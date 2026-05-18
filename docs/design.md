@@ -1050,7 +1050,7 @@ This doc tracks the v0.1 spec. Implementation phases:
 
 | Phase | Status | Scope |
 |---|---|---|
-| 1 | not started | Foundation: locator pipeline copied from mempatch; `[[patch]]` works under `kcdx.toml` |
+| 1 | **code complete, in-game verify pending** | Foundation: locator pipeline copied from mempatch; `[[patch]]` works under `kcdx.toml` |
 | 2 | not started | Plugin loader: DLL discovery, `kcdxPluginVersionData`, dependency topo-sort |
 | 3 | not started | Messaging + Task + lifecycle messages |
 | 4 | not started | Trampoline + function hooks: `[[hook]]`, `[[trampoline]]` |
@@ -1060,5 +1060,7 @@ This doc tracks the v0.1 spec. Implementation phases:
 | 8 | not started | Docs + examples + v0.1.0 release |
 
 Currently completed: **Part A** (mempatch boundary docs) +
-**Part B** (kcdx repo bootstrap). See `README.md` for the
-condensed roadmap.
+**Part B** (kcdx repo bootstrap) + **Phase 1** (foundation,
+code complete; in-game verification recipe at
+[`docs/VERIFY_PHASE1.md`](VERIFY_PHASE1.md)).
+See `README.md` for the condensed roadmap.

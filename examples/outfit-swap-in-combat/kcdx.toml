@@ -1,0 +1,43 @@
+# outfit_swap_in_combat — VioletAnvil
+#
+# Identical patch to the kcd2-mempatch example of the same name. Exists
+# in kcdx's examples for Phase 1's verification milestone: the engine
+# must produce identical apply-log output for this patch under kcdx as
+# mempatch does for the same patch under mempatch.toml.
+#
+# In practice, players who only need this one byte patch should install
+# kcd2-mempatch (smaller, faster) rather than kcdx. This example is kept
+# in the kcdx repo as a conformance test for the [[patch]] schema.
+#
+# Original instruction:
+#   mov  r14b, al    (44 8A F0)   ; cVar2 = IsInCombat()
+# Patched to:
+#   xor  r14d, r14d  (45 31 F6)   ; cVar2 = 0 (always "not in combat")
+#
+# Found by static analysis with Ghidra + dynamic verification with x64dbg
+# on KCD2 build release_1_5_1164953_841 (2026-05-17).
+
+[[patch]]
+name        = "outfit_swap_in_combat"
+priority    = 100
+module      = "WHGame.dll"
+
+# Tier 1 — primary AOB. Confirmed exactly 1 match in current WHGame.dll.
+pattern     = "48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0"
+offset      = 13
+original    = "44 8A F0"
+replacement = "45 31 F6"
+idempotent  = true
+
+# Tier 2 — bulletproofing. Extends the pattern with the preceding
+# `mov rcx, [rax+0x90]` instruction; must also be unique, and the
+# Tier-1 pattern must fall entirely inside this context window.
+context     = "48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0"
+
+description = """
+Allows switching outfits while in combat.
+
+Combat itself, AI, music, hit detection are all unaffected because they read
+combat state via different code paths. This patch only flips the value of one
+boolean used to gate the next_outfit action binding's `enabled` flag.
+"""

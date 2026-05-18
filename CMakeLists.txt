@@ -53,22 +53,18 @@ target_include_directories(minhook PRIVATE vendor/minhook/src)
 # -----------------------------------------------------------------------------
 # kcdx.asi — the engine itself
 # -----------------------------------------------------------------------------
-# Source list grows phase by phase. Phase 1 (foundation) starts with the
-# locator pipeline + a minimal dllmain; later phases add plugin_loader,
-# messaging, trampoline, hook_engine, scripting, serialization, etc.
+# Source list grows phase by phase. Phase 1 ships the locator pipeline
+# adapted from kcd2-mempatch (same byte-rewrite engine, kcdx.toml filename
+# and kcdx:: namespace). Later phases add plugin_loader, messaging,
+# trampoline, hook_engine, scripting, serialization, etc.
 add_library(kcdx SHARED
-    # Phase 1 sources (uncomment as they land):
-    # src/dllmain.cpp
-    # src/log.cpp
-    # src/pe_helpers.cpp
-    # src/locator.cpp
-    # src/patch_engine.cpp
-    # src/config.cpp
-    # src/hooks.cpp
-
-    # Placeholder until Phase 1 source files exist. Remove this line and
-    # uncomment the real sources above when Phase 1 is in progress.
-    src/placeholder.cpp
+    src/dllmain.cpp
+    src/log.cpp
+    src/pe_helpers.cpp
+    src/patch_engine.cpp
+    src/config.cpp
+    src/hooks.cpp
+    src/lua_bind.cpp
 )
 
 target_include_directories(kcdx PRIVATE
