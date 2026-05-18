@@ -67,6 +67,8 @@ add_library(kcdx SHARED
     src/lua_bind.cpp
     src/plugin_loader.cpp
     src/interfaces.cpp
+    src/messaging.cpp
+    src/task.cpp
 )
 
 target_include_directories(kcdx PRIVATE

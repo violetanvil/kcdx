@@ -1053,9 +1053,9 @@ This doc tracks the v0.1 spec. Implementation phases:
 
 | Phase | Status | Scope |
 |---|---|---|
-| 1 | **code complete, in-game verify pending** | Foundation: locator pipeline copied from mempatch; `[[patch]]` works under `kcdx.toml` |
+| 1 | **live-verified in-game** | Foundation: locator pipeline copied from mempatch; `[[patch]]` works under `kcdx.toml` |
 | 2 | **code complete, in-game verify pending** | Plugin loader: DLL discovery, `kcdxPluginVersionData`, dependency topo-sort, hello-plugin example builds standalone |
-| 3 | not started | Messaging + Task + lifecycle messages |
+| 3 | **code complete, in-game verify pending** | Messaging + Task + lifecycle messages (kPostLoad/kPostPostLoad/kInputLoaded fire; save/load messages reserved for Phase 6) |
 | 4 | not started | Trampoline + function hooks: `[[hook]]`, `[[trampoline]]` |
 | 5 | not started | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` |
 | 6 | not started | Save/load + `kcdxSerializationInterface` |
@@ -1064,8 +1064,14 @@ This doc tracks the v0.1 spec. Implementation phases:
 
 Currently completed: **Part A** (mempatch boundary docs) +
 **Part B** (kcdx repo bootstrap) + **Phase 1** (foundation; verify
-recipe at [`docs/VERIFY_PHASE1.md`](VERIFY_PHASE1.md)) + **Phase 2**
+recipe at [`docs/VERIFY_PHASE1.md`](VERIFY_PHASE1.md);
+**live-verified** — outfit swap works in combat) + **Phase 2**
 (plugin loader; verify recipe at
 [`docs/VERIFY_PHASE2.md`](VERIFY_PHASE2.md);
-hello-plugin example at [`examples/hello-plugin/`](../examples/hello-plugin/)).
+hello-plugin example at [`examples/hello-plugin/`](../examples/hello-plugin/)) +
+**Phase 3** (messaging + task + lifecycle; verify recipe at
+[`docs/VERIFY_PHASE3.md`](VERIFY_PHASE3.md); hello-plugin example
+extended to subscribe + submit task). Plus a mid-stride fix to runtime
+version detection (parse kcd_launcher.log instead of relying on
+WHGame.dll's missing VS_VERSIONINFO resource).
 See `README.md` for the condensed roadmap.

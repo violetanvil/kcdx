@@ -10,8 +10,10 @@
 #include "MinHook.h"
 #include "log.h"
 #include "lua_bind.h"
+#include "messaging.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
+#include "task.h"
 
 extern "C" {
 #include "lua.h"
@@ -52,9 +54,20 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 log::Info("First update tick with live lua_State — registering KCDX + applying patches");
                 kcdx::lua_bind::RegisterKcdxTable(L);
                 kcdx::patch::ApplyAll();
+
+                // Lifecycle: input subsystem is alive by the time the first
+                // update tick fires (Lua VM is up). Closest analogue to
+                // SKSE's kInputLoaded message.
+                log::Info("Firing kcdxMessage_InputLoaded...");
+                kcdx::messaging::FireEngineMessage(kcdxMessage_InputLoaded);
             }
         }
     }
+
+    // Drain the task queue every tick. Plugins that called AddTask from
+    // any thread get their tasks executed here, on the main thread.
+    kcdx::task::DrainQueue();
+
     g_orig_update(p1, p2, p3);
 }
 

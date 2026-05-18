@@ -12,6 +12,7 @@
 #include <unordered_set>
 
 #include "log.h"
+#include "messaging.h"
 #include "pe_helpers.h"
 
 namespace fs = std::filesystem;
@@ -606,6 +607,16 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     for (const auto& p : g_plugins) if (p.loaded) ++okCount;
     log::InfoF("Plugin DLL loader: %zu of %zu plugin(s) loaded successfully",
                okCount, g_plugins.size());
+
+    // Phase 7 — Lifecycle: fire kcdxMessage_PostLoad, then kcdxMessage_PostPostLoad.
+    // Plugin B's PostLoad handler can confirm plugin A is loaded (its Load
+    // returned). Plugin B's PostPostLoad handler can confirm plugin A's
+    // PostLoad handler returned — the wave is settled.
+    log::Info("Firing kcdxMessage_PostLoad...");
+    messaging::FireEngineMessage(kcdxMessage_PostLoad);
+
+    log::Info("Firing kcdxMessage_PostPostLoad...");
+    messaging::FireEngineMessage(kcdxMessage_PostPostLoad);
 }
 
 const LoadedPlugin* FindByName(const char* name) {

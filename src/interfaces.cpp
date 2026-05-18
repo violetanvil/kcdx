@@ -8,7 +8,9 @@
 // As later phases land, QueryInterface gets new cases.
 
 #include "kcdx/Interfaces.h"
+#include "messaging.h"
 #include "plugin_loader.h"
+#include "task.h"
 
 #include <cstdint>
 
@@ -16,10 +18,23 @@ namespace kcdx::plugins {
 
 namespace {
 
-void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t /*version*/) {
-    // Phase 3+ fills these in. Until then, every sub-interface is unimplemented.
-    (void)interfaceID;
-    return nullptr;
+void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
+    switch (interfaceID) {
+    case kcdxInterface_Messaging:
+        if (version > kcdxMessagingInterface_Version) return nullptr;
+        return const_cast<kcdxMessagingInterface*>(messaging::GetInterface());
+
+    case kcdxInterface_Task:
+        if (version > kcdxTaskInterface_Version) return nullptr;
+        return const_cast<kcdxTaskInterface*>(task::GetInterface());
+
+    // Phases 4-7 fill these in.
+    case kcdxInterface_Trampoline:
+    case kcdxInterface_Scripting:
+    case kcdxInterface_Serialization:
+    default:
+        return nullptr;
+    }
 }
 
 const kcdxPluginVersionData* Thunk_GetPluginInfo(const char* name) {

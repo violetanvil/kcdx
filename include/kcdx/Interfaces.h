@@ -148,6 +148,141 @@ typedef struct kcdxInterface {
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------
+// kcdxMessagingInterface — pub/sub message bus between plugins and engine
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Messaging,
+// kcdxMessagingInterface_Version).
+//
+// The engine fires lifecycle messages (kcdxMessage_PostLoad,
+// kcdxMessage_PostLoadGame, etc.) with sender = null. Plugins broadcast their
+// own messages with sender = their own stable name. Listeners filter by
+// sender — null-sender listeners see only engine messages; specific-sender
+// listeners see only messages from that plugin.
+
+#define kcdxMessagingInterface_Version 1u
+
+// One message delivered to an EventCallback. Pointer to this struct is
+// valid only for the duration of the callback; copy any data you need to
+// keep.
+typedef struct kcdxMessage {
+    const char* sender;        // Stable plugin name; null = engine-originated
+    uint32_t    messageType;   // kcdxMessage_* catalog OR plugin-defined (>= 0x10000)
+    const void* data;          // Message-specific payload, null if none
+    uint32_t    dataLen;       // Payload byte length, 0 if data is null
+} kcdxMessage;
+
+typedef void (*kcdxMessagingCallback)(kcdxMessage* msg);
+
+typedef struct kcdxMessagingInterface {
+    // Subscribe `callback` to messages from `sender`. Pass sender = null to
+    // receive engine-originated messages (the kcdxMessage_* lifecycle catalog).
+    // Multiple listeners for the same sender are allowed; each gets a copy.
+    // Returns true on success, false on invalid arguments (e.g. unknown listener
+    // handle).
+    bool (*RegisterListener)(kcdxPluginHandle listener,
+                             const char* sender,
+                             kcdxMessagingCallback callback);
+
+    // Send a message. If receiver != null, only listeners that subscribed
+    // specifically to `sender` will see it. If receiver == null, broadcast
+    // to all listeners that subscribed to this sender.
+    // Returns true if at least one listener fired.
+    bool (*Dispatch)(kcdxPluginHandle sender,
+                     uint32_t messageType,
+                     const void* data,
+                     uint32_t dataLen,
+                     const char* receiver);
+} kcdxMessagingInterface;
+
+// Engine-originated message types. Plugin-defined message types should use
+// values >= 0x10000 to avoid collision.
+//
+// All engine messages have sender == null in the kcdxMessage struct.
+enum kcdxMessageType {
+    // After every plugin's kcdxPlugin_Load returned. Plugin B can now look up
+    // plugin A via GetPluginInfo / GetPluginHandle.
+    kcdxMessage_PostLoad      = 1,
+
+    // After every kMessage_PostLoad handler returned. The "plugin wave is
+    // settled" moment — anything plugin B's PostLoad handler registered is
+    // now safe to depend on.
+    kcdxMessage_PostPostLoad  = 2,
+
+    // After KCD2's input subsystem init, before the main menu appears.
+    // Approximated by the first `update` tick.
+    kcdxMessage_InputLoaded   = 3,
+
+    // New game started, before the first cell loads.
+    kcdxMessage_NewGame       = 4,
+
+    // Save selected, before engine reads it. `data` points to the save name
+    // as a null-terminated C string. NOT YET FIRED (Phase 6).
+    kcdxMessage_PreLoadGame   = 5,
+
+    // Save finished loading, world is interactive. `data` = save name string.
+    // NOT YET FIRED (Phase 6).
+    kcdxMessage_PostLoadGame  = 6,
+
+    // Game being saved (manual or quicksave). `data` = save name string.
+    // NOT YET FIRED (Phase 6).
+    kcdxMessage_SaveGame      = 7,
+
+    // A save plus its .kcdx co-save being deleted. `data` = save name string.
+    // NOT YET FIRED (Phase 6).
+    kcdxMessage_DeleteGame    = 8,
+
+    // First plugin-defined message ID. Use anything >= this for your own
+    // message types.
+    kcdxMessage_FirstUserDefined = 0x10000,
+};
+
+// -----------------------------------------------------------------------------
+// kcdxTaskInterface — schedule work onto the game's main thread
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Task,
+// kcdxTaskInterface_Version).
+//
+// Most CryEngine state is NOT thread-safe. If your plugin is fired from a
+// non-main thread (e.g. inside a MinHook detour on a function called from
+// the game's worker pool), defer any game-state mutation onto the next
+// update tick via AddTask.
+
+#define kcdxTaskInterface_Version 1u
+
+// A scheduled unit of work. Plugin authors derive from this and override
+// Run + Dispose, then submit an instance to AddTask. The engine calls Run()
+// on the main thread on the next update tick, then calls Dispose() to give
+// the plugin a chance to free the object (typically `delete this;` inside
+// Dispose).
+//
+// Defined as a C++ virtual class to match SKSE's interface shape. Plugin
+// DLLs and the engine share an MSVC vtable ABI; this is safe.
+#ifdef __cplusplus
+struct kcdxTask {
+    virtual ~kcdxTask() = default;
+
+    // Called on the main thread next update tick. Do your work here.
+    virtual void Run() = 0;
+
+    // Called after Run() completes. Free the object — typical implementation
+    // is `delete this;`.
+    virtual void Dispose() = 0;
+};
+#else
+// Opaque to C plugins.
+typedef struct kcdxTask kcdxTask;
+#endif
+
+typedef struct kcdxTaskInterface {
+    // Schedule `task` for execution on the main thread next update tick.
+    // Safe to call from any thread. After Run() completes the engine calls
+    // task->Dispose().
+    void (*AddTask)(kcdxTask* task);
+} kcdxTaskInterface;
+
+// -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)
 // -----------------------------------------------------------------------------
 //
