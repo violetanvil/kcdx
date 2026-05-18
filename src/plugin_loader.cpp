@@ -147,71 +147,44 @@ uint32_t DetectRuntimeGameVersion() {
     return 0;
 }
 
-// Read the kcdxPluginVersionData from a DLL using LoadLibraryEx with
-// LOAD_LIBRARY_AS_IMAGE_RESOURCE — maps the PE without executing any code or
-// running DllMain. Safe to call on untrusted plugins; we validate before
-// any real LoadLibrary.
+// Read the kcdxPluginVersionData export from a plugin DLL.
 //
-// Returns a copy of the version data on success. The original lives inside
-// the resource-mapped image which we unmap before returning, so we own this
-// copy by value.
-bool PeekVersionData(const fs::path& dllPath, kcdxPluginVersionData& out) {
+// Earlier versions of this code tried LoadLibraryEx with
+// LOAD_LIBRARY_AS_IMAGE_RESOURCE | LOAD_LIBRARY_AS_DATAFILE to peek metadata
+// without running DllMain. That had several bugs (the flags are mutually
+// exclusive per MSDN, RVAs didn't resolve correctly in the resulting flat
+// mapping, and several failure paths returned false silently with no log
+// line — producing the symptom "Plugin DLL loader: discovered 0
+// candidate(s)" even when the DLL was physically present).
+//
+// The simpler approach: real LoadLibraryW, GetProcAddress, copy out the
+// struct. If validation fails downstream the caller FreeLibrary's the
+// module. This is exactly what SKSE does. The trade-off is that a malicious
+// plugin's DllMain runs once — but plugin DLLs are already in a privileged
+// trust position (they get arbitrary memory access through MinHook from
+// kcdxPlugin_Load anyway), so this isn't a meaningful security regression.
+bool PeekVersionData(const fs::path& dllPath,
+                     kcdxPluginVersionData& out,
+                     HMODULE& outModule) {
+    outModule = nullptr;
     std::wstring wpath = dllPath.wstring();
-    HMODULE peek = LoadLibraryExW(wpath.c_str(), nullptr,
-                                  LOAD_LIBRARY_AS_IMAGE_RESOURCE |
-                                  LOAD_LIBRARY_AS_DATAFILE);
-    if (!peek) {
-        log::WarnF("Plugin '%s': LoadLibraryEx(peek) failed (err=%lu)",
+    HMODULE mod = LoadLibraryW(wpath.c_str());
+    if (!mod) {
+        log::WarnF("Plugin '%s': LoadLibrary failed (err=%lu)",
                    dllPath.string().c_str(), GetLastError());
         return false;
     }
-    // LOAD_LIBRARY_AS_IMAGE_RESOURCE returns an HMODULE with the low bit set
-    // (per MSDN). Strip it to get the base.
-    uintptr_t base = reinterpret_cast<uintptr_t>(peek) & ~uintptr_t(1);
-
-    // GetProcAddress doesn't work on a resource-mapped module. We walk the
-    // export table by hand and resolve the name.
-    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
-        FreeLibrary(peek);
-        return false;
-    }
-    auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE) {
-        FreeLibrary(peek);
-        return false;
-    }
-    auto& expDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
-    if (expDir.VirtualAddress == 0 || expDir.Size == 0) {
-        log::WarnF("Plugin '%s': no export table", dllPath.string().c_str());
-        FreeLibrary(peek);
-        return false;
-    }
-    auto* exp = reinterpret_cast<const IMAGE_EXPORT_DIRECTORY*>(base + expDir.VirtualAddress);
-    auto* names = reinterpret_cast<const uint32_t*>(base + exp->AddressOfNames);
-    auto* funcs = reinterpret_cast<const uint32_t*>(base + exp->AddressOfFunctions);
-    auto* ords  = reinterpret_cast<const uint16_t*>(base + exp->AddressOfNameOrdinals);
-
-    const void* dataPtr = nullptr;
-    for (DWORD i = 0; i < exp->NumberOfNames; ++i) {
-        const char* name = reinterpret_cast<const char*>(base + names[i]);
-        if (std::strcmp(name, "kcdxPluginVersionData") == 0) {
-            uint16_t ord = ords[i];
-            if (ord >= exp->NumberOfFunctions) break;
-            dataPtr = reinterpret_cast<const void*>(base + funcs[ord]);
-            break;
-        }
-    }
+    auto* dataPtr = reinterpret_cast<const kcdxPluginVersionData*>(
+        GetProcAddress(mod, "kcdxPluginVersionData"));
     if (!dataPtr) {
-        log::WarnF("Plugin '%s': missing kcdxPluginVersionData export",
+        log::WarnF("Plugin '%s': missing kcdxPluginVersionData export — "
+                   "not a kcdx plugin, ignoring",
                    dllPath.string().c_str());
-        FreeLibrary(peek);
+        FreeLibrary(mod);
         return false;
     }
-
-    // Copy by value. The resource-mapped image is going away.
     std::memcpy(&out, dataPtr, sizeof(out));
-    FreeLibrary(peek);
+    outModule = mod;
     return true;
 }
 
@@ -299,12 +272,15 @@ bool ValidateVersionData(const kcdxPluginVersionData& v,
 }
 
 // One DLL on disk waiting to be validated and loaded. Lifecycle:
-//   1. Discovery: PE-peek the version data into `vdataCopy`. Set `dllPath`.
-//   2. Validation: ValidateVersionData → if ok, queue for real load.
-//   3. Real load: LoadLibraryW + GetProcAddress for entry points → LoadedPlugin.
+//   1. Discovery: LoadLibraryW the DLL, copy out kcdxPluginVersionData into
+//      `vdataCopy`. Module handle stays live in `module`.
+//   2. Validation: ValidateVersionData → if invalid, FreeLibrary(module) and
+//      mark not-valid.
+//   3. Survivors get GetProcAddress for entry points → LoadedPlugin.
 struct Candidate {
     fs::path                folderPath;
     fs::path                dllPath;
+    HMODULE                 module = nullptr;   // owned by Candidate until promoted to LoadedPlugin
     kcdxPluginVersionData   vdataCopy;
     bool                    valid = false;
 };
@@ -469,8 +445,15 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         Candidate c;
         c.folderPath = folderPath;
         c.dllPath = dllPath;
-        if (!PeekVersionData(dllPath, c.vdataCopy)) continue;
+        if (!PeekVersionData(dllPath, c.vdataCopy, c.module)) continue;
         c.valid = ValidateVersionData(c.vdataCopy, dllPath.string());
+        if (!c.valid) {
+            // Invalid plugin — unload the DLL. PeekVersionData succeeded
+            // (so c.module is live), but validation rejected it. We loaded
+            // the DLL to read the metadata; we don't keep it around.
+            FreeLibrary(c.module);
+            c.module = nullptr;
+        }
         cands.push_back(std::move(c));
     }
 
@@ -501,44 +484,50 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     // plugin missing a required dep. The surviving cands are in load order.
     TopoSort(cands);
 
+    // Free any candidate that was rejected by uniqueness check or topo-sort
+    // (marked valid=false but module still live). Done in one sweep here so
+    // every rejection path doesn't need to remember to FreeLibrary.
+    for (Candidate& c : cands) {
+        if (!c.valid && c.module) {
+            FreeLibrary(c.module);
+            c.module = nullptr;
+        }
+    }
+
     if (cands.empty()) {
         log::Info("Plugin DLL loader: no plugins survived validation");
         return;
     }
 
-    // Phase 4 — real load. Allocate handles in topo-sort order.
+    // Phase 4 — promote survivors to LoadedPlugin and assign handles. The
+    // DLLs are already loaded (PeekVersionData kept them mapped) so this is
+    // just bookkeeping + GetProcAddress for the entry points.
     g_plugins.reserve(cands.size());
-    for (size_t i = 0; i < cands.size(); ++i) {
-        Candidate& c = cands[i];
-
-        std::wstring wpath = c.dllPath.wstring();
-        HMODULE mod = LoadLibraryW(wpath.c_str());
-        if (!mod) {
-            log::ErrorF("Plugin '%s': LoadLibrary failed (err=%lu) — skipping",
-                        c.vdataCopy.name, GetLastError());
+    for (Candidate& c : cands) {
+        if (!c.module) {
+            // Validation rejected it; FreeLibrary already happened upstream.
             continue;
         }
 
         LoadedPlugin lp;
         lp.filePath = c.dllPath.string();
         lp.folderName = c.folderPath.filename().string();
-        lp.module = mod;
-        // The version data lives at a static address in the real DLL; we look it
-        // up again on the LoadLibrary'd module so the pointer is stable for the
-        // lifetime of the process.
+        lp.module = c.module;
+        // Re-resolve the export so the pointer references the live DLL's
+        // static address (stable for the lifetime of the process).
         lp.versionData = reinterpret_cast<const kcdxPluginVersionData*>(
-            GetProcAddress(mod, "kcdxPluginVersionData"));
+            GetProcAddress(c.module, "kcdxPluginVersionData"));
         if (!lp.versionData) {
-            log::ErrorF("Plugin '%s': kcdxPluginVersionData symbol resolved during "
-                        "discovery but missing after real load — skipping",
+            log::ErrorF("Plugin '%s': kcdxPluginVersionData export disappeared "
+                        "between discovery and promote — skipping",
                         c.vdataCopy.name);
-            FreeLibrary(mod);
+            FreeLibrary(c.module);
             continue;
         }
         lp.preloadFn = reinterpret_cast<kcdxPlugin_Preload_t>(
-            GetProcAddress(mod, "kcdxPlugin_Preload"));
+            GetProcAddress(c.module, "kcdxPlugin_Preload"));
         lp.loadFn = reinterpret_cast<kcdxPlugin_Load_t>(
-            GetProcAddress(mod, "kcdxPlugin_Load"));
+            GetProcAddress(c.module, "kcdxPlugin_Load"));
 
         // Handle assignment. Sequential from 0.
         lp.handle = static_cast<kcdxPluginHandle>(g_plugins.size());
@@ -547,6 +536,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
                    lp.versionData->name, lp.versionData->pluginVersion,
                    lp.filePath.c_str(), lp.handle);
         g_plugins.push_back(std::move(lp));
+        c.module = nullptr;  // ownership transferred to LoadedPlugin
     }
 
     if (g_plugins.empty()) return;
