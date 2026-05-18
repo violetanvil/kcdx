@@ -114,6 +114,17 @@ enum kcdxInterfaceID {
     kcdxInterface_Serialization  = 5,  // Phase 6
 };
 
+// Log levels passed to kcdxInterface::Log. Match the severities the engine
+// itself uses; the engine routes Log(handle, level, msg) into the plugin's
+// own log file at <plugin-folder>/<folder-name>.log with the plugin's
+// stable name prepended as `[name] ...`.
+enum kcdxLogLevel {
+    kcdxLog_Info  = 0,
+    kcdxLog_Warn  = 1,
+    kcdxLog_Error = 2,
+    kcdxLog_Debug = 3,
+};
+
 // Root accessor. The engine passes a const pointer to one of these to your
 // kcdxPlugin_Preload and kcdxPlugin_Load functions. Treat as read-only.
 //
@@ -145,6 +156,22 @@ typedef struct kcdxInterface {
     // the ID is unknown for the running game version, or if the Address
     // Library has it as `removed` for this version. Phase 7+.
     uintptr_t (*ResolveAddress)(uint64_t id);
+
+    // Write a line to this plugin's own log file at
+    //   <plugins-dir>/<plugin-folder>/<plugin-folder>.log
+    //
+    // The engine handles file lifecycle (lazy-open on first call, truncate on
+    // session start) and a hard 20 MB size cap per file (further writes get
+    // silently dropped, with one warning to kcdx.log naming the offending
+    // file). The line is automatically prefixed with the plugin's stable
+    // name so multiple plugins can identify themselves if they share a log
+    // surface for any reason.
+    //
+    // `msg` should be a UTF-8 null-terminated C string. Newlines are added
+    // by the engine — don't append your own.
+    //
+    // Safe to call from any thread.
+    void (*Log)(kcdxPluginHandle self, uint32_t level, const char* msg);
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------
@@ -281,6 +308,44 @@ typedef struct kcdxTaskInterface {
     // task->Dispose().
     void (*AddTask)(kcdxTask* task);
 } kcdxTaskInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxTrampolineInterface — allocate executable memory the plugin owns
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Trampoline,
+// kcdxTrampolineInterface_Version).
+//
+// Two pools with different proximity guarantees:
+//
+//   AllocateFromBranchPool — executable memory within ±2 GB of WHGame.dll's
+//     .text section, so a 5-byte E9 rel32 jump can reach it. Use this for
+//     trampolines that the original game code branches into via 5-byte
+//     jumps. Budget is limited (default 64 KB across all plugins). Returns
+//     null on exhaustion.
+//
+//   AllocateFromLocalPool — executable memory anywhere VirtualAlloc places
+//     it. Effectively unlimited budget. Plugins calling into this region
+//     must use abs-64 jumps (14-byte FF 25 + 8 bytes of target) or a
+//     register-indirect call. Use this when proximity doesn't matter.
+//
+// Both functions return memory marked PAGE_EXECUTE_READWRITE and zero-filled.
+// Tag with `owner` so kcdx's pre-flight conflict detector knows which plugin
+// owns which byte range — used when two plugins' trampolines would collide.
+
+#define kcdxTrampolineInterface_Version 1u
+
+typedef struct kcdxTrampolineInterface {
+    // Allocate `size` bytes of executable memory within ±2 GB of WHGame.dll's
+    // .text. Returns null if `size` is zero, the pool is exhausted, or no
+    // free region within range exists. Plugin owns the returned pointer for
+    // the lifetime of the process — no Free function (matches SKSE's model).
+    void* (*AllocateFromBranchPool)(kcdxPluginHandle owner, size_t size);
+
+    // Allocate `size` bytes of executable memory anywhere. Returns null on
+    // failure (typically: out of memory).
+    void* (*AllocateFromLocalPool)(kcdxPluginHandle owner, size_t size);
+} kcdxTrampolineInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)

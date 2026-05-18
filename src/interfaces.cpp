@@ -8,9 +8,11 @@
 // As later phases land, QueryInterface gets new cases.
 
 #include "kcdx/Interfaces.h"
+#include "log.h"
 #include "messaging.h"
 #include "plugin_loader.h"
 #include "task.h"
+#include "trampoline.h"
 
 #include <cstdint>
 
@@ -28,8 +30,11 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxTaskInterface_Version) return nullptr;
         return const_cast<kcdxTaskInterface*>(task::GetInterface());
 
-    // Phases 4-7 fill these in.
     case kcdxInterface_Trampoline:
+        if (version > kcdxTrampolineInterface_Version) return nullptr;
+        return const_cast<kcdxTrampolineInterface*>(trampoline::GetInterface());
+
+    // Phases 5-7 fill these in.
     case kcdxInterface_Scripting:
     case kcdxInterface_Serialization:
     default:
@@ -62,6 +67,18 @@ uintptr_t Thunk_ResolveAddress(uint64_t /*id*/) {
     return 0;
 }
 
+void Thunk_Log(kcdxPluginHandle self, uint32_t level, const char* msg) {
+    if (!msg) return;
+    std::string s(msg);
+    switch (level) {
+    case kcdxLog_Warn:  log::PluginWarn (self, s); break;
+    case kcdxLog_Error: log::PluginError(self, s); break;
+    case kcdxLog_Debug: log::PluginDebug(self, s); break;
+    case kcdxLog_Info:
+    default:            log::PluginInfo (self, s); break;
+    }
+}
+
 // The static instance. Initialized at program startup before any plugin code
 // runs because DiscoverAndLoad fetches it.
 kcdxInterface g_api = {
@@ -72,6 +89,7 @@ kcdxInterface g_api = {
     /*GetPluginHandle=*/    Thunk_GetPluginHandle,
     /*EnumeratePlugins=*/   Thunk_EnumeratePlugins,
     /*ResolveAddress=*/     Thunk_ResolveAddress,
+    /*Log=*/                Thunk_Log,
 };
 
 }  // namespace

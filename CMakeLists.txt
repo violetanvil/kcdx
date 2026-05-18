@@ -69,6 +69,7 @@ add_library(kcdx SHARED
     src/interfaces.cpp
     src/messaging.cpp
     src/task.cpp
+    src/trampoline.cpp
 )
 
 target_include_directories(kcdx PRIVATE
