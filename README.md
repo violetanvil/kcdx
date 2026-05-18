@@ -123,6 +123,12 @@ documented SKSE weak spot:
 | 7 | Address Library + console commands (`[[command]]`) | not started |
 | 8 | Docs + examples + v0.1.0 release | not started |
 
+**Authoritative v0.1 spec:** [`docs/design.md`](docs/design.md). The
+full TOML schema, every C++ interface signature, the lifecycle
+message catalog, the symbol-table contract, the conflict matrix,
+and worked examples for each entry type all live there. Read that
+first if you're writing a plugin or contributing to the engine.
+
 ## Installation (placeholder)
 
 Same install model as kcd2-mempatch: drop `dinput8.dll` next to
