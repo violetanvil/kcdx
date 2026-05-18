@@ -4,7 +4,10 @@
 #include <psapi.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -30,32 +33,81 @@ std::string WideToUtf8(const std::wstring& w) {
     return out;
 }
 
-// Pull the file version (major, minor, build) out of WHGame.dll and pack into
-// the engine's encoded form. Logs a warn and returns 0 if WHGame.dll isn't
-// loaded or has no VS_VERSIONINFO resource.
-uint32_t DetectRuntimeGameVersion() {
+// Locate WHGame.dll's full path. Used by both version-detection paths.
+// Returns empty wstring on failure.
+std::wstring LocateWHGamePath() {
     HMODULE h = GetModuleHandleW(L"WHGame.dll");
-    if (!h) {
-        log::Warn("DetectRuntimeGameVersion: WHGame.dll not loaded");
-        return 0;
-    }
+    if (!h) return {};
     wchar_t path[MAX_PATH];
     DWORD n = GetModuleFileNameW(h, path, MAX_PATH);
-    if (n == 0 || n == MAX_PATH) {
-        log::Warn("DetectRuntimeGameVersion: GetModuleFileName failed");
-        return 0;
+    if (n == 0 || n == MAX_PATH) return {};
+    return std::wstring(path, n);
+}
+
+// Strategy 1: parse `<game_root>/kcd_launcher.log` for the build description.
+//
+// The launcher log is written on every game launch with a header like:
+//   Build info:
+//   * date/time: Apr 16 2026  11:16:26
+//   * computer: RACK-BUILD21
+//   * configuration: MasterMasterSteamPGO
+//   * description: release_1_5_1164953_841
+//
+// We pattern-match the `description:` line and pull out major/minor/build
+// from the `release_<major>_<minor>_<build>_<subbuild>` token.
+//
+// Returns 0 on any failure (file missing, header missing, parse failure).
+// We pass the WHGame.dll path so we can locate the game root by walking up.
+uint32_t TryParseLauncherLog(const std::wstring& whgamePath) {
+    if (whgamePath.empty()) return 0;
+    fs::path root = fs::path(whgamePath).parent_path()    // Win64MasterMasterSteamPGO
+                                          .parent_path()  // Bin
+                                          .parent_path(); // game root
+    fs::path logPath = root / "kcd_launcher.log";
+    std::error_code ec;
+    if (!fs::exists(logPath, ec)) return 0;
+
+    std::ifstream in(logPath);
+    if (!in) return 0;
+
+    // Read just the first ~40 lines. The build header is in the first
+    // handful; reading the entire file would be wasteful (the launcher
+    // log can grow to MBs).
+    std::string line;
+    for (int i = 0; i < 64 && std::getline(in, line); ++i) {
+        // Look for "* description: release_<maj>_<min>_<build>_..."
+        auto descPos = line.find("description:");
+        if (descPos == std::string::npos) continue;
+        auto relPos = line.find("release_", descPos);
+        if (relPos == std::string::npos) continue;
+
+        // Parse three underscore-separated integers after "release_".
+        const char* p = line.c_str() + relPos + 8;  // skip "release_"
+        unsigned major = 0, minor = 0, build = 0;
+        if (std::sscanf(p, "%u_%u_%u", &major, &minor, &build) != 3) {
+            continue;
+        }
+        uint32_t encoded = kcdxMakeGameVersion(major, minor, build);
+        log::InfoF("Detected KCD2 runtime version: %u.%u.%u "
+                   "(encoded 0x%08X, source: kcd_launcher.log)",
+                   major, minor, build, encoded);
+        return encoded;
     }
+    return 0;
+}
+
+// Strategy 2: pull VS_VERSIONINFO out of WHGame.dll. KCD2 doesn't ship one as
+// of 1.5.1164953 so this almost always fails — kept as a fallback in case a
+// future build adds it.
+uint32_t TryVersionInfoResource(const std::wstring& whgamePath) {
+    if (whgamePath.empty()) return 0;
 
     DWORD verHandle = 0;
-    DWORD verSize = GetFileVersionInfoSizeW(path, &verHandle);
-    if (verSize == 0) {
-        log::WarnF("DetectRuntimeGameVersion: no version info in %s",
-                   WideToUtf8(path).c_str());
-        return 0;
-    }
+    DWORD verSize = GetFileVersionInfoSizeW(whgamePath.c_str(), &verHandle);
+    if (verSize == 0) return 0;
+
     std::vector<uint8_t> buf(verSize);
-    if (!GetFileVersionInfoW(path, verHandle, verSize, buf.data())) {
-        log::Warn("DetectRuntimeGameVersion: GetFileVersionInfo failed");
+    if (!GetFileVersionInfoW(whgamePath.c_str(), verHandle, verSize, buf.data())) {
         return 0;
     }
     VS_FIXEDFILEINFO* ffi = nullptr;
@@ -63,16 +115,35 @@ uint32_t DetectRuntimeGameVersion() {
     if (!VerQueryValueW(buf.data(), L"\\",
                         reinterpret_cast<LPVOID*>(&ffi), &ffiLen) ||
         !ffi) {
-        log::Warn("DetectRuntimeGameVersion: VerQueryValue failed");
         return 0;
     }
     uint16_t major = HIWORD(ffi->dwFileVersionMS);
     uint16_t minor = LOWORD(ffi->dwFileVersionMS);
     uint16_t build = HIWORD(ffi->dwFileVersionLS);
     uint32_t encoded = kcdxMakeGameVersion(major, minor, build);
-    log::InfoF("Detected KCD2 runtime version: %u.%u.%u (encoded 0x%08X)",
+    log::InfoF("Detected KCD2 runtime version: %u.%u.%u "
+               "(encoded 0x%08X, source: WHGame.dll VS_VERSIONINFO)",
                major, minor, build, encoded);
     return encoded;
+}
+
+// Try every strategy in order. Returns 0 if all fail; the caller (validation
+// code) treats 0 as "skip the version-compat check with a warning, don't
+// refuse the plugin".
+uint32_t DetectRuntimeGameVersion() {
+    std::wstring path = LocateWHGamePath();
+    if (path.empty()) {
+        log::Warn("DetectRuntimeGameVersion: WHGame.dll not loaded");
+        return 0;
+    }
+
+    if (uint32_t v = TryParseLauncherLog(path); v != 0) return v;
+    if (uint32_t v = TryVersionInfoResource(path); v != 0) return v;
+
+    log::WarnF("DetectRuntimeGameVersion: could not determine KCD2 build "
+               "(checked kcd_launcher.log and WHGame.dll VS_VERSIONINFO). "
+               "compatibleGameVersions checks will be skipped with a warning.");
+    return 0;
 }
 
 // Read the kcdxPluginVersionData from a DLL using LoadLibraryEx with
@@ -183,6 +254,28 @@ bool ValidateVersionData(const kcdxPluginVersionData& v,
         if (gv == g_runtimeGameVersion) { versionOK = true; break; }
     }
     bool addrLibOptIn = (v.versionIndependence & kcdxVersionIndependent_AddressLibrary) != 0;
+
+    // Graceful-degradation case: if we couldn't detect the runtime game version
+    // (g_runtimeGameVersion == 0), the version-compat check is unreliable. Don't
+    // refuse plugins over our own self-detection failure — log a warning and
+    // let them load. The plugin author's compatibleGameVersions array still
+    // shows up in the log so users can see what was claimed.
+    if (g_runtimeGameVersion == 0 && !addrLibOptIn) {
+        log::WarnF("Plugin '%s': engine couldn't determine the running KCD2 version, "
+                   "so compatibleGameVersions cannot be verified. Loading anyway. "
+                   "Plugin claims compatibility with:",
+                   v.name);
+        if (!hasAnyVersion) {
+            log::Warn("    (none — empty compatibleGameVersions array)");
+        } else {
+            for (uint32_t gv : v.compatibleGameVersions) {
+                if (gv == 0) break;
+                log::WarnF("    0x%08X", gv);
+            }
+        }
+        return true;
+    }
+
     if (!versionOK && !addrLibOptIn) {
         if (!hasAnyVersion) {
             log::ErrorF("Plugin '%s': empty compatibleGameVersions array and "
