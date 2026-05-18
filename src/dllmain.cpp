@@ -5,6 +5,7 @@
 #include "config.h"
 #include "hooks.h"
 #include "log.h"
+#include "plugin_loader.h"
 
 namespace {
 
@@ -37,6 +38,13 @@ DWORD WINAPI WorkerThread(LPVOID) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
         return 1;
     }
+
+    // Plugin DLL discovery + load. Runs after the engine's own hooks are
+    // installed so plugins can rely on the MinHook + lua_State infrastructure
+    // being present. Plugin_Preload + Plugin_Load fire here, before the first
+    // game `update` tick.
+    kcdx::plugins::DiscoverAndLoad(selfDir);
+
     return 0;
 }
 

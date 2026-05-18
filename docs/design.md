@@ -126,11 +126,13 @@ struct kcdxPluginVersionData {
     uint32_t versionIndependenceEx;    // Reserved for forward compat. Set 0.
     uint32_t versionIndependence;      // Bitfield. See VersionIndependence flags below.
 
-    uint32_t compatibleGameVersions[16];  // Exact KCD2 build numbers this plugin tested
-                                          // against (e.g. 0x010505BC for 1.5.1164953).
-                                          // Zero-terminated. Empty array means
-                                          // "any version" — only valid if
-                                          // versionIndependence has AddressLibrary set.
+    uint32_t compatibleGameVersions[16];  // KCD2 build numbers this plugin tested against.
+                                          // Encoding: (major<<24) | (minor<<16) | (build_lo16).
+                                          // 1.5.1164953 → kcdxMakeGameVersion(1,5,1164953) =
+                                          //   (1<<24) | (5<<16) | (1164953 & 0xFFFF) = 0x010579D9.
+                                          // Zero-terminated. Empty array means "any version"
+                                          // — only valid if versionIndependence has
+                                          // AddressLibrary set.
 
     uint32_t kcdxVersionRequired;      // Minimum kcdx version (e.g. 0x00010000 = 0.1.0).
 
@@ -142,14 +144,15 @@ struct kcdxPluginVersionData {
     const char* inlinePatchesToml;     // Null-terminated, nullable.
 
     // Optional: dependencies. Pointer to a zero-terminated array of
-    // { name, min_version, optional } triplets. Loader topo-sorts before
-    // issuing Plugin_Load calls.
-    struct Dependency {
-        const char* name;              // Other plugin's stable ID
-        uint32_t    minVersion;        // Their pluginVersion must be >= this
-        uint32_t    flags;             // Bit 0: optional (load anyway if missing)
-    };
-    const Dependency* dependencies;    // Nullable. Array terminated by {nullptr, 0, 0}.
+    // { name, min_version, flags } triplets. Loader topo-sorts before
+    // issuing Plugin_Load calls. See kcdxPluginDependency below.
+    const kcdxPluginDependency* dependencies;  // Nullable. Array terminated by {nullptr, 0, 0}.
+};
+
+struct kcdxPluginDependency {
+    const char* name;          // Other plugin's stable ID
+    uint32_t    minVersion;    // Their pluginVersion must be >= this
+    uint32_t    flags;         // Bit 0: kcdxDependencyFlag_Optional
 };
 
 enum VersionIndependence : uint32_t {
@@ -1051,7 +1054,7 @@ This doc tracks the v0.1 spec. Implementation phases:
 | Phase | Status | Scope |
 |---|---|---|
 | 1 | **code complete, in-game verify pending** | Foundation: locator pipeline copied from mempatch; `[[patch]]` works under `kcdx.toml` |
-| 2 | not started | Plugin loader: DLL discovery, `kcdxPluginVersionData`, dependency topo-sort |
+| 2 | **code complete, in-game verify pending** | Plugin loader: DLL discovery, `kcdxPluginVersionData`, dependency topo-sort, hello-plugin example builds standalone |
 | 3 | not started | Messaging + Task + lifecycle messages |
 | 4 | not started | Trampoline + function hooks: `[[hook]]`, `[[trampoline]]` |
 | 5 | not started | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` |
@@ -1060,7 +1063,9 @@ This doc tracks the v0.1 spec. Implementation phases:
 | 8 | not started | Docs + examples + v0.1.0 release |
 
 Currently completed: **Part A** (mempatch boundary docs) +
-**Part B** (kcdx repo bootstrap) + **Phase 1** (foundation,
-code complete; in-game verification recipe at
-[`docs/VERIFY_PHASE1.md`](VERIFY_PHASE1.md)).
+**Part B** (kcdx repo bootstrap) + **Phase 1** (foundation; verify
+recipe at [`docs/VERIFY_PHASE1.md`](VERIFY_PHASE1.md)) + **Phase 2**
+(plugin loader; verify recipe at
+[`docs/VERIFY_PHASE2.md`](VERIFY_PHASE2.md);
+hello-plugin example at [`examples/hello-plugin/`](../examples/hello-plugin/)).
 See `README.md` for the condensed roadmap.

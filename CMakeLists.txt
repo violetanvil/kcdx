@@ -65,6 +65,8 @@ add_library(kcdx SHARED
     src/config.cpp
     src/hooks.cpp
     src/lua_bind.cpp
+    src/plugin_loader.cpp
+    src/interfaces.cpp
 )
 
 target_include_directories(kcdx PRIVATE
@@ -75,7 +77,8 @@ target_include_directories(kcdx PRIVATE
     vendor/tomlplusplus
 )
 
-target_link_libraries(kcdx PRIVATE lua minhook)
+# version.lib is needed for GetFileVersionInfo* calls in plugin_loader.cpp
+target_link_libraries(kcdx PRIVATE lua minhook version)
 
 if(MSVC)
     target_compile_definitions(kcdx PRIVATE
