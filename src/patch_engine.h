@@ -56,6 +56,10 @@ struct PatchEntry {
     std::optional<Pattern> context;
     Anchor anchor;
     uint32_t maxAnchorDistance = 4096;
+
+    // Set true by ApplyResolvedPatch on successful apply. Read by
+    // GetConflictReport so test plugins can verify outcomes.
+    bool appliedOK = false;
 };
 
 // Engine state — set by config.cpp at startup, read by hooks.cpp when applying.

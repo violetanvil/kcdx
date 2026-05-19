@@ -1,0 +1,51 @@
+# COMP-02 — [[patch]] + [[hook]] overlapping at same function entry.
+#
+# One plugin declares BOTH a [[patch]] and a [[hook]] that resolve to
+# the same function entry of the IsInCombat wrapper. Expected engine
+# behavior (Phase 4b.3 acceptance):
+#   - conflict_engine pre-flight: INFO — "Hook will install rel32 jmp ...
+#     overlapping bytes already modified by patch ... Both apply,
+#     no action needed."
+#   - Patch applies first (lower priority number).
+#   - Hook installs second; MinHook relocates the patched prologue
+#     into its trampoline so the patch survives.
+#
+# Both entries' bytes are no-ops (identity 48 -> 48 patch; the hook's
+# 3-byte 31 C0 C3 detour is `xor eax, eax; ret` which makes
+# IsInCombat always return 0 — but the function is rarely-called
+# during boot, so observable behavior is benign).
+#
+# DLL companion subscribes to kInputLoaded, calls GetConflictReport
+# at the resolved target, asserts both entries are present and BOTH
+# show appliedOK = true.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.comp-02-hook-on-patch"
+display_name        = "COMP-02 Hook-on-patch overlap"
+author              = "kcdx"
+description         = "Patch and hook at same target; both should apply."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+
+[[patch]]
+name        = "comp-02-patch"
+priority    = 100
+description = "Identity 48 -> 48 patch at IsInCombat entry. No-op."
+pattern     = "48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02"
+offset      = -4
+original    = "48"
+replacement = "48"
+idempotent  = true
+
+[[hook]]
+name        = "comp-02-hook"
+priority    = 200
+description = "rel32 jmp at IsInCombat entry. Overlaps the identity patch."
+pattern     = "48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02"
+offset      = -4
+bytes       = "31 C0 C3"

@@ -54,6 +54,10 @@ struct HookEntry {
     std::vector<std::string> param_types;       // empty for a no-arg target
     std::string              lua_callback;      // dotted Lua function name; empty for raw-bytes hooks
     std::string              lua_post_callback; // optional; same lookup
+
+    // Set true by ApplyOneHook if MinHook install + enable succeeded.
+    // Read by GetConflictReport so test plugins can verify outcomes.
+    bool                     appliedOK = false;
 };
 
 // Phase 5g: [[mid_hook]] entries from kcdx.toml. Distinct from HookEntry

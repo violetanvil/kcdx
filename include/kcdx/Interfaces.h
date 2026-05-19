@@ -133,6 +133,22 @@ enum kcdxLogLevel {
     kcdxLog_Debug = 3,
 };
 
+// Per-entry record returned by kcdxInterface::GetConflictReport. Describes
+// one [[patch]] or [[hook]] entry that overlaps a queried target address.
+// All char* fields are owned by the engine and remain valid for the
+// process lifetime.
+enum kcdxConflictEntryKind {
+    kcdxConflictEntryKind_Patch = 0,
+    kcdxConflictEntryKind_Hook  = 1,
+};
+
+typedef struct kcdxConflictEntry {
+    const char* name;       // entry's TOML name (e.g. "outfit_swap_in_combat")
+    int         priority;   // resolved load-order position (lower = earlier)
+    int         kind;       // kcdxConflictEntryKind_Patch or _Hook
+    int         applied;    // 0 = aborted (lost a conflict), nonzero = applied
+} kcdxConflictEntry;
+
 // Root accessor. The engine passes a const pointer to one of these to your
 // kcdxPlugin_Preload and kcdxPlugin_Load functions. Treat as read-only.
 //
@@ -220,6 +236,28 @@ typedef struct kcdxInterface {
                              const char*      testName,
                              int              pass,    // 0 = fail, nonzero = pass
                              const char*      reason); // nullable
+
+    // Conflict introspection: query which patch/hook entries resolve to a
+    // given target address, and how the conflict engine handled them.
+    // Used by test plugins (COMP-01/02/03 and friends) to assert that a
+    // declared conflict was detected + resolved as expected.
+    //
+    // For [[patch]] entries the "target" matches if the patch's write
+    // range contains the queried address (write footprint covers
+    // [patchVa, patchVa + replacement_len)).
+    //
+    // For [[hook]] entries the "target" matches if the hook's resolved
+    // function entry address equals the queried address.
+    //
+    // Pass out=null, cap=0 to query the count only; the function returns
+    // how many entries would have been written. With a real buffer, fills
+    // up to cap entries (truncates if there are more).
+    //
+    // Order: entries are sorted by (priority asc, name asc) — the same
+    // order kcdx uses for apply.
+    uint32_t (*GetConflictReport)(uintptr_t              target,
+                                  kcdxConflictEntry*     out,
+                                  uint32_t               cap);
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------

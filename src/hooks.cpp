@@ -140,12 +140,14 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                                kcdx::patch::g_dryRun ? " [dry_run=true]" : "");
                     for (const auto& ref : kcdx::conflict_engine::g_applyOrder) {
                         if (ref.kind == kcdx::conflict_engine::EntryKind::Patch) {
-                            if (kcdx::patch::ApplyResolvedPatch(
-                                    kcdx::patch::g_patches[ref.index],
-                                    kcdx::conflict_engine::g_resolvedPatches[ref.index])) {
-                                ++okPatches;
-                            }
+                            bool ok = kcdx::patch::ApplyResolvedPatch(
+                                kcdx::patch::g_patches[ref.index],
+                                kcdx::conflict_engine::g_resolvedPatches[ref.index]);
+                            kcdx::patch::g_patches[ref.index].appliedOK = ok;
+                            if (ok) ++okPatches;
                         } else {
+                            // ApplyOneHook sets appliedOK on the HookEntry
+                            // internally before returning true.
                             if (kcdx::hook_engine::ApplyOneHook(ref.index)) {
                                 ++okHooks;
                             }

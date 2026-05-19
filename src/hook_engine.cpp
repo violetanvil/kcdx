@@ -62,7 +62,7 @@ patch::PatchEntry MakeLocatorPatch(const HookEntry& h) {
 
 bool ApplyOneHook(size_t hookIdx) {
     if (hookIdx >= g_hooks.size()) return false;
-    const HookEntry& h = g_hooks[hookIdx];
+    HookEntry& h = g_hooks[hookIdx];
 
     // conflict_engine::RunPreFlight should have populated g_resolvedHooks
     // already. If we're being called outside that orchestration (tests,
@@ -212,6 +212,7 @@ bool ApplyOneHook(size_t hookIdx) {
                siteBytes[0], siteBytes[1], siteBytes[2], siteBytes[3], siteBytes[4]);
 
     g_installed.emplace(targetAddr, h.name);
+    h.appliedOK = true;
     return true;
 }
 

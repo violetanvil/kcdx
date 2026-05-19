@@ -8,13 +8,19 @@
 // As later phases land, QueryInterface gets new cases.
 
 #include "kcdx/Interfaces.h"
+#include "conflict_engine.h"
+#include "hook_engine.h"
 #include "log.h"
 #include "messaging.h"
+#include "patch_engine.h"
 #include "plugin_loader.h"
 #include "scripting_interface.h"
 #include "task.h"
 #include "test.h"
 #include "trampoline.h"
+
+#include <algorithm>
+#include <vector>
 
 #include <cstdint>
 
@@ -149,6 +155,70 @@ void Thunk_ReportTestResult(kcdxPluginHandle /*self*/,
     kcdx::test::ReportResult(testName, pass != 0, reason ? reason : "");
 }
 
+uint32_t Thunk_GetConflictReport(uintptr_t target,
+                                 kcdxConflictEntry* out,
+                                 uint32_t cap) {
+    // Collect matching entries from both patches and hooks. Names are
+    // stable for the process lifetime (live in PatchEntry/HookEntry
+    // strings inside the static g_patches/g_hooks vectors), so we can
+    // hand out raw c_str() pointers.
+    struct TempEntry {
+        const char* name;
+        int         priority;
+        int         kind;
+        bool        applied;
+    };
+    std::vector<TempEntry> hits;
+
+    // Patches: target lies within [patchAddr, patchAddr + replacement.size())
+    for (size_t i = 0; i < kcdx::patch::g_patches.size(); ++i) {
+        const auto& p = kcdx::patch::g_patches[i];
+        if (i >= kcdx::conflict_engine::g_resolvedPatches.size()) break;
+        const auto& r = kcdx::conflict_engine::g_resolvedPatches[i];
+        if (!r.ok) continue;
+        uintptr_t begin = r.patchAddr;
+        uintptr_t end   = begin + p.replacement.size();
+        if (target >= begin && target < end) {
+            hits.push_back({
+                p.name.c_str(), p.priority,
+                kcdxConflictEntryKind_Patch, p.appliedOK
+            });
+        }
+    }
+
+    // Hooks: target matches resolved function entry exactly
+    for (size_t i = 0; i < kcdx::hook_engine::g_hooks.size(); ++i) {
+        const auto& h = kcdx::hook_engine::g_hooks[i];
+        if (i >= kcdx::conflict_engine::g_resolvedHooks.size()) break;
+        const auto& rh = kcdx::conflict_engine::g_resolvedHooks[i];
+        if (!rh.ok) continue;
+        if (rh.targetAddr == target) {
+            hits.push_back({
+                h.name.c_str(), h.priority,
+                kcdxConflictEntryKind_Hook, h.appliedOK
+            });
+        }
+    }
+
+    // Sort by (priority asc, name asc)
+    std::sort(hits.begin(), hits.end(), [](const TempEntry& a, const TempEntry& b) {
+        if (a.priority != b.priority) return a.priority < b.priority;
+        return std::string(a.name) < std::string(b.name);
+    });
+
+    // Fill out buffer
+    if (out && cap > 0) {
+        uint32_t n = (hits.size() < cap) ? (uint32_t)hits.size() : cap;
+        for (uint32_t i = 0; i < n; ++i) {
+            out[i].name     = hits[i].name;
+            out[i].priority = hits[i].priority;
+            out[i].kind     = hits[i].kind;
+            out[i].applied  = hits[i].applied ? 1 : 0;
+        }
+    }
+    return static_cast<uint32_t>(hits.size());
+}
+
 // Resolve a plugin's install folder path. Returned pointer is owned by the
 // engine and remains valid for the process lifetime — backed by the
 // LoadedPlugin::folderPath wstring which lives as long as g_plugins.
@@ -174,6 +244,7 @@ kcdxInterface g_api = {
     /*Log=*/                Thunk_Log,
     /*GetPluginPath=*/      Thunk_GetPluginPath,
     /*ReportTestResult=*/   Thunk_ReportTestResult,
+    /*GetConflictReport=*/  Thunk_GetConflictReport,
 };
 
 }  // namespace
