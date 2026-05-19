@@ -25,6 +25,13 @@ extern "C" {
 #include "patch_engine.h"
 #include "pe_helpers.h"
 
+// kcdx.lua.* helpers live in lua_bind_lua.cpp. Forward-decl bind()
+// here so RegisterKcdxTable can call it. (No header needed for a
+// single function with this signature.)
+namespace kcdx::lua_bind_lua {
+    void bind(lua_State* L);
+}
+
 namespace kcdx::lua_bind {
 
 namespace {
@@ -175,6 +182,7 @@ void RegisterKcdxTable(lua_State* L) {
     lua_pushliteral(L, "0.1.0-phase5c");
     lua_setfield(L, kcdx_idx, "version");
     kcdx::lua_memory::bind(L);
+    kcdx::lua_bind_lua::bind(L);
     lua_setglobal(L, "kcdx");
     log::Info("kcdx.* global registered (raw Lua C API; no sol2)");
 }
