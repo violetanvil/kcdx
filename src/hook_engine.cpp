@@ -46,120 +46,112 @@ patch::PatchEntry MakeLocatorPatch(const HookEntry& h) {
 
 }  // namespace
 
-size_t ApplyAll() {
-    if (g_hooks.empty()) return 0;
+bool ApplyOneHook(size_t hookIdx) {
+    if (hookIdx >= g_hooks.size()) return false;
+    const HookEntry& h = g_hooks[hookIdx];
 
     // conflict_engine::RunPreFlight should have populated g_resolvedHooks
-    // already. If it wasn't called (e.g. tests, future runtime paths), fall
-    // back to local resolution.
-    if (conflict_engine::g_resolvedHooks.size() != g_hooks.size()) {
+    // already. If we're being called outside that orchestration (tests,
+    // future runtime paths), fall back to local resolution for this entry.
+    if (hookIdx >= conflict_engine::g_resolvedHooks.size()) {
         log::Warn("Hook engine: conflict_engine pre-flight not run, "
-                  "resolving hooks locally (no cross-engine conflict matrix).");
-        conflict_engine::g_resolvedHooks.clear();
+                  "resolving hook locally (no cross-engine conflict matrix).");
         conflict_engine::g_resolvedHooks.resize(g_hooks.size());
-        for (size_t i = 0; i < g_hooks.size(); ++i) {
-            const HookEntry& h = g_hooks[i];
-            if (h.bytes.empty()) {
-                conflict_engine::g_resolvedHooks[i].reason = "empty 'bytes' field";
-                continue;
-            }
+        if (h.bytes.empty()) {
+            conflict_engine::g_resolvedHooks[hookIdx].reason = "empty 'bytes' field";
+        } else {
             patch::PatchEntry locator = MakeLocatorPatch(h);
             patch::ResolvedPatch r = patch::Resolve(locator);
-            if (!r.ok) {
-                conflict_engine::g_resolvedHooks[i].reason = r.reason;
-                continue;
+            if (r.ok) {
+                conflict_engine::g_resolvedHooks[hookIdx].ok = true;
+                conflict_engine::g_resolvedHooks[hookIdx].targetAddr = r.patchAddr;
+            } else {
+                conflict_engine::g_resolvedHooks[hookIdx].reason = r.reason;
             }
-            conflict_engine::g_resolvedHooks[i].ok = true;
-            conflict_engine::g_resolvedHooks[i].targetAddr = r.patchAddr;
         }
     }
+    const auto& rh = conflict_engine::g_resolvedHooks[hookIdx];
 
-    log::InfoF("Hook engine: applying %zu hook(s)...", g_hooks.size());
-    size_t installed = 0;
+    if (!rh.ok) {
+        log::ErrorF("[hook '%s'] aborted: %s", h.name.c_str(), rh.reason.c_str());
+        return false;
+    }
+    uintptr_t targetAddr = rh.targetAddr;
 
-    for (size_t hookIdx = 0; hookIdx < g_hooks.size(); ++hookIdx) {
-        const HookEntry& h = g_hooks[hookIdx];
-        const auto& rh = conflict_engine::g_resolvedHooks[hookIdx];
-
-        if (!rh.ok) {
-            log::ErrorF("[hook '%s'] aborted: %s", h.name.c_str(), rh.reason.c_str());
-            continue;
-        }
-        uintptr_t targetAddr = rh.targetAddr;
-
-        // Step 2: hook-on-hook collision check (first-wins).
-        if (auto it = g_installed.find(targetAddr); it != g_installed.end()) {
-            log::WarnF("[hook '%s'] aborted: target 0x%p already hooked by '%s' "
-                       "(v0.1 first-wins; chained hooks are v0.2+; "
-                       "see conflict_engine HookOnHook WARN above)",
-                       h.name.c_str(),
-                       reinterpret_cast<void*>(targetAddr),
-                       it->second.c_str());
-            continue;
-        }
-
-        // Step 3: allocate branch-pool space for the detour body.
-        //
-        // Owner = 0 means "engine" (no plugin handle attached). In Phase 4b
-        // when TOML hooks come from plugin DLLs we'll thread the owner
-        // through; for now [[hook]] is a kcdx.toml-only feature so the
-        // engine owns the alloc.
-        void* detour = trampoline::AllocateBranch(/*owner=*/0, h.bytes.size());
-        if (!detour) {
-            log::ErrorF("[hook '%s'] aborted: trampoline branch pool exhausted "
-                        "(needed %zu bytes)", h.name.c_str(), h.bytes.size());
-            continue;
-        }
-
-        // Step 4: copy the plugin's bytes into the detour slot.
-        std::memcpy(detour, h.bytes.data(), h.bytes.size());
-
-        // Step 5: install via MinHook. pOriginal stores MinHook's
-        // trampoline-to-original pointer; v0.1 doesn't surface this to the
-        // hook author (call-original support comes in Phase 5 with typed
-        // marshaling), but MinHook still needs an out-pointer slot.
-        LPVOID pOriginal = nullptr;
-        MH_STATUS rc = MH_CreateHook(reinterpret_cast<LPVOID>(targetAddr),
-                                     detour,
-                                     &pOriginal);
-        if (rc != MH_OK) {
-            log::ErrorF("[hook '%s'] aborted: MH_CreateHook failed (%s) at 0x%p",
-                        h.name.c_str(),
-                        MH_StatusToString(rc),
-                        reinterpret_cast<void*>(targetAddr));
-            continue;
-        }
-        rc = MH_EnableHook(reinterpret_cast<LPVOID>(targetAddr));
-        if (rc != MH_OK) {
-            log::ErrorF("[hook '%s'] aborted: MH_EnableHook failed (%s) at 0x%p",
-                        h.name.c_str(),
-                        MH_StatusToString(rc),
-                        reinterpret_cast<void*>(targetAddr));
-            // Best-effort cleanup. The CreateHook left state behind.
-            MH_RemoveHook(reinterpret_cast<LPVOID>(targetAddr));
-            continue;
-        }
-
-        log::InfoF("[hook '%s'] installed at 0x%p (detour at 0x%p, %zu bytes)",
+    // Hook-on-hook collision check (first-wins).
+    if (auto it = g_installed.find(targetAddr); it != g_installed.end()) {
+        log::WarnF("[hook '%s'] aborted: target 0x%p already hooked by '%s' "
+                   "(v0.1 first-wins; chained hooks are v0.2+; "
+                   "see conflict_engine HookOnHook WARN above)",
                    h.name.c_str(),
                    reinterpret_cast<void*>(targetAddr),
-                   detour,
-                   h.bytes.size());
-
-        // Diagnostic: read the first 5 bytes at the target site after
-        // MinHook claims to have installed. If MinHook actually rewrote
-        // the prologue, those bytes will start with E9 (rel32 jmp) or
-        // FF 25 (abs64 jmp via [rip+0]). If they're still whatever the
-        // function originally started with, MinHook silently failed.
-        const uint8_t* siteBytes = reinterpret_cast<const uint8_t*>(targetAddr);
-        log::InfoF("[hook '%s'] post-install bytes at target: %02X %02X %02X %02X %02X",
-                   h.name.c_str(),
-                   siteBytes[0], siteBytes[1], siteBytes[2], siteBytes[3], siteBytes[4]);
-
-        g_installed.emplace(targetAddr, h.name);
-        ++installed;
+                   it->second.c_str());
+        return false;
     }
 
+    // Allocate branch-pool space for the detour body.
+    void* detour = trampoline::AllocateBranch(/*owner=*/0, h.bytes.size());
+    if (!detour) {
+        log::ErrorF("[hook '%s'] aborted: trampoline branch pool exhausted "
+                    "(needed %zu bytes)", h.name.c_str(), h.bytes.size());
+        return false;
+    }
+
+    // Copy the plugin's bytes into the detour slot.
+    std::memcpy(detour, h.bytes.data(), h.bytes.size());
+
+    // Install via MinHook. pOriginal stores MinHook's trampoline-to-original
+    // pointer; v0.1 doesn't surface this to hook authors (call-original
+    // support is Phase 5), but MinHook still needs the out-pointer slot.
+    LPVOID pOriginal = nullptr;
+    MH_STATUS rc = MH_CreateHook(reinterpret_cast<LPVOID>(targetAddr),
+                                 detour,
+                                 &pOriginal);
+    if (rc != MH_OK) {
+        log::ErrorF("[hook '%s'] aborted: MH_CreateHook failed (%s) at 0x%p",
+                    h.name.c_str(),
+                    MH_StatusToString(rc),
+                    reinterpret_cast<void*>(targetAddr));
+        return false;
+    }
+    rc = MH_EnableHook(reinterpret_cast<LPVOID>(targetAddr));
+    if (rc != MH_OK) {
+        log::ErrorF("[hook '%s'] aborted: MH_EnableHook failed (%s) at 0x%p",
+                    h.name.c_str(),
+                    MH_StatusToString(rc),
+                    reinterpret_cast<void*>(targetAddr));
+        MH_RemoveHook(reinterpret_cast<LPVOID>(targetAddr));
+        return false;
+    }
+
+    log::InfoF("[hook '%s'] installed at 0x%p (detour at 0x%p, %zu bytes)",
+               h.name.c_str(),
+               reinterpret_cast<void*>(targetAddr),
+               detour,
+               h.bytes.size());
+
+    // Diagnostic: read the first 5 bytes at the target site after MinHook
+    // claims to have installed. If MinHook rewrote the prologue, bytes
+    // start with E9 (rel32 jmp) or FF 25 (abs64 jmp via [rip+0]). If still
+    // unchanged, MinHook silently failed.
+    const uint8_t* siteBytes = reinterpret_cast<const uint8_t*>(targetAddr);
+    log::InfoF("[hook '%s'] post-install bytes at target: %02X %02X %02X %02X %02X",
+               h.name.c_str(),
+               siteBytes[0], siteBytes[1], siteBytes[2], siteBytes[3], siteBytes[4]);
+
+    g_installed.emplace(targetAddr, h.name);
+    return true;
+}
+
+size_t ApplyAll() {
+    if (g_hooks.empty()) return 0;
+    log::InfoF("Hook engine: applying %zu hook(s) (fallback path — production "
+               "orchestration uses the unified apply loop in hooks.cpp)...",
+               g_hooks.size());
+    size_t installed = 0;
+    for (size_t i = 0; i < g_hooks.size(); ++i) {
+        if (ApplyOneHook(i)) ++installed;
+    }
     log::InfoF("Hook engine: %zu of %zu hook(s) installed", installed, g_hooks.size());
     return installed;
 }

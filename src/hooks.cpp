@@ -56,18 +56,44 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                                              std::memory_order_acq_rel)) {
                 log::Info("First update tick with live lua_State — registering KCDX + applying patches/hooks");
                 kcdx::lua_bind::RegisterKcdxTable(L);
-                // Order:
-                //   1. trampolines populate the symbol table (so patch/hook
-                //      target_symbol resolves)
-                //   2. conflict_engine runs the unified pre-flight pass
-                //      (resolves every patch + hook, classifies conflicts,
-                //      logs each)
-                //   3. patches apply (reading conflict_engine::g_resolvedPatches)
-                //   4. hooks apply (reading conflict_engine::g_resolvedHooks)
+                // Unified orchestration:
+                //   1. Trampolines populate the symbol table so patch/hook
+                //      target_symbol resolves correctly.
+                //   2. conflict_engine runs unified pre-flight: resolves
+                //      every patch + hook, classifies conflicts, builds
+                //      the unified apply order (priority asc, name asc
+                //      across ALL entry types).
+                //   3. A single sorted loop dispatches per-entry apply
+                //      functions. Patches and hooks interleave correctly
+                //      by global priority — fixes the v0.1 bug where
+                //      patches always applied before hooks regardless
+                //      of priority.
                 kcdx::trampoline_engine::ApplyAll();
                 kcdx::conflict_engine::RunPreFlight();
-                kcdx::patch::ApplyAll();
-                kcdx::hook_engine::ApplyAll();
+
+                size_t okPatches = 0, okHooks = 0;
+                size_t totalPatches = kcdx::patch::g_patches.size();
+                size_t totalHooks   = kcdx::hook_engine::g_hooks.size();
+                if (totalPatches + totalHooks > 0) {
+                    log::InfoF("Applying %zu patch(es) + %zu hook(s) in unified load order%s",
+                               totalPatches, totalHooks,
+                               kcdx::patch::g_dryRun ? " [dry_run=true]" : "");
+                    for (const auto& ref : kcdx::conflict_engine::g_applyOrder) {
+                        if (ref.kind == kcdx::conflict_engine::EntryKind::Patch) {
+                            if (kcdx::patch::ApplyResolvedPatch(
+                                    kcdx::patch::g_patches[ref.index],
+                                    kcdx::conflict_engine::g_resolvedPatches[ref.index])) {
+                                ++okPatches;
+                            }
+                        } else {
+                            if (kcdx::hook_engine::ApplyOneHook(ref.index)) {
+                                ++okHooks;
+                            }
+                        }
+                    }
+                    log::InfoF("Apply summary: %zu/%zu patch(es), %zu/%zu hook(s)",
+                               okPatches, totalPatches, okHooks, totalHooks);
+                }
 
                 // Lifecycle: input subsystem is alive by the time the first
                 // update tick fires (Lua VM is up). Closest analogue to

@@ -15,6 +15,7 @@ std::vector<ResolvedHook>         g_resolvedHooks;
 std::vector<WriteFootprint>       g_writes;
 std::vector<ReadFootprint>        g_reads;
 std::vector<Conflict>             g_conflicts;
+std::vector<EntryRef>             g_applyOrder;
 
 namespace {
 
@@ -320,6 +321,48 @@ void DetectConflicts() {
     }
 }
 
+// Build the unified apply order. Walks every resolved patch and hook,
+// emits an EntryRef for each, then sorts by (priority, name) so the
+// orchestration in hooks.cpp can dispatch in load order. Used by the
+// unified apply loop.
+void BuildApplyOrder() {
+    g_applyOrder.clear();
+    g_applyOrder.reserve(patch::g_patches.size() + hook_engine::g_hooks.size());
+
+    for (size_t i = 0; i < patch::g_patches.size(); ++i) {
+        g_applyOrder.push_back({ EntryKind::Patch, i });
+    }
+    for (size_t i = 0; i < hook_engine::g_hooks.size(); ++i) {
+        g_applyOrder.push_back({ EntryKind::Hook, i });
+    }
+
+    // Sort by (priority, name) across all entry types. Lower priority
+    // applies first. Stable so ties preserve the relative order from
+    // config::LoadAllConfigs (which itself sorted by priority then name).
+    std::stable_sort(g_applyOrder.begin(), g_applyOrder.end(),
+        [](const EntryRef& a, const EntryRef& b) {
+            int aPri, bPri;
+            const std::string* aName;
+            const std::string* bName;
+            if (a.kind == EntryKind::Patch) {
+                aPri = patch::g_patches[a.index].priority;
+                aName = &patch::g_patches[a.index].name;
+            } else {
+                aPri = hook_engine::g_hooks[a.index].priority;
+                aName = &hook_engine::g_hooks[a.index].name;
+            }
+            if (b.kind == EntryKind::Patch) {
+                bPri = patch::g_patches[b.index].priority;
+                bName = &patch::g_patches[b.index].name;
+            } else {
+                bPri = hook_engine::g_hooks[b.index].priority;
+                bName = &hook_engine::g_hooks[b.index].name;
+            }
+            if (aPri != bPri) return aPri < bPri;
+            return *aName < *bName;
+        });
+}
+
 }  // namespace
 
 void RunPreFlight() {
@@ -328,6 +371,7 @@ void RunPreFlight() {
 
     ResolvePatches();
     ResolveHooks();
+    BuildApplyOrder();
     CollectFootprints();
     DetectConflicts();
 

@@ -39,11 +39,17 @@ struct HookEntry {
 // Engine state.
 extern std::vector<HookEntry> g_hooks;
 
-// Apply every loaded hook: resolve target, allocate branch-pool slot, copy
-// bytes in, install MinHook detour, enable. Logs status per hook. Called
-// once at startup from the first update tick (alongside patch::ApplyAll).
+// Apply one hook by index into g_hooks. Reads its resolution from
+// conflict_engine::g_resolvedHooks. Logs status. Returns true on
+// successful install or no-op skip; false on abort.
 //
-// Returns the number of hooks successfully installed.
+// Called by the unified apply orchestrator (in hooks.cpp's first-update-tick
+// handler) which interleaves patch and hook applies in global load order.
+bool ApplyOneHook(size_t hookIdx);
+
+// Apply every loaded hook in g_hooks order. Used by fallback paths only
+// (the production orchestration calls ApplyOneHook from a global sorted
+// loop instead). Returns the number of hooks successfully installed.
 size_t ApplyAll();
 
 }  // namespace kcdx::hook_engine

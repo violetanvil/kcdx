@@ -142,6 +142,23 @@ extern std::vector<ReadFootprint>  g_reads;
 // Detected conflicts. Ordered by earlier.priority then later.priority.
 extern std::vector<Conflict> g_conflicts;
 
+// Unified apply order across patches and hooks. Populated by RunPreFlight
+// after resolution. Each EntryRef points back into either patch::g_patches
+// (kind = Patch, index into g_resolvedPatches) or hook_engine::g_hooks
+// (kind = Hook, index into g_resolvedHooks). The orchestrator in hooks.cpp
+// walks this list and dispatches per-entry apply functions.
+//
+// Sort order: (priority asc, name asc) across all entry types. This means
+// a high-priority patch and a low-priority hook are interleaved correctly,
+// fixing the v0.1 bug where patches always applied before hooks regardless
+// of priority.
+enum class EntryKind { Patch, Hook };
+struct EntryRef {
+    EntryKind kind;
+    size_t    index;  // into g_resolvedPatches or g_resolvedHooks
+};
+extern std::vector<EntryRef> g_applyOrder;
+
 // Run the unified pre-flight pass:
 //   1. Resolve every patch via patch::Resolve
 //   2. Resolve every hook via hook target resolution (same locator pipeline)
