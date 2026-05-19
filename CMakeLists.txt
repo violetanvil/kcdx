@@ -8,6 +8,15 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# Force static MSVC runtime globally before any add_subdirectory(). Without
+# this, vendored sub-projects (asmjit in particular) default to /MD and
+# produce LNK2038 against kcdx's /MT. CMP0091 lets MSVC_RUNTIME_LIBRARY
+# override the per-target compile flags consistently.
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 # -----------------------------------------------------------------------------
 # Lua 5.1 (vendored from CryEngine 5.2.3 SDK — same Lua the game ships)
 # -----------------------------------------------------------------------------
@@ -88,8 +97,10 @@ add_library(kcdx SHARED
     src/conflict_engine.cpp
     src/load_order.cpp
     src/detour_hook.cpp
+    src/scripting.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
+    src/rom_borrowed/runtime_func_t.cpp
 )
 
 target_include_directories(kcdx PRIVATE

@@ -15,6 +15,7 @@
 #include "messaging.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
+#include "scripting.h"
 #include "task.h"
 #include "trampoline_engine.h"
 
@@ -56,6 +57,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                                              std::memory_order_acq_rel)) {
                 log::Info("First update tick with live lua_State — registering KCDX + applying patches/hooks");
                 kcdx::lua_bind::RegisterKcdxTable(L);
+                kcdx::scripting::set_lua_state(L);
                 // Unified orchestration:
                 //   1. Trampolines populate the symbol table so patch/hook
                 //      target_symbol resolves correctly.
