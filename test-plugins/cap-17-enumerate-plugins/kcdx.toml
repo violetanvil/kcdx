@@ -1,0 +1,20 @@
+# CAP-17 — EnumeratePlugins introspection.
+#
+# Calls api->EnumeratePlugins(nullptr, 0) for the count, then with
+# a buffer to get the handle list. Asserts:
+#   - count > 0
+#   - this plugin's own handle is in the list
+# Reports pass/fail via ReportTestResult.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-17-enumerate-plugins"
+display_name        = "CAP-17 EnumeratePlugins"
+author              = "kcdx"
+description         = "Asserts EnumeratePlugins returns sensible data including self."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"

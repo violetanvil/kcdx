@@ -18,6 +18,7 @@
 #include "pe_helpers.h"
 #include "scripting.h"
 #include "task.h"
+#include "test.h"
 #include "trampoline_engine.h"
 
 extern "C" {
@@ -186,6 +187,12 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // Drain the task queue every tick. Plugins that called AddTask from
     // any thread get their tasks executed here, on the main thread.
     kcdx::task::DrainQueue();
+
+    // After tasks ran, if any reported a test result (async path), emit
+    // a fresh suite summary. Cheap — no-op when nothing changed since
+    // the last emit. Catches CAP-09-style tests that report from a task
+    // queued during Plugin_Load (task fires AFTER kInputLoaded summary).
+    kcdx::test::EmitSummaryIfChanged("update tick");
 
     g_orig_update(p1, p2, p3);
 }

@@ -1,0 +1,20 @@
+# CAP-07 — kcdxTrampolineInterface pool allocation.
+#
+# QueryInterface(kcdxInterface_Trampoline), then call
+# AllocateFromBranchPool + AllocateFromLocalPool. Asserts:
+#   - Trampoline interface returns non-null
+#   - Branch-pool alloc returns address within rel32 range of WHGame.dll
+#   - Local-pool alloc returns any non-null executable address
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-07-trampoline-pools"
+display_name        = "CAP-07 Trampoline pools"
+author              = "kcdx"
+description         = "Exercises branch + local trampoline pool allocations."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"

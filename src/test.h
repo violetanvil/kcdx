@@ -36,6 +36,14 @@ void ReportResult(std::string_view name, bool pass, std::string_view reason);
 // completes. messageLabel is a human-readable name like "kPostLoad".
 void EmitSummary(const char* messageLabel);
 
+// Same as EmitSummary, but only emits if the report state has changed
+// since the last emit (different test count OR different
+// pass/fail counts). Use after task::DrainQueue and other places where
+// async work might have reported between lifecycle messages — avoids
+// spamming the same summary every tick while still catching late
+// reports.
+void EmitSummaryIfChanged(const char* messageLabel);
+
 // Map a kcdxMessage_* uint to its display name. Used by the FireEngineMessage
 // caller so test::EmitSummary gets a sensible label. Returns nullptr for
 // unknown messages.
