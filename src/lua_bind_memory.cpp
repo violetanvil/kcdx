@@ -24,10 +24,13 @@ extern "C" {
 #include "patch_engine.h"
 #include "pe_helpers.h"
 
-// dynamic_hook lives in its own TU (lua_bind_dynamic_hook.cpp). Forward-
-// declare just the Lua C entry point so kFunctions can reference it.
+// dynamic_hook / dynamic_call live in their own TUs. Forward-declare
+// just the Lua C entry points so kFunctions can reference them.
 namespace kcdx::lua_bind_dynamic_hook {
     int Lua_DynamicHook(lua_State* L);
+}
+namespace kcdx::lua_bind_dynamic_call {
+    int Lua_DynamicCall(lua_State* L);
 }
 
 namespace kcdx::lua_memory {
@@ -130,6 +133,7 @@ const luaL_Reg kFunctions[] = {
     {"allocate",                 Lua_Allocate},
     {"free",                     Lua_Free},
     {"dynamic_hook",             kcdx::lua_bind_dynamic_hook::Lua_DynamicHook},
+    {"dynamic_call",             kcdx::lua_bind_dynamic_call::Lua_DynamicCall},
     {nullptr, nullptr},
 };
 
