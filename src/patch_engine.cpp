@@ -119,6 +119,13 @@ std::vector<size_t> FindAllInBuffer(const uint8_t* data, size_t size, const Patt
     return hits;
 }
 
+// Important caveat for callers: this scans the LIVE in-memory image,
+// which means any patches kcdx has already applied (TOML [[patch]] /
+// [[hook]] entries that ran during first-update-tick) are visible. An
+// AOB that matched the pristine binary may no longer match if the bytes
+// it covers were rewritten. Pak Lua callers calling kcdx.memory.scan_pattern
+// after game-load are scanning post-patch state — pick patterns that
+// don't overlap with any active patch.
 std::optional<uintptr_t> ScanModuleFirst(const std::wstring& module_name_wide,
                                          const std::string&  pattern) {
     pe::ModuleView mv;
