@@ -1,43 +1,88 @@
-# kcdx capability test matrix
+# kcdx test suite
 
-The "did we crack the vault" exercise. SKSE-class flexibility means
-kcdx has to handle the full range of things real mods do — byte
-rewrites, function detours, hooks, new game systems, save
-serialization, console commands, cross-plugin APIs, conflicts,
-load order, version drift. This matrix catalogs every primitive
-kcdx exposes (today or planned), every plausible authoring
-channel, and every competition/collision case, then walks each
-through a live test that says PASS / FAIL / DEFERRED-PHASE-X.
+This folder is the kcdx regression test suite. Each subfolder is a
+**plugin that's permanently installed in the developer's game**.
+On every boot, dev mode gates whether the suite runs; when it
+does, each test plugin self-checks and reports pass/fail to kcdx,
+which aggregates results into kcdx.log.
 
-It started life as the outfit-swap-in-combat repro matrix, hence
-the folder name; we kept the name because outfit-swap is the
-load-bearing live test for several of these rows. The matrix
-itself is **phase-agnostic** — rows that test capabilities the
-engine doesn't yet implement are marked `DEFERRED <reason>` and
-get filled in when the engine catches up.
+**Normal workflow going forward:** every time we boot the game,
+the suite tells us how many tests are passing. Before committing
+anything that touches `src/` or `include/`, we re-run (i.e. launch
+the game with dev mode on, read the summary), and the matrix
+roll-up below records the state at the commit SHA we're about to
+land. Green-everywhere is the baseline.
 
-The matrix lives in [`kcdx/examples/outfit-swap-test-matrix/`](.).
-Each test that needs its own plugin gets a subfolder
-(e.g., `outfit-swap-patch/`); shared assets stay at this level.
+## How it works
 
----
+Each test plugin opts into being suite-gated with one TOML key:
 
-## How to read this doc
+```toml
+[kcdx]
+test_suite_only = true
+```
 
-Three sections:
+- **Dev mode off** (production / end-user installs): kcdx silently
+  skips every entry in the file. C++ DLLs early-return at
+  `Plugin_Load` (also silently). Pak-Lua test scripts check
+  `kcdx.dev.is_enabled()` and return. Zero log noise, zero
+  behavioral change — production users never see the suite in
+  their logs.
+- **Dev mode on** (developer installs `dev-mode-enable/kcdx.toml`):
+  every test runs its check, calls `ReportTestResult(...)` (C++)
+  or `kcdx.test.report(...)` (Lua), and the aggregator emits
+  `Test suite: X/Y passing` to kcdx.log on each engine lifecycle
+  message.
 
-1. **Capability rows** — one per kcdx primitive. Each row says
-   what the primitive *does*, what *authoring channel(s)* it's
-   reachable through, what the test plugin looks like, what
-   PASS means, and the live result. Rows for unimplemented
-   primitives carry `DEFERRED <phase>` instead of a live result.
-2. **Competition rows** — one per collision/conflict scenario.
-   Tests two-or-more plugins interacting on the same target or
-   the same Lua registration.
-3. **Real-world mod scenarios** — end-to-end thought experiments
-   ("can someone write a magic-system mod with kcdx?"). For each
-   scenario, walks the list of capabilities it needs and notes
-   which rows above prove it's achievable.
+The gating mechanic + reporting API are documented in
+[`docs/dev-mode.md`](../docs/dev-mode.md).
+
+**Some tests can't auto-run on boot** — e.g., "open inventory in
+combat and try to swap outfit" requires the developer to perform
+an in-game gesture. Those rows are flagged `[manual]` and the
+test plugin still reports `PASS` if its passive checks succeed
+(plugin loaded, patch applied, hook installed) — the gesture is
+how the developer confirms the user-facing effect.
+
+## Folder layout
+
+```
+test-plugins/
+  README.md                <- this doc, the matrix
+  cap-01-patch/            <- one plugin per CAP/COMP row
+    kcdx.toml
+    (optional .cpp + CMakeLists.txt if it ships a DLL)
+    (optional pak/ subdir if it ships a pak)
+  cap-05-paklua-runtime/
+    kcdx.toml
+    pak/
+      Data/cap_05.pak
+      mod.manifest
+  comp-01-two-patch-overlap/
+    kcdx.toml
+  ...
+```
+
+Folder naming convention: `<row-id>-<short-name>/`, lowercase,
+dashes between words. The row ID (CAP-XX or COMP-XX) matches the
+matrix below; the short-name is the primitive being tested.
+
+## Installation
+
+To enable the suite on a dev machine:
+
+1. Build kcdx (`pwsh ./build.ps1`) and install `kcdx.asi` to
+   `<game>/Bin/Win64MasterMasterSteamPGO/plugins/`.
+2. Install `dev-mode-enable/kcdx.toml` (the trivial opt-in
+   plugin) to the same folder.
+3. For each test plugin under `test-plugins/<folder>/`: copy the
+   folder to the same `plugins/` directory (or the pak to
+   `<game>/mods/`). The suite is intended to be "drop all of
+   these in, leave them there forever."
+
+Once installed, every game boot writes a fresh `Test suite: X/Y
+passing` line to kcdx.log. If a number changes, something
+regressed.
 
 ---
 
@@ -52,31 +97,11 @@ Three sections:
 | Patched bytes | `45 31 F6` (`xor r14d, r14d`) |
 | Game build | release_1_5_1164953_841 |
 | Effect | `IsInCombat()` result is replaced with 0 in the gating register that decides whether the `next_outfit` action binding is enabled |
-| In-game test | Enter combat (draw weapon, attack NPC, take a hit). Try to open inventory and change outfit. Vanilla = popup "You can't switch outfits in combat." Patched = swap succeeds, popup never appears. |
+| Manual in-game test | Enter combat (draw weapon, attack NPC, take a hit). Try to open inventory and change outfit. Vanilla = popup "You can't switch outfits in combat." Patched = swap succeeds, popup never appears. |
 
-Other tests target other sites; their site info lives in the
-row itself.
-
----
-
-## Isolation protocol
-
-For each run:
-
-1. Disable every other test plugin (rename `kcdx.toml` →
-   `kcdx.toml.disabled-for-matrix`).
-2. Verify only `dev-mode-enable/kcdx.toml` and the current test's
-   plugin are active.
-3. Verify mempatch.asi is NOT installed (`mempatch.toml` not
-   present in `plugins/`).
-4. Launch game, load save, run the in-game test specified by the
-   row.
-5. Capture timestamp; read kcdx.log + kcdx-dev.log + kcd.log.
-6. Fill the row's Result table.
-7. Disable the test plugin again before moving on.
-
-Pak mods (`<game>/mods/`) come with their own enable/disable
-dance — rename the folder to `<name>.disabled-for-matrix`.
+This site is convenient because it's a well-characterized byte
+patch with a clear in-game observable. Other tests target other
+sites; their site info lives in the row itself.
 
 ---
 
@@ -92,10 +117,11 @@ what the live result is.
 | What | Replace N bytes at a resolved address with N other bytes. Locator pipeline (pattern + context + anchor_string) handles AOB drift. |
 | Channels | (iii) `kcdx.toml`, (iv) `inlinePatchesToml` |
 | Engine status | READY (Phase 1) |
-| Test plugin | [`outfit-swap-patch/`](outfit-swap-patch/) |
+| Test plugin | [`cap-01-patch/`](cap-01-patch/) |
 | Site | The outfit AOB above |
-| PASS = | kcdx.log: pattern matches=1, context matches=1, applied successfully. In-game: outfit swap works in combat. |
-| Result | ✅ PASS (kcdx@918d5fb, applied at `0x00007FFCF9051759`, user confirmed) |
+| Auto-pass check | Plugin reports PASS when patch applies cleanly (kcdx.log line `applied successfully at 0x... 44 8A F0 -> 45 31 F6`). The DLL companion verifies post-apply bytes match. |
+| Manual confirm | In-game outfit-swap-in-combat works. [manual] |
+| Last result | ✅ PASS (kcdx@918d5fb 2026-05-19, manual confirmed) |
 | Notes | Mempatch-compatible. The reference for every other primitive. |
 
 ## CAP-02: `[[hook]]` + `bytes` (TOML, native trampoline)
@@ -106,9 +132,8 @@ what the live result is.
 | Channels | (iii) `kcdx.toml` |
 | Engine status | READY (Phase 4) |
 | Test plugin | _TBD — need a target where we can write a meaningful detour without crashing_ |
-| Site | _TBD_ |
-| PASS = | kcdx-dev.log: DYNAMIC_HOOK/install-ok. In-game: detour observably changed behavior. |
-| Result | _TBD_ |
+| Auto-pass check | Hook installs (kcdx-dev.log DYNAMIC_HOOK/install-ok), detour bytes verifiable. |
+| Last result | _TBD_ |
 | Notes | Bytes can be any 5+ byte sequence that does something useful (set a register, jump elsewhere). Hardest to test because we'd need to actually write working detour shellcode for an interesting target. |
 
 ## CAP-03: `[[hook]]` + `lua_callback` (TOML, dispatch to Lua)
@@ -118,11 +143,10 @@ what the live result is.
 | What | Hook a function; on entry the dispatch shim calls a named Lua function that decides whether to let the original run (`return true`) or skip it. |
 | Channels | (iii) `kcdx.toml` + a pak-Lua-side function registration |
 | Engine status | READY (Phase 5f) |
-| Test plugin | `examples/phase5f-lua-callback-test/` (already exists, proven) |
-| Site | A recurring-fire engine function (not the outfit registrar — that's a one-shot init) |
-| PASS = | kcdx-dev.log: SHIM/enter fires N times matching trigger count. In-game: observable effect when the Lua callback returns false. |
-| Result | ✅ PRE-VERIFIED (Phase 5f acceptance, kcd.log captured `Phase5fTest.Greet fired (count=1..3)` against the test hook target) |
-| Notes | Outfit-swap NOT a good fit (one-shot init), kept the existing phase5f-lua-callback-test as the proof. Worth re-running under the matrix run cadence to capture a fresh row. |
+| Test plugin | _TBD — port `examples/phase5f-lua-callback-test/` to `test-plugins/cap-03-hook-lua-callback/`_ |
+| Auto-pass check | SHIM/enter fires expected number of times during boot. |
+| Last result | ✅ PRE-VERIFIED on existing examples plugin (needs port to test-plugins/ for auto-reporting) |
+| Notes | Outfit-swap NOT a good fit (one-shot init), use the existing phase5f-lua-callback-test pattern. |
 
 ## CAP-04: `[[mid_hook]]` register capture + Lua override
 
@@ -131,10 +155,9 @@ what the live result is.
 | What | Hook at an arbitrary instruction inside a function (not just entry). Capture named registers (rax, r14, etc) before the instruction, pass them to a Lua callback as a table, callback may modify the table, modified values written back to CPU registers before resuming. |
 | Channels | (iii) `kcdx.toml` |
 | Engine status | DEFERRED — Phase 5g design limit. Current MinHook-based mid-hook re-executes the captured instruction after our callback returns, overwriting any register override. Need a new primitive (true instruction-replacement mode or `call_original=false` flag) for v0.2. |
-| Test plugin | `outfit-swap-midhook/` (built earlier as a demonstration of the limit) |
-| Site | The outfit AOB above, override r14 to 0 |
-| PASS = | In-game: outfit swap works in combat |
-| Result | ❌ EXPECTED FAIL (re-execution issue). Run to document failure mode precisely. |
+| Test plugin | _TBD `cap-04-midhook/` — built to FAIL deliberately, asserts the failure mode is the expected one (re-execution overwrites override)._ |
+| Auto-pass check | Plugin reports PASS if the expected failure mode is observed (mid-hook installs, fires, but register override is not preserved). PASS = "the limit is exactly where we documented it." If the test starts unexpectedly succeeding, that means someone added the missing primitive and the test row should be updated. |
+| Last result | DEFERRED-PHASE-V0.2 |
 | Notes | Whether v0.2 needs a new primitive depends on use cases. Many mid-hook use cases (read register, log it, don't override) work fine with the current primitive; only "skip the instruction" doesn't. |
 
 ## CAP-05: Runtime `dynamic_hook` from pak Lua
@@ -144,10 +167,9 @@ what the live result is.
 | What | Pak Lua script calls `kcdx.memory.dynamic_hook({ target=..., pre_callback=..., ... })` to install a hook at runtime. Same MinHook + JIT-detour plumbing as `[[hook]]` but driven from Lua at script-load time instead of TOML at engine-init time. |
 | Channels | (i) pure pak mod, (vi) plugin Lua |
 | Engine status | READY (Phase 5c.7b proved end-to-end in the verify pak — `phase5g_greet_intercept` fired 5/5 at exact shim VA) |
-| Test plugin | `outfit-swap-paklua-mod/` (Workshop-distributable pak) |
-| Site | Outfit AOB above |
-| PASS = | kcdx-dev.log: DYNAMIC_HOOK/install-ok. In-game: outfit swap works. |
-| Result | _TBD — build it_ |
+| Test plugin | _TBD `cap-05-paklua-runtime/` — pak mod that installs a hook and calls `kcdx.test.report` from the pre_callback_ |
+| Auto-pass check | Hook installed + callback fired ≥ 1 time during boot. |
+| Last result | _TBD_ |
 | Notes | This is the novel kcdx capability — Workshop-distributable code injection. Before kcdx, pak Lua had no FFI (`package.loadlib` is CryEngine-compiled-out stub). After kcdx, a pak mod can install function detours. |
 
 ## CAP-06: Runtime `dynamic_call` from pak Lua (call game function)
@@ -157,10 +179,9 @@ what the live result is.
 | What | Pak Lua script calls `kcdx.memory.dynamic_call({ target=..., return_type=..., param_types=... })` to get a callable userdata that invokes a native game function with marshaled args/return. |
 | Channels | (i), (vi) |
 | Engine status | READY (Phase 5c.7c) |
-| Test plugin | Already exercised in verify pak (`dynamic_call bogus-target` returns userdata cleanly). Real-target call has no live verification yet. |
-| Site | _TBD — pick a known-safe game function (e.g., something that just returns a constant)_ |
-| PASS = | Callable userdata invokes the target, returns a sensible value. |
-| Result | _TBD_ |
+| Test plugin | _TBD — pick a known-safe game function (e.g., something that just returns a constant) and call it_ |
+| Auto-pass check | Callable userdata invokes the target and returns the expected value. |
+| Last result | _TBD partial — verify pak proved the shape works, real target untested_ |
 | Notes | Counterpart to CAP-05. Together they let pak Lua do bidirectional native interop — read game state via dynamic_call, modify it via dynamic_hook. |
 
 ## CAP-07: `[[trampoline]]` allocation (branch / local pool)
@@ -170,9 +191,9 @@ what the live result is.
 | What | Reserve executable memory within ±2GB of WHGame.dll (branch pool, for 5-byte rel32 reachable detours) or anywhere (local pool, for general JIT). Used internally by `[[hook]]` and `dynamic_hook`. Exposed to C++ plugins via `kcdxTrampolineInterface`. |
 | Channels | (ii) C++ DLL, indirectly (i) via dynamic_hook, (iii) via `[[hook]]` |
 | Engine status | READY (Phase 4) |
-| Test plugin | `examples/hello-plugin/` already exercises both pool allocations |
-| PASS = | hello-plugin.log: `branch-pool alloc OK ... in rel32 range = YES` and `local-pool alloc OK` |
-| Result | ✅ PRE-VERIFIED (Phase 4 acceptance) |
+| Test plugin | _TBD — port `examples/hello-plugin/`'s pool-alloc check to a test plugin_ |
+| Auto-pass check | Branch-pool alloc returns address in rel32 range from WHGame.dll base. Local-pool alloc returns any executable address. |
+| Last result | ✅ PRE-VERIFIED on hello-plugin |
 | Notes | Foundational, used by everything that installs detours. |
 
 ## CAP-08: `kcdxMessagingInterface` (engine lifecycle messages)
@@ -182,9 +203,9 @@ what the live result is.
 | What | Subscribe to engine events: `kPostLoad`, `kPostPostLoad`, `kInputLoaded`, `kNewGame`, `kPreLoadGame`, `kPostLoadGame`, `kSaveGame`, `kDeleteGame`. Plugin-to-plugin dispatch also supported. |
 | Channels | (ii) C++ DLL |
 | Engine status | READY (Phase 3 for the events that exist; PreLoadGame/PostLoadGame/SaveGame/DeleteGame DEFERRED — Phase 6 save-hook required) |
-| Test plugin | `examples/hello-plugin/` subscribes + logs received messages; `examples/messaging-pair/` does plugin-to-plugin |
-| PASS = | hello-plugin.log shows received messages with correct type/name |
-| Result | ✅ PARTIAL (PostLoad/PostPostLoad/InputLoaded confirmed; game-lifecycle messages awaiting Phase 6) |
+| Test plugin | _TBD — subscribe to all available message types, assert each fires at least once during boot_ |
+| Auto-pass check | Each subscribed message received during the session. |
+| Last result | ✅ PARTIAL (PostLoad/PostPostLoad/InputLoaded confirmed; game-lifecycle messages awaiting Phase 6) |
 | Notes | _ |
 
 ## CAP-09: `kcdxTaskInterface` (queue work for main thread)
@@ -194,9 +215,9 @@ what the live result is.
 | What | `AddTask(task)` queues a callback for next `update` tick on the main thread. Used so worker-thread plugins can safely touch CryEngine state. |
 | Channels | (ii) C++ DLL |
 | Engine status | READY (Phase 3) |
-| Test plugin | `examples/hello-plugin/` enqueues a HelloTask, drained on first update tick |
-| PASS = | hello-plugin.log shows `HelloTask::Run on main thread` |
-| Result | ✅ PRE-VERIFIED |
+| Test plugin | _TBD — enqueue a task from worker thread, assert it runs on main thread within N ticks_ |
+| Auto-pass check | Task callback fires, thread ID matches kcdx's stashed main-thread ID. |
+| Last result | ✅ PRE-VERIFIED on hello-plugin |
 | Notes | _ |
 
 ## CAP-10: `kcdxScriptingInterface` — C++ exposes Lua functions
@@ -206,9 +227,9 @@ what the live result is.
 | What | `RegisterFunction(handle, table, name, fn, userdata)` makes a C++ function callable from pak Lua as `kcdx.<table>.<name>(...)`. Uses the kcdxLuaApi function-pointer struct for the C++ side's Lua C API access (no direct lua.h include). |
 | Channels | (ii) C++ DLL + (i)/(vi) on the calling side |
 | Engine status | READY (Phase 5e) |
-| Test plugin | `examples/hello-plugin/` registers `kcdx.hello.greet` and `kcdx.hello.add`; verify pak calls them and reports results |
-| PASS = | Pak Lua sees `kcdx.hello.greet` and `kcdx.hello.add` as callable, results match C++ implementations |
-| Result | ✅ PRE-VERIFIED (verify pak captured `hello, Michael, from hello-plugin` and `add(3,4)=7`) |
+| Test plugin | _TBD — register a C function from a test DLL, call it from a paired test pak Lua, assert round-trip works_ |
+| Auto-pass check | Pak Lua sees the registered function as callable; result matches C++ implementation. |
+| Last result | ✅ PRE-VERIFIED on hello-plugin + verify pak |
 | Notes | Core capability for "new game systems" mods — magic, perks, custom inventory, etc. all use this surface. |
 
 ## CAP-11: `kcdx.lua.cfunction_address` (resolve C address of a Lua-callable)
@@ -218,9 +239,9 @@ what the live result is.
 | What | Pak Lua passes a function (Lua-side) and gets back a `kcdx.memory.pointer` userdata holding the C function pointer (if any). Returns nil + error for pure-Lua functions. |
 | Channels | (i), (vi) |
 | Engine status | READY (Phase 5c.7d post-LUA_NUMBER fix) |
-| Test plugin | verify pak (`cfunction_address(System.LogAlways)` returns pointer userdata) |
-| PASS = | Pointer userdata returned for cfunctions, nil for pure-Lua. Userdata is usable as `dynamic_hook.target`. |
-| Result | ✅ PRE-VERIFIED (`5gDEMO intercept #1..#3` captured against `kcdx.hello.greet`) |
+| Test plugin | _TBD — pak script calls cfunction_address on a known cfunction, asserts pointer userdata with non-zero VA returned_ |
+| Auto-pass check | Returns pointer userdata for cfunctions, nil for pure-Lua. Userdata is usable as `dynamic_hook.target`. |
+| Last result | ✅ PRE-VERIFIED (verify pak 5gDEMO) |
 | Notes | The "find any registered Lua C function's address so I can hook it" primitive. |
 
 ## CAP-12: `kcdxSerializationInterface` (save/load co-save)
@@ -231,8 +252,8 @@ what the live result is.
 | Channels | (ii) C++ DLL |
 | Engine status | DEFERRED — Phase 6. Requires save-hook + co-save file format. |
 | Test plugin | DEFERRED |
-| PASS = | Plugin writes counter on save, reads it on load, value persists across game restarts. |
-| Result | DEFERRED-PHASE-6 |
+| Auto-pass check | Plugin writes counter on save, reads it on load, value persists across game restarts. |
+| Last result | DEFERRED-PHASE-6 |
 | Notes | Essential for any mod that has persistent state per save (perks added by mod, custom inventory, magic-spell-known list, etc). |
 
 ## CAP-13: `[[command]]` console commands
@@ -243,8 +264,8 @@ what the live result is.
 | Channels | (iii) `kcdx.toml`, (ii) C++ DLL |
 | Engine status | DEFERRED — Phase 7. Needs Ghidra session on `pConsole.RegisterCommand` calling convention. |
 | Test plugin | DEFERRED |
-| PASS = | `se_dump_address 12345` callable from in-game console, prints a value via System.LogAlways. |
-| Result | DEFERRED-PHASE-7 |
+| Auto-pass check | _N/A (manual test only — console interaction)_ |
+| Last result | DEFERRED-PHASE-7 |
 | Notes | Critical for dev workflows and for cheat/debug mods. |
 
 ## CAP-14: Address Library (`kcdxInterface::ResolveAddress`)
@@ -255,8 +276,8 @@ what the live result is.
 | Channels | (ii) C++ DLL |
 | Engine status | DEFERRED — Phase 7. Currently returns 0 (stub). |
 | Test plugin | DEFERRED |
-| PASS = | Plugin calls ResolveAddress(known_id), gets a VA, dereferences it, gets sensible data. |
-| Result | DEFERRED-PHASE-7 |
+| Auto-pass check | Plugin calls ResolveAddress(known_id), gets non-zero VA, dereferences it, gets sensible data. |
+| Last result | DEFERRED-PHASE-7 |
 | Notes | The SKSE-equivalent that lets plugins survive KCD2 patches without re-doing AOB scans. |
 
 ## CAP-15: `inlinePatchesToml` (C++ plugin ships patches inline)
@@ -267,8 +288,8 @@ what the live result is.
 | Channels | (iv) |
 | Engine status | _TBD — check whether the loader currently parses this field_ |
 | Test plugin | _TBD — build a DLL with the outfit-swap patch in its inlinePatchesToml_ |
-| PASS = | kcdx.log shows the patch applied from the DLL's inline TOML, no sidecar TOML needed. In-game: outfit swap works. |
-| Result | _TBD_ |
+| Auto-pass check | Patch applies from the DLL's inline TOML (no sidecar TOML), post-apply bytes verifiable. |
+| Last result | _TBD_ |
 | Notes | If READY, this is the cleanest way for C++ plugins to ship "I need this byte to change for my code to work" without a parallel TOML. |
 
 ## CAP-16: Plugin dependencies + topo-sort (`dependencies` array)
@@ -278,8 +299,9 @@ what the live result is.
 | What | `kcdxPluginVersionData::dependencies` array names other plugins this one depends on, with min-version constraints. Loader topologically sorts before issuing `Plugin_Load`. |
 | Channels | (ii) C++ DLL |
 | Engine status | READY (Phase 2 acceptance — see `examples/messaging-pair/` for the ordering proof) |
-| PASS = | Plugin B loads AFTER plugin A even when filesystem order would have B first. |
-| Result | ✅ PRE-VERIFIED (Phase 2) |
+| Test plugin | _TBD — port the messaging-pair pattern, assert load order_ |
+| Auto-pass check | Plugin B's `Plugin_Load` observes Plugin A's state being already initialized. |
+| Last result | ✅ PRE-VERIFIED on messaging-pair |
 | Notes | _ |
 
 ## CAP-17: `EnumeratePlugins` (introspection)
@@ -289,8 +311,9 @@ what the live result is.
 | What | C++ plugin calls `api->EnumeratePlugins(buf, cap)` to get the list of loaded plugins (handle, name, version). |
 | Channels | (ii) C++ DLL |
 | Engine status | READY (Phase 2) |
-| PASS = | hello-plugin.log reports `N plugin(s) loaded total` matching reality. |
-| Result | ✅ PRE-VERIFIED |
+| Test plugin | _TBD — call EnumeratePlugins, assert returned count ≥ 1 and self is in the list_ |
+| Auto-pass check | Count matches the number of loaded plugins; entries include this plugin's name and handle. |
+| Last result | ✅ PRE-VERIFIED on hello-plugin |
 | Notes | Used for conflict diagnostics, config UIs that enumerate co-loaded mods. |
 
 ## CAP-18: Pak mod resource overrides (XML / Lua / Schematyc)
@@ -300,8 +323,8 @@ what the live result is.
 | What | Standard CryEngine pak mod: drop a pak that contains modified `Libs/Tables/*.xml`, `Scripts/*.lua`, etc. The game loads the modded version instead of the vanilla one. Workshop-distributable. |
 | Channels | (i) |
 | Engine status | NATIVE (not a kcdx feature — CryEngine pak system) |
-| PASS = | XML/Lua/asset change visible in game. |
-| Result | ✅ NATIVE (the existing `inventory-in-dialogue/`, `easytoseeherbs/` pak mods demonstrate this works without kcdx) |
+| Test plugin | _N/A — CryEngine-level capability, not kcdx-tested_ |
+| Last result | ✅ NATIVE (the existing `inventory-in-dialogue/`, `easytoseeherbs/` pak mods demonstrate this works without kcdx) |
 | Notes | Documented for completeness — many real mods are pure pak mods that don't need kcdx at all. |
 
 ## CAP-19: UI / Scaleform injection
@@ -311,7 +334,8 @@ what the live result is.
 | What | Inject Flash UI widgets, hook Scaleform events, register new HUD elements. |
 | Channels | (ii) probably C++ DLL once exposed |
 | Engine status | DEFERRED — v0.2 (`kcdxScaleformInterface` equivalent), separate Ghidra session |
-| Result | DEFERRED-v0.2 |
+| Test plugin | DEFERRED |
+| Last result | DEFERRED-v0.2 |
 | Notes | Big surface area; lots of mods will want this eventually. |
 
 ---
@@ -324,10 +348,10 @@ what the live result is.
 |---|---|
 | Scenario | Plugin A and Plugin B both declare `[[patch]]` entries that resolve to the same VA. |
 | Engine behavior expected | conflict_engine pre-flight detects overlap. Lower-priority-number plugin wins. Loser's apply is aborted with a log line naming the winner. |
-| Test plugin | _TBD — build A=outfit-swap-patch, B=outfit-swap-patch-conflict (same bytes, different priority)_ |
+| Test plugin | _TBD `comp-01-two-patch-overlap/` — two siblings under one folder, both target the outfit AOB with different priorities_ |
 | Engine status | READY (conflict_engine ships) |
-| PASS = | kcdx.log: CONFLICT record with both names. Only winner's bytes land. |
-| Result | _TBD_ |
+| Auto-pass check | kcdx.log CONFLICT record names both plugins; only winner's bytes land at the address. |
+| Last result | _TBD_ |
 
 ## COMP-02: `[[patch]]` + `[[hook]]` on overlapping bytes
 
@@ -335,8 +359,10 @@ what the live result is.
 |---|---|
 | Scenario | Patch writes bytes at address X..X+2. Hook installs a 5-byte rel32 jmp at address X..X+4 (overlaps). |
 | Engine behavior expected | conflict_engine notes the overlap. Patch applies first, MinHook relocates the patched bytes into its trampoline so the patch survives inside the hook's call-original path. Both apply. |
-| Engine status | READY (existing `conflict-test-hook-on-patch/` exercises this) |
-| Result | ✅ PRE-VERIFIED — `HookOverlapsEarlierPatch=1` in kcdx.log Conflict engine summary, both apply cleanly |
+| Test plugin | _TBD — port `examples/conflict-test-hook-on-patch/` to `comp-02-hook-on-patch/`_ |
+| Engine status | READY |
+| Auto-pass check | `HookOverlapsEarlierPatch=1` line in kcdx.log; both entries apply cleanly. |
+| Last result | ✅ PRE-VERIFIED on existing examples plugin |
 | Notes | This is the most common patch+hook coexistence case in real mods. |
 
 ## COMP-03: Two `[[hook]]` on the same function
@@ -345,10 +371,10 @@ what the live result is.
 |---|---|
 | Scenario | Plugin A and Plugin B both install hooks at function entry X. |
 | Engine behavior expected | First-hook-wins. Second hook aborted with a plain-English log line naming the first plugin. |
-| Test plugin | `examples/conflict-test-hook-on-hook/` (already exists) |
+| Test plugin | _TBD — port `examples/conflict-test-hook-on-hook/`_ |
 | Engine status | READY (Phase 4b) |
-| PASS = | Second hook's install-failed log line names the first plugin. |
-| Result | ✅ PRE-VERIFIED |
+| Auto-pass check | Second hook's install-failed log line names the first plugin. |
+| Last result | ✅ PRE-VERIFIED on existing examples plugin |
 | Notes | Chained hooks are explicitly v0.2+ (Hard rule #8). |
 
 ## COMP-04: `[[patch]]` + runtime `dynamic_hook` on same address
@@ -359,8 +385,8 @@ what the live result is.
 | Engine behavior expected | The runtime install path sees the existing patched bytes in the first-wins map, aborts cleanly. |
 | Test plugin | _TBD — patch + pak mod targeting same VA_ |
 | Engine status | READY (first-wins map covers both channels per Phase 5c.7b.2) |
-| PASS = | kcdx-dev.log: runtime DYNAMIC_HOOK/install-failed cites the prior patch. |
-| Result | _TBD_ |
+| Auto-pass check | kcdx-dev.log: runtime DYNAMIC_HOOK/install-failed cites the prior patch. |
+| Last result | _TBD_ |
 
 ## COMP-05: Plugin Lua registration overrides another plugin's
 
@@ -368,10 +394,10 @@ what the live result is.
 |---|---|
 | Scenario | Plugin A and Plugin B both `RegisterFunction("hello", "greet", ...)`. Last registration wins (replaces earlier). |
 | Engine behavior expected | Whichever runs `Plugin_Load` later overwrites the earlier. Optionally: warn in log. |
-| Test plugin | _TBD — clone hello-plugin twice with different greet implementations_ |
+| Test plugin | _TBD — two test DLLs registering the same name_ |
 | Engine status | _TBD — confirm behavior; may need to add a warn_ |
-| PASS = | Pak Lua sees plugin B's implementation; log has a warning naming plugin A as overridden. |
-| Result | _TBD_ |
+| Auto-pass check | Pak Lua sees plugin B's implementation; log has a warning naming plugin A as overridden. |
+| Last result | _TBD_ |
 
 ## COMP-06: Plugin B depends on plugin A's Lua registration
 
@@ -379,10 +405,10 @@ what the live result is.
 |---|---|
 | Scenario | Plugin A `RegisterFunction`s `kcdx.magic.castSpell`. Plugin B's `Plugin_Load` reads `kcdx.magic.castSpell` and wraps it. Needs A loaded first. |
 | Engine behavior expected | B's `kcdxPluginVersionData::dependencies` lists A; topo-sort ensures A loads first. |
-| Engine status | READY (Phase 2 dependencies + Phase 5e registration both ship) |
-| Test plugin | _TBD — build magic-system-stub (A) + magic-extender (B) with dependency_ |
-| PASS = | B's Plugin_Load reads A's registration without error; combined behavior works in pak Lua. |
-| Result | _TBD_ |
+| Test plugin | _TBD — magic-system-stub (A) + magic-extender (B) with dependency_ |
+| Engine status | READY |
+| Auto-pass check | B's Plugin_Load reads A's registration without error; combined behavior works in pak Lua. |
+| Last result | _TBD_ |
 | Notes | The "ecosystem" case. SKSE has this via SKSE plugin-to-plugin Messaging; kcdx has it via the kcdx.* Lua namespace + Messaging. |
 
 ## COMP-07: Pak resource override + DLL function detour collide
@@ -391,9 +417,8 @@ what the live result is.
 |---|---|
 | Scenario | Pak mod overrides a Lua script in `scripts/system/something.lua`. DLL plugin hooks a C++ function that calls that script. The two modifications interact. |
 | Engine behavior expected | Each operates in its own channel; outcomes depend on what the Lua and the hook each do. kcdx doesn't try to detect this (out of scope — pak resources aren't kcdx's domain). |
-| Test plugin | _TBD if we want it; arguably out of scope_ |
-| Engine status | OUT-OF-SCOPE (deliberate) |
-| Result | _N/A_ |
+| Test plugin | OUT-OF-SCOPE (deliberate) |
+| Last result | _N/A_ |
 
 ## COMP-08: Load-order determinism across game restarts
 
@@ -401,9 +426,10 @@ what the live result is.
 |---|---|
 | Scenario | Same set of conflicting plugins, multiple game restarts, verify same winner each time. |
 | Engine behavior expected | Apply order = topo-sort(dependencies) → sort(priority asc, name asc). Deterministic. |
+| Test plugin | _TBD — assertion that runs three game restarts and compares apply order. Hard to auto-test in a single boot; may need a "previous boot's apply order" persisted in a sidecar file the plugin reads on each boot_ |
 | Engine status | READY |
-| PASS = | Run game N times with same plugin set, kcdx.log shows identical apply order each time. |
-| Result | _TBD — run 3x_ |
+| Auto-pass check | Apply order matches the previous boot's apply order (read from sidecar). |
+| Last result | _TBD_ |
 
 ---
 
@@ -416,7 +442,7 @@ DEFERRED.
 ## Scenario A: "Combat tweaks" (the outfit-swap case)
 
 Small mod, single byte rewrite. Maps to **CAP-01** alone. Already
-proven via Test 1.
+proven via CAP-01 test plugin.
 
 ## Scenario B: "Better hud" (UI addition with custom data)
 
@@ -467,54 +493,64 @@ registration-override warning ergonomics.
 
 ---
 
-# Section 4: Live result roll-up
+# Section 4: Live roll-up
 
-Quick-reference table updated as rows land. One line per CAP or
-COMP, status only. Detail lives in the row above.
+Auto-updated by the developer after each suite run. One row per
+CAP/COMP, status + commit SHA.
 
-| Row | Status | Notes |
-|---|---|---|
-| CAP-01 | ✅ PASS | outfit-swap-patch, Test 1 |
-| CAP-02 | _TBD_ | _ |
-| CAP-03 | ✅ PRE-VERIFIED | phase5f-lua-callback-test |
-| CAP-04 | ❌ EXPECTED FAIL | Phase 5g design limit; documented |
-| CAP-05 | _TBD_ | outfit-swap-paklua-mod |
-| CAP-06 | _TBD partial_ | bogus-target shape verified; real target untested |
-| CAP-07 | ✅ PRE-VERIFIED | hello-plugin |
-| CAP-08 | ✅ PARTIAL | engine messages ready; game lifecycle DEFERRED Phase 6 |
-| CAP-09 | ✅ PRE-VERIFIED | hello-plugin task |
-| CAP-10 | ✅ PRE-VERIFIED | kcdx.hello.* round-trip |
-| CAP-11 | ✅ PRE-VERIFIED | verify pak 5gDEMO |
-| CAP-12 | DEFERRED-PHASE-6 | save/load |
-| CAP-13 | DEFERRED-PHASE-7 | console commands |
-| CAP-14 | DEFERRED-PHASE-7 | Address Library |
-| CAP-15 | _TBD_ | inlinePatchesToml — confirm loader handles |
-| CAP-16 | ✅ PRE-VERIFIED | messaging-pair |
-| CAP-17 | ✅ PRE-VERIFIED | EnumeratePlugins |
-| CAP-18 | ✅ NATIVE | CryEngine pak system |
-| CAP-19 | DEFERRED-v0.2 | Scaleform |
-| COMP-01 | _TBD_ | two-patch overlap |
-| COMP-02 | ✅ PRE-VERIFIED | conflict-test-hook-on-patch |
-| COMP-03 | ✅ PRE-VERIFIED | conflict-test-hook-on-hook |
-| COMP-04 | _TBD_ | patch + runtime hook |
-| COMP-05 | _TBD_ | Lua registration override |
-| COMP-06 | _TBD_ | dependency chain in practice |
-| COMP-07 | OUT-OF-SCOPE | pak + DLL cross-channel |
-| COMP-08 | _TBD_ | determinism across restarts |
+| Row | Status | Last verified at SHA | Notes |
+|---|---|---|---|
+| CAP-01 | ✅ PASS | `918d5fb` | outfit-swap-patch applied at 0x7FFCF9051759, manual swap confirmed |
+| CAP-02 | _TBD_ | _ | _ |
+| CAP-03 | ✅ PRE-VERIFIED | _ | needs port to test-plugins/ for auto-reporting |
+| CAP-04 | ❌ EXPECTED FAIL | _ | Phase 5g design limit; documented, await v0.2 primitive |
+| CAP-05 | _TBD_ | _ | pak Lua runtime dynamic_hook on outfit AOB |
+| CAP-06 | _TBD partial_ | _ | shape verified; real target untested |
+| CAP-07 | ✅ PRE-VERIFIED | _ | hello-plugin pool allocs |
+| CAP-08 | ✅ PARTIAL | _ | engine messages ready; game lifecycle DEFERRED Phase 6 |
+| CAP-09 | ✅ PRE-VERIFIED | _ | hello-plugin task |
+| CAP-10 | ✅ PRE-VERIFIED | _ | kcdx.hello.* round-trip |
+| CAP-11 | ✅ PRE-VERIFIED | _ | verify pak 5gDEMO |
+| CAP-12 | DEFERRED-PHASE-6 | _ | save/load |
+| CAP-13 | DEFERRED-PHASE-7 | _ | console commands |
+| CAP-14 | DEFERRED-PHASE-7 | _ | Address Library |
+| CAP-15 | _TBD_ | _ | inlinePatchesToml — confirm loader handles |
+| CAP-16 | ✅ PRE-VERIFIED | _ | messaging-pair |
+| CAP-17 | ✅ PRE-VERIFIED | _ | EnumeratePlugins |
+| CAP-18 | ✅ NATIVE | _ | CryEngine pak system |
+| CAP-19 | DEFERRED-v0.2 | _ | Scaleform |
+| COMP-01 | _TBD_ | _ | two-patch overlap |
+| COMP-02 | ✅ PRE-VERIFIED | _ | conflict-test-hook-on-patch (needs port) |
+| COMP-03 | ✅ PRE-VERIFIED | _ | conflict-test-hook-on-hook (needs port) |
+| COMP-04 | _TBD_ | _ | patch + runtime hook |
+| COMP-05 | _TBD_ | _ | Lua registration override |
+| COMP-06 | _TBD_ | _ | dependency chain in practice |
+| COMP-07 | OUT-OF-SCOPE | _ | pak + DLL cross-channel |
+| COMP-08 | _TBD_ | _ | determinism across restarts |
 
 ---
 
-# Section 5: How to fill in this doc
+# Section 5: Authoring a new test plugin
 
-Each row goes through this loop:
+Loop for each row that needs a real test plugin:
 
-1. Confirm the row is READY (engine supports the primitive being
-   tested) or mark DEFERRED-PHASE-X and skip.
-2. Build the test plugin under `outfit-swap-test-matrix/<rowid>/`.
-3. Disable every other test plugin (isolation protocol above).
-4. Install just this row's plugin.
-5. Launch game, run the in-game test, report yes/no/notes.
-6. Read kcd.log + kcdx.log + kcdx-dev.log, fill the row's
-   Result table + the roll-up at section 4.
-7. Commit. The row's Build field cites the commit SHA so
-   anyone reading later can reproduce.
+1. Create the folder `test-plugins/<row-id>-<short-name>/` (e.g.
+   `cap-05-paklua-runtime/`).
+2. Drop in a `kcdx.toml` with `[kcdx] test_suite_only = true`.
+3. If the test needs a DLL: add `CMakeLists.txt` + `.cpp` next to
+   the TOML. In `kcdxPlugin_Load`, check `dev::IsEnabled()`,
+   run the test logic, call `api->ReportTestResult(handle,
+   "<row-id>", pass, "<one-sentence reason>")`.
+4. If the test needs a pak: add a `pak/` subdir with `Data/*.pak`
+   + `mod.manifest`. The pak's Lua script checks
+   `kcdx.dev.is_enabled()`, runs the test, calls
+   `kcdx.test.report("<row-id>", pass, "<reason>")`.
+5. Install the plugin to the game, launch with dev mode on,
+   verify the suite picks up the new test and reports it.
+6. Update the row's Last result + Section 4 roll-up + commit.
+
+Folder hygiene: don't pollute test-plugins/ with utility files
+(build scripts, README per plugin, etc.). The plugin should be
+the minimum viable thing that asserts the capability. If it
+needs README text, put it inline in the plugin's kcdx.toml as a
+comment block.

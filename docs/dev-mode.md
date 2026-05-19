@@ -153,3 +153,130 @@ returns a different value than `lua_tocfunction` returns kcdx-side)
 falls out as a side effect of `LUA.CFUNCTION_ADDR` + `SCRIPTING.REGISTER`
 both being logged with full context. The diff between the two log
 lines names the exact handoff that mutates the value.
+
+---
+
+# Dev-mode-gated test suite
+
+kcdx ships a permanent regression test suite as a set of plugins under
+[`test-plugins/`](../test-plugins/). The suite runs on every game
+boot, each plugin self-reports pass/fail, and kcdx aggregates results
+into kcdx.log. **The entire suite is gated on dev mode** — when dev
+mode is off (i.e. the user is just playing the game with mods), the
+test-suite plugins skip all work and produce zero log noise.
+
+## Gating model
+
+Test-suite plugins flag themselves with one TOML key:
+
+```toml
+[kcdx]
+test_suite_only = true
+```
+
+When kcdx parses a config file with `test_suite_only = true`:
+- If dev mode is **off** for this session: kcdx silently skips
+  every `[[patch]]`, `[[hook]]`, `[[mid_hook]]`, `[[trampoline]]`,
+  etc. in that file. No log line. The plugin's DLL (if any) still
+  loads and still receives `kcdxPlugin_Load`, but the C++ side
+  checks `kcdx::dev::IsEnabled()` at entry and early-returns —
+  also silently. Production users never see the suite in their
+  logs.
+- If dev mode is **on**: kcdx parses and applies the entries
+  normally. The plugin's `kcdxPlugin_Load` runs its check, calls
+  the test-result reporting API, and the aggregator picks it up.
+
+For pak-Lua test scripts (Test Suite plugins shipped as pak mods
+rather than DLLs), there's no TOML to gate. The pak script
+checks at script-load time:
+
+```lua
+if not kcdx or not kcdx.dev or not kcdx.dev.is_enabled() then
+    return  -- dev mode off, skip the whole test
+end
+```
+
+Reason for engine-side gating instead of "always run but early-out
+in plugin code": `[[patch]]` and `[[hook]]` entries get applied at
+config-load time, BEFORE any plugin C++ runs. Without the
+`test_suite_only` skip, a CAP-01-patch test plugin would actually
+apply its patch in production, defeating the purpose.
+
+Production users don't ship `dev-mode-enable/kcdx.toml` (the
+trivial opt-in plugin), so dev mode is off, so the suite is
+silent. Developers always have `dev-mode-enable` installed, so
+the suite always runs on boot.
+
+## Test result reporting
+
+Each test plugin calls one API to report its result. C++:
+
+```c++
+api->ReportTestResult(handle,
+    /*testName=*/"CAP-01-patch",
+    /*pass=*/    true,
+    /*reason=*/  "applied at 0x7FFCF9051759");
+```
+
+Pak Lua:
+
+```lua
+kcdx.test.report("CAP-05-paklua-runtime", true,
+                 "dispatch fired 5/5 times")
+```
+
+`testName` should be the matrix row ID (e.g. `CAP-05`,
+`COMP-03`) so the kcdx.log summary lines up with
+[`test-plugins/README.md`](../test-plugins/README.md). `reason` is
+freeform; aim for one short sentence that explains the verdict.
+
+A test may report multiple times during a session (e.g. once at
+`kcdxPlugin_Load`, again at `kPostLoadGame`). Last report wins —
+the aggregator keeps a `<testName> -> {pass, reason, sourceHandle,
+timestamp}` map and overwrites on each call.
+
+## Aggregator output
+
+The aggregator emits a roll-up line to kcdx.log on each kcdx
+engine lifecycle message firing:
+
+```
+[12:34:56][INFO] Test suite: 12/14 passing as of kPostLoad
+[12:34:56][INFO]   FAIL CAP-05-paklua-runtime: dispatch did not fire
+[12:34:56][INFO]   FAIL COMP-04-runtime-vs-patch: collision not detected
+```
+
+The summary always reports both passing-count and total-registered;
+failures are listed by name + reason. Tests that didn't report yet
+(e.g. they wait for `kPostLoadGame` to check state) appear in
+neither the pass nor fail bucket and are deducted from both
+numerator and denominator — the summary tells you which message
+the count is "as of" so you can correlate.
+
+When dev mode is off, the aggregator emits nothing — there are no
+registrations to count.
+
+## When to update the suite
+
+- **Adding a new feature to kcdx?** Add a test plugin under
+  `test-plugins/<row-id>-<short-name>/` that exercises it.
+- **Fixing a bug?** Add a regression test that fails before the
+  fix and passes after.
+- **Changing existing behavior?** Re-run the suite locally
+  (launch game with dev mode on, look at the summary). If a
+  previously-passing test now fails, you either broke something
+  or the test needs updating — figure out which before committing.
+- **Going to commit anything in `src/` or `include/`?** Re-run the
+  suite. The matrix README's roll-up table should show the suite
+  state at the commit SHA you're about to land.
+
+## Caveat: caps not currently max'd
+
+Reading config.cpp:405-414 closely: when multiple plugins declare
+`dev_log_cap_mb` / `dev_log_max_files`, the values are **overwritten
+in load order** (last writer wins) rather than max'd. This document
+says "most-permissive wins" because that's the intended behavior,
+but the engine implementation needs a small fix to actually do
+max(). Tracked as a Phase 5 cleanup task. Workaround for now: set
+the caps you want in the single `dev-mode-enable/kcdx.toml`, since
+nothing else in your install is likely to set them.
