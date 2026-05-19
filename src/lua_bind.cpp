@@ -32,6 +32,11 @@ namespace kcdx::lua_bind_lua {
     void bind(lua_State* L);
 }
 
+// scripting_interface drains the queue of pending RegisterFunction
+// calls into the live state. Pull the real header so the call
+// reference resolves cleanly.
+#include "scripting_interface.h"
+
 namespace kcdx::lua_bind {
 
 namespace {
@@ -185,6 +190,13 @@ void RegisterKcdxTable(lua_State* L) {
     kcdx::lua_bind_lua::bind(L);
     lua_setglobal(L, "kcdx");
     log::Info("kcdx.* global registered (raw Lua C API; no sol2)");
+
+    // Drain any kcdxScriptingInterface::RegisterFunction calls that
+    // arrived from plugin DLLs during kcdxPlugin_Load (which happens
+    // BEFORE this point — plugins load right after the version table
+    // is parsed, but the kcdx global only gets created here). Any
+    // further calls apply directly because g_table_ready flips true.
+    kcdx::scripting_interface::ApplyPendingToTable(L);
 }
 
 }  // namespace kcdx::lua_bind

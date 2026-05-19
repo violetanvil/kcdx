@@ -20,6 +20,12 @@
 
 #include "kcdx/Interfaces.h"
 
+// NOTE: plugins do NOT #include "lua.h" directly. kcdx's vendored
+// Lua 5.1 is statically linked inside kcdx.asi with no exported
+// symbols (matches SKSE's pattern — see Interfaces.h commentary on
+// kcdxLuaApi). All Lua C API calls go through the kcdxLuaApi*
+// function-pointer struct.
+
 extern "C" __declspec(dllexport)
 kcdxPluginVersionData kcdxPluginVersionData = {
     /*dataVersion=*/        kcdxPluginVersionData_CurrentVersion,
@@ -85,6 +91,30 @@ struct HelloTask : kcdxTask {
     }
 };
 
+// Stashed at Load time so the registered functions have access
+// without a global lookup each call.
+static const kcdxLuaApi* g_lua = nullptr;
+
+// A Lua-callable native function. Signature:
+//   kcdx.hello.greet(name) -> string
+// Demonstrates the kcdxScriptingInterface::RegisterFunction round-trip.
+static int Lua_Greet(struct lua_State* L, void* /*user_data*/) {
+    const char* name = g_lua->ToString(L, 1);
+    if (!name) name = "stranger";
+    char buf[256];
+    snprintf(buf, sizeof(buf), "hello, %s, from hello-plugin", name);
+    g_lua->PushString(L, buf);
+    return 1;
+}
+
+// kcdx.hello.add(a, b) -> number. Variation on the same theme.
+static int Lua_Add(struct lua_State* L, void* /*user_data*/) {
+    double a = g_lua->ToNumber(L, 1);
+    double b = g_lua->ToNumber(L, 2);
+    g_lua->PushNumber(L, a + b);
+    return 1;
+}
+
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api  = api;
@@ -146,6 +176,29 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         }
     } else {
         api->Log(g_self, kcdxLog_Warn, "Trampoline interface unavailable");
+    }
+
+    // Phase 5e: register Lua-callable native functions under
+    // kcdx.hello.*. The actual application to the live lua_State
+    // happens later (after kcdx creates the kcdx global at
+    // first-update-tick); these calls queue.
+    auto* scripting = static_cast<kcdxScriptingInterface*>(
+        api->QueryInterface(kcdxInterface_Scripting,
+                            kcdxScriptingInterface_Version));
+    if (scripting) {
+        g_lua = scripting->lua;
+        if (scripting->RegisterFunction(g_self, "hello", "greet", Lua_Greet, nullptr)) {
+            LogInfo("registered kcdx.hello.greet");
+        } else {
+            api->Log(g_self, kcdxLog_Warn, "RegisterFunction(greet) failed");
+        }
+        if (scripting->RegisterFunction(g_self, "hello", "add", Lua_Add, nullptr)) {
+            LogInfo("registered kcdx.hello.add");
+        } else {
+            api->Log(g_self, kcdxLog_Warn, "RegisterFunction(add) failed");
+        }
+    } else {
+        api->Log(g_self, kcdxLog_Warn, "Scripting interface unavailable");
     }
 
     return true;

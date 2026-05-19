@@ -11,6 +11,7 @@
 #include "log.h"
 #include "messaging.h"
 #include "plugin_loader.h"
+#include "scripting_interface.h"
 #include "task.h"
 #include "trampoline.h"
 
@@ -34,8 +35,12 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxTrampolineInterface_Version) return nullptr;
         return const_cast<kcdxTrampolineInterface*>(trampoline::GetInterface());
 
-    // Phases 5-7 fill these in.
     case kcdxInterface_Scripting:
+        if (version > kcdxScriptingInterface_Version) return nullptr;
+        return const_cast<kcdxScriptingInterface*>(
+            scripting_interface::GetInterface());
+
+    // Phase 6 fills this in.
     case kcdxInterface_Serialization:
     default:
         return nullptr;

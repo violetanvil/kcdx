@@ -348,6 +348,155 @@ typedef struct kcdxTrampolineInterface {
 } kcdxTrampolineInterface;
 
 // -----------------------------------------------------------------------------
+// kcdxScriptingInterface — register native C functions callable from pak Lua
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Scripting,
+// kcdxScriptingInterface_Version). Companion to the kcdx.memory.dynamic_call
+// Lua-side API: dynamic_call invokes EXISTING native functions; this
+// interface lets plugins author NEW Lua-callable C functions.
+//
+// Why this interface bundles the Lua C API as function pointers (and
+// not just a single RegisterFunction call): KCD2's Lua VM lives
+// statically linked inside kcdx.asi. Plugin DLLs can't see those
+// symbols via the linker — there's no analogue to SKSE's "VM is a
+// vtable on a game-side class" trick (subagent research, 2026-05-18).
+//
+// So this interface ships the ~30 lua_* / luaL_* calls a plugin
+// actually needs as function pointers. Plugins:
+//
+//   #include "kcdx/Interfaces.h"
+//   ...
+//   static int Lua_Greet(struct lua_State* L, void* ud) {
+//       auto* lua = static_cast<const kcdxLuaApi*>(ud);
+//       const char* name = lua->ToString(L, 1, nullptr);
+//       lua->PushString(L, "hello!");
+//       return 1;
+//   }
+//
+//   scripting->RegisterFunction(handle, "hello", "greet",
+//                               Lua_Greet, (void*)scripting->lua);
+//
+// Alternatively plugins can stash the kcdxLuaApi pointer in a static
+// global at Load time and call lua->Push... directly. Plugin authors'
+// choice.
+//
+// Lifecycle:
+//   - Plugin calls RegisterFunction during kcdxPlugin_Load OR after,
+//     from a kcdxMessaging callback. Both are supported.
+//   - kcdx queues registrations called before its first-update-tick;
+//     once the kcdx global table is created, queued + new registrations
+//     are applied to the live Lua state.
+//   - Functions registered persist for the session. No Unregister.
+
+#define kcdxScriptingInterface_Version 1u
+
+// Forward-declare lua_State to avoid pulling lua.h into the public
+// plugin API. The Lua type is opaque to plugin authors — they use
+// it as an out-of-band token.
+struct lua_State;
+
+// Plugin's Lua-callable function. The user_data slot is what the
+// plugin passed to RegisterFunction (commonly: the kcdxLuaApi* so
+// the plugin can call lua->Push... without a global). Returns the
+// number of values pushed onto the Lua stack.
+typedef int (*kcdxLuaCFunction)(struct lua_State* L, void* user_data);
+
+// Lua C API surface available to plugin functions. Pointer signatures
+// match Lua 5.1's API verbatim, so plugin code reads like raw lua.h.
+// Members are function pointers because KCD2 ships Lua 5.1 inside
+// kcdx.asi (no exported symbols, no game-side vtable).
+//
+// Naming: PascalCase (kcdx convention) — `PushString` not `pushstring` —
+// so plugin code visually differs from any in-process lua.h
+// includes, and to match the rest of kcdxInterface methods.
+//
+// Each function name's underlying lua_* is in a comment for grep'ability.
+typedef struct kcdxLuaApi {
+    // --- stack inspection ---
+    int         (*GetTop)        (struct lua_State* L);                                   // lua_gettop
+    void        (*SetTop)        (struct lua_State* L, int idx);                          // lua_settop
+    void        (*PushValue)     (struct lua_State* L, int idx);                          // lua_pushvalue
+    void        (*Remove)        (struct lua_State* L, int idx);                          // lua_remove
+    void        (*Insert)        (struct lua_State* L, int idx);                          // lua_insert
+    void        (*Replace)       (struct lua_State* L, int idx);                          // lua_replace
+    int         (*CheckStack)    (struct lua_State* L, int n);                            // lua_checkstack
+
+    // --- type queries ---
+    int         (*Type)          (struct lua_State* L, int idx);                          // lua_type
+    int         (*IsNumber)      (struct lua_State* L, int idx);                          // lua_isnumber
+    int         (*IsString)      (struct lua_State* L, int idx);                          // lua_isstring
+    int         (*IsBoolean)     (struct lua_State* L, int idx);                          // lua_isboolean
+    int         (*IsNil)         (struct lua_State* L, int idx);                          // lua_isnil
+    int         (*IsCFunction)   (struct lua_State* L, int idx);                          // lua_iscfunction
+    int         (*IsTable)       (struct lua_State* L, int idx);                          // lua_istable
+    int         (*IsFunction)    (struct lua_State* L, int idx);                          // lua_isfunction
+    int         (*IsUserdata)    (struct lua_State* L, int idx);                          // lua_isuserdata
+
+    // --- pull values from stack ---
+    const char* (*ToString)      (struct lua_State* L, int idx);                          // lua_tostring
+    const char* (*ToLString)     (struct lua_State* L, int idx, size_t* len);             // lua_tolstring
+    double      (*ToNumber)      (struct lua_State* L, int idx);                          // lua_tonumber
+    long long   (*ToInteger)     (struct lua_State* L, int idx);                          // lua_tointeger (lua_Integer is ptrdiff_t on 5.1)
+    int         (*ToBoolean)     (struct lua_State* L, int idx);                          // lua_toboolean
+    const void* (*ToPointer)     (struct lua_State* L, int idx);                          // lua_topointer
+    void*       (*ToUserdata)    (struct lua_State* L, int idx);                          // lua_touserdata
+
+    // --- push values onto stack ---
+    void        (*PushString)    (struct lua_State* L, const char* s);                    // lua_pushstring
+    void        (*PushLString)   (struct lua_State* L, const char* s, size_t len);        // lua_pushlstring
+    void        (*PushNumber)    (struct lua_State* L, double n);                         // lua_pushnumber
+    void        (*PushInteger)   (struct lua_State* L, long long n);                      // lua_pushinteger
+    void        (*PushBoolean)   (struct lua_State* L, int b);                            // lua_pushboolean
+    void        (*PushNil)       (struct lua_State* L);                                   // lua_pushnil
+    void        (*PushCFunction) (struct lua_State* L, kcdxLuaCFunction fn, void* ud);    // lua_pushcclosure with one upvalue (the ud)
+    void        (*PushLightUserdata)(struct lua_State* L, void* p);                       // lua_pushlightuserdata
+
+    // --- tables ---
+    void        (*NewTable)      (struct lua_State* L);                                   // lua_newtable
+    void        (*GetField)      (struct lua_State* L, int idx, const char* k);           // lua_getfield
+    void        (*SetField)      (struct lua_State* L, int idx, const char* k);           // lua_setfield
+    void        (*RawGetI)       (struct lua_State* L, int idx, int n);                   // lua_rawgeti
+    void        (*RawSetI)       (struct lua_State* L, int idx, int n);                   // lua_rawseti
+    void        (*GetGlobal)     (struct lua_State* L, const char* name);                 // lua_getglobal (5.1 macro: getfield+globalsindex)
+    void        (*SetGlobal)     (struct lua_State* L, const char* name);                 // lua_setglobal
+
+    // --- error reporting ---
+    int         (*Error)         (struct lua_State* L);                                   // lua_error  (call only with a value already on the stack)
+    int         (*ErrorF)        (struct lua_State* L, const char* fmt, ...);             // luaL_error (varargs convenience)
+} kcdxLuaApi;
+
+typedef struct kcdxScriptingInterface {
+    // Register a native function callable from pak Lua at:
+    //   kcdx.<table_name>.<fn_name>
+    //
+    // table_name must be a valid Lua identifier (alphanumeric +
+    // underscore, must not start with a digit). fn_name same. Both
+    // are copied; the strings need not outlive the call.
+    //
+    // user_data is passed through to every invocation. The plugin owns
+    // its lifetime; kcdx never reads or frees it. A common pattern:
+    // pass `scripting->lua` so the registered function has direct
+    // access to the Lua C API without a global.
+    //
+    // Returns 1 on success, 0 on failure (invalid args, name collision,
+    // OOM). Failures are also logged to kcdx.log.
+    //
+    // Thread safety: must be called from the main thread (i.e., from
+    // kcdxPlugin_Load or from a Task::Run callback). Calling from a
+    // worker thread results in undefined behavior.
+    int (*RegisterFunction)(kcdxPluginHandle owner,
+                            const char*      table_name,
+                            const char*      fn_name,
+                            kcdxLuaCFunction fn,
+                            void*            user_data);
+
+    // The Lua C API surface, owned by kcdx. Lifetime: process. Plugin
+    // may store this pointer at any time after QueryInterface returns it.
+    const kcdxLuaApi* lua;
+} kcdxScriptingInterface;
+
+// -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)
 // -----------------------------------------------------------------------------
 //
