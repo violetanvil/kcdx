@@ -191,6 +191,11 @@ kcdx stands on the shoulders of several other projects:
 - **Lua 5.1** sources from CryEngine 5.2.3 SDK — same Lua KCD2 ships
   internally.
 
+## Support the project
+
+If kcdx has been useful to you, you can support development at
+[ko-fi.com/violetanvil](https://ko-fi.com/violetanvil).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
