@@ -89,8 +89,15 @@ Roughly one per kcdx subsystem:
 | `MSG`     | FIRE (type + listener count) |
 | `SCRIPTING` | REGISTER, DISPATCH/pre, DISPATCH/post, DISPATCH/mid, REENTRY_GUARD |
 | `JIT`     | EMIT (size, addr, source), DISASM (one inst per continuation line) |
-| `LUA`     | CFUNCTION_ADDR, PUSH_POINTER, CLOSURE_DUMP, DYNAMIC_HOOK_REQ |
+| `LUA`     | CFUNCTION_ADDR/enter, CFUNCTION_ADDR/pushed, DYNAMIC_HOOK/request, DYNAMIC_HOOK/jit-*, DYNAMIC_HOOK/install-*, NUMBER_PROBE/sizes, NUMBER_PROBE/push_pull, NUMBER_PROBE/num_push_pull, NUMBER_PROBE/lightud |
 | `MEMORY`  | SCAN, ALLOC, FREE, READ |
+
+The `LUA.NUMBER_PROBE/*` family is produced on-demand by calling
+`kcdx.lua._probe_numbers()` from pak Lua. It characterizes
+`sizeof(lua_Number)` and the precision behavior of integer round-trips
+across the float-precision boundary. Re-run it whenever a new KCD2
+patch lands to confirm hard rule #17 still applies. See
+[`lua-number-precision.md`](lua-number-precision.md).
 
 A plugin author wanting "tell me about every hook" greps `^.*HOOK\.`.
 "Tell me about my plugin specifically" greps for the plugin handle or

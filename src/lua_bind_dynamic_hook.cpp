@@ -132,11 +132,16 @@ int Handle_Gc(lua_State* L) {
     return 0;
 }
 
-// Push the handle's stored target VA — handy for diagnostics.
+// Push the handle's stored target VA as a kcdx.memory.pointer userdata.
+//
+// NOT an integer: on KCD2, CryEngine's Lua 5.1 is LUA_NUMBER=float, so
+// pointer-magnitude values lose precision through the Lua stack. See
+// CLAUDE.md hard rule #17 and docs/lua-number-precision.md.
 int Handle_GetTarget(lua_State* L) {
     auto* ud = static_cast<HandleUd*>(
         luaL_checkudata(L, 1, kHandleMetatable));
-    lua_pushinteger(L, (lua_Integer)ud->target_addr);
+    kcdx::lua_bind_helpers::PushPointer(
+        L, kcdx::lua_memory::pointer(ud->target_addr));
     return 1;
 }
 

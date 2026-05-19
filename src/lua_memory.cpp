@@ -52,6 +52,17 @@ uintptr_t   pointer::get_address()                                      const { 
 value_wrapper_t::value_wrapper_t(char* val, kcdx::rom::type_info_t type)
     : m_value(val), m_type(type) {}
 
+// Push the wrapped value onto the Lua stack.
+//
+// PRECISION NOTE for the integer_ case: on KCD2, CryEngine compiled
+// Lua 5.1 with LUA_NUMBER=float (24-bit mantissa). Any value > 2^24
+// loses low bits when pushed via lua_pushinteger; pointer-magnitude
+// values (~2^47) round to a 16MB grid. If the wrapped 64-bit integer
+// is actually a pointer/VA (common in dynamic_hook register captures
+// and dynamic_call return values), the Lua side will see a corrupted
+// address. The right fix is a dedicated type_info_t::ptr_ variant
+// that routes through PushPointer; tracked as a Phase 5g follow-up.
+// See CLAUDE.md hard rule #17 and docs/lua-number-precision.md.
 void value_wrapper_t::push_value(lua_State* L) const {
     switch (m_type.m_val) {
         case kcdx::rom::type_info_t::boolean_:

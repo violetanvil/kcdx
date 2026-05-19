@@ -21,6 +21,7 @@ extern "C" {
 // the sol2 bindings inside it are unused from this translation unit.
 
 #include "log.h"
+#include "lua_bind_helpers.h"
 #include "lua_memory.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
@@ -145,14 +146,21 @@ int Lua_ReadBytes(lua_State* L) {
     return 1;
 }
 
+// Legacy uppercase KCDX.GetWHGameBase. The preferred path is
+// kcdx.memory.module_base() which returns a pointer userdata. This
+// is kept for v0 backwards-compat but returns a pointer userdata
+// too — on KCD2, returning the address as an integer would be
+// silently corrupted to a 16MB-aligned junk value (LUA_NUMBER=float,
+// 24-bit mantissa). See CLAUDE.md hard rule #17.
 int Lua_GetWHGameBase(lua_State* L) {
     kcdx::pe::ModuleView mv;
     if (!kcdx::pe::OpenModule(L"WHGame.dll", mv)) {
         lua_pushnil(L);
         return 1;
     }
-    lua_pushinteger(L, static_cast<lua_Integer>(
-        reinterpret_cast<uintptr_t>(mv.baseBytes)));
+    kcdx::lua_bind_helpers::PushPointer(
+        L, kcdx::lua_memory::pointer(
+                reinterpret_cast<uintptr_t>(mv.baseBytes)));
     return 1;
 }
 

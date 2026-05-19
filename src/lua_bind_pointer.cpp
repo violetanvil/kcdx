@@ -30,6 +30,15 @@ using kcdx::lua_memory::pointer;
 // `int(*)(lua_State*)` functions in the metatable bindings below; the
 // template lets us share the body.
 
+// Pointer:get_<type>() implementation.
+//
+// Precision caveat for get_qword (T = uint64_t): the value gets pushed
+// via lua_pushinteger, which on KCD2 stores via LUA_NUMBER=float and
+// rounds anything > 2^24 to a float-grid. For pointer-magnitude values
+// (~2^47), the step size is 16MB. If you're reading a pointer from
+// memory and need to use it, use pointer:deref() instead (returns a
+// new pointer userdata) — that path stays in the safe channel.
+// See CLAUDE.md hard rule #17 + docs/lua-number-precision.md.
 template <typename T>
 int Get(lua_State* L) {
     auto* p = CheckPointer(L, 1);
@@ -142,6 +151,15 @@ int IsValid(lua_State* L) {
     return 1;
 }
 
+// pointer:get_address() -> integer (LOSSY at pointer magnitudes).
+//
+// Returns the raw integer VA. Kept for backwards compatibility and
+// for plugins that only need an opaque numeric ID. On KCD2 this value
+// is rounded to a 16MB grid because CryEngine's Lua 5.1 is built with
+// LUA_NUMBER=float (24-bit mantissa). DO NOT pass the result back to
+// any kcdx API that expects an exact address (dynamic_hook target,
+// dynamic_call target, etc.) — pass the pointer userdata itself.
+// See CLAUDE.md hard rule #17 + docs/lua-number-precision.md.
 int GetAddress(lua_State* L) {
     auto* p = CheckPointer(L, 1);
     lua_pushinteger(L, (lua_Integer)p->get_address());

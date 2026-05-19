@@ -443,14 +443,30 @@ typedef struct kcdxLuaApi {
     void*       (*ToUserdata)    (struct lua_State* L, int idx);                          // lua_touserdata
 
     // --- push values onto stack ---
+    //
+    // PRECISION CAVEAT on KCD2: CryEngine's bundled Lua 5.1 is compiled
+    // with LUA_NUMBER=float (single-precision, 24-bit mantissa). Any
+    // integer pushed via PushInteger/PushNumber whose magnitude exceeds
+    // 2^24 (16,777,216) loses low bits when read back. At pointer
+    // magnitudes (~2^47) the rounding step is 16 MB, so 64-bit pointers
+    // round to garbage 16 MB-aligned addresses.
+    //
+    // Plugin guidance: do NOT use PushInteger/PushNumber to hand a
+    // pointer (or any value > 2^24) to pak Lua. Use PushLightUserdata
+    // (raw void* round-trip is exact, but no metatable methods) or
+    // the kcdx.memory.pointer userdata channel — both stay clean.
+    //
+    // This caveat is intrinsic to CryEngine's Lua build; we cannot fix
+    // it inside kcdx. See kcdx/docs/lua-number-precision.md for the
+    // probe data and kcdx/CLAUDE.md hard rule #17.
     void        (*PushString)    (struct lua_State* L, const char* s);                    // lua_pushstring
     void        (*PushLString)   (struct lua_State* L, const char* s, size_t len);        // lua_pushlstring
-    void        (*PushNumber)    (struct lua_State* L, double n);                         // lua_pushnumber
-    void        (*PushInteger)   (struct lua_State* L, long long n);                      // lua_pushinteger
+    void        (*PushNumber)    (struct lua_State* L, double n);                         // lua_pushnumber (precision-lossy; see caveat above)
+    void        (*PushInteger)   (struct lua_State* L, long long n);                      // lua_pushinteger (precision-lossy; see caveat above)
     void        (*PushBoolean)   (struct lua_State* L, int b);                            // lua_pushboolean
     void        (*PushNil)       (struct lua_State* L);                                   // lua_pushnil
     void        (*PushCFunction) (struct lua_State* L, kcdxLuaCFunction fn, void* ud);    // lua_pushcclosure with one upvalue (the ud)
-    void        (*PushLightUserdata)(struct lua_State* L, void* p);                       // lua_pushlightuserdata
+    void        (*PushLightUserdata)(struct lua_State* L, void* p);                       // lua_pushlightuserdata (exact for pointers — preferred over PushInteger for VAs)
 
     // --- tables ---
     void        (*NewTable)      (struct lua_State* L);                                   // lua_newtable
