@@ -29,9 +29,9 @@ extern "C" {
 // kcdx.lua.* helpers live in lua_bind_lua.cpp. Forward-decl bind()
 // here so RegisterKcdxTable can call it. (No header needed for a
 // single function with this signature.)
-namespace kcdx::lua_bind_lua {
-    void bind(lua_State* L);
-}
+namespace kcdx::lua_bind_lua  { void bind(lua_State* L); }
+namespace kcdx::lua_bind_dev  { void bind(lua_State* L); }
+namespace kcdx::lua_bind_test { void bind(lua_State* L); }
 
 // scripting_interface drains the queue of pending RegisterFunction
 // calls into the live state. Pull the real header so the call
@@ -196,6 +196,8 @@ void RegisterKcdxTable(lua_State* L) {
     lua_setfield(L, kcdx_idx, "version");
     kcdx::lua_memory::bind(L);
     kcdx::lua_bind_lua::bind(L);
+    kcdx::lua_bind_dev::bind(L);
+    kcdx::lua_bind_test::bind(L);
     lua_setglobal(L, "kcdx");
     log::Info("kcdx.* global registered (raw Lua C API; no sol2)");
 

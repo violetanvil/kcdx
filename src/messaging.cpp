@@ -7,6 +7,7 @@
 
 #include "log.h"
 #include "plugin_loader.h"
+#include "test.h"
 
 namespace kcdx::messaging {
 
@@ -137,17 +138,23 @@ void FireEngineMessage(uint32_t messageType,
             if (l.sender.empty()) targets.push_back(l.callback);
         }
     }
-    if (targets.empty()) return;
 
-    kcdxMessage msg;
-    msg.sender = nullptr;     // engine-originated
-    msg.messageType = messageType;
-    msg.data = data;
-    msg.dataLen = dataLen;
-    for (auto cb : targets) {
-        kcdxMessage perCallback = msg;
-        cb(&perCallback);
+    if (!targets.empty()) {
+        kcdxMessage msg;
+        msg.sender = nullptr;     // engine-originated
+        msg.messageType = messageType;
+        msg.data = data;
+        msg.dataLen = dataLen;
+        for (auto cb : targets) {
+            kcdxMessage perCallback = msg;
+            cb(&perCallback);
+        }
     }
+
+    // After dispatch completes, give the test-suite aggregator a chance
+    // to emit its "Test suite: X/Y passing as of <message>" roll-up.
+    // No-op when dev mode is off or no tests have reported.
+    test::EmitSummary(test::MessageLabel(messageType));
 }
 
 }  // namespace kcdx::messaging

@@ -204,6 +204,22 @@ typedef struct kcdxInterface {
     // kcdx.toml in a folder. Subfolders of a plugin folder are
     // invisible to discovery — they're yours to use however you like.
     const wchar_t* (*GetPluginPath)(kcdxPluginHandle handle);
+
+    // Report a regression-test result. testName should be the matrix row
+    // ID (e.g. "CAP-01"); reason is a short freeform explanation of
+    // pass/fail. Last call for a given testName wins (a plugin may
+    // re-report on later lifecycle messages).
+    //
+    // No-op when dev mode is off — production users never see test-suite
+    // output. The aggregator emits a "Test suite: X/Y passing as of <msg>"
+    // roll-up to kcdx.log on each engine lifecycle message.
+    //
+    // See kcdx/docs/dev-mode.md (Test suite section) for the contract +
+    // kcdx/test-plugins/README.md for the matrix.
+    void (*ReportTestResult)(kcdxPluginHandle self,
+                             const char*      testName,
+                             int              pass,    // 0 = fail, nonzero = pass
+                             const char*      reason); // nullable
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------

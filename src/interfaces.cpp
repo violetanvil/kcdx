@@ -13,6 +13,7 @@
 #include "plugin_loader.h"
 #include "scripting_interface.h"
 #include "task.h"
+#include "test.h"
 #include "trampoline.h"
 
 #include <cstdint>
@@ -140,6 +141,14 @@ void Thunk_Log(kcdxPluginHandle self, uint32_t level, const char* msg) {
     }
 }
 
+void Thunk_ReportTestResult(kcdxPluginHandle /*self*/,
+                            const char* testName,
+                            int pass,
+                            const char* reason) {
+    if (!testName) return;
+    kcdx::test::ReportResult(testName, pass != 0, reason ? reason : "");
+}
+
 // Resolve a plugin's install folder path. Returned pointer is owned by the
 // engine and remains valid for the process lifetime — backed by the
 // LoadedPlugin::folderPath wstring which lives as long as g_plugins.
@@ -163,6 +172,8 @@ kcdxInterface g_api = {
     /*EnumeratePlugins=*/   Thunk_EnumeratePlugins,
     /*ResolveAddress=*/     Thunk_ResolveAddress,
     /*Log=*/                Thunk_Log,
+    /*GetPluginPath=*/      Thunk_GetPluginPath,
+    /*ReportTestResult=*/   Thunk_ReportTestResult,
 };
 
 }  // namespace

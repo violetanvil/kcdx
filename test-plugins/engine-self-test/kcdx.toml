@@ -1,0 +1,22 @@
+# engine-self-test — proves the test-suite reporting wiring works.
+#
+# This plugin's only job is to call api->ReportTestResult during
+# kcdxPlugin_Load. If the aggregator emits "Test suite: 1/1 passing
+# as of kPostLoad" (or higher) to kcdx.log, the C++-side reporting
+# surface is intact.
+#
+# Test-suite-gated like every test plugin: silent when dev mode is
+# off; only runs when <plugins>/kcdx-engine.toml has dev_mode=true.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.engine-self-test"
+display_name        = "Engine self-test"
+author              = "kcdx"
+description         = "Smoke test for the test-suite reporting wiring."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "debug"  # verbose, this plugin is for dev use
