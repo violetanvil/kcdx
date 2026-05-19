@@ -19,8 +19,9 @@ namespace fs = std::filesystem;
 
 namespace kcdx::plugins {
 
-std::vector<LoadedPlugin> g_plugins;
-uint32_t                  g_runtimeGameVersion = 0;
+std::vector<LoadedPlugin>   g_plugins;
+std::vector<PluginManifest> g_manifests;
+uint32_t                    g_runtimeGameVersion = 0;
 
 namespace {
 
@@ -147,121 +148,63 @@ uint32_t DetectRuntimeGameVersion() {
     return 0;
 }
 
-// Read the kcdxPluginVersionData export from a plugin DLL.
-//
-// Earlier versions of this code tried LoadLibraryEx with
-// LOAD_LIBRARY_AS_IMAGE_RESOURCE | LOAD_LIBRARY_AS_DATAFILE to peek metadata
-// without running DllMain. That had several bugs (the flags are mutually
-// exclusive per MSDN, RVAs didn't resolve correctly in the resulting flat
-// mapping, and several failure paths returned false silently with no log
-// line — producing the symptom "Plugin DLL loader: discovered 0
-// candidate(s)" even when the DLL was physically present).
-//
-// The simpler approach: real LoadLibraryW, GetProcAddress, copy out the
-// struct. If validation fails downstream the caller FreeLibrary's the
-// module. This is exactly what SKSE does. The trade-off is that a malicious
-// plugin's DllMain runs once — but plugin DLLs are already in a privileged
-// trust position (they get arbitrary memory access through MinHook from
-// kcdxPlugin_Load anyway), so this isn't a meaningful security regression.
-bool PeekVersionData(const fs::path& dllPath,
-                     kcdxPluginVersionData& out,
-                     HMODULE& outModule) {
-    outModule = nullptr;
-    std::wstring wpath = dllPath.wstring();
-    HMODULE mod = LoadLibraryW(wpath.c_str());
-    if (!mod) {
-        log::WarnF("Plugin '%s': LoadLibrary failed (err=%lu)",
-                   dllPath.string().c_str(), GetLastError());
-        return false;
-    }
-    auto* dataPtr = reinterpret_cast<const kcdxPluginVersionData*>(
-        GetProcAddress(mod, "kcdxPluginVersionData"));
-    if (!dataPtr) {
-        log::WarnF("Plugin '%s': missing kcdxPluginVersionData export — "
-                   "not a kcdx plugin, ignoring",
-                   dllPath.string().c_str());
-        FreeLibrary(mod);
-        return false;
-    }
-    std::memcpy(&out, dataPtr, sizeof(out));
-    outModule = mod;
-    return true;
-}
+// Validate a parsed PluginManifest against engine + game-version invariants.
+// Returns true if the plugin is loadable; logs the specific reason on false.
+// matchedGameVersion (out): on success, set to the entry of compatibleGameVersions
+// that matched the running game (or 0 if versionIndependent).
+bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
+    matchedGameVersion = 0;
 
-// Validate a kcdxPluginVersionData against the engine's runtime invariants.
-// Returns true if the plugin is loadable. Logs the specific reason on false.
-bool ValidateVersionData(const kcdxPluginVersionData& v,
-                         const std::string& filePathForLog) {
-    if (v.dataVersion != kcdxPluginVersionData_CurrentVersion) {
-        log::ErrorF("Plugin '%s': dataVersion %u not supported (engine expects %u)",
-                    filePathForLog.c_str(), v.dataVersion,
-                    kcdxPluginVersionData_CurrentVersion);
-        return false;
-    }
-    if (v.name[0] == '\0') {
-        log::ErrorF("Plugin '%s': name field is empty", filePathForLog.c_str());
-        return false;
-    }
-    // Ensure name is null-terminated within the field.
-    bool nameTerminated = false;
-    for (size_t i = 0; i < sizeof(v.name); ++i) {
-        if (v.name[i] == '\0') { nameTerminated = true; break; }
-    }
-    if (!nameTerminated) {
-        log::ErrorF("Plugin '%s': name field not null-terminated", filePathForLog.c_str());
+    if (m.name.empty()) {
+        log::ErrorF("Plugin manifest at %s: name field is empty",
+                    m.tomlPath.string().c_str());
         return false;
     }
 
-    if (v.kcdxVersionRequired > kEngineVersion) {
+    if (m.kcdxMinVersion > kEngineVersion) {
         log::ErrorF("Plugin '%s' requires kcdx >= 0x%08X but engine is 0x%08X",
-                    v.name, v.kcdxVersionRequired, kEngineVersion);
+                    m.name.c_str(), m.kcdxMinVersion, kEngineVersion);
         return false;
     }
 
-    // Compatibility: either compatibleGameVersions includes the running build,
-    // or the plugin opted into AddressLibrary version-independence.
+    // Game-version compatibility.
     bool versionOK = false;
-    bool hasAnyVersion = false;
-    for (uint32_t gv : v.compatibleGameVersions) {
-        if (gv == 0) break;
-        hasAnyVersion = true;
-        if (gv == g_runtimeGameVersion) { versionOK = true; break; }
+    for (uint32_t gv : m.compatibleGameVersions) {
+        if (gv == g_runtimeGameVersion) {
+            versionOK = true;
+            matchedGameVersion = gv;
+            break;
+        }
     }
-    bool addrLibOptIn = (v.versionIndependence & kcdxVersionIndependent_AddressLibrary) != 0;
 
-    // Graceful-degradation case: if we couldn't detect the runtime game version
-    // (g_runtimeGameVersion == 0), the version-compat check is unreliable. Don't
-    // refuse plugins over our own self-detection failure — log a warning and
-    // let them load. The plugin author's compatibleGameVersions array still
-    // shows up in the log so users can see what was claimed.
-    if (g_runtimeGameVersion == 0 && !addrLibOptIn) {
-        log::WarnF("Plugin '%s': engine couldn't determine the running KCD2 version, "
-                   "so compatibleGameVersions cannot be verified. Loading anyway. "
-                   "Plugin claims compatibility with:",
-                   v.name);
-        if (!hasAnyVersion) {
-            log::Warn("    (none — empty compatibleGameVersions array)");
+    // Graceful-degradation: if we couldn't detect the runtime game version,
+    // don't refuse over our own self-detection failure.
+    if (g_runtimeGameVersion == 0 && !m.versionIndependent) {
+        log::WarnF("Plugin '%s': engine couldn't determine the running KCD2 "
+                   "version; loading anyway. Plugin claims compatibility with:",
+                   m.name.c_str());
+        if (m.compatibleGameVersions.empty()) {
+            log::Warn("    (none — empty compatible_game_versions list)");
         } else {
-            for (uint32_t gv : v.compatibleGameVersions) {
-                if (gv == 0) break;
+            for (uint32_t gv : m.compatibleGameVersions) {
                 log::WarnF("    0x%08X", gv);
             }
         }
         return true;
     }
 
-    if (!versionOK && !addrLibOptIn) {
-        if (!hasAnyVersion) {
-            log::ErrorF("Plugin '%s': empty compatibleGameVersions array and "
-                        "AddressLibrary flag NOT set — refusing to load. "
-                        "Either list your tested game versions or opt into the "
-                        "AddressLibrary version-independence flag.",
-                        v.name);
+    if (!versionOK && !m.versionIndependent) {
+        if (m.compatibleGameVersions.empty()) {
+            log::ErrorF("Plugin '%s': empty compatible_game_versions list and "
+                        "version_independent NOT set — refusing to load. "
+                        "Either list your tested game versions or set "
+                        "version_independent=true in [plugin].",
+                        m.name.c_str());
         } else {
-            log::ErrorF("Plugin '%s' not compatible with running game version 0x%08X. "
-                        "Its compatibleGameVersions:", v.name, g_runtimeGameVersion);
-            for (uint32_t gv : v.compatibleGameVersions) {
-                if (gv == 0) break;
+            log::ErrorF("Plugin '%s' not compatible with running game version "
+                        "0x%08X. Its compatible_game_versions:",
+                        m.name.c_str(), g_runtimeGameVersion);
+            for (uint32_t gv : m.compatibleGameVersions) {
                 log::ErrorF("    0x%08X", gv);
             }
         }
@@ -271,33 +214,52 @@ bool ValidateVersionData(const kcdxPluginVersionData& v,
     return true;
 }
 
-// One DLL on disk waiting to be validated and loaded. Lifecycle:
-//   1. Discovery: LoadLibraryW the DLL, copy out kcdxPluginVersionData into
-//      `vdataCopy`. Module handle stays live in `module`.
-//   2. Validation: ValidateVersionData → if invalid, FreeLibrary(module) and
-//      mark not-valid.
-//   3. Survivors get GetProcAddress for entry points → LoadedPlugin.
+// One plugin slot during the load wave. Owns a manifest (by value, separate
+// from g_manifests so we can shuffle / drop without disturbing the source-of-
+// truth collection) and tracks whether it's still valid after each validation
+// pass. After topo-sort + DLL resolution, surviving Candidates get promoted
+// to LoadedPlugin.
 struct Candidate {
-    fs::path                folderPath;
-    fs::path                dllPath;
-    HMODULE                 module = nullptr;   // owned by Candidate until promoted to LoadedPlugin
-    kcdxPluginVersionData   vdataCopy;
-    bool                    valid = false;
+    PluginManifest manifest;
+    fs::path       dllPath;     // empty for TOML-only plugins
+    HMODULE        module = nullptr;   // owned by Candidate until promoted to LoadedPlugin
+    uint32_t       matchedGameVersion = 0;  // from ValidateManifest
+    bool           valid = false;
 };
 
-// Scan one folder for a DLL. Convention: a plugin folder contains exactly one
-// .dll in its root. Multi-DLL plugins (bundled libraries) currently are not
-// supported by auto-discovery — Shape C refactor will add [entrypoints] dll
-// in kcdx.toml to disambiguate; until then, multiple DLLs return the first
-// alphabetically and warn. Returns the DLL path or empty if none found.
+// Resolve a plugin's DLL entrypoint path. Two paths:
 //
-// Only scans the folder root — does NOT descend. Subfolders of a plugin
-// folder are the plugin's private space (sub-DLLs the plugin loads itself
-// via LoadLibraryW + GetPluginPath, data files, configs).
-fs::path FindDllInFolder(const fs::path& folder) {
+//   1. If the manifest declares [entrypoints] dll = "...", that's an explicit
+//      relative path. We verify it exists and return it. No fallback —
+//      authors who declare it want THIS dll, not "whatever else is in the
+//      folder."
+//
+//   2. Otherwise, auto-discover: scan the plugin folder root for exactly one
+//      *.dll. Subfolders are private to the plugin (bundled libraries etc.)
+//      and ignored. If multiple DLLs are present, that's ambiguous — fail
+//      with a helpful error directing the author to declare [entrypoints]
+//      dll. If zero DLLs, return empty (TOML-only plugin).
+//
+// Returns empty path for "no DLL" (TOML-only plugin) or "ambiguous /
+// declared-but-missing" (logged with detail).
+fs::path ResolveDllEntrypoint(const PluginManifest& m) {
+    if (!m.dllEntrypointRel.empty()) {
+        fs::path explicitDll = m.folderPath / m.dllEntrypointRel;
+        std::error_code ec;
+        if (!fs::exists(explicitDll, ec)) {
+            log::ErrorF("Plugin '%s': [entrypoints] dll = \"%s\" but file does "
+                        "not exist (resolved to %s)",
+                        m.name.c_str(), m.dllEntrypointRel.c_str(),
+                        explicitDll.string().c_str());
+            return {};
+        }
+        return explicitDll;
+    }
+
+    // Auto-discover: scan folder root only (NOT subfolders).
     std::error_code ec;
     std::vector<fs::path> dlls;
-    for (const auto& entry : fs::directory_iterator(folder, ec)) {
+    for (const auto& entry : fs::directory_iterator(m.folderPath, ec)) {
         if (!entry.is_regular_file(ec)) continue;
         auto p = entry.path();
         auto ext = p.extension().wstring();
@@ -305,95 +267,68 @@ fs::path FindDllInFolder(const fs::path& folder) {
             dlls.push_back(p);
         }
     }
-    if (dlls.empty()) return {};
-    if (dlls.size() > 1) {
-        std::sort(dlls.begin(), dlls.end());
-        log::WarnF("Plugin folder '%s' contains %zu DLLs; auto-discovery "
-                   "picks the first alphabetically ('%s'). Multi-DLL plugins "
-                   "should declare [entrypoints] dll in kcdx.toml to "
-                   "disambiguate (coming in next kcdx revision).",
-                   folder.filename().string().c_str(),
-                   dlls.size(),
-                   dlls[0].filename().string().c_str());
+    if (dlls.empty()) return {};  // TOML-only plugin
+    if (dlls.size() == 1) return dlls[0];
+
+    // Multiple DLLs in root — author must disambiguate.
+    std::sort(dlls.begin(), dlls.end());
+    log::ErrorF("Plugin '%s': %zu DLLs found in plugin folder root; "
+                "auto-discovery is ambiguous. Declare [entrypoints] dll = "
+                "\"primary.dll\" in kcdx.toml to specify the entrypoint, "
+                "or move bundled libraries to a subfolder. Found:",
+                m.name.c_str(), dlls.size());
+    for (const auto& d : dlls) {
+        log::ErrorF("    %s", d.filename().string().c_str());
     }
-    return dlls[0];
-}
-
-// Recursive walk for plugin folders (defined as: any folder containing a
-// kcdx.toml). Mirrors config.cpp's WalkForTomls discovery rules:
-//   - kcdx.toml at depth 0 (directly in plugins/) is ignored (config.cpp
-//     already warned about it).
-//   - From any folder, recurse until kcdx.toml is found; that folder is
-//     the plugin folder. Do NOT descend into it.
-//   - Hidden + *.disabled* folders are skipped.
-// For each plugin folder, calls visit() with (folderPath, dllPath). dllPath
-// may be empty for TOML-only plugins (no DLL in the folder root).
-template <typename Visit>
-void WalkForPluginFolders(const fs::path& dir, int depth, Visit&& visit) {
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(dir, ec)) {
-        const auto p = entry.path();
-        const auto name = p.filename().wstring();
-
-        if (!name.empty() && name[0] == L'.') continue;
-        if (name.find(L".disabled") != std::wstring::npos) continue;
-        if (!entry.is_directory(ec)) continue;
-
-        fs::path candidate = p / "kcdx.toml";
-        if (fs::exists(candidate, ec)) {
-            fs::path dll = FindDllInFolder(p);
-            visit(p, dll);
-            // Do NOT descend — folder is claimed.
-        } else {
-            WalkForPluginFolders(p, depth + 1, visit);
-        }
-    }
+    return {};
 }
 
 // Topologically sort the candidate list by dependencies. Stable: preserves
 // the input order among nodes with no dependency relation. Logs cycles and
 // missing required deps; returns true if every required edge resolved.
+//
+// Uses Kahn's algorithm. Each candidate's manifest.dependencies array names
+// other plugins that must load first.
 bool TopoSort(std::vector<Candidate>& cands) {
     // Index candidates by name.
     std::unordered_map<std::string, size_t> byName;
     byName.reserve(cands.size());
     for (size_t i = 0; i < cands.size(); ++i) {
-        byName[cands[i].vdataCopy.name] = i;
+        byName[cands[i].manifest.name] = i;
     }
 
-    // Adjacency: edges[i] = indices of candidates that must load before i.
+    // Adjacency: edges[i] = indices of candidates that must load AFTER i.
     std::vector<std::vector<size_t>> edges(cands.size());
     std::vector<size_t> indeg(cands.size(), 0);
 
     for (size_t i = 0; i < cands.size(); ++i) {
-        const auto& v = cands[i].vdataCopy;
-        const kcdxPluginDependency* d = v.dependencies;
-        if (!d) continue;
-        for (; d->name != nullptr; ++d) {
-            auto it = byName.find(d->name);
-            bool optional = (d->flags & kcdxDependencyFlag_Optional) != 0;
+        const auto& m = cands[i].manifest;
+        for (const auto& dep : m.dependencies) {
+            auto it = byName.find(dep.name);
             if (it == byName.end()) {
-                if (optional) {
+                if (dep.optional) {
                     log::InfoF("Plugin '%s': optional dependency '%s' not present",
-                               v.name, d->name);
+                               m.name.c_str(), dep.name.c_str());
                 } else {
-                    log::ErrorF("Plugin '%s' requires '%s' but no such plugin is loaded — "
-                                "skipping '%s'",
-                                v.name, d->name, v.name);
+                    log::ErrorF("Plugin '%s' requires '%s' but no such plugin is "
+                                "loaded — skipping '%s'",
+                                m.name.c_str(), dep.name.c_str(), m.name.c_str());
                     cands[i].valid = false;
                 }
                 continue;
             }
-            const auto& depV = cands[it->second].vdataCopy;
-            if (depV.pluginVersion < d->minVersion) {
-                if (optional) {
+            const auto& depM = cands[it->second].manifest;
+            if (depM.version < dep.minVersion) {
+                if (dep.optional) {
                     log::InfoF("Plugin '%s': optional dependency '%s' is version "
-                               "0x%08X but minVersion 0x%08X required",
-                               v.name, d->name, depV.pluginVersion, d->minVersion);
+                               "0x%08X but min_version 0x%08X required",
+                               m.name.c_str(), dep.name.c_str(),
+                               depM.version, dep.minVersion);
                 } else {
-                    log::ErrorF("Plugin '%s' requires '%s' >= 0x%08X but loaded version "
-                                "is 0x%08X — skipping '%s'",
-                                v.name, d->name, d->minVersion, depV.pluginVersion, v.name);
+                    log::ErrorF("Plugin '%s' requires '%s' >= 0x%08X but loaded "
+                                "version is 0x%08X — skipping '%s'",
+                                m.name.c_str(), dep.name.c_str(),
+                                dep.minVersion, depM.version, m.name.c_str());
                     cands[i].valid = false;
                 }
                 continue;
@@ -403,8 +338,8 @@ bool TopoSort(std::vector<Candidate>& cands) {
         }
     }
 
-    // Kahn's algorithm. Use a stable queue (vector) so equal-indegree nodes
-    // preserve discovery order.
+    // Kahn's algorithm. Stable queue (vector scan) preserves discovery order
+    // among equal-indegree nodes.
     std::vector<Candidate> out;
     out.reserve(cands.size());
     std::vector<bool> emitted(cands.size(), false);
@@ -429,12 +364,13 @@ bool TopoSort(std::vector<Candidate>& cands) {
     // Any candidate not emitted is part of a cycle (or depends on one).
     for (size_t i = 0; i < cands.size(); ++i) {
         if (emitted[i]) continue;
-        if (!cands[i].valid) continue;  // already-failed plugins don't count as cycle members
-        log::ErrorF("Plugin '%s' is part of a dependency cycle — skipping", cands[i].vdataCopy.name);
+        if (!cands[i].valid) continue;  // already-failed; don't count as cycle member
+        log::ErrorF("Plugin '%s' is part of a dependency cycle — skipping",
+                    cands[i].manifest.name.c_str());
     }
 
     cands = std::move(out);
-    return true;  // we don't fail the whole load over cycles; we skip cycle members
+    return true;  // cycles don't fail the whole load; we skip cycle members
 }
 
 }  // namespace
@@ -466,112 +402,104 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         return;
     }
 
-    // Phase 1 — discover all candidate DLLs by walking the plugin folder
-    // tree recursively. A folder containing kcdx.toml is a plugin folder;
-    // we look for a sibling DLL in that folder root (subfolders are the
-    // plugin's private space — sub-DLLs, data, configs). TOML-only plugins
-    // (no DLL) are silently skipped here; they're picked up by config.cpp.
+    // Phase 1 — manifests already populated by config::LoadAllConfigs from
+    // each plugin's kcdx.toml [plugin] table. Build a Candidate list from
+    // them, applying validation (game-version compat, kcdx_min_version).
     std::vector<Candidate> cands;
-    WalkForPluginFolders(root, /*depth=*/0,
-        [&](const fs::path& folderPath, const fs::path& dllPath) {
-            if (dllPath.empty()) return;  // TOML-only plugin
+    cands.reserve(g_manifests.size());
+    for (const auto& m : g_manifests) {
+        Candidate c;
+        c.manifest = m;
+        c.valid    = ValidateManifest(m, c.matchedGameVersion);
+        cands.push_back(std::move(c));
+    }
 
-            Candidate c;
-            c.folderPath = folderPath;
-            c.dllPath = dllPath;
-            if (!PeekVersionData(dllPath, c.vdataCopy, c.module)) return;
-            c.valid = ValidateVersionData(c.vdataCopy, dllPath.string());
-            if (!c.valid) {
-                // Invalid plugin — unload the DLL. PeekVersionData succeeded
-                // (so c.module is live), but validation rejected it. We loaded
-                // the DLL to read the metadata; we don't keep it around.
-                FreeLibrary(c.module);
-                c.module = nullptr;
-            }
-            cands.push_back(std::move(c));
-        });
+    log::InfoF("Plugin DLL loader: %zu manifest(s) discovered from kcdx.toml files",
+               g_manifests.size());
+    if (cands.empty()) {
+        // No manifests at all — but config-only kcdx.toml files (no [plugin]
+        // section) may still have applied patches. That's fine; nothing to
+        // do here. Fire the lifecycle messages so any engine subsystem that
+        // gates on PostLoad still gets the signal.
+        log::Info("Firing kcdxMessage_PostLoad...");
+        messaging::FireEngineMessage(kcdxMessage_PostLoad);
+        log::Info("Firing kcdxMessage_PostPostLoad...");
+        messaging::FireEngineMessage(kcdxMessage_PostPostLoad);
+        return;
+    }
 
-    log::InfoF("Plugin DLL loader: discovered %zu candidate(s)", cands.size());
-    if (cands.empty()) return;
-
-    // Phase 2 — check name uniqueness. Two plugins with the same stable
-    // name is a load-time error; both abort.
+    // Phase 2 — name uniqueness. Two plugins with the same stable name is
+    // a load-time error; both abort.
     {
         std::unordered_map<std::string, size_t> firstSeen;
         for (size_t i = 0; i < cands.size(); ++i) {
             if (!cands[i].valid) continue;
-            std::string nm = cands[i].vdataCopy.name;
+            const std::string& nm = cands[i].manifest.name;
             auto [it, inserted] = firstSeen.try_emplace(nm, i);
             if (!inserted) {
-                log::ErrorF("Two plugins both export name '%s' (%s and %s) — "
+                log::ErrorF("Two plugins both declare name '%s' (%s and %s) — "
                             "aborting both.",
                             nm.c_str(),
-                            cands[it->second].dllPath.string().c_str(),
-                            cands[i].dllPath.string().c_str());
+                            cands[it->second].manifest.tomlPath.string().c_str(),
+                            cands[i].manifest.tomlPath.string().c_str());
                 cands[it->second].valid = false;
-                cands[i].valid = false;
+                cands[i].valid          = false;
             }
         }
     }
 
     // Phase 3 — topo-sort by dependencies. Drops cycle members and any
-    // plugin missing a required dep. The surviving cands are in load order.
+    // plugin missing a required dep. Surviving cands are in load order.
     TopoSort(cands);
-
-    // Free any candidate that was rejected by uniqueness check or topo-sort
-    // (marked valid=false but module still live). Done in one sweep here so
-    // every rejection path doesn't need to remember to FreeLibrary.
-    for (Candidate& c : cands) {
-        if (!c.valid && c.module) {
-            FreeLibrary(c.module);
-            c.module = nullptr;
-        }
-    }
 
     if (cands.empty()) {
         log::Info("Plugin DLL loader: no plugins survived validation");
         return;
     }
 
-    // Phase 4 — promote survivors to LoadedPlugin and assign handles. The
-    // DLLs are already loaded (PeekVersionData kept them mapped) so this is
-    // just bookkeeping + GetProcAddress for the entry points.
+    // Phase 4 — resolve DLL entrypoints + LoadLibraryW. For TOML-only
+    // plugins (no DLL), still create a LoadedPlugin record so they appear
+    // in g_plugins with a handle (for GetPluginHandle / GetPluginInfo
+    // lookups from other plugins). They just have no module + no entry fns.
     g_plugins.reserve(cands.size());
     for (Candidate& c : cands) {
-        if (!c.module) {
-            // Validation rejected it; FreeLibrary already happened upstream.
-            continue;
-        }
-
         LoadedPlugin lp;
-        lp.filePath = c.dllPath.string();
-        lp.folderName = c.folderPath.filename().string();
-        lp.folderPath = c.folderPath.wstring();
-        lp.module = c.module;
-        // Re-resolve the export so the pointer references the live DLL's
-        // static address (stable for the lifetime of the process).
-        lp.versionData = reinterpret_cast<const kcdxPluginVersionData*>(
-            GetProcAddress(c.module, "kcdxPluginVersionData"));
-        if (!lp.versionData) {
-            log::ErrorF("Plugin '%s': kcdxPluginVersionData export disappeared "
-                        "between discovery and promote — skipping",
-                        c.vdataCopy.name);
-            FreeLibrary(c.module);
-            continue;
+        lp.manifest   = c.manifest;
+        lp.folderName = c.manifest.folderPath.filename().string();
+        lp.folderPath = c.manifest.folderPath.wstring();
+        lp.handle     = static_cast<kcdxPluginHandle>(g_plugins.size());
+
+        fs::path dllPath = ResolveDllEntrypoint(c.manifest);
+        if (!dllPath.empty()) {
+            std::wstring wpath = dllPath.wstring();
+            HMODULE mod = LoadLibraryW(wpath.c_str());
+            if (!mod) {
+                log::ErrorF("Plugin '%s': LoadLibrary failed for %s (err=%lu) — "
+                            "registering as metadata-only plugin",
+                            c.manifest.name.c_str(),
+                            dllPath.string().c_str(), GetLastError());
+            } else {
+                lp.module     = mod;
+                lp.filePath   = dllPath.string();
+                lp.preloadFn  = reinterpret_cast<kcdxPlugin_Preload_t>(
+                                    GetProcAddress(mod, "kcdxPlugin_Preload"));
+                lp.loadFn     = reinterpret_cast<kcdxPlugin_Load_t>(
+                                    GetProcAddress(mod, "kcdxPlugin_Load"));
+                if (!lp.loadFn && !lp.preloadFn) {
+                    log::WarnF("Plugin '%s' DLL has neither kcdxPlugin_Load nor "
+                               "kcdxPlugin_Preload exports — DLL is dead weight. "
+                               "Did you forget extern \"C\" __declspec(dllexport)?",
+                               c.manifest.name.c_str());
+                }
+            }
         }
-        lp.preloadFn = reinterpret_cast<kcdxPlugin_Preload_t>(
-            GetProcAddress(c.module, "kcdxPlugin_Preload"));
-        lp.loadFn = reinterpret_cast<kcdxPlugin_Load_t>(
-            GetProcAddress(c.module, "kcdxPlugin_Load"));
+        // else: TOML-only plugin (no DLL). Valid; just no entry points.
 
-        // Handle assignment. Sequential from 0.
-        lp.handle = static_cast<kcdxPluginHandle>(g_plugins.size());
-
-        log::InfoF("Loaded plugin '%s' (version 0x%08X) from %s [handle=%u]",
-                   lp.versionData->name, lp.versionData->pluginVersion,
-                   lp.filePath.c_str(), lp.handle);
+        log::InfoF("Loaded plugin '%s' v0x%08X [handle=%u]%s%s",
+                   c.manifest.name.c_str(), c.manifest.version, lp.handle,
+                   lp.filePath.empty() ? " (TOML-only)" : " from ",
+                   lp.filePath.empty() ? "" : lp.filePath.c_str());
         g_plugins.push_back(std::move(lp));
-        c.module = nullptr;  // ownership transferred to LoadedPlugin
     }
 
     if (g_plugins.empty()) return;
@@ -585,29 +513,23 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
             ok = p.preloadFn(api);
         } catch (...) {
             log::ErrorF("Plugin '%s' kcdxPlugin_Preload threw an exception",
-                        p.versionData->name);
+                        p.manifest.name.c_str());
             ok = false;
         }
         if (!ok) {
             log::ErrorF("Plugin '%s' kcdxPlugin_Preload returned false",
-                        p.versionData->name);
-            // We continue running subsequent plugins; a failed Preload is logged
-            // but doesn't propagate.
+                        p.manifest.name.c_str());
         } else {
-            log::InfoF("Plugin '%s' kcdxPlugin_Preload OK", p.versionData->name);
+            log::InfoF("Plugin '%s' kcdxPlugin_Preload OK", p.manifest.name.c_str());
         }
     }
 
     // Phase 6 — Load wave.
     for (auto& p : g_plugins) {
         if (!p.loadFn) {
-            // No Load function — that's OK if the plugin is purely declarative
-            // (versionData.inlinePatchesToml non-null). Otherwise log a warning.
-            if (!p.versionData->inlinePatchesToml && !p.preloadFn) {
-                log::WarnF("Plugin '%s' has no kcdxPlugin_Load, no kcdxPlugin_Preload, "
-                           "and no inlinePatchesToml — nothing to do.",
-                           p.versionData->name);
-            }
+            // No Load function. That's OK for TOML-only plugins (purely
+            // declarative — patches/hooks already applied via config.cpp's
+            // entry processors). Note as "TOML-only" rather than warning.
             p.loaded = true;
             continue;
         }
@@ -616,14 +538,14 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
             ok = p.loadFn(api);
         } catch (...) {
             log::ErrorF("Plugin '%s' kcdxPlugin_Load threw an exception",
-                        p.versionData->name);
+                        p.manifest.name.c_str());
             ok = false;
         }
         if (!ok) {
             log::ErrorF("Plugin '%s' kcdxPlugin_Load returned false",
-                        p.versionData->name);
+                        p.manifest.name.c_str());
         } else {
-            log::InfoF("Plugin '%s' kcdxPlugin_Load OK", p.versionData->name);
+            log::InfoF("Plugin '%s' kcdxPlugin_Load OK", p.manifest.name.c_str());
         }
         p.loaded = ok;
     }
@@ -647,9 +569,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
 const LoadedPlugin* FindByName(const char* name) {
     if (!name) return nullptr;
     for (const auto& p : g_plugins) {
-        if (p.versionData && std::strcmp(p.versionData->name, name) == 0) {
-            return &p;
-        }
+        if (p.manifest.name == name) return &p;
     }
     return nullptr;
 }

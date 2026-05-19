@@ -2,10 +2,15 @@
 //
 // SKSE-shaped extender interface for Kingdom Come: Deliverance II.
 // Plugin authors:
-//   1. #include this header
-//   2. Export `kcdxPluginVersionData` as a data symbol describing your plugin
-//   3. Export `kcdxPlugin_Load` as a function the engine calls at load time
-//   4. Optionally export `kcdxPlugin_Preload` for early-phase setup
+//   1. Ship a `kcdx.toml` in your plugin folder. The [plugin] table
+//      carries identity, version, compatibility, and dependencies.
+//      Required for every plugin (C++ or pure-TOML).
+//   2. (C++ plugins only) #include this header.
+//   3. (C++ plugins only) Export `kcdxPlugin_Load` as a function the
+//      engine calls at load time, after every plugin's metadata has
+//      been parsed and the dependency graph topologically sorted.
+//   4. (C++ plugins only) Optionally export `kcdxPlugin_Preload` for
+//      early-phase setup.
 //
 // See ../docs/design.md in the kcdx repo for the full design spec, schema,
 // and worked examples.
@@ -32,74 +37,77 @@ typedef uint32_t kcdxPluginHandle;
 #define kcdxInvalidPluginHandle ((kcdxPluginHandle)0xFFFFFFFFu)
 
 // -----------------------------------------------------------------------------
-// kcdxPluginVersionData — the exported metadata block
+// Plugin metadata — lives in kcdx.toml, NOT in the DLL
 // -----------------------------------------------------------------------------
 //
-// Every C++ plugin DLL must export an instance of this struct as a data
-// symbol with the literal name `kcdxPluginVersionData`. The engine reads it
-// at discovery time (before any plugin code runs) to validate compatibility,
-// check dependencies, and decide load order.
+// Every plugin (C++ DLL or pure-TOML) declares its identity in a kcdx.toml
+// file at its plugin folder root. The engine reads this BEFORE loading any
+// DLL — name, version, dependencies, and compatibility are decided up front
+// so the dependency topo-sort runs against parsed metadata, not against
+// late-bound symbols.
+//
+// Schema for kcdx.toml [plugin]:
+//
+//     [plugin]
+//     name              = "author.mod-name"   # required. stable ID, unique across loaded plugins.
+//     display_name      = "My Mod"            # optional; for UI. defaults to `name`.
+//     author            = "Author Name"
+//     version           = "1.0.0"             # semver. parsed to packed integer 0xMMmmpp00.
+//     description       = "..."
+//     url               = "https://..."
+//     support_email     = "..."
+//
+//     kcdx_min_version  = "0.1.0"             # engine refuses to load if kcdx is older.
+//                                              # default 0 (= "any kcdx").
+//
+//     # KCD2 builds this plugin has been tested against. Encoded by
+//     # kcdxMakeGameVersion(major, minor, build) — see end of this header.
+//     # Default empty == "any version", VALID ONLY if version_independent = true.
+//     compatible_game_versions = [
+//         "1.5.1164953",
+//     ]
+//
+//     # Set true if your plugin uses kcdx::ResolveAddress (Address Library)
+//     # and doesn't pin to a specific game build. Required if
+//     # compatible_game_versions is empty.
+//     version_independent = false
+//
+//     # Dependencies on other plugins. Loader topo-sorts these.
+//     [[plugin.dependencies]]
+//     name        = "other-author.lib"
+//     min_version = "0.3.0"
+//     optional    = false        # if true, load this plugin even if dep missing
+//
+//     [[plugin.dependencies]]
+//     name        = "yet.another"
+//     min_version = "1.0.0"
+//     optional    = true
+//
+// Schema for kcdx.toml [entrypoints] (all optional):
+//
+//     [entrypoints]
+//     dll = "bin/my-plugin.dll"   # relative to plugin folder. If omitted,
+//                                  # kcdx auto-discovers: exactly one *.dll
+//                                  # in the plugin folder root. Multi-DLL
+//                                  # plugins MUST set this explicitly.
 
-// Bitfield flags for kcdxPluginVersionData::versionIndependence.
-enum kcdxVersionIndependence {
-    // Plugin uses kcdx::ResolveAddress() for runtime offset lookups; skip the
-    // strict compatibleGameVersions check. Required if compatibleGameVersions
-    // is empty.
-    kcdxVersionIndependent_AddressLibrary = 1u << 0,
-
-    // Reserved for future use. Set zero.
-    kcdxVersionIndependent_StructsPostAE = 1u << 1,
-};
-
-// One entry in a plugin's optional dependency array.
-typedef struct kcdxPluginDependency {
-    const char* name;          // Other plugin's stable name (their kcdxPluginVersionData.name)
-    uint32_t    minVersion;    // Their pluginVersion must be >= this
-    uint32_t    flags;         // Bit 0: optional (load anyway if missing)
-} kcdxPluginDependency;
-
-#define kcdxDependencyFlag_Optional (1u << 0)
-
-// Current data block version. Bump when adding fields to kcdxPluginVersionData.
-#define kcdxPluginVersionData_CurrentVersion 1u
-
-typedef struct kcdxPluginVersionData {
-    uint32_t dataVersion;              // Must equal kcdxPluginVersionData_CurrentVersion
-    uint32_t pluginVersion;            // Your plugin's own integer version
-
-    char     name[256];                // STABLE PLUGIN ID. Must be unique across all loaded
-                                       // plugins. Used as messaging sender identity,
-                                       // serialization record key, dependency lookup target.
-                                       // Convention: "author.mod-name". NOT the filename.
-
-    char     author[256];
-    char     supportEmail[252];
-
-    uint32_t versionIndependenceEx;    // Reserved for forward compat. Set 0.
-    uint32_t versionIndependence;      // Bitfield of kcdxVersionIndependence flags.
-
-    uint32_t compatibleGameVersions[16];  // KCD2 build numbers this plugin tested against.
-                                          // Encoded as packed BCD-ish (e.g. 0x010505BC for
-                                          // 1.5.1164953 — see notes in design.md).
-                                          // Zero-terminated array. Empty means
-                                          // "any version" — valid only if
-                                          // versionIndependence has AddressLibrary set.
-
-    uint32_t kcdxVersionRequired;      // Minimum kcdx engine version (e.g. 0x00010000 = 0.1.0)
-
-    uint32_t reserved[8];              // Pad for future fields. Set zero.
-
-    // Optional: inline declarative patches. If non-null, parsed by the loader
-    // BEFORE kcdxPlugin_Load fires. Lets a C++ plugin ship its byte rewrites
-    // alongside its DLL without needing a sidecar kcdx.toml. Same schema as
-    // a kcdx.toml file (just the `[[patch]]` entries).
-    const char* inlinePatchesToml;     // Nullable. Null-terminated.
-
-    // Optional: dependencies. Array of {name, minVersion, flags} terminated by
-    // an entry with name == nullptr. Loader topologically sorts the plugin
-    // load order before issuing kcdxPlugin_Load calls.
-    const kcdxPluginDependency* dependencies;  // Nullable.
-} kcdxPluginVersionData;
+// Lightweight read-only snapshot of a plugin's identity. Returned by
+// kcdxInterface::GetPluginInfo. All char* fields are owned by the engine
+// and live for the process lifetime. Empty string (not null) for fields
+// the plugin did not declare.
+typedef struct kcdxPluginInfo {
+    const char* name;              // Stable plugin ID. Never null.
+    const char* displayName;       // UI name. Never null; falls back to `name` if not declared.
+    const char* author;
+    const char* description;
+    const char* url;
+    const char* supportEmail;
+    uint32_t    version;           // Packed semver (0xMMmmpp00)
+    uint32_t    kcdxMinVersion;
+    uint32_t    runtimeCompatibleGameVersion;  // The matched entry from compatible_game_versions,
+                                                // or 0 if version_independent
+    int         versionIndependent;            // 0/1
+} kcdxPluginInfo;
 
 // -----------------------------------------------------------------------------
 // kcdxInterface — the root API a plugin receives at load
@@ -143,7 +151,7 @@ typedef struct kcdxInterface {
     // Look up another plugin by stable name. Returns null if not loaded.
     // The returned pointer is owned by the engine and remains valid for the
     // lifetime of the process.
-    const kcdxPluginVersionData* (*GetPluginInfo)(const char* name);
+    const kcdxPluginInfo* (*GetPluginInfo)(const char* name);
 
     // Get a plugin's handle by stable name. Returns kcdxInvalidPluginHandle on miss.
     kcdxPluginHandle (*GetPluginHandle)(const char* name);
@@ -540,9 +548,9 @@ typedef struct kcdxScriptingInterface {
 // Plugin entry points (you export these from your DLL)
 // -----------------------------------------------------------------------------
 //
-// Both functions are OPTIONAL but at least one must be present, OR your
-// kcdxPluginVersionData.inlinePatchesToml must be non-null (a pure
-// declarative-patches plugin).
+// Both functions are OPTIONAL but at least one must be present in a C++
+// plugin's DLL. Pure-TOML plugins (no DLL) don't export anything; they're
+// pure declarative and apply via kcdx's patch/hook engines.
 //
 // kcdxPlugin_Preload runs in the "preload wave" before any plugin's Load.
 // Use it only for registering symbols or state that another plugin's Load
@@ -551,6 +559,11 @@ typedef struct kcdxScriptingInterface {
 // kcdxPlugin_Load runs in the load wave, after every Preload has returned.
 // At this point all other plugins are visible (GetPluginInfo works for any
 // loaded plugin). Register listeners, install hooks, call into peers here.
+//
+// Plugin self-identity: at load time, your DLL doesn't yet know its own
+// kcdxPluginHandle. Call `api->GetPluginHandle("your.stable.name")` to
+// resolve it, where the name string must match what you declared in your
+// kcdx.toml [plugin] name field. Cache the handle for later use.
 
 // Return true on success. A false return is logged but the DLL is not
 // unloaded (Windows reclaims at process exit; kcdx, like SKSE, does not
@@ -559,8 +572,9 @@ typedef bool (*kcdxPlugin_Preload_t)(const kcdxInterface* api);
 typedef bool (*kcdxPlugin_Load_t)   (const kcdxInterface* api);
 
 // -----------------------------------------------------------------------------
-// Helper: pack a KCD2 build number into the encoded form
-// kcdxPluginVersionData.compatibleGameVersions expects.
+// Helper: pack a KCD2 build number into the encoded form used by
+// kcdxPluginInfo.runtimeCompatibleGameVersion and kcdxInterface::
+// runtimeGameVersion.
 // -----------------------------------------------------------------------------
 //
 // Encoding: (major << 24) | (minor << 16) | (build_lo16).
@@ -569,6 +583,9 @@ typedef bool (*kcdxPlugin_Load_t)   (const kcdxInterface* api);
 // The build_lo16 truncation is intentional — KCD2 builds use the lower 16 bits
 // of the patch revision as the disambiguator and the upper bits never matter
 // for compatibility checks.
+//
+// kcdx.toml authors write the human-readable string ("1.5.1164953") in their
+// [plugin] compatible_game_versions array and the engine parses it.
 #define kcdxMakeGameVersion(major, minor, build) \
     ((uint32_t)((((major) & 0xFFu) << 24) | (((minor) & 0xFFu) << 16) | ((build) & 0xFFFFu)))
 

@@ -47,9 +47,30 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
     }
 }
 
-const kcdxPluginVersionData* Thunk_GetPluginInfo(const char* name) {
-    if (const auto* p = FindByName(name)) return p->versionData;
-    return nullptr;
+// Lazy-build a kcdxPluginInfo snapshot for a LoadedPlugin. The returned
+// pointer references the plugin's own manifest fields (stable for the
+// process lifetime), so it remains valid until kcdx is unloaded.
+const kcdxPluginInfo* Thunk_GetPluginInfo(const char* name) {
+    const LoadedPlugin* p = FindByName(name);
+    if (!p) return nullptr;
+    if (!p->infoCache) {
+        auto info = std::make_unique<kcdxPluginInfo>();
+        info->name                         = p->manifest.name.c_str();
+        info->displayName                  = p->manifest.displayName.c_str();
+        info->author                       = p->manifest.author.c_str();
+        info->description                  = p->manifest.description.c_str();
+        info->url                          = p->manifest.url.c_str();
+        info->supportEmail                 = p->manifest.supportEmail.c_str();
+        info->version                      = p->manifest.version;
+        info->kcdxMinVersion               = p->manifest.kcdxMinVersion;
+        info->runtimeCompatibleGameVersion = 0;
+        // The matched game version isn't stored on LoadedPlugin currently;
+        // it lives in the Candidate during discovery and gets discarded.
+        // If we find that consumers need it, we can plumb it through.
+        info->versionIndependent           = p->manifest.versionIndependent ? 1 : 0;
+        p->infoCache = std::move(info);
+    }
+    return p->infoCache.get();
 }
 
 kcdxPluginHandle Thunk_GetPluginHandle(const char* name) {

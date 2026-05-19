@@ -1,13 +1,27 @@
-# hello-plugin — minimal kcdx plugin marker.
+# hello-plugin — kcdx's "hello world" example.
 #
-# kcdx requires a kcdx.toml in every plugin folder (the marker that
-# tells the engine "this folder is a plugin"). Even for DLL-only
-# plugins like this one, the TOML must exist; it just doesn't need
-# to declare any [[patch]] / [[hook]] / etc. entries.
+# Shows the minimum C++ plugin DLL: register a Lua-callable C function,
+# subscribe to engine messages, queue a main-thread task, exercise the
+# trampoline pools.
 #
-# The DLL (hello-plugin.dll) carries the plugin's metadata in its
-# exported kcdxPluginVersionData block. A future kcdx revision will
-# move that metadata into this TOML file's [plugin] section; until
-# then, the DLL's version data is authoritative for C++ plugins.
+# Plugin metadata lives here (in kcdx.toml [plugin]) — NOT in the DLL.
+# The DLL just exports kcdxPlugin_Load. See ../../docs/dev-mode.md and
+# the new Shape C schema in include/kcdx/Interfaces.h for the full
+# kcdx.toml [plugin] / [entrypoints] schema.
 
-# (No entries — the DLL provides everything.)
+[plugin]
+name                = "violetanvil.hello-plugin"
+display_name        = "Hello Plugin"
+author              = "VioletAnvil"
+description         = "Minimal kcdx plugin example"
+url                 = "https://github.com/violetanvil/kcdx"
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true  # uses kcdx::ResolveAddress, not pinned to a game build
+
+# DLL auto-discovered: there's exactly one *.dll (hello-plugin.dll) in this
+# folder root, so kcdx picks it up automatically. To override (e.g. if you
+# add a bundled library), uncomment:
+#
+# [entrypoints]
+# dll = "hello-plugin.dll"

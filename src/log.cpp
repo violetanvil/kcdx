@@ -215,8 +215,8 @@ void WritePlugin(uint32_t handle, const char* level, const std::string& msg) {
     // resolution fails we still write a sensible fallback).
     const char* pluginName = nullptr;
     for (const auto& p : plugins::g_plugins) {
-        if (p.handle == handle && p.versionData) {
-            pluginName = p.versionData->name;
+        if (p.handle == handle && !p.manifest.name.empty()) {
+            pluginName = p.manifest.name.c_str();
             break;
         }
     }

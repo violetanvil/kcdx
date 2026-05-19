@@ -26,21 +26,8 @@
 // kcdxLuaApi). All Lua C API calls go through the kcdxLuaApi*
 // function-pointer struct.
 
-extern "C" __declspec(dllexport)
-kcdxPluginVersionData kcdxPluginVersionData = {
-    /*dataVersion=*/        kcdxPluginVersionData_CurrentVersion,
-    /*pluginVersion=*/      0x00010000u,                  // 0.1.0
-    /*name=*/               "violetanvil.hello-plugin",
-    /*author=*/             "violetanvil",
-    /*supportEmail=*/       "noreply@example.com",
-    /*versionIndependenceEx=*/ 0,
-    /*versionIndependence=*/ kcdxVersionIndependent_AddressLibrary,
-    /*compatibleGameVersions=*/ { 0 },                    // any version (relying on AddressLibrary)
-    /*kcdxVersionRequired=*/ 0x00010000u,
-    /*reserved=*/           { 0 },
-    /*inlinePatchesToml=*/  nullptr,
-    /*dependencies=*/       nullptr,
-};
+// kcdxPluginVersionData no longer exported — plugin metadata moved to
+// kcdx.toml's [plugin] section in this plugin folder. See ./kcdx.toml.
 
 // Static references to the engine interface + our handle, captured at Load
 // time. Used by the engine-message callback and the task callback, both of

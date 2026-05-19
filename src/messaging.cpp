@@ -32,8 +32,8 @@ std::vector<Listener> g_listeners;
 const char* HandleToName(kcdxPluginHandle h) {
     if (h == kcdxInvalidPluginHandle) return nullptr;
     for (const auto& p : plugins::g_plugins) {
-        if (p.handle == h && p.versionData) {
-            return p.versionData->name;
+        if (p.handle == h && !p.manifest.name.empty()) {
+            return p.manifest.name.c_str();
         }
     }
     return nullptr;

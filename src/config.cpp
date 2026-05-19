@@ -16,6 +16,7 @@
 #include "dev.h"
 #include "log.h"
 #include "patch_engine.h"
+#include "plugin_loader.h"
 #include "trampoline_engine.h"
 
 namespace fs = std::filesystem;
@@ -53,6 +54,164 @@ bool OptBool(const toml::table& tbl, std::string_view key, bool fallback) {
         return *v->value<bool>();
     }
     return fallback;
+}
+
+// Parse a semver string like "1.2.3" into the packed format kcdx uses
+// internally: (major << 24) | (minor << 16) | (patch << 8). Trailing field
+// is reserved (currently always 0). Missing fields default to 0.
+//
+// Returns true on success. On parse error, leaves out unchanged and returns
+// false with err populated.
+bool ParseSemver(const std::string& s, uint32_t& out, std::string& err) {
+    if (s.empty()) {
+        out = 0;
+        return true;  // empty == 0 == "any version"
+    }
+    uint32_t major = 0, minor = 0, patch = 0;
+    const char* p = s.c_str();
+    char* endp = nullptr;
+    auto parse_field = [&](uint32_t& field, const char* labelForErr) -> bool {
+        unsigned long v = std::strtoul(p, &endp, 10);
+        if (endp == p) {
+            err = std::string("expected ") + labelForErr + " number near '" + p + "'";
+            return false;
+        }
+        if (v > 0xFFu) {
+            err = std::string(labelForErr) + " number out of range (0..255)";
+            return false;
+        }
+        field = static_cast<uint32_t>(v);
+        p = endp;
+        return true;
+    };
+    if (!parse_field(major, "major")) return false;
+    if (*p == '.') { ++p; if (!parse_field(minor, "minor")) return false; }
+    if (*p == '.') { ++p; if (!parse_field(patch, "patch")) return false; }
+    // Allow trailing junk (pre-release suffixes like "-rc1") by ignoring.
+    out = (major << 24) | (minor << 16) | (patch << 8);
+    return true;
+}
+
+// Parse a KCD2 game-version string ("1.5.1164953") into the kcdxMakeGameVersion
+// packed form (major<<24 | minor<<16 | (build & 0xFFFF)). Returns 0 + err on
+// parse failure.
+bool ParseGameVersion(const std::string& s, uint32_t& out, std::string& err) {
+    uint32_t major = 0, minor = 0, build = 0;
+    const char* p = s.c_str();
+    char* endp = nullptr;
+    auto parse_field = [&](uint32_t& field, const char* labelForErr) -> bool {
+        unsigned long v = std::strtoul(p, &endp, 10);
+        if (endp == p) {
+            err = std::string("expected ") + labelForErr + " number near '" + p + "'";
+            return false;
+        }
+        field = static_cast<uint32_t>(v);
+        p = endp;
+        return true;
+    };
+    if (!parse_field(major, "major")) return false;
+    if (*p != '.') { err = "expected '.' after major"; return false; }
+    ++p;
+    if (!parse_field(minor, "minor")) return false;
+    if (*p != '.') { err = "expected '.' after minor"; return false; }
+    ++p;
+    if (!parse_field(build, "build")) return false;
+    if (major > 0xFFu || minor > 0xFFu) {
+        err = "major/minor out of range (0..255)";
+        return false;
+    }
+    out = ((major & 0xFFu) << 24) | ((minor & 0xFFu) << 16) | (build & 0xFFFFu);
+    return true;
+}
+
+// Parse the [plugin] + [entrypoints] sections of a kcdx.toml into a
+// PluginManifest. Returns true on success. The 'name' field is the only
+// required key; if [plugin] is absent or has no 'name', returns false (the
+// plugin is treated as a config-only kcdx.toml with no identity — patches
+// and hooks in the same file still apply, but the plugin doesn't appear in
+// the loaded-plugins list or participate in dependency topo-sort).
+bool ParsePluginManifest(const toml::table& doc,
+                         const fs::path& tomlPath,
+                         kcdx::plugins::PluginManifest& out,
+                         std::string& err) {
+    auto* pluginTbl = doc.get("plugin");
+    if (!pluginTbl || !pluginTbl->is_table()) {
+        err = "no [plugin] table";
+        return false;
+    }
+    const auto& t = *pluginTbl->as_table();
+
+    out.name = OptString(t, "name");
+    if (out.name.empty()) {
+        err = "[plugin] missing required field 'name'";
+        return false;
+    }
+    out.displayName  = OptString(t, "display_name", out.name);
+    out.author       = OptString(t, "author");
+    out.description  = OptString(t, "description");
+    out.url          = OptString(t, "url");
+    out.supportEmail = OptString(t, "support_email");
+
+    std::string verStr = OptString(t, "version");
+    std::string semErr;
+    if (!ParseSemver(verStr, out.version, semErr)) {
+        err = "[plugin] version: " + semErr;
+        return false;
+    }
+
+    std::string kcdxMinStr = OptString(t, "kcdx_min_version");
+    if (!ParseSemver(kcdxMinStr, out.kcdxMinVersion, semErr)) {
+        err = "[plugin] kcdx_min_version: " + semErr;
+        return false;
+    }
+
+    out.versionIndependent = OptBool(t, "version_independent", false);
+
+    // compatible_game_versions = [ "1.5.1164953", ... ]
+    if (auto* arr = t.get("compatible_game_versions"); arr && arr->is_array()) {
+        for (const auto& elem : *arr->as_array()) {
+            if (!elem.is_string()) continue;
+            std::string s = std::string(*elem.value<std::string>());
+            uint32_t v = 0;
+            std::string gvErr;
+            if (!ParseGameVersion(s, v, gvErr)) {
+                err = "[plugin] compatible_game_versions[\"" + s + "\"]: " + gvErr;
+                return false;
+            }
+            out.compatibleGameVersions.push_back(v);
+        }
+    }
+
+    // [[plugin.dependencies]] array
+    if (auto* arr = t.get("dependencies"); arr && arr->is_array()) {
+        for (const auto& elem : *arr->as_array()) {
+            if (!elem.is_table()) continue;
+            const auto& dt = *elem.as_table();
+            kcdx::plugins::ManifestDependency dep;
+            dep.name = OptString(dt, "name");
+            if (dep.name.empty()) {
+                err = "[[plugin.dependencies]] entry missing 'name'";
+                return false;
+            }
+            std::string minStr = OptString(dt, "min_version");
+            if (!ParseSemver(minStr, dep.minVersion, semErr)) {
+                err = "[[plugin.dependencies]] '" + dep.name + "' min_version: " + semErr;
+                return false;
+            }
+            dep.optional = OptBool(dt, "optional", false);
+            out.dependencies.push_back(std::move(dep));
+        }
+    }
+
+    // [entrypoints] section
+    if (auto* entryTbl = doc.get("entrypoints"); entryTbl && entryTbl->is_table()) {
+        const auto& et = *entryTbl->as_table();
+        out.dllEntrypointRel = OptString(et, "dll");
+    }
+
+    out.tomlPath   = tomlPath;
+    out.folderPath = tomlPath.parent_path();
+    return true;
 }
 
 bool ParseOnePatch(const toml::table& t,
@@ -411,6 +570,28 @@ void LoadOneFile(const fs::path& path) {
                 kcdx::dev::SetEnabled(true);
                 log::InfoF("dev_mode enabled by %s (cap=%d MB, max_files=%d)",
                            fileLabel.c_str(), cap_mb, max_files);
+            }
+        }
+
+        // [plugin] + [entrypoints] sections — plugin identity. Optional;
+        // a kcdx.toml with only [[patch]] entries and no [plugin] table is
+        // still valid (the patches apply, but the file doesn't register
+        // a plugin in g_plugins / g_manifests).
+        {
+            kcdx::plugins::PluginManifest manifest;
+            std::string mErr;
+            if (ParsePluginManifest(doc, path, manifest, mErr)) {
+                log::InfoF("Discovered plugin '%s' v0x%08X from %s",
+                           manifest.name.c_str(), manifest.version,
+                           fileLabel.c_str());
+                kcdx::plugins::g_manifests.push_back(std::move(manifest));
+            } else {
+                // "no [plugin] table" is fine — file is config-only.
+                // Other errors warrant a log line.
+                if (mErr != "no [plugin] table") {
+                    log::WarnF("%s: %s (plugin not registered)",
+                               fileLabel.c_str(), mErr.c_str());
+                }
             }
         }
 
