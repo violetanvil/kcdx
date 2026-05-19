@@ -28,21 +28,88 @@ lua_State* g_lua_state = nullptr;
 // installer (or, eventually, Lua-side memory.dynamic_hook userdata).
 std::unordered_map<uintptr_t, kcdx::rom::runtime_func_t*> g_target_to_hook;
 
-// Per-target Lua-registry refs (from luaL_ref). A ref is an `int` that
-// can be passed to `lua_rawgeti(L, LUA_REGISTRYINDEX, ref)` to push the
-// stored function back onto the stack. luaL_unref releases it.
-std::unordered_map<uintptr_t, std::vector<int>> g_pre_callback_refs;
-std::unordered_map<uintptr_t, std::vector<int>> g_post_callback_refs;
-std::unordered_map<uintptr_t, std::vector<int>> g_mid_callback_refs;
+// A callback is either a baked Lua-registry ref OR a dotted name we
+// resolve lazily at dispatch. Phase 5c-style "register_*_from_top"
+// produces refs; Phase 5f TOML "lua_callback = 'Foo.Bar'" produces
+// names. Both fire from the same dispatcher loop.
+struct CallbackEntry {
+    int         ref  = LUA_NOREF;   // -1 when name-only
+    std::string name;               // empty when ref-only
+};
 
-// Pop the value at the top of `L`, store it via luaL_ref, append the
-// resulting ref to the per-target vector. Stack effect: -1.
-void StoreTopRef(lua_State*                      L,
+std::unordered_map<uintptr_t, std::vector<CallbackEntry>> g_pre_callbacks;
+std::unordered_map<uintptr_t, std::vector<CallbackEntry>> g_post_callbacks;
+std::unordered_map<uintptr_t, std::vector<CallbackEntry>> g_mid_callbacks;
+
+// Pop the value at the top of `L`, store it via luaL_ref, append a
+// ref-only CallbackEntry to the per-target vector. Stack effect: -1.
+void StoreTopRef(lua_State*                                                L,
                  std::unordered_map<uintptr_t,
-                                    std::vector<int>>& tbl,
-                 uintptr_t                       target_func_ptr) {
+                                    std::vector<CallbackEntry>>&            tbl,
+                 uintptr_t                                                  target_func_ptr) {
     int ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    tbl[target_func_ptr].push_back(ref);
+    tbl[target_func_ptr].push_back(CallbackEntry{ref, ""});
+}
+
+// Append a name-only CallbackEntry. Resolution deferred to dispatch.
+void StoreName(std::unordered_map<uintptr_t,
+                                  std::vector<CallbackEntry>>& tbl,
+               uintptr_t                                       target_func_ptr,
+               const std::string&                              name) {
+    tbl[target_func_ptr].push_back(CallbackEntry{LUA_NOREF, name});
+}
+
+// Resolve a dotted name like "Foo.Bar.Baz" against _G. Pushes the
+// resolved function onto the Lua stack on success (stack effect +1)
+// and returns true. On failure (any step is nil or not a table/function),
+// leaves the stack unchanged and returns false.
+bool PushResolvedDotted(lua_State* L, const std::string& dotted) {
+    int start_top = lua_gettop(L);
+    lua_pushvalue(L, LUA_GLOBALSINDEX);  // start with _G on top
+    size_t pos = 0;
+    while (pos <= dotted.size()) {
+        size_t dot = dotted.find('.', pos);
+        std::string segment = dotted.substr(pos, dot - pos);
+        if (segment.empty()) {
+            lua_settop(L, start_top);
+            return false;
+        }
+        lua_getfield(L, -1, segment.c_str());
+        lua_remove(L, -2);  // remove parent
+        if (lua_isnil(L, -1)) {
+            lua_settop(L, start_top);
+            return false;
+        }
+        if (dot == std::string::npos) break;
+        pos = dot + 1;
+    }
+    if (!lua_isfunction(L, -1)) {
+        lua_settop(L, start_top);
+        return false;
+    }
+    return true;
+}
+
+// Push the callback's function onto the Lua stack. For ref-backed
+// entries, lua_rawgeti from REGISTRYINDEX. For name-backed entries,
+// resolve the dotted path against _G — but cache: once a name resolves
+// successfully, luaL_ref it and rewrite the entry to a ref-backed
+// form. On failure, return false (stack unchanged).
+bool PushCallback(lua_State* L, CallbackEntry& cb) {
+    if (cb.ref != LUA_NOREF) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, cb.ref);
+        return true;
+    }
+    // Name lookup
+    if (!PushResolvedDotted(L, cb.name)) return false;
+    // Cache: ref the resolved function so future dispatches skip the
+    // dotted walk. lua_pushvalue keeps a copy on the stack so we can
+    // ref one and return the other.
+    lua_pushvalue(L, -1);
+    int new_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    cb.ref  = new_ref;
+    cb.name.clear();  // don't keep stale name once cached
+    return true;
 }
 
 }  // namespace
@@ -85,7 +152,7 @@ void register_pre_callback_from_top(uintptr_t target_func_ptr) {
         log::Warn("scripting: register_pre_callback_from_top before lua_State bound");
         return;
     }
-    StoreTopRef(g_lua_state, g_pre_callback_refs, target_func_ptr);
+    StoreTopRef(g_lua_state, g_pre_callbacks, target_func_ptr);
 }
 
 void register_post_callback_from_top(uintptr_t target_func_ptr) {
@@ -94,7 +161,7 @@ void register_post_callback_from_top(uintptr_t target_func_ptr) {
         log::Warn("scripting: register_post_callback_from_top before lua_State bound");
         return;
     }
-    StoreTopRef(g_lua_state, g_post_callback_refs, target_func_ptr);
+    StoreTopRef(g_lua_state, g_post_callbacks, target_func_ptr);
 }
 
 void register_mid_callback_from_top(uintptr_t target_func_ptr) {
@@ -103,29 +170,47 @@ void register_mid_callback_from_top(uintptr_t target_func_ptr) {
         log::Warn("scripting: register_mid_callback_from_top before lua_State bound");
         return;
     }
-    StoreTopRef(g_lua_state, g_mid_callback_refs, target_func_ptr);
+    StoreTopRef(g_lua_state, g_mid_callbacks, target_func_ptr);
+}
+
+void register_pre_callback_by_name(uintptr_t target_func_ptr, const std::string& name) {
+    std::scoped_lock guard(g_lock);
+    StoreName(g_pre_callbacks, target_func_ptr, name);
+}
+
+void register_post_callback_by_name(uintptr_t target_func_ptr, const std::string& name) {
+    std::scoped_lock guard(g_lock);
+    StoreName(g_post_callbacks, target_func_ptr, name);
+}
+
+void register_mid_callback_by_name(uintptr_t target_func_ptr, const std::string& name) {
+    std::scoped_lock guard(g_lock);
+    StoreName(g_mid_callbacks, target_func_ptr, name);
 }
 
 void clear_callbacks(uintptr_t target_func_ptr) {
     std::scoped_lock guard(g_lock);
     if (!g_lua_state) {
         // Nothing to unref against; just drop the entries.
-        g_pre_callback_refs.erase(target_func_ptr);
-        g_post_callback_refs.erase(target_func_ptr);
-        g_mid_callback_refs.erase(target_func_ptr);
+        g_pre_callbacks.erase(target_func_ptr);
+        g_post_callbacks.erase(target_func_ptr);
+        g_mid_callbacks.erase(target_func_ptr);
         return;
     }
-    auto unref_all = [&](std::unordered_map<uintptr_t, std::vector<int>>& tbl) {
+    auto unref_all = [&](std::unordered_map<uintptr_t,
+                                            std::vector<CallbackEntry>>& tbl) {
         auto it = tbl.find(target_func_ptr);
         if (it == tbl.end()) return;
-        for (int ref : it->second) {
-            luaL_unref(g_lua_state, LUA_REGISTRYINDEX, ref);
+        for (const CallbackEntry& cb : it->second) {
+            if (cb.ref != LUA_NOREF) {
+                luaL_unref(g_lua_state, LUA_REGISTRYINDEX, cb.ref);
+            }
         }
         tbl.erase(it);
     };
-    unref_all(g_pre_callback_refs);
-    unref_all(g_post_callback_refs);
-    unref_all(g_mid_callback_refs);
+    unref_all(g_pre_callbacks);
+    unref_all(g_post_callbacks);
+    unref_all(g_mid_callbacks);
 }
 
 // --- dispatchers ----------------------------------------------------------
@@ -150,8 +235,8 @@ bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* params,
     std::scoped_lock guard(g_lock);
     if (!g_lua_state) return true;
 
-    auto it = g_pre_callback_refs.find(target_func_ptr);
-    if (it == g_pre_callback_refs.end() || it->second.empty()) return true;
+    auto it = g_pre_callbacks.find(target_func_ptr);
+    if (it == g_pre_callbacks.end() || it->second.empty()) return true;
 
     auto hook_it = g_target_to_hook.find(target_func_ptr);
     const kcdx::rom::runtime_func_t* hook =
@@ -159,9 +244,14 @@ bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* params,
     if (!hook) return true;
 
     bool call_orig = true;
-    for (int ref : it->second) {
-        // [func]
-        lua_rawgeti(g_lua_state, LUA_REGISTRYINDEX, ref);
+    for (CallbackEntry& cb : it->second) {
+        // [func]  (or skip if name failed to resolve)
+        if (!PushCallback(g_lua_state, cb)) {
+            log::WarnF("scripting: pre-callback for target 0x%p: '%s' "
+                       "unresolved at dispatch time; original runs",
+                       (void*)target_func_ptr, cb.name.c_str());
+            continue;
+        }
         // [func, return_value]
         kcdx::lua_memory::to_lua_return(g_lua_state, return_value, hook->m_return_type);
         // [func, return_value, args...]
@@ -194,16 +284,21 @@ void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
     std::scoped_lock guard(g_lock);
     if (!g_lua_state) return;
 
-    auto it = g_post_callback_refs.find(target_func_ptr);
-    if (it == g_post_callback_refs.end() || it->second.empty()) return;
+    auto it = g_post_callbacks.find(target_func_ptr);
+    if (it == g_post_callbacks.end() || it->second.empty()) return;
 
     auto hook_it = g_target_to_hook.find(target_func_ptr);
     const kcdx::rom::runtime_func_t* hook =
         (hook_it == g_target_to_hook.end()) ? nullptr : hook_it->second;
     if (!hook) return;
 
-    for (int ref : it->second) {
-        lua_rawgeti(g_lua_state, LUA_REGISTRYINDEX, ref);
+    for (CallbackEntry& cb : it->second) {
+        if (!PushCallback(g_lua_state, cb)) {
+            log::WarnF("scripting: post-callback for target 0x%p: '%s' "
+                       "unresolved at dispatch time", (void*)target_func_ptr,
+                       cb.name.c_str());
+            continue;
+        }
         kcdx::lua_memory::to_lua_return(g_lua_state, return_value, hook->m_return_type);
         for (uint8_t i = 0; i < param_count; i++) {
             kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
@@ -225,8 +320,8 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
     std::scoped_lock guard(g_lock);
     if (!g_lua_state) return 0;
 
-    auto it = g_mid_callback_refs.find(target_func_ptr);
-    if (it == g_mid_callback_refs.end() || it->second.empty()) return 0;
+    auto it = g_mid_callbacks.find(target_func_ptr);
+    if (it == g_mid_callbacks.end() || it->second.empty()) return 0;
 
     auto hook_it = g_target_to_hook.find(target_func_ptr);
     const kcdx::rom::runtime_func_t* hook =
@@ -235,8 +330,13 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
 
     // Mid-hooks pass args as a table keyed by 1..N (matches RoM).
     uintptr_t restore_address = 0;
-    for (int ref : it->second) {
-        lua_rawgeti(g_lua_state, LUA_REGISTRYINDEX, ref);
+    for (CallbackEntry& cb : it->second) {
+        if (!PushCallback(g_lua_state, cb)) {
+            log::WarnF("scripting: mid-callback for target 0x%p: '%s' "
+                       "unresolved at dispatch time", (void*)target_func_ptr,
+                       cb.name.c_str());
+            continue;
+        }
         lua_createtable(g_lua_state, (int)param_count, 0);
         int table_idx = lua_gettop(g_lua_state);
         for (uint8_t i = 0; i < param_count; i++) {

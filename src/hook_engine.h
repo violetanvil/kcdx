@@ -33,7 +33,27 @@ struct HookEntry {
     // (last instruction = ret), or bake in their own jump back to the
     // MinHook-managed trampoline using a separate mechanism. Phase 5+ adds
     // typed Lua callbacks that make this more accessible.
+    //
+    // EXACTLY ONE of `bytes` or `lua_callback` must be non-empty. If both
+    // are set or both are empty, the parser rejects the entry.
     std::vector<uint8_t> bytes;
+
+    // --- Phase 5f: TOML-driven Lua callback ----------------------------
+    //
+    // When lua_callback is non-empty, ApplyOneHook builds a runtime_func_t
+    // trampoline (the same one kcdx.memory.dynamic_hook uses), JIT'd with
+    // make_jit_func against the declared return_type / param_types, and
+    // installs it via hook_engine::InstallRuntime. The lua_callback name
+    // (e.g. "OutfitGate.Decide") is resolved lazily at first dispatch
+    // by walking _G[<dotted-path>]; if it doesn't exist when the hook
+    // fires, kcdx logs a warn and lets the original run.
+    //
+    // lua_post_callback is optional; same lookup semantics but post-fires
+    // after the original returns.
+    std::string              return_type;       // "void", "i32", "ptr", etc. — same vocabulary as kcdx.memory.dynamic_hook
+    std::vector<std::string> param_types;       // empty for a no-arg target
+    std::string              lua_callback;      // dotted Lua function name; empty for raw-bytes hooks
+    std::string              lua_post_callback; // optional; same lookup
 };
 
 // Engine state.

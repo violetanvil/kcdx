@@ -138,8 +138,13 @@ void ResolveHooks() {
         const hook_engine::HookEntry& h = hook_engine::g_hooks[i];
         ResolvedHook& rh = g_resolvedHooks[i];
 
-        if (h.bytes.empty()) {
-            rh.reason = "empty 'bytes' field";
+        // Phase 5f: hooks may declare either 'bytes' (raw machine code)
+        // OR 'lua_callback' (TOML schema, kcdx routes through JIT
+        // trampoline + scripting). Both produce a valid hook; only
+        // reject when both are empty (caught at parse time in config.cpp,
+        // but defensive double-check here).
+        if (h.bytes.empty() && h.lua_callback.empty()) {
+            rh.reason = "neither 'bytes' nor 'lua_callback' set";
             continue;
         }
 

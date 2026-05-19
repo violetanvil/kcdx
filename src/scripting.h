@@ -61,6 +61,17 @@ void register_pre_callback_from_top (uintptr_t target_func_ptr);
 void register_post_callback_from_top(uintptr_t target_func_ptr);
 void register_mid_callback_from_top (uintptr_t target_func_ptr);
 
+// Phase 5f: register a callback by dotted name (e.g., "Foo.Bar"). The
+// name is stored verbatim and resolved lazily at first dispatch by
+// walking _G[Foo][Bar]. If the name fails to resolve when the hook
+// fires, the dispatcher logs a warn and lets the original run.
+//
+// Multiple registrations against the same target stack; all fire on
+// each hook invocation. Order matches registration order.
+void register_pre_callback_by_name (uintptr_t target_func_ptr, const std::string& name);
+void register_post_callback_by_name(uintptr_t target_func_ptr, const std::string& name);
+void register_mid_callback_by_name (uintptr_t target_func_ptr, const std::string& name);
+
 // Clear all callbacks for a target (used when a [[hook]] is being
 // uninstalled). luaL_unref's each stored ref so Lua can GC the
 // functions. Does not unregister the runtime_func_t itself.

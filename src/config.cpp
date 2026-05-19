@@ -177,16 +177,45 @@ bool ParseOneHook(const toml::table& t,
 
     out.offset = OptInt(t, "offset", 0);
 
-    std::string bytesStr = OptString(t, "bytes");
-    if (bytesStr.empty()) {
-        err = "missing required field 'bytes' (the detour body)";
+    // Detour body: exactly one of 'bytes' (raw machine code) or
+    // 'lua_callback' (dotted Lua function name; Phase 5f) is required.
+    std::string bytesStr      = OptString(t, "bytes");
+    std::string luaCallback   = OptString(t, "lua_callback");
+    std::string luaPostCb     = OptString(t, "lua_post_callback");
+
+    if (!bytesStr.empty() && !luaCallback.empty()) {
+        err = "'bytes' and 'lua_callback' are mutually exclusive";
         return false;
     }
-    try {
-        out.bytes = ParseBytes(bytesStr);
-    } catch (const std::exception& e) {
-        err = std::string("parse error in 'bytes': ") + e.what();
+    if (bytesStr.empty() && luaCallback.empty()) {
+        err = "must declare exactly one of 'bytes' or 'lua_callback'";
         return false;
+    }
+    if (!bytesStr.empty() && !luaPostCb.empty()) {
+        err = "'lua_post_callback' requires 'lua_callback' (not 'bytes')";
+        return false;
+    }
+
+    if (!bytesStr.empty()) {
+        try {
+            out.bytes = ParseBytes(bytesStr);
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'bytes': ") + e.what();
+            return false;
+        }
+    } else {
+        out.lua_callback      = luaCallback;
+        out.lua_post_callback = luaPostCb;
+        out.return_type       = OptString(t, "return_type", "void");
+
+        // param_types: array of strings, default empty.
+        if (auto* v = t.get("param_types"); v && v->is_array()) {
+            for (const auto& el : *v->as_array()) {
+                if (auto s = el.value<std::string>(); s.has_value()) {
+                    out.param_types.push_back(*s);
+                }
+            }
+        }
     }
 
     // Tier 2 — context (same shape as [[patch]])

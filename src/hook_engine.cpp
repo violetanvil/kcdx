@@ -2,12 +2,17 @@
 
 #include <windows.h>
 #include <cstring>
+#include <memory>
 #include <unordered_map>
+
+#include <asmjit/asmjit.h>
 
 #include "MinHook.h"
 #include "conflict_engine.h"
 #include "log.h"
 #include "patch_engine.h"  // for Resolve, ResolvedPatch (the locator pipeline)
+#include "rom_borrowed/runtime_func_t.h"
+#include "scripting.h"
 #include "trampoline.h"
 
 namespace kcdx::hook_engine {
@@ -20,6 +25,14 @@ namespace {
 // detect hook-on-hook collisions in v0.1's first-wins policy. Maps
 // targetAddr -> name of the first hook that grabbed it.
 std::unordered_map<uintptr_t, std::string> g_installed;
+
+// Storage for TOML-lua_callback hooks' runtime_func_t instances.
+// Keyed by target VA. Lifetime: process. The runtime_func_t holds
+// the JIT'd trampoline pointer + asmjit state; destroying it would
+// disable the MinHook entry, which we never want in v0.1 (hooks
+// live for the session, matching SKSE).
+std::unordered_map<uintptr_t,
+                   std::unique_ptr<kcdx::rom::runtime_func_t>> g_runtime_funcs;
 
 // Adapter: shim a HookEntry's locator data into a PatchEntry that's just
 // good enough for patch::Resolve() to do its job. The locator pipeline
@@ -57,8 +70,9 @@ bool ApplyOneHook(size_t hookIdx) {
         log::Warn("Hook engine: conflict_engine pre-flight not run, "
                   "resolving hook locally (no cross-engine conflict matrix).");
         conflict_engine::g_resolvedHooks.resize(g_hooks.size());
-        if (h.bytes.empty()) {
-            conflict_engine::g_resolvedHooks[hookIdx].reason = "empty 'bytes' field";
+        if (h.bytes.empty() && h.lua_callback.empty()) {
+            conflict_engine::g_resolvedHooks[hookIdx].reason =
+                "neither 'bytes' nor 'lua_callback' set";
         } else {
             patch::PatchEntry locator = MakeLocatorPatch(h);
             patch::ResolvedPatch r = patch::Resolve(locator);
@@ -78,7 +92,57 @@ bool ApplyOneHook(size_t hookIdx) {
     }
     uintptr_t targetAddr = rh.targetAddr;
 
-    // Hook-on-hook collision check (first-wins).
+    // ---------------------------------------------------------------------
+    // Phase 5f branch: lua_callback hooks route through the runtime_func_t
+    // JIT machinery + hook_engine::InstallRuntime + scripting::register_*_by_name.
+    // Same path as kcdx.memory.dynamic_hook but driven by TOML.
+    if (!h.lua_callback.empty()) {
+        auto rf = std::make_unique<kcdx::rom::runtime_func_t>();
+        uintptr_t jit_addr = rf->make_jit_func(
+            h.return_type,
+            h.param_types,
+            asmjit::Arch::kX64,
+            &kcdx::scripting::dynamic_hook_pre,
+            &kcdx::scripting::dynamic_hook_post,
+            targetAddr);
+        if (!jit_addr) {
+            log::ErrorF("[hook '%s'] aborted: make_jit_func failed "
+                        "(check return_type='%s' / param_types signature)",
+                        h.name.c_str(), h.return_type.c_str());
+            return false;
+        }
+
+        // Install via InstallRuntime (handles MinHook + first-wins +
+        // g_installed bookkeeping; same path as kcdx.memory.dynamic_hook).
+        auto install = InstallRuntime(h.name, targetAddr, (void*)jit_addr);
+        if (!install.ok) {
+            log::ErrorF("[hook '%s'] InstallRuntime failed: %s",
+                        h.name.c_str(), install.reason.c_str());
+            return false;
+        }
+
+        // Register the runtime_func_t with scripting so the dispatchers
+        // can resolve target_func_ptr -> param_types for arg marshaling.
+        kcdx::scripting::register_hook(targetAddr, rf.get());
+        kcdx::scripting::register_pre_callback_by_name(targetAddr, h.lua_callback);
+        if (!h.lua_post_callback.empty()) {
+            kcdx::scripting::register_post_callback_by_name(targetAddr, h.lua_post_callback);
+        }
+
+        // Stable storage so the runtime_func_t survives this scope.
+        g_runtime_funcs[targetAddr] = std::move(rf);
+
+        log::InfoF("[hook '%s'] lua_callback='%s' wired (target 0x%p, "
+                   "JIT detour 0x%p)",
+                   h.name.c_str(), h.lua_callback.c_str(),
+                   reinterpret_cast<void*>(targetAddr), (void*)jit_addr);
+        return true;
+    }
+    // ---------------------------------------------------------------------
+
+    // Hook-on-hook collision check (first-wins). Raw-bytes path only;
+    // the lua_callback branch above runs the same check inside
+    // InstallRuntime.
     if (auto it = g_installed.find(targetAddr); it != g_installed.end()) {
         log::WarnF("[hook '%s'] aborted: target 0x%p already hooked by '%s' "
                    "(v0.1 first-wins; chained hooks are v0.2+; "
