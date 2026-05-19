@@ -87,6 +87,9 @@ add_library(kcdx SHARED
     src/trampoline_engine.cpp
     src/conflict_engine.cpp
     src/load_order.cpp
+    src/detour_hook.cpp
+    src/rom_borrowed/type_info_t.cpp
+    src/rom_borrowed/asmjit_helper.cpp
 )
 
 target_include_directories(kcdx PRIVATE
@@ -95,6 +98,8 @@ target_include_directories(kcdx PRIVATE
     vendor/lua
     vendor/minhook/include
     vendor/tomlplusplus
+    vendor/sol2/include      # <sol/sol.hpp> for rom_borrowed/
+    vendor/asmjit            # <asmjit/asmjit.h> for rom_borrowed/
 )
 
 # version.lib is needed for GetFileVersionInfo* calls in plugin_loader.cpp
@@ -108,7 +113,9 @@ if(MSVC)
         NOMINMAX
         WIN32_LEAN_AND_MEAN
     )
-    target_compile_options(kcdx PRIVATE /W3 /MT)
+    # /wd4244: Sol2's headers emit narrowing warnings against Lua 5.1's
+    # float-typed lua_Number. Upstream behavior; not our bug.
+    target_compile_options(kcdx PRIVATE /W3 /MT /wd4244)
     set_property(TARGET kcdx    PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET lua     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
