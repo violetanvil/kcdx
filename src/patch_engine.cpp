@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "conflict_engine.h"
 #include "log.h"
 #include "pe_helpers.h"
 #include "symbols.h"
@@ -15,13 +16,7 @@
 namespace kcdx::patch {
 
 std::vector<PatchEntry> g_patches;
-std::vector<Conflict>   g_conflicts;
 bool g_dryRun = false;
-
-// Pre-flight resolutions, parallel to g_patches by index. Populated by
-// PreFlightAll(); consumed by ApplyAll() so plugins benefit from the
-// "incidental overlap is OK" property of working against the pristine DLL.
-static std::vector<ResolvedPatch> g_resolved;
 
 namespace {
 
@@ -330,75 +325,6 @@ ResolvedPatch Resolve(const PatchEntry& p) {
 
 namespace {
 
-// Look up the FIRST write-on-original conflict where the named patch is the
-// reader. Used to enrich the reader's failure message when its verify fails.
-const Conflict* FindWriteOnOriginalReader(const std::string& readerName) {
-    for (const auto& c : g_conflicts) {
-        if (c.kind == ConflictKind::WriteOnOriginal && c.readerName == readerName) {
-            return &c;
-        }
-    }
-    return nullptr;
-}
-
-// Look up write-on-write conflicts where the named patch is the WRITER
-// landing on bytes a previous plugin already wrote. Used to log "you just
-// clobbered plugin X's bytes" at the point of write.
-std::vector<const Conflict*> FindWriteOnWriteForLaterWriter(const std::string& laterWriterName) {
-    std::vector<const Conflict*> out;
-    for (const auto& c : g_conflicts) {
-        if (c.kind != ConflictKind::WriteOnOriginal && c.readerName == laterWriterName) {
-            out.push_back(&c);
-        }
-    }
-    return out;
-}
-
-// Plain-English explanation, addressed to a player reading the log to figure
-// out which mod is interacting with which other mod.
-std::string ConflictExplanation(const Conflict& c) {
-    char buf[640];
-    switch (c.kind) {
-        case ConflictKind::WriteOnOriginal:
-            snprintf(buf, sizeof(buf),
-                     "Plugin '%s' modified bytes that plugin '%s' needs to verify before patching "
-                     "(overlap at 0x%p..0x%p). The earlier mod stopped the later one from applying. "
-                     "Try removing or reordering one of them.",
-                     c.writerName.c_str(), c.readerName.c_str(),
-                     reinterpret_cast<void*>(c.overlap.begin),
-                     reinterpret_cast<void*>(c.overlap.end));
-            break;
-        case ConflictKind::WriteOnWriteFull:
-            snprintf(buf, sizeof(buf),
-                     "Plugin '%s' fully overwrote bytes already written by plugin '%s' "
-                     "(at 0x%p..0x%p). Both mods applied; '%s' wins because it ran later. "
-                     "If you wanted plugin '%s' to take effect at this address instead, "
-                     "give it a lower 'priority' number in its kcdx.toml.",
-                     c.readerName.c_str(), c.writerName.c_str(),
-                     reinterpret_cast<void*>(c.overlap.begin),
-                     reinterpret_cast<void*>(c.overlap.end),
-                     c.readerName.c_str(),
-                     c.writerName.c_str());
-            break;
-        case ConflictKind::WriteOnWritePartial:
-            snprintf(buf, sizeof(buf),
-                     "Plugin '%s' partially overwrote bytes already written by plugin '%s' "
-                     "(overlap at 0x%p..0x%p). Both mods applied, but the result is a MIX of "
-                     "their bytes -- this may produce invalid instructions and crash the game. "
-                     "If the game becomes unstable, remove one of the two conflicting mods.",
-                     c.readerName.c_str(), c.writerName.c_str(),
-                     reinterpret_cast<void*>(c.overlap.begin),
-                     reinterpret_cast<void*>(c.overlap.end));
-            break;
-    }
-    return std::string(buf);
-}
-
-// Compute intersection of two ByteRanges. Caller must verify they overlap.
-ByteRange Intersect(const ByteRange& a, const ByteRange& b) {
-    return ByteRange{ std::max(a.begin, b.begin), std::min(a.end, b.end) };
-}
-
 // Verify `original` bytes at addr. Returns:
 //   1  — original matches, write should proceed
 //   0  — bytes already equal `replacement` (idempotent skip)
@@ -437,81 +363,25 @@ bool WriteBytesAtAddr(uintptr_t addr, const PatchEntry& p) {
 }  // namespace
 
 void PreFlightAll() {
-    g_conflicts.clear();
-    g_resolved.clear();
-    g_resolved.resize(g_patches.size());
-
-    log::InfoF("Pre-flight: resolving %zu patch(es) against pristine module...",
-               g_patches.size());
-
-    for (size_t i = 0; i < g_patches.size(); ++i) {
-        g_resolved[i] = Resolve(g_patches[i]);
-    }
-
-    // Pairwise overlap check. g_patches is sorted by (priority, name) at
-    // config load time, so for any pair (i, j) with i < j, patch i applies
-    // first and is the "writer" relative to patch j's view.
-    for (size_t i = 0; i < g_patches.size(); ++i) {
-        if (!g_resolved[i].ok) continue;
-        const auto& w = g_resolved[i];
-        const auto& wp = g_patches[i];
-
-        for (size_t j = i + 1; j < g_patches.size(); ++j) {
-            if (!g_resolved[j].ok) continue;
-            const auto& r = g_resolved[j];
-            const auto& rp = g_patches[j];
-
-            // (a) Write-on-original: writer's bytes overlap reader's verify
-            //     target. The reader will fail its verify check at apply time.
-            if (w.writeRange.overlaps(r.originalRange)) {
-                Conflict c;
-                c.kind = ConflictKind::WriteOnOriginal;
-                c.writerName = wp.name;
-                c.readerName = rp.name;
-                c.overlap = Intersect(w.writeRange, r.originalRange);
-                g_conflicts.push_back(c);
-                log::Warn(ConflictExplanation(c));
-                continue;  // don't also report write-on-write for this pair
-            }
-
-            // (b) Write-on-write: both patches target the same bytes. The
-            //     later one will land its full write on top of the earlier
-            //     one's bytes. Categorize as full (write ranges identical)
-            //     or partial (overlapping but not equal).
-            if (w.writeRange.overlaps(r.writeRange)) {
-                bool fullOverlap = (w.writeRange.begin == r.writeRange.begin &&
-                                    w.writeRange.end   == r.writeRange.end);
-                Conflict c;
-                c.kind = fullOverlap ? ConflictKind::WriteOnWriteFull
-                                     : ConflictKind::WriteOnWritePartial;
-                c.writerName = wp.name;
-                c.readerName = rp.name;
-                c.overlap = Intersect(w.writeRange, r.writeRange);
-                g_conflicts.push_back(c);
-                if (fullOverlap) {
-                    log::Info(ConflictExplanation(c));
-                } else {
-                    log::Warn(ConflictExplanation(c));
-                }
-                continue;
-            }
-
-            // (c) Pattern / context overlap is INCIDENTAL. Pre-flight resolved
-            //     the reader against the pristine DLL, so its patchAddr is
-            //     correct regardless of subsequent writes. No log entry.
+    // Phase 4b.3 refactor: resolution + conflict detection live in
+    // conflict_engine now. patch_engine's PreFlightAll is retained as a
+    // thin shim so the ApplyAll() entry point (and the Lua-runtime
+    // ApplyPatch path) still has a way to populate g_resolved if the
+    // unified conflict_engine::RunPreFlight wasn't called externally.
+    //
+    // In the hooks.cpp orchestration path, conflict_engine::RunPreFlight
+    // is called first, which populates conflict_engine::g_resolvedPatches.
+    // ApplyAll below reads from that. If for some reason it wasn't called
+    // (e.g. tests, or future runtime patches), fall back to resolving here.
+    if (conflict_engine::g_resolvedPatches.size() != g_patches.size()) {
+        conflict_engine::g_resolvedPatches.clear();
+        conflict_engine::g_resolvedPatches.resize(g_patches.size());
+        for (size_t i = 0; i < g_patches.size(); ++i) {
+            conflict_engine::g_resolvedPatches[i] = Resolve(g_patches[i]);
         }
-    }
-
-    if (g_conflicts.empty()) {
-        log::Info("Pre-flight: no conflicts detected");
-    } else {
-        size_t wOnO = 0, wOnW = 0;
-        for (const auto& c : g_conflicts) {
-            if (c.kind == ConflictKind::WriteOnOriginal) ++wOnO;
-            else ++wOnW;
-        }
-        log::InfoF("Pre-flight: %zu conflict(s) recorded (%zu write-on-original, %zu write-on-write).",
-                   g_conflicts.size(), wOnO, wOnW);
+        log::InfoF("Pre-flight (patch_engine fallback): resolved %zu patch(es) — "
+                   "no cross-engine conflict matrix available on this path",
+                   g_patches.size());
     }
 }
 
@@ -519,8 +389,10 @@ bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
     if (!r.ok) {
         // Resolution failed during pre-flight. Surface conflict context if
         // any was recorded against this patch.
-        if (const Conflict* c = FindWriteOnOriginalReader(p.name)) {
-            log::Warn(std::string("[") + p.name + "] " + ConflictExplanation(*c));
+        if (auto* c = conflict_engine::FindWriteOnOriginalAffecting(p.name)) {
+            log::WarnF("[%s] note: pre-flight predicted this — earlier entry "
+                       "'%s' modified bytes inside this patch's verify range.",
+                       p.name.c_str(), c->earlier.name.c_str());
         }
         return false;
     }
@@ -552,8 +424,14 @@ bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
                 break;
             }
         }
-        if (const Conflict* c = FindWriteOnOriginalReader(p.name)) {
-            log::Warn(std::string("[") + p.name + "] " + ConflictExplanation(*c));
+        // Enriched diagnostic: did a conflict_engine pre-flight pass
+        // predict this verify-failure? If so, surface which other entry
+        // (patch or hook) is responsible.
+        if (auto* c = conflict_engine::FindWriteOnOriginalAffecting(p.name)) {
+            log::Warn(std::string("[") + p.name + "] note: " +
+                      "earlier entry '" + c->earlier.name +
+                      "' modified bytes inside this patch's verify range "
+                      "(see Conflict engine WARN above for details).");
         }
         return false;
     }
@@ -577,14 +455,15 @@ bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
                HexBytes(p.replacement).c_str());
 
     // If this patch's write landed on bytes a previous plugin already wrote,
-    // log the clobber so the user can see exactly what happened.
-    auto clobbers = FindWriteOnWriteForLaterWriter(p.name);
-    for (const Conflict* c : clobbers) {
-        if (c->kind == ConflictKind::WriteOnWriteFull) {
-            log::Info(ConflictExplanation(*c));
-        } else {
-            log::Warn(ConflictExplanation(*c));
-        }
+    // log the clobber so the user can see exactly what happened. conflict_engine
+    // already emitted the human-readable Explain() at pre-flight time; here we
+    // just emit a brief reminder at the moment of write so the log reads
+    // chronologically.
+    auto clobbers = conflict_engine::FindWriteOnWriteAffecting(p.name);
+    for (const auto* c : clobbers) {
+        log::InfoF("[%s] note: this write landed on top of earlier writer '%s' "
+                   "(see Conflict engine log line above for full explanation).",
+                   p.name.c_str(), c->earlier.name.c_str());
     }
     return true;
 }
@@ -599,6 +478,10 @@ bool ApplyPatch(const PatchEntry& p) {
 }
 
 void ApplyAll() {
+    // PreFlightAll is a no-op shim if conflict_engine::RunPreFlight already
+    // ran (the normal path from hooks.cpp). It re-resolves only when called
+    // outside that orchestration (e.g., tests). Either way, when we exit
+    // PreFlightAll, conflict_engine::g_resolvedPatches is sized and populated.
     PreFlightAll();
 
     log::InfoF("Applying %zu patch(es)%s",
@@ -606,7 +489,7 @@ void ApplyAll() {
                g_dryRun ? " [dry_run=true]" : "");
     size_t ok = 0, fail = 0;
     for (size_t i = 0; i < g_patches.size(); ++i) {
-        if (ApplyResolvedPatch(g_patches[i], g_resolved[i])) ++ok;
+        if (ApplyResolvedPatch(g_patches[i], conflict_engine::g_resolvedPatches[i])) ++ok;
         else ++fail;
     }
     log::InfoF("Patch summary: %zu applied, %zu aborted", ok, fail);

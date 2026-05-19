@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "MinHook.h"
+#include "conflict_engine.h"
 #include "log.h"
 #include "patch_engine.h"  // for Resolve, ResolvedPatch (the locator pipeline)
 #include "trampoline.h"
@@ -48,28 +49,49 @@ patch::PatchEntry MakeLocatorPatch(const HookEntry& h) {
 size_t ApplyAll() {
     if (g_hooks.empty()) return 0;
 
+    // conflict_engine::RunPreFlight should have populated g_resolvedHooks
+    // already. If it wasn't called (e.g. tests, future runtime paths), fall
+    // back to local resolution.
+    if (conflict_engine::g_resolvedHooks.size() != g_hooks.size()) {
+        log::Warn("Hook engine: conflict_engine pre-flight not run, "
+                  "resolving hooks locally (no cross-engine conflict matrix).");
+        conflict_engine::g_resolvedHooks.clear();
+        conflict_engine::g_resolvedHooks.resize(g_hooks.size());
+        for (size_t i = 0; i < g_hooks.size(); ++i) {
+            const HookEntry& h = g_hooks[i];
+            if (h.bytes.empty()) {
+                conflict_engine::g_resolvedHooks[i].reason = "empty 'bytes' field";
+                continue;
+            }
+            patch::PatchEntry locator = MakeLocatorPatch(h);
+            patch::ResolvedPatch r = patch::Resolve(locator);
+            if (!r.ok) {
+                conflict_engine::g_resolvedHooks[i].reason = r.reason;
+                continue;
+            }
+            conflict_engine::g_resolvedHooks[i].ok = true;
+            conflict_engine::g_resolvedHooks[i].targetAddr = r.patchAddr;
+        }
+    }
+
     log::InfoF("Hook engine: applying %zu hook(s)...", g_hooks.size());
     size_t installed = 0;
 
-    for (const HookEntry& h : g_hooks) {
-        if (h.bytes.empty()) {
-            log::ErrorF("[hook '%s'] aborted: empty 'bytes' field", h.name.c_str());
-            continue;
-        }
+    for (size_t hookIdx = 0; hookIdx < g_hooks.size(); ++hookIdx) {
+        const HookEntry& h = g_hooks[hookIdx];
+        const auto& rh = conflict_engine::g_resolvedHooks[hookIdx];
 
-        // Step 1: resolve target via the existing locator pipeline.
-        patch::PatchEntry locator = MakeLocatorPatch(h);
-        patch::ResolvedPatch r = patch::Resolve(locator);
-        if (!r.ok) {
-            log::ErrorF("[hook '%s'] aborted: %s", h.name.c_str(), r.reason.c_str());
+        if (!rh.ok) {
+            log::ErrorF("[hook '%s'] aborted: %s", h.name.c_str(), rh.reason.c_str());
             continue;
         }
-        uintptr_t targetAddr = r.patchAddr;
+        uintptr_t targetAddr = rh.targetAddr;
 
         // Step 2: hook-on-hook collision check (first-wins).
         if (auto it = g_installed.find(targetAddr); it != g_installed.end()) {
             log::WarnF("[hook '%s'] aborted: target 0x%p already hooked by '%s' "
-                       "(v0.1 first-wins; chained hooks are v0.2+)",
+                       "(v0.1 first-wins; chained hooks are v0.2+; "
+                       "see conflict_engine HookOnHook WARN above)",
                        h.name.c_str(),
                        reinterpret_cast<void*>(targetAddr),
                        it->second.c_str());

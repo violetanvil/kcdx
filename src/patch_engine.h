@@ -82,38 +82,22 @@ struct ResolvedPatch {
     std::optional<ByteRange> contextRange;  // bytes the context pattern scanned (if any)
 };
 
-// Category of inter-plugin byte overlap detected at pre-flight. Used to drive
-// log severity and abort behavior.
-enum class ConflictKind {
-    WriteOnOriginal,   // genuine — reader's verify will fail
-    WriteOnWriteFull,  // documented "mod B clobbers mod A" — both apply, B's bytes win
-    WriteOnWritePartial,  // dangerous — bytes get a Frankenstein mix that may be invalid code
-};
-
-// One detected pre-flight conflict. Recorded by PreFlightAll() and referenced
-// later: write-on-original conflicts surface as enriched error messages on
-// the reader's abort; write-on-write conflicts log at apply time describing
-// what got clobbered.
-struct Conflict {
-    ConflictKind kind;
-    std::string writerName;       // plugin that writes (earlier priority)
-    std::string readerName;       // plugin whose locator / write is affected
-    ByteRange overlap;            // the overlapping byte range
-};
-
-extern std::vector<Conflict> g_conflicts;
-
 // Resolve a patch's locators against the pristine module WITHOUT writing.
 // Pure read; safe to call before any patches have been applied. Used by the
 // pre-flight pass and by Lua-runtime patches (which don't participate in
 // pre-flight). For TOML patches, ApplyPatch uses the cached pre-flight
 // ResolvedPatch instead of calling this again.
+//
+// Conflict types and the conflict detection pass moved to conflict_engine
+// in Phase 4b.3 — patch_engine no longer owns those.
 ResolvedPatch Resolve(const PatchEntry& p);
 
-// Run Resolve() on every patch in g_patches against the pristine module,
-// compute pairwise byte overlaps with genuine-conflict semantics, populate
-// g_conflicts, and stash the resolved data for ApplyAll() to consume.
-// Safe to call once at startup, before ApplyAll().
+// Backwards-compat shim. Today this defers to conflict_engine::RunPreFlight
+// for the resolution + conflict detection pipeline, but also serves as a
+// fallback resolver when ApplyAll is called outside the normal orchestration
+// (e.g., tests, future runtime apply paths). The hooks.cpp first-update-tick
+// path calls conflict_engine::RunPreFlight directly and this shim becomes
+// a no-op.
 void PreFlightAll();
 
 // Apply one TOML patch using its pre-flight resolution. Idempotent. Returns

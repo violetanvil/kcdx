@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "MinHook.h"
+#include "conflict_engine.h"
 #include "hook_engine.h"
 #include "log.h"
 #include "lua_bind.h"
@@ -55,10 +56,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                                              std::memory_order_acq_rel)) {
                 log::Info("First update tick with live lua_State — registering KCDX + applying patches/hooks");
                 kcdx::lua_bind::RegisterKcdxTable(L);
-                // Order matters: trampolines populate the symbol table that
-                // [[patch]] target_symbol resolvers depend on. Trampolines
-                // first, then patches (which may import symbols), then hooks.
+                // Order:
+                //   1. trampolines populate the symbol table (so patch/hook
+                //      target_symbol resolves)
+                //   2. conflict_engine runs the unified pre-flight pass
+                //      (resolves every patch + hook, classifies conflicts,
+                //      logs each)
+                //   3. patches apply (reading conflict_engine::g_resolvedPatches)
+                //   4. hooks apply (reading conflict_engine::g_resolvedHooks)
                 kcdx::trampoline_engine::ApplyAll();
+                kcdx::conflict_engine::RunPreFlight();
                 kcdx::patch::ApplyAll();
                 kcdx::hook_engine::ApplyAll();
 

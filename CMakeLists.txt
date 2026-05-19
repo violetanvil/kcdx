@@ -73,6 +73,8 @@ add_library(kcdx SHARED
     src/hook_engine.cpp
     src/symbols.cpp
     src/trampoline_engine.cpp
+    src/conflict_engine.cpp
+    src/load_order.cpp
 )
 
 target_include_directories(kcdx PRIVATE
