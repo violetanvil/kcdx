@@ -32,10 +32,22 @@ target_include_directories(minhook PUBLIC vendor/minhook/include)
 target_include_directories(minhook PRIVATE vendor/minhook/src)
 
 # -----------------------------------------------------------------------------
-# asmjit (Phase 5+: vendored as a submodule, typed Lua-callback marshaling)
+# asmjit (vendored flat-copy at commit 0bd5787, Zlib license)
+#
+# Used by Phase 5's typed-marshaling trampolines for [[hook]] lua_callback
+# and [[mid_hook]] entries. Plugin authors don't see asmjit directly —
+# it's an engine-internal dep.
+#
+# Build options chosen to minimize the binary size impact:
+#   - ASMJIT_NO_INSTALL: skip install targets (we don't ship asmjit as a
+#     standalone library, just statically linked into kcdx.asi)
+#   - ASMJIT_NO_FOREIGN: drop the non-x86-64 backends (KCD2 is x86-64 only).
+#     Saves ~2 MB of compiled-but-unused code.
 # -----------------------------------------------------------------------------
-# add_subdirectory(vendor/asmjit)
-# Uncomment when Phase 5 lands.
+set(ASMJIT_NO_INSTALL ON CACHE BOOL "" FORCE)
+set(ASMJIT_NO_FOREIGN ON CACHE BOOL "" FORCE)
+set(ASMJIT_STATIC ON CACHE BOOL "" FORCE)
+add_subdirectory(vendor/asmjit)
 
 # -----------------------------------------------------------------------------
 # rom-borrowed (Phase 5+: vendored RoM source files for dynamic_hook bindings)
@@ -86,7 +98,9 @@ target_include_directories(kcdx PRIVATE
 )
 
 # version.lib is needed for GetFileVersionInfo* calls in plugin_loader.cpp
-target_link_libraries(kcdx PRIVATE lua minhook version)
+# asmjit is linked even when no [[hook]] uses lua_callback yet — Phase 5
+# code references it; the linker dead-strips unused asmjit code per-symbol.
+target_link_libraries(kcdx PRIVATE lua minhook asmjit version)
 
 if(MSVC)
     target_compile_definitions(kcdx PRIVATE
