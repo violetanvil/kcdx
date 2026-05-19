@@ -1,0 +1,18 @@
+# CAP-08 — kcdxMessagingInterface engine lifecycle messages.
+#
+# Subscribes to engine messages with sender=null. Tracks which message
+# types were received. Reports pass at kInputLoaded if all three boot-
+# time messages have been observed (kPostLoad, kPostPostLoad, kInputLoaded).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-08-messaging"
+display_name        = "CAP-08 Messaging"
+author              = "kcdx"
+description         = "Subscribes to engine messages, asserts all three boot messages received."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"

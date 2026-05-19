@@ -1,0 +1,24 @@
+# CAP-16 + COMP-06 — Plugin B. Consumer side of the dependency pair.
+#
+# Declares a dependency on cap-16-A; kcdx's topo-sort guarantees A's
+# Plugin_Load completes before B's. B verifies during Plugin_Load that:
+#   1. A's manifest is queryable via GetPluginInfo (CAP-16 dependencies)
+#   2. A's stable handle exists (== COMP-06 cross-plugin visibility)
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-16-B"
+display_name        = "CAP-16/COMP-06 Consumer (B)"
+author              = "kcdx"
+description         = "Loads after A. Asserts A's plugin info is visible."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+
+[[plugin.dependencies]]
+name        = "kcdx.cap-16-A"
+min_version = "1.0.0"
+optional    = false

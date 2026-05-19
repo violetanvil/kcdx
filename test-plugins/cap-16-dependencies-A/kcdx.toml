@@ -1,0 +1,18 @@
+# CAP-16 + COMP-06 — Plugin A. Producer side of the dependency pair.
+#
+# Pair with cap-16-dependencies-B/. A loads first (B depends on A via
+# kcdxPluginVersionData.dependencies), registers a Lua function under
+# kcdx.cap16producer, then reports PASS.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-16-A"
+display_name        = "CAP-16/COMP-06 Producer (A)"
+author              = "kcdx"
+description         = "Loads first. Registers a Lua function B can introspect."
+version             = "1.0.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
