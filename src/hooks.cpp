@@ -10,6 +10,7 @@
 #include "MinHook.h"
 #include "conflict_engine.h"
 #include "hook_engine.h"
+#include "dev.h"
 #include "log.h"
 #include "lua_bind.h"
 #include "messaging.h"
@@ -47,8 +48,64 @@ int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
     return g_orig_lua_pcall(L, nargs, nresults, errfunc);
 }
 
+// Phase 5g investigation: periodic readback of kcdx.hello.greet's
+// cfunction pointer to find out IF and WHEN the value at that table
+// slot changes after first-update-tick registration. If the value
+// stays equal to LuaDispatchShim throughout, the mutation must
+// happen in pak Lua's read context (very strange). If the value
+// changes by tick N, we can correlate with what other code ran
+// around that time.
+//
+// Triggers a few readbacks at staggered intervals.
+static void Phase5gReadback(lua_State* L, uint64_t tick) {
+    static const int kTicks[] = { 1, 50, 500, 2000, 8000 };
+    bool match = false;
+    for (int t : kTicks) {
+        if ((uint64_t)t == tick) { match = true; break; }
+    }
+    if (!match) return;
+
+    lua_getglobal(L, "kcdx");
+    if (!lua_istable(L, -1)) {
+        log::WarnF("[5g-readback tick=%llu] _G.kcdx is not a table",
+                   (unsigned long long)tick);
+        lua_pop(L, 1);
+        return;
+    }
+    lua_getfield(L, -1, "hello");
+    if (!lua_istable(L, -1)) {
+        log::WarnF("[5g-readback tick=%llu] kcdx.hello missing",
+                   (unsigned long long)tick);
+        lua_pop(L, 2);
+        return;
+    }
+    lua_getfield(L, -1, "greet");
+    if (lua_iscfunction(L, -1)) {
+        lua_CFunction cf = lua_tocfunction(L, -1);
+        KCDX_DEV("SCRIPTING", "READBACK/tick",
+            kcdx::dev::KV("tick",        (unsigned long long)tick),
+            kcdx::dev::KV("path",        "_G.kcdx.hello.greet"),
+            kcdx::dev::KV("lua_type",    lua_type(L, -1)),
+            kcdx::dev::KV("topointer",   lua_topointer(L, -1)),
+            kcdx::dev::KV("tocfunction", (const void*)cf));
+    } else {
+        KCDX_DEV("SCRIPTING", "READBACK/tick/missing",
+            kcdx::dev::KV("tick",     (unsigned long long)tick),
+            kcdx::dev::KV("lua_type", lua_type(L, -1)));
+    }
+    lua_pop(L, 3);  // greet + hello + kcdx
+}
+
 void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     static std::atomic<bool> done{false};
+    static std::atomic<uint64_t> tick_count{0};
+    {
+        uint64_t t = tick_count.fetch_add(1) + 1;
+        lua_State* L_now = g_L.load(std::memory_order_acquire);
+        if (L_now && done.load(std::memory_order_acquire)) {
+            Phase5gReadback(L_now, t);
+        }
+    }
     if (!done.load(std::memory_order_acquire)) {
         lua_State* L = g_L.load(std::memory_order_acquire);
         if (L) {
@@ -95,6 +152,26 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                     }
                     log::InfoF("Apply summary: %zu/%zu patch(es), %zu/%zu hook(s)",
                                okPatches, totalPatches, okHooks, totalHooks);
+                }
+
+                // Phase 5g: mid-hooks. Not part of g_applyOrder yet
+                // (conflict_engine doesn't track them in v0.1); apply
+                // separately. Each mid-hook resolves its locator inline
+                // and goes through hook_engine::InstallRuntime so the
+                // global first-wins map still catches direct VA
+                // collisions with [[hook]] or runtime kcdx.memory.dynamic_hook
+                // installs.
+                const size_t totalMidHooks = kcdx::hook_engine::g_mid_hooks.size();
+                if (totalMidHooks > 0) {
+                    log::InfoF("Applying %zu mid-hook(s)%s",
+                               totalMidHooks,
+                               kcdx::patch::g_dryRun ? " [dry_run=true]" : "");
+                    size_t okMidHooks = 0;
+                    for (size_t i = 0; i < totalMidHooks; ++i) {
+                        if (kcdx::hook_engine::ApplyOneMidHook(i)) ++okMidHooks;
+                    }
+                    log::InfoF("Mid-hook summary: %zu/%zu installed",
+                               okMidHooks, totalMidHooks);
                 }
 
                 // Lifecycle: input subsystem is alive by the time the first

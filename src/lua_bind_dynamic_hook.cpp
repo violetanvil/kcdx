@@ -33,6 +33,7 @@ extern "C" {
 #include <asmjit/asmjit.h>
 
 #include "hook_engine.h"
+#include "dev.h"
 #include "log.h"
 #include "lua_bind_helpers.h"
 #include "lua_memory.h"
@@ -194,6 +195,14 @@ int Lua_DynamicHook(lua_State* L) {
         return 2;
     }
 
+    KCDX_DEV("LUA", "DYNAMIC_HOOK/request",
+        kcdx::dev::KV("name",         name),
+        kcdx::dev::KV("target",       (void*)target_addr),
+        kcdx::dev::KV("return_type",  return_type),
+        kcdx::dev::KV("param_count",  (unsigned long long)param_types.size()),
+        kcdx::dev::KV("has_pre",      has_pre),
+        kcdx::dev::KV("has_post",     has_post));
+
     // Build the runtime_func_t. Allocated on the heap because we hand
     // its lifetime to the Lua userdata.
     auto rf = std::make_unique<kcdx::rom::runtime_func_t>();
@@ -209,6 +218,9 @@ int Lua_DynamicHook(lua_State* L) {
         &kcdx::scripting::dynamic_hook_post,
         target_addr);
     if (!jit_addr) {
+        KCDX_DEV("LUA", "DYNAMIC_HOOK/jit-failed",
+            kcdx::dev::KV("name",   name),
+            kcdx::dev::KV("target", (void*)target_addr));
         lua_pop(L, 2);  // pre, post
         lua_pushnil(L);
         lua_pushfstring(L, "kcdx.memory.dynamic_hook '%s': make_jit_func "
@@ -216,15 +228,34 @@ int Lua_DynamicHook(lua_State* L) {
                            "see kcdx.log)", name.c_str());
         return 2;
     }
+    KCDX_DEV("LUA", "DYNAMIC_HOOK/jit-ok",
+        kcdx::dev::KV("name",     name),
+        kcdx::dev::KV("target",   (void*)target_addr),
+        kcdx::dev::KV("jit_addr", (void*)jit_addr));
 
     // Install via hook_engine — same conflict matrix + first-wins as TOML hooks.
     auto install = kcdx::hook_engine::InstallRuntime(name, target_addr, (void*)jit_addr);
     if (!install.ok) {
+        KCDX_DEV("LUA", "DYNAMIC_HOOK/install-failed",
+            kcdx::dev::KV("name",   name),
+            kcdx::dev::KV("target", (void*)target_addr),
+            kcdx::dev::KV("reason", install.reason));
         lua_pop(L, 2);  // pre, post
         lua_pushnil(L);
         lua_pushfstring(L, "kcdx.memory.dynamic_hook '%s': %s",
                         name.c_str(), install.reason.c_str());
         return 2;
+    }
+    KCDX_DEV("LUA", "DYNAMIC_HOOK/install-ok",
+        kcdx::dev::KV("name",      name),
+        kcdx::dev::KV("target",    (void*)target_addr),
+        kcdx::dev::KV("pOriginal", install.pOriginal));
+
+    // Wire MinHook's pOriginal into the JIT'd trampoline's
+    // call-original slot. See hook_engine.cpp::ApplyOneMidHook for
+    // the long explanation; this is the same fix.
+    if (void** slot = rf->get_jit_original_slot()) {
+        *slot = install.pOriginal;
     }
 
     // Register with scripting so dispatchers can find this hook by target_addr.

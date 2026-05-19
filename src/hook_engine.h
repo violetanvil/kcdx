@@ -56,8 +56,55 @@ struct HookEntry {
     std::string              lua_post_callback; // optional; same lookup
 };
 
+// Phase 5g: [[mid_hook]] entries from kcdx.toml. Distinct from HookEntry
+// because the install path is different (runtime_func_t::make_jit_midfunc
+// instead of make_jit_func) and the schema fields are different (captures
+// + stack_restore_offset instead of return_type).
+//
+// Mid-hooks land at an arbitrary offset inside a function — typically
+// pointing at a specific instruction whose effect the plugin wants to
+// override. The Lua callback receives a table keyed by capture name
+// (e.g. {r14b = <value_wrapper>}). The callback mutates wrapper values
+// via :set(...); on return, the trampoline writes the modified values
+// back to the named registers (or memory expressions) and resumes
+// execution at (pattern_match + offset + stack_restore_offset) — past
+// the captured instruction.
+//
+// param_captures syntax (subset of RoM's, expanded as plugins demand):
+//   "rax", "rbx", "r14b", etc. — bare GP register name
+//   "xmm0", "xmm1"             — XMM register name
+//   "[rcx+0x10]"               — memory at register + displacement
+//                                (square-brackets mark a memory expr)
+//
+// stack_restore_offset is the byte length of the captured instruction.
+// For a 3-byte `mov r14b, al` that's 3; resume executes the instruction
+// after the mov. Set to 0 to re-execute the captured instruction itself
+// after the callback (rare; only useful when the capture is a no-op
+// observability tap rather than an override).
+struct MidHookEntry {
+    std::string sourceFile;
+    std::string name;
+    std::string description;
+    int         priority = 100;
+    std::string module = "WHGame.dll";
+
+    // Locator — same as HookEntry / PatchEntry.
+    patch::Pattern             pattern;
+    int                        offset = 0;
+    std::optional<patch::Pattern> context;
+    patch::Anchor              anchor;
+    uint32_t                   maxAnchorDistance = 4096;
+
+    // Mid-hook-specific
+    std::vector<std::string> param_types;       // per-capture type, "i8" / "i32" / "ptr" / etc.
+    std::vector<std::string> param_captures;    // per-capture source, "r14b" / "[rcx+0x10]" / etc.
+    int                      stack_restore_offset = 0;
+    std::string              lua_callback;      // dotted Lua function name; required
+};
+
 // Engine state.
-extern std::vector<HookEntry> g_hooks;
+extern std::vector<HookEntry>     g_hooks;
+extern std::vector<MidHookEntry>  g_mid_hooks;
 
 // Apply one hook by index into g_hooks. Reads its resolution from
 // conflict_engine::g_resolvedHooks. Logs status. Returns true on
@@ -66,6 +113,13 @@ extern std::vector<HookEntry> g_hooks;
 // Called by the unified apply orchestrator (in hooks.cpp's first-update-tick
 // handler) which interleaves patch and hook applies in global load order.
 bool ApplyOneHook(size_t hookIdx);
+
+// Phase 5g: apply one mid-hook by index into g_mid_hooks. Resolves the
+// locator inline (mid-hooks don't currently participate in
+// conflict_engine pre-flight — they're an additive layer with their
+// own first-wins semantics via hook_engine::InstallRuntime). Returns
+// true on success, false on abort.
+bool ApplyOneMidHook(size_t midHookIdx);
 
 // Apply every loaded hook in g_hooks order. Used by fallback paths only
 // (the production orchestration calls ApplyOneHook from a global sorted

@@ -78,6 +78,20 @@ public:
     void enable_hook()  { if (m_detour) m_detour->enable();  }
     void disable_hook() { if (m_detour) m_detour->disable(); }
 
+    // Phase 5g: when the install path bypasses m_detour (e.g.,
+    // hook_engine::InstallRuntime calls MH_CreateHook directly to
+    // share its g_installed first-wins map across TOML + runtime
+    // hooks), the caller must write MinHook's returned pOriginal
+    // here so the JIT'd trampoline's `push qword [&original_]` reads
+    // the correct value at runtime. Without this, the trampoline
+    // pushes null and the subsequent `ret` jumps to address 0.
+    //
+    // Returns &original_ — the same pointer `get_original_ptr()` bakes
+    // into the JIT'd asm at JIT time.
+    void** get_jit_original_slot() {
+        return m_detour ? m_detour->get_original_ptr() : nullptr;
+    }
+
     void debug_print_args(const asmjit::FuncSignature& sig);
 
     // Build a JIT trampoline given a raw asmjit signature. Returns the

@@ -106,6 +106,7 @@ add_library(kcdx SHARED
     src/lua_bind_dynamic_call.cpp
     src/lua_bind_lua.cpp
     src/scripting_interface.cpp
+    src/dev.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

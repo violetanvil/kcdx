@@ -12,6 +12,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "dev.h"
 #include "log.h"
 
 namespace kcdx::scripting_interface {
@@ -50,10 +51,25 @@ lua_State*                 g_lua_state   = nullptr;  // captured during apply
 //   1. lightuserdata pointing at the Registration in g_applied
 int LuaDispatchShim(lua_State* L) {
     void* p = lua_touserdata(L, lua_upvalueindex(1));
-    if (!p) return luaL_error(L, "kcdx scripting shim: null upvalue");
+    if (!p) {
+        KCDX_DEV("SCRIPTING", "SHIM/null-upvalue",
+            kcdx::dev::KV("L", (const void*)L));
+        return luaL_error(L, "kcdx scripting shim: null upvalue");
+    }
     auto* reg = static_cast<Registration*>(p);
+    KCDX_DEV("SCRIPTING", "SHIM/enter",
+        kcdx::dev::KV("L",         (const void*)L),
+        kcdx::dev::KV("table",     reg->table_name),
+        kcdx::dev::KV("fn",        reg->fn_name),
+        kcdx::dev::KV("nargs",     lua_gettop(L)),
+        kcdx::dev::KV("plugin_fn", (const void*)reg->fn));
     if (!reg->fn) return luaL_error(L, "kcdx scripting shim: null fn pointer");
-    return reg->fn(L, reg->user_data);
+    int nresults = reg->fn(L, reg->user_data);
+    KCDX_DEV("SCRIPTING", "SHIM/exit",
+        kcdx::dev::KV("table",    reg->table_name),
+        kcdx::dev::KV("fn",       reg->fn_name),
+        kcdx::dev::KV("nresults", nresults));
+    return nresults;
 }
 
 // Ensure kcdx.<table_name> exists. Assumes kcdx table is at stack top.
@@ -99,18 +115,57 @@ void ApplyOne(lua_State* L, Registration* reg) {
     }
     lua_pop(L, 1);  // pop the nil
 
+    KCDX_DEV("SCRIPTING", "REGISTER",
+        kcdx::dev::KV("L",          (const void*)L),
+        kcdx::dev::KV("table",      reg->table_name),
+        kcdx::dev::KV("fn",         reg->fn_name),
+        kcdx::dev::KV("owner",      (unsigned)reg->owner),
+        kcdx::dev::KV("shim",       (const void*)&LuaDispatchShim),
+        kcdx::dev::KV("upvalue",    (const void*)reg),
+        kcdx::dev::KV("plugin_fn",  (const void*)reg->fn));
+
     // Push C closure with the Registration pointer as upvalue.
-    // Storage stability: g_applied reserve(1024) ahead of time
-    // (in RegisterFunction); registration cap enforced before
-    // every push_back so pointers handed to Lua never dangle.
+    // Storage stability: g_applied reserve(1024) ahead of time.
     lua_pushlightuserdata(L, reg);
     lua_pushcclosure(L, LuaDispatchShim, 1);
+
+    // Right-after-push observation: type + cclosure heap object addr +
+    // c.f field via tocfunction. Confirms what we just pushed.
+    {
+        int t = lua_type(L, -1);
+        const void* p_obj = lua_topointer(L, -1);
+        lua_CFunction f_cf = lua_iscfunction(L, -1) ? lua_tocfunction(L, -1) : nullptr;
+        KCDX_DEV("SCRIPTING", "REGISTER/post-push",
+            kcdx::dev::KV("table",       reg->table_name),
+            kcdx::dev::KV("fn",          reg->fn_name),
+            kcdx::dev::KV("lua_type",    t),
+            kcdx::dev::KV("topointer",   p_obj),
+            kcdx::dev::KV("tocfunction", (const void*)f_cf),
+            kcdx::dev::KV("expected_shim", (const void*)&LuaDispatchShim));
+    }
+
     // Stack: [..., subtable, cclosure]
     lua_setfield(L, -2, reg->fn_name.c_str());
     lua_pop(L, 1);  // pop subtable
 
-    log::InfoF("scripting_interface: registered kcdx.%s.%s (owner=%u)",
-               reg->table_name.c_str(), reg->fn_name.c_str(), reg->owner);
+    // Readback via _G.kcdx.<table>.<fn> after the assignment — confirms
+    // what landed in the table matches what we pushed.
+    lua_getglobal(L, "kcdx");
+    GetOrCreateSubtable(L, reg->table_name.c_str());
+    lua_getfield(L, -1, reg->fn_name.c_str());
+    {
+        int t = lua_type(L, -1);
+        const void* p_obj = lua_topointer(L, -1);
+        lua_CFunction f_cf = lua_iscfunction(L, -1) ? lua_tocfunction(L, -1) : nullptr;
+        KCDX_DEV("SCRIPTING", "REGISTER/readback",
+            kcdx::dev::KV("table",       reg->table_name),
+            kcdx::dev::KV("fn",          reg->fn_name),
+            kcdx::dev::KV("lua_type",    t),
+            kcdx::dev::KV("topointer",   p_obj),
+            kcdx::dev::KV("tocfunction", (const void*)f_cf),
+            kcdx::dev::KV("expected_shim", (const void*)&LuaDispatchShim));
+    }
+    lua_pop(L, 2);  // pop the field value + subtable
 }
 
 // Validate a name string. Must be a valid Lua identifier:

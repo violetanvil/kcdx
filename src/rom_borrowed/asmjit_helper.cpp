@@ -95,6 +95,20 @@ asmjit::TypeId get_type_id(const std::string& type) {
 #undef TYPEID_MATCH_STR_IF
 #undef TYPEID_MATCH_STR_ELSEIF
 
+    // kcdx convention aliases (matches docs/design.md and the
+    // kcdx.memory.dynamic_hook examples). The RoM-inherited table
+    // above only recognizes literal C type spellings (`int`,
+    // `int64_t`, `uintptr_t`, etc.); plugin authors writing TOML or
+    // Lua have no reason to know which spellings work, so accept the
+    // short forms too.
+    if (type == "i8"  || type == "u8")  return asmjit::TypeId::kInt8;
+    if (type == "i16" || type == "u16") return asmjit::TypeId::kInt16;
+    if (type == "i32" || type == "u32") return asmjit::TypeId::kInt32;
+    if (type == "i64" || type == "u64") return asmjit::TypeId::kInt64;
+    if (type == "f32") return asmjit::TypeId::kFloat32;
+    if (type == "f64") return asmjit::TypeId::kFloat64;
+    if (type == "ptr") return asmjit::TypeId::kUIntPtr;
+
     return asmjit::TypeId::kVoid;
 }
 

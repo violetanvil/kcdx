@@ -38,10 +38,19 @@ public:
     // Uninstall the hook (MH_DisableHook + MH_RemoveHook).
     void disable();
 
-    // The trampoline-to-original function pointer, valid after enable().
-    // RoM's JIT code references this directly to emit calls back into
-    // the original function from inside the JIT-built trampoline.
-    void* get_original_ptr() const { return original_; }
+    // Pointer-to-the-slot-where-MinHook-stored-pOriginal.
+    //
+    // CRITICAL: this returns void** (a stable address INTO this object),
+    // not void* (the value of the slot). RoM's JIT code bakes the
+    // address returned here as an asmjit qword_ptr; the JIT'd
+    // instruction reads the CURRENT value of m_original at runtime.
+    // If we returned void* (the value), the JIT would bake whatever
+    // m_original was at JIT time — which is null because we JIT
+    // BEFORE calling MH_CreateHook.
+    //
+    // Verified against RoM upstream src/hooks/detour_hook.hpp
+    // @ commit d30217b6 (2026-05-19 investigation).
+    void** get_original_ptr() { return &original_; }
 
 private:
     std::string name_;

@@ -13,6 +13,7 @@
 #include "toml.hpp"
 
 #include "hook_engine.h"
+#include "dev.h"
 #include "log.h"
 #include "patch_engine.h"
 #include "trampoline_engine.h"
@@ -251,6 +252,94 @@ bool ParseOneHook(const toml::table& t,
     return true;
 }
 
+bool ParseOneMidHook(const toml::table& t,
+                     const std::string& sourceFile,
+                     kcdx::hook_engine::MidHookEntry& out,
+                     std::string& err) {
+    using namespace kcdx::patch;
+    out.sourceFile = sourceFile;
+    out.name = OptString(t, "name");
+    if (out.name.empty()) {
+        err = "missing required field 'name'";
+        return false;
+    }
+    out.description = OptString(t, "description");
+    out.priority = OptInt(t, "priority", 100);
+    out.module = OptString(t, "module", "WHGame.dll");
+
+    std::string patternStr = OptString(t, "pattern");
+    if (patternStr.empty()) {
+        err = "missing required field 'pattern'";
+        return false;
+    }
+    try {
+        out.pattern = ParsePattern(patternStr);
+    } catch (const std::exception& e) {
+        err = std::string("parse error in 'pattern': ") + e.what();
+        return false;
+    }
+
+    out.offset = OptInt(t, "offset", 0);
+
+    if (auto* v = t.get("context"); v && v->is_string()) {
+        try {
+            out.context = ParsePattern(std::string(*v->value<std::string>()));
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'context': ") + e.what();
+            return false;
+        }
+    }
+
+    int anchorCount = 0;
+    if (auto* v = t.get("anchor_string"); v && v->is_string()) {
+        out.anchor = AnchorString{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (auto* v = t.get("anchor_function_by_export"); v && v->is_string()) {
+        out.anchor = AnchorFunctionByExport{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (auto* v = t.get("anchor_symbol"); v && v->is_string()) {
+        out.anchor = AnchorSymbol{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (anchorCount > 1) {
+        err = "only one of anchor_string / anchor_function_by_export / anchor_symbol may be declared";
+        return false;
+    }
+    out.maxAnchorDistance = static_cast<uint32_t>(OptInt(t, "max_anchor_distance", 4096));
+
+    out.lua_callback = OptString(t, "lua_callback");
+    if (out.lua_callback.empty()) {
+        err = "missing required field 'lua_callback'";
+        return false;
+    }
+
+    out.stack_restore_offset = OptInt(t, "stack_restore_offset", 0);
+
+    // param_types + param_captures: arrays of strings, same length.
+    if (auto* v = t.get("param_types"); v && v->is_array()) {
+        for (const auto& el : *v->as_array()) {
+            if (auto s = el.value<std::string>(); s.has_value()) {
+                out.param_types.push_back(*s);
+            }
+        }
+    }
+    if (auto* v = t.get("param_captures"); v && v->is_array()) {
+        for (const auto& el : *v->as_array()) {
+            if (auto s = el.value<std::string>(); s.has_value()) {
+                out.param_captures.push_back(*s);
+            }
+        }
+    }
+    if (out.param_types.size() != out.param_captures.size()) {
+        err = "param_types and param_captures must be the same length";
+        return false;
+    }
+
+    return true;
+}
+
 bool ParseOneTrampoline(const toml::table& t,
                         const std::string& sourceFile,
                         kcdx::trampoline_engine::TrampolineEntry& out,
@@ -310,6 +399,19 @@ void LoadOneFile(const fs::path& path) {
                 kcdx::patch::g_dryRun = true;
                 log::InfoF("dry_run enabled by %s", fileLabel.c_str());
             }
+            // Dev mode: any-true wins, most-permissive caps win. We call
+            // SetCapBytes/SetMaxFiles BEFORE SetEnabled so the open
+            // happens with the right caps.
+            if (OptBool(tbl, "dev_mode", false)) {
+                int cap_mb    = OptInt(tbl, "dev_log_cap_mb",   50);
+                int max_files = OptInt(tbl, "dev_log_max_files", 20);
+                size_t cap_bytes = (size_t)cap_mb * 1024ull * 1024ull;
+                kcdx::dev::SetCapBytes(cap_bytes);
+                kcdx::dev::SetMaxFiles(max_files);
+                kcdx::dev::SetEnabled(true);
+                log::InfoF("dev_mode enabled by %s (cap=%d MB, max_files=%d)",
+                           fileLabel.c_str(), cap_mb, max_files);
+            }
         }
 
         // [[patch]] array
@@ -340,6 +442,22 @@ void LoadOneFile(const fs::path& path) {
                     kcdx::hook_engine::g_hooks.push_back(std::move(entry));
                 } else {
                     log::ErrorF("Skipped hook in %s: %s", fileLabel.c_str(), err.c_str());
+                }
+            }
+        }
+
+        // [[mid_hook]] array (Phase 5g)
+        if (auto* arr = doc.get("mid_hook"); arr && arr->is_array()) {
+            for (const auto& elem : *arr->as_array()) {
+                if (!elem.is_table()) continue;
+                kcdx::hook_engine::MidHookEntry entry;
+                std::string err;
+                if (ParseOneMidHook(*elem.as_table(), fileLabel, entry, err)) {
+                    log::InfoF("Loaded mid_hook '%s' (priority %d) from %s",
+                               entry.name.c_str(), entry.priority, fileLabel.c_str());
+                    kcdx::hook_engine::g_mid_hooks.push_back(std::move(entry));
+                } else {
+                    log::ErrorF("Skipped mid_hook in %s: %s", fileLabel.c_str(), err.c_str());
                 }
             }
         }

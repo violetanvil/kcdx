@@ -10,6 +10,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "dev.h"
 #include "log.h"
 #include "lua_memory.h"  // for to_lua / to_lua_return
 
@@ -23,6 +24,31 @@ namespace {
 std::recursive_mutex g_lock;
 
 lua_State* g_lua_state = nullptr;
+
+// Phase 5g: thread-local re-entrancy guard. If a hook callback calls
+// (transitively) into a function we've also hooked — e.g., hooked
+// lua_pcall and the callback uses System.LogAlways which internally
+// runs through pcall — without this guard we'd recurse infinitely
+// and stack-overflow. RAII flag flips for the duration of dispatch.
+//
+// thread_local so concurrent hook fires on different threads each get
+// their own guard (engine update thread vs. e.g. audio worker that
+// happened to enter Lua somehow).
+thread_local bool t_in_dispatch = false;
+
+struct DispatchGuard {
+    bool was_set = false;
+    DispatchGuard() {
+        was_set = t_in_dispatch;
+        t_in_dispatch = true;
+    }
+    ~DispatchGuard() {
+        t_in_dispatch = was_set;
+    }
+    // true if this guard is the outermost (we're entering dispatch fresh).
+    // false if we're recursing — caller should skip the dispatch.
+    bool is_outermost() const { return !was_set; }
+};
 
 // Non-owning. Lifetime of runtime_func_t lives in the [[hook]]
 // installer (or, eventually, Lua-side memory.dynamic_hook userdata).
@@ -232,11 +258,32 @@ bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* params,
                       uint8_t                                        param_count,
                       kcdx::rom::runtime_func_t::return_value_t*     return_value,
                       uintptr_t                                      target_func_ptr) {
+    KCDX_DEV("SCRIPTING", "DISPATCH/pre/enter",
+        kcdx::dev::KV("target",      (void*)target_func_ptr),
+        kcdx::dev::KV("param_count", (unsigned)param_count));
+    DispatchGuard re_entry;
+    if (!re_entry.is_outermost()) {
+        KCDX_DEV("SCRIPTING", "DISPATCH/pre/reentry-skip",
+            kcdx::dev::KV("target", (void*)target_func_ptr));
+        return true;
+    }
     std::scoped_lock guard(g_lock);
-    if (!g_lua_state) return true;
+    if (!g_lua_state) {
+        KCDX_DEV("SCRIPTING", "DISPATCH/pre/no-state",
+            kcdx::dev::KV("target", (void*)target_func_ptr));
+        return true;
+    }
 
     auto it = g_pre_callbacks.find(target_func_ptr);
-    if (it == g_pre_callbacks.end() || it->second.empty()) return true;
+    if (it == g_pre_callbacks.end() || it->second.empty()) {
+        KCDX_DEV("SCRIPTING", "DISPATCH/pre/no-callbacks",
+            kcdx::dev::KV("target",            (void*)target_func_ptr),
+            kcdx::dev::KV("registered_targets", (unsigned long long)g_pre_callbacks.size()));
+        return true;
+    }
+    KCDX_DEV("SCRIPTING", "DISPATCH/pre/found",
+        kcdx::dev::KV("target",         (void*)target_func_ptr),
+        kcdx::dev::KV("callback_count", (unsigned long long)it->second.size()));
 
     auto hook_it = g_target_to_hook.find(target_func_ptr);
     const kcdx::rom::runtime_func_t* hook =
@@ -281,6 +328,10 @@ void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
                        uint8_t                                        param_count,
                        kcdx::rom::runtime_func_t::return_value_t*     return_value,
                        uintptr_t                                      target_func_ptr) {
+    KCDX_DEV("SCRIPTING", "DISPATCH/post/enter",
+        kcdx::dev::KV("target", (void*)target_func_ptr));
+    DispatchGuard re_entry;
+    if (!re_entry.is_outermost()) return;
     std::scoped_lock guard(g_lock);
     if (!g_lua_state) return;
 
@@ -317,6 +368,10 @@ void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
 uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params,
                            size_t                                         param_count,
                            uintptr_t                                      target_func_ptr) {
+    KCDX_DEV("SCRIPTING", "DISPATCH/mid/enter",
+        kcdx::dev::KV("target", (void*)target_func_ptr));
+    DispatchGuard re_entry;
+    if (!re_entry.is_outermost()) return 0;
     std::scoped_lock guard(g_lock);
     if (!g_lua_state) return 0;
 

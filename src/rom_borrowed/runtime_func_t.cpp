@@ -98,7 +98,7 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
         } else if (is_XMM_register(arg_type)) {
             arg = cc.new_xmm();
         } else {
-            log::ErrorF("runtime_func_t::make_jit_func: parameter wider than 64 bits not supported, index=%u type=%d",
+            log::ErrorF("runtime_func_t::make_jit_func: unsupported parameter type at index=%u (asmjit TypeId=%d; likely unknown type name in param_types — try 'i32', 'i64', 'ptr', 'f32', 'f64', etc., or check spelling against asmjit_helper.cpp::get_type_id)",
                         (unsigned)arg_index, (int)arg_type);
             debug_print_args(sig);
             return 0;
@@ -134,7 +134,7 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
         } else if (is_XMM_register(argType)) {
             cc.movq(args_stack_index, arg_registers.at(argIdx).as<asmjit::x86::Vec>());
         } else {
-            log::ErrorF("runtime_func_t::make_jit_func: parameter wider than 64 bits not supported, index=%u type=%d",
+            log::ErrorF("runtime_func_t::make_jit_func: unsupported parameter type at index=%u (asmjit TypeId=%d; likely unknown type name in param_types — try 'i32', 'i64', 'ptr', 'f32', 'f64', etc., or check spelling against asmjit_helper.cpp::get_type_id)",
                         (unsigned)argIdx, (int)argType);
             debug_print_args(sig);
             return 0;
@@ -197,7 +197,7 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
         } else if (is_XMM_register(argType)) {
             cc.movq(arg_registers.at(arg_idx).as<asmjit::x86::Vec>(), args_stack_index);
         } else {
-            log::ErrorF("runtime_func_t::make_jit_func: parameter wider than 64 bits not supported, index=%u type=%d",
+            log::ErrorF("runtime_func_t::make_jit_func: unsupported parameter type at index=%u (asmjit TypeId=%d; likely unknown type name in param_types — try 'i32', 'i64', 'ptr', 'f32', 'f64', etc., or check spelling against asmjit_helper.cpp::get_type_id)",
                         (unsigned)arg_idx, (int)argType);
             debug_print_args(sig);
             return 0;
@@ -410,7 +410,7 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
                 cc.movq(asmjit::x86::xmm0, asmjit::x86::ptr(asmjit::x86::rsp, 16));
                 cc.add(asmjit::x86::rsp, 16);
             } else {
-                log::Error("runtime_func_t::make_jit_midfunc: parameters wider than 64 bits not supported");
+                log::Error("runtime_func_t::make_jit_midfunc: unsupported parameter type (likely unknown name in param_types — try 'i32', 'i64', 'ptr', 'f32', 'f64', etc.)");
                 return 0;
             }
         } else {
@@ -447,7 +447,7 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
                 }
                 cc.movq(asmjit::x86::ptr(asmjit::x86::rsp, 16 * argIdx), *target_reg);
             } else {
-                log::Error("runtime_func_t::make_jit_midfunc: parameters wider than 64 bits not supported");
+                log::Error("runtime_func_t::make_jit_midfunc: unsupported parameter type (likely unknown name in param_types — try 'i32', 'i64', 'ptr', 'f32', 'f64', etc.)");
                 return 0;
             }
         }
@@ -568,8 +568,19 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     code.relocate_to_base((uintptr_t)m_jit_function_buffer);
     code.copy_flattened_data(m_jit_function_buffer, size);
 
-    log::DebugF("runtime_func_t::make_jit_midfunc: JIT stub at 0x%p (%zu bytes, branch_pool), asmjit log:\n%s",
-                m_jit_function_buffer, size, asmLog.data());
+    log::DebugF("runtime_func_t::make_jit_midfunc: JIT stub at 0x%p (%zu bytes, branch_pool)",
+                m_jit_function_buffer, size);
+    // Log the disassembly line by line so log.h's 1024-char buffer
+    // doesn't truncate it. Each asmjit-emitted instruction is on its
+    // own line in the StringLogger output.
+    const char* p = asmLog.data();
+    while (p && *p) {
+        const char* end = strchr(p, '\n');
+        std::string line = end ? std::string(p, end - p) : std::string(p);
+        if (!line.empty()) log::DebugF("  jit| %s", line.c_str());
+        if (!end) break;
+        p = end + 1;
+    }
 
     return (uintptr_t)m_jit_function_buffer;
 }

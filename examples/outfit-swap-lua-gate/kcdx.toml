@@ -1,0 +1,36 @@
+# outfit-swap-lua-gate — VioletAnvil
+#
+# Phase 5g demo: recreates the outfit-swap-in-combat behavior via a
+# [[mid_hook]] driven by pak Lua, instead of mempatch/kcdx's
+# [[patch]] byte rewrite.
+#
+# Functional equivalence:
+#   - Original instruction at +13:  44 8A F0       (mov r14b, al)
+#   - mempatch's [[patch]] rewrites: 45 31 F6      (xor r14d, r14d)
+#   - This mid-hook captures r14, lets Lua zero it, then resumes
+#     execution past the 3-byte mov. End result: r14 is 0 after the
+#     instruction, same as the patch.
+#
+# The companion pak mod (workspace: outfit-swap-lua-gate-pak/) provides
+# the OutfitGate.Decide Lua function. The mid-hook fires whenever the
+# captured instruction executes (which is during inventory checks
+# involving combat state).
+#
+# Why this is interesting: proves the [[mid_hook]] mechanism end-to-end
+# AND demonstrates the SKSE-class "I can rewrite C++ behavior via Lua"
+# capability that motivated kcdx. The same outcome the existing
+# [[patch]] achieves, but the gate logic lives in Lua (and could
+# easily decide based on player state, CVars, etc. rather than always
+# returning 0).
+
+[[mid_hook]]
+name                 = "outfit_swap_lua_gate"
+priority             = 100
+pattern              = "48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0"
+offset               = 13          # land at the `mov r14b, al` instruction
+stack_restore_offset = 3           # length of the captured mov; resume past it
+
+param_types    = ["uint64_t"]
+param_captures = ["r14"]
+
+lua_callback = "OutfitGate.Decide"

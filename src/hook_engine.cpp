@@ -17,7 +17,8 @@
 
 namespace kcdx::hook_engine {
 
-std::vector<HookEntry> g_hooks;
+std::vector<HookEntry>    g_hooks;
+std::vector<MidHookEntry> g_mid_hooks;
 
 namespace {
 
@@ -121,6 +122,13 @@ bool ApplyOneHook(size_t hookIdx) {
             return false;
         }
 
+        // Wire MinHook's pOriginal into the JIT'd trampoline's
+        // call-original slot — see ApplyOneMidHook for the long
+        // explanation. Same fix; both paths bypass m_detour->enable().
+        if (void** slot = rf->get_jit_original_slot()) {
+            *slot = install.pOriginal;
+        }
+
         // Register the runtime_func_t with scripting so the dispatchers
         // can resolve target_func_ptr -> param_types for arg marshaling.
         kcdx::scripting::register_hook(targetAddr, rf.get());
@@ -218,6 +226,96 @@ size_t ApplyAll() {
     }
     log::InfoF("Hook engine: %zu of %zu hook(s) installed", installed, g_hooks.size());
     return installed;
+}
+
+bool ApplyOneMidHook(size_t midHookIdx) {
+    if (midHookIdx >= g_mid_hooks.size()) return false;
+    const MidHookEntry& mh = g_mid_hooks[midHookIdx];
+
+    // Mid-hooks resolve their target inline. They don't participate in
+    // conflict_engine pre-flight today (Phase 5g v0.1 limitation;
+    // future work could lift the same first-wins matrix to cover them,
+    // but the install-time first-wins via InstallRuntime is sufficient
+    // for v0.1 since mid-hook collisions are rare in practice).
+    patch::PatchEntry locator;
+    locator.sourceFile        = mh.sourceFile;
+    locator.name              = mh.name;
+    locator.module            = mh.module;
+    locator.pattern           = mh.pattern;
+    locator.context           = mh.context;
+    locator.anchor            = mh.anchor;
+    locator.maxAnchorDistance = mh.maxAnchorDistance;
+    locator.offset            = mh.offset;
+    locator.original.clear();
+    locator.replacement.clear();
+    patch::ResolvedPatch r = patch::Resolve(locator);
+    if (!r.ok) {
+        log::ErrorF("[mid_hook '%s'] aborted: %s",
+                    mh.name.c_str(), r.reason.c_str());
+        return false;
+    }
+    uintptr_t targetAddr = r.patchAddr;
+
+    if (mh.param_types.size() != mh.param_captures.size()) {
+        log::ErrorF("[mid_hook '%s'] aborted: param_types (%zu) and "
+                    "param_captures (%zu) length mismatch",
+                    mh.name.c_str(),
+                    mh.param_types.size(), mh.param_captures.size());
+        return false;
+    }
+    if (mh.lua_callback.empty()) {
+        log::ErrorF("[mid_hook '%s'] aborted: lua_callback is required",
+                    mh.name.c_str());
+        return false;
+    }
+
+    // Build the JIT trampoline.
+    auto rf = std::make_unique<kcdx::rom::runtime_func_t>();
+    uintptr_t jit_addr = rf->make_jit_midfunc(
+        mh.param_types,
+        mh.param_captures,
+        mh.stack_restore_offset,
+        asmjit::Arch::kX64,
+        &kcdx::scripting::dynamic_hook_mid,
+        targetAddr);
+    if (!jit_addr) {
+        log::ErrorF("[mid_hook '%s'] aborted: make_jit_midfunc failed "
+                    "(check param_captures syntax — see kcdx.log for asmjit error)",
+                    mh.name.c_str());
+        return false;
+    }
+
+    auto install = InstallRuntime(mh.name, targetAddr, (void*)jit_addr);
+    if (!install.ok) {
+        log::ErrorF("[mid_hook '%s'] InstallRuntime failed: %s",
+                    mh.name.c_str(), install.reason.c_str());
+        return false;
+    }
+
+    // CRITICAL: the JIT'd trampoline reads `[&m_detour->original_]`
+    // at runtime to find the call-original address. Because we bypass
+    // m_detour->enable() (InstallRuntime calls MH_CreateHook directly
+    // for first-wins coordination with TOML hooks), m_detour->original_
+    // never gets set by detour_hook::enable(). Write it now from the
+    // pOriginal MinHook returned via RuntimeInstallResult, so the
+    // trampoline's push reads the right value.
+    if (void** slot = rf->get_jit_original_slot()) {
+        *slot = install.pOriginal;
+    }
+
+    // Wire scripting: dispatchers need the runtime_func_t for
+    // param_types lookup; the callback name is resolved lazily on fire.
+    kcdx::scripting::register_hook(targetAddr, rf.get());
+    kcdx::scripting::register_mid_callback_by_name(targetAddr, mh.lua_callback);
+
+    g_runtime_funcs[targetAddr] = std::move(rf);
+
+    log::InfoF("[mid_hook '%s'] lua_callback='%s' wired (target 0x%p, "
+               "JIT detour 0x%p, %zu captures, stack_restore_offset=%d)",
+               mh.name.c_str(), mh.lua_callback.c_str(),
+               reinterpret_cast<void*>(targetAddr), (void*)jit_addr,
+               mh.param_captures.size(), mh.stack_restore_offset);
+    return true;
 }
 
 RuntimeInstallResult InstallRuntime(const std::string& name,

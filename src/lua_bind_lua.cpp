@@ -27,6 +27,9 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "dev.h"
+#include "log.h"
+
 namespace kcdx::lua_bind_lua {
 
 namespace {
@@ -47,7 +50,27 @@ int Lua_CFunctionAddress(lua_State* L) {
                            "returned null");
         return 2;
     }
-    lua_pushinteger(L, (lua_Integer)(uintptr_t)fn);
+    uintptr_t  fn_addr   = (uintptr_t)fn;
+    int        arg_type  = lua_type(L, 1);
+    const void* arg_objp = lua_topointer(L, 1);
+
+    KCDX_DEV("LUA", "CFUNCTION_ADDR/enter",
+        kcdx::dev::KV("L",          (const void*)L),
+        kcdx::dev::KV("arg_type",   arg_type),
+        kcdx::dev::KV("arg_topointer", arg_objp),
+        kcdx::dev::KV("tocfunction",   (const void*)fn));
+
+    lua_pushinteger(L, (lua_Integer)fn_addr);
+
+    // Readback what we just pushed via both lua_tointeger and lua_tonumber
+    // so we can see if the value is the same as what we put in.
+    lua_Integer back_i = lua_tointeger(L, -1);
+    lua_Number  back_n = lua_tonumber(L, -1);
+    KCDX_DEV("LUA", "CFUNCTION_ADDR/readback",
+        kcdx::dev::KV("pushed_hex",     (uintptr_t)fn_addr),
+        kcdx::dev::KV("readback_int_hex", (uintptr_t)back_i),
+        kcdx::dev::KV("readback_num",   (double)back_n),
+        kcdx::dev::KV("readback_num_as_hex", (uintptr_t)(uintptr_t)back_n));
     return 1;
 }
 
