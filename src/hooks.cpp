@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "MinHook.h"
+#include "hook_engine.h"
 #include "log.h"
 #include "lua_bind.h"
 #include "messaging.h"
@@ -51,9 +52,10 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
             bool expected = false;
             if (done.compare_exchange_strong(expected, true,
                                              std::memory_order_acq_rel)) {
-                log::Info("First update tick with live lua_State — registering KCDX + applying patches");
+                log::Info("First update tick with live lua_State — registering KCDX + applying patches/hooks");
                 kcdx::lua_bind::RegisterKcdxTable(L);
                 kcdx::patch::ApplyAll();
+                kcdx::hook_engine::ApplyAll();
 
                 // Lifecycle: input subsystem is alive by the time the first
                 // update tick fires (Lua VM is up). Closest analogue to

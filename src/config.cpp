@@ -12,6 +12,7 @@
 #define TOML_EXCEPTIONS 1
 #include "toml.hpp"
 
+#include "hook_engine.h"
 #include "log.h"
 #include "patch_engine.h"
 
@@ -134,6 +135,80 @@ bool ParseOnePatch(const toml::table& t,
     return true;
 }
 
+bool ParseOneHook(const toml::table& t,
+                  const std::string& sourceFile,
+                  kcdx::hook_engine::HookEntry& out,
+                  std::string& err) {
+    using namespace kcdx::patch;
+    out.sourceFile = sourceFile;
+    out.name = OptString(t, "name");
+    if (out.name.empty()) {
+        err = "missing required field 'name'";
+        return false;
+    }
+    out.description = OptString(t, "description");
+    out.priority = OptInt(t, "priority", 100);
+    out.module = OptString(t, "module", "WHGame.dll");
+
+    std::string patternStr = OptString(t, "pattern");
+    if (patternStr.empty()) {
+        err = "missing required field 'pattern'";
+        return false;
+    }
+    try {
+        out.pattern = ParsePattern(patternStr);
+    } catch (const std::exception& e) {
+        err = std::string("parse error in 'pattern': ") + e.what();
+        return false;
+    }
+
+    out.offset = OptInt(t, "offset", 0);
+
+    std::string bytesStr = OptString(t, "bytes");
+    if (bytesStr.empty()) {
+        err = "missing required field 'bytes' (the detour body)";
+        return false;
+    }
+    try {
+        out.bytes = ParseBytes(bytesStr);
+    } catch (const std::exception& e) {
+        err = std::string("parse error in 'bytes': ") + e.what();
+        return false;
+    }
+
+    // Tier 2 — context (same shape as [[patch]])
+    if (auto* v = t.get("context"); v && v->is_string()) {
+        try {
+            out.context = ParsePattern(std::string(*v->value<std::string>()));
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'context': ") + e.what();
+            return false;
+        }
+    }
+
+    // Tier 3 — anchors (mutually exclusive, same as [[patch]])
+    int anchorCount = 0;
+    if (auto* v = t.get("anchor_string"); v && v->is_string()) {
+        out.anchor = AnchorString{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (auto* v = t.get("anchor_function_by_export"); v && v->is_string()) {
+        out.anchor = AnchorFunctionByExport{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (auto* v = t.get("anchor_symbol"); v && v->is_string()) {
+        out.anchor = AnchorSymbol{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (anchorCount > 1) {
+        err = "only one of anchor_string / anchor_function_by_export / anchor_symbol may be declared";
+        return false;
+    }
+    out.maxAnchorDistance = static_cast<uint32_t>(OptInt(t, "max_anchor_distance", 4096));
+
+    return true;
+}
+
 void LoadOneFile(const fs::path& path) {
     std::string fileLabel = path.string();
     try {
@@ -167,6 +242,22 @@ void LoadOneFile(const fs::path& path) {
                     kcdx::patch::g_patches.push_back(std::move(entry));
                 } else {
                     log::ErrorF("Skipped patch in %s: %s", fileLabel.c_str(), err.c_str());
+                }
+            }
+        }
+
+        // [[hook]] array (Phase 4b.1)
+        if (auto* arr = doc.get("hook"); arr && arr->is_array()) {
+            for (const auto& elem : *arr->as_array()) {
+                if (!elem.is_table()) continue;
+                kcdx::hook_engine::HookEntry entry;
+                std::string err;
+                if (ParseOneHook(*elem.as_table(), fileLabel, entry, err)) {
+                    log::InfoF("Loaded hook '%s' (priority %d) from %s",
+                               entry.name.c_str(), entry.priority, fileLabel.c_str());
+                    kcdx::hook_engine::g_hooks.push_back(std::move(entry));
+                } else {
+                    log::ErrorF("Skipped hook in %s: %s", fileLabel.c_str(), err.c_str());
                 }
             }
         }
@@ -204,9 +295,17 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
                   if (a.priority != b.priority) return a.priority < b.priority;
                   return a.name < b.name;
               });
+    std::sort(kcdx::hook_engine::g_hooks.begin(), kcdx::hook_engine::g_hooks.end(),
+              [](const kcdx::hook_engine::HookEntry& a, const kcdx::hook_engine::HookEntry& b) {
+                  if (a.priority != b.priority) return a.priority < b.priority;
+                  return a.name < b.name;
+              });
 
-    log::InfoF("Discovered %zu patch(es) from %zu config file(s) across %zu plugin folder(s)",
-               kcdx::patch::g_patches.size(), files, folders);
+    log::InfoF("Discovered %zu patch(es) and %zu hook(s) from %zu config file(s) "
+               "across %zu plugin folder(s)",
+               kcdx::patch::g_patches.size(),
+               kcdx::hook_engine::g_hooks.size(),
+               files, folders);
 }
 
 }  // namespace kcdx::config

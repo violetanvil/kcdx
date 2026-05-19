@@ -1,0 +1,44 @@
+# no_combat_state_hook — kcdx Phase 4b.1 acceptance test
+#
+# Hooks FUN_1805605b8 (IsInCombat wrapper) in WHGame.dll. The original
+# function reads the player's combat state through a 3-deref pointer chain
+# and returns `state == 2`. Our 3-byte detour replaces the entire function
+# with `xor eax, eax; ret` → always returns false.
+#
+# Player-visible effect: combat music suppressed, AI paths that poll this
+# wrapper see the player as peaceful. NPCs may still attack via different
+# code paths (this wrapper is one of several combat-state queries) — the
+# specific visible signal is the *music*.
+#
+# This is NOT a substitute for the outfit-swap mempatch! Different code
+# path (outfit-swap hits FUN_1805616e8's vtable call directly, not this
+# wrapper).
+#
+# The AOB matches at function_entry + 4 (28-byte pattern from the agent's
+# Ghidra investigation starts at the second instruction). offset = -4
+# steps back to the function entry so MinHook installs at the right spot.
+#
+# Target: KCD2 release_1_5_1164953_841 (April 2026). RVA = 0x5605B8.
+# Tested-against:  preferred base 0x180000000 → VA 0x1805605B8.
+
+[[hook]]
+name        = "no_combat_state"
+priority    = 100
+module      = "WHGame.dll"
+description = """
+Hook FUN_1805605b8 (IsInCombat wrapper) → always returns false.
+kcdx Phase 4b.1 acceptance test: demonstrates [[hook]] schema end-to-end
+with player-visible recoverable effect (combat music suppressed).
+"""
+
+# 28-byte AOB starting at function_entry+4. Verified unique by the Ghidra
+# agent (a 22-byte prefix without the trailing `3C 02` hits 2 sites — a
+# sister wrapper at FUN_180566040 — but the `3C 02` disambiguates).
+pattern = "48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02"
+offset  = -4
+
+# Detour body: xor eax, eax; ret. Always returns false.
+# Calling-convention safety: function returns bool in al/eax, takes
+# self (rcx) we don't dereference, doesn't touch callee-save registers.
+# A 3-byte replacement leaves rsp untouched (caller's ret addr pops cleanly).
+bytes = "31 C0 C3"

@@ -70,6 +70,7 @@ add_library(kcdx SHARED
     src/messaging.cpp
     src/task.cpp
     src/trampoline.cpp
+    src/hook_engine.cpp
 )
 
 target_include_directories(kcdx PRIVATE
