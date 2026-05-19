@@ -15,6 +15,7 @@
 #include "patch_engine.h"
 #include "pe_helpers.h"
 #include "task.h"
+#include "trampoline_engine.h"
 
 extern "C" {
 #include "lua.h"
@@ -54,6 +55,10 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                                              std::memory_order_acq_rel)) {
                 log::Info("First update tick with live lua_State — registering KCDX + applying patches/hooks");
                 kcdx::lua_bind::RegisterKcdxTable(L);
+                // Order matters: trampolines populate the symbol table that
+                // [[patch]] target_symbol resolvers depend on. Trampolines
+                // first, then patches (which may import symbols), then hooks.
+                kcdx::trampoline_engine::ApplyAll();
                 kcdx::patch::ApplyAll();
                 kcdx::hook_engine::ApplyAll();
 

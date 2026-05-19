@@ -10,6 +10,7 @@
 
 #include "log.h"
 #include "pe_helpers.h"
+#include "symbols.h"
 
 namespace kcdx::patch {
 
@@ -219,6 +220,33 @@ ResolvedPatch Resolve(const PatchEntry& p) {
         log::ErrorF("[%s] aborted: %s (%zu vs %zu)",
                     p.name.c_str(), r.reason.c_str(),
                     p.original.size(), p.replacement.size());
+        return r;
+    }
+
+    // Locator path A: target_symbol — resolves via the global symbol table.
+    // Used when a patch wants to write into another plugin's [[trampoline]]
+    // region. No module / pattern / context / anchor needed.
+    if (!p.targetSymbol.empty()) {
+        auto addr = symbols::Lookup(p.targetSymbol);
+        if (!addr) {
+            r.reason = "target_symbol '" + p.targetSymbol + "' not registered "
+                       "(producer plugin may be missing or failed to apply)";
+            log::ErrorF("[%s] aborted: %s", p.name.c_str(), r.reason.c_str());
+            return r;
+        }
+        r.patchAddr = *addr + p.offset;
+        r.writeRange = { r.patchAddr, r.patchAddr + p.replacement.size() };
+        // patternRange / originalRange behave as for the pattern path —
+        // originalRange tracks what verify will read, patternRange is empty
+        // since there was no pattern scan.
+        r.patternRange  = { 0, 0 };
+        r.originalRange = { r.patchAddr, r.patchAddr + p.original.size() };
+        log::InfoF("[%s] resolved target_symbol '%s' -> 0x%p (patchAddr 0x%p)",
+                   p.name.c_str(),
+                   p.targetSymbol.c_str(),
+                   reinterpret_cast<void*>(*addr),
+                   reinterpret_cast<void*>(r.patchAddr));
+        r.ok = true;
         return r;
     }
 

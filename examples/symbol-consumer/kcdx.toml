@@ -1,0 +1,23 @@
+# symbol-consumer — kcdx Phase 4b.2 acceptance test (paired with symbol-producer)
+#
+# Patches one byte inside symbol-producer's trampoline by referencing the
+# `phase4b2.test_region` symbol. Changes byte 3 (zero-indexed) from `90`
+# (NOP) to `CC` (INT3).
+#
+# This demonstrates the [[patch]] target_symbol locator path: instead of
+# resolving an AOB against WHGame.dll, the patch resolves against the
+# global symbol table populated by trampoline_engine::ApplyAll.
+#
+# If symbol-producer isn't installed, this patch aborts cleanly with a
+# log line naming the missing symbol — that's the second test case
+# (drop symbol-producer alone and confirm graceful failure).
+
+[[patch]]
+name          = "phase4b2_consumer"
+description   = "Patch byte 3 of phase4b2.test_region from 90 to CC. Verifies cross-plugin symbol resolution."
+priority      = 200
+target_symbol = "phase4b2.test_region"
+offset        = 3
+original      = "90"
+replacement   = "CC"
+idempotent    = true

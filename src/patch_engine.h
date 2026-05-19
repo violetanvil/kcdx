@@ -31,7 +31,13 @@ struct PatchEntry {
     int priority = 100;
     std::string module = "WHGame.dll";
 
+    // Locator. Exactly one of `pattern` or `targetSymbol` must be set.
+    // When targetSymbol is non-empty, Resolve() looks up the symbol in the
+    // global table and computes patchAddr = symbol_addr + offset (no pattern
+    // scan happens). When pattern is set, the AOB path runs as before.
     Pattern pattern;
+    std::string targetSymbol;
+
     int offset = 0;
     std::vector<uint8_t> original;
     std::vector<uint8_t> replacement;

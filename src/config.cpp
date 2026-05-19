@@ -15,6 +15,7 @@
 #include "hook_engine.h"
 #include "log.h"
 #include "patch_engine.h"
+#include "trampoline_engine.h"
 
 namespace fs = std::filesystem;
 namespace kcdx::config {
@@ -68,16 +69,28 @@ bool ParseOnePatch(const toml::table& t,
     out.priority = OptInt(t, "priority", 100);
     out.module = OptString(t, "module", "WHGame.dll");
 
-    std::string patternStr = OptString(t, "pattern");
-    if (patternStr.empty()) {
-        err = "missing required field 'pattern'";
+    // Locator: either 'pattern' (the v1 AOB path) or 'target_symbol' (the
+    // cross-plugin path that resolves against the global symbol table).
+    // Exactly one of the two must be set.
+    std::string patternStr      = OptString(t, "pattern");
+    std::string targetSymbolStr = OptString(t, "target_symbol");
+    if (patternStr.empty() && targetSymbolStr.empty()) {
+        err = "missing locator: declare either 'pattern' or 'target_symbol'";
         return false;
     }
-    try {
-        out.pattern = ParsePattern(patternStr);
-    } catch (const std::exception& e) {
-        err = std::string("parse error in 'pattern': ") + e.what();
+    if (!patternStr.empty() && !targetSymbolStr.empty()) {
+        err = "conflicting locators: declare only one of 'pattern' or 'target_symbol'";
         return false;
+    }
+    if (!patternStr.empty()) {
+        try {
+            out.pattern = ParsePattern(patternStr);
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'pattern': ") + e.what();
+            return false;
+        }
+    } else {
+        out.targetSymbol = targetSymbolStr;
     }
 
     out.offset = OptInt(t, "offset", 0);
@@ -209,6 +222,46 @@ bool ParseOneHook(const toml::table& t,
     return true;
 }
 
+bool ParseOneTrampoline(const toml::table& t,
+                        const std::string& sourceFile,
+                        kcdx::trampoline_engine::TrampolineEntry& out,
+                        std::string& err) {
+    using namespace kcdx::patch;  // for ParseBytes
+    out.sourceFile = sourceFile;
+    out.name = OptString(t, "name");
+    if (out.name.empty()) {
+        err = "missing required field 'name'";
+        return false;
+    }
+    out.description = OptString(t, "description");
+    out.priority = OptInt(t, "priority", 100);
+
+    // bytes is optional only if `size` is set (allocate empty NOP region).
+    std::string bytesStr = OptString(t, "bytes");
+    if (!bytesStr.empty()) {
+        try {
+            out.bytes = ParseBytes(bytesStr);
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'bytes': ") + e.what();
+            return false;
+        }
+    }
+
+    // Optional size override (allows NOP-padded tail for other plugins to
+    // patch into).
+    if (auto* v = t.get("size"); v && v->is_integer()) {
+        out.size = static_cast<size_t>(*v->value<int64_t>());
+    }
+    if (out.bytes.empty() && !out.size.has_value()) {
+        err = "trampoline must declare either 'bytes' or 'size' (or both)";
+        return false;
+    }
+
+    out.pool = OptString(t, "pool", "branch");
+    out.exportSymbol = OptString(t, "export");
+    return true;
+}
+
 void LoadOneFile(const fs::path& path) {
     std::string fileLabel = path.string();
     try {
@@ -261,6 +314,22 @@ void LoadOneFile(const fs::path& path) {
                 }
             }
         }
+
+        // [[trampoline]] array (Phase 4b.2)
+        if (auto* arr = doc.get("trampoline"); arr && arr->is_array()) {
+            for (const auto& elem : *arr->as_array()) {
+                if (!elem.is_table()) continue;
+                kcdx::trampoline_engine::TrampolineEntry entry;
+                std::string err;
+                if (ParseOneTrampoline(*elem.as_table(), fileLabel, entry, err)) {
+                    log::InfoF("Loaded trampoline '%s' (priority %d) from %s",
+                               entry.name.c_str(), entry.priority, fileLabel.c_str());
+                    kcdx::trampoline_engine::g_trampolines.push_back(std::move(entry));
+                } else {
+                    log::ErrorF("Skipped trampoline in %s: %s", fileLabel.c_str(), err.c_str());
+                }
+            }
+        }
     } catch (const toml::parse_error& e) {
         log::ErrorF("TOML parse error in %s: %s", fileLabel.c_str(), e.what());
     } catch (const std::exception& e) {
@@ -300,11 +369,19 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
                   if (a.priority != b.priority) return a.priority < b.priority;
                   return a.name < b.name;
               });
+    std::sort(kcdx::trampoline_engine::g_trampolines.begin(),
+              kcdx::trampoline_engine::g_trampolines.end(),
+              [](const kcdx::trampoline_engine::TrampolineEntry& a,
+                 const kcdx::trampoline_engine::TrampolineEntry& b) {
+                  if (a.priority != b.priority) return a.priority < b.priority;
+                  return a.name < b.name;
+              });
 
-    log::InfoF("Discovered %zu patch(es) and %zu hook(s) from %zu config file(s) "
-               "across %zu plugin folder(s)",
+    log::InfoF("Discovered %zu patch(es), %zu hook(s), %zu trampoline(s) from "
+               "%zu config file(s) across %zu plugin folder(s)",
                kcdx::patch::g_patches.size(),
                kcdx::hook_engine::g_hooks.size(),
+               kcdx::trampoline_engine::g_trampolines.size(),
                files, folders);
 }
 

@@ -71,6 +71,8 @@ add_library(kcdx SHARED
     src/task.cpp
     src/trampoline.cpp
     src/hook_engine.cpp
+    src/symbols.cpp
+    src/trampoline_engine.cpp
 )
 
 target_include_directories(kcdx PRIVATE
