@@ -43,6 +43,12 @@ std::filesystem::path g_log_path;
 std::filesystem::path g_log_dir;
 size_t              g_bytes_written = 0;
 
+// Category filter. Empty = all categories pass. Non-empty = only listed
+// categories pass IsCategoryEnabled. Set once during config load; read
+// from many threads thereafter, no further mutation — so we don't need
+// a mutex around access after init.
+std::vector<std::string> g_category_filter;
+
 // Resolve the kcdx-dev.log path. log::Init() in log.cpp captures the
 // module directory at startup; we re-derive it the same way (via
 // GetModuleHandle for kcdx.asi and PathRemoveFileSpec) so we don't
@@ -214,6 +220,20 @@ void SetCapBytes(size_t cap_bytes) {
 
 void SetMaxFiles(int max_files) {
     g_max_files = max_files;
+}
+
+void SetCategoryFilter(const std::vector<std::string>& categories) {
+    g_category_filter = categories;
+}
+
+bool IsCategoryEnabled(const char* category) {
+    if (!g_enabled.load(std::memory_order_relaxed)) return false;
+    if (g_category_filter.empty()) return true;
+    if (!category) return false;
+    for (const auto& c : g_category_filter) {
+        if (c == category) return true;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------

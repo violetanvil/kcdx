@@ -28,11 +28,11 @@ test_suite_only = true
   `kcdx.dev.is_enabled()` and return. Zero log noise, zero
   behavioral change — production users never see the suite in
   their logs.
-- **Dev mode on** (developer installs `dev-mode-enable/kcdx.toml`):
-  every test runs its check, calls `ReportTestResult(...)` (C++)
-  or `kcdx.test.report(...)` (Lua), and the aggregator emits
-  `Test suite: X/Y passing` to kcdx.log on each engine lifecycle
-  message.
+- **Dev mode on** (developer creates `<plugins>/kcdx-engine.toml`
+  with `dev_mode = true`): every test runs its check, calls
+  `ReportTestResult(...)` (C++) or `kcdx.test.report(...)` (Lua),
+  and the aggregator emits `Test suite: X/Y passing` to kcdx.log
+  on each engine lifecycle message.
 
 The gating mechanic + reporting API are documented in
 [`docs/dev-mode.md`](../docs/dev-mode.md).
@@ -73,8 +73,17 @@ To enable the suite on a dev machine:
 
 1. Build kcdx (`pwsh ./build.ps1`) and install `kcdx.asi` to
    `<game>/Bin/Win64MasterMasterSteamPGO/plugins/`.
-2. Install `dev-mode-enable/kcdx.toml` (the trivial opt-in
-   plugin) to the same folder.
+2. Create `<game>/Bin/Win64MasterMasterSteamPGO/plugins/kcdx-engine.toml`
+   with at minimum:
+
+   ```toml
+   [kcdx]
+   dev_mode = true
+   ```
+
+   This is the engine-config file (lives next to `kcdx.asi`). It's
+   what turns on dev mode and unlocks the test suite. See
+   `kcdx/docs/dev-mode.md` for the full schema.
 3. For each test plugin under `test-plugins/<folder>/`: copy the
    folder to the same `plugins/` directory (or the pak to
    `<game>/mods/`). The suite is intended to be "drop all of

@@ -52,6 +52,16 @@ struct PluginManifest {
 
     std::vector<ManifestDependency> dependencies;
 
+    // Log level threshold for this plugin's per-plugin log. Calls to
+    // api->Log(self, level, msg) at a level BELOW this are dropped
+    // before formatting. Default = Info (0). See kcdxLog_* enum in
+    // Interfaces.h for the levels.
+    //
+    // Encoded as the kcdxLog_* enum value (info=0, warn=1, error=2,
+    // debug=3). The special value 4 means "off" (drop everything).
+    // Parsed from kcdx.toml [plugin] log_level = "debug|info|warn|error|off".
+    uint32_t logLevel = 0;  // == kcdxLog_Info
+
     // Entrypoints — populated from [entrypoints] table (all optional).
     std::string dllEntrypointRel; // Relative path from plugin folder. If empty,
                                   //   kcdx auto-discovers: if exactly one *.dll

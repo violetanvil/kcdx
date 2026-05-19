@@ -30,6 +30,7 @@
 #include <initializer_list>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace kcdx::dev {
 
@@ -50,11 +51,28 @@ void SetEnabled(bool on);
 void SetCapBytes (size_t cap_bytes);
 void SetMaxFiles (int    max_files);
 
+// Optional category allow-list. If never called (or called with empty),
+// every category emits when dev mode is on. If called with a non-empty
+// list, ONLY listed categories emit; others are dropped at the IsEnabled
+// check. Categories are case-sensitive and match the strings passed
+// to KCDX_DEV's first arg (e.g. "LUA", "SCRIPTING").
+//
+// Called by config.cpp during engine-config load when
+// dev_categories = [...] is present.
+void SetCategoryFilter(const std::vector<std::string>& categories);
+
 // Hot path: branch predictor takes not-taken when dev mode is off.
+// Returns true only when dev mode is on AND the category passes the
+// filter (or no filter is set).
 inline bool IsEnabled() {
     extern std::atomic<bool> g_enabled;
     return g_enabled.load(std::memory_order_relaxed);
 }
+
+// Category-aware variant. Plugins should prefer this via the
+// KCDX_DEV macro — calling Emit with a category that's been
+// filtered out is wasted work otherwise.
+bool IsCategoryEnabled(const char* category);
 
 // ---------------------------------------------------------------------
 // KV: a name + typed value, emitted as `name=val` in the trace.
@@ -151,7 +169,7 @@ void Emit(const char* category, const char* action,
 // IsEnabled() branch — the not-taken path doesn't construct the KVs.
 #define KCDX_DEV(category, action, ...) \
     do { \
-        if (::kcdx::dev::IsEnabled()) \
+        if (::kcdx::dev::IsCategoryEnabled(category)) \
             ::kcdx::dev::Emit((category), (action), { __VA_ARGS__ }); \
     } while (0)
 
@@ -159,6 +177,6 @@ void Emit(const char* category, const char* action,
 // boundary markers).
 #define KCDX_DEV0(category, action) \
     do { \
-        if (::kcdx::dev::IsEnabled()) \
+        if (::kcdx::dev::IsCategoryEnabled(category)) \
             ::kcdx::dev::Emit((category), (action), {}); \
     } while (0)

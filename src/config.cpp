@@ -167,6 +167,22 @@ bool ParsePluginManifest(const toml::table& doc,
 
     out.versionIndependent = OptBool(t, "version_independent", false);
 
+    // log_level controls api->Log threshold for this plugin's per-plugin
+    // log file. "debug"|"info"|"warn"|"error"|"off". Default "info".
+    {
+        std::string lvl = OptString(t, "log_level", "info");
+        if      (lvl == "debug") out.logLevel = 3;  // kcdxLog_Debug
+        else if (lvl == "info")  out.logLevel = 0;  // kcdxLog_Info
+        else if (lvl == "warn")  out.logLevel = 1;  // kcdxLog_Warn
+        else if (lvl == "error") out.logLevel = 2;  // kcdxLog_Error
+        else if (lvl == "off")   out.logLevel = 4;  // synthetic "drop all"
+        else {
+            err = "[plugin] log_level: unknown level '" + lvl + "' "
+                  "(expected debug|info|warn|error|off)";
+            return false;
+        }
+    }
+
     // compatible_game_versions = [ "1.5.1164953", ... ]
     if (auto* arr = t.get("compatible_game_versions"); arr && arr->is_array()) {
         for (const auto& elem : *arr->as_array()) {
@@ -539,6 +555,95 @@ bool ParseOneTrampoline(const toml::table& t,
     return true;
 }
 
+// Load the engine-config file at <plugins>/kcdx-engine.toml. This is
+// the ONLY place engine-wide settings live (dev_mode, dev_log_*,
+// dry_run). Plugin kcdx.toml files cannot turn these on — that would
+// be cross-plugin contamination.
+//
+// Called once at startup before any plugin TOML is walked, so the
+// engine's IsEnabled() / dry-run flags are settled before any
+// downstream gating (test_suite_only, etc.) is evaluated.
+//
+// Schema:
+//
+//   [kcdx]
+//   dev_mode          = false      # default false; turns on kcdx-dev.log
+//   dev_log_cap_mb    = 50
+//   dev_log_max_files = 20
+//   dev_categories    = ["LUA", "SCRIPTING"]   # empty = all
+//   dry_run           = false
+//
+// Returns silently if the file doesn't exist (dev mode stays off,
+// which is the production default).
+void LoadEngineConfig(const fs::path& enginePath) {
+    std::error_code ec;
+    if (!fs::exists(enginePath, ec)) return;
+
+    std::string fileLabel = enginePath.string();
+    try {
+        std::ifstream in(enginePath);
+        if (!in) {
+            log::ErrorF("Failed to open engine config %s", fileLabel.c_str());
+            return;
+        }
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        toml::table doc = toml::parse(ss.str(), enginePath.string());
+
+        auto* top = doc.get("kcdx");
+        if (!top || !top->is_table()) {
+            log::WarnF("%s: missing [kcdx] table; ignoring file",
+                       fileLabel.c_str());
+            return;
+        }
+        const auto& tbl = *top->as_table();
+
+        if (OptBool(tbl, "dry_run", false)) {
+            kcdx::patch::g_dryRun = true;
+            log::InfoF("dry_run enabled by %s", fileLabel.c_str());
+        }
+
+        if (OptBool(tbl, "dev_mode", false)) {
+            int cap_mb    = OptInt(tbl, "dev_log_cap_mb",   50);
+            int max_files = OptInt(tbl, "dev_log_max_files", 20);
+            size_t cap_bytes = (size_t)cap_mb * 1024ull * 1024ull;
+            kcdx::dev::SetCapBytes(cap_bytes);
+            kcdx::dev::SetMaxFiles(max_files);
+            kcdx::dev::SetEnabled(true);
+            log::InfoF("dev_mode enabled by %s (cap=%d MB, max_files=%d)",
+                       fileLabel.c_str(), cap_mb, max_files);
+
+            // Optional category filter. If absent or empty, emit every
+            // category. If present, only listed categories emit.
+            std::vector<std::string> cats;
+            if (auto* arr = tbl.get("dev_categories");
+                arr && arr->is_array()) {
+                for (const auto& elem : *arr->as_array()) {
+                    if (elem.is_string()) {
+                        cats.push_back(std::string(*elem.value<std::string>()));
+                    }
+                }
+            }
+            if (!cats.empty()) {
+                kcdx::dev::SetCategoryFilter(cats);
+                std::string joined;
+                for (size_t i = 0; i < cats.size(); ++i) {
+                    if (i) joined += ", ";
+                    joined += cats[i];
+                }
+                log::InfoF("dev_categories filter active: [%s]",
+                           joined.c_str());
+            }
+        }
+    } catch (const toml::parse_error& e) {
+        log::ErrorF("TOML parse error in engine config %s: %s",
+                    fileLabel.c_str(), e.what());
+    } catch (const std::exception& e) {
+        log::ErrorF("Error reading engine config %s: %s",
+                    fileLabel.c_str(), e.what());
+    }
+}
+
 void LoadOneFile(const fs::path& path) {
     std::string fileLabel = path.string();
     try {
@@ -551,26 +656,31 @@ void LoadOneFile(const fs::path& path) {
         ss << in.rdbuf();
         toml::table doc = toml::parse(ss.str(), path.string());
 
-        // Top-level [kcdx] section
+        // Top-level [kcdx] section. Engine-level settings (dev_mode,
+        // dev_log_*, dry_run) are NOT allowed here — they live in
+        // <plugins>/kcdx-engine.toml. Warn if a plugin sets them so
+        // the author moves them to the right place.
+        bool isTestSuiteOnly = false;
         if (auto* top = doc.get("kcdx"); top && top->is_table()) {
             const auto& tbl = *top->as_table();
-            if (OptBool(tbl, "dry_run", false)) {
-                kcdx::patch::g_dryRun = true;
-                log::InfoF("dry_run enabled by %s", fileLabel.c_str());
+            for (const char* k : { "dev_mode", "dev_log_cap_mb",
+                                   "dev_log_max_files", "dev_categories",
+                                   "dry_run" }) {
+                if (tbl.get(k) != nullptr) {
+                    log::WarnF("%s: [kcdx] %s is an engine-level setting and "
+                               "cannot be set by plugins. Move it to "
+                               "<plugins>/kcdx-engine.toml instead.",
+                               fileLabel.c_str(), k);
+                }
             }
-            // Dev mode: any-true wins, most-permissive caps win. We call
-            // SetCapBytes/SetMaxFiles BEFORE SetEnabled so the open
-            // happens with the right caps.
-            if (OptBool(tbl, "dev_mode", false)) {
-                int cap_mb    = OptInt(tbl, "dev_log_cap_mb",   50);
-                int max_files = OptInt(tbl, "dev_log_max_files", 20);
-                size_t cap_bytes = (size_t)cap_mb * 1024ull * 1024ull;
-                kcdx::dev::SetCapBytes(cap_bytes);
-                kcdx::dev::SetMaxFiles(max_files);
-                kcdx::dev::SetEnabled(true);
-                log::InfoF("dev_mode enabled by %s (cap=%d MB, max_files=%d)",
-                           fileLabel.c_str(), cap_mb, max_files);
-            }
+            isTestSuiteOnly = OptBool(tbl, "test_suite_only", false);
+        }
+
+        // test_suite_only: silently skip every entry in this file when dev
+        // mode is off. Production users never see suite log noise. When dev
+        // mode IS on, fall through and process normally.
+        if (isTestSuiteOnly && !kcdx::dev::IsEnabled()) {
+            return;
         }
 
         // [plugin] + [entrypoints] sections — plugin identity. Optional;
@@ -736,6 +846,12 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
         log::WarnF("plugins dir not found: %s", WideToUtf8(pluginsDir).c_str());
         return;
     }
+
+    // Engine config first. Settles dev_mode + dry_run + dev_categories
+    // before any plugin TOML is parsed (so test_suite_only gating sees
+    // the final IsEnabled() value). Production users don't ship this
+    // file; dev mode stays off.
+    LoadEngineConfig(root / "kcdx-engine.toml");
 
     size_t folders = 0, files = 0;
     WalkForTomls(root, /*depth=*/0, folders, files);

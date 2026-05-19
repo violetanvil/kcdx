@@ -93,8 +93,43 @@ uintptr_t Thunk_ResolveAddress(uint64_t /*id*/) {
     return 0;
 }
 
+// Level priority for filtering. Higher number = louder. log_level=4 (off)
+// means "drop everything." Within the kcdxLog_* enum the ordering is
+// Info(0) < Warn(1) < Error(2) < Debug(3), which is NOT a strict
+// severity order — Debug is the most verbose but the lowest priority
+// gate. Map both to a comparable severity scale for filtering.
+//
+// Mapping (manifest log_level threshold) -> "what passes":
+//   debug (3) — everything (incl. Debug)
+//   info  (0) — Info + Warn + Error (drops Debug)
+//   warn  (1) — Warn + Error (drops Info + Debug)
+//   error (2) — Error only (drops Info + Warn + Debug)
+//   off   (4) — drop all
+static bool PluginLogLevelPasses(uint32_t threshold, uint32_t callLevel) {
+    if (threshold == 4) return false;  // off
+    // threshold=3 (debug) lets everything pass.
+    if (threshold == 3) return true;
+    // For thresholds 0/1/2: only let calls of severity >= threshold pass
+    // in the "info < warn < error" sense. Debug (callLevel=3) is treated
+    // as below Info — only passes when threshold=debug.
+    if (callLevel == kcdxLog_Debug) return false;
+    return callLevel >= threshold;
+}
+
 void Thunk_Log(kcdxPluginHandle self, uint32_t level, const char* msg) {
     if (!msg) return;
+
+    // Look up the plugin's log_level threshold from its manifest.
+    // Unknown handle -> default Info (0) -> drops only Debug.
+    uint32_t threshold = kcdxLog_Info;
+    if (self != kcdxInvalidPluginHandle) {
+        size_t idx = static_cast<size_t>(self);
+        if (idx < g_plugins.size()) {
+            threshold = g_plugins[idx].manifest.logLevel;
+        }
+    }
+    if (!PluginLogLevelPasses(threshold, level)) return;
+
     std::string s(msg);
     switch (level) {
     case kcdxLog_Warn:  log::PluginWarn (self, s); break;
