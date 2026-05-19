@@ -1,0 +1,19 @@
+# CAP-10 — kcdxScriptingInterface RegisterFunction.
+#
+# QueryInterface(Scripting), call RegisterFunction for a stub C function
+# under a unique namespace, assert true. The actual Lua-side round-trip
+# is covered by hello-plugin + verify pak end-to-end; this row proves
+# the registration call itself succeeds without crashing.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-10-scripting-interface"
+display_name        = "CAP-10 Scripting interface"
+author              = "kcdx"
+description         = "Verifies RegisterFunction returns true."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
