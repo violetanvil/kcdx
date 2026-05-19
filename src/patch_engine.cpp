@@ -119,6 +119,28 @@ std::vector<size_t> FindAllInBuffer(const uint8_t* data, size_t size, const Patt
     return hits;
 }
 
+std::optional<uintptr_t> ScanModuleFirst(const std::wstring& module_name_wide,
+                                         const std::string&  pattern) {
+    pe::ModuleView mv;
+    if (!pe::OpenModule(module_name_wide.c_str(), mv)) {
+        return std::nullopt;
+    }
+    Pattern pat;
+    try {
+        pat = ParsePattern(pattern);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+    const auto sections = pe::ExecutableSections(mv);
+    for (const auto& sec : sections) {
+        const auto offs = FindAllInBuffer(sec.data, sec.size, pat);
+        if (!offs.empty()) {
+            return reinterpret_cast<uintptr_t>(sec.data) + offs[0];
+        }
+    }
+    return std::nullopt;
+}
+
 namespace {
 
 // Resolve `pattern` against executable sections of `module`. Returns the absolute VA

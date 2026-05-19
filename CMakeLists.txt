@@ -98,6 +98,10 @@ add_library(kcdx SHARED
     src/load_order.cpp
     src/detour_hook.cpp
     src/scripting.cpp
+    src/lua_memory.cpp
+    src/lua_bind_helpers.cpp
+    src/lua_bind_pointer.cpp
+    src/lua_bind_memory.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

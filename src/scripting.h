@@ -5,12 +5,12 @@
 // (we load C++ DLL plugins, not Lua script bundles), so this module is
 // flatter: a single global state holding the live lua_State, a non-owning
 // target_func_ptr -> runtime_func_t* map, and per-target vectors of
-// sol::functions resolved from "module.function" strings declared in
-// [[hook]] / [[mid_hook]] kcdx.toml entries.
+// Lua-registry refs resolved from "module.function" strings declared
+// in [[hook]] / [[mid_hook]] kcdx.toml entries.
 //
-// Phase 5c.6 lands the storage + dispatch surface. The string-to-Lua-fn
-// resolution (sol::state_view::globals lookup) happens here; the parsing
-// of "module.function" out of TOML happens in hook_engine (Phase 5f).
+// **No sol2 here.** Per kcdx/CLAUDE.md hard rule #15 (bisect 2026-05-18),
+// sol2 must not touch the live lua_State. Callbacks are stored as
+// `int` registry refs (luaL_ref) and invoked via raw lua_pcall.
 //
 // Threading: protected by a single recursive_mutex. The pre/post/mid
 // callbacks are invoked from inside JIT trampolines on whichever thread
@@ -21,12 +21,12 @@
 #pragma once
 
 #include <cstdint>
-#include <mutex>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <sol/sol.hpp>
+extern "C" {
+#include "lua.h"
+}
 
 #include "rom_borrowed/runtime_func_t.h"
 
@@ -42,30 +42,34 @@ void set_lua_state(lua_State* L);
 // runtime_func_t callbacks read this to know whether the VM is up.
 lua_State* lua_state();
 
-// Non-owning registration. The caller (memory.cpp / future [[hook]]
+// Non-owning registration. The caller (lua_memory.cpp / future [[hook]]
 // installer) owns the runtime_func_t lifetime; this map just lets
 // dispatchers find the right pre/post/mid descriptors by target_func_ptr.
 void register_hook(uintptr_t target_func_ptr, kcdx::rom::runtime_func_t* hook);
 void unregister_hook(uintptr_t target_func_ptr);
 kcdx::rom::runtime_func_t* get_existing_dynamic_hook(uintptr_t target_func_ptr);
 
-// Per-target Lua callback registration. A [[hook]] with
-// lua_callback = "MyMod.OnOutfitSwap" calls register_pre_callback with
-// the resolved sol::function. Multiple plugins may register against the
-// same target; all fire in registration order.
-void register_pre_callback (uintptr_t target_func_ptr, sol::protected_function fn);
-void register_post_callback(uintptr_t target_func_ptr, sol::protected_function fn);
-void register_mid_callback (uintptr_t target_func_ptr, sol::protected_function fn);
+// Per-target Lua callback registration. The caller pushes the callback
+// function onto the Lua stack first, then calls register_*_callback_from_top
+// which luaL_ref()s it from the top of the stack (consuming it) and
+// stores the registry reference. Multiple plugins may register against
+// the same target; all fire in registration order.
+//
+// The Lua state used for the ref is the one currently bound via
+// set_lua_state; it's a programming error to call these before that.
+void register_pre_callback_from_top (uintptr_t target_func_ptr);
+void register_post_callback_from_top(uintptr_t target_func_ptr);
+void register_mid_callback_from_top (uintptr_t target_func_ptr);
 
 // Clear all callbacks for a target (used when a [[hook]] is being
-// uninstalled, e.g., during plugin unload). Does not unregister the
-// runtime_func_t itself.
+// uninstalled). luaL_unref's each stored ref so Lua can GC the
+// functions. Does not unregister the runtime_func_t itself.
 void clear_callbacks(uintptr_t target_func_ptr);
 
 // C trampolines installed as runtime_func_t pre/post/mid_callback_t.
 // The JIT'd marshaling code calls into these from inside the hooked
 // function's call site. They look up the registered Lua callbacks
-// for target_func_ptr and dispatch via sol2.
+// for target_func_ptr and dispatch via lua_pcall.
 //
 // Return semantics match runtime_func_t's typedefs:
 //   pre  -> bool: false means "skip the original function"

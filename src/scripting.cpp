@@ -1,31 +1,49 @@
+// See scripting.h for what this is and why no sol2.
 #include "scripting.h"
 
-#include "log.h"
-
 #include <mutex>
+#include <unordered_map>
+#include <vector>
+
+extern "C" {
+#include "lua.h"
+#include "lauxlib.h"
+}
+
+#include "log.h"
+#include "lua_memory.h"  // for to_lua / to_lua_return
 
 namespace kcdx::scripting {
 
 namespace {
 
 // All state guarded by a single recursive_mutex. Recursive because a
-// dispatched Lua callback may itself trigger another hook (e.g., a Lua
-// function calls a hooked C++ function), which re-enters the dispatch
-// path. Non-recursive lock would deadlock that case.
+// dispatched Lua callback may itself trigger another hook, which
+// re-enters the dispatch path. Non-recursive lock would deadlock.
 std::recursive_mutex g_lock;
 
 lua_State* g_lua_state = nullptr;
 
-// Non-owning map. Lifetime of runtime_func_t lives in the [[hook]]
+// Non-owning. Lifetime of runtime_func_t lives in the [[hook]]
 // installer (or, eventually, Lua-side memory.dynamic_hook userdata).
 std::unordered_map<uintptr_t, kcdx::rom::runtime_func_t*> g_target_to_hook;
 
-// Per-target callback vectors. Keyed by target_func_ptr so a single
-// hook installation on a given function can fan-in callbacks from
-// multiple plugins.
-std::unordered_map<uintptr_t, std::vector<sol::protected_function>> g_pre_callbacks;
-std::unordered_map<uintptr_t, std::vector<sol::protected_function>> g_post_callbacks;
-std::unordered_map<uintptr_t, std::vector<sol::protected_function>> g_mid_callbacks;
+// Per-target Lua-registry refs (from luaL_ref). A ref is an `int` that
+// can be passed to `lua_rawgeti(L, LUA_REGISTRYINDEX, ref)` to push the
+// stored function back onto the stack. luaL_unref releases it.
+std::unordered_map<uintptr_t, std::vector<int>> g_pre_callback_refs;
+std::unordered_map<uintptr_t, std::vector<int>> g_post_callback_refs;
+std::unordered_map<uintptr_t, std::vector<int>> g_mid_callback_refs;
+
+// Pop the value at the top of `L`, store it via luaL_ref, append the
+// resulting ref to the per-target vector. Stack effect: -1.
+void StoreTopRef(lua_State*                      L,
+                 std::unordered_map<uintptr_t,
+                                    std::vector<int>>& tbl,
+                 uintptr_t                       target_func_ptr) {
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    tbl[target_func_ptr].push_back(ref);
+}
 
 }  // namespace
 
@@ -52,9 +70,7 @@ void register_hook(uintptr_t target_func_ptr, kcdx::rom::runtime_func_t* hook) {
 void unregister_hook(uintptr_t target_func_ptr) {
     std::scoped_lock guard(g_lock);
     g_target_to_hook.erase(target_func_ptr);
-    g_pre_callbacks.erase(target_func_ptr);
-    g_post_callbacks.erase(target_func_ptr);
-    g_mid_callbacks.erase(target_func_ptr);
+    clear_callbacks(target_func_ptr);
 }
 
 kcdx::rom::runtime_func_t* get_existing_dynamic_hook(uintptr_t target_func_ptr) {
@@ -63,128 +79,183 @@ kcdx::rom::runtime_func_t* get_existing_dynamic_hook(uintptr_t target_func_ptr) 
     return it == g_target_to_hook.end() ? nullptr : it->second;
 }
 
-void register_pre_callback(uintptr_t target_func_ptr, sol::protected_function fn) {
+void register_pre_callback_from_top(uintptr_t target_func_ptr) {
     std::scoped_lock guard(g_lock);
-    g_pre_callbacks[target_func_ptr].push_back(std::move(fn));
+    if (!g_lua_state) {
+        log::Warn("scripting: register_pre_callback_from_top before lua_State bound");
+        return;
+    }
+    StoreTopRef(g_lua_state, g_pre_callback_refs, target_func_ptr);
 }
 
-void register_post_callback(uintptr_t target_func_ptr, sol::protected_function fn) {
+void register_post_callback_from_top(uintptr_t target_func_ptr) {
     std::scoped_lock guard(g_lock);
-    g_post_callbacks[target_func_ptr].push_back(std::move(fn));
+    if (!g_lua_state) {
+        log::Warn("scripting: register_post_callback_from_top before lua_State bound");
+        return;
+    }
+    StoreTopRef(g_lua_state, g_post_callback_refs, target_func_ptr);
 }
 
-void register_mid_callback(uintptr_t target_func_ptr, sol::protected_function fn) {
+void register_mid_callback_from_top(uintptr_t target_func_ptr) {
     std::scoped_lock guard(g_lock);
-    g_mid_callbacks[target_func_ptr].push_back(std::move(fn));
+    if (!g_lua_state) {
+        log::Warn("scripting: register_mid_callback_from_top before lua_State bound");
+        return;
+    }
+    StoreTopRef(g_lua_state, g_mid_callback_refs, target_func_ptr);
 }
 
 void clear_callbacks(uintptr_t target_func_ptr) {
     std::scoped_lock guard(g_lock);
-    g_pre_callbacks.erase(target_func_ptr);
-    g_post_callbacks.erase(target_func_ptr);
-    g_mid_callbacks.erase(target_func_ptr);
+    if (!g_lua_state) {
+        // Nothing to unref against; just drop the entries.
+        g_pre_callback_refs.erase(target_func_ptr);
+        g_post_callback_refs.erase(target_func_ptr);
+        g_mid_callback_refs.erase(target_func_ptr);
+        return;
+    }
+    auto unref_all = [&](std::unordered_map<uintptr_t, std::vector<int>>& tbl) {
+        auto it = tbl.find(target_func_ptr);
+        if (it == tbl.end()) return;
+        for (int ref : it->second) {
+            luaL_unref(g_lua_state, LUA_REGISTRYINDEX, ref);
+        }
+        tbl.erase(it);
+    };
+    unref_all(g_pre_callback_refs);
+    unref_all(g_post_callback_refs);
+    unref_all(g_mid_callback_refs);
 }
 
-// --- dispatchers ------------------------------------------------------------
+// --- dispatchers ----------------------------------------------------------
 //
-// The JIT trampoline built by runtime_func_t::make_jit_func calls into
-// these via runtime_func_t::user_pre_callback_t / user_post_callback_t /
-// mid_callback_t. We're inside the original function's prologue here —
-// minimal allocation, no exceptions across the C/Lua boundary.
+// All three dispatchers follow the same shape:
+//   1. Take the lock, look up callbacks for this target.
+//   2. If none, return the default ("call original" / "no restore addr").
+//   3. For each registered ref:
+//        a. Push the Lua function via lua_rawgeti(L, LUA_REGISTRYINDEX, ref).
+//        b. Push the args (return_value first for pre/post, args as table for mid).
+//        c. lua_pcall.
+//        d. Inspect the result, update accumulator.
+//   4. Return the accumulated decision.
 //
-// Phase 5c.6 ships these with a placeholder marshaling strategy: the
-// Lua callback receives the target_func_ptr (as a Lua integer) and
-// param_count, but no actual unpacked args yet. Phase 5c.7 wires
-// memory.cpp's `pointer`/`value_wrapper_t` types into the arg list.
-//
-// The lock is held across the entire dispatch. If a callback re-enters
-// (e.g., calls a hooked function), the recursive_mutex permits it; but
-// the per-target callback vectors must not be mutated mid-iteration,
-// so register_* and unregister_* must NOT be called from inside a
-// callback. (Future hardening: snapshot the vector under the lock,
-// release, then iterate — but that costs an alloc per dispatch.)
+// pre/post pass: (return_value, ...args)
+// mid pass:      (table of args)
 
-bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
+bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* params,
                       uint8_t                                        param_count,
-                      kcdx::rom::runtime_func_t::return_value_t*     /*return_value*/,
+                      kcdx::rom::runtime_func_t::return_value_t*     return_value,
                       uintptr_t                                      target_func_ptr) {
     std::scoped_lock guard(g_lock);
+    if (!g_lua_state) return true;
 
-    if (!g_lua_state) {
-        // VM not ready yet — let the original run.
-        return true;
-    }
+    auto it = g_pre_callback_refs.find(target_func_ptr);
+    if (it == g_pre_callback_refs.end() || it->second.empty()) return true;
 
-    const auto it = g_pre_callbacks.find(target_func_ptr);
-    if (it == g_pre_callbacks.end()) {
-        return true;
-    }
+    auto hook_it = g_target_to_hook.find(target_func_ptr);
+    const kcdx::rom::runtime_func_t* hook =
+        (hook_it == g_target_to_hook.end()) ? nullptr : hook_it->second;
+    if (!hook) return true;
 
     bool call_orig = true;
-    for (const auto& fn : it->second) {
-        sol::protected_function_result r = fn(target_func_ptr, (unsigned)param_count);
-        if (!r.valid()) {
-            sol::error err = r;
+    for (int ref : it->second) {
+        // [func]
+        lua_rawgeti(g_lua_state, LUA_REGISTRYINDEX, ref);
+        // [func, return_value]
+        kcdx::lua_memory::to_lua_return(g_lua_state, return_value, hook->m_return_type);
+        // [func, return_value, args...]
+        for (uint8_t i = 0; i < param_count; i++) {
+            kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
+        }
+        // 1 + param_count args, expecting 1 return
+        int n_args = 1 + (int)param_count;
+        int status = lua_pcall(g_lua_state, n_args, 1, 0);
+        if (status != 0) {
+            const char* err = lua_tostring(g_lua_state, -1);
             log::ErrorF("scripting: pre-callback for target 0x%p threw: %s",
-                        (void*)target_func_ptr, err.what());
+                        (void*)target_func_ptr, err ? err : "<no message>");
+            lua_pop(g_lua_state, 1);
             continue;
         }
-        // Lua may return false to suppress the original. Any non-false
-        // (nil, no return, true) keeps call_orig at its current value;
-        // once any callback says "false", we stop calling the original.
-        if (r.get_type(0) == sol::type::boolean && r.get<bool>(0) == false) {
+        // Any callback returning literal false suppresses the original.
+        if (lua_isboolean(g_lua_state, -1) && lua_toboolean(g_lua_state, -1) == 0) {
             call_orig = false;
         }
+        lua_pop(g_lua_state, 1);
     }
     return call_orig;
 }
 
-void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
+void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
                        uint8_t                                        param_count,
-                       kcdx::rom::runtime_func_t::return_value_t*     /*return_value*/,
+                       kcdx::rom::runtime_func_t::return_value_t*     return_value,
                        uintptr_t                                      target_func_ptr) {
     std::scoped_lock guard(g_lock);
-
     if (!g_lua_state) return;
 
-    const auto it = g_post_callbacks.find(target_func_ptr);
-    if (it == g_post_callbacks.end()) return;
+    auto it = g_post_callback_refs.find(target_func_ptr);
+    if (it == g_post_callback_refs.end() || it->second.empty()) return;
 
-    for (const auto& fn : it->second) {
-        sol::protected_function_result r = fn(target_func_ptr, (unsigned)param_count);
-        if (!r.valid()) {
-            sol::error err = r;
+    auto hook_it = g_target_to_hook.find(target_func_ptr);
+    const kcdx::rom::runtime_func_t* hook =
+        (hook_it == g_target_to_hook.end()) ? nullptr : hook_it->second;
+    if (!hook) return;
+
+    for (int ref : it->second) {
+        lua_rawgeti(g_lua_state, LUA_REGISTRYINDEX, ref);
+        kcdx::lua_memory::to_lua_return(g_lua_state, return_value, hook->m_return_type);
+        for (uint8_t i = 0; i < param_count; i++) {
+            kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
+        }
+        int n_args = 1 + (int)param_count;
+        int status = lua_pcall(g_lua_state, n_args, 0, 0);
+        if (status != 0) {
+            const char* err = lua_tostring(g_lua_state, -1);
             log::ErrorF("scripting: post-callback for target 0x%p threw: %s",
-                        (void*)target_func_ptr, err.what());
+                        (void*)target_func_ptr, err ? err : "<no message>");
+            lua_pop(g_lua_state, 1);
         }
     }
 }
 
-uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
+uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params,
                            size_t                                         param_count,
                            uintptr_t                                      target_func_ptr) {
     std::scoped_lock guard(g_lock);
-
     if (!g_lua_state) return 0;
 
-    const auto it = g_mid_callbacks.find(target_func_ptr);
-    if (it == g_mid_callbacks.end()) return 0;
+    auto it = g_mid_callback_refs.find(target_func_ptr);
+    if (it == g_mid_callback_refs.end() || it->second.empty()) return 0;
 
+    auto hook_it = g_target_to_hook.find(target_func_ptr);
+    const kcdx::rom::runtime_func_t* hook =
+        (hook_it == g_target_to_hook.end()) ? nullptr : hook_it->second;
+    if (!hook) return 0;
+
+    // Mid-hooks pass args as a table keyed by 1..N (matches RoM).
     uintptr_t restore_address = 0;
-    for (const auto& fn : it->second) {
-        sol::protected_function_result r = fn(target_func_ptr, (unsigned)param_count);
-        if (!r.valid()) {
-            sol::error err = r;
+    for (int ref : it->second) {
+        lua_rawgeti(g_lua_state, LUA_REGISTRYINDEX, ref);
+        lua_createtable(g_lua_state, (int)param_count, 0);
+        int table_idx = lua_gettop(g_lua_state);
+        for (uint8_t i = 0; i < param_count; i++) {
+            kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
+            lua_rawseti(g_lua_state, table_idx, i + 1);
+        }
+        int status = lua_pcall(g_lua_state, 1, 1, 0);
+        if (status != 0) {
+            const char* err = lua_tostring(g_lua_state, -1);
             log::ErrorF("scripting: mid-callback for target 0x%p threw: %s",
-                        (void*)target_func_ptr, err.what());
+                        (void*)target_func_ptr, err ? err : "<no message>");
+            lua_pop(g_lua_state, 1);
             continue;
         }
-        // First non-zero integer return wins (matches RoM semantics —
-        // first plugin to specify a restore address gets it, rest are
-        // advisory).
-        if (!restore_address && r.get_type(0) == sol::type::number) {
-            restore_address = (uintptr_t)r.get<int64_t>(0);
+        // First non-zero numeric return wins (matches RoM).
+        if (!restore_address && lua_isnumber(g_lua_state, -1)) {
+            restore_address = (uintptr_t)lua_tointeger(g_lua_state, -1);
         }
+        lua_pop(g_lua_state, 1);
     }
     return restore_address;
 }

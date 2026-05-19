@@ -4,16 +4,25 @@
 // Source: https://github.com/xiaoxiao921/ReturnOfModdingBase/blob/master/src/lua/bindings/type_info_t.hpp
 // License: MIT. Modifications for kcdx:
 //   - namespace lua::memory -> kcdx::rom
-//   - sol/sol_include.hpp -> sol/sol.hpp (single-header vendoring)
-//   - Custom-type feeder typedef kept; takes raw lua_State* and bytes.
+//   - **sol2 removed (2026-05-18)** per workspace memory
+//     `project-kcd2-sol2-incompatibility`. Custom-type feeder typedef
+//     now returns void; contract is "push exactly one value onto the
+//     Lua stack" (raw C API). Caller checks stack-top to consume the
+//     pushed value.
 #pragma once
 
-#include <sol/sol.hpp>
 #include <string>
+
+extern "C" {
+#include "lua.h"
+}
 
 namespace kcdx::rom {
 
-typedef sol::object (*type_info_feeder_t)(lua_State* state_, char* arg_ptr);
+// Custom marshaler: given a lua_State* and a byte pointer into the
+// runtime_func_t arg/return slots, push exactly one Lua value onto
+// the stack. Stack effect: +1.
+typedef void (*type_info_feeder_t)(lua_State* state_, char* arg_ptr);
 
 struct type_info_t {
     enum type_info_id_t {

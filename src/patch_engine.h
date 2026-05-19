@@ -18,6 +18,16 @@ Pattern ParsePattern(const std::string& s);
 // Parse "44 8A F0" into raw bytes. No wildcards allowed.
 std::vector<uint8_t> ParseBytes(const std::string& s);
 
+// Convenience: parse pattern + scan an executable module by name, return
+// VA of first match. Returns std::nullopt for zero matches; logs how many
+// matches were seen so multi-match cases are visible. Used by the Lua
+// scripting layer (lua_memory::scan_pattern_from_module) for pak-mod
+// memory primitives. The full patch-resolution pipeline (with anchor +
+// context + uniqueness constraints) is in Resolve(), which this does NOT
+// reuse — that one expects a PatchEntry, this one just needs (module, pattern).
+std::optional<uintptr_t> ScanModuleFirst(const std::wstring& module_name_wide,
+                                         const std::string&  pattern);
+
 // Anchor variant types ----------------------------------------------------
 struct AnchorString          { std::string literal; };
 struct AnchorFunctionByExport{ std::string name; };

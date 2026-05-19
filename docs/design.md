@@ -633,6 +633,52 @@ The implementation uses asmjit-generated thunks (vendored from
 ReturnOfModding, Phase 5+). Plugin authors don't see asmjit
 directly — just the typed `signature` string.
 
+#### Implementation constraint: no sol2 on the live `lua_State`
+
+**sol2 must NOT touch KCD2's live `lua_State` at all.** Pinned
+via bisect in Phase 5c.7a (2026-05-18): registering a sol2
+usertype (`new_usertype<T>(...)`) — even with zero call sites
+and no instances ever constructed — hard-crashes the game
+during save-game deserialization. No Aftermath dump is
+produced; `kcd.log` ends mid-load. Title screen and main-menu
+interaction work fine; only save-load fails. The likely cause
+is sol2's metatable scaffolding in `LUA_REGISTRYINDEX`
+interfering with KCD2's save-load walk of Lua state.
+
+Decision (2026-05-18, "Strict" path): the rule covers every
+kcdx code path that touches the live `lua_State`, not just
+`new_usertype`. `sol::make_object<UserType>` is also forbidden
+because it triggers on-demand metatable creation on first push.
+sol2 stays vendored at `vendor/sol2/` (for reference; the
+linker dead-strips unused headers) but no kcdx translation
+unit may `#include <sol/sol.hpp>`. `git grep '<sol/sol.hpp>' src/`
+should always return zero lines.
+
+What this means concretely:
+
+- The `kcdx.*` Lua global and all sub-tables (`kcdx.memory.*`,
+  `kcdx.scripting.*`, etc.) are built with raw Lua C API
+  (`lua_newtable`, `lua_pushcfunction`, `lua_setfield`,
+  `luaL_newmetatable`). The existing Phase 1 globals
+  (`KCDX.ScanAndWrite`, `KCDX.ReadBytes`, `KCDX.GetWHGameBase`
+  in `src/lua_bind.cpp`) demonstrate the pattern.
+- `kcdx::scripting`'s per-target callback storage uses Lua
+  registry refs (`luaL_ref` / `lua_rawgeti`) instead of
+  `std::vector<sol::protected_function>`.
+- `kcdx::scripting`'s dispatchers (`dynamic_hook_pre/post/mid`)
+  push args onto the Lua stack with the raw C API and call
+  `lua_pcall` directly.
+- `kcdx::lua_memory::to_lua` / `to_lua_return` push the
+  marshaled value onto the Lua stack and return void (no
+  `sol::object`).
+- All marshaled types (`pointer`, `value_wrapper_t`) are
+  pushed as raw userdata via `lua_newuserdata` +
+  `luaL_setmetatable`.
+- The `kcdxScriptingInterface::RegisterFunction`
+  thunk-generation machinery (asmjit) is unaffected — it
+  generates raw C functions that get registered via
+  `lua_pushcfunction`, same as a manually written binding.
+
 ### `kcdxSerializationInterface`
 
 Persist data tied to the current save game. Storage location:
