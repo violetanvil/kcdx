@@ -49,4 +49,25 @@ void EmitSummaryIfChanged(const char* messageLabel);
 // unknown messages.
 const char* MessageLabel(uint32_t messageType);
 
+// Register a test name a plugin promises to report. The aggregator uses
+// this to track PENDING (registered but no report yet) vs reported.
+// Called from config.cpp during ParsePluginManifest for any plugin
+// with [kcdx] test_suite_only = true + [plugin] test_names = [...].
+//
+// pluginName is the plugin's stable ID (for the PENDING log line so
+// the user knows which plugin owns the silent test).
+void RegisterExpectedTestName(std::string_view testName,
+                              std::string_view pluginName);
+
+// Increment the count of test_suite_only plugins skipped because dev
+// mode is off. Reported once at the end of LoadAllConfigs as
+// "Test suite: N plugin(s) gated off (dev mode disabled)" so even
+// production users notice that test plugins exist.
+void IncrementGatedOffCount();
+
+// Emit the production-quiet count line if any test plugins were gated
+// off this session. Called once from LoadAllConfigs after all TOMLs
+// have been parsed. No-op when count == 0.
+void EmitGatedOffSummary();
+
 }  // namespace kcdx::test

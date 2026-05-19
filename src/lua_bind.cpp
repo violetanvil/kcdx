@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
@@ -20,9 +21,11 @@ extern "C" {
 // the pure-C++ types it defines (pointer, value_wrapper_t, to_lua);
 // the sol2 bindings inside it are unused from this translation unit.
 
+#include "dev.h"
 #include "log.h"
 #include "lua_bind_helpers.h"
 #include "lua_memory.h"
+#include "messaging.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
 
@@ -39,6 +42,12 @@ namespace kcdx::lua_bind_test { void bind(lua_State* L); }
 #include "scripting_interface.h"
 
 namespace kcdx::lua_bind {
+
+// Flipped by RegisterKcdxTable after _G.kcdx is populated + the
+// kcdxMessage_LuaReady message is fired. Read by IsKcdxGlobalReady()
+// (used by lua_bind_dev::Lua_OnReady to fast-path the
+// already-ready case).
+std::atomic<bool> g_kcdx_ready{false};
 
 namespace {
 
@@ -207,6 +216,20 @@ void RegisterKcdxTable(lua_State* L) {
     // is parsed, but the kcdx global only gets created here). Any
     // further calls apply directly because g_table_ready flips true.
     kcdx::scripting_interface::ApplyPendingToTable(L);
+
+    // Mark ready BEFORE firing the message so a listener that checks
+    // IsKcdxGlobalReady() during dispatch sees true.
+    g_kcdx_ready.store(true, std::memory_order_release);
+
+    KCDX_DEV("SCRIPTING", "GLOBAL_READY",
+        kcdx::dev::KV("L", static_cast<const void*>(L)));
+
+    log::Info("Firing kcdxMessage_LuaReady...");
+    kcdx::messaging::FireEngineMessage(kcdxMessage_LuaReady);
+}
+
+bool IsKcdxGlobalReady() {
+    return g_kcdx_ready.load(std::memory_order_acquire);
 }
 
 }  // namespace kcdx::lua_bind

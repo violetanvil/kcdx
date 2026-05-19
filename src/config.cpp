@@ -17,6 +17,7 @@
 #include "log.h"
 #include "patch_engine.h"
 #include "plugin_loader.h"
+#include "test.h"
 #include "trampoline_engine.h"
 
 namespace fs = std::filesystem;
@@ -223,6 +224,18 @@ bool ParsePluginManifest(const toml::table& doc,
     if (auto* entryTbl = doc.get("entrypoints"); entryTbl && entryTbl->is_table()) {
         const auto& et = *entryTbl->as_table();
         out.dllEntrypointRel = OptString(et, "dll");
+    }
+
+    // [plugin] test_names = ["CAP-XX", ...] — for test-suite plugins,
+    // the matrix row IDs this plugin promises to report. Used by the
+    // aggregator to track PENDING (registered but no report yet) vs
+    // reported. Empty = no expectation; plugin still counts in
+    // "N gated off" but no PENDING tracking.
+    if (auto* arr = t.get("test_names"); arr && arr->is_array()) {
+        for (const auto& elem : *arr->as_array()) {
+            if (!elem.is_string()) continue;
+            out.testNames.push_back(std::string(*elem.value<std::string>()));
+        }
     }
 
     out.tomlPath   = tomlPath;
@@ -676,10 +689,13 @@ void LoadOneFile(const fs::path& path) {
             isTestSuiteOnly = OptBool(tbl, "test_suite_only", false);
         }
 
-        // test_suite_only: silently skip every entry in this file when dev
-        // mode is off. Production users never see suite log noise. When dev
-        // mode IS on, fall through and process normally.
+        // test_suite_only + dev_mode OFF: production-quiet path.
+        // We still want to COUNT the plugin so the user sees
+        // "Test suite: N plugin(s) gated off" at boot. Bump the
+        // counter and skip everything else (no [[patch]]/[[hook]]
+        // entries register, plugin DLLs early-return at Plugin_Load).
         if (isTestSuiteOnly && !kcdx::dev::IsEnabled()) {
+            kcdx::test::IncrementGatedOffCount();
             return;
         }
 
@@ -691,9 +707,23 @@ void LoadOneFile(const fs::path& path) {
             kcdx::plugins::PluginManifest manifest;
             std::string mErr;
             if (ParsePluginManifest(doc, path, manifest, mErr)) {
+                manifest.testSuiteOnly = isTestSuiteOnly;
                 log::InfoF("Discovered plugin '%s' v0x%08X from %s",
                            manifest.name.c_str(), manifest.version,
                            fileLabel.c_str());
+
+                // Register expected test names with the aggregator so it
+                // can track PENDING (registered but not yet reported).
+                if (isTestSuiteOnly) {
+                    for (const auto& tn : manifest.testNames) {
+                        kcdx::test::RegisterExpectedTestName(tn, manifest.name);
+                    }
+                    KCDX_DEV("TEST", "REGISTERED",
+                        kcdx::dev::KV("plugin", manifest.name),
+                        kcdx::dev::KV("expected_names",
+                            (unsigned long long)manifest.testNames.size()));
+                }
+
                 kcdx::plugins::g_manifests.push_back(std::move(manifest));
             } else {
                 // "no [plugin] table" is fine — file is config-only.
@@ -881,6 +911,10 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
                kcdx::hook_engine::g_hooks.size(),
                kcdx::trampoline_engine::g_trampolines.size(),
                files, folders);
+
+    // Production-quiet: tell the user about gated-off test plugins even
+    // when dev mode is off. No-op when count == 0.
+    kcdx::test::EmitGatedOffSummary();
 }
 
 }  // namespace kcdx::config

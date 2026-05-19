@@ -52,6 +52,18 @@ struct PluginManifest {
 
     std::vector<ManifestDependency> dependencies;
 
+    // For test-suite plugins (those with [kcdx] test_suite_only = true):
+    // the matrix row IDs this plugin promises to report. Used by the
+    // aggregator to track "PENDING" vs "reported." Empty = no
+    // expectation, plugin is included in count but can report any name.
+    //
+    // Example: test_names = ["CAP-05", "CAP-11"]
+    std::vector<std::string> testNames;
+
+    // Set to true by config.cpp if [kcdx] test_suite_only = true in
+    // this plugin's TOML.
+    bool testSuiteOnly = false;
+
     // Log level threshold for this plugin's per-plugin log. Calls to
     // api->Log(self, level, msg) at a level BELOW this are dropped
     // before formatting. Default = Info (0). See kcdxLog_* enum in

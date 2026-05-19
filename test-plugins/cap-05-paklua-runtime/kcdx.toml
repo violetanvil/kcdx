@@ -1,0 +1,27 @@
+# CAP-05 / CAP-11 sidecar kcdx.toml.
+#
+# The actual test runs as a pak mod (Data/kcdx_test_paklua.pak), but
+# that pak doesn't go through kcdx's plugin loader — it loads via
+# CryEngine's pak system. So kcdx wouldn't know the pak exists or
+# that it intends to report CAP-05 / CAP-11 results.
+#
+# This sidecar TOML-only plugin tells kcdx:
+#   - "I intend to report CAP-05 and CAP-11"
+#   - "Skip me silently if dev mode is off"
+#
+# Then the aggregator's PENDING tracking shows whether the pak
+# reported on schedule.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-05-paklua-sidecar"
+display_name        = "CAP-05/11 sidecar (declares pak's test names)"
+author              = "kcdx"
+description         = "Sidecar that registers expected test names for the pak mod."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-05", "CAP-11"]

@@ -345,6 +345,22 @@ enum kcdxMessageType {
     // NOT YET FIRED (Phase 6).
     kcdxMessage_DeleteGame    = 8,
 
+    // kcdx's Lua surface (_G.kcdx and its sub-tables) is now populated and
+    // safe to call. Fires once per process, on the first update tick after
+    // RegisterKcdxTable runs.
+    //
+    // Why this exists: pak Lua test plugins (and any plugin Lua that wants
+    // to call kcdx.* from pak-init time) face a chicken-and-egg — pak
+    // scripts load early, but kcdx.* isn't installed until first-update-
+    // tick. Listening for this message via a kcdxMessagingInterface
+    // subscription gets you a one-shot "kcdx is ready" signal at exactly
+    // the right moment.
+    //
+    // For pak Lua specifically, kcdx.dev.on_ready(fn) is a more
+    // convenient wrapper that handles both the "already ready" and
+    // "subscribe and wait" cases.
+    kcdxMessage_LuaReady      = 9,
+
     // First plugin-defined message ID. Use anything >= this for your own
     // message types.
     kcdxMessage_FirstUserDefined = 0x10000,

@@ -18,4 +18,10 @@ namespace kcdx::lua_bind {
 // Safe to call once after the lua_State* is captured.
 void RegisterKcdxTable(lua_State* L);
 
+// True after RegisterKcdxTable has run and the kcdxMessage_LuaReady
+// message has fired. Used by lua_bind_dev::on_ready to fast-path the
+// already-ready case, and by anything else that needs to gate on
+// "kcdx.* is callable from pak Lua right now."
+bool IsKcdxGlobalReady();
+
 }  // namespace kcdx::lua_bind
