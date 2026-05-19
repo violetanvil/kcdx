@@ -679,6 +679,45 @@ What this means concretely:
   generates raw C functions that get registered via
   `lua_pushcfunction`, same as a manually written binding.
 
+#### Threading constraint: hook only main-thread functions
+
+KCD2's Lua VM (CryEngine 5.2.3 bundled Lua 5.1) is single-
+threaded. `lua_lock` / `lua_unlock` are no-ops in the shipped
+build. `kcdx::scripting`'s pre/post/mid dispatchers invoke
+`lua_pcall` directly against the captured `g_lua_state` from
+inside MinHook detours — whatever thread the hooked target
+ran on is the thread that ends up entering the Lua VM.
+
+v0.1 does NOT add a runtime thread-ID guard. Plugin authors
+using `kcdx.memory.dynamic_hook` (Lua-side) or
+`[[hook]] lua_callback` (TOML-side, Phase 5f) are responsible
+for ensuring the targeted function runs on the main game
+thread. Safe targets:
+
+  - Anything kcdx already hooks (`lua_pcall`, `update`) — main
+    thread by construction, since that's where kcdx captured
+    the `lua_State` pointer.
+  - CryEngine gameplay-loop functions invoked from the main
+    `update`. The vast majority of `WHGame.dll` code.
+  - Lua-bound C functions (anything resolvable via
+    `kcdx.lua.cfunction_address`) — Lua's single-threaded
+    nature implies these only run from the main VM-owning
+    thread.
+
+Unsafe targets:
+
+  - Audio mixer callbacks
+  - Physics worker thread routines
+  - IO/streaming worker routines
+
+If a real plugin needs to hook an unsafe target, v0.2 adds a
+runtime `GetCurrentThreadId()` guard inside the dispatcher
+that skips invocation when called off-thread (logs a warn).
+Until that exists, the failure mode is undefined — Lua state
+race, likely crash. Verified-2026-05-18 (Phase 5d skip
+decision): the rule is documented here and in
+`CLAUDE.md` hard rule #16; no runtime enforcement.
+
 ### `kcdxSerializationInterface`
 
 Persist data tied to the current save game. Storage location:
