@@ -27,7 +27,15 @@
 namespace kcdx::rom {
 
 class runtime_func_t {
-    std::vector<uint8_t>          m_jit_function_buffer;
+    // Phase 5c.7b.1: allocated from kcdx::trampoline::AllocateBranch
+    // (within +/-2 GB of WHGame.dll, alloc-only, no free) instead of
+    // heap-via-vector. The previous std::vector approach didn't
+    // guarantee rel32 reachability from the target function — could
+    // produce silently-truncated 5-byte E9 displacements when the
+    // heap wandered outside the 2GB window. Matches SKSE's
+    // BranchTrampoline pattern (subagent research 2026-05-18).
+    void*                         m_jit_function_buffer = nullptr;
+    size_t                        m_jit_function_size   = 0;
     asmjit::x86::Mem              m_args_stack;
     std::unique_ptr<kcdx::detour_hook> m_detour;
     uintptr_t                     m_target_func_ptr{};

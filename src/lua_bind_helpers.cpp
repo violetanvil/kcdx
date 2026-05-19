@@ -21,6 +21,17 @@ namespace pointer_binding {
     void PushMetatable(lua_State* L);
 }  // namespace pointer_binding
 
+}  // namespace kcdx::lua_bind_helpers
+
+// Defined in lua_bind_dynamic_hook.cpp; forward-decl here so
+// RegisterMetatables can call it. Idempotent (luaL_newmetatable guards
+// the registration).
+namespace kcdx::lua_bind_dynamic_hook {
+    void PushHandleMetatable(lua_State* L);
+}
+
+namespace kcdx::lua_bind_helpers {
+
 namespace value_wrapper_binding {
 
 // __index handler: kcdx.memory.value_wrapper:get() / :set(v) entries
@@ -78,6 +89,11 @@ void RegisterMetatables(lua_State* L) {
     lua_pop(L, 1);                       // we just want it registered
 
     value_wrapper_binding::SetupMetatable(L);
+
+    // dynamic_hook handle metatable. Pushes the metatable; we don't
+    // need it on the stack here.
+    kcdx::lua_bind_dynamic_hook::PushHandleMetatable(L);
+    lua_pop(L, 1);
 }
 
 // --- Push* ----------------------------------------------------------------

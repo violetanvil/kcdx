@@ -52,4 +52,39 @@ bool ApplyOneHook(size_t hookIdx);
 // loop instead). Returns the number of hooks successfully installed.
 size_t ApplyAll();
 
+// --- Phase 5c.7b.2: runtime hook installation -----------------------------
+//
+// Parallel to ApplyOneHook but for hooks resolved at runtime (not from
+// TOML pre-flight). Used by kcdx.memory.dynamic_hook in pak Lua and by
+// (Phase 5+) future plugin-DLL APIs that install hooks programmatically.
+//
+// Caller responsibility:
+//   - resolve target_addr to an absolute VA
+//   - JIT/build/copy the detour code somewhere within ±2 GB of target_addr
+//     (typically via trampoline::AllocateBranch + runtime_func_t::make_jit_func)
+//
+// hook_engine responsibility:
+//   - first-wins collision check against g_installed
+//   - MH_CreateHook + MH_EnableHook
+//   - bookkeep into g_installed so future hooks see this one
+//
+// Returns true on successful install, false on collision/MinHook failure.
+// Logs the outcome regardless. The `name` is used in log messages and as
+// the first-wins-collision report; pick something the plugin author will
+// recognize.
+struct RuntimeInstallResult {
+    bool        ok = false;
+    std::string reason;            // populated when !ok, for the caller
+                                   // to surface to its own Lua/log channel
+    void*       pOriginal = nullptr;  // MinHook's trampoline-to-original
+                                      // pointer (Phase 5+: call-original
+                                      // support; v0.1 ignores). void* not
+                                      // LPVOID to avoid pulling windows.h
+                                      // into every consumer of this header.
+};
+
+RuntimeInstallResult InstallRuntime(const std::string& name,
+                                    uintptr_t          target_addr,
+                                    void*              detour_addr);
+
 }  // namespace kcdx::hook_engine

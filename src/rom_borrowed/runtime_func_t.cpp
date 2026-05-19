@@ -29,6 +29,7 @@
 #include <unordered_map>
 
 #include "../log.h"
+#include "../trampoline.h"
 
 namespace kcdx::rom {
 
@@ -264,19 +265,21 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
     code.flatten();
     size_t size = code.code_size();
 
-    // Allocate virtual memory (executable). NOTE: upstream RoM uses a
-    // std::vector<uint8_t>::reserve() + VirtualProtect on the .data()
-    // pointer, which is dubious — it changes the page protection of
-    // whatever heap pages happen to back the vector, potentially
-    // affecting adjacent allocations. v0.2 of this port will route
-    // through kcdx::trampoline::AllocateLocal/Branch for proper page-
-    // level ownership. For Phase 5c.5 we preserve the upstream behavior
-    // to keep the diff small; it works in practice because asmjit-built
-    // trampolines tend to fit on a single heap page.
-    m_jit_function_buffer.reserve(size);
-
-    DWORD old_protect;
-    VirtualProtect(m_jit_function_buffer.data(), size, PAGE_EXECUTE_READWRITE, &old_protect);
+    // Allocate executable memory from kcdx's branch_pool — within
+    // +/-2 GB of WHGame.dll, so a 5-byte rel32 jmp from any hook
+    // target site can reach this trampoline. Replaces upstream RoM's
+    // std::vector<uint8_t> + VirtualProtect approach (Phase 5c.7b.1,
+    // 2026-05-18; see workspace memory project-kcd2-sol2-incompatibility
+    // sibling memory for the SKSE-pattern reference).
+    //
+    // owner=0 here means "engine, not a plugin." Once Phase 5e wires
+    // RegisterFunction we'll thread the calling plugin's handle through.
+    m_jit_function_buffer = kcdx::trampoline::AllocateBranch(/*owner=*/0, size);
+    if (!m_jit_function_buffer) {
+        log::Error("runtime_func_t::make_jit_func: branch_pool allocation failed");
+        return 0;
+    }
+    m_jit_function_size = size;
 
     // if multiple sections, resolve linkage (1 atm)
     if (code.has_unresolved_fixups()) {
@@ -284,13 +287,13 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
     }
 
     // Relocate to the base-address of the allocated memory.
-    code.relocate_to_base((uintptr_t)m_jit_function_buffer.data());
-    code.copy_flattened_data(m_jit_function_buffer.data(), size);
+    code.relocate_to_base((uintptr_t)m_jit_function_buffer);
+    code.copy_flattened_data(m_jit_function_buffer, size);
 
-    log::DebugF("runtime_func_t::make_jit_func: JIT stub at 0x%p, asmjit log:\n%s",
-                m_jit_function_buffer.data(), asmLog.data());
+    log::DebugF("runtime_func_t::make_jit_func: JIT stub at 0x%p (%zu bytes, branch_pool), asmjit log:\n%s",
+                m_jit_function_buffer, size, asmLog.data());
 
-    return (uintptr_t)m_jit_function_buffer.data();
+    return (uintptr_t)m_jit_function_buffer;
 }
 
 uintptr_t runtime_func_t::make_jit_func(const std::string& return_type,
@@ -549,23 +552,26 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     code.flatten();
     size_t size = code.code_size();
 
-    // Same caveat as make_jit_func re: VirtualProtect on vector data.
-    m_jit_function_buffer.reserve(size);
-
-    DWORD old_protect;
-    VirtualProtect(m_jit_function_buffer.data(), size, PAGE_EXECUTE_READWRITE, &old_protect);
+    // Same branch_pool allocation as make_jit_func — see Phase 5c.7b.1
+    // notes above. owner=0 (engine, not a plugin) until 5e wires it.
+    m_jit_function_buffer = kcdx::trampoline::AllocateBranch(/*owner=*/0, size);
+    if (!m_jit_function_buffer) {
+        log::Error("runtime_func_t::make_jit_midfunc: branch_pool allocation failed");
+        return 0;
+    }
+    m_jit_function_size = size;
 
     if (code.has_unresolved_fixups()) {
         code.resolve_cross_section_fixups();
     }
 
-    code.relocate_to_base((uintptr_t)m_jit_function_buffer.data());
-    code.copy_flattened_data(m_jit_function_buffer.data(), size);
+    code.relocate_to_base((uintptr_t)m_jit_function_buffer);
+    code.copy_flattened_data(m_jit_function_buffer, size);
 
-    log::DebugF("runtime_func_t::make_jit_midfunc: JIT stub at 0x%p, asmjit log:\n%s",
-                m_jit_function_buffer.data(), asmLog.data());
+    log::DebugF("runtime_func_t::make_jit_midfunc: JIT stub at 0x%p (%zu bytes, branch_pool), asmjit log:\n%s",
+                m_jit_function_buffer, size, asmLog.data());
 
-    return (uintptr_t)m_jit_function_buffer.data();
+    return (uintptr_t)m_jit_function_buffer;
 }
 
 void runtime_func_t::create_and_enable_hook(const std::string& hook_name,
