@@ -12,6 +12,7 @@ namespace kcdx::plugins {
 struct LoadedPlugin {
     std::string                  filePath;        // absolute path to the .dll
     std::string                  folderName;      // plugin folder name (for log diagnostics)
+    std::wstring                 folderPath;      // absolute path to plugin install dir (for GetPluginPath)
     HMODULE                      module = nullptr; // null for TOML-only plugins (no DLL)
     const kcdxPluginVersionData* versionData = nullptr;  // null for TOML-only plugins
     kcdxPluginHandle             handle = kcdxInvalidPluginHandle;

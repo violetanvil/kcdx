@@ -286,18 +286,68 @@ struct Candidate {
 };
 
 // Scan one folder for a DLL. Convention: a plugin folder contains exactly one
-// DLL (any name); also tolerated is a "loose" DLL sitting directly in plugins/
-// with no folder. Returns the DLL path or empty if none found.
+// .dll in its root. Multi-DLL plugins (bundled libraries) currently are not
+// supported by auto-discovery — Shape C refactor will add [entrypoints] dll
+// in kcdx.toml to disambiguate; until then, multiple DLLs return the first
+// alphabetically and warn. Returns the DLL path or empty if none found.
+//
+// Only scans the folder root — does NOT descend. Subfolders of a plugin
+// folder are the plugin's private space (sub-DLLs the plugin loads itself
+// via LoadLibraryW + GetPluginPath, data files, configs).
 fs::path FindDllInFolder(const fs::path& folder) {
     std::error_code ec;
+    std::vector<fs::path> dlls;
     for (const auto& entry : fs::directory_iterator(folder, ec)) {
         if (!entry.is_regular_file(ec)) continue;
         auto p = entry.path();
-        if (p.extension() == L".dll" || p.extension() == L".DLL") {
-            return p;
+        auto ext = p.extension().wstring();
+        if (_wcsicmp(ext.c_str(), L".dll") == 0) {
+            dlls.push_back(p);
         }
     }
-    return {};
+    if (dlls.empty()) return {};
+    if (dlls.size() > 1) {
+        std::sort(dlls.begin(), dlls.end());
+        log::WarnF("Plugin folder '%s' contains %zu DLLs; auto-discovery "
+                   "picks the first alphabetically ('%s'). Multi-DLL plugins "
+                   "should declare [entrypoints] dll in kcdx.toml to "
+                   "disambiguate (coming in next kcdx revision).",
+                   folder.filename().string().c_str(),
+                   dlls.size(),
+                   dlls[0].filename().string().c_str());
+    }
+    return dlls[0];
+}
+
+// Recursive walk for plugin folders (defined as: any folder containing a
+// kcdx.toml). Mirrors config.cpp's WalkForTomls discovery rules:
+//   - kcdx.toml at depth 0 (directly in plugins/) is ignored (config.cpp
+//     already warned about it).
+//   - From any folder, recurse until kcdx.toml is found; that folder is
+//     the plugin folder. Do NOT descend into it.
+//   - Hidden + *.disabled* folders are skipped.
+// For each plugin folder, calls visit() with (folderPath, dllPath). dllPath
+// may be empty for TOML-only plugins (no DLL in the folder root).
+template <typename Visit>
+void WalkForPluginFolders(const fs::path& dir, int depth, Visit&& visit) {
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(dir, ec)) {
+        const auto p = entry.path();
+        const auto name = p.filename().wstring();
+
+        if (!name.empty() && name[0] == L'.') continue;
+        if (name.find(L".disabled") != std::wstring::npos) continue;
+        if (!entry.is_directory(ec)) continue;
+
+        fs::path candidate = p / "kcdx.toml";
+        if (fs::exists(candidate, ec)) {
+            fs::path dll = FindDllInFolder(p);
+            visit(p, dll);
+            // Do NOT descend — folder is claimed.
+        } else {
+            WalkForPluginFolders(p, depth + 1, visit);
+        }
+    }
 }
 
 // Topologically sort the candidate list by dependencies. Stable: preserves
@@ -416,46 +466,30 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         return;
     }
 
-    // Phase 1 — discover all candidate DLLs. Scan subdirectories of plugins/.
-    // (Loose DLLs sitting directly in plugins/ are also picked up, matching
-    // the SKSE convention.)
+    // Phase 1 — discover all candidate DLLs by walking the plugin folder
+    // tree recursively. A folder containing kcdx.toml is a plugin folder;
+    // we look for a sibling DLL in that folder root (subfolders are the
+    // plugin's private space — sub-DLLs, data, configs). TOML-only plugins
+    // (no DLL) are silently skipped here; they're picked up by config.cpp.
     std::vector<Candidate> cands;
-    for (const auto& entry : fs::directory_iterator(root, ec)) {
-        fs::path dllPath;
-        fs::path folderPath;
-        if (entry.is_directory(ec)) {
-            folderPath = entry.path();
-            dllPath = FindDllInFolder(folderPath);
-            if (dllPath.empty()) continue;
-        } else if (entry.is_regular_file(ec)) {
-            auto p = entry.path();
-            // Skip kcdx.asi itself.
-            std::wstring filename = p.filename().wstring();
-            if (_wcsicmp(filename.c_str(), L"kcdx.asi") == 0) continue;
-            if (p.extension() == L".dll" || p.extension() == L".DLL") {
-                dllPath = p;
-                folderPath = p.parent_path();
-            } else {
-                continue;
-            }
-        } else {
-            continue;
-        }
+    WalkForPluginFolders(root, /*depth=*/0,
+        [&](const fs::path& folderPath, const fs::path& dllPath) {
+            if (dllPath.empty()) return;  // TOML-only plugin
 
-        Candidate c;
-        c.folderPath = folderPath;
-        c.dllPath = dllPath;
-        if (!PeekVersionData(dllPath, c.vdataCopy, c.module)) continue;
-        c.valid = ValidateVersionData(c.vdataCopy, dllPath.string());
-        if (!c.valid) {
-            // Invalid plugin — unload the DLL. PeekVersionData succeeded
-            // (so c.module is live), but validation rejected it. We loaded
-            // the DLL to read the metadata; we don't keep it around.
-            FreeLibrary(c.module);
-            c.module = nullptr;
-        }
-        cands.push_back(std::move(c));
-    }
+            Candidate c;
+            c.folderPath = folderPath;
+            c.dllPath = dllPath;
+            if (!PeekVersionData(dllPath, c.vdataCopy, c.module)) return;
+            c.valid = ValidateVersionData(c.vdataCopy, dllPath.string());
+            if (!c.valid) {
+                // Invalid plugin — unload the DLL. PeekVersionData succeeded
+                // (so c.module is live), but validation rejected it. We loaded
+                // the DLL to read the metadata; we don't keep it around.
+                FreeLibrary(c.module);
+                c.module = nullptr;
+            }
+            cands.push_back(std::move(c));
+        });
 
     log::InfoF("Plugin DLL loader: discovered %zu candidate(s)", cands.size());
     if (cands.empty()) return;
@@ -512,6 +546,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         LoadedPlugin lp;
         lp.filePath = c.dllPath.string();
         lp.folderName = c.folderPath.filename().string();
+        lp.folderPath = c.folderPath.wstring();
         lp.module = c.module;
         // Re-resolve the export so the pointer references the live DLL's
         // static address (stable for the lifetime of the process).

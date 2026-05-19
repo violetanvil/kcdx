@@ -1,0 +1,13 @@
+# hello-plugin — minimal kcdx plugin marker.
+#
+# kcdx requires a kcdx.toml in every plugin folder (the marker that
+# tells the engine "this folder is a plugin"). Even for DLL-only
+# plugins like this one, the TOML must exist; it just doesn't need
+# to declare any [[patch]] / [[hook]] / etc. entries.
+#
+# The DLL (hello-plugin.dll) carries the plugin's metadata in its
+# exported kcdxPluginVersionData block. A future kcdx revision will
+# move that metadata into this TOML file's [plugin] section; until
+# then, the DLL's version data is authoritative for C++ plugins.
+
+# (No entries — the DLL provides everything.)

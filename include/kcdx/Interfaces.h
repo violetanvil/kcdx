@@ -172,6 +172,30 @@ typedef struct kcdxInterface {
     //
     // Safe to call from any thread.
     void (*Log)(kcdxPluginHandle self, uint32_t level, const char* msg);
+
+    // Return the absolute filesystem path of a plugin's install folder.
+    // For self-introspection, pass your own handle (the one returned by
+    // GetPluginHandle in your Plugin_Load). Returns null for an unknown
+    // handle. The returned pointer is owned by the engine and remains
+    // valid for the process lifetime.
+    //
+    // Use this to address files your plugin ships alongside its DLL —
+    // sub-DLLs you LoadLibraryW dynamically, config files (.ini, .toml,
+    // .json, .lua), models, textures, or any other static asset that
+    // lives under your plugin's install folder. kcdx does NOT scan or
+    // load any of these for you; you own that. Convention is to keep
+    // them in a subfolder (e.g. `data/`, `extras/`) so they don't get
+    // mistaken for a kcdx.toml-marked plugin.
+    //
+    // Example (C++):
+    //   const wchar_t* root = api->GetPluginPath(g_self);
+    //   std::wstring cfg = std::wstring(root) + L"\\data\\config.ini";
+    //   FILE* fp = _wfopen(cfg.c_str(), L"r");
+    //
+    // Note: kcdx's recursive discovery walk STOPS once it finds a
+    // kcdx.toml in a folder. Subfolders of a plugin folder are
+    // invisible to discovery — they're yours to use however you like.
+    const wchar_t* (*GetPluginPath)(kcdxPluginHandle handle);
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------

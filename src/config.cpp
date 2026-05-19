@@ -484,6 +484,69 @@ void LoadOneFile(const fs::path& path) {
     }
 }
 
+// Discovery rules (also apply to plugin_loader.cpp's DLL walk):
+//
+//   1. kcdx.toml is the plugin marker. Every plugin folder has one.
+//   2. kcdx.toml at depth 0 (directly in plugins/) is rejected with a
+//      helpful warn line — plugins/ is for plugin folders, not data.
+//   3. From any folder, recurse infinitely until a kcdx.toml is found.
+//      That folder IS the plugin; we do NOT descend into it further.
+//      Subfolders of a plugin folder are the plugin's private space
+//      for sub-DLLs, data files, configs, etc — kcdx ignores them.
+//   4. Hidden folders (starting with `.`) and *.disabled* folders
+//      are skipped silently.
+//
+// folders/files counters track plugin folders (with TOML) and TOML
+// files loaded, respectively.
+void WalkForTomls(const fs::path& dir, int depth,
+                  size_t& folders, size_t& files) {
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(dir, ec)) {
+        const auto p = entry.path();
+        const auto name = p.filename().wstring();
+
+        // Skip hidden / disabled folders + files.
+        if (!name.empty() && name[0] == L'.') continue;
+        if (name.find(L".disabled") != std::wstring::npos) continue;
+
+        if (entry.is_directory(ec)) {
+            // Does this folder claim itself as a plugin?
+            fs::path candidate = p / "kcdx.toml";
+            if (fs::exists(candidate, ec)) {
+                ++folders;
+                ++files;
+                LoadOneFile(candidate);
+                // Plugin claimed. Do NOT descend.
+            } else {
+                // Container folder. Recurse.
+                WalkForTomls(p, depth + 1, folders, files);
+            }
+        } else if (entry.is_regular_file(ec)) {
+            // Files at depth 0 (directly in plugins/) are misplaced.
+            // Files at depth > 0 inside a container folder (no kcdx.toml
+            // in the same folder) are silently ignored — they're junk or
+            // pre-plugin debris.
+            if (depth == 0) {
+                const auto ext = p.extension().wstring();
+                if (_wcsicmp(name.c_str(), L"kcdx.toml") == 0) {
+                    log::WarnF("Ignoring '%s': the plugins/ directory "
+                               "should host folders of installed plugins, "
+                               "not the plugin data itself. Move this file "
+                               "into a subfolder.",
+                               WideToUtf8(p.wstring()).c_str());
+                } else if (_wcsicmp(ext.c_str(), L".dll") == 0
+                           && _wcsicmp(name.c_str(), L"kcdx.asi") != 0) {
+                    log::WarnF("Ignoring '%s': the plugins/ directory "
+                               "should host folders of installed plugins, "
+                               "not the plugin data itself. Move this DLL "
+                               "into a subfolder with a kcdx.toml.",
+                               WideToUtf8(p.wstring()).c_str());
+                }
+            }
+        }
+    }
+}
+
 }  // namespace
 
 void LoadAllConfigs(const std::wstring& pluginsDir) {
@@ -494,16 +557,7 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
     }
 
     size_t folders = 0, files = 0;
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(root, ec)) {
-        if (!entry.is_directory(ec)) continue;
-        ++folders;
-        fs::path candidate = entry.path() / "kcdx.toml";
-        if (fs::exists(candidate, ec)) {
-            LoadOneFile(candidate);
-            ++files;
-        }
-    }
+    WalkForTomls(root, /*depth=*/0, folders, files);
 
     // Stable sort by (priority asc, name asc).
     std::sort(kcdx::patch::g_patches.begin(), kcdx::patch::g_patches.end(),

@@ -84,6 +84,18 @@ void Thunk_Log(kcdxPluginHandle self, uint32_t level, const char* msg) {
     }
 }
 
+// Resolve a plugin's install folder path. Returned pointer is owned by the
+// engine and remains valid for the process lifetime — backed by the
+// LoadedPlugin::folderPath wstring which lives as long as g_plugins.
+const wchar_t* Thunk_GetPluginPath(kcdxPluginHandle handle) {
+    if (handle == kcdxInvalidPluginHandle) return nullptr;
+    size_t idx = static_cast<size_t>(handle);
+    if (idx >= g_plugins.size()) return nullptr;
+    const auto& p = g_plugins[idx];
+    if (p.folderPath.empty()) return nullptr;
+    return p.folderPath.c_str();
+}
+
 // The static instance. Initialized at program startup before any plugin code
 // runs because DiscoverAndLoad fetches it.
 kcdxInterface g_api = {
