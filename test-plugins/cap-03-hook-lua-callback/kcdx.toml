@@ -1,0 +1,47 @@
+# CAP-03 — [[hook]] + lua_callback (TOML-declared hook dispatches to pak Lua).
+#
+# Hooks WHGame.dll's luaL_loadfile at function entry. luaL_loadfile fires
+# many times during engine boot as CryEngine's script system pulls in
+# Scripts/*.lua files. Each fire dispatches into our Lua callback,
+# Cap03Test.OnLuaLoadFile, which increments a counter.
+#
+# A DLL companion subscribes to kInputLoaded and reports CAP-03 pass
+# if the counter > 0 (the hook fired at least once during boot).
+#
+# AOB pattern verified against KCD2 1.5 production via yobson1/kcd2lua
+# (see _research/predecessor-sigs/CAP-03-CANDIDATES.md candidate #1).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-03-hook-lua-callback"
+display_name        = "CAP-03 Hook + lua_callback"
+author              = "kcdx"
+description         = "TOML-declared hook dispatches to pak Lua during boot."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+
+[[hook]]
+name        = "cap03_luaL_loadfile"
+priority    = 100
+module      = "WHGame.dll"
+pattern     = "48 89 5C 24 ? 48 89 74 24 ? 55 57 41 56 48 8D AC 24 ? ? ? ? 48 81 EC 40 02 00 00 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 48 8B 79 10"
+offset      = 0
+
+# luaL_loadfile(lua_State* L, const char* filename) -> int
+# kcdx's typed dispatch: ptr (lua_State*) + ptr (const char*) → int32
+return_type = "int32"
+param_types = ["ptr", "ptr"]
+
+# Lua-side callback (in a pak we'll ship alongside). Receives the args
+# as (retval, L_ptr, filename_ptr) and just increments a counter so we
+# can observe at least one fire.
+lua_callback = "Cap03Test.OnLuaLoadFile"
+
+description = """
+CAP-03 of the kcdx test suite. Verifies [[hook]] + lua_callback chain
+fires from a real engine function during boot.
+"""

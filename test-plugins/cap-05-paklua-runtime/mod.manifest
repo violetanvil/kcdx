@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kcd_mod>
+    <info>
+        <name>kcdx CAP-05 + CAP-11 test pak</name>
+        <description>Test suite plugin. Exercises pak-Lua runtime hook installation via kcdx.memory.dynamic_hook and address resolution via kcdx.lua.cfunction_address. Silent when dev mode is off.</description>
+        <author>kcdx</author>
+        <version>0.1.0</version>
+        <modid>kcdx_test_paklua</modid>
+        <created_on>2026-05-19</created_on>
+    </info>
+</kcd_mod>
