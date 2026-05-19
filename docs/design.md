@@ -1053,25 +1053,38 @@ This doc tracks the v0.1 spec. Implementation phases:
 
 | Phase | Status | Scope |
 |---|---|---|
-| 1 | **live-verified in-game** | Foundation: locator pipeline copied from mempatch; `[[patch]]` works under `kcdx.toml` |
-| 2 | **code complete, in-game verify pending** | Plugin loader: DLL discovery, `kcdxPluginVersionData`, dependency topo-sort, hello-plugin example builds standalone |
-| 3 | **code complete, in-game verify pending** | Messaging + Task + lifecycle messages (kPostLoad/kPostPostLoad/kInputLoaded fire; save/load messages reserved for Phase 6) |
-| 4 | not started | Trampoline + function hooks: `[[hook]]`, `[[trampoline]]` |
+| 1 | **live-verified** | Foundation: locator pipeline copied from mempatch; `[[patch]]` works under `kcdx.toml` |
+| 2 | **live-verified** | Plugin loader: DLL discovery, `kcdxPluginVersionData`, dependency topo-sort, hello-plugin example builds standalone |
+| 3 | **live-verified** | Messaging + Task + lifecycle messages (kPostLoad/kPostPostLoad/kInputLoaded fire; save/load messages reserved for Phase 6) |
+| 4a | **live-verified** | Trampoline allocator (branch + local pools) + `kcdxTrampolineInterface` + per-plugin log files with 20 MB cap |
+| 4b.1 | **live-verified** | `[[hook]]` schema: raw-bytes function-entry detours via MinHook |
+| 4b.2 | **live-verified** | `[[trampoline]]` schema + cross-plugin symbol table (export / target_symbol) |
+| 4b.3 | **live-verified** | Unified conflict matrix (HookOnHook, PatchOverlapsEarlierHook, HookOverlapsEarlierPatch) + global apply order across all entry types |
 | 5 | not started | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` |
 | 6 | not started | Save/load + `kcdxSerializationInterface` |
 | 7 | not started | Address Library + `[[command]]` |
 | 8 | not started | Docs + examples + v0.1.0 release |
 
-Currently completed: **Part A** (mempatch boundary docs) +
-**Part B** (kcdx repo bootstrap) + **Phase 1** (foundation; verify
-recipe at [`docs/VERIFY_PHASE1.md`](VERIFY_PHASE1.md);
-**live-verified** — outfit swap works in combat) + **Phase 2**
-(plugin loader; verify recipe at
-[`docs/VERIFY_PHASE2.md`](VERIFY_PHASE2.md);
-hello-plugin example at [`examples/hello-plugin/`](../examples/hello-plugin/)) +
-**Phase 3** (messaging + task + lifecycle; verify recipe at
-[`docs/VERIFY_PHASE3.md`](VERIFY_PHASE3.md); hello-plugin example
-extended to subscribe + submit task). Plus a mid-stride fix to runtime
+Phase 4 verification recipe: [`docs/VERIFY_PHASE4.md`](VERIFY_PHASE4.md).
+Three synthetic conflict-test plugins
+(`examples/conflict-test-{hook-on-hook,patch-on-hook,hook-on-patch}/`)
+exercise each new cross-engine conflict category. All three live-verified
+on KCD2 1.5.1164953 — pre-flight predictions match apply-time behavior,
+log lines name the conflicting plugins, and the orchestration honors
+priority across entry kinds (a high-priority hook can apply earlier than
+a low-priority patch).
+
+The Phase 4b.3 work also introduced a separate `conflict_engine` module
+that owns resolution, footprint collection, conflict classification, and
+the unified apply order. Future engines (`[[mid_hook]]` in Phase 5, etc.)
+plug in by registering write/read footprints — they don't need to know
+about each other's conflict semantics directly.
+
+Earlier verification recipes:
+[`VERIFY_PHASE1.md`](VERIFY_PHASE1.md),
+[`VERIFY_PHASE2.md`](VERIFY_PHASE2.md),
+[`VERIFY_PHASE3.md`](VERIFY_PHASE3.md). Plus a mid-stride fix to runtime
 version detection (parse kcd_launcher.log instead of relying on
 WHGame.dll's missing VS_VERSIONINFO resource).
+
 See `README.md` for the condensed roadmap.

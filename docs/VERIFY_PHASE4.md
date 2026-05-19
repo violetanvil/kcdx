@@ -113,9 +113,23 @@ patch's effect.
 
 ## Cleanup after testing
 
-Remove all three conflict-test plugin folders. Restore
-`no-combat-state-hook/` if you want to keep using it. No game-state
-side effects from these tests because:
+```powershell
+$Live = "E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\plugins"
+
+# Remove any conflict-test plugin folders left over from testing
+foreach ($name in @("conflict-test-hook-on-hook",
+                    "conflict-test-patch-on-hook",
+                    "conflict-test-hook-on-patch")) {
+    if (Test-Path "$Live\$name") { Remove-Item -Recurse -Force "$Live\$name" }
+}
+
+# Restore no-combat-state-hook if you disabled it for the tests
+if (Test-Path "$Live\no-combat-state-hook\kcdx.toml.disabled") {
+    Rename-Item "$Live\no-combat-state-hook\kcdx.toml.disabled" "kcdx.toml"
+}
+```
+
+No game-state side effects from these tests because:
 - Test 1: hooks target IsInCombat (recoverable, same effect as no-combat-state)
 - Test 2: patch aborts, only the hook installs (same effect as no-combat-state)
 - Test 3: patch is 48->48 identity, hook installs (same effect as no-combat-state)

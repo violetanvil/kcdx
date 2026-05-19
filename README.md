@@ -114,10 +114,13 @@ documented SKSE weak spot:
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Foundation — locator pipeline copied from mempatch, `[[patch]]` under `kcdx.toml` produces identical apply-log output | not started |
-| 2 | Plugin loader — DLL discovery, `kcdxPluginVersionData`, dependency topo-sort, Preload/Load dispatch | not started |
-| 3 | Messaging + Task + lifecycle messages | not started |
-| 4 | Trampoline + function hooks (`[[hook]]`, `[[trampoline]]`) | not started |
+| 1 | Foundation — `[[patch]]` schema (mempatch-equivalent byte rewrites under `kcdx.toml`) | **live-verified** |
+| 2 | Plugin loader — DLL discovery, `kcdxPluginVersionData`, dependency topo-sort, Preload/Load dispatch | **live-verified** |
+| 3 | Messaging + Task + lifecycle messages | **live-verified** |
+| 4a | Trampoline allocator (branch + local pools) + `kcdxTrampolineInterface` + per-plugin log files | **live-verified** |
+| 4b.1 | `[[hook]]` schema (raw-bytes function-entry detours via MinHook) | **live-verified** |
+| 4b.2 | `[[trampoline]]` schema + cross-plugin symbol table (export / target_symbol) | **live-verified** |
+| 4b.3 | Unified conflict matrix + global apply order across all entry types | **live-verified** |
 | 5 | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` | not started |
 | 6 | Save/load + `kcdxSerializationInterface` (`.kcdx` co-save) | not started |
 | 7 | Address Library + console commands (`[[command]]`) | not started |
