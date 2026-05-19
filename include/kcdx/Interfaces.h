@@ -120,6 +120,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Task           = 3,  // Phase 3
     kcdxInterface_Scripting      = 4,  // Phase 5
     kcdxInterface_Serialization  = 5,  // Phase 6
+    kcdxInterface_Memory         = 6,  // Phase 5h — DLL-facing memory I/O
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -613,6 +614,57 @@ typedef struct kcdxScriptingInterface {
     // may store this pointer at any time after QueryInterface returns it.
     const kcdxLuaApi* lua;
 } kcdxScriptingInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxMemoryInterface — AOB scan + byte read/write for C++ plugins
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Memory,
+// kcdxMemoryInterface_Version). Mirrors (a subset of) the pak Lua
+// kcdx.memory.* surface for C++ plugins that want to do AOB resolution
+// + byte rewrites without re-implementing the locator pipeline.
+//
+// The functions here go through the same patch_engine code paths
+// kcdx uses internally — pattern syntax (hex pairs + `?` wildcards)
+// matches the [[patch]] / [[hook]] schema exactly.
+//
+// Lifecycle:
+//   - Safe to call from kcdxPlugin_Load.
+//   - Safe to call from any kcdxMessaging callback.
+//   - Plugin is responsible for the BYTE-LEVEL safety contract:
+//     same-length writes, no clobbering unrelated state.
+
+#define kcdxMemoryInterface_Version 1u
+
+typedef struct kcdxMemoryInterface {
+    // Scan moduleName's executable sections for the given AOB pattern.
+    // Pattern syntax: space-separated hex pairs ("48 8B 41"), with `?`
+    // as a wildcard byte (also accepts `??`).
+    //
+    // Returns the absolute VA of the FIRST match, or 0 if no match (or
+    // if the pattern is ambiguous — multiple matches log a warn and
+    // return 0; force a unique pattern with more context bytes).
+    //
+    // moduleName: e.g. "WHGame.dll". Pass NULL for the main module.
+    uintptr_t (*ScanPattern)(const char* moduleName, const char* pattern);
+
+    // Resolve a module's base address. Returns 0 if not loaded.
+    uintptr_t (*GetModuleBase)(const char* moduleName);
+
+    // Write `size` bytes at `addr`, handling VirtualProtect. Returns 1
+    // on success, 0 on failure (writes nothing on failure — page-
+    // protect roll back happens automatically).
+    //
+    // SAFETY: the write must be code that's safe to execute mid-function.
+    // For patches, same-length rewrites of single instructions are the
+    // documented contract (matches mempatch's [[patch]] same-length rule).
+    int (*WriteBytes)(uintptr_t addr, const void* bytes, size_t size);
+
+    // Read `size` bytes at `addr` into `out`. No page-protect dance
+    // needed (we use VirtualQuery to confirm readable). Returns 1 on
+    // success.
+    int (*ReadBytes)(uintptr_t addr, void* out, size_t size);
+} kcdxMemoryInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)

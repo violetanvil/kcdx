@@ -1,0 +1,24 @@
+# outfit-swap-dll — C++ DLL plugin demonstrating runtime byte rewrites
+# via kcdxMemoryInterface.
+#
+# Functionally identical to outfit-swap-in-combat (the [[patch]] version).
+# The point of this example is to show the DLL path: a C++ plugin that
+# does the AOB scan + byte rewrite from kcdxPlugin_Load using kcdx's
+# C++ memory interface, instead of declaring [[patch]] in TOML.
+#
+# When to use this vs the [[patch]] schema:
+#   - [[patch]] when your fix is purely declarative and fits the
+#     same-length-byte-rewrite contract.
+#   - This DLL pattern when your fix needs runtime conditions
+#     (CVars, save state, other-plugin state) or when you're
+#     already writing a DLL for other reasons.
+
+[plugin]
+name                = "violetanvil.outfit-swap-dll"
+display_name        = "Outfit Swap (DLL example)"
+author              = "VioletAnvil"
+description         = "C++ DLL doing the outfit-swap byte rewrite via kcdxMemoryInterface."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"

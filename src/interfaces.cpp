@@ -22,11 +22,19 @@
 #include <algorithm>
 #include <vector>
 
+#include <windows.h>
+
 #include <cstdint>
+#include <cstring>
+#include <string>
 
 namespace kcdx::plugins {
 
 namespace {
+
+// Forward decl — defined below alongside the kcdxMemoryInterface
+// thunks.
+const kcdxMemoryInterface* GetMemoryInterface();
 
 void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
     switch (interfaceID) {
@@ -46,6 +54,10 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxScriptingInterface_Version) return nullptr;
         return const_cast<kcdxScriptingInterface*>(
             scripting_interface::GetInterface());
+
+    case kcdxInterface_Memory:
+        if (version > kcdxMemoryInterface_Version) return nullptr;
+        return const_cast<kcdxMemoryInterface*>(GetMemoryInterface());
 
     // Phase 6 fills this in.
     case kcdxInterface_Serialization:
@@ -229,6 +241,74 @@ const wchar_t* Thunk_GetPluginPath(kcdxPluginHandle handle) {
     const auto& p = g_plugins[idx];
     if (p.folderPath.empty()) return nullptr;
     return p.folderPath.c_str();
+}
+
+// ---------------------------------------------------------------------
+// kcdxMemoryInterface impl
+// ---------------------------------------------------------------------
+
+static std::wstring Utf8ToWide(const char* s) {
+    if (!s) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
+    std::wstring w(n > 0 ? n - 1 : 0, L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s, -1, w.data(), n);
+    return w;
+}
+
+uintptr_t Mem_ScanPattern(const char* moduleName, const char* pattern) {
+    if (!pattern) return 0;
+    std::wstring modw = moduleName ? Utf8ToWide(moduleName) : std::wstring();
+    auto va = kcdx::patch::ScanModuleFirst(modw, std::string(pattern));
+    return va.value_or(0);
+}
+
+uintptr_t Mem_GetModuleBase(const char* moduleName) {
+    std::wstring modw = moduleName ? Utf8ToWide(moduleName) : std::wstring();
+    HMODULE h = modw.empty() ? GetModuleHandleW(nullptr)
+                              : GetModuleHandleW(modw.c_str());
+    return reinterpret_cast<uintptr_t>(h);
+}
+
+int Mem_WriteBytes(uintptr_t addr, const void* bytes, size_t size) {
+    if (!bytes || size == 0) return 0;
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(reinterpret_cast<LPVOID>(addr), size,
+                        PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        return 0;
+    }
+    std::memcpy(reinterpret_cast<void*>(addr), bytes, size);
+    DWORD ignored = 0;
+    VirtualProtect(reinterpret_cast<LPVOID>(addr), size, oldProtect, &ignored);
+    FlushInstructionCache(GetCurrentProcess(),
+                          reinterpret_cast<LPCVOID>(addr), size);
+    return 1;
+}
+
+int Mem_ReadBytes(uintptr_t addr, void* out, size_t size) {
+    if (!out || size == 0) return 0;
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi)) == 0) {
+        return 0;
+    }
+    if (mbi.State != MEM_COMMIT) return 0;
+    // Check readability via Protect bits.
+    DWORD readableBits = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY
+                       | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE
+                       | PAGE_EXECUTE_WRITECOPY;
+    if (!(mbi.Protect & readableBits)) return 0;
+    std::memcpy(out, reinterpret_cast<const void*>(addr), size);
+    return 1;
+}
+
+kcdxMemoryInterface g_memory = {
+    /*ScanPattern=*/   Mem_ScanPattern,
+    /*GetModuleBase=*/ Mem_GetModuleBase,
+    /*WriteBytes=*/    Mem_WriteBytes,
+    /*ReadBytes=*/     Mem_ReadBytes,
+};
+
+const kcdxMemoryInterface* GetMemoryInterface() {
+    return &g_memory;
 }
 
 // The static instance. Initialized at program startup before any plugin code
