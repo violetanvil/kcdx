@@ -3,6 +3,7 @@
 #include <mutex>
 #include <vector>
 
+#include "crash_guard.h"
 #include "log.h"
 
 namespace kcdx::task {
@@ -47,16 +48,12 @@ void DrainQueue() {
 
     for (kcdxTask* t : snapshot) {
         if (!t) continue;
-        try {
-            t->Run();
-        } catch (...) {
-            log::Error("Task: ran with an unhandled exception");
-        }
-        try {
-            t->Dispose();
-        } catch (...) {
-            log::Error("Task: Dispose() threw — possible memory leak");
-        }
+        guard::Call("task.run", nullptr,
+            [](void* ud) { static_cast<kcdxTask*>(ud)->Run(); },
+            t);
+        guard::Call("task.dispose", nullptr,
+            [](void* ud) { static_cast<kcdxTask*>(ud)->Dispose(); },
+            t);
     }
 }
 

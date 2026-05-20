@@ -4,31 +4,42 @@
 
 namespace kcdx::log {
 
-// Hard size cap (bytes). Applies to every log stream: kcdx.log and every
-// per-plugin <plugin-folder>/<folder>.log. When a stream reaches this size,
-// further writes are silently dropped (the engine emits a single WARN line
-// to kcdx.log naming the offending stream so a player reading the log can
-// see which file went off the rails).
-constexpr uint64_t kLogSizeCapBytes = 20ull * 1024 * 1024;  // 20 MB
+// Maximum number of session log files to retain per stream. On Init(),
+// each stream's logs/ folder is pruned to the newest kLogRetainCount
+// files matching that stream's filename prefix; older files are deleted.
+// "Per stream" means kcdx_*.log and kcdx-dev_*.log are counted
+// independently — the engine's logs/ folder may hold up to
+// kLogRetainCount of each.
+constexpr int kLogRetainCount = 20;
 
-// Initialize: opens log file at <kcdx-engine>/kcdx.log (resolved via
-// paths::EngineDataDir, which must be initialized first), optionally
-// allocates a console if the game was launched with -console.
+// Initialize: opens a fresh per-session log file at
+// <kcdx-engine>/logs/kcdx_<YYYY-MM-DD_HH-MM-SS>.log (resolved via
+// paths::EngineDataDir, which must be initialized first), prunes older
+// kcdx_*.log files beyond kLogRetainCount, optionally allocates a
+// console if the game was launched with -console.
 void Init();
 
-// Engine-internal writers (write to kcdx.log).
+// Eagerly create a plugin's logs/ folder and open its per-session log
+// file. Called by the plugin loader once per discovered DLL-bearing
+// plugin, after its entry is appended to g_plugins. TOML-only plugins
+// are skipped by the caller (they have no code path that logs).
+// Idempotent — if already opened, this is a no-op. Failure to open is
+// logged to the engine log; subsequent writes for that plugin are
+// silently dropped.
+void OpenPluginStream(uint32_t handle);
+
+// Engine-internal writers (write to the current session's kcdx_<ts>.log).
 void Info(const std::string& msg);
 void Warn(const std::string& msg);
 void Error(const std::string& msg);
 void Debug(const std::string& msg);
 
-// Plugin-side writers (write to <plugin-folder>/<folder>.log, prefix-tagged
-// with the plugin's stable name). The path is determined by looking up
-// `handle` in the loaded-plugins registry. If the handle is invalid, the
-// write falls back to kcdx.log with a `[unknown plugin handle %u]` prefix.
-//
-// Each plugin's stream is opened lazily on first write and stays open for
-// the rest of the session.
+// Plugin-side writers. Each plugin gets its own per-session log at
+// <plugins>/<folder>/logs/<folder>_<YYYY-MM-DD_HH-MM-SS>.log, lazily
+// opened on first write and pruned to kLogRetainCount on open. Lines
+// are prefix-tagged with the plugin's stable name. If the handle is
+// invalid, the write falls back to the engine's kcdx log with a
+// `[unknown plugin handle %u]` prefix.
 void PluginInfo (uint32_t handle, const std::string& msg);
 void PluginWarn (uint32_t handle, const std::string& msg);
 void PluginError(uint32_t handle, const std::string& msg);

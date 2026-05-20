@@ -12,8 +12,10 @@
 #include <vector>
 
 #include "address_library.h"
+#include "crash_guard.h"
 #include "dev.h"
 #include "log.h"
+#include "plugin_loader.h"
 
 namespace kcdx::console {
 
@@ -65,20 +67,44 @@ std::mutex g_slotsMutex;
 // Dispatcher: called by every trampoline. Looks up the slot and forwards
 // the IConsoleCmdArgs* to the plugin callback.
 void DispatchSlot(size_t slotIdx, void* iConsoleCmdArgs) {
-    Slot* s = nullptr;
     kcdxConsoleCommandCallback cb = nullptr;
+    kcdxPluginHandle owner = kcdxInvalidPluginHandle;
+    std::string slotName;
     {
         std::lock_guard<std::mutex> lock(g_slotsMutex);
         if (slotIdx >= kMaxCommands) return;
-        s = &g_slots[slotIdx];
+        Slot* s = &g_slots[slotIdx];
         if (!s->used || !s->callback) return;
-        cb = s->callback;
+        cb       = s->callback;
+        owner    = s->owner;
+        slotName = s->name;
     }
     KCDX_DEV("CONSOLE", "DISPATCH",
         kcdx::dev::KV("slot", static_cast<unsigned long long>(slotIdx)),
-        kcdx::dev::KV("name", s->name.c_str()));
+        kcdx::dev::KV("name", slotName.c_str()));
 
-    cb(reinterpret_cast<const kcdxConsoleCmdArgs*>(iConsoleCmdArgs));
+    // Resolve owner plugin name for the guard log line.
+    const char* pluginName = nullptr;
+    for (const auto& p : plugins::g_plugins) {
+        if (p.handle == owner && !p.manifest.name.empty()) {
+            pluginName = p.manifest.name.c_str();
+            break;
+        }
+    }
+
+    struct Ctx {
+        kcdxConsoleCommandCallback cb;
+        const kcdxConsoleCmdArgs*  args;
+    };
+    Ctx ctx{cb, reinterpret_cast<const kcdxConsoleCmdArgs*>(iConsoleCmdArgs)};
+    guard::Call(
+        "console.cmd",
+        pluginName,
+        [](void* ud) {
+            Ctx* c = static_cast<Ctx*>(ud);
+            c->cb(c->args);
+        },
+        &ctx);
 }
 
 // Templated thunk: one C function per slot. CryEngine sees the thunk

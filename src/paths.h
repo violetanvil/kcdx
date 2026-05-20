@@ -4,23 +4,29 @@
 //
 // v0.1 layout (rides on Ultimate ASI Loader):
 //   <game>/Bin/Win64MasterMasterSteamPGO/
-//   ├── dinput8.dll          (ASI loader)
+//   ├── dinput8.dll                          (ASI loader)
 //   ├── plugins/
-//   │   ├── kcdx.asi         (us — the ASI module dir == PluginsDir)
-//   │   └── <plugin>/...     (user plugin folders, walked by discovery)
-//   └── kcdx-engine/         (sibling of plugins/, owned by us)
-//       ├── engine.toml      (engine config — was kcdx-engine.toml in v0.0)
-//       ├── kcdx.log         (engine log)
-//       ├── kcdx-dev.log     (dev trace, only if dev_mode = true)
-//       └── address-library/ (future: Phase 7a)
+//   │   ├── kcdx.asi                         (us — the ASI module dir == PluginsDir)
+//   │   └── <plugin>/                        (user plugin folder, walked by discovery)
+//   │       ├── kcdx.toml / <plugin>.dll
+//   │       └── logs/
+//   │           └── <plugin>_<ts>.log        (one file per session)
+//   └── kcdx-engine/                         (sibling of plugins/, owned by us)
+//       ├── engine.toml                      (engine config)
+//       ├── logs/
+//       │   ├── kcdx_<ts>.log                (engine log, one per session)
+//       │   └── kcdx-dev_<ts>.log            (dev trace, only if dev_mode = true)
+//       └── address-library/                 (future: Phase 7a)
 //           └── database.toml
+//
+// Where <ts> is "YYYY-MM-DD_HH-MM-SS" of the session start. Old session
+// files are pruned to kcdx::log::kLogRetainCount per stream on open.
 //
 // Why split: keeping engine-owned data out of plugins/ means plugin
 // discovery walks only real plugin folders, and uninstall-by-deleting-
 // kcdx-engine/-plus-plugins/kcdx.asi is unambiguous about ownership.
-// Per-plugin logs still live inside each plugin's own folder
-// (<plugins>/<plugin>/<plugin>.log) — they're plugin-owned, not
-// engine-owned.
+// Per-plugin logs still live inside each plugin's own folder — they're
+// plugin-owned, not engine-owned.
 //
 // v0.2 collapses this — see docs/loader-architecture.md.
 

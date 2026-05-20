@@ -15,8 +15,7 @@ std::wstring g_pluginsDir;     // ASI module dir, with trailing '\\'
 std::wstring g_engineDataDir;  // <PluginsDir>/../kcdx-engine/, with trailing '\\'
 
 // Re-derive the ASI module directory using the address of a function
-// inside this translation unit. Matches the trick used pre-refactor in
-// dev.cpp's ResolveLogPath; consolidates the lookup here.
+// inside this translation unit.
 std::wstring DeriveSelfDir() {
     HMODULE hMod = nullptr;
     GetModuleHandleExW(

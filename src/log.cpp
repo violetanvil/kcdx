@@ -3,13 +3,15 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
-#include <fstream>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "paths.h"           // for paths::PluginsDir / EngineDataDir
 #include "plugin_loader.h"   // for kcdx::plugins::g_plugins lookup
@@ -17,20 +19,26 @@
 namespace kcdx::log {
 namespace {
 
-// One independent log stream. The engine has one of these for kcdx.log;
-// each plugin gets one keyed on its handle. Streams are mutex-protected
-// individually (each plugin's writes don't contend with engine writes,
-// which matters for plugins that log frequently from a worker thread).
+namespace fs = std::filesystem;
+
+// One independent log stream. The engine has one of these for the
+// session kcdx_<ts>.log; each plugin gets one keyed on its handle.
+// Streams are mutex-protected individually (each plugin's writes don't
+// contend with engine writes, which matters for plugins that log
+// frequently from a worker thread).
+//
+// Backed by FILE* (via _wfopen) rather than std::ofstream — dev.cpp
+// uses the same pattern and we know it works against this game. The
+// std::ofstream path silently dropped writes here despite is_open()
+// returning true; rather than chase the cause, copy what works.
 struct Stream {
-    std::mutex     mutex;
-    std::ofstream  file;
-    std::wstring   path;       // for diagnostics + the cap-reached message
-    std::string    streamName; // human-readable name for the cap warning
-    uint64_t       bytesWritten = 0;
-    bool           capWarned = false;
+    std::mutex   mutex;
+    FILE*        fp = nullptr;
+    std::wstring path;       // for diagnostics
+    std::string  streamName; // human-readable name, e.g. "kcdx_2026-05-20_14-30-15.log"
 };
 
-// The engine's own log stream (kcdx.log).
+// The engine's own log stream.
 Stream g_engineStream;
 
 // Per-plugin streams, keyed by PluginHandle. Created lazily on first write.
@@ -43,7 +51,11 @@ std::unordered_map<uint32_t, Stream*> g_pluginStreams;
 HANDLE g_consoleOut = nullptr;
 bool   g_consoleEnabled = false;
 
-// (Plugin per-log paths resolve via paths::PluginsDir at write time.)
+// Session timestamp string ("YYYY-MM-DD_HH-MM-SS"), captured once at
+// Init() and reused for both the engine log filename and every plugin
+// log opened during this session. Capturing it once means all of this
+// session's files sort together lexicographically.
+std::string g_sessionStamp;
 
 bool HasConsoleArg() {
     LPWSTR cmdLine = GetCommandLineW();
@@ -71,30 +83,71 @@ std::string FormatTimestamp() {
     return std::string(ts);
 }
 
-// Write to a Stream with size-cap enforcement.
-//   - Returns true if the write was attempted, false if dropped due to cap.
-//   - When the cap is first hit on a stream, marks `capWarned` and the
-//     caller is expected to log a single notification to the engine
-//     stream pointing the user at the offending stream.
-//   - Caller holds the stream's mutex.
-bool WriteToStream(Stream& s, const char* fullLine, size_t len) {
-    if (!s.file.is_open()) return false;
-    if (s.bytesWritten >= kLogSizeCapBytes) return false;
-    s.file.write(fullLine, len);
-    s.file.flush();
-    s.bytesWritten += len;
-    return true;
+// "YYYY-MM-DD_HH-MM-SS" — filesystem-safe (no colons), lexicographically
+// sortable, human-readable. Used in the filename per session.
+std::string FormatSessionStamp() {
+    std::time_t now = std::time(nullptr);
+    std::tm tm{};
+    localtime_s(&tm, &now);
+    char ts[32];
+    std::strftime(ts, sizeof(ts), "%Y-%m-%d_%H-%M-%S", &tm);
+    return std::string(ts);
+}
+
+// Prune `dir` to the newest `keep` files whose filename matches
+// "<prefix>*<suffix>" (i.e., starts with prefix and ends with suffix).
+// Older files are deleted. Errors are swallowed silently — failure to
+// prune is not fatal (worst case: old logs accumulate). Caller does
+// NOT hold any lock.
+void PruneOldSessionFiles(const fs::path& dir,
+                          const std::string& prefix,
+                          const std::string& suffix,
+                          int keep) {
+    std::error_code ec;
+    if (!fs::exists(dir, ec)) return;
+
+    std::vector<fs::path> matches;
+    for (auto& entry : fs::directory_iterator(dir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec)) continue;
+        std::string name = entry.path().filename().string();
+        if (name.size() < prefix.size() + suffix.size()) continue;
+        if (name.compare(0, prefix.size(), prefix) != 0) continue;
+        if (name.compare(name.size() - suffix.size(),
+                         suffix.size(), suffix) != 0) continue;
+        matches.push_back(entry.path());
+    }
+
+    if ((int)matches.size() <= keep) return;
+
+    // Sort by filename ascending — because the timestamp format is
+    // lexicographically chronological, this gives us oldest-first.
+    std::sort(matches.begin(), matches.end(),
+              [](const fs::path& a, const fs::path& b) {
+                  return a.filename().wstring() < b.filename().wstring();
+              });
+
+    int to_delete = (int)matches.size() - keep;
+    for (int i = 0; i < to_delete; ++i) {
+        std::error_code rm_ec;
+        fs::remove(matches[i], rm_ec);
+    }
+}
+
+// Write to a Stream. Caller holds the stream's mutex.
+void WriteToStream(Stream& s, const char* fullLine, size_t len) {
+    if (!s.fp) return;
+    fwrite(fullLine, 1, len, s.fp);
+    fflush(s.fp);
 }
 
 // Compose "[HH:MM:SS][LEVEL] msg\n" into `out`. Returns the byte length.
-// `out` is sized for a kilobyte; messages longer than that get truncated.
 int FormatLine(char* out, size_t outSize, const char* level, const std::string& msg) {
     std::string ts = FormatTimestamp();
     int n = snprintf(out, outSize, "[%s][%s] %s\n",
                      ts.c_str(), level, msg.c_str());
     if (n < 0) return 0;
     if (static_cast<size_t>(n) >= outSize) {
-        // Truncated. snprintf returned the would-be length; clamp.
         return static_cast<int>(outSize - 1);
     }
     return n;
@@ -115,35 +168,13 @@ void WriteEngine(const char* level, const std::string& msg) {
     int n = FormatLine(line, sizeof(line), level, msg);
     if (n <= 0) return;
 
-    bool dropped = false;
-    {
-        std::lock_guard<std::mutex> lock(g_engineStream.mutex);
-        bool wrote = WriteToStream(g_engineStream, line, n);
-        if (!wrote && g_engineStream.file.is_open() && !g_engineStream.capWarned) {
-            g_engineStream.capWarned = true;
-            dropped = true;
-        }
-        // Console gets the line whether or not the file took it — players
-        // running with -console still see live output even past cap.
-        MirrorToConsole(line, n);
-    }
-
-    if (dropped) {
-        // Try to write the cap-reached notification itself. If the engine
-        // stream is full, the notification gets dropped too — that's fine
-        // because the console mirror will still show it to a -console user.
-        std::string note = "kcdx.log reached " + std::to_string(kLogSizeCapBytes / (1024 * 1024))
-                         + " MB cap; further writes to this file dropped for the session.";
-        char capLine[256];
-        int cn = FormatLine(capLine, sizeof(capLine), "WARN", note);
-        std::lock_guard<std::mutex> lock(g_engineStream.mutex);
-        if (cn > 0) MirrorToConsole(capLine, cn);
-    }
+    std::lock_guard<std::mutex> lock(g_engineStream.mutex);
+    WriteToStream(g_engineStream, line, n);
+    MirrorToConsole(line, n);
 }
 
-// Per-plugin stream: open it on first use. Returns the Stream*, or null if
-// the plugin folder can't be resolved (e.g. invalid handle, plugin already
-// rejected). Caller does NOT hold any lock on entry.
+// Per-plugin stream: open it on first use. Returns the Stream*, or null
+// if the plugin folder can't be resolved.
 Stream* GetOrOpenPluginStream(uint32_t handle) {
     {
         std::lock_guard<std::mutex> lock(g_pluginStreamsMutex);
@@ -151,48 +182,49 @@ Stream* GetOrOpenPluginStream(uint32_t handle) {
         if (it != g_pluginStreams.end()) return it->second;
     }
 
-    // Need to create. Look up the plugin's folder name via the loader registry.
-    const std::string* folder = nullptr;
+    // Need to create. Look up the plugin's absolute folder path + leaf
+    // name via the loader registry. folderPath is authoritative for the
+    // on-disk location (plugins can live nested, e.g.
+    // plugins/test-suite/cap-01-patch/); folderName is just the leaf
+    // for filename construction.
+    std::wstring folderPath;
+    std::string  folderName;
     for (const auto& p : plugins::g_plugins) {
         if (p.handle == handle) {
-            folder = &p.folderName;
+            folderPath = p.folderPath;
+            folderName = p.folderName;
             break;
         }
     }
-    if (!folder || folder->empty()) return nullptr;
+    if (folderPath.empty() || folderName.empty()) return nullptr;
 
-    // Build the log path:
-    //   <plugins-dir>/<folderName>/<folderName>.log  (folder case)
-    //   <plugins-dir>/<folderName>.log               (loose-DLL case — folder
-    //     is actually the parent path, but for now we always treat
-    //     folderName as a subdirectory under plugins/. Loose-DLL case is
-    //     handled by DiscoverAndLoad using the .dll filename as folder.)
-    // Build wide path for std::ofstream's open().
-    const std::wstring& pluginsDir = kcdx::paths::PluginsDir();
-    std::wstring wide;
-    wide.reserve(pluginsDir.size() + 2 + folder->size() * 2);
-    wide += pluginsDir;
-    for (char c : *folder) wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
-    wide += L"\\";
-    for (char c : *folder) wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
-    wide += L".log";
+    // Build the per-plugin logs/ dir:
+    //   <plugin-folder>/logs/<folderName>_<sessionStamp>.log
+    fs::path logsDir = fs::path(folderPath) / L"logs";
+    std::error_code ec;
+    fs::create_directories(logsDir, ec);
+
+    // Prune old session files for this plugin before opening the new one.
+    std::string prefix = folderName + "_";
+    std::string suffix = ".log";
+    PruneOldSessionFiles(logsDir, prefix, suffix, kLogRetainCount);
+
+    std::string filename = prefix + g_sessionStamp + suffix;
+    fs::path logPath = logsDir / filename;
 
     auto* s = new Stream();
-    s->path = wide;
-    s->streamName = *folder + ".log";
-    s->file.open(wide, std::ios_base::out | std::ios_base::trunc);
-    if (!s->file.is_open()) {
-        // Fall back: log a one-time warning to the engine stream and don't
-        // try again for this plugin (we cache a null sentinel... well, we
-        // cache the broken Stream so we don't keep retrying open).
+    s->path = logPath.wstring();
+    s->streamName = filename;
+    s->fp = _wfopen(logPath.c_str(), L"wb");
+    if (!s->fp) {
         WriteEngine("WARN",
             "plugin handle " + std::to_string(handle) +
-            ": could not open log file at " + std::string(s->streamName) +
+            ": could not open log file " + s->streamName +
             "; further plugin log lines for this plugin will be dropped silently.");
     } else {
         WriteEngine("INFO",
             "plugin handle " + std::to_string(handle) +
-            ": opened log at " + s->streamName);
+            ": opened log at " + folderName + "/logs/" + s->streamName);
     }
 
     // Insert into map. If a concurrent caller raced, prefer the existing entry.
@@ -200,8 +232,7 @@ Stream* GetOrOpenPluginStream(uint32_t handle) {
         std::lock_guard<std::mutex> lock(g_pluginStreamsMutex);
         auto it = g_pluginStreams.find(handle);
         if (it != g_pluginStreams.end()) {
-            // Lost the race; close+delete ours.
-            if (s->file.is_open()) s->file.close();
+            if (s->fp) fclose(s->fp);
             delete s;
             return it->second;
         }
@@ -212,8 +243,6 @@ Stream* GetOrOpenPluginStream(uint32_t handle) {
 
 // Per-plugin write. Looks up the plugin's name for the prefix.
 void WritePlugin(uint32_t handle, const char* level, const std::string& msg) {
-    // Resolve the plugin's stable name for the prefix (best-effort; if
-    // resolution fails we still write a sensible fallback).
     const char* pluginName = nullptr;
     for (const auto& p : plugins::g_plugins) {
         if (p.handle == handle && !p.manifest.name.empty()) {
@@ -242,31 +271,28 @@ void WritePlugin(uint32_t handle, const char* level, const std::string& msg) {
         return;
     }
 
-    bool justHitCap = false;
-    std::string capNote;
-    {
-        std::lock_guard<std::mutex> lock(s->mutex);
-        bool wrote = WriteToStream(*s, line, n);
-        if (!wrote && s->file.is_open() && !s->capWarned) {
-            s->capWarned = true;
-            justHitCap = true;
-            capNote = "plugin log '" + s->streamName + "' reached "
-                    + std::to_string(kLogSizeCapBytes / (1024 * 1024))
-                    + " MB cap; further writes to that file dropped for the session.";
-        }
-    }
-    if (justHitCap) {
-        WriteEngine("WARN", capNote);
-    }
+    std::lock_guard<std::mutex> lock(s->mutex);
+    WriteToStream(*s, line, n);
 }
 
 }  // namespace
 
 void Init() {
-    std::wstring logPath = kcdx::paths::EngineDataDir() + L"kcdx.log";
-    g_engineStream.path = logPath;
-    g_engineStream.streamName = "kcdx.log";
-    g_engineStream.file.open(logPath, std::ios_base::out | std::ios_base::trunc);
+    g_sessionStamp = FormatSessionStamp();
+
+    fs::path logsDir = kcdx::paths::EngineDataDirPath() / L"logs";
+    std::error_code ec;
+    fs::create_directories(logsDir, ec);
+
+    // Prune older kcdx_*.log before opening this session's file so
+    // the new file isn't accidentally counted in the keep limit.
+    PruneOldSessionFiles(logsDir, "kcdx_", ".log", kLogRetainCount);
+
+    std::string filename = "kcdx_" + g_sessionStamp + ".log";
+    fs::path logPath = logsDir / filename;
+    g_engineStream.path = logPath.wstring();
+    g_engineStream.streamName = filename;
+    g_engineStream.fp = _wfopen(logPath.c_str(), L"wb");
 
     if (HasConsoleArg()) {
         g_consoleEnabled = true;
@@ -276,6 +302,14 @@ void Init() {
         COORD bufSize{120, 9000};
         SetConsoleScreenBufferSize(g_consoleOut, bufSize);
     }
+}
+
+// Public wrapper: eagerly open a plugin's log stream so its logs/ folder
+// and per-session file exist even if the plugin never calls Log itself.
+// Plugin loader calls this once per plugin after the plugin is registered
+// in g_plugins.
+void OpenPluginStream(uint32_t handle) {
+    GetOrOpenPluginStream(handle);
 }
 
 void Info(const std::string& msg)  { WriteEngine("INFO",  msg); }

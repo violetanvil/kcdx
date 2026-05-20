@@ -10,6 +10,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "crash_guard.h"
 #include "dev.h"
 #include "log.h"
 #include "lua_memory.h"  // for to_lua / to_lua_return
@@ -258,6 +259,7 @@ bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* params,
                       uint8_t                                        param_count,
                       kcdx::rom::runtime_func_t::return_value_t*     return_value,
                       uintptr_t                                      target_func_ptr) {
+    kcdx::guard::BreadcrumbScope bc("scripting.dispatch_pre", nullptr);
     KCDX_DEV("SCRIPTING", "DISPATCH/pre/enter",
         kcdx::dev::KV("target",      (void*)target_func_ptr),
         kcdx::dev::KV("param_count", (unsigned)param_count));
@@ -328,6 +330,7 @@ void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
                        uint8_t                                        param_count,
                        kcdx::rom::runtime_func_t::return_value_t*     return_value,
                        uintptr_t                                      target_func_ptr) {
+    kcdx::guard::BreadcrumbScope bc("scripting.dispatch_post", nullptr);
     KCDX_DEV("SCRIPTING", "DISPATCH/post/enter",
         kcdx::dev::KV("target", (void*)target_func_ptr));
     DispatchGuard re_entry;
@@ -368,6 +371,7 @@ void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
 uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params,
                            size_t                                         param_count,
                            uintptr_t                                      target_func_ptr) {
+    kcdx::guard::BreadcrumbScope bc("scripting.dispatch_mid", nullptr);
     KCDX_DEV("SCRIPTING", "DISPATCH/mid/enter",
         kcdx::dev::KV("target", (void*)target_func_ptr));
     DispatchGuard re_entry;

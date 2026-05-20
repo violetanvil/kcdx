@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "crash_guard.h"
 #include "log.h"
 #include "messaging.h"
 #include "pe_helpers.h"
@@ -499,7 +500,18 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
                    c.manifest.name.c_str(), c.manifest.version, lp.handle,
                    lp.filePath.empty() ? " (TOML-only)" : " from ",
                    lp.filePath.empty() ? "" : lp.filePath.c_str());
+        kcdxPluginHandle h = lp.handle;
+        bool hasDll = (lp.module != nullptr);
         g_plugins.push_back(std::move(lp));
+
+        // Eagerly create this plugin's logs/<folder>_<ts>.log so every
+        // DLL-bearing plugin has a logs/ folder, even if the plugin
+        // itself never calls api->Log. TOML-only plugins are skipped
+        // — they have no code path that calls Log and creating an
+        // empty file for them would just be noise.
+        if (hasDll) {
+            log::OpenPluginStream(h);
+        }
     }
 
     if (g_plugins.empty()) return;
@@ -508,20 +520,31 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     const kcdxInterface* api = GetEngineInterface();
     for (auto& p : g_plugins) {
         if (!p.preloadFn) continue;
-        bool ok = false;
-        try {
-            ok = p.preloadFn(api);
-        } catch (...) {
-            log::ErrorF("Plugin '%s' kcdxPlugin_Preload threw an exception",
+        struct Ctx {
+            kcdxPlugin_Preload_t fn;
+            const kcdxInterface* api;
+            bool                 result;
+        };
+        Ctx ctx{p.preloadFn, api, false};
+        bool noFault = guard::Call(
+            "plugin.preload",
+            p.manifest.name.c_str(),
+            [](void* ud) {
+                Ctx* c = static_cast<Ctx*>(ud);
+                c->result = c->fn(c->api);
+            },
+            &ctx);
+        bool ok = noFault && ctx.result;
+        if (!noFault) {
+            log::ErrorF("Plugin '%s' kcdxPlugin_Preload faulted (see GUARD line)",
                         p.manifest.name.c_str());
-            ok = false;
-        }
-        if (!ok) {
+        } else if (!ctx.result) {
             log::ErrorF("Plugin '%s' kcdxPlugin_Preload returned false",
                         p.manifest.name.c_str());
         } else {
             log::InfoF("Plugin '%s' kcdxPlugin_Preload OK", p.manifest.name.c_str());
         }
+        (void)ok;
     }
 
     // Phase 6 — Load wave.
@@ -533,15 +556,25 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
             p.loaded = true;
             continue;
         }
-        bool ok = false;
-        try {
-            ok = p.loadFn(api);
-        } catch (...) {
-            log::ErrorF("Plugin '%s' kcdxPlugin_Load threw an exception",
+        struct Ctx {
+            kcdxPlugin_Load_t    fn;
+            const kcdxInterface* api;
+            bool                 result;
+        };
+        Ctx ctx{p.loadFn, api, false};
+        bool noFault = guard::Call(
+            "plugin.load",
+            p.manifest.name.c_str(),
+            [](void* ud) {
+                Ctx* c = static_cast<Ctx*>(ud);
+                c->result = c->fn(c->api);
+            },
+            &ctx);
+        bool ok = noFault && ctx.result;
+        if (!noFault) {
+            log::ErrorF("Plugin '%s' kcdxPlugin_Load faulted (see GUARD line)",
                         p.manifest.name.c_str());
-            ok = false;
-        }
-        if (!ok) {
+        } else if (!ctx.result) {
             log::ErrorF("Plugin '%s' kcdxPlugin_Load returned false",
                         p.manifest.name.c_str());
         } else {

@@ -81,6 +81,7 @@ add_subdirectory(vendor/asmjit)
 add_library(kcdx SHARED
     src/dllmain.cpp
     src/log.cpp
+    src/crash_guard.cpp
     src/paths.cpp
     src/pe_helpers.cpp
     src/patch_engine.cpp
@@ -145,6 +146,13 @@ if(MSVC)
     set_property(TARGET kcdx    PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET lua     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+    # crash_guard.cpp uses __try/__except in a C++ TU. /EHa turns on
+    # the structured-exception unwinder so SEH and C++ exceptions can
+    # coexist in the same function. Applied per-file to keep the rest
+    # of the binary on the cheaper /EHs path.
+    set_source_files_properties(src/crash_guard.cpp PROPERTIES
+        COMPILE_FLAGS "/EHa")
 else()
     # MinGW cross-compile
     target_compile_definitions(kcdx PRIVATE

@@ -42,14 +42,9 @@ namespace kcdx::dev {
 // dev mode. After this returns, IsEnabled() is stable for the session
 // (no plugin can disable mid-session; this matches the v0.1 simple model).
 //
-// First call to SetEnabled(true) opens kcdx-dev.log in the plugins
-// directory. Subsequent SetEnabled calls are no-ops.
+// First call to SetEnabled(true) opens a per-session kcdx-dev_<ts>.log
+// in <kcdx-engine>/logs/. Subsequent SetEnabled calls are no-ops.
 void SetEnabled(bool on);
-
-// Apply caps before SetEnabled. Either may be skipped (defaults: 50 MB,
-// 20 files). max_files = 0 means "never delete rotated files."
-void SetCapBytes (size_t cap_bytes);
-void SetMaxFiles (int    max_files);
 
 // Optional category allow-list. If never called (or called with empty),
 // every category emits when dev mode is on. If called with a non-empty

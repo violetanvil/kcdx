@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "crash_guard.h"
 #include "log.h"
 #include "plugin_loader.h"
 #include "serialization.h"
@@ -82,38 +83,73 @@ bool Thunk_Dispatch(kcdxPluginHandle sender,
 
     // Snapshot listener list under the lock, then dispatch without the lock
     // held. Avoids re-entrancy issues if a callback calls back into
-    // Dispatch or RegisterListener.
-    std::vector<kcdxMessagingCallback> targets;
+    // Dispatch or RegisterListener. Capture handle + name alongside the
+    // callback so the crash-guard can name the offending plugin in the
+    // fault log without needing a second lock-acquire after a SEH unwind.
+    struct Target {
+        kcdxMessagingCallback callback;
+        kcdxPluginHandle      handle;
+        std::string           name;  // copied under the lock — stable for use after
+    };
+    std::vector<Target> targets;
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         for (const auto& l : g_listeners) {
-            // Sender filter: listener subscribed to this specific sender?
             if (l.sender != senderName) continue;
-            // Receiver filter: if dispatch specified a receiver, only that
-            // plugin's listeners get it.
             if (receiver) {
                 const char* listenerName = HandleToName(l.handle);
                 if (!listenerName || std::strcmp(listenerName, receiver) != 0) {
                     continue;
                 }
             }
-            targets.push_back(l.callback);
+            Target t;
+            t.callback = l.callback;
+            t.handle   = l.handle;
+            const char* nm = HandleToName(l.handle);
+            if (nm) t.name = nm;
+            targets.push_back(std::move(t));
         }
     }
 
     if (targets.empty()) return false;
+
+    log::InfoF("messaging: dispatch from '%s' type=%u: %zu listener(s)",
+               senderName, messageType, targets.size());
 
     kcdxMessage msg;
     msg.sender = senderName;
     msg.messageType = messageType;
     msg.data = data;
     msg.dataLen = dataLen;
-    for (auto cb : targets) {
-        // Each callback gets its own kcdxMessage copy on the stack — protects
-        // against a callback mutating the struct and confusing the next.
+
+    // Per-call closure that the guard invokes. The guard can't take a
+    // lambda directly (it's a function pointer + userdata), so we pass
+    // the kcdxMessage as the userdata payload.
+    struct Ctx {
+        kcdxMessagingCallback cb;
+        kcdxMessage*          arg;
+    };
+
+    size_t okCount = 0;
+    for (auto& t : targets) {
         kcdxMessage perCallback = msg;
-        cb(&perCallback);
+        Ctx ctx{t.callback, &perCallback};
+        bool ok = guard::Call(
+            "messaging.dispatch",
+            t.name.empty() ? nullptr : t.name.c_str(),
+            [](void* ud) {
+                Ctx* c = static_cast<Ctx*>(ud);
+                c->cb(c->arg);
+            },
+            &ctx);
+        if (ok) ++okCount;
+        // Continue the broadcast even if one listener faulted — other
+        // plugins shouldn't be silently denied a message because of a
+        // peer's bug.
     }
+
+    log::InfoF("messaging: dispatch from '%s' type=%u complete (%zu/%zu ok)",
+               senderName, messageType, okCount, targets.size());
     return true;
 }
 
@@ -132,13 +168,28 @@ void FireEngineMessage(uint32_t messageType,
                        const void* data,
                        uint32_t dataLen) {
     // Snapshot listeners subscribed to the engine (empty sender string).
-    std::vector<kcdxMessagingCallback> targets;
+    // Capture handle + name alongside callback so a fault gets named.
+    struct Target {
+        kcdxMessagingCallback callback;
+        kcdxPluginHandle      handle;
+        std::string           name;
+    };
+    std::vector<Target> targets;
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         for (const auto& l : g_listeners) {
-            if (l.sender.empty()) targets.push_back(l.callback);
+            if (!l.sender.empty()) continue;
+            Target t;
+            t.callback = l.callback;
+            t.handle   = l.handle;
+            const char* nm = HandleToName(l.handle);
+            if (nm) t.name = nm;
+            targets.push_back(std::move(t));
         }
     }
+
+    log::InfoF("messaging: broadcast engine type=%u: %zu listener(s)",
+               messageType, targets.size());
 
     if (!targets.empty()) {
         kcdxMessage msg;
@@ -146,22 +197,51 @@ void FireEngineMessage(uint32_t messageType,
         msg.messageType = messageType;
         msg.data = data;
         msg.dataLen = dataLen;
-        for (auto cb : targets) {
+
+        struct Ctx {
+            kcdxMessagingCallback cb;
+            kcdxMessage*          arg;
+        };
+
+        size_t okCount = 0;
+        for (auto& t : targets) {
             kcdxMessage perCallback = msg;
-            cb(&perCallback);
+            Ctx ctx{t.callback, &perCallback};
+            bool ok = guard::Call(
+                "messaging.broadcast",
+                t.name.empty() ? nullptr : t.name.c_str(),
+                [](void* ud) {
+                    Ctx* c = static_cast<Ctx*>(ud);
+                    c->cb(c->arg);
+                },
+                &ctx);
+            if (ok) ++okCount;
         }
+        log::InfoF("messaging: broadcast engine type=%u complete (%zu/%zu ok)",
+                   messageType, okCount, targets.size());
     }
 
     // Route to engine-internal serialization handler too. Engine-side
     // subsystems can't reasonably register as plugin listeners (no
-    // PluginHandle), so this is the dispatch path for them.
+    // PluginHandle), so this is the dispatch path for them. Guarded
+    // separately under an "engine.serialization" site name.
     {
-        kcdxMessage engineMsg;
-        engineMsg.sender = nullptr;
-        engineMsg.messageType = messageType;
-        engineMsg.data = data;
-        engineMsg.dataLen = dataLen;
-        kcdx::serialization::OnEngineMessage(&engineMsg);
+        struct EngCtx {
+            kcdxMessage msg;
+        };
+        EngCtx ectx;
+        ectx.msg.sender = nullptr;
+        ectx.msg.messageType = messageType;
+        ectx.msg.data = data;
+        ectx.msg.dataLen = dataLen;
+        guard::Call(
+            "engine.serialization",
+            nullptr,
+            [](void* ud) {
+                EngCtx* c = static_cast<EngCtx*>(ud);
+                kcdx::serialization::OnEngineMessage(&c->msg);
+            },
+            &ectx);
     }
 
     // After dispatch completes, give the test-suite aggregator a chance

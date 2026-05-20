@@ -3,6 +3,7 @@
 #include <string>
 
 #include "config.h"
+#include "crash_guard.h"
 #include "hooks.h"
 #include "log.h"
 #include "paths.h"
@@ -16,6 +17,12 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::log::Init();
     kcdx::log::Info("");
     kcdx::log::Info("kcdx.asi loaded");
+
+    // Install the unhandled-exception backstop early so even a crash
+    // during config load / hook install gets a final log line. The
+    // filter chains to the prior handler (BugSplat once KCD2 has
+    // installed it).
+    kcdx::guard::InstallUnhandledExceptionFilter();
     char pluginsUtf8[512];
     WideCharToMultiByte(CP_UTF8, 0, kcdx::paths::PluginsDir().c_str(), -1,
                         pluginsUtf8, sizeof(pluginsUtf8), nullptr, nullptr);

@@ -1,30 +1,32 @@
 // dev — see dev.h.
 //
 // Implementation choices:
-//   - Single std::mutex around the FILE* + rotation state. dev mode is
-//     opt-in and the cost of mutex contention is paid by authors who
-//     accepted it; not worth an async queue in v0.1.
-//   - Rotation happens lazily, checked on each Emit. When the current
-//     log exceeds cap, we close, rename .N->.N+1 (oldest dropped if
-//     exceeds max_files), open a fresh kcdx-dev.log, continue.
-//   - The log file path is derived from kcdx::log's module directory.
-//     We grab it via a callback from log::Init (set during kcdx's
-//     dllmain init) rather than re-discovering it.
+//   - Single std::mutex around the FILE*. dev mode is opt-in and the
+//     cost of mutex contention is paid by authors who accepted it;
+//     not worth an async queue in v0.1.
+//   - Each session writes to its own file:
+//     <kcdx-engine>/logs/kcdx-dev_<YYYY-MM-DD_HH-MM-SS>.log. On open,
+//     older kcdx-dev_*.log files beyond kLogRetainCount are pruned.
+//   - The log file path is derived from kcdx::paths::EngineDataDir.
 
 #include "dev.h"
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <mutex>
 #include <string>
+#include <vector>
 
+#include "log.h"      // kLogRetainCount
 #include "paths.h"
 
 namespace kcdx::dev {
@@ -37,13 +39,11 @@ std::atomic<bool> g_enabled{false};
 
 namespace {
 
+namespace fs = std::filesystem;
+
 std::mutex          g_lock;
-FILE*               g_fp        = nullptr;
-size_t              g_cap_bytes = 50ull * 1024 * 1024;   // 50 MB default
-int                 g_max_files = 20;
-std::filesystem::path g_log_path;
-std::filesystem::path g_log_dir;
-size_t              g_bytes_written = 0;
+FILE*               g_fp = nullptr;
+fs::path            g_log_path;
 
 // Category filter. Empty = all categories pass. Non-empty = only listed
 // categories pass IsCategoryEnabled. Set once during config load; read
@@ -51,65 +51,63 @@ size_t              g_bytes_written = 0;
 // a mutex around access after init.
 std::vector<std::string> g_category_filter;
 
-// Resolve the kcdx-dev.log path inside the engine-data folder.
-std::filesystem::path ResolveLogPath() {
-    return kcdx::paths::EngineDataDirPath() / L"kcdx-dev.log";
+// "YYYY-MM-DD_HH-MM-SS" — filesystem-safe, sortable, human-readable.
+std::string FormatSessionStamp() {
+    std::time_t now = std::time(nullptr);
+    std::tm tm{};
+    localtime_s(&tm, &now);
+    char ts[32];
+    std::strftime(ts, sizeof(ts), "%Y-%m-%d_%H-%M-%S", &tm);
+    return std::string(ts);
 }
 
-// Cycle .log -> .log.1 -> .log.2 ... up to max_files. Drop the oldest.
-// Caller holds g_lock. Caller has already closed g_fp.
-void RotateLocked() {
-    namespace fs = std::filesystem;
-    if (g_log_path.empty()) return;
+// Delete oldest kcdx-dev_*.log files in `dir` beyond `keep` entries.
+// Errors are swallowed silently.
+void PruneOldDevLogs(const fs::path& dir, int keep) {
+    std::error_code ec;
+    if (!fs::exists(dir, ec)) return;
 
-    // If unbounded retention, find the highest existing .N and keep
-    // going. Otherwise drop the one at max_files first.
-    if (g_max_files > 0) {
-        fs::path drop = g_log_path;
-        drop += L"." + std::to_wstring(g_max_files);
-        std::error_code ec;
-        fs::remove(drop, ec);
+    const std::string prefix = "kcdx-dev_";
+    const std::string suffix = ".log";
+    std::vector<fs::path> matches;
+    for (auto& entry : fs::directory_iterator(dir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec)) continue;
+        std::string name = entry.path().filename().string();
+        if (name.size() < prefix.size() + suffix.size()) continue;
+        if (name.compare(0, prefix.size(), prefix) != 0) continue;
+        if (name.compare(name.size() - suffix.size(),
+                         suffix.size(), suffix) != 0) continue;
+        matches.push_back(entry.path());
     }
+    if ((int)matches.size() <= keep) return;
 
-    // Walk from N-1 down to 1: .N-1 -> .N, .N-2 -> .N-1, ... .1 -> .2
-    // For unbounded (max_files == 0), pick a sane upper bound to walk.
-    int max_walk = (g_max_files > 0) ? g_max_files : 9999;
-    for (int i = max_walk - 1; i >= 1; --i) {
-        fs::path from = g_log_path;
-        from += L"." + std::to_wstring(i);
-        if (!fs::exists(from)) continue;
-        fs::path to = g_log_path;
-        to += L"." + std::to_wstring(i + 1);
-        std::error_code ec;
-        fs::rename(from, to, ec);
-    }
-
-    // Finally .log -> .log.1
-    if (fs::exists(g_log_path)) {
-        fs::path to = g_log_path;
-        to += L".1";
-        std::error_code ec;
-        fs::rename(g_log_path, to, ec);
+    std::sort(matches.begin(), matches.end(),
+              [](const fs::path& a, const fs::path& b) {
+                  return a.filename().wstring() < b.filename().wstring();
+              });
+    int to_delete = (int)matches.size() - keep;
+    for (int i = 0; i < to_delete; ++i) {
+        std::error_code rm_ec;
+        fs::remove(matches[i], rm_ec);
     }
 }
 
-// Opens kcdx-dev.log fresh (truncating). Caller holds g_lock.
+// Opens a fresh per-session kcdx-dev log (truncating). Caller holds g_lock.
 // Returns whether we have a writable g_fp afterward.
 bool OpenLocked() {
-    if (g_log_path.empty()) g_log_path = ResolveLogPath();
-    if (g_log_path.empty()) return false;
-    g_log_dir = g_log_path.parent_path();
-    if (g_fp) { fclose(g_fp); g_fp = nullptr; }
-    g_fp = _wfopen(g_log_path.c_str(), L"ab");
-    if (!g_fp) return false;
-    g_bytes_written = 0;
-    // Probe current file size so we don't immediately rotate after
-    // reopening an existing file from a prior session.
-    if (fseek(g_fp, 0, SEEK_END) == 0) {
-        long sz = ftell(g_fp);
-        if (sz > 0) g_bytes_written = (size_t)sz;
-    }
-    return true;
+    if (g_fp) return true;
+
+    fs::path logsDir = kcdx::paths::EngineDataDirPath() / L"logs";
+    std::error_code ec;
+    fs::create_directories(logsDir, ec);
+
+    PruneOldDevLogs(logsDir, kcdx::log::kLogRetainCount);
+
+    std::string filename = "kcdx-dev_" + FormatSessionStamp() + ".log";
+    g_log_path = logsDir / filename;
+    g_fp = _wfopen(g_log_path.c_str(), L"wb");
+    return g_fp != nullptr;
 }
 
 // Format current timestamp + thread id into `buf`, return length written.
@@ -164,18 +162,9 @@ void WriteLineLocked(const char* line, size_t len) {
     if (!g_fp) {
         if (!OpenLocked()) return;
     }
-    // Check rotation BEFORE writing so the new line lands in the
-    // freshly-opened file rather than pushing the old one over cap.
-    if (g_cap_bytes > 0 && g_bytes_written + len + 1 > g_cap_bytes) {
-        fclose(g_fp);
-        g_fp = nullptr;
-        RotateLocked();
-        if (!OpenLocked()) return;
-    }
     fwrite(line, 1, len, g_fp);
     fputc('\n', g_fp);
     fflush(g_fp);
-    g_bytes_written += len + 1;
 }
 
 }  // namespace
@@ -198,17 +187,8 @@ void SetEnabled(bool on) {
             fwrite(banner, 1, strlen(banner), g_fp);
             fputc('\n', g_fp);
             fflush(g_fp);
-            g_bytes_written += strlen(banner) + 1;
         }
     }
-}
-
-void SetCapBytes(size_t cap_bytes) {
-    g_cap_bytes = cap_bytes;
-}
-
-void SetMaxFiles(int max_files) {
-    g_max_files = max_files;
 }
 
 void SetCategoryFilter(const std::vector<std::string>& categories) {

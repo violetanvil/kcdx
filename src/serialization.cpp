@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "crash_guard.h"
 #include "dev.h"
 #include "log.h"
 #include "messaging.h"
@@ -298,8 +299,22 @@ void RunSaveCallbacks() {
         p->pendingChunks.clear();
         p->currentChunk = nullptr;
 
+        const char* pluginName = nullptr;
+        for (const auto& lp : plugins::g_plugins) {
+            if (lp.handle == p->handle && !lp.manifest.name.empty()) {
+                pluginName = lp.manifest.name.c_str(); break;
+            }
+        }
+
+        struct Ctx {
+            kcdxSerializationSaveCallback fn;
+            kcdxPluginHandle              h;
+        };
+        Ctx ctx{p->saveCb, p->handle};
         g_currentWriter = p;
-        p->saveCb(p->handle);
+        guard::Call("serialization.save", pluginName,
+            [](void* ud) { Ctx* c = static_cast<Ctx*>(ud); c->fn(c->h); },
+            &ctx);
         g_currentWriter = nullptr;
     }
 }
@@ -536,8 +551,22 @@ void RunLoadCallbacks() {
         p->loadByteOffset = 0;
         p->loadHasPending = false;
 
+        const char* pluginName = nullptr;
+        for (const auto& lp : plugins::g_plugins) {
+            if (lp.handle == p->handle && !lp.manifest.name.empty()) {
+                pluginName = lp.manifest.name.c_str(); break;
+            }
+        }
+
+        struct Ctx {
+            kcdxSerializationLoadCallback fn;
+            kcdxPluginHandle              h;
+        };
+        Ctx ctx{p->loadCb, p->handle};
         g_currentReader = p;
-        p->loadCb(p->handle);
+        guard::Call("serialization.load", pluginName,
+            [](void* ud) { Ctx* c = static_cast<Ctx*>(ud); c->fn(c->h); },
+            &ctx);
         g_currentReader = nullptr;
 
         // Clear after callback so we don't keep the data around longer
@@ -562,7 +591,20 @@ void RunRevertCallbacks() {
         //  - have a UID but no chunks in the cosave for that UID.
         // Engine callers (PostLoadGame when no cosave exists) call
         // this for every plugin regardless.
-        p->revertCb(p->handle);
+        const char* pluginName = nullptr;
+        for (const auto& lp : plugins::g_plugins) {
+            if (lp.handle == p->handle && !lp.manifest.name.empty()) {
+                pluginName = lp.manifest.name.c_str(); break;
+            }
+        }
+        struct Ctx {
+            kcdxSerializationRevertCallback fn;
+            kcdxPluginHandle                h;
+        };
+        Ctx ctx{p->revertCb, p->handle};
+        guard::Call("serialization.revert", pluginName,
+            [](void* ud) { Ctx* c = static_cast<Ctx*>(ud); c->fn(c->h); },
+            &ctx);
     }
 }
 
@@ -660,7 +702,20 @@ void OnPostLoadGame(kcdxMessage* msg) {
         }
         for (PluginState* p : snapshot) {
             if (p->revertCb && p->uid != 0 && p->loadedChunks.empty()) {
-                p->revertCb(p->handle);
+                const char* pluginName = nullptr;
+                for (const auto& lp : plugins::g_plugins) {
+                    if (lp.handle == p->handle && !lp.manifest.name.empty()) {
+                        pluginName = lp.manifest.name.c_str(); break;
+                    }
+                }
+                struct Ctx {
+                    kcdxSerializationRevertCallback fn;
+                    kcdxPluginHandle                h;
+                };
+                Ctx ctx{p->revertCb, p->handle};
+                guard::Call("serialization.revert", pluginName,
+                    [](void* ud) { Ctx* c = static_cast<Ctx*>(ud); c->fn(c->h); },
+                    &ctx);
             }
         }
     } else {

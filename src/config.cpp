@@ -543,20 +543,22 @@ bool ParseOneMidHook(const toml::table& t,
     out.priority = OptInt(t, "priority", 100);
     out.module = OptString(t, "module", "WHGame.dll");
 
-    // Locator: exactly one of 'pattern' or 'address_id' (Phase 7).
-    // Mid-hooks don't currently support 'target_symbol' — the cross-
-    // plugin symbol-table case isn't a natural fit for mid-function
-    // sites yet.
-    std::string patternStr   = OptString(t, "pattern");
-    int64_t     addressIdInt = OptInt(t, "address_id", 0);
-    int        locatorCount  = (!patternStr.empty() ? 1 : 0)
-                              + (addressIdInt != 0 ? 1 : 0);
+    // Locator: exactly one of 'pattern', 'target_symbol' (cross-plugin
+    // symbol table), or 'address_id' (Phase 7).
+    std::string patternStr      = OptString(t, "pattern");
+    std::string targetSymbolStr = OptString(t, "target_symbol");
+    int64_t     addressIdInt    = OptInt(t, "address_id", 0);
+    int        locatorCount     = (!patternStr.empty() ? 1 : 0)
+                                 + (!targetSymbolStr.empty() ? 1 : 0)
+                                 + (addressIdInt != 0 ? 1 : 0);
     if (locatorCount == 0) {
-        err = "missing locator: declare exactly one of 'pattern' or 'address_id'";
+        err = "missing locator: declare exactly one of 'pattern', "
+              "'target_symbol', or 'address_id'";
         return false;
     }
     if (locatorCount > 1) {
-        err = "conflicting locators: declare exactly one of 'pattern' or 'address_id'";
+        err = "conflicting locators: declare exactly one of 'pattern', "
+              "'target_symbol', or 'address_id'";
         return false;
     }
     if (!patternStr.empty()) {
@@ -566,6 +568,8 @@ bool ParseOneMidHook(const toml::table& t,
             err = std::string("parse error in 'pattern': ") + e.what();
             return false;
         }
+    } else if (!targetSymbolStr.empty()) {
+        out.targetSymbol = targetSymbolStr;
     } else {
         out.addressId = static_cast<uint64_t>(addressIdInt);
     }
@@ -683,11 +687,13 @@ bool ParseOneTrampoline(const toml::table& t,
 // Schema:
 //
 //   [kcdx]
-//   dev_mode          = false      # default false; turns on kcdx-dev.log
-//   dev_log_cap_mb    = 50
-//   dev_log_max_files = 20
-//   dev_categories    = ["LUA", "SCRIPTING"]   # empty = all
-//   dry_run           = false
+//   dev_mode       = false      # default false; turns on kcdx-dev_<ts>.log
+//   dev_categories = ["LUA", "SCRIPTING"]   # empty = all
+//   dry_run        = false
+//
+// Log files are per-session (one file per launch) and live in
+// <kcdx-engine>/logs/. Retention is fixed at kcdx::log::kLogRetainCount
+// per stream — no TOML knob.
 //
 // Returns silently if the file doesn't exist (dev mode stays off,
 // which is the production default).
@@ -720,14 +726,8 @@ void LoadEngineConfig(const fs::path& enginePath) {
         }
 
         if (OptBool(tbl, "dev_mode", false)) {
-            int cap_mb    = OptInt(tbl, "dev_log_cap_mb",   50);
-            int max_files = OptInt(tbl, "dev_log_max_files", 20);
-            size_t cap_bytes = (size_t)cap_mb * 1024ull * 1024ull;
-            kcdx::dev::SetCapBytes(cap_bytes);
-            kcdx::dev::SetMaxFiles(max_files);
             kcdx::dev::SetEnabled(true);
-            log::InfoF("dev_mode enabled by %s (cap=%d MB, max_files=%d)",
-                       fileLabel.c_str(), cap_mb, max_files);
+            log::InfoF("dev_mode enabled by %s", fileLabel.c_str());
 
             // Optional category filter. If absent or empty, emit every
             // category. If present, only listed categories emit.
