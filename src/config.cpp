@@ -948,9 +948,23 @@ void WalkForTomls(const fs::path& dir, int depth,
         const auto p = entry.path();
         const auto name = p.filename().wstring();
 
-        // Skip hidden / disabled folders + files.
+        // Skip hidden / disabled folders + files. A name is "disabled"
+        // only when `.disabled` is its final suffix (e.g.
+        // `kcdx.toml.disabled` or a folder explicitly suffixed
+        // `something.disabled`). A `.disabled` substring elsewhere in
+        // the name does NOT skip — the previous substring rule would
+        // match any name containing `.disabled` anywhere, including
+        // benign user folder names that happened to contain that
+        // literal in the middle.
         if (!name.empty() && name[0] == L'.') continue;
-        if (name.find(L".disabled") != std::wstring::npos) continue;
+        {
+            const std::wstring kSuffix = L".disabled";
+            if (name.size() >= kSuffix.size()
+                && name.compare(name.size() - kSuffix.size(),
+                                kSuffix.size(), kSuffix) == 0) {
+                continue;
+            }
+        }
 
         if (entry.is_directory(ec)) {
             // Does this folder claim itself as a plugin?
