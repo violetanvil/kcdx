@@ -39,6 +39,7 @@ enhances.
    - [`[[hook]]` — function-entry detour](#hook--function-entry-detour)
    - [`[[mid_hook]]` — mid-function hook](#mid_hook--mid-function-hook)
    - [`[[trampoline]]` — named executable region](#trampoline--named-executable-region)
+   - [`[[scan]]` — diagnostic locator resolve (no apply)](#scan--diagnostic-locator-resolve-no-apply)
    - [`[[command]]` — console command](#command--console-command)
    - [`[[event]]` — lifecycle event subscription](#event--lifecycle-event-subscription)
 5. [Plugin interfaces (C++)](#plugin-interfaces-c)
@@ -367,6 +368,14 @@ export       = "myplugin.my_hook"  # publish this hook's trampoline as a symbol
 **Constraint:** Exactly one locator block, exactly one detour body.
 Mixing `bytes` and `lua_callback` is a validation error.
 
+> **Threading:** if `lua_callback` is set, the callback runs on
+> whatever thread the hooked function ran on. KCD2's Lua VM is
+> single-threaded and `lua_pcall` racing against the main thread
+> from a worker is undefined (likely crash). Use `lua_callback`
+> only on functions you know run on the main game thread. See
+> [Threading constraint](#threading-constraint-hook-only-main-thread-functions)
+> in `kcdxScriptingInterface` for the safe / unsafe target list.
+
 ### `[[mid_hook]]` — mid-function hook
 
 Hooks any instruction (not just function entry). Captures named
@@ -410,6 +419,20 @@ lua_callback = "MyMod.GateOutfitSwap"
 #                  before resume. Allows in-place mutation of game state.
 ```
 
+> **Threading:** the `lua_callback` runs on whatever thread reached
+> the hooked instruction. Hook only main-thread instructions. See
+> [Threading constraint](#threading-constraint-hook-only-main-thread-functions)
+> for the full list.
+
+> **Known v0.1 limitation:** the current MinHook-based mid-hook
+> primitive re-executes the captured instruction after the callback
+> returns. The capture / read / log workflow works; "skip the original
+> instruction by writing a different value to its destination register"
+> does NOT, because MinHook reinstates the original bytes. Tests
+> intentionally fail this case (CAP-04 in the regression suite).
+> A v0.2 primitive (`call_original = false` flag, or a true
+> instruction-replacement detour) is needed for the override case.
+
 ### `[[trampoline]]` — named executable region
 
 Allocates a chunk of executable memory, fills it with the supplied
@@ -450,6 +473,47 @@ priority = 50     # int, lower allocates first
 a 5-byte rel32 `E9` jmp can reach). Specify
 `pool = "local"` to use `AllocateFromLocalPool` instead (any address,
 larger budget, 14-byte abs jmp required).
+
+### `[[scan]]` — diagnostic locator resolve (no apply)
+
+Pure-diagnostic entry type. Resolves a locator via the same pipeline
+`[[patch]]` / `[[hook]]` use, but performs NO write, NO hook install,
+and NO conflict-engine participation. Logs the match count, resolved
+address(es), and surrounding raw bytes.
+
+```toml
+[[scan]]
+name           = "find_outfit_swap"
+module         = "WHGame.dll"                     # default
+pattern        = "48 81 C1 60 0B 00 00 ..."
+offset         = 13                                # default 0
+context        = "..."                             # optional Tier-2
+anchor_string  = "..."                             # optional Tier-3 anchor
+max_anchor_distance = 4096                         # optional
+```
+
+**Output to kcdx.log on resolve:**
+
+```
+[scan 'find_outfit_swap'] pattern matches: 1
+[scan 'find_outfit_swap'] context matches: 1
+[scan 'find_outfit_swap'] match 1: pattern at 0x00007FFCF9051738 (WHGame.dll+0x1971738);
+                                   with offset +13 -> apply addr 0x00007FFCF9051745
+[scan 'find_outfit_swap']   bytes -16: 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B
+[scan 'find_outfit_swap']   bytes  +0: 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0 44 89 ...
+```
+
+**Use case:** new modders writing their first AOB have no way to ask
+"did this pattern resolve, and to what?" without committing a
+destructive write through `[[patch]]` or `[[hook]]`. `[[scan]]` is
+the discoverable answer — drop in a TOML, launch, read kcdx.log.
+
+If `pattern` matches multiple times, all match addresses are logged
+so the author can see WHY uniqueness failed and pick a more
+distinctive prefix or use Tier-2 `context` to disambiguate.
+
+Runs at first-update-tick, same moment patches apply. No effect on
+the game; runs even when other entries in the same file have errors.
 
 ### `[[command]]` — console command
 

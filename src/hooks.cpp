@@ -16,6 +16,7 @@
 #include "messaging.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
+#include "scan_engine.h"
 #include "scripting.h"
 #include "task.h"
 #include "test.h"
@@ -130,6 +131,14 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 //      of priority.
                 kcdx::trampoline_engine::ApplyAll();
                 kcdx::conflict_engine::RunPreFlight();
+
+                // [[scan]] diagnostic entries — locator-resolve only,
+                // no apply. Runs BEFORE patches/hooks apply so scans
+                // see the pristine pre-patch byte state (a scan whose
+                // pattern overlaps an applied [[patch]] would otherwise
+                // see post-patch bytes and miss). New-modder onramp
+                // per docs/design-gaps.md gap #7.
+                kcdx::scan_engine::RunAll();
 
                 size_t okPatches = 0, okHooks = 0;
                 size_t totalPatches = kcdx::patch::g_patches.size();

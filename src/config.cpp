@@ -17,6 +17,7 @@
 #include "log.h"
 #include "patch_engine.h"
 #include "plugin_loader.h"
+#include "scan_engine.h"
 #include "test.h"
 #include "trampoline_engine.h"
 
@@ -240,6 +241,65 @@ bool ParsePluginManifest(const toml::table& doc,
 
     out.tomlPath   = tomlPath;
     out.folderPath = tomlPath.parent_path();
+    return true;
+}
+
+bool ParseOneScan(const toml::table& t,
+                  const std::string& sourceFile,
+                  kcdx::scan_engine::ScanEntry& out,
+                  std::string& err) {
+    using namespace kcdx::patch;
+    out.sourceFile = sourceFile;
+    out.name = OptString(t, "name");
+    if (out.name.empty()) {
+        err = "missing required field 'name'";
+        return false;
+    }
+    out.module = OptString(t, "module", "WHGame.dll");
+
+    std::string patternStr = OptString(t, "pattern");
+    if (patternStr.empty()) {
+        err = "missing required field 'pattern'";
+        return false;
+    }
+    try {
+        out.pattern = ParsePattern(patternStr);
+    } catch (const std::exception& e) {
+        err = std::string("parse error in 'pattern': ") + e.what();
+        return false;
+    }
+
+    out.offset = OptInt(t, "offset", 0);
+
+    if (auto* v = t.get("context"); v && v->is_string()) {
+        try {
+            out.context = ParsePattern(std::string(*v->value<std::string>()));
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'context': ") + e.what();
+            return false;
+        }
+    }
+
+    // Anchors — same shape as [[patch]] / [[hook]].
+    int anchorCount = 0;
+    if (auto* v = t.get("anchor_string"); v && v->is_string()) {
+        out.anchor = AnchorString{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (auto* v = t.get("anchor_function_by_export"); v && v->is_string()) {
+        out.anchor = AnchorFunctionByExport{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (auto* v = t.get("anchor_symbol"); v && v->is_string()) {
+        out.anchor = AnchorSymbol{std::string(*v->value<std::string>())};
+        ++anchorCount;
+    }
+    if (anchorCount > 1) {
+        err = "only one of anchor_string / anchor_function_by_export / anchor_symbol may be declared";
+        return false;
+    }
+    out.maxAnchorDistance = static_cast<uint32_t>(OptInt(t, "max_anchor_distance", 4096));
+
     return true;
 }
 
@@ -795,6 +855,25 @@ void LoadOneFile(const fs::path& path) {
                     kcdx::trampoline_engine::g_trampolines.push_back(std::move(entry));
                 } else {
                     log::ErrorF("Skipped trampoline in %s: %s", fileLabel.c_str(), err.c_str());
+                }
+            }
+        }
+
+        // [[scan]] — diagnostic-only locator-resolve entries (Phase 5h
+        // closeout, design-gaps gap #7). No write, no apply; logs the
+        // match count and surrounding bytes for new modders learning
+        // the locator pipeline.
+        if (auto* arr = doc.get("scan"); arr && arr->is_array()) {
+            for (const auto& elem : *arr->as_array()) {
+                if (!elem.is_table()) continue;
+                kcdx::scan_engine::ScanEntry entry;
+                std::string err;
+                if (ParseOneScan(*elem.as_table(), fileLabel, entry, err)) {
+                    log::InfoF("Loaded scan '%s' from %s",
+                               entry.name.c_str(), fileLabel.c_str());
+                    kcdx::scan_engine::g_scans.push_back(std::move(entry));
+                } else {
+                    log::ErrorF("Skipped scan in %s: %s", fileLabel.c_str(), err.c_str());
                 }
             }
         }

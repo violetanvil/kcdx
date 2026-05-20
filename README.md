@@ -115,16 +115,27 @@ documented SKSE weak spot:
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Foundation — `[[patch]]` schema (mempatch-equivalent byte rewrites under `kcdx.toml`) | **live-verified** |
-| 2 | Plugin loader — DLL discovery, `kcdxPluginVersionData`, dependency topo-sort, Preload/Load dispatch | **live-verified** |
+| 2 | Plugin loader — DLL discovery, dependency topo-sort, Preload/Load dispatch. Shape C refactor: plugin identity moved from DLL exports to `kcdx.toml [plugin]` schema. | **live-verified** |
 | 3 | Messaging + Task + lifecycle messages | **live-verified** |
 | 4a | Trampoline allocator (branch + local pools) + `kcdxTrampolineInterface` + per-plugin log files | **live-verified** |
 | 4b.1 | `[[hook]]` schema (raw-bytes function-entry detours via MinHook) | **live-verified** |
 | 4b.2 | `[[trampoline]]` schema + cross-plugin symbol table (export / target_symbol) | **live-verified** |
 | 4b.3 | Unified conflict matrix + global apply order across all entry types | **live-verified** |
-| 5 | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` | not started |
+| 5c | Lua marshaling — raw Lua C API only (no sol2), `kcdx.memory.*` namespace, pak-Lua-driven runtime hooks via `dynamic_hook`, address resolution via `cfunction_address` | **live-verified** |
+| 5d | Lua VM threading constraint documented (Hard Rule #16); no runtime guard in v0.1 | **documented** |
+| 5e | `kcdxScriptingInterface` — C++ DLLs register Lua-callable functions via function-pointer struct (no exported Lua C API from kcdx.asi) | **live-verified** |
+| 5f | `[[hook]] lua_callback` schema (TOML hook dispatches to pak-Lua function) | **live-verified** |
+| 5g | `[[mid_hook]]` schema (mid-instruction hook with register capture) — partial: schema + capture work, "skip-original" semantics blocked on MinHook design limit; v0.2 needs new primitive | **partial, design limit documented** |
+| 5h | `kcdxMemoryInterface` (C++ DLL surface mirroring `kcdx.memory.*` — ScanPattern, Read/WriteBytes, GetModuleBase) + dev-mode-gated test suite + `kcdxMessage_LuaReady` + modder-UX trace gaps | **live-verified** |
 | 6 | Save/load + `kcdxSerializationInterface` (`.kcdx` co-save) | not started |
 | 7 | Address Library + console commands (`[[command]]`) | not started |
 | 8 | Docs + examples + v0.1.0 release | not started |
+
+Test suite reporting `12/13 passing` on every dev-mode boot — see
+[`test-plugins/README.md`](test-plugins/README.md) for the live
+matrix. The single deferred FAIL is CAP-03 awaiting a boot-firing
+hook target (see [`docs/design-gaps.md`](docs/design-gaps.md) for
+the broader Phase 5 follow-up list).
 
 **Authoritative v0.1 spec:** [`docs/design.md`](docs/design.md). The
 full TOML schema, every C++ interface signature, the lifecycle
@@ -191,10 +202,6 @@ kcdx stands on the shoulders of several other projects:
 - **Lua 5.1** sources from CryEngine 5.2.3 SDK — same Lua KCD2 ships
   internally.
 
-## Support the project
-
-If kcdx has been useful to you, you can support development at
-[ko-fi.com/violetanvil](https://ko-fi.com/violetanvil).
 
 ## License
 
