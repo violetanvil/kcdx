@@ -25,6 +25,11 @@
 namespace fs = std::filesystem;
 namespace kcdx::config {
 
+// Bring KV into scope for LOG_*_KV macro call sites below. The macros
+// expand to `{ KV(...), KV(...) }` initializer lists and need an
+// unqualified KV resolveable in the macro-expansion's local scope.
+using KV = ::kcdx::log::KV;
+
 namespace {
 
 std::string WideToUtf8(const std::wstring& w) {
@@ -944,69 +949,109 @@ void LoadOneFile(const fs::path& path) {
 //      That folder IS the plugin; we do NOT descend into it further.
 //      Subfolders of a plugin folder are the plugin's private space
 //      for sub-DLLs, data files, configs, etc — kcdx ignores them.
-//   4. Hidden folders (starting with `.`) and *.disabled* folders
-//      are skipped silently.
+//   4. Hidden folders/files (starting with `.`) are skipped.
+//   5. Plugin folders whose name ends with `.disabled` are skipped —
+//      this is the modder convention for deactivating a plugin
+//      without deleting it. The suffix is honored ONLY on folder
+//      names, not files; a stray `kcdx.toml.disabled` file inside
+//      an active plugin folder does NOT cause the folder to be
+//      skipped.
+//
+// Every walker decision (examine, skip, accept, recurse) emits a
+// DEBUG/TRACE line under the DISCOVERY category so the funnel is
+// visible when something silently disappears. Always-on funnel
+// summary is emitted by LoadAllConfigs after the walk completes.
 //
 // folders/files counters track plugin folders (with TOML) and TOML
-// files loaded, respectively.
+// files loaded. `examined` counts every directory_iterator entry
+// visited (folders + files combined).
 void WalkForTomls(const fs::path& dir, int depth,
-                  size_t& folders, size_t& files) {
+                  size_t& folders, size_t& files, size_t& examined) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
         const auto p = entry.path();
         const auto name = p.filename().wstring();
+        ++examined;
 
-        // Skip hidden / disabled folders + files. A name is "disabled"
-        // only when `.disabled` is its final suffix (e.g.
-        // `kcdx.toml.disabled` or a folder explicitly suffixed
-        // `something.disabled`). A `.disabled` substring elsewhere in
-        // the name does NOT skip — the previous substring rule would
-        // match any name containing `.disabled` anywhere, including
-        // benign user folder names that happened to contain that
-        // literal in the middle.
-        if (!name.empty() && name[0] == L'.') continue;
-        {
+        const bool isDir = entry.is_directory(ec);
+        LOG_TRACE_KV("DISCOVERY", "examine",
+            KV("path",  WideToUtf8(p.wstring())),
+            KV("depth", depth),
+            KV::BareStr("kind", isDir ? "dir" : "file"));
+
+        // Skip hidden folders/files (`.git`, `.DS_Store`, etc.).
+        if (!name.empty() && name[0] == L'.') {
+            LOG_DEBUG_KV("DISCOVERY", "skip",
+                KV("path",   WideToUtf8(p.wstring())),
+                KV("reason", "hidden"));
+            continue;
+        }
+
+        // Skip plugin folders explicitly deactivated with the
+        // `.disabled` suffix. Folders only — files are not subject
+        // to this rule (a `kcdx.toml.disabled` crumb is just an
+        // unused file).
+        if (isDir) {
             const std::wstring kSuffix = L".disabled";
             if (name.size() >= kSuffix.size()
                 && name.compare(name.size() - kSuffix.size(),
                                 kSuffix.size(), kSuffix) == 0) {
+                LOG_WARN("DISCOVERY",
+                    "skipping disabled plugin folder '%s'",
+                    WideToUtf8(p.wstring()).c_str());
                 continue;
             }
         }
 
-        if (entry.is_directory(ec)) {
+        if (isDir) {
             // Does this folder claim itself as a plugin?
             fs::path candidate = p / "kcdx.toml";
             if (fs::exists(candidate, ec)) {
                 ++folders;
                 ++files;
+                LOG_DEBUG_KV("DISCOVERY", "accept",
+                    KV("folder", WideToUtf8(p.wstring())),
+                    KV("toml",   WideToUtf8(candidate.wstring())));
                 LoadOneFile(candidate);
                 // Plugin claimed. Do NOT descend.
             } else {
                 // Container folder. Recurse.
-                WalkForTomls(p, depth + 1, folders, files);
+                LOG_DEBUG_KV("DISCOVERY", "recurse",
+                    KV("path",  WideToUtf8(p.wstring())),
+                    KV("depth", depth + 1));
+                WalkForTomls(p, depth + 1, folders, files, examined);
             }
         } else if (entry.is_regular_file(ec)) {
             // Files at depth 0 (directly in plugins/) are misplaced.
-            // Files at depth > 0 inside a container folder (no kcdx.toml
-            // in the same folder) are silently ignored — they're junk or
-            // pre-plugin debris.
+            // Files at depth > 0 inside a container folder (no
+            // kcdx.toml in the same folder) are silently ignored —
+            // they're junk or pre-plugin debris.
             if (depth == 0) {
                 const auto ext = p.extension().wstring();
                 if (_wcsicmp(name.c_str(), L"kcdx.toml") == 0) {
-                    log::WarnF("Ignoring '%s': the plugins/ directory "
-                               "should host folders of installed plugins, "
-                               "not the plugin data itself. Move this file "
-                               "into a subfolder.",
-                               WideToUtf8(p.wstring()).c_str());
+                    LOG_WARN("DISCOVERY",
+                        "Ignoring '%s': the plugins/ directory "
+                        "should host folders of installed plugins, "
+                        "not the plugin data itself. Move this file "
+                        "into a subfolder.",
+                        WideToUtf8(p.wstring()).c_str());
                 } else if (_wcsicmp(ext.c_str(), L".dll") == 0
                            && _wcsicmp(name.c_str(), L"kcdx.asi") != 0) {
-                    log::WarnF("Ignoring '%s': the plugins/ directory "
-                               "should host folders of installed plugins, "
-                               "not the plugin data itself. Move this DLL "
-                               "into a subfolder with a kcdx.toml.",
-                               WideToUtf8(p.wstring()).c_str());
+                    LOG_WARN("DISCOVERY",
+                        "Ignoring '%s': the plugins/ directory "
+                        "should host folders of installed plugins, "
+                        "not the plugin data itself. Move this DLL "
+                        "into a subfolder with a kcdx.toml.",
+                        WideToUtf8(p.wstring()).c_str());
+                } else {
+                    LOG_TRACE_KV("DISCOVERY", "skip",
+                        KV("path",   WideToUtf8(p.wstring())),
+                        KV("reason", "depth-0-non-plugin-file"));
                 }
+            } else {
+                LOG_TRACE_KV("DISCOVERY", "skip",
+                    KV("path",   WideToUtf8(p.wstring())),
+                    KV("reason", "loose-file-in-container"));
             }
         }
     }
@@ -1027,8 +1072,11 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
     // file; dev mode stays off.
     LoadEngineConfig(kcdx::paths::EngineDataDirPath() / L"engine.toml");
 
-    size_t folders = 0, files = 0;
-    WalkForTomls(root, /*depth=*/0, folders, files);
+    size_t folders = 0, files = 0, examined = 0;
+    WalkForTomls(root, /*depth=*/0, folders, files, examined);
+    LOG_INFO("DISCOVERY",
+        "walk complete: %zu entries examined, %zu plugin folder(s) accepted",
+        examined, folders);
 
     // Stable sort by (priority asc, name asc).
     std::sort(kcdx::patch::g_patches.begin(), kcdx::patch::g_patches.end(),
