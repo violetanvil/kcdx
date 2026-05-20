@@ -293,6 +293,9 @@ void RunSaveCallbacks() {
         for (auto& p : g_plugins) snapshot.push_back(p.get());
     }
 
+    LOG_INFO("SERIALIZATION",
+        "RunSaveCallbacks ENTER (%zu plugin(s) registered)", snapshot.size());
+
     for (PluginState* p : snapshot) {
         if (!p->saveCb || p->uid == 0) continue;
         // Reset write-side state for this plugin.
@@ -306,6 +309,10 @@ void RunSaveCallbacks() {
             }
         }
 
+        LOG_INFO("SERIALIZATION",
+            "  before saveCb for plugin='%s' uid=0x%08X",
+            pluginName ? pluginName : "<unknown>", p->uid);
+
         struct Ctx {
             kcdxSerializationSaveCallback fn;
             kcdxPluginHandle              h;
@@ -316,7 +323,12 @@ void RunSaveCallbacks() {
             [](void* ud) { Ctx* c = static_cast<Ctx*>(ud); c->fn(c->h); },
             &ctx);
         g_currentWriter = nullptr;
+
+        LOG_INFO("SERIALIZATION",
+            "  after  saveCb for plugin='%s'",
+            pluginName ? pluginName : "<unknown>");
     }
+    LOG_INFO("SERIALIZATION", "RunSaveCallbacks EXIT");
 }
 
 bool BuildAndWriteCosave(const std::wstring& path) {
@@ -419,17 +431,20 @@ bool BuildAndWriteCosave(const std::wstring& path) {
 // is malformed. In the false case, RunRevertCallbacks fires for every
 // registered plugin so they reset to a fresh-game state.
 bool ReadAndParseCosave(const std::wstring& path) {
+    LOG_INFO("SERIALIZATION", "ReadAndParseCosave ENTER");
     HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
                            nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         DWORD e = GetLastError();
         if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) {
+            LOG_INFO("SERIALIZATION",
+                "  no cosave file at path (first load or save without kcdx data)");
             KCDX_DEV("SERIALIZATION", "LOAD",
                 kcdx::dev::KV("status", "no-cosave-file"));
         } else {
-            log::WarnF("[serialization] CreateFileW failed for cosave (err=%lu)",
-                       e);
+            LOG_WARN("SERIALIZATION",
+                "CreateFileW failed for cosave (err=%lu)", e);
         }
         return false;
     }
@@ -437,19 +452,22 @@ bool ReadAndParseCosave(const std::wstring& path) {
     if (!GetFileSizeEx(h, &size) || size.QuadPart <= 0 ||
         size.QuadPart > (64 * 1024 * 1024)) {
         CloseHandle(h);
-        log::WarnF("[serialization] cosave size suspect (%lld)",
-                   static_cast<long long>(size.QuadPart));
+        LOG_WARN("SERIALIZATION", "cosave size suspect (%lld)",
+                 static_cast<long long>(size.QuadPart));
         return false;
     }
+    LOG_INFO("SERIALIZATION", "  cosave size=%lld bytes; reading",
+             static_cast<long long>(size.QuadPart));
     std::vector<uint8_t> blob(static_cast<size_t>(size.QuadPart));
     DWORD got = 0;
     BOOL ok = ReadFile(h, blob.data(), static_cast<DWORD>(blob.size()),
                        &got, nullptr);
     CloseHandle(h);
     if (!ok || got != blob.size()) {
-        log::Warn("[serialization] ReadFile short on cosave");
+        LOG_WARN("SERIALIZATION", "ReadFile short on cosave");
         return false;
     }
+    LOG_INFO("SERIALIZATION", "  read OK; parsing");
 
     const uint8_t* cursor = blob.data();
     const uint8_t* end    = cursor + blob.size();
@@ -533,6 +551,9 @@ bool ReadAndParseCosave(const std::wstring& path) {
     KCDX_DEV("SERIALIZATION", "LOAD",
         kcdx::dev::KV("plugins", static_cast<unsigned long long>(uidToChunks.size())),
         kcdx::dev::KV("bytes",   static_cast<unsigned long long>(blob.size())));
+    LOG_INFO("SERIALIZATION",
+        "ReadAndParseCosave EXIT (plugins_with_data=%zu, bytes=%zu)",
+        uidToChunks.size(), blob.size());
     return true;
 }
 
@@ -543,6 +564,8 @@ void RunLoadCallbacks() {
         snapshot.reserve(g_plugins.size());
         for (auto& p : g_plugins) snapshot.push_back(p.get());
     }
+    LOG_INFO("SERIALIZATION",
+        "RunLoadCallbacks ENTER (%zu plugin(s) registered)", snapshot.size());
     for (PluginState* p : snapshot) {
         if (!p->loadCb || p->uid == 0) continue;
         if (p->loadedChunks.empty()) continue;  // RevertCallback handles that
@@ -558,6 +581,11 @@ void RunLoadCallbacks() {
             }
         }
 
+        LOG_INFO("SERIALIZATION",
+            "  before loadCb for plugin='%s' uid=0x%08X chunks=%zu",
+            pluginName ? pluginName : "<unknown>", p->uid,
+            p->loadedChunks.size());
+
         struct Ctx {
             kcdxSerializationLoadCallback fn;
             kcdxPluginHandle              h;
@@ -569,11 +597,16 @@ void RunLoadCallbacks() {
             &ctx);
         g_currentReader = nullptr;
 
+        LOG_INFO("SERIALIZATION",
+            "  after  loadCb for plugin='%s'",
+            pluginName ? pluginName : "<unknown>");
+
         // Clear after callback so we don't keep the data around longer
         // than needed (plugins copy what they want out during the
         // callback).
         p->loadedChunks.clear();
     }
+    LOG_INFO("SERIALIZATION", "RunLoadCallbacks EXIT");
 }
 
 void RunRevertCallbacks() {
@@ -583,6 +616,8 @@ void RunRevertCallbacks() {
         snapshot.reserve(g_plugins.size());
         for (auto& p : g_plugins) snapshot.push_back(p.get());
     }
+    LOG_INFO("SERIALIZATION",
+        "RunRevertCallbacks ENTER (%zu plugin(s) registered)", snapshot.size());
     for (PluginState* p : snapshot) {
         if (!p->revertCb) continue;
         // Revert fires for plugins that:
@@ -597,6 +632,9 @@ void RunRevertCallbacks() {
                 pluginName = lp.manifest.name.c_str(); break;
             }
         }
+        LOG_INFO("SERIALIZATION",
+            "  before revertCb for plugin='%s'",
+            pluginName ? pluginName : "<unknown>");
         struct Ctx {
             kcdxSerializationRevertCallback fn;
             kcdxPluginHandle                h;
@@ -605,7 +643,11 @@ void RunRevertCallbacks() {
         guard::Call("serialization.revert", pluginName,
             [](void* ud) { Ctx* c = static_cast<Ctx*>(ud); c->fn(c->h); },
             &ctx);
+        LOG_INFO("SERIALIZATION",
+            "  after  revertCb for plugin='%s'",
+            pluginName ? pluginName : "<unknown>");
     }
+    LOG_INFO("SERIALIZATION", "RunRevertCallbacks EXIT");
 }
 
 // -----------------------------------------------------------------------------
@@ -616,9 +658,13 @@ void OnSaveGame(kcdxMessage* msg) {
     if (!msg || msg->messageType != kcdxMessage_SaveGame) return;
     const char* basename = static_cast<const char*>(msg->data);
     if (!basename || !*basename) {
-        log::Warn("[serialization] kcdxMessage_SaveGame fired with empty basename — skipping cosave write");
+        LOG_WARN("SERIALIZATION",
+            "OnSaveGame fired with empty basename — skipping cosave write");
         return;
     }
+
+    LOG_INFO("SERIALIZATION",
+        "OnSaveGame ENTER basename='%s'", basename);
 
     // For SAVE, derive the cosave path from the engine's raw full
     // SaveGame path (captured by save_load_hooks::HookedSaveGame
@@ -632,15 +678,22 @@ void OnSaveGame(kcdxMessage* msg) {
     }
     std::wstring fullPath = CosavePathFromSaveFullPath(rawPath);
     if (fullPath.empty()) {
-        log::Warn("[serialization] cannot resolve saves dir for cosave write "
-                  "(no raw SaveGame full path captured)");
+        LOG_WARN("SERIALIZATION",
+            "cannot resolve saves dir for cosave write "
+            "(no raw SaveGame full path captured)");
+        LOG_INFO("SERIALIZATION", "OnSaveGame EXIT (no path)");
         return;
     }
 
     // Run save callbacks (fills each plugin's pendingChunks), then
     // serialize to disk.
+    LOG_INFO("SERIALIZATION", "  before RunSaveCallbacks");
     RunSaveCallbacks();
+    LOG_INFO("SERIALIZATION", "  after  RunSaveCallbacks");
+
+    LOG_INFO("SERIALIZATION", "  before BuildAndWriteCosave");
     BuildAndWriteCosave(fullPath);
+    LOG_INFO("SERIALIZATION", "  after  BuildAndWriteCosave");
 
     // Reset write buffers after flush so the same plugin can save
     // again on the next user save action.
@@ -651,6 +704,7 @@ void OnSaveGame(kcdxMessage* msg) {
             p->currentChunk = nullptr;
         }
     }
+    LOG_INFO("SERIALIZATION", "OnSaveGame EXIT");
 }
 
 void OnLoadGameSelected(kcdxMessage* msg) {
@@ -664,6 +718,8 @@ void OnLoadGameSelected(kcdxMessage* msg) {
 void OnPostLoadGame(kcdxMessage* msg) {
     if (!msg || msg->messageType != kcdxMessage_PostLoadGame) return;
 
+    LOG_INFO("SERIALIZATION", "OnPostLoadGame ENTER");
+
     std::string basename;
     {
         std::lock_guard<std::mutex> lock(g_pendingLoadBasenameMutex);
@@ -673,24 +729,37 @@ void OnPostLoadGame(kcdxMessage* msg) {
     // Grab and clear the playline alongside the basename so subsequent
     // loads start with a clean slate.
     int32_t playline = g_pendingLoadPlayline.exchange(-1, std::memory_order_acq_rel);
+    LOG_INFO("SERIALIZATION", "  basename='%s' playline=%d",
+             basename.c_str(), (int)playline);
+
     if (basename.empty()) {
         // No LoadGameSelected for this load (engine-internal load?).
         // Fire Revert so plugins reset to fresh state — matches SKSE
         // behavior when a save doesn't have plugin data.
+        LOG_INFO("SERIALIZATION", "  no basename; firing RunRevertCallbacks");
         RunRevertCallbacks();
+        LOG_INFO("SERIALIZATION", "OnPostLoadGame EXIT (no basename)");
         return;
     }
 
     std::string cosaveBasename = MakeCosaveBasename(basename.c_str());
     std::wstring fullPath = MakeCosavePath(playline, cosaveBasename);
     if (fullPath.empty()) {
+        LOG_INFO("SERIALIZATION", "  empty fullPath; firing RunRevertCallbacks");
         RunRevertCallbacks();
+        LOG_INFO("SERIALIZATION", "OnPostLoadGame EXIT (empty fullPath)");
         return;
     }
 
+    LOG_INFO("SERIALIZATION", "  before ReadAndParseCosave");
     bool parsed = ReadAndParseCosave(fullPath);
+    LOG_INFO("SERIALIZATION", "  after  ReadAndParseCosave (parsed=%d)",
+             (int)parsed);
+
     if (parsed) {
+        LOG_INFO("SERIALIZATION", "  before RunLoadCallbacks");
         RunLoadCallbacks();
+        LOG_INFO("SERIALIZATION", "  after  RunLoadCallbacks");
         // After loadCb dispatch, also fire Revert for plugins that
         // didn't get any chunks (their loadedChunks was empty, so
         // RunLoadCallbacks skipped them).
@@ -700,6 +769,8 @@ void OnPostLoadGame(kcdxMessage* msg) {
             snapshot.reserve(g_plugins.size());
             for (auto& p : g_plugins) snapshot.push_back(p.get());
         }
+        LOG_INFO("SERIALIZATION",
+            "  empty-chunks revert pass over %zu plugin(s)", snapshot.size());
         for (PluginState* p : snapshot) {
             if (p->revertCb && p->uid != 0 && p->loadedChunks.empty()) {
                 const char* pluginName = nullptr;
@@ -708,6 +779,9 @@ void OnPostLoadGame(kcdxMessage* msg) {
                         pluginName = lp.manifest.name.c_str(); break;
                     }
                 }
+                LOG_INFO("SERIALIZATION",
+                    "    before revertCb for plugin='%s' uid=0x%08X (no chunks)",
+                    pluginName ? pluginName : "<unknown>", p->uid);
                 struct Ctx {
                     kcdxSerializationRevertCallback fn;
                     kcdxPluginHandle                h;
@@ -716,12 +790,18 @@ void OnPostLoadGame(kcdxMessage* msg) {
                 guard::Call("serialization.revert", pluginName,
                     [](void* ud) { Ctx* c = static_cast<Ctx*>(ud); c->fn(c->h); },
                     &ctx);
+                LOG_INFO("SERIALIZATION",
+                    "    after  revertCb for plugin='%s'",
+                    pluginName ? pluginName : "<unknown>");
             }
         }
     } else {
         // No cosave file or malformed — every plugin reverts.
+        LOG_INFO("SERIALIZATION", "  cosave not parsed; firing RunRevertCallbacks");
         RunRevertCallbacks();
+        LOG_INFO("SERIALIZATION", "  after RunRevertCallbacks");
     }
+    LOG_INFO("SERIALIZATION", "OnPostLoadGame EXIT");
 }
 
 // Listener that watches kcdxMessage_SaveGame to capture the FULL path

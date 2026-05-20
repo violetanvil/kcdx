@@ -176,6 +176,9 @@ char __fastcall HookedSaveGame(void* self, const char* filename,
     const char* base     = Basename(safePath);
     uint32_t baseLen     = base ? static_cast<uint32_t>(strlen(base)) + 1 : 0;
 
+    LOG_INFO("SAVE_LOAD", "HookedSaveGame ENTER fire_n=%llu basename='%s'",
+             (unsigned long long)n, base ? base : "<null>");
+
     KCDX_DEV("SAVE_LOAD", "FIRE",
         kcdx::dev::KV("name",        "SaveGame"),
         kcdx::dev::KV("fire_n",      static_cast<unsigned long long>(n)),
@@ -194,18 +197,31 @@ char __fastcall HookedSaveGame(void* self, const char* filename,
     // matching directory. Must happen BEFORE FireEngineMessage so the
     // listener sees the latest value.
     if (safePath) {
+        LOG_INFO("SAVE_LOAD", "  before SetLastSaveFullPath");
         kcdx::serialization::SetLastSaveFullPath(safePath);
+        LOG_INFO("SAVE_LOAD", "  after  SetLastSaveFullPath");
     }
 
+    LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(SaveGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_SaveGame, base, baseLen);
+    LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(SaveGame)");
 
-    return g_orig_save_game(self, filename, reason, flag_a,
-                            arg5, flag_b, description);
+    LOG_INFO("SAVE_LOAD", "  before original SaveGame");
+    char result = g_orig_save_game(self, filename, reason, flag_a,
+                                   arg5, flag_b, description);
+    LOG_INFO("SAVE_LOAD", "  after  original SaveGame (result=%d)", (int)result);
+
+    LOG_INFO("SAVE_LOAD", "HookedSaveGame EXIT fire_n=%llu", (unsigned long long)n);
+    return result;
 }
 
 char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
                                       uint32_t slot) {
     uint64_t n = g_load_game_wrapper_fires.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    LOG_INFO("SAVE_LOAD",
+        "HookedLoadGameWrapper ENTER fire_n=%llu playline=%u slot=%u",
+        (unsigned long long)n, (unsigned)playline, (unsigned)slot);
 
     KCDX_DEV("SAVE_LOAD", "FIRE",
         kcdx::dev::KV("name",     "LoadGame_wrapper"),
@@ -221,13 +237,25 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
     // resetting on every wrapper-entry would re-fire LoadGameSelected
     // for the second pass. Reset happens in PostLoadGame instead —
     // one PostLoadGame per user-visible load is the right cadence.
+    LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(PreLoadGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_PreLoadGame);
+    LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(PreLoadGame)");
 
-    return g_orig_load_game_wrapper(self, playline, slot);
+    LOG_INFO("SAVE_LOAD", "  before original LoadGame_wrapper");
+    char result = g_orig_load_game_wrapper(self, playline, slot);
+    LOG_INFO("SAVE_LOAD", "  after  original LoadGame_wrapper (result=%d)",
+             (int)result);
+
+    LOG_INFO("SAVE_LOAD", "HookedLoadGameWrapper EXIT fire_n=%llu",
+             (unsigned long long)n);
+    return result;
 }
 
 char __fastcall HookedPostLoadGame(void* self, uint32_t arg2, void* arg3) {
     uint64_t n = g_post_load_game_fires.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    LOG_INFO("SAVE_LOAD", "HookedPostLoadGame ENTER fire_n=%llu",
+             (unsigned long long)n);
 
     KCDX_DEV("SAVE_LOAD", "FIRE",
         kcdx::dev::KV("name",   "PostLoadGame"),
@@ -241,9 +269,18 @@ char __fastcall HookedPostLoadGame(void* self, uint32_t arg2, void* arg3) {
     // state again here as belt-and-suspenders.
     g_last_resolved_record.store(nullptr, std::memory_order_release);
 
+    LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(PostLoadGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_PostLoadGame);
+    LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(PostLoadGame)");
 
-    return g_orig_post_load_game(self, arg2, arg3);
+    LOG_INFO("SAVE_LOAD", "  before original PostLoadGame");
+    char result = g_orig_post_load_game(self, arg2, arg3);
+    LOG_INFO("SAVE_LOAD", "  after  original PostLoadGame (result=%d)",
+             (int)result);
+
+    LOG_INFO("SAVE_LOAD", "HookedPostLoadGame EXIT fire_n=%llu",
+             (unsigned long long)n);
+    return result;
 }
 
 char __fastcall HookedDeleteSavegame(void* self, int32_t slot, uint32_t flags) {
@@ -277,8 +314,14 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
                                     int32_t slot_idx) {
     uint64_t n = g_slot_resolver_fires.fetch_add(1, std::memory_order_relaxed) + 1;
 
+    LOG_INFO("SAVE_LOAD",
+        "HookedSlotResolver ENTER fire_n=%llu playline=%d slot=%d",
+        (unsigned long long)n, (int)playline_idx, (int)slot_idx);
+
     // Forward to original first — we need the SaveGameRecord pointer.
+    LOG_INFO("SAVE_LOAD", "  before original SlotResolver");
     void* record = g_orig_slot_resolver(sub_object, playline_idx, slot_idx);
+    LOG_INFO("SAVE_LOAD", "  after  original SlotResolver record=0x%p", record);
 
     // Dedup: if this is the same record we already fired for since
     // the most recent LoadGame_wrapper / PostLoadGame, skip.
@@ -316,13 +359,20 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
         // cosave subsystem playline-safe: the engine just told us
         // which playline the user is loading into, so we use that
         // exact value rather than guessing from session history.
+        LOG_INFO("SAVE_LOAD",
+            "  first resolve, base='%s', firing LoadGameSelected",
+            base);
         kcdx::serialization::SetPendingLoadPlayline(playline_idx);
 
         uint32_t baseLen = static_cast<uint32_t>(strlen(base)) + 1;
+        LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(LoadGameSelected)");
         kcdx::messaging::FireEngineMessage(kcdxMessage_LoadGameSelected,
                                            base, baseLen);
+        LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(LoadGameSelected)");
     }
 
+    LOG_INFO("SAVE_LOAD", "HookedSlotResolver EXIT fire_n=%llu",
+             (unsigned long long)n);
     return record;
 }
 
