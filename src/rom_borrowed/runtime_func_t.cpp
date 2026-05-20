@@ -269,8 +269,7 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
     // +/-2 GB of WHGame.dll, so a 5-byte rel32 jmp from any hook
     // target site can reach this trampoline. Replaces upstream RoM's
     // std::vector<uint8_t> + VirtualProtect approach (Phase 5c.7b.1,
-    // 2026-05-18; see workspace memory project-kcd2-sol2-incompatibility
-    // sibling memory for the SKSE-pattern reference).
+    // 2026-05-18).
     //
     // owner=0 here means "engine, not a plugin." Once Phase 5e wires
     // RegisterFunction we'll thread the calling plugin's handle through.

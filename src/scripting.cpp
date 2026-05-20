@@ -1,4 +1,4 @@
-// See scripting.h for what this is and why no sol2.
+// See scripting.h for what this is.
 #include "scripting.h"
 
 #include <mutex>

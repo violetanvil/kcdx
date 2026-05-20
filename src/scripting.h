@@ -1,15 +1,12 @@
 // scripting — kcdx's substitute for ReturnOfModding's big::g_lua_manager.
 //
 // RoM's lua_manager owns per-Lua-script-module data: each module carries
-// vectors of sol::functions keyed by target_func_ptr. kcdx is different
-// (we load C++ DLL plugins, not Lua script bundles), so this module is
-// flatter: a single global state holding the live lua_State, a non-owning
+// vectors of per-target callbacks. kcdx is different (we load C++ DLL
+// plugins, not Lua script bundles), so this module is flatter: a single
+// global state holding the live lua_State, a non-owning
 // target_func_ptr -> runtime_func_t* map, and per-target vectors of
 // Lua-registry refs resolved from "module.function" strings declared
-// in [[hook]] / [[mid_hook]] kcdx.toml entries.
-//
-// **No sol2 here.** Per kcdx/CLAUDE.md hard rule #15 (bisect 2026-05-18),
-// sol2 must not touch the live lua_State. Callbacks are stored as
+// in [[hook]] / [[mid_hook]] kcdx.toml entries. Callbacks are stored as
 // `int` registry refs (luaL_ref) and invoked via raw lua_pcall.
 //
 // Threading: protected by a single recursive_mutex. The pre/post/mid

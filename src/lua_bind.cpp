@@ -15,12 +15,6 @@ extern "C" {
 #include "lauxlib.h"
 }
 
-// sol2 is intentionally NOT included here. Per kcdx/CLAUDE.md hard
-// rule #15, the Lua-bound surface uses raw Lua C API only — sol2's
-// new_usertype<> breaks KCD2 save-load. lua_memory.h is included for
-// the pure-C++ types it defines (pointer, value_wrapper_t, to_lua);
-// the sol2 bindings inside it are unused from this translation unit.
-
 #include "dev.h"
 #include "log.h"
 #include "lua_bind_helpers.h"
@@ -190,12 +184,6 @@ void RegisterKcdxTable(lua_State* L) {
     lua_setglobal(L, "KCDX");
     log::Info("KCDX Lua API registered (ScanAndWrite, ReadBytes, GetWHGameBase)");
 
-    // Phase 5c.7a-rev2: build the lowercase `kcdx.*` surface via raw
-    // Lua C API. sol2's new_usertype<>() machinery is forbidden — see
-    // hard rule #15 in kcdx/CLAUDE.md, the "Implementation constraint"
-    // subsection in docs/design.md, and the bisect record in
-    // workspace memory `project-kcd2-sol2-incompatibility`.
-    //
     // Stack discipline: kcdx::lua_memory::bind() expects the kcdx
     // table at stack top. We create it, push it to top, populate via
     // bind(), then pop it after lua_setglobal.
@@ -208,7 +196,7 @@ void RegisterKcdxTable(lua_State* L) {
     kcdx::lua_bind_dev::bind(L);
     kcdx::lua_bind_test::bind(L);
     lua_setglobal(L, "kcdx");
-    log::Info("kcdx.* global registered (raw Lua C API; no sol2)");
+    log::Info("kcdx.* global registered");
 
     // Drain any kcdxScriptingInterface::RegisterFunction calls that
     // arrived from plugin DLLs during kcdxPlugin_Load (which happens

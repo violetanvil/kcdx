@@ -86,6 +86,7 @@ add_library(kcdx SHARED
     src/patch_engine.cpp
     src/config.cpp
     src/hooks.cpp
+    src/save_load_hooks.cpp
     src/lua_bind.cpp
     src/plugin_loader.cpp
     src/interfaces.cpp
@@ -123,7 +124,6 @@ target_include_directories(kcdx PRIVATE
     vendor/lua
     vendor/minhook/include
     vendor/tomlplusplus
-    vendor/sol2/include      # <sol/sol.hpp> for rom_borrowed/
     vendor/asmjit            # <asmjit/asmjit.h> for rom_borrowed/
 )
 
@@ -138,9 +138,7 @@ if(MSVC)
         NOMINMAX
         WIN32_LEAN_AND_MEAN
     )
-    # /wd4244: Sol2's headers emit narrowing warnings against Lua 5.1's
-    # float-typed lua_Number. Upstream behavior; not our bug.
-    target_compile_options(kcdx PRIVATE /W3 /MT /wd4244)
+    target_compile_options(kcdx PRIVATE /W3 /MT)
     set_property(TARGET kcdx    PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET lua     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")

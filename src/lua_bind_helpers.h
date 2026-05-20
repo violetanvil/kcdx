@@ -2,10 +2,6 @@
 // checking kcdx userdata types. Used by lua_bind_pointer.cpp,
 // lua_bind_memory.cpp, and scripting.cpp.
 //
-// All helpers operate on the live `lua_State*` directly. No sol2.
-// See workspace memory `project-kcd2-sol2-incompatibility` for the
-// rule and bisect record.
-//
 // Stack-effect conventions for "Push*" helpers: +1 (pushes one
 // userdata onto the top of the stack, no other side effects).
 // "Check*" helpers: 0 (read-only stack inspection; throws a Lua

@@ -1,8 +1,5 @@
 // Pure-C++ method bodies for kcdx::lua_memory::pointer and
-// value_wrapper_t. value_wrapper_t::push_value / assign_from touch
-// the Lua stack via raw C API but never the registry, so they're
-// safe under the no-sol2-on-live-state rule (workspace memory
-// `project-kcd2-sol2-incompatibility`).
+// value_wrapper_t.
 //
 // Lua bindings (metatables, the kcdx.memory.* table-level functions)
 // live in lua_bind_helpers.cpp, lua_bind_pointer.cpp, and

@@ -3,13 +3,6 @@
 // Originally adapted from ReturnOfModding (xiaoxiao921/ReturnOfModdingBase,
 // `src/lua/bindings/memory.{hpp,cpp}` @ commit d30217b6). MIT.
 //
-// **Implementation note (rewrite 2026-05-18):** sol2 is intentionally
-// NOT used here. Pinned via bisect in Phase 5c.7a, sol2's
-// `new_usertype<>` registration on KCD2's live `lua_State` hard-crashes
-// the game during save deserialization. See `../CLAUDE.md` hard rule
-// #15 and workspace memory `project-kcd2-sol2-incompatibility` for the
-// full bisect record and rationale.
-//
 // What this exposes to pak Lua under the lowercase `kcdx.*` global:
 //   kcdx.memory.pointer(addr)              -- userdata + 22-method API
 //   kcdx.memory.scan_pattern(pat)          -- AOB scan in WHGame.dll
@@ -21,9 +14,7 @@
 // Why this matters: KCD2's pak-mod Lua sandbox has `package.loadlib`
 // compiled out (workspace memory `project-kcd2-lua-sandbox`). Without
 // kcdx, pak Lua cannot touch C++ at all. kcdx's `kcdx.memory.*` is the
-// **only bridge** for pak Lua mods to interact with native code, so
-// the binding has to be game-compatible (no sol2 metatable
-// scaffolding) rather than developer-convenient.
+// **only bridge** for pak Lua mods to interact with native code.
 //
 // Naming: lowercase `kcdx.memory.*` matches RoM convention; the
 // PascalCase Phase-1-era `KCDX.ScanAndWrite` / `KCDX.ReadBytes` /

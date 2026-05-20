@@ -154,7 +154,7 @@ void bind(lua_State* L) {
     }
     lua_setfield(L, kcdx_idx, "memory");
 
-    log::Info("kcdx.memory.* registered (raw Lua C API; no sol2)");
+    log::Info("kcdx.memory.* registered");
 }
 
 }  // namespace kcdx::lua_memory

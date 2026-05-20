@@ -21,7 +21,6 @@
 //     (matches kcdx Phase 5c.7b.1) instead of new uint8_t[] + VirtualProtect
 //   - Returns a userdata with __call rather than poisoning the Lua
 //     global namespace with `__dynamic_call_<addr>` per RoM
-//   - sol2 removed throughout (kcdx hard rule #15)
 //
 // What this enables: pak Lua mods can now invoke arbitrary WHGame.dll
 // functions (or any DLL function) at runtime. Combined with
