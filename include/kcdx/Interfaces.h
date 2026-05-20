@@ -330,20 +330,28 @@ enum kcdxMessageType {
     // New game started, before the first cell loads.
     kcdxMessage_NewGame       = 4,
 
-    // Save selected, before engine reads it. `data` points to the save name
-    // as a null-terminated C string. NOT YET FIRED (Phase 6).
+    // The engine is about to start a load — fires at C_SaveGameManager's
+    // LoadGame_wrapper entry. `data` is currently NULL; use
+    // kcdxMessage_LoadGameSelected (below) to get the filename.
+    // Fires multiple times per user-visible load (engine bootstraps the
+    // load through this path more than once); not deduplicated.
     kcdxMessage_PreLoadGame   = 5,
 
-    // Save finished loading, world is interactive. `data` = save name string.
-    // NOT YET FIRED (Phase 6).
+    // Save finished loading, world is interactive. Fires at
+    // C_SaveGameManager::PostLoadGame entry. `data` is currently NULL.
+    // Use the kcdxMessage_LoadGameSelected basename captured earlier
+    // if you need to know WHICH save was loaded.
     kcdxMessage_PostLoadGame  = 6,
 
-    // Game being saved (manual or quicksave). `data` = save name string.
-    // NOT YET FIRED (Phase 6).
+    // Game being saved (manual, quicksave, autosave, or save-and-quit).
+    // `data` = const char* save basename, e.g. "save561.whs",
+    // "autosave560.whs", "exit.whs". The full path is
+    // %USER%/saves/playline<N>/<basename>.
     kcdxMessage_SaveGame      = 7,
 
-    // A save plus its .kcdx co-save being deleted. `data` = save name string.
-    // NOT YET FIRED (Phase 6).
+    // A save plus its .kcdx co-save being deleted. `data` = const char*
+    // save basename. Hook is installed but no UI surface in vanilla
+    // KCD2 currently triggers it.
     kcdxMessage_DeleteGame    = 8,
 
     // kcdx's Lua surface (_G.kcdx and its sub-tables) is now populated and
@@ -361,6 +369,27 @@ enum kcdxMessageType {
     // convenient wrapper that handles both the "already ready" and
     // "subscribe and wait" cases.
     kcdxMessage_LuaReady      = 9,
+
+    // The user has selected a specific savegame to load and the engine
+    // has resolved its on-disk filename. Fires once per user load
+    // action, BEFORE deserialization begins. `data` = const char* save
+    // basename (e.g. "save561.whs", "autosave560.whs", "exit.whs"); the
+    // saves directory itself is %USER%/saves/playline<N>/ where <N> is
+    // the active playline (use kcdxSerializationInterface accessors
+    // when Phase 6b lands).
+    //
+    // Distinct from kcdxMessage_PreLoadGame:
+    //  - kcdxMessage_PreLoadGame fires at every internal LoadGame
+    //    invocation (including engine bootstraps that don't carry a
+    //    user-chosen file).
+    //  - kcdxMessage_LoadGameSelected fires only when the user
+    //    explicitly picked a save from the menu AND the engine has
+    //    resolved it to a real on-disk filename.
+    //
+    // For sidecar serialization workflows, prefer this message — it
+    // gives you the filename early enough to parse a .kcdx sidecar
+    // before kcdxMessage_PostLoadGame fires.
+    kcdxMessage_LoadGameSelected = 10,
 
     // First plugin-defined message ID. Use anything >= this for your own
     // message types.

@@ -7,6 +7,7 @@
 #include "log.h"
 #include "paths.h"
 #include "plugin_loader.h"
+#include "save_load_hooks.h"
 
 DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::paths::Init();
@@ -30,6 +31,13 @@ DWORD WINAPI WorkerThread(LPVOID) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
         return 1;
     }
+
+    // Phase 6 save/load lifecycle hooks. ABIs from ROUND 3 RECON via
+    // _research/phase6_abi_walker.py — full-body capstone analysis,
+    // not prologue-shape guessing. SaveGame correctly forwards all 7
+    // args. See _research/phase6-save-load/SAVE-LOAD-CANDIDATES.md
+    // §"ROUND 3 ABI RECON" for the derivation.
+    kcdx::save_load_hooks::Install();
 
     // Plugin DLL discovery + load. Runs after the engine's own hooks are
     // installed so plugins can rely on the MinHook + lua_State infrastructure
