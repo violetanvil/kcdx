@@ -270,25 +270,25 @@ what the live result is.
 
 | Field | Value |
 |---|---|
-| What | Register a console command (callable from KCD2's `-console` window) that dispatches to Lua or C++. |
-| Channels | (iii) `kcdx.toml`, (ii) C++ DLL |
-| Engine status | DEFERRED — Phase 7. Needs Ghidra session on `pConsole.RegisterCommand` calling convention. |
-| Test plugin | DEFERRED |
-| Auto-pass check | _N/A (manual test only — console interaction)_ |
-| Last result | DEFERRED-PHASE-7 |
-| Notes | Critical for dev workflows and for cheat/debug mods. |
+| What | Register a console command callable from KCD2's `~` in-game console (and any other dispatch path that goes through `IConsole::ExecuteString`). v0.1 ships the C++ DLL path via `kcdxConsoleInterface::{RegisterCommand, ExecuteString, GetArgCount, GetArg, GetCommandLine}`; the TOML `[[command]]` schema lands in Phase 7b once a plugin needs declarative registration. |
+| Channels | (ii) C++ DLL |
+| Engine status | READY (Phase 7, shipped 2026-05-20). |
+| Test plugin | `cap-13-console-command/` (C++ DLL) |
+| Auto-pass check | At `kInputLoaded`: (1) registers `kcdx_test_cap13` via `RegisterCommand`, (2) self-fires `ExecuteString("kcdx_test_cap13 hello world")` synchronously, (3) the callback (running inside ExecuteString) captures `argc` + each `GetArg(i)` into globals, (4) after ExecuteString returns, the plugin verifies `argc==3 && arg[0]=="kcdx_test_cap13" && arg[1]=="hello" && arg[2]=="world"`. PASS only if every check holds. Any future regression in the Phase 7 dispatch chain (Address Library ids 2000/2001/2002, the vtable[33] AddCommand semantic, the IConsoleCmdArgs vtable layout, or the kcdxConsoleInterface ABI) fails this test on the next game launch — no manual gesture required. |
+| Last result | LIVE 2026-05-20 — `register+ExecuteString+callback roundtrip ok (argc=3, command_line='kcdx_test_cap13 hello world')`. |
+| Notes | Critical for dev workflows and for cheat/debug mods. The plugin-facing callback signature is `void(const kcdxConsoleCmdArgs*)`; the kcdx engine wraps CryEngine's `IConsoleCmdArgs` vtable so plugins don't depend on it directly. The vtable[32] vs vtable[33] swap discovered by the Phase 7 DISPATCH-INVESTIGATION is the only reason this test exists — without it, future builds could silently regress into the script-string overload and only manifest as "command doesn't fire from `~` console" with no other signal. |
 
 ## CAP-14: Address Library (`kcdxInterface::ResolveAddress`)
 
 | Field | Value |
 |---|---|
-| What | Plugin calls `api->ResolveAddress(uint64_t id)` to get a runtime VA. The id-to-RVA mapping ships with kcdx as a CSV compiled into a binary lookup table, with per-game-version entries so the same id keeps working across KCD2 patches. |
-| Channels | (ii) C++ DLL |
-| Engine status | DEFERRED — Phase 7. Currently returns 0 (stub). |
-| Test plugin | DEFERRED |
-| Auto-pass check | Plugin calls ResolveAddress(known_id), gets non-zero VA, dereferences it, gets sensible data. |
-| Last result | DEFERRED-PHASE-7 |
-| Notes | The SKSE-equivalent that lets plugins survive KCD2 patches without re-doing AOB scans. |
+| What | Plugin calls `api->ResolveAddress(uint64_t id)` to get a runtime VA. The id-to-RVA mapping ships compiled into `kcdx.asi` at build time from `_research/phase7-recon/address-library-seed.csv`. Per-game-version entries gate resolution, so the same id keeps working across KCD2 patches (each patch adds new rows for its build identifier; rows for older builds stay around for compatibility-mode plugins). |
+| Channels | (ii) C++ DLL, (iii) `kcdx.toml` via `address_id = N` (peer to `pattern` / `target_symbol` in `[[patch]]` / `[[hook]]` / `[[mid_hook]]`) |
+| Engine status | READY (Phase 7, shipped 2026-05-20). |
+| Test plugin | DEFERRED — covered indirectly by the [[command]] surface (CAP-13 exercises ids 1009 + 2000 + 2001 transitively). A dedicated CAP-14 plugin would only add a `ResolveAddress(1000)` sanity check; not blocking. |
+| Auto-pass check | None as of v0.1; relies on CAP-13's transitive verification. |
+| Last result | LIVE 2026-05-20 (transitively, via CAP-13). |
+| Notes | The SKSE-equivalent that lets plugins survive KCD2 patches without re-doing AOB scans. Seed contains 12 verified rows (1000–1011 + 2000–2003) and 6 vtable-index constants (3000–3005) reserved for future `[[vtable_hook]]`. Authors add new ids by editing the CSV + the in-source mirror at `src/address_library.cpp::kEntries[]`. |
 
 ## CAP-15: `inlinePatchesToml` (C++ plugin ships patches inline)
 

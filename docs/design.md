@@ -518,8 +518,14 @@ the game; runs even when other entries in the same file have errors.
 ### `[[command]]` — console command
 
 Registers a string command callable from KCD2's `-console` window.
-Backed by the game's `pConsole.RegisterCommand` (see
-[Open questions](#open-questions-for-implementation)).
+Backed by `IConsole::AddCommand` (Phase 7: live-verified at vtable
+slot 32 in KCD2 1.5; resolved via Address Library ids 1009 + 2000).
+
+The TOML form below is the declarative path (Phase 7b). For v0.1
+the **C++ DLL path** ships via `kcdxConsoleInterface::RegisterCommand`
+(fetch with `QueryInterface(kcdxInterface_Console,
+kcdxConsoleInterface_Version)`); see `kcdx/test-plugins/cap-13-console-command/`
+for a working example.
 
 ```toml
 [[command]]
@@ -925,18 +931,41 @@ uintptr_t kcdxInterface::ResolveAddress(uint64_t id);
 Returns 0 if the ID is unknown for the running game version (not in
 the database, or the database has it as `removed` for this version).
 
-CSV schema: `id, game_version, rva, status, name`
+CSV schema: `id, game_version, rva, status, name, source, notes`
 
-- `id` — stable integer, never recycled
-- `game_version` — KCD2 build number this row applies to
-  (e.g. `0x010505BC` for 1.5.1164953). Multiple rows per ID for
-  different game versions.
-- `rva` — address relative to `WHGame.dll` base
-- `status` — `ok` (valid), `removed` (function gone in this version),
-  `unverified` (community contribution awaiting confirmation)
-- `name` — human-readable Ghidra-style name, for log diagnostics
+- `id` — stable integer, never recycled (1000-range = function entries,
+  2000-range = vtable-resolved RVAs, 3000-range = vtable index
+  constants — see `_research/phase7-recon/id-assignment-policy.md`).
+- `game_version` — KCD2 build number this row applies to (parsed from
+  human form `1.5.1164953` to the `kcdxMakeGameVersion` encoding).
+  Multiple rows per ID for different game versions.
+- `rva` — address relative to `WHGame.dll` base.
+- `status` — `verified` (live-confirmed on this build) or `unverified`
+  (community contribution awaiting confirmation). `ResolveAddress`
+  refuses to return non-zero for unverified rows; authors must
+  either verify-and-promote or fall back to a `pattern` locator.
+- `name` — human-readable Ghidra-style name, for log diagnostics.
+- `source` — provenance: who/what verified the row (e.g.
+  `kcdx-engine@<sha>`, `muyuanjin/kcd2db@<sha>`).
+- `notes` — free-form explanation of the row + semantics.
 
-Authors add IDs by editing the CSV and submitting a PR.
+**Pattern-hit semantics:** `rva` stores the address of the AOB hit
+(or other anchor), not always the "function entry." Consumers
+ALWAYS compute `target = resolved_rva + offset`. The offset comes
+from the consumer's TOML entry (zero for function-entry rows like
+1000–1003, non-zero for mid-function anchors like 1004/1006).
+
+**Usage in TOML:** declare `address_id = N` as the locator on
+`[[patch]]`, `[[hook]]`, or `[[mid_hook]]`. Mutually exclusive with
+`pattern` and `target_symbol`. The Address Library lookup happens
+during the same conflict-engine pre-flight that runs pattern-based
+locators, so address-id-based entries participate in the unified
+priority + first-wins matrix.
+
+Authors add IDs by editing both the canonical CSV (in `_research/`)
+and the in-source mirror at `src/address_library.cpp::kEntries[]`
+(a code-gen step in a later phase will collapse these into a single
+source of truth).
 
 ---
 
@@ -1175,11 +1204,14 @@ coordinated against v0.2.**
 These don't block the design but get answered during the relevant
 phase:
 
-1. **`pConsole.RegisterCommand` calling convention.** Not yet
-   documented in `muyuanjin/kcd2-mod-docs`. Phase 7 budgets a
-   ½-day Ghidra session. If varargs or unusual ownership semantics,
-   the `[[command]]` schema may need adjustment (a typed args
-   spec, similar to `[[hook]]`'s `signature`).
+1. ~~**`pConsole.RegisterCommand` calling convention.**~~ **RESOLVED
+   (Phase 7).** The function is `IConsole::AddCommand` at vtable[32]
+   for KCD2 1.5 (canonical CryEngine 5.2.3 slot — no +1 insert).
+   `__thiscall`: `rcx=IConsole*, rdx=sCommand, r8=func, r9d=nFlags,
+   [rsp+0x28]=sHelp`. Callback signature is
+   `void __fastcall(IConsoleCmdArgs*)`. See
+   `_research/phase7-recon/console-command-abi.md` for the full
+   dossier and `kcdx/src/console.cpp` for the live implementation.
 2. ~~**Save-game serialization integration.**~~ **RESOLVED (Phase 6).**
    `.kcdx` co-save lands next to `<savename>.whs` in
    `%USER%/saves/playline<N>/`. Format documented under
@@ -1215,7 +1247,7 @@ This doc tracks the v0.1 spec. Implementation phases:
 | 5 | **live-verified** | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` + `kcdxMemoryInterface` + `kcdxMessage_LuaReady` (see README phase table for sub-phase breakdown) |
 | 6a | **live-verified** | Save/load lifecycle hooks (kSaveGame / kPreLoadGame / kPostLoadGame / kDeleteGame / kLoadGameSelected) on `C_SaveGameManager` + slot-resolver |
 | 6b | **live-verified** | `kcdxSerializationInterface` + `.kcdx` co-save file format + plugin Save/Load/Revert callbacks. Playline-safe; CAP-12 roundtrip verified across process restarts and across multiple playlines. |
-| 7 | not started | Address Library + `[[command]]` |
+| 7  | **live-verified** | Address Library (CSV-seeded id→RVA table + `ResolveAddress` + `address_id` TOML locator on `[[patch]]` / `[[hook]]` / `[[mid_hook]]`) + `kcdxConsoleInterface` (CryEngine `IConsole::AddCommand` wrapper, vtable[33] live-verified — note: NOT slot 32, the canonical CryEngine order is swapped in this build; corrected after the DISPATCH-INVESTIGATION). CAP-13 self-test (`register + ExecuteString + callback roundtrip`) runs every launch. |
 | 8 | not started | Docs + examples + v0.1.0 release |
 
 Phase 4 verification recipe: [`docs/VERIFY_PHASE4.md`](VERIFY_PHASE4.md).
