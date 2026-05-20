@@ -15,6 +15,7 @@
 #include "patch_engine.h"
 #include "plugin_loader.h"
 #include "scripting_interface.h"
+#include "serialization.h"
 #include "task.h"
 #include "test.h"
 #include "trampoline.h"
@@ -59,8 +60,11 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxMemoryInterface_Version) return nullptr;
         return const_cast<kcdxMemoryInterface*>(GetMemoryInterface());
 
-    // Phase 6 fills this in.
     case kcdxInterface_Serialization:
+        if (version > kcdxSerializationInterface_Version) return nullptr;
+        return const_cast<kcdxSerializationInterface*>(
+            kcdx::serialization::GetInterface());
+
     default:
         return nullptr;
     }

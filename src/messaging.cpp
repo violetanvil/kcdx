@@ -7,6 +7,7 @@
 
 #include "log.h"
 #include "plugin_loader.h"
+#include "serialization.h"
 #include "test.h"
 
 namespace kcdx::messaging {
@@ -149,6 +150,18 @@ void FireEngineMessage(uint32_t messageType,
             kcdxMessage perCallback = msg;
             cb(&perCallback);
         }
+    }
+
+    // Route to engine-internal serialization handler too. Engine-side
+    // subsystems can't reasonably register as plugin listeners (no
+    // PluginHandle), so this is the dispatch path for them.
+    {
+        kcdxMessage engineMsg;
+        engineMsg.sender = nullptr;
+        engineMsg.messageType = messageType;
+        engineMsg.data = data;
+        engineMsg.dataLen = dataLen;
+        kcdx::serialization::OnEngineMessage(&engineMsg);
     }
 
     // After dispatch completes, give the test-suite aggregator a chance

@@ -8,6 +8,7 @@
 #include "paths.h"
 #include "plugin_loader.h"
 #include "save_load_hooks.h"
+#include "serialization.h"
 
 DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::paths::Init();
@@ -38,6 +39,14 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // args. See _research/phase6-save-load/SAVE-LOAD-CANDIDATES.md
     // §"ROUND 3 ABI RECON" for the derivation.
     kcdx::save_load_hooks::Install();
+
+    // Phase 6b kcdxSerializationInterface — subscribes to save/load
+    // lifecycle messages for the cosave (.kcdx) read/write pipeline.
+    // Must initialize AFTER save_load_hooks::Install so the messages
+    // exist; the order also matches the engine-internal listener
+    // path (messaging::FireEngineMessage calls serialization
+    // synchronously after firing to plugin listeners).
+    kcdx::serialization::Init();
 
     // Plugin DLL discovery + load. Runs after the engine's own hooks are
     // installed so plugins can rely on the MinHook + lua_State infrastructure

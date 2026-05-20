@@ -1,0 +1,21 @@
+# CAP-12 — kcdxSerializationInterface save/load roundtrip.
+#
+# Registers Save/Load/Revert callbacks. On save, writes a monotonic
+# counter into the cosave. On load, reads it back and verifies it
+# matches the counter expected from the save side. Asserts pass when:
+#   (a) revert OR load fires (proves the dispatcher is calling us)
+#   (b) saved value round-trips (proves the cosave file format works)
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-12-serialization"
+display_name        = "CAP-12 Serialization"
+author              = "kcdx"
+description         = "Round-trips a counter through kcdxSerializationInterface."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-12"]

@@ -696,6 +696,99 @@ typedef struct kcdxMemoryInterface {
 } kcdxMemoryInterface;
 
 // -----------------------------------------------------------------------------
+// kcdxSerializationInterface — per-save plugin data (a `.kcdx` co-save)
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Serialization,
+// kcdxSerializationInterface_Version). Modeled on SKSE's
+// SKSESerializationInterface — plugins register Save/Load/Revert
+// callbacks, get a unique 32-bit ID, and read/write arbitrary blobs
+// via Open/Write/Read calls. The engine bundles all plugins' data
+// into a single `<savename>.kcdx` co-save file that lives next to
+// KCD2's `<savename>.whs`.
+//
+// Lifecycle:
+//   - Register callbacks from kcdxPlugin_Load (or any kcdxMessaging
+//     callback that fires before the first save/load).
+//   - SetUniqueID is REQUIRED before any data your plugin writes is
+//     persisted. The ID identifies your plugin's section in the
+//     co-save and gates which chunks GetNextRecordInfo surfaces in
+//     your LoadCallback. Two plugins using the same UID collide;
+//     pick something distinct (a 32-bit FourCC from your plugin's
+//     stable name works well).
+//   - SaveCallback fires AFTER the engine has written the .whs.
+//     Inside it, call OpenRecord(tag, version) to start a chunk,
+//     then WriteRecordData(buf, len) to push bytes. Multiple
+//     records per save are fine; reopen with a new tag.
+//   - LoadCallback fires AFTER the engine has hydrated the world
+//     from the .whs (i.e. at kcdxMessage_PostLoadGame timing).
+//     Inside it, GetNextRecordInfo walks YOUR plugin's chunks one
+//     by one; for each, ReadRecordData(buf, len) pulls the bytes.
+//   - RevertCallback fires when starting a new game, OR when
+//     loading a save that has no chunks for your plugin's UID
+//     (because the save predates your plugin's installation, or
+//     was written by a kcdx that didn't have your plugin loaded).
+//     Use this to reset in-memory state to its "fresh game" values.
+//
+// Co-save format (informational, not part of the API contract):
+//   Header: magic "KCDX" (4B), format version (4B u32), plugin count (4B u32)
+//   Per plugin:
+//     - UID (4B u32)
+//     - chunk count (4B u32)
+//     - section length in bytes (4B u32)
+//     - chunks back-to-back
+//   Per chunk:
+//     - tag (4B u32, plugin-defined)
+//     - version (4B u32, plugin-defined per-tag)
+//     - length in bytes (4B u32)
+//     - data
+//
+// Threading: SaveCallback and LoadCallback fire on the main thread
+// (same thread as kcdxMessage_SaveGame / kcdxMessage_PostLoadGame).
+// OpenRecord / WriteRecordData / GetNextRecordInfo / ReadRecordData
+// MUST be called only from inside your callback — they consult
+// thread-local engine state that's only valid during the callback.
+
+#define kcdxSerializationInterface_Version 1u
+
+typedef void (*kcdxSerializationSaveCallback)  (kcdxPluginHandle plugin);
+typedef void (*kcdxSerializationLoadCallback)  (kcdxPluginHandle plugin);
+typedef void (*kcdxSerializationRevertCallback)(kcdxPluginHandle plugin);
+
+typedef struct kcdxSerializationInterface {
+    // Set a unique 32-bit ID for this plugin's chunks. Required
+    // before any saved data is persisted. A common convention is a
+    // FourCC of your plugin's short name.
+    void (*SetUniqueID)(kcdxPluginHandle plugin, uint32_t uid);
+
+    // Register callbacks. Pass null to clear a previously-registered
+    // callback. Re-registering replaces the previous callback.
+    void (*SetSaveCallback)  (kcdxPluginHandle plugin, kcdxSerializationSaveCallback   cb);
+    void (*SetLoadCallback)  (kcdxPluginHandle plugin, kcdxSerializationLoadCallback   cb);
+    void (*SetRevertCallback)(kcdxPluginHandle plugin, kcdxSerializationRevertCallback cb);
+
+    // Write side — call from your SaveCallback. OpenRecord starts a
+    // new chunk in your plugin's section; WriteRecordData appends
+    // bytes to the chunk that was last opened. Multiple records per
+    // SaveCallback are fine; just OpenRecord again with a new tag.
+    // Returns false if SetUniqueID wasn't called or the engine isn't
+    // currently in a save phase.
+    bool (*OpenRecord)     (uint32_t tag, uint32_t version);
+    bool (*WriteRecordData)(const void* buf, uint32_t len);
+
+    // Read side — call from your LoadCallback. GetNextRecordInfo
+    // advances the cursor to the next chunk belonging to YOUR
+    // plugin's UID, populating *outTag / *outVersion / *outLen.
+    // Returns false when there are no more chunks (loop until then).
+    // After a successful GetNextRecordInfo, call ReadRecordData with
+    // a buffer of at least *outLen bytes to extract the chunk data.
+    // (If you don't want a chunk, just call GetNextRecordInfo again
+    // — the engine skips the unread chunk automatically.)
+    bool (*GetNextRecordInfo)(uint32_t* outTag, uint32_t* outVersion, uint32_t* outLen);
+    bool (*ReadRecordData)   (void* buf, uint32_t len);
+} kcdxSerializationInterface;
+
+// -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)
 // -----------------------------------------------------------------------------
 //
