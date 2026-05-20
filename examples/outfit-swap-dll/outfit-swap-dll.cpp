@@ -30,21 +30,21 @@ const uint8_t kReplacement[3] = { 0x45, 0x31, 0xF6 };  // xor r14d, r14d
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     kcdxPluginHandle self = api->GetPluginHandle(kName);
+    kcdxLogger log(api, self);
 
     auto* mem = static_cast<kcdxMemoryInterface*>(
         api->QueryInterface(kcdxInterface_Memory,
                             kcdxMemoryInterface_Version));
     if (!mem) {
-        api->Log(self, kcdxLog_Error,
-                 "QueryInterface(Memory) returned null - kcdx too old?");
+        log.Error("INIT", "QueryInterface(Memory) returned null - kcdx too old?");
         return false;
     }
 
     uintptr_t hit = mem->ScanPattern("WHGame.dll", kPattern);
     if (!hit) {
-        api->Log(self, kcdxLog_Error,
-                 "Could not resolve outfit-swap AOB in WHGame.dll - "
-                 "AOB may have drifted; check kcdx.log for context");
+        log.Error("PATCH",
+            "Could not resolve outfit-swap AOB in WHGame.dll - "
+            "AOB may have drifted; check kcdx.log for context");
         return false;
     }
 
@@ -53,38 +53,33 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     // Read-before-write so we can verify the pre-patch state.
     uint8_t before[3] = { 0, 0, 0 };
     if (!mem->ReadBytes(patchAddr, before, sizeof(before))) {
-        api->Log(self, kcdxLog_Error,
-                 "ReadBytes pre-check failed at resolved address");
+        log.Error("PATCH", "ReadBytes pre-check failed at resolved address");
         return false;
     }
 
-    char buf[256];
     if (before[0] == kReplacement[0] && before[1] == kReplacement[1]
         && before[2] == kReplacement[2]) {
-        snprintf(buf, sizeof(buf),
+        log.Info("PATCH",
             "site at 0x%p already patched (45 31 F6) - idempotent skip",
             (void*)patchAddr);
-        api->Log(self, kcdxLog_Info, buf);
         return true;
     }
     if (before[0] != 0x44 || before[1] != 0x8A || before[2] != 0xF0) {
-        snprintf(buf, sizeof(buf),
+        log.Error("PATCH",
             "site at 0x%p has unexpected bytes %02X %02X %02X "
             "(expected vanilla 44 8A F0); refusing to write",
             (void*)patchAddr, before[0], before[1], before[2]);
-        api->Log(self, kcdxLog_Error, buf);
         return false;
     }
 
     if (!mem->WriteBytes(patchAddr, kReplacement, sizeof(kReplacement))) {
-        api->Log(self, kcdxLog_Error, "WriteBytes failed");
+        log.Error("PATCH", "WriteBytes failed");
         return false;
     }
 
-    snprintf(buf, sizeof(buf),
+    log.Info("PATCH",
         "patched 0x%p: 44 8A F0 -> 45 31 F6 (xor r14d, r14d) via "
         "kcdxMemoryInterface", (void*)patchAddr);
-    api->Log(self, kcdxLog_Info, buf);
     return true;
 }
 

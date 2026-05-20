@@ -129,34 +129,27 @@ uintptr_t Thunk_ResolveSymbol(const char* name) {
     return v.value_or(0);
 }
 
-// Level priority for filtering. Higher number = louder. log_level=4 (off)
-// means "drop everything." Within the kcdxLog_* enum the ordering is
-// Info(0) < Warn(1) < Error(2) < Debug(3), which is NOT a strict
-// severity order — Debug is the most verbose but the lowest priority
-// gate. Map both to a comparable severity scale for filtering.
+// Level filter for plugin-side Log calls.
 //
-// Mapping (manifest log_level threshold) -> "what passes":
-//   debug (3) — everything (incl. Debug)
-//   info  (0) — Info + Warn + Error (drops Debug)
-//   warn  (1) — Warn + Error (drops Info + Debug)
-//   error (2) — Error only (drops Info + Warn + Debug)
-//   off   (4) — drop all
+// kcdxLog_* enum is now strictly ordered by verbosity:
+//   Trace(0) < Debug(1) < Info(2) < Warn(3) < Error(4)
+//
+// `threshold` is the plugin manifest's log_level (parsed from TOML).
+// 5 is a synthetic "off" sentinel that drops everything.
+//
+// A Log call passes iff callLevel >= threshold and threshold != off.
+static constexpr uint32_t kLogLevelOff = 5;
 static bool PluginLogLevelPasses(uint32_t threshold, uint32_t callLevel) {
-    if (threshold == 4) return false;  // off
-    // threshold=3 (debug) lets everything pass.
-    if (threshold == 3) return true;
-    // For thresholds 0/1/2: only let calls of severity >= threshold pass
-    // in the "info < warn < error" sense. Debug (callLevel=3) is treated
-    // as below Info — only passes when threshold=debug.
-    if (callLevel == kcdxLog_Debug) return false;
+    if (threshold >= kLogLevelOff) return false;
     return callLevel >= threshold;
 }
 
-void Thunk_Log(kcdxPluginHandle self, uint32_t level, const char* msg) {
+void Thunk_Log(kcdxPluginHandle self, uint32_t level,
+               const char* category, const char* msg) {
     if (!msg) return;
+    if (!category || !*category) category = "PLUGIN";
 
-    // Look up the plugin's log_level threshold from its manifest.
-    // Unknown handle -> default Info (0) -> drops only Debug.
+    // Look up the plugin's manifest threshold. Unknown handle -> Info.
     uint32_t threshold = kcdxLog_Info;
     if (self != kcdxInvalidPluginHandle) {
         size_t idx = static_cast<size_t>(self);
@@ -166,14 +159,16 @@ void Thunk_Log(kcdxPluginHandle self, uint32_t level, const char* msg) {
     }
     if (!PluginLogLevelPasses(threshold, level)) return;
 
-    std::string s(msg);
+    log::Level lv;
     switch (level) {
-    case kcdxLog_Warn:  log::PluginWarn (self, s); break;
-    case kcdxLog_Error: log::PluginError(self, s); break;
-    case kcdxLog_Debug: log::PluginDebug(self, s); break;
-    case kcdxLog_Info:
-    default:            log::PluginInfo (self, s); break;
+        case kcdxLog_Trace: lv = log::Level::Trace; break;
+        case kcdxLog_Debug: lv = log::Level::Debug; break;
+        case kcdxLog_Warn:  lv = log::Level::Warn;  break;
+        case kcdxLog_Error: lv = log::Level::Error; break;
+        case kcdxLog_Info:
+        default:            lv = log::Level::Info;  break;
     }
+    log::EmitPlugin(lv, self, category, msg);
 }
 
 void Thunk_ReportTestResult(kcdxPluginHandle /*self*/,

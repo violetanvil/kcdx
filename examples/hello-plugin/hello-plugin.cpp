@@ -29,25 +29,15 @@
 // kcdxPluginVersionData no longer exported — plugin metadata moved to
 // kcdx.toml's [plugin] section in this plugin folder. See ./kcdx.toml.
 
-// Static references to the engine interface + our handle, captured at Load
-// time. Used by the engine-message callback and the task callback, both of
-// which are called outside the kcdxPlugin_Load scope.
-static const kcdxInterface* g_api  = nullptr;
-static kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;
+// One kcdxLogger holds the api pointer + this plugin's handle. Wired up
+// during kcdxPlugin_Load and reused by every callback that fires later
+// (engine messages, tasks, Lua bindings). The wrapper is in
+// kcdx/Interfaces.h; see kcdx/docs/logging.md for the routing model.
+static kcdxLogger gLog;
 
-// Tiny helper so callbacks don't repeat themselves.
-static void LogInfo(const char* msg) {
-    if (g_api) g_api->Log(g_self, kcdxLog_Info, msg);
-}
-static void LogInfoF(const char* fmt, ...) {
-    if (!g_api) return;
-    char buf[512];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    g_api->Log(g_self, kcdxLog_Info, buf);
-}
+// Engine interface + Lua API pointers — same pattern as gLog but for
+// callbacks that need more than just logging (RegisterFunction etc.).
+static const kcdxInterface* g_api  = nullptr;
 
 // Lifecycle callback: fires for each engine-originated message we subscribed
 // to. The engine fires these with sender == nullptr.
@@ -63,7 +53,7 @@ static void OnEngineMessage(kcdxMessage* msg) {
         case kcdxMessage_SaveGame:      name = "SaveGame";      break;
         case kcdxMessage_DeleteGame:    name = "DeleteGame";    break;
     }
-    LogInfoF("engine message: %s (type=%u)", name, msg->messageType);
+    gLog.Info("MESSAGING", "engine message: %s (type=%u)", name, msg->messageType);
 }
 
 // Example task: prints from the main thread. Plugins extend kcdxTask, override
@@ -71,7 +61,7 @@ static void OnEngineMessage(kcdxMessage* msg) {
 // (which typically just `delete this`).
 struct HelloTask : kcdxTask {
     void Run() override {
-        LogInfo("HelloTask::Run on main thread");
+        gLog.Info("TASK", "HelloTask::Run on main thread");
     }
     void Dispose() override {
         delete this;
@@ -104,24 +94,25 @@ static int Lua_Add(struct lua_State* L, void* /*user_data*/) {
 
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
-    g_api  = api;
-    g_self = api->GetPluginHandle("violetanvil.hello-plugin");
+    g_api = api;
+    kcdxPluginHandle self = api->GetPluginHandle("violetanvil.hello-plugin");
+    gLog  = kcdxLogger(api, self);
 
-    LogInfo("kcdxPlugin_Load called");
-    LogInfoF("my handle is %u, engine version 0x%08X, game version 0x%08X",
-             g_self, api->kcdxVersion, api->runtimeGameVersion);
+    gLog.Info("INIT", "kcdxPlugin_Load called");
+    gLog.Info("INIT", "handle=%u engine=0x%08X game=0x%08X",
+              self, api->kcdxVersion, api->runtimeGameVersion);
 
     uint32_t count = api->EnumeratePlugins(nullptr, 0);
-    LogInfoF("%u plugin(s) loaded total", count);
+    gLog.Info("INIT", "%u plugin(s) loaded total", count);
 
     // Subscribe to engine lifecycle messages.
     auto* msg = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging, kcdxMessagingInterface_Version));
     if (msg) {
-        msg->RegisterListener(g_self, /*sender=*/nullptr, OnEngineMessage);
-        LogInfo("subscribed to engine messages");
+        msg->RegisterListener(self, /*sender=*/nullptr, OnEngineMessage);
+        gLog.Info("MESSAGING", "subscribed to engine messages");
     } else {
-        api->Log(g_self, kcdxLog_Warn, "Messaging interface unavailable");
+        gLog.Warn("MESSAGING", "Messaging interface unavailable");
     }
 
     // Submit a task to the main thread.
@@ -129,9 +120,9 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         api->QueryInterface(kcdxInterface_Task, kcdxTaskInterface_Version));
     if (task) {
         task->AddTask(new HelloTask());
-        LogInfo("submitted a HelloTask");
+        gLog.Info("TASK", "submitted a HelloTask");
     } else {
-        api->Log(g_self, kcdxLog_Warn, "Task interface unavailable");
+        gLog.Warn("TASK", "Task interface unavailable");
     }
 
     // Exercise the trampoline interface. Allocates 64 bytes from each pool
@@ -144,25 +135,26 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         HMODULE whgame = GetModuleHandleW(L"WHGame.dll");
         uintptr_t whBase = reinterpret_cast<uintptr_t>(whgame);
 
-        void* branch = tramp->AllocateFromBranchPool(g_self, 64);
+        void* branch = tramp->AllocateFromBranchPool(self, 64);
         if (branch) {
             uintptr_t b = reinterpret_cast<uintptr_t>(branch);
             int64_t offset = (b > whBase) ? int64_t(b - whBase) : -int64_t(whBase - b);
             bool inRange = (offset > -int64_t(0x80000000ll)) && (offset < int64_t(0x7FFFFFFFll));
-            LogInfoF("branch-pool alloc OK: 0x%p (offset from WHGame.dll = %lld, in rel32 range = %s)",
-                     branch, static_cast<long long>(offset), inRange ? "YES" : "NO");
+            gLog.Info("TRAMPOLINE",
+                "branch-pool alloc OK: 0x%p (offset from WHGame.dll = %lld, in rel32 range = %s)",
+                branch, static_cast<long long>(offset), inRange ? "YES" : "NO");
         } else {
-            api->Log(g_self, kcdxLog_Warn, "branch-pool alloc failed");
+            gLog.Warn("TRAMPOLINE", "branch-pool alloc failed");
         }
 
-        void* local = tramp->AllocateFromLocalPool(g_self, 64);
+        void* local = tramp->AllocateFromLocalPool(self, 64);
         if (local) {
-            LogInfoF("local-pool alloc OK: 0x%p", local);
+            gLog.Info("TRAMPOLINE", "local-pool alloc OK: 0x%p", local);
         } else {
-            api->Log(g_self, kcdxLog_Warn, "local-pool alloc failed");
+            gLog.Warn("TRAMPOLINE", "local-pool alloc failed");
         }
     } else {
-        api->Log(g_self, kcdxLog_Warn, "Trampoline interface unavailable");
+        gLog.Warn("TRAMPOLINE", "Trampoline interface unavailable");
     }
 
     // Phase 5e: register Lua-callable native functions under
@@ -174,18 +166,18 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
                             kcdxScriptingInterface_Version));
     if (scripting) {
         g_lua = scripting->lua;
-        if (scripting->RegisterFunction(g_self, "hello", "greet", Lua_Greet, nullptr)) {
-            LogInfo("registered kcdx.hello.greet");
+        if (scripting->RegisterFunction(self, "hello", "greet", Lua_Greet, nullptr)) {
+            gLog.Info("SCRIPTING", "registered kcdx.hello.greet");
         } else {
-            api->Log(g_self, kcdxLog_Warn, "RegisterFunction(greet) failed");
+            gLog.Warn("SCRIPTING", "RegisterFunction(greet) failed");
         }
-        if (scripting->RegisterFunction(g_self, "hello", "add", Lua_Add, nullptr)) {
-            LogInfo("registered kcdx.hello.add");
+        if (scripting->RegisterFunction(self, "hello", "add", Lua_Add, nullptr)) {
+            gLog.Info("SCRIPTING", "registered kcdx.hello.add");
         } else {
-            api->Log(g_self, kcdxLog_Warn, "RegisterFunction(add) failed");
+            gLog.Warn("SCRIPTING", "RegisterFunction(add) failed");
         }
     } else {
-        api->Log(g_self, kcdxLog_Warn, "Scripting interface unavailable");
+        gLog.Warn("SCRIPTING", "Scripting interface unavailable");
     }
 
     return true;

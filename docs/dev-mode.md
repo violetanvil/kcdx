@@ -1,206 +1,106 @@
-# kcdx logging model
+# kcdx dev mode
 
-kcdx writes to three distinct log streams. Each one targets a different
-audience and has its own enable/verbosity controls. Mixing them up is
-the #1 way to drown in noise, so the model is worth reading once.
+Dev mode is the single user-facing toggle that turns on verbose
+logging. It opens `kcdx-dev.log`, lifts plugin `log_level` floors, and
+gates the regression test suite.
 
-## The three streams at a glance
+The full logging model — destinations, routing rules, severity
+guidance — lives in [`logging.md`](logging.md). This doc covers only
+the dev-mode-specific surface.
 
-| Stream | File | Audience | Default | Configured by |
-|---|---|---|---|---|
-| Engine status | `<kcdx-engine>/kcdx.log` | End user + everyone | always on, minimal | nothing — kcdx writes what it writes |
-| Engine internals trace | `<kcdx-engine>/kcdx-dev.log` | kcdx contributor (debugging the engine) | OFF | `<kcdx-engine>/engine.toml` |
-| Per-plugin log | `<plugins>/<plugin>/<plugin>.log` | plugin author (debugging their plugin) | always on, `info` level | each plugin's own `kcdx.toml` `[plugin] log_level` |
-
-`<kcdx-engine>` here is the engine-owned data folder at
-`<game>/Bin/Win64MasterMasterSteamPGO/kcdx-engine/` — a sibling of
-the `plugins/` folder where the user installs plugins.
-`<plugins>` is `<game>/Bin/Win64MasterMasterSteamPGO/plugins/`.
-Both are created on first launch.
-
-The streams are independent. Turning on engine dev mode doesn't make
-plugin logs more verbose. Cranking a plugin's log level doesn't
-contaminate the engine trace. Each audience reads one file.
-
----
-
-## Stream 1: `kcdx.log` — engine status
-
-Always written, always minimal. Contains:
-
-- `kcdx.asi loaded` + module-directory startup line
-- Per-plugin discovery summaries (`Discovered plugin '...' v0x...`)
-- Per-plugin load result (`kcdxPlugin_Load OK` / `... returned false`)
-- Conflict-engine pre-flight summary
-- Patch / hook apply summaries
-- Engine lifecycle messages (`Firing kcdxMessage_PostLoad...`)
-- Test-suite roll-up lines (`Test suite: X/Y passing as of ...`) — see test-suite section below
-
-A player who's just running the game and sees a problem reads
-`kcdx.log` first. It's intentionally quiet: one or two lines per
-plugin, no internal trace, no JIT disasm, no per-call dispatch
-events. If `kcdx.log` is clean and the game still misbehaves, the
-problem is in a plugin — read that plugin's log next.
-
----
-
-## Stream 2: `kcdx-dev.log` — engine internals trace
-
-OFF by default. When on, kcdx emits a structured trace of every
-meaningful internal action (hook installs, dispatch fires, conflict
-matrix decisions, JIT disasm, MinHook return codes, dev-probe data).
-
-**This stream is for kcdx contributors debugging the engine, not for
-plugin authors debugging plugins.** A plugin author should rarely
-need it; if their plugin is misbehaving, they look at their own
-plugin's log first. They only crack open kcdx-dev.log if they
-suspect the engine is doing something they didn't ask it to.
-
-### Enabling
+## Enabling
 
 Create `<kcdx-engine>/engine.toml` (engine config file, sits in the
 engine-owned data folder next to `kcdx.log`):
 
 ```toml
 [kcdx]
-dev_mode          = true     # turns the engine-internals trace on
-dev_log_cap_mb    = 50       # optional, default 50
-dev_log_max_files = 20       # optional, default 20
-
-# Optional category filter. If absent or empty, log every category.
-# If present, only the listed categories emit. Useful for "I'm
-# debugging dispatch chain, give me only SCRIPTING + LUA" runs.
-dev_categories    = ["LUA", "SCRIPTING"]
-
-# Engine-wide: report patches/hooks but don't actually apply them.
-# Useful for verifying a load-order or conflict-detection question
-# without risking a crash.
-dry_run           = false
+dev_mode       = true                  # opens kcdx-dev.log, lifts log_level floors
+dev_categories = ["MESSAGING", "GUARD"] # optional; narrows kcdx-dev.log only
+dry_run        = false                 # report patches/hooks but don't apply
 ```
 
-`engine.toml` is the ONLY engine-level config. **Plugin
-`kcdx.toml` files cannot turn dev mode on or off** — that would be
-cross-plugin contamination (Plugin A flipping global state that
-changes how Plugin B is parsed). The setting lives where it
-belongs: in the engine-owned data folder, separate from any
-plugin.
+`engine.toml` is the ONLY engine-level config. **Plugin `kcdx.toml`
+files cannot turn dev mode on or off** — that would be cross-plugin
+contamination (Plugin A flipping global state that changes how
+Plugin B is parsed). The setting lives where it belongs: in the
+engine-owned data folder, separate from any plugin.
 
-Production users don't ship `engine.toml`; dev mode is off and
-the file doesn't exist. Developers ship one and the engine reads
-it at startup.
+Production users don't ship `engine.toml`; dev mode is off and the
+file doesn't exist. Developers ship one and the engine reads it at
+startup.
 
-### Rotation
+## What dev mode changes
 
-When `kcdx-dev.log` reaches `dev_log_cap_mb`, it rotates:
-- `kcdx-dev.log` → `kcdx-dev.log.1`
-- existing `kcdx-dev.log.1` → `kcdx-dev.log.2`
-- … up to `kcdx-dev.log.N` where N = `dev_log_max_files`
-- the file beyond N is deleted on the next rotation
+1. **Opens `kcdx-dev.log`** at `<kcdx-engine>/logs/kcdx-dev_<ts>.log`.
+   This file receives every severity (TRACE/DEBUG/INFO/WARN/ERROR)
+   from every source (engine + every plugin) that passes the
+   `dev_categories` filter.
+2. **Lifts plugin `log_level` floors.** Each plugin's `kcdx.toml`
+   can set `log_level = "warn"` (for example) to suppress its own
+   TRACE/DEBUG/INFO output from the plugin's own file. With dev mode
+   on, those floors are bypassed — devs see everything.
+3. **Gates the regression test suite.** Test-suite plugins
+   self-skip when dev mode is off; see the test-suite section below.
 
-Default: 50 MB × 20 files ≈ 1 GB before pruning. Set `dev_log_max_files
-= 0` to disable pruning entirely (the contributor accepts the disk
-fill risk).
+What dev mode does NOT change:
 
-### Line format
+- The engine log (`kcdx.log`) is unaffected. It's always-on at the
+  INFO floor.
+- The category filter (`dev_categories`) only narrows `kcdx-dev.log`.
+  Engine log and per-plugin logs still see every category.
+- Plugin author intent. If a plugin author wrote no log calls,
+  enabling dev mode does NOT magically produce plugin-side trace
+  output. It does mean the engine-attributed lines (GUARD faults,
+  validation issues) become more visible.
 
-```
-[HH:MM:SS.mmm T:tid] CATEGORY.ACTION key1=val1 key2=val2 ...
-```
+## Categories
 
-- Timestamp in milliseconds (necessary for correlating dispatch fires)
-- `T:tid` is the OS thread ID (`GetCurrentThreadId`)
-- `CATEGORY.ACTION` is a dotted name (e.g. `PATCH.RESOLVE`, `SCRIPTING.DISPATCH/pre`)
-- Key/value pairs trailing: `0x...` for addresses, raw decimal for counts, double-quoted for strings with spaces
-- Long values (asm dumps, byte buffers) get continuation lines
+Every log line is tagged with a short category string. The
+`dev_categories` filter is a string-equality allow-list — empty list
+means "every category passes." Set this to focus the dev log on a
+specific subsystem.
 
-### Categories
+Current categories emitted by the engine (non-exhaustive; new
+categories are a string-change at the call site, no enum):
 
-| Category | When it emits |
+| Category | Subsystem |
 |---|---|
-| `CONFIG`  | TOML parse events |
-| `PATCH`   | RESOLVE (pattern/context/anchor counts), APPLY (bytes before/after) |
-| `HOOK`    | RESOLVE, INSTALL, COLLISION (first-wins) |
-| `MID_HOOK`| RESOLVE, INSTALL, COLLISION |
-| `TRAMP`   | RESOLVE, INSTALL, SYMBOL_EXPORT |
-| `CONFLICT`| ENTRY (pairwise check), RECORD (category + verdict) |
-| `POOL`    | RESERVE (new region + base), ALLOC (size, owner, slot) |
-| `MINHOOK` | CREATE, ENABLE, REMOVE, DISABLE (status code) |
-| `PLUGIN`  | DISCOVERED, LOADED, PRELOADED, MSG_DISPATCH, TASK_RUN |
-| `MSG`     | FIRE (type + listener count) |
-| `SCRIPTING` | REGISTER, DISPATCH/pre, DISPATCH/post, DISPATCH/mid, REENTRY_GUARD |
-| `JIT`     | EMIT (size, addr, source), DISASM (one inst per continuation line) |
-| `LUA`     | CFUNCTION_ADDR/*, DYNAMIC_HOOK/*, NUMBER_PROBE/* |
-| `MEMORY`  | SCAN, ALLOC, FREE, READ |
-| `TEST`    | REGISTER (test plugin registered), REPORT (pass/fail recorded), SUMMARY (roll-up emitted) |
+| `CONFIG`     | TOML parse events |
+| `DISCOVERY`  | Plugin folder walking, kcdx.toml detection |
+| `MANIFEST`   | Plugin manifest validation, name conflicts |
+| `PATCH`      | Byte-rewrite resolve + apply |
+| `HOOK`       | Function hook resolve + install |
+| `MID_HOOK`   | Mid-function hook resolve + install |
+| `TRAMP`      | Trampoline resolve + symbol export |
+| `CONFLICT`   | Pairwise overlap detection |
+| `POOL`       | Trampoline pool region + slot allocation |
+| `MINHOOK`    | MinHook return codes |
+| `PLUGIN`     | Plugin DLL discovery + load |
+| `MESSAGING`  | Engine + plugin message broadcasts |
+| `SCRIPTING`  | Lua callback dispatch + registration |
+| `GUARD`      | Crash-guard breadcrumbs + fault attribution |
+| `JIT`        | asmjit emit + disasm |
+| `LUA`        | C-Lua API thunks, number-precision probe |
+| `MEMORY`     | Plugin-facing memory inspect / read / scan |
+| `TEST`       | Test-suite register, report, summary |
 
 The `LUA.NUMBER_PROBE/*` family is on-demand via
 `kcdx.lua._probe_numbers()` from pak Lua; characterizes
-`sizeof(lua_Number)` etc. Re-run on each KCD2 patch to confirm
-hard rule #17 still applies. See [`lua-number-precision.md`](lua-number-precision.md).
+`sizeof(lua_Number)` etc. Re-run on each KCD2 patch to confirm hard
+rule #17 still applies. See [`lua-number-precision.md`](lua-number-precision.md).
 
-### Off-path cost
+## Boundary between log destinations
 
-```c++
-#define KCDX_DEV(category, action, ...)                                  \
-    do {                                                                 \
-        if (kcdx::dev::IsCategoryEnabled(category))                      \
-            kcdx::dev::Emit(category, action, __VA_ARGS__);              \
-    } while (0)
-```
+Quick reference: where should a given log line live? See
+[`logging.md`](logging.md) for the full table; the quick version:
 
-`IsCategoryEnabled` does a single non-atomic-fenced flag load (when
-master flag is off) or one additional bitset check (when on). When
-dev mode is off, branch predictor picks the not-taken path; cost
-is well under 1 ns per call site.
-
-When on, `Emit` formats the line and queues it onto an mpsc lock-
-free buffer drained by a dedicated logger thread, so call-site cost
-stays bounded under firehose conditions like every-tick dispatch
-fires.
-
----
-
-## Stream 3: `<plugin>/<plugin>.log` — per-plugin log
-
-Always written. Each plugin's `api->Log(self, level, msg)` calls
-land in its own log file. The level threshold is set per-plugin in
-the plugin's own `kcdx.toml`:
-
-```toml
-[plugin]
-name      = "author.my-mod"
-author    = "..."
-version   = "1.0.0"
-log_level = "info"   # "debug" | "info" | "warn" | "error" | "off"
-```
-
-- `debug` — everything, including verbose tracing the author put in
-- `info` (default) — normal operational lines
-- `warn` — issues the author wants someone to notice
-- `error` — something failed
-- `off` — write nothing (file still opens; for plugins that want to
-  selectively log only in their own debug builds)
-
-When the plugin calls `api->Log(self, kcdxLog_Info, "...")` and
-`log_level = "warn"`, the call is dropped before formatting. The
-plugin author tunes their own verbosity without rebuilding the DLL.
-
-This stream is for the plugin author debugging their own plugin.
-Other plugins do not appear here. Engine internals do not appear
-here. Just `[plugin-name] info: message text`.
-
----
-
-## Boundary between streams
-
-Quick reference: where should a given log line live?
-
-- **"My .asi loaded but plugins didn't"** → kcdx.log
-- **"Plugin X is loaded but my dispatch chain misbehaves"** → kcdx-dev.log (only if you're a contributor); plugin X's log otherwise
-- **"My plugin X has a bug in its dispatch callback logic"** → X.log (your own log)
-- **"kcdx's conflict matrix made a decision I don't understand"** → kcdx-dev.log
+- **"My .asi loaded but plugins didn't"** → `kcdx.log`
+- **"Plugin X faulted during InputLoaded"** → both `kcdx.log` and `X.log` (engine attributes GUARD lines to the plugin's file automatically)
+- **"Plugin X has a bug in its dispatch callback logic"** → X.log (plugin uses `KCDX_LOG_*` for their own trace)
+- **"kcdx's conflict matrix made a decision I don't understand"** → `kcdx-dev.log` (requires dev mode)
 - **"My plugin can't find its config file"** → X.log (use `api->Log`)
-- **"Test suite results"** → kcdx.log (the roll-up) + per-plugin logs (the details)
+- **"Test suite results"** → `kcdx.log` (the roll-up) + per-plugin logs (the details)
 
 ---
 
@@ -228,7 +128,7 @@ When kcdx parses a plugin `kcdx.toml` with `test_suite_only = true`:
 - If dev mode is **off** (no `engine.toml` or `dev_mode = false`):
   kcdx silently skips every entry in that file (no [[patch]],
   [[hook]], [plugin], etc. gets registered). C++ DLLs in the
-  plugin folder also check `kcdx::dev::IsEnabled()` in their
+  plugin folder also check `kcdx::log::IsDevModeEnabled()` in their
   `Plugin_Load` and early-return silently. **Production users see
   zero suite output.**
 - If dev mode is **on**: kcdx parses + applies normally. The
@@ -285,9 +185,9 @@ The aggregator emits a roll-up line to `kcdx.log` on each kcdx
 engine lifecycle message firing:
 
 ```
-[12:34:56][INFO] Test suite: 12/14 passing as of kPostLoad
-[12:34:56][INFO]   FAIL CAP-05-paklua-runtime: dispatch did not fire
-[12:34:56][INFO]   FAIL COMP-04-runtime-vs-patch: collision not detected
+[12:34:56.789][INFO][engine][TEST] Test suite: 12/14 passing as of kPostLoad
+[12:34:56.789][INFO][engine][TEST]   FAIL CAP-05-paklua-runtime: dispatch did not fire
+[12:34:56.789][INFO][engine][TEST]   FAIL COMP-04-runtime-vs-patch: collision not detected
 ```
 
 The summary always reports both passing-count and total-registered;
@@ -321,8 +221,9 @@ are registered).
 
 | File | Role |
 |---|---|
-| `src/dev.h` / `dev.cpp` | Engine-internals trace: macro, IsEnabled accessor, log file open + rotation + format helpers + drain thread |
-| `src/config.cpp` | Parses `engine.toml` at startup. Calls `dev::SetEnabled`, `dev::SetCategories`, `patch::g_dryRun`. Walks plugin `kcdx.toml` files (without dev_mode/dry_run keys). |
-| `src/log.cpp` | The three log writers: `kcdx.log`, `kcdx-dev.log`, per-plugin `<plugin>.log`. Each one gates on its own setting (always-on, dev mode, plugin log_level). |
-| `src/plugin_loader.cpp` | Reads `[plugin] log_level` into LoadedPlugin; `Thunk_Log` consults it before formatting. |
-| 40+ existing TUs | `KCDX_DEV(...)` sprinkles at each interesting handoff. |
+| `src/log.{h,cpp}` | Unified logging router (engine + dev + per-plugin destinations). All log routing decisions live here. |
+| `src/dev.{h,cpp}` | Compatibility shim over `kcdx::log`. `KCDX_DEV` macro expands to `LOG_DEBUG_KV`. `dev::KV` aliases `log::KV`. Header-only; `dev.cpp` is intentionally empty. |
+| `src/config.cpp` | Parses `engine.toml` at startup. Calls `log::SetDevMode`, `log::SetCategoryFilter`, `patch::g_dryRun`. Walks plugin `kcdx.toml` files (which can't set engine-level keys). |
+| `src/interfaces.cpp` | `Thunk_Log` — the public `api->Log` shim. Honors per-plugin `log_level` floor (except for WARN/ERROR which always pass). |
+| `src/plugin_loader.cpp` | Reads `[plugin] log_level` into LoadedPlugin. Eagerly opens each plugin's log stream after load. |
+| `include/kcdx/Interfaces.h` | `KCDX_LOG_*` macros for plugin authors. The 5-line short form over `api->Log`. |

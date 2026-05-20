@@ -170,18 +170,26 @@ bool ParsePluginManifest(const toml::table& doc,
 
     out.versionIndependent = OptBool(t, "version_independent", false);
 
-    // log_level controls api->Log threshold for this plugin's per-plugin
-    // log file. "debug"|"info"|"warn"|"error"|"off". Default "info".
+    // log_level is a per-plugin floor for the plugin's own log file.
+    // Maps to the kcdxLog_* enum ordering:
+    //   trace(0) < debug(1) < info(2) < warn(3) < error(4) < off(5)
+    //
+    // Default "info" passes Info/Warn/Error to the plugin's file;
+    // Debug/Trace are gated by dev mode. "off" suppresses Info and
+    // below — Warn and Error always pass to the plugin file
+    // regardless of this setting (the floor never gates problems;
+    // see kcdx/docs/logging.md).
     {
         std::string lvl = OptString(t, "log_level", "info");
-        if      (lvl == "debug") out.logLevel = 3;  // kcdxLog_Debug
-        else if (lvl == "info")  out.logLevel = 0;  // kcdxLog_Info
-        else if (lvl == "warn")  out.logLevel = 1;  // kcdxLog_Warn
-        else if (lvl == "error") out.logLevel = 2;  // kcdxLog_Error
-        else if (lvl == "off")   out.logLevel = 4;  // synthetic "drop all"
+        if      (lvl == "trace") out.logLevel = 0;  // kcdxLog_Trace
+        else if (lvl == "debug") out.logLevel = 1;  // kcdxLog_Debug
+        else if (lvl == "info")  out.logLevel = 2;  // kcdxLog_Info
+        else if (lvl == "warn")  out.logLevel = 3;  // kcdxLog_Warn
+        else if (lvl == "error") out.logLevel = 4;  // kcdxLog_Error
+        else if (lvl == "off")   out.logLevel = 5;  // synthetic "drop all"
         else {
             err = "[plugin] log_level: unknown level '" + lvl + "' "
-                  "(expected debug|info|warn|error|off)";
+                  "(expected trace|debug|info|warn|error|off)";
             return false;
         }
     }

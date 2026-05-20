@@ -125,14 +125,20 @@ enum kcdxInterfaceID {
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
-// itself uses; the engine routes Log(handle, level, msg) into the plugin's
-// own log file at <plugin-folder>/<folder-name>.log with the plugin's
-// stable name prepended as `[name] ...`.
+// itself uses.
+//
+// Engine routes plugin Log calls as follows (always tagged with the
+// plugin's stable name as the SOURCE field and `category` as the
+// CATEGORY field):
+//   Info / Warn / Error    — engine log AND plugin's own log; always on.
+//   Debug / Trace          — plugin's own log only when dev mode is on
+//                            AND `category` passes dev_categories filter.
 enum kcdxLogLevel {
-    kcdxLog_Info  = 0,
-    kcdxLog_Warn  = 1,
-    kcdxLog_Error = 2,
-    kcdxLog_Debug = 3,
+    kcdxLog_Trace = 0,  // ultra-verbose; dev-mode only
+    kcdxLog_Debug = 1,  // verbose;       dev-mode only
+    kcdxLog_Info  = 2,  // always-on
+    kcdxLog_Warn  = 3,  // always-on
+    kcdxLog_Error = 4,  // always-on
 };
 
 // Per-entry record returned by kcdxInterface::GetConflictReport. Describes
@@ -198,21 +204,29 @@ typedef struct kcdxInterface {
     // kInputLoaded).
     uintptr_t (*ResolveSymbol)(const char* name);
 
-    // Write a line to this plugin's own log file at
-    //   <plugins-dir>/<plugin-folder>/<plugin-folder>.log
+    // Write a categorized line to the kcdx logging system. Lines are
+    // tagged with this plugin's stable name (as SOURCE) and `category`
+    // (as CATEGORY) and routed by the engine to:
     //
-    // The engine handles file lifecycle (lazy-open on first call, truncate on
-    // session start) and a hard 20 MB size cap per file (further writes get
-    // silently dropped, with one warning to kcdx.log naming the offending
-    // file). The line is automatically prefixed with the plugin's stable
-    // name so multiple plugins can identify themselves if they share a log
-    // surface for any reason.
+    //   - this plugin's per-session log at
+    //     <plugins>/<folder>/logs/<folder>_<timestamp>.log
+    //   - the engine's per-session log at
+    //     <kcdx-engine>/logs/kcdx_<timestamp>.log (Info/Warn/Error only)
+    //   - the dev log at <kcdx-engine>/logs/kcdx-dev_<timestamp>.log
+    //     (when engine.toml sets dev_mode = true AND `category` passes
+    //      the dev_categories filter)
     //
-    // `msg` should be a UTF-8 null-terminated C string. Newlines are added
-    // by the engine — don't append your own.
+    // `category` is a short identifier the plugin chooses for grouping
+    // (e.g. "INIT", "HOOK", "TASK"). Pass null and the engine
+    // substitutes "PLUGIN". Categories are stable strings, not enums,
+    // so they're greppable.
+    //
+    // `msg` should be a UTF-8 null-terminated C string. Newlines are
+    // added by the engine — don't append your own.
     //
     // Safe to call from any thread.
-    void (*Log)(kcdxPluginHandle self, uint32_t level, const char* msg);
+    void (*Log)(kcdxPluginHandle self, uint32_t level,
+                const char* category, const char* msg);
 
     // Return the absolute filesystem path of a plugin's install folder.
     // For self-introspection, pass your own handle (the one returned by
@@ -933,3 +947,102 @@ typedef bool (*kcdxPlugin_Load_t)   (const kcdxInterface* api);
 #ifdef __cplusplus
 }  // extern "C"
 #endif
+
+// -----------------------------------------------------------------------------
+// kcdxLogger — ergonomic C++ wrapper over kcdxInterface::Log
+// -----------------------------------------------------------------------------
+//
+// Plugin authors: build one of these once you have an api pointer +
+// your plugin handle. Then log with short member-function calls.
+//
+//   static kcdxLogger gLog;
+//
+//   bool kcdxPlugin_Load(const kcdxInterface* api) {
+//       gLog = kcdxLogger(api, api->GetPluginHandle("my.plugin"));
+//
+//       gLog.Info ("INIT",      "loaded, engine v0x%08X", api->kcdxVersion);
+//       gLog.Warn ("MESSAGING", "Messaging interface unavailable");
+//       gLog.Error("INIT",      "RegisterFunction failed: %s", err);
+//       return true;
+//   }
+//
+// Routing rules (severity gates, plugin file inclusion, dev-log
+// behavior) are documented in kcdx/docs/logging.md. Short version:
+//
+//   - INFO / WARN / ERROR always reach kcdx.log AND this plugin's file.
+//   - WARN / ERROR ALWAYS reach this plugin's file, even if you set
+//     log_level = "off" in your kcdx.toml.
+//   - DEBUG / TRACE reach this plugin's file only when allowed by
+//     your manifest log_level OR when the user enabled dev mode in
+//     engine.toml.
+//
+// The wrapper is header-only and zero-allocation per call (formats
+// into a 1 KiB stack buffer, truncates if exceeded). Each call costs
+// one indirect call + vsnprintf.
+//
+// Safe to call from any thread. Default-constructed loggers (no api
+// pointer set) are no-ops — useful if you want a `kcdxLogger gLog;`
+// at file scope and assign it during Plugin_Load.
+//
+// Construct with a different handle if you have a reason to log on
+// behalf of another plugin (rare; usually you pass your own handle).
+
+#ifdef __cplusplus
+
+#include <cstdarg>
+#include <cstdio>
+
+struct kcdxLogger {
+    const kcdxInterface* api = nullptr;
+    kcdxPluginHandle     self = kcdxInvalidPluginHandle;
+
+    kcdxLogger() = default;
+    kcdxLogger(const kcdxInterface* a, kcdxPluginHandle s)
+        : api(a), self(s) {}
+
+    // Convenience: did the user wire this logger up?
+    bool ready() const { return api != nullptr; }
+
+    void Trace(const char* category, const char* fmt, ...) const {
+        if (!api) return;
+        char buf[1024];
+        va_list args; va_start(args, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        api->Log(self, kcdxLog_Trace, category, buf);
+    }
+    void Debug(const char* category, const char* fmt, ...) const {
+        if (!api) return;
+        char buf[1024];
+        va_list args; va_start(args, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        api->Log(self, kcdxLog_Debug, category, buf);
+    }
+    void Info(const char* category, const char* fmt, ...) const {
+        if (!api) return;
+        char buf[1024];
+        va_list args; va_start(args, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        api->Log(self, kcdxLog_Info, category, buf);
+    }
+    void Warn(const char* category, const char* fmt, ...) const {
+        if (!api) return;
+        char buf[1024];
+        va_list args; va_start(args, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        api->Log(self, kcdxLog_Warn, category, buf);
+    }
+    void Error(const char* category, const char* fmt, ...) const {
+        if (!api) return;
+        char buf[1024];
+        va_list args; va_start(args, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        api->Log(self, kcdxLog_Error, category, buf);
+    }
+};
+
+#endif  // __cplusplus
