@@ -103,12 +103,12 @@ where dev mode is on:
 See `crash_guard.cpp::WriteOwnMinidump` and the watchdog source
 in `src/watchdog/main.cpp` (sections marked "a)", "b)", "c)").
 
-### Known patch (not shipped)
+### Planned fix (to ship as a kcdx builtin engine-fix plugin)
 
-A clean, ready-to-ship patch exists. We've chosen **not** to ship
-it — see "Why we don't ship this" below — but documented here in
-full so a future maintainer has everything needed to flip the
-decision.
+A clean, ready-to-ship patch exists. **Decision: ship it** as a
+first-party kcdx engine-fix plugin under
+`kcdx-engine/builtin/bugsplat-filename-fix/`. Not yet implemented
+— this section documents the patch + the implementation plan.
 
 **Patch summary.** Repoint a single `LEA` instruction in WHGame.dll
 from the colon-bearing app-name string to a sibling string that's
@@ -143,25 +143,30 @@ the mempatch contract.
 | AOB anchor (unique in `.text`) | `E8 48 CF 09 FE 4C 8B C0 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 30 E8 10 D4` |
 | AOB patch offset | +13 |
 
-**As a mempatch plugin** (if ever needed):
+**As a kcdx engine-fix plugin** (the planned ship vehicle —
+`kcdx-engine/builtin/bugsplat-filename-fix/kcdx.toml`):
 
 ```toml
-[mempatch]
-schema = 1
+[plugin]
+name        = "kcdx.bugsplat-filename-fix"
+description = "Repoints WHGame.dll's BugSplat dmp-filename call site from \"Kingdom Come: Deliverance II\" (colon is illegal on NTFS) to the filename-safe sibling string already in the binary."
+author      = "kcdx"
+version     = "1.0.0"
+compatible_game_versions = ["1.5.1164953"]
 
 [[patch]]
-name = "bugsplat-filename-fix"
-target = "WHGame.dll"
-pattern = "E8 48 CF 09 FE 4C 8B C0 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 30 E8 10 D4"
-offset = 13
+name        = "bugsplat-filename-fix"
+target      = "WHGame.dll"
+pattern     = "E8 48 CF 09 FE 4C 8B C0 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 30 E8 10 D4"
+offset      = 13
 original    = "1A 9B 64 01"
 replacement = "A2 E8 9B 01"
-game_version = "1.5.1164953"
 ```
 
-kcdx supports the full mempatch `[[patch]]` schema (see kcdx
-`CLAUDE.md` hard rule #11), so the same TOML works inside any
-`kcdx.toml` if shipped as a kcdx-only patch instead.
+(The schema is mempatch-compatible by design — see kcdx
+`CLAUDE.md` hard rule #11 — but mempatch is deprecated, so the
+plugin ships exclusively as a kcdx engine-fix. See "How it ships"
+below for the loader requirements.)
 
 **Verification recipe** (required before any commit that ships
 this — kcdx's standard live-verify policy):
@@ -183,50 +188,117 @@ this — kcdx's standard live-verify policy):
 The agent's analysis was static-only; a first-run live check is
 non-negotiable before this leaves draft state.
 
-### Why we don't ship this
+### Why ship it
 
-kcdx's `crash_guard::UnhandledFilter` already calls
-`MiniDumpWriteDump` itself, writing to a path we fully control at
-`<kcdx-engine>/logs/kcdx_<sessionstamp>.dmp`. That dmp contains
-the same diagnostic content (crashing thread's stack, registers,
-modules, indirect-referenced memory) that BugSplat's dmp would
-contain. From a kcdx diagnostic perspective, **the BugSplat dmp
-is redundant**.
+For *kcdx users alone*, this patch is redundant — `crash_guard::WriteOwnMinidump` (commit `2ee3da6`) already gives us a usable
+dmp at `<kcdx-engine>/logs/kcdx_<sessionstamp>.dmp` for every
+SEH-trappable crash.
 
-The fix would only have value:
+But **for Warhorse**, this is significant:
 
-- **For non-kcdx KCD2 users** if shipped as a standalone mempatch
-  plugin. Real ecosystem-citizenship value, but kcdx isn't the
-  right vehicle for delivering it.
-- **As a regression check** — defence-in-depth if kcdx's
-  in-process dmp ever breaks. Real but small.
+- BugSplat's transmission pipeline almost certainly reads from
+  the dmp file on disk before uploading. With the file empty
+  (the zero-byte `Kingdom Come` stub case), Warhorse receives
+  either nothing usable or a corrupt upload for **every
+  SEH-trappable crash on every KCD2 player's machine**.
+- The patch is one same-length 4-byte LEA disp32 rewrite. Tiny
+  maintenance footprint relative to the diagnostic value it
+  restores to Warhorse's whole telemetry pipeline.
+- A more stable KCD2 benefits every modder and every kcdx user
+  transitively — the win is non-zero for us, just indirect.
 
-Against that, every patched AOB is maintenance debt — needs
-re-derivation on each KCD2 update. We've decided that's not
-worth carrying for a fix whose only customer is "us, redundantly."
+The "kcdx is redundant for itself" framing missed the
+externality. Shipping costs us an AOB to maintain on KCD2
+updates and gives every KCD2 player (kcdx or otherwise) usable
+BugSplat telemetry.
 
-Other options considered and rejected:
+### How it ships
 
-- **Hook `CreateFileW`** to sanitize colon-bearing paths at runtime.
-  Affects every `CreateFileW` call in the process (thousands per
-  session); the patch above is targeted at one instruction instead.
-- **Patch `BugSplat64.dll`** itself. Wrong target — BugSplat just
-  consumes a wstring that WHGame.dll constructs. The colon
-  literal isn't in `BugSplat64.dll`.
-- **Report upstream to Warhorse.** Still worthwhile in parallel
-  but on Warhorse's release cadence; not actionable from kcdx.
+**Ship vehicle: a first-party kcdx engine-fix plugin** at
+`kcdx-engine/builtin/bugsplat-filename-fix/kcdx.toml`.
 
-### What we did instead
+This is a new plugin category — see `docs/loader-architecture.md`
+§"Engine-fix plugins" for the design — distinct from user-installed
+plugins under `plugins/`. Properties:
 
-Commit `2ee3da6` added `crash_guard::WriteOwnMinidump`. Every
-SEH-trappable crash now produces a usable dmp at
-`<kcdx-engine>/logs/kcdx_<sessionstamp>.dmp`. The watchdog
-prioritizes that path over BugSplat's unreliable output (see
-`src/watchdog/main.cpp`, sections marked "a)/b)/c)"). For
-crashes that bypass SEH entirely (fast-fail, kernel kill), the
-watchdog falls back to WerFault's `%LOCALAPPDATA%/CrashDumps/`
-dumps.
+- **Ships in the kcdx release zip** alongside `kcdx.asi` and
+  `kcdx-watchdog.exe`. Users get the fix automatically when
+  they install kcdx.
+- **Loaded by the same kcdx discovery pipeline** that walks
+  `plugins/`, just rooted at `kcdx-engine/builtin/` instead.
+- **Loaded before user plugins** so cross-plugin conflicts at
+  the same address resolve in the engine fix's favor.
+- **Cannot be disabled by users.** Engine fixes are part of
+  kcdx; to remove the fix, uninstall kcdx. (No `.disabled`
+  suffix support in `kcdx-engine/builtin/`.)
+- **Uses the same `[[patch]]` schema** that user plugins use.
+  No special engine-fix-only syntax. The only differences from
+  a user plugin are the on-disk location, the discovery
+  precedence, and the inability to be user-disabled.
 
-The BugSplat-side scan is still in the watchdog as a third
-fallback, but it's expected to find nothing useful until the
-upstream bug is fixed or this patch ships.
+Why **not** ship as a mempatch plugin under
+`mempatch-plugins/bugsplat-filename-fix/`: **mempatch is
+deprecated.** All byte-rewrite patches now ship through kcdx.
+The two engines used to coexist (CLAUDE.md hard rule #3 etc.);
+that's no longer the case as of this design.
+
+### Implementation plan
+
+When ready to ship, the work is:
+
+1. **Loader change:** extend `kcdx::config::LoadAllConfigs` to
+   walk `kcdx-engine/builtin/` in addition to `plugins/`. Two
+   roots, single result set, engine-fix root walked first so
+   its patches land at the front of the conflict-engine's
+   `g_applyOrder`. See [`src/config.cpp`](../src/config.cpp)'s
+   `WalkForTomls` for the walker to extend.
+2. **Discovery semantics:** engine-fix plugins skip the
+   `.disabled`-suffix check (always loaded). Discovery logs
+   them under a distinct category like `[BUILTIN]` so the
+   funnel summary distinguishes user vs engine-fix counts.
+3. **Conflict resolution:** if a user plugin tries to patch the
+   same address as an engine-fix plugin, the engine fix wins
+   and the user plugin's `[[patch]]` aborts with a clear
+   `MANIFEST.reject` line naming the conflict.
+4. **Plugin authoring:** create
+   `kcdx-engine/builtin/bugsplat-filename-fix/kcdx.toml` with
+   the TOML shown above.
+5. **Live-verification** (kcdx policy: no patch ships without
+   live verification):
+   - Enable Application Verifier page heap on `KingdomCome.exe`
+     (the setup that turned the recurring `0xC0000374` into
+     a `0xC0000005` in the 13:32 session).
+   - Build + deploy kcdx with the patch loaded.
+   - Trigger the same save-load crash that produced the 13:32
+     fault.
+   - Check `%LOCALAPPDATA%/Temp/` for the dmp file. Expected:
+     `Kingdom Come Deliverance II<id>.dmp` (no colon). Should
+     be a real non-zero-byte file.
+   - Confirm the display-name UI surfaces (game title bar,
+     `sys_game_name` CVar via console) still show
+     `"Kingdom Come: Deliverance II"` — those use the three
+     un-touched colon-string xrefs.
+6. **Release packaging:** the kcdx release zip needs to include
+   `kcdx-engine/builtin/bugsplat-filename-fix/` so the fix
+   ships with the engine. See `package-release.ps1`.
+7. **Docs:** graduate this section from "planned" to "shipped";
+   add a brief note in `docs/loader-architecture.md` about the
+   `builtin/` location.
+
+### What we did in the interim
+
+Until the engine-fix plugin lands, kcdx still produces a usable
+dmp for its own diagnostic purposes via the in-process workaround
+shipped in commit `2ee3da6` (`crash_guard::WriteOwnMinidump`).
+That dmp lands at `<kcdx-engine>/logs/kcdx_<sessionstamp>.dmp`
+and is bundled by the watchdog into
+`<kcdx-engine>/logs/crash/crash_<ts>.zip`. See
+[`logging.md`](logging.md) §"Crash bundles".
+
+The BugSplat-side dmp scan in the watchdog
+(`src/watchdog/main.cpp`, section "c)") will continue to find
+nothing useful for AV crashes until the engine-fix plugin
+ships. After it ships, BugSplat's dmp will appear in
+`%LOCALAPPDATA%/Temp/Kingdom Come Deliverance II<id>.dmp` and
+the watchdog's existing "Kingdom" substring filter will
+catch it without modification.

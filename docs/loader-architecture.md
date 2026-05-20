@@ -35,10 +35,15 @@ to host, and (b) the v0.1 model is working live-verified today.
 │           └── <manifest.name>_<ts>.log
 └── kcdx-engine/                      (engine-owned data, sibling of plugins/)
     ├── engine.toml                   (engine config)
+    ├── builtin/                      (first-party kcdx engine-fix plugins;
+    │   │                              ships in the kcdx release zip)
+    │   └── bugsplat-filename-fix/    (example — see docs/known-issues.md §1)
+    │       └── kcdx.toml
     └── logs/
         ├── kcdx_<ts>.log             (one per session)
         ├── kcdx-dev_<ts>.log         (only when dev_mode = true)
         ├── kcdx-watchdog_<ts>.log    (watchdog's own diagnostic log)
+        ├── kcdx_<ts>.dmp             (in-process minidump, when SEH catches)
         └── crash/
             └── crash_<ts>.zip        (only when game exit code != 0)
 ```
@@ -55,16 +60,16 @@ Notes:
   crash, zips engine + plugin + game logs and crash artifacts
   into `kcdx-engine/logs/crash/crash_<ts>.zip`. See
   [`logging.md`](logging.md) §"Crash bundles".
-- Engine-owned data files (config, logs, address library) live in a
-  **sibling** `kcdx-engine/` folder. Keeping them out of `plugins/`
-  means uninstall-by-deleting is unambiguous: delete `kcdx-engine/`
-  + `plugins/kcdx.asi` + `plugins/kcdx-watchdog.exe` to remove
-  kcdx, leave the rest of `plugins/` alone (other ASI mods or
-  kcdx plugin folders).
+- Engine-owned data files (config, logs, address library, builtin
+  engine-fix plugins) live in a **sibling** `kcdx-engine/` folder.
+  Keeping them out of `plugins/` means uninstall-by-deleting is
+  unambiguous: delete `kcdx-engine/` + `plugins/kcdx.asi` +
+  `plugins/kcdx-watchdog.exe` to remove kcdx, leave the rest of
+  `plugins/` alone (other ASI mods or kcdx plugin folders).
 - `kcdx-engine/` is auto-created on first launch by `paths::Init`.
-  Users don't need to mkdir it manually. The `logs/` and
-  `logs/crash/` subfolders are created on demand by `log::Init`
-  and the watchdog respectively.
+  The `builtin/` subfolder is part of the release zip; the
+  `logs/` and `logs/crash/` subfolders are created on demand by
+  `log::Init` and the watchdog respectively.
 - Per-plugin log files
   (`<plugins>/<plugin>/logs/<manifest.name>_<ts>.log`) stay inside
   each plugin's own folder — they're plugin-owned, not
@@ -74,6 +79,73 @@ Notes:
   having installed it (or installs it from our README). It proxies
   the system `dinput8.dll` and additionally LoadLibrary's every
   `*.asi` in the folder it lives in.
+
+## Engine-fix plugins (`kcdx-engine/builtin/`)
+
+A **second** plugin discovery root, distinct from user-installed
+plugins under `plugins/`. Engine-fix plugins are first-party
+kcdx engine fixes for issues in WHGame.dll or other shipped game
+binaries (BugSplat configuration, etc.) — they ship with kcdx,
+not separately, and apply unconditionally.
+
+### What lives here
+
+Anything kcdx wants to fix about KCD2's stock binaries that
+doesn't belong in the engine source itself. Concrete first
+inhabitant: `bugsplat-filename-fix/` (see
+[`known-issues.md`](known-issues.md) §1 — repoints WHGame.dll's
+BugSplat dmp-filename call site so Warhorse's telemetry pipeline
+gets usable crash dumps from KCD2 again).
+
+### How it differs from user plugins
+
+| Property | `plugins/<X>/` | `kcdx-engine/builtin/<X>/` |
+|---|---|---|
+| Authored by | third-party modders | kcdx maintainers |
+| Distributed via | Nexus / Workshop / direct download | kcdx release zip |
+| Discovered by | `config::LoadAllConfigs` walking `plugins/` | same walker, extended to also walk `kcdx-engine/builtin/` |
+| TOML schema | full `[plugin]` + `[[patch]]` / `[[hook]]` / `[[mid_hook]]` / `[[trampoline]]` / `[[command]]` / `[[event]]` | same schema |
+| Apply order | per `priority`, after engine fixes | **applied first** so cross-plugin conflicts at the same address resolve in the engine fix's favor |
+| `.disabled` suffix | honored (user opt-out) | **not honored** — engine fixes are part of kcdx; to remove, uninstall kcdx |
+| Per-plugin log file | `<plugins>/<X>/logs/<X>_<ts>.log` | `<plugins>/<X>/logs/<X>_<ts>.log` (same — log root is keyed on the plugin folder, both roots route through `OpenPluginStream`) |
+
+Discovery walks both roots into one unified candidate list; the
+two-root walk is a small extension of the existing single-root
+walker in `config::WalkForTomls`. Engine-fix entries are tagged
+internally so log lines distinguish them (e.g. funnel summary
+reports "5 user plugins + 1 engine fix accepted, 6 total").
+
+### Why "first-party only"
+
+`kcdx-engine/builtin/` is for **engine fixes maintained by the
+kcdx project**, not a general "system plugins" folder. The
+deliberate scope keeps the loader contract simple: engine fixes
+are part of kcdx, ship with kcdx, get reviewed before merge,
+and have the same versioning + release cadence. Third-party
+patches go under `plugins/` like any other mod.
+
+If a kcdx user wants to write their own always-on patch, they
+can ship it as a user plugin and document that it should be
+left enabled. There's no advantage to giving third parties
+write access to `kcdx-engine/builtin/`.
+
+### Why not mempatch
+
+mempatch was the original sibling project for declarative byte
+patches. **mempatch is deprecated.** All byte-rewrite work now
+flows through kcdx: user plugins for third-party patches, and
+`kcdx-engine/builtin/` for first-party engine fixes. The two
+engines used to coexist (per filename discipline — mempatch
+loaded only `mempatch.toml`, kcdx loaded only `kcdx.toml`);
+that coexistence is no longer the design. mempatch's last
+released build (which lives in the sibling
+`kcd2-mempatch/` repo) remains functional against KCD2 1.5 for
+anyone already using it, but no new work targets it.
+
+The kcdx `[[patch]]` schema is identical in semantics to
+mempatch's `[[patch]]` (per kcdx CLAUDE.md hard rule #11), so
+migrating any existing mempatch.toml is a rename + minor
+identity-field additions away.
 
 ## v0.2+ layout (planned, NOT current)
 
