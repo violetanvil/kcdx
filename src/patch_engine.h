@@ -5,6 +5,8 @@
 #include <variant>
 #include <vector>
 
+#include "config.h"  // for kcdx::config::Source
+
 namespace kcdx::patch {
 
 struct Pattern {
@@ -36,6 +38,11 @@ using Anchor = std::variant<std::monostate, AnchorString, AnchorFunctionByExport
 
 struct PatchEntry {
     std::string sourceFile;   // for error messages — path of the toml that contributed this patch
+    // Which discovery root this came from. Stamped by LoadOneFile
+    // (Engine for kcdx-engine/builtin/, User for plugins/). Used as
+    // the primary sort key so engine fixes apply before any user
+    // plugin patch, regardless of numeric priority.
+    kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;
     std::string description;
     int priority = 100;

@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "config.h"  // for kcdx::config::Source
+
 namespace kcdx::trampoline_engine {
 
 // One [[trampoline]] entry parsed from a kcdx.toml file. Unlike [[patch]]
@@ -14,6 +16,7 @@ namespace kcdx::trampoline_engine {
 // target_symbol.
 struct TrampolineEntry {
     std::string sourceFile;
+    kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;
     std::string description;
     int         priority = 100;

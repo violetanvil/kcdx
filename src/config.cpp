@@ -773,7 +773,7 @@ void LoadEngineConfig(const fs::path& enginePath) {
     }
 }
 
-void LoadOneFile(const fs::path& path) {
+void LoadOneFile(const fs::path& path, Source source) {
     std::string fileLabel = path.string();
     try {
         std::ifstream in(path);
@@ -858,8 +858,11 @@ void LoadOneFile(const fs::path& path) {
                 kcdx::patch::PatchEntry entry;
                 std::string err;
                 if (ParseOnePatch(*elem.as_table(), fileLabel, entry, err)) {
-                    log::InfoF("Loaded patch '%s' (priority %d) from %s",
-                               entry.name.c_str(), entry.priority, fileLabel.c_str());
+                    entry.source = source;
+                    log::InfoF("Loaded patch '%s' (priority %d, source=%s) from %s",
+                               entry.name.c_str(), entry.priority,
+                               source == Source::Engine ? "engine" : "user",
+                               fileLabel.c_str());
                     kcdx::patch::g_patches.push_back(std::move(entry));
                 } else {
                     log::ErrorF("Skipped patch in %s: %s", fileLabel.c_str(), err.c_str());
@@ -874,8 +877,11 @@ void LoadOneFile(const fs::path& path) {
                 kcdx::hook_engine::HookEntry entry;
                 std::string err;
                 if (ParseOneHook(*elem.as_table(), fileLabel, entry, err)) {
-                    log::InfoF("Loaded hook '%s' (priority %d) from %s",
-                               entry.name.c_str(), entry.priority, fileLabel.c_str());
+                    entry.source = source;
+                    log::InfoF("Loaded hook '%s' (priority %d, source=%s) from %s",
+                               entry.name.c_str(), entry.priority,
+                               source == Source::Engine ? "engine" : "user",
+                               fileLabel.c_str());
                     kcdx::hook_engine::g_hooks.push_back(std::move(entry));
                 } else {
                     log::ErrorF("Skipped hook in %s: %s", fileLabel.c_str(), err.c_str());
@@ -890,8 +896,11 @@ void LoadOneFile(const fs::path& path) {
                 kcdx::hook_engine::MidHookEntry entry;
                 std::string err;
                 if (ParseOneMidHook(*elem.as_table(), fileLabel, entry, err)) {
-                    log::InfoF("Loaded mid_hook '%s' (priority %d) from %s",
-                               entry.name.c_str(), entry.priority, fileLabel.c_str());
+                    entry.source = source;
+                    log::InfoF("Loaded mid_hook '%s' (priority %d, source=%s) from %s",
+                               entry.name.c_str(), entry.priority,
+                               source == Source::Engine ? "engine" : "user",
+                               fileLabel.c_str());
                     kcdx::hook_engine::g_mid_hooks.push_back(std::move(entry));
                 } else {
                     log::ErrorF("Skipped mid_hook in %s: %s", fileLabel.c_str(), err.c_str());
@@ -906,8 +915,11 @@ void LoadOneFile(const fs::path& path) {
                 kcdx::trampoline_engine::TrampolineEntry entry;
                 std::string err;
                 if (ParseOneTrampoline(*elem.as_table(), fileLabel, entry, err)) {
-                    log::InfoF("Loaded trampoline '%s' (priority %d) from %s",
-                               entry.name.c_str(), entry.priority, fileLabel.c_str());
+                    entry.source = source;
+                    log::InfoF("Loaded trampoline '%s' (priority %d, source=%s) from %s",
+                               entry.name.c_str(), entry.priority,
+                               source == Source::Engine ? "engine" : "user",
+                               fileLabel.c_str());
                     kcdx::trampoline_engine::g_trampolines.push_back(std::move(entry));
                 } else {
                     log::ErrorF("Skipped trampoline in %s: %s", fileLabel.c_str(), err.c_str());
@@ -943,19 +955,21 @@ void LoadOneFile(const fs::path& path) {
 // Discovery rules (also apply to plugin_loader.cpp's DLL walk):
 //
 //   1. kcdx.toml is the plugin marker. Every plugin folder has one.
-//   2. kcdx.toml at depth 0 (directly in plugins/) is rejected with a
-//      helpful warn line — plugins/ is for plugin folders, not data.
+//   2. kcdx.toml at depth 0 (directly in the root) is rejected with
+//      a helpful warn line — the root is for plugin folders, not
+//      data. Applies to both `plugins/` (user) and
+//      `kcdx-engine/builtin/` (engine).
 //   3. From any folder, recurse infinitely until a kcdx.toml is found.
 //      That folder IS the plugin; we do NOT descend into it further.
 //      Subfolders of a plugin folder are the plugin's private space
 //      for sub-DLLs, data files, configs, etc — kcdx ignores them.
-//   4. Hidden folders/files (starting with `.`) are skipped.
-//   5. Plugin folders whose name ends with `.disabled` are skipped —
-//      this is the modder convention for deactivating a plugin
-//      without deleting it. The suffix is honored ONLY on folder
-//      names, not files; a stray `kcdx.toml.disabled` file inside
-//      an active plugin folder does NOT cause the folder to be
-//      skipped.
+//   4. Hidden folders/files (starting with `.`) are skipped, both
+//      roots.
+//   5. Plugin folders whose name ends with `.disabled` are skipped
+//      ONLY in the user root (`plugins/`). The engine root
+//      (`kcdx-engine/builtin/`) ignores the `.disabled` suffix —
+//      engine fixes are part of kcdx and apply unconditionally; to
+//      remove an engine fix, uninstall kcdx.
 //
 // Every walker decision (examine, skip, accept, recurse) emits a
 // DEBUG/TRACE line under the DISCOVERY category so the funnel is
@@ -964,8 +978,10 @@ void LoadOneFile(const fs::path& path) {
 //
 // folders/files counters track plugin folders (with TOML) and TOML
 // files loaded. `examined` counts every directory_iterator entry
-// visited (folders + files combined).
-void WalkForTomls(const fs::path& dir, int depth,
+// visited (folders + files combined). `source` flows down into
+// LoadOneFile so every entry it appends is stamped with the
+// discovery root that produced it.
+void WalkForTomls(const fs::path& dir, int depth, Source source,
                   size_t& folders, size_t& files, size_t& examined) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
@@ -988,10 +1004,11 @@ void WalkForTomls(const fs::path& dir, int depth,
         }
 
         // Skip plugin folders explicitly deactivated with the
-        // `.disabled` suffix. Folders only — files are not subject
+        // `.disabled` suffix. User root only — engine fixes are
+        // always-on by design. Folders only — files are not subject
         // to this rule (a `kcdx.toml.disabled` crumb is just an
         // unused file).
-        if (isDir) {
+        if (isDir && source == Source::User) {
             const std::wstring kSuffix = L".disabled";
             if (name.size() >= kSuffix.size()
                 && name.compare(name.size() - kSuffix.size(),
@@ -1011,15 +1028,17 @@ void WalkForTomls(const fs::path& dir, int depth,
                 ++files;
                 LOG_DEBUG_KV("DISCOVERY", "accept",
                     KV("folder", WideToUtf8(p.wstring())),
-                    KV("toml",   WideToUtf8(candidate.wstring())));
-                LoadOneFile(candidate);
+                    KV("toml",   WideToUtf8(candidate.wstring())),
+                    KV::BareStr("source",
+                        source == Source::Engine ? "engine" : "user"));
+                LoadOneFile(candidate, source);
                 // Plugin claimed. Do NOT descend.
             } else {
                 // Container folder. Recurse.
                 LOG_DEBUG_KV("DISCOVERY", "recurse",
                     KV("path",  WideToUtf8(p.wstring())),
                     KV("depth", depth + 1));
-                WalkForTomls(p, depth + 1, folders, files, examined);
+                WalkForTomls(p, depth + 1, source, folders, files, examined);
             }
         } else if (entry.is_regular_file(ec)) {
             // Files at depth 0 (directly in plugins/) are misplaced.
@@ -1060,49 +1079,83 @@ void WalkForTomls(const fs::path& dir, int depth,
 }  // namespace
 
 void LoadAllConfigs(const std::wstring& pluginsDir) {
-    fs::path root(pluginsDir);
-    if (!fs::exists(root) || !fs::is_directory(root)) {
-        log::WarnF("plugins dir not found: %s", WideToUtf8(pluginsDir).c_str());
-        return;
-    }
-
     // Engine config first. Settles dev_mode + dry_run + dev_categories
     // before any plugin TOML is parsed (so test_suite_only gating sees
     // the final IsEnabled() value). Production users don't ship this
     // file; dev mode stays off.
     LoadEngineConfig(kcdx::paths::EngineDataDirPath() / L"engine.toml");
 
-    size_t folders = 0, files = 0, examined = 0;
-    WalkForTomls(root, /*depth=*/0, folders, files, examined);
-    LOG_INFO("DISCOVERY",
-        "walk complete: %zu entries examined, %zu plugin folder(s) accepted",
-        examined, folders);
+    // Walk discovery roots in order:
+    //   1) kcdx-engine/builtin/  — first-party engine fixes
+    //   2) plugins/              — third-party user plugins
+    //
+    // Walking the engine root first is mostly cosmetic — the
+    // final sort comparator uses Source as its primary key, so
+    // engine-fix entries land at the front of each global vector
+    // regardless of walk order. We still walk Engine first for
+    // log readability (engine-fix DISCOVERY lines appear before
+    // user-plugin ones).
+    size_t engFolders = 0, engFiles = 0, engExamined = 0;
+    fs::path engineBuiltin = kcdx::paths::EngineDataDirPath() / L"builtin";
+    if (fs::exists(engineBuiltin) && fs::is_directory(engineBuiltin)) {
+        WalkForTomls(engineBuiltin, /*depth=*/0, Source::Engine,
+                     engFolders, engFiles, engExamined);
+    }
 
-    // Stable sort by (priority asc, name asc).
+    size_t usrFolders = 0, usrFiles = 0, usrExamined = 0;
+    fs::path userRoot(pluginsDir);
+    if (fs::exists(userRoot) && fs::is_directory(userRoot)) {
+        WalkForTomls(userRoot, /*depth=*/0, Source::User,
+                     usrFolders, usrFiles, usrExamined);
+    } else {
+        log::WarnF("plugins dir not found: %s", WideToUtf8(pluginsDir).c_str());
+    }
+
+    LOG_INFO("DISCOVERY",
+        "walk complete: engine=%zu/%zu user=%zu/%zu (accepted/examined)",
+        engFolders, engExamined, usrFolders, usrExamined);
+
+    // Sort key: (Source asc, priority asc, name asc). Source first
+    // ensures every engine-fix entry comes before any user-plugin
+    // entry of the same engine type, regardless of numeric
+    // priority. Within a source, priority decides; ties broken by
+    // name for determinism.
+    auto patchLess = [](const kcdx::patch::PatchEntry& a,
+                        const kcdx::patch::PatchEntry& b) {
+        if (a.source != b.source) return a.source < b.source;
+        if (a.priority != b.priority) return a.priority < b.priority;
+        return a.name < b.name;
+    };
+    auto hookLess = [](const kcdx::hook_engine::HookEntry& a,
+                       const kcdx::hook_engine::HookEntry& b) {
+        if (a.source != b.source) return a.source < b.source;
+        if (a.priority != b.priority) return a.priority < b.priority;
+        return a.name < b.name;
+    };
+    auto trampLess = [](const kcdx::trampoline_engine::TrampolineEntry& a,
+                        const kcdx::trampoline_engine::TrampolineEntry& b) {
+        if (a.source != b.source) return a.source < b.source;
+        if (a.priority != b.priority) return a.priority < b.priority;
+        return a.name < b.name;
+    };
     std::sort(kcdx::patch::g_patches.begin(), kcdx::patch::g_patches.end(),
-              [](const kcdx::patch::PatchEntry& a, const kcdx::patch::PatchEntry& b) {
-                  if (a.priority != b.priority) return a.priority < b.priority;
-                  return a.name < b.name;
-              });
+              patchLess);
     std::sort(kcdx::hook_engine::g_hooks.begin(), kcdx::hook_engine::g_hooks.end(),
-              [](const kcdx::hook_engine::HookEntry& a, const kcdx::hook_engine::HookEntry& b) {
-                  if (a.priority != b.priority) return a.priority < b.priority;
-                  return a.name < b.name;
-              });
+              hookLess);
     std::sort(kcdx::trampoline_engine::g_trampolines.begin(),
               kcdx::trampoline_engine::g_trampolines.end(),
-              [](const kcdx::trampoline_engine::TrampolineEntry& a,
-                 const kcdx::trampoline_engine::TrampolineEntry& b) {
-                  if (a.priority != b.priority) return a.priority < b.priority;
-                  return a.name < b.name;
-              });
+              trampLess);
 
+    size_t totalFolders = engFolders + usrFolders;
+    size_t totalFiles   = engFiles   + usrFiles;
     log::InfoF("Discovered %zu patch(es), %zu hook(s), %zu trampoline(s) from "
-               "%zu config file(s) across %zu plugin folder(s)",
+               "%zu config file(s) across %zu plugin folder(s) "
+               "(%zu engine + %zu user)",
                kcdx::patch::g_patches.size(),
                kcdx::hook_engine::g_hooks.size(),
                kcdx::trampoline_engine::g_trampolines.size(),
-               files, folders);
+               totalFiles, totalFolders,
+               engFolders, usrFolders);
 
     // Production-quiet: tell the user about gated-off test plugins even
     // when dev mode is off. No-op when count == 0.

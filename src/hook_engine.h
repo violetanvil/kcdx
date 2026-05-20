@@ -14,6 +14,7 @@ namespace kcdx::hook_engine {
 // pattern/context/anchor resolution path is identical.
 struct HookEntry {
     std::string sourceFile;       // path of the toml that contributed this hook
+    kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;
     std::string description;
     int         priority = 100;
@@ -90,6 +91,7 @@ struct HookEntry {
 // observability tap rather than an override).
 struct MidHookEntry {
     std::string sourceFile;
+    kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;
     std::string description;
     int         priority = 100;
@@ -170,5 +172,11 @@ struct RuntimeInstallResult {
 RuntimeInstallResult InstallRuntime(const std::string& name,
                                     uintptr_t          target_addr,
                                     void*              detour_addr);
+
+// Diagnostic: emit a MID_HOOK.fingerprint DEBUG line per installed
+// mid-hook with current JIT-buffer hash. Used by save_load_hooks to
+// detect post-install overwrites. `label` is appended to each line so
+// the reader can correlate scans across multiple call sites.
+void DumpMidHookFingerprints(const char* label);
 
 }  // namespace kcdx::hook_engine
