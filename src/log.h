@@ -100,6 +100,11 @@ enum class Level : uint8_t {
 // LOG_* macro is used.
 void Init();
 
+// Returns the "YYYY-MM-DD_HH-MM-SS" stamp captured at Init() — the
+// suffix used in every log file's name for this session. Used by
+// the watchdog to find this session's log files at bundle time.
+const std::string& SessionStamp();
+
 // Eagerly open a plugin's per-session log. Called by the plugin loader
 // after a DLL-bearing plugin is registered. Idempotent.
 void OpenPluginStream(uint32_t handle);

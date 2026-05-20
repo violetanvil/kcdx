@@ -546,6 +546,10 @@ void OpenPluginStream(uint32_t handle) {
     GetOrOpenPluginStream(handle);
 }
 
+const std::string& SessionStamp() {
+    return g_sessionStamp;
+}
+
 void SetDevMode(bool on) {
     g_devMode.store(on, std::memory_order_relaxed);
     if (!on) return;

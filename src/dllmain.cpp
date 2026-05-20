@@ -10,6 +10,7 @@
 #include "plugin_loader.h"
 #include "save_load_hooks.h"
 #include "serialization.h"
+#include "watchdog_spawn.h"
 
 DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::paths::Init();
@@ -23,6 +24,15 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // filter chains to the prior handler (BugSplat once KCD2 has
     // installed it).
     kcdx::guard::InstallUnhandledExceptionFilter();
+
+    // Spawn the external crash-bundle watchdog. It blocks on our
+    // process handle and zips up logs + crash artifacts when we die
+    // with a non-zero exit code. This catches crash classes that the
+    // in-process exception filter can't (fast-fail, stack overflow
+    // with no stack left, kernel-level termination). On launch
+    // failure we just log a WARN — game still runs, just no
+    // auto-bundle.
+    kcdx::watchdog::Spawn();
     char pluginsUtf8[512];
     WideCharToMultiByte(CP_UTF8, 0, kcdx::paths::PluginsDir().c_str(), -1,
                         pluginsUtf8, sizeof(pluginsUtf8), nullptr, nullptr);

@@ -82,6 +82,7 @@ add_library(kcdx SHARED
     src/dllmain.cpp
     src/log.cpp
     src/crash_guard.cpp
+    src/watchdog_spawn.cpp
     src/paths.cpp
     src/pe_helpers.cpp
     src/patch_engine.cpp
@@ -169,3 +170,32 @@ set_target_properties(kcdx PROPERTIES
     SUFFIX ".asi"
     OUTPUT_NAME "kcdx"
 )
+
+# -----------------------------------------------------------------------------
+# kcdx-watchdog.exe — external crash-bundle helper
+# -----------------------------------------------------------------------------
+# Spawned by kcdx.asi at startup. Waits on the game's process handle and,
+# on non-zero exit, zips kcdx logs + plugin logs + game crash artifacts
+# into kcdx-engine/logs/crash/crash_<ts>.zip. See src/watchdog/main.cpp.
+
+add_executable(kcdx-watchdog
+    src/watchdog/main.cpp
+    vendor/miniz/miniz.c
+)
+target_include_directories(kcdx-watchdog PRIVATE vendor/miniz)
+set_target_properties(kcdx-watchdog PROPERTIES
+    OUTPUT_NAME "kcdx-watchdog"
+)
+if(MSVC)
+    target_compile_definitions(kcdx-watchdog PRIVATE
+        _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN
+        UNICODE _UNICODE)
+    target_compile_options(kcdx-watchdog PRIVATE /W3 /MT)
+    set_property(TARGET kcdx-watchdog
+        PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    target_link_libraries(kcdx-watchdog PRIVATE shell32)
+    # /SUBSYSTEM:WINDOWS means no console window appears for the watchdog;
+    # /ENTRY:wWinMainCRTStartup picks up our wmain entry-point.
+    set_target_properties(kcdx-watchdog PROPERTIES
+        WIN32_EXECUTABLE TRUE)
+endif()
