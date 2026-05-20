@@ -37,3 +37,8 @@ _download/
 release-staging/
 test-install/
 KCD2-change-outfit-mod/Tools/WHGame.dll
+
+# Research scratch from outer workspace — predecessor-repo clones, extracted
+# sig notes. Lives at workspace root in _research/ but defense-in-depth
+# entry here in case anything ever lands inside kcdx/.
+_research/

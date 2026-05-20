@@ -1,15 +1,24 @@
 # CAP-03 — [[hook]] + lua_callback (TOML-declared hook dispatches to pak Lua).
 #
-# Hooks WHGame.dll's luaL_loadfile at function entry. luaL_loadfile fires
-# many times during engine boot as CryEngine's script system pulls in
-# Scripts/*.lua files. Each fire dispatches into our Lua callback,
-# Cap03Test.OnLuaLoadFile, which increments a counter.
+# Hooks a function called every tick from WHGame.dll's CGame::Update (the
+# function kcdx already detours as `update`). The chosen target is a direct
+# callee of update — a per-frame UI/menu pump at 0x180865FB4 in KCD2
+# 1.5.1164953. By construction it fires every tick AFTER kcdx's hook-install
+# moment (first-update-tick), so the dispatch chain is exercised many times
+# before the player even sees the main menu.
 #
 # A DLL companion subscribes to kInputLoaded and reports CAP-03 pass
 # if the counter > 0 (the hook fired at least once during boot).
 #
-# AOB pattern verified against KCD2 1.5 production via yobson1/kcd2lua
-# (see _research/predecessor-sigs/CAP-03-CANDIDATES.md candidate #1).
+# Sig discovered 2026-05-19 via the callee-enumeration tool at
+# _research/cap03_find_candidates.py (disassembles WHGame.dll, finds
+# update() via the yobson1 sig, walks its direct CALL targets, emits
+# 24-byte function-entry sigs with .text-uniqueness checks). Full
+# candidate dossier: _research/predecessor-sigs/CAP-03-CANDIDATES.md
+# (candidate #4).
+#
+# Earlier attempt: luaL_loadfile, which installed cleanly but fired only
+# during pre-update Scripts/ loading (before kcdx's hooks installed).
 
 [kcdx]
 test_suite_only = true
@@ -26,23 +35,25 @@ log_level           = "info"
 test_names          = ["CAP-03"]
 
 [[hook]]
-name        = "cap03_luaL_loadfile"
+name        = "cap03_update_callee"
 priority    = 100
 module      = "WHGame.dll"
-pattern     = "48 89 5C 24 ? 48 89 74 24 ? 55 57 41 56 48 8D AC 24 ? ? ? ? 48 81 EC 40 02 00 00 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 48 8B 79 10"
+pattern     = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
 offset      = 0
 
-# luaL_loadfile(lua_State* L, const char* filename) -> int
-# kcdx's typed dispatch: ptr (lua_State*) + ptr (const char*) → int32
-return_type = "int32"
-param_types = ["ptr", "ptr"]
+# void __fastcall fn(this_ptr*)
+# kcdx's typed dispatch: single ptr (this) → void
+# The Lua callback receives the this pointer as a kcdx.memory.pointer userdata.
+# Callback should not dereference it (object layout not known); it exists
+# purely to confirm the dispatch chain fired.
+return_type = "void"
+param_types = ["ptr"]
 
-# Lua-side callback (in a pak we'll ship alongside). Receives the args
-# as (retval, L_ptr, filename_ptr) and just increments a counter so we
-# can observe at least one fire.
-lua_callback = "Cap03Test.OnLuaLoadFile"
+lua_callback = "Cap03Test.OnUpdateCallee"
 
 description = """
 CAP-03 of the kcdx test suite. Verifies [[hook]] + lua_callback chain
-fires from a real engine function during boot.
+fires from a real engine function during boot. The hook target is a
+direct callee of CGame::Update, so it fires every tick AFTER kcdx's
+own first-update-tick — strictly post-install, on the main thread.
 """
