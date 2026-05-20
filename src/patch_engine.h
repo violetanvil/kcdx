@@ -41,12 +41,23 @@ struct PatchEntry {
     int priority = 100;
     std::string module = "WHGame.dll";
 
-    // Locator. Exactly one of `pattern` or `targetSymbol` must be set.
-    // When targetSymbol is non-empty, Resolve() looks up the symbol in the
-    // global table and computes patchAddr = symbol_addr + offset (no pattern
-    // scan happens). When pattern is set, the AOB path runs as before.
+    // Locator. Exactly one of `pattern` / `targetSymbol` / `addressId`
+    // must be set.
+    //
+    //   - pattern:      AOB scan of the named module (the v1 path).
+    //   - targetSymbol: lookup in the cross-plugin symbol table
+    //                   (resolves to a [[trampoline]] / [[hook]] export).
+    //   - addressId:    lookup in kcdx's compiled-in Address Library
+    //                   (kcdx::address_library::Resolve). Stable across
+    //                   game patches; recommended for authors who don't
+    //                   want to maintain their own AOBs.
+    //
+    // In every case the resolved VA gets `offset` added to produce
+    // the final write target (see _research/phase7-recon/
+    // id-assignment-policy.md §"pattern-hit semantics").
     Pattern pattern;
     std::string targetSymbol;
+    uint64_t addressId = 0;          // 0 = no address-library locator
 
     int offset = 0;
     std::vector<uint8_t> original;

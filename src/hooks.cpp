@@ -9,6 +9,7 @@
 
 #include "MinHook.h"
 #include "conflict_engine.h"
+#include "console.h"
 #include "hook_engine.h"
 #include "dev.h"
 #include "log.h"
@@ -186,49 +187,11 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                                okMidHooks, totalMidHooks);
                 }
 
-                // -----------------------------------------------------------
-                // Phase 7 one-shot probe — IConsole vtable slot resolver.
-                //
-                // Address-library seed (_research/phase7-recon/) leaves ids
-                // 2000–2003 unverified because static analysis can't read
-                // the IConsole vtable (its contents are RIP-relative
-                // relocations resolved at load time). This probe walks
-                // gEnv->pConsole at runtime, dumps vtable slots 20..40 to
-                // kcdx.log, and lets us identify AddCommand / RemoveCommand
-                // / ExecuteString / GetCVar by their RVAs. Single-fire
-                // (lives inside the first-tick branch). Remove once the
-                // CSV is updated and the [[command]] engine is in.
-                {
-                    uintptr_t whgame_base =
-                        reinterpret_cast<uintptr_t>(GetModuleHandleW(L"WHGame.dll"));
-                    if (whgame_base) {
-                        // Seed id 1009: gEnv->pConsole storage in .data.
-                        constexpr uintptr_t kPConsolePtrRVA = 0x0492B8A8;
-                        void** pConsoleStorage =
-                            reinterpret_cast<void**>(whgame_base + kPConsolePtrRVA);
-                        void* iconsole = *pConsoleStorage;
-                        log::InfoF("[phase7-probe] WHGame.dll base = 0x%p, "
-                                   "pConsole_storage = 0x%p, IConsole* = 0x%p",
-                                   reinterpret_cast<void*>(whgame_base),
-                                   reinterpret_cast<void*>(pConsoleStorage),
-                                   iconsole);
-                        if (iconsole) {
-                            void** vtbl = *reinterpret_cast<void***>(iconsole);
-                            log::InfoF("[phase7-probe] IConsole vtable @ 0x%p", vtbl);
-                            // Dump slots 20..40 — covers AddCommand
-                            // candidates {32,33,34}, GetCVar {23,24,25},
-                            // RemoveCommand {34,35,36}, ExecuteString
-                            // {35,36,37}.
-                            for (int i = 20; i < 40; i++) {
-                                void* fn = vtbl[i];
-                                uintptr_t rva = reinterpret_cast<uintptr_t>(fn) - whgame_base;
-                                log::InfoF("[phase7-probe] vtable[%2d] = 0x%p (rva 0x%08llX)",
-                                           i, fn, (unsigned long long)rva);
-                            }
-                        }
-                    }
-                }
-                // -----------------------------------------------------------
+                // Phase 7: resolve gEnv->pConsole + IConsole::AddCommand/
+                // RemoveCommand via the Address Library and arm the
+                // [[command]] dispatch surface. After this returns true,
+                // plugin RegisterCommand calls succeed.
+                kcdx::console::Init();
 
                 // Lifecycle: input subsystem is alive by the time the first
                 // update tick fires (Lua VM is up). Closest analogue to

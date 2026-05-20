@@ -88,6 +88,8 @@ add_library(kcdx SHARED
     src/hooks.cpp
     src/save_load_hooks.cpp
     src/serialization.cpp
+    src/address_library.cpp
+    src/console.cpp
     src/lua_bind.cpp
     src/plugin_loader.cpp
     src/interfaces.cpp

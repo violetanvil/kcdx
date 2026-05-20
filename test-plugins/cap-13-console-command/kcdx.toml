@@ -1,0 +1,21 @@
+# CAP-13 — kcdxConsoleInterface console command registration.
+#
+# Registers a console command at Plugin_Load. Reports pass at
+# kInputLoaded (registration ok) once kcdx::console::Init has armed
+# the surface. Manual gesture for full validation: launch with
+# -console, type `kcdx_test_cap13 hello world`, check kcdx.log for
+# the callback fire line.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-13-console-command"
+display_name        = "CAP-13 Console Command"
+author              = "kcdx"
+description         = "Registers a console command via kcdxConsoleInterface."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-13"]

@@ -19,10 +19,13 @@ struct HookEntry {
     int         priority = 100;
     std::string module = "WHGame.dll";
 
-    // Locator — same shape as PatchEntry. Resolves to a function entry point
-    // at (pattern_match + offset). `offset` is signed so the author can use
-    // an AOB that anchors mid-function and step backward to the entry.
+    // Locator — same shape as PatchEntry. Exactly one of pattern /
+    // targetSymbol / addressId must be set. Resolves to (resolved_va +
+    // offset). `offset` is signed so the author can use an AOB that
+    // anchors mid-function and step backward to the entry.
     patch::Pattern             pattern;
+    std::string                targetSymbol;   // cross-plugin symbol-table lookup
+    uint64_t                   addressId = 0;  // kcdx Address Library id (Phase 7)
     int                        offset = 0;
     std::optional<patch::Pattern> context;
     patch::Anchor              anchor;
@@ -92,8 +95,11 @@ struct MidHookEntry {
     int         priority = 100;
     std::string module = "WHGame.dll";
 
-    // Locator — same as HookEntry / PatchEntry.
+    // Locator — same as HookEntry / PatchEntry. Exactly one of pattern
+    // or addressId must be set. (Mid-hooks don't currently consume
+    // target_symbol.)
     patch::Pattern             pattern;
+    uint64_t                   addressId = 0;
     int                        offset = 0;
     std::optional<patch::Pattern> context;
     patch::Anchor              anchor;

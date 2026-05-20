@@ -50,6 +50,8 @@ patch::PatchEntry MakeLocatorPatch(const HookEntry& h) {
     p.anchor = h.anchor;
     p.maxAnchorDistance = h.maxAnchorDistance;
     p.offset = h.offset;
+    p.targetSymbol = h.targetSymbol;
+    p.addressId = h.addressId;
     // original/replacement aren't used by Resolve's locator-resolution
     // path, but Resolve checks original.size() == replacement.size() at
     // the very top — give it equal empty vectors so the check passes.
@@ -243,6 +245,7 @@ bool ApplyOneMidHook(size_t midHookIdx) {
     locator.name              = mh.name;
     locator.module            = mh.module;
     locator.pattern           = mh.pattern;
+    locator.addressId         = mh.addressId;
     locator.context           = mh.context;
     locator.anchor            = mh.anchor;
     locator.maxAnchorDistance = mh.maxAnchorDistance;

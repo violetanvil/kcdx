@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "address_library.h"
 #include "conflict_engine.h"
 #include "log.h"
 #include "pe_helpers.h"
@@ -269,6 +270,34 @@ ResolvedPatch Resolve(const PatchEntry& p) {
                    p.name.c_str(),
                    p.targetSymbol.c_str(),
                    reinterpret_cast<void*>(*addr),
+                   reinterpret_cast<void*>(r.patchAddr));
+        r.ok = true;
+        return r;
+    }
+
+    // Locator path A2: address_id — resolves via kcdx's Address Library.
+    // Stable across game patches as long as the Library row matches the
+    // running game build.
+    if (p.addressId != 0) {
+        uintptr_t addr = kcdx::address_library::Resolve(p.addressId);
+        if (!addr) {
+            char idBuf[32];
+            snprintf(idBuf, sizeof(idBuf), "%llu",
+                     static_cast<unsigned long long>(p.addressId));
+            r.reason = "address_id " + std::string(idBuf) +
+                       " did not resolve (unknown id, game-version "
+                       "mismatch, or row status != verified)";
+            log::ErrorF("[%s] aborted: %s", p.name.c_str(), r.reason.c_str());
+            return r;
+        }
+        r.patchAddr = addr + p.offset;
+        r.writeRange = { r.patchAddr, r.patchAddr + p.replacement.size() };
+        r.patternRange  = { 0, 0 };
+        r.originalRange = { r.patchAddr, r.patchAddr + p.original.size() };
+        log::InfoF("[%s] resolved address_id %llu -> 0x%p (patchAddr 0x%p)",
+                   p.name.c_str(),
+                   static_cast<unsigned long long>(p.addressId),
+                   reinterpret_cast<void*>(addr),
                    reinterpret_cast<void*>(r.patchAddr));
         r.ok = true;
         return r;

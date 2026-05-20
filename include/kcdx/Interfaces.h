@@ -121,6 +121,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Scripting      = 4,  // Phase 5
     kcdxInterface_Serialization  = 5,  // Phase 6
     kcdxInterface_Memory         = 6,  // Phase 5h — DLL-facing memory I/O
+    kcdxInterface_Console        = 7,  // Phase 7 — IConsole::AddCommand thunk
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -694,6 +695,87 @@ typedef struct kcdxMemoryInterface {
     // success.
     int (*ReadBytes)(uintptr_t addr, void* out, size_t size);
 } kcdxMemoryInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxConsoleInterface — register CryEngine console commands (Phase 7)
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Console,
+// kcdxConsoleInterface_Version). Thin wrapper around CryEngine's
+// `IConsole::AddCommand(const char*, ConsoleCommandFunc, int, const char*)`.
+// Lets plugins expose strings runnable from the -console window without
+// touching the IConsole vtable directly.
+//
+// Lifecycle:
+//   - Safe to call from kcdxPlugin_Load (engine resolves IConsole at boot
+//     before plugins are loaded).
+//   - The callback fires on the main thread (CryEngine dispatches console
+//     commands during the game loop).
+//
+// Command-arg access uses the `kcdxConsoleCmdArgs` opaque pointer plus the
+// `GetArgCount` / `GetArg` accessors — kcdx wraps CryEngine's
+// `IConsoleCmdArgs` vtable so plugins don't need to know its layout.
+
+// Opaque alias for CryEngine's IConsoleCmdArgs* — passed to your
+// callback. Use the accessors below to read args.
+typedef struct kcdxConsoleCmdArgs kcdxConsoleCmdArgs;
+
+// Console-command callback. Plugins write a function with this
+// signature and pass it to RegisterCommand. Called on the main thread.
+typedef void (*kcdxConsoleCommandCallback)(const kcdxConsoleCmdArgs* args);
+
+#define kcdxConsoleInterface_Version 1u
+
+typedef struct kcdxConsoleInterface {
+    // Register a console command. `name` must be unique across the
+    // process (CryEngine's AddCommand allows redefinition, but kcdx
+    // refuses to register a name twice from different plugins). `help`
+    // is displayed when the user types `help <name>`. Returns true
+    // on success.
+    //
+    // kcdx registers commands with CryEngine's VF_RESTRICTEDMODE flag
+    // automatically, which is required for the in-game `~` console
+    // to dispatch the command (without it, the Scaleform UI silently
+    // ignores non-devmode commands). A future API revision may
+    // expose a `flags` parameter for authors who want devmode-only
+    // commands; v0.1 hardcodes the "callable from the UI console"
+    // shape because that's the common case.
+    //
+    // Lifetime: the engine retains `name`, `help`, and `cb` for the
+    // lifetime of the process. Plugin authors should pass string
+    // literals (static-storage) or maintain the storage themselves.
+    bool (*RegisterCommand)(kcdxPluginHandle owner,
+                            const char*       name,
+                            const char*       help,
+                            kcdxConsoleCommandCallback cb);
+
+    // Read args from inside your callback.
+    // GetArgCount returns 1 + N (the first arg is the command name
+    // itself, matching CryEngine's IConsoleCmdArgs convention).
+    int          (*GetArgCount)(const kcdxConsoleCmdArgs* args);
+
+    // Get arg N as a null-terminated string. nIndex=0 is the command
+    // name itself; nIndex=1..GetArgCount()-1 are the user-supplied
+    // arguments. Returns null on out-of-bounds. Pointer is valid for
+    // the duration of the callback only.
+    const char*  (*GetArg)(const kcdxConsoleCmdArgs* args, int nIndex);
+
+    // Get the raw command line (everything the user typed, including
+    // the command name and any quoted arguments). Pointer is valid
+    // for the duration of the callback only.
+    const char*  (*GetCommandLine)(const kcdxConsoleCmdArgs* args);
+
+    // Programmatically execute a console command as if the user typed
+    // it into the in-game `~` console. Goes through the same
+    // IConsole::ExecuteString dispatch path that user input uses, so
+    // your registered command fires synchronously (same thread, same
+    // semantics). Useful for self-test harnesses and for triggering
+    // commands from non-console paths (hotkeys, save/load handlers).
+    //
+    // Returns true on success, false if the IConsole surface isn't
+    // ready (i.e. before kcdxMessage_InputLoaded fires).
+    bool         (*ExecuteString)(const char* commandLine);
+} kcdxConsoleInterface;
 
 // -----------------------------------------------------------------------------
 // kcdxSerializationInterface — per-save plugin data (a `.kcdx` co-save)

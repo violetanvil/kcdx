@@ -319,17 +319,23 @@ bool ParseOnePatch(const toml::table& t,
     out.priority = OptInt(t, "priority", 100);
     out.module = OptString(t, "module", "WHGame.dll");
 
-    // Locator: either 'pattern' (the v1 AOB path) or 'target_symbol' (the
-    // cross-plugin path that resolves against the global symbol table).
-    // Exactly one of the two must be set.
+    // Locator: exactly one of 'pattern' (v1 AOB path),
+    // 'target_symbol' (cross-plugin symbol table), or 'address_id'
+    // (kcdx Address Library, Phase 7).
     std::string patternStr      = OptString(t, "pattern");
     std::string targetSymbolStr = OptString(t, "target_symbol");
-    if (patternStr.empty() && targetSymbolStr.empty()) {
-        err = "missing locator: declare either 'pattern' or 'target_symbol'";
+    int64_t     addressIdInt    = OptInt(t, "address_id", 0);
+    int        locatorCount     = (!patternStr.empty() ? 1 : 0)
+                                 + (!targetSymbolStr.empty() ? 1 : 0)
+                                 + (addressIdInt != 0 ? 1 : 0);
+    if (locatorCount == 0) {
+        err = "missing locator: declare exactly one of 'pattern', "
+              "'target_symbol', or 'address_id'";
         return false;
     }
-    if (!patternStr.empty() && !targetSymbolStr.empty()) {
-        err = "conflicting locators: declare only one of 'pattern' or 'target_symbol'";
+    if (locatorCount > 1) {
+        err = "conflicting locators: declare exactly one of 'pattern', "
+              "'target_symbol', or 'address_id'";
         return false;
     }
     if (!patternStr.empty()) {
@@ -339,8 +345,10 @@ bool ParseOnePatch(const toml::table& t,
             err = std::string("parse error in 'pattern': ") + e.what();
             return false;
         }
-    } else {
+    } else if (!targetSymbolStr.empty()) {
         out.targetSymbol = targetSymbolStr;
+    } else {
+        out.addressId = static_cast<uint64_t>(addressIdInt);
     }
 
     out.offset = OptInt(t, "offset", 0);
@@ -413,16 +421,35 @@ bool ParseOneHook(const toml::table& t,
     out.priority = OptInt(t, "priority", 100);
     out.module = OptString(t, "module", "WHGame.dll");
 
-    std::string patternStr = OptString(t, "pattern");
-    if (patternStr.empty()) {
-        err = "missing required field 'pattern'";
+    // Locator: exactly one of 'pattern', 'target_symbol' (Phase 4b.2),
+    // or 'address_id' (Phase 7).
+    std::string patternStr      = OptString(t, "pattern");
+    std::string targetSymbolStr = OptString(t, "target_symbol");
+    int64_t     addressIdInt    = OptInt(t, "address_id", 0);
+    int        locatorCount     = (!patternStr.empty() ? 1 : 0)
+                                 + (!targetSymbolStr.empty() ? 1 : 0)
+                                 + (addressIdInt != 0 ? 1 : 0);
+    if (locatorCount == 0) {
+        err = "missing locator: declare exactly one of 'pattern', "
+              "'target_symbol', or 'address_id'";
         return false;
     }
-    try {
-        out.pattern = ParsePattern(patternStr);
-    } catch (const std::exception& e) {
-        err = std::string("parse error in 'pattern': ") + e.what();
+    if (locatorCount > 1) {
+        err = "conflicting locators: declare exactly one of 'pattern', "
+              "'target_symbol', or 'address_id'";
         return false;
+    }
+    if (!patternStr.empty()) {
+        try {
+            out.pattern = ParsePattern(patternStr);
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'pattern': ") + e.what();
+            return false;
+        }
+    } else if (!targetSymbolStr.empty()) {
+        out.targetSymbol = targetSymbolStr;
+    } else {
+        out.addressId = static_cast<uint64_t>(addressIdInt);
     }
 
     out.offset = OptInt(t, "offset", 0);
@@ -516,16 +543,31 @@ bool ParseOneMidHook(const toml::table& t,
     out.priority = OptInt(t, "priority", 100);
     out.module = OptString(t, "module", "WHGame.dll");
 
-    std::string patternStr = OptString(t, "pattern");
-    if (patternStr.empty()) {
-        err = "missing required field 'pattern'";
+    // Locator: exactly one of 'pattern' or 'address_id' (Phase 7).
+    // Mid-hooks don't currently support 'target_symbol' — the cross-
+    // plugin symbol-table case isn't a natural fit for mid-function
+    // sites yet.
+    std::string patternStr   = OptString(t, "pattern");
+    int64_t     addressIdInt = OptInt(t, "address_id", 0);
+    int        locatorCount  = (!patternStr.empty() ? 1 : 0)
+                              + (addressIdInt != 0 ? 1 : 0);
+    if (locatorCount == 0) {
+        err = "missing locator: declare exactly one of 'pattern' or 'address_id'";
         return false;
     }
-    try {
-        out.pattern = ParsePattern(patternStr);
-    } catch (const std::exception& e) {
-        err = std::string("parse error in 'pattern': ") + e.what();
+    if (locatorCount > 1) {
+        err = "conflicting locators: declare exactly one of 'pattern' or 'address_id'";
         return false;
+    }
+    if (!patternStr.empty()) {
+        try {
+            out.pattern = ParsePattern(patternStr);
+        } catch (const std::exception& e) {
+            err = std::string("parse error in 'pattern': ") + e.what();
+            return false;
+        }
+    } else {
+        out.addressId = static_cast<uint64_t>(addressIdInt);
     }
 
     out.offset = OptInt(t, "offset", 0);

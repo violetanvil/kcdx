@@ -8,7 +8,9 @@
 // As later phases land, QueryInterface gets new cases.
 
 #include "kcdx/Interfaces.h"
+#include "address_library.h"
 #include "conflict_engine.h"
+#include "console.h"
 #include "hook_engine.h"
 #include "log.h"
 #include "messaging.h"
@@ -65,6 +67,11 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         return const_cast<kcdxSerializationInterface*>(
             kcdx::serialization::GetInterface());
 
+    case kcdxInterface_Console:
+        if (version > kcdxConsoleInterface_Version) return nullptr;
+        return const_cast<kcdxConsoleInterface*>(
+            kcdx::console::GetInterface());
+
     default:
         return nullptr;
     }
@@ -111,9 +118,8 @@ uint32_t Thunk_EnumeratePlugins(kcdxPluginHandle* out, uint32_t cap) {
     return n;
 }
 
-uintptr_t Thunk_ResolveAddress(uint64_t /*id*/) {
-    // Phase 7 fills this in. Until then, every lookup misses.
-    return 0;
+uintptr_t Thunk_ResolveAddress(uint64_t id) {
+    return kcdx::address_library::Resolve(id);
 }
 
 // Level priority for filtering. Higher number = louder. log_level=4 (off)
