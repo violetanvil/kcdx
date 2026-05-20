@@ -245,6 +245,7 @@ bool ApplyOneMidHook(size_t midHookIdx) {
     locator.name              = mh.name;
     locator.module            = mh.module;
     locator.pattern           = mh.pattern;
+    locator.targetSymbol      = mh.targetSymbol;
     locator.addressId         = mh.addressId;
     locator.context           = mh.context;
     locator.anchor            = mh.anchor;

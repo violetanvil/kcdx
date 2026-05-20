@@ -95,10 +95,10 @@ struct MidHookEntry {
     int         priority = 100;
     std::string module = "WHGame.dll";
 
-    // Locator — same as HookEntry / PatchEntry. Exactly one of pattern
-    // or addressId must be set. (Mid-hooks don't currently consume
-    // target_symbol.)
+    // Locator — same as HookEntry / PatchEntry. Exactly one of pattern,
+    // targetSymbol, or addressId must be set.
     patch::Pattern             pattern;
+    std::string                targetSymbol;   // cross-plugin symbol-table lookup
     uint64_t                   addressId = 0;
     int                        offset = 0;
     std::optional<patch::Pattern> context;

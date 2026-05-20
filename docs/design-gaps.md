@@ -362,6 +362,9 @@ If only some of these land before v0.1.0:
 - #5 (thread safety in design.md) — silent footgun, pure docs
 - #6 (`[[scan]]` diagnostic) — biggest new-modder UX leverage, trivial engine work
 - #9 (address_id-as-update-survivor guidance) — pure docs
+- #11 (`kcdxLuaApi::Call/Pcall/LoadString`) — interface advertises
+  bidirectional C++↔Lua but currently only Lua→C works. ~30 LOC
+  total. Blocking clean CAP-04 ship.
 
 **Should address before v0.1.0** (defines the audience):
 
@@ -465,3 +468,97 @@ for an alternate Lua-state-capture path (belt-and-suspenders for the
 existing `lua_pcall` hook capture).
 
 Not a v0.1 blocker. Detours alone deliver the full lifecycle catalog.
+
+---
+
+## 11. `kcdxLuaApi` is missing `Call` / `Pcall` / `LoadString` — plugins can't actually invoke Lua functions
+
+**Discovered 2026-05-20 during Phase 5g closeout (CAP-04 mid-hook test plugin authoring).**
+
+`kcdxScriptingInterface::lua` (a.k.a. `kcdxLuaApi`) exposes ~30
+function pointers covering stack manipulation, type queries, value
+push/pull, table read/write, globals, and error reporting. What it
+DOESN'T expose:
+
+- `lua_call` (or its safe variant `lua_pcall`)
+- `lua_loadstring` / `luaL_loadbuffer` / `luaL_loadstring`
+- `lua_dostring` / `luaL_dostring`
+
+The result: **a C++ plugin can't invoke Lua functions through the
+public API.** It can build a function on the stack (PushValue,
+GetGlobal, GetField) and push args (PushString, PushInteger, etc.),
+but it can't fire the call. The closest workaround is registering a
+Lua C function that mutates state — but even that can't call OTHER
+Lua functions, so cascading callbacks are blocked.
+
+### How this surfaces in practice
+
+The CAP-04 mid-hook self-test wants to:
+
+1. Register a Lua callback `kcdx.Cap04Test.OnB(args)` that mutates
+   the captured `rax` register via `args[1]:set(555)`.
+2. From a C++ test plugin, invoke the hooked target function and
+   verify the return.
+
+Step 1's `args[1]:set(...)` is a method call — needs `lua_pcall` to
+invoke. From a C plugin's RegisterFunction callback, you can:
+
+```cpp
+int OnB(lua_State* L, void* ud) {
+    g_lua->RawGetI(L, 1, 1);          // args[1] = value_wrapper userdata
+    g_lua->GetField(L, -1, "set");     // its set method
+    g_lua->PushValue(L, -2);           // self arg
+    g_lua->PushInteger(L, 555);        // newValue
+    // *** No g_lua->Call() or g_lua->Pcall() to invoke ***
+    return 0;
+}
+```
+
+The closest fallback is to write the mutation in pak Lua (which has
+unrestricted access to the Lua VM via the in-VM globals), but that
+requires authors to ship a pak alongside their DLL — defeating the
+"pure C++ plugin" model the kcdxScriptingInterface advertises.
+
+### Suggested resolution
+
+Add three methods to `kcdxLuaApi`:
+
+```cpp
+// Standard Lua 5.1 call. nresults can be LUA_MULTRET (-1).
+int (*Call)(lua_State* L, int nargs, int nresults);    // lua_call (no pcall)
+int (*Pcall)(lua_State* L, int nargs, int nresults, int errfunc);  // lua_pcall
+
+// Load Lua source (or precompiled bytecode) as a chunk; pushes the
+// resulting function onto the stack. Returns 0 on success.
+int (*LoadString)(lua_State* L, const char* chunk);    // luaL_loadstring
+```
+
+Implementation is trivial (each is one function-pointer thunk wrapping
+the bundled Lua 5.1 API; same pattern as the 30 existing thunks).
+Risk surface: `Call` can crash on bad args; `Pcall` catches that. Both
+are mentioned explicitly in Lua 5.1's reference manual as the standard
+invocation primitives, so authors will know what they do.
+
+### Why "must address before v0.1.0"
+
+- **The kcdxScriptingInterface advertises bidirectional C++↔Lua
+  interop**, but without Call/Pcall it's one-directional (Lua can
+  call C, C can't call back into Lua). That's a documentation hole
+  vs. promised semantics.
+- **CAP-04's mid-hook mutation test cannot ship cleanly without it**,
+  blocking [[mid_hook]] full-verification.
+- Risk to ship-readiness: a plugin author tries to use the SDK as a
+  full-featured C++ plugin host, hits the wall, files a "this is
+  unfinished" issue on day 1.
+
+### Workaround in the interim
+
+CAP-04 ships as **C++ DLL + pak Lua sidecar** rather than pure C++ DLL.
+The pak Lua side defines `Cap04Test.OnB` etc. as in-VM Lua functions
+that can use `:set()` directly. The C++ DLL handles invocation +
+verification. This matches the cap-05 paklua-sidecar pattern.
+
+When this gap is closed (Call/Pcall/LoadString land in
+kcdxLuaApi), the pak Lua sidecar collapses into the C++ DLL.
+
+---

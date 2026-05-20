@@ -18,6 +18,7 @@
 #include "plugin_loader.h"
 #include "scripting_interface.h"
 #include "serialization.h"
+#include "symbols.h"
 #include "task.h"
 #include "test.h"
 #include "trampoline.h"
@@ -120,6 +121,12 @@ uint32_t Thunk_EnumeratePlugins(kcdxPluginHandle* out, uint32_t cap) {
 
 uintptr_t Thunk_ResolveAddress(uint64_t id) {
     return kcdx::address_library::Resolve(id);
+}
+
+uintptr_t Thunk_ResolveSymbol(const char* name) {
+    if (!name) return 0;
+    auto v = kcdx::symbols::Lookup(name);
+    return v.value_or(0);
 }
 
 // Level priority for filtering. Higher number = louder. log_level=4 (off)
@@ -331,6 +338,7 @@ kcdxInterface g_api = {
     /*GetPluginHandle=*/    Thunk_GetPluginHandle,
     /*EnumeratePlugins=*/   Thunk_EnumeratePlugins,
     /*ResolveAddress=*/     Thunk_ResolveAddress,
+    /*ResolveSymbol=*/      Thunk_ResolveSymbol,
     /*Log=*/                Thunk_Log,
     /*GetPluginPath=*/      Thunk_GetPluginPath,
     /*ReportTestResult=*/   Thunk_ReportTestResult,

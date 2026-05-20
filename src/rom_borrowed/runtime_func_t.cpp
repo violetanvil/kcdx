@@ -357,7 +357,32 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     asmjit::Label original_invoke_label = cc.new_label();
 
     // save caller-saved registers
-    cc.push(asmjit::x86::qword_ptr((uint64_t)m_detour->get_original_ptr()));
+    //
+    // First slot pushed is the MinHook trampoline pointer (read at runtime
+    // from m_detour->original_). The naive `push qword ptr [absolute_addr]`
+    // emits an x86-64 RIP-relative encoding (FF /6 with a 32-bit signed
+    // disp). asmjit's relocator silently truncates to disp=0 when the
+    // storage is > ±2 GB from the JIT buffer — which is exactly our
+    // layout: JIT pool sits adjacent to WHGame.dll at ~0x7FFD146C0000,
+    // but detour_hook's `original_` field is in a `new`'d allocation at
+    // ~0x1DC1xxxxxxx (heap, ~100 TB away). Result: the JIT pushed
+    // garbage from inside its own buffer and the closing `ret` jumped
+    // to it → crash.
+    //
+    // Fix: load the absolute address into rax via mov-imm64, deref, then
+    // place the value into the would-be-pushed slot using xchg with the
+    // saved-rax slot. The xchg is 1 instruction and atomic; after it,
+    // [rsp] holds trampoline_ptr (was saved-rax), and rax holds the
+    // original rax value (was trampoline_ptr). That re-establishes
+    // the original layout with the correct content and the correct
+    // register state, so the rest of the prologue is unchanged. This
+    // matches make_jit_func's two-instruction `mov reg, IMM64 ; deref`
+    // pattern (see line ~211 of this file) which has no 2 GB reach
+    // limit.
+    cc.push(asmjit::x86::rax);                                                // [reserve trampoline_ptr slot]
+    cc.mov(asmjit::x86::rax, (uintptr_t)m_detour->get_original_ptr());        // rax = &original_
+    cc.mov(asmjit::x86::rax, asmjit::x86::ptr(asmjit::x86::rax));             // rax = *(&original_)
+    cc.xchg(asmjit::x86::ptr(asmjit::x86::rsp), asmjit::x86::rax);            // swap with saved-rax slot
     cc.pushfq();
     cc.push(asmjit::x86::rbp);
     cc.push(asmjit::x86::rax);

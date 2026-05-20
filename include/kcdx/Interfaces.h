@@ -183,6 +183,21 @@ typedef struct kcdxInterface {
     // Library has it as `removed` for this version. Phase 7+.
     uintptr_t (*ResolveAddress)(uint64_t id);
 
+    // Look up a cross-plugin symbol by name. Symbols are registered by
+    // `[[trampoline]]` / `[[hook]]` TOML entries with an `export = "..."`
+    // field — see docs/design.md §"Cross-plugin symbol table". Returns
+    // 0 (== nullptr) if the symbol is not registered.
+    //
+    // The returned address is whatever was registered (a trampoline
+    // base, a hook's call-original entry, etc.). The caller is
+    // responsible for knowing the ABI of the resolved address.
+    //
+    // Lookup is constant-time over a hash map and safe to call from
+    // any plugin context after kcdxMessage_InputLoaded fires (the
+    // symbol table is populated during apply, which runs before
+    // kInputLoaded).
+    uintptr_t (*ResolveSymbol)(const char* name);
+
     // Write a line to this plugin's own log file at
     //   <plugins-dir>/<plugin-folder>/<plugin-folder>.log
     //
