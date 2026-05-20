@@ -191,9 +191,12 @@ bool AddFile(mz_zip_archive& zip, const fs::path& src,
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     // /SUBSYSTEM:WINDOWS doesn't give us argv directly. Get the
     // wide command line and split it ourselves.
+    //
+    // Expected: <exe> <pid> <engineDir> <pluginsDir> <stamp>
+    //                <gameDir> <devMode 0|1>
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    if (!argv || argc < 6) {
+    if (!argv || argc < 7) {
         if (argv) LocalFree(argv);
         return 1;
     }
@@ -204,6 +207,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     std::wstring stampW = argv[4];
     std::string stamp = WToUtf8(stampW);
     fs::path gameDir = argv[5];
+    bool devMode = (wcstoul(argv[6], nullptr, 10) != 0);
     LocalFree(argv);
 
     OpenSelfLog(engineDir, stamp);
@@ -212,6 +216,10 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     SelfLog("  engineDir=%s",   WToUtf8(engineDir.wstring()).c_str());
     SelfLog("  pluginsDir=%s",  WToUtf8(pluginsDir.wstring()).c_str());
     SelfLog("  gameDir=%s",     WToUtf8(gameDir.wstring()).c_str());
+    SelfLog("  devMode=%s (dmp inclusion %s)",
+            devMode ? "ON" : "OFF",
+            devMode ? "enabled" : "skipped — set dev_mode = true in "
+                                  "engine.toml to include the minidump");
 
     HANDLE hProc = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
                                FALSE, pid);
@@ -305,7 +313,15 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
     // 4) WerFault dumps under %LOCALAPPDATA%/CrashDumps/ for our PID,
     //    or any KingdomCome.exe dump newer than sessionStart.
-    {
+    //
+    // Gated on devMode. Dumps are ~100MB each; in non-dev sessions a
+    // typical "plugin X faulted in its own callback" crash is fully
+    // diagnosed from the logs alone (the GUARD line names the
+    // plugin + module + offset). The dmp matters most for crashes
+    // the logs can't see — fast-fails, kernel kills, game-side
+    // faults — and those are exactly the cases an engine dev /
+    // plugin author would be investigating with dev mode on.
+    if (devMode) {
         wchar_t local[MAX_PATH];
         if (SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0,
                              local) == S_OK) {
@@ -326,6 +342,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
                         WToUtf8(crashDumpsDir.wstring()).c_str());
             }
         }
+    } else {
+        SelfLog("  minidump skipped (dev mode off); enable dev_mode = true "
+                "in engine.toml to include it");
     }
 
     // 5) BugSplat XML reports — these live in %LOCALAPPDATA%/Temp and have

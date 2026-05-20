@@ -68,18 +68,24 @@ bool Spawn() {
     strip(engineDir);
     strip(pluginsDirW);
 
-    // Build command line: <exe> <pid> "<engine>" "<plugins>" <stamp> "<game>"
+    // Build command line:
+    //   <exe> <pid> "<engine>" "<plugins>" <stamp> "<game>" <devMode>
     // Each path argument is double-quoted to survive spaces.
+    // devMode is "1" if log::IsDevModeEnabled() at spawn time, "0"
+    // otherwise. Dev mode gates the inclusion of the ~100MB
+    // minidump in the crash bundle (consumer bundles stay ~500KB).
     wchar_t cmd[2048];
     DWORD myPid = GetCurrentProcessId();
+    unsigned devMode = log::IsDevModeEnabled() ? 1u : 0u;
     int written = swprintf(cmd, _countof(cmd),
-        L"\"%ls\" %lu \"%ls\" \"%ls\" %ls \"%ls\"",
+        L"\"%ls\" %lu \"%ls\" \"%ls\" %ls \"%ls\" %u",
         watchdogExe.wstring().c_str(),
         myPid,
         engineDir.c_str(),
         pluginsDirW.c_str(),
         stampW.c_str(),
-        gameDir.c_str());
+        gameDir.c_str(),
+        devMode);
     if (written <= 0) {
         LOG_WARN("WATCHDOG", "command line too long; not spawning");
         return false;

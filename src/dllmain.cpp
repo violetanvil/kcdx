@@ -25,14 +25,6 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // installed it).
     kcdx::guard::InstallUnhandledExceptionFilter();
 
-    // Spawn the external crash-bundle watchdog. It blocks on our
-    // process handle and zips up logs + crash artifacts when we die
-    // with a non-zero exit code. This catches crash classes that the
-    // in-process exception filter can't (fast-fail, stack overflow
-    // with no stack left, kernel-level termination). On launch
-    // failure we just log a WARN — game still runs, just no
-    // auto-bundle.
-    kcdx::watchdog::Spawn();
     char pluginsUtf8[512];
     WideCharToMultiByte(CP_UTF8, 0, kcdx::paths::PluginsDir().c_str(), -1,
                         pluginsUtf8, sizeof(pluginsUtf8), nullptr, nullptr);
@@ -43,7 +35,20 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::log::InfoF("engine data directory: %s", engineUtf8);
 
     // The ASI itself sits in plugins/, plugin subfolders are siblings of kcdx.asi.
+    // LoadAllConfigs is also where dev_mode is read from engine.toml and
+    // log::SetDevMode is called — the watchdog needs that signal to decide
+    // whether to bundle the ~100MB minidump on crash, so we spawn it after.
     kcdx::config::LoadAllConfigs(kcdx::paths::PluginsDir());
+
+    // Spawn the external crash-bundle watchdog. It blocks on our
+    // process handle and zips up logs + crash artifacts when we die
+    // with a non-zero exit code. This catches crash classes that the
+    // in-process exception filter can't (fast-fail, stack overflow
+    // with no stack left, kernel-level termination). On launch
+    // failure we just log a WARN — game still runs, just no
+    // auto-bundle. Spawned AFTER LoadAllConfigs so the dev-mode flag
+    // we pass it is the final post-config value.
+    kcdx::watchdog::Spawn();
 
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
