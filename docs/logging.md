@@ -435,6 +435,25 @@ The watchdog writes its own diagnostic log at
 collected, why files were skipped, and the game's exit code. This
 is the file to read when something looks wrong with the bundle.
 
+### Where the dmp comes from
+
+Three possible sources, in priority order:
+
+1. **`<kcdx-engine>/logs/kcdx_<ts>.dmp`** — written by
+   `crash_guard::UnhandledFilter` when SEH catches the crash.
+   Filtered minidump (~2-5MB) containing stacks, modules, and
+   indirect-referenced memory. Most crashes land here.
+2. **`%LOCALAPPDATA%/CrashDumps/KingdomCome.exe.<pid>.dmp`** —
+   written by Windows Error Reporting when the crash bypasses SEH
+   (heap-corruption fast-fails, kernel-level kills). Full-memory
+   dump (~100MB).
+3. **`%LOCALAPPDATA%/Temp/`** — best-effort BugSplat fallback. See
+   [`known-issues.md`](known-issues.md) §1 for why this is
+   unreliable.
+
+All three paths are scanned. If multiple are present they're all
+bundled.
+
 ## Adding a new log call
 
 Decision tree:
