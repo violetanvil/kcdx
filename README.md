@@ -127,7 +127,8 @@ documented SKSE weak spot:
 | 5f | `[[hook]] lua_callback` schema (TOML hook dispatches to pak-Lua function) | **live-verified** |
 | 5g | `[[mid_hook]]` schema (mid-instruction hook with register capture) — partial: schema + capture work, "skip-original" semantics blocked on MinHook design limit; v0.2 needs new primitive | **partial, design limit documented** |
 | 5h | `kcdxMemoryInterface` (C++ DLL surface mirroring `kcdx.memory.*` — ScanPattern, Read/WriteBytes, GetModuleBase) + dev-mode-gated test suite + `kcdxMessage_LuaReady` + modder-UX trace gaps | **live-verified** |
-| 6 | Save/load + `kcdxSerializationInterface` (`.kcdx` co-save) | not started |
+| 6a | Save/load lifecycle hooks (kSaveGame / kPreLoadGame / kPostLoadGame / kDeleteGame / kLoadGameSelected) on `C_SaveGameManager` + slot-resolver | **live-verified** |
+| 6b | `kcdxSerializationInterface` (`.kcdx` co-save format + plugin Save/Load/Revert callbacks) | **live-verified** |
 | 7 | Address Library + console commands (`[[command]]`) | not started |
 | 8 | Docs + examples + v0.1.0 release | not started |
 

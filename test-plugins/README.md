@@ -260,10 +260,10 @@ what the live result is.
 |---|---|
 | What | Plugin registers `SetSaveCallback`/`SetLoadCallback`/`SetRevertCallback`. On save, kcdx fires SaveCallback; plugin writes records via `OpenRecord` + `WriteRecordData`. Stored in a `.kcdx` sidecar file alongside the save. On load, LoadCallback fires, plugin walks records via `GetNextRecordInfo` + `ReadRecordData`. |
 | Channels | (ii) C++ DLL |
-| Engine status | DEFERRED — Phase 6. Requires save-hook + co-save file format. |
-| Test plugin | DEFERRED |
-| Auto-pass check | Plugin writes counter on save, reads it on load, value persists across game restarts. |
-| Last result | DEFERRED-PHASE-6 |
+| Engine status | READY (Phase 6b, shipped 2026-05-19) |
+| Test plugin | `cap-12-serialization/` (C++ DLL) |
+| Auto-pass check | Plugin writes counter on save, reads it on load, value persists across game restarts. Manual sequence: load any save → quicksave → quit → relaunch → load the quicksave. Pass = `kPostLoadGame` reports "Load round-trip: read counter=N from cosave" with N matching the number of OnSave calls before quit. |
+| Last result | LIVE 2026-05-19 — 15/15 suite passing after roundtrip; 44-byte cosave at `<saves>/<basename>.kcdx` decoded as XCDX magic + uid + chunk + counter (u64). |
 | Notes | Essential for any mod that has persistent state per save (perks added by mod, custom inventory, magic-spell-known list, etc). |
 
 ## CAP-13: `[[command]]` console commands

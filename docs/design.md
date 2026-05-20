@@ -829,16 +829,13 @@ equivalent), the name is simply not present in kcdx.
 | `kMessage_PostLoad` | After every plugin's `kcdxPlugin_Load` returned | null |
 | `kMessage_PostPostLoad` | After every `kMessage_PostLoad` handler returned. The "plugin wave is settled" moment. | null |
 | `kMessage_InputLoaded` | After KCD2's input subsystem init, before main menu shows | null |
-| `kMessage_NewGame` | New game started, before first cell loads | null |
-| `kMessage_PreLoadGame` | Save selected, before engine reads it | `const char*` (save name) |
-| `kMessage_PostLoadGame` | Save finished loading, world is interactive | `const char*` (save name) |
-| `kMessage_SaveGame` | Game being saved (either manual or quicksave) | `const char*` (save name) |
-| `kMessage_DeleteGame` | A save + its `.kcdx` co-save being deleted | `const char*` (save name) |
-
-Phase 6 of the implementation budget covers the Ghidra session to
-identify the save-game and load-game entry points. Until that
-lands, `kMessage_PreLoadGame` / `kPostLoadGame` / `kSaveGame` /
-`kDeleteGame` may not fire — to be confirmed during Phase 6.
+| `kMessage_NewGame` | New game started, before first cell loads | null (not currently wired; reserved) |
+| `kMessage_PreLoadGame` | At every internal `LoadGame_wrapper` call (engine bootstraps each user-visible load through this path more than once). | null — see `kMessage_LoadGameSelected` for the filename |
+| `kMessage_PostLoadGame` | Save finished loading, world is interactive. Fires once per successful user-visible load. | null — use the `kMessage_LoadGameSelected` basename captured earlier |
+| `kMessage_SaveGame` | Game being saved (manual, quicksave, autosave, or save-and-quit). | `const char*` save BASENAME, e.g. `"save561.whs"`, `"autosave560.whs"`, `"exit.whs"`. Full path is `%USER%/saves/playline<N>/<basename>`. |
+| `kMessage_DeleteGame` | A save plus its `.kcdx` co-save being deleted. | `const char*` save basename. Hook installed but no UI surface in vanilla KCD2 currently triggers it. |
+| `kMessage_LuaReady` | `_G.kcdx` Lua surface is registered and safe to call. Fires once per process on the first update tick. | null |
+| `kMessage_LoadGameSelected` | User has confirmed Load on a specific save row AND the engine has resolved its on-disk filename. Fires once per user-visible load (deduplicated across the engine's cold-load and warm-load asymmetries). Distinct from `kMessage_PreLoadGame` — that one fires on every internal LoadGame call including engine bootstraps that don't carry a user-chosen file. | `const char*` save basename. For sidecar workflows, prefer this message — it carries the filename early enough to parse a `.kcdx` before `kMessage_PostLoadGame`. |
 
 Custom plugin-to-plugin message types use ID values **≥ 0x10000**.
 The engine reserves the lower range. Two custom messages from
@@ -1078,37 +1075,44 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 
 ```cpp
 // save-counter.dll
-static PluginHandle g_handle;
-static uint32_t g_counter = 0;
+static kcdxPluginHandle                  g_handle;
+static const kcdxSerializationInterface* g_ser = nullptr;
+static uint32_t                          g_counter = 0;
 constexpr uint32_t kRecordTag = 'CNTR';
 
-void OnSave(PluginHandle p) {
-    auto* ser = /* fetch kcdxSerializationInterface */;
-    ser->OpenRecord(kRecordTag, 1);
-    ser->WriteRecordData(&g_counter, sizeof(g_counter));
+void OnSave(kcdxPluginHandle /*p*/) {
+    g_ser->OpenRecord(kRecordTag, 1);
+    g_ser->WriteRecordData(&g_counter, sizeof(g_counter));
 }
 
-void OnLoad(PluginHandle p) {
-    auto* ser = /* fetch */;
+void OnLoad(kcdxPluginHandle /*p*/) {
     uint32_t tag, ver, len;
-    while (ser->GetNextRecordInfo(&tag, &ver, &len)) {
+    while (g_ser->GetNextRecordInfo(&tag, &ver, &len)) {
         if (tag == kRecordTag && len == sizeof(g_counter)) {
-            ser->ReadRecordData(&g_counter, sizeof(g_counter));
+            g_ser->ReadRecordData(&g_counter, sizeof(g_counter));
         }
     }
+}
+
+void OnRevert(kcdxPluginHandle /*p*/) {
+    g_counter = 0;  // fresh-game / no-cosave reset
 }
 
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_handle = api->GetPluginHandle("violetanvil.save-counter");
-    auto* ser = static_cast<kcdxSerializationInterface*>(
-        api->QueryInterface(kInterface_Serialization, 1));
-    ser->SetUniqueID(g_handle, 0xC0FFEE01);
-    ser->SetSaveCallback(g_handle, OnSave);
-    ser->SetLoadCallback(g_handle, OnLoad);
+    g_ser = static_cast<const kcdxSerializationInterface*>(
+        api->QueryInterface(kcdxInterface_Serialization,
+                            kcdxSerializationInterface_Version));
+    g_ser->SetUniqueID     (g_handle, 0xC0FFEE01);
+    g_ser->SetSaveCallback (g_handle, OnSave);
+    g_ser->SetLoadCallback (g_handle, OnLoad);
+    g_ser->SetRevertCallback(g_handle, OnRevert);
     return true;
 }
 ```
+
+Working version: `kcdx/test-plugins/cap-12-serialization/cap-12.cpp`.
 
 ---
 
@@ -1176,18 +1180,22 @@ phase:
    ½-day Ghidra session. If varargs or unusual ownership semantics,
    the `[[command]]` schema may need adjustment (a typed args
    spec, similar to `[[hook]]`'s `signature`).
-2. **Save-game serialization integration.** KCD2's save format
-   isn't public; the `.kcdx` co-save (separate file) is the safer
-   path and matches SKSE. Phase 6 confirms the save trigger is
-   hookable stably.
+2. ~~**Save-game serialization integration.**~~ **RESOLVED (Phase 6).**
+   `.kcdx` co-save lands next to `<savename>.whs` in
+   `%USER%/saves/playline<N>/`. Format documented under
+   `kcdxSerializationInterface` above and live-verified by
+   `cap-12-serialization` across multiple playlines. Hook surface
+   = five `C_SaveGameManager` detours + the slot resolver; see
+   [`_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md`](../../_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md)
+   and [`_research/phase6b-recon/SAVE-SELECTION-HOOK.md`](../../_research/phase6b-recon/SAVE-SELECTION-HOOK.md).
 3. **Address Library maintenance.** v0.1 ships kcdx's own database
    as part of the zip. Long-term, may split into a
    community-maintained sibling repo. Not blocking.
-4. **Lua VM thread model.** Current mempatch hooks `lua_pcall`
-   which strongly implies single-threaded, but
-   `kcdxScriptingInterface::RegisterFunction` needs confirmation
-   that registered functions are only called on the main thread.
-   Phase 5 task.
+4. ~~**Lua VM thread model.**~~ **RESOLVED (Phase 5d).** Single-
+   threaded. Documented as hard rule #16 in
+   [`CLAUDE.md`](../CLAUDE.md). No runtime guard in v0.1; plugin
+   authors are responsible for only hooking functions that run on
+   the main thread.
 
 ---
 
@@ -1204,8 +1212,9 @@ This doc tracks the v0.1 spec. Implementation phases:
 | 4b.1 | **live-verified** | `[[hook]]` schema: raw-bytes function-entry detours via MinHook |
 | 4b.2 | **live-verified** | `[[trampoline]]` schema + cross-plugin symbol table (export / target_symbol) |
 | 4b.3 | **live-verified** | Unified conflict matrix (HookOnHook, PatchOverlapsEarlierHook, HookOverlapsEarlierPatch) + global apply order across all entry types |
-| 5 | not started | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` |
-| 6 | not started | Save/load + `kcdxSerializationInterface` |
+| 5 | **live-verified** | Lua marshaling + `[[mid_hook]]` + `kcdxScriptingInterface` + `kcdxMemoryInterface` + `kcdxMessage_LuaReady` (see README phase table for sub-phase breakdown) |
+| 6a | **live-verified** | Save/load lifecycle hooks (kSaveGame / kPreLoadGame / kPostLoadGame / kDeleteGame / kLoadGameSelected) on `C_SaveGameManager` + slot-resolver |
+| 6b | **live-verified** | `kcdxSerializationInterface` + `.kcdx` co-save file format + plugin Save/Load/Revert callbacks. Playline-safe; CAP-12 roundtrip verified across process restarts and across multiple playlines. |
 | 7 | not started | Address Library + `[[command]]` |
 | 8 | not started | Docs + examples + v0.1.0 release |
 

@@ -377,3 +377,91 @@ If only some of these land before v0.1.0:
 - #7 (wrap-with-mutate worked example) — disappears if #2 ships
 - #8 (cross-plugin API conventions) — once one or two real plugins
   ship and a pattern settles
+
+---
+
+## 10. CryEngine `IGameFrameworkListener` second-source-of-truth for save/load
+
+Phase 6 shipped 2026-05-19 with the function-entry detour path:
+five hooks on `wh::framework::C_SaveGameManager` and the adjacent
+slot resolver, surfacing five lifecycle messages
+(`kcdxMessage_SaveGame` / `kPreLoadGame` / `kPostLoadGame` /
+`kDeleteGame` / `kLoadGameSelected`). See
+[`_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md`](../../_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md)
+and [`_research/phase6b-recon/SAVE-SELECTION-HOOK.md`](../../_research/phase6b-recon/SAVE-SELECTION-HOOK.md)
+for the full recon trail.
+
+CryEngine offers an alternate path via the `IGameFrameworkListener`
+interface (proved working by muyuanjin/kcd2db at
+[`_research/predecessor-sigs/muyuanjin-kcd2db/src/db/LuaDB.cpp:280`](../../_research/predecessor-sigs/muyuanjin-kcd2db/src/db/LuaDB.cpp))
+which exposes `OnSaveGame(ISaveGame*)` / `OnLoadGame(ILoadGame*)`
+as virtual callbacks via
+`gEnv->pGame->GetIGameFramework()->RegisterListener(this, "kcdx", FRAMEWORKLISTENERPRIORITY_DEFAULT)`.
+Not adopted for v0.1 for three concrete reasons:
+
+1. **Coverage gap.** The interface fires `OnSaveGame` and `OnLoadGame`
+   only — there is no `OnDeleteGame` and no `OnPreLoadGame`. Two of
+   the five lifecycle messages have no listener-side equivalent.
+2. **Infrastructure cost.** Adopting the listener path requires
+   ~400 LOC of new glue inside kcdx: a `gEnv` resolver (muyuanjin's
+   `"exec autoexec.cfg"` string-anchor + `MOV rXX, [rip+disp]`
+   reverse-walk), a vtable hook on `IGame::CompleteInit` (so the
+   `RegisterListener` call happens after the framework is ready), a
+   C++ class deriving from `IGameFrameworkListener` with three virtual
+   slots (`OnSaveGame` / `OnLoadGame` / `OnActionEvent`), and the
+   CryEngine type headers (vendored at
+   [`_research/predecessor-sigs/muyuanjin-kcd2db/external/cryengine/`](../../_research/predecessor-sigs/muyuanjin-kcd2db/external/cryengine/)
+   but not yet pulled into the kcdx tree).
+3. **Schema gap.** kcdx's `[[hook]]` TOML block addresses function
+   entries by AOB. There's no equivalent declarative way for plugin
+   authors to subscribe to a framework listener event from
+   `kcdx.toml`. Adopting the listener as the dispatch mechanism for
+   `kcdxMessage_*` would require a new internal subsystem (the
+   listener instance lives in the engine and fans out to plugin
+   messaging) — that's fine, but it's a real chunk of work.
+
+The detour-only path was the deliberate v0.1 pick on 2026-05-19.
+All open questions from that decision have since been resolved by
+live testing:
+
+- **Fire ordering** — function-entry hooks correctly bracket
+  deserialization. `kPreLoadGame` fires before the world hydrates;
+  `kPostLoadGame` fires after.
+- **Filename payload** — `kSaveGame` and `kLoadGameSelected` carry
+  a basename in `data` (e.g. `"save561.whs"`). `kPreLoadGame` /
+  `kPostLoadGame` data is null; use `kLoadGameSelected` if you need
+  the filename for a load.
+- **Multi-fire** — `kSaveGame` fires once per user save action;
+  `kPreLoadGame` may fire twice per user load (engine cold-load
+  pattern); `kLoadGameSelected` is engine-deduped to fire once per
+  user-visible load.
+- **Main-thread assertion** — confirmed across all five hooks on
+  every observed fire.
+
+**When to revisit:**
+
+- **Cross-check trigger.** If Round 2 in-game testing reveals that
+  one of the four detours has surprising fire semantics — e.g.,
+  `LoadGame` returns *before* deserialization, so the function-entry
+  hook isn't actually a "pre-load" moment, or the orchestrator at
+  `0x180FBEE78` is the right hook frame instead — then standing up
+  the listener probe as a second source of truth becomes a fast
+  diagnostic step.
+- **v0.2 schema work.** If `[[event]]` (the design.md §`[[event]]`
+  schema, currently described as Lua-callback-only) gets generalized
+  to subscribe to engine messages, the listener path is the natural
+  internal-fan-out mechanism for messages that have a CryEngine
+  equivalent. At that point the gEnv resolver + `CompleteInit` vtable
+  hook stop being one-off save/load probe code and start being
+  shared infrastructure.
+
+**Suggested resolution path (v0.2):** promote the gEnv resolver to a
+first-class kcdx subsystem (`src/gEnv.{h,cpp}`), with the
+`CompleteInit` vtable hook installed by the engine itself at boot.
+Build the listener subclass as one of the consumers. Other future
+consumers: `gEnv->pConsole` for kcdx's `[[command]]` registration
+(currently planned to use a different mechanism), `gEnv->pScriptSystem`
+for an alternate Lua-state-capture path (belt-and-suspenders for the
+existing `lua_pcall` hook capture).
+
+Not a v0.1 blocker. Detours alone deliver the full lifecycle catalog.
