@@ -1,0 +1,44 @@
+# COMP-03 plugin B — loser half of the hook-on-hook collision pair.
+#
+# Mirrors plugin A's [[hook]] entry exactly (same pattern, same offset,
+# same detour bytes) but with priority = 200 so apply-order puts it
+# AFTER plugin A. At install time kcdx's first-hook-wins logic should
+# see that plugin A already occupies the target address, log
+#   [hook 'comp-03-B'] aborted: target 0x... already hooked by
+#   'comp-03-A' (v0.1 first-wins; chained hooks are v0.2+)
+# and skip MinHook install for plugin B's hook.
+#
+# Plugin B's DLL companion subscribes to kInputLoaded, re-resolves the
+# target address by scanning for a post-install AOB suffix (the first
+# 5 bytes of the AOB are now an E9-rel32 jmp from A's install, so it
+# scans for bytes 5..end which survive intact), calls GetConflictReport
+# at that target, and asserts:
+#   - exactly 2 hook entries returned
+#   - one named "comp-03-A" with applied != 0
+#   - one named "comp-03-B" with applied == 0
+# On match, reports PASS for COMP-03. On any mismatch, reports FAIL with
+# a diagnostic string naming the actual entries returned.
+#
+# Plugin A doesn't need to report — only B's observation matters.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.comp-03-B"
+display_name        = "COMP-03 Hook-on-hook loser (plugin B)"
+author              = "kcdx"
+description         = "Higher-priority hook in the COMP-03 first-wins pair. Aborts; verifies the outcome via GetConflictReport."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["COMP-03"]
+
+[[hook]]
+name        = "comp-03-B"
+priority    = 200
+description = "Second hook at the same target as comp-03-A. Higher priority → first-wins aborts this entry."
+pattern     = "48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01"
+offset      = 0
+bytes       = "31 C0 C3"

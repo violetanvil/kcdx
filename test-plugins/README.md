@@ -380,11 +380,12 @@ what the live result is.
 |---|---|
 | Scenario | Plugin A and Plugin B both install hooks at function entry X. |
 | Engine behavior expected | First-hook-wins. Second hook aborted with a plain-English log line naming the first plugin. |
-| Test plugin | _TBD — port `examples/conflict-test-hook-on-hook/`_ |
+| Test plugin pair | [`comp-03-hook-on-hook-A/`](comp-03-hook-on-hook-A/) (winner, priority 100) + [`comp-03-hook-on-hook-B/`](comp-03-hook-on-hook-B/) (loser, priority 200, DLL verifier) |
+| Site | Sister IsInCombat wrapper at WHGame.dll RVA `0x566040` (distinct from COMP-02's `FUN_1805605b8`; AOB ends in `3C 01` vs COMP-02's `3C 02`). |
 | Engine status | READY (Phase 4b) |
-| Auto-pass check | Second hook's install-failed log line names the first plugin. |
-| Last result | ✅ PRE-VERIFIED on existing examples plugin |
-| Notes | Chained hooks are explicitly v0.2+ (Hard rule #8). |
+| Auto-pass check | Plugin B's DLL re-resolves the target, calls `GetConflictReport`, asserts exactly 2 entries with `comp-03-A` applied and `comp-03-B` aborted. |
+| Last result | _TBD — installable as of this commit; awaiting live run_ |
+| Notes | Chained hooks are explicitly v0.2+ (Hard rule #8). Both detour bodies are `31 C0 C3` (always-return-false); the function is a combat-state predicate, returning false at boot is harmless. |
 
 ## COMP-04: `[[patch]]` + runtime `dynamic_hook` on same address
 
@@ -530,7 +531,7 @@ CAP/COMP, status + commit SHA.
 | CAP-19 | DEFERRED-v0.2 | _ | Scaleform |
 | COMP-01 | _TBD_ | _ | two-patch overlap |
 | COMP-02 | ✅ PRE-VERIFIED | _ | conflict-test-hook-on-patch (needs port) |
-| COMP-03 | ✅ PRE-VERIFIED | _ | conflict-test-hook-on-hook (needs port) |
+| COMP-03 | _TBD_ | _ | comp-03-hook-on-hook-A + -B; DLL verifier reports via GetConflictReport |
 | COMP-04 | _TBD_ | _ | patch + runtime hook |
 | COMP-05 | _TBD_ | _ | Lua registration override |
 | COMP-06 | _TBD_ | _ | dependency chain in practice |

@@ -1,0 +1,48 @@
+# COMP-03 plugin A — winner half of the hook-on-hook collision pair.
+#
+# Two test plugins (this one and comp-03-hook-on-hook-B) install [[hook]]
+# entries at the same function entry. kcdx's first-hook-wins policy (Hard
+# rule #8) says the lower-priority-number plugin's hook installs and the
+# higher one is aborted with a plain-English log line naming the winner.
+#
+# Plugin A holds priority = 100 → installs. Plugin B holds priority = 200
+# → aborts.
+#
+# Target: a third combat-state wrapper in WHGame.dll at RVA 0x566040,
+# distinct from FUN_1805605b8 (the COMP-02 target). Both functions share
+# a 22-byte prefix that reads `state through the same vtable slot, but
+# the sister at 0x566040 compares the result to constant 1 (vs 2 at
+# FUN_1805605b8). That `3C 01` byte at the end of the AOB is what
+# disambiguates the two sites. Confirmed unique in .text against
+# release_1_5_1164953_841 (April 2026).
+#
+# Plugin A has no DLL companion. Its only job is to win the install. The
+# verification — checking that GetConflictReport shows A applied and B
+# aborted — lives in plugin B's DLL.
+#
+# Detour body `31 C0 C3` = xor eax, eax; ret → function returns false.
+# The function is a `cmp al, 1` style combat-state predicate; making it
+# always return false during a typical boot is harmless (the player isn't
+# in combat in the title-screen flow, so the predicate would have been
+# false anyway).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.comp-03-A"
+display_name        = "COMP-03 Hook-on-hook winner (plugin A)"
+author              = "kcdx"
+description         = "Lower-priority hook in the COMP-03 first-wins pair. Installs cleanly."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+
+[[hook]]
+name        = "comp-03-A"
+priority    = 100
+description = "First-wins hook in the COMP-03 pair. Lower priority → installs."
+pattern     = "48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01"
+offset      = 0
+bytes       = "31 C0 C3"
