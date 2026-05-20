@@ -37,7 +37,7 @@ to host, and (b) the v0.1 model is working live-verified today.
     ├── engine.toml                   (engine config)
     ├── builtin/                      (first-party kcdx engine-fix plugins;
     │   │                              ships in the kcdx release zip)
-    │   └── bugsplat-filename-fix/    (example — see docs/known-issues.md §1)
+    │   └── bugsplat-filename-fix/    (example — see docs/known-issues/)
     │       └── kcdx.toml
     └── logs/
         ├── kcdx_<ts>.log             (one per session)
@@ -93,7 +93,7 @@ not separately, and apply unconditionally.
 Anything kcdx wants to fix about KCD2's stock binaries that
 doesn't belong in the engine source itself. Concrete first
 inhabitant: `bugsplat-filename-fix/` (see
-[`known-issues.md`](known-issues.md) §1 — repoints WHGame.dll's
+[`known-issues/`](known-issues/) — repoints WHGame.dll's
 BugSplat dmp-filename call site so Warhorse's telemetry pipeline
 gets usable crash dumps from KCD2 again).
 
