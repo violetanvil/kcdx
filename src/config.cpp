@@ -966,10 +966,13 @@ void LoadOneFile(const fs::path& path, Source source) {
 //   4. Hidden folders/files (starting with `.`) are skipped, both
 //      roots.
 //   5. Plugin folders whose name ends with `.disabled` are skipped
-//      ONLY in the user root (`plugins/`). The engine root
-//      (`kcdx-engine/builtin/`) ignores the `.disabled` suffix —
-//      engine fixes are part of kcdx and apply unconditionally; to
-//      remove an engine fix, uninstall kcdx.
+//      on BOTH roots. Even though engine fixes ship with kcdx, a
+//      user can still disable a specific fix the same way they
+//      disable any user plugin (rename the folder). Useful as a
+//      safety valve if a fix turns out to cause regressions on
+//      someone's machine, without needing to uninstall the whole
+//      engine. Convention: leave the rest of `kcdx-engine/`
+//      untouched.
 //
 // Every walker decision (examine, skip, accept, recurse) emits a
 // DEBUG/TRACE line under the DISCOVERY category so the funnel is
@@ -1004,18 +1007,20 @@ void WalkForTomls(const fs::path& dir, int depth, Source source,
         }
 
         // Skip plugin folders explicitly deactivated with the
-        // `.disabled` suffix. User root only — engine fixes are
-        // always-on by design. Folders only — files are not subject
-        // to this rule (a `kcdx.toml.disabled` crumb is just an
-        // unused file).
-        if (isDir && source == Source::User) {
+        // `.disabled` suffix. Honored on BOTH roots — a user can
+        // disable an engine fix the same way they disable a user
+        // plugin (rename the folder). Folders only — files are not
+        // subject to this rule (a `kcdx.toml.disabled` crumb is
+        // just an unused file).
+        if (isDir) {
             const std::wstring kSuffix = L".disabled";
             if (name.size() >= kSuffix.size()
                 && name.compare(name.size() - kSuffix.size(),
                                 kSuffix.size(), kSuffix) == 0) {
                 LOG_WARN("DISCOVERY",
-                    "skipping disabled plugin folder '%s'",
-                    WideToUtf8(p.wstring()).c_str());
+                    "skipping disabled plugin folder '%s' (source=%s)",
+                    WideToUtf8(p.wstring()).c_str(),
+                    source == Source::Engine ? "engine" : "user");
                 continue;
             }
         }

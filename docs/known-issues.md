@@ -228,13 +228,16 @@ plugins under `plugins/`. Properties:
   `plugins/`, just rooted at `kcdx-engine/builtin/` instead.
 - **Loaded before user plugins** so cross-plugin conflicts at
   the same address resolve in the engine fix's favor.
-- **Cannot be disabled by users.** Engine fixes are part of
-  kcdx; to remove the fix, uninstall kcdx. (No `.disabled`
-  suffix support in `kcdx-engine/builtin/`.)
+- **User-disable-able via `.disabled` suffix.** Same convention
+  as user plugins under `plugins/`: rename
+  `kcdx-engine/builtin/<fix>/` to `<fix>.disabled/` to opt out
+  of a specific engine fix without uninstalling all of kcdx.
+  Useful safety valve if a fix turns out to cause regressions
+  on someone's machine.
 - **Uses the same `[[patch]]` schema** that user plugins use.
   No special engine-fix-only syntax. The only differences from
-  a user plugin are the on-disk location, the discovery
-  precedence, and the inability to be user-disabled.
+  a user plugin are the on-disk location and the discovery
+  precedence.
 
 Why **not** ship as a mempatch plugin under
 `mempatch-plugins/bugsplat-filename-fix/`: **mempatch is
@@ -252,10 +255,13 @@ When ready to ship, the work is:
    its patches land at the front of the conflict-engine's
    `g_applyOrder`. See [`src/config.cpp`](../src/config.cpp)'s
    `WalkForTomls` for the walker to extend.
-2. **Discovery semantics:** engine-fix plugins skip the
-   `.disabled`-suffix check (always loaded). Discovery logs
-   them under a distinct category like `[BUILTIN]` so the
-   funnel summary distinguishes user vs engine-fix counts.
+2. **Discovery semantics:** engine-fix plugins honor the
+   `.disabled` suffix the same way user plugins do — a user
+   can opt out of a specific fix by renaming its folder
+   (e.g. `bugsplat-filename-fix.disabled/`) without
+   uninstalling kcdx. Discovery logs tag each line with
+   `source=engine|user` so the funnel summary distinguishes
+   user vs engine-fix counts.
 3. **Conflict resolution:** if a user plugin tries to patch the
    same address as an engine-fix plugin, the engine fix wins
    and the user plugin's `[[patch]]` aborts with a clear
