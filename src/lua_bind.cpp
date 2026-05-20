@@ -171,9 +171,12 @@ int Lua_GetWHGameBase(lua_State* L) {
 
 void RegisterKcdxTable(lua_State* L) {
     if (!L) {
-        log::Warn("RegisterKcdxTable called with null L");
+        LOG_WARN("LUA_BIND", "RegisterKcdxTable called with null L");
         return;
     }
+    LOG_INFO("LUA_BIND", "RegisterKcdxTable ENTER L=%p", (void*)L);
+
+    LOG_INFO("LUA_BIND", "  before KCDX (uppercase) table creation");
     lua_newtable(L);
     lua_pushcfunction(L, Lua_ScanAndWrite);
     lua_setfield(L, -2, "ScanAndWrite");
@@ -182,28 +185,47 @@ void RegisterKcdxTable(lua_State* L) {
     lua_pushcfunction(L, Lua_GetWHGameBase);
     lua_setfield(L, -2, "GetWHGameBase");
     lua_setglobal(L, "KCDX");
-    log::Info("KCDX Lua API registered (ScanAndWrite, ReadBytes, GetWHGameBase)");
+    LOG_INFO("LUA_BIND",
+        "  after  KCDX (uppercase) registered (ScanAndWrite, ReadBytes, GetWHGameBase)");
 
     // Stack discipline: kcdx::lua_memory::bind() expects the kcdx
     // table at stack top. We create it, push it to top, populate via
     // bind(), then pop it after lua_setglobal.
+    LOG_INFO("LUA_BIND", "  before kcdx (lowercase) table creation");
     lua_newtable(L);
     int kcdx_idx = lua_gettop(L);
     lua_pushliteral(L, "0.1.0-phase5c");
     lua_setfield(L, kcdx_idx, "version");
+    LOG_INFO("LUA_BIND", "  after  kcdx table creation; entering sub-binders");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_memory::bind");
     kcdx::lua_memory::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_memory::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_lua::bind");
     kcdx::lua_bind_lua::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_lua::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_dev::bind");
     kcdx::lua_bind_dev::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_dev::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_test::bind");
     kcdx::lua_bind_test::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_test::bind");
+
+    LOG_INFO("LUA_BIND", "  before lua_setglobal(\"kcdx\")");
     lua_setglobal(L, "kcdx");
-    log::Info("kcdx.* global registered");
+    LOG_INFO("LUA_BIND", "  after  lua_setglobal(\"kcdx\")");
 
     // Drain any kcdxScriptingInterface::RegisterFunction calls that
     // arrived from plugin DLLs during kcdxPlugin_Load (which happens
     // BEFORE this point — plugins load right after the version table
     // is parsed, but the kcdx global only gets created here). Any
     // further calls apply directly because g_table_ready flips true.
+    LOG_INFO("LUA_BIND", "  before ApplyPendingToTable (plugin queued registrations)");
     kcdx::scripting_interface::ApplyPendingToTable(L);
+    LOG_INFO("LUA_BIND", "  after  ApplyPendingToTable");
 
     // Mark ready BEFORE firing the message so a listener that checks
     // IsKcdxGlobalReady() during dispatch sees true.
@@ -212,8 +234,11 @@ void RegisterKcdxTable(lua_State* L) {
     KCDX_DEV("SCRIPTING", "GLOBAL_READY",
         kcdx::dev::KV("L", static_cast<const void*>(L)));
 
-    log::Info("Firing kcdxMessage_LuaReady...");
+    LOG_INFO("LUA_BIND", "  before FireEngineMessage(LuaReady)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_LuaReady);
+    LOG_INFO("LUA_BIND", "  after  FireEngineMessage(LuaReady)");
+
+    LOG_INFO("LUA_BIND", "RegisterKcdxTable EXIT");
 }
 
 bool IsKcdxGlobalReady() {

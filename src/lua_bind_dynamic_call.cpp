@@ -333,7 +333,12 @@ int Handle_Gc(lua_State* L) {
 }  // namespace
 
 void PushHandleMetatable(lua_State* L) {
+    LOG_INFO("LUA_BIND",
+        "      dynamic_call::PushHandleMetatable ENTER (key='%s')",
+        kHandleMetatable);
     if (luaL_newmetatable(L, kHandleMetatable) == 0) {
+        LOG_INFO("LUA_BIND",
+            "      dynamic_call::PushHandleMetatable EXIT (already registered)");
         return;
     }
     lua_pushcfunction(L, Handle_Call);
@@ -342,6 +347,8 @@ void PushHandleMetatable(lua_State* L) {
     lua_setfield(L, -2, "__gc");
     lua_pushstring(L, kHandleMetatable);
     lua_setfield(L, -2, "__metatable");
+    LOG_INFO("LUA_BIND",
+        "      dynamic_call::PushHandleMetatable EXIT (freshly registered)");
 }
 
 // kcdx.memory.dynamic_call(table) -> callable handle or (nil, errmsg)

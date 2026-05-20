@@ -309,11 +309,19 @@ bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* params,
         }
         // 1 + param_count args, expecting 1 return
         int n_args = 1 + (int)param_count;
+        LOG_INFO("SCRIPTING",
+            "  before lua_pcall pre target=0x%p cb='%s' nargs=%d",
+            (void*)target_func_ptr, cb.name.c_str(), n_args);
         int status = lua_pcall(g_lua_state, n_args, 1, 0);
+        LOG_INFO("SCRIPTING",
+            "  after  lua_pcall pre target=0x%p cb='%s' status=%d",
+            (void*)target_func_ptr, cb.name.c_str(), status);
         if (status != 0) {
             const char* err = lua_tostring(g_lua_state, -1);
-            log::ErrorF("scripting: pre-callback for target 0x%p threw: %s",
-                        (void*)target_func_ptr, err ? err : "<no message>");
+            LOG_ERROR("SCRIPTING",
+                "pre-callback for target 0x%p ('%s') threw: %s",
+                (void*)target_func_ptr, cb.name.c_str(),
+                err ? err : "<no message>");
             lua_pop(g_lua_state, 1);
             continue;
         }
@@ -358,11 +366,19 @@ void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
             kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
         }
         int n_args = 1 + (int)param_count;
+        LOG_INFO("SCRIPTING",
+            "  before lua_pcall post target=0x%p cb='%s' nargs=%d",
+            (void*)target_func_ptr, cb.name.c_str(), n_args);
         int status = lua_pcall(g_lua_state, n_args, 0, 0);
+        LOG_INFO("SCRIPTING",
+            "  after  lua_pcall post target=0x%p cb='%s' status=%d",
+            (void*)target_func_ptr, cb.name.c_str(), status);
         if (status != 0) {
             const char* err = lua_tostring(g_lua_state, -1);
-            log::ErrorF("scripting: post-callback for target 0x%p threw: %s",
-                        (void*)target_func_ptr, err ? err : "<no message>");
+            LOG_ERROR("SCRIPTING",
+                "post-callback for target 0x%p ('%s') threw: %s",
+                (void*)target_func_ptr, cb.name.c_str(),
+                err ? err : "<no message>");
             lua_pop(g_lua_state, 1);
         }
     }
@@ -402,11 +418,19 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
             kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
             lua_rawseti(g_lua_state, table_idx, i + 1);
         }
+        LOG_INFO("SCRIPTING",
+            "  before lua_pcall mid target=0x%p cb='%s'",
+            (void*)target_func_ptr, cb.name.c_str());
         int status = lua_pcall(g_lua_state, 1, 1, 0);
+        LOG_INFO("SCRIPTING",
+            "  after  lua_pcall mid target=0x%p cb='%s' status=%d",
+            (void*)target_func_ptr, cb.name.c_str(), status);
         if (status != 0) {
             const char* err = lua_tostring(g_lua_state, -1);
-            log::ErrorF("scripting: mid-callback for target 0x%p threw: %s",
-                        (void*)target_func_ptr, err ? err : "<no message>");
+            LOG_ERROR("SCRIPTING",
+                "mid-callback for target 0x%p ('%s') threw: %s",
+                (void*)target_func_ptr, cb.name.c_str(),
+                err ? err : "<no message>");
             lua_pop(g_lua_state, 1);
             continue;
         }

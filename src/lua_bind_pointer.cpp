@@ -14,6 +14,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "log.h"
 #include "lua_bind_helpers.h"
 #include "lua_memory.h"
 
@@ -208,23 +209,32 @@ const luaL_Reg kMethods[] = {
 // metatable onto the stack; idempotent if already registered.
 // Stack effect: +1 (caller is expected to pop or use it).
 void PushMetatable(lua_State* L) {
+    LOG_INFO("LUA_BIND",
+        "      pointer::PushMetatable ENTER L=%p", (void*)L);
     if (luaL_newmetatable(L, kcdx::lua_memory::kPointerMetatable) == 0) {
         // Already registered; the existing metatable is on the stack.
+        LOG_INFO("LUA_BIND",
+            "      pointer::PushMetatable EXIT (already registered)");
         return;
     }
     // mt at stack top
+    LOG_INFO("LUA_BIND", "        before __index/__gc/__metatable bind");
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");        // mt.__index = mt
     lua_pushcfunction(L, Gc);
     lua_setfield(L, -2, "__gc");
     lua_pushliteral(L, "kcdx.memory.pointer");
     lua_setfield(L, -2, "__metatable");    // hide from pak Lua
+    LOG_INFO("LUA_BIND", "        after  metamethods bound");
 
     // Populate methods
+    LOG_INFO("LUA_BIND", "        before methods bind");
     for (const luaL_Reg* m = kMethods; m->name; ++m) {
         lua_pushcfunction(L, m->func);
         lua_setfield(L, -2, m->name);
     }
+    LOG_INFO("LUA_BIND", "        after  methods bind");
+    LOG_INFO("LUA_BIND", "      pointer::PushMetatable EXIT (freshly registered)");
 }
 
 }  // namespace pointer_binding

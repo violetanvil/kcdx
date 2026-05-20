@@ -7,6 +7,7 @@ extern "C" {
 
 #include <new>
 
+#include "log.h"
 #include "lua_memory.h"
 
 namespace kcdx::lua_bind_helpers {
@@ -64,9 +65,12 @@ int Lua_ValueWrapperGc(lua_State* L) {
 // returns 0 + leaves the existing table on the stack if already
 // registered). Stack effect: 0.
 void SetupMetatable(lua_State* L) {
+    LOG_INFO("LUA_BIND", "      value_wrapper::SetupMetatable ENTER");
     if (luaL_newmetatable(L, kcdx::lua_memory::kValueWrapperMetatable) == 0) {
         // Already registered. Pop the duplicate metatable left on stack.
         lua_pop(L, 1);
+        LOG_INFO("LUA_BIND",
+            "      value_wrapper::SetupMetatable EXIT (already registered)");
         return;
     }
     // Stack: [..., mt]
@@ -81,26 +85,37 @@ void SetupMetatable(lua_State* L) {
     lua_pushcfunction(L, Lua_ValueWrapperSet);
     lua_setfield(L, -2, "set");
     lua_pop(L, 1);                          // pop mt; back to original stack
+    LOG_INFO("LUA_BIND",
+        "      value_wrapper::SetupMetatable EXIT (freshly registered)");
 }
 
 }  // namespace value_wrapper_binding
 
 void RegisterMetatables(lua_State* L) {
+    LOG_INFO("LUA_BIND", "    RegisterMetatables ENTER");
     // pointer metatable (with its 22 methods) is owned by
     // lua_bind_pointer.cpp; that file does the setup.
+    LOG_INFO("LUA_BIND", "      before pointer::PushMetatable");
     pointer_binding::PushMetatable(L);  // leaves the mt on stack
     lua_pop(L, 1);                       // we just want it registered
+    LOG_INFO("LUA_BIND", "      after  pointer::PushMetatable");
 
     value_wrapper_binding::SetupMetatable(L);
 
     // dynamic_hook handle metatable. Pushes the metatable; we don't
     // need it on the stack here.
+    LOG_INFO("LUA_BIND", "      before lua_bind_dynamic_hook::PushHandleMetatable");
     kcdx::lua_bind_dynamic_hook::PushHandleMetatable(L);
     lua_pop(L, 1);
+    LOG_INFO("LUA_BIND", "      after  lua_bind_dynamic_hook::PushHandleMetatable");
 
     // dynamic_call callable metatable.
+    LOG_INFO("LUA_BIND", "      before lua_bind_dynamic_call::PushHandleMetatable");
     kcdx::lua_bind_dynamic_call::PushHandleMetatable(L);
     lua_pop(L, 1);
+    LOG_INFO("LUA_BIND", "      after  lua_bind_dynamic_call::PushHandleMetatable");
+
+    LOG_INFO("LUA_BIND", "    RegisterMetatables EXIT");
 }
 
 // --- Push* ----------------------------------------------------------------

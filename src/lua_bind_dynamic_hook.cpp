@@ -150,7 +150,12 @@ int Handle_GetTarget(lua_State* L) {
 // Public: lua_bind_helpers::RegisterMetatables calls this once at startup
 // (via the same mechanism that registers pointer + value_wrapper metatables).
 void PushHandleMetatable(lua_State* L) {
+    LOG_INFO("LUA_BIND",
+        "      dynamic_hook::PushHandleMetatable ENTER (key='%s')",
+        kHandleMetatable);
     if (luaL_newmetatable(L, kHandleMetatable) == 0) {
+        LOG_INFO("LUA_BIND",
+            "      dynamic_hook::PushHandleMetatable EXIT (already registered)");
         return;  // already registered; mt left on stack
     }
     lua_pushvalue(L, -1);
@@ -161,6 +166,8 @@ void PushHandleMetatable(lua_State* L) {
     lua_setfield(L, -2, "__metatable");
     lua_pushcfunction(L, Handle_GetTarget);
     lua_setfield(L, -2, "get_target");
+    LOG_INFO("LUA_BIND",
+        "      dynamic_hook::PushHandleMetatable EXIT (freshly registered)");
 }
 
 // kcdx.memory.dynamic_hook(table) -> handle userdata or (nil, errmsg)
