@@ -34,6 +34,7 @@ const char* kName = "kcdx.cap-13-console-command";
 const kcdxInterface*           g_api     = nullptr;
 const kcdxConsoleInterface*    g_console = nullptr;
 kcdxPluginHandle               g_self    = kcdxInvalidPluginHandle;
+kcdxLogger                     gLog;
 
 bool g_reported   = false;
 
@@ -63,11 +64,14 @@ void OnMessage(kcdxMessage* msg) {
     if (g_reported) return;
     g_reported = true;
 
+    gLog.Info("CONSOLE", "InputLoaded received; running RegisterCommand+ExecuteString self-test");
+
     char reason[512];
 
     if (!g_console) {
         snprintf(reason, sizeof(reason),
             "QueryInterface(Console) returned null at Plugin_Load");
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
@@ -83,6 +87,7 @@ void OnMessage(kcdxMessage* msg) {
         snprintf(reason, sizeof(reason),
             "RegisterCommand returned false (console surface not "
             "armed, or name collision)");
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
@@ -95,6 +100,7 @@ void OnMessage(kcdxMessage* msg) {
             "ExecuteString refused (g_ExecuteString null or IConsole "
             "not ready) — registration worked, dispatch can't be "
             "tested");
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
@@ -105,6 +111,7 @@ void OnMessage(kcdxMessage* msg) {
             "ExecuteString returned but callback never fired "
             "(CryEngine dispatcher rejected the command — possibly "
             "a regression in vtable[33]/AddCommand registration)");
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
@@ -112,24 +119,28 @@ void OnMessage(kcdxMessage* msg) {
         snprintf(reason, sizeof(reason),
             "callback fired but argc=%d (expected 3); "
             "command_line='%s'", g_argc, g_commandLine);
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
     if (strcmp(g_argv0, "kcdx_test_cap13") != 0) {
         snprintf(reason, sizeof(reason),
             "arg[0]='%s' (expected 'kcdx_test_cap13')", g_argv0);
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
     if (strcmp(g_argv1, "hello") != 0) {
         snprintf(reason, sizeof(reason),
             "arg[1]='%s' (expected 'hello')", g_argv1);
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
     if (strcmp(g_argv2, "world") != 0) {
         snprintf(reason, sizeof(reason),
             "arg[2]='%s' (expected 'world')", g_argv2);
+        gLog.Error("CONSOLE", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-13", 0, reason);
         return;
     }
@@ -138,6 +149,7 @@ void OnMessage(kcdxMessage* msg) {
     snprintf(reason, sizeof(reason),
         "register+ExecuteString+callback roundtrip ok "
         "(argc=3, command_line='%s')", g_commandLine);
+    gLog.Info("CONSOLE", "PASS: %s", reason);
     g_api->ReportTestResult(g_self, "CAP-13", 1, reason);
 }
 }  // namespace
@@ -146,6 +158,9 @@ extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api  = api;
     g_self = api->GetPluginHandle(kName);
+    gLog   = kcdxLogger(api, g_self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called");
 
     g_console = static_cast<const kcdxConsoleInterface*>(
         api->QueryInterface(kcdxInterface_Console,
@@ -156,6 +171,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         api->QueryInterface(kcdxInterface_Messaging,
                             kcdxMessagingInterface_Version));
     if (!m) {
+        gLog.Error("INIT", "QueryInterface(Messaging) returned null");
         api->ReportTestResult(g_self, "CAP-13", 0,
             "QueryInterface(Messaging) returned null");
         return true;

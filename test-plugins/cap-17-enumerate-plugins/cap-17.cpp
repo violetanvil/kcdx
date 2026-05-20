@@ -5,15 +5,21 @@
 #include <vector>
 #include "kcdx/Interfaces.h"
 
-namespace { const char* kName = "kcdx.cap-17-enumerate-plugins"; }
+namespace {
+const char* kName = "kcdx.cap-17-enumerate-plugins";
+kcdxLogger  gLog;
+}
 
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     kcdxPluginHandle self = api->GetPluginHandle(kName);
+    gLog = kcdxLogger(api, self);
+    gLog.Info("INIT", "kcdxPlugin_Load called");
 
     // Query count
     uint32_t count = api->EnumeratePlugins(nullptr, 0);
     if (count == 0) {
+        gLog.Error("ENUMERATE", "FAIL: EnumeratePlugins count == 0; expected >= 1 (self)");
         api->ReportTestResult(self, "CAP-17", 0,
             "EnumeratePlugins count == 0; expected >= 1 (self)");
         return true;
@@ -27,6 +33,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         snprintf(msg, sizeof(msg),
             "EnumeratePlugins returned %u handles but count was %u",
             got, count);
+        gLog.Error("ENUMERATE", "FAIL: %s", msg);
         api->ReportTestResult(self, "CAP-17", 0, msg);
         return true;
     }
@@ -37,6 +44,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         if (h == self) { foundSelf = true; break; }
     }
     if (!foundSelf) {
+        gLog.Error("ENUMERATE", "FAIL: self handle not present in EnumeratePlugins result");
         api->ReportTestResult(self, "CAP-17", 0,
             "self handle not present in EnumeratePlugins result");
         return true;
@@ -45,6 +53,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     char msg[160];
     snprintf(msg, sizeof(msg),
         "count=%u, self handle (%u) present in list", count, self);
+    gLog.Info("ENUMERATE", "PASS: %s", msg);
     api->ReportTestResult(self, "CAP-17", 1, msg);
     return true;
 }

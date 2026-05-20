@@ -5,16 +5,23 @@
 #include <cstdint>
 #include "kcdx/Interfaces.h"
 
-namespace { const char* kName = "kcdx.cap-07-trampoline-pools"; }
+namespace {
+const char* kName = "kcdx.cap-07-trampoline-pools";
+kcdxLogger gLog;
+}
 
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     kcdxPluginHandle self = api->GetPluginHandle(kName);
+    gLog = kcdxLogger(api, self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called");
 
     auto* tramp = static_cast<kcdxTrampolineInterface*>(
         api->QueryInterface(kcdxInterface_Trampoline,
                             kcdxTrampolineInterface_Version));
     if (!tramp) {
+        gLog.Error("INIT", "QueryInterface(Trampoline) returned null");
         api->ReportTestResult(self, "CAP-07", 0,
             "QueryInterface(Trampoline) returned null");
         return true;
@@ -22,6 +29,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 
     void* branch = tramp->AllocateFromBranchPool(self, 64);
     if (!branch) {
+        gLog.Error("VERIFY", "FAIL: AllocateFromBranchPool returned null");
         api->ReportTestResult(self, "CAP-07", 0,
             "AllocateFromBranchPool returned null");
         return true;
@@ -40,6 +48,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
             snprintf(msg, sizeof(msg),
                 "branch alloc 0x%p outside rel32 range from WHGame.dll (offset %lld)",
                 branch, static_cast<long long>(offset));
+            gLog.Error("VERIFY", "FAIL: %s", msg);
             api->ReportTestResult(self, "CAP-07", 0, msg);
             return true;
         }
@@ -47,6 +56,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 
     void* local = tramp->AllocateFromLocalPool(self, 64);
     if (!local) {
+        gLog.Error("VERIFY", "FAIL: AllocateFromLocalPool returned null");
         api->ReportTestResult(self, "CAP-07", 0,
             "AllocateFromLocalPool returned null");
         return true;
@@ -55,6 +65,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     char msg[200];
     snprintf(msg, sizeof(msg),
         "branch=%p (in rel32 range), local=%p", branch, local);
+    gLog.Info("VERIFY", "PASS: %s", msg);
     api->ReportTestResult(self, "CAP-07", 1, msg);
     return true;
 }

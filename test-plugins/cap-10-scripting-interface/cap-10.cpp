@@ -3,7 +3,10 @@
 #include <windows.h>
 #include "kcdx/Interfaces.h"
 
-namespace { const char* kName = "kcdx.cap-10-scripting-interface"; }
+namespace {
+const char* kName = "kcdx.cap-10-scripting-interface";
+kcdxLogger  gLog;
+}  // namespace
 
 // A trivial C function. We never expect this to actually be called
 // from pak Lua — the test only verifies the registration succeeds.
@@ -14,11 +17,15 @@ static int Lua_Stub(struct lua_State* /*L*/, void* /*ud*/) {
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     kcdxPluginHandle self = api->GetPluginHandle(kName);
+    gLog = kcdxLogger(api, self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called");
 
     auto* scripting = static_cast<kcdxScriptingInterface*>(
         api->QueryInterface(kcdxInterface_Scripting,
                             kcdxScriptingInterface_Version));
     if (!scripting) {
+        gLog.Error("INIT", "QueryInterface(Scripting) returned null");
         api->ReportTestResult(self, "CAP-10", 0,
             "QueryInterface(Scripting) returned null");
         return true;
@@ -32,11 +39,13 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
                                           Lua_Stub,
                                           nullptr);
     if (ok) {
-        api->ReportTestResult(self, "CAP-10", 1,
-            "RegisterFunction('cap10test.stub') queued/applied successfully");
+        const char* reason = "RegisterFunction('cap10test.stub') queued/applied successfully";
+        gLog.Info("SCRIPTING", "PASS: %s", reason);
+        api->ReportTestResult(self, "CAP-10", 1, reason);
     } else {
-        api->ReportTestResult(self, "CAP-10", 0,
-            "RegisterFunction returned false");
+        const char* reason = "RegisterFunction returned false";
+        gLog.Error("SCRIPTING", "FAIL: %s", reason);
+        api->ReportTestResult(self, "CAP-10", 0, reason);
     }
     return true;
 }

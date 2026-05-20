@@ -23,6 +23,7 @@ const int   kEntryOffset = -4;  // function entry relative to AOB hit
 
 const kcdxInterface* g_api  = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;
+kcdxLogger           gLog;
 bool                 g_reported = false;
 
 struct PatBytes { std::vector<uint8_t> v; std::vector<uint8_t> mask; };
@@ -60,13 +61,17 @@ void OnInputLoaded(kcdxMessage* msg) {
     if (g_reported) return;
     g_reported = true;
 
+    gLog.Info("CONFLICT", "InputLoaded received; resolving target and querying conflict report");
+
     HMODULE whgame = GetModuleHandleW(L"WHGame.dll");
     if (!whgame) {
+        gLog.Error("CONFLICT", "FAIL: WHGame.dll not loaded");
         g_api->ReportTestResult(g_self, "COMP-02", 0, "WHGame.dll not loaded");
         return;
     }
     MODULEINFO mi{};
     if (!GetModuleInformation(GetCurrentProcess(), whgame, &mi, sizeof(mi))) {
+        gLog.Error("CONFLICT", "FAIL: GetModuleInformation failed");
         g_api->ReportTestResult(g_self, "COMP-02", 0, "GetModuleInformation failed");
         return;
     }
@@ -103,6 +108,7 @@ void OnInputLoaded(kcdxMessage* msg) {
         char r[160];
         snprintf(r, sizeof(r),
             "post-hook AOB suffix matches %zu times (need 1)", hits.size());
+        gLog.Error("CONFLICT", "FAIL: %s", r);
         g_api->ReportTestResult(g_self, "COMP-02", 0, r);
         return;
     }
@@ -119,6 +125,7 @@ void OnInputLoaded(kcdxMessage* msg) {
         char r[160];
         snprintf(r, sizeof(r),
             "GetConflictReport(0x%p) returned 0 entries", (void*)target);
+        gLog.Error("CONFLICT", "FAIL: %s", r);
         g_api->ReportTestResult(g_self, "COMP-02", 0, r);
         return;
     }
@@ -127,6 +134,7 @@ void OnInputLoaded(kcdxMessage* msg) {
         snprintf(r, sizeof(r),
             "GetConflictReport returned %u entries (expected 2: comp-02-patch + comp-02-hook)",
             count);
+        gLog.Error("CONFLICT", "FAIL: %s", r);
         g_api->ReportTestResult(g_self, "COMP-02", 0, r);
         return;
     }
@@ -151,11 +159,13 @@ void OnInputLoaded(kcdxMessage* msg) {
     if (patchOk && hookOk) {
         snprintf(r, sizeof(r),
             "both entries applied at 0x%p: %s", (void*)target, names.c_str());
+        gLog.Info("CONFLICT", "PASS: %s", r);
         g_api->ReportTestResult(g_self, "COMP-02", 1, r);
     } else {
         snprintf(r, sizeof(r),
             "expected both comp-02-patch + comp-02-hook applied; got: %s",
             names.c_str());
+        gLog.Error("CONFLICT", "FAIL: %s", r);
         g_api->ReportTestResult(g_self, "COMP-02", 0, r);
     }
 }
@@ -166,10 +176,15 @@ extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api  = api;
     g_self = api->GetPluginHandle(kName);
+    gLog   = kcdxLogger(api, g_self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called");
+
     auto* m = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging,
                             kcdxMessagingInterface_Version));
     if (!m) {
+        gLog.Error("INIT", "QueryInterface(Messaging) returned null");
         api->ReportTestResult(g_self, "COMP-02", 0,
             "QueryInterface(Messaging) returned null");
         return true;

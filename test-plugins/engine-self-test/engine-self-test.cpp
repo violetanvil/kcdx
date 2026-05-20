@@ -10,10 +10,16 @@
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     kcdxPluginHandle self = api->GetPluginHandle("kcdx.engine-self-test");
+    kcdxLogger gLog(api, self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called");
+
+    const char* reason = "Plugin_Load fired and ReportTestResult reached";
+    gLog.Info("SELFTEST", "PASS: %s", reason);
     api->ReportTestResult(self,
                           "engine-self-test",
                           /*pass=*/1,
-                          "Plugin_Load fired and ReportTestResult reached");
+                          reason);
     return true;
 }
 

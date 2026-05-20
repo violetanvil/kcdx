@@ -11,20 +11,27 @@
 #include <cstdio>
 #include "kcdx/Interfaces.h"
 
-namespace { const char* kName = "kcdx.cap-16-B"; }
+namespace {
+const char* kName = "kcdx.cap-16-B";
+kcdxLogger  gLog;
+}
 
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     kcdxPluginHandle self = api->GetPluginHandle(kName);
+    gLog = kcdxLogger(api, self);
+    gLog.Info("INIT", "kcdxPlugin_Load called");
 
     const kcdxPluginInfo* a = api->GetPluginInfo("kcdx.cap-16-A");
     if (!a) {
+        gLog.Error("INIT", "GetPluginInfo('kcdx.cap-16-A') returned null - A not loaded?");
         api->ReportTestResult(self, "CAP-16", 0,
             "GetPluginInfo('kcdx.cap-16-A') returned null - A not loaded?");
         return true;
     }
     kcdxPluginHandle aHandle = api->GetPluginHandle("kcdx.cap-16-A");
     if (aHandle == kcdxInvalidPluginHandle) {
+        gLog.Error("INIT", "GetPluginHandle('kcdx.cap-16-A') returned invalid handle");
         api->ReportTestResult(self, "CAP-16", 0,
             "GetPluginHandle('kcdx.cap-16-A') returned invalid handle");
         return true;
@@ -35,11 +42,13 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         snprintf(reason, sizeof(reason),
             "A loaded first (handle=%u, version=0x%08X, displayName='%s')",
             aHandle, a->version, a->displayName ? a->displayName : "?");
+        gLog.Info("DEPS", "PASS: %s", reason);
         api->ReportTestResult(self, "CAP-16", 1, reason);
     } else {
         snprintf(reason, sizeof(reason),
             "A loaded but version=0x%08X (expected 0x01000000 = 1.0.0)",
             a->version);
+        gLog.Error("DEPS", "FAIL: %s", reason);
         api->ReportTestResult(self, "CAP-16", 0, reason);
     }
     return true;

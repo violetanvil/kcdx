@@ -31,6 +31,7 @@ const char* kPostPatchPattern =
 
 const kcdxInterface* g_api  = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;
+kcdxLogger           gLog;
 bool                 g_reported = false;
 
 // Trivial AOB scan: each "byte" is either two hex chars or "?". Returns
@@ -80,8 +81,11 @@ void OnInputLoaded(kcdxMessage* msg) {
     if (g_reported) return;
     g_reported = true;
 
+    gLog.Info("VERIFY", "InputLoaded received; scanning WHGame.dll");
+
     HMODULE whgame = GetModuleHandleW(L"WHGame.dll");
     if (!whgame) {
+        gLog.Error("VERIFY", "WHGame.dll not loaded");
         g_api->ReportTestResult(g_self, "CAP-01", 0,
             "WHGame.dll not loaded");
         return;
@@ -123,16 +127,19 @@ void OnInputLoaded(kcdxMessage* msg) {
         snprintf(reason, sizeof(reason),
             "post-patch pattern unique at 0x%p; pre-patch absent (patch applied)",
             postHits[0]);
+        gLog.Info("VERIFY", "PASS: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-01", 1, reason);
     } else if (preHits.size() == 1 && postHits.empty()) {
         snprintf(reason, sizeof(reason),
             "pre-patch pattern still present at 0x%p (patch did NOT apply)",
             preHits[0]);
+        gLog.Error("VERIFY", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-01", 0, reason);
     } else {
         snprintf(reason, sizeof(reason),
             "unexpected state: pre-patch matches=%zu, post-patch matches=%zu",
             preHits.size(), postHits.size());
+        gLog.Error("VERIFY", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, "CAP-01", 0, reason);
     }
 }
@@ -143,11 +150,15 @@ extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api  = api;
     g_self = api->GetPluginHandle(kName);
+    gLog   = kcdxLogger(api, g_self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called; waiting for InputLoaded to verify patch");
 
     auto* msg = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging,
                             kcdxMessagingInterface_Version));
     if (!msg) {
+        gLog.Error("INIT", "QueryInterface(Messaging) returned null");
         api->ReportTestResult(g_self, "CAP-01", 0,
             "QueryInterface(Messaging) returned null");
         return true;

@@ -39,6 +39,7 @@ constexpr uint32_t kRecordVersion = 1;
 const kcdxInterface*              g_api  = nullptr;
 const kcdxSerializationInterface* g_ser  = nullptr;
 kcdxPluginHandle                  g_self = kcdxInvalidPluginHandle;
+kcdxLogger                        gLog;
 
 // The state we're persisting: a counter and a "did we successfully
 // round-trip on this session?" flag.
@@ -56,6 +57,11 @@ void Report(const char* status, int pass, const char* reasonFmt, ...) {
     va_start(ap, reasonFmt);
     vsnprintf(reason, sizeof(reason), reasonFmt, ap);
     va_end(ap);
+    if (pass) {
+        gLog.Info("SERIALIZATION", "PASS: %s", reason);
+    } else {
+        gLog.Error("SERIALIZATION", "FAIL: %s", reason);
+    }
     g_api->ReportTestResult(g_self, "CAP-12", pass, reason);
     (void)status;
 }
@@ -90,6 +96,7 @@ void OnRevert(kcdxPluginHandle /*plugin*/) {
 }
 
 void OnMessage(kcdxMessage* msg) {
+    gLog.Info("SERIALIZATION", "OnMessage received type=%d; dispatching", msg->messageType);
     switch (msg->messageType) {
     case kcdxMessage_InputLoaded:
         if (g_inputLoadedReported) break;
@@ -127,11 +134,15 @@ extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api  = api;
     g_self = api->GetPluginHandle(kName);
+    gLog   = kcdxLogger(api, g_self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called");
 
     g_ser = static_cast<const kcdxSerializationInterface*>(
         api->QueryInterface(kcdxInterface_Serialization,
                             kcdxSerializationInterface_Version));
     if (!g_ser) {
+        gLog.Error("INIT", "QueryInterface(Serialization) returned null");
         api->ReportTestResult(g_self, "CAP-12", 0,
             "QueryInterface(Serialization) returned null");
         return true;
@@ -147,6 +158,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         api->QueryInterface(kcdxInterface_Messaging,
                             kcdxMessagingInterface_Version));
     if (!m) {
+        gLog.Error("INIT", "QueryInterface(Messaging) returned null");
         api->ReportTestResult(g_self, "CAP-12", 0,
             "QueryInterface(Messaging) returned null");
         return true;

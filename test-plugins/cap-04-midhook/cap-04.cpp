@@ -39,6 +39,7 @@ const kcdxInterface*           g_api    = nullptr;
 const kcdxScriptingInterface*  g_script = nullptr;
 const kcdxLuaApi*              g_lua    = nullptr;
 kcdxPluginHandle               g_self   = kcdxInvalidPluginHandle;
+kcdxLogger                     gLog;
 bool g_reported_a = false, g_reported_b = false;
 bool g_reported_c = false, g_reported_d = false;
 
@@ -94,6 +95,7 @@ void InvokeAndReport(const char* sym, const char* sub_test_name,
         snprintf(reason, sizeof(reason),
             "ResolveSymbol('%s') returned 0 — trampoline didn't "
             "register its export", sym);
+        gLog.Error("VERIFY", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, sub_test_name, 0, reason);
         return;
     }
@@ -103,17 +105,21 @@ void InvokeAndReport(const char* sym, const char* sub_test_name,
         snprintf(reason, sizeof(reason),
             "target_symbol='%s' seed=%d returned %d (expected %d)",
             sym, seed, result, expected);
+        gLog.Error("VERIFY", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, sub_test_name, 0, reason);
         return;
     }
     snprintf(reason, sizeof(reason),
         "target_symbol='%s' seed=%d returned %d as expected",
         sym, seed, result);
+    gLog.Info("VERIFY", "PASS: %s", reason);
     g_api->ReportTestResult(g_self, sub_test_name, 1, reason);
 }
 
 void OnMessage(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
+
+    gLog.Info("VERIFY", "InputLoaded received; invoking 4 mid_hook target symbols");
 
     if (!g_reported_a) {
         g_reported_a = true;
@@ -138,11 +144,15 @@ extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api  = api;
     g_self = api->GetPluginHandle(kName);
+    gLog   = kcdxLogger(api, g_self);
+
+    gLog.Info("INIT", "kcdxPlugin_Load called");
 
     g_script = static_cast<const kcdxScriptingInterface*>(
         api->QueryInterface(kcdxInterface_Scripting,
                             kcdxScriptingInterface_Version));
     if (!g_script || !g_script->lua) {
+        gLog.Error("INIT", "QueryInterface(Scripting) returned null");
         api->ReportTestResult(g_self, "CAP-04a", 0,
             "QueryInterface(Scripting) returned null");
         return true;
@@ -161,6 +171,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         api->QueryInterface(kcdxInterface_Messaging,
                             kcdxMessagingInterface_Version));
     if (!m) {
+        gLog.Error("INIT", "QueryInterface(Messaging) returned null");
         api->ReportTestResult(g_self, "CAP-04a", 0,
             "QueryInterface(Messaging) returned null");
         return true;
