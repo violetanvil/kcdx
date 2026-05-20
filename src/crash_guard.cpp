@@ -6,11 +6,15 @@
 #include "crash_guard.h"
 
 #include <windows.h>
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
 
 #include <atomic>
 #include <cstdio>
+#include <filesystem>
 
 #include "log.h"
+#include "paths.h"
 #include "plugin_loader.h"  // for plugins::g_plugins (name -> handle lookup)
 
 namespace kcdx::guard {
@@ -178,6 +182,89 @@ DWORD InvokeGuarded(GuardedFn fn, void* userdata,
     }
 }
 
+// Write a minidump to a path we own, while the process is still alive
+// inside the SEH handler. This is the only reliable way to get a dmp
+// for the watchdog to bundle — BugSplat's dmps go to unpredictable
+// paths (and sometimes don't materialize on disk at all due to
+// filename quirks like "Kingdom Come: Deliverance II" with a colon),
+// and WerFault only runs for crash classes that bypass our filter.
+//
+// We use a filtered dump type (~2-5MB typical) rather than
+// MiniDumpWithFullMemory (~100MB), since the stack + module info is
+// what a debugger needs to name the crashing function. The full heap
+// is mostly noise for crash diagnosis and 20x larger.
+//
+// Returns true on success. Failures are logged but never throw —
+// SEH handler must remain a safe, no-allocation-failure path.
+bool WriteOwnMinidump(EXCEPTION_POINTERS* info) {
+    namespace fs = std::filesystem;
+    fs::path logsDir = kcdx::paths::EngineDataDirPath() / "logs";
+    std::error_code ec;
+    fs::create_directories(logsDir, ec);
+
+    // Filename mirrors the log file naming so the watchdog can find
+    // it via the same session stamp it already uses.
+    std::string dmpName = "kcdx_" + ::kcdx::log::SessionStamp() + ".dmp";
+    fs::path dmpPath = logsDir / dmpName;
+
+    HANDLE hFile = CreateFileW(dmpPath.wstring().c_str(),
+                               GENERIC_WRITE,
+                               0,  // no sharing while we write
+                               nullptr,
+                               CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL,
+                               nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        LOG_ERROR("GUARD",
+            "MiniDump: CreateFileW failed (err=%lu) for %s",
+            GetLastError(),
+            dmpPath.string().c_str());
+        return false;
+    }
+
+    MINIDUMP_EXCEPTION_INFORMATION mei{};
+    mei.ThreadId          = GetCurrentThreadId();
+    mei.ExceptionPointers = info;
+    mei.ClientPointers    = FALSE;
+
+    // Dump shape: stack + thread context + module list + a small
+    // window of memory around each thread's RIP and stack. Skips
+    // the full heap to keep the file small (~2-5MB typical).
+    MINIDUMP_TYPE type = (MINIDUMP_TYPE)(
+        MiniDumpNormal |
+        MiniDumpWithThreadInfo |
+        MiniDumpWithIndirectlyReferencedMemory |
+        MiniDumpWithDataSegs |
+        MiniDumpWithUnloadedModules);
+
+    BOOL ok = MiniDumpWriteDump(
+        GetCurrentProcess(),
+        GetCurrentProcessId(),
+        hFile,
+        type,
+        info ? &mei : nullptr,
+        nullptr,
+        nullptr);
+
+    if (!ok) {
+        DWORD err = GetLastError();
+        CloseHandle(hFile);
+        LOG_ERROR("GUARD",
+            "MiniDumpWriteDump failed (err=0x%lX) for %s",
+            err, dmpPath.string().c_str());
+        return false;
+    }
+
+    LARGE_INTEGER sz{};
+    GetFileSizeEx(hFile, &sz);
+    CloseHandle(hFile);
+    LOG_INFO("GUARD",
+        "MiniDump written: %s (%lld bytes)",
+        dmpPath.string().c_str(),
+        (long long)sz.QuadPart);
+    return true;
+}
+
 LONG WINAPI UnhandledFilter(EXCEPTION_POINTERS* info) {
     // One last log line attributing the crash. Use the breadcrumb
     // (tls_lastSite/tls_lastPlugin) so even an unguarded escape from
@@ -189,6 +276,12 @@ LONG WINAPI UnhandledFilter(EXCEPTION_POINTERS* info) {
     } else {
         LOG_ERROR("GUARD", "UNHANDLED (no exception info available)");
     }
+
+    // Capture our own minidump before chaining. BugSplat may or may
+    // not write its own; the watchdog can't predict where BugSplat
+    // puts it. Ours lands at a path we control so the watchdog can
+    // reliably find it.
+    if (info) WriteOwnMinidump(info);
 
     // Chain to whatever filter was installed before us (BugSplat's, if
     // KCD2 has installed it by now). If there's no prior filter,

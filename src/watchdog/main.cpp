@@ -311,17 +311,39 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     // 3) Game's own kcd.log, into game/.
     AddFile(zip, gameDir / "kcd.log", "game/kcd.log");
 
-    // 4) WerFault dumps under %LOCALAPPDATA%/CrashDumps/ for our PID,
-    //    or any KingdomCome.exe dump newer than sessionStart.
+    // 4) Minidumps. Gated on devMode (dumps are large; consumer
+    //    bundles stay log-only).
     //
-    // Gated on devMode. Dumps are ~100MB each; in non-dev sessions a
-    // typical "plugin X faulted in its own callback" crash is fully
-    // diagnosed from the logs alone (the GUARD line names the
-    // plugin + module + offset). The dmp matters most for crashes
-    // the logs can't see — fast-fails, kernel kills, game-side
-    // faults — and those are exactly the cases an engine dev /
-    // plugin author would be investigating with dev mode on.
+    // We try three sources, in order of preference:
+    //
+    //   a) Our own dmp written by crash_guard's UnhandledFilter to
+    //      <engine>/logs/kcdx_<stamp>.dmp. Most reliable: a path we
+    //      control, written while the process is still alive in our
+    //      SEH handler. Small (~2-5MB) because we use a filtered
+    //      MINIDUMP_TYPE rather than MiniDumpWithFullMemory.
+    //
+    //   b) WerFault dump at %LOCALAPPDATA%/CrashDumps/
+    //      KingdomCome.exe.<pid>.dmp. Written by Windows for crashes
+    //      that bypass our filter entirely (fast-fail, kernel kills).
+    //      Large (~100MB) because WerFault defaults to full heap.
+    //
+    //   c) BugSplat dumps under %LOCALAPPDATA%/Temp/. BugSplat's
+    //      filename construction is buggy (uses ':' which Windows
+    //      rejects), so this is unreliable — kept as last resort.
     if (devMode) {
+        // a) Our own dmp.
+        fs::path ownDmp = engineDir / "logs" / ("kcdx_" + stamp + ".dmp");
+        std::error_code dec;
+        if (fs::exists(ownDmp, dec)) {
+            AddFile(zip, ownDmp, "crash/kcdx_" + stamp + ".dmp");
+        } else {
+            SelfLog("  no kcdx-side dmp at %s "
+                    "(SEH handler didn't run — crash class probably "
+                    "bypassed it: fast-fail, kernel kill, etc.)",
+                    WToUtf8(ownDmp.wstring()).c_str());
+        }
+
+        // b) WerFault dump.
         wchar_t local[MAX_PATH];
         if (SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0,
                              local) == S_OK) {
@@ -332,7 +354,6 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
                     return name.rfind("KingdomCome.exe.", 0) == 0 &&
                            p.extension() == ".dmp";
                 });
-            // Bundle ALL matching (typically 1, possibly 2 if BugSplat + WerFault both wrote).
             for (auto& d : dumps) {
                 std::string archive = "crash/" + d.filename().string();
                 AddFile(zip, d, archive);
@@ -340,6 +361,26 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             if (dumps.empty()) {
                 SelfLog("  no WerFault dump found in %s",
                         WToUtf8(crashDumpsDir.wstring()).c_str());
+            }
+
+            // c) BugSplat-written dumps. Two flavors observed:
+            //    - "Kingdom Come: Deliverance II<id>.dmp" (write
+            //      usually fails due to ':' in name, but check anyway)
+            //    - Bare *.dmp in Temp root that BugSplat may have
+            //      written via its sanitized fallback path
+            fs::path tempDir = fs::path(local) / "Temp";
+            auto bsDumps = FindRecent(tempDir, sessionStart,
+                [](const fs::path& p) {
+                    if (p.extension() != ".dmp") return false;
+                    auto name = p.filename().string();
+                    return name.find("Kingdom") != std::string::npos ||
+                           name.find("Deliverance") != std::string::npos ||
+                           name.find("pageheap") != std::string::npos;
+                });
+            for (auto& d : bsDumps) {
+                std::string archive = "crash/bugsplat_" +
+                                      d.filename().string();
+                AddFile(zip, d, archive);
             }
         }
     } else {
