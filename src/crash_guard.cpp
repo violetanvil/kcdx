@@ -11,8 +11,12 @@
 #include <cstdio>
 
 #include "log.h"
+#include "plugin_loader.h"  // for plugins::g_plugins (name -> handle lookup)
 
 namespace kcdx::guard {
+
+// Bring KV into local scope so LOG_*_KV macros expand cleanly.
+using KV = ::kcdx::log::KV;
 
 namespace {
 
@@ -77,10 +81,21 @@ bool ModuleForAddress(void* addr, char* outName, size_t outNameLen,
     return true;
 }
 
-// Build the FAULTED log line. Caller passes the EXCEPTION_RECORD from
-// GetExceptionInformation()'s ExceptionRecord. snprintf goes to a
-// fixed 512-byte buffer — log lines this size are already enforced
-// elsewhere.
+// Resolve a plugin's stable name to its handle, so a GUARD line about
+// that plugin can also land in the plugin's own log file. Returns
+// kcdxInvalidPluginHandle (== UINT32_MAX) on unknown name.
+uint32_t HandleFromName(const char* name) {
+    if (!name) return UINT32_MAX;
+    for (const auto& p : kcdx::plugins::g_plugins) {
+        if (p.manifest.name == name) return p.handle;
+    }
+    return UINT32_MAX;
+}
+
+// Build the FAULTED log line. Always lands in the engine log
+// (engine view of the fault). When pluginName resolves to a loaded
+// plugin handle, the same line ALSO lands in that plugin's own
+// log file — the consumer's bug-report channel.
 void LogFault(const char* site, const char* pluginName,
               const EXCEPTION_RECORD* er) {
     void* rip = er ? er->ExceptionAddress : nullptr;
@@ -96,29 +111,52 @@ void LogFault(const char* site, const char* pluginName,
                                     reinterpret_cast<uint8_t*>(moduleBase));
     }
 
-    char line[512];
+    // Engine log + dev log (if dev mode + GUARD category enabled).
     if (codeName) {
-        snprintf(line, sizeof(line),
-                 "GUARD FAULTED site=%s plugin=%s code=%s rip=0x%llX "
-                 "module=%s+0x%llX thread=%lu",
-                 site ? site : "?",
-                 pluginName ? pluginName : "(none)",
-                 codeName,
-                 reinterpret_cast<uint64_t>(rip),
-                 moduleName, rva,
-                 GetCurrentThreadId());
+        LOG_ERROR_KV("GUARD", "FAULTED",
+            KV::BareStr("site",   site ? site : "?"),
+            KV::BareStr("plugin", pluginName ? pluginName : "(none)"),
+            KV::BareStr("code",   codeName),
+            KV("rip",    reinterpret_cast<void*>(rip)),
+            KV::BareStr("module", moduleName),
+            KV("module_rva", rva),
+            KV("thread", (unsigned long)GetCurrentThreadId()));
     } else {
-        snprintf(line, sizeof(line),
-                 "GUARD FAULTED site=%s plugin=%s code=0x%lX rip=0x%llX "
-                 "module=%s+0x%llX thread=%lu",
-                 site ? site : "?",
-                 pluginName ? pluginName : "(none)",
-                 static_cast<unsigned long>(code),
-                 reinterpret_cast<uint64_t>(rip),
-                 moduleName, rva,
-                 GetCurrentThreadId());
+        LOG_ERROR_KV("GUARD", "FAULTED",
+            KV::BareStr("site",   site ? site : "?"),
+            KV::BareStr("plugin", pluginName ? pluginName : "(none)"),
+            KV("code",   (unsigned long)code),
+            KV("rip",    reinterpret_cast<void*>(rip)),
+            KV::BareStr("module", moduleName),
+            KV("module_rva", rva),
+            KV("thread", (unsigned long)GetCurrentThreadId()));
     }
-    kcdx::log::Error(line);
+
+    // Also surface the fault in the offending plugin's own log file
+    // (the consumer's bug-report channel). The line is identical
+    // structure; the plugin's name becomes the SOURCE field.
+    uint32_t handle = HandleFromName(pluginName);
+    if (handle != UINT32_MAX) {
+        if (codeName) {
+            ::kcdx::log::EmitPluginKV(::kcdx::log::Level::Error,
+                handle, "GUARD", "FAULTED",
+                { KV::BareStr("site",   site ? site : "?"),
+                  KV::BareStr("code",   codeName),
+                  KV("rip",    reinterpret_cast<void*>(rip)),
+                  KV::BareStr("module", moduleName),
+                  KV("module_rva", rva),
+                  KV("thread", (unsigned long)GetCurrentThreadId()) });
+        } else {
+            ::kcdx::log::EmitPluginKV(::kcdx::log::Level::Error,
+                handle, "GUARD", "FAULTED",
+                { KV::BareStr("site",   site ? site : "?"),
+                  KV("code",   (unsigned long)code),
+                  KV("rip",    reinterpret_cast<void*>(rip)),
+                  KV::BareStr("module", moduleName),
+                  KV("module_rva", rva),
+                  KV("thread", (unsigned long)GetCurrentThreadId()) });
+        }
+    }
 }
 
 // The actual guarded invocation. Lives in its own function so the
@@ -149,7 +187,7 @@ LONG WINAPI UnhandledFilter(EXCEPTION_POINTERS* info) {
                  tls_lastPlugin,
                  info->ExceptionRecord);
     } else {
-        kcdx::log::Error("GUARD UNHANDLED (no exception info available)");
+        LOG_ERROR("GUARD", "UNHANDLED (no exception info available)");
     }
 
     // Chain to whatever filter was installed before us (BugSplat's, if
@@ -205,11 +243,8 @@ void InstallUnhandledExceptionFilter() {
         return;  // already installed
     }
     g_priorFilter = ::SetUnhandledExceptionFilter(UnhandledFilter);
-    char line[256];
-    snprintf(line, sizeof(line),
-             "GUARD installed unhandled-exception filter (prior=0x%p)",
+    LOG_INFO("GUARD", "installed unhandled-exception filter (prior=0x%p)",
              reinterpret_cast<void*>(g_priorFilter));
-    kcdx::log::Info(line);
 }
 
 }  // namespace kcdx::guard

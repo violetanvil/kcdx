@@ -65,20 +65,20 @@ size_t ApplyAll() {
                         totalSize - t.bytes.size());
         }
 
-        log::InfoF("[trampoline '%s'] allocated %zu bytes at 0x%p (pool=%s)",
-                   t.name.c_str(),
-                   totalSize,
-                   region,
-                   t.pool.c_str());
+        LOG_DEBUG("TRAMPOLINE", "[%s] allocated %zu bytes at 0x%p (pool=%s)",
+                  t.name.c_str(),
+                  totalSize,
+                  region,
+                  t.pool.c_str());
 
         // Register export if requested.
         if (!t.exportSymbol.empty()) {
             uintptr_t addr = reinterpret_cast<uintptr_t>(region);
             if (symbols::Register(t.exportSymbol, addr, t.name)) {
-                log::InfoF("[trampoline '%s'] exported symbol '%s' -> 0x%p",
-                           t.name.c_str(),
-                           t.exportSymbol.c_str(),
-                           reinterpret_cast<void*>(addr));
+                LOG_DEBUG("TRAMPOLINE", "[%s] exported symbol '%s' -> 0x%p",
+                          t.name.c_str(),
+                          t.exportSymbol.c_str(),
+                          reinterpret_cast<void*>(addr));
             } else {
                 // Symbol already registered. We've already allocated and
                 // filled the region; the alloc isn't freed (alloc-only),

@@ -46,17 +46,17 @@ bool Thunk_RegisterListener(kcdxPluginHandle listener,
                             const char* sender,
                             kcdxMessagingCallback callback) {
     if (!callback) {
-        log::Warn("Messaging::RegisterListener: null callback");
+        LOG_WARN("MESSAGING", "RegisterListener: null callback");
         return false;
     }
     if (listener == kcdxInvalidPluginHandle) {
-        log::Warn("Messaging::RegisterListener: invalid listener handle");
+        LOG_WARN("MESSAGING", "RegisterListener: invalid listener handle");
         return false;
     }
     // Validate that the listener handle actually corresponds to a loaded plugin.
     if (!HandleToName(listener)) {
-        log::WarnF("Messaging::RegisterListener: unknown listener handle %u",
-                   listener);
+        LOG_WARN("MESSAGING",
+            "RegisterListener: unknown listener handle %u", listener);
         return false;
     }
 
@@ -77,7 +77,7 @@ bool Thunk_Dispatch(kcdxPluginHandle sender,
                     const char* receiver) {
     const char* senderName = HandleToName(sender);
     if (!senderName) {
-        log::WarnF("Messaging::Dispatch: unknown sender handle %u", sender);
+        LOG_WARN("MESSAGING", "Dispatch: unknown sender handle %u", sender);
         return false;
     }
 
@@ -113,8 +113,8 @@ bool Thunk_Dispatch(kcdxPluginHandle sender,
 
     if (targets.empty()) return false;
 
-    log::InfoF("messaging: dispatch from '%s' type=%u: %zu listener(s)",
-               senderName, messageType, targets.size());
+    LOG_INFO("MESSAGING", "dispatch from '%s' type=%u: %zu listener(s)",
+             senderName, messageType, targets.size());
 
     kcdxMessage msg;
     msg.sender = senderName;
@@ -148,8 +148,8 @@ bool Thunk_Dispatch(kcdxPluginHandle sender,
         // peer's bug.
     }
 
-    log::InfoF("messaging: dispatch from '%s' type=%u complete (%zu/%zu ok)",
-               senderName, messageType, okCount, targets.size());
+    LOG_INFO("MESSAGING", "dispatch from '%s' type=%u complete (%zu/%zu ok)",
+             senderName, messageType, okCount, targets.size());
     return true;
 }
 
@@ -188,8 +188,8 @@ void FireEngineMessage(uint32_t messageType,
         }
     }
 
-    log::InfoF("messaging: broadcast engine type=%u: %zu listener(s)",
-               messageType, targets.size());
+    LOG_INFO("MESSAGING", "broadcast engine type=%u: %zu listener(s)",
+             messageType, targets.size());
 
     if (!targets.empty()) {
         kcdxMessage msg;
@@ -217,8 +217,8 @@ void FireEngineMessage(uint32_t messageType,
                 &ctx);
             if (ok) ++okCount;
         }
-        log::InfoF("messaging: broadcast engine type=%u complete (%zu/%zu ok)",
-                   messageType, okCount, targets.size());
+        LOG_INFO("MESSAGING", "broadcast engine type=%u complete (%zu/%zu ok)",
+                 messageType, okCount, targets.size());
     }
 
     // Route to engine-internal serialization handler too. Engine-side

@@ -209,9 +209,9 @@ bool ApplyOneHook(size_t hookIdx) {
     // start with E9 (rel32 jmp) or FF 25 (abs64 jmp via [rip+0]). If still
     // unchanged, MinHook silently failed.
     const uint8_t* siteBytes = reinterpret_cast<const uint8_t*>(targetAddr);
-    log::InfoF("[hook '%s'] post-install bytes at target: %02X %02X %02X %02X %02X",
-               h.name.c_str(),
-               siteBytes[0], siteBytes[1], siteBytes[2], siteBytes[3], siteBytes[4]);
+    LOG_DEBUG("HOOK", "[%s] post-install bytes at target: %02X %02X %02X %02X %02X",
+              h.name.c_str(),
+              siteBytes[0], siteBytes[1], siteBytes[2], siteBytes[3], siteBytes[4]);
 
     g_installed.emplace(targetAddr, h.name);
     h.appliedOK = true;

@@ -157,14 +157,15 @@ bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
     matchedGameVersion = 0;
 
     if (m.name.empty()) {
-        log::ErrorF("Plugin manifest at %s: name field is empty",
-                    m.tomlPath.string().c_str());
+        LOG_ERROR("MANIFEST", "reject: manifest at %s has empty name field",
+                  m.tomlPath.string().c_str());
         return false;
     }
 
     if (m.kcdxMinVersion > kEngineVersion) {
-        log::ErrorF("Plugin '%s' requires kcdx >= 0x%08X but engine is 0x%08X",
-                    m.name.c_str(), m.kcdxMinVersion, kEngineVersion);
+        LOG_ERROR("MANIFEST",
+            "reject '%s': requires kcdx >= 0x%08X but engine is 0x%08X",
+            m.name.c_str(), m.kcdxMinVersion, kEngineVersion);
         return false;
     }
 
@@ -178,17 +179,18 @@ bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
         }
     }
 
-    // Graceful-degradation: if we couldn't detect the runtime game version,
+    // Graceful-degradation: if we couldn't determine the running game version,
     // don't refuse over our own self-detection failure.
     if (g_runtimeGameVersion == 0 && !m.versionIndependent) {
-        log::WarnF("Plugin '%s': engine couldn't determine the running KCD2 "
-                   "version; loading anyway. Plugin claims compatibility with:",
-                   m.name.c_str());
+        LOG_WARN("MANIFEST",
+            "Plugin '%s': engine couldn't determine the running KCD2 "
+            "version; loading anyway. Plugin claims compatibility with:",
+            m.name.c_str());
         if (m.compatibleGameVersions.empty()) {
-            log::Warn("    (none — empty compatible_game_versions list)");
+            LOG_WARN("MANIFEST", "    (none — empty compatible_game_versions list)");
         } else {
             for (uint32_t gv : m.compatibleGameVersions) {
-                log::WarnF("    0x%08X", gv);
+                LOG_WARN("MANIFEST", "    0x%08X", gv);
             }
         }
         return true;
@@ -196,17 +198,18 @@ bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
 
     if (!versionOK && !m.versionIndependent) {
         if (m.compatibleGameVersions.empty()) {
-            log::ErrorF("Plugin '%s': empty compatible_game_versions list and "
-                        "version_independent NOT set — refusing to load. "
-                        "Either list your tested game versions or set "
-                        "version_independent=true in [plugin].",
-                        m.name.c_str());
+            LOG_ERROR("MANIFEST",
+                "reject '%s': empty compatible_game_versions list and "
+                "version_independent NOT set. Either list your tested game "
+                "versions or set version_independent=true in [plugin].",
+                m.name.c_str());
         } else {
-            log::ErrorF("Plugin '%s' not compatible with running game version "
-                        "0x%08X. Its compatible_game_versions:",
-                        m.name.c_str(), g_runtimeGameVersion);
+            LOG_ERROR("MANIFEST",
+                "reject '%s': not compatible with running game version "
+                "0x%08X. Its compatible_game_versions:",
+                m.name.c_str(), g_runtimeGameVersion);
             for (uint32_t gv : m.compatibleGameVersions) {
-                log::ErrorF("    0x%08X", gv);
+                LOG_ERROR("MANIFEST", "    0x%08X", gv);
             }
         }
         return false;
@@ -415,8 +418,15 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         cands.push_back(std::move(c));
     }
 
-    log::InfoF("Plugin DLL loader: %zu manifest(s) discovered from kcdx.toml files",
-               g_manifests.size());
+    // MANIFEST funnel summary: how many considered vs how many survived
+    // ValidateManifest. Pair this with WARN/ERROR lines above to track
+    // why any specific plugin was rejected.
+    size_t validCount = 0;
+    for (const auto& c : cands) if (c.valid) ++validCount;
+    LOG_INFO("MANIFEST",
+        "Plugin DLL loader: %zu manifest(s) considered, %zu valid, "
+        "%zu rejected (see WARN/ERROR above)",
+        g_manifests.size(), validCount, g_manifests.size() - validCount);
     if (cands.empty()) {
         // No manifests at all — but config-only kcdx.toml files (no [plugin]
         // section) may still have applied patches. That's fine; nothing to
@@ -438,11 +448,12 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
             const std::string& nm = cands[i].manifest.name;
             auto [it, inserted] = firstSeen.try_emplace(nm, i);
             if (!inserted) {
-                log::ErrorF("Two plugins both declare name '%s' (%s and %s) — "
-                            "aborting both.",
-                            nm.c_str(),
-                            cands[it->second].manifest.tomlPath.string().c_str(),
-                            cands[i].manifest.tomlPath.string().c_str());
+                LOG_ERROR("MANIFEST",
+                    "reject: two plugins both declare name '%s' (%s and %s) — "
+                    "aborting both",
+                    nm.c_str(),
+                    cands[it->second].manifest.tomlPath.string().c_str(),
+                    cands[i].manifest.tomlPath.string().c_str());
                 cands[it->second].valid = false;
                 cands[i].valid          = false;
             }
