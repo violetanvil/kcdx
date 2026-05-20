@@ -309,11 +309,15 @@ bool dynamic_hook_pre(const kcdx::rom::runtime_func_t::parameters_t* params,
         }
         // 1 + param_count args, expecting 1 return
         int n_args = 1 + (int)param_count;
-        LOG_INFO("SCRIPTING",
+        // DEBUG (not INFO) — hot path fires on every hooked function
+        // call. The BreadcrumbScope at function entry already names
+        // scripting.dispatch_pre for the process-level filter; these
+        // per-pcall lines are only useful for verbose dev-mode trace.
+        LOG_DEBUG("SCRIPTING",
             "  before lua_pcall pre target=0x%p cb='%s' nargs=%d",
             (void*)target_func_ptr, cb.name.c_str(), n_args);
         int status = lua_pcall(g_lua_state, n_args, 1, 0);
-        LOG_INFO("SCRIPTING",
+        LOG_DEBUG("SCRIPTING",
             "  after  lua_pcall pre target=0x%p cb='%s' status=%d",
             (void*)target_func_ptr, cb.name.c_str(), status);
         if (status != 0) {
@@ -366,11 +370,13 @@ void dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* params,
             kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
         }
         int n_args = 1 + (int)param_count;
-        LOG_INFO("SCRIPTING",
+        // DEBUG (not INFO) — hot path; BreadcrumbScope already names
+        // scripting.dispatch_post for the unhandled-exception filter.
+        LOG_DEBUG("SCRIPTING",
             "  before lua_pcall post target=0x%p cb='%s' nargs=%d",
             (void*)target_func_ptr, cb.name.c_str(), n_args);
         int status = lua_pcall(g_lua_state, n_args, 0, 0);
-        LOG_INFO("SCRIPTING",
+        LOG_DEBUG("SCRIPTING",
             "  after  lua_pcall post target=0x%p cb='%s' status=%d",
             (void*)target_func_ptr, cb.name.c_str(), status);
         if (status != 0) {
@@ -418,11 +424,13 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
             kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
             lua_rawseti(g_lua_state, table_idx, i + 1);
         }
-        LOG_INFO("SCRIPTING",
+        // DEBUG (not INFO) — hot path; BreadcrumbScope already names
+        // scripting.dispatch_mid for the unhandled-exception filter.
+        LOG_DEBUG("SCRIPTING",
             "  before lua_pcall mid target=0x%p cb='%s'",
             (void*)target_func_ptr, cb.name.c_str());
         int status = lua_pcall(g_lua_state, 1, 1, 0);
-        LOG_INFO("SCRIPTING",
+        LOG_DEBUG("SCRIPTING",
             "  after  lua_pcall mid target=0x%p cb='%s' status=%d",
             (void*)target_func_ptr, cb.name.c_str(), status);
         if (status != 0) {

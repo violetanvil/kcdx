@@ -90,31 +90,38 @@ void EmitSummary(const char* messageLabel) {
     // where total includes silent test plugins.
     size_t total = reported + pending.size();
 
+    // Use LOG_DEBUG for the per-lifecycle-message summary. The whole
+    // aggregator only runs when dev mode is on (see early-return at
+    // the top of this function), and the summary is verbose enough
+    // that emitting at INFO floods the engine log with the same
+    // 5-10 lines on every broadcast. With LOG_DEBUG the lines still
+    // show up in kcdx-dev.log (where dev users grep) but stay out
+    // of kcdx.log (the consumer bug-report channel).
     if (pending.empty()) {
-        log::InfoF("Test suite: %zu/%zu passing as of %s",
-                   passing, total,
-                   messageLabel ? messageLabel : "<unknown>");
+        LOG_DEBUG("TEST", "suite: %zu/%zu passing as of %s",
+                  passing, total,
+                  messageLabel ? messageLabel : "<unknown>");
     } else {
-        log::InfoF("Test suite: %zu/%zu passing as of %s "
-                   "(%zu not yet reported)",
-                   passing, total,
-                   messageLabel ? messageLabel : "<unknown>",
-                   pending.size());
+        LOG_DEBUG("TEST",
+                  "suite: %zu/%zu passing as of %s (%zu not yet reported)",
+                  passing, total,
+                  messageLabel ? messageLabel : "<unknown>",
+                  pending.size());
     }
 
     // FAIL lines come first (most actionable).
     if (passing < reported) {
         for (const auto& [name, e] : g_results) {
             if (e.pass) continue;
-            log::InfoF("  FAIL %s: %s",
-                       name.c_str(),
-                       e.reason.empty() ? "(no reason given)" : e.reason.c_str());
+            LOG_DEBUG("TEST", "  FAIL %s: %s",
+                      name.c_str(),
+                      e.reason.empty() ? "(no reason given)" : e.reason.c_str());
         }
     }
     // Then PENDING.
     for (const auto& [name, owner] : pending) {
-        log::InfoF("  PENDING %s (registered by '%s', no report yet)",
-                   name.c_str(), owner.c_str());
+        LOG_DEBUG("TEST", "  PENDING %s (registered by '%s', no report yet)",
+                  name.c_str(), owner.c_str());
     }
 
     KCDX_DEV("TEST", "SUMMARY",
@@ -170,8 +177,9 @@ void EmitGatedOffSummary() {
         count = g_gated_off_count;
     }
     if (count <= 0) return;
-    log::InfoF("Test suite: %d plugin(s) gated off (dev mode disabled; "
-               "enable via <kcdx-engine>/engine.toml)", count);
+    LOG_INFO("TEST",
+        "%d test_suite_only plugin(s) gated off (dev mode disabled; "
+        "enable via <kcdx-engine>/engine.toml)", count);
 }
 
 }  // namespace kcdx::test
