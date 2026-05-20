@@ -42,6 +42,13 @@ startup.
    on, those floors are bypassed — devs see everything.
 3. **Gates the regression test suite.** Test-suite plugins
    self-skip when dev mode is off; see the test-suite section below.
+4. **Includes the minidump in the watchdog crash bundle.** When the
+   game crashes, the watchdog produces a zip under
+   `<kcdx-engine>/logs/crash/`. With dev mode off, the zip contains
+   only the logs (~500KB). With dev mode on, the zip also contains
+   the ~108MB Windows minidump (`KingdomCome.exe.<pid>.dmp`) for
+   post-mortem stack-trace analysis. See [`logging.md`](logging.md)
+   §"Crash bundles" for the full breakdown.
 
 What dev mode does NOT change:
 

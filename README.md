@@ -148,8 +148,8 @@ first if you're writing a plugin or contributing to the engine.
 
 Same install model as kcd2-mempatch: drop `dinput8.dll` next to
 `KingdomCome.exe` in `<game>/Bin/Win64MasterMasterSteamPGO/`, drop
-`kcdx.asi` into the `plugins/` subdir, and any plugin folders
-alongside it. Runtime layout:
+**both** `kcdx.asi` and `kcdx-watchdog.exe` into the `plugins/`
+subdir, and any plugin folders alongside them. Runtime layout:
 
 ```
 <game>/Bin/Win64MasterMasterSteamPGO/
@@ -157,18 +157,31 @@ alongside it. Runtime layout:
 ├── dinput8.dll                       (Ultimate-ASI-Loader)
 ├── plugins/
 │   ├── kcdx.asi                      (this engine)
+│   ├── kcdx-watchdog.exe             (external crash-bundle sidecar)
 │   ├── <your-plugin>/
 │   │   ├── kcdx.toml                 (declarative path)
 │   │   ├── <your-plugin>.dll         (C++ plugin path)
-│   │   └── <your-plugin>.log         (per-plugin log)
+│   │   └── logs/
+│   │       └── <manifest.name>_<ts>.log
 │   └── <other-plugin>/
 │       ├── mempatch.toml             (mempatch coexists)
 │       └── kcdx.toml                 (paired plugins ship both)
 └── kcdx-engine/                      (engine-owned, auto-created)
     ├── engine.toml                   (optional dev config)
-    ├── kcdx.log                      (runtime log)
-    └── kcdx-dev.log                  (dev trace, when enabled)
+    └── logs/
+        ├── kcdx_<ts>.log             (per-session engine log)
+        ├── kcdx-dev_<ts>.log         (dev trace, when enabled)
+        ├── kcdx-watchdog_<ts>.log    (watchdog diagnostics)
+        └── crash/
+            └── crash_<ts>.zip        (auto-bundled on game crash)
 ```
+
+The two binaries ship together. `kcdx-watchdog.exe` is a ~280KB
+sidecar that `kcdx.asi` spawns at startup — it blocks on the
+game's process handle (zero CPU) and, on game crash, zips up logs
++ crash artifacts into `kcdx-engine/logs/crash/`. See
+[`docs/logging.md`](docs/logging.md) §"Crash bundles" for what's in
+the zip.
 
 See [`docs/loader-architecture.md`](docs/loader-architecture.md) for
 the rationale behind the `plugins/` vs `kcdx-engine/` split, and the

@@ -347,7 +347,93 @@ Author sets `dev_mode = true`, `dev_categories = ["MESSAGING", "GUARD"]`.
 - `dev.{h,cpp}` is a header-only compatibility shim over the unified API. `KCDX_DEV(c, a, ...)` expands to `LOG_DEBUG_KV(c, a, ...)`. The `dev::KV` type is an alias for `log::KV`.
 - All three destinations use FILE* (`_wfopen`/`fwrite`/`fflush`), not `std::ofstream`. Bisected 2026-05-20: `std::ofstream` silently dropped writes on some plugin streams even with `is_open()` returning true.
 - Per-plugin streams open eagerly via `OpenPluginStream(handle)` called from the plugin loader, so every DLL-bearing plugin's `logs/` folder exists from session start. TOML-only plugins are skipped.
+- Plugin log files are named after the plugin's `[plugin] name` manifest field (e.g. `violetanvil.hello-plugin_<ts>.log`), with a fallback to the install folder name if the manifest name is empty.
 - The dev log is opened lazily on first `SetDevMode(true)` call. If `engine.toml` doesn't set `dev_mode = true`, no `kcdx-dev_*.log` file ever appears in the player's `logs/` folder.
+
+## Crash bundles (kcdx-watchdog.exe)
+
+kcdx ships an external sidecar binary, `kcdx-watchdog.exe`, that
+bundles up everything the consumer would need to file a useful bug
+report when the game crashes.
+
+### How it works
+
+1. On startup (after `LoadAllConfigs` so the dev-mode flag is
+   settled), `kcdx.asi`'s DllMain worker thread spawns
+   `kcdx-watchdog.exe` via `CreateProcessW` with `DETACHED_PROCESS |
+   CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`. The spawn passes
+   our PID + paths + session stamp + dev-mode flag.
+2. The watchdog calls `OpenProcess(SYNCHRONIZE, ..., pid)` and
+   `WaitForSingleObject(hProc, INFINITE)`. Zero CPU; it blocks on
+   a kernel handle until the game dies.
+3. On wake-up it reads `GetExitCodeProcess`. Exit code `0` → clean
+   shutdown, exit silently. Non-zero → the game crashed.
+4. After a 5-second grace period (lets BugSplat/WerFault finish
+   writing their dumps), the watchdog zips the bundle into
+   `<kcdx-engine>/logs/crash/crash_<sessionstamp>.zip`.
+
+### What's in the zip
+
+```
+crash_<ts>.zip
+├── kcdx/
+│   ├── kcdx_<ts>.log                    (engine log)
+│   └── kcdx-dev_<ts>.log                (dev log, if dev mode was on)
+├── plugins/
+│   ├── violetanvil.hello-plugin_<ts>.log
+│   ├── kcdx.cap-01-patch_<ts>.log
+│   └── ... (one flat file per plugin)
+├── game/
+│   └── kcd.log                          (game's own narration log)
+└── crash/
+    ├── KingdomCome.exe.<pid>.dmp        (only when dev_mode = true)
+    └── bugsplat_<id>.log                (BugSplat diagnostics if any)
+```
+
+Layout is intentionally flat: four top-level directories, one file
+per leaf. Plugin filenames already encode `<manifest.name>_<ts>` so
+there are no collisions when 18 plugins share one directory.
+
+### Dev-mode gates the minidump
+
+The minidump (~108MB uncompressed) is the only bulky artifact. It's
+included only when `dev_mode = true` in `engine.toml`.
+
+| Scenario | engine.toml | Bundle contains | Approx size |
+|---|---|---|---|
+| Consumer playing with mods | `dev_mode = false` (or no file) | logs only | ~500KB |
+| Engine dev / plugin author investigating | `dev_mode = true` | logs + dmp | ~40MB |
+
+Rationale: for the common case of "plugin X crashed in its own
+callback," the GUARD line in `kcdx.log` already names the plugin +
+module + offset. The mod author needs nothing else. The dmp is
+irreplaceable for crashes our logs can't see (fast-fails, kernel
+kills, game-side faults), and that's exactly when an engine dev
+would have dev mode on.
+
+### When the watchdog can't help
+
+`SetUnhandledExceptionFilter` catches most crash classes; the
+watchdog is the safety net for the rest. There are still a few
+crash classes neither can name:
+
+- **Process killed externally** (TerminateProcess, kernel OOM,
+  user task-manager kill). The watchdog will see exit code != 0,
+  bundle the logs, but there's no fault to attribute.
+- **Stack overflow with no guard page left.** Both the in-process
+  filter AND the watchdog (which still ran fine) will produce
+  output; the dmp will name the crashing function via the kernel.
+- **Watchdog itself didn't launch** (security software blocked
+  `CreateProcessW`, `kcdx-watchdog.exe` missing from `plugins/`).
+  kcdx logs `[WARN][engine][WATCHDOG]` at startup; the in-process
+  filter still runs.
+
+### Watchdog's own log
+
+The watchdog writes its own diagnostic log at
+`<kcdx-engine>/logs/kcdx-watchdog_<ts>.log`. It records what it
+collected, why files were skipped, and the game's exit code. This
+is the file to read when something looks wrong with the bundle.
 
 ## Adding a new log call
 
@@ -355,7 +441,7 @@ Decision tree:
 
 1. **Engine-side or plugin-side call site?**
    - Engine → `LOG_*` macros.
-   - Plugin → `KCDX_LOG_*` macros.
+   - Plugin → `kcdxLogger` (member of struct or static instance).
 2. **Severity** — apply the rule-of-thumb test (would a consumer's bug-report reader benefit?).
 3. **Category** — short, stable, grep-able. Reuse an existing category if one fits. Adding a new category is a string change at the call site; no enum, no registration.
 4. **printf or structured?** — Free-form prose → `LOG_INFO(...)`. Structured event data (named fields the log reader will programmatically query) → `LOG_INFO_KV(...)`.

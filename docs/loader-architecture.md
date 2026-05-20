@@ -27,34 +27,49 @@ to host, and (b) the v0.1 model is working live-verified today.
 ├── dinput8.dll                       (Ultimate ASI Loader proxy)
 ├── plugins/
 │   ├── kcdx.asi                      (engine binary, loaded by ASI loader)
+│   ├── kcdx-watchdog.exe             (external crash-bundle sidecar)
 │   └── <plugin-name>/
 │       ├── kcdx.toml
 │       ├── *.dll
-│       └── <plugin>.log
+│       └── logs/
+│           └── <manifest.name>_<ts>.log
 └── kcdx-engine/                      (engine-owned data, sibling of plugins/)
     ├── engine.toml                   (engine config)
-    ├── kcdx.log
-    ├── kcdx-dev.log                  (only present if dev_mode = true)
-    └── address-library/              (Phase 7a — when it lands)
-        └── database.toml
+    └── logs/
+        ├── kcdx_<ts>.log             (one per session)
+        ├── kcdx-dev_<ts>.log         (only when dev_mode = true)
+        ├── kcdx-watchdog_<ts>.log    (watchdog's own diagnostic log)
+        └── crash/
+            └── crash_<ts>.zip        (only when game exit code != 0)
 ```
 
 Notes:
 - The engine binary `kcdx.asi` lives **inside** `plugins/` because
   that's where Ultimate ASI Loader scans. Plugin discovery walks
   subdirectories of `plugins/` and skips loose files at depth 0,
-  so `kcdx.asi` is ignored by discovery (it never tries to load
-  itself as a plugin).
+  so `kcdx.asi` and `kcdx-watchdog.exe` are ignored by discovery
+  (neither tries to load itself as a plugin).
+- `kcdx-watchdog.exe` is a tiny (~280KB) external sidecar that
+  kcdx.asi spawns at startup. It blocks on the game's process
+  handle with `WaitForSingleObject` (zero CPU) and, on game
+  crash, zips engine + plugin + game logs and crash artifacts
+  into `kcdx-engine/logs/crash/crash_<ts>.zip`. See
+  [`logging.md`](logging.md) §"Crash bundles".
 - Engine-owned data files (config, logs, address library) live in a
   **sibling** `kcdx-engine/` folder. Keeping them out of `plugins/`
   means uninstall-by-deleting is unambiguous: delete `kcdx-engine/`
-  + `plugins/kcdx.asi` to remove kcdx, leave the rest of `plugins/`
-  alone (other ASI mods or kcdx plugin folders).
+  + `plugins/kcdx.asi` + `plugins/kcdx-watchdog.exe` to remove
+  kcdx, leave the rest of `plugins/` alone (other ASI mods or
+  kcdx plugin folders).
 - `kcdx-engine/` is auto-created on first launch by `paths::Init`.
-  Users don't need to mkdir it manually.
-- Per-plugin log files (`<plugins>/<plugin>/<plugin>.log`) stay
-  inside each plugin's own folder — they're plugin-owned, not
-  engine-owned.
+  Users don't need to mkdir it manually. The `logs/` and
+  `logs/crash/` subfolders are created on demand by `log::Init`
+  and the watchdog respectively.
+- Per-plugin log files
+  (`<plugins>/<plugin>/logs/<manifest.name>_<ts>.log`) stay inside
+  each plugin's own folder — they're plugin-owned, not
+  engine-owned. Filename uses the plugin's `[plugin] name` from
+  its `kcdx.toml`, not the install folder name.
 - `dinput8.dll` is Ultimate ASI Loader. The user is responsible for
   having installed it (or installs it from our README). It proxies
   the system `dinput8.dll` and additionally LoadLibrary's every
