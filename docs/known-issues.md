@@ -103,22 +103,130 @@ where dev mode is on:
 See `crash_guard.cpp::WriteOwnMinidump` and the watchdog source
 in `src/watchdog/main.cpp` (sections marked "a)", "b)", "c)").
 
-### Long-term fix (not scoped)
+### Known patch (not shipped)
 
-Options if we ever want to address the BugSplat side directly:
+A clean, ready-to-ship patch exists. We've chosen **not** to ship
+it — see "Why we don't ship this" below — but documented here in
+full so a future maintainer has everything needed to flip the
+decision.
 
-- **Hook `CreateFileW`** in WHGame.dll and sanitize `:` → `_` in
-  paths matching the BugSplat pattern. Trivial implementation but
-  affects every `CreateFileW` call in the process (most are not
-  BugSplat-related), so it's a hot path.
-- **Patch the static byte that produces the colon in BugSplat.dll**
-  via mempatch. Need to RE BugSplat's filename-construction code
-  to find the source of the colon. Cleanest at runtime; one-time
-  AOB hunt up front.
-- **Report to Warhorse / BugSplat upstream.** They control the
-  display-name config; sanitizing it for filename use is their fix
-  to make.
+**Patch summary.** Repoint a single `LEA` instruction in WHGame.dll
+from the colon-bearing app-name string to a sibling string that's
+filename-safe. WHGame.dll already contains both forms:
 
-None of these are urgent because the in-process dmp workaround
-fully covers our diagnostic need. Documented here so a future
-investigation has the context.
+| String | VA | Used for | xrefs |
+|---|---|---|---|
+| `"Kingdom Come: Deliverance II"` (colon) | `0x183aa3508` | display name (CVar `sys_game_name`, getter, etc.) + BugSplat dmp filename | 4 |
+| `"Kingdom Come Deliverance II"`   (no colon) | `0x183e18290` | filename-safe sibling, single existing xref | 1 |
+
+Of the 4 colon-form xrefs, three are legitimate display-name uses
+(CVar, getter thunk, 29-byte hashing loop). The fourth, at VA
+`0x1824599e7`, is the BugSplat call site — identified by "- Fatal
+Error" string loaded immediately before and a vtable dispatch at
+`[rax+0x170]` with `BS_MINIDUMP_TYPE` flags `0x12010`.
+
+The patch rewrites that single LEA's `disp32` to point at the
+filename-safe string instead. Same-length 4-byte rewrite; fits
+the mempatch contract.
+
+**Patch fields:**
+
+| Field | Value |
+|---|---|
+| Target | `WHGame.dll` (KCD2 1.5.1164953) |
+| Instruction VA | `0x1824599e7` |
+| File offset | `0x2458de7` |
+| LEA bytes | `48 8D 15 1A 9B 64 01` |
+| Patch site offset | +3 from LEA start (the disp32) |
+| Original 4 bytes | `1A 9B 64 01` (→ `0x183aa3508`, colon string) |
+| Replacement 4 bytes | `A2 E8 9B 01` (→ `0x183e18290`, safe string) |
+| AOB anchor (unique in `.text`) | `E8 48 CF 09 FE 4C 8B C0 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 30 E8 10 D4` |
+| AOB patch offset | +13 |
+
+**As a mempatch plugin** (if ever needed):
+
+```toml
+[mempatch]
+schema = 1
+
+[[patch]]
+name = "bugsplat-filename-fix"
+target = "WHGame.dll"
+pattern = "E8 48 CF 09 FE 4C 8B C0 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 30 E8 10 D4"
+offset = 13
+original    = "1A 9B 64 01"
+replacement = "A2 E8 9B 01"
+game_version = "1.5.1164953"
+```
+
+kcdx supports the full mempatch `[[patch]]` schema (see kcdx
+`CLAUDE.md` hard rule #11), so the same TOML works inside any
+`kcdx.toml` if shipped as a kcdx-only patch instead.
+
+**Verification recipe** (required before any commit that ships
+this — kcdx's standard live-verify policy):
+
+1. Enable Application Verifier page heap on `KingdomCome.exe`
+   (the setup that turned the recurring `0xC0000374` into a
+   `0xC0000005` in the 13:32 session).
+2. Apply the patch via mempatch (or kcdx).
+3. Boot the game with the test-suite plugins active and trigger
+   the same save-load crash that produced the 13:32 fault.
+4. Check `%LOCALAPPDATA%/Temp/` for the dmp file. Expected:
+   `Kingdom Come Deliverance II<id>.dmp` (no colon). It should
+   be a real non-zero-byte file.
+5. Also confirm display-name UI surfaces (e.g. game title bar,
+   `sys_game_name` CVar via console) still show
+   `"Kingdom Come: Deliverance II"` — those use the three
+   un-touched xrefs.
+
+The agent's analysis was static-only; a first-run live check is
+non-negotiable before this leaves draft state.
+
+### Why we don't ship this
+
+kcdx's `crash_guard::UnhandledFilter` already calls
+`MiniDumpWriteDump` itself, writing to a path we fully control at
+`<kcdx-engine>/logs/kcdx_<sessionstamp>.dmp`. That dmp contains
+the same diagnostic content (crashing thread's stack, registers,
+modules, indirect-referenced memory) that BugSplat's dmp would
+contain. From a kcdx diagnostic perspective, **the BugSplat dmp
+is redundant**.
+
+The fix would only have value:
+
+- **For non-kcdx KCD2 users** if shipped as a standalone mempatch
+  plugin. Real ecosystem-citizenship value, but kcdx isn't the
+  right vehicle for delivering it.
+- **As a regression check** — defence-in-depth if kcdx's
+  in-process dmp ever breaks. Real but small.
+
+Against that, every patched AOB is maintenance debt — needs
+re-derivation on each KCD2 update. We've decided that's not
+worth carrying for a fix whose only customer is "us, redundantly."
+
+Other options considered and rejected:
+
+- **Hook `CreateFileW`** to sanitize colon-bearing paths at runtime.
+  Affects every `CreateFileW` call in the process (thousands per
+  session); the patch above is targeted at one instruction instead.
+- **Patch `BugSplat64.dll`** itself. Wrong target — BugSplat just
+  consumes a wstring that WHGame.dll constructs. The colon
+  literal isn't in `BugSplat64.dll`.
+- **Report upstream to Warhorse.** Still worthwhile in parallel
+  but on Warhorse's release cadence; not actionable from kcdx.
+
+### What we did instead
+
+Commit `2ee3da6` added `crash_guard::WriteOwnMinidump`. Every
+SEH-trappable crash now produces a usable dmp at
+`<kcdx-engine>/logs/kcdx_<sessionstamp>.dmp`. The watchdog
+prioritizes that path over BugSplat's unreliable output (see
+`src/watchdog/main.cpp`, sections marked "a)/b)/c)"). For
+crashes that bypass SEH entirely (fast-fail, kernel kill), the
+watchdog falls back to WerFault's `%LOCALAPPDATA%/CrashDumps/`
+dumps.
+
+The BugSplat-side scan is still in the watchdog as a third
+fallback, but it's expected to find nothing useful until the
+upstream bug is fixed or this patch ships.
