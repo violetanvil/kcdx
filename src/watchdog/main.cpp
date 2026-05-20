@@ -264,16 +264,27 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
     SelfLog("collecting artifacts...");
 
-    // 1) kcdx engine log + dev log for this session
+    // Bundle layout is intentionally flat: kcdx/, plugins/, game/,
+    // crash/. Each leaf is a single file. No nested directories per
+    // plugin — plugin logs are flattened by filename, which is now
+    // unique because kcdx::log writes plugin files as
+    // "<manifest.name>_<ts>.log" (manifest names are required to be
+    // unique). Authors and consumers don't need to navigate three
+    // levels deep to find a specific plugin's log.
+
+    // 1) kcdx engine log + dev log for this session, into kcdx/.
     AddFile(zip,
         engineDir / "logs" / ("kcdx_" + stamp + ".log"),
-        "kcdx_" + stamp + ".log");
+        "kcdx/kcdx_" + stamp + ".log");
     AddFile(zip,
         engineDir / "logs" / ("kcdx-dev_" + stamp + ".log"),
-        "kcdx-dev_" + stamp + ".log");
+        "kcdx/kcdx-dev_" + stamp + ".log");
 
-    // 2) ALL plugin logs for this session (recursive walk under plugins/
-    //    for files named "*_<stamp>.log").
+    // 2) ALL plugin logs for this session (recursive walk under
+    //    plugins/ for files named "*_<stamp>.log"), flattened into
+    //    plugins/<filename>. The filename already encodes the
+    //    plugin's manifest name + session stamp, so there's no
+    //    ambiguity in the flat layout.
     {
         std::error_code wec;
         std::string suffix = "_" + stamp + ".log";
@@ -284,17 +295,12 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             if (name.size() < suffix.size()) continue;
             if (name.compare(name.size() - suffix.size(),
                              suffix.size(), suffix) != 0) continue;
-            // Archive name: plugins/<rel>/...
-            fs::path rel = fs::relative(entry.path(), pluginsDir, wec);
-            std::string archive = "plugins/" +
-                std::string(WToUtf8(rel.wstring()));
-            // Normalize slashes in archive names.
-            std::replace(archive.begin(), archive.end(), '\\', '/');
+            std::string archive = "plugins/" + name;
             AddFile(zip, entry.path(), archive);
         }
     }
 
-    // 3) Game's own kcd.log
+    // 3) Game's own kcd.log, into game/.
     AddFile(zip, gameDir / "kcd.log", "game/kcd.log");
 
     // 4) WerFault dumps under %LOCALAPPDATA%/CrashDumps/ for our PID,

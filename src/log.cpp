@@ -204,20 +204,36 @@ Stream* GetOrOpenPluginStream(uint32_t handle) {
 
     std::wstring folderPath;
     std::string  folderName;
+    std::string  manifestName;
     for (const auto& p : plugins::g_plugins) {
         if (p.handle == handle) {
-            folderPath = p.folderPath;
-            folderName = p.folderName;
+            folderPath   = p.folderPath;
+            folderName   = p.folderName;
+            manifestName = p.manifest.name;
             break;
         }
     }
-    if (folderPath.empty() || folderName.empty()) return nullptr;
+    if (folderPath.empty()) return nullptr;
 
     fs::path logsDir = fs::path(folderPath) / L"logs";
     std::error_code ec;
     fs::create_directories(logsDir, ec);
 
-    std::string prefix = folderName + "_";
+    // Plugin log files are named after the plugin's manifest [plugin]
+    // name (e.g. "violetanvil.hello-plugin") rather than the folder
+    // name. This makes a flat collection of plugin logs trivially
+    // grep-able by author + plugin without needing to know the
+    // install layout, and lets the watchdog flatten plugin/* into a
+    // single zip directory without name collisions.
+    //
+    // Fall back to folder name when manifest.name is empty (defensive
+    // path for plugins still being validated — losing logs is worse
+    // than an ugly filename).
+    const std::string& baseName =
+        !manifestName.empty() ? manifestName : folderName;
+    if (baseName.empty()) return nullptr;
+
+    std::string prefix = baseName + "_";
     std::string suffix = ".log";
     PruneOldSessionFiles(logsDir, prefix, suffix, kLogRetainCount);
 
