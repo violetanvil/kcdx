@@ -16,6 +16,7 @@
 #include "dev.h"
 #include "log.h"
 #include "patch_engine.h"
+#include "paths.h"
 #include "plugin_loader.h"
 #include "scan_engine.h"
 #include "test.h"
@@ -628,7 +629,7 @@ bool ParseOneTrampoline(const toml::table& t,
     return true;
 }
 
-// Load the engine-config file at <plugins>/kcdx-engine.toml. This is
+// Load the engine-config file at <kcdx-engine>/engine.toml. This is
 // the ONLY place engine-wide settings live (dev_mode, dev_log_*,
 // dry_run). Plugin kcdx.toml files cannot turn these on — that would
 // be cross-plugin contamination.
@@ -731,7 +732,7 @@ void LoadOneFile(const fs::path& path) {
 
         // Top-level [kcdx] section. Engine-level settings (dev_mode,
         // dev_log_*, dry_run) are NOT allowed here — they live in
-        // <plugins>/kcdx-engine.toml. Warn if a plugin sets them so
+        // <kcdx-engine>/engine.toml. Warn if a plugin sets them so
         // the author moves them to the right place.
         bool isTestSuiteOnly = false;
         if (auto* top = doc.get("kcdx"); top && top->is_table()) {
@@ -742,7 +743,7 @@ void LoadOneFile(const fs::path& path) {
                 if (tbl.get(k) != nullptr) {
                     log::WarnF("%s: [kcdx] %s is an engine-level setting and "
                                "cannot be set by plugins. Move it to "
-                               "<plugins>/kcdx-engine.toml instead.",
+                               "<kcdx-engine>/engine.toml instead.",
                                fileLabel.c_str(), k);
                 }
             }
@@ -960,7 +961,7 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
     // before any plugin TOML is parsed (so test_suite_only gating sees
     // the final IsEnabled() value). Production users don't ship this
     // file; dev mode stays off.
-    LoadEngineConfig(root / "kcdx-engine.toml");
+    LoadEngineConfig(kcdx::paths::EngineDataDirPath() / L"engine.toml");
 
     size_t folders = 0, files = 0;
     WalkForTomls(root, /*depth=*/0, folders, files);

@@ -147,23 +147,32 @@ first if you're writing a plugin or contributing to the engine.
 
 Same install model as kcd2-mempatch: drop `dinput8.dll` next to
 `KingdomCome.exe` in `<game>/Bin/Win64MasterMasterSteamPGO/`, drop
-`kcdx.asi` and any plugin folders into the `plugins/` subdir
+`kcdx.asi` into the `plugins/` subdir, and any plugin folders
 alongside it. Runtime layout:
 
 ```
 <game>/Bin/Win64MasterMasterSteamPGO/
 ├── KingdomCome.exe                   (vanilla)
 ├── dinput8.dll                       (Ultimate-ASI-Loader)
-└── plugins/
-    ├── kcdx.asi                      (this engine)
+├── plugins/
+│   ├── kcdx.asi                      (this engine)
+│   ├── <your-plugin>/
+│   │   ├── kcdx.toml                 (declarative path)
+│   │   ├── <your-plugin>.dll         (C++ plugin path)
+│   │   └── <your-plugin>.log         (per-plugin log)
+│   └── <other-plugin>/
+│       ├── mempatch.toml             (mempatch coexists)
+│       └── kcdx.toml                 (paired plugins ship both)
+└── kcdx-engine/                      (engine-owned, auto-created)
+    ├── engine.toml                   (optional dev config)
     ├── kcdx.log                      (runtime log)
-    ├── <your-plugin>/
-    │   ├── kcdx.toml                 (declarative path)
-    │   └── <your-plugin>.dll         (C++ plugin path)
-    └── <other-plugin>/
-        ├── mempatch.toml             (mempatch coexists)
-        └── kcdx.toml                 (paired plugins ship both)
+    └── kcdx-dev.log                  (dev trace, when enabled)
 ```
+
+See [`docs/loader-architecture.md`](docs/loader-architecture.md) for
+the rationale behind the `plugins/` vs `kcdx-engine/` split, and the
+v0.2+ plan (SKSE-style launcher + injected DLL) that supersedes this
+layout once we have a UI to ship.
 
 ## Compatibility
 

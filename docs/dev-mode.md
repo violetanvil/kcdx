@@ -8,9 +8,15 @@ the #1 way to drown in noise, so the model is worth reading once.
 
 | Stream | File | Audience | Default | Configured by |
 |---|---|---|---|---|
-| Engine status | `<plugins>/kcdx.log` | End user + everyone | always on, minimal | nothing — kcdx writes what it writes |
-| Engine internals trace | `<plugins>/kcdx-dev.log` | kcdx contributor (debugging the engine) | OFF | `<plugins>/kcdx-engine.toml` |
+| Engine status | `<kcdx-engine>/kcdx.log` | End user + everyone | always on, minimal | nothing — kcdx writes what it writes |
+| Engine internals trace | `<kcdx-engine>/kcdx-dev.log` | kcdx contributor (debugging the engine) | OFF | `<kcdx-engine>/engine.toml` |
 | Per-plugin log | `<plugins>/<plugin>/<plugin>.log` | plugin author (debugging their plugin) | always on, `info` level | each plugin's own `kcdx.toml` `[plugin] log_level` |
+
+`<kcdx-engine>` here is the engine-owned data folder at
+`<game>/Bin/Win64MasterMasterSteamPGO/kcdx-engine/` — a sibling of
+the `plugins/` folder where the user installs plugins.
+`<plugins>` is `<game>/Bin/Win64MasterMasterSteamPGO/plugins/`.
+Both are created on first launch.
 
 The streams are independent. Turning on engine dev mode doesn't make
 plugin logs more verbose. Cranking a plugin's log level doesn't
@@ -52,8 +58,8 @@ suspect the engine is doing something they didn't ask it to.
 
 ### Enabling
 
-Create `<plugins>/kcdx-engine.toml` (engine config file, sits next
-to `kcdx.asi`):
+Create `<kcdx-engine>/engine.toml` (engine config file, sits in the
+engine-owned data folder next to `kcdx.log`):
 
 ```toml
 [kcdx]
@@ -72,13 +78,14 @@ dev_categories    = ["LUA", "SCRIPTING"]
 dry_run           = false
 ```
 
-`kcdx-engine.toml` is the ONLY engine-level config. **Plugin
+`engine.toml` is the ONLY engine-level config. **Plugin
 `kcdx.toml` files cannot turn dev mode on or off** — that would be
 cross-plugin contamination (Plugin A flipping global state that
 changes how Plugin B is parsed). The setting lives where it
-belongs: next to the engine binary.
+belongs: in the engine-owned data folder, separate from any
+plugin.
 
-Production users don't ship `kcdx-engine.toml`; dev mode is off and
+Production users don't ship `engine.toml`; dev mode is off and
 the file doesn't exist. Developers ship one and the engine reads
 it at startup.
 
@@ -218,7 +225,7 @@ test_suite_only = true
 ```
 
 When kcdx parses a plugin `kcdx.toml` with `test_suite_only = true`:
-- If dev mode is **off** (no `kcdx-engine.toml` or `dev_mode = false`):
+- If dev mode is **off** (no `engine.toml` or `dev_mode = false`):
   kcdx silently skips every entry in that file (no [[patch]],
   [[hook]], [plugin], etc. gets registered). C++ DLLs in the
   plugin folder also check `kcdx::dev::IsEnabled()` in their
@@ -300,7 +307,7 @@ are registered).
 - **Fixing a bug?** Add a regression test that fails before the
   fix and passes after.
 - **Changing existing behavior?** Re-run the suite locally
-  (launch game with `kcdx-engine.toml` + dev mode on, read the
+  (launch game with `engine.toml` + dev mode on, read the
   summary). If a previously-passing test now fails, you either
   broke something or the test needs updating — figure out which
   before committing.
@@ -315,7 +322,7 @@ are registered).
 | File | Role |
 |---|---|
 | `src/dev.h` / `dev.cpp` | Engine-internals trace: macro, IsEnabled accessor, log file open + rotation + format helpers + drain thread |
-| `src/config.cpp` | Parses `kcdx-engine.toml` at startup. Calls `dev::SetEnabled`, `dev::SetCategories`, `patch::g_dryRun`. Walks plugin `kcdx.toml` files (without dev_mode/dry_run keys). |
+| `src/config.cpp` | Parses `engine.toml` at startup. Calls `dev::SetEnabled`, `dev::SetCategories`, `patch::g_dryRun`. Walks plugin `kcdx.toml` files (without dev_mode/dry_run keys). |
 | `src/log.cpp` | The three log writers: `kcdx.log`, `kcdx-dev.log`, per-plugin `<plugin>.log`. Each one gates on its own setting (always-on, dev mode, plugin log_level). |
 | `src/plugin_loader.cpp` | Reads `[plugin] log_level` into LoadedPlugin; `Thunk_Log` consults it before formatting. |
 | 40+ existing TUs | `KCDX_DEV(...)` sprinkles at each interesting handoff. |

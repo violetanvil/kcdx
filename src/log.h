@@ -11,9 +11,10 @@ namespace kcdx::log {
 // see which file went off the rails).
 constexpr uint64_t kLogSizeCapBytes = 20ull * 1024 * 1024;  // 20 MB
 
-// Initialize: opens log file at <module_dir>/kcdx.log, optionally allocates a console
-// if the game was launched with -console.
-void Init(const std::wstring& moduleDir);
+// Initialize: opens log file at <kcdx-engine>/kcdx.log (resolved via
+// paths::EngineDataDir, which must be initialized first), optionally
+// allocates a console if the game was launched with -console.
+void Init();
 
 // Engine-internal writers (write to kcdx.log).
 void Info(const std::string& msg);

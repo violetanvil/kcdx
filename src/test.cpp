@@ -171,7 +171,7 @@ void EmitGatedOffSummary() {
     }
     if (count <= 0) return;
     log::InfoF("Test suite: %d plugin(s) gated off (dev mode disabled; "
-               "enable via <plugins>/kcdx-engine.toml)", count);
+               "enable via <kcdx-engine>/engine.toml)", count);
 }
 
 }  // namespace kcdx::test

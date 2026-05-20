@@ -28,7 +28,7 @@ test_suite_only = true
   `kcdx.dev.is_enabled()` and return. Zero log noise, zero
   behavioral change — production users never see the suite in
   their logs.
-- **Dev mode on** (developer creates `<plugins>/kcdx-engine.toml`
+- **Dev mode on** (developer creates `<kcdx-engine>/engine.toml`
   with `dev_mode = true`): every test runs its check, calls
   `ReportTestResult(...)` (C++) or `kcdx.test.report(...)` (Lua),
   and the aggregator emits `Test suite: X/Y passing` to kcdx.log
@@ -73,8 +73,9 @@ To enable the suite on a dev machine:
 
 1. Build kcdx (`pwsh ./build.ps1`) and install `kcdx.asi` to
    `<game>/Bin/Win64MasterMasterSteamPGO/plugins/`.
-2. Create `<game>/Bin/Win64MasterMasterSteamPGO/plugins/kcdx-engine.toml`
-   with at minimum:
+2. Create `<game>/Bin/Win64MasterMasterSteamPGO/kcdx-engine/engine.toml`
+   (the `kcdx-engine/` folder is auto-created on first kcdx launch, or
+   you can `mkdir` it yourself) with at minimum:
 
    ```toml
    [kcdx]

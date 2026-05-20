@@ -6,7 +6,7 @@
 # surface is intact.
 #
 # Test-suite-gated like every test plugin: silent when dev mode is
-# off; only runs when <plugins>/kcdx-engine.toml has dev_mode=true.
+# off; only runs when <kcdx-engine>/engine.toml has dev_mode=true.
 
 [kcdx]
 test_suite_only = true

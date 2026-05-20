@@ -5,34 +5,26 @@
 #include "config.h"
 #include "hooks.h"
 #include "log.h"
+#include "paths.h"
 #include "plugin_loader.h"
 
-namespace {
-
-HMODULE g_self = nullptr;
-
-std::wstring GetSelfDirectory() {
-    wchar_t buf[MAX_PATH * 2];
-    DWORD n = GetModuleFileNameW(g_self, buf, _countof(buf));
-    if (n == 0 || n == _countof(buf)) return L".\\";
-    std::wstring path(buf, n);
-    auto pos = path.find_last_of(L"/\\");
-    if (pos == std::wstring::npos) return L".\\";
-    return path.substr(0, pos + 1);
-}
-
 DWORD WINAPI WorkerThread(LPVOID) {
-    std::wstring selfDir = GetSelfDirectory();
+    kcdx::paths::Init();
 
-    kcdx::log::Init(selfDir);
+    kcdx::log::Init();
     kcdx::log::Info("");
     kcdx::log::Info("kcdx.asi loaded");
-    char dirUtf8[512];
-    WideCharToMultiByte(CP_UTF8, 0, selfDir.c_str(), -1, dirUtf8, sizeof(dirUtf8), nullptr, nullptr);
-    kcdx::log::InfoF("module directory: %s", dirUtf8);
+    char pluginsUtf8[512];
+    WideCharToMultiByte(CP_UTF8, 0, kcdx::paths::PluginsDir().c_str(), -1,
+                        pluginsUtf8, sizeof(pluginsUtf8), nullptr, nullptr);
+    kcdx::log::InfoF("plugins directory: %s", pluginsUtf8);
+    char engineUtf8[512];
+    WideCharToMultiByte(CP_UTF8, 0, kcdx::paths::EngineDataDir().c_str(), -1,
+                        engineUtf8, sizeof(engineUtf8), nullptr, nullptr);
+    kcdx::log::InfoF("engine data directory: %s", engineUtf8);
 
     // The ASI itself sits in plugins/, plugin subfolders are siblings of kcdx.asi.
-    kcdx::config::LoadAllConfigs(selfDir);
+    kcdx::config::LoadAllConfigs(kcdx::paths::PluginsDir());
 
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
@@ -43,16 +35,13 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // installed so plugins can rely on the MinHook + lua_State infrastructure
     // being present. Plugin_Preload + Plugin_Load fire here, before the first
     // game `update` tick.
-    kcdx::plugins::DiscoverAndLoad(selfDir);
+    kcdx::plugins::DiscoverAndLoad(kcdx::paths::PluginsDir());
 
     return 0;
 }
 
-}  // namespace
-
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
     if (reason == DLL_PROCESS_ATTACH) {
-        g_self = hModule;
         DisableThreadLibraryCalls(hModule);
         HANDLE h = CreateThread(nullptr, 0, WorkerThread, nullptr, 0, nullptr);
         if (h) CloseHandle(h);

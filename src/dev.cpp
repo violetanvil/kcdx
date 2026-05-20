@@ -25,6 +25,8 @@
 #include <mutex>
 #include <string>
 
+#include "paths.h"
+
 namespace kcdx::dev {
 
 // ---------------------------------------------------------------------
@@ -49,22 +51,9 @@ size_t              g_bytes_written = 0;
 // a mutex around access after init.
 std::vector<std::string> g_category_filter;
 
-// Resolve the kcdx-dev.log path. log::Init() in log.cpp captures the
-// module directory at startup; we re-derive it the same way (via
-// GetModuleHandle for kcdx.asi and PathRemoveFileSpec) so we don't
-// need to plumb a callback.
+// Resolve the kcdx-dev.log path inside the engine-data folder.
 std::filesystem::path ResolveLogPath() {
-    HMODULE hMod = nullptr;
-    GetModuleHandleExW(
-        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        reinterpret_cast<LPCWSTR>(&ResolveLogPath),
-        &hMod);
-    wchar_t buf[MAX_PATH];
-    DWORD n = GetModuleFileNameW(hMod, buf, MAX_PATH);
-    if (n == 0 || n == MAX_PATH) return {};
-    std::filesystem::path p(buf);
-    return p.parent_path() / L"kcdx-dev.log";
+    return kcdx::paths::EngineDataDirPath() / L"kcdx-dev.log";
 }
 
 // Cycle .log -> .log.1 -> .log.2 ... up to max_files. Drop the oldest.

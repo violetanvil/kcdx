@@ -11,7 +11,8 @@
 #include <string>
 #include <unordered_map>
 
-#include "plugin_loader.h"  // for kcdx::plugins::g_plugins lookup
+#include "paths.h"           // for paths::PluginsDir / EngineDataDir
+#include "plugin_loader.h"   // for kcdx::plugins::g_plugins lookup
 
 namespace kcdx::log {
 namespace {
@@ -42,8 +43,7 @@ std::unordered_map<uint32_t, Stream*> g_pluginStreams;
 HANDLE g_consoleOut = nullptr;
 bool   g_consoleEnabled = false;
 
-// Module directory (kept after Init so we can construct plugin log paths).
-std::wstring g_moduleDir;
+// (Plugin per-log paths resolve via paths::PluginsDir at write time.)
 
 bool HasConsoleArg() {
     LPWSTR cmdLine = GetCommandLineW();
@@ -168,9 +168,10 @@ Stream* GetOrOpenPluginStream(uint32_t handle) {
     //     folderName as a subdirectory under plugins/. Loose-DLL case is
     //     handled by DiscoverAndLoad using the .dll filename as folder.)
     // Build wide path for std::ofstream's open().
+    const std::wstring& pluginsDir = kcdx::paths::PluginsDir();
     std::wstring wide;
-    wide.reserve(g_moduleDir.size() + 2 + folder->size() * 2);
-    wide += g_moduleDir;
+    wide.reserve(pluginsDir.size() + 2 + folder->size() * 2);
+    wide += pluginsDir;
     for (char c : *folder) wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
     wide += L"\\";
     for (char c : *folder) wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
@@ -261,9 +262,8 @@ void WritePlugin(uint32_t handle, const char* level, const std::string& msg) {
 
 }  // namespace
 
-void Init(const std::wstring& moduleDir) {
-    g_moduleDir = moduleDir;
-    std::wstring logPath = moduleDir + L"kcdx.log";
+void Init() {
+    std::wstring logPath = kcdx::paths::EngineDataDir() + L"kcdx.log";
     g_engineStream.path = logPath;
     g_engineStream.streamName = "kcdx.log";
     g_engineStream.file.open(logPath, std::ios_base::out | std::ios_base::trunc);

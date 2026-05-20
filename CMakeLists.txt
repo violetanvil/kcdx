@@ -81,6 +81,7 @@ add_subdirectory(vendor/asmjit)
 add_library(kcdx SHARED
     src/dllmain.cpp
     src/log.cpp
+    src/paths.cpp
     src/pe_helpers.cpp
     src/patch_engine.cpp
     src/config.cpp

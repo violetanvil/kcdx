@@ -34,7 +34,7 @@ CAP-11 will report FAIL with "kcdx.hello.greet not registered".
 
 ## Verifying
 
-Launch the game with dev mode on (`<plugins>/kcdx-engine.toml`
+Launch the game with dev mode on (`<kcdx-engine>/engine.toml`
 with `dev_mode = true`). The next test-suite summary in `kcdx.log`
 should include both rows:
 
