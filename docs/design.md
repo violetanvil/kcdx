@@ -1,6 +1,36 @@
 # kcdx v0.1 — design
 
-> **Status:** authoritative spec for the v0.1 release. Updated as
+> **⚠️ SUPERSEDED by [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md).**
+>
+> This document describes the v0.1 design: seven TOML behavior entry types
+> (`[[patch]]`, `[[hook]]`, `[[mid_hook]]`, `[[trampoline]]`, `[[scan]]`,
+> `[[command]]`, `[[event]]`), ASI-loader-based installation
+> (`kcdx.asi` + Ultimate ASI Loader), immediate-apply hook model, and
+> kcdx.* Lua API exposed at first-update-tick. It is preserved as
+> historical reference for the engine internals that survive the
+> restructure (patch_engine, conflict_engine, ldr_notify, load_order,
+> messaging, serialization), but the schema, lifecycle, install layout,
+> and author surface have all been replaced.
+>
+> **The current authoritative design is
+> [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md).**
+> Each phase of the restructure that touches an engine surface should
+> update both this doc (trim the relevant section) AND the restructure
+> plan (record what changed). At the end of the restructure this doc
+> either gets fully replaced by the restructure plan as the live spec,
+> OR retained as the engine-internals reference (patch_engine algorithm,
+> conflict_engine pre-flight matrix, etc.) with the schema/author-surface
+> sections gone.
+>
+> **What's still accurate here**: engine internals descriptions
+> (patch_engine, conflict_engine, ldr_notify, trampoline pools, messaging,
+> serialization, address library, console). The "WHO calls them" changed
+> with the restructure (TOML parser → Lua/C++ API calls), but the engines
+> themselves are unchanged.
+
+---
+
+> **Status (historical):** authoritative spec for the v0.1 release. Updated as
 > implementation lands. The plan-mode plan that produced this design
 > lives in the author's private `~/.claude/plans/` dir; this doc is
 > the public-facing successor.

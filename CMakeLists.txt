@@ -119,6 +119,8 @@ add_library(kcdx SHARED
     src/test.cpp
     src/lua_bind_dev.cpp
     src/lua_bind_test.cpp
+    src/probes/createfilew_probe.cpp
+    src/probes/bugsplat_ctor_probe.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

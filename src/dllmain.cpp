@@ -14,6 +14,8 @@
 #include "serialization.h"
 #include "watchdog_spawn.h"
 
+#include "probes/bugsplat_ctor_probe.h"  // PROBE T — remove after fix
+
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
     // again here is safe and keeps this worker startup self-contained.
@@ -126,6 +128,14 @@ static void RunBeforeGameZoneInDllMain() {
     // WHGame.dll mapping is what triggers any before_game patch
     // targeting it.
     kcdx::ldr_notify::Register();
+
+    // === DIAGNOSTIC (PROBE T): install the BugSplat ctor log-only
+    // hook at DllMain time (immediate if BugSplat64.dll is already
+    // mapped, otherwise via LDR notification). Tests whether
+    // DllMain-time install timing catches the ctor call that
+    // worker-thread install (PROBE S) missed. Remove after the
+    // question is answered.
+    kcdx::probes::bugsplat_ctor_probe::ArmLdrInstall();
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {

@@ -562,3 +562,302 @@ When this gap is closed (Call/Pcall/LoadString land in
 kcdxLuaApi), the pak Lua sidecar collapses into the C++ DLL.
 
 ---
+
+## 12. `[[hook]]` schema grew organically; verbs + body shapes need rationalization
+
+**Discovered 2026-05-21 during BugSplat PROBE R/S/T investigation
+(see `docs/known-issues/BugSplat dmp files don't reach disk for AV
+crashes.md`).**
+
+The current `[[hook]]` schema accumulated three locator types
+(`pattern` / `target_symbol` / `address_id` — soon to include
+`export` per gap #15), two body shapes (`bytes` for raw asm vs
+`lua_callback` for typed Lua), and no first-class verb distinguishing
+"replace function entirely" vs "intercept and call original." Plugin
+authors have to read several pages of docs to decide which combination
+they want, and the two body shapes barely have anything in common.
+
+A reasonable cleanup direction surfaced during the investigation
+discussion (transcript, 2026-05-21):
+
+- **Verb-first entry types.** Replace the catch-all `[[hook]]` with
+  verbs reflecting intent: `[[intercept]]` (before/after/around), 
+  `[[replace]]` (full function-entry override), `[[constant]]` (byte
+  rewrite, mempatch-style — would replace `[[patch]]`). The verb
+  determines body semantics; authors don't pick a "kind" and then
+  separately figure out what fields apply.
+- **One locator family.** `function = "Module.dll!ExportName"` as
+  the default form, with `pattern`/`address_id`/`offset` as fallback
+  options for the cases an export name doesn't cover. SKSE-style
+  Address Library IDs stay as a separate `address_id` field; AOB
+  patterns stay as a separate `pattern` field; but the *common* case
+  is one string.
+- **Function signatures as first-class data.** Today `return_type`
+  and `param_types` are inline on every hook entry. Pull them into
+  a reusable `[function.Name]` declaration that hooks reference by
+  name. Decouples "what is this function" from "what do I want to
+  do to it."
+- **Declarative arg rewriters.** For the BugSplat-class case — "if
+  arg N's string matches X, substitute Y, then call original" — a
+  pure-declarative shape (`rewrite_arg.szApp = {find=":", with=" -"}`)
+  removes the need for a C++ or Lua callback. Narrow, but extremely
+  natural for engine-fix authors.
+
+**Why this is a v0.1 gap, not a v0.2 nice-to-have:** the surface is
+about to grow further (export locator from gap #15, before-game-zone
+hooks from PROBE T's findings, the BugSplat fix itself). Rationalizing
+now costs less than rationalizing after three more plugins are
+written against the current shape.
+
+**Migration strategy when this lands:** the existing 21+ test plugins
+all use the current `[[hook]]` schema. Options:
+1. Hard break — bump engine version, ship migration script.
+2. Parallel schemas with deprecation — both `[[hook]]` (legacy) and
+   `[[intercept]]` (new) work; `[[hook]]` logs a deprecation WARN.
+3. Pure additive — keep `[[hook]]` as-is, ship verb-first as new
+   entries without deprecation. Authors gradually migrate.
+
+Option 2 is the SKSE-shaped answer (long deprecation windows).
+
+---
+
+## 13. Function-locator by exported name is missing
+
+**Discovered 2026-05-21 during BugSplat PROBE R/T (cross-module
+hooking).**
+
+Today's locator surface is `pattern` / `target_symbol` /
+`address_id` — none of which let an author say "the function
+exported by this DLL with this name." This matters specifically for:
+
+- **Cross-module hooking** of game-shipped DLLs that aren't WHGame
+  (BugSplat64.dll, dinput8.dll, Steam APIs the game links). These
+  are guaranteed-stable APIs with well-known mangled names; AOB
+  patterns are overkill, Address Library doesn't cover them, and
+  symbol-table lookup is for plugin-published symbols only.
+- **Loader-safe before_game timing.** Export resolution is just
+  `GetModuleHandleW` + `GetProcAddress`, which is safe under the
+  loader lock. AOB scanning is not. This means export-locator hooks
+  could qualify for the before_game zone (today restricted to
+  `[[patch]]` only per `load_order::DeriveMinZone`), unlocking
+  DllMain-time interception of DLL APIs.
+
+**Suggested resolution:** new locator field, mutually exclusive
+with the existing three:
+
+```toml
+[[hook]]
+module = "BugSplat64.dll"
+export = "??0MiniDmpSender@@QEAA@PEB_W000K@Z"   # C++ mangled name
+# ... rest unchanged
+```
+
+Resolves via `GetProcAddress(GetModuleHandleW(module), export)`.
+Capability gating in `load_order` extended so export-locator
+`[[hook]]` entries are allowed in before_game zone (no AOB scan, no
+text-section read, loader-safe).
+
+`ldr_notify::ApplyEntriesForModule` extended to apply
+before_game-zoned export-locator hooks at module-mapped time, mirror
+of today's patch handling.
+
+PROBE T proved the timing works (BugSplat64.dll already mapped at
+kcdx.asi DllMain → immediate install via direct call; alternatively
+LDR notification catches the load). The plumbing is half-built; this
+gap is mostly schema + capability-matrix work.
+
+**Why this matters beyond BugSplat:** any future kcdx engine-fix
+targeting a non-WHGame DLL (Denuvo overlays, third-party crash
+reporters, anti-cheat shims if Warhorse ever adds one, dinput8 input
+hooks) needs this primitive. Without it, every such fix becomes a
+hand-rolled `LoadLibrary` + `GetProcAddress` + manual MinHook setup
+in a C++ engine builtin.
+
+---
+
+## 14. No "intercept, mutate args, call original" first-class shape
+
+**Discovered 2026-05-21 alongside gap #12.**
+
+The two body shapes today are:
+
+- `bytes = "..."` — raw asm. Full replacement of function prologue.
+  Author writes their own return-to-original via trampoline or
+  abandons the original entirely. No declarative way to wrap.
+- `lua_callback = "..."` — typed marshaling via the
+  `runtime_func_t` JIT machinery. Lua callback fires before the
+  original; return value handling is partially shipped (gap #2);
+  arg mutation is doable in Lua but requires the Lua VM to be
+  populated.
+
+What's missing: **"intercept this function, mutate one of its
+arguments, then call the original."** This is the most common
+detour pattern in SKSE / Frida / AOP frameworks generally
+("before-advice with args"). It's also what the BugSplat fix needs:
+read `szApp`, if it contains `:`, substitute a colon-free copy,
+call original.
+
+Today's options for this pattern:
+1. Write raw asm in `bytes` that mutates the register holding the
+   arg, then jumps to the original via a trampoline. C++ expertise +
+   asm knowledge required.
+2. Use `lua_callback` — but then the Lua VM must be alive at the
+   detour-fire time. For BugSplat, the constructor fires during
+   WHGame.dll's startup init, well before the Lua VM is populated.
+   So this option is unavailable for the very case that motivated
+   the discovery.
+3. Ship the substitution as a C++ engine builtin (kcdx-internal),
+   hardcoded. Works but skips TOML entirely, and isn't available
+   to plugin authors.
+
+**Suggested resolution:** add a `before` field to `[[hook]]` (or to
+the new `[[intercept]]` verb from gap #12) that names a kcdx-internal
+or plugin-DLL-exported C function. Signature:
+
+```cpp
+typedef bool (*kcdxBeforeCallback)(uintptr_t* args, size_t nargs);
+```
+
+Returns true to call original, false to skip. Args mutable in place.
+Pure C signature, no Lua VM required. Engine handler name resolves
+via a small registry (kcdx-internal handlers) plus per-plugin export
+lookup (DLL-side handlers).
+
+Combined with gap #13's `export` locator and gap #12's verb-first
+schema, the BugSplat fix becomes (one entry):
+
+```toml
+[[intercept]]
+function = "BugSplat64.dll!??0MiniDmpSender@@QEAA@PEB_W000K@Z"
+signature = "void(ptr, wstr, wstr, wstr, wstr, u32)"
+before = "kcdx.builtin.bugsplat_filename_fix"
+```
+
+Where `kcdx.builtin.bugsplat_filename_fix` is a 4-line C function
+in the engine that swaps the colon for a dash if present.
+
+---
+
+## 15. Game-event API beyond lifecycle messages
+
+**Discovered 2026-05-21 during SKSE-parity audit (total-conversion
+ambition).**
+
+Today's `kcdxMessage_*` catalog covers the kcdx-engine lifecycle:
+PostLoad, PostPostLoad, InputLoaded, NewGame, PreLoadGame /
+PostLoadGame / SaveGame / DeleteGame, LuaReady, LoadGameSelected.
+Ten messages. All originate from kcdx itself, fired at well-known
+moments in the engine's own lifecycle.
+
+What's missing: **gameplay events.** SKSE / Papyrus has tens of
+in-game-state events plugins subscribe to:
+
+- OnEffectStart / OnEffectFinish (magic effect lifecycle)
+- OnHit (damage received/dealt)
+- OnObjectEquipped / OnObjectUnequipped
+- OnContainerChanged (inventory)
+- OnLocationChange (player moves between named locations)
+- OnDying / OnDeath
+- OnCellLoad / OnCellAttach
+- OnActivate (player interacts with object)
+- OnDialogueBegin / OnDialogueEnd
+
+Each maps to a Papyrus virtual method or a specific hook the SKSE
+plugin installs. The Skyrim mod community is so productive *because*
+these events exist as a stable subscription surface — no plugin
+re-implements "did the player just take damage" hook-and-state code.
+
+kcdx today: plugin authors must install their own hooks for any
+gameplay event they care about. Two plugins both wanting
+"OnPlayerDamageTaken" install conflicting MinHook detours; the
+first wins; the second silently doesn't fire (per first-wins rule).
+
+**Why this is the biggest F:L-class blocker:** a total conversion
+needs *dozens* of these events to coordinate quest / dialogue / AI
+behavior. Without a shared event surface, every TC contributor
+re-implements the same hooks, and the conflict matrix explodes.
+
+**Suggested resolution path (v0.2+, incremental):**
+
+1. Identify the 10-15 highest-value events from KCD2's existing
+   gameplay surface (likely candidates: damage taken/dealt, save
+   created, dialogue line spoken, item picked up, location entered,
+   combat started/ended, perk unlocked, level-up, quest stage
+   advanced, NPC interacted with).
+2. For each, RE the underlying CryEngine call path, install a
+   single kcdx-side hook, and surface it via a new
+   `kcdxMessage_Game*` ID in the catalog. One hook per event, kcdx
+   owns it, plugins subscribe via `kcdxMessagingInterface`.
+3. Document the catalog + the contribution flow ("here's how to
+   add a game event") so the community can extend it without
+   waiting on us.
+
+Incremental shipping: ship the catalog one event at a time. Each
+event is a small PR.
+
+**Why this is a v0.2+ item, not v0.1:** the engine plumbing already
+exists (`kcdxMessagingInterface` was built for exactly this kind of
+fan-out). What's missing is the RE work to identify the hook sites
+and the catalog growth. Doesn't block v0.1 ship.
+
+---
+
+## 16. High-level Lua surface for gameplay
+
+**Discovered 2026-05-21 during SKSE-parity audit (total-conversion
+ambition); companion to gap #15.**
+
+`kcdxScriptingInterface::lua` (a.k.a. `kcdxLuaApi`) exposes the
+primitive Lua 5.1 C API as function pointers — ~30 calls covering
+stack, types, values, tables, globals, errors. This is the *floor*
+of what a plugin can do; it's the same shape any C extension to
+Lua 5.1 sees.
+
+What's missing: **the *ceiling*.** SKSE / CommonLibSSE plugins live
+in C++ wrapper APIs like `RE::PlayerCharacter::GetSingleton()`,
+`actor->GetActorValue(RE::ActorValue::kHealth)`, etc. These wrap
+the underlying engine pointers and offsets in named, type-checked
+helpers. Plugin authors write `player->ModActorValue(...)` instead
+of `*(float*)(player_ptr + 0x320) += 10.0f`.
+
+kcdx today has NONE of this for KCD2's gameplay surface. A plugin
+wanting "give the player +1 health" writes:
+
+```cpp
+// Today (illustrative; KCD2 vtable layout TBD):
+uintptr_t player = kcdx::ResolveAddress(ADDR_GLOBAL_PLAYER);
+uintptr_t health_addr = *(uintptr_t*)(player + KCDX_OFFSET_HEALTH);
+*(float*)health_addr += 1.0f;
+```
+
+A plugin wanting the same in pak Lua writes the same in Lua, via
+`kcdx.memory.pointer`. **Every TC contributor re-implements the same
+wrappers, with their own offsets and their own names.**
+
+**Suggested resolution path (v0.2+, incremental):**
+
+Build out a `kcdx.gameplay.*` (Lua) and `kcdxGameplayInterface`
+(C++) surface covering common operations:
+
+- `kcdx.player.health` / `:set(n)` / `:add(n)`
+- `kcdx.player.position` (read-only Vec3; set via teleport API)
+- `kcdx.player.inventory:add(item_id, count)` / `:remove(id)`
+- `kcdx.player.gold` (and gold-like resource accessors)
+- `kcdx.world.spawn(npc_id, position)`
+- `kcdx.dialogue.replace(line_id, new_text)`
+- `kcdx.quest.set_stage(quest_id, stage_n)`
+
+Each function is just a thin wrapper over the existing primitives
+(ResolveAddress + offset arithmetic + WriteBytes / read). The
+value is in **naming them once, in one place, with one canonical
+implementation.**
+
+Incremental shipping: pick the 10 most-needed by RE'ing real KCD2
+mod ideas (the "I want to" list from the modding community). One
+helper per PR. Document each in a "Gameplay API reference" doc.
+
+**Why this is v0.2+:** the underlying primitives exist. The work is
+RE + naming + documentation, not engine architecture. Doesn't block
+v0.1 ship; absolutely blocks F:L-class TCs.
+
+---

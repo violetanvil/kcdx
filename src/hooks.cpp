@@ -24,6 +24,10 @@
 #include "test.h"
 #include "trampoline_engine.h"
 
+#include "probes/createfilew_probe.h"
+// bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
+// installs from kcdx.asi DllMain, not from hooks::Install.
+
 extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
@@ -467,9 +471,17 @@ bool Install() {
         return false;
     }
 
-    if (MH_Initialize() != MH_OK) {
-        log::Error("MH_Initialize failed");
-        return false;
+    // MinHook may already be initialized: PROBE T (and any future
+    // before_game-zone hook) calls MH_Initialize from kcdx.asi
+    // DllMain so it can install detours before the game's startup
+    // code reaches them. Treat ALREADY_INITIALIZED as the no-op
+    // success path.
+    {
+        MH_STATUS mi = MH_Initialize();
+        if (mi != MH_OK && mi != MH_ERROR_ALREADY_INITIALIZED) {
+            log::ErrorF("MH_Initialize failed: %d", (int)mi);
+            return false;
+        }
     }
 
     if (MH_CreateHook(reinterpret_cast<LPVOID>(pcallAddr),
@@ -490,6 +502,20 @@ bool Install() {
     }
 
     log::Info("Hooks installed: lua_pcall + update");
+
+    // === DIAGNOSTIC (PROBE R): hook kernel32!CreateFileW to identify
+    // the call site building BugSplat's colon-bearing dmp filename.
+    // Dev-mode-gated (Install() is a no-op in production). Remove
+    // once the question is answered.
+    kcdx::probes::createfilew_probe::Install();
+
+    // === DIAGNOSTIC (PROBE S retired 2026-05-21):
+    // Worker-thread install of bugsplat_ctor_probe was too late — the
+    // ctor fired before this code ran. PROBE T moves the install to
+    // kcdx.asi DllMain via LdrRegisterDllNotification (see
+    // src/dllmain.cpp RunBeforeGameZoneInDllMain). The Install()
+    // function itself is unchanged; only the call site moved.
+
     return true;
 }
 
