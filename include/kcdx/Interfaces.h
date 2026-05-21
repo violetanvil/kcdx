@@ -524,14 +524,14 @@ typedef struct kcdxTrampolineInterface {
 // symbols via the linker — there's no analogue to SKSE's "VM is a
 // vtable on a game-side class" trick (subagent research, 2026-05-18).
 //
-// So this interface ships the ~30 lua_* / luaL_* calls a plugin
-// actually needs as function pointers. Plugins:
+// So this interface ships the full Lua 5.1 C API — all 117 LUA_API
+// + LUALIB_API functions — as function pointers. Plugins:
 //
 //   #include "kcdx/Interfaces.h"
 //   ...
 //   static int Lua_Greet(struct lua_State* L, void* ud) {
 //       auto* lua = static_cast<const kcdxLuaApi*>(ud);
-//       const char* name = lua->ToString(L, 1, nullptr);
+//       const char* name = lua->ToString(L, 1);
 //       lua->PushString(L, "hello!");
 //       return 1;
 //   }
@@ -564,6 +564,118 @@ struct lua_State;
 // number of values pushed onto the Lua stack.
 typedef int (*kcdxLuaCFunction)(struct lua_State* L, void* user_data);
 
+// Raw Lua 5.1 lua_CFunction shape (no user_data). Needed by PushCClosure
+// and the luaL_Reg table — kept distinct from kcdxLuaCFunction so the
+// upvalue-shim ergonomics of RegisterFunction stay opt-in.
+typedef int (*kcdxLuaRawCFunction)(struct lua_State* L);
+
+// Reader/Writer callbacks for lua_load / lua_dump.
+typedef const char* (*kcdxLuaReader)(struct lua_State* L, void* ud, size_t* sz);
+typedef int         (*kcdxLuaWriter)(struct lua_State* L, const void* p,
+                                     size_t sz, void* ud);
+
+// Allocator callback for lua_getallocf / lua_setallocf. Same shape as
+// Lua's lua_Alloc.
+typedef void* (*kcdxLuaAlloc)(void* ud, void* ptr, size_t osize, size_t nsize);
+
+// Debug-hook callback for lua_sethook / lua_gethook.
+struct kcdxLuaDebug;
+typedef void (*kcdxLuaHook)(struct lua_State* L, struct kcdxLuaDebug* ar);
+
+// Activation record for the Debug API. Layout mirrors Lua 5.1's
+// lua_Debug exactly — kcdx's Lua build defines LUA_IDSIZE=60. Plugins
+// pass kcdxLuaDebug* through GetStack / GetInfo / GetLocal / SetLocal
+// / GetUpvalue / SetUpvalue.
+typedef struct kcdxLuaDebug {
+    int         event;
+    const char* name;             // (n)
+    const char* namewhat;         // (n) 'global', 'local', 'field', 'method'
+    const char* what;             // (S) 'Lua', 'C', 'main', 'tail'
+    const char* source;           // (S)
+    int         currentline;      // (l)
+    int         nups;             // (u) number of upvalues
+    int         linedefined;      // (S)
+    int         lastlinedefined;  // (S)
+    char        short_src[60];    // (S) LUA_IDSIZE=60 in kcdx's Lua build
+    int         i_ci;             // private — active function index
+} kcdxLuaDebug;
+
+// luaL_Reg entry for batch registration via LRegister. Mirrors Lua's
+// luaL_Reg one-to-one. A NULL `name` terminates the array.
+typedef struct kcdxLuaLReg {
+    const char*         name;
+    kcdxLuaRawCFunction func;
+} kcdxLuaLReg;
+
+// Buffer for the LBuffInit / LPrepBuffer / LAddLString / LAddString /
+// LAddValue / LPushResult API. Layout matches luaL_Buffer in kcdx's
+// Lua build: BUFSIZ=512 on MSVC's CRT, so LUAL_BUFFERSIZE=512. Plugins
+// allocate this on the stack and pass &buf into LBuffInit. The buffer
+// fields are documented in lauxlib.h but plugins generally only need
+// to call the functions, not poke the fields.
+typedef struct kcdxLuaLBuffer {
+    char*             p;             // current position
+    int               lvl;           // strings on the Lua stack
+    struct lua_State* L;
+    char              buffer[512];   // LUAL_BUFFERSIZE
+} kcdxLuaLBuffer;
+
+// Pseudo-indices and constants — mirror lua.h verbatim so plugin code
+// reads like the canonical API. Kept as macros (not enum) to match
+// upstream Lua's exact spellings.
+#define kcdxLua_MultRet         (-1)
+#define kcdxLua_RegistryIndex   (-10000)
+#define kcdxLua_EnvironIndex    (-10001)
+#define kcdxLua_GlobalsIndex    (-10002)
+#define kcdxLua_UpvalueIndex(i) (kcdxLua_GlobalsIndex - (i))
+
+// Thread status codes returned by lua_pcall / lua_resume / lua_load.
+#define kcdxLua_OK         0
+#define kcdxLua_Yield      1
+#define kcdxLua_ErrRun     2
+#define kcdxLua_ErrSyntax  3
+#define kcdxLua_ErrMem     4
+#define kcdxLua_ErrErr     5
+#define kcdxLua_ErrFile    (kcdxLua_ErrErr + 1)  // luaL_load* file-open error
+
+// Basic types — returned by Type().
+#define kcdxLua_TNone           (-1)
+#define kcdxLua_TNil            0
+#define kcdxLua_TBoolean        1
+#define kcdxLua_TLightUserdata  2
+#define kcdxLua_TNumber         3
+#define kcdxLua_TString         4
+#define kcdxLua_TTable          5
+#define kcdxLua_TFunction       6
+#define kcdxLua_TUserdata       7
+#define kcdxLua_TThread         8
+
+// GC opcodes for GC().
+#define kcdxLua_GCStop         0
+#define kcdxLua_GCRestart      1
+#define kcdxLua_GCCollect      2
+#define kcdxLua_GCCount        3
+#define kcdxLua_GCCountB       4
+#define kcdxLua_GCStep         5
+#define kcdxLua_GCSetPause     6
+#define kcdxLua_GCSetStepMul   7
+
+// Debug hook event codes + masks.
+#define kcdxLua_HookCall      0
+#define kcdxLua_HookRet       1
+#define kcdxLua_HookLine      2
+#define kcdxLua_HookCount     3
+#define kcdxLua_HookTailRet   4
+
+#define kcdxLua_MaskCall  (1 << kcdxLua_HookCall)
+#define kcdxLua_MaskRet   (1 << kcdxLua_HookRet)
+#define kcdxLua_MaskLine  (1 << kcdxLua_HookLine)
+#define kcdxLua_MaskCount (1 << kcdxLua_HookCount)
+
+// Predefined ref values returned by LRef.
+#define kcdxLua_NoRef  (-2)
+#define kcdxLua_RefNil (-1)
+
 // Lua C API surface available to plugin functions. Pointer signatures
 // match Lua 5.1's API verbatim, so plugin code reads like raw lua.h.
 // Members are function pointers because KCD2 ships Lua 5.1 inside
@@ -573,38 +685,75 @@ typedef int (*kcdxLuaCFunction)(struct lua_State* L, void* user_data);
 // so plugin code visually differs from any in-process lua.h
 // includes, and to match the rest of kcdxInterface methods.
 //
-// Each function name's underlying lua_* is in a comment for grep'ability.
+// Each function name's underlying lua_* / luaL_* is in a comment for
+// grep'ability.
+//
+// Naming convention: lua_X → X (PascalCase). luaL_X → LX (PascalCase
+// with `L` prefix). The `L` prefix keeps the two namespaces visually
+// distinct in plugin code and matches Lua's own `L`-prefix tradition
+// for the auxiliary library.
+//
+// All 117 LUA_API + LUALIB_API functions from Lua 5.1 are exposed —
+// no exclusions. The Lua C API is sandbox-internal (every function
+// operates on lua_State*); functions that could harm a user's system
+// (os.execute, io.popen, package.loadlib) live in Lua's stdlib, not
+// in the C API surface this struct wraps.
 typedef struct kcdxLuaApi {
-    // --- stack inspection ---
-    int         (*GetTop)        (struct lua_State* L);                                   // lua_gettop
-    void        (*SetTop)        (struct lua_State* L, int idx);                          // lua_settop
-    void        (*PushValue)     (struct lua_State* L, int idx);                          // lua_pushvalue
-    void        (*Remove)        (struct lua_State* L, int idx);                          // lua_remove
-    void        (*Insert)        (struct lua_State* L, int idx);                          // lua_insert
-    void        (*Replace)       (struct lua_State* L, int idx);                          // lua_replace
-    int         (*CheckStack)    (struct lua_State* L, int n);                            // lua_checkstack
+    // -------------------------------------------------------------------
+    // state manipulation
+    // -------------------------------------------------------------------
+    struct lua_State* (*NewState)    (kcdxLuaAlloc f, void* ud);                          // lua_newstate
+    void              (*Close)       (struct lua_State* L);                               // lua_close
+    struct lua_State* (*NewThread)   (struct lua_State* L);                               // lua_newthread
+    kcdxLuaRawCFunction (*AtPanic)   (struct lua_State* L, kcdxLuaRawCFunction panicf);   // lua_atpanic
+    void              (*StoreDebugInfo)   (struct lua_State* L, int enable);              // lua_storedebuginfo (Cryengine extension)
+    int               (*IsStoreDebugInfo) (struct lua_State* L);                          // lua_isstoredebuginfo (Cryengine extension)
 
-    // --- type queries ---
-    int         (*Type)          (struct lua_State* L, int idx);                          // lua_type
-    int         (*IsNumber)      (struct lua_State* L, int idx);                          // lua_isnumber
-    int         (*IsString)      (struct lua_State* L, int idx);                          // lua_isstring
-    int         (*IsBoolean)     (struct lua_State* L, int idx);                          // lua_isboolean
-    int         (*IsNil)         (struct lua_State* L, int idx);                          // lua_isnil
-    int         (*IsCFunction)   (struct lua_State* L, int idx);                          // lua_iscfunction
-    int         (*IsTable)       (struct lua_State* L, int idx);                          // lua_istable
-    int         (*IsFunction)    (struct lua_State* L, int idx);                          // lua_isfunction
-    int         (*IsUserdata)    (struct lua_State* L, int idx);                          // lua_isuserdata
+    // -------------------------------------------------------------------
+    // basic stack manipulation
+    // -------------------------------------------------------------------
+    int   (*GetTop)        (struct lua_State* L);                                         // lua_gettop
+    void  (*SetTop)        (struct lua_State* L, int idx);                                // lua_settop
+    void  (*PushValue)     (struct lua_State* L, int idx);                                // lua_pushvalue
+    void  (*Remove)        (struct lua_State* L, int idx);                                // lua_remove
+    void  (*Insert)        (struct lua_State* L, int idx);                                // lua_insert
+    void  (*Replace)       (struct lua_State* L, int idx);                                // lua_replace
+    int   (*CheckStack)    (struct lua_State* L, int n);                                  // lua_checkstack
+    void  (*XMove)         (struct lua_State* from, struct lua_State* to, int n);         // lua_xmove
 
-    // --- pull values from stack ---
-    const char* (*ToString)      (struct lua_State* L, int idx);                          // lua_tostring
-    const char* (*ToLString)     (struct lua_State* L, int idx, size_t* len);             // lua_tolstring
-    double      (*ToNumber)      (struct lua_State* L, int idx);                          // lua_tonumber
-    long long   (*ToInteger)     (struct lua_State* L, int idx);                          // lua_tointeger (lua_Integer is ptrdiff_t on 5.1)
-    int         (*ToBoolean)     (struct lua_State* L, int idx);                          // lua_toboolean
-    const void* (*ToPointer)     (struct lua_State* L, int idx);                          // lua_topointer
-    void*       (*ToUserdata)    (struct lua_State* L, int idx);                          // lua_touserdata
+    // -------------------------------------------------------------------
+    // access functions (stack -> C)
+    // -------------------------------------------------------------------
+    int                 (*IsNumber)     (struct lua_State* L, int idx);                   // lua_isnumber
+    int                 (*IsString)     (struct lua_State* L, int idx);                   // lua_isstring
+    int                 (*IsCFunction)  (struct lua_State* L, int idx);                   // lua_iscfunction
+    int                 (*IsUserdata)   (struct lua_State* L, int idx);                   // lua_isuserdata
+    int                 (*IsBoolean)    (struct lua_State* L, int idx);                   // lua_type(L,n)==LUA_TBOOLEAN  (macro in lua.h, exposed as fn)
+    int                 (*IsNil)        (struct lua_State* L, int idx);                   // lua_type(L,n)==LUA_TNIL
+    int                 (*IsTable)      (struct lua_State* L, int idx);                   // lua_type(L,n)==LUA_TTABLE
+    int                 (*IsFunction)   (struct lua_State* L, int idx);                   // lua_type(L,n)==LUA_TFUNCTION
+    int                 (*IsLightUserdata)(struct lua_State* L, int idx);                 // lua_type(L,n)==LUA_TLIGHTUSERDATA
+    int                 (*IsThread)     (struct lua_State* L, int idx);                   // lua_type(L,n)==LUA_TTHREAD
+    int                 (*IsNone)       (struct lua_State* L, int idx);                   // lua_type(L,n)==LUA_TNONE
+    int                 (*IsNoneOrNil)  (struct lua_State* L, int idx);                   // lua_type(L,n)<=0
+    int                 (*Type)         (struct lua_State* L, int idx);                   // lua_type
+    const char*         (*TypeName)     (struct lua_State* L, int tp);                    // lua_typename
+    int                 (*Equal)        (struct lua_State* L, int idx1, int idx2);        // lua_equal
+    int                 (*RawEqual)     (struct lua_State* L, int idx1, int idx2);        // lua_rawequal
+    int                 (*LessThan)     (struct lua_State* L, int idx1, int idx2);        // lua_lessthan
+    double              (*ToNumber)     (struct lua_State* L, int idx);                   // lua_tonumber
+    long long           (*ToInteger)    (struct lua_State* L, int idx);                   // lua_tointeger
+    int                 (*ToBoolean)    (struct lua_State* L, int idx);                   // lua_toboolean
+    const char*         (*ToString)     (struct lua_State* L, int idx);                   // lua_tostring (macro: lua_tolstring with NULL)
+    const char*         (*ToLString)    (struct lua_State* L, int idx, size_t* len);      // lua_tolstring
+    size_t              (*ObjLen)       (struct lua_State* L, int idx);                   // lua_objlen
+    kcdxLuaRawCFunction (*ToCFunction)  (struct lua_State* L, int idx);                   // lua_tocfunction
+    void*               (*ToUserdata)   (struct lua_State* L, int idx);                   // lua_touserdata
+    struct lua_State*   (*ToThread)     (struct lua_State* L, int idx);                   // lua_tothread
+    const void*         (*ToPointer)    (struct lua_State* L, int idx);                   // lua_topointer
 
-    // --- push values onto stack ---
+    // -------------------------------------------------------------------
+    // push functions (C -> stack)
     //
     // PRECISION CAVEAT on KCD2: CryEngine's bundled Lua 5.1 is compiled
     // with LUA_NUMBER=float (single-precision, 24-bit mantissa). Any
@@ -619,29 +768,146 @@ typedef struct kcdxLuaApi {
     // the kcdx.memory.pointer userdata channel — both stay clean.
     //
     // This caveat is intrinsic to CryEngine's Lua build; we cannot fix
-    // it inside kcdx. See kcdx/docs/lua-number-precision.md for the
-    // probe data and kcdx/CLAUDE.md hard rule #17.
-    void        (*PushString)    (struct lua_State* L, const char* s);                    // lua_pushstring
-    void        (*PushLString)   (struct lua_State* L, const char* s, size_t len);        // lua_pushlstring
-    void        (*PushNumber)    (struct lua_State* L, double n);                         // lua_pushnumber (precision-lossy; see caveat above)
-    void        (*PushInteger)   (struct lua_State* L, long long n);                      // lua_pushinteger (precision-lossy; see caveat above)
-    void        (*PushBoolean)   (struct lua_State* L, int b);                            // lua_pushboolean
-    void        (*PushNil)       (struct lua_State* L);                                   // lua_pushnil
-    void        (*PushCFunction) (struct lua_State* L, kcdxLuaCFunction fn, void* ud);    // lua_pushcclosure with one upvalue (the ud)
-    void        (*PushLightUserdata)(struct lua_State* L, void* p);                       // lua_pushlightuserdata (exact for pointers — preferred over PushInteger for VAs)
+    // it inside kcdx. See kcdx/docs/lua-number-precision.md.
+    // -------------------------------------------------------------------
+    void        (*PushNil)            (struct lua_State* L);                              // lua_pushnil
+    void        (*PushNumber)         (struct lua_State* L, double n);                    // lua_pushnumber (precision-lossy; see caveat above)
+    void        (*PushInteger)        (struct lua_State* L, long long n);                 // lua_pushinteger (precision-lossy; see caveat above)
+    void        (*PushLString)        (struct lua_State* L, const char* s, size_t len);   // lua_pushlstring
+    void        (*PushString)         (struct lua_State* L, const char* s);               // lua_pushstring
+    const char* (*PushVFString)       (struct lua_State* L, const char* fmt, va_list ap); // lua_pushvfstring
+    const char* (*PushFString)        (struct lua_State* L, const char* fmt, ...);        // lua_pushfstring
+    void        (*PushBoolean)        (struct lua_State* L, int b);                       // lua_pushboolean
+    void        (*PushLightUserdata)  (struct lua_State* L, void* p);                     // lua_pushlightuserdata (exact for pointers — preferred over PushInteger for VAs)
+    int         (*PushThread)         (struct lua_State* L);                              // lua_pushthread
 
-    // --- tables ---
-    void        (*NewTable)      (struct lua_State* L);                                   // lua_newtable
-    void        (*GetField)      (struct lua_State* L, int idx, const char* k);           // lua_getfield
-    void        (*SetField)      (struct lua_State* L, int idx, const char* k);           // lua_setfield
-    void        (*RawGetI)       (struct lua_State* L, int idx, int n);                   // lua_rawgeti
-    void        (*RawSetI)       (struct lua_State* L, int idx, int n);                   // lua_rawseti
-    void        (*GetGlobal)     (struct lua_State* L, const char* name);                 // lua_getglobal (5.1 macro: getfield+globalsindex)
-    void        (*SetGlobal)     (struct lua_State* L, const char* name);                 // lua_setglobal
+    // PushCFunction: pushes a kcdxLuaCFunction (the 2-arg shape with
+    // user_data) as a Lua closure. The user_data slot lets plugins
+    // capture a kcdxLuaApi* or other context without a global. kcdx
+    // wraps it in an internal shim so Lua sees a plain lua_CFunction.
+    void        (*PushCFunction)      (struct lua_State* L, kcdxLuaCFunction fn, void* ud);
 
-    // --- error reporting ---
-    int         (*Error)         (struct lua_State* L);                                   // lua_error  (call only with a value already on the stack)
-    int         (*ErrorF)        (struct lua_State* L, const char* fmt, ...);             // luaL_error (varargs convenience)
+    // PushCClosure: raw lua_pushcclosure — push a kcdxLuaRawCFunction
+    // with `n` upvalues already on the stack. Use this when you need
+    // Lua's native closure semantics (multiple upvalues) rather than
+    // the single-user_data shape of PushCFunction.
+    void        (*PushCClosure)       (struct lua_State* L, kcdxLuaRawCFunction fn, int n); // lua_pushcclosure
+
+    // -------------------------------------------------------------------
+    // get functions (Lua -> stack)
+    // -------------------------------------------------------------------
+    void  (*GetTable)        (struct lua_State* L, int idx);                              // lua_gettable
+    void  (*GetField)        (struct lua_State* L, int idx, const char* k);               // lua_getfield
+    void  (*RawGet)          (struct lua_State* L, int idx);                              // lua_rawget
+    void  (*RawGetI)         (struct lua_State* L, int idx, int n);                       // lua_rawgeti
+    void  (*CreateTable)     (struct lua_State* L, int narr, int nrec);                   // lua_createtable
+    void  (*NewTable)        (struct lua_State* L);                                       // lua_newtable (macro: createtable 0,0)
+    void* (*NewUserdata)     (struct lua_State* L, size_t sz);                            // lua_newuserdata
+    int   (*GetMetatable)    (struct lua_State* L, int objindex);                         // lua_getmetatable
+    void  (*GetFEnv)         (struct lua_State* L, int idx);                              // lua_getfenv
+    void  (*GetGlobal)       (struct lua_State* L, const char* name);                     // lua_getglobal (macro: getfield+globalsindex)
+
+    // -------------------------------------------------------------------
+    // set functions (stack -> Lua)
+    // -------------------------------------------------------------------
+    void  (*SetTable)        (struct lua_State* L, int idx);                              // lua_settable
+    void  (*SetField)        (struct lua_State* L, int idx, const char* k);               // lua_setfield
+    void  (*RawSet)          (struct lua_State* L, int idx);                              // lua_rawset
+    void  (*RawSetI)         (struct lua_State* L, int idx, int n);                       // lua_rawseti
+    int   (*SetMetatable)    (struct lua_State* L, int objindex);                         // lua_setmetatable
+    int   (*SetFEnv)         (struct lua_State* L, int idx);                              // lua_setfenv
+    void  (*SetGlobal)       (struct lua_State* L, const char* name);                     // lua_setglobal (macro: setfield+globalsindex)
+
+    // -------------------------------------------------------------------
+    // load and run Lua code
+    // -------------------------------------------------------------------
+    void  (*Call)            (struct lua_State* L, int nargs, int nresults);              // lua_call
+    int   (*PCall)           (struct lua_State* L, int nargs, int nresults, int errfunc); // lua_pcall
+    int   (*CPCall)          (struct lua_State* L, kcdxLuaRawCFunction func, void* ud);   // lua_cpcall
+    int   (*Load)            (struct lua_State* L, kcdxLuaReader reader, void* dt,
+                              const char* chunkname);                                     // lua_load
+    int   (*Dump)            (struct lua_State* L, kcdxLuaWriter writer, void* data);     // lua_dump
+
+    // -------------------------------------------------------------------
+    // coroutine functions
+    // -------------------------------------------------------------------
+    int   (*Yield)           (struct lua_State* L, int nresults);                         // lua_yield
+    int   (*Resume)          (struct lua_State* L, int narg);                             // lua_resume
+    int   (*Status)          (struct lua_State* L);                                       // lua_status
+
+    // -------------------------------------------------------------------
+    // garbage collection
+    // -------------------------------------------------------------------
+    int   (*GC)              (struct lua_State* L, int what, int data);                   // lua_gc
+
+    // -------------------------------------------------------------------
+    // miscellaneous
+    // -------------------------------------------------------------------
+    int          (*Error)        (struct lua_State* L);                                   // lua_error (call only with a value already on the stack)
+    int          (*Next)         (struct lua_State* L, int idx);                          // lua_next
+    void         (*Concat)       (struct lua_State* L, int n);                            // lua_concat
+    kcdxLuaAlloc (*GetAllocF)    (struct lua_State* L, void** ud);                        // lua_getallocf
+    void         (*SetAllocF)    (struct lua_State* L, kcdxLuaAlloc f, void* ud);         // lua_setallocf
+
+    // -------------------------------------------------------------------
+    // debug API
+    // -------------------------------------------------------------------
+    int          (*GetStack)        (struct lua_State* L, int level, kcdxLuaDebug* ar);   // lua_getstack
+    int          (*GetInfo)         (struct lua_State* L, const char* what, kcdxLuaDebug* ar); // lua_getinfo
+    const char*  (*GetLocal)        (struct lua_State* L, const kcdxLuaDebug* ar, int n); // lua_getlocal
+    const char*  (*SetLocal)        (struct lua_State* L, const kcdxLuaDebug* ar, int n); // lua_setlocal
+    const char*  (*GetUpvalue)      (struct lua_State* L, int funcindex, int n);          // lua_getupvalue
+    const char*  (*SetUpvalue)      (struct lua_State* L, int funcindex, int n);          // lua_setupvalue
+    int          (*SetHook)         (struct lua_State* L, kcdxLuaHook func, int mask, int count); // lua_sethook
+    kcdxLuaHook  (*GetHook)         (struct lua_State* L);                                // lua_gethook
+    int          (*GetHookMask)     (struct lua_State* L);                                // lua_gethookmask
+    int          (*GetHookCount)    (struct lua_State* L);                                // lua_gethookcount
+
+    // -------------------------------------------------------------------
+    // auxiliary library (luaL_*) — `L` prefix, otherwise same conventions
+    // -------------------------------------------------------------------
+    void         (*LOpenLib)        (struct lua_State* L, const char* libname,
+                                     const kcdxLuaLReg* l, int nup);                      // luaI_openlib
+    void         (*LRegister)       (struct lua_State* L, const char* libname,
+                                     const kcdxLuaLReg* l);                               // luaL_register
+    int          (*LGetMetafield)   (struct lua_State* L, int obj, const char* e);        // luaL_getmetafield
+    int          (*LCallMeta)       (struct lua_State* L, int obj, const char* e);        // luaL_callmeta
+    int          (*LTypeError)      (struct lua_State* L, int narg, const char* tname);   // luaL_typerror
+    int          (*LArgError)       (struct lua_State* L, int numarg, const char* extramsg); // luaL_argerror
+    const char*  (*LCheckLString)   (struct lua_State* L, int numArg, size_t* l);         // luaL_checklstring
+    const char*  (*LOptLString)     (struct lua_State* L, int numArg, const char* def, size_t* l); // luaL_optlstring
+    double       (*LCheckNumber)    (struct lua_State* L, int numArg);                    // luaL_checknumber (precision-lossy; see PushNumber caveat)
+    double       (*LOptNumber)      (struct lua_State* L, int nArg, double def);          // luaL_optnumber
+    long long    (*LCheckInteger)   (struct lua_State* L, int numArg);                    // luaL_checkinteger (precision-lossy; see PushInteger caveat)
+    long long    (*LOptInteger)     (struct lua_State* L, int nArg, long long def);       // luaL_optinteger
+    void         (*LCheckStack)     (struct lua_State* L, int sz, const char* msg);       // luaL_checkstack
+    void         (*LCheckType)      (struct lua_State* L, int narg, int t);               // luaL_checktype
+    void         (*LCheckAny)       (struct lua_State* L, int narg);                      // luaL_checkany
+    int          (*LNewMetatable)   (struct lua_State* L, const char* tname);             // luaL_newmetatable
+    void*        (*LCheckUdata)     (struct lua_State* L, int ud, const char* tname);     // luaL_checkudata
+    void         (*LWhere)          (struct lua_State* L, int lvl);                       // luaL_where
+    int          (*LError)          (struct lua_State* L, const char* fmt, ...);          // luaL_error (varargs)
+    int          (*LCheckOption)    (struct lua_State* L, int narg, const char* def, const char* const lst[]); // luaL_checkoption
+    int          (*LRef)            (struct lua_State* L, int t);                         // luaL_ref
+    void         (*LUnref)          (struct lua_State* L, int t, int ref);                // luaL_unref
+    int          (*LLoadFile)       (struct lua_State* L, const char* filename);          // luaL_loadfile
+    int          (*LLoadBuffer)     (struct lua_State* L, const char* buff, size_t sz, const char* name); // luaL_loadbuffer
+    int          (*LLoadString)     (struct lua_State* L, const char* s);                 // luaL_loadstring
+    struct lua_State* (*LNewState)  (void);                                               // luaL_newstate
+    const char*  (*LGSub)           (struct lua_State* L, const char* s, const char* p, const char* r); // luaL_gsub
+    const char*  (*LFindTable)      (struct lua_State* L, int idx, const char* fname, int szhint); // luaL_findtable
+
+    // luaL_Buffer surface — see kcdxLuaLBuffer struct above. Plugins
+    // allocate the buffer on the stack, BuffInit it, then use the
+    // Add* functions to accumulate, then PushResult to push the final
+    // string. (The luaL_addchar/luaL_addsize macros in upstream lauxlib
+    // are not exposed — use LAddLString instead.)
+    void         (*LBuffInit)       (struct lua_State* L, kcdxLuaLBuffer* B);             // luaL_buffinit
+    char*        (*LPrepBuffer)     (kcdxLuaLBuffer* B);                                  // luaL_prepbuffer
+    void         (*LAddLString)     (kcdxLuaLBuffer* B, const char* s, size_t l);         // luaL_addlstring
+    void         (*LAddString)      (kcdxLuaLBuffer* B, const char* s);                   // luaL_addstring
+    void         (*LAddValue)       (kcdxLuaLBuffer* B);                                  // luaL_addvalue
+    void         (*LPushResult)     (kcdxLuaLBuffer* B);                                  // luaL_pushresult
 } kcdxLuaApi;
 
 typedef struct kcdxScriptingInterface {

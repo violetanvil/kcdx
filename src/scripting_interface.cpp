@@ -241,56 +241,94 @@ int Thunk_RegisterFunction(kcdxPluginHandle owner,
 
 // --- kcdxLuaApi function-pointer table ----------------------------------
 //
-// Most members are direct passthroughs to lua_* with a (potential)
-// signature/typedef reshape. A few (PushCFunction, ErrorF) need glue.
+// Most members are direct passthroughs to lua_* / luaL_* with a
+// (potential) signature/typedef reshape — kcdxLuaDebug and kcdxLuaLBuffer
+// are layout-identical to Lua's lua_Debug / luaL_Buffer (verified against
+// vendor/lua headers) and reinterpret_cast safely.
+//
+// Precision-lossy entries (PushNumber/PushInteger/ToNumber/ToInteger and
+// the L-prefixed Check/Opt Number/Integer variants) cast through the
+// public double/long long ABI to/from Lua's internal lua_Number (float
+// on KCD2's build) and lua_Integer (ptrdiff_t). The lossiness is documented
+// at the struct field and in docs/lua-number-precision.md.
+//
+// PushCFunction needs the closure-shim glue; everything else is a
+// one-line forward.
 
-int         api_GetTop        (lua_State* L)                                   { return lua_gettop(L); }
-void        api_SetTop        (lua_State* L, int idx)                          { lua_settop(L, idx); }
-void        api_PushValue     (lua_State* L, int idx)                          { lua_pushvalue(L, idx); }
-void        api_Remove        (lua_State* L, int idx)                          { lua_remove(L, idx); }
-void        api_Insert        (lua_State* L, int idx)                          { lua_insert(L, idx); }
-void        api_Replace       (lua_State* L, int idx)                          { lua_replace(L, idx); }
-int         api_CheckStack    (lua_State* L, int n)                            { return lua_checkstack(L, n); }
+// State manipulation
+lua_State* api_NewState           (kcdxLuaAlloc f, void* ud)                   { return lua_newstate(reinterpret_cast<lua_Alloc>(f), ud); }
+void       api_Close              (lua_State* L)                               { lua_close(L); }
+lua_State* api_NewThread          (lua_State* L)                               { return lua_newthread(L); }
+kcdxLuaRawCFunction api_AtPanic   (lua_State* L, kcdxLuaRawCFunction panicf)   { return reinterpret_cast<kcdxLuaRawCFunction>(lua_atpanic(L, reinterpret_cast<lua_CFunction>(panicf))); }
+void       api_StoreDebugInfo     (lua_State* L, int enable)                  { lua_storedebuginfo(L, enable); }
+int        api_IsStoreDebugInfo   (lua_State* L)                              { return lua_isstoredebuginfo(L); }
 
-int         api_Type          (lua_State* L, int idx)                          { return lua_type(L, idx); }
-int         api_IsNumber      (lua_State* L, int idx)                          { return lua_isnumber(L, idx); }
-int         api_IsString      (lua_State* L, int idx)                          { return lua_isstring(L, idx); }
-int         api_IsBoolean     (lua_State* L, int idx)                          { return lua_isboolean(L, idx); }
-int         api_IsNil         (lua_State* L, int idx)                          { return lua_isnil(L, idx); }
-int         api_IsCFunction   (lua_State* L, int idx)                          { return lua_iscfunction(L, idx); }
-int         api_IsTable       (lua_State* L, int idx)                          { return lua_istable(L, idx); }
-int         api_IsFunction    (lua_State* L, int idx)                          { return lua_isfunction(L, idx); }
-int         api_IsUserdata    (lua_State* L, int idx)                          { return lua_isuserdata(L, idx); }
+// Basic stack manipulation
+int  api_GetTop      (lua_State* L)                                            { return lua_gettop(L); }
+void api_SetTop      (lua_State* L, int idx)                                   { lua_settop(L, idx); }
+void api_PushValue   (lua_State* L, int idx)                                   { lua_pushvalue(L, idx); }
+void api_Remove      (lua_State* L, int idx)                                   { lua_remove(L, idx); }
+void api_Insert      (lua_State* L, int idx)                                   { lua_insert(L, idx); }
+void api_Replace     (lua_State* L, int idx)                                   { lua_replace(L, idx); }
+int  api_CheckStack  (lua_State* L, int n)                                     { return lua_checkstack(L, n); }
+void api_XMove       (lua_State* from, lua_State* to, int n)                   { lua_xmove(from, to, n); }
 
-const char* api_ToString      (lua_State* L, int idx)                          { return lua_tostring(L, idx); }
-const char* api_ToLString     (lua_State* L, int idx, size_t* len)             { return lua_tolstring(L, idx, len); }
-double      api_ToNumber      (lua_State* L, int idx)                          { return (double)lua_tonumber(L, idx); }
-long long   api_ToInteger     (lua_State* L, int idx)                          { return (long long)lua_tointeger(L, idx); }
-int         api_ToBoolean     (lua_State* L, int idx)                          { return lua_toboolean(L, idx); }
-const void* api_ToPointer     (lua_State* L, int idx)                          { return lua_topointer(L, idx); }
-void*       api_ToUserdata    (lua_State* L, int idx)                          { return lua_touserdata(L, idx); }
+// Access (stack -> C)
+int         api_IsNumber    (lua_State* L, int idx)                            { return lua_isnumber(L, idx); }
+int         api_IsString    (lua_State* L, int idx)                            { return lua_isstring(L, idx); }
+int         api_IsCFunction (lua_State* L, int idx)                            { return lua_iscfunction(L, idx); }
+int         api_IsUserdata  (lua_State* L, int idx)                            { return lua_isuserdata(L, idx); }
+int         api_IsBoolean   (lua_State* L, int idx)                            { return lua_isboolean(L, idx); }
+int         api_IsNil       (lua_State* L, int idx)                            { return lua_isnil(L, idx); }
+int         api_IsTable     (lua_State* L, int idx)                            { return lua_istable(L, idx); }
+int         api_IsFunction  (lua_State* L, int idx)                            { return lua_isfunction(L, idx); }
+int         api_IsLightUserdata(lua_State* L, int idx)                         { return lua_islightuserdata(L, idx); }
+int         api_IsThread    (lua_State* L, int idx)                            { return lua_isthread(L, idx); }
+int         api_IsNone      (lua_State* L, int idx)                            { return lua_isnone(L, idx); }
+int         api_IsNoneOrNil (lua_State* L, int idx)                            { return lua_isnoneornil(L, idx); }
+int         api_Type        (lua_State* L, int idx)                            { return lua_type(L, idx); }
+const char* api_TypeName    (lua_State* L, int tp)                             { return lua_typename(L, tp); }
+int         api_Equal       (lua_State* L, int idx1, int idx2)                 { return lua_equal(L, idx1, idx2); }
+int         api_RawEqual    (lua_State* L, int idx1, int idx2)                 { return lua_rawequal(L, idx1, idx2); }
+int         api_LessThan    (lua_State* L, int idx1, int idx2)                 { return lua_lessthan(L, idx1, idx2); }
+double      api_ToNumber    (lua_State* L, int idx)                            { return (double)lua_tonumber(L, idx); }
+long long   api_ToInteger   (lua_State* L, int idx)                            { return (long long)lua_tointeger(L, idx); }
+int         api_ToBoolean   (lua_State* L, int idx)                            { return lua_toboolean(L, idx); }
+const char* api_ToString    (lua_State* L, int idx)                            { return lua_tostring(L, idx); }
+const char* api_ToLString   (lua_State* L, int idx, size_t* len)               { return lua_tolstring(L, idx, len); }
+size_t      api_ObjLen      (lua_State* L, int idx)                            { return lua_objlen(L, idx); }
+kcdxLuaRawCFunction api_ToCFunction (lua_State* L, int idx)                    { return reinterpret_cast<kcdxLuaRawCFunction>(lua_tocfunction(L, idx)); }
+void*       api_ToUserdata  (lua_State* L, int idx)                            { return lua_touserdata(L, idx); }
+lua_State*  api_ToThread    (lua_State* L, int idx)                            { return lua_tothread(L, idx); }
+const void* api_ToPointer   (lua_State* L, int idx)                            { return lua_topointer(L, idx); }
 
-void        api_PushString    (lua_State* L, const char* s)                    { lua_pushstring(L, s); }
-void        api_PushLString   (lua_State* L, const char* s, size_t len)        { lua_pushlstring(L, s, len); }
-void        api_PushNumber    (lua_State* L, double n)                         { lua_pushnumber(L, (lua_Number)n); }
-void        api_PushInteger   (lua_State* L, long long n)                      { lua_pushinteger(L, (lua_Integer)n); }
-void        api_PushBoolean   (lua_State* L, int b)                            { lua_pushboolean(L, b); }
-void        api_PushNil       (lua_State* L)                                   { lua_pushnil(L); }
-void        api_PushLightUserdata(lua_State* L, void* p)                       { lua_pushlightuserdata(L, p); }
+// Push (C -> stack)
+void        api_PushNil           (lua_State* L)                               { lua_pushnil(L); }
+void        api_PushNumber        (lua_State* L, double n)                     { lua_pushnumber(L, (lua_Number)n); }
+void        api_PushInteger       (lua_State* L, long long n)                  { lua_pushinteger(L, (lua_Integer)n); }
+void        api_PushLString       (lua_State* L, const char* s, size_t len)    { lua_pushlstring(L, s, len); }
+void        api_PushString        (lua_State* L, const char* s)                { lua_pushstring(L, s); }
+const char* api_PushVFString      (lua_State* L, const char* fmt, va_list ap)  { return lua_pushvfstring(L, fmt, ap); }
+const char* api_PushFString       (lua_State* L, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    const char* r = lua_pushvfstring(L, fmt, ap);
+    va_end(ap);
+    return r;
+}
+void        api_PushBoolean       (lua_State* L, int b)                        { lua_pushboolean(L, b); }
+void        api_PushLightUserdata (lua_State* L, void* p)                      { lua_pushlightuserdata(L, p); }
+int         api_PushThread        (lua_State* L)                               { return lua_pushthread(L); }
 
 // PushCFunction: install a shim that calls back through the
 // kcdxLuaCFunction signature. Same upvalue trick as the registry
 // shim, scoped to this single push.
 void        api_PushCFunction (lua_State* L, kcdxLuaCFunction fn, void* ud) {
-    // Pack (fn, ud) into a 2-element lightuserdata block in g_pushcclosures.
-    // For simplicity we allocate a stable Registration-shaped struct via
-    // the same g_applied storage. This means each PushCFunction call
-    // adds one entry to g_applied; over a long session that's bounded
-    // by the cap (1024).
+    // Pack (fn, ud) into a stable Registration via g_applied — the
+    // upvalue is a raw pointer into that vector, so storage must not
+    // move. g_applied reserve(1024) handles this for the session.
     std::lock_guard<std::mutex> lock(g_lock);
     if (g_applied.size() + g_pending.size() >= 1024) {
-        // Push a Lua error if we're out of slots; can't return failure
-        // any other way from this API.
         luaL_error(L, "kcdx scripting: registration cap reached, "
                       "cannot bind anonymous PushCFunction closure");
         return;
@@ -300,71 +338,262 @@ void        api_PushCFunction (lua_State* L, kcdxLuaCFunction fn, void* ud) {
     lua_pushcclosure(L, LuaDispatchShim, 1);
 }
 
-void        api_NewTable      (lua_State* L)                                   { lua_newtable(L); }
-void        api_GetField      (lua_State* L, int idx, const char* k)           { lua_getfield(L, idx, k); }
-void        api_SetField      (lua_State* L, int idx, const char* k)           { lua_setfield(L, idx, k); }
-void        api_RawGetI       (lua_State* L, int idx, int n)                   { lua_rawgeti(L, idx, n); }
-void        api_RawSetI       (lua_State* L, int idx, int n)                   { lua_rawseti(L, idx, n); }
-void        api_GetGlobal     (lua_State* L, const char* name)                 { lua_getglobal(L, name); }
-void        api_SetGlobal     (lua_State* L, const char* name)                 { lua_setglobal(L, name); }
+// PushCClosure: raw Lua semantics — caller has already pushed `n`
+// upvalues onto the stack; lua_pushcclosure pops them and binds.
+void        api_PushCClosure (lua_State* L, kcdxLuaRawCFunction fn, int n)     { lua_pushcclosure(L, reinterpret_cast<lua_CFunction>(fn), n); }
 
-int         api_Error         (lua_State* L)                                   { return lua_error(L); }
-int         api_ErrorF        (lua_State* L, const char* fmt, ...) {
-    // luaL_error in Lua 5.1 doesn't take varargs directly; it uses
-    // lua_pushvfstring internally. Replicate that pattern:
+// Get (Lua -> stack)
+void  api_GetTable      (lua_State* L, int idx)                                { lua_gettable(L, idx); }
+void  api_GetField      (lua_State* L, int idx, const char* k)                 { lua_getfield(L, idx, k); }
+void  api_RawGet        (lua_State* L, int idx)                                { lua_rawget(L, idx); }
+void  api_RawGetI       (lua_State* L, int idx, int n)                         { lua_rawgeti(L, idx, n); }
+void  api_CreateTable   (lua_State* L, int narr, int nrec)                     { lua_createtable(L, narr, nrec); }
+void  api_NewTable      (lua_State* L)                                         { lua_newtable(L); }
+void* api_NewUserdata   (lua_State* L, size_t sz)                              { return lua_newuserdata(L, sz); }
+int   api_GetMetatable  (lua_State* L, int objindex)                           { return lua_getmetatable(L, objindex); }
+void  api_GetFEnv       (lua_State* L, int idx)                                { lua_getfenv(L, idx); }
+void  api_GetGlobal     (lua_State* L, const char* name)                       { lua_getglobal(L, name); }
+
+// Set (stack -> Lua)
+void  api_SetTable      (lua_State* L, int idx)                                { lua_settable(L, idx); }
+void  api_SetField      (lua_State* L, int idx, const char* k)                 { lua_setfield(L, idx, k); }
+void  api_RawSet        (lua_State* L, int idx)                                { lua_rawset(L, idx); }
+void  api_RawSetI       (lua_State* L, int idx, int n)                         { lua_rawseti(L, idx, n); }
+int   api_SetMetatable  (lua_State* L, int objindex)                           { return lua_setmetatable(L, objindex); }
+int   api_SetFEnv       (lua_State* L, int idx)                                { return lua_setfenv(L, idx); }
+void  api_SetGlobal     (lua_State* L, const char* name)                       { lua_setglobal(L, name); }
+
+// Load and run
+void api_Call  (lua_State* L, int nargs, int nresults)                         { lua_call(L, nargs, nresults); }
+int  api_PCall (lua_State* L, int nargs, int nresults, int errfunc)            { return lua_pcall(L, nargs, nresults, errfunc); }
+int  api_CPCall(lua_State* L, kcdxLuaRawCFunction func, void* ud)              { return lua_cpcall(L, reinterpret_cast<lua_CFunction>(func), ud); }
+int  api_Load  (lua_State* L, kcdxLuaReader reader, void* dt, const char* chunkname) { return lua_load(L, reinterpret_cast<lua_Reader>(reader), dt, chunkname); }
+int  api_Dump  (lua_State* L, kcdxLuaWriter writer, void* data)                { return lua_dump(L, reinterpret_cast<lua_Writer>(writer), data); }
+
+// Coroutines
+int api_Yield  (lua_State* L, int nresults)                                    { return lua_yield(L, nresults); }
+int api_Resume (lua_State* L, int narg)                                        { return lua_resume(L, narg); }
+int api_Status (lua_State* L)                                                  { return lua_status(L); }
+
+// GC
+int api_GC (lua_State* L, int what, int data)                                  { return lua_gc(L, what, data); }
+
+// Misc
+int          api_Error      (lua_State* L)                                     { return lua_error(L); }
+int          api_Next       (lua_State* L, int idx)                            { return lua_next(L, idx); }
+void         api_Concat     (lua_State* L, int n)                              { lua_concat(L, n); }
+kcdxLuaAlloc api_GetAllocF  (lua_State* L, void** ud)                          { return reinterpret_cast<kcdxLuaAlloc>(lua_getallocf(L, ud)); }
+void         api_SetAllocF  (lua_State* L, kcdxLuaAlloc f, void* ud)           { lua_setallocf(L, reinterpret_cast<lua_Alloc>(f), ud); }
+
+// Debug API
+int         api_GetStack     (lua_State* L, int level, kcdxLuaDebug* ar)       { return lua_getstack(L, level, reinterpret_cast<lua_Debug*>(ar)); }
+int         api_GetInfo      (lua_State* L, const char* what, kcdxLuaDebug* ar){ return lua_getinfo(L, what, reinterpret_cast<lua_Debug*>(ar)); }
+const char* api_GetLocal     (lua_State* L, const kcdxLuaDebug* ar, int n)     { return lua_getlocal(L, reinterpret_cast<const lua_Debug*>(ar), n); }
+const char* api_SetLocal     (lua_State* L, const kcdxLuaDebug* ar, int n)     { return lua_setlocal(L, reinterpret_cast<const lua_Debug*>(ar), n); }
+const char* api_GetUpvalue   (lua_State* L, int funcindex, int n)              { return lua_getupvalue(L, funcindex, n); }
+const char* api_SetUpvalue   (lua_State* L, int funcindex, int n)              { return lua_setupvalue(L, funcindex, n); }
+int         api_SetHook      (lua_State* L, kcdxLuaHook func, int mask, int count) { return lua_sethook(L, reinterpret_cast<lua_Hook>(func), mask, count); }
+kcdxLuaHook api_GetHook      (lua_State* L)                                    { return reinterpret_cast<kcdxLuaHook>(lua_gethook(L)); }
+int         api_GetHookMask  (lua_State* L)                                    { return lua_gethookmask(L); }
+int         api_GetHookCount (lua_State* L)                                    { return lua_gethookcount(L); }
+
+// Auxiliary library (luaL_*)
+void         api_LOpenLib       (lua_State* L, const char* libname, const kcdxLuaLReg* l, int nup) { luaI_openlib(L, libname, reinterpret_cast<const luaL_Reg*>(l), nup); }
+void         api_LRegister      (lua_State* L, const char* libname, const kcdxLuaLReg* l) { luaL_register(L, libname, reinterpret_cast<const luaL_Reg*>(l)); }
+int          api_LGetMetafield  (lua_State* L, int obj, const char* e)         { return luaL_getmetafield(L, obj, e); }
+int          api_LCallMeta      (lua_State* L, int obj, const char* e)         { return luaL_callmeta(L, obj, e); }
+int          api_LTypeError     (lua_State* L, int narg, const char* tname)    { return luaL_typerror(L, narg, tname); }
+int          api_LArgError      (lua_State* L, int numarg, const char* extramsg) { return luaL_argerror(L, numarg, extramsg); }
+const char*  api_LCheckLString  (lua_State* L, int numArg, size_t* l)          { return luaL_checklstring(L, numArg, l); }
+const char*  api_LOptLString    (lua_State* L, int numArg, const char* def, size_t* l) { return luaL_optlstring(L, numArg, def, l); }
+double       api_LCheckNumber   (lua_State* L, int numArg)                     { return (double)luaL_checknumber(L, numArg); }
+double       api_LOptNumber     (lua_State* L, int nArg, double def)           { return (double)luaL_optnumber(L, nArg, (lua_Number)def); }
+long long    api_LCheckInteger  (lua_State* L, int numArg)                     { return (long long)luaL_checkinteger(L, numArg); }
+long long    api_LOptInteger    (lua_State* L, int nArg, long long def)        { return (long long)luaL_optinteger(L, nArg, (lua_Integer)def); }
+void         api_LCheckStack    (lua_State* L, int sz, const char* msg)        { luaL_checkstack(L, sz, msg); }
+void         api_LCheckType     (lua_State* L, int narg, int t)                { luaL_checktype(L, narg, t); }
+void         api_LCheckAny      (lua_State* L, int narg)                       { luaL_checkany(L, narg); }
+int          api_LNewMetatable  (lua_State* L, const char* tname)              { return luaL_newmetatable(L, tname); }
+void*        api_LCheckUdata    (lua_State* L, int ud, const char* tname)      { return luaL_checkudata(L, ud, tname); }
+void         api_LWhere         (lua_State* L, int lvl)                        { luaL_where(L, lvl); }
+int          api_LError         (lua_State* L, const char* fmt, ...) {
+    // luaL_error in Lua 5.1 is varargs; replicate using lua_pushvfstring + lua_error.
     va_list ap;
     va_start(ap, fmt);
+    luaL_where(L, 1);
     lua_pushvfstring(L, fmt, ap);
     va_end(ap);
+    lua_concat(L, 2);
     return lua_error(L);
 }
+int          api_LCheckOption   (lua_State* L, int narg, const char* def, const char* const lst[]) { return luaL_checkoption(L, narg, def, lst); }
+int          api_LRef           (lua_State* L, int t)                          { return luaL_ref(L, t); }
+void         api_LUnref         (lua_State* L, int t, int ref)                 { luaL_unref(L, t, ref); }
+int          api_LLoadFile      (lua_State* L, const char* filename)           { return luaL_loadfile(L, filename); }
+int          api_LLoadBuffer    (lua_State* L, const char* buff, size_t sz, const char* name) { return luaL_loadbuffer(L, buff, sz, name); }
+int          api_LLoadString    (lua_State* L, const char* s)                  { return luaL_loadstring(L, s); }
+lua_State*   api_LNewState      (void)                                         { return luaL_newstate(); }
+const char*  api_LGSub          (lua_State* L, const char* s, const char* p, const char* r) { return luaL_gsub(L, s, p, r); }
+const char*  api_LFindTable     (lua_State* L, int idx, const char* fname, int szhint) { return luaL_findtable(L, idx, fname, szhint); }
+void         api_LBuffInit      (lua_State* L, kcdxLuaLBuffer* B)              { luaL_buffinit(L, reinterpret_cast<luaL_Buffer*>(B)); }
+char*        api_LPrepBuffer    (kcdxLuaLBuffer* B)                            { return luaL_prepbuffer(reinterpret_cast<luaL_Buffer*>(B)); }
+void         api_LAddLString    (kcdxLuaLBuffer* B, const char* s, size_t l)   { luaL_addlstring(reinterpret_cast<luaL_Buffer*>(B), s, l); }
+void         api_LAddString     (kcdxLuaLBuffer* B, const char* s)             { luaL_addstring(reinterpret_cast<luaL_Buffer*>(B), s); }
+void         api_LAddValue      (kcdxLuaLBuffer* B)                            { luaL_addvalue(reinterpret_cast<luaL_Buffer*>(B)); }
+void         api_LPushResult    (kcdxLuaLBuffer* B)                            { luaL_pushresult(reinterpret_cast<luaL_Buffer*>(B)); }
 
 const kcdxLuaApi g_lua_api = {
-    /*GetTop=*/             api_GetTop,
-    /*SetTop=*/             api_SetTop,
-    /*PushValue=*/          api_PushValue,
-    /*Remove=*/             api_Remove,
-    /*Insert=*/             api_Insert,
-    /*Replace=*/            api_Replace,
-    /*CheckStack=*/         api_CheckStack,
+    // state manipulation
+    /*NewState=*/             api_NewState,
+    /*Close=*/                api_Close,
+    /*NewThread=*/            api_NewThread,
+    /*AtPanic=*/              api_AtPanic,
+    /*StoreDebugInfo=*/       api_StoreDebugInfo,
+    /*IsStoreDebugInfo=*/     api_IsStoreDebugInfo,
 
-    /*Type=*/               api_Type,
-    /*IsNumber=*/           api_IsNumber,
-    /*IsString=*/           api_IsString,
-    /*IsBoolean=*/          api_IsBoolean,
-    /*IsNil=*/              api_IsNil,
-    /*IsCFunction=*/        api_IsCFunction,
-    /*IsTable=*/            api_IsTable,
-    /*IsFunction=*/         api_IsFunction,
-    /*IsUserdata=*/         api_IsUserdata,
+    // basic stack manipulation
+    /*GetTop=*/               api_GetTop,
+    /*SetTop=*/               api_SetTop,
+    /*PushValue=*/            api_PushValue,
+    /*Remove=*/               api_Remove,
+    /*Insert=*/               api_Insert,
+    /*Replace=*/              api_Replace,
+    /*CheckStack=*/           api_CheckStack,
+    /*XMove=*/                api_XMove,
 
-    /*ToString=*/           api_ToString,
-    /*ToLString=*/          api_ToLString,
-    /*ToNumber=*/           api_ToNumber,
-    /*ToInteger=*/          api_ToInteger,
-    /*ToBoolean=*/          api_ToBoolean,
-    /*ToPointer=*/          api_ToPointer,
-    /*ToUserdata=*/         api_ToUserdata,
+    // access functions
+    /*IsNumber=*/             api_IsNumber,
+    /*IsString=*/             api_IsString,
+    /*IsCFunction=*/          api_IsCFunction,
+    /*IsUserdata=*/           api_IsUserdata,
+    /*IsBoolean=*/            api_IsBoolean,
+    /*IsNil=*/                api_IsNil,
+    /*IsTable=*/              api_IsTable,
+    /*IsFunction=*/           api_IsFunction,
+    /*IsLightUserdata=*/      api_IsLightUserdata,
+    /*IsThread=*/             api_IsThread,
+    /*IsNone=*/               api_IsNone,
+    /*IsNoneOrNil=*/          api_IsNoneOrNil,
+    /*Type=*/                 api_Type,
+    /*TypeName=*/             api_TypeName,
+    /*Equal=*/                api_Equal,
+    /*RawEqual=*/             api_RawEqual,
+    /*LessThan=*/             api_LessThan,
+    /*ToNumber=*/             api_ToNumber,
+    /*ToInteger=*/            api_ToInteger,
+    /*ToBoolean=*/            api_ToBoolean,
+    /*ToString=*/             api_ToString,
+    /*ToLString=*/            api_ToLString,
+    /*ObjLen=*/               api_ObjLen,
+    /*ToCFunction=*/          api_ToCFunction,
+    /*ToUserdata=*/           api_ToUserdata,
+    /*ToThread=*/             api_ToThread,
+    /*ToPointer=*/            api_ToPointer,
 
-    /*PushString=*/         api_PushString,
-    /*PushLString=*/        api_PushLString,
-    /*PushNumber=*/         api_PushNumber,
-    /*PushInteger=*/        api_PushInteger,
-    /*PushBoolean=*/        api_PushBoolean,
-    /*PushNil=*/            api_PushNil,
-    /*PushCFunction=*/      api_PushCFunction,
-    /*PushLightUserdata=*/  api_PushLightUserdata,
+    // push functions
+    /*PushNil=*/              api_PushNil,
+    /*PushNumber=*/           api_PushNumber,
+    /*PushInteger=*/          api_PushInteger,
+    /*PushLString=*/          api_PushLString,
+    /*PushString=*/           api_PushString,
+    /*PushVFString=*/         api_PushVFString,
+    /*PushFString=*/          api_PushFString,
+    /*PushBoolean=*/          api_PushBoolean,
+    /*PushLightUserdata=*/    api_PushLightUserdata,
+    /*PushThread=*/           api_PushThread,
+    /*PushCFunction=*/        api_PushCFunction,
+    /*PushCClosure=*/         api_PushCClosure,
 
-    /*NewTable=*/           api_NewTable,
-    /*GetField=*/           api_GetField,
-    /*SetField=*/           api_SetField,
-    /*RawGetI=*/            api_RawGetI,
-    /*RawSetI=*/            api_RawSetI,
-    /*GetGlobal=*/          api_GetGlobal,
-    /*SetGlobal=*/          api_SetGlobal,
+    // get functions
+    /*GetTable=*/             api_GetTable,
+    /*GetField=*/             api_GetField,
+    /*RawGet=*/               api_RawGet,
+    /*RawGetI=*/              api_RawGetI,
+    /*CreateTable=*/          api_CreateTable,
+    /*NewTable=*/             api_NewTable,
+    /*NewUserdata=*/          api_NewUserdata,
+    /*GetMetatable=*/         api_GetMetatable,
+    /*GetFEnv=*/              api_GetFEnv,
+    /*GetGlobal=*/            api_GetGlobal,
 
-    /*Error=*/              api_Error,
-    /*ErrorF=*/             api_ErrorF,
+    // set functions
+    /*SetTable=*/             api_SetTable,
+    /*SetField=*/             api_SetField,
+    /*RawSet=*/               api_RawSet,
+    /*RawSetI=*/              api_RawSetI,
+    /*SetMetatable=*/         api_SetMetatable,
+    /*SetFEnv=*/              api_SetFEnv,
+    /*SetGlobal=*/            api_SetGlobal,
+
+    // load + call
+    /*Call=*/                 api_Call,
+    /*PCall=*/                api_PCall,
+    /*CPCall=*/               api_CPCall,
+    /*Load=*/                 api_Load,
+    /*Dump=*/                 api_Dump,
+
+    // coroutines
+    /*Yield=*/                api_Yield,
+    /*Resume=*/               api_Resume,
+    /*Status=*/               api_Status,
+
+    // GC
+    /*GC=*/                   api_GC,
+
+    // misc
+    /*Error=*/                api_Error,
+    /*Next=*/                 api_Next,
+    /*Concat=*/               api_Concat,
+    /*GetAllocF=*/            api_GetAllocF,
+    /*SetAllocF=*/            api_SetAllocF,
+
+    // debug API
+    /*GetStack=*/             api_GetStack,
+    /*GetInfo=*/              api_GetInfo,
+    /*GetLocal=*/             api_GetLocal,
+    /*SetLocal=*/             api_SetLocal,
+    /*GetUpvalue=*/           api_GetUpvalue,
+    /*SetUpvalue=*/           api_SetUpvalue,
+    /*SetHook=*/              api_SetHook,
+    /*GetHook=*/              api_GetHook,
+    /*GetHookMask=*/          api_GetHookMask,
+    /*GetHookCount=*/         api_GetHookCount,
+
+    // auxiliary library (luaL_*)
+    /*LOpenLib=*/             api_LOpenLib,
+    /*LRegister=*/            api_LRegister,
+    /*LGetMetafield=*/        api_LGetMetafield,
+    /*LCallMeta=*/            api_LCallMeta,
+    /*LTypeError=*/           api_LTypeError,
+    /*LArgError=*/            api_LArgError,
+    /*LCheckLString=*/        api_LCheckLString,
+    /*LOptLString=*/          api_LOptLString,
+    /*LCheckNumber=*/         api_LCheckNumber,
+    /*LOptNumber=*/           api_LOptNumber,
+    /*LCheckInteger=*/        api_LCheckInteger,
+    /*LOptInteger=*/          api_LOptInteger,
+    /*LCheckStack=*/          api_LCheckStack,
+    /*LCheckType=*/           api_LCheckType,
+    /*LCheckAny=*/            api_LCheckAny,
+    /*LNewMetatable=*/        api_LNewMetatable,
+    /*LCheckUdata=*/          api_LCheckUdata,
+    /*LWhere=*/               api_LWhere,
+    /*LError=*/               api_LError,
+    /*LCheckOption=*/         api_LCheckOption,
+    /*LRef=*/                 api_LRef,
+    /*LUnref=*/               api_LUnref,
+    /*LLoadFile=*/            api_LLoadFile,
+    /*LLoadBuffer=*/          api_LLoadBuffer,
+    /*LLoadString=*/          api_LLoadString,
+    /*LNewState=*/            api_LNewState,
+    /*LGSub=*/                api_LGSub,
+    /*LFindTable=*/           api_LFindTable,
+    /*LBuffInit=*/            api_LBuffInit,
+    /*LPrepBuffer=*/          api_LPrepBuffer,
+    /*LAddLString=*/          api_LAddLString,
+    /*LAddString=*/           api_LAddString,
+    /*LAddValue=*/            api_LAddValue,
+    /*LPushResult=*/          api_LPushResult,
 };
 
 const kcdxScriptingInterface g_iface = {
