@@ -123,7 +123,7 @@ documented SKSE weak spot:
 | 4b.3 | Unified conflict matrix + global apply order across all entry types | **live-verified** |
 | 5c | Lua marshaling — raw Lua C API only (no sol2), `kcdx.memory.*` namespace, pak-Lua-driven runtime hooks via `dynamic_hook`, address resolution via `cfunction_address` | **live-verified** |
 | 5d | Lua VM threading constraint documented (Hard Rule #16); no runtime guard in v0.1 | **documented** |
-| 5e | `kcdxScriptingInterface` — C++ DLLs register Lua-callable functions via function-pointer struct (no exported Lua C API from kcdx.asi) | **live-verified** |
+| 5e | `kcdxScriptingInterface` — C++ DLLs register Lua-callable functions via function-pointer struct (no exported Lua C API from kcdx.dll) | **live-verified** |
 | 5f | `[[hook]] lua_callback` schema (TOML hook dispatches to pak-Lua function) | **live-verified** |
 | 5g | `[[mid_hook]]` schema (mid-instruction hook with register capture) — schema + capture + three-mode `call_original` (true/false/"auto" with Lua-side `args._skip` runtime decision) | **live-verified** |
 | 5h | `kcdxMemoryInterface` (C++ DLL surface mirroring `kcdx.memory.*` — ScanPattern, Read/WriteBytes, GetModuleBase) + dev-mode-gated test suite + `kcdxMessage_LuaReady` + modder-UX trace gaps | **live-verified** |
@@ -138,55 +138,69 @@ Test suite reporting **`21/21 passing`** on every dev-mode boot
 [`test-plugins/README.md`](test-plugins/README.md) for the live
 matrix.
 
-**Authoritative v0.1 spec:** [`docs/design.md`](docs/design.md). The
-full TOML schema, every C++ interface signature, the lifecycle
-message catalog, the symbol-table contract, the conflict matrix,
-and worked examples for each entry type all live there. Read that
-first if you're writing a plugin or contributing to the engine.
+**Authoritative spec (v0.2 in progress):** the restructure plan at
+[`docs/outstanding-work/restructure-plan.md`](docs/outstanding-work/restructure-plan.md).
+[`docs/design.md`](docs/design.md) is the v0.1 spec and is currently
+marked SUPERSEDED — most of its schema/lifecycle/install sections are
+being replaced phase-by-phase. Read the restructure plan first if
+you're writing a plugin or contributing to the engine.
 
-## Installation (placeholder)
+## Installation (v0.2 layout, Phase 1+)
 
-Same install model as kcd2-mempatch: drop `dinput8.dll` next to
-`KingdomCome.exe` in `<game>/Bin/Win64MasterMasterSteamPGO/`, drop
-**both** `kcdx.asi` and `kcdx-watchdog.exe` into the `plugins/`
-subdir, and any plugin folders alongside them. Runtime layout:
+kcdx ships its own launcher (`kcdx.exe`) — Ultimate ASI Loader is no
+longer required. Extract the release zip into
+`<game>/Bin/Win64MasterMasterSteamPGO/` and set Steam's launch options
+to point at `kcdx.exe`. Runtime layout:
 
 ```
 <game>/Bin/Win64MasterMasterSteamPGO/
-├── KingdomCome.exe                   (vanilla)
-├── dinput8.dll                       (Ultimate-ASI-Loader)
-├── plugins/
-│   ├── kcdx.asi                      (this engine)
-│   ├── kcdx-watchdog.exe             (external crash-bundle sidecar)
-│   ├── <your-plugin>/
-│   │   ├── kcdx.toml                 (declarative path)
-│   │   ├── <your-plugin>.dll         (C++ plugin path)
-│   │   └── logs/
-│   │       └── <manifest.name>_<ts>.log
-│   └── <other-plugin>/
-│       ├── mempatch.toml             (mempatch coexists)
-│       └── kcdx.toml                 (paired plugins ship both)
-└── kcdx-engine/                      (engine-owned, auto-created)
-    ├── engine.toml                   (optional dev config)
-    └── logs/
-        ├── kcdx_<ts>.log             (per-session engine log)
-        ├── kcdx-dev_<ts>.log         (dev trace, when enabled)
-        ├── kcdx-watchdog_<ts>.log    (watchdog diagnostics)
-        └── crash/
-            └── crash_<ts>.zip        (auto-bundled on game crash)
+├── KingdomCome.exe                  (vanilla)
+├── WHGame.dll                       (vanilla)
+├── kcdx.exe                         (LAUNCHER — user runs this)
+├── kcdx-README.txt                  (ships in the zip)
+├── kcdx-engine/                     (everything kcdx-owned)
+│   ├── kcdx.dll                     (engine; injected by launcher)
+│   ├── kcdx-watchdog.exe            (crash-bundle sidecar)
+│   ├── engine.toml                  (engine config)
+│   ├── load_order.toml              (user load-order overrides)
+│   ├── address-library/
+│   ├── logs/
+│   │   ├── kcdx_<ts>.log
+│   │   ├── kcdx-dev_<ts>.log
+│   │   ├── kcdx-launcher_<ts>.log
+│   │   └── crash/
+│   │       └── crash_<ts>.zip
+│   └── builtin/                     (first-party engine fixes)
+└── kcdx-plugins/                    (user/third-party plugins ONLY)
+    └── <your-plugin>/
+        ├── kcdx.toml
+        ├── plugin.lua / <your-plugin>.dll
+        └── logs/
+            └── <manifest.name>_<ts>.log
 ```
 
-The two binaries ship together. `kcdx-watchdog.exe` is a ~280KB
-sidecar that `kcdx.asi` spawns at startup — it blocks on the
-game's process handle (zero CPU) and, on game crash, zips up logs
-+ crash artifacts into `kcdx-engine/logs/crash/`. See
-[`docs/logging.md`](docs/logging.md) §"Crash bundles" for what's in
-the zip.
+**Steam launch options**: right-click *Kingdom Come: Deliverance II*
+in Steam → Properties → Launch Options, paste the quoted full path
+of `kcdx.exe`. Steam's overlay is preserved (kcdx.exe spawns the
+game via CreateProcess, keeping Steam's tracking intact).
+
+`kcdx.exe` injects `kcdx-engine/kcdx.dll` via CreateRemoteThread +
+LoadLibraryW. If injection fails (Windows Defender / third-party AV),
+the launcher logs to `kcdx-engine/logs/kcdx-launcher_<ts>.log` and shows
+an actionable error dialog.
+
+`kcdx-watchdog.exe` is a ~280KB sidecar that `kcdx.dll` spawns at
+startup — it blocks on the game's process handle (zero CPU) and, on
+game crash, zips up logs + crash artifacts into
+`kcdx-engine/logs/crash/`. See [`docs/logging.md`](docs/logging.md)
+§"Crash bundles" for what's in the zip.
+
+**Migrating from a v0.1 install**: see
+[`docs/migration.md`](docs/migration.md) for the uninstall + reinstall
+steps. Existing plugin folders carry forward into `kcdx-plugins/`.
 
 See [`docs/loader-architecture.md`](docs/loader-architecture.md) for
-the rationale behind the `plugins/` vs `kcdx-engine/` split, and the
-v0.2+ plan (SKSE-style launcher + injected DLL) that supersedes this
-layout once we have a UI to ship.
+the rationale behind the new layout.
 
 ## Compatibility
 

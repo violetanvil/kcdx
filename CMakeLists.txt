@@ -170,12 +170,45 @@ else()
     target_link_options(kcdx PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 
-# Output as <name>.asi instead of <name>.dll
+# Output as kcdx.dll (was kcdx.asi pre-restructure; v0.2 drops ASI loader
+# dependency in favor of kcdx.exe doing CreateRemoteThread injection).
 set_target_properties(kcdx PROPERTIES
     PREFIX ""
-    SUFFIX ".asi"
+    SUFFIX ".dll"
     OUTPUT_NAME "kcdx"
 )
+
+# -----------------------------------------------------------------------------
+# kcdx.exe — launcher (Phase 1 of v0.2 restructure)
+# -----------------------------------------------------------------------------
+# Standalone Win32 exe the user runs instead of KingdomCome.exe directly.
+# Responsibilities:
+#   1. Resolve paths: kcdx.exe sits at <game-bin>/; kcdx.dll lives at
+#      <game-bin>/engine/kcdx.dll; KingdomCome.exe is the sibling vanilla.
+#   2. CreateProcessW(KingdomCome.exe, ..., CREATE_SUSPENDED).
+#   3. CreateRemoteThread(LoadLibraryW, "<path>/engine/kcdx.dll") to inject.
+#   4. ResumeThread(hMainThread) to let the game run.
+# No UI, no dependencies beyond Win32. Strips to <100 KB.
+#
+# Output name is "kcdx" with suffix ".exe" → produces kcdx.exe. The .exe
+# and .dll share the "kcdx" stem; Windows distinguishes by extension.
+add_executable(kcdx-launcher
+    src/loader/main.cpp
+)
+set_target_properties(kcdx-launcher PROPERTIES
+    PREFIX ""
+    SUFFIX ".exe"
+    OUTPUT_NAME "kcdx"
+    WIN32_EXECUTABLE TRUE
+)
+if(MSVC)
+    target_compile_definitions(kcdx-launcher PRIVATE
+        _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN
+        UNICODE _UNICODE)
+    target_compile_options(kcdx-launcher PRIVATE /W3 /MT)
+    set_property(TARGET kcdx-launcher
+        PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
 
 # -----------------------------------------------------------------------------
 # kcdx-watchdog.exe — external crash-bundle helper

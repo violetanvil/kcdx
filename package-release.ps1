@@ -1,87 +1,101 @@
 # package-release.ps1 — build the engine-only release zip
 #
 # Produces release-staging/kcdx-<version>.zip with the explicit
-# allowlist of files that ship to end users:
-#   - dinput8.dll                              (Ultimate-ASI-Loader, downloaded fresh)
-#   - dinput8.dll.LICENSE.txt                  (its MIT license)
-#   - plugins/kcdx.asi                         (engine)
-#   - plugins/kcdx-watchdog.exe                (external crash-bundle sidecar)
-#   - kcdx-engine/builtin/<fix>/kcdx.toml      (first-party engine-fix plugins)
+# allowlist of files that ship to end users. Phase 1+ layout:
 #
-# Third-party plugins ship from their own repos. Engine-fix
-# plugins are part of kcdx itself and live under
-# kcdx-engine/builtin/<name>/ — added by hand to $EngineBuiltin
-# below as new fixes land.
+#   <zip-root>/
+#   ├── kcdx.exe                                (launcher; the only file at game-bin root)
+#   ├── kcdx-README.txt                         (install + Steam launch options)
+#   ├── engine/
+#   │   ├── kcdx.dll                            (engine; injected by kcdx.exe)
+#   │   ├── kcdx-watchdog.exe                   (crash-bundle sidecar)
+#   │   ├── load_order.toml                     (shipped defaults; user-editable)
+#   │   └── builtin/
+#   │       └── <fix-name>/
+#   │           ├── kcdx.toml
+#   │           └── <fix>.dll                    (optional; for DLL-based engine fixes)
+#   └── plugins/                                (empty in the zip — user-installed only)
+#
+# Notes vs the v0.1 layout:
+#   - dinput8.dll (Ultimate ASI Loader) is GONE. No longer required;
+#     kcdx.exe injects kcdx.dll directly via CreateRemoteThread+LoadLibrary.
+#   - No more kcdx.asi extension. Engine is kcdx.dll under engine/.
+#   - Engine-owned files (kcdx.dll, watchdog, engine.toml, builtin/) all
+#     live under engine/, NOT in plugins/.
+#   - plugins/ is exclusively for third-party user-installed plugins.
+#
+# Third-party plugins ship from their own repos. Engine-fix plugins are
+# part of kcdx itself and live under engine/builtin/<name>/ — added by
+# hand to $EngineBuiltin below as new fixes land.
 #
 # Usage:
-#   pwsh ./package-release.ps1                # uses version "dev"
-#   pwsh ./package-release.ps1 -Version 0.1.0
+#   pwsh ./package-release.ps1                 # uses version "dev"
+#   pwsh ./package-release.ps1 -Version 0.2.0
 #
-# Prereqs: build.ps1 must have already produced
-#   build/Release/kcdx.asi
-#   build/Release/kcdx-watchdog.exe
+# Prereqs: build.ps1 must have already produced:
+#   build/Release/kcdx.exe          (launcher)
+#   build/Release/kcdx.dll          (engine)
+#   build/Release/kcdx-watchdog.exe (crash-bundle helper)
 
 [CmdletBinding()]
 param(
-    [string]$Version = "dev",
-    [string]$UlahVersion = "v9.7.1"
+    [string]$Version = "dev"
 )
 $ErrorActionPreference = "Stop"
 
-$RepoRoot = $PSScriptRoot
-$Asi = Join-Path $RepoRoot "build/Release/kcdx.asi"
-$Watchdog = Join-Path $RepoRoot "build/Release/kcdx-watchdog.exe"
+$RepoRoot      = $PSScriptRoot
+$LauncherExe   = Join-Path $RepoRoot "build/Release/kcdx.exe"
+$EngineDll     = Join-Path $RepoRoot "build/Release/kcdx.dll"
+$Watchdog      = Join-Path $RepoRoot "build/Release/kcdx-watchdog.exe"
 $EngineBuiltin = Join-Path $RepoRoot "kcdx-engine/builtin"
-$Staging = Join-Path $RepoRoot "release-staging"
-$Download = Join-Path $RepoRoot "_download"
+$Staging       = Join-Path $RepoRoot "release-staging"
 
-if (-not (Test-Path $Asi)) {
-    throw "kcdx.asi not found at $Asi — run build.ps1 first"
-}
-if (-not (Test-Path $Watchdog)) {
-    throw "kcdx-watchdog.exe not found at $Watchdog — run build.ps1 first"
+foreach ($pair in @(@($LauncherExe, "kcdx.exe (launcher)"),
+                    @($EngineDll,   "kcdx.dll (engine)"),
+                    @($Watchdog,    "kcdx-watchdog.exe"))) {
+    $path = $pair[0]; $label = $pair[1]
+    if (-not (Test-Path $path)) { throw "$label not found at $path — run build.ps1 first" }
 }
 
 Write-Host "Cleaning release-staging..." -ForegroundColor Cyan
 if (Test-Path $Staging) { Remove-Item -Recurse -Force $Staging }
-New-Item -ItemType Directory -Path "$Staging/plugins" | Out-Null
+New-Item -ItemType Directory -Path "$Staging/kcdx-engine" | Out-Null
+New-Item -ItemType Directory -Path "$Staging/kcdx-plugins" | Out-Null
 
-if (-not (Test-Path $Download)) {
-    New-Item -ItemType Directory -Path $Download | Out-Null
-}
+# Launcher + README at the zip root.
+Write-Host "Copying kcdx.exe + kcdx-README.txt..." -ForegroundColor Cyan
+Copy-Item $LauncherExe "$Staging/kcdx.exe"
+$readmePath = Join-Path $RepoRoot "kcdx-README.txt"
+if (Test-Path $readmePath) {
+    Copy-Item $readmePath "$Staging/kcdx-README.txt"
+} else {
+    # Minimal placeholder so users have install instructions in the zip.
+    Set-Content -Path "$Staging/kcdx-README.txt" -Value @"
+kcdx — KCD2 mod extender
 
-# Download Ultimate-ASI-Loader x64 if not already cached
-$UlahZip = Join-Path $Download "ulah_$UlahVersion.zip"
-if (-not (Test-Path $UlahZip)) {
-    $url = "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/$UlahVersion/Ultimate-ASI-Loader_x64.zip"
-    Write-Host "Downloading $url..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $url -OutFile $UlahZip
-}
+Install:
+  1. Extract this zip into <game>\Bin\Win64MasterMasterSteamPGO\ so that:
+       kcdx.exe        sits next to KingdomCome.exe
+       kcdx-engine/    is a sibling folder (auto-created on first run)
+       kcdx-plugins/   is a sibling folder (for user-installed plugins)
+  2. In Steam: right-click Kingdom Come: Deliverance II → Properties →
+     Launch Options → set to the full path of kcdx.exe (quoted).
+  3. Launch via Steam as usual. kcdx.exe injects kcdx.dll on launch.
 
-# Extract just dinput8.dll
-Write-Host "Extracting dinput8.dll..." -ForegroundColor Cyan
-Expand-Archive -Path $UlahZip -DestinationPath $Staging -Force
+If kcdx doesn't load, check kcdx-engine/logs/kcdx-launcher_<timestamp>.log
+for the diagnostic trail.
 
-# Fetch ULAH license to satisfy MIT redistribution
-Write-Host "Fetching Ultimate-ASI-Loader license..." -ForegroundColor Cyan
-$ulahLic = Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ThirteenAG/Ultimate-ASI-Loader/master/license" -UseBasicParsing
-$licHeader = @"
-This LICENSE applies ONLY to dinput8.dll (Ultimate-ASI-Loader by ThirteenAG).
-The rest of this distribution (kcdx.asi etc.) is MIT-licensed; see the
-kcdx repository at https://github.com/violetanvil/kcdx for its license.
-
+See https://github.com/violetanvil/kcdx for full docs.
 "@
-Set-Content -Path "$Staging/dinput8.dll.LICENSE.txt" -Value ($licHeader + $ulahLic.Content) -NoNewline
+}
 
-# Copy kcdx.asi + kcdx-watchdog.exe (both go into plugins/)
-Write-Host "Copying kcdx.asi + kcdx-watchdog.exe..." -ForegroundColor Cyan
-Copy-Item $Asi      "$Staging/plugins/kcdx.asi"
-Copy-Item $Watchdog "$Staging/plugins/kcdx-watchdog.exe"
+# Engine binaries under kcdx-engine/.
+Write-Host "Copying kcdx-engine/kcdx.dll + kcdx-engine/kcdx-watchdog.exe..." -ForegroundColor Cyan
+Copy-Item $EngineDll  "$Staging/kcdx-engine/kcdx.dll"
+Copy-Item $Watchdog   "$Staging/kcdx-engine/kcdx-watchdog.exe"
 
-# Copy kcdx-engine/builtin/ (first-party engine-fix plugins).
-# Each subfolder ships its kcdx.toml verbatim. Any other files in
-# a builtin subfolder are ignored — engine fixes are TOML-only by
-# design (no DLLs).
+# Engine builtins (kcdx-engine/builtin/<fix>/). Source is in the repo
+# under kcdx-engine/builtin/; ships at the same path in the zip.
 Write-Host "Copying kcdx-engine/builtin/..." -ForegroundColor Cyan
 $BuiltinFixes = @()
 if (Test-Path $EngineBuiltin) {
@@ -93,51 +107,34 @@ if (Test-Path $EngineBuiltin) {
             New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
             Copy-Item $srcToml "$dstDir/kcdx.toml"
             $BuiltinFixes += "kcdx-engine/builtin/$($_.Name)/kcdx.toml"
+            # Pick up the optional <fix>.dll if present.
+            Get-ChildItem -Path $_.FullName -Filter "*.dll" | ForEach-Object {
+                Copy-Item $_.FullName "$dstDir/$($_.Name)"
+                $BuiltinFixes += "kcdx-engine/builtin/$(Split-Path -Leaf $_.DirectoryName)/$($_.Name)"
+            }
             Write-Host "  + $($_.Name)" -ForegroundColor Cyan
         }
     }
 } else {
-    Write-Host "  (no kcdx-engine/builtin/ folder; skipping)" -ForegroundColor Yellow
+    Write-Host "  (no kcdx-engine/builtin/ in repo; skipping)" -ForegroundColor Yellow
 }
 
-# Ship the shipped-defaults load_order.toml (currently disables the
-# bugsplat-filename-fix plugin pending the correct patch site). If the
-# user has already customized their own load_order.toml from a prior
-# install, we don't overwrite — but the launcher / installer is
-# responsible for that merge; package-release just stages the
-# repo-tracked file.
+# Shipped-defaults load_order.toml. Source: kcdx-engine/load_order.toml.
 $LoadOrderSrc = Join-Path $RepoRoot "kcdx-engine/load_order.toml"
 if (Test-Path $LoadOrderSrc) {
     Write-Host "Copying kcdx-engine/load_order.toml (shipped defaults)..." -ForegroundColor Cyan
     Copy-Item $LoadOrderSrc "$Staging/kcdx-engine/load_order.toml"
 }
 
-# Build the zip
+# Build the zip.
 $ZipName = "kcdx-$Version.zip"
 $ZipPath = Join-Path $RepoRoot "release-staging/$ZipName"
 Write-Host "Creating $ZipName..." -ForegroundColor Cyan
 if (Test-Path $ZipPath) { Remove-Item $ZipPath }
 
-# Explicit allowlist of files to include
-$Include = @(
-    "$Staging/dinput8.dll",
-    "$Staging/dinput8.dll.LICENSE.txt",
-    "$Staging/plugins/kcdx.asi",
-    "$Staging/plugins/kcdx-watchdog.exe"
-)
-foreach ($f in $Include) {
-    if (-not (Test-Path $f)) { throw "Missing required file: $f" }
-}
-
-# Compress with the right relative paths by working from $Staging.
-# Include kcdx-engine/ only when builtin fixes exist (Test-Path so
-# this stays a no-op for builds that ship no engine fixes).
-$CompressPaths = @("dinput8.dll", "dinput8.dll.LICENSE.txt", "plugins")
-if (Test-Path "$Staging/kcdx-engine") {
-    $CompressPaths += "kcdx-engine"
-}
 Push-Location $Staging
 try {
+    $CompressPaths = @("kcdx.exe", "kcdx-README.txt", "kcdx-engine", "kcdx-plugins")
     Compress-Archive `
         -Path $CompressPaths `
         -DestinationPath $ZipPath `
@@ -147,20 +144,27 @@ finally {
     Pop-Location
 }
 
-# Verify the zip contents match the allowlist (defense against accidental drift)
-$ExpectedEntries = @(
-    "dinput8.dll",
-    "dinput8.dll.LICENSE.txt",
-    "plugins/kcdx.asi",
-    "plugins/kcdx-watchdog.exe"
-) + $BuiltinFixes
+# Verify the zip's contents against the expected allowlist.
+$ExpectedRoot = @(
+    "kcdx.exe",
+    "kcdx-README.txt",
+    "kcdx-engine/kcdx.dll",
+    "kcdx-engine/kcdx-watchdog.exe"
+)
+if (Test-Path "$Staging/kcdx-engine/load_order.toml") {
+    $ExpectedRoot += "kcdx-engine/load_order.toml"
+}
+$ExpectedEntries = $ExpectedRoot + $BuiltinFixes
+
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
 try {
-    $actual = $zip.Entries | ForEach-Object { $_.FullName.Replace("\","/") } | Where-Object { -not $_.EndsWith("/") }
+    $actual = $zip.Entries `
+        | ForEach-Object { $_.FullName.Replace("\","/") } `
+        | Where-Object { -not $_.EndsWith("/") }
     $extra = $actual | Where-Object { $ExpectedEntries -notcontains $_ }
     $missing = $ExpectedEntries | Where-Object { $actual -notcontains $_ }
-    if ($extra) { throw "Release zip has unexpected entries: $($extra -join ', ')" }
+    if ($extra)   { throw "Release zip has unexpected entries: $($extra -join ', ')" }
     if ($missing) { throw "Release zip is missing entries: $($missing -join ', ')" }
 }
 finally {

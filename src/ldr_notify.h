@@ -64,4 +64,27 @@ bool Register();
 // for completeness; the registration is process-lifetime by default.
 void Unregister();
 
+// Block the calling thread until WHGame.dll is mapped into the process,
+// OR until timeoutMs elapses. Returns true if WHGame.dll became
+// available (or was already loaded at call time), false on timeout.
+//
+// kcdx.exe launches KingdomCome.exe via CREATE_SUSPENDED and injects
+// kcdx.dll BEFORE the game starts running, so WHGame.dll is not yet
+// loaded when kcdx.dll's DllMain (and the worker thread it spawns)
+// runs. The engine's MinHook installs target WHGame.dll, so they must
+// wait. Once the launcher calls ResumeThread, KCD2's startup code
+// loads WHGame.dll and the LDR notification fires; this function
+// signals an event from inside the callback so the worker thread
+// resumes.
+//
+// Idempotent if WHGame.dll is already loaded — the underlying event
+// is set in Register() via a one-time GetModuleHandle check, so the
+// race "game loaded WHGame.dll before kcdx finished setup" is also
+// covered.
+//
+// Safe to call from the worker thread. Do NOT call from DllMain or
+// from inside the LDR notification callback (will deadlock under
+// loader lock).
+bool WaitForGameDll(unsigned long timeoutMs = 60'000);
+
 }  // namespace kcdx::ldr_notify

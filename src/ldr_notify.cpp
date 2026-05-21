@@ -59,6 +59,12 @@ typedef NTSTATUS (NTAPI *PFN_LdrUnregisterDllNotification)(
 
 PVOID g_cookie = nullptr;  // registration cookie; non-null after Register()
 
+// Manual-reset event signaled when WHGame.dll has been mapped into the
+// process. Created by Register(); set by NotificationCallback() the
+// first time it sees WHGame.dll. The worker thread waits on this
+// before calling hooks::Install (which targets WHGame.dll).
+HANDLE g_whgameLoadedEvent = nullptr;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -148,6 +154,15 @@ VOID CALLBACK NotificationCallback(ULONG                              reason,
                    "to '%s' immediately after map",
                    n, name.c_str());
     }
+
+    // Signal the WHGame-loaded event so any thread waiting in
+    // WaitForGameDll() can proceed. SetEvent is loader-lock-safe
+    // (documented in MSDN as a kernel-only operation that doesn't
+    // load other DLLs).
+    if (g_whgameLoadedEvent && EqualIgnoreCase(name, "WHGame.dll")) {
+        SetEvent(g_whgameLoadedEvent);
+        log::Info("ldr_notify: WHGame.dll mapped; signaled gate event");
+    }
 }
 
 }  // namespace
@@ -183,6 +198,23 @@ size_t ApplyAlreadyLoaded() {
 
 bool Register() {
     if (g_cookie) return true;
+
+    // Create the WHGame-loaded gate event before registering the
+    // callback. Manual-reset so multiple waiters can be released by
+    // one signal; initially unsignaled. If WHGame.dll is somehow
+    // already loaded at this point (would only happen if kcdx.dll got
+    // injected after KCD2's startup ran some, which our launcher
+    // doesn't do — but defensive), set it immediately so the worker
+    // thread doesn't deadlock.
+    if (!g_whgameLoadedEvent) {
+        g_whgameLoadedEvent = CreateEventW(nullptr, /*manualReset=*/TRUE,
+                                           /*initialState=*/FALSE, nullptr);
+        if (g_whgameLoadedEvent && GetModuleHandleW(L"WHGame.dll") != nullptr) {
+            SetEvent(g_whgameLoadedEvent);
+            log::Info("ldr_notify: WHGame.dll already loaded at Register; "
+                      "gate event pre-signaled");
+        }
+    }
 
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (!ntdll) {
@@ -222,6 +254,40 @@ void Unregister() {
         GetProcAddress(ntdll, "LdrUnregisterDllNotification"));
     if (pUnregister) pUnregister(g_cookie);
     g_cookie = nullptr;
+}
+
+bool WaitForGameDll(unsigned long timeoutMs) {
+    // Fast path: WHGame.dll is already mapped (engine restart, late
+    // injection, etc.).
+    if (GetModuleHandleW(L"WHGame.dll") != nullptr) return true;
+
+    // If Register() never ran or failed to allocate the event, we
+    // can't wait. Fall back to spin-checking the module list briefly
+    // before giving up.
+    if (!g_whgameLoadedEvent) {
+        log::Warn("ldr_notify: WaitForGameDll called without a registered "
+                  "gate event; spin-checking GetModuleHandle for up to "
+                  "10s as fallback");
+        const unsigned long kSpinSliceMs = 50;
+        unsigned long elapsed = 0;
+        while (elapsed < 10'000) {
+            Sleep(kSpinSliceMs);
+            elapsed += kSpinSliceMs;
+            if (GetModuleHandleW(L"WHGame.dll") != nullptr) return true;
+        }
+        return false;
+    }
+
+    DWORD r = WaitForSingleObject(g_whgameLoadedEvent, timeoutMs);
+    if (r == WAIT_OBJECT_0) return true;
+    if (r == WAIT_TIMEOUT) {
+        log::WarnF("ldr_notify: timed out after %lu ms waiting for "
+                   "WHGame.dll to load", timeoutMs);
+        return false;
+    }
+    log::WarnF("ldr_notify: WaitForSingleObject returned %lu (gle=%lu)",
+               (unsigned long)r, GetLastError());
+    return false;
 }
 
 }  // namespace kcdx::ldr_notify

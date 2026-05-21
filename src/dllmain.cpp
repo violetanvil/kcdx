@@ -23,7 +23,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
 
     kcdx::log::Init();
     kcdx::log::Info("");
-    kcdx::log::Info("kcdx.asi loaded");
+    kcdx::log::Info("kcdx.dll loaded");
 
     // Install the unhandled-exception backstop early so even a crash
     // during config load / hook install gets a final log line. The
@@ -63,6 +63,27 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // auto-bundle. Spawned AFTER LoadAllConfigs so the dev-mode flag
     // we pass it is the final post-config value.
     kcdx::watchdog::Spawn();
+
+    // Wait for KingdomCome.exe's startup code to load WHGame.dll
+    // before installing our hooks. The launcher (kcdx.exe) injects
+    // kcdx.dll into a CREATE_SUSPENDED game process, so kcdx's
+    // DllMain + this worker thread run BEFORE KingdomCome.exe begins
+    // executing — WHGame.dll isn't mapped yet. The ldr_notify
+    // callback registered in DllMain signals an event the moment
+    // WHGame.dll lands; we block here until it does. After
+    // ResumeThread() (launcher) → KCD2 startup → LoadLibrary
+    // WHGame.dll → notification → SetEvent, this wait returns and
+    // hooks::Install proceeds normally.
+    //
+    // 60s timeout is generous (typical wait is well under a second).
+    // On timeout we bail loudly rather than crashing inside
+    // hooks::Install's "WHGame.dll not loaded" error path.
+    if (!kcdx::ldr_notify::WaitForGameDll(/*timeoutMs=*/60'000)) {
+        kcdx::log::Error("worker thread: WHGame.dll did not load within "
+                         "60s — aborting hook install. Game will run "
+                         "vanilla.");
+        return 1;
+    }
 
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");

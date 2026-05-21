@@ -11,11 +11,30 @@ namespace fs = std::filesystem;
 
 namespace {
 
-std::wstring g_pluginsDir;     // ASI module dir, with trailing '\\'
-std::wstring g_engineDataDir;  // <PluginsDir>/../kcdx-engine/, with trailing '\\'
+// New install layout (Phase 1+):
+//   <game-bin>/
+//   ├── kcdx.exe              (launcher; user runs this)
+//   ├── kcdx-engine/          (everything kcdx-owned)
+//   │   ├── kcdx.dll          (engine; injected by launcher; we live here)
+//   │   ├── kcdx-watchdog.exe
+//   │   ├── engine.toml
+//   │   ├── load_order.toml
+//   │   ├── logs/
+//   │   ├── address-library/
+//   │   └── builtin/          (first-party engine fixes)
+//   └── kcdx-plugins/         (user/third-party plugins only)
+//       └── <plugin>/...
+//
+// The engine's perspective: self lives at <game-bin>/kcdx-engine/kcdx.dll.
+// - engineDataDir = <game-bin>/kcdx-engine/   (same folder as self)
+// - pluginsDir    = <game-bin>/kcdx-plugins/  (sibling of kcdx-engine/)
+// - builtinDir    = <game-bin>/kcdx-engine/builtin/
 
-// Re-derive the ASI module directory using the address of a function
-// inside this translation unit.
+std::wstring g_engineDataDir;  // <game-bin>/kcdx-engine/   (trailing '\\')
+std::wstring g_pluginsDir;     // <game-bin>/kcdx-plugins/  (trailing '\\')
+std::wstring g_builtinDir;     // <game-bin>/kcdx-engine/builtin/ (trailing '\\')
+
+// Re-derive kcdx.dll's directory using the address of a function in this TU.
 std::wstring DeriveSelfDir() {
     HMODULE hMod = nullptr;
     GetModuleHandleExW(
@@ -32,21 +51,40 @@ std::wstring DeriveSelfDir() {
     return path.substr(0, pos + 1);
 }
 
+std::wstring AppendDir(const fs::path& p) {
+    std::wstring s = p.wstring();
+    if (!s.empty() && s.back() != L'\\' && s.back() != L'/') s.push_back(L'\\');
+    return s;
+}
+
 }  // namespace
 
 void Init() {
-    if (!g_pluginsDir.empty()) return;  // idempotent
+    if (!g_engineDataDir.empty()) return;  // idempotent
 
-    g_pluginsDir = DeriveSelfDir();
-
-    fs::path sibling = fs::path(g_pluginsDir).parent_path().parent_path()
-                       / L"kcdx-engine";
-    std::error_code ec;
-    fs::create_directories(sibling, ec);
-    g_engineDataDir = sibling.wstring();
-    if (!g_engineDataDir.empty() && g_engineDataDir.back() != L'\\') {
-        g_engineDataDir.push_back(L'\\');
+    // self lives at <game-bin>/kcdx-engine/kcdx.dll. DeriveSelfDir returns
+    // the path WITH a trailing slash; trim it so fs::path::parent_path
+    // returns the parent directory, not the same path with the slash
+    // shaved off.
+    std::wstring selfDir = DeriveSelfDir();  // <game-bin>/kcdx-engine/
+    while (!selfDir.empty()
+           && (selfDir.back() == L'\\' || selfDir.back() == L'/')) {
+        selfDir.pop_back();
     }
+
+    fs::path engineDir(selfDir);                     // <game-bin>/kcdx-engine
+    fs::path gameBin    = engineDir.parent_path();   // <game-bin>
+    fs::path pluginDir  = gameBin / L"kcdx-plugins";
+    fs::path builtinDir = engineDir / L"builtin";
+
+    std::error_code ec;
+    fs::create_directories(engineDir,  ec);
+    fs::create_directories(pluginDir,  ec);
+    fs::create_directories(builtinDir, ec);
+
+    g_engineDataDir = AppendDir(engineDir);
+    g_pluginsDir    = AppendDir(pluginDir);
+    g_builtinDir    = AppendDir(builtinDir);
 }
 
 const std::wstring& PluginsDir() {

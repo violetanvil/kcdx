@@ -2,55 +2,77 @@
 
 // Filesystem layout for kcdx's engine-owned files.
 //
-// v0.1 layout (rides on Ultimate ASI Loader):
+// v0.2 layout (Phase 1+):
 //   <game>/Bin/Win64MasterMasterSteamPGO/
-//   ├── dinput8.dll                          (ASI loader)
-//   ├── plugins/
-//   │   ├── kcdx.asi                         (us — the ASI module dir == PluginsDir)
-//   │   └── <plugin>/                        (user plugin folder, walked by discovery)
-//   │       ├── kcdx.toml / <plugin>.dll
-//   │       └── logs/
-//   │           └── <plugin>_<ts>.log        (one file per session)
-//   └── kcdx-engine/                         (sibling of plugins/, owned by us)
-//       ├── engine.toml                      (engine config)
-//       ├── logs/
-//       │   ├── kcdx_<ts>.log                (engine log, one per session)
-//       │   └── kcdx-dev_<ts>.log            (dev trace, only if dev_mode = true)
-//       └── address-library/                 (future: Phase 7a)
-//           └── database.toml
+//   ├── KingdomCome.exe                      (vanilla)
+//   ├── WHGame.dll                           (vanilla)
+//   ├── kcdx.exe                             (LAUNCHER — user runs this)
+//   ├── kcdx-engine/                         (everything kcdx-owned)
+//   │   ├── kcdx.dll                         (us — the engine; injected by kcdx.exe)
+//   │   ├── kcdx-watchdog.exe                (crash-bundle sidecar)
+//   │   ├── engine.toml                      (engine config)
+//   │   ├── load_order.toml                  (user load-order overrides)
+//   │   ├── address-library/
+//   │   │   └── database.csv
+//   │   ├── logs/
+//   │   │   ├── kcdx_<ts>.log                (engine log)
+//   │   │   ├── kcdx-dev_<ts>.log            (dev trace)
+//   │   │   ├── kcdx-launcher_<ts>.log       (launcher's own log)
+//   │   │   ├── kcdx-watchdog_<ts>.log       (watchdog's own log)
+//   │   │   └── crash/
+//   │   │       └── crash_<ts>.zip
+//   │   └── builtin/                         (first-party engine fixes)
+//   │       └── <fix-name>/
+//   │           ├── kcdx.toml
+//   │           └── <fix>.dll
+//   └── kcdx-plugins/                        (ONLY user/third-party plugins)
+//       └── <plugin>/
+//           ├── kcdx.toml
+//           ├── plugin.lua / <plugin>.dll
+//           └── logs/
+//               └── <plugin>_<ts>.log
 //
 // Where <ts> is "YYYY-MM-DD_HH-MM-SS" of the session start. Old session
 // files are pruned to kcdx::log::kLogRetainCount per stream on open.
 //
-// Why split: keeping engine-owned data out of plugins/ means plugin
-// discovery walks only real plugin folders, and uninstall-by-deleting-
-// kcdx-engine/-plus-plugins/kcdx.asi is unambiguous about ownership.
-// Per-plugin logs still live inside each plugin's own folder — they're
-// plugin-owned, not engine-owned.
+// Key change from v0.1: only kcdx.exe sits at the game-bin root. The
+// engine DLL, watchdog, configs, logs, builtin fixes all live one folder
+// down under kcdx-engine/. The kcdx-plugins/ folder is exclusively for
+// user-installed plugins — nothing kcdx-owned lives there. Both kcdx-*
+// folder names use the "kcdx-" prefix to make ownership unambiguous at
+// a glance and to avoid colliding with the existing KCD2-vanilla "mods/"
+// concept (pak mods) and ASI-loader-era "plugins/" folder.
 //
-// v0.2 collapses this — see docs/loader-architecture.md.
+// kcdx.dll's perspective at runtime:
+//   - Self is at <game-bin>/kcdx-engine/kcdx.dll.
+//   - EngineDataDir = <game-bin>/kcdx-engine/ (same folder as self).
+//   - PluginsDir = <game-bin>/kcdx-plugins/ (sibling of kcdx-engine/).
 
 #include <string>
 #include <filesystem>
 
 namespace kcdx::paths {
 
-// Initialize once at startup from dllmain. Captures the ASI module
-// directory as PluginsDir, derives EngineDataDir as the sibling
-// kcdx-engine/. Creates the engine-data dir if it doesn't exist yet
-// (idempotent — first-launch on a fresh install creates it).
+// Initialize once at startup from dllmain. Captures kcdx.dll's directory
+// as EngineDataDir, derives PluginsDir as the sibling
+// <game-bin>/kcdx-plugins/. Creates engine-data + plugins + builtin
+// dirs if they don't exist yet (idempotent — first-launch on a fresh
+// install creates them).
 //
 // Safe to call before log::Init.
 void Init();
 
-// Directory containing kcdx.asi. Also the scan root for plugin
-// discovery (subdirs of this with a kcdx.toml become plugins).
-// Wide-char path with a trailing path separator.
+// Directory containing user plugins (subdirs of this with a kcdx.toml
+// become plugins). Wide-char path with a trailing path separator.
+//
+// Sibling of EngineDataDir. <game-bin>/kcdx-plugins/.
 const std::wstring& PluginsDir();
 
-// Directory holding engine-owned data files (engine.toml, kcdx.log,
-// kcdx-dev.log, address-library/database.toml). Sibling of PluginsDir.
-// Wide-char path with a trailing path separator.
+// Directory holding engine-owned data files (engine.toml, load_order.toml,
+// logs/, address-library/, builtin/). Also the directory containing
+// kcdx.dll itself. Wide-char path with a trailing path separator.
+//
+// <game-bin>/kcdx-engine/.
 const std::wstring& EngineDataDir();
 
 // std::filesystem::path views of the same two dirs, for code that

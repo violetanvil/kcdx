@@ -16,16 +16,16 @@ namespace kcdx::watchdog {
 
 namespace {
 
-// Resolve the game-root directory by walking up from the ASI's
-// install location: <game>/Bin/Win64MasterMasterSteamPGO/plugins/.
+// Resolve the game-root directory by walking up from kcdx.dll's
+// install location: <game>/Bin/Win64MasterMasterSteamPGO/kcdx-engine/.
 // Two parent_path() calls land us at <game>/Bin/Win64...; one more
 // gets us to <game>/Bin; one more to <game>.
 std::wstring DeriveGameDir() {
-    fs::path pluginsDir(paths::PluginsDir());
-    if (pluginsDir.empty()) return {};
-    // pluginsDir has a trailing slash; strip it via parent_path twice
+    fs::path engineDir(paths::EngineDataDir());
+    if (engineDir.empty()) return {};
+    // engineDir has a trailing slash; strip it via parent_path twice
     // (once removes the slash, second hops into Win64....)
-    fs::path winDir  = pluginsDir.parent_path().parent_path();
+    fs::path winDir  = engineDir.parent_path().parent_path();
     fs::path binDir  = winDir.parent_path();
     fs::path gameDir = binDir.parent_path();
     return gameDir.wstring();
@@ -34,19 +34,20 @@ std::wstring DeriveGameDir() {
 }  // namespace
 
 bool Spawn() {
-    fs::path pluginsDir(paths::PluginsDir());
-    fs::path watchdogExe = pluginsDir / L"kcdx-watchdog.exe";
+    fs::path engineDir(paths::EngineDataDir());
+    fs::path watchdogExe = engineDir / L"kcdx-watchdog.exe";
 
     std::error_code ec;
     if (!fs::exists(watchdogExe, ec)) {
         LOG_WARN("WATCHDOG",
             "kcdx-watchdog.exe not found at %s; crash-bundle will not "
-            "auto-run. Ship kcdx-watchdog.exe alongside kcdx.asi.",
+            "auto-run. The release zip ships kcdx-watchdog.exe inside "
+            "kcdx-engine/; check that folder.",
             watchdogExe.string().c_str());
         return false;
     }
 
-    std::wstring engineDir  = paths::EngineDataDir();
+    std::wstring engineDirW = paths::EngineDataDir();
     std::wstring pluginsDirW(paths::PluginsDir());
     std::wstring stampW;
     {
@@ -65,7 +66,7 @@ bool Spawn() {
         while (!s.empty() && (s.back() == L'\\' || s.back() == L'/'))
             s.pop_back();
     };
-    strip(engineDir);
+    strip(engineDirW);
     strip(pluginsDirW);
 
     // Build command line:
@@ -81,7 +82,7 @@ bool Spawn() {
         L"\"%ls\" %lu \"%ls\" \"%ls\" %ls \"%ls\" %u",
         watchdogExe.wstring().c_str(),
         myPid,
-        engineDir.c_str(),
+        engineDirW.c_str(),
         pluginsDirW.c_str(),
         stampW.c_str(),
         gameDir.c_str(),
@@ -109,7 +110,7 @@ bool Spawn() {
         FALSE,          // don't inherit handles
         flags,
         nullptr,        // inherit environment
-        pluginsDir.wstring().c_str(),  // working dir (where the exe lives)
+        engineDir.wstring().c_str(),  // working dir (where the exe lives)
         &si,
         &pi);
 
@@ -124,7 +125,7 @@ bool Spawn() {
             flags &= ~CREATE_BREAKAWAY_FROM_JOB;
             ok = CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE,
                                 flags, nullptr,
-                                pluginsDir.wstring().c_str(), &si, &pi);
+                                engineDir.wstring().c_str(), &si, &pi);
             if (!ok) err = GetLastError();
         }
     }

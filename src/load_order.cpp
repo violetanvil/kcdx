@@ -184,7 +184,7 @@ void Resolve() {
             // path: engine builtins are stamped Source::Engine on
             // their entries. We approximate via the manifest's
             // tomlPath; engine builtins live under
-            // kcdx-engine/builtin/.
+            // <game-bin>/kcdx-engine/builtin/.
             //
             // We don't need a perfect classifier here — capability
             // gating below will still bump after_game-required
@@ -192,8 +192,10 @@ void Resolve() {
             bool isEngineBuiltin = false;
             {
                 auto pathStr = m.tomlPath.u8string();
-                // Cheap substring check; the discovery walk roots
-                // are stable kcdx-engine/builtin and plugins/.
+                // Cheap substring check. The two discovery roots are
+                // <game-bin>/kcdx-engine/builtin/ (engine fixes) and
+                // <game-bin>/kcdx-plugins/ (user). "kcdx-engine" only
+                // appears in the engine-root path, so that suffices.
                 if (pathStr.find("kcdx-engine") != std::string::npos &&
                     pathStr.find("builtin") != std::string::npos) {
                     isEngineBuiltin = true;
