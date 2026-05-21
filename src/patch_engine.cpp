@@ -10,6 +10,7 @@
 
 #include "address_library.h"
 #include "conflict_engine.h"
+#include "load_order.h"
 #include "log.h"
 #include "pe_helpers.h"
 #include "symbols.h"
@@ -444,6 +445,18 @@ void PreFlightAll() {
 }
 
 bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
+    // load_order.toml disabled gate. The production orchestration in
+    // hooks.cpp filters disabled-plugin entries out of g_applyOrder
+    // before reaching this function, but the ldr_notify before_game
+    // path, the patch::ApplyAll fallback, and the Lua-runtime
+    // ApplyPatch path all reach ApplyResolvedPatch directly — they
+    // need their own gate.
+    if (!load_order::IsPluginEnabled(p.pluginName)) {
+        log::InfoF("[%s] skipping patch '%s' (plugin disabled via load_order.toml)",
+                   p.pluginName.c_str(), p.name.c_str());
+        return false;
+    }
+
     if (!r.ok) {
         // Resolution failed during pre-flight. Surface conflict context if
         // any was recorded against this patch.

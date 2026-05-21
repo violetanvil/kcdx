@@ -100,6 +100,18 @@ if (Test-Path $EngineBuiltin) {
     Write-Host "  (no kcdx-engine/builtin/ folder; skipping)" -ForegroundColor Yellow
 }
 
+# Ship the shipped-defaults load_order.toml (currently disables the
+# bugsplat-filename-fix plugin pending the correct patch site). If the
+# user has already customized their own load_order.toml from a prior
+# install, we don't overwrite — but the launcher / installer is
+# responsible for that merge; package-release just stages the
+# repo-tracked file.
+$LoadOrderSrc = Join-Path $RepoRoot "kcdx-engine/load_order.toml"
+if (Test-Path $LoadOrderSrc) {
+    Write-Host "Copying kcdx-engine/load_order.toml (shipped defaults)..." -ForegroundColor Cyan
+    Copy-Item $LoadOrderSrc "$Staging/kcdx-engine/load_order.toml"
+}
+
 # Build the zip
 $ZipName = "kcdx-$Version.zip"
 $ZipPath = Join-Path $RepoRoot "release-staging/$ZipName"

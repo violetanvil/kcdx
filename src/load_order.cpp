@@ -265,4 +265,12 @@ const Effective& Of(const std::string& pluginName) {
     return it->second;
 }
 
+bool IsPluginEnabled(const std::string& pluginName) {
+    // Anonymous entries (pure-patch kcdx.toml with no [plugin] table)
+    // have no row in load_order.toml and no way to toggle. Treat as
+    // always enabled — they predate the launcher's toggle UI.
+    if (pluginName.empty()) return true;
+    return Of(pluginName).enabled;
+}
+
 }  // namespace kcdx::load_order

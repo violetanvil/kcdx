@@ -1,13 +1,19 @@
 # kcdx engine-fix plugin: bugsplat-filename-fix
 #
-# *** STATUS: ship-disabled. ***
+# *** STATUS: ship-disabled via kcdx-engine/load_order.toml. ***
 #
-# The plugin folder is deployed as `bugsplat-filename-fix.disabled/`
-# in the kcdx release zip; rename to drop `.disabled` to re-enable.
-# Today (2026-05-20) the deployed folder is `.disabled` because the
-# patch site captured here was empirically proven WRONG — see below.
-# Source kept in-tree so the load-order zone+priority shape is
-# preserved as the reference template for the eventual correct fix.
+# This plugin's patch site (LEA at VA 0x1824599e7) was empirically
+# proven NOT to feed BugSplat's dmp filename construction (2026-05-20
+# test run — the patch lands at DllMain time via the before_game
+# zone as designed, but BugSplat still writes to a colon-truncated
+# stub). The shipped kcdx-engine/load_order.toml carries
+# `enabled = false` for this plugin until the right patch site is
+# identified. Source retained as the reference template for the
+# eventual correct fix.
+#
+# To re-enable once the correct site is identified: edit
+# kcdx-engine/load_order.toml and set enabled = true for this plugin
+# (or remove its row entirely — default is enabled = true).
 #
 # Original design (still archived here; verified incorrect 2026-05-20):
 #   Repoint a single LEA in WHGame.dll from the colon-bearing app-name

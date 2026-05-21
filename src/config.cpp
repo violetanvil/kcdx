@@ -1006,6 +1006,7 @@ void LoadOneFile(const fs::path& path, Source source) {
                 kcdx::scan_engine::ScanEntry entry;
                 std::string err;
                 if (ParseOneScan(*elem.as_table(), fileLabel, entry, err)) {
+                    entry.pluginName = pluginName;
                     log::InfoF("Loaded scan '%s' from %s",
                                entry.name.c_str(), fileLabel.c_str());
                     kcdx::scan_engine::g_scans.push_back(std::move(entry));
@@ -1034,14 +1035,12 @@ void LoadOneFile(const fs::path& path, Source source) {
 //      for sub-DLLs, data files, configs, etc — kcdx ignores them.
 //   4. Hidden folders/files (starting with `.`) are skipped, both
 //      roots.
-//   5. Plugin folders whose name ends with `.disabled` are skipped
-//      on BOTH roots. Even though engine fixes ship with kcdx, a
-//      user can still disable a specific fix the same way they
-//      disable any user plugin (rename the folder). Useful as a
-//      safety valve if a fix turns out to cause regressions on
-//      someone's machine, without needing to uninstall the whole
-//      engine. Convention: leave the rest of `kcdx-engine/`
-//      untouched.
+//
+// To disable a plugin without uninstalling it, set `enabled = false`
+// for it in `kcdx-engine/load_order.toml`. The launcher (when shipped)
+// does this via a per-row toggle. Folder-rename `.disabled` was
+// removed once `enabled` was wired into every apply path — having
+// two ways to express the same intent was a foot-gun.
 //
 // Every walker decision (examine, skip, accept, recurse) emits a
 // DEBUG/TRACE line under the DISCOVERY category so the funnel is
@@ -1073,25 +1072,6 @@ void WalkForTomls(const fs::path& dir, int depth, Source source,
                 KV("path",   WideToUtf8(p.wstring())),
                 KV("reason", "hidden"));
             continue;
-        }
-
-        // Skip plugin folders explicitly deactivated with the
-        // `.disabled` suffix. Honored on BOTH roots — a user can
-        // disable an engine fix the same way they disable a user
-        // plugin (rename the folder). Folders only — files are not
-        // subject to this rule (a `kcdx.toml.disabled` crumb is
-        // just an unused file).
-        if (isDir) {
-            const std::wstring kSuffix = L".disabled";
-            if (name.size() >= kSuffix.size()
-                && name.compare(name.size() - kSuffix.size(),
-                                kSuffix.size(), kSuffix) == 0) {
-                LOG_WARN("DISCOVERY",
-                    "skipping disabled plugin folder '%s' (source=%s)",
-                    WideToUtf8(p.wstring()).c_str(),
-                    source == Source::Engine ? "engine" : "user");
-                continue;
-            }
         }
 
         if (isDir) {

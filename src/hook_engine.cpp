@@ -9,6 +9,7 @@
 
 #include "MinHook.h"
 #include "conflict_engine.h"
+#include "load_order.h"
 #include "log.h"
 #include "patch_engine.h"  // for Resolve, ResolvedPatch (the locator pipeline)
 #include "rom_borrowed/runtime_func_t.h"
@@ -73,6 +74,17 @@ patch::PatchEntry MakeLocatorPatch(const HookEntry& h) {
 bool ApplyOneHook(size_t hookIdx) {
     if (hookIdx >= g_hooks.size()) return false;
     HookEntry& h = g_hooks[hookIdx];
+
+    // load_order.toml disabled gate. Production orchestration in
+    // hooks.cpp filters disabled plugins out of g_applyOrder so we
+    // never reach this check by that path, but the ApplyAll fallback
+    // (used by tests, the Lua runtime path, and any future caller
+    // bypassing conflict_engine) still hits ApplyOneHook directly.
+    if (!load_order::IsPluginEnabled(h.pluginName)) {
+        log::InfoF("[%s] skipping hook '%s' (plugin disabled via load_order.toml)",
+                   h.pluginName.c_str(), h.name.c_str());
+        return false;
+    }
 
     // conflict_engine::RunPreFlight should have populated g_resolvedHooks
     // already. If we're being called outside that orchestration (tests,
@@ -242,6 +254,13 @@ size_t ApplyAll() {
 bool ApplyOneMidHook(size_t midHookIdx) {
     if (midHookIdx >= g_mid_hooks.size()) return false;
     const MidHookEntry& mh = g_mid_hooks[midHookIdx];
+
+    // load_order.toml disabled gate.
+    if (!load_order::IsPluginEnabled(mh.pluginName)) {
+        log::InfoF("[%s] skipping mid_hook '%s' (plugin disabled via load_order.toml)",
+                   mh.pluginName.c_str(), mh.name.c_str());
+        return false;
+    }
 
     // Mid-hooks resolve their target inline. They don't participate in
     // conflict_engine pre-flight today (Phase 5g v0.1 limitation;

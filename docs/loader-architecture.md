@@ -106,7 +106,7 @@ gets usable crash dumps from KCD2 again).
 | Discovered by | `config::LoadAllConfigs` walking `plugins/` | same walker, extended to also walk `kcdx-engine/builtin/` |
 | TOML schema | full `[plugin]` + `[[patch]]` / `[[hook]]` / `[[mid_hook]]` / `[[trampoline]]` / `[[command]]` / `[[event]]` | same schema |
 | Apply order | per `priority`, after engine fixes | **applied first** so cross-plugin conflicts at the same address resolve in the engine fix's favor |
-| `.disabled` suffix | honored (user opt-out) | also honored — same safety valve. A user can rename `kcdx-engine/builtin/<fix>/` to `<fix>.disabled/` to opt out of a specific engine fix without uninstalling all of kcdx. |
+| User opt-out | `enabled = false` in `kcdx-engine/load_order.toml` | same — set `enabled = false` to disable a specific engine fix without uninstalling all of kcdx |
 | Per-plugin log file | `<plugins>/<X>/logs/<X>_<ts>.log` | `<plugins>/<X>/logs/<X>_<ts>.log` (same — log root is keyed on the plugin folder, both roots route through `OpenPluginStream`) |
 
 Discovery walks both roots into one unified candidate list; the

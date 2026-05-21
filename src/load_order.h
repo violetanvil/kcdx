@@ -128,6 +128,21 @@ void Resolve();
 // entries land at default position in the after_game zone.
 const Effective& Of(const std::string& pluginName);
 
+// True if the named plugin is enabled per the resolved load order.
+//
+// Anonymous entries (kcdx.toml with no [plugin] table — pure-patch
+// files used historically by mempatch-compatible installs) have
+// pluginName == "" and are always enabled. They predate the launcher
+// and have no row to toggle.
+//
+// Every apply path that walks entries — patch, hook, mid_hook,
+// trampoline, scan, command registration, Plugin_Load — calls this
+// before doing work. A user setting enabled = false on their plugin
+// in kcdx-engine/load_order.toml must result in zero side effects
+// from that plugin, no matter which engine surface the entry
+// belongs to.
+bool IsPluginEnabled(const std::string& pluginName);
+
 // Capability derivation. Walks the entry vectors for `pluginName` and
 // returns the strictest zone requirement. Pure read; no side effects.
 //

@@ -12,6 +12,7 @@
 #include <unordered_set>
 
 #include "crash_guard.h"
+#include "load_order.h"
 #include "log.h"
 #include "messaging.h"
 #include "pe_helpers.h"
@@ -531,6 +532,16 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     const kcdxInterface* api = GetEngineInterface();
     for (auto& p : g_plugins) {
         if (!p.preloadFn) continue;
+        // load_order.toml disabled gate. A disabled plugin still gets
+        // its DLL mapped (LoadLibraryW already ran above to read the
+        // manifest version + export discovery), but kcdxPlugin_Preload
+        // is NOT called — so the plugin's static initializers ran but
+        // its declarative entry-point code does not.
+        if (!load_order::IsPluginEnabled(p.manifest.name)) {
+            log::InfoF("Plugin '%s' kcdxPlugin_Preload skipped (plugin disabled via load_order.toml)",
+                       p.manifest.name.c_str());
+            continue;
+        }
         struct Ctx {
             kcdxPlugin_Preload_t fn;
             const kcdxInterface* api;
@@ -560,6 +571,15 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
 
     // Phase 6 — Load wave.
     for (auto& p : g_plugins) {
+        // load_order.toml disabled gate. Mark the plugin as not-loaded
+        // so enumeration reflects the user's choice. The DLL stays in
+        // process (already mapped) but kcdxPlugin_Load is not called.
+        if (!load_order::IsPluginEnabled(p.manifest.name)) {
+            log::InfoF("Plugin '%s' kcdxPlugin_Load skipped (plugin disabled via load_order.toml)",
+                       p.manifest.name.c_str());
+            p.loaded = false;
+            continue;
+        }
         if (!p.loadFn) {
             // No Load function. That's OK for TOML-only plugins (purely
             // declarative — patches/hooks already applied via config.cpp's

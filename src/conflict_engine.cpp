@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "hook_engine.h"
+#include "load_order.h"
 #include "log.h"
 
 namespace kcdx::conflict_engine {
@@ -330,15 +331,42 @@ void DetectConflicts() {
 // emits an EntryRef for each, then sorts by (priority, name) so the
 // orchestration in hooks.cpp can dispatch in load order. Used by the
 // unified apply loop.
+//
+// Entries from plugins the user disabled via load_order.toml
+// (enabled = false) are filtered out here so the orchestrator dispatch
+// loop, conflict reporting, and apply-summary counts all naturally see
+// zero work for them. We log a single line per skipped entry so the
+// modder can verify their disable took effect.
 void BuildApplyOrder() {
     g_applyOrder.clear();
     g_applyOrder.reserve(patch::g_patches.size() + hook_engine::g_hooks.size());
 
+    size_t skippedPatches = 0;
+    size_t skippedHooks   = 0;
+
     for (size_t i = 0; i < patch::g_patches.size(); ++i) {
+        const auto& p = patch::g_patches[i];
+        if (!load_order::IsPluginEnabled(p.pluginName)) {
+            log::InfoF("[%s] skipping patch '%s' (plugin disabled via load_order.toml)",
+                       p.pluginName.c_str(), p.name.c_str());
+            ++skippedPatches;
+            continue;
+        }
         g_applyOrder.push_back({ EntryKind::Patch, i });
     }
     for (size_t i = 0; i < hook_engine::g_hooks.size(); ++i) {
+        const auto& h = hook_engine::g_hooks[i];
+        if (!load_order::IsPluginEnabled(h.pluginName)) {
+            log::InfoF("[%s] skipping hook '%s' (plugin disabled via load_order.toml)",
+                       h.pluginName.c_str(), h.name.c_str());
+            ++skippedHooks;
+            continue;
+        }
         g_applyOrder.push_back({ EntryKind::Hook, i });
+    }
+    if (skippedPatches + skippedHooks > 0) {
+        log::InfoF("load_order: skipped %zu patch(es) + %zu hook(s) from disabled plugin(s)",
+                   skippedPatches, skippedHooks);
     }
 
     // Sort by (priority, name) across all entry types. Lower priority

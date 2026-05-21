@@ -12,6 +12,7 @@
 #include "conflict_engine.h"
 #include "console.h"
 #include "hook_engine.h"
+#include "load_order.h"
 #include "log.h"
 #include "messaging.h"
 #include "patch_engine.h"
@@ -195,8 +196,11 @@ uint32_t Thunk_GetConflictReport(uintptr_t target,
     std::vector<TempEntry> hits;
 
     // Patches: target lies within [patchAddr, patchAddr + replacement.size())
+    // Skip entries whose plugin is disabled via load_order.toml — they
+    // never applied and shouldn't appear in conflict reports.
     for (size_t i = 0; i < kcdx::patch::g_patches.size(); ++i) {
         const auto& p = kcdx::patch::g_patches[i];
+        if (!kcdx::load_order::IsPluginEnabled(p.pluginName)) continue;
         if (i >= kcdx::conflict_engine::g_resolvedPatches.size()) break;
         const auto& r = kcdx::conflict_engine::g_resolvedPatches[i];
         if (!r.ok) continue;
@@ -213,6 +217,7 @@ uint32_t Thunk_GetConflictReport(uintptr_t target,
     // Hooks: target matches resolved function entry exactly
     for (size_t i = 0; i < kcdx::hook_engine::g_hooks.size(); ++i) {
         const auto& h = kcdx::hook_engine::g_hooks[i];
+        if (!kcdx::load_order::IsPluginEnabled(h.pluginName)) continue;
         if (i >= kcdx::conflict_engine::g_resolvedHooks.size()) break;
         const auto& rh = kcdx::conflict_engine::g_resolvedHooks[i];
         if (!rh.ok) continue;

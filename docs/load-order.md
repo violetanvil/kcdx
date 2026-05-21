@@ -106,12 +106,15 @@ Per-field rules:
 - **`priority`** — optional. Missing → author default. Out-of-range
   values (`< 0` or `> 100`) get a WARN and fall back to author
   default.
-- **`enabled`** — optional. Default `true`. `enabled = false` is a
-  soft-disable: the plugin's entries don't apply, but the plugin DLL
-  (if any) still loads — useful for plugins whose DLL has side
-  effects you want to keep while suppressing TOML-declared work.
-  Power-user / no-launcher fallback: rename the folder
-  `<plugin>.disabled/`. `.disabled` wins.
+- **`enabled`** — optional. Default `true`. `enabled = false` skips
+  every side effect of the plugin: no `[[patch]]` writes, no
+  `[[hook]]` / `[[mid_hook]]` installs, no `[[trampoline]]` allocs,
+  no `[[scan]]` runs, no `kcdxPlugin_Preload` / `kcdxPlugin_Load`
+  calls (so no `[[command]]` / `[[event]]` registration either).
+  The plugin's DLL is still mapped into the process (the loader
+  reads its manifest version + exports), but none of its declarative
+  or imperative entry points fire. This is the single, authoritative
+  way to disable a plugin without uninstalling it.
 
 "Revert to defaults" in a future launcher just deletes
 `load_order.toml`. kcdx regenerates effective values from author

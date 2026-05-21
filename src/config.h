@@ -10,18 +10,23 @@ namespace kcdx::config {
 //
 //   Engine — kcdx-engine/builtin/<name>/kcdx.toml
 //            First-party engine fixes shipped in the kcdx release zip.
-//            Always-on (no `.disabled` suffix support); apply BEFORE
-//            user plugins. Used today for the BugSplat filename fix.
+//            Apply BEFORE user plugins. Subject to the same
+//            enabled = false load_order.toml gate as user plugins —
+//            a user can disable a specific engine fix the same way
+//            they disable any other plugin (useful as a safety valve
+//            if a fix turns out to cause regressions).
 //
 //   User   — plugins/<name>/kcdx.toml
-//            Third-party plugins installed by the user. Respect
-//            `.disabled` suffix; apply per their priority field.
+//            Third-party plugins installed by the user. Subject to
+//            the load_order.toml enabled gate; apply per their
+//            priority field.
 //
 // Walked in this order. Within each engine entry type, the final
-// sort key is (source asc, priority asc, name asc) — `Engine`
-// sorts before `User`, so cross-source conflicts at the same
-// address resolve in the engine fix's favor regardless of
-// numeric priority.
+// sort key is (zone, plugin_priority, plugin_name, source asc, ...)
+// — see docs/load-order.md for the full sort. `Engine` sorts before
+// `User` at the source tiebreaker level, so cross-source conflicts
+// at the same address resolve in the engine fix's favor when other
+// keys are equal.
 enum class Source : uint8_t {
     Engine = 0,
     User   = 1,

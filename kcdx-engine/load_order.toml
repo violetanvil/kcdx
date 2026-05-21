@@ -1,0 +1,30 @@
+# kcdx load order — user override file.
+#
+# Edit via the launcher UI (when shipped), or hand-edit here.
+#
+# Plugins not listed in this file inherit author defaults from their
+# own kcdx.toml ([plugin].default_position / .default_priority) and
+# are enabled. Listed plugins get the fields below applied on top of
+# those defaults; missing fields fall back to the author default.
+#
+# See docs/load-order.md for the full model.
+
+# ----- Shipped defaults -----
+#
+# bugsplat-filename-fix is shipped DISABLED because its patch site
+# (LEA at VA 0x1824599e7) was empirically proven NOT to feed
+# BugSplat's dmp filename construction (2026-05-20 test run — the
+# patch lands at DllMain time as designed but BugSplat still writes
+# to a colon-truncated stub). The plugin's kcdx.toml + source are
+# retained in the release zip as the reference template for the
+# eventual correct fix; flip enabled = true here once the right
+# patch site is identified.
+#
+# See docs/known-issues/BugSplat dmp files don't reach disk for AV
+# crashes.md for the full trail and the planned next investigation
+# step (hook MiniDumpWriteDump / CreateFileW to trace the real
+# filename source).
+
+[[plugin]]
+name      = "kcdx.bugsplat-filename-fix"
+enabled   = false

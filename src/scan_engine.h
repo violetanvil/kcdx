@@ -31,6 +31,9 @@ namespace kcdx::scan_engine {
 
 struct ScanEntry {
     std::string sourceFile;
+    // Plugin name this scan belongs to. Stamped by LoadOneFile so the
+    // scan apply path can honor load_order.toml's enabled = false.
+    std::string pluginName;
     std::string name;
     std::string module = "WHGame.dll";
 

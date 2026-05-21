@@ -7,6 +7,7 @@
 
 #include "scan_engine.h"
 
+#include "load_order.h"
 #include "log.h"
 #include "pe_helpers.h"
 
@@ -115,6 +116,11 @@ void RunAll() {
     log::InfoF("Scan engine: running %zu [[scan]] entr%s",
                g_scans.size(), g_scans.size() == 1 ? "y" : "ies");
     for (const auto& s : g_scans) {
+        if (!load_order::IsPluginEnabled(s.pluginName)) {
+            log::InfoF("[%s] skipping scan '%s' (plugin disabled via load_order.toml)",
+                       s.pluginName.c_str(), s.name.c_str());
+            continue;
+        }
         RunOne(s);
     }
 }

@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "load_order.h"
 #include "log.h"
 #include "symbols.h"
 #include "trampoline.h"
@@ -17,6 +18,13 @@ size_t ApplyAll() {
     size_t applied = 0;
 
     for (const TrampolineEntry& t : g_trampolines) {
+        // load_order.toml disabled gate.
+        if (!load_order::IsPluginEnabled(t.pluginName)) {
+            log::InfoF("[%s] skipping trampoline '%s' (plugin disabled via load_order.toml)",
+                       t.pluginName.c_str(), t.name.c_str());
+            continue;
+        }
+
         if (t.bytes.empty() && !t.size.has_value()) {
             log::ErrorF("[trampoline '%s'] aborted: no `bytes` and no `size`",
                         t.name.c_str());
