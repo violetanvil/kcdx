@@ -187,6 +187,15 @@ constexpr Entry kEntries[] = {
     { 1186, kGV_1_5_1164953, 0x0071E7C0, "verified", "lua-settable" },
     { 1187, kGV_1_5_1164953, 0x0399614C, "verified", "luaG-runerror" },     // internal ldebug.c helper
     { 1188, kGV_1_5_1164953, 0x03998368, "verified", "luaO-pushfstring" },  // internal lobject.c helper
+    { 1189, kGV_1_5_1164953, 0x014492A8, "verified", "lua-newstate" },      // PGO-fused with luaL_newstate (hardcoded l_alloc); sole caller is CScriptSystem::Init
+    { 1190, kGV_1_5_1164953, 0x01449600, "verified", "luaL-openlibs" },     // sole xref to lualibs[] @ .rdata 0x3B8B200
+    { 1191, kGV_1_5_1164953, 0x00F77CA4, "verified", "lua-f-luaopen" },     // internal: static helper inside lua_newstate (calls stack_init, luaH_new x2, luaS_resize, etc.)
+    { 1192, kGV_1_5_1164953, 0x0071E2B0, "verified", "lua-l-alloc" },       // internal: default CryEngine Lua allocator (the lua_Alloc passed to lua_newstate)
+    { 1193, kGV_1_5_1164953, 0x039936D0, "verified", "luaL-checkudata" },
+    { 1194, kGV_1_5_1164953, 0x03B8AF70, "verified", "cscriptsystem-vtable" },   // 69 slots; slot[6]=ExecuteBuffer (caller of lua_pcall), [13]=CreateTable
+    { 1195, kGV_1_5_1164953, 0x01448E60, "verified", "cscriptsystem-ctor" },
+    { 1196, kGV_1_5_1164953, 0x01448F38, "verified", "cscriptsystem-init" },     // lua-boot anchor; sole caller of lua_newstate + luaL_openlibs
+    { 1197, kGV_1_5_1164953, 0x039AD63C, "verified", "cscriptsystem-dtor" },
 };
 
 constexpr size_t kEntryCount = sizeof(kEntries) / sizeof(kEntries[0]);
