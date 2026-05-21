@@ -122,6 +122,7 @@ add_library(kcdx SHARED
     src/lua_bind_bytes.cpp
     src/lua_bind_addr.cpp
     src/lua_registry.cpp
+    src/hook_signature.cpp
     src/probes/createfilew_probe.cpp
     src/probes/bugsplat_ctor_probe.cpp
     src/rom_borrowed/type_info_t.cpp
