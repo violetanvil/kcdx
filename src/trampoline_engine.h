@@ -16,6 +16,11 @@ namespace kcdx::trampoline_engine {
 // target_symbol.
 struct TrampolineEntry {
     std::string sourceFile;
+    // Plugin name this entry belongs to (the [plugin].name from the
+    // owning kcdx.toml). Stamped by LoadOneFile alongside `source`.
+    // Used by the load-order sort to look up the plugin's effective
+    // zone + priority.
+    std::string pluginName;
     kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;
     std::string description;

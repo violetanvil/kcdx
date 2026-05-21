@@ -38,6 +38,12 @@ using Anchor = std::variant<std::monostate, AnchorString, AnchorFunctionByExport
 
 struct PatchEntry {
     std::string sourceFile;   // for error messages — path of the toml that contributed this patch
+    // Plugin name this entry belongs to (the [plugin].name from the
+    // owning kcdx.toml). Stamped by LoadOneFile alongside `source`.
+    // Used by the load-order sort to look up the plugin's effective
+    // zone + priority, and by logs to attribute entries to their
+    // plugin.
+    std::string pluginName;
     // Which discovery root this came from. Stamped by LoadOneFile
     // (Engine for kcdx-engine/builtin/, User for plugins/). Used as
     // the primary sort key so engine fixes apply before any user

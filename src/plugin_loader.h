@@ -74,6 +74,28 @@ struct PluginManifest {
     // Parsed from kcdx.toml [plugin] log_level = "debug|info|warn|error|off".
     uint32_t logLevel = 0;  // == kcdxLog_Info
 
+    // Load-order author hints (parsed from [plugin] default_position +
+    // default_priority). Surface the plugin's preferred placement to the
+    // launcher; user can override via kcdx-engine/load_order.toml.
+    //
+    // defaultPosition is one of "before_game" / "after_game" (or empty,
+    // meaning "let kcdx derive from capabilities"). When empty, kcdx
+    // picks before_game iff the plugin has zero entries requiring
+    // after_game (mid-hooks, lua-callback hooks, byte-detour hooks,
+    // trampolines, commands, events). Source::Engine plugins default
+    // to before_game; Source::User defaults to after_game when
+    // capability-flexible.
+    //
+    // defaultPriority is 0..100; 0 = earliest in zone, 100 = latest.
+    // Default 50 (middle of the zone). Sparse range gives author /
+    // user room to insert "definitely before X" or "definitely after Y"
+    // without renumbering.
+    //
+    // These are AUTHOR HINTS only — load_order.toml overrides win when
+    // present. See docs/load-order.md for the full model.
+    std::string defaultPosition;        // "before_game" / "after_game" / "" (derive)
+    int         defaultPriority = 50;   // 0..100, lower = earlier
+
     // Entrypoints — populated from [entrypoints] table (all optional).
     std::string dllEntrypointRel; // Relative path from plugin folder. If empty,
                                   //   kcdx auto-discovers: if exactly one *.dll

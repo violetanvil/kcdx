@@ -14,6 +14,7 @@
 
 #include "hook_engine.h"
 #include "dev.h"
+#include "load_order.h"
 #include "log.h"
 #include "patch_engine.h"
 #include "paths.h"
@@ -174,6 +175,38 @@ bool ParsePluginManifest(const toml::table& doc,
     }
 
     out.versionIndependent = OptBool(t, "version_independent", false);
+
+    // Load-order author hints (zone + priority). Both are optional. See
+    // docs/load-order.md for the full model — zones partition plugins into
+    // before_game vs after_game (the game.exe sentinel divides them);
+    // priority orders plugins within their zone.
+    //
+    //   default_position = "before_game" | "after_game" | ""
+    //     ""  → engine derives from capabilities at load time
+    //           (engine builtins default to before_game; user plugins
+    //           default to after_game when their entries are flexible).
+    //
+    //   default_priority = 0..100  (default 50)
+    //     0 = earliest in zone, 100 = latest. Sparse range gives users /
+    //     authors room to insert "definitely before X" without renumbering.
+    {
+        std::string pos = OptString(t, "default_position");
+        if (!pos.empty() && pos != "before_game" && pos != "after_game") {
+            err = "[plugin] default_position: unknown value '" + pos + "' "
+                  "(expected 'before_game' or 'after_game')";
+            return false;
+        }
+        out.defaultPosition = pos;
+    }
+    {
+        int prio = OptInt(t, "default_priority", 50);
+        if (prio < 0 || prio > 100) {
+            err = "[plugin] default_priority: out of range (" +
+                  std::to_string(prio) + "); expected 0..100";
+            return false;
+        }
+        out.defaultPriority = prio;
+    }
 
     // log_level is a per-plugin floor for the plugin's own log file.
     // Maps to the kcdxLog_* enum ordering:
@@ -844,12 +877,17 @@ void LoadOneFile(const fs::path& path, Source source) {
         // [plugin] + [entrypoints] sections — plugin identity. Optional;
         // a kcdx.toml with only [[patch]] entries and no [plugin] table is
         // still valid (the patches apply, but the file doesn't register
-        // a plugin in g_plugins / g_manifests).
+        // a plugin in g_plugins / g_manifests). We capture the plugin name
+        // here and stamp it onto every [[patch]] / [[hook]] / [[mid_hook]]
+        // / [[trampoline]] entry parsed from this file, so the load-order
+        // sort can look up the owning plugin's effective zone + priority.
+        std::string pluginName;  // empty if this file has no [plugin] table
         {
             kcdx::plugins::PluginManifest manifest;
             std::string mErr;
             if (ParsePluginManifest(doc, path, manifest, mErr)) {
                 manifest.testSuiteOnly = isTestSuiteOnly;
+                pluginName = manifest.name;
                 log::InfoF("Discovered plugin '%s' v0x%08X from %s",
                            manifest.name.c_str(), manifest.version,
                            fileLabel.c_str());
@@ -885,6 +923,7 @@ void LoadOneFile(const fs::path& path, Source source) {
                 std::string err;
                 if (ParseOnePatch(*elem.as_table(), fileLabel, entry, err)) {
                     entry.source = source;
+                    entry.pluginName = pluginName;
                     log::InfoF("Loaded patch '%s' (priority %d, source=%s) from %s",
                                entry.name.c_str(), entry.priority,
                                source == Source::Engine ? "engine" : "user",
@@ -904,6 +943,7 @@ void LoadOneFile(const fs::path& path, Source source) {
                 std::string err;
                 if (ParseOneHook(*elem.as_table(), fileLabel, entry, err)) {
                     entry.source = source;
+                    entry.pluginName = pluginName;
                     log::InfoF("Loaded hook '%s' (priority %d, source=%s) from %s",
                                entry.name.c_str(), entry.priority,
                                source == Source::Engine ? "engine" : "user",
@@ -923,6 +963,7 @@ void LoadOneFile(const fs::path& path, Source source) {
                 std::string err;
                 if (ParseOneMidHook(*elem.as_table(), fileLabel, entry, err)) {
                     entry.source = source;
+                    entry.pluginName = pluginName;
                     log::InfoF("Loaded mid_hook '%s' (priority %d, source=%s) from %s",
                                entry.name.c_str(), entry.priority,
                                source == Source::Engine ? "engine" : "user",
@@ -942,6 +983,7 @@ void LoadOneFile(const fs::path& path, Source source) {
                 std::string err;
                 if (ParseOneTrampoline(*elem.as_table(), fileLabel, entry, err)) {
                     entry.source = source;
+                    entry.pluginName = pluginName;
                     log::InfoF("Loaded trampoline '%s' (priority %d, source=%s) from %s",
                                entry.name.c_str(), entry.priority,
                                source == Source::Engine ? "engine" : "user",
@@ -1146,33 +1188,81 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
         "walk complete: engine=%zu/%zu user=%zu/%zu (accepted/examined)",
         engFolders, engExamined, usrFolders, usrExamined);
 
-    // Sort key: (Source asc, priority asc, name asc). Source first
-    // ensures every engine-fix entry comes before any user-plugin
-    // entry of the same engine type, regardless of numeric
-    // priority. Within a source, priority decides; ties broken by
-    // name for determinism.
-    auto patchLess = [](const kcdx::patch::PatchEntry& a,
-                        const kcdx::patch::PatchEntry& b) {
-        if (a.source != b.source) return a.source < b.source;
-        if (a.priority != b.priority) return a.priority < b.priority;
-        return a.name < b.name;
+    // Load-order resolution. Discovery is done; entry vectors are
+    // populated with their pluginName stamps. Read the user's
+    // load_order.toml (if any), then Resolve() to compute each
+    // plugin's effective (zone, priority, enabled) — applying
+    // capability gating where the user's request is impossible
+    // given the plugin's declared entries.
+    kcdx::load_order::Read(
+        kcdx::paths::EngineDataDirPath() / L"load_order.toml");
+    kcdx::load_order::Resolve();
+
+    // Sort key:
+    //   (Zone asc, plugin_effective_priority asc, plugin_name asc,
+    //    Source asc, entry.priority asc, entry.name asc)
+    //
+    // Zone first ensures every before_game-zoned entry lands before
+    // every after_game-zoned entry — that's the immovable game.exe
+    // sentinel materialized in the sort.
+    //
+    // Plugin priority next gives the user / author control over
+    // intra-zone position. plugin_name breaks priority ties for
+    // determinism.
+    //
+    // Source (Engine < User) preserves the "engine fixes lead within
+    // their zone" invariant for ties at the plugin level (e.g. two
+    // engine-fix plugins at the same priority).
+    //
+    // Entry priority + name break ties for plugins that ship multiple
+    // entries.
+    auto pluginKey = [](const std::string& pluginName, int entrySource,
+                        int entryPriority, const std::string& entryName) {
+        const auto& eff = kcdx::load_order::Of(pluginName);
+        return std::tuple<int, int, std::string, int, int, std::string>{
+            static_cast<int>(eff.zone),
+            eff.priority,
+            pluginName,
+            entrySource,
+            entryPriority,
+            entryName
+        };
     };
-    auto hookLess = [](const kcdx::hook_engine::HookEntry& a,
-                       const kcdx::hook_engine::HookEntry& b) {
-        if (a.source != b.source) return a.source < b.source;
-        if (a.priority != b.priority) return a.priority < b.priority;
-        return a.name < b.name;
+    auto patchLess = [&](const kcdx::patch::PatchEntry& a,
+                         const kcdx::patch::PatchEntry& b) {
+        return pluginKey(a.pluginName, static_cast<int>(a.source),
+                         a.priority, a.name) <
+               pluginKey(b.pluginName, static_cast<int>(b.source),
+                         b.priority, b.name);
     };
-    auto trampLess = [](const kcdx::trampoline_engine::TrampolineEntry& a,
-                        const kcdx::trampoline_engine::TrampolineEntry& b) {
-        if (a.source != b.source) return a.source < b.source;
-        if (a.priority != b.priority) return a.priority < b.priority;
-        return a.name < b.name;
+    auto hookLess = [&](const kcdx::hook_engine::HookEntry& a,
+                        const kcdx::hook_engine::HookEntry& b) {
+        return pluginKey(a.pluginName, static_cast<int>(a.source),
+                         a.priority, a.name) <
+               pluginKey(b.pluginName, static_cast<int>(b.source),
+                         b.priority, b.name);
+    };
+    auto midHookLess = [&](const kcdx::hook_engine::MidHookEntry& a,
+                           const kcdx::hook_engine::MidHookEntry& b) {
+        return pluginKey(a.pluginName, static_cast<int>(a.source),
+                         a.priority, a.name) <
+               pluginKey(b.pluginName, static_cast<int>(b.source),
+                         b.priority, b.name);
+    };
+    auto trampLess = [&](const kcdx::trampoline_engine::TrampolineEntry& a,
+                         const kcdx::trampoline_engine::TrampolineEntry& b) {
+        return pluginKey(a.pluginName, static_cast<int>(a.source),
+                         a.priority, a.name) <
+               pluginKey(b.pluginName, static_cast<int>(b.source),
+                         b.priority, b.name);
     };
     std::sort(kcdx::patch::g_patches.begin(), kcdx::patch::g_patches.end(),
               patchLess);
     std::sort(kcdx::hook_engine::g_hooks.begin(), kcdx::hook_engine::g_hooks.end(),
               hookLess);
+    std::sort(kcdx::hook_engine::g_mid_hooks.begin(),
+              kcdx::hook_engine::g_mid_hooks.end(),
+              midHookLess);
     std::sort(kcdx::trampoline_engine::g_trampolines.begin(),
               kcdx::trampoline_engine::g_trampolines.end(),
               trampLess);

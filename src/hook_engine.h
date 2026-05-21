@@ -14,6 +14,11 @@ namespace kcdx::hook_engine {
 // pattern/context/anchor resolution path is identical.
 struct HookEntry {
     std::string sourceFile;       // path of the toml that contributed this hook
+    // Plugin name this entry belongs to (the [plugin].name from the
+    // owning kcdx.toml). Stamped by LoadOneFile alongside `source`.
+    // Used by the load-order sort to look up the plugin's effective
+    // zone + priority.
+    std::string pluginName;
     kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;
     std::string description;
@@ -113,6 +118,11 @@ enum class CallOriginalMode : uint8_t {
 
 struct MidHookEntry {
     std::string sourceFile;
+    // Plugin name this entry belongs to (the [plugin].name from the
+    // owning kcdx.toml). Stamped by LoadOneFile alongside `source`.
+    // Used by the load-order sort to look up the plugin's effective
+    // zone + priority.
+    std::string pluginName;
     kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;
     std::string description;
