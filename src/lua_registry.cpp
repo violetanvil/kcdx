@@ -308,11 +308,18 @@ size_t ApplyZone(kcdx::load_order::Zone zone) {
         }
     }
 
-    log::InfoF("lua_registry: ApplyZone(zone=%s) — %zu entries "
-               "transitioned",
-               zone == kcdx::load_order::Zone::BeforeGame
-                   ? "before_game" : "after_game",
-               transitioned);
+    // Only emit a log line when we actually moved something —
+    // ApplyZone runs every update tick (cheap when queue is empty)
+    // and we don't want to flood the log with "0 entries transitioned"
+    // on every frame. Silent no-op when queue is empty is the
+    // common case.
+    if (transitioned > 0) {
+        log::InfoF("lua_registry: ApplyZone(zone=%s) — %zu entries "
+                   "transitioned",
+                   zone == kcdx::load_order::Zone::BeforeGame
+                       ? "before_game" : "after_game",
+                   transitioned);
+    }
     return transitioned;
 }
 
