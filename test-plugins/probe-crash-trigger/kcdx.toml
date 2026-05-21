@@ -1,0 +1,28 @@
+# PROBE-CRASH-TRIGGER — dev-only on-demand crash.
+#
+# Registers a `kcdx_crash_now` console command. When invoked, the
+# handler deliberately derefs NULL to produce a clean 0xC0000005
+# ACCESS_VIOLATION. Used to exercise BugSplat's filename construction
+# (the colon-in-display-name bug, see
+# docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md)
+# and to baseline the in-process MiniDumpWriteDump + watchdog bundle
+# pipeline.
+#
+# This is a DEVELOPER TOOL only — the plugin is suite-gated
+# (`test_suite_only = true`) so it skips entirely when dev_mode is
+# off in production installs. There is no auto-pass check; the
+# crash is invoked manually by typing the command in the in-game
+# console.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.probe-crash-trigger"
+display_name        = "PROBE-CRASH-TRIGGER"
+author              = "kcdx"
+description         = "Registers `kcdx_crash_now` console command for manual AV-crash testing."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
