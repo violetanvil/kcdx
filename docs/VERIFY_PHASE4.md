@@ -16,7 +16,9 @@ Earlier phase verifications are in [VERIFY_PHASE1.md](VERIFY_PHASE1.md),
 **Before running these tests, disable any other plugins that target the
 IsInCombat wrapper (RVA 0x5605B8 in WHGame.dll 1.5.1164953).** That
 includes:
-- `no-combat-state-hook/` (rename to `.disabled`)
+- `no-combat-state-hook/` (add an `[[plugin]]` row in
+  `kcdx-engine/load_order.toml` with `name = "..."` and
+  `enabled = false`)
 - Any prior conflict-test folders from a previous run
 
 The three conflict tests all target the same function for isolation. They
@@ -123,10 +125,9 @@ foreach ($name in @("conflict-test-hook-on-hook",
     if (Test-Path "$Live\$name") { Remove-Item -Recurse -Force "$Live\$name" }
 }
 
-# Restore no-combat-state-hook if you disabled it for the tests
-if (Test-Path "$Live\no-combat-state-hook\kcdx.toml.disabled") {
-    Rename-Item "$Live\no-combat-state-hook\kcdx.toml.disabled" "kcdx.toml"
-}
+# Re-enable no-combat-state-hook if you set enabled = false for it.
+# (Edit kcdx-engine/load_order.toml and either delete the plugin's
+#  [[plugin]] row or flip enabled = true.)
 ```
 
 No game-state side effects from these tests because:

@@ -239,6 +239,22 @@ like SKSE, does not `FreeLibrary`).
 There is **no teardown hook**. Plugins leak until process exit.
 This is intentional and matches SKSE.
 
+#### Load-order user overrides
+
+Steps 5–10 (and every entry-apply path that runs on behalf of a
+plugin) are short-circuited when the user sets `enabled = false`
+for that plugin in `kcdx-engine/load_order.toml`. The DLL is still
+mapped during step 4 so the launcher's plugin enumeration can
+read the manifest, but `kcdxPlugin_Preload` / `kcdxPlugin_Load`
+don't fire, declarative `[[patch]]` / `[[hook]]` / `[[mid_hook]]` /
+`[[trampoline]]` / `[[scan]]` entries don't apply, and no
+`[[command]]` / `[[event]]` registration happens (since those run
+through the entry points).
+
+The same file lets the user reorder plugins (`zone` + `priority`
+fields per `[[plugin]]` row). Full model in
+[`load-order.md`](load-order.md).
+
 ---
 
 ## The declarative TOML path
