@@ -85,7 +85,7 @@ constexpr Entry kEntries[] = {
     { 3004, kGV_1_5_1164953, 12, "unverified", "igame-getlongname-vtable-idx" },
     { 3005, kGV_1_5_1164953, 13, "unverified", "igame-getname-vtable-idx" },
 
-    // ----- 1100-1184: Lua 5.1 C API surface (Phase 8 FIX A harvest) -----
+    // ----- 1100-1188: Lua 5.1 C API surface (Phase 8 FIX A harvest) -----
     // RVAs of WHGame.dll's compiled Lua 5.1 LUA_API/LUALIB_API + luaopen_*
     // functions. Harvested by walking call graphs from known anchors;
     // each row's evidence is documented in the canonical seed CSV at
@@ -98,17 +98,6 @@ constexpr Entry kEntries[] = {
     // dual-Lua sentinel hazard. lua-pcall + luaL-loadfile already
     // exist at ids 1000 + 1002 — those rows authoritative, NOT
     // duplicated here.
-    //
-    // ID range layout (alphabetized within sub-ranges):
-    //   1100-1141  =  lua_* (low-RVA cluster: 0x0071XXXX..0x0071FXXX)
-    //   1119-1120  =  lua_tonumber / lua_isnumber (0x0041CXXX)
-    //   1121-1128  =  lua_*  / luaL_* (0x00B9CXXX..0x00B9DXXX)
-    //   1129-1140  =  high-RVA scatter (0x00ADBxxx-0x01649xxx)
-    //   1141       =  lua_load (0x013E14D8 — luaB_loadstring's lua_load call)
-    //   1142-1148  =  luaL_* helpers (0x00B9CXXX-0x00B9DXXX cluster)
-    //   1149-1173  =  high-RVA lua_*/luaL_* (0x039930XX range — most luaB internals)
-    //   1174-1181  =  luaopen_* (lualibs[] static table at .rdata 0x3B8B210)
-    //   1182-1184  =  internal helpers (index2adr, luaD_pcall, luaD_rawrunprotected)
     { 1100, kGV_1_5_1164953, 0x0071A0D8, "verified", "luaL-checktype" },
     { 1101, kGV_1_5_1164953, 0x0071A49C, "verified", "lua-insert" },
     { 1102, kGV_1_5_1164953, 0x0071A4E4, "verified", "lua-remove" },
@@ -151,57 +140,53 @@ constexpr Entry kEntries[] = {
     { 1139, kGV_1_5_1164953, 0x013236D0, "verified", "lua-concat" },
     { 1140, kGV_1_5_1164953, 0x01323664, "verified", "luaL-pushresult" },
     { 1141, kGV_1_5_1164953, 0x013E14D8, "verified", "lua-load" },
-    // IDs 1143 and 1156 are intentionally skipped — they held
-    // placeholder rows during seed development that were removed.
-    // Per the policy in id-assignment-policy.md ("ids are append-only,
-    // never renumber"), the gaps are permanent.
     { 1142, kGV_1_5_1164953, 0x00B9C9BC, "verified", "luaL-checklstring" },
-    { 1144, kGV_1_5_1164953, 0x00B9CA08, "verified", "luaL-optinteger" },
-    { 1145, kGV_1_5_1164953, 0x00B9CAB4, "verified", "luaL-checkinteger" },
-    { 1146, kGV_1_5_1164953, 0x00B9CC20, "verified", "luaL-checkstack" },
-    { 1147, kGV_1_5_1164953, 0x00B9CE94, "verified", "luaL-checkany" },
-    { 1148, kGV_1_5_1164953, 0x00B9D8E4, "verified", "luaL-addlstring" },
-    { 1149, kGV_1_5_1164953, 0x039930A4, "verified", "lua-iscfunction" },
-    { 1150, kGV_1_5_1164953, 0x039930CC, "verified", "lua-isstring" },
-    { 1151, kGV_1_5_1164953, 0x039930E8, "verified", "lua-lessthan" },
-    { 1152, kGV_1_5_1164953, 0x03993060, "verified", "lua-getupvalue" },
-    { 1153, kGV_1_5_1164953, 0x03993134, "verified", "lua-pushfstring" },
-    { 1154, kGV_1_5_1164953, 0x03993178, "verified", "lua-rawequal" },
-    { 1155, kGV_1_5_1164953, 0x039931C0, "verified", "lua-setfenv" },
-    { 1157, kGV_1_5_1164953, 0x03993244, "verified", "lua-setupvalue" },
-    { 1158, kGV_1_5_1164953, 0x039932C0, "verified", "lua-tothread" },
-    { 1159, kGV_1_5_1164953, 0x039932DC, "verified", "lua-xmove" },
-    { 1160, kGV_1_5_1164953, 0x039934C8, "verified", "luaL-addvalue" },
-    { 1161, kGV_1_5_1164953, 0x0399355C, "verified", "luaL-argerror" },
-    { 1162, kGV_1_5_1164953, 0x03993638, "verified", "luaL-checkoption" },
-    { 1163, kGV_1_5_1164953, 0x0399375C, "verified", "luaL-error" },
-    { 1164, kGV_1_5_1164953, 0x03993AA4, "verified", "luaL-optlstring" },
-    { 1165, kGV_1_5_1164953, 0x03993B00, "verified", "luaL-prepbuffer" },
-    { 1166, kGV_1_5_1164953, 0x03993B24, "verified", "luaL-typerror" },
-    { 1167, kGV_1_5_1164953, 0x03993B70, "verified", "luaL-where" },
-    { 1168, kGV_1_5_1164953, 0x03996250, "verified", "lua-getlocal" },
-    { 1169, kGV_1_5_1164953, 0x039962B8, "verified", "lua-setlocal" },
-    { 1170, kGV_1_5_1164953, 0x0399605C, "verified", "lua-error" },
-    { 1171, kGV_1_5_1164953, 0x039966A4, "verified", "lua-resume" },
-    { 1172, kGV_1_5_1164953, 0x03996EE4, "verified", "lua-dump" },
-    { 1173, kGV_1_5_1164953, 0x03992FFC, "verified", "lua-getfenv" },
-    { 1174, kGV_1_5_1164953, 0x009299AC, "verified", "luaopen-math" },
-    { 1175, kGV_1_5_1164953, 0x00D815A4, "verified", "luaopen-table" },
-    { 1176, kGV_1_5_1164953, 0x007A671C, "verified", "luaopen-debug" },
-    { 1177, kGV_1_5_1164953, 0x012DA578, "verified", "luaopen-base" },
-    { 1178, kGV_1_5_1164953, 0x012DAC38, "verified", "luaopen-string" },
-    { 1179, kGV_1_5_1164953, 0x012DAF40, "verified", "luaopen-package" },
-    { 1180, kGV_1_5_1164953, 0x019DFD0C, "verified", "luaopen-os" },
-    { 1181, kGV_1_5_1164953, 0x003B70F0, "verified", "luaopen-io" },  // NOTE: stubbed (3-byte ret 0) by CryEngine
-    { 1182, kGV_1_5_1164953, 0x0071DD7C, "verified", "lua-index2adr" },        // internal helper, NOT a public LUA_API
-    { 1183, kGV_1_5_1164953, 0x0071A628, "verified", "luaD-pcall" },           // internal helper, NOT a public LUA_API
-    { 1184, kGV_1_5_1164953, 0x0071A6A8, "verified", "luaD-rawrunprotected" }, // internal helper, NOT a public LUA_API
-    { 1185, kGV_1_5_1164953, 0x039934B4, "verified", "luaL-addstring" },
-    { 1186, kGV_1_5_1164953, 0x0399838C, "verified", "luaO-pushvfstring" },    // internal helper used by lua_pushfstring (lua_pushvfstring inlined)
-    { 1187, kGV_1_5_1164953, 0x0071F1F8, "verified", "lua-topointer" },
-    { 1188, kGV_1_5_1164953, 0x0071E7C0, "verified", "lua-settable" },
-    { 1189, kGV_1_5_1164953, 0x0399614C, "verified", "luaG-runerror" },     // internal ldebug.c helper
-    { 1190, kGV_1_5_1164953, 0x03998368, "verified", "luaO-pushfstring" },  // internal lobject.c helper
+    { 1143, kGV_1_5_1164953, 0x00B9CA08, "verified", "luaL-optinteger" },
+    { 1144, kGV_1_5_1164953, 0x00B9CAB4, "verified", "luaL-checkinteger" },
+    { 1145, kGV_1_5_1164953, 0x00B9CC20, "verified", "luaL-checkstack" },
+    { 1146, kGV_1_5_1164953, 0x00B9CE94, "verified", "luaL-checkany" },
+    { 1147, kGV_1_5_1164953, 0x00B9D8E4, "verified", "luaL-addlstring" },
+    { 1148, kGV_1_5_1164953, 0x039930A4, "verified", "lua-iscfunction" },
+    { 1149, kGV_1_5_1164953, 0x039930CC, "verified", "lua-isstring" },
+    { 1150, kGV_1_5_1164953, 0x039930E8, "verified", "lua-lessthan" },
+    { 1151, kGV_1_5_1164953, 0x03993060, "verified", "lua-getupvalue" },
+    { 1152, kGV_1_5_1164953, 0x03993134, "verified", "lua-pushfstring" },
+    { 1153, kGV_1_5_1164953, 0x03993178, "verified", "lua-rawequal" },
+    { 1154, kGV_1_5_1164953, 0x039931C0, "verified", "lua-setfenv" },
+    { 1155, kGV_1_5_1164953, 0x03993244, "verified", "lua-setupvalue" },
+    { 1156, kGV_1_5_1164953, 0x039932C0, "verified", "lua-tothread" },
+    { 1157, kGV_1_5_1164953, 0x039932DC, "verified", "lua-xmove" },
+    { 1158, kGV_1_5_1164953, 0x039934C8, "verified", "luaL-addvalue" },
+    { 1159, kGV_1_5_1164953, 0x0399355C, "verified", "luaL-argerror" },
+    { 1160, kGV_1_5_1164953, 0x03993638, "verified", "luaL-checkoption" },
+    { 1161, kGV_1_5_1164953, 0x0399375C, "verified", "luaL-error" },
+    { 1162, kGV_1_5_1164953, 0x03993AA4, "verified", "luaL-optlstring" },
+    { 1163, kGV_1_5_1164953, 0x03993B00, "verified", "luaL-prepbuffer" },
+    { 1164, kGV_1_5_1164953, 0x03993B24, "verified", "luaL-typerror" },
+    { 1165, kGV_1_5_1164953, 0x03993B70, "verified", "luaL-where" },
+    { 1166, kGV_1_5_1164953, 0x03996250, "verified", "lua-getlocal" },
+    { 1167, kGV_1_5_1164953, 0x039962B8, "verified", "lua-setlocal" },
+    { 1168, kGV_1_5_1164953, 0x0399605C, "verified", "lua-error" },
+    { 1169, kGV_1_5_1164953, 0x039966A4, "verified", "lua-resume" },
+    { 1170, kGV_1_5_1164953, 0x03996EE4, "verified", "lua-dump" },
+    { 1171, kGV_1_5_1164953, 0x03992FFC, "verified", "lua-getfenv" },
+    { 1172, kGV_1_5_1164953, 0x009299AC, "verified", "luaopen-math" },
+    { 1173, kGV_1_5_1164953, 0x00D815A4, "verified", "luaopen-table" },
+    { 1174, kGV_1_5_1164953, 0x007A671C, "verified", "luaopen-debug" },
+    { 1175, kGV_1_5_1164953, 0x012DA578, "verified", "luaopen-base" },
+    { 1176, kGV_1_5_1164953, 0x012DAC38, "verified", "luaopen-string" },
+    { 1177, kGV_1_5_1164953, 0x012DAF40, "verified", "luaopen-package" },
+    { 1178, kGV_1_5_1164953, 0x019DFD0C, "verified", "luaopen-os" },
+    { 1179, kGV_1_5_1164953, 0x003B70F0, "verified", "luaopen-io" },  // NOTE: stubbed (3-byte ret 0) by CryEngine
+    { 1180, kGV_1_5_1164953, 0x0071DD7C, "verified", "lua-index2adr" },        // internal helper, NOT a public LUA_API
+    { 1181, kGV_1_5_1164953, 0x0071A628, "verified", "luaD-pcall" },           // internal helper, NOT a public LUA_API
+    { 1182, kGV_1_5_1164953, 0x0071A6A8, "verified", "luaD-rawrunprotected" }, // internal helper, NOT a public LUA_API
+    { 1183, kGV_1_5_1164953, 0x039934B4, "verified", "luaL-addstring" },
+    { 1184, kGV_1_5_1164953, 0x0399838C, "verified", "luaO-pushvfstring" },    // internal helper used by lua_pushfstring (lua_pushvfstring inlined)
+    { 1185, kGV_1_5_1164953, 0x0071F1F8, "verified", "lua-topointer" },
+    { 1186, kGV_1_5_1164953, 0x0071E7C0, "verified", "lua-settable" },
+    { 1187, kGV_1_5_1164953, 0x0399614C, "verified", "luaG-runerror" },     // internal ldebug.c helper
+    { 1188, kGV_1_5_1164953, 0x03998368, "verified", "luaO-pushfstring" },  // internal lobject.c helper
 };
 
 constexpr size_t kEntryCount = sizeof(kEntries) / sizeof(kEntries[0]);
