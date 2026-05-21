@@ -132,11 +132,11 @@ documented SKSE weak spot:
 | 7  | Address Library (CSV → compiled-in id→RVA table + `ResolveAddress` + `address_id` TOML locator) + `kcdxConsoleInterface` (IConsole::AddCommand wrapper for plugin-registered console commands) | **live-verified** |
 | 8 | Docs + examples + v0.1.0 release | not started |
 
-Test suite reporting `12/13 passing` on every dev-mode boot — see
+Test suite reporting **`21/21 passing`** on every dev-mode boot
+(verified 2026-05-20 18:32; full pass on `update tick`,
+`kPreLoadGame`, `kPostLoadGame`) — see
 [`test-plugins/README.md`](test-plugins/README.md) for the live
-matrix. The single deferred FAIL is CAP-03 awaiting a boot-firing
-hook target (see [`docs/design-gaps.md`](docs/design-gaps.md) for
-the broader Phase 5 follow-up list).
+matrix.
 
 **Authoritative v0.1 spec:** [`docs/design.md`](docs/design.md). The
 full TOML schema, every C++ interface signature, the lifecycle

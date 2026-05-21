@@ -162,13 +162,13 @@ what the live result is.
 
 | Field | Value |
 |---|---|
-| What | Hook at an arbitrary instruction inside a function (not just entry). Capture named registers (rax, r14, etc) before the instruction, pass them to a Lua callback as a table, callback may modify the table, modified values written back to CPU registers before resuming. |
+| What | Hook at an arbitrary instruction inside a function (not just entry). Capture named registers (rax, r14, etc) before the instruction, pass them to a Lua callback as a table. `call_original` knob controls whether the captured instruction runs after the callback: `true` (default, original runs), `false` (compile-time skip — original NEVER runs), or `"auto"` (runtime decision via `args._skip = true` from Lua). |
 | Channels | (iii) `kcdx.toml` |
-| Engine status | DEFERRED — Phase 5g design limit. Current MinHook-based mid-hook re-executes the captured instruction after our callback returns, overwriting any register override. Need a new primitive (true instruction-replacement mode or `call_original=false` flag) for v0.2. |
-| Test plugin | _TBD `cap-04-midhook/` — built to FAIL deliberately, asserts the failure mode is the expected one (re-execution overwrites override)._ |
-| Auto-pass check | Plugin reports PASS if the expected failure mode is observed (mid-hook installs, fires, but register override is not preserved). PASS = "the limit is exactly where we documented it." If the test starts unexpectedly succeeding, that means someone added the missing primitive and the test row should be updated. |
-| Last result | DEFERRED-PHASE-V0.2 |
-| Notes | Whether v0.2 needs a new primitive depends on use cases. Many mid-hook use cases (read register, log it, don't override) work fine with the current primitive; only "skip the instruction" doesn't. |
+| Engine status | LIVE (2026-05-20, commit `03dd155`) — three-mode codegen in `make_jit_midfunc` + hde64 auto-decode of `stack_restore_offset` + `g_mid_skip_original` atomic flag interlock between dispatcher and JIT. |
+| Test plugin | `cap-04-midhook/` — 4 sub-tests covering all three modes (a=true, b=false, c=auto+_skip, d=auto+no-skip). Each fires against a self-contained 9-byte trampoline target with `add rax, 0x64` at the hook site; sub-test invokes the target with seed=10 and asserts the expected return value. |
+| Auto-pass check | All four sub-tests pass when register state matches the `call_original` contract: CAP-04a returns 110 (original ran, +100), CAP-04b returns 10 (skipped), CAP-04c returns 10 (Lua-skipped via `_skip`), CAP-04d returns 110 (auto without skip = run). |
+| Last result | LIVE 2026-05-20 — CAP-04a/b/c/d all PASS in the 18:32 dev-log run. |
+| Notes | Mid-hook register MUTATION via `args[1]:set(...)` is still v0.1-deferred (kcdxLuaApi lacks Call/Pcall — see `docs/design-gaps.md` #11). CAP-04 verifies the harder problem (skip-original codegen); register mutation lands when `kcdxLuaApi` gets `Call`. |
 
 ## CAP-05: Runtime `dynamic_hook` from pak Lua
 
@@ -509,35 +509,38 @@ registration-override warning ergonomics.
 Auto-updated by the developer after each suite run. One row per
 CAP/COMP, status + commit SHA.
 
+As of 2026-05-20 18:32 dev-log run: **21/21 passing** across every
+suite-aggregate emit point (`update tick`, `kPreLoadGame`,
+`kPostLoadGame`). The full pass count includes all CAP-* and
+COMP-* rows that ship a real test plugin under `test-plugins/`.
+
 | Row | Status | Last verified at SHA | Notes |
 |---|---|---|---|
-| CAP-01 | ✅ PASS | `918d5fb` | outfit-swap-patch applied at 0x7FFCF9051759, manual swap confirmed |
-| CAP-02 | _TBD_ | _ | _ |
-| CAP-03 | ✅ PRE-VERIFIED | _ | needs port to test-plugins/ for auto-reporting |
-| CAP-04 | ❌ EXPECTED FAIL | _ | Phase 5g design limit; documented, await v0.2 primitive |
-| CAP-05 | _TBD_ | _ | pak Lua runtime dynamic_hook on outfit AOB |
-| CAP-06 | _TBD partial_ | _ | shape verified; real target untested |
-| CAP-07 | ✅ PRE-VERIFIED | _ | hello-plugin pool allocs |
-| CAP-08 | ✅ PARTIAL | _ | engine messages ready; game lifecycle DEFERRED Phase 6 |
-| CAP-09 | ✅ PRE-VERIFIED | _ | hello-plugin task |
-| CAP-10 | ✅ PRE-VERIFIED | _ | kcdx.hello.* round-trip |
-| CAP-11 | ✅ PRE-VERIFIED | _ | verify pak 5gDEMO |
-| CAP-12 | DEFERRED-PHASE-6 | _ | save/load |
-| CAP-13 | DEFERRED-PHASE-7 | _ | console commands |
-| CAP-14 | DEFERRED-PHASE-7 | _ | Address Library |
-| CAP-15 | _TBD_ | _ | inlinePatchesToml — confirm loader handles |
-| CAP-16 | ✅ PRE-VERIFIED | _ | messaging-pair |
-| CAP-17 | ✅ PRE-VERIFIED | _ | EnumeratePlugins |
-| CAP-18 | ✅ NATIVE | _ | CryEngine pak system |
-| CAP-19 | DEFERRED-v0.2 | _ | Scaleform |
-| COMP-01 | _TBD_ | _ | two-patch overlap |
-| COMP-02 | ✅ PRE-VERIFIED | _ | conflict-test-hook-on-patch (needs port) |
-| COMP-03 | _TBD_ | _ | comp-03-hook-on-hook-A + -B; DLL verifier reports via GetConflictReport |
-| COMP-04 | _TBD_ | _ | patch + runtime hook |
-| COMP-05 | _TBD_ | _ | Lua registration override |
-| COMP-06 | _TBD_ | _ | dependency chain in practice |
-| COMP-07 | OUT-OF-SCOPE | _ | pak + DLL cross-channel |
-| COMP-08 | _TBD_ | _ | determinism across restarts |
+| CAP-01 | ✅ LIVE | `03dd155` | outfit-swap-style byte patch; post-patch AOB unique, pre-patch absent |
+| CAP-03 | ✅ LIVE | `03dd155` | `[[hook]] lua_callback` dispatches into pak Lua |
+| CAP-04a | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=true`; returns 110 |
+| CAP-04b | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=false`; returns 10 (original skipped) |
+| CAP-04c | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original="auto"` + `args._skip=true`; returns 10 |
+| CAP-04d | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original="auto"`, no `_skip`; returns 110 |
+| CAP-05 | ✅ LIVE | `03dd155` | pak Lua `dynamic_hook` install |
+| CAP-07 | ✅ LIVE | `03dd155` | trampoline branch / local pool allocations |
+| CAP-08 | ✅ LIVE | `03dd155` | engine messages + lifecycle |
+| CAP-09 | ✅ LIVE | `03dd155` | `kcdxTaskInterface` round-trip |
+| CAP-10 | ✅ LIVE | `03dd155` | `kcdxScriptingInterface` C++ → Lua round-trip |
+| CAP-11 | ✅ LIVE | `03dd155` | `kcdx.lua.cfunction_address` resolution |
+| CAP-12 | ✅ LIVE | `03dd155` | `kcdxSerializationInterface` cosave roundtrip |
+| CAP-13 | ✅ LIVE | `03dd155` | `[[command]]` console command registration |
+| CAP-14 | DEFERRED | _ | Address Library — verified transitively via CAP-13's `address_id`-based hooks (1009 + 2000 + 2001). No dedicated test plugin needed for v0.1. |
+| CAP-15 | OUT-OF-SCOPE-v0.1 | _ | inline-patches authoring style |
+| CAP-16 | ✅ LIVE | `03dd155` | dependency-A → dependency-B messaging pair |
+| CAP-17 | ✅ LIVE | `03dd155` | `EnumeratePlugins` |
+| CAP-18 | ✅ NATIVE | _ | CryEngine pak system; nothing kcdx-specific to verify |
+| CAP-19 | DEFERRED-v0.2 | _ | Scaleform — not a kcdx feature |
+| COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
+| COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
+| PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |
+| COMP-01, COMP-04, COMP-05, COMP-06, COMP-08 | DEFERRED-v0.2 | _ | conflict-matrix completeness lives in `_research/` recon docs; v0.1 ships CAP-* coverage of the primary primitives |
+| COMP-07 | OUT-OF-SCOPE | _ | pak + DLL cross-channel; not a v0.1 surface |
 
 ---
 
