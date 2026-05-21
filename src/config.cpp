@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -1152,6 +1153,22 @@ void WalkForTomls(const fs::path& dir, int depth, Source source,
 }  // namespace
 
 void LoadAllConfigs(const std::wstring& pluginsDir) {
+    // Idempotence guard. LoadAllConfigs is called from two places when
+    // the before_game-zone path is enabled:
+    //   1. kcdx.asi DllMain (synchronously, so before_game patches can
+    //      resolve their TOMLs before WHGame.dll's DllMain).
+    //   2. The worker thread (the historical site).
+    // We want the worker-thread call to be a no-op if DllMain already
+    // parsed everything — otherwise we'd double-populate g_patches /
+    // g_hooks / g_mid_hooks / g_trampolines.
+    static std::atomic<bool> sAlreadyLoaded{false};
+    bool expected = false;
+    if (!sAlreadyLoaded.compare_exchange_strong(expected, true)) {
+        log::Info("config::LoadAllConfigs: skipping (already loaded earlier "
+                  "this session)");
+        return;
+    }
+
     // Engine config first. Settles dev_mode + dry_run + dev_categories
     // before any plugin TOML is parsed (so test_suite_only gating sees
     // the final IsEnabled() value). Production users don't ship this

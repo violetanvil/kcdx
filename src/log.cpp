@@ -64,6 +64,33 @@ std::unordered_map<uint32_t, Stream*> g_pluginStreams;
 HANDLE g_consoleOut = nullptr;
 bool   g_consoleEnabled = false;
 
+// Deferred-log buffer.
+//
+// EmitEngine / EmitEngineKV can be called from kcdx.asi's DllMain, BEFORE
+// log::Init() opens g_engineStream.fp. Without buffering, those lines
+// would silently drop in WriteLineLocked (which no-ops on null fp).
+//
+// Pre-init lines are queued here AND mirrored to OutputDebugStringA
+// (visible in DebugView / WinDbg). Init() drains the queue into the
+// freshly-opened engine log behind a "=== flushing N deferred line(s)
+// ===" divider so the order in the file matches emit order.
+//
+// Plugin-attributed lines and dev-log lines aren't deferred. Plugin
+// streams open later via DiscoverAndLoad — anything attempting to log
+// to a plugin stream before Init() is a programming error (plugin
+// handles aren't allocated yet). Dev log only opens on SetDevMode(true)
+// which happens via engine.toml parse, also after Init().
+struct DeferredLine {
+    Level       level;
+    std::string source;    // "engine" or plugin name
+    std::string category;
+    std::string body;
+};
+
+std::mutex                  g_deferredMutex;
+std::vector<DeferredLine>   g_deferred;
+std::atomic<bool>           g_initialized{false};
+
 // Session timestamp ("YYYY-MM-DD_HH-MM-SS") captured at Init() and
 // reused for every file opened during this session so they all sort
 // together lexicographically.
@@ -394,6 +421,37 @@ void Dispatch(Level level, const char* source, const char* category,
     bool isEngineLogWorthy = (level >= Level::Info);
     bool devOn             = g_devMode.load(std::memory_order_relaxed);
 
+    // Pre-Init() path. log::Init() hasn't opened g_engineStream.fp yet
+    // (we may be running under kcdx.asi's DllMain). Buffer the line for
+    // later flush + mirror to OutputDebugStringA so DebugView shows it
+    // immediately. Plugin streams aren't open this early so plugin-
+    // attributed lines just get the OutputDebugStringA path.
+    if (isEngineLogWorthy && !g_initialized.load(std::memory_order_acquire)) {
+        char dbgLine[KCDX_LOG_FORMAT_BUF_SIZE + 256];
+        int  dbgN = FormatEngineLine(dbgLine, sizeof(dbgLine),
+                                     level, source, category, body);
+        if (dbgN > 0) {
+            // OutputDebugStringA wants a newline-terminated C-string.
+            char ods[KCDX_LOG_FORMAT_BUF_SIZE + 260];
+            int  m = snprintf(ods, sizeof(ods), "[kcdx] %.*s\n",
+                              dbgN, dbgLine);
+            (void)m;
+            OutputDebugStringA(ods);
+        }
+        // Queue for later file flush. Skip if pluginStream is set —
+        // plugin streams open after Init(), so any pre-Init plugin
+        // line is a programming error; OutputDebugStringA above is
+        // the only sink in that case.
+        if (pluginStream == nullptr) {
+            std::lock_guard<std::mutex> lock(g_deferredMutex);
+            g_deferred.push_back({level,
+                                  source ? std::string(source) : std::string(),
+                                  category ? std::string(category) : std::string(),
+                                  body ? std::string(body) : std::string()});
+        }
+        return;
+    }
+
     bool catPasses = false;
     if (devOn) {
         if (g_categoryFilter.empty()) {
@@ -555,6 +613,41 @@ void Init() {
         SetConsoleTitleA("kcdx.asi");
         COORD bufSize{120, 9000};
         SetConsoleScreenBufferSize(g_consoleOut, bufSize);
+    }
+
+    // Drain the deferred-log buffer. Any EmitEngine call that happened
+    // before this point was queued in g_deferred (and mirrored to
+    // OutputDebugStringA so DebugView saw it live). Flush in arrival
+    // order behind a divider so a reader can tell where the DllMain
+    // phase ends and the normal phase begins.
+    //
+    // Set g_initialized BEFORE the flush so Dispatch's pre-init branch
+    // doesn't re-queue our own divider line.
+    g_initialized.store(true, std::memory_order_release);
+    {
+        std::vector<DeferredLine> drained;
+        {
+            std::lock_guard<std::mutex> lock(g_deferredMutex);
+            drained.swap(g_deferred);
+        }
+        if (!drained.empty()) {
+            char hdr[128];
+            int  n = snprintf(hdr, sizeof(hdr),
+                              "=== flushing %zu deferred line(s) from "
+                              "pre-log-init phases ===",
+                              drained.size());
+            if (n > 0) EmitEngine(Level::Info, "LOGGING", hdr);
+            for (const auto& dl : drained) {
+                Dispatch(dl.level,
+                         dl.source.empty()   ? "engine" : dl.source.c_str(),
+                         dl.category.empty() ? ""       : dl.category.c_str(),
+                         dl.body.c_str(),
+                         /*pluginStream=*/nullptr,
+                         /*pluginLogLevelFloor=*/kNoFloor);
+            }
+            EmitEngine(Level::Info, "LOGGING",
+                       "=== end deferred-log flush ===");
+        }
     }
 }
 

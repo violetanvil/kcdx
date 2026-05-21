@@ -1,0 +1,93 @@
+# kcdx engine-fix plugin: bugsplat-filename-fix
+#
+# *** STATUS: ship-disabled. ***
+#
+# The plugin folder is deployed as `bugsplat-filename-fix.disabled/`
+# in the kcdx release zip; rename to drop `.disabled` to re-enable.
+# Today (2026-05-20) the deployed folder is `.disabled` because the
+# patch site captured here was empirically proven WRONG — see below.
+# Source kept in-tree so the load-order zone+priority shape is
+# preserved as the reference template for the eventual correct fix.
+#
+# Original design (still archived here; verified incorrect 2026-05-20):
+#   Repoint a single LEA in WHGame.dll from the colon-bearing app-name
+#   string "Kingdom Come: Deliverance II" to the filename-safe sibling
+#   "Kingdom Come Deliverance II" (no colon). The colon-bearing string
+#   has 4 xrefs; three are legitimate display-name uses (CVar
+#   sys_game_name, getter thunk, length-29 hashing loop). The fourth,
+#   at VA 0x1824599e7, was attributed to BugSplat's filename
+#   construction by static analysis.
+#
+# Empirical result (2026-05-20, with PR 2 before_game-zone path):
+#   - Patch applied successfully at DllMain time, BEFORE WHGame.dll's
+#     own DllMain ran (ldr_notify path verified end-to-end).
+#   - BugSplat STILL produced a zero-byte "Kingdom Come" stub at
+#     %LOCALAPPDATA%/Temp/ on `kcdx_crash_now` AV crash.
+#   - Conclusion: this LEA does not feed BugSplat's filename
+#     construction, OR BugSplat sources the colon-bearing string
+#     from elsewhere (different LEA, CVar, env query, hardcoded
+#     fallback). Static-analysis attribution was wrong.
+#
+# Next investigation step (when this work is picked up again):
+#   Hook MiniDumpWriteDump in dbghelp.dll (or CreateFileW filtered
+#   to *.dmp) and log the actual filename passed at crash time.
+#   That gives the real string, which we can then trace back to its
+#   source in WHGame.dll. The load-order zone+priority hint below
+#   stays as the correct shape for the eventual fix.
+#
+# See docs/known-issues/BugSplat dmp files don't reach disk for AV
+# crashes.md for the full trail.
+
+[plugin]
+name        = "kcdx.bugsplat-filename-fix"
+display_name = "BugSplat Filename Fix"
+description = "Fixes KCD2's BugSplat integration so minidumps actually land on disk (the stock filename contains ':' which Windows rejects)."
+author      = "kcdx"
+version     = "1.0.0"
+compatible_game_versions = ["1.5.1164953"]
+
+# Load-order positioning. BugSplat's MiniDumpWriteDump-filename helper
+# caches the colon-bearing app-name string at WHGame.dll's DllMain time;
+# if our LEA-disp32 rewrite lands after that point, the cached path
+# already contains the colon and the patch is useless. So this entry
+# MUST apply before WHGame.dll's DllMain runs — that's exactly what
+# the before_game zone provides via LdrRegisterDllNotification.
+#
+# Priority 30 keeps room (sparse 0..100) for users to insert other
+# before_game fixes earlier (e.g. compatibility-flag patches that
+# influence what BugSplat sees) without renumbering.
+default_position = "before_game"
+default_priority = 30
+
+[[patch]]
+name        = "bugsplat-filename-fix"
+description = "Repoint BugSplat call site's LEA disp32 from colon-string to safe-string."
+module      = "WHGame.dll"
+
+# AOB anchors on the bytes leading up to + including the LEA
+# instruction. Unique in WHGame.dll's .text section.
+#
+# Breakdown:
+#   E8 48 CF 09 FE              call <preceding fn>
+#   4C 8B C0                    mov  r8,  rax
+#   48 8D 15 ?? ?? ?? ??        lea  rdx, [rip + disp32]    ← patch site
+#   48 8D 4C 24 30              lea  rcx, [rsp + 0x30]
+#   E8 10 D4 ?? ??              call <next fn>
+#
+# The 4-byte disp32 immediately follows the `48 8D 15` opcode of
+# the LEA. Counting the pattern bytes:
+#   byte 0:  E8         (call opcode)
+#   bytes 1-4: 48 CF 09 FE  (relative target)
+#   bytes 5-7: 4C 8B C0     (mov r8, rax)
+#   bytes 8-10: 48 8D 15    (LEA opcode + ModR/M for [rip+disp32])
+#   bytes 11-14: ?? ?? ?? ?? ← disp32, the 4 bytes we patch
+#   bytes 15+:  48 8D 4C 24 30 E8 10 D4  (rest of context)
+# So offset = 11, length = 4. Replacement repoints the disp32 from
+# 0x183aa3508 ("Kingdom Come: Deliverance II") to
+# 0x183e18290 ("Kingdom Come Deliverance II"). Both strings already
+# exist in WHGame.dll; we just change which one this LEA loads.
+pattern     = "E8 48 CF 09 FE 4C 8B C0 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 30 E8 10 D4"
+offset      = 11
+original    = "1A 9B 64 01"
+replacement = "A2 E8 9B 01"
+idempotent  = true

@@ -156,14 +156,19 @@ the UI rejects the move and shows the engine-derived reason.
    enabled)` row per plugin. Applies capability gating; logs any
    downgrades.
 4. **Sort** the entry vectors by the global key above.
-5. **Apply** entries in sort order. Today (v0.1, before PR 2),
-   everything still applies at first update tick. Zone is only
-   informational at this point.
+5. **Apply** entries in sort order. Zone is the source of truth for
+   timing:
+   - `zone=before_game` `[[patch]]` entries apply during kcdx.asi's
+     `DllMain` (against modules already mapped — ntdll, kernel32,
+     dinput8, kcdx.asi itself) or when their target module is mapped
+     later, BEFORE that module's own `DllMain` runs. This is via an
+     `LdrRegisterDllNotification` callback installed during kcdx's
+     `DllMain`.
+   - `zone=after_game` entries apply at the first update tick, the
+     same point patches have always applied historically.
 
-After PR 2 ships the `LdrRegisterDllNotification` path,
-`before_game`-zoned `[[patch]]` entries apply during kcdx's `DllMain`
-or when their target module is mapped, BEFORE that module's own
-`DllMain` runs.
+`before_game` is unconditionally honored — no env var, no feature
+flag. The load order says when; the engine obeys.
 
 ## What kcdx logs
 

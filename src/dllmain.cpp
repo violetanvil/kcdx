@@ -5,6 +5,8 @@
 #include "config.h"
 #include "crash_guard.h"
 #include "hooks.h"
+#include "ldr_notify.h"
+#include "load_order.h"
 #include "log.h"
 #include "paths.h"
 #include "plugin_loader.h"
@@ -13,6 +15,8 @@
 #include "watchdog_spawn.h"
 
 DWORD WINAPI WorkerThread(LPVOID) {
+    // paths::Init is also called from DllMain (idempotent). Calling it
+    // again here is safe and keeps this worker startup self-contained.
     kcdx::paths::Init();
 
     kcdx::log::Init();
@@ -34,10 +38,18 @@ DWORD WINAPI WorkerThread(LPVOID) {
                         engineUtf8, sizeof(engineUtf8), nullptr, nullptr);
     kcdx::log::InfoF("engine data directory: %s", engineUtf8);
 
-    // The ASI itself sits in plugins/, plugin subfolders are siblings of kcdx.asi.
-    // LoadAllConfigs is also where dev_mode is read from engine.toml and
-    // log::SetDevMode is called — the watchdog needs that signal to decide
-    // whether to bundle the ~100MB minidump on crash, so we spawn it after.
+    // LoadAllConfigs has already run inside DllMain (synchronously, so
+    // before_game-zoned [[patch]] entries could apply against ntdll /
+    // kernel32 / etc. that were already mapped, and the LDR-notification
+    // callback could be registered for WHGame.dll). The idempotence
+    // guard inside LoadAllConfigs makes this call a no-op that simply
+    // logs "skipping (already loaded earlier this session)".
+    //
+    // We keep the call here so the test-suite reporter, dev_mode flag
+    // propagation, etc. all see a uniform code path regardless of
+    // whether DllMain's pre-load succeeded or aborted partway. If
+    // DllMain ever fails to parse configs (loader-lock edge case
+    // someone hits), the worker thread's call is the fallback.
     kcdx::config::LoadAllConfigs(kcdx::paths::PluginsDir());
 
     // Spawn the external crash-bundle watchdog. It blocks on our
@@ -79,9 +91,54 @@ DWORD WINAPI WorkerThread(LPVOID) {
     return 0;
 }
 
+// Synchronous DllMain-phase work for the before_game-zone path.
+//
+// Reads + parses every plugin's kcdx.toml, computes load-order
+// resolution, applies before_game-zoned [[patch]] entries to any
+// already-loaded target module, and registers an LdrRegisterDllNotification
+// callback so future module loads (notably WHGame.dll) get their
+// before_game patches applied right after they're mapped, BEFORE
+// their own DllMain runs.
+//
+// Loader-safety contract: this runs under ntdll's loader lock during
+// kcdx.asi's own DllMain. dumpbin /imports kcdx.asi confirms zero
+// delay-loaded DLLs — std::filesystem, tomlplusplus, std::string,
+// std::vector are all safe. MinHook init / CreateThread / LoadLibrary
+// are NOT done here; those stay in the worker thread.
+//
+// See docs/load-order.md §"Loader-safety contract for before_game zone".
+static void RunBeforeGameZoneInDllMain() {
+    kcdx::paths::Init();
+
+    // Synchronous config parse. Sets the idempotence flag so the
+    // worker thread's later LoadAllConfigs call is a no-op.
+    kcdx::config::LoadAllConfigs(kcdx::paths::PluginsDir());
+
+    // load_order::Read + Resolve are called inside LoadAllConfigs, so
+    // by this point every plugin has an Effective(zone, priority,
+    // enabled) row computed.
+
+    // Apply before_game [[patch]] entries against modules already mapped
+    // (ntdll, kernel32, kcdx.asi itself, and typically dinput8.dll).
+    kcdx::ldr_notify::ApplyAlreadyLoaded();
+
+    // Register the notification callback for future module loads.
+    // WHGame.dll mapping is what triggers any before_game patch
+    // targeting it.
+    kcdx::ldr_notify::Register();
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
+
+        // before_game-zone path runs unconditionally. Zone is the
+        // single source of truth for apply timing: zone=before_game
+        // means before WHGame.dll's DllMain, full stop. No env-var
+        // gating, no flag — the load order says when the patch
+        // applies, and the engine honors it.
+        RunBeforeGameZoneInDllMain();
+
         HANDLE h = CreateThread(nullptr, 0, WorkerThread, nullptr, 0, nullptr);
         if (h) CloseHandle(h);
     }
