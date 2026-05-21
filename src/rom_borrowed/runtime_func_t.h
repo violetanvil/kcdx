@@ -138,10 +138,37 @@ public:
 
     // Mid-function hook variant. param_captures are register/memory
     // expressions ("rax", "[rcx+0x10]", etc.); stack_restore_offset is
-    // how many bytes the original instruction took (so we resume past it).
+    // how many bytes the captured instruction took (so we resume past it).
+    //
+    // call_original_mode controls whether the captured instruction runs
+    // after the Lua callback returns:
+    //   0 (True)  — original runs; JIT pushes MinHook's trampoline_ptr,
+    //                ret jumps into the relocated-original at the end.
+    //   1 (False) — original NEVER runs; JIT pushes resume_addr (= target
+    //                + stack_restore_offset), ret jumps past the captured
+    //                instruction.
+    //   2 (Auto)  — runtime decision via kcdx::scripting::g_mid_skip_original.
+    //                JIT pushes trampoline_ptr by default; after the
+    //                callback returns, JIT reads the skip flag's byte
+    //                (mov al, [flag_addr]; test al, al). If non-zero,
+    //                JIT overwrites the trampoline_ptr stack slot with
+    //                resume_addr, so the closing ret jumps past instead.
+    //
+    // skip_flag_addr is the absolute byte address of
+    // kcdx::scripting::g_mid_skip_original. Only used when
+    // call_original_mode == 2 (Auto). Pass 0 for True/False modes; JIT
+    // ignores it.
+    //
+    // resume_addr is the absolute address to jump to when skipping the
+    // original (= target_func_ptr + stack_restore_offset, precomputed
+    // by the caller so the JIT emits a single mov-imm64). Only used
+    // for False/Auto modes; pass 0 for True.
     uintptr_t make_jit_midfunc(const std::vector<std::string>& param_types,
                                const std::vector<std::string>& param_captures,
                                const int stack_restore_offset,
+                               const int call_original_mode,
+                               const uintptr_t skip_flag_addr,
+                               const uintptr_t resume_addr,
                                const asmjit::Arch arch,
                                mid_callback_t mid_callback,
                                const uintptr_t target_func_ptr);

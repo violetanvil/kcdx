@@ -128,6 +128,9 @@ target_include_directories(kcdx PRIVATE
     include
     vendor/lua
     vendor/minhook/include
+    vendor/minhook/src       # hde/hde64.h — used by hook_engine to
+                             # auto-decode instruction length for
+                             # [[mid_hook]] stack_restore_offset.
     vendor/tomlplusplus
     vendor/asmjit            # <asmjit/asmjit.h> for rom_borrowed/
 )

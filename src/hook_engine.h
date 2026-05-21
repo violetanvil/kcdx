@@ -89,6 +89,28 @@ struct HookEntry {
 // after the mov. Set to 0 to re-execute the captured instruction itself
 // after the callback (rare; only useful when the capture is a no-op
 // observability tap rather than an override).
+// call_original mode for [[mid_hook]] — decides whether the captured
+// instruction at the hook site runs after the Lua callback returns.
+//
+//   True   — default; original instruction always runs (compile-time
+//            decision). Used when the hook only observes / mutates
+//            register values that the original then consumes.
+//   False  — original instruction NEVER runs (compile-time decision).
+//            JIT pushes precomputed (target + stack_restore_offset)
+//            instead of MinHook's trampoline_ptr. Used to fully
+//            replace the captured instruction's effect.
+//   Auto   — Lua callback decides at runtime by setting
+//            `args._skip = true` on the captures table. Dispatcher
+//            reads the flag post-pcall and signals JIT via a global
+//            atomic; JIT consults the flag in its post-callback path
+//            and swaps the stack-top from trampoline_ptr to resume_addr
+//            if set. Used when the decision is data-dependent.
+enum class CallOriginalMode : uint8_t {
+    True  = 0,   // default; original runs
+    False = 1,   // codegen-time skip
+    Auto  = 2,   // runtime decision via args._skip
+};
+
 struct MidHookEntry {
     std::string sourceFile;
     kcdx::config::Source source = kcdx::config::Source::User;
@@ -110,7 +132,8 @@ struct MidHookEntry {
     // Mid-hook-specific
     std::vector<std::string> param_types;       // per-capture type, "i8" / "i32" / "ptr" / etc.
     std::vector<std::string> param_captures;    // per-capture source, "r14b" / "[rcx+0x10]" / etc.
-    int                      stack_restore_offset = 0;
+    int                      stack_restore_offset = 0;  // 0 = auto-decode via hde64
+    CallOriginalMode         callOriginal = CallOriginalMode::True;
     std::string              lua_callback;      // dotted Lua function name; required
 };
 

@@ -144,6 +144,22 @@ bool PushCallback(lua_State* L, CallbackEntry& cb) {
 
 }  // namespace
 
+// Defined here, declared in scripting.h. JIT codegen takes its address
+// via get_mid_skip_flag_address(). See header for the per-invocation
+// lifecycle contract.
+std::atomic<uint8_t> g_mid_skip_original{0};
+
+uint8_t* get_mid_skip_flag_address() {
+    // std::atomic<uint8_t>'s storage is byte-addressable. C++20 made
+    // is_always_lock_free a constexpr we can static_assert against;
+    // x64 has had lock-free single-byte atomics forever, so this is
+    // trivially true. The cast yields the address of the byte the
+    // JIT can `mov al, [addr]` from.
+    static_assert(std::atomic<uint8_t>::is_always_lock_free,
+                  "atomic<uint8_t> must be lock-free for JIT byte read");
+    return reinterpret_cast<uint8_t*>(&g_mid_skip_original);
+}
+
 // PROBE P helper: format a byte buffer as a lowercase-hex space-separated
 // string. Used to hex-dump fresh Tables for ABI comparison. 16 bytes
 // per chunk to keep grep-friendly.
@@ -575,8 +591,17 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
         log::KV("fnv_self",   hook->fingerprint_self()),
         log::KV("fnv_detour", hook->fingerprint_detour()));
 
+    // Clear the skip-original flag at the start of each dispatch.
+    // The JIT trampoline reads this after we return; we want to
+    // start from a known state so a stale "set" from a previous
+    // mid-hook can't carry over.
+    g_mid_skip_original.store(0, std::memory_order_release);
+
     // Mid-hooks pass args as a table keyed by 1..N (matches RoM).
-    uintptr_t restore_address = 0;
+    // For call_original="auto", the Lua callback can set
+    // `args._skip = true` to signal the JIT to skip the captured
+    // instruction. We dup the captures table before pcall so we
+    // retain access to read _skip after pcall pops it.
     for (CallbackEntry& cb : it->second) {
         if (!PushCallback(g_lua_state, cb)) {
             log::WarnF("scripting: mid-callback for target 0x%p: '%s' "
@@ -584,55 +609,36 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
                        cb.name.c_str());
             continue;
         }
-        // === PROBE O ===
-        // Capture raw-struct snapshots immediately before and after
-        // the lua_createtable call that builds the args table for the
-        // user's Lua callback. PROBE N proved the same code pattern
-        // (lua_createtable on captured L) is SAFE when called from
-        // HookedUpdate's main-thread frame. If the snapshots here
-        // differ from the safe ones in a meaningful field (errorJmp,
-        // nCcalls, ci, savedpc, gcstate, ...), that field is the
-        // discriminator the trail has been hunting since PROBE L.
-        LogLuaStateRawStruct(g_lua_state, "PROBE_O.dispatch_mid.before_createtable");
-        // === PROBE P pre-step ===
-        // Hex-dump the registry Table BEFORE we allocate. The registry
-        // is WHGame-allocated at VM init time and lives in g->rootgc.
-        // Its bytes show the layout WHGame's Lua uses for `Table`. We'll
-        // compare against our freshly-allocated Table below — if our
-        // bytes diverge structurally (different field layout, different
-        // size), dual-Lua ABI mismatch is confirmed.
-        {
-            const void* reg = lua_topointer(g_lua_state, LUA_REGISTRYINDEX);
-            LogTableBytes(reg, 128, "PROBE_P.registry_table_WHGame_owned");
-        }
+        // Build the captures table — [func, args]
         lua_createtable(g_lua_state, (int)param_count, 0);
-        LogLuaStateRawStruct(g_lua_state, "PROBE_O.dispatch_mid.after_createtable");
-        // === PROBE P ===
-        // Dump 128 bytes of the freshly-allocated Table. Static-Lua
-        // believes `sizeof(Table) = 64` (offsetof tail at 0x40); the
-        // luaH_new flow that just ran also linked a dummynode (sized in
-        // the array allocator) but no node allocation since nhash=0.
-        // If bytes past offset 0x40 look like the START of an unrelated
-        // heap block (signature, length tag, free list pointers), our
-        // 64-byte allocation is undersized vs WHGame's Table layout and
-        // every WHGame GC walk of `g->rootgc` will read garbage from
-        // the misshapen Table. That's the dual-Lua ABI mismatch
-        // mechanism.
-        {
-            const void* tbl = lua_topointer(g_lua_state, -1);
-            LogTableBytes(tbl, 128, "PROBE_P.fresh_table_kcdx_allocated");
-        }
         int table_idx = lua_gettop(g_lua_state);
         for (uint8_t i = 0; i < param_count; i++) {
             kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
             lua_rawseti(g_lua_state, table_idx, i + 1);
         }
-        // DEBUG (not INFO) — hot path; BreadcrumbScope already names
-        // scripting.dispatch_mid for the unhandled-exception filter.
+        // We need to (a) call `func(args)` and (b) retain access to
+        // `args` after the call so we can read `args._skip`. The
+        // sequence below produces the layout pcall expects (func at
+        // top-1, arg at top) while leaving one extra `args` ref
+        // BELOW that gets left on the stack post-pcall:
+        //
+        //   [func, args]              after createtable + rawseti loop
+        //   lua_insert(L, -2)         -> [args, func]    (move args below func)
+        //   lua_pushvalue(L, -2)      -> [args, func, args]
+        //   lua_pcall(L, 1, 0, 0)     -> consumes top 2 entries [func, args]
+        //                                leaves [args] (the first push)
+        //
+        // pcall expects function at index top-nargs; with our final
+        // pre-pcall stack [args, func, args], top=3, nargs=1, so
+        // function is at index 3-1=2 (= func ✓) and arg is at index 3
+        // (= args ✓).
+        lua_insert(g_lua_state, -2);
+        lua_pushvalue(g_lua_state, -2);
+
         LOG_DEBUG("SCRIPTING",
             "  before lua_pcall mid target=0x%p cb='%s'",
             (void*)target_func_ptr, cb.name.c_str());
-        int status = lua_pcall(g_lua_state, 1, 1, 0);
+        int status = lua_pcall(g_lua_state, 1, 0, 0);
         LOG_DEBUG("SCRIPTING",
             "  after  lua_pcall mid target=0x%p cb='%s' status=%d",
             (void*)target_func_ptr, cb.name.c_str(), status);
@@ -642,22 +648,28 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
                 "mid-callback for target 0x%p ('%s') threw: %s",
                 (void*)target_func_ptr, cb.name.c_str(),
                 err ? err : "<no message>");
-            lua_pop(g_lua_state, 1);
+            // Pop: error message + args_dup (the dup we pushed before
+            // pcall; pcall pushed err at -1 and the dup is now at -2).
+            // Actually: when pcall fails, it pops nargs+1 (the func +
+            // its args) and pushes the error. So stack ends up:
+            // [args_dup, err]. Pop both.
+            lua_pop(g_lua_state, 2);
             continue;
         }
-        // First non-zero numeric return wins (matches RoM).
-        if (!restore_address && lua_isnumber(g_lua_state, -1)) {
-            restore_address = (uintptr_t)lua_tointeger(g_lua_state, -1);
+        // pcall succeeded, nresults=0; stack is [args_dup]. Read
+        // args_dup._skip to decide whether to set the skip flag.
+        lua_getfield(g_lua_state, -1, "_skip");
+        if (lua_toboolean(g_lua_state, -1)) {
+            g_mid_skip_original.store(1, std::memory_order_release);
         }
-        lua_pop(g_lua_state, 1);
+        lua_pop(g_lua_state, 2);  // _skip value + args_dup
     }
     LOG_DEBUG_KV("MID_HOOK", "dispatch.exit",
-        log::KV("target",            (void*)target_func_ptr),
-        log::KV("restore_address",   (void*)restore_address),
-        log::KV("post_fnv_jit",      hook->fingerprint_jit_buffer()),
-        log::KV("post_fnv_self",     hook->fingerprint_self()),
-        log::KV("post_fnv_detour",   hook->fingerprint_detour()));
-    return restore_address;
+        log::KV("target",          (void*)target_func_ptr),
+        log::KV("skip_original",   (int64_t)g_mid_skip_original.load(std::memory_order_acquire)));
+    // Return 0: the old return-value-as-resume-addr semantic is
+    // retired. JIT no longer reads rax.
+    return 0;
 }
 
 }  // namespace kcdx::scripting

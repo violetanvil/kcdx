@@ -625,6 +625,32 @@ bool ParseOneMidHook(const toml::table& t,
 
     out.stack_restore_offset = OptInt(t, "stack_restore_offset", 0);
 
+    // call_original — bool true/false OR string "auto". Default is
+    // back-compat: true (the original instruction runs after the
+    // callback). See hook_engine.h::CallOriginalMode.
+    if (auto* v = t.get("call_original")) {
+        if (v->is_boolean()) {
+            out.callOriginal = *v->value<bool>()
+                ? kcdx::hook_engine::CallOriginalMode::True
+                : kcdx::hook_engine::CallOriginalMode::False;
+        } else if (v->is_string()) {
+            std::string s = std::string(*v->value<std::string>());
+            if (s == "auto") {
+                out.callOriginal = kcdx::hook_engine::CallOriginalMode::Auto;
+            } else if (s == "true") {
+                out.callOriginal = kcdx::hook_engine::CallOriginalMode::True;
+            } else if (s == "false") {
+                out.callOriginal = kcdx::hook_engine::CallOriginalMode::False;
+            } else {
+                err = "call_original: must be true, false, or \"auto\"";
+                return false;
+            }
+        } else {
+            err = "call_original: must be a boolean or the string \"auto\"";
+            return false;
+        }
+    }
+
     // param_types + param_captures: arrays of strings, same length.
     if (auto* v = t.get("param_types"); v && v->is_array()) {
         for (const auto& el : *v->as_array()) {

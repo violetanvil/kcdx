@@ -405,33 +405,41 @@ captures = [
     "[rsp+0x10]:i32",                     # explicit width
 ]
 
-# Bytes the original instruction takes. After capture, the callback
-# returns; kcdx restores registers and resumes at (pattern_match +
-# offset + stack_restore_offset). Set to the length of the original
-# instruction or the number of bytes you want to skip.
-stack_restore_offset = 3
+# Bytes the original instruction takes. kcdx resumes at
+# (pattern_match + offset + stack_restore_offset) when the captured
+# instruction is skipped (see `call_original` below). Defaults to 0,
+# in which case kcdx auto-decodes via hde64, accumulating instruction
+# lengths until ≥ 5 bytes (the MinHook patch size). Override
+# explicitly only when targeting a non-standard hook layout.
+stack_restore_offset = 0
+
+# Whether the captured instruction runs after the Lua callback
+# returns:
+#   true   (default)  original instruction runs; callback observes
+#                     /optionally-mutates register state pre-execution.
+#   false             original instruction is NEVER executed (compile-
+#                     time decision); ret jumps past it. Use when the
+#                     callback fully replaces the captured operation.
+#   "auto"            runtime decision: Lua callback sets `args._skip =
+#                     true` on the captures table to skip; otherwise
+#                     original runs. Use when the decision depends on
+#                     callback state (game data, computed values, etc.).
+call_original = true
 
 lua_callback = "MyMod.GateOutfitSwap"
-# Callback signature: function(captures) -> table or nil
-# - captures: table with keys matching the `captures` array
-# - returns nil: registers unchanged
-# - returns table: any key matching a capture name overwrites that register
-#                  before resume. Allows in-place mutation of game state.
+# Callback signature: function(args) -> any
+# - args: a table with integer keys (1..N) matching the `captures`
+#         array order. v0.1 doesn't yet pass register mutation back
+#         (kcdxLuaApi lacks Call/Pcall so `args[1]:set(...)` isn't
+#         wired through); the callback observes captures + optionally
+#         sets `args._skip = true` for `call_original = "auto"` mode.
+# - return value: ignored in v0.1.
 ```
 
 > **Threading:** the `lua_callback` runs on whatever thread reached
 > the hooked instruction. Hook only main-thread instructions. See
 > [Threading constraint](#threading-constraint-hook-only-main-thread-functions)
 > for the full list.
-
-> **Known v0.1 limitation:** the current MinHook-based mid-hook
-> primitive re-executes the captured instruction after the callback
-> returns. The capture / read / log workflow works; "skip the original
-> instruction by writing a different value to its destination register"
-> does NOT, because MinHook reinstates the original bytes. Tests
-> intentionally fail this case (CAP-04 in the regression suite).
-> A v0.2 primitive (`call_original = false` flag, or a true
-> instruction-replacement detour) is needed for the override case.
 
 ### `[[trampoline]]` — named executable region
 

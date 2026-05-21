@@ -17,6 +17,7 @@
 // thread will be logged-and-skipped rather than executed.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -113,9 +114,12 @@ void clear_callbacks(uintptr_t target_func_ptr);
 // Return semantics match runtime_func_t's typedefs:
 //   pre  -> bool: false means "skip the original function"
 //   post -> void
-//   mid  -> uintptr_t: non-zero means "resume execution at this address
-//                       instead of the next instruction" (used by
-//                       [[mid_hook]] to short-circuit a control flow)
+//   mid  -> uintptr_t: ALWAYS zero in v0.1. (The original RoM design
+//          used a non-zero return as a resume-address override, but
+//          that was retired when call_original=false/"auto" landed —
+//          the JIT codegen now decides at install time whether to
+//          skip the original, and the runtime "auto" mode signals
+//          via g_mid_skip_original instead of via return value.)
 bool      dynamic_hook_pre (const kcdx::rom::runtime_func_t::parameters_t* params,
                             uint8_t                                        param_count,
                             kcdx::rom::runtime_func_t::return_value_t*     return_value,
@@ -129,5 +133,32 @@ void      dynamic_hook_post(const kcdx::rom::runtime_func_t::parameters_t* param
 uintptr_t dynamic_hook_mid (const kcdx::rom::runtime_func_t::parameters_t* params,
                             size_t                                         param_count,
                             uintptr_t                                      target_func_ptr);
+
+// Skip-original flag for [[mid_hook]] call_original="auto" mode.
+//
+// Set by dynamic_hook_mid post-pcall when the Lua callback sets
+// `args._skip = true` on the captures table. Read by the JIT'd
+// trampoline's post-callback path; when set, JIT overwrites its
+// stack-top slot from MinHook's trampoline_ptr to the precomputed
+// resume_addr, so the closing `ret` jumps past the captured
+// instruction instead of into MinHook's re-execute trampoline.
+//
+// Single-threaded by Lua-VM-callback contract (see
+// .claude/rules/lua-callback-threading.md), so std::atomic<uint8_t>
+// is overkill for correctness but free perf-wise (lock-free single-
+// byte load on x64). Kept atomic to document intent: this is
+// cross-thread-visible by mechanism (JIT thread reads, dispatcher
+// thread writes) even though the contract collapses both to main.
+//
+// Per-invocation lifecycle: dispatcher clears the flag at entry,
+// writes it after pcall if `args._skip` was set, then JIT reads it.
+// No multi-mid-hook ambiguity because the dispatcher serializes on
+// g_lock and the JIT path is single-threaded.
+extern std::atomic<uint8_t> g_mid_skip_original;
+
+// Accessor for the JIT codegen — returns the address of the atomic's
+// byte storage so make_jit_midfunc can emit `mov al, [absolute_addr]`
+// without TLS / runtime lookup.
+uint8_t* get_mid_skip_flag_address();
 
 }  // namespace kcdx::scripting

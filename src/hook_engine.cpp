@@ -15,6 +15,14 @@
 #include "scripting.h"
 #include "trampoline.h"
 
+// Vendored from MinHook: hde64 instruction-length decoder. Used to auto-
+// derive stack_restore_offset for [[mid_hook]] entries when the author
+// leaves it at the default (0). The MinHook static lib already compiles
+// hde64.c into the build; we just need the header to call hde64_disasm.
+extern "C" {
+#include "hde/hde64.h"
+}
+
 namespace kcdx::hook_engine {
 
 std::vector<HookEntry>    g_hooks;
@@ -274,12 +282,72 @@ bool ApplyOneMidHook(size_t midHookIdx) {
         return false;
     }
 
+    // Auto-decode stack_restore_offset when the author left it at 0.
+    //
+    // MinHook patches AT LEAST 5 bytes at the hook site (the size of a
+    // near-rel32 jmp on x64; it's the smallest direct-jump encoding
+    // that reaches anywhere in the 64-bit address space). If the
+    // CAPTURED instruction is < 5 bytes (e.g., a 4-byte add or 3-byte
+    // mov), MinHook patches additional following bytes too so the
+    // total is ≥ 5. Resume after the hook MUST land on an instruction
+    // boundary past that whole patched region — not just past the
+    // captured instruction. Otherwise `ret` jumps into the middle of
+    // MinHook's rel32 displacement or a half-consumed instruction.
+    //
+    // Algorithm: hde64-disassemble forward from target until the
+    // accumulated length is ≥ 5 bytes. That's the resume offset.
+    // Author can still override by setting stack_restore_offset
+    // explicitly in their TOML — if they pre-computed a value < 5,
+    // we trust them (some hook targets are inside a longer prologue
+    // where MinHook can patch within a single instruction's bytes).
+    constexpr int kMinHookPatchBytes = 5;
+    int stack_restore_offset = mh.stack_restore_offset;
+    if (stack_restore_offset == 0) {
+        uintptr_t scan = targetAddr;
+        int accumulated = 0;
+        while (accumulated < kMinHookPatchBytes) {
+            hde64s hs{};
+            unsigned int len = hde64_disasm(
+                reinterpret_cast<const void*>(scan), &hs);
+            if (len == 0 || (hs.flags & F_ERROR) != 0) {
+                log::ErrorF("[mid_hook '%s'] aborted: hde64_disasm failed "
+                            "at target+%d (0x%p, flags=0x%x); set "
+                            "stack_restore_offset explicitly in TOML",
+                            mh.name.c_str(), accumulated,
+                            reinterpret_cast<void*>(scan), hs.flags);
+                return false;
+            }
+            scan += len;
+            accumulated += static_cast<int>(len);
+        }
+        stack_restore_offset = accumulated;
+        LOG_DEBUG_KV("MID_HOOK", "ApplyOneMidHook.auto_decoded_offset",
+            log::KV("name",                 mh.name),
+            log::KV("target",               (void*)targetAddr),
+            log::KV("stack_restore_offset", (int64_t)stack_restore_offset));
+    }
+
+    // resume_addr is what `ret` jumps to when skipping the captured
+    // instruction (call_original=false or auto-with-_skip). It must
+    // be PAST the captured instruction — that is, target_addr +
+    // stack_restore_offset. For call_original=true this value is
+    // unused by codegen.
+    uintptr_t resume_addr = targetAddr + stack_restore_offset;
+
+    // skip_flag_addr — only meaningful for Auto mode. We pass it
+    // unconditionally; codegen only reads it when mode==2.
+    uintptr_t skip_flag_addr = reinterpret_cast<uintptr_t>(
+        kcdx::scripting::get_mid_skip_flag_address());
+
     // Build the JIT trampoline.
     auto rf = std::make_unique<kcdx::rom::runtime_func_t>();
     uintptr_t jit_addr = rf->make_jit_midfunc(
         mh.param_types,
         mh.param_captures,
-        mh.stack_restore_offset,
+        stack_restore_offset,
+        static_cast<int>(mh.callOriginal),
+        skip_flag_addr,
+        resume_addr,
         asmjit::Arch::kX64,
         &kcdx::scripting::dynamic_hook_mid,
         targetAddr);
@@ -335,11 +403,16 @@ bool ApplyOneMidHook(size_t midHookIdx) {
 
     g_runtime_funcs[targetAddr] = std::move(rf);
 
+    const char* mode_name =
+        (mh.callOriginal == CallOriginalMode::True)  ? "true"  :
+        (mh.callOriginal == CallOriginalMode::False) ? "false" : "auto";
     log::InfoF("[mid_hook '%s'] lua_callback='%s' wired (target 0x%p, "
-               "JIT detour 0x%p, %zu captures, stack_restore_offset=%d)",
+               "JIT detour 0x%p, %zu captures, stack_restore_offset=%d, "
+               "call_original=%s, resume_addr=0x%p)",
                mh.name.c_str(), mh.lua_callback.c_str(),
                reinterpret_cast<void*>(targetAddr), (void*)jit_addr,
-               mh.param_captures.size(), mh.stack_restore_offset);
+               mh.param_captures.size(), stack_restore_offset,
+               mode_name, reinterpret_cast<void*>(resume_addr));
     return true;
 }
 

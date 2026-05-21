@@ -361,17 +361,23 @@ public:
 uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param_types,
                                            const std::vector<std::string>& param_captures,
                                            const int stack_restore_offset,
+                                           const int call_original_mode,
+                                           const uintptr_t skip_flag_addr,
+                                           const uintptr_t resume_addr,
                                            const asmjit::Arch arch,
                                            mid_callback_t mid_callback,
                                            const uintptr_t target_func_ptr) {
     LOG_DEBUG_KV("MID_HOOK", "make_jit_midfunc.enter",
-        log::KV("target_func_ptr", (void*)target_func_ptr),
-        log::KV("mid_callback",    (void*)mid_callback),
+        log::KV("target_func_ptr",      (void*)target_func_ptr),
+        log::KV("mid_callback",         (void*)mid_callback),
         log::KV("stack_restore_offset", (int64_t)stack_restore_offset),
-        log::KV("param_count",     (int64_t)param_types.size()),
-        log::KV("this",            (void*)this),
-        log::KV("m_detour",        (void*)m_detour.get()),
-        log::KV("original_ptr",    (void*)(m_detour ? m_detour->get_original_ptr() : nullptr)));
+        log::KV("call_original_mode",   (int64_t)call_original_mode),
+        log::KV("skip_flag_addr",       (void*)skip_flag_addr),
+        log::KV("resume_addr",          (void*)resume_addr),
+        log::KV("param_count",          (int64_t)param_types.size()),
+        log::KV("this",                 (void*)this),
+        log::KV("m_detour",             (void*)m_detour.get()),
+        log::KV("original_ptr",         (void*)(m_detour ? m_detour->get_original_ptr() : nullptr)));
     for (const std::string& s : param_types) {
         m_param_types.push_back(get_type_info_from_string(s));
     }
@@ -394,34 +400,53 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     asmLog.add_flags(format_flags);
     code.set_logger(&asmLog);
 
-    asmjit::Label original_invoke_label = cc.new_label();
-
     // save caller-saved registers
     //
-    // First slot pushed is the MinHook trampoline pointer (read at runtime
-    // from m_detour->original_). The naive `push qword ptr [absolute_addr]`
-    // emits an x86-64 RIP-relative encoding (FF /6 with a 32-bit signed
-    // disp). asmjit's relocator silently truncates to disp=0 when the
-    // storage is > ±2 GB from the JIT buffer — which is exactly our
-    // layout: JIT pool sits adjacent to WHGame.dll at ~0x7FFD146C0000,
-    // but detour_hook's `original_` field is in a `new`'d allocation at
-    // ~0x1DC1xxxxxxx (heap, ~100 TB away). Result: the JIT pushed
-    // garbage from inside its own buffer and the closing `ret` jumped
-    // to it → crash.
+    // First slot pushed is the resume target — read at the closing
+    // `ret`. Three modes:
+    //
+    //   True  — slot = MinHook trampoline_ptr (= *m_detour->original_).
+    //           Ret jumps into MinHook's relocated-original buffer,
+    //           which re-executes the captured instruction and then
+    //           jumps back to the function body. Original runs.
+    //
+    //   False — slot = resume_addr (= target + stack_restore_offset).
+    //           Ret jumps PAST the captured instruction. Original
+    //           skipped entirely; mutation of captured registers by
+    //           the Lua callback sticks because the original
+    //           instruction never re-overwrites them.
+    //
+    //   Auto  — slot = MinHook trampoline_ptr as default. After the
+    //           callback returns, JIT checks g_mid_skip_original
+    //           (byte at skip_flag_addr); if non-zero, overwrites
+    //           the slot with resume_addr. Otherwise the trampoline
+    //           runs as in True mode.
+    //
+    // Naive `push qword ptr [absolute_addr]` emits an x86-64 RIP-relative
+    // encoding (FF /6 with a 32-bit signed disp). asmjit's relocator
+    // silently truncates to disp=0 when the storage is > ±2 GB from the
+    // JIT buffer — which is exactly our layout: JIT pool sits adjacent
+    // to WHGame.dll at ~0x7FFD146C0000, but detour_hook's `original_`
+    // field is in a `new`'d allocation at ~0x1DC1xxxxxxx (heap, ~100 TB
+    // away). Result: the JIT pushed garbage from inside its own buffer
+    // and the closing `ret` jumped to it → crash.
     //
     // Fix: load the absolute address into rax via mov-imm64, deref, then
     // place the value into the would-be-pushed slot using xchg with the
     // saved-rax slot. The xchg is 1 instruction and atomic; after it,
-    // [rsp] holds trampoline_ptr (was saved-rax), and rax holds the
-    // original rax value (was trampoline_ptr). That re-establishes
-    // the original layout with the correct content and the correct
-    // register state, so the rest of the prologue is unchanged. This
-    // matches make_jit_func's two-instruction `mov reg, IMM64 ; deref`
-    // pattern (see line ~211 of this file) which has no 2 GB reach
-    // limit.
-    cc.push(asmjit::x86::rax);                                                // [reserve trampoline_ptr slot]
-    cc.mov(asmjit::x86::rax, (uintptr_t)m_detour->get_original_ptr());        // rax = &original_
-    cc.mov(asmjit::x86::rax, asmjit::x86::ptr(asmjit::x86::rax));             // rax = *(&original_)
+    // [rsp] holds the resume value (was saved-rax), and rax holds the
+    // original rax value (was resume value). That re-establishes the
+    // original layout with the correct content and the correct register
+    // state, so the rest of the prologue is unchanged.
+    cc.push(asmjit::x86::rax);                                                // [reserve resume slot]
+    if (call_original_mode == 1) {
+        // False — load resume_addr (immediate, exact) into rax.
+        cc.mov(asmjit::x86::rax, resume_addr);
+    } else {
+        // True or Auto — deref trampoline_ptr storage.
+        cc.mov(asmjit::x86::rax, (uintptr_t)m_detour->get_original_ptr());    // rax = &original_
+        cc.mov(asmjit::x86::rax, asmjit::x86::ptr(asmjit::x86::rax));         // rax = *(&original_)
+    }
     cc.xchg(asmjit::x86::ptr(asmjit::x86::rsp), asmjit::x86::rax);            // swap with saved-rax slot
     cc.pushfq();
     cc.push(asmjit::x86::rbp);
@@ -538,11 +563,29 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     // restore rsp
     cc.mov(asmjit::x86::rsp, asmjit::x86::rbp);
 
-    // if the callback return value is zero, skip orig.
-    cc.test(asmjit::x86::rax, asmjit::x86::rax);
-    cc.jz(original_invoke_label);
-    cc.mov(asmjit::x86::ptr(asmjit::x86::rsp, stack_size + 8 * 9), asmjit::x86::rax);
-    cc.bind(original_invoke_label);
+    // Auto mode: read the skip-original byte flag and, if set, overwrite
+    // the resume slot with resume_addr. True / False modes don't need
+    // this block — they baked the decision in at prologue time.
+    //
+    // The resume slot sits at [rsp + stack_size + 8*9]:
+    //   stack_size  — captured arg payload (16 bytes per capture)
+    //   + 8*8       — pushed: pushfq + rbp,rax,rcx,rdx,r8,r9,r10,r11
+    //                 (8 entries, the rax we pushed first PLUS the
+    //                 pushfq + 7 more registers = 8 slots above the
+    //                 resume slot, which sits at the very bottom).
+    //   + 8         — the resume slot itself, one 8-byte offset above.
+    if (call_original_mode == 2) {
+        asmjit::Label skip_done = cc.new_label();
+        // Load the flag byte from absolute address. mov-imm64 + byte deref.
+        cc.mov(asmjit::x86::rax, skip_flag_addr);                              // rax = &flag
+        cc.mov(asmjit::x86::al,  asmjit::x86::byte_ptr(asmjit::x86::rax));     // al  = *flag
+        cc.test(asmjit::x86::al, asmjit::x86::al);
+        cc.jz(skip_done);                                                       // flag == 0 → leave slot alone
+        // Flag was set — overwrite slot with resume_addr.
+        cc.mov(asmjit::x86::rax, resume_addr);
+        cc.mov(asmjit::x86::ptr(asmjit::x86::rsp, stack_size + 8 * 9), asmjit::x86::rax);
+        cc.bind(skip_done);
+    }
 
     // restore caller-saved registers before using again.
     auto restore_register = [&](asmjit::x86::Gp reg, size_t index) {
@@ -598,15 +641,23 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
         }
     }
 
-    // stack cleanup
+    // stack cleanup. After this `add`, rsp points at the pushfq slot.
+    // popfq pops it. Then rsp points at the resume slot we pushed
+    // first. The closing `ret` pops that into rip — jumping into
+    // either MinHook's relocated-original trampoline (call_original
+    // True or Auto-with-flag-clear) or directly to resume_addr
+    // (call_original False or Auto-with-flag-set).
+    //
+    // Previously this code had `if (stack_restore_offset != 0) sub
+    // rsp, K` here. That was broken: `sub rsp, K` moved rsp DOWN,
+    // putting K bytes ABOVE the resume slot, so `ret` popped from
+    // the wrong location. Removed as part of the call_original
+    // skip-original codegen landing.
     cc.add(asmjit::x86::rsp, stack_size + 8 * 8);
     cc.popfq();
 
-    if (stack_restore_offset != 0) {
-        cc.sub(asmjit::x86::rsp, stack_restore_offset);
-    }
-
-    // jump to the original function
+    // jump to the original function (or to resume_addr — see comment
+    // at prologue / Auto-mode skip-flag block above)
     cc.ret();
 
     // write to buffer
