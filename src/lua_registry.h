@@ -1,0 +1,188 @@
+#pragma once
+
+// kcdx::lua_registry — deferred-apply queue for Lua-side kcdx.* calls.
+//
+// Per the restructure plan (docs/outstanding-work/restructure-plan.md
+// §"Confirmed design decisions" #2):
+//
+//   API calls register intent; engine applies them in one pass after
+//   all plugins have registered. When plugin.lua calls kcdx.hook(opts),
+//   the engine validates the call (locator format, signature, zone
+//   capability) and queues the registration; nothing is written to game
+//   memory yet. After all enabled plugins in the unified ordered list
+//   have run their plugin.lua / DLL Preload+Load (i.e. after every
+//   plugin in the current zone has had its turn to register),
+//   conflict_engine runs pre-flight ONCE across all queued entries,
+//   classifies conflicts, decides who wins via unified load order,
+//   then the apply pass walks the registrations in order and installs
+//   them.
+//
+// This module owns the queue, the handle metatable, and the per-zone
+// apply orchestration. Each kcdx.* surface (kcdx.bytes, kcdx.hook,
+// kcdx.code, ...) builds its own kind-specific payload and calls
+// Append() to add an entry; later the apply pass dispatches per-kind
+// install routines through registered handlers.
+
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+extern "C" {
+#include "lua.h"
+}
+
+#include "load_order.h"   // Zone
+
+namespace kcdx::lua_registry {
+
+// What kind of intent this entry represents. Each kind has a payload
+// type the binder builds and a per-kind apply handler the registry
+// invokes during ApplyZone.
+enum class Kind {
+    Bytes,        // succeeds [[patch]]
+    // Hook, Code, Command, Cosave, Scan ... added by their Phase 2x
+    // commits.
+};
+
+// Lifecycle status of a queued entry. Read by handle:applied().
+//
+//   Pending  — queued, apply pass hasn't reached this entry yet.
+//   Applied  — apply succeeded; handle is "live".
+//   Failed   — apply rejected (locator failed, byte mismatch, conflict
+//              lost, etc.); see `reason` for diagnostic.
+enum class Status : uint8_t {
+    Pending = 0,
+    Applied = 1,
+    Failed  = 2,
+};
+
+// One queued registration. Built by binders, stored in the per-zone
+// queue, walked by the apply pass.
+struct Entry {
+    Kind kind = Kind::Bytes;
+    // The plugin that owns this registration. Empty when called from
+    // ad-hoc Lua (KCDX.ScanAndWrite-style; legacy path). Used by the
+    // apply pass to attribute log lines and conflict resolution.
+    std::string pluginName;
+    // Per-author intra-plugin sort key. Author hint, ignored when the
+    // owning plugin has a load_order.toml priority override.
+    int priority = 50;
+    // Author-supplied name, also used for log lines + dedupe.
+    std::string name;
+    // The kind-specific payload. Owns its own memory. Type-erased so
+    // this header doesn't pull in patch_engine.h / hook_engine.h /
+    // etc. — each binder casts the payload back to its own type at
+    // apply time. Use a union of strongly-typed shared_ptrs in a
+    // future refactor if the type erasure proves error-prone.
+    std::shared_ptr<void> payload;
+
+    // Filled by the apply pass.
+    std::atomic<Status> status{Status::Pending};
+    // Diagnostic for status == Failed. Set by the apply pass; read by
+    // handle:applied() and handle:reason().
+    std::string reason;
+
+    // The call site that produced this registration. Set on append
+    // from debug.getinfo (Lua) so failure log lines can attribute
+    // back to the source line.
+    std::string callSiteFile;
+    int callSiteLine = 0;
+
+    // Default ctor + explicit copy/move semantics so std::vector
+    // can store these. The atomic<Status> would normally make this
+    // non-copyable; we provide a copy that snapshots the status and
+    // hand the registry a stable address discipline (append-only;
+    // entries never move after Append returns).
+    Entry() = default;
+    Entry(const Entry& o)
+        : kind(o.kind), pluginName(o.pluginName), priority(o.priority),
+          name(o.name), payload(o.payload),
+          status(o.status.load(std::memory_order_relaxed)),
+          reason(o.reason),
+          callSiteFile(o.callSiteFile), callSiteLine(o.callSiteLine) {}
+    Entry(Entry&& o) noexcept
+        : kind(o.kind), pluginName(std::move(o.pluginName)),
+          priority(o.priority), name(std::move(o.name)),
+          payload(std::move(o.payload)),
+          status(o.status.load(std::memory_order_relaxed)),
+          reason(std::move(o.reason)),
+          callSiteFile(std::move(o.callSiteFile)),
+          callSiteLine(o.callSiteLine) {}
+    Entry& operator=(const Entry&) = delete;  // append-only by design
+    Entry& operator=(Entry&&)      = delete;
+};
+
+// Append an entry to the queue. The entry's zone is derived from its
+// owning plugin's load_order::Effective state at append time. Returns
+// a stable handle id (>= 1) that binders use to wire up the Lua
+// handle userdata's :applied() field. Handle id 0 means "append
+// failed" (the entry was not enqueued; the err string explains why).
+//
+// `err_out` is set when the return value is 0; otherwise left
+// unmodified. The error string is suitable for direct return through
+// the (nil, err) Lua convention.
+//
+// Per-kind apply handlers must be registered via RegisterApplyHandler
+// before any entry of that kind is appended.
+uint64_t Append(Entry&& e, std::string* err_out);
+
+// Look up an entry by handle id. Returns nullptr if not found.
+// Pointer remains valid for the process lifetime (append-only; no
+// reallocation visible to consumers because we use a node-stable
+// container — see implementation).
+const Entry* Find(uint64_t handleId);
+Entry*       FindMut(uint64_t handleId);
+
+// Per-kind apply handler. The handler is invoked once per matching
+// entry during ApplyZone, in unified load order. It updates the
+// entry's status + reason.
+//
+// Returning true means "applied successfully"; false means "rejected"
+// (the handler should populate entry.reason). Either way the registry
+// flips entry.status appropriately afterward — the handler doesn't
+// touch atomic status itself.
+using ApplyHandler = bool (*)(Entry& entry, std::string& reason_out);
+void RegisterApplyHandler(Kind k, ApplyHandler fn);
+
+// Walk the queue for `zone`, run pre-flight + per-kind apply in
+// unified load order, update handle statuses. Idempotent — entries
+// that have already been applied or failed are skipped. Safe to call
+// multiple times per zone (later kcdx.* calls accumulate and the next
+// apply pass picks them up).
+//
+// Returns the number of entries newly transitioned (Pending → Applied
+// or Pending → Failed) by this call.
+size_t ApplyZone(kcdx::load_order::Zone zone);
+
+// Push a kcdx.registry handle userdata for the entry with the given
+// id onto the Lua stack. The userdata's metatable provides
+// :applied(), :reason(), :name(), :wait_applied() (the last is a
+// stub in Phase 2a; Phase 2i implements via coroutines).
+//
+// If handleId == 0 (failed Append), pushes nil + err onto the stack
+// and returns 2 (the standard kcdx-binder error-return idiom).
+//
+// Caller is responsible for the return-value count semantic in their
+// Lua-C function.
+int PushHandleOrError(lua_State* L, uint64_t handleId,
+                      const std::string& errIfNoHandle);
+
+// Install the handle metatable into the registry. Called once during
+// kcdx::lua_bind::RegisterKcdxTable. Idempotent.
+void EnsureHandleMetatable(lua_State* L);
+
+// Resolve the owning plugin for the current Lua call. The plugin
+// name is stamped on every registered Entry so the apply pass can
+// attribute results to the right plugin's load-order row, log file,
+// etc. Implementation: walk the Lua callstack via debug.getinfo,
+// look up the source file in the plugin-by-script-path index built
+// by [entrypoints].lua loading (Phase 2h). Until 2h ships, this
+// returns "" for everything (entries are treated as anonymous —
+// they apply but don't participate in load-order resolution).
+std::string OwningPluginForCurrentCall(lua_State* L,
+                                        std::string& callSiteFileOut,
+                                        int& callSiteLineOut);
+
+}  // namespace kcdx::lua_registry

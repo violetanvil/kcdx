@@ -27,9 +27,10 @@ extern "C" {
 // kcdx.lua.* helpers live in lua_bind_lua.cpp. Forward-decl bind()
 // here so RegisterKcdxTable can call it. (No header needed for a
 // single function with this signature.)
-namespace kcdx::lua_bind_lua  { void bind(lua_State* L); }
-namespace kcdx::lua_bind_dev  { void bind(lua_State* L); }
-namespace kcdx::lua_bind_test { void bind(lua_State* L); }
+namespace kcdx::lua_bind_lua   { void bind(lua_State* L); }
+namespace kcdx::lua_bind_dev   { void bind(lua_State* L); }
+namespace kcdx::lua_bind_test  { void bind(lua_State* L); }
+namespace kcdx::lua_bind_bytes { void bind(lua_State* L); }
 
 // scripting_interface drains the queue of pending RegisterFunction
 // calls into the live state. Pull the real header so the call
@@ -222,6 +223,10 @@ void RegisterKcdxTable(lua_State* L) {
     LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_test::bind");
     kcdx::lua_bind_test::bind(L);
     LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_test::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_bytes::bind");
+    kcdx::lua_bind_bytes::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_bytes::bind");
 
     LOG_INFO("LUA_BIND", "  before lua_setglobal(\"kcdx\")");
     lua_setglobal(L, "kcdx");

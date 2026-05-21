@@ -14,7 +14,9 @@
 #include "hook_engine.h"
 #include "dev.h"
 #include "log.h"
+#include "load_order.h"
 #include "lua_bind.h"
+#include "lua_registry.h"
 #include "messaging.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
@@ -400,6 +402,17 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
             }
         }
     }
+
+    // Drain pending kcdx.* registrations queued by Lua plugin code. New
+    // entries arrive any time after kcdxMessage_LuaReady (pak Lua's
+    // OnSystemStarted / OnLoadingComplete / etc.) — we apply them here
+    // so they participate in the same lifecycle as TOML-declared
+    // entries. ApplyZone is idempotent: already-applied / already-
+    // failed entries are skipped, so re-running per tick is cheap
+    // (no-op when queue is empty). Phase 2a apples after_game zone
+    // only; before_game zone applies after Phase 11 lands the early
+    // VM startup.
+    kcdx::lua_registry::ApplyZone(kcdx::load_order::Zone::AfterGame);
 
     // Drain the task queue every tick. Plugins that called AddTask from
     // any thread get their tasks executed here, on the main thread.
