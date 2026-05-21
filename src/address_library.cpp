@@ -196,6 +196,14 @@ constexpr Entry kEntries[] = {
     { 1195, kGV_1_5_1164953, 0x01448E60, "verified", "cscriptsystem-ctor" },
     { 1196, kGV_1_5_1164953, 0x01448F38, "verified", "cscriptsystem-init" },     // lua-boot anchor; sole caller of lua_newstate + luaL_openlibs
     { 1197, kGV_1_5_1164953, 0x039AD63C, "verified", "cscriptsystem-dtor" },
+    { 1198, kGV_1_5_1164953, 0x039989A4, "verified", "lua-close" },              // sole caller is CScriptSystem dtor at 0x39AD6E2
+    { 1199, kGV_1_5_1164953, 0x00B9CCB8, "verified", "lua-replace" },            // verified via "no calling environment" string anchor
+    { 1200, kGV_1_5_1164953, 0x0071D118, "verified", "luaL-ref" },               // discovered via CryEngine extension lib registrar 0x14495C4
+    { 1201, kGV_1_5_1164953, 0x039987B4, "verified", "lua-close-state" },        // internal lstate.c helper; tail-called from lua_close
+    { 1202, kGV_1_5_1164953, 0x03997070, "verified", "luaC-barrierf" },          // GC barrier slow-path; needed by shim stubs that write GC pointers
+    { 1203, kGV_1_5_1164953, 0x01565018, "verified", "luaF-close" },             // internal lfunc.c helper
+    { 1204, kGV_1_5_1164953, 0x00FEABA8, "verified", "luaC-separateudata" },     // internal lgc.c helper
+    { 1205, kGV_1_5_1164953, 0x0071E258, "verified", "luaM-realloc_" },          // internal lmem.c reallocator (routes all Lua memory through g->frealloc)
 };
 
 constexpr size_t kEntryCount = sizeof(kEntries) / sizeof(kEntries[0]);
