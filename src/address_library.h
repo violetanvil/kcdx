@@ -37,4 +37,28 @@ size_t EntryCount();
 // startup summary.
 size_t EntryCountForRunningVersion();
 
+// Resolve a known address by NAME instead of numeric id. Names are
+// the kebab/snake-case labels in the seed CSV (e.g. "lua_pcall",
+// "cscriptsystem_init"). Returns the same VA as Resolve(id) for the
+// matching row, or 0 with the same rules (unknown name, wrong
+// game_version, unverified).
+//
+// Used by kcdx.hook's locator path so authors can write
+//   kcdx.hook(kcdx.addr.lua_pcall, { ... })
+// rather than remembering numeric ids. Names are advisory (no
+// stability guarantee across kcdx versions); numeric ids remain
+// the canonical reference for code that needs stability.
+uintptr_t ResolveByName(const char* name);
+
+// Iterate every entry that matches the running KCD2 build AND has
+// status "verified" — i.e. every row that would resolve via either
+// Resolve(id) or ResolveByName(name). Calls `cb` with the entry's
+// id, name, and resolved VA for each match. Used to eagerly populate
+// kcdx.addr.* at startup.
+//
+// Stops iterating when `cb` returns false.
+using ForEachResolvableCallback = bool (*)(uint64_t id, const char* name,
+                                           uintptr_t va, void* userdata);
+void ForEachResolvable(ForEachResolvableCallback cb, void* userdata);
+
 }  // namespace kcdx::address_library
