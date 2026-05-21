@@ -125,7 +125,7 @@ constexpr Entry kEntries[] = {
     { 1113, kGV_1_5_1164953, 0x0071F4BC, "verified", "lua-next" },
     { 1114, kGV_1_5_1164953, 0x0071F6A8, "verified", "lua-tolstring" },
     { 1115, kGV_1_5_1164953, 0x0071F6FC, "verified", "lua-gettable" },
-    { 1116, kGV_1_5_1164953, 0x0071FCE8, "verified", "lua-newthread" },
+    { 1116, kGV_1_5_1164953, 0x0071FCE8, "verified", "luaC-step" }, // CORRECTED: was tagged "lua-newthread" but body analysis shows this is luaC_step (internal GC). lua_newthread is now UNIDENTIFIED (likely inlined).
     { 1117, kGV_1_5_1164953, 0x00718464, "verified", "lua-rawget" },
     { 1118, kGV_1_5_1164953, 0x00720738, "verified", "lua-rawset" },
     { 1119, kGV_1_5_1164953, 0x0041C200, "verified", "lua-tonumber" },
@@ -196,6 +196,8 @@ constexpr Entry kEntries[] = {
     { 1182, kGV_1_5_1164953, 0x0071DD7C, "verified", "lua-index2adr" },        // internal helper, NOT a public LUA_API
     { 1183, kGV_1_5_1164953, 0x0071A628, "verified", "luaD-pcall" },           // internal helper, NOT a public LUA_API
     { 1184, kGV_1_5_1164953, 0x0071A6A8, "verified", "luaD-rawrunprotected" }, // internal helper, NOT a public LUA_API
+    { 1185, kGV_1_5_1164953, 0x039934B4, "verified", "luaL-addstring" },
+    { 1186, kGV_1_5_1164953, 0x0399838C, "verified", "luaO-pushvfstring" },    // internal helper used by lua_pushfstring (lua_pushvfstring inlined)
 };
 
 constexpr size_t kEntryCount = sizeof(kEntries) / sizeof(kEntries[0]);
