@@ -200,6 +200,8 @@ constexpr Entry kEntries[] = {
     { 1186, kGV_1_5_1164953, 0x0399838C, "verified", "luaO-pushvfstring" },    // internal helper used by lua_pushfstring (lua_pushvfstring inlined)
     { 1187, kGV_1_5_1164953, 0x0071F1F8, "verified", "lua-topointer" },
     { 1188, kGV_1_5_1164953, 0x0071E7C0, "verified", "lua-settable" },
+    { 1189, kGV_1_5_1164953, 0x0399614C, "verified", "luaG-runerror" },     // internal ldebug.c helper
+    { 1190, kGV_1_5_1164953, 0x03998368, "verified", "luaO-pushfstring" },  // internal lobject.c helper
 };
 
 constexpr size_t kEntryCount = sizeof(kEntries) / sizeof(kEntries[0]);
