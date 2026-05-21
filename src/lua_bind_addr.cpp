@@ -51,7 +51,8 @@ struct Ctx {
     size_t     count;
 };
 
-bool ForEachCb(uint64_t /*id*/, const char* name, uintptr_t va, void* userdata) {
+bool ForEachCb(uint64_t /*id*/, const char* name,
+               const char* /*description*/, uintptr_t va, void* userdata) {
     auto* ctx = static_cast<Ctx*>(userdata);
     if (!name || !name[0] || va == 0) return true;  // skip empty names
     // PushPointer leaves a kcdx.memory.pointer userdata at the top
