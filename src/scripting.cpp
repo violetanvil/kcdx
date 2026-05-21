@@ -1,6 +1,8 @@
 // See scripting.h for what this is.
 #include "scripting.h"
 
+#include <windows.h>  // for PROBE C: GetModuleHandleEx + GetModuleFileNameA
+
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -8,6 +10,7 @@
 extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
+#include "lstate.h"   // for PROBE N: raw lua_State / global_State struct reads
 }
 
 #include "crash_guard.h"
@@ -141,11 +144,161 @@ bool PushCallback(lua_State* L, CallbackEntry& cb) {
 
 }  // namespace
 
+// PROBE P helper: format a byte buffer as a lowercase-hex space-separated
+// string. Used to hex-dump fresh Tables for ABI comparison. 16 bytes
+// per chunk to keep grep-friendly.
+static std::string HexDump(const void* p, size_t n) {
+    static const char hex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(n * 3);
+    const uint8_t* b = static_cast<const uint8_t*>(p);
+    for (size_t i = 0; i < n; ++i) {
+        out.push_back(hex[b[i] >> 4]);
+        out.push_back(hex[b[i] & 0xF]);
+        if (i + 1 < n) out.push_back(' ');
+    }
+    return out;
+}
+
+// PROBE P: dump a Table-shaped memory region for ABI comparison.
+// Reads up to `bytes` bytes from `p` and logs them under `lstate.raw.tbl`.
+// VirtualQuery is used to confirm the page is committed before reading,
+// to avoid a probe-induced crash if `p` is garbage.
+static void LogTableBytes(const void* p, size_t bytes, const char* tag) {
+    if (!p || bytes == 0) return;
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (::VirtualQuery(p, &mbi, sizeof(mbi)) == 0 ||
+        mbi.State != MEM_COMMIT ||
+        (mbi.Protect & PAGE_NOACCESS)) {
+        LOG_DEBUG_KV("MID_HOOK", "lstate.raw.tbl",
+            log::KV("tag",  std::string(tag ? tag : "?")),
+            log::KV("p",    p),
+            log::KV("note", std::string("memory not readable")));
+        return;
+    }
+    // Clamp `bytes` to the end of the committed region.
+    uintptr_t end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+    uintptr_t start = reinterpret_cast<uintptr_t>(p);
+    size_t avail = (end > start) ? (size_t)(end - start) : 0;
+    if (bytes > avail) bytes = avail;
+    LOG_DEBUG_KV("MID_HOOK", "lstate.raw.tbl",
+        log::KV("tag",   std::string(tag ? tag : "?")),
+        log::KV("p",     p),
+        log::KV("bytes", (int64_t)bytes),
+        log::KV("hex",   HexDump(p, bytes)));
+}
+
+void LogLuaStateSnapshot(lua_State* L, const char* tag) {
+    if (!L) {
+        LOG_DEBUG_KV("MID_HOOK", "lstate.snapshot",
+            log::KV("tag", std::string(tag ? tag : "?")),
+            log::KV("L",   (void*)nullptr));
+        return;
+    }
+    // lua_topointer is read-only on LUA_REGISTRYINDEX / LUA_GLOBALSINDEX.
+    // For Lua 5.1 those return the underlying Table object pointer; two
+    // lua_State* sharing one VM share these pointers.
+    const void* registry_ptr = lua_topointer(L, LUA_REGISTRYINDEX);
+    const void* globals_ptr  = lua_topointer(L, LUA_GLOBALSINDEX);
+    LOG_DEBUG_KV("MID_HOOK", "lstate.snapshot",
+        log::KV("tag",          std::string(tag ? tag : "?")),
+        log::KV("L",            (void*)L),
+        log::KV("top",          (int64_t)lua_gettop(L)),
+        log::KV("registry_ptr", registry_ptr),
+        log::KV("globals_ptr",  globals_ptr),
+        log::KV("status",       (int64_t)lua_status(L)),
+        log::KV("os_tid",       (int64_t)::GetCurrentThreadId()));
+}
+
+void LogLuaStateRawStruct(lua_State* L, const char* tag) {
+    // PROBE N: dump raw C-struct fields of `lua_State` and `global_State`
+    // straight off the pointer. The Lua C API summary in
+    // LogLuaStateSnapshot returns identical values at the safe vs crashing
+    // newtable sites (proven by PROBE L). The question this answers: do
+    // any *lower-level* struct fields differ that would discriminate one
+    // call site from the other? If yes, that field is the smoking gun. If
+    // no, the trigger is invisible to anything the Lua source code can
+    // observe at the call site — meaning it lives inside lua_createtable's
+    // own body, or in the static-vs-WHGame Lua ABI mismatch.
+    //
+    // Pure read; safe to call anywhere we have a valid L.
+    if (!L) {
+        LOG_DEBUG_KV("MID_HOOK", "lstate.raw",
+            log::KV("tag", std::string(tag ? tag : "?")),
+            log::KV("L",   (void*)nullptr));
+        return;
+    }
+    // lua_State (from lstate.h)
+    global_State* g = L->l_G;
+    LOG_DEBUG_KV("MID_HOOK", "lstate.raw.L",
+        log::KV("tag",         std::string(tag ? tag : "?")),
+        log::KV("L",           (void*)L),
+        log::KV("status",      (int64_t)L->status),
+        log::KV("top",         (void*)L->top),
+        log::KV("base",        (void*)L->base),
+        log::KV("l_G",         (void*)g),
+        log::KV("ci",          (void*)L->ci),
+        log::KV("savedpc",     (void*)L->savedpc),
+        log::KV("stack_last",  (void*)L->stack_last),
+        log::KV("stack",       (void*)L->stack),
+        log::KV("end_ci",      (void*)L->end_ci),
+        log::KV("base_ci",     (void*)L->base_ci),
+        log::KV("stacksize",   (int64_t)L->stacksize),
+        log::KV("size_ci",     (int64_t)L->size_ci),
+        log::KV("nCcalls",     (int64_t)L->nCcalls),
+        log::KV("hookmask",    (int64_t)L->hookmask),
+        log::KV("allowhook",   (int64_t)L->allowhook),
+        log::KV("errorJmp",    (void*)L->errorJmp),
+        log::KV("errfunc",     (int64_t)L->errfunc),
+        log::KV("openupval",   (void*)L->openupval),
+        log::KV("gclist",      (void*)L->gclist));
+    // global_State — shared across all threads of this VM
+    if (g) {
+        LOG_DEBUG_KV("MID_HOOK", "lstate.raw.G",
+            log::KV("tag",          std::string(tag ? tag : "?")),
+            log::KV("L",            (void*)L),
+            log::KV("g",            (void*)g),
+            log::KV("frealloc",     (void*)g->frealloc),
+            log::KV("ud",           (void*)g->ud),
+            log::KV("currentwhite", (int64_t)g->currentwhite),
+            log::KV("gcstate",      (int64_t)g->gcstate),
+            log::KV("sweepstrgc",   (int64_t)g->sweepstrgc),
+            log::KV("rootgc",       (void*)g->rootgc),
+            log::KV("sweepgc",      (void*)g->sweepgc),
+            log::KV("gray",         (void*)g->gray),
+            log::KV("grayagain",    (void*)g->grayagain),
+            log::KV("weak",         (void*)g->weak),
+            log::KV("tmudata",      (void*)g->tmudata),
+            log::KV("GCthreshold",  (int64_t)g->GCthreshold),
+            log::KV("totalbytes",   (int64_t)g->totalbytes),
+            log::KV("estimate",     (int64_t)g->estimate),
+            log::KV("gcdept",       (int64_t)g->gcdept),
+            log::KV("gcpause",      (int64_t)g->gcpause),
+            log::KV("gcstepmul",    (int64_t)g->gcstepmul),
+            log::KV("panic",        (void*)g->panic),
+            log::KV("mainthread",   (void*)g->mainthread));
+    }
+    // Static-Lua ABI sanity: log sizes of the structs as our vendored
+    // copy sees them. If WHGame's Lua disagrees, these are still useful
+    // baselines for later comparison against a memory hexdump.
+    LOG_DEBUG_KV("MID_HOOK", "lstate.raw.sizes",
+        log::KV("tag",                std::string(tag ? tag : "?")),
+        log::KV("sizeof_lua_State",   (int64_t)sizeof(lua_State)),
+        log::KV("sizeof_global_State",(int64_t)sizeof(global_State)),
+        log::KV("offsetof_l_G",       (int64_t)offsetof(lua_State, l_G)),
+        log::KV("offsetof_top",       (int64_t)offsetof(lua_State, top)),
+        log::KV("offsetof_status",    (int64_t)offsetof(lua_State, status)),
+        log::KV("offsetof_errorJmp",  (int64_t)offsetof(lua_State, errorJmp)),
+        log::KV("offsetof_frealloc",  (int64_t)offsetof(global_State, frealloc)));
+}
+
 void set_lua_state(lua_State* L) {
     std::scoped_lock guard(g_lock);
     g_lua_state = L;
     if (L) {
         log::Info("scripting: lua_State bound");
+        LogLuaStateSnapshot(L, "set_lua_state.enter");
+        LogLuaStateSnapshot(L, "set_lua_state.exit");
     } else {
         log::Info("scripting: lua_State cleared");
     }
@@ -394,8 +547,13 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
                            size_t                                         param_count,
                            uintptr_t                                      target_func_ptr) {
     kcdx::guard::BreadcrumbScope bc("scripting.dispatch_mid", nullptr);
+    LOG_DEBUG_KV("MID_HOOK", "dispatch.enter",
+        log::KV("target",      (void*)target_func_ptr),
+        log::KV("params_ptr",  (void*)params),
+        log::KV("param_count", (int64_t)param_count));
     KCDX_DEV("SCRIPTING", "DISPATCH/mid/enter",
         kcdx::dev::KV("target", (void*)target_func_ptr));
+
     DispatchGuard re_entry;
     if (!re_entry.is_outermost()) return 0;
     std::scoped_lock guard(g_lock);
@@ -409,6 +567,14 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
         (hook_it == g_target_to_hook.end()) ? nullptr : hook_it->second;
     if (!hook) return 0;
 
+    LOG_DEBUG_KV("MID_HOOK", "dispatch.hook_resolved",
+        log::KV("target",     (void*)target_func_ptr),
+        log::KV("hook",       (void*)hook),
+        log::KV("jit_buf",    const_cast<kcdx::rom::runtime_func_t*>(hook)->get_jit_buffer()),
+        log::KV("fnv_jit",    hook->fingerprint_jit_buffer()),
+        log::KV("fnv_self",   hook->fingerprint_self()),
+        log::KV("fnv_detour", hook->fingerprint_detour()));
+
     // Mid-hooks pass args as a table keyed by 1..N (matches RoM).
     uintptr_t restore_address = 0;
     for (CallbackEntry& cb : it->second) {
@@ -418,7 +584,44 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
                        cb.name.c_str());
             continue;
         }
+        // === PROBE O ===
+        // Capture raw-struct snapshots immediately before and after
+        // the lua_createtable call that builds the args table for the
+        // user's Lua callback. PROBE N proved the same code pattern
+        // (lua_createtable on captured L) is SAFE when called from
+        // HookedUpdate's main-thread frame. If the snapshots here
+        // differ from the safe ones in a meaningful field (errorJmp,
+        // nCcalls, ci, savedpc, gcstate, ...), that field is the
+        // discriminator the trail has been hunting since PROBE L.
+        LogLuaStateRawStruct(g_lua_state, "PROBE_O.dispatch_mid.before_createtable");
+        // === PROBE P pre-step ===
+        // Hex-dump the registry Table BEFORE we allocate. The registry
+        // is WHGame-allocated at VM init time and lives in g->rootgc.
+        // Its bytes show the layout WHGame's Lua uses for `Table`. We'll
+        // compare against our freshly-allocated Table below — if our
+        // bytes diverge structurally (different field layout, different
+        // size), dual-Lua ABI mismatch is confirmed.
+        {
+            const void* reg = lua_topointer(g_lua_state, LUA_REGISTRYINDEX);
+            LogTableBytes(reg, 128, "PROBE_P.registry_table_WHGame_owned");
+        }
         lua_createtable(g_lua_state, (int)param_count, 0);
+        LogLuaStateRawStruct(g_lua_state, "PROBE_O.dispatch_mid.after_createtable");
+        // === PROBE P ===
+        // Dump 128 bytes of the freshly-allocated Table. Static-Lua
+        // believes `sizeof(Table) = 64` (offsetof tail at 0x40); the
+        // luaH_new flow that just ran also linked a dummynode (sized in
+        // the array allocator) but no node allocation since nhash=0.
+        // If bytes past offset 0x40 look like the START of an unrelated
+        // heap block (signature, length tag, free list pointers), our
+        // 64-byte allocation is undersized vs WHGame's Table layout and
+        // every WHGame GC walk of `g->rootgc` will read garbage from
+        // the misshapen Table. That's the dual-Lua ABI mismatch
+        // mechanism.
+        {
+            const void* tbl = lua_topointer(g_lua_state, -1);
+            LogTableBytes(tbl, 128, "PROBE_P.fresh_table_kcdx_allocated");
+        }
         int table_idx = lua_gettop(g_lua_state);
         for (uint8_t i = 0; i < param_count; i++) {
             kcdx::lua_memory::to_lua(g_lua_state, params, i, hook->m_param_types);
@@ -448,6 +651,12 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
         }
         lua_pop(g_lua_state, 1);
     }
+    LOG_DEBUG_KV("MID_HOOK", "dispatch.exit",
+        log::KV("target",            (void*)target_func_ptr),
+        log::KV("restore_address",   (void*)restore_address),
+        log::KV("post_fnv_jit",      hook->fingerprint_jit_buffer()),
+        log::KV("post_fnv_self",     hook->fingerprint_self()),
+        log::KV("post_fnv_detour",   hook->fingerprint_detour()));
     return restore_address;
 }
 

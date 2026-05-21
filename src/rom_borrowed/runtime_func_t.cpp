@@ -56,6 +56,38 @@ runtime_func_t::~runtime_func_t() {
     }
 }
 
+uint64_t runtime_func_t::fingerprint_jit_buffer() const {
+    if (!m_jit_function_buffer || m_jit_function_size == 0) return 0;
+    uint64_t h = 0xcbf29ce484222325ULL;
+    const uint8_t* b = static_cast<const uint8_t*>(m_jit_function_buffer);
+    for (size_t i = 0; i < m_jit_function_size; ++i) {
+        h ^= b[i];
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+uint64_t runtime_func_t::fingerprint_self() const {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    const uint8_t* b = reinterpret_cast<const uint8_t*>(this);
+    for (size_t i = 0; i < sizeof(*this); ++i) {
+        h ^= b[i];
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+uint64_t runtime_func_t::fingerprint_detour() const {
+    if (!m_detour) return 0;
+    uint64_t h = 0xcbf29ce484222325ULL;
+    const uint8_t* b = reinterpret_cast<const uint8_t*>(m_detour.get());
+    for (size_t i = 0; i < sizeof(*m_detour); ++i) {
+        h ^= b[i];
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
 void runtime_func_t::debug_print_args(const asmjit::FuncSignature& sig) {
     for (uint8_t arg_index_debug = 0; arg_index_debug < sig.arg_count(); arg_index_debug++) {
         const auto arg_type_debug = sig.args()[arg_index_debug];
@@ -332,6 +364,14 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
                                            const asmjit::Arch arch,
                                            mid_callback_t mid_callback,
                                            const uintptr_t target_func_ptr) {
+    LOG_DEBUG_KV("MID_HOOK", "make_jit_midfunc.enter",
+        log::KV("target_func_ptr", (void*)target_func_ptr),
+        log::KV("mid_callback",    (void*)mid_callback),
+        log::KV("stack_restore_offset", (int64_t)stack_restore_offset),
+        log::KV("param_count",     (int64_t)param_types.size()),
+        log::KV("this",            (void*)this),
+        log::KV("m_detour",        (void*)m_detour.get()),
+        log::KV("original_ptr",    (void*)(m_detour ? m_detour->get_original_ptr() : nullptr)));
     for (const std::string& s : param_types) {
         m_param_types.push_back(get_type_info_from_string(s));
     }
@@ -576,6 +616,10 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     code.flatten();
     size_t size = code.code_size();
 
+    LOG_DEBUG_KV("MID_HOOK", "make_jit_midfunc.code_emitted",
+        log::KV("target_func_ptr", (void*)target_func_ptr),
+        log::KV("code_size",       (int64_t)size));
+
     // Same branch_pool allocation as make_jit_func — see Phase 5c.7b.1
     // notes above. owner=0 (engine, not a plugin) until 5e wires it.
     m_jit_function_buffer = kcdx::trampoline::AllocateBranch(/*owner=*/0, size);
@@ -584,6 +628,11 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
         return 0;
     }
     m_jit_function_size = size;
+
+    LOG_DEBUG_KV("MID_HOOK", "make_jit_midfunc.buf_allocated",
+        log::KV("target_func_ptr", (void*)target_func_ptr),
+        log::KV("jit_buf",         m_jit_function_buffer),
+        log::KV("jit_size",        (int64_t)size));
 
     if (code.has_unresolved_fixups()) {
         code.resolve_cross_section_fixups();
@@ -605,6 +654,20 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
         if (!end) break;
         p = end + 1;
     }
+
+    // Fingerprint the freshly-installed JIT buffer so we can detect later
+    // overwrites. The simple FNV-1a of the entire buffer is enough to
+    // notice any single-byte difference.
+    uint64_t fnv = 0xcbf29ce484222325ULL;
+    {
+        const uint8_t* b = static_cast<const uint8_t*>(m_jit_function_buffer);
+        for (size_t i = 0; i < size; ++i) { fnv ^= b[i]; fnv *= 0x100000001b3ULL; }
+    }
+    LOG_DEBUG_KV("MID_HOOK", "make_jit_midfunc.exit",
+        log::KV("target_func_ptr", (void*)target_func_ptr),
+        log::KV("jit_buf",         m_jit_function_buffer),
+        log::KV("jit_size",        (int64_t)size),
+        log::KV("fnv1a",           (uint64_t)fnv));
 
     return (uintptr_t)m_jit_function_buffer;
 }

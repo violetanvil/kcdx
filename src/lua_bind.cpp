@@ -19,6 +19,7 @@ extern "C" {
 #include "log.h"
 #include "lua_bind_helpers.h"
 #include "lua_memory.h"
+#include "scripting.h"  // for LogLuaStateSnapshot (heap-corruption diag)
 #include "messaging.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
@@ -175,9 +176,14 @@ void RegisterKcdxTable(lua_State* L) {
         return;
     }
     LOG_INFO("LUA_BIND", "RegisterKcdxTable ENTER L=%p", (void*)L);
+    kcdx::scripting::LogLuaStateSnapshot(L, "RegisterKcdxTable.enter");
 
     LOG_INFO("LUA_BIND", "  before KCDX (uppercase) table creation");
+    kcdx::scripting::LogLuaStateSnapshot(L, "RegisterKcdxTable.before_newtable_KCDX");
+    kcdx::scripting::LogLuaStateRawStruct(L, "RegisterKcdxTable.before_newtable_KCDX");
     lua_newtable(L);
+    kcdx::scripting::LogLuaStateSnapshot(L, "RegisterKcdxTable.after_newtable_KCDX");
+    kcdx::scripting::LogLuaStateRawStruct(L, "RegisterKcdxTable.after_newtable_KCDX");
     lua_pushcfunction(L, Lua_ScanAndWrite);
     lua_setfield(L, -2, "ScanAndWrite");
     lua_pushcfunction(L, Lua_ReadBytes);
@@ -187,12 +193,15 @@ void RegisterKcdxTable(lua_State* L) {
     lua_setglobal(L, "KCDX");
     LOG_INFO("LUA_BIND",
         "  after  KCDX (uppercase) registered (ScanAndWrite, ReadBytes, GetWHGameBase)");
+    kcdx::scripting::LogLuaStateSnapshot(L, "RegisterKcdxTable.after_KCDX_setglobal");
 
     // Stack discipline: kcdx::lua_memory::bind() expects the kcdx
     // table at stack top. We create it, push it to top, populate via
     // bind(), then pop it after lua_setglobal.
     LOG_INFO("LUA_BIND", "  before kcdx (lowercase) table creation");
+    kcdx::scripting::LogLuaStateSnapshot(L, "RegisterKcdxTable.before_newtable_kcdx");
     lua_newtable(L);
+    kcdx::scripting::LogLuaStateSnapshot(L, "RegisterKcdxTable.after_newtable_kcdx");
     int kcdx_idx = lua_gettop(L);
     lua_pushliteral(L, "0.1.0-phase5c");
     lua_setfield(L, kcdx_idx, "version");

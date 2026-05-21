@@ -92,6 +92,29 @@ public:
         return m_detour ? m_detour->get_original_ptr() : nullptr;
     }
 
+    // Diagnostic accessors used by hook_engine + scripting for structured
+    // logging of JIT-buffer state. Cheap; safe to call at any time after
+    // make_jit_*func has returned non-zero.
+    void*  get_jit_buffer() const { return m_jit_function_buffer; }
+    size_t get_jit_size()   const { return m_jit_function_size;   }
+
+    // FNV-1a fingerprint of the entire JIT buffer contents. Used to
+    // detect post-install overwrites — diagnostic only; not on any hot
+    // path. Returns 0 if the buffer was never allocated.
+    uint64_t fingerprint_jit_buffer() const;
+
+    // FNV-1a over the bytes of `*this` (the runtime_func_t object on
+    // the heap). Diagnostic only. Captures whether anything stomped
+    // into the object's own heap allocation between install and a
+    // later checkpoint. The captures area (m_jit_function_buffer,
+    // m_jit_function_size, m_param_types vector, etc.) is part of
+    // the fingerprint.
+    uint64_t fingerprint_self() const;
+
+    // FNV-1a over the bytes of the detour_hook on the heap. Returns 0
+    // if m_detour was reset.
+    uint64_t fingerprint_detour() const;
+
     void debug_print_args(const asmjit::FuncSignature& sig);
 
     // Build a JIT trampoline given a raw asmjit signature. Returns the

@@ -1,0 +1,21 @@
+# PROBE-COMP-CRASH — replicate the comp-02/comp-03 DLL flow with step
+# logging to pinpoint the crash. NO hooks, NO patches — just the
+# QueryInterface(Messaging) + RegisterListener + InputLoaded + AOB
+# scan + GetConflictReport + ReportTestResult flow.
+#
+# Writes its trace to <plugins>/probe-comp-crash.log via Win32 with
+# FlushFileBuffers after every line, so the trace survives the crash.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.probe-comp-crash"
+display_name        = "PROBE comp-crash"
+author              = "kcdx"
+description         = "Replicate comp-02/comp-03 flow to pinpoint crash step."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "debug"
+test_names          = ["PROBE-COMP-CRASH"]

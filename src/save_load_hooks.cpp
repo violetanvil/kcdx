@@ -9,6 +9,7 @@
 
 #include "MinHook.h"
 #include "dev.h"
+#include "hook_engine.h"
 #include "log.h"
 #include "messaging.h"
 #include "patch_engine.h"
@@ -240,6 +241,12 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
     LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(PreLoadGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_PreLoadGame);
     LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(PreLoadGame)");
+
+    // Mid-hook JIT buffer integrity probe — diagnoses cap-04 heap
+    // corruption that surfaces during save-load. If a fingerprint has
+    // changed since install-time, something has been writing into the
+    // JIT buffer between then and now.
+    kcdx::hook_engine::DumpMidHookFingerprints("before-LoadGame_wrapper");
 
     LOG_INFO("SAVE_LOAD", "  before original LoadGame_wrapper");
     char result = g_orig_load_game_wrapper(self, playline, slot);

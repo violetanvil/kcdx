@@ -278,24 +278,41 @@ static void setarrayvector (lua_State *L, Table *t, int size) {
 
 
 static void setnodevector (lua_State *L, Table *t, int size) {
+  /* kcdx FIX C (2026-05-20): bypass the dummynode sentinel for the
+   * empty-hash case. Original Lua 5.1 sets `t->node = &dummynode_`
+   * when size==0 to avoid allocating a 1-Node array for tables that
+   * never use their hash part. We can't do this in kcdx's static-Lua
+   * because WHGame.dll embeds its OWN copy of Lua 5.1 with its own
+   * `static const Node dummynode_` at a different address. Both Luas
+   * share `g->rootgc`; when WHGame's GC walks a Table we allocated,
+   * its `t->node != WHGame_dummynode` check returns TRUE (since our
+   * dummynode_ lives in kcdx.asi's .rdata at a different address),
+   * so WHGame calls `frealloc(g->ud, &kcdx_dummynode_, ...)` to free
+   * what it thinks is a heap-allocated Node array. The heap manager
+   * faults with STATUS_HEAP_CORRUPTION.
+   *
+   * Fix: always allocate a real 1-Node array (~40 bytes) when caller
+   * requests size==0. The dummynode_ pointer is never written into
+   * any Table struct. Trade-off: +40 bytes per kcdx-allocated Table
+   * that would otherwise have used the dummynode sentinel. Tables
+   * with non-empty hash parts are unaffected.
+   *
+   * Full investigation: docs/known-issues/kcdx lua_newtable corrupts
+   * the process heap.md (PROBE Q verified the mechanism 2026-05-20).
+   */
   int lsize;
-  if (size == 0) {  /* no elements to hash part? */
-    t->node = cast(Node *, dummynode);  /* use common `dummynode' */
-    lsize = 0;
-  }
-  else {
-    int i;
-    lsize = ceillog2(size);
-    if (lsize > MAXBITS)
-      luaG_runerror(L, "table overflow");
-    size = twoto(lsize);
-    t->node = luaM_newvector(L, size, Node);
-    for (i=0; i<size; i++) {
-      Node *n = gnode(t, i);
-      gnext(n) = NULL;
-      setnilvalue(gkey(n));
-      setnilvalue(gval(n));
-    }
+  int i;
+  if (size == 0) size = 1;  /* avoid dummynode sentinel — see comment above */
+  lsize = ceillog2(size);
+  if (lsize > MAXBITS)
+    luaG_runerror(L, "table overflow");
+  size = twoto(lsize);
+  t->node = luaM_newvector(L, size, Node);
+  for (i=0; i<size; i++) {
+    Node *n = gnode(t, i);
+    gnext(n) = NULL;
+    setnilvalue(gkey(n));
+    setnilvalue(gval(n));
   }
   t->lsizenode = cast_byte(lsize);
   t->lastfree = gnode(t, size);  /* all positions are free */
@@ -368,11 +385,20 @@ Table *luaH_new (lua_State *L, int narray, int nhash) {
   luaC_link(L, obj2gco(t), LUA_TTABLE);
   t->metatable = NULL;
   t->flags = cast_byte(~0);
-  /* temporary values (kept only if some malloc fails) */
+  /* kcdx FIX C (2026-05-20): the original "temporary values" pattern
+   * here sets t->node = &dummynode_ as a placeholder in case
+   * setarrayvector or setnodevector fail with OOM mid-init. We can't
+   * use that pattern — see setnodevector's comment above. Initialize
+   * t->node to NULL; setnodevector unconditionally writes it shortly
+   * (it now ALWAYS allocates, even for size==0). If the malloc fails,
+   * luaM_newvector raises LUA_ERRMEM via luaD_throw and the partially-
+   * init Table never escapes this function's stack frame to be walked
+   * by the GC.
+   */
   t->array = NULL;
   t->sizearray = 0;
   t->lsizenode = 0;
-  t->node = cast(Node *, dummynode);
+  t->node = NULL;
   setarrayvector(L, t, narray);
   setnodevector(L, t, nhash);
   return t;

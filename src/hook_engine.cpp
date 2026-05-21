@@ -297,6 +297,13 @@ bool ApplyOneMidHook(size_t midHookIdx) {
         return false;
     }
 
+    LOG_DEBUG_KV("MID_HOOK", "ApplyOneMidHook.installed",
+        log::KV("name",       mh.name),
+        log::KV("target",     (void*)targetAddr),
+        log::KV("jit_detour", (void*)jit_addr),
+        log::KV("pOriginal",  install.pOriginal),
+        log::KV("rf",         (void*)rf.get()));
+
     // CRITICAL: the JIT'd trampoline reads `[&m_detour->original_]`
     // at runtime to find the call-original address. Because we bypass
     // m_detour->enable() (InstallRuntime calls MH_CreateHook directly
@@ -306,12 +313,25 @@ bool ApplyOneMidHook(size_t midHookIdx) {
     // trampoline's push reads the right value.
     if (void** slot = rf->get_jit_original_slot()) {
         *slot = install.pOriginal;
+        LOG_DEBUG_KV("MID_HOOK", "ApplyOneMidHook.original_slot_written",
+            log::KV("name",       mh.name),
+            log::KV("slot_addr",  (void*)slot),
+            log::KV("slot_value", install.pOriginal));
     }
 
     // Wire scripting: dispatchers need the runtime_func_t for
     // param_types lookup; the callback name is resolved lazily on fire.
     kcdx::scripting::register_hook(targetAddr, rf.get());
     kcdx::scripting::register_mid_callback_by_name(targetAddr, mh.lua_callback);
+
+    LOG_DEBUG_KV("MID_HOOK", "ApplyOneMidHook.exit",
+        log::KV("name",       mh.name),
+        log::KV("target",     (void*)targetAddr),
+        log::KV("jit_buf",    rf->get_jit_buffer()),
+        log::KV("jit_size",   (int64_t)rf->get_jit_size()),
+        log::KV("fnv_jit",    rf->fingerprint_jit_buffer()),
+        log::KV("fnv_self",   rf->fingerprint_self()),
+        log::KV("fnv_detour", rf->fingerprint_detour()));
 
     g_runtime_funcs[targetAddr] = std::move(rf);
 
@@ -321,6 +341,51 @@ bool ApplyOneMidHook(size_t midHookIdx) {
                reinterpret_cast<void*>(targetAddr), (void*)jit_addr,
                mh.param_captures.size(), mh.stack_restore_offset);
     return true;
+}
+
+// Diagnostic helper: walk g_mid_hooks + g_runtime_funcs to (a) log the
+// current fingerprint of each installed mid-hook's JIT buffer, and
+// (b) compare against the fingerprint captured at install time.
+// Called from save_load_hooks just before HookedLoadGameWrapper passes
+// control to the engine's deserializer, so we can pin down whether the
+// mid-hook JIT buffers got overwritten between install and save-load.
+void DumpMidHookFingerprints(const char* label) {
+    LOG_DEBUG_KV("MID_HOOK", "fingerprint_scan.begin",
+        log::KV("label", std::string(label ? label : "")),
+        log::KV("count", (int64_t)g_mid_hooks.size()));
+    for (const auto& mh : g_mid_hooks) {
+        // Each mid_hook's runtime_func_t is keyed in g_runtime_funcs by
+        // target VA. Resolve via the locator; if the mid-hook never
+        // applied (Resolve.ok was false), there's nothing to fingerprint.
+        patch::PatchEntry locator;
+        locator.sourceFile        = mh.sourceFile;
+        locator.name              = mh.name;
+        locator.module            = mh.module;
+        locator.pattern           = mh.pattern;
+        locator.targetSymbol      = mh.targetSymbol;
+        locator.addressId         = mh.addressId;
+        locator.context           = mh.context;
+        locator.anchor            = mh.anchor;
+        locator.maxAnchorDistance = mh.maxAnchorDistance;
+        locator.offset            = mh.offset;
+        locator.original.clear();
+        locator.replacement.clear();
+        patch::ResolvedPatch r = patch::Resolve(locator);
+        if (!r.ok) continue;
+        auto it = g_runtime_funcs.find(r.patchAddr);
+        if (it == g_runtime_funcs.end()) continue;
+        const auto& rf = it->second;
+        LOG_DEBUG_KV("MID_HOOK", "fingerprint",
+            log::KV("label",       std::string(label ? label : "")),
+            log::KV("name",        mh.name),
+            log::KV("target",      (void*)r.patchAddr),
+            log::KV("jit_buf",     rf->get_jit_buffer()),
+            log::KV("fnv_jit",     rf->fingerprint_jit_buffer()),
+            log::KV("fnv_self",    rf->fingerprint_self()),
+            log::KV("fnv_detour",  rf->fingerprint_detour()));
+    }
+    LOG_DEBUG_KV("MID_HOOK", "fingerprint_scan.end",
+        log::KV("label", std::string(label ? label : "")));
 }
 
 RuntimeInstallResult InstallRuntime(const std::string& name,

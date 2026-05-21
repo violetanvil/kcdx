@@ -29,6 +29,37 @@ extern "C" {
 
 namespace kcdx::scripting {
 
+// === DIAGNOSTIC HELPER (heap-corruption investigation, 2026-05-20) ===
+//
+// Dump a labeled snapshot of the Lua state's observable properties to
+// the dev log under category `MID_HOOK`. Captures:
+//   - the L pointer
+//   - lua_gettop(L) (Lua stack height)
+//   - lua_topointer(L, LUA_REGISTRYINDEX) (registry table identity —
+//     two L's with the same registry ptr share a VM)
+//   - lua_topointer(L, LUA_GLOBALSINDEX) (globals identity)
+//   - GetCurrentThreadId() (OS thread)
+//   - tag: a string label naming the call site
+//
+// Pure read; safe to call anywhere we have a valid L. Used to compare
+// snapshots across kcdx call sites to find the moment something diverges.
+// Kept until the heap-corruption issue is resolved; see
+// docs/known-issues/kcdx lua_newtable corrupts the process heap.md.
+void LogLuaStateSnapshot(lua_State* L, const char* tag);
+
+// PROBE N: raw C-struct field dump of lua_State and global_State.
+// Reads L->status / L->top / L->l_G / L->ci / L->savedpc / L->errorJmp /
+// L->nCcalls / etc. and the global state's frealloc/ud/gcstate/rootgc/
+// gray/totalbytes/mainthread. Used to find the discriminator between
+// RegisterKcdxTable's (safe) lua_newtable and PROBE M's (crashing)
+// lua_newtable when both fire on the same L at the same depth in the
+// same update tick. The Lua C API can't see whatever distinguishes
+// them — this probe reads the underlying struct directly. Pure read.
+//
+// See docs/known-issues/kcdx lua_newtable corrupts the process heap.md
+// for the investigation trail.
+void LogLuaStateRawStruct(lua_State* L, const char* tag);
+
 // Called once from hooks.cpp's first-update-tick when the game's
 // lua_State first becomes live. Safe to call multiple times; the last
 // pointer wins (KCD2 may recreate the VM across save/load, in which
