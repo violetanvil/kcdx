@@ -338,27 +338,74 @@ int PushHandleOrError(lua_State* L, uint64_t handleId,
     return 1;
 }
 
+namespace {
+
+// Plugin-by-script-path index. Keyed by the NORMALIZED script path
+// (forward slashes, lowercased) so a debug.getinfo source matches the
+// path the loader registered regardless of slash direction / case
+// (Windows paths are case-insensitive). Populated by RegisterScriptOwner
+// before each plugin.lua runs; read by OwningPluginForCurrentCall.
+std::unordered_map<std::string, std::string> g_scriptOwners;
+
+std::string NormalizeScriptPath(const std::string& p) {
+    std::string out = p;
+    for (char& c : out) {
+        if (c == '\\') c = '/';
+        else if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return out;
+}
+
+}  // namespace
+
+void RegisterScriptOwner(const std::string& scriptPath,
+                         const std::string& pluginName) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    g_scriptOwners[NormalizeScriptPath(scriptPath)] = pluginName;
+}
+
 std::string OwningPluginForCurrentCall(lua_State* L,
                                         std::string& callSiteFileOut,
                                         int& callSiteLineOut) {
-    // debug.getinfo(2, "Sl") gives us the source + currentline of
-    // the caller of the Lua-C function (which is the Lua code that
-    // called kcdx.bytes / kcdx.hook / ...).
-    lua_Debug ar;
-    if (lua_getstack(L, 1, &ar) && lua_getinfo(L, "Sl", &ar)) {
+    // Walk up the Lua stack to the nearest frame that maps to a known
+    // plugin script. The immediate caller (level 1) is usually the
+    // plugin.lua code that called kcdx.hook/.bytes/..., but it may also
+    // be a helper module the plugin require()'d — so we climb until we
+    // find an attributed source or run out of frames. The first
+    // attributed frame found also supplies the call-site file/line for
+    // diagnostics.
+    bool haveCallSite = false;
+    for (int level = 1; level <= 16; ++level) {
+        lua_Debug ar;
+        if (!lua_getstack(L, level, &ar)) break;
+        if (!lua_getinfo(L, "Sl", &ar)) continue;
+
+        std::string src;
         if (ar.source && ar.source[0] == '@') {
-            // Lua marks file sources with '@'. Strip it.
-            callSiteFileOut = ar.source + 1;
+            src = ar.source + 1;   // Lua marks file sources with '@'.
         } else if (ar.source) {
-            callSiteFileOut = ar.source;
+            src = ar.source;
         }
-        callSiteLineOut = ar.currentline;
+        if (src.empty()) continue;
+
+        // First real frame supplies the diagnostic call-site.
+        if (!haveCallSite) {
+            callSiteFileOut = src;
+            callSiteLineOut = ar.currentline;
+            haveCallSite = true;
+        }
+
+        std::string owner;
+        {
+            std::lock_guard<std::mutex> lock(g_mu);
+            auto it = g_scriptOwners.find(NormalizeScriptPath(src));
+            if (it != g_scriptOwners.end()) owner = it->second;
+        }
+        if (!owner.empty()) return owner;
     }
 
-    // Plugin-by-script-path lookup arrives in Phase 2h (when
-    // [entrypoints].lua loading happens). Until then, all Lua-side
-    // registrations are treated as anonymous — they apply at
-    // after_game zone using default priority 50.
+    // No attributed frame — ad-hoc Lua (console, pak scripts, etc.).
+    // Anonymous: applies at after_game / priority 50.
     return "";
 }
 

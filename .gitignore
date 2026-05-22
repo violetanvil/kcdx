@@ -35,9 +35,25 @@ Makefile
 _download/
 release-staging/
 test-install/
-KCD2-change-outfit-mod/Tools/WHGame.dll
 
-# Research scratch from outer workspace — predecessor-repo clones, extracted
-# sig notes. Lives at workspace root in _research/ but defense-in-depth
-# entry here in case anything ever lands inside kcdx/.
-_research/
+# Reverse-engineering toolchain. The pre-analyzed Ghidra project and the
+# Ghidra install are multi-GB binaries — kept in-tree for local use but never
+# committed. Helper scripts and a setup README under third-party-ghidra/ stay
+# tracked. WHGame.dll is the game binary; never commit it.
+third-party-ghidra/ghidra_project/
+third-party-ghidra/ghidra_12.1_PUBLIC/
+third-party-ghidra/x64dbg/
+third-party-ghidra/ninja/
+third-party-ghidra/WHGame.dll
+third-party-ghidra/*.fidb
+third-party-ghidra/*.log
+
+# Built pak fixtures are binary; keep probe Lua source + manifests tracked,
+# ignore the compiled .pak blobs.
+test-fixtures/pak-mods/**/*.pak
+
+# RE research scratch under _research/ is tracked (recon notes, the
+# address-library seed, ABI walker, phase-N reports). EXCEPT the
+# predecessor-sig clones — those are shallow clones of third-party repos
+# with their own nested .git dirs; re-cloneable, never committed here.
+_research/predecessor-sigs/

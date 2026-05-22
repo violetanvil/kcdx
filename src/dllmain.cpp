@@ -91,7 +91,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     }
 
     // Phase 6 save/load lifecycle hooks. ABIs from ROUND 3 RECON via
-    // _research/phase6_abi_walker.py — full-body capstone analysis,
+    // _research/phase6-save-load/phase6_abi_walker.py — full-body capstone analysis,
     // not prologue-shape guessing. SaveGame correctly forwards all 7
     // args. See _research/phase6-save-load/SAVE-LOAD-CANDIDATES.md
     // §"ROUND 3 ABI RECON" for the derivation.

@@ -390,13 +390,13 @@ five hooks on `wh::framework::C_SaveGameManager` and the adjacent
 slot resolver, surfacing five lifecycle messages
 (`kcdxMessage_SaveGame` / `kPreLoadGame` / `kPostLoadGame` /
 `kDeleteGame` / `kLoadGameSelected`). See
-[`_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md`](../../_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md)
-and [`_research/phase6b-recon/SAVE-SELECTION-HOOK.md`](../../_research/phase6b-recon/SAVE-SELECTION-HOOK.md)
+[`_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md`](../_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md)
+and [`_research/phase6b-recon/SAVE-SELECTION-HOOK.md`](../_research/phase6b-recon/SAVE-SELECTION-HOOK.md)
 for the full recon trail.
 
 CryEngine offers an alternate path via the `IGameFrameworkListener`
 interface (proved working by muyuanjin/kcd2db at
-[`_research/predecessor-sigs/muyuanjin-kcd2db/src/db/LuaDB.cpp:280`](../../_research/predecessor-sigs/muyuanjin-kcd2db/src/db/LuaDB.cpp))
+[`_research/predecessor-sigs/muyuanjin-kcd2db/src/db/LuaDB.cpp:280`](../_research/predecessor-sigs/muyuanjin-kcd2db/src/db/LuaDB.cpp))
 which exposes `OnSaveGame(ISaveGame*)` / `OnLoadGame(ILoadGame*)`
 as virtual callbacks via
 `gEnv->pGame->GetIGameFramework()->RegisterListener(this, "kcdx", FRAMEWORKLISTENERPRIORITY_DEFAULT)`.
@@ -412,9 +412,9 @@ Not adopted for v0.1 for three concrete reasons:
    `RegisterListener` call happens after the framework is ready), a
    C++ class deriving from `IGameFrameworkListener` with three virtual
    slots (`OnSaveGame` / `OnLoadGame` / `OnActionEvent`), and the
-   CryEngine type headers (vendored at
-   [`_research/predecessor-sigs/muyuanjin-kcd2db/external/cryengine/`](../../_research/predecessor-sigs/muyuanjin-kcd2db/external/cryengine/)
-   but not yet pulled into the kcdx tree).
+   CryEngine type headers (available at
+   [`_research/predecessor-sigs/muyuanjin-kcd2db/external/cryengine/`](../_research/predecessor-sigs/muyuanjin-kcd2db/external/cryengine/)
+   but not yet pulled into the kcdx build tree).
 3. **Schema gap.** kcdx's `[[hook]]` TOML block addresses function
    entries by AOB. There's no equivalent declarative way for plugin
    authors to subscribe to a framework listener event from

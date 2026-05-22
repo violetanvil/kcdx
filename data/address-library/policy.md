@@ -78,7 +78,7 @@ Two paths:
    line.
 
 2. **Maintainer sign-off.** A kcdx maintainer cross-references the RVA in
-   the Ghidra project (`KCD2-change-outfit-mod/tools/ghidra_project/KCD2/`),
+   the Ghidra project (`third-party-ghidra/ghidra_project/KCD2/`),
    confirms the disassembly matches the documented signature, and signs
    off. Higher friction than (1) but available when no plugin uses the ID
    yet.

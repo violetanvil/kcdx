@@ -173,14 +173,25 @@ int PushHandleOrError(lua_State* L, uint64_t handleId,
 // kcdx::lua_bind::RegisterKcdxTable. Idempotent.
 void EnsureHandleMetatable(lua_State* L);
 
+// Register that the Lua chunk loaded from `scriptPath` belongs to
+// plugin `pluginName`. Called by the Lua plugin loader immediately
+// before it runs each [entrypoints].lua file, so any kcdx.* call made
+// from that file (or anything it requires synchronously) attributes to
+// the right plugin. `scriptPath` is the path as it will appear in
+// debug.getinfo's `source` field (normalized; see implementation).
+//
+// Idempotent: re-registering the same path overwrites the owner.
+void RegisterScriptOwner(const std::string& scriptPath,
+                         const std::string& pluginName);
+
 // Resolve the owning plugin for the current Lua call. The plugin
 // name is stamped on every registered Entry so the apply pass can
 // attribute results to the right plugin's load-order row, log file,
-// etc. Implementation: walk the Lua callstack via debug.getinfo,
-// look up the source file in the plugin-by-script-path index built
-// by [entrypoints].lua loading (Phase 2h). Until 2h ships, this
-// returns "" for everything (entries are treated as anonymous —
-// they apply but don't participate in load-order resolution).
+// etc. Implementation: walk the Lua callstack via debug.getinfo, then
+// look up the source file in the plugin-by-script-path index populated
+// by RegisterScriptOwner. Returns "" when the call site doesn't map to
+// a known plugin script (ad-hoc Lua, console, pak scripts) — those
+// entries apply anonymously at after_game / priority 50.
 std::string OwningPluginForCurrentCall(lua_State* L,
                                         std::string& callSiteFileOut,
                                         int& callSiteLineOut);

@@ -39,35 +39,21 @@ pre-flight conflict detection, same locator tiers (`pattern`,
 `context`, `anchor_string`), same idempotent re-runs. **You do not
 have to learn what a hook is to use kcdx for the simple case.**
 
-That said: if you *only* need byte patches, [kcd2-mempatch][mp] is
-the lighter tool — smaller, faster to load, ships independently.
-Use kcdx when you have a byte patch *and* something else (a hook,
-a console command, save data) in the same plugin folder, or when
-you'd rather learn one mental model instead of two.
+## What kcdx handles
 
-[mp]: https://github.com/violetanvil/kcd2-mempatch
+A single declarative TOML can flip bytes in `WHGame.dll` (full
+pre-flight safety checks, no code needed). Beyond that, kcdx covers
+**everything else** through one engine:
 
-## Two engines, one workspace
-
-kcdx is the heavyweight cousin of
-[**kcd2-mempatch**](https://github.com/violetanvil/kcd2-mempatch).
-mempatch handles **declarative same-length byte rewrites** — flip
-three bytes via a TOML file, no code needed, full pre-flight safety
-checks. kcdx handles **everything else**: code injection, hooks,
-plugin lifecycle, save serialization.
-
-Pick based on what you need:
-
-| Need | Use |
+| Need | Supported |
 |---|---|
-| Flip a few bytes in `WHGame.dll` | mempatch |
-| Hook a function (before/after/skip) | kcdx |
-| Allocate executable memory and call into it | kcdx |
-| Register a console command | kcdx |
-| Subscribe to game-load / save events | kcdx |
-| Persist data across saves | kcdx |
-| Expose new functions to KCD2's Lua | kcdx |
-| All of the above | Ship both a `mempatch.toml` and a `kcdx.toml` (or DLL); the two engines coexist. |
+| Flip a few bytes in `WHGame.dll` | `[[patch]]` |
+| Hook a function (before/after/skip) | `[[hook]]` / DLL |
+| Allocate executable memory and call into it | `[[trampoline]]` / DLL |
+| Register a console command | `[[command]]` |
+| Subscribe to game-load / save events | `[[event]]` |
+| Persist data across saves | cosave API |
+| Expose new functions to KCD2's Lua | Lua bridge |
 
 ## SKSE compatibility — naming and conventions
 
@@ -217,10 +203,6 @@ kcdx stands on the shoulders of several other projects:
   [CommonLibSSE-NG](https://github.com/CharmedBaryon/CommonLibSSE-NG))
   — the plugin API conventions kcdx mirrors. Not vendored; just
   named after.
-- **[kcd2-mempatch](https://github.com/violetanvil/kcd2-mempatch)**
-  — sibling project. kcdx's locator pipeline (`pattern` / `context`
-  / `anchor_string` / pre-flight conflict detection) is copied from
-  mempatch, MIT-licensed.
 - **[yobson1/kcd2lua](https://github.com/yobson1/kcd2lua)** — ASI
   bootstrap scaffold (MIT). Original code by Oren / ecaii.
 - **[ReturnOfModding](https://github.com/return-of-modding/ReturnOfModding)**

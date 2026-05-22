@@ -75,8 +75,8 @@ add_subdirectory(vendor/asmjit)
 # kcdx.asi — the engine itself
 # -----------------------------------------------------------------------------
 # Source list grows phase by phase. Phase 1 ships the locator pipeline
-# adapted from kcd2-mempatch (same byte-rewrite engine, kcdx.toml filename
-# and kcdx:: namespace). Later phases add plugin_loader, messaging,
+# (byte-rewrite engine, kcdx.toml filename and kcdx:: namespace).
+# Later phases add plugin_loader, messaging,
 # trampoline, hook_engine, scripting, serialization, etc.
 add_library(kcdx SHARED
     src/dllmain.cpp
@@ -121,10 +121,13 @@ add_library(kcdx SHARED
     src/lua_bind_test.cpp
     src/lua_bind_bytes.cpp
     src/lua_bind_hook.cpp
+    src/lua_bind_log.cpp
     src/lua_bind_addr.cpp
     src/lua_registry.cpp
+    src/lua_plugin_loader.cpp
     src/hook_signature.cpp
     src/hook_payload.cpp
+    src/hook_chain.cpp
     src/probes/createfilew_probe.cpp
     src/probes/bugsplat_ctor_probe.cpp
     src/rom_borrowed/type_info_t.cpp

@@ -42,6 +42,7 @@ extern "C" {
 
 #include <asmjit/asmjit.h>
 
+#include "dynamic_call_jit.h"
 #include "log.h"
 #include "lua_bind_helpers.h"
 #include "lua_memory.h"
@@ -83,6 +84,9 @@ public:
 //
 // Per-return marshaling: takes the target's return register, converts
 // to a Lua-pushable type if needed, invokes lua_pushXXX.
+}  // namespace  (close anon so JitTrampoline has namespace-scope linkage,
+   //              callable from BuildLuaCallThunk later in this TU)
+
 uintptr_t JitTrampoline(uintptr_t                                  target_func_ptr,
                         const asmjit::FuncSignature&               target_sig,
                         asmjit::Arch                               arch,
@@ -128,7 +132,14 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
         if (arg_type_info.m_val == kcdx::rom::type_info_t::integer_ ||
             arg_type_info.m_val == kcdx::rom::type_info_t::float_   ||
             arg_type_info.m_val == kcdx::rom::type_info_t::double_) {
-            // lua_tonumberx(L, idx, isnum) → lua_Number (double)
+            // lua_tonumber(L, idx) → lua_Number. On this build
+            // LUA_NUMBER=float (vendor/lua/luaconf.h:504), so the result
+            // in `tmp` is a 32-bit FLOAT, NOT a double. Converting it as a
+            // double (cvttsd2si / treating tmp as double) reinterprets the
+            // float bit-pattern and yields garbage→0 — this was the cause
+            // of the call_original arg arriving as 0 (CAP-20-around). See
+            // docs/known-issues/cap-20-around-wraps-original-wrong-result.md.
+            // Read tmp AS A FLOAT, then convert to the target arg's width.
             asmjit::InvokeNode* lua_tofunc;
             cc.invoke(asmjit::Out(lua_tofunc),
                       (uintptr_t)&lua_tonumber,
@@ -136,21 +147,22 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
             lua_tofunc->set_arg(0, lua_state_reg);
             lua_tofunc->set_arg(1, (int)(arg_index + 1));
 
-            auto tmp = cc.new_xmm();
+            auto tmp = cc.new_xmm();   // holds a FLOAT (lua_Number)
             lua_tofunc->set_ret(0, tmp);
 
             if (arg_type_info.m_val == kcdx::rom::type_info_t::integer_) {
-                // double → integer (truncating convert)
+                // float → integer (truncating convert from single)
                 auto gp = cc.new_gp_ptr();
-                cc.cvttsd2si(gp, tmp);
+                cc.cvttss2si(gp, tmp);
                 arg = gp;
             } else if (arg_type_info.m_val == kcdx::rom::type_info_t::float_) {
-                // double → float (narrowing convert)
-                auto narrowed = cc.new_xmm();
-                cc.cvtsd2ss(narrowed, tmp);
-                arg = narrowed;
+                // target wants a float; tmp is already a float — use as-is.
+                arg = tmp;
             } else {
-                arg = tmp;  // already double
+                // target wants a double; widen the float lua_Number to double.
+                auto widened = cc.new_xmm();
+                cc.cvtss2sd(widened, tmp);
+                arg = widened;
             }
         } else if (arg_type_info.m_val == kcdx::rom::type_info_t::boolean_) {
             // lua_toboolean(L, idx) → int
@@ -233,19 +245,27 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
         if (return_type.m_val == kcdx::rom::type_info_t::integer_ ||
             return_type.m_val == kcdx::rom::type_info_t::float_   ||
             return_type.m_val == kcdx::rom::type_info_t::double_) {
-            // Coerce to lua_Number (double) for lua_pushnumber.
-            asmjit::x86::Vec push_reg;
+            // Produce a lua_Number-WIDTH value for lua_pushnumber. On this
+            // build LUA_NUMBER=float (vendor/lua/luaconf.h:504), so
+            // lua_pushnumber's FP arg is a 32-bit FLOAT in xmm0 — the vreg
+            // we hand set_arg MUST be float-typed, or asmjit fails to wire
+            // xmm0 (observed: the converted value sat in xmm1 with no move
+            // to xmm0, and lua_pushnumber read garbage → pushed 0.0). See
+            // docs/known-issues/cap-20-around-wraps-original-wrong-result.md.
+            // NOTE: float lua_Number means int/ptr returns above 2^24 lose
+            // precision crossing the Lua boundary (lua-precision.md); for
+            // pointer-magnitude values the PushPointer userdata path is the
+            // correct surface, not lua_pushnumber.
+            asmjit::x86::Vec push_reg = cc.new_xmm();
             if (ret_in_gp) {
-                // int → double
-                auto tmp = cc.new_xmm();
-                cc.cvtsi2sd(tmp, ret_reg.as<asmjit::x86::Gp>());
-                push_reg = tmp;
+                // int → float (single-precision; matches lua_Number)
+                cc.cvtsi2ss(push_reg, ret_reg.as<asmjit::x86::Gp>());
             } else if (target_sig.ret() == asmjit::TypeId::kFloat32) {
-                // float → double
-                cc.cvtss2sd(ret_reg.as<asmjit::x86::Vec>(), ret_reg.as<asmjit::x86::Vec>());
+                // already a float — use as-is (lua_Number is float)
                 push_reg = ret_reg.as<asmjit::x86::Vec>();
             } else {
-                push_reg = ret_reg.as<asmjit::x86::Vec>();
+                // double → float (narrow to lua_Number width)
+                cc.cvtsd2ss(push_reg, ret_reg.as<asmjit::x86::Vec>());
             }
             asmjit::InvokeNode* lua_pushfunc;
             cc.invoke(asmjit::Out(lua_pushfunc),
@@ -268,9 +288,15 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
             lua_pushfunc->set_arg(0, lua_state_reg);
             lua_pushfunc->set_arg(1, ret_reg.as<asmjit::x86::Gp>());
         } else if (return_type.m_val == kcdx::rom::type_info_t::ptr_) {
-            // Pointer: push as integer (lua_Number). cvtsi2sd then lua_pushnumber.
+            // Pointer pushed via lua_pushnumber (lua_Number=float width).
+            // cvtsi2ss (int→float) so the vreg matches the float arg type;
+            // see the integer branch above. WARNING: a float lua_Number
+            // can't represent a 48-bit pointer exactly (lua-precision.md) —
+            // ptr returns through this path are lossy; PushPointer userdata
+            // is the correct surface for pointer returns. Kept for parity
+            // with the existing dynamic_call behavior.
             auto tmp = cc.new_xmm();
-            cc.cvtsi2sd(tmp, ret_reg.as<asmjit::x86::Gp>());
+            cc.cvtsi2ss(tmp, ret_reg.as<asmjit::x86::Gp>());
             asmjit::InvokeNode* lua_pushfunc;
             cc.invoke(asmjit::Out(lua_pushfunc),
                       (uintptr_t)&lua_pushnumber,
@@ -308,6 +334,8 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
 
     return (uintptr_t)jit_buffer;
 }
+
+namespace {  // reopen anon namespace for the rest of the TU-local helpers
 
 // --- handle metatable -----------------------------------------------------
 
@@ -355,11 +383,14 @@ void PushHandleMetatable(lua_State* L) {
 int Lua_DynamicCall(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
 
-    // target: pointer userdata or integer
+    // target: kcdx.memory.pointer userdata, raw lightuserdata (exact VA —
+    // e.g. from kcdx.lua.cfunction_address), or integer VA.
     uintptr_t target_addr = 0;
     {
         lua_getfield(L, 1, "target");
-        if (lua_isnumber(L, -1)) {
+        if (lua_islightuserdata(L, -1)) {
+            target_addr = reinterpret_cast<uintptr_t>(lua_touserdata(L, -1));
+        } else if (lua_isnumber(L, -1)) {
             target_addr = (uintptr_t)lua_tointeger(L, -1);
         } else if (lua_isuserdata(L, -1)) {
             lua_getmetatable(L, -1);
@@ -377,7 +408,7 @@ int Lua_DynamicCall(lua_State* L) {
     if (!target_addr) {
         lua_pushnil(L);
         lua_pushliteral(L, "kcdx.memory.dynamic_call: 'target' must be a "
-                           "pointer userdata or integer VA");
+                           "pointer userdata, lightuserdata, or integer VA");
         return 2;
     }
 
@@ -443,3 +474,36 @@ int Lua_DynamicCall(lua_State* L) {
 }
 
 }  // namespace kcdx::lua_bind_dynamic_call
+
+// --- shared extraction: build a lua_CFunction call-thunk for any target ----
+//
+// Exposed via dynamic_call_jit.h for reuse by hook_chain's call_original
+// bridge. Builds the asmjit signature from the type-string vocabulary
+// then delegates to the proven JitTrampoline above (kept in this TU so
+// the asmjit body lives in exactly one place — extract-on-second-use
+// without duplicating 200+ lines of codegen).
+namespace kcdx::dynamic_call_jit {
+
+lua_CFunction BuildLuaCallThunk(uintptr_t                       targetVa,
+                                const std::string&              returnType,
+                                const std::vector<std::string>& paramTypes) {
+    if (!targetVa) return nullptr;
+
+    asmjit::FuncSignature target_sig(
+        asmjit::CallConvId::kCDecl,
+        asmjit::FuncSignature::kNoVarArgs,
+        kcdx::rom::get_type_id(returnType));
+
+    std::vector<kcdx::rom::type_info_t> paramTypeInfos;
+    for (const auto& s : paramTypes) {
+        target_sig.add_arg(kcdx::rom::get_type_id(s));
+        paramTypeInfos.push_back(kcdx::rom::get_type_info_from_string(s));
+    }
+
+    uintptr_t jit = kcdx::lua_bind_dynamic_call::JitTrampoline(
+        targetVa, target_sig, asmjit::Arch::kX64, paramTypeInfos,
+        kcdx::rom::get_type_info_from_string(returnType));
+    return reinterpret_cast<lua_CFunction>(jit);
+}
+
+}  // namespace kcdx::dynamic_call_jit

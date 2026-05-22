@@ -26,7 +26,7 @@ namespace {
 // _research/phase6b-recon/SAVE-SELECTION-HOOK.md (Phase 6b). All verified
 // unique in WHGame.dll .text against KCD2 release_1_5_1164953_841.
 //
-// Arg ABIs come from _research/phase6_abi_walker.py (capstone-based
+// Arg ABIs come from _research/phase6-save-load/phase6_abi_walker.py (capstone-based
 // body-wide stack-arg analysis). Earlier rounds derived arg lists from
 // prologue-shape only — that's what produced the 3-arg-SaveGame bug
 // that corrupted saves. Always use full-body analysis for new hook

@@ -1,9 +1,16 @@
 # Verify Phase 1 — `[[patch]]` under `kcdx.toml` produces identical apply-log output
 
+> **ARCHIVED — historical record only.** Phase 1 is complete and
+> live-verified. This recipe A/B-compared kcdx against a deprecated
+> predecessor declarative-patch engine ("mempatch" below) that no
+> longer factors into kcdx development and is not part of this repo.
+> Do not run as-is; kept to document how Phase 1 was originally
+> verified.
+
 The Phase 1 acceptance criterion (from the v0.1 design doc and the
 plan): a `[[patch]]` entry under `kcdx.toml` must produce the same
-apply-log output as the same entry under `mempatch.toml`. This file
-documents the recipe so you can run it in-game when convenient.
+apply-log output as the same entry under the predecessor engine's
+config. This file documents the recipe as it was run.
 
 Static verification already complete (see commit log):
 
@@ -25,14 +32,12 @@ What remains is the dynamic acceptance test below.
 1. **Confirm both engines are built:**
 
    ```powershell
-   cd "C:\Users\Michael\Documents\KCD2 Mods\kcd2-mempatch"
-   pwsh .\build.ps1     # if not already built
-   cd ..\kcdx
-   pwsh .\build.ps1     # already verified working
+   # build the predecessor engine from its own checkout, then:
+   pwsh .\build.ps1     # kcdx — already verified working
    ```
 
    Outputs:
-   - `kcd2-mempatch/build/Release/mempatch.asi`
+   - the predecessor engine's `mempatch.asi`
    - `kcdx/build/Release/kcdx.asi`
 
 2. **Install both engines side-by-side** into the live game install:
@@ -58,7 +63,7 @@ What remains is the dynamic acceptance test below.
    ```
    plugins\
      phase1-mempatch\
-       mempatch.toml      ← copy from kcd2-mempatch/examples/outfit-swap-in-combat/
+       mempatch.toml      ← from the predecessor engine's outfit-swap example
      phase1-kcdx\
        kcdx.toml          ← copy from kcdx/examples/outfit-swap-in-combat/
    ```

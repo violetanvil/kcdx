@@ -1,13 +1,8 @@
 # outfit_swap_in_combat — VioletAnvil
 #
-# Identical patch to the kcd2-mempatch example of the same name. Exists
-# in kcdx's examples for Phase 1's verification milestone: the engine
-# must produce identical apply-log output for this patch under kcdx as
-# mempatch does for the same patch under mempatch.toml.
-#
-# In practice, players who only need this one byte patch should install
-# kcd2-mempatch (smaller, faster) rather than kcdx. This example is kept
-# in the kcdx repo as a conformance test for the [[patch]] schema.
+# Removes the "You can't switch outfits in combat" restriction. Kept in
+# kcdx's examples as a conformance test for the [[patch]] schema and a
+# worked single-patch reference.
 #
 # Original instruction:
 #   mov  r14b, al    (44 8A F0)   ; cVar2 = IsInCombat()

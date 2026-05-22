@@ -536,6 +536,14 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-17 | ✅ LIVE | `03dd155` | `EnumeratePlugins` |
 | CAP-18 | ✅ NATIVE | _ | CryEngine pak system; nothing kcdx-specific to verify |
 | CAP-19 | DEFERRED-v0.2 | _ | Scaleform — not a kcdx feature |
+| CAP-20-before | ✅ LIVE | sub-4 | `kcdx.hook` mode=before mutates arg via return; original runs (`cap-20-hook-modes`) |
+| CAP-20-after | ✅ LIVE | sub-4 | `kcdx.hook` mode=after mutates return value |
+| CAP-20-replace | ✅ LIVE | sub-4 | `kcdx.hook` mode=replace; original skipped, return overridden |
+| CAP-20-around | ✅ LIVE | sub-4 | `kcdx.hook` mode=around wraps original via `orig()` call_original; doubles result |
+| CAP-20-chain | ✅ LIVE | sub-4 | two before hooks on one target chain in load order |
+| CAP-20-wstr | ✅ LIVE | sub-4 | wstr arg read + mutate (UTF-16↔UTF-8 marshal + string pinning) |
+| CAP-20-conflict | ✅ LIVE | sub-4 | two replace hooks on one target; load-order-loses (first wins, second rejected) |
+| CAP-20-dyncall | ✅ LIVE | sub-4 | `kcdx.memory.dynamic_call` i32(i32) arg+return round-trip (10→110); regression for the LUA_NUMBER=float JitTrampoline bug |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |

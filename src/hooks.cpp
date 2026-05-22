@@ -15,7 +15,9 @@
 #include "dev.h"
 #include "log.h"
 #include "load_order.h"
+#include "hook_chain.h"
 #include "lua_bind.h"
+#include "lua_plugin_loader.h"
 #include "lua_registry.h"
 #include "messaging.h"
 #include "patch_engine.h"
@@ -315,6 +317,17 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 log::Info("First update tick with live lua_State — registering KCDX + applying patches/hooks");
                 kcdx::lua_bind::RegisterKcdxTable(L);
                 kcdx::scripting::set_lua_state(L);
+                kcdx::hook_chain::SetLuaState(L);
+
+                // Phase 2b sub-4: execute each enabled plugin's
+                // [entrypoints].lua now that kcdx.* is live + the VM is
+                // bound. Their kcdx.hook/.bytes/... calls queue intent
+                // into lua_registry; the deferred-apply pass
+                // (ApplyZone(AfterGame), below this block) installs
+                // everything in unified load order. Runs once per
+                // session (internal latch). Each file is SEH-guarded so
+                // a faulty plugin.lua can't break the engine.
+                kcdx::lua_plugin_loader::RunAll(L);
                 // PROBE Q: arm the frealloc interceptor + resolve the
                 // kcdx-static dummynode address. Runs once per session.
                 // See the function definition above for the design.
@@ -393,6 +406,17 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // [[command]] dispatch surface. After this returns true,
                 // plugin RegisterCommand calls succeed.
                 kcdx::console::Init();
+
+                // Apply the after_game registration queue NOW — before
+                // any "ready" signal. plugin.lua (RunAll, above) queued
+                // its kcdx.hook/.bytes registrations; install them in
+                // unified load order so they're LIVE before InputLoaded
+                // tells plugins "you're ready to run/verify". Steps run
+                // in order: register -> apply -> ready. (The per-tick
+                // ApplyZone drain below still picks up registrations that
+                // arrive later, e.g. from pak Lua callbacks.)
+                kcdx::lua_registry::ApplyZone(
+                    kcdx::load_order::Zone::AfterGame);
 
                 // Lifecycle: input subsystem is alive by the time the first
                 // update tick fires (Lua VM is up). Closest analogue to

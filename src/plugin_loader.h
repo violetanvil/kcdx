@@ -102,6 +102,14 @@ struct PluginManifest {
                                   //   exists in the plugin folder root, that's it.
                                   //   Multi-DLL plugins must declare this explicitly.
 
+    // [entrypoints] lua = "plugin.lua" OR lua = ["plugin.lua", "extras.lua"].
+    // Relative paths from the plugin folder. Run in declared order at the
+    // plugin's slot in the unified load order, after the Lua VM is up (see
+    // hooks.cpp first-update-tick orchestration). Each file is loaded via
+    // luaL_loadfile + lua_pcall under crash_guard so a faulty plugin.lua
+    // can't take down the engine or other plugins. Empty = no Lua entrypoint.
+    std::vector<std::string> luaEntrypointsRel;
+
     // Location — populated by the discovery walk.
     std::filesystem::path folderPath; // Absolute path of the plugin's install folder
     std::filesystem::path tomlPath;   // Absolute path of the kcdx.toml that yielded this manifest

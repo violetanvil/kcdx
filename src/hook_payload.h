@@ -85,6 +85,11 @@ struct HookPayload {
     uint64_t                      addressId = 0;       // Address Library id
     std::string                   targetSymbol;        // cross-plugin symbol-table lookup
     std::string                   targetLuaCfunction;  // e.g. "System.LogAlways"
+    // Raw absolute VA the author already has (a kcdx.memory.pointer
+    // userdata or integer from kcdx.lua.cfunction_address,
+    // kcdx.memory.scan_pattern, etc.). 0 = not set. The most direct
+    // locator: no resolution needed, the VA IS the target.
+    uintptr_t                     address = 0;
     int                           offset = 0;          // applied after resolution
     std::optional<patch::Pattern> context;             // optional disambiguation pattern
     patch::Anchor                 anchor;               // optional string anchor

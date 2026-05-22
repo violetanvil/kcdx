@@ -163,15 +163,14 @@ it as a user plugin and document that it should be left enabled.
 There's no advantage to giving third parties write access to
 `kcdx-engine/builtin/`.
 
-### mempatch coexistence
+### Legacy declarative-patch engine
 
-mempatch was the original sibling project for declarative byte
-patches. **mempatch is deprecated.** All byte-rewrite work now flows
-through kcdx: user plugins for third-party patches, and
-`kcdx-engine/builtin/` for first-party engine fixes. mempatch's last
-released build (which lives in the sibling `kcd2-mempatch/` repo)
-remains functional against KCD2 1.5 for anyone already using it,
-but no new work targets it.
+A deprecated predecessor engine originally handled declarative byte
+patches. All byte-rewrite work now flows through kcdx: user plugins
+for third-party patches, and `kcdx-engine/builtin/` for first-party
+engine fixes. The legacy engine's last released build remains
+functional against KCD2 1.5 for anyone already using it, but no new
+work targets it.
 
 ## Decisions along the way
 

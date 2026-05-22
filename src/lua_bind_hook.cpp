@@ -11,23 +11,41 @@
 //   local h = kcdx.hook{
 //       name      = "bugsplat_filename_fix",
 //       function_name = "WHGame.dll!Symbol",   -- one locator (see below)
-//       mode      = "before",                  -- before|after|around|replace|mid|callsite
-//       signature = "void (ptr, wstr szApp, u32)",
-//       callback  = function(args, call_original) ... end,
+//       signature = "void (ptr self, wstr szApp, u32 flags)",
+//       -- attach the callback under the MODE NAME itself. Exactly one of
+//       -- before / after / around / replace per call:
+//       before = function(self, szApp, flags)
+//           if szApp:find(":") then szApp = (szApp:gsub(":", " -")) end
+//           return self, szApp, flags          -- returned values flow into the original
+//       end,
 //   }
 //   -- h:applied() -> nil (Pending) | true (Applied) | false (Failed)
 //   -- h:reason()  -> string (when Failed)
 //   -- h:name()    -> string
 //
-// SCOPE OF THIS COMMIT (sub-3): build the queued payload, parse the
-// signature DSL, validate the locator + mode + exclusivity rules, take
-// a GC-safe reference to the callback closure, and enqueue the
-// registration. The actual interception install is DEFERRED to the
-// per-mode apply commits (sub-4..9): this file registers an apply
-// handler that, until those land, marks the entry Failed with a clear
-// "mode not yet implemented" reason. That keeps handle:applied()
-// honest — a plugin sees false + a diagnostic rather than a silent
-// no-op.
+// Callback surface (the author writes the target function, in Lua):
+//   - Params arrive as POSITIONAL callback arguments, named by the
+//     author's own function(...) list. The signature string supplies
+//     the TYPES; the parameter names are the author's choice.
+//   - Mutation is by RETURN. "What you return is what flows forward."
+//       before  : return nothing -> original runs with unchanged args;
+//                 return N values -> they replace the args. before
+//                 ALWAYS runs the original (it massages inputs only).
+//       after   : receives the return value; returns the (possibly
+//                 changed) return value.
+//       replace : original never runs; the return is the result. An
+//                 empty replace = function() end suppresses the call.
+//       around  : receives the original as a callable first parameter;
+//                 calls it 0/1/N times, returns the result. The full
+//                 wrap; the only mode that can conditionally skip.
+//
+// SCOPE: this file builds the queued payload, parses the signature,
+// validates the locator + the mode-as-key rule (exactly one of
+// before/after/around/replace), takes a GC-safe ref to the callback,
+// and enqueues. The deferred apply pass (Kind::Hook handler ->
+// hook_chain::Add) installs the interception in unified load order.
+// mid / callsite modes are NOT accepted here yet (their own sub-commits;
+// the payload carries the enum values so those subs are additive).
 //
 // Validation runs IMMEDIATELY (table shape, locator exclusivity, mode
 // name, signature parse) so the caller gets (nil, err) in straight-line
@@ -45,11 +63,15 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "hook_chain.h"
 #include "hook_payload.h"
 #include "hook_signature.h"
+#include "load_order.h"
 #include "log.h"
+#include "lua_memory.h"
 #include "lua_registry.h"
 #include "patch_engine.h"
+#include "scripting.h"
 
 namespace kcdx::lua_bind_hook {
 
@@ -70,6 +92,34 @@ int LuaTableInt(lua_State* L, int tableIdx, const char* key, int fallback) {
     lua_getfield(L, tableIdx, key);
     int out = fallback;
     if (lua_isnumber(L, -1)) out = static_cast<int>(lua_tointeger(L, -1));
+    lua_pop(L, 1);
+    return out;
+}
+
+// Read a `key` that may be a kcdx.memory.pointer userdata, a raw
+// lightuserdata (exact VA — preferred for pointer-magnitude values; see
+// .claude/rules/lua-precision.md), or an integer VA. Returns 0 if absent
+// / wrong type. Same target shape as kcdx.memory.dynamic_hook's `target`.
+uintptr_t LuaTableAddress(lua_State* L, int tableIdx, const char* key) {
+    lua_getfield(L, tableIdx, key);
+    uintptr_t out = 0;
+    if (lua_islightuserdata(L, -1)) {
+        out = reinterpret_cast<uintptr_t>(lua_touserdata(L, -1));
+    } else if (lua_isnumber(L, -1)) {
+        out = static_cast<uintptr_t>(lua_tointeger(L, -1));
+    } else if (lua_isuserdata(L, -1)) {
+        if (lua_getmetatable(L, -1)) {
+            luaL_getmetatable(L, kcdx::lua_memory::kPointerMetatable);
+            if (lua_rawequal(L, -1, -2)) {
+                lua_pop(L, 2);
+                auto* p = static_cast<kcdx::lua_memory::pointer*>(
+                    lua_touserdata(L, -1));
+                if (p) out = static_cast<uintptr_t>(p->get_address());
+            } else {
+                lua_pop(L, 2);
+            }
+        }
+    }
     lua_pop(L, 1);
     return out;
 }
@@ -99,31 +149,49 @@ int TakeCallbackRef(lua_State* L, int tableIdx, const char* key) {
     return luaL_ref(L, LUA_REGISTRYINDEX);
 }
 
-// --- Apply handler (sub-3 stub) ----------------------------------------
+// --- Apply handler ------------------------------------------------------
 //
-// Registered for Kind::Hook. The per-mode install routines (sub-4..9)
-// replace this with real dispatch. Until then, every queued hook
-// resolves to Failed with an explicit reason — the registration,
-// parsing, and validation all ran (and would have errored loudly if
-// wrong), but no interception is installed yet. This is intentional:
-// sub-3's contract is "the surface exists, validates, and queues"; the
-// behavior arrives mode-by-mode.
+// Registered for Kind::Hook. Runs in the end-of-zone apply pass
+// (lua_registry::ApplyZone), in unified load order. Installs the hook by
+// resolving its locator + appending to the per-target chain via
+// hook_chain::Add. On success the handle goes Applied; on conflict /
+// resolution failure it goes Failed with a clear reason. On failure the
+// callback registry ref is released (no live hook will use it).
 bool ApplyHookEntry(kcdx::lua_registry::Entry& entry,
                     std::string& reason_out) {
-    auto* p = std::static_pointer_cast<kcdx::hook_payload::HookPayload>(
-                  entry.payload)
-                  .get();
+    auto sp = std::static_pointer_cast<kcdx::hook_payload::HookPayload>(
+                  entry.payload);
+    kcdx::hook_payload::HookPayload* p = sp.get();
     if (!p) {
         reason_out = "internal error: hook entry payload is null";
         return false;
     }
-    reason_out =
-        std::string("kcdx.hook mode='") +
-        kcdx::hook_payload::ModeToken(p->mode) +
-        "' install is not yet implemented (Phase 2b sub-3 ships the "
-        "registration + validation surface; per-mode apply lands in "
-        "sub-4..9). The registration parsed and validated cleanly.";
-    return false;
+
+    // Effective load-order priority for chain ordering. Anonymous
+    // entries (no owning plugin yet) fall back to the entry's own
+    // priority field (default 50).
+    int priority = entry.priority;
+    if (!entry.pluginName.empty()) {
+        priority = kcdx::load_order::Of(entry.pluginName).priority;
+    }
+
+    // L is captured by hook_chain at first-tick (SetLuaState) and again
+    // on first Add; pass nullptr here — Add uses the already-bound state.
+    kcdx::hook_chain::AddResult r = kcdx::hook_chain::Add(
+        /*L=*/nullptr, *p, p->callbackRef, entry.pluginName, priority,
+        entry.name);
+
+    if (!r.ok) {
+        reason_out = r.reason;
+        // Release the callback ref — this hook will never fire.
+        if (p->callbackRef != LUA_NOREF) {
+            lua_State* gs = kcdx::scripting::lua_state();
+            if (gs) luaL_unref(gs, LUA_REGISTRYINDEX, p->callbackRef);
+            p->callbackRef = LUA_NOREF;
+        }
+        return false;
+    }
+    return true;
 }
 
 // --- Locator validation -------------------------------------------------
@@ -139,7 +207,8 @@ std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
         (!p.pattern.bytes.empty()      ? 1 : 0) +
         (p.addressId != 0              ? 1 : 0) +
         (!p.targetSymbol.empty()       ? 1 : 0) +
-        (!p.targetLuaCfunction.empty() ? 1 : 0);
+        (!p.targetLuaCfunction.empty() ? 1 : 0) +
+        (p.address != 0                ? 1 : 0);
 
     if (p.mode == kcdx::hook_payload::Mode::Callsite) {
         if (!p.callsite.has_value()) {
@@ -170,14 +239,14 @@ std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
 
     // Non-callsite modes: exactly one function-entry locator.
     if (entryLocatorCount == 0) {
-        return "must specify exactly one locator (function_name, "
+        return "must specify exactly one locator (address, function_name, "
                "pattern, address_id, target_symbol, or "
                "target_lua_cfunction)";
     }
     if (entryLocatorCount > 1) {
         return "locators are mutually exclusive (set exactly one of "
-               "function_name, pattern, address_id, target_symbol, "
-               "target_lua_cfunction)";
+               "address, function_name, pattern, address_id, "
+               "target_symbol, target_lua_cfunction)";
     }
     if (p.callsite.has_value()) {
         return "target_callsite is only valid with mode='callsite'";
@@ -252,14 +321,48 @@ int Lua_Hook(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    // --- Mode ---
-    const std::string modeStr = LuaTableString(L, 1, "mode", "before");
-    if (!kcdx::hook_payload::ParseMode(modeStr, p->mode)) {
+    // --- Mode-as-key + callback ---
+    // The author attaches the callback under the mode name itself:
+    //   kcdx.hook{ ..., before = function(...) ... end }
+    // Exactly ONE of before / after / around / replace must hold a
+    // function (one mode per call — chain multiple modes on a target by
+    // making multiple kcdx.hook calls). mid / callsite are not accepted
+    // in this sub (they land in their own sub-commits); the payload
+    // still carries Mode::Mid/Callsite so those subs are additive.
+    struct ModeKey { const char* key; kcdx::hook_payload::Mode mode; };
+    static const ModeKey kModeKeys[] = {
+        {"before",  kcdx::hook_payload::Mode::Before},
+        {"after",   kcdx::hook_payload::Mode::After},
+        {"around",  kcdx::hook_payload::Mode::Around},
+        {"replace", kcdx::hook_payload::Mode::Replace},
+    };
+    int    modeCount = 0;
+    bool   haveMode  = false;
+    for (const auto& mk : kModeKeys) {
+        lua_getfield(L, 1, mk.key);
+        const bool isFn = lua_isfunction(L, -1);
+        lua_pop(L, 1);
+        if (isFn) {
+            ++modeCount;
+            if (!haveMode) { p->mode = mk.mode; haveMode = true; }
+        }
+    }
+    if (modeCount == 0) {
         lua_pushnil(L);
         lua_pushfstring(L,
-            "kcdx.hook '%s': unknown mode '%s' (expected one of: "
-            "before, after, around, replace, mid, callsite)",
-            p->name.c_str(), modeStr.c_str());
+            "kcdx.hook '%s': must attach exactly one callback under a "
+            "mode key (before, after, around, or replace), e.g. "
+            "before = function(...) ... end",
+            p->name.c_str());
+        return 2;
+    }
+    if (modeCount > 1) {
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.hook '%s': attach exactly ONE mode per call; found "
+            "multiple of before/after/around/replace. Use separate "
+            "kcdx.hook calls to put more than one mode on a target.",
+            p->name.c_str());
         return 2;
     }
 
@@ -268,6 +371,7 @@ int Lua_Hook(lua_State* L) {
     p->addressId          = LuaTableU64(L, 1, "address_id", 0);
     p->targetSymbol       = LuaTableString(L, 1, "target_symbol");
     p->targetLuaCfunction = LuaTableString(L, 1, "target_lua_cfunction");
+    p->address            = LuaTableAddress(L, 1, "address");
     const std::string patternStr = LuaTableString(L, 1, "pattern");
     const std::string contextStr = LuaTableString(L, 1, "context");
     const std::string anchorStr  = LuaTableString(L, 1, "anchor_string");
@@ -311,21 +415,20 @@ int Lua_Hook(lua_State* L) {
     }
 
     // --- Signature DSL ---
-    // Required for every mode except `mid` (which can capture raw
-    // register/memory state without a typed entry signature). When
-    // present, parse it now so the apply pass never re-parses.
+    // Required for before/after/around/replace — the engine needs the
+    // ABI to marshal arguments + return value to/from the callback.
+    // Parse now so the apply pass never re-parses.
     const std::string sigStr = LuaTableString(L, 1, "signature");
     if (sigStr.empty()) {
-        if (p->mode != kcdx::hook_payload::Mode::Mid) {
-            lua_pushnil(L);
-            lua_pushfstring(L,
-                "kcdx.hook '%s': mode='%s' requires a 'signature' "
-                "(e.g. \"void (ptr, wstr szApp)\")",
-                p->name.c_str(),
-                kcdx::hook_payload::ModeToken(p->mode));
-            return 2;
-        }
-    } else {
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.hook '%s': a 'signature' is required (e.g. "
+            "\"void (ptr self, wstr szApp)\") so the engine knows the "
+            "function's argument + return types",
+            p->name.c_str());
+        return 2;
+    }
+    {
         auto sr = kcdx::hook_signature::Parse(sigStr);
         if (!sr.ok) {
             lua_pushnil(L);
@@ -344,32 +447,19 @@ int Lua_Hook(lua_State* L) {
         p->hasSignature = true;
     }
 
-    // --- mode == mid: capture descriptors ---
-    if (p->mode == kcdx::hook_payload::Mode::Mid) {
-        lua_getfield(L, 1, "captures");
-        if (lua_istable(L, -1)) {
-            const int capIdx = lua_gettop(L);
-            const int n = static_cast<int>(lua_objlen(L, capIdx));
-            for (int i = 1; i <= n; ++i) {
-                lua_rawgeti(L, capIdx, i);
-                if (lua_isstring(L, -1)) {
-                    p->captures.emplace_back(lua_tostring(L, -1));
-                }
-                lua_pop(L, 1);
-            }
-        }
-        lua_pop(L, 1);
-    }
-
     // --- Callback closure ---
-    // Required for every mode (the interception runs Lua). Take a
-    // GC-safe registry ref so the closure survives until the apply pass.
-    p->callbackRef = TakeCallbackRef(L, 1, "callback");
+    // Take a GC-safe registry ref to the function attached under the
+    // chosen mode key, so the closure survives until the apply pass.
+    p->callbackRef = TakeCallbackRef(
+        L, 1, kcdx::hook_payload::ModeToken(p->mode));
     if (p->callbackRef == LUA_NOREF) {
+        // Shouldn't happen — mode detection above already confirmed a
+        // function under this key — but guard defensively.
         lua_pushnil(L);
         lua_pushfstring(L,
-            "kcdx.hook '%s': missing required 'callback' function",
-            p->name.c_str());
+            "kcdx.hook '%s': internal error: mode '%s' callback vanished "
+            "between detection and ref",
+            p->name.c_str(), kcdx::hook_payload::ModeToken(p->mode));
         return 2;
     }
 

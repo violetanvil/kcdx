@@ -273,6 +273,23 @@ bool ParsePluginManifest(const toml::table& doc,
     if (auto* entryTbl = doc.get("entrypoints"); entryTbl && entryTbl->is_table()) {
         const auto& et = *entryTbl->as_table();
         out.dllEntrypointRel = OptString(et, "dll");
+
+        // lua = "plugin.lua"  OR  lua = ["plugin.lua", "scripts/extras.lua"].
+        // Accept both forms: a bare string is treated as a one-element list.
+        // Files run in declared order at the plugin's load-order slot.
+        if (auto* luaNode = et.get("lua")) {
+            if (luaNode->is_string()) {
+                out.luaEntrypointsRel.push_back(
+                    std::string(*luaNode->value<std::string>()));
+            } else if (luaNode->is_array()) {
+                for (const auto& elem : *luaNode->as_array()) {
+                    if (elem.is_string()) {
+                        out.luaEntrypointsRel.push_back(
+                            std::string(*elem.value<std::string>()));
+                    }
+                }
+            }
+        }
     }
 
     // [plugin] test_names = ["CAP-XX", ...] — for test-suite plugins,

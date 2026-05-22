@@ -1,0 +1,46 @@
+# CAP-20 — kcdx.hook 4-mode chaining + arg/return mutation + wstr.
+#
+# The first test of the NEW kcdx.hook surface (Phase 2b sub-4). Uses
+# ONLY restructured-model surfaces:
+#   - a C++ DLL entrypoint (exposes the native targets + drives verify)
+#   - plugin.lua calling kcdx.hook{ address=, before=/after=/around=/replace= }
+# No legacy [[hook]]/[[mid_hook]]/[[trampoline]] behavior TOML (that
+# path is being deleted; this test must not depend on it).
+#
+# Flow (single update tick, in strict order):
+#   1. DLL kcdxPlugin_Load registers cap20.addr_add100 / cap20.addr_wlen
+#      (Lua C fns handing the targets' exact addresses to Lua).
+#   2. plugin.lua runs: fetches each address, installs hooks via kcdx.hook.
+#   3. ApplyZone installs the chain (load order).
+#   4. kcdxMessage_InputLoaded fires (AFTER apply): the DLL calls each
+#      native target directly (the MinHook detour fires for any caller),
+#      checks the hook changed the observed behavior, reports CAP-20*.
+#
+# Sub-tests:
+#   CAP-20-before   before mutates the arg (seed -> seed+1); original runs
+#   CAP-20-after    after mutates the return (+1000)
+#   CAP-20-replace  original never runs; replace returns a constant
+#   CAP-20-around   around wraps: calls orig, doubles the result
+#   CAP-20-chain    two before hooks on one target, load-order ordered
+#   CAP-20-wstr     before reads + mutates a wstr arg; WLen sees the change
+#   CAP-20-conflict replace + before on one target: later loses, loud
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-20-hook-modes"
+display_name        = "CAP-20 kcdx.hook modes + chaining"
+author              = "kcdx"
+description         = "kcdx.hook before/after/around/replace + chaining + wstr + conflict."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-20-before", "CAP-20-after", "CAP-20-replace",
+                       "CAP-20-around", "CAP-20-chain", "CAP-20-wstr",
+                       "CAP-20-conflict", "CAP-20-dyncall"]
+
+[entrypoints]
+dll = "cap-20.dll"
+lua = "plugin.lua"

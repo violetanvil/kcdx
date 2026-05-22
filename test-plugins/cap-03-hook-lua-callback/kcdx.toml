@@ -11,7 +11,7 @@
 # if the counter > 0 (the hook fired at least once during boot).
 #
 # Sig discovered 2026-05-19 via the callee-enumeration tool at
-# _research/cap03_find_candidates.py (disassembles WHGame.dll, finds
+# _research/cap03-recon/cap03_find_candidates.py (disassembles WHGame.dll, finds
 # update() via the yobson1 sig, walks its direct CALL targets, emits
 # 24-byte function-entry sigs with .text-uniqueness checks). Full
 # candidate dossier: _research/predecessor-sigs/CAP-03-CANDIDATES.md

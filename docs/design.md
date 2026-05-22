@@ -36,10 +36,9 @@
 > the public-facing successor.
 
 kcdx is the SKSE-class extender for Kingdom Come: Deliverance II.
-Sibling project to [kcd2-mempatch][mp] (which handles declarative
-same-length byte rewrites only). kcdx covers everything else: code
-injection, plugin lifecycle, save serialization, console commands,
-inter-plugin messaging.
+It covers declarative same-length byte rewrites plus everything
+else: code injection, plugin lifecycle, save serialization, console
+commands, inter-plugin messaging.
 
 The plugin API mirrors SKSE / F4SE conventions verbatim with `kcdx`
 substituted for `SKSE`. Authors who've shipped an SKSE plugin should
@@ -47,8 +46,6 @@ recognize the entire surface in an hour. Where SKSE has documented
 weak spots — no inter-plugin conflict detection, no declarative
 escape hatch for non-coders, hidden plugin enumeration — kcdx
 enhances.
-
-[mp]: https://github.com/violetanvil/kcd2-mempatch
 
 ---
 
@@ -107,15 +104,11 @@ contain either or both of:
   serialization recording), but covers ~80% of common mod use cases
   without a C++ toolchain.
 
-A plugin folder is **also** allowed to contain a `mempatch.toml`
-file — that one is consumed by the sibling [kcd2-mempatch][mp]
-engine, not by kcdx. mempatch and kcdx coexist by filename
-discipline (mempatch loads only `mempatch.toml`; kcdx loads only
-`kcdx.toml` and `*.dll`). Never make the two engines argue.
-
-If you only need byte rewrites, **mempatch alone is the better tool**
-— smaller, faster to load, ships independently. Use kcdx when you
-need anything else, or when you want one mental model instead of two.
+A plugin folder may contain a legacy `mempatch.toml` from the
+deprecated predecessor declarative-patch engine. kcdx ignores it
+(kcdx loads only `kcdx.toml` and `*.dll`), so the two never argue if
+both happen to be installed. All new byte-rewrite work ships through
+kcdx's `[[patch]]` schema.
 
 ---
 
@@ -365,11 +358,10 @@ anchor_function_by_export = "..."  # exported function name
 max_anchor_distance       = 4096   # int, default 4096
 ```
 
-The full safety guarantees from mempatch's
-[`writing-safe-patches.md`](../../kcd2-mempatch/docs/writing-safe-patches.md)
-apply. The verification milestone for Phase 1 is that a `[[patch]]`
-in `kcdx.toml` produces **identical** apply-log output to the same
-entry in `mempatch.toml`.
+The full safety guarantees from
+[`writing-safe-patches.md`](re-reference/writing-safe-patches.md)
+apply. The Phase 1 verification milestone is that a `[[patch]]` in
+`kcdx.toml` produces a correct, idempotent apply-log.
 
 ### `[[hook]]` — function-entry detour
 
@@ -1278,8 +1270,8 @@ phase:
    `kcdxSerializationInterface` above and live-verified by
    `cap-12-serialization` across multiple playlines. Hook surface
    = five `C_SaveGameManager` detours + the slot resolver; see
-   [`_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md`](../../_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md)
-   and [`_research/phase6b-recon/SAVE-SELECTION-HOOK.md`](../../_research/phase6b-recon/SAVE-SELECTION-HOOK.md).
+   [`_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md`](../_research/phase6-save-load/SAVE-LOAD-CANDIDATES.md)
+   and [`_research/phase6b-recon/SAVE-SELECTION-HOOK.md`](../_research/phase6b-recon/SAVE-SELECTION-HOOK.md).
 3. **Address Library maintenance.** v0.1 ships kcdx's own database
    as part of the zip. Long-term, may split into a
    community-maintained sibling repo. Not blocking.
