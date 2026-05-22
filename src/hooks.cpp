@@ -22,6 +22,7 @@
 #include "messaging.h"
 #include "patch_engine.h"
 #include "pe_helpers.h"
+#include "plugin_loader.h"  // plugins::RunPostGameLoad + GetEngineInterface
 #include "scan_engine.h"
 #include "scripting.h"
 #include "task.h"
@@ -438,6 +439,21 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // would eventually catch them, but we want them live now.
                 kcdx::lua_registry::ApplyZone(
                     kcdx::load_order::Zone::AfterGame);
+
+                // C++ parity for lua_after: run every C++ plugin's optional
+                // kcdxPlugin_PostGameLoad export NOW — same after_game phase
+                // as RunAfterEntrypoints (above), at load-order priority.
+                // Fires AFTER all before-game work is applied (the ApplyZone
+                // passes above) and BEFORE InputLoaded, so a C++ plugin and a
+                // Lua plugin reach the same logical point. Lua after-work and
+                // C++ PostGameLoad are two sequential passes (all lua_after by
+                // priority, then all PostGameLoad by priority); a Lua and a
+                // C++ plugin at the same priority is the only edge case and
+                // does not interleave. The DLL load wave's `api` is reused
+                // (GetEngineInterface() — same source plugin_loader's load
+                // wave uses).
+                kcdx::plugins::RunPostGameLoad(
+                    kcdx::plugins::GetEngineInterface());
 
                 // Lifecycle: input subsystem is alive by the time the first
                 // update tick fires (Lua VM is up). Closest analogue to

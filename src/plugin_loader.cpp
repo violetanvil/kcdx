@@ -494,10 +494,16 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
             } else {
                 lp.module     = mod;
                 lp.filePath   = dllPath.string();
-                lp.preloadFn  = reinterpret_cast<kcdxPlugin_Preload_t>(
+                lp.preloadFn      = reinterpret_cast<kcdxPlugin_Preload_t>(
                                     GetProcAddress(mod, "kcdxPlugin_Preload"));
-                lp.loadFn     = reinterpret_cast<kcdxPlugin_Load_t>(
+                lp.loadFn         = reinterpret_cast<kcdxPlugin_Load_t>(
                                     GetProcAddress(mod, "kcdxPlugin_Load"));
+                // Optional after-game export — the C++ mirror of lua_after.
+                // Resolved off the SAME module as Preload/Load (one DLL,
+                // multiple optional exports). Null when absent -> skipped by
+                // RunPostGameLoad, like a plugin with no Preload.
+                lp.postGameLoadFn = reinterpret_cast<kcdxPlugin_PostGameLoad_t>(
+                                    GetProcAddress(mod, "kcdxPlugin_PostGameLoad"));
                 if (!lp.loadFn && !lp.preloadFn) {
                     log::WarnF("Plugin '%s' DLL has neither kcdxPlugin_Load nor "
                                "kcdxPlugin_Preload exports — DLL is dead weight. "
@@ -641,6 +647,75 @@ const LoadedPlugin* FindByName(const char* name) {
 kcdxPluginHandle HandleOf(const char* name) {
     if (const auto* p = FindByName(name)) return p->handle;
     return kcdxInvalidPluginHandle;
+}
+
+void RunPostGameLoad(const kcdxInterface* api) {
+    // The C++ mirror of lua_after. Like RunAfterEntrypoints, this runs in
+    // LOAD-ORDER PRIORITY, NOT g_plugins (topo/discovery) order: a
+    // PostGameLoad body may call game functions and observe before-work, so
+    // its RUN order is observable and must follow the plugin's load_order
+    // priority. Build an index over plugins that export PostGameLoad, sorted
+    // by (priority asc, name asc) — zone is irrelevant: PostGameLoad is
+    // after_game by construction. Mirrors the sort in
+    // lua_plugin_loader::RunAfterEntrypoints.
+    std::vector<LoadedPlugin*> ordered;
+    ordered.reserve(g_plugins.size());
+    for (auto& p : g_plugins) {
+        if (!p.postGameLoadFn) continue;  // optional export; skip if absent
+        ordered.push_back(&p);
+    }
+    std::sort(ordered.begin(), ordered.end(),
+              [](const LoadedPlugin* a, const LoadedPlugin* b) {
+                  const auto& ea = load_order::Of(a->manifest.name);
+                  const auto& eb = load_order::Of(b->manifest.name);
+                  if (ea.priority != eb.priority) {
+                      return ea.priority < eb.priority;
+                  }
+                  return a->manifest.name < b->manifest.name;
+              });
+
+    size_t ran = 0;
+    for (LoadedPlugin* pp : ordered) {
+        LoadedPlugin& p = *pp;
+
+        // Honor the load_order.toml enabled gate — same as the load wave
+        // and the lua_after slot.
+        if (!load_order::IsPluginEnabled(p.manifest.name)) {
+            log::InfoF("Plugin '%s' kcdxPlugin_PostGameLoad skipped (plugin disabled via load_order.toml)",
+                       p.manifest.name.c_str());
+            continue;
+        }
+
+        struct Ctx {
+            kcdxPlugin_PostGameLoad_t fn;
+            const kcdxInterface*      api;
+            bool                      result;
+        };
+        Ctx ctx{p.postGameLoadFn, api, false};
+        bool noFault = guard::Call(
+            "plugin.post_game_load",
+            p.manifest.name.c_str(),
+            [](void* ud) {
+                Ctx* c = static_cast<Ctx*>(ud);
+                c->result = c->fn(c->api);
+            },
+            &ctx);
+        if (!noFault) {
+            log::ErrorF("Plugin '%s' kcdxPlugin_PostGameLoad faulted (see GUARD line)",
+                        p.manifest.name.c_str());
+        } else if (!ctx.result) {
+            log::ErrorF("Plugin '%s' kcdxPlugin_PostGameLoad returned false",
+                        p.manifest.name.c_str());
+        } else {
+            log::InfoF("Plugin '%s' kcdxPlugin_PostGameLoad OK", p.manifest.name.c_str());
+        }
+        ++ran;
+    }
+
+    if (ran > 0) {
+        log::InfoF("Plugin DLL loader (after_game): %zu plugin(s) ran kcdxPlugin_PostGameLoad",
+                   ran);
+    }
 }
 
 }  // namespace kcdx::plugins

@@ -273,11 +273,13 @@ bool ParsePluginManifest(const toml::table& doc,
     if (auto* entryTbl = doc.get("entrypoints"); entryTbl && entryTbl->is_table()) {
         const auto& et = *entryTbl->as_table();
         out.dllEntrypointRel      = OptString(et, "dll");
-        // dll_after = "bin/post.dll" — the OPTIONAL after-game DLL slot.
-        // Parsed for schema completeness; its dispatch (kcdxPlugin_PostGameLoad)
-        // is a SEPARATE later step. Recorded but not wired here. See
-        // PluginManifest::dllAfterEntrypointRel.
-        out.dllAfterEntrypointRel = OptString(et, "dll_after");
+        // No "dll_after" key: a C++ plugin's after-game work is an OPTIONAL
+        // kcdxPlugin_PostGameLoad export on the SAME plugin DLL (the `dll`
+        // entrypoint), mirroring how Preload/Load coexist on one module —
+        // not a separate DLL file. The export is resolved at discovery
+        // (plugin_loader.cpp) and dispatched by plugins::RunPostGameLoad in
+        // the after_game phase. The speculative dll_after path field was
+        // removed once that export model was settled.
 
         // lua = "plugin.lua"  OR  lua = ["plugin.lua", "scripts/extras.lua"].
         // Accept both forms: a bare string is treated as a one-element list.

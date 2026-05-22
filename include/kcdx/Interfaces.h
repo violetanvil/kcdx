@@ -11,6 +11,10 @@
 //      been parsed and the dependency graph topologically sorted.
 //   4. (C++ plugins only) Optionally export `kcdxPlugin_Preload` for
 //      early-phase setup.
+//   5. (C++ plugins only) Optionally export `kcdxPlugin_PostGameLoad` to
+//      run after-game work at load-order priority — the C++ mirror of the
+//      Lua `lua_after` entrypoint slot. Fires in the after_game phase,
+//      after all before-game work is applied, before kcdxMessage_InputLoaded.
 //
 // See ../docs/design.md in the kcdx repo for the full design spec, schema,
 // and worked examples.
@@ -158,7 +162,8 @@ typedef struct kcdxConflictEntry {
 } kcdxConflictEntry;
 
 // Root accessor. The engine passes a const pointer to one of these to your
-// kcdxPlugin_Preload and kcdxPlugin_Load functions. Treat as read-only.
+// kcdxPlugin_Preload, kcdxPlugin_Load, and kcdxPlugin_PostGameLoad
+// functions. Treat as read-only.
 //
 // All function pointers are non-null on a valid kcdxInterface*. Sub-interfaces
 // fetched via QueryInterface may be null if the requested interface or version
@@ -1196,6 +1201,21 @@ typedef struct kcdxSerializationInterface {
 // At this point all other plugins are visible (GetPluginInfo works for any
 // loaded plugin). Register listeners, install hooks, call into peers here.
 //
+// kcdxPlugin_PostGameLoad (OPTIONAL) runs LATER than Load — in the
+// after_game phase at the first update tick, NOT during the load wave.
+// It is the C++ mirror of the Lua `lua_after` entrypoint slot: it fires
+// AFTER all before-game work has been applied (every plugin's hooks +
+// byte patches are live) and BEFORE kcdxMessage_InputLoaded. All
+// PostGameLoad exports run in LOAD-ORDER PRIORITY (the plugin's
+// resolved load_order priority, ties broken by name), the same order
+// as lua_after. Use it for work that must observe before-game state —
+// e.g. reading a value a hook installed at load time now affects, or
+// initialization that depends on the game's after-phase being live.
+// The full C++ lifecycle is: Preload -> Load -> [before-work applied]
+// -> PostGameLoad. It is resolved as an optional export on the SAME
+// plugin DLL as Preload/Load (one DLL, three optional exports) — there
+// is no separate "after" DLL file.
+//
 // Plugin self-identity: at load time, your DLL doesn't yet know its own
 // kcdxPluginHandle. Call `api->GetPluginHandle("your.stable.name")` to
 // resolve it, where the name string must match what you declared in your
@@ -1204,8 +1224,9 @@ typedef struct kcdxSerializationInterface {
 // Return true on success. A false return is logged but the DLL is not
 // unloaded (Windows reclaims at process exit; kcdx, like SKSE, does not
 // FreeLibrary).
-typedef bool (*kcdxPlugin_Preload_t)(const kcdxInterface* api);
-typedef bool (*kcdxPlugin_Load_t)   (const kcdxInterface* api);
+typedef bool (*kcdxPlugin_Preload_t)     (const kcdxInterface* api);
+typedef bool (*kcdxPlugin_Load_t)        (const kcdxInterface* api);
+typedef bool (*kcdxPlugin_PostGameLoad_t)(const kcdxInterface* api);
 
 // -----------------------------------------------------------------------------
 // Helper: pack a KCD2 build number into the encoded form used by

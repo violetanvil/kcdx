@@ -126,14 +126,17 @@ struct PluginManifest {
     // (per-entry-zone execution model).
     std::vector<std::string> luaAfterEntrypointsRel;
 
-    // [entrypoints] dll_after = "bin/post.dll" — the OPTIONAL after-game DLL
-    // slot (kcdxPlugin_PostGameLoad). PARSED into this field now for schema
-    // completeness, but its dispatch is NOT wired in this step — the
-    // kcdxPlugin_PostGameLoad C++ export + its invocation are a SEPARATE
-    // later step. TODO(step-4): wire dll_after dispatch (load the DLL's
-    // kcdxPlugin_PostGameLoad export, fire it in the after_game phase at
-    // the plugin's priority). Until then this field is recorded but unused.
-    std::string dllAfterEntrypointRel;
+    // The after-game C++ slot is NOT a separate DLL file. A C++ plugin is
+    // ONE compiled DLL with optional exports (kcdxPlugin_Preload /
+    // kcdxPlugin_Load / kcdxPlugin_PostGameLoad), mirroring how Preload and
+    // Load coexist on the same module. The after-game work is reached via
+    // an optional kcdxPlugin_PostGameLoad export ON THE EXISTING
+    // dllEntrypointRel module — resolved at discovery into
+    // LoadedPlugin::postGameLoadFn, dispatched by RunPostGameLoad in the
+    // after_game phase at the plugin's load-order priority (the C++ mirror
+    // of luaAfterEntrypointsRel). There is therefore no separate "dll_after"
+    // path field; the speculative one added during schema scaffolding was
+    // removed once the export model (matching Preload/Load) was settled.
 
     // Location — populated by the discovery walk.
     std::filesystem::path folderPath; // Absolute path of the plugin's install folder
@@ -150,8 +153,13 @@ struct LoadedPlugin {
     kcdxPluginHandle handle = kcdxInvalidPluginHandle;
 
     // Filled in during discovery, cleared after the load wave completes.
-    kcdxPlugin_Preload_t preloadFn = nullptr;
-    kcdxPlugin_Load_t    loadFn    = nullptr;
+    kcdxPlugin_Preload_t      preloadFn      = nullptr;
+    kcdxPlugin_Load_t         loadFn         = nullptr;
+    // Optional after-game export — the C++ mirror of lua_after. Null when
+    // the plugin's DLL doesn't export kcdxPlugin_PostGameLoad (optional,
+    // like Preload). Resolved off the same module as preloadFn/loadFn;
+    // dispatched by RunPostGameLoad in load-order priority.
+    kcdxPlugin_PostGameLoad_t postGameLoadFn = nullptr;
 
     // Result of the load wave. Default false; set true if loadFn returned true
     // (or if the plugin has no loadFn but is otherwise valid).
@@ -204,5 +212,15 @@ kcdxPluginHandle HandleOf(const char* name);
 // Get the kcdxInterface pointer that's passed to plugin entry points.
 // Populated by DiscoverAndLoad. Owned by the engine.
 const kcdxInterface* GetEngineInterface();
+
+// Fire each enabled C++ plugin's optional kcdxPlugin_PostGameLoad export —
+// the C++ mirror of lua_after. Runs in the after_game phase at the first
+// update tick, AFTER all before-game work is applied and BEFORE
+// kcdxMessage_InputLoaded. Plugins are dispatched in LOAD-ORDER PRIORITY
+// (priority asc, then name asc — the SAME ordering RunAfterEntrypoints uses
+// for lua_after), honoring the load_order.toml enabled gate, each call under
+// crash_guard. A plugin without the export (null postGameLoadFn) is skipped.
+// `api` is the engine interface published to plugins (GetEngineInterface()).
+void RunPostGameLoad(const kcdxInterface* api);
 
 }  // namespace kcdx::plugins
