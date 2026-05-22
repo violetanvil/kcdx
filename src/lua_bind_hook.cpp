@@ -258,6 +258,121 @@ std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
     return "";
 }
 
+// --- mid captures parsing ----------------------------------------------
+//
+// A capture entry is a register/memory EXPRESSION with an OPTIONAL
+// `:type` suffix:  "rax"  "[rcx+0x10]:i32"  "xmm0:f32".  The expression
+// is the make_jit_midfunc param_capture; the type is its param_type
+// (default "i64"). Authors write these straight off a disassembler, so
+// the syntax mirrors the disassembly 1:1.
+//
+// Splitting rule: the `:type` suffix is the LAST `:` whose tail is a
+// recognized width token. A memory expr like "[rcx+0x10]" contains no
+// `:`, so the common case is unambiguous; we only peel a suffix when the
+// tail is a known type, leaving exprs that happen to contain a colon
+// (none today, but future-proof) intact.
+
+// Recognized capture type tokens — must match the make_jit_midfunc /
+// type_info_t string matcher (i8..u64, ptr, f32/f64 and aliases). Tokens
+// the JIT understands; anything else is treated as part of the expr.
+bool IsKnownCaptureType(const std::string& tok) {
+    static const char* kTypes[] = {
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+        "ptr", "f32", "f64", "float", "double", "bool",
+    };
+    for (const char* t : kTypes) if (tok == t) return true;
+    return false;
+}
+
+// Split "expr:type" -> (expr, type). type defaults to "i64" when absent.
+void SplitCapture(const std::string& raw, std::string& expr, std::string& type) {
+    type = "i64";
+    expr = raw;
+    const std::string::size_type colon = raw.find_last_of(':');
+    if (colon != std::string::npos && colon + 1 < raw.size()) {
+        std::string tail = raw.substr(colon + 1);
+        if (IsKnownCaptureType(tail)) {
+            expr = raw.substr(0, colon);
+            type = tail;
+        }
+    }
+}
+
+// Read the `captures` field into the payload's parallel capture vectors.
+// Two accepted shapes (mode == mid only):
+//   positional list:  captures = {"rax", "[rcx+0x10]:i32"}
+//                       -> captureNames[i] = "" (callback table keyed 1..N)
+//   name map:         captures = {hp = "rax", x = "[rcx+0x10]:i32"}
+//                       -> captureNames[i] = "hp" (callback table keyed by name)
+// A table with ANY string key is treated as the name-map form; a pure
+// array (1..N integer keys) is the list form. Returns "" on success or a
+// ready-to-return diagnostic. Leaves the vectors empty when `captures` is
+// absent (validated as required for mid by the caller).
+std::string ReadCaptures(lua_State* L, int tableIdx,
+                         kcdx::hook_payload::HookPayload& p) {
+    lua_getfield(L, tableIdx, "captures");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); return ""; }
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return "captures must be a table (a list {\"rax\", \"[rcx+0x10]:i32\"} "
+               "or a name map {hp=\"rax\", x=\"[rcx]:i32\"})";
+    }
+    const int capIdx = lua_gettop(L);
+
+    // Detect form: any non-integer (string) key => name-map form.
+    bool nameMap = false;
+    lua_pushnil(L);
+    while (lua_next(L, capIdx) != 0) {
+        if (lua_type(L, -2) == LUA_TSTRING) nameMap = true;
+        lua_pop(L, 1);  // pop value, keep key for next
+        if (nameMap) { lua_pop(L, 1); break; }  // pop the key; decided
+    }
+
+    if (nameMap) {
+        // Iterate string keys. Lua table order over string keys is
+        // unspecified, but capture slot order is irrelevant — the
+        // callback addresses each handle BY NAME, not position.
+        lua_pushnil(L);
+        while (lua_next(L, capIdx) != 0) {
+            // key at -2, value at -1
+            if (lua_type(L, -2) != LUA_TSTRING || !lua_isstring(L, -1)) {
+                lua_pop(L, 2);
+                return "captures name-map entries must be name = \"expr:type\" "
+                       "strings (e.g. hp = \"rax\")";
+            }
+            std::string name = lua_tostring(L, -2);
+            std::string raw  = lua_tostring(L, -1);
+            std::string expr, type;
+            SplitCapture(raw, expr, type);
+            p.captureExprs.push_back(std::move(expr));
+            p.captureTypes.push_back(std::move(type));
+            p.captureNames.push_back(std::move(name));
+            lua_pop(L, 1);  // pop value, keep key
+        }
+    } else {
+        const int n = static_cast<int>(lua_objlen(L, capIdx));
+        for (int i = 1; i <= n; ++i) {
+            lua_rawgeti(L, capIdx, i);
+            if (!lua_isstring(L, -1)) {
+                lua_pop(L, 1);
+                lua_pop(L, 1);  // captures table
+                return "captures list entries must be \"expr:type\" strings "
+                       "(e.g. \"rax\" or \"[rcx+0x10]:i32\")";
+            }
+            std::string raw = lua_tostring(L, -1);
+            std::string expr, type;
+            SplitCapture(raw, expr, type);
+            p.captureExprs.push_back(std::move(expr));
+            p.captureTypes.push_back(std::move(type));
+            p.captureNames.push_back("");  // positional: keyed 1..N
+            lua_pop(L, 1);
+        }
+    }
+
+    lua_pop(L, 1);  // pop the captures table
+    return "";
+}
+
 // Build the optional callsite sub-locator from a nested
 // `target_callsite = {...}` table, if present. Leaves `out` as
 // nullopt when the field is absent. Returns "" on success, a
@@ -328,17 +443,18 @@ int Lua_Hook(lua_State* L) {
     // --- Mode-as-key + callback ---
     // The author attaches the callback under the mode name itself:
     //   kcdx.hook{ ..., before = function(...) ... end }
-    // Exactly ONE of before / after / around / replace must hold a
+    //   kcdx.hook{ ..., mid = function(c) ... end, offset =, captures = }
+    // Exactly ONE of before / after / around / replace / mid must hold a
     // function (one mode per call — chain multiple modes on a target by
-    // making multiple kcdx.hook calls). mid / callsite are not accepted
-    // in this sub (they land in their own sub-commits); the payload
-    // still carries Mode::Mid/Callsite so those subs are additive.
+    // making multiple kcdx.hook calls). `callsite` is not accepted yet
+    // (its own sub); the payload carries Mode::Callsite so that's additive.
     struct ModeKey { const char* key; kcdx::hook_payload::Mode mode; };
     static const ModeKey kModeKeys[] = {
         {"before",  kcdx::hook_payload::Mode::Before},
         {"after",   kcdx::hook_payload::Mode::After},
         {"around",  kcdx::hook_payload::Mode::Around},
         {"replace", kcdx::hook_payload::Mode::Replace},
+        {"mid",     kcdx::hook_payload::Mode::Mid},
     };
     int    modeCount = 0;
     bool   haveMode  = false;
@@ -355,7 +471,7 @@ int Lua_Hook(lua_State* L) {
         lua_pushnil(L);
         lua_pushfstring(L,
             "kcdx.hook '%s': must attach exactly one callback under a "
-            "mode key (before, after, around, or replace), e.g. "
+            "mode key (before, after, around, replace, or mid), e.g. "
             "before = function(...) ... end",
             p->name.c_str());
         return 2;
@@ -364,7 +480,7 @@ int Lua_Hook(lua_State* L) {
         lua_pushnil(L);
         lua_pushfstring(L,
             "kcdx.hook '%s': attach exactly ONE mode per call; found "
-            "multiple of before/after/around/replace. Use separate "
+            "multiple of before/after/around/replace/mid. Use separate "
             "kcdx.hook calls to put more than one mode on a target.",
             p->name.c_str());
         return 2;
@@ -430,10 +546,38 @@ int Lua_Hook(lua_State* L) {
         }
     }
 
-    // --- Signature DSL ---
-    // Required for before/after/around/replace — the engine needs the
-    // ABI to marshal arguments + return value to/from the callback.
-    // Parse now so the apply pass never re-parses.
+    // --- mid mode: captures, not a function signature ---
+    // mid intercepts a single instruction at `offset` inside the
+    // function and reads/writes named register/memory captures — it does
+    // NOT know (or need) the function's signature. So mid takes `captures`
+    // where the other modes take `signature`. Parse the captures now and
+    // skip the signature requirement entirely. (The payload's
+    // hasSignature stays false; the apply pass dispatches on mode.)
+    if (p->mode == kcdx::hook_payload::Mode::Mid) {
+        std::string capErr = ReadCaptures(L, 1, *p);
+        if (!capErr.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L, "kcdx.hook '%s': %s",
+                            p->name.c_str(), capErr.c_str());
+            return 2;
+        }
+        if (p->captureExprs.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook '%s': mode='mid' requires a 'captures' table — "
+                "the register/memory values to read/write at `offset` "
+                "(e.g. captures = {\"rax\", \"[rcx+0x10]:i32\"} or "
+                "captures = {hp = \"rax\"})",
+                p->name.c_str());
+            return 2;
+        }
+        // offset is where inside the function the captured instruction
+        // lives. 0 is legal (capture at the entry) but unusual; warn-free.
+    } else {
+    // --- Signature DSL (before/after/around/replace) ---
+    // Required for these modes — the engine needs the ABI to marshal
+    // arguments + return value to/from the callback. Parse now so the
+    // apply pass never re-parses.
     const std::string sigStr = LuaTableString(L, 1, "signature");
     if (sigStr.empty()) {
         lua_pushnil(L);
@@ -461,6 +605,7 @@ int Lua_Hook(lua_State* L) {
         }
         p->signature    = std::move(sr.sig);
         p->hasSignature = true;
+    }
     }
 
     // --- Callback closure ---

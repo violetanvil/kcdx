@@ -545,6 +545,10 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-20-conflict | ✅ LIVE | sub-4 | two replace hooks on one target; load-order-loses (first wins, second rejected) |
 | CAP-20-dyncall | ✅ LIVE | sub-4 | `kcdx.memory.dynamic_call` i32(i32) arg+return round-trip (10→110); regression for the LUA_NUMBER=float JitTrampoline bug |
 | CAP-20-addrname | ✅ LIVE | sub-4b | Address Library NAME locator (`address_id = "name"` for kcdx.hook; `api->ResolveAddressByName` for C++). Resolve-layer check: ResolveAddressByName("lua_pcall") == ResolveAddress(1000), exact. Miss-path assert deferred (ready-event-and-handle-assert.md) |
+| CAP-21-read | ✅ LIVE | sub-5 | `kcdx.hook` mode=mid capture READ: `c.rax:get()==seed` (name-map captures); add runs → 110 (`cap-21-mid-hook`) |
+| CAP-21-write | ✅ LIVE | sub-5 | mode=mid capture WRITE: `c.rax:set(1000)` lands in the real register; add runs on 1000 → 1100 |
+| CAP-21-skip | ✅ LIVE | sub-5 | mode=mid run/skip: callback returns `"skip"` → captured `add` never runs → 10 (positional-list captures `c[1]`). Proves the fresh dispatcher does NOT inherit the cap-04-c `args._skip` bug |
+| CAP-21-run | ✅ LIVE | sub-5 | mode=mid control: callback returns nothing → captured `add` runs → 110 |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |

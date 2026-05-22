@@ -111,9 +111,19 @@ struct HookPayload {
     bool                      hasSignature = false;  // false for raw mid captures w/o sig
 
     // --- mode == Mid extras --------------------------------------------
-    // Capture descriptors ("r14b", "[rcx+0x10]:i32") forwarded verbatim
-    // to the mid-hook engine at apply; parsed there, not here.
-    std::vector<std::string> captures;
+    // Captures the mid callback reads/writes at `offset`. The binder
+    // splits each author entry into a register/memory EXPRESSION
+    // ("rax", "[rcx+0x10]") and a TYPE ("i64" default, or the `:type`
+    // suffix). Parallel vectors, same length:
+    //   captureExprs[i]  — the reg/mem expr (make_jit_midfunc param_capture)
+    //   captureTypes[i]  — the type string  (make_jit_midfunc param_type)
+    //   captureNames[i]  — the author's name for this capture, or "" when
+    //                      the author used the positional list form. Drives
+    //                      whether the callback's handle table is keyed by
+    //                      name (map form) or 1..N (list form).
+    std::vector<std::string> captureExprs;
+    std::vector<std::string> captureTypes;
+    std::vector<std::string> captureNames;
 
     // --- Lua callback ---------------------------------------------------
     // Reference into the Lua registry (luaL_ref) keeping the callback

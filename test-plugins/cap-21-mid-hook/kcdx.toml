@@ -1,0 +1,42 @@
+# CAP-21 — kcdx.hook mode="mid": capture read/write + run/skip.
+#
+# The first test of the NEW kcdx.hook mid surface (Phase 2b sub-5). Uses
+# ONLY restructured-model surfaces:
+#   - a C++ DLL entrypoint (hand-writes controlled stubs into RWX memory,
+#     hands their capture-site addresses to Lua, drives verify)
+#   - plugin.lua calling kcdx.hook{ address=, mode="mid", captures=, mid= }
+# No legacy [[hook]]/[[mid_hook]]/[[trampoline]] behavior TOML.
+#
+# Flow (single update tick, in strict order):
+#   1. DLL kcdxPlugin_Load allocates 4 RWX stubs (int fn(int)->seed+100,
+#      hook site at +2 = the `add rax,0x64`), registers cap21.addr_*.
+#   2. plugin.lua runs: fetches each capture-site address, installs mid
+#      hooks via kcdx.hook (captures rax; reads/writes/skips per sub-test).
+#   3. ApplyZone installs the mid detours (make_jit_midfunc).
+#   4. kcdxMessage_InputLoaded fires (AFTER apply): the DLL calls each stub
+#      directly and checks the captured-instruction behavior, reports CAP-21*.
+#
+# Sub-tests (all capture rax at the `add rax,0x64` site, seed=10):
+#   CAP-21-read   callback asserts c.rax:get()==10, returns nothing -> 110
+#   CAP-21-write  callback c.rax:set(1000), returns nothing -> 1100
+#   CAP-21-skip   callback returns "skip" -> add skipped -> 10
+#   CAP-21-run    callback returns nothing -> add runs -> 110 (control)
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-21-mid-hook"
+display_name        = "CAP-21 kcdx.hook mode=mid"
+author              = "kcdx"
+description         = "kcdx.hook mode='mid': capture :get()/:set() + run/skip via return."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-21-read", "CAP-21-write", "CAP-21-skip",
+                       "CAP-21-run"]
+
+[entrypoints]
+dll = "cap-21.dll"
+lua = "plugin.lua"

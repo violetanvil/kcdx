@@ -36,6 +36,7 @@ extern "C" {
 
 #include "address_library.h"   // ResolveByName (address_id = "name")
 #include "dynamic_call_jit.h"  // BuildLuaCallThunk (call_original over pOriginal)
+#include "hde/hde64.h"         // hde64_disasm (auto-decode mid resume offset)
 #include "hook_engine.h"       // InstallRuntime
 #include "log.h"
 #include "lua_bind_helpers.h"  // PushPointer
@@ -151,6 +152,15 @@ struct ChainEntry {
 // lifetime + the ordered callback chain. The runtime_func_t holds the
 // MinHook detour; destroying it would uninstall the hook, which we never
 // do (hooks live for the session, matching SKSE).
+//
+// A mid Chain (isMid) is a DIFFERENT install: a mid-function detour at
+// the captured-instruction VA (targetVa already includes `offset`), built
+// with make_jit_midfunc + the MidDispatch C callback, carrying its own
+// capture layout instead of a function signature. v1 keeps one mid hook
+// per VA (the JIT bakes one capture layout); a second mid hook on the
+// same VA loses by load order (CanCoexist's mid branch). The struct is
+// the same shape as a signature Chain so the map + lifetime rules are
+// shared; the mid-only fields sit alongside.
 struct Chain {
     uintptr_t                                  targetVa = 0;
     std::unique_ptr<kcdx::rom::runtime_func_t> rf;
@@ -158,12 +168,25 @@ struct Chain {
     // SignaturesCompatible with this to share the thunk. Dispatch
     // marshals directly off this (per-slot hook_signature::Type), which
     // is why wstr/cstr round-trip correctly (the legacy type_info_t
-    // can't tell them apart).
+    // can't tell them apart). Unused for mid chains.
     kcdx::hook_signature::Signature            sig;
     // call_original thunk over MinHook's pOriginal, built when the first
     // around on this target lands (a lua_CFunction; see §7). 0 = none.
     uintptr_t                                  callOriginalThunk = 0;
     std::vector<ChainEntry>                    entries;       // load-order ordered
+
+    // --- mid-only ------------------------------------------------------
+    bool                     isMid = false;
+    int                      midCallbackRef = -2;  // LUA_NOREF
+    std::string              midPluginName;
+    std::string              midName;
+    // Parallel capture metadata (parsed by the binder). captureNames[i]
+    // == "" means positional (handle table keyed 1..N); otherwise the
+    // handle table is keyed by name. captureTypes drives per-slot
+    // marshaling in MidDispatch (i8..u64 / ptr / f32 / f64).
+    std::vector<std::string> capExprs;
+    std::vector<std::string> capTypes;
+    std::vector<std::string> capNames;
 };
 
 // target VA -> Chain. Process-lifetime; node-stable via unique_ptr so
@@ -439,6 +462,147 @@ void WriteReturn(lua_State* L, int idx, const Chain& chain,
 }
 
 // ===========================================================================
+// §5b  mid-hook capture handles + skip flag
+// ===========================================================================
+//
+// A mid hook captures register/memory values at one instruction inside a
+// function. The author's callback receives a table of capture HANDLES —
+// one per capture — each a small userdata with :get() / :set(). :get()
+// reads the captured value (as a Lua number/pointer); :set(v) writes it
+// back into the JIT capture slot, which make_jit_midfunc's unconditional
+// "apply change" loop then stores into the real register/memory after the
+// callback returns (runtime_func_t.cpp:608+).
+//
+// Slots live in the JIT trampoline's STACK payload for the duration of
+// the dispatch only. A handle is valid ONLY inside the callback; stashing
+// one and using it later reads freed stack (author bug — same hazard as
+// retaining any by-reference callback argument).
+//
+// The capture payload uses a 16-BYTE slot stride (the JIT writes
+// [rsp + 16*i]) — NOT parameters_t::get_arg_ptr's 8-byte stride. We index
+// the payload base directly. (cap-04 has one capture so slot0 coincides
+// in both strides; the mismatch only bites 2+ captures — see
+// project_kcdx_phase2b_hook_restructure memory.)
+
+// Skip-original flag: a single byte make_jit_midfunc reads (Auto mode)
+// after MidDispatch returns. Non-zero => the captured instruction is
+// skipped (resume past it). hook_chain owns its OWN flag (not
+// scripting::g_mid_skip_original) so it stays self-contained for the
+// eventual legacy-scripting discard. Main-thread-only dispatch
+// (.claude/rules/lua-callback-threading.md) means a plain byte suffices;
+// MidDispatch clears it at entry and sets it from the callback's return.
+uint8_t g_midSkipOriginal = 0;
+
+// One capture handle: a pointer into the live JIT slot payload + the
+// capture's type string. Bare value (not a kcdx.memory.pointer) — the
+// author reads/writes plain numbers off a disassembler.
+struct CaptureHandle {
+    void*       slot = nullptr;  // (char*)&params->m_arguments + 16*i
+    const char* type = "i64";    // capExprs[i]'s parsed type
+};
+
+const char* const kCaptureHandleMetatable = "kcdx.hook.capture";
+
+// Push the slot value as a bare Lua value, per the capture type string.
+// f32/f64 -> number; ptr -> kcdx.memory.pointer userdata (exact, per
+// lua-precision.md); integer widths -> Lua integer (read at the slot's
+// width so the upper bits of a 16-byte slot don't leak in).
+void PushCaptureValue(lua_State* L, const CaptureHandle* h) {
+    const std::string t = h->type;
+    if (t == "f32")        lua_pushnumber(L, (lua_Number)*(const float*)h->slot);
+    else if (t == "f64" || t == "double")
+                           lua_pushnumber(L, (lua_Number)*(const double*)h->slot);
+    else if (t == "float") lua_pushnumber(L, (lua_Number)*(const float*)h->slot);
+    else if (t == "bool")  lua_pushboolean(L, (*(const uint64_t*)h->slot != 0) ? 1 : 0);
+    else if (t == "ptr")
+        kcdx::lua_bind_helpers::PushPointer(
+            L, kcdx::lua_memory::pointer(*(const uintptr_t*)h->slot));
+    else if (t == "i8")    lua_pushinteger(L, (lua_Integer)*(const int8_t*)h->slot);
+    else if (t == "u8")    lua_pushinteger(L, (lua_Integer)*(const uint8_t*)h->slot);
+    else if (t == "i16")   lua_pushinteger(L, (lua_Integer)*(const int16_t*)h->slot);
+    else if (t == "u16")   lua_pushinteger(L, (lua_Integer)*(const uint16_t*)h->slot);
+    else if (t == "i32")   lua_pushinteger(L, (lua_Integer)*(const int32_t*)h->slot);
+    else if (t == "u32")   lua_pushinteger(L, (lua_Integer)*(const uint32_t*)h->slot);
+    else if (t == "u64")   lua_pushinteger(L, (lua_Integer)*(const uint64_t*)h->slot);
+    else                   lua_pushinteger(L, (lua_Integer)*(const int64_t*)h->slot);  // i64 default
+}
+
+// Write a Lua value at `idx` into the slot, per the capture type. Widens
+// to the full 16-byte slot for integer types (zero/sign-extend the rest)
+// so the JIT's 8-byte reload reads a clean value. Wrong-typed value is a
+// no-op (mutate-by-call: not calling :set() leaves the captured value).
+void WriteCaptureValue(lua_State* L, int idx, const CaptureHandle* h) {
+    const std::string t = h->type;
+    if (t == "f32" || t == "float") {
+        if (lua_isnumber(L, idx)) *(float*)h->slot = (float)lua_tonumber(L, idx);
+    } else if (t == "f64" || t == "double") {
+        if (lua_isnumber(L, idx)) *(double*)h->slot = (double)lua_tonumber(L, idx);
+    } else if (t == "bool") {
+        if (!lua_isnil(L, idx)) *(uint64_t*)h->slot = lua_toboolean(L, idx) ? 1 : 0;
+    } else if (t == "ptr") {
+        // Accept a kcdx.memory.pointer userdata or an integer VA.
+        if (lua_isuserdata(L, idx)) {
+            if (lua_getmetatable(L, idx)) {
+                luaL_getmetatable(L, kcdx::lua_memory::kPointerMetatable);
+                const bool match = lua_rawequal(L, -1, -2) != 0;
+                lua_pop(L, 2);
+                if (match) {
+                    auto* p = static_cast<kcdx::lua_memory::pointer*>(
+                        lua_touserdata(L, idx));
+                    if (p) *(uintptr_t*)h->slot = (uintptr_t)p->get_address();
+                }
+            }
+        } else if (lua_isnumber(L, idx)) {
+            *(uintptr_t*)h->slot = (uintptr_t)lua_tointeger(L, idx);
+        }
+    } else {
+        // Integer widths: store full 64 bits so the slot is clean for the
+        // JIT reload. The author's narrower intent (i8/i32) is honored on
+        // the read side; on write we sign-extend through int64.
+        if (lua_isnumber(L, idx))
+            *(uint64_t*)h->slot = (uint64_t)(int64_t)lua_tointeger(L, idx);
+    }
+}
+
+int CaptureHandle_get(lua_State* L) {
+    auto* h = static_cast<CaptureHandle*>(
+        luaL_checkudata(L, 1, kCaptureHandleMetatable));
+    PushCaptureValue(L, h);
+    return 1;
+}
+
+int CaptureHandle_set(lua_State* L) {
+    auto* h = static_cast<CaptureHandle*>(
+        luaL_checkudata(L, 1, kCaptureHandleMetatable));
+    WriteCaptureValue(L, 2, h);
+    return 0;
+}
+
+// Lazily create the capture-handle metatable on the live state. Raw Lua C
+// API only (no static-const sentinel — .claude/rules/lua-bridge.md AP5).
+void EnsureCaptureHandleMetatable(lua_State* L) {
+    if (luaL_newmetatable(L, kCaptureHandleMetatable)) {
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -2, "__index");  // mt.__index = mt
+        lua_pushcfunction(L, CaptureHandle_get);
+        lua_setfield(L, -2, "get");
+        lua_pushcfunction(L, CaptureHandle_set);
+        lua_setfield(L, -2, "set");
+    }
+    lua_pop(L, 1);
+}
+
+// Push a fresh capture handle userdata for slot i of the dispatch payload.
+void PushCaptureHandle(lua_State* L, void* slot, const char* type) {
+    auto* h = static_cast<CaptureHandle*>(
+        lua_newuserdata(L, sizeof(CaptureHandle)));
+    h->slot = slot;
+    h->type = type;
+    luaL_getmetatable(L, kCaptureHandleMetatable);
+    lua_setmetatable(L, -2);
+}
+
+// ===========================================================================
 // §6  DispatchPre / DispatchPost — the C callbacks the JIT thunk calls
 // ===========================================================================
 
@@ -642,6 +806,94 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
 }
 
 // ===========================================================================
+// §6b  MidDispatch — the C callback make_jit_midfunc invokes
+// ===========================================================================
+//
+// Runs once per call to the captured instruction. Builds a table of
+// capture handles (keyed by name for the name-map form, or 1..N for the
+// positional list form), runs the author's `mid` callback with it, and
+// decides run-vs-skip from the RETURN value:
+//   return "skip" or true  -> set g_midSkipOriginal (instruction skipped)
+//   return nothing/false    -> leave it clear (instruction runs)
+// :set() calls on handles mutate the JIT slots in place; the JIT's
+// "apply change" loop stores them back into the real reg/mem afterwards.
+//
+// This is the FRESH dispatcher (not the legacy scripting::dynamic_hook_mid
+// which carried the cap-04-c bug: it dup'd the args table with a fragile
+// lua_insert/lua_pushvalue juggle to read `args._skip` post-pcall). Here
+// the decision rides the return value — no global args._skip, no juggle.
+//
+// Returns 0: the JIT no longer reads rax (resume is decided by the skip
+// flag in Auto mode).
+uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
+                      const size_t  param_count,
+                      const uintptr_t target_func_ptr) {
+    // Clear the skip flag at entry — start from a known state so a stale
+    // "set" from a previous mid dispatch can't carry over.
+    g_midSkipOriginal = 0;
+
+    lua_State* L = g_L;
+    if (!L) return 0;
+    Chain* chain = ResolveChainForDispatch(target_func_ptr);
+    if (!chain || !chain->isMid || chain->midCallbackRef == -2) return 0;
+
+    // Capture payload base. Slots are at 16-byte stride.
+    char* payload = reinterpret_cast<char*>(
+        const_cast<uintptr_t*>(&params->m_arguments));
+    const size_t n = (param_count < chain->capTypes.size())
+                         ? param_count : chain->capTypes.size();
+
+    lua_rawgeti(L, LUA_REGISTRYINDEX, chain->midCallbackRef);
+    if (!lua_isfunction(L, -1)) { lua_pop(L, 1); return 0; }
+    const int top0 = lua_gettop(L);  // [..., fn]
+
+    // Build the capture handle table.
+    lua_createtable(L, (int)n, (int)n);
+    const int tbl = lua_gettop(L);
+    const bool nameKeyed = !chain->capNames.empty() &&
+                           !chain->capNames[0].empty();
+    for (size_t i = 0; i < n; ++i) {
+        void* slot = payload + 16 * i;
+        if (nameKeyed && i < chain->capNames.size() &&
+            !chain->capNames[i].empty()) {
+            PushCaptureHandle(L, slot, chain->capTypes[i].c_str());
+            lua_setfield(L, tbl, chain->capNames[i].c_str());
+        } else {
+            PushCaptureHandle(L, slot, chain->capTypes[i].c_str());
+            lua_rawseti(L, tbl, (int)i + 1);
+        }
+    }
+
+    const int status = lua_pcall(L, 1, LUA_MULTRET, 0);
+    if (status != 0) {
+        const char* msg = lua_tostring(L, -1);
+        log::ErrorF("hook_chain: mid '%s' (plugin '%s') on 0x%p threw: %s",
+                    chain->midName.c_str(), chain->midPluginName.c_str(),
+                    (void*)target_func_ptr, msg ? msg : "<no message>");
+        lua_settop(L, top0 - 1);
+        return 0;
+    }
+
+    // Run-vs-skip from the return: "skip" (string) or true -> skip.
+    const int retCount = lua_gettop(L) - (top0 - 1);
+    if (retCount > 0) {
+        if (lua_type(L, top0) == LUA_TSTRING) {
+            const char* s = lua_tostring(L, top0);
+            if (s && std::string(s) == "skip") g_midSkipOriginal = 1;
+        } else if (lua_isboolean(L, top0) && lua_toboolean(L, top0)) {
+            g_midSkipOriginal = 1;
+        }
+    }
+    lua_settop(L, top0 - 1);  // balance
+
+    LOG_DEBUG_KV("MID_HOOK", "hook_chain.mid_dispatch",
+        log::KV("target",        (void*)target_func_ptr),
+        log::KV("captures",      (int64_t)n),
+        log::KV("skip_original", (int64_t)g_midSkipOriginal));
+    return 0;
+}
+
+// ===========================================================================
 // §7  Locator resolution + first-touch install + chain append
 // ===========================================================================
 
@@ -752,7 +1004,127 @@ void InsertOrdered(Chain& chain, ChainEntry&& e) {
 
 }  // namespace
 
-void SetLuaState(lua_State* L) { g_L = L; }
+void SetLuaState(lua_State* L) {
+    g_L = L;
+    // Create the mid-capture-handle metatable once on the live state, so
+    // MidDispatch can hand the callback handles with :get()/:set(). Raw
+    // Lua C API only (no static-const sentinel — lua-bridge.md AP5).
+    if (L) EnsureCaptureHandleMetatable(L);
+}
+
+// Install a mode=mid hook: a mid-function detour at the captured-
+// instruction VA (payload's locator already resolved to it, offset
+// included), built with make_jit_midfunc + MidDispatch. v1 keeps one mid
+// hook per VA — the JIT bakes one capture layout, so a second mid hook on
+// the same VA loses by load order (it cannot share the layout). This is
+// the safe-but-blunt v1, consistent with the around/replace exclusivity;
+// footprint-based mid coexistence is the same future work as the
+// signature path (smart-replace-conflict-detection.md). The runtime_func_t
+// holds the detour for the session.
+AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
+                 int callbackRef, const std::string& pluginName,
+                 int priority, const std::string& name) {
+    AddResult res;
+    (void)priority;  // v1: one mid hook per VA, so ordering is moot
+
+    std::string reason;
+    uintptr_t targetVa = ResolveLocator(payload, reason);
+    if (!targetVa) { res.reason = std::move(reason); return res; }
+
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+
+    if (FindChain(targetVa)) {
+        // A hook (mid or signature) already owns this VA. v1 mid can't
+        // share — load-order-loses: the later one fails loud.
+        res.reason =
+            "target already has a hook; a 'mid' hook needs sole ownership "
+            "of its capture site in v1 (the JIT bakes one capture layout). "
+            "The earlier hook wins by load order. (Footprint-based mid "
+            "coexistence is future work — see docs/outstanding-work/"
+            "smart-replace-conflict-detection.md.)";
+        return res;
+    }
+
+    // Auto-decode the resume offset (how many bytes to skip past so the
+    // resume lands on an instruction boundary beyond MinHook's patched
+    // region). hde64-disassemble forward from the capture site until the
+    // accumulated length covers MinHook's minimum 5-byte rel32 jmp. Same
+    // algorithm as hook_engine::ApplyOneMidHook — better UX than making
+    // the author count instruction bytes.
+    constexpr int kMinHookPatchBytes = 5;
+    int stackRestoreOffset = 0;
+    {
+        uintptr_t scan = targetVa;
+        int accumulated = 0;
+        while (accumulated < kMinHookPatchBytes) {
+            hde64s hs{};
+            unsigned int len =
+                hde64_disasm(reinterpret_cast<const void*>(scan), &hs);
+            if (len == 0 || (hs.flags & F_ERROR) != 0) {
+                res.reason =
+                    "could not disassemble the capture site to compute the "
+                    "resume point (hde64 failed at the mid offset); the "
+                    "`offset` may not land on an instruction boundary";
+                return res;
+            }
+            scan += len;
+            accumulated += static_cast<int>(len);
+        }
+        stackRestoreOffset = accumulated;
+    }
+    const uintptr_t resumeAddr = targetVa + (uintptr_t)stackRestoreOffset;
+
+    auto newChain = std::make_unique<Chain>();
+    newChain->targetVa       = targetVa;
+    newChain->isMid          = true;
+    newChain->midCallbackRef = callbackRef;
+    newChain->midPluginName  = pluginName;
+    newChain->midName        = name;
+    newChain->capExprs       = payload.captureExprs;
+    newChain->capTypes       = payload.captureTypes;
+    newChain->capNames       = payload.captureNames;
+    newChain->rf             = std::make_unique<kcdx::rom::runtime_func_t>();
+
+    // call_original_mode = 2 (Auto): the JIT pushes MinHook's trampoline
+    // by default and, after MidDispatch returns, reads our skip-flag byte;
+    // if set, it resumes past the captured instruction instead. This is
+    // the return-value model (the callback returns "skip"/true to skip).
+    uintptr_t jit = newChain->rf->make_jit_midfunc(
+        newChain->capTypes,
+        newChain->capExprs,
+        stackRestoreOffset,
+        /*call_original_mode=*/2,
+        /*skip_flag_addr=*/reinterpret_cast<uintptr_t>(&g_midSkipOriginal),
+        resumeAddr,
+        asmjit::Arch::kX64,
+        &MidDispatch,
+        targetVa);
+    if (!jit) {
+        res.reason = "make_jit_midfunc failed (capture/codegen — check the "
+                     "capture exprs + types; see kcdx.log)";
+        return res;
+    }
+
+    auto install = kcdx::hook_engine::InstallRuntime(name, targetVa, (void*)jit);
+    if (!install.ok) {
+        res.reason = "InstallRuntime failed: " + install.reason;
+        return res;
+    }
+    // Wire MinHook's pOriginal into the JIT trampoline's call-original
+    // slot — Auto mode's default path rets into it (runs the captured
+    // instruction). Without this the trampoline reads null and rets to 0.
+    if (void** slot = newChain->rf->get_jit_original_slot()) {
+        *slot = install.pOriginal;
+    }
+
+    g_chains.emplace(targetVa, std::move(newChain));
+    res.ok = true;
+    log::InfoF("hook_chain: installed mid '%s' (plugin '%s') at 0x%p "
+               "(%zu captures, resume +%d, JIT detour 0x%p)",
+               name.c_str(), pluginName.c_str(), (void*)targetVa,
+               payload.captureExprs.size(), stackRestoreOffset, (void*)jit);
+    return res;
+}
 
 AddResult Add(lua_State*                             L,
               const kcdx::hook_payload::HookPayload& payload,
@@ -762,6 +1134,12 @@ AddResult Add(lua_State*                             L,
               const std::string&                     name) {
     AddResult res;
     if (L) g_L = L;  // capture the dispatch state on first use
+
+    // mode=mid is a different install (mid-function detour + captures, no
+    // function signature) — branch before the signature gate.
+    if (payload.mode == kcdx::hook_payload::Mode::Mid) {
+        return AddMid(payload, callbackRef, pluginName, priority, name);
+    }
 
     if (!payload.hasSignature) {
         res.reason = "internal: hook has no parsed signature";
