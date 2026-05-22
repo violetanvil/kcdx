@@ -80,4 +80,29 @@ const char* Describe(uint64_t id);
 // Same as Describe() but by name. Returns nullptr if name is unknown.
 const char* DescribeByName(const char* name);
 
+// Fetch the machine-readable function SIGNATURE for a given Address
+// Library NAME, in the kcdx.hook signature DSL (see
+// src/hook_signature.h) — e.g. "i32 (ptr L, i32 nargs, i32 nresults,
+// i32 errfunc)" for lua_pcall. This is the STRUCTURED form of the
+// verified ABI prose carried in the row's notes/description column; it
+// lets `kcdx.hook{ target = "<name>" }` supply the ABI so the author
+// never hand-writes a signature for a named target (the disassembler
+// test — .claude/rules/cornerstones.md / AP12).
+//
+// Returns:
+//   - the entry's signature string when the row exists AND carries a
+//     verified, structured signature;
+//   - "" (empty, non-null) when the row exists but has NO verified
+//     signature yet (the prose carried no ABI to structure — we never
+//     invent one, per AP2). The caller treats "" as "name resolved but
+//     no ABI known: ask the author for an explicit signature=".
+//   - "" when the name is unknown (callers resolve the address via
+//     ResolveByName separately and report the unknown-name error there).
+//
+// Lifetime: process (compiled into .rdata). Returned independently of
+// game_version / status, mirroring Describe() — the binder gates the
+// address on ResolveByName (which enforces version + verified); the
+// signature is descriptive metadata for the same row.
+const char* ResolveSignatureByName(const char* name);
+
 }  // namespace kcdx::address_library

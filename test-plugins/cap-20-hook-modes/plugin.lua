@@ -129,6 +129,40 @@ local hAddrnameMiss = kcdx.hook{
     before     = function(seed) return seed end,
 }
 
+-- CAP-20-target: the NAME-supplies-the-ABI path (AP12 headline). This
+-- hook gives ONLY `target = "<name>"` and a callback — NO hand-written
+-- signature=. If it installs (applied()==true), the engine carried the
+-- verified signature from the Address Library for that name (had it not,
+-- the binder would have rejected with "a 'signature' is required"). This
+-- is the end-to-end proof that the name supplied the ABI.
+--
+-- Target choice: "luaL_loadfile" (Address Library id 1002) — verified,
+-- signature populated ("i32 (ptr L, cstr filename)"), and SAFE to hook in
+-- a test: it fires only during pre-update Scripts/ loading (before kcdx's
+-- hooks install), so post-install the detour sits dormant. NOT a
+-- production kcdx hook (those are lua_pcall / CGame_Update — id 1000/1001
+-- — which we deliberately do NOT hook here) and NOT hooked by any other
+-- test. We assert install success in "ready"; the hook need not fire (a
+-- dormant target) — the install IS the proof the ABI was supplied.
+local hTargetAbi = kcdx.hook{
+    name   = "cap20_target_abi",
+    target = "luaL_loadfile",      -- name resolves address AND signature
+    before = function(L, filename) return L, filename end,  -- no-op passthrough
+}
+
+-- CAP-20-target-nosig: the AP2 path. A name that RESOLVES an address but
+-- whose Address Library row carries NO verified signature must fail to
+-- install with a teaching error (the engine never invents a signature).
+-- "IConsole_AddCommand" (id 2000) is verified but its signature column is
+-- "" (the prose states args but not a full method return type, so we left
+-- it un-populated rather than guess — AP2). Expected: applied()==false +
+-- a reason naming the missing-signature teaching error.
+local hTargetNoSig = kcdx.hook{
+    name   = "cap20_target_nosig",
+    target = "IConsole_AddCommand",   -- resolves an address; no seed signature
+    before = function() end,          -- never installs, so never runs
+}
+
 -- CAP-20 deferred failure-path asserts. These need the post-apply
 -- moment: handle:applied()/:reason() only become final during ApplyZone,
 -- which runs AFTER this plugin.lua returns. kcdx.on("ready", ...) fires
@@ -176,10 +210,45 @@ kcdx.on("ready", function()
                  or  ("ready fired but winning handle applied="
                       .. tostring(applied) .. " (expected true)"))
     end
+
+    -- (d) CAP-20-target: the headline AP12 fix. The hook gave ONLY
+    -- target="luaL_loadfile" + a callback (no signature=). applied()==true
+    -- proves the engine supplied the verified ABI from the name — the
+    -- author never wrote the signature. (Had the name carried no
+    -- signature, the binder would have rejected and applied() would be
+    -- false, which CAP-20-target-nosig below checks for the no-ABI case.)
+    do
+        local applied = hTargetAbi:applied()
+        local reason  = hTargetAbi:reason()
+        local pass = (applied == true)
+        kcdx.test.report("CAP-20-target", pass,
+            pass and ("target=\"luaL_loadfile\" installed with NO "
+                      .. "hand-written signature= — the name supplied the "
+                      .. "ABI (engine carries it)")
+                 or  ("expected applied()==true (name supplies the ABI); "
+                      .. "got applied=" .. tostring(applied)
+                      .. " reason=" .. tostring(reason)))
+    end
+
+    -- (e) CAP-20-target-nosig: AP2 path. target resolved an address but
+    -- the row has no verified signature, and no explicit signature= was
+    -- given — must fail to install with a teaching reason (the engine
+    -- never invents a signature).
+    do
+        local applied = hTargetNoSig:applied()
+        local reason  = hTargetNoSig:reason()
+        local pass = (applied == false) and reason ~= nil and reason ~= ""
+        kcdx.test.report("CAP-20-target-nosig", pass,
+            pass and ("name with no verified signature failed to install "
+                      .. "with reason: " .. reason)
+                 or  ("expected applied()==false + non-empty reason "
+                      .. "(no-ABI teaching error); got applied="
+                      .. tostring(applied) .. " reason=" .. tostring(reason)))
+    end
 end)
 
 -- Also exercises kcdx.log.* (the grouped logging domain): a positional
 -- "do a thing" call per the surface convention. The handles are held in
 -- locals so they aren't GC'd before ApplyZone resolves them.
-local _ = { hConflictA, hConflictB, hAddrnameMiss }
+local _ = { hConflictA, hConflictB, hAddrnameMiss, hTargetAbi, hTargetNoSig }
 kcdx.log.info("CAP20", "installed all cap-20 hooks (4 modes + chain + wstr + conflict)")

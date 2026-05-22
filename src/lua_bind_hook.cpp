@@ -66,6 +66,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "address_library.h"   // ResolveSignatureByName (target = "name")
 #include "hook_chain.h"
 #include "hook_payload.h"
 #include "hook_signature.h"
@@ -594,6 +595,54 @@ int Lua_Hook(lua_State* L) {
         p->addressId = static_cast<uint64_t>(lua_tointeger(L, -1));
     }
     lua_pop(L, 1);
+
+    // `target = "<name>"` — the name-based locator that resolves BOTH the
+    // address AND the verified signature from the Address Library. This is
+    // the COMMON path (the disassembler test — cornerstones.md / AP12): the
+    // author names the function and the engine carries its ABI, so no
+    // hand-written signature is needed. Implemented as the same name slot
+    // address_id="name" already feeds (p->addressName → ResolveLocator's
+    // ResolveByName); the signature carry happens at the signature gate
+    // below (target's entry signature fills in when no explicit signature=
+    // is given). This cycle ADDS target alongside the existing locators;
+    // the broader locator cleanup (target as universal default, labeling
+    // the hex-tier locators expert-only) is the next cycle.
+    std::string targetName;
+    bool        haveTarget = false;
+    {
+        lua_getfield(L, 1, "target");
+        if (lua_type(L, -1) == LUA_TSTRING) {
+            targetName  = lua_tostring(L, -1);
+            haveTarget  = true;
+        } else if (!lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook '%s': `target` must be a string — the Address "
+                "Library name of the function to hook (e.g. target = "
+                "\"CGame_per_frame_ui_pump\"). The name resolves both the "
+                "address and the verified signature.",
+                p->name.c_str());
+            return 2;
+        }
+        lua_pop(L, 1);
+    }
+    if (haveTarget) {
+        // target shares the name slot with address_id="name". Setting both
+        // a string address_id AND target would be two names for one locator
+        // — reject with a clear steer rather than silently letting one win.
+        if (!p->addressName.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook '%s': set EITHER target = \"%s\" OR address_id = "
+                "\"%s\", not both — they are the same name-based locator. "
+                "Prefer `target` (the common path; it also supplies the "
+                "verified signature).",
+                p->name.c_str(), targetName.c_str(), p->addressName.c_str());
+            return 2;
+        }
+        p->addressName = targetName;
+    }
     p->targetSymbol       = LuaTableString(L, 1, "target_symbol");
     p->targetLuaCfunction = LuaTableString(L, 1, "target_lua_cfunction");
     p->address            = LuaTableAddress(L, 1, "address");
@@ -668,24 +717,71 @@ int Lua_Hook(lua_State* L) {
         // lives. 0 is legal (capture at the entry) but unusual; warn-free.
     } else {
     // --- Signature DSL (before/after/around/replace) ---
-    // Required for these modes — the engine needs the ABI to marshal
-    // arguments + return value to/from the callback. Parse now so the
-    // apply pass never re-parses.
+    // The engine needs the ABI to marshal arguments + return value to/from
+    // the callback. TWO sources, in precedence order:
+    //   1. An explicit `signature = "..."` the author wrote (EXPERT path /
+    //      override — always WINS when present, even if target also carries
+    //      one; the author may know better than the seed, or be hooking a
+    //      target the library can't name yet).
+    //   2. The verified signature the Address Library carries for `target`
+    //      (the COMMON path — the name supplies the ABI; AP12). Used when
+    //      the author gave NO explicit signature=.
+    // Parse now so the apply pass never re-parses. If target resolved an
+    // address but has NO verified signature AND no explicit signature= was
+    // given, that's a teaching error (the engine can't know the ABI).
     const std::string sigStr = LuaTableString(L, 1, "signature");
-    if (sigStr.empty()) {
+
+    // The signature string actually parsed: explicit wins; else target's.
+    std::string effectiveSig = sigStr;
+    bool        sigFromTarget = false;
+    if (effectiveSig.empty() && haveTarget) {
+        const char* entrySig =
+            kcdx::address_library::ResolveSignatureByName(targetName.c_str());
+        if (entrySig && entrySig[0] != '\0') {
+            effectiveSig  = entrySig;
+            sigFromTarget = true;
+        }
+    }
+
+    if (effectiveSig.empty()) {
         lua_pushnil(L);
-        lua_pushfstring(L,
-            "kcdx.hook '%s': a 'signature' is required (e.g. "
-            "\"void (ptr self, wstr szApp)\") so the engine knows the "
-            "function's argument + return types",
-            p->name.c_str());
+        if (haveTarget) {
+            // target resolved a NAME but the library has no verified ABI
+            // for it yet — teach the fix (supply signature= explicitly, the
+            // expert path), don't just reject. (AP2: the engine never
+            // invents a signature; an un-populated seed row stays "".)
+            lua_pushfstring(L,
+                "kcdx.hook '%s': target '%s' resolved to an address but the "
+                "Address Library has no verified signature for it yet — "
+                "supply signature= explicitly (advanced), or use a name "
+                "whose ABI is known.",
+                p->name.c_str(), targetName.c_str());
+        } else {
+            lua_pushfstring(L,
+                "kcdx.hook '%s': a 'signature' is required (e.g. "
+                "\"void (ptr self, wstr szApp)\") so the engine knows the "
+                "function's argument + return types — or use target = "
+                "\"<name>\" to have the engine supply it.",
+                p->name.c_str());
+        }
         return 2;
     }
     {
-        auto sr = kcdx::hook_signature::Parse(sigStr);
+        auto sr = kcdx::hook_signature::Parse(effectiveSig);
         if (!sr.ok) {
             lua_pushnil(L);
-            if (sr.errorColumn > 0) {
+            // A target-supplied signature that fails to parse is a SEED bug
+            // (a malformed signature string in the Address Library), not an
+            // author mistake — say so, since the author didn't write it.
+            if (sigFromTarget) {
+                lua_pushfstring(L,
+                    "kcdx.hook '%s': the Address Library signature for "
+                    "target '%s' (\"%s\") failed to parse: %s. This is a "
+                    "kcdx seed bug — report it; meanwhile you can override "
+                    "with an explicit signature=.",
+                    p->name.c_str(), targetName.c_str(), effectiveSig.c_str(),
+                    sr.error.c_str());
+            } else if (sr.errorColumn > 0) {
                 lua_pushfstring(L,
                     "kcdx.hook '%s': signature parse error at column %d: %s",
                     p->name.c_str(), sr.errorColumn, sr.error.c_str());
