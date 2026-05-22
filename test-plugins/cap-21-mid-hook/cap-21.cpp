@@ -39,8 +39,9 @@
 namespace {
 const char* kName = "kcdx.cap-21-mid-hook";
 kcdxLogger  gLog;
-const kcdxInterface* g_api = nullptr;
-kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;
+const kcdxInterface*      g_api   = nullptr;
+kcdxPluginHandle          g_self  = kcdxInvalidPluginHandle;
+kcdxTrampolineInterface*  g_tramp = nullptr;
 
 // The controlled stub: int fn(int seed) -> seed + 100. HOOK at +2.
 const unsigned char kStub[] = {
@@ -59,9 +60,20 @@ using StubFn = int (*)(int);
 struct Stub { void* mem = nullptr; StubFn fn = nullptr; };
 Stub g_read, g_write, g_skip, g_run;
 
+// Allocate the stub from the kcdx BRANCH POOL (RWX memory within ±2 GB of
+// WHGame.dll's .text), NOT raw VirtualAlloc(nullptr, ...). A real plugin
+// hooks code inside loaded modules — always near other module code, inside
+// MinHook's ±1 GB trampoline window (vendor/minhook/src/buffer.c
+// MAX_MEMORY_RANGE = 0x40000000). A raw-heap stub (~0x1D8…) lands an
+// ASLR-dependent distance away; MinHook's MH_CreateHook trampoline allocator
+// (the mid install path: AddMid -> InstallRuntime -> MH_CreateHook) then
+// fails MH_ERROR_MEMORY_ALLOC when no free page is in range — flaky.
+// Allocating near WHGame mirrors a real in-module target and is deterministic.
+// (cap-07 proves AllocateFromBranchPool returns rel32-reachable memory; the
+//  pool is ±2 GB of WHGame.dll .text per docs/design.md §"Pool choice".)
 bool AllocStub(Stub& s) {
-    s.mem = VirtualAlloc(nullptr, sizeof(kStub),
-                         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_tramp) return false;
+    s.mem = g_tramp->AllocateFromBranchPool(g_self, sizeof(kStub));
     if (!s.mem) return false;
     memcpy(s.mem, kStub, sizeof(kStub));
     FlushInstructionCache(GetCurrentProcess(), s.mem, sizeof(kStub));
@@ -138,24 +150,31 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     gLog   = kcdxLogger(api, g_self);
     gLog.Info("INIT", "kcdxPlugin_Load called");
 
-    if (!AllocStub(g_read) || !AllocStub(g_write) ||
-        !AllocStub(g_skip) || !AllocStub(g_run)) {
-        gLog.Error("INIT", "VirtualAlloc(RWX) for a stub failed");
-        api->ReportTestResult(g_self, "CAP-21-read", 0,
-            "VirtualAlloc(PAGE_EXECUTE_READWRITE) failed");
-        return true;
-    }
-
     auto* scripting = static_cast<kcdxScriptingInterface*>(
         api->QueryInterface(kcdxInterface_Scripting,
                             kcdxScriptingInterface_Version));
     auto* messaging = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging,
                             kcdxMessagingInterface_Version));
-    if (!scripting || !messaging) {
-        gLog.Error("INIT", "QueryInterface(Scripting/Messaging) null");
+    g_tramp = static_cast<kcdxTrampolineInterface*>(
+        api->QueryInterface(kcdxInterface_Trampoline,
+                            kcdxTrampolineInterface_Version));
+    if (!scripting || !messaging || !g_tramp) {
+        gLog.Error("INIT", "QueryInterface(Scripting/Messaging/Trampoline) null");
         api->ReportTestResult(g_self, "CAP-21-read", 0,
             "QueryInterface returned null");
+        return true;
+    }
+
+    // Stubs come from the branch pool (fetched above) so MinHook's mid-hook
+    // trampoline allocator finds a page in range deterministically. A null
+    // alloc fails LOUD — no silent fall back to VirtualAlloc (that would
+    // reintroduce the ASLR flakiness this fix removes).
+    if (!AllocStub(g_read) || !AllocStub(g_write) ||
+        !AllocStub(g_skip) || !AllocStub(g_run)) {
+        gLog.Error("INIT", "AllocateFromBranchPool for a stub failed");
+        api->ReportTestResult(g_self, "CAP-21-read", 0,
+            "AllocateFromBranchPool(branch) for a stub returned null");
         return true;
     }
 
