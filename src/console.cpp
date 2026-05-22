@@ -64,6 +64,22 @@ struct Slot {
 Slot      g_slots[kMaxCommands];
 std::mutex g_slotsMutex;
 
+// Deferred-registration queue (restructure-plan.md §"The deferred-registration
+// pattern"). kcdx.command may be CALLED before Init() resolves IConsole — Lua
+// plugin.lua runs (lua_plugin_loader::RunAll) BEFORE console::Init() in the
+// same first-update-tick block (hooks.cpp). A RegisterCommand that arrives
+// while g_ready==false is queued here (validated first), then flushed in FIFO
+// order the instant Init() arms the surface. The author's call succeeds
+// optimistically ("accepted-deferred"); the engine does the timing.
+// Guarded by g_slotsMutex (the same lock the slot table uses).
+struct PendingCommand {
+    kcdxPluginHandle           owner;
+    std::string                name;
+    std::string                help;
+    kcdxConsoleCommandCallback callback;
+};
+std::vector<PendingCommand> g_pendingCommands;
+
 // Dispatcher: called by every trampoline. Looks up the slot and forwards
 // the IConsoleCmdArgs* to the plugin callback.
 void DispatchSlot(size_t slotIdx, void* iConsoleCmdArgs) {
@@ -147,30 +163,20 @@ const void* const* CmdArgsVtable(const void* args) {
 // kcdxConsoleInterface thunks
 // -----------------------------------------------------------------
 
-bool Thunk_RegisterCommand(kcdxPluginHandle owner,
-                           const char* name,
-                           const char* help,
-                           kcdxConsoleCommandCallback cb) {
-    if (!g_ready.load(std::memory_order_acquire)) {
-        log::WarnF("[console] RegisterCommand('%s') refused: IConsole not ready",
-                   name ? name : "<null>");
-        return false;
-    }
-    if (!name || !*name || !cb) {
-        log::Warn("[console] RegisterCommand: null name or callback");
-        return false;
-    }
-    std::lock_guard<std::mutex> lock(g_slotsMutex);
-
-    // Uniqueness check (kcdx-side, before involving CryEngine).
-    for (size_t i = 0; i < kMaxCommands; ++i) {
-        if (g_slots[i].used && g_slots[i].name == name) {
-            log::WarnF("[console] RegisterCommand('%s') refused: name already "
-                       "registered by another plugin (handle %u)",
-                       name, g_slots[i].owner);
-            return false;
-        }
-    }
+// THE single registration code path: find a free slot, fill it, and call
+// CryEngine's AddCommand. BOTH the immediate (g_ready==true) RegisterCommand
+// path AND the deferred-queue flush in Init() call this — there is exactly
+// ONE copy of the slot-find + AddCommand logic, never two.
+//
+// PRECONDITIONS (caller's responsibility — this helper asserts none of them):
+//   * g_slotsMutex is HELD by the caller.
+//   * g_ready is true / IConsole is armed (g_AddCommand non-null).
+//   * name/cb already validated non-null; name already dup-checked.
+// Returns false only on "no free slots" (the one failure this body owns).
+bool RegisterCommandNow(kcdxPluginHandle owner,
+                        const char* name,
+                        const char* help,
+                        kcdxConsoleCommandCallback cb) {
     // Find an unused slot.
     size_t slotIdx = kMaxCommands;
     for (size_t i = 0; i < kMaxCommands; ++i) {
@@ -210,6 +216,68 @@ bool Thunk_RegisterCommand(kcdxPluginHandle owner,
     return true;
 }
 
+// True iff `name` is already taken by a live slot OR a queued pending command.
+// Caller holds g_slotsMutex. The pending-queue arm closes the gap where two
+// before-ready registrations of the same name would otherwise both queue.
+bool NameTaken(const char* name, kcdxPluginHandle* outOwner) {
+    for (size_t i = 0; i < kMaxCommands; ++i) {
+        if (g_slots[i].used && g_slots[i].name == name) {
+            if (outOwner) *outOwner = g_slots[i].owner;
+            return true;
+        }
+    }
+    for (const auto& pc : g_pendingCommands) {
+        if (pc.name == name) {
+            if (outOwner) *outOwner = pc.owner;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Thunk_RegisterCommand(kcdxPluginHandle owner,
+                           const char* name,
+                           const char* help,
+                           kcdxConsoleCommandCallback cb) {
+    // Cheap validations run FIRST, in BOTH the ready and not-ready paths —
+    // a null/dup call is a genuinely bad call and must fail fast (and, when
+    // not-ready, must NOT be queued).
+    if (!name || !*name || !cb) {
+        log::Warn("[console] RegisterCommand: null name or callback");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(g_slotsMutex);
+
+    // Uniqueness check (kcdx-side, before involving CryEngine). Looks in BOTH
+    // the live slot table AND the pending queue, so a dup is refused whether
+    // the prior registration already landed or is still queued.
+    kcdxPluginHandle priorOwner = kcdxInvalidPluginHandle;
+    if (NameTaken(name, &priorOwner)) {
+        log::WarnF("[console] RegisterCommand('%s') refused: name already "
+                   "registered by another plugin (handle %u)",
+                   name, priorOwner);
+        return false;
+    }
+
+    if (!g_ready.load(std::memory_order_acquire)) {
+        // IConsole not up yet — accept-deferred. Queue the validated command;
+        // Init() flushes it in FIFO order the instant the surface arms.
+        // (restructure-plan.md §"The deferred-registration pattern".)
+        g_pendingCommands.push_back(
+            PendingCommand{owner, name, help ? help : "", cb});
+        LOG_INFO_KV("CONSOLE", "register_deferred",
+                    log::KV("name", name),
+                    log::KV("owner", static_cast<unsigned long long>(owner)),
+                    log::KV("queued", static_cast<unsigned long long>(
+                                          g_pendingCommands.size())));
+        return true;
+    }
+
+    // Surface is armed — register immediately through the shared path.
+    return RegisterCommandNow(owner, name, help, cb);
+}
+
 int Thunk_GetArgCount(const kcdxConsoleCmdArgs* args) {
     if (!args) return 0;
     auto vt = CmdArgsVtable(args);
@@ -247,6 +315,55 @@ bool Thunk_ExecuteString(const char* commandLine) {
     return true;
 }
 
+// Drain g_pendingCommands through the ONE registration path (RegisterCommandNow)
+// in FIFO order, then clear the queue. Caller holds g_slotsMutex; g_ready must
+// already be true (the surface is armed). Called once, from Init(), right after
+// g_ready flips.
+void FlushPendingCommands() {
+    if (g_pendingCommands.empty()) return;
+    LOG_INFO_KV("CONSOLE", "flush_deferred",
+                log::KV("count", static_cast<unsigned long long>(
+                                     g_pendingCommands.size())));
+    for (const auto& pc : g_pendingCommands) {
+        // RegisterCommandNow may still refuse a single command (no free slots);
+        // it logs its own loud reason. The rest of the queue still flushes.
+        RegisterCommandNow(pc.owner, pc.name.c_str(),
+                           pc.help.empty() ? "" : pc.help.c_str(),
+                           pc.callback);
+    }
+    g_pendingCommands.clear();
+}
+
+// Init() failed terminally (Address Library ids didn't resolve — wrong game
+// version / broken seed; NOT a transient timing issue, and Init is call-once
+// per session, so these commands are genuinely undeliverable). Drop every
+// queued command with a LOUD per-command ERROR that names the command, the
+// owning plugin, and the reason — routed to the OWNING PLUGIN'S OWN log (via
+// the by-handle plugin log stream) so the author sees it where they look
+// (lua-api-surface.md rule 3: errors teach; anti-patterns.md AP13: no silent
+// orphan). Caller holds g_slotsMutex; g_ready stays false.
+void DropPendingWithError(const char* reason) {
+    if (g_pendingCommands.empty()) return;
+    for (const auto& pc : g_pendingCommands) {
+        // Resolve owner handle -> plugin name for the message body.
+        const char* pluginName = "<unknown/anonymous>";
+        for (const auto& p : plugins::g_plugins) {
+            if (p.handle == pc.owner && !p.manifest.name.empty()) {
+                pluginName = p.manifest.name.c_str();
+                break;
+            }
+        }
+        // Per-plugin log (by handle) — the author's first stop. LOG_PLUGIN_*
+        // also mirrors INFO/WARN/ERROR to the engine log, so users debugging
+        // "why didn't my command register" see it there too.
+        LOG_PLUGIN_ERROR_KV(pc.owner, "CONSOLE", "deferred_command_dropped",
+                            log::KV("command", pc.name.c_str()),
+                            log::KV("plugin", pluginName),
+                            log::KV("reason", reason));
+    }
+    g_pendingCommands.clear();
+}
+
 kcdxConsoleInterface g_iface = {
     /*RegisterCommand=*/  Thunk_RegisterCommand,
     /*GetArgCount=*/      Thunk_GetArgCount,
@@ -264,17 +381,30 @@ const kcdxConsoleInterface* GetInterface() {
 bool Init() {
     if (g_ready.load(std::memory_order_acquire)) return true;
 
+    // Init() is call-once per session: hooks.cpp invokes it exactly once,
+    // inside the first-update-tick `done` CAS latch, AFTER plugin.lua RunAll.
+    // It is NOT tried-early-then-retried — so a failure here is TERMINAL, and
+    // every queued command is genuinely undeliverable. At each failure return
+    // we drain+drop the pending queue with a loud per-command error (routed to
+    // the owning plugin's log) under g_slotsMutex; the queue never silently
+    // orphans (anti-patterns.md AP13).
+
     // Resolve gEnv->pConsole storage via Address Library id 1009.
     uintptr_t pConsole_storage = address_library::Resolve(1009);
     if (!pConsole_storage) {
         log::Warn("[console] Init: Address Library id 1009 (gEnv-pConsole-ptr) "
                   "did not resolve — IConsole will be unavailable");
+        std::lock_guard<std::mutex> lock(g_slotsMutex);
+        DropPendingWithError("IConsole unavailable (Address Library id 1009 "
+                             "gEnv->pConsole did not resolve)");
         return false;
     }
     void* iconsole = *reinterpret_cast<void**>(pConsole_storage);
     if (!iconsole) {
         log::Warn("[console] Init: gEnv->pConsole is null — engine not "
                   "initialized yet?");
+        std::lock_guard<std::mutex> lock(g_slotsMutex);
+        DropPendingWithError("IConsole unavailable (gEnv->pConsole is null)");
         return false;
     }
 
@@ -288,6 +418,10 @@ bool Init() {
     if (!addCommandVA || !removeCommandVA || !executeStringVA) {
         log::Warn("[console] Init: Address Library ids 2000/2001/2002 "
                   "(AddCommand/RemoveCommand/ExecuteString) did not resolve");
+        std::lock_guard<std::mutex> lock(g_slotsMutex);
+        DropPendingWithError("IConsole unavailable (Address Library ids "
+                             "2000/2001/2002 AddCommand/RemoveCommand/"
+                             "ExecuteString did not resolve)");
         return false;
     }
 
@@ -296,11 +430,17 @@ bool Init() {
     g_RemoveCommand  = reinterpret_cast<RemoveCommandFn>(removeCommandVA);
     g_ExecuteString  = reinterpret_cast<ExecuteStringFn>(executeStringVA);
 
-    g_ready.store(true, std::memory_order_release);
-    log::InfoF("[console] ready: IConsole=0x%p, AddCommand=0x%p, "
-               "RemoveCommand=0x%p, %zu slots available",
-               iconsole, reinterpret_cast<void*>(addCommandVA),
-               reinterpret_cast<void*>(removeCommandVA), kMaxCommands);
+    {
+        std::lock_guard<std::mutex> lock(g_slotsMutex);
+        g_ready.store(true, std::memory_order_release);
+        log::InfoF("[console] ready: IConsole=0x%p, AddCommand=0x%p, "
+                   "RemoveCommand=0x%p, %zu slots available",
+                   iconsole, reinterpret_cast<void*>(addCommandVA),
+                   reinterpret_cast<void*>(removeCommandVA), kMaxCommands);
+        // Drain the deferred-registration queue NOW that the surface is armed,
+        // FIFO, through the single RegisterCommandNow path.
+        FlushPendingCommands();
+    }
     return true;
 }
 
