@@ -616,7 +616,7 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-24-input-loaded | ✅ LIVE | sub-8 | `kcdx.on("input_loaded", fn)` fires on the first update tick every boot → auto-pass; proves the lifecycle bridge wires kcdx.on to the engine kcdxMessage_* dispatch (`cap-24-lifecycle-events`) |
 | CAP-24-save-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("save_game", fn)` fires on every in-game save with the basename arg; callback asserts a non-empty string. Needs a save gesture (`cap-24-lifecycle-events`) |
 | CAP-24-post-load-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("post_load_game", fn)` fires after a load (no-arg lifecycle event). Needs a load gesture (`cap-24-lifecycle-events`) |
-| COMP-09-pubsub | ⏳ PENDING | sub-9 | `kcdx.publish` cross-plugin pub/sub: A publishes `outfit_changed` `{x=42,name="Noble"}` from its `input_loaded` handler; B's `kcdx.on("kcdx.comp-09-pubsub-a:outfit_changed", fn)` asserts the table arrived by reference + the publisher namespace resolved (`comp-09-pubsub-a` + `comp-09-pubsub-b`) |
+| COMP-09-pubsub | ✅ LIVE | sub-9 | `kcdx.publish` cross-plugin pub/sub: A publishes `outfit_changed` `{x=42,name="Noble"}` from its `input_loaded` handler; B's `kcdx.on("kcdx.comp-09-pubsub-a:outfit_changed", fn)` asserts the table arrived by reference + the publisher namespace resolved (`comp-09-pubsub-a` + `comp-09-pubsub-b`) |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |
