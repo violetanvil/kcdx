@@ -196,4 +196,21 @@ std::string OwningPluginForCurrentCall(lua_State* L,
                                         std::string& callSiteFileOut,
                                         int& callSiteLineOut);
 
+// Register a "ready" lifecycle callback for `pluginName`. `callbackRef`
+// is a luaL_ref into LUA_REGISTRYINDEX (the kcdx.on binder takes it).
+// Stored keyed by owning plugin; a plugin may call kcdx.on("ready", ...)
+// more than once, so callbacks accumulate in a list and fire in
+// registration order. Anonymous callers (pluginName == "") are supported
+// and fire in the after_game zone — matching how ApplyZone defaults
+// anonymous ENTRIES.
+//
+// Each ready callback fires EXACTLY ONCE: after the plugin's zone apply
+// pass transitions all of that zone's entries to a final status (so
+// handle:applied()/:reason() are final), the callback runs, then its
+// registry ref is released (luaL_unref) and it is removed from the
+// pending set. A later ApplyZone tick must not re-fire it. Firing
+// happens at the end of ApplyZone(zone) for the matching zone — see the
+// implementation; hooks.cpp needs no separate dispatch call.
+void RegisterReadyCallback(const std::string& pluginName, int callbackRef);
+
 }  // namespace kcdx::lua_registry

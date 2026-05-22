@@ -2,16 +2,22 @@
 
 #include "lua_registry.h"
 
+#include <algorithm>
 #include <atomic>
 #include <deque>
 #include <mutex>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 extern "C" {
 #include "lauxlib.h"
 }
 
 #include "log.h"
+#include "scripting.h"   // scripting::lua_state() — the live VM the
+                         // ready callbacks fire against (same source the
+                         // hook binder uses to unref callbacks).
 
 namespace kcdx::lua_registry {
 
@@ -41,6 +47,21 @@ ApplyHandler g_handlers[8] = {nullptr};  // sized to fit a few Kinds
 // status==Pending and applies. Handles wait_applied via coroutine in
 // Phase 2i will sleep on g_applyEpoch advance.
 std::atomic<uint64_t> g_applyEpoch{0};
+
+// --- "ready" lifecycle callbacks (kcdx.on("ready", fn)) -----------------
+//
+// Pending ready callbacks, keyed by owning plugin name ("" = anonymous).
+// Each is a luaL_ref into LUA_REGISTRYINDEX. A plugin may register more
+// than one, so the value is a list fired in registration order.
+//
+// One-shot: after a callback fires (at the end of ApplyZone for the
+// plugin's zone), its ref is luaL_unref'd and erased from this map, so a
+// later ApplyZone tick cannot re-fire it. The map + g_mu guard the
+// registration/erase; firing copies the to-fire refs out under the lock
+// (and erases them) BEFORE invoking, so a ready callback that itself
+// calls kcdx.on("ready", ...) — or any reentrant ApplyZone — neither
+// double-fires nor deadlocks.
+std::unordered_map<std::string, std::vector<int>> g_readyCallbacks;
 
 // --- Handle userdata ----------------------------------------------------
 //
@@ -127,6 +148,80 @@ int H_tostring(lua_State* L) {
         e ? e->name.c_str() : "<gone>",
         statusStr);
     return 1;
+}
+
+// Resolve the zone a ready-callback owner fires in — the SAME routing
+// ApplyZone uses for entries. Anonymous ("") defaults to AfterGame
+// (matching how ApplyZone defaults anonymous entries). A disabled plugin
+// still resolves to its declared zone; ready never fires for it because
+// its entries are skipped, but the routing here is owner→zone only.
+kcdx::load_order::Zone ReadyOwnerZone(const std::string& pluginName) {
+    if (pluginName.empty()) return kcdx::load_order::Zone::AfterGame;
+    return kcdx::load_order::Of(pluginName).zone;
+}
+
+// Fire (once) every pending "ready" callback whose owning plugin's zone
+// == `zone`. Called at the END of ApplyZone(zone), after every entry in
+// the zone has transitioned to a final status — so handle:applied() /
+// :reason() are final inside the callback.
+//
+// One-shot + reentrancy-safe: the to-fire refs are copied out of
+// g_readyCallbacks and erased UNDER THE LOCK before any invocation, so a
+// callback that re-enters (calls kcdx.on / triggers ApplyZone) can't see
+// the same ref again. Each callback runs under lua_pcall; a throw is
+// logged with the plugin name and does NOT abort the apply pass or other
+// plugins' callbacks. Refs are luaL_unref'd after firing (one-shot).
+void FireReadyForZone(kcdx::load_order::Zone zone) {
+    // Snapshot + erase the matching (plugin, refs) pairs under the lock.
+    std::vector<std::pair<std::string, int>> toFire;  // (plugin, ref)
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        for (auto it = g_readyCallbacks.begin();
+             it != g_readyCallbacks.end();) {
+            if (ReadyOwnerZone(it->first) == zone) {
+                for (int ref : it->second) {
+                    toFire.emplace_back(it->first, ref);
+                }
+                it = g_readyCallbacks.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    if (toFire.empty()) return;
+
+    lua_State* L = kcdx::scripting::lua_state();
+    if (!L) {
+        // No live VM to fire against — release the refs we pulled so they
+        // don't leak, and log loudly (this shouldn't happen: ready fires
+        // from the main-thread apply pass, where the VM is up).
+        log::Error("lua_registry: ready callbacks pending but no live "
+                   "lua_State; dropping (engine misconfiguration)");
+        // Cannot luaL_unref without a state; the refs are abandoned.
+        return;
+    }
+
+    for (const auto& pr : toFire) {
+        const std::string& plugin = pr.first;
+        int ref = pr.second;
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+        if (lua_isfunction(L, -1)) {
+            // "ready" takes no args.
+            int status = lua_pcall(L, 0, 0, 0);
+            if (status != 0) {
+                const char* msg = lua_tostring(L, -1);
+                log::ErrorF("lua_registry: \"ready\" callback for plugin "
+                            "'%s' threw: %s",
+                            plugin.empty() ? "<anon>" : plugin.c_str(),
+                            msg ? msg : "(no message)");
+                lua_pop(L, 1);  // pop the error message
+            }
+        } else {
+            lua_pop(L, 1);  // not a function (shouldn't happen) — discard
+        }
+        // One-shot: release the ref now that it has fired.
+        luaL_unref(L, LUA_REGISTRYINDEX, ref);
+    }
 }
 
 }  // namespace
@@ -320,6 +415,19 @@ size_t ApplyZone(kcdx::load_order::Zone zone) {
                        ? "before_game" : "after_game",
                    transitioned);
     }
+
+    // Every entry in this zone now has a FINAL status (Applied/Failed),
+    // so handle:applied()/:reason() are settled. Fire each plugin's
+    // "ready" callback for THIS zone exactly once (one-shot; reentrancy-
+    // safe; a throw is logged and isolated). Co-located here so it
+    // naturally serves both the first-tick ApplyZone(AfterGame) and any
+    // later per-tick drain — hooks.cpp needs no separate dispatch. (A
+    // future before_game apply pass fires its own zone's ready cbs the
+    // same way.) Fired even when transitioned == 0: a plugin whose hooks
+    // all already applied on an earlier tick still gets its ready signal
+    // on the tick its kcdx.on registration is first seen.
+    FireReadyForZone(zone);
+
     return transitioned;
 }
 
@@ -357,6 +465,11 @@ std::string NormalizeScriptPath(const std::string& p) {
 }
 
 }  // namespace
+
+void RegisterReadyCallback(const std::string& pluginName, int callbackRef) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    g_readyCallbacks[pluginName].push_back(callbackRef);
+}
 
 void RegisterScriptOwner(const std::string& scriptPath,
                          const std::string& pluginName) {

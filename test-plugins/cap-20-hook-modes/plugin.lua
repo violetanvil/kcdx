@@ -69,10 +69,9 @@ kcdx.hook{
 -- v1), so load order decides: the first (cap20_conflict_a) wins and
 -- returns 7; the second (cap20_conflict_b) is REJECTED. The DLL asserts
 -- the observed result is 7 (not 99) — value-distinguishable proof that
--- the first won and the second lost. (Once the "ready" lifecycle event
--- is wired in its own sub, this plugin will additionally assert
--- hConflictB:applied()==false with a reason; for now the value contract
--- is the observable proof.)
+-- the first won and the second lost. The REJECTION side
+-- (hConflictB:applied()==false + reason) is asserted in Lua from the
+-- "ready" callback below (CAP-20-conflict-rejected).
 local conflictAddr = cap20.addr_conflict()
 local hConflictA = kcdx.hook{
     name = "cap20_conflict_a", address = conflictAddr, signature = SIG,
@@ -114,12 +113,73 @@ end
 -- ResolveAddressByName("name") == ResolveAddress(id) for a known entry
 -- (exact uintptr_t, no float loss; collision-proof; no live hook needed).
 -- Install+dispatch by locator is already covered by the 8 sub-tests
--- above. The miss path (bad name -> loud fail) is implemented + logged;
--- its automated handle:applied()==false assert is deferred to the
--- post-apply "ready" event (docs/outstanding-work/ready-event-and-handle-assert.md).
+-- above.
+
+-- CAP-20-addrname-miss: a kcdx.hook whose address_id NAME does NOT
+-- resolve. This hook is EXPECTED to fail to apply — that is the test.
+-- The name "cap20_addrname_miss" is deliberately not a real Address
+-- Library entry, so its failure can never be confused with a regression
+-- on a real target. We capture its handle and assert (in "ready")
+-- :applied()==false with a non-empty :reason(). before=function is a
+-- no-op stub: the hook never installs, so it never runs.
+local hAddrnameMiss = kcdx.hook{
+    name       = "cap20_addrname_miss",
+    address_id = "cap20_addrname_miss",   -- not a real Address Library name
+    signature  = SIG,
+    before     = function(seed) return seed end,
+}
+
+-- CAP-20 deferred failure-path asserts. These need the post-apply
+-- moment: handle:applied()/:reason() only become final during ApplyZone,
+-- which runs AFTER this plugin.lua returns. kcdx.on("ready", ...) fires
+-- once, after this plugin's zone apply pass completes — so every handle
+-- captured above now reads a final status. (docs/outstanding-work/
+-- ready-event-and-handle-assert.md)
+kcdx.on("ready", function()
+    -- (a) CAP-20-addrname-miss: a bad address_id NAME must fail to apply
+    -- with a clear reason.
+    do
+        local applied = hAddrnameMiss:applied()
+        local reason  = hAddrnameMiss:reason()
+        local pass = (applied == false) and reason ~= nil and reason ~= ""
+        kcdx.test.report("CAP-20-addrname-miss", pass,
+            pass and ("bad address_id name failed to apply with reason: "
+                      .. reason)
+                 or  ("expected applied()==false + non-empty reason; got "
+                      .. "applied=" .. tostring(applied)
+                      .. " reason=" .. tostring(reason)))
+    end
+
+    -- (b) CAP-20-conflict-rejected: the load-order-losing replace
+    -- (hConflictB) must be REJECTED — applied()==false + reason.
+    do
+        local applied = hConflictB:applied()
+        local reason  = hConflictB:reason()
+        local pass = (applied == false) and reason ~= nil and reason ~= ""
+        kcdx.test.report("CAP-20-conflict-rejected", pass,
+            pass and ("load-order-losing replace rejected with reason: "
+                      .. reason)
+                 or  ("expected applied()==false + non-empty reason; got "
+                      .. "applied=" .. tostring(applied)
+                      .. " reason=" .. tostring(reason)))
+    end
+
+    -- (c) CAP-20-ready: prove the ready cb fired AT ALL + a SUCCEEDED
+    -- handle reads applied()==true. hConflictA won the conflict, so it
+    -- applied. If ready never fires, this row never reports (shows
+    -- PENDING) — which itself signals the feature didn't work.
+    do
+        local applied = hConflictA:applied()
+        local pass = (applied == true)
+        kcdx.test.report("CAP-20-ready", pass,
+            pass and "ready callback fired; winning handle applied()==true"
+                 or  ("ready fired but winning handle applied="
+                      .. tostring(applied) .. " (expected true)"))
+    end
+end)
 
 -- Also exercises kcdx.log.* (the grouped logging domain): a positional
 -- "do a thing" call per the surface convention. The handles are held in
 -- locals so they aren't GC'd before ApplyZone resolves them.
-local _ = { hConflictA, hConflictB }
+local _ = { hConflictA, hConflictB, hAddrnameMiss }
 kcdx.log.info("CAP20", "installed all cap-20 hooks (4 modes + chain + wstr + conflict)")
