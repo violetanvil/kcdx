@@ -305,7 +305,15 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
     //
     // owner=0 here means "engine, not a plugin." Once Phase 5e wires
     // RegisterFunction we'll thread the calling plugin's handle through.
-    m_jit_function_buffer = kcdx::trampoline::AllocateBranch(/*owner=*/0, size);
+    //
+    // nearVa = target_func_ptr: anchor the buffer near the hook TARGET, not
+    // just WHGame.dll. For a function-entry hook target_func_ptr is the
+    // function VA; for a callsite chain it is the call-site VA (the rewritten
+    // E8 must reach this buffer). When the target lives in a far module
+    // (>2 GB from WHGame) this is what keeps the 5-byte rel32 jmp in range
+    // (cap-22). nearVa=0 callers are unchanged (WHGame anchor).
+    m_jit_function_buffer = kcdx::trampoline::AllocateBranch(/*owner=*/0, size,
+                                                             target_func_ptr);
     if (!m_jit_function_buffer) {
         log::Error("runtime_func_t::make_jit_func: branch_pool allocation failed");
         return 0;
@@ -673,7 +681,11 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
 
     // Same branch_pool allocation as make_jit_func — see Phase 5c.7b.1
     // notes above. owner=0 (engine, not a plugin) until 5e wires it.
-    m_jit_function_buffer = kcdx::trampoline::AllocateBranch(/*owner=*/0, size);
+    // nearVa = target_func_ptr anchors the mid trampoline near the mid-hook
+    // target (the captured instruction's VA), so a target in a far module is
+    // still rel32-reachable. nearVa=0 callers unchanged (WHGame anchor).
+    m_jit_function_buffer = kcdx::trampoline::AllocateBranch(/*owner=*/0, size,
+                                                             target_func_ptr);
     if (!m_jit_function_buffer) {
         log::Error("runtime_func_t::make_jit_midfunc: branch_pool allocation failed");
         return 0;

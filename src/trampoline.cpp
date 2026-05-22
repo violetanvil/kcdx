@@ -20,10 +20,17 @@ namespace {
 // allocations. We bump-allocate within the reservation — there's no free()
 // (matching SKSE's "alloc-only" trampoline pool model).
 struct Reservation {
-    uint8_t* base = nullptr;    // VirtualAlloc'd region
-    size_t   size = 0;          // total reserved bytes
-    size_t   used = 0;          // bytes handed out so far
-    bool     branch = false;    // true = branch pool (proximity guaranteed), false = local
+    uint8_t*  base = nullptr;   // VirtualAlloc'd region
+    size_t    size = 0;         // total reserved bytes
+    size_t    used = 0;         // bytes handed out so far
+    bool      branch = false;   // true = branch pool (proximity guaranteed), false = local
+    uintptr_t anchor = 0;       // branch only: the VA this reservation was placed
+                                // near (WHGame midpoint when nearVa==0, else the
+                                // target VA). Used by the rel32-reach reuse test.
+    bool      whGameAnchored = false;  // branch only: true iff placed with the
+                                       // default WHGame anchor (nearVa==0). The
+                                       // nearVa==0 reuse path matches ONLY these;
+                                       // a far (nearVa!=0) request never reuses one.
 };
 
 std::mutex                g_mutex;
@@ -32,6 +39,14 @@ std::vector<Reservation>  g_reservations;
 // Branch pool defaults. Sized to handle ~100 small detour trampolines.
 constexpr size_t kBranchPoolReservationSize = 64 * 1024;  // 64 KB per reservation
 constexpr size_t kLocalPoolReservationSize  = 1024 * 1024; // 1 MB per reservation
+
+// rel32 reach window half-width, with safety margin. A signed 32-bit
+// displacement spans ±2 GB; we shave it to 0x7FFF0000 so the FAR END of a
+// reservation (base + size) still fits when we allocate `size` bytes from the
+// chosen base. ReserveNearby's bounds AND the reservation-reuse predicate in
+// Allocate() both use this single constant so "did we place it in range?" and
+// "is this existing reservation in range?" can never disagree.
+constexpr uintptr_t kRel32Margin = 0x7FFF0000ull;
 
 // Align `n` up to a multiple of `align`.
 inline size_t AlignUp(size_t n, size_t align) {
@@ -56,9 +71,9 @@ uint8_t* ReserveNearby(uintptr_t nearAddr, size_t size) {
     // [nearAddr - 0x80000000, nearAddr + 0x7FFFFFFF]. Allow some safety
     // margin so the FAR END of the reservation also fits (we'll be
     // allocating `size` bytes starting at the chosen base).
-    const uintptr_t lowerBound = (nearAddr > 0x7FFF0000ull)
-                                    ? (nearAddr - 0x7FFF0000ull) : 0;
-    const uintptr_t upperBound = nearAddr + 0x7FFF0000ull - size;
+    const uintptr_t lowerBound = (nearAddr > kRel32Margin)
+                                    ? (nearAddr - kRel32Margin) : 0;
+    const uintptr_t upperBound = nearAddr + kRel32Margin - size;
 
     auto tryReserveAt = [size](uintptr_t addr) -> uint8_t* {
         void* result = VirtualAlloc(reinterpret_cast<LPVOID>(addr), size,
@@ -106,18 +121,23 @@ uint8_t* ReserveNearby(uintptr_t nearAddr, size_t size) {
     return nullptr;
 }
 
-// Get a fresh branch-pool reservation near WHGame.dll's .text. Returns null
-// on failure (logs the reason).
-Reservation MakeBranchReservation(size_t bytesNeeded) {
-    pe::ModuleView mod;
-    if (!pe::OpenModule(L"WHGame.dll", mod)) {
-        log::Error("Trampoline branch pool: WHGame.dll not loaded");
-        return {};
+// Get a fresh branch-pool reservation anchored near `nearVa` (within ±2 GB so
+// a rel32 jmp from a hook site can reach it). When `nearVa == 0`, anchor near
+// WHGame.dll's .text midpoint, as before. Returns null on failure (logs the
+// reason).
+Reservation MakeBranchReservation(size_t bytesNeeded, uintptr_t nearVa) {
+    uintptr_t anchor = nearVa;
+    if (anchor == 0) {
+        pe::ModuleView mod;
+        if (!pe::OpenModule(L"WHGame.dll", mod)) {
+            log::Error("Trampoline branch pool: WHGame.dll not loaded");
+            return {};
+        }
+        // Pick an anchor address inside .text. We use the module's base + half
+        // its size as a reasonable midpoint — keeps the reservation reachable
+        // from anywhere in the module.
+        anchor = reinterpret_cast<uintptr_t>(mod.baseBytes) + (mod.size / 2);
     }
-    // Pick an anchor address inside .text. We use the module's base + half
-    // its size as a reasonable midpoint — keeps the reservation reachable
-    // from anywhere in the module.
-    uintptr_t anchor = reinterpret_cast<uintptr_t>(mod.baseBytes) + (mod.size / 2);
 
     size_t reservationSize = kBranchPoolReservationSize;
     if (bytesNeeded > reservationSize) reservationSize = AlignUp(bytesNeeded, 0x10000);
@@ -125,13 +145,15 @@ Reservation MakeBranchReservation(size_t bytesNeeded) {
     uint8_t* base = ReserveNearby(anchor, reservationSize);
     if (!base) {
         log::ErrorF("Trampoline branch pool: could not reserve %zu bytes within "
-                    "+/-2GB of WHGame.dll (anchor 0x%p) — no nearby free region",
-                    reservationSize, reinterpret_cast<void*>(anchor));
+                    "+/-2GB of anchor 0x%p (%s) — no nearby free region",
+                    reservationSize, reinterpret_cast<void*>(anchor),
+                    nearVa ? "target module" : "WHGame.dll midpoint");
         return {};
     }
     log::InfoF("Trampoline branch pool: reserved %zu bytes at 0x%p (anchor 0x%p)",
                reservationSize, base, reinterpret_cast<void*>(anchor));
-    return Reservation{ base, reservationSize, 0, true };
+    return Reservation{ base, reservationSize, 0, true, anchor,
+                        /*whGameAnchored=*/ nearVa == 0 };
 }
 
 Reservation MakeLocalReservation(size_t bytesNeeded) {
@@ -162,16 +184,58 @@ void* BumpAlloc(Reservation& r, size_t size) {
     return result;
 }
 
+// Is a branch reservation rel32-reachable from `nearVa`? True iff its WHOLE
+// range [base, base+size) lies within ±kRel32Margin of `nearVa` — the same
+// window ReserveNearby places a fresh reservation in. Caller holds g_mutex.
+//
+// This is the guard locked decision #5 requires: a flat first-fit over the
+// branch bool would hand a WHGame-anchored block to a far target (in range for
+// WHGame, OUT of range for the far target → a silently-wrong trampoline that
+// RewriteCallDisplacement would refuse, or worse). We reuse a reservation ONLY
+// when both its ends fit.
+bool BranchReservationReachesFrom(const Reservation& r, uintptr_t nearVa) {
+    const uintptr_t lo = (nearVa > kRel32Margin) ? (nearVa - kRel32Margin) : 0;
+    const uintptr_t hi = nearVa + kRel32Margin;  // window ceiling
+    const uintptr_t rBase = reinterpret_cast<uintptr_t>(r.base);
+    const uintptr_t rEnd  = rBase + r.size;       // one past the last byte
+    return rBase >= lo && rEnd <= hi;
+}
+
 // Try existing reservations of the matching pool first; if none have room,
 // make a new reservation.
-void* Allocate(bool branchPool, kcdxPluginHandle owner, size_t size) {
+//
+// `nearVa` (branch pool only) anchors a far-target trampoline near its target
+// VA; nearVa==0 keeps the WHGame anchor. The local pool ignores nearVa (no
+// proximity guarantee). For the branch pool, an existing reservation is reused
+// only when it is rel32-reachable from the SAME anchor we'd place a fresh one
+// at (the WHGame midpoint for nearVa==0, else nearVa itself) — never hand a
+// WHGame-anchored block to a far target, nor vice versa.
+void* Allocate(bool branchPool, kcdxPluginHandle owner, size_t size,
+               uintptr_t nearVa = 0) {
     if (size == 0) return nullptr;
 
     std::lock_guard<std::mutex> lock(g_mutex);
 
-    // Walk existing reservations, first-fit.
+    // Walk existing reservations, first-fit (with a reach test for branch).
     for (auto& r : g_reservations) {
         if (r.branch != branchPool) continue;
+        // Branch pool reuse, two cases — never cross them:
+        //  - nearVa==0 (WHGame default): reuse ONLY a WHGame-anchored
+        //    reservation. A far-target reservation is in rel32 range of its
+        //    OWN anchor but NOT of WHGame, so handing it to a WHGame request
+        //    would silently break reach — exclude it by the flag, not by a
+        //    range test against its own anchor.
+        //  - nearVa!=0 (far target): reuse a reservation (WHGame- or
+        //    target-anchored) ONLY if its whole range is within rel32 of
+        //    nearVa. A WHGame reservation 3 GB away fails this test and is
+        //    skipped, forcing a fresh near-target reservation.
+        if (branchPool) {
+            if (nearVa == 0) {
+                if (!r.whGameAnchored) continue;
+            } else if (!BranchReservationReachesFrom(r, nearVa)) {
+                continue;
+            }
+        }
         if (void* p = BumpAlloc(r, size)) {
             log::InfoF("Trampoline %s pool: allocated %zu bytes at 0x%p "
                        "(owner=%u, %zu/%zu used)",
@@ -181,8 +245,9 @@ void* Allocate(bool branchPool, kcdxPluginHandle owner, size_t size) {
         }
     }
 
-    // No room — add a new reservation.
-    Reservation r = branchPool ? MakeBranchReservation(size) : MakeLocalReservation(size);
+    // No room (or no in-range reservation) — add a new one.
+    Reservation r = branchPool ? MakeBranchReservation(size, nearVa)
+                               : MakeLocalReservation(size);
     if (!r.base) return nullptr;
     void* p = BumpAlloc(r, size);
     g_reservations.push_back(r);
@@ -211,8 +276,8 @@ const kcdxTrampolineInterface* GetInterface() {
     return &g_iface;
 }
 
-void* AllocateBranch(kcdxPluginHandle owner, size_t size) {
-    return Thunk_AllocateFromBranchPool(owner, size);
+void* AllocateBranch(kcdxPluginHandle owner, size_t size, uintptr_t nearVa) {
+    return Allocate(/*branchPool=*/true, owner, size, nearVa);
 }
 
 void* AllocateLocal(kcdxPluginHandle owner, size_t size) {
