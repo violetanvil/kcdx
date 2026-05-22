@@ -111,6 +111,20 @@ void LoadOneFileGuarded(void* userdata) {
         return;
     }
 
+    // Set the kcdx environment as this ENTRYPOINT chunk's fenv BEFORE the
+    // pcall (mechanism a — see lua_require_searcher.h). The kcdx env's
+    // `require` is the kcdx closure (plugin-scoped resolution + namespaced
+    // cache that bypasses _LOADED), so the author's bare require("helper")
+    // from this entrypoint routes to kcdx and resolves against THIS
+    // plugin's folder + cache slot. require'd helpers get their own kcdx
+    // fenv set inside the closure, so the whole load (entrypoint + nested
+    // helpers) runs under kcdx's require. lua_setfenv routes through the
+    // chunk's env at OP_GETGLOBAL time (vendor/lua/lvm.c:431). Net stack
+    // height unchanged — the chunk stays on top. Must be done before the
+    // errfunc reorder below (the chunk must still be the function at -1).
+    // Stack here: [chunk] (chunk at top == top+1).
+    kcdx::lua_require_searcher::SetKcdxEnvOnChunkAtTop(L);
+
     // Install the traceback handler as the pcall errfunc so a RUNTIME
     // error carries the call chain. It must sit BELOW the chunk function
     // on the stack: push it first (index errfuncIdx), then move the chunk
@@ -282,13 +296,14 @@ void RunAll(lua_State* L) {
         return;
     }
 
-    // Install the plugin-scoped `require` searcher into package.loaders
-    // ONCE before any plugin.lua runs. This lets a plugin.lua do plain
-    // require("helper") and have it resolve against the plugin's OWN
-    // folder (stock package.path never reaches there) — and stamps
-    // attribution at the helper's compile point so kcdx.* calls from
-    // inside the helper resolve to the plugin. Idempotent. See
-    // lua_require_searcher.h.
+    // Set up the kcdx plugin-scoped `require` ONCE before any plugin.lua
+    // runs: create the namespaced module cache + the shared kcdx env table
+    // whose `require` is the kcdx closure. Entrypoint chunks get this env
+    // as their fenv (SetKcdxEnvOnChunkAtTop, in LoadOneFileGuarded) so a
+    // plain require("helper") resolves against the plugin's OWN folder AND
+    // OWN cache slot (cross-plugin collision impossible — _LOADED bypassed)
+    // and stamps attribution at the helper's compile point. Idempotent.
+    // See lua_require_searcher.h.
     kcdx::lua_require_searcher::Install(L);
 
     size_t pluginsWithLua = 0, filesRun = 0, filesFailed = 0;
@@ -340,10 +355,13 @@ void RunAfterEntrypoints(lua_State* L) {
         return;
     }
 
-    // The plugin-scoped require searcher is installed once by RunAll (which
-    // always runs before this in the first-update-tick sequence). Re-call
-    // Install — it's idempotent (internal latch) — so RunAfterEntrypoints is
-    // self-contained and correct even if the call order ever changes.
+    // The kcdx require setup is done once by RunAll (which always runs
+    // before this in the first-update-tick sequence). Re-call Install —
+    // it's idempotent (internal latch) — so RunAfterEntrypoints is
+    // self-contained and correct even if the call order ever changes. The
+    // session-lived cache means a lua_after entrypoint's require("state")
+    // hits the SAME slot a plugin.lua require("state") populated earlier
+    // (cap-27 relies on this cross-window within-plugin cache hit).
     kcdx::lua_require_searcher::Install(L);
 
     // The lua_after slot runs in LOAD-ORDER PRIORITY, not g_plugins

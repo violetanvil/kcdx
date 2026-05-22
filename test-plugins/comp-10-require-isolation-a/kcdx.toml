@@ -1,0 +1,47 @@
+# COMP-10 — cross-plugin require-cache ISOLATION: plugin A.
+#
+# Phase 2b per-entry-zone step 6. THE GAP THIS REGRESSION-GUARDS (AP13,
+# fixed at the source): there is ONE shared lua_State for all plugins, so
+# Lua's _LOADED module cache is SHARED across every plugin. Stock
+# ll_require keys _LOADED by the BARE module name, so plugin A's
+# require("helper") would cache _LOADED["helper"]=A's-module and plugin B's
+# require("helper") would then HIT that cache and silently get A's module —
+# a cross-plugin mis-resolution. kcdx now owns require for plugin chunks
+# (per-chunk fenv + a cache keyed "<owner>:<modname>" that BYPASSES
+# _LOADED), so each plugin's bare require("helper") resolves to ITS OWN
+# helper.lua and ITS OWN cache slot.
+#
+# THE FIXTURE: this plugin (A) and its companion comp-10-require-isolation-b
+# (B) EACH ship a DIFFERENT helper.lua under the SAME bare module name
+# "helper": A's returns { marker = "A" }, B's returns { marker = "B" }. Each
+# plugin does require("helper") and MUST get ITS OWN file:
+#   * fix WORKS  -> A sees marker "A", B sees marker "B" -> both PASS.
+#   * fix BROKEN -> whichever loads first wins _LOADED["helper"]; the other
+#     sees the WRONG marker -> that plugin's row FAILS. (This is exactly the
+#     collision that failed before the fix and passes after.)
+#
+# ALSO (within-plugin cache-hit): a SECOND require("helper") in the same
+# plugin must return the SAME table (same owner, same key -> kcdx cache
+# hit), proving the namespaced cache caches per plugin rather than
+# reloading.
+#
+# Cross-plugin interaction => a COMP row (COMP-10, next free comp number).
+# Pure Lua, no DLL (no CMakeLists entry). Test mode: boot-only — require
+# resolves + asserts at plugin load; the row is decided by the main menu.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.comp-10-require-isolation-a"
+display_name        = "COMP-10 require isolation (A)"
+author              = "kcdx"
+description         = "Ships helper.lua returning marker='A'; require('helper') must resolve to THIS plugin's helper (not B's). Companion: comp-10-require-isolation-b. Proves cross-plugin require-cache isolation + within-plugin cache hit."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["COMP-10-require-isolation-a"]
+
+[entrypoints]
+lua = "plugin.lua"

@@ -1,0 +1,33 @@
+# COMP-10 — cross-plugin require-cache ISOLATION: plugin B.
+#
+# The companion to comp-10-require-isolation-a. See that plugin's kcdx.toml
+# for the full gap description (shared _LOADED bare-name cache collision,
+# fixed by kcdx-owned require with a "<owner>:<modname>" namespaced cache
+# that bypasses _LOADED).
+#
+# This is plugin B: it ships its OWN helper.lua under the SAME bare module
+# name "helper" as plugin A, but returning marker = "B". B's
+# require("helper") MUST resolve to B's helper.lua (marker "B"), not A's
+# (marker "A"). If the cross-plugin collision were live, whichever of A/B
+# loaded first would win the bare "helper" key in the shared _LOADED and the
+# other would see the wrong marker -> FAIL. With the fix, each plugin's bare
+# require resolves to its own file + cache slot -> both PASS.
+#
+# Pure Lua, no DLL (no CMakeLists entry). Test mode: boot-only.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.comp-10-require-isolation-b"
+display_name        = "COMP-10 require isolation (B)"
+author              = "kcdx"
+description         = "Ships helper.lua returning marker='B'; require('helper') must resolve to THIS plugin's helper (not A's). Companion: comp-10-require-isolation-a. Proves cross-plugin require-cache isolation + within-plugin cache hit."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["COMP-10-require-isolation-b"]
+
+[entrypoints]
+lua = "plugin.lua"
