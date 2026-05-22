@@ -561,12 +561,12 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-21-write | ✅ LIVE | sub-5 | mode=mid capture WRITE: `c.rax:set(1000)` lands in the real register; add runs on 1000 → 1100 |
 | CAP-21-skip | ✅ LIVE | sub-5 | mode=mid run/skip: callback returns `"skip"` → captured `add` never runs → 10 (positional-list captures `c[1]`). Proves the fresh dispatcher does NOT inherit the cap-04-c `args._skip` bug |
 | CAP-21-run | ✅ LIVE | sub-5 | mode=mid control: callback returns nothing → captured `add` runs → 110 |
-| CAP-22-before | ⏳ PENDING | sub-6 | `kcdx.hook` mode=callsite before: redirected E8 site, Helper sees 10→11 → 111 (`cap-22-callsite-redirect`) |
-| CAP-22-after | ⏳ PENDING | sub-6 | mode=callsite after: redirected E8 site, Helper return 110 → 1110 |
-| CAP-22-around | ⏳ PENDING | sub-6 | mode=callsite around: redirected E8 site, 2 * orig(10)=2*110 → 220 |
-| CAP-22-replace | ⏳ PENDING | sub-6 | mode=callsite replace: redirected E8 site returns 42; Helper not called from this site |
-| CAP-22-control-unaffected | ⏳ PENDING | sub-6 | ISOLATION: control caller of the SAME Helper is unchanged (110) — per-call-site, not per-callee |
-| CAP-22-callee-unaffected | ⏳ PENDING | sub-6 | ISOLATION: direct Helper(10) unchanged (110) — callee untouched, only call sites rewritten |
+| CAP-22-before | ✅ LIVE | sub-6 | `kcdx.hook` mode=callsite before: redirected E8 site, Helper sees 10→11 → 111 (`cap-22-callsite-redirect`) |
+| CAP-22-after | ✅ LIVE | sub-6 | mode=callsite after: redirected E8 site, Helper return 110 → 1110 |
+| CAP-22-around | ✅ LIVE | sub-6 | mode=callsite around: redirected E8 site, 2 * orig(10)=2*110 → 220 |
+| CAP-22-replace | ✅ LIVE | sub-6 | mode=callsite replace: redirected E8 site returns 42; Helper not called from this site |
+| CAP-22-control-unaffected | ✅ LIVE | sub-6 | ISOLATION: control caller of the SAME Helper is unchanged (110) — per-call-site, not per-callee |
+| CAP-22-callee-unaffected | ✅ LIVE | sub-6 | ISOLATION: direct Helper(10) unchanged (110) — callee untouched, only call sites rewritten |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |
