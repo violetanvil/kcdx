@@ -23,8 +23,11 @@
 # ExecuteString already exists — the Lua binder just calls it).
 #
 # Flow:
-#   1. plugin.lua runs at load: kcdx.command registers cap26_cmd immediately
-#      (IConsole is live by plugin load), and subscribes kcdx.on("input_loaded").
+#   1. plugin.lua runs at load: kcdx.command registers cap26_cmd from plugin.lua
+#      while IConsole is NOT yet up (plugin.lua runs in RunAll, before
+#      console::Init) -> the command is DEFERRED-queued (the not-ready arm of
+#      Thunk_RegisterCommand) and flushed when console::Init arms the surface;
+#      plugin.lua also subscribes kcdx.on("input_loaded").
 #   2. input_loaded fires (first update tick): kcdx.console.execute fires
 #      "cap26_cmd 42 hello" synchronously; the callback records its args
 #      same-stack; the handler then asserts and reports.

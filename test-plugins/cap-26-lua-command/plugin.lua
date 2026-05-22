@@ -9,9 +9,12 @@
 -- .claude/rules/lua-api-surface.md).
 --
 -- Flow (deterministic, boot-only — no player gesture):
---   1. At plugin load: kcdx.command{ name="cap26_cmd", callback=... }
---      registers the command immediately (IConsole is live by then; the
---      callback records what it received into plugin-local upvalues).
+--   1. At plugin load: kcdx.command{ name="cap26_cmd", callback=... } registers
+--      the command from plugin.lua while IConsole is NOT yet up (plugin.lua
+--      runs in RunAll, before console::Init) — so the command is DEFERRED-
+--      queued (the not-ready arm of Thunk_RegisterCommand) and FLUSHED when
+--      console::Init arms the surface; the callback records what it received
+--      into plugin-local upvalues.
 --   2. On kcdx.on("input_loaded", ...) (first update tick, after the apply
 --      pass — the same deterministic boot trigger CAP-13 uses via
 --      InputLoaded): kcdx.console.execute("cap26_cmd 42 hello") fires the

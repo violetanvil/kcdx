@@ -1,0 +1,76 @@
+# CAP-27 — kcdx.command registration TIMING ARMS: the IMMEDIATE arm (Lua)
+# + the deferred/immediate coexistence boundary.
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-24-lifecycle-events / cap-25-multifile-attribution / cap-26-lua-command
+# are the structural mirrors).
+#
+# THE GAP THIS CLOSES (do not conflate with CAP-26):
+#   kcdx's console::Thunk_RegisterCommand (src/console.cpp:238) has TWO arms,
+#   selected by g_ready at call time:
+#     * g_ready == false -> QUEUE the command (deferred); console::Init()
+#       flushes it later via FlushPendingCommands (console.cpp:322).
+#     * g_ready == true  -> RegisterCommandNow directly (the IMMEDIATE arm).
+#
+#   CAP-26 registers from plugin.lua, which RunAll runs at hooks.cpp:331 —
+#   BEFORE console::Init at hooks.cpp:409 — so g_ready is FALSE and the
+#   command is deferred-then-flushed. CAP-26 thus only ever exercises the
+#   DEFERRED arm. The IMMEDIATE arm has NO Lua regression today; CAP-13
+#   proves it only from C++.
+#
+#   CAP-27 is the LUA MIRROR of CAP-13's immediate path. A kcdx.command
+#   called from a lua_after entrypoint runs at hooks.cpp:431 — AFTER
+#   console::Init — so g_ready is TRUE and it hits RegisterCommandNow
+#   DIRECTLY (no queue). This is the new coverage.
+#
+#   PLUS CAP-27 pins the QUEUE-THEN-FLUSH BOUNDARY: this SAME plugin
+#   registers ONE command from plugin.lua (deferred arm) AND ONE from its
+#   lua_after slot (immediate arm), then asserts BOTH land and dispatch —
+#   proving deferred-queued and immediate commands coexist in the same
+#   g_slots table without clobber.
+#
+# What it proves (all boot-only, no player gesture):
+#   * CAP-27-immediate: the IMMEDIATE arm works from Lua — cap27_immediate is
+#     registered from after.lua (post-Init, RegisterCommandNow direct), then
+#     self-fired via kcdx.console.execute; the callback fires with the right
+#     args. The Lua mirror of CAP-13's C++ immediate path.
+#   * CAP-27-coexist: the deferred command (cap27_deferred, registered from
+#     plugin.lua and flushed at console::Init) ALSO dispatches with its own
+#     correct args — both arms coexist in g_slots without clobber.
+#
+# TIMING: lua_after runs at hooks.cpp:431, AFTER console::Init (hooks.cpp:409
+# arms IConsole) and AFTER ApplyZone — so by after.lua time BOTH commands
+# exist (cap27_deferred was flushed at Init; cap27_immediate is registered at
+# the top of after.lua) AND IConsole is live, so kcdx.console.execute works.
+# The whole self-fire + assert therefore happens in after.lua — no need to
+# wait for input_loaded (cleaner than CAP-26's input_loaded path, since
+# everything is ready by lua_after).
+#
+# NOTE on zone: this plugin declares NO zone (default after_game). RunAll runs
+# ALL plugin.lua regardless of declared zone, so zone does NOT change WHEN Lua
+# runs. CAP-27's axis is the registration-TIMING arm (plugin.lua = deferred
+# vs lua_after = immediate), NOT a zone declaration. It uses BOTH entrypoint
+# slots ([entrypoints].lua + .lua_after).
+#
+# Test mode: boot-only. cap27_deferred registered at plugin.lua (deferred-
+# queued), cap27_immediate registered at the top of after.lua (immediate),
+# both self-fired + asserted in after.lua — all complete by the main menu,
+# no console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-27-command-timing-arms"
+display_name        = "CAP-27 kcdx.command timing arms (immediate + coexist)"
+author              = "kcdx"
+description         = "Pure-Lua kcdx.command registration-timing test: cap27_deferred is registered from plugin.lua (the DEFERRED arm — queued, flushed at console::Init) and cap27_immediate from the lua_after slot (the IMMEDIATE arm — RegisterCommandNow direct, post-Init). after.lua self-fires both via kcdx.console.execute and asserts each dispatched with correct args. The Lua mirror of CAP-13's C++ immediate path + the deferred/immediate coexistence boundary."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-27-immediate", "CAP-27-coexist"]
+
+[entrypoints]
+lua       = "plugin.lua"
+lua_after = "after.lua"
