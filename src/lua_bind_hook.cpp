@@ -9,8 +9,11 @@
 // one function call.
 //
 //   local h = kcdx.hook{
-//       name      = "bugsplat_filename_fix",
-//       function_name = "WHGame.dll!Symbol",   -- one locator (see below)
+//       name      = "outfit_gate",
+//       address_id = "lua_pcall",   -- one locator: Address Library NAME
+//                                   -- (or numeric id), or `address` (raw
+//                                   -- VA/pointer), `target_symbol`,
+//                                   -- `pattern`. See below.
 //       signature = "void (ptr self, wstr szApp, u32 flags)",
 //       -- attach the callback under the MODE NAME itself. Exactly one of
 //       -- before / after / around / replace per call:
@@ -206,6 +209,7 @@ std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
         (!p.functionName.empty()       ? 1 : 0) +
         (!p.pattern.bytes.empty()      ? 1 : 0) +
         (p.addressId != 0              ? 1 : 0) +
+        (!p.addressName.empty()        ? 1 : 0) +
         (!p.targetSymbol.empty()       ? 1 : 0) +
         (!p.targetLuaCfunction.empty() ? 1 : 0) +
         (p.address != 0                ? 1 : 0);
@@ -368,7 +372,19 @@ int Lua_Hook(lua_State* L) {
 
     // --- Function-entry locator fields ---
     p->functionName       = LuaTableString(L, 1, "function_name");
-    p->addressId          = LuaTableU64(L, 1, "address_id", 0);
+    // address_id accepts EITHER a human-readable Address Library name
+    // (string → addressName) OR a numeric id (number → addressId). One
+    // field, both forms — authors can write the readable name they see
+    // in kcdx.addr.* instead of memorizing the opaque number. Dispatch on
+    // the actual Lua type (LUA_TSTRING vs LUA_TNUMBER), not lua_isstring/
+    // lua_isnumber which cross-coerce in Lua 5.1.
+    lua_getfield(L, 1, "address_id");
+    if (lua_type(L, -1) == LUA_TSTRING) {
+        p->addressName = lua_tostring(L, -1);
+    } else if (lua_type(L, -1) == LUA_TNUMBER) {
+        p->addressId = static_cast<uint64_t>(lua_tointeger(L, -1));
+    }
+    lua_pop(L, 1);
     p->targetSymbol       = LuaTableString(L, 1, "target_symbol");
     p->targetLuaCfunction = LuaTableString(L, 1, "target_lua_cfunction");
     p->address            = LuaTableAddress(L, 1, "address");

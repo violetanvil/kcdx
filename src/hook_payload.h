@@ -80,9 +80,16 @@ struct HookPayload {
     // callsite sub-locator is used instead (functionName is still
     // allowed alongside callsite — it supplies the called function's
     // signature info, not a patch target).
-    std::string                   functionName;        // "WHGame.dll!Symbol" or mangled export
+    std::string                   functionName;        // raw Module.dll!Export — REJECTED (poor UX; use address_id by name). Kept only to give a helpful error.
     patch::Pattern                pattern;             // AOB at the function entry
-    uint64_t                      addressId = 0;       // Address Library id
+    uint64_t                      addressId = 0;       // Address Library numeric id
+    // Address Library entry by human-readable NAME (e.g. "lua_pcall").
+    // The `address_id` opts key accepts a string OR a number; a string
+    // lands here, a number in addressId. Resolved via
+    // address_library::ResolveByName. Empty = not set. Better UX than the
+    // opaque numeric id (kcdx carries names; we don't make authors
+    // memorize numbers — see .claude/rules/lua-api-surface.md).
+    std::string                   addressName;
     std::string                   targetSymbol;        // cross-plugin symbol-table lookup
     std::string                   targetLuaCfunction;  // e.g. "System.LogAlways"
     // Raw absolute VA the author already has (a kcdx.memory.pointer

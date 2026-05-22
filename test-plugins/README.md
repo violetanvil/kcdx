@@ -544,6 +544,7 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-20-wstr | ✅ LIVE | sub-4 | wstr arg read + mutate (UTF-16↔UTF-8 marshal + string pinning) |
 | CAP-20-conflict | ✅ LIVE | sub-4 | two replace hooks on one target; load-order-loses (first wins, second rejected) |
 | CAP-20-dyncall | ✅ LIVE | sub-4 | `kcdx.memory.dynamic_call` i32(i32) arg+return round-trip (10→110); regression for the LUA_NUMBER=float JitTrampoline bug |
+| CAP-20-addrname | ✅ LIVE | sub-4b | Address Library NAME locator (`address_id = "name"` for kcdx.hook; `api->ResolveAddressByName` for C++). Resolve-layer check: ResolveAddressByName("lua_pcall") == ResolveAddress(1000), exact. Miss-path assert deferred (ready-event-and-handle-assert.md) |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |

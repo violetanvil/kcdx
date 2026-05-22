@@ -109,6 +109,15 @@ do
     end
 end
 
+-- CAP-20-addrname (the Address Library NAME locator, sub-4b) is verified
+-- in cap-20.cpp at the RESOLVE layer: the DLL asserts
+-- ResolveAddressByName("name") == ResolveAddress(id) for a known entry
+-- (exact uintptr_t, no float loss; collision-proof; no live hook needed).
+-- Install+dispatch by locator is already covered by the 8 sub-tests
+-- above. The miss path (bad name -> loud fail) is implemented + logged;
+-- its automated handle:applied()==false assert is deferred to the
+-- post-apply "ready" event (docs/outstanding-work/ready-event-and-handle-assert.md).
+
 -- Also exercises kcdx.log.* (the grouped logging domain): a positional
 -- "do a thing" call per the surface convention. The handles are held in
 -- locals so they aren't GC'd before ApplyZone resolves them.

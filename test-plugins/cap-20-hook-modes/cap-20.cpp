@@ -188,6 +188,30 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         return true;
     }
 
+    // CAP-20-addrname (sub-4b): the Address Library NAME locator, verified
+    // at the RESOLVE layer. Resolving the readable name must equal
+    // resolving the numeric id for the same entry — that equality IS the
+    // name->address machinery the kcdx.hook `address_id = "name"` locator
+    // relies on. Exact uintptr_t compare (no float loss); no live hook, so
+    // no target-collision fragility. lua_pcall is id 1000 in the seed.
+    {
+        uintptr_t byName = api->ResolveAddressByName("lua_pcall");
+        uintptr_t byId   = api->ResolveAddress(1000);
+        bool pass = (byName != 0) && (byName == byId);
+        char reason[160];
+        if (pass) {
+            _snprintf_s(reason, sizeof(reason), _TRUNCATE,
+                "ResolveAddressByName('lua_pcall') == ResolveAddress(1000) "
+                "== 0x%p (name locator resolves correctly)", (void*)byName);
+        } else {
+            _snprintf_s(reason, sizeof(reason), _TRUNCATE,
+                "name/id resolve mismatch: byName=0x%p byId=0x%p",
+                (void*)byName, (void*)byId);
+        }
+        gLog.Info("VERIFY", "CAP-20-addrname: %s", reason);
+        api->ReportTestResult(g_self, "CAP-20-addrname", pass ? 1 : 0, reason);
+    }
+
     messaging->RegisterListener(g_self, nullptr, OnMessage);
     gLog.Info("INIT", "targets registered; verify runs on InputLoaded");
     return true;

@@ -39,7 +39,7 @@ version_independent = true
 log_level           = "info"
 test_names          = ["CAP-20-before", "CAP-20-after", "CAP-20-replace",
                        "CAP-20-around", "CAP-20-chain", "CAP-20-wstr",
-                       "CAP-20-conflict", "CAP-20-dyncall"]
+                       "CAP-20-conflict", "CAP-20-dyncall", "CAP-20-addrname"]
 
 [entrypoints]
 dll = "cap-20.dll"

@@ -34,6 +34,7 @@ extern "C" {
 
 #include <asmjit/asmjit.h>
 
+#include "address_library.h"   // ResolveByName (address_id = "name")
 #include "dynamic_call_jit.h"  // BuildLuaCallThunk (call_original over pOriginal)
 #include "hook_engine.h"       // InstallRuntime
 #include "log.h"
@@ -657,11 +658,31 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
     if (p.address != 0) {
         return p.address;
     }
+    // Address Library by human-readable NAME (address_id = "lua_pcall").
+    // Resolves against the compiled-in library — the readable surface that
+    // spares authors the opaque numeric id. Loud fail on miss (typo or
+    // unknown name): a dead hook is worse UX than a clear error.
+    if (!p.addressName.empty()) {
+        uintptr_t va = kcdx::address_library::ResolveByName(p.addressName.c_str());
+        if (!va) {
+            reason = "address_id name '" + p.addressName +
+                     "' did not resolve in the Address Library (unknown "
+                     "name, or its entry doesn't match this game version / "
+                     "isn't verified). Check the name against kcdx.addr.*.";
+            return 0;
+        }
+        return va + (uintptr_t)(int64_t)p.offset;
+    }
     if (!p.functionName.empty()) {
-        reason = "function_name locator (\"Module.dll!Export\") is not yet "
-                 "supported — it lands in Phase 2b sub-4b (export-table + "
-                 "mangled-name resolution). Use address_id, target_symbol, "
-                 "or pattern for now.";
+        // function_name (raw Module.dll!Export, incl. mangled C++ symbols)
+        // is intentionally NOT supported — mangled names are unusable UX.
+        // Game/DLL targets resolve by readable Address Library name
+        // (address_id = "..."), numeric id, target_symbol, or pattern.
+        reason = "function_name (\"Module.dll!Export\") is not a kcdx locator "
+                 "— raw/mangled export names are poor UX. Use address_id "
+                 "with a readable Address Library name (e.g. "
+                 "address_id = \"lua_pcall\") or a numeric id, or "
+                 "target_symbol / pattern.";
         return 0;
     }
     // Build a PatchEntry carrying just the locator fields Resolve reads.

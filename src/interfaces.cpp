@@ -124,6 +124,11 @@ uintptr_t Thunk_ResolveAddress(uint64_t id) {
     return kcdx::address_library::Resolve(id);
 }
 
+uintptr_t Thunk_ResolveAddressByName(const char* name) {
+    if (!name) return 0;
+    return kcdx::address_library::ResolveByName(name);
+}
+
 uintptr_t Thunk_ResolveSymbol(const char* name) {
     if (!name) return 0;
     auto v = kcdx::symbols::Lookup(name);
@@ -343,6 +348,9 @@ kcdxInterface g_api = {
     /*GetPluginPath=*/      Thunk_GetPluginPath,
     /*ReportTestResult=*/   Thunk_ReportTestResult,
     /*GetConflictReport=*/  Thunk_GetConflictReport,
+    // Append-only (see Interfaces.h): new pointers go at the END so
+    // existing-compiled plugins keep their offsets.
+    /*ResolveAddressByName=*/ Thunk_ResolveAddressByName,
 };
 
 }  // namespace

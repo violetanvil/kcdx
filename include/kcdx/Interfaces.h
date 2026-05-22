@@ -289,6 +289,21 @@ typedef struct kcdxInterface {
     uint32_t (*GetConflictReport)(uintptr_t              target,
                                   kcdxConflictEntry*     out,
                                   uint32_t               cap);
+
+    // --- APPEND-ONLY BELOW THIS LINE ---------------------------------------
+    // New function pointers MUST be appended at the END of this struct,
+    // never inserted in the middle: inserting shifts every subsequent
+    // pointer's offset, and any plugin DLL compiled against the older
+    // header then calls through the wrong offset → ACCESS_VIOLATION.
+    // (Learned the hard way: inserting ResolveAddressByName mid-struct
+    // crashed every pre-built test plugin on load.)
+
+    // Look up a known address by Address Library NAME (the human-readable
+    // label, e.g. "lua_pcall"). Same resolution rules as ResolveAddress
+    // (0 if unknown / wrong game_version / unverified). The C++ mirror of
+    // the Lua `address_id = "name"` hook locator — names are friendlier
+    // than numeric ids; numeric ids remain the stable cross-version ref.
+    uintptr_t (*ResolveAddressByName)(const char* name);
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------
