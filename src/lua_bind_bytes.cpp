@@ -132,7 +132,28 @@ int Lua_Bytes(lua_State* L) {
     p->sourceFile  = "<lua>";
     p->name        = LuaTableString(L, 1, "name", "lua_bytes");
     p->description = LuaTableString(L, 1, "description");
-    p->priority    = LuaTableInt(L, 1, "priority", 100);
+    // priority on individual entries is no longer honored — plugin-
+    // level [load_order].priority is the single source of truth for
+    // cross-plugin ordering, and intra-plugin order is determined by
+    // the order entries are registered in plugin.lua. Silently accept
+    // the field for forward-compat with old TOML conversions, but
+    // INFO-log once-per-session so authors notice when they're
+    // reaching for a knob that doesn't do anything.
+    lua_getfield(L, 1, "priority");
+    if (!lua_isnil(L, -1)) {
+        static bool warnedOnce = false;
+        if (!warnedOnce) {
+            warnedOnce = true;
+            log::Info("kcdx.bytes: entry-level 'priority' field is no "
+                      "longer honored. Cross-plugin ordering comes from "
+                      "the plugin's [load_order].priority (set in "
+                      "kcdx.toml). Intra-plugin ordering is the "
+                      "registration order in your plugin.lua. This "
+                      "warning fires once per session.");
+        }
+    }
+    lua_pop(L, 1);
+    p->priority    = 50;   // engine-internal default; ignored everywhere
     p->module      = LuaTableString(L, 1, "module", "WHGame.dll");
     p->offset      = LuaTableInt(L, 1, "offset", 0);
     p->idempotent  = LuaTableBool(L, 1, "idempotent", true);

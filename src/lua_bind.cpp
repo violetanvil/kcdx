@@ -31,6 +31,7 @@ namespace kcdx::lua_bind_lua   { void bind(lua_State* L); }
 namespace kcdx::lua_bind_dev   { void bind(lua_State* L); }
 namespace kcdx::lua_bind_test  { void bind(lua_State* L); }
 namespace kcdx::lua_bind_bytes { void bind(lua_State* L); }
+namespace kcdx::lua_bind_hook  { void bind(lua_State* L); }
 namespace kcdx::lua_bind_addr  { void bind(lua_State* L); }
 
 // scripting_interface drains the queue of pending RegisterFunction
@@ -228,6 +229,10 @@ void RegisterKcdxTable(lua_State* L) {
     LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_bytes::bind");
     kcdx::lua_bind_bytes::bind(L);
     LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_bytes::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_hook::bind");
+    kcdx::lua_bind_hook::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_hook::bind");
 
     LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_addr::bind");
     kcdx::lua_bind_addr::bind(L);

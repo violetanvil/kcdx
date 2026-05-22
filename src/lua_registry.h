@@ -42,8 +42,8 @@ namespace kcdx::lua_registry {
 // invokes during ApplyZone.
 enum class Kind {
     Bytes,        // succeeds [[patch]]
-    // Hook, Code, Command, Cosave, Scan ... added by their Phase 2x
-    // commits.
+    Hook,         // succeeds [[hook]] + [[mid_hook]] + dynamic_hook
+    // Code, Command, Cosave, Scan ... added by their Phase 2x commits.
 };
 
 // Lifecycle status of a queued entry. Read by handle:applied().
