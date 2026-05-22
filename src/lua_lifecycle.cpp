@@ -2,6 +2,7 @@
 
 #include "lua_lifecycle.h"
 
+#include <algorithm>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -12,6 +13,8 @@ extern "C" {
 }
 
 #include "kcdx/Interfaces.h"  // kcdxMessageType enum
+#include "load_order.h"       // load_order::Of — owning plugin's effective
+                              // priority, captured per-callback at register
 #include "log.h"
 #include "scripting.h"   // scripting::lua_state() — the live VM the
                          // lifecycle callbacks fire against (same source
@@ -44,11 +47,19 @@ bool IsKnownEvent(const std::string& e) {
 struct Callback {
     std::string pluginName;  // attributed owner ("" = anonymous), for logs
     int         ref;         // luaL_ref into LUA_REGISTRYINDEX
+    int         priority;    // owning plugin's load-order priority (0..100),
+                             // captured at registration via load_order::Of.
+                             // Fire order is (priority asc, registration asc):
+                             // load order decides who fires first.
 };
 
 // Subscribers keyed by event NAME. A plugin (or several) may register more
-// than one callback for an event; they accumulate and fire in registration
-// order. Durable — refs are never released (the message fires repeatedly).
+// than one callback for an event; they accumulate here in registration
+// (push_back) order. FIRE order is computed at fire time — both fire
+// functions stable_sort a COPY by (priority asc, registration asc) so
+// callbacks fire in load-order priority (load order decides who fires
+// first; the stored vector order is irrelevant once we sort on fire).
+// Durable — refs are never released (the message fires repeatedly).
 std::unordered_map<std::string, std::vector<Callback>> g_subscribers;
 
 // Guards g_subscribers. RegisterLifecycleCallback runs at plugin.lua time;
@@ -70,8 +81,16 @@ const char* EventNameList() {
 void RegisterLifecycleCallback(const std::string& eventName,
                                const std::string& pluginName,
                                int callbackRef) {
+    // Capture the owning plugin's load-order priority at REGISTRATION time.
+    // load_order::Resolve() runs inside LoadAllConfigs (DllMain), well before
+    // RunAll executes any plugin.lua / kcdx.on registration on the first
+    // update tick — so Of() returns the real Effective row here, not the
+    // priority=50 default. An anonymous ("") owner correctly maps to the
+    // default Effective (priority 50). Stored on the Callback for fire-order.
+    int priority = kcdx::load_order::Of(pluginName).priority;
     std::lock_guard<std::mutex> lock(g_mu);
-    g_subscribers[eventName].push_back(Callback{pluginName, callbackRef});
+    g_subscribers[eventName].push_back(
+        Callback{pluginName, callbackRef, priority});
 }
 
 void RegisterCustomCallback(const std::string& eventName,
@@ -82,8 +101,15 @@ void RegisterCustomCallback(const std::string& eventName,
     // against the 9 (IsKnownEvent is only consulted by the kcdx.on binder),
     // so a "<publisher>:<event>" key slots in alongside lifecycle keys with
     // no relaxing required.
+    // Same load-order priority capture as RegisterLifecycleCallback (see the
+    // ordering note there): Of() is populated by Resolve() before any
+    // registration runs. Custom events share g_subscribers, so they carry the
+    // same priority key and fire in the same (priority asc, registration asc)
+    // order as lifecycle callbacks.
+    int priority = kcdx::load_order::Of(pluginName).priority;
     std::lock_guard<std::mutex> lock(g_mu);
-    g_subscribers[eventName].push_back(Callback{pluginName, callbackRef});
+    g_subscribers[eventName].push_back(
+        Callback{pluginName, callbackRef, priority});
 }
 
 int FirePublish(const std::string& fullEventName, lua_State* L,
@@ -99,6 +125,18 @@ int FirePublish(const std::string& fullEventName, lua_State* L,
         }
     }
     if (toFire.empty()) return 0;
+
+    // Fire in load-order priority: (priority asc, registration asc). The
+    // engine sorts plugins "(zone asc, priority asc, name asc)" (load_order.h)
+    // — lower priority = earlier — so subscribers fire in that same order.
+    // std::stable_sort keeps the original (registration / push_back) order for
+    // equal priorities, which IS the tiebreak (no separate sequence field
+    // needed). We sort the COPY (toFire), never g_subscribers — stored order
+    // is irrelevant once we sort on fire.
+    std::stable_sort(toFire.begin(), toFire.end(),
+                     [](const Callback& a, const Callback& b) {
+                         return a.priority < b.priority;
+                     });
 
     if (!L) {
         log::ErrorF("lua_lifecycle: publish \"%s\" fired but no live "
@@ -155,6 +193,16 @@ void FireLifecycle(const std::string& eventName, const char* basename) {
         }
     }
     if (toFire.empty()) return;
+
+    // Fire in load-order priority: (priority asc, registration asc). Same
+    // sort as FirePublish (see the note there) — lower priority fires first,
+    // matching the engine's "(zone asc, priority asc, name asc)" plugin sort.
+    // stable_sort preserves registration order for equal priorities (the
+    // tiebreak). Sorted on the COPY; g_subscribers is untouched.
+    std::stable_sort(toFire.begin(), toFire.end(),
+                     [](const Callback& a, const Callback& b) {
+                         return a.priority < b.priority;
+                     });
 
     lua_State* L = kcdx::scripting::lua_state();
     if (!L) {
