@@ -342,6 +342,54 @@ int Lua_Command(lua_State* L) {
     return 1;
 }
 
+// kcdx.console.execute(commandLine)
+//
+// Run a console command line as if it were typed into the in-game `~`
+// console. Goes through CryEngine's IConsole::ExecuteString — the SAME
+// dispatch path user input uses, synchronous on the calling (main) thread,
+// so a kcdx.command-registered command's callback fires same-stack before
+// this returns (AP6-safe: kcdx.console.execute is called from plugin.lua /
+// a kcdx.on callback, both main-thread).
+//
+// A GROUPED-DOMAIN positional "do a thing" verb per
+// .claude/rules/lua-api-surface.md: kcdx.console.* is a domain sub-table
+// (like kcdx.log.*), execute takes one positional string arg. This is the
+// Lua mirror of the C++ kcdxConsoleInterface::ExecuteString (Interfaces.h)
+// that CAP-13 already drives — bringing the Lua surface to parity.
+//
+//   local ok = kcdx.console.execute("my_cmd 42 hello")
+//
+// Returns true on success, false if IConsole isn't ready yet (mirrors the
+// C++ ExecuteString bool return). On a bad arg, returns (nil, teaching
+// error) per the kcdx-binder error convention.
+//
+// `ExecuteString` is NOT a <windows.h> object-like macro (unlike
+// GetCommandLine, #undef'd above), so the member call is unambiguous here.
+int Lua_ConsoleExecute(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.console.execute(commandLine): expects a single string "
+            "argument — the console command line to run as if typed into "
+            "the ~ console (e.g. kcdx.console.execute(\"my_cmd 42 hello\")).");
+        return 2;
+    }
+    const char* line = lua_tostring(L, 1);
+
+    const kcdxConsoleInterface* console = kcdx::console::GetInterface();
+    if (!console) {
+        // No interface published yet — same observable as ExecuteString
+        // refusing because IConsole isn't ready. Return false (not an
+        // arg error): the call shape was valid, the console just isn't up.
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    bool ok = console->ExecuteString(line);
+    lua_pushboolean(L, ok ? 1 : 0);
+    return 1;
+}
+
 }  // namespace
 
 void bind(lua_State* L) {
@@ -351,6 +399,17 @@ void bind(lua_State* L) {
     int kcdx_idx = lua_gettop(L);
     lua_pushcfunction(L, Lua_Command);
     lua_setfield(L, kcdx_idx, "command");
+
+    // kcdx.console.* — a GROUPED capability domain (NOT a top-level verb).
+    // Built exactly like kcdx.log.* (lua_bind_log.cpp): lua_newtable +
+    // per-fn lua_pushcfunction/lua_setfield + lua_setfield onto the kcdx
+    // table. The kcdx table stays at `kcdx_idx` throughout (lua_setfield
+    // pops the sub-table it consumes), so this leaves the stack exactly as
+    // the next sub-binder expects it — balanced.
+    lua_newtable(L);
+    lua_pushcfunction(L, Lua_ConsoleExecute);
+    lua_setfield(L, -2, "execute");
+    lua_setfield(L, kcdx_idx, "console");
 }
 
 }  // namespace kcdx::lua_bind_command

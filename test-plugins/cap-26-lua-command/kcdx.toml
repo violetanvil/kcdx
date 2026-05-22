@@ -1,0 +1,51 @@
+# CAP-26 — kcdx.command register + kcdx.console.execute fire + args round-trip
+# (the Lua analog of the C++ CAP-13 console-command self-test).
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-24-lifecycle-events / cap-25-multifile-attribution are the structural
+# mirrors).
+#
+# What it proves (all boot-only, no player gesture):
+#   * kcdx.command{...} registers a console command from Lua (the verb that
+#     landed in step 1 / commit d41cb0b).
+#   * kcdx.console.execute(line) fires that command through CryEngine's
+#     IConsole::ExecuteString — synchronous, same (main) thread, AP6-safe.
+#   * The callback receives the args table: the ARRAY of typed args
+#     (args[1]=="42", args[2]=="hello", #args==2 — GetArg(0)/the command
+#     name EXCLUDED) PLUS args.raw (the full line, containing "cap26_cmd").
+#   * kcdx.console.execute returns true (IConsole is live at input_loaded).
+#
+# C++ PARITY NOTE: CAP-13 (cap-13-console-command) is the C++ analog — it
+# drives kcdxConsoleInterface::RegisterCommand + ExecuteString from a DLL.
+# kcdx.command (step 1) + kcdx.console.execute (step 2) bring the Lua surface
+# to parity with that already-shipped C++ mirror; CAP-26 exercises the Lua
+# side of the same console round-trip. No C++ console work is owed (the C++
+# ExecuteString already exists — the Lua binder just calls it).
+#
+# Flow:
+#   1. plugin.lua runs at load: kcdx.command registers cap26_cmd immediately
+#      (IConsole is live by plugin load), and subscribes kcdx.on("input_loaded").
+#   2. input_loaded fires (first update tick): kcdx.console.execute fires
+#      "cap26_cmd 42 hello" synchronously; the callback records its args
+#      same-stack; the handler then asserts and reports.
+#
+# Test mode: boot-only. Registration at load, self-fire at input_loaded via
+# kcdx.console.execute, assertion completes by the main menu — no console
+# typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-26-lua-command"
+display_name        = "CAP-26 kcdx.command + kcdx.console.execute round-trip"
+author              = "kcdx"
+description         = "Pure-Lua console-command round-trip: kcdx.command registers cap26_cmd, kcdx.console.execute self-fires it at input_loaded, and the callback's args (array + .raw) are asserted. The Lua analog of the C++ CAP-13."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-26-command-roundtrip"]
+
+[entrypoints]
+lua = "plugin.lua"
