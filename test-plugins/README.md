@@ -586,7 +586,7 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-22-replace | ✅ LIVE | sub-6 | mode=callsite replace: redirected E8 site returns 42; Helper not called from this site |
 | CAP-22-control-unaffected | ✅ LIVE | sub-6 | ISOLATION: control caller of the SAME Helper is unchanged (110) — per-call-site, not per-callee |
 | CAP-22-callee-unaffected | ✅ LIVE | sub-6 | ISOLATION: direct Helper(10) unchanged (110) — callee untouched, only call sites rewritten |
-| cap-23-lua-error-lineinfo | ⏳ PENDING | AP12 | loader reports PASS when a captured plugin.lua runtime error carries `:<line>:` + `"stack traceback:"`; fixture-agnostic assertion over any runtime error, deliberate-error fixture (`cap-23-lua-error`) triggers it each boot |
+| cap-23-lua-error-lineinfo | ✅ LIVE | AP12 | loader reports PASS when a captured plugin.lua runtime error carries `:<line>:` + `"stack traceback:"`; fixture-agnostic assertion over any runtime error, deliberate-error fixture (`cap-23-lua-error`) triggers it each boot |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |
