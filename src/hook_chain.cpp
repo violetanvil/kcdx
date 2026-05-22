@@ -936,9 +936,7 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
 
 // Resolve a HookPayload's function-entry locator to an absolute VA via
 // the patch-engine locator pipeline (same path [[hook]]/kcdx.bytes use).
-// function_name is NOT handled here — that's sub-4b (export-table +
-// mangled-name resolution); reject it loudly. Returns 0 + reason on
-// failure.
+// Returns 0 + reason on failure.
 uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
                          std::string& reason) {
     // Direct address — the VA is already in hand (pointer userdata or
@@ -961,18 +959,6 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
             return 0;
         }
         return va + (uintptr_t)(int64_t)p.offset;
-    }
-    if (!p.functionName.empty()) {
-        // function_name (raw Module.dll!Export, incl. mangled C++ symbols)
-        // is intentionally NOT supported — mangled names are unusable UX.
-        // Game/DLL targets resolve by readable Address Library name
-        // (address_id = "..."), numeric id, target_symbol, or pattern.
-        reason = "function_name (\"Module.dll!Export\") is not a kcdx locator "
-                 "— raw/mangled export names are poor UX. Use address_id "
-                 "with a readable Address Library name (e.g. "
-                 "address_id = \"lua_pcall\") or a numeric id, or "
-                 "target_symbol / pattern.";
-        return 0;
     }
     // Build a PatchEntry carrying just the locator fields Resolve reads.
     kcdx::patch::PatchEntry pe;

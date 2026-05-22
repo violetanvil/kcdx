@@ -10,11 +10,9 @@
 //
 //   local h = kcdx.hook{
 //       name      = "outfit_gate",
-//       address_id = "lua_pcall",   -- one locator: Address Library NAME
-//                                   -- (or numeric id), or `address` (raw
-//                                   -- VA/pointer), `target_symbol`,
-//                                   -- `pattern`. See below.
-//       signature = "void (ptr self, wstr szApp, u32 flags)",
+//       target    = "lua_pcall",     -- THE common locator: name the
+//                                    -- function; the engine resolves its
+//                                    -- address AND verified signature.
 //       -- attach the callback under the MODE NAME itself. Exactly one of
 //       -- before / after / around / replace per call:
 //       before = function(self, szApp, flags)
@@ -25,6 +23,17 @@
 //   -- h:applied() -> nil (Pending) | true (Applied) | false (Failed)
 //   -- h:reason()  -> string (when Failed)
 //   -- h:name()    -> string
+//
+// Locators: the common path is `target = "<name>"` (above) — the name
+// supplies BOTH address and verified signature, so no hand-written
+// signature/hex is needed (the disassembler test — cornerstones.md /
+// AP12). ADVANCED/EXPERT locators exist for targets the library can't
+// name yet — exactly one of `address` (raw VA/pointer), `pattern` (AOB),
+// `address_id` (numeric id), `target_symbol`, `target_lua_cfunction`, or
+// `mode = "callsite"` with a `target_callsite` sub-locator. These carry
+// hex/ABI burden and are the escape hatch, never the path a normal
+// author is funneled down. When you use one, supply `signature = "..."`
+// yourself (the engine has no name to carry the ABI from).
 //
 // Callback surface (the author writes the target function, in Lua):
 //   - Params arrive as POSITIONAL callback arguments, named by the
@@ -201,14 +210,13 @@ bool ApplyHookEntry(kcdx::lua_registry::Entry& entry,
 // --- Locator validation -------------------------------------------------
 //
 // Exactly one function-entry locator must be set for the default
-// (function-entry) scope. For mode = "callsite", the callsite
-// sub-locator carries the patch target and function_name (if present) is
-// signature-info only, so the function-entry-locator count must be zero.
-// Returns an empty string on success or a ready-to-return diagnostic on
-// failure.
+// (function-entry) scope. The COMMON locator is `target = "<name>"`,
+// which lands in addressName and is counted below. For mode = "callsite",
+// the callsite sub-locator carries the patch target, so the
+// function-entry-locator count must be zero. Returns an empty string on
+// success or a ready-to-return diagnostic on failure.
 std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
     const int entryLocatorCount =
-        (!p.functionName.empty()       ? 1 : 0) +
         (!p.pattern.bytes.empty()      ? 1 : 0) +
         (p.addressId != 0              ? 1 : 0) +
         (!p.addressName.empty()        ? 1 : 0) +
@@ -230,29 +238,30 @@ std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
             return "target_callsite must set exactly one of "
                    "pattern, address_id, or rva";
         }
-        // function_name is allowed here (it supplies the called
-        // function's signature); the other entry locators are not.
-        const int disallowed = entryLocatorCount -
-                               (!p.functionName.empty() ? 1 : 0);
-        if (disallowed > 0) {
+        // mode='callsite' locates the patch target via target_callsite;
+        // no function-entry locator may also be set.
+        if (entryLocatorCount > 0) {
             return "mode='callsite' uses target_callsite for the patch "
-                   "target; do not also set pattern/address_id/"
-                   "target_symbol/target_lua_cfunction (function_name is "
-                   "allowed, for signature info only)";
+                   "target; do not also set target/pattern/address_id/"
+                   "target_symbol/target_lua_cfunction";
         }
         return "";
     }
 
-    // Non-callsite modes: exactly one function-entry locator.
+    // Non-callsite modes: exactly one function-entry locator. The common
+    // path is `target = "<name>"`; the raw locators are an advanced hatch.
     if (entryLocatorCount == 0) {
-        return "must specify exactly one locator (address, function_name, "
-               "pattern, address_id, target_symbol, or "
-               "target_lua_cfunction)";
+        return "specify target=\"<name>\" to hook a function by name — the "
+               "engine resolves the address and ABI for you. (Advanced: a "
+               "raw address=, pattern=, address_id=, target_symbol=, or "
+               "target_lua_cfunction= for targets the library can't name "
+               "yet.)";
     }
     if (entryLocatorCount > 1) {
-        return "locators are mutually exclusive (set exactly one of "
-               "address, function_name, pattern, address_id, "
-               "target_symbol, target_lua_cfunction)";
+        return "set exactly ONE locator — normally target=\"<name>\". "
+               "(Advanced locators address/pattern/address_id/target_symbol/"
+               "target_lua_cfunction are mutually exclusive with each other "
+               "and with target.)";
     }
     if (p.callsite.has_value()) {
         return "target_callsite is only valid with mode='callsite'";
@@ -581,7 +590,6 @@ int Lua_Hook(lua_State* L) {
     }
 
     // --- Function-entry locator fields ---
-    p->functionName       = LuaTableString(L, 1, "function_name");
     // address_id accepts EITHER a human-readable Address Library name
     // (string → addressName) OR a numeric id (number → addressId). One
     // field, both forms — authors can write the readable name they see
@@ -604,9 +612,9 @@ int Lua_Hook(lua_State* L) {
     // address_id="name" already feeds (p->addressName → ResolveLocator's
     // ResolveByName); the signature carry happens at the signature gate
     // below (target's entry signature fills in when no explicit signature=
-    // is given). This cycle ADDS target alongside the existing locators;
-    // the broader locator cleanup (target as universal default, labeling
-    // the hex-tier locators expert-only) is the next cycle.
+    // is given). The remaining locators (address/pattern/address_id/
+    // target_symbol/target_lua_cfunction) are the labeled advanced/expert
+    // hatch for targets the library can't name yet — never the common path.
     std::string targetName;
     bool        haveTarget = false;
     {

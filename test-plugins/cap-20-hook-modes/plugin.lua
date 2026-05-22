@@ -178,6 +178,52 @@ do
                   .. "h=" .. tostring(h) .. " err=" .. tostring(err)))
 end
 
+-- CAP-20-locator-default: a kcdx.hook with NO locator at all. The binder
+-- REJECTS it SYNCHRONOUSLY (nil + teaching error), and the error LEADS
+-- with the common path: target="<name>". This is the AP12 two-tier steer
+-- — the default error names target= + by-name, not the advanced raw
+-- locators, so a confused author is funneled to the right path. We assert
+-- the message names BOTH "target" and "name" (the common-path steer), not
+-- just nil — wording is the observable contract (results-driven.md).
+do
+    local h, err = kcdx.hook{
+        name   = "cap20_no_locator",
+        before = function() end,
+    }
+    local pass = (h == nil)
+                 and type(err) == "string"
+                 and err:find("target") ~= nil
+                 and err:find("name") ~= nil
+    kcdx.test.report("CAP-20-locator-default", pass,
+        pass and ("no-locator hook rejected; error leads with the common "
+                  .. "path target=<name>: " .. err)
+             or  ("expected (nil, error naming both 'target' and 'name'); "
+                  .. "got h=" .. tostring(h) .. " err=" .. tostring(err)))
+end
+
+-- CAP-20-locator-exclusive: TWO locators set at once (target= AND a raw
+-- address=). They land in DIFFERENT locator slots, so entryLocatorCount
+-- is 2 and the binder REJECTS synchronously with the exactly-ONE error.
+-- The error names target=<name> as the normal locator and lists the
+-- advanced ones as mutually exclusive (the two-tier surface). We assert
+-- the "ONE" wording — the exactly-one-locator contract.
+do
+    local h, err = kcdx.hook{
+        name    = "cap20_two_locators",
+        target  = "luaL_loadfile",   -- a name-based locator (addressName)
+        address = 0x1000,            -- AND a raw address (different slot)
+        before  = function() end,
+    }
+    local pass = (h == nil)
+                 and type(err) == "string"
+                 and err:find("ONE") ~= nil
+    kcdx.test.report("CAP-20-locator-exclusive", pass,
+        pass and ("two locators (target + address) rejected with the "
+                  .. "exactly-one-locator error: " .. err)
+             or  ("expected (nil, error naming 'ONE' locator); got "
+                  .. "h=" .. tostring(h) .. " err=" .. tostring(err)))
+end
+
 -- CAP-20 deferred failure-path asserts. These need the post-apply
 -- moment: handle:applied()/:reason() only become final during ApplyZone,
 -- which runs AFTER this plugin.lua returns. kcdx.on("ready", ...) fires

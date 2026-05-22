@@ -12,10 +12,10 @@
 // queues it; the per-mode apply routines (sub-4..9) consume it.
 //
 // The locator fields mirror kcdx::hook_engine::HookEntry's resolution
-// surface (pattern / target_symbol / address_id / function_name /
-// callsite), since address resolution is shared. The signature is the
-// already-parsed kcdx::hook_signature::Signature, so the apply pass
-// never re-parses the DSL string.
+// surface (pattern / target_symbol / address_id / callsite), since
+// address resolution is shared. The signature is the already-parsed
+// kcdx::hook_signature::Signature, so the apply pass never re-parses the
+// DSL string.
 
 #include <cstdint>
 #include <optional>
@@ -81,27 +81,33 @@ struct HookPayload {
     Mode mode = Mode::Before;
 
     // --- Function-entry locator (mode != Callsite) ---------------------
-    // Exactly one of: functionName, pattern, addressId, targetSymbol,
-    // targetLuaCfunction. For mode == Callsite these are EMPTY and the
-    // callsite sub-locator is used instead (functionName is still
-    // allowed alongside callsite — it supplies the called function's
-    // signature info, not a patch target).
-    std::string                   functionName;        // raw Module.dll!Export — REJECTED (poor UX; use address_id by name). Kept only to give a helpful error.
-    patch::Pattern                pattern;             // AOB at the function entry
-    uint64_t                      addressId = 0;       // Address Library numeric id
+    // Exactly one of: addressName, pattern, addressId, targetSymbol,
+    // targetLuaCfunction, address. For mode == Callsite these are EMPTY
+    // and the callsite sub-locator is used instead.
+    //
+    // The COMMON path is `target = "<name>"` (lands in addressName below):
+    // the author names the function and the engine carries its address AND
+    // verified signature (the disassembler test — cornerstones.md / AP12).
+    // The remaining locators (pattern / addressId / targetSymbol /
+    // targetLuaCfunction / address) are EXPERT/ADVANCED forms for targets
+    // the library can't name yet — an escape hatch, never the default path.
+    patch::Pattern                pattern;             // [advanced] AOB at the function entry
+    uint64_t                      addressId = 0;       // [advanced] Address Library numeric id
     // Address Library entry by human-readable NAME (e.g. "lua_pcall").
-    // The `address_id` opts key accepts a string OR a number; a string
-    // lands here, a number in addressId. Resolved via
-    // address_library::ResolveByName. Empty = not set. Better UX than the
-    // opaque numeric id (kcdx carries names; we don't make authors
-    // memorize numbers — see .claude/rules/lua-api-surface.md).
+    // This is the landing slot for the COMMON path `target = "<name>"` and
+    // for `address_id = "<name>"` (the `address_id` opts key accepts a
+    // string OR a number; a string lands here, a number in addressId).
+    // Resolved via address_library::ResolveByName. Empty = not set. The
+    // name carries address AND verified signature — the author never
+    // hand-writes hex/ABI for a named target (cornerstones.md / AP12).
     std::string                   addressName;
-    std::string                   targetSymbol;        // cross-plugin symbol-table lookup
-    std::string                   targetLuaCfunction;  // e.g. "System.LogAlways"
-    // Raw absolute VA the author already has (a kcdx.memory.pointer
-    // userdata or integer from kcdx.lua.cfunction_address,
-    // kcdx.memory.scan_pattern, etc.). 0 = not set. The most direct
-    // locator: no resolution needed, the VA IS the target.
+    std::string                   targetSymbol;        // [advanced] cross-plugin symbol-table lookup
+    std::string                   targetLuaCfunction;  // [advanced] e.g. "System.LogAlways"
+    // [advanced] Raw absolute VA the author already has (a
+    // kcdx.memory.pointer userdata or integer from
+    // kcdx.lua.cfunction_address, kcdx.memory.scan_pattern, etc.). 0 = not
+    // set. The most direct locator: no resolution needed, the VA IS the
+    // target.
     uintptr_t                     address = 0;
     int                           offset = 0;          // applied after resolution
     std::optional<patch::Pattern> context;             // optional disambiguation pattern
