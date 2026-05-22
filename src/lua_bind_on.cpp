@@ -14,9 +14,10 @@
 //   end)
 //
 // SCOPE: the kcdx.on binder + the "ready" event (sub-7) + the 9
-// game-lifecycle events (sub-8). kcdx.publish pub/sub is a SEPARATE
-// follow-on sub; any event string outside the 10 known names returns
-// (nil, teaching error) here.
+// game-lifecycle events (sub-8) + custom cross-plugin events (sub-9). Any
+// name containing ':' is a "<plugin>:<event>" subscription to a
+// kcdx.publish event (routed to the shared lua_lifecycle registry); a bare
+// non-lifecycle name returns (nil, teaching error) here.
 //
 // "ready" is the post-apply callback — it fires after
 // lua_registry::ApplyZone has transitioned every entry in the plugin's
@@ -156,14 +157,54 @@ int Lua_On(lua_State* L) {
         return 0;
     }
 
-    // Any other event string: not a known event. Teach the full set of
-    // available names ("ready" + the 9 lifecycle events).
+    // A custom cross-plugin event: any name containing ':' is a
+    // "<plugin>:<event>" subscription to another (or the same) plugin's
+    // kcdx.publish event (Phase 2b sub-9). It shares the SAME lifecycle
+    // subscriber registry, keyed by the full "plugin:event" string, with the
+    // same GC-safe luaL_ref + OwningPluginForCurrentCall attribution as the
+    // lifecycle/ready branches. (A published event is always stamped
+    // "<publisher>:event", so a subscriber always uses the ':' form to hear
+    // it — a bare non-lifecycle name below stays a teaching error.)
+    if (event.find(':') != std::string::npos) {
+        std::string callSiteFile;
+        int callSiteLine = 0;
+        std::string pluginName =
+            kcdx::lua_registry::OwningPluginForCurrentCall(
+                L, callSiteFile, callSiteLine);
+
+        // luaL_ref pops the value — push a copy first so the caller's args
+        // aren't disturbed (same as the lifecycle/ready paths).
+        lua_pushvalue(L, 2);
+        int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+        if (ref == LUA_NOREF || ref == LUA_REFNIL) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.on(\"%s\", fn): internal error — failed to retain "
+                "the callback (see kcdx.log)",
+                event.c_str());
+            return 2;
+        }
+
+        kcdx::lua_lifecycle::RegisterCustomCallback(event, pluginName, ref);
+        log::InfoF("kcdx.on: registered custom-event \"%s\" callback for "
+                   "plugin='%s' site=%s:%d (ref=%d)",
+                   event.c_str(),
+                   pluginName.empty() ? "<anon>" : pluginName.c_str(),
+                   callSiteFile.empty() ? "?" : callSiteFile.c_str(),
+                   callSiteLine, ref);
+        return 0;
+    }
+
+    // Any other event string: a bare non-lifecycle name. Custom events are
+    // heard via the "plugin:event" form (above); teach that, plus the full
+    // set of built-in names ("ready" + the 9 lifecycle events).
     lua_pushnil(L);
     lua_pushfstring(L,
-        "kcdx.on: event \"%s\" is not available. Available events: "
-        "\"ready\" (fires after your hooks/bytes are applied, so "
-        "handle:applied() is final), and the game-lifecycle events: %s. "
-        "Custom events (kcdx.publish) arrive in a later kcdx version.",
+        "kcdx.on: event \"%s\" is not available. To hear another plugin's "
+        "custom event, subscribe with kcdx.on(\"plugin_name:event\", fn) "
+        "(the published event is stamped with its publisher's plugin name). "
+        "The built-in lifecycle events are: %s. \"ready\" fires after your "
+        "hooks/bytes are applied, so handle:applied() is final.",
         event.c_str(), kcdx::lua_lifecycle::EventNameList());
     return 2;
 }

@@ -65,6 +65,50 @@ void RegisterLifecycleCallback(const std::string& eventName,
                                const std::string& pluginName,
                                int callbackRef);
 
+// --- Custom-event pub/sub (Phase 2b sub-9: kcdx.publish) ---
+//
+// kcdx.publish is a Lua-NATIVE layer SHARING this same g_subscribers
+// registry: a custom event is just another event NAME, keyed by the full
+// "<publisher-plugin>:<event>" string. The kcdx.on binder routes any name
+// containing ':' (a cross-plugin "plugin:event" subscription) here via
+// RegisterCustomCallback; kcdx.publish stamps the publisher's namespace and
+// fans out via FirePublish. This is NOT the C++ kcdxMessage wire format — a
+// Lua table/value rides the Lua stack by reference, never serialized to
+// bytes (sub-9 design lock).
+//
+// Register a Lua callback for a custom (cross-plugin) event. `eventName` is
+// the FULL "plugin:event" key (already validated to contain ':' by the
+// binder). Same durable-ref + plugin-attribution semantics as
+// RegisterLifecycleCallback — they share g_subscribers, so the only
+// difference from a lifecycle subscription is the key shape and the fire
+// path (FirePublish, which passes an arbitrary Lua value vs a basename
+// string). Refs are never released (a custom event can fire repeatedly).
+void RegisterCustomCallback(const std::string& eventName,
+                            const std::string& pluginName,
+                            int callbackRef);
+
+// Fire every callback registered for the custom event `fullEventName`
+// ("<publisher>:<event>"), in registration order, against the live state
+// `L`. `payloadIdx` is the absolute stack index (1-based) of the payload
+// value to pass to each subscriber, or 0 to fire with NO argument.
+//
+// PAYLOAD-BY-REFERENCE (sub-9 fork 1): the payload is NOT copied or
+// serialized. For each subscriber we lua_pushvalue(payloadIdx) — a fresh
+// stack reference to the SAME underlying Lua value — and pcall(cb, 1). A
+// table is therefore shared by reference across all subscribers and the
+// publisher (publish-immutable-by-convention; kcdx does NOT deep-copy). The
+// payload lives on the publish caller's stack for the whole loop, so
+// payloadIdx stays valid across iterations (we push a fresh copy per
+// subscriber and the pcall consumes it).
+//
+// Each callback runs under lua_pcall; a throw is logged with the
+// subscriber's plugin name and does NOT abort the remaining callbacks
+// (mirrors FireLifecycle / FireReadyForZone). Main-thread-only: publish runs
+// from plugin.lua / a kcdx.on callback, both main-thread (AP6).
+//
+// Returns the number of subscribers fired (0 if none registered).
+int FirePublish(const std::string& fullEventName, lua_State* L, int payloadIdx);
+
 // Fire every callback registered for `eventName`, in registration order.
 // Called from the engine messaging bridge listener when a mapped
 // kcdxMessage_* fires.

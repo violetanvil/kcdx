@@ -479,6 +479,19 @@ what the live result is.
 | Auto-pass check | Apply order matches the previous boot's apply order (read from sidecar). |
 | Last result | _TBD_ |
 
+## COMP-09: `kcdx.publish` cross-plugin pub/sub
+
+| Field | Value |
+|---|---|
+| Scenario | Plugin A `kcdx.publish("event", payload)` broadcasts a custom Lua event; Plugin B `kcdx.on("A-name:event", fn)` in a different plugin hears it with the payload. A Lua-NATIVE layer (Phase 2b sub-9) sharing the kcdx.on subscriber registry (lua_lifecycle's `g_subscribers`) — NOT the C++ `kcdxMessage` wire format. Payload is passed BY REFERENCE (no copy/serialize): any Lua value (table/string/number/nested); a table is shared by reference (publish-immutable-by-convention). Namespacing: the publisher names the BARE event; the engine prepends the owning plugin (`OwningPluginForCurrentCall`) → `"<publisher>:event"`. A subscriber always uses the `"plugin:event"` form. kcdx.on extended to route any name containing `:` to the shared registry; a bare non-lifecycle name stays a teaching error. |
+| Channels | (vi) plugin Lua (C++ `kcdx.publish` mirror is restructure parity-debt, built in the C++ phase) |
+| Engine status | LIVE-PENDING (Phase 2b sub-9) — `src/lua_bind_publish.{h,cpp}` (the `kcdx.publish` verb), custom-event branch in `src/lua_bind_on.cpp`, `RegisterCustomCallback` + `FirePublish` in `src/lua_lifecycle.{h,cpp}`, bound at `src/lua_bind.cpp` `RegisterKcdxTable`. Awaiting checkpoint launch. |
+| Test plugin pair | [`comp-09-pubsub-a/`](comp-09-pubsub-a/) (publisher) + [`comp-09-pubsub-b/`](comp-09-pubsub-b/) (subscriber, owns the row). Both pure Lua. |
+| Deterministic ordering | B subscribes at plugin.lua-LOAD time; A publishes from inside its own `kcdx.on("input_loaded", ...)` handler (fires on the first update tick, AFTER all plugin.lua loaded + all subscriptions registered). A top-level publish at A's load would race B's subscription — publishing from input_loaded makes it deterministic regardless of A-vs-B load order. |
+| Auto-pass check | On `input_loaded`, A publishes `outfit_changed` with `{ x=42, name="Noble" }`. B's `kcdx.on("kcdx.comp-09-pubsub-a:outfit_changed", fn)` callback fires and reports `COMP-09-pubsub` PASS iff it received a table payload with `payload.x==42 && payload.name=="Noble"`. A correct fire ALSO proves A's publisher namespace resolved (the event only reaches B if stamped exactly under A's name) AND the identity-from-inside-a-callback probe (publish ran from within A's input_loaded callback). No player input. |
+| Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
+| Notes | Identity-probe outcome map: B fires with the right payload → publish identity resolves (`OwningPluginForCurrentCall` stamps the publisher correctly even from inside a dispatched callback). Never fires / wrong payload → a RegisterScriptOwner coverage gap (wrong namespace) or a payload-by-reference break — surface before sub-9 lands. Anonymous publisher (`OwningPluginForCurrentCall` → "") is NOT dropped: warned + fired under `"<anon>:event"`. The require'd-module identity gap (`lua_registry.cpp:485`) is not exercised here (would need a require'd helper whose path was never RegisterScriptOwner'd) — flagged for a later sub-test if a real plugin hits it. |
+
 ---
 
 # Section 3: Real-world mod scenarios
@@ -603,6 +616,7 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-24-input-loaded | ✅ LIVE | sub-8 | `kcdx.on("input_loaded", fn)` fires on the first update tick every boot → auto-pass; proves the lifecycle bridge wires kcdx.on to the engine kcdxMessage_* dispatch (`cap-24-lifecycle-events`) |
 | CAP-24-save-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("save_game", fn)` fires on every in-game save with the basename arg; callback asserts a non-empty string. Needs a save gesture (`cap-24-lifecycle-events`) |
 | CAP-24-post-load-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("post_load_game", fn)` fires after a load (no-arg lifecycle event). Needs a load gesture (`cap-24-lifecycle-events`) |
+| COMP-09-pubsub | ⏳ PENDING | sub-9 | `kcdx.publish` cross-plugin pub/sub: A publishes `outfit_changed` `{x=42,name="Noble"}` from its `input_loaded` handler; B's `kcdx.on("kcdx.comp-09-pubsub-a:outfit_changed", fn)` asserts the table arrived by reference + the publisher namespace resolved (`comp-09-pubsub-a` + `comp-09-pubsub-b`) |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |

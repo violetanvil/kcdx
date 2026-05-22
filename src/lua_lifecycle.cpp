@@ -74,6 +74,72 @@ void RegisterLifecycleCallback(const std::string& eventName,
     g_subscribers[eventName].push_back(Callback{pluginName, callbackRef});
 }
 
+void RegisterCustomCallback(const std::string& eventName,
+                            const std::string& pluginName,
+                            int callbackRef) {
+    // Custom (cross-plugin) events share g_subscribers with the lifecycle
+    // events — the registry keys by an arbitrary string and never validates
+    // against the 9 (IsKnownEvent is only consulted by the kcdx.on binder),
+    // so a "<publisher>:<event>" key slots in alongside lifecycle keys with
+    // no relaxing required.
+    std::lock_guard<std::mutex> lock(g_mu);
+    g_subscribers[eventName].push_back(Callback{pluginName, callbackRef});
+}
+
+int FirePublish(const std::string& fullEventName, lua_State* L,
+                int payloadIdx) {
+    // Snapshot subscribers under the lock, fire without it held (same
+    // re-entrancy discipline as FireLifecycle).
+    std::vector<Callback> toFire;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        auto it = g_subscribers.find(fullEventName);
+        if (it != g_subscribers.end()) {
+            toFire = it->second;  // copy
+        }
+    }
+    if (toFire.empty()) return 0;
+
+    if (!L) {
+        log::ErrorF("lua_lifecycle: publish \"%s\" fired but no live "
+                    "lua_State; dropping %zu callback(s)",
+                    fullEventName.c_str(), toFire.size());
+        return 0;
+    }
+
+    int fired = 0;
+    for (const Callback& cb : toFire) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, cb.ref);
+        if (!lua_isfunction(L, -1)) {
+            lua_pop(L, 1);  // not a function (shouldn't happen) — discard
+            continue;
+        }
+        // PAYLOAD-BY-REFERENCE: push a fresh stack reference to the SAME
+        // underlying value (lua_pushvalue copies the stack slot, not the
+        // GC object) so each subscriber gets the identical table/value. The
+        // payload lives on the publish caller's stack across the whole loop,
+        // so payloadIdx stays valid each iteration; the pcall consumes the
+        // copy we just pushed. payloadIdx == 0 → fire with no argument.
+        int nargs = 0;
+        if (payloadIdx != 0) {
+            lua_pushvalue(L, payloadIdx);
+            nargs = 1;
+        }
+        int status = lua_pcall(L, nargs, 0, 0);
+        if (status != 0) {
+            const char* msg = lua_tostring(L, -1);
+            log::ErrorF("lua_lifecycle: publish \"%s\" callback for plugin "
+                        "'%s' threw: %s",
+                        fullEventName.c_str(),
+                        cb.pluginName.empty() ? "<anon>" : cb.pluginName.c_str(),
+                        msg ? msg : "(no message)");
+            lua_pop(L, 1);  // pop the error message
+        }
+        ++fired;
+    }
+    return fired;
+}
+
 void FireLifecycle(const std::string& eventName, const char* basename) {
     // Snapshot the subscribers for this event under the lock, then fire
     // without the lock held — a callback that re-enters (calls kcdx.on, or

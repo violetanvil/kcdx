@@ -1,0 +1,46 @@
+-- COMP-09 plugin B (SUBSCRIBER) — exercises kcdx.publish cross-plugin
+-- pub/sub (Phase 2b sub-9).
+--
+-- B subscribes at plugin.lua-LOAD time to plugin A's custom event. A
+-- published event is stamped with its publisher's plugin name, so B uses
+-- the "<publisher>:event" form: A's [plugin] name is
+-- "kcdx.comp-09-pubsub-a" and the bare event is "outfit_changed", so the
+-- full subscription name is "kcdx.comp-09-pubsub-a:outfit_changed".
+--
+-- A publishes from its input_loaded handler (after all plugin.lua loaded),
+-- so this subscription is guaranteed registered before the publish fires
+-- (deterministic ordering).
+--
+-- The callback owns the COMP-09 row. It asserts:
+--   (a) it RECEIVED the payload (a table), and
+--   (b) the table arrived intact BY REFERENCE — payload.x == 42 and
+--       payload.name == "Noble" (the values A published).
+-- A correct fire ALSO proves A's publisher namespace resolved: the event
+-- only reaches this callback if it was stamped exactly
+-- "kcdx.comp-09-pubsub-a:outfit_changed" (the name subscribed to here).
+--
+-- Identity-probe outcome map:
+--   fires with payload.x==42 + payload.name=="Noble" -> PASS: publish
+--     identity resolved (OwningPluginForCurrentCall stamped A correctly,
+--     even though publish ran from inside A's input_loaded callback).
+--   never fires / wrong payload -> a RegisterScriptOwner identity-resolution
+--     gap (the event stamped under the wrong namespace, or the payload was
+--     not passed by reference) — surface before sub-9 lands.
+
+kcdx.on("kcdx.comp-09-pubsub-a:outfit_changed", function(payload)
+    local ok = type(payload) == "table"
+        and payload.x == 42
+        and payload.name == "Noble"
+    kcdx.test.report("COMP-09-pubsub", ok,
+        ok and ("received A's published 'outfit_changed' with payload "
+                .. "x=42 name='Noble' (by reference; publisher namespace "
+                .. "resolved)")
+            or ("publish received but payload mismatch: x="
+                .. tostring(type(payload) == "table" and payload.x or payload)
+                .. " name="
+                .. tostring(type(payload) == "table" and payload.name or "?")))
+end)
+
+kcdx.log.info("COMP09B",
+    "subscribed to kcdx.comp-09-pubsub-a:outfit_changed (awaiting A's "
+    .. "publish on input_loaded)")
