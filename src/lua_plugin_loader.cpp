@@ -2,9 +2,11 @@
 
 #include "lua_plugin_loader.h"
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include "lauxlib.h"
@@ -138,6 +140,7 @@ void LoadOneFileGuarded(void* userdata) {
 }
 
 std::atomic<bool> g_ranOnce{false};
+std::atomic<bool> g_ranAfterOnce{false};
 
 // True iff `s` contains a ':<one-or-more-digits>:' run anywhere — the
 // file:line marker (e.g. "plugin.lua:13:") that a runtime error carries
@@ -151,6 +154,118 @@ bool HasLineMarker(const std::string& s) {
         if (j > i + 1 && j < s.size() && s[j] == ':') return true;  // ':' digits ':'
     }
     return false;
+}
+
+// Outcome of loading one entrypoint file. The caller (per-plugin loop)
+// uses this to keep its counters and to decide whether to keep running
+// this plugin's later files.
+enum class FileResult {
+    Ok,       // chunk loaded + ran clean
+    Failed,   // missing / compile error / runtime error — skip this file, keep going
+    Faulted,  // hard SEH fault inside the chunk — abandon this plugin's remaining files
+};
+
+// Load + run ONE plugin Lua entrypoint file against `L`. Shared by both
+// the before/default slot (RunAll) and the after-game slot
+// (RunAfterEntrypoints) so the load discipline — existence check,
+// per-plugin OwnerScope (plugin-scoped require + attribution),
+// RegisterScriptOwner, crash_guard, storedebug toggle (inside
+// LoadOneFileGuarded), dual error-routing (engine log + the plugin's own
+// log), and the cap-23 line-info regression read — lives in exactly ONE
+// place. `slotLabel` only flavors the log lines (e.g. "lua entrypoint" vs
+// "lua_after entrypoint"); behavior is identical.
+//
+// Pre: caller has already gated on enabled + non-empty file list. Main
+// thread only (loads are main-thread; lua-callback-threading.md / AP6).
+FileResult RunOneEntrypointFile(lua_State* L,
+                                const kcdx::plugins::LoadedPlugin& p,
+                                const std::string& rel,
+                                const char* slotLabel) {
+    const auto& m = p.manifest;
+
+    fs::path abs = m.folderPath / rel;
+    std::error_code ec;
+    if (!fs::exists(abs, ec)) {
+        log::ErrorF("Plugin '%s': %s '%s' not found at %s — skipping this file",
+                    m.name.c_str(), slotLabel, rel.c_str(),
+                    abs.string().c_str());
+        return FileResult::Failed;
+    }
+
+    const std::string absUtf8 = abs.string();
+
+    // Attribute kcdx.* calls from this file (and anything it require()s
+    // synchronously) to this plugin BEFORE running it. We register the
+    // absolute path (what luaL_loadfile is handed, and thus what
+    // debug.getinfo reports) so the lookup matches.
+    kcdx::lua_registry::RegisterScriptOwner(absUtf8, m.name);
+
+    LoadCtx ctx;
+    ctx.L          = L;
+    ctx.pluginName = m.name.c_str();
+    ctx.absPath    = absUtf8.c_str();
+
+    log::InfoF("Plugin '%s': running %s '%s'",
+               m.name.c_str(), slotLabel, rel.c_str());
+
+    // Scope the "current owning plugin" across the SYNCHRONOUS load below.
+    // Because guard::Call runs LoadOneFileGuarded (luaL_loadfile +
+    // lua_pcall) inline and returns rather than unwinding (it swallows any
+    // SEH fault and returns false), the OwnerScope destructor runs on
+    // EVERY exit path — clean return, Lua compile/runtime error (captured
+    // in ctx), or hard fault. A require(...) executed inside the chunk runs
+    // while this owner is set, so the kcdx searcher resolves against THIS
+    // plugin's folder. See lua_require_searcher.h.
+    bool clean;
+    {
+        kcdx::lua_require_searcher::OwnerScope ownerScope(m.name, m.folderPath);
+        clean = kcdx::guard::Call("plugin.lua.run", m.name.c_str(),
+                                  &LoadOneFileGuarded, &ctx);
+    }
+
+    if (!clean) {
+        // Hard fault inside the chunk — guard already logged a FAULTED line
+        // with the site + plugin name.
+        log::ErrorF("Plugin '%s': %s '%s' faulted (see GUARD line) — skipping "
+                    "remaining files for this plugin",
+                    m.name.c_str(), slotLabel, rel.c_str());
+        return FileResult::Faulted;
+    }
+    if (ctx.status != 0) {
+        const char* kind = ctx.ran ? "runtime error" : "load error";
+        // Engine log (kcdx-dev.log) — the developer / bug-report channel.
+        log::ErrorF("Plugin '%s': %s '%s' %s: %s",
+                    m.name.c_str(), slotLabel, rel.c_str(), kind,
+                    ctx.err.c_str());
+        // ALSO route to the offending plugin's OWN log so the author sees
+        // the file:line:detail (+ traceback, for runtime errors) where they
+        // naturally look. p.handle is the plugin's log stream; PluginError
+        // routes by handle (log.h).
+        log::PluginError(
+            p.handle,
+            std::string(slotLabel) + " '" + rel + "' " + kind + ": " + ctx.err);
+
+        // Regression assertion for AP12 #3 (plugin.lua error line-info
+        // quality). PURE READ of ctx.err — it does not touch
+        // status/err/control flow. FIXTURE-AGNOSTIC: never checks the
+        // plugin's name; reports on the line-info quality of WHATEVER
+        // runtime error we just captured. Only RUNTIME errors qualify
+        // (ctx.ran): they have a live stack, so the errfunc appended a
+        // traceback. A load (compile) error has no stack, so it isn't a
+        // datapoint. ReportResult's OWN dev-mode early-return is the
+        // production-quiet backstop. See cap-23-lua-error.
+        if (ctx.ran) {
+            const bool pass =
+                HasLineMarker(ctx.err) &&
+                ctx.err.find("stack traceback:") != std::string::npos;
+            kcdx::test::ReportResult("cap-23-lua-error-lineinfo", pass, ctx.err);
+        }
+
+        return FileResult::Failed;
+    }
+
+    log::InfoF("Plugin '%s': %s '%s' OK", m.name.c_str(), slotLabel, rel.c_str());
+    return FileResult::Ok;
 }
 
 }  // namespace
@@ -193,112 +308,16 @@ void RunAll(lua_State* L) {
 
         ++pluginsWithLua;
         for (const std::string& rel : m.luaEntrypointsRel) {
-            fs::path abs = m.folderPath / rel;
-            std::error_code ec;
-            if (!fs::exists(abs, ec)) {
-                log::ErrorF("Plugin '%s': [entrypoints].lua '%s' not found at "
-                            "%s — skipping this file",
-                            m.name.c_str(), rel.c_str(),
-                            abs.string().c_str());
+            const FileResult r =
+                RunOneEntrypointFile(L, p, rel, "lua entrypoint");
+            if (r == FileResult::Ok) {
+                ++filesRun;
+            } else {
                 ++filesFailed;
-                continue;
-            }
-
-            const std::string absUtf8 = abs.string();
-
-            // Attribute kcdx.* calls from this file (and anything it
-            // require()s synchronously) to this plugin BEFORE running it.
-            // We register both the absolute path (what luaL_loadfile is
-            // handed, and thus what debug.getinfo reports) so the lookup
-            // matches.
-            kcdx::lua_registry::RegisterScriptOwner(absUtf8, m.name);
-
-            LoadCtx ctx;
-            ctx.L          = L;
-            ctx.pluginName = m.name.c_str();
-            ctx.absPath    = absUtf8.c_str();
-
-            log::InfoF("Plugin '%s': running lua entrypoint '%s'",
-                       m.name.c_str(), rel.c_str());
-
-            // Scope the "current owning plugin" across the SYNCHRONOUS
-            // load below. Because guard::Call runs LoadOneFileGuarded
-            // (luaL_loadfile + lua_pcall) inline and returns rather than
-            // unwinding (it swallows any SEH fault and returns false), the
-            // OwnerScope destructor runs on EVERY exit path — clean return,
-            // Lua compile/runtime error (captured in ctx), or hard fault.
-            // A require(...) executed inside the chunk runs while this
-            // owner is set, so the kcdx searcher resolves against THIS
-            // plugin's folder. Owner set BEFORE the call, cleared right
-            // after it returns. See lua_require_searcher.h.
-            bool clean;
-            {
-                kcdx::lua_require_searcher::OwnerScope ownerScope(m.name,
-                                                                 m.folderPath);
-                clean = kcdx::guard::Call("plugin.lua.run", m.name.c_str(),
-                                          &LoadOneFileGuarded, &ctx);
-            }
-
-            if (!clean) {
-                // Hard fault inside the chunk — guard already logged a
-                // FAULTED line with the site + plugin name.
-                log::ErrorF("Plugin '%s': lua entrypoint '%s' faulted "
-                            "(see GUARD line) — skipping remaining files "
-                            "for this plugin",
-                            m.name.c_str(), rel.c_str());
-                ++filesFailed;
-                break;  // don't run this plugin's later files after a fault
-            }
-            if (ctx.status != 0) {
-                const char* kind = ctx.ran ? "runtime error" : "load error";
-                // Engine log (kcdx-dev.log) — the developer / bug-report
-                // channel; keep it.
-                log::ErrorF("Plugin '%s': lua entrypoint '%s' %s: %s",
-                            m.name.c_str(), rel.c_str(), kind,
-                            ctx.err.c_str());
-                // ALSO route to the offending plugin's OWN log so the author
-                // sees the file:line:detail (+ traceback, for runtime errors)
-                // where they naturally look — they shouldn't have to know to
-                // grep the engine log. p.handle is the plugin's log stream
-                // (plugin_loader.h); PluginError routes by handle (log.h).
-                log::PluginError(
-                    p.handle,
-                    std::string("lua entrypoint '") + rel + "' " + kind +
-                        ": " + ctx.err);
-
-                // Regression assertion for AP12 #3 (plugin.lua error
-                // line-info quality). PURE READ of ctx.err — it does not
-                // touch status/err/control flow; the plugin loads/errors
-                // exactly as it would without this block. FIXTURE-AGNOSTIC:
-                // we never check the plugin's name — we report on the
-                // line-info quality of WHATEVER plugin.lua runtime error we
-                // just captured. Only RUNTIME errors qualify (ctx.ran):
-                // they have a live stack, so the errfunc (piece 2) appended
-                // a traceback. A load (compile) error has no stack/traceback,
-                // so it isn't a datapoint for this assertion.
-                //
-                // The production-quiet backstop is ReportResult's OWN
-                // dev-mode early-return (test.cpp) — NOT a loader-side
-                // fixture check. So in production this read+call is a cheap
-                // no-op; in dev mode every plugin.lua runtime error feeds
-                // cap-23. The deliberate-error fixture (cap-23-lua-error)
-                // reliably triggers it each boot; a real plugin erroring is
-                // also a valid datapoint (it too should carry line info).
-                if (ctx.ran) {
-                    const bool pass =
-                        HasLineMarker(ctx.err) &&
-                        ctx.err.find("stack traceback:") != std::string::npos;
-                    kcdx::test::ReportResult("cap-23-lua-error-lineinfo", pass,
-                                             ctx.err);
+                if (r == FileResult::Faulted) {
+                    break;  // don't run this plugin's later files after a fault
                 }
-
-                ++filesFailed;
-                continue;
             }
-
-            ++filesRun;
-            log::InfoF("Plugin '%s': lua entrypoint '%s' OK",
-                       m.name.c_str(), rel.c_str());
         }
     }
 
@@ -306,6 +325,88 @@ void RunAll(lua_State* L) {
         log::InfoF("Lua plugin loader: %zu file(s) run, %zu failed, across "
                    "%zu plugin(s) with lua entrypoints",
                    filesRun, filesFailed, pluginsWithLua);
+    }
+}
+
+void RunAfterEntrypoints(lua_State* L) {
+    bool expected = false;
+    if (!g_ranAfterOnce.compare_exchange_strong(expected, true,
+                                                 std::memory_order_acq_rel)) {
+        return;  // already ran this session
+    }
+    if (!L) {
+        log::Warn("lua_plugin_loader::RunAfterEntrypoints called with null "
+                  "lua_State; no lua_after entrypoint will execute this session");
+        return;
+    }
+
+    // The plugin-scoped require searcher is installed once by RunAll (which
+    // always runs before this in the first-update-tick sequence). Re-call
+    // Install — it's idempotent (internal latch) — so RunAfterEntrypoints is
+    // self-contained and correct even if the call order ever changes.
+    kcdx::lua_require_searcher::Install(L);
+
+    // The lua_after slot runs in LOAD-ORDER PRIORITY, not g_plugins
+    // (topo/discovery) order. g_plugins is sorted by dependency topo-sort,
+    // NOT by load_order priority; the before/default slot (RunAll) iterates
+    // it as-is because cross-plugin CHAIN order is decided later at apply
+    // time by lua_registry::ApplyZone's load-order sort — the order
+    // plugin.lua files happen to RUN doesn't affect chain order. But a
+    // lua_after entrypoint's CODE runs here (it may call game functions,
+    // observe before-work, etc.), so its RUN order is observable and MUST
+    // follow load-order priority. Build an index ordered by
+    // (priority asc, name asc) — zone is irrelevant: lua_after is
+    // after_game by construction. Ties broken by name for determinism.
+    std::vector<const kcdx::plugins::LoadedPlugin*> ordered;
+    ordered.reserve(kcdx::plugins::g_plugins.size());
+    for (const auto& p : kcdx::plugins::g_plugins) {
+        if (p.manifest.luaAfterEntrypointsRel.empty()) continue;
+        ordered.push_back(&p);
+    }
+    std::sort(ordered.begin(), ordered.end(),
+              [](const kcdx::plugins::LoadedPlugin* a,
+                 const kcdx::plugins::LoadedPlugin* b) {
+                  const auto& ea = kcdx::load_order::Of(a->manifest.name);
+                  const auto& eb = kcdx::load_order::Of(b->manifest.name);
+                  if (ea.priority != eb.priority) {
+                      return ea.priority < eb.priority;
+                  }
+                  return a->manifest.name < b->manifest.name;
+              });
+
+    size_t pluginsWithAfter = 0, filesRun = 0, filesFailed = 0;
+
+    for (const kcdx::plugins::LoadedPlugin* pp : ordered) {
+        const kcdx::plugins::LoadedPlugin& p = *pp;
+        const auto& m = p.manifest;
+
+        // Honor the load_order.toml enabled gate — same as the before slot.
+        if (!kcdx::load_order::IsPluginEnabled(m.name)) {
+            log::InfoF("Plugin '%s': %zu lua_after entrypoint(s) skipped "
+                       "(plugin disabled via load_order.toml)",
+                       m.name.c_str(), m.luaAfterEntrypointsRel.size());
+            continue;
+        }
+
+        ++pluginsWithAfter;
+        for (const std::string& rel : m.luaAfterEntrypointsRel) {
+            const FileResult r =
+                RunOneEntrypointFile(L, p, rel, "lua_after entrypoint");
+            if (r == FileResult::Ok) {
+                ++filesRun;
+            } else {
+                ++filesFailed;
+                if (r == FileResult::Faulted) {
+                    break;  // don't run this plugin's later files after a fault
+                }
+            }
+        }
+    }
+
+    if (pluginsWithAfter > 0 || filesFailed > 0) {
+        log::InfoF("Lua plugin loader (after_game): %zu file(s) run, %zu "
+                   "failed, across %zu plugin(s) with lua_after entrypoints",
+                   filesRun, filesFailed, pluginsWithAfter);
     }
 }
 

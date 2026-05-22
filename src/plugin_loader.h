@@ -105,10 +105,35 @@ struct PluginManifest {
     // [entrypoints] lua = "plugin.lua" OR lua = ["plugin.lua", "extras.lua"].
     // Relative paths from the plugin folder. Run in declared order at the
     // plugin's slot in the unified load order, after the Lua VM is up (see
-    // hooks.cpp first-update-tick orchestration). Each file is loaded via
-    // luaL_loadfile + lua_pcall under crash_guard so a faulty plugin.lua
-    // can't take down the engine or other plugins. Empty = no Lua entrypoint.
+    // hooks.cpp first-update-tick orchestration). This is the BEFORE-or-
+    // default slot: it runs in the plugin's declared zone. Each file is
+    // loaded via luaL_loadfile + lua_pcall under crash_guard so a faulty
+    // plugin.lua can't take down the engine or other plugins. Empty = no
+    // Lua entrypoint.
     std::vector<std::string> luaEntrypointsRel;
+
+    // [entrypoints] lua_after = "after.lua" OR an array — the OPTIONAL
+    // after-game Lua slot. Same shape + per-file load discipline as
+    // luaEntrypointsRel, but these files run in the AFTER_GAME phase at the
+    // plugin's load-order priority, regardless of the plugin's declared
+    // zone. The phase split is DECLARED and VISIBLE: a plugin doing both
+    // before-game and after-game work declares `lua` (its before/default
+    // slot) AND `lua_after` (its after-game slot); each runs at the
+    // plugin's single load-order priority IN ITS PHASE. lua_after is run
+    // by lua_plugin_loader::RunAfterEntrypoints after ApplyZone(AfterGame)
+    // (so all before-work is live) and before kcdxMessage_InputLoaded.
+    // Empty = no after-game Lua entrypoint. See restructure-plan.md
+    // (per-entry-zone execution model).
+    std::vector<std::string> luaAfterEntrypointsRel;
+
+    // [entrypoints] dll_after = "bin/post.dll" — the OPTIONAL after-game DLL
+    // slot (kcdxPlugin_PostGameLoad). PARSED into this field now for schema
+    // completeness, but its dispatch is NOT wired in this step — the
+    // kcdxPlugin_PostGameLoad C++ export + its invocation are a SEPARATE
+    // later step. TODO(step-4): wire dll_after dispatch (load the DLL's
+    // kcdxPlugin_PostGameLoad export, fire it in the after_game phase at
+    // the plugin's priority). Until then this field is recorded but unused.
+    std::string dllAfterEntrypointRel;
 
     // Location — populated by the discovery walk.
     std::filesystem::path folderPath; // Absolute path of the plugin's install folder

@@ -272,11 +272,17 @@ bool ParsePluginManifest(const toml::table& doc,
     // [entrypoints] section
     if (auto* entryTbl = doc.get("entrypoints"); entryTbl && entryTbl->is_table()) {
         const auto& et = *entryTbl->as_table();
-        out.dllEntrypointRel = OptString(et, "dll");
+        out.dllEntrypointRel      = OptString(et, "dll");
+        // dll_after = "bin/post.dll" — the OPTIONAL after-game DLL slot.
+        // Parsed for schema completeness; its dispatch (kcdxPlugin_PostGameLoad)
+        // is a SEPARATE later step. Recorded but not wired here. See
+        // PluginManifest::dllAfterEntrypointRel.
+        out.dllAfterEntrypointRel = OptString(et, "dll_after");
 
         // lua = "plugin.lua"  OR  lua = ["plugin.lua", "scripts/extras.lua"].
         // Accept both forms: a bare string is treated as a one-element list.
-        // Files run in declared order at the plugin's load-order slot.
+        // Files run in declared order at the plugin's load-order slot. This
+        // is the BEFORE-or-default slot (runs in the plugin's declared zone).
         if (auto* luaNode = et.get("lua")) {
             if (luaNode->is_string()) {
                 out.luaEntrypointsRel.push_back(
@@ -285,6 +291,25 @@ bool ParsePluginManifest(const toml::table& doc,
                 for (const auto& elem : *luaNode->as_array()) {
                     if (elem.is_string()) {
                         out.luaEntrypointsRel.push_back(
+                            std::string(*elem.value<std::string>()));
+                    }
+                }
+            }
+        }
+
+        // lua_after = "after.lua"  OR  lua_after = ["after.lua", ...] — the
+        // OPTIONAL after-game Lua slot. Same string-or-array shape as `lua`;
+        // these files run in the AFTER_GAME phase at the plugin's priority,
+        // regardless of declared zone (see RunAfterEntrypoints). A both-phase
+        // plugin declares `lua` (before) AND `lua_after` (after).
+        if (auto* luaAfterNode = et.get("lua_after")) {
+            if (luaAfterNode->is_string()) {
+                out.luaAfterEntrypointsRel.push_back(
+                    std::string(*luaAfterNode->value<std::string>()));
+            } else if (luaAfterNode->is_array()) {
+                for (const auto& elem : *luaAfterNode->as_array()) {
+                    if (elem.is_string()) {
+                        out.luaAfterEntrypointsRel.push_back(
                             std::string(*elem.value<std::string>()));
                     }
                 }

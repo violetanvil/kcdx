@@ -42,4 +42,23 @@ namespace kcdx::lua_plugin_loader {
 // every plugin's registrations queued with correct attribution.
 void RunAll(lua_State* L);
 
+// Run every enabled plugin's [entrypoints].lua_after files against `L` —
+// the after-game Lua slot of the per-entry-zone execution model. Unlike
+// RunAll (which iterates g_plugins in topo/discovery order), this runs in
+// LOAD-ORDER PRIORITY (sorted by load_order::Of(name).priority, ties by
+// name): a lua_after entrypoint's CODE runs here and is observable, so its
+// run order must follow load order. Same per-file load discipline as the
+// before slot — enabled gate, plugin-scoped OwnerScope (require +
+// attribution), RegisterScriptOwner, crash_guard, dual error-routing —
+// shared via the internal RunOneEntrypointFile body (not copy-pasted).
+//
+// Called from the first-update-tick orchestration in hooks.cpp AFTER
+// lua_registry::ApplyZone(AfterGame) (so every plugin's before-work is
+// LIVE) and BEFORE kcdxMessage_InputLoaded. A lua_after file may itself
+// call kcdx.hook/.bytes (which QUEUE into lua_registry), so the caller
+// runs a SECOND ApplyZone(AfterGame) after this returns to install them
+// before InputLoaded. Safe to call once per session (internal latch
+// independent of RunAll's).
+void RunAfterEntrypoints(lua_State* L);
+
 }  // namespace kcdx::lua_plugin_loader

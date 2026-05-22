@@ -418,6 +418,27 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 kcdx::lua_registry::ApplyZone(
                     kcdx::load_order::Zone::AfterGame);
 
+                // Per-entry-zone model: run every plugin's after-game Lua
+                // slot ([entrypoints].lua_after) NOW — after the ApplyZone
+                // above (so every plugin's before-work is LIVE: hooks +
+                // byte patches installed) and BEFORE InputLoaded (so the
+                // after-work is done by the time plugins are told they're
+                // ready). RunAfterEntrypoints fires each enabled plugin's
+                // lua_after files in LOAD-ORDER PRIORITY. This is the clean
+                // phase boundary: all BEFORE work registered+applied, THEN
+                // all AFTER work runs with before-work live.
+                kcdx::lua_plugin_loader::RunAfterEntrypoints(L);
+
+                // A lua_after entrypoint may itself call kcdx.hook/.bytes,
+                // which QUEUE into lua_registry AFTER the ApplyZone above
+                // already ran. Drain+install them with a SECOND
+                // ApplyZone(AfterGame) so they're LIVE before InputLoaded.
+                // ApplyZone is idempotent (already-applied entries skip),
+                // so this is cheap + correct; the per-tick ApplyZone below
+                // would eventually catch them, but we want them live now.
+                kcdx::lua_registry::ApplyZone(
+                    kcdx::load_order::Zone::AfterGame);
+
                 // Lifecycle: input subsystem is alive by the time the first
                 // update tick fires (Lua VM is up). Closest analogue to
                 // SKSE's kInputLoaded message.

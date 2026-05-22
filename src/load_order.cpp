@@ -218,22 +218,16 @@ void Resolve() {
             if (ov.hasEnabled)  enabled           = ov.enabled;
         }
 
-        // Step 4: capability gate. If the user / author asked for
-        // before_game but the plugin has after_game-only entries,
-        // we downgrade to the capability minimum at default priority
-        // and log a reason. The plugin still loads.
-        Zone finalZone = requestedZone;
+        // Step 4: the user's / author's declared (zone, priority) stands
+        // unconditionally — no silent relocation. In the per-entry-zone
+        // execution model a plugin's after-work goes in the lua_after slot
+        // (which runs after_game by construction) and its before-work in the
+        // lua/before slot, so "before_game zone but has after-work" is no
+        // longer a contradiction to downgrade. The old full-plugin downgrade
+        // (before_game → after_game at priority 50 with a warn) was a silent
+        // relocation (AP13) and is deleted; the author's choice is honored.
+        Zone finalZone     = requestedZone;
         int  finalPriority = requestedPriority;
-        if (eff.minZone == MinZone::AfterGame && finalZone == Zone::BeforeGame) {
-            finalZone = Zone::AfterGame;
-            finalPriority = 50;  // reset to middle; user asked for an impossible spot
-            std::ostringstream ss;
-            ss << "plugin '" << m.name << "' requested zone=before_game but "
-                  "declares entries (hook/mid_hook/trampoline) that require "
-                  "after_game; reassigned to after_game at priority 50";
-            eff.reason = ss.str();
-            log::Warn(eff.reason);
-        }
 
         eff.zone     = finalZone;
         eff.priority = finalPriority;
