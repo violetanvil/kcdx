@@ -1,0 +1,45 @@
+# CAP-24 — kcdx.on lifecycle-event bridge (Phase 2b sub-8).
+#
+# The kcdx.on(name, fn) verb (sub-7) gains the 9 game-lifecycle events
+# that mirror the engine's existing kcdxMessage_* catalog. This plugin is
+# PURE LUA (no DLL): it subscribes to lifecycle events and reports via
+# kcdx.test.report from inside each callback.
+#
+# Events under test:
+#   input_loaded       fires every boot (first update tick) -> AUTO-PASS.
+#   save_game          fires on every save; carries the save basename arg.
+#                      [manual] — needs an in-game save gesture.
+#   post_load_game     fires after a load completes; NO arg. [manual] —
+#                      needs an in-game load gesture.
+#
+# Flow:
+#   1. plugin.lua runs at first-update-tick; registers the 3 kcdx.on subs.
+#   2. kcdxMessage_InputLoaded fires (same tick, after ApplyZone): the
+#      input_loaded callback runs and reports CAP-24-input-loaded PASS.
+#      This is the boot auto-pass — no player input required.
+#   3. When the dev saves in-game, save_game fires: the callback asserts
+#      it received a non-empty basename string and reports CAP-24-save-game.
+#   4. When the dev loads a save, post_load_game fires: reports
+#      CAP-24-post-load-game (confirms a no-arg lifecycle event fires).
+#
+# The two [manual] rows stay PENDING until the dev performs the gesture in
+# the verification-checkpoint launch; input_loaded is the standing
+# regression guard that the bridge wires up at all.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-24-lifecycle-events"
+display_name        = "CAP-24 kcdx.on lifecycle events"
+author              = "kcdx"
+description         = "kcdx.on bridge for the 9 game-lifecycle events (input_loaded auto-pass; save_game / post_load_game manual)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-24-input-loaded", "CAP-24-save-game",
+                       "CAP-24-post-load-game"]
+
+[entrypoints]
+lua = "plugin.lua"

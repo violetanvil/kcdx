@@ -7,6 +7,7 @@
 
 #include "crash_guard.h"
 #include "log.h"
+#include "lua_lifecycle.h"
 #include "plugin_loader.h"
 #include "serialization.h"
 #include "test.h"
@@ -242,6 +243,31 @@ void FireEngineMessage(uint32_t messageType,
                 kcdx::serialization::OnEngineMessage(&c->msg);
             },
             &ectx);
+    }
+
+    // Route to the kcdx.on lifecycle bridge too. Like serialization, the
+    // Lua lifecycle subscribers are engine-internal (no PluginHandle to
+    // register a plugin listener with) — so they consume engine messages
+    // via this same direct-dispatch path rather than RegisterListener.
+    // FireLifecycle fans the mapped message out to its kcdx.on(name, fn)
+    // Lua subscribers (pcall-isolated per callback). Guarded under its own
+    // site name so a faulting Lua callback can't take down the engine.
+    {
+        struct LifeCtx {
+            uint32_t    messageType;
+            const void* data;
+            uint32_t    dataLen;
+        };
+        LifeCtx lctx{messageType, data, dataLen};
+        guard::Call(
+            "engine.lua_lifecycle",
+            nullptr,
+            [](void* ud) {
+                LifeCtx* c = static_cast<LifeCtx*>(ud);
+                kcdx::lua_lifecycle::OnEngineMessage(
+                    c->messageType, c->data, c->dataLen);
+            },
+            &lctx);
     }
 
     // After dispatch completes, give the test-suite aggregator a chance

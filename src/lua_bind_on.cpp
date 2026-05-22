@@ -13,16 +13,25 @@
 //       assert(my_hook:applied() == true)
 //   end)
 //
-// SCOPE (this sub): the kcdx.on binder + the "ready" event ONLY. "ready"
-// is the post-apply callback — it fires after lua_registry::ApplyZone
-// has transitioned every entry in the plugin's zone, so handle:applied()
-// is final. The full lifecycle-event bridge (input_loaded, save_game,
-// ...) and kcdx.publish pub/sub are SEPARATE follow-on subs; any other
-// event string returns (nil, teaching error) here.
+// SCOPE: the kcdx.on binder + the "ready" event (sub-7) + the 9
+// game-lifecycle events (sub-8). kcdx.publish pub/sub is a SEPARATE
+// follow-on sub; any event string outside the 10 known names returns
+// (nil, teaching error) here.
 //
-// The "ready" callback takes NO arguments: it is a "your zone is applied
-// now" signal. The plugin reads its OWN captured handles inside it. It
-// runs once, per-plugin, after that plugin's zone apply pass completes.
+// "ready" is the post-apply callback — it fires after
+// lua_registry::ApplyZone has transitioned every entry in the plugin's
+// zone, so handle:applied() is final. It takes NO arguments (a "your zone
+// is applied now" signal — the plugin reads its OWN captured handles
+// inside it), runs ONCE, per-plugin, after that plugin's zone apply pass.
+//
+// The 9 lifecycle events (post_load, post_post_load, input_loaded,
+// new_game, pre_load_game, post_load_game, save_game, load_game_selected,
+// delete_game) are a PURE BRIDGE over the existing engine kcdxMessage_*
+// catalog (see lua_lifecycle.{h,cpp}). They fire EVERY time the mapped
+// message fires (e.g. save_game on every save). The 3 save/load events
+// (save_game, load_game_selected, delete_game) pass the save basename
+// (e.g. "save561.whs") as the callback's single arg; the other 6 fire
+// with no args.
 
 #include "lua_bind_on.h"
 
@@ -34,6 +43,7 @@ extern "C" {
 }
 
 #include "log.h"
+#include "lua_lifecycle.h"
 #include "lua_registry.h"
 
 namespace kcdx::lua_bind_on {
@@ -42,9 +52,12 @@ namespace {
 
 // kcdx.on(event, fn)
 //
-//   event (string)   : the lifecycle event to subscribe to. Only "ready"
-//                      is wired today.
-//   fn    (function) : the callback. For "ready" it takes no arguments.
+//   event (string)   : the lifecycle event to subscribe to — "ready" or
+//                      one of the 9 game-lifecycle events.
+//   fn    (function) : the callback. "ready" + the 6 no-arg lifecycle
+//                      events take no arguments; the 3 save/load events
+//                      (save_game, load_game_selected, delete_game) get
+//                      the save basename string.
 //
 // On success returns nothing (the subscription is registered). On a bad
 // argument or an unknown event, returns (nil, teaching error) per the
@@ -107,15 +120,51 @@ int Lua_On(lua_State* L) {
         return 0;
     }
 
-    // Any other event string: not wired yet. Teach what IS available and
-    // what is coming, naming "ready" as the only wired event.
+    // One of the 9 game-lifecycle events: a pure bridge over the engine's
+    // existing kcdxMessage_* catalog (lua_lifecycle.{h,cpp}). Same
+    // attribution + GC-safe ref pattern as the "ready" branch above; the
+    // difference is the callback fires EVERY time the mapped message fires
+    // (registered in a durable per-name registry, not the one-shot ready
+    // map).
+    if (kcdx::lua_lifecycle::IsLifecycleEvent(event)) {
+        std::string callSiteFile;
+        int callSiteLine = 0;
+        std::string pluginName =
+            kcdx::lua_registry::OwningPluginForCurrentCall(
+                L, callSiteFile, callSiteLine);
+
+        // luaL_ref pops the value — push a copy first so the caller's args
+        // aren't disturbed (same as the "ready" path).
+        lua_pushvalue(L, 2);
+        int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+        if (ref == LUA_NOREF || ref == LUA_REFNIL) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.on(\"%s\", fn): internal error — failed to retain "
+                "the callback (see kcdx.log)",
+                event.c_str());
+            return 2;
+        }
+
+        kcdx::lua_lifecycle::RegisterLifecycleCallback(event, pluginName, ref);
+        log::InfoF("kcdx.on: registered \"%s\" callback for plugin='%s' "
+                   "site=%s:%d (ref=%d)",
+                   event.c_str(),
+                   pluginName.empty() ? "<anon>" : pluginName.c_str(),
+                   callSiteFile.empty() ? "?" : callSiteFile.c_str(),
+                   callSiteLine, ref);
+        return 0;
+    }
+
+    // Any other event string: not a known event. Teach the full set of
+    // available names ("ready" + the 9 lifecycle events).
     lua_pushnil(L);
     lua_pushfstring(L,
-        "kcdx.on: event \"%s\" is not available yet — only \"ready\" is "
-        "wired today (fires after your hooks/bytes are applied, so "
-        "handle:applied() is final). Lifecycle events (input_loaded, "
-        "save_game, ...) and custom events arrive in a later kcdx version.",
-        event.c_str());
+        "kcdx.on: event \"%s\" is not available. Available events: "
+        "\"ready\" (fires after your hooks/bytes are applied, so "
+        "handle:applied() is final), and the game-lifecycle events: %s. "
+        "Custom events (kcdx.publish) arrive in a later kcdx version.",
+        event.c_str(), kcdx::lua_lifecycle::EventNameList());
     return 2;
 }
 

@@ -372,6 +372,19 @@ what the live result is.
 | Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
 | Notes | Pieces 1–3 (storedebug line numbers, errfunc traceback, plugin-log routing) live in `src/lua_plugin_loader.cpp` and are the feature under test. Multiple-report semantics: if more than one plugin.lua errors in a boot, `ReportResult("cap-23-lua-error-lineinfo", ...)` is called once per erroring plugin and last-call-wins (test.h) — fine, since every erroring plugin should carry line info, so any of them passing is the signal. |
 
+## CAP-24: `kcdx.on` lifecycle-event bridge
+
+| Field | Value |
+|---|---|
+| What | `kcdx.on(name, fn)` (the sub-7 verb) gains the 9 game-lifecycle events that mirror the engine's existing `kcdxMessage_*` catalog: `post_load`, `post_post_load`, `input_loaded`, `new_game`, `pre_load_game`, `post_load_game`, `save_game`, `load_game_selected`, `delete_game`. A PURE BRIDGE — one engine-internal hook in `messaging::FireEngineMessage` fans each mapped `kcdxMessage_*` out to that event name's `kcdx.on` Lua subscribers. The 3 save/load events (`save_game`, `load_game_selected`, `delete_game`) pass the save basename (e.g. `"save561.whs"`) as the callback's single arg (a copy — the engine-owned `const char*` is never retained); the other 6 fire with no args. Fires EVERY time the message fires (e.g. `save_game` on every save), pcall-isolated per callback (a throwing callback logs loud + does not abort the others or the engine). `"ready"` is unchanged (sub-7 per-plugin post-apply signal; not a lifecycle event). |
+| Channels | (vi) plugin Lua (C++ `kcdxMessagingInterface` is the existing parity surface — CAP-08 — so no new C++ mirror is owed; this binds the same engine messages to Lua) |
+| Engine status | LIVE-PENDING (Phase 2b sub-8) — `src/lua_lifecycle.{h,cpp}` registry + dispatch, `kcdx.on` binder lifecycle branch in `src/lua_bind_on.cpp`, engine-internal bridge in `src/messaging.cpp::FireEngineMessage`. Awaiting checkpoint launch. |
+| Test plugin | [`cap-24-lifecycle-events/`](cap-24-lifecycle-events/) — pure Lua. Subscribes to `input_loaded` (auto), `save_game` (manual), `post_load_game` (manual); reports from each callback. |
+| Auto-pass check | `CAP-24-input-loaded`: `kcdx.on("input_loaded", ...)` fires on the first update tick every boot → reports PASS with no player input. This is the standing regression guard that the bridge wires `kcdx.on` through to the engine dispatch. |
+| Manual confirm | `CAP-24-save-game` [manual]: save in-game → callback asserts it got a non-empty basename string. `CAP-24-post-load-game` [manual]: load a save → callback fires (proves a no-arg lifecycle event reaches Lua). |
+| Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
+| Notes | Engine-internal listener placement: mirrors `serialization::OnEngineMessage` — a direct call in `FireEngineMessage`, NOT a `RegisterListener` call (the messaging `RegisterListener` thunk requires a valid `PluginHandle` and rejects engine-internal subscribers, so engine-internal consumers use the direct-dispatch path). Empirical: of the 3 save/load events only `save_game` + `load_game_selected` actually pass a basename at their fire sites today; the `delete_game` fire site passes none (degrades to a no-arg call — `FireLifecycle` never pushes a NULL string to Lua). |
+
 ---
 
 # Section 2: Competition / collision rows
@@ -587,6 +600,9 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-22-control-unaffected | ✅ LIVE | sub-6 | ISOLATION: control caller of the SAME Helper is unchanged (110) — per-call-site, not per-callee |
 | CAP-22-callee-unaffected | ✅ LIVE | sub-6 | ISOLATION: direct Helper(10) unchanged (110) — callee untouched, only call sites rewritten |
 | cap-23-lua-error-lineinfo | ✅ LIVE | AP12 | loader reports PASS when a captured plugin.lua runtime error carries `:<line>:` + `"stack traceback:"`; fixture-agnostic assertion over any runtime error, deliberate-error fixture (`cap-23-lua-error`) triggers it each boot |
+| CAP-24-input-loaded | ⏳ PENDING | sub-8 | `kcdx.on("input_loaded", fn)` fires on the first update tick every boot → auto-pass; proves the lifecycle bridge wires kcdx.on to the engine kcdxMessage_* dispatch (`cap-24-lifecycle-events`) |
+| CAP-24-save-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("save_game", fn)` fires on every in-game save with the basename arg; callback asserts a non-empty string. Needs a save gesture (`cap-24-lifecycle-events`) |
+| CAP-24-post-load-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("post_load_game", fn)` fires after a load (no-arg lifecycle event). Needs a load gesture (`cap-24-lifecycle-events`) |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |
