@@ -348,6 +348,18 @@ what the live result is.
 | Last result | DEFERRED-v0.2 |
 | Notes | Big surface area; lots of mods will want this eventually. |
 
+## CAP-22: `kcdx.hook` mode="callsite" (single call-site redirect)
+
+| Field | Value |
+|---|---|
+| What | Redirect ONE specific E8 near-call (rewrite its rel32 displacement) so only that caller is routed through the hook chain; every other caller of the same callee is untouched. `mode = "callsite"` is the explicit SCOPE selector; the behavior (before/after/around/replace) is attached under its own key and wraps the CALLED function at that one site. Locator: `target_callsite = { pattern \| address_id \| rva }`. The install reads the opcode at the site (rejects non-E8 indirect calls loudly), computes the original callee VA from the displacement, builds a chain trampoline over that callee (reusing the function-entry DispatchPre/Post + call_original spine), verifies rel32 reachability, and rewrites the 4 displacement bytes. Conflict mediation: the chain is keyed by the call-site VA, so two plugins redirecting the SAME site are load-order-mediated via `hook_chain::CanCoexist`; two plugins redirecting DIFFERENT sites to the same callee never collide. |
+| Channels | (vi) plugin Lua (C++ `kcdxHookInterface` mirror is restructure parity-debt, built in the C++ phase) |
+| Engine status | LIVE-PENDING (Phase 2b sub-6) — binder reconcile (`mode="callsite"` scope + behavior key), `hook_chain::AddCallsite` install path, E8-opcode + rel32-reach install-time checks, callsite branch in `CanCoexist`. Awaiting checkpoint launch. |
+| Test plugin | `cap-22-callsite-redirect/` (C++ DLL + plugin.lua). Shared `Cap22_Helper` callee; five distinct callers (four redirected: before/after/around/replace, one control). Each caller makes a real noinline E8 call to Helper; `/OPT:NOICF` + per-caller unique volatile tags keep them distinct. The DLL scans each redirected caller's body for the E8-to-Helper, converts to a module RVA, and hands plugin.lua the `target_callsite = { rva = "cap-22.dll @ rva 0x..." }` locator (exercising the rva escape-hatch form). |
+| Auto-pass check | On `kInputLoaded` (after ApplyZone), the DLL calls each caller(10): before→111, after→1110, around→220, replace→42. Isolation: the control caller of the SAME Helper →110 AND a direct `Cap22_Helper(10)`→110, both UNAFFECTED — proving the redirect is per-call-site, not per-callee. |
+| Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
+| Notes | restructure-plan design-gap #1 (canonical BugSplat MiniDmpSender-ctor-callsite case). v1 handles only the E8 direct near-call; FF /2 and FF 15 indirect calls are rejected at install with the actual opcode named. |
+
 ---
 
 # Section 2: Competition / collision rows
@@ -549,6 +561,12 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-21-write | ✅ LIVE | sub-5 | mode=mid capture WRITE: `c.rax:set(1000)` lands in the real register; add runs on 1000 → 1100 |
 | CAP-21-skip | ✅ LIVE | sub-5 | mode=mid run/skip: callback returns `"skip"` → captured `add` never runs → 10 (positional-list captures `c[1]`). Proves the fresh dispatcher does NOT inherit the cap-04-c `args._skip` bug |
 | CAP-21-run | ✅ LIVE | sub-5 | mode=mid control: callback returns nothing → captured `add` runs → 110 |
+| CAP-22-before | ⏳ PENDING | sub-6 | `kcdx.hook` mode=callsite before: redirected E8 site, Helper sees 10→11 → 111 (`cap-22-callsite-redirect`) |
+| CAP-22-after | ⏳ PENDING | sub-6 | mode=callsite after: redirected E8 site, Helper return 110 → 1110 |
+| CAP-22-around | ⏳ PENDING | sub-6 | mode=callsite around: redirected E8 site, 2 * orig(10)=2*110 → 220 |
+| CAP-22-replace | ⏳ PENDING | sub-6 | mode=callsite replace: redirected E8 site returns 42; Helper not called from this site |
+| CAP-22-control-unaffected | ⏳ PENDING | sub-6 | ISOLATION: control caller of the SAME Helper is unchanged (110) — per-call-site, not per-callee |
+| CAP-22-callee-unaffected | ⏳ PENDING | sub-6 | ISOLATION: direct Helper(10) unchanged (110) — callee untouched, only call sites rewritten |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |

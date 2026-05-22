@@ -199,11 +199,12 @@ bool ApplyHookEntry(kcdx::lua_registry::Entry& entry,
 
 // --- Locator validation -------------------------------------------------
 //
-// Exactly one function-entry locator must be set for non-callsite
-// modes. For callsite mode, the callsite sub-locator carries the patch
-// target and function_name (if present) is signature-info only, so the
-// function-entry-locator count must be zero. Returns an empty string on
-// success or a ready-to-return diagnostic on failure.
+// Exactly one function-entry locator must be set for the default
+// (function-entry) scope. For mode = "callsite", the callsite
+// sub-locator carries the patch target and function_name (if present) is
+// signature-info only, so the function-entry-locator count must be zero.
+// Returns an empty string on success or a ready-to-return diagnostic on
+// failure.
 std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
     const int entryLocatorCount =
         (!p.functionName.empty()       ? 1 : 0) +
@@ -214,7 +215,7 @@ std::string ValidateLocator(const kcdx::hook_payload::HookPayload& p) {
         (!p.targetLuaCfunction.empty() ? 1 : 0) +
         (p.address != 0                ? 1 : 0);
 
-    if (p.mode == kcdx::hook_payload::Mode::Callsite) {
+    if (p.callsiteScope) {
         if (!p.callsite.has_value()) {
             return "mode='callsite' requires a target_callsite table "
                    "(pattern, address_id, or rva)";
@@ -440,14 +441,51 @@ int Lua_Hook(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    // --- Mode-as-key + callback ---
-    // The author attaches the callback under the mode name itself:
+    // --- Optional `mode` string: SCOPE selector ONLY ---
+    // `mode` selects the hook's SCOPE — never its behavior. The only scope
+    // value today is:
+    //   "callsite"  — redirect ONE call instruction (vs the default
+    //                 function-entry scope, selected by omitting `mode`).
+    // The BEHAVIOR (before/after/around/replace/mid) is ALWAYS attached
+    // under its own key, never named in `mode`. A behavior name in `mode`
+    // is a teaching error (lua-api-surface.md §"errors teach"): it points
+    // the author at the behavior key, it does not just reject. We capture
+    // the string here; a behavior-name `mode` is diagnosed after the
+    // behavior key is known (so the message can name the actual key).
+    // Absent `mode` = default function-entry scope.
+    std::string modeStr;
+    bool        haveModeStr = false;
+    {
+        lua_getfield(L, 1, "mode");
+        if (lua_type(L, -1) == LUA_TSTRING) {
+            modeStr = lua_tostring(L, -1);
+            haveModeStr = true;
+            if (modeStr == "callsite") p->callsiteScope = true;
+        } else if (!lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook '%s': `mode` must be a string — \"callsite\" "
+                "(the only scope selector today) or omitted (default: hook "
+                "the function entry).",
+                p->name.c_str());
+            return 2;
+        }
+        lua_pop(L, 1);
+    }
+
+    // --- Behavior-as-key + callback ---
+    // The author attaches the callback under the behavior name itself:
     //   kcdx.hook{ ..., before = function(...) ... end }
     //   kcdx.hook{ ..., mid = function(c) ... end, offset =, captures = }
+    //   kcdx.hook{ ..., mode="callsite", around = function(orig, ...) end }
     // Exactly ONE of before / after / around / replace / mid must hold a
-    // function (one mode per call — chain multiple modes on a target by
-    // making multiple kcdx.hook calls). `callsite` is not accepted yet
-    // (its own sub); the payload carries Mode::Callsite so that's additive.
+    // function (one behavior per call — chain multiple behaviors on a
+    // target by making multiple kcdx.hook calls). The detected behavior
+    // is stored in p->mode; the callsite SCOPE (if any) rides
+    // p->callsiteScope alongside it. `mid` is NOT a valid callsite
+    // behavior (a call-site redirect wraps the called function — there is
+    // no mid-instruction capture at a call site).
     struct ModeKey { const char* key; kcdx::hook_payload::Mode mode; };
     static const ModeKey kModeKeys[] = {
         {"before",  kcdx::hook_payload::Mode::Before},
@@ -471,7 +509,7 @@ int Lua_Hook(lua_State* L) {
         lua_pushnil(L);
         lua_pushfstring(L,
             "kcdx.hook '%s': must attach exactly one callback under a "
-            "mode key (before, after, around, replace, or mid), e.g. "
+            "behavior key (before, after, around, replace, or mid), e.g. "
             "before = function(...) ... end",
             p->name.c_str());
         return 2;
@@ -479,9 +517,64 @@ int Lua_Hook(lua_State* L) {
     if (modeCount > 1) {
         lua_pushnil(L);
         lua_pushfstring(L,
-            "kcdx.hook '%s': attach exactly ONE mode per call; found "
+            "kcdx.hook '%s': attach exactly ONE behavior per call; found "
             "multiple of before/after/around/replace/mid. Use separate "
-            "kcdx.hook calls to put more than one mode on a target.",
+            "kcdx.hook calls to put more than one behavior on a target.",
+            p->name.c_str());
+        return 2;
+    }
+    // mode = "callsite" wraps the called function, so it accepts only the
+    // function-wrapping behaviors (before/after/around/replace) — not mid.
+    if (p->callsiteScope && p->mode == kcdx::hook_payload::Mode::Mid) {
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.hook '%s': mode = \"callsite\" cannot use the `mid` "
+            "behavior. A call-site redirect wraps the CALLED function; use "
+            "before / after / around / replace. (For a mid-instruction "
+            "capture, drop mode=\"callsite\" and hook the function "
+            "directly with mid.)",
+            p->name.c_str());
+        return 2;
+    }
+
+    // `mode` selects SCOPE, not behavior. The only valid scope string is
+    // "callsite" (handled above → callsiteScope). ANY other string is an
+    // author mistake: either they echoed the behavior name into `mode`
+    // (the behavior key already declares it) or they typed an unknown
+    // scope. Teach the fix rather than just rejecting (lua-api-surface.md
+    // §"errors teach").
+    if (haveModeStr && !p->callsiteScope) {
+        const char* attached = kcdx::hook_payload::ModeToken(p->mode);
+        // Did they name the behavior they actually attached? Point them
+        // straight at the redundant key to remove.
+        if (modeStr == attached) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook '%s': mode selects SCOPE, not behavior. The `%s "
+                "= function...` key already declares the %s behavior — "
+                "remove `mode = \"%s\"`. (mode is only for scope, e.g. mode "
+                "= \"callsite\" to redirect one call site.)",
+                p->name.c_str(), attached, attached, modeStr.c_str());
+            return 2;
+        }
+        // mode names a known behavior, but a DIFFERENT one than the key
+        // attached — still steer them to set behavior via the key.
+        if (modeStr == "before" || modeStr == "after" ||
+            modeStr == "around" || modeStr == "replace" || modeStr == "mid") {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook '%s': mode selects SCOPE, not behavior. Set the "
+                "behavior by attaching it under its own key, e.g. before = "
+                "function... ; mode is only for scope (e.g. mode = "
+                "\"callsite\").",
+                p->name.c_str());
+            return 2;
+        }
+        // Unknown scope string — list the only valid scope value(s).
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.hook '%s': mode must be \"callsite\" (the only scope "
+            "selector today) or omitted (default: hook the function entry).",
             p->name.c_str());
         return 2;
     }

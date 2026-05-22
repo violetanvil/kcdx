@@ -19,6 +19,9 @@
 #include "hook_chain.h"
 
 #include <cstdint>
+#include <cstdio>    // snprintf (callsite diagnostics)
+#include <cstdlib>   // strtoull (callsite rva parse)
+#include <cstring>   // memcpy (callsite E8 displacement read/write)
 #include <memory>
 #include <mutex>
 #include <string>
@@ -42,6 +45,7 @@ extern "C" {
 #include "lua_bind_helpers.h"  // PushPointer
 #include "lua_memory.h"        // pointer, kPointerMetatable
 #include "patch_engine.h"      // Resolve, ResolvedPatch (locator pipeline)
+#include "pe_helpers.h"        // OpenModule (callsite rva -> module base)
 #include "rom_borrowed/runtime_func_t.h"
 #include "rom_borrowed/type_info_t.h"
 
@@ -175,6 +179,20 @@ struct Chain {
     uintptr_t                                  callOriginalThunk = 0;
     std::vector<ChainEntry>                    entries;       // load-order ordered
 
+    // --- callsite-only -------------------------------------------------
+    // A callsite Chain is keyed in g_chains by the CALL-INSTRUCTION VA
+    // (not the callee VA): a callsite redirect affects ONE caller, so the
+    // mediated resource is the call site's 4 rewritten displacement bytes,
+    // not the callee. Two plugins redirecting the SAME call site collide
+    // (load-order-loses via CanCoexist's callsite branch); two plugins
+    // redirecting DIFFERENT call sites to the same callee do NOT — that is
+    // the whole point of callsite vs function-entry. The dispatch spine
+    // (DispatchPre/Post + the entries chain + sig + callOriginalThunk) is
+    // shared with a function-entry Chain; only the install differs (an E8
+    // rewrite instead of a MinHook detour on the callee).
+    bool                     isCallsite = false;
+    uintptr_t                calleeVa = 0;  // original callee (orig() target)
+
     // --- mid-only ------------------------------------------------------
     bool                     isMid = false;
     int                      midCallbackRef = -2;  // LUA_NOREF
@@ -226,8 +244,27 @@ Chain* FindChain(uintptr_t va) {
 bool CanCoexist(const Chain&                            chain,
                 kcdx::hook_payload::Mode                incomingMode,
                 const kcdx::hook_signature::Signature&  incomingSig,
+                bool                                    incomingIsCallsite,
                 std::string&                            whyNot) {
     using Mode = kcdx::hook_payload::Mode;
+
+    // A callsite chain (keyed by the call-instruction VA) and a
+    // function-entry chain (keyed by the callee VA) are distinct kinds of
+    // interception; they must not share a chain even in the (vanishingly
+    // unlikely) event their VAs coincide. Mediate by load order — the
+    // earlier-installed kind owns the site; the later loses loudly. This
+    // is the isolated callsite extension of the predicate (no cross-engine
+    // knowledge; the decision stays inside hook_chain).
+    if (chain.isCallsite != incomingIsCallsite) {
+        whyNot = chain.isCallsite
+            ? "this address is already redirected by a mode='callsite' "
+              "hook; a function-entry hook cannot share it (load-order-"
+              "loses; the callsite hook installed first wins)"
+            : "this address already has a function-entry hook; a "
+              "mode='callsite' hook cannot share it (load-order-loses; "
+              "the function-entry hook installed first wins)";
+        return false;
+    }
 
     if (!SignaturesCompatible(chain.sig, incomingSig)) {
         whyNot = "target already hooked with an incompatible signature; "
@@ -992,6 +1029,146 @@ std::string ReturnAbiString(const kcdx::hook_signature::Signature& sig) {
     return SigTypeToJitString(sig.returnType);
 }
 
+// ---------------------------------------------------------------------------
+// Callsite locator resolution + E8-displacement rewrite (mode="callsite")
+// ---------------------------------------------------------------------------
+
+// Resolve a CallsiteLocator to the absolute VA of the CALL instruction
+// whose rel32 displacement we will rewrite. Exactly one of pattern /
+// addressId / rva is set (the binder's ValidateLocator guarantees this).
+//   pattern    : run it through the patch-engine locator pipeline (same
+//                path function-entry hooks use), then apply the locator's
+//                own `offset` (the offset to the call opcode in the match).
+//   addressId  : Address Library numeric id -> VA, + offset.
+//   rva        : "Module.dll @ rva 0xNNNN" -> module_base + rva (the
+//                escape-hatch form; no library entry needed).
+// Returns 0 + reason on failure.
+uintptr_t ResolveCallsite(const kcdx::hook_payload::HookPayload& p,
+                          std::string& reason) {
+    const kcdx::hook_payload::CallsiteLocator& cs = *p.callsite;
+
+    // rva form: "Module.dll @ rva 0x12345a"  (case-insensitive "rva").
+    if (!cs.rva.empty()) {
+        // Parse "<module> @ rva <hex>". Be forgiving about whitespace.
+        std::string s = cs.rva;
+        const std::string::size_type at = s.find('@');
+        if (at == std::string::npos) {
+            reason = "target_callsite.rva must be of the form "
+                     "\"WHGame.dll @ rva 0x12345a\" (module, '@', then "
+                     "'rva <hex offset>'); got: " + cs.rva;
+            return 0;
+        }
+        std::string moduleName = s.substr(0, at);
+        // trim trailing spaces from module name
+        while (!moduleName.empty() &&
+               (moduleName.back() == ' ' || moduleName.back() == '\t'))
+            moduleName.pop_back();
+        std::string rest = s.substr(at + 1);  // " rva 0x12345a"
+        // find the hex token after "rva"
+        const std::string::size_type rvaKw = rest.find("rva");
+        if (rvaKw == std::string::npos) {
+            reason = "target_callsite.rva is missing the 'rva' keyword "
+                     "(expected \"<module> @ rva 0x...\"); got: " + cs.rva;
+            return 0;
+        }
+        std::string hexPart = rest.substr(rvaKw + 3);  // after "rva"
+        // strtoull handles optional leading 0x and skips leading spaces.
+        char* end = nullptr;
+        unsigned long long rvaVal = std::strtoull(hexPart.c_str(), &end, 0);
+        if (end == hexPart.c_str() || rvaVal == 0ull) {
+            reason = "target_callsite.rva offset did not parse as a "
+                     "non-zero number (expected a hex RVA like 0x12345a); "
+                     "got: " + cs.rva;
+            return 0;
+        }
+        if (moduleName.empty()) moduleName = p.module;  // default WHGame.dll
+        std::wstring wmod(moduleName.begin(), moduleName.end());
+        kcdx::pe::ModuleView mod;
+        if (!kcdx::pe::OpenModule(wmod.c_str(), mod)) {
+            reason = "target_callsite.rva module '" + moduleName +
+                     "' is not loaded";
+            return 0;
+        }
+        return reinterpret_cast<uintptr_t>(mod.baseBytes) +
+               static_cast<uintptr_t>(rvaVal) +
+               static_cast<uintptr_t>(static_cast<int64_t>(cs.offset));
+    }
+
+    // address_id form: numeric Address Library id.
+    if (cs.addressId != 0) {
+        uintptr_t va = kcdx::address_library::Resolve(cs.addressId);
+        if (!va) {
+            reason = "target_callsite.address_id " +
+                     std::to_string((unsigned long long)cs.addressId) +
+                     " did not resolve in the Address Library (unknown id, "
+                     "or its entry doesn't match this game version / isn't "
+                     "verified)";
+            return 0;
+        }
+        return va + static_cast<uintptr_t>(static_cast<int64_t>(cs.offset));
+    }
+
+    // pattern form: run through the patch-engine locator pipeline.
+    kcdx::patch::PatchEntry pe;
+    pe.sourceFile = "<lua:kcdx.hook callsite>";
+    pe.name       = p.name;
+    pe.module     = p.module;
+    pe.pattern    = cs.pattern;
+    pe.context    = p.context;       // optional disambiguation (shared field)
+    pe.anchor     = p.anchor;
+    pe.maxAnchorDistance = p.maxAnchorDistance;
+    pe.offset     = cs.offset;       // offset to the call opcode in the match
+    pe.original.clear();
+    pe.replacement.clear();
+    kcdx::patch::ResolvedPatch r = kcdx::patch::Resolve(pe);
+    if (!r.ok) {
+        reason = "target_callsite.pattern did not resolve: " + r.reason;
+        return 0;
+    }
+    return r.patchAddr;
+}
+
+// Rewrite the 4 rel32 displacement bytes of the E8 call at
+// callsiteVa+1..+4 so the call now targets `newTarget`. The opcode byte
+// at callsiteVa is assumed already verified == 0xE8 by the caller.
+// VirtualProtect dance + FlushInstructionCache (same shape as
+// patch_engine::WriteBytesAtAddr, which is TU-local there). Returns false
+// + reason on failure.
+bool RewriteCallDisplacement(uintptr_t callsiteVa, uintptr_t newTarget,
+                             std::string& reason) {
+    // rel32 = newTarget - (callsiteVa + 5). Must fit in a signed 32-bit.
+    const int64_t rel =
+        static_cast<int64_t>(newTarget) -
+        static_cast<int64_t>(callsiteVa + 5);
+    if (rel < INT32_MIN || rel > INT32_MAX) {
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+            "trampoline 0x%p is not rel32-reachable from the call site "
+            "0x%p (distance %lld bytes > 2GB)",
+            (void*)newTarget, (void*)callsiteVa, (long long)rel);
+        reason = buf;
+        return false;
+    }
+    const int32_t disp32 = static_cast<int32_t>(rel);
+    uintptr_t writeAt = callsiteVa + 1;
+    DWORD oldProt = 0;
+    if (!VirtualProtect(reinterpret_cast<LPVOID>(writeAt), 4,
+                        PAGE_EXECUTE_READWRITE, &oldProt)) {
+        char buf[128];
+        std::snprintf(buf, sizeof(buf),
+            "VirtualProtect failed at 0x%p (err=%lu)",
+            (void*)writeAt, (unsigned long)GetLastError());
+        reason = buf;
+        return false;
+    }
+    std::memcpy(reinterpret_cast<void*>(writeAt), &disp32, 4);
+    DWORD restoreOld = 0;
+    VirtualProtect(reinterpret_cast<LPVOID>(writeAt), 4, oldProt, &restoreOld);
+    FlushInstructionCache(GetCurrentProcess(),
+                          reinterpret_cast<LPCVOID>(writeAt), 4);
+    return true;
+}
+
 // Insert an entry into the chain in load order (priority asc, name asc).
 void InsertOrdered(Chain& chain, ChainEntry&& e) {
     auto pos = chain.entries.begin();
@@ -1126,6 +1303,176 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
     return res;
 }
 
+// Install a mode="callsite" hook: redirect ONE E8 near-call so only that
+// caller reaches the chain trampoline; every other caller of the same
+// callee is untouched. Reuses the function-entry dispatch spine
+// (DispatchPre/DispatchPost + the entries chain + the call_original
+// thunk over the ORIGINAL CALLEE) — the only difference from Add()'s
+// first-touch path is the install: instead of a MinHook detour on the
+// callee, we point the call site's E8 rel32 at the chain trampoline and
+// wire the trampoline's call-original slot to the original callee VA.
+//
+// The Chain is keyed in g_chains by the CALL-SITE VA (not the callee), so
+// a second callsite hook on the SAME site chains/mediates, while two
+// callsite hooks on DIFFERENT sites that call the same callee never
+// collide — the defining property of callsite vs function-entry.
+AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
+                      int callbackRef, const std::string& pluginName,
+                      int priority, const std::string& name) {
+    using Mode = kcdx::hook_payload::Mode;
+    AddResult res;
+
+    if (!payload.hasSignature) {
+        // Should be unreachable — the binder requires a signature for the
+        // before/after/around/replace behaviors callsite uses — but guard.
+        res.reason = "internal: callsite hook has no parsed signature";
+        return res;
+    }
+
+    // 1. Resolve the call-site VA (the E8 instruction).
+    std::string reason;
+    uintptr_t callsiteVa = ResolveCallsite(payload, reason);
+    if (!callsiteVa) { res.reason = std::move(reason); return res; }
+
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+
+    // 2. Existing callsite chain on this exact site? Chain onto it (same
+    //    coexistence rules as a function-entry chain — the E8 already
+    //    points at that chain's trampoline; we only append a behavior).
+    if (Chain* chain = FindChain(callsiteVa)) {
+        std::string whyNot;
+        if (!CanCoexist(*chain, payload.mode, payload.signature,
+                        /*incomingIsCallsite=*/true, whyNot)) {
+            res.reason = std::move(whyNot);
+            return res;
+        }
+        ChainEntry e;
+        e.mode = payload.mode; e.callbackRef = callbackRef;
+        e.pluginName = pluginName; e.priority = priority; e.name = name;
+        const bool needsCallOriginal = (payload.mode == Mode::Around);
+        InsertOrdered(*chain, std::move(e));
+        if (needsCallOriginal && !chain->callOriginalThunk &&
+            chain->calleeVa) {
+            std::string rt; std::vector<std::string> pts;
+            SignatureToAbiStrings(chain->sig, rt, pts);
+            chain->callOriginalThunk = (uintptr_t)
+                kcdx::dynamic_call_jit::BuildLuaCallThunk(
+                    chain->calleeVa, rt, pts);
+        }
+        res.ok = true;
+        log::InfoF("hook_chain: appended %s '%s' (plugin '%s') to CALLSITE "
+                   "0x%p (chain now %zu)",
+                   kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
+                   pluginName.c_str(), (void*)callsiteVa,
+                   chain->entries.size());
+        return res;
+    }
+
+    // 3. First touch on this call site. Read the opcode — v1 handles ONLY
+    //    the E8 near-call rel32 form. FF /2 (call r/m), FF 15 (call
+    //    [rip+disp]) and other indirect calls are out of scope: their
+    //    displacement is not a rel32-to-callee we can recompute, so reject
+    //    LOUDLY naming the actual opcode (this is an ABI fact verified at
+    //    install, never assumed — .claude/rules/anti-patterns.md AP10).
+    const uint8_t opcode = *reinterpret_cast<const uint8_t*>(callsiteVa);
+    if (opcode != 0xE8) {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf),
+            "callsite at 0x%p is not an E8 near-call rel32 (opcode byte is "
+            "0x%02X). mode='callsite' v1 only redirects direct E8 calls; "
+            "indirect calls (FF /2 register/memory, FF 15 [rip+disp]) are "
+            "out of scope. Check the target_callsite locator points at the "
+            "CALL instruction (offset to the E8 byte).",
+            (void*)callsiteVa, (unsigned)opcode);
+        res.reason = buf;
+        return res;
+    }
+
+    // 4. Original callee VA = (callsiteVa + 5) + signed disp32 at +1.
+    int32_t disp = 0;
+    std::memcpy(&disp, reinterpret_cast<const void*>(callsiteVa + 1), 4);
+    const uintptr_t calleeVa =
+        callsiteVa + 5 + static_cast<uintptr_t>(static_cast<int64_t>(disp));
+
+    // 5. Build the chain trampoline over the ORIGINAL CALLEE, reusing the
+    //    function-entry spine. make_jit_func bakes the address of the
+    //    runtime_func_t's own detour `original_` slot into the emitted
+    //    call-original path; we then write the callee VA into that slot
+    //    (no MinHook detour is installed — this trampoline is a standalone
+    //    function the E8 will point at). The slot is valid even without
+    //    InstallRuntime (the detour_hook is default-constructed in the
+    //    runtime_func_t ctor; get_jit_original_slot() == &original_).
+    auto newChain = std::make_unique<Chain>();
+    newChain->targetVa   = callsiteVa;
+    newChain->isCallsite = true;
+    newChain->calleeVa   = calleeVa;
+    newChain->sig        = payload.signature;
+    newChain->rf         = std::make_unique<kcdx::rom::runtime_func_t>();
+
+    std::string rt; std::vector<std::string> pts;
+    SignatureToAbiStrings(payload.signature, rt, pts);
+
+    // The last make_jit_func arg is the value baked into the trampoline
+    // and passed to DispatchPre/DispatchPost as `target_func_ptr` — it is
+    // the CHAIN-LOOKUP KEY (ResolveChainForDispatch keys g_chains by it),
+    // NOT the call target. For a callsite chain that key is the call-site
+    // VA (how this chain is stored in g_chains), so the dispatchers find
+    // THIS chain. The original callee VA is supplied separately via the
+    // call-original slot (below) + the around thunk.
+    uintptr_t jit = newChain->rf->make_jit_func(
+        rt, pts, asmjit::Arch::kX64,
+        &DispatchPre, &DispatchPost, /*target_func_ptr=*/callsiteVa);
+    if (!jit) {
+        res.reason = "make_jit_func failed (signature/codegen — see kcdx.log)";
+        return res;
+    }
+    // Wire the original callee VA into the trampoline's call-original slot
+    // so the spine's auto-run-original path (before/after) and the around
+    // call_original thunk reach the real callee.
+    if (void** slot = newChain->rf->get_jit_original_slot()) {
+        *slot = reinterpret_cast<void*>(calleeVa);
+    } else {
+        res.reason = "callsite: runtime_func_t has no call-original slot "
+                     "(internal — detour_hook missing)";
+        return res;
+    }
+
+    // 6. around's call_original thunk runs over the ORIGINAL CALLEE VA
+    //    directly (we have it in hand; no MinHook trampoline involved).
+    if (payload.mode == Mode::Around) {
+        newChain->callOriginalThunk = (uintptr_t)
+            kcdx::dynamic_call_jit::BuildLuaCallThunk(calleeVa, rt, pts);
+    }
+
+    // 7. Verify rel32 reachability + rewrite the E8 displacement to the
+    //    trampoline. RewriteCallDisplacement computes the distance and
+    //    fails loud if the trampoline is out of rel32 range (the branch
+    //    pool guarantees proximity to WHGame.dll, but the call site may be
+    //    in another module — verified here, not assumed). On success the
+    //    call site now reaches the chain trampoline; the conflict-engine
+    //    footprint for the 4 rewritten bytes is the g_chains entry keyed
+    //    by callsiteVa (CanCoexist mediates a second redirect of the same
+    //    site — load-order-loses).
+    if (!RewriteCallDisplacement(callsiteVa, jit, reason)) {
+        res.reason = "callsite redirect failed: " + reason;
+        return res;
+    }
+
+    ChainEntry e;
+    e.mode = payload.mode; e.callbackRef = callbackRef;
+    e.pluginName = pluginName; e.priority = priority; e.name = name;
+    newChain->entries.push_back(std::move(e));
+
+    g_chains.emplace(callsiteVa, std::move(newChain));
+    res.ok = true;
+    log::InfoF("hook_chain: installed CALLSITE %s '%s' (plugin '%s') at E8 "
+               "site 0x%p -> callee 0x%p (trampoline 0x%p)",
+               kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
+               pluginName.c_str(), (void*)callsiteVa, (void*)calleeVa,
+               (void*)jit);
+    return res;
+}
+
 AddResult Add(lua_State*                             L,
               const kcdx::hook_payload::HookPayload& payload,
               int                                    callbackRef,
@@ -1139,6 +1486,18 @@ AddResult Add(lua_State*                             L,
     // function signature) — branch before the signature gate.
     if (payload.mode == kcdx::hook_payload::Mode::Mid) {
         return AddMid(payload, callbackRef, pluginName, priority, name);
+    }
+
+    // mode="callsite" is a different install (rewrite ONE E8 call's rel32
+    // displacement to a chain trampoline; the callee is untouched, so only
+    // THIS caller is affected). The behavior (before/after/around/replace)
+    // in payload.mode drives the dispatch semantics exactly as for a
+    // function-entry hook — AddCallsite reuses the same DispatchPre/Post +
+    // call_original spine. Branch after the Mid check (callsite uses a
+    // signature, so the signature gate below would also pass; routing on
+    // the scope keeps the install path explicit).
+    if (payload.callsiteScope) {
+        return AddCallsite(payload, callbackRef, pluginName, priority, name);
     }
 
     if (!payload.hasSignature) {
@@ -1158,7 +1517,8 @@ AddResult Add(lua_State*                             L,
     if (chain) {
         // Existing target — check coexistence, then append.
         std::string whyNot;
-        if (!CanCoexist(*chain, payload.mode, payload.signature, whyNot)) {
+        if (!CanCoexist(*chain, payload.mode, payload.signature,
+                        /*incomingIsCallsite=*/false, whyNot)) {
             res.reason = std::move(whyNot);
             return res;
         }

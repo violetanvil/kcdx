@@ -21,7 +21,6 @@ local cap21 = kcdx.cap21   -- DLL-registered capture-site accessors
 kcdx.hook{
     name     = "cap21_read",
     address  = cap21.addr_read(),
-    mode     = "mid",
     captures = { rax = "rax" },
     mid      = function(c)
         -- rax holds seed (10) at the capture site, before `add rax,0x64`.
@@ -36,7 +35,6 @@ kcdx.hook{
 kcdx.hook{
     name     = "cap21_write",
     address  = cap21.addr_write(),
-    mode     = "mid",
     captures = { rax = "rax" },
     mid      = function(c)
         c.rax:set(1000)
@@ -50,7 +48,6 @@ kcdx.hook{
 kcdx.hook{
     name     = "cap21_skip",
     address  = cap21.addr_skip(),
-    mode     = "mid",
     captures = { "rax" },
     mid      = function(c)
         assert(c[1]:get() == 10,
@@ -64,7 +61,6 @@ kcdx.hook{
 kcdx.hook{
     name     = "cap21_run",
     address  = cap21.addr_run(),
-    mode     = "mid",
     captures = { "rax" },
     mid      = function(c)
         -- no return -> run the captured instruction

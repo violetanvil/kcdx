@@ -1,0 +1,52 @@
+# CAP-22 — kcdx.hook mode="callsite": redirect ONE call instruction.
+#
+# The first test of the NEW kcdx.hook callsite surface (Phase 2b sub-6).
+# mode="callsite" rewrites the rel32 displacement of ONE specific E8
+# near-call so only THAT caller is redirected through the hook chain;
+# every other caller of the same callee is untouched. Uses ONLY
+# restructured-model surfaces:
+#   - a C++ DLL entrypoint (shared callee + 5 distinct callers; locates
+#     each redirected caller's E8 call site; drives verify)
+#   - plugin.lua calling kcdx.hook{ mode="callsite", target_callsite={rva=},
+#     before=/after=/around=/replace= }
+# No legacy [[hook]]/[[mid_hook]]/[[trampoline]] behavior TOML.
+#
+# Flow (single update tick, in strict order):
+#   1. DLL kcdxPlugin_Load: scans each caller body for the E8 call-to-
+#      Helper, converts to a module RVA, registers cap22.site_* (each hands
+#      Lua the "cap-22.dll @ rva 0x..." callsite locator string).
+#   2. plugin.lua: installs a callsite redirect on each of the four
+#      redirected callers' E8 site (NOT on Helper), one behavior each.
+#   3. ApplyZone installs the redirects (E8 displacement rewrite).
+#   4. kcdxMessage_InputLoaded fires (AFTER apply): the DLL calls each
+#      caller directly and asserts the redirected site changed THAT
+#      caller, while the control caller of the SAME Helper + a direct
+#      Helper call are UNAFFECTED — the callsite-isolation contract.
+#
+# Sub-tests (Helper(x)=x+100; callers call Helper(seed); seed=10):
+#   CAP-22-before            before mutates Helper's arg 10->11 -> 111
+#   CAP-22-after             after mutates Helper's return 110 -> 1110
+#   CAP-22-around            around wraps: 2 * orig(10)=2*110 -> 220
+#   CAP-22-replace           replace returns 42; Helper not called here
+#   CAP-22-control-unaffected control caller of the SAME Helper = 110
+#   CAP-22-callee-unaffected  direct Helper(10) = 110 (callee untouched)
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-22-callsite-redirect"
+display_name        = "CAP-22 kcdx.hook mode=callsite"
+author              = "kcdx"
+description         = "kcdx.hook mode='callsite': redirect one E8 call site; per-call-site isolation."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-22-before", "CAP-22-after", "CAP-22-around",
+                       "CAP-22-replace", "CAP-22-control-unaffected",
+                       "CAP-22-callee-unaffected"]
+
+[entrypoints]
+dll = "cap-22.dll"
+lua = "plugin.lua"

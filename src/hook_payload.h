@@ -48,9 +48,15 @@ bool ParseMode(const std::string& token, Mode& out);
 // Canonical token for a mode value (for log lines + diagnostics).
 const char* ModeToken(Mode m);
 
-// True iff the mode requires the function-being-called signature to
-// be present even though the patched bytes are at a call site rather
-// than the function entry. (Callsite is the only such mode today.)
+// True iff this mode value requires the called-function signature even
+// though the patched bytes are at a call site rather than the function
+// entry. NOTE: the callsite SCOPE is now carried by
+// HookPayload::callsiteScope (the behavior mode — before/after/around/
+// replace — lives in HookPayload::mode), so a callsite hook's `mode`
+// value is its behavior, not Mode::Callsite. A callsite hook's signature
+// requirement is enforced by the same gate as any non-Mid behavior
+// (the binder requires a signature for before/after/around/replace).
+// This helper is retained for diagnostics / intent.
 inline bool ModeUsesCallsiteLocator(Mode m) { return m == Mode::Callsite; }
 
 // The callsite sub-locator (only meaningful when mode == Callsite).
@@ -103,7 +109,24 @@ struct HookPayload {
     uint32_t                      maxAnchorDistance = 4096;
     std::string                   module = "WHGame.dll";
 
-    // --- Callsite sub-locator (mode == Callsite only) ------------------
+    // --- Callsite scope (mode = "callsite") ----------------------------
+    // True iff the author wrote `mode = "callsite"`. This is the explicit
+    // SCOPE selector ("redirect ONE call instruction"); the BEHAVIOR
+    // (Before/After/Around/Replace) lives in `mode` above, attached under
+    // the normal mode key. callsiteScope + the callsite sub-locator route
+    // the install to the callsite path (hook_chain::AddCallsite); the
+    // behavior `mode` drives the dispatch semantics there exactly as it
+    // does for a function-entry hook. Mid is not a valid callsite behavior.
+    //
+    // Why a scope flag rather than reusing Mode::Callsite as the `mode`
+    // value: a callsite hook still needs a behavior (before/after/around/
+    // replace) to know how to wrap the redirected call, so the behavior
+    // enum slot must hold that behavior — not be consumed by the scope.
+    // (Mode::Callsite remains in the enum for ModeToken/diagnostics +
+    // ModeUsesCallsiteLocator's signature-required test.)
+    bool callsiteScope = false;
+
+    // --- Callsite sub-locator (mode = "callsite" only) -----------------
     std::optional<CallsiteLocator> callsite;
 
     // --- Signature (already parsed; never re-parsed at apply) ----------
