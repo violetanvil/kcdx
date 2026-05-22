@@ -65,6 +65,17 @@ void ReportResult(std::string_view name, bool pass, std::string_view reason) {
         kcdx::dev::KV("name",   std::string(name)),
         kcdx::dev::KV("pass",   pass),
         kcdx::dev::KV("reason", std::string(reason)));
+
+    // Flat, uniform per-result line. Unlike the structured REPORT line
+    // above (and the per-plugin "VERIFY" main-log echoes), this returns
+    // EVERY reported result exactly once on a single stable token
+    // ("TEST RESULT") with the verdict as a literal PASS/FAIL token, so
+    // a dev grep can count results without miscounting on inconsistent
+    // per-plugin formats. Dev-log-only (DEBUG): the test aggregate is
+    // the development surface, not the end-user crash-report channel.
+    LOG_DEBUG("TEST", "RESULT name=%s verdict=%s",
+              std::string(name).c_str(),
+              pass ? "PASS" : "FAIL");
 }
 
 void EmitSummary(const char* messageLabel) {
