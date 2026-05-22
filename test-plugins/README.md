@@ -360,6 +360,18 @@ what the live result is.
 | Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
 | Notes | restructure-plan design-gap #1 (canonical BugSplat MiniDmpSender-ctor-callsite case). v1 handles only the E8 direct near-call; FF /2 and FF 15 indirect calls are rejected at install with the actual opcode named. |
 
+## CAP-23: plugin.lua error line-info quality (AP12 #3)
+
+| Field | Value |
+|---|---|
+| What | When a `plugin.lua` raises a RUNTIME error, the loader-captured error text must carry a `:<line>:` file:line marker (piece 1: `storedebug` toggled on across the load) AND a `"stack traceback:"` (piece 2: the `lua_pcall` errfunc that fetches `debug.traceback`), then route it to the engine log + the plugin's own log (piece 3). This row regression-guards that the captured text quality survives. |
+| Channels | (vi) plugin Lua (loader-side assertion in `src/lua_plugin_loader.cpp`) |
+| Engine status | LIVE-PENDING (AP12 #3) — fixture-agnostic loader assertion in `RunAll`'s runtime-error branch + deliberate-error fixture. Awaiting checkpoint launch. |
+| Test plugin | [`cap-23-lua-error/`](cap-23-lua-error/) — `plugin.lua` deliberately indexes a nil global (a runtime error with a live stack, so it carries both line + traceback). The error IS the test; it never gets "fixed". |
+| Auto-pass check | The loader reports `cap-23-lua-error-lineinfo` PASS when a `plugin.lua` runtime error's captured text carries `:<digits>:` AND `"stack traceback:"`. FIXTURE-AGNOSTIC: the loader never checks the plugin's name — it asserts on whatever runtime-error text it captured; the deliberate-error fixture is what reliably triggers it each boot. Production-quiet via `ReportResult`'s own dev-mode early-return (no loader-side fixture check). |
+| Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
+| Notes | Pieces 1–3 (storedebug line numbers, errfunc traceback, plugin-log routing) live in `src/lua_plugin_loader.cpp` and are the feature under test. Multiple-report semantics: if more than one plugin.lua errors in a boot, `ReportResult("cap-23-lua-error-lineinfo", ...)` is called once per erroring plugin and last-call-wins (test.h) — fine, since every erroring plugin should carry line info, so any of them passing is the signal. |
+
 ---
 
 # Section 2: Competition / collision rows
@@ -574,6 +586,7 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-22-replace | ✅ LIVE | sub-6 | mode=callsite replace: redirected E8 site returns 42; Helper not called from this site |
 | CAP-22-control-unaffected | ✅ LIVE | sub-6 | ISOLATION: control caller of the SAME Helper is unchanged (110) — per-call-site, not per-callee |
 | CAP-22-callee-unaffected | ✅ LIVE | sub-6 | ISOLATION: direct Helper(10) unchanged (110) — callee untouched, only call sites rewritten |
+| cap-23-lua-error-lineinfo | ⏳ PENDING | AP12 | loader reports PASS when a captured plugin.lua runtime error carries `:<line>:` + `"stack traceback:"`; fixture-agnostic assertion over any runtime error, deliberate-error fixture (`cap-23-lua-error`) triggers it each boot |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |
