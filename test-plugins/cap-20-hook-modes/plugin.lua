@@ -150,18 +150,33 @@ local hTargetAbi = kcdx.hook{
     before = function(L, filename) return L, filename end,  -- no-op passthrough
 }
 
--- CAP-20-target-nosig: the AP2 path. A name that RESOLVES an address but
--- whose Address Library row carries NO verified signature must fail to
--- install with a teaching error (the engine never invents a signature).
--- "IConsole_AddCommand" (id 2000) is verified but its signature column is
--- "" (the prose states args but not a full method return type, so we left
--- it un-populated rather than guess — AP2). Expected: applied()==false +
--- a reason naming the missing-signature teaching error.
-local hTargetNoSig = kcdx.hook{
-    name   = "cap20_target_nosig",
-    target = "IConsole_AddCommand",   -- resolves an address; no seed signature
-    before = function() end,          -- never installs, so never runs
-}
+-- CAP-20-target-nosig: the AP2 path. target="IConsole_AddCommand" (id 2000)
+-- resolves an address but its signature column is "" (left un-populated
+-- rather than guessed — AP2). With no explicit signature= either, the
+-- engine cannot marshal the call, so the binder REJECTS the registration
+-- SYNCHRONOUSLY (returns nil + a teaching error naming the missing
+-- signature) — this is NOT a deferred apply-fail (contrast addrname-miss,
+-- which passes the binder with its explicit SIG, gets a real handle, and
+-- fails later at apply). So we assert the synchronous shape RIGHT HERE,
+-- inline (like CAP-20-dyncall), not in the deferred "ready" callback. The
+-- teaching MESSAGE is the contract (the engine teaches the fix per the
+-- disassembler-test cornerstone), so we assert the reason text, not just
+-- nil — a future regression returning nil with no message must not pass.
+do
+    local h, err = kcdx.hook{
+        name   = "cap20_target_nosig",
+        target = "IConsole_AddCommand",   -- resolves an address; no seed signature
+        before = function() end,          -- (would never install)
+    }
+    local pass = (h == nil)
+                 and type(err) == "string"
+                 and err:find("no verified signature") ~= nil
+    kcdx.test.report("CAP-20-target-nosig", pass,
+        pass and ("name with no verified signature rejected synchronously "
+                  .. "with teaching error: " .. err)
+             or  ("expected (nil, error naming 'no verified signature'); got "
+                  .. "h=" .. tostring(h) .. " err=" .. tostring(err)))
+end
 
 -- CAP-20 deferred failure-path asserts. These need the post-apply
 -- moment: handle:applied()/:reason() only become final during ApplyZone,
@@ -216,7 +231,8 @@ kcdx.on("ready", function()
     -- proves the engine supplied the verified ABI from the name — the
     -- author never wrote the signature. (Had the name carried no
     -- signature, the binder would have rejected and applied() would be
-    -- false, which CAP-20-target-nosig below checks for the no-ABI case.)
+    -- false, which CAP-20-target-nosig (asserted inline above) checks for
+    -- the no-ABI case.)
     do
         local applied = hTargetAbi:applied()
         local reason  = hTargetAbi:reason()
@@ -229,26 +245,13 @@ kcdx.on("ready", function()
                       .. "got applied=" .. tostring(applied)
                       .. " reason=" .. tostring(reason)))
     end
-
-    -- (e) CAP-20-target-nosig: AP2 path. target resolved an address but
-    -- the row has no verified signature, and no explicit signature= was
-    -- given — must fail to install with a teaching reason (the engine
-    -- never invents a signature).
-    do
-        local applied = hTargetNoSig:applied()
-        local reason  = hTargetNoSig:reason()
-        local pass = (applied == false) and reason ~= nil and reason ~= ""
-        kcdx.test.report("CAP-20-target-nosig", pass,
-            pass and ("name with no verified signature failed to install "
-                      .. "with reason: " .. reason)
-                 or  ("expected applied()==false + non-empty reason "
-                      .. "(no-ABI teaching error); got applied="
-                      .. tostring(applied) .. " reason=" .. tostring(reason)))
-    end
+    -- (CAP-20-target-nosig is asserted INLINE at its registration above —
+    -- it's a SYNCHRONOUS binder rejection (nil + teaching error), not a
+    -- deferred handle, so it does not belong in this post-apply block.)
 end)
 
 -- Also exercises kcdx.log.* (the grouped logging domain): a positional
 -- "do a thing" call per the surface convention. The handles are held in
 -- locals so they aren't GC'd before ApplyZone resolves them.
-local _ = { hConflictA, hConflictB, hAddrnameMiss, hTargetAbi, hTargetNoSig }
+local _ = { hConflictA, hConflictB, hAddrnameMiss, hTargetAbi }
 kcdx.log.info("CAP20", "installed all cap-20 hooks (4 modes + chain + wstr + conflict)")
