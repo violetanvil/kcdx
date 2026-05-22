@@ -385,6 +385,18 @@ what the live result is.
 | Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
 | Notes | Engine-internal listener placement: mirrors `serialization::OnEngineMessage` — a direct call in `FireEngineMessage`, NOT a `RegisterListener` call (the messaging `RegisterListener` thunk requires a valid `PluginHandle` and rejects engine-internal subscribers, so engine-internal consumers use the direct-dispatch path). Empirical: of the 3 save/load events only `save_game` + `load_game_selected` actually pass a basename at their fire sites today; the `delete_game` fire site passes none (degrades to a no-arg call — `FireLifecycle` never pushes a NULL string to Lua). |
 
+## CAP-25: multi-file plugin + complete source attribution
+
+| Field | Value |
+|---|---|
+| What | A plugin's `plugin.lua` can `require("helper")`; a kcdx searcher installed in Lua 5.1 `package.loaders` resolves `"helper"` against the plugin's OWN folder (a sibling `helper.lua`). At the searcher's compile point kcdx calls `RegisterScriptOwner(helperPath, pluginName)` so EVERY source a plugin loads (entrypoint AND require'd helper) lands in `g_scriptOwners` owned by the plugin → a `kcdx.*` call from inside the helper resolves to the plugin (via the unchanged `OwningPluginForCurrentCall` frame walk), NOT `"<anon>"`. The completeness criterion: identity resolves identically from any plugin source. |
+| Channels | (vi) plugin Lua (Lua-surface PARITY test — C++ DLL plugins split across files NATIVELY; the linker handles it and a DLL's identity is its handle, not a Lua source path, so NO C++ mirror is owed; this brings the Lua `require` path to parity and exercises it) |
+| Engine status | LIVE-PENDING — the kcdx `package.loaders` searcher + per-require `RegisterScriptOwner` (commits `7640fde` probe + `3371de0` searcher). Awaiting checkpoint launch. |
+| Test plugin | [`cap-25-multifile-attribution/`](cap-25-multifile-attribution/) — a SINGLE pure-Lua plugin split across `plugin.lua` (entrypoint; `require`s the helper) + `helper.lua` (the file under test). |
+| Auto-pass check | The helper (running from a require'd source) SUBSCRIBES at load to `kcdx.cap-25-multifile-attribution:multifile_event` and PUBLISHES the bare `multifile_event` from a DEFERRED `input_loaded` callback. The engine stamps the published bare event under the publisher's RESOLVED owner. If the helper's source is attributed to the plugin (fix works), the stamp is `kcdx.cap-25-multifile-attribution:multifile_event` → matches the subscription → the callback FIRES with `payload.marker=="CAP25_OK"` → PASS. If the source resolves to `"<anon>"`, the stamp is `<anon>:multifile_event` → no match → the callback never fires → row stays PENDING/FAIL. A firing callback with the right payload is unforgeable proof the require'd helper's `kcdx.*` calls resolved to the plugin. No player input. |
+| Last result | ⏳ PENDING (in-game verified at the checkpoint launch) |
+| Notes | The multi-file `require` + complete-attribution regression: proves a require'd helper's `kcdx.*` calls resolve to the plugin, not `<anon>`. Lua-surface parity (C++ splits natively — no C++ mirror owed). Deterministic ordering mirrors COMP-09: subscribe-at-load (synchronous during `require`), publish-from-`input_loaded` (first update tick, after all plugin.lua loaded), so the subscription is registered before the publish fires. Publishing from inside the deferred callback is the hardest identity case (no plugin.lua / helper top-level frame live). |
+
 ---
 
 # Section 2: Competition / collision rows
@@ -617,6 +629,7 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-24-save-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("save_game", fn)` fires on every in-game save with the basename arg; callback asserts a non-empty string. Needs a save gesture (`cap-24-lifecycle-events`) |
 | CAP-24-post-load-game | ⏳ PENDING [manual] | sub-8 | `kcdx.on("post_load_game", fn)` fires after a load (no-arg lifecycle event). Needs a load gesture (`cap-24-lifecycle-events`) |
 | COMP-09-pubsub | ✅ LIVE | sub-9 | `kcdx.publish` cross-plugin pub/sub: A publishes `outfit_changed` `{x=42,name="Noble"}` from its `input_loaded` handler; B's `kcdx.on("kcdx.comp-09-pubsub-a:outfit_changed", fn)` asserts the table arrived by reference + the publisher namespace resolved (`comp-09-pubsub-a` + `comp-09-pubsub-b`) |
+| CAP-25-multifile-attribution | ⏳ PENDING | multi-file | multi-file `require` + complete source attribution: a require'd `helper.lua` subscribes to `kcdx.cap-25-multifile-attribution:multifile_event` + publishes bare `multifile_event` from a deferred `input_loaded` callback; the callback fires (PASS) ONLY if the helper's `kcdx.*` calls resolved to the plugin not `<anon>`. Lua-surface parity (C++ splits natively) (`cap-25-multifile-attribution`) |
 | COMP-02 | ✅ LIVE | `03dd155` | conflict-test hook-on-patch |
 | COMP-03 | ✅ LIVE | `03dd155` | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | `03dd155` | conflict-report-crash regression guard |
