@@ -15,6 +15,7 @@ extern "C" {
 #include "load_order.h"
 #include "log.h"
 #include "lua_registry.h"
+#include "lua_require_searcher.h"  // Install() + OwnerScope (plugin-scoped require)
 #include "plugin_loader.h"
 #include "test.h"  // kcdx::test::ReportResult (dev-mode-gated, name-keyed)
 
@@ -166,6 +167,15 @@ void RunAll(lua_State* L) {
         return;
     }
 
+    // Install the plugin-scoped `require` searcher into package.loaders
+    // ONCE before any plugin.lua runs. This lets a plugin.lua do plain
+    // require("helper") and have it resolve against the plugin's OWN
+    // folder (stock package.path never reaches there) — and stamps
+    // attribution at the helper's compile point so kcdx.* calls from
+    // inside the helper resolve to the plugin. Idempotent. See
+    // lua_require_searcher.h.
+    kcdx::lua_require_searcher::Install(L);
+
     size_t pluginsWithLua = 0, filesRun = 0, filesFailed = 0;
 
     for (const auto& p : kcdx::plugins::g_plugins) {
@@ -211,8 +221,23 @@ void RunAll(lua_State* L) {
             log::InfoF("Plugin '%s': running lua entrypoint '%s'",
                        m.name.c_str(), rel.c_str());
 
-            bool clean = kcdx::guard::Call("plugin.lua.run", m.name.c_str(),
-                                           &LoadOneFileGuarded, &ctx);
+            // Scope the "current owning plugin" across the SYNCHRONOUS
+            // load below. Because guard::Call runs LoadOneFileGuarded
+            // (luaL_loadfile + lua_pcall) inline and returns rather than
+            // unwinding (it swallows any SEH fault and returns false), the
+            // OwnerScope destructor runs on EVERY exit path — clean return,
+            // Lua compile/runtime error (captured in ctx), or hard fault.
+            // A require(...) executed inside the chunk runs while this
+            // owner is set, so the kcdx searcher resolves against THIS
+            // plugin's folder. Owner set BEFORE the call, cleared right
+            // after it returns. See lua_require_searcher.h.
+            bool clean;
+            {
+                kcdx::lua_require_searcher::OwnerScope ownerScope(m.name,
+                                                                 m.folderPath);
+                clean = kcdx::guard::Call("plugin.lua.run", m.name.c_str(),
+                                          &LoadOneFileGuarded, &ctx);
+            }
 
             if (!clean) {
                 // Hard fault inside the chunk — guard already logged a

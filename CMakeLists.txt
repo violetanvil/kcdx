@@ -128,6 +128,7 @@ add_library(kcdx SHARED
     src/lua_registry.cpp
     src/lua_lifecycle.cpp
     src/lua_plugin_loader.cpp
+    src/lua_require_searcher.cpp
     src/hook_signature.cpp
     src/hook_payload.cpp
     src/hook_chain.cpp
