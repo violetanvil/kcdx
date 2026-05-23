@@ -1,0 +1,39 @@
+# COMP-11 — both-phase Lua execution model, plugin B (the PUBLISHER).
+#
+# Per-entry-zone execution model step 7. The companion of
+# comp-11-both-phase-order-a (the asserter, which owns the COMP-11 row and
+# documents the full model + the deterministic-timing argument). B is the
+# HIGHER-priority plugin (default_priority 70 > A's 30), so B's plugin.lua and
+# B's after.lua each run AFTER A's in their respective phase.
+#
+# B is a pure PUBLISHER: it just publishes its two phase tokens — "b.before"
+# from its lua slot (plugin.lua) and "b.after" from its lua_after slot
+# (after.lua). It does NOT subscribe or assert; A's collector (subscribed at
+# A's plugin.lua-load, which runs FIRST because A is lowest priority) catches
+# both of B's tokens.
+#
+# Token shape (must match A's collector): bare event "phase_token" with payload
+# { slot = "before" | "after" }. The engine stamps it
+# "kcdx.comp-11-both-phase-order-b:phase_token" — A subscribes to that name.
+#
+# Test mode: boot-only. Both tokens publish during load (plugin.lua in RunAll,
+# after.lua in RunAfterEntrypoints); the assert is A's, at input_loaded — all
+# complete by the main menu, no console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.comp-11-both-phase-order-b"
+display_name        = "COMP-11 both-phase order B (publisher, priority 70)"
+author              = "kcdx"
+description         = "Higher-priority (70) PUBLISHER half of the both-phase execution-model test. Publishes b.before from its lua slot and b.after from its lua_after slot; the asserter (comp-11-both-phase-order-a, priority 30) collects all four tokens and asserts the run-order. Carries no test row of its own."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+default_priority    = 70
+
+[entrypoints]
+lua       = "plugin.lua"
+lua_after = "after.lua"

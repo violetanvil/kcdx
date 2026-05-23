@@ -1,0 +1,66 @@
+# COMP-11 — both-phase Lua execution model, plugin A (the ASSERTER).
+#
+# Per-entry-zone execution model step 7. This pair proves the BOTH-PHASE
+# cross-plugin run-order: two plugins, each with a `lua` (before) slot AND a
+# `lua_after` (after) slot, at DIFFERENT load-order priorities. PASS iff the
+# recorded run-order is:
+#     [all before-slots, in load-order priority] THEN
+#     [all after-slots,  in load-order priority]
+# which proves BOTH:
+#   (1) the PHASE BOUNDARY — every before-slot runs before every after-slot
+#       (the engine runs RunAll over all plugin.lua, THEN ApplyZone, THEN
+#       RunAfterEntrypoints over all lua_after — sub-3 hooks.cpp ordering), AND
+#   (2) the CROSS-PLUGIN PRIORITY INTERLEAVE — within each phase the
+#       lower-priority plugin's slot runs first (RunAll + RunAfterEntrypoints
+#       both iterate plugins in load-order priority asc — sub-2 + sub-3).
+#
+# PRIORITIES: A = default_priority 30 (this plugin), B = 70. 30 < 70, so A's
+# plugin.lua and A's after.lua each run BEFORE B's in their respective phase.
+# Expected sequence = ["a.before", "b.before", "a.after", "b.after"].
+#
+# CROSS-PLUGIN RECORDING (the only correct channel): step 6 made require'd
+# modules PER-PLUGIN ISOLATED (COMP-10) — two separate-owner plugins get
+# different cache keys, so they CANNOT share a require'd module to record into.
+# The only cross-plugin channel is kcdx.publish / kcdx.on (sub-9, COMP-09). So
+# each slot, WHEN IT RUNS, publishes a token naming its slot
+# (kcdx.publish("phase_token", { slot = "before" | "after" })); the engine
+# stamps it "<publisher>:phase_token" so the publisher (a vs b) is in the event
+# NAME, the slot is in the payload. A is the ASSERTER: it subscribes (kcdx.on)
+# to BOTH plugins' token events to COLLECT them into an ordered list as they
+# fire, and at input_loaded (after RunAll + RunAfterEntrypoints, per sub-3)
+# reads the collected sequence and reports COMP-11 via kcdx.test.report.
+#
+# DETERMINISTIC SUBSCRIBE-BEFORE-FIRST-TOKEN (no missed-token hole — option B,
+# lowest-priority-asserter): A is the LOWEST priority (30), so A's plugin.lua
+# runs FIRST in RunAll — before ANY token publishes. A subscribes to both token
+# events at the TOP of its plugin.lua, BEFORE it publishes its own "a.before".
+# kcdx.publish fires subscribers SYNCHRONOUSLY, so:
+#   * A's own "a.before" (published right after A subscribes) is caught;
+#   * "b.before" (B's plugin.lua, runs after A's) is caught;
+#   * "a.after" + "b.after" (RunAfterEntrypoints, after RunAll) are caught.
+# Every token publishes AFTER A's subscriptions are live → none can be missed.
+# (Had A NOT been lowest priority, B's "b.before" could publish before A's
+# plugin.lua subscribed — that is the hole option B closes.)
+#
+# Test mode: boot-only. All four slots publish during load (RunAll +
+# RunAfterEntrypoints); the assert runs at input_loaded (first update tick) —
+# all complete by the main menu, no console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.comp-11-both-phase-order-a"
+display_name        = "COMP-11 both-phase order A (asserter, priority 30)"
+author              = "kcdx"
+description         = "Lowest-priority (30) ASSERTER of the both-phase execution model. Subscribes at plugin.lua-load to both plugins' phase tokens, publishes its own before/after tokens from its lua + lua_after slots, and at input_loaded asserts the collected run-order == [a.before, b.before, a.after, b.after] (phase boundary AND priority interleave). Paired with comp-11-both-phase-order-b (priority 70)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+default_priority    = 30
+test_names          = ["COMP-11-both-phase-order"]
+
+[entrypoints]
+lua       = "plugin.lua"
+lua_after = "after.lua"
