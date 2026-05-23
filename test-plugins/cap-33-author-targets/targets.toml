@@ -13,28 +13,46 @@
 # signature carries the ABI, both delivered by the bare name.
 #
 # Pattern + signature both target CGame_per_frame_ui_pump (Address Library
-# id 1003 — a VERIFIED, live-tested row in data/address-library/seed.csv):
-#   - AOB:  the 25-byte .text-unique function-entry prologue, copied verbatim
-#           from seed.csv id 1003's notes (verified against KCD2 1.5).
-#   - sig:  the verified ABI from seed.csv id 1003 — void (ptr self).
-# CGame_per_frame_ui_pump is a direct callee of CGame::Update; cap-03 hooks it
-# in production and it is dormant enough that installing a no-op detour is
-# harmless (the same safe-target reasoning cap-20 uses for CAP-20-target).
+# id 1003, verified RVA in data/address-library/seed.csv); the AOB is the
+# 25-byte .text-unique entry prologue from that row's notes.
+#
+# BLOCKED (do NOT mark PASS): the AOB matches the function-ENTRY prologue, and
+# cap-03 hooks this SAME function in production — the detour overwrites the
+# prologue, so a post-patch pattern scan finds 0 matches (patch_engine.cpp:124-130).
+# A by-NAME pattern hook therefore cannot apply here. No verified .text-unique
+# entry-prologue AOB exists yet for a function that NOTHING entry-hooks; minting
+# one is bounded tier-5 work. See docs/outstanding-work/section36-pattern-target-aob.md.
+# This row stays the pure "author names a target BY AOB PATTERN and hooks it by
+# name" proof and is expected to fail/parse-skip at apply until that AOB is minted.
 [[target]]
 name      = "ui_pump_by_pattern"
 pattern   = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
 signature = "void (ptr self)"
 
-# --- A pattern author-target for the kcdx.bytes resolution proof. -----------
-# A DISTINCT verified function from the hooked CGame_per_frame_ui_pump:
-# lua_pcall (Address Library id 1000 in seed.csv — verified, hooked in
-# production). Using a DIFFERENT function avoids any hook/bytes overlap on one
-# address — the cap-33 hooks all target CGame_per_frame_ui_pump, so the byte
-# write here lands on untouched memory. kcdx.bytes resolves this name to the
-# entry VA; the write is an idempotent no-op (write byte 0x48 over the existing
-# 0x48 — the AOB begins "48 89 5C 24"), so it applies cleanly without changing
-# behaviour. We assert RESOLUTION via :applied()==true, not a destructive edit.
-# (A bytes target is untyped — no signature needed.)
+# --- A VERIFIED-ID author-target for the prefix / alias resolution proofs. ---
+# Same function as the pattern row (CGame_per_frame_ui_pump, seed id 1003), but
+# located by address_id — RVA-resolved, with NO scan, so it is IMMUNE to the
+# prologue-overwrite problem the pattern row hits. A hook on it chains fine with
+# cap-03's production hook (hook_chain coexistence). The prefixed and alias rows
+# point at THIS target so they prove PREFIX and ALIAS resolution end-to-end and
+# can pass, instead of inheriting the pattern row's blocker.
 [[target]]
-name    = "pcall_safe_site"
-pattern = "48 89 5C 24 ? 57 48 83 EC 40 33 C0 41 8B F8"
+name       = "ui_pump_by_id"
+address_id = 1003
+signature  = "void (ptr self)"
+
+# --- A VERIFIED-ID author-target for the kcdx.bytes resolution proof. -------
+# lua_toboolean (Address Library id 1124 in seed.csv — verified RVA 0x00B9C1AC,
+# sig "i32 (ptr L, i32 idx)"). A DISTINCT, verified leaf that NOTHING hooks:
+# production hooks lua_pcall (1000) + CGame::Update; cap-03/cap-33 hook
+# CGame_per_frame_ui_pump (1003) — none touch this function, so its prologue is
+# pristine and a byte READ of the original bytes is correct. Resolving by
+# address_id (no scan) is immune to the prologue-overwrite problem anyway.
+# Byte 0 of the lua_toboolean entry is 0x48 (read directly from WHGame.dll:
+# entry bytes "48 83 EC 28 E8 ..."), so the idempotent same-byte write (0x48
+# over 0x48) verifies AND applies without changing behaviour. We assert
+# RESOLUTION via :applied()==true, not a destructive edit. (Bytes target is
+# untyped — no signature needed.)
+[[target]]
+name       = "bool_leaf_safe_site"
+address_id = 1124

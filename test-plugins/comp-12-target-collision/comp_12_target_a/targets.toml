@@ -1,17 +1,21 @@
 # COMP-12 plugin A — declares the bare target name `combat_check`.
 #
-# A's `combat_check` is the GOOD locator: the verified CGame_per_frame_ui_pump
-# entry AOB (Address Library id 1003 in seed.csv) + its ABI. Plugin B (sibling
-# folder) declares a target with the SAME bare name but a BOGUS pattern that
-# cannot match. When A hooks the bare name `combat_check`, self>engine>other
+# A's `combat_check` is the GOOD locator: CGame_per_frame_ui_pump by
+# address_id=1003 (verified RVA in seed.csv) + its ABI. Located by id (RVA, no
+# scan), so it resolves and applies regardless of any hook on the function —
+# immune to the entry-prologue-overwrite problem an entry AOB would hit (cap-03
+# hooks this same function in production; the detour overwrites the prologue,
+# defeating a post-patch pattern scan — patch_engine.cpp:124-130). Plugin B
+# (sibling folder) declares a target with the SAME bare name but a BOGUS pattern
+# that cannot match. When A hooks the bare name `combat_check`, self>engine>other
 # precedence must pick A's OWN target (self tier) — which resolves and applies.
-# Had B's target won, the hook would FAIL to apply (B's pattern matches
-# nothing). So A's hook applying is a falsifiable proof that self won, not B.
+# Had B's target won, the hook would FAIL to apply (B's pattern matches nothing).
+# So A's hook applying is a falsifiable proof that self won, not B.
 #
 # The bare-name collision (A and B both own `combat_check`) ALSO triggers the
 # once-per-session "NAMESPACE" warn naming both owners — observable in the log
 # (asserted [manual]; the auto-assertion is that SELF resolved, not OTHER).
 [[target]]
-name      = "combat_check"
-pattern   = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
-signature = "void (ptr self)"
+name       = "combat_check"
+address_id = 1003
+signature  = "void (ptr self)"

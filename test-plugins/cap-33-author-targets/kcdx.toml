@@ -10,25 +10,35 @@
 # structural mirrors are cap-24/cap-25/cap-26/cap-30, all pure-Lua).
 #
 # What it proves (all boot-only, no player gesture):
-#   * CAP-33-pattern-by-name (THE §36 HEADLINE): kcdx.hook{ target =
-#     "ui_pump_by_pattern" } resolves the author-declared PATTERN target
-#     (CGame_per_frame_ui_pump, seed id 1003) end-to-end — the pattern supplies
-#     the ADDRESS and the target's signature supplies the ABI, both from the
-#     bare name (NO signature= on the hook). PASS iff :applied()==true at
-#     "ready". This is the proof a pattern site named once is hookable by name
-#     with zero hex/ABI at the call site.
+#   * CAP-33-pattern-by-name (THE §36 HEADLINE — BLOCKED, NOT silenced):
+#     kcdx.hook{ target = "ui_pump_by_pattern" } is the pure "author names a
+#     target BY AOB PATTERN and hooks it by name" proof (pattern → address,
+#     target signature → ABI, both from the bare name; NO signature= on the
+#     hook). It is BLOCKED: the AOB matches the ENTRY prologue of
+#     CGame_per_frame_ui_pump (seed id 1003), which cap-03 hooks in production —
+#     the detour overwrites the prologue, so the post-patch pattern scan finds
+#     0 (patch_engine.cpp:124-130). No verified .text-unique entry-prologue AOB
+#     exists yet for a function NOTHING entry-hooks; minting one is bounded
+#     tier-5 work. This row will fail/parse-skip at apply until that AOB is
+#     minted — EXPECTED and TRACKED. See
+#     docs/outstanding-work/section36-pattern-target-aob.md.
 #   * CAP-33-engine-tier: kcdx.hook{ target = "luaL_loadfile" } (an ENGINE seed
 #     name) still resolves — the engine tier of self>engine>other coexists with
 #     the author's own targets.
 #   * CAP-33-prefixed: the explicit "<pluginname>.<target>" form
-#     ("cap_33_author_targets.ui_pump_by_pattern") resolves directly.
-#   * CAP-33-bytes-by-name: kcdx.bytes{ target = "pcall_safe_site" } resolves
-#     an author-declared PATTERN target (lua_pcall, seed id 1000 — a DISTINCT
-#     function from the hooked CGame_per_frame_ui_pump) to a VA; an idempotent
-#     no-op write (0x48 over the existing 0x48) :applied()==true proves the
-#     resolution.
-#   * CAP-33-alias: kcdx.alias("up", "cap_33_author_targets.ui_pump_by_pattern")
-#     then kcdx.hook{ target = "up" } resolves the hook via the local alias.
+#     ("cap_33_author_targets.ui_pump_by_id") resolves directly. Points at the
+#     VERIFIED-ID target (CGame_per_frame_ui_pump by address_id=1003 — RVA, no
+#     scan, immune to the prologue-overwrite blocker), so it proves PREFIX
+#     resolution and can pass.
+#   * CAP-33-bytes-by-name: kcdx.bytes{ target = "bool_leaf_safe_site" }
+#     resolves an author-declared VERIFIED-ID target (lua_toboolean,
+#     address_id=1124 — a DISTINCT verified leaf that NOTHING hooks, so its
+#     prologue is pristine) to a writable VA; an idempotent no-op write (0x48
+#     over the existing 0x48 — byte 0 of the lua_toboolean entry, read from
+#     WHGame.dll) :applied()==true proves the resolution.
+#   * CAP-33-alias: kcdx.alias("up", "cap_33_author_targets.ui_pump_by_id")
+#     then kcdx.hook{ target = "up" } resolves the hook via the local alias to
+#     the same VERIFIED-ID target, so it proves ALIAS resolution and can pass.
 #
 # Test mode: boot-only. Every target/alias resolution + apply happens during
 # the launch-time registration + apply pass; the handles read final at

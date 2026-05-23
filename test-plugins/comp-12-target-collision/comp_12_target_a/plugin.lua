@@ -1,7 +1,9 @@
 -- COMP-12 plugin A — self-wins asserter.
 --
--- A's targets.toml declared bare `combat_check` = the verified
--- CGame_per_frame_ui_pump entry AOB + ABI. Plugin B (sibling) declared bare
+-- A's targets.toml declared bare `combat_check` = CGame_per_frame_ui_pump by
+-- address_id=1003 (verified RVA + ABI; located by id, so it resolves and
+-- applies regardless of any hook on the function — immune to the entry-prologue
+-- overwrite an entry AOB would hit). Plugin B (sibling) declared bare
 -- `combat_check` = a bogus non-matching pattern. Both own the bare name → a
 -- cross-plugin collision.
 --

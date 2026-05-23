@@ -1,30 +1,44 @@
 -- CAP-33 plugin.lua — author-declared named targets (targets.toml) + alias.
 --
 -- The targets.toml sidecar (loaded by the engine BEFORE this script runs)
--- declared two targets under this plugin's namespace
+-- declared three targets under this plugin's namespace
 -- (cap_33_author_targets, derived from [plugin].name — the author never types
 -- the prefix):
---   * ui_pump_by_pattern  — a PATTERN locator + a signature (the §36 row),
---                           targeting CGame_per_frame_ui_pump (seed id 1003)
---   * pcall_safe_site      — a PATTERN locator on the lua_pcall entry AOB
---                           (seed id 1000), a DISTINCT verified function
+--   * ui_pump_by_pattern   — a PATTERN locator + signature (the §36 row),
+--                            CGame_per_frame_ui_pump (seed id 1003).
+--                            BLOCKED: cap-03 hooks the same function, so the
+--                            detour overwrites the entry prologue the AOB
+--                            matches → a post-patch scan finds 0
+--                            (patch_engine.cpp:124-130). See
+--                            docs/outstanding-work/section36-pattern-target-aob.md.
+--   * ui_pump_by_id        — the SAME function by address_id=1003 (RVA, no
+--                            scan → immune to the prologue overwrite). The
+--                            prefix + alias proofs point HERE so they pass.
+--   * bool_leaf_safe_site  — lua_toboolean by address_id=1124, a DISTINCT
+--                            verified leaf that NOTHING hooks (pristine
+--                            prologue) for the kcdx.bytes resolution proof.
 --
 -- Every hook below is a no-op passthrough whose ONLY job is to resolve a NAME
 -- and apply. We assert :applied() at kcdx.on("ready") (after the apply pass).
--- The hook targets are CGame_per_frame_ui_pump, a direct callee of CGame::Update
--- that cap-03 hooks in production; installing a no-op detour is harmless. The
--- install IS the proof the name resolved; the hook never needs to fire.
-
-local SIG = "void (ptr self)"
+-- The id-located hook targets are CGame_per_frame_ui_pump, a direct callee of
+-- CGame::Update that cap-03 hooks in production; the no-op detour chains
+-- harmlessly (hook_chain coexistence). The install IS the proof the name
+-- resolved; the hook never needs to fire.
 
 -- ====================================================================
--- (1) CAP-33-pattern-by-name — THE §36 HEADLINE.
--- kcdx.hook{ target = "<own pattern target>" } with NO signature=. The name
--- carries BOTH the address (resolved from the author-declared AOB through the
--- patch engine) AND the verified ABI (the target's signature). If the binder
--- had not gotten the signature from the target it would have rejected with
--- "no verified signature"; applied()==true is the end-to-end proof that a
--- pattern site named ONCE is hookable BY NAME with zero hex/ABI here.
+-- (1) CAP-33-pattern-by-name — THE §36 HEADLINE (BLOCKED, NOT silenced).
+-- kcdx.hook{ target = "<own pattern target>" } with NO signature=. This is the
+-- pure "author names a target BY AOB PATTERN and hooks it by name" proof: the
+-- pattern would carry the ADDRESS and the target's signature the ABI, both
+-- from the bare name. It is BLOCKED: the AOB matches the ENTRY prologue of
+-- CGame_per_frame_ui_pump, which cap-03 hooks in production — the detour
+-- overwrites the prologue, so the post-patch pattern scan finds 0
+-- (patch_engine.cpp:124-130). No verified .text-unique entry AOB exists yet
+-- for a function NOTHING entry-hooks; minting one is bounded tier-5 work.
+-- This row will fail/parse-skip at apply until that AOB is minted — that is
+-- EXPECTED and TRACKED, not a regression. We still assert honestly (NOT a
+-- silenced check): the report below records the real :applied() outcome.
+-- See docs/outstanding-work/section36-pattern-target-aob.md.
 -- ====================================================================
 local hPattern = kcdx.hook{
     name   = "cap33_pattern_by_name",
@@ -46,12 +60,14 @@ local hEngine = kcdx.hook{
 
 -- ====================================================================
 -- (3) CAP-33-prefixed — the explicit "<pluginname>.<target>" form.
--- Unambiguous from anywhere and never warns; resolves the SAME pattern target
--- as (1). Carries no signature= (the target does).
+-- Unambiguous from anywhere and never warns. Resolves the VERIFIED-ID target
+-- ui_pump_by_id (address_id=1003 — RVA, no scan), so this proves PREFIX
+-- resolution end-to-end and can PASS (immune to the pattern row's blocker).
+-- Carries no signature= (the target does).
 -- ====================================================================
 local hPrefixed = kcdx.hook{
     name   = "cap33_prefixed",
-    target = "cap_33_author_targets.ui_pump_by_pattern",  -- explicit prefix
+    target = "cap_33_author_targets.ui_pump_by_id",  -- explicit prefix → verified-id target
     before = function(self) return self end,
 }
 
@@ -59,40 +75,43 @@ local hPrefixed = kcdx.hook{
 -- (4) CAP-33-alias — kcdx.alias declares a local handle, then hook via it.
 -- kcdx.alias substitutes the long prefixed name before resolving; the alias is
 -- plugin-scoped and cannot shadow. The hook gives no signature= — the alias
--- resolves to the pattern target, which carries the ABI.
+-- resolves to the VERIFIED-ID target ui_pump_by_id, which carries the ABI, so
+-- this proves ALIAS resolution end-to-end and can PASS.
 -- ====================================================================
-local aliasOk, aliasErr = kcdx.alias("up", "cap_33_author_targets.ui_pump_by_pattern")
+local aliasOk, aliasErr = kcdx.alias("up", "cap_33_author_targets.ui_pump_by_id")
 if aliasOk ~= true then
     kcdx.log.error("CAP33", "kcdx.alias failed: " .. tostring(aliasErr))
 end
 local hAlias = kcdx.hook{
     name   = "cap33_alias",
-    target = "up",                      -- the local alias → the pattern target
+    target = "up",                      -- the local alias → the verified-id target
     before = function(self) return self end,
 }
 
 -- ====================================================================
 -- (5) CAP-33-bytes-by-name — kcdx.bytes{ target = "<name>" } resolution.
--- Resolves the author-declared PATTERN target "pcall_safe_site" to lua_pcall's
--- entry VA — a DISTINCT function from the hooked CGame_per_frame_ui_pump, so
--- the byte write lands on memory NO cap-33 hook touches (no hook/bytes overlap
--- on one address). The write is an IDEMPOTENT NO-OP: byte 0 of the entry is
--- 0x48 (the AOB in targets.toml begins "48 89 5C 24"), so writing 0x48 over
--- 0x48 applies cleanly without changing behaviour. We assert RESOLUTION via
--- :applied()==true (the byte write succeeds only if the name resolved to a
--- real, writable VA) rather than a destructive edit.
+-- Resolves the author-declared VERIFIED-ID target "bool_leaf_safe_site" to
+-- lua_toboolean's entry VA (address_id=1124) — a DISTINCT verified leaf that
+-- NOTHING hooks, so the prologue is pristine and the original-byte verify is
+-- correct (no detour bytes). Byte 0 of the lua_toboolean entry is 0x48 (read
+-- directly from WHGame.dll: "48 83 EC 28 ..."), so writing 0x48 over 0x48 is
+-- an IDEMPOTENT NO-OP that verifies AND applies without changing behaviour. We
+-- assert RESOLUTION via :applied()==true (the write succeeds only if the name
+-- resolved to a real, writable VA) rather than a destructive edit.
 -- ====================================================================
 local hBytes = kcdx.bytes{
     name        = "cap33_bytes_by_name",
-    target      = "pcall_safe_site",       -- author-declared PATTERN target
-    original    = "48",                    -- verified byte 0 of lua_pcall entry
+    target      = "bool_leaf_safe_site",   -- author-declared VERIFIED-ID target
+    original    = "48",                    -- verified byte 0 of lua_toboolean entry (WHGame.dll)
     replacement = "48",                    -- same byte: idempotent no-op
 }
 
 -- Handles resolve to a final :applied() only AFTER the zone apply pass, which
 -- runs after this plugin.lua returns. Read them in kcdx.on("ready").
 kcdx.on("ready", function()
-    -- (1) §36 HEADLINE.
+    -- (1) §36 HEADLINE — BLOCKED (honest report; the row is expected to fail
+    --     until the verified .text-unique entry AOB is minted — see the
+    --     outstanding-work doc). NOT silenced: we record the real outcome.
     do
         local applied = hPattern:applied()
         kcdx.test.report("CAP-33-pattern-by-name", applied == true,
@@ -100,8 +119,13 @@ kcdx.on("ready", function()
               and ("kcdx.hook{ target=\"ui_pump_by_pattern\" } applied with NO "
                    .. "signature= — the author-declared PATTERN target supplied "
                    .. "BOTH address and ABI by name (cornerstones §36)")
-              or  ("expected applied()==true (pattern target resolves by name "
-                   .. "+ carries the ABI); got applied=" .. tostring(applied)
+              or  ("BLOCKED (tracked, not a regression): the entry-prologue AOB "
+                   .. "is overwritten by cap-03's production hook on the same "
+                   .. "function, so the post-patch scan finds 0 "
+                   .. "(patch_engine.cpp:124-130). Needs a verified .text-unique "
+                   .. "entry AOB for an UNHOOKED function — see "
+                   .. "docs/outstanding-work/section36-pattern-target-aob.md. "
+                   .. "applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPattern:reason())))
     end
 
@@ -116,34 +140,34 @@ kcdx.on("ready", function()
                    .. " reason=" .. tostring(hEngine:reason())))
     end
 
-    -- (3) explicit prefix.
+    -- (3) explicit prefix → verified-id target.
     do
         local applied = hPrefixed:applied()
         kcdx.test.report("CAP-33-prefixed", applied == true,
             applied == true
-              and "explicit \"cap_33_author_targets.ui_pump_by_pattern\" resolved directly"
+              and "explicit \"cap_33_author_targets.ui_pump_by_id\" (address_id=1003) resolved directly"
               or  ("expected applied()==true for the prefixed form; got "
                    .. "applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPrefixed:reason())))
     end
 
-    -- (4) alias.
+    -- (4) alias → verified-id target.
     do
         local applied = hAlias:applied()
         kcdx.test.report("CAP-33-alias", applied == true and aliasOk == true,
             (applied == true and aliasOk == true)
-              and "kcdx.alias(\"up\", \"...ui_pump_by_pattern\") + kcdx.hook{ target=\"up\" } resolved via the alias"
+              and "kcdx.alias(\"up\", \"...ui_pump_by_id\") + kcdx.hook{ target=\"up\" } resolved via the alias"
               or  ("expected aliasOk==true AND applied()==true; got aliasOk="
                    .. tostring(aliasOk) .. " applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hAlias:reason())))
     end
 
-    -- (5) kcdx.bytes target=<name>.
+    -- (5) kcdx.bytes target=<name> → verified-id target.
     do
         local applied = hBytes:applied()
         kcdx.test.report("CAP-33-bytes-by-name", applied == true,
             applied == true
-              and "kcdx.bytes{ target=\"pcall_safe_site\" } resolved the PATTERN author-target to a VA; idempotent no-op write applied"
+              and "kcdx.bytes{ target=\"bool_leaf_safe_site\" } (address_id=1124) resolved the author-target to a writable VA; idempotent no-op write applied"
               or  ("expected applied()==true (name resolved to a writable VA); "
                    .. "got applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hBytes:reason())))
@@ -151,5 +175,6 @@ kcdx.on("ready", function()
 end)
 
 kcdx.log.info("CAP33",
-    "registered author-target hooks (pattern-by-name, engine-tier, prefixed, "
-    .. "alias) + kcdx.bytes target=pcall_safe_site; applied() asserted at ready")
+    "registered author-target hooks (pattern-by-name BLOCKED, engine-tier, "
+    .. "prefixed+alias on verified id 1003) + kcdx.bytes target=bool_leaf_safe_site "
+    .. "(verified id 1124); applied() asserted at ready")
