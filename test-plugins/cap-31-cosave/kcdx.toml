@@ -29,15 +29,23 @@
 #     legitimately PENDING (the gesture hasn't happened) — mirrors CAP-12's
 #     "Revert fired, no cosave yet" handling.
 #
-#   * CAP-31-reject ([manual], rides the same save gesture): inside on_save,
-#     after the valid writes, attempt two NEGATIVE writes the serializer must
-#     reject — a function value and a cyclic table — and assert each returns
-#     (nil, err) with the serializer's teaching string ("function" / "cyclic").
-#     These must run inside on_save because write() only reaches the serializer
-#     when the window is open; outside it, write() returns the window-closed
-#     error before the value is ever inspected (which is exactly what
-#     CAP-31-outside-window asserts). PASS iff both rejections fired with the
-#     right error substrings; the failed writes do NOT abort the valid save.
+#   * CAP-31-reject ([manual], needs only a save gesture — no load half):
+#     inside on_save, after the valid writes, attempt two NEGATIVE writes the
+#     serializer must reject — a function value and a cyclic table — and assert
+#     each returns (nil, err) with the serializer's teaching string
+#     ("function" / "cyclic"). These must run inside on_save because write()
+#     only reaches the serializer when the window is open; outside it, write()
+#     returns the window-closed error before the value is ever inspected (which
+#     is exactly what CAP-31-outside-window asserts). The row is REPORTED at
+#     SAVE time too — at the end of on_save, the instant the rejected writes are
+#     attempted — NOT alongside the round-trip at load time. The rejection is
+#     in-process state observable the moment write() is called in-window, not
+#     persisted cosave data, so it belongs in the callback that produces it;
+#     reporting it from on_load false-FAILED on a load-after-reboot, where
+#     on_save never ran. Still [manual] (it needs a save gesture to enter the
+#     window), but it no longer needs the load half. PASS iff both rejections
+#     fired with the right error substrings; the failed writes do NOT abort the
+#     valid save.
 #
 # Cross-language parity (the CAP-12 pairing): records are scoped per-plugin
 # (per uid) — two DIFFERENT plugins CANNOT share a record, so the parity claim
@@ -53,7 +61,8 @@
 # Test modes:
 #   CAP-31-outside-window  boot-only (auto-pass at load).
 #   CAP-31-roundtrip       [manual] — save (dev mode on), quit, reboot, load.
-#   CAP-31-reject          [manual] — same save gesture (rejections fire in on_save).
+#   CAP-31-reject          [manual] — same save gesture; reports at save time
+#                          (in on_save), no load half needed.
 
 [kcdx]
 test_suite_only = true
