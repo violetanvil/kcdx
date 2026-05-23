@@ -28,7 +28,7 @@
 # WHY kcdx.bytes (not a Lua symbol-resolve, not a hook): there is NO Lua
 # surface that resolves the runtime symbols table — kcdx.addr is the Address
 # Library snapshot built once at startup, NOT the symbols::Register table that
-# `export` writes to. The doc (docs/lua-api.md §kcdx.code) names exactly the
+# `export` writes to. The doc (docs/lua/code.md) names exactly the
 # consumers that resolve a kcdx.code export: kcdx.hook{target_symbol=} /
 # kcdx.bytes{target_symbol=}. kcdx.bytes is the cleaner of the two for an
 # arbitrary code region: a hook needs a meaningful function entry, but a

@@ -13,7 +13,7 @@ A plugin built from these will not match the current engine.
 
 ## Where to look instead
 
-- **The API reference:** [`docs/lua-api.md`](../../../docs/lua-api.md) — every
+- **The API reference:** [`docs/lua/index.md`](../../../docs/lua/index.md) — every
   `kcdx.*` accessor you can call today, with its arguments, return, errors,
   and a minimal snippet.
 - **How to write a plugin:** [`README.md`](../../../README.md) — the

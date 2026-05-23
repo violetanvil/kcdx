@@ -73,7 +73,7 @@ just *doing* something you pass positional args.
 
 The first seven rows are live today. The last three are on the
 roadmap and **not callable yet** — do not write code against them
-(see [`docs/lua-api.md` §Planned](docs/lua-api.md)).
+(see [`docs/lua/planned.md`](docs/lua/planned.md)).
 
 ### The engine does the heavy lifting
 
@@ -94,7 +94,7 @@ kcdx.hook{
 }
 ```
 
-**Full API reference: [`docs/lua-api.md`](docs/lua-api.md)** — every
+**Full API reference: [`docs/lua/index.md`](docs/lua/index.md)** — every
 verb, domain, accessor, argument, call shape, and error mode, with
 the full manifest schema.
 
@@ -161,9 +161,9 @@ checkpoint (the remaining rows are `[manual]` save/load gestures, not
 failures). To answer the three questions an author actually asks:
 
 - **"What can I call today?"** →
-  [`docs/lua-api.md`](docs/lua-api.md). Its main body is the live API
+  [`docs/lua/index.md`](docs/lua/index.md). Its main body is the live API
   surface — if a verb is documented there it is built and callable; the
-  [§Planned](docs/lua-api.md) section lists what is coming but not yet
+  [§Planned](docs/lua/planned.md) section lists what is coming but not yet
   callable.
 - **"What passes live right now?"** (per-row status + SHA) →
   [`test-plugins/README.md`](test-plugins/README.md), the live test

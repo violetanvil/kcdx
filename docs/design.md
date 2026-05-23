@@ -1,6 +1,6 @@
 # kcdx v0.1 — design
 
-> **⚠️ SUPERSEDED (as-built note, 2026-05-22) by [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md) (the current authoritative design) and [`lua-api.md`](lua-api.md) (the current author-facing API reference for the as-built `kcdx.*` Lua surface).**
+> **⚠️ SUPERSEDED (as-built note, 2026-05-22) by [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md) (the current authoritative design) and [`lua/index.md`](lua/index.md) (the current author-facing API reference for the as-built `kcdx.*` Lua surface).**
 >
 > This document describes the v0.1 design: seven TOML behavior entry types
 > (`[[patch]]`, `[[hook]]`, `[[mid_hook]]`, `[[trampoline]]`, `[[scan]]`,
@@ -14,7 +14,7 @@
 >
 > **The current authoritative design is
 > [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md);
-> the current author-facing API reference is [`lua-api.md`](lua-api.md).**
+> the current author-facing API reference is [`lua/index.md`](lua/index.md).**
 > Each phase of the restructure that touches an engine surface should
 > update both this doc (trim the relevant section) AND the restructure
 > plan (record what changed). At the end of the restructure this doc
