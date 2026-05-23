@@ -1,3 +1,90 @@
 # The plugin shell
+> Part of the [kcdx Lua API](index.md).
 
-> Moved here from the old monolithic doc. Content lands in a later step of this restructure. See the [index](index.md) for the full map.
+A declarative/Lua plugin is a folder with a `kcdx.toml` and one or more Lua
+files. The minimal working plugin:
+
+`kcdx.toml`:
+
+```toml
+[plugin]
+name    = "kcdx.my-first-plugin"
+version = "0.1.0"
+
+[entrypoints]
+lua = "plugin.lua"
+```
+
+`plugin.lua`:
+
+```lua
+kcdx.log.info("MYMOD", "hello from my first plugin")
+```
+
+## `[plugin]` keys
+
+| Key | Type | Meaning |
+|---|---|---|
+| `name` | string | **Required.** Stable plugin identity used for load order, attribution, dependency resolution. |
+| `display_name` | string | Human-friendly name (defaults to `name`). |
+| `author` | string | Author name. |
+| `description` | string | Free text. |
+| `url` | string | Project/support URL. |
+| `support_email` | string | Contact email. |
+| `version` | string | Semver, e.g. `"0.1.0"`. |
+| `kcdx_min_version` | string | Minimum kcdx version this plugin needs (semver). |
+| `version_independent` | bool | `true` if the plugin does not bind to a specific KCD2 build (default `false`). |
+| `compatible_game_versions` | array of strings | KCD2 build versions this plugin targets, e.g. `["1.5.1164953"]`. |
+| `default_position` | string | Load zone: `"before_game"` or `"after_game"`. Omit to let the engine derive it (engine builtins → before; user plugins → after). |
+| `default_priority` | integer | `0`–`100` within the zone (default `50`). |
+| `log_level` | string | Floor for the plugin's own log file: `trace`/`debug`/`info`/`warn`/`error`/`off` (default `info`). Warn/Error always pass. |
+| `test_names` | array of strings | For test-suite plugins: the matrix row IDs this plugin promises to report. |
+
+`[[plugin.dependencies]]` — zero or more dependency entries:
+
+```toml
+[[plugin.dependencies]]
+name        = "kcdx.some-other-plugin"
+min_version = "0.2.0"
+optional    = false
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `name` | string | **Required.** The depended-on plugin's `name`. |
+| `min_version` | string | Minimum required version (semver). |
+| `optional` | bool | `true` if the dependency is soft (default `false`). |
+
+## `[entrypoints]` keys
+
+| Key | Type | Meaning |
+|---|---|---|
+| `lua` | string or array | The before/default-slot Lua file(s), run in declared order at the plugin's load-order slot. A bare string is a one-element list. |
+| `lua_after` | string or array | Optional after-game-slot Lua file(s). Run in the after_game phase at the plugin's priority, regardless of declared zone. |
+| `dll` | string | The plugin DLL (a C++ plugin). |
+
+## `[kcdx]` keys
+
+| Key | Type | Meaning |
+|---|---|---|
+| `test_suite_only` | bool | `true` = the plugin runs only under dev mode (silent in production). Used by test-suite plugins. |
+
+Engine settings (`dev_mode`, `dry_run`, `dev_log_*`) are **not** valid here —
+they live in `<kcdx-engine>/engine.toml`. A plugin that sets them gets a
+warning.
+
+## The both-phase model
+
+A plugin can run code before the game is up *and* after. In Lua, declare `lua`
+(before/default slot) and/or `lua_after` (after-game slot); the C++ mirror is
+the `kcdxPlugin_Load` export (before) and the optional `kcdxPlugin_PostGameLoad`
+export (after) on the same plugin DLL. Both-phase work runs in load-order
+priority within each phase.
+
+## Cross-plugin ordering
+
+A `priority` field on an individual `kcdx.hook{}` / `kcdx.bytes{}` call is **no
+longer honoured** (kcdx logs a once-per-session notice if you set it).
+Cross-plugin ordering comes from the plugin's `default_priority` (or the
+engine `load_order.toml`); intra-plugin ordering is the order your `plugin.lua`
+registers entries.
