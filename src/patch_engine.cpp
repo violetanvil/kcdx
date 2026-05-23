@@ -249,6 +249,28 @@ ResolvedPatch Resolve(const PatchEntry& p) {
         return r;
     }
 
+    // Locator path 0: pre-resolved VA — the opt-in carrier. Set ONLY by the
+    // kcdx.bytes `target = "<name>"` path when the name resolved to a bare VA
+    // (engine-seed name or Rva author-target). When present, the WHERE is
+    // already known: use it directly and skip pattern / target_symbol /
+    // address_id resolution entirely. Mirrors the address_id path exactly —
+    // patchAddr = VA + offset, empty patternRange, originalRange == verify
+    // range — so a `target=name` site behaves IDENTICALLY to the address_id
+    // for that same site. Every existing entry leaves resolvedVa == 0 and
+    // falls through to the unchanged paths below.
+    if (p.resolvedVa != 0) {
+        r.patchAddr = p.resolvedVa + p.offset;
+        r.writeRange = { r.patchAddr, r.patchAddr + p.replacement.size() };
+        r.patternRange  = { 0, 0 };
+        r.originalRange = { r.patchAddr, r.patchAddr + p.original.size() };
+        log::InfoF("[%s] resolved target= -> 0x%p (patchAddr 0x%p)",
+                   p.name.c_str(),
+                   reinterpret_cast<void*>(p.resolvedVa),
+                   reinterpret_cast<void*>(r.patchAddr));
+        r.ok = true;
+        return r;
+    }
+
     // Locator path A: target_symbol — resolves via the global symbol table.
     // Used when a patch wants to write into another plugin's [[trampoline]]
     // region. No module / pattern / context / anchor needed.

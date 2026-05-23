@@ -46,6 +46,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "address_library.h"
 #include "log.h"
 #include "lua_registry.h"
 #include "patch_engine.h"
@@ -166,23 +167,50 @@ int Lua_Bytes(lua_State* L) {
     const std::string contextStr     = LuaTableString(L, 1, "context");
     const std::string anchorStr      = LuaTableString(L, 1, "anchor_string");
 
-    // Exactly-one-locator rule. Same invariant as the TOML loader.
+    // The owning plugin drives the self > engine > other precedence in the
+    // name-resolution path below (ResolveByName / FindResolvedAuthorTarget,
+    // naming-namespaces.md). Fetch it ONCE here and reuse it for the registry
+    // Entry stamp at the bottom — no second OwningPluginForCurrentCall
+    // stack-walk. callSiteFile/Line come back populated for the Entry too.
+    // Launch-time registration only; never a hot path.
+    std::string owningPlugin;
+    std::string callSiteFile;
+    int         callSiteLine = 0;
+    owningPlugin = kcdx::lua_registry::OwningPluginForCurrentCall(
+        L, callSiteFile, callSiteLine);
+
+    // `target = "<name>"` — the COMMON-PATH locator (the disassembler test,
+    // cornerstones.md / AP12): the author names the site and the engine
+    // resolves WHERE, exactly as kcdx.hook's `target` does. Distinct from
+    // `target_symbol` (the cross-plugin published-symbol table) — `target`
+    // names an Address Library seed entry OR an author-declared target. The
+    // pattern / address_id / target_symbol locators remain the labeled
+    // expert/advanced hatch for sites the name table can't yet name.
+    const std::string targetName = LuaTableString(L, 1, "target");
+
+    // Exactly-one-locator rule. Same invariant as the TOML loader + the
+    // hook target/address_id-share rule. `target` is one of the mutually-
+    // exclusive locators and joins the count.
     const int locatorCount =
-        (!patternStr.empty() ? 1 : 0) +
-        (p->addressId != 0    ? 1 : 0) +
-        (!p->targetSymbol.empty() ? 1 : 0);
+        (!patternStr.empty()       ? 1 : 0) +
+        (p->addressId != 0         ? 1 : 0) +
+        (!p->targetSymbol.empty()  ? 1 : 0) +
+        (!targetName.empty()       ? 1 : 0);
     if (locatorCount == 0) {
         lua_pushnil(L);
         lua_pushfstring(L,
             "kcdx.bytes '%s': must specify exactly one locator "
-            "(pattern, address_id, or target_symbol)", p->name.c_str());
+            "(target, pattern, address_id, or target_symbol). The common "
+            "path is target = \"<name>\" — a name the engine resolves to an "
+            "address; pattern/address_id/target_symbol are the expert hatch.",
+            p->name.c_str());
         return 2;
     }
     if (locatorCount > 1) {
         lua_pushnil(L);
         lua_pushfstring(L,
             "kcdx.bytes '%s': locators are mutually exclusive "
-            "(set exactly one of pattern, address_id, target_symbol)",
+            "(set exactly one of target, pattern, address_id, target_symbol)",
             p->name.c_str());
         return 2;
     }
@@ -192,6 +220,116 @@ int Lua_Bytes(lua_State* L) {
             "kcdx.bytes '%s': missing required field 'replacement'",
             p->name.c_str());
         return 2;
+    }
+
+    // --- target = "<name>" → resolve the NAME into a locator field --------
+    //
+    // kcdx.bytes is a byte rewrite, not a typed hook, so `target` resolves
+    // ONLY an ADDRESS (no signature) — the disassembler-test parity with
+    // kcdx.hook (cornerstones.md / AP12): name the site, the engine resolves
+    // WHERE. Resolution is launch-time (registration pass), never a hot path.
+    //
+    // The bytes apply pass (ApplyBytesEntry → patch::ApplyPatch → Resolve)
+    // re-resolves from the PatchEntry, so `target` is resolved here into the
+    // PatchEntry field that carries the named target's WHERE — mirroring
+    // hook_chain::ResolveLocator's name→locator routing. With the opt-in
+    // resolvedVa carrier on PatchEntry, this now reaches parity with kcdx.hook
+    // for ALL locator kinds:
+    //
+    //   - VA-bearing names (engine seed, Rva author-target, AddressId
+    //     author-target) → p->resolvedVa (the carrier; Resolve uses it directly)
+    //   - Pattern author-target      → p->pattern       (parse the registry AOB)
+    //   - TargetSymbol author-target → p->targetSymbol  (cross-plugin symbol)
+    //
+    // RESOLUTION ORDER (self > engine > other is enforced INSIDE both calls):
+    //   1. ResolveByName(name, owner) → nonzero VA  → p->resolvedVa.
+    //      address_library resolves an engine seed, an Rva author-target, AND
+    //      an AddressId author-target (via Resolve(id)) to a VA here, so all
+    //      three flow through the single resolvedVa carrier. Pattern /
+    //      TargetSymbol author-targets return 0 from ResolveByName (the leaf
+    //      module can't turn them into a VA without depending on the patch
+    //      engine / symbol table) and fall through.
+    //   2. Else FindResolvedAuthorTarget(name, owner) → Pattern / TargetSymbol
+    //      author-target  → route through p->pattern / p->targetSymbol.
+    //   3. Else genuine miss → teaching error.
+    //
+    // AddressId author-targets resolve via path 1 (resolvedVa) rather than the
+    // p->addressId field — both produce the SAME final patchAddr (resolvedVa =
+    // ResolveByName → ResolveAuthorTargetAddr → Resolve(id); the addressId
+    // field path computes Resolve(id) too), so this is simpler and correct.
+    if (!targetName.empty()) {
+        const uintptr_t va = kcdx::address_library::ResolveByName(
+            targetName.c_str(), owningPlugin.c_str());
+        if (va) {
+            // Engine seed, Rva author-target, or AddressId author-target — the
+            // name resolved straight to a VA. Carry it; Resolve uses it
+            // directly and skips locator resolution.
+            p->resolvedVa = va;
+        } else {
+            // ResolveByName returned 0 — either a Pattern / TargetSymbol
+            // author-target (no VA in this leaf module) or a genuine miss.
+            // FindResolvedAuthorTarget disambiguates with the same precedence.
+            const kcdx::address_library::AuthorTarget* at =
+                kcdx::address_library::FindResolvedAuthorTarget(
+                    targetName.c_str(), owningPlugin.c_str());
+            if (at) {
+                using Kind = kcdx::address_library::AuthorLocatorKind;
+                switch (at->kind) {
+                    case Kind::Pattern:
+                        // The registry stores the AOB un-parsed; parse it here
+                        // so the apply pass resolves it through the SAME
+                        // pattern path a directly-set pattern= uses. A
+                        // malformed AOB is an author error in the target's row
+                        // — teach it, don't throw.
+                        try {
+                            p->pattern =
+                                kcdx::patch::ParsePattern(at->locatorStr);
+                        } catch (const std::exception& ex) {
+                            lua_pushnil(L);
+                            lua_pushfstring(L,
+                                "kcdx.bytes '%s': target '%s' (author-declared "
+                                "pattern) has a malformed AOB: %s",
+                                p->name.c_str(), targetName.c_str(), ex.what());
+                            return 2;
+                        }
+                        break;
+                    case Kind::TargetSymbol:
+                        p->targetSymbol = at->locatorStr;
+                        break;
+                    case Kind::Rva:
+                    case Kind::AddressId:
+                        // VA-bearing kinds should have resolved via
+                        // ResolveByName above. Reaching here means the name
+                        // table disagreed with itself; surface it rather than
+                        // silently mis-resolving.
+                        lua_pushnil(L);
+                        lua_pushfstring(L,
+                            "kcdx.bytes '%s': target '%s' is a VA-bearing "
+                            "author-target but did not resolve to an address "
+                            "(unverified row or game-version mismatch). Check "
+                            "the target's row.",
+                            p->name.c_str(), targetName.c_str());
+                        return 2;
+                    default:
+                        lua_pushnil(L);
+                        lua_pushfstring(L,
+                            "kcdx.bytes '%s': target '%s' has an unsupported "
+                            "author-target kind.",
+                            p->name.c_str(), targetName.c_str());
+                        return 2;
+                }
+            } else {
+                // Genuine miss — no seed, no author target won the precedence.
+                lua_pushnil(L);
+                lua_pushfstring(L,
+                    "kcdx.bytes '%s': target '%s' did not resolve (unknown "
+                    "name, wrong game version, unverified row, or a typo). "
+                    "Check the name against kcdx.addr.* or your declared "
+                    "[[target]] rows.",
+                    p->name.c_str(), targetName.c_str());
+                return 2;
+            }
+        }
     }
 
     try {
@@ -220,14 +358,17 @@ int Lua_Bytes(lua_State* L) {
         return 2;
     }
 
-    // Stamp owning plugin + call site for the registry.
+    // Stamp owning plugin + call site for the registry. Reuse the owner +
+    // call site already fetched above for the target= resolution — one
+    // OwningPluginForCurrentCall stack-walk per call, not two.
     kcdx::lua_registry::Entry e;
     e.kind     = kcdx::lua_registry::Kind::Bytes;
     e.name     = p->name;
     e.priority = p->priority;
     e.payload  = p;  // shared_ptr<PatchEntry> stored as shared_ptr<void>
-    e.pluginName = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, e.callSiteFile, e.callSiteLine);
+    e.pluginName    = owningPlugin;
+    e.callSiteFile  = callSiteFile;
+    e.callSiteLine  = callSiteLine;
     // Anonymous (no owning plugin) entries copy the plugin name into
     // the PatchEntry so patch_engine log lines have meaningful
     // attribution — they get the script source filename as a

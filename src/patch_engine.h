@@ -72,6 +72,23 @@ struct PatchEntry {
     std::string targetSymbol;
     uint64_t addressId = 0;          // 0 = no address-library locator
 
+    // Pre-resolved virtual address — the opt-in resolved-VA carrier.
+    //   - 0 (unset) = resolve normally via pattern / target_symbol /
+    //     address_id (the path EVERY existing PatchEntry takes; behavior
+    //     unchanged for them).
+    //   - nonzero   = "skip locator resolution, use this VA directly":
+    //     patch::Resolve treats it as the located base and adds `offset`
+    //     to produce patchAddr, exactly as the other locator paths do.
+    //
+    // Set ONLY by the kcdx.bytes `target = "<name>"` path when the name
+    // resolves to a BARE VA — an engine-seed name OR an Rva author-target —
+    // i.e. the cases address_library::ResolveByName returns a nonzero VA
+    // for. Pattern / TargetSymbol named targets do NOT set this; they route
+    // through pattern / targetSymbol as before. This is what gives
+    // kcdx.bytes{ target = "<name>" } the same WHERE-resolution kcdx.hook
+    // already has, for ALL locator kinds.
+    uintptr_t resolvedVa = 0;
+
     int offset = 0;
     std::vector<uint8_t> original;
     std::vector<uint8_t> replacement;
