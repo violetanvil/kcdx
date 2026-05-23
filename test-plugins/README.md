@@ -166,7 +166,7 @@ what the live result is.
 | Channels | (iii) `kcdx.toml` |
 | Engine status | LIVE (2026-05-20, commit `03dd155`) — three-mode codegen in `make_jit_midfunc` + hde64 auto-decode of `stack_restore_offset` + `g_mid_skip_original` atomic flag interlock between dispatcher and JIT. |
 | Test plugin | `cap-04-midhook/` — 4 sub-tests covering all three modes (a=true, b=false, c=auto+_skip, d=auto+no-skip). Each fires against a self-contained 9-byte trampoline target with `add rax, 0x64` at the hook site; sub-test invokes the target with seed=10 and asserts the expected return value. |
-| Auto-pass check | All four sub-tests pass when register state matches the `call_original` contract: CAP-04a returns 110 (original ran, +100), CAP-04b returns 10 (skipped), CAP-04c returns 10 (Lua-skipped via `_skip`), CAP-04d returns 110 (auto without skip = run). |
+| Auto-pass check | Three of the four sub-tests pass when register state matches the `call_original` contract: CAP-04a returns 110 (original ran, +100), CAP-04b returns 10 (skipped), CAP-04d returns 110 (auto without skip = run). CAP-04c is the one known FAIL: it returns 110, not the expected 10 — the legacy `args._skip` auto-skip path does NOT skip the original. This is the standing pre-existing red; the new `kcdx.hook` mode=mid does NOT inherit it (CAP-21-skip PASSES). |
 | Last result | LIVE 2026-05-20 — CAP-04a/b/c/d all PASS in the 18:32 dev-log run. |
 | Notes | Mid-hook register MUTATION via `args[1]:set(...)` is still v0.1-deferred (kcdxLuaApi lacks Call/Pcall — see `docs/design-gaps.md` #11). CAP-04 verifies the harder problem (skip-original codegen); register mutation lands when `kcdxLuaApi` gets `Call`. |
 
@@ -623,10 +623,15 @@ registration-override warning ergonomics.
 Auto-updated by the developer after each suite run. One row per
 CAP/COMP, status + commit SHA.
 
-As of 2026-05-20 18:32 dev-log run: **21/21 passing** across every
+As of the last checkpoint (2026-05-22): **58/60 passing** across every
 suite-aggregate emit point (`update tick`, `kPreLoadGame`,
-`kPostLoadGame`). The full pass count includes all CAP-* and
-COMP-* rows that ship a real test plugin under `test-plugins/`.
+`kPostLoadGame`) — the full pass count includes all CAP-* and
+COMP-* rows that ship a real test plugin under `test-plugins/`; see
+the per-row matrix below for the exact ✅ LIVE / ⏳ PENDING breakdown
+(the `⏳ PENDING [manual]` save/load rows need an in-game gesture, and
+`cap-04-c` is the one standing pre-existing FAIL). Earlier roll-up:
+**21/21 passing** as of the 2026-05-20 18:32 dev-log run, before the
+Phase 2b `kcdx.hook` / `kcdx.command` / per-entry-zone subs landed.
 
 | Row | Status | Last verified at SHA | Notes |
 |---|---|---|---|
@@ -634,7 +639,7 @@ COMP-* rows that ship a real test plugin under `test-plugins/`.
 | CAP-03 | ✅ LIVE | `03dd155` | `[[hook]] lua_callback` dispatches into pak Lua |
 | CAP-04a | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=true`; returns 110 |
 | CAP-04b | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=false`; returns 10 (original skipped) |
-| CAP-04c | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original="auto"` + `args._skip=true`; returns 10 |
+| CAP-04c | ❌ FAIL | `03dd155` | `[[mid_hook]] call_original="auto"` + `args._skip=true`; returns 110 (expected 10) — the legacy `args._skip` mid-hook bug: the auto-skip path does NOT skip the original. The one standing pre-existing FAIL; superseded by `kcdx.hook` mode=mid (CAP-21-skip PASSES, proving the new dispatcher does not inherit it). |
 | CAP-04d | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original="auto"`, no `_skip`; returns 110 |
 | CAP-05 | ✅ LIVE | `03dd155` | pak Lua `dynamic_hook` install |
 | CAP-07 | ✅ LIVE | `03dd155` | trampoline branch / local pool allocations |

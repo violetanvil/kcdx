@@ -1,5 +1,17 @@
 # Verify Phase 3 — messaging + task + lifecycle
 
+> **ARCHIVED (as-built note, 2026-05-22) — superseded by the
+> `/verification-checkpoint` skill + the restructure phases in
+> [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md).**
+> This is a v0.1-phase-numbering manual-verification checklist (the
+> v0.1 "Phase 3 = messaging/task/lifecycle" numbering, NOT the
+> restructure's Phase 3). It is kept as a historical record; do NOT
+> follow it as a current procedure — the live test surface is the
+> regression suite in
+> [`../test-plugins/README.md`](../test-plugins/README.md), run via
+> `/verification-checkpoint`. (Mirrors how
+> [`archive/VERIFY_PHASE1.md`](archive/VERIFY_PHASE1.md) was archived.)
+
 Phase 3 ships the inter-plugin pub/sub message bus, the main-thread
 task queue, and the engine-fired lifecycle messages.
 

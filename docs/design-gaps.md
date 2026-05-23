@@ -25,6 +25,15 @@ the remaining gaps.
 
 ## 1. Single-callsite redirection has no first-class entry
 
+> **CLOSED (as-built note, 2026-05-22) — superseded by the restructure.**
+> Shipped as `kcdx.hook{ mode = "callsite" }` — a per-call-site E8
+> rel32 redirect, isolation-proven (Phase 2b sub-6, commit `f04edbe`;
+> matrix rows CAP-22-before/after/around/replace + the two isolation
+> rows in `test-plugins/README.md`). The `[[call_redirect]]` TOML
+> sibling proposed below is obsolete (TOML is manifest-only post-
+> restructure); the capability lives on the `kcdx.hook` verb. Original
+> gap text retained below as historical context.
+
 SKSE / CommonLibSSE's most-used hooking primitive is
 `write_call<5>(callsite_addr, &MyFn)` — patch a *specific call site*
 so one caller gets your behavior, every other caller still hits the
@@ -64,6 +73,17 @@ won't notice it's missing until they try to port a real plugin.
 ---
 
 ## 2. "Wrap with mutate" — call original, inspect return, mutate it — is partially shipped
+
+> **CLOSED (as-built note, 2026-05-22) — superseded by the restructure.**
+> The full wrap-with-mutate pattern is now first-class via
+> `kcdx.hook{ mode = "around" }`: the callback receives a
+> `call_original` callable, invokes the original, inspects its return,
+> and overwrites it by returning the mutated value (mutate-by-return)
+> (Phase 2b sub-4, commit `27ee126`; matrix row CAP-20-around in
+> `test-plugins/README.md`). The `lua_post_callback`-can't-return
+> half-shipped TOML form below is obsolete. Original gap text retained
+> below as historical context. (The worked-example follow-up #7 below
+> is likewise mooted by the `mode=around` surface.)
 
 Phase 5f's `lua_post_callback` field lets a Lua callback observe the
 original's return value after it runs ([`src/scripting.cpp:327-366`](../src/scripting.cpp#L327-L366)).
@@ -565,6 +585,19 @@ kcdxLuaApi), the pak Lua sidecar collapses into the C++ DLL.
 
 ## 12. `[[hook]]` schema grew organically; verbs + body shapes need rationalization
 
+> **ADDRESSED (as-built note, 2026-05-22) — the restructure resolved the
+> SPIRIT of this gap differently than the shape proposed below.** The
+> organic `[[hook]]` schema is gone: TOML is manifest-only, and intent
+> is declared via the single `kcdx.hook{ mode = ... }` verb (before /
+> after / around / replace / mid / callsite) with one locator family
+> (`target = "<name>"` carrying address + verified ABI, advanced raw
+> locators behind the disassembler-test escape hatch). The specific
+> `[[intercept]]`/`[[replace]]`/`[[constant]]` TOML verbs + reusable
+> `[function.Name]` blocks proposed below were NOT built as written.
+> The declarative-arg-rewriter idea (`rewrite_arg.szApp = {...}`) is
+> NOT shipped — it is the one part of this gap that remains open as a
+> possible future ergonomic. Original gap text retained below.
+
 **Discovered 2026-05-21 during BugSplat PROBE R/S/T investigation
 (see `docs/known-issues/BugSplat dmp files don't reach disk for AV
 crashes.md`).**
@@ -676,6 +709,17 @@ in a C++ engine builtin.
 ---
 
 ## 14. No "intercept, mutate args, call original" first-class shape
+
+> **CLOSED (as-built note, 2026-05-22) — superseded by the restructure.**
+> `kcdx.hook{ mode = "before" }` (and `around`) gives the callback the
+> args and lets it mutate an argument by returning the new value, then
+> the original runs with the mutated arg — the exact "before-advice
+> with args" / BugSplat `szApp` pattern (Phase 2b sub-4, commit
+> `27ee126`; matrix rows CAP-20-before "mutates arg via return" and
+> CAP-20-wstr "wstr arg read + mutate" in `test-plugins/README.md`).
+> The proposed `before`-callback C typedef + `[[intercept]]` TOML verb
+> below are obsolete (TOML is manifest-only; the capability is on the
+> `kcdx.hook` verb). Original gap text retained below for context.
 
 **Discovered 2026-05-21 alongside gap #12.**
 

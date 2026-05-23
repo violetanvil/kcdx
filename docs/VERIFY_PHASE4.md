@@ -1,5 +1,19 @@
 # Verify Phase 4 — trampoline + function hooks + cross-engine conflicts
 
+> **ARCHIVED (as-built note, 2026-05-22) — superseded by the
+> `/verification-checkpoint` skill + the restructure phases in
+> [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md).**
+> This is a v0.1-phase-numbering manual-verification checklist (the
+> v0.1 "Phase 4 = trampoline/hooks/conflicts" numbering, NOT the
+> restructure's Phase 4) covering the raw-bytes `[[hook]]` /
+> `[[trampoline]]` schema that the restructure replaces with the
+> `kcdx.hook` / `kcdx.code` verbs. It is kept as a historical record;
+> do NOT follow it as a current procedure — the live test surface is
+> the regression suite in
+> [`../test-plugins/README.md`](../test-plugins/README.md), run via
+> `/verification-checkpoint`. (Mirrors how
+> [`archive/VERIFY_PHASE1.md`](archive/VERIFY_PHASE1.md) was archived.)
+
 Phase 4 ships the bulk of v0.1's runtime injection surface:
 - 4a: kcdxTrampolineInterface + per-plugin logging
 - 4b.1: [[hook]] schema (raw-bytes function-entry detours)
