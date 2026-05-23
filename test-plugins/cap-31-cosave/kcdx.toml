@@ -1,0 +1,74 @@
+# CAP-31 — kcdx.cosave.* Lua surface (the Lua counterpart of CAP-12's C++
+# kcdxSerializationInterface row).
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-24-lifecycle-events / cap-30-lua-code are the structural mirrors).
+#
+# What it proves:
+#   * CAP-31-outside-window (BOOT-ONLY auto-pass, no gesture): a
+#     kcdx.cosave.write(...) at plugin.lua top-level — i.e. OUTSIDE any
+#     on_save body, so the writer window is closed — returns (nil, err) and the
+#     err is the window-closed teaching error. This fires synchronously at load
+#     and is the standing regression guard that write() refuses an out-of-window
+#     call instead of silently dropping data. Verified against the binder's
+#     ACTUAL error text (src/lua_bind_cosave.cpp Lua_Write: "...outside a
+#     kcdx.cosave.on_save(...) body — write() only works inside the save
+#     window..."), NOT the surface doc's paraphrase.
+#
+#   * CAP-31-roundtrip ([manual], needs save+quit+reboot+load): in on_save,
+#     write one record per supported type (number incl. a non-integer float,
+#     string, boolean, nested table). In on_load, iterate
+#     `for tag, ver, val in kcdx.cosave.records()` and assert each round-tripped
+#     EXACTLY. PASS iff every type round-tripped. This is the auto-derived-UID
+#     proof too: cap-31 NEVER calls set_uid, so the section persisting +
+#     reloading at all is proof the UID auto-derived from the plugin name
+#     resolved (no FourCC hand-packing — the disassembler-test win).
+#     NO-COSAVE-YET FIRST BOOT does NOT false-FAIL: on_load only reports when
+#     records were actually present (a save made WITH cap-31 loaded). A fresh
+#     game / a first load of a save with no cap-31 cosave leaves the row
+#     legitimately PENDING (the gesture hasn't happened) — mirrors CAP-12's
+#     "Revert fired, no cosave yet" handling.
+#
+#   * CAP-31-reject ([manual], rides the same save gesture): inside on_save,
+#     after the valid writes, attempt two NEGATIVE writes the serializer must
+#     reject — a function value and a cyclic table — and assert each returns
+#     (nil, err) with the serializer's teaching string ("function" / "cyclic").
+#     These must run inside on_save because write() only reaches the serializer
+#     when the window is open; outside it, write() returns the window-closed
+#     error before the value is ever inspected (which is exactly what
+#     CAP-31-outside-window asserts). PASS iff both rejections fired with the
+#     right error substrings; the failed writes do NOT abort the valid save.
+#
+# Cross-language parity (the CAP-12 pairing): records are scoped per-plugin
+# (per uid) — two DIFFERENT plugins CANNOT share a record, so the parity claim
+# is NOT "the same record cross-plugin" (that would need a shared uid, the
+# FourCC-collision foot-gun the auto-UID model removes). The real, testable
+# parity is the SAME named-tag MECHANISM round-tripping on BOTH surfaces:
+# CAP-12 (C++) writes "counter" via OpenRecordNamed + reads it via
+# GetRecordTagName; CAP-31 (Lua) writes "count"/"label"/... via
+# kcdx.cosave.write + reads them via records(). Each independently proves its
+# half of the same capability (lua-api-surface.md: same capability, both
+# surfaces) — that IS the parity demonstration.
+#
+# Test modes:
+#   CAP-31-outside-window  boot-only (auto-pass at load).
+#   CAP-31-roundtrip       [manual] — save (dev mode on), quit, reboot, load.
+#   CAP-31-reject          [manual] — same save gesture (rejections fire in on_save).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-31-cosave"
+display_name        = "CAP-31 kcdx.cosave.* Lua surface"
+author              = "kcdx"
+description         = "Pure-Lua kcdx.cosave self-test (the Lua counterpart of the C++ CAP-12 row): boot-only window-guard assertion (write() outside on_save returns the window-closed teaching error), plus a [manual] type round-trip (number/float/string/boolean/nested table via auto-derived UID — no set_uid) and a [manual] serializer-rejection assertion (function + cyclic table) that ride a save+reboot+load gesture."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-31-outside-window", "CAP-31-roundtrip",
+                       "CAP-31-reject"]
+
+[entrypoints]
+lua = "plugin.lua"
