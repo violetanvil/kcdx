@@ -31,15 +31,21 @@
 //     pointer. Mirrors kcdx.command's register-immediately + the C++
 //     trampoline interface (which allocates immediately).
 //   * `export` REGISTERS THE SYMBOL IMMEDIATELY (right after allocation)
-//     via symbols::Register(name, addr, ownerName). This is EARLIER than
-//     the apply-pass target_symbol resolution — that ordering is correct
-//     (the symbol exists before any apply-pass Lookup resolves it). A
-//     later kcdx.hook{target_symbol=...} / kcdx.bytes resolves this export
-//     at the apply pass (symbols::Lookup), finding what kcdx.code
-//     registered. On COLLISION (name already registered) the allocation
-//     still stands (fresh memory — fine) but the EXPORT failed: log a loud
-//     error naming the prior owner (symbols::OwnerOf) and return
-//     (nil, teaching error) so the author knows their symbol name clashed.
+//     via symbols::Register(bareName, addr, owner). The author writes a
+//     BARE export name; the engine derives the <owner> prefix from the
+//     calling plugin and publishes <owner>.<export> — the SAME
+//     <pluginname>.<name> model as author-targets (naming-namespaces.md).
+//     A dotted `export` is an author error (the engine supplies the
+//     prefix). This is EARLIER than the apply-pass target_symbol
+//     resolution — that ordering is correct (the symbol exists before any
+//     apply-pass Lookup resolves it). A later kcdx.hook{target_symbol=...}
+//     / kcdx.bytes resolves this export at the apply pass (symbols::Lookup,
+//     self > other precedence), finding what kcdx.code registered. On
+//     COLLISION (the same plugin re-exporting the same bare name — names
+//     are now per-namespace, so cross-plugin clashes can't happen) the
+//     allocation still stands (fresh memory — fine) but the EXPORT failed:
+//     log a loud error naming the prior owner (symbols::OwnerOf on the full
+//     name) and return (nil, teaching error).
 //   * OWNER IDENTITY via lua_registry::OwningPluginForCurrentCall (the same
 //     mechanism kcdx.command/publish/on/hook use), mapped to a
 //     kcdxPluginHandle via plugins::HandleOf. An anonymous caller
@@ -311,29 +317,50 @@ int Lua_Code(lua_State* L) {
     // --- Register export IMMEDIATELY if requested (mirror ApplyAll's
     // export branch, but EARLIER — at the call, not the apply pass; that
     // ordering is correct, the symbol exists before any apply-pass
-    // Lookup). On collision the allocation stands (fresh memory — fine)
-    // but the export FAILED, so the author must know: loud error naming
-    // the prior owner + (nil, teaching error). ---
+    // Lookup). ---
+    //
+    // NAMESPACE MODEL (naming-namespaces.md): `export` is a BARE name; the
+    // engine derives the <owner> prefix from the calling plugin and stores the
+    // symbol as <owner>.<export>. The author NEVER types their own prefix — a
+    // dotted `export` is an author error. A bare collision is now per-namespace
+    // (each plugin gets its own prefix), so a clash only happens when the SAME
+    // plugin re-exports the SAME name. On collision the allocation stands
+    // (fresh memory — fine) but the export FAILED: loud error + (nil, teaching
+    // error).
     if (!exportSymbol.empty()) {
-        if (kcdx::symbols::Register(exportSymbol, addr,
-                                    owner.empty() ? name : owner)) {
+        // Reject a dotted / prefixed export — the engine supplies the prefix.
+        if (exportSymbol.find('.') != std::string::npos) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.code{ name = \"%s\" }: `export` must be a BARE name — do "
+                "NOT type your own \"<plugin>.\" prefix. The engine derives it "
+                "from your [plugin].name and publishes the symbol as "
+                "\"<yourplugin>.%s\" (naming-namespaces.md). You wrote "
+                "\"%s\".",
+                name.c_str(), exportSymbol.c_str(), exportSymbol.c_str());
+            return 2;
+        }
+        // Fully-qualified name the engine will publish (for diagnostics).
+        std::string fullName =
+            owner.empty() ? exportSymbol : (owner + "." + exportSymbol);
+        if (kcdx::symbols::Register(exportSymbol, addr, owner)) {
             LOG_DEBUG("CODE", "[%s] exported symbol '%s' -> 0x%p",
-                      name.c_str(), exportSymbol.c_str(),
+                      name.c_str(), fullName.c_str(),
                       reinterpret_cast<void*>(addr));
         } else {
-            std::string priorOwner = kcdx::symbols::OwnerOf(exportSymbol);
+            std::string priorOwner = kcdx::symbols::OwnerOf(fullName);
             log::ErrorF("[kcdx.code '%s'] symbol export collision: '%s' is "
                         "already registered by '%s' — the region is allocated "
                         "but unreachable by symbol.",
-                        name.c_str(), exportSymbol.c_str(),
+                        name.c_str(), fullName.c_str(),
                         priorOwner.empty() ? "?" : priorOwner.c_str());
             lua_pushnil(L);
             lua_pushfstring(L,
-                "kcdx.code{ name = \"%s\" }: export symbol '%s' is already "
-                "registered by '%s'. Symbol names must be unique across "
-                "plugins — choose a different `export` name (the region was "
-                "allocated, but is unreachable by symbol).",
-                name.c_str(), exportSymbol.c_str(),
+                "kcdx.code{ name = \"%s\" }: export '%s' is already registered "
+                "by '%s' — your plugin already exported this bare name. Choose "
+                "a different `export` name (the region was allocated, but is "
+                "unreachable by symbol).",
+                name.c_str(), fullName.c_str(),
                 priorOwner.empty() ? "?" : priorOwner.c_str());
             return 2;
         }

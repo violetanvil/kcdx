@@ -79,25 +79,32 @@ size_t ApplyAll() {
                   region,
                   t.pool.c_str());
 
-        // Register export if requested.
+        // Register export if requested. `exportSymbol` is a BARE name; the
+        // engine derives the <owner> prefix from the entry's pluginName and
+        // publishes <owner>.<exportSymbol> — the SAME <pluginname>.<name>
+        // model as kcdx.code{export=} (naming-namespaces.md). A collision now
+        // only happens when the SAME plugin re-exports the SAME bare name.
         if (!t.exportSymbol.empty()) {
             uintptr_t addr = reinterpret_cast<uintptr_t>(region);
-            if (symbols::Register(t.exportSymbol, addr, t.name)) {
+            std::string fullName =
+                t.pluginName.empty() ? t.exportSymbol
+                                     : (t.pluginName + "." + t.exportSymbol);
+            if (symbols::Register(t.exportSymbol, addr, t.pluginName)) {
                 LOG_DEBUG("TRAMPOLINE", "[%s] exported symbol '%s' -> 0x%p",
                           t.name.c_str(),
-                          t.exportSymbol.c_str(),
+                          fullName.c_str(),
                           reinterpret_cast<void*>(addr));
             } else {
                 // Symbol already registered. We've already allocated and
                 // filled the region; the alloc isn't freed (alloc-only),
                 // but the trampoline is effectively orphaned — no other
                 // plugin can reach it by symbol.
-                std::string priorOwner = symbols::OwnerOf(t.exportSymbol);
+                std::string priorOwner = symbols::OwnerOf(fullName);
                 log::ErrorF("[trampoline '%s'] symbol export collision: '%s' "
                             "already registered by '%s' — this trampoline is "
                             "allocated but unreachable by symbol.",
                             t.name.c_str(),
-                            t.exportSymbol.c_str(),
+                            fullName.c_str(),
                             priorOwner.c_str());
                 continue;  // don't count as "applied"
             }

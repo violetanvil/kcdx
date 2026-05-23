@@ -275,7 +275,12 @@ ResolvedPatch Resolve(const PatchEntry& p) {
     // Used when a patch wants to write into another plugin's [[trampoline]]
     // region. No module / pattern / context / anchor needed.
     if (!p.targetSymbol.empty()) {
-        auto addr = symbols::Lookup(p.targetSymbol);
+        // Pass the consuming plugin's name so the symbol resolves by the
+        // namespace model (alias substitution + self > other precedence +
+        // shared warn-once) — a bare target_symbol resolves to this plugin's
+        // own export first, an explicit "<plugin>.<name>" directly
+        // (naming-namespaces.md).
+        auto addr = symbols::Lookup(p.targetSymbol, p.pluginName);
         if (!addr) {
             r.reason = "target_symbol '" + p.targetSymbol + "' not registered "
                        "(producer plugin may be missing or failed to apply)";

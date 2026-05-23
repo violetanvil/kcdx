@@ -260,4 +260,58 @@ bool RegisterAuthorTarget(const char*       pluginName,
 // (Self-test / dev-log startup summary; not a hot path.)
 size_t AuthorTargetCount();
 
+// ===========================================================================
+// Aliases — per-plugin local handles (naming-namespaces.md §Aliasing).
+// ===========================================================================
+//
+// `kcdx.alias(short, "plugin.name")` declares a LOCAL handle scoped to the
+// calling plugin: within that plugin, the bare name `short` resolves to the
+// full `target` name. An alias is pure local convenience layered ON TOP of the
+// self > engine > other model — it CANNOT shadow an engine name or another
+// plugin's bare name, because substitution happens only when the calling
+// plugin owns an alias by that exact short name. It ADDS a handle, never
+// displaces resolution.
+//
+// Storage: a per-plugin map (owningPlugin -> short -> fullName), populated at
+// launch and read only during the apply pass (same launch-time-only invariant
+// as g_authorTargets — never a hook-fire / per-frame path).
+
+// Register an alias `short` -> `target` owned by `owningPlugin`. VALIDATES the
+// owning plugin name (charset/length/reserved-root via ValidatePluginName), the
+// `short` handle (the [a-z0-9_] 2-32 component rule — it is referenced like a
+// bare name), and that `target` is non-empty. On success records the alias and
+// returns true; on a validation failure returns false and fills `outError` with
+// a teaching message and records nothing.
+//
+// `owningPlugin` "" (anonymous caller) is rejected: an alias is meaningless
+// without a plugin to scope it to.
+//
+// Launch-time only.
+bool RegisterAlias(const char*  owningPlugin,
+                   const char*  shortName,
+                   const char*  target,
+                   std::string& outError);
+
+// Resolve an alias: if `owningPlugin` declared an alias whose short name is
+// exactly `name`, returns the aliased full target name; otherwise returns "".
+// Called at the TOP of name resolution (before the self > engine > other walk)
+// so a matching alias substitutes its full target, which then resolves
+// normally. A non-empty result is always re-resolved as a name.
+//
+// Launch-time only.
+std::string ResolveAlias(const char* owningPlugin, const char* name);
+
+// Diagnostic: number of registered aliases. (Self-test / dev-log summary.)
+size_t AliasCount();
+
+// Emit the shared once-per-session-per-name bare-collision warning. Exposed so
+// the symbol table (symbols.cpp) reuses the SAME warn-once dedup as the
+// address-name resolver — a bare name that collides warns ONCE across both
+// surfaces. `winnerOwner` is the owner that won by precedence; `shadowed` lists
+// the displaced owner(s). Launch-time only.
+void WarnBareCollisionShared(const char*        bareName,
+                             const char*        winnerTier,
+                             const std::string& winnerOwner,
+                             const std::string& shadowed);
+
 }  // namespace kcdx::address_library

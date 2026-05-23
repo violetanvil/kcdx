@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -484,9 +485,17 @@ uintptr_t ResolveByName(const char* name, const char* owningPlugin) {
     if (!name || !name[0]) return 0;
     const std::string owner = owningPlugin ? owningPlugin : "";
 
+    // --- ALIAS substitution (naming-namespaces.md §Aliasing) — BEFORE the
+    // self > engine > other walk. If the calling plugin declared an alias by
+    // this bare name, substitute its full target and resolve THAT. An alias is
+    // a pure local add-on: it only fires when this plugin owns it, so it can
+    // never shadow an engine name or another plugin's bare name.
+    std::string aliased = ResolveAlias(owner.c_str(), name);
+    const char* eff = aliased.empty() ? name : aliased.c_str();
+
     // --- EXPLICIT prefixed reference: "<plugin>.<name>" — never warns. -----
     std::string prefix, rest;
-    if (SplitPrefixed(name, prefix, rest)) {
+    if (SplitPrefixed(eff, prefix, rest)) {
         if (prefix == "kcdx") {
             // Reserved engine root → the engine seed, by the unprefixed
             // engine name (rest).
@@ -500,7 +509,7 @@ uintptr_t ResolveByName(const char* name, const char* owningPlugin) {
     }
 
     // --- BARE reference: resolve self > engine > other (shared decision). --
-    BareResolution res = ResolveBareWinner(name, owner);
+    BareResolution res = ResolveBareWinner(eff, owner);
     switch (res.winner) {
         case BareResolution::Tier::Self:
         case BareResolution::Tier::Other:
@@ -509,7 +518,7 @@ uintptr_t ResolveByName(const char* name, const char* owningPlugin) {
             // and routes them through the patch/symbol pipeline — see header).
             return ResolveAuthorTargetAddr(*res.authorTarget);
         case BareResolution::Tier::Engine:
-            return SeedResolveAddr(name);
+            return SeedResolveAddr(eff);
         case BareResolution::Tier::None:
             return 0;
     }
@@ -521,11 +530,17 @@ const AuthorTarget* FindResolvedAuthorTarget(const char* name,
     if (!name || !name[0]) return nullptr;
     const std::string owner = owningPlugin ? owningPlugin : "";
 
+    // --- ALIAS substitution (naming-namespaces.md §Aliasing) — same as
+    // ResolveByName, BEFORE the dot-split / precedence walk. Local handle,
+    // never displaces another tier.
+    std::string aliased = ResolveAlias(owner.c_str(), name);
+    const char* eff = aliased.empty() ? name : aliased.c_str();
+
     // --- EXPLICIT prefixed reference: "<plugin>.<name>" — never warns. -----
     // "kcdx.<rest>" is the engine seed (NOT an author target) → nullptr;
     // "<plugin>.<rest>" resolves directly to that plugin's author target.
     std::string prefix, rest;
-    if (SplitPrefixed(name, prefix, rest)) {
+    if (SplitPrefixed(eff, prefix, rest)) {
         if (prefix == "kcdx") return nullptr;
         return FindAuthorTarget(prefix, rest.c_str());
     }
@@ -534,8 +549,18 @@ const AuthorTarget* FindResolvedAuthorTarget(const char* name,
     // ResolveByName (ResolveBareWinner is the single shared decision point).
     // Return the winning author target when Self/Other won; nullptr when the
     // engine seed won (a seed row is not an author target) or nothing matched.
-    BareResolution res = ResolveBareWinner(name, owner);
+    BareResolution res = ResolveBareWinner(eff, owner);
     return res.authorTarget;  // non-null iff Self/Other won
+}
+
+void WarnBareCollisionShared(const char*        bareName,
+                             const char*        winnerTier,
+                             const std::string& winnerOwner,
+                             const std::string& shadowed) {
+    // Delegates to the file-local once-per-session helper so the symbol table
+    // shares the SAME g_warnedCollisions dedup as the address-name resolver:
+    // a bare name that already warned from either surface does not double-warn.
+    WarnBareCollisionOnce(bareName, winnerTier, winnerOwner, shadowed);
 }
 
 void ForEachResolvable(ForEachResolvableCallback cb, void* userdata) {
@@ -588,9 +613,17 @@ const char* ResolveSignatureByName(const char* name, const char* owningPlugin) {
     if (!name || !name[0]) return "";
     const std::string owner = owningPlugin ? owningPlugin : "";
 
+    // --- ALIAS substitution (naming-namespaces.md §Aliasing) — same as
+    // ResolveByName, so the signature resolves from the SAME row the address
+    // does. The aliased target string must outlive the bare-path locals below
+    // (selfTarget etc. point into the registry, not into this string), so keep
+    // `aliased` alive for the whole function.
+    std::string aliased = ResolveAlias(owner.c_str(), name);
+    const char* eff = aliased.empty() ? name : aliased.c_str();
+
     // --- EXPLICIT prefixed reference: "<plugin>.<name>" — never warns. -----
     std::string prefix, rest;
-    if (SplitPrefixed(name, prefix, rest)) {
+    if (SplitPrefixed(eff, prefix, rest)) {
         if (prefix == "kcdx") {
             const char* s = SeedSignature(rest.c_str());
             return s ? s : "";
@@ -605,15 +638,15 @@ const char* ResolveSignatureByName(const char* name, const char* owningPlugin) {
     // ResolveByName: a bare name that already warned there does not double-warn
     // here (first warn this session wins, keyed by the name).
     const AuthorTarget* selfTarget =
-        owner.empty() ? nullptr : FindAuthorTarget(owner, name);
-    const char* engineSig = SeedSignature(name);
+        owner.empty() ? nullptr : FindAuthorTarget(owner, eff);
+    const char* engineSig = SeedSignature(eff);
     bool engineHit = (engineSig != nullptr);
-    const AuthorTarget* otherTarget = FindOtherAuthorTarget(owner, name);
+    const AuthorTarget* otherTarget = FindOtherAuthorTarget(owner, eff);
 
     bool selfHit  = (selfTarget != nullptr);
     bool otherHit = (otherTarget != nullptr);
 
-    MaybeWarnCollision(name, owner, selfHit, engineHit, otherHit, otherTarget);
+    MaybeWarnCollision(eff, owner, selfHit, engineHit, otherHit, otherTarget);
 
     // (1) self, (2) engine, (3) other — the signature from the winning row.
     if (selfTarget) return selfTarget->signature.c_str();
@@ -640,6 +673,15 @@ namespace {
 // runs. Treat any read of this from a hooked function or per-frame tick as a
 // bug.
 std::vector<AuthorTarget> g_authorTargets;
+
+// Per-plugin alias map: owningPlugin -> (short handle -> full target name).
+// Same launch-time-populate / resident / never-read-at-runtime invariant as
+// g_authorTargets — populated once during discovery by RegisterAlias(), read
+// only during the apply pass (ResolveAlias, called at the top of name
+// resolution). A nested map keeps lookups plugin-scoped: an alias resolves
+// ONLY in the declaring plugin's space, so it can never shadow an engine name
+// or another plugin's bare name (naming-namespaces.md §Aliasing).
+std::map<std::string, std::map<std::string, std::string>> g_aliases;
 
 // True iff `c` is a legal char for a shared-name component: [a-z0-9_].
 // Uppercase, '.', '-', and everything else are rejected (the dot is the
@@ -752,6 +794,63 @@ bool RegisterAuthorTarget(const char*       pluginName,
 
 size_t AuthorTargetCount() {
     return g_authorTargets.size();
+}
+
+bool RegisterAlias(const char*  owningPlugin,
+                   const char*  shortName,
+                   const char*  target,
+                   std::string& outError) {
+    // An alias is scoped to a plugin; an anonymous caller has no space to
+    // declare it in.
+    if (!owningPlugin || owningPlugin[0] == '\0') {
+        outError =
+            "kcdx.alias can only be called from a plugin script — the calling "
+            "Lua chunk did not attribute to a [plugin] (anonymous console / pak "
+            "Lua cannot declare an alias). An alias is a per-plugin local handle "
+            "(naming-namespaces.md).";
+        return false;
+    }
+    // The owning plugin name must be a legal namespace prefix (also rejects
+    // the reserved "kcdx" root — a plugin named "kcdx" can't reach here, but
+    // validate for a teaching message anyway).
+    if (!ValidatePluginName(owningPlugin, outError)) {
+        return false;
+    }
+    // The short handle is referenced exactly like a bare name, so it obeys the
+    // same [a-z0-9_] 2-32 component charset.
+    if (!ValidateNameComponent(shortName, "alias name", outError)) {
+        return false;
+    }
+    // The target must be non-empty. It can be a bare name or an explicit
+    // "<plugin>.<name>"; we do NOT further validate its shape here — it is
+    // re-resolved through the normal name pipeline at the apply pass, which
+    // reports an unknown / malformed target with full context then.
+    if (!target || target[0] == '\0') {
+        outError =
+            std::string("kcdx.alias(\"") + shortName +
+            "\", target): the target name is empty — pass the full name to "
+            "alias, e.g. kcdx.alias(\"inv\", \"redmoon.open_inventory\").";
+        return false;
+    }
+    g_aliases[owningPlugin][shortName] = target;
+    return true;
+}
+
+std::string ResolveAlias(const char* owningPlugin, const char* name) {
+    if (!owningPlugin || owningPlugin[0] == '\0' || !name || name[0] == '\0') {
+        return {};
+    }
+    auto pit = g_aliases.find(owningPlugin);
+    if (pit == g_aliases.end()) return {};
+    auto ait = pit->second.find(name);
+    if (ait == pit->second.end()) return {};
+    return ait->second;
+}
+
+size_t AliasCount() {
+    size_t n = 0;
+    for (const auto& [plugin, m] : g_aliases) n += m.size();
+    return n;
 }
 
 }  // namespace kcdx::address_library

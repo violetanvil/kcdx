@@ -23,7 +23,12 @@
 -- (lua-precision.md) — so we hold the region pointer and call methods on it;
 -- we never round-trip an address through a Lua number.
 
-local EXPORT_SYMBOL = "kcdx.cap-30-lua-code.region"
+-- Bare export name: the engine stamps the calling plugin's [plugin].name
+-- prefix (cap_30_lua_code) automatically, registering cap_30_lua_code.region.
+-- The consumer below uses the SAME bare name; since the same plugin both
+-- exports and consumes, self>engine>other precedence self-resolves it
+-- (naming-namespaces.md). The author NEVER types their own prefix.
+local EXPORT_SYMBOL = "region"
 
 -- ====================================================================
 -- (1)+(2) ALLOCATION + WRITE/READ ROUND-TRIP + NOP-PAD — synchronous.

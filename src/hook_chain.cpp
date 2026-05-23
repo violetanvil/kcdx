@@ -983,6 +983,9 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
             pe.sourceFile = "<lua:kcdx.hook target=\"" + p.addressName + "\">";
             pe.name       = p.name;
             pe.module     = p.module;
+            // Carry the consuming plugin so a routed target_symbol resolves by
+            // the namespace model (self > other) in patch::Resolve.
+            pe.pluginName = p.owningPlugin;
             // Feed the author target's locator into the field patch::Resolve
             // reads for that kind — the SAME path a directly-set locator uses.
             if (at->kind == kcdx::address_library::AuthorLocatorKind::Pattern) {
@@ -1025,6 +1028,9 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
     pe.sourceFile   = "<lua:kcdx.hook>";
     pe.name         = p.name;
     pe.module       = p.module;
+    // Carry the consuming plugin so a directly-set target_symbol resolves by
+    // the namespace model (self > other) in patch::Resolve.
+    pe.pluginName   = p.owningPlugin;
     pe.pattern      = p.pattern;
     pe.context      = p.context;
     pe.anchor       = p.anchor;
