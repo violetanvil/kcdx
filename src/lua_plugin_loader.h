@@ -30,25 +30,31 @@ extern "C" {
 namespace kcdx::lua_plugin_loader {
 
 // Run every enabled plugin's [entrypoints].lua files against `L`, in
-// the order plugins appear in kcdx::plugins::g_plugins (the post-topo-
-// sort order). Registration order within a plugin follows the declared
-// luaEntrypointsRel order. Safe to call once per session; subsequent
-// calls are no-ops (guarded by an internal latch) so the first-tick
-// path can call it unconditionally.
+// LOAD-ORDER PRIORITY (sorted by load_order::Of(name).priority, ties by
+// name) — symmetric with RunAfterEntrypoints and the C++ PostGameLoad
+// mirror. A plugin.lua body runs observably (it may call game functions,
+// publish events), so its RUN order must be predictable load-order
+// priority, not the dependency topo-sort order g_plugins happens to carry.
+// Registration order within a plugin follows the declared luaEntrypointsRel
+// order. Safe to call once per session; subsequent calls are no-ops
+// (guarded by an internal latch) so the first-tick path can call it
+// unconditionally.
 //
-// NOTE: cross-plugin hook CHAIN order is decided later, at apply time,
-// by lua_registry::ApplyZone's load-order sort — not by the order
+// Dependency (topo) order does NOT constrain this: it gates DLL
+// Preload/Load (earlier, on the worker thread); plugin.lua only QUEUES
+// kcdx.* intent. Cross-plugin hook CHAIN order is decided later, at apply
+// time, by lua_registry::ApplyZone's load-order sort — not by the order
 // plugin.lua files happen to run here. This function only needs to get
 // every plugin's registrations queued with correct attribution.
 void RunAll(lua_State* L);
 
 // Run every enabled plugin's [entrypoints].lua_after files against `L` —
-// the after-game Lua slot of the per-entry-zone execution model. Unlike
-// RunAll (which iterates g_plugins in topo/discovery order), this runs in
+// the after-game Lua slot of the per-entry-zone execution model. Runs in
 // LOAD-ORDER PRIORITY (sorted by load_order::Of(name).priority, ties by
-// name): a lua_after entrypoint's CODE runs here and is observable, so its
-// run order must follow load order. Same per-file load discipline as the
-// before slot — enabled gate, plugin-scoped OwnerScope (require +
+// name) — the SAME order as RunAll (both slots' bodies are observable) and
+// the C++ PostGameLoad mirror: a lua_after entrypoint's CODE runs here and is
+// observable, so its run order must follow load order. Same per-file load
+// discipline as the before slot — enabled gate, plugin-scoped OwnerScope (require +
 // attribution), RegisterScriptOwner, crash_guard, dual error-routing —
 // shared via the internal RunOneEntrypointFile body (not copy-pasted).
 //

@@ -156,6 +156,36 @@ void LoadOneFileGuarded(void* userdata) {
 std::atomic<bool> g_ranOnce{false};
 std::atomic<bool> g_ranAfterOnce{false};
 
+// THE single entrypoint run-order: (load_order priority asc, name asc).
+//
+// Both Lua slots — the before/default slot (RunAll, plugin.lua) and the
+// after-game slot (RunAfterEntrypoints, lua_after) — run their bodies
+// observably (they can call game functions, publish events, observe
+// before-work). So both RUN in load-order priority, symmetric with each
+// other and with the C++ PostGameLoad mirror (plugin_loader.cpp). Zone is
+// irrelevant to the tiebreak: each slot is single-zone by construction
+// (RunAll is the before/default slot; lua_after is after_game). Ties broken
+// by name for determinism.
+//
+// Dependency (topo) order is NOT a factor here, and that is correct: topo
+// order constrains DLL Preload/Load (which consume g_plugins directly,
+// earlier, on the worker thread); plugin.lua / lua_after only QUEUE kcdx.*
+// intent that is applied later at lua_registry::ApplyZone in load-order — no
+// entrypoint's body depends on ANOTHER plugin's entrypoint having run first.
+// load_order::priority is itself dependency-agnostic (load_order.cpp Resolve:
+// author hint + user override only), so a pure-priority sort is safe.
+//
+// Returns true if `a` must run before `b`. Strict-weak-ordering for std::sort.
+bool EntrypointRunsBefore(const kcdx::plugins::LoadedPlugin* a,
+                          const kcdx::plugins::LoadedPlugin* b) {
+    const auto& ea = kcdx::load_order::Of(a->manifest.name);
+    const auto& eb = kcdx::load_order::Of(b->manifest.name);
+    if (ea.priority != eb.priority) {
+        return ea.priority < eb.priority;
+    }
+    return a->manifest.name < b->manifest.name;
+}
+
 // True iff `s` contains a ':<one-or-more-digits>:' run anywhere — the
 // file:line marker (e.g. "plugin.lua:13:") that a runtime error carries
 // once storedebug is on (piece 1). Plain scan, no regex: find a ':',
@@ -306,11 +336,28 @@ void RunAll(lua_State* L) {
     // See lua_require_searcher.h.
     kcdx::lua_require_searcher::Install(L);
 
+    // Run plugin.lua entrypoints in LOAD-ORDER PRIORITY (priority asc, name
+    // asc), symmetric with the lua_after slot (RunAfterEntrypoints) and the
+    // C++ PostGameLoad mirror. g_plugins is in dependency topo-sort order; the
+    // before phase's body runs observably (it can call game functions, publish
+    // events), so its RUN order must be predictable load-order priority — not
+    // the topo/folder-alphabetical coincidence g_plugins happens to carry.
+    // Dependency order does NOT constrain this: plugin.lua only QUEUES kcdx.*
+    // intent applied later at ApplyZone in load-order (see EntrypointRunsBefore
+    // above for the full rationale). Ties broken by name for determinism.
+    std::vector<const kcdx::plugins::LoadedPlugin*> ordered;
+    ordered.reserve(kcdx::plugins::g_plugins.size());
+    for (const auto& p : kcdx::plugins::g_plugins) {
+        if (p.manifest.luaEntrypointsRel.empty()) continue;
+        ordered.push_back(&p);
+    }
+    std::sort(ordered.begin(), ordered.end(), &EntrypointRunsBefore);
+
     size_t pluginsWithLua = 0, filesRun = 0, filesFailed = 0;
 
-    for (const auto& p : kcdx::plugins::g_plugins) {
+    for (const kcdx::plugins::LoadedPlugin* pp : ordered) {
+        const kcdx::plugins::LoadedPlugin& p = *pp;
         const auto& m = p.manifest;
-        if (m.luaEntrypointsRel.empty()) continue;
 
         // Honor the load_order.toml enabled gate — a disabled plugin's
         // Lua doesn't run, same as its DLL kcdxPlugin_Load is skipped.
@@ -365,32 +412,20 @@ void RunAfterEntrypoints(lua_State* L) {
     kcdx::lua_require_searcher::Install(L);
 
     // The lua_after slot runs in LOAD-ORDER PRIORITY, not g_plugins
-    // (topo/discovery) order. g_plugins is sorted by dependency topo-sort,
-    // NOT by load_order priority; the before/default slot (RunAll) iterates
-    // it as-is because cross-plugin CHAIN order is decided later at apply
-    // time by lua_registry::ApplyZone's load-order sort — the order
-    // plugin.lua files happen to RUN doesn't affect chain order. But a
-    // lua_after entrypoint's CODE runs here (it may call game functions,
-    // observe before-work, etc.), so its RUN order is observable and MUST
-    // follow load-order priority. Build an index ordered by
-    // (priority asc, name asc) — zone is irrelevant: lua_after is
-    // after_game by construction. Ties broken by name for determinism.
+    // (topo/discovery) order — symmetric with the before/default slot (RunAll)
+    // and the C++ PostGameLoad mirror, all of which sort by the SAME
+    // EntrypointRunsBefore comparator (priority asc, name asc). A lua_after
+    // entrypoint's CODE runs here (it may call game functions, observe
+    // before-work, etc.), so its RUN order is observable and MUST follow
+    // load-order priority. Build an index over plugins with a lua_after file
+    // and sort it; ties broken by name for determinism.
     std::vector<const kcdx::plugins::LoadedPlugin*> ordered;
     ordered.reserve(kcdx::plugins::g_plugins.size());
     for (const auto& p : kcdx::plugins::g_plugins) {
         if (p.manifest.luaAfterEntrypointsRel.empty()) continue;
         ordered.push_back(&p);
     }
-    std::sort(ordered.begin(), ordered.end(),
-              [](const kcdx::plugins::LoadedPlugin* a,
-                 const kcdx::plugins::LoadedPlugin* b) {
-                  const auto& ea = kcdx::load_order::Of(a->manifest.name);
-                  const auto& eb = kcdx::load_order::Of(b->manifest.name);
-                  if (ea.priority != eb.priority) {
-                      return ea.priority < eb.priority;
-                  }
-                  return a->manifest.name < b->manifest.name;
-              });
+    std::sort(ordered.begin(), ordered.end(), &EntrypointRunsBefore);
 
     size_t pluginsWithAfter = 0, filesRun = 0, filesFailed = 0;
 
