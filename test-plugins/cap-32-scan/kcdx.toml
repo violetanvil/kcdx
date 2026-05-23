@@ -1,0 +1,44 @@
+# CAP-32 — kcdx.scan top-level Lua verb: diagnostic AOB scan, returns the
+# structured result the author branches on.
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-30-lua-code / cap-31-cosave are the structural mirrors).
+#
+# What it proves (all boot-only, no player gesture — kcdx.scan resolves
+# synchronously at the call and returns immediately):
+#   * CAP-32-resolve: a KNOWN-UNIQUE pattern resolves to count==1 with a
+#     non-nil addr pointer and the right module attribution. Reuses
+#     scan-demo's LIVE-PROVEN outfit-swap pattern + module (already verified
+#     to resolve uniquely) so the resolve assertion rests on a verified site,
+#     not a fresh RE guess. Asserts count==1, addr~=nil, matches[1] present,
+#     matches[1].module=="WHGame.dll", matches[1].addr~=nil, and
+#     matches[1].offset is a number (NOT a specific absolute address — that
+#     shifts per game build; count/module/non-nil-addr are the falsifiable
+#     resolve proof).
+#   * CAP-32-nomatch: a deliberately-bogus pattern (cannot match) resolves to
+#     count==0 with addr==nil and an EMPTY matches table — proving the
+#     always-a-table contract (no-match is count=0, NOT a nil return / NOT an
+#     error).
+#   * CAP-32-badinput: a bad-input call (kcdx.scan{} — missing required name +
+#     pattern) returns (nil, err), NOT a table, with err naming the missing
+#     `name` field (asserted against the binder's actual teaching error).
+#
+# Test mode: boot-only. All three rows resolve + report synchronously at
+# plugin load. No console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-32-scan"
+display_name        = "CAP-32 kcdx.scan diagnostic AOB scan"
+author              = "kcdx"
+description         = "Pure-Lua kcdx.scan self-test: a known-unique pattern resolves to count==1 with module attribution, a bogus pattern returns the always-a-table count==0 / addr==nil / empty-matches contract, and a missing-field call returns (nil, teaching-err) rather than a table."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-32-resolve", "CAP-32-nomatch", "CAP-32-badinput"]
+
+[entrypoints]
+lua = "plugin.lua"
