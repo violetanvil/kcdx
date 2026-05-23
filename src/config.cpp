@@ -21,6 +21,7 @@
 #include "paths.h"
 #include "plugin_loader.h"
 #include "scan_engine.h"
+#include "target_manifest.h"
 #include "test.h"
 #include "trampoline_engine.h"
 
@@ -933,6 +934,11 @@ void LoadOneFile(const fs::path& path, Source source) {
             if (ParsePluginManifest(doc, path, manifest, mErr)) {
                 manifest.testSuiteOnly = isTestSuiteOnly;
                 pluginName = manifest.name;
+
+                // Optional per-plugin targets.toml sidecar — author-declared
+                // hook/byte targets registered under this plugin's namespace.
+                LoadTargetsFor(path.parent_path().string(), pluginName);
+
                 log::InfoF("Discovered plugin '%s' v0x%08X from %s",
                            manifest.name.c_str(), manifest.version,
                            fileLabel.c_str());
