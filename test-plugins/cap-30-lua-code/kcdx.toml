@@ -1,0 +1,59 @@
+# CAP-30 — kcdx.code Lua verb: executable-region allocation + NOP-pad +
+# export-symbol interlock.
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-24-lifecycle-events / cap-25-multifile-attribution / cap-26-lua-command /
+# cap-27-command-timing-arms are the structural mirrors).
+#
+# What it proves (all boot-only, no player gesture):
+#   * CAP-30-alloc: kcdx.code{ name=, size= } / { name=, bytes=, size= }
+#     allocates a LIVE writable executable region from the trampoline pool and
+#     returns a kcdx.memory.pointer userdata to it. We WRITE a known byte +
+#     dword in via the returned pointer (:set_byte/:set_dword) and READ them
+#     back (:get_byte/:get_dword) — the round-trip is unforgeable proof the
+#     region is real, allocated, and writable (a nil/non-writable region fails
+#     the read-back). The SAME assertion also reads a TAIL byte of a
+#     bytes-plus-size region and asserts it is 0x90 — the NOP-pad contract
+#     (size > #bytes => the unused tail is NOP-filled).
+#   * CAP-30-export: the export-symbol interlock — the cross-feature proof.
+#     kcdx.code{ ..., export="kcdx.cap-30-lua-code.region" } publishes the
+#     allocated address as a symbol (symbols::Register, immediately at the
+#     call). A later kcdx.bytes{ target_symbol="kcdx.cap-30-lua-code.region" }
+#     resolves that export at the apply pass (symbols::Lookup) and writes into
+#     the live region. PASS iff the kcdx.bytes handle :applied()==true in
+#     kcdx.on("ready") — proving target_symbol RESOLVED the export to the live
+#     region (a NOP-over-NOP same-length idempotent write that genuinely
+#     applies because the region is real writable memory).
+#
+# WHY kcdx.bytes (not a Lua symbol-resolve, not a hook): there is NO Lua
+# surface that resolves the runtime symbols table — kcdx.addr is the Address
+# Library snapshot built once at startup, NOT the symbols::Register table that
+# `export` writes to. The doc (docs/lua-api.md §kcdx.code) names exactly the
+# consumers that resolve a kcdx.code export: kcdx.hook{target_symbol=} /
+# kcdx.bytes{target_symbol=}. kcdx.bytes is the cleaner of the two for an
+# arbitrary code region: a hook needs a meaningful function entry, but a
+# same-length byte rewrite needs only live writable memory — which the region
+# is. So :applied()==true is a REAL, non-contrived proof the export resolved.
+#
+# Test mode: boot-only. The alloc + write + read-back + NOP-pad assertion runs
+# synchronously at plugin load (kcdx.code allocates immediately and returns a
+# live pointer). The export interlock is asserted in kcdx.on("ready") (after
+# the apply pass, when the deferred kcdx.bytes has resolved target_symbol).
+# All complete by the main menu — no console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-30-lua-code"
+display_name        = "CAP-30 kcdx.code allocation + NOP-pad + export interlock"
+author              = "kcdx"
+description         = "Pure-Lua kcdx.code self-test: allocates a live writable executable region (write/read-back round-trip), verifies the size>#bytes NOP-pad (tail byte == 0x90), and proves the export-symbol interlock by resolving the export through a deferred kcdx.bytes{ target_symbol=... } (handle :applied()==true at ready)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-30-alloc", "CAP-30-export"]
+
+[entrypoints]
+lua = "plugin.lua"

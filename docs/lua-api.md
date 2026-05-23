@@ -694,7 +694,7 @@ local region = kcdx.code{
     pool   = "branch",
     export = "violetanvil.outfit_gate_logic",
 }
-region:set_byte(0, 0xC3)   -- write code in (the region is live now)
+region:set_byte(0xC3)   -- write a RET into the base (the region is live now)
 -- elsewhere: kcdx.hook{ target_symbol = "violetanvil.outfit_gate_logic", ... }
 ```
 
