@@ -1137,6 +1137,9 @@ typedef struct kcdxConsoleInterface {
 //   Per chunk:
 //     - tag (4B u32, plugin-defined)
 //     - version (4B u32, plugin-defined per-tag)
+//     - tag-name length (4B u32) + tag-name bytes (the human-readable
+//       string for an OpenRecordNamed chunk; length 0 for a chunk
+//       opened via the numeric OpenRecord)
 //     - length in bytes (4B u32)
 //     - data
 //
@@ -1146,7 +1149,11 @@ typedef struct kcdxConsoleInterface {
 // MUST be called only from inside your callback — they consult
 // thread-local engine state that's only valid during the callback.
 
-#define kcdxSerializationInterface_Version 1u
+// Version 2 adds the string-tag surface (OpenRecordNamed +
+// GetRecordTagName) at the END of the struct, append-only — see the
+// APPEND-ONLY block. A v1 plugin reading the v2 struct sees the
+// unchanged prefix members at their original offsets (no ABI break).
+#define kcdxSerializationInterface_Version 2u
 
 typedef void (*kcdxSerializationSaveCallback)  (kcdxPluginHandle plugin);
 typedef void (*kcdxSerializationLoadCallback)  (kcdxPluginHandle plugin);
@@ -1183,6 +1190,38 @@ typedef struct kcdxSerializationInterface {
     // — the engine skips the unread chunk automatically.)
     bool (*GetNextRecordInfo)(uint32_t* outTag, uint32_t* outVersion, uint32_t* outLen);
     bool (*ReadRecordData)   (void* buf, uint32_t len);
+
+    // --- APPEND-ONLY BELOW (kcdxSerializationInterface_Version >= 2) ---
+    // New members go HERE, at the END, never mid-struct: a plugin DLL
+    // built against an older version reads the prefix members at their
+    // original offsets, so appending cannot shift them (AP11).
+
+    // Named-tag write side — the common path; the disassembler test's
+    // fix for the hand-packed FourCC. Pass a human-readable string tag
+    // ("counter", "spawned_npcs", …); the engine hashes it to the u32
+    // the chunk stores AND records the original string so the read side
+    // can hand it back via GetRecordTagName. Call from your SaveCallback
+    // exactly like OpenRecord; follow with WriteRecordData.
+    //
+    // Returns false (and logs, naming both tags + your plugin) if two
+    // DIFFERENT string tags collide to the same hash within this save —
+    // a silent data-merge hazard the engine refuses rather than merges.
+    // Reopening the SAME string tag again in one save is fine (multiple
+    // records per save). Returns false too if SetUniqueID wasn't called
+    // or you're not currently in a save phase.
+    //
+    // The numeric OpenRecord above stays for expert/interop use; a
+    // chunk opened that way stores no name (GetRecordTagName returns "").
+    bool (*OpenRecordNamed)(const char* tag, uint32_t version);
+
+    // Named-tag read side — call AFTER a successful GetNextRecordInfo
+    // to retrieve the current chunk's stored string tag. Returns the
+    // human-readable name for a chunk written via OpenRecordNamed, or
+    // "" for a numeric-tagged chunk (OpenRecord) or an old cosave that
+    // predates the named-tag format. The returned pointer is valid
+    // until the next GetNextRecordInfo / ReadRecordData / end of the
+    // LoadCallback; copy it if you need to keep it. Never null.
+    const char* (*GetRecordTagName)();
 } kcdxSerializationInterface;
 
 // -----------------------------------------------------------------------------

@@ -37,10 +37,23 @@ namespace {
 //     For each chunk:
 //       uint32 tag
 //       uint32 version
+//       uint32 tagname_bytes        (format v2+; length of the string tag)
+//       <tagname_bytes> tag name    (format v2+; "" for a numeric-tagged chunk)
 //       uint32 chunk_bytes
 //       <chunk_bytes> raw data
+//
+// Format history:
+//   v1 — no tagname field. A v1 cosave loaded by this (v2) engine
+//        degrades gracefully: each chunk's tagName is "" (the named
+//        read-side accessor returns "" for it; the numeric tag still
+//        round-trips). See ReadAndParseCosave.
+//   v2 — adds the [tagname_bytes][tag name] pair per chunk, carrying
+//        the human-readable string for OpenRecordNamed chunks so the
+//        read side can hand it back via GetRecordTagName.
 constexpr uint32_t kCosaveMagic        = 0x58444358;  // 'X','C','D','K' little-endian = "KCDX"
-constexpr uint32_t kCosaveFormatVersion = 1;
+constexpr uint32_t kCosaveFormatVersion = 2;
+// Oldest on-disk format this engine can still READ (graceful degrade).
+constexpr uint32_t kCosaveMinReadableFormatVersion = 1;
 
 // -----------------------------------------------------------------------------
 // In-memory representation of cosave content
@@ -49,6 +62,11 @@ constexpr uint32_t kCosaveFormatVersion = 1;
 struct Chunk {
     uint32_t tag = 0;
     uint32_t version = 0;
+    // Human-readable tag name for a chunk opened via OpenRecordNamed.
+    // Empty for a numeric-tagged chunk (OpenRecord) or a chunk loaded
+    // from a pre-v2 cosave that has no name field. This is chunk
+    // METADATA — the name the tag hashed FROM — not value data.
+    std::string tagName;
     std::vector<uint8_t> data;
 };
 
@@ -364,15 +382,20 @@ bool BuildAndWriteCosave(const std::wstring& path) {
         AppendU32(blob, static_cast<uint32_t>(s.chunks->size()));
 
         // Compute section bytes (the chunks region length).
+        // Per chunk (format v2): tag(4) + version(4) + tagname_len(4) +
+        // tagname bytes + data_len(4) + data bytes.
         uint32_t sectionBytes = 0;
         for (const auto& c : *s.chunks) {
-            sectionBytes += 4 + 4 + 4 + static_cast<uint32_t>(c.data.size());
+            sectionBytes += 4 + 4 + 4 + static_cast<uint32_t>(c.tagName.size())
+                          + 4 + static_cast<uint32_t>(c.data.size());
         }
         AppendU32(blob, sectionBytes);
 
         for (const auto& c : *s.chunks) {
             AppendU32(blob, c.tag);
             AppendU32(blob, c.version);
+            AppendU32(blob, static_cast<uint32_t>(c.tagName.size()));
+            AppendBytes(blob, c.tagName.data(), c.tagName.size());
             AppendU32(blob, static_cast<uint32_t>(c.data.size()));
             AppendBytes(blob, c.data.data(), c.data.size());
         }
@@ -477,11 +500,24 @@ bool ReadAndParseCosave(const std::wstring& path) {
         log::Warn("[serialization] cosave magic mismatch");
         return false;
     }
-    if (!ReadU32(cursor, end, fmtVer) || fmtVer != kCosaveFormatVersion) {
-        log::WarnF("[serialization] cosave format version %u (expected %u)",
-                   fmtVer, kCosaveFormatVersion);
+    if (!ReadU32(cursor, end, fmtVer)) {
+        log::Warn("[serialization] cosave format version field truncated");
         return false;
     }
+    // Accept any format from the oldest-readable up to ours. A NEWER
+    // format than we know is refused (we can't safely parse fields we
+    // don't understand — matches the phase-6 refuse model). An OLDER
+    // format is read with graceful per-field degrade below (v1 chunks
+    // carry no tagName → it defaults to "").
+    if (fmtVer < kCosaveMinReadableFormatVersion ||
+        fmtVer > kCosaveFormatVersion) {
+        log::WarnF("[serialization] cosave format version %u out of readable "
+                   "range [%u..%u] — refusing",
+                   fmtVer, kCosaveMinReadableFormatVersion,
+                   kCosaveFormatVersion);
+        return false;
+    }
+    const bool hasTagName = (fmtVer >= 2);
     if (!ReadU32(cursor, end, pluginCount)) {
         log::Warn("[serialization] cosave header truncated");
         return false;
@@ -510,14 +546,36 @@ bool ReadAndParseCosave(const std::wstring& path) {
         for (uint32_t c = 0; c < chunkCount; ++c) {
             uint32_t tag = 0, version = 0, chunkBytes = 0;
             if (!ReadU32(cursor, sectionEnd, tag) ||
-                !ReadU32(cursor, sectionEnd, version) ||
-                !ReadU32(cursor, sectionEnd, chunkBytes)) {
+                !ReadU32(cursor, sectionEnd, version)) {
                 log::Warn("[serialization] cosave chunk header truncated");
                 return false;
             }
             Chunk ck;
             ck.tag = tag;
             ck.version = version;
+
+            // Format v2+ carries the human-readable tag name here. A v1
+            // cosave has no such field: tagName stays "" (graceful
+            // degrade — the numeric tag above still round-trips).
+            if (hasTagName) {
+                uint32_t nameLen = 0;
+                if (!ReadU32(cursor, sectionEnd, nameLen)) {
+                    log::Warn("[serialization] cosave chunk tag-name length truncated");
+                    return false;
+                }
+                if (nameLen > 0) {
+                    ck.tagName.resize(nameLen);
+                    if (!ReadBytes(cursor, sectionEnd, ck.tagName.data(), nameLen)) {
+                        log::Warn("[serialization] cosave chunk tag name truncated");
+                        return false;
+                    }
+                }
+            }
+
+            if (!ReadU32(cursor, sectionEnd, chunkBytes)) {
+                log::Warn("[serialization] cosave chunk data length truncated");
+                return false;
+            }
             ck.data.resize(chunkBytes);
             if (!ReadBytes(cursor, sectionEnd, ck.data.data(), chunkBytes)) {
                 log::Warn("[serialization] cosave chunk data truncated");
@@ -861,9 +919,76 @@ bool Thunk_OpenRecord(uint32_t tag, uint32_t version) {
         log::Warn("[serialization] OpenRecord requires SetUniqueID first");
         return false;
     }
-    p->pendingChunks.push_back(Chunk{tag, version, {}});
+    // Numeric path: no string name (GetRecordTagName returns "" for it).
+    Chunk ck;
+    ck.tag = tag;
+    ck.version = version;
+    p->pendingChunks.push_back(std::move(ck));
     p->currentChunk = &p->pendingChunks.back();
     return true;
+}
+
+// Resolve the loaded plugin's human-readable name for collision logs.
+const char* PluginNameForHandle(kcdxPluginHandle h) {
+    for (const auto& lp : plugins::g_plugins) {
+        if (lp.handle == h && !lp.manifest.name.empty()) {
+            return lp.manifest.name.c_str();
+        }
+    }
+    return nullptr;
+}
+
+bool Thunk_OpenRecordNamed(const char* tag, uint32_t version) {
+    PluginState* p = g_currentWriter;
+    if (!p) {
+        log::Warn("[serialization] OpenRecordNamed called outside a SaveCallback");
+        return false;
+    }
+    if (p->uid == 0) {
+        log::Warn("[serialization] OpenRecordNamed requires SetUniqueID first");
+        return false;
+    }
+    if (!tag || !*tag) {
+        log::Warn("[serialization] OpenRecordNamed requires a non-empty tag");
+        return false;
+    }
+
+    const uint32_t hash = HashTag(tag);
+
+    // Collision-detect-and-teach: within THIS plugin's section for this
+    // save, refuse two DIFFERENT string tags that hash to the same u32
+    // (a silent data-merge hazard). Reopening the SAME string (same hash
+    // + same name) is fine — that's the documented multiple-records case.
+    for (const Chunk& existing : p->pendingChunks) {
+        if (existing.tag == hash && existing.tagName != tag) {
+            const char* pluginName = PluginNameForHandle(p->handle);
+            log::ErrorF("[serialization] cosave tag-hash collision in plugin "
+                        "'%s': tags \"%s\" and \"%s\" both hash to 0x%08X — "
+                        "refusing to merge them. Rename one tag.",
+                        pluginName ? pluginName : "<unknown>",
+                        existing.tagName.c_str(), tag, hash);
+            return false;
+        }
+    }
+
+    Chunk ck;
+    ck.tag = hash;
+    ck.version = version;
+    ck.tagName = tag;
+    p->pendingChunks.push_back(std::move(ck));
+    p->currentChunk = &p->pendingChunks.back();
+    return true;
+}
+
+const char* Thunk_GetRecordTagName() {
+    PluginState* p = g_currentReader;
+    if (!p || !p->loadHasPending) {
+        log::Warn("[serialization] GetRecordTagName called without a current "
+                  "record (call after a successful GetNextRecordInfo)");
+        return "";
+    }
+    if (p->loadCursor >= p->loadedChunks.size()) return "";
+    return p->loadedChunks[p->loadCursor].tagName.c_str();
 }
 
 bool Thunk_WriteRecordData(const void* buf, uint32_t len) {
@@ -940,9 +1065,29 @@ kcdxSerializationInterface g_iface = {
     /*WriteRecordData=*/    Thunk_WriteRecordData,
     /*GetNextRecordInfo=*/  Thunk_GetNextRecordInfo,
     /*ReadRecordData=*/     Thunk_ReadRecordData,
+    // --- APPEND-ONLY BELOW (kcdxSerializationInterface_Version >= 2) ---
+    // Mirror the struct's append-only block EXACTLY, in order.
+    /*OpenRecordNamed=*/    Thunk_OpenRecordNamed,
+    /*GetRecordTagName=*/   Thunk_GetRecordTagName,
 };
 
 }  // namespace
+
+uint32_t HashTag(const char* tag) {
+    // FNV-1a 32-bit. Single source of truth for cosave tag hashing —
+    // the C++ OpenRecordNamed thunk and the Lua cosave binder (step 2)
+    // both call HERE so identical strings map to identical u32s across
+    // both surfaces.
+    uint32_t h = 0x811C9DC5u;  // FNV offset basis
+    if (tag) {
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(tag);
+             *p; ++p) {
+            h ^= static_cast<uint32_t>(*p);
+            h *= 0x01000193u;  // FNV prime
+        }
+    }
+    return h;
+}
 
 const kcdxSerializationInterface* GetInterface() {
     return &g_iface;

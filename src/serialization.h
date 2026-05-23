@@ -1,7 +1,20 @@
 #pragma once
+#include <cstdint>
+
 #include "kcdx/Interfaces.h"
 
 namespace kcdx::serialization {
+
+// Single-sourced cosave tag hash: maps a human-readable string tag
+// (e.g. "counter") to the uint32_t the on-disk Chunk.tag stores.
+//
+// This is THE one hash for cosave tags — called by both the C++
+// OpenRecordNamed thunk and the Lua cosave binder (step 2), so the
+// two surfaces produce the SAME u32 for the SAME string and interop
+// cleanly. Never re-implement; call this. FNV-1a 32-bit over the tag
+// bytes — wide and well-distributed; collisions are detected and
+// taught at write time (see Thunk_OpenRecordNamed).
+uint32_t HashTag(const char* tag);
 
 // Get the published kcdxSerializationInterface implementation. Returned
 // pointer is owned by the engine and remains valid for the process
