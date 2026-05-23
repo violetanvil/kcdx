@@ -115,7 +115,7 @@ spellings noted where they differ:
   conflict-resolved registration model is the NYI `kcdxHookInterface` surface.
 
 - **co-save** — a `.kcdx` sidecar holding per-plugin save data. C++ spelling:
-  `kcdxSerializationInterface` (built, Phase 6). See [planned.md](planned.md).
+  `kcdxSerializationInterface` (built, Phase 6). See [cosave.md](cosave.md).
 
 ---
 
@@ -148,6 +148,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxInterface::ResolveAddress`/`ResolveAddressByName`/`ResolveSymbol` | Built | `kcdx.addr` | [addr.md](addr.md) |
 | `kcdxConsoleInterface::ExecuteString` | Built | `kcdx.console.*` | [console.md](console.md) |
 | `kcdxInterface::ReportTestResult` | Built | `kcdx.test.*` | [test.md](test.md) |
+| `kcdxSerializationInterface` (per-save plugin data; `OpenRecordNamed`/`GetRecordTagName`, Version 2) | Built (name-derived UID **NYI**) | `kcdx.cosave.*` | [cosave.md](cosave.md) |
 | dev-mode introspection | **NYI** | `kcdx.dev.*` | [dev.md](dev.md) |
 | `kcdxScriptingInterface` (Lua C-API surface; VM interop) | Built | the `kcdx.lua` domain | [lua.md](lua.md) |
 
@@ -162,4 +163,4 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 
 | C++ surface | Status | Lua counterpart | File |
 |---|---|---|---|
-| planned / not yet available (incl. `kcdxSerializationInterface`, built Phase 6) | mixed | planned | [planned.md](planned.md) |
+| planned / not yet available | mixed | planned | [planned.md](planned.md) |

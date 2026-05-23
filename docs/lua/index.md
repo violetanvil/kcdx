@@ -103,6 +103,18 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
 - **lifecycle event** — a named moment in the game's run (e.g. `input_loaded`,
   `save_game`) your plugin can subscribe to with `kcdx.on`.
 
+- **co-save** — the per-save `.kcdx` sidecar file holding your plugin's
+  persisted state, written and read through `kcdx.cosave.*` and tied to the
+  specific game save it sits next to. Each save has its own co-save, so plugin
+  state is remembered per-save. See [cosave.md](cosave.md).
+
+- **cosave write/read window** — the brief moment, inside the body you register
+  with `kcdx.cosave.on_save` (resp. `on_load`), when `kcdx.cosave.write`
+  (resp. `records`) actually works because the engine is mid-writing (resp.
+  mid-reading) the co-save file. Distinct from the `save_game` *lifecycle event*,
+  which fires *after* the file is written and carries no write window — so cosave
+  data must be written from `on_save`, never from `kcdx.on("save_game")`.
+
 - **dev mode** — an engine setting (`engine.toml`, `dev_mode = true`) that
   enables the test suite, debug/trace logging, and dev-only diagnostics.
 
@@ -156,6 +168,7 @@ it does not exist yet.
 | `kcdx.addr` | Address Library name → pointer snapshot table | [addr.md](addr.md) |
 | `kcdx.console.*` | run a console command line from Lua | [console.md](console.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
+| `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |
 | `kcdx.dev.*` | dev-mode introspection sugar | [dev.md](dev.md) |
 | the `kcdx.lua` domain | VM-introspection (cfunction_address, _probe_numbers) | [lua.md](lua.md) |
 
@@ -170,4 +183,4 @@ it does not exist yet.
 
 | Call | What it does | File |
 |---|---|---|
-| planned — not yet available | `kcdx.cosave.*`, `kcdx.scan{...}`, gameplay domains | [planned.md](planned.md) |
+| planned — not yet available | `kcdx.scan{...}`, gameplay domains | [planned.md](planned.md) |

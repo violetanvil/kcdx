@@ -1,11 +1,138 @@
 # kcdx.cosave
 > Part of the [kcdx Lua API](index.md).
 
-**Surface not yet callable.** The `kcdx.cosave.*` author surface (the
-`write` / `read` call shapes) is still [Planned](planned.md) — it lands with
-the cosave binder. This file currently documents only the **wire format**: the
-byte layout the cosave serializer produces for one Lua value. The call-shape /
-arguments / returns / snippet sections are filled in when the binder ships.
+Persist your plugin's state across saves — a counter, a settings table, a set
+of flags — written when the player saves and read back when they load. The data
+is tied to the specific save file (it lives in a `.kcdx` co-save next to the
+game's `.whs`), so each save remembers your plugin's state independently.
+
+This is a grouped domain (`kcdx.cosave.*`), not a top-level verb. Five
+accessors: `on_save` / `on_load` register the bodies that run inside the
+engine's save/load windows; `write` / `records` are the data calls used *inside*
+those bodies; `set_uid` is an advanced override most plugins never touch.
+
+## The two moments — put your logic in `on_save` / `on_load`, NOT `kcdx.on("save_game")`
+
+Your cosave write/read logic goes in `kcdx.cosave.on_save` and
+`kcdx.cosave.on_load` — **not** in a `kcdx.on("save_game")` handler. This is the
+one thing to get right.
+
+The cosave write window is open *only* inside the body you register with
+`on_save`: that body runs while the engine is mid-writing the co-save file, so a
+`write()` there actually lands. `kcdx.on("save_game")` fires *later* — after the
+co-save file has already been written and flushed to disk — so a `write()` from
+there hits a closed window and persists nothing.
+
+Read the two as different questions:
+
+- `kcdx.cosave.on_save(fn)` = *"write my data into the co-save now."* The write
+  window is open inside `fn`.
+- `kcdx.on("save_game", fn)` = *"a save happened"* — a notification, with no
+  write window. Use it to react to a save, never to write co-save data.
+
+The same split holds on load: read your records inside `kcdx.cosave.on_load`,
+not from a load lifecycle event.
+
+---
+
+## `kcdx.cosave.on_save(fn)`
+
+Register the body that writes your plugin's data into the co-save. `fn` takes no
+arguments and runs inside the engine's open writer window, where
+`kcdx.cosave.write(...)` works. Re-registering replaces the previous body.
+
+**Returns** `true` on success; `(nil, err)` if `fn` is not a function, or if the
+call is not attributed to a plugin (it ran from the console or an anonymous
+script — cosave needs an owning plugin to derive a save identity, so the error
+tells you to call it from a plugin's `plugin.lua`).
+
+## `kcdx.cosave.on_load(fn)`
+
+Register the body that reads your plugin's data back. `fn` takes no arguments and
+runs inside the engine's open reader window, where `kcdx.cosave.records()`
+yields your records. Re-registering replaces the previous body.
+
+**Returns** `true` on success; `(nil, err)` on the same conditions as `on_save`
+(non-function `fn`, or an unattributed/anonymous caller).
+
+## `kcdx.cosave.write(tag, version, value)`
+
+Write one record into the co-save. **Only valid inside an `on_save` body** — the
+writer window is open only there.
+
+| Arg | Type | Meaning |
+|---|---|---|
+| `tag` | string | A human-readable record name (e.g. `"player_hp"`). You read it back by this same string in `records()`. |
+| `version` | integer | Your per-tag schema version — a positive integer. Start at `1`; bump it when you change what this tag stores, so an `on_load` body can tell old data from new. (Distinct from the wire-format version below — that one versions the byte layout itself.) |
+| `value` | number / string / boolean / table | The value to persist. See [Wire format](#wire-format--the-per-value-serializer) for the serializable types and the precision contract. |
+
+**Returns** `true` on success; `(nil, err)` when:
+
+- it is called **outside** an `on_save` body (the window is closed) — the most
+  common cause, and what the error leads with;
+- your string `tag` collides with another tag's hash in this save (a rare
+  hash collision; the error points you at `kcdx.log`, which names both tags);
+- `value` is not serializable (a function, userdata, thread, a top-level `nil`,
+  or a cyclic table — the serializer returns a teaching message saying which);
+- an argument is missing or the wrong type (`tag` not a string, `version` not a
+  positive integer).
+
+## `kcdx.cosave.records()`
+
+Iterate this plugin's records. **Only valid inside an `on_load` body** — the
+reader window is open only there. Returns a Lua **iterator** for a generic
+`for`:
+
+```lua
+for tag, ver, val in kcdx.cosave.records() do ... end
+```
+
+Each step yields three values — the string `tag`, the integer `version`, and the
+deserialized `value` — for one record this plugin saved. The loop ends when there
+are no more records. (Called outside the reader window it simply yields nothing,
+so the loop body never runs.)
+
+A record whose bytes are corrupt or incompatible is **logged and skipped**, not
+fatal — one bad record never aborts the loop; the iterator advances to the next.
+
+## `kcdx.cosave.set_uid(uid)` — advanced / expert override
+
+> **You almost never need this.** By default kcdx derives your co-save section's
+> identity automatically from your plugin's name — the common path is to OMIT
+> `set_uid` entirely (see the snippet below; it has no `set_uid`). The engine
+> carries the identity from the name; you hand-pack nothing.
+
+`set_uid` pins an explicit 32-bit section id instead of the name-derived default.
+Pin one **only to match a save format you already shipped** (e.g. you renamed
+your plugin but want existing saves to keep loading).
+
+| Arg | Type | Meaning |
+|---|---|---|
+| `uid` | integer | A positive 32-bit id in `[1, 0xFFFFFFFF]`. |
+
+**Returns** `true` on success; `(nil, err)` if `uid` is `0` (the engine drops a
+zero-uid section silently — the error says so), not a positive integer in range,
+or the call is unattributed (console / anonymous). Once set explicitly, the
+auto-derive never overrides it.
+
+## Minimal snippet — the common path (no `set_uid`)
+
+A complete fragment: persist a value on save, read it back on load. Runs as-is —
+the auto-derived UID needs no setup.
+
+```lua
+local hp = 100
+kcdx.cosave.on_save(function()
+    kcdx.cosave.write("player_hp", 1, hp)
+end)
+kcdx.cosave.on_load(function()
+    for tag, ver, val in kcdx.cosave.records() do
+        if tag == "player_hp" then hp = val end
+    end
+end)
+```
+
+The C++ mirror of this surface is [`kcdxSerializationInterface`](../cpp/cosave.md).
 
 ---
 
@@ -89,10 +216,3 @@ type tag, a deeper-than-`kMaxDepth` (256) nesting, or trailing bytes after the
 value all yield a clean failure with a teaching error — never a buffer
 over-read or a crash. On failure nothing is reconstructed; on success exactly
 the original value (and Lua type) is produced.
-
----
-
-*The author-facing call surface (`kcdx.cosave.write` / `kcdx.cosave.read`, their
-arguments, return values, error behaviour, and a runnable snippet) lands in this
-file when the cosave binder ships, along with this call's row in the
-[index map](index.md) and its glossary terms.*
