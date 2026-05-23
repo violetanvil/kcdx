@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -255,19 +256,32 @@ bool StrEq(const char* a, const char* b) {
     return *a == *b;
 }
 
-}  // namespace
+// ---------------------------------------------------------------------------
+// Shared-name resolution (naming-namespaces.md): self > engine > other, with
+// a warn-once-per-session-per-colliding-bare-name diagnostic.
+//
+// LAUNCH-TIME ONLY. Every helper below is reached exclusively from
+// ResolveByName / ResolveSignatureByName, which run during the launch-time
+// registration/apply pass and NEVER from a hook-fire / per-frame path (the
+// resolved address is cached in the binding). The g_warnedCollisions dedup
+// set is likewise touched only at launch. Do NOT call any of these from a
+// hooked function or runtime tick — that would defeat the resident-registry
+// invariant documented at g_authorTargets.
+// ---------------------------------------------------------------------------
 
-uintptr_t ResolveByName(const char* name, const char* owningPlugin) {
-    // owningPlugin is carried for the self > engine > other precedence
-    // wired in the NEXT step; CURRENTLY UNUSED — resolution is engine-seed-
-    // only, exactly as before this plumbing thread.
-    (void)owningPlugin;
-    if (!name || !name[0]) return 0;
+// Forward declaration of the author-target registry — its definition (with
+// the resident / never-read-at-runtime invariant comment) lives in the
+// registry section lower in this TU. Both blocks are in the SAME unnamed
+// namespace, so this declaration binds to that definition (internal linkage).
+extern std::vector<AuthorTarget> g_authorTargets;
+
+// The engine seed scan, factored out of ResolveByName. Returns the resolved
+// VA for a verified, game-version-matching seed row with this name, or 0.
+uintptr_t SeedResolveAddr(const char* name) {
     uint32_t gv = kcdx::plugins::g_runtimeGameVersion;
     // Linear scan — same rationale as Resolve(): ~110 rows, sub-µs.
-    // First matching row by name wins (names should be unique in
-    // practice; if a duplicate ever ships, the first-defined row
-    // takes precedence and a maintainer warning lands in the diff).
+    // First matching row by name wins (names are unique in the seed in
+    // practice; if a duplicate ever ships, the first-defined row wins).
     for (size_t i = 0; i < kEntryCount; ++i) {
         const Entry& e = kEntries[i];
         if (!StrEq(e.name, name)) continue;
@@ -279,6 +293,249 @@ uintptr_t ResolveByName(const char* name, const char* owningPlugin) {
         return base + e.rva;
     }
     return 0;
+}
+
+// True iff the engine seed DECLARES this name at all — independent of
+// game_version / status. Collision detection is about namespace OCCUPANCY
+// (who claims the name), not whether the row currently resolves: a seed row
+// that exists but is unverified still occupies the engine namespace and must
+// count as a shadowed owner, so the author is taught to prefix.
+bool SeedHasName(const char* name) {
+    for (size_t i = 0; i < kEntryCount; ++i) {
+        if (StrEq(kEntries[i].name, name)) return true;
+    }
+    return false;
+}
+
+// Find the author target owned by `plugin` with this bare name, or nullptr.
+const AuthorTarget* FindAuthorTarget(const std::string& plugin,
+                                     const char* bareName) {
+    for (const AuthorTarget& t : g_authorTargets) {
+        if (t.pluginName == plugin && t.bareName == bareName) return &t;
+    }
+    return nullptr;
+}
+
+// Find the FIRST author target with this bare name owned by some plugin OTHER
+// than `excludePlugin`, or nullptr. `excludePlugin` is the calling plugin (its
+// own target is the "self" tier, resolved separately and never the "other").
+const AuthorTarget* FindOtherAuthorTarget(const std::string& excludePlugin,
+                                          const char* bareName) {
+    for (const AuthorTarget& t : g_authorTargets) {
+        if (t.pluginName == excludePlugin) continue;
+        if (t.bareName == bareName) return &t;
+    }
+    return nullptr;
+}
+
+// Resolve the address an author target locates, for the kinds resolvable
+// DIRECTLY in this leaf module: Rva (locatorNum is the rva) and AddressId
+// (locatorNum is a seed id → Resolve(id)). Pattern / TargetSymbol are NOT
+// resolved here — turning them into a VA requires the patch engine / symbol
+// table, and this module must not depend on them (the dependency runs the
+// other way; see address-library.h FindResolvedAuthorTarget). Returns 0 for
+// those two kinds.
+//
+// How a by-name Pattern/TargetSymbol author target reaches a real address:
+// hook_chain::ResolveLocator, on a 0 from ResolveByName for an addressName,
+// calls FindResolvedAuthorTarget; if the winner is a Pattern/TargetSymbol
+// author target it feeds that target's locatorStr (the pattern string / symbol
+// name) into the SAME patch::Resolve / symbol pipeline it already runs for a
+// directly-set pattern / target_symbol locator. The address comes from THAT
+// pipeline, not from here. We never fabricate a VA (AP2).
+uintptr_t ResolveAuthorTargetAddr(const AuthorTarget& t) {
+    switch (t.kind) {
+        case AuthorLocatorKind::Rva: {
+            if (t.locatorNum == 0) return 0;
+            uintptr_t base = WhgameBase();
+            if (!base) return 0;
+            return base + static_cast<uintptr_t>(t.locatorNum);
+        }
+        case AuthorLocatorKind::AddressId:
+            return Resolve(t.locatorNum);
+        case AuthorLocatorKind::Pattern:
+        case AuthorLocatorKind::TargetSymbol:
+        default:
+            return 0;
+    }
+}
+
+// Already-warned bare names this session (warn-once-per-session-per-name per
+// naming-namespaces.md). Shared by ResolveByName + ResolveSignatureByName so a
+// bare name that collides warns ONCE total, not once per function. Launch-time
+// only (see the block comment above).
+std::set<std::string> g_warnedCollisions;
+
+// Emit the once-per-session collision warning for a bare name. `winnerTier` /
+// `winnerOwner` describe who won by precedence; `shadowed` lists the other
+// owners. The line teaches the fix: prefix the name you didn't declare.
+// A PREFIXED reference never reaches here (callers only call this on a bare
+// reference that occupied >1 of {self, engine, other}).
+void WarnBareCollisionOnce(const char* bareName,
+                           const char* winnerTier,
+                           const std::string& winnerOwner,
+                           const std::string& shadowed) {
+    if (g_warnedCollisions.count(bareName)) return;
+    g_warnedCollisions.insert(bareName);
+    LOG_WARN_KV("NAMESPACE", "bare_name_collision",
+        log::KV("name", bareName),
+        log::KV("resolved_to", winnerTier),
+        log::KV("winner", winnerOwner),
+        log::KV("shadowed", shadowed),
+        log::KV("fix",
+            "a bare name that exists in more than one of {your plugin, the "
+            "engine, another plugin} resolves self > engine > other; prefix "
+            "the one you did not declare as \"<plugin>.<name>\" (or \"kcdx."
+            "<name>\" for the engine seed) to pick it explicitly and silence "
+            "this warning (naming-namespaces.md)."));
+}
+
+// Detect a bare-name collision (the name occupies >1 of {self, engine, other})
+// and warn once if so. Called by both resolvers AFTER they pick a winner, so
+// the winner tier is known. `selfHit` = the calling plugin owns it;
+// `engineHit` = the seed declares it; `otherHit` = some other plugin owns it.
+// Resolution proceeds by precedence regardless of the warn.
+void MaybeWarnCollision(const char* bareName, const std::string& owningPlugin,
+                        bool selfHit, bool engineHit, bool otherHit,
+                        const AuthorTarget* otherTarget) {
+    int occupants = (selfHit ? 1 : 0) + (engineHit ? 1 : 0) + (otherHit ? 1 : 0);
+    if (occupants < 2) return;
+
+    // Winner tier + owner, by precedence (self > engine > other).
+    const char* winnerTier = selfHit ? "self" : (engineHit ? "engine" : "other");
+    std::string winnerOwner =
+        selfHit ? owningPlugin
+                : (engineHit ? std::string("kcdx") : otherTarget->pluginName);
+
+    // List the shadowed owners (everyone the winner displaced).
+    std::string shadowed;
+    auto append = [&shadowed](const std::string& s) {
+        if (!shadowed.empty()) shadowed += ", ";
+        shadowed += s;
+    };
+    if (selfHit) {  // self won — engine and/or other are shadowed
+        if (engineHit) append("kcdx (engine seed)");
+        if (otherHit)  append(otherTarget->pluginName);
+    } else if (engineHit) {  // engine won — other is shadowed (self absent)
+        if (otherHit) append(otherTarget->pluginName);
+    }
+    WarnBareCollisionOnce(bareName, winnerTier, winnerOwner, shadowed);
+}
+
+// Split a possibly-prefixed shared name on the FIRST dot. Returns true and
+// fills prefix/rest when a dot is present (prefix may be "kcdx" = the reserved
+// engine root); returns false for a bare name (no dot). The engine parses on
+// the dot — it is semantic, not convention (naming-namespaces.md).
+bool SplitPrefixed(const char* name, std::string& prefix, std::string& rest) {
+    const char* dot = nullptr;
+    for (const char* p = name; *p; ++p) {
+        if (*p == '.') { dot = p; break; }
+    }
+    if (!dot) return false;
+    prefix.assign(name, dot);
+    rest.assign(dot + 1);
+    return true;
+}
+
+// What a bare name resolved to, by self > engine > other precedence. Computed
+// ONCE by ResolveBareWinner so ResolveByName and FindResolvedAuthorTarget share
+// the SAME precedence decision AND the SAME once-per-session collision warn
+// (the warn fires inside ResolveBareWinner, keyed by name, so a name that
+// already warned from one caller does not double-warn from the other —
+// naming-namespaces.md). `winner` names the tier; `authorTarget` is the winning
+// author target when the winner is Self/Other, nullptr when Engine/None.
+struct BareResolution {
+    enum class Tier { None, Self, Engine, Other } winner = Tier::None;
+    const AuthorTarget* authorTarget = nullptr;  // non-null iff Self/Other won
+};
+
+// Resolve a BARE name (no dot) by self > engine > other precedence and emit the
+// once-per-session collision warn if the name occupies >1 tier. Shared by
+// ResolveByName (which turns the winner into a VA) and FindResolvedAuthorTarget
+// (which hands the winning author target to hook_chain for pattern/symbol
+// routing). Launch-time only.
+BareResolution ResolveBareWinner(const char* name, const std::string& owner) {
+    const AuthorTarget* selfTarget =
+        owner.empty() ? nullptr : FindAuthorTarget(owner, name);
+    bool engineHit = SeedHasName(name);
+    const AuthorTarget* otherTarget = FindOtherAuthorTarget(owner, name);
+
+    bool selfHit  = (selfTarget != nullptr);
+    bool otherHit = (otherTarget != nullptr);
+
+    MaybeWarnCollision(name, owner, selfHit, engineHit, otherHit, otherTarget);
+
+    BareResolution r;
+    if (selfTarget) {
+        r.winner = BareResolution::Tier::Self;
+        r.authorTarget = selfTarget;
+    } else if (engineHit) {
+        r.winner = BareResolution::Tier::Engine;
+    } else if (otherTarget) {
+        r.winner = BareResolution::Tier::Other;
+        r.authorTarget = otherTarget;
+    }
+    return r;
+}
+
+}  // namespace
+
+uintptr_t ResolveByName(const char* name, const char* owningPlugin) {
+    if (!name || !name[0]) return 0;
+    const std::string owner = owningPlugin ? owningPlugin : "";
+
+    // --- EXPLICIT prefixed reference: "<plugin>.<name>" — never warns. -----
+    std::string prefix, rest;
+    if (SplitPrefixed(name, prefix, rest)) {
+        if (prefix == "kcdx") {
+            // Reserved engine root → the engine seed, by the unprefixed
+            // engine name (rest).
+            return SeedResolveAddr(rest.c_str());
+        }
+        // Another plugin's (or this plugin's own) target by full path —
+        // unambiguous, callable from anywhere.
+        const AuthorTarget* t = FindAuthorTarget(prefix, rest.c_str());
+        if (!t) return 0;
+        return ResolveAuthorTargetAddr(*t);
+    }
+
+    // --- BARE reference: resolve self > engine > other (shared decision). --
+    BareResolution res = ResolveBareWinner(name, owner);
+    switch (res.winner) {
+        case BareResolution::Tier::Self:
+        case BareResolution::Tier::Other:
+            // An author target won. Rva / AddressId become a VA here; Pattern /
+            // TargetSymbol return 0 (the caller asks FindResolvedAuthorTarget
+            // and routes them through the patch/symbol pipeline — see header).
+            return ResolveAuthorTargetAddr(*res.authorTarget);
+        case BareResolution::Tier::Engine:
+            return SeedResolveAddr(name);
+        case BareResolution::Tier::None:
+            return 0;
+    }
+    return 0;
+}
+
+const AuthorTarget* FindResolvedAuthorTarget(const char* name,
+                                             const char* owningPlugin) {
+    if (!name || !name[0]) return nullptr;
+    const std::string owner = owningPlugin ? owningPlugin : "";
+
+    // --- EXPLICIT prefixed reference: "<plugin>.<name>" — never warns. -----
+    // "kcdx.<rest>" is the engine seed (NOT an author target) → nullptr;
+    // "<plugin>.<rest>" resolves directly to that plugin's author target.
+    std::string prefix, rest;
+    if (SplitPrefixed(name, prefix, rest)) {
+        if (prefix == "kcdx") return nullptr;
+        return FindAuthorTarget(prefix, rest.c_str());
+    }
+
+    // --- BARE reference: SAME precedence + SAME collision-warn dedup as
+    // ResolveByName (ResolveBareWinner is the single shared decision point).
+    // Return the winning author target when Self/Other won; nullptr when the
+    // engine seed won (a seed row is not an author target) or nothing matched.
+    BareResolution res = ResolveBareWinner(name, owner);
+    return res.authorTarget;  // non-null iff Self/Other won
 }
 
 void ForEachResolvable(ForEachResolvableCallback cb, void* userdata) {
@@ -310,22 +567,58 @@ const char* DescribeByName(const char* name) {
     return nullptr;
 }
 
-const char* ResolveSignatureByName(const char* name, const char* owningPlugin) {
-    // owningPlugin carried for the self > engine > other precedence wired
-    // in the NEXT step; CURRENTLY UNUSED — engine-seed-only as before.
-    (void)owningPlugin;
-    if (!name || !name[0]) return "";
-    // First matching row by name wins (same first-defined precedence as
-    // ResolveByName). Return the row's structured signature, or "" when
-    // the row carries none yet — never null, so callers can treat
-    // "resolved-but-no-ABI" uniformly with a non-null empty string.
-    // Signature is descriptive metadata (returned regardless of
-    // game_version / status, like Describe()); the binder gates the
-    // ADDRESS via ResolveByName, which enforces version + verified.
+namespace {
+
+// The engine seed signature scan, factored out. Returns the row's structured
+// signature ("" when the row carries none yet — AP2: never invented), or
+// nullptr when the seed has no row by this name (so the caller can fall
+// through to the next precedence tier). Returned regardless of game_version /
+// status, like Describe() — the binder gates the ADDRESS via ResolveByName.
+const char* SeedSignature(const char* name) {
     for (size_t i = 0; i < kEntryCount; ++i) {
         if (!StrEq(kEntries[i].name, name)) continue;
         return kEntries[i].signature ? kEntries[i].signature : "";
     }
+    return nullptr;
+}
+
+}  // namespace
+
+const char* ResolveSignatureByName(const char* name, const char* owningPlugin) {
+    if (!name || !name[0]) return "";
+    const std::string owner = owningPlugin ? owningPlugin : "";
+
+    // --- EXPLICIT prefixed reference: "<plugin>.<name>" — never warns. -----
+    std::string prefix, rest;
+    if (SplitPrefixed(name, prefix, rest)) {
+        if (prefix == "kcdx") {
+            const char* s = SeedSignature(rest.c_str());
+            return s ? s : "";
+        }
+        const AuthorTarget* t = FindAuthorTarget(prefix, rest.c_str());
+        return t ? t->signature.c_str() : "";
+    }
+
+    // --- BARE reference: SAME order as ResolveByName (self > engine > other).
+    // The signature must come from the SAME row the address came from, so the
+    // ABI matches the resolved function. Share the collision dedup with
+    // ResolveByName: a bare name that already warned there does not double-warn
+    // here (first warn this session wins, keyed by the name).
+    const AuthorTarget* selfTarget =
+        owner.empty() ? nullptr : FindAuthorTarget(owner, name);
+    const char* engineSig = SeedSignature(name);
+    bool engineHit = (engineSig != nullptr);
+    const AuthorTarget* otherTarget = FindOtherAuthorTarget(owner, name);
+
+    bool selfHit  = (selfTarget != nullptr);
+    bool otherHit = (otherTarget != nullptr);
+
+    MaybeWarnCollision(name, owner, selfHit, engineHit, otherHit, otherTarget);
+
+    // (1) self, (2) engine, (3) other — the signature from the winning row.
+    if (selfTarget) return selfTarget->signature.c_str();
+    if (engineHit)  return engineSig;
+    if (otherTarget) return otherTarget->signature.c_str();
     return "";
 }
 

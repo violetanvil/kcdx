@@ -126,7 +126,24 @@ uintptr_t Thunk_ResolveAddress(uint64_t id) {
 
 uintptr_t Thunk_ResolveAddressByName(const char* name) {
     if (!name) return 0;
-    return kcdx::address_library::ResolveByName(name);
+    // PARITY GAP (surfaced, not papered over): the Lua side threads the
+    // calling plugin's name into ResolveByName so a bare name resolves
+    // self > engine > other (naming-namespaces.md). The C++ mirror CANNOT do
+    // the same yet: this thunk receives only `name`, and the kcdxInterface
+    // method `uintptr_t (*ResolveAddressByName)(const char* name)` carries no
+    // plugin handle. A single shared g_api is handed to every plugin
+    // (GetEngineInterfaceImpl), so there is no per-call C++ identity to read,
+    // and ResolveAddressByName may be called from any context (Load,
+    // PostLoad, a hook callback) — a "current loading plugin" static set only
+    // covers kcdxPlugin_Load and would mis-attribute every later call, which
+    // is worse than "" (AP13 — a wrong owner silently picks the wrong
+    // precedence tier). Passing "" keeps C++ on the engine-seed-only path
+    // (no self / no other-plugin tier) — correct-but-narrower than Lua, not
+    // wrong. Closing this to full parity needs an APPEND-ONLY
+    // ResolveAddressByNameAs(handle, name) overload on kcdxInterface (bump the
+    // interface version) so the caller's handle reaches here — out of this
+    // step's scope (touches the plugin-facing ABI). Tracked as a finding.
+    return kcdx::address_library::ResolveByName(name, "");
 }
 
 uintptr_t Thunk_ResolveSymbol(const char* name) {

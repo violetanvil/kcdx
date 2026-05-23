@@ -81,8 +81,10 @@ struct HookPayload {
     // anonymous / console / pak-script call. Set by the binder at parse
     // time (OwningPluginForCurrentCall). Threaded into the resolvers
     // (ResolveLocator / ResolveCallsite → address_library::ResolveByName)
-    // for the self > engine > other precedence wired in the NEXT step;
-    // CURRENTLY carried only — resolution is engine-seed-only, unchanged.
+    // and drives the self > engine > other precedence (naming-namespaces.md):
+    // a bare name resolves to this plugin's own target first, then the engine
+    // seed, then any other plugin's; "" = anonymous (engine-seed + other only,
+    // no self tier).
     std::string owningPlugin;
 
     // Mode-of-interception. Validated at registration; drives which

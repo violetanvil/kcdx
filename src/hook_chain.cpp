@@ -950,19 +950,75 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
     // spares authors the opaque numeric id. Loud fail on miss (typo or
     // unknown name): a dead hook is worse UX than a clear error.
     if (!p.addressName.empty()) {
-        // owningPlugin threaded for the self > engine > other precedence
-        // wired in the NEXT step; ResolveByName ignores it for now (engine-
-        // seed-only), so this resolves exactly as before.
+        // owningPlugin drives the self > engine > other precedence in
+        // ResolveByName (naming-namespaces.md): a bare addressName resolves
+        // to this plugin's own target first, then the engine seed, then any
+        // other plugin's target; an explicit "<plugin>.<name>" resolves
+        // directly. Launch-time apply pass only — never a hook-fire path.
         uintptr_t va = kcdx::address_library::ResolveByName(
             p.addressName.c_str(), p.owningPlugin.c_str());
-        if (!va) {
-            reason = "address_id name '" + p.addressName +
-                     "' did not resolve in the Address Library (unknown "
-                     "name, or its entry doesn't match this game version / "
-                     "isn't verified). Check the name against kcdx.addr.*.";
-            return 0;
+        if (va) {
+            return va + (uintptr_t)(int64_t)p.offset;
         }
-        return va + (uintptr_t)(int64_t)p.offset;
+        // A 0 from ResolveByName has TWO meanings: (a) the name is genuinely
+        // unresolvable (typo / wrong game version / unverified), or (b) the
+        // name resolved by precedence to an author-declared target whose
+        // locator is a Pattern or TargetSymbol — kinds address_library (a leaf
+        // module) deliberately does NOT turn into a VA, because that would
+        // make it depend on the patch engine / symbol table. Disambiguate by
+        // asking for the resolved author-target descriptor (SAME self > engine
+        // > other precedence + SAME collision-warn dedup as ResolveByName).
+        // If it's a Pattern/TargetSymbol target, route its locatorStr through
+        // the SAME patch::Resolve pipeline this function already owns for a
+        // directly-set pattern / target_symbol — so an author names an AOB
+        // site once and every plugin hooks it BY NAME end-to-end
+        // (cornerstones.md §"author-declared targets are shareable").
+        const kcdx::address_library::AuthorTarget* at =
+            kcdx::address_library::FindResolvedAuthorTarget(
+                p.addressName.c_str(), p.owningPlugin.c_str());
+        if (at &&
+            (at->kind == kcdx::address_library::AuthorLocatorKind::Pattern ||
+             at->kind == kcdx::address_library::AuthorLocatorKind::TargetSymbol)) {
+            kcdx::patch::PatchEntry pe;
+            pe.sourceFile = "<lua:kcdx.hook target=\"" + p.addressName + "\">";
+            pe.name       = p.name;
+            pe.module     = p.module;
+            // Feed the author target's locator into the field patch::Resolve
+            // reads for that kind — the SAME path a directly-set locator uses.
+            if (at->kind == kcdx::address_library::AuthorLocatorKind::Pattern) {
+                // The pattern string is the raw author-supplied AOB (the
+                // registry stores it un-parsed); parse it here. A malformed
+                // pattern is an author error in the targets.toml row — turn the
+                // ParsePattern throw into a clean Failed reason, never an
+                // unwound apply pass.
+                try {
+                    pe.pattern = kcdx::patch::ParsePattern(at->locatorStr);
+                } catch (const std::exception& ex) {
+                    reason = "target '" + p.addressName +
+                             "' (author-declared pattern) has a malformed AOB: " +
+                             ex.what();
+                    return 0;
+                }
+            } else {  // TargetSymbol
+                pe.targetSymbol = at->locatorStr;
+            }
+            pe.offset = p.offset;  // the hook's own offset, applied after match
+            pe.original.clear();
+            pe.replacement.clear();
+            kcdx::patch::ResolvedPatch r = kcdx::patch::Resolve(pe);
+            if (!r.ok) {
+                reason = "target '" + p.addressName +
+                         "' is an author-declared target, but its locator did "
+                         "not resolve: " + r.reason;
+                return 0;
+            }
+            return r.patchAddr;
+        }
+        reason = "address_id name '" + p.addressName +
+                 "' did not resolve in the Address Library (unknown "
+                 "name, or its entry doesn't match this game version / "
+                 "isn't verified). Check the name against kcdx.addr.*.";
+        return 0;
     }
     // Build a PatchEntry carrying just the locator fields Resolve reads.
     kcdx::patch::PatchEntry pe;

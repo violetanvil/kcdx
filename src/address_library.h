@@ -20,6 +20,11 @@
 
 namespace kcdx::address_library {
 
+// Forward declaration — the full struct is defined in the author-declared
+// targets section below. FindResolvedAuthorTarget (declared with ResolveByName)
+// returns a pointer to one, so the type must be visible before that point.
+struct AuthorTarget;
+
 // Resolve a known address-library ID against the running KCD2 build.
 // Returns the absolute VA (WHGame.dll base + RVA) on success, or 0
 // when:
@@ -57,11 +62,63 @@ size_t EntryCountForRunningVersion();
 //
 // `owningPlugin` is the name of the plugin whose call is resolving this
 // name (the namespace prefix per naming-namespaces.md), or "" for an
-// anonymous / engine-internal resolve. It is carried for the
-// self > engine > other precedence wired in the NEXT step; it is
-// CURRENTLY UNUSED here — resolution still hits the engine seed only,
-// exactly as before. (Plumbing-only thread; behavior unchanged.)
+// anonymous / engine-internal resolve.
+//
+// RESOLUTION (naming-namespaces.md):
+//   - A name with a '.' is an EXPLICIT "<prefix>.<rest>" reference, callable
+//     from anywhere and NEVER warns: prefix "kcdx" → the engine seed by the
+//     unprefixed name `rest`; any other prefix → that plugin's author target
+//     {pluginName==prefix, bareName==rest}.
+//   - A BARE name (no '.') resolves self > engine > other: (1) the calling
+//     plugin's own target {owningPlugin, name}, (2) the engine seed, (3) any
+//     other plugin's target with that bare name. First hit wins. When the bare
+//     name occupies MORE THAN ONE tier it still resolves by precedence but
+//     warns ONCE PER SESSION PER NAME (category "NAMESPACE"), naming the winner
+//     + shadowed owners and teaching the prefix fix.
+//   - Author-target kinds Rva / AddressId resolve to a VA directly here.
+//   - Author-target kinds Pattern / TargetSymbol cannot become a VA in this
+//     leaf module (it must not depend on the patch engine / symbol table).
+//     ResolveByName returns 0 for them; the caller then asks
+//     FindResolvedAuthorTarget (below) for the winning author-target
+//     descriptor and routes its pattern / symbol through the patch/symbol
+//     pipeline itself (hook_chain::ResolveLocator does this). We never
+//     fabricate a VA here (AP2).
+//
+// LAUNCH-TIME ONLY — runs during the registration/apply pass, never on a
+// hook-fire / runtime path (the resolved VA is cached in the binding).
 uintptr_t ResolveByName(const char* name, const char* owningPlugin = "");
+
+// Resolve a NAME to the winning AUTHOR-TARGET descriptor, applying the SAME
+// self > engine > other precedence (and sharing the SAME bare-collision
+// once-per-session warn dedup) as ResolveByName — but returning the
+// AuthorTarget* the name resolved to instead of a VA. Returns nullptr when no
+// author target wins (the name is unknown, or the engine seed won the
+// precedence — a seed row is NOT an author target).
+//
+// WHY THIS EXISTS — the leaf-module dependency rule (placement is invariant-
+// determined, see address-library.md / hook-engine.md): an author target of
+// kind Pattern / TargetSymbol cannot resolve to a VA inside this module,
+// because doing so would make address_library depend on the patch engine /
+// symbol table — inverting the dependency (the patch engine + symbol table
+// depend on the name table, never the reverse) and pulling heavy machinery
+// into the name table. So ResolveByName returns 0 for those kinds; the caller
+// (hook_chain::ResolveLocator) calls THIS to learn that the name resolved to a
+// Pattern / TargetSymbol author target, then routes that target's locatorStr
+// (the pattern string / symbol name) + signature through the SAME patch::
+// Resolve / symbol pipeline it already owns for a directly-set locator. This
+// closes the disassembler-test guarantee (cornerstones.md §"author-declared
+// targets are shareable"): an expert names a pattern site once, every
+// non-expert hooks it BY NAME and it resolves end-to-end.
+//
+// Returned descriptor lifetime: a pointer into the resident g_authorTargets
+// registry — valid for the rest of the process (the registry is append-only
+// and never relocated after launch-time discovery). Read the kind + locatorStr
+// + signature off it; do NOT cache the pointer past the apply pass.
+//
+// LAUNCH-TIME ONLY — same invariant as ResolveByName: reached only from the
+// apply pass, never from a hook-fire / per-frame path.
+const AuthorTarget* FindResolvedAuthorTarget(const char* name,
+                                             const char* owningPlugin = "");
 
 // Iterate every entry that matches the running KCD2 build AND has
 // status "verified" — i.e. every row that would resolve via either
@@ -113,9 +170,12 @@ const char* DescribeByName(const char* name);
 // signature is descriptive metadata for the same row.
 //
 // `owningPlugin` is the resolving plugin's name (namespace prefix per
-// naming-namespaces.md), or "" for anonymous / engine-internal. Carried
-// for the self > engine > other precedence wired in the NEXT step;
-// CURRENTLY UNUSED — the signature still comes from the engine seed only.
+// naming-namespaces.md), or "" for anonymous / engine-internal. The signature
+// resolves by the SAME order as ResolveByName (self > engine > other for a
+// bare name; explicit "<prefix>.<rest>" resolves directly and never warns), so
+// the returned ABI comes from the SAME row the address did. The bare-collision
+// warn shares ResolveByName's once-per-session-per-name dedup — a name that
+// already warned there does not double-warn here.
 const char* ResolveSignatureByName(const char* name,
                                    const char* owningPlugin = "");
 

@@ -758,9 +758,10 @@ int Lua_Hook(lua_State* L) {
     std::string effectiveSig = sigStr;
     bool        sigFromTarget = false;
     if (effectiveSig.empty() && haveTarget) {
-        // owningPlugin threaded for the self > engine > other precedence
-        // wired in the NEXT step; ResolveSignatureByName ignores it for now
-        // (engine-seed-only), so the signature resolves exactly as before.
+        // owningPlugin drives the self > engine > other precedence in
+        // ResolveSignatureByName (naming-namespaces.md): the signature comes
+        // from the SAME row the address resolves to (self target, else engine
+        // seed, else another plugin's target). Launch-time binder pass only.
         const char* entrySig =
             kcdx::address_library::ResolveSignatureByName(
                 targetName.c_str(), owningPlugin.c_str());
@@ -773,16 +774,21 @@ int Lua_Hook(lua_State* L) {
     if (effectiveSig.empty()) {
         lua_pushnil(L);
         if (haveTarget) {
-            // target resolved a NAME but the library has no verified ABI
-            // for it yet — teach the fix (supply signature= explicitly, the
-            // expert path), don't just reject. (AP2: the engine never
-            // invents a signature; an un-populated seed row stays "".)
+            // The target resolved a NAME (a seed entry OR an author-declared
+            // target) but carries no ABI — a hook NEEDS a signature, and the
+            // engine never invents one (AP2 / the disassembler test, AP12).
+            // This is the folded pattern/rva-no-signature case: an author
+            // target whose locator is a raw pattern or RVA can't carry an ABI
+            // on its own, so its targets.toml row must add signature=. Teach
+            // both fixes, don't just reject.
             lua_pushfstring(L,
-                "kcdx.hook '%s': target '%s' resolved to an address but the "
-                "Address Library has no verified signature for it yet — "
-                "supply signature= explicitly (advanced), or use a name "
-                "whose ABI is known.",
-                p->name.c_str(), targetName.c_str());
+                "kcdx.hook '%s': target '%s' resolved to an address but has "
+                "no signature — a hook needs an ABI. If '%s' is your own "
+                "author-declared target, add signature=\"...\" to its "
+                "targets.toml row (so every plugin that hooks it by name gets "
+                "the ABI for free); otherwise supply signature= here "
+                "(advanced), or use a name whose ABI the engine already knows.",
+                p->name.c_str(), targetName.c_str(), targetName.c_str());
         } else {
             lua_pushfstring(L,
                 "kcdx.hook '%s': a 'signature' is required (e.g. "
