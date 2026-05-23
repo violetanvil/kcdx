@@ -950,7 +950,11 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
     // spares authors the opaque numeric id. Loud fail on miss (typo or
     // unknown name): a dead hook is worse UX than a clear error.
     if (!p.addressName.empty()) {
-        uintptr_t va = kcdx::address_library::ResolveByName(p.addressName.c_str());
+        // owningPlugin threaded for the self > engine > other precedence
+        // wired in the NEXT step; ResolveByName ignores it for now (engine-
+        // seed-only), so this resolves exactly as before.
+        uintptr_t va = kcdx::address_library::ResolveByName(
+            p.addressName.c_str(), p.owningPlugin.c_str());
         if (!va) {
             reason = "address_id name '" + p.addressName +
                      "' did not resolve in the Address Library (unknown "

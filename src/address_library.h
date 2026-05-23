@@ -54,7 +54,14 @@ size_t EntryCountForRunningVersion();
 // rather than remembering numeric ids. Names are advisory (no
 // stability guarantee across kcdx versions); numeric ids remain
 // the canonical reference for code that needs stability.
-uintptr_t ResolveByName(const char* name);
+//
+// `owningPlugin` is the name of the plugin whose call is resolving this
+// name (the namespace prefix per naming-namespaces.md), or "" for an
+// anonymous / engine-internal resolve. It is carried for the
+// self > engine > other precedence wired in the NEXT step; it is
+// CURRENTLY UNUSED here — resolution still hits the engine seed only,
+// exactly as before. (Plumbing-only thread; behavior unchanged.)
+uintptr_t ResolveByName(const char* name, const char* owningPlugin = "");
 
 // Iterate every entry that matches the running KCD2 build AND has
 // status "verified" — i.e. every row that would resolve via either
@@ -104,7 +111,13 @@ const char* DescribeByName(const char* name);
 // game_version / status, mirroring Describe() — the binder gates the
 // address on ResolveByName (which enforces version + verified); the
 // signature is descriptive metadata for the same row.
-const char* ResolveSignatureByName(const char* name);
+//
+// `owningPlugin` is the resolving plugin's name (namespace prefix per
+// naming-namespaces.md), or "" for anonymous / engine-internal. Carried
+// for the self > engine > other precedence wired in the NEXT step;
+// CURRENTLY UNUSED — the signature still comes from the engine seed only.
+const char* ResolveSignatureByName(const char* name,
+                                   const char* owningPlugin = "");
 
 // ===========================================================================
 // Author-declared targets — the runtime registry (STORAGE + VALIDATION ONLY).

@@ -431,6 +431,21 @@ int Lua_Hook(lua_State* L) {
     p->module      = LuaTableString(L, 1, "module", "WHGame.dll");
     p->offset      = LuaTableInt(L, 1, "offset", 0);
 
+    // Fetch the owning plugin NOW (not at append-time below) so it is in
+    // hand for the name-resolution path — the target signature lookup
+    // (ResolveSignatureByName) and, at apply, ResolveLocator's
+    // ResolveByName — which take the owner for the self > engine > other
+    // precedence wired in the NEXT step. "" = anonymous (console / pak /
+    // ad-hoc Lua), a valid value meaning "no self namespace"; pass it
+    // through, never error. The same callSiteFile/Line + owner are reused
+    // for the registry Entry below (no second stack-walk).
+    std::string owningPlugin;
+    std::string callSiteFile;
+    int         callSiteLine = 0;
+    owningPlugin = kcdx::lua_registry::OwningPluginForCurrentCall(
+        L, callSiteFile, callSiteLine);
+    p->owningPlugin = owningPlugin;
+
     // Entry-level 'priority' is no longer honored — cross-plugin order
     // comes from the plugin's [load_order].priority (kcdx.toml);
     // intra-plugin order is registration order in plugin.lua. Mirror
@@ -743,8 +758,12 @@ int Lua_Hook(lua_State* L) {
     std::string effectiveSig = sigStr;
     bool        sigFromTarget = false;
     if (effectiveSig.empty() && haveTarget) {
+        // owningPlugin threaded for the self > engine > other precedence
+        // wired in the NEXT step; ResolveSignatureByName ignores it for now
+        // (engine-seed-only), so the signature resolves exactly as before.
         const char* entrySig =
-            kcdx::address_library::ResolveSignatureByName(targetName.c_str());
+            kcdx::address_library::ResolveSignatureByName(
+                targetName.c_str(), owningPlugin.c_str());
         if (entrySig && entrySig[0] != '\0') {
             effectiveSig  = entrySig;
             sigFromTarget = true;
@@ -826,8 +845,11 @@ int Lua_Hook(lua_State* L) {
     e.kind    = kcdx::lua_registry::Kind::Hook;
     e.name    = p->name;
     e.payload = p;  // shared_ptr<HookPayload> stored as shared_ptr<void>
-    e.pluginName = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, e.callSiteFile, e.callSiteLine);
+    // Reuse the owner + call site fetched at the top (single stack-walk);
+    // the same value is now also on p->owningPlugin for the resolvers.
+    e.pluginName   = owningPlugin;
+    e.callSiteFile = callSiteFile;
+    e.callSiteLine = callSiteLine;
 
     std::string err;
     uint64_t handleId = kcdx::lua_registry::Append(std::move(e), &err);

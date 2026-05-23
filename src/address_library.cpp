@@ -257,7 +257,11 @@ bool StrEq(const char* a, const char* b) {
 
 }  // namespace
 
-uintptr_t ResolveByName(const char* name) {
+uintptr_t ResolveByName(const char* name, const char* owningPlugin) {
+    // owningPlugin is carried for the self > engine > other precedence
+    // wired in the NEXT step; CURRENTLY UNUSED — resolution is engine-seed-
+    // only, exactly as before this plumbing thread.
+    (void)owningPlugin;
     if (!name || !name[0]) return 0;
     uint32_t gv = kcdx::plugins::g_runtimeGameVersion;
     // Linear scan — same rationale as Resolve(): ~110 rows, sub-µs.
@@ -306,7 +310,10 @@ const char* DescribeByName(const char* name) {
     return nullptr;
 }
 
-const char* ResolveSignatureByName(const char* name) {
+const char* ResolveSignatureByName(const char* name, const char* owningPlugin) {
+    // owningPlugin carried for the self > engine > other precedence wired
+    // in the NEXT step; CURRENTLY UNUSED — engine-seed-only as before.
+    (void)owningPlugin;
     if (!name || !name[0]) return "";
     // First matching row by name wins (same first-defined precedence as
     // ResolveByName). Return the row's structured signature, or "" when

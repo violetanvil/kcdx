@@ -76,6 +76,15 @@ struct HookPayload {
     std::string name;
     std::string description;
 
+    // The plugin that owns this registration — the namespace prefix per
+    // naming-namespaces.md (derived from [plugin].name), or "" for an
+    // anonymous / console / pak-script call. Set by the binder at parse
+    // time (OwningPluginForCurrentCall). Threaded into the resolvers
+    // (ResolveLocator / ResolveCallsite → address_library::ResolveByName)
+    // for the self > engine > other precedence wired in the NEXT step;
+    // CURRENTLY carried only — resolution is engine-seed-only, unchanged.
+    std::string owningPlugin;
+
     // Mode-of-interception. Validated at registration; drives which
     // apply routine the per-mode commit dispatches to.
     Mode mode = Mode::Before;
