@@ -1,6 +1,13 @@
 # kcdx.publish
 > Part of the [kcdx Lua API](index.md).
 
+> **Known debt — separator.** Custom events currently namespace as
+> `<publisher>:<event>` (colon). The canonical shared-namespace separator is
+> `.` (dot) per `.claude/rules/naming-namespaces.md`; the colon is tracked debt
+> to reconcile to `<publisher>.<event>` when `kcdx.publish` is next touched.
+> The engine still derives `<publisher>` from `[plugin].name` — you type only
+> the bare event name either way.
+
 Broadcast a custom event to subscribers in any plugin (the counterpart to
 `kcdx.on("<publisher>:<event>", ...)`).
 

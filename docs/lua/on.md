@@ -1,6 +1,12 @@
 # kcdx.on
 > Part of the [kcdx Lua API](index.md).
 
+> **Known debt — separator.** The custom-event subscribe form below uses
+> `"<publisher>:<event>"` (colon). The canonical shared-namespace separator is
+> `.` (dot) per `.claude/rules/naming-namespaces.md`; the colon is tracked debt
+> to reconcile to `"<publisher>.<event>"` when `kcdx.publish` / `kcdx.on` are
+> next touched. See [kcdx.publish](publish.md).
+
 Subscribe to a lifecycle event or a custom cross-plugin event.
 
 **Call shape:** positional `(event, fn)`. Returns nothing on success; returns

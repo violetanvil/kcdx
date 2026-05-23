@@ -898,6 +898,16 @@ different senders are distinguished by `Message::sender`.
 
 ## Cross-plugin symbol table
 
+> **Superseded-by `.claude/rules/naming-namespaces.md`.** The collision model
+> below (globally-unique key; duplicate-export → hard error; dot is
+> convention-only and unparsed) predates the `<pluginname>.<name>` namespace
+> rule. The binding model is now: the engine derives `<pluginname>` from
+> `[plugin].name` and stamps it (the author types only the bare name); the dot
+> is the **canonical, semantic** separator; bare references resolve
+> **self > engine > other** with a warn-once-per-bare-collision — NOT
+> globally-unique-or-reject. `kcdx.*` is reserved for the engine. Reconcile this
+> section when the symbol table is next implemented.
+
 A globally-unique string-keyed map from name → runtime address.
 
 **Population:** an entry that includes `export = "<name>"` registers
@@ -933,6 +943,11 @@ two-pass pre-flight:
 Convention (not enforced): `pluginname.symbolname`. Underscores OK
 inside the suffix. The engine doesn't parse the dot — it's just a
 naming discipline that scales.
+
+> **Superseded** (see the section banner above). Under
+> `naming-namespaces.md` the dot IS parsed and semantic, the
+> `<pluginname>` prefix is engine-derived from `[plugin].name` (the
+> author types only `symbolname`), and resolution is precedence-based.
 
 ---
 
