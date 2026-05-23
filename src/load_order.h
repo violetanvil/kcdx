@@ -7,7 +7,7 @@
 namespace kcdx::load_order {
 
 // ============================================================================
-// Load order — zones, sentinels, priority, capability gating.
+// Load order — zones, sentinels, priority.
 //
 // Mental model: one global ordered list of plugins, with one immovable
 // sentinel ("game.exe"). The list naturally has two zones:
@@ -32,11 +32,12 @@ namespace kcdx::load_order {
 // Inputs to the effective values for each plugin:
 //   1. Author hints from [plugin].default_position / default_priority.
 //   2. (If present) user override from kcdx-engine/load_order.toml.
-//   3. Capability gating: if the resulting zone is incompatible with the
-//      plugin's declared entries (mid-hooks, lua-callback hooks, etc. that
-//      can't run before WHGame.dll's DllMain), the engine downgrades to
-//      the capability minimum and logs a one-line reason. The plugin
-//      still loads; it just gets re-zoned.
+//
+// The declared (zone, priority) stands unconditionally — there is no silent
+// re-zoning. In the per-entry-zone execution model a plugin's after-work runs
+// from the lua_after / PostGameLoad slot (after_game by construction) and its
+// before-work from the lua / Load slot, so a "before_game zone with after-work"
+// declaration is no longer a contradiction to downgrade.
 //
 // See docs/load-order.md for the full model.
 // ============================================================================
@@ -44,22 +45,6 @@ namespace kcdx::load_order {
 enum class Zone : uint8_t {
     BeforeGame = 0,  // applied before WHGame.dll DllMain
     AfterGame  = 1,  // applied at first-update-tick (existing path)
-};
-
-// Capability-derived minimum zone for a plugin. Computed once at config-load
-// time from the plugin's declared [[patch]] / [[hook]] / [[mid_hook]] /
-// [[trampoline]] entries.
-//
-//   BeforeGame — all entries are zone-flexible (pure [[patch]] entries).
-//                Plugin may sit in either zone; author hint / user override
-//                decides.
-//   AfterGame  — at least one entry requires WHGame.dll, MinHook, the
-//                JIT branch-pool, or the Lua VM. Plugin MUST sit in the
-//                after_game zone; engine refuses requests to move it
-//                before WHGame.dll.
-enum class MinZone : uint8_t {
-    BeforeGame = 0,
-    AfterGame  = 1,
 };
 
 // One row from kcdx-engine/load_order.toml. The launcher writes this file;
@@ -95,25 +80,14 @@ void Read(const std::filesystem::path& loadOrderPath);
 //   zone     — final zone after capability gating + user override.
 //   priority — final priority (author default, overridden by user if set).
 //   enabled  — final enabled flag (author default true, overridden by user).
-//
-// reasonsLogged is for diagnostics: the human-readable lines emitted when
-// resolution mutated the user's request (e.g. "downgraded to after_game
-// because plugin declares mid-hook entries"). Populated by Resolve();
-// already logged at WARN — the field exists so tests / future UI surfaces
-// can re-read without re-emitting.
 struct Effective {
     Zone        zone        = Zone::AfterGame;
     int         priority    = 50;
     bool        enabled     = true;
-    MinZone     minZone     = MinZone::BeforeGame;
-    std::string reason;  // populated if the request was mutated
 };
 
 // Compute and cache the Effective row for every plugin. Reads:
 //   - kcdx::plugins::g_manifests (for author defaults)
-//   - kcdx::patch::g_patches, kcdx::hook_engine::g_hooks +
-//     g_mid_hooks, kcdx::trampoline_engine::g_trampolines (to derive
-//     each plugin's MinZone)
 //   - the load_order.toml state previously populated by Read()
 //
 // Call after LoadAllConfigs has populated the entry vectors AND
@@ -142,17 +116,5 @@ const Effective& Of(const std::string& pluginName);
 // from that plugin, no matter which engine surface the entry
 // belongs to.
 bool IsPluginEnabled(const std::string& pluginName);
-
-// Capability derivation. Walks the entry vectors for `pluginName` and
-// returns the strictest zone requirement. Pure read; no side effects.
-//
-// Capability matrix:
-//   [[patch]]     zone-flexible
-//   [[hook]]      after_game  (MinHook + JIT branch-pool)
-//   [[mid_hook]]  after_game  (MinHook + JIT + Lua VM)
-//   [[trampoline]] after_game (JIT branch-pool needs WHGame.dll proximity)
-//
-// Empty plugin (no entries) → BeforeGame (allowed anywhere).
-MinZone DeriveMinZone(const std::string& pluginName);
 
 }  // namespace kcdx::load_order

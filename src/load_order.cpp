@@ -2,16 +2,12 @@
 
 #include <algorithm>
 #include <fstream>
-#include <sstream>
 #include <unordered_map>
 
 #include "toml.hpp"
 
-#include "hook_engine.h"
 #include "log.h"
-#include "patch_engine.h"
 #include "plugin_loader.h"
-#include "trampoline_engine.h"
 
 namespace fs = std::filesystem;
 
@@ -135,60 +131,27 @@ void Read(const fs::path& loadOrderPath) {
                loaded, loadOrderPath.u8string().c_str());
 }
 
-MinZone DeriveMinZone(const std::string& pluginName) {
-    if (pluginName.empty()) {
-        // Anonymous entries (kcdx.toml with no [plugin] table) are
-        // pure-patch by construction — hooks / mid-hooks / trampolines
-        // can only attach to a plugin name via [plugin].name. Allow
-        // them in either zone.
-        return MinZone::BeforeGame;
-    }
-
-    for (const auto& h : kcdx::hook_engine::g_hooks) {
-        if (h.pluginName == pluginName) return MinZone::AfterGame;
-    }
-    for (const auto& m : kcdx::hook_engine::g_mid_hooks) {
-        if (m.pluginName == pluginName) return MinZone::AfterGame;
-    }
-    for (const auto& t : kcdx::trampoline_engine::g_trampolines) {
-        if (t.pluginName == pluginName) return MinZone::AfterGame;
-    }
-    // Patches are zone-flexible; their presence alone doesn't gate.
-    return MinZone::BeforeGame;
-}
-
 void Resolve() {
     g_effective.clear();
 
     for (const auto& m : kcdx::plugins::g_manifests) {
         Effective eff;
 
-        // Step 1: capability minimum. This is the floor; the resolved
-        // zone can never be below this.
-        eff.minZone = DeriveMinZone(m.name);
-
-        // Step 2: derive starting zone from author hint + source.
+        // Step 1: derive starting zone from author hint + source.
         //
-        //   default_position set explicitly  → honor it (subject to capability gate)
-        //   empty + Source::Engine            → before_game (engine fixes lead)
-        //   empty + capability flexible       → after_game  (safe default for users)
-        //   empty + capability requires after → after_game  (forced by capability)
+        //   default_position set explicitly  → honor it
+        //   empty + engine builtin            → before_game (engine fixes lead)
+        //   empty + user plugin               → after_game  (safe default)
         Zone authorZone;
         if (m.defaultPosition == "before_game") {
             authorZone = Zone::BeforeGame;
         } else if (m.defaultPosition == "after_game") {
             authorZone = Zone::AfterGame;
         } else {
-            // Empty → derive. Find this plugin's source via the
-            // matching kcdx.toml in g_patches/g_hooks/etc. — simpler
-            // path: engine builtins are stamped Source::Engine on
-            // their entries. We approximate via the manifest's
-            // tomlPath; engine builtins live under
-            // <game-bin>/kcdx-engine/builtin/.
-            //
-            // We don't need a perfect classifier here — capability
-            // gating below will still bump after_game-required
-            // plugins back into the right zone.
+            // Empty → derive from source: engine builtins lead
+            // (before_game), user plugins default to after_game. We
+            // classify via the manifest's tomlPath; engine builtins live
+            // under <game-bin>/kcdx-engine/builtin/.
             bool isEngineBuiltin = false;
             {
                 auto pathStr = m.tomlPath.u8string();
@@ -207,7 +170,7 @@ void Resolve() {
         int authorPriority = m.defaultPriority;
         bool enabled = true;
 
-        // Step 3: user override (load_order.toml) wins over author hint
+        // Step 2: user override (load_order.toml) wins over author hint
         // when present.
         Zone requestedZone     = authorZone;
         int  requestedPriority = authorPriority;
@@ -218,7 +181,7 @@ void Resolve() {
             if (ov.hasEnabled)  enabled           = ov.enabled;
         }
 
-        // Step 4: the user's / author's declared (zone, priority) stands
+        // Step 3: the user's / author's declared (zone, priority) stands
         // unconditionally — no silent relocation. In the per-entry-zone
         // execution model a plugin's after-work goes in the lua_after slot
         // (which runs after_game by construction) and its before-work in the
@@ -245,13 +208,11 @@ void Resolve() {
     // verify their load_order.toml took effect. One line per plugin.
     for (const auto& m : kcdx::plugins::g_manifests) {
         const auto& eff = Of(m.name);
-        log::InfoF("  %s: zone=%s priority=%d enabled=%s%s",
+        log::InfoF("  %s: zone=%s priority=%d enabled=%s",
                    m.name.c_str(),
                    ZoneName(eff.zone),
                    eff.priority,
-                   eff.enabled ? "true" : "false",
-                   eff.reason.empty() ? "" :
-                       (" (" + eff.reason + ")").c_str());
+                   eff.enabled ? "true" : "false");
     }
 }
 
