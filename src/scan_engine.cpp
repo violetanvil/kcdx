@@ -55,53 +55,102 @@ std::string FormatBytesAt(uintptr_t addr, size_t count) {
     return std::string(buf, bufPos);
 }
 
-void RunOne(const ScanEntry& s) {
+}  // namespace
+
+ScanResult ResolveScan(const ScanEntry& s) {
+    ScanResult result;
+
     pe::ModuleView mv;
     std::wstring wmod(s.module.begin(), s.module.end());
     if (!pe::OpenModule(wmod.c_str(), mv)) {
+        // Module not loaded: leave moduleLoaded = false, no matches.
+        // AP2 — never fabricate a VA when the resolve cannot run.
+        return result;
+    }
+    result.moduleLoaded = true;
+
+    auto hits = ScanAll(mv, s.pattern);
+    result.patternMatches = hits.size();
+
+    // Tier-2 context (optional, for uniqueness disambiguation). Recorded
+    // as a count only — context is a uniqueness signal, not an apply site.
+    if (s.context) {
+        auto cHits = ScanAll(mv, *s.context);
+        result.contextMatches = cHits.size();
+    }
+
+    // Attribute every hit to its owning module + module-relative offset.
+    // Single-module scan today: every match's module is the entry's
+    // module and relOffset = applyAddr - this module's base. Each match
+    // still carries its own copy so a future multi-module scan attributes
+    // per hit without a per-scan single-module assumption.
+    uintptr_t modBase = reinterpret_cast<uintptr_t>(mv.baseBytes);
+    result.matches.reserve(hits.size());
+    for (uintptr_t hit : hits) {
+        ScanMatch m;
+        m.va = hit;
+        m.applyAddr = hit + (intptr_t)s.offset;
+        m.module = s.module;
+        m.relOffset = (uint64_t)(m.applyAddr - modBase);
+        result.matches.push_back(std::move(m));
+    }
+    return result;
+}
+
+namespace {
+
+// Thin diagnostic logger over ResolveScan: emits the [[scan]] log lines.
+// Output here must stay byte-for-byte identical to the documented
+// scan-demo output — ResolveScan changes what is RETURNED, never what is
+// LOGGED.
+void RunOne(const ScanEntry& s) {
+    ScanResult result = ResolveScan(s);
+
+    if (!result.moduleLoaded) {
         log::ErrorF("[scan '%s'] module '%s' not loaded",
                     s.name.c_str(), s.module.c_str());
         return;
     }
 
-    auto hits = ScanAll(mv, s.pattern);
     log::InfoF("[scan '%s'] pattern matches: %zu",
-               s.name.c_str(), hits.size());
+               s.name.c_str(), result.patternMatches);
 
     // Tier-2 context (optional, for uniqueness disambiguation).
-    if (s.context) {
-        auto cHits = ScanAll(mv, *s.context);
+    if (result.contextMatches) {
         log::InfoF("[scan '%s'] context matches: %zu",
-                   s.name.c_str(), cHits.size());
+                   s.name.c_str(), *result.contextMatches);
     }
 
-    if (hits.empty()) {
+    if (result.matches.empty()) {
         return;
     }
-    if (hits.size() > 1) {
+    if (result.matches.size() > 1) {
         log::InfoF("[scan '%s'] pattern not unique; listing all matches:",
                    s.name.c_str());
     }
 
-    uintptr_t modBase = reinterpret_cast<uintptr_t>(mv.baseBytes);
-    for (size_t i = 0; i < hits.size(); ++i) {
-        uintptr_t hit = hits[i];
-        uintptr_t applyAddr = hit + (intptr_t)s.offset;
+    for (size_t i = 0; i < result.matches.size(); ++i) {
+        const ScanMatch& m = result.matches[i];
+        // The log prints the HIT's module offset (not the apply-addr's).
+        // relOffset is applyAddr-relative, so recover the module base
+        // (applyAddr - relOffset, exact by construction) and offset the
+        // raw va against it — identical to the old `hit - modBase`.
+        uintptr_t modBase = m.applyAddr - m.relOffset;
         log::InfoF("[scan '%s'] match %zu: pattern at 0x%p (%s+0x%llX); "
                    "with offset %+d -> apply addr 0x%p",
                    s.name.c_str(), i + 1,
-                   reinterpret_cast<void*>(hit),
-                   s.module.c_str(),
-                   (unsigned long long)(hit - modBase),
+                   reinterpret_cast<void*>(m.va),
+                   m.module.c_str(),
+                   (unsigned long long)(m.va - modBase),
                    s.offset,
-                   reinterpret_cast<void*>(applyAddr));
+                   reinterpret_cast<void*>(m.applyAddr));
 
         // 16 bytes before, 32 bytes at + after. Bounded by safety —
         // raw memcpy from page; if we hit unmapped memory we'll AV.
         // The hit address came from a scan of mapped executable
         // bytes so this is safe within the same section.
-        std::string before = FormatBytesAt(applyAddr - 16, 16);
-        std::string after  = FormatBytesAt(applyAddr, 32);
+        std::string before = FormatBytesAt(m.applyAddr - 16, 16);
+        std::string after  = FormatBytesAt(m.applyAddr, 32);
         log::InfoF("[scan '%s']   bytes -16: %s",
                    s.name.c_str(), before.c_str());
         log::InfoF("[scan '%s']   bytes  +0: %s",
