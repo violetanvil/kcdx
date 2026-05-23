@@ -138,6 +138,8 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxMessagingInterface::Dispatch` (custom event broadcast) | Built | `kcdx.publish` | [publish.md](publish.md) |
 | `kcdxTrampolineInterface::AllocateFromBranchPool`/`LocalPool` (code allocation) | Built | `kcdx.code` | [code.md](code.md) |
 | `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
+| `kcdxTargetInterface::RegisterTarget` (author-declared named targets) | **NYI** | author-declared targets (`targets.toml`) | [targets.md](targets.md) |
+| `kcdxTargetInterface::RegisterAlias` (short local name handle) | **NYI** | `kcdx.alias` | [alias.md](alias.md) |
 | `require` (sibling-file loading) | Single-surface | `require` | [require.md](require.md) |
 
 ### Domains

@@ -1,0 +1,14 @@
+# COMP-12 plugin B — declares the SAME bare target name `combat_check`.
+#
+# B's `combat_check` is a DELIBERATELY-BOGUS pattern that matches nothing in
+# WHGame.dll, carrying a signature so the only failure mode is "pattern did not
+# resolve" (NOT "missing ABI"). B never hooks it itself — its sole purpose is
+# to COLLIDE with plugin A's `combat_check` so that when A hooks the bare name,
+# self>engine>other precedence is exercised: A's hook must pick A's OWN target
+# (self), not B's. If precedence were broken and B's target leaked, A's hook
+# would resolve B's non-matching pattern and FAIL to apply — making A's
+# applied()==true a falsifiable self-wins proof.
+[[target]]
+name      = "combat_check"
+pattern   = "DE AD BE EF DE AD BE EF DE AD BE EF DE AD BE EF DE AD BE EF"
+signature = "i32 (ptr L, cstr filename)"

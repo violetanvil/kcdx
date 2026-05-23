@@ -65,11 +65,20 @@ local h = kcdx.hook{
 
 The hook needs to find its target. The **common path** is by name:
 
-- **`target = "<name>"`** — the Address Library name of the function. The name
-  resolves **both** the address and the verified signature, so you write no
-  hex and no ABI. This is the path the engine is built around (the disassembler
-  test, `cornerstones.md`). Use it whenever the engine knows the name (see
-  `kcdx.addr` for what is named on your build).
+- **`target = "<name>"`** — a named function. The name resolves **both** the
+  address and the verified signature, so you write no hex and no ABI. This is
+  the path the engine is built around (the disassembler test, `cornerstones.md`).
+  The name resolves three ways, by [precedence](targets.md#resolving-a-name--self--engine--other)
+  (self > engine > other):
+    - an **engine** [Address Library](addr.md) name (`kcdx.addr` lists what is
+      named on your build);
+    - one of **your own** [author-declared targets](targets.md) — including a
+      `pattern`- or `target_symbol`-located target, resolved by name
+      end-to-end (the engine carries the hex and ABI you declared once);
+    - another plugin's target, by its explicit `"<pluginname>.<name>"` form.
+
+  When a `pattern`/`rva` author-target supplies the address, its `signature`
+  carries the ABI — so a named pattern site needs no `signature =` on the hook.
 
 The remaining locators are an **advanced/expert escape hatch** for targets the
 library cannot name yet. When you use one you must supply `signature = "..."`

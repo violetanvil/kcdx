@@ -89,8 +89,33 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
 
 - **locator** — how a hook or byte patch finds its target. `target = "<name>"`
   is the common path (the engine resolves both address *and* verified
-  signature). Advanced/expert locators (`address`, `address_id`, `pattern`,
-  `target_symbol`) make you supply hex/ABI yourself.
+  signature). The name may be an engine [Address Library](addr.md) name or one
+  you declared yourself (see *author-target* below). Advanced/expert locators
+  (`address`, `address_id`, `pattern`, `target_symbol`) make you supply hex/ABI
+  yourself.
+
+- **author-target / `targets.toml`** — a code site you name yourself in a
+  `targets.toml` sidecar (`[[target]]` rows: a bare `name` + one locator +
+  optional `signature`), then refer to by name from `kcdx.hook` / `kcdx.bytes`.
+  The author-declared peer of an engine name; shareable by name across plugins
+  (an expert names an AOB once, non-experts hook it by name). See
+  [targets.md](targets.md).
+
+- **implicit namespace prefix** — the `<pluginname>` the engine stamps on every
+  shared name your plugin exports (a target, a `kcdx.code` export, a published
+  event), derived from `[plugin].name`. You write the bare `name`; the engine
+  registers `<pluginname>.<name>`. You never type your own prefix. See
+  [targets.md](targets.md).
+
+- **name precedence (self > engine > other)** — how a *bare* shared name
+  resolves: your own plugin's declaration first, then an engine name, then
+  another plugin's. The explicit `"<pluginname>.<name>"` form bypasses
+  precedence and is unambiguous from anywhere; a bare-name collision warns once
+  per session. See [targets.md](targets.md).
+
+- **alias** — a short, plugin-scoped local handle for a long shared name,
+  declared with `kcdx.alias(short, target)`. Only adds a handle — never shadows
+  or displaces resolution. See [alias.md](alias.md).
 
 - **signature** — the ABI string telling the engine a function's argument and
   return types, e.g. `"i32 (i32 seed)"`. The `target = "<name>"` path supplies
@@ -169,6 +194,8 @@ it does not exist yet.
 | `kcdx.publish` | broadcast a custom event to subscribers | [publish.md](publish.md) |
 | `kcdx.code` | allocate executable memory, fill + export it | [code.md](code.md) |
 | `kcdx.scan` | validate an AOB pattern + discover an address (dev-time workbench) | [scan.md](scan.md) |
+| `kcdx.alias` | declare a short local handle for a long shared name | [alias.md](alias.md) |
+| author-declared targets (`targets.toml`) | name a code site yourself, then hook/patch it by name | [targets.md](targets.md) |
 | `require` | load a sibling Lua file (multi-file plugins) | [require.md](require.md) |
 
 ### Domains

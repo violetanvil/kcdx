@@ -1,0 +1,32 @@
+# COMP-12 plugin A — the ASSERTER. Owns the COMP-12 row.
+#
+# A and B (sibling folder comp_12_target_b) each declare a target with the SAME
+# bare name `combat_check` in their own targets.toml. A's is the GOOD locator
+# (the verified luaL_loadfile AOB + ABI); B's is a bogus non-matching pattern.
+# A hooks the BARE name `combat_check` and asserts its OWN target won
+# (self > engine > other): A's hook applies (self resolved) — had B's target
+# leaked, the bogus pattern would fail to resolve and the hook would not apply.
+#
+# Pure Lua + TOML, no DLL — no CMakeLists entry (mirrors comp-09/comp-11).
+#
+# Test mode: boot-only. The collision is resolved at the launch-time apply
+# pass; A reads its handle at kcdx.on("ready"). The bare-collision warn is a
+# log line (NAMESPACE category) observable [manual] — the auto-assertion is
+# that SELF resolved, not the warn text.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_12_target_a"
+display_name        = "COMP-12 target collision (A, self-wins asserter)"
+author              = "kcdx"
+description         = "Plugin A declares bare target `combat_check` (good locator) colliding with plugin B's same-named target (bogus). A hooks the bare name and asserts its OWN target won the self>engine>other precedence."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["COMP-12-self-wins"]
+
+[entrypoints]
+lua = "plugin.lua"

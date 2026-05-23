@@ -39,6 +39,20 @@ interface ships and is verified callable:
   address-discovery workbench. Built in Lua; no mirror interface in the header
   yet. Today a C++ author uses `kcdxMemoryInterface::ScanPattern` for raw
   single-result scanning. See [scan.md](scan.md).
+- **`kcdxTargetInterface::RegisterTarget`** (↔ author-declared targets /
+  `targets.toml`) — registering a plugin's own named code site (bare name + one
+  locator + optional signature) so it is hookable/patchable by name and
+  shareable across plugins. Built in Lua (the `targets.toml` sidecar); no mirror
+  interface in the header yet. See [targets.md](targets.md).
+- **`kcdxTargetInterface::RegisterAlias`** (↔ `kcdx.alias`) — a short,
+  plugin-scoped local handle for a long prefixed shared name. Built in Lua; no
+  mirror interface in the header yet. See [alias.md](alias.md).
+- **`kcdxInterface::ResolveAddressByNameAs(handle, name)`** (the namespaced
+  by-name resolution overload) — `ResolveAddressByName(name)` is built (engine
+  Address Library names; [addr.md](addr.md)), but the overload that resolves a
+  name with the *calling* plugin's namespace for self > engine > other
+  precedence — so the C++ author target table participates — is NYI. Tracked
+  alongside `kcdxTargetInterface`. See [targets.md](targets.md).
 
 ## Genuinely not built on either surface
 

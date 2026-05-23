@@ -1,0 +1,40 @@
+# CAP-33 — author-declared named targets (the targets.toml sidecar).
+#
+# Each [[target]] row declares a BARE name + exactly one locator; the engine
+# stamps the <pluginname> prefix derived from [plugin].name
+# (cap_33_author_targets) automatically — the author NEVER types their own
+# prefix (naming-namespaces.md). A pattern/rva target SHOULD carry a
+# `signature` (no engine name to carry the ABI — the disassembler test).
+
+# --- The §36 HEADLINE: a PATTERN-located target WITH a signature. -----------
+# This is the cornerstones.md §36 "share guarantee" proof in one row: an
+# expert names an AOB site ONCE (here), and a non-expert hooks it BY NAME with
+# no hex and no hand-written ABI — the pattern resolves the WHERE and this
+# signature carries the ABI, both delivered by the bare name.
+#
+# Pattern + signature both target luaL_loadfile (Address Library id 1002):
+#   - AOB:  verified in _research/phase7-recon/lua-rvas-harvested.csv:20
+#           (the 22-byte luaL_loadfile function-entry prologue, harvested +
+#           live-confirmed against KCD2 1.5).
+#   - sig:  the verified ABI from seed.csv id 1002.
+# luaL_loadfile is SAFE to hook in a test: it fires only during pre-update
+# Scripts/ loading (before kcdx's hooks install), so post-install the detour
+# sits dormant (the same safe-target reasoning cap-20 uses for CAP-20-target).
+[[target]]
+name      = "loadfile_by_pattern"
+pattern   = "40 55 56 57 48 81 EC 40 02 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4"
+signature = "i32 (ptr L, cstr filename)"
+
+# --- A pattern author-target for the kcdx.bytes resolution proof. -----------
+# A DISTINCT safe function from the hooked luaL_loadfile: luaL_loadbuffer (its
+# verified entry AOB, _research/phase7-recon/lua-rvas-harvested.csv:19). Using
+# a DIFFERENT function avoids any hook/bytes overlap on one address — the
+# cap-33 hooks all target luaL_loadfile, so the byte write here lands on
+# untouched memory. kcdx.bytes resolves this name to the entry VA; the write is
+# an idempotent no-op (write byte 0x48 over the existing 0x48 — the AOB begins
+# "48 83 EC 38"), so it applies cleanly without changing behaviour. We assert
+# RESOLUTION via :applied()==true, not a destructive edit. (A bytes target is
+# untyped — no signature needed.)
+[[target]]
+name    = "loadbuffer_safe_site"
+pattern = "48 83 EC 38 48 89 54 24 20 48 8D 15 ?? ?? ?? ?? 4C 89 44 24 28"

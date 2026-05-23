@@ -1,0 +1,25 @@
+# COMP-12 plugin B — the COLLIDER. Declares the same bare target name as A.
+#
+# B's sole purpose is to register a SECOND target named `combat_check` (a bogus
+# non-matching pattern) so that plugin A's hook on the bare name exercises the
+# self > engine > other precedence across two plugins. B never hooks anything;
+# it does not own the COMP-12 row (A asserts). B's targets.toml is the load-
+# bearing file — this kcdx.toml just makes B a loadable suite-gated plugin.
+#
+# Pure Lua + TOML, no DLL — no CMakeLists entry.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_12_target_b"
+display_name        = "COMP-12 target collision (B, collider)"
+author              = "kcdx"
+description         = "Plugin B declares a second target named `combat_check` (bogus locator) to collide with plugin A's same-named target, exercising cross-plugin self>engine>other precedence. B asserts nothing."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+
+[entrypoints]
+lua = "plugin.lua"
