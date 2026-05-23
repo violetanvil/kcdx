@@ -1,0 +1,28 @@
+# CAP-29 — both-phase C++ plugin lifecycle (Load THEN PostGameLoad).
+#
+# A pure C++ DLL plugin (no Lua) that exports BOTH kcdxPlugin_Load and
+# kcdxPlugin_PostGameLoad. It proves the both-phase C++ lifecycle: Load
+# runs in the before-game/load wave, PostGameLoad runs in the after-game
+# phase (first update tick after ApplyZone), and Load runs strictly
+# BEFORE PostGameLoad. This is the first live exercise of the
+# kcdxPlugin_PostGameLoad export (sub-4) and the C++ parity mirror of
+# COMP-11 (the Lua both-phase test).
+#
+# Assertion lives in PostGameLoad (the later of the two): PASS iff Load
+# ran AND PostGameLoad's seq > Load's seq. A never-fired PostGameLoad is
+# caught by an InputLoaded backstop listener registered in Load, which
+# reports a loud FAIL rather than a silent PENDING.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "kcdx.cap-29-both-phase-dll"
+display_name        = "CAP-29 Both-Phase C++ Lifecycle"
+author              = "kcdx"
+description         = "Exports kcdxPlugin_Load + kcdxPlugin_PostGameLoad; asserts Load runs before PostGameLoad."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-29"]
