@@ -20,8 +20,8 @@ shape it takes:
 
 1. **Core authoring verbs are top-level: `kcdx.<verb>`.** These are the
    actions every plugin performs to register intent with the engine — one per
-   engine primitive. The live set is `kcdx.hook`, `kcdx.bytes`, `kcdx.on`,
-   `kcdx.command`, `kcdx.publish`.
+   engine primitive. The live set is `kcdx.hook`, `kcdx.bytes`, `kcdx.code`,
+   `kcdx.on`, `kcdx.command`, `kcdx.publish`, `kcdx.scan`.
 
 2. **Everything else is a grouped domain: `kcdx.<domain>.<verb>`.** Capability
    areas are sub-tables — `kcdx.log.*`, `kcdx.memory.*`, `kcdx.addr.*`,
@@ -96,6 +96,17 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   return types, e.g. `"i32 (i32 seed)"`. The `target = "<name>"` path supplies
   it for you; the advanced locators require you to write it.
 
+- **AOB pattern** — an *array-of-bytes* pattern: a hex byte string with optional
+  `??` wildcards, e.g. `"48 8B 88 ?? ?? ?? ?? 48"`, that matches a code sequence
+  in a module. It is the expert hex form behind the `pattern` locator and the
+  input to the diagnostic scan — disassembler-tier, not the common path.
+
+- **diagnostic scan (the workbench)** — the dev-time step, `kcdx.scan{...}`, where
+  you resolve a hand-written AOB pattern against a module and check whether it
+  matched and how many sites it hit, *before* committing it to a hook. The expert
+  workbench you run to discover and validate an un-named site; once it resolves
+  uniquely you name it and hook it by name. See [scan.md](scan.md).
+
 - **handle** — the userdata `kcdx.hook` / `kcdx.bytes` return. Carries
   `:applied()`, `:reason()`, `:name()`. Its status is `nil` (pending) until the
   apply pass runs.
@@ -157,6 +168,7 @@ it does not exist yet.
 | `kcdx.command` | register a console command | [command.md](command.md) |
 | `kcdx.publish` | broadcast a custom event to subscribers | [publish.md](publish.md) |
 | `kcdx.code` | allocate executable memory, fill + export it | [code.md](code.md) |
+| `kcdx.scan` | validate an AOB pattern + discover an address (dev-time workbench) | [scan.md](scan.md) |
 | `require` | load a sibling Lua file (multi-file plugins) | [require.md](require.md) |
 
 ### Domains
@@ -183,4 +195,4 @@ it does not exist yet.
 
 | Call | What it does | File |
 |---|---|---|
-| planned — not yet available | `kcdx.scan{...}`, gameplay domains | [planned.md](planned.md) |
+| planned — not yet available | gameplay domains | [planned.md](planned.md) |

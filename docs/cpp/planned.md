@@ -35,12 +35,13 @@ interface ships and is verified callable:
 - **A dev-mode `is_enabled()` accessor** (↔ `kcdx.dev.is_enabled`) — see
   [dev.md](dev.md) (the `on_ready` half is already covered by
   `kcdxMessage_LuaReady`).
+- **`kcdxScanInterface`** (↔ `kcdx.scan`) — the diagnostic AOB-scan /
+  address-discovery workbench. Built in Lua; no mirror interface in the header
+  yet. Today a C++ author uses `kcdxMemoryInterface::ScanPattern` for raw
+  single-result scanning. See [scan.md](scan.md).
 
 ## Genuinely not built on either surface
 
-- **`kcdx.scan{...}`** as a top-level diagnostic-scan verb — tracked in the
-  restructure plan; not built in Lua or C++. (Runtime scanning today goes
-  through `kcdxMemoryInterface::ScanPattern` — see [memory.md](memory.md).)
 - **Gameplay domains** (`kcdx.player.*`, `kcdx.world.*`, `kcdx.dialogue.*`,
   `kcdx.quest.*`, `kcdx.inventory.*`, `kcdx.assets.*`) — roadmap (Phase 9+), not
   built on either surface.

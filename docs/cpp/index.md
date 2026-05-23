@@ -137,6 +137,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxConsoleInterface::RegisterCommand`/`GetArg*` (console command) | Built | `kcdx.command` | [command.md](command.md) |
 | `kcdxMessagingInterface::Dispatch` (custom event broadcast) | Built | `kcdx.publish` | [publish.md](publish.md) |
 | `kcdxTrampolineInterface::AllocateFromBranchPool`/`LocalPool` (code allocation) | Built | `kcdx.code` | [code.md](code.md) |
+| `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
 | `require` (sibling-file loading) | Single-surface | `require` | [require.md](require.md) |
 
 ### Domains
