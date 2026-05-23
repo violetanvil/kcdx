@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 // Address Library — id-to-RVA lookup compiled into kcdx.asi.
 //
@@ -104,5 +105,86 @@ const char* DescribeByName(const char* name);
 // address on ResolveByName (which enforces version + verified); the
 // signature is descriptive metadata for the same row.
 const char* ResolveSignatureByName(const char* name);
+
+// ===========================================================================
+// Author-declared targets — the runtime registry (STORAGE + VALIDATION ONLY).
+// ===========================================================================
+//
+// The compiled-in seed (kEntries[]) is the engine's own name table. Authors
+// can ALSO declare their own targets (the disassembler-test guarantees in
+// cornerstones.md: an author identifies an un-named site via the expert hatch
+// ONCE, names it, and shares it by name). Those author-declared targets live
+// in a SEPARATE runtime registry (not the constexpr seed) because they're
+// discovered at launch from plugin manifests, not baked into the binary.
+//
+// THIS HEADER SECTION IS THE STORAGE + VALIDATION LAYER ONLY. Precedence
+// resolution (self > engine > other per naming-namespaces.md) is a LATER step
+// and is NOT wired into ResolveByName here.
+
+// How an author-declared target locates its address. Mirrors the locator
+// kinds the seed Entry carries, but as a runtime tag (the seed packs them
+// into separate columns; an author target carries exactly one).
+enum class AuthorLocatorKind {
+    Pattern,       // a byte/AOB signature string (expert hatch)
+    Rva,           // a raw RVA literal (expert hatch)
+    AddressId,     // a numeric Address Library id payload
+    TargetSymbol,  // another already-known target name (seed or author)
+};
+
+// One author-declared target, as registered at launch. Runtime data — a
+// std::vector<AuthorTarget> rather than the constexpr seed Entry, because the
+// set is populated from plugin manifests during discovery, not compiled in.
+//
+// The owning plugin name + the bare target name together form the shared
+// name `<pluginName>.<bareName>` per naming-namespaces.md; the engine derives
+// the prefix, the author types only the bare name.
+struct AuthorTarget {
+    std::string       pluginName;   // owner; the namespace prefix (validated)
+    std::string       bareName;     // the author's bare <name> (no prefix)
+    AuthorLocatorKind kind;         // which payload field below is meaningful
+    std::string       locatorStr;   // payload for Pattern / TargetSymbol; "" otherwise
+    uint64_t          locatorNum;   // payload for Rva / AddressId; 0 otherwise
+    std::string       signature;    // the structured ABI in the hook DSL ("" = none)
+};
+
+// Validate a `[plugin].name` per naming-namespaces.md: charset [a-z0-9_],
+// length 2..32, and NOT the reserved engine root. Returns true when the name
+// is a legal namespace prefix; on failure returns false and fills `outError`
+// with a teaching message naming the rule.
+//
+// Rejected (hard manifest rejection — a bad prefix corrupts every shared name
+// the plugin exports; fail loud at the door):
+//   - empty / under 2 / over 32 chars
+//   - any char outside [a-z0-9_] (uppercase, '.', '-', etc.)
+//   - the reserved value "kcdx" (the engine root), or any name beginning
+//     "kcdx." (engine-namespace squatting)
+bool ValidatePluginName(const char* name, std::string& outError);
+
+// Register one author-declared target into the runtime registry. VALIDATES
+// (the owning plugin name via ValidatePluginName, and the bare name's charset
+// — same [a-z0-9_] rule, since it becomes the second half of the shared
+// `<plugin>.<name>`), THEN appends. Returns true on success; on a validation
+// failure returns false and fills `outError` with a teaching message and does
+// NOT append.
+//
+// `locatorStr` carries the payload for Pattern / TargetSymbol locators (pass
+// "" for the numeric kinds); `locatorNum` carries it for Rva / AddressId
+// (pass 0 for the string kinds). `signature` is the structured ABI in the
+// kcdx.hook DSL, or "" when the author has none yet (we never invent one —
+// AP2).
+//
+// Launch-time only. See the registry definition comment in the .cpp for the
+// resident / never-read-at-runtime invariant.
+bool RegisterAuthorTarget(const char*       pluginName,
+                          const char*       bareName,
+                          AuthorLocatorKind kind,
+                          const char*       locatorStr,
+                          uint64_t          locatorNum,
+                          const char*       signature,
+                          std::string&      outError);
+
+// Diagnostic: number of author-declared targets currently in the registry.
+// (Self-test / dev-log startup summary; not a hot path.)
+size_t AuthorTargetCount();
 
 }  // namespace kcdx::address_library

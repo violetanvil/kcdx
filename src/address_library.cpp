@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "kcdx/Interfaces.h"
 #include "log.h"
@@ -318,6 +320,138 @@ const char* ResolveSignatureByName(const char* name) {
         return kEntries[i].signature ? kEntries[i].signature : "";
     }
     return "";
+}
+
+// ===========================================================================
+// Author-declared targets — runtime registry (storage + validation).
+// ===========================================================================
+
+namespace {
+
+// The runtime registry of author-declared targets.
+//
+// INVARIANT — launch-time populate; resident; never read at runtime.
+// This vector is POPULATED ONCE at launch, during plugin discovery, via
+// RegisterAuthorTarget(). After discovery it is RESIDENT and READ-ONLY for
+// the rest of the process lifetime. It must NEVER be consulted on a
+// hook-fire / runtime-hot path: resolution happens exactly ONCE during the
+// apply pass (a LATER step wires that read), the resolved address is cached
+// in the binding, and the registry is never touched again while the game
+// runs. Treat any read of this from a hooked function or per-frame tick as a
+// bug.
+std::vector<AuthorTarget> g_authorTargets;
+
+// True iff `c` is a legal char for a shared-name component: [a-z0-9_].
+// Uppercase, '.', '-', and everything else are rejected (the dot is the
+// reserved canonical separator the engine parses on — naming-namespaces.md).
+bool IsNameChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+// Validate one shared-name COMPONENT (a plugin name OR a bare target name):
+// non-empty, length 2..32, every char in [a-z0-9_]. `what` names the field
+// in the teaching error ("plugin name" / "target name"). Does NOT apply the
+// reserved-"kcdx" rule — that's plugin-name-specific, layered on by the
+// caller. Returns false + fills outError on any violation.
+bool ValidateNameComponent(const char* name, const char* what,
+                           std::string& outError) {
+    if (!name || name[0] == '\0') {
+        outError = std::string(what) +
+                   " is empty — must be 2-32 chars of [a-z0-9_] "
+                   "(naming-namespaces.md).";
+        return false;
+    }
+    size_t len = 0;
+    for (const char* p = name; *p; ++p) {
+        ++len;
+        if (!IsNameChar(*p)) {
+            outError = std::string(what) + " \"" + name +
+                       "\" has an illegal character — only lowercase "
+                       "[a-z0-9_] is allowed (no uppercase, '.', '-', or "
+                       "spaces). The dot is the reserved namespace separator "
+                       "(naming-namespaces.md).";
+            return false;
+        }
+    }
+    if (len < 2) {
+        outError = std::string(what) + " \"" + name +
+                   "\" is too short — must be 2-32 chars "
+                   "(naming-namespaces.md).";
+        return false;
+    }
+    if (len > 32) {
+        outError = std::string(what) + " \"" + name +
+                   "\" is too long — must be 2-32 chars "
+                   "(naming-namespaces.md).";
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool ValidatePluginName(const char* name, std::string& outError) {
+    // Charset + length first (also catches empty / over-long).
+    if (!ValidateNameComponent(name, "[plugin].name", outError)) {
+        return false;
+    }
+    // Reserved engine root: the exact value "kcdx" is the engine namespace;
+    // any name starting "kcdx." would squat under the reserved root. Both are
+    // a hard rejection (naming-namespaces.md: "kcdx.* is reserved for the
+    // engine; [plugin].name = \"kcdx\" is rejected").
+    //
+    // Note: a literal "kcdx." can't actually reach here as a single component
+    // because '.' fails the charset check above; we still guard the prefix
+    // explicitly so the intent — and the teaching message — is unambiguous.
+    if (StrEq(name, "kcdx") ||
+        (name[0] == 'k' && name[1] == 'c' && name[2] == 'd' &&
+         name[3] == 'x' && name[4] == '.')) {
+        outError =
+            "[plugin].name \"" + std::string(name) +
+            "\" is reserved — the \"kcdx\" namespace (and any \"kcdx.\" "
+            "prefix) belongs to the engine. Pick your own short lowercase "
+            "id (naming-namespaces.md).";
+        return false;
+    }
+    return true;
+}
+
+bool RegisterAuthorTarget(const char*       pluginName,
+                          const char*       bareName,
+                          AuthorLocatorKind kind,
+                          const char*       locatorStr,
+                          uint64_t          locatorNum,
+                          const char*       signature,
+                          std::string&      outError) {
+    // Validate the owning plugin name as a namespace prefix (charset, length,
+    // reserved-root) — a bad prefix corrupts every shared name this plugin
+    // exports (naming-namespaces.md: hard manifest rejection).
+    if (!ValidatePluginName(pluginName, outError)) {
+        return false;
+    }
+    // Validate the bare name as the second half of `<plugin>.<name>` — same
+    // [a-z0-9_], 2-32 component rule (the reserved-"kcdx" check is
+    // prefix-only, so it does NOT apply to the bare name).
+    if (!ValidateNameComponent(bareName, "target name", outError)) {
+        return false;
+    }
+
+    // Validated — append. (Storage layer only: precedence resolution is a
+    // later step. We do not de-dup here; collision handling is the resolver's
+    // job per naming-namespaces.md, not the registry's.)
+    AuthorTarget t;
+    t.pluginName = pluginName;
+    t.bareName   = bareName;
+    t.kind       = kind;
+    t.locatorStr = locatorStr ? locatorStr : "";
+    t.locatorNum = locatorNum;
+    t.signature  = signature ? signature : "";
+    g_authorTargets.push_back(std::move(t));
+    return true;
+}
+
+size_t AuthorTargetCount() {
+    return g_authorTargets.size();
 }
 
 }  // namespace kcdx::address_library
