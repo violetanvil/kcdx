@@ -11,21 +11,24 @@
 #
 # What it proves (all boot-only, no player gesture):
 #   * CAP-33-pattern-by-name (THE §36 HEADLINE): kcdx.hook{ target =
-#     "loadfile_by_pattern" } resolves the author-declared PATTERN target
-#     end-to-end — the pattern supplies the ADDRESS and the target's signature
-#     supplies the ABI, both from the bare name (NO signature= on the hook).
-#     PASS iff :applied()==true at "ready". This is the proof a pattern site
-#     named once is hookable by name with zero hex/ABI at the call site.
+#     "ui_pump_by_pattern" } resolves the author-declared PATTERN target
+#     (CGame_per_frame_ui_pump, seed id 1003) end-to-end — the pattern supplies
+#     the ADDRESS and the target's signature supplies the ABI, both from the
+#     bare name (NO signature= on the hook). PASS iff :applied()==true at
+#     "ready". This is the proof a pattern site named once is hookable by name
+#     with zero hex/ABI at the call site.
 #   * CAP-33-engine-tier: kcdx.hook{ target = "luaL_loadfile" } (an ENGINE seed
 #     name) still resolves — the engine tier of self>engine>other coexists with
 #     the author's own targets.
 #   * CAP-33-prefixed: the explicit "<pluginname>.<target>" form
-#     ("cap_33_author_targets.loadfile_by_pattern") resolves directly.
-#   * CAP-33-bytes-by-name: kcdx.bytes{ target = "loadbuffer_safe_site" } resolves
-#     an author-declared PATTERN target to a VA; an idempotent no-op write
-#     (0x40 over the existing 0x40) :applied()==true proves the resolution.
-#   * CAP-33-alias: kcdx.alias("lf", "cap_33_author_targets.loadfile_by_pattern")
-#     then kcdx.hook{ target = "lf" } resolves the hook via the local alias.
+#     ("cap_33_author_targets.ui_pump_by_pattern") resolves directly.
+#   * CAP-33-bytes-by-name: kcdx.bytes{ target = "pcall_safe_site" } resolves
+#     an author-declared PATTERN target (lua_pcall, seed id 1000 — a DISTINCT
+#     function from the hooked CGame_per_frame_ui_pump) to a VA; an idempotent
+#     no-op write (0x48 over the existing 0x48) :applied()==true proves the
+#     resolution.
+#   * CAP-33-alias: kcdx.alias("up", "cap_33_author_targets.ui_pump_by_pattern")
+#     then kcdx.hook{ target = "up" } resolves the hook via the local alias.
 #
 # Test mode: boot-only. Every target/alias resolution + apply happens during
 # the launch-time registration + apply pass; the handles read final at

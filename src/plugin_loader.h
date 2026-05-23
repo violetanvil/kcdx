@@ -182,7 +182,9 @@ extern std::vector<PluginManifest> g_manifests;
 
 // Engine version we report to plugins via kcdxInterface::kcdxVersion.
 // Bumped when the public ABI changes.
-constexpr uint32_t kEngineVersion = 0x00010000u;  // 0.1.0
+constexpr uint32_t kEngineVersion = 0x00010100u;  // 0.1.1 — kcdxInterface gained
+                                                  // ResolveSymbolAs + ResolveAddressByNameAs
+                                                  // (append-only; gates the new layout, AP11)
 
 // Live KCD2 build number, populated at engine startup from the WHGame.dll
 // file version. Reported via kcdxInterface::runtimeGameVersion. Plugins

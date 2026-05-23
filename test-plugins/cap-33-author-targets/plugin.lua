@@ -4,17 +4,18 @@
 -- declared two targets under this plugin's namespace
 -- (cap_33_author_targets, derived from [plugin].name — the author never types
 -- the prefix):
---   * loadfile_by_pattern  — a PATTERN locator + a signature (the §36 row)
---   * loadbuffer_safe_site  — a PATTERN locator on the luaL_loadbuffer entry AOB
+--   * ui_pump_by_pattern  — a PATTERN locator + a signature (the §36 row),
+--                           targeting CGame_per_frame_ui_pump (seed id 1003)
+--   * pcall_safe_site      — a PATTERN locator on the lua_pcall entry AOB
+--                           (seed id 1000), a DISTINCT verified function
 --
 -- Every hook below is a no-op passthrough whose ONLY job is to resolve a NAME
 -- and apply. We assert :applied() at kcdx.on("ready") (after the apply pass).
--- All targets are luaL_loadfile, which fires only during pre-update Scripts/
--- loading — dormant post-install, so installing a detour is harmless (the
--- same safe-target reasoning cap-20 uses for CAP-20-target). The install IS
--- the proof the name resolved; the hook never needs to fire.
+-- The hook targets are CGame_per_frame_ui_pump, a direct callee of CGame::Update
+-- that cap-03 hooks in production; installing a no-op detour is harmless. The
+-- install IS the proof the name resolved; the hook never needs to fire.
 
-local SIG = "i32 (ptr L, cstr filename)"
+local SIG = "void (ptr self)"
 
 -- ====================================================================
 -- (1) CAP-33-pattern-by-name — THE §36 HEADLINE.
@@ -27,8 +28,8 @@ local SIG = "i32 (ptr L, cstr filename)"
 -- ====================================================================
 local hPattern = kcdx.hook{
     name   = "cap33_pattern_by_name",
-    target = "loadfile_by_pattern",     -- author-declared PATTERN target; carries the sig
-    before = function(L, filename) return L, filename end,  -- no-op passthrough
+    target = "ui_pump_by_pattern",       -- author-declared PATTERN target; carries the sig
+    before = function(self) return self end,  -- no-op passthrough
 }
 
 -- ====================================================================
@@ -50,8 +51,8 @@ local hEngine = kcdx.hook{
 -- ====================================================================
 local hPrefixed = kcdx.hook{
     name   = "cap33_prefixed",
-    target = "cap_33_author_targets.loadfile_by_pattern",  -- explicit prefix
-    before = function(L, filename) return L, filename end,
+    target = "cap_33_author_targets.ui_pump_by_pattern",  -- explicit prefix
+    before = function(self) return self end,
 }
 
 -- ====================================================================
@@ -60,31 +61,31 @@ local hPrefixed = kcdx.hook{
 -- plugin-scoped and cannot shadow. The hook gives no signature= — the alias
 -- resolves to the pattern target, which carries the ABI.
 -- ====================================================================
-local aliasOk, aliasErr = kcdx.alias("lf", "cap_33_author_targets.loadfile_by_pattern")
+local aliasOk, aliasErr = kcdx.alias("up", "cap_33_author_targets.ui_pump_by_pattern")
 if aliasOk ~= true then
     kcdx.log.error("CAP33", "kcdx.alias failed: " .. tostring(aliasErr))
 end
 local hAlias = kcdx.hook{
     name   = "cap33_alias",
-    target = "lf",                      -- the local alias → the pattern target
-    before = function(L, filename) return L, filename end,
+    target = "up",                      -- the local alias → the pattern target
+    before = function(self) return self end,
 }
 
 -- ====================================================================
 -- (5) CAP-33-bytes-by-name — kcdx.bytes{ target = "<name>" } resolution.
--- Resolves the author-declared PATTERN target "loadbuffer_safe_site" to
--- luaL_loadbuffer's entry VA — a DISTINCT function from the hooked
--- luaL_loadfile, so the byte write lands on memory NO cap-33 hook touches (no
--- hook/bytes overlap on one address). The write is an IDEMPOTENT NO-OP: byte 0
--- of the entry is 0x48 (the AOB in targets.toml begins "48 83 EC 38"), so
--- writing 0x48 over 0x48 applies cleanly without changing behaviour. We assert
--- RESOLUTION via :applied()==true (the byte write succeeds only if the name
--- resolved to a real, writable VA) rather than a destructive edit.
+-- Resolves the author-declared PATTERN target "pcall_safe_site" to lua_pcall's
+-- entry VA — a DISTINCT function from the hooked CGame_per_frame_ui_pump, so
+-- the byte write lands on memory NO cap-33 hook touches (no hook/bytes overlap
+-- on one address). The write is an IDEMPOTENT NO-OP: byte 0 of the entry is
+-- 0x48 (the AOB in targets.toml begins "48 89 5C 24"), so writing 0x48 over
+-- 0x48 applies cleanly without changing behaviour. We assert RESOLUTION via
+-- :applied()==true (the byte write succeeds only if the name resolved to a
+-- real, writable VA) rather than a destructive edit.
 -- ====================================================================
 local hBytes = kcdx.bytes{
     name        = "cap33_bytes_by_name",
-    target      = "loadbuffer_safe_site",  -- author-declared PATTERN target
-    original    = "48",                    -- verified byte 0 of luaL_loadbuffer entry
+    target      = "pcall_safe_site",       -- author-declared PATTERN target
+    original    = "48",                    -- verified byte 0 of lua_pcall entry
     replacement = "48",                    -- same byte: idempotent no-op
 }
 
@@ -96,7 +97,7 @@ kcdx.on("ready", function()
         local applied = hPattern:applied()
         kcdx.test.report("CAP-33-pattern-by-name", applied == true,
             applied == true
-              and ("kcdx.hook{ target=\"loadfile_by_pattern\" } applied with NO "
+              and ("kcdx.hook{ target=\"ui_pump_by_pattern\" } applied with NO "
                    .. "signature= — the author-declared PATTERN target supplied "
                    .. "BOTH address and ABI by name (cornerstones §36)")
               or  ("expected applied()==true (pattern target resolves by name "
@@ -120,7 +121,7 @@ kcdx.on("ready", function()
         local applied = hPrefixed:applied()
         kcdx.test.report("CAP-33-prefixed", applied == true,
             applied == true
-              and "explicit \"cap_33_author_targets.loadfile_by_pattern\" resolved directly"
+              and "explicit \"cap_33_author_targets.ui_pump_by_pattern\" resolved directly"
               or  ("expected applied()==true for the prefixed form; got "
                    .. "applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPrefixed:reason())))
@@ -131,7 +132,7 @@ kcdx.on("ready", function()
         local applied = hAlias:applied()
         kcdx.test.report("CAP-33-alias", applied == true and aliasOk == true,
             (applied == true and aliasOk == true)
-              and "kcdx.alias(\"lf\", \"...loadfile_by_pattern\") + kcdx.hook{ target=\"lf\" } resolved via the alias"
+              and "kcdx.alias(\"up\", \"...ui_pump_by_pattern\") + kcdx.hook{ target=\"up\" } resolved via the alias"
               or  ("expected aliasOk==true AND applied()==true; got aliasOk="
                    .. tostring(aliasOk) .. " applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hAlias:reason())))
@@ -142,7 +143,7 @@ kcdx.on("ready", function()
         local applied = hBytes:applied()
         kcdx.test.report("CAP-33-bytes-by-name", applied == true,
             applied == true
-              and "kcdx.bytes{ target=\"loadbuffer_safe_site\" } resolved the PATTERN author-target to a VA; idempotent no-op write applied"
+              and "kcdx.bytes{ target=\"pcall_safe_site\" } resolved the PATTERN author-target to a VA; idempotent no-op write applied"
               or  ("expected applied()==true (name resolved to a writable VA); "
                    .. "got applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hBytes:reason())))
@@ -151,4 +152,4 @@ end)
 
 kcdx.log.info("CAP33",
     "registered author-target hooks (pattern-by-name, engine-tier, prefixed, "
-    .. "alias) + kcdx.bytes target=loadbuffer_safe_site; applied() asserted at ready")
+    .. "alias) + kcdx.bytes target=pcall_safe_site; applied() asserted at ready")

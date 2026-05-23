@@ -89,11 +89,16 @@ using Cap04TargetFn = int(__fastcall*)(int seed);
 
 void InvokeAndReport(const char* sym, const char* sub_test_name,
                      int seed, int expected) {
-    uintptr_t va = g_api->ResolveSymbol(sym);
+    // Resolve via the SELF tier: under the <pluginname>.<name> namespace
+    // model our own [[trampoline]] export "target_a" is stored as
+    // "<thisplugin>.target_a", so a bare ResolveSymbol("target_a") with no
+    // owner would miss it. ResolveSymbolAs threads our own handle so the bare
+    // name resolves to our own export (naming-namespaces.md).
+    uintptr_t va = g_api->ResolveSymbolAs(g_self, sym);
     char reason[256];
     if (!va) {
         snprintf(reason, sizeof(reason),
-            "ResolveSymbol('%s') returned 0 — trampoline didn't "
+            "ResolveSymbolAs(self, '%s') returned 0 — trampoline didn't "
             "register its export", sym);
         gLog.Error("VERIFY", "FAIL: %s", reason);
         g_api->ReportTestResult(g_self, sub_test_name, 0, reason);
@@ -123,19 +128,19 @@ void OnMessage(kcdxMessage* msg) {
 
     if (!g_reported_a) {
         g_reported_a = true;
-        InvokeAndReport("cap04.target_a", "CAP-04a", 10, 110);
+        InvokeAndReport("target_a", "CAP-04a", 10, 110);
     }
     if (!g_reported_b) {
         g_reported_b = true;
-        InvokeAndReport("cap04.target_b", "CAP-04b", 10, 10);
+        InvokeAndReport("target_b", "CAP-04b", 10, 10);
     }
     if (!g_reported_c) {
         g_reported_c = true;
-        InvokeAndReport("cap04.target_c", "CAP-04c", 10, 10);
+        InvokeAndReport("target_c", "CAP-04c", 10, 10);
     }
     if (!g_reported_d) {
         g_reported_d = true;
-        InvokeAndReport("cap04.target_d", "CAP-04d", 10, 110);
+        InvokeAndReport("target_d", "CAP-04d", 10, 110);
     }
 }
 }  // namespace

@@ -1,8 +1,9 @@
 -- COMP-12 plugin A — self-wins asserter.
 --
--- A's targets.toml declared bare `combat_check` = the verified luaL_loadfile
--- entry AOB + ABI. Plugin B (sibling) declared bare `combat_check` = a bogus
--- non-matching pattern. Both own the bare name → a cross-plugin collision.
+-- A's targets.toml declared bare `combat_check` = the verified
+-- CGame_per_frame_ui_pump entry AOB + ABI. Plugin B (sibling) declared bare
+-- `combat_check` = a bogus non-matching pattern. Both own the bare name → a
+-- cross-plugin collision.
 --
 -- A hooks the BARE name `combat_check`. Per self > engine > other
 -- (naming-namespaces.md) the calling plugin's OWN target wins, so A's hook
@@ -10,13 +11,13 @@
 -- A's hook would resolve B's bogus pattern, fail to match, and NOT apply —
 -- so applied()==true is a falsifiable proof that SELF won.
 --
--- luaL_loadfile fires only during pre-update Scripts/ loading (dormant
--- post-install), so installing the no-op detour is harmless.
+-- CGame_per_frame_ui_pump is a direct callee of CGame::Update that cap-03
+-- hooks in production; installing the no-op detour is harmless.
 
 local hSelf = kcdx.hook{
     name   = "comp12_self",
     target = "combat_check",   -- BARE name: A owns one, B owns one → self wins
-    before = function(L, filename) return L, filename end,  -- no-op passthrough
+    before = function(self) return self end,  -- no-op passthrough
 }
 
 kcdx.on("ready", function()

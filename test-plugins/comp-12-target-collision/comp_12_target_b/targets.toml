@@ -11,4 +11,4 @@
 [[target]]
 name      = "combat_check"
 pattern   = "DE AD BE EF DE AD BE EF DE AD BE EF DE AD BE EF DE AD BE EF"
-signature = "i32 (ptr L, cstr filename)"
+signature = "void (ptr self)"

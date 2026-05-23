@@ -47,12 +47,11 @@ interface ships and is verified callable:
 - **`kcdxTargetInterface::RegisterAlias`** (↔ `kcdx.alias`) — a short,
   plugin-scoped local handle for a long prefixed shared name. Built in Lua; no
   mirror interface in the header yet. See [alias.md](alias.md).
-- **`kcdxInterface::ResolveAddressByNameAs(handle, name)`** (the namespaced
-  by-name resolution overload) — `ResolveAddressByName(name)` is built (engine
-  Address Library names; [addr.md](addr.md)), but the overload that resolves a
-  name with the *calling* plugin's namespace for self > engine > other
-  precedence — so the C++ author target table participates — is NYI. Tracked
-  alongside `kcdxTargetInterface`. See [targets.md](targets.md).
+
+(`kcdxInterface::ResolveAddressByNameAs(handle, name)` — the identity-carrying
+by-name resolution overload for self > engine > other precedence — is now
+**BUILT** and documented in [addr.md](addr.md), alongside the sibling
+`ResolveSymbolAs(handle, name)`. No longer NYI; struck from this list.)
 
 ## Genuinely not built on either surface
 

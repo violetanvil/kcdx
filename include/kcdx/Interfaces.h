@@ -308,7 +308,44 @@ typedef struct kcdxInterface {
     // (0 if unknown / wrong game_version / unverified). The C++ mirror of
     // the Lua `address_id = "name"` hook locator — names are friendlier
     // than numeric ids; numeric ids remain the stable cross-version ref.
+    //
+    // ANONYMOUS form: this overload carries no caller identity, so a BARE
+    // name resolves on the engine-seed-only path (no self / no other-plugin
+    // tier). Use ResolveAddressByNameAs (below) to get full self > engine >
+    // other precedence; or pass an explicit "<plugin>.<name>" here, which is
+    // unambiguous from any caller.
     uintptr_t (*ResolveAddressByName)(const char* name);
+
+    // Resolve a cross-plugin SYMBOL with `owner` as the "self" tier — the
+    // identity-carrying mirror of ResolveSymbol. Symbols resolve self >
+    // other (there is NO engine-seed tier for symbols — the engine seed is
+    // the Address Library, a separate surface). Pass YOUR OWN handle (the
+    // one from GetPluginHandle in your Plugin_Load) as `owner` so a BARE
+    // name resolves to your own kcdx.code{export=} / [[trampoline]] export
+    // first; an explicit "<plugin>.<name>" resolves directly regardless of
+    // owner. Pass kcdxInvalidPluginHandle (or a handle the engine doesn't
+    // know) to resolve anonymously (equivalent to ResolveSymbol). Returns
+    // 0 if the symbol is not registered for that resolution.
+    //
+    // This closes the self-tier gap that ResolveSymbol alone cannot: under
+    // the <pluginname>.<name> namespace model a plugin's own export is
+    // stored as "<yourname>.<bare>", so a bare ResolveSymbol("bare") with no
+    // owner misses your own export. ResolveSymbolAs threads the owner so the
+    // self tier resolves it. (naming-namespaces.md)
+    uintptr_t (*ResolveSymbolAs)(kcdxPluginHandle owner, const char* name);
+
+    // Resolve an author-target / Address Library NAME with `owner` as the
+    // "self" tier — the identity-carrying mirror of ResolveAddressByName and
+    // the C++ equivalent of the Lua `target = "<name>"` resolution path. A
+    // BARE name resolves self > engine > other; an explicit "<plugin>.<name>"
+    // resolves directly. Pass YOUR OWN handle as `owner`; pass
+    // kcdxInvalidPluginHandle to resolve anonymously (engine-seed-only path,
+    // equivalent to ResolveAddressByName). Returns 0 if unresolved.
+    //
+    // Closes the tracked C++ parity debt with the Lua target= path: a single
+    // shared kcdxInterface is handed to every plugin, so ResolveAddressByName
+    // alone has no per-call identity to read; this overload threads it.
+    uintptr_t (*ResolveAddressByNameAs)(kcdxPluginHandle owner, const char* name);
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------

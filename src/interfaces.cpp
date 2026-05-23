@@ -126,23 +126,20 @@ uintptr_t Thunk_ResolveAddress(uint64_t id) {
 
 uintptr_t Thunk_ResolveAddressByName(const char* name) {
     if (!name) return 0;
-    // PARITY GAP (surfaced, not papered over): the Lua side threads the
-    // calling plugin's name into ResolveByName so a bare name resolves
-    // self > engine > other (naming-namespaces.md). The C++ mirror CANNOT do
-    // the same yet: this thunk receives only `name`, and the kcdxInterface
-    // method `uintptr_t (*ResolveAddressByName)(const char* name)` carries no
-    // plugin handle. A single shared g_api is handed to every plugin
-    // (GetEngineInterfaceImpl), so there is no per-call C++ identity to read,
-    // and ResolveAddressByName may be called from any context (Load,
-    // PostLoad, a hook callback) — a "current loading plugin" static set only
-    // covers kcdxPlugin_Load and would mis-attribute every later call, which
-    // is worse than "" (AP13 — a wrong owner silently picks the wrong
-    // precedence tier). Passing "" keeps C++ on the engine-seed-only path
-    // (no self / no other-plugin tier) — correct-but-narrower than Lua, not
-    // wrong. Closing this to full parity needs an APPEND-ONLY
-    // ResolveAddressByNameAs(handle, name) overload on kcdxInterface (bump the
-    // interface version) so the caller's handle reaches here — out of this
-    // step's scope (touches the plugin-facing ABI). Tracked as a finding.
+    // ANONYMOUS by-name resolution: this thunk receives only `name` and so
+    // resolves the ENGINE-SEED + EXPLICIT-PREFIX path only — NO self tier.
+    // A single shared g_api is handed to every plugin (GetEngineInterfaceImpl),
+    // so there is no per-call C++ identity to read here, and this may be called
+    // from any context (Load, PostLoad, a hook callback) — a "current loading
+    // plugin" static would mis-attribute every later call (AP13 — a wrong owner
+    // silently picks the wrong precedence tier), which is worse than "".
+    // Passing "" keeps an explicit-prefix ("<plugin>.<name>") reference exact
+    // and a bare name on the engine-seed path. The C++/Lua parity gap is CLOSED
+    // by the sibling Thunk_ResolveAddressByNameAs(owner, name) below: a plugin
+    // that wants full self > engine > other precedence passes its OWN handle,
+    // which threads the self tier (naming-namespaces.md). The Lua target= path
+    // gets self for free because the Lua runtime knows the calling plugin; the
+    // shared C++ kcdxInterface does not, hence the explicit-handle overload.
     return kcdx::address_library::ResolveByName(name, "");
 }
 
@@ -150,6 +147,32 @@ uintptr_t Thunk_ResolveSymbol(const char* name) {
     if (!name) return 0;
     auto v = kcdx::symbols::Lookup(name);
     return v.value_or(0);
+}
+
+// Convert a plugin handle to the registering plugin's [plugin].name (the
+// namespace prefix the symbol / author-target resolvers expect). The handle
+// is the index into g_plugins (assigned in DiscoverAndLoad); guard it exactly
+// as Thunk_Log does. An invalid / unknown handle yields "" — the anonymous
+// (engine-seed-only, no self tier) path, which is correct-but-narrower, never
+// a mis-attribution to the wrong owner.
+const std::string& NameForHandle(kcdxPluginHandle owner) {
+    static const std::string kEmpty;
+    if (owner == kcdxInvalidPluginHandle) return kEmpty;
+    size_t idx = static_cast<size_t>(owner);
+    if (idx >= g_plugins.size()) return kEmpty;
+    return g_plugins[idx].manifest.name;
+}
+
+uintptr_t Thunk_ResolveSymbolAs(kcdxPluginHandle owner, const char* name) {
+    if (!name) return 0;
+    auto v = kcdx::symbols::Lookup(name, NameForHandle(owner));
+    return v.value_or(0);
+}
+
+uintptr_t Thunk_ResolveAddressByNameAs(kcdxPluginHandle owner,
+                                       const char* name) {
+    if (!name) return 0;
+    return kcdx::address_library::ResolveByName(name, NameForHandle(owner).c_str());
 }
 
 // Level filter for plugin-side Log calls.
@@ -367,7 +390,9 @@ kcdxInterface g_api = {
     /*GetConflictReport=*/  Thunk_GetConflictReport,
     // Append-only (see Interfaces.h): new pointers go at the END so
     // existing-compiled plugins keep their offsets.
-    /*ResolveAddressByName=*/ Thunk_ResolveAddressByName,
+    /*ResolveAddressByName=*/   Thunk_ResolveAddressByName,
+    /*ResolveSymbolAs=*/        Thunk_ResolveSymbolAs,
+    /*ResolveAddressByNameAs=*/ Thunk_ResolveAddressByNameAs,
 };
 
 }  // namespace

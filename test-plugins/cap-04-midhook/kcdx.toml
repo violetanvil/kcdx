@@ -42,28 +42,34 @@ test_names          = ["CAP-04a", "CAP-04b", "CAP-04c", "CAP-04d"]
 
 # --- Targets: 4 identical 9-byte code stubs, exported by name -----------------
 
+# Exports are BARE names (target_a..d). Under the <pluginname>.<name>
+# namespace model the engine derives the prefix from [plugin].name, so these
+# register as "<thisplugin>.target_a" etc. Consumers reference the BARE name
+# and resolve it via the self tier (the C++ DLL uses ResolveSymbolAs(g_self,
+# "target_a"); the [[mid_hook]] target_symbol path threads this plugin's name
+# automatically). (naming-namespaces.md)
 [[trampoline]]
 name   = "cap04_target_a"
 pool   = "branch"
-export = "cap04.target_a"
+export = "target_a"
 bytes  = "48 89 C8 48 83 C0 64 90 C3"
 
 [[trampoline]]
 name   = "cap04_target_b"
 pool   = "branch"
-export = "cap04.target_b"
+export = "target_b"
 bytes  = "48 89 C8 48 83 C0 64 90 C3"
 
 [[trampoline]]
 name   = "cap04_target_c"
 pool   = "branch"
-export = "cap04.target_c"
+export = "target_c"
 bytes  = "48 89 C8 48 83 C0 64 90 C3"
 
 [[trampoline]]
 name   = "cap04_target_d"
 pool   = "branch"
-export = "cap04.target_d"
+export = "target_d"
 bytes  = "48 89 C8 48 83 C0 64 90 C3"
 
 # --- Mid-hooks: one per call_original mode ------------------------------------
@@ -73,7 +79,7 @@ bytes  = "48 89 C8 48 83 C0 64 90 C3"
 [[mid_hook]]
 name           = "cap04a_true_capture"
 priority       = 100
-target_symbol  = "cap04.target_a"
+target_symbol  = "target_a"
 offset         = 3
 param_types    = ["i64"]
 param_captures = ["rax"]
@@ -85,7 +91,7 @@ lua_callback   = "kcdx.Cap04Test.OnA"
 [[mid_hook]]
 name           = "cap04b_false_skip"
 priority       = 100
-target_symbol  = "cap04.target_b"
+target_symbol  = "target_b"
 offset         = 3
 param_types    = ["i64"]
 param_captures = ["rax"]
@@ -96,7 +102,7 @@ call_original  = false
 [[mid_hook]]
 name           = "cap04c_auto_skip"
 priority       = 100
-target_symbol  = "cap04.target_c"
+target_symbol  = "target_c"
 offset         = 3
 param_types    = ["i64"]
 param_captures = ["rax"]
@@ -107,7 +113,7 @@ call_original  = "auto"
 [[mid_hook]]
 name           = "cap04d_auto_no_skip"
 priority       = 100
-target_symbol  = "cap04.target_d"
+target_symbol  = "target_d"
 offset         = 3
 param_types    = ["i64"]
 param_captures = ["rax"]
