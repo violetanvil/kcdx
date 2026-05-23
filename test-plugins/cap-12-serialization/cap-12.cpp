@@ -5,6 +5,15 @@
 // counter and verify it matches our expectation. On Revert (no
 // cosave for this save, or new game), reset to 0.
 //
+// Tag mechanism: the counter record is opened by NAME ("counter") via
+// OpenRecordNamed (the v2 string-tag path), and read back by comparing
+// GetRecordTagName() against "counter" — not by hand-packing a FourCC
+// magic number. The engine carries the name->u32 hash and the string
+// for read-back, so the author never reverse-engineers a tag encoding
+// (the disassembler-test fix for the hand-packed tag, AP12). The UID
+// stays an explicit SetUniqueID (the valid C++ expert path; a C++
+// name-derived-UID default is a tracked future parity item).
+//
 // Pass conditions (reported at successive lifecycle messages):
 //   - kInputLoaded: registration succeeded (interface fetched,
 //     callbacks set without error).
@@ -22,18 +31,25 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include "kcdx/Interfaces.h"
 
 namespace {
 const char* kName = "kcdx.cap-12-serialization";
 
-// Cosave UID — distinct from any other plugin. ASCII "C12S" packed
-// little-endian.
+// Cosave UID — distinct from any other plugin. The C++ surface pins
+// the plugin's section identity explicitly via SetUniqueID (the valid
+// expert path); the Lua cosave binder auto-derives the UID from the
+// plugin name, but no C++ name-derived-UID default exists yet (a tracked
+// future parity item). ASCII "C12S" packed little-endian.
 constexpr uint32_t kUID = 0x53323143;  // 'C','1','2','S'
 
-// Record tag — plugin-defined. We only ship one record, named "CNTR".
-constexpr uint32_t kRecordTag     = 0x52544E43;  // 'C','N','T','R'
+// Record version. The record itself is opened by NAME ("counter") via
+// OpenRecordNamed (the string-tag path) — the engine hashes the name to
+// the u32 it stores and records the string for read-back, so this plugin
+// never hand-packs a FourCC tag (the disassembler-test fix for the
+// hand-packed magic-number tag, AP12).
 constexpr uint32_t kRecordVersion = 1;
 
 const kcdxInterface*              g_api  = nullptr;
@@ -68,7 +84,7 @@ void Report(const char* status, int pass, const char* reasonFmt, ...) {
 
 void OnSave(kcdxPluginHandle /*plugin*/) {
     g_counter += 1;
-    g_ser->OpenRecord(kRecordTag, kRecordVersion);
+    g_ser->OpenRecordNamed("counter", kRecordVersion);
     g_ser->WriteRecordData(&g_counter, sizeof(g_counter));
 }
 
@@ -76,7 +92,14 @@ void OnLoad(kcdxPluginHandle /*plugin*/) {
     g_loadObserved = true;
     uint32_t tag = 0, version = 0, len = 0;
     while (g_ser->GetNextRecordInfo(&tag, &version, &len)) {
-        if (tag == kRecordTag && len == sizeof(uint64_t)) {
+        // Match by the human-readable STRING tag, not the hashed u32:
+        // GetRecordTagName hands back the name the chunk was opened
+        // under ("counter"). This proves the named round-trip end-to-end
+        // and is what the cross-language parity test leans on (a Lua
+        // plugin writing "counter" and this C++ plugin reading "counter"
+        // resolve to the same record).
+        const char* name = g_ser->GetRecordTagName();
+        if (name && strcmp(name, "counter") == 0 && len == sizeof(uint64_t)) {
             uint64_t v = 0;
             if (g_ser->ReadRecordData(&v, sizeof(v))) {
                 g_lastLoadedValue = v;
