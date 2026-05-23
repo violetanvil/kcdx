@@ -10,126 +10,171 @@
 
 **kcdx is the SKSE-class extender for Kingdom Come: Deliverance II.**
 Function hooks, trampolines, console commands, save/load
-serialization, inter-plugin messaging, persistent storage. The
-plugin API deliberately mirrors SKSE / F4SE so anyone who's shipped
-an SKSE plugin can pick this up in an hour.
+serialization, inter-plugin messaging. Two first-class authoring
+languages — **Lua** (a `plugin.lua`, no compiler) and **C++** (a
+plugin DLL), at feature parity — and the C++ surface deliberately
+mirrors SKSE / F4SE so anyone who's shipped an SKSE plugin can pick
+this up in an hour.
 
-**Status: v0.1 in development.** This README documents the planned
-v0.1 surface; the implementation is being built phase by phase.
-See the [roadmap](#roadmap) below for what's shipping when.
+**Status: v0.2 restructure in progress.** The Lua authoring surface
+is live; some core verbs are still being built. See
+[Status](#status) below for what's shipping when.
 
-## "I just want to flip three bytes" — simple byte patches work in kcdx too
+## How you write a plugin
 
-If you only need a same-length byte rewrite, kcdx accepts the exact
-mempatch `[[patch]]` schema, identical semantics, identical safety
-checks. No DLL, no Lua, no compiler:
+A plugin is a **folder**. It carries a **manifest-only** `kcdx.toml`
+— identity, entrypoints, and load-order, with **no behavior in it**
+— plus a `plugin.lua` and/or a DLL. All behavior is **code**, written
+against the `kcdx.*` surface.
+
+The smallest working Lua plugin is a two-key manifest and a one-line
+script:
+
+`kcdx.toml`:
 
 ```toml
-# plugins/my-mod/kcdx.toml
-[[patch]]
-name        = "outfit_swap_in_combat"
-pattern     = "48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0"
-offset      = 13
-original    = "44 8A F0"
-replacement = "45 31 F6"
+[plugin]
+name    = "kcdx.my-first-plugin"
+version = "0.1.0"
+
+[entrypoints]
+lua = "plugin.lua"
 ```
 
-Drop the folder in `plugins/`, launch. Same as mempatch. Same
-pre-flight conflict detection, same locator tiers (`pattern`,
-`context`, `anchor_string`), same idempotent re-runs. **You do not
-have to learn what a hook is to use kcdx for the simple case.**
+`plugin.lua`:
 
-## What kcdx handles
+```lua
+kcdx.on("ready", function()
+    kcdx.log.info("MYMOD", "hello from my first plugin")
+end)
+```
 
-A single declarative TOML can flip bytes in `WHGame.dll` (full
-pre-flight safety checks, no code needed). Beyond that, kcdx covers
-**everything else** through one engine:
+Drop the folder in `kcdx-plugins/`, launch. Everything an author
+calls hangs off the single `kcdx` global: the core actions you do
+to register intent with the engine are `kcdx.<verb>`; everything
+else is a grouped domain, `kcdx.<domain>.<verb>`. When you are
+*configuring* something you pass a `{ named = table }`; when you are
+just *doing* something you pass positional args.
 
-| Need | Supported |
+### What kcdx handles — and the call that does it
+
+| Need | Surface |
 |---|---|
-| Flip a few bytes in `WHGame.dll` | `[[patch]]` |
-| Hook a function (before/after/skip) | `[[hook]]` / DLL |
-| Allocate executable memory and call into it | `[[trampoline]]` / DLL |
-| Register a console command | `[[command]]` |
-| Subscribe to game-load / save events | `[[event]]` |
-| Persist data across saves | cosave API |
-| Expose new functions to KCD2's Lua | Lua bridge |
+| Flip bytes in `WHGame.dll` (same-length rewrite) | `kcdx.bytes{}` |
+| Hook a function (before / after / around / replace / mid / callsite) | `kcdx.hook{}` |
+| React to load / save / lifecycle events | `kcdx.on(event, fn)` |
+| Register a console command | `kcdx.command{}` |
+| Cross-plugin events | `kcdx.publish(event, payload)` + `kcdx.on("<plugin>:<event>", fn)` |
+| Read/write memory, call game functions | `kcdx.memory.*` |
+| Address Library lookup (name → pointer) | `kcdx.addr.*` |
+| Allocate code / trampolines | `kcdx.code{}` — *planned, not yet built* |
+| Persist data across saves | `kcdx.cosave.*` — *planned, not yet built* |
+| Diagnostic AOB scan (top-level verb) | `kcdx.scan{}` — *planned; use `kcdx.memory.scan_pattern` today* |
 
-## SKSE compatibility — naming and conventions
+The first seven rows are live today. The last three are on the
+roadmap and **not callable yet** — do not write code against them
+(see [`docs/lua-api.md` §Planned](docs/lua-api.md)).
 
-The C++ plugin API mirrors SKSE / F4SE exactly, with `kcdx`
-substituted for `SKSE`. A plugin DLL exports `kcdxPlugin_Version`
-(data block) and `kcdxPlugin_Load` (entry function). The interfaces
-are `kcdxMessagingInterface`, `kcdxTrampolineInterface`,
-`kcdxSerializationInterface`, `kcdxTaskInterface`,
-`kcdxScriptingInterface` (the SKSE Papyrus interface's equivalent,
-binding KCD2's Lua VM instead). Lifecycle messages keep the SKSE
-names (`kMessage_PostLoad`, `kMessage_PostPostLoad`,
-`kMessage_InputLoaded`, `kMessage_SaveGame`, `kMessage_PreLoadGame`,
-`kMessage_PostLoadGame`, `kMessage_DeleteGame`, `kMessage_NewGame`)
-so authors don't have to relearn anything.
+### The engine does the heavy lifting
 
-## Where kcdx enhances SKSE
+**You declare WHAT you want; the engine resolves the WHERE and HOW.**
+`kcdx.hook{ target = "IsInCombat" }` gives you the address **and** the
+verified ABI from the name alone — you write no hex and no signature.
+Raw byte patterns, RVAs, and hand-written signatures are an
+expert-only escape hatch for targets the Address Library can't name
+yet, never the common path.
 
-Five concrete improvements over the SKSE design, each addressing a
-documented SKSE weak spot:
+A real hook is just as short:
 
-1. **Inter-plugin conflict detection.** kcdx ports the pre-flight
-   model from mempatch (incidental / write-on-original /
-   write-on-write categories with plain-English log lines naming
-   the conflicting plugins). SKSE silently lets plugins clobber each
-   other.
-2. **Declarative TOML plugin path.** A `kcdx.toml` file can declare
-   `[[patch]]`, `[[hook]]`, `[[mid_hook]]`, `[[trampoline]]`,
-   `[[command]]`, `[[event]]` entries without writing any C++. The
-   Lua-callback path is lossy compared to a real DLL but covers most
-   gameplay-tweak use cases.
+```lua
+kcdx.hook{
+    name   = "boost_score",
+    target = "Score",                      -- name supplies address AND signature
+    after  = function(ret) return ret + 1000 end,
+}
+```
+
+**Full API reference: [`docs/lua-api.md`](docs/lua-api.md)** — every
+verb, domain, accessor, argument, call shape, and error mode, with
+the full manifest schema.
+
+## SKSE parity — Lua and C++ are both first-class
+
+The C++ plugin DLL surface mirrors SKSE / F4SE, with `kcdx`
+substituted for `SKSE`. A plugin DLL exports `kcdxPlugin_Load` (entry)
+and declares its identity in the manifest's `[plugin]` block. The
+interface family is `kcdxMessagingInterface`, `kcdxTaskInterface`,
+`kcdxTrampolineInterface`, `kcdxSerializationInterface`,
+`kcdxConsoleInterface`, `kcdxScriptingInterface` (the SKSE Papyrus
+interface's equivalent, binding KCD2's Lua VM), plus an in-box Address
+Library. Lifecycle messages keep the `kcdxMessage_*` names
+(`PostLoad`, `PostPostLoad`, `InputLoaded`, `NewGame`, `PreLoadGame`,
+`PostLoadGame`, `SaveGame`, `LoadGameSelected`, `DeleteGame`) so SKSE
+authors don't relearn anything.
+
+Lua and C++ are **two expressions of one model at feature parity** —
+same concepts, same names, each idiomatic in its language. Anything
+you can do in Lua you can do in C++ and vice-versa; neither is the
+"real" surface. (During the v0.2 restructure the new `kcdx.hook`-family
+verbs land in Lua first, then backfill to the C++ interface — see the
+restructure plan.)
+
+Concrete improvements over the SKSE design:
+
+1. **Inter-plugin conflict detection.** kcdx detects when two plugins
+   touch the same bytes or function and mediates by load order with
+   plain-English log lines naming the plugins. SKSE silently lets
+   plugins clobber each other.
+2. **Two first-class authoring languages — no behavior-in-TOML.**
+   Write your whole mod in Lua (`plugin.lua`, no compiler) or in C++
+   (a DLL), at parity. The `kcdx.toml` is a manifest only — identity,
+   entrypoints, load-order — so there is no lossy "declarative
+   behavior" tier to outgrow.
 3. **Public `EnumeratePlugins()` API.** SKSE deliberately hides the
    loaded-plugin list; kcdx exposes it for conflict diagnostics and
    config UIs.
-4. **Optional dependency graph.** Plugins may declare
-   `dependencies = [...]` in their version data; the loader
-   topologically sorts before issuing `kcdxPlugin_Load` calls.
+4. **Optional dependency graph.** Plugins declare `[[plugin.dependencies]]`
+   in the manifest; the loader topologically sorts before issuing
+   `kcdxPlugin_Load` calls.
 5. **In-box Address Library.** SKSE's Address Library is a separate
-   community mod; kcdx ships a small address database alongside the
-   engine itself, updated per game patch. API:
-   `kcdx::ResolveAddress(uint64_t id)`. Community can contribute IDs
-   via PR.
+   community mod; kcdx ships an address database alongside the engine
+   itself, updated per game patch — surfaced to Lua as `kcdx.addr.*`
+   and to C++ as `ResolveAddress` / `ResolveAddressByName`. Community
+   can contribute IDs via PR.
 
-## Roadmap
+## Status
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Foundation — `[[patch]]` schema (mempatch-equivalent byte rewrites under `kcdx.toml`) | **live-verified** |
-| 2 | Plugin loader — DLL discovery, dependency topo-sort, Preload/Load dispatch. Shape C refactor: plugin identity moved from DLL exports to `kcdx.toml [plugin]` schema. | **live-verified** |
-| 3 | Messaging + Task + lifecycle messages | **live-verified** |
-| 4a | Trampoline allocator (branch + local pools) + `kcdxTrampolineInterface` + per-plugin log files | **live-verified** |
-| 4b.1 | `[[hook]]` schema (raw-bytes function-entry detours via MinHook) | **live-verified** |
-| 4b.2 | `[[trampoline]]` schema + cross-plugin symbol table (export / target_symbol) | **live-verified** |
-| 4b.3 | Unified conflict matrix + global apply order across all entry types | **live-verified** |
-| 5c | Lua marshaling — raw Lua C API only (no sol2), `kcdx.memory.*` namespace, pak-Lua-driven runtime hooks via `dynamic_hook`, address resolution via `cfunction_address` | **live-verified** |
-| 5d | Lua VM threading constraint documented (Hard Rule #16); no runtime guard in v0.1 | **documented** |
-| 5e | `kcdxScriptingInterface` — C++ DLLs register Lua-callable functions via function-pointer struct (no exported Lua C API from kcdx.dll) | **live-verified** |
-| 5f | `[[hook]] lua_callback` schema (TOML hook dispatches to pak-Lua function) | **live-verified** |
-| 5g | `[[mid_hook]]` schema (mid-instruction hook with register capture) — schema + capture + three-mode `call_original` (true/false/"auto" with Lua-side `args._skip` runtime decision) | **live-verified** |
-| 5h | `kcdxMemoryInterface` (C++ DLL surface mirroring `kcdx.memory.*` — ScanPattern, Read/WriteBytes, GetModuleBase) + dev-mode-gated test suite + `kcdxMessage_LuaReady` + modder-UX trace gaps | **live-verified** |
-| 6a | Save/load lifecycle hooks (kSaveGame / kPreLoadGame / kPostLoadGame / kDeleteGame / kLoadGameSelected) on `C_SaveGameManager` + slot-resolver | **live-verified** |
-| 6b | `kcdxSerializationInterface` (`.kcdx` co-save format + plugin Save/Load/Revert callbacks) | **live-verified** |
-| 7  | Address Library (CSV → compiled-in id→RVA table + `ResolveAddress` + `address_id` TOML locator) + `kcdxConsoleInterface` (IConsole::AddCommand wrapper for plugin-registered console commands) | **live-verified** |
-| 8 | Docs + examples + v0.1.0 release | not started |
+**v0.2 restructure in progress.** The Lua authoring surface — the
+`kcdx.*` model above — is live and exercised by the regression suite:
+`kcdx.hook` (before / after / around / replace / mid / callsite),
+`kcdx.bytes`, `kcdx.on` (the `ready` event + the 9 game-lifecycle
+events), `kcdx.command` + `kcdx.console.execute`, `kcdx.publish`
+cross-plugin pub/sub, multi-file plugins (`require`), and the
+both-phase (before-game / after-game) execution model in both Lua and
+C++. The remaining core verbs — `kcdx.code` (trampolines), `kcdx.cosave`
+(per-save persistence), `kcdx.scan` — are **planned, not yet built**;
+the C++ mirror of the new `kcdx.hook`-family interfaces is the next
+parity backfill.
 
-Test suite reporting **`21/21 passing`** on every dev-mode boot
-(verified 2026-05-20 18:32; full pass on `update tick`,
-`kPreLoadGame`, `kPostLoadGame`) — see
-[`test-plugins/README.md`](test-plugins/README.md) for the live
-matrix.
+The dev-mode regression suite was at **58/60 passing** at the last
+checkpoint (the remaining rows are `[manual]` save/load gestures, not
+failures). To answer the three questions an author actually asks:
 
-**Authoritative spec (v0.2 in progress):** the restructure plan at
-[`docs/outstanding-work/restructure-plan.md`](docs/outstanding-work/restructure-plan.md).
-[`docs/design.md`](docs/design.md) is the v0.1 spec and is currently
-marked SUPERSEDED — most of its schema/lifecycle/install sections are
-being replaced phase-by-phase. Read the restructure plan first if
-you're writing a plugin or contributing to the engine.
+- **"What can I call today?"** →
+  [`docs/lua-api.md`](docs/lua-api.md). Its main body is the live API
+  surface — if a verb is documented there it is built and callable; the
+  [§Planned](docs/lua-api.md) section lists what is coming but not yet
+  callable.
+- **"What passes live right now?"** (per-row status + SHA) →
+  [`test-plugins/README.md`](test-plugins/README.md), the live test
+  matrix.
+- **"What's the v0.2 phase plan, and what's still coming?"** →
+  [`docs/outstanding-work/restructure-plan.md`](docs/outstanding-work/restructure-plan.md),
+  the restructure roadmap.
+
+[`docs/design.md`](docs/design.md) is the v0.1 spec and is marked
+SUPERSEDED — read the restructure plan first if you're writing a
+plugin or contributing to the engine.
 
 ## Installation (v0.2 layout, Phase 1+)
 
