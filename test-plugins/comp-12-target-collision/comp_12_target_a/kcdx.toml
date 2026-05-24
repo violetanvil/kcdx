@@ -20,7 +20,7 @@ test_suite_only = true
 [plugin]
 name                = "comp_12_target_a"
 display_name        = "COMP-12 target collision (A, self-wins asserter)"
-author              = "kcdx"
+author              = "ts"
 description         = "Plugin A declares bare target `combat_check` (good locator) colliding with plugin B's same-named target (bogus). A hooks the bare name and asserts its OWN target won the self>engine>other precedence."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

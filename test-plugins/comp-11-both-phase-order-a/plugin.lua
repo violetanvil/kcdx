@@ -11,8 +11,8 @@
 --
 -- The token event is the BARE name "phase_token"; the engine prepends the
 -- publishing plugin's name, so a token from A arrives as
--- "ts_comp_11_both_phase_order_a:phase_token" and one from B as
--- "ts_comp_11_both_phase_order_b:phase_token". The event NAME tells WHICH
+-- "ts.comp_11_both_phase_order_a.phase_token" and one from B as
+-- "ts.comp_11_both_phase_order_b.phase_token". The event NAME tells WHICH
 -- plugin; the payload { slot = "before" | "after" } tells WHICH slot. The
 -- collector reconstructs the ordered [plugin, slot] sequence as
 -- "<plugin>.<slot>" strings.
@@ -29,10 +29,10 @@ end
 
 -- (1) Collector subscriptions — registered FIRST, before any publish below.
 -- A subscribes to BOTH plugins' phase_token events by their stamped names.
-kcdx.on("ts_comp_11_both_phase_order_a:phase_token", function(payload)
+kcdx.on("ts.comp_11_both_phase_order_a.phase_token", function(payload)
     record("a", payload)
 end)
-kcdx.on("ts_comp_11_both_phase_order_b:phase_token", function(payload)
+kcdx.on("ts.comp_11_both_phase_order_b.phase_token", function(payload)
     record("b", payload)
 end)
 

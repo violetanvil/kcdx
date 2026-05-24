@@ -24,7 +24,7 @@
 -- we never round-trip an address through a Lua number.
 
 -- Bare export name: the engine stamps the calling plugin's [plugin].name
--- prefix (ts_cap_30_lua_code) automatically, registering ts_cap_30_lua_code.region.
+-- prefix (ts.cap_30_lua_code) automatically, registering ts.cap_30_lua_code.region.
 -- The consumer below uses the SAME bare name; since the same plugin both
 -- exports and consumes, self>engine>other precedence self-resolves it
 -- (naming-namespaces.md). The author NEVER types their own prefix.

@@ -95,7 +95,7 @@ static int Lua_Add(struct lua_State* L, void* /*user_data*/) {
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api = api;
-    kcdxPluginHandle self = api->GetPluginHandle("violetanvil.hello-plugin");
+    kcdxPluginHandle self = api->GetPluginHandle("hello_plugin");
     gLog  = kcdxLogger(api, self);
 
     gLog.Info("INIT", "kcdxPlugin_Load called");

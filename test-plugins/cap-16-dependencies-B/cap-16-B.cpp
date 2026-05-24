@@ -3,16 +3,16 @@
 // Declared dependency on cap-16-A. By the time Plugin_Load fires here,
 // A's Plugin_Load must have completed (topo-sort guarantee).
 // Verifies:
-//   - GetPluginInfo("ts_cap_16_a") returns non-null
+//   - GetPluginInfo("cap_16_a") returns non-null
 //   - The info struct's version matches what A's TOML declared (1.0.0 = 0x01000000)
-//   - GetPluginHandle("ts_cap_16_a") returns a valid handle
+//   - GetPluginHandle("cap_16_a") returns a valid handle
 
 #include <windows.h>
 #include <cstdio>
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "ts_cap_16_b";
+const char* kName = "cap_16_b";
 kcdxLogger  gLog;
 }
 
@@ -22,18 +22,18 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     gLog = kcdxLogger(api, self);
     gLog.Info("INIT", "kcdxPlugin_Load called");
 
-    const kcdxPluginInfo* a = api->GetPluginInfo("ts_cap_16_a");
+    const kcdxPluginInfo* a = api->GetPluginInfo("cap_16_a");
     if (!a) {
-        gLog.Error("INIT", "GetPluginInfo('ts_cap_16_a') returned null - A not loaded?");
+        gLog.Error("INIT", "GetPluginInfo('cap_16_a') returned null - A not loaded?");
         api->ReportTestResult(self, "CAP-16", 0,
-            "GetPluginInfo('ts_cap_16_a') returned null - A not loaded?");
+            "GetPluginInfo('cap_16_a') returned null - A not loaded?");
         return true;
     }
-    kcdxPluginHandle aHandle = api->GetPluginHandle("ts_cap_16_a");
+    kcdxPluginHandle aHandle = api->GetPluginHandle("cap_16_a");
     if (aHandle == kcdxInvalidPluginHandle) {
-        gLog.Error("INIT", "GetPluginHandle('ts_cap_16_a') returned invalid handle");
+        gLog.Error("INIT", "GetPluginHandle('cap_16_a') returned invalid handle");
         api->ReportTestResult(self, "CAP-16", 0,
-            "GetPluginHandle('ts_cap_16_a') returned invalid handle");
+            "GetPluginHandle('cap_16_a') returned invalid handle");
         return true;
     }
 

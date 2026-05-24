@@ -30,9 +30,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_32_scan"
+name                = "cap_32_scan"
 display_name        = "CAP-32 kcdx.scan diagnostic AOB scan"
-author              = "kcdx"
+author              = "ts"
 description         = "Pure-Lua kcdx.scan self-test: a known-unique pattern resolves to count==1 with module attribution, a bogus pattern returns the always-a-table count==0 / addr==nil / empty-matches contract, and a missing-field call returns (nil, teaching-err) rather than a table."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

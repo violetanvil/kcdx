@@ -16,9 +16,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_01_patch"
+name                = "cap_01_patch"
 display_name        = "CAP-01 Patch byte-rewrite"
-author              = "kcdx"
+author              = "ts"
 description         = "Verifies [[patch]] applies + bytes match post-apply."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

@@ -14,7 +14,7 @@ test_suite_only = true
 [plugin]
 name                = "comp_12_target_b"
 display_name        = "COMP-12 target collision (B, collider)"
-author              = "kcdx"
+author              = "ts"
 description         = "Plugin B declares a second target named `combat_check` (bogus locator) to collide with plugin A's same-named target, exercising cross-plugin self>engine>other precedence. B asserts nothing."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

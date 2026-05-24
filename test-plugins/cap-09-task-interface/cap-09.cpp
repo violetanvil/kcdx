@@ -12,7 +12,7 @@
 
 namespace {
 
-const char* kName = "ts_cap_09_task_interface";
+const char* kName = "cap_09_task_interface";
 
 const kcdxInterface* g_api  = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;

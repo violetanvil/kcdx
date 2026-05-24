@@ -29,9 +29,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_20_hook_modes"
+name                = "cap_20_hook_modes"
 display_name        = "CAP-20 kcdx.hook modes + chaining"
-author              = "kcdx"
+author              = "ts"
 description         = "kcdx.hook before/after/around/replace + chaining + wstr + conflict."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

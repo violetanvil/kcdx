@@ -10,9 +10,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_12_serialization"
+name                = "cap_12_serialization"
 display_name        = "CAP-12 Serialization"
-author              = "kcdx"
+author              = "ts"
 description         = "Round-trips a counter through kcdxSerializationInterface."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

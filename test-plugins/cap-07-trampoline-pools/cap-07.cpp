@@ -6,7 +6,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "ts_cap_07_trampoline_pools";
+const char* kName = "cap_07_trampoline_pools";
 kcdxLogger gLog;
 }
 

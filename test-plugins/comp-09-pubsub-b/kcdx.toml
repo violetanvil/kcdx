@@ -2,7 +2,7 @@
 #
 # Phase 2b sub-9. The subscriber half. Its companion is comp-09-pubsub-a
 # (the publisher). B subscribes at plugin.lua-LOAD time to plugin A's custom
-# event via the "<publisher>:event" name form; A publishes from its
+# event via the "<author>.<plugin>.<event>" 3-segment dot form; A publishes from its
 # input_loaded handler (after all plugin.lua loaded), so B's subscription is
 # guaranteed registered before the publish (deterministic ordering — see
 # comp-09-pubsub-a/kcdx.toml).
@@ -11,7 +11,7 @@
 # the event AND the table payload arrived intact (payload.x == 42,
 # payload.name == "Noble"), proving (a) the payload rode by reference and
 # (b) A's publisher namespace resolved correctly (the event fired under
-# "ts_comp_09_pubsub_a:outfit_changed", which is the name B subscribed to).
+# "ts.comp_09_pubsub_a.outfit_changed", which is the name B subscribed to).
 #
 # test_names pre-registers the row so the aggregator counts it even before
 # the callback fires (PENDING until input_loaded fires on boot).
@@ -20,9 +20,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_comp_09_pubsub_b"
+name                = "comp_09_pubsub_b"
 display_name        = "COMP-09 pub/sub subscriber (B)"
-author              = "kcdx"
+author              = "ts"
 description         = "Subscribes to plugin A's published custom event and asserts the table payload arrived by reference with the right publisher namespace."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

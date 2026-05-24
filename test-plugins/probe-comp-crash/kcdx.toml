@@ -10,9 +10,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_probe_comp_crash"
+name                = "probe_comp_crash"
 display_name        = "PROBE comp-crash"
-author              = "kcdx"
+author              = "ts"
 description         = "Replicate comp-02/comp-03 flow to pinpoint crash step."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

@@ -33,7 +33,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "ts_cap_04_midhook";
+const char* kName = "cap_04_midhook";
 
 const kcdxInterface*           g_api    = nullptr;
 const kcdxScriptingInterface*  g_script = nullptr;

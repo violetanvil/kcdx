@@ -8,7 +8,7 @@
 --
 -- B is a pure publisher: it only publishes its phase tokens. The bare event is
 -- "phase_token" with payload { slot = ... }; the engine stamps it under B's
--- name ("ts_comp_11_both_phase_order_b:phase_token"), which is the name A
+-- name ("ts.comp_11_both_phase_order_b.phase_token"), which is the name A
 -- subscribed to.
 
 kcdx.publish("phase_token", { slot = "before" })

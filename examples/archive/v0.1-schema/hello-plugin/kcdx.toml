@@ -10,9 +10,9 @@
 # kcdx.toml [plugin] / [entrypoints] schema.
 
 [plugin]
-name                = "violetanvil.hello-plugin"
+name                = "hello_plugin"
 display_name        = "Hello Plugin"
-author              = "VioletAnvil"
+author              = "violetanvil"
 description         = "Minimal kcdx plugin example"
 url                 = "https://github.com/violetanvil/kcdx"
 version             = "0.1.0"

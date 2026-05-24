@@ -37,7 +37,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "ts_cap_21_mid_hook";
+const char* kName = "cap_21_mid_hook";
 kcdxLogger  gLog;
 const kcdxInterface*      g_api   = nullptr;
 kcdxPluginHandle          g_self  = kcdxInvalidPluginHandle;

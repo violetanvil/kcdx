@@ -10,9 +10,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_17_enumerate_plugins"
+name                = "cap_17_enumerate_plugins"
 display_name        = "CAP-17 EnumeratePlugins"
-author              = "kcdx"
+author              = "ts"
 description         = "Asserts EnumeratePlugins returns sensible data including self."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

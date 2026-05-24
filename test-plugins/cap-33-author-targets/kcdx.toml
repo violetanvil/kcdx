@@ -26,7 +26,7 @@
 #     name) still resolves — the engine tier of self>engine>other coexists with
 #     the author's own targets.
 #   * CAP-33-prefixed: the explicit "<pluginname>.<target>" form
-#     ("ts_cap_33_author_targets.luaopen_math_by_id") resolves directly. Points at
+#     ("ts.cap_33_author_targets.luaopen_math_by_id") resolves directly. Points at
 #     the VERIFIED-ID target (luaopen_math by address_id=1172 — an UNHOOKED verified
 #     leaf; RVA-resolved, no scan), so it proves PREFIX resolution and passes.
 #   * CAP-33-bytes-by-name: kcdx.bytes{ target = "bool_leaf_safe_site" }
@@ -35,7 +35,7 @@
 #     prologue is pristine) to a writable VA; an idempotent no-op write (0x48
 #     over the existing 0x48 — byte 0 of the lua_toboolean entry, read from
 #     WHGame.dll) :applied()==true proves the resolution.
-#   * CAP-33-alias: kcdx.alias("up", "ts_cap_33_author_targets.luaopen_math_by_id")
+#   * CAP-33-alias: kcdx.alias("up", "ts.cap_33_author_targets.luaopen_math_by_id")
 #     then kcdx.hook{ target = "up" } resolves the hook via the local alias to
 #     the same VERIFIED-ID target, so it proves ALIAS resolution and can pass.
 #
@@ -48,9 +48,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_33_author_targets"
+name                = "cap_33_author_targets"
 display_name        = "CAP-33 author-declared named targets + alias"
-author              = "kcdx"
+author              = "ts"
 description         = "Author-declared targets.toml self-test: a pattern target with a signature hooked BY NAME end-to-end (cornerstones §36), engine-tier + explicit-prefix + alias resolution, and a kcdx.bytes target=<name> resolution."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

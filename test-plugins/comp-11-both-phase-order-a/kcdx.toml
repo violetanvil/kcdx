@@ -24,7 +24,7 @@
 # The only cross-plugin channel is kcdx.publish / kcdx.on (sub-9, COMP-09). So
 # each slot, WHEN IT RUNS, publishes a token naming its slot
 # (kcdx.publish("phase_token", { slot = "before" | "after" })); the engine
-# stamps it "<publisher>:phase_token" so the publisher (a vs b) is in the event
+# stamps it "<author>.<plugin>.phase_token" so the publisher (a vs b) is in the event
 # NAME, the slot is in the payload. A is the ASSERTER: it subscribes (kcdx.on)
 # to BOTH plugins' token events to COLLECT them into an ordered list as they
 # fire, and at input_loaded (after RunAll + RunAfterEntrypoints, per sub-3)
@@ -50,9 +50,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_comp_11_both_phase_order_a"
+name                = "comp_11_both_phase_order_a"
 display_name        = "COMP-11 both-phase order A (asserter, priority 30)"
-author              = "kcdx"
+author              = "ts"
 description         = "Lowest-priority (30) ASSERTER of the both-phase execution model. Subscribes at plugin.lua-load to both plugins' phase tokens, publishes its own before/after tokens from its lua + lua_after slots, and at input_loaded asserts the collected run-order == [a.before, b.before, a.after, b.after] (phase boundary AND priority interleave). Paired with comp-11-both-phase-order-b (priority 70)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

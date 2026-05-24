@@ -45,10 +45,10 @@
 # crashes.md for the full trail.
 
 [plugin]
-name        = "kcdx_builtin_bugsplat_filename_fix"
+name        = "bugsplat_filename_fix"
 display_name = "BugSplat Filename Fix"
 description = "Fixes KCD2's BugSplat integration so minidumps actually land on disk (the stock filename contains ':' which Windows rejects)."
-author      = "kcdx"
+author      = "kcdx_builtin"
 version     = "1.0.0"
 compatible_game_versions = ["1.5.1164953"]
 

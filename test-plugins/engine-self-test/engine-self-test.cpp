@@ -9,7 +9,7 @@
 
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
-    kcdxPluginHandle self = api->GetPluginHandle("ts_engine_self_test");
+    kcdxPluginHandle self = api->GetPluginHandle("engine_self_test");
     kcdxLogger gLog(api, self);
 
     gLog.Info("INIT", "kcdxPlugin_Load called");

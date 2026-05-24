@@ -24,9 +24,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_03_hook_lua_callback"
+name                = "cap_03_hook_lua_callback"
 display_name        = "CAP-03 Hook + lua_callback"
-author              = "kcdx"
+author              = "ts"
 description         = "TOML-declared hook dispatches to pak Lua during boot."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

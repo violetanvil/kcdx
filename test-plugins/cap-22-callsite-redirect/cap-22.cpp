@@ -50,7 +50,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "ts_cap_22_callsite_redirect";
+const char* kName = "cap_22_callsite_redirect";
 kcdxLogger  gLog;
 const kcdxInterface* g_api = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;

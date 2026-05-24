@@ -2,17 +2,17 @@
 --
 -- plugin.lua does require("helper"); the kcdx searcher resolves it to this
 -- sibling and, at its compile point, kcdx calls RegisterScriptOwner(this
--- path, "ts_cap_25_multifile_attribution"). So this source is attributed
+-- path, "ts.cap_25_multifile_attribution"). So this source is attributed
 -- to the plugin in g_scriptOwners — which is exactly the fix this test
 -- regression-guards. Everything below runs FROM INSIDE this require'd source.
 --
 -- What this file does:
 --   (a) SUBSCRIBE (at helper-load time, synchronous during plugin.lua's
 --       require → registered at plugin load) to this plugin's OWN published
---       event, using the "<self-plugin-name>:event" prefix form (the
---       bare-name-is-mine rule: a subscriber always names "plugin:event";
+--       event, using the "<author>.<plugin>.<event>" 3-segment dot form (the
+--       bare-name-is-mine rule: a subscriber always names "<author>.<plugin>.<event>";
 --       here the helper subscribes to its own plugin, so the prefix is this
---       plugin's own [plugin] name).
+--       plugin's own [plugin].author + [plugin].name).
 --   (b) PUBLISH the BARE event from a DEFERRED kcdx.on("input_loaded", ...)
 --       callback. This is the HARDEST identity case: when the publish runs,
 --       NO plugin.lua frame and NO helper top-level frame is live — the
@@ -32,23 +32,23 @@
 -- WHY A FIRING CALLBACK IS UNFORGEABLE PROOF OF ATTRIBUTION
 -- (the falsifiable assertion — the whole reason this fixture is shaped this
 --  way; identity-probe outcome map):
---   * The helper SUBSCRIBES to "ts_cap_25_multifile_attribution:multifile_event"
+--   * The helper SUBSCRIBES to "ts.cap_25_multifile_attribution.multifile_event"
 --     and PUBLISHES the bare "multifile_event". The engine stamps the
---     published bare event under the PUBLISHER's resolved plugin name.
+--     published bare event under the PUBLISHER's resolved <author>.<plugin>.
 --   * fix WORKS (helper source IS attributed to the plugin): publish
---     resolves owner = "ts_cap_25_multifile_attribution", stamps
---     "ts_cap_25_multifile_attribution:multifile_event", which MATCHES the
+--     resolves owner = "ts.cap_25_multifile_attribution", stamps
+--     "ts.cap_25_multifile_attribution.multifile_event", which MATCHES the
 --     subscription → the callback FIRES with the payload → PASS.
 --   * fix BROKEN (helper source resolves to "<anon>"): publish stamps
---     "<anon>:multifile_event", which does NOT match the subscription →
+--     "<anon>.multifile_event", which does NOT match the subscription →
 --     the callback NEVER FIRES → the row stays PENDING/FAIL.
 --   So a firing callback carrying payload.marker == "CAP25_OK" is
 --   unforgeable proof that the require'd helper's kcdx.* calls resolved to
 --   the plugin — the regression that proves the completeness criterion.
 
-local SELF  = "ts_cap_25_multifile_attribution"  -- this plugin's [plugin] name
+local SELF  = "ts.cap_25_multifile_attribution"  -- this plugin's qualified <author>.<plugin> identity
 local EVENT = "multifile_event"                     -- the bare event name
-local FULL  = SELF .. ":" .. EVENT                  -- the subscription string
+local FULL  = SELF .. "." .. EVENT                  -- the subscription string (3-segment dot)
 
 -- (a) SUBSCRIBE at helper-load time (synchronous during plugin.lua's
 -- require). The callback owns the CAP-25 row. It fires ONLY if the publish

@@ -1,7 +1,7 @@
 # COMP-09 — kcdx.publish cross-plugin pub/sub: PUBLISHER (plugin A).
 #
 # Phase 2b sub-9. kcdx.publish("event", payload) broadcasts a custom Lua
-# event to kcdx.on("<publisher>:event", fn) subscribers in OTHER plugins.
+# event to kcdx.on("<author>.<plugin>.<event>", fn) subscribers in OTHER plugins.
 # A Lua-native layer sharing the kcdx.on subscriber registry (NOT the C++
 # kcdxMessage wire format) — the payload is passed BY REFERENCE.
 #
@@ -21,7 +21,7 @@
 #
 # The publish is also the identity-from-inside-a-callback probe: A's
 # input_loaded handler is itself a dispatched kcdx.on callback, so a correct
-# "ts_comp_09_pubsub_a:..." stamp from there proves
+# "ts.comp_09_pubsub_a...." stamp from there proves
 # OwningPluginForCurrentCall resolves the publisher correctly when publish is
 # called from within a dispatched callback (not just top-level plugin.lua).
 
@@ -29,9 +29,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_comp_09_pubsub_a"
+name                = "comp_09_pubsub_a"
 display_name        = "COMP-09 pub/sub publisher (A)"
-author              = "kcdx"
+author              = "ts"
 description         = "Publishes a custom event with a table payload from its input_loaded handler (deterministic ordering); subscriber is comp-09-pubsub-b."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

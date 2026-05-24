@@ -36,7 +36,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "ts_cap_12_serialization";
+const char* kName = "cap_12_serialization";
 
 // Cosave UID — distinct from any other plugin. The C++ surface pins
 // the plugin's section identity explicitly via SetUniqueID (the valid

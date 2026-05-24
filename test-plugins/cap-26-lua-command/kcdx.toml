@@ -40,9 +40,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_26_lua_command"
+name                = "cap_26_lua_command"
 display_name        = "CAP-26 kcdx.command + kcdx.console.execute round-trip"
-author              = "kcdx"
+author              = "ts"
 description         = "Pure-Lua console-command round-trip: kcdx.command registers cap26_cmd, kcdx.console.execute self-fires it at input_loaded, and the callback's args (array + .raw) are asserted. The Lua analog of the C++ CAP-13."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

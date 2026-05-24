@@ -17,7 +17,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "ts_probe_crash_trigger";
+const char* kName = "probe_crash_trigger";
 
 const kcdxInterface*        g_api     = nullptr;
 const kcdxConsoleInterface* g_console = nullptr;

@@ -2,10 +2,10 @@
 -- pub/sub (Phase 2b sub-9).
 --
 -- B subscribes at plugin.lua-LOAD time to plugin A's custom event. A
--- published event is stamped with its publisher's plugin name, so B uses
--- the "<publisher>:event" form: A's [plugin] name is
--- "ts_comp_09_pubsub_a" and the bare event is "outfit_changed", so the
--- full subscription name is "ts_comp_09_pubsub_a:outfit_changed".
+-- published event is stamped with its publisher's <author>.<plugin>, so B
+-- uses the "<author>.<plugin>.<event>" dot form: A's author is "ts", its
+-- plugin name is "comp_09_pubsub_a", and the bare event is "outfit_changed",
+-- so the full subscription name is "ts.comp_09_pubsub_a.outfit_changed".
 --
 -- A publishes from its input_loaded handler (after all plugin.lua loaded),
 -- so this subscription is guaranteed registered before the publish fires
@@ -17,7 +17,7 @@
 --       payload.name == "Noble" (the values A published).
 -- A correct fire ALSO proves A's publisher namespace resolved: the event
 -- only reaches this callback if it was stamped exactly
--- "ts_comp_09_pubsub_a:outfit_changed" (the name subscribed to here).
+-- "ts.comp_09_pubsub_a.outfit_changed" (the name subscribed to here).
 --
 -- Identity-probe outcome map:
 --   fires with payload.x==42 + payload.name=="Noble" -> PASS: publish
@@ -27,7 +27,7 @@
 --     gap (the event stamped under the wrong namespace, or the payload was
 --     not passed by reference) — surface before sub-9 lands.
 
-kcdx.on("ts_comp_09_pubsub_a:outfit_changed", function(payload)
+kcdx.on("ts.comp_09_pubsub_a.outfit_changed", function(payload)
     local ok = type(payload) == "table"
         and payload.x == 42
         and payload.name == "Noble"
@@ -42,5 +42,5 @@ kcdx.on("ts_comp_09_pubsub_a:outfit_changed", function(payload)
 end)
 
 kcdx.log.info("COMP09B",
-    "subscribed to ts_comp_09_pubsub_a:outfit_changed (awaiting A's "
+    "subscribed to ts.comp_09_pubsub_a.outfit_changed (awaiting A's "
     .. "publish on input_loaded)")

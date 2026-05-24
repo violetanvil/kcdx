@@ -25,9 +25,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_comp_03_b"
+name                = "comp_03_b"
 display_name        = "COMP-03 Hook-on-hook loser (plugin B)"
-author              = "kcdx"
+author              = "ts"
 description         = "Higher-priority hook in the COMP-03 first-wins pair. Aborts; verifies the outcome via GetConflictReport."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

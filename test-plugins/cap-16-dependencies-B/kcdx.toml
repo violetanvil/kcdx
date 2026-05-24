@@ -9,9 +9,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_16_b"
+name                = "cap_16_b"
 display_name        = "CAP-16/COMP-06 Consumer (B)"
-author              = "kcdx"
+author              = "ts"
 description         = "Loads after A. Asserts A's plugin info is visible."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
@@ -20,6 +20,6 @@ log_level           = "info"
 test_names          = ["CAP-16"]
 
 [[plugin.dependencies]]
-name        = "ts_cap_16_a"
+name        = "cap_16_a"
 min_version = "1.0.0"
 optional    = false

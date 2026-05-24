@@ -9,9 +9,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_10_scripting_interface"
+name                = "cap_10_scripting_interface"
 display_name        = "CAP-10 Scripting interface"
-author              = "kcdx"
+author              = "ts"
 description         = "Verifies RegisterFunction returns true."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"

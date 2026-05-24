@@ -30,9 +30,9 @@
 test_suite_only = true
 
 [plugin]
-name                = "ts_cap_04_midhook"
+name                = "cap_04_midhook"
 display_name        = "CAP-04 mid_hook"
-author              = "kcdx"
+author              = "ts"
 description         = "Mid-hook capture + mutate + skip-original roundtrip."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
