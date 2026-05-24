@@ -1,0 +1,68 @@
+# COMP-13 — zone_gate REJECTION-PATH end-to-end: OBSERVER (the asserter half).
+#
+# Phase 2 zone_gate sub-4 (the regression close-out — sub-1 448d9ff two-flag,
+# sub-2 5828373 gating engine + wiring + log enrichment, sub-3 a3bd3df
+# synthetic stub + kcdx.plugin.is_rejected + docs).
+#
+# WHAT THIS PLUGIN PROVES:
+#   This is the OBSERVER half of the COMP-13 pair. It asserts that the
+#   SUBJECT (ts.comp_13_zone_gate_subject — declared zone=before_game)
+#   was REJECTED by zone_gate end-to-end. The assertion uses the
+#   kcdx.plugin.is_rejected(name) -> (bool, reason_or_nil) accessor that
+#   landed in sub-3 (src/lua_bind_plugin.cpp).
+#
+#   The observer reports COMP-13-zone-reject as a single row at
+#   kcdx.on("ready") time. PASS iff:
+#     * kcdx.plugin.is_rejected("ts.comp_13_zone_gate_subject") returns
+#       (true, reason), AND
+#     * reason is a string containing the literal substring "after_game"
+#       (verified against the binder reason-string shape at
+#       src/zone_gate.cpp::Check() — the reason text is
+#       "declared zone='before_game' but calls kcdx.zone_gate_test_after_only
+#       (requires zone='after_game' in kcdx 0.2.0)"; "after_game" appears
+#       in the `requires zone='after_game'` clause).
+#
+# ZONE-COMPATIBLE BY OMISSION:
+#   This plugin does NOT declare [load_order].zone. It defaults to
+#   after_game per the zone-default model — every capability the observer
+#   uses (kcdx.on, kcdx.plugin.is_rejected, kcdx.test.report, kcdx.log.*)
+#   is RequireZone::Either in zone_gate's capability table, so the
+#   default after_game is unambiguously legal here. The observer is
+#   itself NOT rejected; that is the prerequisite for it to run + report
+#   the assertion at all.
+#
+# WHY IT'S A `comp` ROW (not `cap`):
+#   The end-to-end proof is a 2-plugin interaction. The subject gets
+#   rejected by the gate at config-load; this observer queries
+#   kcdx.plugin.is_rejected at "ready" time and asserts the rejection
+#   persisted. Two plugins, one assertion. Same shape as comp-09
+#   (publisher/subscriber pair) and comp-12 (collider/asserter pair).
+#
+# DETERMINISTIC ORDERING:
+#   zone_gate evaluates all manifests in LoadAllConfigs at config-load
+#   time — orders of magnitude before any plugin.lua runs and before
+#   the after_game apply pass. By the time this observer's
+#   kcdx.on("ready") handler fires (at end of the after_game apply pass),
+#   the subject's rejection has been on file in zone_gate::g_rejected
+#   since config-load. The query is reading state set well in the past;
+#   no race possible.
+#
+# test_names pre-registers the single row so the aggregator counts it
+# (PENDING until ready fires).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_13_zone_gate_observer"
+display_name        = "COMP-13 zone_gate observer (asserts subject rejected)"
+author              = "ts"
+description         = "Asserts via kcdx.plugin.is_rejected at kcdx.on('ready') that the comp-13 subject (ts.comp_13_zone_gate_subject, declared zone=before_game) was rejected by zone_gate with a reason containing the API's required zone 'after_game'."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["COMP-13-zone-reject"]
+
+[entrypoints]
+lua = "plugin.lua"
