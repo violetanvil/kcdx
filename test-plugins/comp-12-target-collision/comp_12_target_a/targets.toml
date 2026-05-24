@@ -1,21 +1,31 @@
 # COMP-12 plugin A — declares the bare target name `combat_check`.
 #
-# A's `combat_check` is the GOOD locator: CGame_per_frame_ui_pump by
-# address_id=1003 (verified RVA in seed.csv) + its ABI. Located by id (RVA, no
-# scan), so it resolves and applies regardless of any hook on the function —
-# immune to the entry-prologue-overwrite problem an entry AOB would hit (cap-03
-# hooks this same function in production; the detour overwrites the prologue,
-# defeating a post-patch pattern scan — patch_engine.cpp:124-130). Plugin B
+# A's `combat_check` is the GOOD locator: luaopen_math by address_id=1172
+# (verified RVA 0x009299AC in seed.csv) + its ABI "i32 (ptr L)". Located by id
+# (RVA, no scan), so it resolves and applies regardless of any hook on the
+# function. Chosen as a VERIFIED leaf that NOTHING entry-hooks (the live run
+# hooks only CGame_per_frame_ui_pump id 1003 + the IsInCombat callsites
+# 1006/1007; production hooks lua_pcall/CGame::Update/l_alloc), so A's hook is
+# free to INSTALL — it is not blocked by another hook on the target. Plugin B
 # (sibling folder) declares a target with the SAME bare name but a BOGUS pattern
 # that cannot match. When A hooks the bare name `combat_check`, self>engine>other
 # precedence must pick A's OWN target (self tier) — which resolves and applies.
 # Had B's target won, the hook would FAIL to apply (B's pattern matches nothing).
 # So A's hook applying is a falsifiable proof that self won, not B.
 #
+# NOTE on the EARLIER target (id 1003, CGame_per_frame_ui_pump): cap-03 ALREADY
+# entry-hooks id 1003 via the legacy [[hook]] first-wins path, so A's hook on it
+# lost with "already hooked by 'cap03_update_callee'" — the install failed for a
+# reason UNRELATED to precedence, defeating the self-wins proof. Repointed to the
+# unhooked luaopen_math so A's install succeeds and applied()==true cleanly
+# isolates the self>other precedence outcome. luaopen_math is lualibs[] entry 6,
+# invoked exactly ONCE at Lua boot — far lower-frequency than any per-call VM
+# primitive, minimising main-thread-callback exposure (lua-callback-threading.md).
+#
 # The bare-name collision (A and B both own `combat_check`) ALSO triggers the
 # once-per-session "NAMESPACE" warn naming both owners — observable in the log
 # (asserted [manual]; the auto-assertion is that SELF resolved, not OTHER).
 [[target]]
 name       = "combat_check"
-address_id = 1003
-signature  = "void (ptr self)"
+address_id = 1172
+signature  = "i32 (ptr L)"

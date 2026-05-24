@@ -30,16 +30,32 @@ pattern   = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 4
 signature = "void (ptr self)"
 
 # --- A VERIFIED-ID author-target for the prefix / alias resolution proofs. ---
-# Same function as the pattern row (CGame_per_frame_ui_pump, seed id 1003), but
-# located by address_id — RVA-resolved, with NO scan, so it is IMMUNE to the
-# prologue-overwrite problem the pattern row hits. A hook on it chains fine with
-# cap-03's production hook (hook_chain coexistence). The prefixed and alias rows
-# point at THIS target so they prove PREFIX and ALIAS resolution end-to-end and
-# can pass, instead of inheriting the pattern row's blocker.
+# luaopen_math (Address Library id 1172, verified RVA 0x009299AC, sig
+# "i32 (ptr L)"). Located by address_id — RVA-resolved, NO scan, so it is IMMUNE
+# to the prologue-overwrite problem the pattern row hits. Chosen because it is a
+# VERIFIED leaf that NOTHING entry-hooks: the live run only hooks
+# CGame_per_frame_ui_pump (id 1003) + the two IsInCombat callsites (1006/1007),
+# engine production hooks lua_pcall (1000) / CGame::Update (1001) / l_alloc via
+# g->frealloc (1192), and no test-plugin hooks/targets this function or id 1172.
+# This is DISTINCT from the bytes target lua_toboolean (id 1124) below, so the
+# hook target and the bytes target never overlap.
+#
+# NOTE on the EARLIER target (id 1003, CGame_per_frame_ui_pump): cap-03 ALREADY
+# entry-hooks id 1003 via the legacy [[hook]] path (first-wins), so a second
+# hook on it loses with "already hooked by 'cap03_update_callee'". Repointed here
+# to an UNHOOKED function so the prefix/alias install can succeed.
+#
+# luaopen_math is lualibs[] entry 6 — invoked EXACTLY ONCE during luaL_openlibs
+# at Lua boot, never again. A no-op before-hook installs a detour that fires at
+# most once at init; this is far lower-frequency than any per-call VM primitive
+# (lua_type/lua_gettable/lua_settop/etc.), minimising main-thread-callback
+# exposure (lua-callback-threading.md). The prefixed and alias rows point at THIS
+# target so they prove PREFIX and ALIAS resolution end-to-end and can pass,
+# instead of inheriting the pattern row's blocker.
 [[target]]
-name       = "ui_pump_by_id"
-address_id = 1003
-signature  = "void (ptr self)"
+name       = "luaopen_math_by_id"
+address_id = 1172
+signature  = "i32 (ptr L)"
 
 # --- A VERIFIED-ID author-target for the kcdx.bytes resolution proof. -------
 # lua_toboolean (Address Library id 1124 in seed.csv — verified RVA 0x00B9C1AC,

@@ -11,19 +11,29 @@
 --                            matches → a post-patch scan finds 0
 --                            (patch_engine.cpp:124-130). See
 --                            docs/outstanding-work/section36-pattern-target-aob.md.
---   * ui_pump_by_id        — the SAME function by address_id=1003 (RVA, no
---                            scan → immune to the prologue overwrite). The
---                            prefix + alias proofs point HERE so they pass.
+--   * luaopen_math_by_id   — luaopen_math by address_id=1172 (RVA, no scan →
+--                            immune to the prologue overwrite). A VERIFIED leaf
+--                            that NOTHING entry-hooks (distinct from the bytes
+--                            target id 1124). The prefix + alias proofs point
+--                            HERE so they pass.
 --   * bool_leaf_safe_site  — lua_toboolean by address_id=1124, a DISTINCT
 --                            verified leaf that NOTHING hooks (pristine
 --                            prologue) for the kcdx.bytes resolution proof.
 --
 -- Every hook below is a no-op passthrough whose ONLY job is to resolve a NAME
 -- and apply. We assert :applied() at kcdx.on("ready") (after the apply pass).
--- The id-located hook targets are CGame_per_frame_ui_pump, a direct callee of
--- CGame::Update that cap-03 hooks in production; the no-op detour chains
--- harmlessly (hook_chain coexistence). The install IS the proof the name
--- resolved; the hook never needs to fire.
+-- The id-located hook target is luaopen_math — lualibs[] entry 6, invoked
+-- EXACTLY ONCE during luaL_openlibs at Lua boot and never again, and entry-hooked
+-- by nobody (the live run hooks only CGame_per_frame_ui_pump id 1003 + the
+-- IsInCombat callsites 1006/1007; production hooks lua_pcall/CGame::Update/
+-- l_alloc). The empty before-hook installs cleanly and is the lowest-frequency
+-- verified target available. The install IS the proof the name resolved; the
+-- hook never needs to fire.
+--
+-- WHY NOT id 1003 (the earlier target): cap-03 ALREADY entry-hooks id 1003
+-- (CGame_per_frame_ui_pump) via the legacy [[hook]] first-wins path, so a second
+-- hook on it loses with "already hooked by 'cap03_update_callee'". Repointed to
+-- the unhooked luaopen_math so the prefix/alias install can succeed.
 
 -- ====================================================================
 -- (1) CAP-33-pattern-by-name — THE §36 HEADLINE (BLOCKED, NOT silenced).
@@ -61,31 +71,34 @@ local hEngine = kcdx.hook{
 -- ====================================================================
 -- (3) CAP-33-prefixed — the explicit "<pluginname>.<target>" form.
 -- Unambiguous from anywhere and never warns. Resolves the VERIFIED-ID target
--- ui_pump_by_id (address_id=1003 — RVA, no scan), so this proves PREFIX
--- resolution end-to-end and can PASS (immune to the pattern row's blocker).
--- Carries no signature= (the target does).
+-- luaopen_math_by_id (address_id=1172 — RVA, no scan), so this proves PREFIX
+-- resolution end-to-end and can PASS (immune to the pattern row's blocker, and
+-- on a function NOTHING entry-hooks so the install is not first-wins-blocked).
+-- Carries no signature= (the target does). Empty before-hook (returns nothing →
+-- original runs unchanged; the install IS the proof).
 -- ====================================================================
 local hPrefixed = kcdx.hook{
     name   = "cap33_prefixed",
-    target = "cap_33_author_targets.ui_pump_by_id",  -- explicit prefix → verified-id target
-    before = function(self) return self end,
+    target = "cap_33_author_targets.luaopen_math_by_id",  -- explicit prefix → verified-id target
+    before = function() end,                              -- no-op (returns nothing)
 }
 
 -- ====================================================================
 -- (4) CAP-33-alias — kcdx.alias declares a local handle, then hook via it.
 -- kcdx.alias substitutes the long prefixed name before resolving; the alias is
 -- plugin-scoped and cannot shadow. The hook gives no signature= — the alias
--- resolves to the VERIFIED-ID target ui_pump_by_id, which carries the ABI, so
--- this proves ALIAS resolution end-to-end and can PASS.
+-- resolves to the VERIFIED-ID target luaopen_math_by_id, which carries the ABI,
+-- so this proves ALIAS resolution end-to-end and can PASS. Empty before-hook
+-- (returns nothing → original runs unchanged).
 -- ====================================================================
-local aliasOk, aliasErr = kcdx.alias("up", "cap_33_author_targets.ui_pump_by_id")
+local aliasOk, aliasErr = kcdx.alias("up", "cap_33_author_targets.luaopen_math_by_id")
 if aliasOk ~= true then
     kcdx.log.error("CAP33", "kcdx.alias failed: " .. tostring(aliasErr))
 end
 local hAlias = kcdx.hook{
     name   = "cap33_alias",
     target = "up",                      -- the local alias → the verified-id target
-    before = function(self) return self end,
+    before = function() end,            -- no-op (returns nothing)
 }
 
 -- ====================================================================
@@ -145,7 +158,7 @@ kcdx.on("ready", function()
         local applied = hPrefixed:applied()
         kcdx.test.report("CAP-33-prefixed", applied == true,
             applied == true
-              and "explicit \"cap_33_author_targets.ui_pump_by_id\" (address_id=1003) resolved directly"
+              and "explicit \"cap_33_author_targets.luaopen_math_by_id\" (address_id=1172) resolved directly"
               or  ("expected applied()==true for the prefixed form; got "
                    .. "applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPrefixed:reason())))
@@ -156,7 +169,7 @@ kcdx.on("ready", function()
         local applied = hAlias:applied()
         kcdx.test.report("CAP-33-alias", applied == true and aliasOk == true,
             (applied == true and aliasOk == true)
-              and "kcdx.alias(\"up\", \"...ui_pump_by_id\") + kcdx.hook{ target=\"up\" } resolved via the alias"
+              and "kcdx.alias(\"up\", \"...luaopen_math_by_id\") + kcdx.hook{ target=\"up\" } resolved via the alias"
               or  ("expected aliasOk==true AND applied()==true; got aliasOk="
                    .. tostring(aliasOk) .. " applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hAlias:reason())))
@@ -176,5 +189,5 @@ end)
 
 kcdx.log.info("CAP33",
     "registered author-target hooks (pattern-by-name BLOCKED, engine-tier, "
-    .. "prefixed+alias on verified id 1003) + kcdx.bytes target=bool_leaf_safe_site "
+    .. "prefixed+alias on verified-unhooked id 1172 luaopen_math) + kcdx.bytes target=bool_leaf_safe_site "
     .. "(verified id 1124); applied() asserted at ready")
