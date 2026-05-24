@@ -35,7 +35,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "kcdx.cap-20-hook-modes";
+const char* kName = "ts_cap_20_hook_modes";
 kcdxLogger  gLog;
 const kcdxInterface* g_api = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;

@@ -11,7 +11,7 @@
 # the event AND the table payload arrived intact (payload.x == 42,
 # payload.name == "Noble"), proving (a) the payload rode by reference and
 # (b) A's publisher namespace resolved correctly (the event fired under
-# "kcdx.comp-09-pubsub-a:outfit_changed", which is the name B subscribed to).
+# "ts_comp_09_pubsub_a:outfit_changed", which is the name B subscribed to).
 #
 # test_names pre-registers the row so the aggregator counts it even before
 # the callback fires (PENDING until input_loaded fires on boot).
@@ -20,7 +20,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.comp-09-pubsub-b"
+name                = "ts_comp_09_pubsub_b"
 display_name        = "COMP-09 pub/sub subscriber (B)"
 author              = "kcdx"
 description         = "Subscribes to plugin A's published custom event and asserts the table payload arrived by reference with the right publisher namespace."

@@ -29,7 +29,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-20-hook-modes"
+name                = "ts_cap_20_hook_modes"
 display_name        = "CAP-20 kcdx.hook modes + chaining"
 author              = "kcdx"
 description         = "kcdx.hook before/after/around/replace + chaining + wstr + conflict."

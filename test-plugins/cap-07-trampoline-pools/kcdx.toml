@@ -10,7 +10,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-07-trampoline-pools"
+name                = "ts_cap_07_trampoline_pools"
 display_name        = "CAP-07 Trampoline pools"
 author              = "kcdx"
 description         = "Exercises branch + local trampoline pool allocations."

@@ -26,7 +26,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-21-mid-hook"
+name                = "ts_cap_21_mid_hook"
 display_name        = "CAP-21 kcdx.hook mode=mid"
 author              = "kcdx"
 description         = "kcdx.hook mode='mid': capture :get()/:set() + run/skip via return."

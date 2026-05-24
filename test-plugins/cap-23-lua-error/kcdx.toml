@@ -19,7 +19,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-23-lua-error"
+name                = "ts_cap_23_lua_error"
 display_name        = "CAP-23 plugin.lua error line-info"
 author              = "kcdx"
 description         = "Deliberate plugin.lua runtime error; loader asserts captured text carries file:line + stack traceback."

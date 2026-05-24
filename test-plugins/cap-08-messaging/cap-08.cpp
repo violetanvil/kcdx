@@ -10,7 +10,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName  = "kcdx.cap-08-messaging";
+const char* kName  = "ts_cap_08_messaging";
 
 const kcdxInterface* g_api  = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;

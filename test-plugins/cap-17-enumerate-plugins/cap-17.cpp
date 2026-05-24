@@ -6,7 +6,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "kcdx.cap-17-enumerate-plugins";
+const char* kName = "ts_cap_17_enumerate_plugins";
 kcdxLogger  gLog;
 }
 

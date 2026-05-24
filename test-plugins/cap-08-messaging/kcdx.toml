@@ -8,7 +8,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-08-messaging"
+name                = "ts_cap_08_messaging"
 display_name        = "CAP-08 Messaging"
 author              = "kcdx"
 description         = "Subscribes to engine messages, asserts all three boot messages received."

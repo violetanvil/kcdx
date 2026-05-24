@@ -29,7 +29,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "kcdx.cap-13-console-command";
+const char* kName = "ts_cap_13_console_command";
 
 const kcdxInterface*           g_api     = nullptr;
 const kcdxConsoleInterface*    g_console = nullptr;

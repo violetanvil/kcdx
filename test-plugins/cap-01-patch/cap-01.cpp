@@ -16,7 +16,7 @@
 
 namespace {
 
-const char* kName        = "kcdx.cap-01-patch";
+const char* kName        = "ts_cap_01_patch";
 // Two full 23-byte patterns: pre-patch (vanilla, ends with the original
 // mov r14b, al = 44 8A F0) and post-patch (kcdx replacement, ends with
 // xor r14d, r14d = 45 31 F6). Each is unique in WHGame.dll's executable

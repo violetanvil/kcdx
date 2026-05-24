@@ -8,7 +8,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-09-task-interface"
+name                = "ts_cap_09_task_interface"
 display_name        = "CAP-09 Task interface"
 author              = "kcdx"
 description         = "Verifies main-thread task scheduling."

@@ -8,7 +8,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "kcdx.cap-16-A";
+const char* kName = "ts_cap_16_a";
 kcdxLogger  gLog;
 }
 

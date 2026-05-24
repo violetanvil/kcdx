@@ -10,7 +10,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-17-enumerate-plugins"
+name                = "ts_cap_17_enumerate_plugins"
 display_name        = "CAP-17 EnumeratePlugins"
 author              = "kcdx"
 description         = "Asserts EnumeratePlugins returns sensible data including self."

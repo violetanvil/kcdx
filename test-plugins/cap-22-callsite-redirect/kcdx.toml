@@ -35,7 +35,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-22-callsite-redirect"
+name                = "ts_cap_22_callsite_redirect"
 display_name        = "CAP-22 kcdx.hook mode=callsite"
 author              = "kcdx"
 description         = "kcdx.hook mode='callsite': redirect one E8 call site; per-call-site isolation."

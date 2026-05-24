@@ -14,7 +14,7 @@
 #
 # Token shape (must match A's collector): bare event "phase_token" with payload
 # { slot = "before" | "after" }. The engine stamps it
-# "kcdx.comp-11-both-phase-order-b:phase_token" — A subscribes to that name.
+# "ts_comp_11_both_phase_order_b:phase_token" — A subscribes to that name.
 #
 # Test mode: boot-only. Both tokens publish during load (plugin.lua in RunAll,
 # after.lua in RunAfterEntrypoints); the assert is A's, at input_loaded — all
@@ -24,7 +24,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.comp-11-both-phase-order-b"
+name                = "ts_comp_11_both_phase_order_b"
 display_name        = "COMP-11 both-phase order B (publisher, priority 70)"
 author              = "kcdx"
 description         = "Higher-priority (70) PUBLISHER half of the both-phase execution-model test. Publishes b.before from its lua slot and b.after from its lua_after slot; the asserter (comp-11-both-phase-order-a, priority 30) collects all four tokens and asserts the run-order. Carries no test row of its own."

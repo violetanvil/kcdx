@@ -16,7 +16,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-01-patch"
+name                = "ts_cap_01_patch"
 display_name        = "CAP-01 Patch byte-rewrite"
 author              = "kcdx"
 description         = "Verifies [[patch]] applies + bytes match post-apply."

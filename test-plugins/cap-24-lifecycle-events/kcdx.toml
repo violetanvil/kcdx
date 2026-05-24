@@ -30,7 +30,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-24-lifecycle-events"
+name                = "ts_cap_24_lifecycle_events"
 display_name        = "CAP-24 kcdx.on lifecycle events"
 author              = "kcdx"
 description         = "kcdx.on bridge for the 9 game-lifecycle events (input_loaded auto-pass; save_game / post_load_game manual)."

@@ -10,7 +10,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-13-console-command"
+name                = "ts_cap_13_console_command"
 display_name        = "CAP-13 Console Command"
 author              = "kcdx"
 description         = "Registers a console command via kcdxConsoleInterface."

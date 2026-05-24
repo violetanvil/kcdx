@@ -8,7 +8,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-16-A"
+name                = "ts_cap_16_a"
 display_name        = "CAP-16/COMP-06 Producer (A)"
 author              = "kcdx"
 description         = "Loads first. Registers a Lua function B can introspect."

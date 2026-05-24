@@ -30,7 +30,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-04-midhook"
+name                = "ts_cap_04_midhook"
 display_name        = "CAP-04 mid_hook"
 author              = "kcdx"
 description         = "Mid-hook capture + mutate + skip-original roundtrip."

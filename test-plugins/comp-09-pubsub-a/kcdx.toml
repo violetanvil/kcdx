@@ -21,7 +21,7 @@
 #
 # The publish is also the identity-from-inside-a-callback probe: A's
 # input_loaded handler is itself a dispatched kcdx.on callback, so a correct
-# "kcdx.comp-09-pubsub-a:..." stamp from there proves
+# "ts_comp_09_pubsub_a:..." stamp from there proves
 # OwningPluginForCurrentCall resolves the publisher correctly when publish is
 # called from within a dispatched callback (not just top-level plugin.lua).
 
@@ -29,7 +29,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.comp-09-pubsub-a"
+name                = "ts_comp_09_pubsub_a"
 display_name        = "COMP-09 pub/sub publisher (A)"
 author              = "kcdx"
 description         = "Publishes a custom event with a table payload from its input_loaded handler (deterministic ordering); subscriber is comp-09-pubsub-b."

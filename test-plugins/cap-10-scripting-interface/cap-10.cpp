@@ -4,7 +4,7 @@
 #include "kcdx/Interfaces.h"
 
 namespace {
-const char* kName = "kcdx.cap-10-scripting-interface";
+const char* kName = "ts_cap_10_scripting_interface";
 kcdxLogger  gLog;
 }  // namespace
 
