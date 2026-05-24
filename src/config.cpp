@@ -26,6 +26,7 @@
 #include "target_manifest.h"
 #include "test.h"
 #include "trampoline_engine.h"
+#include "zone_gate.h"
 
 namespace fs = std::filesystem;
 namespace kcdx::config {
@@ -1284,6 +1285,28 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
     kcdx::load_order::Read(
         kcdx::paths::EngineDataDirPath() / L"load_order.toml");
     kcdx::load_order::Resolve();
+
+    // Capability/zone evaluation. Three reasons this runs here, and
+    // ONLY here:
+    //
+    //   (a) load_order::Resolve has populated every plugin's resolved
+    //       zone — zone_gate's per-plugin Check reads Of(name).zone, so
+    //       Resolve must precede it.
+    //   (b) No plugin-init path has run yet — neither C++ DLL
+    //       Preload/Load nor Lua plugin.lua execution. A rejection
+    //       therefore prevents any registration from happening; no
+    //       half-loaded plugin state has to be torn down.
+    //   (c) Flipping Effective.engineAccepted = false on a rejected
+    //       plugin makes the existing IsPluginEnabled(name) predicate
+    //       (already gated at all 5 plugin-init sites + the 2 runtime
+    //       readers in ldr_notify and lua_registry) naturally skip the
+    //       plugin everywhere — no new gate to thread through the
+    //       engine.
+    //
+    // The init-site skip-logs consult zone_gate::RejectReason(name) to
+    // distinguish "engine rejected this plugin" from "user disabled
+    // this plugin" when emitting their skip lines.
+    kcdx::zone_gate::EvaluateAllPlugins();
 
     // Sort key:
     //   (Zone asc, plugin_effective_priority asc, plugin_name asc,

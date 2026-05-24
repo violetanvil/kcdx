@@ -137,4 +137,13 @@ const Effective& Of(const std::string& pluginName);
 // plugin.
 bool IsPluginEnabled(const std::string& pluginName);
 
+// Writer for Effective.engineAccepted on an existing row. The sole
+// intended caller is kcdx::zone_gate::EvaluateAllPlugins(), which flips
+// this to false on a capability/zone rejection. No-op if the plugin name
+// has no row (anonymous patch entries, unknown names). Resolve() does
+// NOT touch this field — every prior call's verdict survives the
+// (currently one-call-per-session) Resolve invocation, but since
+// zone_gate runs AFTER Resolve, ordering is fine for the v0.2 flow.
+void SetEngineAccepted(const std::string& pluginName, bool accepted);
+
 }  // namespace kcdx::load_order

@@ -103,6 +103,7 @@ add_library(kcdx SHARED
     src/trampoline_engine.cpp
     src/conflict_engine.cpp
     src/load_order.cpp
+    src/zone_gate.cpp
     src/ldr_notify.cpp
     src/detour_hook.cpp
     src/scripting.cpp

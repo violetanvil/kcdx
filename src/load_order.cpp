@@ -241,4 +241,15 @@ bool IsPluginEnabled(const std::string& pluginName) {
     return e.userEnabled && e.engineAccepted;
 }
 
+void SetEngineAccepted(const std::string& pluginName, bool accepted) {
+    // zone_gate is the sole intended caller. Anonymous (empty-name)
+    // entries have no Effective row to mutate; an unknown name is
+    // likewise silently ignored — zone_gate only iterates manifests,
+    // so a miss here would be an internal bug, not user input.
+    if (pluginName.empty()) return;
+    auto it = g_effective.find(pluginName);
+    if (it == g_effective.end()) return;
+    it->second.engineAccepted = accepted;
+}
+
 }  // namespace kcdx::load_order

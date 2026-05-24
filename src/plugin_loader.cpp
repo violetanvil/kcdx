@@ -16,6 +16,7 @@
 #include "log.h"
 #include "messaging.h"
 #include "pe_helpers.h"
+#include "zone_gate.h"  // RejectReason() — distinguish engine-reject from user-disabled in skip-logs
 
 namespace fs = std::filesystem;
 
@@ -542,10 +543,21 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         // its DLL mapped (LoadLibraryW already ran above to read the
         // manifest version + export discovery), but kcdxPlugin_Preload
         // is NOT called — so the plugin's static initializers ran but
-        // its declarative entry-point code does not.
+        // its declarative entry-point code does not. Skip-log
+        // distinguishes engine-reject (zone_gate) from user-disabled
+        // cause; PLUGIN_REJECTED was already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
-            log::InfoF("Plugin '%s' kcdxPlugin_Preload skipped (plugin disabled via load_order.toml)",
-                       p.manifest.name.c_str());
+            const std::string& rejectReason =
+                zone_gate::RejectReason(p.manifest.name);
+            if (!rejectReason.empty()) {
+                log::InfoF("Plugin '%s' kcdxPlugin_Preload skipped "
+                           "(rejected by zone_gate: %s)",
+                           p.manifest.name.c_str(), rejectReason.c_str());
+            } else {
+                log::InfoF("Plugin '%s' kcdxPlugin_Preload skipped "
+                           "(plugin disabled via load_order.toml)",
+                           p.manifest.name.c_str());
+            }
             continue;
         }
         struct Ctx {
@@ -580,9 +592,20 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         // load_order.toml disabled gate. Mark the plugin as not-loaded
         // so enumeration reflects the user's choice. The DLL stays in
         // process (already mapped) but kcdxPlugin_Load is not called.
+        // Skip-log distinguishes engine-reject (zone_gate) from
+        // user-disabled cause; PLUGIN_REJECTED was already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
-            log::InfoF("Plugin '%s' kcdxPlugin_Load skipped (plugin disabled via load_order.toml)",
-                       p.manifest.name.c_str());
+            const std::string& rejectReason =
+                zone_gate::RejectReason(p.manifest.name);
+            if (!rejectReason.empty()) {
+                log::InfoF("Plugin '%s' kcdxPlugin_Load skipped "
+                           "(rejected by zone_gate: %s)",
+                           p.manifest.name.c_str(), rejectReason.c_str());
+            } else {
+                log::InfoF("Plugin '%s' kcdxPlugin_Load skipped "
+                           "(plugin disabled via load_order.toml)",
+                           p.manifest.name.c_str());
+            }
             p.loaded = false;
             continue;
         }
@@ -679,10 +702,21 @@ void RunPostGameLoad(const kcdxInterface* api) {
         LoadedPlugin& p = *pp;
 
         // Honor the load_order.toml enabled gate — same as the load wave
-        // and the lua_after slot.
+        // and the lua_after slot. Skip-log distinguishes engine-reject
+        // (zone_gate) from user-disabled cause; PLUGIN_REJECTED was
+        // already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
-            log::InfoF("Plugin '%s' kcdxPlugin_PostGameLoad skipped (plugin disabled via load_order.toml)",
-                       p.manifest.name.c_str());
+            const std::string& rejectReason =
+                zone_gate::RejectReason(p.manifest.name);
+            if (!rejectReason.empty()) {
+                log::InfoF("Plugin '%s' kcdxPlugin_PostGameLoad skipped "
+                           "(rejected by zone_gate: %s)",
+                           p.manifest.name.c_str(), rejectReason.c_str());
+            } else {
+                log::InfoF("Plugin '%s' kcdxPlugin_PostGameLoad skipped "
+                           "(plugin disabled via load_order.toml)",
+                           p.manifest.name.c_str());
+            }
             continue;
         }
 

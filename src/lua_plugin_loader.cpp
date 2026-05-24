@@ -20,6 +20,7 @@ extern "C" {
 #include "lua_require_searcher.h"  // Install() + OwnerScope (plugin-scoped require)
 #include "plugin_loader.h"
 #include "test.h"  // kcdx::test::ReportResult (dev-mode-gated, name-keyed)
+#include "zone_gate.h"  // RejectReason() — distinguish engine-reject from user-disabled in skip-logs
 
 namespace fs = std::filesystem;
 
@@ -361,10 +362,24 @@ void RunAll(lua_State* L) {
 
         // Honor the load_order.toml enabled gate — a disabled plugin's
         // Lua doesn't run, same as its DLL kcdxPlugin_Load is skipped.
+        // Skip-log distinguishes engine-reject (zone_gate) from
+        // user-disabled (load_order.toml) so the author knows which
+        // surface to edit. PLUGIN_REJECTED was already emitted loudly
+        // by zone_gate; here we stay at Info to match the existing
+        // "disabled via load_order.toml" cadence.
         if (!kcdx::load_order::IsPluginEnabled(m.name)) {
-            log::InfoF("Plugin '%s': %zu lua entrypoint(s) skipped (plugin "
-                       "disabled via load_order.toml)",
-                       m.name.c_str(), m.luaEntrypointsRel.size());
+            const std::string& rejectReason =
+                kcdx::zone_gate::RejectReason(m.name);
+            if (!rejectReason.empty()) {
+                log::InfoF("Plugin '%s': %zu lua entrypoint(s) skipped "
+                           "(rejected by zone_gate: %s)",
+                           m.name.c_str(), m.luaEntrypointsRel.size(),
+                           rejectReason.c_str());
+            } else {
+                log::InfoF("Plugin '%s': %zu lua entrypoint(s) skipped "
+                           "(plugin disabled via load_order.toml)",
+                           m.name.c_str(), m.luaEntrypointsRel.size());
+            }
             continue;
         }
 
@@ -434,10 +449,21 @@ void RunAfterEntrypoints(lua_State* L) {
         const auto& m = p.manifest;
 
         // Honor the load_order.toml enabled gate — same as the before slot.
+        // Skip-log distinguishes engine-reject (zone_gate) from
+        // user-disabled cause; PLUGIN_REJECTED was already emitted loudly.
         if (!kcdx::load_order::IsPluginEnabled(m.name)) {
-            log::InfoF("Plugin '%s': %zu lua_after entrypoint(s) skipped "
-                       "(plugin disabled via load_order.toml)",
-                       m.name.c_str(), m.luaAfterEntrypointsRel.size());
+            const std::string& rejectReason =
+                kcdx::zone_gate::RejectReason(m.name);
+            if (!rejectReason.empty()) {
+                log::InfoF("Plugin '%s': %zu lua_after entrypoint(s) skipped "
+                           "(rejected by zone_gate: %s)",
+                           m.name.c_str(), m.luaAfterEntrypointsRel.size(),
+                           rejectReason.c_str());
+            } else {
+                log::InfoF("Plugin '%s': %zu lua_after entrypoint(s) skipped "
+                           "(plugin disabled via load_order.toml)",
+                           m.name.c_str(), m.luaAfterEntrypointsRel.size());
+            }
             continue;
         }
 
