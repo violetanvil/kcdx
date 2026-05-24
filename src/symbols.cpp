@@ -12,83 +12,127 @@ namespace {
 
 struct Entry {
     uintptr_t   addr = 0;
-    std::string owner;     // the registering plugin ([plugin].name); "" = anon
+    // Owning namespace (2-dot model — naming-namespaces.md):
+    //   ownerAuthor "" + ownerPlugin "" → anonymous (console / pak Lua); the
+    //     symbol is stored under its bare name.
+    //   ownerAuthor "" + ownerPlugin populated → legacy 1-dot row (the corpus's
+    //     state during the in-progress namespace refactor); stored as
+    //     <ownerPlugin>.<bareName>.
+    //   ownerAuthor populated + ownerPlugin populated → 2-dot row; stored as
+    //     <ownerAuthor>.<ownerPlugin>.<bareName>.
+    std::string ownerAuthor;
+    std::string ownerPlugin;
     std::string bareName;  // the author's bare export name (no prefix)
 };
 
 std::mutex                              g_mutex;
-// Keyed by the FULLY-QUALIFIED name: "<owner>.<bareName>", or the bare name
-// when the owner is anonymous ("").
+// Keyed by the FULLY-QUALIFIED name (the 2-dot or 1-dot composite), or the
+// bare name when the owner is anonymous ("" / "").
 std::unordered_map<std::string, Entry>  g_table;
 
-// Build the fully-qualified storage key for an export. A named owner prefixes;
-// an anonymous owner ("") stores the bare name as-is (no namespace to derive).
-std::string QualifiedKey(const std::string& owner, const std::string& bareName) {
-    if (owner.empty()) return bareName;
-    return owner + "." + bareName;
+// Build the fully-qualified storage key for an export. A populated author +
+// plugin produces the 2-dot key; an empty author + populated plugin is the
+// 1-dot legacy key; both empty is the anonymous bare key.
+std::string QualifiedKey(const std::string& ownerAuthor,
+                         const std::string& ownerPlugin,
+                         const std::string& bareName) {
+    if (ownerPlugin.empty()) return bareName;  // anonymous: bare key
+    if (ownerAuthor.empty()) return ownerPlugin + "." + bareName;
+    return ownerAuthor + "." + ownerPlugin + "." + bareName;
 }
 
-// Split a possibly-prefixed reference on the FIRST dot. Returns true + fills
-// prefix/rest when a dot is present; false for a bare name. Mirrors
-// address_library::SplitPrefixed (the engine parses on the dot — it is
-// semantic, naming-namespaces.md).
-bool SplitPrefixed(const std::string& name, std::string& prefix,
-                   std::string& rest) {
-    auto dot = name.find('.');
-    if (dot == std::string::npos) return false;
-    prefix = name.substr(0, dot);
-    rest   = name.substr(dot + 1);
-    return true;
+// Render the owner display string for log lines ("<author>.<plugin>",
+// "<plugin>" for a legacy 1-dot row, or "" for an anonymous export).
+std::string OwnerDisplay(const std::string& ownerAuthor,
+                         const std::string& ownerPlugin) {
+    if (ownerPlugin.empty()) return {};
+    if (ownerAuthor.empty()) return ownerPlugin;
+    return ownerAuthor + "." + ownerPlugin;
+}
+
+// Split a possibly-qualified reference into its dot-separated segments —
+// mirrors address_library::SplitQualified (the engine parses on the dot — it
+// is semantic, naming-namespaces.md). `count` is the number of segments
+// produced; >3 means malformed (overflow).
+struct QName {
+    std::string segments[3];
+    int         count = 0;
+};
+
+QName SplitQualified(const std::string& name) {
+    QName q;
+    if (name.empty()) return q;
+    size_t start = 0;
+    for (size_t i = 0; i <= name.size(); ++i) {
+        if (i == name.size() || name[i] == '.') {
+            if (q.count < 3) q.segments[q.count] = name.substr(start, i - start);
+            ++q.count;
+            start = i + 1;
+        }
+    }
+    return q;
 }
 
 }  // namespace
 
 bool Register(const std::string& bareName, uintptr_t addr,
-              const std::string& ownerName) {
+              const std::string& ownerAuthor,
+              const std::string& ownerPlugin) {
     if (bareName.empty() || addr == 0) return false;
     std::lock_guard<std::mutex> lock(g_mutex);
-    std::string key = QualifiedKey(ownerName, bareName);
+    std::string key = QualifiedKey(ownerAuthor, ownerPlugin, bareName);
     auto [it, inserted] =
-        g_table.try_emplace(key, Entry{addr, ownerName, bareName});
+        g_table.try_emplace(key, Entry{addr, ownerAuthor, ownerPlugin,
+                                       bareName});
     return inserted;
 }
 
 std::optional<uintptr_t> Lookup(const std::string& name,
+                                const std::string& owningAuthor,
                                 const std::string& owningPlugin) {
     if (name.empty()) return std::nullopt;
 
     // --- ALIAS substitution (naming-namespaces.md §Aliasing) — BEFORE the
-    // self > other walk, using the SAME per-plugin alias map as the address
-    // resolver. A local handle; it only fires when the calling plugin owns it,
-    // so it never shadows another plugin's bare export.
+    // self > other walk, using the SAME per-namespace alias map as the
+    // address resolver. A local handle; it only fires when the calling
+    // namespace owns it, so it never shadows another plugin's bare export.
     std::string aliased =
-        kcdx::address_library::ResolveAlias(owningPlugin.c_str(), name.c_str());
+        kcdx::address_library::ResolveAlias(owningAuthor.c_str(),
+                                            owningPlugin.c_str(),
+                                            name.c_str());
     const std::string& eff = aliased.empty() ? name : aliased;
 
     std::lock_guard<std::mutex> lock(g_mutex);
 
-    // --- EXPLICIT prefixed reference: "<plugin>.<name>" — direct, never warns.
-    // (A "kcdx." reference can't match a stored author export — the engine
-    // never registers exports under its own reserved root — so it simply
-    // misses here, which is the correct "no such symbol" answer.)
-    std::string prefix, rest;
-    if (SplitPrefixed(eff, prefix, rest)) {
+    QName q = SplitQualified(eff);
+    if (q.count == 0 || q.count > 3) return std::nullopt;
+
+    // --- EXPLICIT prefixed reference: a 2-segment "<plugin>.<bare>" or
+    // 3-segment "<author>.<plugin>.<bare>" stored key. Direct hash hit; never
+    // warns. (A "kcdx." reference can't match a stored author export — the
+    // engine never registers exports under its own reserved root — so it
+    // simply misses here, which is the correct "no such symbol" answer.)
+    if (q.count >= 2) {
         auto it = g_table.find(eff);
         if (it == g_table.end()) return std::nullopt;
         return it->second.addr;
     }
 
     // --- BARE reference: resolve self > other (no engine tier for symbols).
-    // Walk the table once collecting the calling plugin's own export and the
-    // first other-plugin export of this bare name.
+    // Walk the table once collecting the calling namespace's own export and
+    // the first other-namespace export of this bare name.
     const Entry* selfEntry  = nullptr;
     const Entry* otherEntry = nullptr;
     const Entry* anonEntry  = nullptr;
     for (const auto& [k, e] : g_table) {
         if (e.bareName != eff) continue;
-        if (!owningPlugin.empty() && e.owner == owningPlugin) {
+        const bool isSelf =
+            !owningPlugin.empty() &&
+            e.ownerPlugin == owningPlugin &&
+            e.ownerAuthor == owningAuthor;
+        if (isSelf) {
             selfEntry = &e;
-        } else if (e.owner.empty()) {
+        } else if (e.ownerPlugin.empty()) {
             anonEntry = &e;  // anonymous export stored under the bare key
         } else if (!otherEntry) {
             otherEntry = &e;
@@ -109,9 +153,11 @@ std::optional<uintptr_t> Lookup(const std::string& name,
     // Bare collision: the bare name is exported by more than one owner the
     // consumer can see. Warn once (shared dedup with the address resolver).
     if (selfHit && otherHit) {
-        std::string winnerOwner = selfEntry->owner;
+        std::string winnerOwner =
+            OwnerDisplay(selfEntry->ownerAuthor, selfEntry->ownerPlugin);
         std::string shadowed =
-            otherEntry ? otherEntry->owner
+            otherEntry ? OwnerDisplay(otherEntry->ownerAuthor,
+                                      otherEntry->ownerPlugin)
                        : std::string("<anonymous export>");
         kcdx::address_library::WarnBareCollisionShared(
             eff.c_str(), "self", winnerOwner, shadowed);
@@ -128,7 +174,7 @@ std::string OwnerOf(const std::string& fullName) {
     std::lock_guard<std::mutex> lock(g_mutex);
     auto it = g_table.find(fullName);
     if (it == g_table.end()) return {};
-    return it->second.owner;
+    return OwnerDisplay(it->second.ownerAuthor, it->second.ownerPlugin);
 }
 
 size_t Count() {
@@ -140,7 +186,8 @@ void ForEach(void (*fn)(const char* name, uintptr_t addr, const char* owner)) {
     if (!fn) return;
     std::lock_guard<std::mutex> lock(g_mutex);
     for (const auto& [name, entry] : g_table) {
-        fn(name.c_str(), entry.addr, entry.owner.c_str());
+        std::string owner = OwnerDisplay(entry.ownerAuthor, entry.ownerPlugin);
+        fn(name.c_str(), entry.addr, owner.c_str());
     }
 }
 

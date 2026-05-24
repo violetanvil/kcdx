@@ -60,21 +60,33 @@ size_t EntryCountForRunningVersion();
 // stability guarantee across kcdx versions); numeric ids remain
 // the canonical reference for code that needs stability.
 //
-// `owningPlugin` is the name of the plugin whose call is resolving this
-// name (the namespace prefix per naming-namespaces.md), or "" for an
-// anonymous / engine-internal resolve.
+// `owningAuthor` + `owningPlugin` are the author + plugin namespace components
+// of the calling plugin (the 2-dot prefix per naming-namespaces.md). Either or
+// both may be "" for an anonymous / engine-internal resolve, or for a plugin
+// whose manifest has not yet populated [plugin].author (the corpus's actual
+// state during the in-progress namespace refactor — empty author is the
+// legacy 1-dot tier that the resolver tolerates without dropping a self-tier
+// match; step 4 of the refactor wires the real author through every binder).
 //
 // RESOLUTION (naming-namespaces.md):
-//   - A name with a '.' is an EXPLICIT "<prefix>.<rest>" reference, callable
-//     from anywhere and NEVER warns: prefix "kcdx" → the engine seed by the
-//     unprefixed name `rest`; any other prefix → that plugin's author target
-//     {pluginName==prefix, bareName==rest}.
+//   - A 3-segment name "<author>.<plugin>.<bare>" is an EXPLICIT plugin-export
+//     reference: callable from anywhere, NEVER warns; resolves directly to the
+//     author target {author, plugin, bare}.
+//   - A 2-segment name "<X>.<Y>" is the legacy 1-dot explicit form. When X ==
+//     "kcdx" → the engine seed by the unprefixed engine name Y (the 1-dot
+//     engine-root form). Any other 2-segment form is ambiguous under the 2-dot
+//     model — for the transition it falls back to treating X as the plugin
+//     name and Y as the bare name (legacy 1-dot author-target lookup), so
+//     callers that have not yet adopted the 2-dot form keep resolving. Once
+//     every author target has a populated author the 2-segment-non-kcdx form
+//     becomes a teaching error.
 //   - A BARE name (no '.') resolves self > engine > other: (1) the calling
-//     plugin's own target {owningPlugin, name}, (2) the engine seed, (3) any
-//     other plugin's target with that bare name. First hit wins. When the bare
-//     name occupies MORE THAN ONE tier it still resolves by precedence but
-//     warns ONCE PER SESSION PER NAME (category "NAMESPACE"), naming the winner
-//     + shadowed owners and teaching the prefix fix.
+//     plugin's own target keyed (owningAuthor, owningPlugin, name); (2) the
+//     engine seed; (3) any other plugin's target with that bare name. First
+//     hit wins. When the bare name occupies MORE THAN ONE tier it still
+//     resolves by precedence but warns ONCE PER SESSION PER NAME (category
+//     "NAMESPACE"), naming the winner + shadowed owners and teaching the
+//     prefix fix.
 //   - Author-target kinds Rva / AddressId resolve to a VA directly here.
 //   - Author-target kinds Pattern / TargetSymbol cannot become a VA in this
 //     leaf module (it must not depend on the patch engine / symbol table).
@@ -86,7 +98,9 @@ size_t EntryCountForRunningVersion();
 //
 // LAUNCH-TIME ONLY — runs during the registration/apply pass, never on a
 // hook-fire / runtime path (the resolved VA is cached in the binding).
-uintptr_t ResolveByName(const char* name, const char* owningPlugin = "");
+uintptr_t ResolveByName(const char* name,
+                        const char* owningAuthor = "",
+                        const char* owningPlugin = "");
 
 // Resolve a NAME to the winning AUTHOR-TARGET descriptor, applying the SAME
 // self > engine > other precedence (and sharing the SAME bare-collision
@@ -118,6 +132,7 @@ uintptr_t ResolveByName(const char* name, const char* owningPlugin = "");
 // LAUNCH-TIME ONLY — same invariant as ResolveByName: reached only from the
 // apply pass, never from a hook-fire / per-frame path.
 const AuthorTarget* FindResolvedAuthorTarget(const char* name,
+                                             const char* owningAuthor = "",
                                              const char* owningPlugin = "");
 
 // Iterate every entry that matches the running KCD2 build AND has
@@ -169,14 +184,15 @@ const char* DescribeByName(const char* name);
 // address on ResolveByName (which enforces version + verified); the
 // signature is descriptive metadata for the same row.
 //
-// `owningPlugin` is the resolving plugin's name (namespace prefix per
-// naming-namespaces.md), or "" for anonymous / engine-internal. The signature
-// resolves by the SAME order as ResolveByName (self > engine > other for a
-// bare name; explicit "<prefix>.<rest>" resolves directly and never warns), so
-// the returned ABI comes from the SAME row the address did. The bare-collision
-// warn shares ResolveByName's once-per-session-per-name dedup — a name that
-// already warned there does not double-warn here.
+// `owningAuthor` + `owningPlugin` are the 2-dot namespace components of the
+// resolving plugin per naming-namespaces.md, or "" for anonymous / engine-
+// internal. The signature resolves by the SAME order as ResolveByName (self >
+// engine > other for a bare name; explicit form resolves directly and never
+// warns), so the returned ABI comes from the SAME row the address did. The
+// bare-collision warn shares ResolveByName's once-per-session-per-name dedup
+// — a name that already warned there does not double-warn here.
 const char* ResolveSignatureByName(const char* name,
+                                   const char* owningAuthor = "",
                                    const char* owningPlugin = "");
 
 // ===========================================================================
@@ -208,11 +224,15 @@ enum class AuthorLocatorKind {
 // std::vector<AuthorTarget> rather than the constexpr seed Entry, because the
 // set is populated from plugin manifests during discovery, not compiled in.
 //
-// The owning plugin name + the bare target name together form the shared
-// name `<pluginName>.<bareName>` per naming-namespaces.md; the engine derives
-// the prefix, the author types only the bare name.
+// The owning author + plugin + bare target name together form the shared
+// name `<author>.<pluginName>.<bareName>` per naming-namespaces.md; the
+// engine derives the prefix, the author types only the bare name. During
+// the in-progress refactor `author` may be empty (the legacy 1-dot tier);
+// once every plugin's [plugin].author is populated the field becomes
+// non-empty for every row.
 struct AuthorTarget {
-    std::string       pluginName;   // owner; the namespace prefix (validated)
+    std::string       author;       // leading namespace component (may be "")
+    std::string       pluginName;   // plugin namespace component (validated)
     std::string       bareName;     // the author's bare <name> (no prefix)
     AuthorLocatorKind kind;         // which payload field below is meaningful
     std::string       locatorStr;   // payload for Pattern / TargetSymbol; "" otherwise
@@ -255,21 +275,25 @@ bool ValidatePluginName(const char* name, std::string& outError);
 bool ValidateAuthorName(const char* name, std::string& outError);
 
 // Register one author-declared target into the runtime registry. VALIDATES
-// (the owning plugin name via ValidatePluginName, and the bare name's charset
-// — same [a-z0-9_] rule, since it becomes the second half of the shared
-// `<plugin>.<name>`), THEN appends. Returns true on success; on a validation
-// failure returns false and fills `outError` with a teaching message and does
-// NOT append.
+// (the author via ValidateAuthorName when non-empty, the plugin name via
+// ValidatePluginName, and the bare name's charset — same [a-z0-9_] rule,
+// since it becomes the final segment of `<author>.<plugin>.<name>`), THEN
+// appends. Returns true on success; on a validation failure returns false
+// and fills `outError` with a teaching message and does NOT append.
 //
-// `locatorStr` carries the payload for Pattern / TargetSymbol locators (pass
-// "" for the numeric kinds); `locatorNum` carries it for Rva / AddressId
-// (pass 0 for the string kinds). `signature` is the structured ABI in the
-// kcdx.hook DSL, or "" when the author has none yet (we never invent one —
-// AP2).
+// `author` MAY be "" during the in-progress namespace refactor (legacy 1-dot
+// row — the plugin has not declared [plugin].author yet); when non-empty it
+// must obey the same charset / length / reserved-root rules a namespace
+// component does. `locatorStr` carries the payload for Pattern / TargetSymbol
+// locators (pass "" for the numeric kinds); `locatorNum` carries it for Rva /
+// AddressId (pass 0 for the string kinds). `signature` is the structured ABI
+// in the kcdx.hook DSL, or "" when the author has none yet (we never invent
+// one — AP2).
 //
 // Launch-time only. See the registry definition comment in the .cpp for the
 // resident / never-read-at-runtime invariant.
-bool RegisterAuthorTarget(const char*       pluginName,
+bool RegisterAuthorTarget(const char*       author,
+                          const char*       pluginName,
                           const char*       bareName,
                           AuthorLocatorKind kind,
                           const char*       locatorStr,
@@ -297,30 +321,37 @@ size_t AuthorTargetCount();
 // launch and read only during the apply pass (same launch-time-only invariant
 // as g_authorTargets — never a hook-fire / per-frame path).
 
-// Register an alias `short` -> `target` owned by `owningPlugin`. VALIDATES the
-// owning plugin name (charset/length/reserved-root via ValidatePluginName), the
-// `short` handle (the [a-z0-9_] 2-32 component rule — it is referenced like a
-// bare name), and that `target` is non-empty. On success records the alias and
-// returns true; on a validation failure returns false and fills `outError` with
-// a teaching message and records nothing.
+// Register an alias `short` -> `target` owned by (`owningAuthor`,
+// `owningPlugin`). VALIDATES the owning plugin name (charset/length/reserved-
+// root via ValidatePluginName), the owning author (when non-empty, same
+// validation via ValidateAuthorName), the `short` handle (the [a-z0-9_] 2-32
+// component rule — it is referenced like a bare name), and that `target` is
+// non-empty. On success records the alias and returns true; on a validation
+// failure returns false and fills `outError` with a teaching message and
+// records nothing.
 //
 // `owningPlugin` "" (anonymous caller) is rejected: an alias is meaningless
-// without a plugin to scope it to.
+// without a plugin to scope it to. `owningAuthor` "" is accepted during the
+// in-progress namespace refactor — the legacy 1-dot scope (plugin-only key).
 //
 // Launch-time only.
-bool RegisterAlias(const char*  owningPlugin,
+bool RegisterAlias(const char*  owningAuthor,
+                   const char*  owningPlugin,
                    const char*  shortName,
                    const char*  target,
                    std::string& outError);
 
-// Resolve an alias: if `owningPlugin` declared an alias whose short name is
-// exactly `name`, returns the aliased full target name; otherwise returns "".
-// Called at the TOP of name resolution (before the self > engine > other walk)
-// so a matching alias substitutes its full target, which then resolves
-// normally. A non-empty result is always re-resolved as a name.
+// Resolve an alias: if (`owningAuthor`, `owningPlugin`) declared an alias
+// whose short name is exactly `name`, returns the aliased full target name;
+// otherwise returns "". Called at the TOP of name resolution (before the
+// self > engine > other walk) so a matching alias substitutes its full
+// target, which then resolves normally. A non-empty result is always
+// re-resolved as a name.
 //
 // Launch-time only.
-std::string ResolveAlias(const char* owningPlugin, const char* name);
+std::string ResolveAlias(const char* owningAuthor,
+                         const char* owningPlugin,
+                         const char* name);
 
 // Diagnostic: number of registered aliases. (Self-test / dev-log summary.)
 size_t AliasCount();

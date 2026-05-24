@@ -258,8 +258,14 @@ int Lua_Bytes(lua_State* L) {
     // ResolveByName → ResolveAuthorTargetAddr → Resolve(id); the addressId
     // field path computes Resolve(id) too), so this is simpler and correct.
     if (!targetName.empty()) {
+        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
+        // step 4 widens OwningPluginForCurrentCall to return both author
+        // and plugin; until then we pass "" for owningAuthor. The resolver
+        // tolerates an empty author by treating the row as legacy 1-dot
+        // (preserving the existing bare-name self > engine > other
+        // observable behavior).
         const uintptr_t va = kcdx::address_library::ResolveByName(
-            targetName.c_str(), owningPlugin.c_str());
+            targetName.c_str(), /*owningAuthor=*/"", owningPlugin.c_str());
         if (va) {
             // Engine seed, Rva author-target, or AddressId author-target — the
             // name resolved straight to a VA. Carry it; Resolve uses it
@@ -269,9 +275,12 @@ int Lua_Bytes(lua_State* L) {
             // ResolveByName returned 0 — either a Pattern / TargetSymbol
             // author-target (no VA in this leaf module) or a genuine miss.
             // FindResolvedAuthorTarget disambiguates with the same precedence.
+            // Same empty-author transition as the ResolveByName call above —
+            // step 4 wires the real author through this call chain.
             const kcdx::address_library::AuthorTarget* at =
                 kcdx::address_library::FindResolvedAuthorTarget(
-                    targetName.c_str(), owningPlugin.c_str());
+                    targetName.c_str(), /*owningAuthor=*/"",
+                    owningPlugin.c_str());
             if (at) {
                 using Kind = kcdx::address_library::AuthorLocatorKind;
                 switch (at->kind) {

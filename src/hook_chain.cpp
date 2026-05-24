@@ -953,10 +953,18 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
         // owningPlugin drives the self > engine > other precedence in
         // ResolveByName (naming-namespaces.md): a bare addressName resolves
         // to this plugin's own target first, then the engine seed, then any
-        // other plugin's target; an explicit "<plugin>.<name>" resolves
-        // directly. Launch-time apply pass only — never a hook-fire path.
+        // other plugin's target; an explicit form resolves directly.
+        // Launch-time apply pass only — never a hook-fire path.
+        //
+        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
+        // HookPayload does not yet carry the owningAuthor field — step 4
+        // adds it alongside owningPlugin. Until then we pass "" for the
+        // author, which scopes the lookup under the legacy 1-dot tier (the
+        // resolver finds the row by (empty author, this plugin, bare name),
+        // exactly how the existing corpus resolves bare names today).
         uintptr_t va = kcdx::address_library::ResolveByName(
-            p.addressName.c_str(), p.owningPlugin.c_str());
+            p.addressName.c_str(), /*owningAuthor=*/"",
+            p.owningPlugin.c_str());
         if (va) {
             return va + (uintptr_t)(int64_t)p.offset;
         }
@@ -973,9 +981,12 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
         // directly-set pattern / target_symbol — so an author names an AOB
         // site once and every plugin hooks it BY NAME end-to-end
         // (cornerstones.md §"author-declared targets are shareable").
+        // Same empty-author transition as the ResolveByName call above —
+        // step 4 wires the real author through HookPayload.
         const kcdx::address_library::AuthorTarget* at =
             kcdx::address_library::FindResolvedAuthorTarget(
-                p.addressName.c_str(), p.owningPlugin.c_str());
+                p.addressName.c_str(), /*owningAuthor=*/"",
+                p.owningPlugin.c_str());
         if (at &&
             (at->kind == kcdx::address_library::AuthorLocatorKind::Pattern ||
              at->kind == kcdx::address_library::AuthorLocatorKind::TargetSymbol)) {

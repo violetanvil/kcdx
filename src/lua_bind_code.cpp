@@ -343,7 +343,13 @@ int Lua_Code(lua_State* L) {
         // Fully-qualified name the engine will publish (for diagnostics).
         std::string fullName =
             owner.empty() ? exportSymbol : (owner + "." + exportSymbol);
-        if (kcdx::symbols::Register(exportSymbol, addr, owner)) {
+        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
+        // OwningPluginForCurrentCall returns only the plugin name today —
+        // step 4 widens it to expose the manifest's [plugin].author. Until
+        // then we register the export under the legacy 1-dot key (empty
+        // author + plugin), which the symbol table treats identically to
+        // today's <plugin>.<bare> storage.
+        if (kcdx::symbols::Register(exportSymbol, addr, "", owner)) {
             LOG_DEBUG("CODE", "[%s] exported symbol '%s' -> 0x%p",
                       name.c_str(), fullName.c_str(),
                       reinterpret_cast<void*>(addr));

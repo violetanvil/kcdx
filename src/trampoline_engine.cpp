@@ -89,7 +89,14 @@ size_t ApplyAll() {
             std::string fullName =
                 t.pluginName.empty() ? t.exportSymbol
                                      : (t.pluginName + "." + t.exportSymbol);
-            if (symbols::Register(t.exportSymbol, addr, t.pluginName)) {
+            // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace
+            // refactor): the [[trampoline]] TOML entry does not yet
+            // carry the owning author — step 4 widens TrampolineEntry
+            // to thread the manifest's [plugin].author alongside
+            // pluginName. Until then we register under the legacy
+            // 1-dot key (empty author + this plugin's name), which is
+            // exactly how the existing corpus's exports already live.
+            if (symbols::Register(t.exportSymbol, addr, "", t.pluginName)) {
                 LOG_DEBUG("TRAMPOLINE", "[%s] exported symbol '%s' -> 0x%p",
                           t.name.c_str(),
                           fullName.c_str(),

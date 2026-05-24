@@ -102,8 +102,16 @@ bool RegisterOneTarget(const toml::table& t,
     std::string signature = OptString(t, "signature");
 
     std::string regErr;
+    // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
+    // the per-plugin [plugin].author plumbing through the targets-discovery
+    // call chain lands in step 4 — until then every [[target]] row registers
+    // under the legacy 1-dot scope (empty author + plugin name == this
+    // plugin's [plugin].name). The resolver's 1-dot tier still finds these
+    // rows by their bare name, so the existing corpus keeps resolving while
+    // the build stays green. Once step 4 threads `author` through here it
+    // will be the manifest's [plugin].author, not "".
     if (!address_library::RegisterAuthorTarget(
-            pluginName.c_str(), bareName.c_str(), kind,
+            "", pluginName.c_str(), bareName.c_str(), kind,
             locatorStr.c_str(), locatorNum, signature.c_str(), regErr)) {
         err = regErr;  // ValidatePluginName / bare-name charset rejection.
         return false;

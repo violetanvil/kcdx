@@ -133,19 +133,21 @@ uintptr_t Thunk_ResolveAddressByName(const char* name) {
     // from any context (Load, PostLoad, a hook callback) — a "current loading
     // plugin" static would mis-attribute every later call (AP13 — a wrong owner
     // silently picks the wrong precedence tier), which is worse than "".
-    // Passing "" keeps an explicit-prefix ("<plugin>.<name>") reference exact
-    // and a bare name on the engine-seed path. The C++/Lua parity gap is CLOSED
-    // by the sibling Thunk_ResolveAddressByNameAs(owner, name) below: a plugin
-    // that wants full self > engine > other precedence passes its OWN handle,
-    // which threads the self tier (naming-namespaces.md). The Lua target= path
-    // gets self for free because the Lua runtime knows the calling plugin; the
-    // shared C++ kcdxInterface does not, hence the explicit-handle overload.
-    return kcdx::address_library::ResolveByName(name, "");
+    // Passing "" / "" for (author, plugin) keeps an explicit-form reference
+    // exact and a bare name on the engine-seed path. The C++/Lua parity gap
+    // is CLOSED by the sibling Thunk_ResolveAddressByNameAs(owner, name)
+    // below: a plugin that wants full self > engine > other precedence passes
+    // its OWN handle, which threads the self tier (naming-namespaces.md).
+    return kcdx::address_library::ResolveByName(name, "", "");
 }
 
 uintptr_t Thunk_ResolveSymbol(const char* name) {
     if (!name) return 0;
-    auto v = kcdx::symbols::Lookup(name);
+    // Anonymous (no owner) — symbols::Lookup defaults to the bare/anonymous
+    // path. The empty-author transition (step 3 of the namespace refactor)
+    // passes "" for both author and plugin; the symbol table treats the
+    // anonymous lookup exactly as before.
+    auto v = kcdx::symbols::Lookup(name, "", "");
     return v.value_or(0);
 }
 
@@ -165,14 +167,23 @@ const std::string& NameForHandle(kcdxPluginHandle owner) {
 
 uintptr_t Thunk_ResolveSymbolAs(kcdxPluginHandle owner, const char* name) {
     if (!name) return 0;
-    auto v = kcdx::symbols::Lookup(name, NameForHandle(owner));
+    // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
+    // NameForHandle reads only the plugin name from the manifest today;
+    // step 4 widens the helper to expose the manifest's [plugin].author
+    // alongside [plugin].name. Until then we thread the plugin (which the
+    // resolver tolerates as the legacy 1-dot scope), with "" for the
+    // author — preserving the existing self > other observable behavior
+    // for the (currently authorless) corpus.
+    auto v = kcdx::symbols::Lookup(name, "", NameForHandle(owner));
     return v.value_or(0);
 }
 
 uintptr_t Thunk_ResolveAddressByNameAs(kcdxPluginHandle owner,
                                        const char* name) {
     if (!name) return 0;
-    return kcdx::address_library::ResolveByName(name, NameForHandle(owner).c_str());
+    // Same empty-author transition as Thunk_ResolveSymbolAs above.
+    return kcdx::address_library::ResolveByName(
+        name, /*owningAuthor=*/"", NameForHandle(owner).c_str());
 }
 
 // Level filter for plugin-side Log calls.

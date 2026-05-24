@@ -762,9 +762,16 @@ int Lua_Hook(lua_State* L) {
         // ResolveSignatureByName (naming-namespaces.md): the signature comes
         // from the SAME row the address resolves to (self target, else engine
         // seed, else another plugin's target). Launch-time binder pass only.
+        //
+        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
+        // step 4 widens OwningPluginForCurrentCall to return both author and
+        // plugin; until then we pass "" for owningAuthor. The resolver
+        // tolerates an empty author by treating the row as legacy 1-dot,
+        // preserving the bare-name resolution observable behavior.
         const char* entrySig =
             kcdx::address_library::ResolveSignatureByName(
-                targetName.c_str(), owningPlugin.c_str());
+                targetName.c_str(), /*owningAuthor=*/"",
+                owningPlugin.c_str());
         if (entrySig && entrySig[0] != '\0') {
             effectiveSig  = entrySig;
             sigFromTarget = true;

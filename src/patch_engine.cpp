@@ -280,7 +280,14 @@ ResolvedPatch Resolve(const PatchEntry& p) {
         // shared warn-once) — a bare target_symbol resolves to this plugin's
         // own export first, an explicit "<plugin>.<name>" directly
         // (naming-namespaces.md).
-        auto addr = symbols::Lookup(p.targetSymbol, p.pluginName);
+        //
+        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
+        // PatchEntry does not yet carry the consuming plugin's author —
+        // step 4 widens it alongside pluginName. Until then we pass "" for
+        // the author, which scopes the lookup under the legacy 1-dot tier
+        // (the symbol table finds the row by (empty author, this plugin,
+        // bare name), exactly how today's corpus resolves bare names).
+        auto addr = symbols::Lookup(p.targetSymbol, "", p.pluginName);
         if (!addr) {
             r.reason = "target_symbol '" + p.targetSymbol + "' not registered "
                        "(producer plugin may be missing or failed to apply)";
