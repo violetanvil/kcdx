@@ -30,7 +30,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.comp-03-A"
+name                = "ts_comp_03_a"
 display_name        = "COMP-03 Hook-on-hook winner (plugin A)"
 author              = "kcdx"
 description         = "Lower-priority hook in the COMP-03 first-wins pair. Installs cleanly."

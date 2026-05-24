@@ -2,7 +2,7 @@
 --
 -- The targets.toml sidecar (loaded by the engine BEFORE this script runs)
 -- declared three targets under this plugin's namespace
--- (cap_33_author_targets, derived from [plugin].name — the author never types
+-- (ts_cap_33_author_targets, derived from [plugin].name — the author never types
 -- the prefix):
 --   * openlibs_by_pattern  — a PATTERN locator + signature (the §36 row),
 --                            luaL_openlibs (seed id 1190). The 16-byte entry
@@ -77,7 +77,7 @@ local hEngine = kcdx.hook{
 -- ====================================================================
 local hPrefixed = kcdx.hook{
     name   = "cap33_prefixed",
-    target = "cap_33_author_targets.luaopen_math_by_id",  -- explicit prefix → verified-id target
+    target = "ts_cap_33_author_targets.luaopen_math_by_id",  -- explicit prefix → verified-id target
     before = function() end,                              -- no-op (returns nothing)
 }
 
@@ -89,7 +89,7 @@ local hPrefixed = kcdx.hook{
 -- so this proves ALIAS resolution end-to-end and can PASS. Empty before-hook
 -- (returns nothing → original runs unchanged).
 -- ====================================================================
-local aliasOk, aliasErr = kcdx.alias("up", "cap_33_author_targets.luaopen_math_by_id")
+local aliasOk, aliasErr = kcdx.alias("up", "ts_cap_33_author_targets.luaopen_math_by_id")
 if aliasOk ~= true then
     kcdx.log.error("CAP33", "kcdx.alias failed: " .. tostring(aliasErr))
 end
@@ -150,7 +150,7 @@ kcdx.on("ready", function()
         local applied = hPrefixed:applied()
         kcdx.test.report("CAP-33-prefixed", applied == true,
             applied == true
-              and "explicit \"cap_33_author_targets.luaopen_math_by_id\" (address_id=1172) resolved directly"
+              and "explicit \"ts_cap_33_author_targets.luaopen_math_by_id\" (address_id=1172) resolved directly"
               or  ("expected applied()==true for the prefixed form; got "
                    .. "applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPrefixed:reason())))

@@ -18,7 +18,7 @@
 #   * CAP-30-export: the export-symbol interlock — the cross-feature proof.
 #     kcdx.code{ ..., export="region" } publishes the allocated address as a
 #     symbol under this plugin's namespace (the engine stamps the [plugin].name
-#     prefix → cap_30_lua_code.region; symbols::Register, immediately at the
+#     prefix → ts_cap_30_lua_code.region; symbols::Register, immediately at the
 #     call). A later kcdx.bytes{ target_symbol="region" } self-resolves that
 #     export at the apply pass (symbols::Lookup) and writes into
 #     the live region. PASS iff the kcdx.bytes handle :applied()==true in
@@ -46,7 +46,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "cap_30_lua_code"
+name                = "ts_cap_30_lua_code"
 display_name        = "CAP-30 kcdx.code allocation + NOP-pad + export interlock"
 author              = "kcdx"
 description         = "Pure-Lua kcdx.code self-test: allocates a live writable executable region (write/read-back round-trip), verifies the size>#bytes NOP-pad (tail byte == 0x90), and proves the export-symbol interlock by resolving the export through a deferred kcdx.bytes{ target_symbol=... } (handle :applied()==true at ready)."

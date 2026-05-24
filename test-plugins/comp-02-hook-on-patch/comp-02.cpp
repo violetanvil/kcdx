@@ -17,7 +17,7 @@
 
 namespace {
 
-const char* kName        = "kcdx.comp-02-hook-on-patch";
+const char* kName        = "ts_comp_02_hook_on_patch";
 const char* kPatternStr  = "48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02";
 const int   kEntryOffset = -4;  // function entry relative to AOB hit
 

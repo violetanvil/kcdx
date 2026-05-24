@@ -17,7 +17,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.scan-demo"
+name                = "ts_scan_demo"
 display_name        = "scan-demo (diagnostic [[scan]] showcase)"
 author              = "kcdx"
 description         = "Shows what [[scan]] output looks like for the outfit-swap site."

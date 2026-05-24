@@ -19,7 +19,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.comp-10-require-isolation-b"
+name                = "ts_comp_10_require_isolation_b"
 display_name        = "COMP-10 require isolation (B)"
 author              = "kcdx"
 description         = "Ships helper.lua returning marker='B'; require('helper') must resolve to THIS plugin's helper (not A's). Companion: comp-10-require-isolation-a. Proves cross-plugin require-cache isolation + within-plugin cache hit."

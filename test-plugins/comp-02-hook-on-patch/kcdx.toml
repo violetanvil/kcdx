@@ -23,7 +23,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.comp-02-hook-on-patch"
+name                = "ts_comp_02_hook_on_patch"
 display_name        = "COMP-02 Hook-on-patch overlap"
 author              = "kcdx"
 description         = "Patch and hook at same target; both should apply."

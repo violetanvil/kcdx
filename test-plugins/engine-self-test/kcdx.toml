@@ -12,7 +12,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.engine-self-test"
+name                = "ts_engine_self_test"
 display_name        = "Engine self-test"
 author              = "kcdx"
 description         = "Smoke test for the test-suite reporting wiring."

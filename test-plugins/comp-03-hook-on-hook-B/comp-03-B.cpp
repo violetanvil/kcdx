@@ -25,7 +25,7 @@
 
 namespace {
 
-const char* kName = "kcdx.comp-03-B";
+const char* kName = "ts_comp_03_b";
 
 const kcdxInterface* g_api  = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;

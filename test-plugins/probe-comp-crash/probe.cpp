@@ -35,7 +35,7 @@
 
 namespace {
 
-const char* kName = "kcdx.probe-comp-crash";
+const char* kName = "ts_probe_comp_crash";
 
 const kcdxInterface* g_api  = nullptr;
 kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;

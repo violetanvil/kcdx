@@ -17,7 +17,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-29-both-phase-dll"
+name                = "ts_cap_29_both_phase_dll"
 display_name        = "CAP-29 Both-Phase C++ Lifecycle"
 author              = "kcdx"
 description         = "Exports kcdxPlugin_Load + kcdxPlugin_PostGameLoad; asserts Load runs before PostGameLoad."

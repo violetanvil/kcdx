@@ -26,17 +26,16 @@
 #     name) still resolves — the engine tier of self>engine>other coexists with
 #     the author's own targets.
 #   * CAP-33-prefixed: the explicit "<pluginname>.<target>" form
-#     ("cap_33_author_targets.ui_pump_by_id") resolves directly. Points at the
-#     VERIFIED-ID target (CGame_per_frame_ui_pump by address_id=1003 — RVA, no
-#     scan, immune to the prologue-overwrite blocker), so it proves PREFIX
-#     resolution and can pass.
+#     ("ts_cap_33_author_targets.luaopen_math_by_id") resolves directly. Points at
+#     the VERIFIED-ID target (luaopen_math by address_id=1172 — an UNHOOKED verified
+#     leaf; RVA-resolved, no scan), so it proves PREFIX resolution and passes.
 #   * CAP-33-bytes-by-name: kcdx.bytes{ target = "bool_leaf_safe_site" }
 #     resolves an author-declared VERIFIED-ID target (lua_toboolean,
 #     address_id=1124 — a DISTINCT verified leaf that NOTHING hooks, so its
 #     prologue is pristine) to a writable VA; an idempotent no-op write (0x48
 #     over the existing 0x48 — byte 0 of the lua_toboolean entry, read from
 #     WHGame.dll) :applied()==true proves the resolution.
-#   * CAP-33-alias: kcdx.alias("up", "cap_33_author_targets.ui_pump_by_id")
+#   * CAP-33-alias: kcdx.alias("up", "ts_cap_33_author_targets.luaopen_math_by_id")
 #     then kcdx.hook{ target = "up" } resolves the hook via the local alias to
 #     the same VERIFIED-ID target, so it proves ALIAS resolution and can pass.
 #
@@ -49,7 +48,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "cap_33_author_targets"
+name                = "ts_cap_33_author_targets"
 display_name        = "CAP-33 author-declared named targets + alias"
 author              = "kcdx"
 description         = "Author-declared targets.toml self-test: a pattern target with a signature hooked BY NAME end-to-end (cornerstones §36), engine-tier + explicit-prefix + alias resolution, and a kcdx.bytes target=<name> resolution."

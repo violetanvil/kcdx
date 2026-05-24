@@ -15,7 +15,7 @@
 --
 -- cap-31 NEVER calls kcdx.cosave.set_uid: the section persisting + reloading at
 -- all is itself the proof the UID auto-derived from the plugin name
--- ("kcdx.cap-31-cosave") resolved — the author hand-packs no FourCC (the
+-- ("ts_cap_31_cosave") resolved — the author hand-packs no FourCC (the
 -- disassembler-test win). So CAP-31-roundtrip PASSING is the auto-UID proof.
 
 -- ============================================================================

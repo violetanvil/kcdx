@@ -2,7 +2,7 @@
 #
 # Each [[target]] row declares a BARE name + exactly one locator; the engine
 # stamps the <pluginname> prefix derived from [plugin].name
-# (cap_33_author_targets) automatically — the author NEVER types their own
+# (ts_cap_33_author_targets) automatically — the author NEVER types their own
 # prefix (naming-namespaces.md). A pattern/rva target SHOULD carry a
 # `signature` (no engine name to carry the ABI — the disassembler test).
 

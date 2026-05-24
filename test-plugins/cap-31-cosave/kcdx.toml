@@ -68,7 +68,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-31-cosave"
+name                = "ts_cap_31_cosave"
 display_name        = "CAP-31 kcdx.cosave.* Lua surface"
 author              = "kcdx"
 description         = "Pure-Lua kcdx.cosave self-test (the Lua counterpart of the C++ CAP-12 row): boot-only window-guard assertion (write() outside on_save returns the window-closed teaching error), plus a [manual] type round-trip (number/float/string/boolean/nested table via auto-derived UID — no set_uid) and a [manual] serializer-rejection assertion (function + cyclic table) that ride a save+reboot+load gesture."

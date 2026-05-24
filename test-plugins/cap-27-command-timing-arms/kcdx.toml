@@ -61,7 +61,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.cap-27-command-timing-arms"
+name                = "ts_cap_27_command_timing_arms"
 display_name        = "CAP-27 kcdx.command timing arms (immediate + coexist)"
 author              = "kcdx"
 description         = "Pure-Lua kcdx.command registration-timing test: cap27_deferred is registered from plugin.lua (the DEFERRED arm — queued, flushed at console::Init) and cap27_immediate from the lua_after slot (the IMMEDIATE arm — RegisterCommandNow direct, post-Init). after.lua self-fires both via kcdx.console.execute and asserts each dispatched with correct args. The Lua mirror of CAP-13's C++ immediate path + the deferred/immediate coexistence boundary."

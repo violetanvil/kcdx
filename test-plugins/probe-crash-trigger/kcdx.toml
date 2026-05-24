@@ -18,7 +18,7 @@
 test_suite_only = true
 
 [plugin]
-name                = "kcdx.probe-crash-trigger"
+name                = "ts_probe_crash_trigger"
 display_name        = "PROBE-CRASH-TRIGGER"
 author              = "kcdx"
 description         = "Registers `kcdx_crash_now` console command for manual AV-crash testing."

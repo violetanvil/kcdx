@@ -2,7 +2,7 @@
 --
 -- plugin.lua does require("helper"); the kcdx searcher resolves it to this
 -- sibling and, at its compile point, kcdx calls RegisterScriptOwner(this
--- path, "kcdx.cap-25-multifile-attribution"). So this source is attributed
+-- path, "ts_cap_25_multifile_attribution"). So this source is attributed
 -- to the plugin in g_scriptOwners — which is exactly the fix this test
 -- regression-guards. Everything below runs FROM INSIDE this require'd source.
 --
@@ -32,12 +32,12 @@
 -- WHY A FIRING CALLBACK IS UNFORGEABLE PROOF OF ATTRIBUTION
 -- (the falsifiable assertion — the whole reason this fixture is shaped this
 --  way; identity-probe outcome map):
---   * The helper SUBSCRIBES to "kcdx.cap-25-multifile-attribution:multifile_event"
+--   * The helper SUBSCRIBES to "ts_cap_25_multifile_attribution:multifile_event"
 --     and PUBLISHES the bare "multifile_event". The engine stamps the
 --     published bare event under the PUBLISHER's resolved plugin name.
 --   * fix WORKS (helper source IS attributed to the plugin): publish
---     resolves owner = "kcdx.cap-25-multifile-attribution", stamps
---     "kcdx.cap-25-multifile-attribution:multifile_event", which MATCHES the
+--     resolves owner = "ts_cap_25_multifile_attribution", stamps
+--     "ts_cap_25_multifile_attribution:multifile_event", which MATCHES the
 --     subscription → the callback FIRES with the payload → PASS.
 --   * fix BROKEN (helper source resolves to "<anon>"): publish stamps
 --     "<anon>:multifile_event", which does NOT match the subscription →
@@ -46,7 +46,7 @@
 --   unforgeable proof that the require'd helper's kcdx.* calls resolved to
 --   the plugin — the regression that proves the completeness criterion.
 
-local SELF  = "kcdx.cap-25-multifile-attribution"  -- this plugin's [plugin] name
+local SELF  = "ts_cap_25_multifile_attribution"  -- this plugin's [plugin] name
 local EVENT = "multifile_event"                     -- the bare event name
 local FULL  = SELF .. ":" .. EVENT                  -- the subscription string
 
