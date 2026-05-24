@@ -4,13 +4,12 @@
 -- declared three targets under this plugin's namespace
 -- (cap_33_author_targets, derived from [plugin].name — the author never types
 -- the prefix):
---   * ui_pump_by_pattern   — a PATTERN locator + signature (the §36 row),
---                            CGame_per_frame_ui_pump (seed id 1003).
---                            BLOCKED: cap-03 hooks the same function, so the
---                            detour overwrites the entry prologue the AOB
---                            matches → a post-patch scan finds 0
---                            (patch_engine.cpp:124-130). See
---                            docs/outstanding-work/section36-pattern-target-aob.md.
+--   * openlibs_by_pattern  — a PATTERN locator + signature (the §36 row),
+--                            luaL_openlibs (seed id 1190). The 16-byte entry
+--                            AOB is .text-UNIQUE (1 match, minted + confirmed by
+--                            _research/phase8-fix-a/aob_scan.py) and the function
+--                            is entry-hooked by NOBODY, so the by-name pattern
+--                            scan resolves it end-to-end — the §36 proof.
 --   * luaopen_math_by_id   — luaopen_math by address_id=1172 (RVA, no scan →
 --                            immune to the prologue overwrite). A VERIFIED leaf
 --                            that NOTHING entry-hooks (distinct from the bytes
@@ -36,23 +35,22 @@
 -- the unhooked luaopen_math so the prefix/alias install can succeed.
 
 -- ====================================================================
--- (1) CAP-33-pattern-by-name — THE §36 HEADLINE (BLOCKED, NOT silenced).
--- kcdx.hook{ target = "<own pattern target>" } with NO signature=. This is the
--- pure "author names a target BY AOB PATTERN and hooks it by name" proof: the
--- pattern would carry the ADDRESS and the target's signature the ABI, both
--- from the bare name. It is BLOCKED: the AOB matches the ENTRY prologue of
--- CGame_per_frame_ui_pump, which cap-03 hooks in production — the detour
--- overwrites the prologue, so the post-patch pattern scan finds 0
--- (patch_engine.cpp:124-130). No verified .text-unique entry AOB exists yet
--- for a function NOTHING entry-hooks; minting one is bounded tier-5 work.
--- This row will fail/parse-skip at apply until that AOB is minted — that is
--- EXPECTED and TRACKED, not a regression. We still assert honestly (NOT a
--- silenced check): the report below records the real :applied() outcome.
--- See docs/outstanding-work/section36-pattern-target-aob.md.
+-- (1) CAP-33-pattern-by-name — THE §36 HEADLINE.
+-- kcdx.hook{ target = "<own pattern target>" } with NO signature=. The pure
+-- "author names a target BY AOB PATTERN and hooks it by name" proof: the
+-- pattern carries the ADDRESS (a .text-unique entry AOB) and the target's
+-- signature carries the ABI, both delivered by the bare name with zero hex at
+-- the call site (cornerstones §36, the disassembler test's sharpest edge).
+-- The target is luaL_openlibs (seed id 1190) — its 16-byte entry AOB is
+-- .text-unique (confirmed by _research/phase8-fix-a/aob_scan.py) and NOTHING
+-- entry-hooks it, so the prologue stays pristine and the by-name pattern scan
+-- resolves end-to-end. If the binder did not get the signature FROM the target
+-- it would reject ("a signature is required"); install with no inline sig IS
+-- the proof the name supplied both.
 -- ====================================================================
 local hPattern = kcdx.hook{
     name   = "cap33_pattern_by_name",
-    target = "ui_pump_by_pattern",       -- author-declared PATTERN target; carries the sig
+    target = "openlibs_by_pattern",      -- author-declared PATTERN target; carries the sig
     before = function(self) return self end,  -- no-op passthrough
 }
 
@@ -122,23 +120,17 @@ local hBytes = kcdx.bytes{
 -- Handles resolve to a final :applied() only AFTER the zone apply pass, which
 -- runs after this plugin.lua returns. Read them in kcdx.on("ready").
 kcdx.on("ready", function()
-    -- (1) §36 HEADLINE — BLOCKED (honest report; the row is expected to fail
-    --     until the verified .text-unique entry AOB is minted — see the
-    --     outstanding-work doc). NOT silenced: we record the real outcome.
+    -- (1) §36 HEADLINE — the author-declared PATTERN target resolves BY NAME.
     do
         local applied = hPattern:applied()
         kcdx.test.report("CAP-33-pattern-by-name", applied == true,
             applied == true
-              and ("kcdx.hook{ target=\"ui_pump_by_pattern\" } applied with NO "
+              and ("kcdx.hook{ target=\"openlibs_by_pattern\" } applied with NO "
                    .. "signature= — the author-declared PATTERN target supplied "
-                   .. "BOTH address and ABI by name (cornerstones §36)")
-              or  ("BLOCKED (tracked, not a regression): the entry-prologue AOB "
-                   .. "is overwritten by cap-03's production hook on the same "
-                   .. "function, so the post-patch scan finds 0 "
-                   .. "(patch_engine.cpp:124-130). Needs a verified .text-unique "
-                   .. "entry AOB for an UNHOOKED function — see "
-                   .. "docs/outstanding-work/section36-pattern-target-aob.md. "
-                   .. "applied=" .. tostring(applied)
+                   .. "BOTH address (.text-unique AOB) and ABI by name "
+                   .. "(cornerstones §36 share guarantee)")
+              or  ("expected applied()==true (pattern target resolves by name + "
+                   .. "carries the ABI); got applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPattern:reason())))
     end
 

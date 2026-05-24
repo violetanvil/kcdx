@@ -12,22 +12,28 @@
 # no hex and no hand-written ABI — the pattern resolves the WHERE and this
 # signature carries the ABI, both delivered by the bare name.
 #
-# Pattern + signature both target CGame_per_frame_ui_pump (Address Library
-# id 1003, verified RVA in data/address-library/seed.csv); the AOB is the
-# 25-byte .text-unique entry prologue from that row's notes.
+# Pattern + signature both target luaL_openlibs (Address Library id 1190,
+# verified RVA 0x01449600, sig "void (ptr L)"). The AOB is the 16-byte
+# .text-unique entry prologue minted + uniqueness-confirmed (EXACTLY 1 match,
+# at the function's own RVA) by _research/phase8-fix-a/aob_scan.py:
+#   48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D
+# (mov [rsp+8],rbx; push rdi; sub rsp,0x20; mov rdi,rcx; + the `lea rbx,[rip+...]`
+# opcode triplet — the slice stops BEFORE the RIP-relative disp32, the first
+# variable byte; every byte kept is fixed, zero wildcards).
 #
-# BLOCKED (do NOT mark PASS): the AOB matches the function-ENTRY prologue, and
-# cap-03 hooks this SAME function in production — the detour overwrites the
-# prologue, so a post-patch pattern scan finds 0 matches (patch_engine.cpp:124-130).
-# A by-NAME pattern hook therefore cannot apply here. No verified .text-unique
-# entry-prologue AOB exists yet for a function that NOTHING entry-hooks; minting
-# one is bounded tier-5 work. See docs/outstanding-work/section36-pattern-target-aob.md.
-# This row stays the pure "author names a target BY AOB PATTERN and hooks it by
-# name" proof and is expected to fail/parse-skip at apply until that AOB is minted.
+# WHY THIS RESOLVES (vs the prior id-1003 attempt that was BLOCKED): luaL_openlibs
+# is entry-hooked by NOBODY — production hooks lua_pcall (1000)/CGame::Update
+# (1001)/l_alloc (1192); no test plugin hooks or targets it. So its entry prologue
+# stays pristine and the by-NAME pattern scan finds it (the post-patch-scan caveat
+# patch_engine.cpp:124-130 does not bite — nothing overwrote the prologue). It is
+# called EXACTLY ONCE at Lua boot (CScriptSystem::Init), so a no-op before-hook is
+# minimal-frequency, and it is DISTINCT from the prefix/alias target (id 1172) and
+# the bytes target (id 1124) — no overlap. The §36 minting is recorded in seed.csv
+# id 1190's notes; closes docs/outstanding-work/section36-pattern-target-aob.md.
 [[target]]
-name      = "ui_pump_by_pattern"
-pattern   = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
-signature = "void (ptr self)"
+name      = "openlibs_by_pattern"
+pattern   = "48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D"
+signature = "void (ptr L)"
 
 # --- A VERIFIED-ID author-target for the prefix / alias resolution proofs. ---
 # luaopen_math (Address Library id 1172, verified RVA 0x009299AC, sig
