@@ -336,9 +336,11 @@ size_t ApplyZone(kcdx::load_order::Zone zone) {
             kcdx::load_order::Zone entryZone =
                 kcdx::load_order::Zone::AfterGame;
             if (!e.pluginName.empty()) {
-                const auto& eff = kcdx::load_order::Of(e.pluginName);
-                if (!eff.enabled) continue;
-                entryZone = eff.zone;
+                // Gate through IsPluginEnabled so a zone_gate rejection
+                // (engineAccepted = false) is honored alongside the user's
+                // enable choice — a direct .userEnabled read would bypass it.
+                if (!kcdx::load_order::IsPluginEnabled(e.pluginName)) continue;
+                entryZone = kcdx::load_order::Of(e.pluginName).zone;
             }
             if (entryZone != zone) continue;
             ids.push_back(kv.first);

@@ -25,7 +25,7 @@ std::unordered_map<std::string, Effective> g_effective;
 // Sentinel returned by Of() for unknown plugin names (anonymous patch
 // entries, etc.). Lives forever so the returned reference is safe.
 const Effective& DefaultEffective() {
-    static const Effective kDefault{};  // zone=AfterGame, priority=50, enabled=true
+    static const Effective kDefault{};  // zone=AfterGame, priority=50, userEnabled=true, engineAccepted=true
     return kDefault;
 }
 
@@ -168,7 +168,7 @@ void Resolve() {
         }
 
         int authorPriority = m.defaultPriority;
-        bool enabled = true;
+        bool userEnabled = true;
 
         // Step 2: user override (load_order.toml) wins over author hint
         // when present.
@@ -178,7 +178,7 @@ void Resolve() {
             const auto& ov = it->second;
             if (ov.hasZone)     requestedZone     = ov.zone;
             if (ov.hasPriority) requestedPriority = ov.priority;
-            if (ov.hasEnabled)  enabled           = ov.enabled;
+            if (ov.hasEnabled)  userEnabled       = ov.enabled;
         }
 
         // Step 3: the user's / author's declared (zone, priority) stands
@@ -192,9 +192,12 @@ void Resolve() {
         Zone finalZone     = requestedZone;
         int  finalPriority = requestedPriority;
 
-        eff.zone     = finalZone;
-        eff.priority = finalPriority;
-        eff.enabled  = enabled;
+        eff.zone        = finalZone;
+        eff.priority    = finalPriority;
+        eff.userEnabled = userEnabled;
+        // eff.engineAccepted stays at its default true — zone_gate writes it
+        // (false on rejection) in step 2 of the zone_gate feature; no other
+        // code path touches it.
 
         g_effective.emplace(m.name, std::move(eff));
     }
@@ -208,11 +211,15 @@ void Resolve() {
     // verify their load_order.toml took effect. One line per plugin.
     for (const auto& m : kcdx::plugins::g_manifests) {
         const auto& eff = Of(m.name);
+        // Print the FINAL gate (userEnabled AND engineAccepted) — what every
+        // other reader honors and what determines whether the plugin actually
+        // loads. Reading the raw user input alone would hide a zone_gate
+        // rejection from the dump.
         log::InfoF("  %s: zone=%s priority=%d enabled=%s",
                    m.name.c_str(),
                    ZoneName(eff.zone),
                    eff.priority,
-                   eff.enabled ? "true" : "false");
+                   IsPluginEnabled(m.name) ? "true" : "false");
     }
 }
 
@@ -227,7 +234,11 @@ bool IsPluginEnabled(const std::string& pluginName) {
     // have no row in load_order.toml and no way to toggle. Treat as
     // always enabled — they predate the launcher's toggle UI.
     if (pluginName.empty()) return true;
-    return Of(pluginName).enabled;
+    // Final gate: user choice AND engine acceptance. Either being false
+    // disables the plugin; a user enabled=true cannot force-load a
+    // zone_gate-rejected plugin.
+    const auto& e = Of(pluginName);
+    return e.userEnabled && e.engineAccepted;
 }
 
 }  // namespace kcdx::load_order

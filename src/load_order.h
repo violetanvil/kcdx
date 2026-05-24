@@ -77,13 +77,27 @@ void Read(const std::filesystem::path& loadOrderPath);
 // Resolved per-plugin load-order state. Produced by Resolve() and looked up
 // at sort time by Of(name).
 //
-//   zone     — final zone after capability gating + user override.
-//   priority — final priority (author default, overridden by user if set).
-//   enabled  — final enabled flag (author default true, overridden by user).
+//   zone           — final zone after capability gating + user override.
+//   priority       — final priority (author default, overridden by user if
+//                    set).
+//   userEnabled    — the user's enable choice from kcdx-engine/load_order.toml
+//                    (author default true; user `enabled = false` flips it).
+//   engineAccepted — engine's accept/reject verdict from zone_gate's
+//                    capability/zone evaluation. Always true until
+//                    zone_gate's EvaluateAllPlugins runs.
+//
+// The FINAL gate is `userEnabled && engineAccepted`, exposed via
+// IsPluginEnabled(name). Do NOT read these two fields directly to decide
+// whether to act on a plugin — go through IsPluginEnabled so a zone_gate
+// rejection cannot be bypassed.
 struct Effective {
-    Zone        zone        = Zone::AfterGame;
-    int         priority    = 50;
-    bool        enabled     = true;
+    Zone        zone           = Zone::AfterGame;
+    int         priority       = 50;
+    bool        userEnabled    = true;
+    // Set to false by zone_gate on a capability/zone rejection (see
+    // src/zone_gate.h). Always true until zone_gate's EvaluateAllPlugins
+    // runs in step 2.
+    bool        engineAccepted = true;
 };
 
 // Compute and cache the Effective row for every plugin. Reads:
@@ -103,6 +117,10 @@ void Resolve();
 const Effective& Of(const std::string& pluginName);
 
 // True if the named plugin is enabled per the resolved load order.
+// Returns the AND of the two underlying inputs on Effective:
+// `userEnabled && engineAccepted`. Either input flipping to false
+// disables the plugin; a user `enabled = true` cannot force-load a
+// zone_gate-rejected plugin (the AND yields false).
 //
 // Anonymous entries (kcdx.toml with no [plugin] table — pure-patch
 // files used historically by mempatch-compatible installs) have
@@ -114,7 +132,9 @@ const Effective& Of(const std::string& pluginName);
 // before doing work. A user setting enabled = false on their plugin
 // in kcdx-engine/load_order.toml must result in zero side effects
 // from that plugin, no matter which engine surface the entry
-// belongs to.
+// belongs to. Likewise a zone_gate rejection flowing through
+// `engineAccepted = false` produces zero side effects from that
+// plugin.
 bool IsPluginEnabled(const std::string& pluginName);
 
 }  // namespace kcdx::load_order

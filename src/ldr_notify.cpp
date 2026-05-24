@@ -98,8 +98,11 @@ bool EqualIgnoreCase(const std::string& a, const std::string& b) {
 // skipped here.
 bool IsBeforeGame(const patch::PatchEntry& p) {
     if (p.pluginName.empty()) return false;
-    const auto& eff = load_order::Of(p.pluginName);
-    return eff.enabled && eff.zone == load_order::Zone::BeforeGame;
+    // Gate through IsPluginEnabled so a zone_gate rejection
+    // (engineAccepted = false) is honored alongside the user's enable
+    // choice — direct .userEnabled reads here would bypass it.
+    if (!load_order::IsPluginEnabled(p.pluginName)) return false;
+    return load_order::Of(p.pluginName).zone == load_order::Zone::BeforeGame;
 }
 
 // Apply one entry; logs success / failure. The patch::Resolve +
