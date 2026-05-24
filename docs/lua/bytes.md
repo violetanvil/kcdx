@@ -34,7 +34,8 @@ The byte rewrite needs to find its site. The **common path** is by name:
   (self > engine > other): an engine [Address Library](addr.md) name, one of
   your own [author-declared targets](targets.md) (including a `pattern`-located
   target, resolved by name end-to-end), or another plugin's by the explicit
-  `"<pluginname>.<name>"` form.
+  `"<author>.<plugin>.<name>"` form (e.g.
+  `target = "redmoon.outfit.outfit_swap_callsite"`).
 
 The remaining locators are the **advanced/expert escape hatch** for sites the
 name table cannot name yet. Set **exactly one**:

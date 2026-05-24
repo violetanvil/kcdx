@@ -1,0 +1,34 @@
+# CAP-34 — the author-declared target for the 2-dot namespace assertions.
+#
+# A single [[target]] row declares a BARE name + exactly one locator; the
+# engine stamps the `<author>.<plugin>` prefix derived from [plugin].author +
+# [plugin].name (ts.cap_34_two_dot_namespace) automatically — the author NEVER
+# types their own prefix. The full registered name is
+# `ts.cap_34_two_dot_namespace.ui_pump_self` and is referred to from plugin.lua
+# in three forms (explicit-3-segment, bare, alias-to-3-segment) to exercise
+# the resolver tiers.
+#
+# Locator: address_id=1172 (luaopen_math, verified RVA 0x009299AC, signature
+# "i32 (ptr L)"). RVA-resolved, NO scan. Chosen because:
+#   - it is a VERIFIED leaf that NOTHING entry-hooks (the live run only hooks
+#     CGame_per_frame_ui_pump id 1003 + the IsInCombat callsites 1006/1007;
+#     engine production hooks lua_pcall id 1000, CGame::Update id 1001, l_alloc
+#     via g->frealloc id 1192; no test-plugin hooks/targets it),
+#   - cap-33's prefix/alias rows already use it successfully (the prior-art
+#     verifies the install path is green on this leaf),
+#   - cross-plugin: cap-33's `luaopen_math_by_id` target also points at id 1172,
+#     so the CAP-34-cross-plugin-2dot row resolves to the same RVA via a
+#     different bare-name path — proving the 3-segment reference does NOT
+#     collide with this plugin's own self-tier target (different bare names,
+#     different namespaces).
+#
+# NOTE on the row name `ui_pump_self`: this is the BARE author-side name only
+# (the resolver-test surface for this plugin). It is named after the conceptual
+# "main-thread tick callable" we'd want to hook in a richer test; the actual
+# RVA is luaopen_math (chosen for safety + the verified-unhooked property), not
+# the per-frame pump. The hook is a no-op before-hook — the install IS the
+# proof the name resolved.
+[[target]]
+name       = "ui_pump_self"
+address_id = 1172
+signature  = "i32 (ptr L)"

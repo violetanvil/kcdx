@@ -57,7 +57,15 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
 
 - **plugin** — a unit of mod content kcdx loads. Either a C++ DLL exporting
   `kcdxPlugin_Load`, a declarative/Lua plugin (a `kcdx.toml` plus a
-  `plugin.lua`), or both. Identified by the `name` in its manifest.
+  `plugin.lua`), or both. Identified by the `<author>.<name>` pair in its
+  manifest (`[plugin].author` + `[plugin].name`).
+
+- **author (namespace)** — `[plugin].author`: the leading component of the
+  qualified namespace your plugin exports. Charset `[a-z0-9_]`, 2–128 chars
+  (the same shape as `[plugin].name`). Distinct from any *display* author
+  string — this one stamps every shared name your plugin exports. The
+  reserved value `kcdx` is the engine's own namespace and is rejected for
+  user plugins.
 
 - **manifest (`kcdx.toml`)** — the per-plugin config file declaring identity
   (`[plugin]`), entry points (`[entrypoints]`), and engine settings
@@ -101,17 +109,19 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   (an expert names an AOB once, non-experts hook it by name). See
   [targets.md](targets.md).
 
-- **implicit namespace prefix** — the `<pluginname>` the engine stamps on every
-  shared name your plugin exports (a target, a `kcdx.code` export, a published
-  event), derived from `[plugin].name`. You write the bare `name`; the engine
-  registers `<pluginname>.<name>`. You never type your own prefix. See
-  [targets.md](targets.md).
+- **implicit namespace prefix** — the `<author>.<plugin>` the engine stamps on
+  every shared name your plugin exports (a target, a `kcdx.code` export, a
+  published event), derived from `[plugin].author` + `[plugin].name`. You write
+  the bare `name`; the engine registers `<author>.<plugin>.<name>`. You never
+  type your own prefix. The engine's own seed names live under the reserved
+  `kcdx.` root (the 1-dot `<kcdx>.<seedname>` form — `kcdx` is the reserved
+  author, with no plugin component). See [targets.md](targets.md).
 
 - **name precedence (self > engine > other)** — how a *bare* shared name
-  resolves: your own plugin's declaration first, then an engine name, then
-  another plugin's. The explicit `"<pluginname>.<name>"` form bypasses
-  precedence and is unambiguous from anywhere; a bare-name collision warns once
-  per session. See [targets.md](targets.md).
+  resolves: your own plugin's declaration first, then an engine seed name,
+  then another plugin's. The explicit `"<author>.<plugin>.<name>"` form
+  bypasses precedence and is unambiguous from anywhere; a bare-name collision
+  warns once per session. See [targets.md](targets.md).
 
 - **alias** — a short, plugin-scoped local handle for a long shared name,
   declared with `kcdx.alias(short, target)`. Only adds a handle — never shadows
@@ -215,7 +225,7 @@ it does not exist yet.
 
 | Call | What it does | File |
 |---|---|---|
-| `kcdx.on` lifecycle events | `"ready"`, the 9 game events, custom `"<publisher>:<event>"` | [lifecycle.md](lifecycle.md) |
+| `kcdx.on` lifecycle events | `"ready"`, the 9 game events, custom `"<author>.<plugin>.<event>"` | [lifecycle.md](lifecycle.md) |
 | cross-cutting rules | main-thread, pointer-userdata, deferred-apply, error contracts | [cross-cutting.md](cross-cutting.md) |
 
 ### Planned

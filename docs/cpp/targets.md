@@ -3,10 +3,11 @@
 
 The C++ mirror of Lua's [author-declared targets](../lua/targets.md) — a plugin
 names a code site itself (a bare `name` + one locator + optional `signature`),
-the engine stamps the `<pluginname>` prefix, and the site is then hookable /
-patchable **by name** (self > engine > other precedence), shareable across
-plugins without anyone re-deriving the hex (the disassembler-test share
-guarantee, `cornerstones.md` §36).
+the engine stamps the `<author>.<plugin>` prefix (from `[plugin].author` +
+`[plugin].name`), and the site is then hookable / patchable **by name**
+(self > engine > other precedence), shareable across plugins without anyone
+re-deriving the hex (the disassembler-test share guarantee,
+`cornerstones.md` §36).
 
 **Not yet implemented (NYI).** There is no author-target registration interface
 in [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h) today — do not
@@ -41,7 +42,7 @@ enum kcdxAuthorLocatorKind {
 };
 
 struct kcdxAuthorTargetOptions {
-    const char*              name;        // required — bare name; engine stamps the prefix
+    const char*              name;        // required — bare name; engine stamps the <author>.<plugin> prefix
     kcdxAuthorLocatorKind    kind;        // which locator below is meaningful
     const char*              locatorStr;  // pattern / target_symbol
     uint64_t                 locatorNum;  // rva / address_id

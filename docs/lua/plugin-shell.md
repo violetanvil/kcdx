@@ -8,7 +8,8 @@ files. The minimal working plugin:
 
 ```toml
 [plugin]
-name    = "kcdx.my-first-plugin"
+author  = "violetanvil"
+name    = "my_first_plugin"
 version = "0.1.0"
 
 [entrypoints]
@@ -25,9 +26,9 @@ kcdx.log.info("MYMOD", "hello from my first plugin")
 
 | Key | Type | Meaning |
 |---|---|---|
-| `name` | string | **Required.** Stable plugin identity used for load order, attribution, dependency resolution. |
-| `display_name` | string | Human-friendly name (defaults to `name`). |
-| `author` | string | Author name. |
+| `author` | string | **Required.** The author/publisher namespace component. Charset `[a-z0-9_]`, 2–128 chars. Combined with `name`, the engine stamps `<author>.<plugin>` as the namespace prefix on every shared name this plugin exports. The reserved `kcdx` author is rejected. See [`naming-namespaces.md`](../../.claude/rules/naming-namespaces.md). |
+| `name` | string | **Required.** The plugin name within its author namespace. Charset `[a-z0-9_]`, 2–128 chars. Stable plugin identity used for load order, attribution, dependency resolution, namespace prefix (second component). |
+| `display_name` | string | Human-friendly name (defaults to `name`). Free-form; never used as a key. |
 | `description` | string | Free text. |
 | `url` | string | Project/support URL. |
 | `support_email` | string | Contact email. |
@@ -44,14 +45,14 @@ kcdx.log.info("MYMOD", "hello from my first plugin")
 
 ```toml
 [[plugin.dependencies]]
-name        = "kcdx.some-other-plugin"
+name        = "some_other_plugin"
 min_version = "0.2.0"
 optional    = false
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
-| `name` | string | **Required.** The depended-on plugin's `name`. |
+| `name` | string | **Required.** The depended-on plugin's bare `[plugin].name`. |
 | `min_version` | string | Minimum required version (semver). |
 | `optional` | bool | `true` if the dependency is soft (default `false`). |
 

@@ -1,0 +1,53 @@
+# CAP-34 — the 2-dot namespace model (`<author>.<plugin>.<bare>`).
+#
+# The regression for the 2-dot namespace refactor (steps 1-6 split
+# [plugin].name into [plugin].author + [plugin].name; the resolver now keys
+# every shared name on `<author>.<plugin>.<bare>` with bare-name self>engine>
+# other precedence under a reserved 'kcdx' engine author).
+#
+# This plugin is PURE LUA + targets.toml (no DLL) — same shape as cap-33.
+# Author='ts', plugin='cap_34_two_dot_namespace' → the bare target this plugin
+# declares ("ui_pump_self") registers as
+# `ts.cap_34_two_dot_namespace.ui_pump_self`. The five assertions cover the
+# distinguishing behaviors of the new model:
+#
+#   * CAP-34-explicit-2dot     — the explicit 3-segment author.plugin.bare form
+#                                resolves directly (this plugin's own target).
+#   * CAP-34-explicit-1dot-kcdx — the 2-segment kcdx.<seedname> form (engine
+#                                seed under reserved author='kcdx') resolves.
+#   * CAP-34-bare-self          — bare name resolves to THIS plugin's own
+#                                target via self-tier (no prefix typed).
+#   * CAP-34-alias-2dot         — kcdx.alias substitutes a 3-segment target
+#                                string + the hook resolves via the alias.
+#   * CAP-34-cross-plugin-2dot  — a 3-segment reference to ANOTHER plugin's
+#                                target (cap-33's luaopen_math_by_id) resolves.
+#
+# Each assertion installs a no-op before-hook against a verified-unhooked leaf
+# (luaopen_math, address_id=1172, RVA — no scan, immune to prologue overwrite;
+# entry-hooked by nobody in production or in the test suite). The install IS
+# the proof the name resolved; the hook never needs to fire. The luaopen_math
+# leaf choice mirrors cap-33's prefix/alias rows.
+#
+# Test mode: boot-only. Every target/alias resolution + apply happens during
+# launch-time registration + apply pass; handles read final at
+# kcdx.on("ready") (after this plugin's zone apply pass), all before the main
+# menu — no console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_34_two_dot_namespace"
+display_name        = "CAP-34 2-dot namespace model"
+author              = "ts"
+description         = "Regression for the 2-dot namespace refactor: <author>.<plugin>.<bare> explicit form, bare-self-tier resolution, alias substitution, and cross-plugin 3-segment lookup."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-34-explicit-2dot", "CAP-34-explicit-1dot-kcdx",
+                       "CAP-34-bare-self", "CAP-34-alias-2dot",
+                       "CAP-34-cross-plugin-2dot"]
+
+[entrypoints]
+lua = "plugin.lua"

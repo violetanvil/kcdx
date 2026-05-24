@@ -71,7 +71,9 @@ spellings noted where they differ:
 
 - **plugin** — a unit of mod content kcdx loads. A C++ plugin is a DLL exporting
   `kcdxPlugin_Load`, declared via `[plugin]` in its `kcdx.toml`. Identified by
-  the `name` in its manifest. See [plugin-shell.md](plugin-shell.md).
+  the `<author>.<name>` pair in its manifest (`[plugin].author` +
+  `[plugin].name` — the qualified namespace prefix the engine stamps on every
+  shared name the plugin exports). See [plugin-shell.md](plugin-shell.md).
 
 - **manifest (`kcdx.toml`)** — the per-plugin config file. C++ plugins point
   `[entrypoints] dll` at their DLL. See [plugin-shell.md](plugin-shell.md).
@@ -87,10 +89,11 @@ spellings noted where they differ:
 
 - **handle (`kcdxPluginHandle`)** — the opaque `uint32_t` ID kcdx assigns each
   plugin. Passed as the `self`/`owner`/`sender` argument to most calls. Fetch
-  your own via `api->GetPluginHandle("your.name")`. `kcdxInvalidPluginHandle`
-  is the lookup-miss sentinel. (Distinct from the Lua *handle* userdata that
-  `kcdx.hook`/`kcdx.bytes` return — that is the NYI `kcdxHookInterface`'s
-  return type; see [hook.md](hook.md).)
+  your own via `api->GetPluginHandle("your.name")` (the `[plugin].name` from
+  your manifest). `kcdxInvalidPluginHandle` is the lookup-miss sentinel.
+  (Distinct from the Lua *handle* userdata that `kcdx.hook`/`kcdx.bytes`
+  return — that is the NYI `kcdxHookInterface`'s return type; see
+  [hook.md](hook.md).)
 
 - **lifecycle event / message** — a named moment in the game's run. C++ spelling:
   a `kcdxMessage_*` value delivered to a `kcdxMessagingCallback` you registered

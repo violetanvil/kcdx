@@ -53,7 +53,7 @@ uintptr_t (*ResolveAddressByNameAs)(kcdxPluginHandle owner, const char* name);
 | Arg | Meaning |
 |---|---|
 | `kcdxPluginHandle owner` | The CALLING plugin's own handle (the `self` tier). Pass `kcdxInvalidPluginHandle` (`0`) to resolve **anonymously** — no `self` tier, identical to `ResolveAddressByName(name)` (engine-seed + explicit-prefix only). |
-| `const char* name` | A BARE name (resolved `self > engine > other`) OR an explicit `"<plugin>.<name>"` (resolved directly, unambiguous from anywhere). |
+| `const char* name` | A BARE name (resolved `self > engine > other`) OR an explicit `"<author>.<plugin>.<name>"` (resolved directly, unambiguous from anywhere). Engine seed names live under the reserved `kcdx` author at the 1-dot `<kcdx>.<seedname>` form. |
 
 **Returns** the absolute VA, or `0` if the name resolves to nothing on this
 build. Same error behavior as `ResolveAddressByName` — a `null` name or an
@@ -91,7 +91,7 @@ uintptr_t (*ResolveSymbolAs)(kcdxPluginHandle owner, const char* name);
 | Arg | Meaning |
 |---|---|
 | `kcdxPluginHandle owner` | The CALLING plugin's own handle (the `self` tier). Pass `kcdxInvalidPluginHandle` (`0`) to resolve **anonymously** — no `self` tier, identical to `ResolveSymbol(name)`. |
-| `const char* name` | A BARE symbol name (resolved `self > other`) OR an explicit `"<plugin>.<name>"` (resolved directly). |
+| `const char* name` | A BARE symbol name (resolved `self > other`) OR an explicit `"<author>.<plugin>.<name>"` (resolved directly). |
 
 **Returns** the registered address, or `0` if the symbol is unregistered. Same
 error behavior as `ResolveSymbol` — a `null` or unknown `name` yields `0`; an
@@ -116,7 +116,8 @@ uintptr_t tramp = api->ResolveSymbolAs(K.self, "outfit_gate_logic");
 uintptr_t pcall = api->ResolveAddressByName("lua_pcall");
 if (!pcall) { gLog.Warn("ADDR", "lua_pcall not named on this build"); }
 
-uintptr_t tramp = api->ResolveSymbol("violetanvil.outfit_gate_logic");
+// Resolve another plugin's exported symbol by its full <author>.<plugin>.<name>:
+uintptr_t tramp = api->ResolveSymbol("walkabout.violetanvil.outfit_gate_logic");
 ```
 
 This is the C++ mirror of [kcdx.addr](../lua/addr.md).

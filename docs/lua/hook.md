@@ -75,7 +75,8 @@ The hook needs to find its target. The **common path** is by name:
     - one of **your own** [author-declared targets](targets.md) — including a
       `pattern`- or `target_symbol`-located target, resolved by name
       end-to-end (the engine carries the hex and ABI you declared once);
-    - another plugin's target, by its explicit `"<pluginname>.<name>"` form.
+    - another plugin's target, by its explicit `"<author>.<plugin>.<name>"`
+      form (e.g. `target = "redmoon.outfit.open_inventory"`).
 
   When a `pattern`/`rva` author-target supplies the address, its `signature`
   carries the ABI — so a named pattern site needs no `signature =` on the hook.

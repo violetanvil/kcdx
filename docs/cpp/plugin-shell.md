@@ -12,7 +12,8 @@ The minimal working plugin:
 
 ```toml
 [plugin]
-name    = "kcdx.my-first-plugin"
+author  = "violetanvil"
+name    = "my_first_plugin"
 version = "0.1.0"
 
 [entrypoints]
@@ -28,7 +29,7 @@ static kcdxLogger gLog;
 
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
-    gLog = kcdxLogger(api, api->GetPluginHandle("kcdx.my-first-plugin"));
+    gLog = kcdxLogger(api, api->GetPluginHandle("my_first_plugin"));
     gLog.Info("MYMOD", "hello from my first plugin");
     return true;
 }
@@ -97,7 +98,7 @@ At load time your DLL does not yet know its own handle. Resolve it from your
 manifest `name`, then cache it:
 
 ```cpp
-kcdxPluginHandle self = api->GetPluginHandle("kcdx.my-first-plugin");
+kcdxPluginHandle self = api->GetPluginHandle("my_first_plugin");
 ```
 
 `GetPluginHandle` returns `kcdxInvalidPluginHandle` on a miss (a name mismatch

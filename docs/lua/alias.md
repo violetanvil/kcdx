@@ -10,7 +10,7 @@ target name is expected (a [`kcdx.hook`](hook.md) / [`kcdx.bytes`](bytes.md)
 `true` on success, or `(false, err)` on a bad call.
 
 ```lua
-kcdx.alias("inv", "redmoon.open_inventory")
+kcdx.alias("inv", "redmoon.outfit.open_inventory")
 kcdx.hook{ name = "log_open", target = "inv", before = function() ... end }
 ```
 
@@ -19,7 +19,7 @@ kcdx.hook{ name = "log_open", target = "inv", before = function() ... end }
 | Position | Type | Meaning |
 |---|---|---|
 | 1 — `short` | string | The local handle to declare. A bare name (`[a-z0-9_]`, 2–32 chars). |
-| 2 — `target` | string | The full name it aliases — another plugin's prefixed name (`"redmoon.open_inventory"`) or your own long/awkward name. Non-empty. |
+| 2 — `target` | string | The full name it aliases — another plugin's prefixed `<author>.<plugin>.<name>` form (`"redmoon.outfit.open_inventory"`) or your own long/awkward name. Non-empty. |
 
 ## Returns
 
@@ -45,11 +45,11 @@ no plugin to scope to, so it is rejected).
 
 ```lua
 -- alias another plugin's named target, then hook it through the short handle
-kcdx.alias("inv", "redmoon.open_inventory")
+kcdx.alias("inv", "redmoon.outfit.open_inventory")
 
 kcdx.hook{
     name   = "log_inventory_open",
-    target = "inv",                       -- substituted to redmoon.open_inventory
+    target = "inv",                       -- substituted to redmoon.outfit.open_inventory
     before = function() kcdx.log.info("INV", "opened") end,
 }
 ```

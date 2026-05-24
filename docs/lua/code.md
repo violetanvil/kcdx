@@ -21,7 +21,7 @@ target right away). Returns `(nil, err)` on a bad call.
 | `bytes` | string | Optional initial machine code as a hex string, e.g. `"48 83 EC 28"`. Copied to the head of the region. |
 | `size` | integer | Optional total bytes to allocate. Defaults to the length of `bytes`. If larger than `bytes`, the tail is **NOP-padded** (`0x90`) so other plugins can patch into the unused space. Must be ≥ the length of `bytes`. |
 | `pool` | string | Optional. `"branch"` (default) places the region within ±2 GB of `WHGame.dll`'s code so a `rel32` branch can reach it; `"local"` places it anywhere (use when ±2 GB reachability is not required). |
-| `export` | string | Optional. Publishes the allocated address under this symbol name; a later `kcdx.hook{ target_symbol = ... }` or `kcdx.bytes{ target_symbol = ... }` (in this or any plugin) resolves to it. |
+| `export` | string | Optional. Bare symbol name to publish the allocated address under; the engine stamps your `<author>.<plugin>` prefix (from `[plugin].author` + `[plugin].name`) automatically — you never type it. A later `kcdx.hook{ target_symbol = ... }` or `kcdx.bytes{ target_symbol = ... }` resolves to it: bare from your own plugin (self), prefixed `<author>.<plugin>.<name>` from anywhere else. |
 
 You must declare `bytes` or `size` (or both).
 
@@ -38,13 +38,17 @@ is still allocated, but is unreachable by that symbol name).
 ## Minimal snippet
 
 ```lua
--- reserve a 256-byte region, publish it, write a RET into it:
+-- reserve a 256-byte region, publish it, write a RET into it.
+-- In a plugin with [plugin].author = "walkabout", [plugin].name = "violetanvil":
 local region = kcdx.code{
     name   = "outfit_gate_logic",
     size   = 256,
     pool   = "branch",
-    export = "violetanvil.outfit_gate_logic",
+    export = "outfit_gate_logic",                -- bare; engine stamps the prefix
 }
 region:set_byte(0xC3)   -- write a RET into the base (the region is live now)
--- elsewhere: kcdx.hook{ target_symbol = "violetanvil.outfit_gate_logic", ... }
+-- elsewhere (another plugin):
+--   kcdx.hook{ target_symbol = "walkabout.violetanvil.outfit_gate_logic", ... }
+-- in this same plugin a bare reference also works:
+--   kcdx.hook{ target_symbol = "outfit_gate_logic", ... }
 ```
