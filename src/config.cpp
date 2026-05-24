@@ -9,6 +9,8 @@
 #include <sstream>
 #include <string>
 
+#include "address_library.h"  // ValidatePluginName (hard-rejects illegal [plugin].name)
+
 // toml++ is header-only.
 #define TOML_EXCEPTIONS 1
 #include "toml.hpp"
@@ -155,6 +157,20 @@ bool ParsePluginManifest(const toml::table& doc,
     out.name = OptString(t, "name");
     if (out.name.empty()) {
         err = "[plugin] missing required field 'name'";
+        return false;
+    }
+    // Enforce the [plugin].name shape at discovery — naming-namespaces.md
+    // requires a charset-legal bare name (no '.', no '-', no uppercase, etc.)
+    // and rejects the reserved 'kcdx' root + 'kcdx.' prefix. A plugin with an
+    // illegal name corrupts every shared name it would export, so a HARD load
+    // rejection here (per the restructure's loud-full-rejection-over-silent-
+    // partial stance) is correct. The author-target / alias surfaces already
+    // re-validate via RegisterAuthorTarget / RegisterAlias, but those fire
+    // only IF a plugin uses them — wiring the check here gates EVERY plugin
+    // at load.
+    std::string nameErr;
+    if (!kcdx::address_library::ValidatePluginName(out.name.c_str(), nameErr)) {
+        err = "[plugin] name: " + nameErr;
         return false;
     }
     out.displayName  = OptString(t, "display_name", out.name);

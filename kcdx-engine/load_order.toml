@@ -26,5 +26,5 @@
 # filename source).
 
 [[plugin]]
-name      = "kcdx.bugsplat-filename-fix"
+name      = "kcdx_builtin_bugsplat_filename_fix"
 enabled   = false

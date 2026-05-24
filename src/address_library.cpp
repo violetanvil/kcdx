@@ -695,11 +695,18 @@ bool IsNameChar(char c) {
 // in the teaching error ("plugin name" / "target name"). Does NOT apply the
 // reserved-"kcdx" rule — that's plugin-name-specific, layered on by the
 // caller. Returns false + fills outError on any violation.
+// Validate a single namespace component (a single dot-separated piece of a
+// qualified name). `maxLen` caps the length: 32 by default (the standard short
+// handle limit — aliases, bare target names, etc., which are typed by hand and
+// should stay terse), with [plugin].name overriding to 128 (engine-prefix
+// author families like kcdx_builtin_* push longer naturally, and the runtime
+// cost of a longer cap is nil — one strlen at launch-time discovery).
 bool ValidateNameComponent(const char* name, const char* what,
-                           std::string& outError) {
+                           std::string& outError,
+                           size_t maxLen = 32) {
     if (!name || name[0] == '\0') {
         outError = std::string(what) +
-                   " is empty — must be 2-32 chars of [a-z0-9_] "
+                   " is empty — must be at least 2 chars of [a-z0-9_] "
                    "(naming-namespaces.md).";
         return false;
     }
@@ -717,13 +724,14 @@ bool ValidateNameComponent(const char* name, const char* what,
     }
     if (len < 2) {
         outError = std::string(what) + " \"" + name +
-                   "\" is too short — must be 2-32 chars "
+                   "\" is too short — must be at least 2 chars "
                    "(naming-namespaces.md).";
         return false;
     }
-    if (len > 32) {
+    if (len > maxLen) {
         outError = std::string(what) + " \"" + name +
-                   "\" is too long — must be 2-32 chars "
+                   "\" is too long — must be at most " +
+                   std::to_string(maxLen) + " chars "
                    "(naming-namespaces.md).";
         return false;
     }
@@ -733,8 +741,17 @@ bool ValidateNameComponent(const char* name, const char* what,
 }  // namespace
 
 bool ValidatePluginName(const char* name, std::string& outError) {
-    // Charset + length first (also catches empty / over-long).
-    if (!ValidateNameComponent(name, "[plugin].name", outError)) {
+    // Charset + length. [plugin].name uses a 128-char cap (raised from the
+    // original 32): runtime cost of a longer bound is nil (one strlen + bounds
+    // compare at launch-time discovery only), and the engine-prefix author
+    // family (e.g. kcdx_builtin) pushes longer names naturally — an artificial
+    // 32 cap would force every kcdx_builtin_* plugin to truncate its plugin
+    // name to fit the author prefix, distorting plugin names to fit prefix
+    // length. Short components (aliases, bare target names) keep the default
+    // 32 cap they were always at. naming-namespaces.md was updated in lockstep.
+    constexpr size_t kPluginNameMaxLen = 128;
+    if (!ValidateNameComponent(name, "[plugin].name", outError,
+                               kPluginNameMaxLen)) {
         return false;
     }
     // Reserved engine root: the exact value "kcdx" is the engine namespace;
