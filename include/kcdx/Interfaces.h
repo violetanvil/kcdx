@@ -100,9 +100,32 @@ typedef uint32_t kcdxPluginHandle;
 // and live for the process lifetime. Empty string (not null) for fields
 // the plugin did not declare.
 typedef struct kcdxPluginInfo {
-    const char* name;              // Stable plugin ID. Never null.
+    const char* name;              // Stable plugin ID. Never null. Under the
+                                   // 2-dot <author>.<plugin>.<bare> namespace
+                                   // model (naming-namespaces.md, in transition),
+                                   // this is the plugin name WITHIN its author's
+                                   // namespace (the second dot-segment); the
+                                   // full shared-namespace prefix is
+                                   // "<author>.<name>" — see `author` below.
+                                   // Current resolver still uses bare `name`
+                                   // as the namespace prefix (1-dot model);
+                                   // subsequent refactor steps wire the 2-dot
+                                   // form into the resolver and validator.
     const char* displayName;       // UI name. Never null; falls back to `name` if not declared.
-    const char* author;
+    const char* author;            // Namespace prefix under the 2-dot
+                                   // <author>.<plugin>.<bare> model
+                                   // (naming-namespaces.md, in transition).
+                                   // The engine composes "<author>.<name>" as
+                                   // the plugin's identity in cross-plugin
+                                   // shared namespaces (hook/byte targets,
+                                   // `kcdx.code{export=}` symbols, publish/on
+                                   // events, cosave records, asset overlays).
+                                   // The author segment 'kcdx' is reserved for
+                                   // engine-seed names (1-dot <kcdx>.<seedname>).
+                                   // Never null; empty string when not declared.
+                                   // Display semantics ("Author Name" for UI)
+                                   // still hold today — the namespace-role
+                                   // transition lands across subsequent steps.
     const char* description;
     const char* url;
     const char* supportEmail;
@@ -111,6 +134,15 @@ typedef struct kcdxPluginInfo {
     uint32_t    runtimeCompatibleGameVersion;  // The matched entry from compatible_game_versions,
                                                 // or 0 if version_independent
     int         versionIndependent;            // 0/1
+
+    // --- APPEND-ONLY BELOW THIS LINE ---------------------------------------
+    // New fields MUST be appended at the END of this struct, never inserted
+    // in the middle: inserting shifts every subsequent field's offset, and
+    // any plugin DLL compiled against the older header then reads through
+    // the wrong offset → ACCESS_VIOLATION.
+    // (Same ABI discipline as kcdxInterface / kcdxSerializationInterface;
+    // pre-positioned here ahead of the 2-dot namespace refactor adding
+    // namespace-aware fields.)
 } kcdxPluginInfo;
 
 // -----------------------------------------------------------------------------

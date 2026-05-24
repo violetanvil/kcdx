@@ -27,10 +27,34 @@ struct ManifestDependency {
 // regardless of whether the plugin ships a DLL.
 struct PluginManifest {
     // Identity — populated from [plugin] table.
-    std::string name;             // STABLE PLUGIN ID. Convention: "author.mod-name".
-                                  //   Required. Must be unique across all loaded plugins.
+    std::string name;             // STABLE PLUGIN ID. Under the 2-dot
+                                  //   <author>.<plugin>.<bare> namespace model
+                                  //   (naming-namespaces.md, in transition),
+                                  //   this is the plugin name WITHIN its
+                                  //   author's namespace; the full
+                                  //   shared-namespace prefix is
+                                  //   "<author>.<name>" — see `author` below.
+                                  //   Required. Must be unique within its
+                                  //   author's namespace once the 2-dot model
+                                  //   is wired through (subsequent step).
+                                  //   Today the resolver still treats `name`
+                                  //   itself as the namespace prefix (1-dot).
     std::string displayName;      // optional; for UI. Defaults to `name`.
-    std::string author;           // optional but recommended
+    std::string author;           // Namespace prefix under the 2-dot
+                                  //   <author>.<plugin>.<bare> model
+                                  //   (naming-namespaces.md, in transition).
+                                  //   The engine composes "<author>.<name>" as
+                                  //   the plugin's identity in cross-plugin
+                                  //   shared namespaces (hook/byte targets,
+                                  //   kcdx.code exports, publish/on events,
+                                  //   cosave records, asset overlays).
+                                  //   Reserved author segment 'kcdx' belongs
+                                  //   to engine-seed names (1-dot
+                                  //   <kcdx>.<seedname>). Optional today; a
+                                  //   subsequent step adds the validator that
+                                  //   requires it under the 2-dot model.
+                                  //   Display semantics ("Author Name") still
+                                  //   hold pending that step.
     std::string description;      // optional
     std::string url;              // optional
     std::string supportEmail;     // optional
@@ -182,9 +206,18 @@ extern std::vector<PluginManifest> g_manifests;
 
 // Engine version we report to plugins via kcdxInterface::kcdxVersion.
 // Bumped when the public ABI changes.
-constexpr uint32_t kEngineVersion = 0x00010100u;  // 0.1.1 — kcdxInterface gained
-                                                  // ResolveSymbolAs + ResolveAddressByNameAs
-                                                  // (append-only; gates the new layout, AP11)
+constexpr uint32_t kEngineVersion = 0x00010200u;  // 0.1.2 — kcdxPluginInfo.author
+                                                  // gains its namespace-prefix
+                                                  // semantic under the 2-dot
+                                                  // <author>.<plugin>.<bare> model
+                                                  // (naming-namespaces.md, in
+                                                  // transition; resolver wiring
+                                                  // lands in subsequent steps).
+                                                  // 0.1.1 — kcdxInterface gained
+                                                  // ResolveSymbolAs +
+                                                  // ResolveAddressByNameAs
+                                                  // (append-only; gates the new
+                                                  // layout, AP11)
 
 // Live KCD2 build number, populated at engine startup from the WHGame.dll
 // file version. Reported via kcdxInterface::runtimeGameVersion. Plugins
