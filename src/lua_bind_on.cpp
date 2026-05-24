@@ -15,9 +15,13 @@
 //
 // SCOPE: the kcdx.on binder + the "ready" event (sub-7) + the 9
 // game-lifecycle events (sub-8) + custom cross-plugin events (sub-9). Any
-// name containing ':' is a "<plugin>:<event>" subscription to a
-// kcdx.publish event (routed to the shared lua_lifecycle registry); a bare
-// non-lifecycle name returns (nil, teaching error) here.
+// name containing '.' is a qualified "<author>.<plugin>.<event>" (or the
+// legacy 2-segment "<plugin>.<event>" while a publisher's [plugin].author
+// is still empty during the corpus transition) subscription to a
+// kcdx.publish event, routed to the shared lua_lifecycle registry. The
+// legacy colon form "<plugin>:<event>" is rejected with a teaching error
+// pointing at the new dot form; a bare non-lifecycle name returns
+// (nil, teaching error) here.
 //
 // "ready" is the post-apply callback — it fires after
 // lua_registry::ApplyZone has transitioned every entry in the plugin's
@@ -162,15 +166,39 @@ int Lua_On(lua_State* L) {
         return 0;
     }
 
-    // A custom cross-plugin event: any name containing ':' is a
-    // "<plugin>:<event>" subscription to another (or the same) plugin's
-    // kcdx.publish event (Phase 2b sub-9). It shares the SAME lifecycle
-    // subscriber registry, keyed by the full "plugin:event" string, with the
-    // same GC-safe luaL_ref + OwningPluginForCurrentCall attribution as the
-    // lifecycle/ready branches. (A published event is always stamped
-    // "<publisher>:event", so a subscriber always uses the ':' form to hear
-    // it — a bare non-lifecycle name below stays a teaching error.)
+    // Legacy colon form — rejected with a teaching error pointing at the
+    // canonical dot. Prior to the 2-dot namespace refactor, kcdx.publish
+    // stamped events as "<publisher>:<event>" and subscribers wrote that
+    // same colon string. The canonical separator for every shared name is
+    // now the dot (naming-namespaces.md); the colon form is no longer
+    // accepted. We catch it explicitly so authors mid-migration get one
+    // teaching error rather than a silent "no subscribers fired."
     if (event.find(':') != std::string::npos) {
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.on(\"%s\", fn): the \"<publisher>:<event>\" colon form is "
+            "no longer accepted — use the canonical dot form "
+            "\"<author>.<plugin>.<event>\" instead (e.g. "
+            "\"walkabout.violetanvil.outfit_changed\"). The publisher in "
+            "kcdx.publish stamps the dot form automatically; subscribers "
+            "subscribe to the same dot string. See "
+            ".claude/rules/naming-namespaces.md for the canonical separator.",
+            event.c_str());
+        return 2;
+    }
+
+    // A custom cross-plugin event: any name containing '.' is a qualified
+    // "<author>.<plugin>.<event>" (or the legacy 2-segment
+    // "<plugin>.<event>" while a publisher's [plugin].author is still
+    // empty during the corpus transition) subscription to another (or the
+    // same) plugin's kcdx.publish event (Phase 2b sub-9). It shares the
+    // SAME lifecycle subscriber registry, keyed by the full dotted string,
+    // with the same GC-safe luaL_ref + OwningPluginForCurrentCall
+    // attribution as the lifecycle/ready branches. (A published event is
+    // always stamped with the dot form, so a subscriber always uses the
+    // dot form to hear it — a bare non-lifecycle name below stays a
+    // teaching error.)
+    if (event.find('.') != std::string::npos) {
         std::string callSiteFile;
         int callSiteLine = 0;
         std::string pluginName =
@@ -201,15 +229,18 @@ int Lua_On(lua_State* L) {
     }
 
     // Any other event string: a bare non-lifecycle name. Custom events are
-    // heard via the "plugin:event" form (above); teach that, plus the full
-    // set of built-in names ("ready" + the 9 lifecycle events).
+    // heard via the "<author>.<plugin>.<event>" dot form (above); teach
+    // that, plus the full set of built-in names ("ready" + the 9 lifecycle
+    // events).
     lua_pushnil(L);
     lua_pushfstring(L,
         "kcdx.on: event \"%s\" is not available. To hear another plugin's "
-        "custom event, subscribe with kcdx.on(\"plugin_name:event\", fn) "
-        "(the published event is stamped with its publisher's plugin name). "
-        "The built-in lifecycle events are: %s. \"ready\" fires after your "
-        "hooks/bytes are applied, so handle:applied() is final.",
+        "custom event, subscribe with "
+        "kcdx.on(\"<author>.<plugin>.<event>\", fn) (the published event is "
+        "stamped with its publisher's qualified <author>.<plugin> "
+        "namespace, dot-separated). The built-in lifecycle events are: %s. "
+        "\"ready\" fires after your hooks/bytes are applied, so "
+        "handle:applied() is final.",
         event.c_str(), kcdx::lua_lifecycle::EventNameList());
     return 2;
 }

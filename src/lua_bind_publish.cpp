@@ -9,8 +9,10 @@
 //   kcdx.publish("outfit_changed", { slot = 2, name = "Noble" })
 //
 //   -- another plugin hears it (events are stamped with the publisher's
-//   -- name, so subscribers use the "<publisher>:<event>" form):
-//   kcdx.on("violetanvil:outfit_changed", function(payload)
+//   -- qualified name, so subscribers use the dot form
+//   -- "<author>.<plugin>.<event>" — or "<plugin>.<event>" while a
+//   -- corpus author field is still empty during the 2-dot refactor):
+//   kcdx.on("walkabout.violetanvil.outfit_changed", function(payload)
 //       kcdx.log.info("MOD", "outfit -> %s", payload.name)
 //   end)
 //
@@ -27,15 +29,20 @@
 //     the Lua norm. payload is OPTIONAL — kcdx.publish("evt") fires
 //     subscribers with no arg.
 //   * NAMESPACING (fork 2): bare is MINE, prefix is THEIRS. The publisher
-//     names the BARE event; the engine prepends the owning plugin →
-//     "<publisher>:<event>". A subscriber hears it via
-//     kcdx.on("<publisher>:<event>", fn). The sender string IS the
-//     reference (no opaque reference-ID layer).
+//     names the BARE event; the engine prepends the owning plugin's
+//     qualified identity → "<author>.<plugin>.<event>" (the canonical
+//     dot per naming-namespaces.md). A subscriber hears it via
+//     kcdx.on("<author>.<plugin>.<event>", fn). The sender string IS the
+//     reference (no opaque reference-ID layer). While a plugin's
+//     [plugin].author is still empty during the corpus 2-dot transition,
+//     the engine falls back to the legacy 2-segment "<plugin>.<event>"
+//     form — same dot separator, just author-less, resolved via the
+//     2-segment legacy tier in naming-namespaces.md.
 //   * CALLER IDENTITY: the publishing plugin is resolved via
 //     lua_registry::OwningPluginForCurrentCall — the same mechanism kcdx.on
 //     (ready + lifecycle) uses. An anonymous publisher (resolves to "") is
-//     NOT dropped: we warn + fire under "<anon>:<event>" so the broadcast
-//     is observable (a subscriber can kcdx.on("<anon>:event", fn) — useful
+//     NOT dropped: we warn + fire under "<anon>.<event>" so the broadcast
+//     is observable (a subscriber can kcdx.on("<anon>.<event>", fn) — useful
 //     for console / pak Lua and for surfacing a RegisterScriptOwner gap).
 //
 // Threading: publish runs from plugin.lua or a kcdx.on callback, both
@@ -79,7 +86,7 @@ int Lua_Publish(lua_State* L) {
             "kcdx.publish(event, payload): `event` must be a string — the "
             "custom event name to broadcast (e.g. \"outfit_changed\"). Call "
             "shape: kcdx.publish(\"my_event\", { x = 1 }). Subscribers hear "
-            "it via kcdx.on(\"<your_plugin>:my_event\", fn).");
+            "it via kcdx.on(\"<author>.<your_plugin>.my_event\", fn).");
         return 2;
     }
     std::string bareEvent = lua_tostring(L, 1);
@@ -93,15 +100,30 @@ int Lua_Publish(lua_State* L) {
     kcdx::lua_registry::OwningPlugin owner =
         kcdx::lua_registry::OwningPluginForCurrentCall(
             L, callSiteFile, callSiteLine);
-    // kcdx.publish identifies its publisher by the plugin component only;
-    // event namespacing is tied to [plugin].name and unchanged by the
-    // 2-dot namespace refactor at this surface (event-name authority
-    // reconciliation is its own follow-up — see naming-namespaces.md
-    // §"Known debt to reconcile").
+    // 2-dot namespace refactor — the canonical separator for every shared
+    // name is the dot (naming-namespaces.md). The publisher's qualified
+    // event string is "<author>.<plugin>.<event>" when both manifest
+    // components are present, falling back to the legacy 2-segment
+    // "<plugin>.<event>" while a plugin's [plugin].author is still empty
+    // during the corpus transition (resolved by the 2-segment legacy tier
+    // in naming-namespaces.md). The anonymous publisher fires under
+    // "<anon>.<event>" — still dot, still observable.
     const std::string& publisher = owner.plugin;
+    const std::string& publisherAuthor = owner.author;
 
-    std::string nsLabel = publisher.empty() ? "<anon>" : publisher;
-    std::string fullEvent = nsLabel + ":" + bareEvent;
+    std::string nsLabel;
+    std::string fullEvent;
+    if (publisher.empty()) {
+        nsLabel = "<anon>";
+        fullEvent = nsLabel + "." + bareEvent;
+    } else if (publisherAuthor.empty()) {
+        // Legacy 2-segment fallback while the corpus is mid-transition.
+        nsLabel = publisher;
+        fullEvent = publisher + "." + bareEvent;
+    } else {
+        nsLabel = publisherAuthor + "." + publisher;
+        fullEvent = publisherAuthor + "." + publisher + "." + bareEvent;
+    }
     if (publisher.empty()) {
         log::WarnF("kcdx.publish: anonymous publisher (no attributed plugin) "
                    "for event \"%s\" at site=%s:%d — firing under \"%s\". "

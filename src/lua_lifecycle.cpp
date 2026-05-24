@@ -99,8 +99,9 @@ void RegisterCustomCallback(const std::string& eventName,
     // Custom (cross-plugin) events share g_subscribers with the lifecycle
     // events — the registry keys by an arbitrary string and never validates
     // against the 9 (IsKnownEvent is only consulted by the kcdx.on binder),
-    // so a "<publisher>:<event>" key slots in alongside lifecycle keys with
-    // no relaxing required.
+    // so a qualified "<author>.<plugin>.<event>" (or the legacy 2-segment
+    // "<plugin>.<event>") key slots in alongside lifecycle keys with no
+    // relaxing required.
     // Same load-order priority capture as RegisterLifecycleCallback (see the
     // ordering note there): Of() is populated by Resolve() before any
     // registration runs. Custom events share g_subscribers, so they carry the
