@@ -80,6 +80,24 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   `before_game` (engine fixes and plugins that must be in place before the game
   starts) or `after_game` (most user plugins). Set with `default_position`.
 
+- **zone gate** — the engine's plugin-init capability check. After load order
+  resolves every plugin's zone, the gate cross-references each enabled plugin's
+  declared zone against the engine's static capability table; if any
+  *requireZone* API would be unreachable from that zone, the plugin is rejected
+  (its `engineAccepted` flag flips false and it is skipped at every init site).
+  Runs ONCE per session, BEFORE any plugin's `plugin.lua` or DLL `Load` runs —
+  so no half-loaded state is possible. Query the result from your own plugin
+  with `kcdx.plugin.is_rejected`. See [plugin.md](plugin.md).
+
+- **requireZone** — the engine's per-API zone capability annotation. Each
+  `kcdx.*` API the engine ships carries a `requireZone` value declaring which
+  load-order zone it can legally be called from (`Either` / `Before` /
+  `After`). Today every shipped API is `Either` — deferred registration handles
+  the "called early but work must happen later" cases — so the zone gate only
+  ever rejects against a synthetic test entry; a future API requiring a
+  specific zone would reject a plugin whose declared zone makes that API
+  unreachable. See [plugin.md](plugin.md).
+
 - **load-order priority** — where a plugin sits within its zone, `0` (earliest)
   to `100` (latest), default `50`. Set with `default_priority`; the engine's
   `load_order.toml` can override it. Cross-plugin ordering of hooks/bytes comes
@@ -218,6 +236,7 @@ it does not exist yet.
 | `kcdx.console.*` | run a console command line from Lua | [console.md](console.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
 | `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |
+| `kcdx.plugin.*` | plugin introspection (is another plugin rejected/loaded) | [plugin.md](plugin.md) |
 | `kcdx.dev.*` | dev-mode introspection sugar | [dev.md](dev.md) |
 | the `kcdx.lua` domain | VM-introspection (cfunction_address, _probe_numbers) | [lua.md](lua.md) |
 

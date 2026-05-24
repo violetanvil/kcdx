@@ -155,6 +155,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxConsoleInterface::ExecuteString` | Built | `kcdx.console.*` | [console.md](console.md) |
 | `kcdxInterface::ReportTestResult` | Built | `kcdx.test.*` | [test.md](test.md) |
 | `kcdxSerializationInterface` (per-save plugin data; `OpenRecordNamed`/`GetRecordTagName`, Version 2) | Built (name-derived UID **NYI**) | `kcdx.cosave.*` | [cosave.md](cosave.md) |
+| `kcdxPluginInfoInterface` (plugin introspection — is another plugin rejected) | **NYI** | `kcdx.plugin.*` | [plugin.md](plugin.md) |
 | dev-mode introspection | **NYI** | `kcdx.dev.*` | [dev.md](dev.md) |
 | `kcdxScriptingInterface` (Lua C-API surface; VM interop) | Built | the `kcdx.lua` domain | [lua.md](lua.md) |
 

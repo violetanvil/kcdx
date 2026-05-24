@@ -47,6 +47,14 @@ interface ships and is verified callable:
 - **`kcdxTargetInterface::RegisterAlias`** (↔ `kcdx.alias`) — a short,
   plugin-scoped local handle for a long prefixed shared name. Built in Lua; no
   mirror interface in the header yet. See [alias.md](alias.md).
+- **`kcdxPluginInfoInterface`** (↔ `kcdx.plugin`) — plugin introspection:
+  query whether another plugin was rejected by the zone gate at load time, and
+  read the gate's recorded teaching reason. Built in Lua (`kcdx.plugin.is_rejected`);
+  no mirror interface in the header yet. Today a C++ author observes a missing
+  dependency indirectly via `kcdxInterface::GetPluginHandle` returning
+  `kcdxInvalidPluginHandle` — the predicate does not yet distinguish *unknown*
+  from *disabled* from *gate-rejected*, and the reason string is not exposed.
+  See [plugin.md](plugin.md).
 
 (`kcdxInterface::ResolveAddressByNameAs(handle, name)` — the identity-carrying
 by-name resolution overload for self > engine > other precedence — is now

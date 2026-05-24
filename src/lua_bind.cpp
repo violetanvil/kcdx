@@ -41,6 +41,8 @@ namespace kcdx::lua_bind_command { void bind(lua_State* L); }
 namespace kcdx::lua_bind_cosave  { void bind(lua_State* L); }
 namespace kcdx::lua_bind_log     { void bind(lua_State* L); }
 namespace kcdx::lua_bind_addr  { void bind(lua_State* L); }
+namespace kcdx::lua_bind_plugin  { void bind(lua_State* L); }
+namespace kcdx::zone_gate        { void bind(lua_State* L); }
 
 // scripting_interface drains the queue of pending RegisterFunction
 // calls into the live state. Pull the real header so the call
@@ -277,6 +279,14 @@ void RegisterKcdxTable(lua_State* L) {
     LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_addr::bind");
     kcdx::lua_bind_addr::bind(L);
     LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_addr::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_plugin::bind");
+    kcdx::lua_bind_plugin::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_plugin::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::zone_gate::bind");
+    kcdx::zone_gate::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::zone_gate::bind");
 
     LOG_INFO("LUA_BIND", "  before lua_setglobal(\"kcdx\")");
     lua_setglobal(L, "kcdx");

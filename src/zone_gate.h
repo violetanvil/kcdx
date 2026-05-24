@@ -3,6 +3,10 @@
 #include <cstddef>
 #include <string>
 
+extern "C" {
+#include "lua.h"
+}
+
 // ============================================================================
 // zone_gate — capability/zone evaluation
 //
@@ -104,5 +108,22 @@ bool IsRejected(const std::string& name);
 // rejected. Safe to call on any name — returns the empty string for
 // unknown / accepted plugins so callers can branch on `.empty()`.
 const std::string& RejectReason(const std::string& name);
+
+// Register the zone_gate-owned Lua surface on the kcdx global table at
+// the top of the Lua stack. Stack effect: 0. Called from
+// lua_bind.cpp::RegisterKcdxTable alongside the other domain binders.
+//
+// Today this registers exactly ONE function — the synthetic test-only
+// no-op `kcdx.zone_gate_test_after_only`, present so step 4's test
+// plugin has a real Lua function paired with the synthetic capability
+// row in kCapabilities. The capability table is the gate's source of
+// truth; keeping the registered surface in sync with that table is
+// what this hook is for. INTERNAL / test-only — NOT documented in
+// docs/lua/ and NOT in the closed-set core verbs (lua-api-surface.md).
+//
+// REMOVE this bind() (or repurpose it for a real shipped API) the day
+// the synthetic capability row goes — the table and the binder ship
+// and retire together.
+void bind(lua_State* L);
 
 }  // namespace kcdx::zone_gate

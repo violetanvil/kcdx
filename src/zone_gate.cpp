@@ -3,6 +3,11 @@
 #include <string>
 #include <unordered_map>
 
+extern "C" {
+#include "lua.h"
+#include "lauxlib.h"
+}
+
 #include "load_order.h"
 #include "log.h"
 #include "plugin_loader.h"  // kcdx::plugins::g_manifests
@@ -174,6 +179,46 @@ const std::string& RejectReason(const std::string& name) {
     auto it = g_rejected.find(name);
     if (it == g_rejected.end()) return EmptyString();
     return it->second;
+}
+
+// ============================================================================
+// Synthetic test-only Lua surface — `kcdx.zone_gate_test_after_only`
+//
+// A pure no-op. Registered ONLY because the synthetic capability row
+// `kCapabilities[...]{ "kcdx.zone_gate_test_after_only", After }` names
+// it: the capability table is the gate's source of truth, and the
+// shipped Lua surface must agree with it so the name is callable rather
+// than a phantom. The gate's rejection path runs BEFORE plugin.lua, so
+// in the After-required / before_game case this function is never
+// actually invoked — its presence is a consistency contract, not a
+// runtime requirement.
+//
+// Top-level placement (NOT `kcdx.<domain>.<verb>`) is intentional: the
+// capability table keys on the exact author-facing string, and the
+// matching string here is `kcdx.zone_gate_test_after_only` (one dot —
+// the engine seed form, lua-api-surface.md rule 5 / naming-namespaces.md
+// "1 dot — kcdx.<seedname>"). It is the only top-level entry on the
+// kcdx table outside the closed-set core verbs, and it is INTERNAL /
+// test-only — gets NO author-facing doc entry; this comment + the
+// header comment on the kCapabilities row are its only documentation.
+//
+// REMOVE this function (and the matching capability row) the day the
+// synthetic capability entry goes. The two ship and retire together.
+// ============================================================================
+static int Lua_ZoneGateTestAfterOnly(lua_State* L) {
+    (void)L;
+    return 0;  // zero results — pure no-op
+}
+
+void bind(lua_State* L) {
+    // The kcdx table is at the top of the Lua stack on entry (set up by
+    // lua_bind.cpp::RegisterKcdxTable). Register the synthetic no-op
+    // directly on it as a top-level field (NOT inside a sub-table) so
+    // the registered Lua name matches the capability-table string
+    // exactly: `kcdx.zone_gate_test_after_only`. Stack effect: 0.
+    int kcdx_idx = lua_gettop(L);
+    lua_pushcfunction(L, Lua_ZoneGateTestAfterOnly);
+    lua_setfield(L, kcdx_idx, "zone_gate_test_after_only");
 }
 
 }  // namespace kcdx::zone_gate

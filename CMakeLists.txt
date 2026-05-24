@@ -132,6 +132,7 @@ add_library(kcdx SHARED
     src/lua_bind_cosave.cpp
     src/lua_bind_log.cpp
     src/lua_bind_addr.cpp
+    src/lua_bind_plugin.cpp
     src/lua_registry.cpp
     src/lua_cosave_serial.cpp
     src/lua_lifecycle.cpp
