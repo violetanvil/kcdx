@@ -775,6 +775,40 @@ bool ValidatePluginName(const char* name, std::string& outError) {
     return true;
 }
 
+bool ValidateAuthorName(const char* name, std::string& outError) {
+    // Charset + length. [plugin].author shares the 128-char cap with
+    // [plugin].name — both are namespace-prefix components in the 2-dot
+    // <author>.<plugin>.<bare> shared-namespace model (naming-namespaces.md);
+    // engine-author families (kcdx_builtin_*, etc.) push longer values
+    // naturally, and the runtime cost of a longer cap is nil (one strlen at
+    // launch-time discovery only). Short components (aliases, bare target
+    // names — typed by hand) keep the default 32 cap.
+    constexpr size_t kAuthorNameMaxLen = 128;
+    if (!ValidateNameComponent(name, "[plugin].author", outError,
+                               kAuthorNameMaxLen)) {
+        return false;
+    }
+    // Reserved engine root: the exact value "kcdx" is the engine namespace;
+    // any name starting "kcdx." would squat under the reserved root. Same
+    // rule as ValidatePluginName — author is the leading namespace component
+    // and obeys the same reserved-root constraint.
+    //
+    // Note: a literal "kcdx." can't actually reach here as a single component
+    // because '.' fails the charset check above; we still guard the prefix
+    // explicitly so the intent — and the teaching message — is unambiguous.
+    if (StrEq(name, "kcdx") ||
+        (name[0] == 'k' && name[1] == 'c' && name[2] == 'd' &&
+         name[3] == 'x' && name[4] == '.')) {
+        outError =
+            "[plugin].author \"" + std::string(name) +
+            "\" is reserved — the \"kcdx\" namespace (and any \"kcdx.\" "
+            "prefix) belongs to the engine. Pick your own short lowercase "
+            "id (naming-namespaces.md).";
+        return false;
+    }
+    return true;
+}
+
 bool RegisterAuthorTarget(const char*       pluginName,
                           const char*       bareName,
                           AuthorLocatorKind kind,

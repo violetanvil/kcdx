@@ -233,6 +233,27 @@ struct AuthorTarget {
 //     "kcdx." (engine-namespace squatting)
 bool ValidatePluginName(const char* name, std::string& outError);
 
+// Validate a `[plugin].author` per naming-namespaces.md: charset [a-z0-9_],
+// length 2..128, and NOT the reserved engine root. Same shape as
+// ValidatePluginName — author is the leading component of the 2-dot
+// `<author>.<plugin>.<bare>` shared-namespace prefix and must obey the same
+// rules a namespace component does. Returns true when the author is a legal
+// namespace prefix; on failure returns false and fills `outError` with a
+// teaching message naming the rule.
+//
+// Rejected (hard manifest rejection — a bad author prefix corrupts every
+// shared name the plugin exports, identical to a bad plugin name; fail loud
+// at the door):
+//   - empty / under 2 / over 128 chars
+//   - any char outside [a-z0-9_] (uppercase, '.', '-', etc.)
+//   - the reserved value "kcdx" (the engine root), or any name beginning
+//     "kcdx." (engine-namespace squatting)
+//
+// Shares the 128-char cap with [plugin].name: both are namespace prefixes
+// engine-author families (kcdx_builtin_*, etc.) may grow into; the runtime
+// cost is nil (one strlen at launch-time discovery).
+bool ValidateAuthorName(const char* name, std::string& outError);
+
 // Register one author-declared target into the runtime registry. VALIDATES
 // (the owning plugin name via ValidatePluginName, and the bare name's charset
 // — same [a-z0-9_] rule, since it becomes the second half of the shared

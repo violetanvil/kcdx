@@ -174,7 +174,24 @@ bool ParsePluginManifest(const toml::table& doc,
         return false;
     }
     out.displayName  = OptString(t, "display_name", out.name);
-    out.author       = OptString(t, "author");
+    out.author       = OptString(t, "author", "");
+    // [plugin].author is the leading component of the 2-dot
+    // <author>.<plugin>.<bare> namespace prefix (naming-namespaces.md). It is
+    // OPTIONAL during the in-progress namespace-refactor transition — the
+    // corpus is re-migrated in a later step, after which the field can be
+    // made required. For now: empty is accepted (no validation, no prefix
+    // contribution); non-empty must obey the same charset / length /
+    // reserved-root rules a namespace component obeys, identical to
+    // [plugin].name (validated via ValidateAuthorName, which mirrors
+    // ValidatePluginName's shape).
+    if (!out.author.empty()) {
+        std::string authorErr;
+        if (!kcdx::address_library::ValidateAuthorName(out.author.c_str(),
+                                                        authorErr)) {
+            err = "[plugin] author: " + authorErr;
+            return false;
+        }
+    }
     out.description  = OptString(t, "description");
     out.url          = OptString(t, "url");
     out.supportEmail = OptString(t, "support_email");
