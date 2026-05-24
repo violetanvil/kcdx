@@ -23,7 +23,7 @@
 #       in the `requires zone='after_game'` clause).
 #
 # ZONE-COMPATIBLE BY OMISSION:
-#   This plugin does NOT declare [load_order].zone. It defaults to
+#   This plugin does NOT declare [plugin].default_position. It defaults to
 #   after_game per the zone-default model — every capability the observer
 #   uses (kcdx.on, kcdx.plugin.is_rejected, kcdx.test.report, kcdx.log.*)
 #   is RequireZone::Either in zone_gate's capability table, so the

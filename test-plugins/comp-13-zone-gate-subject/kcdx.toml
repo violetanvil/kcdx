@@ -6,15 +6,15 @@
 #
 # WHAT THIS PLUGIN PROVES:
 #   This plugin is DESIGNED TO BE REJECTED. It declares
-#   [load_order].zone = "before_game" — which trips the synthetic After-required
-#   capability entry kcdx.zone_gate_test_after_only in zone_gate's
-#   capability table (src/zone_gate.cpp kCapabilities[]). zone_gate runs
-#   in EvaluateAllPlugins at config-load time (well BEFORE any plugin.lua
-#   runs), flips this plugin's engineAccepted=false, records the reason
-#   under zone_gate::g_rejected, and the engine logs the loud teaching
-#   PLUGIN_REJECTED line. By the time any init site reaches THIS plugin
-#   the enriched skip-log "rejected by zone_gate: ..." fires and the
-#   plugin.lua never runs.
+#   [plugin].default_position = "before_game" — which trips the synthetic
+#   After-required capability entry kcdx.zone_gate_test_after_only in
+#   zone_gate's capability table (src/zone_gate.cpp kCapabilities[]).
+#   zone_gate runs in EvaluateAllPlugins at config-load time (well BEFORE
+#   any plugin.lua runs), flips this plugin's engineAccepted=false, records
+#   the reason under zone_gate::g_rejected, and the engine logs the loud
+#   teaching PLUGIN_REJECTED line. By the time any init site reaches THIS
+#   plugin the enriched skip-log "rejected by zone_gate: ..." fires and
+#   the plugin.lua never runs.
 #
 #   THE REJECTION IS THE TEST. The observer half (comp-13-zone-gate-observer,
 #   zone-compatible, NOT rejected) is what reports the COMP-13 row — it
@@ -56,19 +56,21 @@ test_suite_only = true
 name                = "comp_13_zone_gate_subject"
 display_name        = "COMP-13 zone_gate subject (rejected by gate)"
 author              = "ts"
-description         = "Declares zone=before_game, which trips the synthetic After-required capability entry; gets rejected by zone_gate at config-load time. Its plugin.lua never runs — the rejection IS the test (the observer asserts it via kcdx.plugin.is_rejected)."
+description         = "Declares default_position=before_game, which trips the synthetic After-required capability entry; gets rejected by zone_gate at config-load time. Its plugin.lua never runs — the rejection IS the test (the observer asserts it via kcdx.plugin.is_rejected)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-
-# THE TRIGGER: declaring zone=before_game causes zone_gate's Check() to
-# walk kCapabilities[], hit the synthetic kcdx.zone_gate_test_after_only
-# row (RequireZone::After), find the mismatch (this plugin is
-# before_game but the API requires after_game), and reject the plugin
-# with the reason string built at zone_gate.cpp::Check() lines 114-122.
-[load_order]
-zone = "before_game"
+# THE TRIGGER: default_position = "before_game" causes load_order::Resolve
+# to stamp this plugin's Effective.zone = BeforeGame; zone_gate's Check()
+# then walks kCapabilities[], hits the synthetic kcdx.zone_gate_test_after_only
+# row (RequireZone::After), finds the mismatch (this plugin is before_game
+# but the API requires after_game), and rejects with the reason string
+# built at zone_gate.cpp::Check() lines 114-122. (The as-built per-plugin
+# manifest key is `[plugin].default_position`, NOT `[load_order].zone` —
+# the latter shape is reserved for kcdx-engine/load_order.toml's
+# top-level [[plugin]] user-override rows, not per-plugin manifests.)
+default_position    = "before_game"
 
 # The lua entrypoint must be declared so plugin discovery passes, but
 # its body is INERT BY DESIGN — the gate flips engineAccepted=false
