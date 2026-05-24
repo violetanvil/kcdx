@@ -76,15 +76,25 @@ struct HookPayload {
     std::string name;
     std::string description;
 
-    // The plugin that owns this registration — the namespace prefix per
-    // naming-namespaces.md (derived from [plugin].name), or "" for an
-    // anonymous / console / pak-script call. Set by the binder at parse
-    // time (OwningPluginForCurrentCall). Threaded into the resolvers
-    // (ResolveLocator / ResolveCallsite → address_library::ResolveByName)
-    // and drives the self > engine > other precedence (naming-namespaces.md):
-    // a bare name resolves to this plugin's own target first, then the engine
-    // seed, then any other plugin's; "" = anonymous (engine-seed + other only,
-    // no self tier).
+    // The 2-dot namespace identity of the plugin that owns this
+    // registration — `owningAuthor` (from [plugin].author) +
+    // `owningPlugin` (from [plugin].name), per naming-namespaces.md.
+    // Either may be "" for an anonymous / console / pak-script call;
+    // `owningAuthor` is also "" for a plugin that has not yet declared
+    // [plugin].author (the in-progress namespace refactor — step 6
+    // populates the manifests, after which both are real). Set by the
+    // binder at parse time (OwningPluginForCurrentCall) and threaded
+    // into the resolvers (ResolveLocator / ResolveCallsite →
+    // address_library::ResolveByName) to drive the self > engine >
+    // other precedence: a bare name resolves to this plugin's own
+    // target first, then the engine seed, then any other plugin's;
+    // empty identity = anonymous (engine-seed + other only, no self
+    // tier).
+    //
+    // Engine-internal struct (not in include/kcdx/Interfaces.h) so the
+    // append-only AP11 discipline does not apply — appending a new
+    // identity field next to `owningPlugin` is free.
+    std::string owningAuthor;
     std::string owningPlugin;
 
     // Mode-of-interception. Validated at registration; drives which

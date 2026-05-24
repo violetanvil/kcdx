@@ -960,17 +960,22 @@ void LoadOneFile(const fs::path& path, Source source) {
         // here and stamp it onto every [[patch]] / [[hook]] / [[mid_hook]]
         // / [[trampoline]] entry parsed from this file, so the load-order
         // sort can look up the owning plugin's effective zone + priority.
-        std::string pluginName;  // empty if this file has no [plugin] table
+        std::string pluginName;    // empty if this file has no [plugin] table
+        std::string pluginAuthor;  // empty when no [plugin].author OR no [plugin] table
         {
             kcdx::plugins::PluginManifest manifest;
             std::string mErr;
             if (ParsePluginManifest(doc, path, manifest, mErr)) {
                 manifest.testSuiteOnly = isTestSuiteOnly;
-                pluginName = manifest.name;
+                pluginName   = manifest.name;
+                pluginAuthor = manifest.author;
 
                 // Optional per-plugin targets.toml sidecar — author-declared
                 // hook/byte targets registered under this plugin's namespace.
-                LoadTargetsFor(path.parent_path().string(), pluginName);
+                // Both identity components (author + plugin name) are passed
+                // through so the targets register under the full 2-dot key.
+                LoadTargetsFor(path.parent_path().string(),
+                               pluginAuthor, pluginName);
 
                 log::InfoF("Discovered plugin '%s' v0x%08X from %s",
                            manifest.name.c_str(), manifest.version,
@@ -1007,7 +1012,8 @@ void LoadOneFile(const fs::path& path, Source source) {
                 std::string err;
                 if (ParseOnePatch(*elem.as_table(), fileLabel, entry, err)) {
                     entry.source = source;
-                    entry.pluginName = pluginName;
+                    entry.pluginAuthor = pluginAuthor;
+                    entry.pluginName   = pluginName;
                     log::InfoF("Loaded patch '%s' (priority %d, source=%s) from %s",
                                entry.name.c_str(), entry.priority,
                                source == Source::Engine ? "engine" : "user",
@@ -1067,7 +1073,8 @@ void LoadOneFile(const fs::path& path, Source source) {
                 std::string err;
                 if (ParseOneTrampoline(*elem.as_table(), fileLabel, entry, err)) {
                     entry.source = source;
-                    entry.pluginName = pluginName;
+                    entry.pluginAuthor = pluginAuthor;
+                    entry.pluginName   = pluginName;
                     log::InfoF("Loaded trampoline '%s' (priority %d, source=%s) from %s",
                                entry.name.c_str(), entry.priority,
                                source == Source::Engine ? "engine" : "user",

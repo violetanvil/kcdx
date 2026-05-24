@@ -167,17 +167,19 @@ int Lua_Bytes(lua_State* L) {
     const std::string contextStr     = LuaTableString(L, 1, "context");
     const std::string anchorStr      = LuaTableString(L, 1, "anchor_string");
 
-    // The owning plugin drives the self > engine > other precedence in the
-    // name-resolution path below (ResolveByName / FindResolvedAuthorTarget,
-    // naming-namespaces.md). Fetch it ONCE here and reuse it for the registry
-    // Entry stamp at the bottom — no second OwningPluginForCurrentCall
-    // stack-walk. callSiteFile/Line come back populated for the Entry too.
-    // Launch-time registration only; never a hot path.
-    std::string owningPlugin;
+    // The owning plugin identity drives the self > engine > other
+    // precedence in the name-resolution path below (ResolveByName /
+    // FindResolvedAuthorTarget, naming-namespaces.md). Fetch BOTH
+    // components ONCE here and reuse them for the registry Entry stamp +
+    // the PatchEntry's own author/plugin fields — no second
+    // OwningPluginForCurrentCall stack-walk. callSiteFile/Line come back
+    // populated for the Entry too. Launch-time registration only; never
+    // a hot path.
     std::string callSiteFile;
     int         callSiteLine = 0;
-    owningPlugin = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
 
     // `target = "<name>"` — the COMMON-PATH locator (the disassembler test,
     // cornerstones.md / AP12): the author names the site and the engine
@@ -258,14 +260,15 @@ int Lua_Bytes(lua_State* L) {
     // ResolveByName → ResolveAuthorTargetAddr → Resolve(id); the addressId
     // field path computes Resolve(id) too), so this is simpler and correct.
     if (!targetName.empty()) {
-        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
-        // step 4 widens OwningPluginForCurrentCall to return both author
-        // and plugin; until then we pass "" for owningAuthor. The resolver
-        // tolerates an empty author by treating the row as legacy 1-dot
-        // (preserving the existing bare-name self > engine > other
-        // observable behavior).
+        // The binder now threads the real (author, plugin) pair from the
+        // OwningPluginForCurrentCall struct (step 4 of the 2-dot namespace
+        // refactor). What remains transitional is plugin manifests whose
+        // [plugin].author is still empty (step 6 populates them); when the
+        // author is empty here the resolver walks the legacy 1-dot scope
+        // by (plugin, name), preserving the existing observable behavior
+        // for the current corpus.
         const uintptr_t va = kcdx::address_library::ResolveByName(
-            targetName.c_str(), /*owningAuthor=*/"", owningPlugin.c_str());
+            targetName.c_str(), owner.author.c_str(), owner.plugin.c_str());
         if (va) {
             // Engine seed, Rva author-target, or AddressId author-target — the
             // name resolved straight to a VA. Carry it; Resolve uses it
@@ -274,13 +277,13 @@ int Lua_Bytes(lua_State* L) {
         } else {
             // ResolveByName returned 0 — either a Pattern / TargetSymbol
             // author-target (no VA in this leaf module) or a genuine miss.
-            // FindResolvedAuthorTarget disambiguates with the same precedence.
-            // Same empty-author transition as the ResolveByName call above —
-            // step 4 wires the real author through this call chain.
+            // FindResolvedAuthorTarget disambiguates with the same precedence
+            // and the same real (author, plugin) the ResolveByName call
+            // threads.
             const kcdx::address_library::AuthorTarget* at =
                 kcdx::address_library::FindResolvedAuthorTarget(
-                    targetName.c_str(), /*owningAuthor=*/"",
-                    owningPlugin.c_str());
+                    targetName.c_str(), owner.author.c_str(),
+                    owner.plugin.c_str());
             if (at) {
                 using Kind = kcdx::address_library::AuthorLocatorKind;
                 switch (at->kind) {
@@ -375,14 +378,16 @@ int Lua_Bytes(lua_State* L) {
     e.name     = p->name;
     e.priority = p->priority;
     e.payload  = p;  // shared_ptr<PatchEntry> stored as shared_ptr<void>
-    e.pluginName    = owningPlugin;
+    e.pluginName    = owner.plugin;
     e.callSiteFile  = callSiteFile;
     e.callSiteLine  = callSiteLine;
     // Anonymous (no owning plugin) entries copy the plugin name into
     // the PatchEntry so patch_engine log lines have meaningful
     // attribution — they get the script source filename as a
     // placeholder until Phase 2h's [entrypoints].lua landing lets us
-    // attribute properly.
+    // attribute properly. The author always threads through verbatim
+    // (empty for anonymous; the manifest's [plugin].author otherwise).
+    p->pluginAuthor = owner.author;
     p->pluginName = e.pluginName.empty()
                         ? (e.callSiteFile.empty()
                             ? std::string("<lua>")

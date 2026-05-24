@@ -90,8 +90,15 @@ int Lua_Publish(lua_State* L) {
     // "<anon>:<event>" so the broadcast stays observable.
     std::string callSiteFile;
     int callSiteLine = 0;
-    std::string publisher = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
+    // kcdx.publish identifies its publisher by the plugin component only;
+    // event namespacing is tied to [plugin].name and unchanged by the
+    // 2-dot namespace refactor at this surface (event-name authority
+    // reconciliation is its own follow-up — see naming-namespaces.md
+    // §"Known debt to reconcile").
+    const std::string& publisher = owner.plugin;
 
     std::string nsLabel = publisher.empty() ? "<anon>" : publisher;
     std::string fullEvent = nsLabel + ":" + bareEvent;

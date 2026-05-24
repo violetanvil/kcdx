@@ -86,22 +86,24 @@ int Lua_Alias(lua_State* L) {
     // --- Resolve owner identity (same mechanism as kcdx.code / kcdx.command).
     std::string callSiteFile;
     int callSiteLine = 0;
-    std::string owner = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
 
     // --- Register (validates owner / short / target; an anonymous caller is
     // rejected — an alias must be scoped to a plugin). ---
     //
-    // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor): the
-    // owning author is not yet plumbed through OwningPluginForCurrentCall —
-    // step 4 widens that helper to return both author + plugin. Until then
-    // we pass "" for the author, which scopes the alias under the legacy
-    // 1-dot key (<owningPlugin>) — exactly how the existing corpus already
-    // declares + resolves aliases. The alias's `target` string can be 1-dot
-    // OR 3-dot; substitution is re-resolved through the standard name
-    // pipeline, which handles both shapes (address_library.cpp).
+    // The binder now threads the real (author, plugin) pair from
+    // OwningPluginForCurrentCall (step 4 of the 2-dot namespace refactor).
+    // When the manifest's [plugin].author is still empty (the corpus state
+    // before step 6) the alias is scoped under the legacy 1-dot key
+    // (<plugin>) — exactly how the existing corpus already declares +
+    // resolves aliases. The alias's `target` string can be 1-dot OR 3-dot;
+    // substitution is re-resolved through the standard name pipeline,
+    // which handles both shapes (address_library.cpp).
     std::string err;
-    if (!kcdx::address_library::RegisterAlias("", owner.c_str(),
+    if (!kcdx::address_library::RegisterAlias(owner.author.c_str(),
+                                              owner.plugin.c_str(),
                                               shortName.c_str(),
                                               target.c_str(), err)) {
         lua_pushboolean(L, 0);
@@ -110,7 +112,7 @@ int Lua_Alias(lua_State* L) {
     }
 
     LOG_DEBUG("NAMESPACE", "[%s] alias '%s' -> '%s' (site=%s:%d)",
-              owner.c_str(), shortName.c_str(), target.c_str(),
+              owner.plugin.c_str(), shortName.c_str(), target.c_str(),
               callSiteFile.empty() ? "?" : callSiteFile.c_str(), callSiteLine);
 
     lua_pushboolean(L, 1);

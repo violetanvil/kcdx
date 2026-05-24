@@ -35,10 +35,17 @@
 namespace kcdx::config {
 
 // Parse `<pluginFolder>/targets.toml` (if present) and register every valid
-// `[[target]]` row for `pluginName` (the derived namespace prefix — the value
-// of this plugin's [plugin].name). No-op when the file is absent. Called from
-// config.cpp's discovery walk once a plugin's folder + name are both known.
+// `[[target]]` row under the 2-dot namespace identity (`pluginAuthor`,
+// `pluginName`) — the values of this plugin's [plugin].author + [plugin].name.
+// `pluginAuthor` may be "" during the in-progress namespace refactor (legacy
+// 1-dot scope — the plugin has not yet declared [plugin].author); when empty
+// the row registers under (empty author, pluginName, bareName), which the
+// resolver walks as the legacy 1-dot tier (naming-namespaces.md).
+//
+// No-op when the file is absent. Called from config.cpp's discovery walk once
+// a plugin's folder + identity components are all known.
 void LoadTargetsFor(const std::string& pluginFolder,
+                    const std::string& pluginAuthor,
                     const std::string& pluginName);
 
 }  // namespace kcdx::config

@@ -255,8 +255,11 @@ int Lua_Scan(lua_State* L) {
     // so a future enabled = false honors it; harmless if "" (anonymous).
     std::string callSiteFile;
     int callSiteLine = 0;
+    // [[scan]] is a diagnostic-only entry — no resolver downstream
+    // consults the author component, so read only `.plugin` from the
+    // owner struct.
     entry.pluginName = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
+        L, callSiteFile, callSiteLine).plugin;
 
     // --- Resolve (no logging happens inside ResolveScan) ---
     scan_engine::ScanResult result = scan_engine::ResolveScan(entry);

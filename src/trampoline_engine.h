@@ -16,10 +16,19 @@ namespace kcdx::trampoline_engine {
 // target_symbol.
 struct TrampolineEntry {
     std::string sourceFile;
-    // Plugin name this entry belongs to (the [plugin].name from the
-    // owning kcdx.toml). Stamped by LoadOneFile alongside `source`.
-    // Used by the load-order sort to look up the plugin's effective
-    // zone + priority.
+    // 2-dot namespace identity of the plugin this entry belongs to:
+    // `pluginAuthor` (from [plugin].author) + `pluginName` (from
+    // [plugin].name). Stamped by LoadOneFile alongside `source`.
+    // `pluginAuthor` may be "" during the in-progress namespace refactor
+    // (legacy 1-dot scope — the plugin has not yet declared
+    // [plugin].author); symbols::Register tolerates an empty author by
+    // storing the export under <pluginName>.<bareExport>, identical to
+    // today's observable behavior. Used by the load-order sort to look
+    // up the plugin's effective zone + priority and by ApplyAll's
+    // symbols::Register call to thread the full (author, plugin)
+    // identity into the cross-plugin symbol table. Engine-internal
+    // struct, so appending the field is unconstrained by AP11.
+    std::string pluginAuthor;
     std::string pluginName;
     kcdx::config::Source source = kcdx::config::Source::User;
     std::string name;

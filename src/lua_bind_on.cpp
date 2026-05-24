@@ -94,9 +94,14 @@ int Lua_On(lua_State* L) {
         // anonymous ENTRIES.
         std::string callSiteFile;
         int callSiteLine = 0;
+        // kcdx.on's lifecycle / ready paths attribute callbacks to the
+        // owning plugin by [plugin].name only; the author component is
+        // not consulted here, so we read only `.plugin` off the owner
+        // struct. (The struct return is the single-stack-walk source of
+        // truth — see lua_registry.h.)
         std::string pluginName =
             kcdx::lua_registry::OwningPluginForCurrentCall(
-                L, callSiteFile, callSiteLine);
+                L, callSiteFile, callSiteLine).plugin;
 
         // Take a GC-safe registry ref to `fn` so the closure survives
         // until the ready dispatch (which runs after plugin.lua returns).
@@ -132,7 +137,7 @@ int Lua_On(lua_State* L) {
         int callSiteLine = 0;
         std::string pluginName =
             kcdx::lua_registry::OwningPluginForCurrentCall(
-                L, callSiteFile, callSiteLine);
+                L, callSiteFile, callSiteLine).plugin;
 
         // luaL_ref pops the value — push a copy first so the caller's args
         // aren't disturbed (same as the "ready" path).
@@ -170,7 +175,7 @@ int Lua_On(lua_State* L) {
         int callSiteLine = 0;
         std::string pluginName =
             kcdx::lua_registry::OwningPluginForCurrentCall(
-                L, callSiteFile, callSiteLine);
+                L, callSiteFile, callSiteLine).plugin;
 
         // luaL_ref pops the value — push a copy first so the caller's args
         // aren't disturbed (same as the lifecycle/ready paths).

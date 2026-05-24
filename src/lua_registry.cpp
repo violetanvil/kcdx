@@ -15,6 +15,9 @@ extern "C" {
 }
 
 #include "log.h"
+#include "plugin_loader.h"  // kcdx::plugins::g_manifests — manifest
+                            // lookup for the resolved plugin's author
+                            // (the 2-dot namespace refactor's step 4).
 #include "scripting.h"   // scripting::lua_state() — the live VM the
                          // ready callbacks fire against (same source the
                          // hook binder uses to unref callbacks).
@@ -477,7 +480,7 @@ void RegisterScriptOwner(const std::string& scriptPath,
     g_scriptOwners[NormalizeScriptPath(scriptPath)] = pluginName;
 }
 
-std::string OwningPluginForCurrentCall(lua_State* L,
+OwningPlugin OwningPluginForCurrentCall(lua_State* L,
                                         std::string& callSiteFileOut,
                                         int& callSiteLineOut) {
     // Walk up the Lua stack to the nearest frame that maps to a known
@@ -514,12 +517,26 @@ std::string OwningPluginForCurrentCall(lua_State* L,
             auto it = g_scriptOwners.find(NormalizeScriptPath(src));
             if (it != g_scriptOwners.end()) owner = it->second;
         }
-        if (!owner.empty()) return owner;
+        if (!owner.empty()) {
+            // Resolved the plugin name; cross-reference g_manifests to
+            // pull out the matching [plugin].author. The corpus today
+            // ships empty [plugin].author for most plugins — that comes
+            // through here as author == "" and the resolver treats the
+            // row as legacy 1-dot. Step 6 of the refactor populates the
+            // manifest field; from then on author is the real value.
+            OwningPlugin out;
+            out.plugin = owner;
+            for (const auto& m : kcdx::plugins::g_manifests) {
+                if (m.name == owner) { out.author = m.author; break; }
+            }
+            return out;
+        }
     }
 
     // No attributed frame — ad-hoc Lua (console, pak scripts, etc.).
-    // Anonymous: applies at after_game / priority 50.
-    return "";
+    // Anonymous: applies at after_game / priority 50. Both fields stay
+    // empty (no plugin → no author).
+    return OwningPlugin{};
 }
 
 }  // namespace kcdx::lua_registry

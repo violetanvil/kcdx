@@ -431,20 +431,23 @@ int Lua_Hook(lua_State* L) {
     p->module      = LuaTableString(L, 1, "module", "WHGame.dll");
     p->offset      = LuaTableInt(L, 1, "offset", 0);
 
-    // Fetch the owning plugin NOW (not at append-time below) so it is in
-    // hand for the name-resolution path — the target signature lookup
-    // (ResolveSignatureByName) and, at apply, ResolveLocator's
-    // ResolveByName — which take the owner for the self > engine > other
-    // precedence wired in the NEXT step. "" = anonymous (console / pak /
-    // ad-hoc Lua), a valid value meaning "no self namespace"; pass it
-    // through, never error. The same callSiteFile/Line + owner are reused
-    // for the registry Entry below (no second stack-walk).
-    std::string owningPlugin;
+    // Fetch the owning plugin identity NOW (not at append-time below) so
+    // both namespace components are in hand for the name-resolution path
+    // — the target signature lookup (ResolveSignatureByName) and, at
+    // apply, ResolveLocator's ResolveByName — which take the
+    // (author, plugin) pair for the self > engine > other precedence
+    // (naming-namespaces.md). Either field may be "" (anonymous caller
+    // → both empty; or a plugin whose [plugin].author is not yet
+    // populated → author empty); pass through, never error. The same
+    // callSiteFile/Line + owner are reused for the registry Entry below
+    // (no second stack-walk; the struct return is the reason).
     std::string callSiteFile;
     int         callSiteLine = 0;
-    owningPlugin = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
-    p->owningPlugin = owningPlugin;
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
+    p->owningAuthor = owner.author;
+    p->owningPlugin = owner.plugin;
 
     // Entry-level 'priority' is no longer honored — cross-plugin order
     // comes from the plugin's [load_order].priority (kcdx.toml);
@@ -758,20 +761,18 @@ int Lua_Hook(lua_State* L) {
     std::string effectiveSig = sigStr;
     bool        sigFromTarget = false;
     if (effectiveSig.empty() && haveTarget) {
-        // owningPlugin drives the self > engine > other precedence in
-        // ResolveSignatureByName (naming-namespaces.md): the signature comes
-        // from the SAME row the address resolves to (self target, else engine
-        // seed, else another plugin's target). Launch-time binder pass only.
-        //
-        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
-        // step 4 widens OwningPluginForCurrentCall to return both author and
-        // plugin; until then we pass "" for owningAuthor. The resolver
-        // tolerates an empty author by treating the row as legacy 1-dot,
-        // preserving the bare-name resolution observable behavior.
+        // (owningAuthor, owningPlugin) drive the self > engine > other
+        // precedence in ResolveSignatureByName (naming-namespaces.md):
+        // the signature comes from the SAME row the address resolves to
+        // (self target, else engine seed, else another plugin's target).
+        // Launch-time binder pass only. The empty-author transition has
+        // retired at this call site (step 4 of the 2-dot namespace
+        // refactor); the real (author, plugin) comes from the
+        // OwningPluginForCurrentCall struct above.
         const char* entrySig =
             kcdx::address_library::ResolveSignatureByName(
-                targetName.c_str(), /*owningAuthor=*/"",
-                owningPlugin.c_str());
+                targetName.c_str(), owner.author.c_str(),
+                owner.plugin.c_str());
         if (entrySig && entrySig[0] != '\0') {
             effectiveSig  = entrySig;
             sigFromTarget = true;
@@ -859,8 +860,9 @@ int Lua_Hook(lua_State* L) {
     e.name    = p->name;
     e.payload = p;  // shared_ptr<HookPayload> stored as shared_ptr<void>
     // Reuse the owner + call site fetched at the top (single stack-walk);
-    // the same value is now also on p->owningPlugin for the resolvers.
-    e.pluginName   = owningPlugin;
+    // the same plugin name is now also on p->owningPlugin (and the
+    // author on p->owningAuthor) for the resolvers.
+    e.pluginName   = owner.plugin;
     e.callSiteFile = callSiteFile;
     e.callSiteLine = callSiteLine;
 

@@ -265,11 +265,12 @@ int Lua_Code(lua_State* L) {
     // anonymous allocation stays observable.
     std::string callSiteFile;
     int callSiteLine = 0;
-    std::string owner = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
     kcdxPluginHandle ownerHandle =
-        kcdx::plugins::HandleOf(owner.empty() ? "" : owner.c_str());
-    if (owner.empty()) {
+        kcdx::plugins::HandleOf(owner.plugin.empty() ? "" : owner.plugin.c_str());
+    if (owner.plugin.empty()) {
         log::WarnF("kcdx.code: anonymous caller (no attributed plugin) for "
                    "region '%s' at site=%s:%d — allocating under an invalid "
                    "plugin handle (the region still works).",
@@ -312,7 +313,7 @@ int Lua_Code(lua_State* L) {
     uintptr_t addr = reinterpret_cast<uintptr_t>(region);
     LOG_DEBUG("CODE", "[%s] allocated %d bytes at 0x%p (pool=%s, plugin=%s)",
               name.c_str(), static_cast<int>(totalSize), region, pool.c_str(),
-              owner.empty() ? "<anon>" : owner.c_str());
+              owner.plugin.empty() ? "<anon>" : owner.plugin.c_str());
 
     // --- Register export IMMEDIATELY if requested (mirror ApplyAll's
     // export branch, but EARLIER — at the call, not the apply pass; that
@@ -342,14 +343,16 @@ int Lua_Code(lua_State* L) {
         }
         // Fully-qualified name the engine will publish (for diagnostics).
         std::string fullName =
-            owner.empty() ? exportSymbol : (owner + "." + exportSymbol);
-        // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
-        // OwningPluginForCurrentCall returns only the plugin name today —
-        // step 4 widens it to expose the manifest's [plugin].author. Until
-        // then we register the export under the legacy 1-dot key (empty
-        // author + plugin), which the symbol table treats identically to
-        // today's <plugin>.<bare> storage.
-        if (kcdx::symbols::Register(exportSymbol, addr, "", owner)) {
+            owner.plugin.empty() ? exportSymbol : (owner.plugin + "." + exportSymbol);
+        // The binder now threads the real (author, plugin) pair from the
+        // OwningPluginForCurrentCall struct (step 4 of the 2-dot namespace
+        // refactor). When the manifest's [plugin].author is still empty
+        // (the corpus state before step 6) the symbol table treats the
+        // row as legacy 1-dot under <plugin>.<bare>, identical to today's
+        // observable behavior; when populated, the export lives under the
+        // full <author>.<plugin>.<bare> key.
+        if (kcdx::symbols::Register(exportSymbol, addr,
+                                    owner.author, owner.plugin)) {
             LOG_DEBUG("CODE", "[%s] exported symbol '%s' -> 0x%p",
                       name.c_str(), fullName.c_str(),
                       reinterpret_cast<void*>(addr));

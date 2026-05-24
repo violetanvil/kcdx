@@ -38,11 +38,23 @@ using Anchor = std::variant<std::monostate, AnchorString, AnchorFunctionByExport
 
 struct PatchEntry {
     std::string sourceFile;   // for error messages — path of the toml that contributed this patch
-    // Plugin name this entry belongs to (the [plugin].name from the
-    // owning kcdx.toml). Stamped by LoadOneFile alongside `source`.
+    // 2-dot namespace identity of the plugin this entry belongs to:
+    // `pluginAuthor` (from the owning kcdx.toml's [plugin].author) +
+    // `pluginName` (from [plugin].name). Stamped by LoadOneFile (for
+    // TOML [[patch]] rows) or by lua_bind_bytes (for kcdx.bytes calls),
+    // alongside `source`. `pluginAuthor` may be "" during the in-progress
+    // namespace refactor (legacy 1-dot scope — the plugin has not yet
+    // declared [plugin].author); the symbol-table / address-library
+    // resolvers tolerate an empty author by walking the legacy 1-dot
+    // tier under pluginName (naming-namespaces.md). Engine-internal
+    // struct (not in include/kcdx/Interfaces.h), so appending the new
+    // identity field is unconstrained by the append-only AP11 rule.
+    //
     // Used by the load-order sort to look up the plugin's effective
-    // zone + priority, and by logs to attribute entries to their
-    // plugin.
+    // zone + priority, by logs to attribute entries to their plugin,
+    // and by Resolve()'s symbols::Lookup call to thread the consuming
+    // plugin's full identity into the namespace resolver.
+    std::string pluginAuthor;
     std::string pluginName;
     // Which discovery root this came from. Stamped by LoadOneFile
     // (Engine for kcdx-engine/builtin/, User for plugins/). Used as

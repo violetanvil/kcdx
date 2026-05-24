@@ -89,14 +89,16 @@ size_t ApplyAll() {
             std::string fullName =
                 t.pluginName.empty() ? t.exportSymbol
                                      : (t.pluginName + "." + t.exportSymbol);
-            // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace
-            // refactor): the [[trampoline]] TOML entry does not yet
-            // carry the owning author — step 4 widens TrampolineEntry
-            // to thread the manifest's [plugin].author alongside
-            // pluginName. Until then we register under the legacy
-            // 1-dot key (empty author + this plugin's name), which is
-            // exactly how the existing corpus's exports already live.
-            if (symbols::Register(t.exportSymbol, addr, "", t.pluginName)) {
+            // Step 4 of the 2-dot namespace refactor: the [[trampoline]]
+            // entry now carries the manifest's [plugin].author alongside
+            // pluginName, so the symbol table sees the full
+            // <author>.<plugin>.<bare> identity. When [plugin].author is
+            // still empty (the corpus state before step 6) the symbol
+            // table registers under the legacy 1-dot key
+            // <pluginName>.<bare>, identical to today's observable
+            // behavior.
+            if (symbols::Register(t.exportSymbol, addr,
+                                  t.pluginAuthor, t.pluginName)) {
                 LOG_DEBUG("TRAMPOLINE", "[%s] exported symbol '%s' -> 0x%p",
                           t.name.c_str(),
                           fullName.c_str(),

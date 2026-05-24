@@ -184,15 +184,43 @@ void EnsureHandleMetatable(lua_State* L);
 void RegisterScriptOwner(const std::string& scriptPath,
                          const std::string& pluginName);
 
-// Resolve the owning plugin for the current Lua call. The plugin
-// name is stamped on every registered Entry so the apply pass can
-// attribute results to the right plugin's load-order row, log file,
-// etc. Implementation: walk the Lua callstack via debug.getinfo, then
-// look up the source file in the plugin-by-script-path index populated
-// by RegisterScriptOwner. Returns "" when the call site doesn't map to
-// a known plugin script (ad-hoc Lua, console, pak scripts) — those
-// entries apply anonymously at after_game / priority 50.
-std::string OwningPluginForCurrentCall(lua_State* L,
+// Resolved owner identity of a Lua call. Carries the 2-dot namespace
+// components — `author` (from the calling plugin manifest's
+// [plugin].author) and `plugin` (from [plugin].name) — both stamped on
+// every registered Entry, and threaded into name resolvers
+// (address_library::ResolveByName / symbols::Lookup /
+// ResolveSignatureByName / FindResolvedAuthorTarget /
+// address_library::RegisterAlias) so the self > engine > other
+// precedence is keyed on the full <author>.<plugin> identity.
+//
+// Both fields may be empty:
+//   - plugin == "" (and therefore author == "") for an anonymous caller
+//     (console / pak Lua / ad-hoc) — those entries apply anonymously at
+//     after_game / priority 50.
+//   - author == "" while plugin != "" during the in-progress namespace
+//     refactor — a plugin whose [plugin].author is not yet declared.
+//     The resolver tolerates an empty author by walking the legacy
+//     1-dot tier under (plugin, name) (naming-namespaces.md).
+struct OwningPlugin {
+    std::string author;
+    std::string plugin;
+};
+
+// Resolve the owning plugin for the current Lua call. Implementation:
+// walk the Lua callstack via debug.getinfo, then look up the source
+// file in the plugin-by-script-path index populated by
+// RegisterScriptOwner, then cross-reference the resolved plugin name
+// against kcdx::plugins::g_manifests to pull out the matching manifest's
+// [plugin].author (so the resolver receives the full identity, not just
+// the plugin component).
+//
+// Returns {"", ""} when the call site doesn't map to a known plugin
+// script (anonymous caller).
+//
+// Single struct (rather than parallel functions) so callers do ONE
+// stack-walk, ONE manifest lookup, and adding more identity fields here
+// is append-only on the struct — no further fanout of the helper.
+OwningPlugin OwningPluginForCurrentCall(lua_State* L,
                                         std::string& callSiteFileOut,
                                         int& callSiteLineOut);
 

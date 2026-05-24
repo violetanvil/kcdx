@@ -275,8 +275,12 @@ int Lua_Command(lua_State* L) {
     // the anonymous registration stays observable.
     std::string callSiteFile;
     int callSiteLine = 0;
-    std::string owner = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
+    // kcdx.command's identity model uses the plugin component only —
+    // command names are global (the console registry has its own
+    // uniqueness rule), so the author component is not threaded here.
+    std::string owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine).plugin;
 
     kcdxPluginHandle ownerHandle =
         kcdx::plugins::HandleOf(owner.empty() ? "" : owner.c_str());

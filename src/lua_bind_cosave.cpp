@@ -139,8 +139,11 @@ constexpr uint32_t kZeroHashUid = 1u;
 // mechanism). callSiteFile/Line are filled for the teaching error / log.
 kcdxPluginHandle ResolveOwner(lua_State* L, std::string& owner,
                               std::string& callSiteFile, int& callSiteLine) {
+    // Cosave identifies its owner by [plugin].name only — UIDs are
+    // derived from the plugin name's FNV-1a hash. The author component
+    // is not consulted here.
     owner = kcdx::lua_registry::OwningPluginForCurrentCall(
-        L, callSiteFile, callSiteLine);
+        L, callSiteFile, callSiteLine).plugin;
     return kcdx::plugins::HandleOf(owner.empty() ? "" : owner.c_str());
 }
 

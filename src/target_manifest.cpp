@@ -37,6 +37,7 @@ std::string OptString(const toml::table& tbl, std::string_view key,
 // registered; on a shape error fills `err` (the caller logs + skips). Mirrors
 // ParseOnePatch's locator-exclusivity check.
 bool RegisterOneTarget(const toml::table& t,
+                       const std::string& pluginAuthor,
                        const std::string& pluginName,
                        std::string& err) {
     std::string bareName = OptString(t, "name");
@@ -102,16 +103,15 @@ bool RegisterOneTarget(const toml::table& t,
     std::string signature = OptString(t, "signature");
 
     std::string regErr;
-    // EMPTY-AUTHOR TRANSITION (step 3 of the 2-dot namespace refactor):
-    // the per-plugin [plugin].author plumbing through the targets-discovery
-    // call chain lands in step 4 — until then every [[target]] row registers
-    // under the legacy 1-dot scope (empty author + plugin name == this
-    // plugin's [plugin].name). The resolver's 1-dot tier still finds these
-    // rows by their bare name, so the existing corpus keeps resolving while
-    // the build stays green. Once step 4 threads `author` through here it
-    // will be the manifest's [plugin].author, not "".
+    // Step 4 of the 2-dot namespace refactor: the caller threads the
+    // manifest's (author, plugin) pair through; the row now registers
+    // under the full 2-dot key when both are non-empty. When
+    // [plugin].author is still empty (the corpus state before step 6)
+    // the row registers under (empty author, pluginName, bareName) and
+    // the resolver walks the legacy 1-dot tier — identical observable
+    // behavior to today's bare-name resolution.
     if (!address_library::RegisterAuthorTarget(
-            "", pluginName.c_str(), bareName.c_str(), kind,
+            pluginAuthor.c_str(), pluginName.c_str(), bareName.c_str(), kind,
             locatorStr.c_str(), locatorNum, signature.c_str(), regErr)) {
         err = regErr;  // ValidatePluginName / bare-name charset rejection.
         return false;
@@ -122,6 +122,7 @@ bool RegisterOneTarget(const toml::table& t,
 }  // namespace
 
 void LoadTargetsFor(const std::string& pluginFolder,
+                    const std::string& pluginAuthor,
                     const std::string& pluginName) {
     fs::path path = fs::path(pluginFolder) / "targets.toml";
 
@@ -152,7 +153,8 @@ void LoadTargetsFor(const std::string& pluginFolder,
         for (const auto& elem : *arr->as_array()) {
             if (!elem.is_table()) continue;
             std::string err;
-            if (RegisterOneTarget(*elem.as_table(), pluginName, err)) {
+            if (RegisterOneTarget(*elem.as_table(), pluginAuthor,
+                                  pluginName, err)) {
                 ++registered;
             } else {
                 // Teaching line: plugin + the bad field/rule. One bad row does
