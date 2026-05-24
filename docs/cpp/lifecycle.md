@@ -21,7 +21,7 @@ messages arrive with `sender == null` in the `kcdxMessage` struct; filter on
 | `kcdxMessage_DeleteGame` | 8 | `const char*` save basename | `delete_game` |
 | `kcdxMessage_LuaReady` | 9 | none — `_G.kcdx` is populated and callable (once per process) | (Lua: use `kcdx.dev.on_ready`) |
 | `kcdxMessage_LoadGameSelected` | 10 | `const char*` save basename — fires once per user load, before deserialization | `load_game_selected` |
-| `kcdxMessage_FirstUserDefined` | `0x10000` | — (first plugin-defined message ID; use `>=` this for your own — see [publish.md](publish.md)) | (custom `"<publisher>:<event>"`) |
+| `kcdxMessage_FirstUserDefined` | `0x10000` | — (first plugin-defined message ID; use `>=` this for your own — see [publish.md](publish.md)) | (custom `"<author>.<plugin>.<event>"`) |
 
 `kcdxMessage_LoadGameSelected` (10) is distinct from `kcdxMessage_PreLoadGame`
 (5): `PreLoadGame` fires at every internal `LoadGame` invocation (including

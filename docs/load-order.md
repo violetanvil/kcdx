@@ -9,13 +9,17 @@ One global ordered list of plugins. One immovable sentinel: `game.exe`.
 The list naturally has two zones:
 
 ```
-[ kcdx.bugsplat-filename-fix    ]  zone=before_game,  priority=30
-[ some-author.cool-fix          ]  zone=before_game,  priority=50
-─── game.exe ──────────────────────  (immovable sentinel)
-[ kcdx.cap-04-midhook           ]  zone=after_game,   priority=10
-[ some-author.tweak-mod         ]  zone=after_game,   priority=50
-[ some-author.late-arriving-mod ]  zone=after_game,   priority=90
+[ kcdx_builtin.bugsplat_filename_fix ]  zone=before_game,  priority=30
+[ some_author.cool_fix               ]  zone=before_game,  priority=50
+─── game.exe ───────────────────────────  (immovable sentinel)
+[ ts.cap_04_midhook                  ]  zone=after_game,   priority=10
+[ some_author.tweak_mod              ]  zone=after_game,   priority=50
+[ some_author.late_arriving_mod      ]  zone=after_game,   priority=90
 ```
+
+Each row is identified by the qualified `<author>.<plugin>` form the engine
+derives from the plugin's manifest (`[plugin].author` + `[plugin].name`); see
+[`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).
 
 This mirrors the SKSE / MO2 / Vortex model. Plugins are rows; the
 sentinel is an immovable divider; users drag freely within their
@@ -84,13 +88,15 @@ listed inherit author defaults.
 # Plugins not listed get author-default position + priority.
 
 [[plugin]]
-name      = "kcdx.bugsplat-filename-fix"
+# Identify the plugin by its qualified <author>.<plugin> form, mirroring how
+# every other shared-namespace surface names a plugin (naming-namespaces.md).
+name      = "kcdx_builtin.bugsplat_filename_fix"
 zone      = "before_game"   # one of: before_game, after_game
 priority  = 30               # 0..100; lower applies earlier
 enabled   = true             # set false to skip without renaming folder
 
 [[plugin]]
-name      = "some-author.tweak-mod"
+name      = "some_author.tweak_mod"
 zone      = "after_game"
 priority  = 50
 enabled   = true
@@ -98,8 +104,10 @@ enabled   = true
 
 Per-field rules:
 
-- **`name`** — required. Must match the plugin's `[plugin].name`
-  exactly. A row with no `name` is skipped with a WARN line.
+- **`name`** — required. The qualified `<author>.<plugin>` form (author
+  taken from `[plugin].author`, plugin from `[plugin].name`). A row with
+  no `name`, or a `name` that doesn't match any discovered plugin's
+  qualified form, is skipped with a WARN line.
 - **`zone`** — optional. Missing → author default. Out-of-vocab values
   (anything other than `before_game` / `after_game`) get a WARN and
   fall back to author default.
@@ -179,19 +187,19 @@ Each apply pass emits one line per plugin showing the resolved order:
 
 ```
 load_order: resolved 5 plugin(s) (2 user override row(s) applied)
-  kcdx.bugsplat-filename-fix: zone=before_game priority=30 enabled=true
-  some-author.cool-fix:       zone=before_game priority=50 enabled=true
-  kcdx.cap-04-midhook:        zone=after_game  priority=10 enabled=true
-  some-author.tweak-mod:      zone=after_game  priority=50 enabled=true
-  some-author.late-mod:       zone=after_game  priority=90 enabled=true
+  kcdx_builtin.bugsplat_filename_fix: zone=before_game priority=30 enabled=true
+  some_author.cool_fix:               zone=before_game priority=50 enabled=true
+  ts.cap_04_midhook:                  zone=after_game  priority=10 enabled=true
+  some_author.tweak_mod:              zone=after_game  priority=50 enabled=true
+  some_author.late_mod:               zone=after_game  priority=90 enabled=true
 ```
 
 When a plugin's request is downgraded, the line also names the
 reason:
 
 ```
-  some-author.midhook-plugin: zone=after_game priority=50 enabled=true
-    (plugin 'some-author.midhook-plugin' requested zone=before_game but
+  some_author.midhook_plugin: zone=after_game priority=50 enabled=true
+    (plugin 'some_author.midhook_plugin' requested zone=before_game but
      declares entries (hook/mid_hook/trampoline) that require after_game;
      reassigned to after_game at priority 50)
 ```

@@ -47,17 +47,22 @@ kcdx.on("save_game", function(basename)
 end)
 ```
 
-## Custom events — `"<publisher>:<event>"`
+## Custom events — `"<author>.<plugin>.<event>"`
 
-Any event name containing `:` subscribes to a `kcdx.publish` broadcast. The
-form is the publishing plugin's name, a colon, then the bare event name. The
-callback receives the published payload (by reference).
+Any event name with two dots subscribes to a `kcdx.publish` broadcast. The form
+is the publishing plugin's `<author>.<plugin>` namespace + the bare event name,
+joined by dots (the same canonical separator every other shared name in the
+namespace model uses). The callback receives the published payload (by
+reference).
 
 ```lua
-kcdx.on("violetanvil:outfit_changed", function(payload)
+kcdx.on("redmoon.outfit.outfit_changed", function(payload)
     kcdx.log.info("MYMOD", "slot " .. payload.slot)
 end)
 ```
 
 A bare event name that is neither `"ready"` nor a lifecycle event is rejected
-with a teaching error — custom events are always heard via the `:` form.
+with a teaching error — custom events are always heard via the 3-segment
+`<author>.<plugin>.<event>` dot form. The legacy `<publisher>:<event>` colon
+form is rejected with a teaching error pointing at the dot form (see
+[`publish.md`](publish.md) for the publisher side).

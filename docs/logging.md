@@ -379,9 +379,9 @@ crash_<ts>.zip
 ├── kcdx/
 │   ├── kcdx_<ts>.log                    (engine log)
 │   └── kcdx-dev_<ts>.log                (dev log, if dev mode was on)
-├── plugins/
-│   ├── violetanvil.hello-plugin_<ts>.log
-│   ├── kcdx.cap-01-patch_<ts>.log
+├── plugins/                              (one file per plugin, named <author>.<plugin>_<ts>.log)
+│   ├── violetanvil.hello_plugin_<ts>.log
+│   ├── ts.cap_01_patch_<ts>.log
 │   └── ... (one flat file per plugin)
 ├── game/
 │   └── kcd.log                          (game's own narration log)

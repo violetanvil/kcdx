@@ -22,7 +22,7 @@ bool (*RegisterListener)(kcdxPluginHandle      listener,
 | Arg | Type | Meaning |
 |---|---|---|
 | `listener` | `kcdxPluginHandle` | Your handle. |
-| `sender` | `const char*` | Whose messages to receive. `null` = engine-originated lifecycle messages (the `kcdxMessage_*` catalog — the mirror of Lua's lifecycle events). A specific plugin's stable name = only that plugin's broadcasts (the mirror of Lua's `"<publisher>:<event>"`). |
+| `sender` | `const char*` | Whose messages to receive. `null` = engine-originated lifecycle messages (the `kcdxMessage_*` catalog — the mirror of Lua's lifecycle events). A specific plugin's stable name = only that plugin's broadcasts (the mirror of Lua's `"<author>.<plugin>.<event>"`). |
 | `callback` | `kcdxMessagingCallback` | `void (*)(kcdxMessage* msg)`. |
 
 **Returns:** `bool` — `true` on success, `false` on invalid arguments (e.g. an
