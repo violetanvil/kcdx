@@ -547,8 +547,12 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         // distinguishes engine-reject (zone_gate) from user-disabled
         // cause; PLUGIN_REJECTED was already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
+            // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
+            // form (matches kcdx.plugin.is_rejected lookup shape per
+            // naming-namespaces.md). Pass the composed key here.
             const std::string& rejectReason =
-                zone_gate::RejectReason(p.manifest.name);
+                zone_gate::RejectReason(
+                    p.manifest.author + "." + p.manifest.name);
             if (!rejectReason.empty()) {
                 log::InfoF("Plugin '%s' kcdxPlugin_Preload skipped "
                            "(rejected by zone_gate: %s)",
@@ -595,8 +599,12 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         // Skip-log distinguishes engine-reject (zone_gate) from
         // user-disabled cause; PLUGIN_REJECTED was already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
+            // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
+            // form (matches kcdx.plugin.is_rejected lookup shape per
+            // naming-namespaces.md). Pass the composed key here.
             const std::string& rejectReason =
-                zone_gate::RejectReason(p.manifest.name);
+                zone_gate::RejectReason(
+                    p.manifest.author + "." + p.manifest.name);
             if (!rejectReason.empty()) {
                 log::InfoF("Plugin '%s' kcdxPlugin_Load skipped "
                            "(rejected by zone_gate: %s)",
@@ -706,8 +714,12 @@ void RunPostGameLoad(const kcdxInterface* api) {
         // (zone_gate) from user-disabled cause; PLUGIN_REJECTED was
         // already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
+            // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
+            // form (matches kcdx.plugin.is_rejected lookup shape per
+            // naming-namespaces.md). Pass the composed key here.
             const std::string& rejectReason =
-                zone_gate::RejectReason(p.manifest.name);
+                zone_gate::RejectReason(
+                    p.manifest.author + "." + p.manifest.name);
             if (!rejectReason.empty()) {
                 log::InfoF("Plugin '%s' kcdxPlugin_PostGameLoad skipped "
                            "(rejected by zone_gate: %s)",

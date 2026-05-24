@@ -142,17 +142,28 @@ void EvaluateAllPlugins() {
         if (r.ok) continue;
 
         ++rejected;
-        g_rejected.emplace(m.name, r.reason);
+
+        // kcdx.plugin.is_rejected is queried cross-plugin per
+        // naming-namespaces.md (explicit `<author>.<plugin>` form);
+        // zone_gate's g_rejected map keys on that same form so the
+        // lookup matches. load_order's g_effective stays bare-keyed
+        // (different module, internal state, not author-facing).
+        const std::string fullName = m.author + "." + m.name;
+
+        g_rejected.emplace(fullName, r.reason);
         load_order::SetEngineAccepted(m.name, false);
 
         // Loud (Error) and one line. The next sentence is the FIX — the
         // author should know exactly what to edit and where. Shape per
-        // docs/outstanding-work/restructure-plan.md:165-168.
+        // docs/outstanding-work/restructure-plan.md:165-168. The plugin
+        // name is rendered in the 2-dot `<author>.<plugin>` form to
+        // match the shape authors query with via kcdx.plugin.is_rejected
+        // (consistency between the log line and the lookup key).
         LOG_ERROR("ZONE_GATE",
                   "plugin '%s' rejected: %s. Change [load_order].zone "
                   "to '%s' in this plugin's kcdx.toml to fix. Plugin "
                   "will not load until manifest is fixed.",
-                  m.name.c_str(),
+                  fullName.c_str(),
                   r.reason.c_str(),
                   // The fix is to move to the zone the FIRST-rejecting
                   // API requires. ZoneRejects only fires when the

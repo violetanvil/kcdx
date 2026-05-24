@@ -368,8 +368,11 @@ void RunAll(lua_State* L) {
         // by zone_gate; here we stay at Info to match the existing
         // "disabled via load_order.toml" cadence.
         if (!kcdx::load_order::IsPluginEnabled(m.name)) {
+            // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
+            // form (matches kcdx.plugin.is_rejected lookup shape per
+            // naming-namespaces.md). Pass the composed key here.
             const std::string& rejectReason =
-                kcdx::zone_gate::RejectReason(m.name);
+                kcdx::zone_gate::RejectReason(m.author + "." + m.name);
             if (!rejectReason.empty()) {
                 log::InfoF("Plugin '%s': %zu lua entrypoint(s) skipped "
                            "(rejected by zone_gate: %s)",
@@ -452,8 +455,11 @@ void RunAfterEntrypoints(lua_State* L) {
         // Skip-log distinguishes engine-reject (zone_gate) from
         // user-disabled cause; PLUGIN_REJECTED was already emitted loudly.
         if (!kcdx::load_order::IsPluginEnabled(m.name)) {
+            // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
+            // form (matches kcdx.plugin.is_rejected lookup shape per
+            // naming-namespaces.md). Pass the composed key here.
             const std::string& rejectReason =
-                kcdx::zone_gate::RejectReason(m.name);
+                kcdx::zone_gate::RejectReason(m.author + "." + m.name);
             if (!rejectReason.empty()) {
                 log::InfoF("Plugin '%s': %zu lua_after entrypoint(s) skipped "
                            "(rejected by zone_gate: %s)",
