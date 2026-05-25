@@ -150,6 +150,12 @@ struct ChainEntry {
     std::string  pluginName;        // owning plugin (load-order attribution)
     int          priority   = 50;   // effective load-order priority
     std::string  name;              // author name (diagnostics)
+    // The registry handle id (lua_registry::Entry::handleId) that produced
+    // this entry. Stamped at Add time so Uninstall(handleId) finds the
+    // matching ChainEntry to erase without an extra index. 0 only for
+    // legacy / not-yet-threaded entries (defensive — production Adds carry
+    // the real id from lua_bind_hook::ApplyHookEntry).
+    uint64_t     handleId    = 0;
 };
 
 // One hooked target. Owns the JIT trampoline (runtime_func_t) for its
@@ -198,6 +204,10 @@ struct Chain {
     int                      midCallbackRef = -2;  // LUA_NOREF
     std::string              midPluginName;
     std::string              midName;
+    // The registry handle id that produced this mid chain. Mid is one-
+    // per-VA in v1, so the id lives on Chain itself (not in entries).
+    // Uninstall(handleId) matches against midHandleId for mid chains.
+    uint64_t                 midHandleId = 0;
     // Parallel capture metadata (parsed by the binder). captureNames[i]
     // == "" means positional (handle table keyed 1..N); otherwise the
     // handle table is keyed by name. captureTypes drives per-slot
@@ -1265,7 +1275,8 @@ void SetLuaState(lua_State* L) {
 // holds the detour for the session.
 AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
                  int callbackRef, const std::string& pluginName,
-                 int priority, const std::string& name) {
+                 int priority, const std::string& name,
+                 uint64_t handleId) {
     AddResult res;
     (void)priority;  // v1: one mid hook per VA, so ordering is moot
 
@@ -1320,6 +1331,7 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
     newChain->targetVa       = targetVa;
     newChain->isMid          = true;
     newChain->midCallbackRef = callbackRef;
+    newChain->midHandleId    = handleId;
     newChain->midPluginName  = pluginName;
     newChain->midName        = name;
     newChain->capExprs       = payload.captureExprs;
@@ -1383,7 +1395,8 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
 // collide — the defining property of callsite vs function-entry.
 AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
                       int callbackRef, const std::string& pluginName,
-                      int priority, const std::string& name) {
+                      int priority, const std::string& name,
+                      uint64_t handleId) {
     using Mode = kcdx::hook_payload::Mode;
     AddResult res;
 
@@ -1414,6 +1427,7 @@ AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
         ChainEntry e;
         e.mode = payload.mode; e.callbackRef = callbackRef;
         e.pluginName = pluginName; e.priority = priority; e.name = name;
+        e.handleId = handleId;
         const bool needsCallOriginal = (payload.mode == Mode::Around);
         InsertOrdered(*chain, std::move(e));
         if (needsCallOriginal && !chain->callOriginalThunk &&
@@ -1526,6 +1540,7 @@ AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
     ChainEntry e;
     e.mode = payload.mode; e.callbackRef = callbackRef;
     e.pluginName = pluginName; e.priority = priority; e.name = name;
+    e.handleId = handleId;
     newChain->entries.push_back(std::move(e));
 
     g_chains.emplace(callsiteVa, std::move(newChain));
@@ -1543,14 +1558,16 @@ AddResult Add(lua_State*                             L,
               int                                    callbackRef,
               const std::string&                     pluginName,
               int                                    priority,
-              const std::string&                     name) {
+              const std::string&                     name,
+              uint64_t                               handleId) {
     AddResult res;
     if (L) g_L = L;  // capture the dispatch state on first use
 
     // mode=mid is a different install (mid-function detour + captures, no
     // function signature) — branch before the signature gate.
     if (payload.mode == kcdx::hook_payload::Mode::Mid) {
-        return AddMid(payload, callbackRef, pluginName, priority, name);
+        return AddMid(payload, callbackRef, pluginName, priority, name,
+                      handleId);
     }
 
     // mode="callsite" is a different install (rewrite ONE E8 call's rel32
@@ -1562,7 +1579,8 @@ AddResult Add(lua_State*                             L,
     // signature, so the signature gate below would also pass; routing on
     // the scope keeps the install path explicit).
     if (payload.callsiteScope) {
-        return AddCallsite(payload, callbackRef, pluginName, priority, name);
+        return AddCallsite(payload, callbackRef, pluginName, priority, name,
+                           handleId);
     }
 
     if (!payload.hasSignature) {
@@ -1590,6 +1608,7 @@ AddResult Add(lua_State*                             L,
         ChainEntry e;
         e.mode = payload.mode; e.callbackRef = callbackRef;
         e.pluginName = pluginName; e.priority = priority; e.name = name;
+        e.handleId = handleId;
         const bool needsCallOriginal =
             (payload.mode == kcdx::hook_payload::Mode::Around);
         InsertOrdered(*chain, std::move(e));
@@ -1655,6 +1674,7 @@ AddResult Add(lua_State*                             L,
     ChainEntry e;
     e.mode = payload.mode; e.callbackRef = callbackRef;
     e.pluginName = pluginName; e.priority = priority; e.name = name;
+    e.handleId = handleId;
     newChain->entries.push_back(std::move(e));
 
     g_chains.emplace(targetVa, std::move(newChain));
@@ -1664,6 +1684,87 @@ AddResult Add(lua_State*                             L,
                kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
                pluginName.c_str(), (void*)targetVa, (void*)jit);
     return res;
+}
+
+// Uninstall a previously-Add()'d hook by registry handle id.
+//
+// Option A (locked design): mark the entry removed, leave the trampoline
+// alone for the session. The MinHook detour stays installed; the chain's
+// JIT trampoline keeps existing. The dispatchers are robust to the
+// resulting state — a function-entry chain with empty entries falls
+// through DispatchPre's `chain->entries.empty()` guard at the top of §6
+// (returns true → original runs) and DispatchPost's `!entries.empty()`
+// guard skips the post loop. A mid chain with midCallbackRef == LUA_NOREF
+// falls through MidDispatch's `midCallbackRef == -2` early-return (§6b),
+// leaving g_midSkipOriginal clear so the JIT runs the captured instruction.
+//
+// This sidesteps the race entirely: no g_chains.erase, no MH_RemoveHook
+// call, no chain teardown. The next Add on the same target REUSES the
+// existing chain (entries vector just grows again). Caller updates the
+// registry Entry's status to Status::Removed after this returns true
+// (lua_registry::SetStatus).
+//
+// Idempotent: unknown / already-removed handleId returns true.
+bool Uninstall(uint64_t handleId) {
+    if (handleId == 0) return true;
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+    for (auto& kv : g_chains) {
+        Chain& chain = *kv.second;
+
+        // Mid path: a v1 mid chain stores its single handle on the Chain
+        // itself, not in entries. Match by midHandleId and clear the
+        // callback ref so MidDispatch's NOREF guard kicks in (trampoline
+        // stays — session lifetime).
+        if (chain.isMid && chain.midHandleId == handleId) {
+            lua_State* L = g_L;
+            if (L && chain.midCallbackRef != LUA_NOREF) {
+                luaL_unref(L, LUA_REGISTRYINDEX, chain.midCallbackRef);
+            } else if (!L && chain.midCallbackRef != LUA_NOREF) {
+                // Defensive: shouldn't fire in practice (Uninstall is
+                // reachable only via a Lua handle, which requires the VM
+                // up + g_L bound at first-tick). If it ever does, the
+                // ref leaks into Lua's registry table — log loudly so
+                // it's discoverable rather than silenced (AP9).
+                log::WarnF("hook_chain: Uninstall(%llu) mid: no lua_State "
+                           "for unref (ref=%d leaked)",
+                           (unsigned long long)handleId,
+                           chain.midCallbackRef);
+            }
+            chain.midCallbackRef = LUA_NOREF;
+            chain.midHandleId    = 0;
+            log::InfoF("hook_chain: Uninstall(%llu) mid OK (chain at %p; "
+                       "trampoline retained — session lifetime)",
+                       (unsigned long long)handleId, (void*)kv.first);
+            return true;
+        }
+
+        // Signature / callsite path: find the matching ChainEntry by
+        // handleId and erase it. chain.entries.empty() is already handled
+        // by DispatchPre/Post (return true → original runs). Trampoline
+        // stays — session lifetime.
+        for (auto it = chain.entries.begin();
+             it != chain.entries.end(); ++it) {
+            if (it->handleId != handleId) continue;
+            lua_State* L = g_L;
+            if (L && it->callbackRef != LUA_NOREF) {
+                luaL_unref(L, LUA_REGISTRYINDEX, it->callbackRef);
+            } else if (!L && it->callbackRef != LUA_NOREF) {
+                // Defensive — see the mid branch above.
+                log::WarnF("hook_chain: Uninstall(%llu): no lua_State for "
+                           "unref (ref=%d leaked)",
+                           (unsigned long long)handleId, it->callbackRef);
+            }
+            const size_t remaining = chain.entries.size() - 1;
+            chain.entries.erase(it);
+            log::InfoF("hook_chain: Uninstall(%llu) OK (chain at %p; %zu "
+                       "entr%s remaining; trampoline retained — session "
+                       "lifetime)",
+                       (unsigned long long)handleId, (void*)kv.first,
+                       remaining, remaining == 1 ? "y" : "ies");
+            return true;
+        }
+    }
+    return true;  // idempotent: unknown id is not an error
 }
 
 }  // namespace kcdx::hook_chain

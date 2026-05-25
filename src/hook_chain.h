@@ -65,6 +65,9 @@ struct AddResult {
 // callback closure (ownership transfers to the chain — released on the
 // rare failure path; otherwise lives for the session). `pluginName` /
 // `priority` / `name` drive load-order chain ordering + diagnostics.
+// `handleId` is the registry handle id identifying THIS specific chain
+// entry (Entry::handleId); stamped onto the ChainEntry so a later
+// Uninstall(handleId) finds and removes the right entry.
 //
 // `L` is the live game lua_State (the chain dispatchers invoke callbacks
 // against it). Must be non-null.
@@ -77,7 +80,25 @@ AddResult Add(lua_State*                          L,
               int                                  callbackRef,
               const std::string&                   pluginName,
               int                                  priority,
-              const std::string&                   name);
+              const std::string&                   name,
+              uint64_t                             handleId);
+
+// Uninstall a previously-Add()'d hook by registry handle id. Removes the
+// entry from its chain. The chain's MinHook detour STAYS installed for
+// the session (matching the documented "hooks live for the session"
+// engine stance at hook_engine.cpp:39-45 and hook_chain.cpp:155-158);
+// the now-empty chain is a no-op shim that dispatches straight to the
+// original. The next Add on this target reuses the existing trampoline.
+//
+// Idempotent: uninstalling an unknown / already-removed handleId is
+// safe and returns true. Safe to call from any context (g_chainsMu
+// guards the entries-vector mutation; the dispatcher is robust to
+// chain.entries.empty()).
+//
+// The caller (Lua handle:uninstall, future C++ kcdxHookInterface::
+// Uninstall) is responsible for updating the registry Entry's status
+// to Status::Removed via lua_registry::SetStatus after this returns true.
+bool Uninstall(uint64_t handleId);
 
 // Set the live game lua_State the chain dispatchers run callbacks
 // against. Add() also captures it on first use; this is here so the

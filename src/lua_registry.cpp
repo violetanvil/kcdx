@@ -102,6 +102,11 @@ int H_applied(lua_State* L) {
     switch (s) {
         case Status::Applied: lua_pushboolean(L, 1); return 1;
         case Status::Failed:  lua_pushboolean(L, 0); return 1;
+        // Uninstall flips a previously-Applied (or Pending/Failed) entry to
+        // Removed. The author contract is "applied() returns false after
+        // uninstall" — explicit boolean false, not nil (nil means Pending
+        // and is reserved for "apply pass hasn't reached this yet").
+        case Status::Removed: lua_pushboolean(L, 0); return 1;
         case Status::Pending:
         default:              lua_pushnil(L);         return 1;
     }
@@ -144,6 +149,7 @@ int H_tostring(lua_State* L) {
             case Status::Pending: statusStr = "pending"; break;
             case Status::Applied: statusStr = "applied"; break;
             case Status::Failed:  statusStr = "failed";  break;
+            case Status::Removed: statusStr = "removed"; break;
         }
     }
     lua_pushfstring(L, "kcdx.handle<id=%d name=%s status=%s>",
@@ -274,6 +280,11 @@ uint64_t Append(Entry&& e, std::string* err_out) {
     g_byHandleId.emplace(id, g_entries.size() - 1);
 
     Entry& back = g_entries.back();
+    // Stamp the entry's own id onto itself. Per-kind install paths that
+    // copy data out of the Entry (hook_chain::Add building a ChainEntry)
+    // carry this id so later Uninstall(handleId) finds the right entry
+    // without a registry round-trip.
+    back.handleId = id;
     log::InfoF("lua_registry: queued kind=%d name='%s' plugin='%s' "
                "site=%s:%d (handle=%llu)",
                kindIdx,
@@ -297,6 +308,20 @@ Entry* FindMut(uint64_t handleId) {
     auto it = g_byHandleId.find(handleId);
     if (it == g_byHandleId.end()) return nullptr;
     return &g_entries[it->second];
+}
+
+void SetStatus(uint64_t handleId, Status s, const std::string& reason) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    auto it = g_byHandleId.find(handleId);
+    if (it == g_byHandleId.end()) return;
+    Entry& e = g_entries[it->second];
+    // The `reason` field is only written under the queue mutex by the
+    // apply pipeline + this helper; readers (H_reason) read it without the
+    // lock but only after observing a non-Pending status via acquire. Set
+    // reason BEFORE the status release-store so a reader that sees the new
+    // status also sees the new reason (release/acquire ordering).
+    if (!reason.empty()) e.reason = reason;
+    e.status.store(s, std::memory_order_release);
 }
 
 void RegisterApplyHandler(Kind k, ApplyHandler fn) {

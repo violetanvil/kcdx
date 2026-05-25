@@ -52,16 +52,29 @@ enum class Kind {
 //   Applied  — apply succeeded; handle is "live".
 //   Failed   — apply rejected (locator failed, byte mismatch, conflict
 //              lost, etc.); see `reason` for diagnostic.
+//   Removed  — Set by hook_chain::Uninstall (and future per-kind Uninstall
+//              paths) after the entry's installed-side has been logically
+//              removed. An Uninstall on an entry whose status is Pending or
+//              Failed is still valid — it logically removes from the
+//              registry's perspective. handle:applied() returns false for
+//              Removed.
 enum class Status : uint8_t {
     Pending = 0,
     Applied = 1,
     Failed  = 2,
+    Removed = 3,
 };
 
 // One queued registration. Built by binders, stored in the per-zone
 // queue, walked by the apply pass.
 struct Entry {
     Kind kind = Kind::Bytes;
+    // The stable registry handle id assigned to this entry by Append (>= 1).
+    // Mirrored onto the entry itself so per-kind install paths (e.g.
+    // hook_chain::Add) can carry it onto their own data structures (a
+    // ChainEntry) — later Uninstall(handleId) finds the entry by id without
+    // a registry round-trip.
+    uint64_t handleId = 0;
     // The plugin that owns this registration. Empty when called from
     // ad-hoc Lua (KCDX.ScanAndWrite-style; legacy path). Used by the
     // apply pass to attribute log lines and conflict resolution.
@@ -97,13 +110,15 @@ struct Entry {
     // entries never move after Append returns).
     Entry() = default;
     Entry(const Entry& o)
-        : kind(o.kind), pluginName(o.pluginName), priority(o.priority),
+        : kind(o.kind), handleId(o.handleId),
+          pluginName(o.pluginName), priority(o.priority),
           name(o.name), payload(o.payload),
           status(o.status.load(std::memory_order_relaxed)),
           reason(o.reason),
           callSiteFile(o.callSiteFile), callSiteLine(o.callSiteLine) {}
     Entry(Entry&& o) noexcept
-        : kind(o.kind), pluginName(std::move(o.pluginName)),
+        : kind(o.kind), handleId(o.handleId),
+          pluginName(std::move(o.pluginName)),
           priority(o.priority), name(std::move(o.name)),
           payload(std::move(o.payload)),
           status(o.status.load(std::memory_order_relaxed)),
@@ -134,6 +149,15 @@ uint64_t Append(Entry&& e, std::string* err_out);
 // container — see implementation).
 const Entry* Find(uint64_t handleId);
 Entry*       FindMut(uint64_t handleId);
+
+// Set the lifecycle status (and optionally the diagnostic reason) of the
+// entry with the given handle id. Intended caller: hook_chain::Uninstall
+// (and future per-kind Uninstall paths) flipping an entry to
+// Status::Removed after the installed-side has been logically removed.
+// The existing apply pipeline writes status atomically itself; standardizing
+// via this helper keeps the cross-TU write surface explicit. No-op if the
+// handle is unknown.
+void SetStatus(uint64_t handleId, Status s, const std::string& reason = "");
 
 // Per-kind apply handler. The handler is invoked once per matching
 // entry during ApplyZone, in unified load order. It updates the

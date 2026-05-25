@@ -190,9 +190,12 @@ bool ApplyHookEntry(kcdx::lua_registry::Entry& entry,
 
     // L is captured by hook_chain at first-tick (SetLuaState) and again
     // on first Add; pass nullptr here — Add uses the already-bound state.
+    // handleId is the registry id of THIS entry — threaded into the
+    // ChainEntry so a later kcdx.hook_chain::Uninstall(handleId) can find
+    // and remove it.
     kcdx::hook_chain::AddResult r = kcdx::hook_chain::Add(
         /*L=*/nullptr, *p, p->callbackRef, entry.pluginName, priority,
-        entry.name);
+        entry.name, entry.handleId);
 
     if (!r.ok) {
         reason_out = r.reason;
