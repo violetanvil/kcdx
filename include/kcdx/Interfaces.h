@@ -159,6 +159,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Memory         = 6,  // Phase 5h — DLL-facing memory I/O
     kcdxInterface_Console        = 7,  // Phase 7 — IConsole::AddCommand thunk
     kcdxInterface_Hook           = 8,  // Phase 3 — C++ kcdx.hook mirror
+    kcdxInterface_Bytes          = 9,  // Phase 3 sub-2 — C++ kcdx.bytes mirror
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -1642,6 +1643,177 @@ typedef struct kcdxHookInterface {
     // built against an older version reads the prefix members at their
     // original offsets, so appending cannot shift them (AP11).
 } kcdxHookInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxBytesInterface — C++ DLL mirror of the Lua kcdx.bytes surface
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Bytes,
+// kcdxBytesInterface_Version). C++ DLLs register byte rewrites through this
+// interface; the surface is feature-parity with the Lua kcdx.bytes
+// (lua-api-surface.md: ONE model, two languages, full parity at all times).
+//
+// SHAPE — ONE operation, not sub-verbs. Unlike kcdxHookInterface (six install
+// methods, one per hook variant), a byte rewrite has a SINGLE operation: write
+// `replacement` at a located site. There is therefore ONE Register method
+// taking an options struct, plus the same query quartet kcdxHookInterface
+// exposes (IsApplied / GetReason / GetName / Uninstall). The Lua surface is the
+// single `kcdx.bytes{...}` call returning a handle with :applied()/:reason()/
+// :name(); this interface mirrors it one-to-one.
+//
+// DEFERRED-APPLY CONTRACT — same model as kcdxHookInterface. Register validates
+// IMMEDIATELY (locator format, exactly-one-locator, replacement present,
+// original==replacement length) and returns a handle; a ZERO handle means
+// registration FAILED at Register time (the engine logs the teaching reason to
+// both the engine log and the calling plugin's log). A NON-ZERO handle does
+// NOT yet mean APPLIED: the actual VirtualProtect + memcpy is DEFERRED to the
+// end-of-zone apply pass so the conflict engine sees every plugin's intent
+// before any byte is written. Query IsApplied(h) after the apply pass to
+// confirm; GetReason(h) gives the failure reason for a registered rewrite that
+// later failed to apply (locator miss, byte-mismatch, etc.).
+//
+// COEXIST WITH kcdxMemoryInterface::WriteBytes. This interface is the DEFERRED,
+// locator-based, conflict-resolved registration path. For an IMMEDIATE raw
+// write at an address you already hold (no locator, no conflict arbitration,
+// no deferral), use kcdxMemoryInterface::WriteBytes / ReadBytes instead — that
+// surface is unchanged and unaffected by this interface.
+//
+// The disassembler test (cornerstones.md / AP12). The COMMON path is
+// opts->target carrying a NAME the engine resolves to an address (an Address
+// Library seed entry, an author-declared target, or the explicit prefixed
+// cross-plugin form). The author types a name and never hand-writes hex.
+// The pattern / addressId / targetSymbol locator fields are EXPERT/ADVANCED
+// escape hatches for sites the name table cannot yet name; each is labeled
+// `[advanced]` in-place below.
+
+#define kcdxBytesInterface_Version 1u
+
+// Opaque handle returned by Register. 0 = registration failed at Register time
+// (the engine logs the teaching error to both the engine log and the calling
+// plugin's log). A NON-ZERO handle does NOT yet mean applied: kcdx defers apply
+// to the end-of-zone pass (deferred-apply model); query IsApplied(h) after the
+// apply pass to confirm. Stable for the process lifetime; never reused; safe to
+// copy by value. Shares the registry handle id space with kcdxHookHandle
+// (lua_registry::Append returns uint64_t).
+typedef uint64_t kcdxBytesHandle;
+
+// Options for a byte-rewrite registration. Mirrors the Lua kcdx.bytes named
+// table EXACTLY (src/lua_bind_bytes.cpp Lua_Bytes). POD, C-ABI shape (no
+// std::string / std::vector — sentinel values for unset: null for strings,
+// 0 for numerics).
+//
+// LOCATOR CONTRACT — EXACTLY ONE locator must be set (exactly one of target /
+// pattern / addressId / targetSymbol non-null/non-zero). `target` is the COMMON
+// PATH — a NAME the engine resolves to an address (the disassembler test,
+// cornerstones.md / AP12). The other three are the labeled EXPERT/ADVANCED
+// escape hatch for sites the name table cannot yet name. Setting zero locators,
+// or more than one, is a Register-time rejection with a teaching error.
+typedef struct kcdxBytesOptions {
+    // --- Identity ---------------------------------------------------------
+    // Optional. `name` defaults to "cpp_bytes" when null (the engine
+    // substitutes it); supply a stable, human-readable string when you want
+    // log lines + cross-plugin references tagged with your own name.
+    const char* name;          // optional — null = engine default "cpp_bytes"
+    const char* description;   // optional — freeform; may be null
+
+    // --- Locator (EXACTLY ONE — `target` is the common path; the rest are
+    //     the labeled EXPERT/ADVANCED escape hatch) -----------------------
+    // The COMMON PATH. A name the engine resolves to an address via
+    // address_library::ResolveByName(target, owningPlugin) with self > engine
+    // > other precedence (naming-namespaces.md). An Address Library seed
+    // entry ("kcdx.<seedname>"), an author-declared target, the bare own-plugin
+    // name, or the explicit cross-plugin form ("<author>.<plugin>.<bare>").
+    // The author types one line and never hand-writes hex. null = unset.
+    const char* target;
+    // The three EXPERT/ADVANCED locators — use ONLY when the target cannot yet
+    // be named. The author identifies the site ONCE via one of these, names it,
+    // and refers to it by name thereafter (cornerstones.md "declare once /
+    // share / coexist").
+    const char* pattern;       // [advanced] AOB hex at the rewrite site; null = unset
+    uint64_t    addressId;     // [advanced] Address-Library numeric ID; 0 = unset
+    const char* targetSymbol;  // [advanced] cross-plugin published-symbol lookup; null = unset
+
+    // --- The rewrite ------------------------------------------------------
+    // `replacement` is REQUIRED — the bytes to write (hex string,
+    // e.g. "90 90 90"). `original` is optional verify bytes; when set it must
+    // equal the replacement byte length (Register rejects a mismatch) and the
+    // apply pass refuses to write if the site doesn't currently match.
+    const char* replacement;   // REQUIRED — bytes to write; null/empty = rejected
+    const char* original;      // optional — verify bytes; null = no verify
+
+    // --- Refinements ------------------------------------------------------
+    const char* module;        // default "WHGame.dll" (engine substitutes if null)
+    int         offset;        // default 0 — applied after locator resolution
+    bool        idempotent;    // default true — skip re-apply if bytes already match
+    const char* context;       // [advanced] AOB disambiguation for `pattern`; null = none
+    const char* anchorString;  // [advanced] string anchor for `pattern`; null = none
+
+    // --- Owning plugin identity (naming-namespaces.md) -------------------
+    // REQUIRED. Drives self > engine > other-plugin precedence for the
+    // bare-name form of `target`. The author's own plugin handle (from
+    // kcdxInterface::GetPluginHandle). Pass kcdxInvalidPluginHandle (or 0) to
+    // disable self-tier resolution (engine-seed + other-plugin only, anonymous
+    // path). The planned wrapper threads this for you; raw-interface callers
+    // pass their own handle directly.
+    kcdxPluginHandle owningPlugin;
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New options fields go HERE, never mid-struct. Same AP11 discipline as
+    // kcdxHookOptions / the kcdxBytesInterface vtable: a mid-struct insert
+    // shifts every subsequent field's offset; a plugin DLL compiled against
+    // the older header would read through the wrong offset → ACCESS_VIOLATION.
+} kcdxBytesOptions;
+
+typedef struct kcdxBytesInterface {
+    // ------------------------------------------------------------------
+    // Register a byte rewrite. Mirrors the Lua kcdx.bytes{...} call.
+    //
+    // Validates the options IMMEDIATELY (exactly-one-locator, replacement
+    // present, original==replacement length) and returns a handle to keep for
+    // IsApplied / GetReason. A ZERO handle = registration FAILED at Register
+    // time; the teaching reason is auto-logged at Error level to the engine
+    // log AND the calling plugin's log (raw-interface callers get the same
+    // loud-on-failure behavior as the planned wrapper users). A NON-ZERO
+    // handle does NOT yet mean APPLIED — the VirtualProtect + memcpy is
+    // deferred to the end-of-zone apply pass; use IsApplied(h) after it to
+    // confirm, GetReason(h) for the failure reason of a rewrite that
+    // registered but later failed to apply.
+    kcdxBytesHandle (*Register)(const kcdxBytesOptions* opts);
+
+    // ------------------------------------------------------------------
+    // Query / control methods on a handle.
+    // ------------------------------------------------------------------
+
+    // Query whether the apply pass has written the rewrite described by `h`.
+    // Returns false for an unknown handle, a still-pending handle (apply pass
+    // hasn't run yet), or a handle that failed to apply. Mirrors the Lua
+    // `h:applied()` query.
+    bool (*IsApplied)(kcdxBytesHandle h);
+
+    // Failure reason for a rewrite that did not apply. Returns null when `h`
+    // is valid AND applied; otherwise returns a teaching-error string
+    // explaining what went wrong + the fix (locator miss, byte-mismatch,
+    // wrong game version, etc.). String is owned by the engine and valid for
+    // the process lifetime. Mirrors the Lua `h:reason()` query.
+    const char* (*GetReason)(kcdxBytesHandle h);
+
+    // Author-supplied (or engine-default "cpp_bytes") rewrite name. Returns
+    // null for an unknown handle. String is owned by the engine and valid for
+    // the lifetime of the handle. Mirrors the Lua `h:name()` query.
+    const char* (*GetName)(kcdxBytesHandle h);
+
+    // Uninstall the rewrite described by `h`. A byte rewrite has NO revert
+    // (the original bytes are not retained for restore), so this is DECLARED
+    // for kcdxHookInterface signature parity but returns false + logs a
+    // teaching line explaining bytes cannot be reverted (use a hook for
+    // reversible interception). Mirrors the Lua `h:uninstall()` method.
+    bool (*Uninstall)(kcdxBytesHandle h);
+
+    // --- APPEND-ONLY BELOW (kcdxBytesInterface_Version >= 2) --------------
+    // New members go HERE, at the END, never mid-struct: a plugin DLL built
+    // against an older version reads the prefix members at their original
+    // offsets, so appending cannot shift them (AP11).
+} kcdxBytesInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)
