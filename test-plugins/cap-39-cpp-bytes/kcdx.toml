@@ -1,0 +1,60 @@
+# CAP-39 — kcdxBytesInterface (C++ mirror of kcdx.bytes) end-to-end.
+#
+# Phase 3 sub-2 step 4 (FINAL) — the verification plugin that proves
+# kcdxBytesInterface v1 works for a real C++ DLL author. Steps 1-3 wired the
+# ABI: 90fd1cf (header decl), 14a0333 (src/bytes_interface.cpp +
+# QueryInterface wire), 16f0c98 (K.bytes accessor on Kcdx.h). This plugin is
+# the FIRST non-Lua-binder consumer of that surface and the C++ PEER of
+# cap-01's Lua kcdx.bytes coverage (parity-is-tested, lua-api-surface.md —
+# both surfaces of the byte-rewrite capability now ship a regression).
+#
+# Shape: NATIVE C++ DLL plugin. Init the K wrapper, register a byte rewrite
+# via K.bytes->Register against a NAMED Address Library target (the
+# disassembler-test common path — a name, not hex), and assert at the
+# after_game C++ export (kcdxPlugin_PostGameLoad, fired after
+# ApplyZone(AfterGame) and before kcdxMessage_InputLoaded; cap-29 / cap-36
+# pattern). There is NO raw `address` locator on kcdxBytesOptions, and the
+# pattern scanner scans executable sections only (so a self-host marker in
+# the plugin's own .data is unscannable) — see cap-39.cpp's design note. The
+# robust observable is the SAME verified-safe rewrite cap-01 proves
+# (44 8A F0 -> 45 31 F6 at outfit_swap_callsite_aob, id 1004), driven through
+# the C++ kcdxBytesInterface instead of Lua kcdx.bytes — the direct parity
+# mirror. The same-replacement coexistence with cap-01 is conflict_engine
+# WriteOnWriteFull (NOT a rejection — both apply, idempotent-skip on the
+# second), so the observable holds in every apply interleaving.
+#
+# The 2 rows:
+#
+#   * CAP-39-cpp-bytes-register            The deferred-apply-through-C++
+#       proof. Register returns a non-zero handle at Load; at PostGameLoad
+#       IsApplied(handle)==true AND ReadBytes(site, 3) reads `45 31 F6`. A
+#       broken Register (zero handle / not applied / bytes unchanged) => FAIL.
+#
+#   * CAP-39-cpp-bytes-uninstall-rejected  The no-revert teaching (peer of
+#       cap-35's bytes-error row). Uninstall(handle)==false (bytes have no
+#       revert path), IsApplied stays true, and the site stays `45 31 F6`. A
+#       revert would be AP13. Falsifiable: Uninstall true or a reverted site
+#       => FAIL.
+#
+# Test mode: boot-only. Both rows self-verify at kcdxPlugin_PostGameLoad; an
+# InputLoaded backstop (cap-29 / cap-36 design) reports a loud FAIL on both
+# rows if the after-phase export never fired. NO console gestures, NO
+# save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_39_cpp_bytes"
+display_name        = "CAP-39 kcdxBytesInterface (C++)"
+author              = "ts"
+description         = "C++ DLL exercising kcdxBytesInterface v1 end-to-end: K.bytes->Register deferred byte rewrite by named target + IsApplied + ReadBytes observable, and the Uninstall-no-revert teaching. C++ peer of cap-01's Lua kcdx.bytes."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-39-cpp-bytes-register",
+                       "CAP-39-cpp-bytes-uninstall-rejected"]
+
+[entrypoints]
+dll = "cap-39.dll"

@@ -115,7 +115,8 @@ spellings noted where they differ:
 - **deferred-apply model** — `kcdx.hook`/`kcdx.bytes` queue intent and install
   in one end-of-zone apply pass. The built `kcdxMemoryInterface::WriteBytes`
   applies *immediately* (it is the runtime byte-write peer); the deferred,
-  conflict-resolved registration model is the built `kcdxHookInterface` surface.
+  conflict-resolved registration model is the built `kcdxHookInterface` (hooks)
+  and `kcdxBytesInterface` (byte rewrites) surfaces.
 
 - **co-save** — a `.kcdx` sidecar holding per-plugin save data. C++ spelling:
   `kcdxSerializationInterface` (built, Phase 6). See [cosave.md](cosave.md).
@@ -136,7 +137,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | the DLL plugin shell (`kcdxPlugin_Load`, `[entrypoints] dll`, QueryInterface handshake) | Built | the plugin shell / manifest | [plugin-shell.md](plugin-shell.md) |
 | `kcdxHookInterface` (function interception) | Built | `kcdx.hook` | [hook.md](hook.md) |
 | `Kcdx.h` empowered wrapper (`kcdx::hook::Before/After/Around/Replace<Sig,&fn>`, `struct Kcdx`) | Single-surface | `kcdx.hook` sub-verbs (Lua's native peer; no mangled ABI to hide) | [wrapper.md](wrapper.md) |
-| `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (byte rewrite) | Built (runtime) / locator-mirror **NYI** | `kcdx.bytes` | [bytes.md](bytes.md) |
+| `kcdxBytesInterface::Register` (deferred locator-based byte rewrite) + `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (immediate raw write) | Built | `kcdx.bytes` | [bytes.md](bytes.md) |
 | `kcdxMessagingInterface::RegisterListener` (event/lifecycle) | Built | `kcdx.on` | [on.md](on.md) |
 | `kcdxConsoleInterface::RegisterCommand`/`GetArg*` (console command) | Built | `kcdx.command` | [command.md](command.md) |
 | `kcdxMessagingInterface::Dispatch` (custom event broadcast) | Built | `kcdx.publish` | [publish.md](publish.md) |
