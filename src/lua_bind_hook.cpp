@@ -948,10 +948,25 @@ int Lua_Hook(lua_State* L) {
 
 }  // namespace
 
-void bind(lua_State* L) {
+// Register the Kind::Hook deferred-apply handler. ENGINE state, not
+// Lua-surface state — it makes Kind::Hook appliable regardless of which
+// surface (Lua kcdx.hook or the C++ kcdxHookInterface) queued the entry.
+// Called at engine init (dllmain.cpp, before DiscoverAndLoad), NOT from
+// bind(): bind() runs at first-update-tick, too LATE for a C++ plugin's
+// kcdxPlugin_Load (DllMain-phase) whose kcdxHookInterface thunk queues a
+// Kind::Hook entry — lua_registry::Append rejects any Kind with no handler.
+// ApplyHookEntry is the TU-local static above; RegisterHandlers() sees it
+// from the same TU. Registers exactly once (no double-register: the call
+// MOVED out of bind(), it is not duplicated there).
+void RegisterHandlers() {
     kcdx::lua_registry::RegisterApplyHandler(
         kcdx::lua_registry::Kind::Hook, &ApplyHookEntry);
+}
 
+void bind(lua_State* L) {
+    // Lua-surface wiring ONLY. The Kind::Hook apply handler is registered
+    // earlier, at engine init, by RegisterHandlers() — by the time bind()
+    // runs (first-update-tick) the handler is already in place.
     kcdx::lua_registry::EnsureHandleMetatable(L);
 
     lua_pushcfunction(L, Lua_Hook);

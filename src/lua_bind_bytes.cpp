@@ -401,12 +401,23 @@ int Lua_Bytes(lua_State* L) {
 
 }  // namespace
 
-void bind(lua_State* L) {
-    // Register the apply handler ONCE on first bind. Subsequent calls
-    // (e.g. a re-bind during a Lua-state reset) overwrite — same
-    // function pointer, no harm.
+// Register the Kind::Bytes deferred-apply handler. ENGINE state, not
+// Lua-surface state — it makes Kind::Bytes appliable regardless of which
+// surface queued the entry. Called at engine init (dllmain.cpp, before
+// DiscoverAndLoad), NOT from bind(): a future kcdxBytesInterface installing
+// a byte-patch at C++ kcdxPlugin_Load time (DllMain-phase) would hit the
+// same wall the Kind::Hook handler did (lua_registry::Append rejects any
+// Kind with no handler; bind() runs too late at first-update-tick).
+// ApplyBytesEntry is the TU-local static above; RegisterHandlers() sees it
+// from the same TU. The call MOVED out of bind() — it is not duplicated.
+void RegisterHandlers() {
     kcdx::lua_registry::RegisterApplyHandler(
         kcdx::lua_registry::Kind::Bytes, &ApplyBytesEntry);
+}
+
+void bind(lua_State* L) {
+    // Lua-surface wiring ONLY. The Kind::Bytes apply handler is registered
+    // earlier, at engine init, by RegisterHandlers().
 
     // Make sure the registry handle metatable exists before any
     // kcdx.bytes call can produce a handle userdata.

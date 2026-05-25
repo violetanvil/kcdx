@@ -8,6 +8,8 @@
 #include "ldr_notify.h"
 #include "load_order.h"
 #include "log.h"
+#include "lua_bind_bytes.h"   // RegisterHandlers() — Kind::Bytes apply handler
+#include "lua_bind_hook.h"    // RegisterHandlers() — Kind::Hook apply handler
 #include "paths.h"
 #include "plugin_loader.h"
 #include "save_load_hooks.h"
@@ -104,6 +106,18 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // path (messaging::FireEngineMessage calls serialization
     // synchronously after firing to plugin listeners).
     kcdx::serialization::Init();
+
+    // Register the deferred-apply handlers for the registry Kinds the C++
+    // plugin interfaces queue (Kind::Hook via kcdxHookInterface, Kind::Bytes
+    // via the future kcdxBytesInterface). These MUST run before
+    // DiscoverAndLoad: a C++ DLL's kcdxPlugin_Load (driven below) can install
+    // a hook through kcdxHookInterface, which queues a Kind::Hook entry into
+    // lua_registry — and lua_registry::Append rejects any Kind with no
+    // registered handler. The Lua-side bind() (RegisterKcdxTable, first-update-
+    // tick) is too LATE for the C++ Load-time caller; these handlers are engine
+    // state, not Lua-surface state, so they register at engine init.
+    kcdx::lua_bind_hook::RegisterHandlers();
+    kcdx::lua_bind_bytes::RegisterHandlers();
 
     // Plugin DLL discovery + load. Runs after the engine's own hooks are
     // installed so plugins can rely on the MinHook + lua_State infrastructure
