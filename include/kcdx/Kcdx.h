@@ -76,7 +76,7 @@
 // when named: `static constexpr auto f = +[](int& s){ s += 1; };
 // Before<int(int), f>(K, "IsInCombat");`
 //
-// Init fetches the shipped QueryInterface set (Hook / Memory / Console /
+// Init fetches the shipped QueryInterface set (Hook / Bytes / Memory / Console /
 // Trampoline / Messaging / Task / Scripting / Serialization), resolves the
 // plugin's own handle via api->GetPluginHandle(plugin) (the BARE [plugin].name,
 // matching plugin_loader's FindByName), and builds K.log from that handle.
@@ -101,6 +101,7 @@ struct Kcdx {
     // Shipped sub-interface pointers (null if the running engine doesn't
     // implement that interface/version).
     const kcdxHookInterface*          hook         = nullptr;  // floor-4 hook drop-down
+    const kcdxBytesInterface*         bytes        = nullptr;  // kcdx.bytes peer
     const kcdxMemoryInterface*        memory       = nullptr;
     const kcdxConsoleInterface*       console      = nullptr;
     const kcdxTrampolineInterface*    code         = nullptr;  // kcdx.code peer
@@ -130,6 +131,8 @@ struct Kcdx {
 
         hook = static_cast<const kcdxHookInterface*>(
             api->QueryInterface(kcdxInterface_Hook, kcdxHookInterface_Version));
+        bytes = static_cast<const kcdxBytesInterface*>(
+            api->QueryInterface(kcdxInterface_Bytes, kcdxBytesInterface_Version));
         memory = static_cast<const kcdxMemoryInterface*>(
             api->QueryInterface(kcdxInterface_Memory, kcdxMemoryInterface_Version));
         console = static_cast<const kcdxConsoleInterface*>(

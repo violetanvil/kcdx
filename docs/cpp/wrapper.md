@@ -59,6 +59,7 @@ struct Kcdx {
     const char*                    author;         // stashed [plugin].author
     const char*                    plugin;         // stashed [plugin].name
     const kcdxHookInterface*       hook;           // floor-4 hook drop-down
+    const kcdxBytesInterface*      bytes;          // kcdx.bytes peer
     const kcdxMemoryInterface*     memory;
     const kcdxConsoleInterface*    console;
     const kcdxTrampolineInterface* code;           // kcdx.code peer
