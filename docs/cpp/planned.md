@@ -25,8 +25,6 @@ API parity** ([`docs/outstanding-work/restructure-plan.md`](../outstanding-work/
 parity as the bar; each NYI marker below is discharged when its Phase 3
 interface ships and is verified callable:
 
-- **`kcdxHookInterface`** (↔ `kcdx.hook`) — function interception. See
-  [hook.md](hook.md).
 - **The locator-based deferred byte-rewrite mirror** (↔ `kcdx.bytes`) — the raw
   runtime write (`kcdxMemoryInterface::WriteBytes`) is built; the
   locator/conflict-engine registration model is NYI. See [bytes.md](bytes.md).
@@ -60,6 +58,11 @@ interface ships and is verified callable:
 by-name resolution overload for self > engine > other precedence — is now
 **BUILT** and documented in [addr.md](addr.md), alongside the sibling
 `ResolveSymbolAs(handle, name)`. No longer NYI; struck from this list.)
+
+(`kcdxHookInterface` (↔ `kcdx.hook`, function interception) is now **BUILT**
+(v1, verified by `cap-36-cpp-hook-interface`) and documented in
+[hook.md](hook.md), with the `Kcdx.h` empowered wrapper on top in
+[wrapper.md](wrapper.md). No longer NYI; struck from this list.)
 
 ## Genuinely not built on either surface
 

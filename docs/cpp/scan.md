@@ -16,7 +16,7 @@ capability while the engine catches up.
 
 Like Lua's `kcdx.scan`, the expert hand-written `pattern` is the **labelled
 expert AOB hatch** here too, by design — not the common path. The everyday way
-to intercept a function is the named-target hook (the NYI `kcdxHookInterface`,
+to intercept a function is the named-target hook (the built `kcdxHookInterface`,
 ↔ `kcdx.hook{ target = "<name>" }`), where the engine resolves address **and**
 verified ABI from a name. `kcdxScanInterface` is the workbench an expert uses to
 discover and validate an un-named site they will then name.

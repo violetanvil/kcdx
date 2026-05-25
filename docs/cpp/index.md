@@ -92,7 +92,7 @@ spellings noted where they differ:
   your own via `api->GetPluginHandle("your.name")` (the `[plugin].name` from
   your manifest). `kcdxInvalidPluginHandle` is the lookup-miss sentinel.
   (Distinct from the Lua *handle* userdata that `kcdx.hook`/`kcdx.bytes`
-  return — that is the NYI `kcdxHookInterface`'s return type; see
+  return — the built `kcdxHookInterface` returns a `kcdxHookHandle`; see
   [hook.md](hook.md).)
 
 - **lifecycle event / message** — a named moment in the game's run. C++ spelling:
@@ -104,7 +104,7 @@ spellings noted where they differ:
   Lua. C++ `PostGameLoad` exports run in load-order priority.
 
 - **locator / signature / hook mode** — how a hook finds its target and the ABI
-  string the engine carries for it. These are the NYI `kcdxHookInterface`
+  string the engine carries for it. These are the built `kcdxHookInterface`
   vocabulary (the C++ mirror of the Lua `target`/`signature`/`before`/… surface);
   see [hook.md](hook.md).
 
@@ -115,7 +115,7 @@ spellings noted where they differ:
 - **deferred-apply model** — `kcdx.hook`/`kcdx.bytes` queue intent and install
   in one end-of-zone apply pass. The built `kcdxMemoryInterface::WriteBytes`
   applies *immediately* (it is the runtime byte-write peer); the deferred,
-  conflict-resolved registration model is the NYI `kcdxHookInterface` surface.
+  conflict-resolved registration model is the built `kcdxHookInterface` surface.
 
 - **co-save** — a `.kcdx` sidecar holding per-plugin save data. C++ spelling:
   `kcdxSerializationInterface` (built, Phase 6). See [cosave.md](cosave.md).
@@ -134,7 +134,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | C++ surface | Status | Lua counterpart | File |
 |---|---|---|---|
 | the DLL plugin shell (`kcdxPlugin_Load`, `[entrypoints] dll`, QueryInterface handshake) | Built | the plugin shell / manifest | [plugin-shell.md](plugin-shell.md) |
-| `kcdxHookInterface` (function interception) | **NYI** | `kcdx.hook` | [hook.md](hook.md) |
+| `kcdxHookInterface` (function interception) | Built | `kcdx.hook` | [hook.md](hook.md) |
 | `Kcdx.h` empowered wrapper (`kcdx::hook::Before/After/Around/Replace<Sig,&fn>`, `struct Kcdx`) | Single-surface | `kcdx.hook` sub-verbs (Lua's native peer; no mangled ABI to hide) | [wrapper.md](wrapper.md) |
 | `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (byte rewrite) | Built (runtime) / locator-mirror **NYI** | `kcdx.bytes` | [bytes.md](bytes.md) |
 | `kcdxMessagingInterface::RegisterListener` (event/lifecycle) | Built | `kcdx.on` | [on.md](on.md) |

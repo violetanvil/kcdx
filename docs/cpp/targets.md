@@ -22,7 +22,7 @@ The Lua surface has two halves; the C++ mirror owes both:
 1. **Declaring a target.** Lua reads a `targets.toml` sidecar; the C++ author
    declares targets through a registration call on a planned interface (the C++
    spelling of the sidecar — same model, declared in code instead of TOML).
-2. **Referring to one by name.** The NYI [`kcdxHookInterface`](hook.md) and the
+2. **Referring to one by name.** The built [`kcdxHookInterface`](hook.md) and the
    NYI locator-based byte-rewrite mirror ([bytes.md](bytes.md)) take a
    `target = "<name>"` locator that resolves an author target exactly as Lua's
    `kcdx.hook{ target }` / `kcdx.bytes{ target }` do.

@@ -9,7 +9,7 @@ pairs + `?`/`??` wildcards) matches the `[[patch]]`/`[[hook]]` schema exactly.
 
 > **Note — advanced/expert surface.** Pattern scanning and raw byte writes ask
 > you to do work the name-based hook path does for you. For function
-> interception, prefer the (NYI) `kcdxHookInterface` ([hook.md](hook.md)); reach
+> interception, prefer the built `kcdxHookInterface` ([hook.md](hook.md)); reach
 > for these only when you already hold an address.
 
 ## Built methods
