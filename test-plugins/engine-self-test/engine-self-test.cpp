@@ -2,7 +2,7 @@
 //
 // Single job: prove ReportTestResult fires end-to-end. On Plugin_Load,
 // records pass + reason. The aggregator's roll-up line should show
-// "Test suite: 1/1 passing" in kcdx.log on the next lifecycle message.
+// "suite: 1/1 passing" in kcdx.log on the next lifecycle message.
 
 #include <windows.h>
 #include "kcdx/Interfaces.h"

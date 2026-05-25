@@ -1,7 +1,7 @@
 # engine-self-test — proves the test-suite reporting wiring works.
 #
 # This plugin's only job is to call api->ReportTestResult during
-# kcdxPlugin_Load. If the aggregator emits "Test suite: 1/1 passing
+# kcdxPlugin_Load. If the aggregator emits "suite: 1/1 passing
 # as of kPostLoad" (or higher) to kcdx.log, the C++-side reporting
 # surface is intact.
 #

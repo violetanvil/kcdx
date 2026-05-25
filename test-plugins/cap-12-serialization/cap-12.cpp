@@ -24,7 +24,7 @@
 //
 // Manual confirmation (for the developer): save the game once with
 // dev mode on, then quit, reboot, and load that save. kcdx.log
-// should show `Test suite: ... CAP-12 PASS reason="load round-trip"
+// should show `suite: ... CAP-12 PASS reason="load round-trip"
 // counter=N`.
 
 #include <windows.h>

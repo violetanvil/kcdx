@@ -3,7 +3,7 @@
 // Pak Lua test plugins call kcdx.test.report(name, pass, reason) to
 // record their pass/fail. Mirrors the C++ api->ReportTestResult call.
 // Both feed the same aggregator (src/test.h) and the same kcdx.log
-// "Test suite: X/Y passing as of <message>" roll-up.
+// "suite: X/Y passing as of <message>" roll-up.
 
 #include <cstdint>
 #include <string>

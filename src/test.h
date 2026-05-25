@@ -28,7 +28,7 @@ namespace kcdx::test {
 // Thread-safe. Cheap when dev mode is off (early-returns).
 void ReportResult(std::string_view name, bool pass, std::string_view reason);
 
-// Emit a "Test suite: X/Y passing as of <messageLabel>" line to kcdx.log,
+// Emit a "suite: X/Y passing as of <messageLabel>" line to kcdx.log,
 // followed by FAIL lines for each failing test. No-op when dev mode is
 // off or no tests have reported.
 //
@@ -61,8 +61,9 @@ void RegisterExpectedTestName(std::string_view testName,
 
 // Increment the count of test_suite_only plugins skipped because dev
 // mode is off. Reported once at the end of LoadAllConfigs as
-// "Test suite: N plugin(s) gated off (dev mode disabled)" so even
-// production users notice that test plugins exist.
+// "N test_suite_only plugin(s) gated off (dev mode disabled; enable
+// via <kcdx-engine>/engine.toml)" so even production users notice that
+// test plugins exist.
 void IncrementGatedOffCount();
 
 // Emit the production-quiet count line if any test plugins were gated

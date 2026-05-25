@@ -39,7 +39,7 @@ with `dev_mode = true`). The next test-suite summary in `kcdx.log`
 should include both rows:
 
 ```
-Test suite: X/Y passing as of kInputLoaded
+suite: X/Y passing as of kInputLoaded
   (CAP-05 + CAP-11 both report at OnSystemStarted, which fires
    after kInputLoaded — look for the update-tick summary)
 ```

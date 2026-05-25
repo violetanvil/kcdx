@@ -271,7 +271,7 @@ void FireEngineMessage(uint32_t messageType,
     }
 
     // After dispatch completes, give the test-suite aggregator a chance
-    // to emit its "Test suite: X/Y passing as of <message>" roll-up.
+    // to emit its "suite: X/Y passing as of <message>" roll-up.
     // No-op when dev mode is off or no tests have reported.
     test::EmitSummary(test::MessageLabel(messageType));
 }

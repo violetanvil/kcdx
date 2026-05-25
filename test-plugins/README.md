@@ -31,7 +31,7 @@ test_suite_only = true
 - **Dev mode on** (developer creates `<kcdx-engine>/engine.toml`
   with `dev_mode = true`): every test runs its check, calls
   `ReportTestResult(...)` (C++) or `kcdx.test.report(...)` (Lua),
-  and the aggregator emits `Test suite: X/Y passing` to kcdx.log
+  and the aggregator emits `suite: X/Y passing` to kcdx.log
   on each engine lifecycle message.
 
 The gating mechanic + reporting API are documented in
@@ -90,7 +90,7 @@ To enable the suite on a dev machine:
    `<game>/mods/`). The suite is intended to be "drop all of
    these in, leave them there forever."
 
-Once installed, every game boot writes a fresh `Test suite: X/Y
+Once installed, every game boot writes a fresh `suite: X/Y
 passing` line to kcdx.log. If a number changes, something
 regressed.
 

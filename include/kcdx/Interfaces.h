@@ -296,7 +296,7 @@ typedef struct kcdxInterface {
     // re-report on later lifecycle messages).
     //
     // No-op when dev mode is off — production users never see test-suite
-    // output. The aggregator emits a "Test suite: X/Y passing as of <msg>"
+    // output. The aggregator emits a "suite: X/Y passing as of <msg>"
     // roll-up to kcdx.log on each engine lifecycle message.
     //
     // See kcdx/docs/dev-mode.md (Test suite section) for the contract +

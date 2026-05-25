@@ -26,7 +26,7 @@ void (*ReportTestResult)(kcdxPluginHandle self,
 **Returns:** nothing. **Behaviour:** the last call for a given `testName` wins
 (a plugin may re-report on later lifecycle messages). **No-op when dev mode is
 off** — production users never see test-suite output. The aggregator rolls
-results into a `Test suite: X/Y passing` line on each engine lifecycle message.
+results into a `suite: X/Y passing` line on each engine lifecycle message.
 
 ## Minimal snippet
 

@@ -946,7 +946,8 @@ void LoadOneFile(const fs::path& path, Source source) {
 
         // test_suite_only + dev_mode OFF: production-quiet path.
         // We still want to COUNT the plugin so the user sees
-        // "Test suite: N plugin(s) gated off" at boot. Bump the
+        // "N test_suite_only plugin(s) gated off (dev mode disabled; ...)"
+        // at boot. Bump the
         // counter and skip everything else (no [[patch]]/[[hook]]
         // entries register, plugin DLLs early-return at Plugin_Load).
         if (isTestSuiteOnly && !kcdx::dev::IsEnabled()) {

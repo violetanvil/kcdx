@@ -192,7 +192,7 @@ The aggregator emits a roll-up line to `kcdx.log` on each kcdx
 engine lifecycle message firing:
 
 ```
-[12:34:56.789][INFO][engine][TEST] Test suite: 12/14 passing as of kPostLoad
+[12:34:56.789][INFO][engine][TEST] suite: 12/14 passing as of kPostLoad
 [12:34:56.789][INFO][engine][TEST]   FAIL CAP-05-paklua-runtime: dispatch did not fire
 [12:34:56.789][INFO][engine][TEST]   FAIL COMP-04-runtime-vs-patch: collision not detected
 ```
