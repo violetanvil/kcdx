@@ -12,6 +12,7 @@
 #include "conflict_engine.h"
 #include "console.h"
 #include "hook_engine.h"
+#include "hook_interface.h"
 #include "load_order.h"
 #include "log.h"
 #include "messaging.h"
@@ -73,6 +74,11 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxConsoleInterface_Version) return nullptr;
         return const_cast<kcdxConsoleInterface*>(
             kcdx::console::GetInterface());
+
+    case kcdxInterface_Hook:
+        if (version > kcdxHookInterface_Version) return nullptr;
+        return const_cast<kcdxHookInterface*>(
+            kcdx::hook_interface::GetInterface());
 
     default:
         return nullptr;
@@ -154,36 +160,6 @@ uintptr_t Thunk_ResolveSymbol(const char* name) {
     return v.value_or(0);
 }
 
-// Convert a plugin handle to the registering plugin's [plugin].name (the
-// namespace prefix the symbol / author-target resolvers expect). The handle
-// is the index into g_plugins (assigned in DiscoverAndLoad); guard it exactly
-// as Thunk_Log does. An invalid / unknown handle yields "" — the anonymous
-// (engine-seed-only, no self tier) path, which is correct-but-narrower, never
-// a mis-attribution to the wrong owner.
-const std::string& NameForHandle(kcdxPluginHandle owner) {
-    static const std::string kEmpty;
-    if (owner == kcdxInvalidPluginHandle) return kEmpty;
-    size_t idx = static_cast<size_t>(owner);
-    if (idx >= g_plugins.size()) return kEmpty;
-    return g_plugins[idx].manifest.name;
-}
-
-// Convert a plugin handle to the registering plugin's [plugin].author
-// (the leading namespace component under the 2-dot
-// <author>.<plugin>.<bare> model — see naming-namespaces.md). Same
-// invalid-handle discipline as NameForHandle. An empty result is the
-// in-progress namespace refactor's "legacy 1-dot row" tier (the corpus
-// today; step 6 of the refactor populates [plugin].author across the
-// manifests), which the resolver tolerates by walking the legacy 1-dot
-// scope under (plugin, name).
-const std::string& AuthorForHandle(kcdxPluginHandle owner) {
-    static const std::string kEmpty;
-    if (owner == kcdxInvalidPluginHandle) return kEmpty;
-    size_t idx = static_cast<size_t>(owner);
-    if (idx >= g_plugins.size()) return kEmpty;
-    return g_plugins[idx].manifest.author;
-}
-
 uintptr_t Thunk_ResolveSymbolAs(kcdxPluginHandle owner, const char* name) {
     if (!name) return 0;
     // Step 4 of the 2-dot namespace refactor: the thunk threads the
@@ -191,9 +167,14 @@ uintptr_t Thunk_ResolveSymbolAs(kcdxPluginHandle owner, const char* name) {
     // the symbol resolver sees the full identity for self > other
     // precedence. When [plugin].author is still empty (the corpus
     // state before step 6) the resolver walks the legacy 1-dot scope
-    // by (plugin, name), preserving observable behavior.
-    auto v = kcdx::symbols::Lookup(name, AuthorForHandle(owner),
-                                   NameForHandle(owner));
+    // by (plugin, name), preserving observable behavior. NameForHandle
+    // / AuthorForHandle moved to plugin_loader.{h,cpp} at Phase 3
+    // sub-1 step 5-main chunk 4 (qualified namespace lookup here so
+    // kcdxHookInterface thunks in src/hook_interface.cpp share the
+    // same accessors).
+    auto v = kcdx::symbols::Lookup(name,
+                                   kcdx::plugins::AuthorForHandle(owner),
+                                   kcdx::plugins::NameForHandle(owner));
     return v.value_or(0);
 }
 
@@ -202,8 +183,8 @@ uintptr_t Thunk_ResolveAddressByNameAs(kcdxPluginHandle owner,
     if (!name) return 0;
     // Same real (author, plugin) threading as Thunk_ResolveSymbolAs.
     return kcdx::address_library::ResolveByName(
-        name, AuthorForHandle(owner).c_str(),
-        NameForHandle(owner).c_str());
+        name, kcdx::plugins::AuthorForHandle(owner).c_str(),
+        kcdx::plugins::NameForHandle(owner).c_str());
 }
 
 // Level filter for plugin-side Log calls.

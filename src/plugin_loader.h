@@ -244,6 +244,25 @@ const LoadedPlugin* FindByName(const char* name);
 // Get a plugin's handle by stable name. Returns kcdxInvalidPluginHandle on miss.
 kcdxPluginHandle HandleOf(const char* name);
 
+// Convert a plugin handle to the registering plugin's [plugin].name (the
+// namespace prefix the symbol / author-target resolvers expect). The handle
+// is the index into g_plugins (assigned in DiscoverAndLoad); guards on
+// kcdxInvalidPluginHandle + out-of-range index. An invalid / unknown handle
+// yields the empty string — the anonymous (engine-seed-only, no self tier)
+// path, which is correct-but-narrower, never a mis-attribution to the wrong
+// owner. Returned reference is stable for the process lifetime (backed by
+// LoadedPlugin::manifest.name, which is append-only).
+const std::string& NameForHandle(kcdxPluginHandle owner);
+
+// Convert a plugin handle to the registering plugin's [plugin].author (the
+// leading namespace component under the 2-dot <author>.<plugin>.<bare>
+// model — see naming-namespaces.md). Same invalid-handle discipline as
+// NameForHandle. An empty result is the in-progress namespace refactor's
+// "legacy 1-dot row" tier (the corpus today; step 6 of the refactor
+// populates [plugin].author across the manifests), which the resolver
+// tolerates by walking the legacy 1-dot scope under (plugin, name).
+const std::string& AuthorForHandle(kcdxPluginHandle owner);
+
 // Get the kcdxInterface pointer that's passed to plugin entry points.
 // Populated by DiscoverAndLoad. Owned by the engine.
 const kcdxInterface* GetEngineInterface();

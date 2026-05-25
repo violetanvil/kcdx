@@ -181,6 +181,25 @@ struct HookPayload {
     // the lifetime of the installed hook. LUA_NOREF (-2) when unset.
     // The binder takes the ref; the apply pass / teardown releases it.
     int callbackRef = -2;  // LUA_NOREF
+
+    // Off-thread routing policy. Default 0 (Marshal) routes off-thread
+    // fires through warn-once-skip degradation in v1 per Outcome P (no
+    // off-thread sites observed in cap-15..22 + cap-35 corpus); real
+    // arg-snapshot Marshal is its own future cycle when the warn ever
+    // fires. 1 = Skip with warn-once-per-hook; 2 = Error log per-fire +
+    // skip. Values match kcdxHookOffThread_* in
+    // include/kcdx/Interfaces.h. See
+    // .claude/rules/lua-callback-threading.md.
+    uint8_t offThread = 0;
+
+    // C function pointer set by the kcdxHookInterface thunks; defaults
+    // nullptr (Lua entries leave it unset). ApplyHookEntry branches on
+    // (cFn != nullptr) to route between hook_chain::AddC and Add. See
+    // step 5-main chunk 1 (b629e14) for the ChainEntry tagged union;
+    // restructure-plan.md:1075-1093 for the D5 routing decision (ONE
+    // Kind::Hook register; mutex enforced by which surface populated
+    // the payload + assert in ApplyHookEntry).
+    void* cFn = nullptr;
 };
 
 }  // namespace kcdx::hook_payload

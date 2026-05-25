@@ -45,6 +45,7 @@ extern "C" {
 }
 
 #include "hook_payload.h"
+#include "hook_signature.h"
 
 namespace kcdx::hook_chain {
 
@@ -82,6 +83,28 @@ AddResult Add(lua_State*                          L,
               int                                  priority,
               const std::string&                   name,
               uint64_t                             handleId);
+
+// Install or extend the chain for one kcdxHookInterface-installed hook.
+// Parallel to Add() (Lua-side) but takes a raw C callback + pre-resolved
+// Signature (already parsed by the kcdxHookInterface thunk via
+// opts->signature parse OR address_library::ResolveSignatureByName).
+//
+// Mirrors Add's branching shape: routes internally to AddCMid (when
+// payload.mode == Mid) or AddCCallsite (when payload.callsiteScope).
+// Reuses ResolveLocator + CanCoexist + InsertOrdered. Builds ChainEntry
+// {kind=C, cFn, cSig, cDispatchThunk, mode, ...}. Same g_chainsMu
+// discipline as Add.
+//
+// On failure (ok=false + reason): the engine owns no Lua ref to release
+// (the C author owns cFn's lifetime); the registry Entry's status will
+// flip Failed by the existing ApplyHookEntry machinery.
+AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
+               void*                                  cFn,
+               const kcdx::hook_signature::Signature& cSig,
+               const std::string&                     pluginName,
+               int                                    priority,
+               const std::string&                     name,
+               uint64_t                               handleId);
 
 // Uninstall a previously-Add()'d hook by registry handle id. Removes the
 // entry from its chain. The chain's MinHook detour STAYS installed for

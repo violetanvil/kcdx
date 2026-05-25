@@ -95,7 +95,9 @@ log_level           = "info"
 test_names          = ["CAP-35-uninstall-basic", "CAP-35-uninstall-idempotent",
                        "CAP-35-uninstall-tostring",
                        "CAP-35-uninstall-chain-survives",
-                       "CAP-35-uninstall-bytes-error"]
+                       "CAP-35-uninstall-bytes-error",
+                       "CAP-35-off-thread-skip",
+                       "CAP-35-off-thread-bogus"]
 
 [entrypoints]
 lua = "plugin.lua"

@@ -680,6 +680,40 @@ kcdxPluginHandle HandleOf(const char* name) {
     return kcdxInvalidPluginHandle;
 }
 
+// Convert a plugin handle to the registering plugin's [plugin].name (the
+// namespace prefix the symbol / author-target resolvers expect). The handle
+// is the index into g_plugins (assigned in DiscoverAndLoad); guard it exactly
+// as Thunk_Log does. An invalid / unknown handle yields "" — the anonymous
+// (engine-seed-only, no self tier) path, which is correct-but-narrower, never
+// a mis-attribution to the wrong owner. Moved out of interfaces.cpp at Phase
+// 3 sub-1 step 5-main chunk 4 so kcdxHookInterface thunks (which live in
+// src/hook_interface.cpp, not src/interfaces.cpp) can call it directly
+// without a TU-cross fanout helper.
+const std::string& NameForHandle(kcdxPluginHandle owner) {
+    static const std::string kEmpty;
+    if (owner == kcdxInvalidPluginHandle) return kEmpty;
+    size_t idx = static_cast<size_t>(owner);
+    if (idx >= g_plugins.size()) return kEmpty;
+    return g_plugins[idx].manifest.name;
+}
+
+// Convert a plugin handle to the registering plugin's [plugin].author
+// (the leading namespace component under the 2-dot
+// <author>.<plugin>.<bare> model — see naming-namespaces.md). Same
+// invalid-handle discipline as NameForHandle. An empty result is the
+// in-progress namespace refactor's "legacy 1-dot row" tier (the corpus
+// today; step 6 of the refactor populates [plugin].author across the
+// manifests), which the resolver tolerates by walking the legacy 1-dot
+// scope under (plugin, name). Same step-5-main relocation as
+// NameForHandle.
+const std::string& AuthorForHandle(kcdxPluginHandle owner) {
+    static const std::string kEmpty;
+    if (owner == kcdxInvalidPluginHandle) return kEmpty;
+    size_t idx = static_cast<size_t>(owner);
+    if (idx >= g_plugins.size()) return kEmpty;
+    return g_plugins[idx].manifest.author;
+}
+
 void RunPostGameLoad(const kcdxInterface* api) {
     // The C++ mirror of lua_after. Like RunAfterEntrypoints, this runs in
     // LOAD-ORDER PRIORITY, NOT g_plugins (topo/discovery) order: a

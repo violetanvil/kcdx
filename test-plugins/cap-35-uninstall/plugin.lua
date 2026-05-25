@@ -141,6 +141,59 @@ if hBytes == nil then
 end
 
 -- ====================================================================
+-- (6) CAP-35-off-thread-skip — parser test for the new `off_thread` knob
+-- (Phase 3 sub-1 step 5-main chunk 3, the Lua off_thread parser landing).
+-- Register a no-op hook with `off_thread = "skip"` on `kcdx.luaopen_math`
+-- (same prior-art target the basic rows use; the hook never fires this
+-- run, the install IS the proof). PASS iff the binder returned a non-nil
+-- handle — the string parsed cleanly + the payload field was threaded.
+-- FALSIFIABLE: if the parser rejects "skip" (typo, missing case, wrong
+-- comparison), kcdx.hook returns nil + err → the assert fires → no
+-- report → the matrix row sits PENDING.
+-- ====================================================================
+local hSkip = kcdx.hook{
+    name      = "cap35_off_thread_skip",
+    target    = "kcdx.luaopen_math",
+    off_thread = "skip",
+    before    = function() end,
+}
+kcdx.test.report("CAP-35-off-thread-skip", hSkip ~= nil,
+    (hSkip ~= nil)
+      and "off_thread=\"skip\" parsed; binder returned a handle"
+      or  ("expected a handle, got nil — off_thread parser rejected "
+           .. "\"skip\" (the new knob is not wired)"))
+
+-- ====================================================================
+-- (7) CAP-35-off-thread-bogus — teaching-error test. Register with an
+-- INVALID off_thread value ("bogus" — not one of marshal/skip/error).
+-- The binder must return (nil, err) where err names the field. PASS
+-- iff returned handle is nil AND error message contains the substring
+-- "off_thread". FALSIFIABLE: a too-permissive parser (silent default-
+-- to-Marshal, or no validation) returns a non-nil handle → assert
+-- fails. A right-shaped error message without "off_thread" in it also
+-- fails — the teaching contract is "name the field so the author can
+-- find + fix it" (lua-api-surface.md §"errors teach").
+-- ====================================================================
+local hBogus, hBogusErr = kcdx.hook{
+    name      = "cap35_off_thread_bogus",
+    target    = "kcdx.luaopen_math",
+    off_thread = "bogus",
+    before    = function() end,
+}
+do
+    local errStr   = tostring(hBogusErr)
+    local nilOk    = (hBogus == nil)
+    local mentions = (string.find(errStr, "off_thread", 1, true) ~= nil)
+    local pass     = nilOk and mentions
+    kcdx.test.report("CAP-35-off-thread-bogus", pass,
+        pass
+          and ("teaching-error PASS — bogus off_thread rejected at "
+               .. "binder; error mentions 'off_thread': " .. errStr)
+          or  ("expected (nil, err containing 'off_thread'); got handle="
+               .. tostring(hBogus) .. " err=" .. errStr))
+end
+
+-- ====================================================================
 -- Handles resolve to a final :applied() only AFTER the zone apply pass,
 -- which runs after this plugin.lua returns. Read them + drive the
 -- uninstall lifecycle in kcdx.on("ready").

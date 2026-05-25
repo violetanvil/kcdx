@@ -193,9 +193,38 @@ bool ApplyHookEntry(kcdx::lua_registry::Entry& entry,
     // handleId is the registry id of THIS entry — threaded into the
     // ChainEntry so a later kcdx.hook_chain::Uninstall(handleId) can find
     // and remove it.
-    kcdx::hook_chain::AddResult r = kcdx::hook_chain::Add(
-        /*L=*/nullptr, *p, p->callbackRef, entry.pluginName, priority,
-        entry.name, entry.handleId);
+    //
+    // Routing branch (Phase 3 sub-1 step 5-main chunks 3+4): a payload
+    // built by the kcdxHookInterface C thunks (src/hook_interface.cpp)
+    // carries cFn != nullptr and routes through hook_chain::AddC.
+    // Lua-built payloads leave cFn null and route through Add. The two
+    // surfaces are mutex by construction — fail loud (log::ErrorF +
+    // Failed reason) on violation. Bare assert() would be a debug-only
+    // no-op in Release; this surface MUST trip in shipped builds when
+    // a bug stamps both fields. The corrupted entry flips to Failed
+    // status with the reason; the apply pass continues with other
+    // entries.
+    if (p->cFn && p->callbackRef != LUA_NOREF) {
+        log::ErrorF("hook_chain: D5 mutex violation on '%s' (plugin '%s'): "
+                    "payload carries BOTH cFn (C thunk path) AND "
+                    "callbackRef (Lua binder path) — exactly one must "
+                    "be set. Refusing to apply this entry.",
+                    entry.name.c_str(), entry.pluginName.c_str());
+        reason_out = "internal: hook payload carries both cFn and "
+                     "callbackRef (D5 mutex violation) — exactly one must "
+                     "be set. Likely a binder bug — file a kcdx issue.";
+        return false;
+    }
+    kcdx::hook_chain::AddResult r;
+    if (p->cFn) {
+        r = kcdx::hook_chain::AddC(
+            *p, p->cFn, p->signature, entry.pluginName, priority,
+            entry.name, entry.handleId);
+    } else {
+        r = kcdx::hook_chain::Add(
+            /*L=*/nullptr, *p, p->callbackRef, entry.pluginName, priority,
+            entry.name, entry.handleId);
+    }
 
     if (!r.ok) {
         reason_out = r.reason;
@@ -433,6 +462,41 @@ int Lua_Hook(lua_State* L) {
     p->description = LuaTableString(L, 1, "description");
     p->module      = LuaTableString(L, 1, "module", "WHGame.dll");
     p->offset      = LuaTableInt(L, 1, "offset", 0);
+
+    // off_thread = "marshal" (default) / "skip" / "error" — per-hook
+    // off-thread routing policy. Mirrors kcdxHookOffThread_* on the
+    // C++ side (include/kcdx/Interfaces.h:1362-1365) so the Lua + C++
+    // surfaces stay at parity (lua-api-surface.md). Absent → default 0
+    // (Marshal, degraded to Skip-with-warn-once per Outcome P in v1).
+    {
+        lua_getfield(L, 1, "off_thread");
+        if (lua_type(L, -1) == LUA_TSTRING) {
+            const char* s = lua_tostring(L, -1);
+            if      (std::string(s) == "marshal") p->offThread = 0;
+            else if (std::string(s) == "skip")    p->offThread = 1;
+            else if (std::string(s) == "error")   p->offThread = 2;
+            else {
+                lua_pop(L, 1);
+                lua_pushnil(L);
+                lua_pushfstring(L,
+                    "kcdx.hook '%s': off_thread must be \"marshal\" "
+                    "(default), \"skip\", or \"error\" — got \"%s\". See "
+                    ".claude/rules/lua-callback-threading.md for the "
+                    "per-hook off-thread routing model.",
+                    p->name.c_str(), s);
+                return 2;
+            }
+        } else if (!lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook '%s': off_thread must be a string "
+                "(\"marshal\" / \"skip\" / \"error\")",
+                p->name.c_str());
+            return 2;
+        }
+        lua_pop(L, 1);
+    }
 
     // Fetch the owning plugin identity NOW (not at append-time below) so
     // both namespace components are in hand for the name-resolution path

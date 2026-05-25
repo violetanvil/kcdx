@@ -1364,6 +1364,17 @@ typedef uint8_t kcdxHookOffThread;
 #define kcdxHookOffThread_Skip     1u  // silently drop off-thread fires; warn-once-per-hook
 #define kcdxHookOffThread_Error    2u  // log error and drop; author asserts main-thread-only
 
+// Callsite sub-verb behavior selector (Callsite is one method pointer
+// on the interface; the behavior is selected by this field on opts).
+// Mirrors kcdxHookOffThread's shape. Default 0 = Before, the most
+// common callsite pattern. Author selects After/Around/Replace by
+// setting opts.callsiteBehavior accordingly.
+typedef uint8_t kcdxHookCallsiteBehavior;
+#define kcdxHookCallsiteBehavior_Before  0u
+#define kcdxHookCallsiteBehavior_After   1u
+#define kcdxHookCallsiteBehavior_Around  2u
+#define kcdxHookCallsiteBehavior_Replace 3u
+
 // One mid-mode capture descriptor (used by the Mid sub-verb). Author owns the
 // storage (typically a static-const array literal in the calling DLL); the
 // engine reads-only at Install time and copies what it needs. Captures are
@@ -1375,6 +1386,35 @@ typedef struct kcdxHookCapture {
     const char* type;   // type string ("i32", "i64", "ptr", etc.)
     const char* name;   // optional — author's name for this capture; null = positional
 } kcdxHookCapture;
+
+// Runtime mirror of kcdxHookCapture for the C Mid callback. The
+// install-time kcdxHookCapture array carries metadata (expr/type/
+// name); this struct carries the runtime VALUE for each capture at
+// dispatch time. Engine fills the typed value field per `type` pre-
+// call from the JIT slot payload (16-byte stride); reads back the
+// SAME field post-call and writes the bytes back. Author touches the
+// value field matching the capture's type — touching the wrong field
+// is silently dropped (e.g. setting value_double on an i32 capture).
+//
+// The Mid callback ABI is `void cFn(kcdxHookCaptureValue* values,
+// int count)`. Author reads/writes values[i].value_<type> per the
+// capture's declared type:
+//
+//   int32_t hp = (int32_t)values[0].value_int64;  // read
+//   values[0].value_int64 = new_hp;               // write
+//
+// Engine type → field mapping:
+//   i8/i16/i32/i64/u8/u16/u32/u64/bool  → value_int64
+//   f32/f64/float/double                → value_double
+//   ptr                                  → value_ptr
+typedef struct kcdxHookCaptureValue {
+    const char* name;          // capture name (from kcdxHookCapture.name) or null for positional
+    const char* type;          // capture type string (e.g. "i32", "ptr")
+    int64_t     value_int64;   // populated for integer/bool types
+    double      value_double;  // populated for f32/f64 types
+    void*       value_ptr;     // populated for ptr type
+    // --- APPEND-ONLY BELOW (new fields go HERE, never mid-struct) ---
+} kcdxHookCaptureValue;
 
 // Optional knobs container shared by every sub-verb. Pass null for the
 // simple case; pass a pointer to one of these for any of: a non-default
@@ -1471,6 +1511,21 @@ typedef struct kcdxHookOptions {
     // at Kcdx.Init and pass it automatically; raw-interface users pass
     // their own handle directly.
     kcdxPluginHandle owningPlugin;
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New options fields go HERE, never mid-struct. Same AP11 discipline
+    // as the kcdxHookInterface vtable: mid-struct insert shifts every
+    // subsequent field's offset; a plugin DLL compiled against the older
+    // header would read through the wrong offset → ACCESS_VIOLATION.
+
+    // Callsite sub-verb behavior selector. Only meaningful when calling
+    // the Callsite() sub-verb on kcdxHookInterface; ignored by every
+    // other sub-verb. Default 0 = kcdxHookCallsiteBehavior_Before (the
+    // most common callsite pattern). See kcdxHookCallsiteBehavior_*
+    // above. The Lua surface uses `mode = "callsite"` + an inline
+    // before=/after=/around=/replace= function; this field is the C++
+    // mirror.
+    kcdxHookCallsiteBehavior callsiteBehavior;
 } kcdxHookOptions;
 
 typedef struct kcdxHookInterface {

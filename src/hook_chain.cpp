@@ -26,6 +26,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <windows.h>  // WideCharToMultiByte / MultiByteToWideChar
@@ -176,6 +177,15 @@ struct ChainEntry {
     void*                           cFn = nullptr;
     kcdx::hook_signature::Signature cSig{};
 
+    // C dispatch thunk emitted at AddC time via BuildCDispatchThunk. The
+    // engine→callback marshaling trampoline that unpacks parameters_t
+    // slots into host x64 registers per cSig and invokes cFn with the
+    // per-mode ABI (Before: args[]+outCount+typed; After: typed_return
+    // origReturn + typed args; Around: typed call_original + typed args;
+    // Replace: typed args returning typed_return; Mid: handled on Chain
+    // via midCDispatchThunk). Null for Kind::Lua entries.
+    void* cDispatchThunk = nullptr;
+
     // --- Shared (both kinds) -------------------------------------------
     std::string  pluginName;        // owning plugin (load-order attribution)
     int          priority   = 50;   // effective load-order priority
@@ -186,6 +196,16 @@ struct ChainEntry {
     // legacy / not-yet-threaded entries (defensive — production Adds carry
     // the real id from lua_bind_hook::ApplyHookEntry).
     uint64_t     handleId    = 0;
+
+    // Off-thread routing policy for THIS entry (copied from
+    // HookPayload::offThread at append time). 0 = Marshal (degraded to
+    // Skip-with-warn-once per Outcome P in v1; real arg-snapshot marshal
+    // is its own future cycle when the warn ever fires). 1 = Skip
+    // explicit (same shape; the explicit-Skip option distinguishes
+    // "asked for skip" from "asked for marshal but got Skip-degradation").
+    // 2 = Error log per-fire + skip. Values match kcdxHookOffThread_*.
+    // See .claude/rules/lua-callback-threading.md.
+    uint8_t      offThread = 0;
 };
 
 // One hooked target. Owns the JIT trampoline (runtime_func_t) for its
@@ -213,6 +233,15 @@ struct Chain {
     // call_original thunk over MinHook's pOriginal, built when the first
     // around on this target lands (a lua_CFunction; see §7). 0 = none.
     uintptr_t                                  callOriginalThunk = 0;
+    // C analogue of callOriginalThunk: a native pass-through pointer
+    // (from BuildNativeCallThunk in chunk 2) for C Around's
+    // call_original primitive. The two are NOT interchangeable —
+    // callOriginalThunk has lua_CFunction shape (Lua stack marshal);
+    // callOriginalCThunk has the native typed signature shape. C Around
+    // entries on the chain read this field; Lua Around entries read
+    // callOriginalThunk. Built on first-touch C-Around per chain;
+    // 0 = none.
+    uintptr_t                                  callOriginalCThunk = 0;
     std::vector<ChainEntry>                    entries;       // load-order ordered
 
     // --- callsite-only -------------------------------------------------
@@ -248,8 +277,19 @@ struct Chain {
     // slots into the C call frame); empty for Lua mids.
     void*                           midCFn = nullptr;
     kcdx::hook_signature::Signature midCSig{};
+    // Mid C dispatch thunk emitted at AddCMid via BuildCDispatchThunk
+    // with Mode::Mid. Marshals the JIT slot payload into a stack-
+    // allocated kcdxHookCaptureValue[N] (typed per chain.capTypes[i]),
+    // invokes midCFn(values, count), reads back typed values post-call
+    // and writes the bytes back. Null for Kind::Lua mids.
+    void*                           midCDispatchThunk = nullptr;
     std::string              midPluginName;
     std::string              midName;
+    // Off-thread routing policy for this mid chain (mid is one-per-VA,
+    // so the policy lives on Chain itself, parallel to midHandleId).
+    // Same value semantics as ChainEntry::offThread. Copied from
+    // HookPayload::offThread at AddMid / AddCMid time.
+    uint8_t                  midOffThread = 0;
     // The registry handle id that produced this mid chain. Mid is one-
     // per-VA in v1, so the id lives on Chain itself (not in entries).
     // Uninstall(handleId) matches against midHandleId for mid chains.
@@ -281,6 +321,67 @@ std::mutex g_chainsMu;
 // we capture our own copy so this module doesn't depend on the legacy
 // scripting TU.
 lua_State* g_L = nullptr;
+
+// Per-hook dedup for the off-thread Skip / Marshal-degraded warn-once
+// line (.claude/rules/lua-callback-threading.md). Keyed by the
+// ChainEntry::handleId for sig + callsite entries; the Mid path keys
+// on Chain::targetVa (mid is one-per-VA in v1 so handleId is also
+// stable, but targetVa makes the dedup intent self-evident and
+// matches the brief's recommendation). Off-thread fires race across
+// worker threads — guard with its own mutex; do NOT take g_chainsMu
+// from this path (the dispatcher already releases it before
+// lua_pcall, and a worker-thread skip should not block the main
+// thread's chain resolve).
+std::unordered_set<uint64_t> g_offThreadWarned;
+std::mutex                   g_offThreadWarnedMu;
+
+// True iff we should emit (and skip) for this entry given the policy +
+// thread context. The caller already established off-thread. Returns
+// true to mean "skip the callback" — the same outcome for all three
+// policy values; only the log shape differs.
+//
+// Policy values:
+//   0 (Marshal — degraded to Skip-with-warn-once per Outcome P):
+//      warn-once per dedupKey, then skip.
+//   1 (Skip explicit): warn-once per dedupKey, then skip.
+//   2 (Error): log::ErrorF every fire (NOT deduped), then skip.
+//
+// In the current corpus (cap-15..22 + cap-35) no off-thread sites
+// fire, so this path is a future-not-yet-wired safety net. When a real
+// site lands, the Marshal degradation can be replaced with a true
+// arg-snapshot Marshal in its own cycle.
+bool OffThreadShouldSkip(uint8_t policy, uint64_t dedupKey,
+                         const char* what, uintptr_t targetVa,
+                         const char* nameForLog,
+                         const char* pluginForLog) {
+    if (policy == 2) {
+        log::ErrorF("hook_chain: off-thread %s '%s' (plugin '%s') at 0x%p "
+                    "fired on tid=%lu (policy=Error) — skipping",
+                    what, nameForLog ? nameForLog : "",
+                    pluginForLog ? pluginForLog : "",
+                    (void*)targetVa, (unsigned long)::GetCurrentThreadId());
+        return true;
+    }
+    // Policy 0 (Marshal degraded) and 1 (Skip explicit) both warn-once.
+    bool firstTime;
+    {
+        std::lock_guard<std::mutex> lock(g_offThreadWarnedMu);
+        firstTime = g_offThreadWarned.insert(dedupKey).second;
+    }
+    if (firstTime) {
+        log::WarnF("hook_chain: off-thread %s '%s' (plugin '%s') at 0x%p "
+                   "fired on tid=%lu (policy=%s) — skipping (warn-once-"
+                   "per-hook). v1 Marshal degrades to Skip per outcome P "
+                   "(.claude/rules/lua-callback-threading.md); a real "
+                   "arg-snapshot Marshal is a future cycle if this warn "
+                   "ever fires in practice.",
+                   what, nameForLog ? nameForLog : "",
+                   pluginForLog ? pluginForLog : "",
+                   (void*)targetVa, (unsigned long)::GetCurrentThreadId(),
+                   policy == 0 ? "Marshal[degraded]" : "Skip");
+    }
+    return true;
+}
 
 Chain* FindChain(uintptr_t va) {
     auto it = g_chains.find(va);
@@ -721,17 +822,33 @@ void DispatchExclusive(lua_State* L, Chain& chain, const ChainEntry& e,
     const bool hasReturn =
         (chain.sig.returnType != kcdx::hook_signature::Type::Void);
 
-    // C-kind branch: chunk 1 stub. No C-kind entry can reach here today —
-    // the only construction sites (Add / AddCallsite) default to Kind::Lua
-    // and AddC (chunk 3) does not exist yet. The defensive warn-and-skip
-    // makes a future-not-yet-wired call site greppable in production logs
-    // and prevents the Lua-only `lua_rawgeti` below from being called with
-    // an invalid callbackRef on a C-kind entry.
+    // C-kind branch: real dispatch via the BuildCDispatchThunk-emitted
+    // trampoline (chunks 3+4). Around takes (params, rv, callOriginalCThunk);
+    // Replace takes (params, rv). Both write into rv per the per-mode codegen;
+    // the thunk handles all typed marshaling.
     if (e.kind == ChainEntry::Kind::C) {
-        log::WarnF("hook_chain: C-kind entry reached DispatchExclusive but "
-                   "C dispatch is not wired yet (kcdx.hook chunk 1) — "
-                   "entry '%s' (plugin '%s') skipped",
-                   e.name.c_str(), e.pluginName.c_str());
+        if (!e.cDispatchThunk) {
+            log::WarnF("hook_chain: C-kind exclusive entry '%s' (plugin '%s') "
+                       "has no cDispatchThunk — skipping (BuildCDispatchThunk "
+                       "failed at AddC time)",
+                       e.name.c_str(), e.pluginName.c_str());
+            return;
+        }
+        if (e.mode == Mode::Around) {
+            using Thunk = void (*)(
+                const kcdx::rom::runtime_func_t::parameters_t*,
+                kcdx::rom::runtime_func_t::return_value_t*,
+                void*);
+            reinterpret_cast<Thunk>(e.cDispatchThunk)(
+                params, return_value,
+                reinterpret_cast<void*>(chain.callOriginalCThunk));
+        } else {  // Replace
+            using Thunk = void (*)(
+                const kcdx::rom::runtime_func_t::parameters_t*,
+                kcdx::rom::runtime_func_t::return_value_t*);
+            reinterpret_cast<Thunk>(e.cDispatchThunk)(params, return_value);
+        }
+        (void)hasReturn;  // rv writeback handled by the thunk
         return;
     }
 
@@ -803,63 +920,64 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
                     g_dispatchDepth, (void*)target_func_ptr);
     }
 
-    // === PROBE: HOOK_THREAD — step 5-pre (Phase 3 sub-1 extended) ======
-    // Theory-INDEPENDENT observation per .claude/rules/results-driven.md:
-    // log the raw thread id of every entry that would fire in pre, no
-    // filter, no early return based on guessed outcome. Outcome map is in
-    // the commit message body. Skip Mode::After (it fires in Post and is
-    // logged there). This duplicates a no-lock chain resolve to read the
-    // chain's entries for the log — fine for a probe; removed in step
-    // 5-main when the real Marshal/Skip/Error path lands.
-    {
-        Chain* probeChain = ResolveChainForDispatch(target_func_ptr);
-        if (probeChain) {
-            for (size_t i = 0; i < probeChain->entries.size(); ++i) {
-                const ChainEntry& e = probeChain->entries[i];
-                if (e.mode == kcdx::hook_payload::Mode::After) continue;
-                LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
-                    log::KV("phase",        "pre"),
-                    log::KV("tid",          (long long)::GetCurrentThreadId()),
-                    log::KV("is_main",      log::IsGameMainThread() ? 1 : 0),
-                    log::KV("target",       (void*)target_func_ptr),
-                    log::KV("chain_target", (void*)probeChain->targetVa),
-                    log::KV("mode",         kcdx::hook_payload::ModeToken(e.mode)),
-                    log::KV("name",         e.name.c_str()),
-                    log::KV("plugin",       e.pluginName.c_str()),
-                    log::KV("handle_id",    (long long)e.handleId),
-                    log::KV("entry_index",  (long long)i));
-            }
-        }
-    }
-
     lua_State* L = g_L;
-    if (!L) return true;
     Chain* chain = ResolveChainForDispatch(target_func_ptr);
     if (!chain || chain->entries.empty()) return true;
+    // On the C-only path (no Lua callbacks ever installed on this
+    // target), a missing L is fine: C dispatch does not touch the Lua
+    // VM. We branch per-entry below: Lua entries early-skip when L is
+    // null; C entries run regardless. (The Lua-only path keeps the
+    // pre-existing return-true-default-runOriginal behavior.)
 
+    const bool onMainThread = log::IsGameMainThread();
     bool runOriginal = true;
 
     for (const ChainEntry& e : chain->entries) {
         using Mode = kcdx::hook_payload::Mode;
         if (e.mode == Mode::After) continue;  // after fires in DispatchPost
 
-        // C-kind branch: chunk 1 stub. No C-kind entry can reach here
-        // today (Add / AddCallsite default to Kind::Lua; AddC is chunk 3
-        // and is the only construction path that produces a C entry).
-        // The branch is unreachable in chunk 1; the defensive warn
-        // surfaces a future not-yet-wired call site if the construction
-        // discipline ever slips. Do NOT assert (production safety) and do
-        // NOT mutate runOriginal — the replace/around skip-original
-        // decision is the real C dispatch's call to make (chunk 3), not
-        // a stub guess this chunk has the authority for.
-        if (e.kind == ChainEntry::Kind::C) {
-            log::WarnF("hook_chain: C-kind entry reached DispatchPre but C "
-                       "dispatch is not wired yet (kcdx.hook chunk 1) — "
-                       "entry '%s' (plugin '%s') skipped",
-                       e.name.c_str(), e.pluginName.c_str());
+        // Off-thread routing branch. Per
+        // .claude/rules/lua-callback-threading.md: Marshal (0) / Skip
+        // (1) / Error (2) all skip the callback in v1; Marshal degrades
+        // to Skip-with-warn-once per Outcome P (no off-thread sites
+        // observed in the cap-15..22 + cap-35 corpus — a real arg-
+        // snapshot marshal is its own future cycle when this warn ever
+        // fires). For replace/around we explicitly leave runOriginal
+        // alone: when the C/Lua callback is skipped, the original
+        // function runs normally (its pre-hook default behavior).
+        if (!onMainThread) {
+            OffThreadShouldSkip(e.offThread, e.handleId, "pre",
+                                target_func_ptr,
+                                e.name.c_str(), e.pluginName.c_str());
             continue;
         }
 
+        // C-kind branch: real dispatch via the BuildCDispatchThunk-emitted
+        // trampoline (chunks 3+4). Before is non-exclusive (engine still
+        // runs the original); Around / Replace are exclusive and flow
+        // through DispatchExclusive (which also covers the C path).
+        if (e.kind == ChainEntry::Kind::C) {
+            if (e.mode == Mode::Before) {
+                if (!e.cDispatchThunk) {
+                    log::WarnF("hook_chain: C-kind Before '%s' (plugin '%s') "
+                               "has no cDispatchThunk — skipping",
+                               e.name.c_str(), e.pluginName.c_str());
+                    continue;
+                }
+                using Thunk = void (*)(
+                    kcdx::rom::runtime_func_t::parameters_t*);
+                reinterpret_cast<Thunk>(e.cDispatchThunk)(
+                    const_cast<kcdx::rom::runtime_func_t::parameters_t*>(
+                        params));
+            } else if (e.mode == Mode::Around || e.mode == Mode::Replace) {
+                runOriginal = false;
+                DispatchExclusive(L, *chain, e, params, return_value);
+            }
+            continue;
+        }
+
+        // Lua-kind branch (the original path).
+        if (!L) continue;  // VM not bound yet — skip the Lua callback safely
         // Push the callback closure.
         lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
         if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
@@ -902,48 +1020,58 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
 // post callback: runs after the original. Only `after` entries fire
 // here; each receives the current return value and may return a
 // replacement.
-void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
+void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* params,
                   const uint8_t /*param_count*/,
                   kcdx::rom::runtime_func_t::return_value_t* return_value,
                   const uintptr_t target_func_ptr) {
     lua_State* L = g_L;
-    Chain* chain = (L) ? ResolveChainForDispatch(target_func_ptr) : nullptr;
+    // Resolve the chain regardless of L — a C-only chain (no Lua entries
+    // installed on this target via kcdx.hook from Lua) must still
+    // dispatch its C After entries even before the VM is bound. Lua
+    // After entries inside the loop still gate on L below.
+    Chain* chain = ResolveChainForDispatch(target_func_ptr);
 
     const bool hasReturn = chain &&
         (chain->sig.returnType != kcdx::hook_signature::Type::Void);
 
+    const bool onMainThread = log::IsGameMainThread();
+
     if (chain && !chain->entries.empty()) {
 
-    for (size_t i = 0; i < chain->entries.size(); ++i) {
-        const ChainEntry& e = chain->entries[i];
+    for (const ChainEntry& e : chain->entries) {
         if (e.mode != kcdx::hook_payload::Mode::After) continue;
 
-        // C-kind branch: chunk 1 stub. Unreachable today (Add /
-        // AddCallsite default to Kind::Lua; AddC is chunk 3). Defensive
-        // warn marks the future not-yet-wired site greppable; do NOT
-        // assert (production safety).
-        if (e.kind == ChainEntry::Kind::C) {
-            log::WarnF("hook_chain: C-kind entry reached DispatchPost but "
-                       "C dispatch is not wired yet (kcdx.hook chunk 1) — "
-                       "entry '%s' (plugin '%s') skipped",
-                       e.name.c_str(), e.pluginName.c_str());
+        // Off-thread routing branch (mirror of DispatchPre's). After
+        // entries fire in Post; same per-entry policy + same dedup
+        // keying as Pre.
+        if (!onMainThread) {
+            OffThreadShouldSkip(e.offThread, e.handleId, "post",
+                                target_func_ptr,
+                                e.name.c_str(), e.pluginName.c_str());
             continue;
         }
 
-        // === PROBE: HOOK_THREAD — step 5-pre =============================
-        // After-entries fire in Post; tag their thread id the same way Pre
-        // does. Theory-independent — log every fire, no filter on outcome.
-        LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
-            log::KV("phase",        "post"),
-            log::KV("tid",          (long long)::GetCurrentThreadId()),
-            log::KV("is_main",      log::IsGameMainThread() ? 1 : 0),
-            log::KV("target",       (void*)target_func_ptr),
-            log::KV("chain_target", (void*)chain->targetVa),
-            log::KV("mode",         kcdx::hook_payload::ModeToken(e.mode)),
-            log::KV("name",         e.name.c_str()),
-            log::KV("plugin",       e.pluginName.c_str()),
-            log::KV("handle_id",    (long long)e.handleId),
-            log::KV("entry_index",  (long long)i));
+        // C-kind branch: real dispatch via the After-mode thunk
+        // (chunks 3+4). The thunk handles void-vs-non-void return per
+        // D-c-fn-abi-3 — void returns ignore rv; non-void returns
+        // read origReturn from rv pre-call + write the typed return
+        // back to rv post-call.
+        if (e.kind == ChainEntry::Kind::C) {
+            if (!e.cDispatchThunk) {
+                log::WarnF("hook_chain: C-kind After '%s' (plugin '%s') has "
+                           "no cDispatchThunk — skipping",
+                           e.name.c_str(), e.pluginName.c_str());
+                continue;
+            }
+            using Thunk = void (*)(
+                const kcdx::rom::runtime_func_t::parameters_t*,
+                kcdx::rom::runtime_func_t::return_value_t*);
+            reinterpret_cast<Thunk>(e.cDispatchThunk)(params, return_value);
+            (void)hasReturn;
+            continue;
+        }
+
+        if (!L) continue;
 
         lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
         if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
@@ -1013,40 +1141,58 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
     // "set" from a previous mid dispatch can't carry over.
     g_midSkipOriginal = 0;
 
-    // === PROBE: HOOK_THREAD — step 5-pre =================================
-    // Mid hooks fire once per call to the captured instruction; tag every
-    // fire with the raw thread id. Resolves the chain a second time below
-    // — fine for a probe (one extra map lookup + mutex acquire on the
-    // dispatch hot path; the alternative would be plumbing chain out of
-    // the existing branch which is out of scope this step).
-    {
-        Chain* probeChain = ResolveChainForDispatch(target_func_ptr);
-        LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
-            log::KV("phase",        "mid"),
-            log::KV("tid",          (long long)::GetCurrentThreadId()),
-            log::KV("is_main",      log::IsGameMainThread() ? 1 : 0),
-            log::KV("target",       (void*)target_func_ptr),
-            log::KV("chain_target", probeChain ? (void*)probeChain->targetVa : (void*)nullptr),
-            log::KV("mode",         "mid"),
-            log::KV("name",         probeChain ? probeChain->midName.c_str() : ""),
-            log::KV("plugin",       probeChain ? probeChain->midPluginName.c_str() : ""),
-            log::KV("handle_id",    probeChain ? (long long)probeChain->midHandleId : (long long)0));
-    }
-
     Chain* chain = ResolveChainForDispatch(target_func_ptr);
     if (!chain || !chain->isMid) return 0;
 
-    // C-kind mid branch: chunk 1 stub. Unreachable today — AddMid sets
-    // only the Lua-kind midCallbackRef and leaves midKind at its default
-    // Kind::Lua; no construction path produces a Kind::C mid yet (the
-    // real wire-up is chunks 2+3, parallel to ChainEntry::C). Defensive
-    // warn marks the future not-yet-wired site greppable; do NOT assert
-    // (production safety).
+    // Off-thread routing branch (parallel to DispatchPre / DispatchPost).
+    // Mid is one-per-VA in v1 so the dedup key is targetVa, not a per-
+    // entry handleId. The same Marshal-degraded-to-Skip + Skip + Error
+    // policy applies; skip leaves g_midSkipOriginal clear so the JIT
+    // runs the captured instruction (the original behavior pre-hook).
+    if (!log::IsGameMainThread()) {
+        OffThreadShouldSkip(chain->midOffThread, chain->targetVa, "mid",
+                            target_func_ptr,
+                            chain->midName.c_str(),
+                            chain->midPluginName.c_str());
+        return 0;
+    }
+
+    // C-kind mid branch: real dispatch via the Mid-mode thunk
+    // (chunks 3+4). The thunk packs the JIT slot payload into a
+    // stack-allocated kcdxHookCaptureValue[count] typed per
+    // chain.capTypes[i], invokes midCFn(values, count), and reads the
+    // typed values back into the slots post-call. The skip-original
+    // flag stays clear (C mid does not yet expose a return-skip
+    // primitive — the v1 author skips by mutating captured slots in a
+    // way the next instruction handles; surfacing a typed skip API is
+    // future work parallel to the Lua "return 'skip'" shape).
     if (chain->midKind == ChainEntry::Kind::C) {
-        log::WarnF("hook_chain: C-kind mid reached MidDispatch but C "
-                   "dispatch is not wired yet (kcdx.hook chunk 1) — mid "
-                   "'%s' (plugin '%s') skipped",
-                   chain->midName.c_str(), chain->midPluginName.c_str());
+        if (!chain->midCDispatchThunk) {
+            log::WarnF("hook_chain: C-kind mid '%s' (plugin '%s') has no "
+                       "midCDispatchThunk — skipping",
+                       chain->midName.c_str(), chain->midPluginName.c_str());
+            return 0;
+        }
+        // Build parallel-vector arrays of c_str() pointers so the thunk
+        // (which receives them as `const char* const*`) can index them
+        // by capture slot without dereferencing std::string.
+        std::vector<const char*> capNames;
+        std::vector<const char*> capTypes;
+        capNames.reserve(chain->capNames.size());
+        capTypes.reserve(chain->capTypes.size());
+        for (const auto& s : chain->capNames) capNames.push_back(s.c_str());
+        for (const auto& s : chain->capTypes) capTypes.push_back(s.c_str());
+        const int count = static_cast<int>(
+            (param_count < chain->capTypes.size())
+                ? param_count : chain->capTypes.size());
+        void* payload = reinterpret_cast<void*>(
+            const_cast<uintptr_t*>(&params->m_arguments));
+        using Thunk = void (*)(void*, int, const char* const*,
+                               const char* const*);
+        reinterpret_cast<Thunk>(chain->midCDispatchThunk)(
+            payload, count,
+            capNames.empty() ? nullptr : capNames.data(),
+            capTypes.empty() ? nullptr : capTypes.data());
         return 0;
     }
 
@@ -1528,6 +1674,7 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
     newChain->capExprs       = payload.captureExprs;
     newChain->capTypes       = payload.captureTypes;
     newChain->capNames       = payload.captureNames;
+    newChain->midOffThread   = payload.offThread;
     newChain->rf             = std::make_unique<kcdx::rom::runtime_func_t>();
 
     // call_original_mode = 2 (Auto): the JIT pushes MinHook's trampoline
@@ -1619,6 +1766,7 @@ AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
         e.mode = payload.mode; e.callbackRef = callbackRef;
         e.pluginName = pluginName; e.priority = priority; e.name = name;
         e.handleId = handleId;
+        e.offThread = payload.offThread;
         const bool needsCallOriginal = (payload.mode == Mode::Around);
         InsertOrdered(*chain, std::move(e));
         if (needsCallOriginal && !chain->callOriginalThunk &&
@@ -1732,6 +1880,7 @@ AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
     e.mode = payload.mode; e.callbackRef = callbackRef;
     e.pluginName = pluginName; e.priority = priority; e.name = name;
     e.handleId = handleId;
+    e.offThread = payload.offThread;
     newChain->entries.push_back(std::move(e));
 
     g_chains.emplace(callsiteVa, std::move(newChain));
@@ -1800,6 +1949,7 @@ AddResult Add(lua_State*                             L,
         e.mode = payload.mode; e.callbackRef = callbackRef;
         e.pluginName = pluginName; e.priority = priority; e.name = name;
         e.handleId = handleId;
+        e.offThread = payload.offThread;
         const bool needsCallOriginal =
             (payload.mode == kcdx::hook_payload::Mode::Around);
         InsertOrdered(*chain, std::move(e));
@@ -1866,11 +2016,418 @@ AddResult Add(lua_State*                             L,
     e.mode = payload.mode; e.callbackRef = callbackRef;
     e.pluginName = pluginName; e.priority = priority; e.name = name;
     e.handleId = handleId;
+    e.offThread = payload.offThread;
     newChain->entries.push_back(std::move(e));
 
     g_chains.emplace(targetVa, std::move(newChain));
     res.ok = true;
     log::InfoF("hook_chain: installed %s '%s' (plugin '%s') at target 0x%p "
+               "(JIT detour 0x%p)",
+               kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
+               pluginName.c_str(), (void*)targetVa, (void*)jit);
+    return res;
+}
+
+// ===========================================================================
+// AddC / AddCMid / AddCCallsite — C-side parallels of Add/AddMid/AddCallsite.
+// ===========================================================================
+//
+// Same chain model, same coexistence rules, same load-order ordering —
+// the only difference is the per-entry construction: C entries carry
+// (cFn, cSig, cDispatchThunk) instead of (callbackRef); C mids carry
+// (midCFn, midCSig, midCDispatchThunk); C arounds + first-touch C
+// callsites build callOriginalCThunk via BuildNativeCallThunk instead
+// of the Lua-shaped BuildLuaCallThunk.
+//
+// Off-thread routing rides on payload.offThread → entry.offThread (or
+// chain.midOffThread). Per the locked decisions (Phase 3 sub-1 step
+// 5-main chunks 3+4), the C path uses the SAME warn-once-skip
+// degradation the Lua path uses; no separate v1 path.
+
+AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
+                  void*                                  cFn,
+                  const kcdx::hook_signature::Signature& cSig,
+                  const std::string& pluginName,
+                  int                priority,
+                  const std::string& name,
+                  uint64_t           handleId) {
+    AddResult res;
+    (void)priority;  // v1: one mid hook per VA, ordering is moot
+
+    std::string reason;
+    uintptr_t targetVa = ResolveLocator(payload, reason);
+    if (!targetVa) { res.reason = std::move(reason); return res; }
+
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+    if (FindChain(targetVa)) {
+        res.reason =
+            "target already has a hook; a 'mid' hook needs sole ownership "
+            "of its capture site in v1 (the JIT bakes one capture layout). "
+            "The earlier hook wins by load order. (Footprint-based mid "
+            "coexistence is future work — see docs/outstanding-work/"
+            "smart-replace-conflict-detection.md.)";
+        return res;
+    }
+
+    constexpr int kMinHookPatchBytes = 5;
+    int stackRestoreOffset = 0;
+    {
+        uintptr_t scan = targetVa;
+        int accumulated = 0;
+        while (accumulated < kMinHookPatchBytes) {
+            hde64s hs{};
+            unsigned int len =
+                hde64_disasm(reinterpret_cast<const void*>(scan), &hs);
+            if (len == 0 || (hs.flags & F_ERROR) != 0) {
+                res.reason =
+                    "could not disassemble the capture site to compute the "
+                    "resume point (hde64 failed at the mid offset); the "
+                    "`offset` may not land on an instruction boundary";
+                return res;
+            }
+            scan += len;
+            accumulated += static_cast<int>(len);
+        }
+        stackRestoreOffset = accumulated;
+    }
+    const uintptr_t resumeAddr = targetVa + (uintptr_t)stackRestoreOffset;
+
+    auto newChain = std::make_unique<Chain>();
+    newChain->targetVa          = targetVa;
+    newChain->isMid             = true;
+    newChain->midKind           = ChainEntry::Kind::C;
+    newChain->midCFn            = cFn;
+    newChain->midCSig           = cSig;
+    newChain->midHandleId       = handleId;
+    newChain->midPluginName     = pluginName;
+    newChain->midName           = name;
+    newChain->capExprs          = payload.captureExprs;
+    newChain->capTypes          = payload.captureTypes;
+    newChain->capNames          = payload.captureNames;
+    newChain->midOffThread      = payload.offThread;
+    newChain->rf                = std::make_unique<kcdx::rom::runtime_func_t>();
+    newChain->midCDispatchThunk =
+        kcdx::dynamic_call_jit::BuildCDispatchThunk(
+            cFn, cSig, kcdx::hook_payload::Mode::Mid);
+    if (!newChain->midCDispatchThunk) {
+        res.reason = "BuildCDispatchThunk(Mid) failed (see kcdx.log)";
+        return res;
+    }
+
+    uintptr_t jit = newChain->rf->make_jit_midfunc(
+        newChain->capTypes,
+        newChain->capExprs,
+        stackRestoreOffset,
+        /*call_original_mode=*/2,
+        /*skip_flag_addr=*/reinterpret_cast<uintptr_t>(&g_midSkipOriginal),
+        resumeAddr,
+        asmjit::Arch::kX64,
+        &MidDispatch,
+        targetVa);
+    if (!jit) {
+        res.reason = "make_jit_midfunc failed (capture/codegen — check the "
+                     "capture exprs + types; see kcdx.log)";
+        return res;
+    }
+
+    auto install = kcdx::hook_engine::InstallRuntime(name, targetVa, (void*)jit);
+    if (!install.ok) {
+        res.reason = "InstallRuntime failed: " + install.reason;
+        return res;
+    }
+    if (void** slot = newChain->rf->get_jit_original_slot()) {
+        *slot = install.pOriginal;
+    }
+
+    g_chains.emplace(targetVa, std::move(newChain));
+    res.ok = true;
+    log::InfoF("hook_chain: installed C mid '%s' (plugin '%s') at 0x%p "
+               "(%zu captures, resume +%d, JIT detour 0x%p)",
+               name.c_str(), pluginName.c_str(), (void*)targetVa,
+               payload.captureExprs.size(), stackRestoreOffset, (void*)jit);
+    return res;
+}
+
+AddResult AddCCallsite(const kcdx::hook_payload::HookPayload& payload,
+                       void*                                  cFn,
+                       const kcdx::hook_signature::Signature& cSig,
+                       const std::string& pluginName,
+                       int                priority,
+                       const std::string& name,
+                       uint64_t           handleId) {
+    using Mode = kcdx::hook_payload::Mode;
+    AddResult res;
+
+    if (!payload.hasSignature) {
+        res.reason = "internal: C callsite hook has no parsed signature";
+        return res;
+    }
+
+    std::string reason;
+    uintptr_t callsiteVa = ResolveCallsite(payload, reason);
+    if (!callsiteVa) { res.reason = std::move(reason); return res; }
+
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+
+    // Existing callsite chain on this exact site? Chain onto it.
+    if (Chain* chain = FindChain(callsiteVa)) {
+        std::string whyNot;
+        if (!CanCoexist(*chain, payload.mode, cSig,
+                        /*incomingIsCallsite=*/true, whyNot)) {
+            res.reason = std::move(whyNot);
+            return res;
+        }
+        ChainEntry e;
+        e.kind           = ChainEntry::Kind::C;
+        e.mode           = payload.mode;
+        e.cFn            = cFn;
+        e.cSig           = cSig;
+        e.cDispatchThunk = kcdx::dynamic_call_jit::BuildCDispatchThunk(
+            cFn, cSig, payload.mode);
+        if (!e.cDispatchThunk) {
+            res.reason = "BuildCDispatchThunk failed (see kcdx.log)";
+            return res;
+        }
+        e.pluginName = pluginName;
+        e.priority   = priority;
+        e.name       = name;
+        e.handleId   = handleId;
+        e.offThread  = payload.offThread;
+        const bool needsCallOriginal = (payload.mode == Mode::Around);
+        InsertOrdered(*chain, std::move(e));
+        if (needsCallOriginal && !chain->callOriginalCThunk &&
+            chain->calleeVa) {
+            std::string rt; std::vector<std::string> pts;
+            SignatureToAbiStrings(chain->sig, rt, pts);
+            chain->callOriginalCThunk = (uintptr_t)
+                kcdx::dynamic_call_jit::BuildNativeCallThunk(
+                    chain->calleeVa, rt, pts);
+        }
+        res.ok = true;
+        log::InfoF("hook_chain: appended C %s '%s' (plugin '%s') to "
+                   "CALLSITE 0x%p (chain now %zu)",
+                   kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
+                   pluginName.c_str(), (void*)callsiteVa,
+                   chain->entries.size());
+        return res;
+    }
+
+    // First touch on this call site — verify it's an E8 near-call.
+    const uint8_t opcode = *reinterpret_cast<const uint8_t*>(callsiteVa);
+    if (opcode != 0xE8) {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf),
+            "callsite at 0x%p is not an E8 near-call rel32 (opcode byte is "
+            "0x%02X). C Callsite v1 only redirects direct E8 calls; "
+            "indirect calls (FF /2 register/memory, FF 15 [rip+disp]) are "
+            "out of scope.",
+            (void*)callsiteVa, (unsigned)opcode);
+        res.reason = buf;
+        return res;
+    }
+
+    int32_t disp = 0;
+    std::memcpy(&disp, reinterpret_cast<const void*>(callsiteVa + 1), 4);
+    const uintptr_t calleeVa =
+        callsiteVa + 5 + static_cast<uintptr_t>(static_cast<int64_t>(disp));
+
+    auto newChain = std::make_unique<Chain>();
+    newChain->targetVa   = callsiteVa;
+    newChain->isCallsite = true;
+    newChain->calleeVa   = calleeVa;
+    newChain->sig        = cSig;
+    newChain->rf         = std::make_unique<kcdx::rom::runtime_func_t>();
+
+    std::string rt; std::vector<std::string> pts;
+    SignatureToAbiStrings(cSig, rt, pts);
+
+    uintptr_t jit = newChain->rf->make_jit_func(
+        rt, pts, asmjit::Arch::kX64,
+        &DispatchPre, &DispatchPost, /*target_func_ptr=*/callsiteVa);
+    if (!jit) {
+        res.reason = "make_jit_func failed (signature/codegen — see kcdx.log)";
+        return res;
+    }
+    if (void** slot = newChain->rf->get_jit_original_slot()) {
+        *slot = reinterpret_cast<void*>(calleeVa);
+    } else {
+        res.reason = "callsite: runtime_func_t has no call-original slot "
+                     "(internal — detour_hook missing)";
+        return res;
+    }
+
+    if (payload.mode == Mode::Around) {
+        newChain->callOriginalCThunk = (uintptr_t)
+            kcdx::dynamic_call_jit::BuildNativeCallThunk(calleeVa, rt, pts);
+    }
+
+    if (!RewriteCallDisplacement(callsiteVa, jit, reason)) {
+        res.reason = "callsite redirect failed: " + reason;
+        return res;
+    }
+
+    ChainEntry e;
+    e.kind           = ChainEntry::Kind::C;
+    e.mode           = payload.mode;
+    e.cFn            = cFn;
+    e.cSig           = cSig;
+    e.cDispatchThunk = kcdx::dynamic_call_jit::BuildCDispatchThunk(
+        cFn, cSig, payload.mode);
+    if (!e.cDispatchThunk) {
+        res.reason = "BuildCDispatchThunk failed (see kcdx.log)";
+        return res;
+    }
+    e.pluginName = pluginName;
+    e.priority   = priority;
+    e.name       = name;
+    e.handleId   = handleId;
+    e.offThread  = payload.offThread;
+    newChain->entries.push_back(std::move(e));
+
+    g_chains.emplace(callsiteVa, std::move(newChain));
+    res.ok = true;
+    log::InfoF("hook_chain: installed C CALLSITE %s '%s' (plugin '%s') at "
+               "E8 site 0x%p -> callee 0x%p (trampoline 0x%p)",
+               kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
+               pluginName.c_str(), (void*)callsiteVa, (void*)calleeVa,
+               (void*)jit);
+    return res;
+}
+
+AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
+               void*                                  cFn,
+               const kcdx::hook_signature::Signature& cSig,
+               const std::string& pluginName,
+               int                priority,
+               const std::string& name,
+               uint64_t           handleId) {
+    AddResult res;
+    if (!cFn) {
+        res.reason = "internal: AddC called with null cFn";
+        return res;
+    }
+
+    if (payload.mode == kcdx::hook_payload::Mode::Mid) {
+        return AddCMid(payload, cFn, cSig, pluginName, priority, name,
+                       handleId);
+    }
+    if (payload.callsiteScope) {
+        return AddCCallsite(payload, cFn, cSig, pluginName, priority, name,
+                            handleId);
+    }
+
+    if (!payload.hasSignature) {
+        res.reason = "internal: C hook has no parsed signature";
+        return res;
+    }
+
+    std::string reason;
+    uintptr_t targetVa = ResolveLocator(payload, reason);
+    if (!targetVa) { res.reason = std::move(reason); return res; }
+
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+
+    Chain* chain = FindChain(targetVa);
+
+    if (chain) {
+        std::string whyNot;
+        if (!CanCoexist(*chain, payload.mode, cSig,
+                        /*incomingIsCallsite=*/false, whyNot)) {
+            res.reason = std::move(whyNot);
+            return res;
+        }
+        ChainEntry e;
+        e.kind           = ChainEntry::Kind::C;
+        e.mode           = payload.mode;
+        e.cFn            = cFn;
+        e.cSig           = cSig;
+        e.cDispatchThunk = kcdx::dynamic_call_jit::BuildCDispatchThunk(
+            cFn, cSig, payload.mode);
+        if (!e.cDispatchThunk) {
+            res.reason = "BuildCDispatchThunk failed (see kcdx.log)";
+            return res;
+        }
+        e.pluginName = pluginName;
+        e.priority   = priority;
+        e.name       = name;
+        e.handleId   = handleId;
+        e.offThread  = payload.offThread;
+        const bool needsCallOriginal =
+            (payload.mode == kcdx::hook_payload::Mode::Around);
+        InsertOrdered(*chain, std::move(e));
+        if (needsCallOriginal && !chain->callOriginalCThunk) {
+            void** origSlot = chain->rf->get_jit_original_slot();
+            if (origSlot && *origSlot) {
+                std::string rt; std::vector<std::string> pts;
+                SignatureToAbiStrings(chain->sig, rt, pts);
+                chain->callOriginalCThunk = (uintptr_t)
+                    kcdx::dynamic_call_jit::BuildNativeCallThunk(
+                        (uintptr_t)*origSlot, rt, pts);
+            }
+        }
+        res.ok = true;
+        log::InfoF("hook_chain: appended C %s '%s' (plugin '%s') to target "
+                   "0x%p (chain now %zu)",
+                   kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
+                   pluginName.c_str(), (void*)targetVa,
+                   chain->entries.size());
+        return res;
+    }
+
+    auto newChain = std::make_unique<Chain>();
+    newChain->targetVa = targetVa;
+    newChain->sig      = cSig;
+    newChain->rf       = std::make_unique<kcdx::rom::runtime_func_t>();
+
+    std::string rt; std::vector<std::string> pts;
+    SignatureToAbiStrings(cSig, rt, pts);
+
+    uintptr_t jit = newChain->rf->make_jit_func(
+        rt, pts, asmjit::Arch::kX64,
+        &DispatchPre, &DispatchPost, targetVa);
+    if (!jit) {
+        res.reason = "make_jit_func failed (signature/codegen — see kcdx.log)";
+        return res;
+    }
+
+    auto install = kcdx::hook_engine::InstallRuntime(name, targetVa, (void*)jit);
+    if (!install.ok) {
+        res.reason = "InstallRuntime failed: " + install.reason;
+        return res;
+    }
+    if (void** slot = newChain->rf->get_jit_original_slot()) {
+        *slot = install.pOriginal;
+    }
+
+    if (payload.mode == kcdx::hook_payload::Mode::Around) {
+        if (install.pOriginal) {
+            newChain->callOriginalCThunk = (uintptr_t)
+                kcdx::dynamic_call_jit::BuildNativeCallThunk(
+                    (uintptr_t)install.pOriginal, rt, pts);
+        }
+    }
+
+    ChainEntry e;
+    e.kind           = ChainEntry::Kind::C;
+    e.mode           = payload.mode;
+    e.cFn            = cFn;
+    e.cSig           = cSig;
+    e.cDispatchThunk = kcdx::dynamic_call_jit::BuildCDispatchThunk(
+        cFn, cSig, payload.mode);
+    if (!e.cDispatchThunk) {
+        res.reason = "BuildCDispatchThunk failed (see kcdx.log)";
+        return res;
+    }
+    e.pluginName = pluginName;
+    e.priority   = priority;
+    e.name       = name;
+    e.handleId   = handleId;
+    e.offThread  = payload.offThread;
+    newChain->entries.push_back(std::move(e));
+
+    g_chains.emplace(targetVa, std::move(newChain));
+    res.ok = true;
+    log::InfoF("hook_chain: installed C %s '%s' (plugin '%s') at target 0x%p "
                "(JIT detour 0x%p)",
                kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
                pluginName.c_str(), (void*)targetVa, (void*)jit);

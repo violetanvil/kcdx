@@ -46,6 +46,9 @@ extern "C" {
 #include "lua.h"
 }
 
+#include "hook_payload.h"   // Mode (per-mode codegen branch)
+#include "hook_signature.h" // Signature (typed slot marshaling)
+
 namespace kcdx::dynamic_call_jit {
 
 // Build a lua_CFunction stub that calls `targetVa` with the given
@@ -90,5 +93,66 @@ lua_CFunction BuildLuaCallThunk(uintptr_t                        targetVa,
 void* BuildNativeCallThunk(uintptr_t                        targetVa,
                            const std::string&               returnType,
                            const std::vector<std::string>&  paramTypes);
+
+// Build an engine→C-callback dispatch trampoline. Emitted at AddC time
+// with full knowledge of cFn + cSig + mode + (for Around)
+// callOriginalCThunk. The trampoline's own ABI varies by mode (see
+// hook_chain.cpp DispatchPre/Post/MidDispatch call sites for the exact
+// shapes). Author-facing cFn ABI is per the locked decisions (Phase 3
+// sub-1 step 5-main chunks 3+4):
+//
+//   Mode::Before  — `void cFn(uintptr_t args[], int* outCount,
+//                              /* typed args from cSig */)`
+//                   Engine-callable shape:
+//                       `void thunk(parameters_t* params)`
+//                   Thunk unpacks the params into typed cFn args + a
+//                   stack-allocated args[N] mutation channel; on
+//                   return writes args[0..outCount-1] back to params.
+//
+//   Mode::After   — non-void: `<typed_return> cFn(<typed_return>
+//                                                  origReturn,
+//                                                  /* typed args */)`
+//                   void:    `void cFn(/* typed args */)`
+//                   Engine-callable shape:
+//                       `void thunk(parameters_t* params,
+//                                   return_value_t* rv)`
+//                   Non-void path writes cFn's typed return into rv;
+//                   void path ignores rv.
+//
+//   Mode::Around  — `<typed_return> cFn(<typed_return>(*call_original)
+//                                          (/* typed args */),
+//                                       /* typed args */)`
+//                   Engine-callable shape:
+//                       `void thunk(parameters_t* params,
+//                                   return_value_t* rv,
+//                                   void* callOriginalCThunk)`
+//                   Thunk passes callOriginalCThunk as the first typed
+//                   cFn arg (pointer-width in RCX); author's C source
+//                   casts it to the typed function pointer.
+//
+//   Mode::Replace — `<typed_return> cFn(/* typed args */)`
+//                   Engine-callable shape:
+//                       `void thunk(parameters_t* params,
+//                                   return_value_t* rv)`
+//                   Original never runs; cFn's typed return is written
+//                   to rv.
+//
+//   Mode::Mid     — `void cFn(kcdxHookCaptureValue* values, int count)`
+//                   Engine-callable shape:
+//                       `void thunk(void* payload_base, int count,
+//                                   const char* const* capNames,
+//                                   const char* const* capTypes)`
+//                   Thunk stack-allocates a kcdxHookCaptureValue[count]
+//                   from the live capture metadata + slot payload (16-
+//                   byte stride per the JIT), invokes cFn, reads the
+//                   typed value field back per capTypes and writes the
+//                   slot bytes back.
+//
+// Returns the emitted trampoline pointer (cast to its call-site ABI at
+// the dispatch site) or nullptr on failure (logged). Code lives in the
+// branch pool (alloc-only; engine-owned via kcdxInvalidPluginHandle).
+void* BuildCDispatchThunk(void*                                  cFn,
+                          const kcdx::hook_signature::Signature& cSig,
+                          kcdx::hook_payload::Mode               mode);
 
 }  // namespace kcdx::dynamic_call_jit
