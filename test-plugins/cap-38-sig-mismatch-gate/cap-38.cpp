@@ -68,6 +68,7 @@ kcdxLogger               g_log;
 kcdxHookHandle g_h_gate      = 0;
 bool           g_observer_fired = false;
 bool           g_post_ran    = false;
+bool           g_reported    = false;
 
 // The named target + the WRONG explicit signature.
 //   target          = "kcdx.lua_settable"  (engine seed, verified
@@ -96,18 +97,39 @@ void Report(const char* row, bool pass, const char* reason) {
     g_api->ReportTestResult(g_self, row, pass ? 1 : 0, reason);
 }
 
-// InputLoaded backstop — loud FAIL if PostGameLoad never fired (the
-// cap-29 / cap-36 design). Only the auto row is backstopped; the manual
-// log-assert row is the orchestrator's job.
+// The auto row reports at InputLoaded, NOT at PostGameLoad. The hook is
+// installed in the deferred apply pass that runs only a few ms before
+// PostGameLoad — too early to have observed lua_settable being called
+// (the first run flaked FAIL on observer-fired==0 for exactly this race).
+// By InputLoaded the apply pass is long done and lua_settable has been
+// called thousands of times during boot, so the full proof holds: the
+// gated install PROCEEDED (handle != 0 / IsApplied — the falsifiable
+// signal vs an (a)-reject impl) AND the hook actually FIRES and marshals
+// per the explicit sig (the before observer ran). PostGameLoad only
+// records that the after-phase export was dispatched (g_post_ran), which
+// the report cross-checks.
 void OnMessage(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
-    if (g_post_ran) return;
-    const char* reason =
-        "kcdxPlugin_PostGameLoad did not fire before kcdxMessage_"
-        "InputLoaded — the after-phase C++ export was not dispatched; "
-        "CAP-38-cpp-gate-proceeds reported FAIL via the InputLoaded backstop";
-    g_log.Error("CAP38", "FAIL backstop: %s", reason);
-    g_api->ReportTestResult(g_self, "CAP-38-cpp-gate-proceeds", 0, reason);
+    if (g_reported) return;
+    g_reported = true;
+
+    const bool installed = (g_h_gate != 0) && g_hook && g_hook->IsApplied(g_h_gate);
+    const bool pass = installed && g_observer_fired && g_post_ran;
+    char reason[520];
+    snprintf(reason, sizeof(reason),
+        "%s — named target '%s' + WRONG explicit sig '%s' (verified ABI is "
+        "'void (ptr L, i32 idx)'): handle=%s, IsApplied=%d, observer "
+        "fired=%d, PostGameLoad ran=%d. behavior-c keeps the explicit sig "
+        "authoritative: the install PROCEEDS and the hook FIRES per the "
+        "explicit sig. Had the gate REJECTED (hypothetical (a)-impl) the "
+        "handle would be 0 / IsApplied false / observer never fires and this "
+        "row FAILS. The gate-WARN itself is the [manual] CAP-38-cpp-gate-warn "
+        "row (orchestrator greps HOOK_SIG_GATE explicit_overrides_verified).",
+        pass ? "gate WARN+proceed PASS" : "gate WARN+proceed FAIL",
+        kTarget, kWrongSig,
+        (g_h_gate != 0) ? "non-zero" : "zero",
+        installed ? 1 : 0, g_observer_fired ? 1 : 0, g_post_ran ? 1 : 0);
+    Report("CAP-38-cpp-gate-proceeds", pass, reason);
 }
 
 }  // namespace
@@ -162,34 +184,12 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
     (void)api;
+    // The after-phase export ran — record it so the InputLoaded report can
+    // cross-check that the full lifecycle fired. The auto row reports at
+    // InputLoaded (see OnMessage), not here: the hook is installed in the
+    // apply pass only a few ms before this point, too early to have observed
+    // lua_settable being called.
     g_post_ran = true;
-
-    bool applied = (g_h_gate != 0) && g_hook->IsApplied(g_h_gate);
-    char reason[460];
-    // PASS condition = behavior-c (install PROCEEDED): a non-zero handle
-    // that IsApplied. This is the falsifiable signal vs a hypothetical
-    // (a)-reject impl (handle 0 / IsApplied false → FAIL), and it mirrors
-    // the Lua peer's applied()-only assertion. The before-observer firing
-    // is incidental boot timing — the apply pass installs the hook only a
-    // few ms before PostGameLoad runs, and lua_settable may not be called
-    // in that window — so observer-fired is reported as an informational
-    // liveness note, NOT a pass gate. (Pre-fix the observer-fired==1 gate
-    // raced the apply and flaked this row to FAIL while the gate worked.)
-    const bool pass = (g_h_gate != 0) && applied;
-    snprintf(reason, sizeof(reason),
-        "%s — named target '%s' + WRONG explicit sig '%s' (verified ABI is "
-        "'void (ptr L, i32 idx)'): handle=%s, IsApplied=%d (observer "
-        "fired=%d, informational — races the apply pass). behavior-c keeps "
-        "the explicit sig authoritative and the install PROCEEDS; had the "
-        "gate REJECTED (hypothetical (a)-impl) the handle would be 0 / "
-        "IsApplied false and this row FAILS. The gate-WARN itself is the "
-        "[manual] CAP-38-cpp-gate-warn row (orchestrator greps HOOK_SIG_GATE "
-        "explicit_overrides_verified).",
-        pass ? "gate WARN+proceed PASS" : "gate WARN+proceed FAIL",
-        kTarget, kWrongSig,
-        (g_h_gate != 0) ? "non-zero" : "zero",
-        applied ? 1 : 0, g_observer_fired ? 1 : 0);
-    Report("CAP-38-cpp-gate-proceeds", pass, reason);
     return true;
 }
 
