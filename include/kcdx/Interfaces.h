@@ -158,6 +158,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Serialization  = 5,  // Phase 6
     kcdxInterface_Memory         = 6,  // Phase 5h — DLL-facing memory I/O
     kcdxInterface_Console        = 7,  // Phase 7 — IConsole::AddCommand thunk
+    kcdxInterface_Hook           = 8,  // Phase 3 — C++ kcdx.hook mirror
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -1292,6 +1293,292 @@ typedef struct kcdxSerializationInterface {
     // LoadCallback; copy it if you need to keep it. Never null.
     const char* (*GetRecordTagName)();
 } kcdxSerializationInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxHookInterface — C++ mirror of the Lua kcdx.hook.* surface (Phase 3)
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Hook,
+// kcdxHookInterface_Version). C++ DLLs install function hooks through this
+// interface; the surface is feature-parity with the Lua kcdx.hook.* sub-verbs
+// (lua-api-surface.md: ONE model, two languages, full parity at all times).
+//
+// SHAPE — sub-verb-per-variant, NOT mode-as-key (lua-api-surface.md rule 4a).
+// The Lua surface exposes a sub-verb per hook variant
+// (kcdx.hook.before / .after / .around / .replace / .mid / .callsite); this
+// interface mirrors that one-to-one as six method pointers (Before, After,
+// Around, Replace, Mid, Callsite). The variant IS the method name — there is
+// no `mode` field on the options struct, and there is no shared Install entry
+// point. Each method takes the variant's required args positionally
+// (target + callback) and an optional knobs container (`opts`) that may be
+// null for the simple case.
+//
+// THIS HEADER ships only Floor 2 — the raw method pointers. A planned
+// `include/kcdx/Kcdx.h` wrapper layers typed templated helpers
+// (`kcdx::hook::Before<Sig>(...)`, `kcdx::hook::After<Sig>(...)`, etc.)
+// on top, and a future `kcdx::hook::InstallRawUnchecked<Sig>(...)` provides
+// the opt-out compile-time check form — those land in a follow-up step of
+// the same feature. The raw interface (this struct) is the always-available
+// floor — every author capability is reachable through it via
+// `api->QueryInterface(kcdxInterface_Hook, kcdxHookInterface_Version)`
+// without ever including the wrapper. The wrapper, when it lands, will
+// expose the raw interface pointer directly (`K.hook == kcdxHookInterface*`)
+// so nothing is hidden from raw-interface callers.
+//
+// The disassembler test (cornerstones.md / AP12). The COMMON path is the
+// positional `target` argument carrying a NAME — the Address Library entry
+// (`"IsInCombat"`), the explicit prefixed cross-plugin form
+// (`"redmoon.outfit.open_inventory"`), or the 1-dot engine-seed form
+// (`"kcdx.luaL_loadfile"`). A name resolves to BOTH the address AND the
+// verified signature; the author types one line and never hand-writes hex
+// or ABI. Every other locator field is an EXPERT/ADVANCED escape hatch for
+// targets the library cannot yet name, lives in `opts`, and is labeled
+// `[advanced]` in-place below. The author identifies an un-named target
+// ONCE via an advanced locator, names it, and refers to it by name
+// thereafter (cornerstones.md "declare once / share / coexist").
+//
+// Threading (lua-callback-threading.md): C++ callbacks behave identically
+// to Lua callbacks on off-thread fires; the `offThread` field on opts
+// selects marshal (default) / skip / error per the same model. The engine
+// queues off-thread fires onto the main thread; the original function
+// returns synchronously with its pre-hook default behavior.
+
+#define kcdxHookInterface_Version 1u
+
+// Opaque handle returned by every sub-verb install method. 0 = registration
+// failed at Install time (the engine logs the teaching error to both the
+// engine log and the calling plugin's log). A NON-ZERO handle does NOT yet
+// mean applied: kcdx defers apply to a later pass (deferred-apply model);
+// query IsApplied(h) after the apply pass to confirm. Stable for the process
+// lifetime; never reused; safe to copy by value. Matches the registry handle
+// id width (lua_registry::Append returns uint64_t).
+typedef uint64_t kcdxHookHandle;
+
+// Off-thread routing — per lua-callback-threading.md. Engine compares
+// the dispatch thread to the recorded main-thread ID; off-thread fires
+// route per the selected policy. Default (Marshal) is the right answer
+// for almost every site; the alternatives exist for the rare cases
+// where queue pressure or strict main-thread asserts are wanted.
+typedef uint8_t kcdxHookOffThread;
+#define kcdxHookOffThread_Marshal  0u  // default — engine queues to main thread
+#define kcdxHookOffThread_Skip     1u  // silently drop off-thread fires; warn-once-per-hook
+#define kcdxHookOffThread_Error    2u  // log error and drop; author asserts main-thread-only
+
+// One mid-mode capture descriptor (used by the Mid sub-verb). Author owns the
+// storage (typically a static-const array literal in the calling DLL); the
+// engine reads-only at Install time and copies what it needs. Captures are
+// positional when `name` is null; named when `name` is set — drives whether
+// the callback's handle table is keyed by 1..N or by name (parity with the
+// Lua positional-vs-map surface).
+typedef struct kcdxHookCapture {
+    const char* expr;   // register / memory expression ("rcx", "[rcx+0x10]")
+    const char* type;   // type string ("i32", "i64", "ptr", etc.)
+    const char* name;   // optional — author's name for this capture; null = positional
+} kcdxHookCapture;
+
+// Optional knobs container shared by every sub-verb. Pass null for the
+// simple case; pass a pointer to one of these for any of: a non-default
+// locator (the COMMON path is the positional `target` arg — see each
+// method below), `signature` override, alternate `name` / `description`,
+// off-thread policy, module override, AOB context / anchor, captures (for
+// Mid), or callsite sub-locator (for Callsite). POD, C-ABI shape (no
+// std::string / std::vector / std::optional — sentinel values for unset:
+// null for strings, 0 for numerics, captureCount=0 for no captures).
+//
+// Locator policy. The positional `target` argument is the COMMON path; the
+// engine resolves it via address_library::ResolveByName(target, owningPlugin)
+// (self > engine > other precedence — naming-namespaces.md). The fields in
+// this struct's "Function-entry locator" block are EXPERT/ADVANCED escape
+// hatches: pass an empty `target` (null or "") on the install method AND set
+// one of these instead when the target cannot yet be named. Each is labeled
+// `[advanced]` (cornerstones.md / AP12 — labeled expert-only escape hatch).
+//
+// Owning identity (`owningPlugin`). Drives the self > engine > other-plugin
+// precedence walk in any bare-name locator (naming-namespaces.md). The
+// wrapper helpers thread this for you; raw-interface callers pass their own
+// handle (from kcdxInterface::GetPluginHandle). Pass kcdxInvalidPluginHandle
+// to disable self-tier resolution (engine-seed + other-plugin only,
+// anonymous path).
+typedef struct kcdxHookOptions {
+    // --- Identity ---------------------------------------------------------
+    // Optional override of the engine-synthesized identity. The engine
+    // composes a default of "<handleId>:<target>" when this is null; supply
+    // a stable, human-readable string when you want log lines tagged with
+    // your own name.
+    const char* name;          // optional — null = engine synthesizes
+    const char* description;   // optional — freeform; may be null
+
+    // --- Function-entry locator (EXPERT/ADVANCED — `target` is the common
+    //     path; these are for targets the library cannot yet name) --------
+    // The author identifies the target ONCE via one of these forms, names it
+    // (publishes via [[address]] / kcdx.address or via a cross-plugin export),
+    // and refers to it by name thereafter (cornerstones.md "declare once /
+    // share / coexist"). All sentinel-null/zero when unset.
+    const char* pattern;              // [advanced] AOB hex at function entry; null = unset
+    uint64_t    addressId;            // [advanced] Address-Library numeric ID; 0 = unset
+    const char* targetSymbol;         // [advanced] cross-plugin symbol-table lookup; null = unset
+    const char* targetLuaCfunction;   // [advanced] e.g. "System.LogAlways"; null = unset
+    uintptr_t   address;              // [advanced] raw absolute VA; 0 = unset
+    int32_t     offset;               // applied after resolution (Mid uses this too)
+    const char* context;              // [advanced] AOB disambiguation; null = none
+    const char* anchorString;         // [advanced] string anchor; null = none
+    uint32_t    maxAnchorDistance;    // default 4096 (engine substitutes if 0)
+    const char* module;               // default "WHGame.dll" (engine substitutes if null)
+
+    // --- Callsite sub-locator (Callsite sub-verb only) -------------------
+    // The Callsite sub-verb redirects ONE call instruction. The positional
+    // `target` arg on Callsite(...) is the FUNCTION whose body contains the
+    // call; these fields locate the CALL instruction within it whose rel32
+    // displacement gets rewritten. Exactly one of callsitePattern /
+    // callsiteAddressId / callsiteRva resolves the callsite address.
+    const char* callsitePattern;      // [advanced] AOB at the CALL instr; null = unset
+    int32_t     callsiteOffset;       // offset to the CALL opcode in the pattern match
+    uint64_t    callsiteAddressId;    // [advanced] Address-Library ID of the callsite; 0 = unset
+    const char* callsiteRva;          // [advanced] "WHGame.dll @ rva 0x12345a" form; null = unset
+
+    // --- Signature --------------------------------------------------------
+    // Unparsed signature DSL ("i32 (i32 seed)" / "void ()"). Engine parses
+    // + caches at Install time. For the COMMON path (a named `target`
+    // carrying a library-verified signature) this may be null and the engine
+    // substitutes the verified one — the author never re-types what the
+    // engine already knows. For the Mid sub-verb this may also be null (raw
+    // register captures with no function signature). For non-Mid sub-verbs
+    // on a locator that does NOT carry a signature (e.g. raw `address` with
+    // no published library entry), the install method fails when signature
+    // is null. See hook_signature.h for the DSL grammar.
+    const char* signature;
+
+    // --- Mid sub-verb captures -------------------------------------------
+    // Pointer + count C-ABI form. Author owns the storage (typically a
+    // static-const array literal in the calling DLL); the engine reads-only
+    // at Install time and copies what it needs. Both null/0 unless calling
+    // the Mid sub-verb.
+    const kcdxHookCapture* captures;
+    uint32_t               captureCount;
+
+    // --- Off-thread routing (per lua-callback-threading.md) --------------
+    // Default (Marshal) is the right answer for almost every site. Pass
+    // 0 (kcdxHookOffThread_Marshal) to take the default; Skip / Error
+    // are for the rare cases the author asserts a main-thread invariant.
+    kcdxHookOffThread offThread;
+
+    // --- Owning plugin identity (naming-namespaces.md) -------------------
+    // Drives self > engine > other-plugin precedence for the bare-name
+    // form of the positional `target` arg. The author's own plugin handle
+    // (from kcdxInterface::GetPluginHandle). Pass kcdxInvalidPluginHandle
+    // (or 0) to disable self-tier resolution (engine-seed + other-plugin
+    // only, anonymous path). The wrapper helpers stash the author's handle
+    // at Kcdx.Init and pass it automatically; raw-interface users pass
+    // their own handle directly.
+    kcdxPluginHandle owningPlugin;
+} kcdxHookOptions;
+
+typedef struct kcdxHookInterface {
+    // ------------------------------------------------------------------
+    // Install methods — one per hook variant (sub-verb-per-variant).
+    // Mirrors kcdx.hook.before / .after / .around / .replace / .mid /
+    // .callsite one-to-one. The variant IS the method name — there is no
+    // shared Install with a `mode` enum (lua-api-surface.md rule 4a).
+    //
+    // Each method takes the COMMON path positionally:
+    //   `target`   — Address-Library name OR explicit cross-plugin form
+    //                ("<author>.<plugin>.<bare>") OR engine-seed form
+    //                ("kcdx.<seedname>"). The engine resolves via
+    //                address_library::ResolveByName(target, owningPlugin)
+    //                with self > engine > other precedence. Pass null or
+    //                "" only when using an [advanced] locator in opts
+    //                (pattern / addressId / targetSymbol /
+    //                targetLuaCfunction / address). For Callsite, this is
+    //                the FUNCTION containing the call; the CALL instruction
+    //                is selected by opts->callsitePattern / etc.
+    //   `callback` — function pointer cast to void* for C-ABI portability.
+    //                The engine's JIT thunk casts this to the signature
+    //                derived from the resolved `target` (or opts->signature
+    //                if you override). ABI: free function or static member
+    //                (cdecl/stdcall per the signature DSL); capturing
+    //                lambdas are NOT directly callable — pass a free
+    //                function that calls into your capturing state.
+    //   `opts`     — optional knobs container; pass nullptr for the simple
+    //                case. See kcdxHookOptions above.
+    //
+    // Returns a handle to keep for IsApplied / GetReason / Uninstall. A
+    // zero handle = registration FAILED at Install time (mode/locator
+    // mismatch, signature parse failure, owning-plugin handle unknown,
+    // etc.). The teaching reason is auto-logged at Error level to the
+    // engine log AND the calling plugin's log — raw-interface callers get
+    // the same loud-on-failure behavior as the wrapper users (the
+    // empowerment-frame floor-1 contract). A NON-ZERO handle does NOT yet
+    // mean APPLIED — use IsApplied(h) after the apply pass; use
+    // GetReason(h) for the failure reason when a registered hook later
+    // failed to apply.
+
+    // Run callback BEFORE the original; may mutate args.
+    kcdxHookHandle (*Before)  (const char* target, void* callback,
+                               const kcdxHookOptions* opts /* nullable */);
+
+    // Run callback AFTER the original; may mutate the return value.
+    kcdxHookHandle (*After)   (const char* target, void* callback,
+                               const kcdxHookOptions* opts /* nullable */);
+
+    // Callback decides whether/when to call original (receives a
+    // call_original primitive); its return is the result.
+    kcdxHookHandle (*Around)  (const char* target, void* callback,
+                               const kcdxHookOptions* opts /* nullable */);
+
+    // Original never runs; callback's return is the result.
+    kcdxHookHandle (*Replace) (const char* target, void* callback,
+                               const kcdxHookOptions* opts /* nullable */);
+
+    // Mid-function capture at opts->offset; callback receives a handle table
+    // keyed by opts->captures (positional or named).
+    kcdxHookHandle (*Mid)     (const char* target, void* callback,
+                               const kcdxHookOptions* opts /* nullable */);
+
+    // Redirect ONE call instruction inside `target` (the containing
+    // function). The CALL instruction is selected by opts->callsitePattern
+    // / opts->callsiteAddressId / opts->callsiteRva.
+    kcdxHookHandle (*Callsite)(const char* target, void* callback,
+                               const kcdxHookOptions* opts /* nullable */);
+
+    // ------------------------------------------------------------------
+    // Query / control methods on a handle.
+    // ------------------------------------------------------------------
+
+    // Query whether the apply pass has installed the hook described by `h`.
+    // Returns false for an unknown handle, a still-pending handle (apply
+    // pass hasn't run yet), an uninstalled handle, or a handle that failed
+    // to apply. Mirrors the Lua `h:applied()` query.
+    bool (*IsApplied)(kcdxHookHandle h);
+
+    // Failure reason for a hook that did not apply (or that was
+    // uninstalled). Returns null when `h` is valid AND applied; otherwise
+    // returns a teaching-error string explaining what went wrong + the fix
+    // (e.g. "target 'IsInCombat' did not resolve in WHGame.dll @ runtime
+    // build 1.5.1164953 — confirm the name in your Address Library, or use
+    // the expert `pattern` locator"). String is owned by the engine and
+    // valid for the process lifetime. Mirrors the Lua `h:reason()` query.
+    const char* (*GetReason)(kcdxHookHandle h);
+
+    // Author-supplied (or engine-synthesized) hook name. Returns null for
+    // an unknown handle. String is owned by the engine and valid for the
+    // lifetime of the handle. Mirrors the Lua `h:name()` query.
+    const char* (*GetName)(kcdxHookHandle h);
+
+    // Uninstall the hook described by `h`. Returns true on success.
+    // Idempotent: uninstalling an already-uninstalled (or never-applied)
+    // handle returns true and is a no-op. Safe to call from
+    // kcdxPlugin_Load or any kcdxMessaging callback. After return,
+    // IsApplied(h) is false and the callback no longer fires. The
+    // underlying MinHook detour stays installed for the session — engine
+    // reuses it if another install lands on the same target later. Mirrors
+    // the Lua `h:uninstall()` method.
+    bool (*Uninstall)(kcdxHookHandle h);
+
+    // --- APPEND-ONLY BELOW (kcdxHookInterface_Version >= 2) ---------------
+    // New members go HERE, at the END, never mid-struct: a plugin DLL
+    // built against an older version reads the prefix members at their
+    // original offsets, so appending cannot shift them (AP11).
+} kcdxHookInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)

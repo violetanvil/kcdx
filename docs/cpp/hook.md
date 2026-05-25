@@ -1,12 +1,17 @@
 # kcdxHookInterface (↔ kcdx.hook)
 > Part of the [kcdx C++ API](index.md).
 
-> **NYI** — mirror of [kcdx.hook](../lua/hook.md); lands in the C++ parity
-> backfill. There is **no `kcdxHookInterface` in
-> [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h) today** — the
-> deferred, conflict-resolved function-interception surface exists only in Lua
-> so far. This entry maps the planned C++ shape at the model level; it does
-> **not** present an exact signature, because the header does not define one yet.
+> **⚠️ WIP — rewrite in progress** (Phase 3 sub-1 extended): `kcdxHookInterface`
+> v1 has landed in [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h)
+> with **six sub-verb method pointers** (`Before` / `After` / `Around` /
+> `Replace` / `Mid` / `Callsite`) per the
+> [`lua-api-surface.md`](../../.claude/rules/lua-api-surface.md) rule-4a
+> sub-verb shape — NOT the single `Install(opts)` + `kcdxHookMode_*` enum the
+> rest of this page below still describes. Per-feature doc gate: the full
+> rewrite of this page lands at the end of the Phase 3 sub-1 feature (step
+> 8). Until then, the header is the source of truth; the planned-shape
+> sections below are STALE — read them as historical context, not as the
+> as-built v1 surface.
 
 Intercept a game function: run your C++ callback when the game calls it, and
 optionally change its arguments, return value, or whether it runs at all. The
