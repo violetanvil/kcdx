@@ -1,0 +1,45 @@
+# CAP-36 sibling Lua plugin — the Lua half of CAP-36-cpp-hook-crosslang.
+#
+# Pair of cap-36-cpp-hook-interface/ (the C++ DLL). Phase 3 sub-1 step
+# 5-main chunk 5, the "PROOF the chunk-1 ChainEntry tagged union was
+# worth building" row: a Lua before-hook + a C++ before-hook coexist on
+# ONE chain at ONE target site, both fire in load order, the observed
+# return is value-distinguishable from any other firing pattern.
+#
+# This plugin OWNS no test row. The crosslang row is reported by the C++
+# plugin in kcdxPlugin_PostGameLoad after it observes the return value;
+# this plugin's job is to install the Lua half + notify the C++ side
+# that the Lua callback fired (so the C++ FAIL reason can name which
+# half is missing if the chain breaks).
+#
+# Dependency on the C++ plugin: the Lua plugin reads the stub VA via the
+# kcdx.cap36.addr_crosslang() function THE C++ DLL registers at Load.
+# The dependency declaration forces the C++ plugin to load FIRST so the
+# function is reachable when this plugin.lua runs.
+#
+# Load-order priority 70 (vs C++ plugin's 30) — the C++ before runs
+# first in the chain, then this Lua before. Order matters for the value:
+# expected = ((seed+1)*2)+100 = 122. Reversed order would give 121,
+# uniquely distinguishable.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_36_cpp_hook_interface_lua"
+display_name        = "CAP-36 kcdxHookInterface (Lua sibling)"
+author              = "ts"
+description         = "Lua half of CAP-36-cpp-hook-crosslang — installs a Lua before-hook on the C++ plugin's Cap36_Crosslang stub; the C++ plugin's PostGameLoad re-invokes the stub and verifies both halves fired in load order."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+default_priority    = 70
+
+[[plugin.dependencies]]
+name        = "cap_36_cpp_hook_interface"
+min_version = "0.1.0"
+optional    = false
+
+[entrypoints]
+lua = "plugin.lua"

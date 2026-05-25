@@ -1,0 +1,130 @@
+# CAP-36 — kcdxHookInterface (C++ mirror of kcdx.hook.*) end-to-end.
+#
+# Phase 3 sub-1 step 5-main chunk 5 — the verification chunk that proves
+# kcdxHookInterface works for a real C++ DLL author. Chunks 1-4 wired the
+# ABI end-to-end (root QueryInterface(kcdxInterface_Hook, v1), six sub-
+# verb install thunks + four query thunks in src/hook_interface.cpp, the
+# per-mode BuildCDispatchThunk codegen in src/dynamic_call_jit.cpp); this
+# plugin is the FIRST non-Lua-binder consumer of that surface.
+#
+# Shape: NATIVE C++ DLL plugin. The DLL defines its own typed stub
+# targets (one per row, ICF-defeated), hooks them via raw `opts.address`
+# (the [advanced] locator labeled at Interfaces.h:1451-1466 — the engine
+# carries no name for a DLL-internal stub, so the author supplies the
+# address ONCE and an explicit `opts.signature` matching the stub's ABI;
+# raw `address` is the right tier here per the cornerstones doctrine —
+# self-defined target → declare it once, no shareability owed), then re-
+# invokes each stub from kcdxPlugin_PostGameLoad (the after_game phase
+# C++ export the engine fires AFTER ApplyZone(AfterGame) and BEFORE
+# kcdxMessage_InputLoaded — by then every hook is LIVE; the cap-29 sub-4
+# pattern). Each row's PASS is a value-distinguishable assertion: the
+# observed return from the hooked stub equals only what the configured
+# hook ACTUALLY DID. A one-bit code change in the hook surface (or a
+# thunk validation regression rejecting a legitimate opts shape) surfaces
+# as a row FAIL with the observed value in the reason.
+#
+# The 7 rows:
+#
+#   * CAP-36-cpp-hook-before     typed Before ABI:
+#                                  void cFn(uintptr_t args[], int* outCount,
+#                                           /* typed args... */)
+#                                Cap36_Add_Before(int) → s+100; hook before
+#                                writes args[0]=seed+1, *outCount=1; observed
+#                                value 111 (10 mutated to 11, + 100). Proves
+#                                the args[] mutation back-channel + outCount
+#                                semantics + the typed-arg-pass-through.
+#
+#   * CAP-36-cpp-hook-after      typed After non-void ABI:
+#                                  <typed_return> cFn(<typed_return> origReturn,
+#                                                     /* typed args... */)
+#                                Cap36_Add_After(int) → s+100; hook after
+#                                receives origReturn=110 and returns
+#                                origReturn+1000=1110. Proves the
+#                                origReturn-as-first-arg + typed-return-write-
+#                                back contract.
+#
+#   * CAP-36-cpp-hook-around     typed Around ABI:
+#                                  <typed_return> cFn(<typed call_original>,
+#                                                     /* typed args... */)
+#                                Cap36_Add_Around(int) → s+100; hook around
+#                                receives a typed call_original fn pointer +
+#                                seed=10, calls call_original(10)=110, returns
+#                                2*110=220. Proves the call_original typed
+#                                fnptr arrival in RCX (D-c-fn-abi-2) + the
+#                                non-void return path.
+#
+#   * CAP-36-cpp-hook-replace    typed Replace ABI:
+#                                  <typed_return> cFn(/* typed args... */)
+#                                Cap36_Add_Replace(int) → s+100 (NEVER runs);
+#                                hook replace returns 42. Proves the original-
+#                                never-runs contract + the per-mode shape
+#                                (D-c-fn-abi-1) with no prepended args.
+#
+#   * CAP-36-cpp-hook-uninstall  Uninstall thunk works (C-side peer of
+#                                cap-35-uninstall-basic). Install one before-
+#                                hook on Cap36_Add_Uninstall, assert it
+#                                applied (the stub re-call returns the hooked
+#                                value), call api->Uninstall(handle), assert
+#                                IsApplied(handle)==false, re-invoke the stub
+#                                and assert the result is now the un-hooked
+#                                value (proves the callback no longer fires).
+#                                Proves Thunk_Uninstall + the registry status
+#                                transition + the chain entry erase.
+#
+#   * CAP-36-cpp-hook-raw-floor  Same shape as -before but uses raw
+#                                api->QueryInterface(kcdxInterface_Hook,
+#                                kcdxHookInterface_Version) instead of the
+#                                (not-yet-existing) Kcdx.h wrapper. THIS row
+#                                proves the raw-interface floor works without
+#                                any helper layer — chunk 6's Kcdx.h takes
+#                                notes from how chunk 5 threads owningPlugin
+#                                + signature + callback manually.
+#
+#   * CAP-36-cpp-hook-crosslang  Paired Lua + C++ chain on ONE target. The
+#                                C++ plugin defines Cap36_Crosslang(int), and
+#                                BOTH the C++ plugin and the sibling Lua
+#                                plugin (cap-36-cpp-hook-interface-lua/)
+#                                install a before-hook on it. With load-order
+#                                priority C++=30 (the manifest below) and
+#                                Lua=70 (the sibling), the C++ before fires
+#                                FIRST (+1), the Lua before fires SECOND (*2),
+#                                then the original runs (+100). Seed 10
+#                                → ((10+1)*2)+100 = 122. The observed value
+#                                is uniquely distinguishable from C++-only
+#                                (111), Lua-only (120), and reversed order
+#                                (121) — the PROOF that the chunk-1 ChainEntry
+#                                tagged union mediates Lua + C entries on one
+#                                chain. The C++ plugin OWNS the row and asserts.
+#
+# Test mode: boot-only. Every row self-verifies at kcdxPlugin_PostGameLoad
+# (the after_game C++ export); the aggregator emits the matrix line at
+# kInputLoaded + update tick. NO console gestures, NO save/load, NO in-game
+# action.
+#
+# Load order: this plugin is the C++ half. It must run FIRST (lower
+# priority number) so the crosslang row's expected order is C++ before
+# → Lua before. The Lua sibling sets default_priority = 70; this one is 30.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_36_cpp_hook_interface"
+display_name        = "CAP-36 kcdxHookInterface (C++)"
+author              = "ts"
+description         = "C++ DLL exercising kcdxHookInterface v1 end-to-end: Before/After/Around/Replace typed ABIs, Uninstall, raw-floor (no wrapper), and cross-language chaining with the sibling Lua plugin."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+default_priority    = 30
+test_names          = ["CAP-36-cpp-hook-before",
+                       "CAP-36-cpp-hook-after",
+                       "CAP-36-cpp-hook-around",
+                       "CAP-36-cpp-hook-replace",
+                       "CAP-36-cpp-hook-uninstall",
+                       "CAP-36-cpp-hook-raw-floor",
+                       "CAP-36-cpp-hook-crosslang"]
+
+[entrypoints]
+dll = "cap-36.dll"
