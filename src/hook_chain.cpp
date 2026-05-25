@@ -743,6 +743,35 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
                     g_dispatchDepth, (void*)target_func_ptr);
     }
 
+    // === PROBE: HOOK_THREAD — step 5-pre (Phase 3 sub-1 extended) ======
+    // Theory-INDEPENDENT observation per .claude/rules/results-driven.md:
+    // log the raw thread id of every entry that would fire in pre, no
+    // filter, no early return based on guessed outcome. Outcome map is in
+    // the commit message body. Skip Mode::After (it fires in Post and is
+    // logged there). This duplicates a no-lock chain resolve to read the
+    // chain's entries for the log — fine for a probe; removed in step
+    // 5-main when the real Marshal/Skip/Error path lands.
+    {
+        Chain* probeChain = ResolveChainForDispatch(target_func_ptr);
+        if (probeChain) {
+            for (size_t i = 0; i < probeChain->entries.size(); ++i) {
+                const ChainEntry& e = probeChain->entries[i];
+                if (e.mode == kcdx::hook_payload::Mode::After) continue;
+                LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
+                    log::KV("phase",        "pre"),
+                    log::KV("tid",          (long long)::GetCurrentThreadId()),
+                    log::KV("is_main",      log::IsMainThread() ? 1 : 0),
+                    log::KV("target",       (void*)target_func_ptr),
+                    log::KV("chain_target", (void*)probeChain->targetVa),
+                    log::KV("mode",         kcdx::hook_payload::ModeToken(e.mode)),
+                    log::KV("name",         e.name.c_str()),
+                    log::KV("plugin",       e.pluginName.c_str()),
+                    log::KV("handle_id",    (long long)e.handleId),
+                    log::KV("entry_index",  (long long)i));
+            }
+        }
+    }
+
     lua_State* L = g_L;
     if (!L) return true;
     Chain* chain = ResolveChainForDispatch(target_func_ptr);
@@ -808,8 +837,24 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
 
     if (chain && !chain->entries.empty()) {
 
-    for (const ChainEntry& e : chain->entries) {
+    for (size_t i = 0; i < chain->entries.size(); ++i) {
+        const ChainEntry& e = chain->entries[i];
         if (e.mode != kcdx::hook_payload::Mode::After) continue;
+
+        // === PROBE: HOOK_THREAD — step 5-pre =============================
+        // After-entries fire in Post; tag their thread id the same way Pre
+        // does. Theory-independent — log every fire, no filter on outcome.
+        LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
+            log::KV("phase",        "post"),
+            log::KV("tid",          (long long)::GetCurrentThreadId()),
+            log::KV("is_main",      log::IsMainThread() ? 1 : 0),
+            log::KV("target",       (void*)target_func_ptr),
+            log::KV("chain_target", (void*)chain->targetVa),
+            log::KV("mode",         kcdx::hook_payload::ModeToken(e.mode)),
+            log::KV("name",         e.name.c_str()),
+            log::KV("plugin",       e.pluginName.c_str()),
+            log::KV("handle_id",    (long long)e.handleId),
+            log::KV("entry_index",  (long long)i));
 
         lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
         if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
@@ -878,6 +923,26 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
     // Clear the skip flag at entry — start from a known state so a stale
     // "set" from a previous mid dispatch can't carry over.
     g_midSkipOriginal = 0;
+
+    // === PROBE: HOOK_THREAD — step 5-pre =================================
+    // Mid hooks fire once per call to the captured instruction; tag every
+    // fire with the raw thread id. Resolves the chain a second time below
+    // — fine for a probe (one extra map lookup + mutex acquire on the
+    // dispatch hot path; the alternative would be plumbing chain out of
+    // the existing branch which is out of scope this step).
+    {
+        Chain* probeChain = ResolveChainForDispatch(target_func_ptr);
+        LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
+            log::KV("phase",        "mid"),
+            log::KV("tid",          (long long)::GetCurrentThreadId()),
+            log::KV("is_main",      log::IsMainThread() ? 1 : 0),
+            log::KV("target",       (void*)target_func_ptr),
+            log::KV("chain_target", probeChain ? (void*)probeChain->targetVa : (void*)nullptr),
+            log::KV("mode",         "mid"),
+            log::KV("name",         probeChain ? probeChain->midName.c_str() : ""),
+            log::KV("plugin",       probeChain ? probeChain->midPluginName.c_str() : ""),
+            log::KV("handle_id",    probeChain ? (long long)probeChain->midHandleId : (long long)0));
+    }
 
     lua_State* L = g_L;
     if (!L) return 0;

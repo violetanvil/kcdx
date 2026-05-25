@@ -127,6 +127,20 @@ inline bool IsDevModeEnabled() {
     return g_devMode.load(std::memory_order_relaxed);
 }
 
+// True iff the calling thread is the main thread (the thread that
+// called log::Init). The main-thread ID is captured by Init() into a
+// TU-local in log.cpp; this accessor compares the current thread to
+// that ID. Cheap: one TLS read + one int compare, no lock.
+//
+// The dispatchers in src/hook_chain.cpp use this to TAG every fire with
+// `is_main = 0/1` so the orchestrator's post-launch log read can tell
+// whether any live hook site fires off-thread without re-running it.
+// (Phase 3 sub-1 extended, step 5-pre — the probe whose outcome decides
+// whether step 5-main needs a real Marshal arg-snapshot or
+// Skip-with-warn-once is sufficient. See .claude/rules/results-driven.md
+// — probe-first on a checkable unknown.)
+bool IsMainThread();
+
 // -----------------------------------------------------------------------------
 // KV — name + typed value, emitted as `name=val` in the body.
 //

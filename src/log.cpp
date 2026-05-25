@@ -708,6 +708,15 @@ bool IsCategoryEnabled(const char* category) {
     return false;
 }
 
+// Main-thread accessor — see log.h. g_mainThreadId is the TU-local
+// captured by Init() (same variable the dev-log formatter reads at
+// FormatDevLine to decide whether to suffix tid=N). The accessor stays
+// here so g_mainThreadId stays unnamed-namespace; callers don't need a
+// pointer to the variable.
+bool IsMainThread() {
+    return ::GetCurrentThreadId() == g_mainThreadId;
+}
+
 // -----------------------------------------------------------------------------
 // KV ctors (moved verbatim from dev.cpp)
 // -----------------------------------------------------------------------------
