@@ -81,6 +81,20 @@ The hook needs to find its target. The **common path** is by name:
   When a `pattern`/`rva` author-target supplies the address, its `signature`
   carries the ABI — so a named pattern site needs no `signature =` on the hook.
 
+> **Named target + explicit `signature` — conflict contract.** If you name a
+> target that carries a verified ABI **and** also pass `signature = "..."`, the
+> **explicit signature wins** (the deliberate-override case — you may know
+> better than the seed, or be overriding a stale row). The engine consults the
+> verified ABI only to **detect** a conflict, not to override yours: when your
+> explicit signature is **not** compatible with the verified ABI (different arg
+> count or per-slot/return type), the engine emits a teaching **WARN**
+> (`HOOK_SIG_GATE` / `explicit_overrides_verified`, naming the target, both
+> signatures, and that the explicit one is used as authored) and then
+> **proceeds with your explicit signature**. The hook still installs — the WARN
+> flags that your hand-written ABI disagrees with the verified one, in case it
+> is a mistake rather than an intentional override. To silence it, drop
+> `signature =` (let the name carry the verified ABI) or correct it to match.
+
 The remaining locators are an **advanced/expert escape hatch** for targets the
 library cannot name yet. When you use one you must supply `signature = "..."`
 yourself, because there is no name for the engine to carry the ABI from. Set

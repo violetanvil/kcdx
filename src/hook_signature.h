@@ -130,4 +130,20 @@ const char* TypeToken(Type t);
 // in Phase 3, or future arg-builder helpers) apply the same check.
 bool IsReservedArgName(const std::string& name);
 
+// Byte-compatibility of two signatures for sharing ONE marshaling
+// thunk: same arg count, and each slot + the return map to the same
+// JIT type-string. Conservative — e.g. i32 vs i64 both collapse to
+// "i64" so they read as compatible (the register move is identical),
+// which never produces a wrong marshal. Returns false on any arg-count
+// delta or per-slot/return type-string mismatch.
+//
+// DECLARED here so the two named-target install surfaces
+// (src/hook_interface.cpp ResolveSignature + src/lua_bind_hook.cpp
+// signature resolution) can cross-check an explicit author signature
+// against a name-resolved verified ABI (the sig-mismatch gate). The
+// body lives in src/hook_chain.cpp (it keys on that TU's file-local
+// SigTypeToJitString mapping — minimal-blast, no header churn for the
+// type→string table).
+bool SignaturesCompatible(const Signature& a, const Signature& b);
+
 }  // namespace kcdx::hook_signature

@@ -52,6 +52,13 @@ extern "C" {
 
 namespace kcdx::hook_chain {
 
+// Forward decl (definition near the bottom of this TU, alongside the
+// public kcdx::hook_signature::SignaturesCompatible wrapper it backs).
+// Declared here so the in-TU chain-share check (§3, Add/AddC) below can
+// call it by unqualified lookup before the definition appears.
+bool SignaturesCompatibleImpl(const kcdx::hook_signature::Signature& a,
+                              const kcdx::hook_signature::Signature& b);
+
 namespace {
 
 // ===========================================================================
@@ -113,24 +120,6 @@ void SignatureToJitStrings(const kcdx::hook_signature::Signature& sig,
     for (const auto& a : sig.args) {
         paramTypesOut.emplace_back(SigTypeToJitString(a.type));
     }
-}
-
-// Byte-compatibility of two signatures for sharing ONE marshaling thunk
-// (§1.1 of the spec). v1 rule: same arg count and each slot maps to the
-// same JIT type-string + same return type-string. This is conservative
-// (e.g. i32 vs i64 both -> "i64" so they're treated compatible, which is
-// fine — the register move is identical) and never produces a wrong
-// marshal.
-bool SignaturesCompatible(const kcdx::hook_signature::Signature& a,
-                          const kcdx::hook_signature::Signature& b) {
-    if (a.args.size() != b.args.size()) return false;
-    if (SigTypeToJitString(a.returnType) !=
-        std::string(SigTypeToJitString(b.returnType))) return false;
-    for (size_t i = 0; i < a.args.size(); ++i) {
-        if (std::string(SigTypeToJitString(a.args[i].type)) !=
-            SigTypeToJitString(b.args[i].type)) return false;
-    }
-    return true;
 }
 
 // ===========================================================================
@@ -423,7 +412,7 @@ bool CanCoexist(const Chain&                            chain,
         return false;
     }
 
-    if (!SignaturesCompatible(chain.sig, incomingSig)) {
+    if (!SignaturesCompatibleImpl(chain.sig, incomingSig)) {
         whyNot = "target already hooked with an incompatible signature; "
                  "all hooks sharing a target must declare the same "
                  "argument + return types (v1 shares one marshaling "
@@ -1572,6 +1561,29 @@ void InsertOrdered(Chain& chain, ChainEntry&& e) {
 
 }  // namespace
 
+// Byte-compatibility of two signatures for sharing ONE marshaling thunk
+// (§1.1 of the spec). v1 rule: same arg count and each slot maps to the
+// same JIT type-string + same return type-string. This is conservative
+// (e.g. i32 vs i64 both -> "i64" so they're treated compatible, which is
+// fine — the register move is identical) and never produces a wrong
+// marshal. Lives here (not the anon namespace) so the public
+// kcdx::hook_signature::SignaturesCompatible wrapper below can forward to
+// it; defined in kcdx::hook_chain so the anon-namespace SigTypeToJitString
+// table resolves by unqualified lookup (minimal-blast — no header churn
+// for that file-local type→string map). The in-TU chain-share check
+// (Add/AddC §3) calls SignaturesCompatibleImpl directly.
+bool SignaturesCompatibleImpl(const kcdx::hook_signature::Signature& a,
+                              const kcdx::hook_signature::Signature& b) {
+    if (a.args.size() != b.args.size()) return false;
+    if (SigTypeToJitString(a.returnType) !=
+        std::string(SigTypeToJitString(b.returnType))) return false;
+    for (size_t i = 0; i < a.args.size(); ++i) {
+        if (std::string(SigTypeToJitString(a.args[i].type)) !=
+            SigTypeToJitString(b.args[i].type)) return false;
+    }
+    return true;
+}
+
 void SetLuaState(lua_State* L) {
     g_L = L;
     if (L) {
@@ -2537,3 +2549,16 @@ bool Uninstall(uint64_t handleId) {
 }
 
 }  // namespace kcdx::hook_chain
+
+// Public surface (declared in hook_signature.h) — forwards to the
+// hook_chain impl that keys on this TU's JIT type-string table. Lets the
+// named-target install surfaces (hook_interface.cpp / lua_bind_hook.cpp)
+// cross-check an explicit author signature against a verified ABI without
+// pulling the SigTypeToJitString map into a header (minimal-blast).
+namespace kcdx::hook_signature {
+
+bool SignaturesCompatible(const Signature& a, const Signature& b) {
+    return kcdx::hook_chain::SignaturesCompatibleImpl(a, b);
+}
+
+}  // namespace kcdx::hook_signature

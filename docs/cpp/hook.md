@@ -112,6 +112,21 @@ The hook needs to find its target. The **common path is by name** — the
   A named target that carries a verified signature leaves `opts->signature`
   null — the engine substitutes its known ABI; you never re-type it.
 
+> **Named target + explicit `opts->signature` — conflict contract.** If you
+> name a target that carries a verified ABI **and** also set
+> `opts->signature`, the **explicit signature wins** (the deliberate-override
+> case — you may know better than the seed, or be overriding a stale row). The
+> engine consults the verified ABI only to **detect** a conflict, not to
+> override yours: when the explicit signature is **not** compatible with the
+> verified ABI (different arg count or per-slot/return type), the install emits
+> a teaching **WARN** (`HOOK_SIG_GATE` / `explicit_overrides_verified`, naming
+> the target, both signatures, and that the explicit one is used as authored)
+> and then **proceeds with your explicit signature**. The install still
+> succeeds — the WARN is a heads-up that your hand-written ABI disagrees with
+> the one the engine has verified, in case it is a mistake rather than an
+> intentional override. To silence it, drop `opts->signature` (let the name
+> carry the verified ABI) or correct it to match.
+
 ### Advanced locators (expert-only escape hatch)
 
 The fields below in `kcdxHookOptions` are the `[advanced]` escape hatch for

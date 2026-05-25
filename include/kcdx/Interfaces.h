@@ -1486,6 +1486,14 @@ typedef struct kcdxHookOptions {
     // on a locator that does NOT carry a signature (e.g. raw `address` with
     // no published library entry), the install method fails when signature
     // is null. See hook_signature.h for the DSL grammar.
+    //
+    // CONFLICT CONTRACT — named target + explicit signature both set: the
+    // EXPLICIT signature WINS (the deliberate-override case). The engine
+    // consults the verified ABI only to DETECT a mismatch, not to override:
+    // if the explicit signature is incompatible with the named target's
+    // verified ABI (different arg count or per-slot/return type), the install
+    // emits a teaching WARN (HOOK_SIG_GATE / explicit_overrides_verified) and
+    // PROCEEDS with the explicit signature — the install still succeeds.
     const char* signature;
 
     // --- Mid sub-verb captures -------------------------------------------

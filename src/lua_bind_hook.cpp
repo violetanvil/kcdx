@@ -844,6 +844,38 @@ int Lua_Hook(lua_State* L) {
             effectiveSig  = entrySig;
             sigFromTarget = true;
         }
+    } else if (!effectiveSig.empty() && haveTarget) {
+        // Sig-mismatch gate (AP12/AP13): the author named a target AND
+        // hand-wrote an explicit signature=. The explicit one WINS (the
+        // deliberate-override case stays authoritative — effectiveSig is
+        // untouched), but if the name ALSO carries a verified library ABI
+        // and the two are NOT compatible, the silent trust is a footgun —
+        // a wrong explicit sig mis-marshals with no diagnostic. Consult the
+        // verified ABI to DETECT the conflict (not to override) and emit a
+        // teaching WARN naming both signatures + that the explicit one is
+        // used as-authored. Mirrors hook_interface.cpp ResolveSignature.
+        const char* verifiedSig =
+            kcdx::address_library::ResolveSignatureByName(
+                targetName.c_str(), owner.author.c_str(),
+                owner.plugin.c_str());
+        if (verifiedSig && verifiedSig[0] != '\0') {
+            auto explicitParse = kcdx::hook_signature::Parse(effectiveSig);
+            auto verifiedParse = kcdx::hook_signature::Parse(verifiedSig);
+            // Only compare when BOTH parse — a malformed explicit sig is
+            // caught by the parse below; a malformed verified seed is a
+            // seed bug surfaced there too. The gate catches a clean-but-
+            // wrong explicit sig vs a clean verified ABI.
+            if (explicitParse.ok && verifiedParse.ok &&
+                !kcdx::hook_signature::SignaturesCompatible(
+                    explicitParse.sig, verifiedParse.sig)) {
+                LOG_WARN_KV("HOOK_SIG_GATE", "explicit_overrides_verified",
+                    log::KV("target",       targetName.c_str()),
+                    log::KV("plugin",       owner.plugin.c_str()),
+                    log::KV("explicit_sig", effectiveSig.c_str()),
+                    log::KV("verified_sig", verifiedSig),
+                    log::KV("used",         "explicit"));
+            }
+        }
     }
 
     if (effectiveSig.empty()) {
