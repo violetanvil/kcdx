@@ -145,8 +145,38 @@ bool SignaturesCompatible(const kcdx::hook_signature::Signature& a,
 // field — that turns the upgrade into a rewrite.
 
 struct ChainEntry {
+    // Tagged-union discriminant: Lua-kind entries carry a Lua callback
+    // ref; C-kind entries carry a raw C function pointer + the parsed
+    // signature so dispatch can call it with the right per-slot widths.
+    // Default Kind::Lua so the four existing AddCallsite/Add construction
+    // sites (which set mode / callbackRef / pluginName / priority / name /
+    // handleId only) keep producing a Lua entry without code change.
+    //
+    // The C-kind branch in DispatchPre/DispatchPost/DispatchExclusive +
+    // MidDispatch is a defensive warn-and-skip stub in this chunk —
+    // BuildCCallThunk (chunk 2) and AddC + hook_interface.cpp thunks
+    // (chunks 3+4) are what actually populate it. Until those land, no
+    // C-kind entry can reach a dispatcher (no constructor path produces
+    // one); the stub is a future-not-yet-wired greppable safety net.
+    enum class Kind : uint8_t { Lua = 0, C = 1 };
+    Kind         kind = Kind::Lua;
+
     kcdx::hook_payload::Mode mode = kcdx::hook_payload::Mode::Before;
+
+    // --- Lua-kind fields (populated when kind == Kind::Lua) ------------
     int          callbackRef = -2;  // LUA_NOREF; the Lua callback closure
+
+    // --- C-kind fields (populated when kind == Kind::C) ----------------
+    // cFn is the author's raw C callback (kcdxHookInterface install path,
+    // chunks 3+). cSig is a COPY of the parsed signature taken at append
+    // time so the dispatcher can marshal per-slot widths without
+    // re-resolving anything. Default-constructed (cFn=nullptr, empty
+    // signature) for Lua entries — the empty Signature is cheap (vector
+    // + two strings) and never read on the Lua path.
+    void*                           cFn = nullptr;
+    kcdx::hook_signature::Signature cSig{};
+
+    // --- Shared (both kinds) -------------------------------------------
     std::string  pluginName;        // owning plugin (load-order attribution)
     int          priority   = 50;   // effective load-order priority
     std::string  name;              // author name (diagnostics)
@@ -201,7 +231,23 @@ struct Chain {
 
     // --- mid-only ------------------------------------------------------
     bool                     isMid = false;
+    // Mid is one-per-VA in v1: the JIT bakes one capture layout per site,
+    // so the mid callback lives on Chain itself (not in entries). To stay
+    // parallel with the ChainEntry tagged union, mid carries a Kind
+    // discriminant + a Lua-kind field (midCallbackRef) AND a C-kind pair
+    // (midCFn + midCSig). Default Kind::Lua so AddMid (which sets
+    // midCallbackRef + midPluginName + midName + midHandleId only) keeps
+    // producing a Lua mid without code change. MidDispatch branches on
+    // midKind; the C branch is a defensive warn-and-skip stub in this
+    // chunk (the real wire-up is chunks 2+3, parallel to ChainEntry::C).
+    ChainEntry::Kind         midKind = ChainEntry::Kind::Lua;
     int                      midCallbackRef = -2;  // LUA_NOREF
+    // C-kind mid fields (populated when midKind == Kind::C; defaults
+    // otherwise). cSig here is the mid callback's typed signature (the
+    // shape make_jit_midfunc / the dispatcher use to marshal capture
+    // slots into the C call frame); empty for Lua mids.
+    void*                           midCFn = nullptr;
+    kcdx::hook_signature::Signature midCSig{};
     std::string              midPluginName;
     std::string              midName;
     // The registry handle id that produced this mid chain. Mid is one-
@@ -675,6 +721,20 @@ void DispatchExclusive(lua_State* L, Chain& chain, const ChainEntry& e,
     const bool hasReturn =
         (chain.sig.returnType != kcdx::hook_signature::Type::Void);
 
+    // C-kind branch: chunk 1 stub. No C-kind entry can reach here today —
+    // the only construction sites (Add / AddCallsite) default to Kind::Lua
+    // and AddC (chunk 3) does not exist yet. The defensive warn-and-skip
+    // makes a future-not-yet-wired call site greppable in production logs
+    // and prevents the Lua-only `lua_rawgeti` below from being called with
+    // an invalid callbackRef on a C-kind entry.
+    if (e.kind == ChainEntry::Kind::C) {
+        log::WarnF("hook_chain: C-kind entry reached DispatchExclusive but "
+                   "C dispatch is not wired yet (kcdx.hook chunk 1) — "
+                   "entry '%s' (plugin '%s') skipped",
+                   e.name.c_str(), e.pluginName.c_str());
+        return;
+    }
+
     lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
     if (!lua_isfunction(L, -1)) { lua_pop(L, 1); return; }
     const int top0 = lua_gettop(L);  // [..., fn]
@@ -783,6 +843,23 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
         using Mode = kcdx::hook_payload::Mode;
         if (e.mode == Mode::After) continue;  // after fires in DispatchPost
 
+        // C-kind branch: chunk 1 stub. No C-kind entry can reach here
+        // today (Add / AddCallsite default to Kind::Lua; AddC is chunk 3
+        // and is the only construction path that produces a C entry).
+        // The branch is unreachable in chunk 1; the defensive warn
+        // surfaces a future not-yet-wired call site if the construction
+        // discipline ever slips. Do NOT assert (production safety) and do
+        // NOT mutate runOriginal — the replace/around skip-original
+        // decision is the real C dispatch's call to make (chunk 3), not
+        // a stub guess this chunk has the authority for.
+        if (e.kind == ChainEntry::Kind::C) {
+            log::WarnF("hook_chain: C-kind entry reached DispatchPre but C "
+                       "dispatch is not wired yet (kcdx.hook chunk 1) — "
+                       "entry '%s' (plugin '%s') skipped",
+                       e.name.c_str(), e.pluginName.c_str());
+            continue;
+        }
+
         // Push the callback closure.
         lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
         if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
@@ -840,6 +917,18 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
     for (size_t i = 0; i < chain->entries.size(); ++i) {
         const ChainEntry& e = chain->entries[i];
         if (e.mode != kcdx::hook_payload::Mode::After) continue;
+
+        // C-kind branch: chunk 1 stub. Unreachable today (Add /
+        // AddCallsite default to Kind::Lua; AddC is chunk 3). Defensive
+        // warn marks the future not-yet-wired site greppable; do NOT
+        // assert (production safety).
+        if (e.kind == ChainEntry::Kind::C) {
+            log::WarnF("hook_chain: C-kind entry reached DispatchPost but "
+                       "C dispatch is not wired yet (kcdx.hook chunk 1) — "
+                       "entry '%s' (plugin '%s') skipped",
+                       e.name.c_str(), e.pluginName.c_str());
+            continue;
+        }
 
         // === PROBE: HOOK_THREAD — step 5-pre =============================
         // After-entries fire in Post; tag their thread id the same way Pre
@@ -944,10 +1033,26 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
             log::KV("handle_id",    probeChain ? (long long)probeChain->midHandleId : (long long)0));
     }
 
+    Chain* chain = ResolveChainForDispatch(target_func_ptr);
+    if (!chain || !chain->isMid) return 0;
+
+    // C-kind mid branch: chunk 1 stub. Unreachable today — AddMid sets
+    // only the Lua-kind midCallbackRef and leaves midKind at its default
+    // Kind::Lua; no construction path produces a Kind::C mid yet (the
+    // real wire-up is chunks 2+3, parallel to ChainEntry::C). Defensive
+    // warn marks the future not-yet-wired site greppable; do NOT assert
+    // (production safety).
+    if (chain->midKind == ChainEntry::Kind::C) {
+        log::WarnF("hook_chain: C-kind mid reached MidDispatch but C "
+                   "dispatch is not wired yet (kcdx.hook chunk 1) — mid "
+                   "'%s' (plugin '%s') skipped",
+                   chain->midName.c_str(), chain->midPluginName.c_str());
+        return 0;
+    }
+
     lua_State* L = g_L;
     if (!L) return 0;
-    Chain* chain = ResolveChainForDispatch(target_func_ptr);
-    if (!chain || !chain->isMid || chain->midCallbackRef == -2) return 0;
+    if (chain->midCallbackRef == -2) return 0;
 
     // Capture payload base. Slots are at 16-byte stride.
     char* payload = reinterpret_cast<char*>(
@@ -1802,21 +1907,35 @@ bool Uninstall(uint64_t handleId) {
         // callback ref so MidDispatch's NOREF guard kicks in (trampoline
         // stays — session lifetime).
         if (chain.isMid && chain.midHandleId == handleId) {
-            lua_State* L = g_L;
-            if (L && chain.midCallbackRef != LUA_NOREF) {
-                luaL_unref(L, LUA_REGISTRYINDEX, chain.midCallbackRef);
-            } else if (!L && chain.midCallbackRef != LUA_NOREF) {
-                // Defensive: shouldn't fire in practice (Uninstall is
-                // reachable only via a Lua handle, which requires the VM
-                // up + g_L bound at first-tick). If it ever does, the
-                // ref leaks into Lua's registry table — log loudly so
-                // it's discoverable rather than silenced (AP9).
-                log::WarnF("hook_chain: Uninstall(%llu) mid: no lua_State "
-                           "for unref (ref=%d leaked)",
-                           (unsigned long long)handleId,
-                           chain.midCallbackRef);
+            // Lua-kind mid: release the Lua registry ref so the closure
+            // becomes GC-eligible. C-kind mid (chunks 3+): the author
+            // owns the C function pointer's lifetime; nothing for the
+            // engine to release. Today every mid is Kind::Lua (AddMid
+            // is the only construction path); the C branch is the chunk
+            // 1 parallel of ChainEntry's Lua-vs-C split.
+            if (chain.midKind == ChainEntry::Kind::Lua) {
+                lua_State* L = g_L;
+                if (L && chain.midCallbackRef != LUA_NOREF) {
+                    luaL_unref(L, LUA_REGISTRYINDEX, chain.midCallbackRef);
+                } else if (!L && chain.midCallbackRef != LUA_NOREF) {
+                    // Defensive: shouldn't fire in practice (Uninstall is
+                    // reachable only via a Lua handle, which requires the
+                    // VM up + g_L bound at first-tick). If it ever does,
+                    // the ref leaks into Lua's registry table — log loudly
+                    // so it's discoverable rather than silenced (AP9).
+                    log::WarnF("hook_chain: Uninstall(%llu) mid: no lua_State "
+                               "for unref (ref=%d leaked)",
+                               (unsigned long long)handleId,
+                               chain.midCallbackRef);
+                }
+                chain.midCallbackRef = LUA_NOREF;
+            } else {
+                // C-kind mid: no Lua ref to release. Null the cFn so
+                // the chunk-3 MidDispatch C branch's eventual nullptr
+                // guard makes a drained C mid a no-op shim (parallel
+                // shape to the Lua NOREF guard).
+                chain.midCFn = nullptr;
             }
-            chain.midCallbackRef = LUA_NOREF;
             chain.midHandleId    = 0;
             log::InfoF("hook_chain: Uninstall(%llu) mid OK (chain at %p; "
                        "trampoline retained — session lifetime)",
@@ -1831,14 +1950,21 @@ bool Uninstall(uint64_t handleId) {
         for (auto it = chain.entries.begin();
              it != chain.entries.end(); ++it) {
             if (it->handleId != handleId) continue;
-            lua_State* L = g_L;
-            if (L && it->callbackRef != LUA_NOREF) {
-                luaL_unref(L, LUA_REGISTRYINDEX, it->callbackRef);
-            } else if (!L && it->callbackRef != LUA_NOREF) {
-                // Defensive — see the mid branch above.
-                log::WarnF("hook_chain: Uninstall(%llu): no lua_State for "
-                           "unref (ref=%d leaked)",
-                           (unsigned long long)handleId, it->callbackRef);
+            // Lua-kind: release the Lua registry ref. C-kind (chunks 3+):
+            // the author owns the C function pointer's lifetime; nothing
+            // for the engine to release. Today every entry is Kind::Lua
+            // (Add / AddCallsite are the only construction paths); the
+            // C branch is the parallel of the mid Uninstall split above.
+            if (it->kind == ChainEntry::Kind::Lua) {
+                lua_State* L = g_L;
+                if (L && it->callbackRef != LUA_NOREF) {
+                    luaL_unref(L, LUA_REGISTRYINDEX, it->callbackRef);
+                } else if (!L && it->callbackRef != LUA_NOREF) {
+                    // Defensive — see the mid branch above.
+                    log::WarnF("hook_chain: Uninstall(%llu): no lua_State for "
+                               "unref (ref=%d leaked)",
+                               (unsigned long long)handleId, it->callbackRef);
+                }
             }
             const size_t remaining = chain.entries.size() - 1;
             chain.entries.erase(it);
