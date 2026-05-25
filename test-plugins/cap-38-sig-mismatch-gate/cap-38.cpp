@@ -165,16 +165,26 @@ bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
     g_post_ran = true;
 
     bool applied = (g_h_gate != 0) && g_hook->IsApplied(g_h_gate);
-    char reason[400];
-    const bool pass = (g_h_gate != 0) && applied && g_observer_fired;
+    char reason[460];
+    // PASS condition = behavior-c (install PROCEEDED): a non-zero handle
+    // that IsApplied. This is the falsifiable signal vs a hypothetical
+    // (a)-reject impl (handle 0 / IsApplied false → FAIL), and it mirrors
+    // the Lua peer's applied()-only assertion. The before-observer firing
+    // is incidental boot timing — the apply pass installs the hook only a
+    // few ms before PostGameLoad runs, and lua_settable may not be called
+    // in that window — so observer-fired is reported as an informational
+    // liveness note, NOT a pass gate. (Pre-fix the observer-fired==1 gate
+    // raced the apply and flaked this row to FAIL while the gate worked.)
+    const bool pass = (g_h_gate != 0) && applied;
     snprintf(reason, sizeof(reason),
         "%s — named target '%s' + WRONG explicit sig '%s' (verified ABI is "
-        "'void (ptr L, i32 idx)'): handle=%s, IsApplied=%d, observer "
-        "fired=%d. behavior-c keeps the explicit sig authoritative and the "
-        "install PROCEEDS; had the gate REJECTED (hypothetical (a)-impl) the "
-        "handle would be 0 / IsApplied false / observer never fires and this "
-        "row FAILS. The gate-WARN itself is the [manual] CAP-38-cpp-gate-warn "
-        "row (orchestrator greps HOOK_SIG_GATE explicit_overrides_verified).",
+        "'void (ptr L, i32 idx)'): handle=%s, IsApplied=%d (observer "
+        "fired=%d, informational — races the apply pass). behavior-c keeps "
+        "the explicit sig authoritative and the install PROCEEDS; had the "
+        "gate REJECTED (hypothetical (a)-impl) the handle would be 0 / "
+        "IsApplied false and this row FAILS. The gate-WARN itself is the "
+        "[manual] CAP-38-cpp-gate-warn row (orchestrator greps HOOK_SIG_GATE "
+        "explicit_overrides_verified).",
         pass ? "gate WARN+proceed PASS" : "gate WARN+proceed FAIL",
         kTarget, kWrongSig,
         (g_h_gate != 0) ? "non-zero" : "zero",
