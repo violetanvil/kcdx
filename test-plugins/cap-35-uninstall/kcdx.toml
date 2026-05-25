@@ -1,0 +1,101 @@
+# CAP-35 — Lua handle:uninstall() (Phase 3 sub-1 extended steps 1+2).
+#
+# The AP7 close-out regression for the Lua-side handle:uninstall() that
+# landed at steps 1+2 of the extended Phase 3 sub-1 (abbb4c6 + 0c0756a):
+#   step 1 — kcdx::hook_chain::Uninstall(handleId): the engine teardown
+#            (entries.erase for sig/callsite chains; midHandleId reset
+#            for mid chains; trampoline retained, session-lifetime per
+#            the dual-Lua-VM safety stance).
+#   step 2 — H_uninstall in src/lua_registry.cpp: the Lua handle method.
+#            Kind::Hook routes through hook_chain::Uninstall + SetStatus
+#            (Status::Removed); non-Hook kinds raise a teaching error
+#            naming the kind (the patch engine has no revert path).
+#
+# This plugin is PURE LUA (no DLL, no targets.toml — it consumes the
+# kcdx.* engine seed via the 2-segment `target="kcdx.luaopen_math"` form,
+# the same shape cap-34's CAP-34-explicit-1dot-kcdx row uses). Author='ts',
+# plugin='cap_35_uninstall'.
+#
+# All five hooks below target luaopen_math (address_id=1172, RVA, no scan
+# — an UNHOOKED verified leaf called EXACTLY ONCE during Lua boot and
+# never again, entry-hooked by nobody — the same prior art cap-33's
+# prefix/alias rows + cap-34's namespace rows + comp-12's collision rows
+# all use). The hooks never need to fire during the test run: it's the
+# install + the metatable methods that ARE the surface under test.
+#
+# The five rows the plugin reports:
+#
+#   * CAP-35-uninstall-basic        — install a no-op before-hook on
+#       luaopen_math; at kcdx.on("ready") assert :applied()==true, call
+#       :uninstall(), assert :applied()==false. The core lifecycle proof:
+#       step 2's SetStatus(Removed) flips the registry status atomic; step
+#       1's hook_chain::Uninstall erases the ChainEntry. FALSIFIABLE: if
+#       step 2's H_uninstall didn't flip status, applied()==false fails;
+#       if step 1's entries.erase didn't happen the engine state is wrong
+#       (covered by CAP-35-uninstall-chain-survives).
+#
+#   * CAP-35-uninstall-idempotent   — install a second no-op before-hook;
+#       at ready, assert applied()==true, call :uninstall() TWICE, assert
+#       both calls returned the handle (the self-return chaining contract
+#       step 2 documents), assert :applied()==false. FALSIFIABLE: if the
+#       second :uninstall() raises or returns something other than the
+#       handle, the chaining contract is broken.
+#
+#   * CAP-35-uninstall-tostring     — install a third no-op before-hook;
+#       at ready, capture tostring(h) before :uninstall(), call :uninstall(),
+#       capture tostring(h) after. Assert before contains "applied" AND
+#       after contains "removed". The H_tostring case step 1 added.
+#       FALSIFIABLE: if H_tostring's Removed branch wasn't appended (or
+#       SetStatus didn't reach the entry), the after-string won't contain
+#       "removed".
+#
+#   * CAP-35-uninstall-chain-survives — install TWO before-hooks on
+#       luaopen_math under distinct names. At ready: assert both
+#       :applied()==true. Uninstall the FIRST one. Assert first
+#       :applied()==false, second STILL :applied()==true. The
+#       multi-hook-on-same-target proof from CAP-20-chain reused: erase
+#       removes only the one ChainEntry; the chain trampoline + remaining
+#       entries stay live. FALSIFIABLE: if step 1 erased the wrong entry,
+#       or if it tore down the whole chain (it explicitly does NOT —
+#       trampoline is session-lifetime), the surviving hook's
+#       applied()==true assertion would fail.
+#
+#   * CAP-35-uninstall-bytes-error  — register a kcdx.bytes with a
+#       well-formed-but-deliberately-non-matching pattern (DE AD BE EF
+#       ... — well-formed AOB the binder accepts at registration time;
+#       the apply pass will fail to find a match, flipping status to
+#       Failed, but the Entry still exists with Kind::Bytes — H_uninstall
+#       switches on Kind, not Status). At ready: call :uninstall() inside
+#       pcall; assert pcall returned false (the teaching error was
+#       raised), assert error message contains "kcdx.bytes" AND
+#       "not yet supported" (the exact substrings step 2's luaL_error
+#       emits at lua_registry.cpp:183-188). FALSIFIABLE: if H_uninstall's
+#       default branch silently flipped status instead of raising, pcall
+#       would return true and the row would fail. NO live memory is
+#       written — the apply fails to find a site, idempotent of any other
+#       state, safe under all conditions.
+#
+# Test mode: boot-only. Every install + uninstall + assertion happens
+# during the launch-time registration + apply pass, with assertions read
+# in kcdx.on("ready") after this plugin's zone apply pass — all before
+# the main menu, no console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_35_uninstall"
+display_name        = "CAP-35 handle:uninstall() (Lua)"
+author              = "ts"
+description         = "Regression for the Lua handle:uninstall() method (Phase 3 sub-1 ext steps 1+2): basic lifecycle, idempotent double-uninstall, tostring transition, chain-survivor on multi-hook target, and the kcdx.bytes non-Hook teaching error."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-35-uninstall-basic", "CAP-35-uninstall-idempotent",
+                       "CAP-35-uninstall-tostring",
+                       "CAP-35-uninstall-chain-survives",
+                       "CAP-35-uninstall-bytes-error"]
+
+[entrypoints]
+lua = "plugin.lua"
