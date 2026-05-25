@@ -1,14 +1,28 @@
 #pragma once
 
-// kcdx::dynamic_call_jit — JIT a lua_CFunction that calls a native
-// target with a declared signature.
+// kcdx::dynamic_call_jit — JIT call-thunks over a native target with a
+// declared signature. Two builders, two ABI shapes:
 //
-// Extracted from lua_bind_dynamic_call.cpp (Phase 2b sub-4) so it can be
-// reused by hook_chain's call_original bridge as well as the
-// kcdx.memory.dynamic_call surface. The generated stub IS a
-// lua_CFunction (int(lua_State*)): it pulls the declared args off the
-// Lua stack (indices 1..N), calls the native target with them in the
-// host (MS x64) calling convention, and pushes the typed return value.
+//   BuildLuaCallThunk    — Lua-stack-coupled. Emits a lua_CFunction
+//                          (int(lua_State*)) that pulls typed args from
+//                          the Lua stack at indices 1..N, calls the
+//                          target in the host x64 calling convention,
+//                          then pushes the typed return back onto the
+//                          Lua stack. Body lives in
+//                          lua_bind_dynamic_call.cpp (delegates to the
+//                          per-slot lua_to* / lua_push* JitTrampoline).
+//
+//   BuildNativeCallThunk — Pure native pass-through. Emits a function
+//                          whose own ABI IS the target's typed
+//                          signature: the C caller invokes it as a
+//                          normal native function and asmjit's
+//                          Compiler-managed prologue lands the typed
+//                          args into vregs per host x64, then `invoke`
+//                          forwards them to the target. The return
+//                          value rides back in the host ABI's return
+//                          register (RAX for integer/ptr/bool, XMM0 for
+//                          float/double). No Lua stack involvement at
+//                          any point. Body lives in dynamic_call_jit.cpp.
 //
 // The target VA is BAKED into the emitted code as an immediate. For
 // call_original this is fine: pass MinHook's trampoline-to-original VA
@@ -20,8 +34,9 @@
 // Type strings use the same vocabulary as kcdx::rom::get_type_id /
 // get_type_info_from_string ("void", "i32"/"i64"/integer-ish, "float",
 // "double", "ptr", "bool", "const char*"/"string"). At the ABI level
-// strings and pointers are both pointer-width; the string<->Lua
-// conversion only matters for the Lua stack marshaling this stub does.
+// strings and pointers are both pointer-width and ride in integer
+// registers; the string<->Lua conversion only matters for the
+// BuildLuaCallThunk marshaling path.
 
 #include <cstdint>
 #include <string>
@@ -40,5 +55,40 @@ namespace kcdx::dynamic_call_jit {
 lua_CFunction BuildLuaCallThunk(uintptr_t                        targetVa,
                                 const std::string&               returnType,
                                 const std::vector<std::string>&  paramTypes);
+
+// Build a NATIVE pass-through call-thunk over `targetVa`. The returned
+// pointer's calling convention IS the typed signature described by
+// `returnType` + `paramTypes` — host x64 end-to-end, NO Lua stack:
+//
+//   void* thunk = kcdx::dynamic_call_jit::BuildNativeCallThunk(
+//                     pOriginalVa, "i32", {"ptr"});
+//   auto orig = reinterpret_cast<int(*)(void*)>(thunk);
+//   int r = orig(self);   // host x64 call; self in RCX, result in RAX
+//
+// The C caller casts the returned pointer to its typed signature and
+// invokes it normally. asmjit's Compiler places each declared arg into
+// the right register-class per host x64 (RCX/RDX/R8/R9 for the first 4
+// integer/ptr/bool args; XMM0-3 for the first 4 float/double args;
+// remaining args on the stack with shadow space + 16-byte alignment);
+// the return value rides back in RAX (integer/ptr/bool) or XMM0
+// (float/double). Slot index — NOT a per-class counter — selects the
+// register: an int at arg-0 + float at arg-1 puts int in RCX and float
+// in XMM1, not XMM0.
+//
+// Returns the raw thunk pointer (cast to its typed signature at the
+// call site) or nullptr on failure (logged). The stub's code lives in
+// the branch pool (alloc-only; never freed). The owner-handle for the
+// allocation is kcdxInvalidPluginHandle — engine-owned, since this
+// thunk is built on behalf of a hook's chain, not for any single
+// plugin's own use.
+//
+// Use case: kcdx.hook chain's C around `call_original` primitive — the
+// C author already holds the typed args and wants to invoke the
+// original with them, getting the typed return back. The lua_CFunction
+// shape is wrong here (Lua-stack-coupled, lossy per .claude/rules/lua-
+// precision.md for pointer-magnitude values).
+void* BuildNativeCallThunk(uintptr_t                        targetVa,
+                           const std::string&               returnType,
+                           const std::vector<std::string>&  paramTypes);
 
 }  // namespace kcdx::dynamic_call_jit

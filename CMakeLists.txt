@@ -141,6 +141,7 @@ add_library(kcdx SHARED
     src/hook_signature.cpp
     src/hook_payload.cpp
     src/hook_chain.cpp
+    src/dynamic_call_jit.cpp
     src/probes/createfilew_probe.cpp
     src/probes/bugsplat_ctor_probe.cpp
     src/rom_borrowed/type_info_t.cpp
