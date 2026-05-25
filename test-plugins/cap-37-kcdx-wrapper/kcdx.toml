@@ -1,0 +1,83 @@
+# CAP-37 — Kcdx.h empowered wrapper end-to-end (Phase 3 sub-1 step 6 follow-up).
+#
+# cap-36-cpp-hook-interface is the RAW kcdxHookInterface floor regression net
+# (Before/After/Around/Replace/uninstall/raw-floor/crosslang, all on raw
+# g_hook->*). THIS plugin is the WRAPPER's regression net: it exercises the
+# include/kcdx/Kcdx.h empowered helpers and the type->DSL trait that derives
+# opts.signature from <Sig>. The wrapper is behavior-preserving sugar, so the
+# 4 sub-verb rows produce the SAME observable values cap-36's raw rows do
+# (Before 111, After 1110, Around 220, Replace 42) — but here the author wrote
+# NATURAL callbacks (no mangled cFn ABI, no hand-written "i32 (i32 seed)").
+#
+# Shape: NATIVE C++ DLL plugin. Self-contained typed stub targets (one per row,
+# ICF-defeated), hooked via the wrapper's no-name (raw opts.address) path so
+# the type->DSL trait runs and owningPlugin is auto-threaded from K.self. Each
+# stub is re-invoked from kcdxPlugin_PostGameLoad (the after_game export the
+# engine fires AFTER ApplyZone(AfterGame) and BEFORE kcdxMessage_InputLoaded —
+# every hook is LIVE by then; the cap-29 / cap-36 pattern). Each row's PASS is
+# a value-distinguishable assertion (or, for the Try* row, the returned handle).
+#
+# The 6 rows:
+#
+#   * CAP-37-wrapper-before     by-ref Before write-back + auto outCount.
+#                               kcdx::hook::TryBefore<int(int), &cb> with the
+#                               NATURAL `void cb(int& seed){ seed += 1; }`;
+#                               Kcdx.h's before_adapter writes the mutated
+#                               local back to args[0] + sets *outCount.
+#                               Cap37_Before(10) == 111.
+#
+#   * CAP-37-wrapper-after      non-void After origReturn-prepend. NATURAL
+#                               `int cb(int origReturn, int seed)` returns
+#                               origReturn+1000. Cap37_After(10) == 1110.
+#
+#   * CAP-37-wrapper-around     typed call_original fn-ptr. NATURAL
+#                               `int cb(int(*call_original)(int), int seed)`
+#                               returns 2*call_original(seed).
+#                               Cap37_Around(10) == 220.
+#
+#   * CAP-37-wrapper-replace    return-only Replace; original never runs.
+#                               NATURAL `int cb(int seed){ return 42; }`.
+#                               Cap37_Replace(10) == 42.
+#
+#   * CAP-37-wrapper-try-handle the Try* handle path. TryBefore returns a
+#                               NON-ZERO kcdxHookHandle; K.hook->IsApplied(h)
+#                               true after the apply pass. Proves the wrapper
+#                               hands the handle back (vs the void Before form).
+#
+#   * CAP-37-wrapper-typemap    the type->DSL trait on MULTIPLE arg types. Stub
+#                               is `int(int, float, void*)`; the wrapper must
+#                               derive `i32 (i32, f32, ptr)` for the no-name
+#                               install to succeed and the slots to marshal.
+#                               Cap37_TypeMap(10, 5.0f, &sentinel) == 1016
+#                               ((10 mutated to 11) + (int)5.0f + 1000-for-ptr).
+#                               The row that catches a future type-trait
+#                               regression — a wrong type->token mapping fails
+#                               the install or perturbs the observed value.
+#
+# Test mode: boot-only. Every row self-verifies at kcdxPlugin_PostGameLoad; the
+# aggregator emits the matrix line at kInputLoaded. An InputLoaded backstop
+# (the cap-36 design) reports a loud FAIL on every row if PostGameLoad never
+# fired. NO console gestures, NO save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_37_kcdx_wrapper"
+display_name        = "CAP-37 Kcdx.h wrapper (C++)"
+author              = "ts"
+description         = "C++ DLL exercising the include/kcdx/Kcdx.h empowered wrapper end-to-end: the Before/After/Around/Replace<Sig,&fn> helpers with NATURAL callbacks, the Try* handle path, and the type->DSL trait on i32+f32+ptr."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+default_priority    = 30
+test_names          = ["CAP-37-wrapper-before",
+                       "CAP-37-wrapper-after",
+                       "CAP-37-wrapper-around",
+                       "CAP-37-wrapper-replace",
+                       "CAP-37-wrapper-try-handle",
+                       "CAP-37-wrapper-typemap"]
+
+[entrypoints]
+dll = "cap-37.dll"

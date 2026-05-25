@@ -214,9 +214,12 @@ void install(Kcdx& K, uintptr_t target_va) {
 }
 ```
 
-This is the floor the `cap-36-cpp-hook-interface` regression plugin exercises
-for its Before/After/Around/Replace rows (its targets are DLL-internal stubs,
-so it uses the raw-address locator + the derived signature).
+This is the path the `cap-37-kcdx-wrapper` regression plugin exercises for its
+Before/After/Around/Replace rows + the Try\* handle row + the type→DSL-trait
+row (its targets are DLL-internal stubs, so it uses the raw-address locator +
+the wrapper-derived signature). `cap-36-cpp-hook-interface` is the peer
+regression net for the **raw** `kcdxHookInterface` floor underneath
+([hook.md](hook.md)) — it does not use this wrapper.
 
 ---
 

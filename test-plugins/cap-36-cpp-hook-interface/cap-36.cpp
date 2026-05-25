@@ -82,18 +82,11 @@
 #include <cstring>
 
 #include "kcdx/Interfaces.h"
-#include "kcdx/Kcdx.h"
 
 namespace {
 
 // Manifest bare name — must match [plugin].name in kcdx.toml.
-const char* kName   = "cap_36_cpp_hook_interface";
-const char* kAuthor = "ts";  // must match [plugin].author in kcdx.toml
-
-// The empowered floor (Kcdx.h). The 4 sub-verb rows install through this;
-// raw-floor / uninstall / crosslang stay on the raw g_hook below to keep
-// proving the floor-4 path works without the wrapper.
-Kcdx K;
+const char* kName = "cap_36_cpp_hook_interface";
 
 // Cached at kcdxPlugin_Load. Every kcdxHookOptions opts.owningPlugin =
 // g_self; raw-floor row included (no wrapper to stash this for the
@@ -143,43 +136,49 @@ TARGET(Cap36_Add_RawFloor,  0x3606)
 TARGET(Cap36_Crosslang,     0x3607)
 #undef TARGET
 
-// === Hook callbacks — NATURAL signatures via Kcdx.h ==================
-//
-// MIGRATED to Kcdx.h's empowered helpers (chunk 6). The author writes a
-// NATURAL callback typed in the ORIGINAL target's signature
-// (int (int seed)); Kcdx.h generates the per-mode adapter that unpacks the
-// engine's mangled JIT-thunk ABI (uintptr_t args[]/int* outCount for Before,
-// origReturn-prepend for After, the typed call_original for Around) and
-// writes back. The author never touches args[]/outCount or the mangled cFn
-// shape — that is exactly the hand-written mangling the raw-floor row below
-// still shows for contrast.
-//
-// All four are NON-CAPTURING free functions (so they decay to a plain fn
-// pointer the adapter's address-of works on). The 7 observed PASS values are
-// UNCHANGED from the hand-mangled version: Before 111, After 1110, Around 220,
-// Replace 42.
+// === Hook callbacks — per-mode signatures (BuildCDispatchThunk) ======
 
-// BEFORE — natural by-reference arg mutation. Kcdx.h writes the mutated
-// `seed` back to args[0] and sets *outCount automatically.
-void Cap36_Before_Cb(int& seed) {
-    seed += 1;
+// BEFORE shape: void cFn(uintptr_t args[], int* outCount, /* typed
+// args... */). Mutate args[i] (8-byte slot) and set *outCount = N to
+// commit the first N slots back to params. Untouched slots (outCount
+// < cSig.args.size()) are left as-is by the thunk (args[] is pre-
+// populated with current slot values at Before entry per
+// dynamic_call_jit.cpp:604-611, so a callback that touches nothing
+// produces zero net change). The typed-arg pass-through (`int seed`
+// trailing) is the engine's typed view of the same slot, given to the
+// callback for ergonomic reading; the AUTHORITATIVE mutation channel
+// is args[]/outCount.
+extern "C" void Cap36_Before_Cb(uintptr_t args[], int* outCount,
+                                int seed) {
+    (void)seed;  // typed pass-through, not used here
+    args[0]     = static_cast<uintptr_t>(static_cast<int32_t>(args[0]) + 1);
+    *outCount   = 1;
 }
 
-// AFTER non-void — receive the original return + the (by-value) args; return
-// the new return. Args observe-only (the original already ran with them).
-int Cap36_After_Cb(int origReturn, int seed) {
+// AFTER non-void shape: <typed_return> cFn(<typed_return> origReturn,
+// /* typed args... */). Receive the original return as the first arg,
+// return the new value. seed is the pass-through (the original function
+// already ran with it; we don't get to change it).
+extern "C" int Cap36_After_Cb(int origReturn, int seed) {
     (void)seed;
     return origReturn + 1000;
 }
 
-// AROUND — call_original is a plain typed function pointer the author invokes
-// with the natural args; return the new result.
-int Cap36_Around_Cb(int (*call_original)(int), int seed) {
+// AROUND shape: <typed_return> cFn(<typed_return>(*call_original)(
+// /* typed args... */), /* typed args... */). The call_original
+// parameter arrives as a pointer-width register (engine-side signature
+// uses TypeId::kUIntPtr per dynamic_call_jit.cpp:417-418, D-c-fn-abi-2
+// Option B); the C source-level typedef declares the typed function
+// pointer so the call site can invoke it with the typed args directly.
+typedef int (*Cap36_Around_CallOrig)(int);
+extern "C" int Cap36_Around_Cb(Cap36_Around_CallOrig call_original,
+                               int seed) {
     return 2 * call_original(seed);
 }
 
-// REPLACE — original never runs; return the replacement.
-int Cap36_Replace_Cb(int seed) {
+// REPLACE shape: <typed_return> cFn(/* typed args... */). No prepended
+// args, no origReturn (the original never runs).
+extern "C" int Cap36_Replace_Cb(int seed) {
     (void)seed;
     return 42;
 }
@@ -305,25 +304,15 @@ const kcdxHookInterface* g_hook_raw_floor = nullptr;
 // === Install all 7 hooks ============================================
 
 bool InstallHooks() {
-    // --- Rows 1-4: the sub-verbs via Kcdx.h's empowered helpers --------
-    //
-    // MIGRATED to the empowered floor. The author writes ONLY:
-    //   - a NATURAL callback (above), and
-    //   - an opts carrying the [advanced] raw-address locator + a name.
-    // Kcdx.h threads opts.owningPlugin = K.self automatically and, because
-    // this is the no-name (raw `address`) path, derives opts.signature from
-    // the <Sig> template arg (B2 — a named target would carry the verified
-    // ABI instead, leaving signature null). No hand-written args[]/outCount,
-    // no per-mode mangled cFn, no manual `i32 (i32 seed)` string. The Try*
-    // forms return the handle so PostGameLoad can read IsApplied.
-
     // --- Row 1: Before -------------------------------------------------
     {
         kcdxHookOptions opts = {};
-        opts.address = reinterpret_cast<uintptr_t>(&Cap36_Add_Before);
-        opts.name    = "cap36_before";
-        g_h_before = kcdx::hook::TryBefore<int(int), &Cap36_Before_Cb>(
-            K, /*target=*/nullptr, &opts);
+        opts.owningPlugin   = g_self;
+        opts.address        = reinterpret_cast<uintptr_t>(&Cap36_Add_Before);
+        opts.signature      = "i32 (i32 seed)";
+        opts.name           = "cap36_before";
+        g_h_before = g_hook->Before(/*target=*/nullptr,
+                                    (void*)&Cap36_Before_Cb, &opts);
         if (g_h_before == 0) {
             g_log.Error("CAP36",
                 "InstallHooks: Before install returned 0 (see HOOK_"
@@ -335,10 +324,12 @@ bool InstallHooks() {
     // --- Row 2: After -------------------------------------------------
     {
         kcdxHookOptions opts = {};
-        opts.address = reinterpret_cast<uintptr_t>(&Cap36_Add_After);
-        opts.name    = "cap36_after";
-        g_h_after = kcdx::hook::TryAfter<int(int), &Cap36_After_Cb>(
-            K, /*target=*/nullptr, &opts);
+        opts.owningPlugin   = g_self;
+        opts.address        = reinterpret_cast<uintptr_t>(&Cap36_Add_After);
+        opts.signature      = "i32 (i32 seed)";
+        opts.name           = "cap36_after";
+        g_h_after = g_hook->After(/*target=*/nullptr,
+                                  (void*)&Cap36_After_Cb, &opts);
         if (g_h_after == 0) {
             g_log.Error("CAP36", "InstallHooks: After install returned 0");
             return false;
@@ -348,10 +339,12 @@ bool InstallHooks() {
     // --- Row 3: Around -------------------------------------------------
     {
         kcdxHookOptions opts = {};
-        opts.address = reinterpret_cast<uintptr_t>(&Cap36_Add_Around);
-        opts.name    = "cap36_around";
-        g_h_around = kcdx::hook::TryAround<int(int), &Cap36_Around_Cb>(
-            K, /*target=*/nullptr, &opts);
+        opts.owningPlugin   = g_self;
+        opts.address        = reinterpret_cast<uintptr_t>(&Cap36_Add_Around);
+        opts.signature      = "i32 (i32 seed)";
+        opts.name           = "cap36_around";
+        g_h_around = g_hook->Around(/*target=*/nullptr,
+                                    (void*)&Cap36_Around_Cb, &opts);
         if (g_h_around == 0) {
             g_log.Error("CAP36", "InstallHooks: Around install returned 0");
             return false;
@@ -361,10 +354,12 @@ bool InstallHooks() {
     // --- Row 4: Replace ------------------------------------------------
     {
         kcdxHookOptions opts = {};
-        opts.address = reinterpret_cast<uintptr_t>(&Cap36_Add_Replace);
-        opts.name    = "cap36_replace";
-        g_h_replace = kcdx::hook::TryReplace<int(int), &Cap36_Replace_Cb>(
-            K, /*target=*/nullptr, &opts);
+        opts.owningPlugin   = g_self;
+        opts.address        = reinterpret_cast<uintptr_t>(&Cap36_Add_Replace);
+        opts.signature      = "i32 (i32 seed)";
+        opts.name           = "cap36_replace";
+        g_h_replace = g_hook->Replace(/*target=*/nullptr,
+                                      (void*)&Cap36_Replace_Cb, &opts);
         if (g_h_replace == 0) {
             g_log.Error("CAP36", "InstallHooks: Replace install returned 0");
             return false;
@@ -476,14 +471,6 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         }
         return true;
     }
-
-    // Initialize the empowered floor (Kcdx.h). K.Init fetches the shipped
-    // sub-interfaces (Hook among them), resolves K.self = GetPluginHandle(
-    // kName), and builds K.log. The 4 sub-verb rows install through K's
-    // helpers; K.self is what they thread into opts.owningPlugin. If Init
-    // fails (Hook unavailable) every row reports FAIL below via the existing
-    // g_hook null-guard, so we don't early-return here.
-    K.Init(api, kAuthor, kName);
 
     auto* messaging = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging,
