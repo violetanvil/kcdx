@@ -14,6 +14,9 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "hook_chain.h"  // kcdx::hook_chain::Uninstall — H_uninstall
+                         // routes a Lua handle:uninstall() on a Kind::Hook
+                         // entry through the per-target chain removal.
 #include "log.h"
 #include "plugin_loader.h"  // kcdx::plugins::g_manifests — manifest
                             // lookup for the resolved plugin's author
@@ -140,6 +143,55 @@ int H_wait_applied(lua_State* L) {
         "for now");
 }
 
+int H_uninstall(lua_State* L) {
+    // Lua method-chaining convention: always return self (the handle
+    // userdata at stack index 1). Idempotent at every layer — an already-
+    // Removed entry, an unknown handle id, and a Kind whose engine-side
+    // uninstall is a no-op all flow through the same "flip to Removed +
+    // return self" path.
+    auto* h = HandleUd(L, 1);
+    Entry* e = FindMut(*h);
+    if (!e) {
+        // Handle's Entry vanished from the registry — shouldn't happen
+        // (the queue is append-only), but match the rest of the H_*
+        // handlers' tolerant shape: return self, no error.
+        lua_pushvalue(L, 1);
+        return 1;
+    }
+    switch (e->kind) {
+        case Kind::Hook:
+            // hook_chain::Uninstall is idempotent and returns true even
+            // when the handle id is unknown or already removed, so a
+            // double-uninstall is a safe no-op at the engine layer.
+            kcdx::hook_chain::Uninstall(*h);
+            SetStatus(*h, Status::Removed);
+            break;
+        // Non-Hook kinds: raise a teaching error. We do NOT silently flip
+        // status — that would lie to the author (`:applied()==false` while
+        // the underlying registration is still applied in memory). The
+        // patch engine has no unapply path today (no original-bytes
+        // snapshot stored on PatchEntry); when a per-kind uninstall ships
+        // (its own feature: snapshot + revert + parity test), extend this
+        // switch to dispatch to it BEFORE flipping status. Mirrors the
+        // existing H_wait_applied "not available yet" pattern.
+        default: {
+            const char* kindName = "unknown";
+            switch (e->kind) {
+                case Kind::Bytes: kindName = "kcdx.bytes"; break;
+                default:          break;
+            }
+            return luaL_error(L,
+                "handle:uninstall() is not yet supported for %s handles "
+                "(only kcdx.hook handles can be uninstalled today). The "
+                "underlying engine has no revert path for this surface "
+                "yet; a future feature ships per-kind uninstall.",
+                kindName);
+        }
+    }
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
 int H_tostring(lua_State* L) {
     auto* h = HandleUd(L, 1);
     const Entry* e = Find(*h);
@@ -255,6 +307,8 @@ void EnsureHandleMetatable(lua_State* L) {
     lua_setfield(L, -2, "reason");
     lua_pushcfunction(L, H_wait_applied);
     lua_setfield(L, -2, "wait_applied");
+    lua_pushcfunction(L, H_uninstall);
+    lua_setfield(L, -2, "uninstall");
     lua_pop(L, 1);
 }
 

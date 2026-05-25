@@ -248,9 +248,10 @@ The userdata returned by `kcdx.hook` and `kcdx.bytes`:
 | Method | Returns | Meaning |
 |---|---|---|
 | `h:name()` | string | The entry's name. |
-| `h:applied()` | `nil` / `true` / `false` | `nil` = pending (apply pass hasn't run); `true` = applied; `false` = failed. |
+| `h:applied()` | `nil` / `true` / `false` | `nil` = pending (apply pass hasn't run); `true` = applied; `false` = failed OR removed (after `:uninstall()`). |
 | `h:reason()` | string or `nil` | The failure reason when `:applied() == false`; `nil` otherwise. |
-| `h:wait_applied()` | — | **Not available yet.** Raises a clear error directing you to use `kcdx.on("ready", ...)`. (Returns self if already resolved.) |
+| `h:wait_applied()` | — | **Not available yet.** Raises a clear error directing you to use `kcdx.on("ready", ...)`. (Returns self if already resolved — including after `:uninstall()`.) |
+| `h:uninstall()` | self | **`kcdx.hook` handles only.** Logically removes the hook. After this returns, `:applied() == false` and the callback no longer fires. Idempotent (calling on an already-uninstalled handle is a no-op). The underlying MinHook detour stays installed for the session — engine reuses it if another `kcdx.hook` lands on the same target later. Returns self for chaining. Calling `:uninstall()` on a `kcdx.bytes` handle raises a teaching error today (the patch engine has no revert path yet — a future feature ships per-kind uninstall). |
 | `tostring(h)` | string | `kcdx.handle<id=… name=… status=…>`. |
 
 Because `:applied()` is `nil` in straight-line `plugin.lua` code, read final
