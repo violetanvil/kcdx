@@ -42,6 +42,27 @@ grid. Use `PushLightUserdata` for pointers. The caveat is documented inline in
 the header on those members; see [lua.md](lua.md) and
 `.claude/rules/lua-precision.md`.
 
+## One shared Lua state — use `kcdxLuaApi`, don't call the game's `lua_*` copy directly
+
+kcdx and WHGame.dll each statically link their own copy of Lua 5.1, but both
+drive **one shared `lua_State`** — the same globals, tables, and stack. So the
+`kcdxLuaApi` you fetch from `kcdxScriptingInterface` already reaches everything
+the game's Lua sees; it is the full, safe path to the live VM, and a plugin
+never needs the game's own `lua_*` exports.
+
+*Hooking* a game Lua function is fully supported — install a `kcdxHookInterface`
+hook on it and your callback fires when the game calls it. What is **not** safe
+is a plugin *calling* the game's compiled `lua_*` copy directly by address (e.g.
+`ResolveAddressByName("kcdx.lua_settable")` then invoking it on a stack you
+built with `kcdxLuaApi`): the two copies have separate internal `static const`
+sentinels, so entering the game's copy with the other copy's stack raises a Lua
+error that `longjmp`s out of your call (it never returns; it is uninstrumentable
+from the plugin side). There is no reason to do this — build and act on the
+shared state through `kcdxLuaApi`, which crosses no boundary. The underlying
+hazard (the dual-Lua GC-sentinel problem) is `.claude/rules/lua-bridge.md`;
+PROBE A in `docs/known-issues/cap-38 cpp before-observer never fires on a named
+game target.md` is the worked demonstration.
+
 ## Error conventions
 
 - **`QueryInterface` returns `null`** if the interface ID is unknown or the

@@ -34,3 +34,18 @@
 - **`require` is plugin-scoped.** `require("helper")` resolves your own folder
   and a per-plugin cache; it never reaches another plugin's module (see
   [require](require.md)).
+
+- **One shared Lua state — use kcdx's Lua, don't call the game's `lua_*`
+  copy directly.** kcdx and the game each statically link their own copy of
+  Lua 5.1, but both drive **one shared `lua_State`** — the same globals,
+  tables, and stack. So the kcdx surface (`kcdx.lua.*`, the values you push
+  and read through any kcdx call) already reaches everything the game's Lua
+  sees; you never need the game's own `lua_*` functions, and kcdx's are the
+  full, safe path. *Hooking* a game Lua function is fully supported (your
+  callback fires when the game calls it). What is **not** safe is a plugin
+  *calling* the game's compiled `lua_*` copy directly by address (e.g.
+  resolving `lua_settable` and invoking it on a kcdx-built stack): the two
+  copies have separate internal sentinels, so crossing from one's stack into
+  the other's function raises a Lua error that unwinds out of your call. There
+  is no reason to do this — call the kcdx surface, which acts on the same live
+  state with no boundary to cross.
