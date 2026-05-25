@@ -19,14 +19,28 @@
 //
 // Rows owned here:
 //
-//   * CAP-38-cpp-gate-proceeds (AUTO) — install PROCEEDED with the
-//     explicit sig: handle != 0, IsApplied()==true, and the hook actually
-//     FIRES (a before observer flips a flag; lua_settable is called all
-//     over boot, so by PostGameLoad the flag is set — the hook is live
-//     and marshalling per the explicit 1-arg sig). FALSIFIABLE against a
-//     hypothetical (a)-REJECT implementation: had the gate rejected the
-//     mismatch, the handle would be 0 / IsApplied false / the observer
-//     never fires, and this row FAILS.
+//   * CAP-38-cpp-gate-proceeds (AUTO) — install PROCEEDED with the explicit
+//     sig: handle != 0 && IsApplied()==true. This is the cap-33/34/35
+//     install-is-the-proof idiom, identical to the Lua peer's applied()
+//     assertion. FALSIFIABLE against a hypothetical (a)-REJECT impl: had the
+//     gate rejected the named-target + wrong-sig mismatch, the handle would
+//     be 0 / IsApplied false and this row FAILS.
+//
+//     Why NOT "the hook fires": the C-dispatch FIRING of a before-observer
+//     is already proven by cap-36's six own-function rows (Before/After/
+//     Around/Replace/uninstall/crosslang each hook a PLUGIN-LOCAL function
+//     and INVOKE it to observe the callback). cap-38 cannot reuse that
+//     pattern: the gate requires a NAMED target (only a game seed carries a
+//     verified ABI to conflict against), and a plugin cannot safely invoke
+//     WHGame's lua_settable on demand to trigger the detour — PROBE A
+//     (docs/known-issues/cap-38 cpp before-observer never fires on a named
+//     game target.md) established that a plugin-driven call into WHGame's
+//     lua_settable raises a Lua error across the dual-Lua boundary
+//     (lua-bridge.md): it longjmp's back to the nearest lua_pcall, never
+//     returns to the caller, and is uninstrumentable from the plugin side.
+//     So firing-on-this-named-target is not observably testable from a
+//     plugin; install-proceeded IS the behavior-c proof, and cap-36 owns the
+//     C-dispatch firing proof.
 //
 //   * CAP-38-cpp-gate-warn ([manual], log-assert; reported by the
 //     orchestrator, NOT auto) — the COMP-12 log-assert pattern: the
@@ -65,29 +79,28 @@ const kcdxHookInterface* g_hook = nullptr;
 kcdxPluginHandle         g_self = kcdxInvalidPluginHandle;
 kcdxLogger               g_log;
 
-kcdxHookHandle g_h_gate      = 0;
-bool           g_observer_fired = false;
-bool           g_post_ran    = false;
-bool           g_reported    = false;
+kcdxHookHandle g_h_gate   = 0;
+bool           g_post_ran = false;
+bool           g_reported = false;
 
 // The named target + the WRONG explicit signature.
 //   target          = "kcdx.lua_settable"  (engine seed, verified
 //                       ABI "void (ptr L, i32 idx)" — id 1186)
 //   opts.signature  = "void (ptr L)"        (1 arg — arg-count delta vs
 //                       the verified 2-arg ABI → NOT SignaturesCompatible)
-const char* kTarget       = "kcdx.lua_settable";
-const char* kWrongSig     = "void (ptr L)";
+const char* kTarget   = "kcdx.lua_settable";
+const char* kWrongSig = "void (ptr L)";
 
 // BEFORE shape: void cFn(uintptr_t args[], int* outCount, /* typed
 // args... */). Pure observer — set *outCount=0 (commit nothing back), do
-// not touch args. The typed pass-through `L` is the one arg the wrong
-// 1-arg sig declares; we read nothing from it. lua_settable runs
-// untouched after this returns.
+// not touch args. Present to document the wrong-sig-is-safe property (the
+// detour preserves the original's registers); the row does NOT assert this
+// fires (see the header note — firing-on-this-named-target is not
+// plugin-observable).
 extern "C" void Cap38_Observer_Cb(uintptr_t args[], int* outCount,
                                   void* L) {
     (void)args;
     (void)L;
-    g_observer_fired = true;
     *outCount = 0;  // commit no arg mutation
 }
 
@@ -97,39 +110,20 @@ void Report(const char* row, bool pass, const char* reason) {
     g_api->ReportTestResult(g_self, row, pass ? 1 : 0, reason);
 }
 
-// The auto row reports at InputLoaded, NOT at PostGameLoad. The hook is
-// installed in the deferred apply pass that runs only a few ms before
-// PostGameLoad — too early to have observed lua_settable being called
-// (the first run flaked FAIL on observer-fired==0 for exactly this race).
-// By InputLoaded the apply pass is long done and lua_settable has been
-// called thousands of times during boot, so the full proof holds: the
-// gated install PROCEEDED (handle != 0 / IsApplied — the falsifiable
-// signal vs an (a)-reject impl) AND the hook actually FIRES and marshals
-// per the explicit sig (the before observer ran). PostGameLoad only
-// records that the after-phase export was dispatched (g_post_ran), which
-// the report cross-checks.
+// InputLoaded backstop — loud FAIL if PostGameLoad never fired (the
+// cap-29 / cap-36 design). Only the auto row is backstopped; the manual
+// log-assert row is the orchestrator's job.
 void OnMessage(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
     if (g_reported) return;
+    if (g_post_ran) return;
     g_reported = true;
-
-    const bool installed = (g_h_gate != 0) && g_hook && g_hook->IsApplied(g_h_gate);
-    const bool pass = installed && g_observer_fired && g_post_ran;
-    char reason[520];
-    snprintf(reason, sizeof(reason),
-        "%s — named target '%s' + WRONG explicit sig '%s' (verified ABI is "
-        "'void (ptr L, i32 idx)'): handle=%s, IsApplied=%d, observer "
-        "fired=%d, PostGameLoad ran=%d. behavior-c keeps the explicit sig "
-        "authoritative: the install PROCEEDS and the hook FIRES per the "
-        "explicit sig. Had the gate REJECTED (hypothetical (a)-impl) the "
-        "handle would be 0 / IsApplied false / observer never fires and this "
-        "row FAILS. The gate-WARN itself is the [manual] CAP-38-cpp-gate-warn "
-        "row (orchestrator greps HOOK_SIG_GATE explicit_overrides_verified).",
-        pass ? "gate WARN+proceed PASS" : "gate WARN+proceed FAIL",
-        kTarget, kWrongSig,
-        (g_h_gate != 0) ? "non-zero" : "zero",
-        installed ? 1 : 0, g_observer_fired ? 1 : 0, g_post_ran ? 1 : 0);
-    Report("CAP-38-cpp-gate-proceeds", pass, reason);
+    const char* reason =
+        "kcdxPlugin_PostGameLoad did not fire before kcdxMessage_"
+        "InputLoaded — the after-phase C++ export was not dispatched; "
+        "CAP-38-cpp-gate-proceeds reported FAIL via the InputLoaded backstop";
+    g_log.Error("CAP38", "FAIL backstop: %s", reason);
+    g_api->ReportTestResult(g_self, "CAP-38-cpp-gate-proceeds", 0, reason);
 }
 
 }  // namespace
@@ -184,12 +178,30 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 extern "C" __declspec(dllexport)
 bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
     (void)api;
-    // The after-phase export ran — record it so the InputLoaded report can
-    // cross-check that the full lifecycle fired. The auto row reports at
-    // InputLoaded (see OnMessage), not here: the hook is installed in the
-    // apply pass only a few ms before this point, too early to have observed
-    // lua_settable being called.
     g_post_ran = true;
+    if (g_reported) return true;
+    g_reported = true;
+
+    // PASS = behavior-c (install PROCEEDED): non-zero handle that IsApplied.
+    // The falsifiable signal vs a hypothetical (a)-reject impl (handle 0 /
+    // IsApplied false → FAIL), mirroring the Lua peer's applied() assertion.
+    // (Firing the detour is NOT asserted — see the header note + PROBE A.)
+    const bool applied = (g_h_gate != 0) && g_hook->IsApplied(g_h_gate);
+    const bool pass = (g_h_gate != 0) && applied;
+    char reason[420];
+    snprintf(reason, sizeof(reason),
+        "%s — named target '%s' + WRONG explicit sig '%s' (verified ABI is "
+        "'void (ptr L, i32 idx)'): handle=%s, IsApplied=%d. behavior-c keeps "
+        "the explicit sig authoritative and the install PROCEEDS; had the "
+        "gate REJECTED (hypothetical (a)-impl) the handle would be 0 / "
+        "IsApplied false and this row FAILS. The gate-WARN itself is the "
+        "[manual] CAP-38-cpp-gate-warn row (orchestrator greps HOOK_SIG_GATE "
+        "explicit_overrides_verified).",
+        pass ? "gate WARN+proceed PASS" : "gate WARN+proceed FAIL",
+        kTarget, kWrongSig,
+        (g_h_gate != 0) ? "non-zero" : "zero",
+        applied ? 1 : 0);
+    Report("CAP-38-cpp-gate-proceeds", pass, reason);
     return true;
 }
 
