@@ -24,6 +24,7 @@
 //
 // Chosen observable (the disassembler-test COMMON PATH — a NAME, not hex):
 //   target      = "outfit_swap_callsite_aob"   (Address Library id 1004)
+//   offset      = 13   (the name resolves the AOB start; the rewrite is +13)
 //   original    = "44 8A F0"
 //   replacement = "45 31 F6"
 // This is the SAME verified-safe rewrite cap-01 proves on the Lua /
@@ -201,6 +202,14 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     opts.owningPlugin = K.self;
     opts.name         = "cap39_outfit_swap_rewrite";
     opts.target       = kTarget;        // name resolves the address (id 1004)
+    // The named target resolves to the 16-byte AOB's START (0x56174C); the
+    // 'mov r14b,al' -> 'xor r14d,r14d' rewrite is at +13 within it (per the
+    // seed-row description for id 1004, and matching cap-01's offset=13). With
+    // offset 0 the apply pass reads 48 81 C1 at the site, not the stated
+    // original 44 8A F0, and correctly REJECTS the patch (the bug the first
+    // launch caught). The named target gives the WHERE; the author still
+    // supplies the intra-site offset for a mid-pattern rewrite.
+    opts.offset       = 13;
     opts.original     = kOriginal;      // verify bytes (same len as replacement)
     opts.replacement  = kReplacement;   // same-length rewrite (3 bytes)
     opts.idempotent   = true;           // coexist with cap-01's same write
