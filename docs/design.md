@@ -791,44 +791,57 @@ Before adopting any new C++↔Lua glue library, repro the
 save-load crash from workspace memory
 `project_kcd2_lua_metatable_fragility` against it.
 
-#### Threading constraint: hook only main-thread functions
+#### Threading: Lua callbacks run on the main thread; the engine marshals off-thread hits
 
 KCD2's Lua VM (CryEngine 5.2.3 bundled Lua 5.1) is single-
-threaded. `lua_lock` / `lua_unlock` are no-ops in the shipped
-build. `kcdx::scripting`'s pre/post/mid dispatchers invoke
-`lua_pcall` directly against the captured `g_lua_state` from
-inside MinHook detours — whatever thread the hooked target
-ran on is the thread that ends up entering the Lua VM.
+threaded — `lua_lock` / `lua_unlock` are no-ops in the shipped
+build, so the VM itself has no internal locking. This is a
+property of the binary KCD2 ships, not a kcdx design choice;
+SKSE/F4SE/ENB live with the same constraint. It does NOT mean
+plugin authors can only hook main-thread functions. It means
+the engine is responsible for getting every Lua callback onto
+the main thread before invoking it — the author hooks
+whatever they need; kcdx handles the marshalling.
 
-v0.1 does NOT add a runtime thread-ID guard. Plugin authors
-using `kcdx.memory.dynamic_hook` (Lua-side) or
-`[[hook]] lua_callback` (TOML-side, Phase 5f) are responsible
-for ensuring the targeted function runs on the main game
-thread. Safe targets:
+The dispatcher captures the main-thread ID at init
+(`kcdx::scripting::Init` records `GetCurrentThreadId()` once
+the lua_State is captured) and, on every callback dispatch,
+checks the calling thread:
 
-  - Anything kcdx already hooks (`lua_pcall`, `update`) — main
-    thread by construction, since that's where kcdx captured
-    the `lua_State` pointer.
-  - CryEngine gameplay-loop functions invoked from the main
-    `update`. The vast majority of `WHGame.dll` code.
-  - Lua-bound C functions (anything resolvable via
-    `kcdx.lua.cfunction_address`) — Lua's single-threaded
-    nature implies these only run from the main VM-owning
-    thread.
+  - **On-thread (the common case — gameplay-loop hooks):**
+    invoke `lua_pcall` directly. No queuing, no extra cost.
+  - **Off-thread (audio mixer, physics worker, IO/streaming):**
+    queue the callback onto `kcdx::task::DrainQueue` and return
+    immediately to the caller. The callback runs on the next
+    main-tick (typically <16ms). Args are captured at queue
+    time (string args pinned in a per-callback arena, released
+    after the main-tick fire); the original function gets its
+    pre-hook default behavior synchronously — `before` mode
+    proceeds with un-mutated args, `after` mode sees the
+    un-transformed return, `replace` / `around` skip the
+    callback for this fire.
 
-Unsafe targets:
+Per-hook opt-out via `off_thread` on the `kcdx.hook` options
+table:
 
-  - Audio mixer callbacks
-  - Physics worker thread routines
-  - IO/streaming worker routines
+  - `off_thread = "marshal"` (default) — auto-marshal as above.
+  - `off_thread = "skip"` — silently skip off-thread fires
+    (warn-once-per-hook in the engine log).
+  - `off_thread = "error"` — log an error and skip; the author
+    is explicit that this hook must never fire off-thread.
 
-If a real plugin needs to hook an unsafe target, v0.2 adds a
-runtime `GetCurrentThreadId()` guard inside the dispatcher
-that skips invocation when called off-thread (logs a warn).
-Until that exists, the failure mode is undefined — Lua state
-race, likely crash. Verified-2026-05-18 (Phase 5d skip
-decision): the rule is documented here and in
-`CLAUDE.md` hard rule #16; no runtime enforcement.
+The on-thread fast path costs the same as today's direct
+dispatch (one TLS read for the thread-ID compare). The
+off-thread path costs a queue push + a wait until the next
+main-tick; authors hooking 10kHz off-thread sites should pick
+`skip` rather than flooding the queue, but the default works
+correctly out of the box.
+
+This is the same pattern `kcdx.command` and `kcdx.cosave` use
+for subsystem-deferral: the author calls the API, the engine
+ensures the work happens at the moment it CAN happen. The
+threading model is one more axis of "engine does the heavy
+lifting" per the cornerstones.
 
 ### `kcdxSerializationInterface`
 
