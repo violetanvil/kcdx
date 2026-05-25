@@ -760,7 +760,7 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
                 LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
                     log::KV("phase",        "pre"),
                     log::KV("tid",          (long long)::GetCurrentThreadId()),
-                    log::KV("is_main",      log::IsMainThread() ? 1 : 0),
+                    log::KV("is_main",      log::IsGameMainThread() ? 1 : 0),
                     log::KV("target",       (void*)target_func_ptr),
                     log::KV("chain_target", (void*)probeChain->targetVa),
                     log::KV("mode",         kcdx::hook_payload::ModeToken(e.mode)),
@@ -847,7 +847,7 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
         LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
             log::KV("phase",        "post"),
             log::KV("tid",          (long long)::GetCurrentThreadId()),
-            log::KV("is_main",      log::IsMainThread() ? 1 : 0),
+            log::KV("is_main",      log::IsGameMainThread() ? 1 : 0),
             log::KV("target",       (void*)target_func_ptr),
             log::KV("chain_target", (void*)chain->targetVa),
             log::KV("mode",         kcdx::hook_payload::ModeToken(e.mode)),
@@ -935,7 +935,7 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
         LOG_DEBUG_KV("HOOK_THREAD", "dispatch",
             log::KV("phase",        "mid"),
             log::KV("tid",          (long long)::GetCurrentThreadId()),
-            log::KV("is_main",      log::IsMainThread() ? 1 : 0),
+            log::KV("is_main",      log::IsGameMainThread() ? 1 : 0),
             log::KV("target",       (void*)target_func_ptr),
             log::KV("chain_target", probeChain ? (void*)probeChain->targetVa : (void*)nullptr),
             log::KV("mode",         "mid"),
@@ -1323,10 +1323,31 @@ void InsertOrdered(Chain& chain, ChainEntry&& e) {
 
 void SetLuaState(lua_State* L) {
     g_L = L;
-    // Create the mid-capture-handle metatable once on the live state, so
-    // MidDispatch can hand the callback handles with :get()/:set(). Raw
-    // Lua C API only (no static-const sentinel — lua-bridge.md AP5).
-    if (L) EnsureCaptureHandleMetatable(L);
+    if (L) {
+        // Capture the game main thread id ONCE on the first non-null
+        // L invocation. This callsite executes inside hooks.cpp's
+        // first-update-tick handler (HookedUpdate, line ~316-321), so
+        // by construction the calling thread IS the game's main /
+        // per-frame update / Lua-callback thread.
+        //
+        // The static-bool sentinel is defensive — SetGameMainThread
+        // itself is idempotent (every call lands the same tid because
+        // the first-update-tick hook always fires on the same
+        // thread), but avoiding the re-write keeps the intent
+        // explicit and makes a future "fires from a different thread
+        // on re-entry" regression visibly skip rather than silently
+        // overwrite. See log.h SetGameMainThread doc-comment.
+        static bool s_gameMainThreadCaptured = false;
+        if (!s_gameMainThreadCaptured) {
+            log::SetGameMainThread();
+            s_gameMainThreadCaptured = true;
+        }
+        // Create the mid-capture-handle metatable once on the live
+        // state, so MidDispatch can hand the callback handles with
+        // :get()/:set(). Raw Lua C API only (no static-const sentinel
+        // — lua-bridge.md AP5).
+        EnsureCaptureHandleMetatable(L);
+    }
 }
 
 // Install a mode=mid hook: a mid-function detour at the captured-

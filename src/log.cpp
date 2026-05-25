@@ -96,10 +96,37 @@ std::atomic<bool>           g_initialized{false};
 // together lexicographically.
 std::string g_sessionStamp;
 
-// Main thread id captured at Init(). Used by the dev-log formatter to
-// decide whether to emit `tid=N` on dev-log lines (only when not the
-// main thread, since "main" is implicit).
-DWORD g_mainThreadId = 0;
+// Engine-init thread id — captured at log::Init() (which runs from
+// DLL_PROCESS_ATTACH on the injector thread under the Phase 1+
+// launcher model). Used ONLY by the dev-log formatter (FormatDevLine
+// below) to decide whether to emit a `tid=N` suffix on dev-log lines:
+// any line whose calling thread differs from this captured id gets the
+// suffix, so a worker / async / boot-phase log line is visibly
+// attributed.
+//
+// The dev-log formatter genuinely WANTS the engine-init thread here —
+// a WorkerThread boot line really IS not the engine-init thread and
+// SHOULD carry tid=N. The semantics this variable serves are correct
+// for that use.
+//
+// What this variable is NOT: it is NOT the game's main-Lua-VM thread
+// (the per-frame update / Lua callback thread). For that, see
+// `g_gameMainThreadId` below + `IsGameMainThread()`. The two threads
+// are different in kcdx — conflating them was the bug behind Phase 3
+// sub-1 step 5-pre's invalid probe.
+DWORD g_engineInitThreadId = 0;
+
+// Game main thread id — captured later than `g_engineInitThreadId`,
+// at `hook_chain::SetLuaState`'s first non-null L call (which executes
+// inside the first-update-tick hook in src/hooks.cpp — that callsite
+// IS the game main thread by construction).
+//
+// Used by the hook dispatchers in src/hook_chain.cpp via
+// `IsGameMainThread()` to classify off-thread fires for the
+// off_thread = marshal/skip/error routing.
+//
+// 0 = "not yet captured" sentinel (no real Windows thread has tid 0).
+DWORD g_gameMainThreadId = 0;
 
 // Category allow-list. Empty = every category passes. Set once during
 // engine.toml load; readers don't need a mutex after that.
@@ -384,9 +411,12 @@ int FormatDevLine(char* out, size_t outSize, Level level,
                      category ? category : "?",
                      body ? body : "");
     if (n < 0) return 0;
-    // Append tid=N if not the main thread.
+    // Append tid=N if not the engine-init thread. (The dev-log
+    // formatter wants the engine-init thread here, not the game main
+    // thread — a boot-phase / worker line genuinely is not the
+    // engine-init thread and SHOULD carry tid=N.)
     DWORD tid = GetCurrentThreadId();
-    if (tid != g_mainThreadId && (size_t)n < outSize) {
+    if (tid != g_engineInitThreadId && (size_t)n < outSize) {
         int w = snprintf(out + n, outSize - n, " tid=%lu", (unsigned long)tid);
         if (w > 0) n += w;
     }
@@ -591,8 +621,8 @@ void FormatTo(char* buf, size_t bufsize, const char* fmt, ...) {
 // -----------------------------------------------------------------------------
 
 void Init() {
-    g_sessionStamp   = FormatSessionStamp();
-    g_mainThreadId   = GetCurrentThreadId();
+    g_sessionStamp        = FormatSessionStamp();
+    g_engineInitThreadId  = GetCurrentThreadId();
 
     fs::path logsDir = kcdx::paths::EngineDataDirPath() / L"logs";
     std::error_code ec;
@@ -708,13 +738,30 @@ bool IsCategoryEnabled(const char* category) {
     return false;
 }
 
-// Main-thread accessor — see log.h. g_mainThreadId is the TU-local
-// captured by Init() (same variable the dev-log formatter reads at
-// FormatDevLine to decide whether to suffix tid=N). The accessor stays
-// here so g_mainThreadId stays unnamed-namespace; callers don't need a
-// pointer to the variable.
+// Engine-init-thread accessor — see log.h. `g_engineInitThreadId` is
+// the TU-local captured by Init() (same variable the dev-log formatter
+// reads at FormatDevLine to decide whether to suffix tid=N). The
+// accessor stays here so the variable stays unnamed-namespace;
+// callers don't need a pointer to it.
+//
+// For game-main-thread classification (hook dispatch) use
+// `IsGameMainThread()` instead — those are different threads.
 bool IsMainThread() {
-    return ::GetCurrentThreadId() == g_mainThreadId;
+    return ::GetCurrentThreadId() == g_engineInitThreadId;
+}
+
+// Game-main-thread setter — see log.h. Called from
+// hook_chain::SetLuaState's first non-null L branch (idempotent: the
+// first-update-tick hook fires every tick and writes the same tid).
+void SetGameMainThread() {
+    g_gameMainThreadId = ::GetCurrentThreadId();
+}
+
+// Game-main-thread accessor — see log.h. Returns false before
+// SetGameMainThread() has run (g_gameMainThreadId == 0; no real
+// thread has tid 0, so this is a clean "not yet captured" negative).
+bool IsGameMainThread() {
+    return ::GetCurrentThreadId() == g_gameMainThreadId;
 }
 
 // -----------------------------------------------------------------------------

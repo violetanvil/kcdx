@@ -127,19 +127,57 @@ inline bool IsDevModeEnabled() {
     return g_devMode.load(std::memory_order_relaxed);
 }
 
-// True iff the calling thread is the main thread (the thread that
-// called log::Init). The main-thread ID is captured by Init() into a
-// TU-local in log.cpp; this accessor compares the current thread to
-// that ID. Cheap: one TLS read + one int compare, no lock.
+// True iff the calling thread is the **engine-init thread** — the
+// thread that ran `log::Init` (typically kcdx.exe's
+// `CreateRemoteThread` injector thread under the Phase 1+ launcher
+// model). Cheap: one TLS read + one int compare, no lock.
 //
-// The dispatchers in src/hook_chain.cpp use this to TAG every fire with
-// `is_main = 0/1` so the orchestrator's post-launch log read can tell
-// whether any live hook site fires off-thread without re-running it.
-// (Phase 3 sub-1 extended, step 5-pre — the probe whose outcome decides
-// whether step 5-main needs a real Marshal arg-snapshot or
-// Skip-with-warn-once is sufficient. See .claude/rules/results-driven.md
-// — probe-first on a checkable unknown.)
+// Body reads the TU-local `g_engineInitThreadId` captured by Init().
+//
+// For "is this the game's main-Lua-VM thread?" use
+// `IsGameMainThread()` instead. The two are DIFFERENT threads in
+// kcdx — `log::Init` runs from DLL_PROCESS_ATTACH on the injector
+// thread; the game main thread is captured later (after first
+// update-tick) via `hook_chain::SetLuaState` → `SetGameMainThread`.
+//
+// Conflating them was the design bug behind Phase 3 sub-1 step 5-pre's
+// invalid probe (every dispatch read `is_main=0` falsely because it
+// was comparing against the injector thread). The split — variable
+// + accessor per consumer — is the fix.
+//
+// See .claude/rules/lua-callback-threading.md for the two-variable
+// model.
 bool IsMainThread();
+
+// Record the **game main thread** id — the thread that runs the game's
+// per-frame update loop and dispatches Lua callbacks. One-liner:
+// `g_gameMainThreadId = GetCurrentThreadId();`.
+//
+// Called once from `hook_chain::SetLuaState`'s first non-null L branch
+// (which executes inside the first-update-tick hook in `src/hooks.cpp`
+// — that callsite IS the game main thread by construction). Safe to
+// call repeatedly: the first-update-tick hook fires every tick and
+// every call lands the same thread id, so only the FIRST call is
+// load-bearing; subsequent calls are idempotent re-writes of the same
+// value.
+//
+// Before this runs, `g_gameMainThreadId == 0` (sentinel) and
+// `IsGameMainThread()` returns false on every real thread.
+void SetGameMainThread();
+
+// True iff the calling thread is the **game main thread** — the thread
+// that first called `hook_chain::SetLuaState` with a non-null L.
+//
+// Returns false BEFORE `SetGameMainThread()` has been called
+// (`g_gameMainThreadId == 0` is the "not yet captured" sentinel; no
+// real Windows thread has tid 0, so this is a clean negative).
+//
+// Used by the hook dispatchers in `src/hook_chain.cpp` to classify
+// off-thread fires (`is_main = 0/1` tag in the HOOK_THREAD probe; in
+// step 5-main, the gate for off_thread = marshal/skip/error routing).
+//
+// Cheap: one TLS read + one int compare, no lock.
+bool IsGameMainThread();
 
 // -----------------------------------------------------------------------------
 // KV — name + typed value, emitted as `name=val` in the body.
