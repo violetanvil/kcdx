@@ -17,6 +17,13 @@ Intercept a game function: run your C++ callback when the game calls it, and
 optionally change its arguments, return value, or whether it runs at all. The
 C++ mirror of the core Lua verb `kcdx.hook{...}`.
 
+> For the everyday path, prefer the **empowered wrapper** in
+> [`include/kcdx/Kcdx.h`](../../include/kcdx/Kcdx.h) —
+> `kcdx::hook::Before/After/Around/Replace<Sig, &fn>(K, target)` lets you write
+> a natural typed callback instead of the mangled per-mode `cFn` ABI shown
+> below. See [wrapper.md](wrapper.md). This raw interface is the always-available
+> floor underneath it (and the only path for the Mid / Callsite sub-verbs).
+
 ## Planned shape (model-level)
 
 Per the one-model-two-languages mapping (`.claude/rules/lua-api-surface.md`),

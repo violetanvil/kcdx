@@ -135,6 +135,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 |---|---|---|---|
 | the DLL plugin shell (`kcdxPlugin_Load`, `[entrypoints] dll`, QueryInterface handshake) | Built | the plugin shell / manifest | [plugin-shell.md](plugin-shell.md) |
 | `kcdxHookInterface` (function interception) | **NYI** | `kcdx.hook` | [hook.md](hook.md) |
+| `Kcdx.h` empowered wrapper (`kcdx::hook::Before/After/Around/Replace<Sig,&fn>`, `struct Kcdx`) | Single-surface | `kcdx.hook` sub-verbs (Lua's native peer; no mangled ABI to hide) | [wrapper.md](wrapper.md) |
 | `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (byte rewrite) | Built (runtime) / locator-mirror **NYI** | `kcdx.bytes` | [bytes.md](bytes.md) |
 | `kcdxMessagingInterface::RegisterListener` (event/lifecycle) | Built | `kcdx.on` | [on.md](on.md) |
 | `kcdxConsoleInterface::RegisterCommand`/`GetArg*` (console command) | Built | `kcdx.command` | [command.md](command.md) |
