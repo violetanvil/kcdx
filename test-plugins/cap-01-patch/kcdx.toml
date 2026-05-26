@@ -1,16 +1,14 @@
-# CAP-01 — [[patch]] byte rewrite.
+# CAP-01 — byte rewrite via kcdx.bytes (Phase 4a pilot migration).
 #
-# This plugin has two parts in one folder:
-#   1. The kcdx.toml [[patch]] entry rewrites the 3-byte outfit-swap
-#      site (mov r14b, al -> xor r14d, r14d).
-#   2. The cap-01.dll subscribes to kInputLoaded (fires after first-
-#      update-tick when patches have applied), reads the bytes at the
-#      resolved address, and calls ReportTestResult based on whether
-#      they match the replacement.
+# FIRST plugin migrated off the legacy [[patch]] TOML path onto the
+# pure-Lua kcdx.bytes surface. Same site, same observable, new mechanism:
+#   - was: a [[patch]] TOML block + a companion verifier DLL.
+#   - now: plugin.lua calls kcdx.bytes{...} and self-verifies in Lua.
 #
-# This is the baseline "kcdx's patch engine is mempatch-compatible"
-# test row. If this ever fails, either the locator pipeline regressed
-# or the patch apply chain regressed.
+# The byte rewrite (mov r14b, al = 44 8A F0  ->  xor r14d, r14d = 45 31 F6)
+# at the outfit-swap site is unchanged. plugin.lua asserts the rewrite
+# applied (handle:applied()==true) AND independently reads the 3 rewritten
+# bytes back via kcdx.scan + a pointer userdata. See plugin.lua.
 
 [kcdx]
 test_suite_only = true
@@ -19,26 +17,12 @@ test_suite_only = true
 name                = "cap_01_patch"
 display_name        = "CAP-01 Patch byte-rewrite"
 author              = "ts"
-description         = "Verifies [[patch]] applies + bytes match post-apply."
+description         = "Verifies kcdx.bytes applies + bytes match post-apply (Phase 4a pilot migration off [[patch]])."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 test_names          = ["CAP-01"]
 
-[[patch]]
-name        = "cap-01-patch"
-priority    = 100
-module      = "WHGame.dll"
-pattern     = "48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0"
-offset      = 13
-original    = "44 8A F0"
-replacement = "45 31 F6"
-idempotent  = true
-context     = "48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0"
-
-description = """
-CAP-01 of the kcdx test suite. The [[patch]] baseline.
-Companion DLL asserts the bytes at the apply site match `45 31 F6`
-after the engine has had a chance to apply.
-"""
+[entrypoints]
+lua = "plugin.lua"

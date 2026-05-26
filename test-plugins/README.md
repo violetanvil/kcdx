@@ -120,19 +120,19 @@ sites; their site info lives in the row itself.
 For each kcdx primitive: what it does, where the test lives,
 what the live result is.
 
-## CAP-01: `[[patch]]` byte rewrite (TOML, declarative)
+## CAP-01: `kcdx.bytes` byte rewrite (Lua) — Phase 4a pilot migration
 
 | Field | Value |
 |---|---|
-| What | Replace N bytes at a resolved address with N other bytes. Locator pipeline (pattern + context + anchor_string) handles AOB drift. |
-| Channels | (iii) `kcdx.toml`, (iv) `inlinePatchesToml` |
-| Engine status | READY (Phase 1) |
+| What | kcdx.bytes applies + bytes match (Phase 4a pilot migration). Replace N bytes at a resolved address with N other bytes via the pure-Lua `kcdx.bytes{...}` surface. Locator pipeline (pattern + context) handles AOB drift. **First plugin migrated off the legacy `[[patch]]` path** — same site, same observable, new mechanism. |
+| Channels | (ii) `plugin.lua` `kcdx.bytes` |
+| Engine status | LIVE-PENDING (Phase 4a pilot, kcdx.bytes mechanism; awaiting checkpoint launch) |
 | Test plugin | [`cap-01-patch/`](cap-01-patch/) |
 | Site | The outfit AOB above |
-| Auto-pass check | Plugin reports PASS when patch applies cleanly (kcdx.log line `applied successfully at 0x... 44 8A F0 -> 45 31 F6`). The DLL companion verifies post-apply bytes match. |
+| Auto-pass check | plugin.lua reports PASS when `h:applied()==true` AND an independent `kcdx.scan` read-back of the post-rewrite site returns `45 31 F6`. Asserted at `kcdx.on("ready")` after the deferred apply pass. |
 | Manual confirm | In-game outfit-swap-in-combat works. [manual] |
-| Last result | ✅ PASS (kcdx@918d5fb 2026-05-19, manual confirmed) |
-| Notes | Mempatch-compatible. The reference for every other primitive. |
+| Last result | ⏳ PENDING (Phase 4a pilot launch) |
+| Notes | First plugin migrated off the legacy `[[patch]]` path to `kcdx.bytes` (was: `[[patch]]` TOML + verifier DLL). The reference for every other primitive; coverage of "a byte rewrite at this site works" persists, the mechanism changes. |
 
 ## CAP-02: `[[hook]]` + `bytes` (TOML, native trampoline)
 
@@ -798,7 +798,7 @@ Phase 2b `kcdx.hook` / `kcdx.command` / per-entry-zone subs landed.
 
 | Row | Status | Last verified at SHA | Notes |
 |---|---|---|---|
-| CAP-01 | ✅ LIVE | `03dd155` | outfit-swap-style byte patch; post-patch AOB unique, pre-patch absent |
+| CAP-01 | ⏳ PENDING | _Phase 4a pilot_ | outfit-swap-style byte rewrite, now via `kcdx.bytes` (Phase 4a pilot migration off legacy `[[patch]]`); `applied()==true` + read-back of post-rewrite site `45 31 F6` |
 | CAP-03 | ✅ LIVE | `03dd155` | `[[hook]] lua_callback` dispatches into pak Lua |
 | CAP-04a | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=true`; returns 110 |
 | CAP-04b | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=false`; returns 10 (original skipped) |
