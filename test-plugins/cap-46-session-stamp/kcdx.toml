@@ -1,0 +1,41 @@
+# CAP-46 — per-session log-stamp correctness (dev log filename).
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# per-session log stamp (kcdx::log::g_sessionStamp, set once via
+# EnsureSessionStamp) and the dev log's derived filename. This kcdx.toml is a
+# MANIFEST-ONLY STUB — no plugin.lua, no DLL — whose sole job is to pre-register
+# the matrix row via test_names so it shows PENDING until the engine reports it.
+# Same pattern as cap-43-loc-dump / cap-44-fopen-override / cap-45-load-inventory
+# (engine reports directly via kcdx::test::ReportResult; a manifest stub holds
+# the name).
+#
+# The bug it pins: SetDevMode(true) opened the dev log using g_sessionStamp, but
+# it fired from the DllMain-phase path (RunBeforeGameZoneInDllMain →
+# config dev_mode parse → SetDevMode) BEFORE the worker thread's log::Init()
+# set the stamp. So the dev log opened as "kcdx-dev_.log" (empty stamp): every
+# dev-mode session overwrote the same file, and the watchdog crash-bundler's
+# "kcdx-dev_<stamp>.log" lookup never matched (dev logs were missing from crash
+# bundles). The fix sets the stamp set-once via EnsureSessionStamp, called from
+# the DllMain path before dev mode can open the dev log, and kept by Init() — so
+# the engine log and the dev log derive their filename from ONE stamp.
+#
+# What it proves:
+#   cap-46-session-stamp   At boot (long after the dev log is open),
+#                          log::SessionStamp() is non-empty AND
+#                          log::DevLogName() equals "kcdx-dev_" +
+#                          SessionStamp() + ".log". Reported by the engine in
+#                          src/hooks.cpp right after the cap-45 self-report.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_46_session_stamp"
+display_name        = "CAP-46 per-session log-stamp correctness"
+author              = "ts"
+description         = "Dev-mode per-session log-stamp fix: confirms the dev log opens as kcdx-dev_<stamp>.log (non-empty stamp) instead of kcdx-dev_.log, so the engine + dev logs share one stamp and the watchdog crash bundle can find the dev log. Engine self-reports."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-46-session-stamp"]

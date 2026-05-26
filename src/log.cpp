@@ -620,8 +620,28 @@ void FormatTo(char* buf, size_t bufsize, const char* fmt, ...) {
 // Lifecycle
 // -----------------------------------------------------------------------------
 
+void EnsureSessionStamp() {
+    // Set-once, thread-safe. The first caller (which may be the DllMain
+    // loader-lock path via dev::SetEnabled, BEFORE the worker thread's
+    // Init()) computes the per-session stamp; every later caller is a
+    // no-op that keeps that same value. So the engine log and the dev
+    // log derive their filename from ONE stamp regardless of which path
+    // opens its file first.
+    //
+    // std::call_once is loader-lock-safe here: FormatSessionStamp() is
+    // self-contained (localtime_s + strftime, no LoadLibrary, no heavy
+    // lock), so running it under the loader lock cannot deadlock.
+    static std::once_flag s_stampOnce;
+    std::call_once(s_stampOnce, [] {
+        g_sessionStamp = FormatSessionStamp();
+    });
+}
+
 void Init() {
-    g_sessionStamp        = FormatSessionStamp();
+    // Keep the stamp the DllMain-phase dev-mode-enable may have already
+    // set (engine log + dev log MUST share one stamp); only compute it
+    // if nothing has yet.
+    EnsureSessionStamp();
     g_engineInitThreadId  = GetCurrentThreadId();
 
     fs::path logsDir = kcdx::paths::EngineDataDirPath() / L"logs";
@@ -689,9 +709,23 @@ const std::string& SessionStamp() {
     return g_sessionStamp;
 }
 
+const std::string& DevLogName() {
+    return g_devStream.streamName;
+}
+
 void SetDevMode(bool on) {
     g_devMode.store(on, std::memory_order_relaxed);
     if (!on) return;
+
+    // Belt-and-suspenders: guarantee the session stamp exists before we
+    // build the dev-log filename, regardless of caller order. The DllMain
+    // dev-mode-enable path reaches here BEFORE the worker thread's Init()
+    // ran (dllmain.cpp RunBeforeGameZoneInDllMain → config dev_mode parse
+    // → SetDevMode), so without this the dev log opened as "kcdx-dev_.log"
+    // (empty stamp), overwriting every session and breaking the watchdog's
+    // crash-bundle lookup. EnsureSessionStamp has its own once-guard, so
+    // ordering relative to the lock below is irrelevant.
+    EnsureSessionStamp();
 
     // Open the dev log on first enable. Idempotent.
     {

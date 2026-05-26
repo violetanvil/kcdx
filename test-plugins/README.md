@@ -606,6 +606,18 @@ what the live result is.
 | Last result | ⏳ pending (PASS expected): the inventory now reads the live sources, and the engine self-instrumentation hooks (`lua_pcall` / `update` / `frealloc`) register on every boot, so `total > 0` holds even before any plugin hook lands. Confirmed by the next dev-mode launch. |
 | Notes | The diagnostic value (a diffable load-path fingerprint + crash-time inventory) is realized: the inventory reflects the LIVE modification set (`hook_chain::g_chains` + the save/load lifecycle hooks + the engine self-instrumentation hooks + dev probes), categorized so the SUMMARY is meaningful rather than a flat count. The dead legacy `hook_engine::g_hooks` / `g_patches` / `g_mid_hooks` vectors are NOT read (empty post-Phase-5); their removal is a separate later cycle. |
 
+## CAP-46: per-session log-stamp correctness (dev log filename)
+
+| Field | Value |
+|---|---|
+| What | The per-session log stamp (`kcdx::log::g_sessionStamp`, set set-once via `kcdx::log::EnsureSessionStamp`, `src/log.cpp`) and the dev log's derived filename. Bug fix: `SetDevMode(true)` opened the dev log using `g_sessionStamp`, but it fired from the DllMain-phase path (`dllmain.cpp` `RunBeforeGameZoneInDllMain` → config `dev_mode` parse → `SetDevMode`) BEFORE the worker thread's `log::Init()` set the stamp. So the dev log opened as `kcdx-dev_.log` (empty stamp): every dev-mode session overwrote the same file, and the watchdog crash-bundler's `kcdx-dev_<stamp>.log` lookup (`src/watchdog/main.cpp`) never matched — dev logs were missing from crash bundles. Fix: `EnsureSessionStamp()` sets the stamp set-once (`std::call_once`, loader-lock-safe); called from the DllMain path before dev mode can open the dev log, kept by `Init()`, and called defensively in `SetDevMode`. Engine log + dev log now derive their filename from ONE stamp. |
+| Channels | Engine self-report (manifest-only stub holds the name; the engine calls `kcdx::test::ReportResult` directly in `src/hooks.cpp` — same pattern as cap-43 / cap-44 / cap-45). |
+| Engine status | LIVE (this cycle) — `log::EnsureSessionStamp()` (set-once stamp); `Init()` + `SetDevMode` call it instead of assigning the stamp unconditionally; `dllmain.cpp` `RunBeforeGameZoneInDllMain` calls it before `LoadAllConfigs`; `log::DevLogName()` read-only observability accessor. |
+| Test plugin | [`cap-46-session-stamp/`](cap-46-session-stamp/) — manifest-only stub. |
+| Auto-pass check | `cap-46-session-stamp`: the engine, at boot (right after the cap-45 self-report, long after the dev log is open), reports PASS iff `log::SessionStamp()` is non-empty AND `log::DevLogName()` equals `"kcdx-dev_" + SessionStamp() + ".log"`. **Boot-only** (no player input). |
+| Last result | ⏳ pending (PASS expected): `EnsureSessionStamp` runs in the DllMain path before the dev-mode enable opens the dev log, so the dev log is named `kcdx-dev_<stamp>.log` with a non-empty stamp shared with the engine log. Confirmed by the next dev-mode launch. |
+| Notes | Verifies the fix at the observable: the dev log filename, which is what the watchdog crash-bundler greps for (`kcdx-dev_<stamp>.log`, `src/watchdog/main.cpp:288`). A regression to the empty-stamp form (`kcdx-dev_.log`) flips this row to FAIL. The `DevLogName()` accessor is the test's observability hook into the otherwise-private dev stream filename. |
+
 ---
 
 # Section 2: Competition / collision rows

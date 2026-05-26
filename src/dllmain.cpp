@@ -159,7 +159,14 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // hardcoded RVA and is immune) makes Resolve(1206) return 0 — the version
     // is still unset. The FOpen detour still arms well before any menu/save
     // asset reads; the resolver fires continuously through boot→menu.
-    kcdx::probes::fopen_override_probe::Install();
+    //
+    // TEMPORARILY DISABLED (2026-05-26): held inert to return to a clean
+    // save-load baseline while isolating a save-load crash in the shared engine
+    // DLL. U.1 already succeeded (cap-44-fopen-read-fires PASS; reach_check
+    // match=1; 64 read opens captured) — this is NOT disabled for a probe
+    // defect. Re-enable (uncomment) once the baseline is confirmed crash-free
+    // and the crash source is identified, then resume PROBE U.2 (override test).
+    // kcdx::probes::fopen_override_probe::Install();
 
     return 0;
 }
@@ -182,6 +189,16 @@ DWORD WINAPI WorkerThread(LPVOID) {
 // See docs/load-order.md §"Loader-safety contract for before_game zone".
 static void RunBeforeGameZoneInDllMain() {
     kcdx::paths::Init();
+
+    // Establish the per-session log stamp BEFORE config parse can enable
+    // dev mode (LoadAllConfigs → dev::SetEnabled(true) → SetDevMode opens
+    // the dev log, which derives its filename from the stamp). This runs
+    // under the loader lock; EnsureSessionStamp is loader-lock-safe (a
+    // set-once over a self-contained localtime formatter). Without it the
+    // dev log opened as "kcdx-dev_.log" (empty stamp). The worker thread's
+    // later log::Init() keeps this same stamp, so the engine log and the
+    // dev log share one stamp.
+    kcdx::log::EnsureSessionStamp();
 
     // Synchronous config parse. Sets the idempotence flag so the
     // worker thread's later LoadAllConfigs call is a no-op.

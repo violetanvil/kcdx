@@ -391,6 +391,53 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                               "hooks should have registered");
                 }
 
+                // cap-46: engine self-report for the per-session log-stamp
+                // fix (manifest stub at test-plugins/cap-46-session-stamp/).
+                // The behavior under test is engine machinery: the dev log
+                // must open as "kcdx-dev_<stamp>.log", NOT "kcdx-dev_.log"
+                // (empty stamp). The bug was that the DllMain-phase dev-mode
+                // enable opened the dev log before log::Init() set the stamp,
+                // so every session overwrote one file and the watchdog crash
+                // bundle couldn't find "kcdx-dev_<stamp>.log". EnsureSessionStamp
+                // now sets the stamp set-once before either log opens, so the
+                // engine log + dev log share one stamp. This site runs at boot,
+                // long after the dev log is open, so DevLogName() is populated.
+                // Engine reports directly — same pattern as cap-43/44/45.
+                {
+                    const std::string& stamp   = kcdx::log::SessionStamp();
+                    const std::string& devName = kcdx::log::DevLogName();
+                    const std::string  expected =
+                        "kcdx-dev_" + stamp + ".log";
+                    // Clause (3) guards the exact pre-fix symptom: the bug
+                    // opened the dev log as the empty-stamp filename
+                    // "kcdx-dev_.log". This clause fails directly if that ever
+                    // recurs, independent of clause (2)'s frozen-name reasoning
+                    // and regardless of how DevLogName is later implemented.
+                    const bool pass =
+                        !stamp.empty()                       // (1)
+                        && devName == expected               // (2)
+                        && devName != "kcdx-dev_.log";       // (3)
+                    kcdx::test::ReportResult(
+                        "cap-46-session-stamp",
+                        pass,
+                        pass
+                            ? "session stamp non-empty; dev log filename "
+                              "matches kcdx-dev_<stamp>.log (engine + dev "
+                              "logs share one stamp)"
+                            : (stamp.empty()
+                                   ? "session stamp is EMPTY at boot — "
+                                     "EnsureSessionStamp did not run before "
+                                     "the dev log opened"
+                                   : (devName == "kcdx-dev_.log"
+                                          ? "dev log opened as the empty-stamp "
+                                            "filename kcdx-dev_.log — the "
+                                            "pre-fix bug has recurred"
+                                          : "dev log filename does not match "
+                                            "kcdx-dev_<stamp>.log — stamp "
+                                            "mismatch between engine log and "
+                                            "dev log")));
+                }
+
                 // Phase 7: resolve gEnv->pConsole + IConsole::AddCommand/
                 // RemoveCommand via the Address Library and arm the
                 // [[command]] dispatch surface. After this returns true,

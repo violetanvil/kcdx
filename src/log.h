@@ -100,10 +100,24 @@ enum class Level : uint8_t {
 // LOG_* macro is used.
 void Init();
 
-// Returns the "YYYY-MM-DD_HH-MM-SS" stamp captured at Init() — the
-// suffix used in every log file's name for this session. Used by
-// the watchdog to find this session's log files at bundle time.
+// Set the per-session stamp once; safe to call before Init(). Both the
+// engine log and the dev log derive their filename from it, so the
+// stamp must exist before whichever opens its file first. Idempotent /
+// thread-safe / loader-lock-safe (set-once via std::call_once over a
+// self-contained localtime formatter).
+void EnsureSessionStamp();
+
+// Returns the "YYYY-MM-DD_HH-MM-SS" stamp for this session — set by the
+// first EnsureSessionStamp()/Init() call. The suffix used in every log
+// file's name for this session. Used by the watchdog to find this
+// session's log files at bundle time.
 const std::string& SessionStamp();
+
+// Returns the dev log's filename ("kcdx-dev_<stamp>.log") once the dev
+// log is open, or "" before SetDevMode(true) has opened it. Read-only
+// observability hook (cap-46 session-stamp regression test asserts it
+// equals "kcdx-dev_" + SessionStamp() + ".log").
+const std::string& DevLogName();
 
 // Eagerly open a plugin's per-session log. Called by the plugin loader
 // after a DLL-bearing plugin is registered. Idempotent.
