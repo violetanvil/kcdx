@@ -5,7 +5,8 @@ AOB scan + byte read/write for C++ plugins. **Built** — `kcdxMemoryInterface`
 in [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h). Fetch via
 `QueryInterface(kcdxInterface_Memory, kcdxMemoryInterface_Version)`. Mirrors a
 subset of the Lua `kcdx.memory.*` surface. Pattern syntax (space-separated hex
-pairs + `?`/`??` wildcards) matches the `[[patch]]`/`[[hook]]` schema exactly.
+pairs + `?`/`??` wildcards) matches the `kcdx.bytes` / `kcdx.hook` locator
+pattern syntax exactly.
 
 > **Note — advanced/expert surface.** Pattern scanning and raw byte writes ask
 > you to do work the name-based hook path does for you. For function
@@ -37,7 +38,7 @@ C++ does pointer arithmetic and typed loads natively. `ReadBytes`/`WriteBytes`
 cover the typed-access need.
 
 **SAFETY:** for `WriteBytes`, the same-length single-instruction rewrite is the
-documented contract (matches the `[[patch]]` rule). You own the byte-level
+documented contract (matches the `kcdx.bytes` length-preserving rule). You own the byte-level
 safety contract — no clobbering unrelated state.
 
 **Lifecycle:** safe from `kcdxPlugin_Load` and from any messaging callback.

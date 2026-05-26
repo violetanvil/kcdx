@@ -133,11 +133,11 @@ test_suite_only = true
 
 When kcdx parses a plugin `kcdx.toml` with `test_suite_only = true`:
 - If dev mode is **off** (no `engine.toml` or `dev_mode = false`):
-  kcdx silently skips every entry in that file (no [[patch]],
-  [[hook]], [plugin], etc. gets registered). C++ DLLs in the
-  plugin folder also check `kcdx::log::IsDevModeEnabled()` in their
-  `Plugin_Load` and early-return silently. **Production users see
-  zero suite output.**
+  kcdx silently skips that plugin entirely (its `plugin.lua` never
+  runs and its `kcdxPlugin_Load` is never called, so none of its
+  `kcdx.*` registrations happen). C++ DLLs in the plugin folder also
+  check `kcdx::log::IsDevModeEnabled()` in their `Plugin_Load` and
+  early-return silently. **Production users see zero suite output.**
 - If dev mode is **on**: kcdx parses + applies normally. The
   plugin's `Plugin_Load` runs its check, calls the test-result
   reporting API, and the aggregator picks it up.
@@ -152,11 +152,12 @@ if not kcdx or not kcdx.dev or not kcdx.dev.is_enabled() then
 end
 ```
 
-Reason for engine-side gating instead of "always run but early-out
-in plugin code": `[[patch]]` / `[[hook]]` entries are applied at
-config-load time, BEFORE any plugin C++ runs. Without the
-`test_suite_only` skip, a CAP-01-patch test plugin would actually
-apply its patch in production, defeating the purpose.
+Reason for engine-side gating (skipping the whole plugin) rather than
+relying only on an in-plugin early-out: gating at discovery keeps a
+suite plugin's `plugin.lua` / `kcdxPlugin_Load` from running at all in
+production, so none of its `kcdx.*` registrations (e.g. a CAP-01 test's
+`kcdx.bytes` rewrite) ever apply. A purely in-code early-out would still
+have run the registration path before the check.
 
 ## Test result reporting
 

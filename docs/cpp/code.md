@@ -26,8 +26,8 @@ design**:
 - **`AllocateFromBranchPool` / `AllocateFromLocalPool`** — the **raw pooled
   floor**: hand back a zero-filled region of a given size, nothing more. You
   `memcpy` your own bytes and publish a symbol yourself (via `Export`, below, or
-  a `[[trampoline]]` TOML `export`). Reach for these when you want only the raw
-  allocation with no fill/pad/export step.
+  the `kcdx.code{ export = }` Lua surface). Reach for these when you want only the
+  raw allocation with no fill/pad/export step.
 
 `Allocate` is built on top of the raw pool methods — it is the convenience layer,
 not a different allocator. Both draw from the same branch/local pools.
@@ -142,8 +142,8 @@ void* (*AllocateFromLocalPool) (kcdxPluginHandle owner, size_t size);
 Both return memory marked `PAGE_EXECUTE_READWRITE` and zero-filled (`null` on
 exhaustion / no rel32-reachable region). Tag with `owner` so kcdx's conflict
 detector knows which plugin owns the byte range. You fill the bytes yourself
-(`memcpy`) and publish a symbol via `Export` or a `[[trampoline]]` TOML
-`export`. These are the floor `Allocate` is built on; reach for them only when
+(`memcpy`) and publish a symbol via `Export` (or the `kcdx.code{ export = }`
+Lua surface). These are the floor `Allocate` is built on; reach for them only when
 you want the raw region with no fill/pad/export step.
 
 ## Minimal snippet (the common path)

@@ -27,7 +27,7 @@ uintptr_t (*ResolveSymbolAs)       (kcdxPluginHandle owner, const char* name);
 |---|---|---|
 | `ResolveAddress` | `uint64_t id` — numeric Address Library ID (the stable cross-version reference). | Absolute VA, or `0` if the ID is unknown for the running game version or marked `removed`. |
 | `ResolveAddressByName` | `const char* name` — the readable label (e.g. `"lua_pcall"`). Resolves **engine-seed + explicit-prefix only** — no `self` tier (the anonymous thunk carries no per-call identity). The C++ mirror of the Lua `address_id = "name"` locator. | Absolute VA, or `0`. |
-| `ResolveSymbol` | `const char* name` — a symbol published by a `[[trampoline]]`/`[[hook]]` TOML `export = "..."` or `kcdx.code{ export = }`. | The registered address (trampoline base, hook call-original entry, …), or `0` if unregistered. The caller owns knowing the ABI of the resolved address. |
+| `ResolveSymbol` | `const char* name` — a symbol published by `kcdx.code{ export = }` (Lua) or `kcdxTrampolineInterface::Allocate(exportName=)` / `Export` (C++). | The registered address (trampoline base, exported address, …), or `0` if unregistered. The caller owns knowing the ABI of the resolved address. |
 
 `ResolveAddressByName` was appended after `ResolveAddress` (the header's
 APPEND-ONLY marker — see [cross-cutting.md](cross-cutting.md)); numeric IDs
@@ -78,7 +78,7 @@ if (!va) { K.log.Warn("ADDR", "outfit_gate unresolved on this build"); }
 ## `ResolveSymbolAs(owner, name)`
 
 The identity-carrying form of `ResolveSymbol` — it resolves a cross-plugin
-exported symbol (a `kcdx.code{ export = }` / `[[trampoline]]` export) with the
+exported symbol (a `kcdx.code{ export = }` / `kcdxTrampolineInterface` export) with the
 **caller's own plugin as the `self` tier**, so a bare symbol name resolves
 `self > other` (there is no engine-seed tier for symbols — only plugins publish
 symbols). The C++ counterpart to consuming a `kcdx.code{ export }` symbol by
