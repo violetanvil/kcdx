@@ -200,6 +200,11 @@ The callback receives one argument: a table of capture handles. Each handle has
 `:get()` and `:set(v)`. Return nothing to run the captured instruction; return
 `"skip"` to skip it.
 
+> **C++ mirror.** The C++ peer is `kcdxHookInterface::Mid`
+> ([../cpp/hook.md#mid](../cpp/hook.md#mid)); its callback returns an `int`
+> `kcdxMidResult` (`Run = 0` / `Skip = 1`) where Lua returns nothing / `"skip"`.
+> Both surfaces have the run/skip channel (full parity).
+
 `captures` accepts two forms:
 
 - **positional list** — `captures = { "rax", "[rcx+0x10]:i32" }` → handles

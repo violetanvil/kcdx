@@ -1,0 +1,41 @@
+# CAP-42 — kcdxHookInterface::Mid C++ return-skip parity.
+#
+# The C++ PEER of CAP-21-skip / CAP-21-run (the Lua mid run/skip rows). The
+# FIRST consumer of kcdxHookInterface::Mid, proving the v2 int-return: a C++
+# mid callback returns kcdxMidResult (Run=0 / Skip=1) to RUN or SKIP the
+# captured instruction — the parity mirror of the Lua mid callback's
+# `return "skip"`. Pre-feature (the void Mid ABI of v1) this skip channel did
+# not exist from C++.
+#
+# All-C++ DLL, NO plugin.lua, NO scripting interface — the install is via
+# kcdxHookInterface::Mid from C++.
+#
+# Flow:
+#   1. kcdxPlugin_Load: QueryInterface(Hook v2 + Trampoline + Messaging);
+#      allocate TWO branch-pool stubs (int fn(int)->seed+100, capture site at
+#      +2 = the `add rax,0x64`); install a C++ mid hook on each via
+#      kcdxHookInterface::Mid (opts.address = stub+2, one rax:i64 capture).
+#   2. ApplyZone installs the mid detours.
+#   3. kcdxMessage_InputLoaded fires (after apply): call each stub directly and
+#      assert the captured-instruction behavior.
+#
+# Rows (both capture rax at the `add rax,0x64` site, seed=10):
+#   CAP-42-cpp-mid-skip  callback returns kcdxMidResult_Skip -> add skipped -> 10
+#   CAP-42-cpp-mid-run   callback returns kcdxMidResult_Run  -> add runs    -> 110
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_42_cpp_mid_skip"
+display_name        = "CAP-42 kcdxHookInterface::Mid C++ return-skip"
+author              = "ts"
+description         = "kcdxHookInterface::Mid v2 int-return: kcdxMidResult Run/Skip from C++ (parity mirror of Lua mid return 'skip')."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-42-cpp-mid-skip", "CAP-42-cpp-mid-run"]
+
+[entrypoints]
+dll = "cap-42.dll"

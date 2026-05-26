@@ -15,10 +15,20 @@ C++ mirror of the core Lua verb `kcdx.hook{...}` ([../lua/hook.md](../lua/hook.m
 > need the raw floor: a callback whose ABI doesn't templatize, or the Mid /
 > Callsite sub-verbs.
 
-This page documents `kcdxHookInterface` **v1** as built and verified
-(`kcdxHookInterface_Version == 1`, [`Interfaces.h:1346`](../../include/kcdx/Interfaces.h)).
+This page documents `kcdxHookInterface` **v2** as built and verified
+(`kcdxHookInterface_Version == 2`, [`Interfaces.h`](../../include/kcdx/Interfaces.h)).
 The `cap-36-cpp-hook-interface` regression plugin exercises every method
-end-to-end (7/7 PASS).
+end-to-end (7/7 PASS); `cap-42-cpp-mid-skip` exercises the v2 `Mid` int-return
+run/skip (the C++ mirror of the Lua mid `return "skip"`).
+
+> **v2 — `Mid` callback gained an `int` return.** The `Mid` callback ABI is now
+> `int cFn(kcdxHookCaptureValue*, int)` returning a [`kcdxMidResult`](#mid)
+> (`Run = 0` / `Skip = 1`) so a C++ mid hook can **skip the captured
+> instruction** — the parity mirror of the Lua mid callback's `return "skip"`
+> ([../lua/hook.md#mid](../lua/hook.md#mid)). v1's `Mid` callback was `void` (no
+> skip channel). The return slot was previously unused (a mid hook never returns
+> a value to the hooked function), so this costs no prior capability — every
+> other sub-verb is unchanged from v1.
 
 ## Fetching the interface
 
@@ -222,8 +232,9 @@ A wrong-shape callback is undefined behavior; match it exactly. For
   int cb(int seed) { (void)seed; return 42; }
   ```
 
-- **Mid** — `void cFn(kcdxHookCaptureValue* values, int count)`. See
-  [Mid](#mid).
+- **Mid** — `int cFn(kcdxHookCaptureValue* values, int count)`, returning a
+  [`kcdxMidResult`](#mid) (`Run = 0` runs the captured instruction, `Skip = 1`
+  skips it). See [Mid](#mid).
 
 - **Callsite** — the `cFn` ABI matches the shape of the behavior selected by
   `opts->callsiteBehavior` (the four shapes above). See [Callsite](#callsite).
@@ -249,11 +260,13 @@ typedef struct kcdxHookCapture {
 } kcdxHookCapture;
 ```
 
-**The callback ABI** is `void cFn(kcdxHookCaptureValue* values, int count)`. The
-engine fills one `kcdxHookCaptureValue`
-([`Interfaces.h:1410-1417`](../../include/kcdx/Interfaces.h)) per capture
-pre-call, reads the SAME field back post-call, and writes the bytes back. Read
-and write `values[i].value_<type>` per the capture's declared type:
+**The callback ABI** (`kcdxHookInterface_Version >= 2`) is
+`int cFn(kcdxHookCaptureValue* values, int count)`. The return is a
+[`kcdxMidResult`](#run--skip) — `Run` (0) runs the captured instruction, `Skip`
+(1) skips it. The engine fills one `kcdxHookCaptureValue`
+([`Interfaces.h`](../../include/kcdx/Interfaces.h)) per capture pre-call, reads
+the SAME field back post-call, and writes the bytes back. Read and write
+`values[i].value_<type>` per the capture's declared type:
 
 ```cpp
 typedef struct kcdxHookCaptureValue {
@@ -274,13 +287,36 @@ Type → field mapping ([`Interfaces.h:1406-1409`](../../include/kcdx/Interfaces
 Touching the wrong field is silently dropped (e.g. setting `value_double` on an
 `i32` capture).
 
+### Run / skip
+
+The callback's `int` return tells the engine whether the captured instruction
+runs (`kcdxMidResult`,
+[`Interfaces.h`](../../include/kcdx/Interfaces.h)):
+
 ```cpp
-// Clamp a captured HP register to 1000.
+typedef enum kcdxMidResult {
+    kcdxMidResult_Run  = 0,   // (default) the captured instruction executes
+    kcdxMidResult_Skip = 1,   // the captured instruction is skipped
+} kcdxMidResult;
+```
+
+- **Return `kcdxMidResult_Skip`** → the captured instruction is **skipped** (its
+  effect does not happen); execution resumes past it. This is the C++ mirror of
+  the Lua mid callback's `return "skip"` ([../lua/hook.md#mid](../lua/hook.md#mid)).
+- **Return `kcdxMidResult_Run`** (or just `0`) → the captured instruction runs
+  normally.
+- **Capture writes are independent of the return** — writing
+  `values[i].value_<type>` applies in BOTH the run and skip cases.
+
+```cpp
+// Clamp a captured HP register to 1000, then run the instruction normally.
 static const kcdxHookCapture kCaps[] = { { "rax", "i32", "hp" } };
 
-void mid_cb(kcdxHookCaptureValue* values, int count) {
+int mid_cb(kcdxHookCaptureValue* values, int count) {
     (void)count;
     if (values[0].value_int64 > 1000) values[0].value_int64 = 1000;  // write-back
+    return kcdxMidResult_Run;        // let the captured instruction run
+    // return kcdxMidResult_Skip;    // ...or skip it (write-back still applies)
 }
 
 void install(const kcdxHookInterface* hook, kcdxPluginHandle self) {
