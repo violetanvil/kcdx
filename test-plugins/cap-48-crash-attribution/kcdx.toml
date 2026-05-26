@@ -1,0 +1,67 @@
+# CAP-48 — crash-attribution fail-state instrumentation (two silent diagnostics
+# made loud). Both halves are ENGINE machinery on a FAIL path that only fires on
+# a real fault / a moved offset, so neither auto-passes at boot: each row is a
+# MANIFEST-STUB tracked PENDING (test_names) until the manual / in-game
+# observation confirms the new always-on Error line in the log. Same stub
+# pattern as cap-43 / cap-45 / cap-46 (the engine owns the behavior; the manifest
+# holds the row name); confirmation is a log-assert by the orchestrator post-run,
+# the cap-38 `-gate-warn` / cap-47 Part-1 `[manual]` convention — a blank == FAIL.
+#
+# No plugin.lua / no DLL: neither half can be driven from an author surface. The
+# culprit-walk false-return only fires inside the SEH filter on a real crash; the
+# null-base deref only fires when [record+0x80] moves (a game patch) — there is
+# no boot gesture that reaches either, so there is nothing for a plugin to drive.
+#
+# Fix #1 (src/crash_guard.cpp WalkToCulprit / LogFault): WalkToCulprit returns
+# false in three cases (walk_exhausted / stack_unreadable / no_progress). Before
+# this cycle LogFault emitted FAULTED_CULPRIT only on SUCCESS — on the false
+# return NOTHING was logged, so an unattributable RaiseException-class fault (the
+# 0xC8 path) read identically to "ran, genuinely no culprit" (AP14). Now the
+# false branch emits GUARD FAULTED_CULPRIT_NONE with the reason string.
+#
+# Fix #2 (src/save_load_hooks.cpp HookedSlotResolver): when the original returns
+# a non-null record but the [record+0x80] basename deref fails (base stays null),
+# the only prior signal was the dev-gated KCDX_DEV FIRE line (invisible in
+# production) — a moved offset silently used a stale/wrong cosave playline (a
+# corruption-risk path). Now an always-on LOG_ERROR fires on exactly
+# record != null && base == null, naming the failed deref, the suppressed
+# kcdxMessage_LoadGameSelected, and the un-stamped pending-load playline.
+#
+# What it proves:
+#   cap-48-culprit-none   [manual]  On a RaiseException-class (0xC8) fault whose
+#                                   culprit-walk finds no non-kernel frame, the
+#                                   GUARD log carries a FAULTED_CULPRIT_NONE line
+#                                   with reason in {walk_exhausted,
+#                                   stack_unreadable, no_progress} (or, if a
+#                                   culprit IS found, a FAULTED_CULPRIT line —
+#                                   either way the fault is ATTRIBUTED, never a
+#                                   blank). Pre-fix: the false return logged
+#                                   nothing -> blank == FAIL. Confirmed by the
+#                                   live 0xC8 repro crash bundle.
+#   cap-48-null-base      in-game   If a load resolves a non-null record whose
+#                                   [record+0x80] deref fails, the SAVE_LOAD log
+#                                   carries the new always-on Error naming the
+#                                   failed deref + the suppressed
+#                                   LoadGameSelected + the un-stamped playline.
+#                                   Pre-fix the signal was dev-gated only ->
+#                                   silent in production. Confirmed in-game by
+#                                   loading a save (the line fires only if the
+#                                   offset has MOVED; under the verified
+#                                   release_1_5_1164953_841 offset it correctly
+#                                   does NOT fire — its absence on a clean load
+#                                   plus its presence on a moved-offset build is
+#                                   the falsifiable pair).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_48_crash_attribution"
+display_name        = "CAP-48 crash-attribution fail-state instrumentation"
+author              = "ts"
+description         = "Crash-attribution diagnostics made loud: the GUARD culprit-walk now emits FAULTED_CULPRIT_NONE (with reason) on its false return instead of nothing, and the save/load slot resolver now emits an always-on Error when a non-null record's [record+0x80] basename deref fails (stale-cosave corruption risk). Both are fail-path engine machinery confirmed by log observation; manifest stub holds the rows PENDING."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-48-culprit-none", "cap-48-null-base"]

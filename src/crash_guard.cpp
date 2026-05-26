@@ -130,9 +130,26 @@ bool IsKernelOrNtdll(const char* moduleName) {
 // MUST be no-throw and allocation-free — it runs inside the SEH filter.
 // On any failure we return false and the caller logs what it has; the
 // handler never throws.
+//
+// On a FALSE return, *outReason is set to a PROCESS-LIFETIME fixed string
+// literal (no allocation) naming WHY no culprit was found, so the caller
+// can emit FAULTED_CULPRIT_NONE distinguishing "ran, genuinely no culprit"
+// from "the unwind broke" — a RaiseException-class fault that can't be
+// attributed must not read identically to one that has no culprit
+// (fail-state-logging.md AP14). The three reasons:
+//   "walk_exhausted"   — bounded walk ran its full length, every frame
+//                        resolved to a kernel/ntdll module (or no module).
+//   "stack_unreadable"  — a leaf-frame stack read faulted/was zero; the
+//                        unwind could not advance (corrupt/unreadable stack).
+//   "no_progress"      — RtlVirtualUnwind made no forward progress
+//                        (Rip unchanged) — defensive bail.
+// outReason is untouched on a TRUE return.
 bool WalkToCulprit(CONTEXT* ctx, char* outModule, size_t outModuleLen,
-                   uint64_t* outRva) {
-    if (!ctx) return false;
+                   uint64_t* outRva, const char** outReason) {
+    if (!ctx) {
+        if (outReason) *outReason = "stack_unreadable";
+        return false;
+    }
 
     // RtlVirtualUnwind mutates the CONTEXT it advances — copy so we never
     // perturb the live faulting context (which WriteOwnMinidump still
@@ -184,12 +201,18 @@ bool WalkToCulprit(CONTEXT* ctx, char* outModule, size_t outModuleLen,
             // Leaf frame: read the return address off the stack and pop it.
             // Guard the read — a corrupt Rsp must not fault inside the SEH
             // filter (a fault here would terminate the process hard).
-            if (local.Rsp == 0) break;
+            if (local.Rsp == 0) {
+                if (outReason) *outReason = "stack_unreadable";
+                return false;
+            }
             uint64_t retAddr = 0;
             if (::ReadProcessMemory(GetCurrentProcess(),
                                     reinterpret_cast<LPCVOID>(local.Rsp),
                                     &retAddr, sizeof(retAddr), nullptr) == 0) {
-                break;  // unreadable stack — stop, emit nothing
+                // unreadable stack — stop. The caller still emits
+                // FAULTED_CULPRIT_NONE with this reason.
+                if (outReason) *outReason = "stack_unreadable";
+                return false;
             }
             local.Rip  = retAddr;
             local.Rsp += 8;
@@ -197,8 +220,17 @@ bool WalkToCulprit(CONTEXT* ctx, char* outModule, size_t outModuleLen,
 
         // RtlVirtualUnwind sets Rip to the caller's return address (0 at
         // the top of the stack). The loop re-checks pc==0 at the top.
-        if (local.Rip == pc) break;  // no progress — bail (defensive)
+        if (local.Rip == pc) {
+            // no progress — bail (defensive)
+            if (outReason) *outReason = "no_progress";
+            return false;
+        }
     }
+    // Bounded walk ran its full length without finding a non-kernel frame
+    // (or every frame had no module / a kernel module). The pc==0 break at
+    // the loop top lands here too — top-of-stack with no culprit above the
+    // RaiseException floor.
+    if (outReason) *outReason = "walk_exhausted";
     return false;
 }
 
@@ -256,17 +288,34 @@ void LogFault(const char* site, const char* pluginName,
     // intact. Context-available path only (UnhandledFilter); the
     // Call()/InvokeGuarded() path passes ctx == nullptr and skips the
     // walk (no context to walk from) — it still gets the inventory dump
-    // below. StackWalk64 is no-throw here; on failure we just don't emit
-    // the culprit line.
+    // below. WalkToCulprit is no-throw + allocation-free here; on its
+    // FALSE return we emit FAULTED_CULPRIT_NONE with the reason rather
+    // than nothing, so an unattributable fault is never a silent blank.
     if (ctx && IsKernelOrNtdll(moduleName)) {
         char culpritMod[128] = "?";
         uint64_t culpritRva = 0;
-        if (WalkToCulprit(ctx, culpritMod, sizeof(culpritMod), &culpritRva)) {
+        const char* walkReason = "walk_exhausted";
+        if (WalkToCulprit(ctx, culpritMod, sizeof(culpritMod), &culpritRva,
+                          &walkReason)) {
             LOG_ERROR_KV("GUARD", "FAULTED_CULPRIT",
                 KV::BareStr("site",          site ? site : "?"),
                 KV::BareStr("raw_module",    moduleName),
                 KV::BareStr("culprit_module", culpritMod),
                 KV("culprit_rva",            culpritRva),
+                KV("thread", (unsigned long)GetCurrentThreadId()));
+        } else {
+            // Walk found NO culprit. Emit a loud line so an unattributable
+            // RaiseException-class fault (the 0xC8 path) is distinguishable
+            // from one that genuinely had no culprit above the kernel floor —
+            // a silent blank here reads as "ran, all clear" (AP14). The
+            // reason names WHICH false-return branch fired. No-throw,
+            // allocation-free, lock-free — same SEH-filter contract as the
+            // FAULTED / FAULTED_CULPRIT lines above (walkReason is a fixed
+            // string literal).
+            LOG_ERROR_KV("GUARD", "FAULTED_CULPRIT_NONE",
+                KV::BareStr("site",       site ? site : "?"),
+                KV::BareStr("raw_module", moduleName),
+                KV::BareStr("reason",     walkReason),
                 KV("thread", (unsigned long)GetCurrentThreadId()));
         }
     }

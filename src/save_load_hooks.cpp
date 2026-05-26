@@ -370,6 +370,30 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
         kcdx::dev::KV("basename", base ? base : "<null>"),
         kcdx::dev::KV("dedup",    isFirst ? "first" : "skip"));
 
+    // The original returned a real record but the [record+0x80] basename
+    // deref failed (base stayed null). This is a corruption-risk path, not a
+    // benign miss: with no basename we SUPPRESS kcdxMessage_LoadGameSelected
+    // and do NOT stamp the pending-load playline (the if (isFirst && base)
+    // block below is skipped), so the cosave subsystem falls back to a
+    // stale/wrong playline for THIS load — the wrong cosave gets attached.
+    // The only prior signal was the dev-gated KCDX_DEV FIRE line above
+    // (invisible in production). Always-on Error: the [record+0x80] offset
+    // was live-verified 2026-05-19, so a null deref off a non-null record
+    // most likely means the offset MOVED on a game patch. Names the
+    // consequence, not just the event (fail-state-logging.md). Off the
+    // dedup-`first` path because EVERY resolve with a bad deref mis-serves.
+    if (record != nullptr && base == nullptr) {
+        LOG_ERROR("SAVE_LOAD",
+            "SlotResolver: original returned record=0x%p but the "
+            "[record+0x80] basename deref failed (base=null) — "
+            "kcdxMessage_LoadGameSelected SUPPRESSED and the pending-load "
+            "playline NOT stamped, so this load uses a stale/wrong cosave "
+            "playline (the [record+0x80] offset likely moved on a game "
+            "patch; was live-verified for release_1_5_1164953_841 on "
+            "2026-05-19). fire_n=%llu playline=%d slot=%d",
+            record, (unsigned long long)n, (int)playline_idx, (int)slot_idx);
+    }
+
     if (isFirst && base) {
         // Stash the playline for the serialization layer's cosave-path
         // construction in OnPostLoadGame. This is what makes the

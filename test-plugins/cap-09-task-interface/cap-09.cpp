@@ -22,17 +22,32 @@ DWORD                g_loadThreadId = 0;
 struct TestTask : kcdxTask {
     void Run() override {
         gLog.Info("TASK", "TestTask::Run fired; comparing thread to Plugin_Load");
-        // Pass = task fired AND on a thread different from the one
-        // that called Plugin_Load. (We don't have a documented "main
-        // thread ID" accessor; comparing against the Plugin_Load
-        // thread is enough to verify the task hopped contexts.)
+        // The feature under test is that AddTask DEFERS the callback to the
+        // main-thread update-tick drain (src/task.cpp DrainQueue, inside the
+        // per-frame update hook) rather than running it inline on the caller.
+        // There is no plugin-facing main-thread-ID accessor; the only
+        // comparison available is Run()-thread vs Plugin_Load-thread. These
+        // are different threads by construction: kcdxPlugin_Load runs on the
+        // injector/bootstrap thread, the drain runs on the game main thread.
+        // So runThreadId != g_loadThreadId is the deterministic, falsifiable
+        // signal that the task correctly hopped to the main-thread drain.
         DWORD runThreadId = GetCurrentThreadId();
-        char msg[200];
-        snprintf(msg, sizeof(msg),
-            "task fired on thread %lu (Plugin_Load thread was %lu)",
-            runThreadId, g_loadThreadId);
-        gLog.Info("TASK", "PASS: %s", msg);
-        g_api->ReportTestResult(g_self, "CAP-09", 1, msg);
+        bool  pass        = (runThreadId != g_loadThreadId);
+        char  msg[256];
+        if (pass) {
+            snprintf(msg, sizeof(msg),
+                "task marshaled to the main-thread drain: ran on thread %lu, "
+                "a thread different from Plugin_Load's (%lu)",
+                runThreadId, g_loadThreadId);
+            gLog.Info("TASK", "PASS: %s", msg);
+        } else {
+            snprintf(msg, sizeof(msg),
+                "task ran INLINE on the Plugin_Load thread %lu (run thread %lu) "
+                "— AddTask did NOT marshal to the main-thread update-tick drain",
+                g_loadThreadId, runThreadId);
+            gLog.Error("TASK", "FAIL: %s", msg);
+        }
+        g_api->ReportTestResult(g_self, "CAP-09", pass ? 1 : 0, msg);
     }
     void Dispose() override { delete this; }
 };
