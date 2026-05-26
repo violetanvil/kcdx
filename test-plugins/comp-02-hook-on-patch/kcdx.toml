@@ -1,23 +1,42 @@
-# COMP-02 — [[patch]] + [[hook]] overlapping at same function entry.
+# COMP-02 — kcdx.bytes patch + kcdx.hook detour overlapping at ONE site.
 #
-# One plugin declares BOTH a [[patch]] and a [[hook]] that resolve to
-# the same function entry of the IsInCombat wrapper. Expected engine
-# behavior (Phase 4b.3 acceptance):
-#   - conflict_engine pre-flight: INFO — "Hook will install rel32 jmp ...
-#     overlapping bytes already modified by patch ... Both apply,
-#     no action needed."
-#   - Patch applies first (lower priority number).
-#   - Hook installs second; MinHook relocates the patched prologue
-#     into its trampoline so the patch survives.
+# Phase 4b Batch 3 migration off the legacy [[patch]] + [[hook]] surface
+# onto the new kcdx.* surfaces. ONE plugin (comp-02.dll) installs BOTH:
+#   - a kcdx.bytes IDENTITY patch (48 -> 48, a genuine no-op) via
+#     kcdxBytesInterface::Register, target="IsInCombat_callsite_26b"
+#     (id 1006), offset=-4 -> the function entry;
+#   - a kcdx.hook REPLACE detour (callback returns false, the migration of
+#     the legacy `31 C0 C3` xor-eax,ret) via kcdxHookInterface::Replace on
+#     the SAME named site (id 1006), offset=-4 -> the function entry.
+# Both resolve to the IDENTICAL function-entry VA (the pattern-hit RVA
+# 0x5605BC minus 4, per the id-1006 seed prose). The patch routes through
+# the PATCH engine (g_patches / conflict_engine); the hook routes through
+# the SEPARATE hook_chain engine.
 #
-# Both entries' bytes are no-ops (identity 48 -> 48 patch; the hook's
-# 3-byte 31 C0 C3 detour is `xor eax, eax; ret` which makes
-# IsInCombat always return 0 — but the function is rarely-called
-# during boot, so observable behavior is benign).
+# === THE PROBE: a cross-engine coexist question, UNVERIFIED ================
+# Does a kcdx.bytes patch + a kcdx.hook detour on ONE site BOTH apply
+# (coexist) in the NEW engines — the way the legacy [[patch]] + [[hook]]
+# did? UNKNOWN. The verifier's GetConflictReport assertion at the
+# function-entry VA (2 entries, both applied) IS the readout.
 #
-# DLL companion subscribes to kInputLoaded, calls GetConflictReport
-# at the resolved target, asserts both entries are present and BOTH
-# show appliedOK = true.
+# OUTCOME MAP (also in comp-02.cpp verifier reasons + README):
+#   PASS  (comp02_patch kind=Patch applied + comp02_hook kind=Hook applied,
+#          both present) -> cross-engine coexist HOLDS: the kcdx.bytes patch
+#          engine + the kcdx.hook hook_chain coexist on one site, like the
+#          legacy. Migration done, COMP-02 preserved.
+#   FAIL, one of ours present-but-applied=0 -> coexist does NOT hold: the new
+#          hook_chain may not relocate/survive a kcdx.bytes patch the way
+#          legacy MinHook did, OR the two engines don't see each other's
+#          overlap. A REAL FINDING (engine gap or intentional reframe) — the
+#          verifier surfaces WHICH one didn't apply, never papers over it.
+#   FAIL, GetConflictReport returns < both (only one entry) -> the report
+#          doesn't catch both at the query VA (the patch's [begin,end) range
+#          vs the hook's exact-VA match) — a GetConflictReport VA-matching
+#          issue, DISTINCT from the coexist question. The reason distinguishes
+#          "entry absent" from "entry present but applied=0".
+#
+# No priority block needed: a patch + a hook in ONE plugin are not a
+# replace-vs-replace conflict, so there is nothing to order.
 
 [kcdx]
 test_suite_only = true
@@ -26,27 +45,12 @@ test_suite_only = true
 name                = "comp_02_hook_on_patch"
 display_name        = "COMP-02 Hook-on-patch overlap"
 author              = "ts"
-description         = "Patch and hook at same target; both should apply."
+description         = "kcdx.bytes patch + kcdx.hook detour on one site; both should coexist."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 test_names          = ["COMP-02"]
 
-[[patch]]
-name        = "comp-02-patch"
-priority    = 100
-description = "Identity 48 -> 48 patch at IsInCombat entry. No-op."
-pattern     = "48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02"
-offset      = -4
-original    = "48"
-replacement = "48"
-idempotent  = true
-
-[[hook]]
-name        = "comp-02-hook"
-priority    = 200
-description = "rel32 jmp at IsInCombat entry. Overlaps the identity patch."
-pattern     = "48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02"
-offset      = -4
-bytes       = "31 C0 C3"
+[entrypoints]
+dll = "comp-02.dll"
