@@ -12,6 +12,7 @@
 #include "bytes_interface.h"
 #include "conflict_engine.h"
 #include "console.h"
+#include "hook_chain.h"
 #include "hook_engine.h"
 #include "hook_interface.h"
 #include "load_order.h"
@@ -290,6 +291,20 @@ uint32_t Thunk_GetConflictReport(uintptr_t target,
                 kcdxConflictEntryKind_Hook, h.appliedOK
             });
         }
+    }
+
+    // kcdx.hook (hook_chain): the new function-interception surface. Both
+    // chain winners (installed, applied=true) and CanCoexist-rejected losers
+    // (applied=false) at this resolved runtime VA — same VA space as `target`
+    // (FindChain's targetVa == what ResolveLocator produced == rh.targetAddr).
+    // The returned `name` pointers live in Chain-stable storage for the
+    // process lifetime, identical to the legacy c_str() aliases above, so
+    // capturing them into TempEntry (an alias, not a copy) is safe.
+    for (const auto& pp : kcdx::hook_chain::GetParticipantsAtTarget(target)) {
+        hits.push_back({
+            pp.name, pp.priority,
+            kcdxConflictEntryKind_Hook, pp.applied
+        });
     }
 
     // Sort by (priority asc, name asc)

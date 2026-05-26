@@ -180,7 +180,15 @@ enum kcdxLogLevel {
 };
 
 // Per-entry record returned by kcdxInterface::GetConflictReport. Describes
-// one [[patch]] or [[hook]] entry that overlaps a queried target address.
+// one [[patch]], [[hook]], or kcdx.hook entry that overlaps a queried
+// target address. For kcdx.hook (the new function-interception surface),
+// this reports BOTH the live-chain winners (applied != 0) AND the
+// CanCoexist-rejected losers (applied == 0) at the target.
+//
+// Scope note: [[mid_hook]] / kcdx.hook mode=mid conflicts are NOT reported
+// (mid hooks reject via sole-ownership, not the chain's CanCoexist path;
+// the legacy path never reported mid conflicts either — same contract).
+//
 // All char* fields are owned by the engine and remain valid for the
 // process lifetime.
 enum kcdxConflictEntryKind {
@@ -318,6 +326,14 @@ typedef struct kcdxInterface {
     //
     // For [[hook]] entries the "target" matches if the hook's resolved
     // function entry address equals the queried address.
+    //
+    // ALSO reports kcdx.hook (the new function-interception surface)
+    // entries whose resolved target VA equals the queried address — both
+    // the live-chain winners (applied != 0) AND the CanCoexist-rejected
+    // losers (applied == 0). [[mid_hook]] / kcdx.hook mode=mid conflicts
+    // are NOT reported (mid hooks reject via sole-ownership, not the
+    // chain's CanCoexist path; the legacy path never reported mid
+    // conflicts either — same contract).
     //
     // Pass out=null, cap=0 to query the count only; the function returns
     // how many entries would have been written. With a real buffer, fills
