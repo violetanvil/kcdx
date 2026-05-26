@@ -93,6 +93,215 @@ std::atomic<bool>           g_reported_getter{false};
 constexpr const char* kRowCapture = "cap-43-loc-ctor-capture";
 constexpr const char* kRowGetter  = "cap-43-loc-byid-getter";
 
+// === Step 2a — read-only manager-struct LAYOUT PROBE ================
+//
+// TWO one-shot latches for the struct-field dump — one per fire site. The
+// ctor-time dump sees the manager layout but manager+0x18 (current language)
+// is NULL by construction (the ctor zeroes it last); the getter-time dump
+// fires only after a language has loaded, so manager+0x18 should be populated
+// and its language-table layout dumpable. We want BOTH observations, so each
+// site latches independently. See LayoutDump() for the full framing +
+// outcome→meaning map.
+std::atomic<bool>           g_layout_dumped_ctor{false};
+std::atomic<bool>           g_layout_dumped_getter{false};
+
+// How many qwords (8 bytes each) to dump per struct. 32 qwords = 0x100 bytes —
+// the cap from the step spec. The manager is far larger (the ctor writes
+// through param_1[0x18] = +0xC0 and beyond), but 0x100 covers every landmark
+// the ctor pins ([3]/[6]/[9]/[10]/[0xb]) with margin.
+constexpr int kDumpQwords = 32;
+
+// === Step 2a layout-probe helpers ===================================
+//
+// Fault-guarded copy of `count` qwords from `src` into `out`. The manager
+// `this` is a known-valid object (reading its own bytes never faults), but a
+// pointer-INTO-heap reached FROM the manager (e.g. the language table at
+// manager+0x18) can be stale/garbage — dereferencing it raw is exactly the
+// step-1-class crash this probe exists to avoid. SEH-guard the copy so a bad
+// pointer is OBSERVED (returns false → logged "unreadable") instead of
+// crashing. Returns true iff all `count` qwords were read.
+bool ReadQwordsNoFault(const void* src, uint64_t* out, int count) {
+    __try {
+        const volatile uint64_t* p = reinterpret_cast<const volatile uint64_t*>(src);
+        for (int i = 0; i < count; ++i) out[i] = p[i];
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Heuristic: do three consecutive already-read qwords (begin/end/capacity)
+// look like a libstdc++/MSVC std::vector<T*> with 8-byte stride? Requires
+// begin<=end<=capacity, begin non-null, and (end-begin) being a clean multiple
+// of 8 (pointer entries). Pure arithmetic on values ALREADY in `buf` — it does
+// NOT dereference begin/end/cap, so it never faults. `*outCount` ← element
+// count on a hit.
+bool LooksLikeVector(uint64_t begin, uint64_t end, uint64_t cap,
+                     uint64_t* outCount) {
+    if (begin == 0) return false;
+    if (!(begin <= end && end <= cap)) return false;
+    uint64_t span = end - begin;
+    if ((span & 0x7) != 0) return false;        // not an 8-byte stride
+    // A plausible non-degenerate vector: cap strictly past begin. (An empty
+    // begin==end==cap vector is a valid C++ state but indistinguishable from
+    // three equal junk values here, so we don't flag it — step 2b confirms
+    // population live.)
+    if (cap == begin) return false;
+    *outCount = span / 8;
+    return true;
+}
+
+// Dump the first kDumpQwords qwords of an already-read buffer as
+// "<label> mgr_field" / "lang_field" lines (offset + hex value), and flag any
+// vector-shaped triple. `what` distinguishes the manager dump ("mgr") from the
+// language-table dump ("lang") in the action tag. Observe-only.
+void DumpBufferFields(const char* what, const uint64_t* buf) {
+    for (int i = 0; i < kDumpQwords; ++i) {
+        // value rendered via the void* KV ctor → HEX (0x...). The qword is a
+        // raw field word; hex is how a layout reader needs to SEE it.
+        LOG_DEBUG_KV("LOC_DUMP", "field",
+                     log::KV::BareStr("struct", what),
+                     log::KV("offset",  (uint64_t)(i * 8)),
+                     log::KV("value",   reinterpret_cast<void*>(buf[i])));
+    }
+    // Scan every offset for a vector-shaped triple (begin/end/cap at i,i+1,i+2).
+    int vecHits = 0;
+    for (int i = 0; i + 2 < kDumpQwords; ++i) {
+        uint64_t count = 0;
+        if (LooksLikeVector(buf[i], buf[i + 1], buf[i + 2], &count)) {
+            ++vecHits;
+            LOG_DEBUG_KV("LOC_DUMP", "vec_candidate",
+                         log::KV::BareStr("struct", what),
+                         log::KV("offset",   (uint64_t)(i * 8)),
+                         log::KV("field_idx", (uint64_t)i),
+                         log::KV("begin",    reinterpret_cast<void*>(buf[i])),
+                         log::KV("end",      reinterpret_cast<void*>(buf[i + 1])),
+                         log::KV("cap",      reinterpret_cast<void*>(buf[i + 2])),
+                         log::KV("count",    count));
+        }
+    }
+    // AP14: "ran, found nothing" is a state — say it, don't go silent.
+    if (vecHits == 0) {
+        LOG_DEBUG_KV("LOC_DUMP", "vec_scan_empty",
+                     log::KV::BareStr("struct", what),
+                     log::KV("note",
+                             "no vector-shaped (begin<=end<=cap, 8-stride) "
+                             "triple in first 0x100 bytes"));
+    }
+}
+
+// One-shot LAYOUT PROBE (step 2a). Given the captured manager `this`, dump
+// enough of the manager's (and the current-language sub-object's) field layout
+// to CONFIRM the path manager → language-table → key↔int-ID vector BEFORE step
+// 2b walks it for real. OBSERVE-ONLY: reads + logs raw field values; walks
+// nothing, mutates nothing.
+//
+// OPEN QUESTION (what this probe answers):
+//   WHERE is the per-language string-table whose vector<entry*> ([9]/[10]/[0xb]
+//   in AddLocalizedString's param_2) gives key→int-ID? The ctor zeroes those
+//   same indices on the MANAGER, but AddLocalizedString operates on a
+//   per-LANGUAGE param_2 — the manager→table link is unconfirmed. The likely
+//   link is manager+0x18 (this[3], "current language"); the ctor sets it to 0
+//   as its LAST act, so it is NULL at ctor time and populated only once a
+//   language loads.
+//
+// OUTCOME→MEANING (also in this probe's report):
+//   - A clean begin/end/cap "vec_candidate" triple on the MANAGER dump (around
+//     +0x48 = field[9]) → the manager itself carries the key→id vector; step 2b
+//     walks the manager at that offset.
+//   - manager+0x18 ("lang_table_ptr") logged NULL → the language table is not
+//     loaded at this fire; we must re-dump on a LATER fire (a getter call, when
+//     a language is set). Reported so step 2b knows WHEN the table populates.
+//   - manager+0x18 non-null AND its "lang" dump shows a vec_candidate (around
+//     its +0x48) → the language-table layout is confirmed directly; step 2b
+//     walks *(manager+0x18) at that offset. This is the path the RE predicts.
+//   - Nothing resembles a vector on either → layout differs from the
+//     AddLocalizedString sub-object assumption; the raw dump feeds a re-RE.
+//
+// `when` tags which fire we dumped at ("ctor" vs "getter") so the report can
+// tell whether the language table was populated yet. `latch` is the per-site
+// one-shot guard (ctor vs getter) so each site dumps exactly once.
+void LayoutDump(void* manager, const char* when, std::atomic<bool>* latch) {
+    bool expected = false;
+    if (!latch->compare_exchange_strong(expected, true,
+                                        std::memory_order_acq_rel)) {
+        return;  // already dumped at this site this session (one-shot)
+    }
+    if (!manager) {
+        log::Warn("LOC_DUMP: layout probe skipped — captured manager is null");
+        return;
+    }
+
+    LOG_DEBUG_KV("LOC_DUMP", "layout_begin",
+                 log::KV("manager", manager),
+                 log::KV::BareStr("when", when));
+
+    // --- Manager struct dump. The manager `this` is a valid object; reading
+    //     its own bytes does not fault. Guard anyway for uniformity. ---
+    uint64_t mgr[kDumpQwords] = {0};
+    if (!ReadQwordsNoFault(manager, mgr, kDumpQwords)) {
+        log::Error("LOC_DUMP: layout probe FAILED — manager this unreadable "
+                   "(fault reading its own bytes; capture is bad)");
+        return;
+    }
+    DumpBufferFields("mgr", mgr);
+
+    // --- Known landmarks from the ctor decompile, logged explicitly so the
+    //     reader can orient (these indices are READ from the buffer above, not
+    //     re-dereferenced). ---
+    //   manager+0x18 = this[3]  — current-language ptr ("No language set"
+    //                             guard; ctor sets it 0 as its last act).
+    //   manager+0x30 = this[6]  — sentinel-node ptr (ctor: node->{+0,+8,+0x10}
+    //                             =node, *(u16*)(node+0x18)=0x101).
+    //   manager+0x58 = this[0xb]— field plVar1 the ctor zeroes (vector-cap
+    //                             slot in the AddLocalizedString param_2 model).
+    uint64_t langTablePtr = mgr[3];   // +0x18
+    LOG_DEBUG_KV("LOC_DUMP", "landmarks",
+                 log::KV("lang_table_ptr_0x18", reinterpret_cast<void*>(langTablePtr)),
+                 log::KV("sentinel_node_0x30",  reinterpret_cast<void*>(mgr[6])),
+                 log::KV("field_0xb_0x58",      reinterpret_cast<void*>(mgr[0xb])));
+
+    // --- The pointed-to current-language sub-object. If null, the table has
+    //     not loaded — SAY SO (AP14), and step 2b must dump on a later fire. If
+    //     non-null, dump its first 0x100 bytes the SAME way, fault-guarded (a
+    //     stale pointer here is observed, not a crash). ---
+    if (langTablePtr == 0) {
+        LOG_DEBUG_KV("LOC_DUMP", "lang_table_null",
+                     log::KV::BareStr("when", when),
+                     log::KV("note",
+                             "manager+0x18 (current language) is null at this "
+                             "fire — language table not loaded yet; re-dump on "
+                             "a later getter fire to see its layout"));
+        LOG_DEBUG_KV("LOC_DUMP", "layout_end",
+                     log::KV("manager", manager));
+        return;
+    }
+
+    uint64_t lang[kDumpQwords] = {0};
+    if (!ReadQwordsNoFault(reinterpret_cast<void*>(langTablePtr), lang,
+                           kDumpQwords)) {
+        // Warn, not Error: an unreadable reached-pointer is an EXPECTED probe
+        // outcome (manager+0x18 may hold a not-yet-valid table ptr at this fire),
+        // not a crash-risk product fail-state — severity matches consequence
+        // (fail-state-logging.md §severity). The manager-this-unreadable case
+        // above stays Error (that IS a bad capture).
+        log::WarnF("LOC_DUMP: layout probe — language-table ptr %p "
+                   "(manager+0x18) UNREADABLE (faulted on deref); not a valid "
+                   "table object at this fire",
+                   reinterpret_cast<void*>(langTablePtr));
+        LOG_DEBUG_KV("LOC_DUMP", "layout_end",
+                     log::KV("manager", manager));
+        return;
+    }
+    LOG_DEBUG_KV("LOC_DUMP", "lang_table",
+                 log::KV("ptr", reinterpret_cast<void*>(langTablePtr)),
+                 log::KV::BareStr("when", when));
+    DumpBufferFields("lang", lang);
+
+    LOG_DEBUG_KV("LOC_DUMP", "layout_end",
+                 log::KV("manager", manager));
+}
+
 // === The by-ID getter detour ========================================
 //
 // Observe-only: log (caller-return-address, id), then call the original
@@ -121,7 +330,17 @@ char* __fastcall HookedGetter(void* self, uint32_t id) {
         log::Error("LOC_DUMP: orig getter pointer null at dispatch");
         return nullptr;  // best-effort; should never happen post-install
     }
-    return orig(self, id);
+    char* result = orig(self, id);
+
+    // Step 2a layout probe (one-shot, getter site). The getter fires only AFTER
+    // a language is loaded (it resolves a string for the current language), so
+    // here manager+0x18 (current language) should be populated — the dump that
+    // shows the language-table layout directly. `self` is the manager `this`
+    // (slot-1 getter is a CLocalizedStringsManager method). Observe-only;
+    // dumped after orig ran so the read sees the post-call state.
+    LayoutDump(self, "getter", &g_layout_dumped_getter);
+
+    return result;
 }
 
 // Install the slot-1 getter hook ONCE, lazily, off the captured instance's live
@@ -217,6 +436,14 @@ void* __fastcall HookedCtor(void* self, void* sysctx) {
 
     // Now the ctor body has run `*this = vtable`; the live vtable is readable.
     InstallGetterHookOnce(self);
+
+    // Step 2a layout probe (one-shot, ctor site). The ctor has fully run, so
+    // the manager's fields are initialized — but manager+0x18 (current
+    // language) is NULL by construction (the ctor's last act is param_1[3]=0),
+    // so this dump shows the MANAGER layout with no language table yet. The
+    // getter-site dump (above) catches the populated language table later.
+    // Observe-only.
+    LayoutDump(self, "ctor", &g_layout_dumped_ctor);
 
     return ret;
 }
