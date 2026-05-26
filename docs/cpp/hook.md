@@ -406,6 +406,56 @@ genuinely cannot coexist (incompatible signature, or two exclusive
 `IsApplied == false` with a `GetReason`, the earlier one wins. To put more than
 one behavior on a target, make separate install calls (one behavior per call).
 
+## Conflict report
+
+`api->GetConflictReport(target, out, cap)` (on the root `kcdxInterface`)
+enumerates every registration that overlaps a target address — `[[patch]]`
+bytes, legacy `[[hook]]` entries, **and `kcdx.hook` (hook_chain) entries**. For
+the `kcdx.hook` surface it reports BOTH the live-chain winners (`applied != 0`)
+AND the `CanCoexist`-rejected losers (`applied == 0`) at that target, so an
+author can ask "who registered here, who won, who was aborted".
+
+```cpp
+uint32_t (*GetConflictReport)(uintptr_t          target,
+                              kcdxConflictEntry* out,
+                              uint32_t           cap);
+```
+
+**Arguments.**
+
+- `target` — the resolved **runtime VA** of the function/site to query. This is
+  the SAME VA space the hook resolved to: for a raw `opts.address` locator the
+  chain is keyed on the address verbatim, so you query
+  `reinterpret_cast<uintptr_t>(&YourFn)`; for a named/`address_id` target, query
+  the resolved address (`api->ResolveAddress(id)` / `ResolveAddressByName`).
+- `out` — caller-owned `kcdxConflictEntry[]` the engine fills, up to `cap`
+  entries (truncates if there are more). Each entry carries `name`, `priority`,
+  `kind` (`kcdxConflictEntryKind_Patch` / `_Hook`), and `applied` (`0` = aborted,
+  lost a conflict; nonzero = applied). `name` pointers are engine-owned and live
+  for the process lifetime.
+
+**Return value.** The number of entries written (`<= cap`). `0` means no
+registration overlaps `target`.
+
+**Order.** Entries are sorted by `(priority asc, name asc)` — the same order
+kcdx uses to apply.
+
+**Scope note.** `[[mid_hook]]` / `kcdx.hook` mode=`mid` conflicts are NOT
+reported: mid hooks reject via sole-ownership (the `FindChain`-non-null path),
+not the chain's `CanCoexist` path, and the legacy path never reported mid
+conflicts either — same contract.
+
+```cpp
+// Two `replace` hooks on one target: the first wins, the second is rejected.
+kcdxConflictEntry entries[8] = {};
+uint32_t n = api->GetConflictReport(
+    reinterpret_cast<uintptr_t>(&MyTarget), entries, 8);
+// n == 2: one entry with applied != 0 (the winner), one with applied == 0
+// (the CanCoexist-rejected loser). Both kind == kcdxConflictEntryKind_Hook.
+for (uint32_t i = 0; i < n; ++i)
+    api->Log(self, kcdxLogLevel_Info, "CONFLICT", entries[i].name);
+```
+
 ---
 
 See also: [wrapper.md](wrapper.md) (the empowered floor on top of this

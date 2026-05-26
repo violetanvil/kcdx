@@ -1,0 +1,60 @@
+# COMP-14 — GetConflictReport reports kcdx.hook (hook_chain) entries,
+# including the CanCoexist-rejected loser.
+#
+# The AP7 + docs-discipline close of the "GetConflictReport covers
+# hook_chain" feature (steps 1-2: hook_chain records chain->rejected +
+# GetParticipantsAtTarget; Thunk_GetConflictReport merges them as a third
+# source). A NATIVE C++ DLL plugin.
+#
+# Shape: the DLL defines ONE plugin-local stub target (Comp14_Target,
+# ICF-defeated) and installs TWO `replace` hooks on it via
+# kcdxHookInterface (cap-36's surface) using the raw opts.address locator.
+# Replace-vs-replace is exclusive in v1. WHICH one wins is decided by the
+# deferred apply pass's (priority asc, name asc) order — NOT call order —
+# so the NAME tiebreak (same plugin, same priority) decides:
+# "comp14_a_winner" sorts first -> first-touch -> applied; "comp14_b_loser"
+# sorts second -> CanCoexist-rejected (recorded in the winning chain's
+# rejected[] by step 1). From kcdxPlugin_PostGameLoad (after the apply pass
+# — the cap-36/39/40 timing) the SAME DLL calls
+# api->GetConflictReport(&Comp14_Target, entries, cap) and asserts:
+#
+#   - exactly 2 entries (proof the report now SEES hook_chain incl. the
+#     loser — pre-feature it returned 0)
+#   - one applied != 0 (the winner, name=comp14_a_winner, kind=Hook)
+#   - one applied == 0 (the rejected loser, name=comp14_b_loser, kind=Hook)
+#
+# The query key is reinterpret_cast<uintptr_t>(&Comp14_Target) — the SAME
+# VA the two installs resolved to via opts.address (ResolveLocator returns
+# payload.address verbatim, so the chain is keyed on &Comp14_Target). This
+# row IS the same-VA-space proof: GetConflictReport(va)'s va matches
+# hook_chain's targetVa for the address-locator path.
+#
+# Falsifiable: pre-feature (steps 1-2 absent) the report returns 0 for a
+# hook_chain target -> 0 != 2 -> FAIL; post-feature 2 with one applied /
+# one aborted -> PASS. An InputLoaded backstop (cap-36/39 pattern)
+# loud-FAILs if PostGameLoad never ran (no silent PENDING).
+#
+# Test mode: boot-only. The single row self-verifies at
+# kcdxPlugin_PostGameLoad. NO console gestures, NO save/load, NO in-game
+# action.
+#
+# Load order: irrelevant to the winner/loser — both replaces are in THIS
+# one plugin and the winner is install-order (first Replace() call), not
+# priority. Default priority.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_14_conflict_report_hook_chain"
+display_name        = "COMP-14 GetConflictReport covers hook_chain (C++)"
+author              = "ts"
+description         = "C++ DLL proving GetConflictReport reports kcdx.hook (hook_chain) entries — the chain winner (applied) AND the CanCoexist-rejected loser (aborted) — via two replaces on one plugin-local target."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["COMP-14-conflict-report"]
+
+[entrypoints]
+dll = "comp-14.dll"

@@ -142,6 +142,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxConsoleInterface::RegisterCommand`/`GetArg*` (console command) | Built | `kcdx.command` | [command.md](command.md) |
 | `kcdxMessagingInterface::Dispatch` (custom event broadcast) | Built | `kcdx.publish` | [publish.md](publish.md) |
 | `kcdxTrampolineInterface` (code allocation) — `Allocate` (all-in-one alloc+fill+pad+export) + `Export` (standalone publish) + the raw `AllocateFromBranchPool`/`LocalPool` floor (v2) | Built | `kcdx.code` | [code.md](code.md) |
+| `kcdxInterface::GetConflictReport` (enumerate patch / hook / kcdx.hook entries at a target — winners + rejected losers) | Built | `kcdx.conflict` (**NYI** — owed Lua mirror, see `docs/outstanding-work/lua-conflict-report-mirror.md`) | [hook.md](hook.md#conflict-report) |
 | `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
 | `kcdxTargetInterface::RegisterTarget` (author-declared named targets) | **NYI** | author-declared targets (`targets.toml`) | [targets.md](targets.md) |
 | `kcdxTargetInterface::RegisterAlias` (short local name handle) | **NYI** | `kcdx.alias` | [alias.md](alias.md) |
