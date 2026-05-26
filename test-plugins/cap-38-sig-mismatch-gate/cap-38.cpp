@@ -5,10 +5,15 @@
 // opts.signature, the engine USED to trust the explicit sig outright and
 // never cross-check it against the verified ABI it had in hand — so a
 // wrong explicit sig was SILENTLY accepted (an AP12 footgun on the exact
-// surface AP12 protects). The gate's core behavior is (c) WARN + keep the
-// explicit sig: the engine consults the verified ABI to DETECT the
-// conflict, emits a teaching WARN, then PROCEEDS with the explicit sig as
-// authored (the deliberate-override case stays authoritative).
+// surface AP12 protects). The gate's core behavior is (c) keep + proceed:
+// the engine consults the verified ABI to DETECT the conflict, emits a
+// teaching diagnostic, then PROCEEDS with the explicit sig as authored (the
+// deliberate-override case stays authoritative — the expert override is
+// honored). The diagnostic SEVERITY splits by ClassifyConflict: cap-38's
+// mismatch is an arg-count delta (1 vs 2) → a HARD conflict → the gate logs
+// at ERROR (action explicit_overrides_verified_hard), flagging the
+// known-crash-risk override on a live engine function. A soft same-shape
+// conflict stays at WARN.
 //
 // This is the C++ half (kcdxHookInterface). The Lua half is the sibling
 // cap-38-sig-mismatch-gate-lua/ plugin (parity-is-tested, lua-api-
@@ -44,14 +49,19 @@
 //
 //   * CAP-38-cpp-gate-warn ([manual], log-assert; reported by the
 //     orchestrator, NOT auto) — the COMP-12 log-assert pattern: the
-//     orchestrator confirms the gate-WARN KV line fired in the engine log
-//     post-run. Pre-fix (silent trust) NO warn line fires, so the manual
-//     row FAILS — that is the falsifiable signal the gate exists. The
-//     EXACT line (engine log): category HOOK_SIG_GATE, action
-//     explicit_overrides_verified, keys target / plugin / explicit_sig /
-//     verified_sig / used. This plugin does NOT scrape the log from inside
-//     itself (engine scope the gate doesn't need); it only drives the
-//     install that makes the line fire.
+//     orchestrator confirms the gate's HARD-conflict line fired in the
+//     engine log post-run. cap-38's mismatch is an ARG-COUNT delta (1-arg
+//     explicit vs 2-arg verified) → ClassifyConflict returns Hard → the
+//     gate emits at ERROR level (not WARN). Pre-fix (silent trust) NO line
+//     fires at all; the older WARN-only gate emitted action
+//     `explicit_overrides_verified` at WARN — so this row catches BOTH a
+//     silent-trust regression AND a downgrade-to-WARN regression. The EXACT
+//     line (engine log): LEVEL=Error, category HOOK_SIG_GATE, action
+//     `explicit_overrides_verified_hard`, keys target / plugin /
+//     explicit_sig / verified_sig / used / severity=hard / crash_risk=true /
+//     note. This plugin does NOT scrape the log from inside itself (engine
+//     scope the gate doesn't need); it only drives the install that makes
+//     the line fire.
 //
 // SAFETY — why hooking the hot lua_settable with a wrong sig is safe: the
 // before observer reads nothing harmful, mutates no args (*outCount=0),

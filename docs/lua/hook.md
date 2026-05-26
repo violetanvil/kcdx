@@ -86,13 +86,24 @@ The hook needs to find its target. The **common path** is by name:
 > **explicit signature wins** (the deliberate-override case — you may know
 > better than the seed, or be overriding a stale row). The engine consults the
 > verified ABI only to **detect** a conflict, not to override yours: when your
-> explicit signature is **not** compatible with the verified ABI (different arg
-> count or per-slot/return type), the engine emits a teaching **WARN**
-> (`HOOK_SIG_GATE` / `explicit_overrides_verified`, naming the target, both
+> explicit signature is **not** compatible with the verified ABI, the engine
+> emits a teaching diagnostic (`HOOK_SIG_GATE`, naming the target, both
 > signatures, and that the explicit one is used as authored) and then
-> **proceeds with your explicit signature**. The hook still installs — the WARN
-> flags that your hand-written ABI disagrees with the verified one, in case it
-> is a mistake rather than an intentional override. To silence it, drop
+> **proceeds with your explicit signature**. The diagnostic **severity** tells
+> you how serious the disagreement is:
+>
+> - **Hard conflict → `ERROR`** (action `explicit_overrides_verified_hard`,
+>   `severity=hard`, `crash_risk=true`). A different **argument count** or a
+>   different **return-register width** — your signature mis-describes the call
+>   frame of a **live engine function**, a known crash risk. The hook still
+>   installs (the override is honored), but if the game crashes in or after this
+>   hook, this is the cause. Double-check it is a deliberate override.
+> - **Soft conflict → `WARN`** (action `explicit_overrides_verified`,
+>   `severity=soft`). Same arg count and same return width — only a per-slot
+>   type nuance differs (e.g. `ptr` vs `i64`). A value-level heads-up, not a
+>   frame mis-description.
+>
+> The hook still installs either way. To silence the diagnostic, drop
 > `signature =` (let the name carry the verified ABI) or correct it to match.
 
 The remaining locators are an **advanced/expert escape hatch** for targets the

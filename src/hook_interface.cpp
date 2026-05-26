@@ -276,18 +276,47 @@ std::string ResolveSignature(const char* target,
             // caught by the parse below; a malformed verified seed is a
             // seed bug surfaced elsewhere. The gate is about a clean-but-
             // wrong explicit sig vs a clean verified ABI.
-            if (explicitParse.ok && verifiedParse.ok &&
-                !kcdx::hook_signature::SignaturesCompatible(
-                    explicitParse.sig, verifiedParse.sig)) {
-                LOG_WARN_KV("HOOK_SIG_GATE", "explicit_overrides_verified",
-                    log::KV("target",       target),
-                    log::KV("plugin",
-                            kcdx::plugins::NameForHandle(
-                                opts ? opts->owningPlugin
-                                     : kcdxInvalidPluginHandle).c_str()),
-                    log::KV("explicit_sig", sigStr.c_str()),
-                    log::KV("verified_sig", verifiedSig),
-                    log::KV("used",         "explicit"));
+            //
+            // Resolution is UNCHANGED either way: sigStr stays the explicit
+            // one — the expert override is honored, the install proceeds
+            // (behavior-(c)). ONLY the log severity changes, split by
+            // ClassifyConflict (shared with lua_bind_hook.cpp's gate so the
+            // two surfaces cannot drift): Hard (arg-count / return-width
+            // delta) → ERROR (a KNOWN CRASH RISK on a live engine function,
+            // the cap-38 / 0xC8 case); Soft (same shape, per-slot nuance) →
+            // WARN as before. Mirrors lua_bind_hook.cpp exactly.
+            if (explicitParse.ok && verifiedParse.ok) {
+                const std::string plugin = kcdx::plugins::NameForHandle(
+                    opts ? opts->owningPlugin : kcdxInvalidPluginHandle);
+                const auto kind = kcdx::hook_signature::ClassifyConflict(
+                    explicitParse.sig, verifiedParse.sig);
+                if (kind == kcdx::hook_signature::SignatureConflictKind::Hard) {
+                    LOG_ERROR_KV("HOOK_SIG_GATE",
+                        "explicit_overrides_verified_hard",
+                        log::KV("target",       target),
+                        log::KV("plugin",       plugin.c_str()),
+                        log::KV("explicit_sig", sigStr.c_str()),
+                        log::KV("verified_sig", verifiedSig),
+                        log::KV("used",         "explicit"),
+                        log::KV("severity",     "hard"),
+                        log::KV("crash_risk",   "true"),
+                        log::KV("note",
+                            "explicit signature used AS-AUTHORED (expert "
+                            "override honored); arg-count or return-width "
+                            "differs from the verified ABI — a frame "
+                            "mis-description on a live engine function. If "
+                            "the game crashes in or after this hook, this is "
+                            "the cause."));
+                } else if (kind ==
+                           kcdx::hook_signature::SignatureConflictKind::Soft) {
+                    LOG_WARN_KV("HOOK_SIG_GATE", "explicit_overrides_verified",
+                        log::KV("target",       target),
+                        log::KV("plugin",       plugin.c_str()),
+                        log::KV("explicit_sig", sigStr.c_str()),
+                        log::KV("verified_sig", verifiedSig),
+                        log::KV("used",         "explicit"),
+                        log::KV("severity",     "soft"));
+                }
             }
         }
     }

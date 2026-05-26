@@ -2698,4 +2698,76 @@ bool SignaturesCompatible(const Signature& a, const Signature& b) {
     return kcdx::hook_chain::SignaturesCompatibleImpl(a, b);
 }
 
+namespace {
+
+// Return-register WIDTH bucket for a parsed type, in BYTES. Type carries no
+// width member, so this is the gate's definition (see ClassifyConflict /
+// hook_signature.h). Used ONLY to decide gate SEVERITY (Hard vs Soft), never
+// resolution. Conservative: an unmapped type falls to 8 (the GPR full width),
+// which can only ever OVER-classify a difference as Soft-not-Hard within the
+// same bucket — and the arg-count delta (the unambiguous Hard case) does not
+// depend on this map at all.
+//
+//   void              -> 0  (no return value; void vs non-void IS a width
+//                            delta — a hook expecting a return where there is
+//                            none, or vice versa, mis-handles the frame)
+//   bool / i8 / u8    -> 1
+//   i16 / u16         -> 2
+//   f32               -> 4   (xmm0, 32-bit lane)
+//   i32 / u32         -> 4
+//   f64               -> 8   (xmm0, 64-bit lane)
+//   i64 / u64         -> 8
+//   ptr / wstr / cstr -> 8   (pointer width)
+int ReturnWidthBytes(kcdx::hook_signature::Type t) {
+    using T = kcdx::hook_signature::Type;
+    switch (t) {
+        case T::Void: return 0;
+        case T::Bool: case T::I8:  case T::U8:  return 1;
+        case T::I16:  case T::U16:                return 2;
+        case T::F32:  case T::I32: case T::U32:   return 4;
+        case T::F64:  case T::I64: case T::U64:   return 8;
+        case T::Ptr:  case T::Wstr: case T::Cstr: return 8;
+    }
+    return 8;  // conservative default (full GPR)
+}
+
+// True iff two return types occupy the same-width register lane AND the same
+// register CLASS (GPR vs XMM). A float and an integer of equal byte width
+// (f32 vs i32, f64 vs i64) return in DIFFERENT registers (xmm0 vs rax), so
+// reading one as the other mis-reads the return — that is a Hard (shape)
+// delta, not a soft per-slot nuance. Both-float or both-non-float of equal
+// width is a Soft difference (same register, same width).
+bool SameReturnWidthClass(kcdx::hook_signature::Type a,
+                          kcdx::hook_signature::Type b) {
+    if (ReturnWidthBytes(a) != ReturnWidthBytes(b)) return false;
+    return kcdx::hook_signature::IsFloatType(a) ==
+           kcdx::hook_signature::IsFloatType(b);
+}
+
+}  // namespace
+
+SignatureConflictKind ClassifyConflict(const Signature& explicitSig,
+                                       const Signature& verifiedSig) {
+    // None — the gate's own compatibility decision (NOT SignaturesCompatible,
+    // which is the chain-share question). If the explicit sig is byte-share
+    // compatible with the verified ABI, there is nothing to warn about.
+    if (kcdx::hook_chain::SignaturesCompatibleImpl(explicitSig, verifiedSig)) {
+        return SignatureConflictKind::None;
+    }
+    // Hard — a SHAPE delta: arg-count mismatch (the unambiguous case, the
+    // cap-38 / 0xC8 crash signature) OR a return-register width/class delta
+    // (a mis-described return register). Either mis-describes the call frame
+    // on a live engine function — a real crash risk.
+    if (explicitSig.args.size() != verifiedSig.args.size()) {
+        return SignatureConflictKind::Hard;
+    }
+    if (!SameReturnWidthClass(explicitSig.returnType, verifiedSig.returnType)) {
+        return SignatureConflictKind::Hard;
+    }
+    // Soft — incompatible (per-slot type nuance) but SAME shape: same arg
+    // count, same return width/class. A value-level mis-marshal, not a frame
+    // mis-description.
+    return SignatureConflictKind::Soft;
+}
+
 }  // namespace kcdx::hook_signature

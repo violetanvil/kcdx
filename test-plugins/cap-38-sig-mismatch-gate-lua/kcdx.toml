@@ -4,11 +4,13 @@
 # Drives kcdx.hook with the named target `kcdx.lua_settable` (engine seed
 # id 1186, verified "void (ptr L, i32 idx)") + the WRONG explicit
 # signature "void (ptr L)" (1 arg → arg-count delta → NOT
-# SignaturesCompatible → the gate fires). Asserts behavior-c (WARN +
-# proceed): handle:applied()==true at kcdx.on("ready").
+# SignaturesCompatible → the gate fires). Asserts behavior-c (keep +
+# proceed): handle:applied()==true at kcdx.on("ready"). The arg-count delta
+# is a HARD conflict → the gate logs the diagnostic at ERROR.
 #
-# Test mode: boot-only. The gate-WARN line is the [manual]
-# CAP-38-lua-gate-warn row (orchestrator-side log grep).
+# Test mode: boot-only. The gate's ERROR-level HARD line is the [manual]
+# CAP-38-lua-gate-warn row (orchestrator-side log grep, action
+# explicit_overrides_verified_hard).
 
 [kcdx]
 test_suite_only = true
@@ -17,7 +19,7 @@ test_suite_only = true
 name                = "cap_38_sig_mismatch_gate_lua"
 display_name        = "CAP-38 sig-mismatch gate (Lua)"
 author              = "ts"
-description         = "Lua half: kcdx.hook names kcdx.lua_settable (verified ABI) with a WRONG explicit signature=; asserts the gate WARNs + PROCEEDS with the explicit sig (behavior-c) — handle:applied()==true."
+description         = "Lua half: kcdx.hook names kcdx.lua_settable (verified ABI) with a WRONG explicit signature=; asserts the gate ERRORs (arg-count delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — handle:applied()==true."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true

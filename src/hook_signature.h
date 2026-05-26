@@ -146,4 +146,37 @@ bool IsReservedArgName(const std::string& name);
 // type→string table).
 bool SignaturesCompatible(const Signature& a, const Signature& b);
 
+// Conflict classification for the sig-mismatch GATE (the named-target +
+// explicit-signature footgun, cap-38). DISTINCT from SignaturesCompatible:
+// SignaturesCompatible answers "can two hooks share ONE marshaling thunk?"
+// (the chain-coexistence question at hook_chain.cpp), and is NOT touched by
+// this. ClassifyConflict answers "how SEVERE is an explicit author signature
+// disagreeing with the name-resolved verified ABI?" — to drive the gate's
+// log SEVERITY, never its resolution (the explicit sig always wins / install
+// always proceeds — behavior-(c)).
+//
+//   None — the two are compatible (no diagnostic).
+//   Soft — incompatible but SAME SHAPE: same arg count AND same return
+//          register-WIDTH. A per-slot type nuance only (e.g. ptr vs i64,
+//          i32 vs u32 — same-width register move; mis-marshals a value but
+//          not the call frame). → WARN.
+//   Hard — a SHAPE delta: different arg count, OR a return-WIDTH delta. The
+//          call frame / return register is mis-described, the live-engine
+//          crash risk (the cap-38 / 0xC8 case: 1-arg explicit vs 2-arg
+//          verified). → ERROR.
+//
+// Return-WIDTH mapping (Type carries no width member, so this is the gate's
+// definition; see ClassifyConflict's body for the table). Conservative by
+// design — when in doubt a difference is classified Hard (a false-Hard
+// over-warns at ERROR but NEVER under-warns a real crash risk).
+//
+// DECLARED here so BOTH named-target install gates (hook_interface.cpp
+// ResolveSignature + lua_bind_hook.cpp signature resolution) share ONE
+// definition of "hard conflict" and cannot drift. Body in hook_chain.cpp
+// alongside SignaturesCompatible (so the file-local type tables resolve).
+enum class SignatureConflictKind { None, Soft, Hard };
+
+SignatureConflictKind ClassifyConflict(const Signature& explicitSig,
+                                       const Signature& verifiedSig);
+
 }  // namespace kcdx::hook_signature

@@ -3,10 +3,13 @@
 -- Pair of cap-38-sig-mismatch-gate/ (the C++ DLL). Both surfaces carry the
 -- SAME footgun and the SAME gate: a named target carrying a verified
 -- Address-Library ABI + an explicit signature= was SILENTLY trusted. The
--- gate's core behavior is (c): WARN + keep the explicit sig (consult the
--- verified ABI to DETECT the conflict, emit a teaching WARN, then proceed
--- with the explicit sig as authored). The C++ half drives kcdxHookInterface;
--- THIS half drives kcdx.hook — same model, the Lua spelling.
+-- gate's core behavior is (c): keep + proceed (consult the verified ABI to
+-- DETECT the conflict, emit a teaching diagnostic, then proceed with the
+-- explicit sig as authored). The diagnostic SEVERITY splits by
+-- ClassifyConflict: cap-38's arg-count delta (1 vs 2) is a HARD conflict →
+-- the gate logs at ERROR (a known crash risk on a live engine function); a
+-- soft same-shape conflict stays at WARN. The C++ half drives
+-- kcdxHookInterface; THIS half drives kcdx.hook — same model, the Lua spelling.
 --
 -- Named target: `kcdx.lua_settable` (engine seed id 1186, verified ABI
 -- "void (ptr L, i32 idx)"). WRONG explicit signature: "void (ptr L)" (1
@@ -24,10 +27,16 @@
 --     resolve-and-apply assertion. The C++ half additionally proves the
 --     hook FIRES per the explicit sig.)
 --
--- The gate-WARN line is the [manual] CAP-38-lua-gate-warn row: the
--- orchestrator greps the engine log for category HOOK_SIG_GATE, action
--- explicit_overrides_verified (keys target / plugin / explicit_sig /
--- verified_sig / used). This plugin does NOT scrape the log itself.
+-- The gate's HARD-conflict line is the [manual] CAP-38-lua-gate-warn row:
+-- the orchestrator greps the engine log for it. cap-38's mismatch is an
+-- ARG-COUNT delta (1-arg explicit vs 2-arg verified) → ClassifyConflict
+-- returns Hard → the gate emits at ERROR level (not WARN). The EXACT line:
+-- LEVEL=Error, category HOOK_SIG_GATE, action
+-- `explicit_overrides_verified_hard` (keys target / plugin / explicit_sig /
+-- verified_sig / used / severity=hard / crash_risk=true / note). Pre-fix the
+-- gate emitted action `explicit_overrides_verified` at WARN — so this row
+-- catches both a silent-trust regression AND a downgrade-to-WARN regression.
+-- This plugin does NOT scrape the log itself.
 --
 -- SAFETY — hooking the hot lua_settable with a wrong 1-arg sig is safe: the
 -- before observer mutates nothing and does not skip the original; the

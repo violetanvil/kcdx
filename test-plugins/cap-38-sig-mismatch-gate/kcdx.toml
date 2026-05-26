@@ -1,12 +1,15 @@
 # CAP-38 — sig-mismatch gate (C++ half). See cap-38.cpp for the full
-# row contract + the behavior-c WARN+proceed design.
+# row contract + the behavior-c keep-and-proceed design.
 #
 # The footgun the gate closes: named target carrying a verified ABI +
 # an explicit opts.signature was SILENTLY trusted (the explicit sig used
 # as-is, the verified ABI never cross-checked) — an AP12 footgun on the
-# exact surface AP12 protects. The gate's core behavior is (c): WARN +
-# keep the explicit sig (consult the verified ABI to DETECT the conflict,
-# emit a teaching WARN, then proceed with the explicit sig as authored).
+# exact surface AP12 protects. The gate's core behavior is (c): keep +
+# proceed (consult the verified ABI to DETECT the conflict, emit a teaching
+# diagnostic, then proceed with the explicit sig as authored). The diagnostic
+# SEVERITY splits by ClassifyConflict — cap-38's arg-count delta (1 vs 2) is
+# a HARD conflict → the gate logs at ERROR (a known crash risk on a live
+# engine function); a soft same-shape conflict stays at WARN.
 #
 # This C++ plugin drives kcdxHookInterface with the named target
 # `kcdx.lua_settable` (engine seed id 1186, verified "void (ptr L, i32
@@ -22,9 +25,10 @@
 #     against a hypothetical (a)-reject impl: a reject would give handle 0 /
 #     IsApplied false / observer never fires → FAIL.
 #   * CAP-38-cpp-gate-warn ([manual], log-assert): the orchestrator greps
-#     the engine log for the gate-WARN KV line. NOT auto-reported by this
-#     plugin (the auto row asserts behavior-c PROCEEDED, which is byte-
-#     identical pre/post-fix; only the WARN line distinguishes them).
+#     the engine log for the gate's ERROR-level HARD line (action
+#     explicit_overrides_verified_hard, severity=hard). NOT auto-reported by
+#     this plugin (the auto row asserts behavior-c PROCEEDED, which is byte-
+#     identical pre/post-fix; only the ERROR line distinguishes them).
 #
 # Test mode: boot-only (the auto row). The manual row is an
 # orchestrator-side log grep, no in-game gesture.
@@ -36,7 +40,7 @@ test_suite_only = true
 name                = "cap_38_sig_mismatch_gate"
 display_name        = "CAP-38 sig-mismatch gate (C++)"
 author              = "ts"
-description         = "C++ DLL: names kcdx.lua_settable (verified ABI) with a WRONG explicit opts.signature; asserts the sig-mismatch gate WARNs + PROCEEDS with the explicit sig (behavior-c) — install succeeds, hook fires."
+description         = "C++ DLL: names kcdx.lua_settable (verified ABI) with a WRONG explicit opts.signature; asserts the sig-mismatch gate ERRORs (arg-count delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — install succeeds, hook fires."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
