@@ -78,7 +78,7 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
 
 - **zone** — which side of the running game the plugin loads on:
   `before_game` (engine fixes and plugins that must be in place before the game
-  starts) or `after_game` (most user plugins). Set with `default_position`.
+  starts) or `after_game` (most user plugins). Set with `[load_order].zone`.
 
 - **zone gate** — the engine's plugin-init capability check. After load order
   resolves every plugin's zone, the gate cross-references each enabled plugin's
@@ -99,7 +99,7 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   unreachable. See [plugin.md](plugin.md).
 
 - **load-order priority** — where a plugin sits within its zone, `0` (earliest)
-  to `100` (latest), default `50`. Set with `default_priority`; the engine's
+  to `100` (latest), default `50`. Set with `[load_order].priority`; the engine's
   `load_order.toml` can override it. Cross-plugin ordering of hooks/bytes comes
   from this; ordering *within* one plugin is the order your `plugin.lua`
   registers them.

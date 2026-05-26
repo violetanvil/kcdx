@@ -71,13 +71,15 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-default_priority    = 30
 test_names          = ["CAP-37-wrapper-before",
                        "CAP-37-wrapper-after",
                        "CAP-37-wrapper-around",
                        "CAP-37-wrapper-replace",
                        "CAP-37-wrapper-try-handle",
                        "CAP-37-wrapper-typemap"]
+
+[load_order]
+priority = 30
 
 [entrypoints]
 dll = "cap-37.dll"

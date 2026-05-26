@@ -14,7 +14,7 @@
 #       lower-priority plugin's slot runs first (RunAll + RunAfterEntrypoints
 #       both iterate plugins in load-order priority asc — sub-2 + sub-3).
 #
-# PRIORITIES: A = default_priority 30 (this plugin), B = 70. 30 < 70, so A's
+# PRIORITIES: A = [load_order].priority 30 (this plugin), B = 70. 30 < 70, so A's
 # plugin.lua and A's after.lua each run BEFORE B's in their respective phase.
 # Expected sequence = ["a.before", "b.before", "a.after", "b.after"].
 #
@@ -58,8 +58,10 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-default_priority    = 30
 test_names          = ["COMP-11-both-phase-order"]
+
+[load_order]
+priority = 30
 
 [entrypoints]
 lua       = "plugin.lua"

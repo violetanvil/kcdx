@@ -98,9 +98,14 @@ struct PluginManifest {
     // Parsed from kcdx.toml [plugin] log_level = "debug|info|warn|error|off".
     uint32_t logLevel = 0;  // == kcdxLog_Info
 
-    // Load-order author hints (parsed from [plugin] default_position +
-    // default_priority). Surface the plugin's preferred placement to the
+    // Load-order author hints (parsed from the per-plugin [load_order] table's
+    // zone + priority keys). Surface the plugin's preferred placement to the
     // launcher; user can override via kcdx-engine/load_order.toml.
+    //
+    // NOTE: these internal fields keep the names defaultPosition /
+    // defaultPriority (their consumers in load_order.cpp read them unchanged);
+    // only the TOML keys the parser reads FROM were renamed (Phase-7 zone
+    // rework: [plugin].default_position/_priority -> [load_order].zone/priority).
     //
     // defaultPosition is one of "before_game" / "after_game" (or empty,
     // meaning "let kcdx derive from capabilities"). When empty, kcdx

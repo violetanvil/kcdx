@@ -211,32 +211,50 @@ bool ParsePluginManifest(const toml::table& doc,
 
     out.versionIndependent = OptBool(t, "version_independent", false);
 
-    // Load-order author hints (zone + priority). Both are optional. See
-    // docs/load-order.md for the full model — zones partition plugins into
-    // before_game vs after_game (the game.exe sentinel divides them);
+    // Load-order author hints — the per-plugin [load_order] TABLE (zone +
+    // priority). Both keys are optional; an absent [load_order] table defaults
+    // both. See docs/load-order.md for the full model — zones partition plugins
+    // into before_game vs after_game (the game.exe sentinel divides them);
     // priority orders plugins within their zone.
     //
-    //   default_position = "before_game" | "after_game" | ""
-    //     ""  → engine derives from capabilities at load time
-    //           (engine builtins default to before_game; user plugins
-    //           default to after_game when their entries are flexible).
+    //   [load_order]
+    //     zone = "before_game" | "after_game" | ""
+    //       ""  → engine derives from capabilities at load time
+    //             (engine builtins default to before_game; user plugins
+    //             default to after_game when their entries are flexible).
     //
-    //   default_priority = 0..100  (default 50)
-    //     0 = earliest in zone, 100 = latest. Sparse range gives users /
-    //     authors room to insert "definitely before X" without renumbering.
+    //     priority = 0..100  (default 50)
+    //       0 = earliest in zone, 100 = latest. Sparse range gives users /
+    //       authors room to insert "definitely before X" without renumbering.
+    //
+    // This is the per-plugin manifest table, parsed here from the plugin's own
+    // kcdx.toml doc. It is DISTINCT from the engine-wide override file
+    // kcdx-engine/load_order.toml, whose top-level [[plugin]] rows are parsed
+    // by a separate parser (load_order.cpp::Read). Different files, different
+    // parsers — no collision.
+    //
+    // HARD rename (Phase 7 zone-rework subset): the legacy [plugin] keys
+    // default_position / default_priority are NO LONGER read. A plugin still
+    // carrying them is parsed as if it set neither (the keys are silently
+    // ignored, consistent with the prerelease fix-forward no-WARN stance).
     {
-        std::string pos = OptString(t, "default_position");
-        if (!pos.empty() && pos != "before_game" && pos != "after_game") {
-            err = "[plugin] default_position: unknown value '" + pos + "' "
-                  "(expected 'before_game' or 'after_game')";
+        const toml::table* lo = nullptr;
+        if (auto* loNode = doc.get("load_order"); loNode && loNode->is_table()) {
+            lo = loNode->as_table();
+        }
+        // Empty/absent [load_order]: zone derives, priority 50 — same defaults
+        // as before the rename.
+        std::string zone = lo ? OptString(*lo, "zone") : std::string();
+        if (!zone.empty() && zone != "before_game" && zone != "after_game") {
+            err = "[load_order] zone: unknown value '" + zone + "' "
+                  "(expected before_game|after_game)";
             return false;
         }
-        out.defaultPosition = pos;
-    }
-    {
-        int prio = OptInt(t, "default_priority", 50);
+        out.defaultPosition = zone;
+
+        int prio = lo ? OptInt(*lo, "priority", 50) : 50;
         if (prio < 0 || prio > 100) {
-            err = "[plugin] default_priority: out of range (" +
+            err = "[load_order] priority: out of range (" +
                   std::to_string(prio) + "); expected 0..100";
             return false;
         }

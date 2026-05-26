@@ -3,7 +3,7 @@
 # Per-entry-zone execution model step 7. The companion of
 # comp-11-both-phase-order-a (the asserter, which owns the COMP-11 row and
 # documents the full model + the deterministic-timing argument). B is the
-# HIGHER-priority plugin (default_priority 70 > A's 30), so B's plugin.lua and
+# HIGHER-priority plugin ([load_order].priority 70 > A's 30), so B's plugin.lua and
 # B's after.lua each run AFTER A's in their respective phase.
 #
 # B is a pure PUBLISHER: it just publishes its two phase tokens — "b.before"
@@ -32,7 +32,9 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-default_priority    = 70
+
+[load_order]
+priority = 70
 
 [entrypoints]
 lua       = "plugin.lua"

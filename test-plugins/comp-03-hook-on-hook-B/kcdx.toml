@@ -1,14 +1,14 @@
 # COMP-03 plugin B — loser half of the cross-plugin hook-on-hook pair.
 #
 # Phase 4b Batch 2 migration: was a legacy [[hook]] mirroring plugin A's
-# bytes= entry at priority=200; now a kcdxHookInterface::Replace install in
+# bytes= entry; now a kcdxHookInterface::Replace install in
 # this DLL (comp-03-B.cpp), at the SAME named site as plugin A, with
-# default_priority=200.
+# [load_order].priority=20.
 #
 # The deferred apply pass orders entries ACROSS plugins by (PLUGIN
 # load-order priority asc, name asc) — lua_registry.cpp reads
-# kcdx::load_order::Of(pluginName).priority (the default_priority). A is
-# 100, B is 200, so A sorts first → A does the first-touch (the applied
+# kcdx::load_order::Of(pluginName).priority (the [load_order].priority). A is
+# 10, B is 20, so A sorts first → A does the first-touch (the applied
 # winner) and B hits FindChain-non-null → CanCoexist (replace-vs-replace is
 # exclusive) rejects it → recorded in chain->rejected (applied=false).
 #
@@ -35,11 +35,13 @@ kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 # Higher number than A's 10 = applies LATER = loses the replace-vs-replace
-# conflict. default_priority is 0..100 (NOT the legacy [[hook]].priority
+# conflict. [load_order].priority is 0..100 (NOT the legacy [[hook]].priority
 # range, which went to 200 — that out-of-range value got the whole plugin
 # REJECTED at manifest load, silently dropping the COMP-03 row).
-default_priority    = 20
 test_names          = ["COMP-03"]
+
+[load_order]
+priority = 20
 
 [entrypoints]
 dll = "comp-03-B.dll"

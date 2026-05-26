@@ -34,12 +34,14 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-default_priority    = 70
 
 [[plugin.dependencies]]
 name        = "cap_36_cpp_hook_interface"
 min_version = "0.1.0"
 optional    = false
+
+[load_order]
+priority = 70
 
 [entrypoints]
 lua = "plugin.lua"

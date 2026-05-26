@@ -51,5 +51,6 @@ compatible_game_versions = ["1.5.1164953"]
 # Priority 30 keeps room (sparse 0..100) for users to insert other
 # before_game fixes earlier (e.g. compatibility-flag patches that
 # influence what BugSplat sees) without renumbering.
-default_position = "before_game"
-default_priority = 30
+[load_order]
+zone     = "before_game"
+priority = 30

@@ -41,8 +41,10 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-default_priority    = 50
 test_names          = ["CAP-38-cpp-gate-proceeds"]
+
+[load_order]
+priority = 50
 
 [entrypoints]
 dll = "cap-38.dll"

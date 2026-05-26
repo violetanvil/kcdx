@@ -9,8 +9,8 @@
 # WHICH one wins is decided by the deferred apply pass, which orders
 # entries ACROSS plugins by (PLUGIN load-order priority asc, name asc) —
 # lua_registry.cpp:429-447 reads kcdx::load_order::Of(pluginName).priority,
-# i.e. the plugin's default_priority. This plugin is default_priority=100;
-# plugin B is 200. 100 < 200, so THIS entry sorts first → does the
+# i.e. the plugin's [load_order].priority. This plugin is priority=10;
+# plugin B is 20. 10 < 20, so THIS entry sorts first → does the
 # first-touch that builds the chain (the applied winner). B's entry hits
 # FindChain-non-null → CanCoexist fails → recorded in chain->rejected
 # (applied=false). The PLUGIN priority is the deterministic lever — there
@@ -51,8 +51,9 @@ kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 # Lower number than B's 20 = applies FIRST = wins the replace-vs-replace
-# conflict (first-touch). default_priority is 0..100.
-default_priority    = 10
+# conflict (first-touch). [load_order].priority is 0..100.
+[load_order]
+priority = 10
 
 [entrypoints]
 lua = "plugin.lua"

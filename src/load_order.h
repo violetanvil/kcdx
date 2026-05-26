@@ -30,7 +30,9 @@ namespace kcdx::load_order {
 // before X" or "definitely after Y" without renumbering siblings.
 //
 // Inputs to the effective values for each plugin:
-//   1. Author hints from [plugin].default_position / default_priority.
+//   1. Author hints from the per-plugin [load_order] table (zone / priority);
+//      these populate the manifest's internal defaultPosition / defaultPriority
+//      fields, which this module reads.
 //   2. (If present) user override from kcdx-engine/load_order.toml.
 //
 // The declared (zone, priority) stands unconditionally — there is no silent

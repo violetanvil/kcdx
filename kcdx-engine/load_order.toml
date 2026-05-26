@@ -3,9 +3,9 @@
 # Edit via the launcher UI (when shipped), or hand-edit here.
 #
 # Plugins not listed in this file inherit author defaults from their
-# own kcdx.toml ([plugin].default_position / .default_priority) and
-# are enabled. Listed plugins get the fields below applied on top of
-# those defaults; missing fields fall back to the author default.
+# own kcdx.toml ([load_order].zone / .priority) and are enabled. Listed
+# plugins get the fields below applied on top of those defaults; missing
+# fields fall back to the author default.
 #
 # See docs/load-order.md for the full model.
 

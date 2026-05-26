@@ -103,7 +103,7 @@
 #
 # Load order: this plugin is the C++ half. It must run FIRST (lower
 # priority number) so the crosslang row's expected order is C++ before
-# → Lua before. The Lua sibling sets default_priority = 70; this one is 30.
+# → Lua before. The Lua sibling sets [load_order].priority = 70; this one is 30.
 
 [kcdx]
 test_suite_only = true
@@ -117,7 +117,6 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-default_priority    = 30
 test_names          = ["CAP-36-cpp-hook-before",
                        "CAP-36-cpp-hook-after",
                        "CAP-36-cpp-hook-around",
@@ -125,6 +124,9 @@ test_names          = ["CAP-36-cpp-hook-before",
                        "CAP-36-cpp-hook-uninstall",
                        "CAP-36-cpp-hook-raw-floor",
                        "CAP-36-cpp-hook-crosslang"]
+
+[load_order]
+priority = 30
 
 [entrypoints]
 dll = "cap-36.dll"

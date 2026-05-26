@@ -2,8 +2,8 @@
 // site; the lower-PLUGIN-priority plugin wins, the higher is rejected.
 //
 // Phase 4b Batch 2 migration off the legacy [[hook]] bytes= first-wins path.
-// Plugin A (pure Lua, default_priority=10) and this plugin B (this DLL,
-// default_priority=20) both install a `replace` at the SAME named function
+// Plugin A (pure Lua, [load_order].priority=10) and this plugin B (this DLL,
+// [load_order].priority=20) both install a `replace` at the SAME named function
 // entry: `IsInCombat_callsite_with_stack_frame` (Address Library id 1007,
 // RVA 0x566040). Replace-vs-replace is exclusive in the hook_chain
 // (CanCoexist rejects the second touch), so one wins and one is rejected.
@@ -11,7 +11,7 @@
 // WHICH one wins is the cross-plugin apply order: the deferred apply pass
 // sorts entries by (PLUGIN load-order priority asc, name asc) —
 // lua_registry.cpp:429-447 reads kcdx::load_order::Of(pluginName).priority,
-// i.e. the plugin's default_priority. A=10 < B=20, so A's entry sorts
+// i.e. the plugin's [load_order].priority. A=10 < B=20, so A's entry sorts
 // first → A does the first-touch (the applied winner); B hits
 // FindChain-non-null → CanCoexist fails → recorded in chain->rejected
 // (applied=false). The PLUGIN priority is the deterministic lever.

@@ -36,10 +36,22 @@ kcdx.log.info("MYMOD", "hello from my first plugin")
 | `kcdx_min_version` | string | Minimum kcdx version this plugin needs (semver). |
 | `version_independent` | bool | `true` if the plugin does not bind to a specific KCD2 build (default `false`). |
 | `compatible_game_versions` | array of strings | KCD2 build versions this plugin targets, e.g. `["1.5.1164953"]`. |
-| `default_position` | string | Load zone: `"before_game"` or `"after_game"`. Omit to let the engine derive it (engine builtins → before; user plugins → after). |
-| `default_priority` | integer | `0`–`100` within the zone (default `50`). |
 | `log_level` | string | Floor for the plugin's own log file: `trace`/`debug`/`info`/`warn`/`error`/`off` (default `info`). Warn/Error always pass. |
 | `test_names` | array of strings | For test-suite plugins: the matrix row IDs this plugin promises to report. |
+
+Load-order hints are NOT `[plugin]` keys — they live in a separate per-plugin
+`[load_order]` table:
+
+```toml
+[load_order]
+zone     = "before_game"   # or "after_game"; omit to derive from capabilities
+priority = 30              # 0..100 within the zone (default 50)
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `zone` | string | Load zone: `"before_game"` or `"after_game"`. Omit to let the engine derive it (engine builtins → before; user plugins → after). |
+| `priority` | integer | `0`–`100` within the zone (default `50`). |
 
 `[[plugin.dependencies]]` — zero or more dependency entries:
 
@@ -86,6 +98,6 @@ priority within each phase.
 
 A `priority` field on an individual `kcdx.hook{}` / `kcdx.bytes{}` call is **no
 longer honoured** (kcdx logs a once-per-session notice if you set it).
-Cross-plugin ordering comes from the plugin's `default_priority` (or the
+Cross-plugin ordering comes from the plugin's `[load_order].priority` (or the
 engine `load_order.toml`); intra-plugin ordering is the order your `plugin.lua`
 registers entries.

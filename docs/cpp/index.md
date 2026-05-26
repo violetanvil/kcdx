@@ -100,8 +100,8 @@ spellings noted where they differ:
   via `kcdxMessagingInterface::RegisterListener`. See [lifecycle.md](lifecycle.md).
 
 - **load-order priority / zone** — where a plugin sits within `before_game` /
-  `after_game`. Same `default_position` / `default_priority` manifest keys as
-  Lua. C++ `PostGameLoad` exports run in load-order priority.
+  `after_game`. Same per-plugin `[load_order]` table (`zone` / `priority`
+  manifest keys) as Lua. C++ `PostGameLoad` exports run in load-order priority.
 
 - **locator / signature / hook mode** — how a hook finds its target and the ABI
   string the engine carries for it. These are the built `kcdxHookInterface`

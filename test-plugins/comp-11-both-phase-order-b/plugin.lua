@@ -1,6 +1,6 @@
 -- COMP-11 plugin B (the PUBLISHER) — plugin.lua: the BEFORE slot.
 --
--- B is the HIGHER-priority plugin (default_priority 70 > A's 30), so this
+-- B is the HIGHER-priority plugin ([load_order].priority 70 > A's 30), so this
 -- plugin.lua runs AFTER A's plugin.lua in RunAll. By the time this runs, A's
 -- collector subscriptions are already live (A is lowest priority -> A's
 -- plugin.lua ran first), so this published token is caught. This token is

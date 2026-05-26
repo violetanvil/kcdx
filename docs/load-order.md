@@ -52,15 +52,12 @@ The priority range is deliberately sparse: `0..100`. That gives
 users / authors room to insert "definitely before X" without
 renumbering siblings.
 
-## Author hints — `[plugin]` table
+## Author hints — the per-plugin `[load_order]` table
 
-Two optional fields per plugin's `kcdx.toml`:
+A `[load_order]` table per plugin's `kcdx.toml`, with two optional keys:
 
 ```toml
-[plugin]
-name              = "myauthor.example"
-version           = "1.0.0"
-
+[load_order]
 # Where should this plugin sit by default?
 #   "before_game"  — applied before WHGame.dll's DllMain
 #                    (only valid if all entries are zone-flexible)
@@ -68,15 +65,21 @@ version           = "1.0.0"
 #   ""  (omitted)  — kcdx derives from capabilities. Engine builtins
 #                    default to before_game; user plugins default to
 #                    after_game when their entries permit it.
-default_position  = "before_game"
+zone     = "before_game"
 
 # Where in the chosen zone?  0 = earliest, 100 = latest, 50 = middle.
-default_priority  = 30
+priority = 30
 ```
 
 Author hints are advisory. The user can override either field via
-`load_order.toml` (see below). Both fields are optional; defaults are
-`""` (derive) and `50`.
+`load_order.toml` (see below). Both keys are optional; an absent `[load_order]`
+table defaults `zone` to `""` (derive) and `priority` to `50`.
+
+This per-plugin `[load_order]` table (in the plugin's own `kcdx.toml`) is
+DISTINCT from the engine-wide override file `kcdx-engine/load_order.toml`
+described below, whose top-level `[[plugin]]` rows a separate parser reads.
+(The legacy `[plugin].default_position` / `[plugin].default_priority` keys were
+renamed into this table in the Phase-7 zone-rework subset.)
 
 ## User overrides — `kcdx-engine/load_order.toml`
 

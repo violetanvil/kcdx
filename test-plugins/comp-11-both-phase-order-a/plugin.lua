@@ -1,7 +1,7 @@
 -- COMP-11 plugin A (the ASSERTER) — plugin.lua: the BEFORE slot + the
 -- collector subscriptions + the input_loaded assert.
 --
--- A is the LOWEST-priority plugin (default_priority 30 < B's 70), so this
+-- A is the LOWEST-priority plugin ([load_order].priority 30 < B's 70), so this
 -- plugin.lua runs FIRST in RunAll — before ANY phase token publishes. That is
 -- what makes the collector deterministic (option B): we subscribe to both
 -- plugins' token events at the TOP here, BEFORE publishing our own before
