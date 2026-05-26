@@ -57,8 +57,11 @@ const char* EventNameList();
 // anonymous callers) — used only for log lines. `eventName` must be one of
 // the 9 (IsLifecycleEvent true); callers validate first.
 //
-// Callbacks accumulate per event name and fire in registration order. They
-// fire EVERY time the mapped message fires (NOT once — unlike "ready").
+// Callbacks accumulate per event name and fire in LOAD-ORDER PRIORITY
+// (priority asc, with registration order as the tiebreak) — the owning
+// plugin's effective priority is captured here at registration via
+// load_order::Of. They fire EVERY time the mapped message fires (NOT once —
+// unlike "ready").
 // Refs are NOT released after firing: a lifecycle subscription is durable
 // for the process lifetime (the message can fire again).
 void RegisterLifecycleCallback(const std::string& eventName,
@@ -88,8 +91,9 @@ void RegisterCustomCallback(const std::string& eventName,
                             int callbackRef);
 
 // Fire every callback registered for the custom event `fullEventName`
-// ("<publisher>:<event>"), in registration order, against the live state
-// `L`. `payloadIdx` is the absolute stack index (1-based) of the payload
+// ("<publisher>:<event>"), in LOAD-ORDER PRIORITY (priority asc, registration
+// order as the tiebreak), against the live state `L`. `payloadIdx` is the
+// absolute stack index (1-based) of the payload
 // value to pass to each subscriber, or 0 to fire with NO argument.
 //
 // PAYLOAD-BY-REFERENCE (sub-9 fork 1): the payload is NOT copied or
@@ -109,9 +113,9 @@ void RegisterCustomCallback(const std::string& eventName,
 // Returns the number of subscribers fired (0 if none registered).
 int FirePublish(const std::string& fullEventName, lua_State* L, int payloadIdx);
 
-// Fire every callback registered for `eventName`, in registration order.
-// Called from the engine messaging bridge listener when a mapped
-// kcdxMessage_* fires.
+// Fire every callback registered for `eventName`, in LOAD-ORDER PRIORITY
+// (priority asc, registration order as the tiebreak). Called from the engine
+// messaging bridge listener when a mapped kcdxMessage_* fires.
 //
 // `basename` is the save basename for the save/load events
 // (save_game / load_game_selected / delete_game) — pushed as the
