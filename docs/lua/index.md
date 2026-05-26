@@ -104,6 +104,13 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   from this; ordering *within* one plugin is the order your `plugin.lua`
   registers them.
 
+- **apply order / kind ordering** — the order the engine applies queued
+  registrations: by load-order priority first, then by *kind* at the same
+  priority. At a shared site a bytes-patch ([`kcdx.bytes`](bytes.md)) applies
+  before a hook ([`kcdx.hook`](hook.md)) — the patch rewrites the bytes, then
+  the hook detours the patched prologue — so a patch and a hook on the same
+  function coexist.
+
 - **hook mode / behaviour** — what your callback does to a hooked function:
   `before`, `after`, `around`, `replace` (function-wrapping behaviours) or
   `mid` (a register/memory capture mid-function). Attached under the behaviour

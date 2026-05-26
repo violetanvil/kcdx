@@ -255,6 +255,16 @@ target, or two `replace`/`around` which the engine treats as exclusive), the
 **later in load order** loses: its handle goes `:applied() == false` with a
 reason, and the earlier one wins.
 
+### A patch and a hook on the same site coexist
+
+At a shared site, a bytes-patch (`kcdx.bytes`) applies **before** a hook
+(`kcdx.hook`): the patch rewrites the bytes first, then the hook detours the
+patched prologue. So a `kcdx.bytes` patch and a `kcdx.hook` on the **same**
+function coexist — both apply. (The patch's optional `original` byte-verify
+sees the pristine bytes because it runs first; if the order were reversed it
+would see the hook's detour and abort.) Ordering is by *kind* — a patch always
+precedes a hook at the same site regardless of declaration or load order.
+
 ## Handle methods
 
 The userdata returned by `kcdx.hook` and `kcdx.bytes`:

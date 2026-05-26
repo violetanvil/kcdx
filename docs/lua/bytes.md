@@ -63,3 +63,14 @@ local h = kcdx.bytes{
     replacement = "90 90 90",
 }
 ```
+
+## Coexisting with a hook on the same site
+
+A `kcdx.bytes` patch at a site that also carries a [`kcdx.hook`](hook.md)
+applies **before** the hook: the patch rewrites the bytes first, then the hook
+detours the patched prologue. So a patch and a hook on the **same** function
+coexist — both apply. This ordering also means your `original` byte-verify sees
+the **pristine** bytes (the hook hasn't run yet), so a patch + hook on one site
+is the normal, supported case rather than a conflict. Ordering is by *kind* (a
+patch always precedes a hook at the same site), not by declaration or load
+order.

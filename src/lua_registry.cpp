@@ -406,6 +406,32 @@ void RegisterApplyHandler(Kind k, ApplyHandler fn) {
     g_handlers[idx] = fn;
 }
 
+// Apply-order kind rank (see the comment in ApplyZone's sort). A TOTAL rank:
+// EVERY Kind gets a distinct, deterministic value, compared unconditionally
+// before the name tiebreak. The load-bearing relationship is Bytes < Hook (a
+// bytes-patch must apply before a hook on the same site). Other kinds get
+// distinct ranks too — not because their relative order matters (it doesn't;
+// non-overlapping sites never interact), but so the comparator is a valid
+// strict weak ordering for ANY number of kinds.
+//
+// Why TOTAL, not a gated "only when one Bytes + one Hook": a gated tier is
+// INTRANSITIVE the moment a third queued kind shares a priority band — e.g.
+// Bytes "z", Hook "a", Code "m" at one priority gives Code<Bytes (name),
+// Bytes<Hook (kind), Hook<Code (name) → a cycle → std::sort UB. A uniform
+// rank compared before name is lexicographic (priority, rank, name) and
+// transitive by construction for all N kinds. The Kind enum already plans
+// Code/Command/Cosave/Scan (lua_registry.h); ranking every kind here means
+// adding one cannot arm that UB. An unknown/future kind not listed below
+// sorts LAST (kRankOther) — still distinct and deterministic, still transitive.
+// File-local (anonymous namespace) — not part of the public contract.
+static int kindRank(Kind k) {
+    switch (k) {
+        case Kind::Bytes: return 0;  // patch writes pristine bytes first
+        case Kind::Hook:  return 1;  // hook detours the (now-patched) prologue
+        default:          return 100;  // any future kind: deterministic, sorts last
+    }
+}
+
 size_t ApplyZone(kcdx::load_order::Zone zone) {
     g_applyEpoch.fetch_add(1, std::memory_order_release);
 
@@ -456,6 +482,34 @@ size_t ApplyZone(kcdx::load_order::Zone zone) {
             pb = effB.priority;
         }
         if (pa != pb) return pa < pb;
+
+        // KIND RANK — at the SAME effective priority, order by kind rank
+        // (kindRank above) BEFORE the name tiebreak. The load-bearing rule is
+        // Bytes < Hook: a Bytes patch must apply BEFORE a Hook on the same
+        // site. WHY: a bytes-patch rewrites the prologue in place; a hook
+        // detours it (writes an E9 rel32 over the entry, then relocates the
+        // original prologue into its trampoline). If the hook applies first,
+        // the patch's byte-verify guard sees the E9 (not the pristine bytes it
+        // expects) and correctly ABORTS — they fail to coexist. Patch first →
+        // pristine bytes → hook detours the now-patched prologue → both apply.
+        // This restores the legacy conflict_engine's patch-before-hook order
+        // (legacy used priority 100<200) — the comp-02 coexist invariant.
+        //
+        // PAYLOAD-AGNOSTIC: Entry.kind ONLY — never a VA, payload cast, or
+        // locator resolution (the COMP-14/cap-41 sort-time boundary).
+        //
+        // UNIFORM (every kind ranked), NOT gated to Bytes+Hook: a gated tier
+        // is intransitive once a third queued kind shares a band (see kindRank
+        // comment) → std::sort UB. Ranking every kind keeps the comparator a
+        // valid strict weak ordering — (priority, rank, name) lexicographic —
+        // for any N kinds. The band-level reorder of Bytes/Hook relative to
+        // other kinds is engine-internal and harmless: non-overlapping sites
+        // never touch each other's bytes, so only a Bytes+Hook pair AT ONE
+        // SITE has an observable outcome, and that's the relationship this
+        // pins.
+        const int ra = kindRank(ea->kind);
+        const int rb = kindRank(eb->kind);
+        if (ra != rb) return ra < rb;
         return ea->name < eb->name;
     });
 
