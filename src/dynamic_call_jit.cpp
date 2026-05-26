@@ -52,11 +52,11 @@ namespace kcdx::dynamic_call_jit {
 
 // Forward declaration — defined at namespace-extern scope below; the
 // Mid-mode asmjit thunk takes its address as a baked invoke target.
-void MidShimEntry(void*              payload_base,
-                  int                count,
-                  const char* const* capNames,
-                  const char* const* capTypes,
-                  void*              cFn);
+int MidShimEntry(void*              payload_base,
+                 int                count,
+                 const char* const* capNames,
+                 const char* const* capTypes,
+                 void*              cFn);
 
 namespace {
 
@@ -360,9 +360,13 @@ void* FinalizeAndAlloc(asmjit::CodeHolder& code, asmjit::StringLogger& asm_log,
 //                       const char* const* capTypes)
 asmjit::FuncSignature OuterSigFor(kcdx::hook_payload::Mode mode) {
     using Mode = kcdx::hook_payload::Mode;
+    // Mid returns int (the kcdxMidResult skip/run the shim forwards from the
+    // author cFn); every other mode's outer thunk is void.
+    const asmjit::TypeId retType =
+        (mode == Mode::Mid) ? asmjit::TypeId::kInt32 : asmjit::TypeId::kVoid;
     asmjit::FuncSignature sig(asmjit::CallConvId::kCDecl,
                               asmjit::FuncSignature::kNoVarArgs,
-                              asmjit::TypeId::kVoid);
+                              retType);
     switch (mode) {
         case Mode::Mid:
             sig.add_arg(asmjit::TypeId::kUIntPtr);   // payload_base
@@ -532,12 +536,14 @@ void* BuildCDispatchThunk(void*                                  cFn,
         func->set_arg(2, vCapNames);
         func->set_arg(3, vCapTypes);
 
-        // Invoke MidShimEntry(payload, count, capNames, capTypes, cFn).
+        // Invoke MidShimEntry(payload, count, capNames, capTypes, cFn) and
+        // return its int result (kcdxMidResult: 0=run, nonzero=skip) as the
+        // thunk's return — MidDispatch reads it into g_midSkipOriginal.
         asmjit::InvokeNode* call;
         asmjit::FuncSignature shimSig(
             asmjit::CallConvId::kCDecl,
             asmjit::FuncSignature::kNoVarArgs,
-            asmjit::TypeId::kVoid);
+            asmjit::TypeId::kInt32);
         shimSig.add_arg(asmjit::TypeId::kUIntPtr);
         shimSig.add_arg(asmjit::TypeId::kInt32);
         shimSig.add_arg(asmjit::TypeId::kUIntPtr);
@@ -549,7 +555,9 @@ void* BuildCDispatchThunk(void*                                  cFn,
         call->set_arg(2, vCapNames);
         call->set_arg(3, vCapTypes);
         call->set_arg(4, (uintptr_t)cFn);
-        cc.ret();
+        auto vMidRet = cc.new_gp32();
+        call->set_ret(0, vMidRet);
+        cc.ret(vMidRet);
         cc.end_func();
         cc.finalize();
         return FinalizeAndAlloc(code, asm_log, "BuildCDispatchThunk[Mid]");
@@ -803,16 +811,21 @@ void StoreSlotFromCaptureValue(const kcdxHookCaptureValue& v,
 }  // namespace
 
 // Defined at namespace-extern scope so the asmjit Mid thunk can take its
-// address; declared inside the Mid codegen branch as `extern void
+// address; declared inside the Mid codegen branch as `extern int
 // MidShimEntry(...)`. v1 caps the per-call values[] at 16 entries
 // (matches the binder's practical author surface); a larger capture
 // count gets clamped + logged.
-void MidShimEntry(void*              payload_base,
-                  int                count,
-                  const char* const* capNames,
-                  const char* const* capTypes,
-                  void*              cFn) {
-    if (!cFn || count <= 0) return;
+//
+// Returns the author cFn's kcdxMidResult (0 = run, nonzero = skip). The Mid
+// thunk returns it; MidDispatch reads it into g_midSkipOriginal. On any
+// early-out (no cFn / no captures) returns 0 (run) — the safe default that
+// leaves the captured instruction executing, matching the pre-hook behavior.
+int MidShimEntry(void*              payload_base,
+                 int                count,
+                 const char* const* capNames,
+                 const char* const* capTypes,
+                 void*              cFn) {
+    if (!cFn || count <= 0) return 0;
     constexpr int kMaxValuesStack = 16;
     if (count > kMaxValuesStack) {
         log::WarnF("BuildCDispatchThunk[Mid]: capture count=%d exceeds v1 "
@@ -829,12 +842,15 @@ void MidShimEntry(void*              payload_base,
         FillCaptureValueFromSlot(values[i], base + kMidStride * i,
                                  values[i].type);
     }
-    using CFnT = void (*)(kcdxHookCaptureValue*, int);
-    reinterpret_cast<CFnT>(cFn)(values, count);
+    // The author cFn now returns int (kcdxMidResult) — v2 ABI. Capture writes
+    // (values[i].value_*) apply regardless of the run/skip return below.
+    using CFnT = int (*)(kcdxHookCaptureValue*, int);
+    const int midResult = reinterpret_cast<CFnT>(cFn)(values, count);
     for (int i = 0; i < count; ++i) {
         StoreSlotFromCaptureValue(values[i], base + kMidStride * i,
                                   values[i].type);
     }
+    return midResult;
 }
 
 }  // namespace kcdx::dynamic_call_jit

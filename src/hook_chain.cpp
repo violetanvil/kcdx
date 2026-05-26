@@ -1172,12 +1172,12 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
     // C-kind mid branch: real dispatch via the Mid-mode thunk
     // (chunks 3+4). The thunk packs the JIT slot payload into a
     // stack-allocated kcdxHookCaptureValue[count] typed per
-    // chain.capTypes[i], invokes midCFn(values, count), and reads the
-    // typed values back into the slots post-call. The skip-original
-    // flag stays clear (C mid does not yet expose a return-skip
-    // primitive — the v1 author skips by mutating captured slots in a
-    // way the next instruction handles; surfacing a typed skip API is
-    // future work parallel to the Lua "return 'skip'" shape).
+    // chain.capTypes[i], invokes the author cFn(values, count), reads the
+    // typed values back into the slots post-call, and RETURNS the author's
+    // kcdxMidResult (0 = run, nonzero = skip — the v2 ABI). We set
+    // g_midSkipOriginal from that return here, exactly as the Lua branch
+    // below sets it from the Lua callback's return — the C++ parity mirror
+    // of the Lua mid `return "skip"`.
     if (chain->midKind == ChainEntry::Kind::C) {
         if (!chain->midCDispatchThunk) {
             log::WarnF("hook_chain: C-kind mid '%s' (plugin '%s') has no "
@@ -1199,12 +1199,17 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
                 ? param_count : chain->capTypes.size());
         void* payload = reinterpret_cast<void*>(
             const_cast<uintptr_t*>(&params->m_arguments));
-        using Thunk = void (*)(void*, int, const char* const*,
-                               const char* const*);
-        reinterpret_cast<Thunk>(chain->midCDispatchThunk)(
+        using Thunk = int (*)(void*, int, const char* const*,
+                              const char* const*);
+        const int midResult = reinterpret_cast<Thunk>(chain->midCDispatchThunk)(
             payload, count,
             capNames.empty() ? nullptr : capNames.data(),
             capTypes.empty() ? nullptr : capTypes.data());
+        if (midResult != 0) g_midSkipOriginal = 1;  // kcdxMidResult_Skip
+        LOG_DEBUG_KV("MID_HOOK", "hook_chain.mid_dispatch_c",
+            log::KV("target",        (void*)target_func_ptr),
+            log::KV("captures",      (int64_t)count),
+            log::KV("skip_original", (int64_t)g_midSkipOriginal));
         return 0;
     }
 
