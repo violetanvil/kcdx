@@ -1,30 +1,42 @@
-# COMP-03 plugin A — winner half of the hook-on-hook collision pair.
+# COMP-03 plugin A — winner half of the cross-plugin hook-on-hook pair.
 #
-# Two test plugins (this one and comp-03-hook-on-hook-B) install [[hook]]
-# entries at the same function entry. kcdx's first-hook-wins policy (Hard
-# rule #8) says the lower-priority-number plugin's hook installs and the
-# higher one is aborted with a plain-English log line naming the winner.
+# Phase 4b Batch 2 migration: was a legacy [[hook]] with bytes= first-wins;
+# now a pure-Lua kcdx.hook{replace} on the SAME named site. Two plugins
+# (this one and comp-03-hook-on-hook-B) install a `replace` at the same
+# function entry — replace-vs-replace is exclusive in the hook_chain
+# (CanCoexist rejects the second), so one wins and one is rejected.
 #
-# Plugin A holds priority = 100 → installs. Plugin B holds priority = 200
-# → aborts.
+# WHICH one wins is decided by the deferred apply pass, which orders
+# entries ACROSS plugins by (PLUGIN load-order priority asc, name asc) —
+# lua_registry.cpp:429-447 reads kcdx::load_order::Of(pluginName).priority,
+# i.e. the plugin's default_priority. This plugin is default_priority=100;
+# plugin B is 200. 100 < 200, so THIS entry sorts first → does the
+# first-touch that builds the chain (the applied winner). B's entry hits
+# FindChain-non-null → CanCoexist fails → recorded in chain->rejected
+# (applied=false). The PLUGIN priority is the deterministic lever — there
+# is no per-hook priority knob on kcdx.hook.
 #
-# Target: a third combat-state wrapper in WHGame.dll at RVA 0x566040,
-# distinct from FUN_1805605b8 (the COMP-02 target). Both functions share
-# a 22-byte prefix that reads `state through the same vtable slot, but
-# the sister at 0x566040 compares the result to constant 1 (vs 2 at
-# FUN_1805605b8). That `3C 01` byte at the end of the AOB is what
-# disambiguates the two sites. Confirmed unique in .text against
-# release_1_5_1164953_841 (April 2026).
+# Target: the IsInCombat callsite wrapper at WHGame.dll RVA 0x566040,
+# named `IsInCombat_callsite_with_stack_frame` (Address Library id 1007,
+# verified). It is the FUNCTION ENTRY (comp-03 hooked at offset 0). The
+# `target=` NAME locator resolves the address; the legacy bytes= detour
+# needed no signature (raw bytes), but a kcdx.hook replace DOES — the seed
+# carries no signature for id 1007, so this plugin supplies one (see below).
 #
-# Plugin A has no DLL companion. Its only job is to win the install. The
-# verification — checking that GetConflictReport shows A applied and B
-# aborted — lives in plugin B's DLL.
+# Signature `bool (ptr self)` — evidence from the seed AOB:
+#   48 83 EC 28        sub rsp, 0x28          (its own stack frame)
+#   48 8B 41 08        mov rax, [rcx+8]       (rcx = this/object pointer → 1 ptr arg)
+#   ...                walks [rax+0x90], +0x0B60, calls a vtable method
+#   3C 01              cmp al, 1              (return tested as a byte → bool)
+# The legacy detour `31 C0 C3` = xor eax,eax; ret → returns 0. The replace
+# returns 0 (false), and the engine writes the bool back to eax — exactly
+# reproducing the old xor-eax detour. Making this combat-state predicate
+# always return false during boot is harmless (the player is not in combat
+# in the title-screen flow).
 #
-# Detour body `31 C0 C3` = xor eax, eax; ret → function returns false.
-# The function is a `cmp al, 1` style combat-state predicate; making it
-# always return false during a typical boot is harmless (the player isn't
-# in combat in the title-screen flow, so the predicate would have been
-# false anyway).
+# Plugin A has no DLL companion. Its only job is to WIN the install and
+# report NOTHING. The verification — GetConflictReport shows A applied and
+# B rejected — lives in plugin B's DLL.
 
 [kcdx]
 test_suite_only = true
@@ -33,16 +45,12 @@ test_suite_only = true
 name                = "comp_03_a"
 display_name        = "COMP-03 Hook-on-hook winner (plugin A)"
 author              = "ts"
-description         = "Lower-priority hook in the COMP-03 first-wins pair. Installs cleanly."
+description         = "Lower-priority (100) replace in the cross-plugin COMP-03 pair. Wins the replace conflict; reports nothing."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
+default_priority    = 100
 
-[[hook]]
-name        = "comp-03-A"
-priority    = 100
-description = "First-wins hook in the COMP-03 pair. Lower priority → installs."
-pattern     = "48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01"
-offset      = 0
-bytes       = "31 C0 C3"
+[entrypoints]
+lua = "plugin.lua"

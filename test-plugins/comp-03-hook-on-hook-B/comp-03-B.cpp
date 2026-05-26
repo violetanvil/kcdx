@@ -1,170 +1,183 @@
-// COMP-03 — Two [[hook]] entries on the same function entry; first-wins.
+// COMP-03 — Cross-plugin hook-on-hook: two kcdx.hook{replace} on one named
+// site; the lower-PLUGIN-priority plugin wins, the higher is rejected.
 //
-// Subscribes to kInputLoaded. Re-resolves the target address (the sister
-// IsInCombat wrapper at WHGame.dll RVA 0x566040) by scanning for the
-// post-install AOB suffix — the first 5 bytes of the AOB were overwritten
-// by plugin A's rel32 jmp on install, but bytes 5..29 survive intact and
-// uniquely identify the site (the final 3C 01 disambiguates from the
-// COMP-02 sister wrapper at FUN_1805605b8 which ends in 3C 02).
+// Phase 4b Batch 2 migration off the legacy [[hook]] bytes= first-wins path.
+// Plugin A (pure Lua, default_priority=100) and this plugin B (this DLL,
+// default_priority=200) both install a `replace` at the SAME named function
+// entry: `IsInCombat_callsite_with_stack_frame` (Address Library id 1007,
+// RVA 0x566040). Replace-vs-replace is exclusive in the hook_chain
+// (CanCoexist rejects the second touch), so one wins and one is rejected.
 //
-// Calls api->GetConflictReport(target) and asserts:
-//   - exactly 2 entries returned
-//   - one named "comp-03-A" with applied != 0
-//   - one named "comp-03-B" with applied == 0
+// WHICH one wins is the cross-plugin apply order: the deferred apply pass
+// sorts entries by (PLUGIN load-order priority asc, name asc) —
+// lua_registry.cpp:429-447 reads kcdx::load_order::Of(pluginName).priority,
+// i.e. the plugin's default_priority. A=100 < B=200, so A's entry sorts
+// first → A does the first-touch (the applied winner); B hits
+// FindChain-non-null → CanCoexist fails → recorded in chain->rejected
+// (applied=false). The PLUGIN priority is the deterministic lever.
 //
-// On match, reports COMP-03 PASS. On mismatch, reports FAIL with a
-// human-readable rundown of the entries actually returned.
+// This DLL installs B's half via kcdxHookInterface::Replace on the NAMED
+// target (cap-36 / comp-14 idiom), then in the after-phase:
+//   - resolves the target VA via api->ResolveAddressByName(
+//     "IsInCombat_callsite_with_stack_frame") — the SAME VA the kcdx.hook
+//     target= name resolved to (the engine-seed name path; comp-14 proved
+//     the address-locator VA match, this is the name path);
+//   - calls api->GetConflictReport(va) and asserts:
+//       * exactly 2 entries
+//       * one named "comp03_a" with applied != 0 (A, the winner)
+//       * one named "comp03_b" with applied == 0 (B, CanCoexist-rejected)
+//       * both kind == Hook
+//
+// The observable is the conflict report read in the after-phase (final
+// after the apply pass) — NOT a hook firing. Neither replace's body needs
+// to run for this assertion (the comp-14 lesson: query the report, don't
+// fire the chain). On match → COMP-03 PASS; on mismatch → FAIL with a
+// human-readable rundown of the entries actually returned. An InputLoaded
+// backstop reports loud FAIL if the after-phase never fired.
 
 #include <windows.h>
-#include <psapi.h>
-#include <cstdio>
+
 #include <cstdint>
-#include <vector>
+#include <cstdio>
+#include <cstring>
 #include <string>
+
 #include "kcdx/Interfaces.h"
 
 namespace {
 
 const char* kName = "comp_03_b";
+const char* kRow  = "COMP-03";
 
-const kcdxInterface* g_api  = nullptr;
-kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;
-kcdxLogger           gLog;
-bool                 g_reported = false;
+const kcdxInterface*     g_api  = nullptr;
+const kcdxHookInterface* g_hook = nullptr;
+kcdxPluginHandle         g_self = kcdxInvalidPluginHandle;
+kcdxLogger               g_log;
 
-struct PatBytes { std::vector<uint8_t> v; std::vector<uint8_t> mask; };
-PatBytes ParsePattern(const char* s) {
-    PatBytes p;
-    for (const char* c = s; *c; ) {
-        if (*c == ' ') { ++c; continue; }
-        if (*c == '?') {
-            p.v.push_back(0); p.mask.push_back(0);
-            ++c; if (*c == '?') ++c; continue;
-        }
-        char buf[3] = { c[0], c[1], 0 };
-        p.v.push_back(static_cast<uint8_t>(strtoul(buf, nullptr, 16)));
-        p.mask.push_back(1);
-        c += 2;
-    }
-    return p;
+bool           g_post_ran = false;
+kcdxHookHandle g_h_b      = 0;   // B's replace handle (for diagnostics)
+
+// === The replace callback ============================================
+//
+// REPLACE shape: <typed_return> cFn(/* typed args... */). Signature is
+// `bool (ptr self)` — matched to the seed AOB for id 1007 (the `mov
+// rax,[rcx+8]` reads through rcx as a this/object pointer → 1 ptr arg;
+// the trailing `3C 01` cmp al,1 tests the result as a byte → bool). The
+// SAME signature plugin A uses. Returns false (0) — the migration of the
+// legacy `31 C0 C3` (xor eax,eax; ret). B is CanCoexist-rejected, so this
+// body never actually runs; it must exist with the right shape so the
+// install is well-formed.
+extern "C" bool Comp03_B_Replace_Cb(void* self) {
+    (void)self;
+    return false;
 }
-std::vector<const uint8_t*> FindAll(const uint8_t* base, size_t size, const PatBytes& p) {
-    std::vector<const uint8_t*> hits;
-    if (p.v.empty() || size < p.v.size()) return hits;
-    size_t plen = p.v.size();
-    for (size_t i = 0; i <= size - plen; ++i) {
-        bool match = true;
-        for (size_t j = 0; j < plen; ++j) {
-            if (p.mask[j] && base[i + j] != p.v[j]) { match = false; break; }
-        }
-        if (match) hits.push_back(base + i);
+
+void Report(bool pass, const char* reason) {
+    if (pass) g_log.Info ("COMP03", "PASS %s: %s", kRow, reason);
+    else      g_log.Error("COMP03", "FAIL %s: %s", kRow, reason);
+    g_api->ReportTestResult(g_self, kRow, pass ? 1 : 0, reason);
+}
+
+// Install B's replace on the NAMED target. The name resolves the address
+// (id 1007); opts.signature carries the ABI because the seed row has no
+// signature for 1007 (the same one A supplies). opts.owningPlugin = g_self
+// threads B's identity for the self-tier of self > engine > other. The
+// install CALL returns a non-zero handle even though B loses the conflict
+// (the loser's is a valid Failed handle — IsApplied==false — distinct from
+// a 0 registration error).
+bool InstallReplace() {
+    kcdxHookOptions opts = {};
+    opts.owningPlugin = g_self;
+    opts.signature    = "bool (ptr self)";
+    opts.name         = "comp03_b";
+    g_h_b = g_hook->Replace("IsInCombat_callsite_with_stack_frame",
+                            (void*)&Comp03_B_Replace_Cb, &opts);
+    g_log.Info("COMP03",
+               "installed B's replace on 'IsInCombat_callsite_with_stack_"
+               "frame' (h=%llu); expected to be CanCoexist-rejected behind "
+               "A (plugin priority 100 < B's 200)",
+               (unsigned long long)g_h_b);
+    return g_h_b != 0;
+}
+
+void RunAssertion() {
+    // Resolve the target VA by NAME — the SAME engine-seed name the
+    // kcdx.hook target= resolved to. Anonymous form is the engine-seed
+    // path, which is exactly what an engine name (id 1007) resolves on.
+    uintptr_t target =
+        g_api->ResolveAddressByName("IsInCombat_callsite_with_stack_frame");
+    if (target == 0) {
+        Report(false,
+            "ResolveAddressByName('IsInCombat_callsite_with_stack_frame') "
+            "returned 0 — the engine-seed name did not resolve on this "
+            "build, so the conflict report cannot be queried at the chain's "
+            "target VA");
+        return;
     }
-    return hits;
+
+    kcdxConflictEntry entries[8] = {};
+    uint32_t count = g_api->GetConflictReport(
+        target, entries, sizeof(entries) / sizeof(entries[0]));
+
+    if (count != 2) {
+        char r[256];
+        snprintf(r, sizeof(r),
+            "GetConflictReport(0x%p) returned %u entries (expected 2: the "
+            "comp03_a winner + the CanCoexist-rejected comp03_b). 0 would "
+            "mean the hook_chain was never built at this VA; 1 would mean "
+            "the rejected loser was not reported",
+            (void*)target, count);
+        Report(false, r);
+        return;
+    }
+
+    // Classify: exactly one winner (applied != 0, name comp03_a) + one
+    // loser (applied == 0, name comp03_b), both kind == Hook.
+    int  winners = 0, losers = 0;
+    bool aWonNamed = false, bLostNamed = false;
+    bool allHookKind = true;
+    std::string names;
+    for (uint32_t i = 0; i < count; ++i) {
+        const kcdxConflictEntry& e = entries[i];
+        if (e.kind != kcdxConflictEntryKind_Hook) allHookKind = false;
+        if (e.applied) {
+            ++winners;
+            if (e.name && std::strcmp(e.name, "comp03_a") == 0) aWonNamed = true;
+        } else {
+            ++losers;
+            if (e.name && std::strcmp(e.name, "comp03_b") == 0) bLostNamed = true;
+        }
+        if (!names.empty()) names += ", ";
+        names += e.name ? e.name : "<null>";
+        names += "(";
+        names += (e.kind == kcdxConflictEntryKind_Patch) ? "patch" : "hook";
+        names += "=";
+        names += e.applied ? "OK" : "ABORTED";
+        names += ")";
+    }
+
+    const bool pass = (winners == 1) && (losers == 1) && allHookKind &&
+                      aWonNamed && bLostNamed;
+    char r[400];
+    snprintf(r, sizeof(r),
+        "%s — cross-plugin first-wins at 0x%p (A prio 100 < B prio 200): "
+        "[%s]. Expected one winner (applied!=0, name=comp03_a) + one "
+        "rejected loser (applied==0, name=comp03_b), both kind=Hook. "
+        "winners=%d losers=%d aWon=%d bLost=%d allHook=%d",
+        pass ? "report SEES A applied + B rejected"
+             : "report did NOT match the A-wins/B-rejected shape",
+        (void*)target, names.c_str(), winners, losers,
+        aWonNamed ? 1 : 0, bLostNamed ? 1 : 0, allHookKind ? 1 : 0);
+    Report(pass, r);
 }
 
 void OnInputLoaded(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
-    if (g_reported) return;
-    g_reported = true;
-
-    gLog.Info("CONFLICT", "InputLoaded received; resolving target and querying conflict report");
-
-    HMODULE whgame = GetModuleHandleW(L"WHGame.dll");
-    if (!whgame) {
-        gLog.Error("CONFLICT", "FAIL: WHGame.dll not loaded");
-        g_api->ReportTestResult(g_self, "COMP-03", 0, "WHGame.dll not loaded");
-        return;
-    }
-    MODULEINFO mi{};
-    if (!GetModuleInformation(GetCurrentProcess(), whgame, &mi, sizeof(mi))) {
-        gLog.Error("CONFLICT", "FAIL: GetModuleInformation failed");
-        g_api->ReportTestResult(g_self, "COMP-03", 0, "GetModuleInformation failed");
-        return;
-    }
-    auto* base = static_cast<const uint8_t*>(mi.lpBaseOfDll);
-    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-    auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-    auto* sec = IMAGE_FIRST_SECTION(nt);
-
-    // Full AOB at target entry pre-install:
-    //   48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1
-    //   60 0B 00 00 48 8B 01 FF 50 08 3C 01
-    //
-    // After plugin A installs MinHook's 5-byte rel32 jmp at offset 0,
-    // MinHook RELOCATES whole instructions to its trampoline — not
-    // just 5 bytes. The first AOB instruction `48 83 EC 28` is 4
-    // bytes, the next `48 8B 41 08` is 4 bytes, so MinHook must
-    // relocate 8 bytes of prologue (5 won't cover a full
-    // instruction boundary). The first 5 bytes become the rel32
-    // jmp `E9 ?? ?? ?? ??`; bytes [aob+5, aob+8) are leftover
-    // garbage from the second instruction (now unreachable since
-    // jmp diverts before they execute).
-    //
-    // Bytes [aob+8, aob+30) survive intact. That 22-byte suffix
-    // starts `48 8B 88 90 00 00 00 ...` and ends `3C 01`. Unique
-    // in .text (the COMP-02 sister at FUN_1805605b8 ends `3C 02`).
-    PatBytes pat = ParsePattern(
-        "48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01");
-    std::vector<const uint8_t*> hits;
-    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
-        const auto& s = sec[i];
-        if (!(s.Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
-        auto found = FindAll(base + s.VirtualAddress, s.Misc.VirtualSize, pat);
-        hits.insert(hits.end(), found.begin(), found.end());
-    }
-    if (hits.size() != 1) {
-        char r[160];
-        snprintf(r, sizeof(r),
-            "post-install AOB suffix matches %zu times (need 1)", hits.size());
-        gLog.Error("CONFLICT", "FAIL: %s", r);
-        g_api->ReportTestResult(g_self, "COMP-03", 0, r);
-        return;
-    }
-    // hits[0] points at aob+8. Function entry = aob+0 = hits[0] - 8.
-    uintptr_t target = reinterpret_cast<uintptr_t>(hits[0]) - 8;
-
-    kcdxConflictEntry entries[8];
-    uint32_t count = g_api->GetConflictReport(target, entries,
-                                              sizeof(entries) / sizeof(entries[0]));
-    if (count != 2) {
-        char r[200];
-        snprintf(r, sizeof(r),
-            "GetConflictReport(0x%p) returned %u entries (expected 2: comp-03-A + comp-03-B)",
-            (void*)target, count);
-        gLog.Error("CONFLICT", "FAIL: %s", r);
-        g_api->ReportTestResult(g_self, "COMP-03", 0, r);
-        return;
-    }
-
-    bool aWon = false, bLost = false;
-    std::string names;
-    for (uint32_t i = 0; i < count; ++i) {
-        if (!names.empty()) names += ", ";
-        names += entries[i].name;
-        names += "(";
-        names += (entries[i].kind == kcdxConflictEntryKind_Patch) ? "patch" : "hook";
-        names += "=";
-        names += entries[i].applied ? "OK" : "ABORTED";
-        names += ")";
-        if (std::string(entries[i].name) == "comp-03-A" && entries[i].applied)
-            aWon = true;
-        if (std::string(entries[i].name) == "comp-03-B" && !entries[i].applied)
-            bLost = true;
-    }
-
-    char r[300];
-    if (aWon && bLost) {
-        snprintf(r, sizeof(r),
-            "first-wins at 0x%p: %s", (void*)target, names.c_str());
-        gLog.Info("CONFLICT", "PASS: %s", r);
-        g_api->ReportTestResult(g_self, "COMP-03", 1, r);
-    } else {
-        snprintf(r, sizeof(r),
-            "expected comp-03-A applied + comp-03-B aborted; got: %s",
-            names.c_str());
-        gLog.Error("CONFLICT", "FAIL: %s", r);
-        g_api->ReportTestResult(g_self, "COMP-03", 0, r);
-    }
+    if (g_post_ran) return;  // PostGameLoad already reported the row.
+    Report(false,
+        "kcdxPlugin_PostGameLoad did not fire before kcdxMessage_"
+        "InputLoaded — the after-phase C++ export was not dispatched; the "
+        "row reported FAIL via the InputLoaded backstop");
 }
 
 }  // namespace
@@ -173,20 +186,48 @@ extern "C" __declspec(dllexport)
 bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_api  = api;
     g_self = api->GetPluginHandle(kName);
-    gLog   = kcdxLogger(api, g_self);
+    g_log  = kcdxLogger(api, g_self);
+    g_log.Info("INIT", "kcdxPlugin_Load called (engine v0x%08X)",
+               api->kcdxVersion);
 
-    gLog.Info("INIT", "kcdxPlugin_Load called");
-
-    auto* m = static_cast<kcdxMessagingInterface*>(
-        api->QueryInterface(kcdxInterface_Messaging,
-                            kcdxMessagingInterface_Version));
-    if (!m) {
-        gLog.Error("INIT", "QueryInterface(Messaging) returned null");
-        api->ReportTestResult(g_self, "COMP-03", 0,
-            "QueryInterface(Messaging) returned null");
+    g_hook = static_cast<const kcdxHookInterface*>(
+        api->QueryInterface(kcdxInterface_Hook, kcdxHookInterface_Version));
+    if (!g_hook) {
+        api->ReportTestResult(g_self, kRow, 0,
+            "QueryInterface(Hook) returned null at Plugin_Load — cannot "
+            "install B's replace; the cross-plugin conflict cannot form");
         return true;
     }
-    m->RegisterListener(g_self, nullptr, OnInputLoaded);
+
+    auto* messaging = static_cast<kcdxMessagingInterface*>(
+        api->QueryInterface(kcdxInterface_Messaging,
+                            kcdxMessagingInterface_Version));
+    if (messaging) {
+        messaging->RegisterListener(g_self, nullptr, OnInputLoaded);
+    } else {
+        g_log.Warn("INIT",
+            "QueryInterface(Messaging) null — InputLoaded backstop disabled "
+            "(if PostGameLoad never fires the row sits silent-PENDING)");
+    }
+
+    if (!InstallReplace()) {
+        api->ReportTestResult(g_self, kRow, 0,
+            "B's Replace install CALL returned a 0 handle (a registration "
+            "error, distinct from the loser's valid-but-Failed handle) — see "
+            "the COMP03 engine log for the teaching error");
+        return true;
+    }
+    return true;
+}
+
+extern "C" __declspec(dllexport)
+bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
+    (void)api;  // cached as g_api in Load.
+    g_post_ran = true;
+    g_log.Info("COMP03",
+               "kcdxPlugin_PostGameLoad — apply pass done; resolving the "
+               "named target VA and querying GetConflictReport");
+    RunAssertion();
     return true;
 }
 

@@ -1,25 +1,26 @@
-# COMP-03 plugin B — loser half of the hook-on-hook collision pair.
+# COMP-03 plugin B — loser half of the cross-plugin hook-on-hook pair.
 #
-# Mirrors plugin A's [[hook]] entry exactly (same pattern, same offset,
-# same detour bytes) but with priority = 200 so apply-order puts it
-# AFTER plugin A. At install time kcdx's first-hook-wins logic should
-# see that plugin A already occupies the target address, log
-#   [hook 'comp-03-B'] aborted: target 0x... already hooked by
-#   'comp-03-A' (v0.1 first-wins; chained hooks are v0.2+)
-# and skip MinHook install for plugin B's hook.
+# Phase 4b Batch 2 migration: was a legacy [[hook]] mirroring plugin A's
+# bytes= entry at priority=200; now a kcdxHookInterface::Replace install in
+# this DLL (comp-03-B.cpp), at the SAME named site as plugin A, with
+# default_priority=200.
 #
-# Plugin B's DLL companion subscribes to kInputLoaded, re-resolves the
-# target address by scanning for a post-install AOB suffix (the first
-# 5 bytes of the AOB are now an E9-rel32 jmp from A's install, so it
-# scans for bytes 5..end which survive intact), calls GetConflictReport
-# at that target, and asserts:
+# The deferred apply pass orders entries ACROSS plugins by (PLUGIN
+# load-order priority asc, name asc) — lua_registry.cpp reads
+# kcdx::load_order::Of(pluginName).priority (the default_priority). A is
+# 100, B is 200, so A sorts first → A does the first-touch (the applied
+# winner) and B hits FindChain-non-null → CanCoexist (replace-vs-replace is
+# exclusive) rejects it → recorded in chain->rejected (applied=false).
+#
+# B's DLL companion subscribes to the after-phase, resolves the target VA
+# via api->ResolveAddressByName("IsInCombat_callsite_with_stack_frame"),
+# calls GetConflictReport(va), and asserts:
 #   - exactly 2 hook entries returned
-#   - one named "comp-03-A" with applied != 0
-#   - one named "comp-03-B" with applied == 0
-# On match, reports PASS for COMP-03. On any mismatch, reports FAIL with
-# a diagnostic string naming the actual entries returned.
-#
-# Plugin A doesn't need to report — only B's observation matters.
+#   - one named "comp03_a" with applied != 0 (A, the winner)
+#   - one named "comp03_b" with applied == 0 (B, CanCoexist-rejected)
+#   - both kind = Hook
+# On match, reports COMP-03 PASS. On mismatch, FAIL with a diagnostic.
+# Plugin A reports nothing — only B's observation matters.
 
 [kcdx]
 test_suite_only = true
@@ -28,17 +29,13 @@ test_suite_only = true
 name                = "comp_03_b"
 display_name        = "COMP-03 Hook-on-hook loser (plugin B)"
 author              = "ts"
-description         = "Higher-priority hook in the COMP-03 first-wins pair. Aborts; verifies the outcome via GetConflictReport."
+description         = "Higher-priority (200) replace in the cross-plugin COMP-03 pair. CanCoexist-rejected; verifies the outcome via GetConflictReport."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
+default_priority    = 200
 test_names          = ["COMP-03"]
 
-[[hook]]
-name        = "comp-03-B"
-priority    = 200
-description = "Second hook at the same target as comp-03-A. Higher priority → first-wins aborts this entry."
-pattern     = "48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01"
-offset      = 0
-bytes       = "31 C0 C3"
+[entrypoints]
+dll = "comp-03-B.dll"

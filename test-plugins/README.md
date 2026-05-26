@@ -584,18 +584,18 @@ what the live result is.
 | Last result | ✅ PRE-VERIFIED on existing examples plugin |
 | Notes | This is the most common patch+hook coexistence case in real mods. |
 
-## COMP-03: Two `[[hook]]` on the same function
+## COMP-03: Two `kcdx.hook{replace}` on the same named function (cross-plugin)
 
 | Field | Value |
 |---|---|
-| Scenario | Plugin A and Plugin B both install hooks at function entry X. |
-| Engine behavior expected | First-hook-wins. Second hook aborted with a plain-English log line naming the first plugin. |
-| Test plugin pair | [`comp-03-hook-on-hook-A/`](comp-03-hook-on-hook-A/) (winner, priority 100) + [`comp-03-hook-on-hook-B/`](comp-03-hook-on-hook-B/) (loser, priority 200, DLL verifier) |
-| Site | Sister IsInCombat wrapper at WHGame.dll RVA `0x566040` (distinct from COMP-02's `FUN_1805605b8`; AOB ends in `3C 01` vs COMP-02's `3C 02`). |
+| Scenario | Plugin A (pure Lua) and Plugin B (C++ DLL) both install a `replace` at the same named function entry. |
+| Engine behavior expected | Cross-plugin first-wins via PLUGIN load-order priority: the lower-`default_priority` plugin's entry sorts first (apply pass orders by plugin priority asc, name asc), does the first-touch, and wins; the higher one is CanCoexist-rejected (replace-vs-replace is exclusive). |
+| Test plugin pair | [`comp-03-hook-on-hook-A/`](comp-03-hook-on-hook-A/) (winner, pure Lua, `default_priority=100`) + [`comp-03-hook-on-hook-B/`](comp-03-hook-on-hook-B/) (loser, C++ DLL verifier, `default_priority=200`) |
+| Site | `IsInCombat_callsite_with_stack_frame` (Address Library id 1007, WHGame.dll RVA `0x566040`, function entry). Distinct from COMP-02's `0x5605BC`; AOB ends in `3C 01` vs COMP-02's `3C 02`. Replace signature `bool (ptr self)` (seed carries none for id 1007). |
 | Engine status | READY (Phase 4b) |
-| Auto-pass check | Plugin B's DLL re-resolves the target, calls `GetConflictReport`, asserts exactly 2 entries with `comp-03-A` applied and `comp-03-B` aborted. |
-| Last result | ✅ all 4 rows PASS (`d8e4ac3`, live run 2026-05-25): cpp-gate-proceeds + lua-gate-proceeds (install-proceeded), cpp-gate-warn + lua-gate-warn (both `HOOK_SIG_GATE explicit_overrides_verified` lines fired). Suite 94/102. |
-| Notes | Chained hooks are explicitly v0.2+ (Hard rule #8). Both detour bodies are `31 C0 C3` (always-return-false); the function is a combat-state predicate, returning false at boot is harmless. |
+| Auto-pass check | Plugin B's DLL resolves the target VA via `ResolveAddressByName("IsInCombat_callsite_with_stack_frame")`, calls `GetConflictReport(va)` at `kcdxPlugin_PostGameLoad`, asserts exactly 2 entries — one `comp03_a` applied!=0, one `comp03_b` applied==0, both kind=Hook. InputLoaded backstop reports loud FAIL if the after-phase never fires. |
+| Last result | PENDING (Phase 4b Batch 2 migration off legacy `[[hook]]` bytes= first-wins onto cross-plugin `kcdx.hook{replace}`) |
+| Notes | Both replaces return `false` (the migration of the legacy `31 C0 C3` xor-eax,ret detour). The function is a combat-state predicate; returning false at boot is harmless (player not in combat in the title flow). The PLUGIN priority is the only deterministic lever — there is no per-hook priority knob on `kcdx.hook`. |
 
 ## COMP-04: `[[patch]]` + runtime `dynamic_hook` on same address
 
