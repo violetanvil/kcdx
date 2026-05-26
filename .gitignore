@@ -57,3 +57,9 @@ test-fixtures/pak-mods/**/*.pak
 # predecessor-sig clones — those are shallow clones of third-party repos
 # with their own nested .git dirs; re-cloneable, never committed here.
 _research/predecessor-sigs/
+
+# Generated Ghidra dump artifacts (function inventories, statement/anchor
+# dumps) are large and regenerable from the committed ghidra_scripts via the
+# recipe in each dir's notes — track the scripts + findings, not the output.
+_research/parallel-ghidra-research/**/*.csv
+_research/parallel-ghidra-research/**/*.jsonl
