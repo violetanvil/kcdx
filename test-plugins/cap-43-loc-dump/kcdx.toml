@@ -1,0 +1,34 @@
+# CAP-43 — localization runtime-dump probe, step 1 (minimal live probe).
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# dev-mode loc-dump probe (src/probes/loc_dump_probe.{cpp,h}, armed from the
+# worker thread). This kcdx.toml is a MANIFEST-ONLY STUB — no plugin.lua, no
+# DLL — whose sole job is to pre-register the two matrix rows via test_names so
+# they show PENDING until the engine probe reports them. Same pattern as
+# cap-23-lua-error (where src/lua_plugin_loader.cpp reports the row directly)
+# and engine-self-test: when the thing under test is engine-internal, the
+# engine calls kcdx::test::ReportResult and a manifest stub holds the names.
+#
+# What the probe proves (the two gating unknowns this step exists to settle):
+#   cap-43-loc-ctor-capture  The CLocalizedStringsManager ctor hook fires and
+#                            captures the manager `this` (arg 1 / RCX).
+#   cap-43-loc-byid-getter   The by-INT-ID getter (loc-manager vtable slot 1,
+#                            ABI char*(this, uint id)) fires with a readable
+#                            (caller-return-address, id) on its first call.
+#
+# Both report PASS from the probe's FIRST observation (one-shot guarded), per
+# the hook-fire-self-report convention — NOT a polled fire-count at ready.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_43_loc_dump"
+display_name        = "CAP-43 localization runtime-dump probe (step 1)"
+author              = "ts"
+description         = "Minimal dev-mode loc-dump probe: CLocalizedStringsManager ctor `this` capture + by-ID getter (vtable slot 1) fire/ABI verification. Observe-only."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-43-loc-ctor-capture", "cap-43-loc-byid-getter"]

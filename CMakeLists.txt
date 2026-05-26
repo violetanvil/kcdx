@@ -145,6 +145,7 @@ add_library(kcdx SHARED
     src/bytes_interface.cpp
     src/dynamic_call_jit.cpp
     src/probes/bugsplat_ctor_probe.cpp
+    src/probes/loc_dump_probe.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

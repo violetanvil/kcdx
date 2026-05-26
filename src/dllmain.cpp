@@ -19,6 +19,8 @@
 #include "probes/bugsplat_ctor_probe.h"  // KEEP — proven before_game-hook install
                                          // machinery; Phase 11 generalizes it
                                          // (docs/outstanding-work/before-game-hooks.md §5)
+#include "probes/loc_dump_probe.h"       // loc runtime-dump feature, step 1: minimal
+                                         // dev-mode probe (ctor capture + by-ID getter)
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -93,6 +95,14 @@ DWORD WINAPI WorkerThread(LPVOID) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
         return 1;
     }
+
+    // Localization runtime-dump feature, step 1: arm the minimal dev-mode probe
+    // (CLocalizedStringsManager ctor capture + by-ID getter slot-1 hook). Runs
+    // here, after hooks::Install (WHGame.dll mapped + MinHook initialized), and
+    // BEFORE CryEngine's system init constructs the loc manager — so the ctor
+    // detour is live when the ctor runs. Dev-mode-gated + idempotent internally;
+    // a no-op in production.
+    kcdx::probes::loc_dump_probe::Install();
 
     // Phase 6 save/load lifecycle hooks. ABIs from ROUND 3 RECON via
     // _research/phase6-save-load/phase6_abi_walker.py — full-body capstone analysis,
