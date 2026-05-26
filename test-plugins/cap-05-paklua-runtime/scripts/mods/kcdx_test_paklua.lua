@@ -6,8 +6,11 @@
 --   * kcdx.memory.dynamic_hook(...)   -> installs detour from pak Lua (CAP-05)
 --   * kcdx.test.report(name, pass, reason) -> records pass/fail
 --
--- Hooks kcdx.hello.greet (registered by the hello-plugin DLL),
--- triggers a call to it from pak Lua, verifies the pre_callback fired.
+-- Hooks kcdx.cap05.probe (registered by cap-05's OWN companion DLL,
+-- cap-05.dll), triggers a call to it from pak Lua, verifies the
+-- pre_callback fired. The fixture is self-owned: it no longer depends on
+-- the archived hello-plugin sample (test-suite.md — a test owns its
+-- fixtures).
 
 KcdxTestPaklua = {}
 KcdxTestPaklua.installed = false
@@ -35,17 +38,20 @@ function KcdxTestPaklua:runTests(label)
     -- All preconditions met; lock out further runs and proceed.
     self.installed = true
 
-    -- Need hello-plugin's registrations
-    if not kcdx.hello or not kcdx.hello.greet then
-        kcdx.test.report("CAP-05", false,
-            "kcdx.hello.greet not registered (hello-plugin missing?)")
+    -- Need cap-05's OWN cfunction (registered by cap-05.dll). If it's
+    -- absent, the companion DLL didn't load/register — a REAL failure to
+    -- report (not an external-sample dependency).
+    if not kcdx.cap05 or not kcdx.cap05.probe then
         kcdx.test.report("CAP-11", false,
-            "no cfunction to address (hello-plugin missing?)")
+            "kcdx.cap05.probe not registered (cap-05.dll missing or "
+            .. "RegisterFunction failed?)")
+        kcdx.test.report("CAP-05", false,
+            "no cfunction to address (cap-05.dll missing?)")
         return
     end
 
     -- CAP-11: cfunction_address returns a pointer userdata
-    local p = kcdx.lua.cfunction_address(kcdx.hello.greet)
+    local p = kcdx.lua.cfunction_address(kcdx.cap05.probe)
     if type(p) ~= "userdata" then
         kcdx.test.report("CAP-11", false,
             "cfunction_address returned " .. type(p) ..
@@ -55,7 +61,7 @@ function KcdxTestPaklua:runTests(label)
         return
     end
     kcdx.test.report("CAP-11", true,
-        "cfunction_address(kcdx.hello.greet) returned pointer userdata "
+        "cfunction_address(kcdx.cap05.probe) returned pointer userdata "
         .. "(triggered at " .. tostring(label) .. ")")
 
     -- CAP-05: install a hook from pak Lua targeting the address
@@ -78,8 +84,8 @@ function KcdxTestPaklua:runTests(label)
     end
     self.hook_handle = h  -- keep alive
 
-    -- Trigger kcdx.hello.greet ourselves. Should fire the pre_callback.
-    kcdx.hello.greet("cap-05-trigger")
+    -- Trigger kcdx.cap05.probe ourselves. Should fire the pre_callback.
+    kcdx.cap05.probe("cap-05-trigger")
 
     if fired then
         kcdx.test.report("CAP-05", true,

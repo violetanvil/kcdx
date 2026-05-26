@@ -5,9 +5,15 @@
 # CryEngine's pak system. So kcdx wouldn't know the pak exists or
 # that it intends to report CAP-05 / CAP-11 results.
 #
-# This sidecar TOML-only plugin tells kcdx:
+# This sidecar plugin tells kcdx:
 #   - "I intend to report CAP-05 and CAP-11"
 #   - "Skip me silently if dev mode is off"
+#
+# It ALSO ships a companion DLL (cap-05.dll) that registers cap-05's
+# OWN callable cfunction (kcdx.cap05.probe) via the scripting interface.
+# The pak-Lua targets THAT cfunction (self-owned fixture) instead of the
+# archived hello-plugin's kcdx.hello.greet — a regression test owns its
+# fixtures (test-suite.md).
 #
 # Then the aggregator's PENDING tracking shows whether the pak
 # reported on schedule.
@@ -25,3 +31,6 @@ kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 test_names          = ["CAP-05", "CAP-11"]
+
+[entrypoints]
+dll = "cap-05.dll"

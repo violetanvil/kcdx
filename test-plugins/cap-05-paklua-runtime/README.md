@@ -28,9 +28,20 @@ CryEngine mod system, not via kcdx's plugin loader.)
 
 ## Dependencies
 
-Requires `hello-plugin` to be loaded (provides `kcdx.hello.greet`,
-which the pak script hooks). Without hello-plugin, both CAP-05 and
-CAP-11 will report FAIL with "kcdx.hello.greet not registered".
+Self-owned. The companion DLL `cap-05.dll` (built from `cap-05.cpp` via
+`CMakeLists.txt`, declared in `kcdx.toml` as `[entrypoints].dll`)
+registers cap-05's own callable cfunction `kcdx.cap05.probe`, which the
+pak script hooks and calls. No external sample is required. If
+`cap-05.dll` doesn't load (or `RegisterFunction` fails), both CAP-05 and
+CAP-11 report FAIL with "kcdx.cap05.probe not registered" — that is a
+real failure, not a missing external dependency.
+
+### Building the companion DLL
+
+`cap-05.dll` builds like the other C++ test plugins (cap-10, cap-20,
+etc.) — the top-level test-plugin build invokes its `CMakeLists.txt`.
+Deploy it alongside the sidecar `kcdx.toml` under
+`kcdx-plugins/test-suite/cap-05-paklua-runtime/`.
 
 ## Verifying
 

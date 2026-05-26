@@ -177,10 +177,10 @@ what the live result is.
 | What | Pak Lua script calls `kcdx.memory.dynamic_hook({ target=..., pre_callback=..., ... })` to install a hook at runtime. Same MinHook + JIT-detour plumbing as `[[hook]]` but driven from Lua at script-load time instead of TOML at engine-init time. |
 | Channels | (i) pure pak mod, (vi) plugin Lua |
 | Engine status | READY (Phase 5c.7b proved end-to-end in the verify pak — `phase5g_greet_intercept` fired 5/5 at exact shim VA) |
-| Test plugin | _TBD `cap-05-paklua-runtime/` — pak mod that installs a hook and calls `kcdx.test.report` from the pre_callback_ |
+| Test plugin | `cap-05-paklua-runtime/` — pak mod that installs a hook and calls `kcdx.test.report` from the pre_callback. Self-owned: a companion DLL (`cap-05.dll`) registers `kcdx.cap05.probe`, which the pak hooks + calls. |
 | Auto-pass check | Hook installed + callback fired ≥ 1 time during boot. |
-| Last result | _TBD_ |
-| Notes | This is the novel kcdx capability — Workshop-distributable code injection. Before kcdx, pak Lua had no FFI (`package.loadlib` is CryEngine-compiled-out stub). After kcdx, a pak mod can install function detours. |
+| Last result | PENDING (test-fixture fix: retargeted off the archived hello-plugin onto cap-05's own `kcdx.cap05.probe`; pak needs rebuild). |
+| Notes | This is the novel kcdx capability — Workshop-distributable code injection. Before kcdx, pak Lua had no FFI (`package.loadlib` is CryEngine-compiled-out stub). After kcdx, a pak mod can install function detours. Fixture is now self-owned (`cap-05.dll` registers `kcdx.cap05.probe`) — no dependency on the archived hello-plugin sample (test-suite.md). |
 
 ## CAP-06: Runtime `dynamic_call` from pak Lua (call game function)
 
@@ -249,10 +249,10 @@ what the live result is.
 | What | Pak Lua passes a function (Lua-side) and gets back a `kcdx.memory.pointer` userdata holding the C function pointer (if any). Returns nil + error for pure-Lua functions. |
 | Channels | (i), (vi) |
 | Engine status | READY (Phase 5c.7d post-LUA_NUMBER fix) |
-| Test plugin | _TBD — pak script calls cfunction_address on a known cfunction, asserts pointer userdata with non-zero VA returned_ |
+| Test plugin | `cap-05-paklua-runtime/` — pak script calls `cfunction_address` on cap-05's own `kcdx.cap05.probe` (registered by `cap-05.dll`), asserts pointer userdata returned. |
 | Auto-pass check | Returns pointer userdata for cfunctions, nil for pure-Lua. Userdata is usable as `dynamic_hook.target`. |
-| Last result | ✅ PRE-VERIFIED (verify pak 5gDEMO) |
-| Notes | The "find any registered Lua C function's address so I can hook it" primitive. |
+| Last result | PENDING (test-fixture fix: retargeted off the archived hello-plugin onto cap-05's own `kcdx.cap05.probe`; pak needs rebuild). |
+| Notes | The "find any registered Lua C function's address so I can hook it" primitive. Shares the cap-05 pak fixture; the cfunction is now self-owned (`kcdx.cap05.probe`), no hello-plugin dependency. |
 
 ## CAP-12: `kcdxSerializationInterface` (save/load co-save)
 
@@ -887,15 +887,15 @@ Phase 2b `kcdx.hook` / `kcdx.command` / per-entry-zone subs landed.
 | Row | Status | Last verified at SHA | Notes |
 |---|---|---|---|
 | CAP-01 | ✅ PASS (1d0faf1) | _Phase 4a pilot_ | outfit-swap-style byte rewrite, now via `kcdx.bytes` with a `target=` NAME locator (Phase 4a pilot migration off legacy `[[patch]]`); `applied()==true` + read-back of post-rewrite site `45 31 F6` |
-| CAP-03 | ⏳ LIVE-PENDING | _Phase 4b Batch 1_ | function hook via `kcdx.hook{before}` on an un-named CGame::Update callee (pattern AOB + `signature="void (ptr)"`), callback fires (counter>0); migrated off legacy `[[hook]]`+pak |
+| CAP-03 | ⏳ PENDING | _test-fix_ | function hook via `kcdx.hook{before}` on an un-named CGame::Update callee (pattern AOB + `signature="void (ptr)"`), callback fires (counter>0); migrated off legacy `[[hook]]`+pak. Test-fix: PASS is now STICKY + TERMINAL across re-loads via a persistent `_G` latch — the input_loaded backstop can no longer flip a genuine prior PASS to FAIL on a second save-load; a never-install hook still FAILs |
 | CAP-04-mid-on-code-run | ✅ PASS (`12d24b3`) | _Phase 4b Batch 4_ | `kcdx.hook` mode=mid installed on a `kcdx.code`-allocated stub; callback returns nothing → captured `add` runs → stub call returns 110. Composes the two author verbs (kcdx.code allocate + kcdx.hook mid on the allocation); distinct from cap-21 (C++-floor stub) and cap-30/cap-40 (allocate, never hook). Migrated off legacy `[[trampoline]]`+`[[mid_hook]]` (`cap-04-midhook`) |
 | CAP-04-mid-on-code-skip | ✅ PASS (`12d24b3`) | _Phase 4b Batch 4_ | mode=mid on the same `kcdx.code` stub; callback returns `"skip"` → captured `add` skipped → stub call returns 10. Proves skip-original codegen reaches a `kcdx.code`-allocated target. Last legacy `[[trampoline]]`/`[[mid_hook]]` consumer retired (C++ Mid now also skips via the v2 int-return — see CAP-42) |
-| CAP-05 | ✅ LIVE | `03dd155` | pak Lua `dynamic_hook` install |
+| CAP-05 | ⏳ PENDING | _test-fix_ | pak Lua `dynamic_hook` install. Test-fix: fixture retargeted off the archived hello-plugin onto cap-05's own `kcdx.cap05.probe` (registered by new companion `cap-05.dll`) — self-owned (test-suite.md). Pak needs rebuild (`build-pak.ps1`) |
 | CAP-07 | ✅ LIVE | `03dd155` | trampoline branch / local pool allocations |
 | CAP-08 | ✅ LIVE | `03dd155` | engine messages + lifecycle |
 | CAP-09 | ✅ LIVE | `03dd155` | `kcdxTaskInterface` round-trip |
 | CAP-10 | ✅ LIVE | `03dd155` | `kcdxScriptingInterface` C++ → Lua round-trip |
-| CAP-11 | ✅ LIVE | `03dd155` | `kcdx.lua.cfunction_address` resolution |
+| CAP-11 | ⏳ PENDING | _test-fix_ | `kcdx.lua.cfunction_address` resolution. Test-fix: addresses cap-05's own `kcdx.cap05.probe` (companion `cap-05.dll`) instead of the archived hello-plugin's `kcdx.hello.greet` — self-owned (test-suite.md). Pak needs rebuild |
 | CAP-12 | ✅ LIVE | `03dd155` | `kcdxSerializationInterface` cosave roundtrip |
 | CAP-13 | ✅ LIVE | `03dd155` | `[[command]]` console command registration |
 | CAP-14 | DEFERRED | _ | Address Library — verified transitively via CAP-13's `address_id`-based hooks (1009 + 2000 + 2001). No dedicated test plugin needed for v0.1. |
@@ -917,7 +917,7 @@ Phase 2b `kcdx.hook` / `kcdx.command` / per-entry-zone subs landed.
 | CAP-20-conflict-rejected | ⏳ PENDING | sub-7 | the load-order-losing replace (`hConflictB`) is rejected; asserted in `kcdx.on("ready")`: `applied()==false` + non-empty `:reason()` (the Lua-side rejection assert for CAP-20-conflict) |
 | CAP-20-ready | ⏳ PENDING | sub-7 | `kcdx.on("ready", fn)` fires once after this plugin's zone apply pass; a SUCCEEDED handle (`hConflictA`, the conflict winner) reads `applied()==true` inside the callback. PENDING (never reports) if ready never fires |
 | CAP-20-target | ✅ LIVE | AP12 | `kcdx.hook{ target = "luaL_loadfile", before=... }` installs with NO hand-written `signature=` — the name supplies the verified ABI (Address Library carries it). `applied()==true` in `kcdx.on("ready")` is the end-to-end proof (had the name carried no signature the binder would have rejected). Target chosen: id 1002 — verified, signature populated, dormant post-install, not a production kcdx hook (`cap-20-hook-modes`) |
-| CAP-20-target-nosig | ✅ LIVE | AP12 | `kcdx.hook{ target = "IConsole_AddCommand", ... }` (a verified row with NO seed signature, no explicit `signature=`) fails to install with the no-ABI teaching error — the engine never invents a signature (AP2). `applied()==false` + non-empty `:reason()` in `kcdx.on("ready")` (`cap-20-hook-modes`) |
+| CAP-20-target-nosig | ⏳ PENDING | _test-fix_ | `kcdx.hook{ target = "IConsole_AddCommand", ... }` (a verified row with NO seed signature, no explicit `signature=`) is REJECTED SYNCHRONOUSLY (`nil` + teaching error) — the engine never invents a signature (AP2). Asserted inline at registration: `h==nil` + `err:find("has no signature")` + `err:find("needs an ABI")`. Test-fix: expected substring was the stale `"no verified signature"` (never emitted) → matched to the actual teaching message; still requires nil + the teaching contract, not weakened (`cap-20-hook-modes`) |
 | CAP-20-locator-default | ✅ LIVE | AP12 | `kcdx.hook{ before=... }` with NO locator is rejected SYNCHRONOUSLY (`nil` + teaching error), and the error LEADS with the common path: `err:find("target")` and `err:find("name")` both match (the two-tier steer names `target="<name>"`, not the advanced raw locators). Asserted inline at registration (`cap-20-hook-modes`) |
 | CAP-20-locator-exclusive | ✅ LIVE | AP12 | `kcdx.hook{ target="luaL_loadfile", address=0x1000, before=... }` (two locators in different slots) is rejected SYNCHRONOUSLY with the exactly-ONE-locator error: `err:find("ONE")` matches. Proves locator mutual-exclusion + the two-tier wording (target normal, advanced locators mutually exclusive). Asserted inline at registration (`cap-20-hook-modes`) |
 | CAP-21-read | ✅ LIVE | sub-5 | `kcdx.hook` mode=mid capture READ: `c.rax:get()==seed` (name-map captures); add runs → 110 (`cap-21-mid-hook`) |

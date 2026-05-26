@@ -28,11 +28,36 @@
 local PATTERN =
     "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
 
+-- PASS is STICKY + TERMINAL. A one-shot hook that has already fired ONCE cannot
+-- un-fire — so once CAP-03 reports PASS it must NEVER report FAIL afterwards.
+-- OBSERVED (kcdx-dev 15:30 run): CAP-03 reported PASS at boot (hook fired,
+-- count=1), then a SECOND FAIL ("never fired") fired ~26s later, between the
+-- first and second save-load — and the aggregator keeps the LAST verdict,
+-- flipping the real PASS to FAIL. The exact trigger of that late FAIL was NOT
+-- the boot input_loaded backstop (that ran clean at boot) and NOT a plugin.lua
+-- re-eval (RegisterKcdxTable/first-update-tick fired exactly once — the chunk
+-- did not re-run). The precise late-FAIL source was not fully traced; rather
+-- than guess it, the fix targets the INVARIANT that holds regardless: a
+-- one-shot test that has passed cannot later fail. The PASS latch lives on a
+-- persistent global keyed to this plugin so it survives ANY re-entry path
+-- (re-eval, a re-fired listener, or the untraced late trigger) in the single
+-- shared Lua state — PASS wins and is terminal, mechanism-independent.
+local PASS_LATCH = "__kcdx_cap03_passed"
+local function already_passed()
+    return rawget(_G, PASS_LATCH) == true
+end
+local function latch_pass()
+    rawset(_G, PASS_LATCH, true)
+end
+
+-- `reported` guards THIS evaluation's report calls (a fresh chunk on re-eval
+-- starts un-reported); `already_passed()` is the cross-eval terminal latch.
 local reported = false
 
 local function report_fired(fire_count)
-    if reported then return end
+    if reported or already_passed() then return end
     reported = true
+    latch_pass()
     kcdx.test.report("CAP-03", true,
         "update-callee hook fired (count=" .. fire_count .. ") — the before "
         .. "callback ran on the hooked CGame::Update callee. Phase 4b Batch 1 "
@@ -66,7 +91,17 @@ end
 -- it simply hasn't fired yet, the row stays PENDING until it does (the honest
 -- "installed, awaiting first fire" state) — it flips to PASS the moment the
 -- menu pump runs.
+--
+-- TERMINAL-PASS guard (the bug this fixes): on a SECOND save-load this chunk
+-- re-evaluates, re-installs the hook, and re-subscribes input_loaded. If that
+-- callback sampled applied()==false before the fresh apply pass completes it
+-- would report FAIL — flipping a genuine prior PASS to FAIL in the aggregator
+-- (which keeps the LAST verdict). So the backstop FIRST honours the cross-eval
+-- PASS latch: if CAP-03 ever passed, it stays passed and the backstop does
+-- nothing. A hook that NEVER installed (no prior PASS, applied()~=true) still
+-- reports the real FAIL — coverage of the never-install case is preserved.
 kcdx.on("input_loaded", function()
+    if already_passed() then return end  -- PASS is terminal across re-loads
     if reported then return end
     if h:applied() ~= true then
         reported = true

@@ -168,14 +168,21 @@ do
         target = "IConsole_AddCommand",   -- resolves an address; no seed signature
         before = function() end,          -- (would never install)
     }
+    -- The engine returns nil + a teaching error that names the missing
+    -- signature ("has no signature — a hook needs an ABI"). We assert the
+    -- STABLE, load-bearing parts of that message ("has no signature" AND
+    -- "needs an ABI"), not the exact prose, so the row protects the
+    -- teaching-message contract (a future regression returning nil with NO
+    -- message must still FAIL) without breaking on a wording tweak.
     local pass = (h == nil)
                  and type(err) == "string"
-                 and err:find("no verified signature") ~= nil
+                 and err:find("has no signature") ~= nil
+                 and err:find("needs an ABI") ~= nil
     kcdx.test.report("CAP-20-target-nosig", pass,
-        pass and ("name with no verified signature rejected synchronously "
+        pass and ("name with no signature rejected synchronously "
                   .. "with teaching error: " .. err)
-             or  ("expected (nil, error naming 'no verified signature'); got "
-                  .. "h=" .. tostring(h) .. " err=" .. tostring(err)))
+             or  ("expected (nil, error naming 'has no signature' + 'needs an "
+                  .. "ABI'); got h=" .. tostring(h) .. " err=" .. tostring(err)))
 end
 
 -- CAP-20-locator-default: a kcdx.hook with NO locator at all. The binder
