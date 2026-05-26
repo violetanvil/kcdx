@@ -307,6 +307,20 @@ uint32_t Thunk_GetConflictReport(uintptr_t target,
         });
     }
 
+    // kcdx.bytes (kcdxBytesInterface::Register): the new byte-rewrite surface.
+    // These route through lua_registry Kind::Bytes, NOT the legacy g_patches
+    // above, so they have their own source. Reported when the queried `target`
+    // falls within an applied bytes patch's write range — same range-match
+    // semantics as the legacy g_patches loop, kind=Patch. The `name` pointers
+    // live in PatchEntry storage for the process lifetime (the accessor
+    // documents this lifetime guarantee), so capturing them as aliases is safe.
+    for (const auto& bp : kcdx::patch::GetAppliedBytesPatchesAtTarget(target)) {
+        hits.push_back({
+            bp.name, bp.priority,
+            kcdxConflictEntryKind_Patch, bp.applied
+        });
+    }
+
     // Sort by (priority asc, name asc)
     std::sort(hits.begin(), hits.end(), [](const TempEntry& a, const TempEntry& b) {
         if (a.priority != b.priority) return a.priority < b.priority;
