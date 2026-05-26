@@ -237,10 +237,10 @@ what the live result is.
 | What | `RegisterFunction(handle, table, name, fn, userdata)` makes a C++ function callable from pak Lua as `kcdx.<table>.<name>(...)`. Uses the kcdxLuaApi function-pointer struct for the C++ side's Lua C API access (no direct lua.h include). |
 | Channels | (ii) C++ DLL + (i)/(vi) on the calling side |
 | Engine status | READY (Phase 5e) |
-| Test plugin | _TBD — register a C function from a test DLL, call it from a paired test pak Lua, assert round-trip works_ |
-| Auto-pass check | Pak Lua sees the registered function as callable; result matches C++ implementation. |
-| Last result | ✅ PRE-VERIFIED on hello-plugin + verify pak |
-| Notes | Core capability for "new game systems" mods — magic, perks, custom inventory, etc. all use this surface. |
+| Test plugin | `cap-10-scripting-interface/` — self-owned: `cap-10.dll` registers `kcdx.cap10test.stub` (reads an int arg, returns arg+42); the SAME plugin's `plugin.lua` calls it and asserts the round-trip. |
+| Auto-pass check | `plugin.lua` calls `kcdx.cap10test.stub(100)` at `input_loaded` and asserts `== 142` (arg+42) — proves the C++-registered function is callable from Lua AND the arg/return round-trips. NOT merely "RegisterFunction returned true" (a build where the function is unreachable/wrong from Lua would still pass that). |
+| Last result | PENDING (re-verify next checkpoint launch — assertion strengthened off the RegisterFunction bool to the Lua round-trip) |
+| Notes | Core capability for "new game systems" mods — magic, perks, custom inventory, etc. all use this surface. Falsifiable broken-state: if the function is unreachable as `kcdx.cap10test.stub` or marshaling drops the arg/return, the call returns nil/wrong value → FAIL. |
 
 ## CAP-11: `kcdx.lua.cfunction_address` (resolve C address of a Lua-callable)
 

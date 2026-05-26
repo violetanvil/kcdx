@@ -1,9 +1,13 @@
-# CAP-10 — kcdxScriptingInterface RegisterFunction.
+# CAP-10 — kcdxScriptingInterface: a C++-registered function is callable
+# from Lua and the arg+return round-trips.
 #
-# QueryInterface(Scripting), call RegisterFunction for a stub C function
-# under a unique namespace, assert true. The actual Lua-side round-trip
-# is covered by hello-plugin + verify pak end-to-end; this row proves
-# the registration call itself succeeds without crashing.
+# Single plugin, two entrypoints. cap-10.dll (kcdxPlugin_Load) registers
+# kcdx.cap10test.stub (reads an int arg, returns arg+42) — registration is
+# only a precondition. plugin.lua then CALLS kcdx.cap10test.stub(100) at
+# input_loaded and asserts it returns 142; that Lua round-trip is the CAP-10
+# verdict, not the bool return of RegisterFunction. The DLL load wave runs
+# before RunAll executes plugin.lua, so the function is reachable when
+# plugin.lua runs.
 
 [kcdx]
 test_suite_only = true
@@ -12,9 +16,13 @@ test_suite_only = true
 name                = "cap_10_scripting_interface"
 display_name        = "CAP-10 Scripting interface"
 author              = "ts"
-description         = "Verifies RegisterFunction returns true."
+description         = "Verifies a C++-registered function is callable from Lua and the arg+return round-trips."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 test_names          = ["CAP-10"]
+
+[entrypoints]
+dll = "cap-10.dll"
+lua = "plugin.lua"
