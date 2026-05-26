@@ -103,16 +103,11 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // here, after hooks::Install (WHGame.dll mapped + MinHook initialized), and
     // BEFORE CryEngine's system init constructs the loc manager — so the ctor
     // detour is live when the ctor runs. Dev-mode-gated + idempotent internally;
-    // a no-op in production.
-    //
-    // TEMPORARILY DISABLED (2026-05-26): the loc probe itself is live-verified
-    // (cap-43-loc-ctor-capture + cap-43-loc-byid-getter both PASS, clean
-    // sequential int-IDs observed) — this is NOT disabled for a probe defect.
-    // It is held inert only while a PARALLEL feature (cap-44 fopen-override /
-    // pak-resolver) stabilizes a save-load crash in the shared engine DLL, so
-    // launches aren't muddied by an unrelated fault. Re-enable (uncomment) once
-    // that work lands clean, then resume loc-dump feature step 2 (table walk).
-    // kcdx::probes::loc_dump_probe::Install();
+    // a no-op in production. Live-verified: cap-43-loc-ctor-capture +
+    // cap-43-loc-byid-getter both PASS (clean sequential int-IDs observed).
+    // (Was briefly disabled 2026-05-26 to isolate a parallel feature's save-load
+    // crash investigation; re-enabled now.)
+    kcdx::probes::loc_dump_probe::Install();
 
     // Phase 6 save/load lifecycle hooks. ABIs from ROUND 3 RECON via
     // _research/phase6-save-load/phase6_abi_walker.py — full-body capstone analysis,
