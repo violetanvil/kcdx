@@ -1,59 +1,35 @@
-# CAP-03 — [[hook]] + lua_callback (TOML-declared hook dispatches to pak Lua).
+# CAP-03 — function hook via kcdx.hook{before} (Phase 4b Batch 1 migration).
 #
-# Hooks a function called every tick from WHGame.dll's CGame::Update (the
-# function kcdx already detours as `update`). The chosen target is a direct
-# callee of update — a per-frame UI/menu pump at 0x180865FB4 in KCD2
-# 1.5.1164953. By construction it fires every tick AFTER kcdx's hook-install
-# moment (first-update-tick), so the dispatch chain is exercised many times
-# before the player even sees the main menu.
+# Migrated off the legacy [[hook]] + lua_callback (pak Lua) path onto the
+# pure-Lua kcdx.hook surface. Same site, same observable, new mechanism:
+#   - was: a [[hook]] TOML block (pattern AOB at a CGame::Update callee,
+#     lua_callback="Cap03Test.OnUpdateCallee") + a pak-Lua callback that
+#     bumped a counter and reported CAP-03 from an EventSystemListener.
+#   - now: plugin.lua installs the SAME AOB site via kcdx.hook{ before=... },
+#     bumps a counter in the before callback, and reports CAP-03 from
+#     kcdx.on("ready").
 #
-# A DLL companion subscribes to kInputLoaded and reports CAP-03 pass
-# if the counter > 0 (the hook fired at least once during boot).
-#
-# Sig discovered 2026-05-19 via the callee-enumeration tool at
-# _research/cap03-recon/cap03_find_candidates.py (disassembles WHGame.dll, finds
-# update() via the yobson1 sig, walks its direct CALL targets, emits
-# 24-byte function-entry sigs with .text-uniqueness checks). Full
-# candidate dossier: _research/predecessor-sigs/CAP-03-CANDIDATES.md
-# (candidate #4).
-#
-# Earlier attempt: luaL_loadfile, which installed cleanly but fired only
-# during pre-update Scripts/ loading (before kcdx's hooks installed).
+# The target is an un-named site (a direct callee of CGame::Update at
+# 0x180865FB4 in KCD2 1.5.1164953) — it has no Address Library name, so the
+# migration keeps the SAME pattern= AOB + signature="void (ptr)". This is the
+# LEGITIMATE labeled expert hatch for a target the library can't name yet
+# (cornerstones.md / AP12-OK), NOT a gap. By construction the site fires every
+# tick AFTER kcdx's hook-install moment, so the counter is >0 well before the
+# main menu — confirming the dispatch chain fired.
 
 [kcdx]
 test_suite_only = true
 
 [plugin]
 name                = "cap_03_hook_lua_callback"
-display_name        = "CAP-03 Hook + lua_callback"
+display_name        = "CAP-03 Function hook (kcdx.hook before)"
 author              = "ts"
-description         = "TOML-declared hook dispatches to pak Lua during boot."
+description         = "Function hook via kcdx.hook{before} on an un-named CGame::Update callee; before callback bumps a counter, asserts installed + fired (Phase 4b Batch 1 migration off legacy [[hook]]+pak)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 test_names          = ["CAP-03"]
 
-[[hook]]
-name        = "cap03_update_callee"
-priority    = 100
-module      = "WHGame.dll"
-pattern     = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
-offset      = 0
-
-# void __fastcall fn(this_ptr*)
-# kcdx's typed dispatch: single ptr (this) → void
-# The Lua callback receives the this pointer as a kcdx.memory.pointer userdata.
-# Callback should not dereference it (object layout not known); it exists
-# purely to confirm the dispatch chain fired.
-return_type = "void"
-param_types = ["ptr"]
-
-lua_callback = "Cap03Test.OnUpdateCallee"
-
-description = """
-CAP-03 of the kcdx test suite. Verifies [[hook]] + lua_callback chain
-fires from a real engine function during boot. The hook target is a
-direct callee of CGame::Update, so it fires every tick AFTER kcdx's
-own first-update-tick — strictly post-install, on the main thread.
-"""
+[entrypoints]
+lua = "plugin.lua"

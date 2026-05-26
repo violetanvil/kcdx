@@ -146,17 +146,17 @@ what the live result is.
 | Last result | _TBD_ |
 | Notes | Bytes can be any 5+ byte sequence that does something useful (set a register, jump elsewhere). Hardest to test because we'd need to actually write working detour shellcode for an interesting target. |
 
-## CAP-03: `[[hook]]` + `lua_callback` (TOML, dispatch to Lua)
+## CAP-03: function hook via `kcdx.hook{before}` (pure Lua)
 
 | Field | Value |
 |---|---|
-| What | Hook a function; on entry the dispatch shim calls a named Lua function that decides whether to let the original run (`return true`) or skip it. |
-| Channels | (iii) `kcdx.toml` + a pak-Lua-side function registration |
-| Engine status | READY (Phase 5f) |
-| Test plugin | _TBD — port `examples/phase5f-lua-callback-test/` to `test-plugins/cap-03-hook-lua-callback/`_ |
-| Auto-pass check | SHIM/enter fires expected number of times during boot. |
-| Last result | ✅ PRE-VERIFIED on existing examples plugin (needs port to test-plugins/ for auto-reporting) |
-| Notes | Outfit-swap NOT a good fit (one-shot init), use the existing phase5f-lua-callback-test pattern. |
+| What | Function hook via `kcdx.hook{before}` on a per-frame CGame::Update callee; the `before` callback bumps a counter (does not deref the `this` ptr). Asserts the hook installed (`applied()==true`) AND fired (counter>0). Phase 4b Batch 1 migration off the legacy `[[hook]]` + `lua_callback` (pak Lua) path — same un-named site (pattern AOB + `signature="void (ptr)"`, the labeled expert hatch for a target the library can't name, AP12-OK), same observable. |
+| Channels | (vi) plugin Lua (`plugin.lua` only — no pak, no DLL) |
+| Engine status | LIVE-PENDING (Phase 4b Batch 1) |
+| Test plugin | `cap-03-hook-lua-callback/` — `plugin.lua` installs the AOB hook and reports CAP-03 from `kcdx.on("ready")`. |
+| Auto-pass check | `h:applied()==true` AND `fire_count > 0` at the `ready` event (the per-frame callee fires every tick after install). |
+| Last result | PENDING (Phase 4b Batch 1 launch) |
+| Notes | Migrated from `[[hook]]`+pak-Lua-callback to `kcdx.hook{before}`. Same site (un-named CGame::Update callee at 0x180865FB4, KCD2 1.5.1164953), same observable (callback fires). The callback bumps a counter and never conditions the original — pure `before` mode. |
 
 ## CAP-04: `[[mid_hook]]` register capture + Lua override
 
@@ -799,7 +799,7 @@ Phase 2b `kcdx.hook` / `kcdx.command` / per-entry-zone subs landed.
 | Row | Status | Last verified at SHA | Notes |
 |---|---|---|---|
 | CAP-01 | ✅ PASS (1d0faf1) | _Phase 4a pilot_ | outfit-swap-style byte rewrite, now via `kcdx.bytes` with a `target=` NAME locator (Phase 4a pilot migration off legacy `[[patch]]`); `applied()==true` + read-back of post-rewrite site `45 31 F6` |
-| CAP-03 | ✅ LIVE | `03dd155` | `[[hook]] lua_callback` dispatches into pak Lua |
+| CAP-03 | ⏳ LIVE-PENDING | _Phase 4b Batch 1_ | function hook via `kcdx.hook{before}` on an un-named CGame::Update callee (pattern AOB + `signature="void (ptr)"`), callback fires (counter>0); migrated off legacy `[[hook]]`+pak |
 | CAP-04a | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=true`; returns 110 |
 | CAP-04b | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=false`; returns 10 (original skipped) |
 | CAP-04c | ❌ FAIL | `03dd155` | `[[mid_hook]] call_original="auto"` + `args._skip=true`; returns 110 (expected 10) — the legacy `args._skip` mid-hook bug: the auto-skip path does NOT skip the original. The one standing pre-existing FAIL; superseded by `kcdx.hook` mode=mid (CAP-21-skip PASSES, proving the new dispatcher does not inherit it). |
