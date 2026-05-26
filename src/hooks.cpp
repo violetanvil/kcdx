@@ -12,7 +12,6 @@
 #include "conflict_engine.h"
 #include "console.h"
 #include "hook_engine.h"
-#include "dev.h"
 #include "log.h"
 #include "load_order.h"
 #include "hook_chain.h"
@@ -29,7 +28,6 @@
 #include "test.h"
 #include "trampoline_engine.h"
 
-#include "probes/createfilew_probe.h"
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
 // installs from kcdx.asi DllMain, not from hooks::Install.
 
@@ -89,54 +87,6 @@ int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
             log::KV("seen_n",   (int64_t)seen_n.load()));
     }
     return g_orig_lua_pcall(L, nargs, nresults, errfunc);
-}
-
-// Phase 5g investigation: periodic readback of kcdx.hello.greet's
-// cfunction pointer to find out IF and WHEN the value at that table
-// slot changes after first-update-tick registration. If the value
-// stays equal to LuaDispatchShim throughout, the mutation must
-// happen in pak Lua's read context (very strange). If the value
-// changes by tick N, we can correlate with what other code ran
-// around that time.
-//
-// Triggers a few readbacks at staggered intervals.
-static void Phase5gReadback(lua_State* L, uint64_t tick) {
-    static const int kTicks[] = { 1, 50, 500, 2000, 8000 };
-    bool match = false;
-    for (int t : kTicks) {
-        if ((uint64_t)t == tick) { match = true; break; }
-    }
-    if (!match) return;
-
-    lua_getglobal(L, "kcdx");
-    if (!lua_istable(L, -1)) {
-        log::WarnF("[5g-readback tick=%llu] _G.kcdx is not a table",
-                   (unsigned long long)tick);
-        lua_pop(L, 1);
-        return;
-    }
-    lua_getfield(L, -1, "hello");
-    if (!lua_istable(L, -1)) {
-        log::WarnF("[5g-readback tick=%llu] kcdx.hello missing",
-                   (unsigned long long)tick);
-        lua_pop(L, 2);
-        return;
-    }
-    lua_getfield(L, -1, "greet");
-    if (lua_iscfunction(L, -1)) {
-        lua_CFunction cf = lua_tocfunction(L, -1);
-        KCDX_DEV("SCRIPTING", "READBACK/tick",
-            kcdx::dev::KV("tick",        (unsigned long long)tick),
-            kcdx::dev::KV("path",        "_G.kcdx.hello.greet"),
-            kcdx::dev::KV("lua_type",    lua_type(L, -1)),
-            kcdx::dev::KV("topointer",   lua_topointer(L, -1)),
-            kcdx::dev::KV("tocfunction", (const void*)cf));
-    } else {
-        KCDX_DEV("SCRIPTING", "READBACK/tick/missing",
-            kcdx::dev::KV("tick",     (unsigned long long)tick),
-            kcdx::dev::KV("lua_type", lua_type(L, -1)));
-    }
-    lua_pop(L, 3);  // greet + hello + kcdx
 }
 
 // === PROBE Q: frealloc interception to verify the dummynode hypothesis ===
@@ -301,14 +251,6 @@ static void ArmFreallocProbe(lua_State* L) {
 
 void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     static std::atomic<bool> done{false};
-    static std::atomic<uint64_t> tick_count{0};
-    {
-        uint64_t t = tick_count.fetch_add(1) + 1;
-        lua_State* L_now = g_L.load(std::memory_order_acquire);
-        if (L_now && done.load(std::memory_order_acquire)) {
-            Phase5gReadback(L_now, t);
-        }
-    }
     if (!done.load(std::memory_order_acquire)) {
         lua_State* L = g_L.load(std::memory_order_acquire);
         if (L) {
@@ -577,18 +519,12 @@ bool Install() {
 
     log::Info("Hooks installed: lua_pcall + update");
 
-    // === DIAGNOSTIC (PROBE R): hook kernel32!CreateFileW to identify
-    // the call site building BugSplat's colon-bearing dmp filename.
-    // Dev-mode-gated (Install() is a no-op in production). Remove
-    // once the question is answered.
-    kcdx::probes::createfilew_probe::Install();
-
-    // === DIAGNOSTIC (PROBE S retired 2026-05-21):
-    // Worker-thread install of bugsplat_ctor_probe was too late — the
-    // ctor fired before this code ran. PROBE T moves the install to
-    // kcdx.asi DllMain via LdrRegisterDllNotification (see
-    // src/dllmain.cpp RunBeforeGameZoneInDllMain). The Install()
-    // function itself is unchanged; only the call site moved.
+    // bugsplat_ctor_probe (PROBE S/T) install timing note: worker-thread
+    // install (PROBE S, retired 2026-05-21) was too late — the ctor fired
+    // before this code ran. The install lives in src/dllmain.cpp
+    // RunBeforeGameZoneInDllMain via LdrRegisterDllNotification (PROBE T),
+    // NOT here. That probe is KEEP-for-Phase-11 (the proven before_game-hook
+    // install machinery; see docs/outstanding-work/before-game-hooks.md §5).
 
     return true;
 }

@@ -1,4 +1,7 @@
-// === DIAGNOSTIC (PROBE S + PROBE T) === see bugsplat_ctor_probe.h
+// === PROBE S + PROBE T (answered 2026-05-26 — KEEP, not removed) ===
+// see bugsplat_ctor_probe.h. This is the proven before_game-hook install
+// machinery; Phase 11 relocates it into the permanent engine home and
+// generalizes it (docs/outstanding-work/before-game-hooks.md §5).
 
 #include "bugsplat_ctor_probe.h"
 
@@ -169,9 +172,10 @@ bool Install() {
 // === PROBE T: LDR-notification path ============================
 //
 // Local declarations of the LDR notification structs / typedefs
-// (mirrors src/ldr_notify.cpp; not extracted to a header because
-// these are PROBE-temporary and we don't want to grow the engine
-// surface for them).
+// (mirrors src/ldr_notify.cpp; not extracted to a header yet — when
+// Phase 11 relocates this into the permanent engine home these merge
+// with ldr_notify's copies, see
+// docs/outstanding-work/before-game-hooks.md §5/§8).
 
 namespace {
 

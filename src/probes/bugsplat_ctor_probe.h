@@ -1,6 +1,16 @@
 #pragma once
 
-// === DIAGNOSTIC (PROBE S) ===
+// KEEP — not a throwaway probe. PROBE S/T answered their questions
+// (live 2026-05-26), but this install machinery is the PROVEN
+// before_game-hook prototype: Phase 11 relocates it into the permanent
+// engine home (e.g. src/early_hook.{h,cpp} or an ldr_notify extension)
+// and generalizes ArmLdrInstall + the detour into a parameterized,
+// author-driven install primitive. See
+// docs/outstanding-work/before-game-hooks.md §5/§8. The lifecycle
+// framing below ("this probe answers …") is the original diagnostic
+// context, retained for the investigation trail — the code stays live.
+//
+// === PROBE S ===
 //
 // Hooks BugSplat64.dll!MiniDmpSender::MiniDmpSender (export ordinal 3,
 // RVA 0xC914 against the live game) and logs the call timing + the

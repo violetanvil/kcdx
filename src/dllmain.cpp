@@ -16,7 +16,9 @@
 #include "serialization.h"
 #include "watchdog_spawn.h"
 
-#include "probes/bugsplat_ctor_probe.h"  // PROBE T — remove after fix
+#include "probes/bugsplat_ctor_probe.h"  // KEEP — proven before_game-hook install
+                                         // machinery; Phase 11 generalizes it
+                                         // (docs/outstanding-work/before-game-hooks.md §5)
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -164,12 +166,13 @@ static void RunBeforeGameZoneInDllMain() {
     // targeting it.
     kcdx::ldr_notify::Register();
 
-    // === DIAGNOSTIC (PROBE T): install the BugSplat ctor log-only
-    // hook at DllMain time (immediate if BugSplat64.dll is already
-    // mapped, otherwise via LDR notification). Tests whether
-    // DllMain-time install timing catches the ctor call that
-    // worker-thread install (PROBE S) missed. Remove after the
-    // question is answered.
+    // KEEP (PROBE S/T, answered 2026-05-26): install the BugSplat ctor
+    // log-only hook at DllMain time (immediate if BugSplat64.dll is
+    // already mapped, otherwise via LDR notification). PROBE T CONFIRMED
+    // DllMain-time install timing catches the ctor call that worker-thread
+    // install (PROBE S) missed. This is the proven before_game-hook install
+    // machinery — Phase 11 generalizes it into the real builtin; it is NOT
+    // removed here (docs/outstanding-work/before-game-hooks.md §5).
     kcdx::probes::bugsplat_ctor_probe::ArmLdrInstall();
 }
 
