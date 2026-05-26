@@ -585,8 +585,101 @@ typedef struct kcdxTaskInterface {
 // Both functions return memory marked PAGE_EXECUTE_READWRITE and zero-filled.
 // Tag with `owner` so kcdx's pre-flight conflict detector knows which plugin
 // owns which byte range — used when two plugins' trampolines would collide.
+//
+// Version 2 adds the high-level peers of the raw AllocateFrom*Pool floor:
+//
+//   Allocate(opts) — the all-in-one alloc+fill+pad+export call. The C++ mirror
+//     of Lua kcdx.code{...}: allocate per opts.pool, copy opts.bytes to the
+//     region head, NOP-pad the tail out to opts.size, register opts.exportName
+//     if set, and return the region. The author declares intent in one
+//     kcdxCodeOptions struct instead of hand-sequencing AllocateFrom*Pool +
+//     memcpy + memset + Export.
+//
+//   Export(owner, bareName, addr) — the standalone symbol-table publish. The
+//     C++ mirror of kcdx.code's export=, usable for an address the plugin
+//     already holds (no allocation needed).
 
-#define kcdxTrampolineInterface_Version 1u
+#define kcdxTrampolineInterface_Version 2u
+
+// Which executable-memory pool kcdxCodeOptions::Allocate draws from. Mirrors
+// the proximity guarantees of the raw AllocateFrom*Pool methods above and the
+// Lua kcdx.code `pool = "branch"|"local"` field. Default 0 = branch.
+typedef uint8_t kcdxCodePool;
+// Branch pool — executable memory within ±2 GB of WHGame.dll's .text, so a
+// 5-byte E9 rel32 jump can reach it. Budget is limited (default 64 KB across
+// all plugins); Allocate returns null on exhaustion. The default (0).
+#define kcdxCodePool_Branch 0u
+// Local pool — executable memory anywhere VirtualAlloc places it. Effectively
+// unlimited budget. Callers branching into this region must use abs-64 jumps
+// (14-byte FF 25 + 8-byte target) or a register-indirect call. Use when
+// rel32 proximity does not matter.
+#define kcdxCodePool_Local  1u
+
+// Options for the all-in-one Allocate call. Mirrors the Lua kcdx.code named
+// table EXACTLY (src/lua_bind_code.cpp Lua_Code). POD, C-ABI shape (no
+// std::string / std::vector — sentinel values for unset: null for strings,
+// 0 for numerics).
+//
+// CONTRACT — must set `bytes` (with `bytesSize`) OR `size` (or both). `name`
+// and `owningPlugin` are REQUIRED. `pool` defaults to branch (the 0 value).
+// `exportName` is optional — a BARE name; the engine derives the
+// <author>.<plugin> prefix (naming-namespaces.md). When `size` > `bytesSize`
+// the tail is NOP-padded (0x90) so another plugin can patch into the unused
+// space; `size` must be >= `bytesSize`.
+typedef struct kcdxCodeOptions {
+    // --- Owning plugin identity (naming-namespaces.md) -------------------
+    // REQUIRED. Drives the <author>.<plugin> export prefix and the pool
+    // attribution (which plugin owns the allocated byte range). The author's
+    // own plugin handle (from kcdxInterface::GetPluginHandle). Same role as
+    // kcdxBytesOptions::owningPlugin. Pass kcdxInvalidPluginHandle (or 0) for
+    // the anonymous path (the region still works; attribution is recorded as
+    // invalid). The planned wrapper threads this for you; raw-interface
+    // callers pass their own handle directly.
+    kcdxPluginHandle owningPlugin;
+
+    // --- Identity ---------------------------------------------------------
+    // REQUIRED — the name used in logs and export diagnostics (e.g.
+    // "outfit_gate_logic"), mirroring the Lua kcdx.code `name` field. Not a
+    // shared name itself; see `exportName` to publish the region's address.
+    const char* name;
+
+    // --- Initial machine code (OPTIONAL) ---------------------------------
+    // `bytes` + `bytesSize` are the C-pointer+length idiom (matching
+    // kcdxMemoryInterface::WriteBytes(addr, bytes, size)). The engine copies
+    // `bytesSize` bytes from `bytes` to the head of the allocated region.
+    // null `bytes` / 0 `bytesSize` = no initial code (a bare NOP region sized
+    // by `size`). Must set this OR `size` (or both).
+    const void* bytes;
+    size_t      bytesSize;
+
+    // --- Total allocation (OPTIONAL) -------------------------------------
+    // Total bytes to allocate. If > `bytesSize` the tail beyond the copied
+    // bytes is NOP-padded (0x90) so another plugin can patch into the unused
+    // space. 0 = default to `bytesSize` (allocate exactly the initial code).
+    // Must be >= `bytesSize`. Mirrors the Lua kcdx.code `size` semantics and
+    // the Lua "must declare bytes OR size" rule. Must set this OR `bytes`.
+    size_t size;
+
+    // --- Pool selection --------------------------------------------------
+    // Which pool to allocate from. kcdxCodePool_Branch is the default (0), so
+    // a zero-initialized kcdxCodeOptions allocates from the branch pool.
+    kcdxCodePool pool;
+
+    // --- Export (OPTIONAL) -----------------------------------------------
+    // A BARE symbol name to publish the region's address under, resolvable by
+    // a later hook/byte target_symbol lookup. null = no export. The author
+    // writes ONLY the bare name; the engine derives the <author>.<plugin>
+    // prefix from `owningPlugin` and publishes <author>.<plugin>.<exportName>
+    // (naming-namespaces.md). A DOTTED `exportName` is an author error (the
+    // engine supplies the prefix) and is rejected.
+    const char* exportName;
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New options fields go HERE, never mid-struct. Same AP11 discipline as
+    // kcdxBytesOptions / kcdxHookOptions: a mid-struct insert shifts every
+    // subsequent field's offset; a plugin DLL compiled against the older
+    // header would read through the wrong offset → ACCESS_VIOLATION.
+} kcdxCodeOptions;
 
 typedef struct kcdxTrampolineInterface {
     // Allocate `size` bytes of executable memory within ±2 GB of WHGame.dll's
@@ -598,6 +691,34 @@ typedef struct kcdxTrampolineInterface {
     // Allocate `size` bytes of executable memory anywhere. Returns null on
     // failure (typically: out of memory).
     void* (*AllocateFromLocalPool)(kcdxPluginHandle owner, size_t size);
+
+    // --- APPEND-ONLY BELOW (Version >= 2) ------------------------------
+    // New methods go HERE, never inserted above. A v1 plugin compiled against
+    // the 2-method struct finds AllocateFromBranchPool / AllocateFromLocalPool
+    // at the SAME offsets and never reads these slots (AP11 append-only).
+
+    // The all-in-one allocate+fill+pad+export call — the high-level peer of
+    // the raw AllocateFrom*Pool methods, and the C++ mirror of Lua
+    // kcdx.code{...}. Allocates from opts->pool, copies opts->bytes (length
+    // opts->bytesSize) to the region head, NOP-pads the tail out to
+    // opts->size, and registers opts->exportName if set. Returns the region
+    // pointer (PAGE_EXECUTE_READWRITE) or null on failure (bad opts —
+    // neither bytes nor size set, size < bytesSize, dotted exportName, etc.;
+    // pool exhausted; alloc failure; export collision). See kcdxCodeOptions
+    // for the field contract. (Version >= 2.)
+    void* (*Allocate)(const kcdxCodeOptions* opts);
+
+    // Standalone symbol-table publish — registers `addr` under
+    // <owner-author>.<owner-plugin>.<bareName> via the cross-plugin symbol
+    // table (the C++ mirror of kcdx.code's export=, for an address the plugin
+    // already holds without allocating). `bareName` is a BARE name; the engine
+    // derives the <author>.<plugin> prefix from `owner` (naming-namespaces.md)
+    // — a dotted `bareName` is an author error and is rejected. Returns true
+    // on success; false on bad args (null/empty bareName, dotted bareName,
+    // invalid addr) or a collision — the SAME plugin re-exporting the SAME
+    // bare name with a DIFFERENT address (names are per-namespace, so
+    // cross-plugin clashes cannot happen). (Version >= 2.)
+    bool (*Export)(kcdxPluginHandle owner, const char* bareName, uintptr_t addr);
 } kcdxTrampolineInterface;
 
 // -----------------------------------------------------------------------------
