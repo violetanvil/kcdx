@@ -594,7 +594,7 @@ what the live result is.
 | Site | `IsInCombat_callsite_with_stack_frame` (Address Library id 1007, WHGame.dll RVA `0x566040`, function entry). Distinct from COMP-02's `0x5605BC`; AOB ends in `3C 01` vs COMP-02's `3C 02`. Replace signature `bool (ptr self)` (seed carries none for id 1007). |
 | Engine status | READY (Phase 4b) |
 | Auto-pass check | Plugin B's DLL resolves the target VA via `ResolveAddressByName("IsInCombat_callsite_with_stack_frame")`, calls `GetConflictReport(va)` at `kcdxPlugin_PostGameLoad`, asserts exactly 2 entries — one `comp03_a` applied!=0, one `comp03_b` applied==0, both kind=Hook. InputLoaded backstop reports loud FAIL if the after-phase never fires. |
-| Last result | PENDING (Phase 4b Batch 2 migration off legacy `[[hook]]` bytes= first-wins onto cross-plugin `kcdx.hook{replace}`) |
+| Last result | ✅ PASS (`4c66a2b`, live run 2026-05-25, suite 101/108): GetConflictReport at the id-1007 site = [comp03_a(hook=OK), comp03_b(hook=ABORTED)] — A (default_priority 10) won the replace, B (20) CanCoexist-rejected, both kind=Hook. Phase 4b Batch 2 migration off legacy `[[hook]]` bytes= first-wins onto cross-plugin `kcdx.hook{replace}` (verified via the extended GetConflictReport). |
 | Notes | Both replaces return `false` (the migration of the legacy `31 C0 C3` xor-eax,ret detour). The function is a combat-state predicate; returning false at boot is harmless (player not in combat in the title flow). The PLUGIN priority is the only deterministic lever — there is no per-hook priority knob on `kcdx.hook`. |
 
 ## COMP-04: `[[patch]]` + runtime `dynamic_hook` on same address

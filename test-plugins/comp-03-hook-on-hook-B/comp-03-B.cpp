@@ -11,7 +11,7 @@
 // WHICH one wins is the cross-plugin apply order: the deferred apply pass
 // sorts entries by (PLUGIN load-order priority asc, name asc) —
 // lua_registry.cpp:429-447 reads kcdx::load_order::Of(pluginName).priority,
-// i.e. the plugin's default_priority. A=100 < B=200, so A's entry sorts
+// i.e. the plugin's default_priority. A=10 < B=20, so A's entry sorts
 // first → A does the first-touch (the applied winner); B hits
 // FindChain-non-null → CanCoexist fails → recorded in chain->rejected
 // (applied=false). The PLUGIN priority is the deterministic lever.
@@ -95,7 +95,7 @@ bool InstallReplace() {
     g_log.Info("COMP03",
                "installed B's replace on 'IsInCombat_callsite_with_stack_"
                "frame' (h=%llu); expected to be CanCoexist-rejected behind "
-               "A (plugin priority 100 < B's 200)",
+               "A (plugin priority 10 < B's 20)",
                (unsigned long long)g_h_b);
     return g_h_b != 0;
 }
@@ -160,7 +160,7 @@ void RunAssertion() {
                       aWonNamed && bLostNamed;
     char r[400];
     snprintf(r, sizeof(r),
-        "%s — cross-plugin first-wins at 0x%p (A prio 100 < B prio 200): "
+        "%s — cross-plugin replace-reject at 0x%p (A prio 10 < B prio 20): "
         "[%s]. Expected one winner (applied!=0, name=comp03_a) + one "
         "rejected loser (applied==0, name=comp03_b), both kind=Hook. "
         "winners=%d losers=%d aWon=%d bLost=%d allHook=%d",
