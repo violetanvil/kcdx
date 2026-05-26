@@ -1484,7 +1484,26 @@ typedef struct kcdxSerializationInterface {
 // queues off-thread fires onto the main thread; the original function
 // returns synchronously with its pre-hook default behavior.
 
-#define kcdxHookInterface_Version 1u
+// Version 2: the Mid callback ABI gained an `int` return (kcdxMidResult) so a
+// C++ mid hook can skip the captured instruction — the parity mirror of the
+// Lua mid callback's `return "skip"`. v1 mid callbacks were `void` (no skip
+// channel). The return slot was previously unused (a mid hook never returns a
+// value to the hooked function — that is `Replace`/`Around`), so repurposing
+// it costs no prior capability. See kcdxMidResult + the Mid ABI note below.
+#define kcdxHookInterface_Version 2u
+
+// Mid-callback result — what a C++ Mid callback returns to tell the engine
+// whether to RUN or SKIP the captured instruction. Mirrors the Lua mid
+// callback's run/skip contract (Lua: return nothing/false = run, return
+// "skip"/true = skip). The engine reads this return into the skip-original
+// flag the JIT consumes; returning Skip resumes execution PAST the captured
+// instruction (its effect does not happen), Run lets it execute normally.
+// Mutating captures via the values[] array (writing values[i].value_*) is
+// independent of this and applies in BOTH cases.
+typedef enum kcdxMidResult {
+    kcdxMidResult_Run  = 0,   // (default) the captured instruction executes
+    kcdxMidResult_Skip = 1,   // the captured instruction is skipped
+} kcdxMidResult;
 
 // Opaque handle returned by every sub-verb install method. 0 = registration
 // failed at Install time (the engine logs the teaching error to both the
@@ -1537,12 +1556,17 @@ typedef struct kcdxHookCapture {
 // value field matching the capture's type — touching the wrong field
 // is silently dropped (e.g. setting value_double on an i32 capture).
 //
-// The Mid callback ABI is `void cFn(kcdxHookCaptureValue* values,
-// int count)`. Author reads/writes values[i].value_<type> per the
-// capture's declared type:
+// The Mid callback ABI is `int cFn(kcdxHookCaptureValue* values,
+// int count)` (kcdxHookInterface_Version >= 2; v1 was `void`). The
+// return is a kcdxMidResult: return kcdxMidResult_Skip to skip the
+// captured instruction, kcdxMidResult_Run (or just 0) to run it — the
+// parity mirror of the Lua mid callback's `return "skip"`. Author
+// reads/writes values[i].value_<type> per the capture's declared type
+// (independent of the run/skip return — capture writes apply either way):
 //
 //   int32_t hp = (int32_t)values[0].value_int64;  // read
 //   values[0].value_int64 = new_hp;               // write
+//   return (hp <= 0) ? kcdxMidResult_Skip : kcdxMidResult_Run;
 //
 // Engine type → field mapping:
 //   i8/i16/i32/i64/u8/u16/u32/u64/bool  → value_int64
