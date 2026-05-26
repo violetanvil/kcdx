@@ -15,6 +15,7 @@
 
 #include "../dev.h"
 #include "../log.h"
+#include "../modification_inventory.h"  // RegisterModification (probe category)
 
 namespace kcdx::probes::bugsplat_ctor_probe {
 
@@ -166,6 +167,9 @@ bool Install() {
                "(BugSplat64.dll base %p, target_rva=0x%llx)",
                target, bsm,
                (unsigned long long)((uintptr_t)target - (uintptr_t)bsm));
+    kcdx::modification_inventory::RegisterModification(
+        reinterpret_cast<uintptr_t>(target),
+        kcdx::modification_inventory::Category::Probe, "bugsplat_ctor");
     return true;
 }
 

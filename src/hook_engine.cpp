@@ -1,6 +1,7 @@
 #include "hook_engine.h"
 
 #include <windows.h>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <unordered_map>

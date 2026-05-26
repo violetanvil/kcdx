@@ -12,6 +12,7 @@
 #include "conflict_engine.h"
 #include "console.h"
 #include "hook_engine.h"
+#include "modification_inventory.h"
 #include "log.h"
 #include "load_order.h"
 #include "hook_chain.h"
@@ -247,6 +248,12 @@ static void ArmFreallocProbe(lua_State* L) {
         log::KV("frealloc_addr", frealloc_addr),
         log::KV("g",             (void*)g),
         log::KV("g_ud",          g->ud));
+
+    // Record this engine self-instrumentation hook in the live modification
+    // inventory (PROBE Q / frealloc — the dual-Lua sentinel canary).
+    kcdx::modification_inventory::RegisterModification(
+        reinterpret_cast<uintptr_t>(frealloc_addr),
+        kcdx::modification_inventory::Category::Engine, "frealloc");
 }
 
 void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
@@ -342,6 +349,46 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                     }
                     log::InfoF("Mid-hook summary: %zu/%zu installed",
                                okMidHooks, totalMidHooks);
+                }
+
+                // Emit the engine-modification inventory now that every
+                // patch/hook/mid-hook is resolved + applied. SUMMARY at Info
+                // (always-on, build-to-build diffable fingerprint); per-target
+                // DETAIL at Debug (dev-only). This call ALSO refreshes the
+                // cached pre-formatted summary string the crash guard dumps
+                // from its SEH handler — so boot and a later crash share the
+                // same content. Re-emitted at each save-load start
+                // (save_load_hooks.cpp) so the load path has a diffable signal
+                // for the 0xC8 load-crash bisect (docs/known-issues/).
+                kcdx::modification_inventory::LogInventory(
+                    kcdx::log::Level::Info);
+
+                // cap-45: engine self-report for the load-time inventory
+                // mechanism (manifest stub at
+                // test-plugins/cap-45-load-hook-inventory/). The behavior under
+                // test is engine machinery (LogInventory ran + emitted a
+                // summary with a nonzero modification count), so the engine
+                // reports it directly — same pattern as cap-43/cap-44. Reported
+                // right after the boot LogInventory call so it observes the
+                // same counts the summary line just emitted.
+                //
+                // The inventory now reads the LIVE sources (hook_chain::g_chains
+                // + the RegisterModification'd fixed engine/lifecycle/probe
+                // installs), so total > 0 holds at boot: the engine self-
+                // instrumentation hooks (lua_pcall / update / frealloc) alone
+                // guarantee a nonzero count even before any plugin hook lands.
+                {
+                    const size_t total =
+                        kcdx::modification_inventory::LastTotalModifications();
+                    kcdx::test::ReportResult(
+                        "cap-45-load-inventory",
+                        total > 0,
+                        total > 0
+                            ? "boot LogInventory emitted summary; live "
+                              "modification inventory count nonzero"
+                            : "boot LogInventory ran but the live modification "
+                              "inventory is empty — engine self-instrumentation "
+                              "hooks should have registered");
                 }
 
                 // Phase 7: resolve gEnv->pConsole + IConsole::AddCommand/
@@ -516,6 +563,14 @@ bool Install() {
         log::Error("MH_EnableHook failed");
         return false;
     }
+
+    // Record the engine self-instrumentation hooks in the live modification
+    // inventory (category "engine"). These two install on every boot, so the
+    // inventory is guaranteed non-empty even before any plugin hook lands.
+    kcdx::modification_inventory::RegisterModification(
+        pcallAddr, kcdx::modification_inventory::Category::Engine, "lua_pcall");
+    kcdx::modification_inventory::RegisterModification(
+        updateAddr, kcdx::modification_inventory::Category::Engine, "update");
 
     log::Info("Hooks installed: lua_pcall + update");
 

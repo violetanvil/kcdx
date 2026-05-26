@@ -99,6 +99,7 @@ add_library(kcdx SHARED
     src/task.cpp
     src/trampoline.cpp
     src/hook_engine.cpp
+    src/modification_inventory.cpp
     src/symbols.cpp
     src/trampoline_engine.cpp
     src/conflict_engine.cpp
@@ -146,6 +147,7 @@ add_library(kcdx SHARED
     src/dynamic_call_jit.cpp
     src/probes/bugsplat_ctor_probe.cpp
     src/probes/loc_dump_probe.cpp
+    src/probes/fopen_override_probe.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp
@@ -178,6 +180,22 @@ if(MSVC)
     set_property(TARGET kcdx    PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET lua     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+    # Emit a PDB beside build/Release/kcdx.dll so a kcdx crash frame
+    # symbolicates offline (the 0xC8 / kcdx+offset crash dumps had no
+    # symbols — docs/known-issues/save-load crash 0xC8 raised from WHGame.md).
+    # /Zi gives full debug info at compile; /DEBUG links the PDB; /OPT:REF +
+    # /OPT:ICF undo the /DEBUG default of disabling those optimizations, so
+    # the shipped binary is NOT bloated by enabling debug info. The PDB is
+    # kept LOCALLY beside the build and is NEVER shipped (package-release.ps1
+    # maps explicit named artifacts only — see that script; .pdb is excluded
+    # by omission).
+    target_compile_options(kcdx PRIVATE
+        $<$<CONFIG:Release>:/Zi>)
+    target_link_options(kcdx PRIVATE
+        $<$<CONFIG:Release>:/DEBUG>
+        $<$<CONFIG:Release>:/OPT:REF>
+        $<$<CONFIG:Release>:/OPT:ICF>)
 
     # crash_guard.cpp uses __try/__except in a C++ TU. /EHa turns on
     # the structured-exception unwinder so SEH and C++ exceptions can

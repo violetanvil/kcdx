@@ -11,11 +11,13 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 
 #include "log.h"
 #include "paths.h"
 #include "plugin_loader.h"  // for plugins::g_plugins (name -> handle lookup)
+#include "modification_inventory.h"  // LastInventorySummary() (cached, alloc-free)
 
 namespace kcdx::guard {
 
@@ -96,12 +98,93 @@ uint32_t HandleFromName(const char* name) {
     return UINT32_MAX;
 }
 
+// True for the modules a RaiseException-class fault bottoms out in —
+// the raw faulting RIP for a `RaiseException` (e.g. the 0xC8 CryEngine
+// fatal-assert path) is always KERNELBASE!RaiseException with ntdll
+// frames below it. Neither names the real culprit; the first frame
+// ABOVE them that belongs to another module does. Case-insensitive.
+bool IsKernelOrNtdll(const char* moduleName) {
+    if (!moduleName) return false;
+    return _stricmp(moduleName, "KERNELBASE.dll") == 0 ||
+           _stricmp(moduleName, "ntdll.dll") == 0 ||
+           _stricmp(moduleName, "kernel32.dll") == 0;
+}
+
+// Walk the stack from the faulting context to find the FIRST return
+// address whose module is NOT KERNELBASE / ntdll / kernel32 — the real
+// culprit module for a RaiseException-class fault. Writes the module
+// leaf name + RVA into the out-params. Returns true if a non-kernel
+// frame was found.
+//
+// MUST be no-throw and allocation-free-ish — it runs inside the SEH
+// filter. dbghelp's StackWalk64 is already linked (#pragma comment
+// below). On any failure we return false and the caller logs what it
+// has; the handler never throws.
+bool WalkToCulprit(CONTEXT* ctx, char* outModule, size_t outModuleLen,
+                   uint64_t* outRva) {
+    if (!ctx) return false;
+
+    // StackWalk64 mutates the CONTEXT it walks — copy so we never
+    // perturb the live faulting context (which WriteOwnMinidump still
+    // needs intact).
+    CONTEXT local = *ctx;
+
+    STACKFRAME64 frame{};
+    frame.AddrPC.Offset    = local.Rip;
+    frame.AddrPC.Mode      = AddrModeFlat;
+    frame.AddrFrame.Offset = local.Rbp;
+    frame.AddrFrame.Mode   = AddrModeFlat;
+    frame.AddrStack.Offset = local.Rsp;
+    frame.AddrStack.Mode   = AddrModeFlat;
+
+    HANDLE hProc   = GetCurrentProcess();
+    HANDLE hThread = GetCurrentThread();
+
+    // Bounded walk — never spin on a corrupt stack.
+    for (int i = 0; i < 64; ++i) {
+        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, hProc, hThread, &frame,
+                         &local, nullptr, SymFunctionTableAccess64,
+                         SymGetModuleBase64, nullptr)) {
+            break;
+        }
+        uint64_t pc = frame.AddrPC.Offset;
+        if (pc == 0) break;
+
+        char mod[128] = "?";
+        void* modBase = nullptr;
+        if (!ModuleForAddress(reinterpret_cast<void*>(pc), mod, sizeof(mod),
+                              &modBase)) {
+            continue;  // no module for this frame — keep walking
+        }
+        if (IsKernelOrNtdll(mod)) continue;  // skip the RaiseException floor
+
+        // First non-kernel frame — this is the real culprit. Copy the
+        // leaf name out (ModuleForAddress already returns a leaf name).
+        size_t len = 0;
+        while (mod[len] && len + 1 < outModuleLen) {
+            outModule[len] = mod[len];
+            ++len;
+        }
+        outModule[len] = '\0';
+        *outRva = pc - reinterpret_cast<uint64_t>(modBase);
+        return true;
+    }
+    return false;
+}
+
 // Build the FAULTED log line. Always lands in the engine log
 // (engine view of the fault). When pluginName resolves to a loaded
 // plugin handle, the same line ALSO lands in that plugin's own
 // log file — the consumer's bug-report channel.
+//
+// `ctx` is the faulting CONTEXT when available (the UnhandledFilter
+// path has it via EXCEPTION_POINTERS->ContextRecord). The Call() /
+// InvokeGuarded() path only saved an EXCEPTION_RECORD (no context), so
+// it passes nullptr — for that path we log the cached inventory but
+// SKIP the stack walk (no context to walk from). The cached inventory
+// dump does not depend on ctx, so both paths get it.
 void LogFault(const char* site, const char* pluginName,
-              const EXCEPTION_RECORD* er) {
+              const EXCEPTION_RECORD* er, CONTEXT* ctx = nullptr) {
     void* rip = er ? er->ExceptionAddress : nullptr;
     DWORD code = er ? er->ExceptionCode : 0;
     const char* codeName = ExceptionCodeName(code);
@@ -135,6 +218,39 @@ void LogFault(const char* site, const char* pluginName,
             KV("module_rva", rva),
             KV("thread", (unsigned long)GetCurrentThreadId()));
     }
+
+    // For a RaiseException-class fault (the raw RIP resolves to
+    // KERNELBASE / ntdll — e.g. the 0xC8 CryEngine fatal-assert path),
+    // walk the stack to the first non-kernel frame and log THAT module +
+    // rva as the real culprit. Keeps the raw rip/module fields above
+    // intact. Context-available path only (UnhandledFilter); the
+    // Call()/InvokeGuarded() path passes ctx == nullptr and skips the
+    // walk (no context to walk from) — it still gets the inventory dump
+    // below. StackWalk64 is no-throw here; on failure we just don't emit
+    // the culprit line.
+    if (ctx && IsKernelOrNtdll(moduleName)) {
+        char culpritMod[128] = "?";
+        uint64_t culpritRva = 0;
+        if (WalkToCulprit(ctx, culpritMod, sizeof(culpritMod), &culpritRva)) {
+            LOG_ERROR_KV("GUARD", "FAULTED_CULPRIT",
+                KV::BareStr("site",          site ? site : "?"),
+                KV::BareStr("raw_module",    moduleName),
+                KV::BareStr("culprit_module", culpritMod),
+                KV("culprit_rva",            culpritRva),
+                KV("thread", (unsigned long)GetCurrentThreadId()));
+        }
+    }
+
+    // Dump the cached engine-modification inventory in the FAULTED
+    // context (Error, always-on). Zero allocation: LastInventorySummary()
+    // returns a fixed static buffer LogInventory refreshed at boot + each
+    // load-start. The std::vector inventory globals are NOT iterated here
+    // (allocation/lock risk inside the SEH handler) — only the pre-formatted
+    // string is read. This is the kcdx-modification signal the 0xC8 load
+    // crash was missing (docs/known-issues/save-load crash 0xC8 ...).
+    LOG_ERROR_KV("GUARD", "FAULTED_INVENTORY",
+        KV::BareStr("site",      site ? site : "?"),
+        KV::BareStr("inventory", ::kcdx::modification_inventory::LastInventorySummary()));
 
     // Also surface the fault in the offending plugin's own log file
     // (the consumer's bug-report channel). The line is identical
@@ -270,11 +386,20 @@ LONG WINAPI UnhandledFilter(EXCEPTION_POINTERS* info) {
     // (tls_lastSite/tls_lastPlugin) so even an unguarded escape from
     // a recently-guarded site still gets attribution.
     if (info && info->ExceptionRecord) {
+        // UnhandledFilter has the faulting CONTEXT — pass it so LogFault
+        // can walk past a KERNELBASE/ntdll RaiseException frame to the
+        // real culprit module.
         LogFault(tls_lastSite ? tls_lastSite : "unhandled",
                  tls_lastPlugin,
-                 info->ExceptionRecord);
+                 info->ExceptionRecord,
+                 info->ContextRecord);
     } else {
         LOG_ERROR("GUARD", "UNHANDLED (no exception info available)");
+        // Still dump the cached inventory — the kcdx-modification signal
+        // is useful even without a record. Zero-allocation static buffer.
+        LOG_ERROR_KV("GUARD", "FAULTED_INVENTORY",
+            KV::BareStr("site",      "unhandled"),
+            KV::BareStr("inventory", ::kcdx::modification_inventory::LastInventorySummary()));
     }
 
     // Capture our own minidump before chaining. BugSplat may or may

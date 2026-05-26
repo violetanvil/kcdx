@@ -23,6 +23,7 @@
 
 #include "../dev.h"
 #include "../log.h"
+#include "../modification_inventory.h"  // RegisterModification (probe category)
 #include "../test.h"  // kcdx::test::ReportResult — engine-internal probe self-report
                       // (same pattern as lua_plugin_loader.cpp's cap-23 report:
                       //  the behavior under test is engine machinery, so the engine
@@ -173,6 +174,9 @@ void InstallGetterHookOnce(void* self) {
 
     log::InfoF("LOC_DUMP: by-ID getter hook installed at vtable[1] %p "
                "(resolved off captured manager %p)", getterTarget, self);
+    kcdx::modification_inventory::RegisterModification(
+        reinterpret_cast<uintptr_t>(getterTarget),
+        kcdx::modification_inventory::Category::Probe, "loc_dump:getter");
 }
 
 // === The ctor detour =================================================
@@ -273,6 +277,9 @@ bool Install() {
                "(WHGame.dll base %p, ctor_rva=0x%llx)",
                ctorTarget, reinterpret_cast<void*>(whgame),
                (unsigned long long)kCtorRva);
+    kcdx::modification_inventory::RegisterModification(
+        reinterpret_cast<uintptr_t>(ctorTarget),
+        kcdx::modification_inventory::Category::Probe, "loc_dump:ctor");
     return true;
 }
 

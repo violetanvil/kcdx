@@ -2623,6 +2623,16 @@ std::vector<ConflictParticipant> GetParticipantsAtTarget(uintptr_t targetVa) {
     return out;
 }
 
+std::vector<uintptr_t> GetAllChainTargets() {
+    std::vector<uintptr_t> out;
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+    out.reserve(g_chains.size());
+    for (const auto& kv : g_chains) {
+        out.push_back(kv.first);  // map key IS the resolved target VA
+    }
+    return out;
+}
+
 }  // namespace kcdx::hook_chain
 
 // Public surface (declared in hook_signature.h) — forwards to the

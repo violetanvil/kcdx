@@ -165,4 +165,15 @@ struct ConflictParticipant {
 // for the process lifetime (see ConflictParticipant).
 std::vector<ConflictParticipant> GetParticipantsAtTarget(uintptr_t targetVa);
 
+// Enumerate every live chain's resolved target VA — the "what kcdx.hook has
+// modified" set, for the modification inventory (modification_inventory.cpp).
+// One VA per Chain in g_chains (function-entry, callsite, and mid chains
+// alike: each is ONE installed detour at its targetVa). Returns by value.
+//
+// Locking: takes g_chainsMu (the same mutex Add* takes), because Add* can run
+// concurrently during the first-tick registration pass. Read-only — the map
+// and its Chains are not mutated. The returned VAs are plain integers (no
+// borrowed pointers), valid indefinitely.
+std::vector<uintptr_t> GetAllChainTargets();
+
 }  // namespace kcdx::hook_chain

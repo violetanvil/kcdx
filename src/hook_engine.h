@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "patch_engine.h"  // for Pattern, Anchor, AnchorString, etc.
+#include "log.h"           // log facilities used across hook_engine
 
 namespace kcdx::hook_engine {
 
@@ -211,5 +212,11 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
 // detect post-install overwrites. `label` is appended to each line so
 // the reader can correlate scans across multiple call sites.
 void DumpMidHookFingerprints(const char* label);
+
+// NOTE: the load-path engine-modification inventory moved to
+// src/modification_inventory.{h,cpp}. It used to read this TU's legacy
+// g_hooks / g_patches / g_mid_hooks vectors, but those are DEAD post-Phase-5
+// (empty, nothing populates them). The live inventory enumerates
+// hook_chain::g_chains + the RegisterModification'd fixed installs instead.
 
 }  // namespace kcdx::hook_engine

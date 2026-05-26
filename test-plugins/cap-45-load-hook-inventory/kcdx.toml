@@ -1,0 +1,40 @@
+# CAP-45 — load-time engine-modification inventory mechanism.
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# load-path modification inventory (kcdx::modification_inventory::LogInventory
+# in src/modification_inventory.cpp), emitted at boot AND at each save-load
+# start, plus its cached summary that the crash guard dumps from the SEH
+# handler. This kcdx.toml is a MANIFEST-ONLY STUB — no plugin.lua, no DLL —
+# whose sole job is to pre-register the matrix row via test_names so it shows
+# PENDING until the engine reports it. Same pattern as cap-43-loc-dump /
+# cap-44-fopen-override (engine reports directly via kcdx::test::ReportResult;
+# a manifest stub holds the name).
+#
+# What it proves:
+#   cap-45-load-inventory  The boot LogInventory call ran and emitted the
+#                          inventory SUMMARY. Reported by the engine right after
+#                          the boot LogInventory call (src/hooks.cpp), PASS iff
+#                          the live inventory's TOTAL modification count is
+#                          nonzero (LastTotalModifications() > 0).
+#
+# The inventory reads the LIVE modification sources: hook_chain::g_chains (live
+# kcdx.hook plugin hooks) plus a RegisterModification'd registry of the fixed
+# engine (lua_pcall / update / frealloc), lifecycle (save/load), and dev-probe
+# installs. The engine self-instrumentation hooks register on every boot, so
+# total > 0 holds even before any plugin hook lands → this row reads PASS at
+# boot. The dead legacy hook_engine::g_hooks / g_patches / g_mid_hooks vectors
+# are NOT read (empty post-Phase-5).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_45_load_hook_inventory"
+display_name        = "CAP-45 load-time hook/patch inventory mechanism"
+author              = "ts"
+description         = "Dev-mode load-path engine-modification inventory: confirms the boot LogInventory call emits the inventory summary with a nonzero hook count. Engine self-reports; the same mechanism re-emits at save-load start and feeds the crash-guard cached buffer."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-45-load-inventory"]

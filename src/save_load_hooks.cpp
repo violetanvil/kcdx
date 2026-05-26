@@ -10,6 +10,7 @@
 #include "MinHook.h"
 #include "dev.h"
 #include "hook_engine.h"
+#include "modification_inventory.h"
 #include "log.h"
 #include "messaging.h"
 #include "patch_engine.h"
@@ -198,16 +199,16 @@ char __fastcall HookedSaveGame(void* self, const char* filename,
     // matching directory. Must happen BEFORE FireEngineMessage so the
     // listener sees the latest value.
     if (safePath) {
-        LOG_INFO("SAVE_LOAD", "  before SetLastSaveFullPath");
+        LOG_DEBUG("SAVE_LOAD", "  before SetLastSaveFullPath");
         kcdx::serialization::SetLastSaveFullPath(safePath);
-        LOG_INFO("SAVE_LOAD", "  after  SetLastSaveFullPath");
+        LOG_DEBUG("SAVE_LOAD", "  after  SetLastSaveFullPath");
     }
 
-    LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(SaveGame)");
+    LOG_DEBUG("SAVE_LOAD", "  before FireEngineMessage(SaveGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_SaveGame, base, baseLen);
-    LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(SaveGame)");
+    LOG_DEBUG("SAVE_LOAD", "  after  FireEngineMessage(SaveGame)");
 
-    LOG_INFO("SAVE_LOAD", "  before original SaveGame");
+    LOG_DEBUG("SAVE_LOAD", "  before original SaveGame");
     char result = g_orig_save_game(self, filename, reason, flag_a,
                                    arg5, flag_b, description);
     LOG_INFO("SAVE_LOAD", "  after  original SaveGame (result=%d)", (int)result);
@@ -224,6 +225,15 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
         "HookedLoadGameWrapper ENTER fire_n=%llu playline=%u slot=%u",
         (unsigned long long)n, (unsigned)playline, (unsigned)slot);
 
+    // Re-emit the engine-modification inventory at load-start. The 0xC8 load
+    // crash (docs/known-issues/save-load crash 0xC8 raised from WHGame.md) was
+    // invisible because nothing recorded what kcdx modifies on the load path;
+    // this gives a build-to-build diffable fingerprint right before the load
+    // that crashes. SUMMARY at Info (always-on), per-target DETAIL at Debug.
+    // Also refreshes the cached summary the crash guard dumps from its SEH
+    // handler, so a fault during this load reports the current hook set.
+    kcdx::modification_inventory::LogInventory(kcdx::log::Level::Info);
+
     KCDX_DEV("SAVE_LOAD", "FIRE",
         kcdx::dev::KV("name",     "LoadGame_wrapper"),
         kcdx::dev::KV("fire_n",   static_cast<unsigned long long>(n)),
@@ -238,9 +248,9 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
     // resetting on every wrapper-entry would re-fire LoadGameSelected
     // for the second pass. Reset happens in PostLoadGame instead —
     // one PostLoadGame per user-visible load is the right cadence.
-    LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(PreLoadGame)");
+    LOG_DEBUG("SAVE_LOAD", "  before FireEngineMessage(PreLoadGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_PreLoadGame);
-    LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(PreLoadGame)");
+    LOG_DEBUG("SAVE_LOAD", "  after  FireEngineMessage(PreLoadGame)");
 
     // Mid-hook JIT buffer integrity probe — diagnoses cap-04 heap
     // corruption that surfaces during save-load. If a fingerprint has
@@ -248,7 +258,7 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
     // JIT buffer between then and now.
     kcdx::hook_engine::DumpMidHookFingerprints("before-LoadGame_wrapper");
 
-    LOG_INFO("SAVE_LOAD", "  before original LoadGame_wrapper");
+    LOG_DEBUG("SAVE_LOAD", "  before original LoadGame_wrapper");
     char result = g_orig_load_game_wrapper(self, playline, slot);
     LOG_INFO("SAVE_LOAD", "  after  original LoadGame_wrapper (result=%d)",
              (int)result);
@@ -276,11 +286,11 @@ char __fastcall HookedPostLoadGame(void* self, uint32_t arg2, void* arg3) {
     // state again here as belt-and-suspenders.
     g_last_resolved_record.store(nullptr, std::memory_order_release);
 
-    LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(PostLoadGame)");
+    LOG_DEBUG("SAVE_LOAD", "  before FireEngineMessage(PostLoadGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_PostLoadGame);
-    LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(PostLoadGame)");
+    LOG_DEBUG("SAVE_LOAD", "  after  FireEngineMessage(PostLoadGame)");
 
-    LOG_INFO("SAVE_LOAD", "  before original PostLoadGame");
+    LOG_DEBUG("SAVE_LOAD", "  before original PostLoadGame");
     char result = g_orig_post_load_game(self, arg2, arg3);
     LOG_INFO("SAVE_LOAD", "  after  original PostLoadGame (result=%d)",
              (int)result);
@@ -326,9 +336,9 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
         (unsigned long long)n, (int)playline_idx, (int)slot_idx);
 
     // Forward to original first — we need the SaveGameRecord pointer.
-    LOG_INFO("SAVE_LOAD", "  before original SlotResolver");
+    LOG_DEBUG("SAVE_LOAD", "  before original SlotResolver");
     void* record = g_orig_slot_resolver(sub_object, playline_idx, slot_idx);
-    LOG_INFO("SAVE_LOAD", "  after  original SlotResolver record=0x%p", record);
+    LOG_DEBUG("SAVE_LOAD", "  after  original SlotResolver record=0x%p", record);
 
     // Dedup: if this is the same record we already fired for since
     // the most recent LoadGame_wrapper / PostLoadGame, skip.
@@ -366,16 +376,16 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
         // cosave subsystem playline-safe: the engine just told us
         // which playline the user is loading into, so we use that
         // exact value rather than guessing from session history.
-        LOG_INFO("SAVE_LOAD",
+        LOG_DEBUG("SAVE_LOAD",
             "  first resolve, base='%s', firing LoadGameSelected",
             base);
         kcdx::serialization::SetPendingLoadPlayline(playline_idx);
 
         uint32_t baseLen = static_cast<uint32_t>(strlen(base)) + 1;
-        LOG_INFO("SAVE_LOAD", "  before FireEngineMessage(LoadGameSelected)");
+        LOG_DEBUG("SAVE_LOAD", "  before FireEngineMessage(LoadGameSelected)");
         kcdx::messaging::FireEngineMessage(kcdxMessage_LoadGameSelected,
                                            base, baseLen);
-        LOG_INFO("SAVE_LOAD", "  after  FireEngineMessage(LoadGameSelected)");
+        LOG_DEBUG("SAVE_LOAD", "  after  FireEngineMessage(LoadGameSelected)");
     }
 
     LOG_INFO("SAVE_LOAD", "HookedSlotResolver EXIT fire_n=%llu",
@@ -460,17 +470,28 @@ bool Install() {
 
     MH_Initialize();
 
+    // Register each lifecycle hook into the live modification inventory on
+    // successful install (category "lifecycle"). The VA is the resolved
+    // target the detour sits on.
+    using kcdx::modification_inventory::RegisterModification;
+    const auto kLifecycle = kcdx::modification_inventory::Category::Lifecycle;
+
     int installed = 0;
     if (InstallOne(saveGame,        (void*)&HookedSaveGame,
-                   (void**)&g_orig_save_game,         "SaveGame"))           ++installed;
+                   (void**)&g_orig_save_game,         "SaveGame"))           {
+        RegisterModification(saveGame, kLifecycle, "SaveGame");        ++installed; }
     if (InstallOne(loadGameWrapper, (void*)&HookedLoadGameWrapper,
-                   (void**)&g_orig_load_game_wrapper, "LoadGame(wrapper)"))  ++installed;
+                   (void**)&g_orig_load_game_wrapper, "LoadGame(wrapper)"))  {
+        RegisterModification(loadGameWrapper, kLifecycle, "LoadGame"); ++installed; }
     if (InstallOne(postLoadGame,    (void*)&HookedPostLoadGame,
-                   (void**)&g_orig_post_load_game,    "PostLoadGame"))       ++installed;
+                   (void**)&g_orig_post_load_game,    "PostLoadGame"))       {
+        RegisterModification(postLoadGame, kLifecycle, "PostLoadGame"); ++installed; }
     if (InstallOne(deleteSavegame,  (void*)&HookedDeleteSavegame,
-                   (void**)&g_orig_delete_savegame,   "DeleteSavegame"))     ++installed;
+                   (void**)&g_orig_delete_savegame,   "DeleteSavegame"))     {
+        RegisterModification(deleteSavegame, kLifecycle, "DeleteSavegame"); ++installed; }
     if (InstallOne(slotResolver,    (void*)&HookedSlotResolver,
-                   (void**)&g_orig_slot_resolver,     "SlotResolver"))       ++installed;
+                   (void**)&g_orig_slot_resolver,     "SlotResolver"))       {
+        RegisterModification(slotResolver, kLifecycle, "SlotResolver"); ++installed; }
 
     if (installed > 0) {
         MH_STATUS st = MH_EnableHook(MH_ALL_HOOKS);
