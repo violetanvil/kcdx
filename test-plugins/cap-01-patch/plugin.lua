@@ -8,11 +8,13 @@
 --   * now: this plugin.lua registers the rewrite with kcdx.bytes{...} and
 --     self-verifies entirely in Lua.
 --
--- The rewrite is identical to the [[patch]] one it replaces: at the
+-- The rewrite is the same SITE + bytes as the [[patch]] it replaces: at the
 -- outfit-swap site, `mov r14b, al` (44 8A F0) -> `xor r14d, r14d`
 -- (45 31 F6). original= gives the apply pass its pre-write byte check;
--- idempotent= lets a second boot skip cleanly (the replacement already
--- there). Same 23-byte context disambiguates the locator.
+-- idempotent= lets it skip cleanly when the replacement is already there
+-- (e.g. cap-39 rewrote this same site first). The migration also UPGRADES
+-- the locator from the [[patch]]'s `pattern=` AOB to the `target=` NAME (see
+-- the locator note below) — robust against the site already being rewritten.
 --
 -- TWO falsifiable signals, both asserted at kcdx.on("ready") (after the
 -- engine's deferred apply pass has run):
@@ -33,15 +35,27 @@
 local POST_CONTEXT =
     "48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 45 31 F6"
 
+-- Locate by NAME, not by the AOB pattern. The verified Address-Library
+-- entry `outfit_swap_callsite_aob` (id 1004) resolves to the AOB start
+-- (0x56174C); the rewrite is at +13 (the `mov r14b,al`). The name is the
+-- disassembler-test common path AND it is robust: it resolves to the stable
+-- address regardless of what bytes are currently at the site. A `pattern=`
+-- locator whose AOB ends in the very bytes being rewritten (44 8A F0) breaks
+-- the moment anything rewrites them first — which is exactly what happens in
+-- the suite: cap-39 (C++ kcdxBytesInterface) rewrites this same site by name
+-- and, when it applies first, the pattern scan finds 0 matches and cap-01
+-- aborts. With the name locator, cap-39-applies-first just means cap-01 sees
+-- 45 31 F6 == replacement and idempotent-skips to applied()==true. (The
+-- Phase 4 migration lesson: prefer target=<name> over a pattern that spans
+-- the mutated bytes.)
 local h = kcdx.bytes{
     name        = "cap_01_outfit_swap_rewrite",
     module      = "WHGame.dll",
-    pattern     = "48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0",
+    target      = "outfit_swap_callsite_aob",   -- id 1004; name resolves the address
     offset      = 13,
     original    = "44 8A F0",
     replacement = "45 31 F6",
     idempotent  = true,
-    context     = "48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0",
 }
 
 if not h then
