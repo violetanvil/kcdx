@@ -173,9 +173,9 @@ the UI rejects the move and shows the engine-derived reason.
 4. **Sort** the entry vectors by the global key above.
 5. **Apply** entries in sort order. Zone is the source of truth for
    timing:
-   - `zone=before_game` `[[patch]]` entries apply during kcdx.asi's
+   - `zone=before_game` `[[patch]]` entries apply during kcdx.dll's
      `DllMain` (against modules already mapped — ntdll, kernel32,
-     dinput8, kcdx.asi itself) or when their target module is mapped
+     kcdx.dll itself) or when their target module is mapped
      later, BEFORE that module's own `DllMain` runs. This is via an
      `LdrRegisterDllNotification` callback installed during kcdx's
      `DllMain`.

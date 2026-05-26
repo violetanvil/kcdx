@@ -11,7 +11,7 @@ namespace kcdx::ldr_notify {
 //
 // Lifecycle:
 //
-//   1. kcdx.asi DllMain (DLL_PROCESS_ATTACH).
+//   1. kcdx.dll DllMain (DLL_PROCESS_ATTACH).
 //   2. paths::Init() + config::LoadAllConfigs() populate g_patches.
 //   3. load_order::Read() + Resolve() compute each plugin's zone.
 //   4. ApplyAlreadyLoaded() walks every entry whose plugin sits in
@@ -19,7 +19,7 @@ namespace kcdx::ldr_notify {
 //      mapped in the process (only ntdll + kernel32 at this point
 //      under most loaders), and applies them.
 //   5. Register() installs an LdrRegisterDllNotification callback.
-//      For every subsequent module load (WHGame.dll, dinput8.dll,
+//      For every subsequent module load (WHGame.dll, BugSplat64.dll,
 //      etc.) we get notified BEFORE that module's DllMain fires.
 //      The callback applies any before_game-zoned patches whose
 //      module matches the just-mapped DLL.
@@ -44,7 +44,7 @@ namespace kcdx::ldr_notify {
 
 // Walk before_game-zone [[patch]] entries; apply any whose target
 // module is currently mapped in this process. Used once at DllMain
-// to handle modules that loaded before kcdx.asi did.
+// to handle modules that loaded before kcdx.dll did.
 //
 // Returns the number of entries successfully applied (incl. idempotent
 // skips counted as "applied"). Logs via kcdx::log — the deferred buffer

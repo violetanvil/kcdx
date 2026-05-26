@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-// Address Library — id-to-RVA lookup compiled into kcdx.asi.
+// Address Library — id-to-RVA lookup compiled into kcdx.dll.
 //
 // Plugins call api->ResolveAddress(id) to get a runtime VA for a
 // known function/data entry without hardcoding RVAs (which would

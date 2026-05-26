@@ -695,7 +695,7 @@ before_game-zoned export-locator hooks at module-mapped time, mirror
 of today's patch handling.
 
 PROBE T proved the timing works (BugSplat64.dll already mapped at
-kcdx.asi DllMain → immediate install via direct call; alternatively
+kcdx.dll DllMain → immediate install via direct call; alternatively
 LDR notification catches the load). The plumbing is half-built; this
 gap is mostly schema + capability-matrix work.
 

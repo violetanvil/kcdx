@@ -50,7 +50,7 @@ bool Install();
 // BugSplat64.dll is already mapped at the time this function is
 // called, Install() runs immediately.
 //
-// Safe to call from kcdx.asi DllMain (loader-lock-safe: only does
+// Safe to call from kcdx.dll DllMain (loader-lock-safe: only does
 // GetModuleHandleW + MinHook init + GetProcAddress + LDR registration).
 // Idempotent.
 //

@@ -223,8 +223,8 @@ the small-file rule.
 
 Same shape as Phase 5c.7a-rev2:
 
-1. **Build clean** — every file compiles, kcdx.asi size sane.
-2. **Regression** — install kcdx.asi, launch, confirm Phase 4
+1. **Build clean** — every file compiles, kcdx.dll size sane.
+2. **Regression** — install kcdx.dll, launch, confirm Phase 4
    examples still apply identically (no new conflict warnings).
 3. **Save-load** — load same save the sol2 work crashed on, confirm
    no crash.

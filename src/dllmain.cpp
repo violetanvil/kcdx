@@ -140,7 +140,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
 // their own DllMain runs.
 //
 // Loader-safety contract: this runs under ntdll's loader lock during
-// kcdx.asi's own DllMain. dumpbin /imports kcdx.asi confirms zero
+// kcdx.dll's own DllMain. dumpbin /imports kcdx.dll confirms zero
 // delay-loaded DLLs — std::filesystem, tomlplusplus, std::string,
 // std::vector are all safe. MinHook init / CreateThread / LoadLibrary
 // are NOT done here; those stay in the worker thread.
@@ -158,7 +158,8 @@ static void RunBeforeGameZoneInDllMain() {
     // enabled) row computed.
 
     // Apply before_game [[patch]] entries against modules already mapped
-    // (ntdll, kernel32, kcdx.asi itself, and typically dinput8.dll).
+    // (ntdll, kernel32, and kcdx.dll itself — the launcher injected us via
+    // CreateRemoteThread(LoadLibraryW) before the game's own startup ran).
     kcdx::ldr_notify::ApplyAlreadyLoaded();
 
     // Register the notification callback for future module loads.

@@ -1,6 +1,6 @@
 // kcdx-watchdog.exe — external crash-bundle helper.
 //
-// Spawned by kcdx.asi at startup with the game's PID + engine paths.
+// Spawned by kcdx.dll at startup with the game's PID + engine paths.
 // Waits on the game's process handle (zero CPU; just blocks on a
 // kernel handle). When the game dies, the watchdog wakes up, checks
 // the exit code, and on non-zero exit collects:
@@ -22,7 +22,7 @@
 //   kcdx-watchdog.exe <pid> <engine-dir> <plugins-dir> <session-stamp> <game-dir>
 //
 // All paths are wide-string-encoded as UTF-8 on the command line by
-// kcdx.asi's launcher (kcdx::watchdog::Spawn in dllmain).
+// kcdx.dll's launcher (kcdx::watchdog::Spawn in dllmain).
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

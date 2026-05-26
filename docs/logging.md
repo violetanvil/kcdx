@@ -359,7 +359,7 @@ report when the game crashes.
 ### How it works
 
 1. On startup (after `LoadAllConfigs` so the dev-mode flag is
-   settled), `kcdx.asi`'s DllMain worker thread spawns
+   settled), `kcdx.dll`'s DllMain worker thread spawns
    `kcdx-watchdog.exe` via `CreateProcessW` with `DETACHED_PROCESS |
    CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`. The spawn passes
    our PID + paths + session stamp + dev-mode flag.

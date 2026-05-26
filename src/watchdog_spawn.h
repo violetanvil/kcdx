@@ -7,7 +7,7 @@
 // bundles up the engine + plugin + crash artifacts into a zip under
 // kcdx-engine/logs/crash/.
 //
-// This module handles the spawn from inside kcdx.asi's DllMain
+// This module handles the spawn from inside kcdx.dll's DllMain
 // worker thread, after paths::Init and log::Init have completed.
 // On launch failure (security software, missing exe, etc.), kcdx
 // continues running normally — only the crash-bundle UX is missed,

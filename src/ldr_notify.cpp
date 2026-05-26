@@ -81,7 +81,7 @@ std::string Utf16ToUtf8(PCWSTR data, size_t len) {
 }
 
 // Case-insensitive ASCII compare. Module names are filesystem-style,
-// always ASCII in practice (WHGame.dll, dinput8.dll, ...).
+// always ASCII in practice (WHGame.dll, kcdx.dll, ...).
 bool EqualIgnoreCase(const std::string& a, const std::string& b) {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i) {
@@ -173,7 +173,7 @@ VOID CALLBACK NotificationCallback(ULONG                              reason,
 size_t ApplyAlreadyLoaded() {
     size_t total = 0;
     // For each before_game entry, check if its module is already
-    // mapped (ntdll, kernel32, and kcdx.asi itself are always loaded
+    // mapped (ntdll, kernel32, and kcdx.dll itself are always loaded
     // by the time we run; everything else depends on the loader).
     for (auto& p : patch::g_patches) {
         if (!IsBeforeGame(p)) continue;

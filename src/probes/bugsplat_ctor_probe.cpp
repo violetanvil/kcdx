@@ -134,7 +134,7 @@ bool Install() {
     // MinHook must be initialized. The worker-thread path
     // (hooks::Install) already calls MH_Initialize before invoking
     // us. The LDR-callback path (ArmLdrInstall) runs much earlier —
-    // under loader lock during kcdx.asi DllMain — so MinHook may not
+    // under loader lock during kcdx.dll DllMain — so MinHook may not
     // be initialized yet. Call MH_Initialize idempotently; the
     // ALREADY_INITIALIZED status is the no-op case.
     MH_STATUS si = MH_Initialize();
@@ -242,9 +242,9 @@ VOID CALLBACK LdrNotifyCallback(ULONG reason,
 bool ArmLdrInstall() {
     if (!kcdx::dev::IsEnabled()) return false;
 
-    // If BugSplat64.dll is already mapped (it usually is, as part of
-    // the ASI loader's normal startup walking the static-import chain
-    // before kcdx.asi loads), install immediately. Otherwise register
+    // If BugSplat64.dll is already mapped (it usually is, pulled in by
+    // the game's normal startup walking the static-import chain before
+    // kcdx.dll loads), install immediately. Otherwise register
     // an LDR notification callback to catch the load.
     if (GetModuleHandleW(L"BugSplat64.dll") != nullptr) {
         bool ok = Install();

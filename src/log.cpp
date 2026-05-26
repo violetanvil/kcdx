@@ -66,7 +66,7 @@ bool   g_consoleEnabled = false;
 
 // Deferred-log buffer.
 //
-// EmitEngine / EmitEngineKV can be called from kcdx.asi's DllMain, BEFORE
+// EmitEngine / EmitEngineKV can be called from kcdx.dll's DllMain, BEFORE
 // log::Init() opens g_engineStream.fp. Without buffering, those lines
 // would silently drop in WriteLineLocked (which no-ops on null fp).
 //
@@ -452,7 +452,7 @@ void Dispatch(Level level, const char* source, const char* category,
     bool devOn             = g_devMode.load(std::memory_order_relaxed);
 
     // Pre-Init() path. log::Init() hasn't opened g_engineStream.fp yet
-    // (we may be running under kcdx.asi's DllMain). Buffer the line for
+    // (we may be running under kcdx.dll's DllMain). Buffer the line for
     // later flush + mirror to OutputDebugStringA so DebugView shows it
     // immediately. Plugin streams aren't open this early so plugin-
     // attributed lines just get the OutputDebugStringA path.

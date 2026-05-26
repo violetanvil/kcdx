@@ -29,7 +29,7 @@
 #include "trampoline_engine.h"
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
-// installs from kcdx.asi DllMain, not from hooks::Install.
+// installs from kcdx.dll DllMain, not from hooks::Install.
 
 extern "C" {
 #include "lua.h"
@@ -94,7 +94,7 @@ int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
 // Hypothesis: WHGame's Lua eventually calls g->frealloc(g->ud, ptr, ...) on
 // our kcdx-static `dummynode_` pointer, mistaking it for a heap allocation.
 // PROBE Q hooks the captured `frealloc` and logs any call whose `block`
-// parameter falls inside kcdx.asi's image range.
+// parameter falls inside kcdx.dll's image range.
 //
 // If we see such a call before the heap-corruption crash, hypothesis is
 // proven. If we never see it but the crash still happens, the mechanism
@@ -103,7 +103,7 @@ int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
 using lua_Alloc_t = void* (*)(void* ud, void* block, size_t osize, size_t nsize);
 lua_Alloc_t g_orig_frealloc = nullptr;
 
-// kcdx.asi image range (resolved at probe-arm time, immutable thereafter).
+// kcdx.dll image range (resolved at probe-arm time, immutable thereafter).
 uintptr_t g_kcdx_image_base = 0;
 size_t    g_kcdx_image_size = 0;
 
@@ -154,7 +154,7 @@ static void ArmFreallocProbe(lua_State* L) {
         return;
     }
 
-    // Step 1: resolve kcdx.asi image range.
+    // Step 1: resolve kcdx.dll image range.
     HMODULE kcdx_mod = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -198,7 +198,7 @@ static void ArmFreallocProbe(lua_State* L) {
         log::Error("PROBE Q: failed to resolve dummynode pointer");
         return;
     }
-    // VirtualQuery the dummynode address to confirm it's in kcdx.asi.
+    // VirtualQuery the dummynode address to confirm it's in the kcdx.dll image.
     MEMORY_BASIC_INFORMATION mbi{};
     if (VirtualQuery(g_kcdx_dummynode, &mbi, sizeof(mbi)) == 0) {
         log::Error("PROBE Q: VirtualQuery on dummynode failed");
@@ -488,7 +488,7 @@ bool Install() {
     }
 
     // MinHook may already be initialized: PROBE T (and any future
-    // before_game-zone hook) calls MH_Initialize from kcdx.asi
+    // before_game-zone hook) calls MH_Initialize from kcdx.dll
     // DllMain so it can install detours before the game's startup
     // code reaches them. Treat ALREADY_INITIALIZED as the no-op
     // success path.

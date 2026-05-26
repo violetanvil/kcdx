@@ -102,7 +102,7 @@ rule #17 still applies. See [`lua-number-precision.md`](lua-number-precision.md)
 Quick reference: where should a given log line live? See
 [`logging.md`](logging.md) for the full table; the quick version:
 
-- **"My .asi loaded but plugins didn't"** → `kcdx.log`
+- **"kcdx.dll loaded but plugins didn't"** → `kcdx.log`
 - **"Plugin X faulted during InputLoaded"** → both `kcdx.log` and `X.log` (engine attributes GUARD lines to the plugin's file automatically)
 - **"Plugin X has a bug in its dispatch callback logic"** → X.log (plugin uses `KCDX_LOG_*` for their own trace)
 - **"kcdx's conflict matrix made a decision I don't understand"** → `kcdx-dev.log` (requires dev mode)
