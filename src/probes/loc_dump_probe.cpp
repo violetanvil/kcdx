@@ -58,7 +58,15 @@ constexpr size_t kGetterVtableSlot = 1;
 // Ctor: `*this = vtable` as its first store. Source return is effectively void,
 // but the ABI returns `this` in RAX by convention (the bugsplat probe documents
 // the same), so we type it returning void* and pass through.
-using LocCtor_t = void* (__fastcall*)(void* self);
+//
+// TWO-arg (verified — FUN_1809f0ce4 in _research/parallel-ghidra-research/
+// loc-manager-recon.txt): param_1 = `this` (RCX), param_2 = a system/context
+// pointer (RDX). The ctor stores it (`this[2] = param_2`) and makes a virtual
+// call through it (`(**(code**)(*param_2 + 0x2a0))(param_2)` at ~ctor+0x110).
+// The probe is observe-only: it passes `sysctx` through UNTOUCHED — never reads
+// or derefs it. (A one-arg typedef left RDX = register garbage, so the ctor's
+// `*param_2 + 0x2a0` deref faulted — AP2, arg-count wrong.)
+using LocCtor_t = void* (__fastcall*)(void* self, void* sysctx);
 
 // by-ID getter, slot 1. Decompiled signature `char* (this, uint id)`. RCX=this,
 // EDX=id. THIS PROBE IS THE VERIFICATION of this ABI: a readable `id` in the
@@ -172,7 +180,10 @@ void InstallGetterHookOnce(void* self) {
 // Capture `this` (arg 1) into an atomic, log it, install the getter hook off
 // the live vtable on first capture, then call the original ctor and return its
 // result. Observe-only — the ctor runs unmodified.
-void* __fastcall HookedCtor(void* self) {
+// `sysctx` is the ctor's second arg (RDX) — a system/context pointer the ctor
+// uses (`this[2] = sysctx`; virtual call at `*sysctx + 0x2a0`). The probe passes
+// it through untouched; it does not read or interpret it (observe-only).
+void* __fastcall HookedCtor(void* self, void* sysctx) {
     g_manager.store(self, std::memory_order_release);
 
     LOG_DEBUG_KV("LOC_DUMP", "manager_captured",
@@ -198,7 +209,7 @@ void* __fastcall HookedCtor(void* self) {
         log::Error("LOC_DUMP: orig ctor pointer null at dispatch");
         return self;  // best-effort no-op; ABI returns rcx by convention
     }
-    void* ret = orig(self);
+    void* ret = orig(self, sysctx);  // pass BOTH args through untouched
 
     // Now the ctor body has run `*this = vtable`; the live vtable is readable.
     InstallGetterHookOnce(self);
