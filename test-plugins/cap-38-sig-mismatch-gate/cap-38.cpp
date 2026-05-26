@@ -10,17 +10,17 @@
 // teaching diagnostic, then PROCEEDS with the explicit sig as authored (the
 // deliberate-override case stays authoritative — the expert override is
 // honored). The diagnostic SEVERITY splits by ClassifyConflict: cap-38's
-// mismatch is an arg-count delta (1 vs 2) → a HARD conflict → the gate logs
-// at ERROR (action explicit_overrides_verified_hard), flagging the
+// mismatch is a return-width delta (i32 vs void) → a HARD conflict → the gate
+// logs at ERROR (action explicit_overrides_verified_hard), flagging the
 // known-crash-risk override on a live engine function. A soft same-shape
 // conflict stays at WARN.
 //
 // This is the C++ half (kcdxHookInterface). The Lua half is the sibling
 // cap-38-sig-mismatch-gate-lua/ plugin (parity-is-tested, lua-api-
-// surface.md). Both name `kcdx.lua_settable` (engine seed id 1186,
-// verified ABI "void (ptr L, i32 idx)") and pass the deliberately-WRONG
-// explicit signature "void (ptr L)" (arg-count delta → NOT
-// SignaturesCompatible → the gate fires).
+// surface.md). Both name `kcdx.luaopen_table` (engine seed id 1173,
+// verified ABI "i32 (ptr L)") and pass the deliberately-WRONG explicit
+// signature "void (ptr L)" (same arg count, RETURN-WIDTH delta — i32
+// collapsed to void → NOT SignaturesCompatible → the gate fires).
 //
 // Rows owned here:
 //
@@ -29,23 +29,10 @@
 //     install-is-the-proof idiom, identical to the Lua peer's applied()
 //     assertion. FALSIFIABLE against a hypothetical (a)-REJECT impl: had the
 //     gate rejected the named-target + wrong-sig mismatch, the handle would
-//     be 0 / IsApplied false and this row FAILS.
-//
-//     Why NOT "the hook fires": the C-dispatch FIRING of a before-observer
-//     is already proven by cap-36's six own-function rows (Before/After/
-//     Around/Replace/uninstall/crosslang each hook a PLUGIN-LOCAL function
-//     and INVOKE it to observe the callback). cap-38 cannot reuse that
-//     pattern: the gate requires a NAMED target (only a game seed carries a
-//     verified ABI to conflict against), and a plugin cannot safely invoke
-//     WHGame's lua_settable on demand to trigger the detour — PROBE A
-//     (docs/known-issues/cap-38 cpp before-observer never fires on a named
-//     game target.md) established that a plugin-driven call into WHGame's
-//     lua_settable raises a Lua error across the dual-Lua boundary
-//     (lua-bridge.md): it longjmp's back to the nearest lua_pcall, never
-//     returns to the caller, and is uninstrumentable from the plugin side.
-//     So firing-on-this-named-target is not observably testable from a
-//     plugin; install-proceeded IS the behavior-c proof, and cap-36 owns the
-//     C-dispatch firing proof.
+//     be 0 / IsApplied false and this row FAILS. The row asserts install-
+//     proceeds ONLY — it does NOT assert the hook fires (the gate is an
+//     INSTALL-TIME check; firing tests nothing about it). cap-36's six
+//     own-function rows own the C-dispatch firing proof.
 //
 //   * CAP-38-cpp-gate-warn ([manual], log-assert; reported by the
 //     orchestrator, NOT auto) — the COMP-12 log-assert pattern: the
@@ -63,14 +50,17 @@
 //     scope the gate doesn't need); it only drives the install that makes
 //     the line fire.
 //
-// SAFETY — why hooking the hot lua_settable with a wrong sig is safe: the
-// before observer reads nothing harmful, mutates no args (*outCount=0),
-// and does not skip the original. The 1-arg explicit sig's before-thunk
-// loads only RCX (L, always valid); the detour preserves the original's
-// real registers (RCX=L, RDX=idx), so lua_settable runs untouched after
-// the observer returns. The wrong sig mis-DESCRIBES the ABI (the gate's
-// whole point) but the observer never acts on the missing arg, so no Lua
-// state is corrupted.
+// SAFETY — the target is gameplay-COLD, so the wrong-ABI thunk NEVER FIRES.
+// luaopen_table is lualibs[] entry 2, called EXACTLY ONCE at Lua library-init
+// (boot) and NEVER during gameplay. cap-38's hook installs at the first-
+// update-tick AFTER that single call → the wrong thunk is installed but never
+// invoked → no register/stack corruption, no crash. This is the cap-33 cold-
+// leaf idiom (cap-33 documents the same no-fire property for luaopen_math).
+// The OLD target was the HOT lua_settable, whose wrong-ABI thunk DID fire on
+// the live save-load path and crashed the game (the 0xC8 root cause): a wrong-
+// ABI thunk corrupts the call frame whenever it fires regardless of how polite
+// the observer is — a cold no-fire target, NOT observer politeness, is the
+// safety property.
 
 #include <windows.h>
 
@@ -94,19 +84,18 @@ bool           g_post_ran = false;
 bool           g_reported = false;
 
 // The named target + the WRONG explicit signature.
-//   target          = "kcdx.lua_settable"  (engine seed, verified
-//                       ABI "void (ptr L, i32 idx)" — id 1186)
-//   opts.signature  = "void (ptr L)"        (1 arg — arg-count delta vs
-//                       the verified 2-arg ABI → NOT SignaturesCompatible)
-const char* kTarget   = "kcdx.lua_settable";
+//   target          = "kcdx.luaopen_table" (engine seed, verified
+//                       ABI "i32 (ptr L)" — id 1173)
+//   opts.signature  = "void (ptr L)"        (same arg count, RETURN-WIDTH
+//                       delta vs the verified i32 return → NOT
+//                       SignaturesCompatible)
+const char* kTarget   = "kcdx.luaopen_table";
 const char* kWrongSig = "void (ptr L)";
 
 // BEFORE shape: void cFn(uintptr_t args[], int* outCount, /* typed
-// args... */). Pure observer — set *outCount=0 (commit nothing back), do
-// not touch args. Present to document the wrong-sig-is-safe property (the
-// detour preserves the original's registers); the row does NOT assert this
-// fires (see the header note — firing-on-this-named-target is not
-// plugin-observable).
+// args... */). A minimal no-op the install requires; NEVER relied upon to
+// fire — the target is gameplay-cold (luaopen_table runs once at boot,
+// before this hook installs), so this thunk is installed but never invoked.
 extern "C" void Cap38_Observer_Cb(uintptr_t args[], int* outCount,
                                   void* L) {
     (void)args;
@@ -195,13 +184,14 @@ bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
     // PASS = behavior-c (install PROCEEDED): non-zero handle that IsApplied.
     // The falsifiable signal vs a hypothetical (a)-reject impl (handle 0 /
     // IsApplied false → FAIL), mirroring the Lua peer's applied() assertion.
-    // (Firing the detour is NOT asserted — see the header note + PROBE A.)
+    // (Firing the detour is NOT asserted — the gate is install-time only, and
+    // the cold target never fires; cap-36 owns the C-dispatch firing proof.)
     const bool applied = (g_h_gate != 0) && g_hook->IsApplied(g_h_gate);
     const bool pass = (g_h_gate != 0) && applied;
     char reason[420];
     snprintf(reason, sizeof(reason),
         "%s — named target '%s' + WRONG explicit sig '%s' (verified ABI is "
-        "'void (ptr L, i32 idx)'): handle=%s, IsApplied=%d. behavior-c keeps "
+        "'i32 (ptr L)' — return-width delta): handle=%s, IsApplied=%d. behavior-c keeps "
         "the explicit sig authoritative and the install PROCEEDS; had the "
         "gate REJECTED (hypothetical (a)-impl) the handle would be 0 / "
         "IsApplied false and this row FAILS. The gate-WARN itself is the "

@@ -1,12 +1,14 @@
 # CAP-38 sig-mismatch gate — Lua half. See plugin.lua for the full row
 # contract. Pair of cap-38-sig-mismatch-gate/ (the C++ DLL).
 #
-# Drives kcdx.hook with the named target `kcdx.lua_settable` (engine seed
-# id 1186, verified "void (ptr L, i32 idx)") + the WRONG explicit
-# signature "void (ptr L)" (1 arg → arg-count delta → NOT
+# Drives kcdx.hook with the named target `kcdx.luaopen_table` (engine seed
+# id 1173, verified "i32 (ptr L)") + the WRONG explicit signature
+# "void (ptr L)" (same arg count, RETURN-WIDTH delta → NOT
 # SignaturesCompatible → the gate fires). Asserts behavior-c (keep +
-# proceed): handle:applied()==true at kcdx.on("ready"). The arg-count delta
-# is a HARD conflict → the gate logs the diagnostic at ERROR.
+# proceed): handle:applied()==true at kcdx.on("ready"). The return-width
+# delta is a HARD conflict → the gate logs the diagnostic at ERROR. The
+# target is gameplay-cold (lualibs[] entry 2, called once at boot before
+# this hook installs) → the wrong-ABI thunk never fires → no crash.
 #
 # Test mode: boot-only. The gate's ERROR-level HARD line is the [manual]
 # CAP-38-lua-gate-warn row (orchestrator-side log grep, action
@@ -19,7 +21,7 @@ test_suite_only = true
 name                = "cap_38_sig_mismatch_gate_lua"
 display_name        = "CAP-38 sig-mismatch gate (Lua)"
 author              = "ts"
-description         = "Lua half: kcdx.hook names kcdx.lua_settable (verified ABI) with a WRONG explicit signature=; asserts the gate ERRORs (arg-count delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — handle:applied()==true."
+description         = "Lua half: kcdx.hook names kcdx.luaopen_table (verified ABI, gameplay-cold) with a WRONG explicit signature=; asserts the gate ERRORs (return-width delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — handle:applied()==true. Proves the install-time gate WITHOUT the wrong-ABI thunk firing; no longer crashes the suite."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true

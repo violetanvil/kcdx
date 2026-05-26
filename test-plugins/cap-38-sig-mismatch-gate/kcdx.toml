@@ -7,23 +7,24 @@
 # exact surface AP12 protects. The gate's core behavior is (c): keep +
 # proceed (consult the verified ABI to DETECT the conflict, emit a teaching
 # diagnostic, then proceed with the explicit sig as authored). The diagnostic
-# SEVERITY splits by ClassifyConflict — cap-38's arg-count delta (1 vs 2) is
-# a HARD conflict → the gate logs at ERROR (a known crash risk on a live
-# engine function); a soft same-shape conflict stays at WARN.
+# SEVERITY splits by ClassifyConflict — cap-38's return-width delta (i32 vs
+# void) is a HARD conflict → the gate logs at ERROR (a known crash risk on a
+# live engine function); a soft same-shape conflict stays at WARN.
 #
 # This C++ plugin drives kcdxHookInterface with the named target
-# `kcdx.lua_settable` (engine seed id 1186, verified "void (ptr L, i32
-# idx)") + the WRONG explicit sig "void (ptr L)" (1 arg → arg-count delta
+# `kcdx.luaopen_table` (engine seed id 1173, verified "i32 (ptr L)") + the
+# WRONG explicit sig "void (ptr L)" (same arg count, RETURN-WIDTH delta
 # → NOT SignaturesCompatible → the gate fires). The Lua half is the
 # sibling cap-38-sig-mismatch-gate-lua/ plugin (parity-is-tested).
 #
 # Rows:
 #   * CAP-38-cpp-gate-proceeds (AUTO, boot-only, asserted at
-#     kcdxPlugin_PostGameLoad): handle != 0 && IsApplied()==true && the
-#     before observer fired (lua_settable is called all over boot → the
-#     hook is live and marshalling per the explicit 1-arg sig). Falsifiable
+#     kcdxPlugin_PostGameLoad): handle != 0 && IsApplied()==true. The gate
+#     is an INSTALL-TIME check — the row asserts install-proceeds ONLY (it
+#     does NOT assert the hook fires; the target is gameplay-cold, called
+#     once at boot before this hook installs, and never fires). Falsifiable
 #     against a hypothetical (a)-reject impl: a reject would give handle 0 /
-#     IsApplied false / observer never fires → FAIL.
+#     IsApplied false → FAIL.
 #   * CAP-38-cpp-gate-warn ([manual], log-assert): the orchestrator greps
 #     the engine log for the gate's ERROR-level HARD line (action
 #     explicit_overrides_verified_hard, severity=hard). NOT auto-reported by
@@ -40,7 +41,7 @@ test_suite_only = true
 name                = "cap_38_sig_mismatch_gate"
 display_name        = "CAP-38 sig-mismatch gate (C++)"
 author              = "ts"
-description         = "C++ DLL: names kcdx.lua_settable (verified ABI) with a WRONG explicit opts.signature; asserts the sig-mismatch gate ERRORs (arg-count delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — install succeeds, hook fires."
+description         = "C++ DLL: names kcdx.luaopen_table (verified ABI, gameplay-cold) with a WRONG explicit opts.signature; asserts the sig-mismatch gate ERRORs (return-width delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — install succeeds. Proves the install-time gate WITHOUT the wrong-ABI thunk firing; no longer crashes the suite."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
