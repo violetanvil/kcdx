@@ -34,7 +34,11 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-default_priority    = 200
+# Higher number than A's 10 = applies LATER = loses the replace-vs-replace
+# conflict. default_priority is 0..100 (NOT the legacy [[hook]].priority
+# range, which went to 200 — that out-of-range value got the whole plugin
+# REJECTED at manifest load, silently dropping the COMP-03 row).
+default_priority    = 20
 test_names          = ["COMP-03"]
 
 [entrypoints]

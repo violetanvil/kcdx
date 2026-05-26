@@ -2,8 +2,8 @@
 // site; the lower-PLUGIN-priority plugin wins, the higher is rejected.
 //
 // Phase 4b Batch 2 migration off the legacy [[hook]] bytes= first-wins path.
-// Plugin A (pure Lua, default_priority=100) and this plugin B (this DLL,
-// default_priority=200) both install a `replace` at the SAME named function
+// Plugin A (pure Lua, default_priority=10) and this plugin B (this DLL,
+// default_priority=20) both install a `replace` at the SAME named function
 // entry: `IsInCombat_callsite_with_stack_frame` (Address Library id 1007,
 // RVA 0x566040). Replace-vs-replace is exclusive in the hook_chain
 // (CanCoexist rejects the second touch), so one wins and one is rejected.
