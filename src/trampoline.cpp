@@ -2,12 +2,15 @@
 
 #include <windows.h>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include "log.h"
 #include "pe_helpers.h"
-#include "plugin_loader.h"  // for kEngineVersion + g_plugins lookup helpers if needed
+#include "plugin_loader.h"  // AuthorForHandle / NameForHandle (owner -> author/plugin)
+#include "symbols.h"        // kcdx::symbols::Register / OwnerOf (export publish)
 
 namespace kcdx::trampoline {
 
@@ -265,9 +268,190 @@ void* Thunk_AllocateFromLocalPool(kcdxPluginHandle owner, size_t size) {
     return Allocate(/*branchPool=*/false, owner, size);
 }
 
+// -----------------------------------------------------------------------
+// Version-2 thunks. The all-in-one Allocate + standalone Export are the C++
+// mirror of the Lua kcdx.code binder (src/lua_bind_code.cpp Lua_Code) — same
+// validate -> alloc -> memcpy/NOP-pad -> export-register sequence, but reading
+// from a kcdxCodeOptions struct instead of a Lua table, and deriving owner
+// identity from opts->owningPlugin (a kcdxPluginHandle) instead of the Lua
+// call-site walk. No Lua stack: a C++ DLL calls directly.
+//
+// One divergence from the Lua path that is NOT a behavior change: the C++
+// caller hands the engine RAW bytes (void* + bytesSize), not a hex string, so
+// there is NO ParseBytes here (the Lua path ParseBytes only because Lua gives a
+// hex STRING). The bytes are memcpy'd verbatim. Same fill/pad result.
+//
+// Owner identity uses the SAME AuthorForHandle/NameForHandle mechanism
+// bytes_interface.cpp / hook_interface.cpp use, so the export prefix +
+// attribution match the Lua path. opts->owningPlugin is already a
+// kcdxPluginHandle, so it threads straight into AllocateBranch/AllocateLocal
+// (which take a handle for attribution) — exactly as the Lua binder passes its
+// resolved ownerHandle.
+//
+// SHARED-HELPER NOTE: the dotted-name check + symbols::Register + OwnerOf
+// collision-diagnostic block is now duplicated in three places (lua_bind_code,
+// here twice). Per the step brief this is a deliberate parallel add (same as
+// bytes_interface mirroring lua_bind_bytes), NOT a shared-helper extraction.
+// If a fourth export site appears, a kcdx::symbols::PublishExport(owner,
+// bareName, addr, diagName) helper is clearly warranted — flagged, not built.
+
+void* Thunk_Allocate(const kcdxCodeOptions* opts) {
+    if (!opts) {
+        log::Error("kcdx code Allocate: opts is null — pass a non-null "
+                   "kcdxCodeOptions* (name + bytes/size required).");
+        return nullptr;
+    }
+
+    // --- name (required) ---
+    const char* name = (opts->name && opts->name[0]) ? opts->name : nullptr;
+    if (!name) {
+        log::Error("kcdx code Allocate: `name` is required — the name used in "
+                   "logs and export diagnostics (e.g. \"outfit_gate_logic\").");
+        return nullptr;
+    }
+
+    // --- bytes OR size rule (mirror lua_bind_code.cpp:195-202) ---
+    const size_t bytesSize = (opts->bytes != nullptr) ? opts->bytesSize : 0;
+    const bool haveBytes = bytesSize > 0;
+    const bool haveSize  = opts->size > 0;
+    if (!haveBytes && !haveSize) {
+        log::ErrorF("kcdx code Allocate [%s]: must declare either `bytes` "
+                    "(with bytesSize > 0) or `size` (a NOP region to fill in "
+                    "later), or both.", name);
+        return nullptr;
+    }
+
+    // --- size must be >= bytesSize (mirror lua_bind_code.cpp:250-258) ---
+    if (haveSize && opts->size < bytesSize) {
+        log::ErrorF("kcdx code Allocate [%s]: declared size (%zu) is smaller "
+                    "than the %zu byte(s) of `bytes`.",
+                    name, opts->size, bytesSize);
+        return nullptr;
+    }
+
+    // size defaults to bytesSize; the tail beyond bytes is NOP-padded.
+    const size_t totalSize = haveSize ? opts->size : bytesSize;
+
+    // --- Owner identity (same path bytes_interface.cpp uses) ---
+    const kcdxPluginHandle ownerHandle = opts->owningPlugin;
+    const std::string author = kcdx::plugins::AuthorForHandle(ownerHandle);
+    const std::string plugin = kcdx::plugins::NameForHandle(ownerHandle);
+
+    // --- Allocate (branch default; local is anywhere) — pass the handle
+    // straight through, exactly as the Lua binder passes ownerHandle. ---
+    void* region = (opts->pool == kcdxCodePool_Local)
+                       ? AllocateLocal(ownerHandle, totalSize)
+                       : AllocateBranch(ownerHandle, totalSize);
+    if (!region) {
+        log::ErrorF("kcdx code Allocate [%s]: the '%s' trampoline pool could "
+                    "not allocate %zu bytes (out of pool space, or no "
+                    "rel32-reachable region for \"branch\"). See kcdx.log.",
+                    name, opts->pool == kcdxCodePool_Local ? "local" : "branch",
+                    totalSize);
+        return nullptr;
+    }
+
+    // --- Copy bytes to the head, NOP-pad the tail (mirror lua_bind_code:301-311) ---
+    auto* dst = reinterpret_cast<uint8_t*>(region);
+    if (haveBytes) {
+        std::memcpy(dst, opts->bytes, bytesSize);
+    }
+    if (totalSize > bytesSize) {
+        // NOP-pad so a plugin patching into the unused tail doesn't trip over
+        // zero-init bytes (which decode as `add [rax], al`).
+        std::memset(dst + bytesSize, 0x90 /* x86 NOP */, totalSize - bytesSize);
+    }
+
+    const uintptr_t addr = reinterpret_cast<uintptr_t>(region);
+    LOG_DEBUG("CODE", "[%s] allocated %d bytes at 0x%p (pool=%s, plugin=%s)",
+              name, static_cast<int>(totalSize), region,
+              opts->pool == kcdxCodePool_Local ? "local" : "branch",
+              plugin.empty() ? "<anon>" : plugin.c_str());
+
+    // --- Register export IMMEDIATELY if requested. Mirrors the Lua export
+    // branch (lua_bind_code.cpp:331-376) EXACTLY, including its ordering: the
+    // region is already allocated, but a dotted exportName is a HARD FAILURE
+    // (the Lua binder returns (nil, err) at lua_bind_code.cpp:333-343), so we
+    // return nullptr too. A collision is likewise a hard failure (the region
+    // stands but is unreachable by symbol — the Lua binder returns (nil, err)
+    // at :366-374). ---
+    if (opts->exportName && opts->exportName[0]) {
+        const std::string exportName = opts->exportName;
+        // Reject a dotted / prefixed export — the engine supplies the prefix.
+        if (exportName.find('.') != std::string::npos) {
+            log::ErrorF("kcdx code Allocate [%s]: `exportName` must be a BARE "
+                        "name — do NOT type your own \"<plugin>.\" prefix. The "
+                        "engine derives it from your [plugin].author/.name and "
+                        "publishes the symbol as \"<author>.<plugin>.%s\" "
+                        "(naming-namespaces.md). You wrote \"%s\".",
+                        name, exportName.c_str(), exportName.c_str());
+            return nullptr;
+        }
+        // Fully-qualified name for diagnostics (matches the Lua binder's
+        // lua_bind_code.cpp:344-346 prefix join).
+        const std::string fullName =
+            plugin.empty() ? exportName : (plugin + "." + exportName);
+        if (kcdx::symbols::Register(exportName, addr, author, plugin)) {
+            LOG_DEBUG("CODE", "[%s] exported symbol '%s' -> 0x%p",
+                      name, fullName.c_str(), reinterpret_cast<void*>(addr));
+        } else {
+            const std::string priorOwner = kcdx::symbols::OwnerOf(fullName);
+            log::ErrorF("[kcdx code '%s'] symbol export collision: '%s' is "
+                        "already registered by '%s' — the region is allocated "
+                        "but unreachable by symbol.",
+                        name, fullName.c_str(),
+                        priorOwner.empty() ? "?" : priorOwner.c_str());
+            return nullptr;
+        }
+    }
+
+    return region;
+}
+
+bool Thunk_Export(kcdxPluginHandle owner, const char* bareName,
+                  uintptr_t addr) {
+    if (!bareName || !bareName[0]) {
+        log::Error("kcdx code Export: `bareName` is required — the BARE symbol "
+                   "name to publish the address under (no \"<plugin>.\" prefix).");
+        return false;
+    }
+    const std::string name = bareName;
+    if (name.find('.') != std::string::npos) {
+        log::ErrorF("kcdx code Export: `bareName` must be a BARE name — do NOT "
+                    "type your own \"<plugin>.\" prefix. The engine derives it "
+                    "from `owner` and publishes \"<author>.<plugin>.%s\" "
+                    "(naming-namespaces.md). You wrote \"%s\".",
+                    name.c_str(), name.c_str());
+        return false;
+    }
+    if (addr == 0) {
+        log::ErrorF("kcdx code Export [%s]: `addr` is 0 — null exports are "
+                    "rejected (the symbol must point at a real address).",
+                    name.c_str());
+        return false;
+    }
+
+    const std::string author = kcdx::plugins::AuthorForHandle(owner);
+    const std::string plugin = kcdx::plugins::NameForHandle(owner);
+    const std::string fullName =
+        plugin.empty() ? name : (plugin + "." + name);
+    if (kcdx::symbols::Register(name, addr, author, plugin)) {
+        LOG_DEBUG("CODE", "Export: published symbol '%s' -> 0x%p",
+                  fullName.c_str(), reinterpret_cast<void*>(addr));
+        return true;
+    }
+    const std::string priorOwner = kcdx::symbols::OwnerOf(fullName);
+    log::ErrorF("kcdx code Export: symbol export collision: '%s' is already "
+                "registered by '%s' — choose a different bare name.",
+                fullName.c_str(), priorOwner.empty() ? "?" : priorOwner.c_str());
+    return false;
+}
+
 const kcdxTrampolineInterface g_iface = {
     /*AllocateFromBranchPool=*/ Thunk_AllocateFromBranchPool,
     /*AllocateFromLocalPool=*/  Thunk_AllocateFromLocalPool,
+    /*Allocate=*/               Thunk_Allocate,
+    /*Export=*/                 Thunk_Export,
 };
 
 }  // namespace
