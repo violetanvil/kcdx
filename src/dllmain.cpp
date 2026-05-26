@@ -21,6 +21,8 @@
                                          // (docs/outstanding-work/before-game-hooks.md §5)
 #include "probes/loc_dump_probe.h"       // loc runtime-dump feature, step 1: minimal
                                          // dev-mode probe (ctor capture + by-ID getter)
+#include "probes/fopen_override_probe.h" // Phase 8.5 pak-resolver probe (FOpen
+                                         // read-fires + override semantics)
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -102,7 +104,15 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // BEFORE CryEngine's system init constructs the loc manager — so the ctor
     // detour is live when the ctor runs. Dev-mode-gated + idempotent internally;
     // a no-op in production.
-    kcdx::probes::loc_dump_probe::Install();
+    //
+    // TEMPORARILY DISABLED (2026-05-26): the loc probe itself is live-verified
+    // (cap-43-loc-ctor-capture + cap-43-loc-byid-getter both PASS, clean
+    // sequential int-IDs observed) — this is NOT disabled for a probe defect.
+    // It is held inert only while a PARALLEL feature (cap-44 fopen-override /
+    // pak-resolver) stabilizes a save-load crash in the shared engine DLL, so
+    // launches aren't muddied by an unrelated fault. Re-enable (uncomment) once
+    // that work lands clean, then resume loc-dump feature step 2 (table walk).
+    // kcdx::probes::loc_dump_probe::Install();
 
     // Phase 6 save/load lifecycle hooks. ABIs from ROUND 3 RECON via
     // _research/phase6-save-load/phase6_abi_walker.py — full-body capstone analysis,
@@ -136,6 +146,20 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // being present. Plugin_Preload + Plugin_Load fire here, before the first
     // game `update` tick.
     kcdx::plugins::DiscoverAndLoad(kcdx::paths::PluginsDir());
+
+    // Phase 8.5 pak-resolver probe (PROBE U.1, observe-only): install the
+    // CCryPak::FOpen body detour (Address Library id 1206) to (a) confirm the
+    // resolver fires for asset READS at runtime and (b) log the early pak-
+    // resident virtual paths, so PROBE U.2's override-target is confirmed-
+    // firing, not guessed. Dev-mode-gated + idempotent; a no-op in production.
+    //
+    // MUST run AFTER DiscoverAndLoad: that call sets g_runtimeGameVersion (via
+    // DetectRuntimeGameVersion), and address_library::Resolve gates on a
+    // version match. Installing earlier (next to loc_dump_probe, which uses a
+    // hardcoded RVA and is immune) makes Resolve(1206) return 0 — the version
+    // is still unset. The FOpen detour still arms well before any menu/save
+    // asset reads; the resolver fires continuously through boot→menu.
+    kcdx::probes::fopen_override_probe::Install();
 
     return 0;
 }
