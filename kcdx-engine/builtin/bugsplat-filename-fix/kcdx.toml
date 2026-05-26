@@ -1,48 +1,37 @@
-# kcdx engine-fix plugin: bugsplat-filename-fix
+# kcdx engine-fix plugin: bugsplat-filename-fix  (Phase-11 STUB)
 #
-# *** STATUS: ship-disabled via kcdx-engine/load_order.toml. ***
+# *** STATUS: metadata-only stub, ship-disabled via
+#     kcdx-engine/load_order.toml (`enabled = false`). ***
 #
-# This plugin's patch site (LEA at VA 0x1824599e7) was empirically
-# proven NOT to feed BugSplat's dmp filename construction (2026-05-20
-# test run — the patch lands at DllMain time via the before_game
-# zone as designed, but BugSplat still writes to a colon-truncated
-# stub). The shipped kcdx-engine/load_order.toml carries
-# `enabled = false` for this plugin until the right patch site is
-# identified. Source retained as the reference template for the
-# eventual correct fix.
+# This folder is a placeholder for the eventual BugSplat-filename fix.
+# It currently declares NO behavior (no [[patch]], no hook, no Lua) —
+# only the [plugin] metadata + load-order hint below, kept so Phase 11
+# can rewrite it in place into the real before_game-hook builtin.
 #
-# To re-enable once the correct site is identified: edit
-# kcdx-engine/load_order.toml and set enabled = true for this plugin
-# (or remove its row entirely — default is enabled = true).
+# Why no patch: the original LEA-repoint approach (rewrite a single
+# `lea rdx, [rip+disp32]` at VA 0x1824599e7 from the colon-bearing
+# app-name string to the filename-safe sibling) was empirically
+# DISPROVEN (PROBE R/S, 2026-05-20). The patch applied at DllMain time
+# via the before_game zone exactly as designed, but BugSplat still
+# wrote a colon-truncated "Kingdom Come" stub — that LEA does not feed
+# BugSplat's dmp-filename construction. The [[patch]] table (and its
+# AOB/offset/disp32 reference) has been REMOVED; nothing in this stub
+# documents a patch that no longer exists.
 #
-# Original design (still archived here; verified incorrect 2026-05-20):
-#   Repoint a single LEA in WHGame.dll from the colon-bearing app-name
-#   string "Kingdom Come: Deliverance II" to the filename-safe sibling
-#   "Kingdom Come Deliverance II" (no colon). The colon-bearing string
-#   has 4 xrefs; three are legitimate display-name uses (CVar
-#   sys_game_name, getter thunk, length-29 hashing loop). The fourth,
-#   at VA 0x1824599e7, was attributed to BugSplat's filename
-#   construction by static analysis.
+# The real fix is the Phase-11 before_game-hook capability: hook
+# MiniDumpWriteDump (or CreateFileW filtered to *.dmp) to observe the
+# actual filename at crash time, trace it to its source, and correct
+# it there. That capability is specified in
+# docs/outstanding-work/before-game-hooks.md — this folder is rewritten
+# into that builtin when Phase 11 lands.
 #
-# Empirical result (2026-05-20, with PR 2 before_game-zone path):
-#   - Patch applied successfully at DllMain time, BEFORE WHGame.dll's
-#     own DllMain ran (ldr_notify path verified end-to-end).
-#   - BugSplat STILL produced a zero-byte "Kingdom Come" stub at
-#     %LOCALAPPDATA%/Temp/ on `kcdx_crash_now` AV crash.
-#   - Conclusion: this LEA does not feed BugSplat's filename
-#     construction, OR BugSplat sources the colon-bearing string
-#     from elsewhere (different LEA, CVar, env query, hardcoded
-#     fallback). Static-analysis attribution was wrong.
+# Full diagnostic trail: docs/known-issues/BugSplat dmp files don't
+# reach disk for AV crashes.md.
 #
-# Next investigation step (when this work is picked up again):
-#   Hook MiniDumpWriteDump in dbghelp.dll (or CreateFileW filtered
-#   to *.dmp) and log the actual filename passed at crash time.
-#   That gives the real string, which we can then trace back to its
-#   source in WHGame.dll. The load-order zone+priority hint below
-#   stays as the correct shape for the eventual fix.
-#
-# See docs/known-issues/BugSplat dmp files don't reach disk for AV
-# crashes.md for the full trail.
+# To activate once Phase 11 ships the fix: replace the metadata below
+# with the before_game-hook behavior and remove this plugin's
+# `enabled = false` row from kcdx-engine/load_order.toml (default is
+# enabled = true).
 
 [plugin]
 name        = "bugsplat_filename_fix"
@@ -64,36 +53,3 @@ compatible_game_versions = ["1.5.1164953"]
 # influence what BugSplat sees) without renumbering.
 default_position = "before_game"
 default_priority = 30
-
-[[patch]]
-name        = "bugsplat-filename-fix"
-description = "Repoint BugSplat call site's LEA disp32 from colon-string to safe-string."
-module      = "WHGame.dll"
-
-# AOB anchors on the bytes leading up to + including the LEA
-# instruction. Unique in WHGame.dll's .text section.
-#
-# Breakdown:
-#   E8 48 CF 09 FE              call <preceding fn>
-#   4C 8B C0                    mov  r8,  rax
-#   48 8D 15 ?? ?? ?? ??        lea  rdx, [rip + disp32]    ← patch site
-#   48 8D 4C 24 30              lea  rcx, [rsp + 0x30]
-#   E8 10 D4 ?? ??              call <next fn>
-#
-# The 4-byte disp32 immediately follows the `48 8D 15` opcode of
-# the LEA. Counting the pattern bytes:
-#   byte 0:  E8         (call opcode)
-#   bytes 1-4: 48 CF 09 FE  (relative target)
-#   bytes 5-7: 4C 8B C0     (mov r8, rax)
-#   bytes 8-10: 48 8D 15    (LEA opcode + ModR/M for [rip+disp32])
-#   bytes 11-14: ?? ?? ?? ?? ← disp32, the 4 bytes we patch
-#   bytes 15+:  48 8D 4C 24 30 E8 10 D4  (rest of context)
-# So offset = 11, length = 4. Replacement repoints the disp32 from
-# 0x183aa3508 ("Kingdom Come: Deliverance II") to
-# 0x183e18290 ("Kingdom Come Deliverance II"). Both strings already
-# exist in WHGame.dll; we just change which one this LEA loads.
-pattern     = "E8 48 CF 09 FE 4C 8B C0 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 30 E8 10 D4"
-offset      = 11
-original    = "1A 9B 64 01"
-replacement = "A2 E8 9B 01"
-idempotent  = true
