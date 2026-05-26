@@ -409,11 +409,16 @@ one behavior on a target, make separate install calls (one behavior per call).
 ## Conflict report
 
 `api->GetConflictReport(target, out, cap)` (on the root `kcdxInterface`)
-enumerates every registration that overlaps a target address — `[[patch]]`
-bytes, legacy `[[hook]]` entries, **and `kcdx.hook` (hook_chain) entries**. For
-the `kcdx.hook` surface it reports BOTH the live-chain winners (`applied != 0`)
-AND the `CanCoexist`-rejected losers (`applied == 0`) at that target, so an
-author can ask "who registered here, who won, who was aborted".
+enumerates every registration that overlaps a target address. It now folds in
+**four** sources: legacy `[[patch]]` bytes, legacy `[[hook]]` entries,
+`kcdx.hook` (hook_chain) entries, **and `kcdx.bytes`
+(`kcdxBytesInterface::Register`) patches**. A `kcdx.bytes` patch routes through
+the `lua_registry` `Kind::Bytes` path rather than the legacy `[[patch]]`
+(`g_patches`) list, so it was previously invisible to the report; it is now
+folded in with `kind == kcdxConflictEntryKind_Patch`. For the `kcdx.hook`
+surface the report carries BOTH the live-chain winners (`applied != 0`) AND the
+`CanCoexist`-rejected losers (`applied == 0`) at that target, so an author can
+ask "who registered here, who won, who was aborted" across all four sources.
 
 ```cpp
 uint32_t (*GetConflictReport)(uintptr_t          target,

@@ -1,0 +1,61 @@
+# CAP-41 — GetConflictReport folds in kcdx.bytes (kcdxBytesInterface::Register)
+# patches as a FOURTH source.
+#
+# The AP7 + docs-discipline close of the "GetConflictReport reports kcdx.bytes"
+# feature. A kcdx.bytes patch registered via kcdxBytesInterface::Register
+# routes through lua_registry Kind::Bytes (NOT the legacy g_patches); steps 1-2
+# made the C++ GetConflictReport(target, out, cap) fold those in as a fourth
+# conflict source (kind=Patch). Pre-feature the report walked only g_patches +
+# g_hooks + hook_chain and was BLIND to a bytes-Register patch. This plugin is
+# the regression that PROVES the report now SEES it.
+#
+# Shape: NATIVE C++ DLL plugin. Init the K wrapper, register ONE byte rewrite
+# via K.bytes->Register against a NAMED Address Library target (the SAME
+# verified-safe rewrite cap-39 / cap-01 prove — 44 8A F0 -> 45 31 F6 at
+# outfit_swap_callsite_aob, id 1004 — with a DISTINCT entry name
+# "cap41_bytes_patch"), then at the after_game C++ export
+# (kcdxPlugin_PostGameLoad, after ApplyZone(AfterGame)) call
+# K.api->GetConflictReport at the patched VA and assert OUR entry is among the
+# returned entries.
+#
+# Co-location subtlety (by-NAME, not by-count): the site is patched by
+# cap-01 (Lua/[[patch]], g_patches), cap-39 (bytes-Register) AND cap-41
+# (bytes-Register), all same-replacement idempotent-coexist (conflict_engine
+# WriteOnWriteFull — every writer applies, the second+ idempotent-skips). So
+# GetConflictReport returns MULTIPLE kind=Patch entries and the COUNT GROWS as
+# the suite grows. The assertion scans for EXACTLY ONE entry named
+# "cap41_bytes_patch", kind=Patch, applied!=0 — a fixed-count assertion would
+# flake. This co-location is a STRONGER proof: the fourth source is folded
+# ALONGSIDE the legacy g_patches source (cap-01) and the other bytes-Register
+# entries (cap-39), not replacing them.
+#
+# The 1 row:
+#
+#   * CAP-41-bytes-in-conflict-report   At PostGameLoad: a precondition guard
+#       (IsApplied(handle)==true AND siteVA resolved) FIRST so a blindness FAIL
+#       is never conflated with an apply/resolve failure; then
+#       GetConflictReport(siteVA) returns the merged entries and EXACTLY ONE is
+#       named "cap41_bytes_patch" with kind=Patch and applied!=0. FALSIFIABLE:
+#       pre-feature 0 matches (the bytes-Register source was invisible) -> FAIL;
+#       a match with kind!=Patch -> wrong fold kind; applied==0 -> accessor bug.
+#
+# Test mode: boot-only. The row self-verifies at kcdxPlugin_PostGameLoad; an
+# InputLoaded backstop (cap-39 design) reports a loud FAIL if the after-phase
+# export never fired. NO console gestures, NO save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_41_cpp_bytes_conflict_report"
+display_name        = "CAP-41 GetConflictReport folds in kcdx.bytes (C++)"
+author              = "ts"
+description         = "C++ DLL proving kcdxInterface::GetConflictReport now folds in kcdx.bytes (kcdxBytesInterface::Register) patches as a fourth source (kind=Patch): registers a named-target byte rewrite, then asserts its entry appears by name in GetConflictReport at the patched VA, alongside the co-located cap-01 (g_patches) + cap-39 (bytes-Register) entries."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["CAP-41-bytes-in-conflict-report"]
+
+[entrypoints]
+dll = "cap-41.dll"
