@@ -158,17 +158,17 @@ what the live result is.
 | Last result | PENDING (Phase 4b Batch 1 launch) |
 | Notes | Migrated from `[[hook]]`+pak-Lua-callback to `kcdx.hook{before}`. Same site (un-named CGame::Update callee at 0x180865FB4, KCD2 1.5.1164953), same observable (callback fires). The callback bumps a counter and never conditions the original — pure `before` mode. |
 
-## CAP-04: `[[mid_hook]]` register capture + Lua override
+## CAP-04: mid-hook (`kcdx.hook` mode=mid) on `kcdx.code`-allocated memory
 
 | Field | Value |
 |---|---|
-| What | Hook at an arbitrary instruction inside a function (not just entry). Capture named registers (rax, r14, etc) before the instruction, pass them to a Lua callback as a table. `call_original` knob controls whether the captured instruction runs after the callback: `true` (default, original runs), `false` (compile-time skip — original NEVER runs), or `"auto"` (runtime decision via `args._skip = true` from Lua). |
-| Channels | (iii) `kcdx.toml` |
-| Engine status | LIVE (2026-05-20, commit `03dd155`) — three-mode codegen in `make_jit_midfunc` + hde64 auto-decode of `stack_restore_offset` + `g_mid_skip_original` atomic flag interlock between dispatcher and JIT. |
-| Test plugin | `cap-04-midhook/` — 4 sub-tests covering all three modes (a=true, b=false, c=auto+_skip, d=auto+no-skip). Each fires against a self-contained 9-byte trampoline target with `add rax, 0x64` at the hook site; sub-test invokes the target with seed=10 and asserts the expected return value. |
-| Auto-pass check | Three of the four sub-tests pass when register state matches the `call_original` contract: CAP-04a returns 110 (original ran, +100), CAP-04b returns 10 (skipped), CAP-04d returns 110 (auto without skip = run). CAP-04c is the one known FAIL: it returns 110, not the expected 10 — the legacy `args._skip` auto-skip path does NOT skip the original. This is the standing pre-existing red; the new `kcdx.hook` mode=mid does NOT inherit it (CAP-21-skip PASSES). |
-| Last result | LIVE 2026-05-20 — CAP-04a/b/c/d all PASS in the 18:32 dev-log run. |
-| Notes | Mid-hook register MUTATION via `args[1]:set(...)` is still v0.1-deferred (kcdxLuaApi lacks Call/Pcall — see `docs/design-gaps.md` #11). CAP-04 verifies the harder problem (skip-original codegen); register mutation lands when `kcdxLuaApi` gets `Call`. |
+| What | The COMPOSITION of two author surfaces: allocate an executable stub with the Lua `kcdx.code` verb, then mid-hook INTO that allocation with `kcdx.hook` mode=mid, then call the hooked stub to observe the mid took effect on allocated code. The distinguishing axis vs cap-21: cap-21 hooks a stub from the C++ raw `AllocateFromBranchPool` floor (a lightuserdata handed to Lua); cap-04 allocates via the `kcdx.code` author verb and hooks `region:add(3)` (a `kcdx.code` pointer userdata as the `address` locator). cap-30/cap-40 allocate via `kcdx.code` but never hook the result. |
+| Channels | (vi) plugin Lua (`kcdx.code` + `kcdx.hook` mode=mid) + (ii) C++ DLL companion (resolves the export, calls the hooked stub). |
+| Engine status | LIVE-PENDING (Phase 4b Batch 4) — exercises the existing `kcdx.code` allocate + `kcdx.hook` mode=mid run/skip codegen + the `kcdx.code` export → `ResolveSymbolAs` interlock; no new engine code. |
+| Test plugin | `cap-04-midhook/` — `plugin.lua` allocates two fresh 9-byte `kcdx.code` stubs (`mov rax,rcx; add rax,0x64; nop; ret`, `pool="branch"` for rel32 reach, `export="stub_run"`/`"stub_skip"`) and installs a mode=mid hook at +3 (the `add`) on each `region:add(3)`. The C++ companion (`cap-04.dll`) resolves each export via `ResolveSymbolAs(self, …)`, casts to `int(*)(int)`, and calls it with seed=10 on InputLoaded. Lua owns the hook because **skip is Lua-only** (the C++ `kcdxHookInterface::Mid` callback has no return-skip primitive — `hook_chain.cpp` MidCDispatch); Lua can't call a region with an arg (no pointer call method), so C++ does the call. |
+| Auto-pass check | CAP-04-mid-on-code-run: stub call returns 110 (callback returns nothing → captured `add` runs on allocated code). CAP-04-mid-on-code-skip: stub call returns 10 (callback returns `"skip"` → captured `add` skipped on allocated code). A failed `ResolveSymbolAs` (kcdx.code alloc or mid install failed in Lua) reports loud FAIL — no silent PENDING. |
+| Last result | ⏳ PENDING (Phase 4b Batch 4 checkpoint launch). |
+| Notes | Phase 4b Batch 4: redesigned off the legacy `[[trampoline]]`+`[[mid_hook]]` schema (the LAST consumer of those parsers — unblocks the Phase 5 parser deletion). A LITERAL migration would have duplicated cap-21 (which covers the new mode=mid read/write/skip/run on a DLL-floor stub) and cap-30/cap-40 (the `[[trampoline]]` allocate path); the redesign instead tests the genuinely-new mid-hook-on-`kcdx.code`-memory composition neither covers. The legacy CAP-04a/b/c/d rows (incl. the `call_original="auto"` + `args._skip` mechanism, gone in the return-`"skip"` model) are retired with the old schema. |
 
 ## CAP-05: Runtime `dynamic_hook` from pak Lua
 
@@ -818,8 +818,9 @@ suite-aggregate emit point (`update tick`, `kPreLoadGame`,
 `kPostLoadGame`) — the full pass count includes all CAP-* and
 COMP-* rows that ship a real test plugin under `test-plugins/`; see
 the per-row matrix below for the exact ✅ LIVE / ⏳ PENDING breakdown
-(the `⏳ PENDING [manual]` save/load rows need an in-game gesture, and
-`cap-04-c` is the one standing pre-existing FAIL). Earlier roll-up:
+(the `⏳ PENDING [manual]` save/load rows need an in-game gesture; the
+former `cap-04-c` standing FAIL is retired with the legacy `[[mid_hook]]`
+schema — CAP-04 is now the mid-on-`kcdx.code` composition). Earlier roll-up:
 **21/21 passing** as of the 2026-05-20 18:32 dev-log run, before the
 Phase 2b `kcdx.hook` / `kcdx.command` / per-entry-zone subs landed.
 
@@ -827,10 +828,8 @@ Phase 2b `kcdx.hook` / `kcdx.command` / per-entry-zone subs landed.
 |---|---|---|---|
 | CAP-01 | ✅ PASS (1d0faf1) | _Phase 4a pilot_ | outfit-swap-style byte rewrite, now via `kcdx.bytes` with a `target=` NAME locator (Phase 4a pilot migration off legacy `[[patch]]`); `applied()==true` + read-back of post-rewrite site `45 31 F6` |
 | CAP-03 | ⏳ LIVE-PENDING | _Phase 4b Batch 1_ | function hook via `kcdx.hook{before}` on an un-named CGame::Update callee (pattern AOB + `signature="void (ptr)"`), callback fires (counter>0); migrated off legacy `[[hook]]`+pak |
-| CAP-04a | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=true`; returns 110 |
-| CAP-04b | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original=false`; returns 10 (original skipped) |
-| CAP-04c | ❌ FAIL | `03dd155` | `[[mid_hook]] call_original="auto"` + `args._skip=true`; returns 110 (expected 10) — the legacy `args._skip` mid-hook bug: the auto-skip path does NOT skip the original. The one standing pre-existing FAIL; superseded by `kcdx.hook` mode=mid (CAP-21-skip PASSES, proving the new dispatcher does not inherit it). |
-| CAP-04d | ✅ LIVE | `03dd155` | `[[mid_hook]] call_original="auto"`, no `_skip`; returns 110 |
+| CAP-04-mid-on-code-run | ⏳ PENDING | _Phase 4b Batch 4_ | `kcdx.hook` mode=mid installed on a `kcdx.code`-allocated stub; callback returns nothing → captured `add` runs → stub call returns 110. Composes the two author verbs (kcdx.code allocate + kcdx.hook mid on the allocation); distinct from cap-21 (C++-floor stub) and cap-30/cap-40 (allocate, never hook). Migrated off legacy `[[trampoline]]`+`[[mid_hook]]` (`cap-04-midhook`) |
+| CAP-04-mid-on-code-skip | ⏳ PENDING | _Phase 4b Batch 4_ | mode=mid on the same `kcdx.code` stub; callback returns `"skip"` → captured `add` skipped → stub call returns 10. Proves skip-original codegen reaches a `kcdx.code`-allocated target (skip is Lua-only — C++ Mid has no return-skip primitive). Last legacy `[[trampoline]]`/`[[mid_hook]]` consumer retired |
 | CAP-05 | ✅ LIVE | `03dd155` | pak Lua `dynamic_hook` install |
 | CAP-07 | ✅ LIVE | `03dd155` | trampoline branch / local pool allocations |
 | CAP-08 | ✅ LIVE | `03dd155` | engine messages + lifecycle |

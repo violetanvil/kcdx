@@ -52,3 +52,11 @@ region:set_byte(0xC3)   -- write a RET into the base (the region is live now)
 -- in this same plugin a bare reference also works:
 --   kcdx.hook{ target_symbol = "outfit_gate_logic", ... }
 ```
+
+The returned pointer is a live hook target right away — you can mid-hook *into*
+the allocated code by passing `region:add(N)` (a [`kcdx.memory.pointer`](memory.md))
+as the [`kcdx.hook`](hook.md) `address` locator. `pool = "branch"` is required
+for that: a `mid` hook writes a `rel32` jmp into the region, which must sit
+within ±2 GB of `WHGame.dll` for the branch to reach. (The `cap-04-midhook`
+test plugin composes exactly this — allocate via `kcdx.code`, mid-hook the
+allocation, call it to observe the hook took effect.)

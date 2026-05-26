@@ -1,121 +1,66 @@
-# CAP-04 — [[mid_hook]] call_original = true/false/"auto" self-test.
+# CAP-04 — mid-hook (kcdx.hook mode=mid) installed on kcdx.code-ALLOCATED memory.
 #
-# Each sub-test (a/b/c/d) gets its own [[trampoline]] that ships
-# 9 bytes of x86-64 machine code:
+# The novel composition: allocate an executable stub with the AUTHOR-FACING
+# kcdx.code verb (Lua), then mid-hook into the allocated region with kcdx.hook
+# mode=mid, then CALL the hooked stub to observe the mid took effect on
+# allocated code. This is distinct from every existing row:
+#   - cap-21 hooks a stub allocated via the C++ raw AllocateFromBranchPool floor
+#     (a lightuserdata handed to Lua); cap-04 allocates via the Lua kcdx.code
+#     verb and hooks `region:add(3)` (a kcdx.code pointer userdata as the
+#     `address` locator).
+#   - cap-30/cap-40 allocate via kcdx.code but NEVER hook into the result.
+# Composing the two new author surfaces — kcdx.code allocate + kcdx.hook mid on
+# the allocation — is the row neither covers.
 #
-#   +0:  48 89 C8        mov rax, rcx          ; rax = seed
-#   +3:  48 83 C0 64     add rax, 0x64         ; HOOK HERE — adds 100
-#   +7:  90              nop                   ; consumed by MinHook's 5-byte rel32 patch
-#   +8:  C3              ret
+# The 9-byte stub (reused verbatim from legacy cap-04 — verified-safe,
+# self-contained, no relocations / external calls):
 #
-# The mid-hook fires at offset +3 (the `add rax, 0x64`), captures rax,
-# then EITHER calls-original (rax += 100) OR skip-original (rax
-# unchanged). v0.1 does NOT exercise register mutation from Lua —
-# kcdxLuaApi lacks Call/Pcall (design-gaps.md item #11), so the Lua
-# callback can't invoke args[1]:set(...). CAP-04 verifies the harder
-# problem: skip-original codegen works correctly.
+#   +0:  48 89 C8        mov rax, rcx     ; rax = seed (arg in rcx, win64)
+#   +3:  48 83 C0 64     add rax, 0x64    ; rax += 100   <-- MID HOOK at +3
+#   +7:  90              nop              ; padding for MinHook's 5-byte patch
+#   +8:  C3              ret              ; return rax
 #
-# Invoking each target with rcx = 10:
+# The mid hook captures rax AT +3 (before the add), so rax == seed. Run/skip
+# is decided by the Lua callback's RETURN value (the new mode=mid surface; the
+# legacy call_original true/false/"auto" knob is GONE — see cap-21).
 #
-#   CAP-04a (true, no mutate)         → 10 + 100 = 110  (original runs)
-#   CAP-04b (false, no mutate)        →            10   (skipped, no add)
-#   CAP-04c (auto, _skip = true)      →            10   (skipped)
-#   CAP-04d (auto, no _skip)          → 10 + 100 = 110  (original runs)
+# Architecture (mirrors cap-21's split; the distinguishing axis is WHERE the
+# stub comes from + WHAT the hook targets):
+#   1. plugin.lua: for each sub-test, kcdx.code{ bytes=<9 bytes>, size=16,
+#      pool="branch", export="stub_<sub>" } allocates a fresh stub and publishes
+#      its base address as a symbol; then kcdx.hook{ address=region:add(3),
+#      captures={"rax"}, mid=function(c) ... end } installs the mid hook at +3.
+#   2. ApplyZone installs the mid detours.
+#   3. cap-04.dll (C++ companion) resolves each export via
+#      ResolveSymbolAs(self, "stub_<sub>"), casts it to int(*)(int), and CALLS
+#      it with seed=10 on kcdxMessage_InputLoaded (Lua cannot call a region with
+#      an arg — kcdx.memory.pointer has no call method). run -> 110, skip -> 10.
 #
-# Why a separate trampoline per sub-test: each MinHook detour
-# installs at a unique target VA. Four targets keeps the sub-tests
-# independent (no shared-state confusion).
+# Why C++ owns the CALL and Lua owns the HOOK: skip is Lua-only. The C++
+# kcdxHookInterface::Mid callback (void ABI) has NO return-skip primitive
+# (src/hook_chain.cpp MidCDispatch — "C mid does not yet expose a return-skip
+# primitive"); only the Lua mid callback's `return "skip"` reaches the
+# skip-original codegen. So the hook MUST install from Lua. Lua cannot call the
+# region with a seed arg, so the C++ companion does the call. The kcdx.code
+# export -> ResolveSymbolAs handshake bridges the two halves.
+#
+# pool="branch" is REQUIRED: the mid hook installs a rel32 jmp into the region,
+# which must sit within ±2 GB of WHGame.dll's .text for the branch to reach.
 
 [kcdx]
 test_suite_only = true
 
 [plugin]
 name                = "cap_04_midhook"
-display_name        = "CAP-04 mid_hook"
+display_name        = "CAP-04 mid-hook on kcdx.code"
 author              = "ts"
-description         = "Mid-hook capture + mutate + skip-original roundtrip."
-version             = "0.1.0"
+description         = "kcdx.hook mode=mid installed on a kcdx.code-allocated stub (run/skip on allocated memory)."
+version             = "0.2.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-test_names          = ["CAP-04a", "CAP-04b", "CAP-04c", "CAP-04d"]
+test_names          = ["CAP-04-mid-on-code-run", "CAP-04-mid-on-code-skip"]
 
-# --- Targets: 4 identical 9-byte code stubs, exported by name -----------------
-
-# Exports are BARE names (target_a..d). Under the <pluginname>.<name>
-# namespace model the engine derives the prefix from [plugin].name, so these
-# register as "<thisplugin>.target_a" etc. Consumers reference the BARE name
-# and resolve it via the self tier (the C++ DLL uses ResolveSymbolAs(g_self,
-# "target_a"); the [[mid_hook]] target_symbol path threads this plugin's name
-# automatically). (naming-namespaces.md)
-[[trampoline]]
-name   = "cap04_target_a"
-pool   = "branch"
-export = "target_a"
-bytes  = "48 89 C8 48 83 C0 64 90 C3"
-
-[[trampoline]]
-name   = "cap04_target_b"
-pool   = "branch"
-export = "target_b"
-bytes  = "48 89 C8 48 83 C0 64 90 C3"
-
-[[trampoline]]
-name   = "cap04_target_c"
-pool   = "branch"
-export = "target_c"
-bytes  = "48 89 C8 48 83 C0 64 90 C3"
-
-[[trampoline]]
-name   = "cap04_target_d"
-pool   = "branch"
-export = "target_d"
-bytes  = "48 89 C8 48 83 C0 64 90 C3"
-
-# --- Mid-hooks: one per call_original mode ------------------------------------
-
-# (a) call_original = true (default) — capture-only, no mutation.
-# Lua callback Cap04Test.OnA does nothing. Original add rax,100 runs.
-[[mid_hook]]
-name           = "cap04a_true_capture"
-priority       = 100
-target_symbol  = "target_a"
-offset         = 3
-param_types    = ["i64"]
-param_captures = ["rax"]
-lua_callback   = "kcdx.Cap04Test.OnA"
-# call_original = true   # back-compat default; omit to verify default
-
-# (b) call_original = false — original skipped at codegen time.
-# Lua callback does nothing observable; codegen drops the original.
-[[mid_hook]]
-name           = "cap04b_false_skip"
-priority       = 100
-target_symbol  = "target_b"
-offset         = 3
-param_types    = ["i64"]
-param_captures = ["rax"]
-lua_callback   = "kcdx.Cap04Test.OnB"
-call_original  = false
-
-# (c) call_original = "auto" — Lua sets args._skip = true; dispatcher skips.
-[[mid_hook]]
-name           = "cap04c_auto_skip"
-priority       = 100
-target_symbol  = "target_c"
-offset         = 3
-param_types    = ["i64"]
-param_captures = ["rax"]
-lua_callback   = "kcdx.Cap04Test.OnC"
-call_original  = "auto"
-
-# (d) call_original = "auto" — Lua does NOT set _skip; original runs.
-[[mid_hook]]
-name           = "cap04d_auto_no_skip"
-priority       = 100
-target_symbol  = "target_d"
-offset         = 3
-param_types    = ["i64"]
-param_captures = ["rax"]
-lua_callback   = "kcdx.Cap04Test.OnD"
-call_original  = "auto"
+[entrypoints]
+dll = "cap-04.dll"
+lua = "plugin.lua"

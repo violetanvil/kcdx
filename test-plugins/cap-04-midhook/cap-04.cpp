@@ -1,147 +1,108 @@
-// CAP-04 — [[mid_hook]] call_original semantics self-test.
+// CAP-04 — mid-hook (kcdx.hook mode=mid) on kcdx.code-ALLOCATED memory.
 //
-// Tests the THREE call_original modes added by Phase 5g closeout:
+// Companion DLL for the mid-on-code composition. The NOVEL axis vs cap-21:
+// cap-21's stub is allocated via the C++ raw AllocateFromBranchPool floor and
+// its address handed to Lua as a lightuserdata; here the stub is allocated by
+// the AUTHOR-FACING Lua kcdx.code verb (plugin.lua) and the mid hook targets
+// `region:add(3)` (a kcdx.code pointer userdata). cap-30/cap-40 allocate via
+// kcdx.code but never hook the result. Composing the two author surfaces —
+// kcdx.code allocate + kcdx.hook mid on the allocation — is the row neither
+// covers.
 //
-//   true   (default)   original instruction runs after the callback
-//   false              original instruction NEVER runs (compile-time)
-//   "auto"             callback decides via args._skip = true
+// Division of labor (and WHY): plugin.lua OWNS the hook because skip is
+// Lua-only — the C++ kcdxHookInterface::Mid callback (void ABI) has no
+// return-skip primitive (src/hook_chain.cpp MidCDispatch: "C mid does not yet
+// expose a return-skip primitive"); only the Lua mid callback's `return "skip"`
+// reaches the skip-original codegen. So the hook MUST install from Lua. Lua
+// cannot CALL the allocated region with a seed arg (kcdx.memory.pointer has no
+// call method — src/lua_bind_pointer.cpp kMethods), so this companion does the
+// call. The two halves are bridged by the kcdx.code export -> ResolveSymbolAs
+// handshake: plugin.lua publishes each stub's base via export="stub_<sub>";
+// this DLL resolves it via ResolveSymbolAs(self, "stub_<sub>").
 //
-// For v0.1, this test does NOT exercise register MUTATION inside the
-// Lua callback — kcdxLuaApi lacks Call/Pcall (see design-gaps.md
-// item #11), so the callback cannot invoke args[1]:set(...). That's
-// a separate v0.1.0 follow-up. CAP-04 verifies the harder problem:
-// skip-original codegen works correctly.
-//
-// Each sub-test uses its own [[trampoline]] target with body:
-//
-//   +0:  48 89 C8        mov rax, rcx           ; rax = seed
-//   +3:  48 83 C0 64     add rax, 0x64          ; HOOK HERE, adds 100
-//   +7:  90              nop                    ; consumed by MinHook patch
+// The 9-byte stub (allocated in plugin.lua, verified-safe self-contained):
+//   +0:  48 89 C8        mov rax, rcx     ; rax = seed (arg in rcx, win64)
+//   +3:  48 83 C0 64     add rax, 0x64    ; rax += 100   <-- MID HOOK at +3
+//   +7:  90              nop
 //   +8:  C3              ret
 //
-// Invoking with seed=10:
-//   CAP-04a  call_original = true   → 110 (original runs, rax += 100)
-//   CAP-04b  call_original = false  →  10 (original skipped, rax unchanged)
-//   CAP-04c  call_original = "auto", _skip = true → 10 (skipped)
-//   CAP-04d  call_original = "auto", no _skip      → 110 (runs)
+// The stub is `int fn(int seed)` (seed in ECX/RCX under the MS x64 ABI; the
+// stub's `mov rax,rcx` consumes it, returns in EAX). Calling with seed=10:
+//   CAP-04-mid-on-code-run   callback returns nothing -> add runs -> 110
+//   CAP-04-mid-on-code-skip  callback returns "skip"  -> add skipped -> 10
+//
+// Test mode: boot-only. Both rows self-verify at kcdxMessage_InputLoaded
+// (AFTER ApplyZone installs the mid detours). A guard reports FAIL if the
+// export never resolved (kcdx.code alloc or mid install failed in Lua), so no
+// row sits silent-PENDING.
 
 #include <windows.h>
 
+#include <cstdint>
 #include <cstdio>
-#include <cstring>
 
 #include "kcdx/Interfaces.h"
 
 namespace {
 const char* kName = "cap_04_midhook";
 
-const kcdxInterface*           g_api    = nullptr;
-const kcdxScriptingInterface*  g_script = nullptr;
-const kcdxLuaApi*              g_lua    = nullptr;
-kcdxPluginHandle               g_self   = kcdxInvalidPluginHandle;
-kcdxLogger                     gLog;
-bool g_reported_a = false, g_reported_b = false;
-bool g_reported_c = false, g_reported_d = false;
+const kcdxInterface* g_api  = nullptr;
+kcdxPluginHandle     g_self = kcdxInvalidPluginHandle;
+kcdxLogger           gLog;
+bool                 g_reported = false;
 
-// -----------------------------------------------------------------
-// Lua callbacks: receive the captures table at stack[1]. Each
-// callback returns 1 result (the dispatcher reads it as either a
-// resume-address override OR nil/0). We return nil for "no override"
-// in all cases; the call_original=false path is handled by
-// codegen-time decision (no Lua signaling required).
-// -----------------------------------------------------------------
+// The stub is int fn(int seed) -> seed + 100 (mod the mid hook's run/skip).
+using StubFn = int (*)(int);
 
-int OnA_callback(lua_State* L, void* /*ud*/) {
-    // call_original = true, no mutation. Original runs.
-    g_lua->PushNil(L);
-    return 1;
-}
-
-int OnB_callback(lua_State* L, void* /*ud*/) {
-    // call_original = false. Codegen skips the original regardless
-    // of what Lua does. Lua doesn't need to do anything.
-    g_lua->PushNil(L);
-    return 1;
-}
-
-int OnC_callback(lua_State* L, void* /*ud*/) {
-    // call_original = "auto" with _skip. Set args._skip = true on
-    // the captures table to signal the dispatcher.
-    if (g_lua->IsTable(L, 1)) {
-        g_lua->PushBoolean(L, 1);
-        g_lua->SetField(L, 1, "_skip");
+void Check(const char* sub, bool pass, const char* reason) {
+    if (pass) {
+        gLog.Info("VERIFY", "PASS %s: %s", sub, reason);
+        g_api->ReportTestResult(g_self, sub, 1, reason);
+    } else {
+        gLog.Error("VERIFY", "FAIL %s: %s", sub, reason);
+        g_api->ReportTestResult(g_self, sub, 0, reason);
     }
-    g_lua->PushNil(L);
-    return 1;
 }
 
-int OnD_callback(lua_State* L, void* /*ud*/) {
-    // call_original = "auto", no _skip. Original runs.
-    g_lua->PushNil(L);
-    return 1;
-}
-
-// -----------------------------------------------------------------
-// kInputLoaded handler: resolve targets, invoke, verify, report.
-// -----------------------------------------------------------------
-
-using Cap04TargetFn = int(__fastcall*)(int seed);
-
-void InvokeAndReport(const char* sym, const char* sub_test_name,
-                     int seed, int expected) {
-    // Resolve via the SELF tier: under the <pluginname>.<name> namespace
-    // model our own [[trampoline]] export "target_a" is stored as
-    // "<thisplugin>.target_a", so a bare ResolveSymbol("target_a") with no
-    // owner would miss it. ResolveSymbolAs threads our own handle so the bare
-    // name resolves to our own export (naming-namespaces.md).
+// Resolve the kcdx.code export plugin.lua published, call the hooked stub with
+// seed=10, and assert the result. ResolveSymbolAs threads g_self so the bare
+// "stub_*" resolves on the SELF tier to our own plugin's <author>.<plugin>.stub_*
+// export (a bare ResolveSymbol with no owner would miss it — cap-40 doc).
+void ResolveCallAndCheck(const char* sym, const char* sub, int expected) {
     uintptr_t va = g_api->ResolveSymbolAs(g_self, sym);
-    char reason[256];
+    char reason[320];
     if (!va) {
         snprintf(reason, sizeof(reason),
-            "ResolveSymbolAs(self, '%s') returned 0 — trampoline didn't "
-            "register its export", sym);
-        gLog.Error("VERIFY", "FAIL: %s", reason);
-        g_api->ReportTestResult(g_self, sub_test_name, 0, reason);
+            "ResolveSymbolAs(self, '%s') returned 0 — the kcdx.code stub was "
+            "not allocated/exported (or the mid hook failed to install) in "
+            "plugin.lua; mid-on-code not proven", sym);
+        Check(sub, false, reason);
         return;
     }
-    auto fn = reinterpret_cast<Cap04TargetFn>(va);
-    int result = fn(seed);
-    if (result != expected) {
-        snprintf(reason, sizeof(reason),
-            "target_symbol='%s' seed=%d returned %d (expected %d)",
-            sym, seed, result, expected);
-        gLog.Error("VERIFY", "FAIL: %s", reason);
-        g_api->ReportTestResult(g_self, sub_test_name, 0, reason);
-        return;
-    }
+    StubFn fn = reinterpret_cast<StubFn>(va);
+    int result = fn(10);
+    bool pass = (result == expected);
     snprintf(reason, sizeof(reason),
-        "target_symbol='%s' seed=%d returned %d as expected",
-        sym, seed, result);
-    gLog.Info("VERIFY", "PASS: %s", reason);
-    g_api->ReportTestResult(g_self, sub_test_name, 1, reason);
+        "%s — called kcdx.code stub '%s' (resolved via export) with seed=10, "
+        "got %d (expected %d); kcdx.hook mode=mid at +3 took effect on the "
+        "kcdx.code-allocated region",
+        pass ? "mid-on-code ok" : "mid-on-code WRONG",
+        sym, result, expected);
+    Check(sub, pass, reason);
 }
 
 void OnMessage(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
+    if (g_reported) return;
+    g_reported = true;
 
-    gLog.Info("VERIFY", "InputLoaded received; invoking 4 mid_hook target symbols");
+    gLog.Info("VERIFY",
+        "InputLoaded — calling the kcdx.code stubs the Lua mid hooks target");
 
-    if (!g_reported_a) {
-        g_reported_a = true;
-        InvokeAndReport("target_a", "CAP-04a", 10, 110);
-    }
-    if (!g_reported_b) {
-        g_reported_b = true;
-        InvokeAndReport("target_b", "CAP-04b", 10, 10);
-    }
-    if (!g_reported_c) {
-        g_reported_c = true;
-        InvokeAndReport("target_c", "CAP-04c", 10, 10);
-    }
-    if (!g_reported_d) {
-        g_reported_d = true;
-        InvokeAndReport("target_d", "CAP-04d", 10, 110);
-    }
+    // run: callback returns nothing -> the captured `add rax,0x64` runs -> 110.
+    ResolveCallAndCheck("stub_run", "CAP-04-mid-on-code-run", 110);
+    // skip: callback returns "skip" -> the captured `add` never runs -> 10.
+    ResolveCallAndCheck("stub_skip", "CAP-04-mid-on-code-skip", 10);
 }
 }  // namespace
 
@@ -153,35 +114,21 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 
     gLog.Info("INIT", "kcdxPlugin_Load called");
 
-    g_script = static_cast<const kcdxScriptingInterface*>(
-        api->QueryInterface(kcdxInterface_Scripting,
-                            kcdxScriptingInterface_Version));
-    if (!g_script || !g_script->lua) {
-        gLog.Error("INIT", "QueryInterface(Scripting) returned null");
-        api->ReportTestResult(g_self, "CAP-04a", 0,
-            "QueryInterface(Scripting) returned null");
-        return true;
-    }
-    g_lua = g_script->lua;
-
-    // Register the 4 Lua callbacks. They'll show up at
-    // kcdx.Cap04Test.OnA..OnD — the mid-hook TOML's lua_callback
-    // field must reference them by that full path.
-    g_script->RegisterFunction(g_self, "Cap04Test", "OnA", &OnA_callback, nullptr);
-    g_script->RegisterFunction(g_self, "Cap04Test", "OnB", &OnB_callback, nullptr);
-    g_script->RegisterFunction(g_self, "Cap04Test", "OnC", &OnC_callback, nullptr);
-    g_script->RegisterFunction(g_self, "Cap04Test", "OnD", &OnD_callback, nullptr);
-
     auto* m = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging,
                             kcdxMessagingInterface_Version));
     if (!m) {
         gLog.Error("INIT", "QueryInterface(Messaging) returned null");
-        api->ReportTestResult(g_self, "CAP-04a", 0,
+        api->ReportTestResult(g_self, "CAP-04-mid-on-code-run", 0,
+            "QueryInterface(Messaging) returned null");
+        api->ReportTestResult(g_self, "CAP-04-mid-on-code-skip", 0,
             "QueryInterface(Messaging) returned null");
         return true;
     }
     m->RegisterListener(g_self, nullptr, OnMessage);
+    gLog.Info("INIT",
+        "listener registered; verify runs on InputLoaded after ApplyZone "
+        "installs the Lua mid detours on the kcdx.code stubs");
     return true;
 }
 
