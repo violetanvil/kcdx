@@ -1,6 +1,6 @@
 -- CAP-03 plugin.lua — Phase 4b Batch 1: CAP-03 migrated from
 -- [[hook]] + pak-Lua-callback to kcdx.hook{before}; same site, same
--- observable (callback fires), pure-Lua now.
+-- observable (the hook callback fires), pure-Lua now.
 --
 -- The target is an un-named direct callee of CGame::Update
 -- (0x180865FB4 in KCD2 1.5.1164953) — no Address Library name, so the
@@ -9,24 +9,36 @@
 -- "void", param_types ["ptr"]). This is the labeled expert hatch for a
 -- target the library can't name yet (cornerstones.md / AP12-OK), NOT a gap.
 --
--- The before callback bumps a fire counter — it does NOT dereference the
--- ptr (object layout unknown; the test only confirms the dispatch chain
--- fired). CAP-03 PASS asserts the SAME observable the old pak callback did:
--- the hook INSTALLED (h:applied()==true) AND FIRED at least once
--- (fire_count > 0).
+-- The before callback does NOT dereference the ptr (object layout unknown;
+-- the test only confirms the dispatch chain fired). CAP-03 PASS asserts the
+-- SAME observable the old pak callback did: the hook FIRED at least once.
 --
--- REPORT TIMING: the old pak test reported from a CryEngine EventSystem
--- listener on OnSystemStarted/OnGameplayStarted — well after the engine had
--- ticked many times. The kcdx-native equivalent is "input_loaded" (the
--- latest boot-time lifecycle event, "fires every boot" — the standard
--- auto-pass trigger), NOT "ready". "ready" fires ~immediately after the
--- apply pass — the CGame::Update callee has barely run by then (the first
--- migration attempt reported at "ready" and saw fire_count=0 despite
--- applied()==true). input_loaded gives the per-frame callee maximal time to
--- fire before the assertion.
+-- REPORT TIMING — self-report on first fire, NOT poll at a fixed lifecycle
+-- event. A probe (PROBE B/B.2, 2026-05-25) established the ground truth: the
+-- hook installs and the detour fires correctly + repeatedly on the main
+-- thread — but the FIRST fire lands AFTER kcdx.on("input_loaded") (and well
+-- after "ready"). The target is the menu/UI pump; the game only starts
+-- calling it once the menu is actually rendering, which is a frame or more
+-- past input_loaded. So ANY fixed lifecycle sampling point can precede the
+-- first fire and read fire_count=0 — that was the bug in the first two
+-- migration attempts (reported at ready, then input_loaded, both too early).
+-- The correct observable is event-driven: the moment the hook fires, report
+-- PASS. The hook firing IS the thing under test; we report when it happens.
 
 local PATTERN =
     "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
+
+local reported = false
+
+local function report_fired(fire_count)
+    if reported then return end
+    reported = true
+    kcdx.test.report("CAP-03", true,
+        "update-callee hook fired (count=" .. fire_count .. ") — the before "
+        .. "callback ran on the hooked CGame::Update callee. Phase 4b Batch 1 "
+        .. "migration off legacy [[hook]]+pak; same site, same observable, "
+        .. "kcdx.hook{before} mechanism.")
+end
 
 local fire_count = 0
 
@@ -36,6 +48,7 @@ local h = kcdx.hook{
     signature = "void (ptr)",       -- void __fastcall(this_ptr*); ptr not deref'd
     before    = function(this_ptr)  -- single `this` arg; we only count fires
         fire_count = fire_count + 1
+        report_fired(fire_count)    -- self-report PASS on the first fire
     end,
 }
 
@@ -45,21 +58,23 @@ if h == nil then
     return
 end
 
--- Report at input_loaded (the latest boot-time lifecycle event) so the
--- per-frame CGame::Update callee has had maximal time to fire. :applied()
--- is final by here (the apply pass ran long ago); fire_count reflects whether
--- the dispatch chain worked end-to-end. Guard against input_loaded firing
--- more than once (it can re-fire) — report only the first time.
-local reported = false
+-- Backstop: if by input_loaded the hook never INSTALLED (apply-pass
+-- rejection), report FAIL with the reason — that is a real failure (the hook
+-- couldn't be placed). We do NOT FAIL here on fire_count==0: the first fire
+-- legitimately lands after input_loaded (see the timing note above), and the
+-- before callback self-reports PASS whenever it fires. If applied()==true but
+-- it simply hasn't fired yet, the row stays PENDING until it does (the honest
+-- "installed, awaiting first fire" state) — it flips to PASS the moment the
+-- menu pump runs.
 kcdx.on("input_loaded", function()
     if reported then return end
-    reported = true
-    local applied = h:applied()
-    local pass = (applied == true) and (fire_count > 0)
-    kcdx.test.report("CAP-03", pass,
-        pass and ("update-callee hook installed (applied()==true) and fired "
-                  .. fire_count .. " time(s) by input_loaded")
-             or  ("expected applied()==true and fire_count>0; got applied="
-                  .. tostring(applied) .. " fire_count=" .. fire_count
-                  .. " reason=" .. tostring(h:reason())))
+    if h:applied() ~= true then
+        reported = true
+        kcdx.test.report("CAP-03", false,
+            "hook did not install: applied()=" .. tostring(h:applied())
+            .. " reason=" .. tostring(h:reason()))
+    end
+    -- applied()==true but not yet fired: leave PENDING; the before callback
+    -- reports PASS on its first fire (which the probe confirmed happens
+    -- shortly after input_loaded as the menu renders).
 end)
