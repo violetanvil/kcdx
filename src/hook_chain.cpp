@@ -45,6 +45,7 @@ extern "C" {
 #include "log.h"
 #include "lua_bind_helpers.h"  // PushPointer
 #include "lua_memory.h"        // pointer, kPointerMetatable
+#include "modification_inventory.h"  // RecordFire (per-detour fire breadcrumb)
 #include "patch_engine.h"      // Resolve, ResolvedPatch (locator pipeline)
 #include "pe_helpers.h"        // OpenModule (callsite rva -> module base)
 #include "rom_borrowed/runtime_func_t.h"
@@ -935,6 +936,22 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
     lua_State* L = g_L;
     Chain* chain = ResolveChainForDispatch(target_func_ptr);
     if (!chain || chain->entries.empty()) return true;
+
+    // Fire breadcrumb: record that the game just executed THIS detour, naming
+    // the chain's representative owner (the first entry — load-order-first,
+    // the one that fixed the thunk). One record per chokepoint (DispatchPre and
+    // DispatchPost each record once for a non-empty chain), not per chain
+    // entry — keeps the 32-slot ring from being flooded by a many-hook chain
+    // and answers "which detour did the game last run" — the missing link for
+    // the 0xC8 crash (docs/known-issues/save-load crash 0xC8 ...). ALWAYS-ON,
+    // zero-allocation, no-log: a relaxed atomic bump + four stores
+    // (.claude/rules/lua-callback-threading.md hot-path contract). The
+    // borrowed name pointers are process-lifetime (Chains never destroyed).
+    modification_inventory::RecordFire(
+        target_func_ptr,
+        chain->entries.front().pluginName.c_str(),
+        chain->entries.front().name.c_str());
+
     // On the C-only path (no Lua callbacks ever installed on this
     // target), a missing L is fine: C dispatch does not touch the Lua
     // VM. We branch per-entry below: Lua entries early-skip when L is
@@ -1050,6 +1067,16 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* params,
 
     if (chain && !chain->entries.empty()) {
 
+    // Fire breadcrumb (mirror of DispatchPre's). The post chokepoint records
+    // too: a crash AFTER the original returns (the 0xC8 shape — fault is
+    // post-original, in the asset/shader window) leaves the last breadcrumb
+    // at the Post fire, naming the detour the game most recently completed.
+    // Same always-on, zero-allocation, no-log hot-path contract.
+    modification_inventory::RecordFire(
+        target_func_ptr,
+        chain->entries.front().pluginName.c_str(),
+        chain->entries.front().name.c_str());
+
     for (const ChainEntry& e : chain->entries) {
         if (e.mode != kcdx::hook_payload::Mode::After) continue;
 
@@ -1155,6 +1182,14 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
 
     Chain* chain = ResolveChainForDispatch(target_func_ptr);
     if (!chain || !chain->isMid) return 0;
+
+    // Fire breadcrumb (mirror of DispatchPre/Post). A mid chain owns its
+    // single callback on the Chain itself (midPluginName / midName), so the
+    // owner comes from there. Same always-on, zero-allocation, no-log
+    // hot-path contract (.claude/rules/lua-callback-threading.md).
+    modification_inventory::RecordFire(target_func_ptr,
+                                       chain->midPluginName.c_str(),
+                                       chain->midName.c_str());
 
     // Off-thread routing branch (parallel to DispatchPre / DispatchPost).
     // Mid is one-per-VA in v1 so the dedup key is targetVa, not a per-
@@ -2623,12 +2658,29 @@ std::vector<ConflictParticipant> GetParticipantsAtTarget(uintptr_t targetVa) {
     return out;
 }
 
-std::vector<uintptr_t> GetAllChainTargets() {
-    std::vector<uintptr_t> out;
+std::vector<ChainTarget> GetAllChainTargets() {
+    std::vector<ChainTarget> out;
     std::lock_guard<std::mutex> lock(g_chainsMu);
     out.reserve(g_chains.size());
     for (const auto& kv : g_chains) {
-        out.push_back(kv.first);  // map key IS the resolved target VA
+        const Chain& chain = *kv.second;
+        // Owner attribution: a mid chain keeps its single callback on the
+        // Chain itself (midPluginName / midName); a function-entry / callsite
+        // chain keeps an ordered entries vector — the FIRST entry is the
+        // representative owner (load-order-first; the chain-share / coexist
+        // policy means all entries share the target, and the first is the one
+        // that fixed the thunk). An empty entries vector (all uninstalled —
+        // the detour stays a no-op shim) has no owner; report "".
+        const char* pluginName = "";
+        const char* hookName   = "";
+        if (chain.isMid) {
+            pluginName = chain.midPluginName.c_str();
+            hookName   = chain.midName.c_str();
+        } else if (!chain.entries.empty()) {
+            pluginName = chain.entries.front().pluginName.c_str();
+            hookName   = chain.entries.front().name.c_str();
+        }
+        out.push_back({kv.first, pluginName, hookName});  // key IS the VA
     }
     return out;
 }

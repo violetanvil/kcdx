@@ -88,4 +88,57 @@ const char* LastInventorySummary();
 // the inventory is non-empty at boot. Refreshed by LogInventory().
 size_t LastTotalModifications();
 
+// ===========================================================================
+// Fire breadcrumb — the last N hook detours the game executed
+// ===========================================================================
+//
+// WHY: the 0xC8 save-load crash (docs/known-issues/save-load crash 0xC8 ...)
+// fires ~10s after the load hooks complete, inside/after a kcdx detour, but
+// nothing logged WHICH detour the game last ran. The inventory above answers
+// "what did kcdx modify"; this answers "what did the game most recently
+// EXECUTE through kcdx" — the missing link to name the culprit from one log.
+//
+// A fixed-size ring of the last kFireRingSize (32) detour fires, written at
+// the hook_chain dispatch chokepoints (DispatchPre / DispatchPost /
+// MidDispatch) and dumped newest-first by the crash guard at fault time.
+//
+// HOT-PATH CONTRACT (.claude/rules/lua-callback-threading.md): RecordFire is
+// ALWAYS-ON and ZERO-ALLOCATION — a relaxed atomic increment + a handful of
+// stores into a fixed slot. NO lock, NO allocation, NO logging. It is cheaper
+// than a dev-mode branch (which is itself a branch + a TLS/global read), so it
+// is NOT dev-gated: the buffer's only value is AT a crash, and crashes happen
+// in production too. The brief mandates no per-fire log, so there is nothing
+// to gate.
+
+// One recorded detour fire. pluginName / hookName are PROCESS-LIFETIME string
+// pointers borrowed from the firing ChainEntry's std::string storage (Chains
+// are never destroyed — hooks live for the session — so the backing strings
+// outlive the ring; see hook_chain.h ConflictParticipant lifetime note). seq
+// is the monotonic global fire counter at record time (0 == an empty slot the
+// dump skips).
+struct FireRecord {
+    uintptr_t   targetVa   = 0;
+    const char* pluginName = nullptr;  // borrowed; process-lifetime
+    const char* hookName   = nullptr;  // borrowed; process-lifetime
+    uint64_t    seq        = 0;
+};
+
+constexpr unsigned kFireRingSize = 32;
+
+// Record one detour fire into the ring. Called from the hook_chain dispatch
+// chokepoints on the hot path. Allocation-free, lock-free, log-free: bumps a
+// relaxed atomic seq, computes slot = seq % kFireRingSize, stores the four
+// fields. `pluginName` / `hookName` MUST be process-lifetime pointers (the
+// ChainEntry's pluginName.c_str() / name.c_str()).
+void RecordFire(uintptr_t targetVa, const char* pluginName,
+                const char* hookName);
+
+// Snapshot the fire ring into `out` (capacity kFireRingSize), NEWEST-FIRST,
+// skipping empty slots. Returns the number of entries written. Read-only over
+// the fixed ring storage — safe to call from the SEH crash handler (no lock,
+// no allocation; a torn read across a concurrent RecordFire is acceptable in
+// the crash path — the worst case is one slightly-stale entry). Also exposed
+// for the cap-47 boot self-test (asserts at least one fire was recorded).
+unsigned LastFires(FireRecord* out, unsigned cap);
+
 }  // namespace kcdx::modification_inventory

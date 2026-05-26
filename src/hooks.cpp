@@ -6,6 +6,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>   // snprintf (cap-47 self-report reason)
+#include <cstring>  // strcmp  (cap-47 owner-name check)
 #include <vector>
 
 #include "MinHook.h"
@@ -520,6 +522,68 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // the last emit. Catches CAP-09-style tests that report from a task
     // queued during Plugin_Load (task fires AFTER kInputLoaded summary).
     kcdx::test::EmitSummaryIfChanged("update tick");
+
+    // cap-47: engine self-report for the crash breadcrumb (Part 2) + the
+    // owner-named inventory DETAIL (Part 3). Manifest stub at
+    // test-plugins/cap-47-crash-breadcrumb/; the plugin installs a `before`
+    // hook on a kcdx.code stub and dynamic_calls it from kcdx.on("ready") so
+    // the detour fires and leaves a breadcrumb. Reported from the per-tick
+    // update (NOT the first-update-tick one-shot above) because that one-shot
+    // runs BEFORE ApplyZone installs plugin hooks and before "ready" fires —
+    // the ring is still empty there. The per-tick path runs after both, so by
+    // the tick following "ready" the breadcrumb ring is populated. One-shot
+    // guarded; retries each tick until a fire is observed so a slow ready
+    // doesn't fail it. The culprit-walk (Part 1) needs a real fault and is
+    // marked [manual] (covered by the live 0xC8 repro) — not asserted here.
+    {
+        static bool s_cap47Reported = false;
+        if (!s_cap47Reported) {
+            namespace mi = kcdx::modification_inventory;
+            mi::FireRecord fires[mi::kFireRingSize];
+            const unsigned nFires = mi::LastFires(fires, mi::kFireRingSize);
+
+            // (b) inventory DETAIL now names the owner: at least one live
+            // chain yields a non-generic, non-empty plugin name (was the
+            // hardcoded "kcdx.hook" before Part 3).
+            bool ownerNamed = false;
+            const char* ownerExample = "";
+            for (const auto& t : kcdx::hook_chain::GetAllChainTargets()) {
+                if (t.pluginName && t.pluginName[0] &&
+                    std::strcmp(t.pluginName, "kcdx.hook") != 0) {
+                    ownerNamed = true;
+                    ownerExample = t.pluginName;
+                    break;
+                }
+            }
+
+            if (nFires > 0) {
+                // (a) the ring recorded a fire after a boot-firing hook ran.
+                s_cap47Reported = true;
+                const bool pass = ownerNamed;
+                char reason[320];
+                if (pass) {
+                    std::snprintf(reason, sizeof(reason),
+                        "breadcrumb ring recorded %u fire(s) (newest: plugin=%s "
+                        "hook=%s seq=%llu); inventory chain owner named (e.g. "
+                        "plugin=%s) — was generic \"kcdx.hook\" pre-Part-3",
+                        nFires,
+                        fires[0].pluginName ? fires[0].pluginName : "(none)",
+                        fires[0].hookName ? fires[0].hookName : "(none)",
+                        (unsigned long long)fires[0].seq, ownerExample);
+                } else {
+                    std::snprintf(reason, sizeof(reason),
+                        "breadcrumb ring recorded %u fire(s) but NO live chain "
+                        "yields a non-generic owner plugin name — Part 3's "
+                        "GetAllChainTargets owner attribution is not landing",
+                        nFires);
+                }
+                kcdx::test::ReportResult("cap-47-crash-breadcrumb", pass, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-47 self-report");
+            }
+            // nFires == 0: leave s_cap47Reported false; retry next tick (the
+            // hook may not have fired yet — ready fires shortly after boot).
+        }
+    }
 
     g_orig_update(p1, p2, p3);
 }

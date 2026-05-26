@@ -116,58 +116,88 @@ bool IsKernelOrNtdll(const char* moduleName) {
 // leaf name + RVA into the out-params. Returns true if a non-kernel
 // frame was found.
 //
-// MUST be no-throw and allocation-free-ish — it runs inside the SEH
-// filter. dbghelp's StackWalk64 is already linked (#pragma comment
-// below). On any failure we return false and the caller logs what it
-// has; the handler never throws.
+// IMPLEMENTATION: the x64-NATIVE unwinder (RtlLookupFunctionEntry +
+// RtlVirtualUnwind), NOT dbghelp's StackWalk64. StackWalk64 needs a
+// symbol handler (SymInitialize + the SymFunctionTableAccess64 /
+// SymGetModuleBase64 callbacks resolve unwind data through it) to walk
+// an x64 stack — and kcdx NEVER calls SymInitialize anywhere in src/, so
+// the StackWalk64 form returned nothing, the loop found no non-kernel
+// frame, and FAULTED_CULPRIT never emitted (docs/known-issues/save-load
+// crash 0xC8 ... PROBE I "No FAULTED_CULPRIT line emitted"). The native
+// unwinder needs NO symbol handler, is allocation-free, and is the same
+// machinery Windows' own SEH dispatch uses — so it is SEH-filter-safe.
+//
+// MUST be no-throw and allocation-free — it runs inside the SEH filter.
+// On any failure we return false and the caller logs what it has; the
+// handler never throws.
 bool WalkToCulprit(CONTEXT* ctx, char* outModule, size_t outModuleLen,
                    uint64_t* outRva) {
     if (!ctx) return false;
 
-    // StackWalk64 mutates the CONTEXT it walks — copy so we never
+    // RtlVirtualUnwind mutates the CONTEXT it advances — copy so we never
     // perturb the live faulting context (which WriteOwnMinidump still
-    // needs intact).
+    // needs intact). Seed Rip/Rsp/Rbp from the fault.
     CONTEXT local = *ctx;
-
-    STACKFRAME64 frame{};
-    frame.AddrPC.Offset    = local.Rip;
-    frame.AddrPC.Mode      = AddrModeFlat;
-    frame.AddrFrame.Offset = local.Rbp;
-    frame.AddrFrame.Mode   = AddrModeFlat;
-    frame.AddrStack.Offset = local.Rsp;
-    frame.AddrStack.Mode   = AddrModeFlat;
-
-    HANDLE hProc   = GetCurrentProcess();
-    HANDLE hThread = GetCurrentThread();
 
     // Bounded walk — never spin on a corrupt stack.
     for (int i = 0; i < 64; ++i) {
-        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, hProc, hThread, &frame,
-                         &local, nullptr, SymFunctionTableAccess64,
-                         SymGetModuleBase64, nullptr)) {
-            break;
-        }
-        uint64_t pc = frame.AddrPC.Offset;
+        const uint64_t pc = local.Rip;
         if (pc == 0) break;
 
         char mod[128] = "?";
         void* modBase = nullptr;
-        if (!ModuleForAddress(reinterpret_cast<void*>(pc), mod, sizeof(mod),
-                              &modBase)) {
-            continue;  // no module for this frame — keep walking
+        if (ModuleForAddress(reinterpret_cast<void*>(pc), mod, sizeof(mod),
+                             &modBase)) {
+            if (!IsKernelOrNtdll(mod)) {
+                // First non-kernel frame — this is the real culprit. Copy
+                // the leaf name out (ModuleForAddress already returns a
+                // leaf name).
+                size_t len = 0;
+                while (mod[len] && len + 1 < outModuleLen) {
+                    outModule[len] = mod[len];
+                    ++len;
+                }
+                outModule[len] = '\0';
+                *outRva = pc - reinterpret_cast<uint64_t>(modBase);
+                return true;
+            }
+            // KERNELBASE / ntdll / kernel32 — the RaiseException floor.
+            // Keep unwinding past it.
         }
-        if (IsKernelOrNtdll(mod)) continue;  // skip the RaiseException floor
+        // No module for this frame, or a kernel module — advance one frame
+        // via the x64 unwinder and keep walking.
 
-        // First non-kernel frame — this is the real culprit. Copy the
-        // leaf name out (ModuleForAddress already returns a leaf name).
-        size_t len = 0;
-        while (mod[len] && len + 1 < outModuleLen) {
-            outModule[len] = mod[len];
-            ++len;
+        // RtlLookupFunctionEntry resolves the function table entry for pc.
+        // A NULL return means a LEAF function (no unwind data) — standard
+        // x64 handling is: the return address is at [Rsp], pop it and
+        // advance Rsp by 8.
+        DWORD64       imageBase   = 0;
+        PRUNTIME_FUNCTION funcEntry =
+            RtlLookupFunctionEntry(pc, &imageBase, nullptr);
+        if (funcEntry) {
+            PVOID    handlerData     = nullptr;
+            DWORD64  establisherFrame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, pc, funcEntry,
+                             &local, &handlerData, &establisherFrame,
+                             nullptr);
+        } else {
+            // Leaf frame: read the return address off the stack and pop it.
+            // Guard the read — a corrupt Rsp must not fault inside the SEH
+            // filter (a fault here would terminate the process hard).
+            if (local.Rsp == 0) break;
+            uint64_t retAddr = 0;
+            if (::ReadProcessMemory(GetCurrentProcess(),
+                                    reinterpret_cast<LPCVOID>(local.Rsp),
+                                    &retAddr, sizeof(retAddr), nullptr) == 0) {
+                break;  // unreadable stack — stop, emit nothing
+            }
+            local.Rip  = retAddr;
+            local.Rsp += 8;
         }
-        outModule[len] = '\0';
-        *outRva = pc - reinterpret_cast<uint64_t>(modBase);
-        return true;
+
+        // RtlVirtualUnwind sets Rip to the caller's return address (0 at
+        // the top of the stack). The loop re-checks pc==0 at the top.
+        if (local.Rip == pc) break;  // no progress — bail (defensive)
     }
     return false;
 }
@@ -251,6 +281,31 @@ void LogFault(const char* site, const char* pluginName,
     LOG_ERROR_KV("GUARD", "FAULTED_INVENTORY",
         KV::BareStr("site",      site ? site : "?"),
         KV::BareStr("inventory", ::kcdx::modification_inventory::LastInventorySummary()));
+
+    // Dump the per-detour fire breadcrumb — the last N hook detours the game
+    // executed before dying, NEWEST-FIRST (Error, always-on). This names the
+    // hook(s) the game last ran, the missing link the 0xC8 load crash needed:
+    // its stack was pure-WHGame with no kcdx frame, but a kcdx detour fired
+    // ~10s earlier (docs/known-issues/save-load crash 0xC8 ...). Allocation-
+    // free: LastFires reads the fixed ring into a stack array, no lock, no
+    // iteration of any std::vector. Skips empty slots; emits nothing if the
+    // ring is empty (no hook ever fired this session).
+    {
+        ::kcdx::modification_inventory::FireRecord fires[
+            ::kcdx::modification_inventory::kFireRingSize];
+        const unsigned n = ::kcdx::modification_inventory::LastFires(
+            fires, ::kcdx::modification_inventory::kFireRingSize);
+        for (unsigned i = 0; i < n; ++i) {
+            LOG_ERROR_KV("GUARD", "FAULTED_FIRE",
+                KV::BareStr("site",   site ? site : "?"),
+                KV("seq",             fires[i].seq),
+                KV::BareStr("plugin", (fires[i].pluginName && fires[i].pluginName[0])
+                                          ? fires[i].pluginName : "(none)"),
+                KV::BareStr("hook",   (fires[i].hookName && fires[i].hookName[0])
+                                          ? fires[i].hookName : "(none)"),
+                KV("va",              reinterpret_cast<void*>(fires[i].targetVa)));
+        }
+    }
 
     // Also surface the fault in the offending plugin's own log file
     // (the consumer's bug-report channel). The line is identical

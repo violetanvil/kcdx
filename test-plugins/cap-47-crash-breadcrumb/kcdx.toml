@@ -1,0 +1,54 @@
+# CAP-47 — crash breadcrumb (per-detour fire ring) + owner-named inventory.
+#
+# Three cohesive engine changes ship under this one row (see the brief +
+# docs/known-issues/save-load crash 0xC8 raised from WHGame.md):
+#   Part 1  GUARD culprit-walk repaired to the x64-native unwinder
+#           (RtlLookupFunctionEntry + RtlVirtualUnwind) so FAULTED_CULPRIT
+#           finally emits on a RaiseException-class (0xC8) fault. NEEDS A REAL
+#           FAULT to exercise — marked [manual], covered by the live 0xC8
+#           repro; this boot test does NOT exercise it.
+#   Part 2  A fixed 32-slot ring of the last hook detours the game executed,
+#           written at the hook_chain dispatch chokepoints (DispatchPre /
+#           DispatchPost / MidDispatch) and dumped newest-first by the crash
+#           guard (GUARD FAULTED_FIRE) at fault time.
+#   Part 3  The inventory plugin_hook DETAIL now names the OWNING plugin +
+#           hook (via hook_chain::GetAllChainTargets returning {va, plugin,
+#           hook}) instead of the generic "kcdx.hook".
+#
+# Unlike cap-43/44/45/46 (pure manifest stubs), this plugin carries a
+# plugin.lua: it must LEAVE A BREADCRUMB so the engine self-check has a fire
+# to find. It allocates a tiny int(int) stub via kcdx.code, installs a
+# `before` hook on it, and dynamic_calls the stub from kcdx.on("ready") so the
+# detour FIRES exactly once after ApplyZone installs it. The fire records into
+# the ring with plugin="ts.cap_47_crash_breadcrumb" hook="cap47_breadcrumb_fire".
+#
+# What it proves (engine self-report in src/hooks.cpp, per-tick update, one-
+# shot, boot-only — no player input):
+#   cap-47-crash-breadcrumb  (a) the breadcrumb ring recorded >= 1 fire after
+#                            a boot-firing hook ran (mi::LastFires() non-empty)
+#                            AND (b) the inventory chain enumeration yields a
+#                            non-generic owner plugin name for >= 1 chain (the
+#                            Part-3 attribution; was hardcoded "kcdx.hook").
+#
+# The report is deferred to the per-tick update path (NOT the first-update-
+# tick one-shot that carries cap-45/46): the one-shot runs BEFORE ApplyZone
+# installs plugin hooks and before "ready" fires, so the ring is empty there.
+# The per-tick path runs after both; the report retries each tick until it
+# sees a fire, so a slow ready cannot make it fail.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_47_crash_breadcrumb"
+display_name        = "CAP-47 crash breadcrumb + owner-named inventory"
+author              = "ts"
+description         = "Dev-mode crash diagnostics: the per-detour fire breadcrumb ring (dumped at fault as GUARD FAULTED_FIRE) and the owner-named inventory plugin_hook DETAIL. The plugin leaves a breadcrumb by hooking + calling a kcdx.code stub; the engine self-reports that the ring is non-empty and the chain owner is named. The GUARD culprit-walk repair (Part 1) is [manual], covered by the live 0xC8 crash repro."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-47-crash-breadcrumb"]
+
+[entrypoints]
+lua = "plugin.lua"

@@ -165,15 +165,37 @@ struct ConflictParticipant {
 // for the process lifetime (see ConflictParticipant).
 std::vector<ConflictParticipant> GetParticipantsAtTarget(uintptr_t targetVa);
 
-// Enumerate every live chain's resolved target VA — the "what kcdx.hook has
-// modified" set, for the modification inventory (modification_inventory.cpp).
-// One VA per Chain in g_chains (function-entry, callsite, and mid chains
-// alike: each is ONE installed detour at its targetVa). Returns by value.
+// One live chain's modification-inventory record: its resolved target VA plus
+// the owning plugin + hook name, so the inventory DETAIL line names WHO owns a
+// chain rather than the generic surface name "kcdx.hook" (the attribution gap
+// PROBE I flagged in docs/known-issues/save-load crash 0xC8 ...). For a
+// function-entry / callsite chain the owner is the FIRST entry's
+// (pluginName, name); for a mid chain it is (midPluginName, midName). An
+// empty chain (all entries uninstalled — the detour stays a no-op shim) has
+// no owner, so pluginName/hookName fall back to "" (the VA is still reported).
+//
+// `pluginName` / `hookName` point into the owning Chain's stable std::string
+// storage. Chains are never destroyed (hooks live for the session), so the
+// pointers are valid for the process lifetime — same lifetime contract as
+// ConflictParticipant::name above. Do NOT hold them past a g_chains mutation
+// of the SAME entry's strings (none happens — entries' name/pluginName are
+// set at Add and never rewritten).
+struct ChainTarget {
+    uintptr_t   va;
+    const char* pluginName;  // borrowed, process-lifetime; "" if chain empty
+    const char* hookName;    // borrowed, process-lifetime; "" if chain empty
+};
+
+// Enumerate every live chain's target VA + owning plugin/hook name — the
+// "what kcdx.hook has modified" set, for the modification inventory
+// (modification_inventory.cpp). One record per Chain in g_chains
+// (function-entry, callsite, and mid chains alike: each is ONE installed
+// detour at its targetVa). Returns by value.
 //
 // Locking: takes g_chainsMu (the same mutex Add* takes), because Add* can run
 // concurrently during the first-tick registration pass. Read-only — the map
-// and its Chains are not mutated. The returned VAs are plain integers (no
-// borrowed pointers), valid indefinitely.
-std::vector<uintptr_t> GetAllChainTargets();
+// and its Chains are not mutated. The VAs are plain integers; the name
+// pointers are process-lifetime borrows (see ChainTarget).
+std::vector<ChainTarget> GetAllChainTargets();
 
 }  // namespace kcdx::hook_chain
