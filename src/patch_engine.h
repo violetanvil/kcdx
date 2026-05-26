@@ -110,9 +110,40 @@ struct PatchEntry {
     Anchor anchor;
     uint32_t maxAnchorDistance = 4096;
 
-    // Set true by ApplyResolvedPatch on successful apply. Read by
-    // GetConflictReport so test plugins can verify outcomes.
+    // Set true by ApplyResolvedPatch on successful apply (or verified
+    // idempotent-skip / dry-run). Read by GetConflictReport so test
+    // plugins can verify outcomes.
+    //
+    // NOTE (COMP-15): ApplyResolvedPatch now sets this itself (it takes a
+    // non-const PatchEntry&). The legacy g_patches callers (hooks.cpp,
+    // ldr_notify.cpp) also assign it post-call; those writes are now
+    // redundant-but-harmless. For the bytes-Register path
+    // (ApplyBytesEntry -> ApplyPatch -> ApplyResolvedPatch) this is the
+    // ONLY thing that sets appliedOK — that path previously left it at the
+    // false default even on success, relying solely on the registry Status
+    // atomic. Setting it here closes that gap so a bytes-Register entry's
+    // appliedOK reflects reality.
     bool appliedOK = false;
+
+    // Final post-apply write target, cached by ApplyResolvedPatch when the
+    // patch is effectively applied (successful write, verified idempotent-
+    // skip, or dry-run). Equals the ResolvedPatch::patchAddr (located base
+    // + offset) for WHATEVER locator kind resolved this entry — target /
+    // pattern / target_symbol / address_id / resolvedVa. The write range is
+    // [appliedPatchAddr, appliedPatchAddr + replacement.size()).
+    //
+    // Stays 0 for an entry that never applied (resolve failure, byte
+    // mismatch, plugin disabled). A 0 base can therefore never CONTAIN a
+    // real target VA, so an unapplied entry cannot false-match a target
+    // query (GetAppliedBytesPatchesAtTarget below relies on this).
+    //
+    // Unlike `resolvedVa` (set only by the target=/seed/Rva path, 0 for
+    // pattern/target_symbol), this is populated for every applied entry
+    // regardless of locator — that is the point: it gives every applied
+    // bytes-Register patch a stable post-apply write-range the conflict
+    // report can fold in (COMP-15). Engine-internal struct field (not in
+    // include/kcdx/), so this append is unconstrained by AP11.
+    uintptr_t appliedPatchAddr = 0;
 };
 
 // Engine state — set by config.cpp at startup, read by hooks.cpp when applying.
@@ -173,15 +204,64 @@ void PreFlightAll();
 // affecting this patch, the abort message names the upstream culprit. If
 // pre-flight predicted a write-on-write conflict where this patch is the
 // writer landing on previously-written bytes, that's logged at apply time.
-bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r);
+//
+// Takes a non-const PatchEntry& because on an effective apply (write,
+// verified idempotent-skip, or dry-run) it caches the final write target
+// onto p.appliedPatchAddr and sets p.appliedOK (COMP-15). All callers
+// already pass a non-const lvalue (g_patches[i], the for(auto& p) loops in
+// ldr_notify.cpp, the *PatchEntry behind the bytes-Register shared_ptr).
+bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r);
 
 // Apply a single patch by re-resolving (no pre-flight context). Used by the
-// Lua KCDX.ScanAndWrite runtime path. Does not benefit from pre-flight's
-// "incidental overlap" tolerance.
-bool ApplyPatch(const PatchEntry& p);
+// Lua KCDX.ScanAndWrite runtime path and the kcdx.bytes apply handler
+// (ApplyBytesEntry). Does not benefit from pre-flight's "incidental overlap"
+// tolerance. Non-const for the same appliedPatchAddr/appliedOK caching as
+// ApplyResolvedPatch.
+bool ApplyPatch(PatchEntry& p);
 
 // Apply all patches in g_patches. Internally calls PreFlightAll() first.
 void ApplyAll();
+
+// --- Conflict-report participation (COMP-15) ----------------------------
+//
+// One bytes-Register patch participating in a conflict at a target VA.
+// Mirrors hook_chain::ConflictParticipant {name, priority, applied} so
+// GetConflictReport (interfaces.cpp) can fold these into its existing
+// per-target hit list exactly as it folds the hook_chain participants
+// (COMP-14). `applied` is the entry's PatchEntry::appliedOK (true = applied
+// or idempotent-skipped; false = a resolved-but-failed apply).
+//
+// `name` points into the PatchEntry's `name` std::string, which lives in
+// the lua_registry Entry's payload (shared_ptr<PatchEntry>) for the process
+// lifetime — registry entries are append-only and never destroyed (see
+// lua_registry.cpp g_entries std::deque). The pointer is valid for as long
+// as the caller could hold it. Mirrors the lifetime guarantee on
+// hook_chain::ConflictParticipant.
+struct AppliedBytesPatch {
+    const char* name;
+    int         priority;
+    bool        applied;
+};
+
+// All kcdx.bytes (Kind::Bytes) registrations whose APPLIED write range
+// [appliedPatchAddr, appliedPatchAddr + replacement.size()) contains
+// `targetVa`. Walks the lua_registry Kind::Bytes entries (via
+// lua_registry::ForEachEntryOfKind), casts each type-erased payload to
+// PatchEntry (the patch engine owns PatchEntry; the registry stays payload-
+// agnostic; interfaces.cpp stays payload-blind — DECISION A), and yields a
+// participant per containing entry.
+//
+// An entry that never applied has appliedPatchAddr == 0, so its range can't
+// contain any real targetVa and it is naturally skipped — mirroring the
+// legacy g_patches report loop's skip of resolve-failures (!r.ok). Returns
+// empty when no bytes-Register patch's applied range covers `targetVa`.
+//
+// Locking: the registry enumerator takes the registry's own mutex for the
+// walk (same discipline as hook_chain::GetParticipantsAtTarget taking
+// g_chainsMu) — the report can run concurrently with the first-tick apply
+// pass. Returns by value; the `name` pointers remain valid for the process
+// lifetime (see AppliedBytesPatch).
+std::vector<AppliedBytesPatch> GetAppliedBytesPatchesAtTarget(uintptr_t targetVa);
 
 // Find every byte-offset within [data, data+size) where the pattern matches.
 std::vector<size_t> FindAllInBuffer(const uint8_t* data, size_t size, const Pattern& pat);

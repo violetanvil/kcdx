@@ -364,6 +364,19 @@ Entry* FindMut(uint64_t handleId) {
     return &g_entries[it->second];
 }
 
+void ForEachEntryOfKind(Kind k, const std::function<void(const Entry&)>& fn) {
+    // Walk the append-only queue under the queue mutex. `fn` is a cheap
+    // read-only inspection (the COMP-15 patch-engine accessor casts the
+    // payload and tests a range); it must not re-enter the registry — that
+    // would self-deadlock on g_mu. Entries never move (std::deque) and are
+    // never destroyed, so handing out a const Entry& for the duration of the
+    // call is safe.
+    std::lock_guard<std::mutex> lock(g_mu);
+    for (const Entry& e : g_entries) {
+        if (e.kind == k) fn(e);
+    }
+}
+
 void SetStatus(uint64_t handleId, Status s, const std::string& reason) {
     std::lock_guard<std::mutex> lock(g_mu);
     auto it = g_byHandleId.find(handleId);

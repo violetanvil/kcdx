@@ -12,6 +12,11 @@
 #include "conflict_engine.h"
 #include "load_order.h"
 #include "log.h"
+#include "lua_registry.h"  // ForEachEntryOfKind — enumerate Kind::Bytes
+                           // entries for GetAppliedBytesPatchesAtTarget
+                           // (COMP-15). The patch engine casts the
+                           // type-erased payload; the registry stays
+                           // payload-agnostic.
 #include "pe_helpers.h"
 #include "symbols.h"
 
@@ -481,7 +486,7 @@ void PreFlightAll() {
     }
 }
 
-bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
+bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r) {
     // load_order.toml disabled gate. The production orchestration in
     // hooks.cpp filters disabled-plugin entries out of g_applyOrder
     // before reaching this function, but the ldr_notify before_game
@@ -510,6 +515,13 @@ bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
     int verdict = VerifyOriginalAtAddr(r.patchAddr, p);
 
     if (verdict == 0) {
+        // Verified idempotent-skip: the replacement bytes are already at the
+        // site, so this patch IS effectively applied. Cache the write-range +
+        // mark applied so it reports in GetConflictReport (COMP-15) just like
+        // a fresh write — an idempotent-skipped bytes-Register entry is a real
+        // winner at this VA.
+        p.appliedPatchAddr = r.patchAddr;
+        p.appliedOK = true;
         log::InfoF("[%s] patch already applied; skipping (site addr 0x%p)",
                    p.name.c_str(), reinterpret_cast<void*>(r.patchAddr));
         return true;
@@ -545,6 +557,11 @@ bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
     }
 
     if (g_dryRun) {
+        // dry_run returns "applied" without writing (test-only path). Cache
+        // the would-be write-range + mark applied so the conflict report
+        // treats it as a participant — consistent with the true return.
+        p.appliedPatchAddr = r.patchAddr;
+        p.appliedOK = true;
         log::InfoF("[%s] dry_run: would write %s at 0x%p (skipped)",
                    p.name.c_str(),
                    HexBytes(p.replacement).c_str(),
@@ -555,6 +572,14 @@ bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
     if (!WriteBytesAtAddr(r.patchAddr, p)) {
         return false;
     }
+
+    // Successful write — cache the final write-range + mark applied. For the
+    // bytes-Register path (ApplyBytesEntry) this is the ONLY appliedOK write;
+    // for the legacy g_patches path the callers also assign appliedOK post-
+    // call (now redundant). appliedPatchAddr stays 0 on every !ok return
+    // above, so an unapplied entry can never false-match a target query.
+    p.appliedPatchAddr = r.patchAddr;
+    p.appliedOK = true;
 
     log::InfoF("[%s] applied successfully at 0x%p: %s -> %s",
                p.name.c_str(),
@@ -576,7 +601,7 @@ bool ApplyResolvedPatch(const PatchEntry& p, const ResolvedPatch& r) {
     return true;
 }
 
-bool ApplyPatch(const PatchEntry& p) {
+bool ApplyPatch(PatchEntry& p) {
     // Lua-runtime entry point: no pre-flight context, re-resolve against the
     // current DLL state. Patches called this way do NOT benefit from the
     // "incidental overlap is OK" property of pre-flight; if an earlier TOML
@@ -601,6 +626,32 @@ void ApplyAll() {
         else ++fail;
     }
     log::InfoF("Patch summary: %zu applied, %zu aborted", ok, fail);
+}
+
+std::vector<AppliedBytesPatch> GetAppliedBytesPatchesAtTarget(uintptr_t targetVa) {
+    std::vector<AppliedBytesPatch> out;
+    // Enumerate the registry's Kind::Bytes entries. The registry hands us the
+    // const Entry&; WE own PatchEntry, so WE do the payload cast (DECISION A:
+    // registry payload-agnostic, patch engine interprets, interfaces.cpp
+    // blind). The whole walk runs under the registry mutex inside
+    // ForEachEntryOfKind, so the callback stays a cheap read-only test and
+    // never re-enters the registry.
+    kcdx::lua_registry::ForEachEntryOfKind(
+        kcdx::lua_registry::Kind::Bytes,
+        [&](const kcdx::lua_registry::Entry& e) {
+            const auto* p =
+                std::static_pointer_cast<PatchEntry>(e.payload).get();
+            if (!p) return;  // defensive — a Bytes payload is always a PatchEntry
+            // An unapplied entry has appliedPatchAddr == 0; its [0, size)
+            // range can't contain a real targetVa, so it self-skips here
+            // (mirrors the legacy g_patches loop skipping resolve-failures).
+            uintptr_t begin = p->appliedPatchAddr;
+            uintptr_t end   = begin + p->replacement.size();
+            if (targetVa >= begin && targetVa < end) {
+                out.push_back({ p->name.c_str(), p->priority, p->appliedOK });
+            }
+        });
+    return out;
 }
 
 }  // namespace kcdx::patch

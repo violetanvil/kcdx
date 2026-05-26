@@ -25,6 +25,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -149,6 +150,22 @@ uint64_t Append(Entry&& e, std::string* err_out);
 // container — see implementation).
 const Entry* Find(uint64_t handleId);
 Entry*       FindMut(uint64_t handleId);
+
+// Invoke `fn` once for every queued entry whose kind == `k`, in append
+// order. The registry stays PAYLOAD-AGNOSTIC: it hands the consumer the
+// const Entry& (kind / name / priority / status / payload as
+// shared_ptr<void>) and the consumer casts the payload back to its own
+// type — the registry never interprets a payload (a Kind::Bytes payload is
+// a kcdx::patch::PatchEntry, owned and cast by the patch engine; the
+// registry does not know that type).
+//
+// Added for the patch engine's GetAppliedBytesPatchesAtTarget (COMP-15),
+// which needs to enumerate Kind::Bytes entries without a per-kind index.
+// The whole walk runs UNDER the registry's queue mutex, so `fn` must not
+// re-enter the registry (no Append / ApplyZone / Find* from inside it) and
+// should be a cheap read-only inspection — same constraint that keeps the
+// snapshot-then-release pattern in ApplyZone deadlock-free.
+void ForEachEntryOfKind(Kind k, const std::function<void(const Entry&)>& fn);
 
 // Set the lifecycle status (and optionally the diagnostic reason) of the
 // entry with the given handle id. Intended caller: hook_chain::Uninstall
