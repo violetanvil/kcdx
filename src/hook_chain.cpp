@@ -197,6 +197,21 @@ struct ChainEntry {
     uint8_t      offThread = 0;
 };
 
+// A kcdx.hook entry that LOST a CanCoexist conflict at this target and
+// was therefore never appended to `entries`. The winning Add already
+// returned its handle Failed (res.reason == this `reason`); we keep a
+// minimal record here so the conflict report can list the loser with
+// applied=false (kcdxConflictEntry.applied "0 = aborted (lost a
+// conflict)", Interfaces.h) — mirroring what conflict_engine's
+// g_resolvedHooks does for the legacy hook path. `applied` is
+// implicitly false (these are the losers). The record grows only on a
+// (rare) rejection; an uncontested chain carries none.
+struct RejectedEntry {
+    std::string name;
+    int         priority = 50;
+    std::string reason;  // the SAME string handed to res.reason / handle:reason()
+};
+
 // One hooked target. Owns the JIT trampoline (runtime_func_t) for its
 // lifetime + the ordered callback chain. The runtime_func_t holds the
 // MinHook detour; destroying it would uninstall the hook, which we never
@@ -290,6 +305,14 @@ struct Chain {
     std::vector<std::string> capExprs;
     std::vector<std::string> capTypes;
     std::vector<std::string> capNames;
+
+    // --- conflict losers ----------------------------------------------
+    // kcdx.hook entries that lost a CanCoexist conflict at this target
+    // (the winner is THIS chain). Empty for an uncontested target; grows
+    // by one per rejected Add* at this VA. Read alongside `entries` by
+    // GetParticipantsAtTarget to report winners (applied=true) + losers
+    // (applied=false). See RejectedEntry above.
+    std::vector<RejectedEntry> rejected;
 };
 
 // target VA -> Chain. Process-lifetime; node-stable via unique_ptr so
@@ -1771,6 +1794,11 @@ AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
         std::string whyNot;
         if (!CanCoexist(*chain, payload.mode, payload.signature,
                         /*incomingIsCallsite=*/true, whyNot)) {
+            // Record the loser on the winning chain (same name/priority
+            // this entry would have had + the same reason res surfaces),
+            // so the conflict report lists it with applied=false. Record
+            // first, then move whyNot into res.reason (single source).
+            chain->rejected.push_back({name, priority, whyNot});
             res.reason = std::move(whyNot);
             return res;
         }
@@ -1954,6 +1982,11 @@ AddResult Add(lua_State*                             L,
         std::string whyNot;
         if (!CanCoexist(*chain, payload.mode, payload.signature,
                         /*incomingIsCallsite=*/false, whyNot)) {
+            // Record the loser on the winning chain (same name/priority
+            // this entry would have had + the same reason res surfaces),
+            // so the conflict report lists it with applied=false. Record
+            // first, then move whyNot into res.reason (single source).
+            chain->rejected.push_back({name, priority, whyNot});
             res.reason = std::move(whyNot);
             return res;
         }
@@ -2186,6 +2219,11 @@ AddResult AddCCallsite(const kcdx::hook_payload::HookPayload& payload,
         std::string whyNot;
         if (!CanCoexist(*chain, payload.mode, cSig,
                         /*incomingIsCallsite=*/true, whyNot)) {
+            // Record the loser on the winning chain (same name/priority
+            // this entry would have had + the same reason res surfaces),
+            // so the conflict report lists it with applied=false. Record
+            // first, then move whyNot into res.reason (single source).
+            chain->rejected.push_back({name, priority, whyNot});
             res.reason = std::move(whyNot);
             return res;
         }
@@ -2345,6 +2383,11 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
         std::string whyNot;
         if (!CanCoexist(*chain, payload.mode, cSig,
                         /*incomingIsCallsite=*/false, whyNot)) {
+            // Record the loser on the winning chain (same name/priority
+            // this entry would have had + the same reason res surfaces),
+            // so the conflict report lists it with applied=false. Record
+            // first, then move whyNot into res.reason (single source).
+            chain->rejected.push_back({name, priority, whyNot});
             res.reason = std::move(whyNot);
             return res;
         }
@@ -2546,6 +2589,33 @@ bool Uninstall(uint64_t handleId) {
         }
     }
     return true;  // idempotent: unknown id is not an error
+}
+
+// All kcdx.hook participants (winners + CanCoexist-rejected losers) at a
+// resolved runtime target VA. See the header for VA-space + name-lifetime
+// + locking contract. Empty when no kcdx.hook ever touched this VA.
+std::vector<ConflictParticipant> GetParticipantsAtTarget(uintptr_t targetVa) {
+    std::vector<ConflictParticipant> out;
+    std::lock_guard<std::mutex> lock(g_chainsMu);
+    Chain* chain = FindChain(targetVa);
+    if (!chain) return out;  // no kcdx.hook here — caller's legacy loops still run
+
+    out.reserve(chain->entries.size() + chain->rejected.size());
+    // Winners — the live, installed chain entries (applied=true). These
+    // are the signature/callsite entries the dispatchers walk. (A mid
+    // chain keeps its single callback on Chain itself, not in entries,
+    // and a mid never populates `rejected` — mid conflicts reject via the
+    // FindChain-non-null path, not CanCoexist — so a mid VA reports no
+    // hook_chain participants here. That is consistent with this module's
+    // contract: winners come from entries, losers from rejected.)
+    for (const auto& e : chain->entries) {
+        out.push_back({e.name.c_str(), e.priority, /*applied=*/true});
+    }
+    // Losers — the CanCoexist-rejected entries (applied=false).
+    for (const auto& r : chain->rejected) {
+        out.push_back({r.name.c_str(), r.priority, /*applied=*/false});
+    }
+    return out;
 }
 
 }  // namespace kcdx::hook_chain

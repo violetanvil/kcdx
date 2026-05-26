@@ -129,4 +129,40 @@ bool Uninstall(uint64_t handleId);
 // lua_State consumers. Idempotent.
 void SetLuaState(lua_State* L);
 
+// One participant in a kcdx.hook conflict at a target VA — a winner
+// (installed in the live chain, applied=true) OR a loser (rejected by
+// CanCoexist, applied=false). Mirrors the {name, priority, applied}
+// shape interfaces.cpp's GetConflictReport already builds for the
+// legacy patch/hook paths, so the consumer can merge these directly
+// into its existing hit list. `kind` is always hook here (this module
+// only knows kcdx.hook entries); the consumer stamps the kcdxConflict
+// kind enum on its side.
+//
+// `name` points into the owning Chain's stable std::string storage
+// (the ChainEntry's `name` for winners, the RejectedEntry's `name` for
+// losers). Both live for the Chain's lifetime, which is process-
+// lifetime (Chains are never destroyed — hooks live for the session),
+// so the pointers are valid for as long as the caller could hold them.
+struct ConflictParticipant {
+    const char* name;
+    int         priority;
+    bool        applied;  // true = winner (live chain); false = loser (rejected)
+};
+
+// All kcdx.hook participants at one RESOLVED runtime target VA — both
+// the live chain winners (applied=true) and the CanCoexist-rejected
+// losers (applied=false). `targetVa` is in the same address space as
+// chain->targetVa (what ResolveLocator produced) and as the `target`
+// GetConflictReport receives (interfaces.cpp matches it against
+// rh.targetAddr). If no kcdx.hook ever touched this VA (FindChain
+// null), returns empty — the caller's legacy patch/hook loops still
+// run; an empty result just means "no kcdx.hook entries here".
+//
+// Locking: takes g_chainsMu (the same mutex Add* takes), because it is
+// queried at GetConflictReport time and Add* can run concurrently
+// during the first-tick registration pass. Returns by value — the
+// vector is the caller's; the `name` pointers inside it remain valid
+// for the process lifetime (see ConflictParticipant).
+std::vector<ConflictParticipant> GetParticipantsAtTarget(uintptr_t targetVa);
+
 }  // namespace kcdx::hook_chain
