@@ -1451,12 +1451,15 @@ typedef struct kcdxSerializationInterface {
 // (target + callback) and an optional knobs container (`opts`) that may be
 // null for the simple case.
 //
-// THIS HEADER ships only Floor 2 — the raw method pointers. A planned
-// `include/kcdx/Kcdx.h` wrapper layers typed templated helpers
-// (`kcdx::hook::Before<Sig>(...)`, `kcdx::hook::After<Sig>(...)`, etc.)
-// on top, and a future `kcdx::hook::InstallRawUnchecked<Sig>(...)` provides
-// the opt-out compile-time check form — those land in a follow-up step of
-// the same feature. The raw interface (this struct) is the always-available
+// THIS HEADER ships the raw method pointers — the unchecked floor of the
+// `Kcdx.h` model (its "raw" floor; see docs/cpp/wrapper.md "The 3-floor
+// model"). The shipped `include/kcdx/Kcdx.h` wrapper layers typed templated
+// helpers on top: `kcdx::hook::Before<Sig, &fn>(...)` (the empowered floor)
+// and `kcdx::hook::TryBefore<Sig, &fn>(...)` (the handle-returning floor).
+// There is NO separate `InstallRawUnchecked` form — `K.hook->Before(...)`
+// (this struct, via the wrapper's `K.hook` pointer) IS the unchecked floor
+// by construction (a `void*` callback is unchecked already). The raw
+// interface (this struct) is the always-available
 // floor — every author capability is reachable through it via
 // `api->QueryInterface(kcdxInterface_Hook, kcdxHookInterface_Version)`
 // without ever including the wrapper. The wrapper, when it lands, will
