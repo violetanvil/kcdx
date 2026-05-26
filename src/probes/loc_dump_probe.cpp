@@ -332,13 +332,21 @@ char* __fastcall HookedGetter(void* self, uint32_t id) {
     }
     char* result = orig(self, id);
 
-    // Step 2a layout probe (one-shot, getter site). The getter fires only AFTER
-    // a language is loaded (it resolves a string for the current language), so
-    // here manager+0x18 (current language) should be populated — the dump that
-    // shows the language-table layout directly. `self` is the manager `this`
-    // (slot-1 getter is a CLocalizedStringsManager method). Observe-only;
-    // dumped after orig ran so the read sees the post-call state.
-    LayoutDump(self, "getter", &g_layout_dumped_getter);
+    // Step 2a' layout probe (one-shot, getter site). The FIRST getter call fires
+    // during early init — before any language is set — so dumping on call #1
+    // catches the manager with manager+0x18 NULL and the +0x58 vector EMPTY (the
+    // 16:35 run: 52 fires over 6s, but the latch tripped on fire #1, the worst
+    // instant). Gate the dump on a NON-EMPTY returned string instead: a non-empty
+    // char* proves an entry actually resolved → the backing container (manager
+    // +0x58 vector, or manager+0x18 language table) is POPULATED → the dump shows
+    // the live layout and discriminates where the key↔id vector lives. The latch
+    // still fires the dump exactly once — now on the first POPULATED resolution.
+    // `result` is the getter's own return; reading result[0] after a non-null
+    // check is safe (a returned char* from the game's getter is valid to read).
+    // Observe-only; dumped after orig ran so the read sees the post-call state.
+    if (result != nullptr && result[0] != '\0') {
+        LayoutDump(self, "getter_populated", &g_layout_dumped_getter);
+    }
 
     return result;
 }
