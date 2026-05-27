@@ -18,3 +18,12 @@ Multiple Claude Code chats run against this ONE repository at once — one share
 4. **True isolation = a worktree, not a branch.** If genuinely-parallel isolated work is needed, the mechanism is a separate git worktree (its own working dir + HEAD + index, shared history) — e.g. dispatch an agent with `isolation: "worktree"`, or the user opens one. A branch alone does NOT isolate, because the working tree is still shared. Do not reach for this unilaterally; surface it to the user.
 
 5. **Check before you assume.** Before any commit, `git branch --show-current` + `git status` — another chat may have changed the branch or left the tree dirty. Read state, don't assume.
+
+## Remotes — private is comprehensive, public is a sanitized projection
+
+This repo has TWO remotes. The local tree is the comprehensive **private** copy.
+
+- `private` → `violetanvil/kcdx-private` — holds everything (incl. `.claude/`, `CLAUDE.md`, `_research/`, `third-party-ghidra/` scripts, `test-fixtures/`, `docs/outstanding-work/`, `docs/known-issues/`). `main` tracks `private/main`, so **a bare `git push` goes to private.** This is the everyday push.
+- `public` → `violetanvil/kcdx` — a SANITIZED snapshot on an unrelated history, force-pushed each publish. Reached ONLY via `pwsh ./publish-public.ps1` (strips the private trees + the script itself; `-DryRun` previews).
+
+6. **Never push to `public` directly.** `git push public ...`, `git push --all`, or any hand-push to the public remote leaks the private working materials. The public remote is updated ONLY by `publish-public.ps1`. The private trees are no longer gitignored — `.gitignore` excludes only heavy/reproducible binaries — so they WILL be in a direct public push. If a public update is wanted, run the script (it sanitizes); never push public by hand.
