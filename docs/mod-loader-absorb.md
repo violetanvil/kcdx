@@ -91,9 +91,49 @@ gate the narrow takeover rested on:
   `count=(end-begin)/8 = 15`; each record 0x70 bytes.
 - **U.6.3 FIELD MAP — captured.** The table above.
 
-`U.7` (synthesis viability — does the native MOUNT lambda + downstream passes
-accept a kcdx-injected/cloned I_Mod record?) is the remaining probe, the first
-step of the absorb build.
+### PROBE U.7 — RESULT: naive mid-SELECT end-bump append is NOT accepted (crash)
+
+Question: does the engine accept a kcdx-APPENDED enabled-list entry? Mechanism
+tested: in the SELECT detour, after the original SELECT ran, duplicate-inject
+the first already-enabled `I_Mod*` (same pointer, no clone) by writing it at
+`*end` and bumping the `end` pointer by 8. One isolated variable.
+
+Result (live, 2026-05-27 08:47 boot):
+
+- The inject SUCCEEDED structurally: `u7_inject ... cap_plausible=1
+  spare_capacity=1 injected=1 count_before=15 count_after=16`. The `+0x40` word
+  IS the end-of-storage pointer (begin 0x...36B0, end 0x...3728, cap 0x...3748 =
+  0x20/4 slots spare) — **the {begin,end,end_of_storage} std::vector layout at
+  +0x30/+0x38/+0x40 is CONFIRMED.** The append itself did not fault.
+- The game then CRASHED ~1.1s later: `GUARD FAULTED code=ACCESS_VIOLATION
+  module=WHGame.DLL module_rva=0x2440C85 thread=worker(16368)`. That RVA is
+  **+0x19 into `FUN_182440c6c`** — the per-mod VERSION-GATE (sibling of
+  `ModManager_ParseManifest` id 3104, RVA 0x2440C6C).
+- `.ecxr` is decisive: `rsi=0x1B76A253728` = EXACTLY the inject's recorded
+  `this+0x38_end`; `rbx=0x1B76A253730` = the slot past it; `rcx=0x0042005C00320065`
+  = UTF-16 string bytes, NOT a pointer — the validation code dereferenced a
+  record field as if it were a list element / `this`.
+
+Meaning: **appending mid-SELECT by bumping `end` alone is unsafe.** The per-mod
+validation/walk that runs after our detour returns control re-walks the range
+and chokes on the modified list. U.7 does NOT distinguish WHICH of two
+mechanisms (next probe, not a guess to act on): (1) the consumer cached its
+end/count before our append, so the bump desynced it; or (2) this consumer does
+not iterate the list as a flat `I_Mod*[]` (different stride), so the duplicate
+landed mid-record.
+
+What U.7 SETTLED: the vector layout (+0x30/+0x38/+0x40) is confirmed, the inject
+timing lands, but the injection POINT matters — appending while still inside the
+SELECT detour (before the native validation pass finishes) is rejected. This
+POINTS AT the approved "let native SELECT FULLY finish, then re-order/append"
+model — inject AFTER the whole SELECT (+ its per-mod validation) completes and
+BEFORE MOUNT, not mid-SELECT. The next probe (U.8) tests injection at that later
+point (e.g. detour the ctor's return, or a point between SELECT-complete and
+MOUNT), and/or rebuilding the vector wholesale rather than bumping `end`.
+
+This is a probe RESULT, not a built capability — the U.7 diagnostic edit in
+`src/probes/mod_loader_probe.cpp` is reverted per probe hygiene; this record is
+its durable home.
 
 ---
 
