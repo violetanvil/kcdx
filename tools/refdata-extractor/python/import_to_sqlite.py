@@ -148,9 +148,22 @@ def build_db(db_path, dump_dir, tables):
                         [(i, v) for v, i in d.items()])
         dict_entries += len(d)
 
-    # Indexes the engine queries (functions survival lookup + statement joins).
+    # Indexes for every way the engine looks a row up. Verified with
+    # EXPLAIN QUERY PLAN: without these the name-resolve + by-rva lookups
+    # full-SCAN 321K/157K rows (~10-20 ms each -> a 2000-hook total-conversion
+    # adds ~40s of scans at launch); with them every lookup is SEARCH USING
+    # INDEX (~0.02 ms). Cost: ~+12 MB on the user DB; the release zip absorbs it.
     if "functions" in tables:
+        # rva = the survival-check seek; function_name/auto_name = the two
+        # name-resolve paths (canonical name + Ghidra auto-name) per §9.1.
         con.execute('CREATE INDEX ix_fn_rva ON functions(rva)')
+        con.execute('CREATE INDEX ix_fn_name ON functions(function_name)')
+        con.execute('CREATE INDEX ix_fn_auto ON functions(auto_name)')
+    if "signatures" in tables:
+        # merged over functions by rva at hook-install (the marshalling ABI).
+        con.execute('CREATE INDEX ix_sig_rva ON signatures(rva)')
+    if "caller_reg_args" in tables:
+        con.execute('CREATE INDEX ix_cra_rva ON caller_reg_args(rva)')
     if "statements" in tables:
         con.execute('CREATE INDEX ix_st_fn ON statements(function_rva, idx)')
     if "call_edges" in tables:
