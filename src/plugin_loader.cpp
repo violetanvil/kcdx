@@ -4,9 +4,11 @@
 #include <psapi.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,6 +17,7 @@
 #include "load_order.h"
 #include "log.h"
 #include "messaging.h"
+#include "paths.h"  // GameRootDirPath() — locate <game-root>/system.cfg for wh_sys_version
 #include "pe_helpers.h"
 #include "version_compat.h"  // shared game-version compat decision (pak-mod path shares it)
 #include "zone_gate.h"  // RejectReason() — distinguish engine-reject from user-disabled in skip-logs
@@ -26,6 +29,7 @@ namespace kcdx::plugins {
 std::vector<LoadedPlugin>   g_plugins;
 std::vector<PluginManifest> g_manifests;
 uint32_t                    g_runtimeGameVersion = 0;
+std::string                 g_runtimeGameVersionString;
 
 namespace {
 
@@ -155,6 +159,94 @@ uint32_t DetectRuntimeGameVersion() {
                "(checked kcd_launcher.log and WHGame.dll VS_VERSIONINFO). "
                "compatibleGameVersions checks will be skipped with a warning.");
     return 0;
+}
+
+// Pure string parse of a CryEngine cfg body for `key = value`. No file I/O —
+// the caller reads the file; this scans the text. Kept external (declared in
+// plugin_loader.h) so the cap-53 self-test can feed it literal cfg text.
+std::string ExtractCfgValue(const std::string& cfgText, const char* key) {
+    auto trim = [](std::string s) {
+        size_t b = s.find_first_not_of(" \t\r\n");
+        if (b == std::string::npos) return std::string{};
+        size_t e = s.find_last_not_of(" \t\r\n");
+        return s.substr(b, e - b + 1);
+    };
+    auto iequals = [](const std::string& a, const std::string& b) {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(a[i])) !=
+                std::tolower(static_cast<unsigned char>(b[i]))) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const std::string wantKey = key;
+    std::istringstream in(cfgText);
+    std::string line;
+    while (std::getline(in, line)) {
+        const std::string t = trim(line);
+        if (t.empty()) continue;
+        if (t.size() >= 2 && t[0] == '-' && t[1] == '-') continue;  // -- comment
+        const size_t eq = t.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string lhs = trim(t.substr(0, eq));
+        if (!iequals(lhs, wantKey)) continue;
+        std::string rhs = trim(t.substr(eq + 1));
+        // Strip a single layer of surrounding double quotes.
+        if (rhs.size() >= 2 && rhs.front() == '"' && rhs.back() == '"') {
+            rhs = rhs.substr(1, rhs.size() - 2);
+        }
+        return rhs;
+    }
+    return {};
+}
+
+// Detect the running KCD2 version STRING from <game-root>/system.cfg's
+// wh_sys_version. The unified <supports> string-prefix-wildcard gate
+// (version_compat::DecideGameVersionCompatString) matches against this.
+// Graceful-degrade: "" on any failure (file absent/unreadable or no
+// wh_sys_version line) + a WARN naming system.cfg — mirrors the integer
+// path's "loading anyway", NOT a hard fail.
+std::string DetectRuntimeGameVersionString() {
+    const fs::path cfgPath = paths::GameRootDirPath() / L"system.cfg";
+
+    std::error_code ec;
+    if (!fs::exists(cfgPath, ec)) {
+        LOG_WARN_KV("VERSION", "system.cfg not found — version-string gate "
+                    "(<supports>) will treat the runtime version as unknown "
+                    "and load mods/plugins anyway",
+                    log::KV("path", cfgPath.string()));
+        return {};
+    }
+
+    std::ifstream in(cfgPath, std::ios::binary);
+    if (!in) {
+        LOG_WARN_KV("VERSION", "system.cfg present but unreadable — "
+                    "version-string gate will treat the runtime version as "
+                    "unknown and load mods/plugins anyway",
+                    log::KV("path", cfgPath.string()));
+        return {};
+    }
+
+    std::stringstream ss;
+    ss << in.rdbuf();
+    const std::string text = ss.str();
+
+    const std::string value = ExtractCfgValue(text, "wh_sys_version");
+    if (value.empty()) {
+        LOG_WARN_KV("VERSION", "system.cfg has no wh_sys_version line — "
+                    "version-string gate will treat the runtime version as "
+                    "unknown and load mods/plugins anyway",
+                    log::KV("path", cfgPath.string()));
+        return {};
+    }
+
+    LOG_INFO_KV("VERSION", "detected runtime version string from system.cfg",
+                log::KV("wh_sys_version", value),
+                log::KV("path", cfgPath.string()));
+    return value;
 }
 
 namespace {

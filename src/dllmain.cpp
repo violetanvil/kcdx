@@ -119,6 +119,12 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // this is the earliest achievable point.
     kcdx::plugins::g_runtimeGameVersion =
         kcdx::plugins::DetectRuntimeGameVersion();
+    // The version STRING (wh_sys_version from <game-root>/system.cfg) — the
+    // source the unified <supports> string-prefix-wildcard gate compares
+    // against. Same init point as the integer detect; reads a file (no WHGame
+    // dependency), graceful-degrades to "" + WARN if system.cfg is absent.
+    kcdx::plugins::g_runtimeGameVersionString =
+        kcdx::plugins::DetectRuntimeGameVersionString();
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::VersionDetected);
 
     if (!kcdx::hooks::Install()) {

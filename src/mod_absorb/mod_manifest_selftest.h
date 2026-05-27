@@ -12,6 +12,13 @@
 // entity-decoding, and exercises the shared DecideGameVersionCompat /
 // DecideModCompat verdicts (the shared-logic regression guard — a regression in
 // the extracted helper changes a verdict and FAILs).
+//
+// Sub-step 2.5a EXTENDED this plugin with: (1) the unified <supports> string-
+// prefix-wildcard gate DecideGameVersionCompatString (prefix/exact/empty/
+// unknown/multi cases, incl. the no-*-is-exact-not-prefix discriminator), and
+// (2) the system.cfg wh_sys_version parser ExtractCfgValue fed a literal cfg
+// string (case-insensitive key, whitespace-around-'=', quote-stripping, absent
+// key -> "").
 
 namespace kcdx::mod_absorb {
 

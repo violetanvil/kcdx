@@ -159,4 +159,23 @@ fs::path EngineDataDirPath() {
     return p;
 }
 
+fs::path GameRootDirPath() {
+    // EngineDataDir = <game-root>/Bin/<flavour>/kcdx-engine/ (trailing '\\').
+    // Climb out of the bin layout: kcdx-engine -> game-bin -> Bin -> game-root.
+    //
+    // Trim the trailing separator FIRST (same as Init() does before its own
+    // parent_path climb) so the path's last component is "kcdx-engine", not an
+    // empty trailing element — then three parent_path() steps land exactly on
+    // game-root, with no dependence on how ".." normalization treats a trailing
+    // slash.
+    std::wstring engine = g_engineDataDir;
+    while (!engine.empty() && (engine.back() == L'\\' || engine.back() == L'/')) {
+        engine.pop_back();
+    }
+    fs::path engineDir(engine);                    // ...\kcdx-engine
+    return engineDir.parent_path()                 // ...\<flavour> (game-bin)
+                    .parent_path()                 // ...\Bin
+                    .parent_path();                // <game-root>
+}
+
 }  // namespace kcdx::paths

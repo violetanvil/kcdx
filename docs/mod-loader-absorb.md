@@ -259,18 +259,64 @@ pak mods — consistent author UX. The shared decision is factored out of
 `<created_on>`, `<dependencies>`, and the modid. Step 2 parses these into a
 `ModRecordInput`.
 
-GAME-VERSION RESTRICTION — RE-PENDING (step-2 scope decision, 2026-05-27): the
-element a `mod.manifest` uses to RESTRICT to a game version (what the native
-gate `FUN_182440c6c` reads, owning "supports game version" / "is not limited to
-any game version") is NOT in the cached Warhorse wiki and NOT present in any
-installed mod — every installed mod logs "has no version restrictions in
-manifest" / "is not limited to any game version, it will be enabled". So the
-field is OPTIONAL and absent in practice. Step 2's gate: **absent restriction →
-ENABLED** (matches native + every real mod). If a restriction-looking element
-IS present, kcdx logs a one-time WARN that it cannot yet enforce it (NOT a silent
-pass — AP14) and enables, until the exact element name is RE'd. FOLLOW-UP: run
-`/research-disassembly` on `FUN_182440c6c` to pin the restriction element name,
-then complete the present-field branch. Tracked, not a silent gap.
+GAME-VERSION RESTRICTION — RESOLVED via the Warhorse wiki (KM-A-57 "Mod
+Manifest", re-cached 2026-05-27): the restriction element is **`<supports>`**, an
+optional list of `<version>` entries inside `<kcd_mod>`:
+
+```
+<kcd_mod>
+  <info>…</info>
+  <supports>
+    <version>1.5*</version>
+    <version>1.6*</version>
+  </supports>
+</kcd_mod>
+```
+
+Semantics (wiki-verbatim): "If the current version of the game is not in this
+list, the mod will be automatically disabled. The version is compared **as a
+string** to the version in **`wh_sys_version`** (in `system.cfg`)." The trailing
+`*` is a prefix wildcard — `1.5*` matches the runtime version string `1.5…`
+(major versions ship without the minor number, so authors use `1.5*`, not
+`1.5.*`). Absent `<supports>` → no restriction → enabled. (`<version>` directly
+under `<info>` is the MOD's own version — distinct from a `<supports><version>`.)
+
+## Version gate UNIFICATION — adopt the vanilla model for BOTH (user-decided 2026-05-27)
+
+The step-2 gate used the kcdx-plugin model (integer `compatible_game_versions`
+exact-match). DECISION: **unify on the vanilla `<supports>` model for BOTH pak
+mods AND kcdx plugins** — one author mental model, matching what KCD2 itself
+documents + does. The kcdx-plugin integer-exact-match model is REPLACED.
+
+The unified gate (one mechanism, both consumers):
+- **Runtime version = a STRING**, read from `wh_sys_version` in
+  `<game-root>/system.cfg` (the source the wiki names + the engine compares
+  against). Captured at init as `kcdx::plugins::g_runtimeGameVersionString`
+  alongside the existing integer `g_runtimeGameVersion` (kept for the Address
+  Library's per-row `game_version` match, a separate concern). Absent/unreadable
+  → graceful-degrade (load anyway with a WARN), mirroring the integer path.
+- **The compare = string prefix-wildcard** (`version_compat`): a `supports`
+  entry `X*` matches the runtime string iff it starts with `X`; an entry with no
+  `*` is an exact string match; empty `supports` list → no restriction →
+  compatible; runtime string unknown → UnknownGameVersion (load + WARN).
+- **kcdx-plugin schema MIGRATES**: `[plugin] compatible_game_versions` (integer
+  list) + `version_independent` → a vanilla-style `supports` string-wildcard list
+  (absent/empty `supports` = version-independent, matching the pak-mod meaning —
+  so the separate `version_independent` flag folds away). The old key is REMOVED
+  outright (fix-forward, prerelease, no external consumers): parser + schema drop
+  it, every in-repo `kcdx.toml` migrates, docs/rules move with it
+  (deletion-hygiene — no prescriptive survivor), an unknown old key warns (AP14).
+- **Read mechanism = `system.cfg` text** (NOT `ICVar::GetString` — that vtable
+  slot is unverified in the tree, AP3-untrusted, and the cvar getters are
+  documented-but-unbuilt). `system.cfg` is the wiki-named source; a few lines of
+  text parsing, no RE.
+
+This is the absorb feature's **sub-arc 2.5** (multi-commit): (a) version-string
+source + the unified string-wildcard compare in `version_compat`; (b) plugin
+schema migration (`supports`, old key removed, TOMLs + docs moved); (c) pak-mod
+`<supports>` parse wired into `mod_manifest` + the step-2 graceful stub replaced;
+tests grow on each. The native `FUN_182440c6c` gate no longer needs RE — the
+wiki settled the schema, and kcdx owns the gate now.
 
 **Load-order = SUBSUME.** kcdx reads `mod_order.txt` as the vanilla baseline
 ordering INPUT each boot (a vanilla mod's initial priority derives from its

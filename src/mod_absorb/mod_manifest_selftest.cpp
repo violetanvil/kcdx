@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "mod_manifest.h"
+#include "../plugin_loader.h"   // ExtractCfgValue — the system.cfg wh_sys_version parser
 #include "../test.h"
 #include "../version_compat.h"
 
@@ -204,13 +205,104 @@ void RunManifestSelfTestOnce() {
         return;
     }
 
+    // --- Assertion 7: DecideGameVersionCompatString — the UNIFIED <supports>
+    //     string-prefix-wildcard gate (sub-step 2.5a Deliverable B). Each case
+    //     is falsifiable + names the broken state it catches (AP15). -----------
+    using version_compat::DecideGameVersionCompatString;
+    const std::string kRtStr = "1.5.1164953";  // a runtime wh_sys_version string.
+
+    struct StrCase { const char* label; CompatResult got; CompatResult want; };
+    const StrCase strCases[] = {
+        // (a) prefix wildcard hits. [broken: prefix logic wrong -> Incompatible -> FAIL]
+        {"prefix-wildcard-match",
+         DecideGameVersionCompatString({"1.5*"}, kRtStr),
+         CompatResult::Compatible},
+        // (b) prefix wildcard for a different major.minor must NOT match.
+        //     [broken: wildcard over-matches -> Compatible -> FAIL]
+        {"prefix-wildcard-nomatch",
+         DecideGameVersionCompatString({"1.6*"}, kRtStr),
+         CompatResult::Incompatible},
+        // (c) exact (no '*') equal string. [broken: exact match broken -> FAIL]
+        {"exact-match",
+         DecideGameVersionCompatString({"1.5.1164953"}, kRtStr),
+         CompatResult::Compatible},
+        // (d) THE DISCRIMINATOR: no '*' is EXACT, not prefix. "1.5" must NOT
+        //     match "1.5.1164953". [broken: treats no-* as prefix -> Compatible
+        //     -> FAIL — this is what distinguishes wildcard from exact]
+        {"no-star-is-exact-not-prefix",
+         DecideGameVersionCompatString({"1.5"}, kRtStr),
+         CompatResult::Incompatible},
+        // (e) empty supports list = no restriction -> Compatible.
+        //     [broken: empty treated as restrictive -> Incompatible/Unknown -> FAIL]
+        {"empty-supports-compatible",
+         DecideGameVersionCompatString({}, kRtStr),
+         CompatResult::Compatible},
+        // (f) non-empty list vs empty runtime string -> UnknownGameVersion.
+        //     [broken: -> Incompatible (or crash) -> FAIL]
+        {"nonempty-vs-empty-runtime-unknown",
+         DecideGameVersionCompatString({"1.5*"}, /*runtime*/""),
+         CompatResult::UnknownGameVersion},
+        // (g) empty list vs empty runtime -> still Compatible (rule 1 wins over
+        //     rule 2: no restriction is compatible regardless of detection).
+        //     [broken: empty-runtime check ordered first -> Unknown -> FAIL]
+        {"empty-list-empty-runtime-compatible",
+         DecideGameVersionCompatString({}, /*runtime*/""),
+         CompatResult::Compatible},
+        // (h) multi-entry list, ANY matches. [broken: only-first-checked ->
+        //     Incompatible -> FAIL]
+        {"multi-entry-any-matches",
+         DecideGameVersionCompatString({"1.4*", "1.5*"}, kRtStr),
+         CompatResult::Compatible},
+    };
+    for (const StrCase& c : strCases) {
+        if (c.got != c.want) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: DecideGameVersionCompatString case '%s' = %d, expected "
+                "%d — the unified <supports> string-prefix-wildcard gate is "
+                "broken (sub-step 2.5a Deliverable B)",
+                c.label, static_cast<int>(c.got), static_cast<int>(c.want));
+            Fail(reason);
+            return;
+        }
+    }
+
+    // --- Assertion 8: the system.cfg wh_sys_version parser, fed a LITERAL cfg
+    //     string (no file). Exercises the case-insensitive key, whitespace
+    //     around '=', quote-stripping, and absent-key -> "". -------------------
+    // [broken: key match wrong, '=' split off, or quotes not stripped -> wrong
+    //  value -> FAIL; absent-key returning non-empty -> FAIL]
+    const std::string kCfg =
+        "-- a comment line\n"
+        "con_restricted = 0\n"
+        "WH_SYS_Version = \"1.5.5\"\n"   // mixed case + quoted + spaces around '='
+        "sys_spec=2\n";
+    const std::string parsed = kcdx::plugins::ExtractCfgValue(kCfg, "wh_sys_version");
+    if (std::strcmp(parsed.c_str(), "1.5.5") != 0) {
+        std::snprintf(reason, sizeof(reason),
+            "FAIL: ExtractCfgValue(wh_sys_version) = \"%s\", expected \"1.5.5\" "
+            "— case-insensitive key, whitespace-around-'=', or quote-stripping "
+            "broke",
+            parsed.c_str());
+        Fail(reason);
+        return;
+    }
+    if (!kcdx::plugins::ExtractCfgValue(kCfg, "not_present").empty()) {
+        std::snprintf(reason, sizeof(reason),
+            "FAIL: ExtractCfgValue(not_present) on a cfg without that key "
+            "returned non-empty (absent key must be \"\")");
+        Fail(reason);
+        return;
+    }
+
     // All assertions held.
     std::snprintf(reason, sizeof(reason),
         "mod.manifest fields parse (name/description/author/version/created_on); "
         "&amp; decoded to '&'; absent <modid> -> empty; DecideGameVersionCompat "
         "verdicts correct (a/b/c/d + vi-undetected = the shared-logic guard); "
         "DecideModCompat no-restriction + restriction-looking both Compatible "
-        "(RE-pending gate enables)");
+        "(RE-pending gate enables); DecideGameVersionCompatString prefix/exact/"
+        "empty/unknown/multi verdicts correct (no-*-is-exact discriminator); "
+        "ExtractCfgValue parses wh_sys_version (case/quote/ws) + absent->\"\"");
     kcdx::test::ReportResult(kRow, true, reason);
     kcdx::test::EmitSummaryIfChanged("cap-53 mod-manifest");
 }

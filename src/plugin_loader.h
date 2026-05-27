@@ -229,6 +229,19 @@ constexpr uint32_t kEngineVersion = 0x00010200u;  // 0.1.2 — kcdxPluginInfo.au
 // compare against their compatibleGameVersions array.
 extern uint32_t g_runtimeGameVersion;
 
+// Live KCD2 version STRING, populated at engine startup from
+// wh_sys_version in <game-root>/system.cfg (the source the vanilla mod
+// version gate compares against — see docs/mod-loader-absorb.md "Version
+// gate UNIFICATION"). This is the value the unified <supports> string-
+// prefix-wildcard gate (version_compat::DecideGameVersionCompatString)
+// matches mod/plugin `supports` patterns against. Empty "" if system.cfg is
+// absent/unreadable or has no wh_sys_version line — the gate then yields
+// UnknownGameVersion and the caller loads anyway with a WARN (graceful-
+// degrade, mirroring the integer path's "couldn't determine version,
+// loading anyway"). Set alongside g_runtimeGameVersion at the same init
+// point (dllmain.cpp worker thread, after WaitForGameDll).
+extern std::string g_runtimeGameVersionString;
+
 // Detect the running KCD2 build by reading kcd_launcher.log's build header,
 // falling back to WHGame.dll's VS_VERSIONINFO. Returns 0 if neither source
 // yields a version (logged WARN inside). Requires ONLY that WHGame.dll is
@@ -237,6 +250,32 @@ extern uint32_t g_runtimeGameVersion;
 // worker thread; the caller stores the result into g_runtimeGameVersion. The
 // per-plugin version-compat gate in DiscoverAndLoad then READS that value.
 uint32_t DetectRuntimeGameVersion();
+
+// Detect the running KCD2 version STRING by reading the `wh_sys_version`
+// setting from <game-root>/system.cfg (located via paths::GameRootDirPath()).
+// system.cfg is a CryEngine cfg text file: lines of `name = value` or
+// `name=value`, value optionally double-quoted. The lookup is
+// case-insensitive on the key, tolerates whitespace around '=', and strips
+// surrounding double quotes from the value. Returns the value string (e.g.
+// "1.5.5"), or "" if system.cfg is absent/unreadable or has no
+// wh_sys_version line (logged WARN naming system.cfg — graceful-degrade, NOT
+// a hard fail; mirrors DetectRuntimeGameVersion's "loading anyway" behavior).
+// Called once at WHGame-mapped time (ctx B, right after WaitForGameDll)
+// alongside DetectRuntimeGameVersion; the caller stores the result into
+// g_runtimeGameVersionString. Does NOT require WHGame mapped — it reads a
+// file — but is co-located with the integer detect for one version-detect
+// site.
+std::string DetectRuntimeGameVersionString();
+
+// Extract the value of `key` from CryEngine cfg text (the body of a
+// system.cfg / *.cfg file passed as one string). Scans line by line for
+// `key = value` / `key=value` (case-insensitive on the key; whitespace
+// around '=' tolerated; a leading-'--' commented line is ignored), strips
+// surrounding double quotes from the value, and returns it. Returns "" if
+// the key is not present. Pure string function (no file I/O) so it is
+// unit-testable from a literal cfg string — DetectRuntimeGameVersionString
+// reads system.cfg into a string and calls this with "wh_sys_version".
+std::string ExtractCfgValue(const std::string& cfgText, const char* key);
 
 // Walk plugins/ for kcdx.toml files (recursively, kcdx.toml marks a plugin
 // folder, do-not-descend-into-claimed-folders rule), parse [plugin] metadata

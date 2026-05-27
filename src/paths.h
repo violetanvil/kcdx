@@ -80,4 +80,19 @@ const std::wstring& EngineDataDir();
 std::filesystem::path PluginsDirPath();
 std::filesystem::path EngineDataDirPath();
 
+// The KCD2 GAME ROOT — the install directory that holds system.cfg, the
+// mods/ folder, and the Bin/ tree. Derived from EngineDataDir by climbing
+// out of the bin layout: EngineDataDir is <game-root>/Bin/<flavour>/
+// kcdx-engine/, so game-root = EngineDataDir / ".." / ".." / "..".
+// No trailing separator.
+//
+//   <game-root>/                         <- this
+//   └── Bin/
+//       └── Win64MasterMasterSteamPGO/   (game-bin)
+//           └── kcdx-engine/             (EngineDataDir)
+//
+// Used to locate game-root-relative files the engine reads but does not own
+// (e.g. system.cfg's wh_sys_version, read by the unified version gate).
+std::filesystem::path GameRootDirPath();
+
 }  // namespace kcdx::paths

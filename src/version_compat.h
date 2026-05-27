@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 // Shared game-version compatibility decision.
@@ -52,5 +53,31 @@ enum class CompatResult {
 CompatResult DecideGameVersionCompat(const std::vector<uint32_t>& compatibleGameVersions,
                                      bool versionIndependent,
                                      uint32_t runtimeGameVersion);
+
+// Decide compat under the vanilla <supports> model. `supports` is the list of
+// version-pattern strings the mod/plugin declares (a mod.manifest <supports>
+// list, or a plugin's migrated `supports` key). Each pattern is matched against
+// `runtimeVersionString` (wh_sys_version): a trailing '*' is a PREFIX wildcard
+// ("1.5*" matches "1.5", "1.5.1164953", "1.5anything"); no '*' = exact string
+// match. Empty `supports` list = NO restriction = Compatible (version-
+// independent by absence, matching the vanilla meaning). Empty/unknown
+// runtimeVersionString = UnknownGameVersion (caller loads anyway + WARNs).
+//
+// This is the UNIFIED gate both pak mods and kcdx plugins move onto (the
+// step-2 integer DecideGameVersionCompat above is the legacy plugin-only model,
+// still wired until the schema-migration commit repoints ValidateManifest /
+// DecideModCompat onto this). See docs/mod-loader-absorb.md "Version gate
+// UNIFICATION".
+//
+// Decision order (the ordering note in the design spec — empty-supports check
+// FIRST so "no restriction" is Compatible regardless of whether we know the
+// runtime version; only a NON-empty list we can't evaluate yields Unknown):
+//   1. supports is empty            -> Compatible (no restriction declared).
+//   2. runtimeVersionString empty   -> UnknownGameVersion (can't evaluate a
+//                                       restriction without the runtime string).
+//   3. any pattern matches          -> Compatible.
+//   4. else                         -> Incompatible.
+CompatResult DecideGameVersionCompatString(const std::vector<std::string>& supports,
+                                           const std::string& runtimeVersionString);
 
 }  // namespace kcdx::version_compat
