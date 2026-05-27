@@ -78,6 +78,12 @@ try {
         'dev-phase scheme'          = '\bPhase \d+[a-z]?(\.\d+)*\b'
         'dev-subphase scheme'       = '\bsub-\d+[a-z]?\b'
         'FIX-naming scheme'         = '\bFIX [A-Z]\b'
+        # Bare private-rule .md filename (cited without the .claude/rules/ path).
+        # These name a private governance file → broken link + build-trace on public.
+# NOTE: loader-architecture.md is EXCLUDED — it collides with the public
+        # doc docs/loader-architecture.md (a bare ref is ambiguous; the .claude/
+        # path form is still caught above). All others are private-only basenames.
+        'private rule-file name'    = '\b(cornerstones|anti-patterns|skse-parity|toml-schema|hook-engine|concurrency-git|results-driven|address-library|lua-bridge|lua-api-surface|naming-namespaces|docs-discipline|deletion-hygiene|lua-precision|lua-callback-threading|reverse-engineering|pak-mods|test-suite|skeptical-expert|public-private-boundary|fail-state-logging|anti-pattern-rationale)\.md\b'
     }
 
     $hits = New-Object System.Collections.Generic.List[string]

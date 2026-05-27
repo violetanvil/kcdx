@@ -66,6 +66,15 @@ Replace the `[text](.claude/rules/x.md)` with a self-contained restatement. The
 | `reverse-engineering.md` | game facts are verified against the binary via the reuse-first evidence ladder |
 | `anti-patterns.md` | (cite the specific concept from Tier 1, not the file) |
 
+### Tier 2b — BARE private-rule filenames (no `.claude/rules/` path)
+
+A reference like `(naming-namespaces.md)` or `cornerstones.md §36` names a private
+governance file by basename WITHOUT the path. It is still a leak — a broken link
+target on public + a build-trace — and the path-based scan misses it. Apply the
+SAME Tier-2 restatement: drop the filename, inline the concept. Every private-rule
+basename is in scope EXCEPT `loader-architecture.md` (collides with the public
+`docs/loader-architecture.md` — a bare ref there is a valid public cross-link).
+
 ## Tier 3 — provenance + misc pointers → restate without the path
 
 | Private token | Public replacement |
