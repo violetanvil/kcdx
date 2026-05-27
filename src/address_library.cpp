@@ -214,10 +214,22 @@ uintptr_t Resolve(uint64_t id) {
     // If the table grows past a few hundred entries we'd build a
     // hash, but the address library is bounded by how many things
     // a maintainer manually catalogues.
+    //
+    // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): Resolve
+    // returns 0 for FIVE distinct reasons — id not in table, id present
+    // but for a different game build, row not yet verified, no RVA, module
+    // not loaded. A caller seeing 0 cannot tell "not configured" from
+    // "version mismatch" from "unverified row". Emit a dev-gated Debug line
+    // (launch-time resolves only — never per-frame; the resolved VA is
+    // cached in the binding — so this is zero production cost) naming WHICH
+    // reason, keyed by id, with a stable token a debugger can grep. We
+    // distinguish "wrong game version for an id that DOES exist" from
+    // "no such id at all" by tracking whether the id was seen on any row.
+    bool sawIdWrongVersion = false;
     for (size_t i = 0; i < kEntryCount; ++i) {
         const Entry& e = kEntries[i];
         if (e.id != id) continue;
-        if (e.game_version != gv) continue;
+        if (e.game_version != gv) { sawIdWrongVersion = true; continue; }
         if (e.status == nullptr || e.status[0] == 'u' /* "unverified" */) {
             // Refuse to resolve unverified rows — callers must
             // explicitly opt in via a different API when we
@@ -225,12 +237,57 @@ uintptr_t Resolve(uint64_t id) {
             // default: plugin authors get the same "this id is not
             // useable" signal whether the row is missing or
             // present-but-unverified.
+            LOG_DEBUG_KV("ADDRLIB", "resolve_returned_zero",
+                log::KV("id", (unsigned long long)id),
+                log::KV::BareStr("reason", "unverified"),
+                log::KV::BareStr("detail",
+                    "row exists for this game build but its status is not "
+                    "\"verified\" — the RVA is not promised correct yet, so "
+                    "Resolve refuses it"));
             return 0;
         }
-        if (e.rva == 0) return 0;
+        if (e.rva == 0) {
+            LOG_DEBUG_KV("ADDRLIB", "resolve_returned_zero",
+                log::KV("id", (unsigned long long)id),
+                log::KV::BareStr("reason", "no_rva"),
+                log::KV::BareStr("detail",
+                    "row is verified but carries rva==0 (a known constant with "
+                    "no address yet, e.g. a vtable-index row) — nothing to "
+                    "resolve to an address"));
+            return 0;
+        }
         uintptr_t base = WhgameBase();
-        if (!base) return 0;
+        if (!base) {
+            LOG_DEBUG_KV("ADDRLIB", "resolve_returned_zero",
+                log::KV("id", (unsigned long long)id),
+                log::KV::BareStr("reason", "module_not_loaded"),
+                log::KV::BareStr("detail",
+                    "WHGame.dll is not loaded in this process (GetModuleHandle "
+                    "returned null) — the row resolves once the game module "
+                    "is mapped"));
+            return 0;
+        }
         return base + e.rva;
+    }
+    // Fell through the loop with no game-version-matching, addressable row.
+    // EITHER the id was seen on a row for a DIFFERENT game build
+    // (version_mismatch) OR it is not in the table at all (unknown_id) —
+    // two distinct misconfigurations a caller must be able to tell apart.
+    if (sawIdWrongVersion) {
+        LOG_DEBUG_KV("ADDRLIB", "resolve_returned_zero",
+            log::KV("id", (unsigned long long)id),
+            log::KV::BareStr("reason", "version_mismatch"),
+            log::KV("running_game_version", (unsigned long long)gv),
+            log::KV::BareStr("detail",
+                "the id exists in the seed but only for a different game "
+                "build — this kcdx has no row for it on the running version"));
+    } else {
+        LOG_DEBUG_KV("ADDRLIB", "resolve_returned_zero",
+            log::KV("id", (unsigned long long)id),
+            log::KV::BareStr("reason", "unknown_id"),
+            log::KV::BareStr("detail",
+                "no row with this id in the compiled-in seed table — a typo'd "
+                "or never-added Address Library id"));
     }
     return 0;
 }

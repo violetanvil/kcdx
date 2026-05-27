@@ -327,6 +327,46 @@ std::string ResolveSignature(const char* target,
             return "";
         }
         if (target && target[0]) {
+            // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14):
+            // ResolveSignatureByName returns "" for TWO distinct cases — a
+            // name that resolved to an address but carries no verified ABI
+            // (the genuine "supply a signature" case), AND a name that does
+            // not resolve at all (a typo / unknown / un-declared target). The
+            // historic message wrongly told a typo'd name to "supply a
+            // signature". DISTINGUISH by asking whether the name resolves to
+            // anything: a nonzero ResolveByName VA, OR a winning author target
+            // (Pattern / TargetSymbol kinds resolve via FindResolvedAuthorTarget,
+            // not ResolveByName — they are DECLARED but have no VA in this leaf
+            // module). If neither holds, the name is genuinely not found.
+            const uintptr_t addr = kcdx::address_library::ResolveByName(
+                target, owner.author.c_str(), owner.plugin.c_str());
+            const bool declared =
+                addr != 0 ||
+                kcdx::address_library::FindResolvedAuthorTarget(
+                    target, owner.author.c_str(), owner.plugin.c_str()) != nullptr;
+            if (!declared) {
+                LOG_DEBUG_KV("HOOK_INTERFACE", "target_not_found",
+                    log::KV("target", target),
+                    log::KV("plugin", owner.plugin.c_str()),
+                    log::KV::BareStr("detail",
+                        "target name resolved to NO address and is not a "
+                        "declared author target — unknown / typo'd / not "
+                        "declared, NOT a known-but-no-ABI target"));
+                return std::string("target '") + target +
+                       "' did not resolve — no engine seed, no declared "
+                       "author target, and no signature= was given. This is "
+                       "an UNKNOWN target name (a typo, or a target you have "
+                       "not declared). Check the name against kcdx.addr.* / "
+                       "your declared targets, or supply opts.signature with "
+                       "an explicit address/pattern locator (advanced).";
+            }
+            LOG_DEBUG_KV("HOOK_INTERFACE", "target_no_abi",
+                log::KV("target", target),
+                log::KV("plugin", owner.plugin.c_str()),
+                log::KV::BareStr("detail",
+                    "target resolved to an address but carries no verified "
+                    "ABI — the author must supply a signature (the engine "
+                    "never invents one, AP2)"));
             return std::string("target '") + target +
                    "' resolved to an address but has no signature — "
                    "kcdxHookInterface needs an ABI. Supply opts.signature, "

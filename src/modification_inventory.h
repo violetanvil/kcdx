@@ -37,6 +37,13 @@ enum class Category : uint8_t {
     Engine     = 1,  // "engine"      — lua_pcall / update / frealloc (PROBE Q)
     Lifecycle  = 2,  // "lifecycle"   — Phase 6 save/load hooks
     Probe      = 3,  // "probe"       — dev probes (bugsplat_ctor / fopen / loc_dump)
+    // APPEND-ONLY (do not reorder/insert above): a successful kcdx.bytes /
+    // kcdxBytesInterface byte rewrite registers here so a crash at/after a
+    // byte-patched site has a fault-time owner record in the inventory the
+    // crash guard dumps (fail-state-logging.md §"the fault-time trace exists
+    // before the fault"). Internal enum, not a plugin-facing ABI struct, but
+    // appended at the end regardless.
+    Bytes      = 4,  // "bytes"       — kcdx.bytes / kcdxBytesInterface writes
 };
 
 // Register a fixed (non-hook_chain) MinHook install into the inventory. Called
@@ -87,6 +94,14 @@ const char* LastInventorySummary();
 // targets + registered fixed installs). Used by the cap-45 self-test to assert
 // the inventory is non-empty at boot. Refreshed by LogInventory().
 size_t LastTotalModifications();
+
+// Count of Category::Bytes modifications the last LogInventory() folded — the
+// successful kcdx.bytes / kcdxBytesInterface byte rewrites RegisterModification
+// recorded. Mirrors LastTotalModifications (same refresh point, same cached
+// shape). Used by the cap-39 self-test to assert a byte patch reaches the
+// inventory (the RegisterModification(Category::Bytes,...) wiring is live).
+// Refreshed by LogInventory(); 0 until the first LogInventory() call.
+size_t LastBytesCount();
 
 // ===========================================================================
 // Fire breadcrumb — the last N hook detours the game executed

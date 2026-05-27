@@ -585,6 +585,58 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
         }
     }
 
+    // cap-39-bytes-in-inventory: engine self-report that a successful
+    // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification
+    // inventory as Category::Bytes (the RegisterModification(Category::Bytes,
+    // ...) wiring on patch_engine's apply path — Batch C #15). cap-39's C++
+    // plugin (kcdxBytesInterface::Register at outfit_swap_callsite_aob) is the
+    // producer; cap-01's Lua kcdx.bytes hits the same site — so a live suite
+    // has ≥1 Bytes entry once those byte patches apply.
+    //
+    // TIMING (mirrors cap-47, NOT the cap-45 boot one-shot): the boot
+    // LogInventory() above runs in the first-update-tick block BEFORE the
+    // ApplyZone(AfterGame) passes install the byte patches — its bytes count is
+    // 0 there. So this report runs from the PER-TICK update path (after the
+    // per-tick ApplyZone(AfterGame) drain above), refreshes the inventory with
+    // a Debug-level LogInventory() (recomputes LastBytesCount over the now-
+    // applied registry), and reads the refreshed count. One-shot guarded +
+    // retried each tick: a tick where the bytes patch has not yet applied reads
+    // 0 and simply tries again next tick (no false FAIL), exactly like cap-47's
+    // empty-ring retry.
+    //
+    // FALSIFIABLE (AP15): reverting RegisterModification(Category::Bytes,...)
+    // on patch_engine's apply/idempotent-skip paths leaves bytes=0 forever →
+    // this row never flips to PASS (stays PENDING, a visible suite gap), and if
+    // it were asserted unconditionally it would FAIL. It reads the feature's
+    // own output (the Bytes subtotal the inventory folds), not a constant.
+    {
+        static bool s_cap39BytesReported = false;
+        if (!s_cap39BytesReported) {
+            namespace mi = kcdx::modification_inventory;
+            // Refresh so LastBytesCount reflects the byte patches applied by the
+            // ApplyZone(AfterGame) passes (Debug: dev-only, no Info-line spam
+            // per tick — the always-on boot/load SUMMARY lines stay at Info).
+            mi::LogInventory(kcdx::log::Level::Debug);
+            const size_t nBytes = mi::LastBytesCount();
+            if (nBytes > 0) {
+                s_cap39BytesReported = true;
+                char reason[256];
+                std::snprintf(reason, sizeof(reason),
+                    "modification inventory folded %zu Category::Bytes "
+                    "entry(ies) — a kcdx.bytes/kcdxBytesInterface rewrite "
+                    "(cap-39 / cap-01) registered as bytes; "
+                    "RegisterModification(Category::Bytes,...) is live",
+                    nBytes);
+                kcdx::test::ReportResult("cap-39-bytes-in-inventory", true,
+                                         reason);
+                kcdx::test::EmitSummaryIfChanged("cap-39 bytes-inventory");
+            }
+            // nBytes == 0: leave s_cap39BytesReported false; retry next tick
+            // (the byte patches may not have applied yet — they install during
+            // the ApplyZone(AfterGame) passes around boot).
+        }
+    }
+
     g_orig_update(p1, p2, p3);
 }
 

@@ -41,6 +41,7 @@ test_names          = ["CAP-20-before", "CAP-20-after", "CAP-20-replace",
                        "CAP-20-around", "CAP-20-chain", "CAP-20-wstr",
                        "CAP-20-conflict", "CAP-20-dyncall", "CAP-20-addrname",
                        "CAP-20-target", "CAP-20-target-nosig",
+                       "CAP-20-unknown-target-teaches",
                        "CAP-20-locator-default", "CAP-20-locator-exclusive"]
 
 [entrypoints]

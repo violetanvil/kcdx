@@ -912,6 +912,43 @@ int Lua_Hook(lua_State* L) {
     if (effectiveSig.empty()) {
         lua_pushnil(L);
         if (haveTarget) {
+            // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14):
+            // ResolveSignatureByName returns "" for TWO distinct cases — a
+            // name that resolved to an address but carries no verified ABI
+            // (the genuine "supply a signature" case), AND a name that does
+            // not resolve at all (a typo / unknown / un-declared target). The
+            // historic message wrongly told a typo'd name to "supply a
+            // signature". DISTINGUISH by asking whether the name resolves to
+            // anything: a nonzero ResolveByName VA, OR a winning author target
+            // (Pattern / TargetSymbol kinds resolve via FindResolvedAuthorTarget,
+            // not ResolveByName — DECLARED but no VA in this leaf module).
+            // Mirrors hook_interface.cpp ResolveSignature.
+            const uintptr_t addr = kcdx::address_library::ResolveByName(
+                targetName.c_str(), owner.author.c_str(), owner.plugin.c_str());
+            const bool declared =
+                addr != 0 ||
+                kcdx::address_library::FindResolvedAuthorTarget(
+                    targetName.c_str(), owner.author.c_str(),
+                    owner.plugin.c_str()) != nullptr;
+            if (!declared) {
+                LOG_DEBUG_KV("HOOK", "target_not_found",
+                    log::KV("target", targetName.c_str()),
+                    log::KV("plugin", owner.plugin.c_str()),
+                    log::KV::BareStr("detail",
+                        "target name resolved to NO address and is not a "
+                        "declared author target — unknown / typo'd / not "
+                        "declared, NOT a known-but-no-ABI target"));
+                lua_pushfstring(L,
+                    "kcdx.hook '%s': target '%s' did not resolve — no engine "
+                    "seed, no declared author target by that name. This is an "
+                    "UNKNOWN target name (a typo, or a target you have not "
+                    "declared). Check the name against kcdx.addr.* or your "
+                    "declared [[target]] rows; if you meant an un-named site, "
+                    "declare a [[target]] with a pattern/rva + signature=, or "
+                    "supply signature= here with an explicit locator (advanced).",
+                    p->name.c_str(), targetName.c_str());
+                return 2;
+            }
             // The target resolved a NAME (a seed entry OR an author-declared
             // target) but carries no ABI — a hook NEEDS a signature, and the
             // engine never invents one (AP2 / the disassembler test, AP12).
@@ -919,6 +956,13 @@ int Lua_Hook(lua_State* L) {
             // target whose locator is a raw pattern or RVA can't carry an ABI
             // on its own, so its targets.toml row must add signature=. Teach
             // both fixes, don't just reject.
+            LOG_DEBUG_KV("HOOK", "target_no_abi",
+                log::KV("target", targetName.c_str()),
+                log::KV("plugin", owner.plugin.c_str()),
+                log::KV::BareStr("detail",
+                    "target resolved to an address but carries no verified "
+                    "ABI — the author must supply a signature (the engine "
+                    "never invents one, AP2)"));
             lua_pushfstring(L,
                 "kcdx.hook '%s': target '%s' resolved to an address but has "
                 "no signature — a hook needs an ABI. If '%s' is your own "

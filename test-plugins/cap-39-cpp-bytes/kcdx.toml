@@ -36,6 +36,17 @@
 #       revert would be AP13. Falsifiable: Uninstall true or a reverted site
 #       => FAIL.
 #
+#   * cap-39-bytes-in-inventory  ENGINE-REPORTED (no DLL/Lua code here drives
+#       it — the engine reports it from src/hooks.cpp's per-tick update, same
+#       manifest-stub-name pattern as cap-45). Asserts the modification
+#       inventory folds ≥1 Category::Bytes entry once the byte patches apply
+#       (cap-39's C++ Register + cap-01's Lua kcdx.bytes hit the same site).
+#       This is the regression for Batch C #15 — the
+#       RegisterModification(Category::Bytes,...) wiring on patch_engine's
+#       apply path. Falsifiable: revert that wiring => bytes count stays 0 =>
+#       this row never flips to PASS (FAIL). cap-39 declares it because cap-39
+#       PRODUCES the byte patch the inventory must show.
+#
 # Test mode: boot-only. Both rows self-verify at kcdxPlugin_PostGameLoad; an
 # InputLoaded backstop (cap-29 / cap-36 design) reports a loud FAIL on both
 # rows if the after-phase export never fired. NO console gestures, NO
@@ -54,7 +65,8 @@ kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 test_names          = ["CAP-39-cpp-bytes-register",
-                       "CAP-39-cpp-bytes-uninstall-rejected"]
+                       "CAP-39-cpp-bytes-uninstall-rejected",
+                       "cap-39-bytes-in-inventory"]
 
 [entrypoints]
 dll = "cap-39.dll"

@@ -3,6 +3,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "log.h"              // LOG_WARN_KV (degenerate-input reject — AP14)
 #include "address_library.h"  // ResolveAlias / WarnBareCollisionShared (shared
                               // alias map + once-per-session collision dedup)
 
@@ -78,12 +79,42 @@ QName SplitQualified(const std::string& name) {
 bool Register(const std::string& bareName, uintptr_t addr,
               const std::string& ownerAuthor,
               const std::string& ownerPlugin) {
-    if (bareName.empty() || addr == 0) return false;
+    // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): Register
+    // returns false for TWO distinct failures — a DEGENERATE input (addr==0
+    // or empty bareName) and a DUPLICATE fully-qualified key (try_emplace did
+    // not insert). The caller treats false as a COLLISION and logs the prior
+    // owner via OwnerOf — but a degenerate-input reject is NOT a collision,
+    // and OwnerOf would return "" for it (no such key), so the caller's
+    // "already registered by '?'" line mis-describes what went wrong. Warn
+    // HERE, naming the real defect, so the degenerate case is distinguishable
+    // from a genuine collision. The duplicate-key false below is left
+    // SILENT here (the caller owns that diagnostic via OwnerOf — warning here
+    // too would double-log the collision). Severity Warn: a dropped export is
+    // a recoverable rejection (the region is allocated but unreachable by
+    // symbol), not a crash risk.
+    if (bareName.empty() || addr == 0) {
+        LOG_WARN_KV("SYMBOLS", "register_rejected_degenerate",
+            log::KV::BareStr("bare_name", bareName.empty() ? "(empty)"
+                                                           : bareName.c_str()),
+            log::KV("addr", (void*)addr),
+            log::KV("owner_author", ownerAuthor.c_str()),
+            log::KV("owner_plugin", ownerPlugin.c_str()),
+            log::KV::BareStr("reason",
+                bareName.empty()
+                    ? "empty export name — nothing to register the symbol "
+                      "under; the export is dropped (not a collision)"
+                    : "address is 0 — a null/unresolved export cannot be "
+                      "registered; the export is dropped (not a collision)"));
+        return false;
+    }
     std::lock_guard<std::mutex> lock(g_mutex);
     std::string key = QualifiedKey(ownerAuthor, ownerPlugin, bareName);
     auto [it, inserted] =
         g_table.try_emplace(key, Entry{addr, ownerAuthor, ownerPlugin,
                                        bareName});
+    // Duplicate-key reject: leave SILENT here. The caller logs the collision
+    // with the prior owner (OwnerOf) — that is the right diagnostic, with the
+    // right owner attribution this function cannot add without double-logging.
     return inserted;
 }
 

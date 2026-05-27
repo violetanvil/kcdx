@@ -13,6 +13,7 @@
 #include "load_order.h"
 #include "log.h"
 #include "lua_registry.h"  // ForEachEntryOfKind — enumerate Kind::Bytes
+#include "modification_inventory.h"  // RegisterModification (Bytes — fault-time owner record)
                            // entries for GetAppliedBytesPatchesAtTarget
                            // (COMP-15). The patch engine casts the
                            // type-erased payload; the registry stays
@@ -524,6 +525,22 @@ bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r) {
         p.appliedOK = true;
         log::InfoF("[%s] patch already applied; skipping (site addr 0x%p)",
                    p.name.c_str(), reinterpret_cast<void*>(r.patchAddr));
+        // FAULT-TIME TRACE (fail-state-logging.md / finding #15): a byte
+        // patch made INVISIBLE to the crash-guard modification inventory left
+        // a crash at/after a byte-patched site with no owner record. An
+        // idempotent-skip is STILL a live byte mod at this VA (the replacement
+        // bytes are present, regardless of whether THIS apply wrote them), so
+        // it belongs in the inventory. `p.name.c_str()` is process-lifetime
+        // stable: the PatchEntry lives either in patch::g_patches (sorted once
+        // before apply, never push_back'd after — interfaces.cpp's
+        // GetConflictReport already borrows these c_str()s for process life)
+        // or in the lua_registry deque-backed shared_ptr (append-only,
+        // node-stable, never freed — patch_engine.h AppliedBytesPatch lifetime
+        // note). Idempotent per (va, category) inside RegisterModification, so
+        // a re-apply on the load path does not double-count.
+        modification_inventory::RegisterModification(
+            r.patchAddr, modification_inventory::Category::Bytes,
+            p.name.c_str());
         return true;
     }
     if (verdict == -1) {
@@ -586,6 +603,14 @@ bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r) {
                reinterpret_cast<void*>(r.patchAddr),
                HexBytes(p.original).c_str(),
                HexBytes(p.replacement).c_str());
+
+    // FAULT-TIME TRACE (fail-state-logging.md / finding #15): record this
+    // byte mod in the crash-guard inventory so a crash at/after the patched
+    // VA is attributable to its owner. `p.name.c_str()` is process-lifetime
+    // stable (see the idempotent-skip path above for the lifetime proof).
+    modification_inventory::RegisterModification(
+        r.patchAddr, modification_inventory::Category::Bytes,
+        p.name.c_str());
 
     // If this patch's write landed on bytes a previous plugin already wrote,
     // log the clobber so the user can see exactly what happened. conflict_engine

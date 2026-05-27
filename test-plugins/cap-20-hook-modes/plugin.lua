@@ -185,6 +185,59 @@ do
                   .. "ABI'); got h=" .. tostring(h) .. " err=" .. tostring(err)))
 end
 
+-- CAP-20-unknown-target-teaches: the Batch C #8 fix. A target=<name> that
+-- resolves to NOTHING (not an engine seed, not a declared author target — a
+-- typo / un-declared name) must be rejected SYNCHRONOUSLY with the UNKNOWN-
+-- target teaching error ("did not resolve"), NOT the known-but-no-ABI "supply
+-- a signature" error. Before #8, ResolveSignatureByName returned "" for BOTH
+-- the unknown-name case AND the resolved-but-no-ABI case, so a typo'd name was
+-- wrongly told to "supply a signature" — misdirecting the author to hand-write
+-- an ABI for a target that does not exist. #8 distinguishes the two by asking
+-- whether the name resolves to any address / declared target.
+--
+-- The name is deliberately a non-existent target: no Address Library seed, no
+-- declared author target, so its rejection can never be confused with a real
+-- target's. Contrast CAP-20-target-nosig ("IConsole_AddCommand" — a name that
+-- DOES resolve to an address but has no seed signature → correctly STILL gets
+-- the "has no signature / needs an ABI" message). This row asserts the OTHER
+-- branch: an unknown name gets the "did not resolve" teaching and must NOT get
+-- the supply-a-signature message.
+--
+-- FALSIFIABLE (AP15): if #8 regresses (the two cases collapse again so an
+-- unknown name is told to supply a signature), the error contains "has no
+-- signature" / "needs an ABI" instead of "did not resolve" → this row FAILS.
+do
+    local h, err = kcdx.hook{
+        name   = "cap20_unknown_target",
+        target = "cap20_definitely_nonexistent_target",  -- resolves to NOTHING
+        before = function() end,                         -- (would never install)
+    }
+    -- The engine returns nil + the UNKNOWN-target teaching error. Assert the
+    -- stable load-bearing parts: it names the target as unresolved/unknown, and
+    -- it does NOT route to the known-but-no-ABI "supply a signature" message
+    -- (the pre-#8 misdirection). Lua patterns treat no magic chars here, but
+    -- guard the literal match with plain find (4th arg = plain).
+    local lc = type(err) == "string" and err:lower() or ""
+    local saysUnresolved =
+        lc:find("did not resolve", 1, true) ~= nil
+        or lc:find("unknown target", 1, true) ~= nil
+        or lc:find("not found", 1, true) ~= nil
+    local wrongOldMsg =
+        lc:find("has no signature", 1, true) ~= nil
+        or lc:find("needs an abi", 1, true) ~= nil
+    local pass = (h == nil)
+                 and type(err) == "string"
+                 and saysUnresolved
+                 and not wrongOldMsg
+    kcdx.test.report("CAP-20-unknown-target-teaches", pass,
+        pass and ("unknown target name rejected with the UNKNOWN/did-not-"
+                  .. "resolve teaching (not the supply-a-signature message): "
+                  .. err)
+             or  ("expected (nil, error saying the target did NOT resolve / is "
+                  .. "UNKNOWN and NOT 'has no signature'/'needs an ABI'); got "
+                  .. "h=" .. tostring(h) .. " err=" .. tostring(err)))
+end
+
 -- CAP-20-locator-default: a kcdx.hook with NO locator at all. The binder
 -- REJECTS it SYNCHRONOUSLY (nil + teaching error), and the error LEADS
 -- with the common path: target="<name>". This is the AP12 two-tier steer

@@ -37,6 +37,7 @@ std::mutex         g_mu;
 // the load-time Info line and the crash-time line therefore share content.
 char   g_lastSummary[256] = "(inventory not yet captured)";
 size_t g_lastTotal        = 0;
+size_t g_lastBytes        = 0;  // Category::Bytes subtotal (cap-39 self-test)
 
 // Order-independent fingerprint of a set of target VAs. XOR-fold with a
 // per-value mix so two runs with the same set (in any order) produce the same
@@ -56,6 +57,7 @@ const char* CategoryToken(Category c) {
         case Category::Engine:     return "engine";
         case Category::Lifecycle:  return "lifecycle";
         case Category::Probe:      return "probe";
+        case Category::Bytes:      return "bytes";
     }
     return "?";
 }
@@ -108,15 +110,18 @@ void LogInventory(log::Level summaryLevel) {
     size_t nEngine     = 0;
     size_t nLifecycle  = 0;
     size_t nProbe      = 0;
+    size_t nBytes      = 0;
     for (const auto& e : registered) {
         switch (e.category) {
             case Category::PluginHook: ++nPluginHook; break;  // (none expected here)
             case Category::Engine:     ++nEngine;     break;
             case Category::Lifecycle:  ++nLifecycle;  break;
             case Category::Probe:      ++nProbe;      break;
+            case Category::Bytes:      ++nBytes;      break;
         }
     }
-    const size_t total = nPluginHook + nEngine + nLifecycle + nProbe;
+    const size_t total =
+        nPluginHook + nEngine + nLifecycle + nProbe + nBytes;
 
     // Order-independent fingerprint over ALL target VAs (both sources).
     uint64_t fp = 0;
@@ -128,10 +133,11 @@ void LogInventory(log::Level summaryLevel) {
     // — no allocation. Stable + greppable.
     std::snprintf(g_lastSummary, sizeof(g_lastSummary),
                   "total=%zu plugin_hook=%zu engine=%zu lifecycle=%zu "
-                  "probe=%zu fingerprint=0x%016llX",
-                  total, nPluginHook, nEngine, nLifecycle, nProbe,
+                  "probe=%zu bytes=%zu fingerprint=0x%016llX",
+                  total, nPluginHook, nEngine, nLifecycle, nProbe, nBytes,
                   static_cast<unsigned long long>(fp));
     g_lastTotal = total;
+    g_lastBytes = nBytes;  // Category::Bytes subtotal (cap-39 self-test reads it)
 
     // SUMMARY at the caller-chosen severity (Info at boot/load → always-on,
     // diffable across builds by eye).
@@ -141,6 +147,7 @@ void LogInventory(log::Level summaryLevel) {
           log::KV("engine",      (unsigned long long)nEngine),
           log::KV("lifecycle",   (unsigned long long)nLifecycle),
           log::KV("probe",       (unsigned long long)nProbe),
+          log::KV("bytes",       (unsigned long long)nBytes),
           log::KV("fingerprint", (unsigned long long)fp) });
 
     // Per-target DETAIL at Debug (dev-only firehose): each VA + category +
@@ -173,6 +180,10 @@ const char* LastInventorySummary() {
 
 size_t LastTotalModifications() {
     return g_lastTotal;
+}
+
+size_t LastBytesCount() {
+    return g_lastBytes;
 }
 
 void RecordFire(uintptr_t targetVa, const char* pluginName,
