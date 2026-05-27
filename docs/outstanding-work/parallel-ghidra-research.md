@@ -551,11 +551,16 @@ version by the cross-version matcher (§11.6).
 
 ### 11.2 The schema — LOCKED (2026-05-27, except the matcher)
 
-The schema COLLAPSED to **8 tables** (+ `_dict_*`). The earlier separate
-`functions` / `signatures` / `caller_reg_args` tables are GONE — folded into
-`entity_versions` (their data is per-byte-form, derived from the bytes, so it
-lives on the interval row). The `overlay` / `versions` tables are renamed
-`kcdx_overlay` / `game_versions`.
+The schema is **9 tables** (+ `_dict_*`). The earlier separate `functions` /
+`signatures` / `caller_reg_args` tables are GONE — folded into `entity_versions`
+(their data is per-byte-form, derived from the bytes, so it lives on the interval
+row). The `overlay` / `versions` tables are renamed `kcdx_overlay` /
+`game_versions`, and the curated layer SPLITS into identity (`kcdx_overlay`) +
+temporal (`kcdx_overlay_versions`) — the verified signature/offset/slot/status
+move with the binary, so they version exactly like `entity_versions`. The model
+is uniform: identity tables (`entities`, `kcdx_overlay`, the `modules` /
+`game_versions` registries) each paired with their temporal interval table where
+facts can move across a patch.
 
 **Conventions (locked):**
 - Every table has an autoincrement `id` PK **except `entities`** (its PK *is*
@@ -653,35 +658,57 @@ name/call-graph fingerprint). Reserved so later population is no migration;
 staged to the Phase 9.x statement-survival design. (Options A/B/C weighed; C —
 general schema, staged statement fill — chosen.)
 
-#### `kcdx_overlay` — curated human layer, sparse sidecar (USER ✅, subset)
+#### `kcdx_overlay` — curated NAME IDENTITY, version-independent (USER ✅, subset)
 
 The maintainer's authoring source-of-truth; the generator projects its verified
-rows into seed.csv/kEntries[]. Stays a SEPARATE sparse sidecar (139 rows ×
-curated columns — folding onto the 321K-row identity table would make a
-super-wide mostly-NULL table). **`id` PK; `kcdx_id` is a NON-UNIQUE FK** — many
-name-rows may share one entity (the supersession case: OldName + NewName both
-point at one `kcdx_id`).
+rows into seed.csv/kEntries[]. Stays a SEPARATE sparse sidecar (139 rows —
+folding onto the 321K-row identity table would make a super-wide mostly-NULL
+table). Holds ONLY the version-INDEPENDENT facts of a curated name (the name
+itself, its kind, its deprecation state, its provenance — none of which change
+because the game patched). The version-DEPENDENT verified facts (signature,
+offset, slot, status — which DO move with the binary) live in
+`kcdx_overlay_versions`, mirroring the `entities` ↔ `entity_versions` split.
+**`id` PK; `kcdx_id` is a NON-UNIQUE FK** — many name-rows may share one entity
+(supersession: OldName + NewName both point at one `kcdx_id`).
 
 | Column | Type | Null | USER? | Meaning |
 |---|---|---|---|---|
 | `id` | INTEGER PK | no | ✅ | The stable *name-row* identity (distinct from the entity's `kcdx_id`). |
 | `kcdx_id` | INTEGER FK→`entities` | no | ✅ | The entity annotated (NON-unique — supersession allows multiple rows per entity). |
 | `name` | TEXT | yes | ✅ | Gameplay name ("IsInCombat"). NULL allowed (id-before-name). The resolution key. |
-| `kind` | INTEGER (dict) | no | ✅ | **9 values** (the seed.csv reality): `function` (108) \| `function_no_sig` (~9) \| `function_variadic` (4) \| `callsite` (3–4, carries `offset`; `aob` collapses in) \| `data_slot` (3) \| `string_anchor` (1) \| `instruction_anchor` (1) \| `vtable_base` (3) \| `vtable_index` (6, slot int in `vtable_slot`, no rva, unverified). |
-| `signature` | TEXT | yes | ✅ | The VERIFIED DSL ABI (distinct from the `entity_versions` floor). NULL for the 31 non-plain-function rows. |
-| `offset` | INTEGER | yes | ✅ | Callsite consumer offset (the `+13` / `-4`). |
-| `vtable_slot` | INTEGER | yes | ✅ | Slot int for `vtable_index` rows (its own structured column). |
-| `status` | INTEGER (dict) | no | ✅ | `verified` (133) \| `unverified` (6) — only verified resolves at runtime. |
+| `kind` | INTEGER (dict) | no | ✅ | **9 values** (the seed.csv reality): `function` (108) \| `function_no_sig` (~9) \| `function_variadic` (4) \| `callsite` (3–4, carries `offset`) \| `data_slot` (3) \| `string_anchor` (1) \| `instruction_anchor` (1) \| `vtable_base` (3) \| `vtable_index` (6). |
 | `is_deprecated` | INTEGER | no | ✅ | Name-deprecation flag; the old name still resolves (§11.4). |
 | `superseded_by` | INTEGER FK→`kcdx_overlay.id` | yes | ✅ | The overlay ROW (name) that replaces this one — you supersede a NAME, not the function. |
-| `source` | INTEGER (dict) | no | ❌ | Provenance tier (seed.csv's separate `source`; kept, not folded into `status`). |
-| `authored_against_version` | INTEGER FK→`game_versions` | yes | ❌ | Verification bookkeeping. |
-| `verified_on_version` | INTEGER FK→`game_versions` | yes | ❌ | Verification bookkeeping. |
-| `signature_source` | INTEGER (dict) | no | ❌ | Always `curated` here (the generator projects ONLY this). |
+| `source` | INTEGER (dict) | no | ❌ | Provenance tier (seed.csv's separate `source`; kept, not folded into status). |
 | `notes` | TEXT | yes | ❌ | seed.csv prose; never in USER (also the public-clean reason). |
 
-Index: `ix_ov_name` on `name`. (No `rva` — a code overlay row gets its address
-via its `kcdx_id`'s current `entity_versions` interval.)
+Index: `ix_ov_name` on `name`.
+
+#### `kcdx_overlay_versions` — verified curated facts that move with the binary (USER ✅)
+
+The version-DEPENDENT half of a curated entry, as validity INTERVALS — mirrors
+`entity_versions`. One row per (curated name, version-interval). When a game patch
+changes IsInCombat's ABI or shifts a callsite offset or a vtable slot, the
+maintainer closes the old interval and opens a new one; the NAME (`kcdx_overlay`)
+is untouched.
+
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ✅ | |
+| `overlay_id` | INTEGER FK→`kcdx_overlay.id` | no | ✅ | The curated name these facts belong to. |
+| `signature` | TEXT | yes | ✅ | The VERIFIED DSL ABI for this version range (distinct from the `entity_versions` floor). NULL for non-plain-function kinds. |
+| `offset` | INTEGER | yes | ✅ | Callsite consumer offset (the `+13` / `-4`) for this version. |
+| `vtable_slot` | INTEGER | yes | ✅ | Slot int for `vtable_index` rows for this version (the slot-32-vs-33-across-builds case). |
+| `status` | INTEGER (dict) | no | ✅ | `verified` \| `unverified` **for this version** (verified-on-1.5 ≠ verified-on-1.6 until rechecked). Only verified resolves at runtime. |
+| `valid_from` | INTEGER FK→`game_versions` | no | ✅ | First version these verified facts hold. |
+| `valid_through` | INTEGER FK→`game_versions` | yes | ✅ | NULL = current. |
+
+Index: `(overlay_id)`; partial UNIQUE `(overlay_id) WHERE valid_through IS NULL`.
+**No `rva`** — the curated entity's ADDRESS comes from its `kcdx_id`'s
+`entity_versions` interval (one source of truth for location). **No
+`verified_on_version` / `authored_against_version`** — the interval's
+`valid_from`/`valid_through` IS the version range. **No `signature_source`** — it
+was always `curated` in the overlay (a constant), dropped.
 
 **Seed id reconciliation:** the seed.csv ids (1000–3106) are NOT preserved — each
 seed row matches the v1.5 baseline `entities.kcdx_id` AT ITS rva (the row's rva →
@@ -749,7 +776,10 @@ FUN_<rva>()`); `functions.signature_source` / `function_name` / `namespace`
 DEV); `statements.cvar_ref` / all `*.edge_reason` (100% empty);
 `statements.callee` NULL'd when redundant `FUN_<rva>`; the separate `signatures`
 / `caller_reg_args` tables (folded into `entity_versions`); `meta.module` /
-`meta.game_version` (→ `modules` / `game_versions`).
+`meta.game_version` (→ `modules` / `game_versions`); the overlay's
+`verified_on_version` / `authored_against_version` / `signature_source` (the
+interval's `valid_from`/`valid_through` replaces the first two; the third was a
+constant `curated`).
 
 ### 11.3 The author reference surface — exactly two handles + the hatch
 
@@ -758,7 +788,7 @@ doesn't exist materially — it's a render of the rva). Resolution is:
 
 | Tier | Author writes | Resolves via | Stable? |
 |---|---|---|---|
-| Verified-named | `target = "IsInCombat"` | `kcdx_overlay.name` → `kcdx_id` → `entities`/`entity_versions` address + verified ABI | ✅ |
+| Verified-named | `target = "IsInCombat"` | `kcdx_overlay.name` → (`kcdx_id` → current `entity_versions` interval for the address) + (current `kcdx_overlay_versions` interval for the verified ABI/slot/offset) | ✅ |
 | Discovered | `target = <kcdx_id>` | `entities.kcdx_id` → current `entity_versions` interval → address | ✅ (append-only id) |
 | Expert hatch | `pattern = "48 8B …"` / `bytes` | scan | ✅ (re-derived per version by the author) |
 
@@ -796,8 +826,11 @@ stable anchors and the matcher's raw signals are preserved:
    ordinal 1); `modules` gets `WHGame.dll`.
 3. **Preserve the matcher's signals** — `call_edges` + `statements.string_ref`
    stay (DEV DB); they are the cross-version fingerprint inputs (§11.6).
-4. The cut/fix pass + the overlay schema + the seed from seed.csv's 139 rows
-   (§11.2), per the feature decomposition.
+4. The cut/fix pass + the overlay schema (`kcdx_overlay` identity +
+   `kcdx_overlay_versions` temporal) + the seed from seed.csv's 139 rows: each row
+   becomes ONE `kcdx_overlay` identity row (name/kind/deprecation/source/notes) +
+   ONE open `kcdx_overlay_versions` interval (verified signature/offset/slot/
+   status, `valid_from=1`, `valid_through=NULL`), per §11.2 + the decomposition.
 
 ### 11.6 The cross-version matcher — THE open problem (solved in a sandbox)
 
