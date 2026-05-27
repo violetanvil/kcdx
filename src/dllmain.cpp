@@ -1,5 +1,6 @@
 #include <windows.h>
 
+#include <cstdio>
 #include <string>
 
 #include "config.h"
@@ -241,7 +242,29 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
         RunBeforeGameZoneInDllMain();
 
         HANDLE h = CreateThread(nullptr, 0, WorkerThread, nullptr, 0, nullptr);
-        if (h) CloseHandle(h);
+        if (h) {
+            CloseHandle(h);
+        } else {
+            // Fail-state (Batch F #20): the worker thread is where log::Init,
+            // hook install, plugin discovery, save/load hooks, and the watchdog
+            // all run. If CreateThread fails, the ENTIRE engine is inert this
+            // session — no hooks, no plugins, no save/load, no watchdog — and
+            // log::Init never runs (it lives inside the thread that just failed
+            // to start), so the file log is never up. OutputDebugStringA is the
+            // ONLY sink; the [ERROR] tag substitutes for ODS's missing severity.
+            // We KEEP returning TRUE: the host game process must continue (the
+            // signal is this line, not aborting the host).
+            DWORD err = GetLastError();
+            char ods[256];
+            snprintf(ods, sizeof(ods),
+                     "[kcdx][ERROR] dllmain: CreateThread(WorkerThread) failed "
+                     "(err=%lu); kcdx is INERT this session — no hooks, "
+                     "plugins, save/load, or watchdog will load, and there is "
+                     "no kcdx log file (log::Init runs inside the worker "
+                     "thread that failed to start). The game runs vanilla.\n",
+                     err);
+            OutputDebugStringA(ods);
+        }
     }
     return TRUE;
 }

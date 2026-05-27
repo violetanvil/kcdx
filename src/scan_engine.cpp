@@ -7,6 +7,8 @@
 
 #include "scan_engine.h"
 
+#include <windows.h>
+
 #include "load_order.h"
 #include "log.h"
 #include "pe_helpers.h"
@@ -38,9 +40,46 @@ std::vector<uintptr_t> ScanAll(const pe::ModuleView& mv,
     return hits;
 }
 
-// Format up to `count` bytes at `addr` as space-separated hex pairs.
-// Bounds-safe via VirtualQuery; truncates at the end of the readable
-// page if needed.
+// Is the FULL byte window [addr, addr+len) committed + readable? Mirrors
+// save_load_hooks.cpp SafeReadByte/SafeReadPtr (VirtualQuery → MEM_COMMIT →
+// not PAGE_NOACCESS), extended so the WHOLE range is covered, not just the
+// start byte: a region edge mid-window (the next page uncommitted, or the
+// window crossing into an adjacent region whose protection differs) must fail.
+// Fail-state (Batch F #16): the context byte-dump reads applyAddr-16 .. with no
+// guard; near a section/region edge (or if applyAddr-16 underflows below the
+// region base) that lands on unmapped memory and AVs inside a diagnostic meant
+// to be SAFE for a newbie validating an AOB. Returns false → caller skips the
+// dump and warns, instead of crashing.
+bool WindowReadable(uintptr_t addr, size_t len) {
+    if (len == 0) return false;
+    // Pointer-arithmetic underflow / overflow guard: applyAddr-16 can wrap below
+    // 0, and addr+len can wrap past the top of the address space.
+    if (addr + len < addr) return false;
+
+    uintptr_t cur = addr;
+    const uintptr_t end = addr + len;  // exclusive
+    while (cur < end) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (VirtualQuery(reinterpret_cast<const void*>(cur), &mbi,
+                         sizeof(mbi)) == 0) {
+            return false;
+        }
+        if (mbi.State != MEM_COMMIT) return false;
+        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+        // Advance to the end of THIS region; loop re-queries the next one, so a
+        // window spanning two regions only passes if EVERY region is committed
+        // + readable.
+        uintptr_t regionEnd =
+            reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        if (regionEnd <= cur) return false;  // no forward progress → bail
+        cur = regionEnd;
+    }
+    return true;
+}
+
+// Format `count` bytes at `addr` as space-separated hex pairs. The caller is
+// responsible for confirming the full window is readable (WindowReadable) —
+// this no longer performs a raw read of unguarded memory.
 std::string FormatBytesAt(uintptr_t addr, size_t count) {
     if (count == 0) return {};
     char buf[1024];
@@ -145,16 +184,32 @@ void RunOne(const ScanEntry& s) {
                    s.offset,
                    reinterpret_cast<void*>(m.applyAddr));
 
-        // 16 bytes before, 32 bytes at + after. Bounded by safety —
-        // raw memcpy from page; if we hit unmapped memory we'll AV.
-        // The hit address came from a scan of mapped executable
-        // bytes so this is safe within the same section.
-        std::string before = FormatBytesAt(m.applyAddr - 16, 16);
-        std::string after  = FormatBytesAt(m.applyAddr, 32);
-        log::InfoF("[scan '%s']   bytes -16: %s",
-                   s.name.c_str(), before.c_str());
-        log::InfoF("[scan '%s']   bytes  +0: %s",
-                   s.name.c_str(), after.c_str());
+        // 16 bytes before, 32 bytes at + after. Guard each window with
+        // WindowReadable BEFORE reading (Batch F #16): near a section/region
+        // edge applyAddr-16 can land on (or underflow into) unmapped memory,
+        // and the +0 window can run off the end of the last committed region —
+        // either AVs inside a diagnostic that must be SAFE for a newbie
+        // validating an AOB. On an unreadable / partially-unmapped window we
+        // SKIP that dump and Warn, instead of crashing. The scan still reports
+        // its match above; only the optional context bytes are lost.
+        if (WindowReadable(m.applyAddr - 16, 16)) {
+            std::string before = FormatBytesAt(m.applyAddr - 16, 16);
+            log::InfoF("[scan '%s']   bytes -16: %s",
+                       s.name.c_str(), before.c_str());
+        } else {
+            log::WarnF("[scan '%s']   bytes -16: context byte-dump near "
+                       "section edge skipped (region unreadable)",
+                       s.name.c_str());
+        }
+        if (WindowReadable(m.applyAddr, 32)) {
+            std::string after = FormatBytesAt(m.applyAddr, 32);
+            log::InfoF("[scan '%s']   bytes  +0: %s",
+                       s.name.c_str(), after.c_str());
+        } else {
+            log::WarnF("[scan '%s']   bytes  +0: context byte-dump near "
+                       "section edge skipped (region unreadable)",
+                       s.name.c_str());
+        }
     }
 }
 

@@ -52,6 +52,21 @@ bool Spawn() {
     std::wstring stampW;
     {
         const std::string& s = log::SessionStamp();
+        // Fail-state (Batch F #21): an empty session stamp hands the watchdog a
+        // blank stamp argument — it cannot locate this session's crash bundle
+        // (the bundler matches on kcdx_<stamp>.log / kcdx-dev_<stamp>.log). This
+        // is mitigated AT SOURCE by EnsureSessionStamp (called in the DllMain
+        // phase and again in log::Init before this runs), so reaching here empty
+        // means that set-once failed — defense-in-depth, hence Warn. Spawn runs
+        // in WorkerThread after log::Init, so the file log IS up → LOG_WARN
+        // (not OutputDebugStringA).
+        if (s.empty()) {
+            LOG_WARN("WATCHDOG",
+                "session stamp is empty; the watchdog receives a blank stamp "
+                "argument and cannot locate this session's crash bundle "
+                "(kcdx_<stamp>.log / kcdx-dev_<stamp>.log will not match). "
+                "EnsureSessionStamp should have set it earlier this session.");
+        }
         int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
         if (n > 0) {
             stampW.resize(n - 1);

@@ -1,0 +1,204 @@
+# CAP-51 — boot / IO fail-state instrumentation (Batch F, the FINAL batch of the
+# fail-state-logging sweep). FIVE defensive guards on normally-infallible OS/IO
+# calls + one dead scan path now fail LOUD instead of silently producing a
+# broken layout / a logless session / an inert engine / a blank crash-bundle
+# stamp / an out-of-bounds byte read (AP14). All five are ENGINE-internal boot/IO
+# machinery — none is reachable from any author surface (no kcdx.* verb, no
+# kcdx*Interface method drives them), so this is a MANIFEST-ONLY STUB (no
+# plugin.lua / no DLL — there is nothing to drive: every guard fires only when a
+# normally-infallible OS/IO call FAILS, or on a dead scan path).
+#
+# Same stub pattern as comp-15-hook-dispatch-failstate (Batch E) and
+# cap-48-crash-attribution: engine-internal fail-path guards, rows held PENDING
+# via test_names, confirmed by ABSENCE on a healthy launch.
+#
+# ===========================================================================
+# WHY THESE ARE NOT FLIP-ON-TRIGGER ROWS — READ THIS FIRST.
+# ===========================================================================
+# cap-48's rows flip when a REAL fault occurs (a live 0xC8 crash bundle / a moved
+# [record+0x80] offset) — they have a positive in-the-wild trigger. These FIVE
+# rows do NOT. Every guard fires ONLY on a failure precondition that does not
+# occur on a clean launch:
+#
+#   - #18: GetModuleFileNameW fails / a module path has no separator / a
+#     create_directories error code — none happens when kcdx.dll loads normally
+#     from <game-bin>/kcdx-engine/ and the dirs already exist or are creatable.
+#   - #19: _wfopen returns null for the engine or dev log — does not happen when
+#     kcdx-engine/logs/ is writable.
+#   - #20: CreateThread(WorkerThread) returns null — does not happen on a healthy
+#     process with a free thread slot.
+#   - #21: log::SessionStamp() is empty at watchdog-spawn time — cannot happen,
+#     EnsureSessionStamp sets it once in the DllMain phase and again in log::Init
+#     before the spawn runs.
+#   - #16: a scan match drives FormatBytesAt over an unreadable region — and
+#     additionally g_scans has NO populator post-Phase-5, so the whole scan
+#     report path is currently dead.
+#
+# Therefore there is NO positive trigger this build. The CONFIRMING signal for
+# every row is ABSENCE: a clean dev-mode launch must show the guard's log line(s)
+# ABSENT (the healthy boot/IO path must NOT false-fire the guard). The
+# falsifiable claim each row pins (AP15): "the healthy live boot/IO path does NOT
+# false-fire this guard" — a guard line appearing on a clean launch is the FAIL
+# (the engine is reporting a broken layout / logless session / inert engine /
+# blank stamp / unreadable scan window on a HEALTHY boot, which would itself be a
+# regression). These rows ALSO pin the EXACT contract + the exact signal text so
+# a FUTURE regression repro (or a future scan feature that repopulates g_scans
+# for #16) has the expected line documented to grep for. They stay PENDING by
+# design (confirmed-clean by absence), NOT flipped PASS by a normal launch. Same
+# honesty stance as comp-15: written as confirmed-clean-by-absence contract pins,
+# not as rows a normal launch flips PASS.
+#
+# ---------------------------------------------------------------------------
+# ROW cap-51-selfdir-fallback-signaled  (#18, src/paths.cpp DeriveSelfDir + Init)
+# ---------------------------------------------------------------------------
+# CONTRACT: a failure deriving kcdx.dll's own directory, or a create_directories
+# error code, emits an always-on [ERROR] OutputDebugStringA line (pre-log /
+# DllMain phase → ODS is the floor; the [ERROR] tag substitutes for ODS's
+# missing severity field) instead of silently falling back to a CWD-relative
+# ".\\" layout / silently leaving a directory uncreated (a later plugin-discovery
+# or log-open then silently finds nothing). SINK: OutputDebugStringA (#18/#19/#20
+# all pre-log).
+# EXACT SIGNAL TEXT (three guard sites, verbatim):
+#   DeriveSelfDir GetModuleFileNameW failure:
+#     [kcdx][ERROR] paths: GetModuleFileNameW failed (n=%lu, err=%lu) deriving
+#     kcdx.dll's own directory; falling back to CWD-relative ".\\" — the ENTIRE
+#     engine layout (engine/plugins/builtin dirs) will resolve relative to the
+#     game's working directory, not next to kcdx.dll. Plugins and engine data
+#     may not be found.
+#   DeriveSelfDir no-path-separator:
+#     [kcdx][ERROR] paths: kcdx.dll module path has no path separator; falling
+#     back to CWD-relative ".\\" — the ENTIRE engine layout (engine/plugins/
+#     builtin dirs) will resolve relative to the game's working directory, not
+#     next to kcdx.dll. Plugins and engine data may not be found.
+#   Init create_directories error code (reportDirFail, which in {engine, plugins,
+#   builtin}):
+#     [kcdx][ERROR] paths: failed to create %s directory '%s' (ec=%d: %s);
+#     plugins/logs/builtin data under it will be missing this session.
+# UNREACHABLE ON A HEALTHY BOOT: kcdx.dll loads from <game-bin>/kcdx-engine/, so
+# GetModuleFileNameW succeeds and the path has a separator; the engine/plugins/
+# builtin dirs already exist or are creatable — none of the three guards fires.
+# HEALTHY-PATH COVERAGE NOTE: cap-46-session-stamp already POSITIVELY asserts
+# #18's healthy outcome (correct engine-dir + non-empty stamp resolution at
+# boot). What cap-51 pins here is the FAILURE-PATH contract (the fallback / the
+# uncreated-dir signal); the healthy path is positively covered by cap-46.
+# CONFIRM BY ABSENCE: no such [ERROR] paths: line on a healthy launch.
+#
+# ---------------------------------------------------------------------------
+# ROW cap-51-logopen-fail-signaled  (#19, src/log.cpp Init / SetDevMode)
+# ---------------------------------------------------------------------------
+# CONTRACT: a null _wfopen for the engine log (Init) or the dev log (SetDevMode)
+# emits an always-on [ERROR] OutputDebugStringA line — the engine log is the
+# stream that just failed so it cannot log this to itself, and SetDevMode can run
+# pre-Init (the DllMain dev-mode-enable path) → OutputDebugStringA is the only
+# dependable sink; the [ERROR] tag substitutes for ODS's missing severity field.
+# Replaces a LOGLESS session with NO signal anywhere. SINK: OutputDebugStringA.
+# EXACT SIGNAL TEXT (two guard sites, verbatim):
+#   Init engine-log open failure (the most severe — no engine log at all this
+#   session):
+#     [kcdx][ERROR] log: failed to open the engine log '%s' (_wfopen returned
+#     null, errno=%d); the engine log will be EMPTY this entire session — every
+#     LOG_* line silently drops. Check the kcdx-engine/logs/ directory is writable.
+#   SetDevMode dev-log open failure:
+#     [kcdx][ERROR] log: failed to open the dev log '%s' (_wfopen returned null,
+#     errno=%d); dev-mode lines (the test-suite summary, probe/diagnostic output)
+#     silently drop this session. Check kcdx-engine/logs/ is writable.
+# UNREACHABLE ON A HEALTHY BOOT: when kcdx-engine/logs/ is writable, _wfopen
+# returns a non-null FILE* for both the engine log and (under dev mode) the dev
+# log — neither guard fires.
+# CONFIRM BY ABSENCE: no such [ERROR] log: failed to open ... line on a healthy
+# launch.
+#
+# ---------------------------------------------------------------------------
+# ROW cap-51-worker-thread-fail-signaled  (#20, src/dllmain.cpp CreateThread)
+# ---------------------------------------------------------------------------
+# CONTRACT: a null CreateThread(WorkerThread) emits an always-on [ERROR]
+# OutputDebugStringA line naming that the ENTIRE engine is inert this session
+# (no hooks, plugins, save/load, watchdog) and that there is no kcdx log file
+# (log::Init runs inside the worker thread that failed to start) — so ODS is the
+# ONLY sink; the [ERROR] tag substitutes for ODS's missing severity. The host
+# game process must continue (the signal is this line, not aborting the host) so
+# DllMain still returns TRUE. SINK: OutputDebugStringA.
+# EXACT SIGNAL TEXT (verbatim):
+#   [kcdx][ERROR] dllmain: CreateThread(WorkerThread) failed (err=%lu); kcdx is
+#   INERT this session — no hooks, plugins, save/load, or watchdog will load, and
+#   there is no kcdx log file (log::Init runs inside the worker thread that
+#   failed to start). The game runs vanilla.
+# UNREACHABLE ON A HEALTHY BOOT: CreateThread succeeds on a healthy process — the
+# guard does not fire and the engine is live (the rest of the suite reporting at
+# all is proof the worker thread started).
+# CONFIRM BY ABSENCE: no such [ERROR] dllmain: CreateThread(WorkerThread) failed
+# line on a healthy launch.
+#
+# ---------------------------------------------------------------------------
+# ROW cap-51-watchdog-empty-stamp-warn  (#21, src/watchdog_spawn.cpp)
+# ---------------------------------------------------------------------------
+# CONTRACT: an empty log::SessionStamp() at watchdog-spawn time emits ONE Warn —
+# the watchdog would receive a blank stamp argument and could not locate this
+# session's crash bundle (the bundler matches on kcdx_<stamp>.log /
+# kcdx-dev_<stamp>.log). Mitigated AT SOURCE by EnsureSessionStamp (DllMain phase
+# + again in log::Init before this runs), so reaching here empty means that
+# set-once failed — defense-in-depth, hence Warn not Error. Spawn runs in
+# WorkerThread AFTER log::Init, so the file log IS up → SINK: LOG_WARN (the
+# "WATCHDOG" category), not OutputDebugStringA.
+# EXACT SIGNAL TEXT (LOG_WARN, "WATCHDOG", verbatim):
+#   session stamp is empty; the watchdog receives a blank stamp argument and
+#   cannot locate this session's crash bundle (kcdx_<stamp>.log /
+#   kcdx-dev_<stamp>.log will not match). EnsureSessionStamp should have set it
+#   earlier this session.
+# UNREACHABLE ON A HEALTHY BOOT: EnsureSessionStamp sets the stamp once before
+# watchdog spawn, so SessionStamp() is non-empty here — the guard does not fire.
+# (cap-46-session-stamp positively asserts the stamp is non-empty at boot.)
+# CONFIRM BY ABSENCE: no such WATCHDOG "session stamp is empty" Warn on a healthy
+# launch.
+#
+# ---------------------------------------------------------------------------
+# ROW cap-51-scan-bytedump-bounds-guard  (#16, src/scan_engine.cpp
+#                                          WindowReadable + FormatBytesAt)
+# ---------------------------------------------------------------------------
+# CONTRACT: the optional context byte-dump (applyAddr-16 .. and applyAddr ..+32)
+# around a scan match is now bounds-checked by WindowReadable (VirtualQuery →
+# MEM_COMMIT → not PAGE_NOACCESS/PAGE_GUARD, whole window) before FormatBytesAt
+# reads it — an unreadable / partially-unmapped window (a section/region edge, or
+# applyAddr-16 underflowing) emits a Warn and SKIPS the dump instead of AVing
+# inside a diagnostic that must be SAFE for a newbie validating an AOB. The scan
+# still reports its match; only the optional context bytes are lost. SINK:
+# log::WarnF (the "scan '<name>'" prefix).
+# EXACT SIGNAL TEXT (log::WarnF, verbatim — two sites, -16 and +0):
+#   [scan '%s']   bytes -16: context byte-dump near section edge skipped (region
+#   unreadable)
+#   [scan '%s']   bytes  +0: context byte-dump near section edge skipped (region
+#   unreadable)
+# NOTE — THIS PATH IS CURRENTLY DEAD: g_scans has NO populator post-Phase-5 (the
+# legacy [[scan]] TOML parser was deleted; no kcdx.scan-driven inventory feeds
+# the scan report loop), so the WindowReadable/FormatBytesAt path does not run at
+# all this build. The guard is therefore DEFENSE-IN-DEPTH, KEPT per the Batch E
+# precedent (comp-15's #3 Error retained as a net-underneath). This row pins the
+# contract for IF a future scan feature repopulates g_scans — at which point a
+# match near a section edge must Warn-and-skip, never AV the diagnostic.
+# UNREACHABLE ON A HEALTHY BOOT: doubly so — no scan match drives the dump on a
+# clean launch, and the scan report loop has no populated g_scans to iterate.
+# CONFIRM BY ABSENCE: no such "scan ... context byte-dump near section edge
+# skipped" Warn on a healthy launch.
+#
+# ===========================================================================
+# Test mode: boot-only (absence-confirmation on a clean dev-mode launch; no
+# gesture). The agent reads the newest kcdx-dev log and confirms NONE of the
+# lines above appear, alongside the standard suite: X/Y passing line. These five
+# rows do NOT flip to PASS on a normal launch — they guard against a future
+# boot/IO regression (and, for #16, a future scan feature); their absence on a
+# clean launch is the standing confirmation.
+# ===========================================================================
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_51_boot_io_failstate"
+display_name        = "CAP-51 boot / IO fail-state instrumentation (Batch F)"
+author              = "ts"
+description         = "Batch F (final) of the fail-state-logging sweep: five defensive guards on normally-infallible boot/IO machinery now fail LOUD instead of silently producing a broken layout / a logless session / an inert engine / a blank crash-bundle stamp / an out-of-bounds byte read (AP14). #18 paths.cpp DeriveSelfDir/.\\\\-fallback + Init create_directories ec → always-on [ERROR] OutputDebugStringA; #19 log.cpp Init/SetDevMode null _wfopen → [ERROR] OutputDebugStringA; #20 dllmain.cpp null CreateThread(WorkerThread) → [ERROR] OutputDebugStringA (engine inert, host continues); #21 watchdog_spawn.cpp empty SessionStamp → LOG_WARN (WATCHDOG, defense-in-depth — EnsureSessionStamp mitigates at source); #16 scan_engine.cpp FormatBytesAt window bounds-guarded by WindowReadable → LOG_WARN + skip (defense-in-depth; the scan report path is currently DEAD — g_scans has no populator post-Phase-5 — kept per the Batch E precedent, pins the contract for a future scan feature). All five are provably UNREACHABLE on a healthy boot — NOT flip-on-trigger rows. Manifest-only stub holds the five rows PENDING; the confirming signal is ABSENCE of the guard lines on a clean launch (the live boot/IO path must not false-fire), plus a documented contract + signal-text pin for a future regression. #18's healthy path is positively covered by cap-46-session-stamp."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-51-selfdir-fallback-signaled", "cap-51-logopen-fail-signaled", "cap-51-worker-thread-fail-signaled", "cap-51-watchdog-empty-stamp-warn", "cap-51-scan-bytedump-bounds-guard"]

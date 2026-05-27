@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <cstdio>
 #include <filesystem>
 #include <string>
 
@@ -35,6 +36,13 @@ std::wstring g_pluginsDir;     // <game-bin>/kcdx-plugins/  (trailing '\\')
 std::wstring g_builtinDir;     // <game-bin>/kcdx-engine/builtin/ (trailing '\\')
 
 // Re-derive kcdx.dll's directory using the address of a function in this TU.
+//
+// Fail-state (Batch F #18): a CWD-relative ".\\" fallback resolves the WHOLE
+// engine layout (engine dir / plugins dir / builtin dir) relative to the
+// game's working directory instead of next to kcdx.dll — silently wrong, no
+// crash. This runs pre-log (DllMain phase, before log::Init), so OutputDebug-
+// StringA is the only sink. The text carries an [ERROR]-equivalent tag because
+// ODS has no severity field.
 std::wstring DeriveSelfDir() {
     HMODULE hMod = nullptr;
     GetModuleHandleExW(
@@ -44,10 +52,31 @@ std::wstring DeriveSelfDir() {
         &hMod);
     wchar_t buf[MAX_PATH * 2];
     DWORD n = GetModuleFileNameW(hMod, buf, _countof(buf));
-    if (n == 0 || n == _countof(buf)) return L".\\";
+    if (n == 0 || n == _countof(buf)) {
+        DWORD err = GetLastError();
+        char ods[256];
+        snprintf(ods, sizeof(ods),
+                 "[kcdx][ERROR] paths: GetModuleFileNameW failed (n=%lu, "
+                 "err=%lu) deriving kcdx.dll's own directory; falling back to "
+                 "CWD-relative \".\\\\\" — the ENTIRE engine layout (engine/"
+                 "plugins/builtin dirs) will resolve relative to the game's "
+                 "working directory, not next to kcdx.dll. Plugins and engine "
+                 "data may not be found.\n",
+                 n, err);
+        OutputDebugStringA(ods);
+        return L".\\";
+    }
     std::wstring path(buf, n);
     auto pos = path.find_last_of(L"/\\");
-    if (pos == std::wstring::npos) return L".\\";
+    if (pos == std::wstring::npos) {
+        OutputDebugStringA(
+            "[kcdx][ERROR] paths: kcdx.dll module path has no path separator; "
+            "falling back to CWD-relative \".\\\\\" — the ENTIRE engine layout "
+            "(engine/plugins/builtin dirs) will resolve relative to the game's "
+            "working directory, not next to kcdx.dll. Plugins and engine data "
+            "may not be found.\n");
+        return L".\\";
+    }
     return path.substr(0, pos + 1);
 }
 
@@ -77,10 +106,35 @@ void Init() {
     fs::path pluginDir  = gameBin / L"kcdx-plugins";
     fs::path builtinDir = engineDir / L"builtin";
 
+    // Fail-state (Batch F #18): a create_directories failure left the layout
+    // pointing at a directory that does not exist — a later plugin-discovery or
+    // log-open silently finds nothing / drops, with no signal here. Check each
+    // ec individually and name WHICH dir failed. Pre-log (DllMain phase) →
+    // OutputDebugStringA is the floor; the [ERROR] tag substitutes for ODS's
+    // missing severity field. (Init is also called idempotently post-log from
+    // WorkerThread, but the FIRST call is pre-log, so ODS is correct in both —
+    // ODS is always available, the file log just is not up the first time.)
+    auto reportDirFail = [](const char* which, const fs::path& p,
+                            const std::error_code& ec) {
+        char ods[512];
+        std::string ps = p.string();
+        snprintf(ods, sizeof(ods),
+                 "[kcdx][ERROR] paths: failed to create %s directory '%s' "
+                 "(ec=%d: %s); plugins/logs/builtin data under it will be "
+                 "missing this session.\n",
+                 which, ps.c_str(), ec.value(), ec.message().c_str());
+        OutputDebugStringA(ods);
+    };
+
     std::error_code ec;
-    fs::create_directories(engineDir,  ec);
-    fs::create_directories(pluginDir,  ec);
+    fs::create_directories(engineDir, ec);
+    if (ec) reportDirFail("engine", engineDir, ec);
+    ec.clear();
+    fs::create_directories(pluginDir, ec);
+    if (ec) reportDirFail("plugins", pluginDir, ec);
+    ec.clear();
     fs::create_directories(builtinDir, ec);
+    if (ec) reportDirFail("builtin", builtinDir, ec);
 
     g_engineDataDir = AppendDir(engineDir);
     g_pluginsDir    = AppendDir(pluginDir);

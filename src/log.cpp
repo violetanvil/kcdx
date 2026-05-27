@@ -16,6 +16,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -656,6 +657,24 @@ void Init() {
     g_engineStream.streamName = engineName;
     g_engineStream.fp = _wfopen(enginePath.c_str(), L"wb");
 
+    // Fail-state (Batch F #19): a null engine-log fp means WriteLineLocked
+    // no-ops forever — a LOGLESS session with NO signal anywhere (the engine
+    // log is the stream that just failed, so we cannot log this to ourselves).
+    // This is the most severe of the open failures (no engine log at all this
+    // session). OutputDebugStringA is the only sink; the [ERROR] tag stands in
+    // for ODS's missing severity field.
+    if (!g_engineStream.fp) {
+        char ods[512];
+        std::string ps = enginePath.string();
+        snprintf(ods, sizeof(ods),
+                 "[kcdx][ERROR] log: failed to open the engine log '%s' "
+                 "(_wfopen returned null, errno=%d); the engine log will be "
+                 "EMPTY this entire session — every LOG_* line silently drops. "
+                 "Check the kcdx-engine/logs/ directory is writable.\n",
+                 ps.c_str(), errno);
+        OutputDebugStringA(ods);
+    }
+
     if (HasConsoleArg()) {
         g_consoleEnabled = true;
         AllocConsole();
@@ -742,6 +761,25 @@ void SetDevMode(bool on) {
         g_devStream.path = devPath.wstring();
         g_devStream.streamName = devName;
         g_devStream.fp = _wfopen(devPath.c_str(), L"wb");
+
+        // Fail-state (Batch F #19): a null dev-log fp means every dev-mode line
+        // silently drops to the dev log for the session (the suite summary, the
+        // probe/diagnostic lines) — a logless dev session with no signal. We
+        // cannot route this through the dev log (the stream we just failed to
+        // open), and this can run pre-Init (DllMain dev-mode-enable path) when
+        // the engine log isn't up yet either, so OutputDebugStringA is the
+        // dependable sink. The [ERROR] tag stands in for ODS's missing severity.
+        if (!g_devStream.fp) {
+            char ods[512];
+            std::string ps = devPath.string();
+            snprintf(ods, sizeof(ods),
+                     "[kcdx][ERROR] log: failed to open the dev log '%s' "
+                     "(_wfopen returned null, errno=%d); dev-mode lines (the "
+                     "test-suite summary, probe/diagnostic output) silently "
+                     "drop this session. Check kcdx-engine/logs/ is writable.\n",
+                     ps.c_str(), errno);
+            OutputDebugStringA(ods);
+        }
 
         if (g_devStream.fp) {
             // Banner so modders can find session boundaries.
