@@ -1,0 +1,29 @@
+# CAP-49 reject fixture (2/4): WRONG-TYPED value on a known [plugin] key.
+#
+# Valid, distinct author+name (ts.cap_49_fix_wrong_type) so the reject is
+# name-queryable; the reject is on a known key carrying the WRONG TYPE —
+# `version_independent` is declared as a string "yes" where the allowlist
+# requires a boolean. ParsePluginManifest's ValidateTableKeys pass rejects it
+# (#4 wrong-type) and returns false; LoadOneFile records the parse-reject under
+# both the folder path and "ts.cap_49_fix_wrong_type".
+#
+# No plugin.lua + no [entrypoints]: rejected at parse time, never loads. The
+# cap-49-observer asserts is_rejected("ts.cap_49_fix_wrong_type") == (true,
+# reason) → the cap-49-reject-wrong-type row.
+#
+# MUST REJECT. If validation stops rejecting a wrong-typed known key, this
+# plugin loads (version_independent falls through OptBool to false, silently
+# discarding the author's intent — the AP14 shape), is_rejected returns false →
+# the observer's cap-49-reject-wrong-type row FAILs.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_49_fix_wrong_type"
+display_name        = "CAP-49 reject: wrong-typed known [plugin] key"
+author              = "ts"
+description         = "Declares version_independent as a string where a boolean is required — MUST be rejected by the wrong-type validation. Identity is valid so the reject is queryable by name."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = "yes"

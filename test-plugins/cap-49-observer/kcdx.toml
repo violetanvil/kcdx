@@ -1,0 +1,55 @@
+# CAP-49 — manifest-validation REJECT observability: OBSERVER (the asserter).
+#
+# WHAT THIS PLUGIN PROVES (Batch B Decision 1, Option A):
+#   Parse-time manifest rejections are QUERYABLE via the SAME accessor that
+#   surfaces zone rejections — kcdx.plugin.is_rejected(name). Before this
+#   work, a manifest-VALIDATION reject returned early from LoadOneFile /
+#   ParsePluginManifest before the plugin ever registered into g_manifests,
+#   so zone_gate's g_rejected never saw it and is_rejected could not
+#   distinguish a reject from a clean load (AP14 silent-accept). The engine
+#   now records every parse-time reject (folder-path-keyed internal +
+#   <author>.<plugin>-keyed when a valid identity was parsed) and folds that
+#   map into zone_gate::IsRejected / RejectReason, so this observer can query
+#   each reject fixture BY NAME.
+#
+#   Each of the four reject fixtures (cap-49-fix-unknown-key,
+#   cap-49-fix-wrong-type, cap-49-fix-misplaced-key, cap-49-fix-stray-table)
+#   carries a VALID, DISTINCT author+name and rejects on a DIFFERENT
+#   key/table/type — so its identity is recorded under the name key and is
+#   queryable here. The observer reports ONE row per fixture; PASS iff
+#   kcdx.plugin.is_rejected returns (true, reason) for that fixture's
+#   "<author>.<plugin>" key. is_rejected==false for a reject fixture == FAIL
+#   (the silent-accept regression this whole feature closes).
+#
+# ZONE-COMPATIBLE BY OMISSION:
+#   No [load_order] table → defaults after_game. Every capability the
+#   observer uses (kcdx.on, kcdx.plugin.is_rejected, kcdx.test.report,
+#   kcdx.log.*) is RequireZone::Either, so the observer is itself NOT
+#   rejected — the prerequisite for it to run + report at all.
+#
+# WHY SIBLING cap-49-* FOLDERS (not a parent with subfolders):
+#   Mirrors comp-13's subject/observer layout — each fixture is its own
+#   discovered plugin folder with its own kcdx.toml. The reject fixtures are
+#   discovered, rejected at parse time, and recorded; the observer queries
+#   them. The reject fixtures register NO test_names (they never run a
+#   plugin.lua); only the observer + the clean fixture report.
+#
+# test_names pre-registers the four reject rows so the aggregator counts them
+# (PENDING until ready fires).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_49_observer"
+display_name        = "CAP-49 manifest-validation reject observer"
+author              = "ts"
+description         = "At kcdx.on('ready') asserts kcdx.plugin.is_rejected returns (true, reason) for each of the four cap-49 reject fixtures (unknown-key, wrong-type, misplaced-key, stray-table) — proving parse-time manifest rejections are queryable by name through the same accessor zone rejections use."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-49-reject-unknown-key", "cap-49-reject-wrong-type", "cap-49-reject-misplaced-key", "cap-49-reject-stray-table"]
+
+[entrypoints]
+lua = "plugin.lua"

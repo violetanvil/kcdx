@@ -1,7 +1,9 @@
 #include "load_order.h"
 
 #include <algorithm>
+#include <array>
 #include <fstream>
+#include <string_view>
 #include <unordered_map>
 
 #include "toml.hpp"
@@ -69,50 +71,109 @@ void Read(const fs::path& loadOrderPath) {
         return;
     }
 
+    // Recognized keys in a kcdx-engine/load_order.toml [[plugin]] row. The
+    // launcher writes this file; a hand-edit with a typo'd key or wrong-typed
+    // field previously dropped SILENTLY (a non-boolean `enabled` fell through
+    // the `is_boolean()` guard; a wrong-typed zone/priority was ignored
+    // field-wise) — the 0xC8-bug class, AP14: a user's enable/disable or
+    // ordering intent vanished with no trace. STRICT posture (flipped from
+    // WARN to Error): a bad row is REJECTED loudly and skipped wholesale; the
+    // remaining rows still apply (this is the user's override file, not a
+    // plugin manifest — one bad row must not nuke every other override).
+    static constexpr std::array<std::string_view, 4> kRowKeys = {
+        "name", "zone", "priority", "enabled",
+    };
+
     size_t loaded = 0;
     for (const auto& elem : *arr->as_array()) {
-        if (!elem.is_table()) continue;
+        if (!elem.is_table()) {
+            log::Error("load_order.toml: [[plugin]] entry is not a table; "
+                       "rejecting this row");
+            continue;
+        }
         const auto& t = *elem.as_table();
+
+        // Unknown-key rejection: name the offending key + reject the row.
+        bool rowBad = false;
+        for (const auto& [keyNode, valNode] : t) {
+            std::string_view k = keyNode.str();
+            bool known = false;
+            for (std::string_view rk : kRowKeys) {
+                if (rk == k) { known = true; break; }
+            }
+            if (!known) {
+                log::ErrorF("load_order.toml: [[plugin]] row has unknown key "
+                            "'%s' (recognized: name, zone, priority, enabled); "
+                            "rejecting this row", std::string(k).c_str());
+                rowBad = true;
+                break;
+            }
+        }
+        if (rowBad) continue;
 
         UserOverride ov;
         auto* nameNode = t.get("name");
         if (!nameNode || !nameNode->is_string()) {
-            log::Warn("load_order.toml: [[plugin]] row missing required "
-                      "'name' (string); skipping row");
+            log::Error("load_order.toml: [[plugin]] row missing required "
+                       "'name' (string); rejecting this row");
             continue;
         }
         ov.name = std::string(*nameNode->value<std::string>());
         if (ov.name.empty()) {
-            log::Warn("load_order.toml: [[plugin]] row with empty 'name'; "
-                      "skipping row");
+            log::Error("load_order.toml: [[plugin]] row with empty 'name'; "
+                       "rejecting this row");
             continue;
         }
 
-        if (auto* z = t.get("zone"); z && z->is_string()) {
+        // zone: present-but-wrong-type or bad value → REJECT the row (was a
+        // field-level WARN-and-ignore that silently kept the row's other
+        // fields, discarding the author's zone intent without saying so).
+        if (auto* z = t.get("zone")) {
+            if (!z->is_string()) {
+                log::ErrorF("load_order.toml: plugin '%s': zone has wrong type "
+                            "(expected string); rejecting this row",
+                            ov.name.c_str());
+                continue;
+            }
             std::string s = std::string(*z->value<std::string>());
             std::string zErr;
             if (!ParseZoneString(s, ov.zone, zErr)) {
-                log::WarnF("load_order.toml: plugin '%s': zone: %s; "
-                           "ignoring this field for this row",
-                           ov.name.c_str(), zErr.c_str());
-            } else {
-                ov.hasZone = true;
+                log::ErrorF("load_order.toml: plugin '%s': zone: %s; "
+                            "rejecting this row", ov.name.c_str(), zErr.c_str());
+                continue;
             }
+            ov.hasZone = true;
         }
 
-        if (auto* p = t.get("priority"); p && p->is_integer()) {
+        // priority: wrong-type or out-of-range → REJECT the row.
+        if (auto* p = t.get("priority")) {
+            if (!p->is_integer()) {
+                log::ErrorF("load_order.toml: plugin '%s': priority has wrong "
+                            "type (expected integer 0..100); rejecting this row",
+                            ov.name.c_str());
+                continue;
+            }
             int prio = static_cast<int>(*p->value<int64_t>());
             if (prio < 0 || prio > 100) {
-                log::WarnF("load_order.toml: plugin '%s': priority %d out "
-                           "of range (0..100); ignoring this field for "
-                           "this row", ov.name.c_str(), prio);
-            } else {
-                ov.priority = prio;
-                ov.hasPriority = true;
+                log::ErrorF("load_order.toml: plugin '%s': priority %d out "
+                            "of range (0..100); rejecting this row",
+                            ov.name.c_str(), prio);
+                continue;
             }
+            ov.priority = prio;
+            ov.hasPriority = true;
         }
 
-        if (auto* en = t.get("enabled"); en && en->is_boolean()) {
+        // enabled: present-but-non-boolean → REJECT the row (was a silent drop
+        // — a non-boolean `enabled` fell through is_boolean() and the user's
+        // disable intent vanished, the canonical 0xC8 bug shape).
+        if (auto* en = t.get("enabled")) {
+            if (!en->is_boolean()) {
+                log::ErrorF("load_order.toml: plugin '%s': enabled has wrong "
+                            "type (expected boolean true/false); rejecting "
+                            "this row", ov.name.c_str());
+                continue;
+            }
             ov.enabled = *en->value<bool>();
             ov.hasEnabled = true;
         }

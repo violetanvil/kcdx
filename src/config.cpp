@@ -3,11 +3,14 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 #include "address_library.h"  // ValidatePluginName (hard-rejects illegal [plugin].name)
 
@@ -68,6 +71,153 @@ bool OptBool(const toml::table& tbl, std::string_view key, bool fallback) {
     }
     return fallback;
 }
+
+// Best-effort read of the "<author>.<plugin>" 2-dot identity key from a doc,
+// WITHOUT validation — used only to NAME a parse-reject record so the reject
+// is queryable via kcdx.plugin.is_rejected("author.plugin"). Returns the
+// composed key when BOTH [plugin].author and [plugin].name are present,
+// non-empty strings; returns "" otherwise (the reject is on the identity
+// itself, or the identity isn't parsable — the folder-path key stands as the
+// always-present internal record). This is a SEPARATE read from
+// ParsePluginManifest's validated reads: the four cap-49 reject fixtures
+// carry a VALID author+name but reject on a DIFFERENT key/table/type, so the
+// strict reject fires BEFORE ParsePluginManifest reaches out.author/out.name
+// — this best-effort read recovers the identity for the name key regardless.
+std::string BestEffortAuthorPluginKey(const toml::table& doc) {
+    auto* pluginNode = doc.get("plugin");
+    if (!pluginNode || !pluginNode->is_table()) return {};
+    const auto& t = *pluginNode->as_table();
+    auto* a = t.get("author");
+    auto* n = t.get("name");
+    if (!a || !a->is_string() || !n || !n->is_string()) return {};
+    std::string author = std::string(*a->value<std::string>());
+    std::string name   = std::string(*n->value<std::string>());
+    if (author.empty() || name.empty()) return {};
+    return author + "." + name;
+}
+
+// ===========================================================================
+// STRICT manifest validation (Batch B — fail-state-logging.md / AP14)
+//
+// The TOML manifest readers historically dropped unrecognized, misplaced, or
+// wrong-typed keys SILENTLY: a wrong-type value made Opt* fall through to its
+// fallback; an unknown key / unknown table was never iterated; a misplaced
+// engine-level [kcdx] key only WARNed. Each is an AP14 silent-ignore — a
+// user's authored intent vanishes with no trace (the 0xC8-bug class: an
+// `enabled=` in the wrong file was simply gone).
+//
+// User-locked posture: STRICT ERROR + REJECT. Every wrong-type / unknown /
+// misplaced key ends the parse with `err` set; the caller already rejects the
+// plugin on a false return (LoadOneFile → ParsePluginManifest false → plugin
+// not registered → does not load). REUSE that existing reject channel — no
+// new gate.
+//
+// The two validators below are allowlist-driven (the recognized-key sets are
+// declared as static literals next to ParsePluginManifest, not scattered) and
+// are called by the manifest parsers AFTER the known keys are read.
+// ===========================================================================
+
+// TOML scalar/array categories the schema cares about. (Tables/arrays are
+// validated structurally where they're consumed; these cover the leaf keys.)
+enum class TomlKind { String, Integer, Boolean, Array };
+
+const char* TomlKindName(TomlKind k) {
+    switch (k) {
+        case TomlKind::String:  return "string";
+        case TomlKind::Integer: return "integer";
+        case TomlKind::Boolean: return "boolean";
+        case TomlKind::Array:   return "array";
+    }
+    return "?";
+}
+
+// One recognized key: its name + the TOML kind it must be when present.
+struct KeySpec {
+    std::string_view key;
+    TomlKind         kind;
+};
+
+bool NodeMatchesKind(const toml::node& n, TomlKind k) {
+    switch (k) {
+        case TomlKind::String:  return n.is_string();
+        case TomlKind::Integer: return n.is_integer();
+        case TomlKind::Boolean: return n.is_boolean();
+        case TomlKind::Array:   return n.is_array();
+    }
+    return false;
+}
+
+const char* NodeKindName(const toml::node& n) {
+    if (n.is_string())            return "string";
+    if (n.is_integer())           return "integer";
+    if (n.is_floating_point())    return "float";
+    if (n.is_boolean())           return "boolean";
+    if (n.is_array())             return "array";
+    if (n.is_table())             return "table";
+    if (n.is_date() || n.is_time() || n.is_date_time()) return "datetime";
+    return "unknown";
+}
+
+// Validate ONE table against its recognized-key allowlist. Two REJECT classes,
+// both setting `err` and returning false (so the caller rejects the plugin):
+//   (1) a recognized key present with the WRONG TYPE  (#4)  — the key IS
+//       present, just mistyped; absent keeps the fallback (handled by Opt*).
+//   (2) a key NOT in the allowlist                    (#5)  — unknown key in a
+//       known table; names the key + table so the author can fix it.
+// `tableLabel` is the author-facing table name for the error ("[plugin]",
+// "[entrypoints]", "[[plugin.dependencies]]", "[load_order]", engine "[kcdx]").
+bool ValidateTableKeys(const toml::table& tbl,
+                       std::string_view tableLabel,
+                       std::initializer_list<KeySpec> allow,
+                       std::string& err) {
+    for (const auto& [keyNode, valNode] : tbl) {
+        std::string_view k = keyNode.str();
+        const KeySpec* spec = nullptr;
+        for (const auto& s : allow) {
+            if (s.key == k) { spec = &s; break; }
+        }
+        if (!spec) {
+            err = std::string(tableLabel) + " unknown key '" + std::string(k) +
+                  "' (not a recognized manifest key; remove it or correct the "
+                  "spelling)";
+            return false;
+        }
+        if (!NodeMatchesKind(valNode, spec->kind)) {
+            err = std::string(tableLabel) + " key '" + std::string(k) +
+                  "' has wrong type (is " + NodeKindName(valNode) +
+                  ", expected " + TomlKindName(spec->kind) + ")";
+            return false;
+        }
+    }
+    return true;
+}
+
+// The ENGINE-LEVEL [kcdx] keys valid ONLY in engine.toml (LoadEngineConfig),
+// NEVER in a PLUGIN's [kcdx] (where only `test_suite_only` is valid). A
+// misplaced engine key in a plugin manifest is a REJECT (was a WARN — flipped
+// per the user-locked strict posture: a setting in the wrong file silently
+// vanishing is the 0xC8-bug class, AP14).
+//
+// EXACTLY THREE keys — LoadEngineConfig reads each one. `dev_log_cap_mb` +
+// `dev_log_max_files` were DROPPED (Batch B Decision 2): they were allowlisted
+// but LoadEngineConfig reads NEITHER (log retention is fixed at
+// kLogRetainCount), so a validate-OK-but-does-nothing knob — AP14
+// silent-success (the author sets it, it validates, it has no effect). They
+// are NOT wired up (rejected option); if they appear in engine.toml they get a
+// "has no effect" WARN there (see LoadEngineConfig), NOT a reject (engine.toml
+// is not a plugin) and NOT silent acceptance.
+constexpr std::array<std::string_view, 3> kEngineOnlyKcdxKeys = {
+    "dev_mode", "dry_run", "dev_categories",
+};
+
+// The two RETIRED engine [kcdx] keys (Batch B Decision 2): no longer
+// allowlisted, no longer wired. If present in engine.toml, LoadEngineConfig
+// WARNs ("no effect; log retention is fixed") rather than rejecting the config
+// — distinguishing a known-dead knob (warn, proceed) from a genuine unknown
+// key (Error, abort). A genuinely-unknown key in engine.toml still aborts.
+constexpr std::array<std::string_view, 2> kRetiredEngineKcdxKeys = {
+    "dev_log_cap_mb", "dev_log_max_files",
+};
 
 // Parse a semver string like "1.2.3" into the packed format kcdx uses
 // internally: (major << 24) | (minor << 16) | (patch << 8). Trailing field
@@ -147,12 +297,71 @@ bool ParsePluginManifest(const toml::table& doc,
                          const fs::path& tomlPath,
                          kcdx::plugins::PluginManifest& out,
                          std::string& err) {
+    // ---- Recognized-key allowlists (declared next to the parser, not
+    // scattered as literals at each check site — toml-schema.md). Each entry
+    // pairs the key with the TOML kind it must carry when present. Verified
+    // against every shipped test-plugin manifest + the builtin: none carry an
+    // unknown key, so STRICT validation false-rejects no current plugin.
+    //
+    // Cross-checked against the AS-BUILT reads below (toml-schema.md documents
+    // the same set): description/url/support_email/version/kcdx_min_version are
+    // all genuinely read here (OptString at the lines below) — none is a
+    // phantom; none the parser reads is omitted.
+    static constexpr std::initializer_list<KeySpec> kPluginKeys = {
+        {"name",                     TomlKind::String},
+        {"display_name",             TomlKind::String},
+        {"author",                   TomlKind::String},
+        {"description",              TomlKind::String},
+        {"url",                      TomlKind::String},
+        {"support_email",            TomlKind::String},
+        {"version",                  TomlKind::String},
+        {"kcdx_min_version",         TomlKind::String},
+        {"version_independent",      TomlKind::Boolean},
+        {"log_level",                TomlKind::String},
+        {"compatible_game_versions", TomlKind::Array},
+        {"dependencies",             TomlKind::Array},
+        {"test_names",               TomlKind::Array},
+    };
+    static constexpr std::initializer_list<KeySpec> kDependencyKeys = {
+        {"name",        TomlKind::String},
+        {"min_version", TomlKind::String},
+        {"optional",    TomlKind::Boolean},
+    };
+    static constexpr std::initializer_list<KeySpec> kLoadOrderKeys = {
+        {"zone",     TomlKind::String},
+        {"priority", TomlKind::Integer},
+    };
+    // ---- Top-level TABLE allowlist (#6): a plugin kcdx.toml has exactly four
+    // valid top-level tables. A stray legacy behavior table
+    // ([[patch]]/[[hook]]/[[mid_hook]]/[[trampoline]]/[[scan]]) — previously
+    // silently unparsed — is now a REJECT naming the table. The [kcdx] table is
+    // read by LoadOneFile (not here), but it IS a valid top-level table, so it
+    // must be in this allowlist or it would self-reject.
+    for (const auto& [keyNode, valNode] : doc) {
+        std::string_view tbl = keyNode.str();
+        if (tbl != "kcdx" && tbl != "plugin" && tbl != "entrypoints" &&
+            tbl != "load_order") {
+            err = "unknown top-level table '[" + std::string(tbl) +
+                  "]' (valid top-level tables: [kcdx], [plugin], "
+                  "[entrypoints], [load_order]; legacy behavior tables like "
+                  "[[patch]]/[[hook]]/[[mid_hook]]/[[trampoline]]/[[scan]] were "
+                  "removed in Phase 5 — behavior ships in plugin.lua / a DLL)";
+            return false;
+        }
+    }
+
     auto* pluginTbl = doc.get("plugin");
     if (!pluginTbl || !pluginTbl->is_table()) {
         err = "no [plugin] table";
         return false;
     }
     const auto& t = *pluginTbl->as_table();
+
+    // STRICT [plugin] validation (#4 wrong-type + #5 unknown-key): reject a
+    // present-but-wrong-type recognized key or any key not in kPluginKeys.
+    // Runs BEFORE the field reads so a mistyped key fails loud here rather than
+    // silently falling through Opt* to a fallback.
+    if (!ValidateTableKeys(t, "[plugin]", kPluginKeys, err)) return false;
 
     out.name = OptString(t, "name");
     if (out.name.empty()) {
@@ -242,6 +451,13 @@ bool ParsePluginManifest(const toml::table& doc,
         if (auto* loNode = doc.get("load_order"); loNode && loNode->is_table()) {
             lo = loNode->as_table();
         }
+        // STRICT [load_order] validation (#4 + #5): unknown key or wrong-typed
+        // zone/priority is a REJECT (a mistyped priority="high" previously fell
+        // through OptInt to the 50 default, silently discarding the author's
+        // intent — AP14).
+        if (lo && !ValidateTableKeys(*lo, "[load_order]", kLoadOrderKeys, err)) {
+            return false;
+        }
         // Empty/absent [load_order]: zone derives, priority 50 — same defaults
         // as before the rename.
         std::string zone = lo ? OptString(*lo, "zone") : std::string();
@@ -286,9 +502,19 @@ bool ParsePluginManifest(const toml::table& doc,
     }
 
     // compatible_game_versions = [ "1.5.1164953", ... ]
+    // STRICT (#17): a wrong-typed element is a REJECT naming the array + index
+    // + actual type (was `continue` — a silent drop that let a typo'd version
+    // entry vanish, so the plugin loaded against a game version it never
+    // declared compatibility with).
     if (auto* arr = t.get("compatible_game_versions"); arr && arr->is_array()) {
+        size_t idx = 0;
         for (const auto& elem : *arr->as_array()) {
-            if (!elem.is_string()) continue;
+            if (!elem.is_string()) {
+                err = "[plugin] compatible_game_versions[" + std::to_string(idx) +
+                      "]: wrong type (is " + NodeKindName(elem) +
+                      ", expected string)";
+                return false;
+            }
             std::string s = std::string(*elem.value<std::string>());
             uint32_t v = 0;
             std::string gvErr;
@@ -297,14 +523,28 @@ bool ParsePluginManifest(const toml::table& doc,
                 return false;
             }
             out.compatibleGameVersions.push_back(v);
+            ++idx;
         }
     }
 
     // [[plugin.dependencies]] array
+    // STRICT (#17 + #5): a non-table element is a REJECT naming the index +
+    // type (was `continue`); each dependency table is validated against
+    // kDependencyKeys (unknown key / wrong type → REJECT).
     if (auto* arr = t.get("dependencies"); arr && arr->is_array()) {
+        size_t idx = 0;
         for (const auto& elem : *arr->as_array()) {
-            if (!elem.is_table()) continue;
+            if (!elem.is_table()) {
+                err = "[plugin] dependencies[" + std::to_string(idx) +
+                      "]: wrong type (is " + NodeKindName(elem) +
+                      ", expected table — a [[plugin.dependencies]] entry)";
+                return false;
+            }
             const auto& dt = *elem.as_table();
+            if (!ValidateTableKeys(dt, "[[plugin.dependencies]]",
+                                   kDependencyKeys, err)) {
+                return false;
+            }
             kcdx::plugins::ManifestDependency dep;
             dep.name = OptString(dt, "name");
             if (dep.name.empty()) {
@@ -318,12 +558,44 @@ bool ParsePluginManifest(const toml::table& doc,
             }
             dep.optional = OptBool(dt, "optional", false);
             out.dependencies.push_back(std::move(dep));
+            ++idx;
         }
     }
 
     // [entrypoints] section
     if (auto* entryTbl = doc.get("entrypoints"); entryTbl && entryTbl->is_table()) {
         const auto& et = *entryTbl->as_table();
+
+        // STRICT [entrypoints] validation (#5 + #4): reject any unknown key,
+        // and any recognized key with the wrong shape. `dll` is string-only;
+        // `lua` / `lua_after` accept string OR array-of-string (the
+        // single-kind ValidateTableKeys can't express the union, so the check
+        // is bespoke here). A mistyped entrypoint silently no-loading the
+        // plugin's code is exactly the AP14 silent-ignore.
+        for (const auto& [keyNode, valNode] : et) {
+            std::string_view k = keyNode.str();
+            if (k == "dll") {
+                if (!valNode.is_string()) {
+                    err = "[entrypoints] key 'dll' has wrong type (is " +
+                          std::string(NodeKindName(valNode)) +
+                          ", expected string)";
+                    return false;
+                }
+            } else if (k == "lua" || k == "lua_after") {
+                if (!valNode.is_string() && !valNode.is_array()) {
+                    err = "[entrypoints] key '" + std::string(k) +
+                          "' has wrong type (is " +
+                          std::string(NodeKindName(valNode)) +
+                          ", expected string or array of strings)";
+                    return false;
+                }
+            } else {
+                err = "[entrypoints] unknown key '" + std::string(k) +
+                      "' (recognized: dll, lua, lua_after)";
+                return false;
+            }
+        }
+
         out.dllEntrypointRel      = OptString(et, "dll");
         // No "dll_after" key: a C++ plugin's after-game work is an OPTIONAL
         // kcdxPlugin_PostGameLoad export on the SAME plugin DLL (the `dll`
@@ -342,11 +614,21 @@ bool ParsePluginManifest(const toml::table& doc,
                 out.luaEntrypointsRel.push_back(
                     std::string(*luaNode->value<std::string>()));
             } else if (luaNode->is_array()) {
+                size_t idx = 0;
                 for (const auto& elem : *luaNode->as_array()) {
-                    if (elem.is_string()) {
-                        out.luaEntrypointsRel.push_back(
-                            std::string(*elem.value<std::string>()));
+                    // STRICT (#17): a non-string element is a REJECT naming the
+                    // index + type (was a silent `continue` that dropped a
+                    // mistyped entrypoint path — the plugin's code never ran,
+                    // no signal).
+                    if (!elem.is_string()) {
+                        err = "[entrypoints] lua[" + std::to_string(idx) +
+                              "]: wrong type (is " + NodeKindName(elem) +
+                              ", expected string)";
+                        return false;
                     }
+                    out.luaEntrypointsRel.push_back(
+                        std::string(*elem.value<std::string>()));
+                    ++idx;
                 }
             }
         }
@@ -361,11 +643,19 @@ bool ParsePluginManifest(const toml::table& doc,
                 out.luaAfterEntrypointsRel.push_back(
                     std::string(*luaAfterNode->value<std::string>()));
             } else if (luaAfterNode->is_array()) {
+                size_t idx = 0;
                 for (const auto& elem : *luaAfterNode->as_array()) {
-                    if (elem.is_string()) {
-                        out.luaAfterEntrypointsRel.push_back(
-                            std::string(*elem.value<std::string>()));
+                    // STRICT (#17): non-string element → REJECT (was silent
+                    // `continue`).
+                    if (!elem.is_string()) {
+                        err = "[entrypoints] lua_after[" + std::to_string(idx) +
+                              "]: wrong type (is " + NodeKindName(elem) +
+                              ", expected string)";
+                        return false;
                     }
+                    out.luaAfterEntrypointsRel.push_back(
+                        std::string(*elem.value<std::string>()));
+                    ++idx;
                 }
             }
         }
@@ -377,9 +667,19 @@ bool ParsePluginManifest(const toml::table& doc,
     // reported. Empty = no expectation; plugin still counts in
     // "N gated off" but no PENDING tracking.
     if (auto* arr = t.get("test_names"); arr && arr->is_array()) {
+        size_t idx = 0;
         for (const auto& elem : *arr->as_array()) {
-            if (!elem.is_string()) continue;
+            // STRICT (#17): non-string element → REJECT naming index + type
+            // (was a silent `continue` — a mistyped test name would silently
+            // not register its PENDING row, hiding a never-reported test).
+            if (!elem.is_string()) {
+                err = "[plugin] test_names[" + std::to_string(idx) +
+                      "]: wrong type (is " + NodeKindName(elem) +
+                      ", expected string)";
+                return false;
+            }
             out.testNames.push_back(std::string(*elem.value<std::string>()));
+            ++idx;
         }
     }
 
@@ -433,6 +733,50 @@ void LoadEngineConfig(const fs::path& enginePath) {
         }
         const auto& tbl = *top->as_table();
 
+        // STRICT engine-[kcdx] validation (#5 + #17): the THREE engine-only
+        // keys are the ONLY valid keys here (test_suite_only is a PLUGIN key,
+        // NOT valid in engine.toml). An unknown key → Error + abort the engine
+        // config load (dev mode stays off — the production default, matching
+        // the existing parse-error / open-failure paths above). A misplaced
+        // engine key silently doing nothing is the AP14 shape this closes on
+        // the engine side too.
+        //
+        // The two RETIRED keys (dev_log_cap_mb / dev_log_max_files) are a
+        // MIDDLE case: not allowlisted (LoadEngineConfig reads neither — log
+        // retention is fixed at kLogRetainCount), but also not a typo. They
+        // get a WARN naming the no-effect, then the load PROCEEDS (engine.toml
+        // is not a plugin — a dead-but-recognized knob does not abort the
+        // whole engine config the way a genuine unknown key does). This is the
+        // honest signal AP14 demands: the author hears their setting has no
+        // effect rather than it silently validating-and-doing-nothing.
+        for (const auto& [keyNode, valNode] : tbl) {
+            (void)valNode;
+            std::string_view k = keyNode.str();
+            bool known = false;
+            for (std::string_view ek : kEngineOnlyKcdxKeys) {
+                if (ek == k) { known = true; break; }
+            }
+            if (known) continue;
+
+            bool retired = false;
+            for (std::string_view rk : kRetiredEngineKcdxKeys) {
+                if (rk == k) { retired = true; break; }
+            }
+            if (retired) {
+                log::WarnF("%s: [kcdx] %s has no effect; log retention is "
+                           "fixed (kLogRetainCount). This setting was retired "
+                           "— remove it. Engine config still applied.",
+                           fileLabel.c_str(), std::string(k).c_str());
+                continue;
+            }
+
+            log::ErrorF("%s: [kcdx] unknown key '%s' (valid engine keys: "
+                        "dev_mode, dry_run, dev_categories). Ignoring "
+                        "engine config.",
+                        fileLabel.c_str(), std::string(k).c_str());
+            return;
+        }
+
         if (OptBool(tbl, "dry_run", false)) {
             kcdx::patch::g_dryRun = true;
             log::InfoF("dry_run enabled by %s", fileLabel.c_str());
@@ -447,10 +791,24 @@ void LoadEngineConfig(const fs::path& enginePath) {
             std::vector<std::string> cats;
             if (auto* arr = tbl.get("dev_categories");
                 arr && arr->is_array()) {
+                size_t idx = 0;
                 for (const auto& elem : *arr->as_array()) {
-                    if (elem.is_string()) {
-                        cats.push_back(std::string(*elem.value<std::string>()));
+                    // STRICT (#17): a non-string element is an engine-config
+                    // error — log Error + abort the engine config load (was a
+                    // silent `continue` that dropped the bad element, so a
+                    // typo'd category would silently widen the filter to
+                    // include categories the author meant to exclude). Matches
+                    // LoadEngineConfig's existing Error-and-return failure
+                    // signalling.
+                    if (!elem.is_string()) {
+                        log::ErrorF("%s: [kcdx] dev_categories[%zu]: wrong type "
+                                    "(is %s, expected string). Ignoring engine "
+                                    "config.",
+                                    fileLabel.c_str(), idx, NodeKindName(elem));
+                        return;
                     }
+                    cats.push_back(std::string(*elem.value<std::string>()));
+                    ++idx;
                 }
             }
             if (!cats.empty()) {
@@ -485,22 +843,69 @@ void LoadOneFile(const fs::path& path, Source source) {
         ss << in.rdbuf();
         toml::table doc = toml::parse(ss.str(), path.string());
 
-        // Top-level [kcdx] section. Engine-level settings (dev_mode,
-        // dev_log_*, dry_run) are NOT allowed here — they live in
-        // <kcdx-engine>/engine.toml. Warn if a plugin sets them so
-        // the author moves them to the right place.
+        // Top-level [kcdx] section. The ONLY valid key in a PLUGIN's [kcdx] is
+        // `test_suite_only`. The engine-level settings (dev_mode, dry_run,
+        // dev_categories — see kEngineOnlyKcdxKeys) live ONLY in
+        // <kcdx-engine>/engine.toml. (dev_log_cap_mb / dev_log_max_files were
+        // dropped in Batch B Decision 2 — read by nothing; they hit the
+        // unknown-key reject branch below if set in a plugin [kcdx].)
+        //
+        // STRICT posture (flipped from WARN — fail-state-logging.md / AP14):
+        //   - a MISPLACED engine-level key in a plugin's [kcdx]  → REJECT
+        //     (was WARN — a `dev_mode` here silently never took effect, the
+        //     0xC8-bug class: a setting in the wrong file vanishing).
+        //   - any OTHER unknown key in [kcdx]                    → REJECT.
+        //   - a wrong-typed `test_suite_only`                    → REJECT
+        //     (would have fallen through OptBool to false, silently disabling
+        //     the suite-gate the author asked for).
+        // A reject here logs Error and returns — the plugin is NOT registered
+        // and NOT counted as gated-off (a malformed manifest is neither). This
+        // runs BEFORE the gated-off production-quiet early-return so the
+        // rejection is never swallowed by the suite gate.
         bool isTestSuiteOnly = false;
         if (auto* top = doc.get("kcdx"); top && top->is_table()) {
             const auto& tbl = *top->as_table();
-            for (const char* k : { "dev_mode", "dev_log_cap_mb",
-                                   "dev_log_max_files", "dev_categories",
-                                   "dry_run" }) {
-                if (tbl.get(k) != nullptr) {
-                    log::WarnF("%s: [kcdx] %s is an engine-level setting and "
-                               "cannot be set by plugins. Move it to "
-                               "<kcdx-engine>/engine.toml instead.",
-                               fileLabel.c_str(), k);
+            for (const auto& [keyNode, valNode] : tbl) {
+                std::string_view k = keyNode.str();
+                if (k == "test_suite_only") {
+                    if (!valNode.is_boolean()) {
+                        std::string reason =
+                            "[kcdx] test_suite_only has wrong type (is " +
+                            std::string(NodeKindName(valNode)) +
+                            ", expected boolean)";
+                        log::ErrorF("%s: %s; plugin rejected",
+                                    fileLabel.c_str(), reason.c_str());
+                        zone_gate::RecordParseReject(
+                            path.parent_path().string(),
+                            BestEffortAuthorPluginKey(doc), reason);
+                        return;
+                    }
+                    continue;
                 }
+                bool engineOnly = false;
+                for (std::string_view ek : kEngineOnlyKcdxKeys) {
+                    if (ek == k) { engineOnly = true; break; }
+                }
+                std::string reason;
+                if (engineOnly) {
+                    reason = "[kcdx] " + std::string(k) +
+                             " is an engine-level setting and cannot be set by "
+                             "a plugin — it belongs in "
+                             "<kcdx-engine>/engine.toml (move the key or "
+                             "remove it)";
+                    log::ErrorF("%s: %s. Plugin rejected.",
+                                fileLabel.c_str(), reason.c_str());
+                } else {
+                    reason = "[kcdx] unknown key '" + std::string(k) +
+                             "' (the only key valid in a plugin's [kcdx] is "
+                             "test_suite_only)";
+                    log::ErrorF("%s: %s. Plugin rejected.",
+                                fileLabel.c_str(), reason.c_str());
+                }
+                zone_gate::RecordParseReject(
+                    path.parent_path().string(),
+                    BestEffortAuthorPluginKey(doc), reason);
+                return;
             }
             isTestSuiteOnly = OptBool(tbl, "test_suite_only", false);
         }
@@ -560,11 +965,24 @@ void LoadOneFile(const fs::path& path, Source source) {
 
                 kcdx::plugins::g_manifests.push_back(std::move(manifest));
             } else {
-                // "no [plugin] table" is fine — file is config-only.
-                // Other errors warrant a log line.
+                // "no [plugin] table" is fine — file is config-only (NOT a
+                // reject: the file legitimately declares no plugin). Every
+                // OTHER mErr is a genuine manifest REJECT — the plugin will
+                // not load. Severity matches consequence (fail-state-logging.md):
+                // a manifest that stops a plugin loading is Error, not Warn (a
+                // Warn here would scroll past the author who needs to fix it).
+                // Record the reject so kcdx.plugin.is_rejected sees it: keyed by
+                // folder path always + by "<author>.<plugin>" when a valid
+                // identity was parsable (the four cap-49 reject classes —
+                // unknown-key, wrong-type, stray-table, [load_order] errors —
+                // carry a valid author+name and reject on a different key, so
+                // they ARE name-queryable).
                 if (mErr != "no [plugin] table") {
-                    log::WarnF("%s: %s (plugin not registered)",
-                               fileLabel.c_str(), mErr.c_str());
+                    log::ErrorF("%s: %s (plugin rejected — not registered)",
+                                fileLabel.c_str(), mErr.c_str());
+                    zone_gate::RecordParseReject(
+                        path.parent_path().string(),
+                        BestEffortAuthorPluginKey(doc), mErr);
                 }
             }
         }

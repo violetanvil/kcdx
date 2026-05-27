@@ -60,10 +60,21 @@ const size_t kCapabilitiesCount =
 
 namespace {
 
-// Reason text per rejected plugin. Owned by zone_gate; consulted by the
-// 5 init-site skip-logs via RejectReason() so each can distinguish
-// engine-reject from user-disabled cause.
+// Reason text per ZONE-rejected plugin. Owned by zone_gate; consulted by
+// the 5 init-site skip-logs via RejectReason() so each can distinguish
+// engine-reject from user-disabled cause. Keyed on the 2-dot
+// "<author>.<plugin>" form.
 std::unordered_map<std::string, std::string> g_rejected;
+
+// Reason text per PARSE-TIME-rejected plugin (config.cpp manifest
+// validation). Populated by RecordParseReject. An ADDITIONAL source that
+// IsRejected/RejectReason fold in alongside g_rejected — the zone-gate
+// evaluation path (EvaluateAllPlugins → g_rejected) is untouched. Keyed
+// on BOTH the always-present folder path AND, when a valid identity was
+// parsed at reject time, the 2-dot "<author>.<plugin>" form (two entries,
+// same reason), so the reject is queryable by name from another plugin
+// exactly like a zone reject. See RecordParseReject's contract in the .h.
+std::unordered_map<std::string, std::string> g_parseRejected;
 
 const std::string& EmptyString() {
     static const std::string kEmpty;
@@ -182,14 +193,50 @@ void EvaluateAllPlugins() {
              evaluated, rejected);
 }
 
+void RecordParseReject(const std::string& folderPath,
+                       const std::string& authorPluginKey,
+                       const std::string& reason) {
+    // Folder path is ALWAYS present — the stable internal record that holds
+    // even when the reject is on the identity itself (no usable name). An
+    // empty folderPath would be a caller bug; log it Error rather than
+    // silently storing an unqueryable empty key (AP14: a record nothing can
+    // ever look up is a silent no-op).
+    if (folderPath.empty()) {
+        LOG_ERROR("ZONE_GATE",
+                  "RecordParseReject called with an empty folderPath "
+                  "(reason: %s) — the parse-reject record would be "
+                  "unqueryable; this is a config.cpp wiring bug",
+                  reason.c_str());
+    } else {
+        g_parseRejected[folderPath] = reason;
+    }
+
+    // When a valid <author>.<plugin> identity was already parsed at reject
+    // time (the reject is on a different key/table/type), ALSO key the
+    // record by name so kcdx.plugin.is_rejected("author.plugin") resolves it
+    // — same observable as a zone reject. Empty key = identity not parsable
+    // (reject hit before/at the identity reads); folder-only record stands.
+    if (!authorPluginKey.empty()) {
+        g_parseRejected[authorPluginKey] = reason;
+    }
+}
+
 bool IsRejected(const std::string& name) {
-    return g_rejected.find(name) != g_rejected.end();
+    // Fold both sources: a zone reject (g_rejected) OR a parse-time manifest
+    // reject (g_parseRejected). A name present in either is rejected.
+    return g_rejected.find(name) != g_rejected.end() ||
+           g_parseRejected.find(name) != g_parseRejected.end();
 }
 
 const std::string& RejectReason(const std::string& name) {
+    // Zone reject first (the historical source; comp-13 reads it). Then the
+    // parse-reject source. Either yields the teaching reason; neither = the
+    // static empty string (caller branches on .empty()).
     auto it = g_rejected.find(name);
-    if (it == g_rejected.end()) return EmptyString();
-    return it->second;
+    if (it != g_rejected.end()) return it->second;
+    auto pit = g_parseRejected.find(name);
+    if (pit != g_parseRejected.end()) return pit->second;
+    return EmptyString();
 }
 
 // ============================================================================

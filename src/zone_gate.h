@@ -98,15 +98,45 @@ CheckResult Check(const std::string& pluginName);
 // guarantee (the load path runs this exactly once per session).
 void EvaluateAllPlugins();
 
-// True iff zone_gate's evaluation rejected this plugin this session.
-// Used by the 5 init-site skip-logs to distinguish engine-reject from
-// user-disabled cause when enriching the skip log message.
+// Record a PARSE-TIME manifest rejection (config.cpp's ParsePluginManifest
+// false-return path + the LoadOneFile [kcdx]-table early rejects). A
+// parse-rejected plugin returns from LoadOneFile BEFORE it ever registers
+// into g_manifests, so EvaluateAllPlugins never sees it and the zone-gate
+// g_rejected map cannot record it — yet kcdx.plugin.is_rejected must still
+// report it as rejected (otherwise a validation reject is indistinguishable
+// from a clean load; AP14 silent-accept). This is the ADDITIONAL source the
+// is_rejected accessor folds in alongside g_rejected; zone_gate's own
+// EvaluateAllPlugins path is untouched.
+//
+//   `folderPath`     — the plugin's folder path (parent of its kcdx.toml).
+//                      ALWAYS present + stable; the internal key for an
+//                      identity-malformed reject that has no usable name.
+//   `authorPluginKey`— the "<author>.<plugin>" 2-dot key when a VALID author
+//                      + name were already parsed at reject time (the reject
+//                      is on a DIFFERENT key/table/type), so the reject is
+//                      ALSO queryable by name via is_rejected("author.plugin").
+//                      Empty when no valid identity was parsable (the reject
+//                      hit before/at the identity reads) — folder key only.
+//   `reason`         — the teaching `err` string config.cpp already produced.
+//
+// Idempotent-ish: a later call for the same key overwrites (a folder can only
+// reject once per load, so this never collides in practice).
+void RecordParseReject(const std::string& folderPath,
+                       const std::string& authorPluginKey,
+                       const std::string& reason);
+
+// True iff this name was rejected this session — by zone_gate's evaluation
+// OR by a parse-time manifest reject (RecordParseReject). Used by the 5
+// init-site skip-logs to distinguish engine-reject from user-disabled cause,
+// and by kcdx.plugin.is_rejected. `name` is the 2-dot "<author>.<plugin>"
+// form (or, for the parse-reject internal lookup, a folder path).
 bool IsRejected(const std::string& name);
 
-// The teaching reason string recorded by EvaluateAllPlugins for a
-// rejected plugin, or a static empty string if the plugin wasn't
-// rejected. Safe to call on any name — returns the empty string for
-// unknown / accepted plugins so callers can branch on `.empty()`.
+// The teaching reason string recorded for a rejected plugin (zone_gate's
+// EvaluateAllPlugins OR a parse-time RecordParseReject), or a static empty
+// string if the plugin wasn't rejected. Safe to call on any name — returns
+// the empty string for unknown / accepted plugins so callers can branch on
+// `.empty()`.
 const std::string& RejectReason(const std::string& name);
 
 // Register the zone_gate-owned Lua surface on the kcdx global table at

@@ -1,0 +1,36 @@
+# CAP-49 reject fixture (3/4): MISPLACED engine key in the plugin's [kcdx].
+#
+# Valid, distinct author+name (ts.cap_49_fix_misplaced_key) so the reject is
+# name-queryable; the reject is on a DIFFERENT table — the plugin's own [kcdx]
+# carries `dev_mode`, an ENGINE-LEVEL key valid only in engine.toml. LoadOneFile's
+# [kcdx] loop rejects it (engine-level-setting-in-a-plugin) and returns; it
+# records the parse-reject under both the folder path and the
+# "ts.cap_49_fix_misplaced_key" name key (read best-effort from [plugin]
+# author+name, independent of the [kcdx] reject).
+#
+# NOTE the [kcdx] table carries BOTH test_suite_only (so the fixture is suite-
+# gated like the rest of cap-49) AND the misplaced dev_mode (the reject
+# trigger). The [kcdx] validation runs BEFORE the suite-gated early-return, so
+# the reject fires regardless of dev-mode state.
+#
+# No plugin.lua + no [entrypoints]: rejected at parse time, never loads. The
+# cap-49-observer asserts is_rejected("ts.cap_49_fix_misplaced_key") == (true,
+# reason) → the cap-49-reject-misplaced-key row.
+#
+# MUST REJECT. If validation stops rejecting a misplaced engine key in a
+# plugin's [kcdx], this plugin loads (dev_mode silently never takes effect —
+# the 0xC8-bug class), is_rejected returns false → the observer's
+# cap-49-reject-misplaced-key row FAILs.
+
+[kcdx]
+test_suite_only = true
+dev_mode        = true
+
+[plugin]
+name                = "cap_49_fix_misplaced_key"
+display_name        = "CAP-49 reject: misplaced engine key in plugin [kcdx]"
+author              = "ts"
+description         = "Sets dev_mode (an engine-level key) inside the plugin's own [kcdx] — MUST be rejected as a misplaced engine setting. Identity is valid so the reject is queryable by name."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true

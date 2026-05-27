@@ -1,0 +1,35 @@
+# CAP-49 reject fixture (4/4): STRAY top-level table.
+#
+# Valid, distinct author+name (ts.cap_49_fix_stray_table) so the reject is
+# name-queryable; the reject is on a DIFFERENT top-level table — a stray
+# [[patch]] (a legacy behavior table removed in Phase 5; behavior ships in
+# plugin.lua / a DLL now, never TOML). ParsePluginManifest's top-level-table
+# allowlist rejects it (#6 unknown top-level table) and returns false;
+# LoadOneFile records the parse-reject under both the folder path and the
+# "ts.cap_49_fix_stray_table" name key.
+#
+# No plugin.lua + no [entrypoints]: rejected at parse time, never loads. The
+# cap-49-observer asserts is_rejected("ts.cap_49_fix_stray_table") == (true,
+# reason) → the cap-49-reject-stray-table row.
+#
+# MUST REJECT. If validation stops rejecting a stray top-level table, this
+# plugin loads (the [[patch]] is silently unparsed — author intent vanishes),
+# is_rejected returns false → the observer's cap-49-reject-stray-table row
+# FAILs.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_49_fix_stray_table"
+display_name        = "CAP-49 reject: stray top-level [[patch]] table"
+author              = "ts"
+description         = "Carries a stray top-level [[patch]] table (a legacy behavior table removed in Phase 5) — MUST be rejected by the top-level-table validation. Identity is valid so the reject is queryable by name."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+
+[[patch]]
+target      = "some_site"
+original    = "90"
+replacement = "90"

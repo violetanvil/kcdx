@@ -71,9 +71,16 @@ struct UserOverride {
 // kcdx::paths::EngineDataDirPath() / L"load_order.toml". If the path does
 // not exist, this is a no-op (every plugin gets author defaults).
 //
-// Parser errors (malformed TOML, unknown fields, out-of-range priority,
-// invalid zone string) are logged at WARN. A bad row is dropped; remaining
-// rows still apply.
+// Row errors (an unknown key, a missing/empty/wrong-typed `name`, a
+// wrong-typed or bad-value `zone`/`priority`, a non-boolean `enabled`) are
+// REJECTED at ERROR severity and the offending row is skipped wholesale —
+// loud, never silently field-dropped (a silently-ignored `enabled` is the
+// 0xC8-bug class: the user's disable intent vanishes with no trace, AP14 in
+// anti-patterns.md / fail-state-logging.md). Recognized row keys: name, zone,
+// priority, enabled. A single bad row does NOT abort the file — the remaining
+// rows still apply (this is the user's override file, not a plugin manifest).
+// A whole-file TOML parse error is logged at WARN and the file is skipped
+// (author defaults apply to every plugin).
 void Read(const std::filesystem::path& loadOrderPath);
 
 // Resolved per-plugin load-order state. Produced by Resolve() and looked up

@@ -1,9 +1,11 @@
 #include "target_manifest.h"
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 // toml++ is header-only. Mirror config.cpp's exception mode + include.
 #define TOML_EXCEPTIONS 1
@@ -36,10 +38,77 @@ std::string OptString(const toml::table& tbl, std::string_view key,
 // One [[target]] row → a RegisterAuthorTarget call. Returns true when the row
 // registered; on a shape error fills `err` (the caller logs + skips). Mirrors
 // ParseOnePatch's locator-exclusivity check.
+// Recognized keys in a targets.toml [[target]] row, paired with the TOML kind
+// each must carry when present. A row may declare exactly one locator
+// (pattern/target_symbol are strings, rva/address_id are integers); `name` is
+// required; `signature` is the optional ABI. Validation here mirrors the
+// manifest sweep (config.cpp): a present-but-wrong-type key or an unknown key
+// is a REJECT (was a silent drop — pattern/target_symbol/signature fell
+// through OptString to "" on the wrong type, and rva/address_id fell through
+// the is_integer() guard, so a mistyped locator silently registered no target
+// or the wrong one; AP14). The reject is surfaced via the same `err` channel
+// RegisterOneTarget already uses — the caller logs the rejected row and skips
+// it (one bad row does not kill the others).
+enum class TKind { String, Integer };
+
+bool TKindMatches(const toml::node& n, TKind k) {
+    return k == TKind::String ? n.is_string() : n.is_integer();
+}
+
+const char* TKindName(TKind k) {
+    return k == TKind::String ? "string" : "integer";
+}
+
+const char* NodeKindName(const toml::node& n) {
+    if (n.is_string())  return "string";
+    if (n.is_integer()) return "integer";
+    if (n.is_floating_point()) return "float";
+    if (n.is_boolean()) return "boolean";
+    if (n.is_array())   return "array";
+    if (n.is_table())   return "table";
+    return "unknown";
+}
+
+bool ValidateTargetRowKeys(const toml::table& t, std::string& err) {
+    struct Spec { std::string_view key; TKind kind; };
+    static constexpr std::array<Spec, 6> kAllow = {{
+        {"name",          TKind::String},
+        {"pattern",       TKind::String},
+        {"target_symbol", TKind::String},
+        {"rva",           TKind::Integer},
+        {"address_id",    TKind::Integer},
+        {"signature",     TKind::String},
+    }};
+    for (const auto& [keyNode, valNode] : t) {
+        std::string_view k = keyNode.str();
+        const Spec* spec = nullptr;
+        for (const auto& s : kAllow) {
+            if (s.key == k) { spec = &s; break; }
+        }
+        if (!spec) {
+            err = "unknown key '" + std::string(k) + "' in [[target]] row "
+                  "(recognized: name, pattern, target_symbol, rva, "
+                  "address_id, signature)";
+            return false;
+        }
+        if (!TKindMatches(valNode, spec->kind)) {
+            err = "key '" + std::string(k) + "' has wrong type (is " +
+                  std::string(NodeKindName(valNode)) + ", expected " +
+                  TKindName(spec->kind) + ")";
+            return false;
+        }
+    }
+    return true;
+}
+
 bool RegisterOneTarget(const toml::table& t,
                        const std::string& pluginAuthor,
                        const std::string& pluginName,
                        std::string& err) {
+    if (!ValidateTargetRowKeys(t, err)) {
+        return false;
+    }
+
     std::string bareName = OptString(t, "name");
     if (bareName.empty()) {
         err = "missing required field 'name' (the bare target name; the engine "
@@ -150,8 +219,20 @@ void LoadTargetsFor(const std::string& pluginFolder,
         }
 
         size_t registered = 0;
+        size_t idx = 0;
         for (const auto& elem : *arr->as_array()) {
-            if (!elem.is_table()) continue;
+            if (!elem.is_table()) {
+                // Loud reject (was a silent `continue` that dropped a malformed
+                // [[target]] entry with no signal — AP14). Same teaching shape
+                // as a shape-error row below.
+                LOG_WARN_KV("TARGETS", "rejected",
+                    KV("plugin", pluginName),
+                    KV("file",   fileLabel),
+                    KV("reason", "[[target]] entry at index " +
+                                 std::to_string(idx) + " is not a table"));
+                ++idx;
+                continue;
+            }
             std::string err;
             if (RegisterOneTarget(*elem.as_table(), pluginAuthor,
                                   pluginName, err)) {
@@ -164,6 +245,7 @@ void LoadTargetsFor(const std::string& pluginFolder,
                     KV("file",   fileLabel),
                     KV("reason", err));
             }
+            ++idx;
         }
 
         LOG_INFO_KV("TARGETS", "loaded",

@@ -1,0 +1,29 @@
+# CAP-49 reject fixture (1/4): UNKNOWN KEY in [plugin].
+#
+# Valid, distinct author+name (ts.cap_49_fix_unknown_key) so the reject is
+# name-queryable; the reject is on a DIFFERENT key — `colour`, which is not in
+# the [plugin] key allowlist. ParsePluginManifest's ValidateTableKeys pass
+# rejects it (#5 unknown-key) and returns false; LoadOneFile records the
+# parse-reject under both the folder path and "ts.cap_49_fix_unknown_key".
+#
+# This fixture has NO plugin.lua + NO [entrypoints]: it is rejected at parse
+# time and never loads, so it registers no test_names of its own. The
+# cap-49-observer asserts is_rejected("ts.cap_49_fix_unknown_key") == (true,
+# reason) → the cap-49-reject-unknown-key row.
+#
+# MUST REJECT. If validation stops rejecting an unknown [plugin] key, this
+# plugin loads, the engine records no reject, and is_rejected returns false →
+# the observer's cap-49-reject-unknown-key row FAILs.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_49_fix_unknown_key"
+display_name        = "CAP-49 reject: unknown key in [plugin]"
+author              = "ts"
+description         = "Carries an unrecognized [plugin] key (colour) — MUST be rejected by the unknown-key validation. Identity is valid so the reject is queryable by name."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+colour              = "blue"

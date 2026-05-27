@@ -1,0 +1,44 @@
+# CAP-49 — manifest-validation: the CLEAN fixture (the no-false-reject guard).
+#
+# A FULLY VALID manifest exercising the breadth of recognized keys/tables
+# (every [plugin] key the allowlist covers, an [entrypoints] lua, a
+# [load_order] table, a [[plugin.dependencies]] entry, a compatible_game_
+# versions array, a test_names array). It MUST LOAD — its plugin.lua runs and
+# self-reports cap-49-clean-loads PASS at kcdx.on("ready").
+#
+# This is the falsifiable counterweight to the four reject fixtures: it proves
+# the STRICT validation does NOT false-reject a valid manifest. If validation
+# over-rejects (e.g. an allowlist entry is missing for a key this manifest
+# uses), this plugin never loads, plugin.lua never runs, and cap-49-clean-loads
+# never reports → the row sits PENDING → FAIL by absence. AP15: the pass
+# condition is "the plugin.lua ran at all", which can ONLY happen if the
+# manifest passed validation.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                      = "cap_49_fix_clean"
+display_name              = "CAP-49 clean manifest (must load — no false-reject)"
+author                    = "ts"
+description               = "A fully valid manifest exercising the breadth of recognized keys + tables; proves strict validation does not false-reject. Self-reports cap-49-clean-loads at ready."
+url                       = "https://example.invalid/cap49"
+support_email             = "cap49@example.invalid"
+version                   = "0.1.0"
+kcdx_min_version          = "0.1.0"
+version_independent       = true
+log_level                 = "info"
+compatible_game_versions  = ["1.5.1164953"]
+test_names                = ["cap-49-clean-loads"]
+
+[[plugin.dependencies]]
+name        = "cap_49_observer"
+min_version = "0.1.0"
+optional    = true
+
+[load_order]
+zone     = "after_game"
+priority = 50
+
+[entrypoints]
+lua = "plugin.lua"
