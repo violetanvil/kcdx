@@ -256,6 +256,72 @@ entry-hook callback consumes it — and there the author hooks by name and gets
 address + a width-typed frame with a register-tightened floor, the engine flags
 any mismatch, and exact types/arity come from the declare/share overlay.
 
+### 4f. The shipped artifacts — TWO DBs, user-vs-dev split — DECIDED 2026-05-27
+
+The import (§8 step 3b, `tools/refdata-extractor/python/import_to_sqlite.py`)
+produces **TWO** SQLite DBs from one full dump, NOT one. This split + the sizing
+below were decided against MEASURED full-binary numbers (the earlier ~150 KB /
+~7 MB estimates in `restructure-plan.md` §9.1 / §9.3 were written before the dump
+existed and are wrong at full scale — see the corrections below).
+
+**USER DB — `reference.sqlite`, ships in every kcdx release (~48 MB on disk /
+~22 MB in the release zip):**
+- Tables: **`functions` + `signatures` + `caller_reg_args`.**
+- Why these: a mod USER's runtime needs (a) the per-launch cross-version
+  **survival check** (`functions.content_hash`), and (b) the **marshalling ABI a
+  callback hook needs at install time** (`functions.signature` — confirmed
+  load-bearing: a `kcdx.hook` a user's plugin installs needs the signature to
+  marshal args; compiled C++ has no runtime-queryable ABI, `restructure-plan.md`
+  §9.3 "The signature is the one irreducible thing"). `signatures`/`caller_reg_args`
+  are the abi_walker floor (§4e). Dropping `signatures` would break callback-hook
+  plugins for end users — so it MUST ship.
+- `statements` / `referenced_vars` / `call_edges` are NOT in the user DB — a user
+  never runs `kcdx.find` / `kcdx_dev_inspect` (those are author discovery), and
+  `call_edges` only powers `find`'s caller-graph ranking.
+
+**DEV DB — `reference-dev.sqlite`, on-demand author download (~1.13 GB on disk /
+~397 MB zipped):**
+- Tables: the full six (USER set + `statements` + `referenced_vars` + `call_edges`).
+- Mod AUTHORS fetch it to build plugins (`kcdx.find`, `kcdx_dev_inspect`); it is
+  the maintainer's source-of-truth. Never shipped to users.
+
+**Encoding (lossless; in `import_to_sqlite.py`):** `content_hash` 64-hex TEXT →
+32-byte BLOB; low-cardinality repetitive TEXT (`kind`/`storage_kind`/`data_type`/
+`edge_reason`/`signature_source`/…) → small INTEGER FK into per-(table,col)
+`_dict_*` lookup tables; hex/decimal address+count columns → INTEGER. Verified
+lossless (the `0x1050` anchor's hash round-trips BLOB→hex exactly; dict FKs
+resolve). The encoding shrinks the on-disk file; the release zip's deflate handles
+the download (~2.6×). NOTE: dictionary-encoding only helps LOW-cardinality
+columns — at full scale `storage_detail` had 88K distinct values (high
+cardinality), so it stays effectively un-dicted; the dict win is real only for
+the genuinely-repetitive columns.
+
+**Launch UX (measured, MATTERS): the DB size is irrelevant to launch speed.**
+SQLite mmaps the file and reads only touched pages — it does NOT load 48 MB into
+RAM. The survival check is **lazy + indexed**: it queries only the functions a
+user's installed plugins hooked. A heavy-TC user (~500 hooked functions) →
+**~12 ms** at launch (Python upper bound; the C engine is faster). Negligible vs
+a 30–60 s game launch. So the 48 MB is a download/disk concern only, never a
+launch-perf one — which is why chasing it smaller (e.g. dropping the 157K-row
+`caller_reg_args`) was NOT worth the complexity.
+
+**Delivery is seamless — no decompression code.** The ~48 MB `reference.sqlite`
+ships UNCOMPRESSED inside the release zip (the zip's deflate gives the ~22 MB
+download for free); the engine opens the plain `.sqlite` directly. This honors
+`restructure-plan.md` §9.1 "No CSV, no diff chain, no install-time assembly step"
+— do NOT add an engine-side decompress step.
+
+**Corrections to `restructure-plan.md` §9.1 / §9.3** (stale pre-dump estimates):
+- "~150 KB" is the SQLite *amalgamation* (the vendored library), NOT the DB — the
+  user DB is ~48 MB, the dev DB ~1.13 GB.
+- "~7 MB resident, ~200-300 ms one-time" (§9.3, the EAGER `kcdx.functions.*`
+  population) is an AUTHOR/dev-mode path, not the user path. A normal user's
+  engine should do the LAZY survival lookup (~12 ms), not eager-load all 321K.
+- "One shipped file … carries ALL per-function hashes, per-statement metadata,
+  applicable-ops, behavior catalog" — corrected: the per-statement metadata is
+  DEV-only (not in the user ship); the user file carries function hashes +
+  signatures only.
+
 ---
 
 ## 5. How the data is produced — a batch job, not subagents
@@ -393,7 +459,7 @@ In dependency order. Each routes to the skill that gives it the right discipline
 | 2 | **Build the production extractor** — functions + statements + referenced_vars + call_edges (Java) + signatures + caller_reg_args (Python) → §4 CSV-per-table RVA-sharded dirs. | `/feature` | no | **DONE** (`tools/refdata-extractor/`; harness 26/26; BLAKE3 35/35) |
 | 2p | **Parallel orchestrator + RVA-range filter** — N workers over disjoint ranges on per-worker project copies, merge by disjoint shards. (Ghidra locks a project exclusively — per-worker COPIES are required, probe-verified.) | `/feature` | no | **DONE** (`run-parallel.ps1`; `614f563`) |
 | 3a | **Run the full dump** over WHGame.dll. | batch run | no | **DONE** (8-way parallel, 2026-05-27; 321,120 functions; 5.24M statements; 10.88M referenced_vars; 1.52M call_edges; output at `C:\kcdx-refdata\refdata-full-20260527-105617\`, 1.3 GB; every anchor verified at full scale) |
-| 3b | **Import the dump → `data/reference.sqlite`** (maintainer-side): build the §9.1 schema, load the CSV-per-table dirs, assign the append-only stable IDs (name+signature+caller-graph fingerprint). | maintainer import tool | no | **NEXT — not built** (no import tool, no `data/reference.sqlite`, no `vendor/sqlite/` yet) |
+| 3b | **Import the dump → SQLite** (maintainer-side, `import_to_sqlite.py`): build the encoded schema, load the CSV-per-table dirs, emit the USER + DEV DBs (the two-DB split + encoding + sizes are §4f). | maintainer import tool | no | **DONE** (`3c033be`; USER `reference.sqlite` 48MB/22MB-zip, DEV `reference-dev.sqlite` 1.13GB/397MB-zip; integrity-verified; built to `C:\kcdx-refdata\db\`). **Stable-ID assignment is the one remaining piece — deferred** (a single-version import has no prior IDs to match; `--assign-ids` arrives with the 2nd game version). |
 | 3c | **Secondary DLLs** (BugSplat64, BugSplatRc64, Quatmosphere, WhGdk) — NOT yet imported into the Ghidra project; dump them after import (own re-run). | import + batch run | no | future |
 | L1 | **Loc-manager RE** — locate `CLocalizedStringsManager`, getters, int-ID = vector index. | `/research-disassembly` | no | **DONE** (`LOC-MANAGER-FINDINGS.md`) |
 | L2 | **Build the loc runtime-dump probe** — hook the by-ID getters / capture manager-`this`, walk the key↔id table, emit `caller↔id↔key` for `loc_gameplay`; + `loc_content` text table. Step 1 = minimal hook-fires/ABI probe (§6). | `/feature` | no (build); **yes** (run) | pending |

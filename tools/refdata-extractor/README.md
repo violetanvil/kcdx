@@ -1,19 +1,15 @@
 # refdata-extractor
 
-The production **reference-data extractor** — a headless toolchain that mechanically
-extracts, per WHGame.dll function, the reference data backing the future Phase 9.x
+The production **reference-data extractor** — a headless toolchain that
+mechanically extracts, per WHGame.dll function, the reference data that backs the
 author surface (`kcdx.find`, `kcdx.hook`, `kcdx.statement.*`). It emits **five
-RVA-sharded CSV-per-table directories** for maintainer import into
-`data/reference.sqlite`.
+RVA-sharded CSV-per-table directories**, which a maintainer import turns into the
+shipped `reference.sqlite`.
 
-This is **real, tracked repo tooling** (not local-only research scratch). It lives
-under top-level `tools/`, NOT under `_research/` or `third-party-ghidra/` — those
-trees are gitignored working-material; this extractor ships.
-
-> The Ghidra **install + project** (`third-party-ghidra/ghidra_12.1_PUBLIC/`,
-> `ghidra_project/`) and the **enumeration CSV + RE scratch** (`_research/`) stay
-> gitignored/local — they are genuine local-only inputs. The extractor *consumes*
-> them but does not live among them.
+It runs against **a local Ghidra install + an analyzed Ghidra project of
+WHGame.dll**, plus a function-enumeration CSV — all produced locally and kept out
+of the repo (heavy, reproducible, machine-specific inputs). The extractor
+*consumes* those inputs; it does not contain them.
 
 ## Layout
 
@@ -41,13 +37,13 @@ tools/refdata-extractor/
     produce_signatures.py         signatures/ table (abi_walker honest width-typed floor)
     produce_caller_reg_args.py    caller_reg_args/ table (register-arg estimate)
     size_abi_walker_cost.py       compute-sizing probe (cost measurement)
-    probe_caller_arity.py         caller-arity feasibility probe (Outcome C evidence)
+    probe_caller_arity.py         caller-arity feasibility probe
     validate_extractor_output.py  THE GATE -- 26 checks vs independent anchors
-    VALIDATE-EXTRACTOR-README.md  the harness runbook + the AP15 record
+    VALIDATE-EXTRACTOR-README.md  the harness runbook + its falsifiability record
   README.md                       (this file)
 ```
 
-## The five output tables (→ data/reference.sqlite)
+## The five output tables (→ reference.sqlite)
 
 | Table | Pass | What |
 |---|---|---|
@@ -67,7 +63,7 @@ shard-by-shard.
 ```powershell
 # 1. The Java side (functions/ statements/ referenced_vars/ call_edges/) over the full binary:
 pwsh tools/refdata-extractor/ghidra/produce-reference-data.ps1 `
-    -ProjectDir <repo>/third-party-ghidra/ghidra_project -ProjectName KCD2 `
+    -ProjectDir <ghidra-project-dir> -ProjectName KCD2 `
     -OutDir <out>/refdata-full -Module WHGame.dll -VersionTag release_1_5_1164953_841
 
 # 2. The Python side (signatures/ caller_reg_args/), same out dir:
@@ -80,9 +76,52 @@ python tools/refdata-extractor/python/produce_caller_reg_args.py \
 The full WHGame.dll run is ~2-2.5 hr single-threaded (decompile-bound; the output
 flushes incrementally + prints a heartbeat every 10000 functions, so it is
 observable + crash-survivable). Re-runs (new game versions) can be sharded with the
-`-RvaStart/-RvaEnd` range filter across per-worker project COPIES (Ghidra locks a
-project exclusively — concurrent workers on ONE project do not work; see
-`parallel-ghidra-research.md` §8).
+`-RvaStart/-RvaEnd` range filter across per-worker project COPIES — Ghidra locks a
+project exclusively, so concurrent workers each need their own copy of the project.
+The 8-way parallel runner wraps all of the above:
+
+```powershell
+pwsh tools/refdata-extractor/run-parallel.ps1 -OutDir <out>/refdata-full -Workers 8 `
+    -VersionTag release_1_5_1164953_841
+```
+
+## Import → the two shipped DBs
+
+```bash
+python tools/refdata-extractor/python/import_to_sqlite.py <out>/refdata-full <out>/db
+#  -> <out>/db/reference.sqlite       (USER, ~48 MB)
+#     <out>/db/reference-dev.sqlite   (DEV,  ~1.13 GB)
+```
+
+The import produces **two** DBs — the user-vs-dev split:
+
+| DB | Tables | Size (disk / zipped) | Who ships / fetches it |
+|---|---|---|---|
+| **USER** `reference.sqlite` | functions + signatures + caller_reg_args | 48 MB / 22 MB | every kcdx release — the per-launch survival check (`functions.content_hash`) + the ABI a callback hook needs at install (`functions.signature`) |
+| **DEV** `reference-dev.sqlite` | + statements + referenced_vars + call_edges | 1.13 GB / 397 MB | on-demand author download — `kcdx.find` / `kcdx_dev_inspect` discovery |
+
+- **Why the split:** a mod user's runtime needs only the survival hashes + the
+  marshalling ABI for the functions their plugins hook — that is the small USER
+  DB. The per-statement metadata + the call graph exist only for the author
+  discovery/inspection surface, so they go in the larger DEV DB an author fetches
+  on demand. (`call_edges` is dev-only: it powers `kcdx.find`'s caller-graph
+  ranking, an author feature.)
+- **Encoding (lossless):** content_hash → 32-byte BLOB; low-cardinality repetitive
+  text → INTEGER FK into `_dict_*` lookup tables; address/count cols → INTEGER.
+- **Seamless delivery:** the user DB ships UNCOMPRESSED inside the release zip
+  (the zip handles the download); the engine opens the plain `.sqlite` — no
+  decompression step, no install-time assembly.
+- **Launch cost is negligible** — the survival check is lazy + indexed (only the
+  functions a user's plugins hooked are queried; ~12 ms for a heavy total
+  conversion). The DB size does not affect launch speed (SQLite mmaps, reads only
+  touched pages).
+- **The DBs are generated artifacts** — they live at the out-dir, NOT in git; they
+  ship as release assets (the user DB in the release; the dev DB as a separate
+  download).
+- **NOT YET DONE:** stable-ID assignment (`functions.id` matched across game
+  versions). A single-version import has no prior IDs to match; a `--assign-ids`
+  follow-up adds it when the 2nd game version arrives. The current DB keys on
+  `rva` (correct for one version).
 
 ## Verify it
 
@@ -90,12 +129,12 @@ project exclusively — concurrent workers on ONE project do not work; see
 python tools/refdata-extractor/python/validate_extractor_output.py   # -> 26/26 PASS
 ```
 
-The harness is the **falsifiable regression net** (the substitute for a
-`test-plugins/cap-NN` row — this is headless data tooling with no in-game surface).
-It runs the full toolchain over a 256-function fixture and asserts 26 checks against
-INDEPENDENT anchors (the enumeration CSV from a different tool; an independent BLAKE3
-recompute; cross-corroborated edges; the probe ground truth) — each with a nameable
-extractor-broken state. See `python/VALIDATE-EXTRACTOR-README.md`.
+The harness is the **falsifiable regression net**. It runs the full toolchain over
+a 256-function fixture and asserts 26 checks against INDEPENDENT anchors (the
+function-enumeration CSV produced by a different tool; an independent BLAKE3
+recompute; cross-corroborated call edges; ground truth from the probes) — each with
+a nameable extractor-broken state that would flip it to FAIL. See
+`python/VALIDATE-EXTRACTOR-README.md`.
 
 The BLAKE3 primitive has its own gate:
 
@@ -107,7 +146,8 @@ javac org/apache/commons/codec/digest/Blake3.java Blake3SelfTest.java && java -c
 
 ## Design
 
-The authoritative plan + decision record is
-`docs/outstanding-work/parallel-ghidra-research.md` (§4 data shape, §4e the
-signature/arity fidelity decision, §8 the build ledger). The content_hash wire
-format is `ghidra/BLAKE3-HASH-CONTRACT.md`.
+The content_hash wire format between this producer and the engine consumer is
+`ghidra/BLAKE3-HASH-CONTRACT.md`: BLAKE3 256-bit, lowercase-hex / 32-byte BLOB, over
+the raw on-disk function-body bytes `[rva, rva+length)`, no normalization — the
+engine reads the same span from the on-disk module file so the static-dump hash and
+the runtime hash compare directly.
