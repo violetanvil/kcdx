@@ -59,3 +59,15 @@ The UX cornerstone is *the engine does the heavy lifting*; an author forced to r
 ## AP13 — Recording a known correctness gap as a someday-maybe follow-up
 
 Once a gap is KNOWN, waiting for a user to trip it is shipping a known defect. Same forbidden shape as AP12's "expert-only-for-now" and the disassembler-test's "the author can just provide it." Implementation effort never justifies deferral (`cornerstones.md`); only genuine undesigned scope does, and that gets surfaced with a next step, not buried. The class is invisible to every gate — the build is green and the suite passes precisely because the gap was written down instead of fixed.
+
+## AP14 — Silent failure: dropping/neutralizing input instead of failing loud
+
+A path that swallows the error keeps the build green and the launch crash-free while the author's intent silently evaporates — the worst failure mode for an authoring tool, because nothing tells the author their config did nothing. (The 0xC8-bug class: a write that misses but reports OK; the author debugs a phantom.) "Handled defensively so it won't crash" is the tell — safe ≠ served (cf. AP13). The cornerstone is errors that teach; a silent drop teaches nothing. Formalized 2026-05 from house vocabulary used widely before it was written down.
+
+## AP15 — A test self-check that cannot fail (non-falsifiable PASS)
+
+A test exists to go red when the behavior breaks. A PASS asserting a tautology (always-true), reporting before the behavior could fire, or reading back a value it just set, is green theater: it grows the matrix count without adding coverage, and a real regression slips past it. Specialization of AP10's falsify-not-confirm into the test-suite surface. Formalized 2026-05 from house vocabulary used widely before it was written down.
+
+## AP16 — A private citation in a public-facing file
+
+The public repo is the sanitized projection (allowlist; `public-private-boundary.md`) and deliberately shows no trace of AI-assisted development. A `.claude/`/`_research/` link or a bare `AP<n>` in a public `.cpp`/`.md` is a double defect: a **broken link** on public (the target was never published) AND a **build-trace** (the one thing the projection most must hide). The root cause is the governance teaching AP-annotation + rule-citation as house style, which agents faithfully carry into public code — so the fix names AP-citation-in-public as itself an anti-pattern. The knowledge is kept (the fact is restated self-contained); only the private pointer is dropped. The why for an internal reader still lives in the private rule; the public file owes the mod author the *what*, not the governance provenance.

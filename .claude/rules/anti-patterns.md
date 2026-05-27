@@ -143,6 +143,47 @@ t->node = &kEmptyNode;
 
 ---
 
+## AP14 — Silent failure: dropping/neutralizing input instead of failing loud
+
+**Forbidden:** swallowing an error, dropping unparseable author input, no-op'ing on a degenerate value, or returning success from a path that did nothing — author intent silently vanishes (the 0xC8-bug class: a write that misses its target but reports OK).
+
+```cpp
+if (!parsed) return;            // author's key silently dropped
+if (idx >= count) return true;  // out-of-range → "success", did nothing
+```
+
+**Fix:** fail LOUD — a structured error naming what was rejected and why, surfaced where the author sees it. An allowlist rejects unknown input with a message, never a silent skip; a validate-OK path must actually do the work or report that it didn't. Per `logging.md` (structured KV) + `cornerstones.md` (errors that teach).
+
+---
+
+## AP15 — A test self-check that cannot fail (non-falsifiable PASS)
+
+**Forbidden:** a test-plugin row whose PASS is a tautology — asserts something always true, reports PASS before the behavior under test could fire, or checks a value it just set. A test that can never go red proves nothing.
+
+```lua
+report("loaded", true)   -- always true once the plugin loads; tests nothing
+```
+
+**Fix:** every row carries a FALSIFIABLE claim — state per row exactly what makes it FAIL ("FAILS if neither slot fires"; "the reject-row reads the actual accessor output, not the input"). A hook-fired test self-reports from the callback's first fire, not a pre-fire lifecycle point. Per `test-suite.md` + `results-driven.md` (falsify-not-confirm).
+
+---
+
+## AP16 — A private citation in a public-facing file
+
+**Forbidden:** a file that ships to public (an allowlisted public dir / root file per `public-private-boundary.md`) referencing anything private — a `.claude/` or `_research/` path, `CLAUDE.md`, a bare `AP<n>` rule citation, the words Claude/Anthropic/subagent/orchestrator, a governance slash-command. Internal house style leaking outward:
+
+```cpp
+// diverging from the canonical header per AP3       // AP-citation in public .cpp
+// Verified by Ghidra, _research/phase7/FINDINGS.txt // private-path provenance
+```
+```markdown
+See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- broken link on public -->
+```
+
+**Fix:** state the fact self-contained — keep the knowledge, drop the private pointer. "per AP3" → "this slot is empirically probed against the binary, not assumed from a header"; a `.claude/rules/` link → restate the rule inline; `_research/...` provenance → "verified via Ghidra analysis". AP-numbers and rule-file citations are **internal shorthand — legitimate in a private file, never in a public-facing one.** Per `public-private-boundary.md`; warn-only `guard-public-private-refs.ps1` flags it at author-time.
+
+---
+
 ## Scope
 
 This file covers the class where code looks fine to every gate yet violates an invariant. Domain-specific wrong-ways live in their own rules (`hook-engine.md`, `lua-bridge.md`, `address-library.md`, `reverse-engineering.md`, `logging.md`). New entries append as new failure modes surface; cite the rule each pattern enforces.

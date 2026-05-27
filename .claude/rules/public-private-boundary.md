@@ -69,6 +69,31 @@ The private rule/doc still holds the *why* for an internal reader; the public
 file restates the *what* in its own words. A design decision does not need its
 governance provenance to be understood by a mod author.
 
+## The three observed habits (these actually happened — don't repeat them)
+
+A scan of the public-facing tree found the leak concentrated in exactly three
+recurring author habits. They are reflexes the internal house style teaches; in
+a public-facing file each is AP16.
+
+1. **Bare `AP<n>` citation in a code comment.** `(AP11)`, `(cornerstones.md /
+   AP12)`, `per AP3` appended to a `.cpp`/`.h` comment as if the reader shares
+   the AP vocabulary.
+   - ❌ `// diverging from the canonical CryEngine header per AP3`
+   - ✅ `// this slot is empirically probed against the binary, not assumed from a header`
+
+2. **`.claude/rules/*.md` markdown link in a doc.** A cross-link in `docs/`
+   pointing into the private governance tree — a broken link on public.
+   - ❌ ``See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).``
+   - ✅ `The namespace model: an engine-derived <author>.<plugin> prefix, self > engine > other precedence.`
+
+3. **`_research/` provenance citation.** RE evidence pointers baked into
+   `seed.csv` and code comments — `Verified by Ghidra <date>, _research/.../FINDINGS.txt`.
+   - ❌ `// abi_walker confirms 4-arg fastcall. See _research/phase8.5-pak-resolver/FINDINGS.md.`
+   - ✅ `// 4-arg fastcall, verified by capstone body-wide stack-arg analysis against the binary.`
+
+The knowledge (empirically probed, the namespace model, the verified ABI) is
+preserved every time; only the private pointer is dropped.
+
 ## Enforcement
 
 - **Author-time:** `guard-public-private-refs.ps1` (PreToolUse on Write/Edit)

@@ -23,7 +23,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 | Git concurrency — no auto-branch; parallel chats share one tree | [concurrency-git.md](.claude/rules/concurrency-git.md) |
 | Public/private boundary — a public-facing file references NOTHING private (paths or AI-dev vocabulary); `guard-public-private-refs.ps1` warns at author-time | [public-private-boundary.md](.claude/rules/public-private-boundary.md) |
 | Results-driven — test/probe the unknown, don't theorize | [results-driven.md](.claude/rules/results-driven.md) |
-| Anti-patterns (passes-every-gate-yet-wrong; AP1–13) | [anti-patterns.md](.claude/rules/anti-patterns.md) |
+| Anti-patterns (passes-every-gate-yet-wrong; AP1–16) | [anti-patterns.md](.claude/rules/anti-patterns.md) |
 | Anti-pattern *whys* — audit-only, NOT auto-loaded; writes are user-consent-gated (`guard-anti-pattern-consent.ps1` forces an accept-prompt on this file + `anti-patterns.md`). An AP whose rationale here was not blessed is unauthorized. | [anti-pattern-rationale.md](.claude/anti-pattern-rationale.md) (not path-scoped) |
 | Address Library (use IDs, not RVAs) | [address-library.md](.claude/rules/address-library.md) |
 | Lua bridge — dual-Lua sentinel hazard (FIX C, PROBE Q) | [lua-bridge.md](.claude/rules/lua-bridge.md) |
