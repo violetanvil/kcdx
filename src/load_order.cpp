@@ -10,6 +10,7 @@
 
 #include "log.h"
 #include "plugin_loader.h"
+#include "mod_absorb/pak_mod_registry.h"
 
 namespace fs = std::filesystem;
 
@@ -263,9 +264,50 @@ void Resolve() {
         g_effective.emplace(m.name, std::move(eff));
     }
 
-    log::InfoF("load_order: resolved %zu plugin(s) "
+    // Fold the discovered vanilla pak mods into the SAME Effective map, keyed
+    // "mods.<modId>". kcdx owns the resolved order; mod_order.txt is the seed.
+    // Each pak mod defaults to zone=after_game, priority=0 (an early after_game
+    // block, all pak mods leading the author plugins within after_game), and
+    // orderIndex = its mod_order.txt line index (-1 -> INT_MAX -> sorts after
+    // the listed mods, then alphabetically by "mods.<modid>"). A user
+    // load_order.toml row keyed "mods.<modid>" overrides zone/priority/enabled,
+    // exactly as it does for a plugin row.
+    size_t pakModRows = 0;
+    for (const auto& mod : kcdx::mod_absorb::Registry()) {
+        Effective eff;
+        eff.zone       = Zone::AfterGame;
+        eff.priority   = 0;
+        eff.orderIndex = (mod.modOrderIndex >= 0) ? mod.modOrderIndex : INT_MAX;
+        bool userEnabled = true;
+
+        const std::string key = kcdx::mod_absorb::LoadOrderNameFor(mod.modId);
+        if (auto it = g_userOverrides.find(key); it != g_userOverrides.end()) {
+            const auto& ov = it->second;
+            if (ov.hasZone)     eff.zone     = ov.zone;
+            if (ov.hasPriority) eff.priority = ov.priority;
+            if (ov.hasEnabled)  userEnabled  = ov.enabled;
+        }
+        eff.userEnabled = userEnabled;
+        // eff.engineAccepted stays default true — mod_absorb::ApplyVersionGate
+        // flips it to false on an Incompatible pak mod, later, once the runtime
+        // game version is known (the SAME mechanism zone_gate uses for plugins).
+
+        // A "mods.<modid>" key never collides with a plugin name: [plugin].name
+        // is charset [a-z0-9_] (no '.'), so it can never begin "mods.". emplace
+        // would no-op a (impossible) collision; use it to be defensive + loud.
+        auto inserted = g_effective.emplace(key, std::move(eff));
+        if (!inserted.second) {
+            log::WarnF("load_order: pak-mod key '%s' already present; the "
+                       "earlier row wins (unexpected — a plugin should never "
+                       "carry a 'mods.' name)", key.c_str());
+        } else {
+            ++pakModRows;
+        }
+    }
+
+    log::InfoF("load_order: resolved %zu plugin(s) + %zu pak mod(s) "
                "(%zu user override row(s) applied)",
-               g_effective.size(),
+               g_effective.size() - pakModRows, pakModRows,
                g_userOverrides.size());
 
     // Dev-grade dump of the resolved order so authors / users can
@@ -311,6 +353,22 @@ void SetEngineAccepted(const std::string& pluginName, bool accepted) {
     auto it = g_effective.find(pluginName);
     if (it == g_effective.end()) return;
     it->second.engineAccepted = accepted;
+}
+
+Snapshot CaptureState() {
+    Snapshot snap;
+    snap.effective.reserve(g_effective.size());
+    for (const auto& kv : g_effective) snap.effective.push_back(kv);
+    snap.userOverrides.reserve(g_userOverrides.size());
+    for (const auto& kv : g_userOverrides) snap.userOverrides.push_back(kv);
+    return snap;
+}
+
+void RestoreState(const Snapshot& snap) {
+    g_effective.clear();
+    for (const auto& kv : snap.effective) g_effective.emplace(kv.first, kv.second);
+    g_userOverrides.clear();
+    for (const auto& kv : snap.userOverrides) g_userOverrides.emplace(kv.first, kv.second);
 }
 
 }  // namespace kcdx::load_order

@@ -31,6 +31,7 @@
 #include "trampoline_engine.h"
 #include "mod_absorb/record_synth_selftest.h"  // cap-52 engine self-report
 #include "mod_absorb/mod_manifest_selftest.h"  // cap-53 engine self-report
+#include "mod_absorb/pak_mod_registry_selftest.h"  // cap-54 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
 // installs from kcdx.dll DllMain, not from hooks::Install.
@@ -565,6 +566,15 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // as cap-52: no hook-fire / "ready" dependency — parses a literal XML string
     // + runs the helper, both work at boot. One-shot guarded internally.
     kcdx::mod_absorb::RunManifestSelfTestOnce();
+
+    // cap-54-pak-mod-registry: engine self-report for the pak-mod registry +
+    // the load-order fold + the version gate (src/mod_absorb/pak_mod_registry.cpp
+    // + the load_order Resolve fold). STEP 3 of mod-loader-absorb. Same timing
+    // as cap-52/53: no hook-fire / "ready" dependency — the parse + fold + gate
+    // logic all work at boot. Assertions 3+4 drive the global load_order state
+    // and RESTORE it before returning (snapshot + re-Read + re-Resolve), so the
+    // live load order is untouched. One-shot guarded internally.
+    kcdx::mod_absorb::RunPakRegistrySelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

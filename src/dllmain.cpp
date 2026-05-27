@@ -12,6 +12,7 @@
 #include "log.h"
 #include "lua_bind_bytes.h"   // RegisterHandlers() — Kind::Bytes apply handler
 #include "lua_bind_hook.h"    // RegisterHandlers() — Kind::Hook apply handler
+#include "mod_absorb/pak_mod_registry.h"  // pak-mod version gate (step 3)
 #include "paths.h"
 #include "plugin_loader.h"
 #include "save_load_hooks.h"
@@ -126,6 +127,24 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::plugins::g_runtimeGameVersionString =
         kcdx::plugins::DetectRuntimeGameVersionString();
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::VersionDetected);
+
+    // Pak-mod version gate (mod-loader absorb, step 3). Discovery already ran
+    // (config::LoadAllConfigs, in DllMain) and folded every pak mod into the
+    // load_order model as a "mods.<modid>" row. The <supports> compatibility
+    // decision must run HERE — the first point g_runtimeGameVersionString is
+    // known (it is empty during the early dir scan, so gating there would be a
+    // silent no-op). ApplyVersionGate flips engineAccepted=false on any pak mod
+    // whose mod.manifest <supports> declares no matching version (the SAME
+    // mechanism the plugin path + zone_gate use). It runs BEFORE DiscoverAndLoad
+    // and the eventual enabled-list build consume the resolved order.
+    {
+        size_t disabled = kcdx::mod_absorb::ApplyVersionGate(
+            kcdx::plugins::g_runtimeGameVersionString);
+        kcdx::log::InfoF("pak-mod version gate: %zu mod(s) disabled as "
+                         "incompatible with game '%s'",
+                         disabled,
+                         kcdx::plugins::g_runtimeGameVersionString.c_str());
+    }
 
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");

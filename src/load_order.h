@@ -1,7 +1,9 @@
 #pragma once
+#include <climits>
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace kcdx::load_order {
@@ -107,15 +109,38 @@ struct Effective {
     // src/zone_gate.h). Always true until zone_gate's EvaluateAllPlugins
     // runs in step 2.
     bool        engineAccepted = true;
+    // Secondary ordering key, applied in the sort AFTER priority and BEFORE
+    // name. Default INT_MAX, which is a no-op among plugins: every plugin
+    // shares the same INT_MAX, so a plugin pair still breaks its priority tie
+    // on name exactly as before this field existed. The only rows that carry a
+    // finite orderIndex are folded vanilla pak mods ("mods.<modid>" rows), all
+    // at zone=after_game priority=0 — there orderIndex preserves the
+    // mod_order.txt RELATIVE order (the vanilla baseline) before the name
+    // tiebreak. A pak mod absent from mod_order.txt also stays at INT_MAX, so
+    // it sorts AFTER the listed ones, then alphabetically by its "mods.<modid>"
+    // name. See docs/mod-loader-absorb.md "Load-order".
+    int         orderIndex     = INT_MAX;
 };
 
-// Compute and cache the Effective row for every plugin. Reads:
+// Compute and cache the Effective row for every plugin AND every discovered
+// vanilla pak mod. Reads:
 //   - kcdx::plugins::g_manifests (for author defaults)
 //   - the load_order.toml state previously populated by Read()
+//   - kcdx::mod_absorb::Registry() (the discovered pak mods)
 //
-// Call after LoadAllConfigs has populated the entry vectors AND
-// load_order::Read() has been called (call order: Read → entries
-// parsed → Resolve).
+// Each pak mod folds into an Effective row keyed "mods.<modId>" at
+// zone=after_game, priority=0 (an early after_game block), orderIndex =
+// the mod's mod_order.txt line index (the secondary ordering key that keeps
+// the vanilla relative order). A user load_order.toml row keyed "mods.<modid>"
+// overrides priority/zone/enabled — kcdx owns the resolved order, mod_order.txt
+// is the seed. After Resolve, Of("mods.<modId>") / IsPluginEnabled("mods.<modId>")
+// work uniformly. The pak-mod <supports> version gate runs SEPARATELY + LATER
+// (mod_absorb::ApplyVersionGate, at the point the runtime version is known) and
+// flips engineAccepted on these rows.
+//
+// Call after LoadAllConfigs has populated the entry vectors, after pak-mod
+// discovery has populated the registry, AND after load_order::Read() has been
+// called (call order: discover + Read → entries parsed → Resolve).
 void Resolve();
 
 // Look up the resolved effective state for a plugin by name. If the
@@ -154,5 +179,21 @@ bool IsPluginEnabled(const std::string& pluginName);
 // (currently one-call-per-session) Resolve invocation, but since
 // zone_gate runs AFTER Resolve, ordering is fine for the v0.2 flow.
 void SetEngineAccepted(const std::string& pluginName, bool accepted);
+
+// A snapshot of the FULL resolved load-order state — every Effective row
+// (engineAccepted verdicts included) AND the user-override layer. Captured by
+// CaptureState(), restored verbatim by RestoreState(). The ONLY intended use is
+// a self-test that must drive Resolve()/SetEngineAccepted() against synthetic
+// rows and then put the LIVE state back EXACTLY as it was — re-running Resolve()
+// alone would NOT restore it (Resolve() resets every engineAccepted to true,
+// dropping the zone_gate + pak-mod-version-gate verdicts a normal boot applied).
+// Not for production orchestration. The payload is a deep copy, so it survives
+// any number of intervening Resolve()/Read() calls.
+struct Snapshot {
+    std::vector<std::pair<std::string, Effective>>    effective;
+    std::vector<std::pair<std::string, UserOverride>> userOverrides;
+};
+Snapshot CaptureState();
+void RestoreState(const Snapshot& snap);
 
 }  // namespace kcdx::load_order

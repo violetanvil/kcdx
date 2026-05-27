@@ -21,6 +21,7 @@
 #include "dev.h"
 #include "load_order.h"
 #include "log.h"
+#include "mod_absorb/pak_mod_registry.h"
 #include "patch_engine.h"
 #include "paths.h"
 #include "plugin_loader.h"
@@ -1143,12 +1144,54 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
         "walk complete: engine=%zu/%zu user=%zu/%zu (accepted/examined)",
         engFolders, engExamined, usrFolders, usrExamined);
 
+    // Pak-mod discovery (mod-loader absorb, step 3). A SEPARATE pass from the
+    // plugin walker above (WalkForTomls is untouched): mod_absorb::Discover
+    // owns the mod.manifest marker-file classification. It scans BOTH roots —
+    // kcdx-plugins/ (a folder with kcdx.toml there is a kcdx plugin, already
+    // claimed above, and Discover SKIPS it) and <game-root>/mods/ (vanilla pak
+    // mods). A folder with mod.manifest + no kcdx.toml registers as a PakMod.
+    // Discovery is UNCONDITIONAL of game version — the <supports> gate runs
+    // later, once the runtime version string is known (mod_absorb::ApplyVersionGate,
+    // from the worker thread after VersionDetected). The pak mods are folded
+    // into the load_order model by Resolve() below.
+    kcdx::mod_absorb::ClearRegistry();
+    fs::path modsDir = kcdx::paths::GameRootDirPath() / L"mods";
+    if (fs::exists(modsDir) && fs::is_directory(modsDir)) {
+        kcdx::mod_absorb::Discover(modsDir, /*fromModsDir=*/true);
+    } else {
+        log::InfoF("mods/ not found at %s — no vanilla pak mods to absorb",
+                   modsDir.string().c_str());
+    }
+    // A kcdx plugin works dropped in EITHER dir — scan kcdx-plugins/ for pak
+    // mods too (a mod.manifest-only folder there is also a pak mod). kcdx.toml
+    // folders there are SKIPPED by Discover (the plugin walker owns them).
+    kcdx::mod_absorb::Discover(fs::path(pluginsDir), /*fromModsDir=*/false);
+
+    // Populate each registered pak mod's mod_order.txt line index (the
+    // vanilla baseline ordering seed, used as the secondary sort key in the
+    // load_order fold). mod_order.txt lives in <game-root>/mods/.
+    {
+        auto orderMap = kcdx::mod_absorb::ReadModOrder(modsDir);
+        size_t fromMods = 0, fromPlugins = 0;
+        for (auto& mod : kcdx::mod_absorb::Registry()) {
+            if (auto it = orderMap.find(mod.modId); it != orderMap.end()) {
+                mod.modOrderIndex = it->second;
+            }
+            (mod.fromModsDir ? fromMods : fromPlugins) += 1;
+        }
+        log::InfoF("pak-mod discovery: %zu pak mod(s) — %zu from mods/, "
+                   "%zu from kcdx-plugins/ (version gate runs later, once the "
+                   "runtime game version is known)",
+                   kcdx::mod_absorb::Registry().size(), fromMods, fromPlugins);
+    }
+
     // Load-order resolution. Discovery is done; entry vectors are
     // populated with their pluginName stamps. Read the user's
     // load_order.toml (if any), then Resolve() to compute each
     // plugin's effective (zone, priority, enabled) — applying
     // capability gating where the user's request is impossible
-    // given the plugin's declared entries.
+    // given the plugin's declared entries. Resolve() ALSO folds the pak-mod
+    // registry into the same Effective map (keyed "mods.<modid>").
     kcdx::load_order::Read(
         kcdx::paths::EngineDataDirPath() / L"load_order.toml");
     kcdx::load_order::Resolve();
@@ -1193,12 +1236,18 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
     //
     // Entry priority + name break ties for plugins that ship multiple
     // entries.
+    // orderIndex sits between priority and plugin_name: it is INT_MAX for every
+    // plugin (a no-op among them — they tie on it and break on name as before),
+    // and a finite mod_order.txt line index only for folded pak-mod rows, so
+    // the pak-mod block keeps its vanilla relative order. Plugin ordering is
+    // provably unchanged.
     auto pluginKey = [](const std::string& pluginName, int entrySource,
                         int entryPriority, const std::string& entryName) {
         const auto& eff = kcdx::load_order::Of(pluginName);
-        return std::tuple<int, int, std::string, int, int, std::string>{
+        return std::tuple<int, int, int, std::string, int, int, std::string>{
             static_cast<int>(eff.zone),
             eff.priority,
+            eff.orderIndex,
             pluginName,
             entrySource,
             entryPriority,

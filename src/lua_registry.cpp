@@ -473,15 +473,25 @@ size_t ApplyZone(kcdx::load_order::Zone zone) {
         if (!ea || !eb) return a < b;
         int pa = ea->priority;
         int pb = eb->priority;
+        // orderIndex tiebreak (between priority and kind rank). INT_MAX for any
+        // plugin/anonymous entry — and ONLY plugins queue registry entries, so
+        // this compare is a uniform no-op here (no pak mod produces a Bytes/Hook
+        // entry); it is threaded for sort-key consistency with the other load-
+        // order sorts. Finite orderIndex never appears on a registry entry.
+        int oa = INT_MAX;
+        int ob = INT_MAX;
         if (!ea->pluginName.empty()) {
             const auto& effA = kcdx::load_order::Of(ea->pluginName);
             pa = effA.priority;
+            oa = effA.orderIndex;
         }
         if (!eb->pluginName.empty()) {
             const auto& effB = kcdx::load_order::Of(eb->pluginName);
             pb = effB.priority;
+            ob = effB.orderIndex;
         }
         if (pa != pb) return pa < pb;
+        if (oa != ob) return oa < ob;
 
         // KIND RANK — at the SAME effective priority, order by kind rank
         // (kindRank above) BEFORE the name tiebreak. The load-bearing rule is

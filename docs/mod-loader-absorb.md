@@ -353,10 +353,81 @@ kcdx OWNS the loader, so there is no collision. kcdx discovers from both
 2. **Seed rows + record-synthesis module** (`src/mod_absorb/`). Rows 3100–3104
    already landed (this synthesis); the module does the clone/repoint.
 3. **Unified discovery** — scan both dirs, marker-file classify, synthesize
-   `mods.<modid>` rows into the `load_order` model.
+   `mods.<modid>` rows into the `load_order` model. **(BUILT — see "Step 3"
+   below.)**
 4. **SELECT detour → real takeover** — call original, append kcdx records,
    re-sort the enabled list by the unified key.
 5. **Order persistence** — write back to `load_order.toml` + `mod_order.txt`.
 6. **Test plugin(s) + docs** — `cap-NN-mod-absorb`, `comp-NN-plugin-in-mods`,
    `loader-architecture.md` rewrite, `docs/design.md` absorb section,
    `docs/load-order.md` vanilla-row model.
+
+---
+
+## Step 3 — unified discovery + the pak-mod registry + the load-order fold
+
+Step 3 makes kcdx DISCOVER vanilla pak mods and fold them into the one
+load-order model, so a pak mod sits in the same ordered list as a kcdx plugin
+and is reorderable/disableable the same way.
+
+**Discovery is a separate pass.** The plugin discovery walk is untouched. A
+second pass (`mod_absorb::Discover`) owns the `mod.manifest` marker-file
+classification and runs over BOTH discovery roots (`kcdx-plugins/` and the
+vanilla `<game-root>/mods/`):
+
+- A folder with a `kcdx.toml` is SKIPPED here — it is a kcdx plugin (even when
+  dropped in `mods/`), and the plugin walk already claimed it. Not
+  double-registered.
+- A folder with a `mod.manifest` and no `kcdx.toml` is registered as a pak mod.
+- Neither marker → recurse into it as a container.
+
+Each registered pak mod becomes a `PakMod` record: its id (the manifest's
+`<modid>` if present, else the folder name), its root path (with and without a
+trailing slash, for the I_Mod record), the parsed `mod.manifest`, and its
+position in `mod_order.txt`.
+
+**`mod_order.txt` is the vanilla baseline ordering seed.** kcdx reads
+`<game-root>/mods/mod_order.txt` (one mod id per line; file order is the
+load/mount order; `#` comment lines and blank lines are stripped, entries
+trimmed) into a modid→line-index map. Each pak mod's `modOrderIndex` is its line
+position; a mod not listed in `mod_order.txt` gets `-1`. An absent `mod_order.txt`
+is a normal first-run state, not an error — it logs an INFO line and pak mods
+order by mod id.
+
+**The fold into one load order.** Load-order resolution folds every registered
+pak mod into the same resolved-order map as plugins, under a synthesized
+`mods.<modid>` name. A pak mod defaults to the `after_game` zone at priority `0`
+— an early `after_game` block, so the vanilla pak mods lead the author plugins
+within `after_game`. Within that block the pak mods keep their `mod_order.txt`
+relative order via a secondary ordering key: the load-order sort key gains an
+`orderIndex` tiebreaker, applied after priority and before the name tiebreak.
+A pak mod's `orderIndex` is its `mod_order.txt` line index; a mod not listed
+(`-1`) sorts after the listed ones (then alphabetically by `mods.<modid>`).
+Plugins are unaffected — every plugin carries the maximum `orderIndex`, so the
+tiebreaker is a no-op among plugins and their relative order still breaks on
+name exactly as before. A user `load_order.toml` row keyed `mods.<modid>`
+overrides a pak mod's zone, priority, or enabled state — kcdx owns the resolved
+order, and `mod_order.txt` is only the seed.
+
+The `mods.<modid>` namespace never collides with a kcdx plugin name: a plugin
+name is lowercase letters, digits, and underscores only, so it can never begin
+`mods.`.
+
+**Version gating runs once the game version is known.** kcdx suppresses the
+native mod selection, so kcdx runs the `<supports>` compatibility decision
+itself — the SAME policy kcdx plugins use, so the two paths cannot drift.
+Discovery happens early (during the directory scan), where the runtime game
+version string is not yet known, so discovery registers every pak mod
+unconditionally. A separate later pass runs the version gate at the point the
+runtime version string IS known: for each registered pak mod it makes the
+compatibility decision and, on an incompatible mod, disables it through the
+same enable/disable mechanism a user override and the capability gate use. The
+disabled mod's `mods.<modid>` row then reports as disabled to every downstream
+reader (including the eventual enabled-list build), with a clear log line naming
+the mod and the running game version. A mod with no `<supports>` restriction, or
+one matching the running version, stays enabled; a declared restriction that
+can't be evaluated because the version is undetected degrades gracefully
+(enabled, with a warning).
+
+The downstream consumer — building the actual enabled I_Mod list from this
+resolved, gated order and handing it to the native mount — is the next step.

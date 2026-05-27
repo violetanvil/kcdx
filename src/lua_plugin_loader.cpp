@@ -184,6 +184,11 @@ bool EntrypointRunsBefore(const kcdx::plugins::LoadedPlugin* a,
     if (ea.priority != eb.priority) {
         return ea.priority < eb.priority;
     }
+    // orderIndex tiebreak (INT_MAX for plugins — a no-op among them; finite
+    // only for folded pak-mod rows).
+    if (ea.orderIndex != eb.orderIndex) {
+        return ea.orderIndex < eb.orderIndex;
+    }
     return a->manifest.name < b->manifest.name;
 }
 
