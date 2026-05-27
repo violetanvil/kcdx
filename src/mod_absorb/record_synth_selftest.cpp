@@ -86,6 +86,15 @@ void RunSelfTestOnce() {
 
     char reason[512];
 
+    // Capture the count BEFORE this test's 2 builds. BuildRecord is a SHARED
+    // engine entry — the production mod-loader takeover (and cap-57's synthetic
+    // Discover) also call it, so BuiltRecordCount() is a process-wide running
+    // total, NOT "records this test built". Assertion 6 checks the DELTA (this
+    // test adds exactly 2), which is robust regardless of how many records the
+    // takeover already synthesized. (Asserting == 2 was stale: it assumed cap-52
+    // is the only BuildRecord caller, which the working takeover breaks.)
+    const size_t countBefore = BuiltRecordCount();
+
     // --- Build record A from a known input (literal test strings). ---------
     ModRecordInput a;
     a.rootPathSlash   = "X:/test/cap52/";
@@ -220,14 +229,18 @@ void RunSelfTestOnce() {
         return;
     }
 
-    // Assertion 6: BuiltRecordCount() == 2 after both builds.
-    // [broken: ownership container not appending → FAIL.]
-    const size_t count = BuiltRecordCount();
-    if (count != 2) {
+    // Assertion 6: BuiltRecordCount() grew by exactly 2 across this test's 2
+    // builds (DELTA, not absolute — the count is a shared process-wide total).
+    // [broken: ownership container not appending each synthesized record → the
+    //  delta is < 2 → FAIL.]
+    const size_t countAfter = BuiltRecordCount();
+    const size_t delta = countAfter - countBefore;
+    if (delta != 2) {
         std::snprintf(reason, sizeof(reason),
-            "FAIL: BuiltRecordCount()=%zu after 2 builds (expected 2) — the "
-            "ownership container is not appending each synthesized record",
-            count);
+            "FAIL: BuiltRecordCount() grew by %zu across this test's 2 builds "
+            "(expected 2; before=%zu after=%zu) — the ownership container is not "
+            "appending each synthesized record",
+            delta, countBefore, countAfter);
         kcdx::test::ReportResult(kRow, false, reason);
         kcdx::test::EmitSummaryIfChanged("cap-52 record-synth");
         return;
@@ -235,8 +248,8 @@ void RunSelfTestOnce() {
 
     // All assertions held.
     std::snprintf(reason, sizeof(reason),
-        "2 records built (BuiltRecordCount=2); A's 8 string fields intact after "
-        "B built (container-stability proof); vtables = Resolve(%llu)/Resolve(%llu) "
+        "2 records built (BuiltRecordCount delta=2); A's 8 string fields intact "
+        "after B built (container-stability proof); vtables = Resolve(%llu)/Resolve(%llu) "
         "non-null; tail +0x50..0x6F zero",
         (unsigned long long)kImodVtablePrimaryId,
         (unsigned long long)kImodVtableSubObjectId);
