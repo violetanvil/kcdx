@@ -32,7 +32,6 @@ author              = "ts"
 description         = "Lua half of CAP-36-cpp-hook-crosslang — installs a Lua before-hook on the C++ plugin's Cap36_Crosslang stub; the C++ plugin's PostGameLoad re-invokes the stub and verifies both halves fired in load order."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 
 [[plugin.dependencies]]

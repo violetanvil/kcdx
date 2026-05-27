@@ -60,7 +60,6 @@ author              = "ts"
 description         = "Asserts via kcdx.plugin.is_rejected at kcdx.on('ready') that the comp-13 subject (ts.comp_13_zone_gate_subject, declared zone=before_game) was rejected by zone_gate with a reason containing the API's required zone 'after_game'."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["COMP-13-zone-reject"]
 

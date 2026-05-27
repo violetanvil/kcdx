@@ -30,7 +30,6 @@ author              = "ts"
 description         = "Higher-priority (70) PUBLISHER half of the both-phase execution-model test. Publishes b.before from its lua slot and b.after from its lua_after slot; the asserter (comp-11-both-phase-order-a, priority 30) collects all four tokens and asserts the run-order. Carries no test row of its own."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 
 [load_order]

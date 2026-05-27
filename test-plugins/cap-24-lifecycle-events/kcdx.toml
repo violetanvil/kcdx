@@ -36,7 +36,6 @@ author              = "ts"
 description         = "kcdx.on bridge for the 9 game-lifecycle events (input_loaded auto-pass; save_game / post_load_game manual)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-24-input-loaded", "CAP-24-save-game",
                        "CAP-24-post-load-game"]

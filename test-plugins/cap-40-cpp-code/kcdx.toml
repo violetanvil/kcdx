@@ -54,7 +54,6 @@ author              = "ts"
 description         = "C++ DLL exercising kcdxTrampolineInterface v2 end-to-end: K.code->Allocate (alloc+fill+NOP-pad+executable region, with + without export) and K.code->Export (standalone publish), each consumed via K.api->ResolveSymbolAs. C++ peer of the Lua kcdx.code coverage."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-40-cpp-code-allocate",
                        "CAP-40-cpp-code-export",

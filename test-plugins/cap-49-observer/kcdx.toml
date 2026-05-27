@@ -47,7 +47,6 @@ author              = "ts"
 description         = "At kcdx.on('ready') asserts kcdx.plugin.is_rejected returns (true, reason) for each of the four cap-49 reject fixtures (unknown-key, wrong-type, misplaced-key, stray-table) — proving parse-time manifest rejections are queryable by name through the same accessor zone rejections use."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["cap-49-reject-unknown-key", "cap-49-reject-wrong-type", "cap-49-reject-misplaced-key", "cap-49-reject-stray-table"]
 

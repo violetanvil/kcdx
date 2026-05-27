@@ -126,8 +126,11 @@ license           = "MIT"                          # optional, free-form.
 
 # Engine compatibility
 kcdx_min_version  = "0.2.0"
-compatible_game_versions = ["1.5.1164953"]
-version_independent = false                        # true if using ResolveAddress
+supports          = ["1.5*"]                        # game-version patterns; trailing-* prefix
+                                                   # wildcard, matched against the running
+                                                   # KCD2 version. Empty/absent = any version
+                                                   # (version-independent, e.g. ResolveAddress
+                                                   # plugins pin no build).
 
 # Per-plugin log level floor
 log_level = "info"                                 # trace|debug|info|warn|error|off
@@ -883,7 +886,7 @@ name        = "bugsplat_filename_fix"
 display_name = "BugSplat Filename Fix"
 description = "Sanitizes BugSplat's szApp at ctor time so dmp filenames don't contain ':'."
 version     = "1.0.0"
-compatible_game_versions = ["1.5.1164953"]
+supports    = ["1.5*"]
 
 [load_order]
 zone     = "before_game"

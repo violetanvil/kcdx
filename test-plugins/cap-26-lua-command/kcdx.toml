@@ -46,7 +46,6 @@ author              = "ts"
 description         = "Pure-Lua console-command round-trip: kcdx.command registers cap26_cmd, kcdx.console.execute self-fires it at input_loaded, and the callback's args (array + .raw) are asserted. The Lua analog of the C++ CAP-13."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-26-command-roundtrip"]
 

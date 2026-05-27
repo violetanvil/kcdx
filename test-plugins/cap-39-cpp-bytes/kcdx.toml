@@ -62,7 +62,6 @@ author              = "ts"
 description         = "C++ DLL exercising kcdxBytesInterface v1 end-to-end: K.bytes->Register deferred byte rewrite by named target + IsApplied + ReadBytes observable, and the Uninstall-no-revert teaching. C++ peer of cap-01's Lua kcdx.bytes."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-39-cpp-bytes-register",
                        "CAP-39-cpp-bytes-uninstall-rejected",

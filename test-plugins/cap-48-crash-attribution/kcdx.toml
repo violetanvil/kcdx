@@ -62,6 +62,5 @@ author              = "ts"
 description         = "Crash-attribution diagnostics made loud: the GUARD culprit-walk now emits FAULTED_CULPRIT_NONE (with reason) on its false return instead of nothing, and the save/load slot resolver now emits an always-on Error when a non-null record's [record+0x80] basename deref fails (stale-cosave corruption risk). Both are fail-path engine machinery confirmed by log observation; manifest stub holds the rows PENDING."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["cap-48-culprit-none", "cap-48-null-base"]

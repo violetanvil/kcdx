@@ -35,6 +35,5 @@ author              = "ts"
 description         = "Dev-mode load-path engine-modification inventory: confirms the boot LogInventory call emits the inventory summary with a nonzero hook count. Engine self-reports; the same mechanism re-emits at save-load start and feeds the crash-guard cached buffer."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["cap-45-load-inventory"]

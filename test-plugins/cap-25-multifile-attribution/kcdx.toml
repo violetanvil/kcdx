@@ -41,7 +41,6 @@ author              = "ts"
 description         = "A single pure-Lua plugin split across plugin.lua + a require'd helper.lua; proves the helper's kcdx.* calls resolve to the plugin (not <anon>) via the require'd-source attribution fix."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-25-multifile-attribution"]
 

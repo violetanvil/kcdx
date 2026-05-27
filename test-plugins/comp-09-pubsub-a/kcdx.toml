@@ -35,7 +35,6 @@ author              = "ts"
 description         = "Publishes a custom event with a table payload from its input_loaded handler (deterministic ordering); subscriber is comp-09-pubsub-b."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 
 [entrypoints]

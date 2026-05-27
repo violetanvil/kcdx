@@ -54,7 +54,6 @@ author              = "ts"
 description         = "Author-declared targets.toml self-test: a pattern target with a signature hooked BY NAME end-to-end (cornerstones §36), engine-tier + explicit-prefix + alias resolution, and a kcdx.bytes target=<name> resolution."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-33-pattern-by-name", "CAP-33-engine-tier",
                        "CAP-33-prefixed", "CAP-33-bytes-by-name",

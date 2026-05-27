@@ -33,7 +33,6 @@ author              = "ts"
 description         = "kcdxHookInterface::Mid v2 int-return: kcdxMidResult Run/Skip from C++ (parity mirror of Lua mid return 'skip')."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-42-cpp-mid-skip", "CAP-42-cpp-mid-run"]
 

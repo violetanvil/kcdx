@@ -41,7 +41,6 @@ author              = "ts"
 description         = "kcdx.hook mode='callsite': redirect one E8 call site; per-call-site isolation."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-22-before", "CAP-22-after", "CAP-22-around",
                        "CAP-22-replace", "CAP-22-control-unaffected",

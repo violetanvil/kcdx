@@ -27,7 +27,6 @@ author              = "ts"
 description         = "Function hook via kcdx.hook{before} on an un-named CGame::Update callee; before callback bumps a counter, asserts installed + fired (Phase 4b Batch 1 migration off legacy [[hook]]+pak)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-03"]
 

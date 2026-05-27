@@ -36,6 +36,5 @@ author              = "ts"
 description         = "Dev-mode per-session log-stamp fix: confirms the dev log opens as kcdx-dev_<stamp>.log (non-empty stamp) instead of kcdx-dev_.log, so the engine + dev logs share one stamp and the watchdog crash bundle can find the dev log. Engine self-reports."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["cap-46-session-stamp"]

@@ -25,5 +25,4 @@ author              = "ts"
 description         = "Carries an unrecognized [plugin] key (colour) — MUST be rejected by the unknown-key validation. Identity is valid so the reject is queryable by name."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 colour              = "blue"

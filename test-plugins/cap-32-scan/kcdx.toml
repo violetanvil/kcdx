@@ -36,7 +36,6 @@ author              = "ts"
 description         = "Pure-Lua kcdx.scan self-test: a known-unique pattern resolves to count==1 with module attribution, a bogus pattern returns the always-a-table count==0 / addr==nil / empty-matches contract, and a missing-field call returns (nil, teaching-err) rather than a table."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-32-resolve", "CAP-32-nomatch", "CAP-32-badinput"]
 

@@ -157,6 +157,15 @@ const char* NodeKindName(const toml::node& n) {
     return "unknown";
 }
 
+// Strip leading/trailing ASCII whitespace from a string (used to normalize
+// `supports` version-pattern entries so " 1.5* " compares as "1.5*").
+std::string TrimWs(std::string s) {
+    const size_t b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return {};
+    const size_t e = s.find_last_not_of(" \t\r\n");
+    return s.substr(b, e - b + 1);
+}
+
 // Validate ONE table against its recognized-key allowlist. Two REJECT classes,
 // both setting `err` and returning false (so the caller rejects the plugin):
 //   (1) a recognized key present with the WRONG TYPE  (#4)  — the key IS
@@ -254,38 +263,6 @@ bool ParseSemver(const std::string& s, uint32_t& out, std::string& err) {
     return true;
 }
 
-// Parse a KCD2 game-version string ("1.5.1164953") into the kcdxMakeGameVersion
-// packed form (major<<24 | minor<<16 | (build & 0xFFFF)). Returns 0 + err on
-// parse failure.
-bool ParseGameVersion(const std::string& s, uint32_t& out, std::string& err) {
-    uint32_t major = 0, minor = 0, build = 0;
-    const char* p = s.c_str();
-    char* endp = nullptr;
-    auto parse_field = [&](uint32_t& field, const char* labelForErr) -> bool {
-        unsigned long v = std::strtoul(p, &endp, 10);
-        if (endp == p) {
-            err = std::string("expected ") + labelForErr + " number near '" + p + "'";
-            return false;
-        }
-        field = static_cast<uint32_t>(v);
-        p = endp;
-        return true;
-    };
-    if (!parse_field(major, "major")) return false;
-    if (*p != '.') { err = "expected '.' after major"; return false; }
-    ++p;
-    if (!parse_field(minor, "minor")) return false;
-    if (*p != '.') { err = "expected '.' after minor"; return false; }
-    ++p;
-    if (!parse_field(build, "build")) return false;
-    if (major > 0xFFu || minor > 0xFFu) {
-        err = "major/minor out of range (0..255)";
-        return false;
-    }
-    out = ((major & 0xFFu) << 24) | ((minor & 0xFFu) << 16) | (build & 0xFFFFu);
-    return true;
-}
-
 // Parse the [plugin] + [entrypoints] sections of a kcdx.toml into a
 // PluginManifest. Returns true on success. The 'name' field is the only
 // required key; if [plugin] is absent or has no 'name', returns false (the
@@ -315,9 +292,8 @@ bool ParsePluginManifest(const toml::table& doc,
         {"support_email",            TomlKind::String},
         {"version",                  TomlKind::String},
         {"kcdx_min_version",         TomlKind::String},
-        {"version_independent",      TomlKind::Boolean},
         {"log_level",                TomlKind::String},
-        {"compatible_game_versions", TomlKind::Array},
+        {"supports",                 TomlKind::Array},
         {"dependencies",             TomlKind::Array},
         {"test_names",               TomlKind::Array},
     };
@@ -417,8 +393,6 @@ bool ParsePluginManifest(const toml::table& doc,
         return false;
     }
 
-    out.versionIndependent = OptBool(t, "version_independent", false);
-
     // Load-order author hints — the per-plugin [load_order] TABLE (zone +
     // priority). Both keys are optional; an absent [load_order] table defaults
     // both. See docs/load-order.md for the full model — zones partition plugins
@@ -500,28 +474,31 @@ bool ParsePluginManifest(const toml::table& doc,
         }
     }
 
-    // compatible_game_versions = [ "1.5.1164953", ... ]
+    // supports = [ "1.5*", ... ]
+    // The UNIFIED <supports> game-version model (shared with pak mods'
+    // mod.manifest <supports> — docs/mod-loader-absorb.md "Version gate
+    // UNIFICATION"). Each element is a RAW version-pattern string (a trailing
+    // '*' is a PREFIX wildcard; no '*' = exact match) matched at load time
+    // against g_runtimeGameVersionString by
+    // version_compat::DecideGameVersionCompatString — NOT parsed to a packed
+    // integer here, since prefix wildcards aren't a packed build number.
+    // Strings are trimmed of surrounding whitespace.
+    // Absent / empty array → empty vector → "any version" (version-independent
+    // by absence).
     // STRICT (#17): a wrong-typed element is a REJECT naming the array + index
-    // + actual type (was `continue` — a silent drop that let a typo'd version
-    // entry vanish, so the plugin loaded against a game version it never
-    // declared compatibility with).
-    if (auto* arr = t.get("compatible_game_versions"); arr && arr->is_array()) {
+    // + actual type (a silent drop would let a mistyped pattern vanish, so the
+    // plugin loaded against a game version it never declared compatibility with).
+    if (auto* arr = t.get("supports"); arr && arr->is_array()) {
         size_t idx = 0;
         for (const auto& elem : *arr->as_array()) {
             if (!elem.is_string()) {
-                err = "[plugin] compatible_game_versions[" + std::to_string(idx) +
+                err = "[plugin] supports[" + std::to_string(idx) +
                       "]: wrong type (is " + NodeKindName(elem) +
                       ", expected string)";
                 return false;
             }
-            std::string s = std::string(*elem.value<std::string>());
-            uint32_t v = 0;
-            std::string gvErr;
-            if (!ParseGameVersion(s, v, gvErr)) {
-                err = "[plugin] compatible_game_versions[\"" + s + "\"]: " + gvErr;
-                return false;
-            }
-            out.compatibleGameVersions.push_back(v);
+            std::string s = TrimWs(std::string(*elem.value<std::string>()));
+            out.supports.push_back(std::move(s));
             ++idx;
         }
     }

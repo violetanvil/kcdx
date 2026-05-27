@@ -27,7 +27,6 @@ author              = "ts"
 description         = "Carries a stray top-level [[patch]] table (a legacy behavior table removed in Phase 5) — MUST be rejected by the top-level-table validation. Identity is valid so the reject is queryable by name."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 
 [[patch]]
 target      = "some_site"

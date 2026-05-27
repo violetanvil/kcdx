@@ -52,7 +52,6 @@ author              = "ts"
 description         = "Pure-Lua kcdx.code self-test: allocates a live writable executable region (write/read-back round-trip), verifies the size>#bytes NOP-pad (tail byte == 0x90), and proves the export-symbol interlock by resolving the export through a deferred kcdx.bytes{ target_symbol=... } (handle :applied()==true at ready)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-30-alloc", "CAP-30-export"]
 

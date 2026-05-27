@@ -28,7 +28,6 @@ author              = "ts"
 description         = "Sidecar that registers expected test names for the pak mod."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-05", "CAP-11"]
 

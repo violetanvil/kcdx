@@ -26,7 +26,6 @@ author              = "ts"
 description         = "Subscribes to plugin A's published custom event and asserts the table payload arrived by reference with the right publisher namespace."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["COMP-09-pubsub"]
 

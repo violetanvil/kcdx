@@ -19,7 +19,6 @@ author              = "ts"
 description         = "Verifies a C++-registered function is callable from Lua and the arg+return round-trips."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-10"]
 

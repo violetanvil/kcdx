@@ -57,7 +57,6 @@ author              = "ts"
 description         = "kcdx.hook mode=mid installed on a kcdx.code-allocated stub (run/skip on allocated memory)."
 version             = "0.2.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-04-mid-on-code-run", "CAP-04-mid-on-code-skip"]
 

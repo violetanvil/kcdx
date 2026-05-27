@@ -24,5 +24,4 @@ author              = "ts"
 description         = "Registers `kcdx_crash_now` console command for manual AV-crash testing."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"

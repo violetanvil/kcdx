@@ -33,6 +33,5 @@ author              = "ts"
 description         = "Dev-mode loc-dump probe: CLocalizedStringsManager ctor `this` capture + LocalizeString key capture (vtable slots 21/22) fire/ABI verification. Observe-only."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["cap-43-loc-ctor-capture", "cap-43-loc-localizestring-fire"]

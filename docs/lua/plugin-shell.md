@@ -34,8 +34,7 @@ kcdx.log.info("MYMOD", "hello from my first plugin")
 | `support_email` | string | Contact email. |
 | `version` | string | Semver, e.g. `"0.1.0"`. |
 | `kcdx_min_version` | string | Minimum kcdx version this plugin needs (semver). |
-| `version_independent` | bool | `true` if the plugin does not bind to a specific KCD2 build (default `false`). |
-| `compatible_game_versions` | array of strings | KCD2 build versions this plugin targets, e.g. `["1.5.1164953"]`. |
+| `supports` | array of strings | Game-version patterns this plugin targets, e.g. `supports = ["1.5*"]`. Each pattern is matched against the running KCD2 version: a trailing `*` is a prefix wildcard (`"1.5*"` matches `1.5`, `1.5.5`, `1.5.1164953`); no `*` = exact match. Empty or absent = any version (the plugin pins no specific build). |
 | `log_level` | string | Floor for the plugin's own log file: `trace`/`debug`/`info`/`warn`/`error`/`off` (default `info`). Warn/Error always pass. |
 | `test_names` | array of strings | For test-suite plugins: the matrix row IDs this plugin promises to report. |
 

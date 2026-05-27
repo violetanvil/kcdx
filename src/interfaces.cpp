@@ -107,11 +107,14 @@ const kcdxPluginInfo* Thunk_GetPluginInfo(const char* name) {
         info->supportEmail                 = p->manifest.supportEmail.c_str();
         info->version                      = p->manifest.version;
         info->kcdxMinVersion               = p->manifest.kcdxMinVersion;
+        // Vestigial ABI fields from the integer version-scheme (now the
+        // <supports> string-wildcard model). runtimeCompatibleGameVersion is
+        // dead (always 0); versionIndependent is re-derived — an empty
+        // `supports` list means the plugin pins no specific version. Both
+        // fields stay in kcdxPluginInfo until a future interface-versioned
+        // cleanup retires them (kept now to preserve the ABI shape, AP11).
         info->runtimeCompatibleGameVersion = 0;
-        // The matched game version isn't stored on LoadedPlugin currently;
-        // it lives in the Candidate during discovery and gets discarded.
-        // If we find that consumers need it, we can plumb it through.
-        info->versionIndependent           = p->manifest.versionIndependent ? 1 : 0;
+        info->versionIndependent           = p->manifest.supports.empty() ? 1 : 0;
         p->infoCache = std::move(info);
     }
     return p->infoCache.get();

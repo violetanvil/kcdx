@@ -59,7 +59,6 @@ author              = "ts"
 description         = "Declares [load_order].zone=before_game, which trips the synthetic After-required capability entry; gets rejected by zone_gate at config-load time. Its plugin.lua never runs — the rejection IS the test (the observer asserts it via kcdx.plugin.is_rejected)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 # The lua entrypoint must be declared so plugin discovery passes, but
 # its body is INERT BY DESIGN — the gate flips engineAccepted=false

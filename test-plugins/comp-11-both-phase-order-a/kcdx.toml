@@ -56,7 +56,6 @@ author              = "ts"
 description         = "Lowest-priority (30) ASSERTER of the both-phase execution model. Subscribes at plugin.lua-load to both plugins' phase tokens, publishes its own before/after tokens from its lua + lua_after slots, and at input_loaded asserts the collected run-order == [a.before, b.before, a.after, b.after] (phase boundary AND priority interleave). Paired with comp-11-both-phase-order-b (priority 70)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["COMP-11-both-phase-order"]
 

@@ -33,4 +33,3 @@ author              = "ts"
 description         = "Sets dev_mode (an engine-level key) inside the plugin's own [kcdx] — MUST be rejected as a misplaced engine setting. Identity is valid so the reject is queryable by name."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true

@@ -90,7 +90,6 @@ author              = "ts"
 description         = "Regression for the Lua handle:uninstall() method (Phase 3 sub-1 ext steps 1+2): basic lifecycle, idempotent double-uninstall, tostring transition, chain-survivor on multi-hook target, and the kcdx.bytes non-Hook teaching error."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-35-uninstall-basic", "CAP-35-uninstall-idempotent",
                        "CAP-35-uninstall-tostring",

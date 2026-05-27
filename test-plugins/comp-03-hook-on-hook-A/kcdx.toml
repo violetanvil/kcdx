@@ -48,7 +48,6 @@ author              = "ts"
 description         = "Lower-priority (10) replace in the cross-plugin COMP-03 pair. Applies first -> wins the replace conflict; reports nothing."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 # Lower number than B's 20 = applies FIRST = wins the replace-vs-replace
 # conflict (first-touch). [load_order].priority is 0..100.

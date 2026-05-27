@@ -24,7 +24,6 @@ author              = "ts"
 description         = "Lua half: kcdx.hook names kcdx.luaopen_table (verified ABI, gameplay-cold) with a WRONG explicit signature=; asserts the gate ERRORs (return-width delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — handle:applied()==true. Proves the install-time gate WITHOUT the wrong-ABI thunk firing; no longer crashes the suite."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 
 [load_order]

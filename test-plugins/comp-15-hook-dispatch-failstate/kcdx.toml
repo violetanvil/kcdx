@@ -130,6 +130,5 @@ author              = "ts"
 description         = "Batch E of the fail-state-logging sweep: three defensive guards in the hook_chain dispatch + hook_chain/hook_engine install machinery now fail LOUD instead of silently neutralizing/no-op'ing (AP14). #3 DispatchExclusive dead-ref Error-once (neutralized function); #13 DispatchPre/Post/MidDispatch dead-ref Warn-once (inert entry, genuine lost ref only — the -2 LUA_NOREF sentinel stays silent); #14 null call-original slot fails the install across 8 sites instead of wiring a crash-on-first-call hook. All three are provably UNREACHABLE on this build (the engine unrefs+resets callbackRef together; the runtime_func_t ctor builds m_detour non-null) — these are NOT cap-48-style flip-on-trigger rows. Manifest-only stub holds the three rows PENDING; the confirming signal is ABSENCE of the guard lines on a healthy launch (the live dispatch/install path must not false-fire), plus a documented contract + log-line pin for a future internal lifecycle/ctor-regression repro."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["comp-15-exclusive-deadref-error", "comp-15-deadref-warn", "comp-15-null-slot-fail-install"]

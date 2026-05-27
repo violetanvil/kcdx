@@ -115,7 +115,6 @@ author              = "ts"
 description         = "C++ DLL exercising kcdxHookInterface v1 end-to-end: Before/After/Around/Replace typed ABIs, Uninstall, raw-floor (no wrapper), and cross-language chaining with the sibling Lua plugin."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-36-cpp-hook-before",
                        "CAP-36-cpp-hook-after",

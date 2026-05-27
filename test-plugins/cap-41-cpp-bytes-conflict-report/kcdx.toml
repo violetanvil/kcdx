@@ -53,7 +53,6 @@ author              = "ts"
 description         = "C++ DLL proving kcdxInterface::GetConflictReport now folds in kcdx.bytes (kcdxBytesInterface::Register) patches as a fourth source (kind=Patch): registers a named-target byte rewrite, then asserts its entry appears by name in GetConflictReport at the patched VA, alongside the co-located cap-01 (g_patches) + cap-39 (bytes-Register) entries."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-41-bytes-in-conflict-report"]
 

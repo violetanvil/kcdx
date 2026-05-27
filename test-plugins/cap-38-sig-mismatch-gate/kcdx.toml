@@ -44,7 +44,6 @@ author              = "ts"
 description         = "C++ DLL: names kcdx.luaopen_table (verified ABI, gameplay-cold) with a WRONG explicit opts.signature; asserts the sig-mismatch gate ERRORs (return-width delta = hard conflict) + PROCEEDS with the explicit sig (behavior-c) — install succeeds. Proves the install-time gate WITHOUT the wrong-ABI thunk firing; no longer crashes the suite."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-38-cpp-gate-proceeds"]
 

@@ -157,7 +157,7 @@ uint32_t DetectRuntimeGameVersion() {
 
     log::WarnF("DetectRuntimeGameVersion: could not determine KCD2 build "
                "(checked kcd_launcher.log and WHGame.dll VS_VERSIONINFO). "
-               "compatibleGameVersions checks will be skipped with a warning.");
+               "Game-version compatibility checks will be skipped with a warning.");
     return 0;
 }
 
@@ -253,11 +253,7 @@ namespace {
 
 // Validate a parsed PluginManifest against engine + game-version invariants.
 // Returns true if the plugin is loadable; logs the specific reason on false.
-// matchedGameVersion (out): on success, set to the entry of compatibleGameVersions
-// that matched the running game (or 0 if versionIndependent).
-bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
-    matchedGameVersion = 0;
-
+bool ValidateManifest(const PluginManifest& m) {
     if (m.name.empty()) {
         LOG_ERROR("MANIFEST", "reject: manifest at %s has empty name field",
                   m.tomlPath.string().c_str());
@@ -271,57 +267,54 @@ bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
         return false;
     }
 
-    // Game-version compatibility. The CORE decision is the shared helper
-    // (version_compat::DecideGameVersionCompat) so the pak-mod path
-    // (mod_absorb) runs the IDENTICAL policy — see docs/mod-loader-absorb.md
-    // "ONE kcdx-owned version policy for BOTH plugins and pak mods". This
-    // function keeps its own logging (the pak-mod path's log lines differ) and
-    // its matchedGameVersion out-param.
-    switch (version_compat::DecideGameVersionCompat(
-                m.compatibleGameVersions, m.versionIndependent, g_runtimeGameVersion)) {
+    // Game-version compatibility. The CORE decision is the shared UNIFIED
+    // <supports> helper (version_compat::DecideGameVersionCompatString) so the
+    // pak-mod path (mod_absorb) runs the IDENTICAL policy — see
+    // docs/mod-loader-absorb.md "ONE kcdx-owned version policy for BOTH plugins
+    // and pak mods" / "Version gate UNIFICATION". The plugin's `supports`
+    // patterns are string-compared (trailing-'*' prefix wildcard) against
+    // g_runtimeGameVersionString (wh_sys_version, e.g. "1.5.5"). This function
+    // keeps its own logging (the pak-mod path's log lines differ).
+    //
+    // Emit the plugin's supports patterns (one line each, indented) at the
+    // given level — shared by the Unknown (WARN) and Incompatible (ERROR)
+    // branches. Empty list prints an explicit "(none)" so the log is
+    // self-explanatory.
+    auto logSupports = [&](log::Level lvl) {
+        if (m.supports.empty()) {
+            log::EmitEngine(lvl, "MANIFEST", "    (none — empty supports list)");
+        } else {
+            for (const std::string& pat : m.supports) {
+                char buf[KCDX_LOG_FORMAT_BUF_SIZE];
+                log::detail::FormatTo(buf, sizeof(buf), "    %s", pat.c_str());
+                log::EmitEngine(lvl, "MANIFEST", buf);
+            }
+        }
+    };
+    switch (version_compat::DecideGameVersionCompatString(
+                m.supports, g_runtimeGameVersionString)) {
     case version_compat::CompatResult::UnknownGameVersion:
         // Graceful-degradation: couldn't determine the running game version;
         // don't refuse over our own self-detection failure.
         LOG_WARN("MANIFEST",
             "Plugin '%s': engine couldn't determine the running KCD2 "
-            "version; loading anyway. Plugin claims compatibility with:",
+            "version; loading anyway. Plugin's supports patterns:",
             m.name.c_str());
-        if (m.compatibleGameVersions.empty()) {
-            LOG_WARN("MANIFEST", "    (none — empty compatible_game_versions list)");
-        } else {
-            for (uint32_t gv : m.compatibleGameVersions) {
-                LOG_WARN("MANIFEST", "    0x%08X", gv);
-            }
-        }
+        logSupports(log::Level::Warn);
         return true;
 
     case version_compat::CompatResult::Incompatible:
-        if (m.compatibleGameVersions.empty()) {
-            LOG_ERROR("MANIFEST",
-                "reject '%s': empty compatible_game_versions list and "
-                "version_independent NOT set. Either list your tested game "
-                "versions or set version_independent=true in [plugin].",
-                m.name.c_str());
-        } else {
-            LOG_ERROR("MANIFEST",
-                "reject '%s': not compatible with running game version "
-                "0x%08X. Its compatible_game_versions:",
-                m.name.c_str(), g_runtimeGameVersion);
-            for (uint32_t gv : m.compatibleGameVersions) {
-                LOG_ERROR("MANIFEST", "    0x%08X", gv);
-            }
-        }
+        // Non-empty supports list, none of whose patterns match the running
+        // version (an empty list yields Compatible, never Incompatible — see
+        // DecideGameVersionCompatString rule 1).
+        LOG_ERROR("MANIFEST",
+            "reject '%s': running game version '%s' is not matched by any "
+            "of its supports patterns:",
+            m.name.c_str(), g_runtimeGameVersionString.c_str());
+        logSupports(log::Level::Error);
         return false;
 
     case version_compat::CompatResult::Compatible:
-        // Set matchedGameVersion to the entry that matched (0 if
-        // version-independent — preserves the prior out-param contract).
-        for (uint32_t gv : m.compatibleGameVersions) {
-            if (gv == g_runtimeGameVersion) {
-                matchedGameVersion = gv;
-                break;
-            }
-        }
         return true;
     }
 
@@ -337,7 +330,6 @@ struct Candidate {
     PluginManifest manifest;
     fs::path       dllPath;     // empty for TOML-only plugins
     HMODULE        module = nullptr;   // owned by Candidate until promoted to LoadedPlugin
-    uint32_t       matchedGameVersion = 0;  // from ValidateManifest
     bool           valid = false;
 };
 
@@ -530,7 +522,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     for (const auto& m : g_manifests) {
         Candidate c;
         c.manifest = m;
-        c.valid    = ValidateManifest(m, c.matchedGameVersion);
+        c.valid    = ValidateManifest(m);
         cands.push_back(std::move(c));
     }
 

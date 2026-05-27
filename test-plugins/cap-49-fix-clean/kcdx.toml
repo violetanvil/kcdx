@@ -2,8 +2,9 @@
 #
 # A FULLY VALID manifest exercising the breadth of recognized keys/tables
 # (every [plugin] key the allowlist covers, an [entrypoints] lua, a
-# [load_order] table, a [[plugin.dependencies]] entry, a compatible_game_
-# versions array, a test_names array). It MUST LOAD — its plugin.lua runs and
+# [load_order] table, a [[plugin.dependencies]] entry, a test_names array;
+# `supports` is omitted on purpose — absent = any version). It MUST LOAD — its
+# plugin.lua runs and
 # self-reports cap-49-clean-loads PASS at kcdx.on("ready").
 #
 # This is the falsifiable counterweight to the four reject fixtures: it proves
@@ -26,9 +27,11 @@ url                       = "https://example.invalid/cap49"
 support_email             = "cap49@example.invalid"
 version                   = "0.1.0"
 kcdx_min_version          = "0.1.0"
-version_independent       = true
 log_level                 = "info"
-compatible_game_versions  = ["1.5.1164953"]
+# `supports` is intentionally OMITTED: an absent supports key = "any game
+# version" = version-independent by absence (the migrated meaning of the old
+# version_independent=true this fixture previously set). This fixture must load
+# on whatever build runs the suite, so it pins no version.
 test_names                = ["cap-49-clean-loads"]
 
 [[plugin.dependencies]]

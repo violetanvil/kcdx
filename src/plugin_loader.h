@@ -65,14 +65,21 @@ struct PluginManifest {
                                   //   if kcdx is older. Optional; defaults 0
                                   //   (= "any kcdx").
 
-    std::vector<uint32_t> compatibleGameVersions;
-                                  // KCD2 build numbers this plugin tested against.
-                                  //   Empty == "any game version" — valid only when
-                                  //   versionIndependent is true.
-    bool versionIndependent = false;
-                                  // Set true if the plugin uses kcdx::ResolveAddress
-                                  //   (Address Library) for runtime offset lookups
-                                  //   and doesn't pin to a specific game build.
+    std::vector<std::string> supports;
+                                  // Game-version compatibility patterns, parsed from
+                                  //   [plugin] supports = ["1.5*", ...]. The UNIFIED
+                                  //   <supports> model shared with pak mods (mod.manifest
+                                  //   <supports>) — see docs/mod-loader-absorb.md "Version
+                                  //   gate UNIFICATION". Each pattern is string-compared
+                                  //   against g_runtimeGameVersionString (wh_sys_version,
+                                  //   e.g. "1.5.5"): a TRAILING '*' is a PREFIX wildcard
+                                  //   ("1.5*" matches "1.5", "1.5.5", "1.5.1164953");
+                                  //   no '*' = exact string match. EMPTY (key absent) =
+                                  //   "any game version" = version-independent by absence
+                                  //   (the migrated meaning of the old version_independent
+                                  //   flag). Evaluated by
+                                  //   version_compat::DecideGameVersionCompatString in
+                                  //   ValidateManifest.
 
     std::vector<ManifestDependency> dependencies;
 
@@ -225,8 +232,10 @@ constexpr uint32_t kEngineVersion = 0x00010200u;  // 0.1.2 — kcdxPluginInfo.au
                                                   // layout, AP11)
 
 // Live KCD2 build number, populated at engine startup from the WHGame.dll
-// file version. Reported via kcdxInterface::runtimeGameVersion. Plugins
-// compare against their compatibleGameVersions array.
+// file version. Reported via kcdxInterface::runtimeGameVersion. (The plugin
+// game-version gate now compares the STRING g_runtimeGameVersionString below
+// against each plugin's `supports` patterns; this integer remains the ABI
+// field plugins read via kcdxInterface::runtimeGameVersion.)
 extern uint32_t g_runtimeGameVersion;
 
 // Live KCD2 version STRING, populated at engine startup from
@@ -283,8 +292,8 @@ std::string ExtractCfgValue(const std::string& cfgText, const char* key);
 // LoadLibraryW each plugin's DLL (if any) in order and call kcdxPlugin_Preload
 // + kcdxPlugin_Load.
 //
-// Plugins failing validation (missing required name, incompatible game
-// version without Address Library, missing required dependency, cycles) are
+// Plugins failing validation (missing required name, game version not matched
+// by any `supports` pattern, missing required dependency, cycles) are
 // logged and skipped; other plugins still load.
 //
 // Safe to call once at startup, after config::LoadAllConfigs has run the

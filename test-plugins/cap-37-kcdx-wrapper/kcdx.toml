@@ -69,7 +69,6 @@ author              = "ts"
 description         = "C++ DLL exercising the include/kcdx/Kcdx.h empowered wrapper end-to-end: the Before/After/Around/Replace<Sig,&fn> helpers with NATURAL callbacks, the Try* handle path, and the type->DSL trait on i32+f32+ptr."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["CAP-37-wrapper-before",
                        "CAP-37-wrapper-after",

@@ -54,7 +54,6 @@ author              = "ts"
 description         = "Pure-Lua self-test for Batch D fail-state instrumentation: kcdx.hook rejects an unrecognized option key naming it, kcdx.memory.dynamic_call rejects a non-string param_types entry, and kcdx.memory.get_module_base_address returns an observable null pointer for an absent module (WARN agent-log-confirmed)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["cap-50-unknown-key", "cap-50-param-types-nonstring",
                        "cap-50-return-type-nonstring", "cap-50-return-type-absent-ok",

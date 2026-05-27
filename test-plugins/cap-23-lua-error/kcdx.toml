@@ -25,7 +25,6 @@ author              = "ts"
 description         = "Deliberate plugin.lua runtime error; loader asserts captured text carries file:line + stack traceback."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
-version_independent = true
 log_level           = "info"
 test_names          = ["cap-23-lua-error-lineinfo"]
 
