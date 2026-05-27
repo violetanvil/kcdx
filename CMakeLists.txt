@@ -150,6 +150,8 @@ add_library(kcdx SHARED
     src/probes/loc_dump_probe.cpp
     src/probes/fopen_override_probe.cpp
     src/probes/mod_loader_probe.cpp
+    src/mod_absorb/record_synth.cpp
+    src/mod_absorb/record_synth_selftest.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

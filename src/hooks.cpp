@@ -29,6 +29,7 @@
 #include "task.h"
 #include "test.h"
 #include "trampoline_engine.h"
+#include "mod_absorb/record_synth_selftest.h"  // cap-52 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
 // installs from kcdx.dll DllMain, not from hooks::Install.
@@ -549,6 +550,13 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
             // hook may not have fired yet — ready fires shortly after boot).
         }
     }
+
+    // cap-52-mod-record-synth: engine self-report for the mod_absorb
+    // record-synthesis module (src/mod_absorb/record_synth.cpp). Unlike cap-47,
+    // it has NO dependency on a hook firing or "ready" — BuildRecord works as
+    // soon as the Address Library resolves (available at boot) — so it reports
+    // on the first tick. One-shot guarded internally; safe to call every tick.
+    kcdx::mod_absorb::RunSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification
