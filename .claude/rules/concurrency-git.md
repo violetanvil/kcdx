@@ -19,11 +19,13 @@ Multiple Claude Code chats run against this ONE repository at once — one share
 
 5. **Check before you assume.** Before any commit, `git branch --show-current` + `git status` — another chat may have changed the branch or left the tree dirty. Read state, don't assume.
 
-## Remotes — private is comprehensive, public is a sanitized projection
+## Remotes — this IS the private repo; public is an allowlisted snapshot
 
-This repo has TWO remotes. The local tree is the comprehensive **private** copy.
+This repo has TWO remotes. The local tree is the comprehensive **private** repo.
 
-- `private` → `violetanvil/kcdx-private` — holds everything (incl. `.claude/`, `CLAUDE.md`, `_research/`, `third-party-ghidra/` scripts, `test-fixtures/`, `docs/outstanding-work/`, `docs/known-issues/`). `main` tracks `private/main`, so **a bare `git push` goes to private.** This is the everyday push.
-- `public` → `violetanvil/kcdx` — a SANITIZED snapshot on an unrelated history, force-pushed each publish. Reached ONLY via `pwsh ./publish-public.ps1` (strips the private trees + the script itself; `-DryRun` previews).
+- `private` → `violetanvil/kcdx-private` — holds everything not in `.gitignore` (incl. `.claude/`, `CLAUDE.md`, `_research/`, `third-party-ghidra/` scripts, `test-fixtures/`, all of `docs/`). `main` tracks `private/main`, so **a bare `git push` goes to private.** This is the everyday push. `.gitignore` here is the ordinary private-repo ignore list (build output, machine state, heavy/reproducible binaries) — it does NOT define the public boundary.
+- `public` → `violetanvil/kcdx` — a fresh single-commit snapshot on an unrelated history, force-pushed each publish. Reached ONLY via `pwsh ./publish-public.ps1` (`-DryRun` previews).
 
-6. **Never push to `public` directly.** `git push public ...`, `git push --all`, or any hand-push to the public remote leaks the private working materials. The public remote is updated ONLY by `publish-public.ps1`. The private trees are no longer gitignored — `.gitignore` excludes only heavy/reproducible binaries — so they WILL be in a direct public push. If a public update is wanted, run the script (it sanitizes); never push public by hand.
+The public boundary is an **ALLOWLIST inside the script**, not a denylist and not `.gitignore`. The script publishes only its listed public dirs (`src`, `include`, `vendor`, `data`, `examples`, `kcdx-engine`, `test-plugins`, `tools`, `docs`) + root files (`README.md`, `LICENSE`, `CMakeLists.txt`, `build.ps1`, `package-release.ps1`). **Everything else defaults to private** — a new top-level dir, `.claude/`, `CLAUDE.md`, `.gitignore`, `publish-public.ps1` itself. To make something public, add it to the allowlist; omission keeps it private (fails safe). The public repo intentionally shows no trace of AI-assisted development.
+
+6. **Never push to `public` directly.** `git push public ...`, `git push --all`, or any hand-push to the public remote ships the comprehensive tree — the private materials are tracked (not gitignored), so they WILL be in a direct push, leaking them and the AI-development trail. The public remote is updated ONLY by `publish-public.ps1`. If a public update is wanted, run the script (allowlist projection); never push public by hand. The script builds the snapshot in a throwaway worktree, so it does not touch the shared live tree.

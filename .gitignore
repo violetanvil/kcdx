@@ -39,10 +39,12 @@ _download/
 release-staging/
 test-install/
 
-# Private working materials are TRACKED on `main` (→ private remote) and STRIPPED
-# when projecting `main` → `public` by publish-public.ps1. They are NOT gitignored
-# anymore — the private/public split is enforced at publish time, not by ignore.
-# See publish-public.ps1 for the authoritative sanitize set.
+# This file is the PRIVATE repo's ignore list — ordinary git semantics. The
+# private working materials (.claude/, CLAUDE.md, _research/, third-party-ghidra/
+# scripts, test-fixtures/, docs/) are TRACKED here, not ignored. The private/public
+# split is NOT enforced by this file: publish-public.ps1 uses an ALLOWLIST (it
+# publishes only its listed public dirs + root files; everything else, including
+# this .gitignore, stays private by default).
 #
 # What stays ignored below is only genuinely heavy / reproducible binaries inside
 # the otherwise-tracked private trees, so the private repo holds the scripts and
