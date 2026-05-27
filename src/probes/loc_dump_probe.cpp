@@ -14,12 +14,15 @@
 
 #include "loc_dump_probe.h"
 
-#include <windows.h>
-#include <intrin.h>  // _ReturnAddress()
+#include <windows.h>    // RtlCaptureStackBackTrace (declared in winnt.h, kernel32-exported)
+#include <intrin.h>     // _ReturnAddress()
 
+#include <array>
 #include <atomic>
 #include <cstdint>
-#include <cstdio>  // std::snprintf (loc-fire report reason)
+#include <cstdio>  // std::snprintf (loc-fire report reason + stack-frame buffer)
+#include <cstring>  // std::memcmp / std::strncpy (seen-key set)
+#include <mutex>   // dev-only guard around the seen-key set
 
 #include "MinHook.h"
 
@@ -155,6 +158,155 @@ const char* DerefKeyPtrNoFault(const void* cryStr) {
     }
 }
 
+// === Decision-1 stack-shape probe (per-@-key call-stack capture) =====
+//
+// GOAL: the prior live run (LOC-MANAGER-FINDINGS.md §"LocalizeString retarget
+// LIVE result") showed caller_ra (the IMMEDIATE return address) collapses to a
+// SINGLE value — RVA 0x51d4a8, a universal text-FORMATTING chokepoint — across
+// all 11,589 fires. That immediate edge does NOT serve find{text=}: it points
+// at the formatter, not "the inventory screen" / "the buff system". This probe
+// captures the frames ABOVE that chokepoint to answer the gating question:
+//
+//   Do frames[1..7] (above the chokepoint at frames[0]~=0x51d4a8) DIFFER across
+//   different @-keys?
+//     → YES (per-key variation): a real gameplay frame is reachable in the live
+//       stack; find{text=} CAN get the gameplay function via a capture-time
+//       stack-walk.
+//     → NO (identical / near-identical across all keys): everything funnels
+//       through the same dispatcher stack above the chokepoint too; runtime
+//       caller capture cannot yield the gameplay function, and a different
+//       (non-runtime) mechanism is needed.
+//
+// Observe-only, dev-mode, same discipline as the existing hooks. This probe
+// DUMPs frames only — it builds NO caller-selection logic (the human reads
+// whether the frames vary). It is the approved Decision-1 stack-shape probe,
+// run BEFORE choosing the caller-capture mechanism (results-driven).
+
+// WHGame.dll module range, resolved ONCE so each captured frame can be logged
+// as a base-relative RVA (comparable across runs / ASLR). Frames outside this
+// range left the game module and are logged raw-tagged (themselves informative
+// — the stack left WHGame.dll), never silently dropped (AP14).
+struct WhgameRange {
+    uintptr_t base = 0;
+    uintptr_t end  = 0;  // base + image size (exclusive)
+};
+
+WhgameRange ResolveWhgameRangeOnce() {
+    static WhgameRange r = [] {
+        WhgameRange out;
+        HMODULE m = GetModuleHandleW(L"WHGame.dll");
+        if (!m) return out;  // base stays 0 → every frame logged raw-tagged below
+        out.base = reinterpret_cast<uintptr_t>(m);
+        // Image size from the PE optional header (SizeOfImage).
+        auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(m);
+        auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+            out.base + dos->e_lfanew);
+        out.end = out.base + nt->OptionalHeader.SizeOfImage;
+        return out;
+    }();
+    return r;
+}
+
+// Volume bounds (dev-only): log the stack for the FIRST N DISTINCT @-keys only,
+// once per key, and hard-cap total stack-logs so a key churn can't flood the
+// log. The prior run saw 914 distinct @-keys / 5,447 @-key fires — we only need
+// a SAMPLE to read whether the frames vary.
+constexpr size_t kMaxDistinctKeys = 200;  // distinct @-keys to sample
+constexpr size_t kMaxStackLogs    = 300;  // absolute log-line cap (belt+braces)
+constexpr size_t kKeyBufLen       = 64;   // per-stored-key length (truncated)
+
+std::mutex g_seenKeysMutex;  // dev-only; the hot path is the formatter chokepoint
+                             // but the seen-set must not race across UI threads.
+std::array<std::array<char, kKeyBufLen>, kMaxDistinctKeys> g_seenKeys{};
+size_t g_seenKeyCount = 0;                  // # distinct @-keys recorded
+std::atomic<size_t> g_stackLogCount{0};     // total stack lines emitted
+
+// Returns true the FIRST time this @-key is seen (and records it); false if
+// already logged or if the distinct-key / total-log cap is hit. Bounded under
+// g_seenKeysMutex. `key` is the already-snapshotted, NUL-terminated readable
+// string (always starts with '@' by the caller's filter).
+bool ShouldLogStackForKey(const char* key) {
+    if (g_stackLogCount.load(std::memory_order_relaxed) >= kMaxStackLogs) {
+        return false;  // absolute cap reached — stop emitting
+    }
+    std::lock_guard<std::mutex> lk(g_seenKeysMutex);
+    for (size_t i = 0; i < g_seenKeyCount; ++i) {
+        if (std::strncmp(g_seenKeys[i].data(), key, kKeyBufLen) == 0) {
+            return false;  // already logged this key's stack
+        }
+    }
+    if (g_seenKeyCount >= kMaxDistinctKeys) {
+        return false;  // distinct-key sample full
+    }
+    std::strncpy(g_seenKeys[g_seenKeyCount].data(), key, kKeyBufLen - 1);
+    g_seenKeys[g_seenKeyCount][kKeyBufLen - 1] = '\0';
+    ++g_seenKeyCount;
+    return true;
+}
+
+// Capture ~8 frames above the detour and log them as WHGame.dll-relative RVAs
+// (or raw-tagged if outside the module) under LOC_DUMP. Called only for @-key
+// fires that pass ShouldLogStackForKey. `slot` is 21/22; `key` is the readable
+// snapshotted key (starts with '@'). frames[0] is the immediate caller (~the
+// 0x51d4a8 chokepoint); frames[1..] are what this probe exists to compare.
+//
+// Fail-state (AP14): RtlCaptureStackBackTrace returning 0 frames is logged as a
+// distinct "captured=0" line — "ran and found nothing" is NOT a silent blank.
+void LogStackForKey(int slot, const char* key) {
+    void* frames[8] = {};
+    USHORT n = RtlCaptureStackBackTrace(/*FramesToSkip*/ 1,
+                                        /*FramesToCapture*/ 8, frames, nullptr);
+    WhgameRange r = ResolveWhgameRangeOnce();
+
+    if (n == 0) {
+        // Ran, captured nothing — say so loudly rather than emit a blank list.
+        LOG_DEBUG_KV("LOC_DUMP", "localizestring_stack",
+                     log::KV("slot", (uint64_t)slot),
+                     log::KV::BareStr("key", key),
+                     log::KV::BareStr("frames", "[captured=0]"));
+        g_stackLogCount.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
+    // Build the frames=[...] list: WHGame.dll-relative RVA (0xNNN) when inside
+    // the module, raw pointer tagged (raw:0xNNN) when outside it.
+    char list[256];
+    size_t pos = 0;
+    list[pos++] = '[';
+    for (USHORT i = 0; i < n && pos < sizeof(list) - 24; ++i) {
+        uintptr_t f = reinterpret_cast<uintptr_t>(frames[i]);
+        int w;
+        if (r.base && f >= r.base && f < r.end) {
+            w = std::snprintf(list + pos, sizeof(list) - pos,
+                              "%s0x%llx", (i ? "," : ""),
+                              (unsigned long long)(f - r.base));
+        } else {
+            // Outside WHGame.dll (or base unresolved) — informative, not dropped.
+            w = std::snprintf(list + pos, sizeof(list) - pos,
+                              "%sraw:0x%llx", (i ? "," : ""),
+                              (unsigned long long)f);
+        }
+        if (w <= 0) break;
+        pos += (size_t)w;
+    }
+    if (pos < sizeof(list) - 1) list[pos++] = ']';
+    list[pos] = '\0';
+
+    LOG_DEBUG_KV("LOC_DUMP", "localizestring_stack",
+                 log::KV("slot", (uint64_t)slot),
+                 log::KV::BareStr("key", key),
+                 log::KV::BareStr("frames", list));
+    g_stackLogCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+// True if the readable key is a REAL @-key (starts with '@'), filtering out the
+// formatted-value noise ("88", "0%", "(empty)", "(null)") the slot-21 formatter
+// also routes. Only @-key fires get a stack dump (volume control + relevance:
+// @-keys are exactly what find{text=} targets).
+bool IsAtKey(const char* readable) {
+    return readable && readable[0] == '@';
+}
+
 // === The LocalizeString detours =====================================
 //
 // Observe-only: each reads its key per its overload's ABI, logs
@@ -202,6 +354,14 @@ char __fastcall HookedLocalizeStr21(void* self, void* cryStr, void* out, char fl
 
     ReportLocFireOnce((int)kLocSlot21, readable, caller);
 
+    // Decision-1 stack-shape probe: for a REAL @-key (not the formatted-value
+    // noise), DUMP the call stack above the chokepoint, bounded to the first N
+    // distinct keys. frames[0] ~= the 0x51d4a8 formatter chokepoint; frames[1..]
+    // are what we read for per-key variation. See LogStackForKey.
+    if (IsAtKey(readable) && ShouldLogStackForKey(readable)) {
+        LogStackForKey((int)kLocSlot21, readable);
+    }
+
     LocLocalizeStr21_t orig = g_orig_loc21.load(std::memory_order_acquire);
     if (!orig) {
         log::Error("LOC_DUMP: orig LocalizeString slot-21 pointer null at "
@@ -225,6 +385,11 @@ char __fastcall HookedLocalizeStr22(void* self, const char* str, void* out, char
                  log::KV("this",      self));
 
     ReportLocFireOnce((int)kLocSlot22, readable, caller);
+
+    // Decision-1 stack-shape probe (same as slot 21): @-key fires only, bounded.
+    if (IsAtKey(readable) && ShouldLogStackForKey(readable)) {
+        LogStackForKey((int)kLocSlot22, readable);
+    }
 
     LocLocalizeStr22_t orig = g_orig_loc22.load(std::memory_order_acquire);
     if (!orig) {
