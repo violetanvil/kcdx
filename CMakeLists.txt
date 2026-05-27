@@ -149,13 +149,15 @@ add_library(kcdx SHARED
     src/probes/bugsplat_ctor_probe.cpp
     src/probes/loc_dump_probe.cpp
     src/probes/fopen_override_probe.cpp
-    src/probes/mod_loader_probe.cpp
     src/mod_absorb/record_synth.cpp
     src/mod_absorb/record_synth_selftest.cpp
     src/mod_absorb/mod_manifest.cpp
     src/mod_absorb/mod_manifest_selftest.cpp
     src/mod_absorb/pak_mod_registry.cpp
     src/mod_absorb/pak_mod_registry_selftest.cpp
+    src/mod_absorb/enabled_list_builder.cpp
+    src/mod_absorb/select_detour.cpp
+    src/mod_absorb/enabled_list_builder_selftest.cpp
     src/version_compat.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp

@@ -26,8 +26,8 @@
                                          // dev-mode probe (ctor capture + by-ID getter)
 #include "probes/fopen_override_probe.h" // Phase 8.5 pak-resolver probe (FOpen
                                          // read-fires + override semantics)
-#include "probes/mod_loader_probe.h"     // Phase 8.5 absorb PROBE U.6 (SELECT-
-                                         // detour timing + I_Mod record layout)
+#include "mod_absorb/select_detour.h"    // Mod-loader absorb: production SELECT
+                                         // detour (rebuilds the enabled list)
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -156,18 +156,22 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // path (the failure return above precedes this).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
 
-    // PHASE 7 (ctx B): ModLoaderTakeoverArmed — the mod-loader SELECT detour.
-    // PROBE U.6 (dev-mode-gated, observe-only): a log-only detour on the engine's
-    // mod-loader SELECT orchestrator (wh::C_ModManager FUN_180da104c), installed
-    // here — after EngineHooksInstalled (WHGame.dll mapped + MinHook live), before
-    // EngineSubsystemsInit (where CSystem::Init runs the native mod-load). Resolves
-    // the two probe-first gates for the absorb (docs/init.md §"The mod-loader
-    // absorb"): U.6.1 — does a worker-thread detour fire BEFORE the native mod-load
-    // (decides whether the narrow takeover installs at ctx-B here, or needs ctx-A /
-    // before_game timing); U.6.2 — the I_Mod 0x70-byte record layout kcdx must
-    // synthesize for kcdx-plugins/ entries. ALWAYS calls the original SELECT
-    // unchanged (no list mutation). No-op in production (dev-mode gate).
-    kcdx::probes::mod_loader_probe::Install();
+    // PHASE 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
+    // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
+    // This installs the detour on the engine's mod-loader SELECT orchestrator
+    // (wh::C_ModManager ModManager_Select, Address Library id 3100), here — after
+    // EngineHooksInstalled (WHGame.dll mapped + MinHook live), before
+    // EngineSubsystemsInit (where CSystem::Init runs the native mod-load). When
+    // the detour FIRES (during CSystem::Init), it lets the original SELECT run,
+    // then WHOLESALE-REPLACES the enabled-list vector with kcdx's rebuilt list —
+    // a synthesized I_Mod record for every enabled discovered mod (vanilla pak
+    // mods + kcdx plugins alike), in kcdx's resolved load order. The native MOUNT
+    // then runs verbatim over kcdx's list. PRODUCTION (no dev-mode gate) — this
+    // IS the feature. By the time it fires, discovery + load_order::Resolve
+    // (ctx-A, LoadAllConfigs) and the pak-mod version gate (ctx-B VersionDetected,
+    // above) have all run, so the detour reads a ready resolved state. See
+    // docs/mod-loader-absorb.md "Step 4".
+    kcdx::mod_absorb::InstallSelectDetour();
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::ModLoaderTakeoverArmed);
 
     // Localization runtime-dump feature: arm the dev-mode probe

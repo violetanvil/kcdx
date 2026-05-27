@@ -32,6 +32,7 @@
 #include "mod_absorb/record_synth_selftest.h"  // cap-52 engine self-report
 #include "mod_absorb/mod_manifest_selftest.h"  // cap-53 engine self-report
 #include "mod_absorb/pak_mod_registry_selftest.h"  // cap-54 engine self-report
+#include "mod_absorb/enabled_list_builder_selftest.h"  // cap-55 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
 // installs from kcdx.dll DllMain, not from hooks::Install.
@@ -575,6 +576,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // and RESTORE it before returning (snapshot + re-Read + re-Resolve), so the
     // live load order is untouched. One-shot guarded internally.
     kcdx::mod_absorb::RunPakRegistrySelfTestOnce();
+
+    // cap-55-enabled-list-builder: engine self-report for the enabled-list
+    // builder (src/mod_absorb/enabled_list_builder.cpp) — STEP 4 of
+    // mod-loader-absorb. Same timing as cap-52/53/54: no hook-fire / "ready"
+    // dependency — the build + normalization logic work at boot. Drives the
+    // global load_order + registry + g_manifests state in isolation and RESTORES
+    // it before returning. The live MOUNT end-to-end (every enabled mod mounts,
+    // in kcdx order) is the batched verification checkpoint, not this self-test.
+    // One-shot guarded internally.
+    kcdx::mod_absorb::RunEnabledListSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

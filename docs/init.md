@@ -138,24 +138,23 @@ the zone split doesn't exist.
 
 ## The mod-loader absorb (asset overlays) in the model
 
-The kcdx "absorb the KCD2 mod loader" feature (the approved absorb design, see
+The kcdx "absorb the KCD2 mod loader" feature (the absorb design, see
 [`mod-loader-absorb.md`](mod-loader-absorb.md)) slots in as:
 - **Phase 7 `ModLoaderTakeoverArmed`** — the SELECT-phase detour
-  (`wh::C_ModManager` `FUN_180da104c`) is kcdx INFRASTRUCTURE (like
-  `hooks::Install`), NOT a load-order entry. It must be armed before
-  `CSystem::Init` runs the native SELECT.
+  (`wh::C_ModManager` SELECT orchestrator) is kcdx INFRASTRUCTURE (like
+  `hooks::Install`), NOT a load-order entry. It is armed before
+  `CSystem::Init` runs the native SELECT, and the production takeover
+  (`mod_absorb::InstallSelectDetour`) rebuilds the enabled-mod list when the
+  detour fires.
 - **Asset-overlay entries** (a plugin's / mod's assets) ARE load-order entries,
   applied THROUGH the takeover: kcdx, now owning SELECT, builds the engine's
-  enabled-mod list FROM the resolved load order's asset slice — so overlays apply
-  via the one apply-driver, in load-order order, same as every other kind.
-- **PLACEMENT IS U.6-GATED.** Whether phase 7 can sit in context B (worker
-  thread) depends on the unproven runtime fact: does a worker-thread detour
-  install BEFORE `CSystem::Init` reaches SELECT? PROBE U.6 (the log-only SELECT
-  detour, `src/probes/mod_loader_probe.{h,cpp}`, built but held out of the boot
-  until the refactor lands) resolves it: fires → phase 7 stays in B; never fires
-  while the native "[Mod] N mods enabled" line appears → the takeover must move
-  to context A (loader-lock, the before_game/Phase-11 LDR machinery), and phase 7
-  relocates accordingly. Do not finalize phase 7's context until U.6.
+  enabled-mod list FROM the resolved load order — so a synthesized I_Mod record
+  for every enabled mod (vanilla pak mod + kcdx plugin alike) mounts via the
+  native MOUNT, in load-order order.
+- **Placement is confirmed in context B (worker thread).** A worker-thread
+  detour installed at this phase fires before `CSystem::Init` completes mod
+  selection — confirmed against the running binary — so phase 7 sits in context
+  B, not context A (the loader-lock / before_game machinery).
 
 ## As-is (today, until the refactor lands)
 

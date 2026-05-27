@@ -73,8 +73,11 @@ enum class InitPhase {
     VersionDetected,
     // [ctx B] hooks::Install (lua_pcall + update); MinHook live.
     EngineHooksInstalled,
-    // [ctx B] the mod-loader SELECT detour installed — placement U.6-gated
-    // (docs/init.md §"The mod-loader absorb"). Today: mod_loader_probe::Install.
+    // [ctx B] the production mod-loader SELECT detour installed
+    // (mod_absorb::InstallSelectDetour) — the takeover that rebuilds the enabled
+    // list. Worker-thread placement is confirmed in time (the detour fires
+    // before CSystem::Init completes mod selection). docs/init.md §"The
+    // mod-loader absorb".
     ModLoaderTakeoverArmed,
     // [ctx B] save_load_hooks, serialization (after save_load), Kind handlers
     // (before plugins).

@@ -77,9 +77,9 @@ slash) and +0x10 (id); the rest is metadata kcdx fills from a plugin's
 
 ## PROBE U.6 — the three closed gates (live, 2026-05-26)
 
-A log-only, observe-only SELECT detour (`src/probes/mod_loader_probe.{h,cpp}`,
-wired at the `ModLoaderTakeoverArmed` init phase) resolved every probe-first
-gate the narrow takeover rested on:
+A log-only, observe-only SELECT detour (since superseded by the production
+`mod_absorb::InstallSelectDetour`, Step 4), wired at the `ModLoaderTakeoverArmed`
+init phase, resolved every gate the narrow takeover rested on:
 
 - **U.6.1 TIMING — ctx-B is in time.** The worker-thread detour FIRED
   (`select_fire`, worker tid) at `WHGame+0xDA104C` **before** `CSystem::Init`
@@ -210,6 +210,32 @@ prior probe. The U.9 diagnostic edit is reverted per probe hygiene.
 ---
 
 ## Settled design (vision-preserving — approved + this session's audit)
+
+**A kcdx plugin is a SUPERSET of a vanilla pak mod (user vision, 2026-05-27).**
+The defining principle for what the rebuilt enabled list contains. A vanilla pak
+mod and a kcdx plugin load the SAME content the SAME way; adding a `kcdx.toml` at
+the mod root is purely ADDITIVE — it unlocks kcdx's extra capabilities and takes
+nothing away. A mod author turns a vanilla pak mod into a kcdx plugin by dropping
+in a `kcdx.toml`, and the pak content keeps loading exactly as before.
+
+Therefore EVERY discovered mod — vanilla pak (`mod.manifest`, no `kcdx.toml`) OR
+kcdx plugin (`kcdx.toml` at the content root) — gets a synthesized native I_Mod
+record pointed at its folder, so its `Data/*.pak` mounts and its
+localization/table-patch/mod.cfg passes run IDENTICALLY via the native MOUNT (the
+mount is path-driven, not identity-driven — it never checks vanilla-vs-plugin). A
+kcdx plugin ADDITIONALLY runs its `kcdx.toml`/`plugin.lua`/DLL through kcdx's own
+loader for the extra capabilities. So:
+
+- `kcdx.toml` presence gates the EXTRA kcdx behavior layer, NOT the asset/pak
+  path. The asset path is uniform for every mod.
+- A pak-less pure-Lua/DLL plugin still gets a native record (pointed at its
+  folder); the native MOUNT finds no `*.pak` and opens nothing — harmless and
+  uniform, no special-casing.
+- The classification (content-bearing root has `kcdx.toml` → plugin; else →
+  vanilla) decides the BEHAVIOR path, not whether content loads.
+
+This is why `cap-05-paklua-runtime` (a kcdx plugin that ships a `Data/*.pak` +
+a `mod.manifest`) loads its pak exactly like a vanilla mod would.
 
 **Takeover depth = NARROW.** Detour ONLY the SELECT phase (3100). kcdx rebuilds
 the enabled I_Mod list (at `C_ModManager+0x30`) in ITS order, then lets the
@@ -354,8 +380,9 @@ kcdx OWNS the loader, so there is no collision. kcdx discovers from both
 3. **Unified discovery** — scan both dirs, marker-file classify, synthesize
    `mods.<modid>` rows into the `load_order` model. **(BUILT — see "Step 3"
    below.)**
-4. **SELECT detour → real takeover** — call original, append kcdx records,
-   re-sort the enabled list by the unified key.
+4. **SELECT detour → real takeover** — call original, then wholesale-REPLACE
+   the enabled-list vector with kcdx's rebuilt list (a synthesized record per
+   enabled mod, in the unified order). **(BUILT — see "Step 4" below.)**
 5. **Order persistence** — write back to `load_order.toml` + `mod_order.txt`.
 6. **Test plugin(s) + docs** — `cap-NN-mod-absorb`, `comp-NN-plugin-in-mods`,
    the loader-architecture doc rewrite, the absorb design section, and
@@ -429,4 +456,79 @@ can't be evaluated because the version is undetected degrades gracefully
 (enabled, with a warning).
 
 The downstream consumer — building the actual enabled I_Mod list from this
-resolved, gated order and handing it to the native mount — is the next step.
+resolved, gated order and handing it to the native mount — is Step 4 below.
+
+## Step 4 — the production SELECT-detour takeover (the keystone)
+
+Step 4 makes kcdx OWN the engine's enabled mod list. It is the keystone: it
+turns the resolved, gated order (Step 3) into the actual list the native MOUNT
+walks.
+
+**The enabled-list builder** (`src/mod_absorb/enabled_list_builder.{h,cpp}`,
+`BuildEnabledList`) reads the resolved state — the pak-mod registry (Step 3) +
+the plugin manifests — and produces the rebuilt enabled I_Mod\* list:
+
+- One synthesized record (`record_synth::BuildRecord`, Step 1) per ENABLED
+  discovered mod. The SUPERSET model: a vanilla pak mod and a kcdx plugin alike
+  get a record pointed at their folder, so the path-driven native MOUNT loads
+  their content identically. A pak-less plugin gets a record too — MOUNT finds
+  no `*.pak` and opens nothing, which is harmless and uniform (no special-casing
+  on pak presence).
+- ENABLED is `IsPluginEnabled(name)`: a user-disabled mod, a version-rejected
+  pak mod (the Step-3 version gate), and a zone-rejected plugin are all
+  excluded. Pak mods key `mods.<modid>`; plugins key `[plugin].name`.
+- ORDER is the one load-order sort key `(zone, priority, orderIndex, name)` —
+  the SAME key the load-order surface resolves, so pak mods and plugins sort
+  into one unified order.
+- A mod whose record synthesis fails (a vtable does not resolve →
+  `BuildRecord` returns null) is DROPPED from the list and logged loud — never
+  inserted as a null pointer, which would crash MOUNT on the first virtual
+  dispatch.
+
+**Path normalization.** Each record's path fields are normalized to the native
+record form: a backslash directory body with a trailing forward `/` for the
+with-slash form (e.g. `E:\…\3728570527/`), no trailing separator for the
+without-slash form. This matches the shape a native record carries and the
+shape the native `OpenPacks('<path>/*.pak')` mount expects, regardless of how
+the source path's separators were spelled.
+
+**The SELECT detour** (`src/mod_absorb/select_detour.{h,cpp}`,
+`InstallSelectDetour`) is the production takeover. It detours the SELECT
+orchestrator (`ModManager_Select`, Address Library id 3100). On fire it:
+
+1. Calls the ORIGINAL SELECT first — which builds the native records AND runs
+   the per-mod validation pass. The list must not be mutated before that
+   completes; mutating it mid-validation crashes the engine's own walk.
+2. Builds the rebuilt list (`BuildEnabledList`) and copies it into a
+   kcdx-OWNED, process-lifetime array (a module-static `std::vector<void*>`).
+   This array — and the records it points at — must outlive MOUNT and every
+   downstream pass, so it is never built on the stack.
+3. WHOLESALE-REPLACES the enabled-list vector: repoints begin / end /
+   end-of-storage (`C_ModManager+0x30 / +0x38 / +0x40`) at the kcdx array. This
+   is a full replace, not an append — repointing the vector at kcdx storage,
+   AFTER the native validation pass already ran, is the mechanism the binary
+   accepts.
+
+The native MOUNT (id 3102) is NOT detoured — it runs verbatim over kcdx's
+rebuilt list, mounting each record's `<path>/*.pak` and running the
+localization / table-patch / mod.cfg passes per record. The mount is
+path-driven, so it treats a synthesized kcdx record exactly like a native one.
+
+**Production, not a probe.** The detour install is NOT dev-mode-gated — it is
+the feature, it runs every boot. Verbose per-record logging stays
+dev-log-routed; the takeover summary (`N mods, M vanilla, K plugins, in kcdx
+load order`) is an INFO line. An empty rebuilt list (every mod disabled,
+version-rejected, or synthesis-failed) repoints the vector at a stable empty
+sentinel (begin == end == cap) with a loud WARN — a real observable state, not
+a silent no-op.
+
+**Ordering.** By the time the detour fires (during `CSystem::Init`), the
+resolved state is ready: discovery + `load_order::Resolve` ran in kcdx's own
+`DllMain` (before the worker thread armed the detour), and the pak-mod version
+gate ran on the worker thread at version-detection time (before the
+takeover-armed phase). The detour only reads the resolved state — it never
+re-discovers or re-resolves.
+
+The kcdx plugin behavior layer (its `kcdx.toml` / `plugin.lua` / DLL) runs
+separately through kcdx's own loader — Step 4 adds the native-record synthesis
+on top, it does not change the plugin-load path.
