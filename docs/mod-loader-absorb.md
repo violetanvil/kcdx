@@ -178,6 +178,37 @@ allocation question U.8 settled. The build proves kcdx-owned strings separately.
 This is a probe RESULT — the U.8 diagnostic edit is reverted per probe hygiene;
 this record is its durable home.
 
+### PROBE U.9 — RESULT: single I_Mod concrete class; vtable RVAs verified + ASLR-stable
+
+Question (the U.8 caveat): U.8 harvested vtables from only the FIRST record. Do
+all mods share one I_Mod concrete class (one vtable pair kcdx sets on every
+synthesized record), or per-mod subclasses (kcdx must derive the right vtable)?
+Read-only loop over ALL enabled records dumping +0x00/+0x18.
+
+Result (live, 2026-05-27 09:07 boot — read-only, all 15 vanilla mods loaded
+normally, no mutation):
+
+- **ALL 15 records share the IDENTICAL vtable pair**: `vtable0` RVA **0x46AAF00**,
+  `vtable1` RVA **0x46AAED8** (every idx 0..14). Single I_Mod concrete class —
+  the synthesis module sets ONE pair on every record it builds.
+- **ASLR-stable across boots**: this boot's WHGame base 0x7FF8FF000000 →
+  `0x7FF9036AAF00 − base = 0x46AAF00` and `0x7FF9036AAED8 − base = 0x46AAED8`,
+  IDENTICAL to U.8's harvested RVAs (U.8 base 0x7FF8FF470000). The RVAs are the
+  stable fact; they land as seed rows.
+- Records are contiguous at 0x70 stride (0x...D30CD50, +0x70, +0x70, ...) —
+  confirms the array layout.
+
+Verified Address Library facts for the synthesis module (land as append-only
+seed rows):
+  - I_Mod primary vtable     = RVA 0x46AAF00 (ImodVtable_primary)
+  - I_Mod sub-object vtable   = RVA 0x46AAED8 (ImodVtable_subobject)
+
+PROBE PHASE COMPLETE. Every fact the synthesis module needs is verified: record
+layout (U.6), field map (U.6.3), from-scratch-survives-MOUNT (U.8), single-class
+vtables + RVA-stability (U.9). The only remaining runtime unknown is kcdx-OWNED
+string-buffer lifetime (U.8's deferred OPEN) — proven by step 1's build, not a
+prior probe. The U.9 diagnostic edit is reverted per probe hygiene.
+
 ---
 
 ## Settled design (vision-preserving — approved + this session's audit)
