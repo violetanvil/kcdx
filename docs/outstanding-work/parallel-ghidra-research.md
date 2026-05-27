@@ -549,131 +549,207 @@ the hash changing is the very event being tracked. So `kcdx_id` is assigned once
 (v1.5 baseline) and re-attached to the same logical function in every later
 version by the cross-version matcher (§11.6).
 
-### 11.2 The schema (finalized except the matcher)
+### 11.2 The schema — LOCKED (2026-05-27, except the matcher)
 
-**`functions`** — version-independent identity + this-version metadata. One row
-per function per imported version is NOT how it works; `functions` holds the
-CURRENT-version row, keyed on `kcdx_id`. (rva/length/auto_name are this-version
-facts; the cross-version invariant is `kcdx_id`.)
+The schema COLLAPSED to **8 tables** (+ `_dict_*`). The earlier separate
+`functions` / `signatures` / `caller_reg_args` tables are GONE — folded into
+`entity_versions` (their data is per-byte-form, derived from the bytes, so it
+lives on the interval row). The `overlay` / `versions` tables are renamed
+`kcdx_overlay` / `game_versions`.
 
-| Column | Meaning |
-|---|---|
-| `kcdx_id` | **stable identity, PK.** Assigned at v1.5 baseline (1..321120), append-only, never recycled/renumbered. The cross-version anchor. |
-| `rva`, `length` | this-version location (moves per version) |
-| `auto_name` (`FUN_<rva>`) | **DEV DB ONLY.** A Ghidra display artifact, NOT a resolution key, NEVER author-referenceable (it's just a render of the rva, which moves). Dropped from the USER DB. |
-| `decompile_quality` | gates `statement.*` |
+**Conventions (locked):**
+- Every table has an autoincrement `id` PK **except `entities`** (its PK *is*
+  `kcdx_id`, the single global id-authority — one PK makes `kcdx_id` collision
+  impossible across the whole DB).
+- **`kcdx_id` is globally unique** (the `entities` PK). Every other table FKs to
+  it. A signature/curated/function id can never collide because they all draw
+  from the one `entities` sequence.
+- Low-cardinality columns are dict-encoded (`_dict_*`); a `_dict_*` ships in
+  whichever DB its parent column ships in.
+- **USER? ✅** = ships in the USER `reference.sqlite`; **❌** = DEV-only. The USER
+  DB serves only two runtime jobs: cross-version SURVIVAL + hook ABI/address
+  RESOLUTION. Everything else (discovery, prose, provenance) is DEV-only.
 
-(Function removal is NOT a column here — it is DERIVED from `entity_versions`: a
-`kcdx_id` whose latest interval is closed with no later open row was removed in
-`valid_through + 1`. Single source of truth = the intervals.)
+#### `modules` — module registry (USER ✅)
 
-**`entity_versions`** — THE versioning table. A general validity-INTERVAL
-(temporal) table over EVERYTHING a mod can target and the game can change — not
-just function bodies. One row per distinct byte-form/value of a targetable
-entity, over the version range it was valid. This is the full path to making
-versioning **completely resolvable**: one query answers "is my target still
-valid?" for any entity kind.
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ✅ | |
+| `name` | TEXT | no | ✅ | `WHGame.dll`, `BugSplat64.dll`, … (§3c secondary DLLs). |
 
-| Column | Meaning |
-|---|---|
-| `entity_kind` | INTEGER (dict FK). The general taxonomy of targetable things: `function` (321K bodies) \| `vtable_slot` \| `data_slot` \| `callsite` \| **`statement`** (reserved enum value, NOT populated yet — see below). |
-| `entity_id` | INTEGER. The stable id within that kind — a `functions.kcdx_id` for functions; the overlay `kcdx_id` for curated sites/slots. |
-| `content_hash` | BLOB (32 bytes). BLAKE3 of this form (function/statement bytes; for a slot, the resolved slot+target value). |
-| `rva` (or value) | location/value of this form in its version range. |
-| `length` | byte length of this form (reproduces the hashed span). |
-| `valid_from` | INTEGER (FK → `versions`). First game version this form held. |
-| `valid_through` | INTEGER (FK → `versions`), **nullable. NULL = still current.** Last version this form was valid. |
+#### `game_versions` — version registry (USER ✅)
 
-`SELECT * WHERE entity_kind=? AND entity_id=N` → the full version history.
-"Is my target still valid?" → `… AND valid_through IS NULL`, compare hash.
-"Which versions changed it?" → the set of `valid_from` values (each new row's
-`valid_from` IS the version it changed). **Removal = the latest row has
-`valid_through` set and no later open (`NULL`) row exists** — so removal is
-DERIVED from the intervals, not a separate column (`functions.removed_in_version`
-is dropped; the intervals are the single source of truth).
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ✅ | FK target for the intervals. |
+| `tag` | TEXT | no | ✅ | `1.5.1164953`. |
+| `ordinal` | INTEGER | no | ✅ | Monotonic sort key (`1.10 > 1.6`, which a string sort gets wrong). |
+| `released` | TEXT | yes | ✅ | Release date if known. |
 
-A small **`versions`** table (`id`, `tag` e.g. `1.5.1164953`, `ordinal`, release
-date) backs `valid_from`/`valid_through` so versions order correctly
-(`1.10 > 1.6`, which a string sort gets wrong).
+#### `entities` — the id authority (USER ✅)
 
-**v1.5 baseline (now):** every function gets ONE open interval
-(`entity_kind=function`, `entity_id=kcdx_id`, hash, `valid_from=1.5`,
-`valid_through=NULL`); curated sites/slots likewise. When v1.6 arrives and the
-MATCHER (§11.6) runs, a CHANGED entity's row is closed (`valid_through=1.5`) and
-a new open row opens (`valid_from=1.6, valid_through=NULL`). The matcher's job is
-to close-and-open intervals — it can only run once it knows the v1.6 entity IS
-the v1.5 entity.
+One row per entity, ever. Version-INDEPENDENT identity only.
 
-**Why `statement` is a reserved-but-unpopulated kind (scope decision, consult
-2026-05-27):** statement-level survival is ALREADY free under the function
-interval, because the function `content_hash` covers the whole body `[rva,
-rva+length)` and each statement hash is a SUB-RANGE of that exact span
-(BLAKE3-HASH-CONTRACT §2a/§2b). So **function-hash-unchanged ⟹ every statement in
-it is byte-identical** — a proven invariant, not an approximation: no statement
-byte can change (or move) without flipping the function hash. Populating
-per-statement intervals (5.24M × versions rows) would buy NOTHING on survival
-correctness, and would force a SECOND cross-version matcher (statements have no
-name/call-graph fingerprint — a far harder identity problem than functions). The
-schema reserves the `statement` enum value so populating it later is no
-migration; the decision to populate is staged to the Phase 9.x statement-survival
-design, informed by real need + the function-matcher's lessons. (Options A/B/C
-were weighed; C — general schema, staged statement fill — was chosen.)
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `kcdx_id` | INTEGER PK | no | ✅ | Globally-unique stable id. The handle a mod references. Assigned at v1.5 baseline, append-only, never recycled. |
+| `entity_type` | INTEGER (dict) | no | ✅ | `function` \| `vtable_slot` \| `data_slot` \| `callsite` \| **`statement`** (reserved, unpopulated — see below). |
+| `module_id` | INTEGER FK→`modules` | no | ✅ | Which module — version-independent (WHGame.dll's functions stay in WHGame.dll across game versions), so it lives on identity, not per-interval. |
 
-**`overlay`** — the curated verified layer (sibling table, the maintainer's
-authoring source-of-truth; the generator projects its verified rows into
-seed.csv/kEntries[]). Keyed on `kcdx_id` so a curated name attaches to the SAME
-stable identity the hash history tracks.
+#### `entity_versions` — temporal forms, the spine (USER ✅, subset of columns)
 
-| Column | Meaning |
-|---|---|
-| `kcdx_id` | PK; the stable id (may equal a `functions.kcdx_id`, or be a curated-only id) |
-| `name` | nullable. The gameplay name ("IsInCombat"). **Stable-id-before-name**: an id can exist with name=NULL. |
-| `kind` | enum, **9 values** (the seed.csv reality, grounded in all 139 rows): `function` (108) \| `function_no_sig` (~9, real entry ABI not DSL'd) \| `function_variadic` (4, DSL can't express `...`) \| `callsite` (3–4, carries `offset`; `aob` collapses in) \| `data_slot` (3, static `.data`) \| `string_anchor` (1, `.rdata` literal) \| `instruction_anchor` (1, a specific instruction RVA) \| `vtable_base` (3, vtable BASE address) \| `vtable_index` (6, integer SLOT, no rva, unverified). |
-| `rva` | nullable (NULL for the 6 `vtable_index` rows; callsite carries `offset`). |
-| `offset` | nullable; only `callsite` rows populate it (the `+13` / `-4` consumers apply). |
-| `vtable_slot` | nullable INTEGER (**D1**, decided): the integer slot for `vtable_index` rows, its own structured column (NOT left in notes). |
-| `signature` | nullable. The VERIFIED ABI in kcdx's DSL. NULL for the 31 non-plain-function rows. |
-| `status` | `verified` (133) \| `unverified` (6) — only verified rows project to runtime. |
-| `source` | **D2, decided: kept as its own column** (seed.csv's separate `source`; all 139=`verified` today but it's a provenance TIER distinct from `status`; preserving it honors the generator's lossless 8-column round-trip — do NOT fold into status). |
-| `is_deprecated`, `superseded_by` | **name-deprecation axis** (§11.4): rename OldName→NewName; the function still lives. |
-| `authored_against_version`, `verified_on_version` | which game build the verification holds for |
-| `notes` | **DEV DB ONLY** (the seed.csv notes prose; never in the USER ship; the projected output stays public-clean) |
+One row per (entity, version-interval). Carries the per-byte-form facts: hash,
+location, AND the abi_walker floor (folded in — it is DERIVED from the bytes, so
+it is per-byte-form, not per-entity; `produce_signatures.py` proves this).
 
-New `signature_source` dict value `curated` distinguishes a hand-verified ABI
-from the abi_walker floor (the generator projects ONLY `curated`).
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ✅ | |
+| `kcdx_id` | INTEGER FK→`entities` | no | ✅ | The entity. |
+| `content_hash` | BLOB(32) | yes | ✅ | BLAKE3 of this byte-form. NULL for non-byte kinds. The survival-check value. |
+| `rva` | INTEGER | yes | ✅ | Address of this form. Resolve id→address. |
+| `length` | INTEGER | yes | ✅ | Byte length — REQUIRED to reproduce the hashed span `[rva, rva+length)`; a dependency of `content_hash`, not extra data. |
+| `value` | INTEGER | yes | ✅ | Payload for non-byte kinds (vtable slot int, data-slot offset) — the entire resolved value for those entities. |
+| `signature` | TEXT | yes | ✅\* | abi_walker width-floor (`? (i64, i32)`). |
+| `observed_arg_slots` | INTEGER | yes | ✅\* | Arg-count lower-bound floor. |
+| `caller_reg_arg_count` | INTEGER | yes | ✅\* | Caller-side reg-arg estimate (≤4). |
+| `caller_arg_agreement` | INTEGER (dict) | yes | ✅\* | Caller-site agreement (`agree`/`spread:MIN..MAX`). |
+| `auto_name` | TEXT | yes | ❌ | `FUN_<rva>` — discovery DISPLAY only, never a resolution key. |
+| `decompile_quality` | INTEGER (dict) | yes | ❌ | Gates `statement.*` (an authoring surface). |
+| `valid_from` | INTEGER FK→`game_versions` | no | ✅ | First version this form held. |
+| `valid_through` | INTEGER FK→`game_versions` | yes | ✅ | **NULL = still current.** Last version valid. |
 
-**Seed id reconciliation (decided):** the seed.csv ids (1000–3106) are NOT
-preserved — they get renumbered to their correct `kcdx_id` in the overlay. A code
-target's overlay row matches the v1.5 baseline `functions.kcdx_id` AT ITS rva (the
-seed row's rva → the baseline function there → that function's kcdx_id);
-non-code rows (`vtable_index`) get a curated-only id. No collision with the
-1..321120 bulk baseline because the old seed id-space is discarded.
+Indexes: `(kcdx_id)`; partial UNIQUE `(kcdx_id) WHERE valid_through IS NULL` (one
+current form per entity — a corrupt close-and-open fails loudly at insert);
+`(rva)`.
 
-**`meta`** — one-row table for the single-value columns hoisted out of the bulk
-(`module`, `game_version` of the current import, `abi_confidence` policy,
-`schema_version`), per the cut pass.
+**✅\*** = the four ABI-floor columns are USER **pending the D3 engine-fact gate**
+(does the user engine re-derive a hook's marshalling ABI from the DB at install,
+or does the plugin carry its own baked signature?). Ship-in-USER is the safe
+default until verified; if "plugin bakes it," they drop to DEV-only. Resolve at
+the Phase 9.1 engine-consumer design.
 
-**`signatures`** (the abi_walker width-floor) — **D3, decided: KEEP** (it is NOT
-dead weight like the cut `functions.signature` was). `functions.signature` was
-100% `undefined FUN_<rva>()` — zero ABI → cut. `signatures.signature` is the
-honest width-floor (`? (i64, i32, …)`, 0% identical to the cut column) and is the
-ONLY marshalling ABI the engine has for the 321K UN-curated functions a
-`kcdx.find` author hooks (the curated 139 get the verified `overlay.signature`
-instead). Cutting it would break callback hooks on any discovered-but-unnamed
-function — the disassembler-test floor (AP12). **USER-vs-DEV ship is GATED on a
-checkable engine fact** (results-driven): does a user's engine re-derive a hook's
-marshalling ABI from the DB at install, or does the plugin carry its own baked
-signature? Ship in BOTH DBs for now (safe default — cutting later is trivial,
-breaking user hooks is not); resolve the cut at the Phase 9.1 engine-consumer
-design when that behavior is settled.
+`SELECT * WHERE kcdx_id=N` → the full version history. "Is my target still
+valid?" → `… AND valid_through IS NULL`, compare hash. "Which versions changed
+it?" → the set of `valid_from` values. **Removal = the latest row is closed
+(`valid_through` set) with no later open (`NULL`) row** — DERIVED from the
+intervals, NOT a separate column.
 
-**The cuts (vs the current dump):** `functions.signature` (zero-ABI dead
-column); `functions.signature_source` (single-value); `functions.function_name` +
-`namespace` (CRT-only, no gameplay names); `functions.auto_name` cut from USER
-(kept DEV-only); `statements.cvar_ref` / `statements.edge_reason` /
-`signatures.edge_reason` / `call_edges.edge_reason` / `caller_reg_args.edge_reason`
-(100% empty); `statements.callee` NULL'd when it's the redundant `FUN_<rva>` form;
-`module` / `game_version` / `abi_confidence` hoisted to `meta`.
+**v1.5 baseline (now):** every function gets ONE open interval (`kcdx_id`, hash,
+rva, length, `valid_from=1`, `valid_through=NULL`); curated sites/slots likewise.
+`game_versions` gets row 1 (`1.5.1164953`). When v1.6 arrives and the MATCHER
+(§11.6) runs, a CHANGED entity's interval is closed (`valid_through=1`) and a new
+open interval opens (`valid_from=2, valid_through=NULL`).
+
+**Why `statement` is a reserved-but-unpopulated entity_type (consult 2026-05-27):**
+statement-level survival is ALREADY free under the function interval — the
+function `content_hash` covers the whole body `[rva, rva+length)` and each
+statement hash is a SUB-RANGE of that exact span (BLAKE3-HASH-CONTRACT §2a/§2b).
+So **function-hash-unchanged ⟹ every statement in it is byte-identical** — a
+proven invariant: no statement byte can change (or move) without flipping the
+function hash. Populating 5.24M per-statement intervals would buy NOTHING on
+survival, and would force a SECOND cross-version matcher (statements have no
+name/call-graph fingerprint). Reserved so later population is no migration;
+staged to the Phase 9.x statement-survival design. (Options A/B/C weighed; C —
+general schema, staged statement fill — chosen.)
+
+#### `kcdx_overlay` — curated human layer, sparse sidecar (USER ✅, subset)
+
+The maintainer's authoring source-of-truth; the generator projects its verified
+rows into seed.csv/kEntries[]. Stays a SEPARATE sparse sidecar (139 rows ×
+curated columns — folding onto the 321K-row identity table would make a
+super-wide mostly-NULL table). **`id` PK; `kcdx_id` is a NON-UNIQUE FK** — many
+name-rows may share one entity (the supersession case: OldName + NewName both
+point at one `kcdx_id`).
+
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ✅ | The stable *name-row* identity (distinct from the entity's `kcdx_id`). |
+| `kcdx_id` | INTEGER FK→`entities` | no | ✅ | The entity annotated (NON-unique — supersession allows multiple rows per entity). |
+| `name` | TEXT | yes | ✅ | Gameplay name ("IsInCombat"). NULL allowed (id-before-name). The resolution key. |
+| `kind` | INTEGER (dict) | no | ✅ | **9 values** (the seed.csv reality): `function` (108) \| `function_no_sig` (~9) \| `function_variadic` (4) \| `callsite` (3–4, carries `offset`; `aob` collapses in) \| `data_slot` (3) \| `string_anchor` (1) \| `instruction_anchor` (1) \| `vtable_base` (3) \| `vtable_index` (6, slot int in `vtable_slot`, no rva, unverified). |
+| `signature` | TEXT | yes | ✅ | The VERIFIED DSL ABI (distinct from the `entity_versions` floor). NULL for the 31 non-plain-function rows. |
+| `offset` | INTEGER | yes | ✅ | Callsite consumer offset (the `+13` / `-4`). |
+| `vtable_slot` | INTEGER | yes | ✅ | Slot int for `vtable_index` rows (its own structured column). |
+| `status` | INTEGER (dict) | no | ✅ | `verified` (133) \| `unverified` (6) — only verified resolves at runtime. |
+| `is_deprecated` | INTEGER | no | ✅ | Name-deprecation flag; the old name still resolves (§11.4). |
+| `superseded_by` | INTEGER FK→`kcdx_overlay.id` | yes | ✅ | The overlay ROW (name) that replaces this one — you supersede a NAME, not the function. |
+| `source` | INTEGER (dict) | no | ❌ | Provenance tier (seed.csv's separate `source`; kept, not folded into `status`). |
+| `authored_against_version` | INTEGER FK→`game_versions` | yes | ❌ | Verification bookkeeping. |
+| `verified_on_version` | INTEGER FK→`game_versions` | yes | ❌ | Verification bookkeeping. |
+| `signature_source` | INTEGER (dict) | no | ❌ | Always `curated` here (the generator projects ONLY this). |
+| `notes` | TEXT | yes | ❌ | seed.csv prose; never in USER (also the public-clean reason). |
+
+Index: `ix_ov_name` on `name`. (No `rva` — a code overlay row gets its address
+via its `kcdx_id`'s current `entity_versions` interval.)
+
+**Seed id reconciliation:** the seed.csv ids (1000–3106) are NOT preserved — each
+seed row matches the v1.5 baseline `entities.kcdx_id` AT ITS rva (the row's rva →
+the baseline entity there → its kcdx_id); non-code rows (`vtable_index`) mint a
+curated-only `entities` row. The old seed id-space is discarded (no collision
+with the 1..321120 bulk baseline).
+
+#### `meta` — DB header, one row (USER ✅)
+
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ✅ | Always 1. |
+| `schema_version` | INTEGER | no | ✅ | Consumers (engine + generator) verify the DB shape before trusting it — fail loud on a mismatch. |
+| `abi_confidence` | TEXT | no | ✅ | The floor policy (`count+width+caller_reg`). |
+
+(`module` → `modules` + `entities.module_id`; `game_version` → `game_versions`.
+Both dropped as single-version/single-module relics the new model obsoletes.)
+
+#### `statements` — per-statement discovery (DEV-only ❌)
+
+5.24M rows; the entire table is DEV-only (ship-tier boundary).
+
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ❌ | |
+| `kcdx_id` | INTEGER FK→`entities` | no | ❌ | Owning function. |
+| `idx` | INTEGER | no | ❌ | Statement ordinal. |
+| `kind` | INTEGER (dict) | no | ❌ | call/assign/branch/… |
+| `pseudo_text` | TEXT | yes | ❌ | Decompiled line. |
+| `byte_range_start` | INTEGER | no | ❌ | Statement code start (RVA). |
+| `byte_range_len` | INTEGER | no | ❌ | Statement code length. |
+| `content_hash` | BLOB(32) | yes | ❌ | Per-statement hash. |
+| `callee` | TEXT | yes | ❌ | NULL'd when redundant `FUN_<rva>`; kept when named (memset etc.). |
+| `string_ref` | TEXT | yes | ❌ | Referenced literal (matcher signal). |
+
+(Cut from the dump: `cvar_ref`, `edge_reason` — 100% empty.)
+
+#### `referenced_vars` — per-statement var storage (DEV-only ❌)
+
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ❌ | |
+| `kcdx_id` | INTEGER FK→`entities` | no | ❌ | Owning function. |
+| `statement_idx` | INTEGER | no | ❌ | Owning statement. |
+| `storage_kind` | INTEGER (dict) | yes | ❌ | register/stack/global. |
+| `data_type` | INTEGER (dict) | yes | ❌ | Approx type. |
+| `storage_detail` | TEXT | yes | ❌ | High-cardinality; stays un-dicted. |
+
+#### `call_edges` — the call graph (DEV-only ❌)
+
+1.52M rows; powers `kcdx.find` ranking + the cross-version matcher (§11.6).
+
+| Column | Type | Null | USER? | Meaning |
+|---|---|---|---|---|
+| `id` | INTEGER PK | no | ❌ | |
+| `caller_kcdx_id` | INTEGER FK→`entities` | no | ❌ | Calling function. |
+| `callee_kcdx_id` | INTEGER FK→`entities` | no | ❌ | Called function. |
+
+(Cut: `edge_reason`. Indexed both directions.)
+
+**The cuts (vs the current dump):** the `functions` table (collapsed to
+`entities`+`entity_versions`); `functions.signature` (zero-ABI `undefined
+FUN_<rva>()`); `functions.signature_source` / `function_name` / `namespace`
+(single-value / CRT-only); `auto_name` + `decompile_quality` cut from USER (kept
+DEV); `statements.cvar_ref` / all `*.edge_reason` (100% empty);
+`statements.callee` NULL'd when redundant `FUN_<rva>`; the separate `signatures`
+/ `caller_reg_args` tables (folded into `entity_versions`); `meta.module` /
+`meta.game_version` (→ `modules` / `game_versions`).
 
 ### 11.3 The author reference surface — exactly two handles + the hatch
 
@@ -682,8 +758,8 @@ doesn't exist materially — it's a render of the rva). Resolution is:
 
 | Tier | Author writes | Resolves via | Stable? |
 |---|---|---|---|
-| Verified-named | `target = "IsInCombat"` | overlay `name` → `kcdx_id` → address + verified ABI | ✅ |
-| Discovered | `target = <kcdx_id>` | overlay/`functions` `kcdx_id` → address | ✅ (append-only id) |
+| Verified-named | `target = "IsInCombat"` | `kcdx_overlay.name` → `kcdx_id` → `entities`/`entity_versions` address + verified ABI | ✅ |
+| Discovered | `target = <kcdx_id>` | `entities.kcdx_id` → current `entity_versions` interval → address | ✅ (append-only id) |
 | Expert hatch | `pattern = "48 8B …"` / `bytes` | scan | ✅ (re-derived per version by the author) |
 
 `kcdx.find` (the in-game author console, the ONLY runtime DB reader, dev-mode,
@@ -695,10 +771,12 @@ attachment to that id. ID minting is **maintainer-only** (no in-game promote).
 
 | Axis | Lives on | Set when | Means |
 |---|---|---|---|
-| **Name** deprecation | `overlay.is_deprecated` + `superseded_by` | maintainer renames | "call it NewName; OldName still resolves to the SAME live function" |
+| **Name** deprecation | `kcdx_overlay.is_deprecated` + `superseded_by` (→ another overlay ROW) | maintainer renames | "call it NewName; OldName still resolves to the SAME live function" |
 | **Function** removal | DERIVED from `entity_versions` (latest interval closed, no later open row) | the matcher finds no v2 match | "this function no longer EXISTS in the game" |
 
-The name axis is a column (`overlay`); the removal axis is NOT a column — it falls
+The name axis is rows in `kcdx_overlay` (a `kcdx_id` may have BOTH an OldName row
+— `is_deprecated=1`, `superseded_by`→the new row — and a NewName row, which is why
+`kcdx_id` is a non-unique FK there). The removal axis is NOT a column — it falls
 out of the interval model (§11.2). Both populate only when the matcher runs (a
 single-version baseline has nothing to deprecate/remove).
 
@@ -713,9 +791,9 @@ stable anchors and the matcher's raw signals are preserved:
    are discarded, NOT preserved. Non-code curated rows (`vtable_index`) get a
    curated-only id.
 2. **`entity_versions`** seeded with the v1.5 baseline as OPEN intervals — one per
-   function (`entity_kind=function`, `entity_id=kcdx_id`, hash, `valid_from=1.5`,
-   `valid_through=NULL`), plus curated sites/slots. The `versions` table gets its
-   first row (`1.5.1164953`, ordinal 1).
+   function (`kcdx_id`, hash, rva, length, `valid_from=1`, `valid_through=NULL`),
+   plus curated sites/slots. `game_versions` gets its first row (`1.5.1164953`,
+   ordinal 1); `modules` gets `WHGame.dll`.
 3. **Preserve the matcher's signals** — `call_edges` + `statements.string_ref`
    stay (DEV DB); they are the cross-version fingerprint inputs (§11.6).
 4. The cut/fix pass + the overlay schema + the seed from seed.csv's 139 rows
