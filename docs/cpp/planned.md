@@ -19,11 +19,10 @@ name the way the Lua binder does — is recorded in [cosave.md](cosave.md).
 ## NYI on the C++ side — Lua-first capabilities awaiting their C++ mirror
 
 These are built in Lua and carry a tracked C++ parity debt (full NYI entries in
-their files). The debt is owned by the restructure plan's **Phase 3 — C++ DLL
-API parity** ([`docs/outstanding-work/restructure-plan.md`](../outstanding-work/restructure-plan.md)
-§"Phase 3"), which names every C++ sub-interface to build and sets full Lua↔C++
-parity as the bar; each NYI marker below is discharged when its Phase 3
-interface ships and is verified callable:
+their files). The debt is the planned C++ DLL API parity work, which names every
+C++ sub-interface to build and sets full Lua↔C++ parity as the bar; each NYI
+marker below is discharged when its mirror interface ships and is verified
+callable:
 
 - **The locator-based deferred byte-rewrite mirror** (↔ `kcdx.bytes`) — the raw
   runtime write (`kcdxMemoryInterface::WriteBytes`) is built; the
@@ -60,14 +59,14 @@ by-name resolution overload for self > engine > other precedence — is now
 `ResolveSymbolAs(handle, name)`. No longer NYI; struck from this list.)
 
 (`kcdxHookInterface` (↔ `kcdx.hook`, function interception) is now **BUILT**
-(v1, verified by `cap-36-cpp-hook-interface`) and documented in
-[hook.md](hook.md), with the `Kcdx.h` empowered wrapper on top in
+(v1, verified by the `cap-36-cpp-hook-interface` regression plugin) and documented
+in [hook.md](hook.md), with the `Kcdx.h` empowered wrapper on top in
 [wrapper.md](wrapper.md). No longer NYI; struck from this list.)
 
 ## Genuinely not built on either surface
 
 - **Gameplay domains** (`kcdx.player.*`, `kcdx.world.*`, `kcdx.dialogue.*`,
-  `kcdx.quest.*`, `kcdx.inventory.*`, `kcdx.assets.*`) — roadmap (Phase 9+), not
+  `kcdx.quest.*`, `kcdx.inventory.*`, `kcdx.assets.*`) — roadmap, not
   built on either surface.
 
 This is the C++ mirror of [the Lua planned list](../lua/planned.md).

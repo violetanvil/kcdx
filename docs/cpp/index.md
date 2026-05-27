@@ -120,7 +120,7 @@ spellings noted where they differ:
   and `kcdxBytesInterface` (byte rewrites) surfaces.
 
 - **co-save** — a `.kcdx` sidecar holding per-plugin save data. C++ spelling:
-  `kcdxSerializationInterface` (built, Phase 6). See [cosave.md](cosave.md).
+  `kcdxSerializationInterface` (built). See [cosave.md](cosave.md).
 
 ---
 

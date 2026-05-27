@@ -6,5 +6,5 @@ are **not callable today** — there is no binder for them. Do not write code
 against them.
 
 Gameplay domains (`kcdx.player.*`, `kcdx.world.*`, `kcdx.dialogue.*`,
-`kcdx.quest.*`, `kcdx.inventory.*`, `kcdx.assets.*`) are roadmap items (Phase 9+)
+`kcdx.quest.*`, `kcdx.inventory.*`, `kcdx.assets.*`) are roadmap items
 and are not built.

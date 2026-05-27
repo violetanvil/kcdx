@@ -79,7 +79,7 @@ This per-plugin `[load_order]` table (in the plugin's own `kcdx.toml`) is
 DISTINCT from the engine-wide override file `kcdx-engine/load_order.toml`
 described below, whose top-level `[[plugin]]` rows a separate parser reads.
 (The legacy `[plugin].default_position` / `[plugin].default_priority` keys were
-renamed into this table in the Phase-7 zone-rework subset.)
+renamed into this table in the zone rework.)
 
 ## User overrides — `kcdx-engine/load_order.toml`
 
@@ -135,13 +135,13 @@ hints next launch.
 ## Capability gating
 
 Each plugin's declared entries (its `kcdx.*` Lua calls / `kcdx*Interface`
-C++ methods — behavior ships in CODE, not TOML, since Phase 5) determine
+C++ methods — behavior ships in CODE, not TOML) determine
 which zone it CAN sit in:
 
 | Surface              | `before_game`-capable in principle? | Why |
 |----------------------|-------------------------------------|-----|
 | `kcdx.bytes`         | Yes (mechanism is loader-safe)      | Pure VirtualProtect + memcpy; loader-safe under LDR notification. ⚠️ But see §"before_game is STUBBED" below — no registry-apply path is wired for before_game yet. |
-| `kcdx.hook`          | No                                  | MinHook init runs in the worker thread; the detour chain needs WHGame.dll's `.text` proximity. (before_game hooks are Phase-11 work.) |
+| `kcdx.hook`          | No                                  | MinHook init runs in the worker thread; the detour chain needs WHGame.dll's `.text` proximity. (before_game hooks are deferred work.) |
 | `kcdx.hook mode=mid` | No                                  | MinHook + JIT (+ a Lua callback, which needs the VM). |
 | `kcdx.code`          | No                                  | JIT branch-pool / trampoline alloc needs ±2 GB of WHGame.dll's `.text`. |
 | `kcdx.command`       | No (registered by the plugin)       | Needs `gEnv->pConsole`. |
@@ -168,7 +168,7 @@ the UI rejects the move and shows the engine-derived reason.
 ## Lifecycle
 
 1. **`config::LoadAllConfigs`** walks discovery roots, parses every
-   `kcdx.toml` (identity + metadata only — Phase 5+), and loads each
+   `kcdx.toml` (identity + metadata only — behavior ships in plugin code), and loads each
    plugin's behavior code (`plugin.lua` / DLL). The plugin's `kcdx.*`
    Lua calls / `kcdx*Interface` C++ methods queue intent into the apply
    registry (`lua_registry`), each entry stamped with its plugin's name.
@@ -191,15 +191,15 @@ the UI rejects the move and shows the engine-derived reason.
      but ⚠️ **that invocation is NOT BUILT yet** (see §"before_game is
      STUBBED" below). The only before_game machinery that runs today is
      `ldr_notify`, which iterates the legacy `patch::g_patches` vector —
-     permanently EMPTY since Phase 5 — so before_game application
-     currently applies NOTHING.
+     permanently EMPTY since the legacy byte-patch parser was removed — so
+     before_game application currently applies NOTHING.
 
 `after_game` is unconditionally honored — no env var, no feature flag.
 The load order says when; the engine obeys. before_game timing is
 designed (the load order can declare it) but not yet wired to an apply
-path — deferred to Phase 11.
+path — deferred.
 
-## ⚠️ before_game is STUBBED — not yet wired (Phase 11)
+## ⚠️ before_game is STUBBED — not yet wired
 
 **A plugin CAN declare `zone = "before_game"`, but its entries do NOT
 apply yet.** There is no live before_game registry-apply path in kcdx
@@ -209,18 +209,18 @@ today:
   is no `ApplyZone(BeforeGame)` call site.
 - `ldr_notify`'s before_game applicator (`ApplyEntriesForModule` /
   `ApplyAlreadyLoaded`) iterates only `patch::g_patches`, which has had no
-  populator since the legacy `[[patch]]` parser was deleted in Phase 5 —
+  populator since the legacy `[[patch]]` parser was removed —
   so it is permanently empty and applies nothing.
 - The `kcdx-engine/builtin/bugsplat-filename-fix` builtin (`zone =
   before_game`) is a **MANIFEST-ONLY STUB**: it declares the zone but
   ships NO behavior (no entrypoints, no Lua, no patch) and is
-  ship-disabled (`enabled = false`). It is a placeholder Phase 11
-  rewrites in place.
+  ship-disabled (`enabled = false`). It is a placeholder a later rewrite
+  lands in place.
 - The ONLY before_game thing actually running is
   `bugsplat_ctor_probe::ArmLdrInstall` — a dev-probe HARDCODED in
   `dllmain.cpp` (`RunBeforeGameZoneInDllMain`), NOT a load-order entry.
 
-before_game application is **aspirational / deferred to Phase 11** —
+before_game application is **aspirational / deferred** —
 the full spec covers the LDR-notification install path, the foreign-module/
 export locator, and the bugsplat consumer.
 A `zone = "before_game"` declaration is honored by the load-order

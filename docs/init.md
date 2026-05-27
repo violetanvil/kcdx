@@ -2,7 +2,7 @@
 
 The authoritative contract for how kcdx boots: what initializes, in what order,
 in which execution context, and how load-order application is driven. The
-**mandate** (2026-05-26): startup is a DECLARED phase order — every subsystem is
+**mandate**: startup is a DECLARED phase order — every subsystem is
 spun up before the phase that needs it, application happens in one
 load-order-driven flow, and adding a subsystem at the wrong phase FAILS LOUD.
 No emergent "statement-order + comments" sequencing.
@@ -11,11 +11,11 @@ This doc has two parts: the **target phase model** (the contract the code
 implements) and the **as-is sequence** (today's boot, until the refactor lands).
 This doc is the forward design + the live reference.
 
-> STATUS (2026-05-26): the phase model below is DESIGNED + APPROVED (all-Option-A).
+> STATUS: the phase model below is DESIGNED + APPROVED.
 > IMPLEMENTED so far: the `InitPhase` enum + `g_phase` + `KCDX_REQUIRE_PHASE`
-> asserts (migration step 1, the pure refactor) and the early version-detection
-> promotion (migration step 2 — this doc's §Migration plan). REMAINING: the one
-> apply-driver unification (step 3), PROBE U.6, the absorb. The §"As-is" section
+> asserts (the pure refactor) and the early version-detection
+> promotion (this doc's §Migration plan). REMAINING: the one
+> apply-driver unification, and the absorb. The §"As-is" section
 > describes the older statement-order boot and is being superseded as the
 > migration lands. Each landed step is confirmed by a boot (suite passes, no
 > regression).
@@ -61,7 +61,7 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
                                            today only LDR notifications + the
                                            hardcoded bugsplat_ctor_probe dev-probe
                                            run here. before_game APPLY is deferred
-                                           to Phase 11 (see §As-is).
+                                           (see §As-is).
 ─── (DllMain returns; WorkerThread already spawned) ───
 3  WorkerInit                         B    log::Init, exception filter, watchdog
 4  GameDllMapped                      B    WaitForGameDll returned; WHGame.dll mapped
@@ -79,7 +79,8 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
 6  EngineHooksInstalled               B    hooks::Install (lua_pcall + update);
                                            MinHook live
 7  ModLoaderTakeoverArmed             B    [absorb] the C_ModManager SELECT detour
-                                           installed — PLACEMENT U.6-GATED (see below)
+                                           installed — placement confirmed against
+                                           the running binary (see below)
 8  EngineSubsystemsInit               B    save_load_hooks, serialization (after
                                            save_load), Kind handlers (before plugins)
 9  PluginsLoaded                      B    DiscoverAndLoad; Plugin_Preload/Load fired
@@ -127,21 +128,22 @@ the zone split doesn't exist.
 > `ApplyZone(BeforeGame)` call site** — the before_game-slice invocation at
 > phase 2 (ctx A) is unbuilt. The only before_game machinery running today is
 > (1) `ldr_notify`, which iterates the legacy `patch::g_patches` vector that has
-> had NO populator since Phase 5 (so it applies NOTHING), and (2) the
+> had no populator since the legacy byte-patch parser was removed (so it applies
+> NOTHING), and (2) the
 > HARDCODED `bugsplat_ctor_probe::ArmLdrInstall` dev-probe wired directly into
 > `dllmain.cpp`'s `RunBeforeGameZoneInDllMain` — not a load-order entry, not
 > driven by the apply-driver. **before_game application applies nothing through
-> the registry today; it is deferred to Phase 11.**
+> the registry today; it is deferred.**
 > The `kcdx-engine/builtin/bugsplat-filename-fix` builtin (zone=before_game) is a
 > MANIFEST-ONLY STUB: it declares the zone but ships no behavior and is
-> ship-disabled (`enabled = false`) until Phase 11 rewrites it in place.
+> ship-disabled (`enabled = false`) until a later rewrite lands it in place.
 
 ## The mod-loader absorb (asset overlays) in the model
 
 The kcdx "absorb the KCD2 mod loader" feature (the absorb design, see
 [`mod-loader-absorb.md`](mod-loader-absorb.md)) slots in as:
-- **Phase 7 `ModLoaderTakeoverArmed`** — the SELECT-phase detour
-  (`wh::C_ModManager` SELECT orchestrator) is kcdx INFRASTRUCTURE (like
+- **phase 7 `ModLoaderTakeoverArmed`** — the SELECT-phase detour
+  (`wh::C_ModManager` SELECT driver) is kcdx INFRASTRUCTURE (like
   `hooks::Install`), NOT a load-order entry. It is armed before
   `CSystem::Init` runs the native SELECT, and the production takeover
   (`mod_absorb::InstallSelectDetour`) rebuilds the enabled-mod list when the
@@ -166,8 +168,8 @@ asserts. Summary of where the code is now:
   ArmLdrInstall` dev-probe — but it does NOT apply any before_game registry
   slice (there is no `ApplyZone(BeforeGame)` call). The before_game apply path
   is STUBBED: `ldr_notify` walks the empty `patch::g_patches` (no populator
-  since Phase 5) and applies nothing; before_game registry-apply is deferred to
-  Phase 11.
+  since the legacy byte-patch parser was removed) and applies nothing;
+  before_game registry-apply is deferred.
 - `dllmain.cpp` `WorkerThread()` = ctx B (phases 4–9, un-enumerated; the FOpen
   probe sits after DiscoverAndLoad because it needs the game version — a
   dependency currently encoded only as placement + a comment).
@@ -201,7 +203,8 @@ hard one-shot constraint the current model can't express.
    apply still fire from separate sites; collapsing them into one resolved-list-
    driven apply-driver (per §"The ONE apply-in-load-order flow") is the remaining
    gap-fix and a later step.
-4. **THEN PROBE U.6** — re-slotted into the new model, resolves phase 7's context.
+4. **THEN the phase-7 context resolution** — re-slotted into the new model,
+   resolving phase 7's context (live-confirmed against the running binary).
 5. **THEN the absorb feature** — builds on the verified phase model; the loader
    is an own-launcher with an A/B early/late context split, and its earlier "no
    `mods/` folder" stance is superseded (kcdx owns the loader).
@@ -216,4 +219,4 @@ behavior. Never both in one step on load-bearing working boot code.
   context split, which the phase context-pinning encodes (its earlier "no
   `mods/` folder" stance is superseded by the absorb).
 - The approved absorb design — see [`mod-loader-absorb.md`](mod-loader-absorb.md) —
-  plus PROBE U.6, which the phase-7 placement waits on.
+  whose phase-7 placement is live-confirmed against the running binary.

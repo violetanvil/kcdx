@@ -4,7 +4,7 @@
 Persist your plugin's state across saves — a counter, a settings blob, a set of
 flags — written when the player saves and read back when they load, tied to the
 specific save file (a `.kcdx` co-save next to the game's `.whs`). **Built**
-(Phase 6, Version 2) — `kcdxSerializationInterface` in
+(Version 2) — `kcdxSerializationInterface` in
 [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h). Fetch via
 `QueryInterface(kcdxInterface_Serialization, kcdxSerializationInterface_Version)`.
 
@@ -64,7 +64,7 @@ logs, naming both tags + your plugin) if two *different* string tags collide to
 the same hash within one save — a silent data-merge hazard the engine refuses
 rather than merges.
 
-> **Parity note (tracked debt — `docs-discipline.md` §3).** The Lua binder
+> **Parity note (tracked debt).** The Lua binder
 > auto-derives the co-save section UID from the plugin's *name*: the common Lua
 > path calls **no** `set_uid`, and the engine carries the identity from the name.
 > The C++ surface does **not** do this yet — a C++ author must call `SetUniqueID`

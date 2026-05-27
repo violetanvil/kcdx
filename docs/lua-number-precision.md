@@ -22,7 +22,7 @@ beyond 2^24 lose precision and pointers must be pushed as light userdata.
 
 ## How we pinned it
 
-In Phase 5c.7d we shipped `kcdx.lua.cfunction_address(fn)`, which
+We shipped `kcdx.lua.cfunction_address(fn)`, which
 returns the address of the C function backing a registered Lua
 callable. The intent: combine it with `kcdx.memory.dynamic_hook`
 so pak Lua can detour any registered C function.
@@ -36,8 +36,7 @@ moved — the `LuaDispatchShim`'s cfunction address (e.g.
 saw `0x7FFD46800000`. Same low 20 bits zeroed, every time.
 
 We built `kcdx.lua._probe_numbers()` to characterize the round-trip
-across magnitude tiers. Dev-mode session 2026-05-19 12:26:44
-captured:
+across magnitude tiers. A dev-mode session captured:
 
 ```
 LUA.NUMBER_PROBE/sizes
