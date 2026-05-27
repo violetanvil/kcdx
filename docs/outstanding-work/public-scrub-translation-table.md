@@ -78,6 +78,27 @@ Replace the `[text](.claude/rules/x.md)` with a self-contained restatement. The
 | `CLAUDE.md` (prose mention) | "the project's contributor guide" or drop, per context |
 | third-party-ghidra/ path | "the project's Ghidra analysis" (no path) |
 
+## Tier 4 — internal dev-process vocabulary → strip the scheme, keep the fact
+
+Beyond private paths and AP-numbers, the internal development-process naming
+schemes are themselves AI-build traces. A public reader must not see that the
+project was built in named phases with lettered probes. Strip the scheme token;
+restate the technical fact it annotated.
+
+| Token family | What it is | Public rewrite |
+|--------------|-----------|----------------|
+| `PROBE <X>` / `PROBE U.6` / `PROBE A` | the RE probe-naming scheme | drop the label; keep the finding — "live-confirmed against the binary", "verified by a runtime probe", or just state the fact. `(PROBE S/T, answered <date>)` → drop entirely. |
+| `Phase <N>` / `Phase 5c.7b` / `sub-N` | the internal dev-phase scheme | drop the phase/sub reference; restate as plain present/past tense. "removed in Phase 5" → "removed (behavior ships in plugin code)". "Phase 2b sub-4: execute each…" → "execute each…". "LIVE-PENDING (Phase 2b sub-9)" → "LIVE-PENDING" or drop. |
+| `FIX A` / `FIX B` / `FIX C` | the internal fix-naming scheme | drop the label; name the fix by what it does. |
+| bare provenance dates (`2026-05-26`, `2026-05-22 boots`) | when/how-built timestamps | drop the date; keep "verified against the binary" / "live-confirmed". A date that is genuine product/version metadata (a game version, a changelog) stays. |
+| `LIVE-PENDING` / `LIVE-CONFIRMED` | internal test-status shorthand | keep if it reads as plain status; otherwise "pending live verification" / "verified live". |
+| commit SHAs as provenance (`kcdx@03e6bd0`, `commit 928fa61`) | internal build pointers | drop the SHA; keep the fact. |
+
+Engine-vs-dev disambiguation: the GAME's own internal sequence ("the engine's
+mod-load Phase 1/Phase 2") is a real technical noun — reword to "Stage 1/Stage 2"
+(preserves meaning, clears the `Phase` token) rather than dropping it. Only the
+DEV phases ("Phase 5c.7b", "sub-9") are the build-trace to strip.
+
 ## Out of scope for the table (handled per-site, flagged for the batch reviewer)
 
 - `data/address-library/seed.csv` — the `notes` column has dense provenance

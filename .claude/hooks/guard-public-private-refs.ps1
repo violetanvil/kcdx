@@ -74,6 +74,10 @@ try {
         'subagent / orchestrator'   = '(?i)\b(subagent|orchestrator)\b'
         'AP-rule citation'          = '\bAP\d{1,2}\b'
         'skill invocation'          = '(?<![A-Za-z0-9_])/(execute|feature|debug|commit|code-review|verification-checkpoint|research-disassembly|governance-architect|senior-architect-(consult|reply)|step-review|architect-review)\b'
+        'PROBE-naming scheme'       = '\bPROBE [A-Z](\.\d+)*\b'
+        'dev-phase scheme'          = '\bPhase \d+[a-z]?(\.\d+)*\b'
+        'dev-subphase scheme'       = '\bsub-\d+[a-z]?\b'
+        'FIX-naming scheme'         = '\bFIX [A-Z]\b'
     }
 
     $hits = New-Object System.Collections.Generic.List[string]

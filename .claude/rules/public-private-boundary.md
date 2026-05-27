@@ -58,6 +58,12 @@ this list.)
 2. **AI-development vocabulary** — `Claude`, `Anthropic`, `subagent`,
    `orchestrator`, a bare `AP<n>` used as a rule citation (e.g. "AP12"), or a
    governance skill slash-command (`/execute`, `/feature`, `/code-review`, …).
+3. **Internal dev-process naming schemes** — the RE probe scheme (`PROBE A`,
+   `PROBE U.6`), the dev-phase scheme (`Phase 5c.7b`, `sub-9`), the fix scheme
+   (`FIX A`/`B`/`C`), bare build/provenance dates and commit SHAs. These reveal
+   the project was built by a phased agentic process. Strip the scheme token,
+   keep the technical fact (Tier 4 of the translation table). The GAME's own
+   internal "Phase 1/2" sequence is real engine vocabulary → reword to "Stage".
 
 ## How to fix a finding — state the fact, drop the citation
 
