@@ -34,18 +34,22 @@ private citation.
 A path published by `publish-public.ps1`'s allowlist:
 
 - Dirs: `src/`, `include/`, `vendor/`, `data/`, `examples/`, `kcdx-engine/`,
-  `test-plugins/`, `tools/`, `docs/` — EXCEPT the private carve-outs
-  `docs/outstanding-work/` and `docs/known-issues/` (internal planning + bug
-  trails; they live under `docs/` but are not published).
+  `test-plugins/`, `tools/`, `docs/` — EXCEPT the private carve-outs below.
 - Root files: `README.md`, `LICENSE`, `CMakeLists.txt`, `build.ps1`,
   `package-release.ps1`.
 
+Private carve-outs inside `docs/` (live under a public dir but NOT published):
+`docs/outstanding-work/` + `docs/known-issues/` (internal planning + bug trails),
+and the superseded/internal-planning files `docs/design.md`, `docs/design-gaps.md`,
+`docs/phase5c7b-plan.md`. The user-facing reference is `docs/cpp/` + `docs/lua/`
++ the operational docs (`init.md`, `load-order.md`, `logging.md`, …).
+
 Anything else is private (`.claude/`, `CLAUDE.md`, `_research/`,
-`third-party-ghidra/`, `test-fixtures/`, `.gitignore`, `publish-public.ps1`,
-`docs/outstanding-work/`, `docs/known-issues/`). Private files may reference
-anything — the rule constrains only public files. (Carve-outs must stay in sync
-across `publish-public.ps1` `$PrivateSubpaths`, `guard-public-private-refs.ps1`,
-and this list.)
+`third-party-ghidra/`, `test-fixtures/`, `.gitignore`, `publish-public.ps1`, the
+`docs/` carve-outs above). Private files may reference anything — the rule
+constrains only public files. (Carve-outs must stay in sync across
+`publish-public.ps1` `$PrivateSubpaths`, `guard-public-private-refs.ps1`, and
+this list.)
 
 ## What is a "private reference" (forbidden in public files)
 

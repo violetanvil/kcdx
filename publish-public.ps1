@@ -63,7 +63,13 @@ $PublicDirs = @(
 # planning + bug-trail docs that live under docs/ but are not user-facing.
 $PrivateSubpaths = @(
   'docs/outstanding-work/',
-  'docs/known-issues/'
+  'docs/known-issues/',
+  # Superseded / internal planning docs that sit at docs/ root but are not
+  # user-facing reference (exact-path carve-outs; the StartsWith match below
+  # treats a non-slash-terminated entry as an exact file).
+  'docs/design.md',
+  'docs/design-gaps.md',
+  'docs/phase5c7b-plan.md'
 )
 
 # ALLOWLIST — the ONLY root-level files published. Note: `.gitignore` is
@@ -123,7 +129,10 @@ try {
         $keep = $allowedDirs.Contains($top)
         if ($keep) {
           foreach ($p in $PrivateSubpaths) {
-            if ($f.StartsWith($p)) { $keep = $false; break }
+            # Trailing '/' = directory prefix match; otherwise exact-file match.
+            if ($p.EndsWith('/')) {
+              if ($f.StartsWith($p)) { $keep = $false; break }
+            } elseif ($f -eq $p) { $keep = $false; break }
           }
         }
       }

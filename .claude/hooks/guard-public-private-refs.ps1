@@ -27,12 +27,18 @@ try {
     # Carve-outs: private subpaths inside an otherwise-public dir (internal
     # planning + bug trails under docs/). Keep in sync with publish-public.ps1
     # $PrivateSubpaths.
-    $privateSubpaths = @('docs/outstanding-work/','docs/known-issues/')
+    # Trailing '/' = directory prefix; otherwise an exact-file carve-out.
+    $privateSubpaths = @('docs/outstanding-work/','docs/known-issues/','docs/design.md','docs/design-gaps.md','docs/phase5c7b-plan.md')
 
     $isPublic = $false
     foreach ($d in $publicDirs)  { if ($rel -like "$d*") { $isPublic = $true; break } }
     if (-not $isPublic) { foreach ($f in $publicFiles) { if ($rel -eq $f) { $isPublic = $true; break } } }
-    if ($isPublic) { foreach ($p in $privateSubpaths) { if ($rel -like "$p*") { $isPublic = $false; break } } }
+    if ($isPublic) {
+      foreach ($p in $privateSubpaths) {
+        if ($p.EndsWith('/')) { if ($rel -like "$p*") { $isPublic = $false; break } }
+        elseif ($rel -eq $p) { $isPublic = $false; break }
+      }
+    }
     if (-not $isPublic) { exit 0 }   # private file — may reference anything.
 
     # Post-operation content (Write supplies it; Edit applies the replacement).
