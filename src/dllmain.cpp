@@ -107,9 +107,15 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // Dev-mode-gated + idempotent internally; a no-op in production. (The
     // prior slot-1 by-int-ID getter target was retargeted away after it was
     // proven to be GetLanguageName, the wrong function.)
-    // (Was briefly disabled 2026-05-26 to isolate a parallel feature's save-load
-    // crash investigation; re-enabled now.)
-    kcdx::probes::loc_dump_probe::Install();
+    // DISABLED 2026-05-26 — loc RE/probe phase COMPLETE (find{text=} design
+    // settled; text→gameplay-function proven impossible via the loc path, see
+    // parallel-ghidra-research.md §6 + LOC-MANAGER-FINDINGS.md). The probe hooks
+    // LocalizeString, which fires ~11.6k×/session on the UI-text hot path +
+    // RtlCaptureStackBackTrace per @-key — a real per-frame cost with no
+    // remaining diagnostic purpose. Disarmed. The probe code + cap-43 stay as
+    // the loc-probe regression/evidence base; re-enable only for a fresh loc
+    // launch. Disabling this line installs NO loc hooks → zero runtime cost.
+    // kcdx::probes::loc_dump_probe::Install();
 
     // Phase 6 save/load lifecycle hooks. ABIs from ROUND 3 RECON via
     // _research/phase6-save-load/phase6_abi_walker.py — full-body capstone analysis,
