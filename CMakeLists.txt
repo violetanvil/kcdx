@@ -158,6 +158,8 @@ add_library(kcdx SHARED
     src/mod_absorb/enabled_list_builder.cpp
     src/mod_absorb/select_detour.cpp
     src/mod_absorb/enabled_list_builder_selftest.cpp
+    src/mod_absorb/order_persist.cpp
+    src/mod_absorb/order_persist_selftest.cpp
     src/version_compat.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp

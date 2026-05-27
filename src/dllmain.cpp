@@ -13,6 +13,7 @@
 #include "lua_bind_bytes.h"   // RegisterHandlers() — Kind::Bytes apply handler
 #include "lua_bind_hook.h"    // RegisterHandlers() — Kind::Hook apply handler
 #include "mod_absorb/pak_mod_registry.h"  // pak-mod version gate (step 3)
+#include "mod_absorb/order_persist.h"     // order persistence (step 5)
 #include "paths.h"
 #include "plugin_loader.h"
 #include "save_load_hooks.h"
@@ -145,6 +146,19 @@ DWORD WINAPI WorkerThread(LPVOID) {
                          disabled,
                          kcdx::plugins::g_runtimeGameVersionString.c_str());
     }
+
+    // Order persistence (mod-loader absorb, step 5). The resolved state is now
+    // FINAL: discovery + load_order::Resolve (ctx-A, LoadAllConfigs) folded the
+    // pak mods, and ApplyVersionGate (just above) ran the version gate. Persist
+    // kcdx's resolved order back to BOTH the editable authority and the vanilla
+    // order file — load_order.toml gets an editable row for any newly-discovered
+    // pak mod (existing rows preserved verbatim), and mod_order.txt is kept in
+    // sync with kcdx's resolved pak-mod order. Each writer is WRITE-IF-CHANGED
+    // (a steady-state boot writes nothing) and fails LOUD. Independent of the
+    // SELECT-detour takeover firing — persistence reflects the resolved order,
+    // not the live repoint. ctx-B, after the loader lock — filesystem writes are
+    // fine here. See docs/mod-loader-absorb.md "Step 5".
+    kcdx::mod_absorb::order_persist::PersistResolvedOrder();
 
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");

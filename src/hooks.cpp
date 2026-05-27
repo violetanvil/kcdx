@@ -33,6 +33,7 @@
 #include "mod_absorb/mod_manifest_selftest.h"  // cap-53 engine self-report
 #include "mod_absorb/pak_mod_registry_selftest.h"  // cap-54 engine self-report
 #include "mod_absorb/enabled_list_builder_selftest.h"  // cap-55 engine self-report
+#include "mod_absorb/order_persist_selftest.h"  // cap-56 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
 // installs from kcdx.dll DllMain, not from hooks::Install.
@@ -586,6 +587,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // in kcdx order) is the batched verification checkpoint, not this self-test.
     // One-shot guarded internally.
     kcdx::mod_absorb::RunEnabledListSelfTestOnce();
+
+    // cap-56-order-persist: engine self-report for order persistence
+    // (src/mod_absorb/order_persist.cpp) — STEP 5 of mod-loader-absorb. Same
+    // timing as cap-52/53/54/55: no hook-fire / "ready" dependency — the pure
+    // string serializers (merge, idempotence, mod_order round-trip, merge-
+    // preserve) all work at boot on literals. Touches NO global state (unlike
+    // cap-54/55 there is nothing to snapshot/restore). The live on-disk write +
+    // write-if-changed skip + fail-loud paths are the batched verification
+    // checkpoint, not this self-test. One-shot guarded internally.
+    kcdx::mod_absorb::RunOrderPersistSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

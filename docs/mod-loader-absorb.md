@@ -532,3 +532,55 @@ re-discovers or re-resolves.
 The kcdx plugin behavior layer (its `kcdx.toml` / `plugin.lua` / DLL) runs
 separately through kcdx's own loader — Step 4 adds the native-record synthesis
 on top, it does not change the plugin-load path.
+
+## Step 5 — order persistence (write back to BOTH files)
+
+Step 4 rebuilds the native enabled list in kcdx's resolved order, but that
+order is recomputed from scratch each boot and is not yet visible or editable.
+Step 5 makes it PERSIST + EDITABLE by writing kcdx's resolved order back to the
+two files that describe it (`src/mod_absorb/order_persist.{h,cpp}`).
+
+**`load_order.toml` — the kcdx-owned editable authority.** kcdx ADDS a
+`[[plugin]]` row for any newly-discovered pak mod, keyed `mods.<modid>`, so the
+user can see and edit it. The human mod name (from the mod's `mod.manifest`
+`<name>`) is surfaced as a **trailing `#` comment** on the row — not a
+`display_name` field — because the `load_order.toml` reader rejects any unknown
+key (its recognized keys are `name` / `zone` / `priority` / `enabled`), so a
+field the reader does not know would make the file fail its own parse; a comment
+is the reader-tolerated way to carry the human name.
+
+The write is a **merge that preserves user edits**, never a
+regenerate-from-scratch. Every existing row — plugin AND pak-mod, including any
+the user hand-edited, and rows for a mod the user has temporarily removed from
+disk — is preserved verbatim. kcdx is **add-only**: it adds a row for a mod that
+has none yet, and it never overwrites an existing row's `zone` / `priority` /
+`enabled`. Those values ARE the user's authority — kcdx owns the order, but the
+user's `load_order.toml` edits win.
+
+**`mod_order.txt` — the vanilla order file, kept in sync.** kcdx writes the
+resolved pak-mod order (every registered pak mod, in kcdx's resolved order, one
+bare mod id per line, under a `# managed by kcdx` header) so the vanilla file
+and a future reorder UI stay in sync. This is the order SEED, not the enable
+list — enable/disable lives in `load_order.toml` — so a disabled mod keeps its
+position here.
+
+**Write-if-changed (idempotent).** Each writer serializes the merged/resolved
+result, compares it to the bytes already on disk, and writes ONLY if they
+differ. A steady-state boot — no new mod, no override change, no reorder —
+writes nothing, so there is no timestamp churn and no fighting a manual edit.
+Writing, re-reading, then writing again yields byte-identical output. The
+serialization is hand-written rather than a full TOML round-trip, which both
+preserves the file's leading guidance block and the per-row human-name comments
+(a round-trip drops comments) and gives the byte-exact stability the idempotence
+guarantee needs.
+
+**Fail loud.** A write that FAILS (the file is unwritable, the path is missing)
+logs an error naming the file and that the order was NOT persisted — so the user
+knows their reorder will not survive the next boot. A write that is SKIPPED
+because nothing changed logs at debug level, so even the skip is visible rather
+than a silent no-op.
+
+The persist runs at boot, after `load_order::Resolve` and the pak-mod version
+gate have produced the final resolved state — and independent of whether the
+SELECT-detour takeover fires, since persistence reflects the resolved order, not
+the live repoint.
