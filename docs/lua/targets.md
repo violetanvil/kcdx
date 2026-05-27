@@ -6,8 +6,9 @@ hand-written ABI at the call site. When the engine does not already name the
 function you need, you declare your own **named target** in a `targets.toml`
 sidecar next to your `kcdx.toml`. Thereafter `kcdx.hook{ target = "<name>" }`
 and `kcdx.bytes{ target = "<name>" }` resolve it like any engine name — and so
-can **any other plugin**, by name, without ever touching the hex (the
-disassembler-test share guarantee, `cornerstones.md` §36).
+can **any other plugin**, by name, without ever touching the hex. One expert
+names a site once; every other author consumes it by name without re-deriving
+the hex.
 
 ## The common path
 
@@ -53,8 +54,9 @@ in your own declarations. The bare name is what you write in your own
 `kcdx.hook`/`kcdx.bytes`; the prefixed form is how *other* plugins refer to
 it. The reserved `kcdx` author is the engine's own namespace — engine seed
 names live at the 1-dot `<kcdx>.<seedname>` form (the engine has no plugin
-component); `[plugin].author = "kcdx"` is rejected for user plugins. Full
-model: [`naming-namespaces.md`](../../.claude/rules/naming-namespaces.md).
+component); `[plugin].author = "kcdx"` is rejected for user plugins. The full
+model: shared names are `<author>.<plugin>`-prefixed, precedence is
+self > engine > other, and the canonical separator is a dot.
 
 ## Locators
 
@@ -103,8 +105,7 @@ unambiguous.
   bad row; the other rows in the file still load.
 - An invalid `[plugin].author` or `[plugin].name` (wrong charset, length, or
   `[plugin].author = "kcdx"` — the reserved engine root) makes the whole plugin
-  a hard rejection — a bad prefix would corrupt every name it exports
-  (`naming-namespaces.md`).
+  a hard rejection — a bad prefix would corrupt every name it exports.
 - A name that does not resolve at hook/byte time (unknown name, wrong game
   build, unverified row, typo) surfaces at the hook/byte call: a synchronous
   `(nil, err)` from the binder, or `:applied() == false` with a `:reason()` for

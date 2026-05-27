@@ -9,10 +9,10 @@ attributed result the author branches on.
 **Not yet implemented (NYI).** There is no scan interface in
 [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h) today — do not
 link against it. `kcdxScanInterface` is the **planned** mirror name; it is
-tracked parity debt (`.claude/rules/docs-discipline.md` criterion 3), discharged
-when the restructure plan's C++ parity phase ships it and it is verified
-callable. This entry maps the planned shape so both surfaces describe the
-capability while the engine catches up.
+tracked parity debt — both docs map a capability even when only one is built,
+discharged when the C++ parity phase ships it and it is verified callable. This
+entry maps the planned shape so both surfaces describe the capability while the
+engine catches up.
 
 Like Lua's `kcdx.scan`, the expert hand-written `pattern` is the **labelled
 expert AOB hatch** here too, by design — not the common path. The everyday way

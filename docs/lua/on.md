@@ -3,8 +3,7 @@
 
 Subscribe to a lifecycle event or a custom cross-plugin event.
 
-Custom-event names use the canonical dot per
-[`.claude/rules/naming-namespaces.md`](../../.claude/rules/naming-namespaces.md):
+Custom-event names use the canonical dot separator:
 `<author>.<plugin>.<event>`. The legacy `<publisher>:<event>` colon form
 is rejected with a teaching error pointing at the dot form.
 

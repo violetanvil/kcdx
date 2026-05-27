@@ -6,12 +6,10 @@ WHICH mods load and in what ORDER — and kcdx plugins work dropped in EITHER
 `kcdx-plugins/` or the vanilla `mods/` directory.
 
 This file is the tracked home for the reverse-engineering provenance and the
-settled design. (It supersedes the working dossier formerly at
-`_research/phase8.5-pak-resolver/FINDINGS.md`, which is now local-only /
-gitignored. The function RVAs live as append-only Address Library rows
+settled design. The function RVAs live as append-only Address Library rows
 3100–3104 in `data/address-library/seed.csv` + `src/address_library.cpp`; this
 doc holds the record layout + the design + the live-probe evidence those rows
-cite.)
+cite.
 
 ---
 
@@ -34,7 +32,7 @@ sweep.
 
 | Address Library | RVA | What |
 |---|---|---|
-| `ModManager_Select` (3100) | 0x00DA104C | Phase-1 SELECT orchestrator — **the absorb hook target** |
+| `ModManager_Select` (3100) | 0x00DA104C | Phase-1 SELECT driver — **the absorb hook target** |
 | `ModManager_ctor` (3101) | 0x00DA0EB0 | 3-arg ctor; stores mgr at CSystem+0x2B30, calls SELECT |
 | `ModManager_Mount` (3102) | 0x004D9058 | Phase-2 MOUNT driver; OpenPacks lambda over enabled list |
 | `ModManager_ReadModOrder` (3103) | 0x00DA1294 | mod_order.txt reader; file line order == enabled order == mount order |
@@ -330,7 +328,8 @@ ONE order. A vanilla mod gets a synthesized `mods.<modid>`-style row.
 **Order persistence = write back to BOTH files.** The resolved order is written
 to `load_order.toml` (a synthesized `mods.<modid>` row per vanilla mod) AND back
 to `mod_order.txt` (so the vanilla file + a future UI reorder stay in sync). A
-write that no-ops on a degenerate input announces it (AP14).
+write that no-ops on a degenerate input announces it — failing loud with a
+structured signal rather than silently doing nothing.
 
 **Classification = marker-file, both dirs scanned.** A dir is a kcdx PLUGIN if
 it has `kcdx.toml`; a VANILLA mod if it has `mod.manifest`; both → kcdx plugin
@@ -344,7 +343,7 @@ kcdx OWNS the loader, so there is no collision. kcdx discovers from both
 
 ---
 
-## Build plan (the `/feature` steps)
+## Build plan (the feature steps)
 
 1. **PROBE U.7 — synthesis viability.** Inject ONE cloned/synthesized I_Mod
    record into the enabled list, let native MOUNT run. Outcome map: paks mount
@@ -359,8 +358,8 @@ kcdx OWNS the loader, so there is no collision. kcdx discovers from both
    re-sort the enabled list by the unified key.
 5. **Order persistence** — write back to `load_order.toml` + `mod_order.txt`.
 6. **Test plugin(s) + docs** — `cap-NN-mod-absorb`, `comp-NN-plugin-in-mods`,
-   `loader-architecture.md` rewrite, `docs/design.md` absorb section,
-   `docs/load-order.md` vanilla-row model.
+   the loader-architecture doc rewrite, the absorb design section, and
+   [`docs/load-order.md`](load-order.md)'s vanilla-row model.
 
 ---
 

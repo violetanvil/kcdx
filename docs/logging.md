@@ -2,9 +2,8 @@
 
 This doc covers the kcdx logging system end-to-end: what gets logged
 where, who configures it, and how to call it from engine code or a
-plugin. It's the canonical reference. If `kcdx/CLAUDE.md` or
-`docs/dev-mode.md` disagree with this file, this file wins and they
-should be updated.
+plugin. It's the canonical reference. If any other doc disagrees with
+this file, this file wins and the other should be updated.
 
 ## The promise
 
@@ -447,9 +446,9 @@ Three possible sources, in priority order:
    written by Windows Error Reporting when the crash bypasses SEH
    (heap-corruption fast-fails, kernel-level kills). Full-memory
    dump (~100MB).
-3. **`%LOCALAPPDATA%/Temp/`** — best-effort BugSplat fallback. See
-   [`known-issues/BugSplat dmp files don't reach disk for AV crashes.md`](known-issues/BugSplat%20dmp%20files%20don't%20reach%20disk%20for%20AV%20crashes.md)
-   for why this is unreliable.
+3. **`%LOCALAPPDATA%/Temp/`** — best-effort BugSplat fallback. BugSplat dmp
+   files don't reliably reach disk for access-violation crashes, so this path
+   is unreliable.
 
 All three paths are scanned. If multiple are present they're all
 bundled.

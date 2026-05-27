@@ -17,7 +17,8 @@ Lua stack as a number.** Use `kcdx.memory.pointer` userdata or
 `lua_pushlightuserdata`. If you have to expose an integer-returning
 helper, document the precision limit in the binding's docstring.
 
-This is hard rule #17 in [`CLAUDE.md`](../CLAUDE.md).
+This is a hard rule for every kcdx binding: `LUA_NUMBER` is float, so integers
+beyond 2^24 lose precision and pointers must be pushed as light userdata.
 
 ## How we pinned it
 

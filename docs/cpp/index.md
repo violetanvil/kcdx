@@ -8,14 +8,15 @@ files, it does not exist yet (see [planned.md](planned.md) and the NYI-marked
 entries).
 
 This is the C++ mirror of [`docs/lua/`](../lua/index.md). The two surfaces are
-ONE model in two languages (`.claude/rules/lua-api-surface.md`): the concepts,
-names, and structure match; only the spelling is idiomatic to each language.
-The shipped end-state is full feature parity. Where the engine has built one
-surface ahead of the other, the lagging side carries a **not-yet-implemented
-(NYI)** entry that maps the planned mirror shape — tracked parity debt, not a
-permanent single-surface capability (`.claude/rules/docs-discipline.md`
-criterion 3). C++-specific facts that exist only because the language provides
-them natively are marked **single-surface** with their reason.
+ONE model in two languages: the authoring surface is one learnable model in two
+languages (Lua + C++), with mirrored `kcdx.*` naming and call-shape — the
+concepts, names, and structure match; only the spelling is idiomatic to each
+language. The shipped end-state is full feature parity. Where the engine has
+built one surface ahead of the other, the lagging side carries a
+**not-yet-implemented (NYI)** entry that maps the planned mirror shape — tracked
+parity debt, not a permanent single-surface capability. C++-specific facts that
+exist only because the language provides them natively are marked
+**single-surface** with their reason.
 
 These files are a reference, not a tutorial. Each entry states the call shape
 (the real C++ signature for a built interface), the arguments (type + meaning),
@@ -142,7 +143,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxConsoleInterface::RegisterCommand`/`GetArg*` (console command) | Built | `kcdx.command` | [command.md](command.md) |
 | `kcdxMessagingInterface::Dispatch` (custom event broadcast) | Built | `kcdx.publish` | [publish.md](publish.md) |
 | `kcdxTrampolineInterface` (code allocation) — `Allocate` (all-in-one alloc+fill+pad+export) + `Export` (standalone publish) + the raw `AllocateFromBranchPool`/`LocalPool` floor (v2) | Built | `kcdx.code` | [code.md](code.md) |
-| `kcdxInterface::GetConflictReport` (enumerate patch / hook / kcdx.hook entries at a target — winners + rejected losers) | Built | `kcdx.conflict` (**NYI** — owed Lua mirror, see `docs/outstanding-work/lua-conflict-report-mirror.md`) | [hook.md](hook.md#conflict-report) |
+| `kcdxInterface::GetConflictReport` (enumerate patch / hook / kcdx.hook entries at a target — winners + rejected losers) | Built | `kcdx.conflict` (**NYI** — owed Lua mirror) | [hook.md](hook.md#conflict-report) |
 | `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
 | `kcdxTargetInterface::RegisterTarget` (author-declared named targets) | **NYI** | author-declared targets (`targets.toml`) | [targets.md](targets.md) |
 | `kcdxTargetInterface::RegisterAlias` (short local name handle) | **NYI** | `kcdx.alias` | [alias.md](alias.md) |

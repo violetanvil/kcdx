@@ -18,8 +18,8 @@ The list naturally has two zones:
 ```
 
 Each row is identified by the qualified `<author>.<plugin>` form the engine
-derives from the plugin's manifest (`[plugin].author` + `[plugin].name`); see
-[`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).
+derives from the plugin's manifest (`[plugin].author` + `[plugin].name`) — the
+same `<author>.<plugin>`-prefixed model every shared-namespace surface uses.
 
 This mirrors the SKSE / MO2 / Vortex model. Plugins are rows; the
 sentinel is an immovable divider; users drag freely within their
@@ -92,7 +92,7 @@ listed inherit author defaults.
 
 [[plugin]]
 # Identify the plugin by its qualified <author>.<plugin> form, mirroring how
-# every other shared-namespace surface names a plugin (naming-namespaces.md).
+# every other shared-namespace surface names a plugin.
 name      = "kcdx_builtin.bugsplat_filename_fix"
 zone      = "before_game"   # one of: before_game, after_game
 priority  = 30               # 0..100; lower applies earlier
@@ -141,7 +141,7 @@ which zone it CAN sit in:
 | Surface              | `before_game`-capable in principle? | Why |
 |----------------------|-------------------------------------|-----|
 | `kcdx.bytes`         | Yes (mechanism is loader-safe)      | Pure VirtualProtect + memcpy; loader-safe under LDR notification. ⚠️ But see §"before_game is STUBBED" below — no registry-apply path is wired for before_game yet. |
-| `kcdx.hook`          | No                                  | MinHook init runs in the worker thread; the detour chain needs WHGame.dll's `.text` proximity. (before_game hooks are Phase-11 work — `outstanding-work/before-game-hooks.md`.) |
+| `kcdx.hook`          | No                                  | MinHook init runs in the worker thread; the detour chain needs WHGame.dll's `.text` proximity. (before_game hooks are Phase-11 work.) |
 | `kcdx.hook mode=mid` | No                                  | MinHook + JIT (+ a Lua callback, which needs the VM). |
 | `kcdx.code`          | No                                  | JIT branch-pool / trampoline alloc needs ±2 GB of WHGame.dll's `.text`. |
 | `kcdx.command`       | No (registered by the plugin)       | Needs `gEnv->pConsole`. |
@@ -221,9 +221,8 @@ today:
   `dllmain.cpp` (`RunBeforeGameZoneInDllMain`), NOT a load-order entry.
 
 before_game application is **aspirational / deferred to Phase 11** —
-the full spec (the LDR-notification install path, the foreign-module/
-export locator, the bugsplat consumer) is
-[`outstanding-work/before-game-hooks.md`](outstanding-work/before-game-hooks.md).
+the full spec covers the LDR-notification install path, the foreign-module/
+export locator, and the bugsplat consumer.
 A `zone = "before_game"` declaration is honored by the load-order
 resolver (the row sorts to the before_game side) but does not yet reach
 an apply.
@@ -258,8 +257,8 @@ reason:
 - Load order decides hook coexistence, not load-time rejection. Multiple
   compatible `kcdx.hook` callbacks on one target coexist in a single
   load-order-ordered chain (`hook_chain`); only genuinely incompatible
-  hooks at one site reject the later-in-load-order one (see
-  `.claude/rules/hook-engine.md` §"`kcdx.hook` chaining"). Load order
+  hooks at one site reject the later-in-load-order one. `kcdx.hook`
+  conflicts resolve by load order through the chain engine: load order
   decides who is first in the chain and who wins an incompatibility.
 - It does not validate that two `kcdx.bytes` patches in different
   plugins don't overlap up front. That's the conflict engine's job; load

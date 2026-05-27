@@ -9,18 +9,16 @@ No emergent "statement-order + comments" sequencing.
 
 This doc has two parts: the **target phase model** (the contract the code
 implements) and the **as-is sequence** (today's boot, until the refactor lands).
-The as-is audit + gaps live in
-[`known-issues/init-sequencing-audit.md`](known-issues/init-sequencing-audit.md);
-this doc is the forward design + the live reference.
+This doc is the forward design + the live reference.
 
-> STATUS (2026-05-26): the phase model below is DESIGNED + APPROVED (via
-> /senior-architect-consult, all-Option-A). IMPLEMENTED so far: the `InitPhase`
-> enum + `g_phase` + `KCDX_REQUIRE_PHASE` asserts (migration step 1, the pure
-> refactor) and the early version-detection promotion (migration step 2 — this
-> doc's §Migration plan). REMAINING: the one apply-driver unification (step 3),
-> PROBE U.6, the absorb. The §"As-is" section describes the older statement-order
-> boot and is being superseded as the migration lands. Each landed step is
-> confirmed by its `/verification-checkpoint` boot (suite passes, no regression).
+> STATUS (2026-05-26): the phase model below is DESIGNED + APPROVED (all-Option-A).
+> IMPLEMENTED so far: the `InitPhase` enum + `g_phase` + `KCDX_REQUIRE_PHASE`
+> asserts (migration step 1, the pure refactor) and the early version-detection
+> promotion (migration step 2 — this doc's §Migration plan). REMAINING: the one
+> apply-driver unification (step 3), PROBE U.6, the absorb. The §"As-is" section
+> describes the older statement-order boot and is being superseded as the
+> migration lands. Each landed step is confirmed by a boot (suite passes, no
+> regression).
 
 ## The three execution contexts (hard physical constraints, not choices)
 
@@ -30,7 +28,7 @@ exactly ONE context, and the context's safety class is a PROPERTY of the phase
 
 | Ctx | Thread / when | Capability + safety class |
 |---|---|---|
-| **A** | `DllMain(DLL_PROCESS_ATTACH)`, under the LOADER LOCK, before WHGame.dll is mapped (launcher injected us into a CREATE_SUSPENDED game process) | LOADER-SAFE ONLY: VirtualProtect/memcpy, `LdrRegisterDllNotification`, std:: containers, tomlplusplus. NO MinHook init, NO CreateThread-dependent work, NO LoadLibrary. (`loader-architecture.md` loader-safety contract.) |
+| **A** | `DllMain(DLL_PROCESS_ATTACH)`, under the LOADER LOCK, before WHGame.dll is mapped (launcher injected us into a CREATE_SUSPENDED game process) | LOADER-SAFE ONLY: VirtualProtect/memcpy, `LdrRegisterDllNotification`, std:: containers, tomlplusplus. NO MinHook init, NO CreateThread-dependent work, NO LoadLibrary. (The loader-safety contract: the loader is an own-launcher with an A/B early/late context split.) |
 | **B** | `WorkerThread`, a normal thread spawned by DllMain, runs at WHGame-MAPPED time (before WHGame's DllMain, far before `CSystem::Init`) | FULL capability: MinHook, threads, file I/O. |
 | **C** | the game's MAIN THREAD, first `update` tick, after `CSystem::Init` has run | FULL capability + the engine is live (lua_State up, gEnv populated). |
 
@@ -63,8 +61,7 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
                                            today only LDR notifications + the
                                            hardcoded bugsplat_ctor_probe dev-probe
                                            run here. before_game APPLY is deferred
-                                           to Phase 11 (see §As-is + before-game-
-                                           hooks.md).
+                                           to Phase 11 (see §As-is).
 ─── (DllMain returns; WorkerThread already spawned) ───
 3  WorkerInit                         B    log::Init, exception filter, watchdog
 4  GameDllMapped                      B    WaitForGameDll returned; WHGame.dll mapped
@@ -134,18 +131,16 @@ the zone split doesn't exist.
 > HARDCODED `bugsplat_ctor_probe::ArmLdrInstall` dev-probe wired directly into
 > `dllmain.cpp`'s `RunBeforeGameZoneInDllMain` — not a load-order entry, not
 > driven by the apply-driver. **before_game application applies nothing through
-> the registry today; it is deferred to Phase 11**
-> ([`outstanding-work/before-game-hooks.md`](outstanding-work/before-game-hooks.md)).
+> the registry today; it is deferred to Phase 11.**
 > The `kcdx-engine/builtin/bugsplat-filename-fix` builtin (zone=before_game) is a
 > MANIFEST-ONLY STUB: it declares the zone but ships no behavior and is
 > ship-disabled (`enabled = false`) until Phase 11 rewrites it in place.
 
 ## The mod-loader absorb (asset overlays) in the model
 
-The kcdx "absorb the KCD2 mod loader" feature (FINDINGS
-`_research/phase8.5-pak-resolver/FINDINGS.md` §"ABSORB DESIGN — APPROVED")
-slots in as:
-- **Phase 7 `ModLoaderTakeoverArmed`** — the SELECT-orchestrator detour
+The kcdx "absorb the KCD2 mod loader" feature (the approved absorb design, see
+[`mod-loader-absorb.md`](mod-loader-absorb.md)) slots in as:
+- **Phase 7 `ModLoaderTakeoverArmed`** — the SELECT-phase detour
   (`wh::C_ModManager` `FUN_180da104c`) is kcdx INFRASTRUCTURE (like
   `hooks::Install`), NOT a load-order entry. It must be armed before
   `CSystem::Init` runs the native SELECT.
@@ -166,22 +161,20 @@ slots in as:
 
 The current boot does the SAME operations in the SAME order, but expressed as
 statement order in two functions + comment paragraphs — NOT a phase enum, no
-asserts. Full as-is mapping + the implicit dependencies + the gaps:
-[`known-issues/init-sequencing-audit.md`](known-issues/init-sequencing-audit.md).
-Summary of where the code is now:
+asserts. Summary of where the code is now:
 - `dllmain.cpp` `RunBeforeGameZoneInDllMain()` = ctx A (phases 0–3, un-enumerated).
   ⚠️ It arms LDR notifications and runs the hardcoded `bugsplat_ctor_probe::
   ArmLdrInstall` dev-probe — but it does NOT apply any before_game registry
   slice (there is no `ApplyZone(BeforeGame)` call). The before_game apply path
   is STUBBED: `ldr_notify` walks the empty `patch::g_patches` (no populator
   since Phase 5) and applies nothing; before_game registry-apply is deferred to
-  Phase 11 ([`outstanding-work/before-game-hooks.md`](outstanding-work/before-game-hooks.md)).
+  Phase 11.
 - `dllmain.cpp` `WorkerThread()` = ctx B (phases 4–9, un-enumerated; the FOpen
   probe sits after DiscoverAndLoad because it needs the game version — a
   dependency currently encoded only as placement + a comment).
 - `hooks.cpp` `HookedUpdate` first-tick block = ctx C (phase 10).
 
-KNOWN GAPS the refactor closes (audit §Gaps): emergent ordering (no enum/assert);
+KNOWN GAPS the refactor closes: emergent ordering (no enum/assert);
 probes inserted by convenience (the FOpen-probe-broke-on-version=0 bug);
 apply scattered across 3+ sites; the version lifecycle hole; and the absorb's
 hard one-shot constraint the current model can't express.
@@ -210,19 +203,18 @@ hard one-shot constraint the current model can't express.
    driven apply-driver (per §"The ONE apply-in-load-order flow") is the remaining
    gap-fix and a later step.
 4. **THEN PROBE U.6** — re-slotted into the new model, resolves phase 7's context.
-5. **THEN the absorb `/feature`** — builds on the verified phase model; updates
-   `loader-architecture.md` (the "no `mods/` folder" line is superseded — kcdx
-   owns the loader) + adds the `docs/design.md` loader-absorb section.
+5. **THEN the absorb feature** — builds on the verified phase model; the loader
+   is an own-launcher with an A/B early/late context split, and its earlier "no
+   `mods/` folder" stance is superseded (kcdx owns the loader).
 
-One axis at a time (`results-driven.md`): restructure (no behavior change) and
-verify equivalent, THEN change behavior. Never both in one step on load-bearing
-working boot code.
+One axis at a time — probe a checkable unknown against the binary before changing
+code: restructure (no behavior change) and verify equivalent, THEN change
+behavior. Never both in one step on load-bearing working boot code.
 
 ## Anchors
-- `docs/known-issues/init-sequencing-audit.md` — the as-is + gaps (spec input).
-- `docs/load-order.md` — the resolved zone/priority list the apply-driver walks.
-- `.claude/rules/loader-architecture.md` — the A/B context split + loader-safety
-  contract phase context-pinning encodes (its "no `mods/` folder" line is
-  superseded by the absorb).
-- `_research/phase8.5-pak-resolver/FINDINGS.md` — the absorb design + U.6 the
-  phase-7 placement waits on.
+- [`docs/load-order.md`](load-order.md) — the resolved zone/priority list the apply-driver walks.
+- The loader-safety contract: the loader is an own-launcher with an A/B early/late
+  context split, which the phase context-pinning encodes (its earlier "no
+  `mods/` folder" stance is superseded by the absorb).
+- The approved absorb design — see [`mod-loader-absorb.md`](mod-loader-absorb.md) —
+  plus PROBE U.6, which the phase-7 placement waits on.

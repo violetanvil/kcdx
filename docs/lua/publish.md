@@ -4,11 +4,9 @@
 Broadcast a custom event to subscribers in any plugin (the counterpart to
 `kcdx.on("<author>.<plugin>.<event>", ...)`).
 
-The custom-event separator is the canonical dot per
-[`.claude/rules/naming-namespaces.md`](../../.claude/rules/naming-namespaces.md):
-events stamp as `<author>.<plugin>.<event>`. The legacy
-`<publisher>:<event>` colon form is rejected by `kcdx.on` with a teaching
-error.
+The custom-event separator is the canonical dot: events stamp as
+`<author>.<plugin>.<event>`. The legacy `<publisher>:<event>` colon form is
+rejected by `kcdx.on` with a teaching error.
 
 **Call shape:** positional `(event [, payload])`. Returns the number of
 subscribers fired (an integer; `0` means nobody listened, not an error). Returns

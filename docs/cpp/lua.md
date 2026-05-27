@@ -56,8 +56,8 @@ exported symbols, so a plugin DLL cannot link them directly). Naming: `lua_X`
 > at pointer magnitudes (~2^47) values round to a 16 MB grid. **Never push a
 > pointer through `PushInteger`/`PushNumber`** — use `PushLightUserdata` (exact)
 > or the `kcdx.memory.pointer` userdata channel. The header docstrings carry this
-> warning; see `.claude/rules/lua-precision.md`. (This caveat cannot be fixed
-> inside kcdx — it is the engine's Lua build.)
+> warning; see [lua-number-precision.md](../lua-number-precision.md). (This caveat
+> cannot be fixed inside kcdx — it is the engine's Lua build.)
 
 ## Minimal snippet
 

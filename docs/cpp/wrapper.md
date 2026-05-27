@@ -26,8 +26,9 @@ It does two things:
    int* outCount` or the per-mode mangled `cFn` shape.
 
 Including the header changes nothing about the ABI — `Kcdx.h` is pure
-consumer-side sugar (AP11: it never modifies `Interfaces.h`). Everything it
-does is reachable through the raw interface without it.
+consumer-side sugar (it never modifies `Interfaces.h`, so it cannot shift any
+interface offset). Everything it does is reachable through the raw interface
+without it.
 
 ---
 
@@ -44,7 +45,8 @@ by construction (a `void*` callback is unchecked already).
 
 **Mid and Callsite have no empowered helper.** They are expert sub-verbs
 (register captures / call-instruction sub-locators — disassembler-tier inputs,
-`cornerstones.md` / AP12). Drop to Floor 4 for them: `K.hook->Mid(target,
+an expert-only escape hatch, not the common path). Drop to Floor 4 for them:
+`K.hook->Mid(target,
 (void*)&cFn, &opts)` / `K.hook->Callsite(...)`. The mangled `cFn` ABI for those
 is documented on [hook.md](hook.md).
 
@@ -100,8 +102,9 @@ K.api->ReportTestResult(K.self, "MY-ROW", /*pass=*/1, "ok");
 ```
 
 `ResolveAddressByNameAs(K.self, ...)` threads your handle so a bare name
-resolves self > engine > other (`naming-namespaces.md`); the bare
-`ResolveAddressByName` is the anonymous engine-seed-only path.
+resolves self > engine > other (your own declaration first, then an engine name,
+then another plugin's); the bare `ResolveAddressByName` is the anonymous
+engine-seed-only path.
 
 ---
 

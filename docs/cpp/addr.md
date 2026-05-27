@@ -41,10 +41,9 @@ runs before that message).
 
 The identity-carrying form of `ResolveAddressByName` — it resolves an
 author-target / Address Library name with the **caller's own plugin as the
-`self` tier**, so resolution is full `self > engine > other` precedence
-(`naming-namespaces.md`). This is the C++ mirror of the Lua
-`kcdx.hook{ target = "<name>" }` path, which threads the calling plugin's
-identity natively.
+`self` tier**, so resolution is full `self > engine > other` precedence. This
+is the C++ mirror of the Lua `kcdx.hook{ target = "<name>" }` path, which
+threads the calling plugin's identity natively.
 
 ```cpp
 uintptr_t (*ResolveAddressByNameAs)(kcdxPluginHandle owner, const char* name);
@@ -67,13 +66,13 @@ uintptr_t va = api->ResolveAddressByNameAs(K.self, "outfit_gate");
 if (!va) { K.log.Warn("ADDR", "outfit_gate unresolved on this build"); }
 ```
 
-> **Single-surface (`docs-discipline.md` §3): no Lua `*As` mirror, by design.**
+> **Single-surface: no Lua `*As` mirror, by design.**
 > Lua threads the caller's identity natively — the Lua runtime knows which
 > plugin is calling — so there is no Lua `*As` form. The `As` form exists ONLY
 > because the single shared C++ `kcdxInterface` (`g_api`) is handed by-pointer to
 > every plugin and so has no per-call identity for the anonymous
 > `ResolveAddressByName` to read. This is a sanctioned single-surface marker, NOT
-> a NYI debt. See [naming-namespaces.md](../../.claude/rules/naming-namespaces.md).
+> a not-yet-implemented debt.
 
 ## `ResolveSymbolAs(owner, name)`
 
@@ -103,12 +102,12 @@ The caller owns knowing the ABI of the resolved address.
 uintptr_t tramp = api->ResolveSymbolAs(K.self, "outfit_gate_logic");
 ```
 
-> **Single-surface (`docs-discipline.md` §3): no Lua `*As` mirror, by design.**
+> **Single-surface: no Lua `*As` mirror, by design.**
 > Lua threads the caller's identity natively (the Lua runtime knows which plugin
 > is calling), so there is no Lua `*As` form. The `As` form exists ONLY because
 > the single shared C++ `kcdxInterface` (`g_api`) has no per-call identity for
 > the anonymous `ResolveSymbol` to read. Sanctioned single-surface marker, NOT a
-> NYI debt. See [naming-namespaces.md](../../.claude/rules/naming-namespaces.md).
+> not-yet-implemented debt.
 
 ## Minimal snippet
 

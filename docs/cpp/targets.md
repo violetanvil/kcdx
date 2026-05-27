@@ -6,16 +6,15 @@ names a code site itself (a bare `name` + one locator + optional `signature`),
 the engine stamps the `<author>.<plugin>` prefix (from `[plugin].author` +
 `[plugin].name`), and the site is then hookable / patchable **by name**
 (self > engine > other precedence), shareable across plugins without anyone
-re-deriving the hex (the disassembler-test share guarantee,
-`cornerstones.md` §36).
+re-deriving the hex — one expert names a site once, and every other author
+consumes it by name without ever touching the hex.
 
 **Not yet implemented (NYI).** There is no author-target registration interface
 in [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h) today — do not
-link against it. This is tracked parity debt
-(`.claude/rules/docs-discipline.md` criterion 3), discharged when the
-restructure plan's C++ parity phase ships it and it is verified callable. This
-entry maps the planned shape so both surfaces describe the capability while the
-engine catches up.
+link against it. This is tracked parity debt — both docs map a capability even
+when only one is built, discharged when the C++ parity phase ships it and it is
+verified callable. This entry maps the planned shape so both surfaces describe
+the capability while the engine catches up.
 
 The Lua surface has two halves; the C++ mirror owes both:
 

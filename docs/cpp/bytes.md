@@ -103,20 +103,22 @@ The byte rewrite needs to find its site. The **common path is by name** — the
   byte rewrite is untyped, so unlike [`kcdxHookInterface`](hook.md) no signature
   is involved). The engine resolves via
   `address_library::ResolveByName(target, owningPlugin)` with
-  **self > engine > other** precedence (`naming-namespaces.md`): an engine
+  **self > engine > other** precedence (a bare name resolves to your own
+  declaration first, then an engine name, then another plugin's): an engine
   [Address Library](addr.md) name, one of your own
   [author-declared targets](targets.md) (bare — the engine stamps
   `<author>.<plugin>.<bare>`), another plugin's by the explicit
   `"<author>.<plugin>.<bare>"` form, or the engine-seed form
-  `"kcdx.<seedname>"`. You write a name and never hand-write hex (the
-  disassembler test, `cornerstones.md` / AP12).
+  `"kcdx.<seedname>"`. You write a name and never hand-write hex — the engine
+  does the heavy lifting of resolving the address from the name.
 
 ### Advanced locators (expert-only escape hatch)
 
 The fields below in `kcdxBytesOptions` are the `[advanced]` escape hatch for
 sites the library cannot yet name. Leave `target` null AND set **exactly one**.
 Identify an un-named site **once** via an advanced locator, name it, and refer
-to it by name thereafter (`cornerstones.md` "declare once / share / coexist").
+to it by name thereafter — hex authored once, not per call, and shareable by
+name with other authors who never touch the hex.
 
 - **`pattern`** — a byte/wildcard AOB scanned in `module`.
 - **`addressId`** — a numeric Address Library ID.
@@ -177,8 +179,9 @@ Operate on a handle returned by `Register`
   with `kcdxHookInterface` but **returns `false` and logs a teaching line**
   explaining bytes cannot be reverted (use a [hook](hook.md) for reversible
   interception). It does **not** flip `IsApplied` — the rewrite stays live in
-  memory. (Silently flipping status while patched bytes remain live would be
-  AP13: "safe ≠ fixed.") Mirrors Lua `h:uninstall()` on a `kcdx.bytes` handle,
+  memory. (Silently flipping status while patched bytes remain live would be a
+  lie: safe is not the same as fixed.) Mirrors Lua `h:uninstall()` on a
+  `kcdx.bytes` handle,
   which raises the equivalent teaching error.
 
 ## Minimal snippet

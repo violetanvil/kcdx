@@ -27,9 +27,10 @@ void (*AddTask)(kcdxTask* task);  // safe to call from any thread
 
 This is the C++ mechanism behind the Lua "callbacks run on the main thread"
 guarantee. The Lua VM is single-threaded — a Lua callback firing off-thread
-races the main thread (`.claude/rules/lua-callback-threading.md`); on the C++
-side, only hook functions the game runs on the main thread are safe to fire work
-from directly, otherwise marshal through `AddTask`.
+races the main thread, so the engine auto-marshals an off-thread hook hit to the
+main thread before firing a Lua callback. On the C++ side, only hook functions
+the game runs on the main thread are safe to fire work from directly, otherwise
+marshal through `AddTask`.
 
 ## Numeric precision — pointers through the Lua boundary
 
@@ -40,7 +41,7 @@ values into pak Lua via `kcdxScriptingInterface`'s `kcdxLuaApi`, the
 above 2^24 the value loses low bits; at pointer magnitudes it rounds to a 16 MB
 grid. Use `PushLightUserdata` for pointers. The caveat is documented inline in
 the header on those members; see [lua.md](lua.md) and
-`.claude/rules/lua-precision.md`.
+[lua-number-precision.md](../lua-number-precision.md).
 
 ## One shared Lua state — use `kcdxLuaApi`, don't call the game's `lua_*` copy directly
 
@@ -59,9 +60,10 @@ sentinels, so entering the game's copy with the other copy's stack raises a Lua
 error that `longjmp`s out of your call (it never returns; it is uninstrumentable
 from the plugin side). There is no reason to do this — build and act on the
 shared state through `kcdxLuaApi`, which crosses no boundary. The underlying
-hazard (the dual-Lua GC-sentinel problem) is `.claude/rules/lua-bridge.md`;
-PROBE A in `docs/known-issues/cap-38 cpp before-observer never fires on a named
-game target.md` is the worked demonstration.
+hazard is the dual-Lua GC-sentinel problem: each copy of Lua keeps its own
+`static const` sentinels, so entering one copy with the other's stack trips a
+sentinel mismatch — which is why a plugin uses the live Lua C API rather than
+calling the game's own `lua_*` copy. This has been confirmed by live probing.
 
 ## Error conventions
 
@@ -84,8 +86,7 @@ every later pointer's offset, so a plugin DLL compiled against the older header
 calls through the wrong offset → ACCESS_VIOLATION. The header carries an
 explicit `--- APPEND-ONLY BELOW THIS LINE ---` marker (e.g. `ResolveAddressByName`
 sits after it). A genuine layout change bumps `kcdx<Name>Interface_Version` and
-gates the new shape. This is `.claude/rules/anti-patterns.md` AP11 — there is no
-Lua-side analogue (the Lua surface is name-keyed, not offset-keyed), so this rule
-is C++-specific.
+gates the new shape. There is no Lua-side analogue (the Lua surface is
+name-keyed, not offset-keyed), so this rule is C++-specific.
 
 This is the C++ mirror of [the Lua cross-cutting rules](../lua/cross-cutting.md).
