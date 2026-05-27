@@ -55,7 +55,15 @@ $PublicDirs = @(
   'kcdx-engine',
   'test-plugins',
   'tools',
-  'docs'           # all of docs/ is public
+  'docs'           # docs/ is public EXCEPT the private subpaths below
+)
+
+# PRIVATE CARVE-OUTS inside an otherwise-public dir. A path under one of these
+# stays private even though its top segment is allowlisted. Used for internal
+# planning + bug-trail docs that live under docs/ but are not user-facing.
+$PrivateSubpaths = @(
+  'docs/outstanding-work/',
+  'docs/known-issues/'
 )
 
 # ALLOWLIST — the ONLY root-level files published. Note: `.gitignore` is
@@ -102,7 +110,8 @@ try {
 
     # Partition by the allowlist. A file is published iff:
     #   - it is a root file (no '/') AND in $PublicRootFiles, or
-    #   - its first path segment is in $PublicDirs.
+    #   - its first path segment is in $PublicDirs, AND it is not under a
+    #     $PrivateSubpaths carve-out.
     $toRemove = [System.Collections.Generic.List[string]]::new()
     $keptCount = 0
     foreach ($f in $allFiles) {
@@ -112,6 +121,11 @@ try {
       } else {
         $top = $f.Substring(0, $slash)
         $keep = $allowedDirs.Contains($top)
+        if ($keep) {
+          foreach ($p in $PrivateSubpaths) {
+            if ($f.StartsWith($p)) { $keep = $false; break }
+          }
+        }
       }
       if ($keep) { $keptCount++ } else { $toRemove.Add($f) }
     }

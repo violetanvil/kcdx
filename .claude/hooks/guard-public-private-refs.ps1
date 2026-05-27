@@ -24,10 +24,15 @@ try {
     # Keep in sync with publish-public.ps1's allowlist.
     $publicDirs  = @('src/','include/','vendor/','data/','examples/','kcdx-engine/','test-plugins/','tools/','docs/')
     $publicFiles = @('README.md','LICENSE','CMakeLists.txt','build.ps1','package-release.ps1')
+    # Carve-outs: private subpaths inside an otherwise-public dir (internal
+    # planning + bug trails under docs/). Keep in sync with publish-public.ps1
+    # $PrivateSubpaths.
+    $privateSubpaths = @('docs/outstanding-work/','docs/known-issues/')
 
     $isPublic = $false
     foreach ($d in $publicDirs)  { if ($rel -like "$d*") { $isPublic = $true; break } }
     if (-not $isPublic) { foreach ($f in $publicFiles) { if ($rel -eq $f) { $isPublic = $true; break } } }
+    if ($isPublic) { foreach ($p in $privateSubpaths) { if ($rel -like "$p*") { $isPublic = $false; break } } }
     if (-not $isPublic) { exit 0 }   # private file — may reference anything.
 
     # Post-operation content (Write supplies it; Edit applies the replacement).
