@@ -146,17 +146,40 @@ verbatim over kcdx's list. kcdx owns WHICH/ORDER; the engine still mounts +
 runs every downstream pass, so kcdx cannot silently drop
 localization/table-patches (the full-takeover risk).
 
-**SELECT relation = let native run, then re-order.** Call the original SELECT
-first (it scans `mods/`, validates manifests via 3104, builds REAL I_Mod
-records with real vtables, in the vanilla mod_order.txt baseline order — proven
-by U.6). THEN kcdx appends `kcdx-plugins/` records + re-sorts the whole enabled
-list by the unified `load_order::Effective` key. Reuses the engine's
-manifest-parse + record construction (real vtables for free).
+**SELECT relation = REBUILD WHOLESALE (revised after U.7, 2026-05-27).** The
+original "let native run then append" model was REVISED after PROBE U.7 proved
+that appending to the live enabled-list vector mid-SELECT crashes the engine's
+own per-mod validation pass (it re-walks the modified range and faults). The
+decided model: kcdx OWNS the enabled list. kcdx builds the entire list itself
+(both `kcdx-plugins/` records and `mods/` pak-mod records) in kcdx's unified
+order, and version-gates pak mods itself (below). The native MOUNT (3102) +
+downstream localization/table-patch/mod.cfg passes still run verbatim over
+kcdx's list, so those are not dropped — kcdx replaces only SELECTION, not MOUNT.
 
-**Record creation = clone-a-real-record** where possible — an appended
-`kcdx-plugins/` record clones a native record's vtable pointers (+0x00/+0x18)
-and repoints the string fields to the plugin's path/id/name. Confirmed/refined
-by U.7.
+**Record creation = BUILD FROM SCRATCH (user-decided 2026-05-27).** kcdx
+allocates + populates each 0x70-byte I_Mod record itself: the two vtable
+pointers (+0x00/+0x18), the string fields (path +0x08/+0x20, id +0x10, name
++0x28, etc. per the field map), and the zeroed scalar tail. GATING UNKNOWN
+(PROBE U.8): the correct I_Mod concrete-class vtable RVAs are NOT yet statically
+resolved (U.6 captured runtime VAs of one workshop mod's record, not the static
+class vtable), and whether a from-scratch record survives the native MOUNT is
+unverified — the same U.7-class risk (a wrong field/vtable crashes MOUNT the
+same opaque way). U.8 resolves both before the feature is built: read-only
+HARVEST the vtable RVAs from a real SELECT-built record (read +0x00/+0x18 −
+WHGame base → static RVAs → seed rows), then build ONE from-scratch record with
+those vtables + a test `mod.manifest` and wholesale-replace the list with it,
+let MOUNT run. Mounts + no crash → from-scratch construction viable; crash → the
+record needs more than the string map.
+
+**Version gate for pak mods = kcdx-owned, shared with the plugin path
+(user-decided 2026-05-27).** Because kcdx suppresses the native SELECT (and thus
+the native version-gate `FUN_182440c6c`), kcdx parses each pak mod's
+`mod.manifest` `<version>`/game-version field itself and runs the SAME
+compatibility decision as the plugin path (`plugin_loader.cpp::ValidateManifest`:
+compare against `g_runtimeGameVersion`, graceful-degrade if unknown). ONE
+kcdx-owned version policy for BOTH plugins and pak mods — consistent author UX.
+Needs a small `mod.manifest` XML reader (the manifest fields are the same set
+the native parser reads — name/description/author/version/created_on/modid).
 
 **Load-order = SUBSUME.** kcdx reads `mod_order.txt` as the vanilla baseline
 ordering INPUT each boot (a vanilla mod's initial priority derives from its
