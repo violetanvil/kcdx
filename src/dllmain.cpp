@@ -98,13 +98,15 @@ DWORD WINAPI WorkerThread(LPVOID) {
         return 1;
     }
 
-    // Localization runtime-dump feature, step 1: arm the minimal dev-mode probe
-    // (CLocalizedStringsManager ctor capture + by-ID getter slot-1 hook). Runs
-    // here, after hooks::Install (WHGame.dll mapped + MinHook initialized), and
-    // BEFORE CryEngine's system init constructs the loc manager — so the ctor
-    // detour is live when the ctor runs. Dev-mode-gated + idempotent internally;
-    // a no-op in production. Live-verified: cap-43-loc-ctor-capture +
-    // cap-43-loc-byid-getter both PASS (clean sequential int-IDs observed).
+    // Localization runtime-dump feature: arm the dev-mode probe
+    // (CLocalizedStringsManager ctor capture + LocalizeString overload hooks on
+    // vtable slots 21/22 for key capture). Runs here, after hooks::Install
+    // (WHGame.dll mapped + MinHook initialized), and BEFORE CryEngine's system
+    // init constructs the loc manager — so the ctor detour is live when the
+    // ctor runs (it installs the LocalizeString hooks off the captured vtable).
+    // Dev-mode-gated + idempotent internally; a no-op in production. (The
+    // prior slot-1 by-int-ID getter target was retargeted away after it was
+    // proven to be GetLanguageName, the wrong function.)
     // (Was briefly disabled 2026-05-26 to isolate a parallel feature's save-load
     // crash investigation; re-enabled now.)
     kcdx::probes::loc_dump_probe::Install();
@@ -155,13 +157,11 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // is still unset. The FOpen detour still arms well before any menu/save
     // asset reads; the resolver fires continuously through boot→menu.
     //
-    // TEMPORARILY DISABLED (2026-05-26): held inert to return to a clean
-    // save-load baseline while isolating a save-load crash in the shared engine
-    // DLL. U.1 already succeeded (cap-44-fopen-read-fires PASS; reach_check
-    // match=1; 64 read opens captured) — this is NOT disabled for a probe
-    // defect. Re-enable (uncomment) once the baseline is confirmed crash-free
-    // and the crash source is identified, then resume PROBE U.2 (override test).
-    // kcdx::probes::fopen_override_probe::Install();
+    // (Was briefly disabled 2026-05-26 to isolate a parallel save-load crash
+    // investigation; that crash is fixed and the baseline is clean, so it is
+    // re-enabled now. U.1 already succeeded once: cap-44-fopen-read-fires PASS;
+    // reach_check match=1; 64 read opens captured.)
+    kcdx::probes::fopen_override_probe::Install();
 
     return 0;
 }

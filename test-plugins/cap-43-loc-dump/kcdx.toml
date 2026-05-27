@@ -1,4 +1,4 @@
-# CAP-43 — localization runtime-dump probe, step 1 (minimal live probe).
+# CAP-43 — localization runtime-dump probe (LocalizeString key capture).
 #
 # The behavior under test is ENGINE machinery, not an author surface: the
 # dev-mode loc-dump probe (src/probes/loc_dump_probe.{cpp,h}, armed from the
@@ -10,11 +10,15 @@
 # engine calls kcdx::test::ReportResult and a manifest stub holds the names.
 #
 # What the probe proves (the two gating unknowns this step exists to settle):
-#   cap-43-loc-ctor-capture  The CLocalizedStringsManager ctor hook fires and
-#                            captures the manager `this` (arg 1 / RCX).
-#   cap-43-loc-byid-getter   The by-INT-ID getter (loc-manager vtable slot 1,
-#                            ABI char*(this, uint id)) fires with a readable
-#                            (caller-return-address, id) on its first call.
+#   cap-43-loc-ctor-capture       The CLocalizedStringsManager ctor hook fires
+#                                 and captures the manager `this` (arg 1 / RCX)
+#                                 — still used to resolve the live vtable for
+#                                 installing the LocalizeString hooks below.
+#   cap-43-loc-localizestring-fire One of the two public LocalizeString
+#                                 overloads (loc-manager vtable slot 21 / 22)
+#                                 fires with a readable key string + the
+#                                 gameplay caller-return-address on its first
+#                                 call.
 #
 # Both report PASS from the probe's FIRST observation (one-shot guarded), per
 # the hook-fire-self-report convention — NOT a polled fire-count at ready.
@@ -26,9 +30,9 @@ test_suite_only = true
 name                = "cap_43_loc_dump"
 display_name        = "CAP-43 localization runtime-dump probe (step 1)"
 author              = "ts"
-description         = "Minimal dev-mode loc-dump probe: CLocalizedStringsManager ctor `this` capture + by-ID getter (vtable slot 1) fire/ABI verification. Observe-only."
+description         = "Dev-mode loc-dump probe: CLocalizedStringsManager ctor `this` capture + LocalizeString key capture (vtable slots 21/22) fire/ABI verification. Observe-only."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
-test_names          = ["cap-43-loc-ctor-capture", "cap-43-loc-byid-getter"]
+test_names          = ["cap-43-loc-ctor-capture", "cap-43-loc-localizestring-fire"]
