@@ -516,14 +516,15 @@ structure the binary does not have (AP10).
 
 ---
 
-## 11. FINALIZED DESIGN — the hash-history DB + curated overlay (2026-05-27)
+## 11. FINALIZED DESIGN — the entity-versioning DB + curated overlay (2026-05-27)
 
 This section is the **controlling spec** for the DB's shape. It supersedes the
 single-version framing in §4f / §9 wherever they conflict: the DB's CORE PURPOSE
-is not a one-version survival snapshot — it is a **per-version content-hash
-HISTORY keyed on a stable function identity**, so the engine and the maintainer
-can answer *"in which game version did function X change, and therefore which
-mods that target X went out of date?"*
+is not a one-version survival snapshot — it is a **validity-interval history over
+every targetable entity, keyed on a stable identity**, so the engine and the
+maintainer can answer *"in which game version did the thing my mod targets change,
+and therefore which mods went out of date?"* — for any target kind (function
+body, curated site, vtable/data slot), not just functions.
 
 Everything here except the cross-version MATCHING MECHANISM is finalized. The
 mechanism is an open problem solved separately (§11.6) in a synthetic sandbox.
@@ -535,9 +536,11 @@ mod's assumptions about it may no longer hold → the mod is out of date *for th
 function*. The DB exists to make this query trivial:
 
 ```sql
-SELECT game_version, content_hash FROM function_hashes WHERE kcdx_id = 1;
--- -> every version's hash for function 1; the versions where it changed are
---    the rows where the hash differs from the prior row.
+SELECT valid_from, valid_through, content_hash FROM entity_versions
+  WHERE entity_kind = 'function' AND entity_id = 1;
+-- -> every byte-form of function 1 over time, as version INTERVALS. Each row's
+--    valid_from IS a version it changed. valid_through IS NULL = the current form.
+--    A plugin is out of date if its authored hash != the open (NULL) row's hash.
 ```
 
 This requires a **stable identity** (`kcdx_id`) that survives a function's bytes
@@ -559,19 +562,62 @@ facts; the cross-version invariant is `kcdx_id`.)
 | `rva`, `length` | this-version location (moves per version) |
 | `auto_name` (`FUN_<rva>`) | **DEV DB ONLY.** A Ghidra display artifact, NOT a resolution key, NEVER author-referenceable (it's just a render of the rva, which moves). Dropped from the USER DB. |
 | `decompile_quality` | gates `statement.*` |
-| `removed_in_version` | nullable. **Function-deprecation axis** (§11.4): set at v2-diff time when a v1 function has no v2 match (the game deleted it). NULL for the single-version baseline. |
 
-**`function_hashes`** — THE history table. One row per `(kcdx_id, game_version)`.
+(Function removal is NOT a column here — it is DERIVED from `entity_versions`: a
+`kcdx_id` whose latest interval is closed with no later open row was removed in
+`valid_through + 1`. Single source of truth = the intervals.)
+
+**`entity_versions`** — THE versioning table. A general validity-INTERVAL
+(temporal) table over EVERYTHING a mod can target and the game can change — not
+just function bodies. One row per distinct byte-form/value of a targetable
+entity, over the version range it was valid. This is the full path to making
+versioning **completely resolvable**: one query answers "is my target still
+valid?" for any entity kind.
 
 | Column | Meaning |
 |---|---|
-| `kcdx_id` | FK to `functions` (the stable id) |
-| `game_version` | which game build this hash is from |
-| `content_hash` | BLAKE3 of `[rva, rva+length)` at that version (32-byte BLOB) |
-| `rva`, `length` | the location IN that version (so history also records the move) |
+| `entity_kind` | INTEGER (dict FK). The general taxonomy of targetable things: `function` (321K bodies) \| `vtable_slot` \| `data_slot` \| `callsite` \| **`statement`** (reserved enum value, NOT populated yet — see below). |
+| `entity_id` | INTEGER. The stable id within that kind — a `functions.kcdx_id` for functions; the overlay `kcdx_id` for curated sites/slots. |
+| `content_hash` | BLOB (32 bytes). BLAKE3 of this form (function/statement bytes; for a slot, the resolved slot+target value). |
+| `rva` (or value) | location/value of this form in its version range. |
+| `length` | byte length of this form (reproduces the hashed span). |
+| `valid_from` | INTEGER (FK → `versions`). First game version this form held. |
+| `valid_through` | INTEGER (FK → `versions`), **nullable. NULL = still current.** Last version this form was valid. |
 
-`SELECT * WHERE kcdx_id = N` → the full per-version history. v1.5 import writes
-the first row-set; each new game version APPENDS a row-set (no rewrite).
+`SELECT * WHERE entity_kind=? AND entity_id=N` → the full version history.
+"Is my target still valid?" → `… AND valid_through IS NULL`, compare hash.
+"Which versions changed it?" → the set of `valid_from` values (each new row's
+`valid_from` IS the version it changed). **Removal = the latest row has
+`valid_through` set and no later open (`NULL`) row exists** — so removal is
+DERIVED from the intervals, not a separate column (`functions.removed_in_version`
+is dropped; the intervals are the single source of truth).
+
+A small **`versions`** table (`id`, `tag` e.g. `1.5.1164953`, `ordinal`, release
+date) backs `valid_from`/`valid_through` so versions order correctly
+(`1.10 > 1.6`, which a string sort gets wrong).
+
+**v1.5 baseline (now):** every function gets ONE open interval
+(`entity_kind=function`, `entity_id=kcdx_id`, hash, `valid_from=1.5`,
+`valid_through=NULL`); curated sites/slots likewise. When v1.6 arrives and the
+MATCHER (§11.6) runs, a CHANGED entity's row is closed (`valid_through=1.5`) and
+a new open row opens (`valid_from=1.6, valid_through=NULL`). The matcher's job is
+to close-and-open intervals — it can only run once it knows the v1.6 entity IS
+the v1.5 entity.
+
+**Why `statement` is a reserved-but-unpopulated kind (scope decision, consult
+2026-05-27):** statement-level survival is ALREADY free under the function
+interval, because the function `content_hash` covers the whole body `[rva,
+rva+length)` and each statement hash is a SUB-RANGE of that exact span
+(BLAKE3-HASH-CONTRACT §2a/§2b). So **function-hash-unchanged ⟹ every statement in
+it is byte-identical** — a proven invariant, not an approximation: no statement
+byte can change (or move) without flipping the function hash. Populating
+per-statement intervals (5.24M × versions rows) would buy NOTHING on survival
+correctness, and would force a SECOND cross-version matcher (statements have no
+name/call-graph fingerprint — a far harder identity problem than functions). The
+schema reserves the `statement` enum value so populating it later is no
+migration; the decision to populate is staged to the Phase 9.x statement-survival
+design, informed by real need + the function-matcher's lessons. (Options A/B/C
+were weighed; C — general schema, staged statement fill — was chosen.)
 
 **`overlay`** — the curated verified layer (sibling table, the maintainer's
 authoring source-of-truth; the generator projects its verified rows into
@@ -650,21 +696,26 @@ attachment to that id. ID minting is **maintainer-only** (no in-game promote).
 | Axis | Lives on | Set when | Means |
 |---|---|---|---|
 | **Name** deprecation | `overlay.is_deprecated` + `superseded_by` | maintainer renames | "call it NewName; OldName still resolves to the SAME live function" |
-| **Function** deprecation | `functions.removed_in_version` | v2-diff finds no match | "this function no longer EXISTS in the game" |
+| **Function** removal | DERIVED from `entity_versions` (latest interval closed, no later open row) | the matcher finds no v2 match | "this function no longer EXISTS in the game" |
 
-Both columns are added now; both populate at the v2-diff step (the function axis
-has nothing to write for a single-version baseline).
+The name axis is a column (`overlay`); the removal axis is NOT a column — it falls
+out of the interval model (§11.2). Both populate only when the matcher runs (a
+single-version baseline has nothing to deprecate/remove).
 
 ### 11.5 What the v1.5 baseline import builds NOW
 
 The matcher can't run with one version, but the baseline must exist so v2 has
 stable anchors and the matcher's raw signals are preserved:
 
-1. **Assign `kcdx_id` to ALL 321,120 v1.5 functions** (the baseline; ids 1..N for
-   the bulk, the seed.csv ids preserved for the curated rows — reconcile the two
-   id-spaces at seed time).
-2. **`function_hashes`** seeded with the v1.5 row-set (`kcdx_id`, `'1.5'`, hash,
-   rva, length).
+1. **Assign `kcdx_id` to ALL 321,120 v1.5 functions** (the baseline, ids 1..N).
+   The curated overlay rows are matched into this id-space by rva (the seed row's
+   rva → the baseline function there → its kcdx_id); the old seed ids (1000–3106)
+   are discarded, NOT preserved. Non-code curated rows (`vtable_index`) get a
+   curated-only id.
+2. **`entity_versions`** seeded with the v1.5 baseline as OPEN intervals — one per
+   function (`entity_kind=function`, `entity_id=kcdx_id`, hash, `valid_from=1.5`,
+   `valid_through=NULL`), plus curated sites/slots. The `versions` table gets its
+   first row (`1.5.1164953`, ordinal 1).
 3. **Preserve the matcher's signals** — `call_edges` + `statements.string_ref`
    stay (DEV DB); they are the cross-version fingerprint inputs (§11.6).
 4. The cut/fix pass + the overlay schema + the seed from seed.csv's 139 rows
@@ -708,8 +759,8 @@ validated against the sandbox first.
 1. **This design — written down** (this §11). The finalized shape, minus the
    matcher mechanism.
 2. **Generate the new DB** — the cut/fix pass + overlay + v1.5 baseline ids +
-   `function_hashes` (the feature decomposition). UNBLOCKS the other agent (the
-   generator + engine consumer read this shape).
+   `entity_versions` (open intervals) + `versions` (the feature decomposition).
+   UNBLOCKS the other agent (the generator + engine consumer read this shape).
 3. **The sandbox + the matcher** (§11.6) — built and validated against synthetic
    ground truth, then run when v1.6 lands.
 
