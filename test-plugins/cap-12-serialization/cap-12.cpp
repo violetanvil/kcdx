@@ -14,13 +14,27 @@
 // stays an explicit SetUniqueID (the valid C++ expert path; a C++
 // name-derived-UID default is a tracked future parity item).
 //
-// Pass conditions (reported at successive lifecycle messages):
-//   - kInputLoaded: registration succeeded (interface fetched,
-//     callbacks set without error).
-//   - kPostLoadGame: either Load fired with a correct round-trip
-//     value, OR Revert fired (cosave didn't exist yet — also valid
-//     since the engine's "no plugin data for me, please revert"
-//     path is exercised).
+// Two rows:
+//   - CAP-12               [manual] round-trip — OnSave writes a
+//     counter, OnLoad reads it back. Confirmed at kPostLoadGame: Load
+//     fired with a correct round-trip value, OR Revert fired (cosave
+//     didn't exist yet — also valid, the engine's "no plugin data for
+//     me, please revert" path). Needs a save+reboot+load gesture.
+//   - CAP-12-outside-window  BOOT-ONLY falsifiable — at kcdxPlugin_Load,
+//     OUTSIDE any save/load callback window, OpenRecordNamed must be
+//     REJECTED (return false). The record-I/O methods consult
+//     thread-local engine state valid ONLY inside a save/load callback
+//     (Interfaces.h: "Returns false too if SetUniqueID wasn't called or
+//     you're not currently in a save phase"; "MUST be called only from
+//     inside your callback"). The C++ counterpart of CAP-31-outside-window.
+//
+// Why CAP-12-outside-window exists (AP15): the InputLoaded
+// "registration ok" line was the only boot-time verdict, but the
+// Set*Callback calls have no error return, so registration ALWAYS
+// succeeds — that PASS was a tautology that measured nothing. The
+// outside-window open is a feature-driven boot check that FAILS if the
+// engine's window guard is missing/broken (an out-of-window open
+// returning true → an out-of-window write could corrupt the cosave).
 //
 // Manual confirmation (for the developer): save the game once with
 // dev mode on, then quit, reboot, and load that save. kcdx.log
@@ -124,12 +138,20 @@ void OnMessage(kcdxMessage* msg) {
     case kcdxMessage_InputLoaded:
         if (g_inputLoadedReported) break;
         g_inputLoadedReported = true;
+        // Staging note only — NOT a test verdict. Registration is a
+        // tautology (Set*Callback has no error return → always
+        // succeeds), so it cannot be the falsifiable boot check (AP15).
+        // The boot verdict is CAP-12-outside-window (reported at
+        // kcdxPlugin_Load); the round-trip verdict is CAP-12 (manual).
         if (g_registrationOK) {
-            Report("input", 1,
-                "registration ok (uid=0x%08X); awaiting first load to confirm round-trip",
+            gLog.Info("SERIALIZATION",
+                "registration ok (uid=0x%08X); CAP-12 round-trip awaits a "
+                "save+reboot+load gesture (manual); CAP-12-outside-window "
+                "reported its boot verdict at Plugin_Load",
                 kUID);
         } else {
-            Report("input", 0, "QueryInterface(Serialization) failed at Plugin_Load");
+            gLog.Error("SERIALIZATION",
+                "QueryInterface(Serialization) failed at Plugin_Load");
         }
         break;
 
@@ -176,6 +198,46 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     g_ser->SetSaveCallback  (g_self, OnSave);
     g_ser->SetLoadCallback  (g_self, OnLoad);
     g_ser->SetRevertCallback(g_self, OnRevert);
+
+    // CAP-12-outside-window — BOOT-ONLY falsifiable. kcdxPlugin_Load runs
+    // OUTSIDE any save/load callback window, so the engine's writer window
+    // is closed. The record-I/O methods consult thread-local engine state
+    // valid ONLY inside a SaveCallback/LoadCallback (Interfaces.h); an
+    // OpenRecordNamed here MUST be REFUSED (return false). This is the C++
+    // counterpart of CAP-31-outside-window and the boot verdict that
+    // replaces the registration-always-succeeds tautology (AP15).
+    //
+    //   PASS iff OpenRecordNamed returned false (window guard refuses an
+    //        out-of-window open).
+    //   FAIL iff it returned true — the window guard is missing/broken, so
+    //        an out-of-window write could corrupt the cosave (logged at
+    //        Error: a corruption-risk fail-state, fail-state-logging.md).
+    //
+    // SetUniqueID was called just above, so a false return here is the
+    // window guard, NOT the "SetUniqueID wasn't called" branch — the two
+    // false-paths are disambiguated by ordering the call after SetUniqueID.
+    {
+        const bool opened = g_ser->OpenRecordNamed("cap12_boot_window_probe", 1);
+        if (!opened) {
+            gLog.Info("SERIALIZATION",
+                "PASS: out-of-window OpenRecordNamed was correctly rejected "
+                "(returned false) at Plugin_Load — the save-window guard "
+                "refuses record I/O outside a save/load callback");
+            api->ReportTestResult(g_self, "CAP-12-outside-window", 1,
+                "out-of-window OpenRecordNamed rejected (returned false); the "
+                "save-window guard is working");
+        } else {
+            gLog.Error("SERIALIZATION",
+                "FAIL: OpenRecordNamed returned TRUE at Plugin_Load (outside "
+                "any save/load callback) — the save-window guard is "
+                "missing/broken; an out-of-window WriteRecordData could now "
+                "corrupt the cosave");
+            api->ReportTestResult(g_self, "CAP-12-outside-window", 0,
+                "out-of-window OpenRecordNamed returned true — the save-window "
+                "guard is missing/broken; an out-of-window write could corrupt "
+                "the cosave");
+        }
+    }
 
     auto* m = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging,

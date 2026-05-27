@@ -262,9 +262,21 @@ what the live result is.
 | Channels | (ii) C++ DLL |
 | Engine status | ✅ LIVE — `kcdxSerializationInterface` Version 2 (named records: `OpenRecordNamed` + `GetRecordTagName`, appended in commit `64567d9`; original interface Phase 6b, 2026-05-19). |
 | Test plugin | `cap-12-serialization/` (C++ DLL) — keeps its explicit C++ `kUID` (a legitimate expert path; C++ name-derived UID is tracked Phase 3 parity debt in `docs/cpp/cosave.md`). |
-| Auto-pass check | Plugin writes counter on save, reads it on load, value persists across game restarts. Manual sequence: load any save → quicksave → quit → relaunch → load the quicksave. Pass = the load round-trip reads `counter=N` back via `GetRecordTagName`-matched record with N matching the OnSave count before quit. Registration auto-passes at boot. |
+| Auto-pass check | **[manual] round-trip.** Plugin writes counter on save, reads it on load, value persists across game restarts. Manual sequence: load any save → quicksave → quit → relaunch → load the quicksave. Pass = the load round-trip reads `counter=N` back via `GetRecordTagName`-matched record with N matching the OnSave count before quit. (Registration is NO LONGER the boot verdict — `Set*Callback` has no error return, so registration always succeeds; that PASS was an AP15 tautology, now demoted to an Info staging line. The boot-only falsifiable verdict is the separate **CAP-12-outside-window** row below; it grows the matrix and does not replace this round-trip coverage.) |
 | Last result | ✅ LIVE (2026-05-22, `9672c57`): named-record registration PASS (uid=0x53323143); round-trip confirmed alongside CAP-31 in the same `64/65` run — the named-record migration preserved the counter persistence. Original FourCC path: LIVE 2026-05-19, 44-byte cosave decoded as magic + uid + chunk + counter (u64). |
 | Notes | Essential for any mod that has persistent state per save (perks added by mod, custom inventory, magic-spell-known list, etc). |
+
+## CAP-12-outside-window: `kcdxSerializationInterface` save-window guard (boot-only)
+
+| Field | Value |
+|---|---|
+| What | The C++ counterpart of CAP-31-outside-window. The record-I/O methods (`OpenRecord`/`OpenRecordNamed`/`WriteRecordData`/`GetNextRecordInfo`/`ReadRecordData`) consult thread-local engine state valid ONLY inside a Save/Load callback window (`Interfaces.h`: "MUST be called only from inside your callback"; `OpenRecordNamed` "Returns false too if SetUniqueID wasn't called or you're not currently in a save phase"). Calling one OUTSIDE any save/load window must be REJECTED. |
+| Channels | (ii) C++ DLL |
+| Engine status | ✅ LIVE — same `kcdxSerializationInterface` Version 2 as CAP-12. |
+| Test plugin | `cap-12-serialization/` (C++ DLL) — same plugin as CAP-12; this row is the new boot-only assertion. |
+| Auto-pass check | **BOOT-ONLY falsifiable.** At `kcdxPlugin_Load` (after `SetUniqueID`, OUTSIDE any save/load callback), the plugin calls `g_ser->OpenRecordNamed("cap12_boot_window_probe", 1)`. PASS iff it returns **false** (the save-window guard refuses record I/O outside a callback). FAIL iff it returns **true** → the window guard is missing/broken → an out-of-window `WriteRecordData` could corrupt the cosave (logged at Error). No save gesture needed — fires synchronously at load. **Broken state that flips this to FAIL:** the engine drops/loses the in-save-phase check and lets `OpenRecordNamed` succeed outside a save/load callback. |
+| Last result | ⏳ PENDING (boot auto-pass; verified at the next checkpoint launch). |
+| Notes | This row assumes the engine already rejects out-of-window opens (the header documents it does — "Returns false too if … you're not currently in a save phase"). If a first run reports FAIL, that is a REAL finding — an AP14 silent-success in the serialization interface (the documented guard not enforced) — to surface as its own decision, NOT to paper over in this test. No `src/**` change was made to add a guard. |
 
 ## CAP-13: `[[command]]` console commands
 
