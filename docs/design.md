@@ -1354,3 +1354,44 @@ version detection (parse kcd_launcher.log instead of relying on
 WHGame.dll's missing VS_VERSIONINFO resource).
 
 See `README.md` for the condensed roadmap.
+
+---
+
+## Mod-loader absorb (post-v0.1 restructure work)
+
+> **Note:** This is post-v0.1 work, part of the restructure tracked in
+> [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md)
+> (the current authoritative design). The full reverse-engineering provenance
+> and the settled record-layout / detour design live in
+> [`mod-loader-absorb.md`](mod-loader-absorb.md); this section is the
+> design-level summary.
+
+kcdx absorbs the KCD2 mod loader: **kcdx IS the mod loader.** The native
+loader still constructs its manager and still performs the actual pak mount,
+but kcdx owns WHICH mods load and in what ORDER. The mechanism is narrow — kcdx
+detours only the loader's SELECT stage and, after the native SELECT has fully
+run, rebuilds the engine's enabled-mod list in kcdx's own resolved order. The
+native MOUNT and every downstream pass (localization, table patches, mod.cfg)
+then run verbatim over kcdx's list, so kcdx replaces only the SELECTION, never
+the mount — it cannot silently drop a downstream pass.
+
+Two kinds of mod fold into ONE unified resolved load order:
+
+- **Vanilla pak mods** — a folder with a `mod.manifest` and no `kcdx.toml`,
+  found under either the game's `mods/` directory or `kcdx-plugins/`. kcdx
+  discovers these, reads the vanilla `mod_order.txt` as the baseline ordering
+  seed, and folds each into the load order under a synthesized `mods.<modid>`
+  row (an early `after_game` block).
+- **kcdx plugins** — a folder with a `kcdx.toml`. A kcdx plugin is a SUPERSET
+  of a vanilla pak mod: it loads its content the same way, and `kcdx.toml`
+  purely ADDS the kcdx behavior layer. A kcdx plugin therefore works dropped in
+  EITHER `kcdx-plugins/` or `mods/` — the classification (`kcdx.toml` present →
+  plugin; else → vanilla pak) decides the behavior path, not whether content
+  loads.
+
+A **single kcdx-owned version gate** decides each mod's game-version
+compatibility — the same `<supports>` string-prefix-wildcard policy for both
+pak mods and kcdx plugins, so the two paths cannot drift. The resolved order
+**persists** back to both `load_order.toml` (the kcdx-owned editable authority,
+add-only and merge-preserving) and `mod_order.txt` (kept in sync for the
+vanilla file and a future reorder UI), write-if-changed and fail-loud.

@@ -66,12 +66,25 @@ Steam-Workshop mod "Inventory In Dialogue + Quicksave"):
 | +0x48 | **created/modified date** | `2026-05-18` |
 | +0x50–0x6F | scalar/flag tail (zeroed for this record) | — |
 
-The string fields are raw `char*`/CryString-char buffers (chars at +0; the
-first 0x18 bytes were dumped as hex to confirm storage shape). These are the
-`mod.manifest` fields the engine parses at SELECT time (`ModManager_ParseManifest`,
-id 3104). Load-bearing for record synthesis: +0x08/+0x20 (path, with/without
-slash) and +0x10 (id); the rest is metadata kcdx fills from a plugin's
-`kcdx.toml`.
+The string fields are **CryString** values, not bare `char*`. Each field holds
+a pointer to the char data, and IMMEDIATELY BEFORE those chars sits a fixed
+16-byte header — `{ pad, nRefs, nLength, nAllocSize }`, four 4-byte words — so
+the length word `nLength` lives at `data − 8` and the refcount `nRefs` at
+`data − 12` (the `pad`/zero word is `data − 16`).
+The engine READS `nLength` to size every copy it makes of the string. This is
+load-bearing for record synthesis and was verified live against a real record:
+a synthesized field that points at a bare char buffer with no header makes the
+engine read whatever bytes precede the chars as `nLength`, and a garbage length
+drives a multi-gigabyte allocation that fatally crashes the load. So record
+synthesis MUST lay down the full CryString header (`nRefs = 1`, the correct
+`nLength` / `nAllocSize`) ahead of each string buffer and point the record
+field at the chars, exactly as the native records do.
+
+These are the `mod.manifest` fields the engine parses at SELECT time
+(`ModManager_ParseManifest`, id 3104). Load-bearing for record synthesis:
++0x08/+0x20 (path, with/without slash) and +0x10 (id); the rest is metadata
+kcdx fills from a plugin's `kcdx.toml`. Every one of these fields is a
+CryString and carries the header described above.
 
 ---
 

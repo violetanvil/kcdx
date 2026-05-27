@@ -59,11 +59,17 @@ Rationale below.
 - **`kcdx.exe` is the only kcdx file at the game-bin root** — sibling
   of `KingdomCome.exe`. The user clicks one binary to launch.
 - **`kcdx-engine/` and `kcdx-plugins/` are siblings.** `kcdx-engine/`
-  holds everything kcdx ships. `kcdx-plugins/` is exclusively for
-  third-party user-installed plugins — nothing kcdx-owned lives there.
-  Both folders use the `kcdx-` prefix to make ownership unambiguous at
-  a glance and to avoid colliding with KCD2's vanilla `mods/` (pak mods)
-  and the ASI-loader-era `plugins/` folder.
+  holds everything kcdx ships. `kcdx-plugins/` is for third-party
+  user-installed plugins — nothing kcdx-owned lives there. Both folders
+  use the `kcdx-` prefix to make ownership unambiguous at a glance and
+  to read clearly apart from the ASI-loader-era `plugins/` folder.
+- **kcdx OWNS the mod load — it scans BOTH `kcdx-plugins/` AND the
+  vanilla `mods/`.** kcdx is the mod loader: it discovers from both
+  directories, so a kcdx plugin works dropped in EITHER one, and the
+  vanilla `mods/` pak mods are absorbed into kcdx's single resolved load
+  order alongside the plugins. There is no off-limits or separate `mods/`
+  folder — a `kcdx.toml` at a mod's root just adds the kcdx behavior layer
+  on top of the same content load. See `mod-loader-absorb.md`.
 - **No more `.asi` extension.** The engine binary is `kcdx.dll`, loaded
   directly by `kcdx.exe` via CreateRemoteThread, not by an ASI loader
   scanning `*.asi` files.
@@ -203,7 +209,9 @@ explicit `kcdx-` prefix. Reasons:
   `<game>/Bin/Win64MasterMasterSteamPGO/` sees the kcdx-prefixed
   folders and knows what put them there. A bare `engine/` or `plugins/`
   is generic enough to be confused with KCD2's own folders (the game's
-  `mods/` folder is already a pak-mod sibling at the game root).
+  `mods/` folder at the game root holds the vanilla pak mods — which
+  kcdx now also discovers and folds into its resolved load order, per
+  `mod-loader-absorb.md`).
 - **No collision with the ASI-loader era.** v0.1 dropped `kcdx.asi`
   into a `plugins/` folder that already held random `.asi` files from
   other mods. Naming the v0.2 plugin scan root `kcdx-plugins/` makes

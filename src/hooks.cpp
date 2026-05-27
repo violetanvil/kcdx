@@ -34,9 +34,10 @@
 #include "mod_absorb/pak_mod_registry_selftest.h"  // cap-54 engine self-report
 #include "mod_absorb/enabled_list_builder_selftest.h"  // cap-55 engine self-report
 #include "mod_absorb/order_persist_selftest.h"  // cap-56 engine self-report
+#include "mod_absorb/mod_absorb_e2e_selftest.h"  // cap-57 engine self-report
 
-// bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
-// installs from kcdx.dll DllMain, not from hooks::Install.
+// bugsplat_ctor_probe.h is included from dllmain.cpp now — the BugSplat
+// ctor probe installs from kcdx.dll DllMain, not from hooks::Install.
 
 extern "C" {
 #include "lua.h"
@@ -597,6 +598,19 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // write-if-changed skip + fail-loud paths are the batched verification
     // checkpoint, not this self-test. One-shot guarded internally.
     kcdx::mod_absorb::RunOrderPersistSelfTestOnce();
+
+    // cap-57-mod-absorb-e2e: engine self-report for the END-TO-END mod-loader-
+    // absorb regression net (closeout) — src/mod_absorb/mod_absorb_e2e_selftest.cpp.
+    // Same timing as cap-52..56: no hook-fire / "ready" dependency — by the
+    // first tick, discovery + load_order::Resolve + the version gate have run,
+    // so the live resolved state is final. Assertion 1 READS that live state
+    // read-only (the discovery->registry->fold contract for every real mods/
+    // pak mod, vacuous on an empty mods/); assertions 2-3 drive the global
+    // registry + load_order state in isolation (synthetic Discover root + a
+    // synthetic resolved set) and RESTORE it verbatim before returning. The
+    // native MOUNT end-to-end is the batched verification checkpoint, not this
+    // self-test. One-shot guarded internally.
+    kcdx::mod_absorb::RunModAbsorbE2ESelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification
