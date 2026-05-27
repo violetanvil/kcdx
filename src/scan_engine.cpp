@@ -138,10 +138,11 @@ ScanResult ResolveScan(const ScanEntry& s) {
 
 namespace {
 
-// Thin diagnostic logger over ResolveScan: emits the [[scan]] log lines.
-// Output here must stay byte-for-byte identical to the documented
-// scan-demo output — ResolveScan changes what is RETURNED, never what is
-// LOGGED.
+// Thin diagnostic logger over ResolveScan: emits the scan diagnostic log
+// lines (the legacy [[scan]] path's output, now dormant — g_scans has no
+// populator since Phase 5). Output here stays byte-for-byte identical to
+// the documented scan-demo output — ResolveScan changes what is RETURNED,
+// never what is LOGGED.
 void RunOne(const ScanEntry& s) {
     ScanResult result = ResolveScan(s);
 
@@ -217,7 +218,7 @@ void RunOne(const ScanEntry& s) {
 
 void RunAll() {
     if (g_scans.empty()) return;
-    log::InfoF("Scan engine: running %zu [[scan]] entr%s",
+    log::InfoF("Scan engine: running %zu scan diagnostic entr%s",
                g_scans.size(), g_scans.size() == 1 ? "y" : "ies");
     for (const auto& s : g_scans) {
         if (!load_order::IsPluginEnabled(s.pluginName)) {

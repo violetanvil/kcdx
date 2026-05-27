@@ -3,9 +3,9 @@
 // A core authoring verb per .claude/rules/lua-api-surface.md: top-level
 // (like kcdx.hook / kcdx.code / kcdx.bytes), configuring -> {named table}.
 // A thin Lua binder over the EXISTING, proven scan_engine resolve path
-// (scan_engine::ResolveScan — the same locator pipeline [[scan]] /
-// [[patch]] use). The engine is NOT touched; this brings the diagnostic
-// scan to the Lua surface.
+// (scan_engine::ResolveScan — the same locator pipeline the legacy
+// [[scan]] path used, shared with the byte-rewrite engines). The engine
+// is NOT touched; this brings the diagnostic scan to the Lua surface.
 //
 //   local r = kcdx.scan{
 //       name    = "find_outfit_swap",        -- required (logs + diagnostics)
@@ -36,9 +36,9 @@
 //     loaded" vs "pattern matches: 0").
 //   * CONCISE log only: the binder emits a short summary (match count +
 //     per-match module/addr) and does NOT duplicate scan_engine's
-//     file-static FormatBytesAt byte-dump — that richness lives in the
-//     [[scan]] TOML path (scan_engine::RunOne). The Lua verb's job is
-//     resolve + return + a concise log.
+//     file-static FormatBytesAt byte-dump — that richness was the legacy
+//     [[scan]] TOML path's (scan_engine::RunOne), now dormant. The Lua
+//     verb's job is resolve + return + a concise log.
 //
 // Lua precision (lua-precision.md): every returned VA is a POINTER — it
 // goes back as a kcdx.memory.pointer userdata via PushPointer, NEVER
@@ -230,8 +230,8 @@ int Lua_Scan(lua_State* L) {
         lua_pop(L, 1);
     }
 
-    // --- anchors (mutually exclusive — at most one; mirror config.cpp
-    //     ParseOneScan) ---
+    // --- anchors (mutually exclusive — at most one; same shape the
+    //     legacy config.cpp ParseOneScan parser used) ---
     int anchorCount = 0;
     lua_getfield(L, 1, "anchor_string");
     if (lua_type(L, -1) == LUA_TSTRING) {
@@ -282,7 +282,7 @@ int Lua_Scan(lua_State* L) {
     // so a future enabled = false honors it; harmless if "" (anonymous).
     std::string callSiteFile;
     int callSiteLine = 0;
-    // [[scan]] is a diagnostic-only entry — no resolver downstream
+    // A scan is a diagnostic-only entry — no resolver downstream
     // consults the author component, so read only `.plugin` from the
     // owner struct.
     entry.pluginName = kcdx::lua_registry::OwningPluginForCurrentCall(
@@ -292,8 +292,8 @@ int Lua_Scan(lua_State* L) {
     scan_engine::ScanResult result = scan_engine::ResolveScan(entry);
 
     // --- Concise diagnostic log (the workbench feedback). Does NOT
-    //     duplicate scan_engine::FormatBytesAt — the full byte-dump lives
-    //     in the [[scan]] TOML path. ---
+    //     duplicate scan_engine::FormatBytesAt — the full byte-dump was
+    //     the legacy [[scan]] TOML path's, now dormant. ---
     if (!result.moduleLoaded) {
         log::ErrorF("[scan '%s'] module '%s' not loaded (0 matches)",
                     name.c_str(), entry.module.c_str());

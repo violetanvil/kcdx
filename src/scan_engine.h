@@ -1,16 +1,23 @@
-// scan_engine — `[[scan]]` TOML entry type.
+// scan_engine — dormant AOB-scan diagnostic resolver.
 //
-// Pure-diagnostic locator resolver. Identical schema shape to [[patch]]'s
-// locator block (pattern + offset + optional context + optional anchor)
-// but writes nothing and applies nothing — just logs match count,
-// resolved address(es), and surrounding raw bytes.
+// The legacy `[[scan]]` TOML entry type was removed in Phase 5; g_scans
+// has no populator anymore, so the RunAll/RunOne byte-dump path below is
+// dormant/unreachable. The LIVE scan surface is the kcdx.scan Lua verb
+// (lua_bind_scan.cpp), which calls ResolveScan directly. ResolveScan
+// itself stays live and shared.
 //
-// Why it exists: new modders writing their first AOB have no
-// discoverable way to validate "did my pattern resolve, and where"
-// without committing a destructive write through [[patch]] or [[hook]].
-// `[[scan]]` removes the cliff.
+// Mechanically a pure-diagnostic locator resolver: same locator block
+// (pattern + offset + optional context + optional anchor) the byte-rewrite
+// engines use, but it writes nothing and applies nothing — it resolves
+// match count, address(es), and (on the dormant RunOne path) surrounding
+// raw bytes.
 //
-// Output to kcdx.log on a successful resolve:
+// The legacy [[scan]] path existed to give new modders writing a first AOB
+// a non-destructive "did my pattern resolve, and where" check without
+// committing a write. The kcdx.scan Lua verb is the current home of that
+// onramp.
+//
+// Output the dormant RunOne path emitted to kcdx.log on a successful resolve:
 //
 //   [scan 'find_outfit_swap'] pattern matches: 1
 //   [scan 'find_outfit_swap'] context matches: 1

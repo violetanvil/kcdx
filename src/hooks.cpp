@@ -300,12 +300,15 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 kcdx::trampoline_engine::ApplyAll();
                 kcdx::conflict_engine::RunPreFlight();
 
-                // [[scan]] diagnostic entries — locator-resolve only,
-                // no apply. Runs BEFORE patches/hooks apply so scans
-                // see the pristine pre-patch byte state (a scan whose
-                // pattern overlaps an applied [[patch]] would otherwise
-                // see post-patch bytes and miss). New-modder onramp
-                // per docs/design-gaps.md gap #7.
+                // Dormant scan diagnostic entries — locator-resolve only,
+                // no apply. The legacy [[scan]] TOML path that populated
+                // g_scans was removed in Phase 5, so g_scans is empty and
+                // RunAll is effectively a no-op today; the live scan surface
+                // is the kcdx.scan Lua verb. The call stays here (and runs
+                // BEFORE patches/hooks apply) so that if a populator ever
+                // returns, scans see the pristine pre-patch byte state — a
+                // scan whose pattern overlapped an applied byte rewrite would
+                // otherwise see post-patch bytes and miss.
                 kcdx::scan_engine::RunAll();
 
                 size_t okPatches = 0, okHooks = 0;
