@@ -39,30 +39,15 @@ _download/
 release-staging/
 test-install/
 
-# Reverse-engineering toolchain. The pre-analyzed Ghidra project and the
-# Ghidra install are multi-GB binaries — kept in-tree for local use but never
-# committed. Helper scripts and a setup README under third-party-ghidra/ stay
-# tracked. WHGame.dll is the game binary; never commit it.
-third-party-ghidra/ghidra_project/
-third-party-ghidra/ghidra_12.1_PUBLIC/
-third-party-ghidra/x64dbg/
-third-party-ghidra/ninja/
-third-party-ghidra/WHGame.dll
-third-party-ghidra/*.fidb
-third-party-ghidra/*.log
-
-# Built pak fixtures are binary; keep probe Lua source + manifests tracked,
-# ignore the compiled .pak blobs.
-test-fixtures/pak-mods/**/*.pak
-
-# RE research scratch under _research/ is tracked (recon notes, the
-# address-library seed, ABI walker, phase-N reports). EXCEPT the
-# predecessor-sig clones — those are shallow clones of third-party repos
-# with their own nested .git dirs; re-cloneable, never committed here.
-_research/predecessor-sigs/
-
-# Generated Ghidra dump artifacts (function inventories, statement/anchor
-# dumps) are large and regenerable from the committed ghidra_scripts via the
-# recipe in each dir's notes — track the scripts + findings, not the output.
-_research/parallel-ghidra-research/**/*.csv
-_research/parallel-ghidra-research/**/*.jsonl
+# Local-only working materials — kept on disk, never committed to the public
+# repo. The agent governance system (.claude/ + CLAUDE.md), reverse-engineering
+# toolchain (third-party-ghidra/), RE research scratch (_research/), internal
+# planning + bug trails (docs/outstanding-work/, docs/known-issues/), and the
+# pak-mod test fixtures (test-fixtures/) all live here locally.
+.claude/
+CLAUDE.md
+_research/
+third-party-ghidra/
+test-fixtures/
+docs/outstanding-work/
+docs/known-issues/

@@ -168,13 +168,9 @@ failures). To answer the three questions an author actually asks:
 - **"What passes live right now?"** (per-row status + SHA) →
   [`test-plugins/README.md`](test-plugins/README.md), the live test
   matrix.
-- **"What's the v0.2 phase plan, and what's still coming?"** →
-  [`docs/outstanding-work/restructure-plan.md`](docs/outstanding-work/restructure-plan.md),
-  the restructure roadmap.
 
 [`docs/design.md`](docs/design.md) is the v0.1 spec and is marked
-SUPERSEDED — read the restructure plan first if you're writing a
-plugin or contributing to the engine.
+SUPERSEDED.
 
 ## Installation (v0.2 layout, Phase 1+)
 
