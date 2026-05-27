@@ -396,6 +396,41 @@ bool OffThreadShouldSkip(uint8_t policy, uint64_t dedupKey,
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Dead-callback-ref warn/error-once latch (#3 + #13, Batch E fail-state sweep).
+//
+// A dispatch entry whose callbackRef is a REAL registry ref (>= 0) but whose
+// lua_rawgeti yields a non-function means the closure was lost (GC'd, or the
+// registry slot reused) WHILE the entry stayed live in the chain. Today's
+// author surfaces cannot produce this — uninstall/fail always luaL_unref AND
+// reset callbackRef to LUA_NOREF together (lua_bind_hook.cpp:257-260,
+// 1089-1091), so a live entry carries either a valid function ref or the -2
+// sentinel. It is a defensive guard against an INTERNAL lifecycle bug (a future
+// unref-without-reset, registry reuse). Pre-Batch-E it was silent: an exclusive
+// (replace/around) entry neutralized the function with ZERO log (#3); a
+// before/after/mid went inert every fire with ZERO log (#13).
+//
+// Hot-path contract (.claude/rules/lua-callback-threading.md): these are
+// per-call dispatch paths on per-frame game functions. The steady-state LIVE
+// path (lua_isfunction passes) NEVER reaches this latch — zero log, zero alloc,
+// zero lock. Only the FIRST observation of a lost ref, per dedup key, logs;
+// thereafter the set lookup short-circuits. Same idiom + same keying as the
+// off-thread warn-once above (g_offThreadWarned): handleId for sig/callsite
+// entries, targetVa for mid (one-per-VA in v1). NOT a Lua static-const sentinel
+// (.claude/rules/lua-bridge.md AP5) — a plain integer set guarded by a mutex.
+std::unordered_set<uint64_t> g_deadRefWarned;
+std::mutex                   g_deadRefWarnedMu;
+
+// True iff THIS dedup key has not yet logged its dead-ref line. One insert per
+// distinct key for the process lifetime; the common (live) path never calls
+// this. severity is chosen by the caller: #3 (exclusive) logs Error (the
+// function is neutralized — a wrong-result/crash-risk); #13 (before/after/mid)
+// logs Warn (the entry merely goes inert — a degradation).
+bool DeadRefFirstObservation(uint64_t dedupKey) {
+    std::lock_guard<std::mutex> lock(g_deadRefWarnedMu);
+    return g_deadRefWarned.insert(dedupKey).second;
+}
+
 Chain* FindChain(uintptr_t va) {
     auto it = g_chains.find(va);
     return it == g_chains.end() ? nullptr : it->second.get();
@@ -866,7 +901,28 @@ void DispatchExclusive(lua_State* L, Chain& chain, const ChainEntry& e,
     }
 
     lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
-    if (!lua_isfunction(L, -1)) { lua_pop(L, 1); return; }
+    if (!lua_isfunction(L, -1)) {
+        lua_pop(L, 1);
+        // #3 — exclusive (replace/around) dead callback ref. The caller has
+        // ALREADY set runOriginal=false for this entry, so the original is
+        // suppressed AND this callback is skipped: the hooked game function is
+        // now a default-return no-op. That is a NEUTRALIZED live function —
+        // Error severity, NOT a quiet skip. Error-once per entry (handleId) so
+        // a per-frame target does not flood while the author still sees the one
+        // loud line. callbackRef==-2 (LUA_NOREF, uninstalled) never reaches
+        // DispatchExclusive (the entry would not be in the exclusive branch),
+        // so any non-function here is the genuine-lost-ref case.
+        if (DeadRefFirstObservation(e.handleId)) {
+            log::ErrorF(
+                "hook_chain: %s '%s' (plugin '%s') at 0x%p — callback ref "
+                "invalid (closure GC'd or never set); original SUPPRESSED and "
+                "callback SKIPPED, so the hooked function now returns a "
+                "default/garbage value (neutralized). Error-once per entry.",
+                kcdx::hook_payload::ModeToken(e.mode), e.name.c_str(),
+                e.pluginName.c_str(), (void*)chain.targetVa);
+        }
+        return;
+    }
     const int top0 = lua_gettop(L);  // [..., fn]
 
     int nargs = 0;
@@ -1009,7 +1065,32 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
         if (!L) continue;  // VM not bound yet — skip the Lua callback safely
         // Push the callback closure.
         lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
-        if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
+        if (!lua_isfunction(L, -1)) {
+            lua_pop(L, 1);
+            // #13 — DispatchPre dead callback ref. This guard precedes the
+            // exclusive dispatch below, so a replace/around with a lost ref is
+            // caught HERE (continue) and runOriginal stays true: the original
+            // runs un-hooked. A before entry simply does not fire. Either way
+            // this entry is INERT, not the function-neutralizing #3 case — so
+            // Warn (a degradation), warn-once per entry (handleId) to honor the
+            // per-frame hot-path contract. Only the genuine-lost-ref case
+            // reaches here: callbackRef==-2 (LUA_NOREF, uninstalled) would have
+            // produced a non-function too, but an uninstalled entry is removed
+            // from the chain (Uninstall erases it), so a live entry in this
+            // loop with a non-function ref is a real lost ref, not the
+            // sentinel. (The -2 sentinel is checked explicitly in MidDispatch
+            // where mid lives on the Chain and is not erased.)
+            if (DeadRefFirstObservation(e.handleId)) {
+                log::WarnF(
+                    "hook_chain: %s '%s' (plugin '%s') at 0x%p — callback ref "
+                    "no longer a function (registry ref lost); entry inert — it "
+                    "will not fire (the original runs un-hooked). Warn-once per "
+                    "entry.",
+                    kcdx::hook_payload::ModeToken(e.mode), e.name.c_str(),
+                    e.pluginName.c_str(), (void*)target_func_ptr);
+            }
+            continue;
+        }
 
         if (e.mode == Mode::Before) {
             // before(self, szApp, ...) -> [changed args...] | nothing
@@ -1113,7 +1194,26 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* params,
         if (!L) continue;
 
         lua_rawgeti(L, LUA_REGISTRYINDEX, e.callbackRef);
-        if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
+        if (!lua_isfunction(L, -1)) {
+            lua_pop(L, 1);
+            // #13 — DispatchPost dead callback ref. Only `after` entries reach
+            // here. A lost ref makes this after-hook inert: the return value
+            // passes through un-transformed. A degradation, not a crash-risk —
+            // Warn, warn-once per entry (handleId), hot-path-safe (the live
+            // path never reaches this block). Genuine-lost-ref only: an
+            // uninstalled entry is erased from the chain, so a live non-function
+            // ref here is a real lost ref, not the -2 sentinel.
+            if (DeadRefFirstObservation(e.handleId)) {
+                log::WarnF(
+                    "hook_chain: after '%s' (plugin '%s') at 0x%p — callback "
+                    "ref no longer a function (registry ref lost); entry inert "
+                    "— it will not fire (the return value passes through "
+                    "un-transformed). Warn-once per entry.",
+                    e.name.c_str(), e.pluginName.c_str(),
+                    (void*)target_func_ptr);
+            }
+            continue;
+        }
 
         const int top0 = lua_gettop(L);  // [..., fn]
         int nargs = 0;
@@ -1250,6 +1350,11 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
 
     lua_State* L = g_L;
     if (!L) return 0;
+    // -2 (LUA_NOREF) is the DELIBERATE uninstalled / never-set sentinel — a mid
+    // chain whose callback was uninstalled keeps the detour as a no-op shim
+    // (mid is one-per-VA; the Chain is not erased). This path MUST stay silent
+    // (#13): it is not a lost ref, it is "nothing installed here." The dead-ref
+    // warn below fires ONLY for midCallbackRef >= 0 that yields a non-function.
     if (chain->midCallbackRef == -2) return 0;
 
     // Capture payload base. Slots are at 16-byte stride.
@@ -1259,7 +1364,27 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
                          ? param_count : chain->capTypes.size();
 
     lua_rawgeti(L, LUA_REGISTRYINDEX, chain->midCallbackRef);
-    if (!lua_isfunction(L, -1)) { lua_pop(L, 1); return 0; }
+    if (!lua_isfunction(L, -1)) {
+        lua_pop(L, 1);
+        // #13 — mid dead callback ref. The -2 sentinel was already filtered
+        // above, so midCallbackRef >= 0 here: this is the genuine-lost-ref
+        // case (closure GC'd / registry slot reused while the mid chain stayed
+        // live). The mid goes inert — the captured instruction runs un-hooked
+        // (g_midSkipOriginal stays clear). A degradation, not a crash-risk —
+        // Warn, warn-once. Mid is one-per-VA in v1, so the dedup key is
+        // targetVa (matching the off-thread mid keying above), not a per-entry
+        // handleId. Hot-path-safe: the live path never reaches this block.
+        if (DeadRefFirstObservation(chain->targetVa)) {
+            log::WarnF(
+                "hook_chain: mid '%s' (plugin '%s') at 0x%p — callback ref no "
+                "longer a function (registry ref lost); mid inert — it will "
+                "not fire (the captured instruction runs un-hooked). Warn-once "
+                "per chain.",
+                chain->midName.c_str(), chain->midPluginName.c_str(),
+                (void*)target_func_ptr);
+        }
+        return 0;
+    }
     const int top0 = lua_gettop(L);  // [..., fn]
 
     // Build the capture handle table.
@@ -1782,6 +1907,20 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
     // instruction). Without this the trampoline reads null and rets to 0.
     if (void** slot = newChain->rf->get_jit_original_slot()) {
         *slot = install.pOriginal;
+    } else {
+        // #14 — null call-original slot. The runtime_func_t ctor
+        // default-constructs the detour non-null, so this is normally
+        // unreachable; but a null slot means the JIT trampoline's
+        // call-original path reads null and any around / auto-mid that rets
+        // into it jumps to 0 → crash. Pre-Batch-E this silently proceeded and
+        // reported install SUCCESS (the two AddCallsite variants already failed
+        // the install here; the others did not). Make them CONSISTENT: fail the
+        // install with a reason, exactly as AddCallsite does — Error-class
+        // (a later around/auto-mid on this target would deref null and crash).
+        res.reason = "internal: runtime_func_t has no call-original slot "
+                     "(detour_hook missing) — a later around/auto-mid on this "
+                     "target would deref null and crash; install aborted";
+        return res;
     }
 
     g_chains.emplace(targetVa, std::move(newChain));
@@ -2086,6 +2225,20 @@ AddResult Add(lua_State*                             L,
     // call-through reads null).
     if (void** slot = newChain->rf->get_jit_original_slot()) {
         *slot = install.pOriginal;
+    } else {
+        // #14 — null call-original slot. The runtime_func_t ctor
+        // default-constructs the detour non-null, so this is normally
+        // unreachable; but a null slot means the JIT trampoline's
+        // call-original path reads null and any around / auto-mid that rets
+        // into it jumps to 0 → crash. Pre-Batch-E this silently proceeded and
+        // reported install SUCCESS (the two AddCallsite variants already failed
+        // the install here; the others did not). Make them CONSISTENT: fail the
+        // install with a reason, exactly as AddCallsite does — Error-class
+        // (a later around/auto-mid on this target would deref null and crash).
+        res.reason = "internal: runtime_func_t has no call-original slot "
+                     "(detour_hook missing) — a later around/auto-mid on this "
+                     "target would deref null and crash; install aborted";
+        return res;
     }
 
     // Build the call_original thunk now if this first hook is an around.
@@ -2222,6 +2375,20 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
     }
     if (void** slot = newChain->rf->get_jit_original_slot()) {
         *slot = install.pOriginal;
+    } else {
+        // #14 — null call-original slot. The runtime_func_t ctor
+        // default-constructs the detour non-null, so this is normally
+        // unreachable; but a null slot means the JIT trampoline's
+        // call-original path reads null and any around / auto-mid that rets
+        // into it jumps to 0 → crash. Pre-Batch-E this silently proceeded and
+        // reported install SUCCESS (the two AddCallsite variants already failed
+        // the install here; the others did not). Make them CONSISTENT: fail the
+        // install with a reason, exactly as AddCallsite does — Error-class
+        // (a later around/auto-mid on this target would deref null and crash).
+        res.reason = "internal: runtime_func_t has no call-original slot "
+                     "(detour_hook missing) — a later around/auto-mid on this "
+                     "target would deref null and crash; install aborted";
+        return res;
     }
 
     g_chains.emplace(targetVa, std::move(newChain));
@@ -2492,6 +2659,20 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
     }
     if (void** slot = newChain->rf->get_jit_original_slot()) {
         *slot = install.pOriginal;
+    } else {
+        // #14 — null call-original slot. The runtime_func_t ctor
+        // default-constructs the detour non-null, so this is normally
+        // unreachable; but a null slot means the JIT trampoline's
+        // call-original path reads null and any around / auto-mid that rets
+        // into it jumps to 0 → crash. Pre-Batch-E this silently proceeded and
+        // reported install SUCCESS (the two AddCallsite variants already failed
+        // the install here; the others did not). Make them CONSISTENT: fail the
+        // install with a reason, exactly as AddCallsite does — Error-class
+        // (a later around/auto-mid on this target would deref null and crash).
+        res.reason = "internal: runtime_func_t has no call-original slot "
+                     "(detour_hook missing) — a later around/auto-mid on this "
+                     "target would deref null and crash; install aborted";
+        return res;
     }
 
     if (payload.mode == kcdx::hook_payload::Mode::Around) {

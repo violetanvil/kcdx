@@ -1,0 +1,135 @@
+# COMP-15 — hook_chain / hook_engine dispatch + install fail-state instrumentation
+# (Batch E of the fail-state-logging sweep). THREE defensive guards in the hook
+# dispatch + install machinery now fail LOUD instead of silently neutralizing /
+# no-op'ing (AP14). All three are ENGINE-internal — none is reachable from any
+# author surface (no kcdx.* verb, no kcdx*Interface method drives them), so this
+# is a MANIFEST-ONLY STUB (no plugin.lua / no DLL — there is nothing to drive).
+# Same stub pattern as cap-48-crash-attribution (engine fail-path machinery, rows
+# held PENDING via test_names, confirmed by log observation).
+#
+# ===========================================================================
+# WHY THESE ARE NOT cap-48-STYLE FLIP-ON-TRIGGER ROWS — READ THIS FIRST.
+# ===========================================================================
+# cap-48's rows flip when a REAL fault occurs (a live 0xC8 crash bundle / a moved
+# [record+0x80] offset) — they have a positive in-the-wild trigger. These THREE
+# rows do NOT. All three guards are provably UNREACHABLE on the current build:
+#
+#   - #3 / #13 (dead callback ref): the engine ALWAYS unrefs the Lua registry
+#     slot and resets callbackRef to LUA_NOREF (-2) TOGETHER (Uninstall;
+#     lua_bind_hook.cpp), so a LIVE chain entry never holds a callbackRef >= 0
+#     that points at a non-function. A genuine lost ref (closure GC'd while the
+#     entry stayed live, or a registry slot reused) cannot arise without an
+#     internal lifecycle regression.
+#   - #14 (null call-original slot): the runtime_func_t ctor ALWAYS
+#     default-constructs m_detour non-null, so get_jit_original_slot() is never
+#     null. A null slot cannot arise without an internal ctor regression.
+#
+# Therefore there is NO positive trigger this build. The CONFIRMING signal for
+# every row is ABSENCE: a clean dev-mode launch must show the guard's log line(s)
+# ABSENT (the healthy dispatch / install path must NOT false-fire the guard).
+# The falsifiable claim each row pins (AP15): "the healthy live path does NOT
+# false-fire this guard" — a guard line appearing on a clean launch is the FAIL
+# (the engine is neutralizing / failing a healthy hook, an internal regression).
+# These rows ALSO pin the EXACT contract + the exact log-line text so a FUTURE
+# internal lifecycle/ctor-regression repro has the expected line documented to
+# grep for. They stay PENDING by design (confirmed-clean by absence), NOT
+# flipped PASS by a normal launch.
+#
+# ---------------------------------------------------------------------------
+# ROW comp-15-exclusive-deadref-error  (Fix #3, hook_chain.cpp DispatchExclusive)
+# ---------------------------------------------------------------------------
+# CONTRACT: a replace/around chain entry whose callbackRef is lost (closure GC'd
+# or slot reused) emits ONE Error naming the neutralized target + entry — NOT a
+# silent default-return no-op. With the original ALREADY suppressed (runOriginal
+# = false) AND the callback skipped, the hooked game function becomes a
+# default-return no-op = a NEUTRALIZED live function, hence Error (not Warn).
+# Error-once per entry (handleId latch) so a per-frame target does not flood.
+# DOUBLY-DEFENSIVE (Decision 2, Option A — the #3 Error STAYS): on today's build
+# a lost replace/around ref is caught UPSTREAM by DispatchPre's #13 guard (the
+# early `continue` before the exclusive branch), so #3 is the net UNDERNEATH —
+# if a future refactor removes DispatchPre's early-continue, #3 still catches the
+# neutralization at the exclusive path. Defense-in-depth, intentionally retained.
+# EXACT LOG LINE (log::ErrorF, Error severity):
+#   hook_chain: <mode> '<name>' (plugin '<plugin>') at 0x<va> — callback ref
+#   invalid (closure GC'd or never set); original SUPPRESSED and callback
+#   SKIPPED, so the hooked function now returns a default/garbage value
+#   (neutralized). Error-once per entry.
+# CONFIRM BY ABSENCE: no such Error on a healthy launch (the live exclusive
+# dispatch path must not false-fire).
+#
+# ---------------------------------------------------------------------------
+# ROW comp-15-deadref-warn  (Fix #13, hook_chain.cpp DispatchPre/DispatchPost/
+#                            MidDispatch)
+# ---------------------------------------------------------------------------
+# CONTRACT: a before/after/mid entry whose callbackRef is lost emits ONE Warn
+# per entry (NOT per-frame — DeadRefFirstObservation latch on the hot path),
+# naming the inert entry; the entry merely goes inert (the original runs
+# un-hooked / the return passes through un-transformed / the captured
+# instruction runs un-hooked), a degradation not a neutralization, hence Warn.
+# The -2 LUA_NOREF uninstalled sentinel stays SILENT (it is "nothing installed
+# here", filtered before this guard) — only the genuine-lost-ref case (ref >= 0
+# but non-function) warns. THREE dispatch sites, all Warn-once:
+# EXACT LOG LINES (log::WarnF, Warn severity):
+#   DispatchPre (before):
+#     hook_chain: <mode> '<name>' (plugin '<plugin>') at 0x<va> — callback ref
+#     no longer a function (registry ref lost); entry inert — it will not fire
+#     (the original runs un-hooked). Warn-once per entry.
+#   DispatchPost (after):
+#     hook_chain: after '<name>' (plugin '<plugin>') at 0x<va> — callback ref no
+#     longer a function (registry ref lost); entry inert — it will not fire (the
+#     return value passes through un-transformed). Warn-once per entry.
+#   MidDispatch (mid):
+#     hook_chain: mid '<name>' (plugin '<plugin>') at 0x<va> — callback ref no
+#     longer a function (registry ref lost); mid inert — it will not fire (the
+#     captured instruction runs un-hooked). Warn-once per chain.
+# CONFIRM BY ABSENCE: no such Warn on a healthy launch.
+#
+# ---------------------------------------------------------------------------
+# ROW comp-15-null-slot-fail-install  (Fix #14, hook_chain.cpp x6 +
+#                                       hook_engine.cpp x2 = 8 sites)
+# ---------------------------------------------------------------------------
+# CONTRACT: an install hitting a null call-original slot FAILS the install with a
+# reason (the hook_chain Add* paths set res.reason + return — fail-install) or
+# Errors-and-returns-false (the hook_engine ApplyOne* paths), NOT a silent
+# success that crashes on the first around/auto-mid call (the JIT trampoline
+# would read a null call-original and ret to 0). Pre-Batch-E several sites
+# silently proceeded and reported install SUCCESS; now all 8 are CONSISTENT.
+# EXACT LOG / REASON TEXT:
+#   hook_chain.cpp — sig + mid Add* paths (res.reason, surfaced as an
+#   Error-class install failure by the caller):
+#     internal: runtime_func_t has no call-original slot (detour_hook missing) —
+#     a later around/auto-mid on this target would deref null and crash; install
+#     aborted
+#   hook_chain.cpp — AddCallsite paths (res.reason):
+#     callsite: runtime_func_t has no call-original slot (internal — detour_hook
+#     missing)
+#   hook_engine.cpp ApplyOneHook (log::ErrorF, Error; returns false):
+#     [hook '<name>'] aborted: runtime_func_t has no call-original slot
+#     (detour_hook missing); the JIT trampoline would read a null call-original
+#     and ret to 0 on the first call — install aborted (target 0x<va>)
+#   hook_engine.cpp ApplyOneMidHook (log::ErrorF, Error; returns false):
+#     [mid_hook '<name>'] aborted: runtime_func_t has no call-original slot
+#     (detour_hook missing); the JIT trampoline would read a null call-original
+#     and ret to 0 on the first fire — install aborted (target 0x<va>)
+# CONFIRM BY ABSENCE: no such install-failure on a healthy launch — every
+# test-suite hook installs cleanly (m_detour is always non-null).
+#
+# ===========================================================================
+# Test mode: boot-only (absence-confirmation on a clean dev-mode launch; no
+# gesture). The agent reads the newest kcdx-dev log and confirms NONE of the
+# lines above appear, alongside the standard suite: X/Y passing line.
+# ===========================================================================
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_15_hook_dispatch_failstate"
+display_name        = "COMP-15 hook dispatch/install fail-state instrumentation"
+author              = "ts"
+description         = "Batch E of the fail-state-logging sweep: three defensive guards in the hook_chain dispatch + hook_chain/hook_engine install machinery now fail LOUD instead of silently neutralizing/no-op'ing (AP14). #3 DispatchExclusive dead-ref Error-once (neutralized function); #13 DispatchPre/Post/MidDispatch dead-ref Warn-once (inert entry, genuine lost ref only — the -2 LUA_NOREF sentinel stays silent); #14 null call-original slot fails the install across 8 sites instead of wiring a crash-on-first-call hook. All three are provably UNREACHABLE on this build (the engine unrefs+resets callbackRef together; the runtime_func_t ctor builds m_detour non-null) — these are NOT cap-48-style flip-on-trigger rows. Manifest-only stub holds the three rows PENDING; the confirming signal is ABSENCE of the guard lines on a healthy launch (the live dispatch/install path must not false-fire), plus a documented contract + log-line pin for a future internal lifecycle/ctor-regression repro."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["comp-15-exclusive-deadref-error", "comp-15-deadref-warn", "comp-15-null-slot-fail-install"]

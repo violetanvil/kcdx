@@ -150,6 +150,21 @@ bool ApplyOneHook(size_t hookIdx) {
         // explanation. Same fix; both paths bypass m_detour->enable().
         if (void** slot = rf->get_jit_original_slot()) {
             *slot = install.pOriginal;
+        } else {
+            // #14 — null call-original slot. Normally unreachable (the
+            // runtime_func_t ctor default-constructs the detour non-null), but
+            // a null slot means the trampoline's call-original push reads null
+            // and the subsequent ret jumps to 0 → crash. Pre-Batch-E this
+            // silently proceeded and returned true (install SUCCESS) with no
+            // signal. This function returns bool and aborts on every prior
+            // failure (make_jit / InstallRuntime); do the same here — fail the
+            // install loud rather than wire a crash-on-first-call hook.
+            log::ErrorF("[hook '%s'] aborted: runtime_func_t has no "
+                        "call-original slot (detour_hook missing); the JIT "
+                        "trampoline would read a null call-original and ret to "
+                        "0 on the first call — install aborted (target 0x%p)",
+                        h.name.c_str(), reinterpret_cast<void*>(targetAddr));
+            return false;
         }
 
         // Register the runtime_func_t with scripting so the dispatchers
@@ -405,6 +420,21 @@ bool ApplyOneMidHook(size_t midHookIdx) {
             log::KV("name",       mh.name),
             log::KV("slot_addr",  (void*)slot),
             log::KV("slot_value", install.pOriginal));
+    } else {
+        // #14 — null call-original slot. Normally unreachable (the
+        // runtime_func_t ctor default-constructs the detour non-null), but a
+        // null slot means the JIT'd trampoline reads a null call-original and
+        // (in Auto / call_original modes) rets to 0 → crash on the first fire.
+        // Pre-Batch-E this silently proceeded and returned true. This function
+        // aborts on every prior failure; do the same — fail loud rather than
+        // wire a crash-on-first-call mid hook. Aborting here is clean: nothing
+        // is registered with scripting yet (that happens below).
+        log::ErrorF("[mid_hook '%s'] aborted: runtime_func_t has no "
+                    "call-original slot (detour_hook missing); the JIT "
+                    "trampoline would read a null call-original and ret to 0 "
+                    "on the first fire — install aborted (target 0x%p)",
+                    mh.name.c_str(), reinterpret_cast<void*>(targetAddr));
+        return false;
     }
 
     // Wire scripting: dispatchers need the runtime_func_t for
