@@ -592,9 +592,9 @@ facts can move across a patch.
 | Column | Type | Null | USER? | Meaning |
 |---|---|---|---|---|
 | `id` | INTEGER PK | no | ✅ | FK target for the intervals. |
-| `tag` | TEXT | no | ✅ | `1.5.1164953`. |
-| `ordinal` | INTEGER | no | ✅ | Monotonic sort key (`1.10 > 1.6`, which a string sort gets wrong). |
-| `released` | TEXT | yes | ✅ | Release date if known. |
+| `tag` | TEXT | no | ✅ | Human version `1.5.1164953` (from `whdlversions.json` MasterMasterPGO config). |
+| `ordinal` | INTEGER | no | ✅ | Sort key = the game build number (`1164953`). The game's own monotonic counter → backfill-safe (an earlier 1.4 build is a smaller number; no renumber). |
+| `released` | TEXT | yes | ✅ | Release date if known; optional. |
 
 #### `entities` — the id authority (USER ✅)
 
@@ -773,6 +773,26 @@ Both dropped as single-version/single-module relics the new model obsoletes.)
 | `callee_kcdx_id` | INTEGER FK→`entities` | no | ❌ | Called function. |
 
 (Cut: `edge_reason`. Indexed both directions.)
+
+#### Provenance — how each column-group is obtained (the build's source map)
+
+| Column-group | Source |
+|---|---|
+| `entities.kcdx_id` / `entity_type` | maintainer-assigned at the v1.5 baseline (id 1..321120 per dumped function; `entity_type=function` for the dump, slots/sites from the curated seed). |
+| `entities.module_id`, `modules.name` | maintainer-supplied at import (the dumped module's filename). |
+| `game_versions.tag` / `ordinal` | `<game>/whdlversions.json`, the **MasterMasterPGO** config's `versionId` — `tag=1.5.1164953` (branch `release_1_5` + build), `ordinal=1164953` (the game's monotonic build number). PROBE-verified; the DLL has no version resource. |
+| `entity_versions.rva` / `length` | Ghidra `Function.getEntryPoint()−imageBase` / `getBody().getNumAddresses()` (FunctionPass). |
+| `entity_versions.content_hash` | BLAKE3 of on-disk `[rva, rva+length)`, no normalization (hash contract; `ContentHash.java`). |
+| `entity_versions.value` | the resolved integer for non-byte kinds (vtable slot / data offset) — from the curated seed. |
+| `entity_versions.signature` / `observed_arg_slots` | `produce_signatures.py` (abi_walker width-floor; honest width-types only, never fabricated). |
+| `entity_versions.caller_reg_arg_count` / `caller_arg_agreement` | `produce_caller_reg_args.py` (caller-side reg-arg scan; non-authoritative floor). |
+| `entity_versions.auto_name` / `decompile_quality` | Ghidra (`FUN_<rva>` label; decompiler clean/partial/unanalyzable). DEV-only. |
+| `entity_versions.valid_from` / `valid_through` | the import: baseline = `valid_from`=v1.5, `valid_through`=NULL; later = the §11.6 matcher closes/opens. |
+| `kcdx_overlay.*` (identity) | seed.csv (`name`, `source`, `notes`); `kind` inferred from the row shape + notes; `kcdx_id` matched seed-rva → baseline entity. |
+| `kcdx_overlay_versions.signature` / `offset` / `vtable_slot` | seed.csv (`signature`; offset + slot parsed from notes). `status` from seed.csv `status`, or auto-`unverified` by the pairing trigger when a byte-form changes. |
+| `statements.*` / `referenced_vars.*` | Ghidra decompiler per statement (StatementPass). DEV-only. |
+| `call_edges.*` | Ghidra call-graph edges (CallEdgePass). DEV-only. |
+| `meta.schema_version` / `abi_confidence` | constants set by the import. |
 
 **The cuts (vs the current dump):** the `functions` table (collapsed to
 `entities`+`entity_versions`); `functions.signature` (zero-ABI `undefined
