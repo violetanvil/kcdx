@@ -582,21 +582,52 @@ stable identity the hash history tracks.
 |---|---|
 | `kcdx_id` | PK; the stable id (may equal a `functions.kcdx_id`, or be a curated-only id) |
 | `name` | nullable. The gameplay name ("IsInCombat"). **Stable-id-before-name**: an id can exist with name=NULL. |
-| `target_kind` | enum `function` \| `callsite` \| `aob` \| `vtable_idx` \| `data_slot` (the seed.csv reality — ~1/3 of rows aren't function entries) |
-| `target_rva` | nullable (NULL for vtable_idx; the callsite/AOB carry an offset) |
-| `signature` | nullable. The VERIFIED ABI in kcdx's DSL. NULL for callsite/AOB/vtable/data rows. |
-| `status` | `verified` \| `unverified` (only verified rows project to runtime) |
+| `kind` | enum, **9 values** (the seed.csv reality, grounded in all 139 rows): `function` (108) \| `function_no_sig` (~9, real entry ABI not DSL'd) \| `function_variadic` (4, DSL can't express `...`) \| `callsite` (3–4, carries `offset`; `aob` collapses in) \| `data_slot` (3, static `.data`) \| `string_anchor` (1, `.rdata` literal) \| `instruction_anchor` (1, a specific instruction RVA) \| `vtable_base` (3, vtable BASE address) \| `vtable_index` (6, integer SLOT, no rva, unverified). |
+| `rva` | nullable (NULL for the 6 `vtable_index` rows; callsite carries `offset`). |
+| `offset` | nullable; only `callsite` rows populate it (the `+13` / `-4` consumers apply). |
+| `vtable_slot` | nullable INTEGER (**D1**, decided): the integer slot for `vtable_index` rows, its own structured column (NOT left in notes). |
+| `signature` | nullable. The VERIFIED ABI in kcdx's DSL. NULL for the 31 non-plain-function rows. |
+| `status` | `verified` (133) \| `unverified` (6) — only verified rows project to runtime. |
+| `source` | **D2, decided: kept as its own column** (seed.csv's separate `source`; all 139=`verified` today but it's a provenance TIER distinct from `status`; preserving it honors the generator's lossless 8-column round-trip — do NOT fold into status). |
 | `is_deprecated`, `superseded_by` | **name-deprecation axis** (§11.4): rename OldName→NewName; the function still lives. |
-| `source_tier` | provenance (curated/predecessor-sig/string-anchor) |
 | `authored_against_version`, `verified_on_version` | which game build the verification holds for |
-| `description` | **DEV DB ONLY** (the seed.csv notes prose; never in the USER ship) |
+| `notes` | **DEV DB ONLY** (the seed.csv notes prose; never in the USER ship; the projected output stays public-clean) |
 
 New `signature_source` dict value `curated` distinguishes a hand-verified ABI
 from the abi_walker floor (the generator projects ONLY `curated`).
 
+**Seed id reconciliation (decided):** the seed.csv ids (1000–3106) are NOT
+preserved — they get renumbered to their correct `kcdx_id` in the overlay. A code
+target's overlay row matches the v1.5 baseline `functions.kcdx_id` AT ITS rva (the
+seed row's rva → the baseline function there → that function's kcdx_id);
+non-code rows (`vtable_index`) get a curated-only id. No collision with the
+1..321120 bulk baseline because the old seed id-space is discarded.
+
 **`meta`** — one-row table for the single-value columns hoisted out of the bulk
-(`module`, `game_version` of the current import, `abi_confidence` policy), per
-the cut pass.
+(`module`, `game_version` of the current import, `abi_confidence` policy,
+`schema_version`), per the cut pass.
+
+**`signatures`** (the abi_walker width-floor) — **D3, decided: KEEP** (it is NOT
+dead weight like the cut `functions.signature` was). `functions.signature` was
+100% `undefined FUN_<rva>()` — zero ABI → cut. `signatures.signature` is the
+honest width-floor (`? (i64, i32, …)`, 0% identical to the cut column) and is the
+ONLY marshalling ABI the engine has for the 321K UN-curated functions a
+`kcdx.find` author hooks (the curated 139 get the verified `overlay.signature`
+instead). Cutting it would break callback hooks on any discovered-but-unnamed
+function — the disassembler-test floor (AP12). **USER-vs-DEV ship is GATED on a
+checkable engine fact** (results-driven): does a user's engine re-derive a hook's
+marshalling ABI from the DB at install, or does the plugin carry its own baked
+signature? Ship in BOTH DBs for now (safe default — cutting later is trivial,
+breaking user hooks is not); resolve the cut at the Phase 9.1 engine-consumer
+design when that behavior is settled.
+
+**The cuts (vs the current dump):** `functions.signature` (zero-ABI dead
+column); `functions.signature_source` (single-value); `functions.function_name` +
+`namespace` (CRT-only, no gameplay names); `functions.auto_name` cut from USER
+(kept DEV-only); `statements.cvar_ref` / `statements.edge_reason` /
+`signatures.edge_reason` / `call_edges.edge_reason` / `caller_reg_args.edge_reason`
+(100% empty); `statements.callee` NULL'd when it's the redundant `FUN_<rva>` form;
+`module` / `game_version` / `abi_confidence` hoisted to `meta`.
 
 ### 11.3 The author reference surface — exactly two handles + the hatch
 
