@@ -459,7 +459,7 @@ In dependency order. Each routes to the skill that gives it the right discipline
 | 2 | **Build the production extractor** — functions + statements + referenced_vars + call_edges (Java) + signatures + caller_reg_args (Python) → §4 CSV-per-table RVA-sharded dirs. | `/feature` | no | **DONE** (`tools/refdata-extractor/`; harness 26/26; BLAKE3 35/35) |
 | 2p | **Parallel orchestrator + RVA-range filter** — N workers over disjoint ranges on per-worker project copies, merge by disjoint shards. (Ghidra locks a project exclusively — per-worker COPIES are required, probe-verified.) | `/feature` | no | **DONE** (`run-parallel.ps1`; `614f563`) |
 | 3a | **Run the full dump** over WHGame.dll. | batch run | no | **DONE** (8-way parallel, 2026-05-27; 321,120 functions; 5.24M statements; 10.88M referenced_vars; 1.52M call_edges; output at `C:\kcdx-refdata\refdata-full-20260527-105617\`, 1.3 GB; every anchor verified at full scale) |
-| 3b | **Import the dump → SQLite** (maintainer-side, `import_to_sqlite.py`): build the encoded schema, load the CSV-per-table dirs, emit the USER + DEV DBs (the two-DB split + encoding + sizes are §4f). | maintainer import tool | no | **DONE** (`3c033be`; USER `reference.sqlite` 48MB/22MB-zip, DEV `reference-dev.sqlite` 1.13GB/397MB-zip; integrity-verified; built to `C:\kcdx-refdata\db\`). **Stable-ID assignment is the one remaining piece — deferred** (a single-version import has no prior IDs to match; `--assign-ids` arrives with the 2nd game version). |
+| 3b | **Import the dump → SQLite** (maintainer-side, `import_to_sqlite.py`): build the encoded schema, load the CSV-per-table dirs, emit the USER + DEV DBs (the two-DB split + encoding + sizes are §4f). | maintainer import tool | no | **DONE (first cut; being reshaped by §11)** (`3c033be`; USER `reference.sqlite` 48MB/22MB-zip, DEV `reference-dev.sqlite` 1.13GB/397MB-zip; integrity-verified). **SUPERSEDED by the §11 finalized design:** the reshape adds the `function_hashes` history table, v1.5 baseline `kcdx_id` assignment for ALL functions, the curated `overlay`, the cut/fix pass, and the two deprecation axes. The cross-version MATCHER is the §11.6 sandbox problem (not this import). |
 | 3c | **Secondary DLLs** (BugSplat64, BugSplatRc64, Quatmosphere, WhGdk) — NOT yet imported into the Ghidra project; dump them after import (own re-run). | import + batch run | no | future |
 | L1 | **Loc-manager RE** — locate `CLocalizedStringsManager`, getters, int-ID = vector index. | `/research-disassembly` | no | **DONE** (`LOC-MANAGER-FINDINGS.md`) |
 | L2 | **Build the loc runtime-dump probe** — hook the by-ID getters / capture manager-`this`, walk the key↔id table, emit `caller↔id↔key` for `loc_gameplay`; + `loc_content` text table. Step 1 = minimal hook-fires/ABI probe (§6). | `/feature` | no (build); **yes** (run) | pending |
@@ -481,9 +481,13 @@ These decisions survive the rework intact:
 - **`content_hash` = BLAKE3.**
 - **IDs maintainer-assigned, append-only, never recycled**; matched across game
   versions by name+signature+caller-graph fingerprint (the call graph the §4b
-  edges now make first-class).
-- **Re-run model for new game versions** — same extractor re-run; hash-match
-  auto-detects unchanged functions; changed functions surface for re-verify.
+  edges now make first-class). **REFINED by §11:** the v1.5 baseline assigns ids
+  to ALL functions now (not just curated); the cross-version MATCHER that
+  re-attaches an id after the bytes change is the §11.6 open problem.
+- **Re-run model for new game versions** — same extractor re-run; **but the hash
+  CANNOT auto-detect "same function" after a change** (the hash changing is the
+  tracked event, §11.1) — re-identification is the §11.6 fingerprint matcher, and
+  each version APPENDS a `function_hashes` row-set rather than overwriting.
 - **Other-game ports** — the extractor + this model carry over; another game
   ships its own `reference.sqlite` keyed on its module names.
 - **The dump never edits SQLite/seed.csv/address_library directly, opens no PRs**
@@ -509,6 +513,174 @@ The replacement (mechanical batch extraction + call-graph backbone + sparse
 curated overlay) does what the author UX actually needs, at feasible cost, and is
 honest to the data. Proceeding with the old model would have theorized a
 structure the binary does not have (AP10).
+
+---
+
+## 11. FINALIZED DESIGN — the hash-history DB + curated overlay (2026-05-27)
+
+This section is the **controlling spec** for the DB's shape. It supersedes the
+single-version framing in §4f / §9 wherever they conflict: the DB's CORE PURPOSE
+is not a one-version survival snapshot — it is a **per-version content-hash
+HISTORY keyed on a stable function identity**, so the engine and the maintainer
+can answer *"in which game version did function X change, and therefore which
+mods that target X went out of date?"*
+
+Everything here except the cross-version MATCHING MECHANISM is finalized. The
+mechanism is an open problem solved separately (§11.6) in a synthetic sandbox.
+
+### 11.1 The core purpose (why this is a DB, not a flat per-version file)
+
+A mod targets a function. When a game update changes that function's bytes, the
+mod's assumptions about it may no longer hold → the mod is out of date *for that
+function*. The DB exists to make this query trivial:
+
+```sql
+SELECT game_version, content_hash FROM function_hashes WHERE kcdx_id = 1;
+-- -> every version's hash for function 1; the versions where it changed are
+--    the rows where the hash differs from the prior row.
+```
+
+This requires a **stable identity** (`kcdx_id`) that survives a function's bytes
+changing AND its rva moving across versions. The hash CANNOT be that identity —
+the hash changing is the very event being tracked. So `kcdx_id` is assigned once
+(v1.5 baseline) and re-attached to the same logical function in every later
+version by the cross-version matcher (§11.6).
+
+### 11.2 The schema (finalized except the matcher)
+
+**`functions`** — version-independent identity + this-version metadata. One row
+per function per imported version is NOT how it works; `functions` holds the
+CURRENT-version row, keyed on `kcdx_id`. (rva/length/auto_name are this-version
+facts; the cross-version invariant is `kcdx_id`.)
+
+| Column | Meaning |
+|---|---|
+| `kcdx_id` | **stable identity, PK.** Assigned at v1.5 baseline (1..321120), append-only, never recycled/renumbered. The cross-version anchor. |
+| `rva`, `length` | this-version location (moves per version) |
+| `auto_name` (`FUN_<rva>`) | **DEV DB ONLY.** A Ghidra display artifact, NOT a resolution key, NEVER author-referenceable (it's just a render of the rva, which moves). Dropped from the USER DB. |
+| `decompile_quality` | gates `statement.*` |
+| `removed_in_version` | nullable. **Function-deprecation axis** (§11.4): set at v2-diff time when a v1 function has no v2 match (the game deleted it). NULL for the single-version baseline. |
+
+**`function_hashes`** — THE history table. One row per `(kcdx_id, game_version)`.
+
+| Column | Meaning |
+|---|---|
+| `kcdx_id` | FK to `functions` (the stable id) |
+| `game_version` | which game build this hash is from |
+| `content_hash` | BLAKE3 of `[rva, rva+length)` at that version (32-byte BLOB) |
+| `rva`, `length` | the location IN that version (so history also records the move) |
+
+`SELECT * WHERE kcdx_id = N` → the full per-version history. v1.5 import writes
+the first row-set; each new game version APPENDS a row-set (no rewrite).
+
+**`overlay`** — the curated verified layer (sibling table, the maintainer's
+authoring source-of-truth; the generator projects its verified rows into
+seed.csv/kEntries[]). Keyed on `kcdx_id` so a curated name attaches to the SAME
+stable identity the hash history tracks.
+
+| Column | Meaning |
+|---|---|
+| `kcdx_id` | PK; the stable id (may equal a `functions.kcdx_id`, or be a curated-only id) |
+| `name` | nullable. The gameplay name ("IsInCombat"). **Stable-id-before-name**: an id can exist with name=NULL. |
+| `target_kind` | enum `function` \| `callsite` \| `aob` \| `vtable_idx` \| `data_slot` (the seed.csv reality — ~1/3 of rows aren't function entries) |
+| `target_rva` | nullable (NULL for vtable_idx; the callsite/AOB carry an offset) |
+| `signature` | nullable. The VERIFIED ABI in kcdx's DSL. NULL for callsite/AOB/vtable/data rows. |
+| `status` | `verified` \| `unverified` (only verified rows project to runtime) |
+| `is_deprecated`, `superseded_by` | **name-deprecation axis** (§11.4): rename OldName→NewName; the function still lives. |
+| `source_tier` | provenance (curated/predecessor-sig/string-anchor) |
+| `authored_against_version`, `verified_on_version` | which game build the verification holds for |
+| `description` | **DEV DB ONLY** (the seed.csv notes prose; never in the USER ship) |
+
+New `signature_source` dict value `curated` distinguishes a hand-verified ABI
+from the abi_walker floor (the generator projects ONLY `curated`).
+
+**`meta`** — one-row table for the single-value columns hoisted out of the bulk
+(`module`, `game_version` of the current import, `abi_confidence` policy), per
+the cut pass.
+
+### 11.3 The author reference surface — exactly two handles + the hatch
+
+The author NEVER sees a `FUN_<rva>` and NEVER references one (it's not stable and
+doesn't exist materially — it's a render of the rva). Resolution is:
+
+| Tier | Author writes | Resolves via | Stable? |
+|---|---|---|---|
+| Verified-named | `target = "IsInCombat"` | overlay `name` → `kcdx_id` → address + verified ABI | ✅ |
+| Discovered | `target = <kcdx_id>` | overlay/`functions` `kcdx_id` → address | ✅ (append-only id) |
+| Expert hatch | `pattern = "48 8B …"` / `bytes` | scan | ✅ (re-derived per version by the author) |
+
+`kcdx.find` (the in-game author console, the ONLY runtime DB reader, dev-mode,
+reads the DEV DB) hands out a **kcdx_id**, never a `FUN_` string. The id is the
+forever-stable handle; a curated `name` is an OPTIONAL later maintainer
+attachment to that id. ID minting is **maintainer-only** (no in-game promote).
+
+### 11.4 Two SEPARATE deprecation axes (do not conflate)
+
+| Axis | Lives on | Set when | Means |
+|---|---|---|---|
+| **Name** deprecation | `overlay.is_deprecated` + `superseded_by` | maintainer renames | "call it NewName; OldName still resolves to the SAME live function" |
+| **Function** deprecation | `functions.removed_in_version` | v2-diff finds no match | "this function no longer EXISTS in the game" |
+
+Both columns are added now; both populate at the v2-diff step (the function axis
+has nothing to write for a single-version baseline).
+
+### 11.5 What the v1.5 baseline import builds NOW
+
+The matcher can't run with one version, but the baseline must exist so v2 has
+stable anchors and the matcher's raw signals are preserved:
+
+1. **Assign `kcdx_id` to ALL 321,120 v1.5 functions** (the baseline; ids 1..N for
+   the bulk, the seed.csv ids preserved for the curated rows — reconcile the two
+   id-spaces at seed time).
+2. **`function_hashes`** seeded with the v1.5 row-set (`kcdx_id`, `'1.5'`, hash,
+   rva, length).
+3. **Preserve the matcher's signals** — `call_edges` + `statements.string_ref`
+   stay (DEV DB); they are the cross-version fingerprint inputs (§11.6).
+4. The cut/fix pass + the overlay schema + the seed from seed.csv's 139 rows
+   (§11.2), per the feature decomposition.
+
+### 11.6 The cross-version matcher — THE open problem (solved in a sandbox)
+
+**Problem.** Given function Y in v1.5 (rva, bytes, hash) and v1.6 where Y's rva
+moved AND its bytes changed, find the v1.6 function X that IS Y and give X the
+kcdx_id of Y. The hash can't do this (it changed). Identity must rest on
+near-invariants:
+
+- **call-graph fingerprint** (who Y calls / who calls Y) — `call_edges`; a
+  fixpoint match since edges are themselves expressed via other ids.
+- **referenced string/cvar literals** — `statements.string_ref`.
+- **curated name + signature** — the ~139 high-confidence seeds that bootstrap.
+- **relative position / ordinal** — weak, tie-breaker only.
+
+**This is NOT coded blind.** Building a matcher with no second version to
+validate against would be theorizing an unfalsifiable mechanism (AP10). The
+validation vehicle is a **synthetic two-version sandbox**:
+
+- A SEPARATE sandbox DB (not the shipped ones) where we can break things freely.
+- Two synthetic "DLL" fixtures with a known set of sample functions modeling what
+  WHGame.dll looks like today, then a COPY with **authored changes** to some
+  functions and not others — so we KNOW the ground-truth v1→v2 mapping (we made
+  the edits).
+- The fixture must be **comprehensive and test the edges**: a function whose
+  bytes changed but call-graph didn't; an rva move with no byte change; a
+  function split into two; two merged into one; a deleted function; a brand-new
+  function; a function whose only invariant is a string literal; a leaf with no
+  edges; a curated-named function.
+- The matcher is correct when its output matches the authored ground-truth across
+  all those edge cases. Only then does it run against a real v1.6.
+
+The matcher arrives mechanically with the 2nd KCD2 version, but is BUILT and
+validated against the sandbox first.
+
+### 11.7 Sequence (the immediate plan)
+
+1. **This design — written down** (this §11). The finalized shape, minus the
+   matcher mechanism.
+2. **Generate the new DB** — the cut/fix pass + overlay + v1.5 baseline ids +
+   `function_hashes` (the feature decomposition). UNBLOCKS the other agent (the
+   generator + engine consumer read this shape).
+3. **The sandbox + the matcher** (§11.6) — built and validated against synthetic
+   ground truth, then run when v1.6 lands.
 
 ---
 
