@@ -35,6 +35,7 @@
 #include "mod_absorb/enabled_list_builder_selftest.h"  // cap-55 engine self-report
 #include "mod_absorb/order_persist_selftest.h"  // cap-56 engine self-report
 #include "mod_absorb/mod_absorb_e2e_selftest.h"  // cap-57 engine self-report
+#include "mod_absorb/record_validate_selftest.h"  // cap-58 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — the BugSplat
 // ctor probe installs from kcdx.dll DllMain, not from hooks::Install.
@@ -611,6 +612,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // native MOUNT end-to-end is the batched verification checkpoint, not this
     // self-test. One-shot guarded internally.
     kcdx::mod_absorb::RunModAbsorbE2ESelfTestOnce();
+
+    // cap-58-record-validate: engine self-report for the synthesized-record
+    // validator (src/mod_absorb/record_validate.cpp) — the takeover self-
+    // validation guard. Same timing as cap-52..57: no hook-fire / "ready"
+    // dependency — BuildRecord + the validator work at boot. The test builds a
+    // well-formed record and asserts ACCEPT, then constructs deliberately-
+    // malformed records (corrupted CryString nLength; nulled vtable) and asserts
+    // REJECT — the reject cases prove the guard checks the invariants rather than
+    // passing everything. One-shot guarded internally.
+    kcdx::mod_absorb::RunRecordValidateSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

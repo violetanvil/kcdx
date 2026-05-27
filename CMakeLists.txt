@@ -157,7 +157,9 @@ add_library(kcdx SHARED
     src/mod_absorb/pak_mod_registry_selftest.cpp
     src/mod_absorb/enabled_list_builder.cpp
     src/mod_absorb/select_detour.cpp
+    src/mod_absorb/record_validate.cpp
     src/mod_absorb/enabled_list_builder_selftest.cpp
+    src/mod_absorb/record_validate_selftest.cpp
     src/mod_absorb/order_persist.cpp
     src/mod_absorb/order_persist_selftest.cpp
     src/mod_absorb/mod_absorb_e2e_selftest.cpp

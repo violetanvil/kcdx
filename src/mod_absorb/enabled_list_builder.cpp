@@ -5,6 +5,7 @@
 #include <tuple>
 
 #include "record_synth.h"
+#include "record_validate.h"
 #include "pak_mod_registry.h"
 #include "../load_order.h"
 #include "../log.h"
@@ -157,6 +158,20 @@ std::vector<void*> BuildEnabledList(std::vector<EnabledListEntry>* outEntries) {
             ++dropped;
             continue;
         }
+
+        // Self-validate the synthesized record against the native invariants
+        // (the two in-image vtables + the 8 CryString header fields) BEFORE it
+        // can be repointed into the engine. A malformed record is caught + named
+        // LOUD here (ValidateSynthRecord logs the field + invariant + the
+        // consequence) instead of surfacing later as an opaque native fatal
+        // allocation during MOUNT — the keystone crash class. A failing record
+        // is DROPPED exactly like a null BuildRecord above: never repointed,
+        // and the enabled_list_built count reflects the drop.
+        if (!ValidateSynthRecord(rec, c.loadOrderName, c.input.id)) {
+            ++dropped;
+            continue;
+        }
+
         list.push_back(rec);
         if (c.isPlugin) ++pluginPlaced; else ++vanillaPlaced;
 

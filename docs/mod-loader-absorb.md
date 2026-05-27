@@ -527,6 +527,24 @@ rebuilt list, mounting each record's `<path>/*.pak` and running the
 localization / table-patch / mod.cfg passes per record. The mount is
 path-driven, so it treats a synthesized kcdx record exactly like a native one.
 
+**The takeover self-validates each record before the repoint.** Before kcdx
+repoints the enabled-list vector at its rebuilt list, every synthesized record
+is walked and asserted well-formed against the native invariants — both vtable
+slots non-null and inside the WHGame image (the resolved I_Mod vtable pair), and
+each of the eight CryString fields carrying a valid 16-byte header whose length
+word matches the actual string (`nLength == strlen`, `nRefs >= 1`,
+`nAllocSize >= nLength`). The per-field header read is fault-guarded so a wild
+pointer fails the record rather than crashing the validator, and the string scan
+is length-capped. A record that fails any invariant is DROPPED from the rebuilt
+list (never repointed into the engine) and logged at error level, naming the
+mod, the field, and the invariant — the same drop-and-log discipline a null
+synthesis result already gets. This catches a malformed record loud at build
+time instead of letting it surface as the opaque native fatal allocation during
+MOUNT that a garbage CryString header length produces (the keystone crash class
+the header layout above exists to avoid): the engine sizes every string copy
+from that length word, so a garbage value drives a huge allocation that fatally
+fails the load.
+
 **Production, not a probe.** The detour install is NOT dev-mode-gated — it is
 the feature, it runs every boot. Verbose per-record logging stays
 dev-log-routed; the takeover summary (`N mods, M vanilla, K plugins, in kcdx
