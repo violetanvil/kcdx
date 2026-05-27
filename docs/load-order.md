@@ -134,16 +134,22 @@ hints next launch.
 
 ## Capability gating
 
-Each plugin's declared entries determine which zone it CAN sit in:
+Each plugin's declared entries (its `kcdx.*` Lua calls / `kcdx*Interface`
+C++ methods — behavior ships in CODE, not TOML, since Phase 5) determine
+which zone it CAN sit in:
 
-| Entry type     | Allowed in `before_game`? | Why |
-|----------------|---------------------------|-----|
-| `[[patch]]`    | Yes                       | Pure VirtualProtect + memcpy. Loader-safe under LDR notification. |
-| `[[hook]]`     | No                        | MinHook init runs in worker thread; trampoline pool needs WHGame.dll's `.text` proximity. |
-| `[[mid_hook]]` | No                        | MinHook + JIT + Lua VM. |
-| `[[trampoline]]` | No                      | JIT branch-pool needs ±2 GB of WHGame.dll's `.text`. |
-| `[[command]]`  | No (registered by DLL)    | Needs `gEnv->pConsole`. |
-| `[[event]]`    | No (registered by DLL)    | Needs messaging subsystem. |
+| Surface              | `before_game`-capable in principle? | Why |
+|----------------------|-------------------------------------|-----|
+| `kcdx.bytes`         | Yes (mechanism is loader-safe)      | Pure VirtualProtect + memcpy; loader-safe under LDR notification. ⚠️ But see §"before_game is STUBBED" below — no registry-apply path is wired for before_game yet. |
+| `kcdx.hook`          | No                                  | MinHook init runs in the worker thread; the detour chain needs WHGame.dll's `.text` proximity. (before_game hooks are Phase-11 work — `outstanding-work/before-game-hooks.md`.) |
+| `kcdx.hook mode=mid` | No                                  | MinHook + JIT (+ a Lua callback, which needs the VM). |
+| `kcdx.code`          | No                                  | JIT branch-pool / trampoline alloc needs ±2 GB of WHGame.dll's `.text`. |
+| `kcdx.command`       | No (registered by the plugin)       | Needs `gEnv->pConsole`. |
+| `kcdx.on`            | No (registered by the plugin)       | Needs the messaging subsystem. |
+
+(Surface mapping from the deleted legacy TOML tables: `[[patch]]`→`kcdx.bytes`,
+`[[hook]]`→`kcdx.hook`, `[[mid_hook]]`→`kcdx.hook mode=mid`,
+`[[trampoline]]`→`kcdx.code`.)
 
 A plugin with at least one after_game-requiring entry has
 `MinZone = AfterGame`. Engine derives this once at config-load time
@@ -162,28 +168,65 @@ the UI rejects the move and shows the engine-derived reason.
 ## Lifecycle
 
 1. **`config::LoadAllConfigs`** walks discovery roots, parses every
-   `kcdx.toml`, fills `g_patches` / `g_hooks` / `g_mid_hooks` /
-   `g_trampolines`. Each entry is stamped with its plugin's name.
+   `kcdx.toml` (identity + metadata only — Phase 5+), and loads each
+   plugin's behavior code (`plugin.lua` / DLL). The plugin's `kcdx.*`
+   Lua calls / `kcdx*Interface` C++ methods queue intent into the apply
+   registry (`lua_registry`), each entry stamped with its plugin's name.
 2. **`load_order::Read`** loads `kcdx-engine/load_order.toml` if
    present. Missing file = quiet path; every plugin gets author
    defaults.
 3. **`load_order::Resolve`** computes the `Effective(zone, priority,
    enabled)` row per plugin. Applies capability gating; logs any
    downgrades.
-4. **Sort** the entry vectors by the global key above.
-5. **Apply** entries in sort order. Zone is the source of truth for
-   timing:
-   - `zone=before_game` `[[patch]]` entries apply during kcdx.dll's
-     `DllMain` (against modules already mapped — ntdll, kernel32,
-     kcdx.dll itself) or when their target module is mapped
-     later, BEFORE that module's own `DllMain` runs. This is via an
-     `LdrRegisterDllNotification` callback installed during kcdx's
-     `DllMain`.
-   - `zone=after_game` entries apply at the first update tick, the
+4. **`lua_registry::ApplyZone(zone)`** is the apply driver: it snapshots
+   the pending registry entries, filters to the given zone (by owning
+   plugin), **sorts by the unified key above**, and dispatches each entry
+   to its per-kind handler (`Kind::Bytes` → `patch::ApplyPatch`,
+   `Kind::Hook` → `hook_chain`). Zone is the source of truth for timing:
+   - `zone=after_game` entries apply at the first update tick — this is
+     the SOLE live invocation today (`ApplyZone(AfterGame)`). It is the
      same point patches have always applied historically.
+   - `zone=before_game` is the TARGET for an `ApplyZone(BeforeGame)`
+     invocation during kcdx.dll's `DllMain` / at LDR-notification time —
+     but ⚠️ **that invocation is NOT BUILT yet** (see §"before_game is
+     STUBBED" below). The only before_game machinery that runs today is
+     `ldr_notify`, which iterates the legacy `patch::g_patches` vector —
+     permanently EMPTY since Phase 5 — so before_game application
+     currently applies NOTHING.
 
-`before_game` is unconditionally honored — no env var, no feature
-flag. The load order says when; the engine obeys.
+`after_game` is unconditionally honored — no env var, no feature flag.
+The load order says when; the engine obeys. before_game timing is
+designed (the load order can declare it) but not yet wired to an apply
+path — deferred to Phase 11.
+
+## ⚠️ before_game is STUBBED — not yet wired (Phase 11)
+
+**A plugin CAN declare `zone = "before_game"`, but its entries do NOT
+apply yet.** There is no live before_game registry-apply path in kcdx
+today:
+
+- `lua_registry::ApplyZone` is only ever invoked with `AfterGame`. There
+  is no `ApplyZone(BeforeGame)` call site.
+- `ldr_notify`'s before_game applicator (`ApplyEntriesForModule` /
+  `ApplyAlreadyLoaded`) iterates only `patch::g_patches`, which has had no
+  populator since the legacy `[[patch]]` parser was deleted in Phase 5 —
+  so it is permanently empty and applies nothing.
+- The `kcdx-engine/builtin/bugsplat-filename-fix` builtin (`zone =
+  before_game`) is a **MANIFEST-ONLY STUB**: it declares the zone but
+  ships NO behavior (no entrypoints, no Lua, no patch) and is
+  ship-disabled (`enabled = false`). It is a placeholder Phase 11
+  rewrites in place.
+- The ONLY before_game thing actually running is
+  `bugsplat_ctor_probe::ArmLdrInstall` — a dev-probe HARDCODED in
+  `dllmain.cpp` (`RunBeforeGameZoneInDllMain`), NOT a load-order entry.
+
+before_game application is **aspirational / deferred to Phase 11** —
+the full spec (the LDR-notification install path, the foreign-module/
+export locator, the bugsplat consumer) is
+[`outstanding-work/before-game-hooks.md`](outstanding-work/before-game-hooks.md).
+A `zone = "before_game"` declaration is honored by the load-order
+resolver (the row sorts to the before_game side) but does not yet reach
+an apply.
 
 ## What kcdx logs
 
@@ -204,19 +247,21 @@ reason:
 ```
   some_author.midhook_plugin: zone=after_game priority=50 enabled=true
     (plugin 'some_author.midhook_plugin' requested zone=before_game but
-     declares entries (hook/mid_hook/trampoline) that require after_game;
-     reassigned to after_game at priority 50)
+     declares entries (kcdx.hook / kcdx.hook mode=mid / kcdx.code) that
+     require after_game; reassigned to after_game at priority 50)
 ```
 
 ## What kcdx does NOT do
 
 - It does not refuse to load a plugin because of a zone mismatch.
   Mismatches downgrade; they don't reject.
-- It does not implicitly chain hooks. First plugin to hook a function
-  wins; second plugin to target the same function aborts (see
-  `.claude/rules/hook-engine.md` §"First-hook-wins"). Load order
-  doesn't change that — it just decides who's first.
-- It does not validate that two `[[patch]]` entries in different
-  plugins don't overlap. That's the conflict engine's job; load order
-  decides who wins when they DO overlap (lower effective priority
+- Load order decides hook coexistence, not load-time rejection. Multiple
+  compatible `kcdx.hook` callbacks on one target coexist in a single
+  load-order-ordered chain (`hook_chain`); only genuinely incompatible
+  hooks at one site reject the later-in-load-order one (see
+  `.claude/rules/hook-engine.md` §"`kcdx.hook` chaining"). Load order
+  decides who is first in the chain and who wins an incompatibility.
+- It does not validate that two `kcdx.bytes` patches in different
+  plugins don't overlap up front. That's the conflict engine's job; load
+  order decides who wins when they DO overlap (lower effective priority
   wins, with `Source::Engine` breaking ties).

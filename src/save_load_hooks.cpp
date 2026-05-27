@@ -253,10 +253,13 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
 
     // (The mid-hook JIT-buffer fingerprint scan that once ran here —
     // hook_engine::DumpMidHookFingerprints — was removed in the
-    // apply-consolidation cut: it walked the now-deleted g_mid_hooks vector,
-    // which had no populator since Phase 5. Live mid-hooks live in hook_chain,
-    // which fingerprints them on its own path. Its return was discarded, so
-    // removing the call drops only a Debug log line, not load control-flow.)
+    // apply-consolidation cut: the cap-04 diagnostic walked the now-deleted
+    // g_mid_hooks vector, which had no populator since Phase 5. Live mid-hooks
+    // live in hook_chain; the JIT-buffer integrity scan has no current consumer
+    // (hook_chain has no JIT-buffer fingerprint — modification_inventory's
+    // order-independent VA-fingerprint, logged just above, is a different
+    // mechanism). Its return was discarded, so removing the call drops only a
+    // Debug log line, not load control-flow.)
 
     LOG_DEBUG("SAVE_LOAD", "  before original LoadGame_wrapper");
     char result = g_orig_load_game_wrapper(self, playline, slot);

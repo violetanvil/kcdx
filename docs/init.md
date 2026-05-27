@@ -55,9 +55,16 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
 ─────────────────────────────────────────────────────────────────────────────
 0  PreInit                            A    paths::Init, log session stamp
 1  ConfigLoaded                       A    every kcdx.toml parsed; load order RESOLVED
-2  BeforeGameApply                    A    before_game load-order slice applied
-                                           (the ONE apply-driver, before_game zone)
-                                           + LDR notifications armed
+2  BeforeGameApply                    A    [TARGET] before_game load-order slice
+                                           applied (the ONE apply-driver,
+                                           before_game zone) + LDR notifications
+                                           armed. ⚠️ NOT YET WIRED — no
+                                           ApplyZone(BeforeGame) call site exists;
+                                           today only LDR notifications + the
+                                           hardcoded bugsplat_ctor_probe dev-probe
+                                           run here. before_game APPLY is deferred
+                                           to Phase 11 (see §As-is + before-game-
+                                           hooks.md).
 ─── (DllMain returns; WorkerThread already spawned) ───
 3  WorkerInit                         B    log::Init, exception filter, watchdog
 4  GameDllMapped                      B    WaitForGameDll returned; WHGame.dll mapped
@@ -102,8 +109,10 @@ Load order is RESOLVED ONCE (phase 1, `load_order::Resolve` → one ordered list
 A SINGLE apply-driver is the only code that applies entries; it is invoked at
 each zone boundary with that zone's SLICE of the one list:
 
-- **before_game slice** → applied at phase 3 (ctx A), in load-order order.
-- **after_game slice** → applied at phase 10 (ctx C), in load-order order.
+- **before_game slice** → TARGET: applied at phase 2 (ctx A), in load-order
+  order. ⚠️ **NOT YET WIRED** — see the caveat below.
+- **after_game slice** → applied at phase 10 (ctx C), in load-order order. This
+  is the SOLE live invocation today (`lua_registry::ApplyZone(AfterGame)`).
 
 "One flow" = one resolved list + one apply function. The zones are not separate
 apply logic — they are just the two INVOCATION POINTS of the one driver, dictated
@@ -113,6 +122,23 @@ application KIND (patch/bytes, hook, mid-hook, trampoline, and the asset-overlay
 mounts the absorb adds) routes through this one driver. This is the realization
 of "apply in the order the load order says" (`load-order.md`) without pretending
 the zone split doesn't exist.
+
+> ⚠️ **STUBBED — the before_game slice invocation is NOT BUILT today.** The
+> "one apply-driver per zone slice" model is the TARGET. As built, the one live
+> driver (`lua_registry::ApplyZone`) is invoked ONLY for the after_game slice
+> (`ApplyZone(AfterGame)` at the first update tick). There is **no
+> `ApplyZone(BeforeGame)` call site** — the before_game-slice invocation at
+> phase 2 (ctx A) is unbuilt. The only before_game machinery running today is
+> (1) `ldr_notify`, which iterates the legacy `patch::g_patches` vector that has
+> had NO populator since Phase 5 (so it applies NOTHING), and (2) the
+> HARDCODED `bugsplat_ctor_probe::ArmLdrInstall` dev-probe wired directly into
+> `dllmain.cpp`'s `RunBeforeGameZoneInDllMain` — not a load-order entry, not
+> driven by the apply-driver. **before_game application applies nothing through
+> the registry today; it is deferred to Phase 11**
+> ([`outstanding-work/before-game-hooks.md`](outstanding-work/before-game-hooks.md)).
+> The `kcdx-engine/builtin/bugsplat-filename-fix` builtin (zone=before_game) is a
+> MANIFEST-ONLY STUB: it declares the zone but ships no behavior and is
+> ship-disabled (`enabled = false`) until Phase 11 rewrites it in place.
 
 ## The mod-loader absorb (asset overlays) in the model
 
@@ -144,6 +170,12 @@ asserts. Full as-is mapping + the implicit dependencies + the gaps:
 [`known-issues/init-sequencing-audit.md`](known-issues/init-sequencing-audit.md).
 Summary of where the code is now:
 - `dllmain.cpp` `RunBeforeGameZoneInDllMain()` = ctx A (phases 0–3, un-enumerated).
+  ⚠️ It arms LDR notifications and runs the hardcoded `bugsplat_ctor_probe::
+  ArmLdrInstall` dev-probe — but it does NOT apply any before_game registry
+  slice (there is no `ApplyZone(BeforeGame)` call). The before_game apply path
+  is STUBBED: `ldr_notify` walks the empty `patch::g_patches` (no populator
+  since Phase 5) and applies nothing; before_game registry-apply is deferred to
+  Phase 11 ([`outstanding-work/before-game-hooks.md`](outstanding-work/before-game-hooks.md)).
 - `dllmain.cpp` `WorkerThread()` = ctx B (phases 4–9, un-enumerated; the FOpen
   probe sits after DiscoverAndLoad because it needs the game version — a
   dependency currently encoded only as placement + a comment).
