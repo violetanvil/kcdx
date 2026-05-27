@@ -218,12 +218,14 @@ uintptr_t Resolve(uint64_t id) {
     // function still returns 0 on a version mismatch exactly as today; this only
     // emits an Error line if the dependency was violated.
     //
-    // NOTE (pure-refactor step): VersionDetected currently advances LATE (at
-    // PluginsLoaded time, inside DiscoverAndLoad — see dllmain.cpp). Every
-    // version-gated Resolve in today's boot happens AFTER that, so this guard
-    // currently always passes. It DOCUMENTS + ENFORCES the dependency the audit
-    // flagged; it begins catching real early reads once version detection is
-    // promoted to context A (the NEXT migration step).
+    // VersionDetected advances EARLY — right after GameDllMapped (ctx B,
+    // before hooks::Install + the plugin load; see dllmain.cpp WorkerThread).
+    // Every version-gated Resolve on the worker path runs AFTER that, so this
+    // guard passes for them; it now genuinely ENFORCES the dependency the audit
+    // flagged (init-sequencing-audit.md gap #4) — a Resolve reached before
+    // VersionDetected (a real early read) trips this loud Error. Ctx-A
+    // detection is impossible (WHGame unmapped under the loader lock), so
+    // right-after-GameDllMapped is the earliest the version can be known.
     KCDX_REQUIRE_PHASE(::kcdx::init::InitPhase::VersionDetected);
 
     uint32_t gv = kcdx::plugins::g_runtimeGameVersion;

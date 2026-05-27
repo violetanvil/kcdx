@@ -15,14 +15,13 @@
 // removed, or reordered by this model — see docs/init.md §Migration plan step 1,
 // the pure behavior-preserving refactor).
 //
-// THIS IS THE PURE-REFACTOR STEP. The enum NAMES every phase in real-time
-// order, but each AdvanceTo() call sits at the point the EXISTING sequence
-// already reaches that phase today. Notably VersionDetected advances LATE — at
-// its current (PluginsLoaded-time) site inside DiscoverAndLoad, NOT promoted
-// early. Promoting version detection to context A is a deliberate LATER
-// migration step; bundling it here would change behavior and break the
-// "pure refactor" guarantee. See the AdvanceTo comments in plugin_loader.cpp /
-// dllmain.cpp.
+// Version detection (VersionDetected) now advances EARLY — right after
+// GameDllMapped, the earliest point WHGame.dll is mapped (ctx B), before
+// hooks::Install and the full plugin load. Detection needs only WHGame mapped
+// (GetModuleHandleW + kcd_launcher.log / VS_VERSIONINFO read), so it sits as
+// early as physically possible. Ctx-A (DllMain) detection is impossible:
+// GetModuleHandleW("WHGame.dll") is null under the loader lock, before the
+// game's startup maps WHGame. See the AdvanceTo comments in dllmain.cpp.
 
 #include <atomic>
 
@@ -42,22 +41,18 @@ namespace kcdx::init {
 //   C = the game's main thread, first `update` tick, after CSystem::Init —
 //       FULL capability + the engine is live.
 //
-// Monotonic: g_phase only advances. Append-only ordering — the integer value
-// IS the order, so do not reorder or insert; a new phase appends (and its
-// AdvanceTo call slots at the point the sequence reaches it).
+// Monotonic: g_phase only advances. The integer value IS the order. This is an
+// INTERNAL ordinal — no shipped artifact (cosave field, ABI, plugin surface)
+// depends on a phase's numeric value, so reordering a value is safe; the
+// version-detection promotion below moved VersionDetected from after
+// ConfigLoaded to after GameDllMapped (its real, earliest-possible point —
+// ctx B). Otherwise treat as append-only: a new phase appends, and its
+// AdvanceTo call slots at the point the sequence reaches it.
 enum class InitPhase {
     // [ctx A] paths::Init, log session stamp.
     PreInit = 0,
     // [ctx A] every kcdx.toml parsed; load order RESOLVED.
     ConfigLoaded,
-    // [ctx A] g_runtimeGameVersion known — everything version-gated
-    // (address_library::Resolve) depends on >= this phase.
-    //
-    // NOTE (pure-refactor step): this phase currently advances LATE, at its
-    // existing site inside DiscoverAndLoad (PluginsLoaded time), NOT in ctx A.
-    // The early-promotion to context A is the NEXT migration step; it is
-    // deliberately out of scope here so this step changes no behavior.
-    VersionDetected,
     // [ctx A] before_game load-order slice applied + LDR notifications armed.
     BeforeGameApply,
     // ─── (DllMain returns; WorkerThread already spawned) ───
@@ -65,6 +60,17 @@ enum class InitPhase {
     WorkerInit,
     // [ctx B] WaitForGameDll returned; WHGame.dll mapped.
     GameDllMapped,
+    // [ctx B] g_runtimeGameVersion known — everything version-gated
+    // (address_library::Resolve) depends on >= this phase.
+    //
+    // Advances right after GameDllMapped, the earliest point WHGame.dll is
+    // mapped — detection reads GetModuleHandleW("WHGame.dll") + kcd_launcher.log
+    // / WHGame's VS_VERSIONINFO, which need only WHGame mapped, not the engine
+    // initialized. Ctx-A (DllMain) detection is IMPOSSIBLE: WHGame is not mapped
+    // under the loader lock, so GetModuleHandleW returns null. This is the
+    // earliest physically-achievable point, ahead of hooks::Install and the
+    // full plugin load.
+    VersionDetected,
     // [ctx B] hooks::Install (lua_pcall + update); MinHook live.
     EngineHooksInstalled,
     // [ctx B] the mod-loader SELECT detour installed — placement U.6-gated

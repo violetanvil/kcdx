@@ -132,9 +132,14 @@ uint32_t TryVersionInfoResource(const std::wstring& whgamePath) {
     return encoded;
 }
 
+}  // namespace
+
 // Try every strategy in order. Returns 0 if all fail; the caller (validation
 // code) treats 0 as "skip the version-compat check with a warning, don't
-// refuse the plugin".
+// refuse the plugin". External linkage (declared in plugin_loader.h) so the
+// worker thread (dllmain.cpp) can call it at WHGame-mapped time — version
+// detection now runs EARLY (ctx B, right after WaitForGameDll), before
+// hooks::Install + the full plugin load, not late inside DiscoverAndLoad.
 uint32_t DetectRuntimeGameVersion() {
     std::wstring path = LocateWHGamePath();
     if (path.empty()) {
@@ -150,6 +155,8 @@ uint32_t DetectRuntimeGameVersion() {
                "compatibleGameVersions checks will be skipped with a warning.");
     return 0;
 }
+
+namespace {
 
 // Validate a parsed PluginManifest against engine + game-version invariants.
 // Returns true if the plugin is loadable; logs the specific reason on false.
@@ -398,8 +405,14 @@ const kcdxInterface* GetEngineInterface() {
 // -----------------------------------------------------------------------------
 
 void DiscoverAndLoad(const std::wstring& pluginsDir) {
-    g_runtimeGameVersion = DetectRuntimeGameVersion();
-
+    // g_runtimeGameVersion is ALREADY set by this point: the worker thread
+    // (dllmain.cpp) ran DetectRuntimeGameVersion right after WaitForGameDll
+    // (ctx B, GameDllMapped → VersionDetected), before this call. The
+    // per-plugin version-compat gate below (ValidateManifest) READS it; it no
+    // longer detects the version itself. A value of 0 means detection found no
+    // source (logged WARN there) → the compat check is skipped, exactly as
+    // before — the only change is WHEN the value was computed (early), not the
+    // gate's behavior.
     fs::path root(pluginsDir);
     std::error_code ec;
     if (!fs::exists(root, ec) || !fs::is_directory(root, ec)) {

@@ -229,6 +229,15 @@ constexpr uint32_t kEngineVersion = 0x00010200u;  // 0.1.2 — kcdxPluginInfo.au
 // compare against their compatibleGameVersions array.
 extern uint32_t g_runtimeGameVersion;
 
+// Detect the running KCD2 build by reading kcd_launcher.log's build header,
+// falling back to WHGame.dll's VS_VERSIONINFO. Returns 0 if neither source
+// yields a version (logged WARN inside). Requires ONLY that WHGame.dll is
+// MAPPED (GetModuleHandleW("WHGame.dll") must be non-null) — no engine init.
+// Called once at WHGame-mapped time (ctx B, right after WaitForGameDll) by the
+// worker thread; the caller stores the result into g_runtimeGameVersion. The
+// per-plugin version-compat gate in DiscoverAndLoad then READS that value.
+uint32_t DetectRuntimeGameVersion();
+
 // Walk plugins/ for kcdx.toml files (recursively, kcdx.toml marks a plugin
 // folder, do-not-descend-into-claimed-folders rule), parse [plugin] metadata
 // from each, validate compatibility, topologically sort by dependencies, then

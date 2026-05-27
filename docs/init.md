@@ -14,10 +14,13 @@ The as-is audit + gaps live in
 this doc is the forward design + the live reference.
 
 > STATUS (2026-05-26): the phase model below is DESIGNED + APPROVED (via
-> /senior-architect-consult, all-Option-A). The pure behavior-preserving refactor
-> that implements it is NOT yet landed — the as-is sequence (§"As-is") is what
-> the code does today. This doc updates to "implemented" when the refactor lands
-> + its verification-checkpoint boot passes.
+> /senior-architect-consult, all-Option-A). IMPLEMENTED so far: the `InitPhase`
+> enum + `g_phase` + `KCDX_REQUIRE_PHASE` asserts (migration step 1, the pure
+> refactor) and the early version-detection promotion (migration step 2 — this
+> doc's §Migration plan). REMAINING: the one apply-driver unification (step 3),
+> PROBE U.6, the absorb. The §"As-is" section describes the older statement-order
+> boot and is being superseded as the migration lands. Each landed step is
+> confirmed by its `/verification-checkpoint` boot (suite passes, no regression).
 
 ## The three execution contexts (hard physical constraints, not choices)
 
@@ -52,17 +55,23 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
 ─────────────────────────────────────────────────────────────────────────────
 0  PreInit                            A    paths::Init, log session stamp
 1  ConfigLoaded                       A    every kcdx.toml parsed; load order RESOLVED
-2  VersionDetected                    A    g_runtimeGameVersion known (reads
-                                           kcd_launcher.log; needs the game-root
-                                           PATH, NOT WHGame mapped) — everything
-                                           version-gated (address_library::Resolve)
-                                           depends on >= this phase
-3  BeforeGameApply                    A    before_game load-order slice applied
+2  BeforeGameApply                    A    before_game load-order slice applied
                                            (the ONE apply-driver, before_game zone)
                                            + LDR notifications armed
 ─── (DllMain returns; WorkerThread already spawned) ───
-4  WorkerInit                         B    log::Init, exception filter, watchdog
-5  GameDllMapped                      B    WaitForGameDll returned; WHGame.dll mapped
+3  WorkerInit                         B    log::Init, exception filter, watchdog
+4  GameDllMapped                      B    WaitForGameDll returned; WHGame.dll mapped
+5  VersionDetected                    B    g_runtimeGameVersion known (reads
+                                           kcd_launcher.log, falling back to WHGame's
+                                           VS_VERSIONINFO; needs only WHGame MAPPED) —
+                                           everything version-gated
+                                           (address_library::Resolve) depends on
+                                           >= this phase. Advances RIGHT AFTER
+                                           GameDllMapped — the earliest possible
+                                           point. pre-map (ctx A) detection is
+                                           impossible — GetModuleHandleW(WHGame.dll)
+                                           is null under the loader lock; earliest
+                                           possible is right after WHGame maps.
 6  EngineHooksInstalled               B    hooks::Install (lua_pcall + update);
                                            MinHook live
 7  ModLoaderTakeoverArmed             B    [absorb] the C_ModManager SELECT detour
@@ -83,7 +92,7 @@ Rules the enum enforces:
   statically known to be loader-lock-limited (a MinHook call in a ctx-A phase is
   a design error the phase identity surfaces).
 - **Spin-up-before-use.** A subsystem initializes at the EARLIEST phase before
-  any phase that uses it. Version detection (phase 2) precedes every
+  any phase that uses it. Version detection (phase 5) precedes every
   version-gated read; Kind handlers (phase 8) precede plugin load (phase 9);
   save/load messages (phase 8) precede serialization (phase 8, ordered within).
 
@@ -147,13 +156,29 @@ hard one-shot constraint the current model can't express.
 
 ## Migration plan (locked, all-Option-A)
 
-1. **Pure behavior-preserving refactor FIRST** — same operations, same order,
-   formalized into the `InitPhase` enum + `g_phase` + `KCDX_REQUIRE_PHASE`
-   asserts + the one apply-driver; version detection promoted to phase 2. NO
-   behavior change. Verified by a `/verification-checkpoint` launch confirming the
-   boot is equivalent (suite still passes, no regression).
-2. **THEN PROBE U.6** — re-slotted into the new model, resolves phase 7's context.
-3. **THEN the absorb `/feature`** — builds on the verified phase model; updates
+1. **Pure behavior-preserving refactor FIRST (DONE)** — same operations, same
+   order, formalized into the `InitPhase` enum + `g_phase` +
+   `KCDX_REQUIRE_PHASE` asserts. NO behavior change. Version detection was
+   deliberately LEFT at its existing late site here (the advance bracketed the
+   existing call inside DiscoverAndLoad) so the step changed no behavior; the
+   early-promotion was carved out as the separate step 2 below.
+2. **Version detection promoted EARLY (DONE — this step).** The SINGLE version
+   detection (`DetectRuntimeGameVersion`, one call/one write) moved from its
+   late site inside `DiscoverAndLoad` to right after `WaitForGameDll` returns
+   (ctx B, `GameDllMapped` → `VersionDetected`), before `hooks::Install` and the
+   full plugin load. This closes the version-lifecycle hole (audit gap #4):
+   `g_runtimeGameVersion` is now known before every version-gated read, and the
+   `KCDX_REQUIRE_PHASE(VersionDetected)` guard in `address_library::Resolve`
+   genuinely enforces it. Ctx-A detection is impossible (WHGame unmapped under
+   the loader lock — `GetModuleHandleW` null), so right-after-`GameDllMapped` is
+   the earliest achievable. One axis: timing only — `DetectRuntimeGameVersion`'s
+   fallback-source logic and the per-plugin compat gate are unchanged.
+3. **The ONE apply-driver unification (PENDING).** before_game / after_game
+   apply still fire from separate sites; collapsing them into one resolved-list-
+   driven apply-driver (per §"The ONE apply-in-load-order flow") is the remaining
+   gap-fix and a later step.
+4. **THEN PROBE U.6** — re-slotted into the new model, resolves phase 7's context.
+5. **THEN the absorb `/feature`** — builds on the verified phase model; updates
    `loader-architecture.md` (the "no `mods/` folder" line is superseded — kcdx
    owns the loader) + adds the `docs/design.md` loader-absorb section.
 

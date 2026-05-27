@@ -74,7 +74,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // we pass it is the final post-config value.
     kcdx::watchdog::Spawn();
 
-    // PHASE 4 (ctx B): WorkerInit — log::Init, the exception filter, and the
+    // PHASE 3 (ctx B): WorkerInit — log::Init, the exception filter, and the
     // watchdog are all up. Reached after watchdog::Spawn (the last of the three).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::WorkerInit);
 
@@ -99,10 +99,25 @@ DWORD WINAPI WorkerThread(LPVOID) {
         return 1;
     }
 
-    // PHASE 5 (ctx B): GameDllMapped — WaitForGameDll returned successfully,
+    // PHASE 4 (ctx B): GameDllMapped — WaitForGameDll returned successfully,
     // so WHGame.dll is mapped (the gate SetEvent fired). Reached only on the
     // success path (the timeout path above returns before getting here).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::GameDllMapped);
+
+    // PHASE 5 (ctx B): VersionDetected — detect the running KCD2 build NOW,
+    // the earliest WHGame-mapped point. DetectRuntimeGameVersion reads
+    // GetModuleHandleW("WHGame.dll") + kcd_launcher.log / VS_VERSIONINFO, which
+    // need only WHGame mapped (just confirmed by WaitForGameDll above), NOT the
+    // engine initialized. Doing it HERE — before hooks::Install and the full
+    // plugin load — means g_runtimeGameVersion is known before every
+    // version-gated read (address_library::Resolve) and before the per-plugin
+    // compat gate in DiscoverAndLoad, which now READS this value rather than
+    // detecting it. Ctx-A (DllMain) detection is impossible: WHGame is not
+    // mapped under the loader lock (GetModuleHandleW returns null there), so
+    // this is the earliest achievable point.
+    kcdx::plugins::g_runtimeGameVersion =
+        kcdx::plugins::DetectRuntimeGameVersion();
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::VersionDetected);
 
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
@@ -184,21 +199,11 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // game `update` tick.
     kcdx::plugins::DiscoverAndLoad(kcdx::paths::PluginsDir());
 
-    // PHASE 2 (ctx B, LATE): VersionDetected — g_runtimeGameVersion is set
-    // inside DiscoverAndLoad (its first statement, via DetectRuntimeGameVersion),
-    // so by the time it returns the version is known. The enum names this phase
-    // 2 (its real-time-correct position is in ctx A, before BeforeGameApply),
-    // but in this PURE-REFACTOR step the advance sits at version detection's
-    // CURRENT site — here, after DiscoverAndLoad. This means VersionDetected
-    // advances LATE; that is CORRECT for this step. The early-promotion to
-    // context A (so before_game version-gated reads are also covered) is the
-    // NEXT migration step (docs/init.md §Migration plan step 1). It is advanced
-    // BEFORE the fopen probe below, which reads the version-gated
-    // address_library::Resolve — the dependency the require-guard documents.
-    kcdx::init::AdvanceTo(kcdx::init::InitPhase::VersionDetected);
-
     // PHASE 9 (ctx B): PluginsLoaded — DiscoverAndLoad finished;
-    // Plugin_Preload/Plugin_Load have fired for every plugin.
+    // Plugin_Preload/Plugin_Load have fired for every plugin. (VersionDetected
+    // is NO LONGER advanced here: version detection moved EARLY, to right after
+    // GameDllMapped above — before hooks::Install. DiscoverAndLoad now relies on
+    // g_runtimeGameVersion already being set, rather than detecting it.)
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::PluginsLoaded);
 
     // Phase 8.5 pak-resolver probe (PROBE U.1, observe-only): install the
@@ -207,12 +212,15 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // resident virtual paths, so PROBE U.2's override-target is confirmed-
     // firing, not guessed. Dev-mode-gated + idempotent; a no-op in production.
     //
-    // MUST run AFTER DiscoverAndLoad: that call sets g_runtimeGameVersion (via
-    // DetectRuntimeGameVersion), and address_library::Resolve gates on a
-    // version match. Installing earlier (next to loc_dump_probe, which uses a
-    // hardcoded RVA and is immune) makes Resolve(1206) return 0 — the version
-    // is still unset. The FOpen detour still arms well before any menu/save
-    // asset reads; the resolver fires continuously through boot→menu.
+    // address_library::Resolve(1206) gates on a g_runtimeGameVersion match, so
+    // this probe must run AFTER VersionDetected. That is now guaranteed early —
+    // the version is detected right after GameDllMapped (above), well before
+    // this point — so the probe's placement here is comfortably past
+    // VersionDetected. (Historically this had to sit after DiscoverAndLoad,
+    // which was where the version got set; that dependency is gone now that
+    // detection moved early, but the probe stays here.) The FOpen detour still
+    // arms well before any menu/save asset reads; the resolver fires
+    // continuously through boot→menu.
     //
     // (Was briefly disabled 2026-05-26 to isolate a parallel save-load crash
     // investigation; that crash is fixed and the baseline is clean, so it is
@@ -269,13 +277,14 @@ static void RunBeforeGameZoneInDllMain() {
     // RESOLVED. Reached as soon as LoadAllConfigs returns.
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::ConfigLoaded);
 
-    // NOTE: VersionDetected (phase 2) is NOT advanced here. Version detection
-    // currently lives LATE — inside DiscoverAndLoad (ctx B, PluginsLoaded
-    // time), where g_runtimeGameVersion is set. The enum names VersionDetected
-    // before BeforeGameApply (its real-time-correct position), but the advance
-    // sits at version detection's CURRENT site to keep this a pure refactor.
-    // The early-promotion to context A is the NEXT migration step
-    // (docs/init.md §Migration plan step 1).
+    // NOTE: VersionDetected is NOT advanced here. It CANNOT be — detection
+    // calls GetModuleHandleW("WHGame.dll"), which is null under the loader lock
+    // in DllMain (the launcher injected us into a CREATE_SUSPENDED process
+    // before the game's startup mapped WHGame). The earliest physically-
+    // achievable detection point is ctx B, right after WaitForGameDll returns
+    // (WHGame mapped); that is where VersionDetected now advances (see
+    // WorkerThread above). The enum reflects this: VersionDetected sits after
+    // GameDllMapped, not in this ctx-A function.
 
     // Apply before_game [[patch]] entries against modules already mapped
     // (ntdll, kernel32, and kcdx.dll itself — the launcher injected us via
@@ -296,11 +305,12 @@ static void RunBeforeGameZoneInDllMain() {
     // removed here (docs/outstanding-work/before-game-hooks.md §5).
     kcdx::probes::bugsplat_ctor_probe::ArmLdrInstall();
 
-    // PHASE 3 (ctx A): BeforeGameApply — the before_game load-order slice is
+    // PHASE 2 (ctx A): BeforeGameApply — the before_game load-order slice is
     // applied (ApplyAlreadyLoaded) and the LDR notifications are armed
     // (Register + ArmLdrInstall). DllMain returns right after this; the
-    // WorkerThread (ctx B) was already spawned by the caller below. (Phase 2
-    // VersionDetected is intentionally skipped here — see the note above.)
+    // WorkerThread (ctx B) was already spawned by the caller below.
+    // (VersionDetected sits AFTER this in the enum but advances later, in
+    // ctx B — it cannot run in this ctx-A function; see the note above.)
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::BeforeGameApply);
 }
 
