@@ -77,7 +77,7 @@ branch pool by default.
 | `bytesSize` | `size_t` | Length in bytes of `bytes`. The C-pointer+length idiom (matching `kcdxMemoryInterface::WriteBytes`). |
 | `size` | `size_t` | Optional total bytes to allocate. If `> bytesSize`, the tail beyond the copied bytes is **NOP-padded** (`0x90`) so another plugin can patch into the unused space. `0` = default to `bytesSize` (allocate exactly the initial code). Must be `>= bytesSize`. |
 | `pool` | `kcdxCodePool` | `kcdxCodePool_Branch` (default, `0`) places the region within ±2 GB of `WHGame.dll`'s `.text` so a `rel32` branch reaches it; `kcdxCodePool_Local` (`1`) places it anywhere (use when ±2 GB reachability is not required — callers branch in via abs-64 or register-indirect). |
-| `exportName` | `const char*` | Optional. A **BARE** symbol name to publish the region's address under. The engine derives the `<author>.<plugin>` prefix from `owningPlugin` and registers `<author>.<plugin>.<exportName>` (`naming-namespaces.md`) — you never type your own prefix. A **dotted** `exportName` is an author error and is rejected. `null` = no export. |
+| `exportName` | `const char*` | Optional. A **BARE** symbol name to publish the region's address under. The engine derives the `<author>.<plugin>` prefix from `owningPlugin` and registers `<author>.<plugin>.<exportName>` — you never type your own prefix. A **dotted** `exportName` is an author error and is rejected. `null` = no export. |
 
 **The `bytes` OR `size` rule.** You must set `bytes` (with `bytesSize > 0`) OR
 `size` (or both) — the same rule as Lua's "declare `bytes` or `size`". `name`

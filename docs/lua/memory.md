@@ -5,7 +5,7 @@ Direct memory access and runtime native interop. Grouped domain.
 
 Pointer values cross the Lua boundary as a **pointer userdata**, never a raw
 number — CryEngine's Lua 5.1 uses `LUA_NUMBER=float`, so a pointer-magnitude
-integer silently corrupts (`lua-precision.md`). Pass pointer userdata between
+integer silently corrupts (integers beyond 2^24 lose precision). Pass pointer userdata between
 these calls; only call `:get_address()` for a display/opaque integer.
 
 ## Table-level functions

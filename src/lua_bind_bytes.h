@@ -15,7 +15,7 @@ namespace kcdx::lua_bind_bytes {
 // kcdxPlugin_Load can queue a Kind::Bytes entry (the future
 // kcdxBytesInterface). The Lua VM need not exist yet — registration only
 // stores a function pointer. Split out of bind() for the same lifecycle
-// reason as the Kind::Hook handler. See docs/known-issues/cap-36.
+// reason as the Kind::Hook handler.
 void RegisterHandlers();
 
 // Register `kcdx.bytes` on the table at the top of the Lua stack (the

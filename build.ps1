@@ -26,9 +26,9 @@ foreach ($pair in @(@($dll, "engine DLL"), @($exe, "launcher exe"), @($watchdog,
     Write-Host ("Built: {0,-60} {1,8:N1} KB ({2})" -f $path, ($size/1KB), $label) -ForegroundColor Green
 }
 
-# Stale .asi from before the Phase 1 rename
+# Stale .asi from before the kcdx.asi -> kcdx.dll rename
 $asi = Join-Path $buildDir "Release\kcdx.asi"
 if (Test-Path $asi) {
     Remove-Item $asi -Force
-    Write-Host "Removed stale: $asi (Phase 1: kcdx.asi -> kcdx.dll)" -ForegroundColor DarkYellow
+    Write-Host "Removed stale: $asi (kcdx.asi -> kcdx.dll)" -ForegroundColor DarkYellow
 }

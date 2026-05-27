@@ -20,16 +20,15 @@
 // (dev-mode-gated, idempotent latch, MinHook detour, atomic orig-pointer),
 // but targets WHGame.dll (the game's own module) rather than BugSplat64.dll.
 //
-// Verified RE facts (from
-// _research/parallel-ghidra-research/LOC-MANAGER-FINDINGS.md):
+// Verified RE facts (verified against the binary by Ghidra analysis):
 //   - CLocalizedStringsManager ctor: FUN_1809f0ce4, RVA 0x9f0ce4. First store
 //     is `*this = vtable`; hooking it captures `this` (RCX, arg 1).
 //   - LocalizeString public overloads: vtable slot 21 (offset 0xA8,
 //     FUN_18051d514, CryStringT overload) + slot 22 (offset 0xB0,
 //     FUN_18242e770, raw C-string overload). Resolved at runtime off the
 //     captured instance's live vtable — NOT hardcoded overload RVAs. The slot-1
-//     by-int-ID getter targeted by a prior step was proven to be
-//     GetLanguageName (the WRONG function) — see findings §"GETTER BODY READ".
+//     by-int-ID getter targeted by a prior step was proven (by reading its body
+//     in the disassembly) to be GetLanguageName — the WRONG function.
 //
 // Dev-mode-only. The probe IS the verification of the slot-21/22 LocalizeString
 // ABIs: if the live launch shows readable key strings + gameplay caller

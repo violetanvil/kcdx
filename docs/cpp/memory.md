@@ -31,7 +31,8 @@ int       (*ReadBytes)    (uintptr_t addr, void* out, size_t size);
 
 **Pointer precision:** because C++ works with native `uintptr_t`, there is no
 `LUA_NUMBER=float` rounding hazard here — the Lua surface needs a pointer
-userdata to dodge that; C++ does not (`lua-precision.md`). This is a
+userdata to dodge that (Lua's `LUA_NUMBER` is float, so integers beyond 2^24
+lose precision); C++ does not. This is a
 **single-surface** difference, by design: the Lua pointer-userdata machinery
 (`p:add`, `p:deref`, `p:get_dword`, …) has no C++ interface analogue because
 C++ does pointer arithmetic and typed loads natively. `ReadBytes`/`WriteBytes`

@@ -1,37 +1,31 @@
-# kcdx engine-fix plugin: bugsplat-filename-fix  (Phase-11 STUB)
+# kcdx engine-fix plugin: bugsplat-filename-fix  (metadata-only stub)
 #
 # *** STATUS: metadata-only stub, ship-disabled via
 #     kcdx-engine/load_order.toml (`enabled = false`). ***
 #
 # This folder is a placeholder for the eventual BugSplat-filename fix.
-# It currently declares NO behavior (no [[patch]], no hook, no Lua) —
-# only the [plugin] metadata + load-order hint below, kept so Phase 11
-# can rewrite it in place into the real before_game-hook builtin.
+# It currently declares NO behavior (no hook, no Lua) — only the
+# [plugin] metadata + load-order hint below, kept as the reference
+# template for the real before_game-hook builtin.
 #
 # Why no patch: the original LEA-repoint approach (rewrite a single
 # `lea rdx, [rip+disp32]` at VA 0x1824599e7 from the colon-bearing
 # app-name string to the filename-safe sibling) was empirically
-# DISPROVEN (PROBE R/S, 2026-05-20). The patch applied at DllMain time
-# via the before_game zone exactly as designed, but BugSplat still
-# wrote a colon-truncated "Kingdom Come" stub — that LEA does not feed
-# BugSplat's dmp-filename construction. The [[patch]] table (and its
-# AOB/offset/disp32 reference) has been REMOVED; nothing in this stub
+# disproven against the binary. The patch applied at DllMain time via
+# the before_game zone exactly as designed, but BugSplat still wrote a
+# colon-truncated "Kingdom Come" stub — that LEA does not feed
+# BugSplat's dmp-filename construction. The byte-patch (and its
+# AOB/offset/disp32 reference) has been removed; nothing in this stub
 # documents a patch that no longer exists.
 #
-# The real fix is the Phase-11 before_game-hook capability: hook
-# MiniDumpWriteDump (or CreateFileW filtered to *.dmp) to observe the
-# actual filename at crash time, trace it to its source, and correct
-# it there. That capability is specified in
-# docs/outstanding-work/before-game-hooks.md — this folder is rewritten
-# into that builtin when Phase 11 lands.
+# The real fix is a before_game-hook capability: hook MiniDumpWriteDump
+# (or CreateFileW filtered to *.dmp) to observe the actual filename at
+# crash time, trace it to its source, and correct it there. This folder
+# is rewritten into that builtin once that capability ships.
 #
-# Full diagnostic trail: docs/known-issues/BugSplat dmp files don't
-# reach disk for AV crashes.md.
-#
-# To activate once Phase 11 ships the fix: replace the metadata below
-# with the before_game-hook behavior and remove this plugin's
-# `enabled = false` row from kcdx-engine/load_order.toml (default is
-# enabled = true).
+# To activate once the fix ships: replace the metadata below with the
+# before_game-hook behavior and remove this plugin's `enabled = false`
+# row from kcdx-engine/load_order.toml (default is enabled = true).
 
 [plugin]
 name        = "bugsplat_filename_fix"

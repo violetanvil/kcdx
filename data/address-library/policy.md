@@ -1,9 +1,8 @@
 # Address Library — ID assignment policy
 
-Proposed contribution flow for the kcdx Address Library. Phase 7
-reconnaissance, 2026-05-19. Intended to ship as `kcdx/docs/address-library.md`
-after Phase 7 lands. Mirrors SKSE/CommonLibSSE's Address Library conventions
-where workable, adapts where KCD2's situation differs.
+Contribution flow for the kcdx Address Library. Mirrors
+SKSE/CommonLibSSE's Address Library conventions where workable, adapts
+where KCD2's situation differs.
 
 ## ID assignment
 
@@ -22,7 +21,7 @@ Suggested ranges:
 | 1000–1999 | kcdx core: engine-shared sites, lua VM, gEnv anchors, IConsole-via-RVA |
 | 2000–2999 | IConsole vtable methods (one ID per method, even though the runtime call walks a single vtable) |
 | 3000–3999 | Vtable-index constants (IGame, IScriptSystem, IScriptTable, IGameFramework, ...). These do NOT resolve to RVAs — they're integer offsets into a vtable. Documented separately. |
-| 4000–4999 | Save/serialization (Phase 6) |
+| 4000–4999 | Save/serialization |
 | 5000–5999 | Entity system, components, ECS |
 | 6000–6999 | Inventory, dialog, quest, gameplay logic |
 | 7000–7999 | Audio, physics, input subsystems |
@@ -78,7 +77,7 @@ Two paths:
    line.
 
 2. **Maintainer sign-off.** A kcdx maintainer cross-references the RVA in
-   the Ghidra project (`third-party-ghidra/ghidra_project/KCD2/`),
+   a Ghidra analysis of `WHGame.dll`,
    confirms the disassembly matches the documented signature, and signs
    off. Higher friction than (1) but available when no plugin uses the ID
    yet.
@@ -119,9 +118,9 @@ unreadable.
 | Maintainer cross-references an `unverified` row in Ghidra | Same — PR flipping status. |
 
 **No automated refresh in v0.1.** Each game update is a human-curated
-event. Phase 8 may revisit this and add a CI workflow that re-runs the
-verification scripts against any uploaded `WHGame.dll` to generate the
-diff for maintainer review. Not v0.1.
+event. A later version may revisit this and add a CI workflow that
+re-runs the verification scripts against any uploaded `WHGame.dll` to
+generate the diff for maintainer review. Not v0.1.
 
 ## Naming conventions
 
@@ -207,7 +206,7 @@ For each row with status `verified` or `unverified`:
 
 ## What an `rva` column stores: pattern-hit semantics
 
-**Resolved 2026-05-19 during seed audit.** Each row's `rva` stores the
+Each row's `rva` stores the
 **pattern-hit position** (the RVA of the first byte the locator matched
 against), NOT a function-entry RVA. The TOML-level `offset` key on
 `[[patch]]` / `[[hook]]` / `[[mid_hook]]` is then applied to produce the
@@ -237,15 +236,14 @@ patches with different write positions.
 
 This is documented in id 1006's `notes` column (which calls out the
 `offset = -4` convention used by every IsInCombat-entry consumer) for
-visibility. The `[[hook]]` / `[[mid_hook]]` / `[[patch]]` schema docs in
-`design.md` should add a one-line statement of this contract:
+visibility. The locator contract is, in one line:
 
 > `address_id` and `pattern` resolve to the same kind of value: a single
 > RVA. `offset` is added afterward to produce the final target. An
 > Address Library entry stores the RVA of the locator anchor, not the
 > byte the consumer ultimately reads or writes.
 
-The Phase 7 implementation should not pre-apply any offset stored in the
+The implementation should not pre-apply any offset stored in the
 CSV — there is no offset stored in the CSV. The contract is "ID →
 locator-anchor RVA" only.
 

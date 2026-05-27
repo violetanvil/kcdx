@@ -67,7 +67,8 @@ The hook needs to find its target. The **common path** is by name:
 
 - **`target = "<name>"`** — a named function. The name resolves **both** the
   address and the verified signature, so you write no hex and no ABI. This is
-  the path the engine is built around (the disassembler test, `cornerstones.md`).
+  the path the engine is built around — the engine does the heavy lifting; you
+  declare intent.
   The name resolves three ways, by [precedence](targets.md#resolving-a-name--self--engine--other)
   (self > engine > other):
     - an **engine** [Address Library](addr.md) name (`kcdx.addr` lists what is
@@ -113,7 +114,7 @@ yourself, because there is no name for the engine to carry the ABI from. Set
 
 - **`address = <pointer|integer>`** — a raw VA. Pass a `kcdx.memory.pointer`
   userdata or lightuserdata (exact); an integer is accepted but is lossy at
-  pointer magnitudes (`lua-precision.md`).
+  pointer magnitudes (Lua's `LUA_NUMBER` is float — integers beyond 2^24 round).
 - **`address_id = <number>`** — a numeric Address Library id.
 - **`address_id = "<name>"`** — a string here is the same name-based locator as
   `target` (the readable name you see in `kcdx.addr`). Do not set both `target`

@@ -15,7 +15,7 @@
 #include "../test.h"
 
 // cap-54 self-test — pak-mod registry + load-order fold + version gate. Each
-// assertion is falsifiable + names the broken state it catches (AP15).
+// assertion is falsifiable + names the broken state it catches.
 
 namespace kcdx::mod_absorb {
 

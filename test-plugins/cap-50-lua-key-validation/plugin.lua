@@ -1,6 +1,6 @@
 -- CAP-50 — kcdx.* binder input validation: FAIL LOUD on bad author input.
 --
--- Batch D of the fail-state-logging sweep (bad input fails loud with a
+-- Batch D of the fail-loud sweep (bad input fails loud with a
 -- structured error, never a silent drop). The
 -- {table} binders signal bad args via the (nil, err) RETURN pattern, so each
 -- row reads the returned err string directly — no pcall is needed for these

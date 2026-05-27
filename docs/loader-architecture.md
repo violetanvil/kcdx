@@ -1,8 +1,8 @@
 # kcdx loader architecture
 
-How kcdx gets loaded into the KCD2 process. Phase 1 of the restructure
-flipped the install model from Ultimate-ASI-Loader-based injection to
-kcdx's own launcher exe (`kcdx.exe`).
+How kcdx gets loaded into the KCD2 process. The v0.2 line flipped the
+install model from Ultimate-ASI-Loader-based injection to kcdx's own
+launcher exe (`kcdx.exe`).
 
 ## Status
 
@@ -12,11 +12,9 @@ kcdx's own launcher exe (`kcdx.exe`).
   third-party loader dependency.
 - **v0.1 (historical):** rode Ultimate ASI Loader (`dinput8.dll`).
   kcdx itself shipped as `kcdx.asi` dropped into `plugins/` alongside
-  user plugins. This model is retired; existing installs migrate per
-  [`migration.md`](migration.md).
+  user plugins. This model is retired; existing installs migrate by
+  removing the old ASI-loader files and reinstalling the v0.2 layout.
 
-The v0.2 flip happened in Phase 1 of the restructure plan
-([`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md)).
 Rationale below.
 
 ## v0.2 layout (current)
@@ -134,10 +132,9 @@ and apply unconditionally.
 
 Anything kcdx wants to fix about KCD2's stock binaries that doesn't
 belong in the engine source itself. Concrete first inhabitant:
-`bugsplat-filename-fix/` (see
-[`known-issues/`](known-issues/) — intercepts BugSplat's
+`bugsplat-filename-fix/` — intercepts BugSplat's
 `MiniDmpSender` constructor so the dmp filename doesn't contain a
-colon, which Windows rejects).
+colon, which Windows rejects.
 
 ### How it differs from user plugins
 
@@ -230,10 +227,10 @@ PR database updates that ship independently of engine binaries.
 
 Engine config, logs, and address library DB live under
 `<game-bin>/kcdx-engine/`. Code accesses them via
-`kcdx::paths::EngineDataDir()` / `EngineDataDirPath()`. After Phase 1
-these resolve to `kcdx-engine/`. Any code referring to literal
-`kcdx-engine/` path strings was updated in Phase 1 (`src/paths.cpp`,
-the load_order builtin-classifier substring check).
+`kcdx::paths::EngineDataDir()` / `EngineDataDirPath()`. These resolve
+to `kcdx-engine/`. Code referring to literal `kcdx-engine/` path strings
+lives in `src/paths.cpp` and the load_order builtin-classifier substring
+check.
 
 User plugins live under `<game-bin>/kcdx-plugins/` (accessed via
 `kcdx::paths::PluginsDir()`).

@@ -5,14 +5,14 @@
   (hook callbacks, lifecycle/`ready` callbacks, command callbacks, publish
   subscribers) on the game's main thread. Only hook functions that the game
   itself runs on the main thread; hooking an audio/physics/streaming worker
-  function is unsafe (`lua-callback-threading.md`).
+  function is unsafe (the engine auto-marshals an off-thread hit to the main
+  thread before firing your callback).
 
 - **Pointers are userdata, not numbers.** CryEngine's Lua 5.1 uses
   `LUA_NUMBER=float` (24-bit mantissa). A pointer-magnitude integer silently
   rounds to a 16 MB grid when it crosses the Lua boundary as a number. Always
   pass `kcdx.memory.pointer` userdata between kcdx calls; only use
-  `:get_address()` for an opaque display value, never to feed another kcdx API
-  (`lua-precision.md`).
+  `:get_address()` for an opaque display value, never to feed another kcdx API.
 
 - **Hooks and bytes apply later, not at the call.** `kcdx.hook` and
   `kcdx.bytes` validate immediately (so a malformed call returns `(nil, err)` in

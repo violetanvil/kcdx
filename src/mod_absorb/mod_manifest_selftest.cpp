@@ -12,7 +12,7 @@
 #include "../version_compat.h"
 
 // cap-53 self-test — mod.manifest reader + the shared version-compat helper.
-// Each assertion is falsifiable + names the broken state it catches (AP15).
+// Each assertion is falsifiable + names the broken state it catches.
 
 namespace kcdx::mod_absorb {
 
@@ -211,7 +211,7 @@ void RunManifestSelfTestOnce() {
 
     // --- Assertion 7: DecideGameVersionCompatString — the UNIFIED <supports>
     //     string-prefix-wildcard gate (sub-step 2.5a Deliverable B). Each case
-    //     is falsifiable + names the broken state it catches (AP15). Reuses
+    //     is falsifiable + names the broken state it catches. Reuses
     //     kRtStr from assertion 4. ---------------------------------------------
     struct StrCase { const char* label; CompatResult got; CompatResult want; };
     const StrCase strCases[] = {

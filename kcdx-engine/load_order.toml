@@ -13,17 +13,14 @@
 #
 # bugsplat-filename-fix is shipped DISABLED because its patch site
 # (LEA at VA 0x1824599e7) was empirically proven NOT to feed
-# BugSplat's dmp filename construction (2026-05-20 test run — the
-# patch lands at DllMain time as designed but BugSplat still writes
-# to a colon-truncated stub). The plugin's kcdx.toml + source are
-# retained in the release zip as the reference template for the
-# eventual correct fix; flip enabled = true here once the right
-# patch site is identified.
+# BugSplat's dmp filename construction (the patch lands at DllMain
+# time as designed but BugSplat still writes to a colon-truncated
+# stub). The plugin's kcdx.toml + source are retained in the release
+# zip as the reference template for the eventual correct fix; flip
+# enabled = true here once the right patch site is identified.
 #
-# See docs/known-issues/BugSplat dmp files don't reach disk for AV
-# crashes.md for the full trail and the planned next investigation
-# step (hook MiniDumpWriteDump / CreateFileW to trace the real
-# filename source).
+# The planned next investigation step is to hook MiniDumpWriteDump /
+# CreateFileW to trace the real filename source.
 
 [[plugin]]
 name      = "bugsplat_filename_fix"

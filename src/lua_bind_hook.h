@@ -15,7 +15,7 @@ namespace kcdx::lua_bind_hook {
 // kcdxPlugin_Load can queue a Kind::Hook entry via kcdxHookInterface. The
 // Lua VM need not exist yet — registration only stores a function pointer.
 // Split out of bind() because bind() runs too late (first-update-tick) for
-// the C++ Load-time caller. See docs/known-issues/cap-36.
+// the C++ Load-time caller.
 void RegisterHandlers();
 
 // Register `kcdx.hook` on the table at the top of the Lua stack (the

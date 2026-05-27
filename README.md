@@ -115,9 +115,8 @@ authors don't relearn anything.
 Lua and C++ are **two expressions of one model at feature parity** —
 same concepts, same names, each idiomatic in its language. Anything
 you can do in Lua you can do in C++ and vice-versa; neither is the
-"real" surface. (During the v0.2 restructure the new `kcdx.hook`-family
-verbs land in Lua first, then backfill to the C++ interface — see the
-restructure plan.)
+"real" surface. (In the v0.2 line the new `kcdx.hook`-family verbs land
+in Lua first, then backfill to the C++ interface.)
 
 Concrete improvements over the SKSE design:
 
@@ -169,10 +168,7 @@ failures). To answer the three questions an author actually asks:
   [`test-plugins/README.md`](test-plugins/README.md), the live test
   matrix.
 
-[`docs/design.md`](docs/design.md) is the v0.1 spec and is marked
-SUPERSEDED.
-
-## Installation (v0.2 layout, Phase 1+)
+## Installation (v0.2 layout)
 
 kcdx ships its own launcher (`kcdx.exe`) — Ultimate ASI Loader is no
 longer required. Extract the release zip into
@@ -222,9 +218,10 @@ game crash, zips up logs + crash artifacts into
 `kcdx-engine/logs/crash/`. See [`docs/logging.md`](docs/logging.md)
 §"Crash bundles" for what's in the zip.
 
-**Migrating from a v0.1 install**: see
-[`docs/migration.md`](docs/migration.md) for the uninstall + reinstall
-steps. Existing plugin folders carry forward into `kcdx-plugins/`.
+**Migrating from a v0.1 install**: uninstall the old ASI-loader files
+(`dinput8.dll` and the `kcdx.asi` under `plugins/`), then reinstall per
+the steps above. Existing plugin folders carry forward into
+`kcdx-plugins/`.
 
 See [`docs/loader-architecture.md`](docs/loader-architecture.md) for
 the rationale behind the new layout.

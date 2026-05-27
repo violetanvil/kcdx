@@ -49,7 +49,7 @@ interface/version.
 `kcdxHookInterface` mirrors the Lua `kcdx.hook.before / .after / .around /
 .replace / .mid / .callsite` sub-verbs **one-to-one** as six method pointers —
 the variant IS the method name, there is no shared `Install` with a `mode`
-enum (`lua-api-surface.md` rule 4a). Four query/control methods operate on a
+enum (discrete behavioral variants are sub-verbs, not a mode key). Four query/control methods operate on a
 returned handle.
 
 Every install method has the **same shape** ([`Interfaces.h:1571-1596`](../../include/kcdx/Interfaces.h)):
@@ -108,10 +108,11 @@ The hook needs to find its target. The **common path is by name** — the
 `target` positional argument:
 
 - **`target = "<name>"`** — a named function. The name resolves **both** the
-  address and the verified signature, so you write no hex and no ABI (the
-  disassembler test, `cornerstones.md`). The engine resolves via
+  address and the verified signature, so you write no hex and no ABI — the
+  engine does the heavy lifting; you declare intent. The engine resolves via
   `address_library::ResolveByName(target, opts->owningPlugin)` with
-  **self > engine > other** precedence (`naming-namespaces.md`). Three name
+  **self > engine > other** precedence (a bare name resolves to your own
+  declaration first, then an engine seed, then another plugin's). Three name
   forms:
     - an **engine** [Address Library](addr.md) name — `"IsInCombat"`;
     - one of **your own** [author-declared targets](targets.md), bare —
@@ -158,7 +159,7 @@ engine to carry the ABI from, and the install fails when it is null.
 
 Identify an un-named target **once** via an advanced locator, name it (publish
 via `[[address]]` / `kcdx.address` or a cross-plugin export), and refer to it
-by name thereafter (`cornerstones.md` "declare once / share / coexist").
+by name thereafter (declare the hex once, share the name, coexist with engine names).
 
 ## Options (`kcdxHookOptions`)
 
@@ -432,7 +433,8 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 ## Threading
 
 C++ callbacks behave identically to Lua callbacks on off-thread fires
-(`lua-callback-threading.md`). The engine compares the dispatch thread to the
+(the engine auto-marshals an off-thread hit to the main thread before firing).
+The engine compares the dispatch thread to the
 recorded game main thread; off-thread fires route per `opts->offThread`
 ([`Interfaces.h:1362-1365`](../../include/kcdx/Interfaces.h)):
 

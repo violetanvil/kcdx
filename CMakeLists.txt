@@ -41,10 +41,10 @@ target_include_directories(minhook PUBLIC vendor/minhook/include)
 target_include_directories(minhook PRIVATE vendor/minhook/src)
 
 # -----------------------------------------------------------------------------
-# asmjit (vendored flat-copy at commit 0bd5787, Zlib license)
+# asmjit (vendored flat-copy, Zlib license)
 #
-# Used by Phase 5's typed-marshaling trampolines for [[hook]] lua_callback
-# and [[mid_hook]] entries. Plugin authors don't see asmjit directly —
+# Used by the typed-marshaling trampolines for Lua-callback hooks and
+# mid-function hooks. Plugin authors don't see asmjit directly —
 # it's an engine-internal dep.
 #
 # Build options chosen to minimize the binary size impact:
@@ -59,7 +59,7 @@ set(ASMJIT_STATIC ON CACHE BOOL "" FORCE)
 add_subdirectory(vendor/asmjit)
 
 # -----------------------------------------------------------------------------
-# rom-borrowed (Phase 5+: vendored RoM source files for dynamic_hook bindings)
+# rom-borrowed (vendored RoM source files for dynamic_hook bindings)
 # -----------------------------------------------------------------------------
 # add_library(rom_borrowed STATIC
 #     vendor/rom-borrowed/memory.cpp
@@ -69,15 +69,14 @@ add_subdirectory(vendor/asmjit)
 # )
 # target_include_directories(rom_borrowed PUBLIC vendor/rom-borrowed)
 # target_link_libraries(rom_borrowed PUBLIC asmjit minhook lua)
-# Uncomment when Phase 5 lands.
+# Uncomment when the dedicated rom_borrowed library is split out.
 
 # -----------------------------------------------------------------------------
 # kcdx.asi — the engine itself
 # -----------------------------------------------------------------------------
-# Source list grows phase by phase. Phase 1 ships the locator pipeline
-# (byte-rewrite engine, kcdx.toml filename and kcdx:: namespace).
-# Later phases add plugin_loader, messaging,
-# trampoline, hook_engine, scripting, serialization, etc.
+# The locator pipeline (byte-rewrite engine, kcdx.toml filename and
+# kcdx:: namespace), plus plugin_loader, messaging, trampoline,
+# hook_engine, scripting, serialization, etc.
 add_library(kcdx SHARED
     src/dllmain.cpp
     src/init_phase.cpp
@@ -182,8 +181,9 @@ target_include_directories(kcdx PRIVATE
 )
 
 # version.lib is needed for GetFileVersionInfo* calls in plugin_loader.cpp
-# asmjit is linked even when no [[hook]] uses lua_callback yet — Phase 5
-# code references it; the linker dead-strips unused asmjit code per-symbol.
+# asmjit is linked even when no hook uses lua_callback yet — the
+# typed-marshaling code references it; the linker dead-strips unused
+# asmjit code per-symbol.
 target_link_libraries(kcdx PRIVATE lua minhook asmjit version)
 
 if(MSVC)
@@ -198,8 +198,8 @@ if(MSVC)
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
     # Emit a PDB beside build/Release/kcdx.dll so a kcdx crash frame
-    # symbolicates offline (the 0xC8 / kcdx+offset crash dumps had no
-    # symbols — docs/known-issues/save-load crash 0xC8 raised from WHGame.md).
+    # symbolicates offline (kcdx+offset crash dumps would otherwise have
+    # no symbols).
     # /Zi gives full debug info at compile; /DEBUG links the PDB; /OPT:REF +
     # /OPT:ICF undo the /DEBUG default of disabling those optimizations, so
     # the shipped binary is NOT bloated by enabling debug info. The PDB is
@@ -229,8 +229,8 @@ else()
     target_link_options(kcdx PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 
-# Output as kcdx.dll (was kcdx.asi pre-restructure; v0.2 drops ASI loader
-# dependency in favor of kcdx.exe doing CreateRemoteThread injection).
+# Output as kcdx.dll (v0.2 drops the ASI loader dependency in favor of
+# kcdx.exe doing CreateRemoteThread injection).
 set_target_properties(kcdx PROPERTIES
     PREFIX ""
     SUFFIX ".dll"
@@ -238,7 +238,7 @@ set_target_properties(kcdx PROPERTIES
 )
 
 # -----------------------------------------------------------------------------
-# kcdx.exe — launcher (Phase 1 of v0.2 restructure)
+# kcdx.exe — launcher (v0.2)
 # -----------------------------------------------------------------------------
 # Standalone Win32 exe the user runs instead of KingdomCome.exe directly.
 # Responsibilities:

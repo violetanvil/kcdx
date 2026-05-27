@@ -1,7 +1,7 @@
 # package-release.ps1 — build the engine-only release zip
 #
 # Produces release-staging/kcdx-<version>.zip with the explicit
-# allowlist of files that ship to end users. Phase 1+ layout:
+# allowlist of files that ship to end users. v0.2 layout:
 #
 #   <zip-root>/
 #   ├── kcdx.exe                                (launcher; the only file at game-bin root)

@@ -95,8 +95,8 @@ asmjit::TypeId get_type_id(const std::string& type) {
 #undef TYPEID_MATCH_STR_IF
 #undef TYPEID_MATCH_STR_ELSEIF
 
-    // kcdx convention aliases (matches docs/design.md and the
-    // kcdx.memory.dynamic_hook examples). The RoM-inherited table
+    // kcdx convention aliases (matches the kcdx signature-type tokens
+    // and the kcdx.memory.dynamic_hook examples). The RoM-inherited table
     // above only recognizes literal C type spellings (`int`,
     // `int64_t`, `uintptr_t`, etc.); plugin authors writing TOML or
     // Lua have no reason to know which spellings work, so accept the
