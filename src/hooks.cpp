@@ -14,6 +14,7 @@
 #include "conflict_engine.h"
 #include "console.h"
 #include "hook_engine.h"
+#include "init_phase.h"
 #include "modification_inventory.h"
 #include "log.h"
 #include "load_order.h"
@@ -498,6 +499,17 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // SKSE's kInputLoaded message.
                 log::Info("Firing kcdxMessage_InputLoaded...");
                 kcdx::messaging::FireEngineMessage(kcdxMessage_InputLoaded);
+
+                // PHASE 10 (ctx C): AfterGameApply — the after_game load-order
+                // slice is applied (the ApplyZone(AfterGame) passes above) and
+                // the KCDX Lua table is registered (RegisterKcdxTable at the top
+                // of this one-shot block). Advanced once, from inside the
+                // first-update-tick latch (this whole block runs exactly once per
+                // session via the `done` compare_exchange). The per-tick
+                // ApplyZone drain below this block is the idempotent steady-state
+                // path, not a phase boundary. This is pure instrumentation —
+                // no after_game operation was added, removed, or reordered.
+                kcdx::init::AdvanceTo(kcdx::init::InitPhase::AfterGameApply);
             }
         }
     }

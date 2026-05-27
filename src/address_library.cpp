@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kcdx/Interfaces.h"
+#include "init_phase.h"     // KCDX_REQUIRE_PHASE — version-gate observability guard
 #include "log.h"
 #include "plugin_loader.h"  // for g_runtimeGameVersion
 
@@ -209,6 +210,22 @@ uintptr_t WhgameBase() {
 }  // namespace
 
 uintptr_t Resolve(uint64_t id) {
+    // OBSERVABILITY GUARD (init_phase.h): the version gate below reads
+    // g_runtimeGameVersion. If this Resolve is reached before VersionDetected,
+    // gv is 0 and every row mismatches → Resolve returns 0 (the
+    // FOpen-probe-broke-on-version=0 bug class). KCDX_REQUIRE_PHASE logs that
+    // loudly as a correctness risk. It does NOT change Resolve's behavior — the
+    // function still returns 0 on a version mismatch exactly as today; this only
+    // emits an Error line if the dependency was violated.
+    //
+    // NOTE (pure-refactor step): VersionDetected currently advances LATE (at
+    // PluginsLoaded time, inside DiscoverAndLoad — see dllmain.cpp). Every
+    // version-gated Resolve in today's boot happens AFTER that, so this guard
+    // currently always passes. It DOCUMENTS + ENFORCES the dependency the audit
+    // flagged; it begins catching real early reads once version detection is
+    // promoted to context A (the NEXT migration step).
+    KCDX_REQUIRE_PHASE(::kcdx::init::InitPhase::VersionDetected);
+
     uint32_t gv = kcdx::plugins::g_runtimeGameVersion;
     // Iterate the seed; ~130 entries today, linear is fine (sub-µs).
     // If the table grows past a few hundred entries we'd build a

@@ -80,6 +80,7 @@ add_subdirectory(vendor/asmjit)
 # trampoline, hook_engine, scripting, serialization, etc.
 add_library(kcdx SHARED
     src/dllmain.cpp
+    src/init_phase.cpp
     src/log.cpp
     src/crash_guard.cpp
     src/watchdog_spawn.cpp

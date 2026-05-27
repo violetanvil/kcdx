@@ -6,6 +6,7 @@
 #include "config.h"
 #include "crash_guard.h"
 #include "hooks.h"
+#include "init_phase.h"
 #include "ldr_notify.h"
 #include "load_order.h"
 #include "log.h"
@@ -73,6 +74,10 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // we pass it is the final post-config value.
     kcdx::watchdog::Spawn();
 
+    // PHASE 4 (ctx B): WorkerInit — log::Init, the exception filter, and the
+    // watchdog are all up. Reached after watchdog::Spawn (the last of the three).
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::WorkerInit);
+
     // Wait for KingdomCome.exe's startup code to load WHGame.dll
     // before installing our hooks. The launcher (kcdx.exe) injects
     // kcdx.dll into a CREATE_SUSPENDED game process, so kcdx's
@@ -94,10 +99,32 @@ DWORD WINAPI WorkerThread(LPVOID) {
         return 1;
     }
 
+    // PHASE 5 (ctx B): GameDllMapped — WaitForGameDll returned successfully,
+    // so WHGame.dll is mapped (the gate SetEvent fired). Reached only on the
+    // success path (the timeout path above returns before getting here).
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::GameDllMapped);
+
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
         return 1;
     }
+
+    // PHASE 6 (ctx B): EngineHooksInstalled — hooks::Install succeeded
+    // (lua_pcall + update hooked; MinHook live). Reached only on the success
+    // path (the failure return above precedes this).
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
+
+    // PHASE 7 (ctx B): ModLoaderTakeoverArmed — the mod-loader SELECT detour.
+    // TODAY THERE IS NO OPERATION AT THIS PHASE: the absorb's SELECT detour is
+    // not yet built and PROBE U.6's mod_loader_probe::Install is held OUT of
+    // the boot until this refactor lands (docs/init.md §"The mod-loader absorb"
+    // / §"As-is"). The advance is a monotonic MARKER only, placed at the
+    // sequence position the detour WILL occupy (after EngineHooksInstalled,
+    // before EngineSubsystemsInit) so the phase order is honored and a later
+    // require-guard on >= ModLoaderTakeoverArmed is meaningful. It brackets no
+    // existing call — adding one here would be the absorb feature, out of scope
+    // for this pure refactor.
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::ModLoaderTakeoverArmed);
 
     // Localization runtime-dump feature: arm the dev-mode probe
     // (CLocalizedStringsManager ctor capture + LocalizeString overload hooks on
@@ -145,11 +172,34 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::lua_bind_hook::RegisterHandlers();
     kcdx::lua_bind_bytes::RegisterHandlers();
 
+    // PHASE 8 (ctx B): EngineSubsystemsInit — save_load_hooks + serialization
+    // (after save_load) + the Kind::Hook/Kind::Bytes deferred-apply handlers
+    // (before plugins) are all registered. Reached after the two
+    // RegisterHandlers calls (the last of this group) and before DiscoverAndLoad.
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineSubsystemsInit);
+
     // Plugin DLL discovery + load. Runs after the engine's own hooks are
     // installed so plugins can rely on the MinHook + lua_State infrastructure
     // being present. Plugin_Preload + Plugin_Load fire here, before the first
     // game `update` tick.
     kcdx::plugins::DiscoverAndLoad(kcdx::paths::PluginsDir());
+
+    // PHASE 2 (ctx B, LATE): VersionDetected — g_runtimeGameVersion is set
+    // inside DiscoverAndLoad (its first statement, via DetectRuntimeGameVersion),
+    // so by the time it returns the version is known. The enum names this phase
+    // 2 (its real-time-correct position is in ctx A, before BeforeGameApply),
+    // but in this PURE-REFACTOR step the advance sits at version detection's
+    // CURRENT site — here, after DiscoverAndLoad. This means VersionDetected
+    // advances LATE; that is CORRECT for this step. The early-promotion to
+    // context A (so before_game version-gated reads are also covered) is the
+    // NEXT migration step (docs/init.md §Migration plan step 1). It is advanced
+    // BEFORE the fopen probe below, which reads the version-gated
+    // address_library::Resolve — the dependency the require-guard documents.
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::VersionDetected);
+
+    // PHASE 9 (ctx B): PluginsLoaded — DiscoverAndLoad finished;
+    // Plugin_Preload/Plugin_Load have fired for every plugin.
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::PluginsLoaded);
 
     // Phase 8.5 pak-resolver probe (PROBE U.1, observe-only): install the
     // CCryPak::FOpen body detour (Address Library id 1206) to (a) confirm the
@@ -190,6 +240,11 @@ DWORD WINAPI WorkerThread(LPVOID) {
 //
 // See docs/load-order.md §"Loader-safety contract for before_game zone".
 static void RunBeforeGameZoneInDllMain() {
+    // PHASE 0 (ctx A): PreInit — paths::Init + the log session stamp below.
+    // This is the first explicit advance; g_phase already starts at PreInit so
+    // this marks the boot's start in the INIT_PHASE log without changing it.
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::PreInit);
+
     kcdx::paths::Init();
 
     // Establish the per-session log stamp BEFORE config parse can enable
@@ -209,6 +264,18 @@ static void RunBeforeGameZoneInDllMain() {
     // load_order::Read + Resolve are called inside LoadAllConfigs, so
     // by this point every plugin has an Effective(zone, priority,
     // enabled) row computed.
+    //
+    // PHASE 1 (ctx A): ConfigLoaded — every kcdx.toml parsed; load order
+    // RESOLVED. Reached as soon as LoadAllConfigs returns.
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::ConfigLoaded);
+
+    // NOTE: VersionDetected (phase 2) is NOT advanced here. Version detection
+    // currently lives LATE — inside DiscoverAndLoad (ctx B, PluginsLoaded
+    // time), where g_runtimeGameVersion is set. The enum names VersionDetected
+    // before BeforeGameApply (its real-time-correct position), but the advance
+    // sits at version detection's CURRENT site to keep this a pure refactor.
+    // The early-promotion to context A is the NEXT migration step
+    // (docs/init.md §Migration plan step 1).
 
     // Apply before_game [[patch]] entries against modules already mapped
     // (ntdll, kernel32, and kcdx.dll itself — the launcher injected us via
@@ -228,6 +295,13 @@ static void RunBeforeGameZoneInDllMain() {
     // machinery — Phase 11 generalizes it into the real builtin; it is NOT
     // removed here (docs/outstanding-work/before-game-hooks.md §5).
     kcdx::probes::bugsplat_ctor_probe::ArmLdrInstall();
+
+    // PHASE 3 (ctx A): BeforeGameApply — the before_game load-order slice is
+    // applied (ApplyAlreadyLoaded) and the LDR notifications are armed
+    // (Register + ArmLdrInstall). DllMain returns right after this; the
+    // WorkerThread (ctx B) was already spawned by the caller below. (Phase 2
+    // VersionDetected is intentionally skipped here — see the note above.)
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::BeforeGameApply);
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
