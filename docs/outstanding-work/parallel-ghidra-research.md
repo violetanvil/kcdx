@@ -484,10 +484,15 @@ These decisions survive the rework intact:
   edges now make first-class). **REFINED by §11:** the v1.5 baseline assigns ids
   to ALL functions now (not just curated); the cross-version MATCHER that
   re-attaches an id after the bytes change is the §11.6 open problem.
-- **Re-run model for new game versions** — same extractor re-run; **but the hash
-  CANNOT auto-detect "same function" after a change** (the hash changing is the
-  tracked event, §11.1) — re-identification is the §11.6 fingerprint matcher, and
-  each version APPENDS a `function_hashes` row-set rather than overwriting.
+- **Re-run model for new game versions** — the EXTRACTOR re-runs over the new
+  binary to produce a fresh dump, but the DB is **updated IN PLACE / appended**,
+  NOT rebuilt (§11.2 "append-only, updated in place"): the version-update path
+  opens the existing DB, adds a `game_versions` row, and the §11.6 matcher
+  extends-or-splits each entity's interval. **The hash CANNOT auto-detect "same
+  function" after a change** (the hash changing is the tracked event, §11.1) —
+  re-identification is the §11.6 fingerprint matcher; each version APPENDS
+  `entity_versions` (and trigger-paired `kcdx_overlay_versions`) intervals rather
+  than overwriting.
 - **Other-game ports** — the extractor + this model carry over; another game
   ships its own `reference.sqlite` keyed on its module names.
 - **The dump never edits SQLite/seed.csv/address_library directly, opens no PRs**
@@ -780,6 +785,51 @@ DEV); `statements.cvar_ref` / all `*.edge_reason` (100% empty);
 `verified_on_version` / `authored_against_version` / `signature_source` (the
 interval's `valid_from`/`valid_through` replaces the first two; the third was a
 constant `curated`).
+
+#### The DB is APPEND-ONLY and UPDATED IN PLACE per version (not rebuilt)
+
+This is a load-bearing model fact. The DB is NOT regenerated from the dump each
+game version — it is **updated in place, appending** the new version's rows to
+the existing DB:
+
+- The v1.5 import is the **baseline BOOTSTRAP** — it builds the DB from the dump
+  from scratch (the current `import_to_sqlite.py` path).
+- v1.6+ is an **incremental VERSION-UPDATE** — a different tool path that opens
+  the existing DB and appends: a new `game_versions` row; for each entity, the
+  matcher (§11.6) either extends the open interval (unchanged → leave it) or
+  closes it and opens a new one (changed); paired overlay-version intervals
+  follow (below). The DB grows; old rows are never rewritten.
+- This is WHY `kcdx_id` is append-only / never recycled: a stable id must survive
+  every in-place update so a plugin authored against v1.5 still resolves after the
+  DB has been updated through v1.9. A rebuild-from-dump model would not need
+  stable ids; the append-in-place model is exactly what makes the version history
+  (and cross-version plugin survival) possible.
+
+#### Trigger-enforced invariant: a curated entity's intervals stay paired
+
+**Every open `entity_versions` interval for an entity that has a `kcdx_overlay`
+row MUST have a paired open `kcdx_overlay_versions` interval.** Because the DB is
+written across many version-update sessions (above), this is enforced by a
+**SQLite trigger at write time**, not left to the exporter:
+
+- When a new `entity_versions` interval opens for an entity that has a
+  `kcdx_overlay` row, the trigger closes the entity's current
+  `kcdx_overlay_versions` interval and opens a new one — `valid_from` = the new
+  version, the prior interval's `signature`/`offset`/`vtable_slot` **carried
+  forward as a starting point**, but **`status = unverified`**.
+- Carrying the facts forward (not NULL) keeps them as a re-verify reference; the
+  `unverified` status is the correctness gate — a byte-form that changed has NOT
+  been re-verified, so the overlay must NOT assert a verified ABI for it (that
+  would be an AP2/AP12 false-verified). The name still RESOLVES (its address comes
+  from `entity_versions`), but the verified-ABI gate reports "unverified on this
+  version" until a maintainer re-checks and flips it to `verified`.
+- This gives the maintainer a precise worklist after every game update: every
+  `kcdx_overlay_versions` row with `status = unverified` on the current version is
+  a re-verify task.
+- The trigger guards the invariant for the DB's whole append-only life, across
+  every write path (baseline build, version-update, a future ad-hoc maintainer
+  edit) — not just the one exporter run, which is why it lives in the DB, not the
+  tool.
 
 ### 11.3 The author reference surface — exactly two handles + the hatch
 
