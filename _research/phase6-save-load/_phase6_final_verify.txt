@@ -1,0 +1,53 @@
+==============================================================================
+PREDECESSOR SIGS (already used by kcdx — confirm still unique)
+==============================================================================
+  [PASS] yobson1 update: 1 hit(s) (expect 1)
+        @ 0x0000000180667B24 (.text)
+  [PASS] yobson1 lua_pcall: 1 hit(s) (expect 1)
+        @ 0x000000018071A5A4 (.text)
+  [PASS] yobson1 luaL_loadfile: 1 hit(s) (expect 1)
+        @ 0x0000000183993898 (.text)
+
+==============================================================================
+MUYUANJIN gEnv anchor chain
+==============================================================================
+  Anchor string @ 0x0000000184095E58
+  LEA xrefs from .text: 1
+    @ 0x000000018086ADB0
+      v1.4+ context byte sig: PRESENT
+
+==============================================================================
+PHASE 6 NEW CANDIDATE SIGS (uniqueness only)
+==============================================================================
+  [PASS] C_SaveGameManager::LoadGame (Tier-2): 1 hit(s) (expect 1)
+        @ 0x00000001825BD1BC (.text)
+  [PASS] C_SaveGameManager::PostLoadGame (Tier-2): 1 hit(s) (expect 1)
+        @ 0x00000001825BCF94 (.text)
+  [PASS] C_SaveGameManager::LoadGame_wrapper (Tier-2): 1 hit(s) (expect 1)
+        @ 0x00000001825BCEEC (.text)
+  [PASS] savemgr_orchestrator_0xFBEE78 (Tier-2): 1 hit(s) (expect 1)
+        @ 0x0000000180FBEE78 (.text)
+  [PASS] cryaction_postloadgame_string_owner_0xFBE628 (Tier-2): 1 hit(s) (expect 1)
+        @ 0x0000000180FBE628 (.text)
+  [PASS] C_UISaveLoad::LoadLastSave (Tier-2): 1 hit(s) (expect 1)
+        @ 0x0000000182BA7094 (.text)
+  [PASS] C_UISaveLoad::ExitGame (Tier-2): 1 hit(s) (expect 1)
+        @ 0x0000000182BA6894 (.text)
+  [PASS] C_UISaveLoad::LoadLastSave (Tier-1): 1 hit(s) (expect 1)
+        @ 0x0000000182BA7094 (.text)
+  [PASS] C_UISaveLoad::ExitGame (Tier-1): 1 hit(s) (expect 1)
+        @ 0x0000000182BA6894 (.text)
+  [PASS] C_SaveGameManager::UpdateSaveGameDescriptions (Tier-1): 1 hit(s) (expect 1)
+        @ 0x00000001806EBF34 (.text)
+  [PASS] savemgr_orchestrator_0xFBEE78 (Tier-1): 1 hit(s) (expect 1)
+        @ 0x0000000180FBEE78 (.text)
+  [PASS] cryaction_postloadgame_string_owner_0xFBE628 (Tier-1): 1 hit(s) (expect 1)
+        @ 0x0000000180FBE628 (.text)
+  [PASS] C_SaveGameManager::SaveGame (Tier-2): 1 hit(s) (expect 1)
+        @ 0x0000000183581B04 (.text)
+  [PASS] C_SaveGameManager::DeleteSavegame (Tier-2): 1 hit(s) (expect 1)
+        @ 0x00000001825BC510 (.text)
+  [PASS] C_SaveGameManager::DeleteAllSavegamesOfPlayline (Tier-1): 1 hit(s) (expect 1)
+        @ 0x00000001825BC41C (.text)
+  [PASS] C_SaveGameManager::LoadCryEngineData (Tier-1): 1 hit(s) (expect 1)
+        @ 0x00000001825BCE18 (.text)

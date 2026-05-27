@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kcd_mod>
+	<info>
+		<name>Inventory In Dialogue</name>
+		<description>Lets you open the inventory and character menu during dialog. Pure XML mod, single defaultProfile.xml edit.</description>
+		<author>VioletAnvil</author>
+		<version>1.0.0</version>
+		<modid>inventory_in_dialogue</modid>
+		<created_on>2026-05-18</created_on>
+	</info>
+</kcd_mod>

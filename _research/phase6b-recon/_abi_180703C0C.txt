@@ -1,0 +1,43 @@
+=== Function @ 0x0000000180703C0C ===
+  Visited 13 unique addresses, extent 0x180703C0C..0x180703C2E
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 0
+  Final rsp offset from entry_rsp: 0 (0x0)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: never (stable post-prologue)
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x0000000180703C0C: 85d2                     test     edx, edx
+  0x0000000180703C0E: 781b                     js       0x180703c2b
+  0x0000000180703C10: 488b01                   mov      rax, qword ptr [rcx]
+  0x0000000180703C13: 488b4908                 mov      rcx, qword ptr [rcx + 8]
+  0x0000000180703C17: 482bc8                   sub      rcx, rax
+  0x0000000180703C1A: 4c63c2                   movsxd   r8, edx
+  0x0000000180703C1D: 48c1f903                 sar      rcx, 3
+  0x0000000180703C21: 4c3bc1                   cmp      r8, rcx
+  0x0000000180703C24: 7305                     jae      0x180703c2b
+  0x0000000180703C26: 4a8b04c0                 mov      rax, qword ptr [rax + r8*8]
+  0x0000000180703C2A: c3                       ret      
+  0x0000000180703C2B: 33c0                     xor      eax, eax
+  0x0000000180703C2D: c3                       ret      

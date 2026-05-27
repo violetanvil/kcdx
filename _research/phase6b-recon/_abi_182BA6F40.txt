@@ -1,0 +1,73 @@
+=== Function @ 0x0000000182BA6F40 ===
+  Visited 43 unique addresses, extent 0x182BA6F40..0x182BA7004
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 6
+  Final rsp offset from entry_rsp: -72 (-0x48)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: never (stable post-prologue)
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x0000000182BA6F40: 4883ec48                 sub      rsp, 0x48
+  0x0000000182BA6F44: 8b0d32f65102             mov      ecx, dword ptr [rip + 0x251f632]
+  0x0000000182BA6F4A: 65488b042558000000       mov      rax, qword ptr gs:[0x58]
+  0x0000000182BA6F53: ba18000000               mov      edx, 0x18
+  0x0000000182BA6F58: 488b04c8                 mov      rax, qword ptr [rax + rcx*8]
+  0x0000000182BA6F5C: 8b0402                   mov      eax, dword ptr [rdx + rax]
+  0x0000000182BA6F5F: 39053355ad02             cmp      dword ptr [rip + 0x2ad5533], eax
+  0x0000000182BA6F65: 7e3f                     jle      0x182ba6fa6
+  0x0000000182BA6F67: 488d0d2a55ad02           lea      rcx, [rip + 0x2ad552a]
+  0x0000000182BA6F6E: e8157a07ff               call     0x181c1e988
+  0x0000000182BA6F73: 833d1e55ad02ff           cmp      dword ptr [rip + 0x2ad551e], -1
+  0x0000000182BA6F7A: 752a                     jne      0x182ba6fa6
+  0x0000000182BA6F7C: 488b0d2549d801           mov      rcx, qword ptr [rip + 0x1d84925]
+  0x0000000182BA6F83: 488d15def82601           lea      rdx, [rip + 0x126f8de]
+  0x0000000182BA6F8A: 488b01                   mov      rax, qword ptr [rcx]
+  0x0000000182BA6F8D: ff90b8000000             call     qword ptr [rax + 0xb8]
+  0x0000000182BA6F93: 488d0dfe54ad02           lea      rcx, [rip + 0x2ad54fe]
+  0x0000000182BA6F9A: 488905ff54ad02           mov      qword ptr [rip + 0x2ad54ff], rax
+  0x0000000182BA6FA1: e8767907ff               call     0x181c1e91c
+  0x0000000182BA6FA6: 488b0df354ad02           mov      rcx, qword ptr [rip + 0x2ad54f3]
+  0x0000000182BA6FAD: 488b01                   mov      rax, qword ptr [rcx]
+  0x0000000182BA6FB0: ff5010                   call     qword ptr [rax + 0x10]
+  0x0000000182BA6FB3: 33c9                     xor      ecx, ecx
+  0x0000000182BA6FB5: 85c0                     test     eax, eax
+  0x0000000182BA6FB7: 7805                     js       0x182ba6fbe
+  0x0000000182BA6FB9: 0f9fc0                   setg     al
+  0x0000000182BA6FBC: eb41                     jmp      0x182ba6fff
+  0x0000000182BA6FBE: 48894c2420               mov      qword ptr [rsp + 0x20], rcx
+  0x0000000182BA6FC3: 48894c2428               mov      qword ptr [rsp + 0x28], rcx
+  0x0000000182BA6FC8: 48894c2430               mov      qword ptr [rsp + 0x30], rcx
+  0x0000000182BA6FCD: 488b0dec48d801           mov      rcx, qword ptr [rip + 0x1d848ec]
+  0x0000000182BA6FD4: 488b01                   mov      rax, qword ptr [rcx]
+  0x0000000182BA6FD7: ff90a8010000             call     qword ptr [rax + 0x1a8]
+  0x0000000182BA6FDD: 4c8d442420               lea      r8, [rsp + 0x20]
+  0x0000000182BA6FE2: ba28000000               mov      edx, 0x28
+  0x0000000182BA6FE7: 488b08                   mov      rcx, qword ptr [rax]
+  0x0000000182BA6FEA: 4c8b89b0010000           mov      r9, qword ptr [rcx + 0x1b0]
+  0x0000000182BA6FF1: 488bc8                   mov      rcx, rax
+  0x0000000182BA6FF4: 41ffd1                   call     r9
+  0x0000000182BA6FF7: 837c243003               cmp      dword ptr [rsp + 0x30], 3
+  0x0000000182BA6FFC: 0f94c0                   sete     al
+  0x0000000182BA6FFF: 4883c448                 add      rsp, 0x48
+  0x0000000182BA7003: c3                       ret      

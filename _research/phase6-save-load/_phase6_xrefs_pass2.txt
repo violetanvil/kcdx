@@ -1,0 +1,264 @@
+
+==============================================================================
+Target VA: 0x0000000183E16B70
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x0000000180FBE6D8
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x0000000180FBE628 (RVA=0xFBE628)
+    via xref @ 0x0000000180FBE6D8
+    Tier-1 sig (24 B): 48 89 5C 24 18 55 56 57 41 54 41 56 48 8D 6C 24 C9 48 81 EC C0 00 00 00
+      .text uniqueness: 1 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 18 55 56 57 41 54 41 56 48 8D 6C 24 C9 48 81 EC C0 00 00 00 4C 8B F1 E8 78 CE 40 01 4C 8D 25 99 CB B2 02 48
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x18], rbx
+      push rbp
+      push rsi
+      push rdi
+      push r12
+      push r14
+      lea rbp, [rsp - 0x37]
+      sub rsp, 0xc0
+
+==============================================================================
+Target VA: 0x0000000183E16B90
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x00000001825BD01B
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x00000001825BCF94 (RVA=0x25BCF94)
+    via xref @ 0x00000001825BD01B
+    Tier-1 sig (24 B): 48 89 5C 24 10 55 56 57 41 56 41 57 48 8D 6C 24 C9 48 81 EC 90 00 00 00
+      .text uniqueness: 3 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 10 55 56 57 41 56 41 57 48 8D 6C 24 C9 48 81 EC 90 00 00 00 49 8B F8 8B DA 48 8B F1 E8 7F F1 35 FE 4C 8B B8
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x10], rbx
+      push rbp
+      push rsi
+      push rdi
+      push r14
+      push r15
+      lea rbp, [rsp - 0x37]
+      sub rsp, 0x90
+
+==============================================================================
+Target VA: 0x0000000183E16CF8
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x00000001806EC015
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x00000001806EBF34 (RVA=0x6EBF34)
+    via xref @ 0x00000001806EC015
+    Tier-1 sig (24 B): 48 89 5C 24 10 48 89 74 24 18 57 48 81 EC B0 01 00 00 48 8B 05 73 10 21
+      .text uniqueness: 1 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 10 48 89 74 24 18 57 48 81 EC B0 01 00 00 48 8B 05 73 10 21 04 48 33 C4 48 89 84 24 A0 01 00 00 48 8D 79 08
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x10], rbx
+      mov qword ptr [rsp + 0x18], rsi
+      push rdi
+      sub rsp, 0x1b0
+      mov rax, qword ptr [rip + 0x4211073]
+      xor rax, rsp
+      mov qword ptr [rsp + 0x1a0], rax
+      lea rdi, [rcx + 8]
+
+==============================================================================
+Target VA: 0x0000000183E16B30
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x000000018005FE94
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x000000018005FE90 (RVA=0x5FE90)
+    via xref @ 0x000000018005FE94
+    Tier-1 sig (24 B): 48 83 EC 28 48 8D 15 95 6C DB 03 48 8D 0D 26 4F 51 05 E8 85 6A 49 00 48
+      .text uniqueness: 1 hit(s)
+    Tier-2 sig (40 B): 48 83 EC 28 48 8D 15 95 6C DB 03 48 8D 0D 26 4F 51 05 E8 85 6A 49 00 48 8D 0D 02 9A 0E 02 48 83 C4 28 E9 D1 EE BB 01 CC
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      sub rsp, 0x28
+      lea rdx, [rip + 0x3db6c95]
+      lea rcx, [rip + 0x5514f26]
+      call 0x1804f692c
+      lea rcx, [rip + 0x20e9a02]
+      add rsp, 0x28
+      jmp 0x181c1ed88
+      int3 
+
+==============================================================================
+Target VA: 0x0000000183E16B20
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x000000018079AB89
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x000000018079AAB4 (RVA=0x79AAB4)
+    via xref @ 0x000000018079AB89
+    Tier-1 sig (24 B): 48 89 5C 24 18 56 48 83 EC 40 BA 48 00 00 00 48 8D 05 DE D5 67 03 48 8B
+      .text uniqueness: 1 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 18 56 48 83 EC 40 BA 48 00 00 00 48 8D 05 DE D5 67 03 48 8B D9 48 89 01 48 83 C1 08 4C 8D 0D 91 07 22 01 44
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x18], rbx
+      push rsi
+      sub rsp, 0x40
+      mov edx, 0x48
+      lea rax, [rip + 0x367d5de]
+      mov rbx, rcx
+      mov qword ptr [rcx], rax
+      add rcx, 8
+
+==============================================================================
+Target VA: 0x0000000183E169A8
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x00000001825BDA1A
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x00000001825BD9E4 (RVA=0x25BD9E4)
+    via xref @ 0x00000001825BDA1A
+    Tier-1 sig (24 B): 48 89 5C 24 08 48 89 74 24 18 55 57 41 56 48 8D 6C 24 B9 48 81 EC 90 00
+      .text uniqueness: 6 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 08 48 89 74 24 18 55 57 41 56 48 8D 6C 24 B9 48 81 EC 90 00 00 00 48 8B 05 BB F5 33 02 48 33 C4 48 89 45 37
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 8], rbx
+      mov qword ptr [rsp + 0x18], rsi
+      push rbp
+      push rdi
+      push r14
+      lea rbp, [rsp - 0x47]
+      sub rsp, 0x90
+      mov rax, qword ptr [rip + 0x233f5bb]
+
+==============================================================================
+Target VA: 0x0000000184725388
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x0000000182BA68E5
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x0000000182BA6894 (RVA=0x2BA6894)
+    via xref @ 0x0000000182BA68E5
+    Tier-1 sig (24 B): 48 89 4C 24 08 48 83 EC 38 48 8B 0D 14 50 D8 01 4C 8D 44 24 40 48 8D 15
+      .text uniqueness: 1 hit(s)
+    Tier-2 sig (40 B): 48 89 4C 24 08 48 83 EC 38 48 8B 0D 14 50 D8 01 4C 8D 44 24 40 48 8D 15 08 EB B7 01 48 8B 01 FF 50 38 E8 7D 58 D7 FD 41
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 8], rcx
+      sub rsp, 0x38
+      mov rcx, qword ptr [rip + 0x1d85014]
+      lea r8, [rsp + 0x40]
+      lea rdx, [rip + 0x1b7eb08]
+      mov rax, qword ptr [rcx]
+      call qword ptr [rax + 0x38]
+      call 0x18091c138
+
+==============================================================================
+Target VA: 0x00000001847949A8
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x000000018370CB9F
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x000000018370CB08 (RVA=0x370CB08)
+    via xref @ 0x000000018370CB9F
+    Tier-1 sig (24 B): 48 89 5C 24 18 88 54 24 10 57 48 83 EC 20 48 8B F9 49 8B D8 48 8B 49 08
+      .text uniqueness: 1 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 18 88 54 24 10 57 48 83 EC 20 48 8B F9 49 8B D8 48 8B 49 08 48 85 C9 75 0E 48 8D 0D 5C 7E 08 01 E8 CF 51 35
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x18], rbx
+      mov byte ptr [rsp + 0x10], dl
+      push rdi
+      sub rsp, 0x20
+      mov rdi, rcx
+      mov rbx, r8
+      mov rcx, qword ptr [rcx + 8]
+      test rcx, rcx
+
+==============================================================================
+Target VA: 0x0000000184793920
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x0000000183716AA2
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x0000000183716A81 (RVA=0x3716A81)
+    via xref @ 0x0000000183716AA2
+    Tier-1 sig (24 B): 48 89 74 24 20 48 8B CF FF 90 30 01 00 00 49 3B C4 74 23 BA 4D 45 54 41
+      .text uniqueness: 1 hit(s)
+    Tier-2 sig (40 B): 48 89 74 24 20 48 8B CF FF 90 30 01 00 00 49 3B C4 74 23 BA 4D 45 54 41 48 8D 4D 58 E8 9E 48 00 00 48 8D 0D 77 CE 07 01
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x20], rsi
+      mov rcx, rdi
+      call qword ptr [rax + 0x130]
+      cmp rax, r12
+      je 0x183716ab7
+      mov edx, 0x4154454d
+      lea rcx, [rbp + 0x58]
+      call 0x18371b340
+
+==============================================================================
+Target VA: 0x0000000184059C80
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x000000018370C964
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x000000018370C944 (RVA=0x370C944)
+    via xref @ 0x000000018370C964
+    Tier-1 sig (24 B): 48 89 5C 24 10 55 56 57 48 83 EC 30 48 8B EA 48 8B F1 48 8B 51 20 48 83
+      .text uniqueness: 2 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 10 55 56 57 48 83 EC 30 48 8B EA 48 8B F1 48 8B 51 20 48 83 7A 08 00 75 16 48 8B 12 48 8D 0D 15 D3 94 00 E8
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x10], rbx
+      push rbp
+      push rsi
+      push rdi
+      sub rsp, 0x30
+      mov rbp, rdx
+      mov rsi, rcx
+      mov rdx, qword ptr [rcx + 0x20]
+
+==============================================================================
+Target VA: 0x0000000184059CC0
+==============================================================================
+  1 LEA xref(s) in .text:
+    xref @ VA=0x000000018370FA68
+
+  1 unique function entry(ies) found:
+
+  Function entry @ VA=0x000000018370FA3C (RVA=0x370FA3C)
+    via xref @ 0x000000018370FA68
+    Tier-1 sig (24 B): 48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 57 41 56 41 57 48 83 EC 30
+      .text uniqueness: 47 hit(s)
+    Tier-2 sig (40 B): 48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 57 41 56 41 57 48 83 EC 30 4C 8B F2 48 8B E9 48 8B 51 20 48 83 7A 08 00 75
+      .text uniqueness: 1 hit(s)
+    Decoded prologue:
+      mov qword ptr [rsp + 0x10], rbx
+      mov qword ptr [rsp + 0x18], rbp
+      mov qword ptr [rsp + 0x20], rsi
+      push rdi
+      push r14
+      push r15
+      sub rsp, 0x30
+      mov r14, rdx

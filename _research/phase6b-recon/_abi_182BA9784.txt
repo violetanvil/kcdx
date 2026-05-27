@@ -1,0 +1,58 @@
+=== Function @ 0x0000000182BA9784 ===
+  Visited 20 unique addresses, extent 0x182BA9784..0x182BA97D0
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 6
+  Final rsp offset from entry_rsp: -40 (-0x28)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: never (stable post-prologue)
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+  entry_rsp+0x08  (arg #1):
+    [read ] 0x182BA97C1: <CsInsn 0x182ba97c1 [488b5c2430]: mov rbx, qword ptr [rsp + 0x30]>  (width=8B, via rsp)
+
+  entry_rsp+0x20  (arg #4):
+    [read ] 0x182BA979E: <CsInsn 0x182ba979e [488d4c2448]: lea rcx, [rsp + 0x48]>  (width=8B, via rsp)
+    [read ] 0x182BA97AB: <CsInsn 0x182ba97ab [488d542448]: lea rdx, [rsp + 0x48]>  (width=8B, via rsp)
+    [read ] 0x182BA97B8: <CsInsn 0x182ba97b8 [488b4c2448]: mov rcx, qword ptr [rsp + 0x48]>  (width=8B, via rsp)
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x0000000182BA9784: 48895c2408               mov      qword ptr [rsp + 8], rbx
+  0x0000000182BA9789: 57                       push     rdi
+  0x0000000182BA978A: 4883ec20                 sub      rsp, 0x20
+  0x0000000182BA978E: 488bf9                   mov      rdi, rcx
+  0x0000000182BA9791: 418ad8                   mov      bl, r8b
+  0x0000000182BA9794: 8aca                     mov      cl, dl
+  0x0000000182BA9796: e8dd5e06fe               call     0x180c0f678
+  0x0000000182BA979B: 488bd0                   mov      rdx, rax
+  0x0000000182BA979E: 488d4c2448               lea      rcx, [rsp + 0x48]
+  0x0000000182BA97A3: e884d194fd               call     0x1804f692c
+  0x0000000182BA97A8: 448ac3                   mov      r8b, bl
+  0x0000000182BA97AB: 488d542448               lea      rdx, [rsp + 0x48]
+  0x0000000182BA97B0: 488bcf                   mov      rcx, rdi
+  0x0000000182BA97B3: e8d8fc32fe               call     0x180ed9490
+  0x0000000182BA97B8: 488b4c2448               mov      rcx, qword ptr [rsp + 0x48]
+  0x0000000182BA97BD: 4883c1f4                 add      rcx, -0xc
+  0x0000000182BA97C1: 488b5c2430               mov      rbx, qword ptr [rsp + 0x30]
+  0x0000000182BA97C6: 4883c420                 add      rsp, 0x20
+  0x0000000182BA97CA: 5f                       pop      rdi
+  0x0000000182BA97CB: e9284395fd               jmp      0x1804fdaf8

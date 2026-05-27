@@ -1,0 +1,138 @@
+=== Function @ 0x0000000182BA9830 ===
+  Visited 98 unique addresses, extent 0x182BA9830..0x182BA99AC
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 2
+  Final rsp offset from entry_rsp: 0 (0x0)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: never (stable post-prologue)
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+  entry_rsp+0x20  (arg #4):
+    [write] 0x182BA98DB: <CsInsn 0x182ba98db [48895c2420]: mov qword ptr [rsp + 0x20], rbx>  (width=8B, via rsp)
+    [write] 0x182BA996E: <CsInsn 0x182ba996e [4c89442420]: mov qword ptr [rsp + 0x20], r8>  (width=8B, via rsp)
+
+  entry_rsp+0x28  (arg #5):
+    [write] 0x182BA98D2: <CsInsn 0x182ba98d2 [48897c2428]: mov qword ptr [rsp + 0x28], rdi>  (width=8B, via rsp)
+
+  entry_rsp+0x30  (arg #6):
+    [write] 0x182BA98C5: <CsInsn 0x182ba98c5 [4889442430]: mov qword ptr [rsp + 0x30], rax>  (width=8B, via rsp)
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x0000000182BA9830: 488d55a7                 lea      rdx, [rbp - 0x59]
+  0x0000000182BA9834: 498bce                   mov      rcx, r14
+  0x0000000182BA9837: e880eef9fd               call     0x180b486bc
+  0x0000000182BA983C: 488b45af                 mov      rax, qword ptr [rbp - 0x51]
+  0x0000000182BA9840: 488d5567                 lea      rdx, [rbp + 0x67]
+  0x0000000182BA9844: 488b5da7                 mov      rbx, qword ptr [rbp - 0x59]
+  0x0000000182BA9848: 488d4d7f                 lea      rcx, [rbp + 0x7f]
+  0x0000000182BA984C: 48894567                 mov      qword ptr [rbp + 0x67], rax
+  0x0000000182BA9850: 48895d7f                 mov      qword ptr [rbp + 0x7f], rbx
+  0x0000000182BA9854: e8c7af7ffd               call     0x1803a4820
+  0x0000000182BA9859: 84c0                     test     al, al
+  0x0000000182BA985B: 0f84e9000000             je       0x182ba994a
+  0x0000000182BA9861: 4c8bfb                   mov      r15, rbx
+  0x0000000182BA9864: 48895d9f                 mov      qword ptr [rbp - 0x61], rbx
+  0x0000000182BA9868: 4c8be3                   mov      r12, rbx
+  0x0000000182BA986B: 4c8beb                   mov      r13, rbx
+  0x0000000182BA986E: 488d4d77                 lea      rcx, [rbp + 0x77]
+  0x0000000182BA9872: e8598082fd               call     0x1803d18d0
+  0x0000000182BA9877: 4c8b03                   mov      r8, qword ptr [rbx]
+  0x0000000182BA987A: 4c8d4d77                 lea      r9, [rbp + 0x77]
+  0x0000000182BA987E: 498bce                   mov      rcx, r14
+  0x0000000182BA9881: e85ae7f9fd               call     0x180b47fe0
+  0x0000000182BA9886: 84c0                     test     al, al
+  0x0000000182BA9888: 488d5577                 lea      rdx, [rbp + 0x77]
+  0x0000000182BA988C: 488d4dc7                 lea      rcx, [rbp - 0x39]
+  0x0000000182BA9890: 408af0                   mov      sil, al
+  0x0000000182BA9893: 0f954567                 setne    byte ptr [rbp + 0x67]
+  0x0000000182BA9897: e8208d81fd               call     0x1803c25bc
+  0x0000000182BA989C: 488b0b                   mov      rcx, qword ptr [rbx]
+  0x0000000182BA989F: 488d55bf                 lea      rdx, [rbp - 0x41]
+  0x0000000182BA98A3: 488bf8                   mov      rdi, rax
+  0x0000000182BA98A6: e875e9c7fd               call     0x180828220
+  0x0000000182BA98AB: 488d15e65d3401           lea      rdx, [rip + 0x1345de6]
+  0x0000000182BA98B2: 488bd8                   mov      rbx, rax
+  0x0000000182BA98B5: 488d4d97                 lea      rcx, [rbp - 0x69]
+  0x0000000182BA98B9: e86ed094fd               call     0x1804f692c
+  0x0000000182BA98BE: 488d4567                 lea      rax, [rbp + 0x67]
+  0x0000000182BA98C2: 4084f6                   test     sil, sil
+  0x0000000182BA98C5: 4889442430               mov      qword ptr [rsp + 0x30], rax
+  0x0000000182BA98CA: 4c8d4d6f                 lea      r9, [rbp + 0x6f]
+  0x0000000182BA98CE: 4d0f44fc                 cmove    r15, r12
+  0x0000000182BA98D2: 48897c2428               mov      qword ptr [rsp + 0x28], rdi
+  0x0000000182BA98D7: 488d5597                 lea      rdx, [rbp - 0x69]
+  0x0000000182BA98DB: 48895c2420               mov      qword ptr [rsp + 0x20], rbx
+  0x0000000182BA98E0: 498bce                   mov      rcx, r14
+  0x0000000182BA98E3: 4d8d470c                 lea      r8, [r15 + 0xc]
+  0x0000000182BA98E7: e83c76ffff               call     0x182ba0f28
+  0x0000000182BA98EC: 488d4d97                 lea      rcx, [rbp - 0x69]
+  0x0000000182BA98F0: e88f2f95fd               call     0x1804fc884
+  0x0000000182BA98F5: 488d4dbf                 lea      rcx, [rbp - 0x41]
+  0x0000000182BA98F9: e8862f95fd               call     0x1804fc884
+  0x0000000182BA98FE: 488d4dc7                 lea      rcx, [rbp - 0x39]
+  0x0000000182BA9902: e87d2f95fd               call     0x1804fc884
+  0x0000000182BA9907: 488d4d77                 lea      rcx, [rbp + 0x77]
+  0x0000000182BA990B: e8742f95fd               call     0x1804fc884
+  0x0000000182BA9910: 488b45af                 mov      rax, qword ptr [rbp - 0x51]
+  0x0000000182BA9914: 488d5567                 lea      rdx, [rbp + 0x67]
+  0x0000000182BA9918: 4084f6                   test     sil, sil
+  0x0000000182BA991B: 48894567                 mov      qword ptr [rbp + 0x67], rax
+  0x0000000182BA991F: 488d4d7f                 lea      rcx, [rbp + 0x7f]
+  0x0000000182BA9923: 4c0f446d9f               cmove    r13, qword ptr [rbp - 0x61]
+  0x0000000182BA9928: 498d5d10                 lea      rbx, [r13 + 0x10]
+  0x0000000182BA992C: 48895d7f                 mov      qword ptr [rbp + 0x7f], rbx
+  0x0000000182BA9930: 4c8bfb                   mov      r15, rbx
+  0x0000000182BA9933: 4c8be3                   mov      r12, rbx
+  0x0000000182BA9936: 48895d9f                 mov      qword ptr [rbp - 0x61], rbx
+  0x0000000182BA993A: 4c8beb                   mov      r13, rbx
+  0x0000000182BA993D: e8deae7ffd               call     0x1803a4820
+  0x0000000182BA9942: 84c0                     test     al, al
+  0x0000000182BA9944: 0f8524ffffff             jne      0x182ba986e
+  0x0000000182BA994A: 488d158f28e900           lea      rdx, [rip + 0xe9288f]
+  0x0000000182BA9951: 488d4d77                 lea      rcx, [rbp + 0x77]
+  0x0000000182BA9955: e8d2cf94fd               call     0x1804f692c
+  0x0000000182BA995A: 488d5567                 lea      rdx, [rbp + 0x67]
+  0x0000000182BA995E: 4c897567                 mov      qword ptr [rbp + 0x67], r14
+  0x0000000182BA9962: 488d4dcf                 lea      rcx, [rbp - 0x31]
+  0x0000000182BA9966: 4c8bc0                   mov      r8, rax
+  0x0000000182BA9969: e842623dff               call     0x181f7fbb0
+  0x0000000182BA996E: 4c89442420               mov      qword ptr [rsp + 0x20], r8
+  0x0000000182BA9973: 41b101                   mov      r9b, 1
+  0x0000000182BA9976: 4c8bc0                   mov      r8, rax
+  0x0000000182BA9979: b204                     mov      dl, 4
+  0x0000000182BA997B: 498bce                   mov      rcx, r14
+  0x0000000182BA997E: e8a9f59afd               call     0x180558f2c
+  0x0000000182BA9983: 498b8e20010000           mov      rcx, qword ptr [r14 + 0x120]
+  0x0000000182BA998A: e8a13a3eff               call     0x181f8d430
+  0x0000000182BA998F: 488d4da7                 lea      rcx, [rbp - 0x59]
+  0x0000000182BA9993: e8c8f581ff               call     0x1823c8f60
+  0x0000000182BA9998: 4881c4c8000000           add      rsp, 0xc8
+  0x0000000182BA999F: 415f                     pop      r15
+  0x0000000182BA99A1: 415e                     pop      r14
+  0x0000000182BA99A3: 415d                     pop      r13
+  0x0000000182BA99A5: 415c                     pop      r12
+  0x0000000182BA99A7: 5f                       pop      rdi
+  0x0000000182BA99A8: 5e                       pop      rsi
+  0x0000000182BA99A9: 5b                       pop      rbx
+  0x0000000182BA99AA: 5d                       pop      rbp
+  0x0000000182BA99AB: c3                       ret      

@@ -39,15 +39,27 @@ _download/
 release-staging/
 test-install/
 
-# Local-only working materials — kept on disk, never committed to the public
-# repo. The agent governance system (.claude/ + CLAUDE.md), reverse-engineering
-# toolchain (third-party-ghidra/), RE research scratch (_research/), internal
-# planning + bug trails (docs/outstanding-work/, docs/known-issues/), and the
-# pak-mod test fixtures (test-fixtures/) all live here locally.
-.claude/
-CLAUDE.md
-_research/
-third-party-ghidra/
-test-fixtures/
-docs/outstanding-work/
-docs/known-issues/
+# Private working materials are TRACKED on `main` (→ private remote) and STRIPPED
+# when projecting `main` → `public` by publish-public.ps1. They are NOT gitignored
+# anymore — the private/public split is enforced at publish time, not by ignore.
+# See publish-public.ps1 for the authoritative sanitize set.
+#
+# What stays ignored below is only genuinely heavy / reproducible binaries inside
+# the otherwise-tracked private trees, so the private repo holds the scripts and
+# notes without carrying gigabytes of third-party toolchain.
+
+# third-party-ghidra/: track the scripts + README; ignore the toolchain binaries
+# and the multi-GB analyzed project DB (clone-and-go expects these present locally).
+third-party-ghidra/ghidra_project/
+third-party-ghidra/ghidra_12.1_PUBLIC/
+third-party-ghidra/x64dbg/
+third-party-ghidra/ninja/
+third-party-ghidra/WHGame.dll
+third-party-ghidra/*.fidb
+
+# test-fixtures/: track the probe sources + manifests; ignore built .pak blobs.
+test-fixtures/pak-mods/**/*.pak
+
+# _research/: tracked (recon notes, scripts, wiki cache). Predecessor-sig clones
+# are shallow clones of third-party repos — keep them on disk, out of git.
+_research/predecessor-sigs/

@@ -1,0 +1,156 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (574 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1555 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: PakFOpenCallers.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\PakFOpenCallers.java (HeadlessAnalyzer)  
+INFO  PakFOpenCallers.java> xrefs to pCryPak global (gEnv+0x50) @0x18492b850: 680 (GhidraScript)  
+INFO  PakFOpenCallers.java> distinct functions reading pCryPak: 350 (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_1839b6d94 @0x1839b6d94 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>      FUN_1804d785c(lVar1); (GhidraScript)  
+INFO  PakFOpenCallers.java>      uVar3 = (**(code **)(*DAT_18492b850 + 0x168))(DAT_18492b850,*(undefined8 *)(param_2 + 0x18),0); (GhidraScript)  
+INFO  PakFOpenCallers.java>      *(undefined8 *)(param_2 + 0x120) = uVar3; (GhidraScript)  
+INFO  PakFOpenCallers.java>      if ((local_1e8 != local_1e0) && (local_1e8 != (undefined1 *)0x0)) { (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_1806a15a0 @0x1806a15a0 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>      local_518 = (undefined8 *)0x0; (GhidraScript)  
+INFO  PakFOpenCallers.java>      FUN_1806a0e14(&local_488,"%s%s.ext",*(undefined8 *)(DAT_18547bb50 + 0x10f0),param_3); (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar5 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_478,&DAT_183a53718,2); (GhidraScript)  
+INFO  PakFOpenCallers.java>      if (lVar5 == 0) { (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java>        local_520 = lVar5; (GhidraScript)  
+INFO  PakFOpenCallers.java>        FUN_1806a0e14(&local_488,"%s%s.ext",*(undefined8 *)(DAT_18547bb50 + 0x1100),param_3); (GhidraScript)  
+INFO  PakFOpenCallers.java>        lVar5 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_478,&DAT_183a53718,2); (GhidraScript)  
+INFO  PakFOpenCallers.java>        local_520 = lVar5; (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_1824f2960 @0x1824f2960 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>        FUN_1824ff390(plVar4,&local_40); (GhidraScript)  
+INFO  PakFOpenCallers.java>        if ((param_7 & 1) != 0) { (GhidraScript)  
+INFO  PakFOpenCallers.java>          lVar2 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,param_5,&DAT_1846d0984,0); (GhidraScript)  
+INFO  PakFOpenCallers.java>          if (lVar2 == 0) { (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_18349818c @0x18349818c calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>            local_6d8 = (undefined1 *)CONCAT44(local_6d8._4_4_,param_1[0xe]); (GhidraScript)  
+INFO  PakFOpenCallers.java>            FUN_18348accc(local_698,"%s/%s/%.5d.%s",uVar7,param_2); (GhidraScript)  
+INFO  PakFOpenCallers.java>            lVar11 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_698,&DAT_183a53718,0); (GhidraScript)  
+INFO  PakFOpenCallers.java>            if (lVar11 == 0) break; (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java>          local_6d8 = (undefined1 *)CONCAT44(local_6d8._4_4_,param_1[0xe]); (GhidraScript)  
+INFO  PakFOpenCallers.java>          FUN_18348accc(local_698,"%s/%s/%.5d.%s",uVar7,param_2); (GhidraScript)  
+INFO  PakFOpenCallers.java>          lVar11 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_698,&DAT_183b26650,0); (GhidraScript)  
+INFO  PakFOpenCallers.java>          if (lVar11 != 0) { (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_183499c8c @0x183499c8c calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>      uVar2 = (**(code **)(*param_1 + 0x460))(fVar8,"ScreenshotMap.Settings"); (GhidraScript)  
+INFO  PakFOpenCallers.java>      FUN_1804f692c(&local_2450,uVar2); (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar3 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_2450,&DAT_183b26650,0); (GhidraScript)  
+INFO  PakFOpenCallers.java>      uVar6 = 0; (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_18051cba0 @0x18051cba0 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>      FUN_18048c930(); (GhidraScript)  
+INFO  PakFOpenCallers.java>      FUN_18048c964(param_1); (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar2 = (**(code **)(*DAT_18492b850 + 0x120)) (GhidraScript)  
+INFO  PakFOpenCallers.java>                        (DAT_18492b850,param_2,&DAT_183a53718,-(*(char *)(param_1 + 0x3d) != '\0') & 2); (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_180496350 @0x180496350 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>       (GhidraScript)  
+INFO  PakFOpenCallers.java>      local_28 = DAT_1848fcfc0 ^ (ulonglong)auStack_f8; (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar3 = (**(code **)(*DAT_18492b850 + 0x120)) (GhidraScript)  
+INFO  PakFOpenCallers.java>                        (DAT_18492b850,*(undefined8 *)(param_1 + 0x40),&DAT_183a53718,0); (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_1804d4358 @0x1804d4358 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar4 = DAT_1854950a0; (GhidraScript)  
+INFO  PakFOpenCallers.java>      plVar3 = DAT_18492b850; (GhidraScript)  
+INFO  PakFOpenCallers.java>      pcVar2 = *(code **)(*DAT_18492b850 + 0x120); (GhidraScript)  
+INFO  PakFOpenCallers.java>      local_res8 = param_1; (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_1807b02e0 @0x1807b02e0 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>            puVar5 = (undefined1 *)param_1[1]; (GhidraScript)  
+INFO  PakFOpenCallers.java>          } (GhidraScript)  
+INFO  PakFOpenCallers.java>          lVar2 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,*param_1,puVar5,uVar3); (GhidraScript)  
+INFO  PakFOpenCallers.java>          param_1[2] = lVar2; (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_18091ef5c @0x18091ef5c calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>        lVar3 = lVar8; (GhidraScript)  
+INFO  PakFOpenCallers.java>      } (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar7 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_70,&DAT_183a53718,lVar3); (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar9 = lVar4; (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java>        } (GhidraScript)  
+INFO  PakFOpenCallers.java>        FUN_18091fc54(lVar4,local_70); (GhidraScript)  
+INFO  PakFOpenCallers.java>        uVar6 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_70,&DAT_183a53718,lVar3); (GhidraScript)  
+INFO  PakFOpenCallers.java>        cVar1 = FUN_180920048(); (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_180af9900 @0x180af9900 calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>      FUN_1824d2e50(lVar5 + -0x18,local_130,local_130 + uVar7 * 4); (GhidraScript)  
+INFO  PakFOpenCallers.java>      if ((*(char *)(param_2 + 0xf) == '\0') && (GhidraScript)  
+INFO  PakFOpenCallers.java>         (lVar5 = (**(code **)(*DAT_18492b850 + 0x120)) (GhidraScript)  
+INFO  PakFOpenCallers.java>                            (DAT_18492b850,*param_2,&DAT_183dbec3c,0x10010004), lVar5 != 0)) { (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+=== FN FUN_1824fe46c @0x1824fe46c calls +0x120 (FOpen) === (GhidraScript)  
+INFO  PakFOpenCallers.java>       (GhidraScript)  
+INFO  PakFOpenCallers.java>      local_30 = DAT_1848fcfc0 ^ (ulonglong)auStack_98; (GhidraScript)  
+INFO  PakFOpenCallers.java>      lVar3 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,param_2,&DAT_183dd0d58,0); (GhidraScript)  
+INFO  PakFOpenCallers.java>      if (lVar3 != 0) { (GhidraScript)  
+INFO  PakFOpenCallers.java>    ---- (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+(stopping at 12 hits) (GhidraScript)  
+INFO  PakFOpenCallers.java> 
+total FOpen-calling functions shown: 12 (GhidraScript)  
+INFO  PakFOpenCallers.java> done. (GhidraScript)  

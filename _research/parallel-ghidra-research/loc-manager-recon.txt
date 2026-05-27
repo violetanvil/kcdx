@@ -1,0 +1,1973 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (556 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1510 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FindLocManager.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindLocManager.java (HeadlessAnalyzer)  
+=== anchor strings + referencing functions === (GhidraScript)  
+  @183dbbaf8  "CLocalizedStringsManager"                     refd-by=FUN_1809f0ce4@1809f0ce4 (GhidraScript)  
+  @183dbbbd0  "d:\buildagent\work\7ffb7f119a855ecb\code\C…"  refd-by=FUN_1809f1e10@1809f1e10, FUN_1809f1e10@1809f1e10, FUN_180eff9f4@180eff9f4, FUN_181355988@181355988, FUN_181ddb4b0@181ddb4b0, FUN_181dda870@181dda870, FUN_181ddac80@181ddac80, FUN_180721b50@180721b50, FUN_180721b50@180721b50, FUN_180721b50@180721b50, FUN_180721b50@180721b50, FUN_180721b50@180721b50, FUN_1807a1c6c@1807a1c6c, FUN_1807a1c6c@1807a1c6c, FUN_1807a1c6c@1807a1c6c, FUN_1807a1c6c@1807a1c6c, FUN_18242ff1c@18242ff1c, FUN_18242fc30@18242fc30, FUN_18242f728@18242f728, FUN_18242f728@18242f728, FUN_18242dea0@18242dea0, FUN_18242dc88@18242dc88 (GhidraScript)  
+  @183dbc0f0  "LocalizeString: No language set."             refd-by=FUN_18051d534@18051d534 (GhidraScript)  
+  @184088890  "LoadLocalizationXml"                          refd-by=FUN_18144b1a0@18144b1a0 (GhidraScript)  
+  @1846aa4f0  "[LocError] RequestLoadLocalizationDataByTa…"  refd-by=FUN_18242fc30@18242fc30 (GhidraScript)  
+  @1846aa540  "[LocError] LoadLocalizationDataByTag - Loc…"  refd-by=FUN_18242dea0@18242dea0 (GhidraScript)  
+  @1846aa588  "<Localization> RequestLoadLocalizationData…"  refd-by=FUN_18242fc30@18242fc30 (GhidraScript)  
+  @1846aa640  "<Localization> LoadLocalizationDataByTag %…"  refd-by=FUN_18242dea0@18242dea0 (GhidraScript)  
+  @1846aa680  "[LocError] LoadLocalizationDataByTag - Alr…"  refd-by=FUN_18242dea0@18242dea0 (GhidraScript)  
+  @184a40e80  ".?AVCLocalizedStringsManager@@"               refd-by=(none) (GhidraScript)  
+
+=== 16 candidate loc-manager functions === (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_1809f1e10 @ 1809f1e10  size=376 (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined8 FUN_1809f1e10(longlong param_1,char *param_2)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    longlong *plVar1;
+ (GhidraScript)  
+    ulonglong *puVar2;
+ (GhidraScript)  
+    int iVar3;
+ (GhidraScript)  
+    longlong lVar4;
+ (GhidraScript)  
+    ulonglong uVar5;
+ (GhidraScript)  
+    ulonglong uVar6;
+ (GhidraScript)  
+    ulonglong local_res8;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    if (1 < *(int *)(param_1 + 0x90)) {
+ (GhidraScript)  
+      FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                    ,0x267,"<Localization> Set language to \'%s\'",param_2);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    uVar5 = 0;
+ (GhidraScript)  
+    if (DAT_18492b968 != (longlong *)0x0) {
+ (GhidraScript)  
+      (**(code **)(*DAT_18492b968 + 0x20))(DAT_18492b968,param_2);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    plVar1 = (longlong *)(param_1 + 0x58);
+ (GhidraScript)  
+    lVar4 = *plVar1;
+ (GhidraScript)  
+    uVar6 = uVar5;
+ (GhidraScript)  
+    if (*(longlong *)(param_1 + 0x60) - lVar4 >> 3 != 0) {
+ (GhidraScript)  
+      do {
+ (GhidraScript)  
+        iVar3 = _stricmp(param_2,(char *)**(undefined8 **)(lVar4 + uVar6 * 8));
+ (GhidraScript)  
+        if (iVar3 == 0) {
+ (GhidraScript)  
+          uVar5 = *(ulonglong *)(*plVar1 + uVar6 * 8);
+ (GhidraScript)  
+          goto LAB_1809f1f65;
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        lVar4 = *plVar1;
+ (GhidraScript)  
+        uVar6 = (ulonglong)((int)uVar6 + 1);
+ (GhidraScript)  
+      } while (uVar6 < (ulonglong)(*(longlong *)(param_1 + 0x60) - lVar4 >> 3));
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    if (DAT_18549b490 == 0) {
+ (GhidraScript)  
+      FUN_18045ad00();
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    lVar4 = (*DAT_18549b480)(0x78,&local_res8);
+ (GhidraScript)  
+    LOCK();
+ (GhidraScript)  
+    DAT_1851ddb18 = DAT_1851ddb18 + (int)local_res8;
+ (GhidraScript)  
+    UNLOCK();
+ (GhidraScript)  
+    LOCK();
+ (GhidraScript)  
+    DAT_1851ddb20 = DAT_1851ddb20 + 0x78;
+ (GhidraScript)  
+    UNLOCK();
+ (GhidraScript)  
+    LOCK();
+ (GhidraScript)  
+    DAT_1851ddb1c = DAT_1851ddb1c + 1;
+ (GhidraScript)  
+    UNLOCK();
+ (GhidraScript)  
+    if (lVar4 != 0) {
+ (GhidraScript)  
+      uVar5 = FUN_1809f1f88(lVar4);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    puVar2 = *(ulonglong **)(param_1 + 0x60);
+ (GhidraScript)  
+    local_res8 = uVar5;
+ (GhidraScript)  
+    if (puVar2 == *(ulonglong **)(param_1 + 0x68)) {
+ (GhidraScript)  
+      FUN_180d7faa8(plVar1,puVar2,&local_res8);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else {
+ (GhidraScript)  
+      *puVar2 = uVar5;
+ (GhidraScript)  
+      *(longlong *)(param_1 + 0x60) = *(longlong *)(param_1 + 0x60) + 8;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    uVar5 = local_res8;
+ (GhidraScript)  
+    if (1 < *(int *)(param_1 + 0x90)) {
+ (GhidraScript)  
+      FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                    ,0x27e,"<Localization> Insert new language to \'%s\'",param_2);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    FUN_1804f6ac8(uVar5,param_2);
+ (GhidraScript)  
+  LAB_1809f1f65:
+ (GhidraScript)  
+    FUN_1809f201c(param_1,uVar5);
+ (GhidraScript)  
+    return 1;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_181355988 @ 181355988  size=233 (GhidraScript)  
+  
+ (GhidraScript)  
+  void FUN_181355988(longlong param_1,int param_2)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    char cVar1;
+ (GhidraScript)  
+    longlong *plVar2;
+ (GhidraScript)  
+    longlong *plVar3;
+ (GhidraScript)  
+    longlong *plVar4;
+ (GhidraScript)  
+    undefined8 *puVar5;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    if (param_2 == 0x1b) {
+ (GhidraScript)  
+      if (1 < *(int *)(param_1 + 0x88)) {
+ (GhidraScript)  
+        FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                      ,0x3f7,"<Localization> Loading Requested Tags");
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      for (puVar5 = *(undefined8 **)(param_1 + 0x38); puVar5 != *(undefined8 **)(param_1 + 0x40);
+ (GhidraScript)  
+          puVar5 = puVar5 + 1) {
+ (GhidraScript)  
+        (**(code **)(*(longlong *)(param_1 + -8) + 0x70))((longlong *)(param_1 + -8),*puVar5,0,0);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      FUN_1806b88f0(param_1 + 0x38);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else if (param_2 == 0x39) {
+ (GhidraScript)  
+      plVar3 = (longlong *)**(undefined8 **)(param_1 + 0x28);
+ (GhidraScript)  
+      while (plVar3 != *(longlong **)(param_1 + 0x28)) {
+ (GhidraScript)  
+        (**(code **)(*(longlong *)(param_1 + -8) + 0x70))((longlong *)(param_1 + -8),plVar3[4],0,0);
+ (GhidraScript)  
+        plVar2 = (longlong *)plVar3[2];
+ (GhidraScript)  
+        if (*(char *)((longlong)plVar2 + 0x19) == '\0') {
+ (GhidraScript)  
+          cVar1 = *(char *)(*plVar2 + 0x19);
+ (GhidraScript)  
+          plVar3 = plVar2;
+ (GhidraScript)  
+          plVar2 = (longlong *)*plVar2;
+ (GhidraScript)  
+          while (cVar1 == '\0') {
+ (GhidraScript)  
+            cVar1 = *(char *)(*plVar2 + 0x19);
+ (GhidraScript)  
+            plVar3 = plVar2;
+ (GhidraScript)  
+            plVar2 = (longlong *)*plVar2;
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        else {
+ (GhidraScript)  
+          plVar2 = (longlong *)plVar3[1];
+ (GhidraScript)  
+          plVar4 = plVar3;
+ (GhidraScript)  
+          while ((plVar3 = plVar2, *(char *)((longlong)plVar3 + 0x19) == '\0' &&
+ (GhidraScript)  
+                 (plVar4 == (longlong *)plVar3[2]))) {
+ (GhidraScript)  
+            plVar4 = plVar3;
+ (GhidraScript)  
+            plVar2 = (longlong *)plVar3[1];
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    return;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_180721b50 @ 180721b50  size=4726 (GhidraScript)  
+  
+ (GhidraScript)  
+  /* WARNING: Function: __chkstk replaced with injection: alloca_probe */
+ (GhidraScript)  
+  /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined8
+ (GhidraScript)  
+  FUN_180721b50(longlong param_1,longlong *param_2,undefined1 param_3,char param_4,char param_5,
+ (GhidraScript)  
+               char param_6)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    code *pcVar1;
+ (GhidraScript)  
+    undefined1 auVar2 [16];
+ (GhidraScript)  
+    bool bVar3;
+ (GhidraScript)  
+    bool bVar4;
+ (GhidraScript)  
+    char cVar5;
+ (GhidraScript)  
+    char cVar6;
+ (GhidraScript)  
+    ushort uVar7;
+ (GhidraScript)  
+    int iVar8;
+ (GhidraScript)  
+    int iVar9;
+ (GhidraScript)  
+    longlong *plVar10;
+ (GhidraScript)  
+    undefined8 uVar11;
+ (GhidraScript)  
+    float *pfVar12;
+ (GhidraScript)  
+    void *pvVar13;
+ (GhidraScript)  
+    longlong lVar14;
+ (GhidraScript)  
+    undefined8 *puVar15;
+ (GhidraScript)  
+    longlong *plVar16;
+ (GhidraScript)  
+    longlong **pplVar17;
+ (GhidraScript)  
+    float fVar18;
+ (GhidraScript)  
+    float fVar19;
+ (GhidraScript)  
+    uint uVar20;
+ (GhidraScript)  
+    undefined8 *puVar21;
+ (GhidraScript)  
+    longlong lVar22;
+ (GhidraScript)  
+    longlong lVar23;
+ (GhidraScript)  
+    char *pcVar24;
+ (GhidraScript)  
+    ulonglong uVar25;
+ (GhidraScript)  
+    double dVar26;
+ (GhidraScript)  
+    undefined4 uVar27;
+ (GhidraScript)  
+    undefined4 uVar28;
+ (GhidraScript)  
+    undefined4 uVar29;
+ (GhidraScript)  
+    undefined4 uVar30;
+ (GhidraScript)  
+    undefined4 uVar31;
+ (GhidraScript)  
+    undefined4 uVar32;
+ (GhidraScript)  
+    undefined4 uVar33;
+ (GhidraScript)  
+    undefined4 uVar34;
+ (GhidraScript)  
+    undefined4 uVar35;
+ (GhidraScript)  
+    undefined4 uVar36;
+ (GhidraScript)  
+    undefined4 uVar37;
+ (GhidraScript)  
+    undefined4 uVar38;
+ (GhidraScript)  
+    undefined4 uVar39;
+ (GhidraScript)  
+    undefined4 uVar40;
+ (GhidraScript)  
+    undefined4 uVar41;
+ (GhidraScript)  
+    undefined4 uVar42;
+ (GhidraScript)  
+    undefined4 uVar43;
+ (GhidraScript)  
+    undefined4 uVar44;
+ (GhidraScript)  
+    undefined4 uVar45;
+ (GhidraScript)  
+    undefined4 uVar46;
+ (GhidraScript)  
+    float fVar47;
+ (GhidraScript)  
+    undefined1 auStack_2b78 [32];
+ (GhidraScript)  
+    ulonglong *local_2b58;
+ (GhidraScript)  
+    undefined1 local_2b50;
+ (GhidraScript)  
+    char local_2b48;
+ (GhidraScript)  
+    char local_2b47;
+ (GhidraScript)  
+    char local_2b46;
+ (GhidraScript)  
+    char local_2b45;
+ (GhidraScript)  
+    byte local_2b44;
+ (GhidraScript)  
+    char local_2b43;
+ (GhidraScript)  
+    undefined1 local_2b42;
+ (GhidraScript)  
+    char local_2b41;
+ (GhidraScript)  
+    undefined8 local_2b38;
+ (GhidraScript)  
+    undefined8 uStack_2b30;
+ (GhidraScript)  
+    undefined8 local_2b28 [2];
+ (GhidraScript)  
+    longlong *local_2b18 [2];
+ (GhidraScript)  
+    ulonglong local_2b08;
+ (GhidraScript)  
+    longlong local_2b00;
+ (GhidraScript)  
+    undefined8 local_2af8;
+ (GhidraScript)  
+    undefined4 uStack_2af0;
+ (GhidraScript)  
+    undefined4 uStack_2aec;
+ (GhidraScript)  
+    undefined4 local_2ae8;
+ (GhidraScript)  
+    undefined8 *local_2ae0;
+ (GhidraScript)  
+    ulonglong local_2ad8 [2];
+ (GhidraScript)  
+    undefined8 local_2ac8;
+ (GhidraScript)  
+  … (799 more lines) (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_18242ff1c @ 18242ff1c  size=105 (GhidraScript)  
+  
+ (GhidraScript)  
+  void FUN_18242ff1c(longlong param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                  ,0x254,
+ (GhidraScript)  
+                  "<Localization> Languages available: 0x%x, audio languages supported: 0x%x, audio languages available: 0x%x"
+ (GhidraScript)  
+                  ,param_2,param_3,param_4);
+ (GhidraScript)  
+    *(undefined4 *)(param_1 + 0xa4) = param_2;
+ (GhidraScript)  
+    *(undefined4 *)(param_1 + 0xac) = param_3;
+ (GhidraScript)  
+    *(undefined4 *)(param_1 + 0xa8) = param_4;
+ (GhidraScript)  
+    return;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_18242fc30 @ 18242fc30  size=189 (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined8 FUN_18242fc30(longlong param_1,undefined8 param_2)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    undefined8 uVar1;
+ (GhidraScript)  
+    undefined1 local_res8 [8];
+ (GhidraScript)  
+    longlong local_res18;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    FUN_1804f692c(local_res8);
+ (GhidraScript)  
+    FUN_1824312d0(param_1 + 0x30,&local_res18,local_res8);
+ (GhidraScript)  
+    FUN_1804fc884(local_res8);
+ (GhidraScript)  
+    if (local_res18 == *(longlong *)(param_1 + 0x30)) {
+ (GhidraScript)  
+      FUN_180a607a4(8,2,
+ (GhidraScript)  
+                    "[LocError] RequestLoadLocalizationDataByTag - Localization tag \'%s\' not found",
+ (GhidraScript)  
+                    param_2);
+ (GhidraScript)  
+      uVar1 = 0;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else {
+ (GhidraScript)  
+      if (1 < *(int *)(param_1 + 0x90)) {
+ (GhidraScript)  
+        FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                      ,0x448,"<Localization> RequestLoadLocalizationDataByTag %s",param_2);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      FUN_1804f692c(local_res8,param_2);
+ (GhidraScript)  
+      FUN_18041d3a8(param_1 + 0x40,local_res8);
+ (GhidraScript)  
+      FUN_1804fc884(local_res8);
+ (GhidraScript)  
+      uVar1 = 1;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    return uVar1;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_18144b1a0 @ 18144b1a0  size=6131 (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined8 * FUN_18144b1a0(undefined8 *param_1,undefined8 param_2,undefined8 param_3)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    undefined4 *puVar1;
+ (GhidraScript)  
+    code *local_res8;
+ (GhidraScript)  
+    code *local_58;
+ (GhidraScript)  
+    undefined4 uStack_50;
+ (GhidraScript)  
+    undefined4 uStack_4c;
+ (GhidraScript)  
+    undefined8 local_48;
+ (GhidraScript)  
+    code *pcStack_40;
+ (GhidraScript)  
+    undefined4 local_38;
+ (GhidraScript)  
+    undefined4 uStack_34;
+ (GhidraScript)  
+    undefined4 uStack_30;
+ (GhidraScript)  
+    undefined4 uStack_2c;
+ (GhidraScript)  
+    undefined4 local_28;
+ (GhidraScript)  
+    undefined4 uStack_24;
+ (GhidraScript)  
+    undefined4 uStack_20;
+ (GhidraScript)  
+    undefined4 uStack_1c;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    local_res8 = (code *)((ulonglong)local_res8 & 0xffffffff00000000);
+ (GhidraScript)  
+    param_1[10] = 0;
+ (GhidraScript)  
+    param_1[0x13] = 0;
+ (GhidraScript)  
+    param_1[9] = 0;
+ (GhidraScript)  
+    *(undefined1 *)(param_1 + 1) = 0;
+ (GhidraScript)  
+    param_1[0x14] = 0;
+ (GhidraScript)  
+    param_1[0xc] = param_3;
+ (GhidraScript)  
+    *param_1 = CScriptBind_System::vftable;
+ (GhidraScript)  
+    *(undefined4 *)(param_1 + 0x12) = 0x447a0000;
+ (GhidraScript)  
+    *(undefined4 *)((longlong)param_1 + 0x94) = 0x43480000;
+ (GhidraScript)  
+    param_1[0xd] = DAT_18492b8e0;
+ (GhidraScript)  
+    param_1[0xe] = DAT_18492b908;
+ (GhidraScript)  
+    param_1[0xf] = DAT_18492b8a8;
+ (GhidraScript)  
+    param_1[0x10] = DAT_18492b880;
+ (GhidraScript)  
+    param_1[0x11] = DAT_18492b808;
+ (GhidraScript)  
+    FUN_180a2d63c(param_2,"SCANDIR_ALL",&local_res8);
+ (GhidraScript)  
+    local_res8._0_4_ = 1;
+ (GhidraScript)  
+    FUN_180a2d63c(param_2,"SCANDIR_FILES",&local_res8);
+ (GhidraScript)  
+    local_res8 = (code *)CONCAT44(local_res8._4_4_,2);
+ (GhidraScript)  
+    FUN_180a2d63c(param_2,"SCANDIR_SUBDIRS",&local_res8);
+ (GhidraScript)  
+    FUN_18144cb3c(param_1,param_2,param_3,0);
+ (GhidraScript)  
+    FUN_180b8bc20(param_1,"System");
+ (GhidraScript)  
+    FUN_180af3f88(param_1 + 0x13,param_2);
+ (GhidraScript)  
+    local_58 = FUN_180c878b0;
+ (GhidraScript)  
+    pcStack_40 = FUN_18041c5dc;
+ (GhidraScript)  
+    local_48._0_4_ = SUB84(param_1,0);
+ (GhidraScript)  
+    local_48._4_4_ = (undefined4)((ulonglong)param_1 >> 0x20);
+ (GhidraScript)  
+    local_38 = 0x80c878b0;
+ (GhidraScript)  
+    uStack_34 = 1;
+ (GhidraScript)  
+    uStack_30 = uStack_50;
+ (GhidraScript)  
+    uStack_2c = uStack_4c;
+ (GhidraScript)  
+    local_28 = (undefined4)local_48;
+ (GhidraScript)  
+    uStack_24 = local_48._4_4_;
+ (GhidraScript)  
+    uStack_20 = 0x8041c5dc;
+ (GhidraScript)  
+    uStack_1c = 1;
+ (GhidraScript)  
+    local_48 = param_1;
+ (GhidraScript)  
+    FUN_180b9c36c(param_1,"CreateDownload",&local_38);
+ (GhidraScript)  
+    puVar1 = (undefined4 *)FUN_1823d2458(&local_58,param_1,FUN_1839a85bc);
+ (GhidraScript)  
+    local_38 = *puVar1;
+ (GhidraScript)  
+    uStack_34 = puVar1[1];
+ (GhidraScript)  
+    uStack_30 = puVar1[2];
+ (GhidraScript)  
+    uStack_2c = puVar1[3];
+ (GhidraScript)  
+    local_28 = puVar1[4];
+ (GhidraScript)  
+    uStack_24 = puVar1[5];
+ (GhidraScript)  
+    uStack_20 = puVar1[6];
+ (GhidraScript)  
+    uStack_1c = puVar1[7];
+ (GhidraScript)  
+    FUN_180b9c36c(param_1,"LoadFont",&local_38);
+ (GhidraScript)  
+    puVar1 = (undefined4 *)FUN_1823d2458(&local_58,param_1,FUN_1839a6140);
+ (GhidraScript)  
+    local_38 = *puVar1;
+ (GhidraScript)  
+    uStack_34 = puVar1[1];
+ (GhidraScript)  
+    uStack_30 = puVar1[2];
+ (GhidraScript)  
+    uStack_2c = puVar1[3];
+ (GhidraScript)  
+    local_28 = puVar1[4];
+ (GhidraScript)  
+    uStack_24 = puVar1[5];
+ (GhidraScript)  
+    uStack_20 = puVar1[6];
+ (GhidraScript)  
+    uStack_1c = puVar1[7];
+ (GhidraScript)  
+    FUN_180b9c36c(param_1,"ExecuteCommand",&local_38);
+ (GhidraScript)  
+    puVar1 = (undefined4 *)FUN_1823d2458(&local_58,param_1,FUN_1839a8a9c);
+ (GhidraScript)  
+    local_38 = *puVar1;
+ (GhidraScript)  
+    uStack_34 = puVar1[1];
+ (GhidraScript)  
+  … (884 more lines) (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_181dda870 @ 181dda870  size=470 (GhidraScript)  
+  
+ (GhidraScript)  
+  void FUN_181dda870(longlong *param_1,longlong *param_2,undefined8 param_3,undefined4 param_4,
+ (GhidraScript)  
+                    undefined4 param_5,undefined8 param_6)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    longlong lVar1;
+ (GhidraScript)  
+    char cVar2;
+ (GhidraScript)  
+    char *pcVar3;
+ (GhidraScript)  
+    longlong lVar4;
+ (GhidraScript)  
+    longlong lVar5;
+ (GhidraScript)  
+    longlong lVar6;
+ (GhidraScript)  
+    longlong local_res10;
+ (GhidraScript)  
+    undefined8 local_res18;
+ (GhidraScript)  
+    undefined1 local_68 [8];
+ (GhidraScript)  
+    longlong local_60;
+ (GhidraScript)  
+    undefined1 local_58 [4];
+ (GhidraScript)  
+    undefined4 local_54;
+ (GhidraScript)  
+    undefined8 local_50;
+ (GhidraScript)  
+    undefined4 local_48;
+ (GhidraScript)  
+    undefined4 local_44;
+ (GhidraScript)  
+    undefined4 local_40;
+ (GhidraScript)  
+    undefined8 local_38;
+ (GhidraScript)  
+    undefined2 local_30;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    lVar6 = 0;
+ (GhidraScript)  
+    local_44 = param_5;
+ (GhidraScript)  
+    local_54 = 0;
+ (GhidraScript)  
+    local_48 = 0xffffffff;
+ (GhidraScript)  
+    local_40 = 0;
+ (GhidraScript)  
+    local_38 = 0;
+ (GhidraScript)  
+    local_30 = 0;
+ (GhidraScript)  
+    local_58[0] = 0;
+ (GhidraScript)  
+    local_50 = param_3;
+ (GhidraScript)  
+    pcVar3 = (char *)(**(code **)(*param_2 + 0x218))(param_2,local_58);
+ (GhidraScript)  
+    if (pcVar3 != (char *)0x0) {
+ (GhidraScript)  
+      local_60 = FUN_1804fda6c();
+ (GhidraScript)  
+      local_60 = local_60 + 0xc;
+ (GhidraScript)  
+      FUN_1805bd0bc(&local_60,"ui_control_%s_%d",param_6,param_4);
+ (GhidraScript)  
+      lVar1 = local_60;
+ (GhidraScript)  
+      local_res18 = thunk_FUN_18063b359(local_60,0xcbf29ce484222325);
+ (GhidraScript)  
+      local_res10 = FUN_1804fda6c();
+ (GhidraScript)  
+      local_res10 = local_res10 + 0xc;
+ (GhidraScript)  
+      if (*pcVar3 == '<') {
+ (GhidraScript)  
+        FUN_1804f6ac8(&local_res10,&DAT_183dbbde8);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      else {
+ (GhidraScript)  
+        FUN_1805bd0bc(&local_res10,&DAT_183a6c49c,pcVar3);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      lVar4 = FUN_1804f7820(0x40);
+ (GhidraScript)  
+      lVar5 = lVar6;
+ (GhidraScript)  
+      if (lVar4 != 0) {
+ (GhidraScript)  
+        lVar5 = FUN_180ec5368(lVar4);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      *(undefined1 *)(lVar5 + 0x30) = 0;
+ (GhidraScript)  
+      lVar4 = FUN_1804f7820(8);
+ (GhidraScript)  
+      if (lVar4 != 0) {
+ (GhidraScript)  
+        lVar6 = FUN_1804fd468(lVar4,&local_res10);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      *(longlong *)(lVar5 + 8) = lVar6;
+ (GhidraScript)  
+      if (1 < *(int *)(*param_1 + 0x90)) {
+ (GhidraScript)  
+        FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                      ,0x2c6,
+ (GhidraScript)  
+                      "<Localization> Add keyboard key localization: name \'%s\', uni: \'%s\', key \'%s\', hash %u"
+ (GhidraScript)  
+                      ,param_3,pcVar3,lVar1,local_res18);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      FUN_1804f692c(local_68,lVar1);
+ (GhidraScript)  
+      cVar2 = FUN_180e970e8();
+ (GhidraScript)  
+      if (cVar2 == '\0') {
+ (GhidraScript)  
+        FUN_1804fc884(local_68);
+ (GhidraScript)  
+        FUN_180eff9f4(*param_1,*(undefined8 *)(*param_1 + 0x18),lVar5,&local_res18);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      else {
+ (GhidraScript)  
+        FUN_1804fc884(local_68);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      FUN_1804fc884(&local_res10);
+ (GhidraScript)  
+      FUN_1804fc884(&local_60);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    return;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_181ddac80 @ 181ddac80  size=236 (GhidraScript)  
+  
+ (GhidraScript)  
+  void FUN_181ddac80(undefined8 *param_1,undefined4 param_2,uint param_3)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    char cVar1;
+ (GhidraScript)  
+    undefined8 uVar2;
+ (GhidraScript)  
+    char *pcVar3;
+ (GhidraScript)  
+    undefined1 local_res8 [8];
+ (GhidraScript)  
+    undefined8 local_res20;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    cVar1 = (**(code **)(**(longlong **)*param_1 + 0x160))
+ (GhidraScript)  
+                      (*(longlong **)*param_1,*(undefined4 *)param_1[1],param_2);
+ (GhidraScript)  
+    if (cVar1 != '\0') {
+ (GhidraScript)  
+      *(uint *)param_1[2] = *(uint *)param_1[2] | param_3;
+ (GhidraScript)  
+      uVar2 = (**(code **)(*(longlong *)param_1[3] + 8))((longlong *)param_1[3],param_2);
+ (GhidraScript)  
+      FUN_1804f692c(&local_res20,uVar2);
+ (GhidraScript)  
+      if (*(int *)(*(longlong *)param_1[4] + -8) != 0) {
+ (GhidraScript)  
+        local_res8[0] = 0x2c;
+ (GhidraScript)  
+        FUN_1804fd134((longlong *)param_1[4],local_res8,1);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      FUN_1805bc668(param_1[4],&local_res20);
+ (GhidraScript)  
+      if (1 < *(int *)(param_1[3] + 0x90)) {
+ (GhidraScript)  
+        pcVar3 = "audio";
+ (GhidraScript)  
+        if (*(int *)param_1[1] != 1) {
+ (GhidraScript)  
+          pcVar3 = "subtitle";
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                      ,0x167,"<Localization> Detected language support for \'%s\' (id %d) - %s",
+ (GhidraScript)  
+                      local_res20,param_2,pcVar3);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      FUN_1804fc884(&local_res20);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    return;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_18242dc88 @ 18242dc88  size=502 (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined1 FUN_18242dc88(longlong param_1,undefined8 param_2)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    undefined8 *puVar1;
+ (GhidraScript)  
+    char cVar2;
+ (GhidraScript)  
+    int iVar3;
+ (GhidraScript)  
+    int iVar4;
+ (GhidraScript)  
+    undefined8 uVar5;
+ (GhidraScript)  
+    longlong lVar6;
+ (GhidraScript)  
+    int iVar7;
+ (GhidraScript)  
+    int iVar8;
+ (GhidraScript)  
+    undefined1 local_res8 [8];
+ (GhidraScript)  
+    longlong *local_res20;
+ (GhidraScript)  
+    longlong *local_68;
+ (GhidraScript)  
+    longlong *local_60;
+ (GhidraScript)  
+    undefined1 local_58 [8];
+ (GhidraScript)  
+    undefined8 local_50;
+ (GhidraScript)  
+    undefined1 local_48 [8];
+ (GhidraScript)  
+    undefined8 local_40;
+ (GhidraScript)  
+    undefined8 uStack_38;
+ (GhidraScript)  
+    undefined8 local_30;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    (**(code **)(**(longlong **)(param_1 + 0x10) + 0x410))
+ (GhidraScript)  
+              (*(longlong **)(param_1 + 0x10),&local_68,param_2,0,1,1);
+ (GhidraScript)  
+    iVar8 = 0;
+ (GhidraScript)  
+    if (local_68 == (longlong *)0x0) {
+ (GhidraScript)  
+      FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                    ,0x419,"Loading Localization File %s failed!",param_2);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else {
+ (GhidraScript)  
+      iVar3 = (**(code **)(*local_68 + 0x160))();
+ (GhidraScript)  
+      if (0 < iVar3) {
+ (GhidraScript)  
+        puVar1 = (undefined8 *)(param_1 + 0x30);
+ (GhidraScript)  
+        iVar3 = iVar8;
+ (GhidraScript)  
+        do {
+ (GhidraScript)  
+          (**(code **)(*local_68 + 0x168))(local_68,&local_res20,iVar3);
+ (GhidraScript)  
+          uVar5 = (**(code **)(*local_res20 + 0x30))();
+ (GhidraScript)  
+          FUN_1804f692c(local_res8,uVar5);
+ (GhidraScript)  
+          uVar5 = FUN_1824312d0(puVar1,local_48,local_res8);
+ (GhidraScript)  
+          local_50 = *puVar1;
+ (GhidraScript)  
+          cVar2 = FUN_1803a4820(uVar5,&local_50);
+ (GhidraScript)  
+          if (cVar2 == '\0') {
+ (GhidraScript)  
+            local_40 = 0;
+ (GhidraScript)  
+            uStack_38 = 0;
+ (GhidraScript)  
+            local_30 = 0;
+ (GhidraScript)  
+            iVar4 = (**(code **)(*local_res20 + 0x160))();
+ (GhidraScript)  
+            iVar7 = iVar8;
+ (GhidraScript)  
+            if (0 < iVar4) {
+ (GhidraScript)  
+              do {
+ (GhidraScript)  
+                (**(code **)(*local_res20 + 0x168))(local_res20,&local_60,iVar7);
+ (GhidraScript)  
+                cVar2 = (**(code **)(*local_60 + 0x40))(local_60,"entry");
+ (GhidraScript)  
+                if (cVar2 != '\0') {
+ (GhidraScript)  
+                  uVar5 = (**(code **)(*local_60 + 0x188))();
+ (GhidraScript)  
+                  FUN_1804f692c(local_58,uVar5);
+ (GhidraScript)  
+                  thunk_FUN_18041d3a8(&local_40,local_58);
+ (GhidraScript)  
+                  FUN_1804fc884(local_58);
+ (GhidraScript)  
+                }
+ (GhidraScript)  
+                FUN_1804fbbe0(&local_60);
+ (GhidraScript)  
+                iVar7 = iVar7 + 1;
+ (GhidraScript)  
+                iVar4 = (**(code **)(*local_res20 + 0x160))();
+ (GhidraScript)  
+              } while (iVar7 < iVar4);
+ (GhidraScript)  
+            }
+ (GhidraScript)  
+            cVar2 = *(char *)(param_1 + 0x38);
+ (GhidraScript)  
+            uVar5 = FUN_18242b2c0(puVar1,local_res8);
+ (GhidraScript)  
+            FUN_18041e28c(uVar5,&local_40);
+ (GhidraScript)  
+            lVar6 = FUN_18242b2c0(puVar1,local_res8);
+ (GhidraScript)  
+            *(char *)(lVar6 + 0x18) = cVar2 + '\x01';
+ (GhidraScript)  
+            lVar6 = FUN_18242b2c0(puVar1,local_res8);
+ (GhidraScript)  
+            *(undefined1 *)(lVar6 + 0x19) = 0;
+ (GhidraScript)  
+            thunk_FUN_1803f7338(&local_40);
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+          FUN_1804fc884(local_res8);
+ (GhidraScript)  
+          FUN_1804fbbe0(&local_res20);
+ (GhidraScript)  
+          iVar3 = iVar3 + 1;
+ (GhidraScript)  
+          iVar7 = (**(code **)(*local_68 + 0x160))();
+ (GhidraScript)  
+        } while (iVar3 < iVar7);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      iVar8 = 1;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+  … (4 more lines) (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_180eff9f4 @ 180eff9f4  size=190 (GhidraScript)  
+  
+ (GhidraScript)  
+  void FUN_180eff9f4(longlong param_1,undefined8 *param_2,undefined8 param_3,undefined8 *param_4)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    undefined8 *puVar1;
+ (GhidraScript)  
+    longlong lVar2;
+ (GhidraScript)  
+    longlong lVar3;
+ (GhidraScript)  
+    undefined8 uVar4;
+ (GhidraScript)  
+    longlong *plVar5;
+ (GhidraScript)  
+    undefined8 local_res18;
+ (GhidraScript)  
+    undefined1 local_28 [16];
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    puVar1 = (undefined8 *)param_2[10];
+ (GhidraScript)  
+    local_res18 = param_3;
+ (GhidraScript)  
+    if (puVar1 == (undefined8 *)param_2[0xb]) {
+ (GhidraScript)  
+      FUN_1803b2b4c(param_2 + 9,puVar1,&local_res18);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else {
+ (GhidraScript)  
+      *puVar1 = param_3;
+ (GhidraScript)  
+      param_2[10] = param_2[10] + 8;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    uVar4 = local_res18;
+ (GhidraScript)  
+    lVar2 = param_2[10];
+ (GhidraScript)  
+    lVar3 = param_2[9];
+ (GhidraScript)  
+    plVar5 = (longlong *)FUN_1809f1c70(param_2 + 1,local_28,param_4);
+ (GhidraScript)  
+    *(undefined8 *)(*plVar5 + 0x18) = uVar4;
+ (GhidraScript)  
+    if (1 < *(int *)(param_1 + 0x90)) {
+ (GhidraScript)  
+      FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                    ,0x84d,"<Localization> Add new string <%u> with ID %d to <%s>",*param_4,
+ (GhidraScript)  
+                    (int)(lVar2 - lVar3 >> 3) + -1,*param_2);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    return;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_18051d534 @ 18051d534  size=402 (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined1
+ (GhidraScript)  
+  FUN_18051d534(longlong *param_1,char *param_2,longlong param_3,undefined8 *param_4,char param_5)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    char *pcVar1;
+ (GhidraScript)  
+    undefined8 uVar2;
+ (GhidraScript)  
+    bool bVar3;
+ (GhidraScript)  
+    bool bVar4;
+ (GhidraScript)  
+    char cVar5;
+ (GhidraScript)  
+    char *_Str;
+ (GhidraScript)  
+    char *pcVar6;
+ (GhidraScript)  
+    undefined1 uVar7;
+ (GhidraScript)  
+    undefined8 local_58;
+ (GhidraScript)  
+    undefined1 local_50 [8];
+ (GhidraScript)  
+    undefined8 local_48 [2];
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    uVar7 = 0;
+ (GhidraScript)  
+    pcVar1 = param_2 + param_3;
+ (GhidraScript)  
+    if (param_1[3] == 0) {
+ (GhidraScript)  
+      FUN_180a607a4(8,2,"LocalizeString: No language set.");
+ (GhidraScript)  
+      FUN_1823ca2fc(param_4,param_2,pcVar1);
+ (GhidraScript)  
+      uVar7 = 0;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else {
+ (GhidraScript)  
+      bVar3 = false;
+ (GhidraScript)  
+      bVar4 = false;
+ (GhidraScript)  
+      FUN_1803d18d0(&local_58);
+ (GhidraScript)  
+      _Str = strchr(param_2,0x40);
+ (GhidraScript)  
+      if (_Str != (char *)0x0) {
+ (GhidraScript)  
+        bVar4 = true;
+ (GhidraScript)  
+        bVar3 = false;
+ (GhidraScript)  
+        do {
+ (GhidraScript)  
+          if (_Str != param_2) {
+ (GhidraScript)  
+            FUN_1823ca2e0(&local_58,param_2,_Str);
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+          pcVar6 = strchr(_Str,0x20);
+ (GhidraScript)  
+          param_2 = pcVar1;
+ (GhidraScript)  
+          if (pcVar6 != (char *)0x0) {
+ (GhidraScript)  
+            param_2 = pcVar6;
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+          FUN_180690468(local_48,_Str,param_2);
+ (GhidraScript)  
+          FUN_1803d18d0(local_50);
+ (GhidraScript)  
+          if (param_5 == '\0') {
+ (GhidraScript)  
+            cVar5 = (**(code **)(*param_1 + 0xb8))(param_1,local_48[0],local_50,0);
+ (GhidraScript)  
+            if (cVar5 != '\0') {
+ (GhidraScript)  
+              bVar3 = true;
+ (GhidraScript)  
+            }
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+          else {
+ (GhidraScript)  
+            cVar5 = (**(code **)(*param_1 + 0xe8))();
+ (GhidraScript)  
+            if (cVar5 != '\0') {
+ (GhidraScript)  
+              bVar3 = true;
+ (GhidraScript)  
+            }
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+          FUN_1823cb9b0(&local_58,local_50);
+ (GhidraScript)  
+          FUN_1804fc884(local_50);
+ (GhidraScript)  
+          FUN_1804fc884(local_48);
+ (GhidraScript)  
+          _Str = strchr(param_2,0x40);
+ (GhidraScript)  
+        } while (_Str != (char *)0x0);
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      FUN_1823ca2e0(&local_58,param_2,pcVar1);
+ (GhidraScript)  
+      uVar2 = *param_4;
+ (GhidraScript)  
+      *param_4 = local_58;
+ (GhidraScript)  
+      if ((bVar3) || (!bVar4)) {
+ (GhidraScript)  
+        uVar7 = 1;
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      local_58 = uVar2;
+ (GhidraScript)  
+      FUN_1804fc884(&local_58);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    return uVar7;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_1809f0ce4 @ 1809f0ce4  size=385 (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined8 * FUN_1809f0ce4(undefined8 *param_1,longlong *param_2)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    longlong *plVar1;
+ (GhidraScript)  
+    undefined8 uVar2;
+ (GhidraScript)  
+    longlong lVar3;
+ (GhidraScript)  
+    longlong *plVar4;
+ (GhidraScript)  
+    undefined8 local_res8;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    *param_1 = CLocalizedStringsManager::vftable;
+ (GhidraScript)  
+    param_1[1] = CLocalizedStringsManager::vftable;
+ (GhidraScript)  
+    param_1[4] = 0;
+ (GhidraScript)  
+    param_1[5] = 0;
+ (GhidraScript)  
+    uVar2 = FUN_180452e04();
+ (GhidraScript)  
+    param_1[4] = uVar2;
+ (GhidraScript)  
+    param_1[6] = 0;
+ (GhidraScript)  
+    param_1[7] = 0;
+ (GhidraScript)  
+    uVar2 = FUN_1805b9fa4(1);
+ (GhidraScript)  
+    lVar3 = FUN_181ab5270(uVar2);
+ (GhidraScript)  
+    plVar1 = param_1 + 0xb;
+ (GhidraScript)  
+    *(longlong *)lVar3 = lVar3;
+ (GhidraScript)  
+    *(longlong *)(lVar3 + 8) = lVar3;
+ (GhidraScript)  
+    *(longlong *)(lVar3 + 0x10) = lVar3;
+ (GhidraScript)  
+    *(undefined2 *)(lVar3 + 0x18) = 0x101;
+ (GhidraScript)  
+    param_1[6] = lVar3;
+ (GhidraScript)  
+    param_1[8] = 0;
+ (GhidraScript)  
+    param_1[9] = 0;
+ (GhidraScript)  
+    param_1[10] = 0;
+ (GhidraScript)  
+    *plVar1 = 0;
+ (GhidraScript)  
+    param_1[0xc] = 0;
+ (GhidraScript)  
+    param_1[0xd] = 0;
+ (GhidraScript)  
+    param_1[0xe] = 0;
+ (GhidraScript)  
+    param_1[0xf] = 0;
+ (GhidraScript)  
+    uVar2 = FUN_1803f820c();
+ (GhidraScript)  
+    param_1[0xe] = uVar2;
+ (GhidraScript)  
+    param_1[0x10] = 0;
+ (GhidraScript)  
+    param_1[0x11] = 0;
+ (GhidraScript)  
+    uVar2 = FUN_1803f820c();
+ (GhidraScript)  
+    param_1[0x10] = uVar2;
+ (GhidraScript)  
+    *(undefined4 *)(param_1 + 0x12) = 0;
+ (GhidraScript)  
+    *(undefined4 *)((longlong)param_1 + 0x94) = 1;
+ (GhidraScript)  
+    param_1[0x13] = 1;
+ (GhidraScript)  
+    param_1[0x14] = 1;
+ (GhidraScript)  
+    *(undefined1 *)(param_1 + 0x16) = 0;
+ (GhidraScript)  
+    ((PSRWLOCK)(param_1 + 0x17))->Ptr = (PVOID)0x0;
+ (GhidraScript)  
+    InitializeSRWLock((PSRWLOCK)(param_1 + 0x17));
+ (GhidraScript)  
+    param_1[0x18] = 0;
+ (GhidraScript)  
+    param_1[2] = param_2;
+ (GhidraScript)  
+    plVar4 = (longlong *)(**(code **)(*param_2 + 0x2a0))(param_2);
+ (GhidraScript)  
+    (**(code **)(*plVar4 + 8))
+ (GhidraScript)  
+              (plVar4,-(ulonglong)(param_1 != (undefined8 *)0x0) & (ulonglong)(param_1 + 1),
+ (GhidraScript)  
+               "CLocalizedStringsManager",1);
+ (GhidraScript)  
+    local_res8 = 4;
+ (GhidraScript)  
+    if ((ulonglong)(param_1[0xd] - *plVar1 >> 3) < 4) {
+ (GhidraScript)  
+      FUN_1803df958(plVar1,&local_res8);
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    param_1[3] = 0;
+ (GhidraScript)  
+    return param_1;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_18242dea0 @ 18242dea0  size=479 (GhidraScript)  
+  
+ (GhidraScript)  
+  /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  byte FUN_18242dea0(longlong param_1,undefined8 param_2,undefined1 param_3,undefined1 param_4)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    longlong *plVar1;
+ (GhidraScript)  
+    undefined1 uVar2;
+ (GhidraScript)  
+    undefined1 uVar3;
+ (GhidraScript)  
+    char cVar4;
+ (GhidraScript)  
+    byte bVar5;
+ (GhidraScript)  
+    undefined8 uVar6;
+ (GhidraScript)  
+    undefined8 *puVar7;
+ (GhidraScript)  
+    char *pcVar8;
+ (GhidraScript)  
+    byte bVar9;
+ (GhidraScript)  
+    longlong lVar10;
+ (GhidraScript)  
+    undefined1 auStack_4f8 [32];
+ (GhidraScript)  
+    uint local_4d8;
+ (GhidraScript)  
+    undefined1 local_4d0;
+ (GhidraScript)  
+    undefined1 local_4c8;
+ (GhidraScript)  
+    undefined1 local_4c7;
+ (GhidraScript)  
+    longlong local_4c0;
+ (GhidraScript)  
+    undefined8 local_4b8;
+ (GhidraScript)  
+    undefined1 local_4b0 [16];
+ (GhidraScript)  
+    longlong local_4a0;
+ (GhidraScript)  
+    undefined1 local_498 [16];
+ (GhidraScript)  
+    undefined8 local_488;
+ (GhidraScript)  
+    undefined1 local_278 [16];
+ (GhidraScript)  
+    undefined8 local_268;
+ (GhidraScript)  
+    ulonglong local_58;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    local_58 = DAT_1848fcfc0 ^ (ulonglong)auStack_4f8;
+ (GhidraScript)  
+    plVar1 = (longlong *)(param_1 + 0x30);
+ (GhidraScript)  
+    local_4c8 = param_3;
+ (GhidraScript)  
+    local_4c7 = param_4;
+ (GhidraScript)  
+    local_4b8 = param_2;
+ (GhidraScript)  
+    FUN_1804f692c(&local_4c0);
+ (GhidraScript)  
+    FUN_1824299c8(plVar1,local_4b0,&local_4c0);
+ (GhidraScript)  
+    cVar4 = FUN_18045276c();
+ (GhidraScript)  
+    lVar10 = local_4a0;
+ (GhidraScript)  
+    if (cVar4 == '\0') {
+ (GhidraScript)  
+      lVar10 = *plVar1;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    FUN_1804fdaf8(local_4c0 + -0xc);
+ (GhidraScript)  
+    if (lVar10 == *plVar1) {
+ (GhidraScript)  
+      pcVar8 = "[LocError] LoadLocalizationDataByTag - Localization tag \'%s\' not found";
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else {
+ (GhidraScript)  
+      if (*(char *)(lVar10 + 0x41) == '\0') {
+ (GhidraScript)  
+        bVar9 = 1;
+ (GhidraScript)  
+        uVar6 = FUN_1804d99fc(&local_4c0);
+ (GhidraScript)  
+        FUN_1806a1110(local_278,uVar6);
+ (GhidraScript)  
+        FUN_1804fdaf8(local_4c0 + -0xc);
+ (GhidraScript)  
+        uVar3 = local_4c8;
+ (GhidraScript)  
+        for (puVar7 = *(undefined8 **)(lVar10 + 0x28); puVar7 != *(undefined8 **)(lVar10 + 0x30);
+ (GhidraScript)  
+            puVar7 = puVar7 + 1) {
+ (GhidraScript)  
+          uVar2 = *(undefined1 *)(lVar10 + 0x40);
+ (GhidraScript)  
+          uVar6 = *puVar7;
+ (GhidraScript)  
+          FUN_1807ae428(local_498,local_278);
+ (GhidraScript)  
+          FUN_1805bb238(local_498,uVar6);
+ (GhidraScript)  
+          FUN_1806962e0(&local_4c0,local_498);
+ (GhidraScript)  
+          local_4d0 = local_4c7;
+ (GhidraScript)  
+          local_4d8 = local_4d8 & 0xffffff00;
+ (GhidraScript)  
+          bVar5 = FUN_180721b50(param_1,&local_4c0,uVar2,uVar3);
+ (GhidraScript)  
+          bVar9 = bVar9 & bVar5;
+ (GhidraScript)  
+          FUN_1804fdaf8(local_4c0 + -0xc);
+ (GhidraScript)  
+          FUN_180c40aa8(local_498,local_488);
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        if (1 < *(int *)(param_1 + 0x90)) {
+ (GhidraScript)  
+          local_4d8 = (uint)bVar9;
+ (GhidraScript)  
+          FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                        ,0x46c,"<Localization> LoadLocalizationDataByTag %s with result %d",local_4b8)
+ (GhidraScript)  
+          ;
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        *(undefined1 *)(lVar10 + 0x41) = 1;
+ (GhidraScript)  
+        FUN_180c40aa8(local_278,local_268);
+ (GhidraScript)  
+        return bVar9;
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+      pcVar8 = "[LocError] LoadLocalizationDataByTag - Already loaded tag \'%s\'";
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+  … (4 more lines) (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_181ddb4b0 @ 181ddb4b0  size=117 (GhidraScript)  
+  
+ (GhidraScript)  
+  void FUN_181ddb4b0(undefined8 param_1,undefined8 param_2)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    longlong *plVar1;
+ (GhidraScript)  
+    undefined **local_48;
+ (GhidraScript)  
+    undefined8 local_40;
+ (GhidraScript)  
+    undefined8 local_38;
+ (GhidraScript)  
+    undefined ***local_10;
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                  ,0x4fc,"[Mod] Loading localization patches...");
+ (GhidraScript)  
+    plVar1 = (longlong *)(**(code **)(*DAT_18492b8c0 + 800))();
+ (GhidraScript)  
+    local_48 = std::
+ (GhidraScript)  
+               _Func_impl_no_alloc<<lambda_7727be849b245cc4cd23048876a30828>,void,wh::I_Mod_const&___ptr64>
+ (GhidraScript)  
+               ::vftable;
+ (GhidraScript)  
+    local_10 = &local_48;
+ (GhidraScript)  
+    local_40 = param_2;
+ (GhidraScript)  
+    local_38 = param_1;
+ (GhidraScript)  
+    (**(code **)(*plVar1 + 0x28))(plVar1,&local_48);
+ (GhidraScript)  
+    return;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_18242f728 @ 18242f728  size=921 (GhidraScript)  
+  
+ (GhidraScript)  
+  undefined8 FUN_18242f728(longlong param_1,undefined8 param_2)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    void *_Src;
+ (GhidraScript)  
+    undefined1 uVar1;
+ (GhidraScript)  
+    undefined2 uVar2;
+ (GhidraScript)  
+    longlong lVar3;
+ (GhidraScript)  
+    longlong lVar4;
+ (GhidraScript)  
+    bool bVar5;
+ (GhidraScript)  
+    int iVar6;
+ (GhidraScript)  
+    longlong *plVar7;
+ (GhidraScript)  
+    undefined8 *puVar8;
+ (GhidraScript)  
+    undefined8 uVar9;
+ (GhidraScript)  
+    void *_Dst;
+ (GhidraScript)  
+    longlong *plVar10;
+ (GhidraScript)  
+    int iVar11;
+ (GhidraScript)  
+    char cVar12;
+ (GhidraScript)  
+    undefined4 *puVar13;
+ (GhidraScript)  
+    char *pcVar14;
+ (GhidraScript)  
+    longlong lVar15;
+ (GhidraScript)  
+    char local_res8 [8];
+ (GhidraScript)  
+    longlong local_res18;
+ (GhidraScript)  
+    longlong local_res20;
+ (GhidraScript)  
+    longlong local_c8 [2];
+ (GhidraScript)  
+    longlong local_b8;
+ (GhidraScript)  
+    longlong local_b0;
+ (GhidraScript)  
+    undefined1 local_a0 [8];
+ (GhidraScript)  
+    undefined8 local_98;
+ (GhidraScript)  
+    undefined4 local_88 [2];
+ (GhidraScript)  
+    undefined8 *local_80;
+ (GhidraScript)  
+    undefined1 local_48 [16];
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    FUN_1804f692c(local_res8);
+ (GhidraScript)  
+    FUN_1824312d0(param_1 + 0x30,&local_res20,local_res8);
+ (GhidraScript)  
+    FUN_1804fc884(local_res8);
+ (GhidraScript)  
+    lVar15 = local_res20;
+ (GhidraScript)  
+    if (local_res20 == *(longlong *)(param_1 + 0x30)) {
+ (GhidraScript)  
+      pcVar14 = "[LocError] ReleaseLocalizationDataByTag - Localization tag \'%s\' not found";
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    else {
+ (GhidraScript)  
+      if (*(char *)(local_res20 + 0x41) != '\0') {
+ (GhidraScript)  
+        cVar12 = *(char *)(local_res20 + 0x40);
+ (GhidraScript)  
+        local_res8[0] = cVar12;
+ (GhidraScript)  
+        FUN_1808efe94(local_c8);
+ (GhidraScript)  
+        plVar10 = (longlong *)(param_1 + 0x20);
+ (GhidraScript)  
+        local_res18 = *(longlong *)*plVar10;
+ (GhidraScript)  
+        while (local_res18 != *plVar10) {
+ (GhidraScript)  
+          if (*(char *)(local_res18 + 0x2a) != cVar12) {
+ (GhidraScript)  
+            uVar2 = *(undefined2 *)(local_res18 + 0x28);
+ (GhidraScript)  
+            uVar1 = *(undefined1 *)(local_res18 + 0x2a);
+ (GhidraScript)  
+            plVar7 = (longlong *)FUN_182429f70(local_c8,local_48,local_res18 + 0x20);
+ (GhidraScript)  
+            lVar3 = *plVar7;
+ (GhidraScript)  
+            *(undefined2 *)(lVar3 + 0x28) = uVar2;
+ (GhidraScript)  
+            *(undefined1 *)(lVar3 + 0x2a) = uVar1;
+ (GhidraScript)  
+            cVar12 = local_res8[0];
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+          FUN_18242b2f4(&local_res18,local_a0);
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        if (plVar10 != local_c8) {
+ (GhidraScript)  
+          FUN_1809f1624(plVar10);
+ (GhidraScript)  
+          FUN_1809f112c(plVar10,local_c8);
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        if (*(longlong *)(param_1 + 0x18) == 0) {
+ (GhidraScript)  
+  LAB_18242fa72:
+ (GhidraScript)  
+          if (1 < *(int *)(param_1 + 0x90)) {
+ (GhidraScript)  
+            FUN_1804d455c("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                          ,0x4e8,"<Localization> ReleaseLocalizationDataByTag %s",param_2);
+ (GhidraScript)  
+          }
+ (GhidraScript)  
+          *(undefined1 *)(lVar15 + 0x41) = 0;
+ (GhidraScript)  
+          FUN_1807f08cc(local_c8);
+ (GhidraScript)  
+          return 1;
+ (GhidraScript)  
+        }
+ (GhidraScript)  
+        FUN_181ab4e48(local_a0,param_1 + 0xb8);
+ (GhidraScript)  
+        bVar5 = false;
+ (GhidraScript)  
+        puVar8 = *(undefined8 **)(*(longlong *)(param_1 + 0x18) + 0x10);
+ (GhidraScript)  
+        do {
+ (GhidraScript)  
+          puVar8 = (undefined8 *)*puVar8;
+ (GhidraScript)  
+          while( true ) {
+ (GhidraScript)  
+            lVar3 = *(longlong *)(param_1 + 0x18);
+ (GhidraScript)  
+  … (94 more lines) (GhidraScript)  
+
+------------------------------------------------------------------------ (GhidraScript)  
+FUNC FUN_1807a1c6c @ 1807a1c6c  size=527 (GhidraScript)  
+  
+ (GhidraScript)  
+  void FUN_1807a1c6c(undefined8 param_1)
+ (GhidraScript)  
+  
+ (GhidraScript)  
+  {
+ (GhidraScript)  
+    int iVar1;
+ (GhidraScript)  
+    undefined4 uVar2;
+ (GhidraScript)  
+    undefined4 uVar3;
+ (GhidraScript)  
+    char cVar4;
+ (GhidraScript)  
+    longlong *plVar5;
+ (GhidraScript)  
+    undefined8 uVar6;
+ (GhidraScript)  
+    int *piVar7;
+ (GhidraScript)  
+    undefined4 *puVar8;
+ (GhidraScript)  
+    char *pcVar9;
+ (GhidraScript)  
+    undefined8 local_58;
+ (GhidraScript)  
+    undefined8 local_50;
+ (GhidraScript)  
+    char *local_48;
+ (GhidraScript)  
+    char *local_40;
+ (GhidraScript)  
+    undefined1 local_38 [16];
+ (GhidraScript)  
+    
+ (GhidraScript)  
+    plVar5 = (longlong *)(**(code **)(*DAT_18492b8a8 + 0xb8))(DAT_18492b8a8,"sys_languages");
+ (GhidraScript)  
+    uVar6 = (**(code **)(*plVar5 + 0x28))(plVar5);
+ (GhidraScript)  
+    FUN_1804f692c(&local_40,uVar6);
+ (GhidraScript)  
+    cVar4 = FUN_18069927c(&local_40);
+ (GhidraScript)  
+    pcVar9 = "<all>";
+ (GhidraScript)  
+    if (cVar4 == '\0') {
+ (GhidraScript)  
+      pcVar9 = local_40;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                  ,0x127,"<Localization> Languages allowed: %s",pcVar9);
+ (GhidraScript)  
+    plVar5 = (longlong *)(**(code **)(*DAT_18492b8a8 + 0xb8))(DAT_18492b8a8,"sys_languages_audio");
+ (GhidraScript)  
+    uVar6 = (**(code **)(*plVar5 + 0x28))(plVar5);
+ (GhidraScript)  
+    FUN_1804f692c(&local_48,uVar6);
+ (GhidraScript)  
+    cVar4 = FUN_18069927c(&local_48);
+ (GhidraScript)  
+    pcVar9 = "<all>";
+ (GhidraScript)  
+    if (cVar4 == '\0') {
+ (GhidraScript)  
+      pcVar9 = local_48;
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                  ,0x129,"<Localization> Audio languages allowed: %s",pcVar9);
+ (GhidraScript)  
+    FUN_1803d18d0(&local_50);
+ (GhidraScript)  
+    piVar7 = (int *)FUN_1807a2980(param_1,local_38,&local_40,0,&local_50);
+ (GhidraScript)  
+    iVar1 = *piVar7;
+ (GhidraScript)  
+    plVar5 = (longlong *)(**(code **)(*DAT_18492b8a8 + 0xb8))(DAT_18492b8a8,"sys_languagesAvailable");
+ (GhidraScript)  
+    (**(code **)(*plVar5 + 0x48))(plVar5,local_50);
+ (GhidraScript)  
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                  ,0x12f,"<Localization> Languages available: %s",local_50);
+ (GhidraScript)  
+    FUN_1803d18d0(&local_58);
+ (GhidraScript)  
+    puVar8 = (undefined4 *)FUN_1807a2980(param_1,local_38,&local_48,1,&local_58);
+ (GhidraScript)  
+    uVar2 = puVar8[1];
+ (GhidraScript)  
+    uVar3 = *puVar8;
+ (GhidraScript)  
+    plVar5 = (longlong *)
+ (GhidraScript)  
+             (**(code **)(*DAT_18492b8a8 + 0xb8))(DAT_18492b8a8,"sys_languagesAvailable_audio");
+ (GhidraScript)  
+    (**(code **)(*plVar5 + 0x48))(plVar5,local_58);
+ (GhidraScript)  
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\LocalizedStringManager.cpp"
+ (GhidraScript)  
+                  ,0x136,"<Localization> Audio languages available: %s",local_58);
+ (GhidraScript)  
+    if (iVar1 == 0) {
+ (GhidraScript)  
+      cVar4 = (**(code **)(*DAT_18492b8c0 + 0x690))();
+ (GhidraScript)  
+      if (cVar4 == '\0') {
+ (GhidraScript)  
+        FUN_180a607a4(8,2,"<Localization> No localization files found!");
+ (GhidraScript)  
+      }
+ (GhidraScript)  
+    }
+ (GhidraScript)  
+    FUN_18242ff1c(param_1,iVar1,uVar2,uVar3);
+ (GhidraScript)  
+    FUN_1804fc884(&local_58);
+ (GhidraScript)  
+    FUN_1804fc884(&local_50);
+ (GhidraScript)  
+    FUN_1804fc884(&local_48);
+ (GhidraScript)  
+    FUN_1804fc884(&local_40);
+ (GhidraScript)  
+    return;
+ (GhidraScript)  
+  }
+ (GhidraScript)  
+  
+ (GhidraScript)  
+
+=== done === (GhidraScript)  

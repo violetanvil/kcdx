@@ -1,0 +1,390 @@
+
+=== playerGoto 0x183e11658  (3 xrefs) ===
+  --- at 0x18100a59e
+      0x018100a57e  cc                       int3    
+      0x018100a57f  cc                       int3    
+      0x018100a580  48895c2408               mov     qword ptr [rsp + 8], rbx
+      0x018100a585  57                       push    rdi
+      0x018100a586  4883ec20                 sub     rsp, 0x20
+      0x018100a58a  4c8d0d6f73e002           lea     r9, [rip + 0x2e0736f]
+      0x018100a591  41b802000000             mov     r8d, 2
+      0x018100a597  488d15c6c079ff           lea     rdx, [rip - 0x863f3a]
+    * 0x018100a59e  488d0db370e002           lea     rcx, [rip + 0x2e070b3]
+      0x018100a5a5  e8eeeab8ff               call    0x180b99098
+      0x018100a5aa  488b3df7129203           mov     rdi, qword ptr [rip + 0x39212f7]
+      0x018100a5b1  488b07                   mov     rax, qword ptr [rdi]
+      0x018100a5b4  488b9858010000           mov     rbx, qword ptr [rax + 0x158]
+      0x018100a5bb  e800010000               call    0x18100a6c0
+      0x018100a5c0  4c8bc0                   mov     r8, rax
+      0x018100a5c3  488d158e70e002           lea     rdx, [rip + 0x2e0708e]
+      0x018100a5ca  488bcf                   mov     rcx, rdi
+      0x018100a5cd  ffd3                     call    rbx
+      0x018100a5cf  4c8d0d9a71e002           lea     r9, [rip + 0x2e0719a]
+      0x018100a5d6  41b802000000             mov     r8d, 2
+      0x018100a5dc  488d1581c079ff           lea     rdx, [rip - 0x863f7f]
+      0x018100a5e3  488d0da6e1de02           lea     rcx, [rip + 0x2dee1a6]
+      0x018100a5ea  e8                       .byte   0xe8
+      0x018100a5eb  a9                       .byte   0xa9
+      0x018100a5ec  ea                       .byte   0xea
+      0x018100a5ed  b8                       .byte   0xb8
+
+  --- at 0x18100a5c3
+      0x018100a5a3  e002                     loopne  0x18100a5a7
+      0x018100a5a5  e8eeeab8ff               call    0x180b99098
+      0x018100a5aa  488b3df7129203           mov     rdi, qword ptr [rip + 0x39212f7]
+      0x018100a5b1  488b07                   mov     rax, qword ptr [rdi]
+      0x018100a5b4  488b9858010000           mov     rbx, qword ptr [rax + 0x158]
+      0x018100a5bb  e800010000               call    0x18100a6c0
+      0x018100a5c0  4c8bc0                   mov     r8, rax
+    * 0x018100a5c3  488d158e70e002           lea     rdx, [rip + 0x2e0708e]
+      0x018100a5ca  488bcf                   mov     rcx, rdi
+      0x018100a5cd  ffd3                     call    rbx
+      0x018100a5cf  4c8d0d9a71e002           lea     r9, [rip + 0x2e0719a]
+      0x018100a5d6  41b802000000             mov     r8d, 2
+      0x018100a5dc  488d1581c079ff           lea     rdx, [rip - 0x863f7f]
+      0x018100a5e3  488d0da6e1de02           lea     rcx, [rip + 0x2dee1a6]
+      0x018100a5ea  e8a9eab8ff               call    0x180b99098
+      0x018100a5ef  488b3db2129203           mov     rdi, qword ptr [rip + 0x39212b2]
+      0x018100a5f6  488b07                   mov     rax, qword ptr [rdi]
+      0x018100a5f9  488b9858010000           mov     rbx, qword ptr [rax + 0x158]
+      0x018100a600  e8bb000000               call    0x18100a6c0
+      0x018100a605  4c8bc0                   mov     r8, rax
+      0x018100a608  488d1581e1de02           lea     rdx, [rip + 0x2dee181]
+      0x018100a60f  488bcf                   mov     rcx, rdi
+      0x018100a612  ff                       .byte   0xff
+
+  --- at 0x18257e4b0
+      0x018257e490  7f88                     jg      0x18257e41a
+      0x018257e492  01488b                   add     dword ptr [rax - 0x75], ecx
+      0x018257e495  0d46d43a02               or      eax, 0x23ad446
+      0x018257e49a  488b01                   mov     rax, qword ptr [rcx]
+      0x018257e49d  ff5028                   call    qword ptr [rax + 0x28]
+      0x018257e4a0  488b5c2450               mov     rbx, qword ptr [rsp + 0x50]
+      0x018257e4a5  488b7c2458               mov     rdi, qword ptr [rsp + 0x58]
+      0x018257e4aa  4883c430                 add     rsp, 0x30
+      0x018257e4ae  5d                       pop     rbp
+      0x018257e4af  c3                       ret     
+    * 0x018257e4b0  488d0da1318901           lea     rcx, [rip + 0x18931a1]
+      0x018257e4b7  e9ac100000               jmp     0x18257f568
+      0x018257e4bc  4053                     push    rbx
+      0x018257e4be  4883ec20                 sub     rsp, 0x20
+      0x018257e4c2  803dd0590e0300           cmp     byte ptr [rip + 0x30e59d0], 0
+      0x018257e4c9  488bd9                   mov     rbx, rcx
+      0x018257e4cc  7536                     jne     0x18257e504
+      0x018257e4ce  488b0dbbd33a02           mov     rcx, qword ptr [rip + 0x23ad3bb]
+      0x018257e4d5  c605bd590e0301           mov     byte ptr [rip + 0x30e59bd], 1
+      0x018257e4dc  488b01                   mov     rax, qword ptr [rcx]
+      0x018257e4df  ff9018010000             call    qword ptr [rax + 0x118]
+      0x018257e4e5  488bc8                   mov     rcx, rax
+      0x018257e4e8  488b10                   mov     rdx, qword ptr [rax]
+      0x018257e4eb  ff5210                   call    qword ptr [rdx + 0x10]
+      0x018257e4ee  488b0b                   mov     rcx, qword ptr [rbx]
+      0x018257e4f1  8bd0                     mov     edx, eax
+      0x018257e4f3  4c8b4138                 mov     r8, qword ptr [rcx + 0x38]
+      0x018257e4f7  488bcb                   mov     rcx, rbx
+      0x018257e4fa  41ffd0                   call    r8
+      0x018257e4fd  c6                       .byte   0xc6
+      0x018257e4fe  05                       .byte   0x05
+      0x018257e4ff  95                       xchg    ebp, eax
+
+
+=== freeze 0x183e06288  (2 xrefs) ===
+  --- at 0x18100a6a7
+      0x018100a687  4c8bc0                   mov     r8, rax
+      0x018100a68a  488d15af74e002           lea     rdx, [rip + 0x2e074af]
+      0x018100a691  488bcf                   mov     rcx, rdi
+      0x018100a694  ffd3                     call    rbx
+      0x018100a696  4c8d0d0374e002           lea     r9, [rip + 0x2e07403]
+      0x018100a69d  4533c0                   xor     r8d, r8d
+      0x018100a6a0  488d150974e002           lea     rdx, [rip + 0x2e07409]
+    * 0x018100a6a7  488d0ddabbdf02           lea     rcx, [rip + 0x2dfbbda]
+      0x018100a6ae  488b5c2430               mov     rbx, qword ptr [rsp + 0x30]
+      0x018100a6b3  4883c420                 add     rsp, 0x20
+      0x018100a6b7  5f                       pop     rdi
+      0x018100a6b8  e9e7fcffff               jmp     0x18100a3a4
+      0x018100a6bd  cc                       int3    
+      0x018100a6be  cc                       int3    
+      0x018100a6bf  cc                       int3    
+      0x018100a6c0  4883ec28                 sub     rsp, 0x28
+      0x018100a6c4  8b0db2be0b04             mov     ecx, dword ptr [rip + 0x40bbeb2]
+      0x018100a6ca  65488b042558000000       mov     rax, qword ptr gs:[0x58]
+      0x018100a6d3  ba18000000               mov     edx, 0x18
+      0x018100a6d8  488b04c8                 mov     rax, qword ptr [rax + rcx*8]
+      0x018100a6dc  8b0402                   mov     eax, dword ptr [rdx + rax]
+      0x018100a6df  3905eb595c04             cmp     dword ptr [rip + 0x45c59eb], eax
+      0x018100a6e5  7f0c                     jg      0x18100a6f3
+      0x018100a6e7  488d057a229203           lea     rax, [rip + 0x392227a]
+      0x018100a6ee  4883c428                 add     rsp, 0x28
+      0x018100a6f2  c3                       ret     
+      0x018100a6f3  48                       .byte   0x48
+      0x018100a6f4  8d                       .byte   0x8d
+      0x018100a6f5  0d                       .byte   0x0d
+      0x018100a6f6  d6                       .byte   0xd6
+
+  --- at 0x1815c8c45
+      0x01815c8c25  442420                   and     al, 0x20
+      0x01815c8c28  488d15a9309002           lea     rdx, [rip + 0x29030a9]
+      0x01815c8c2f  488bcb                   mov     rcx, rbx
+      0x01815c8c32  e8854093ff               call    0x180efccbc
+      0x01815c8c37  488d055eff4e01           lea     rax, [rip + 0x14eff5e]
+      0x01815c8c3e  4c8bcb                   mov     r9, rbx
+      0x01815c8c41  48894518                 mov     qword ptr [rbp + 0x18], rax
+    * 0x01815c8c45  4c8d053cd68302           lea     r8, [rip + 0x283d63c]
+      0x01815c8c4c  488d4518                 lea     rax, [rbp + 0x18]
+      0x01815c8c50  488bcb                   mov     rcx, rbx
+      0x01815c8c53  488d156e309002           lea     rdx, [rip + 0x290306e]
+      0x01815c8c5a  4889442420               mov     qword ptr [rsp + 0x20], rax
+      0x01815c8c5f  e8584093ff               call    0x180efccbc
+      0x01815c8c64  488d057d714f01           lea     rax, [rip + 0x14f717d]
+      0x01815c8c6b  4c8bcb                   mov     r9, rbx
+      0x01815c8c6e  48894518                 mov     qword ptr [rbp + 0x18], rax
+      0x01815c8c72  488bcb                   mov     rcx, rbx
+      0x01815c8c75  488d4518                 lea     rax, [rbp + 0x18]
+      0x01815c8c79  4889442420               mov     qword ptr [rsp + 0x20], rax
+      0x01815c8c7e  e8a1090000               call    0x1815c9624
+      0x01815c8c83  488d0596cf4e01           lea     rax, [rip + 0x14ecf96]
+      0x01815c8c8a  4c8bcb                   mov     r9, rbx
+      0x01815c8c8d  48894518                 mov     qword ptr [rbp + 0x18], rax
+      0x01815c8c91  4c                       .byte   0x4c
+      0x01815c8c92  8d                       .byte   0x8d
+      0x01815c8c93  05                       .byte   0x05
+      0x01815c8c94  80                       .byte   0x80
+
+
+=== sys_spec 0x183a7e620  (8 xrefs) ===
+  --- at 0x180600c11
+      0x0180600bf1  0000                     add     byte ptr [rax], al
+      0x0180600bf3  4c8d0576664e03           lea     r8, [rip + 0x34e6676]
+      0x0180600bfa  488b0ddfac3204           mov     rcx, qword ptr [rip + 0x432acdf]
+      0x0180600c01  488bd3                   mov     rdx, rbx
+      0x0180600c04  488b01                   mov     rax, qword ptr [rcx]
+      0x0180600c07  ff5038                   call    qword ptr [rax + 0x38]
+      0x0180600c0a  488b0d97ac3204           mov     rcx, qword ptr [rip + 0x432ac97]
+    * 0x0180600c11  488d1508da4703           lea     rdx, [rip + 0x347da08]
+      0x0180600c18  488b01                   mov     rax, qword ptr [rcx]
+      0x0180600c1b  ff90b8000000             call    qword ptr [rax + 0xb8]
+      0x0180600c21  488987a0010000           mov     qword ptr [rdi + 0x1a0], rax
+      0x0180600c28  4885c0                   test    rax, rax
+      0x0180600c2b  7523                     jne     0x180600c50
+      0x0180600c2d  e8ce5c5a02               call    0x182ba6900
+      0x0180600c32  488987a0010000           mov     qword ptr [rdi + 0x1a0], rax
+      0x0180600c39  4c8d05e0d94703           lea     r8, [rip + 0x347d9e0]
+      0x0180600c40  488b0d99ac3204           mov     rcx, qword ptr [rip + 0x432ac99]
+      0x0180600c47  488bd3                   mov     rdx, rbx
+      0x0180600c4a  488b01                   mov     rax, qword ptr [rcx]
+      0x0180600c4d  ff5038                   call    qword ptr [rax + 0x38]
+      0x0180600c50  488b0d51ac3204           mov     rcx, qword ptr [rip + 0x432ac51]
+      0x0180600c57  488d1562126403           lea     rdx, [rip + 0x3641262]
+      0x0180600c5e  488b01                   mov     rax, qword ptr [rcx]
+
+  --- at 0x180600c39
+      0x0180600c19  8b01                     mov     eax, dword ptr [rcx]
+      0x0180600c1b  ff90b8000000             call    qword ptr [rax + 0xb8]
+      0x0180600c21  488987a0010000           mov     qword ptr [rdi + 0x1a0], rax
+      0x0180600c28  4885c0                   test    rax, rax
+      0x0180600c2b  7523                     jne     0x180600c50
+      0x0180600c2d  e8ce5c5a02               call    0x182ba6900
+      0x0180600c32  488987a0010000           mov     qword ptr [rdi + 0x1a0], rax
+    * 0x0180600c39  4c8d05e0d94703           lea     r8, [rip + 0x347d9e0]
+      0x0180600c40  488b0d99ac3204           mov     rcx, qword ptr [rip + 0x432ac99]
+      0x0180600c47  488bd3                   mov     rdx, rbx
+      0x0180600c4a  488b01                   mov     rax, qword ptr [rcx]
+      0x0180600c4d  ff5038                   call    qword ptr [rax + 0x38]
+      0x0180600c50  488b0d51ac3204           mov     rcx, qword ptr [rip + 0x432ac51]
+      0x0180600c57  488d1562126403           lea     rdx, [rip + 0x3641262]
+      0x0180600c5e  488b01                   mov     rax, qword ptr [rcx]
+      0x0180600c61  ff90b8000000             call    qword ptr [rax + 0xb8]
+      0x0180600c67  488987a8010000           mov     qword ptr [rdi + 0x1a8], rax
+      0x0180600c6e  4885c0                   test    rax, rax
+      0x0180600c71  7523                     jne     0x180600c96
+      0x0180600c73  e8885c5a02               call    0x182ba6900
+      0x0180600c78  488987a8010000           mov     qword ptr [rdi + 0x1a8], rax
+      0x0180600c7f  4c8d053a126403           lea     r8, [rip + 0x364123a]
+      0x0180600c86  48                       .byte   0x48
+      0x0180600c87  8b                       .byte   0x8b
+      0x0180600c88  0d                       .byte   0x0d
+
+  --- at 0x1807a77a7
+      0x01807a7787  e89400d5ff               call    0x1804f7820
+      0x01807a778c  4885c0                   test    rax, rax
+      0x01807a778f  740c                     je      0x1807a779d
+      0x01807a7791  488d0d489b6103           lea     rcx, [rip + 0x3619b48]
+      0x01807a7798  488908                   mov     qword ptr [rax], rcx
+      0x01807a779b  eb03                     jmp     0x1807a77a0
+      0x01807a779d  498bc7                   mov     rax, r15
+      0x01807a77a0  488986382b0000           mov     qword ptr [rsi + 0x2b38], rax
+    * 0x01807a77a7  488d15726e2d03           lea     rdx, [rip + 0x32d6e72]
+      0x01807a77ae  488b0df3401804           mov     rcx, qword ptr [rip + 0x41840f3]
+      0x01807a77b5  488b01                   mov     rax, qword ptr [rcx]
+      0x01807a77b8  ff90b8000000             call    qword ptr [rax + 0xb8]
+      0x01807a77be  4c8b05fb401804           mov     r8, qword ptr [rip + 0x41840fb]
+      0x01807a77c5  488bf8                   mov     rdi, rax
+      0x01807a77c8  498b08                   mov     rcx, qword ptr [r8]
+      0x01807a77cb  488b91f0030000           mov     rdx, qword ptr [rcx + 0x3f0]
+      0x01807a77d2  498bc8                   mov     rcx, r8
+      0x01807a77d5  ffd2                     call    rdx
+      0x01807a77d7  84c0                     test    al, al
+      0x01807a77d9  7438                     je      0x1807a7813
+      0x01807a77db  4885ff                   test    rdi, rdi
+      0x01807a77de  7433                     je      0x1807a7813
+      0x01807a77e0  488b0f                   mov     rcx, qword ptr [rdi]
+      0x01807a77e3  488b5160                 mov     rdx, qword ptr [rcx + 0x60]
+      0x01807a77e7  488bcf                   mov     rcx, rdi
+      0x01807a77ea  ffd2                     call    rdx
+      0x01807a77ec  0fbae011                 bt      eax, 0x11
+      0x01807a77f0  7321                     jae     0x1807a7813
+      0x01807a77f2  488b07                   mov     rax, qword ptr [rdi]
+      0x01807a77f5  48                       .byte   0x48
+      0x01807a77f6  8b                       .byte   0x8b
+
+  --- at 0x180b98c55
+      0x0180b98c35  ec                       in      al, dx
+      0x0180b98c36  20488b                   and     byte ptr [rax - 0x75], cl
+      0x0180b98c39  01488b                   add     dword ptr [rax - 0x75], ecx
+      0x0180b98c3c  f9                       stc     
+      0x0180b98c3d  ff5010                   call    qword ptr [rax + 0x10]
+      0x0180b98c40  488b17                   mov     rdx, qword ptr [rdi]
+      0x0180b98c43  488bcf                   mov     rcx, rdi
+      0x0180b98c46  8bd8                     mov     ebx, eax
+      0x0180b98c48  89442430                 mov     dword ptr [rsp + 0x30], eax
+      0x0180b98c4c  ff5278                   call    qword ptr [rdx + 0x78]
+      0x0180b98c4f  41b808000000             mov     r8d, 8
+    * 0x0180b98c55  488d15c459ee02           lea     rdx, [rip + 0x2ee59c4]
+      0x0180b98c5c  488bc8                   mov     rcx, rax
+      0x0180b98c5f  ff15fbb0e602             call    qword ptr [rip + 0x2e6b0fb]
+      0x0180b98c65  85c0                     test    eax, eax
+      0x0180b98c67  7514                     jne     0x180b98c7d
+      0x0180b98c69  488b0d502cd903           mov     rcx, qword ptr [rip + 0x3d92c50]
+      0x0180b98c70  488b01                   mov     rax, qword ptr [rcx]
+      0x0180b98c73  ff90f8040000             call    qword ptr [rax + 0x4f8]
+      0x0180b98c79  3bd8                     cmp     ebx, eax
+      0x0180b98c7b  7f4b                     jg      0x180b98cc8
+      0x0180b98c7d  488d542430               lea     rdx, [rsp + 0x30]
+      0x0180b98c82  488d4f68                 lea     rcx, [rdi + 0x68]
+      0x0180b98c86  e845140000               call    0x180b9a0d0
+      0x0180b98c8b  33f6                     xor     esi, esi
+      0x0180b98c8d  483b4768                 cmp     rax, qword ptr [rdi + 0x68]
+      0x0180b98c91  7417                     je      0x180b98caa
+      0x0180b98c93  488b7028                 mov     rsi, qword ptr [rax + 0x28]
+      0x0180b98c97  4885f6                   test    rsi, rsi
+      0x0180b98c9a  740e                     je      0x180b98caa
+      0x0180b98c9c  4533c0                   xor     r8d, r8d
+      0x0180b98c9f  488bd6                   mov     rdx, rsi
+      0x0180b98ca2  488bcf                   mov     rcx, rdi
+
+  --- at 0x180b990ee
+      0x0180b990ce  896c2418                 mov     dword ptr [rsp + 0x18], ebp
+      0x0180b990d2  56                       push    rsi
+      0x0180b990d3  57                       push    rdi
+      0x0180b990d4  4154                     push    r12
+      0x0180b990d6  4156                     push    r14
+      0x0180b990d8  4157                     push    r15
+      0x0180b990da  4883ec20                 sub     rsp, 0x20
+      0x0180b990de  488b4140                 mov     rax, qword ptr [rcx + 0x40]
+      0x0180b990e2  498be8                   mov     rbp, r8
+      0x0180b990e5  488b3a                   mov     rdi, qword ptr [rdx]
+      0x0180b990e8  488bda                   mov     rbx, rdx
+      0x0180b990eb  488bf1                   mov     rsi, rcx
+    * 0x0180b990ee  488d152b55ee02           lea     rdx, [rip + 0x2ee552b]
+      0x0180b990f5  41b808000000             mov     r8d, 8
+      0x0180b990fb  448ab8de010000           mov     r15b, byte ptr [rax + 0x1de]
+      0x0180b99102  c680de01000001           mov     byte ptr [rax + 0x1de], 1
+      0x0180b99109  488b4908                 mov     rcx, qword ptr [rcx + 8]
+      0x0180b9910d  ff15a5ace602             call    qword ptr [rip + 0x2e6aca5]
+      0x0180b99113  488b4e40                 mov     rcx, qword ptr [rsi + 0x40]
+      0x0180b99117  f7d8                     neg     eax
+      0x0180b99119  1bd2                     sbb     edx, edx
+      0x0180b9911b  f7d2                     not     edx
+      0x0180b9911d  488b01                   mov     rax, qword ptr [rcx]
+      0x0180b99120  83e202                   and     edx, 2
+      0x0180b99123  ff9000020000             call    qword ptr [rax + 0x200]
+      0x0180b99129  488b1b                   mov     rbx, qword ptr [rbx]
+      0x0180b9912c  448be0                   mov     r12d, eax
+      0x0180b9912f  488b1b                   mov     rbx, qword ptr [rbx]
+      0x0180b99132  48895c2450               mov     qword ptr [rsp + 0x50], rbx
+      0x0180b99137  483bdf                   cmp     rbx, rdi
+      0x0180b9913a  743d                     je      0x180b99179
+      0x0180b9913c  48                       .byte   0x48
+      0x0180b9913d  85                       .byte   0x85
+
+  --- at 0x180e3760f
+      0x0180e375ef  83500c00                 adc     dword ptr [rax + 0xc], 0
+      0x0180e375f3  004c8d0d                 add     byte ptr [rbp + rcx*4 + 0xd], cl
+      0x0180e375f7  1529f90248               adc     eax, 0x4802f929
+      0x0180e375fc  8d05b6076aff             lea     eax, [rip - 0x95f84a]
+      0x0180e37602  33d2                     xor     edx, edx
+      0x0180e37604  41b800002000             mov     r8d, 0x200000
+      0x0180e3760a  4889442420               mov     qword ptr [rsp + 0x20], rax
+    * 0x0180e3760f  488d0d0a70c402           lea     rcx, [rip + 0x2c4700a]
+      0x0180e37616  e8f145d6ff               call    0x180b9bc0c
+      0x0180e3761b  4c8d0db628f902           lea     r9, [rip + 0x2f928b6]
+      0x0180e37622  488983580c0000           mov     qword ptr [rbx + 0xc58], rax
+      0x0180e37629  4533c0                   xor     r8d, r8d
+      0x0180e3762c  4c897c2420               mov     qword ptr [rsp + 0x20], r15
+      0x0180e37631  33d2                     xor     edx, edx
+      0x0180e37633  488d0d8628f902           lea     rcx, [rip + 0x2f92886]
+      0x0180e3763a  e8cd45d6ff               call    0x180b9bc0c
+      0x0180e3763f  4c8d0dc22cf902           lea     r9, [rip + 0x2f92cc2]
+      0x0180e37646  488983780c0000           mov     qword ptr [rbx + 0xc78], rax
+      0x0180e3764d  4533c0                   xor     r8d, r8d
+      0x0180e37650  4c897c2420               mov     qword ptr [rsp + 0x20], r15
+      0x0180e37655  33d2                     xor     edx, edx
+      0x0180e37657  488d0d9a2cf902           lea     rcx, [rip + 0x2f92c9a]
+      0x0180e3765e  e8                       .byte   0xe8
+
+
+=== kill 0x183b32bf0  (2 xrefs) ===
+  --- at 0x18120beef
+      0x018120becf  0000                     add     byte ptr [rax], al
+      0x018120bed1  004889                   add     byte ptr [rax - 0x77], cl
+      0x018120bed4  004889                   add     byte ptr [rax - 0x77], cl
+      0x018120bed7  40084889                 or      byte ptr [rax - 0x77], cl
+      0x018120bedb  401066c7                 adc     byte ptr [rsi - 0x39], spl
+      0x018120bedf  401801                   sbb     byte ptr [rcx], al
+      0x018120bee2  014889                   add     dword ptr [rax - 0x77], ecx
+      0x018120bee5  8690000000e8             xchg    byte ptr [rax - 0x18000000], dl
+      0x018120beeb  8d0500004c8d             lea     eax, [rip - 0x72b40000]
+      0x018120bef1  0dfa6c9202               or      eax, 0x2926cfa
+      0x018120bef6  4c89b6e0000000           mov     qword ptr [rsi + 0xe0], r14
+      0x018120befd  4c8d0594689202           lea     r8, [rip + 0x2926894]
+      0x018120bf04  4c89b6e8000000           mov     qword ptr [rsi + 0xe8], r14
+      0x018120bf0b  33d2                     xor     edx, edx
+      0x018120bf0d  4c89b6f0000000           mov     qword ptr [rsi + 0xf0], r14
+      0x018120bf14  488d4d70                 lea     rcx, [rbp + 0x70]
+      0x018120bf18  48c786f8000000ffffffff   mov     qword ptr [rsi + 0xf8], 0xffffffffffffffff
+      0x018120bf23  4c89b600010000           mov     qword ptr [rsi + 0x100], r14
+      0x018120bf2a  4c89b608010000           mov     qword ptr [rsi + 0x108], r14
+      0x018120bf31  4489b610010000           mov     dword ptr [rsi + 0x110], r14d
+      0x018120bf38  e8b7040000               call    0x18120c3f4
+      0x018120bf3d  4c                       .byte   0x4c
+      0x018120bf3e  8d                       .byte   0x8d
+
+  --- at 0x1836f2d03
+      0x01836f2ce3  8bcc                     mov     ecx, esp
+      0x01836f2ce5  ff9070010000             call    qword ptr [rax + 0x170]
+      0x01836f2ceb  8b7f04                   mov     edi, dword ptr [rdi + 4]
+      0x01836f2cee  488d4dd8                 lea     rcx, [rbp - 0x28]
+      0x01836f2cf2  488b7558                 mov     rsi, qword ptr [rbp + 0x58]
+      0x01836f2cf6  488bd8                   mov     rbx, rax
+      0x01836f2cf9  e8f6936bfd               call    0x180dac0f4
+      0x01836f2cfe  4c897c2438               mov     qword ptr [rsp + 0x38], r15
+    * 0x01836f2d03  4c8d05e6fe4300           lea     r8, [rip + 0x43fee6]
+      0x01836f2d0a  f30f11742430             movss   dword ptr [rsp + 0x30], xmm6
+      0x01836f2d10  4c8bce                   mov     r9, rsi
+      0x01836f2d13  48895c2428               mov     qword ptr [rsp + 0x28], rbx
+      0x01836f2d18  488bd0                   mov     rdx, rax
+      0x01836f2d1b  498bce                   mov     rcx, r14
+      0x01836f2d1e  897c2420                 mov     dword ptr [rsp + 0x20], edi
+      0x01836f2d22  e8a5faffff               call    0x1836f27cc
+      0x01836f2d27  488b4d58                 mov     rcx, qword ptr [rbp + 0x58]
+      0x01836f2d2b  4883c1f4                 add     rcx, -0xc
+      0x01836f2d2f  e8c4ade0fc               call    0x1804fdaf8
+      0x01836f2d34  8b0d42389d01             mov     ecx, dword ptr [rip + 0x19d3842]
+      0x01836f2d3a  65488b042558000000       mov     rax, qword ptr gs:[0x58]
+      0x01836f2d43  ba18000000               mov     edx, 0x18
+      0x01836f2d48  488b04c8                 mov     rax, qword ptr [rax + rcx*8]
+      0x01836f2d4c  8b0402                   mov     eax, dword ptr [rdx + rax]
+      0x01836f2d4f  39                       .byte   0x39
+      0x01836f2d50  05                       .byte   0x05
+      0x01836f2d51  03c8                     add     ecx, eax
+

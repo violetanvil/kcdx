@@ -1,0 +1,115 @@
+=== Function @ 0x00000001825BC510 ===
+  Visited 71 unique addresses, extent 0x1825BC510..0x1825BC619
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 11
+  Final rsp offset from entry_rsp: -88 (-0x58)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: 0x1825bc605
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+  entry_rsp+0x08  (arg #1):
+    [read ] 0x1825BC600: <CsInsn 0x1825bc600 [488b5c2460]: mov rbx, qword ptr [rsp + 0x60]>  (width=8B, via rsp)
+
+  entry_rsp+0x10  (arg #2):
+    [read ] 0x1825BC605: <CsInsn 0x1825bc605 [488b6c2468]: mov rbp, qword ptr [rsp + 0x68]>  (width=8B, via rsp)
+
+  entry_rsp+0x18  (arg #3):
+    [read ] 0x1825BC60A: <CsInsn 0x1825bc60a [488b742470]: mov rsi, qword ptr [rsp + 0x70]>  (width=8B, via rsp)
+
+  entry_rsp+0x20  (arg #4):
+    [read ] 0x1825BC564: <CsInsn 0x1825bc564 [488d542478]: lea rdx, [rsp + 0x78]>  (width=8B, via rsp)
+    [read ] 0x1825BC57B: <CsInsn 0x1825bc57b [488b542478]: mov rdx, qword ptr [rsp + 0x78]>  (width=8B, via rsp)
+    [read ] 0x1825BC5F3: <CsInsn 0x1825bc5f3 [488d4c2478]: lea rcx, [rsp + 0x78]>  (width=8B, via rsp)
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x00000001825BC510: 48895c2408               mov      qword ptr [rsp + 8], rbx
+  0x00000001825BC515: 48896c2410               mov      qword ptr [rsp + 0x10], rbp
+  0x00000001825BC51A: 4889742418               mov      qword ptr [rsp + 0x18], rsi
+  0x00000001825BC51F: 57                       push     rdi
+  0x00000001825BC520: 4156                     push     r14
+  0x00000001825BC522: 4157                     push     r15
+  0x00000001825BC524: 4883ec40                 sub      rsp, 0x40
+  0x00000001825BC528: 4863ea                   movsxd   rbp, edx
+  0x00000001825BC52B: 458bf8                   mov      r15d, r8d
+  0x00000001825BC52E: 8bd5                     mov      edx, ebp
+  0x00000001825BC530: 488bf1                   mov      rsi, rcx
+  0x00000001825BC533: e8401942ff               call     0x1819dde78
+  0x00000001825BC538: 33ff                     xor      edi, edi
+  0x00000001825BC53A: 4c8bf0                   mov      r14, rax
+  0x00000001825BC53D: 4885c0                   test     rax, rax
+  0x00000001825BC540: 750f                     jne      0x1825bc551
+  0x00000001825BC542: 488bce                   mov      rcx, rsi
+  0x00000001825BC545: e8eaf912fe               call     0x1806ebf34
+  0x00000001825BC54A: 32c0                     xor      al, al
+  0x00000001825BC54C: e9af000000               jmp      0x1825bc600
+  0x00000001825BC551: 488b0d68f33602           mov      rcx, qword ptr [rip + 0x236f368]
+  0x00000001825BC558: 488b01                   mov      rax, qword ptr [rcx]
+  0x00000001825BC55B: ff90a8010000             call     qword ptr [rax + 0x1a8]
+  0x00000001825BC561: 448bc5                   mov      r8d, ebp
+  0x00000001825BC564: 488d542478               lea      rdx, [rsp + 0x78]
+  0x00000001825BC569: 498bce                   mov      rcx, r14
+  0x00000001825BC56C: 488bd8                   mov      rbx, rax
+  0x00000001825BC56F: e8a4060000               call     0x1825bcc18
+  0x00000001825BC574: 488b0b                   mov      rcx, qword ptr [rbx]
+  0x00000001825BC577: 4183c8ff                 or       r8d, 0xffffffff
+  0x00000001825BC57B: 488b542478               mov      rdx, qword ptr [rsp + 0x78]
+  0x00000001825BC580: 4c8b8998000000           mov      r9, qword ptr [rcx + 0x98]
+  0x00000001825BC587: 488bcb                   mov      rcx, rbx
+  0x00000001825BC58A: 41ffd1                   call     r9
+  0x00000001825BC58D: 84c0                     test     al, al
+  0x00000001825BC58F: 750a                     jne      0x1825bc59b
+  0x00000001825BC591: 488bce                   mov      rcx, rsi
+  0x00000001825BC594: e89bf912fe               call     0x1806ebf34
+  0x00000001825BC599: eb58                     jmp      0x1825bc5f3
+  0x00000001825BC59B: 488b3d3ef33602           mov      rdi, qword ptr [rip + 0x236f33e]
+  0x00000001825BC5A2: 488d542430               lea      rdx, [rsp + 0x30]
+  0x00000001825BC5A7: 448bc5                   mov      r8d, ebp
+  0x00000001825BC5AA: 498bce                   mov      rcx, r14
+  0x00000001825BC5AD: 488b07                   mov      rax, qword ptr [rdi]
+  0x00000001825BC5B0: 488b5868                 mov      rbx, qword ptr [rax + 0x68]
+  0x00000001825BC5B4: e85f060000               call     0x1825bcc18
+  0x00000001825BC5B9: 458bc7                   mov      r8d, r15d
+  0x00000001825BC5BC: 896c2420                 mov      dword ptr [rsp + 0x20], ebp
+  0x00000001825BC5C0: 488d1579a58501           lea      rdx, [rip + 0x185a579]
+  0x00000001825BC5C7: 488bcf                   mov      rcx, rdi
+  0x00000001825BC5CA: 4c8b08                   mov      r9, qword ptr [rax]
+  0x00000001825BC5CD: ffd3                     call     rbx
+  0x00000001825BC5CF: 488d4c2430               lea      rcx, [rsp + 0x30]
+  0x00000001825BC5D4: e8ab02f4fd               call     0x1804fc884
+  0x00000001825BC5D9: 488d0ced01000000         lea      rcx, [rbp*8 + 1]
+  0x00000001825BC5E1: 418bd7                   mov      edx, r15d
+  0x00000001825BC5E4: 4803cd                   add      rcx, rbp
+  0x00000001825BC5E7: 488d0cce                 lea      rcx, [rsi + rcx*8]
+  0x00000001825BC5EB: e86c110000               call     0x1825bd75c
+  0x00000001825BC5F0: 40b701                   mov      dil, 1
+  0x00000001825BC5F3: 488d4c2478               lea      rcx, [rsp + 0x78]
+  0x00000001825BC5F8: e88702f4fd               call     0x1804fc884
+  0x00000001825BC5FD: 408ac7                   mov      al, dil
+  0x00000001825BC600: 488b5c2460               mov      rbx, qword ptr [rsp + 0x60]
+  0x00000001825BC605: 488b6c2468               mov      rbp, qword ptr [rsp + 0x68]
+  0x00000001825BC60A: 488b742470               mov      rsi, qword ptr [rsp + 0x70]
+  0x00000001825BC60F: 4883c440                 add      rsp, 0x40
+  0x00000001825BC613: 415f                     pop      r15
+  0x00000001825BC615: 415e                     pop      r14
+  0x00000001825BC617: 5f                       pop      rdi
+  0x00000001825BC618: c3                       ret      

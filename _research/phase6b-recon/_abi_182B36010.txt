@@ -1,0 +1,70 @@
+=== Function @ 0x0000000182B36010 ===
+  Visited 36 unique addresses, extent 0x182B36010..0x182B36099
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 2
+  Final rsp offset from entry_rsp: 0 (0x0)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: never (stable post-prologue)
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+  entry_rsp+0x08  (arg #1):
+    [write] 0x182B36010: <CsInsn 0x182b36010 [48897c2408]: mov qword ptr [rsp + 8], rdi>  (width=8B, via rsp)
+    [read ] 0x182B36093: <CsInsn 0x182b36093 [488b7c2408]: mov rdi, qword ptr [rsp + 8]>  (width=8B, via rsp)
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x0000000182B36010: 48897c2408               mov      qword ptr [rsp + 8], rdi
+  0x0000000182B36015: 4c8b05c4e77e02           mov      r8, qword ptr [rip + 0x27ee7c4]
+  0x0000000182B3601C: 48b8295c8fc2f5285c8f     movabs   rax, 0x8f5c28f5c28f5c29
+  0x0000000182B36026: 488b0dbbe77e02           mov      rcx, qword ptr [rip + 0x27ee7bb]
+  0x0000000182B3602D: 4533c9                   xor      r9d, r9d
+  0x0000000182B36030: 492bc8                   sub      rcx, r8
+  0x0000000182B36033: 4c8bd2                   mov      r10, rdx
+  0x0000000182B36036: 48c1f903                 sar      rcx, 3
+  0x0000000182B3603A: 480fafc8                 imul     rcx, rax
+  0x0000000182B3603E: 4885c9                   test     rcx, rcx
+  0x0000000182B36041: 7e35                     jle      0x182b36078
+  0x0000000182B36043: 408a3a                   mov      dil, byte ptr [rdx]
+  0x0000000182B36046: 488bd1                   mov      rdx, rcx
+  0x0000000182B36049: 48d1ea                   shr      rdx, 1
+  0x0000000182B3604C: 4c69dac8000000           imul     r11, rdx, 0xc8
+  0x0000000182B36053: 43387c0308               cmp      byte ptr [r11 + r8 + 8], dil
+  0x0000000182B36058: 7316                     jae      0x182b36070
+  0x0000000182B3605A: 4981c0c8000000           add      r8, 0xc8
+  0x0000000182B36061: 4883c8ff                 or       rax, 0xffffffffffffffff
+  0x0000000182B36065: 4d03c3                   add      r8, r11
+  0x0000000182B36068: 482bc2                   sub      rax, rdx
+  0x0000000182B3606B: 4803c8                   add      rcx, rax
+  0x0000000182B3606E: eb03                     jmp      0x182b36073
+  0x0000000182B36070: 488bca                   mov      rcx, rdx
+  0x0000000182B36073: 4885c9                   test     rcx, rcx
+  0x0000000182B36076: 7fce                     jg       0x182b36046
+  0x0000000182B36078: 4c3b0569e77e02           cmp      r8, qword ptr [rip + 0x27ee769]
+  0x0000000182B3607F: 7504                     jne      0x182b36085
+  0x0000000182B36081: 33c0                     xor      eax, eax
+  0x0000000182B36083: eb0e                     jmp      0x182b36093
+  0x0000000182B36085: 418a0a                   mov      cl, byte ptr [r10]
+  0x0000000182B36088: 41384808                 cmp      byte ptr [r8 + 8], cl
+  0x0000000182B3608C: 4d0f44c8                 cmove    r9, r8
+  0x0000000182B36090: 498bc1                   mov      rax, r9
+  0x0000000182B36093: 488b7c2408               mov      rdi, qword ptr [rsp + 8]
+  0x0000000182B36098: c3                       ret      

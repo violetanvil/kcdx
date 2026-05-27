@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-write.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-comment-density.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-patterns.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-probe-stack.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-review-files.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-edit.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-comment-density.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-patterns.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-probe-stack.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-review-files.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,115 @@
+=== Function @ 0x0000000182BA8D80 ===
+  Visited 82 unique addresses, extent 0x182BA8D80..0x182BA8EF4
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 5
+  Final rsp offset from entry_rsp: -120 (-0x78)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: never (stable post-prologue)
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+  entry_rsp+0x08  (arg #1):
+    [read ] 0x182BA8EE3: <CsInsn 0x182ba8ee3 [488b9c2480000000]: mov rbx, qword ptr [rsp + 0x80]>  (width=8B, via rsp)
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x0000000182BA8D80: 48895c2408               mov      qword ptr [rsp + 8], rbx
+  0x0000000182BA8D85: 57                       push     rdi
+  0x0000000182BA8D86: 4883ec70                 sub      rsp, 0x70
+  0x0000000182BA8D8A: 488bda                   mov      rbx, rdx
+  0x0000000182BA8D8D: 488bf9                   mov      rdi, rcx
+  0x0000000182BA8D90: 4584c0                   test     r8b, r8b
+  0x0000000182BA8D93: 0f848b000000             je       0x182ba8e24
+  0x0000000182BA8D99: e8460f87ff               call     0x182419ce4
+  0x0000000182BA8D9E: 488bc8                   mov      rcx, rax
+  0x0000000182BA8DA1: 4c8b00                   mov      r8, qword ptr [rax]
+  0x0000000182BA8DA4: 41ff9028030000           call     qword ptr [r8 + 0x328]
+  0x0000000182BA8DAB: b201                     mov      dl, 1
+  0x0000000182BA8DAD: 488bc8                   mov      rcx, rax
+  0x0000000182BA8DB0: 4c8b00                   mov      r8, qword ptr [rax]
+  0x0000000182BA8DB3: 4d8b08                   mov      r9, qword ptr [r8]
+  0x0000000182BA8DB6: 41b807000000             mov      r8d, 7
+  0x0000000182BA8DBC: 41ffd1                   call     r9
+  0x0000000182BA8DBF: 488b0dfa2ad801           mov      rcx, qword ptr [rip + 0x1d82afa]
+  0x0000000182BA8DC6: 488b01                   mov      rax, qword ptr [rcx]
+  0x0000000182BA8DC9: ff90a0020000             call     qword ptr [rax + 0x2a0]
+  0x0000000182BA8DCF: 4533c9                   xor      r9d, r9d
+  0x0000000182BA8DD2: 4533c0                   xor      r8d, r8d
+  0x0000000182BA8DD5: ba09100000               mov      edx, 0x1009
+  0x0000000182BA8DDA: 488b08                   mov      rcx, qword ptr [rax]
+  0x0000000182BA8DDD: 4c8b5118                 mov      r10, qword ptr [rcx + 0x18]
+  0x0000000182BA8DE1: 488bc8                   mov      rcx, rax
+  0x0000000182BA8DE4: 41ffd2                   call     r10
+  0x0000000182BA8DE7: 488b0d1a2ad801           mov      rcx, qword ptr [rip + 0x1d82a1a]
+  0x0000000182BA8DEE: 488b01                   mov      rax, qword ptr [rcx]
+  0x0000000182BA8DF1: ff90a0060000             call     qword ptr [rax + 0x6a0]
+  0x0000000182BA8DF7: 488d542420               lea      rdx, [rsp + 0x20]
+  0x0000000182BA8DFC: 48897c2420               mov      qword ptr [rsp + 0x20], rdi
+  0x0000000182BA8E01: 488d4c2430               lea      rcx, [rsp + 0x30]
+  0x0000000182BA8E06: 48895c2428               mov      qword ptr [rsp + 0x28], rbx
+  0x0000000182BA8E0B: e8107e3dff               call     0x181f80c20
+  0x0000000182BA8E10: 4c8bc0                   mov      r8, rax
+  0x0000000182BA8E13: 488d8fb8020000           lea      rcx, [rdi + 0x2b8]
+  0x0000000182BA8E1A: ba913b0000               mov      edx, 0x3b91
+  0x0000000182BA8E1F: e87c6241fe               call     0x180fbf0a0
+  0x0000000182BA8E24: 8b13                     mov      edx, dword ptr [rbx]
+  0x0000000182BA8E26: 488d0dbbe62201           lea      rcx, [rip + 0x122e6bb]
+  0x0000000182BA8E2D: e8ba0de2fe               call     0x1819c9bec
+  0x0000000182BA8E32: 8b5304                   mov      edx, dword ptr [rbx + 4]
+  0x0000000182BA8E35: 488d0d548d2601           lea      rcx, [rip + 0x1268d54]
+  0x0000000182BA8E3C: e8ab0de2fe               call     0x1819c9bec
+  0x0000000182BA8E41: 8b5308                   mov      edx, dword ptr [rbx + 8]
+  0x0000000182BA8E44: 488d0d4d723401           lea      rcx, [rip + 0x134724d]
+  0x0000000182BA8E4B: e89c0de2fe               call     0x1819c9bec
+  0x0000000182BA8E50: 8b530c                   mov      edx, dword ptr [rbx + 0xc]
+  0x0000000182BA8E53: 488d0d2e723401           lea      rcx, [rip + 0x134722e]
+  0x0000000182BA8E5A: e88d0de2fe               call     0x1819c9bec
+  0x0000000182BA8E5F: 8b5310                   mov      edx, dword ptr [rbx + 0x10]
+  0x0000000182BA8E62: 488d0d5f723401           lea      rcx, [rip + 0x134725f]
+  0x0000000182BA8E69: e87e0de2fe               call     0x1819c9bec
+  0x0000000182BA8E6E: 8b5314                   mov      edx, dword ptr [rbx + 0x14]
+  0x0000000182BA8E71: 488d0d38723401           lea      rcx, [rip + 0x1347238]
+  0x0000000182BA8E78: e86f0de2fe               call     0x1819c9bec
+  0x0000000182BA8E7D: 8b5318                   mov      edx, dword ptr [rbx + 0x18]
+  0x0000000182BA8E80: 488d0d79723401           lea      rcx, [rip + 0x1347279]
+  0x0000000182BA8E87: e8600de2fe               call     0x1819c9bec
+  0x0000000182BA8E8C: 8b531c                   mov      edx, dword ptr [rbx + 0x1c]
+  0x0000000182BA8E8F: 488d0d72ab2101           lea      rcx, [rip + 0x121ab72]
+  0x0000000182BA8E96: e8510de2fe               call     0x1819c9bec
+  0x0000000182BA8E9B: 8b5320                   mov      edx, dword ptr [rbx + 0x20]
+  0x0000000182BA8E9E: 488d0d43723401           lea      rcx, [rip + 0x1347243]
+  0x0000000182BA8EA5: e8420de2fe               call     0x1819c9bec
+  0x0000000182BA8EAA: 8b5324                   mov      edx, dword ptr [rbx + 0x24]
+  0x0000000182BA8EAD: 488d0d7c723401           lea      rcx, [rip + 0x134727c]
+  0x0000000182BA8EB4: e8330de2fe               call     0x1819c9bec
+  0x0000000182BA8EB9: 8b5328                   mov      edx, dword ptr [rbx + 0x28]
+  0x0000000182BA8EBC: 488d0d55723401           lea      rcx, [rip + 0x1347255]
+  0x0000000182BA8EC3: e8240de2fe               call     0x1819c9bec
+  0x0000000182BA8EC8: 8b532c                   mov      edx, dword ptr [rbx + 0x2c]
+  0x0000000182BA8ECB: 488d0d8e723401           lea      rcx, [rip + 0x134728e]
+  0x0000000182BA8ED2: e8150de2fe               call     0x1819c9bec
+  0x0000000182BA8ED7: 488b8fa0010000           mov      rcx, qword ptr [rdi + 0x1a0]
+  0x0000000182BA8EDE: 33d2                     xor      edx, edx
+  0x0000000182BA8EE0: 488b01                   mov      rax, qword ptr [rcx]
+  0x0000000182BA8EE3: 488b9c2480000000         mov      rbx, qword ptr [rsp + 0x80]
+  0x0000000182BA8EEB: 4883c470                 add      rsp, 0x70
+  0x0000000182BA8EEF: 5f                       pop      rdi
+  0x0000000182BA8EF0: 48ff6038                 jmp      qword ptr [rax + 0x38]

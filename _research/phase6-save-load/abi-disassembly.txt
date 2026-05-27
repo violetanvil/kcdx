@@ -1,0 +1,346 @@
+ROUND 3 ABI RECON SCRATCH NOTES
+================================
+
+Date:           2026-05-19
+Binary:         WHGame.dll release_1_5_1164953_841
+ImageBase:      0x180000000
+Methodology:    Recursive disassembly via capstone, follow all conditional
+                + unconditional jumps within the function (intra-function
+                only), then enumerate every memory operand with base
+                register in {rsp, rbp, r11} and back-map to
+                entry_rsp+offset.
+
+                Walker handles r11/rbp redefinition: after the epilogue
+                does `lea r11, [rsp + K]`, subsequent [r11+N] reads are
+                register-restore false positives, NOT incoming-arg reads.
+                Same for rbp redefinitions.
+
+Walker:         _research/phase6-save-load/phase6_abi_walker.py
+Raw outputs:    _research/phase6-save-load/_phase6_abi_savegame.txt
+                _research/phase6-save-load/_phase6_abi_loadgame.txt
+                _research/phase6-save-load/_phase6_abi_postload.txt
+                _research/phase6-save-load/_phase6_abi_delete.txt
+
+------------------------------------------------------------
+MSVC x64 ABI slot map (used throughout):
+   entry_rsp+0x00 = return address pushed by `call`
+   entry_rsp+0x08 = arg1 home (rcx)
+   entry_rsp+0x10 = arg2 home (rdx)
+   entry_rsp+0x18 = arg3 home (r8)
+   entry_rsp+0x20 = arg4 home (r9)
+   entry_rsp+0x28 = arg5 (first true stack arg, 8 bytes)
+   entry_rsp+0x30 = arg6
+   entry_rsp+0x38 = arg7
+   entry_rsp+0x40 = arg8
+   ...
+
+============================================================
+#1 C_SaveGameManager::SaveGame @ 0x183581B04
+============================================================
+
+PROLOGUE (8 insns to setup, 18 in total including more nonvols):
+   mov  r11, rsp                # r11 = entry_rsp (snapshot)
+   mov  [r11+0x08], rbx         # save rbx in arg1 home
+   mov  [r11+0x18], rsi         # save rsi in arg3 home
+   mov  [r11+0x20], rdi         # save rdi in arg4 home
+   push rbp; push r12; push r13; push r14; push r15  # -40
+   mov  rbp, rsp                # rbp = entry_rsp - 0x28
+   sub  rsp, 0x50               # rsp = entry_rsp - 0x78
+
+FRAME LAYOUT:
+   rsp final offset from entry_rsp: -0x78
+   rbp final offset from entry_rsp: -0x28
+   r11 final offset from entry_rsp:  0x00 (still mirrors entry_rsp)
+   r11 redefined later at 0x183581BDD (`lea r11, [rsp+0x50]`)
+       — reads through r11 after that are register restores.
+
+INCOMING ARG READS (first read of each slot before any clobber):
+
+  arg1 (entry_rsp+0x08, rcx):
+    0x183581B39  mov  rbx, rcx           # this pointer
+    => C_SaveGameManager*
+
+  arg2 (entry_rsp+0x10, rdx):
+    0x183581B54  mov  r15, rdx           # full 8-byte
+    later passed as rdx to log calls (0x1804d455c, 0x1804f6ac8)
+    => const char* filename
+       (confirmed live in Round 2: "%USER%/saves/playline0/autosave5...")
+
+  arg3 (entry_rsp+0x18, r8):
+    0x183581B43  movzx r12d, r8b         # only low byte
+    later: `xor edx, edi; add edx, edi` arithmetic patterns
+    => uint8_t (ESaveGameReason — only low byte used)
+
+  arg4 (entry_rsp+0x20, r9):
+    0x183581B51  mov  r14b, r9b          # only low byte
+    0x183581B5B  test r9b, r9b           # bool test
+    => uint8_t (bool flag — only low byte used)
+
+  arg5 (entry_rsp+0x28):
+    0x183581C21  mov  r14d, dword ptr [rbp + 0x50]
+    used: `mov dword ptr [rbx+0x744], eax`, `mov [rbx+0x748], r14d`
+          where rbx = this. So this writes through to member fields.
+    => uint32_t (some kind of slot or session id)
+
+  arg6 (entry_rsp+0x30):
+    0x183581B23  mov  dil, byte ptr [rbp + 0x58]    # 1 byte
+    0x183581B47  test dil, dil                       # bool test
+    used as a guard throughout the body.
+    => uint8_t (boolean flag — THE [rbp+0x58] read the workspace
+       notes flagged)
+
+  arg7 (entry_rsp+0x38):
+    0x183581B2E  mov  rsi, qword ptr [rbp + 0x60]   # 8 bytes
+    immediately saved to `[r11-0x40]` (local frame)
+    later passed to fmt-print call 0x1804d455c (as `rdx`)
+    AT 0x183581D31:   test rsi, rsi
+    AT 0x183581D34:   lea  rcx, [rip + 0x4ba4a5]   # literal string
+    AT 0x183581D3B:   cmove rsi, rcx                # if NULL, use literal
+    => const char* (the NULL-fallback to a string literal is strong
+       evidence it's a string pointer, likely a save description/label)
+    NOTE: the body ALSO uses the address `[rbp+0x60]` later as a
+    scratch buffer (`lea rcx, [rbp+0x60]` passed to subcall, then
+    `cmp byte ptr [rbp+0x64], r13b`). But the FIRST read at
+    0x183581B2E is unambiguously consuming the incoming arg7 value.
+
+  arg8 and beyond (entry_rsp+0x40+):
+    [r11+0x40] and [r11+0x48] reads at 0x183581BE6 and 0x183581BEA
+    appear in the epilogue AFTER `lea r11, [rsp+0x50]` redefines r11
+    (r11 = entry_rsp - 0x28 at that point). They resolve to
+    entry_rsp+0x18 and entry_rsp+0x20 = home slots for rsi/rdi
+    saved by the prologue. THESE ARE REGISTER RESTORES, NOT ARG
+    READS.
+
+UPPER BOUND VERIFICATION:
+  Enumerated every memory op with base in {rsp, rbp, r11} in the
+  body (215 visited insns). Highest non-restore positive rbp
+  displacement is `rbp + 0x64` (= entry_rsp + 0x3C, second half of
+  arg7's 8-byte slot). No rbp+0x68 or higher reads. The function
+  consumes arg7 once at function-entry, then reuses [rbp+0x60..0x68]
+  as a stack-local scratch buffer.
+
+FINAL: SaveGame takes 7 arguments.
+
+  using SaveGame_t = char (__fastcall*)(
+      void* /*this*/,                   // arg1 rcx — C_SaveGameManager*
+      const char* /*filename*/,         // arg2 rdx — ASCII path
+      uint8_t /*reason*/,               // arg3 r8 (low byte) — ESaveGameReason
+      uint8_t /*flag1*/,                // arg4 r9 (low byte) — bool
+      uint32_t /*arg5*/,                // arg5 [rsp+0x28] — slot/session id
+      uint8_t /*flag2*/,                // arg6 [rsp+0x30] — bool (was [rbp+0x58])
+      const char* /*description*/       // arg7 [rsp+0x38] — string (NULL-fallback)
+  );
+
+  Return type: function ends with `mov al, dil` then ret — returns
+  a 1-byte bool. Use `char` or `uint8_t` as return type.
+
+
+============================================================
+#2 C_SaveGameManager::LoadGame_wrapper @ 0x1825BCEEC
+============================================================
+
+PROLOGUE (7 insns):
+   mov  [rsp+0x08], rbx        # save rbx in arg1 home (=entry_rsp+0x08)
+   mov  [rsp+0x10], rsi        # save rsi in arg2 home
+   push rdi                    # -8
+   sub  rsp, 0x20              # -0x20
+   mov  ebx, r8d               # arg3 reason -> ebx
+   mov  edi, edx               # arg2 -> edi
+   mov  rsi, rcx               # arg1 this -> rsi
+
+FRAME LAYOUT:
+   rsp final offset from entry_rsp: -0x28
+   rbp:    not used as frame pointer (None)
+   r11:    not used (None)
+
+INCOMING ARG READS:
+
+  arg1 (rcx):
+    0x1825BCF00  mov  rsi, rcx
+    => void* this  (C_SaveGameManager*, vtable 0x7FFCF60183B0 per Round 2)
+
+  arg2 (rdx):
+    0x1825BCEFE  mov  edi, edx           # 4-byte
+    later: `mov edx, edi` to pass to call 0x1825BD1BC
+    => uint32_t  (always 0 at runtime per Round 2, but slot is read
+       as 32-bit and forwarded — type is uint32_t, not a pointer)
+
+  arg3 (r8):
+    0x1825BCEFB  mov  ebx, r8d           # 4-byte
+    later: `mov r8d, ebx` forwarded to call 0x1825BD1BC
+    => uint32_t  (the reason: observed values 0x61, 0x63, 0x64)
+
+  arg4 (r9): NEVER READ. r9 is not touched in the body.
+
+UPPER BOUND VERIFICATION:
+  42 instructions in total, body is a thin wrapper. No reads at
+  rsp+0x28 (arg5 stack slot) or higher. Reads at [rsp+0x30] and
+  [rsp+0x38] in the epilogue (0x1825BCF83, 0x1825BCF88) resolve
+  to entry_rsp+0x08 and entry_rsp+0x10 = arg1/arg2 home slots
+  where the prologue saved rbx/rsi. Register restores, NOT arg
+  reads.
+
+FINAL: LoadGame_wrapper takes 3 arguments.
+
+  using LoadGame_wrapper_t = char (__fastcall*)(
+      void* /*this*/,        // arg1 rcx — C_SaveGameManager-owner instance
+      uint32_t /*arg2*/,     // arg2 rdx (32-bit slot) — observed 0 live
+      uint32_t /*reason*/    // arg3 r8d — ELoadGameReason (0x61/0x63/0x64)
+  );
+
+  Return type: function ends with `mov al, bl` then ret — returns
+  a 1-byte bool. Use `char` or `uint8_t`.
+
+
+============================================================
+#3 C_SaveGameManager::PostLoadGame @ 0x1825BCF94
+============================================================
+
+PROLOGUE (11 insns):
+   mov  [rsp+0x10], rbx        # save rbx in arg2 home
+   push rbp; push rsi; push rdi; push r14; push r15  # -40
+   lea  rbp, [rsp - 0x37]      # rbp = (entry_rsp - 0x28) - 0x37 = entry_rsp - 0x5F
+   sub  rsp, 0x90              # rsp = entry_rsp - 0xB8
+   mov  rdi, r8                # arg3 ptr -> rdi
+   mov  ebx, edx               # arg2 32-bit -> ebx
+   mov  rsi, rcx               # arg1 this -> rsi
+
+FRAME LAYOUT:
+   rsp final offset from entry_rsp: -0xB8
+   rbp final offset from entry_rsp: -0x5F
+   r11: not used
+
+INCOMING ARG READS:
+
+  arg1 (rcx):
+    0x1825BCFB1  mov  rsi, rcx
+    => void* this  (C_SaveGameManager*, same vtable as inner LoadGame)
+
+  arg2 (rdx):
+    0x1825BCFAF  mov  ebx, edx           # 4-byte
+    later: `mov dword ptr [rsi+0x188], ebx` (writes to a this-member)
+    => uint32_t
+
+  arg3 (r8):
+    0x1825BCFAC  mov  rdi, r8            # full 8-byte ptr
+    later: `mov edx, dword ptr [rdi+0x78]`     # reads 4 bytes at +0x78
+           `mov eax, dword ptr [rdi+0x54]`     # reads 4 bytes at +0x54
+    => void* (object pointer with vtable per Round 2)
+
+  arg4 (r9): NEVER READ. r9 is xor'd zero later (`xor r9d, r9d`)
+              but never read as incoming.
+
+UPPER BOUND VERIFICATION:
+  125 instructions in body. All [rbp+N] reads with positive N
+  resolve to slots [rbp+0x67] and [rbp+0x77] which are
+  entry_rsp+0x08 and entry_rsp+0x18 (= arg1/arg3 home slots).
+  These are used as a local *scratch buffer*: the function calls
+  0x1804f692c with `rcx = lea[rbp+0x67]` which fills the buffer,
+  then `mov rcx, [rbp+0x67]` reads back the buffer-pointer the
+  callee just wrote. These are SCRATCH USES of the home slots,
+  NOT incoming-arg reads (the function never wrote arg1/arg3 to
+  those slots; they have undefined incoming values for this
+  function because rcx/r8 went to registers).
+
+  The [rsp+0xC8] read at 0x1825BD1A5 in the epilogue is the
+  register restore of rbx (saved at entry_rsp+0x10).
+
+  No reads at entry_rsp+0x28 or above.
+
+FINAL: PostLoadGame takes 3 arguments.
+
+  using PostLoadGame_t = char (__fastcall*)(
+      void* /*this*/,        // arg1 rcx — C_SaveGameManager*
+      uint32_t /*arg2*/,     // arg2 rdx — 32-bit, written to this+0x188
+      void* /*arg3*/         // arg3 r8 — pointer to context object
+  );
+
+  Return type: function ends with `mov al, r14b` or `xor al, al` —
+  returns a 1-byte bool. Use `char`.
+
+
+============================================================
+#4 C_SaveGameManager::DeleteSavegame @ 0x1825BC510
+============================================================
+
+PROLOGUE (11 insns):
+   mov  [rsp+0x08], rbx        # save rbx in arg1 home
+   mov  [rsp+0x10], rbp        # save rbp in arg2 home
+   mov  [rsp+0x18], rsi        # save rsi in arg3 home
+   push rdi; push r14; push r15  # -24
+   sub  rsp, 0x40              # -0x40
+   movsxd rbp, edx             # arg2: edx sign-extended to rbp (64-bit)
+   mov  r15d, r8d              # arg3 -> r15d (32-bit)
+   mov  edx, ebp               # set up edx for next call (=arg2)
+   mov  rsi, rcx               # arg1 this -> rsi
+
+FRAME LAYOUT:
+   rsp final offset from entry_rsp: -0x58
+   rbp: redefined as a local var (not frame ptr); walker detects
+        redef at 0x1825BC605
+   r11: not used
+
+INCOMING ARG READS:
+
+  arg1 (rcx):
+    0x1825BC530  mov  rsi, rcx
+    => void* this
+
+  arg2 (rdx):
+    0x1825BC528  movsxd rbp, edx        # SIGNED 32->64 sign-extend
+    used: `lea rcx, [rbp*8 + 1]; add rcx, rbp; lea rcx, [rsi+rcx*8]`
+          (compute array offset from rbp). The sign-extension
+          means edx is treated as a signed index.
+    => int32_t (signed)
+
+  arg3 (r8):
+    0x1825BC52B  mov  r15d, r8d          # 4-byte
+    later: passed to sub-calls as `mov edx, r15d` or `mov r8d, r15d`
+    => uint32_t
+
+  arg4 (r9): NEVER READ. r9 is used as scratch (`mov r9, [rcx+0x98]`)
+             but never read incoming.
+
+UPPER BOUND VERIFICATION:
+  71 instructions in body. The [rsp+0x78] reads at 0x1825BC564,
+  0x1825BC57B, 0x1825BC5F3 resolve to entry_rsp+0x20 = arg4 home
+  slot. The function takes its address (`lea rdx, [rsp+0x78]`),
+  passes it to call 0x1825BCC18 which fills the slot, then reads
+  back via `mov rdx, [rsp+0x78]`. This is SCRATCH USE of arg4
+  home, not an incoming-arg4 read.
+
+  [rsp+0x60], [rsp+0x68], [rsp+0x70] reads at the epilogue
+  (0x1825BC600, 605, 60A) resolve to entry_rsp+0x08, +0x10, +0x18
+  = home slots where rbx/rbp/rsi were saved. Register restores.
+
+  No reads at entry_rsp+0x28 or above.
+
+FINAL: DeleteSavegame takes 3 arguments.
+
+  using DeleteSavegame_t = char (__fastcall*)(
+      void* /*this*/,        // arg1 rcx — C_SaveGameManager*
+      int32_t /*slot*/,      // arg2 edx — SIGNED (movsxd) slot/playline index
+      uint32_t /*flags*/     // arg3 r8d — second 32-bit (reason/flags)
+  );
+
+  Return type: function ends with `mov al, dil` then ret —
+  returns 1-byte bool.
+
+
+============================================================
+SUMMARY TABLE
+============================================================
+
+                       | Arg count | Return | Type-confident?
+SaveGame               |     7     | char   | yes (live filename + body)
+LoadGame_wrapper       |     3     | char   | yes
+PostLoadGame           |     3     | char   | yes
+DeleteSavegame         |     3     | char   | yes (arg2 signed via movsxd)
+
+Original Round 2 dossier predicted:
+  SaveGame:          3 args  -> WRONG, was missing 4 stack args (corrupted saves)
+  LoadGame_wrapper:  3 args  -> CORRECT
+  PostLoadGame:      3 args  -> CORRECT
+  DeleteSavegame:    3 args  -> CORRECT
+
+The SaveGame correction is the critical fix.

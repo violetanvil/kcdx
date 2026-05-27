@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kcd_mod>
+	<info>
+		<name>Lua Sandbox Probe</name>
+		<description>Diagnostic probe — logs what's reachable from pak Lua's global table. Remove after reading kcd.log.</description>
+		<author>VioletAnvil</author>
+		<version>1.0.0</version>
+		<modid>lua_sandbox_probe</modid>
+		<created_on>2026-05-18</created_on>
+	</info>
+</kcd_mod>

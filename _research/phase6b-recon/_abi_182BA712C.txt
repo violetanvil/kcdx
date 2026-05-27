@@ -1,0 +1,80 @@
+=== Function @ 0x0000000182BA712C ===
+  Visited 43 unique addresses, extent 0x182BA712C..0x182BA7A42
+
+--- Linear disassembly (prologue + body in addr order) ---
+  Prologue insns: 9
+  Final rsp offset from entry_rsp: -56 (-0x38)
+  rbp offset from entry_rsp: None
+  r11 offset from entry_rsp: None
+
+  r11 redefined at: never (still mirrors entry_rsp)
+  rbp redefined at: never (stable post-prologue)
+
+--- Memory operands referencing rsp/rbp/r11 ---
+
+--- Incoming-arg slot accesses (entry_rsp+offset) ---
+
+MSVC x64 ABI slot map:
+  +0x08  = arg1 home (rcx)
+  +0x10  = arg2 home (rdx)
+  +0x18  = arg3 home (r8)
+  +0x20  = arg4 home (r9)
+  +0x28  = arg5 stack
+  +0x30  = arg6 stack
+  +0x38  = arg7 stack
+  +0x40  = arg8 stack
+
+  entry_rsp+0x28  (arg #5):
+    [read ] 0x182BA7A20: <CsInsn 0x182ba7a20 [488d4c2460]: lea rcx, [rsp + 0x60]>  (width=8B, via rsp)
+
+  entry_rsp+0x88  (arg #17):
+    [read ] 0x182BA7A10: <CsInsn 0x182ba7a10 [488d9424c0000000]: lea rdx, [rsp + 0xc0]>  (width=8B, via rsp)
+    [write] 0x182BA7A18: <CsInsn 0x182ba7a18 [4c899424c0000000]: mov qword ptr [rsp + 0xc0], r10>  (width=8B, via rsp)
+
+
+======================================================================
+FULL DISASSEMBLY (sorted address order)
+======================================================================
+  0x0000000182BA712C: 4053                     push     rbx
+  0x0000000182BA712E: 4883ec30                 sub      rsp, 0x30
+  0x0000000182BA7132: 4863c2                   movsxd   rax, edx
+  0x0000000182BA7135: 488bd9                   mov      rbx, rcx
+  0x0000000182BA7138: 488b4968                 mov      rcx, qword ptr [rcx + 0x68]
+  0x0000000182BA713C: 4c8d0cc0                 lea      r9, [rax + rax*8]
+  0x0000000182BA7140: 488b4148                 mov      rax, qword ptr [rcx + 0x48]
+  0x0000000182BA7144: 4e8b54c810               mov      r10, qword ptr [rax + r9*8 + 0x10]
+  0x0000000182BA7149: 4e2b54c808               sub      r10, qword ptr [rax + r9*8 + 8]
+  0x0000000182BA714E: 49c1fa03                 sar      r10, 3
+  0x0000000182BA7152: 453bc2                   cmp      r8d, r10d
+  0x0000000182BA7155: 7c14                     jl       0x182ba716b
+  0x0000000182BA7157: e8006ca1ff               call     0x1825bdd5c
+  0x0000000182BA715C: 33d2                     xor      edx, edx
+  0x0000000182BA715E: 488bcb                   mov      rcx, rbx
+  0x0000000182BA7161: 4883c430                 add      rsp, 0x30
+  0x0000000182BA7165: 5b                       pop      rbx
+  0x0000000182BA7166: e98d080000               jmp      0x182ba79f8
+  0x0000000182BA716B: 488d4c2420               lea      rcx, [rsp + 0x20]
+  0x0000000182BA7170: 48895c2420               mov      qword ptr [rsp + 0x20], rbx
+  0x0000000182BA7175: 89542428                 mov      dword ptr [rsp + 0x28], edx
+  0x0000000182BA7179: 448944242c               mov      dword ptr [rsp + 0x2c], r8d
+  0x0000000182BA717E: e8cd313eff               call     0x181f8a350
+  0x0000000182BA7183: 4883c430                 add      rsp, 0x30
+  0x0000000182BA7187: 5b                       pop      rbx
+  0x0000000182BA7188: c3                       ret      
+  0x0000000182BA79F8: 4881eca8000000           sub      rsp, 0xa8
+  0x0000000182BA79FF: 4c8bd1                   mov      r10, rcx
+  0x0000000182BA7A02: 84d2                     test     dl, dl
+  0x0000000182BA7A04: 7534                     jne      0x182ba7a3a
+  0x0000000182BA7A06: 488d4c2420               lea      rcx, [rsp + 0x20]
+  0x0000000182BA7A0B: e83ca19bfd               call     0x180561b4c
+  0x0000000182BA7A10: 488d9424c0000000         lea      rdx, [rsp + 0xc0]
+  0x0000000182BA7A18: 4c899424c0000000         mov      qword ptr [rsp + 0xc0], r10
+  0x0000000182BA7A20: 488d4c2460               lea      rcx, [rsp + 0x60]
+  0x0000000182BA7A25: 4c8bc8                   mov      r9, rax
+  0x0000000182BA7A28: e8f38e3dff               call     0x181f80920
+  0x0000000182BA7A2D: 4c8bc0                   mov      r8, rax
+  0x0000000182BA7A30: b210                     mov      dl, 0x10
+  0x0000000182BA7A32: 498bca                   mov      rcx, r10
+  0x0000000182BA7A35: e84adbffff               call     0x182ba5584
+  0x0000000182BA7A3A: 4881c4a8000000           add      rsp, 0xa8
+  0x0000000182BA7A41: c3                       ret      

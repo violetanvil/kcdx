@@ -1,0 +1,111 @@
+name,rva,va,confidence,evidence
+lua_pcall,0x71A5A4,0x18071A5A4,verified,yobson1 anchor + AOB sig matches uniquely in WHGame.dll (release_1_5_1164953_841); cross-confirmed: called from luaB_pcall and luaB_xpcall
+luaD_pcall,0x71A628,0x18071A628,verified,call-graph from lua_pcall hot path + body-shape match against source (thin wrapper around luaD_rawrunprotected with PGO-split error path)
+luaD_rawrunprotected,0x71A6A8,0x18071A6A8,verified,call-graph from luaD_pcall + body-shape match against source (calls _setjmp; LUAI_TRY pattern visible)
+lua_xmove,0x39932DC,0x183932DC,verified,auxresume in lbaselib.c calls lua_xmove 3x; cross-confirmed in db_getlocal + db_setlocal + db_sethook
+lua_checkstack,0xB9CC48,0x180B9CC48,verified,body-shape match: computes (L->top - L->base) + size > LUAI_MAXCSTACK with constant 0x800 (= CryEngine's LUAI_MAXCSTACK=2048); also called 2x from auxresume
+lua_resume,0x39966A4,0x183966A4,high,auxresume calls lua_resume once after lua_xmove#1
+luaL_error,0x399375C,0x18399375C,verified,cross-confirmed: str_dump + auxresume + tinsert all reach the same RVA
+luaL_checktype,0x71A0D8,0x18071A0D8,verified,cross-confirmed across str_dump + luaB_next + luaB_rawget + luaB_rawset + tconcat + tinsert + tremove + db_sethook
+lua_settop,0x71E77C,0x18071E77C,verified,cross-confirmed across str_dump + luaB_next + luaB_rawget + luaB_rawset + luaB_error + luaB_setmetatable + luaB_xpcall + db_setlocal + db_sethook
+lua_dump,0x3996EE4,0x183996EE4,verified,call site in str_dump immediately before "unable to dump given function" string load
+luaL_pushresult,0x1323664,0x181323664,high,call site in str_dump immediately after luaL_error and before security_check_cookie
+lua_next,0x71F4BC,0x18071F4BC,verified,third call in luaB_next body matching final lua_next(L, 1) in source
+luaL_checkany,0xB9CE94,0x180B9CE94,verified,cross-confirmed across luaB_rawget + luaB_rawset + luaB_rawequal + luaB_type + luaB_getmetatable + luaB_pcall + luaB_xpcall + luaB_tostring + luaB_tonumber + luaB_unpack + db_setlocal
+lua_rawget,0x718464,0x180718464,verified,fourth call in luaB_rawget matching final lua_rawget(L, 1) in source
+lua_rawset,0x720738,0x180720738,verified,fifth call in luaB_rawset matching final lua_rawset(L, 1) in source; cross-confirmed in db_sethook
+lua_rawequal,0x3993178,0x183993178,verified,third call in luaB_rawequal with 3 args (L, 1, 2); lua_pushboolean inlined
+lua_type,0x71CA90,0x18071CA90,verified,second call in luaB_type body + first call in luaB_setmetatable + part of luaB_tostring switch dispatch + db_sethook
+lua_typename,0xB9CE78,0x180B9CE78,high,third call in luaB_type body matching luaL_typename macro = lua_typename(L, lua_type(L,i))
+lua_pushstring,0x71EF54,0x18071EF54,verified,fourth call in luaB_type body with rcx=L rdx=string (2 args); matches lua_pushstring(L, luaL_typename(...)) exactly
+lua_pushlstring,0x71E46C,0x18071E46C,verified,db_gethook calls it with rcx=L rdx="external hook" r8=13 (length); auxresume calls it with rcx=L rdx="cannot resume dead coroutine" r8=0x1C (length 28) — PGO specialized the original lua_pushfstring at compile time to lua_pushlstring with the literal. CORRECTS earlier wrong tag as lua_pushfstring.
+lua_getmetatable,0x71E4D4,0x18071E4D4,verified,second call in luaB_getmetatable body matching if (!lua_getmetatable(L, 1)) check
+luaL_getmetafield,0x16546F8,0x1816546F8,verified,third call in luaB_getmetatable body matching luaL_getmetafield(L, 1, "__metatable"); cross-confirmed via inlined luaL_callmeta in luaB_tostring
+lua_iscfunction,0x39930A4,0x1839930A4,verified,call in luaB_getfenv with (L, -1); cross-confirmed in luaB_setfenv
+lua_pushvalue,0x71F100,0x18071F100,verified,call in luaB_getfenv with edx=0xFFFFD8EE (= -10002 = LUA_GLOBALSINDEX); matches lua_pushvalue(L, LUA_GLOBALSINDEX); cross-confirmed in luaB_setfenv + luaB_tostring + db_getlocal + db_sethook
+lua_getfenv,0x3992FFC,0x183992FFC,verified,else branch of luaB_getfenv with edx=-1; matches lua_getfenv(L, -1)
+luaL_optinteger,0xB9CA08,0x180B9CA08,verified,first call in luaB_error matching luaL_optint macro = (int)luaL_optinteger(L, 2, 1); cross-confirmed in luaB_tonumber + luaB_collectgarbage + tremove + db_sethook
+lua_isstring,0x39930CC,0x1839930CC,verified,third call in luaB_error body matching the lua_isstring(L, 1) check
+luaL_where,0x3993B70,0x183993B70,verified,fourth call in luaB_error body matching luaL_where(L, level)
+lua_concat,0x13236D0,0x1813236D0,verified,sixth call in luaB_error body matching lua_concat(L, 2)
+lua_error,0x399605C,0x18399605C,verified,seventh and final call in luaB_error body matching return lua_error(L)
+lua_setmetatable,0x71F128,0x18071F128,verified,fifth call in luaB_setmetatable body matching lua_setmetatable(L, 1) (after lua_type/checktype/getmetafield/settop)
+lua_insert,0x71A49C,0x18071A49C,verified,cross-confirmed: luaB_pcall (after pcall) + luaB_xpcall (between settop and pcall); both match source's lua_insert call
+lua_call,0x144965C,0x18144965C,verified,inlined luaL_callmeta in luaB_tostring: after luaL_getmetafield returns true the code does lua_pushvalue(L, obj); lua_call(L, 1, 1) — the call here is lua_call
+luaL_checknumber,0x1250AC4,0x181250AC4,verified,first call in math_floor (and many other math_* wrappers) with (L, 1); each math_X is luaL_checknumber + CRT math fn + inlined lua_pushnumber; cross-confirmed in math_pow which calls it 2x
+luaL_optlstring,0x3993AA4,0x183993AA4,verified,first call in tconcat with (L, 2, "", &lsep) matching luaL_optstring expansion
+lua_objlen,0xB9D764,0x180B9D764,verified,reached via luaL_getn macro in tconcat + tremove + tinsert; also directly from table getn wrapper
+luaL_checkinteger,0xB9CAB4,0x180B9CAB4,verified,reached via luaL_checkint macro in tconcat + tinsert + tremove + db_getlocal + db_setlocal
+lua_rawgeti,0x71D06C,0x18071D06C,verified,fourth call in tconcat (the loop body lua_rawgeti(L, 1, i)); cross-confirmed in tinsert + tremove
+lua_rawseti,0xB9C2A4,0x180B9C2A4,verified,reached 2x in tinsert (the swap loop) + 2x in tremove (the shift loop) — matches source
+lua_getstack,0xCAE9A8,0x180CAE9A8,verified,call in db_getlocal + db_setlocal after the luaL_checkint(L, arg+1) call; matches if (!lua_getstack(L1, n, &ar))
+luaL_argerror,0x399355C,0x18399355C,verified,error path of db_getlocal + db_setlocal after !lua_getstack — return luaL_argerror(L, arg+1, "level out of range")
+lua_getlocal,0x3996250,0x183996250,verified,call in db_getlocal after the second luaL_checkint(L, arg+2); matches lua_getlocal(L1, &ar, n)
+lua_setlocal,0x39962B8,0x1839962B8,verified,call in db_setlocal after lua_xmove(L, L1, 1); matches lua_setlocal(L1, &ar, luaL_checkint(L, arg+2))
+lua_sethook,0xA2DA68,0x180A2DA68,verified,call in db_sethook with 4 args (L1, hookf, mask, count); matches lua_sethook signature exactly
+luaL_checklstring,0xB9C9BC,0x180B9C9BC,verified,call in db_sethook matching luaL_checkstring macro = luaL_checklstring(L, n, NULL); cross-confirmed in str_rep + str_len
+luaL_addlstring,0xB9D8E4,0x180B9D8E4,verified,call inside str_rep's repeat loop after the buffer was initialized inline; matches luaL_addlstring(&b, s, l) with rcx=&buffer rdx=s r8=l (3 args)
+luaL_findtable,0xADB058,0x180ADB058,verified,first call in luaopen_math with edx=-10000 (LUA_REGISTRYINDEX) r8="_LOADED" r9d=size; matches luaL_findtable signature; called again in same fn with edx=LUA_GLOBALSINDEX
+lua_getfield,0xADB44C,0x180ADB44C,verified,second call in luaopen_math matching lua_getfield(L, -1, libname); 3 args (L, idx, k)
+lua_setfield,0xA2D840,0x180A2D840,verified,call in luaopen_math's library setup matching lua_setfield(L, -3, libname); cross-confirmed in luaopen_math's lua_setfield(L, -3, "pi") and "huge"
+lua_remove,0x71A4E4,0x18071A4E4,verified,call in luaopen_math matching lua_remove(L, -2) (removes _LOADED table after registering); cross-confirmed in db_gethook
+lua_pushcclosure,0xB9D11C,0x180B9D11C,verified,call inside luaopen_math's library-population loop matching lua_pushcclosure(L, l->func, 0) (the upvalue copy loop is skipped because nup=0)
+luaopen_base,0x12DA578,0x1812DA578,verified,lualibs[] entry 0 — empty name maps to luaopen_base in linit.c
+luaopen_package,0x12DAF40,0x1812DAF40,verified,lualibs[] entry 1 — "package" → luaopen_package
+luaopen_table,0xD815A4,0x180D815A4,verified,lualibs[] entry 2 — "table" → luaopen_table
+luaopen_io,0x3B70F0,0x1803B70F0,verified,lualibs[] entry 3 — "io" → luaopen_io
+luaopen_os,0x19DFD0C,0x1819DFD0C,verified,lualibs[] entry 4 — "os" → luaopen_os
+luaopen_string,0x12DAC38,0x1812DAC38,verified,lualibs[] entry 5 — "string" → luaopen_string
+luaopen_math,0x9299AC,0x1809299AC,verified,lualibs[] entry 6 — "math" → luaopen_math; cross-walked above for register/findtable/etc.
+luaopen_debug,0x7A671C,0x1807A671C,verified,lualibs[] entry 7 — "debug" → luaopen_debug
+lua_createtable,0x71F098,0x18071F098,verified,call in base_open after the auxopen pair matching lua_createtable(L, 0, 1) for the newproxy weak table
+lua_pushfstring,0x3993134,0x183993134,verified,called 5+ times in db_traceback with format-string args (variadic call pattern); each call site loads a format string (e.g. "%s:" "%d:" " in function " LUA_QS) — matches the multiple lua_pushfstring sites in db_errorfb's traceback-building loop
+lua_getinfo,0xCAEA88,0x180CAEA88,verified,call in db_traceback after lua_getstack with rdx="Snl" — matches lua_getinfo(L1, "Snl", &ar) in the traceback loop
+lua_tointeger,0xB9CAFC,0x180B9CAFC,verified,call near top of db_traceback matching (int)lua_tointeger(L, arg+2); cross-confirmed in db_getinfo
+lua_tolstring,0x71F6A8,0x18071F6A8,verified,call in db_getinfo after lua_pushfstring(L, ">%s", options) matching options = lua_tostring(L, -1) which expands via macro to lua_tolstring(L, -1, NULL)
+lua_setfenv,0x39931C0,0x1839931C0,verified,third call in db_setfenv after luaL_checktype + lua_settop matching if (lua_setfenv(L, 1) == 0); cross-confirmed in luaB_setfenv
+lua_getupvalue,0x3993060,0x183993060,verified,call in auxupvalue's "get" path (test edi != 0 fall-through) with rcx=L edx=1; source: name = get ? lua_getupvalue(L, 1, n) : lua_setupvalue(L, 1, n)
+lua_setupvalue,0x3993244,0x183993244,verified,call in auxupvalue's "set" path (test edi != 0 taken to jump) with same args; ternary other branch
+lua_toboolean,0xB9C1AC,0x180B9C1AC,verified,body-shape match: calls index2adr (0x71DD7C) then cmp [rax+8] 0 (LUA_TNIL → return 0); cmp eax 1 (LUA_TBOOLEAN check) then checks bvalue; exact match for lua_toboolean source
+lua_isnumber,0x41C230,0x18041C230,verified,body-shape match: calls index2adr (0x71DD7C) then cmp [rax+8] 3 (LUA_TNUMBER → return 1); fast-path for lua_isnumber
+luaL_checkstack,0xB9CC20,0x180B9CC20,verified,call in luaB_unpack matching luaL_checkstack(L, n, "too many results to unpack") (4 args)
+index2adr,0x71DD7C,0x18071DD7C,verified,target of lua_pcall's first call (lapi.c static helper); also called from lua_toboolean + lua_isnumber + many other LUA_API functions. NOT part of API surface (internal); recorded so other walks can identify and skip it.
+lua_load,0x13E14D8,0x1813E14D8,verified,call in luaB_loadstring (after luaL_checklstring + luaL_optstring with the LoadS struct set up in stack); function calls luaD_pcall (via luaD_protectedparser) — matches the lua_load implementation
+luaL_loadfile,0x3993898,0x183993898,verified,second call in luaB_loadfile (after luaL_optstring) with the filename arg; matches the 1-line wrapper around the file-reading + lua_load
+lua_gc,0xA2D8B8,0x180A2D8B8,verified,called 2x in luaB_collectgarbage matching source's 2 lua_gc invocations (one for the main op, one for GCCOUNTB in the GCCOUNT case)
+luaL_checkoption,0x3993638,0x183993638,verified,first call in luaB_collectgarbage matching luaL_checkoption(L, 1, "collect", opts)
+lua_tonumber,0x41C200,0x18041C200,verified,call in luaB_setfenv after lua_isnumber check matching lua_tonumber(L, 1); returns xmm0 (float per CryEngine's LUA_NUMBER=float)
+luaL_prepbuffer,0x3993B00,0x183993B00,verified,call in str_gsub main loop with single arg (luaL_Buffer*) when buffer needs refilling; matches luaL_prepbuffer signature
+str_format,0xB9BF60,0x180B9BF60,verified,strlib[].format entry from .rdata table (full 15-entry strlib decoded directly from VAs)
+str_byte,0x3999000,0x183999000,verified,strlib[].byte entry
+str_char,0x3999104,0x183999104,verified,strlib[].char entry
+str_find,0x3999298,0x183999298,verified,strlib[].find entry
+str_dump,0x39991E8,0x1839991E8,verified,strlib[].dump entry (already used as anchor for the earlier harvest)
+str_gfind,0x3998DAC,0x183998DAC,verified,strlib[].gfind entry
+str_gmatch,0xB9C4AC,0x180B9C4AC,verified,strlib[].gmatch entry
+str_gsub,0x39992A4,0x1839992A4,verified,strlib[].gsub entry
+str_len,0xB9C468,0x180B9C468,verified,strlib[].len entry
+str_lower,0x132359C,0x18132359C,verified,strlib[].lower entry
+str_match,0xB9C638,0x180B9C638,verified,strlib[].match entry
+str_rep,0x3999470,0x183999470,verified,strlib[].rep entry (anchor for luaL_addlstring identification)
+str_reverse,0x399951C,0x18399951C,verified,strlib[].reverse entry
+str_sub,0x162BA98,0x18162BA98,verified,strlib[].sub entry
+str_upper,0x39995E0,0x1839995E0,verified,strlib[].upper entry
+lua_lessthan,0x39930E8,0x1839930E8,verified,sort_comp's cold path (when comparator nil) tail-jumps to lua_lessthan; the cold-path call after je at 0x3999C95 → 0x3999CE9 → call rel32 to 0x39930E8; the function calls index2adr 2x and tail-jmps to luaV_lessthan @ 0x71A1B4 (verified by type-cmp + comiss float compare). lua_equal still unidentified — likely needs different anchor since it's called from OP_EQ bytecode rather than stdlib C.
+os_clock,0x39986C0,0x1839986C0,verified,syslib[].clock entry — CryEngine os library has only {time, clock}; os.execute/os.remove/os.getenv/etc. all stripped. Cannot be used to find LUA_API since the body inlines lua_pushnumber.
+os_time,0x19DB6D8,0x1819DB6D8,verified,syslib[].time entry — same stub-level body as os_clock
+lua_tothread,0x39932C0,0x1839932C0,verified,first call in luaB_costatus matching lua_State *co = lua_tothread(L, 1); 2-arg call (L, 1); cross-confirmed via luaB_coresume which uses lua_tothread first
+lua_newthread,,, MISIDENTIFIED,The earlier ID of 0x71FCE8 was incorrect. 0x71FCE8 is luaC_step (internal GC stepper) — verified by its body shape: reads g->totalbytes/threshold via [L+0x20]+offsets, calls 0x71FDAC (luaC_singlestep). luaB_cocreate's apparent lua_newthread call was actually the inlined-lua_newthread's call to luaC_checkGC (which the macro expands to luaC_step). lua_newthread itself is now UNIDENTIFIED — likely inlined into luaB_cocreate. luaC_step is an internal helper not part of LUA_API.
+luaC_step,0x71FCE8,0x18071FCE8,verified,GC stepper. Internal helper (not LUA_API). Called from inlined luaC_checkGC macros throughout lapi.c. Body reads g->totalbytes/GCthreshold then dispatches.
+luaO_pushvfstring,0x399838C,0x18399838C,verified,Internal varargs vformat helper (not LUA_API). Called from lua_pushfstring at 0x399316B AFTER the inlined lua_pushvfstring's luaC_checkGC. Plugin shim that wants lua_pushvfstring should call this directly + handle GC manually.
+lua_topointer,0x71F1F8,0x18071F1F8,verified,Body matches lua_topointer source: index2adr; cmp ttype against 2 (LUA_TLIGHTUSERDATA) → tail-jmp to lua_touserdata; else cmp against 5/6/7 (TABLE/FUNCTION/THREAD) → return [rax] (the GC pointer). Branch structure: ttype-dispatch on a switch.
+lua_settable,0x71E7C0,0x18071E7C0,verified,Body matches lua_settable source: index2adr; compute L->top-2 and L->top-1; call luaV_settable (0x71CCF0) with (L, t, L->top-2, L->top-1); then L->top -= 2. Four-arg internal helper call after stack-pointer arithmetic is the lua_settable signature.
+luaG_runerror,0x399614C,0x18399614C,verified,Internal ldebug.c error-message constructor (NOT LUA_API). Body matches source: saves variadic args; checks G(L)->storedebug flag at [g+0x22]; if set calls luaO_pushvfstring(L, fmt, argp); else calls luaO_pushfstring(L, "[Error] Lua error..."). The storedebug-dispatch on a g-field is CryEngine-specific (vendor/lua/luaconf.h adds the storedebug field for memory-saving debug suppression).
+luaO_pushfstring,0x3998368,0x183998368,verified,Internal lobject.c varargs wrapper around luaO_pushvfstring. Body: save varargs to home space, lea r8=va_list_start, tail-call luaO_pushvfstring. Used by luaG_runerror's no-debug-info path.
+luaL_addstring,0x39934B4,0x1839934B4,verified,Identified by JMP-scan: only function in WHGame.dll that tail-jumps to luaL_addlstring (0xB9D8E4). Body: inline strlen (or r8,-1; inc r8; cmp byte [rdx+r8], 0; jne) then jmp luaL_addlstring. Exactly matches the 1-line source.
+lua_newthread,,UNIDENTIFIED,inlined,lua_newthread is inlined into luaB_cocreate (the apparent lua_newthread call goes to luaC_step which is what the inlined lua_newthread's luaC_checkGC macro expands to). The actual lua_newthread body — which calls luaE_newthread + sets up the thread — got inlined. luaE_newthread RVA exists somewhere but isn't on the LUA_API surface.
+lua_newuserdata,0xB9D0C0,0x180B9D0C0,verified,second call in luaB_newproxy after lua_settop matching lua_newuserdata(L, 0); 2-arg call (L, 0)
+lua_touserdata,0x71ECEC,0x18071ECEC,verified,call in ll_require matching lua_touserdata(L, -1) == sentinel check
+lua_gettable,0x71F6FC,0x18071F6FC,verified,call in str_gsub's add_value helper at LUA_TTABLE case matching lua_gettable(L, 3); 2-arg call (L, 3)
+luaL_typerror,0x3993B24,0x183993B24,verified,located via string xref to "%s expected, got %s" format string in .rdata; body calls lua_type + lua_typename + lua_pushfstring then tail-jumps to luaL_argerror — matches luaL_typerror source exactly
+luaL_addvalue,0x39934C8,0x1839934C8,verified,final call in str_gsub's add_value helper with rcx=&b matching luaL_addvalue(b); single luaL_Buffer* arg
