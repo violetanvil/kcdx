@@ -11,9 +11,9 @@
 # the STRICT validation does NOT false-reject a valid manifest. If validation
 # over-rejects (e.g. an allowlist entry is missing for a key this manifest
 # uses), this plugin never loads, plugin.lua never runs, and cap-49-clean-loads
-# never reports → the row sits PENDING → FAIL by absence. AP15: the pass
+# never reports → the row sits PENDING → FAIL by absence. The pass
 # condition is "the plugin.lua ran at all", which can ONLY happen if the
-# manifest passed validation.
+# manifest passed validation — a falsifiable claim that can actually go red.
 
 [kcdx]
 test_suite_only = true

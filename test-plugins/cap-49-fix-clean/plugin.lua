@@ -6,7 +6,7 @@
 -- returned early, the plugin would never have registered, plugin.lua would
 -- never have run, and cap-49-clean-loads would sit PENDING (FAIL by absence).
 --
--- FALSIFIABLE (AP15): the feature-broken state is "validation false-rejects a
+-- FALSIFIABLE: the feature-broken state is "validation false-rejects a
 -- valid manifest → this clean row never reports → FAIL". The pass is gated on
 -- the plugin actually loading + this callback firing, not on a constant.
 

@@ -14,7 +14,7 @@
 -- backing kcdx.plugin.is_rejected reads. So each fixture below MUST come back
 -- (true, reason).
 --
--- FALSIFIABLE (AP15): if validation stops rejecting a class, the engine never
+-- FALSIFIABLE: if validation stops rejecting a class, the engine never
 -- records that reject → is_rejected returns false → the row FAILs. The pass
 -- condition reads the ACTUAL accessor output (the feature under test), not a
 -- constant. A reject fixture coming back is_rejected==false is exactly the

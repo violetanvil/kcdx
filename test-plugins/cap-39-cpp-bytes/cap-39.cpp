@@ -5,7 +5,7 @@
 // the ABI end-to-end (90fd1cf header decl, 14a0333 src/bytes_interface.cpp
 // + QueryInterface, 16f0c98 K.bytes on Kcdx.h); this plugin is the FIRST
 // non-Lua-binder consumer of that surface, and the C++ PEER of cap-01's
-// Lua kcdx.bytes coverage (parity-is-tested, lua-api-surface.md).
+// Lua kcdx.bytes coverage (both surfaces of one capability ship a regression).
 //
 // === Test design — why the named-target common path, not a self-host =====
 //
@@ -20,7 +20,7 @@
 // ResolveUniquePatternMatch) scan `pe::ExecutableSections` ONLY. A plugin's
 // own marker buffer lives in a WRITABLE, NON-executable .data section, so a
 // pattern scan would never find it — the self-host marker is not supported
-// by the engine as built (results-driven: read the scanner, don't theorize).
+// by the engine as built (established by reading the scanner, not theorizing).
 //
 // Chosen observable (the disassembler-test COMMON PATH — a NAME, not hex):
 //   target      = "outfit_swap_callsite_aob"   (Address Library id 1004)
@@ -60,8 +60,8 @@
 //       cap-35's bytes-error row). K.bytes->Uninstall(handle) returns FALSE
 //       — a byte rewrite has no revert path (the original bytes are not
 //       retained), and IsApplied stays true (the bytes are NOT reverted).
-//       A revert would be AP13 (silently flipping status while the rewrite
-//       remains live in memory). Falsifiable: an Uninstall that returns true
+//       A revert would silently flip status while the rewrite remains live
+//       in memory — a lie about state. Falsifiable: an Uninstall that returns true
 //       or a site that reverted to `44 8A F0` => FAIL.
 //
 // Test mode: boot-only. Both rows self-verify at kcdxPlugin_PostGameLoad
@@ -309,7 +309,7 @@ bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
             "%s — Uninstall returned %d (expected 0/false: bytes have no "
             "revert path), IsApplied after=%d (expected 1: NOT reverted), "
             "live bytes %02X %02X %02X (expected still 45 31 F6). A revert "
-            "would be AP13 (flipping status while the rewrite stays live)",
+            "would flip status while the rewrite stays live (a lie about state)",
             pass ? "Uninstall correctly rejected; rewrite stays live"
                  : "Uninstall behaved unexpectedly",
             uninstall_ret ? 1 : 0,

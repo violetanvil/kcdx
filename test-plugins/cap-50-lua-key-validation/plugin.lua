@@ -1,6 +1,7 @@
 -- CAP-50 — kcdx.* binder input validation: FAIL LOUD on bad author input.
 --
--- Batch D of the fail-state-logging sweep (fail-state-logging.md / AP14). The
+-- Batch D of the fail-state-logging sweep (bad input fails loud with a
+-- structured error, never a silent drop). The
 -- {table} binders signal bad args via the (nil, err) RETURN pattern, so each
 -- row reads the returned err string directly — no pcall is needed for these
 -- (the binder does not raise; it returns). The assertions read the LOAD-
@@ -20,7 +21,7 @@
 -- vanished. Post-fix the binder rejects up front with (nil, err) naming the
 -- bad key.
 --
--- FALSIFIABLE (AP15): the feature-broken state is "the unknown-key gate stops
+-- FALSIFIABLE: the feature-broken state is "the unknown-key gate stops
 -- rejecting → the typo'd key is silently ignored → kcdx.hook returns a handle
 -- (h ~= nil) OR returns an error that does NOT name 'signagure' → FAIL". The
 -- pass reads the actual err string the gate produced.
@@ -57,7 +58,7 @@ end
 -- target is a harmless integer VA: the call is rejected at param_types
 -- validation BEFORE any JIT / invocation, so the bogus target never matters.
 --
--- FALSIFIABLE (AP15): the feature-broken state is "the param_types walk
+-- FALSIFIABLE: the feature-broken state is "the param_types walk
 -- silently truncates at the non-string entry → dynamic_call returns a callable
 -- handle for the WRONG arity (c ~= nil) → FAIL". The pass reads the err the
 -- reject produced.
@@ -84,8 +85,9 @@ end
 -- return_type is an ERROR, not a thing to coerce or default away. This is the
 -- OPPOSITE polarity to #12 (param_types): there the bad value truncated a
 -- list; here a non-string return_type was silently mis-served. On this build
--- LUA_NUMBER=float and lua_isstring returns TRUE for numbers (lua-precision.md),
--- so pre-fix `return_type = 5` coerced to "5" → get_type_id("5") resolved a
+-- LUA_NUMBER=float and lua_isstring returns TRUE for numbers (integers beyond
+-- 2^24 lose precision), so pre-fix `return_type = 5` coerced to "5" →
+-- get_type_id("5") resolved a
 -- garbage/default type → wrong return marshaling with no signal; a non-numeric
 -- non-string fell to the silent "void" default. Post-fix the binder rejects a
 -- present-non-string with (nil, err) naming return_type. (An ABSENT return_type
@@ -94,7 +96,7 @@ end
 -- target is the same harmless integer VA the param_types row uses: the reject
 -- fires at return_type validation BEFORE any JIT / invocation.
 --
--- FALSIFIABLE (AP15): the feature-broken state is "a non-string return_type is
+-- FALSIFIABLE: the feature-broken state is "a non-string return_type is
 -- silently coerced/defaulted → dynamic_call returns a callable handle
 -- (c ~= nil) instead of rejecting → FAIL". The pass reads the err the reject
 -- produced and that it names return_type.
@@ -117,8 +119,9 @@ do
 end
 
 -- ====================================================================
--- (#12-followup guard) cap-50-return-type-absent-ok — the AP15 inverted-shape
--- guard for the reject above. An ABSENT return_type MUST keep defaulting to
+-- (#12-followup guard) cap-50-return-type-absent-ok — the inverted-shape
+-- guard for the reject above (a falsifiable row that fails if the fix
+-- over-rejects). An ABSENT return_type MUST keep defaulting to
 -- "void" (legal, common) and must NOT be rejected. A fix that over-rejected
 -- (treated nil/missing as a bad value) would FAIL this row. We call
 -- dynamic_call with NO return_type and NO param_types; the binder JITs a
@@ -127,7 +130,7 @@ end
 -- the address; cap-20-dyncall confirms the build-and-return path), so this is
 -- safe.
 --
--- FALSIFIABLE (AP15, inverted): the feature-broken state is "the fix rejects an
+-- FALSIFIABLE (inverted): the feature-broken state is "the fix rejects an
 -- absent return_type → dynamic_call returns (nil, err) instead of a handle
 -- (c == nil) → FAIL". The pass reads the actual returned handle.
 do
@@ -156,10 +159,10 @@ end
 --
 -- What IS Lua-assertable and falsifiable: the call returns a pointer userdata
 -- whose :is_null() is true. :is_null() compares the C-side address to 0
--- exactly (no float round-trip — lua-precision.md), so it is a reliable
+-- exactly (no float round-trip — pointers compare at full width), so it is a reliable
 -- "ran, resolved to nothing" signal.
 --
--- FALSIFIABLE (AP15): the feature-broken state is "the call errors (returns
+-- FALSIFIABLE: the feature-broken state is "the call errors (returns
 -- nil / raises) OR returns a non-null pointer for an absent module → FAIL".
 -- The pass reads the feature's actual output (the returned pointer + its
 -- null-ness), not a constant.

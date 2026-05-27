@@ -85,8 +85,7 @@ local hConflictB = kcdx.hook{
 -- CAP-20-dyncall: regression for the shared JitTrampoline arg+return
 -- round-trip (kcdx.memory.dynamic_call). This is the path whose
 -- LUA_NUMBER=float arg/return marshaling was latent-broken and never
--- tested (only void + bogus-target paths existed) — see
--- docs/known-issues/cap-20-around-wraps-original-wrong-result.md. Call a
+-- tested (only void + bogus-target paths existed). Call a
 -- known i32(i32) target directly via dynamic_call (runs unhooked here —
 -- hooks apply later at ApplyZone) and assert 10 -> 110. Reported inline
 -- from plugin.lua (dynamic_call is synchronous; no deferral needed).
@@ -129,7 +128,8 @@ local hAddrnameMiss = kcdx.hook{
     before     = function(seed) return seed end,
 }
 
--- CAP-20-target: the NAME-supplies-the-ABI path (AP12 headline). This
+-- CAP-20-target: the NAME-supplies-the-ABI path (the headline disassembler-
+-- test win — the engine resolves address AND signature from a name). This
 -- hook gives ONLY `target = "<name>"` and a callback — NO hand-written
 -- signature=. If it installs (applied()==true), the engine carried the
 -- verified signature from the Address Library for that name (had it not,
@@ -150,9 +150,10 @@ local hTargetAbi = kcdx.hook{
     before = function(L, filename) return L, filename end,  -- no-op passthrough
 }
 
--- CAP-20-target-nosig: the AP2 path. target="IConsole_AddCommand" (id 2000)
--- resolves an address but its signature column is "" (left un-populated
--- rather than guessed — AP2). With no explicit signature= either, the
+-- CAP-20-target-nosig: the unverified-signature path. target="IConsole_AddCommand"
+-- (id 2000) resolves an address but its signature column is "" (left
+-- un-populated rather than guessed — a signature is verified against the
+-- binary, never inferred from prologue shape). With no explicit signature= either, the
 -- engine cannot marshal the call, so the binder REJECTS the registration
 -- SYNCHRONOUSLY (returns nil + a teaching error naming the missing
 -- signature) — this is NOT a deferred apply-fail (contrast addrname-miss,
@@ -203,7 +204,7 @@ end
 -- branch: an unknown name gets the "did not resolve" teaching and must NOT get
 -- the supply-a-signature message.
 --
--- FALSIFIABLE (AP15): if #8 regresses (the two cases collapse again so an
+-- FALSIFIABLE: if #8 regresses (the two cases collapse again so an
 -- unknown name is told to supply a signature), the error contains "has no
 -- signature" / "needs an ABI" instead of "did not resolve" → this row FAILS.
 do
@@ -240,11 +241,12 @@ end
 
 -- CAP-20-locator-default: a kcdx.hook with NO locator at all. The binder
 -- REJECTS it SYNCHRONOUSLY (nil + teaching error), and the error LEADS
--- with the common path: target="<name>". This is the AP12 two-tier steer
+-- with the common path: target="<name>". This is the two-tier steer
 -- — the default error names target= + by-name, not the advanced raw
 -- locators, so a confused author is funneled to the right path. We assert
 -- the message names BOTH "target" and "name" (the common-path steer), not
--- just nil — wording is the observable contract (results-driven.md).
+-- just nil — wording is the observable contract (assert the behavior, don't
+-- theorize it).
 do
     local h, err = kcdx.hook{
         name   = "cap20_no_locator",
@@ -288,8 +290,7 @@ end
 -- moment: handle:applied()/:reason() only become final during ApplyZone,
 -- which runs AFTER this plugin.lua returns. kcdx.on("ready", ...) fires
 -- once, after this plugin's zone apply pass completes — so every handle
--- captured above now reads a final status. (docs/outstanding-work/
--- ready-event-and-handle-assert.md)
+-- captured above now reads a final status.
 kcdx.on("ready", function()
     -- (a) CAP-20-addrname-miss: a bad address_id NAME must fail to apply
     -- with a clear reason.
@@ -332,7 +333,7 @@ kcdx.on("ready", function()
                       .. tostring(applied) .. " (expected true)"))
     end
 
-    -- (d) CAP-20-target: the headline AP12 fix. The hook gave ONLY
+    -- (d) CAP-20-target: the headline name-supplies-the-ABI fix. The hook gave ONLY
     -- target="luaL_loadfile" + a callback (no signature=). applied()==true
     -- proves the engine supplied the verified ABI from the name — the
     -- author never wrote the signature. (Had the name carried no

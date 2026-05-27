@@ -9,7 +9,7 @@
 #   * kcdx.command{...} registers a console command from Lua (the verb that
 #     landed in step 1 / commit d41cb0b).
 #   * kcdx.console.execute(line) fires that command through CryEngine's
-#     IConsole::ExecuteString — synchronous, same (main) thread, AP6-safe.
+#     IConsole::ExecuteString — synchronous, same (main) thread, main-thread-safe.
 #   * The callback receives the args table: the ARRAY of typed args
 #     (args[1]=="42", args[2]=="hello", #args==2 — GetArg(0)/the command
 #     name EXCLUDED) PLUS args.raw (the full line, containing "cap26_cmd").

@@ -1,6 +1,6 @@
 -- CAP-35 plugin.lua — Lua handle:uninstall() (Phase 3 sub-1 ext steps 1+2).
 --
--- The AP7 close-out regression for the Lua-side handle:uninstall() method
+-- The permanent regression for the Lua-side handle:uninstall() method
 -- and its underlying engine path:
 --   * step 1 (abbb4c6) — kcdx::hook_chain::Uninstall(handleId): erases the
 --     ChainEntry for sig/callsite chains; clears midHandleId + midCallback
@@ -133,7 +133,8 @@ local hBytes, hBytesErr = kcdx.bytes{
 if hBytes == nil then
     -- Defensive: if the binder rejected at registration, we never get a
     -- handle to test :uninstall() on. Log loudly so the failure mode is
-    -- discoverable rather than silenced (AP9).
+    -- discoverable rather than silenced (fix at the cause, never quietly
+    -- swallow it).
     kcdx.log.error("CAP35",
         "kcdx.bytes registration unexpectedly rejected at binder: "
         .. tostring(hBytesErr) .. " (CAP-35-uninstall-bytes-error will "
@@ -172,7 +173,7 @@ kcdx.test.report("CAP-35-off-thread-skip", hSkip ~= nil,
 -- to-Marshal, or no validation) returns a non-nil handle → assert
 -- fails. A right-shaped error message without "off_thread" in it also
 -- fails — the teaching contract is "name the field so the author can
--- find + fix it" (lua-api-surface.md §"errors teach").
+-- find + fix it" (errors teach — the message names the offending input).
 -- ====================================================================
 local hBogus, hBogusErr = kcdx.hook{
     name      = "cap35_off_thread_bogus",

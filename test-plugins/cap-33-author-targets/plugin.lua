@@ -4,10 +4,10 @@
 -- declared three targets under this plugin's namespace
 -- (ts.cap_33_author_targets, derived from [plugin].author + [plugin].name — the author never types
 -- the prefix):
---   * openlibs_by_pattern  — a PATTERN locator + signature (the §36 row),
---                            luaL_openlibs (seed id 1190). The 16-byte entry
+--   * openlibs_by_pattern  — a PATTERN locator + signature (the share-guarantee
+--                            row), luaL_openlibs (seed id 1190). The 16-byte entry
 --                            AOB is .text-UNIQUE (1 match, minted + confirmed by
---                            _research/phase8-fix-a/aob_scan.py) and the function
+--                            an AOB scan against the binary) and the function
 --                            is entry-hooked by NOBODY, so the by-name pattern
 --                            scan resolves it end-to-end — the §36 proof.
 --   * luaopen_math_by_id   — luaopen_math by address_id=1172 (RVA, no scan →
@@ -35,14 +35,15 @@
 -- the unhooked luaopen_math so the prefix/alias install can succeed.
 
 -- ====================================================================
--- (1) CAP-33-pattern-by-name — THE §36 HEADLINE.
+-- (1) CAP-33-pattern-by-name — THE SHARE-GUARANTEE HEADLINE.
 -- kcdx.hook{ target = "<own pattern target>" } with NO signature=. The pure
 -- "author names a target BY AOB PATTERN and hooks it by name" proof: the
 -- pattern carries the ADDRESS (a .text-unique entry AOB) and the target's
 -- signature carries the ABI, both delivered by the bare name with zero hex at
--- the call site (cornerstones §36, the disassembler test's sharpest edge).
+-- the call site (the disassembler test's sharpest edge — one expert names an
+-- AOB site once, every other author hooks it by name with no hex).
 -- The target is luaL_openlibs (seed id 1190) — its 16-byte entry AOB is
--- .text-unique (confirmed by _research/phase8-fix-a/aob_scan.py) and NOTHING
+-- .text-unique (confirmed by an AOB scan against the binary) and NOTHING
 -- entry-hooks it, so the prologue stays pristine and the by-name pattern scan
 -- resolves end-to-end. If the binder did not get the signature FROM the target
 -- it would reject ("a signature is required"); install with no inline sig IS
@@ -120,7 +121,7 @@ local hBytes = kcdx.bytes{
 -- Handles resolve to a final :applied() only AFTER the zone apply pass, which
 -- runs after this plugin.lua returns. Read them in kcdx.on("ready").
 kcdx.on("ready", function()
-    -- (1) §36 HEADLINE — the author-declared PATTERN target resolves BY NAME.
+    -- (1) SHARE-GUARANTEE HEADLINE — the author-declared PATTERN target resolves BY NAME.
     do
         local applied = hPattern:applied()
         kcdx.test.report("CAP-33-pattern-by-name", applied == true,
@@ -128,7 +129,7 @@ kcdx.on("ready", function()
               and ("kcdx.hook{ target=\"openlibs_by_pattern\" } applied with NO "
                    .. "signature= — the author-declared PATTERN target supplied "
                    .. "BOTH address (.text-unique AOB) and ABI by name "
-                   .. "(cornerstones §36 share guarantee)")
+                   .. "(the share guarantee: name once, hook by name forever)")
               or  ("expected applied()==true (pattern target resolves by name + "
                    .. "carries the ABI); got applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPattern:reason())))

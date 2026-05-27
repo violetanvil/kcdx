@@ -4,8 +4,8 @@
 # MANIFEST-STUB tracked PENDING (test_names) until the manual / in-game
 # observation confirms the new always-on Error line in the log. Same stub
 # pattern as cap-43 / cap-45 / cap-46 (the engine owns the behavior; the manifest
-# holds the row name); confirmation is a log-assert by the orchestrator post-run,
-# the cap-38 `-gate-warn` / cap-47 Part-1 `[manual]` convention — a blank == FAIL.
+# holds the row name); confirmation is a post-run log grep, the cap-38
+# `-gate-warn` / cap-47 Part-1 `[manual]` convention — a blank == FAIL.
 #
 # No plugin.lua / no DLL: neither half can be driven from an author surface. The
 # culprit-walk false-return only fires inside the SEH filter on a real crash; the
@@ -16,7 +16,8 @@
 # false in three cases (walk_exhausted / stack_unreadable / no_progress). Before
 # this cycle LogFault emitted FAULTED_CULPRIT only on SUCCESS — on the false
 # return NOTHING was logged, so an unattributable RaiseException-class fault (the
-# 0xC8 path) read identically to "ran, genuinely no culprit" (AP14). Now the
+# 0xC8 path) read identically to "ran, genuinely no culprit" — a silent-success
+# that validated nothing. Now the
 # false branch emits GUARD FAULTED_CULPRIT_NONE with the reason string.
 #
 # Fix #2 (src/save_load_hooks.cpp HookedSlotResolver): when the original returns

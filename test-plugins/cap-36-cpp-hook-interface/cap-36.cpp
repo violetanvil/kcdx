@@ -12,15 +12,15 @@
 //    src/plugin_loader.cpp::FindByName which compares manifest.name
 //    directly). Every kcdxHookOptions this DLL builds threads `self`
 //    into opts.owningPlugin so the self-tier of self>engine>other
-//    resolves the calling plugin's identity (naming-namespaces.md).
-//    The raw-floor row PROVES this works without a wrapper to stash it
+//    resolves the calling plugin's identity (precedence is self > engine >
+//    other-plugin). The raw-floor row PROVES this works without a wrapper to stash it
 //    for the author.
 //
 // 2. QueryInterface(kcdxInterface_Hook, kcdxHookInterface_Version) at
 //    Load. The returned vtable's lifetime is the engine's; cache the
 //    pointer at file scope. Returns null on version mismatch — every
 //    row reports FAIL with a clear reason in that case (loud-on-failure
-//    rather than silent skipping; AP9).
+//    rather than silent skipping — fix/report at the cause).
 //
 // 3. Build kcdxHookOptions on the stack as a POD aggregate, default-zero
 //    every field by `kcdxHookOptions opts = {};`, then set ONLY the
@@ -219,8 +219,8 @@ extern "C" void Cap36_Crosslang_Before_Cb(uintptr_t args[], int* outCount,
 //
 // The sibling Lua plugin can't see this DLL's symbols. The cap-20
 // pattern: register a kcdx C function returning the stub VA as
-// lightuserdata (exact for pointer-magnitude values — lua-precision.md;
-// PushInteger would truncate at 2^24).
+// lightuserdata (exact for pointer-magnitude values — pointers push as
+// light userdata; PushInteger would truncate at 2^24 under LUA_NUMBER=float).
 
 static int Lua_AddrCrosslang(struct lua_State* L, void* ud) {
     static_cast<const kcdxLuaApi*>(ud)->PushLightUserdata(

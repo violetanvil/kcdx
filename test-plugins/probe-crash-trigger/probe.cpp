@@ -2,10 +2,8 @@
 //
 // Registers a `kcdx_crash_now` console command. When invoked, derefs
 // NULL → 0xC0000005 ACCESS_VIOLATION. Used to baseline + verify the
-// BugSplat filename fix (see docs/known-issues/BugSplat dmp files
-// don't reach disk for AV crashes.md). Also exercises the kcdx
-// in-process MiniDumpWriteDump path and the watchdog crash-bundle
-// pipeline.
+// BugSplat filename fix. Also exercises the kcdx in-process
+// MiniDumpWriteDump path and the watchdog crash-bundle pipeline.
 //
 // Plugin is suite-gated; dev_mode off => never registers the
 // command. Production installs see nothing.

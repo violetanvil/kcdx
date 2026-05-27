@@ -3,8 +3,9 @@
 #
 # The footgun the gate closes: named target carrying a verified ABI +
 # an explicit opts.signature was SILENTLY trusted (the explicit sig used
-# as-is, the verified ABI never cross-checked) — an AP12 footgun on the
-# exact surface AP12 protects. The gate's core behavior is (c): keep +
+# as-is, the verified ABI never cross-checked) — a footgun on the very
+# surface whose promise is the engine carries address AND verified signature
+# from a name. The gate's core behavior is (c): keep +
 # proceed (consult the verified ABI to DETECT the conflict, emit a teaching
 # diagnostic, then proceed with the explicit sig as authored). The diagnostic
 # SEVERITY splits by ClassifyConflict — cap-38's return-width delta (i32 vs
@@ -25,14 +26,14 @@
 #     once at boot before this hook installs, and never fires). Falsifiable
 #     against a hypothetical (a)-reject impl: a reject would give handle 0 /
 #     IsApplied false → FAIL.
-#   * CAP-38-cpp-gate-warn ([manual], log-assert): the orchestrator greps
+#   * CAP-38-cpp-gate-warn ([manual], log-assert): a post-run log grep checks
 #     the engine log for the gate's ERROR-level HARD line (action
 #     explicit_overrides_verified_hard, severity=hard). NOT auto-reported by
 #     this plugin (the auto row asserts behavior-c PROCEEDED, which is byte-
 #     identical pre/post-fix; only the ERROR line distinguishes them).
 #
-# Test mode: boot-only (the auto row). The manual row is an
-# orchestrator-side log grep, no in-game gesture.
+# Test mode: boot-only (the auto row). The manual row is a
+# post-run log grep, no in-game gesture.
 
 [kcdx]
 test_suite_only = true

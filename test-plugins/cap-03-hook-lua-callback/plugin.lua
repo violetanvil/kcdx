@@ -7,7 +7,8 @@
 -- locator stays the SAME pattern= AOB the old [[hook]] block used, with
 -- signature="void (ptr)" (the void __fastcall(this_ptr*) ABI: return_type
 -- "void", param_types ["ptr"]). This is the labeled expert hatch for a
--- target the library can't name yet (cornerstones.md / AP12-OK), NOT a gap.
+-- target the library can't name yet (the common path is a target name; the
+-- raw pattern is the expert escape hatch), NOT a gap.
 --
 -- The before callback does NOT dereference the ptr (object layout unknown;
 -- the test only confirms the dispatch chain fired). CAP-03 PASS asserts the
@@ -69,7 +70,7 @@ local fire_count = 0
 
 local h = kcdx.hook{
     name      = "cap03_update_callee",
-    pattern   = PATTERN,            -- un-named site: expert AOB hatch (AP12-OK)
+    pattern   = PATTERN,            -- un-named site: expert AOB hatch
     signature = "void (ptr)",       -- void __fastcall(this_ptr*); ptr not deref'd
     before    = function(this_ptr)  -- single `this` arg; we only count fires
         fire_count = fire_count + 1

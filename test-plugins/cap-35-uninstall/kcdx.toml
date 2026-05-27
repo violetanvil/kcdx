@@ -1,6 +1,6 @@
 # CAP-35 — Lua handle:uninstall() (Phase 3 sub-1 extended steps 1+2).
 #
-# The AP7 close-out regression for the Lua-side handle:uninstall() that
+# The permanent regression for the Lua-side handle:uninstall() that
 # landed at steps 1+2 of the extended Phase 3 sub-1 (abbb4c6 + 0c0756a):
 #   step 1 — kcdx::hook_chain::Uninstall(handleId): the engine teardown
 #            (entries.erase for sig/callsite chains; midHandleId reset

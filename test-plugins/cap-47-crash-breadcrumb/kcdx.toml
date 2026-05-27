@@ -1,7 +1,7 @@
 # CAP-47 — crash breadcrumb (per-detour fire ring) + owner-named inventory.
 #
-# Three cohesive engine changes ship under this one row (see the brief +
-# docs/known-issues/save-load crash 0xC8 raised from WHGame.md):
+# Three cohesive engine changes ship under this one row (motivated by the
+# 0xC8 save-load crash):
 #   Part 1  GUARD culprit-walk repaired to the x64-native unwinder
 #           (RtlLookupFunctionEntry + RtlVirtualUnwind) so FAULTED_CULPRIT
 #           finally emits on a RaiseException-class (0xC8) fault. NEEDS A REAL

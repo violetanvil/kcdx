@@ -3,10 +3,8 @@
 # Registers a `kcdx_crash_now` console command. When invoked, the
 # handler deliberately derefs NULL to produce a clean 0xC0000005
 # ACCESS_VIOLATION. Used to exercise BugSplat's filename construction
-# (the colon-in-display-name bug, see
-# docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md)
-# and to baseline the in-process MiniDumpWriteDump + watchdog bundle
-# pipeline.
+# (the colon-in-display-name bug) and to baseline the in-process
+# MiniDumpWriteDump + watchdog bundle pipeline.
 #
 # This is a DEVELOPER TOOL only — the plugin is suite-gated
 # (`test_suite_only = true`) so it skips entirely when dev_mode is

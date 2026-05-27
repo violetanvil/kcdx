@@ -1,7 +1,7 @@
 // CAP-41 — GetConflictReport now folds in kcdx.bytes (kcdxBytesInterface::
 // Register) patches as a FOURTH source.
 //
-// The AP7 + docs-discipline close of the "GetConflictReport reports
+// The regression + doc close of the "GetConflictReport reports
 // kcdx.bytes" feature (steps 1-2: the C++ GetConflictReport(target, out, cap)
 // now walks lua_registry Kind::Bytes entries and folds them in as a fourth
 // conflict source, kind=Patch). A kcdx.bytes patch registered via

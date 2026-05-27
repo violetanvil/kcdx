@@ -13,7 +13,8 @@
 #
 # MUST REJECT. If validation stops rejecting a wrong-typed known key, this
 # plugin loads (version falls through OptString to empty, silently
-# discarding the author's intent — the AP14 shape), is_rejected returns false →
+# discarding the author's intent — a silent-success that validated OK but
+# dropped the value), is_rejected returns false →
 # the observer's cap-49-reject-wrong-type row FAILs.
 
 [kcdx]

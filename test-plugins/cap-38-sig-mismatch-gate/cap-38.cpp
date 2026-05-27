@@ -4,8 +4,9 @@
 // a verified Address-Library ABI AND ALSO hand-writes an explicit
 // opts.signature, the engine USED to trust the explicit sig outright and
 // never cross-check it against the verified ABI it had in hand — so a
-// wrong explicit sig was SILENTLY accepted (an AP12 footgun on the exact
-// surface AP12 protects). The gate's core behavior is (c) keep + proceed:
+// wrong explicit sig was SILENTLY accepted (a footgun on the very surface
+// whose promise is the engine carries address AND verified signature from a
+// name). The gate's core behavior is (c) keep + proceed:
 // the engine consults the verified ABI to DETECT the conflict, emits a
 // teaching diagnostic, then PROCEEDS with the explicit sig as authored (the
 // deliberate-override case stays authoritative — the expert override is
@@ -16,8 +17,9 @@
 // conflict stays at WARN.
 //
 // This is the C++ half (kcdxHookInterface). The Lua half is the sibling
-// cap-38-sig-mismatch-gate-lua/ plugin (parity-is-tested, lua-api-
-// surface.md). Both name `kcdx.luaopen_table` (engine seed id 1173,
+// cap-38-sig-mismatch-gate-lua/ plugin (both surfaces of one capability are
+// tested — the authoring surface mirrors across the two languages). Both
+// name `kcdx.luaopen_table` (engine seed id 1173,
 // verified ABI "i32 (ptr L)") and pass the deliberately-WRONG explicit
 // signature "void (ptr L)" (same arg count, RETURN-WIDTH delta — i32
 // collapsed to void → NOT SignaturesCompatible → the gate fires).
@@ -34,10 +36,10 @@
 //     INSTALL-TIME check; firing tests nothing about it). cap-36's six
 //     own-function rows own the C-dispatch firing proof.
 //
-//   * CAP-38-cpp-gate-warn ([manual], log-assert; reported by the
-//     orchestrator, NOT auto) — the COMP-12 log-assert pattern: the
-//     orchestrator confirms the gate's HARD-conflict line fired in the
-//     engine log post-run. cap-38's mismatch is an ARG-COUNT delta (1-arg
+//   * CAP-38-cpp-gate-warn ([manual], log-assert; reported by a post-run
+//     log grep, NOT auto) — the COMP-12 log-assert pattern: a post-run log
+//     grep confirms the gate's HARD-conflict line fired in the
+//     engine log. cap-38's mismatch is an ARG-COUNT delta (1-arg
 //     explicit vs 2-arg verified) → ClassifyConflict returns Hard → the
 //     gate emits at ERROR level (not WARN). Pre-fix (silent trust) NO line
 //     fires at all; the older WARN-only gate emitted action
@@ -111,7 +113,7 @@ void Report(const char* row, bool pass, const char* reason) {
 
 // InputLoaded backstop — loud FAIL if PostGameLoad never fired (the
 // cap-29 / cap-36 design). Only the auto row is backstopped; the manual
-// log-assert row is the orchestrator's job.
+// log-assert row is confirmed by a post-run log grep.
 void OnMessage(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
     if (g_reported) return;
@@ -195,7 +197,7 @@ bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
         "the explicit sig authoritative and the install PROCEEDS; had the "
         "gate REJECTED (hypothetical (a)-impl) the handle would be 0 / "
         "IsApplied false and this row FAILS. The gate-WARN itself is the "
-        "[manual] CAP-38-cpp-gate-warn row (orchestrator greps HOOK_SIG_GATE "
+        "[manual] CAP-38-cpp-gate-warn row (a post-run log grep checks HOOK_SIG_GATE "
         "explicit_overrides_verified).",
         pass ? "gate WARN+proceed PASS" : "gate WARN+proceed FAIL",
         kTarget, kWrongSig,

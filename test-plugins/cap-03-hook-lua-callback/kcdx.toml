@@ -13,7 +13,8 @@
 # 0x180865FB4 in KCD2 1.5.1164953) — it has no Address Library name, so the
 # migration keeps the SAME pattern= AOB + signature="void (ptr)". This is the
 # LEGITIMATE labeled expert hatch for a target the library can't name yet
-# (cornerstones.md / AP12-OK), NOT a gap. By construction the site fires every
+# (the common path is a target name; the raw pattern is the expert escape
+# hatch), NOT a gap. By construction the site fires every
 # tick AFTER kcdx's hook-install moment, so the counter is >0 well before the
 # main menu — confirming the dispatch chain fired.
 

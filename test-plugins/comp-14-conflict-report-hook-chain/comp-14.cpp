@@ -1,7 +1,7 @@
 // COMP-14 — GetConflictReport now reports kcdx.hook (hook_chain) entries,
 // including the CanCoexist-rejected loser.
 //
-// The AP7 + docs-discipline close of the "GetConflictReport covers
+// The regression + doc close of the "GetConflictReport covers
 // hook_chain" feature (steps 1-2: hook_chain records chain->rejected +
 // GetParticipantsAtTarget; Thunk_GetConflictReport merges them as a third
 // source). Pre-feature, GetConflictReport(va) only walked the legacy

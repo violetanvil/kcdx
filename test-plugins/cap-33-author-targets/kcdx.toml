@@ -20,8 +20,7 @@
 #     0 (patch_engine.cpp:124-130). No verified .text-unique entry-prologue AOB
 #     exists yet for a function NOTHING entry-hooks; minting one is bounded
 #     tier-5 work. This row will fail/parse-skip at apply until that AOB is
-#     minted — EXPECTED and TRACKED. See
-#     docs/outstanding-work/section36-pattern-target-aob.md.
+#     minted — EXPECTED and TRACKED.
 #   * CAP-33-engine-tier: kcdx.hook{ target = "luaL_loadfile" } (an ENGINE seed
 #     name) still resolves — the engine tier of self>engine>other coexists with
 #     the author's own targets.

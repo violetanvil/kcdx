@@ -1,6 +1,7 @@
 # CAP-50 — kcdx.* binder input validation: FAIL LOUD on bad author input.
 #
-# Batch D of the fail-state-logging sweep (fail-state-logging.md / AP14): the
+# Batch D of the fail-state-logging sweep (bad input must fail loud with a
+# structured error, never a silent drop): the
 # kcdx.* Lua binder surface must reject bad author input loudly instead of
 # silently dropping it. This pure-Lua plugin exercises the three Batch-D
 # findings via pcall + the (nil, err) returns the {table} binders use.
@@ -27,8 +28,9 @@
 #     non-string return_type is silently coerced/defaulted → dynamic_call
 #     returns a callable handle instead of rejecting → FAIL.
 #
-#   * cap-50-return-type-absent-ok (#12-followup guard): the AP15 inverted-shape
-#     guard. kcdx.memory.dynamic_call with NO return_type still defaults to
+#   * cap-50-return-type-absent-ok (#12-followup guard): the inverted-shape
+#     guard (a falsifiable row that fails if the fix over-rejects).
+#     kcdx.memory.dynamic_call with NO return_type still defaults to
 #     "void" and returns a callable handle. Feature-broken state: the fix
 #     over-rejects a MISSING return_type → returns (nil, err) → FAIL.
 #

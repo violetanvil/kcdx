@@ -8,7 +8,8 @@
 // and asserts it returns 142. Registration succeeding is only a
 // PRECONDITION here — a successful RegisterFunction whose function is
 // unreachable or wrong from Lua would still flunk the Lua round-trip
-// (the AP15 false-PASS this strengthening closes). So this side reports
+// (the false-PASS this strengthening closes — a PASS that asserts nothing
+// falsifiable). So this side reports
 // FAIL only on a real registration failure (null Scripting interface, or
 // RegisterFunction returning 0); on success it stays silent and defers the
 // verdict to plugin.lua.
@@ -32,7 +33,8 @@ kcdxLogger  gLog;
 // a Lua caller passing 100 must see exactly 142 back, proving the arg
 // reached C++ AND the return reached Lua. user_data is the kcdxLuaApi*
 // passed at RegisterFunction. 100/142 are well under 2^24, so they
-// round-trip losslessly under CryEngine's LUA_NUMBER=float (lua-precision.md).
+// round-trip losslessly under CryEngine's LUA_NUMBER=float (integers beyond
+// 2^24 lose precision).
 static int Lua_Cap10Stub(struct lua_State* L, void* user_data) {
     const kcdxLuaApi* lua = static_cast<const kcdxLuaApi*>(user_data);
     long long arg = lua->LCheckInteger(L, 1);

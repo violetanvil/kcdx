@@ -70,7 +70,7 @@ Stub g_read, g_write, g_skip, g_run;
 // fails MH_ERROR_MEMORY_ALLOC when no free page is in range — flaky.
 // Allocating near WHGame mirrors a real in-module target and is deterministic.
 // (cap-07 proves AllocateFromBranchPool returns rel32-reachable memory; the
-//  pool is ±2 GB of WHGame.dll .text per docs/design.md §"Pool choice".)
+//  pool is ±2 GB of WHGame.dll .text.)
 bool AllocStub(Stub& s) {
     if (!g_tramp) return false;
     s.mem = g_tramp->AllocateFromBranchPool(g_self, sizeof(kStub));

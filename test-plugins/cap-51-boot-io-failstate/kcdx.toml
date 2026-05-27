@@ -2,7 +2,8 @@
 # fail-state-logging sweep). FIVE defensive guards on normally-infallible OS/IO
 # calls + one dead scan path now fail LOUD instead of silently producing a
 # broken layout / a logless session / an inert engine / a blank crash-bundle
-# stamp / an out-of-bounds byte read (AP14). All five are ENGINE-internal boot/IO
+# stamp / an out-of-bounds byte read (each failing loud with a structured
+# error instead of a silent drop). All five are ENGINE-internal boot/IO
 # machinery — none is reachable from any author surface (no kcdx.* verb, no
 # kcdx*Interface method drives them), so this is a MANIFEST-ONLY STUB (no
 # plugin.lua / no DLL — there is nothing to drive: every guard fires only when a
@@ -37,7 +38,7 @@
 # Therefore there is NO positive trigger this build. The CONFIRMING signal for
 # every row is ABSENCE: a clean dev-mode launch must show the guard's log line(s)
 # ABSENT (the healthy boot/IO path must NOT false-fire the guard). The
-# falsifiable claim each row pins (AP15): "the healthy live boot/IO path does NOT
+# falsifiable claim each row pins (a claim that can actually go red): "the healthy live boot/IO path does NOT
 # false-fire this guard" — a guard line appearing on a clean launch is the FAIL
 # (the engine is reporting a broken layout / logless session / inert engine /
 # blank stamp / unreadable scan window on a HEALTHY boot, which would itself be a
@@ -196,7 +197,7 @@ test_suite_only = true
 name                = "cap_51_boot_io_failstate"
 display_name        = "CAP-51 boot / IO fail-state instrumentation (Batch F)"
 author              = "ts"
-description         = "Batch F (final) of the fail-state-logging sweep: five defensive guards on normally-infallible boot/IO machinery now fail LOUD instead of silently producing a broken layout / a logless session / an inert engine / a blank crash-bundle stamp / an out-of-bounds byte read (AP14). #18 paths.cpp DeriveSelfDir/.\\\\-fallback + Init create_directories ec → always-on [ERROR] OutputDebugStringA; #19 log.cpp Init/SetDevMode null _wfopen → [ERROR] OutputDebugStringA; #20 dllmain.cpp null CreateThread(WorkerThread) → [ERROR] OutputDebugStringA (engine inert, host continues); #21 watchdog_spawn.cpp empty SessionStamp → LOG_WARN (WATCHDOG, defense-in-depth — EnsureSessionStamp mitigates at source); #16 scan_engine.cpp FormatBytesAt window bounds-guarded by WindowReadable → LOG_WARN + skip (defense-in-depth; the scan report path is currently DEAD — g_scans has no populator post-Phase-5 — kept per the Batch E precedent, pins the contract for a future scan feature). All five are provably UNREACHABLE on a healthy boot — NOT flip-on-trigger rows. Manifest-only stub holds the five rows PENDING; the confirming signal is ABSENCE of the guard lines on a clean launch (the live boot/IO path must not false-fire), plus a documented contract + signal-text pin for a future regression. #18's healthy path is positively covered by cap-46-session-stamp."
+description         = "Batch F (final) of the fail-state-logging sweep: five defensive guards on normally-infallible boot/IO machinery now fail LOUD instead of silently producing a broken layout / a logless session / an inert engine / a blank crash-bundle stamp / an out-of-bounds byte read (each failing loud with a structured error instead of a silent drop). #18 paths.cpp DeriveSelfDir/.\\\\-fallback + Init create_directories ec → always-on [ERROR] OutputDebugStringA; #19 log.cpp Init/SetDevMode null _wfopen → [ERROR] OutputDebugStringA; #20 dllmain.cpp null CreateThread(WorkerThread) → [ERROR] OutputDebugStringA (engine inert, host continues); #21 watchdog_spawn.cpp empty SessionStamp → LOG_WARN (WATCHDOG, defense-in-depth — EnsureSessionStamp mitigates at source); #16 scan_engine.cpp FormatBytesAt window bounds-guarded by WindowReadable → LOG_WARN + skip (defense-in-depth; the scan report path is currently DEAD — g_scans has no populator post-Phase-5 — kept per the Batch E precedent, pins the contract for a future scan feature). All five are provably UNREACHABLE on a healthy boot — NOT flip-on-trigger rows. Manifest-only stub holds the five rows PENDING; the confirming signal is ABSENCE of the guard lines on a clean launch (the live boot/IO path must not false-fire), plus a documented contract + signal-text pin for a future regression. #18's healthy path is positively covered by cap-46-session-stamp."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"

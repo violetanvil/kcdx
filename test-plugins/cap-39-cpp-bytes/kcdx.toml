@@ -5,8 +5,8 @@
 # ABI: 90fd1cf (header decl), 14a0333 (src/bytes_interface.cpp +
 # QueryInterface wire), 16f0c98 (K.bytes accessor on Kcdx.h). This plugin is
 # the FIRST non-Lua-binder consumer of that surface and the C++ PEER of
-# cap-01's Lua kcdx.bytes coverage (parity-is-tested, lua-api-surface.md —
-# both surfaces of the byte-rewrite capability now ship a regression).
+# cap-01's Lua kcdx.bytes coverage (both surfaces of the byte-rewrite
+# capability now ship a regression — the surface mirrors across languages).
 #
 # Shape: NATIVE C++ DLL plugin. Init the K wrapper, register a byte rewrite
 # via K.bytes->Register against a NAMED Address Library target (the
@@ -33,7 +33,8 @@
 #   * CAP-39-cpp-bytes-uninstall-rejected  The no-revert teaching (peer of
 #       cap-35's bytes-error row). Uninstall(handle)==false (bytes have no
 #       revert path), IsApplied stays true, and the site stays `45 31 F6`. A
-#       revert would be AP13. Falsifiable: Uninstall true or a reverted site
+#       revert would lie about state (flip status while the rewrite stays
+#       live). Falsifiable: Uninstall true or a reverted site
 #       => FAIL.
 #
 #   * cap-39-bytes-in-inventory  ENGINE-REPORTED (no DLL/Lua code here drives

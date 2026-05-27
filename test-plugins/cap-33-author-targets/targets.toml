@@ -3,11 +3,12 @@
 # Each [[target]] row declares a BARE name + exactly one locator; the engine
 # stamps the <pluginname> prefix derived from [plugin].name
 # (ts.cap_33_author_targets) automatically — the author NEVER types their own
-# prefix (naming-namespaces.md). A pattern/rva target SHOULD carry a
+# prefix (shared names are <author>.<plugin>-prefixed; the engine derives the
+# prefix from the manifest). A pattern/rva target SHOULD carry a
 # `signature` (no engine name to carry the ABI — the disassembler test).
 
-# --- The §36 HEADLINE: a PATTERN-located target WITH a signature. -----------
-# This is the cornerstones.md §36 "share guarantee" proof in one row: an
+# --- The SHARE-GUARANTEE HEADLINE: a PATTERN-located target WITH a signature. -
+# This is the "share guarantee" proof in one row: an
 # expert names an AOB site ONCE (here), and a non-expert hooks it BY NAME with
 # no hex and no hand-written ABI — the pattern resolves the WHERE and this
 # signature carries the ABI, both delivered by the bare name.
@@ -15,7 +16,7 @@
 # Pattern + signature both target luaL_openlibs (Address Library id 1190,
 # verified RVA 0x01449600, sig "void (ptr L)"). The AOB is the 16-byte
 # .text-unique entry prologue minted + uniqueness-confirmed (EXACTLY 1 match,
-# at the function's own RVA) by _research/phase8-fix-a/aob_scan.py:
+# at the function's own RVA) by an AOB scan against the binary:
 #   48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D
 # (mov [rsp+8],rbx; push rdi; sub rsp,0x20; mov rdi,rcx; + the `lea rbx,[rip+...]`
 # opcode triplet — the slice stops BEFORE the RIP-relative disp32, the first
@@ -28,8 +29,8 @@
 # patch_engine.cpp:124-130 does not bite — nothing overwrote the prologue). It is
 # called EXACTLY ONCE at Lua boot (CScriptSystem::Init), so a no-op before-hook is
 # minimal-frequency, and it is DISTINCT from the prefix/alias target (id 1172) and
-# the bytes target (id 1124) — no overlap. The §36 minting is recorded in seed.csv
-# id 1190's notes; closes docs/outstanding-work/section36-pattern-target-aob.md.
+# the bytes target (id 1124) — no overlap. The minting is recorded in seed.csv
+# id 1190's notes.
 [[target]]
 name      = "openlibs_by_pattern"
 pattern   = "48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D"
@@ -55,7 +56,8 @@ signature = "void (ptr L)"
 # at Lua boot, never again. A no-op before-hook installs a detour that fires at
 # most once at init; this is far lower-frequency than any per-call VM primitive
 # (lua_type/lua_gettable/lua_settop/etc.), minimising main-thread-callback
-# exposure (lua-callback-threading.md). The prefixed and alias rows point at THIS
+# exposure (the engine auto-marshals an off-thread hook hit to the main thread
+# before firing a Lua callback). The prefixed and alias rows point at THIS
 # target so they prove PREFIX and ALIAS resolution end-to-end and can pass,
 # instead of inheriting the pattern row's blocker.
 [[target]]

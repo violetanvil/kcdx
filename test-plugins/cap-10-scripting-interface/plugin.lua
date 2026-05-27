@@ -5,8 +5,9 @@
 -- that reads an int arg and returns arg+42) and reports FAIL only on a real
 -- registration failure. It deliberately does NOT report PASS — a successful
 -- RegisterFunction whose function is unreachable or wrong from Lua would
--- still be a broken feature. That AP15 false-PASS (PASS purely on the bool
--- return of RegisterFunction) is exactly what this plugin closes: the verdict
+-- still be a broken feature. That false-PASS (PASS purely on the bool
+-- return of RegisterFunction — a verdict that can't go red) is exactly what
+-- this plugin closes: the verdict
 -- is the actual Lua-side CALL, not the registration.
 --
 -- DLL-load-before-own-plugin.lua: the DLL load wave runs before RunAll

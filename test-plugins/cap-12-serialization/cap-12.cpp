@@ -10,7 +10,8 @@
 // GetRecordTagName() against "counter" — not by hand-packing a FourCC
 // magic number. The engine carries the name->u32 hash and the string
 // for read-back, so the author never reverse-engineers a tag encoding
-// (the disassembler-test fix for the hand-packed tag, AP12). The UID
+// (the engine carries the tag detail from a name, so the author writes no
+// hand-packed encoding). The UID
 // stays an explicit SetUniqueID (the valid C++ expert path; a C++
 // name-derived-UID default is a tracked future parity item).
 //
@@ -28,10 +29,11 @@
 //     you're not currently in a save phase"; "MUST be called only from
 //     inside your callback"). The C++ counterpart of CAP-31-outside-window.
 //
-// Why CAP-12-outside-window exists (AP15): the InputLoaded
+// Why CAP-12-outside-window exists: the InputLoaded
 // "registration ok" line was the only boot-time verdict, but the
 // Set*Callback calls have no error return, so registration ALWAYS
-// succeeds — that PASS was a tautology that measured nothing. The
+// succeeds — that PASS was a tautology (asserted something always true)
+// that measured nothing. The
 // outside-window open is a feature-driven boot check that FAILS if the
 // engine's window guard is missing/broken (an out-of-window open
 // returning true → an out-of-window write could corrupt the cosave).
@@ -62,8 +64,8 @@ constexpr uint32_t kUID = 0x53323143;  // 'C','1','2','S'
 // Record version. The record itself is opened by NAME ("counter") via
 // OpenRecordNamed (the string-tag path) — the engine hashes the name to
 // the u32 it stores and records the string for read-back, so this plugin
-// never hand-packs a FourCC tag (the disassembler-test fix for the
-// hand-packed magic-number tag, AP12).
+// never hand-packs a FourCC tag (the engine carries the tag detail from a
+// name, so the author writes no hand-packed magic-number tag).
 constexpr uint32_t kRecordVersion = 1;
 
 const kcdxInterface*              g_api  = nullptr;
@@ -140,7 +142,8 @@ void OnMessage(kcdxMessage* msg) {
         g_inputLoadedReported = true;
         // Staging note only — NOT a test verdict. Registration is a
         // tautology (Set*Callback has no error return → always
-        // succeeds), so it cannot be the falsifiable boot check (AP15).
+        // succeeds), so it cannot be the falsifiable boot check (a check
+        // that can never go red proves nothing).
         // The boot verdict is CAP-12-outside-window (reported at
         // kcdxPlugin_Load); the round-trip verdict is CAP-12 (manual).
         if (g_registrationOK) {
@@ -205,13 +208,14 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     // valid ONLY inside a SaveCallback/LoadCallback (Interfaces.h); an
     // OpenRecordNamed here MUST be REFUSED (return false). This is the C++
     // counterpart of CAP-31-outside-window and the boot verdict that
-    // replaces the registration-always-succeeds tautology (AP15).
+    // replaces the registration-always-succeeds tautology (which could
+    // never go red).
     //
     //   PASS iff OpenRecordNamed returned false (window guard refuses an
     //        out-of-window open).
     //   FAIL iff it returned true — the window guard is missing/broken, so
     //        an out-of-window write could corrupt the cosave (logged at
-    //        Error: a corruption-risk fail-state, fail-state-logging.md).
+    //        Error: a corruption-risk fail-state must fail loud).
     //
     // SetUniqueID was called just above, so a false return here is the
     // window guard, NOT the "SetUniqueID wasn't called" branch — the two

@@ -6,7 +6,8 @@
 #   work, a manifest-VALIDATION reject returned early from LoadOneFile /
 #   ParsePluginManifest before the plugin ever registered into g_manifests,
 #   so zone_gate's g_rejected never saw it and is_rejected could not
-#   distinguish a reject from a clean load (AP14 silent-accept). The engine
+#   distinguish a reject from a clean load (a silent-accept that validated
+#   nothing). The engine
 #   now records every parse-time reject (folder-path-keyed internal +
 #   <author>.<plugin>-keyed when a valid identity was parsed) and folds that
 #   map into zone_gate::IsRejected / RejectReason, so this observer can query

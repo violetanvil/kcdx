@@ -11,7 +11,7 @@
 # this hook installs) → the wrong-ABI thunk never fires → no crash.
 #
 # Test mode: boot-only. The gate's ERROR-level HARD line is the [manual]
-# CAP-38-lua-gate-warn row (orchestrator-side log grep, action
+# CAP-38-lua-gate-warn row (confirmed by a post-run log grep, action
 # explicit_overrides_verified_hard).
 
 [kcdx]

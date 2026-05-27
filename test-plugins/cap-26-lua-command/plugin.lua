@@ -5,8 +5,8 @@
 -- CAP-13 drives kcdxConsoleInterface::RegisterCommand + ExecuteString from
 -- a DLL; CAP-26 drives kcdx.command + kcdx.console.execute from pure Lua.
 -- Together they prove the two authoring surfaces are at parity on the
--- console-command round-trip (one model, two languages —
--- .claude/rules/lua-api-surface.md).
+-- console-command round-trip (the authoring surface is one learnable model
+-- in two languages, with mirrored kcdx.* naming and call-shape).
 --
 -- Flow (deterministic, boot-only — no player gesture):
 --   1. At plugin load: kcdx.command{ name="cap26_cmd", callback=... } registers
@@ -20,7 +20,7 @@
 --      InputLoaded): kcdx.console.execute("cap26_cmd 42 hello") fires the
 --      command synchronously on the main thread. The callback runs
 --      same-stack BEFORE execute() returns (ExecuteString is synchronous —
---      AP6-safe), so by the time we assert, the recorded state is set.
+--      main-thread-safe), so by the time we assert, the recorded state is set.
 --   3. Assert the callback fired AND the args matched AND execute()
 --      returned true; report PASS/FAIL accordingly.
 --

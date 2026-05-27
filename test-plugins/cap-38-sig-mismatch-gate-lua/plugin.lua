@@ -1,4 +1,5 @@
--- CAP-38 sig-mismatch gate — Lua half (parity-is-tested, lua-api-surface.md).
+-- CAP-38 sig-mismatch gate — Lua half (both surfaces of one capability are
+-- tested — the authoring surface is one model in two languages, mirrored).
 --
 -- Pair of cap-38-sig-mismatch-gate/ (the C++ DLL). Both surfaces carry the
 -- SAME footgun and the SAME gate: a named target carrying a verified
@@ -28,7 +29,7 @@
 --     resolve-and-apply assertion.)
 --
 -- The gate's HARD-conflict line is the [manual] CAP-38-lua-gate-warn row:
--- the orchestrator greps the engine log for it. cap-38's mismatch is a
+-- a post-run log grep confirms it in the engine log. cap-38's mismatch is a
 -- RETURN-WIDTH delta (i32 verified vs void explicit) → ClassifyConflict
 -- returns Hard → the gate emits at ERROR level (not WARN). The EXACT line:
 -- LEVEL=Error, category HOOK_SIG_GATE, action

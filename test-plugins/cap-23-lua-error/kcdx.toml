@@ -1,4 +1,4 @@
-# CAP-23 — plugin.lua error line-info quality (AP12 #3 regression).
+# CAP-23 — plugin.lua error line-info quality regression.
 #
 # This plugin's plugin.lua DELIBERATELY throws a RUNTIME error every boot.
 # That error IS the test: the loader (src/lua_plugin_loader.cpp) captures
