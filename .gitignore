@@ -39,6 +39,9 @@ _download/
 release-staging/
 test-install/
 
+# Transient per-session runtime lock (sessionId/pid/timestamp) — never committed.
+.claude/scheduled_tasks.lock
+
 # This file is the PRIVATE repo's ignore list — ordinary git semantics. The
 # private working materials (.claude/, CLAUDE.md, _research/, third-party-ghidra/
 # scripts, test-fixtures/, docs/) are TRACKED here, not ignored. The private/public

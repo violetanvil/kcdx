@@ -1,0 +1,42 @@
+# CAP-44 — pak-resolver FOpen probe (Phase 8.5, gating diagnostic).
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# dev-mode FOpen probe (src/probes/fopen_override_probe.{cpp,h}, armed from the
+# worker thread alongside loc_dump_probe). This kcdx.toml is a MANIFEST-ONLY
+# STUB — no plugin.lua, no DLL — whose sole job is to pre-register the matrix
+# rows via test_names so they show PENDING until resolved. Same pattern as
+# cap-43-loc-dump (engine reports directly, manifest stub holds the names).
+#
+# This probe resolves the two RUNTIME unknowns the Phase-8.5a RE flagged before
+# the asset-overlay design (8.5b-e) rests on them
+# (_research/phase8.5-pak-resolver/FINDINGS.md §CONFIDENCE MAP):
+#
+#   cap-44-fopen-read-fires  (PROBE U.1, auto-pass) CCryPak::FOpen (id 1206) is
+#                            on the live asset-READ path — the resolver fires
+#                            with a read mode during boot. Reported PASS from
+#                            the probe's FIRST read-mode fire (one-shot guarded,
+#                            hook-fire-self-report convention).
+#
+#   cap-44-fopen-override    (PROBE U.2, manual read) A pName-rewrite in the
+#                            FOpen hook OVERRIDES a pak-resident asset (vs pak
+#                            precedence winning). NOT boot-only auto-passable:
+#                            it requires the U.2 mutate build + reading what the
+#                            game loaded from the dev log. Stays PENDING until
+#                            U.2 runs and the override semantics are confirmed.
+#
+# These rows are DIAGNOSTIC, not the permanent overlay regression — the
+# permanent test plugin ships WITH the 8.5c overlay feature. cap-44 graduates
+# (or is struck) when the overlay feature lands its own coverage.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_44_fopen_override"
+display_name        = "CAP-44 pak-resolver FOpen probe (Phase 8.5)"
+author              = "ts"
+description         = "Dev-mode FOpen probe: confirms CCryPak::FOpen fires for asset reads (U.1, auto-pass) and tests whether a pName-rewrite overrides a pak-resident asset (U.2, manual log read). Gating diagnostic for the asset-overlay feature."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-44-fopen-read-fires", "cap-44-fopen-override"]
