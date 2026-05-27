@@ -3,25 +3,29 @@
   Publish a SANITIZED snapshot of `main` to the PUBLIC remote (violetanvil/kcdx).
 
 .DESCRIPTION
-  This repo is the comprehensive PRIVATE tree. `main` tracks the `private` remote
-  and `git push` (no args) goes there. This script is the ONLY path that touches
-  the `public` remote. It does NOT switch your working branch or disturb the
-  working tree — it builds the sanitized tree entirely in git's object store via
-  a temporary worktree, so it is safe to run while other chats share this tree.
+  This repo IS the private repo. `main` tracks the `private` remote and a bare
+  `git push` goes there. `.gitignore` is simply the private repo's ignore list —
+  ordinary git semantics. This script is the ONLY path that touches the `public`
+  remote.
 
-  Sanitize set (stripped from the public projection) — keep in sync with the
-  private paths that .gitignore intentionally no longer ignores:
-    .claude/  CLAUDE.md  _research/  third-party-ghidra/
-    test-fixtures/  docs/outstanding-work/  docs/known-issues/
+  The public projection is an ALLOWLIST, not a denylist: it publishes ONLY the
+  explicitly-listed public directories + root files below. Anything not on the
+  list — any new dir, any private working material — defaults to PRIVATE and is
+  never published. (A denylist would leak the moment a new private dir was added
+  and forgotten; an allowlist fails safe toward private.)
 
-  The public branch (origin/main) is a SNAPSHOT, not shared history with private.
-  Each publish replaces public main with a single sanitized commit whose tree
-  matches the current private main minus the sanitize set. This is a force-push
-  to public by design (the histories are unrelated).
+  Because the projection starts from the committed tree, it also inherently
+  respects `.gitignore`: ignored files are not tracked, so they are never in the
+  tree to publish.
+
+  The script builds the public tree in a throwaway worktree, so it never touches
+  the live working tree / index / HEAD — safe to run while other chats share the
+  tree. The public branch is a single snapshot commit on an unrelated history;
+  each publish force-pushes a fresh snapshot.
 
 .PARAMETER DryRun
-  Show what would be published (the stripped file list + diffstat vs current
-  public main) and do NOT push.
+  Show what would be published (file count + diffstat vs current public) without
+  pushing.
 
 .EXAMPLE
   pwsh ./publish-public.ps1 -DryRun
@@ -39,84 +43,117 @@ $PrivateBranch = 'main'         # source of truth (private remote tracks this)
 $PublicRemote  = 'public'       # violetanvil/kcdx
 $PublicBranch  = 'main'         # branch on the public remote to receive the snapshot
 
-# Paths stripped from the public projection. Directory entries strip recursively.
-$SanitizeSet = @(
-  '.claude',
-  'CLAUDE.md',
-  '_research',
-  'third-party-ghidra',
-  'test-fixtures',
-  'docs/outstanding-work',
-  'docs/known-issues'
+# ALLOWLIST — the ONLY directories published. Everything else is private.
+# A path is published iff its first segment is one of these. Add a dir here to
+# make it public; omit it to keep it (and anything new) private by default.
+$PublicDirs = @(
+  'src',
+  'include',
+  'vendor',
+  'data',
+  'examples',
+  'kcdx-engine',
+  'test-plugins',
+  'tools',
+  'docs'           # all of docs/ is public
+)
+
+# ALLOWLIST — the ONLY root-level files published. Note: `.gitignore` is
+# intentionally NOT published (its contents would reveal the hidden private
+# dirs). `CLAUDE.md`, `publish-public.ps1`, etc. are absent by omission.
+$PublicRootFiles = @(
+  'README.md',
+  'LICENSE',
+  'CMakeLists.txt',
+  'build.ps1',
+  'package-release.ps1'
 )
 # ----------------------------------------------------------------------------
 
 $repoRoot = (git rev-parse --show-toplevel).Trim()
 Set-Location $repoRoot
 
-# Refuse to publish a dirty index/tree for the source branch's tracked paths is
-# unnecessary: we publish from the committed tip of $PrivateBranch, never the
-# working tree. Uncommitted local edits are simply not included — by design.
 $srcCommit = (git rev-parse $PrivateBranch).Trim()
 Write-Host "Source (private $PrivateBranch): $srcCommit"
 
-# Make sure we have the latest public ref to diff against (best-effort).
+# Best-effort fetch of the public ref to diff against.
 git fetch $PublicRemote $PublicBranch 2>$null | Out-Null
 
-# Build the sanitized tree in an isolated temporary worktree so the live working
-# tree / index / HEAD are never touched (safe under parallel chats).
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("kcdx-publish-" + [guid]::NewGuid().ToString('N'))
 $cleanupBranch = "publish/tmp-" + [guid]::NewGuid().ToString('N').Substring(0,8)
 
+# Build the set of allowed top-level segments once.
+$allowedDirs  = [System.Collections.Generic.HashSet[string]]::new()
+$PublicDirs | ForEach-Object { [void]$allowedDirs.Add($_) }
+$allowedFiles = [System.Collections.Generic.HashSet[string]]::new()
+$PublicRootFiles | ForEach-Object { [void]$allowedFiles.Add($_) }
+
 try {
-  # Detached worktree at the private tip — its own HEAD/index, shared object store.
   git worktree add --quiet -b $cleanupBranch $tmp $srcCommit | Out-Null
 
   Push-Location $tmp
   try {
-    # Strip the sanitize set from the index (and disk in this throwaway tree).
-    $stripped = @()
-    foreach ($p in $SanitizeSet) {
-      # --ignore-unmatch: a path absent at this commit is not an error.
-      $before = (git ls-files -- $p | Measure-Object).Count
-      git rm -r --quiet --cached --ignore-unmatch -- $p | Out-Null
-      if ($before -gt 0) { $stripped += "$p ($before files)" }
+    # Every tracked file at the source commit (already respects .gitignore —
+    # ignored files are not tracked). Forward slashes from git ls-files.
+    # -c core.quotepath=false: emit raw UTF-8 paths, NOT octal-escaped + quoted,
+    # so a non-ASCII filename (e.g. an em-dash) is not mis-partitioned by the
+    # leading quote turning its top segment into `"docs` instead of `docs`.
+    $allFiles = git -c core.quotepath=false ls-files
+
+    # Partition by the allowlist. A file is published iff:
+    #   - it is a root file (no '/') AND in $PublicRootFiles, or
+    #   - its first path segment is in $PublicDirs.
+    $toRemove = [System.Collections.Generic.List[string]]::new()
+    $keptCount = 0
+    foreach ($f in $allFiles) {
+      $slash = $f.IndexOf('/')
+      if ($slash -lt 0) {
+        $keep = $allowedFiles.Contains($f)
+      } else {
+        $top = $f.Substring(0, $slash)
+        $keep = $allowedDirs.Contains($top)
+      }
+      if ($keep) { $keptCount++ } else { $toRemove.Add($f) }
     }
 
-    # Also drop the publish script itself and the accounting scratch file — they
-    # are private tooling, not public artifacts.
-    git rm -q --cached --ignore-unmatch -- 'publish-public.ps1' 'REPO-RECONCILIATION-ACCOUNTING.md' | Out-Null
+    # Remove the non-allowlisted files from the index (and disk in this throwaway
+    # tree). Batch through a temp file to avoid a multi-thousand-arg command line.
+    if ($toRemove.Count -gt 0) {
+      $listFile = Join-Path $tmp '.publish-remove-list'
+      # NUL-delimited so paths with spaces/unicode are safe.
+      [System.IO.File]::WriteAllText($listFile, ($toRemove -join "`0"))
+      # git rm reads -z pathspecs from stdin via --pathspec-from-file.
+      git rm -q --cached --ignore-unmatch --pathspec-from-file=$listFile --pathspec-file-nul | Out-Null
+      Remove-Item $listFile -Force -ErrorAction SilentlyContinue
+    }
 
     Write-Host ""
-    Write-Host "Stripped from public projection:"
-    $stripped | ForEach-Object { Write-Host "  - $_" }
-
-    $publicCount = (git ls-files | Measure-Object).Count
-    Write-Host ""
-    Write-Host "Public projection will contain $publicCount tracked files."
+    Write-Host "Allowlist (published): $($PublicDirs -join ', ')"
+    Write-Host "Root files: $($PublicRootFiles -join ', ')"
+    Write-Host "Public projection: $keptCount files (held private: $($toRemove.Count))."
 
     if ($DryRun) {
       Write-Host ""
-      Write-Host "[Dry run] Diffstat vs current $PublicRemote/$PublicBranch (if present):"
       $tree = (git write-tree).Trim()
       $publicRef = "$PublicRemote/$PublicBranch"
       if (git rev-parse --verify --quiet $publicRef) {
+        Write-Host "[Dry run] Diffstat vs current ${publicRef}:"
         git diff --stat $publicRef $tree
       } else {
-        Write-Host "  (no $publicRef yet — first publish)"
+        Write-Host "[Dry run] (no $publicRef yet — first publish)"
       }
+      Write-Host ""
+      Write-Host "[Dry run] Top-level entries that WOULD be on public:"
+      git -c core.quotepath=false ls-files | ForEach-Object { ($_ -split '/')[0] } | Sort-Object -Unique | ForEach-Object { Write-Host "  $_" }
       Write-Host ""
       Write-Host "[Dry run] No push performed."
       return
     }
 
-    # Commit the sanitized tree as a single snapshot commit.
     $stamp = Get-Date -Format 'yyyy-MM-dd'
-    git commit -q -m "Public snapshot $stamp (sanitized from private $($srcCommit.Substring(0,8)))."
+    git commit -q -m "kcdx $stamp"
     $snapCommit = (git rev-parse HEAD).Trim()
 
-    # Force-push the snapshot to public main. Force is required: public history is
-    # intentionally unrelated to private, and each publish is a fresh snapshot.
     Write-Host ""
     Write-Host "Pushing snapshot $($snapCommit.Substring(0,8)) -> $PublicRemote/$PublicBranch ..."
     git push --force $PublicRemote "HEAD:$PublicBranch"
@@ -127,7 +164,6 @@ try {
   }
 }
 finally {
-  # Always remove the temporary worktree + its throwaway branch.
   git worktree remove --force $tmp 2>$null | Out-Null
   git branch -D $cleanupBranch 2>$null | Out-Null
 }
