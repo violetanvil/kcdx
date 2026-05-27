@@ -135,6 +135,49 @@ This is a probe RESULT, not a built capability — the U.7 diagnostic edit in
 `src/probes/mod_loader_probe.cpp` is reverted per probe hygiene; this record is
 its durable home.
 
+### PROBE U.8 — RESULT: from-scratch record survives MOUNT (rebuild-wholesale VIABLE)
+
+Question (the gating unknown for the rebuild-wholesale design): does a
+kcdx-ALLOCATED 0x70-byte I_Mod record with harvested vtables survive the native
+MOUNT? Mechanism: detour SELECT, after the original runs (1) HARVEST the two
+I_Mod vtable VAs from the first real record (read-only, RVA=VA−base), then (2)
+build ONE record in kcdx's own static buffer (harvested vtables + string
+pointers COPIED from the real record — isolating the allocation+vtable question
+from string synthesis) and WHOLESALE-REPLACE the enabled list by repointing its
+vector at a kcdx 1-element array, let native MOUNT run.
+
+Result (live, 2026-05-27 09:02 boot — clean, no crash, reached menu):
+
+- **Gate U.8.1 — vtable RVAs HARVESTED + resolve to code.** WHGame base
+  0x7FF8FF470000; `vtable0_va=0x7FF903B1AF00` → **RVA 0x46AAF00**;
+  `vtable1_va=0x7FF903B1AED8` → **RVA 0x46AAED8**. `u8_vtable_dump read_ok=true
+  read_slots=4` for both — both resolve to real function pointers. These are the
+  concrete I_Mod-class vtables (the workshop-mod record's), the static fact the
+  from-scratch feature sets at +0x00/+0x18. (Not yet a seed row — land when the
+  feature graduates the probe; the concrete-class identity should be confirmed,
+  since a different I_Mod subclass might use a different vtable.)
+- **Gate U.8.2 — from-scratch record MOUNTED, no crash.** `u8_replace` repointed
+  the vector (orig_count=15 → new_count=1, engine vector → kcdx storage). The
+  game log shows EXACTLY ONE `[Mod] Opening paks in ...\3728570527/data/*.pak`
+  (our record's copied path), then `[Mod] Loading localization patches...`
+  continued. ZERO `FAULTED` in the dev log; no crash zip. MOUNT + the
+  localization pass accepted our kcdx-allocated record.
+
+Meaning: **a kcdx-allocated I_Mod record with harvested vtables is accepted by
+native MOUNT + downstream passes — rebuild-wholesale is VIABLE.** The U.7 crash
+was specifically about GROWING the live vector mid-validation; wholesale-REPLACE
+(repoint at kcdx storage, done after the native validation pass already ran)
+sidesteps it. This green-lights the decided design.
+
+OPEN (deliberately not tested by U.8, owned by the build): U.8 COPIED string
+pointers from a real record. The feature must SYNTHESIZE its own string buffers
+(a kcdx-plugin has no native record to copy from) — a string-LIFETIME concern
+(the buffers must outlive MOUNT + every downstream pass), not the vtable/
+allocation question U.8 settled. The build proves kcdx-owned strings separately.
+
+This is a probe RESULT — the U.8 diagnostic edit is reverted per probe hygiene;
+this record is its durable home.
+
 ---
 
 ## Settled design (vision-preserving — approved + this session's audit)
