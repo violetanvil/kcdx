@@ -16,6 +16,7 @@
 #include "log.h"
 #include "messaging.h"
 #include "pe_helpers.h"
+#include "version_compat.h"  // shared game-version compat decision (pak-mod path shares it)
 #include "zone_gate.h"  // RejectReason() — distinguish engine-reject from user-disabled in skip-logs
 
 namespace fs = std::filesystem;
@@ -178,19 +179,17 @@ bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
         return false;
     }
 
-    // Game-version compatibility.
-    bool versionOK = false;
-    for (uint32_t gv : m.compatibleGameVersions) {
-        if (gv == g_runtimeGameVersion) {
-            versionOK = true;
-            matchedGameVersion = gv;
-            break;
-        }
-    }
-
-    // Graceful-degradation: if we couldn't determine the running game version,
-    // don't refuse over our own self-detection failure.
-    if (g_runtimeGameVersion == 0 && !m.versionIndependent) {
+    // Game-version compatibility. The CORE decision is the shared helper
+    // (version_compat::DecideGameVersionCompat) so the pak-mod path
+    // (mod_absorb) runs the IDENTICAL policy — see docs/mod-loader-absorb.md
+    // "ONE kcdx-owned version policy for BOTH plugins and pak mods". This
+    // function keeps its own logging (the pak-mod path's log lines differ) and
+    // its matchedGameVersion out-param.
+    switch (version_compat::DecideGameVersionCompat(
+                m.compatibleGameVersions, m.versionIndependent, g_runtimeGameVersion)) {
+    case version_compat::CompatResult::UnknownGameVersion:
+        // Graceful-degradation: couldn't determine the running game version;
+        // don't refuse over our own self-detection failure.
         LOG_WARN("MANIFEST",
             "Plugin '%s': engine couldn't determine the running KCD2 "
             "version; loading anyway. Plugin claims compatibility with:",
@@ -203,9 +202,8 @@ bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
             }
         }
         return true;
-    }
 
-    if (!versionOK && !m.versionIndependent) {
+    case version_compat::CompatResult::Incompatible:
         if (m.compatibleGameVersions.empty()) {
             LOG_ERROR("MANIFEST",
                 "reject '%s': empty compatible_game_versions list and "
@@ -222,9 +220,20 @@ bool ValidateManifest(const PluginManifest& m, uint32_t& matchedGameVersion) {
             }
         }
         return false;
+
+    case version_compat::CompatResult::Compatible:
+        // Set matchedGameVersion to the entry that matched (0 if
+        // version-independent — preserves the prior out-param contract).
+        for (uint32_t gv : m.compatibleGameVersions) {
+            if (gv == g_runtimeGameVersion) {
+                matchedGameVersion = gv;
+                break;
+            }
+        }
+        return true;
     }
 
-    return true;
+    return true;  // unreachable — switch is exhaustive over CompatResult.
 }
 
 // One plugin slot during the load wave. Owns a manifest (by value, separate

@@ -152,6 +152,9 @@ add_library(kcdx SHARED
     src/probes/mod_loader_probe.cpp
     src/mod_absorb/record_synth.cpp
     src/mod_absorb/record_synth_selftest.cpp
+    src/mod_absorb/mod_manifest.cpp
+    src/mod_absorb/mod_manifest_selftest.cpp
+    src/version_compat.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

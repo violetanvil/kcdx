@@ -1,0 +1,23 @@
+#pragma once
+
+// cap-53 self-test for the mod_absorb mod.manifest reader (mod_manifest.{h,cpp})
+// and the shared version-compat helper (version_compat.{h,cpp}) — STEP 2 of the
+// mod-loader-absorb feature.
+//
+// Like cap-52, these surfaces are engine-INTERNAL (kcdx::mod_absorb /
+// kcdx::version_compat), not plugin exports, so cap-53 self-reports from ENGINE
+// code via kcdx::test::ReportResult — the cap-47 / cap-39 / cap-52 prior-art
+// pattern. It feeds a LITERAL mod.manifest XML string (no file on disk) through
+// the tag extractor + the equivalent of ReadModManifest, asserts each field +
+// entity-decoding, and exercises the shared DecideGameVersionCompat /
+// DecideModCompat verdicts (the shared-logic regression guard — a regression in
+// the extracted helper changes a verdict and FAILs).
+
+namespace kcdx::mod_absorb {
+
+// Run the cap-53 self-test exactly once and report via kcdx::test::ReportResult.
+// Idempotent (function-static one-shot). No hook-fire / "ready" dependency — the
+// parsing + the helper work at boot — so it reports on the first tick.
+void RunManifestSelfTestOnce();
+
+}  // namespace kcdx::mod_absorb

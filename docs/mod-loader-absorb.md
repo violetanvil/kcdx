@@ -248,12 +248,29 @@ record needs more than the string map.
 **Version gate for pak mods = kcdx-owned, shared with the plugin path
 (user-decided 2026-05-27).** Because kcdx suppresses the native SELECT (and thus
 the native version-gate `FUN_182440c6c`), kcdx parses each pak mod's
-`mod.manifest` `<version>`/game-version field itself and runs the SAME
-compatibility decision as the plugin path (`plugin_loader.cpp::ValidateManifest`:
-compare against `g_runtimeGameVersion`, graceful-degrade if unknown). ONE
-kcdx-owned version policy for BOTH plugins and pak mods — consistent author UX.
-Needs a small `mod.manifest` XML reader (the manifest fields are the same set
-the native parser reads — name/description/author/version/created_on/modid).
+`mod.manifest` itself and runs the SAME compatibility decision as the plugin
+path (compare a game-version restriction against `g_runtimeGameVersion`,
+graceful-degrade if unknown). ONE kcdx-owned version policy for BOTH plugins and
+pak mods — consistent author UX. The shared decision is factored out of
+`plugin_loader.cpp::ValidateManifest` into a reusable helper both call.
+
+`mod.manifest` is XML: `<kcd_mod><info>` with `<name>`, `<description>`,
+`<author>`, `<version>` (the MOD's own version, NOT a game-version restriction),
+`<created_on>`, `<dependencies>`, and the modid. Step 2 parses these into a
+`ModRecordInput`.
+
+GAME-VERSION RESTRICTION — RE-PENDING (step-2 scope decision, 2026-05-27): the
+element a `mod.manifest` uses to RESTRICT to a game version (what the native
+gate `FUN_182440c6c` reads, owning "supports game version" / "is not limited to
+any game version") is NOT in the cached Warhorse wiki and NOT present in any
+installed mod — every installed mod logs "has no version restrictions in
+manifest" / "is not limited to any game version, it will be enabled". So the
+field is OPTIONAL and absent in practice. Step 2's gate: **absent restriction →
+ENABLED** (matches native + every real mod). If a restriction-looking element
+IS present, kcdx logs a one-time WARN that it cannot yet enforce it (NOT a silent
+pass — AP14) and enables, until the exact element name is RE'd. FOLLOW-UP: run
+`/research-disassembly` on `FUN_182440c6c` to pin the restriction element name,
+then complete the present-field branch. Tracked, not a silent gap.
 
 **Load-order = SUBSUME.** kcdx reads `mod_order.txt` as the vanilla baseline
 ordering INPUT each boot (a vanilla mod's initial priority derives from its

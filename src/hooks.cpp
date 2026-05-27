@@ -30,6 +30,7 @@
 #include "test.h"
 #include "trampoline_engine.h"
 #include "mod_absorb/record_synth_selftest.h"  // cap-52 engine self-report
+#include "mod_absorb/mod_manifest_selftest.h"  // cap-53 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — PROBE T
 // installs from kcdx.dll DllMain, not from hooks::Install.
@@ -557,6 +558,13 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // soon as the Address Library resolves (available at boot) — so it reports
     // on the first tick. One-shot guarded internally; safe to call every tick.
     kcdx::mod_absorb::RunSelfTestOnce();
+
+    // cap-53-mod-manifest-version-gate: engine self-report for the mod.manifest
+    // reader (src/mod_absorb/mod_manifest.cpp) + the shared version-compat
+    // helper (src/version_compat.cpp). STEP 2 of mod-loader-absorb. Same timing
+    // as cap-52: no hook-fire / "ready" dependency — parses a literal XML string
+    // + runs the helper, both work at boot. One-shot guarded internally.
+    kcdx::mod_absorb::RunManifestSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification
