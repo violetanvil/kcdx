@@ -563,12 +563,26 @@ bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r) {
         }
         // Enriched diagnostic: did a conflict_engine pre-flight pass
         // predict this verify-failure? If so, surface which other entry
-        // (patch or hook) is responsible.
+        // is responsible.
         if (auto* c = conflict_engine::FindWriteOnOriginalAffecting(p.name)) {
             log::Warn(std::string("[") + p.name + "] note: " +
                       "earlier entry '" + c->earlier.name +
                       "' modified bytes inside this patch's verify range "
                       "(see Conflict engine WARN above for details).");
+        } else {
+            // FAIL-STATE (fail-state-logging.md / AP14): the conflict
+            // pre-flight matrix no longer runs on this path — RunPreFlight
+            // (which once populated conflict_engine::g_conflicts) was removed
+            // in the apply-consolidation cut, so the Find* lookup above is
+            // now always empty. Distinguish "ran the matrix, found no culprit"
+            // from "the matrix did not run at all" so a debugger reading this
+            // failure does not mistake the empty lookup for an all-clear. Warn,
+            // matching the apply-failure severity above (this is its sub-detail).
+            log::WarnF("[%s] note: no upstream-culprit enrichment available — "
+                       "the conflict pre-flight matrix did not run on this apply "
+                       "path (it was retired in the apply-consolidation cut). "
+                       "The byte mismatch above stands on its own.",
+                       p.name.c_str());
         }
         return false;
     }

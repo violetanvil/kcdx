@@ -13,7 +13,6 @@
 #include "conflict_engine.h"
 #include "console.h"
 #include "hook_chain.h"
-#include "hook_engine.h"
 #include "hook_interface.h"
 #include "load_order.h"
 #include "log.h"
@@ -247,10 +246,11 @@ void Thunk_ReportTestResult(kcdxPluginHandle /*self*/,
 uint32_t Thunk_GetConflictReport(uintptr_t target,
                                  kcdxConflictEntry* out,
                                  uint32_t cap) {
-    // Collect matching entries from both patches and hooks. Names are
-    // stable for the process lifetime (live in PatchEntry/HookEntry
-    // strings inside the static g_patches/g_hooks vectors), so we can
-    // hand out raw c_str() pointers.
+    // Collect matching entries across the legacy g_patches surface (empty
+    // since Phase 5 — kept guarded, scoped to Phase 11) and the LIVE sources
+    // below (hook_chain participants + applied kcdx.bytes patches). Names are
+    // stable for the process lifetime (PatchEntry strings, Chain-stable
+    // storage), so we can hand out raw c_str() / aliased pointers.
     struct TempEntry {
         const char* name;
         int         priority;
@@ -278,20 +278,11 @@ uint32_t Thunk_GetConflictReport(uintptr_t target,
         }
     }
 
-    // Hooks: target matches resolved function entry exactly
-    for (size_t i = 0; i < kcdx::hook_engine::g_hooks.size(); ++i) {
-        const auto& h = kcdx::hook_engine::g_hooks[i];
-        if (!kcdx::load_order::IsPluginEnabled(h.pluginName)) continue;
-        if (i >= kcdx::conflict_engine::g_resolvedHooks.size()) break;
-        const auto& rh = kcdx::conflict_engine::g_resolvedHooks[i];
-        if (!rh.ok) continue;
-        if (rh.targetAddr == target) {
-            hits.push_back({
-                h.name.c_str(), h.priority,
-                kcdxConflictEntryKind_Hook, h.appliedOK
-            });
-        }
-    }
+    // (The legacy g_hooks loop that once joined here was removed in the
+    // apply-consolidation cut alongside conflict_engine::g_resolvedHooks —
+    // g_hooks had no populator since Phase 5, so it contributed nothing. The
+    // LIVE hook source is the hook_chain enumeration below; the LIVE byte
+    // source is the kcdx.bytes GetAppliedBytesPatchesAtTarget enumeration.)
 
     // kcdx.hook (hook_chain): the new function-interception surface. Both
     // chain winners (installed, applied=true) and CanCoexist-rejected losers

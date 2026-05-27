@@ -18,7 +18,6 @@
 #define TOML_EXCEPTIONS 1
 #include "toml.hpp"
 
-#include "hook_engine.h"
 #include "dev.h"
 #include "load_order.h"
 #include "log.h"
@@ -1236,20 +1235,6 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
                pluginKey(b.pluginName, static_cast<int>(b.source),
                          b.priority, b.name);
     };
-    auto hookLess = [&](const kcdx::hook_engine::HookEntry& a,
-                        const kcdx::hook_engine::HookEntry& b) {
-        return pluginKey(a.pluginName, static_cast<int>(a.source),
-                         a.priority, a.name) <
-               pluginKey(b.pluginName, static_cast<int>(b.source),
-                         b.priority, b.name);
-    };
-    auto midHookLess = [&](const kcdx::hook_engine::MidHookEntry& a,
-                           const kcdx::hook_engine::MidHookEntry& b) {
-        return pluginKey(a.pluginName, static_cast<int>(a.source),
-                         a.priority, a.name) <
-               pluginKey(b.pluginName, static_cast<int>(b.source),
-                         b.priority, b.name);
-    };
     auto trampLess = [&](const kcdx::trampoline_engine::TrampolineEntry& a,
                          const kcdx::trampoline_engine::TrampolineEntry& b) {
         return pluginKey(a.pluginName, static_cast<int>(a.source),
@@ -1259,22 +1244,16 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
     };
     std::sort(kcdx::patch::g_patches.begin(), kcdx::patch::g_patches.end(),
               patchLess);
-    std::sort(kcdx::hook_engine::g_hooks.begin(), kcdx::hook_engine::g_hooks.end(),
-              hookLess);
-    std::sort(kcdx::hook_engine::g_mid_hooks.begin(),
-              kcdx::hook_engine::g_mid_hooks.end(),
-              midHookLess);
     std::sort(kcdx::trampoline_engine::g_trampolines.begin(),
               kcdx::trampoline_engine::g_trampolines.end(),
               trampLess);
 
     size_t totalFolders = engFolders + usrFolders;
     size_t totalFiles   = engFiles   + usrFiles;
-    log::InfoF("Discovered %zu patch(es), %zu hook(s), %zu trampoline(s) from "
+    log::InfoF("Discovered %zu patch(es), %zu trampoline(s) from "
                "%zu config file(s) across %zu plugin folder(s) "
                "(%zu engine + %zu user)",
                kcdx::patch::g_patches.size(),
-               kcdx::hook_engine::g_hooks.size(),
                kcdx::trampoline_engine::g_trampolines.size(),
                totalFiles, totalFolders,
                engFolders, usrFolders);

@@ -4,29 +4,27 @@
 #include <cstdio>
 #include <cstring>
 
-#include "hook_engine.h"
-#include "load_order.h"
 #include "log.h"
+
+// HISTORICAL (apply-consolidation cut): the HOOK half of this engine
+// (g_resolvedHooks + ResolveHooks, the hook write-footprint loop, the
+// kHookWriteFootprintBytes constant), the unified apply order
+// (g_applyOrder + BuildApplyOrder + EntryRef), the pre-flight driver
+// RunPreFlight, and the FindHookOnHookAffecting lookup were removed. They
+// fed a dead apply loop in hooks.cpp that walked g_patches/g_hooks (TOML
+// vectors with no populator since Phase 5). The PATCH half below survives
+// as a dead-but-present builder kept for the compile dependency in
+// patch::ApplyResolvedPatch (the Find* readers); see the header banner.
 
 namespace kcdx::conflict_engine {
 
 // Engine state.
 std::vector<patch::ResolvedPatch> g_resolvedPatches;
-std::vector<ResolvedHook>         g_resolvedHooks;
 std::vector<WriteFootprint>       g_writes;
 std::vector<ReadFootprint>        g_reads;
 std::vector<Conflict>             g_conflicts;
-std::vector<EntryRef>             g_applyOrder;
 
 namespace {
-
-// MinHook's rel32-jmp footprint at a hook target. Pre-flight assumes 5
-// bytes; if MinHook picks the 14-byte abs64 form at actual install time
-// (which can only happen when no branch-pool address is within ±2GB —
-// kcdx's branch pool is sized to make this rare), pre-flight conflict
-// detection slightly under-counts. The 14-byte abs64 case can be added
-// later by widening the footprint here.
-constexpr uintptr_t kHookWriteFootprintBytes = 5;
 
 inline uintptr_t IntersectBegin(uintptr_t a, uintptr_t b) {
     return a > b ? a : b;
@@ -128,50 +126,6 @@ void ResolvePatches() {
     }
 }
 
-// Resolve hooks: factored from old hook_engine::ApplyAll. Adapts the hook's
-// locator data into a synthetic PatchEntry (the locator pipeline doesn't
-// care that there's no original/replacement), runs patch::Resolve, captures
-// patchAddr as the hook target.
-void ResolveHooks() {
-    g_resolvedHooks.clear();
-    g_resolvedHooks.resize(hook_engine::g_hooks.size());
-    for (size_t i = 0; i < hook_engine::g_hooks.size(); ++i) {
-        const hook_engine::HookEntry& h = hook_engine::g_hooks[i];
-        ResolvedHook& rh = g_resolvedHooks[i];
-
-        // Phase 5f: hooks may declare either 'bytes' (raw machine code)
-        // OR 'lua_callback' (TOML schema, kcdx routes through JIT
-        // trampoline + scripting). Both produce a valid hook; only
-        // reject when both are empty (caught at parse time in config.cpp,
-        // but defensive double-check here).
-        if (h.bytes.empty() && h.lua_callback.empty()) {
-            rh.reason = "neither 'bytes' nor 'lua_callback' set";
-            continue;
-        }
-
-        // Adapt to a PatchEntry for patch::Resolve.
-        patch::PatchEntry locator;
-        locator.sourceFile = h.sourceFile;
-        locator.name = h.name;
-        locator.module = h.module;
-        locator.pattern = h.pattern;
-        locator.context = h.context;
-        locator.anchor = h.anchor;
-        locator.maxAnchorDistance = h.maxAnchorDistance;
-        locator.offset = h.offset;
-        locator.original.clear();
-        locator.replacement.clear();
-
-        patch::ResolvedPatch r = patch::Resolve(locator);
-        if (!r.ok) {
-            rh.reason = r.reason;
-            continue;
-        }
-        rh.ok = true;
-        rh.targetAddr = r.patchAddr;
-    }
-}
-
 // Build write + read footprints from resolved data.
 void CollectFootprints() {
     g_writes.clear();
@@ -200,21 +154,6 @@ void CollectFootprints() {
         rd.end   = r.originalRange.end;
         rd.patchIndex = static_cast<int>(i);
         g_reads.push_back(std::move(rd));
-    }
-
-    // Hooks contribute one write footprint (the 5-byte rel32 jmp).
-    for (size_t i = 0; i < hook_engine::g_hooks.size(); ++i) {
-        const auto& h = hook_engine::g_hooks[i];
-        const auto& r = g_resolvedHooks[i];
-        if (!r.ok) continue;
-        WriteFootprint w;
-        w.name = h.name;
-        w.kind = WriteKind::HookPrologue;
-        w.priority = h.priority;
-        w.begin = r.targetAddr;
-        w.end   = r.targetAddr + kHookWriteFootprintBytes;
-        w.hookIndex = static_cast<int>(i);
-        g_writes.push_back(std::move(w));
     }
 }
 
@@ -327,121 +266,11 @@ void DetectConflicts() {
     }
 }
 
-// Build the unified apply order. Walks every resolved patch and hook,
-// emits an EntryRef for each, then sorts by (priority, name) so the
-// orchestration in hooks.cpp can dispatch in load order. Used by the
-// unified apply loop.
-//
-// Entries from plugins the user disabled via load_order.toml
-// (enabled = false) are filtered out here so the orchestrator dispatch
-// loop, conflict reporting, and apply-summary counts all naturally see
-// zero work for them. We log a single line per skipped entry so the
-// modder can verify their disable took effect.
-void BuildApplyOrder() {
-    g_applyOrder.clear();
-    g_applyOrder.reserve(patch::g_patches.size() + hook_engine::g_hooks.size());
-
-    size_t skippedPatches = 0;
-    size_t skippedHooks   = 0;
-
-    for (size_t i = 0; i < patch::g_patches.size(); ++i) {
-        const auto& p = patch::g_patches[i];
-        if (!load_order::IsPluginEnabled(p.pluginName)) {
-            log::InfoF("[%s] skipping patch '%s' (plugin disabled via load_order.toml)",
-                       p.pluginName.c_str(), p.name.c_str());
-            ++skippedPatches;
-            continue;
-        }
-        g_applyOrder.push_back({ EntryKind::Patch, i });
-    }
-    for (size_t i = 0; i < hook_engine::g_hooks.size(); ++i) {
-        const auto& h = hook_engine::g_hooks[i];
-        if (!load_order::IsPluginEnabled(h.pluginName)) {
-            log::InfoF("[%s] skipping hook '%s' (plugin disabled via load_order.toml)",
-                       h.pluginName.c_str(), h.name.c_str());
-            ++skippedHooks;
-            continue;
-        }
-        g_applyOrder.push_back({ EntryKind::Hook, i });
-    }
-    if (skippedPatches + skippedHooks > 0) {
-        log::InfoF("load_order: skipped %zu patch(es) + %zu hook(s) from disabled plugin(s)",
-                   skippedPatches, skippedHooks);
-    }
-
-    // Sort by (priority, name) across all entry types. Lower priority
-    // applies first. Stable so ties preserve the relative order from
-    // config::LoadAllConfigs (which itself sorted by priority then name).
-    std::stable_sort(g_applyOrder.begin(), g_applyOrder.end(),
-        [](const EntryRef& a, const EntryRef& b) {
-            int aPri, bPri;
-            const std::string* aName;
-            const std::string* bName;
-            if (a.kind == EntryKind::Patch) {
-                aPri = patch::g_patches[a.index].priority;
-                aName = &patch::g_patches[a.index].name;
-            } else {
-                aPri = hook_engine::g_hooks[a.index].priority;
-                aName = &hook_engine::g_hooks[a.index].name;
-            }
-            if (b.kind == EntryKind::Patch) {
-                bPri = patch::g_patches[b.index].priority;
-                bName = &patch::g_patches[b.index].name;
-            } else {
-                bPri = hook_engine::g_hooks[b.index].priority;
-                bName = &hook_engine::g_hooks[b.index].name;
-            }
-            if (aPri != bPri) return aPri < bPri;
-            return *aName < *bName;
-        });
-}
-
 }  // namespace
-
-void RunPreFlight() {
-    log::InfoF("Conflict engine: pre-flight starting (%zu patch(es), %zu hook(s))",
-               patch::g_patches.size(), hook_engine::g_hooks.size());
-
-    ResolvePatches();
-    ResolveHooks();
-    BuildApplyOrder();
-    CollectFootprints();
-    DetectConflicts();
-
-    if (g_conflicts.empty()) {
-        log::Info("Conflict engine: pre-flight clean, no conflicts detected.");
-    } else {
-        // Tallies for the summary line.
-        size_t woo = 0, woof = 0, woop = 0, hoh = 0, hoEp = 0, pOeh = 0;
-        for (const auto& c : g_conflicts) {
-            switch (c.category) {
-            case Category::WriteOnOriginal:           ++woo;  break;
-            case Category::WriteOnWriteFull:          ++woof; break;
-            case Category::WriteOnWritePartial:       ++woop; break;
-            case Category::HookOnHook:                ++hoh;  break;
-            case Category::HookOverlapsEarlierPatch:  ++hoEp; break;
-            case Category::PatchOverlapsEarlierHook:  ++pOeh; break;
-            }
-        }
-        log::InfoF("Conflict engine: %zu conflict(s) recorded "
-                   "(WriteOnOriginal=%zu, WriteOnWriteFull=%zu, WriteOnWritePartial=%zu, "
-                   "HookOnHook=%zu, HookOverlapsEarlierPatch=%zu, PatchOverlapsEarlierHook=%zu)",
-                   g_conflicts.size(), woo, woof, woop, hoh, hoEp, pOeh);
-    }
-}
 
 const Conflict* FindWriteOnOriginalAffecting(const std::string& patchName) {
     for (const auto& c : g_conflicts) {
         if (c.category == Category::WriteOnOriginal && c.later.name == patchName) {
-            return &c;
-        }
-    }
-    return nullptr;
-}
-
-const Conflict* FindHookOnHookAffecting(const std::string& hookName) {
-    for (const auto& c : g_conflicts) {
-        if (c.category == Category::HookOnHook && c.later.name == hookName) {
             return &c;
         }
     }

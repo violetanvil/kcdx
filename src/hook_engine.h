@@ -148,29 +148,15 @@ struct MidHookEntry {
     std::string              lua_callback;      // dotted Lua function name; required
 };
 
-// Engine state.
-extern std::vector<HookEntry>     g_hooks;
-extern std::vector<MidHookEntry>  g_mid_hooks;
-
-// Apply one hook by index into g_hooks. Reads its resolution from
-// conflict_engine::g_resolvedHooks. Logs status. Returns true on
-// successful install or no-op skip; false on abort.
-//
-// Called by the unified apply orchestrator (in hooks.cpp's first-update-tick
-// handler) which interleaves patch and hook applies in global load order.
-bool ApplyOneHook(size_t hookIdx);
-
-// Phase 5g: apply one mid-hook by index into g_mid_hooks. Resolves the
-// locator inline (mid-hooks don't currently participate in
-// conflict_engine pre-flight — they're an additive layer with their
-// own first-wins semantics via hook_engine::InstallRuntime). Returns
-// true on success, false on abort.
-bool ApplyOneMidHook(size_t midHookIdx);
-
-// Apply every loaded hook in g_hooks order. Used by fallback paths only
-// (the production orchestration calls ApplyOneHook from a global sorted
-// loop instead). Returns the number of hooks successfully installed.
-size_t ApplyAll();
+// HISTORICAL (apply-consolidation cut): the TOML-fed engine state
+// (g_hooks / g_mid_hooks) and their apply orchestration (ApplyOneHook,
+// ApplyOneMidHook, ApplyAll, DumpMidHookFingerprints) were removed. Those
+// vectors had no populator since Phase 5, so the apply loop in hooks.cpp
+// that walked them was dead code. The HookEntry / MidHookEntry /
+// CallOriginalMode definitions above are retained as dead-but-present types
+// (nothing constructs them now). The LIVE hook path is kcdx.hook /
+// kcdxHookInterface via src/hook_chain.cpp; it and kcdx.memory.dynamic_hook
+// install via InstallRuntime below.
 
 // --- Phase 5c.7b.2: runtime hook installation -----------------------------
 //
@@ -206,12 +192,6 @@ struct RuntimeInstallResult {
 RuntimeInstallResult InstallRuntime(const std::string& name,
                                     uintptr_t          target_addr,
                                     void*              detour_addr);
-
-// Diagnostic: emit a MID_HOOK.fingerprint DEBUG line per installed
-// mid-hook with current JIT-buffer hash. Used by save_load_hooks to
-// detect post-install overwrites. `label` is appended to each line so
-// the reader can correlate scans across multiple call sites.
-void DumpMidHookFingerprints(const char* label);
 
 // NOTE: the load-path engine-modification inventory moved to
 // src/modification_inventory.{h,cpp}. It used to read this TU's legacy

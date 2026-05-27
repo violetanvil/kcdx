@@ -11,9 +11,7 @@
 #include <vector>
 
 #include "MinHook.h"
-#include "conflict_engine.h"
 #include "console.h"
-#include "hook_engine.h"
 #include "init_phase.h"
 #include "modification_inventory.h"
 #include "log.h"
@@ -285,20 +283,18 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // kcdx-static dummynode address. Runs once per session.
                 // See the function definition above for the design.
                 ArmFreallocProbe(L);
-                // Unified orchestration:
-                //   1. Trampolines populate the symbol table so patch/hook
-                //      target_symbol resolves correctly.
-                //   2. conflict_engine runs unified pre-flight: resolves
-                //      every patch + hook, classifies conflicts, builds
-                //      the unified apply order (priority asc, name asc
-                //      across ALL entry types).
-                //   3. A single sorted loop dispatches per-entry apply
-                //      functions. Patches and hooks interleave correctly
-                //      by global priority — fixes the v0.1 bug where
-                //      patches always applied before hooks regardless
-                //      of priority.
+                // Trampolines populate the symbol table so any
+                // target_symbol locator resolves correctly. The legacy
+                // unified patch+hook apply orchestration that once ran here
+                // (conflict_engine::RunPreFlight + a g_applyOrder dispatch
+                // loop over g_patches/g_hooks/g_mid_hooks) was removed in the
+                // apply-consolidation cut: those TOML-fed vectors have had no
+                // populator since Phase 5, so the loop was dead. The live
+                // apply path is the kcdx.* surface drained by ApplyZone below
+                // (kcdx.bytes/.hook via lua_registry + hook_chain) plus the
+                // before_game ldr_notify path. g_applyOrder/RunPreFlight no
+                // longer exist.
                 kcdx::trampoline_engine::ApplyAll();
-                kcdx::conflict_engine::RunPreFlight();
 
                 // Dormant scan diagnostic entries — locator-resolve only,
                 // no apply. The legacy [[scan]] TOML path that populated
@@ -310,52 +306,6 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // scan whose pattern overlapped an applied byte rewrite would
                 // otherwise see post-patch bytes and miss.
                 kcdx::scan_engine::RunAll();
-
-                size_t okPatches = 0, okHooks = 0;
-                size_t totalPatches = kcdx::patch::g_patches.size();
-                size_t totalHooks   = kcdx::hook_engine::g_hooks.size();
-                if (totalPatches + totalHooks > 0) {
-                    log::InfoF("Applying %zu patch(es) + %zu hook(s) in unified load order%s",
-                               totalPatches, totalHooks,
-                               kcdx::patch::g_dryRun ? " [dry_run=true]" : "");
-                    for (const auto& ref : kcdx::conflict_engine::g_applyOrder) {
-                        if (ref.kind == kcdx::conflict_engine::EntryKind::Patch) {
-                            bool ok = kcdx::patch::ApplyResolvedPatch(
-                                kcdx::patch::g_patches[ref.index],
-                                kcdx::conflict_engine::g_resolvedPatches[ref.index]);
-                            kcdx::patch::g_patches[ref.index].appliedOK = ok;
-                            if (ok) ++okPatches;
-                        } else {
-                            // ApplyOneHook sets appliedOK on the HookEntry
-                            // internally before returning true.
-                            if (kcdx::hook_engine::ApplyOneHook(ref.index)) {
-                                ++okHooks;
-                            }
-                        }
-                    }
-                    log::InfoF("Apply summary: %zu/%zu patch(es), %zu/%zu hook(s)",
-                               okPatches, totalPatches, okHooks, totalHooks);
-                }
-
-                // Phase 5g: mid-hooks. Not part of g_applyOrder yet
-                // (conflict_engine doesn't track them in v0.1); apply
-                // separately. Each mid-hook resolves its locator inline
-                // and goes through hook_engine::InstallRuntime so the
-                // global first-wins map still catches direct VA
-                // collisions with [[hook]] or runtime kcdx.memory.dynamic_hook
-                // installs.
-                const size_t totalMidHooks = kcdx::hook_engine::g_mid_hooks.size();
-                if (totalMidHooks > 0) {
-                    log::InfoF("Applying %zu mid-hook(s)%s",
-                               totalMidHooks,
-                               kcdx::patch::g_dryRun ? " [dry_run=true]" : "");
-                    size_t okMidHooks = 0;
-                    for (size_t i = 0; i < totalMidHooks; ++i) {
-                        if (kcdx::hook_engine::ApplyOneMidHook(i)) ++okMidHooks;
-                    }
-                    log::InfoF("Mid-hook summary: %zu/%zu installed",
-                               okMidHooks, totalMidHooks);
-                }
 
                 // Emit the engine-modification inventory now that every
                 // patch/hook/mid-hook is resolved + applied. SUMMARY at Info

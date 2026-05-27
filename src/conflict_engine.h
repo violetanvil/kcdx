@@ -26,9 +26,21 @@
 //   * Plain-English conflict logging
 //   * Lookup APIs so the apply step can find conflicts affecting it
 //
-// Apply-time engines (patch::ApplyResolvedPatch, hook_engine::ApplyAll)
-// READ this module's resolved data + conflict list; they no longer compute
-// any of it themselves.
+// Apply-time engines (patch::ApplyResolvedPatch) READ this module's resolved
+// data + conflict list; they no longer compute any of it themselves.
+//
+// HISTORICAL (apply-consolidation cut): this module once carried a HOOK half
+// (g_resolvedHooks + ResolveHooks, the hook write-footprint loop), a unified
+// apply order (g_applyOrder + BuildApplyOrder + EntryRef), and the pre-flight
+// driver RunPreFlight that built g_conflicts — all consumed by a dead apply
+// loop in hooks.cpp that walked g_patches/g_hooks (TOML-fed vectors with no
+// populator since Phase 5). Those were removed. The PATCH half below
+// (g_resolvedPatches + ResolvePatches, the patch footprint loop, DetectConflicts,
+// the Find* lookups) survives as a dead-but-present builder: nothing CALLS the
+// builders now (g_conflicts is no longer populated), but patch::ApplyResolvedPatch
+// still LINKS the Find* readers, so the half is kept for the compile dependency
+// (same sanctioned dead-but-present status as patch::ApplyAll/PreFlightAll —
+// hook-engine.md §ApplyAll fallback paths).
 
 namespace kcdx::conflict_engine {
 
@@ -119,70 +131,26 @@ struct Conflict {
     uintptr_t      overlapEnd;
 };
 
-// Engine state, populated by RunPreFlight():
+// Engine state. (Historically populated by RunPreFlight, now removed — these
+// are dead-but-present builders; see the module banner above.)
 
 // Resolved patches, parallel to patch::g_patches by index. (Moved here
 // from patch_engine.cpp as part of the option-A refactor.)
 extern std::vector<patch::ResolvedPatch> g_resolvedPatches;
 
-// Resolved hooks, parallel to hook_engine::g_hooks by index. Each entry
-// carries the function entry address; the hook's write footprint is
-// (targetAddr, targetAddr + 5) for MinHook's rel32 jmp.
-struct ResolvedHook {
-    bool        ok = false;
-    std::string reason;
-    uintptr_t   targetAddr = 0;  // function entry — MinHook installs the jmp here
-};
-extern std::vector<ResolvedHook> g_resolvedHooks;
-
-// Collected footprints. Sorted by (priority, begin) after RunPreFlight.
+// Collected footprints. Sorted by (priority, begin) after ResolvePatches.
 extern std::vector<WriteFootprint> g_writes;
 extern std::vector<ReadFootprint>  g_reads;
 
 // Detected conflicts. Ordered by earlier.priority then later.priority.
 extern std::vector<Conflict> g_conflicts;
 
-// Unified apply order across patches and hooks. Populated by RunPreFlight
-// after resolution. Each EntryRef points back into either patch::g_patches
-// (kind = Patch, index into g_resolvedPatches) or hook_engine::g_hooks
-// (kind = Hook, index into g_resolvedHooks). The orchestrator in hooks.cpp
-// walks this list and dispatches per-entry apply functions.
-//
-// Sort order: (priority asc, name asc) across all entry types. This means
-// a high-priority patch and a low-priority hook are interleaved correctly,
-// fixing the v0.1 bug where patches always applied before hooks regardless
-// of priority.
-enum class EntryKind { Patch, Hook };
-struct EntryRef {
-    EntryKind kind;
-    size_t    index;  // into g_resolvedPatches or g_resolvedHooks
-};
-extern std::vector<EntryRef> g_applyOrder;
-
-// Run the unified pre-flight pass:
-//   1. Resolve every patch via patch::Resolve
-//   2. Resolve every hook via hook target resolution (same locator pipeline)
-//   3. Collect WriteFootprints + ReadFootprints
-//   4. Detect pairwise conflicts; populate g_conflicts; log each
-//
-// Called from hooks.cpp's first-update-tick orchestration, AFTER
-// trampoline_engine::ApplyAll (so the symbol table is populated and
-// target_symbol-using patches can resolve), and BEFORE patch::ApplyAll
-// and hook_engine::ApplyAll.
-//
-// Safe to call exactly once per session.
-void RunPreFlight();
-
 // Diagnostic-lookup APIs for the apply step:
 
 // For a patch that's about to abort with a "bytes don't match" error,
-// check if an earlier writer (patch or hook) is responsible. Returns
-// the enriching conflict or nullptr.
+// check if an earlier writer is responsible. Returns the enriching
+// conflict or nullptr.
 const Conflict* FindWriteOnOriginalAffecting(const std::string& patchName);
-
-// For a hook that's about to attempt install, check if an earlier hook
-// already claimed the same target. Returns the enriching conflict or null.
-const Conflict* FindHookOnHookAffecting(const std::string& hookName);
 
 // For a write-on-write apply-time log: did this writer just clobber an
 // earlier writer's bytes? Returns conflicts where this writer is the
