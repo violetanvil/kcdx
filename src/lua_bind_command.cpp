@@ -68,6 +68,7 @@ extern "C" {
 
 #include "console.h"
 #include "log.h"
+#include "lua_bind_helpers.h"  // FindUnknownKey (shared unknown-key gate)
 #include "plugin_loader.h"
 #include "scripting.h"      // scripting::lua_state() — the live VM the
                             // main-thread thunk pcalls against.
@@ -185,6 +186,16 @@ void TheThunk(const kcdxConsoleCmdArgs* args) {
     }
 }
 
+// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+//
+// The recognized option-key set for kcdx.command. A typo'd `callbak=` /
+// `descripton=` would otherwise be silently ignored, the author's intent
+// lost. The iteration is the shared kcdx::lua_bind_helpers::FindUnknownKey;
+// this list stays local because the key set belongs to this binder.
+static const char* kKnown[] = {
+    "name", "description", "callback",
+};
+
 // kcdx.command{ name=, description=, callback= }
 //
 //   name        (string, required)  : the console command name (unique
@@ -208,6 +219,21 @@ int Lua_Command(lua_State* L) {
             "`description` (string). Call shape: kcdx.command{ name = "
             "\"my_cmd\", callback = function(args) ... end }");
         return 2;
+    }
+
+    // Reject an unrecognized option key before reading anything — a typo'd
+    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    {
+        std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
+            L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
+        if (!bad.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.command: unrecognized option key '%s' — not a recognized "
+                "kcdx.command option (check for a typo).",
+                bad.c_str());
+            return 2;
+        }
     }
 
     // --- name (string, required) ---

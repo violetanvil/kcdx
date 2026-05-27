@@ -86,6 +86,16 @@ namespace kcdx::lua_bind_code {
 
 namespace {
 
+// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+//
+// The recognized option-key set for kcdx.code. A typo'd `byts=` / `export=`
+// would otherwise be silently ignored, the author's intent lost. The
+// iteration is the shared kcdx::lua_bind_helpers::FindUnknownKey; this list
+// stays local because the key set belongs to this binder.
+static const char* kKnown[] = {
+    "name", "bytes", "size", "pool", "export",
+};
+
 // kcdx.code{ name=, bytes=, size=, pool=, export= }
 //
 //   name   (string, required)  : name for logs + export diagnostics.
@@ -113,6 +123,21 @@ int Lua_Code(lua_State* L) {
             "and `export` (string). Call shape: kcdx.code{ name = "
             "\"my_region\", bytes = \"90 90 90\", size = 64 }");
         return 2;
+    }
+
+    // Reject an unrecognized option key before reading anything — a typo'd
+    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    {
+        std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
+            L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
+        if (!bad.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.code: unrecognized option key '%s' — not a recognized "
+                "kcdx.code option (check for a typo).",
+                bad.c_str());
+            return 2;
+        }
     }
 
     // --- name (string, required) ---

@@ -72,6 +72,18 @@ namespace kcdx::lua_bind_scan {
 
 namespace {
 
+// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+//
+// The recognized option-key set for kcdx.scan. A typo'd `patern=` /
+// `anchor_strng=` would otherwise be silently ignored, the author's intent
+// lost. The iteration is the shared kcdx::lua_bind_helpers::FindUnknownKey;
+// this list stays local because the key set belongs to this binder.
+static const char* kKnown[] = {
+    "name", "pattern", "module", "offset", "context",
+    "anchor_string", "anchor_function_by_export", "anchor_symbol",
+    "max_anchor_distance",
+};
+
 // kcdx.scan{ name=, pattern=, module?, offset?, context?, anchor_*?,
 //            max_anchor_distance? }
 //
@@ -98,6 +110,21 @@ int Lua_Scan(lua_State* L) {
             "and `max_anchor_distance`. Call shape: kcdx.scan{ name = "
             "\"find_it\", pattern = \"48 8B 88 ?? ?? ?? ?? 48\" }");
         return 2;
+    }
+
+    // Reject an unrecognized option key before reading anything — a typo'd
+    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    {
+        std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
+            L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
+        if (!bad.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.scan: unrecognized option key '%s' — not a recognized "
+                "kcdx.scan option (check for a typo).",
+                bad.c_str());
+            return 2;
+        }
     }
 
     // --- name (string, required) ---

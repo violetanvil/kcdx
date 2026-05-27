@@ -48,6 +48,7 @@ extern "C" {
 
 #include "address_library.h"
 #include "log.h"
+#include "lua_bind_helpers.h"  // FindUnknownKey (shared unknown-key gate)
 #include "lua_registry.h"
 #include "patch_engine.h"
 
@@ -93,6 +94,18 @@ bool LuaTableBool(lua_State* L, int tableIdx, const char* key, bool fallback) {
     return out;
 }
 
+// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+//
+// The recognized option-key set for kcdx.bytes. A typo'd `replacment=` /
+// `targt=` would otherwise be silently ignored, the author's intent lost.
+// The iteration is the shared kcdx::lua_bind_helpers::FindUnknownKey; this
+// list stays local because the key set belongs to this binder.
+static const char* kKnown[] = {
+    "name", "description", "priority", "module", "offset", "idempotent",
+    "address_id", "target_symbol", "pattern", "original", "replacement",
+    "context", "anchor_string", "target",
+};
+
 // Apply handler for Kind::Bytes. Invoked once per queued entry during
 // kcdx::lua_registry::ApplyZone, in unified-load-order. Returns true
 // on successful patch apply (or idempotent-skip), false on rejection
@@ -126,6 +139,21 @@ int Lua_Bytes(lua_State* L) {
         lua_pushnil(L);
         lua_pushstring(L, "kcdx.bytes: expected a single table argument");
         return 2;
+    }
+
+    // Reject an unrecognized option key before reading anything — a typo'd
+    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    {
+        std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
+            L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
+        if (!bad.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.bytes: unrecognized option key '%s' — not a recognized "
+                "kcdx.bytes option (check for a typo).",
+                bad.c_str());
+            return 2;
+        }
     }
 
     // Build the patch entry from the table.

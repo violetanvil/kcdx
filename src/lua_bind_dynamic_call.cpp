@@ -337,6 +337,18 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
 
 namespace {  // reopen anon namespace for the rest of the TU-local helpers
 
+// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+//
+// The recognized option-key set for kcdx.memory.dynamic_call. A typo'd
+// `retrun_type=` / `param_type=` would otherwise vanish silently, the
+// author's intent lost. Integer keys (the param_types array's own elements
+// live in a sub-table, not here) are not checked by the shared gate. The
+// iteration is the shared kcdx::lua_bind_helpers::FindUnknownKey; this list
+// stays local because the key set belongs to this binder.
+static const char* kKnown[] = {
+    "target", "return_type", "param_types",
+};
+
 // --- handle metatable -----------------------------------------------------
 
 int Handle_Call(lua_State* L) {
@@ -383,6 +395,21 @@ void PushHandleMetatable(lua_State* L) {
 int Lua_DynamicCall(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
 
+    // Reject an unrecognized option key before reading anything — a typo'd
+    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    {
+        std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
+            L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
+        if (!bad.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.memory.dynamic_call: unrecognized option key '%s' — not "
+                "a recognized option (check for a typo).",
+                bad.c_str());
+            return 2;
+        }
+    }
+
     // target: kcdx.memory.pointer userdata, raw lightuserdata (exact VA —
     // e.g. from kcdx.lua.cfunction_address), or integer VA.
     uintptr_t target_addr = 0;
@@ -421,17 +448,41 @@ int Lua_DynamicCall(lua_State* L) {
     }
 
     // param_types: list-of-strings table, default empty
+    //
+    // #12 (fail-state-logging.md / AP14): a NON-STRING entry is an ERROR, not
+    // an end-of-list marker. param_types DEFINES the native ABI — silently
+    // truncating at the first non-string entry builds a JIT thunk for the
+    // WRONG arity and marshals wrong into a native function (a crash risk).
+    // The list ends at the first NIL (Lua array convention); a present-but-
+    // non-string entry (e.g. {"ptr", 5}) is rejected naming the bad index.
     std::vector<std::string> param_types_strings;
     {
         lua_getfield(L, 1, "param_types");
         if (lua_istable(L, -1)) {
-            int idx = 1;
-            while (true) {
+            const int n = static_cast<int>(lua_objlen(L, -1));
+            for (int idx = 1; idx <= n; idx++) {
                 lua_rawgeti(L, -1, idx);
-                if (!lua_isstring(L, -1)) { lua_pop(L, 1); break; }
+                if (lua_isnil(L, -1)) {
+                    // End of the array part — stop cleanly.
+                    lua_pop(L, 1);
+                    break;
+                }
+                if (!lua_isstring(L, -1)) {
+                    const char* gotType = lua_typename(L, lua_type(L, -1));
+                    lua_pop(L, 1);   // the bad entry
+                    lua_pop(L, 1);   // the param_types table
+                    lua_pushnil(L);
+                    lua_pushfstring(L,
+                        "kcdx.memory.dynamic_call: param_types[%d] is a %s — "
+                        "every param_types entry must be a type-name string "
+                        "(e.g. \"ptr\", \"i32\"). param_types defines the "
+                        "native function's ABI; a non-string entry would "
+                        "build a thunk for the wrong arity.",
+                        idx, gotType);
+                    return 2;
+                }
                 param_types_strings.emplace_back(lua_tostring(L, -1));
                 lua_pop(L, 1);
-                idx++;
             }
         }
         lua_pop(L, 1);

@@ -71,28 +71,65 @@ std::string GetStringField(lua_State* L, const char* key, const char* default_va
 }
 
 // Pull a list-of-strings table field. Returns empty vector when missing.
-std::vector<std::string> GetStringListField(lua_State* L, const char* key) {
+//
+// #12 (fail-state-logging.md / AP14): a NON-STRING entry is an ERROR, not an
+// end-of-list marker. param_types DEFINES the native ABI — silently
+// truncating at the first non-string entry builds a JIT thunk for the WRONG
+// arity and marshals wrong into a native function (a crash risk). The list
+// ends at the first NIL (Lua array convention); a present-but-non-string
+// entry is reported via `err_out` (with the 1-based bad index) so the caller
+// can reject with its (nil, err) idiom. On error, returns an empty vector
+// and sets `err_out` non-empty; the Lua stack is left balanced.
+std::vector<std::string> GetStringListField(lua_State* L, const char* key,
+                                            std::string& err_out) {
+    err_out.clear();
     std::vector<std::string> out;
     lua_getfield(L, 1, key);
     if (!lua_istable(L, -1)) {
         lua_pop(L, 1);
         return out;
     }
-    // Walk 1..N (Lua-style array). Stop at first non-string entry.
-    int idx = 1;
-    while (true) {
+    const int n = static_cast<int>(lua_objlen(L, -1));
+    for (int idx = 1; idx <= n; idx++) {
         lua_rawgeti(L, -1, idx);
-        if (!lua_isstring(L, -1)) {
-            lua_pop(L, 1);
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);  // end of array part — stop cleanly
             break;
+        }
+        if (!lua_isstring(L, -1)) {
+            const char* gotType = lua_typename(L, lua_type(L, -1));
+            lua_pop(L, 1);  // the bad entry
+            char buf[160];
+            std::snprintf(buf, sizeof(buf),
+                "%s[%d] is a %s — every entry must be a type-name string "
+                "(e.g. \"ptr\", \"i32\"). %s defines the native function's "
+                "ABI; a non-string entry would build a thunk for the wrong "
+                "arity.",
+                key, idx, gotType, key);
+            err_out = buf;
+            out.clear();
+            lua_pop(L, 1);  // pop the field table itself
+            return out;
         }
         out.emplace_back(lua_tostring(L, -1));
         lua_pop(L, 1);
-        idx++;
     }
     lua_pop(L, 1);  // pop the field table itself
     return out;
 }
+
+// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+//
+// The recognized option-key set for kcdx.memory.dynamic_hook. A typo'd
+// `pre_calback=` / `retrun_type=` would otherwise vanish silently, the
+// author's intent lost. Integer keys (the param_types array's elements live
+// in a sub-table) are not checked by the shared gate. The iteration is the
+// shared kcdx::lua_bind_helpers::FindUnknownKey; this list stays local
+// because the key set belongs to this binder.
+static const char* kKnown[] = {
+    "name", "target", "return_type", "param_types",
+    "pre_callback", "post_callback",
+};
 
 // Pull target as either a pointer userdata or an integer VA.
 // Returns 0 if neither / invalid.
@@ -174,6 +211,21 @@ void PushHandleMetatable(lua_State* L) {
 int Lua_DynamicHook(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
 
+    // Reject an unrecognized option key before reading anything — a typo'd
+    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    {
+        std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
+            L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
+        if (!bad.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.memory.dynamic_hook: unrecognized option key '%s' — not "
+                "a recognized option (check for a typo).",
+                bad.c_str());
+            return 2;
+        }
+    }
+
     std::string name = GetStringField(L, "name", "");
     if (name.empty()) {
         lua_pushnil(L);
@@ -190,7 +242,15 @@ int Lua_DynamicHook(lua_State* L) {
     }
 
     std::string return_type = GetStringField(L, "return_type", "void");
-    std::vector<std::string> param_types = GetStringListField(L, "param_types");
+    std::string paramErr;
+    std::vector<std::string> param_types =
+        GetStringListField(L, "param_types", paramErr);
+    if (!paramErr.empty()) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "kcdx.memory.dynamic_hook '%s': %s",
+                        name.c_str(), paramErr.c_str());
+        return 2;
+    }
 
     // At least one callback must be present.
     lua_getfield(L, 1, "pre_callback");

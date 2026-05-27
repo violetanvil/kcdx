@@ -8,7 +8,9 @@
 // error if the value at the given index doesn't match expectations).
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <string>
 
 extern "C" {
 #include "lua.h"
@@ -39,5 +41,14 @@ kcdx::lua_memory::pointer* CheckPointer(lua_State* L, int idx);
 
 // Same for value_wrapper_t.
 kcdx::lua_memory::value_wrapper_t* CheckValueWrapper(lua_State* L, int idx);
+
+// Returns the first top-level STRING key in the table at `tableIdx` that is
+// NOT in `known[0..n)`, or "" if every string key is recognized. Integer/
+// array keys are ignored. Stack-balanced: pushes nil, iterates lua_next,
+// pops correctly on BOTH the found-unknown early-return AND clean-exit.
+// Does not alter the stack on return. (fail-state-logging.md / AP14 —
+// the shared unknown-option-key gate for the kcdx.* {table} binders.)
+std::string FindUnknownKey(lua_State* L, int tableIdx,
+                           const char* const* known, size_t n);
 
 }  // namespace kcdx::lua_bind_helpers

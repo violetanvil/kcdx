@@ -1,0 +1,51 @@
+# CAP-50 — kcdx.* binder input validation: FAIL LOUD on bad author input.
+#
+# Batch D of the fail-state-logging sweep (fail-state-logging.md / AP14): the
+# kcdx.* Lua binder surface must reject bad author input loudly instead of
+# silently dropping it. This pure-Lua plugin exercises the three Batch-D
+# findings via pcall + the (nil, err) returns the {table} binders use.
+#
+# What it proves (all boot-only, no player gesture — every binder validates
+# synchronously at the call and returns immediately):
+#
+#   * cap-50-unknown-key (#11): kcdx.hook called with an UNRECOGNIZED option
+#     key (a typo'd `signagure=`) is REJECTED with (nil, err) where err NAMES
+#     the bad key ("signagure") and says it is unrecognized. Feature-broken
+#     state: the unknown-key gate stops rejecting → the typo is silently
+#     ignored → the call proceeds / err does not name the key → FAIL.
+#
+#   * cap-50-param-types-nonstring (#12): kcdx.memory.dynamic_call with a
+#     param_types list containing a NON-STRING entry ({"ptr", 5}) is REJECTED
+#     with (nil, err) naming the bad index / param_types. Feature-broken
+#     state: the walk silently truncates at the non-string entry → builds a
+#     thunk for the wrong arity → the call proceeds → FAIL.
+#
+#   * cap-50-null-return-distinguishable (#10): kcdx.memory.get_module_base_
+#     address on a definitely-absent module RAN and returned a NULL pointer
+#     userdata (not nil, not an error) — the call is observably "ran, found
+#     nothing", and the WARN line naming the bad module is agent-log-confirmed
+#     (a null return looks identical pass/fail from Lua, so the Lua-assertable
+#     part is just that the call ran and returned a null pointer). Feature-
+#     broken state: the call errors / returns a non-null pointer for an absent
+#     module → FAIL.
+#
+# Test mode: boot-only. All three rows run + report synchronously at plugin
+# load. No console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_50_lua_key_validation"
+display_name        = "CAP-50 kcdx.* binder input validation (fail loud)"
+author              = "ts"
+description         = "Pure-Lua self-test for Batch D fail-state instrumentation: kcdx.hook rejects an unrecognized option key naming it, kcdx.memory.dynamic_call rejects a non-string param_types entry, and kcdx.memory.get_module_base_address returns an observable null pointer for an absent module (WARN agent-log-confirmed)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+version_independent = true
+log_level           = "info"
+test_names          = ["cap-50-unknown-key", "cap-50-param-types-nonstring",
+                       "cap-50-null-return-distinguishable"]
+
+[entrypoints]
+lua = "plugin.lua"

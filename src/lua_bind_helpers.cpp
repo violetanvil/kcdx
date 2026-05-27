@@ -148,6 +148,38 @@ kcdx::lua_memory::value_wrapper_t* CheckValueWrapper(lua_State* L, int idx) {
         luaL_checkudata(L, idx, kcdx::lua_memory::kValueWrapperMetatable));
 }
 
+// --- FindUnknownKey -------------------------------------------------------
+//
+// The shared unknown-option-key gate for the kcdx.* {table} binders. See the
+// header for the contract. Body was de-duplicated VERBATIM from the seven
+// per-binder copies (lua_bind_{hook,bytes,code,command,scan,dynamic_call,
+// dynamic_hook}.cpp); each binder keeps its OWN kKnown[] and its OWN reject
+// message — only this loop is shared. (fail-state-logging.md / AP14.)
+std::string FindUnknownKey(lua_State* L, int tableIdx,
+                           const char* const* known, size_t n) {
+    // Normalize a possibly-relative index to an absolute one (lua_next
+    // pushes onto the top, shifting relative indices).
+    const int abs = (tableIdx < 0) ? (lua_gettop(L) + tableIdx + 1) : tableIdx;
+    lua_pushnil(L);
+    while (lua_next(L, abs) != 0) {
+        // key at -2, value at -1. Only validate string keys.
+        if (lua_type(L, -2) == LUA_TSTRING) {
+            const char* k = lua_tostring(L, -2);
+            bool found = false;
+            for (size_t i = 0; i < n; i++) {
+                if (std::string(known[i]) == k) { found = true; break; }
+            }
+            if (!found) {
+                std::string offending = k;
+                lua_pop(L, 2);  // pop value + key (abort the iteration)
+                return offending;
+            }
+        }
+        lua_pop(L, 1);  // pop value, keep key for the next lua_next
+    }
+    return "";
+}
+
 }  // namespace kcdx::lua_bind_helpers
 
 // --- to_lua / to_lua_return ------------------------------------------------

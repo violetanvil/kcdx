@@ -81,6 +81,7 @@ extern "C" {
 #include "hook_signature.h"
 #include "load_order.h"
 #include "log.h"
+#include "lua_bind_helpers.h"  // FindUnknownKey (shared unknown-key gate)
 #include "lua_memory.h"
 #include "lua_registry.h"
 #include "patch_engine.h"
@@ -161,6 +162,30 @@ int TakeCallbackRef(lua_State* L, int tableIdx, const char* key) {
     // luaL_unref when the hook is uninstalled or fails to apply.
     return luaL_ref(L, LUA_REGISTRYINDEX);
 }
+
+// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+//
+// The recognized option-key set for kcdx.hook. The binder reads only the
+// keys it knows via lua_getfield and historically IGNORED any sibling key —
+// so a typo'd `signagure=` / `target_calsite=` vanished, the author's intent
+// gone with no trace. The shared kcdx::lua_bind_helpers::FindUnknownKey
+// iterates the top-level options table and validates STRING keys against
+// this set; integer/array keys are NOT checked (a captures list {"rax", ...}
+// is freeform). This list stays local because the key set belongs to this
+// binder.
+static const char* kKnown[] = {
+    // identity / metadata
+    "name", "description", "module", "offset", "off_thread", "priority",
+    // scope selector
+    "mode",
+    // behavior-as-key (the callback lands under its mode name)
+    "before", "after", "around", "replace", "mid",
+    // locators (common + advanced hatch)
+    "address_id", "target", "target_symbol", "target_lua_cfunction",
+    "address", "pattern", "context", "anchor_string",
+    // mode-specific sub-tables / signature
+    "target_callsite", "captures", "signature",
+};
 
 // --- Apply handler ------------------------------------------------------
 //
@@ -455,6 +480,22 @@ int Lua_Hook(lua_State* L) {
         lua_pushnil(L);
         lua_pushstring(L, "kcdx.hook: expected a single table argument");
         return 2;
+    }
+
+    // Reject an unrecognized option key BEFORE reading anything — a typo'd
+    // key (signagure=, target_calsite=) would otherwise vanish silently, the
+    // author's intent lost with no trace (fail-state-logging.md / AP14).
+    {
+        std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
+            L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
+        if (!bad.empty()) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.hook: unrecognized option key '%s' — not a recognized "
+                "kcdx.hook option (check for a typo).",
+                bad.c_str());
+            return 2;
+        }
     }
 
     auto p = std::make_shared<kcdx::hook_payload::HookPayload>();
