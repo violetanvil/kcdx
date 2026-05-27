@@ -2,7 +2,7 @@
 #
 # Valid, distinct author+name (ts.cap_49_fix_stray_table) so the reject is
 # name-queryable; the reject is on a DIFFERENT top-level table — a stray
-# [[patch]] (a legacy behavior table removed in Phase 5; behavior ships in
+# [[patch]] (a legacy behavior table that was removed — behavior ships in
 # plugin.lua / a DLL now, never TOML). ParsePluginManifest's top-level-table
 # allowlist rejects it (#6 unknown top-level table) and returns false;
 # LoadOneFile records the parse-reject under both the folder path and the
@@ -24,7 +24,7 @@ test_suite_only = true
 name                = "cap_49_fix_stray_table"
 display_name        = "CAP-49 reject: stray top-level [[patch]] table"
 author              = "ts"
-description         = "Carries a stray top-level [[patch]] table (a legacy behavior table removed in Phase 5) — MUST be rejected by the top-level-table validation. Identity is valid so the reject is queryable by name."
+description         = "Carries a stray top-level [[patch]] table (a removed legacy behavior table) — MUST be rejected by the top-level-table validation. Identity is valid so the reject is queryable by name."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 

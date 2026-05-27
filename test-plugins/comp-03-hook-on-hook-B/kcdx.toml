@@ -1,6 +1,6 @@
 # COMP-03 plugin B — loser half of the cross-plugin hook-on-hook pair.
 #
-# Phase 4b Batch 2 migration: was a legacy [[hook]] mirroring plugin A's
+# Migration: was a legacy [[hook]] mirroring plugin A's
 # bytes= entry; now a kcdxHookInterface::Replace install in
 # this DLL (comp-03-B.cpp), at the SAME named site as plugin A, with
 # [load_order].priority=20.

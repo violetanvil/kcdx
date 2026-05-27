@@ -1,8 +1,8 @@
 # CAP-36 sibling Lua plugin — the Lua half of CAP-36-cpp-hook-crosslang.
 #
-# Pair of cap-36-cpp-hook-interface/ (the C++ DLL). Phase 3 sub-1 step
-# 5-main chunk 5, the "PROOF the chunk-1 ChainEntry tagged union was
-# worth building" row: a Lua before-hook + a C++ before-hook coexist on
+# Pair of cap-36-cpp-hook-interface/ (the C++ DLL). The "PROOF the
+# ChainEntry tagged union was worth building" row: a Lua before-hook + a
+# C++ before-hook coexist on
 # ONE chain at ONE target site, both fire in load order, the observed
 # return is value-distinguishable from any other firing pattern.
 #

@@ -1,4 +1,4 @@
-# CAP-03 — function hook via kcdx.hook{before} (Phase 4b Batch 1 migration).
+# CAP-03 — function hook via kcdx.hook{before} (migration).
 #
 # Migrated off the legacy [[hook]] + lua_callback (pak Lua) path onto the
 # pure-Lua kcdx.hook surface. Same site, same observable, new mechanism:
@@ -25,7 +25,7 @@ test_suite_only = true
 name                = "cap_03_hook_lua_callback"
 display_name        = "CAP-03 Function hook (kcdx.hook before)"
 author              = "ts"
-description         = "Function hook via kcdx.hook{before} on an un-named CGame::Update callee; before callback bumps a counter, asserts installed + fired (Phase 4b Batch 1 migration off legacy [[hook]]+pak)."
+description         = "Function hook via kcdx.hook{before} on an un-named CGame::Update callee; before callback bumps a counter, asserts installed + fired (migration off legacy [[hook]]+pak)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"

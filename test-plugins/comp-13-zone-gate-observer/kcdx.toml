@@ -1,15 +1,14 @@
 # COMP-13 — zone_gate REJECTION-PATH end-to-end: OBSERVER (the asserter half).
 #
-# Phase 2 zone_gate sub-4 (the regression close-out — sub-1 448d9ff two-flag,
-# sub-2 5828373 gating engine + wiring + log enrichment, sub-3 a3bd3df
-# synthetic stub + kcdx.plugin.is_rejected + docs).
+# The zone_gate regression close-out (two-flag gating engine + wiring + log
+# enrichment + synthetic stub + kcdx.plugin.is_rejected + docs).
 #
 # WHAT THIS PLUGIN PROVES:
 #   This is the OBSERVER half of the COMP-13 pair. It asserts that the
 #   SUBJECT (ts.comp_13_zone_gate_subject — declared zone=before_game)
 #   was REJECTED by zone_gate end-to-end. The assertion uses the
 #   kcdx.plugin.is_rejected(name) -> (bool, reason_or_nil) accessor that
-#   landed in sub-3 (src/lua_bind_plugin.cpp).
+#   landed in src/lua_bind_plugin.cpp.
 #
 #   The observer reports COMP-13-zone-reject as a single row at
 #   kcdx.on("ready") time. PASS iff:

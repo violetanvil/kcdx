@@ -1,6 +1,6 @@
 // CAP-36 — kcdxHookInterface (C++ mirror of kcdx.hook.*) end-to-end.
 //
-// Phase 3 sub-1 step 5-main chunk 5. The verification chunk that proves
+// The verification plugin that proves
 // kcdxHookInterface v1 works for a real C++ DLL author. See kcdx.toml in
 // this folder for the full row-by-row plan + the per-row falsifiability
 // contract; this file is the as-built proof.

@@ -13,7 +13,7 @@
 # OWN callable cfunction (kcdx.cap05.probe) via the scripting interface.
 # The pak-Lua targets THAT cfunction (self-owned fixture) instead of the
 # archived hello-plugin's kcdx.hello.greet — a regression test owns its
-# fixtures (test-suite.md).
+# fixtures.
 #
 # Then the aggregator's PENDING tracking shows whether the pak
 # reported on schedule.

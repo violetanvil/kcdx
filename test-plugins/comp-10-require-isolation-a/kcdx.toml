@@ -1,6 +1,6 @@
 # COMP-10 — cross-plugin require-cache ISOLATION: plugin A.
 #
-# Phase 2b per-entry-zone step 6. THE GAP THIS REGRESSION-GUARDS (fixed at
+# THE GAP THIS REGRESSION-GUARDS (fixed at
 # the source, not deferred): there is ONE shared lua_State for all plugins, so
 # Lua's _LOADED module cache is SHARED across every plugin. Stock
 # ll_require keys _LOADED by the BARE module name, so plugin A's

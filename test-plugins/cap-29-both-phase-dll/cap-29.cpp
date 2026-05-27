@@ -17,7 +17,7 @@
 // run, so it owns the assertion — it can see its own run AND that Load
 // already ran. If PostGameLoad never fired the order-row would silently
 // stay PENDING, so kcdxPlugin_Load also registers a kcdxMessage_InputLoaded
-// backstop listener: sub-4 wires RunPostGameLoad BEFORE InputLoaded, so by
+// backstop listener: RunPostGameLoad is wired BEFORE InputLoaded, so by
 // InputLoaded PostGameLoad MUST have run; if it hasn't reported by then,
 // the listener reports a loud FAIL instead of a silent PENDING.
 

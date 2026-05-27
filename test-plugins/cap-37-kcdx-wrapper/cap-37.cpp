@@ -1,6 +1,6 @@
 // CAP-37 — Kcdx.h empowered wrapper end-to-end.
 //
-// Phase 3 sub-1 step 6 follow-up. cap-36 is the RAW kcdxHookInterface floor
+// cap-36 is the RAW kcdxHookInterface floor
 // regression net; THIS plugin is the WRAPPER's regression net. It exercises
 // the include/kcdx/Kcdx.h empowered helpers (kcdx::hook::Before/After/Around/
 // Replace<Sig,&fn> + the Try* handle path) and the type->DSL trait that

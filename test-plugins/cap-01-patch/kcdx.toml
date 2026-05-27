@@ -1,4 +1,4 @@
-# CAP-01 — byte rewrite via kcdx.bytes (Phase 4a pilot migration).
+# CAP-01 — byte rewrite via kcdx.bytes (pilot migration).
 #
 # FIRST plugin migrated off the legacy [[patch]] TOML path onto the
 # pure-Lua kcdx.bytes surface. Same site, same observable, new mechanism:
@@ -17,7 +17,7 @@ test_suite_only = true
 name                = "cap_01_patch"
 display_name        = "CAP-01 Patch byte-rewrite"
 author              = "ts"
-description         = "Verifies kcdx.bytes applies + bytes match post-apply (Phase 4a pilot migration off [[patch]])."
+description         = "Verifies kcdx.bytes applies + bytes match post-apply (pilot migration off [[patch]])."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"

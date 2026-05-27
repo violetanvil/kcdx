@@ -107,7 +107,7 @@ do
     end
 end
 
--- CAP-20-addrname (the Address Library NAME locator, sub-4b) is verified
+-- CAP-20-addrname (the Address Library NAME locator) is verified
 -- in cap-20.cpp at the RESOLVE layer: the DLL asserts
 -- ResolveAddressByName("name") == ResolveAddress(id) for a known entry
 -- (exact uintptr_t, no float loss; collision-proof; no live hook needed).

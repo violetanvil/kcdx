@@ -1,7 +1,7 @@
 // COMP-03 — Cross-plugin hook-on-hook: two kcdx.hook{replace} on one named
 // site; the lower-PLUGIN-priority plugin wins, the higher is rejected.
 //
-// Phase 4b Batch 2 migration off the legacy [[hook]] bytes= first-wins path.
+// Migration off the legacy [[hook]] bytes= first-wins path.
 // Plugin A (pure Lua, [load_order].priority=10) and this plugin B (this DLL,
 // [load_order].priority=20) both install a `replace` at the SAME named function
 // entry: `IsInCombat_callsite_with_stack_frame` (Address Library id 1007,

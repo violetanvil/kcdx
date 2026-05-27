@@ -1,15 +1,15 @@
 // CAP-40 — kcdxTrampolineInterface v2 (C++ mirror of kcdx.code) end-to-end.
 //
-// Phase 3 sub-3 step 4 (FINAL) — the verification plugin that proves the v2
+// The verification plugin that proves the v2
 // peers of the raw AllocateFrom*Pool floor work for a real C++ DLL author.
-// Steps 1-3 wired the ABI: 519dbb2-class header decl (kcdxCodeOptions +
+// The ABI was wired: the header decl (kcdxCodeOptions +
 // Allocate/Export appended to kcdxTrampolineInterface, _Version=2u), the
 // src/trampoline.cpp engine impl (Thunk_Allocate alloc+memcpy+NOP-pad+
 // export-register; Thunk_Export standalone symbols::Register), and K.code on
 // Kcdx.h already pointing at kcdxTrampolineInterface fetched at version 2u.
 // This plugin is the FIRST non-Lua-binder consumer of Allocate/Export and the
-// C++ PEER of the Lua kcdx.code test coverage (parity-is-tested,
-// lua-api-surface.md).
+// C++ PEER of the Lua kcdx.code test coverage (the same capability is
+// tested across both languages).
 //
 // === Test design — fully self-hosting, deterministic, boot-time ==========
 //
@@ -49,7 +49,7 @@
 //       K.code->Allocate with opts.exportName = "cap40_region" (a BARE name).
 //       Assert region != null AND ResolveSymbolAs(K.self, "cap40_region")
 //       returns the SAME address as the allocated region. Proves the export=
-//       publish path sub-3 closes end-to-end: publish via Allocate, consume via
+//       publish path: publish via Allocate, consume via
 //       ResolveSymbol. FALSIFIABLE: export doesn't resolve / resolves to a
 //       different address → FAIL.
 //
@@ -311,7 +311,7 @@ bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
             "resolved to 0x%p (expected 0x%p)=%d; published via "
             "K.code->Allocate(exportName=\"cap40_region\") (BARE name; engine "
             "stamps <author>.<plugin> prefix), consumed via the self-tier "
-            "resolver — the export= publish path sub-3 closes end-to-end",
+            "resolver — the export= publish path",
             pass ? "export resolves to the allocated region"
                  : "export did NOT resolve to the allocated region",
             region_ok ? "non-null" : "NULL",

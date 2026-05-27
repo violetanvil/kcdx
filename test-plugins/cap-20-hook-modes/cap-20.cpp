@@ -1,7 +1,7 @@
 // CAP-20 — kcdx.hook 4-mode chaining + arg/return mutation + wstr.
 //
-// Companion DLL for the first test of the NEW kcdx.hook surface
-// (Phase 2b sub-4). It exposes one distinct NATIVE target per sub-test
+// Companion DLL for the first test of the NEW kcdx.hook surface.
+// It exposes one distinct NATIVE target per sub-test
 // (so the sub-tests don't interfere — each MinHook detour sits on its
 // own function, mirroring cap-04's target_a/b/c/d approach), hands their
 // addresses to plugin.lua, and AFTER the hooks are applied (on
@@ -70,7 +70,7 @@ extern "C" __declspec(noinline) int Cap20_WLen(const wchar_t* s) {
 
 // Hand each target's exact address to Lua as a lightuserdata (exact for
 // pointer-magnitude VAs; PushInteger would truncate under
-// LUA_NUMBER=float — see lua-precision.md).
+// LUA_NUMBER=float).
 #define ADDR_FN(luaName, target) \
     static int luaName(struct lua_State* L, void* ud) { \
         static_cast<const kcdxLuaApi*>(ud)->PushLightUserdata( \
@@ -188,7 +188,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         return true;
     }
 
-    // CAP-20-addrname (sub-4b): the Address Library NAME locator, verified
+    // CAP-20-addrname: the Address Library NAME locator, verified
     // at the RESOLVE layer. Resolving the readable name must equal
     // resolving the numeric id for the same entry — that equality IS the
     // name->address machinery the kcdx.hook `address_id = "name"` locator

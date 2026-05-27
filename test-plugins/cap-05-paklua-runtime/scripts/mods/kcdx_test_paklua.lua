@@ -9,8 +9,7 @@
 -- Hooks kcdx.cap05.probe (registered by cap-05's OWN companion DLL,
 -- cap-05.dll), triggers a call to it from pak Lua, verifies the
 -- pre_callback fired. The fixture is self-owned: it no longer depends on
--- the archived hello-plugin sample (test-suite.md — a test owns its
--- fixtures).
+-- the archived hello-plugin sample (a test owns its fixtures).
 
 KcdxTestPaklua = {}
 KcdxTestPaklua.installed = false

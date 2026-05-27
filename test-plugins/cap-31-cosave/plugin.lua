@@ -81,7 +81,7 @@ local reject = {
 kcdx.cosave.on_save(function()
     -- --- valid writes, one per supported type ---
     -- number: a non-integer float. 3.5 is exactly representable in float
-    -- (lua_Number=float on this CryEngine build, lua-precision.md), so it
+    -- (lua_Number=float on this CryEngine build), so it
     -- round-trips EXACTLY relative to the live value — the serializer stores
     -- the raw lua_Number bytes and reloads them unchanged.
     kcdx.cosave.write("count", 1, 3.5)

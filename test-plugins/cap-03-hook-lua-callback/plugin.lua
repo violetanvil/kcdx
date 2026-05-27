@@ -1,4 +1,4 @@
--- CAP-03 plugin.lua — Phase 4b Batch 1: CAP-03 migrated from
+-- CAP-03 plugin.lua — CAP-03 migrated from
 -- [[hook]] + pak-Lua-callback to kcdx.hook{before}; same site, same
 -- observable (the hook callback fires), pure-Lua now.
 --
@@ -15,7 +15,7 @@
 -- SAME observable the old pak callback did: the hook FIRED at least once.
 --
 -- REPORT TIMING — self-report on first fire, NOT poll at a fixed lifecycle
--- event. A probe (PROBE B/B.2, 2026-05-25) established the ground truth: the
+-- event. A runtime probe established the ground truth: the
 -- hook installs and the detour fires correctly + repeatedly on the main
 -- thread — but the FIRST fire lands AFTER kcdx.on("input_loaded") (and well
 -- after "ready"). The target is the menu/UI pump; the game only starts
@@ -61,8 +61,8 @@ local function report_fired(fire_count)
     latch_pass()
     kcdx.test.report("CAP-03", true,
         "update-callee hook fired (count=" .. fire_count .. ") — the before "
-        .. "callback ran on the hooked CGame::Update callee. Phase 4b Batch 1 "
-        .. "migration off legacy [[hook]]+pak; same site, same observable, "
+        .. "callback ran on the hooked CGame::Update callee. Migration off "
+        .. "legacy [[hook]]+pak; same site, same observable, "
         .. "kcdx.hook{before} mechanism.")
 end
 

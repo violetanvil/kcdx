@@ -1,12 +1,12 @@
--- CAP-35 plugin.lua — Lua handle:uninstall() (Phase 3 sub-1 ext steps 1+2).
+-- CAP-35 plugin.lua — Lua handle:uninstall().
 --
 -- The permanent regression for the Lua-side handle:uninstall() method
 -- and its underlying engine path:
---   * step 1 (abbb4c6) — kcdx::hook_chain::Uninstall(handleId): erases the
+--   * step 1 — kcdx::hook_chain::Uninstall(handleId): erases the
 --     ChainEntry for sig/callsite chains; clears midHandleId + midCallback
 --     for mid chains; trampoline retained (session-lifetime per the
 --     dual-Lua-VM safety stance hook_chain.cpp:1700-1768).
---   * step 2 (0c0756a) — H_uninstall in src/lua_registry.cpp: the metatable
+--   * step 2 — H_uninstall in src/lua_registry.cpp: the metatable
 --     method. Kind::Hook routes through hook_chain::Uninstall + SetStatus
 --     (Status::Removed); non-Hook kinds raise a teaching luaL_error
 --     (lua_registry.cpp:177-189). H_tostring's Removed case (step 1, lua_
@@ -143,7 +143,7 @@ end
 
 -- ====================================================================
 -- (6) CAP-35-off-thread-skip — parser test for the new `off_thread` knob
--- (Phase 3 sub-1 step 5-main chunk 3, the Lua off_thread parser landing).
+-- (the Lua off_thread parser landing).
 -- Register a no-op hook with `off_thread = "skip"` on `kcdx.luaopen_math`
 -- (same prior-art target the basic rows use; the hook never fires this
 -- run, the install IS the proof). PASS iff the binder returned a non-nil

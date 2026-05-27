@@ -1,7 +1,7 @@
 // CAP-21 — kcdx.hook mode="mid": capture read/write + run/skip.
 //
-// Companion DLL for the FIRST test of the NEW kcdx.hook mid surface
-// (Phase 2b sub-5). mode=mid intercepts ONE instruction inside a function
+// Companion DLL for the FIRST test of the NEW kcdx.hook mid surface.
+// mode=mid intercepts ONE instruction inside a function
 // and reads/writes named register/memory captures; the callback returns
 // "skip" (or true) to skip the captured instruction, or returns nothing
 // to let it run.

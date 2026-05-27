@@ -1,7 +1,7 @@
 // CAP-22 — kcdx.hook mode="callsite": redirect ONE call instruction.
 //
-// Companion DLL for the first test of the NEW kcdx.hook callsite surface
-// (Phase 2b sub-6). mode="callsite" rewrites the rel32 displacement of
+// Companion DLL for the first test of the NEW kcdx.hook callsite surface.
+// mode="callsite" rewrites the rel32 displacement of
 // ONE specific E8 near-call so only THAT caller is redirected through the
 // hook chain; every other caller of the same callee is untouched. That
 // isolation is the whole point of callsite vs function-entry, and it is

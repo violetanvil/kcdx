@@ -55,8 +55,8 @@
 # CAP-12 (C++) writes "counter" via OpenRecordNamed + reads it via
 # GetRecordTagName; CAP-31 (Lua) writes "count"/"label"/... via
 # kcdx.cosave.write + reads them via records(). Each independently proves its
-# half of the same capability (lua-api-surface.md: same capability, both
-# surfaces) — that IS the parity demonstration.
+# half of the same capability across both languages — that IS the parity
+# demonstration.
 #
 # Test modes:
 #   CAP-31-outside-window  boot-only (auto-pass at load).

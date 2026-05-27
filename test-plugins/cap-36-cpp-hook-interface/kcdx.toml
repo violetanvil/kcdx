@@ -1,8 +1,8 @@
 # CAP-36 — kcdxHookInterface (C++ mirror of kcdx.hook.*) end-to-end.
 #
-# Phase 3 sub-1 step 5-main chunk 5 — the verification chunk that proves
-# kcdxHookInterface works for a real C++ DLL author. Chunks 1-4 wired the
-# ABI end-to-end (root QueryInterface(kcdxInterface_Hook, v1), six sub-
+# The verification plugin that proves
+# kcdxHookInterface works for a real C++ DLL author. The ABI was wired
+# end-to-end (root QueryInterface(kcdxInterface_Hook, v1), six sub-
 # verb install thunks + four query thunks in src/hook_interface.cpp, the
 # per-mode BuildCDispatchThunk codegen in src/dynamic_call_jit.cpp); this
 # plugin is the FIRST non-Lua-binder consumer of that surface.
@@ -16,7 +16,7 @@
 # self-defined target → declare it once, no shareability owed), then re-
 # invokes each stub from kcdxPlugin_PostGameLoad (the after_game phase
 # C++ export the engine fires AFTER ApplyZone(AfterGame) and BEFORE
-# kcdxMessage_InputLoaded — by then every hook is LIVE; the cap-29 sub-4
+# kcdxMessage_InputLoaded — by then every hook is LIVE; the cap-29
 # pattern). Each row's PASS is a value-distinguishable assertion: the
 # observed return from the hooked stub equals only what the configured
 # hook ACTUALLY DID. A one-bit code change in the hook surface (or a

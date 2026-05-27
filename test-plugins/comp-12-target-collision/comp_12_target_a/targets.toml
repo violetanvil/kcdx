@@ -20,7 +20,8 @@
 # unhooked luaopen_math so A's install succeeds and applied()==true cleanly
 # isolates the self>other precedence outcome. luaopen_math is lualibs[] entry 6,
 # invoked exactly ONCE at Lua boot — far lower-frequency than any per-call VM
-# primitive, minimising main-thread-callback exposure (lua-callback-threading.md).
+# primitive, minimising main-thread-callback exposure (the engine marshals an
+# off-thread hook hit to the main thread before firing a Lua callback).
 #
 # The bare-name collision (A and B both own `combat_check`) ALSO triggers the
 # once-per-session "NAMESPACE" warn naming both owners — observable in the log

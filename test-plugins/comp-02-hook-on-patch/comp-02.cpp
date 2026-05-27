@@ -1,6 +1,6 @@
 // COMP-02 — kcdx.bytes patch + kcdx.hook detour overlapping at ONE site.
 //
-// Phase 4b Batch 3 migration off the legacy [[patch]] + [[hook]] surface.
+// Migration off the legacy [[patch]] + [[hook]] surface.
 // ONE plugin installs BOTH, on the SAME function-entry VA:
 //   - a kcdx.bytes IDENTITY patch (48 -> 48, a genuine no-op) via
 //     kcdxBytesInterface::Register — routes through the PATCH engine

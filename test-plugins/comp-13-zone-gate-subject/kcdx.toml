@@ -1,8 +1,7 @@
 # COMP-13 — zone_gate REJECTION-PATH end-to-end: SUBJECT (the rejected half).
 #
-# Phase 2 zone_gate sub-4 (the regression close-out — sub-1 448d9ff two-flag,
-# sub-2 5828373 gating engine + wiring + log enrichment, sub-3 a3bd3df
-# synthetic stub + kcdx.plugin.is_rejected + docs).
+# The zone_gate regression close-out (two-flag gating engine + wiring + log
+# enrichment + synthetic stub + kcdx.plugin.is_rejected + docs).
 #
 # WHAT THIS PLUGIN PROVES:
 #   This plugin is DESIGNED TO BE REJECTED. It declares
@@ -42,9 +41,9 @@
 #
 # WHY [plugin].author = "ts" + [plugin].name = "comp_13_zone_gate_subject":
 #   The full prefixed name the observer references is
-#   "ts.comp_13_zone_gate_subject" (the 2-dot <author>.<plugin> form per
-#   naming-namespaces.md — when a plugin references ANOTHER plugin's
-#   whole identity, use the explicit prefixed form).
+#   "ts.comp_13_zone_gate_subject" (the 2-dot <author>.<plugin> form —
+#   when a plugin references ANOTHER plugin's whole identity, use the
+#   explicit prefixed form).
 #
 # NO test_names FIELD: the subject reports nothing — its plugin.lua never
 # runs because the gate rejected it. The observer owns the single row.

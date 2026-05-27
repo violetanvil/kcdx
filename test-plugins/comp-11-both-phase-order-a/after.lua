@@ -1,6 +1,6 @@
 -- COMP-11 plugin A (the ASSERTER) — after.lua: the AFTER slot.
 --
--- The lua_after slot runs in RunAfterEntrypoints (sub-3 hooks.cpp ordering),
+-- The lua_after slot runs in RunAfterEntrypoints (hooks.cpp ordering),
 -- which runs AFTER RunAll (both plugin.lua before slots) + ApplyZone, and
 -- iterates plugins in load-order priority asc. A is priority 30 < B's 70, so
 -- this after.lua runs BEFORE B's after.lua — this token is "a.after", and it

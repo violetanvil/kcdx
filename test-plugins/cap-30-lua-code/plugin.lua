@@ -20,14 +20,14 @@
 --       :applied()==true proves the export resolved to the live region.
 --
 -- Pointer values cross the boundary as a userdata, never a raw number
--- (lua-precision.md) — so we hold the region pointer and call methods on it;
+-- (LUA_NUMBER is float) — so we hold the region pointer and call methods on it;
 -- we never round-trip an address through a Lua number.
 
 -- Bare export name: the engine stamps the calling plugin's [plugin].name
 -- prefix (ts.cap_30_lua_code) automatically, registering ts.cap_30_lua_code.region.
 -- The consumer below uses the SAME bare name; since the same plugin both
--- exports and consumes, self>engine>other precedence self-resolves it
--- (naming-namespaces.md). The author NEVER types their own prefix.
+-- exports and consumes, self>engine>other precedence self-resolves it.
+-- The author NEVER types their own prefix.
 local EXPORT_SYMBOL = "region"
 
 -- ====================================================================

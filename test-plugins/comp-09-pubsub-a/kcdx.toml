@@ -1,6 +1,6 @@
 # COMP-09 — kcdx.publish cross-plugin pub/sub: PUBLISHER (plugin A).
 #
-# Phase 2b sub-9. kcdx.publish("event", payload) broadcasts a custom Lua
+# kcdx.publish("event", payload) broadcasts a custom Lua
 # event to kcdx.on("<author>.<plugin>.<event>", fn) subscribers in OTHER plugins.
 # A Lua-native layer sharing the kcdx.on subscriber registry (NOT the C++
 # kcdxMessage wire format) — the payload is passed BY REFERENCE.

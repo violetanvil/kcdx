@@ -1,6 +1,6 @@
-# CAP-24 — kcdx.on lifecycle-event bridge (Phase 2b sub-8).
+# CAP-24 — kcdx.on lifecycle-event bridge.
 #
-# The kcdx.on(name, fn) verb (sub-7) gains the 9 game-lifecycle events
+# The kcdx.on(name, fn) verb gains the 9 game-lifecycle events
 # that mirror the engine's existing kcdxMessage_* catalog. This plugin is
 # PURE LUA (no DLL): it subscribes to lifecycle events and reports via
 # kcdx.test.report from inside each callback.

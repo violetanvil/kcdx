@@ -10,8 +10,7 @@
 //
 // This makes the pak test self-owned: it no longer depends on the
 // archived hello-plugin sample (which is not a suite plugin and isn't
-// deployed with the suite). A regression test owns its fixtures
-// (test-suite.md).
+// deployed with the suite). A regression test owns its fixtures.
 //
 // The function is a real registered Lua C function the pak-Lua can take
 // the address of, hook, and call. Its body is a trivial counter that

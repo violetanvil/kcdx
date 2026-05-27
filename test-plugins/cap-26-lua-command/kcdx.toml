@@ -7,7 +7,7 @@
 #
 # What it proves (all boot-only, no player gesture):
 #   * kcdx.command{...} registers a console command from Lua (the verb that
-#     landed in step 1 / commit d41cb0b).
+#     landed in step 1).
 #   * kcdx.console.execute(line) fires that command through CryEngine's
 #     IConsole::ExecuteString — synchronous, same (main) thread, main-thread-safe.
 #   * The callback receives the args table: the ARRAY of typed args

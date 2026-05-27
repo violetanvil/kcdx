@@ -16,7 +16,7 @@
 //
 // Any future regression in:
 //   - Address Library id 2000/2001/2002 resolution
-//   - vtable[33] semantic (the slot-32-vs-33 bug we hit on 2026-05-20)
+//   - vtable[33] semantic (the slot-32-vs-33 bug)
 //   - IConsoleCmdArgs vtable layout (GetArgCount/GetArg/GetCommandLine)
 //   - kcdxConsoleInterface ABI
 // will fail this test on the next game launch.

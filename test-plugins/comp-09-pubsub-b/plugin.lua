@@ -1,5 +1,5 @@
 -- COMP-09 plugin B (SUBSCRIBER) — exercises kcdx.publish cross-plugin
--- pub/sub (Phase 2b sub-9).
+-- pub/sub.
 --
 -- B subscribes at plugin.lua-LOAD time to plugin A's custom event. A
 -- published event is stamped with its publisher's <author>.<plugin>, so B
@@ -25,7 +25,7 @@
 --     even though publish ran from inside A's input_loaded callback).
 --   never fires / wrong payload -> a RegisterScriptOwner identity-resolution
 --     gap (the event stamped under the wrong namespace, or the payload was
---     not passed by reference) — surface before sub-9 lands.
+--     not passed by reference) — surface before the pub/sub layer lands.
 
 kcdx.on("ts.comp_09_pubsub_a.outfit_changed", function(payload)
     local ok = type(payload) == "table"

@@ -2,15 +2,14 @@
 #
 # The regression for the whole author-targets feature: a plugin declares its
 # own named targets in a targets.toml sidecar, then refers to them BY NAME from
-# kcdx.hook / kcdx.bytes — the disassembler-test "share guarantee"
-# (cornerstones.md §36): an expert names an AOB site ONCE, a non-expert hooks
-# it by name with no hex and no ABI.
+# kcdx.hook / kcdx.bytes — the disassembler-test share guarantee: an expert
+# names an AOB site ONCE, a non-expert hooks it by name with no hex and no ABI.
 #
 # This plugin is PURE LUA + TOML (no DLL) — no CMakeLists entry needed (the
 # structural mirrors are cap-24/cap-25/cap-26/cap-30, all pure-Lua).
 #
 # What it proves (all boot-only, no player gesture):
-#   * CAP-33-pattern-by-name (THE §36 HEADLINE — BLOCKED, NOT silenced):
+#   * CAP-33-pattern-by-name (THE SHARE-GUARANTEE HEADLINE — BLOCKED, NOT silenced):
 #     kcdx.hook{ target = "ui_pump_by_pattern" } is the pure "author names a
 #     target BY AOB PATTERN and hooks it by name" proof (pattern → address,
 #     target signature → ABI, both from the bare name; NO signature= on the
@@ -50,7 +49,7 @@ test_suite_only = true
 name                = "cap_33_author_targets"
 display_name        = "CAP-33 author-declared named targets + alias"
 author              = "ts"
-description         = "Author-declared targets.toml self-test: a pattern target with a signature hooked BY NAME end-to-end (cornerstones §36), engine-tier + explicit-prefix + alias resolution, and a kcdx.bytes target=<name> resolution."
+description         = "Author-declared targets.toml self-test: a pattern target with a signature hooked BY NAME end-to-end (the share guarantee), engine-tier + explicit-prefix + alias resolution, and a kcdx.bytes target=<name> resolution."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"

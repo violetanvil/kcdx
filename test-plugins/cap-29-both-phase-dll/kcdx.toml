@@ -5,7 +5,7 @@
 # runs in the before-game/load wave, PostGameLoad runs in the after-game
 # phase (first update tick after ApplyZone), and Load runs strictly
 # BEFORE PostGameLoad. This is the first live exercise of the
-# kcdxPlugin_PostGameLoad export (sub-4) and the C++ parity mirror of
+# kcdxPlugin_PostGameLoad export and the C++ parity mirror of
 # COMP-11 (the Lua both-phase test).
 #
 # Assertion lives in PostGameLoad (the later of the two): PASS iff Load

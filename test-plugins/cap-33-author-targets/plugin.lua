@@ -9,7 +9,7 @@
 --                            AOB is .text-UNIQUE (1 match, minted + confirmed by
 --                            an AOB scan against the binary) and the function
 --                            is entry-hooked by NOBODY, so the by-name pattern
---                            scan resolves it end-to-end — the §36 proof.
+--                            scan resolves it end-to-end — the share-guarantee proof.
 --   * luaopen_math_by_id   — luaopen_math by address_id=1172 (RVA, no scan →
 --                            immune to the prologue overwrite). A VERIFIED leaf
 --                            that NOTHING entry-hooks (distinct from the bytes
@@ -59,7 +59,7 @@ local hPattern = kcdx.hook{
 -- (2) CAP-33-engine-tier — the ENGINE tier of self>engine>other still works.
 -- A bare name that is an engine seed ("luaL_loadfile", id 1002) resolves to
 -- the engine's own target. Proves the author's targets COEXIST with the
--- engine name table (precedence, not partition — naming-namespaces.md).
+-- engine name table (precedence, not partition).
 -- ====================================================================
 local hEngine = kcdx.hook{
     name   = "cap33_engine_tier",

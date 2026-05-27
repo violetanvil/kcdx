@@ -1,5 +1,5 @@
--- CAP-24 plugin.lua — exercises the kcdx.on lifecycle-event bridge
--- (Phase 2b sub-8). kcdx.on(name, fn) now accepts the 9 game-lifecycle
+-- CAP-24 plugin.lua — exercises the kcdx.on lifecycle-event bridge.
+-- kcdx.on(name, fn) now accepts the 9 game-lifecycle
 -- events that mirror the engine's kcdxMessage_* catalog; this plugin
 -- subscribes to three of them and reports from inside each callback.
 --

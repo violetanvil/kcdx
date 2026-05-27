@@ -7,7 +7,7 @@
 -- own the bare name → a cross-plugin collision.
 --
 -- A hooks the BARE name `combat_check`. Per self > engine > other
--- (naming-namespaces.md) the calling plugin's OWN target wins, so A's hook
+-- the calling plugin's OWN target wins, so A's hook
 -- must resolve A's GOOD locator and APPLY. Had B's target leaked instead,
 -- A's hook would resolve B's bogus pattern, fail to match, and NOT apply —
 -- so applied()==true is a falsifiable proof that SELF won.

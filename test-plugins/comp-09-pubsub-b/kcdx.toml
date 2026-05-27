@@ -1,6 +1,6 @@
 # COMP-09 — kcdx.publish cross-plugin pub/sub: SUBSCRIBER (plugin B).
 #
-# Phase 2b sub-9. The subscriber half. Its companion is comp-09-pubsub-a
+# The subscriber half. Its companion is comp-09-pubsub-a
 # (the publisher). B subscribes at plugin.lua-LOAD time to plugin A's custom
 # event via the "<author>.<plugin>.<event>" 3-segment dot form; A publishes from its
 # input_loaded handler (after all plugin.lua loaded), so B's subscription is

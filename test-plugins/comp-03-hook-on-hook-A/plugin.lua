@@ -1,6 +1,6 @@
 -- COMP-03 plugin A — winner half of the cross-plugin hook-on-hook pair.
 --
--- Phase 4b Batch 2 migration off legacy [[hook]] bytes= first-wins onto a
+-- Migration off legacy [[hook]] bytes= first-wins onto a
 -- cross-plugin kcdx.hook{replace}. See kcdx.toml for the full design:
 -- A ([load_order].priority=10) sorts before B (20) in the apply pass, so A's
 -- replace does first-touch and WINS; B is CanCoexist-rejected. A reports

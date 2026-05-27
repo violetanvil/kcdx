@@ -1,5 +1,4 @@
-# CAP-25 — multi-file plugin + complete source attribution (Phase 2b
-# multi-file/require step).
+# CAP-25 — multi-file plugin + complete source attribution.
 #
 # A plugin's plugin.lua can now `require("helper")` and the kcdx searcher
 # (installed in Lua 5.1 package.loaders) resolves it against the plugin's

@@ -1,5 +1,5 @@
 -- COMP-09 plugin A (PUBLISHER) — exercises kcdx.publish cross-plugin
--- pub/sub (Phase 2b sub-9).
+-- pub/sub.
 --
 -- A publishes a custom event with a TABLE payload. The subscriber half
 -- (comp-09-pubsub-b) listens via kcdx.on("ts.comp_09_pubsub_a.<event>",

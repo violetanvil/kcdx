@@ -1,6 +1,6 @@
 # CAP-20 — kcdx.hook 4-mode chaining + arg/return mutation + wstr.
 #
-# The first test of the NEW kcdx.hook surface (Phase 2b sub-4). Uses
+# The first test of the NEW kcdx.hook surface. Uses
 # ONLY restructured-model surfaces:
 #   - a C++ DLL entrypoint (exposes the native targets + drives verify)
 #   - plugin.lua calling kcdx.hook{ address=, before=/after=/around=/replace= }

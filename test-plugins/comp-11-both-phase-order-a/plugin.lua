@@ -38,7 +38,7 @@ end)
 
 -- (2) The input_loaded assert — registered now, fires on the first update
 -- tick, AFTER RunAll (both before slots) + ApplyZone + RunAfterEntrypoints
--- (both after slots) per the sub-3 hooks.cpp ordering. By then `sequence`
+-- (both after slots) per the hooks.cpp ordering. By then `sequence`
 -- holds all four tokens in the order their slots ran.
 --
 -- Expected = [a.before, b.before, a.after, b.after]:

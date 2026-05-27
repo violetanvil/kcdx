@@ -1,9 +1,9 @@
 // CAP-39 — kcdxBytesInterface (C++ mirror of kcdx.bytes) end-to-end.
 //
-// Phase 3 sub-2 step 4 (FINAL) — the verification plugin that proves
-// kcdxBytesInterface v1 works for a real C++ DLL author. Steps 1-3 wired
-// the ABI end-to-end (90fd1cf header decl, 14a0333 src/bytes_interface.cpp
-// + QueryInterface, 16f0c98 K.bytes on Kcdx.h); this plugin is the FIRST
+// The verification plugin that proves
+// kcdxBytesInterface v1 works for a real C++ DLL author. The ABI was wired
+// end-to-end (header decl, src/bytes_interface.cpp
+// + QueryInterface, K.bytes on Kcdx.h); this plugin is the FIRST
 // non-Lua-binder consumer of that surface, and the C++ PEER of cap-01's
 // Lua kcdx.bytes coverage (both surfaces of one capability ship a regression).
 //
@@ -30,7 +30,7 @@
 // This is the SAME verified-safe rewrite cap-01 proves on the Lua /
 // [[patch]] side (mov r14b,al -> xor r14d,r14d). Driving it through the
 // C++ kcdxBytesInterface instead of Lua kcdx.bytes is exactly the parity
-// proof sub-2 owes.
+// proof the C++ byte-rewrite surface owes.
 //
 // Conflict-engine entanglement — resolved, NOT blind. cap-01's [[patch]]
 // rewrites this same site with the SAME replacement and is in the suite.

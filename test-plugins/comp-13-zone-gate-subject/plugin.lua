@@ -25,7 +25,7 @@
 -- is_rejected==false.)
 --
 -- Note: this file deliberately does NOT call kcdx.zone_gate_test_after_only
--- (the synthetic API). That call would now succeed at runtime — sub-3
+-- (the synthetic API). That call would now succeed at runtime — the engine
 -- registered a no-op stub for the name — but the call is irrelevant
 -- because the gate already rejected this plugin based on the static
 -- capability table at config-load. The whole rejection model is

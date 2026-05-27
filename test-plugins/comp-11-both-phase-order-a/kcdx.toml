@@ -9,10 +9,10 @@
 # which proves BOTH:
 #   (1) the PHASE BOUNDARY — every before-slot runs before every after-slot
 #       (the engine runs RunAll over all plugin.lua, THEN ApplyZone, THEN
-#       RunAfterEntrypoints over all lua_after — sub-3 hooks.cpp ordering), AND
+#       RunAfterEntrypoints over all lua_after — hooks.cpp ordering), AND
 #   (2) the CROSS-PLUGIN PRIORITY INTERLEAVE — within each phase the
 #       lower-priority plugin's slot runs first (RunAll + RunAfterEntrypoints
-#       both iterate plugins in load-order priority asc — sub-2 + sub-3).
+#       both iterate plugins in load-order priority asc).
 #
 # PRIORITIES: A = [load_order].priority 30 (this plugin), B = 70. 30 < 70, so A's
 # plugin.lua and A's after.lua each run BEFORE B's in their respective phase.
@@ -21,13 +21,13 @@
 # CROSS-PLUGIN RECORDING (the only correct channel): step 6 made require'd
 # modules PER-PLUGIN ISOLATED (COMP-10) — two separate-owner plugins get
 # different cache keys, so they CANNOT share a require'd module to record into.
-# The only cross-plugin channel is kcdx.publish / kcdx.on (sub-9, COMP-09). So
+# The only cross-plugin channel is kcdx.publish / kcdx.on (COMP-09). So
 # each slot, WHEN IT RUNS, publishes a token naming its slot
 # (kcdx.publish("phase_token", { slot = "before" | "after" })); the engine
 # stamps it "<author>.<plugin>.phase_token" so the publisher (a vs b) is in the event
 # NAME, the slot is in the payload. A is the ASSERTER: it subscribes (kcdx.on)
 # to BOTH plugins' token events to COLLECT them into an ordered list as they
-# fire, and at input_loaded (after RunAll + RunAfterEntrypoints, per sub-3)
+# fire, and at input_loaded (after RunAll + RunAfterEntrypoints)
 # reads the collected sequence and reports COMP-11 via kcdx.test.report.
 #
 # DETERMINISTIC SUBSCRIBE-BEFORE-FIRST-TOKEN (no missed-token hole — option B,

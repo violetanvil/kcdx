@@ -1,4 +1,4 @@
--- CAP-01 — byte rewrite via kcdx.bytes (Phase 4a pilot migration).
+-- CAP-01 — byte rewrite via kcdx.bytes (pilot migration).
 --
 -- This is the FIRST plugin migrated off the legacy [[patch]] TOML path
 -- onto the pure-Lua kcdx.bytes surface. Same site, same observable, new
@@ -46,7 +46,7 @@ local POST_CONTEXT =
 -- and, when it applies first, the pattern scan finds 0 matches and cap-01
 -- aborts. With the name locator, cap-39-applies-first just means cap-01 sees
 -- 45 31 F6 == replacement and idempotent-skips to applied()==true. (The
--- Phase 4 migration lesson: prefer target=<name> over a pattern that spans
+-- migration lesson: prefer target=<name> over a pattern that spans
 -- the mutated bytes.)
 local h = kcdx.bytes{
     name        = "cap_01_outfit_swap_rewrite",
@@ -105,7 +105,7 @@ kcdx.on("ready", function()
         string.format(
             "kcdx.bytes pilot: applied()=%s reason=%q; read-back at "
             .. "post-rewrite site = %02X %02X %02X (expected 45 31 F6). "
-            .. "Phase 4a migration off legacy [[patch]] — same site, same "
+            .. "Migration off legacy [[patch]] — same site, same "
             .. "observable, kcdx.bytes mechanism.",
             tostring(applied), tostring(reason), b0, b1, b2))
 end)

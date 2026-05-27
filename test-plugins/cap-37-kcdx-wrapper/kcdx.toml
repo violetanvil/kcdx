@@ -1,4 +1,4 @@
-# CAP-37 — Kcdx.h empowered wrapper end-to-end (Phase 3 sub-1 step 6 follow-up).
+# CAP-37 — Kcdx.h empowered wrapper end-to-end.
 #
 # cap-36-cpp-hook-interface is the RAW kcdxHookInterface floor regression net
 # (Before/After/Around/Replace/uninstall/raw-floor/crosslang, all on raw
