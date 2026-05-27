@@ -9,7 +9,8 @@
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-patterns.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-probe-stack.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-review-files.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" }
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-public-private-refs.ps1" }
         ]
       },
       {
@@ -20,7 +21,8 @@
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-patterns.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-probe-stack.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-review-files.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" }
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-public-private-refs.ps1" }
         ]
       }
     ]
