@@ -786,6 +786,43 @@ DEV); `statements.cvar_ref` / all `*.edge_reason` (100% empty);
 interval's `valid_from`/`valid_through` replaces the first two; the third was a
 constant `curated`).
 
+#### The import tool: two modes + the verified version source
+
+The import is `tools/refdata-extractor/python/import_to_sqlite.py`, with two modes:
+
+- **Rebuild mode (`--rebuild`, non-default):** from-scratch baseline build from a
+  dump dir → a fresh DB. Builds the v1.5 baseline NOW; also the path to use if the
+  schema itself changes.
+- **Update mode (DEFAULT):** the incremental append (§"append-only" below):
+  1. find the most-recent version in the DB (`max(game_versions.ordinal)`);
+  2. read the game's on-disk version (source below);
+  3. if the disk version is newer → run the version-update import (matcher +
+     append). With only v1.5 present this default-runs to "already current,
+     nothing to do" — the full step-3 append lands with the §11.6 matcher.
+
+**The version source — PROBED + VERIFIED 2026-05-27 (a checkable unknown, not
+assumed):**
+- **WHGame.dll has NO PE version resource** — `VS_FIXEDFILEINFO` + `FileInfo`
+  both absent (the resource dir is a 480-byte icon/manifest stub). So the DLL is
+  NOT the version source.
+- **The source is `<game>/whdlversions.json`.** It carries PER-CONFIGURATION
+  build ids under `Configurations[]`; the build number is NOT global — Animations
+  =1089519, Shared=1069729, **MasterMasterPGO=1164953**, Profiling=1164953. The
+  detector MUST read the **`MasterMasterPGO`** configuration (the SHIPPED game
+  config — the live game runs from `Bin/Win64MasterMasterSteamPGO/`), via
+  `Configurations[].SelectedVersion.versionId`
+  (`kcd2_release_1_5_PC_MasterMasterPGO_1164953_7490`), and ignore the other
+  configs' differing numbers. Branch = `release_1_5`.
+- **`tag`** = branch + build → `1.5.1164953` (matches seed.csv). **`ordinal`** =
+  the MasterMasterPGO build number `1164953` — the GAME's own monotonic counter
+  (an earlier 1.4 build is a smaller number), so it is **backfill-safe**: a later
+  back-import of v1.4 sorts BEFORE v1.5 with no renumbering (which the append-only
+  DB requires — you cannot renumber). (Steam's `appmanifest_1771300.acf` buildid
+  22819807 is also monotonic but is Steam's depot counter, not the game build —
+  not used.)
+- `game_versions` v1.5 row: `ordinal=1164953`, `tag='1.5.1164953'`, optionally the
+  full `versionId` string for provenance.
+
 #### The DB is APPEND-ONLY and UPDATED IN PLACE per version (not rebuilt)
 
 This is a load-bearing model fact. The DB is NOT regenerated from the dump each
