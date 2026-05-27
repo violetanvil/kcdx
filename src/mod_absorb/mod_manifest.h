@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include "../version_compat.h"
 
@@ -41,6 +42,14 @@ std::string ExtractTag(const std::string& xml, const char* tag);
 // entities — the mod.manifest shape only carries these five.
 std::string DecodeEntities(const std::string& s);
 
+// Parse the <supports> game-version restriction list from a mod.manifest's XML.
+// Returns the list of <version> patterns found INSIDE the <supports> block
+// only — NOT the <info><version> mod's-own-version (the two-context
+// discriminator). <supports> absent (or malformed) -> empty list (no
+// restriction). Exposed so the self-test can exercise the two-context parse
+// directly against a literal XML string.
+std::vector<std::string> ParseSupports(const std::string& xml);
+
 struct ModManifest {
     bool ok = false;          // false if the file couldn't be read/parsed.
     std::string name;         // <name>        -> I_Mod displayName (+0x28)
@@ -52,6 +61,13 @@ struct ModManifest {
     // absent, the caller supplies the folder name (the native loader uses the
     // folder name as the id — docs/mod-loader-absorb.md, record +0x10).
     std::string modId;
+    // supports: the <supports> game-version restriction patterns — the list of
+    // <version> entries inside the <supports> block (NOT the <info><version>
+    // mod's-own-version above). Each is a wh_sys_version pattern with a trailing
+    // '*' prefix wildcard. EMPTY = <supports> absent = NO restriction = enabled
+    // (the vanilla meaning). See docs/mod-loader-absorb.md "GAME-VERSION
+    // RESTRICTION".
+    std::vector<std::string> supports;
 };
 
 // Read + parse <modManifestPath>. Returns ok=false + logs WARN naming the file
@@ -60,21 +76,17 @@ ModManifest ReadModManifest(const std::filesystem::path& modManifestPath);
 
 // Decide a pak mod's game-version compatibility.
 //
-// RE-PENDING (docs/mod-loader-absorb.md "GAME-VERSION RESTRICTION"): the
-// element a mod.manifest uses to RESTRICT to a game version is not yet known
-// (absent in the wiki + every installed mod). So for now this returns
-// Compatible (no restriction present -> enabled, matching native behavior).
+// Delegates to the UNIFIED string-prefix-wildcard gate
+// (version_compat::DecideGameVersionCompatString): the mod's parsed <supports>
+// patterns (m.supports) are matched against the runtime wh_sys_version string.
+// Empty m.supports = <supports> absent = no restriction = Compatible (the
+// vanilla meaning). This is the SAME gate kcdx plugins use, so the two paths
+// cannot drift (docs/mod-loader-absorb.md "Version gate UNIFICATION").
 //
-// `modIdForLog` names the mod in the defensive WARN below (the folder name /
-// resolved id), and `rawXml` is the manifest text scanned for a candidate
-// restriction element. If the XML carries any element whose name CONTAINS
-// "version" OTHER than the known <version> (the mod's own version), this logs a
-// ONE-TIME WARN naming the mod + the unrecognized element, stating kcdx cannot
-// yet enforce a game-version restriction and is enabling the mod (NOT a silent
-// pass — AP14): the RE-pending gap is LOUD if a real restricted mod appears.
+//   runtimeVersionString : the detected wh_sys_version string
+//                          (g_runtimeGameVersionString; empty/undetected ->
+//                          UnknownGameVersion for a non-empty restriction).
 version_compat::CompatResult DecideModCompat(const ModManifest& m,
-                                             const std::string& rawXml,
-                                             const std::string& modIdForLog,
-                                             uint32_t runtimeGameVersion);
+                                             const std::string& runtimeVersionString);
 
 }  // namespace kcdx::mod_absorb

@@ -4,7 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <unordered_set>
+#include <vector>
 
 #include "../log.h"
 
@@ -96,6 +96,53 @@ std::string ExtractTag(const std::string& xml, const char* tag) {
     }
 }
 
+// Parse the <supports> game-version restriction list out of a mod.manifest.
+//
+// TWO-CONTEXT DISCRIMINATOR: a mod.manifest carries TWO <version> contexts —
+// <info><version> (the mod's OWN version) and <supports><version> (the
+// restriction patterns). We must scan <version> ONLY within the <supports>
+// block, never the whole manifest, or the mod's own version would be captured
+// as a (bogus) restriction. So: locate the <supports>...</supports> inner text
+// FIRST (empty when <supports> is absent), THEN walk <version> entries within
+// THAT substring.
+std::vector<std::string> ParseSupports(const std::string& xml) {
+    std::vector<std::string> out;
+    // Locate the <supports>...</supports> inner text directly (NOT via ExtractTag
+    // — its decode would mangle the nested <version> tags). We want the RAW inner
+    // text so the <version> walk below sees the tags intact, decoding only each
+    // entry's text content.
+    const std::string openTag = "<supports";
+    const size_t openPos = xml.find(openTag);
+    if (openPos == std::string::npos) {
+        return out;  // <supports> absent -> no restriction.
+    }
+    const size_t openEnd = xml.find('>', openPos);
+    if (openEnd == std::string::npos) {
+        return out;
+    }
+    const size_t inner = openEnd + 1;
+    const size_t closePos = xml.find("</supports>", inner);
+    if (closePos == std::string::npos) {
+        return out;  // malformed (no close) -> treat as no restriction.
+    }
+    const std::string block = xml.substr(inner, closePos - inner);
+
+    // Walk every <version>...</version> entry within the supports block only.
+    const std::string vOpen = "<version>";
+    const std::string vClose = "</version>";
+    size_t from = 0;
+    for (;;) {
+        const size_t vo = block.find(vOpen, from);
+        if (vo == std::string::npos) break;
+        const size_t vstart = vo + vOpen.size();
+        const size_t vc = block.find(vClose, vstart);
+        if (vc == std::string::npos) break;
+        out.push_back(Trim(DecodeEntities(block.substr(vstart, vc - vstart))));
+        from = vc + vClose.size();
+    }
+    return out;
+}
+
 ModManifest ReadModManifest(const std::filesystem::path& modManifestPath) {
     ModManifest m;
 
@@ -129,75 +176,18 @@ ModManifest ReadModManifest(const std::filesystem::path& modManifestPath) {
     m.version     = ExtractTag(xml, "version");
     m.createdOn   = ExtractTag(xml, "created_on");
     m.modId       = ExtractTag(xml, "modid");  // optional; caller falls back to folder name
+    m.supports    = ParseSupports(xml);        // <supports><version>… restriction list; empty = none
     m.ok = true;
     return m;
 }
 
-namespace {
-
-// One-time-per-mod WARN tracking for the RE-pending restriction gap. Keyed by
-// modId so each distinct mod warns at most once across the process lifetime.
-std::unordered_set<std::string> g_restrictionWarned;
-
-// Does the raw XML contain an element whose tag-name CONTAINS "version" but is
-// NOT the known <version> element? Returns the offending tag name (without
-// brackets) or empty if none. Case-insensitive on the substring match; the
-// scan walks '<' ... name-end and tests each opening tag.
-std::string FindUnknownVersionElement(const std::string& xml) {
-    for (size_t i = 0; i + 1 < xml.size(); ++i) {
-        if (xml[i] != '<') continue;
-        const char next = xml[i + 1];
-        // Skip closing tags, declarations/PIs (<?xml), comments (<!--).
-        if (next == '/' || next == '?' || next == '!') continue;
-        // Read the tag name: letters/digits/_/- until whitespace, '>', or '/'.
-        size_t j = i + 1;
-        std::string name;
-        while (j < xml.size()) {
-            const char c = xml[j];
-            if (std::isspace(static_cast<unsigned char>(c)) || c == '>' || c == '/') break;
-            name.push_back(c);
-            ++j;
-        }
-        if (name.empty()) continue;
-        // Lower-case the name for the substring + equality tests.
-        std::string lower = name;
-        for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (lower == "version") continue;  // the mod's OWN version — known.
-        if (lower.find("version") != std::string::npos) {
-            return name;  // candidate restriction element we don't yet parse.
-        }
-    }
-    return {};
-}
-
-}  // namespace
-
 version_compat::CompatResult DecideModCompat(const ModManifest& m,
-                                             const std::string& rawXml,
-                                             const std::string& modIdForLog,
-                                             uint32_t runtimeGameVersion) {
-    (void)m;                   // no parsed restriction field yet (RE-pending).
-    (void)runtimeGameVersion;  // nothing to compare against until the element is RE'd.
-
-    // Defensive: if a candidate restriction element IS present, make the
-    // RE-pending gap LOUD (one-time per mod) — kcdx enables the mod but says so
-    // (AP14: a silent ignore of a real restriction would be a fail-state hidden
-    // as success).
-    const std::string unknownEl = FindUnknownVersionElement(rawXml);
-    if (!unknownEl.empty()) {
-        if (g_restrictionWarned.insert(modIdForLog).second) {
-            LOG_WARN("MOD_ABSORB",
-                "mod '%s' declares a possible game-version restriction element "
-                "<%s> that kcdx cannot yet enforce (the restriction element name "
-                "is RE-pending — see docs/mod-loader-absorb.md). Enabling the mod "
-                "anyway; run /research-disassembly on the native version-gate to "
-                "pin the element, then complete the present-field branch.",
-                modIdForLog.c_str(), unknownEl.c_str());
-        }
-    }
-
-    // No restriction parsed -> Compatible (matches native + every installed mod).
-    return version_compat::CompatResult::Compatible;
+                                             const std::string& runtimeVersionString) {
+    // The UNIFIED gate: the mod's parsed <supports> patterns vs the runtime
+    // wh_sys_version string. Empty m.supports = <supports> absent = no
+    // restriction = Compatible. Same gate kcdx plugins use, so the two paths
+    // cannot drift (docs/mod-loader-absorb.md "Version gate UNIFICATION").
+    return version_compat::DecideGameVersionCompatString(m.supports, runtimeVersionString);
 }
 
 }  // namespace kcdx::mod_absorb

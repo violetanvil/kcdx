@@ -9,16 +9,17 @@
 // code via kcdx::test::ReportResult — the cap-47 / cap-39 / cap-52 prior-art
 // pattern. It feeds a LITERAL mod.manifest XML string (no file on disk) through
 // the tag extractor + the equivalent of ReadModManifest, asserts each field +
-// entity-decoding, and exercises the shared DecideGameVersionCompat /
-// DecideModCompat verdicts (the shared-logic regression guard — a regression in
-// the extracted helper changes a verdict and FAILs).
+// entity-decoding, and exercises the UNIFIED <supports> string-prefix-wildcard
+// gate from both entry points — DecideGameVersionCompatString directly and
+// DecideModCompat (the pak-mod gate, which parses <supports> + delegates to it).
 //
-// Sub-step 2.5a EXTENDED this plugin with: (1) the unified <supports> string-
-// prefix-wildcard gate DecideGameVersionCompatString (prefix/exact/empty/
-// unknown/multi cases, incl. the no-*-is-exact-not-prefix discriminator), and
-// (2) the system.cfg wh_sys_version parser ExtractCfgValue fed a literal cfg
-// string (case-insensitive key, whitespace-around-'=', quote-stripping, absent
-// key -> "").
+// Sub-step 2.5a added: (1) the unified gate DecideGameVersionCompatString
+// (prefix/exact/empty/unknown/multi cases, incl. the no-*-is-exact-not-prefix
+// discriminator), and (2) the system.cfg wh_sys_version parser ExtractCfgValue
+// fed a literal cfg string (case-insensitive key, whitespace-around-'=',
+// quote-stripping, absent key -> ""). Sub-step 2.5c wired the pak-mod <supports>
+// parse (ParseSupports — the two-context discriminator) + repointed DecideModCompat
+// onto the string gate, so assertion 4 now asserts that pak-mod delegation.
 
 namespace kcdx::mod_absorb {
 

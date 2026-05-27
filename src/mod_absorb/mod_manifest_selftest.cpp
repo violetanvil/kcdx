@@ -1,9 +1,9 @@
 #include "mod_manifest_selftest.h"
 
-#include <cstdint>
 #include <cstdio>   // snprintf (reason string)
 #include <cstring>  // strcmp
 #include <string>
+#include <utility>  // std::move (assertion 4 lambda)
 #include <vector>
 
 #include "mod_manifest.h"
@@ -42,14 +42,20 @@ constexpr const char* kExpectAuthor  = "Othiden";
 constexpr const char* kExpectVersion = "2.21";
 constexpr const char* kExpectCreated = "Fri Mar 14 16:06:23 EDT 2025";
 
-// A fabricated game-version-restriction element name we DON'T yet parse, to
-// exercise the defensive RE-pending WARN scan (B.2). Distinct from <version>.
-constexpr const char* kManifestWithRestriction =
+// A manifest carrying BOTH a mod's-own <info><version> AND a <supports> block
+// of TWO restriction <version> entries — the two-context discriminator. The
+// <supports> parse must collect ONLY the two restriction patterns ("1.5*",
+// "1.6*") and NOT the mod's own version ("3.0"), which lives under <info>.
+constexpr const char* kManifestWithSupports =
     "<kcd_mod><info>"
     "<name>restricted</name>"
-    "<version>1.0</version>"
-    "<supported_game_version>1_5</supported_game_version>"
-    "</info></kcd_mod>";
+    "<version>3.0</version>"
+    "</info>"
+    "<supports>"
+    "<version>1.5*</version>"
+    "<version>1.6*</version>"
+    "</supports>"
+    "</kcd_mod>";
 
 void Fail(char* reason) {
     kcdx::test::ReportResult(kRow, false, reason);
@@ -67,7 +73,7 @@ void RunManifestSelfTestOnce() {
 
     char reason[640];
     using version_compat::CompatResult;
-    using version_compat::DecideGameVersionCompat;
+    using version_compat::DecideGameVersionCompatString;
 
     // --- Assertion 1: each field parses correctly from the literal XML. -----
     // ExtractTag is exactly the extraction ReadModManifest applies per field;
@@ -121,96 +127,92 @@ void RunManifestSelfTestOnce() {
         return;
     }
 
-    // --- Assertion 4: DecideGameVersionCompat — the shared-logic guard. ------
-    // This is the regression guard for Deliverable A: a change to the extracted
-    // helper that alters the decision shows up as a wrong verdict here.
-    const uint32_t kRt = 0x01050489;  // a stand-in running build (nonzero).
-    const std::vector<uint32_t> matchList    = {0x01040000, kRt, 0x01060000};
-    const std::vector<uint32_t> nonMatchList = {0x01040000, 0x01060000};
-    const std::vector<uint32_t> emptyList    = {};
+    // --- Assertion 4: DecideModCompat delegates to the string gate. ----------
+    // The pak-mod entry point (mod_absorb's gate) must produce the SAME verdicts
+    // as DecideGameVersionCompatString for equivalent inputs — i.e. it parses
+    // m.supports + forwards to the unified gate, no separate decision logic. This
+    // is the pak-mod-path coverage of the unified gate (it exercises the NEW
+    // DecideModCompat signature + the <supports> plumbing). Both authoring paths
+    // now ride the same string gate (the earlier integer compare is removed).
+    const std::string kRtStr = "1.5.1164953";  // a runtime wh_sys_version string.
+
+    auto modCompat = [](std::vector<std::string> supports,
+                        const std::string& rt) -> CompatResult {
+        ModManifest mm;
+        mm.ok = true;
+        mm.supports = std::move(supports);
+        return DecideModCompat(mm, rt);
+    };
 
     struct Case { const char* label; CompatResult got; CompatResult want; };
     const Case cases[] = {
-        // (a) list containing runtimeGameVersion -> Compatible.
-        {"list-contains-runtime",
-         DecideGameVersionCompat(matchList, /*vi*/false, kRt),
+        // (a) a matching prefix-wildcard restriction -> Compatible.
+        //     [broken: DecideModCompat doesn't forward m.supports -> wrong verdict]
+        {"supports-1.5*-matches",
+         modCompat({"1.5*"}, kRtStr),
          CompatResult::Compatible},
-        // (b) non-matching list, not version-independent -> Incompatible.
-        {"non-matching-not-vi",
-         DecideGameVersionCompat(nonMatchList, /*vi*/false, kRt),
+        // (b) a non-matching restriction -> Incompatible.
+        //     [broken: gate ignores the restriction + blanket-Compatible (the old
+        //      stub shape) -> a real restricted mod wrongly enabled -> FAIL]
+        {"supports-1.6*-no-match",
+         modCompat({"1.6*"}, kRtStr),
          CompatResult::Incompatible},
-        // (c) runtimeGameVersion == 0 -> UnknownGameVersion.
-        {"runtime-zero",
-         DecideGameVersionCompat(nonMatchList, /*vi*/false, /*rt*/0),
+        // (c) <supports> absent (empty list) -> no restriction -> Compatible.
+        //     [broken: empty treated as restrictive -> every real mod (none
+        //      carries <supports>) wrongly rejected -> FAIL]
+        {"no-supports-compatible",
+         modCompat({}, kRtStr),
+         CompatResult::Compatible},
+        // (d) a restriction we can't evaluate (runtime string unknown) ->
+        //     UnknownGameVersion (graceful-degrade, not reject).
+        //     [broken: -> Incompatible (reject over our own detection failure)
+        //      or crash -> FAIL]
+        {"supports-vs-empty-runtime-unknown",
+         modCompat({"1.5*"}, /*runtime*/""),
          CompatResult::UnknownGameVersion},
-        // (d) version_independent == true -> Compatible (even with empty list).
-        {"version-independent",
-         DecideGameVersionCompat(emptyList, /*vi*/true, kRt),
-         CompatResult::Compatible},
-        // (d') version_independent + undetected build -> still Compatible
-        //      (the rule-1/rule-2 ordering ValidateManifest preserved).
-        {"version-independent-undetected",
-         DecideGameVersionCompat(emptyList, /*vi*/true, /*rt*/0),
-         CompatResult::Compatible},
     };
     for (const Case& c : cases) {
         if (c.got != c.want) {
             std::snprintf(reason, sizeof(reason),
-                "FAIL: DecideGameVersionCompat case '%s' = %d, expected %d — the "
-                "shared helper (extracted from ValidateManifest) changed the "
-                "decision; this is the plugin-version regression guard",
+                "FAIL: DecideModCompat case '%s' = %d, expected %d — the pak-mod "
+                "gate does not delegate correctly to the unified string gate "
+                "(m.supports not forwarded, or the verdict diverges from "
+                "DecideGameVersionCompatString)",
                 c.label, static_cast<int>(c.got), static_cast<int>(c.want));
             Fail(reason);
             return;
         }
     }
 
-    // --- Assertion 5: DecideModCompat with a no-restriction manifest. --------
-    // [broken: the no-restriction pak-mod gate stops returning Compatible ->
-    //  every real mod (none carries a restriction) would be wrongly rejected.]
-    ModManifest m;
-    m.ok = true;
-    m.name = kExpectName;
-    const CompatResult modVerdict =
-        DecideModCompat(m, /*rawXml*/xml, /*modIdForLog*/"cheat", kRt);
-    if (modVerdict != CompatResult::Compatible) {
+    // --- Assertion 5: <supports> PARSE — the two-context discriminator. -------
+    // kManifestWithSupports carries an <info><version>3.0</version> (the mod's
+    // OWN version) AND a <supports> block of two restriction <version> entries
+    // ("1.5*", "1.6*"). ParseSupports must collect EXACTLY the two restriction
+    // patterns and NOT the mod's own version.
+    // [broken: the loop scanned the whole manifest instead of the <supports>
+    //  block -> m.supports wrongly includes "3.0" (the <info> version) -> the
+    //  count is 3 or the set contains "3.0" -> FAIL. This is the ordering-bug
+    //  guard: extract the <supports> substring FIRST, then loop <version>.]
+    const std::vector<std::string> parsedSupports = ParseSupports(kManifestWithSupports);
+    const bool supportsExact =
+        parsedSupports.size() == 2 &&
+        parsedSupports[0] == "1.5*" &&
+        parsedSupports[1] == "1.6*";
+    if (!supportsExact) {
         std::snprintf(reason, sizeof(reason),
-            "FAIL: DecideModCompat on a no-restriction manifest = %d, expected "
-            "Compatible(%d) — a real pak mod (none declares a restriction) would "
-            "be wrongly rejected",
-            static_cast<int>(modVerdict),
-            static_cast<int>(CompatResult::Compatible));
-        Fail(reason);
-        return;
-    }
-
-    // --- Assertion 6: a restriction-looking manifest still ENABLES (Compatible)
-    //     while the RE-pending WARN path is exercised (the gap is LOUD, not a
-    //     silent reject). We assert only the verdict here; the one-time WARN is
-    //     a log line confirmed at the feature checkpoint.
-    // [broken: the defensive scan turns a candidate restriction into a reject
-    //  -> a real restricted mod would be silently dropped instead of enabled +
-    //  warned.]
-    const std::string restrictedXml = kManifestWithRestriction;
-    const CompatResult restrictedVerdict =
-        DecideModCompat(m, restrictedXml, /*modIdForLog*/"restricted", kRt);
-    if (restrictedVerdict != CompatResult::Compatible) {
-        std::snprintf(reason, sizeof(reason),
-            "FAIL: DecideModCompat on a restriction-looking manifest = %d, "
-            "expected Compatible(%d) — the RE-pending gate must ENABLE + WARN, "
-            "not reject (the element name is not yet RE'd)",
-            static_cast<int>(restrictedVerdict),
-            static_cast<int>(CompatResult::Compatible));
+            "FAIL: ParseSupports got %zu entries (expected 2: \"1.5*\",\"1.6*\") "
+            "first=\"%s\" — the <supports> parse either missed an entry or "
+            "leaked the <info><version> mod's-own-version (the two-context bug)",
+            parsedSupports.size(),
+            parsedSupports.empty() ? "" : parsedSupports[0].c_str());
         Fail(reason);
         return;
     }
 
     // --- Assertion 7: DecideGameVersionCompatString — the UNIFIED <supports>
     //     string-prefix-wildcard gate (sub-step 2.5a Deliverable B). Each case
-    //     is falsifiable + names the broken state it catches (AP15). -----------
-    using version_compat::DecideGameVersionCompatString;
-    const std::string kRtStr = "1.5.1164953";  // a runtime wh_sys_version string.
-
+    //     is falsifiable + names the broken state it catches (AP15). Reuses
+    //     kRtStr from assertion 4. ---------------------------------------------
     struct StrCase { const char* label; CompatResult got; CompatResult want; };
     const StrCase strCases[] = {
         // (a) prefix wildcard hits. [broken: prefix logic wrong -> Incompatible -> FAIL]
@@ -297,12 +299,13 @@ void RunManifestSelfTestOnce() {
     // All assertions held.
     std::snprintf(reason, sizeof(reason),
         "mod.manifest fields parse (name/description/author/version/created_on); "
-        "&amp; decoded to '&'; absent <modid> -> empty; DecideGameVersionCompat "
-        "verdicts correct (a/b/c/d + vi-undetected = the shared-logic guard); "
-        "DecideModCompat no-restriction + restriction-looking both Compatible "
-        "(RE-pending gate enables); DecideGameVersionCompatString prefix/exact/"
-        "empty/unknown/multi verdicts correct (no-*-is-exact discriminator); "
-        "ExtractCfgValue parses wh_sys_version (case/quote/ws) + absent->\"\"");
+        "&amp; decoded to '&'; absent <modid> -> empty; DecideModCompat delegates "
+        "to the string gate (1.5* match/1.6* no-match/no-supports/unknown-runtime "
+        "verdicts = pak-mod-path gate coverage); ParseSupports collects exactly "
+        "the two <supports> patterns, NOT the <info> version (two-context "
+        "discriminator); DecideGameVersionCompatString prefix/exact/empty/unknown/"
+        "multi verdicts correct (no-*-is-exact discriminator); ExtractCfgValue "
+        "parses wh_sys_version (case/quote/ws) + absent->\"\"");
     kcdx::test::ReportResult(kRow, true, reason);
     kcdx::test::EmitSummaryIfChanged("cap-53 mod-manifest");
 }

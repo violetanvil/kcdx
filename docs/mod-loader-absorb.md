@@ -249,10 +249,12 @@ record needs more than the string map.
 (user-decided 2026-05-27).** Because kcdx suppresses the native SELECT (and thus
 the native version-gate `FUN_182440c6c`), kcdx parses each pak mod's
 `mod.manifest` itself and runs the SAME compatibility decision as the plugin
-path (compare a game-version restriction against `g_runtimeGameVersion`,
-graceful-degrade if unknown). ONE kcdx-owned version policy for BOTH plugins and
-pak mods — consistent author UX. The shared decision is factored out of
-`plugin_loader.cpp::ValidateManifest` into a reusable helper both call.
+path: it parses the `<supports>` version-pattern list and string-prefix-wildcard
+matches it against `g_runtimeGameVersionString` (wh_sys_version), graceful-degrade
+if unknown. ONE kcdx-owned version policy for BOTH plugins and pak mods —
+consistent author UX. The shared decision lives in `version_compat`
+(`DecideGameVersionCompatString`); the pak-mod entry `DecideModCompat` and the
+plugin entry `ValidateManifest` both call it.
 
 `mod.manifest` is XML: `<kcd_mod><info>` with `<name>`, `<description>`,
 `<author>`, `<version>` (the MOD's own version, NOT a game-version restriction),
@@ -305,11 +307,12 @@ The unified gate (one mechanism, both consumers):
   so the separate `version_independent` flag folds away). The old key is REMOVED
   outright (fix-forward, prerelease, no external consumers): parser + schema drop
   it, every in-repo `kcdx.toml` migrates, docs/rules move with it
-  (deletion-hygiene — no prescriptive survivor), an unknown old key warns (AP14).
+  (no prescriptive survivor doc/rule left behind), an unknown old key warns
+  loudly rather than being silently ignored.
 - **Read mechanism = `system.cfg` text** (NOT `ICVar::GetString` — that vtable
-  slot is unverified in the tree, AP3-untrusted, and the cvar getters are
-  documented-but-unbuilt). `system.cfg` is the wiki-named source; a few lines of
-  text parsing, no RE.
+  slot is unverified in the tree and the cvar getters are documented-but-unbuilt,
+  so relying on the slot is unsafe). `system.cfg` is the wiki-named source; a few
+  lines of text parsing, no RE.
 
 This is the absorb feature's **sub-arc 2.5** (multi-commit): (a) version-string
 source + the unified string-wildcard compare in `version_compat`; (b) plugin

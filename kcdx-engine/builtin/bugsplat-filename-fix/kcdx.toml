@@ -39,7 +39,7 @@ display_name = "BugSplat Filename Fix"
 description = "Fixes KCD2's BugSplat integration so minidumps actually land on disk (the stock filename contains ':' which Windows rejects)."
 author      = "kcdx_builtin"
 version     = "1.0.0"
-compatible_game_versions = ["1.5.1164953"]
+supports     = ["1.5*"]
 
 # Load-order positioning. BugSplat's MiniDumpWriteDump-filename helper
 # caches the colon-bearing app-name string at WHGame.dll's DllMain time;
