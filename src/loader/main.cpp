@@ -405,7 +405,7 @@ int RunLauncher() {
     if (!injected) {
         Logf(L"  CreateRemoteThread injection failed: 0x%08x", injectError);
         // Future: fallback chain (WriteProcessMemory variant, then
-        // manual mapped LoadLibrary stub). For Phase 1 ship, the
+        // manual mapped LoadLibrary stub). For the initial ship, the
         // single-variant path is the baseline; fallbacks are added
         // in a follow-up if Defender / AV problems surface.
         Logf(L"FATAL: kcdx.dll injection failed. Game will not have kcdx loaded.");

@@ -2,8 +2,7 @@
 
 // kcdx::lua_registry — deferred-apply queue for Lua-side kcdx.* calls.
 //
-// Per the restructure plan (docs/outstanding-work/restructure-plan.md
-// §"Confirmed design decisions" #2):
+// The deferred-apply contract:
 //
 //   API calls register intent; engine applies them in one pass after
 //   all plugins have registered. When plugin.lua calls kcdx.hook(opts),
@@ -44,7 +43,7 @@ namespace kcdx::lua_registry {
 enum class Kind {
     Bytes,        // succeeds [[patch]]
     Hook,         // succeeds [[hook]] + [[mid_hook]] + dynamic_hook
-    // Code, Command, Cosave, Scan ... added by their Phase 2x commits.
+    // Code, Command, Cosave, Scan ... added by later commits.
 };
 
 // Lifecycle status of a queued entry. Read by handle:applied().
@@ -199,8 +198,8 @@ size_t ApplyZone(kcdx::load_order::Zone zone);
 
 // Push a kcdx.registry handle userdata for the entry with the given
 // id onto the Lua stack. The userdata's metatable provides
-// :applied(), :reason(), :name(), :wait_applied() (the last is a
-// stub in Phase 2a; Phase 2i implements via coroutines).
+// :applied(), :reason(), :name(), :wait_applied() (the last is
+// currently a stub; a future version implements it via coroutines).
 //
 // If handleId == 0 (failed Append), pushes nil + err onto the stack
 // and returns 2 (the standard kcdx-binder error-return idiom).
@@ -241,7 +240,7 @@ void RegisterScriptOwner(const std::string& scriptPath,
 //   - author == "" while plugin != "" during the in-progress namespace
 //     refactor — a plugin whose [plugin].author is not yet declared.
 //     The resolver tolerates an empty author by walking the legacy
-//     1-dot tier under (plugin, name) (naming-namespaces.md).
+//     1-dot tier under (plugin, name).
 struct OwningPlugin {
     std::string author;
     std::string plugin;

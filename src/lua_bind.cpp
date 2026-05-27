@@ -168,7 +168,7 @@ int Lua_ReadBytes(lua_State* L) {
 // is kept for v0 backwards-compat but returns a pointer userdata
 // too — on KCD2, returning the address as an integer would be
 // silently corrupted to a 16MB-aligned junk value (LUA_NUMBER=float,
-// 24-bit mantissa). See CLAUDE.md hard rule #17.
+// 24-bit mantissa). Pointers must not round-trip through lua_Number.
 int Lua_GetWHGameBase(lua_State* L) {
     kcdx::pe::ModuleView mv;
     if (!kcdx::pe::OpenModule(L"WHGame.dll", mv)) {

@@ -16,7 +16,7 @@
 //      Lua `lua_after` entrypoint slot. Fires in the after_game phase,
 //      after all before-game work is applied, before kcdxMessage_InputLoaded.
 //
-// See ../docs/design.md in the kcdx repo for the full design spec, schema,
+// See the kcdx documentation for the full design spec, schema,
 // and worked examples.
 
 #pragma once
@@ -102,7 +102,7 @@ typedef uint32_t kcdxPluginHandle;
 typedef struct kcdxPluginInfo {
     const char* name;              // Stable plugin ID. Never null. Under the
                                    // 2-dot <author>.<plugin>.<bare> namespace
-                                   // model (naming-namespaces.md, in transition),
+                                   // model (in transition),
                                    // this is the plugin name WITHIN its author's
                                    // namespace (the second dot-segment); the
                                    // full shared-namespace prefix is
@@ -114,7 +114,7 @@ typedef struct kcdxPluginInfo {
     const char* displayName;       // UI name. Never null; falls back to `name` if not declared.
     const char* author;            // Namespace prefix under the 2-dot
                                    // <author>.<plugin>.<bare> model
-                                   // (naming-namespaces.md, in transition).
+                                   // (in transition).
                                    // The engine composes "<author>.<name>" as
                                    // the plugin's identity in cross-plugin
                                    // shared namespaces (hook/byte targets,
@@ -151,15 +151,15 @@ typedef struct kcdxPluginInfo {
 
 // Sub-interface identifiers passed to kcdxInterface::QueryInterface.
 enum kcdxInterfaceID {
-    kcdxInterface_Messaging      = 1,  // Phase 3
-    kcdxInterface_Trampoline     = 2,  // Phase 4
-    kcdxInterface_Task           = 3,  // Phase 3
-    kcdxInterface_Scripting      = 4,  // Phase 5
-    kcdxInterface_Serialization  = 5,  // Phase 6
-    kcdxInterface_Memory         = 6,  // Phase 5h — DLL-facing memory I/O
-    kcdxInterface_Console        = 7,  // Phase 7 — IConsole::AddCommand thunk
-    kcdxInterface_Hook           = 8,  // Phase 3 — C++ kcdx.hook mirror
-    kcdxInterface_Bytes          = 9,  // Phase 3 sub-2 — C++ kcdx.bytes mirror
+    kcdxInterface_Messaging      = 1,
+    kcdxInterface_Trampoline     = 2,
+    kcdxInterface_Task           = 3,
+    kcdxInterface_Scripting      = 4,
+    kcdxInterface_Serialization  = 5,
+    kcdxInterface_Memory         = 6,  // DLL-facing memory I/O
+    kcdxInterface_Console        = 7,  // IConsole::AddCommand thunk
+    kcdxInterface_Hook           = 8,  // C++ kcdx.hook mirror
+    kcdxInterface_Bytes          = 9,  // C++ kcdx.bytes mirror
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -233,12 +233,12 @@ typedef struct kcdxInterface {
 
     // Look up a known address by Address Library ID. Returns 0 (== nullptr) if
     // the ID is unknown for the running game version, or if the Address
-    // Library has it as `removed` for this version. Phase 7+.
+    // Library has it as `removed` for this version.
     uintptr_t (*ResolveAddress)(uint64_t id);
 
     // Look up a cross-plugin symbol by name. Symbols are registered by
     // `[[trampoline]]` / `[[hook]]` TOML entries with an `export = "..."`
-    // field — see docs/design.md §"Cross-plugin symbol table". Returns
+    // field — the cross-plugin symbol table. Returns
     // 0 (== nullptr) if the symbol is not registered.
     //
     // The returned address is whatever was registered (a trampoline
@@ -381,7 +381,7 @@ typedef struct kcdxInterface {
     // the <pluginname>.<name> namespace model a plugin's own export is
     // stored as "<yourname>.<bare>", so a bare ResolveSymbol("bare") with no
     // owner misses your own export. ResolveSymbolAs threads the owner so the
-    // self tier resolves it. (naming-namespaces.md)
+    // self tier resolves it (self > engine > other precedence).
     uintptr_t (*ResolveSymbolAs)(kcdxPluginHandle owner, const char* name);
 
     // Resolve an author-target / Address Library NAME with `owner` as the
@@ -513,7 +513,7 @@ enum kcdxMessageType {
     // basename (e.g. "save561.whs", "autosave560.whs", "exit.whs"); the
     // saves directory itself is %USER%/saves/playline<N>/ where <N> is
     // the active playline (use kcdxSerializationInterface accessors
-    // when Phase 6b lands).
+    // when they land).
     //
     // Distinct from kcdxMessage_PreLoadGame:
     //  - kcdxMessage_PreLoadGame fires at every internal LoadGame
@@ -639,11 +639,11 @@ typedef uint8_t kcdxCodePool;
 // CONTRACT — must set `bytes` (with `bytesSize`) OR `size` (or both). `name`
 // and `owningPlugin` are REQUIRED. `pool` defaults to branch (the 0 value).
 // `exportName` is optional — a BARE name; the engine derives the
-// <author>.<plugin> prefix (naming-namespaces.md). When `size` > `bytesSize`
+// <author>.<plugin> prefix. When `size` > `bytesSize`
 // the tail is NOP-padded (0x90) so another plugin can patch into the unused
 // space; `size` must be >= `bytesSize`.
 typedef struct kcdxCodeOptions {
-    // --- Owning plugin identity (naming-namespaces.md) -------------------
+    // --- Owning plugin identity ------------------------------------------
     // REQUIRED. Drives the <author>.<plugin> export prefix and the pool
     // attribution (which plugin owns the allocated byte range). The author's
     // own plugin handle (from kcdxInterface::GetPluginHandle). Same role as
@@ -685,13 +685,13 @@ typedef struct kcdxCodeOptions {
     // A BARE symbol name to publish the region's address under, resolvable by
     // a later hook/byte target_symbol lookup. null = no export. The author
     // writes ONLY the bare name; the engine derives the <author>.<plugin>
-    // prefix from `owningPlugin` and publishes <author>.<plugin>.<exportName>
-    // (naming-namespaces.md). A DOTTED `exportName` is an author error (the
+    // prefix from `owningPlugin` and publishes <author>.<plugin>.<exportName>.
+    // A DOTTED `exportName` is an author error (the
     // engine supplies the prefix) and is rejected.
     const char* exportName;
 
     // --- APPEND-ONLY BELOW ---------------------------------------------
-    // New options fields go HERE, never mid-struct. Same AP11 discipline as
+    // New options fields go HERE, never mid-struct. Same append-only discipline as
     // kcdxBytesOptions / kcdxHookOptions: a mid-struct insert shifts every
     // subsequent field's offset; a plugin DLL compiled against the older
     // header would read through the wrong offset → ACCESS_VIOLATION.
@@ -711,7 +711,7 @@ typedef struct kcdxTrampolineInterface {
     // --- APPEND-ONLY BELOW (Version >= 2) ------------------------------
     // New methods go HERE, never inserted above. A v1 plugin compiled against
     // the 2-method struct finds AllocateFromBranchPool / AllocateFromLocalPool
-    // at the SAME offsets and never reads these slots (AP11 append-only).
+    // at the SAME offsets and never reads these slots (append-only ABI).
 
     // The all-in-one allocate+fill+pad+export call — the high-level peer of
     // the raw AllocateFrom*Pool methods, and the C++ mirror of Lua
@@ -728,7 +728,7 @@ typedef struct kcdxTrampolineInterface {
     // <owner-author>.<owner-plugin>.<bareName> via the cross-plugin symbol
     // table (the C++ mirror of kcdx.code's export=, for an address the plugin
     // already holds without allocating). `bareName` is a BARE name; the engine
-    // derives the <author>.<plugin> prefix from `owner` (naming-namespaces.md)
+    // derives the <author>.<plugin> prefix from `owner`
     // — a dotted `bareName` is an author error and is rejected. Returns true
     // on success; false on bad args (null/empty bareName, dotted bareName,
     // invalid addr) or a collision — the SAME plugin re-exporting the SAME
@@ -750,7 +750,7 @@ typedef struct kcdxTrampolineInterface {
 // not just a single RegisterFunction call): KCD2's Lua VM lives
 // statically linked inside kcdx.asi. Plugin DLLs can't see those
 // symbols via the linker — there's no analogue to SKSE's "VM is a
-// vtable on a game-side class" trick (subagent research, 2026-05-18).
+// vtable on a game-side class" trick.
 //
 // So this interface ships the full Lua 5.1 C API — all 117 LUA_API
 // + LUALIB_API functions — as function pointers. Plugins:
@@ -1220,7 +1220,7 @@ typedef struct kcdxMemoryInterface {
 } kcdxMemoryInterface;
 
 // -----------------------------------------------------------------------------
-// kcdxConsoleInterface — register CryEngine console commands (Phase 7)
+// kcdxConsoleInterface — register CryEngine console commands
 // -----------------------------------------------------------------------------
 //
 // Fetched via kcdxInterface::QueryInterface(kcdxInterface_Console,
@@ -1402,7 +1402,7 @@ typedef struct kcdxSerializationInterface {
     // --- APPEND-ONLY BELOW (kcdxSerializationInterface_Version >= 2) ---
     // New members go HERE, at the END, never mid-struct: a plugin DLL
     // built against an older version reads the prefix members at their
-    // original offsets, so appending cannot shift them (AP11).
+    // original offsets, so appending cannot shift them (append-only ABI).
 
     // Named-tag write side — the common path; the disassembler test's
     // fix for the hand-packed FourCC. Pass a human-readable string tag
@@ -1433,15 +1433,16 @@ typedef struct kcdxSerializationInterface {
 } kcdxSerializationInterface;
 
 // -----------------------------------------------------------------------------
-// kcdxHookInterface — C++ mirror of the Lua kcdx.hook.* surface (Phase 3)
+// kcdxHookInterface — C++ mirror of the Lua kcdx.hook.* surface
 // -----------------------------------------------------------------------------
 //
 // Fetched via kcdxInterface::QueryInterface(kcdxInterface_Hook,
 // kcdxHookInterface_Version). C++ DLLs install function hooks through this
 // interface; the surface is feature-parity with the Lua kcdx.hook.* sub-verbs
-// (lua-api-surface.md: ONE model, two languages, full parity at all times).
+// (ONE model, two languages, full parity at all times).
 //
-// SHAPE — sub-verb-per-variant, NOT mode-as-key (lua-api-surface.md rule 4a).
+// SHAPE — sub-verb-per-variant, NOT mode-as-key (discrete behavioral
+// variants are sub-verbs, not table keys).
 // The Lua surface exposes a sub-verb per hook variant
 // (kcdx.hook.before / .after / .around / .replace / .mid / .callsite); this
 // interface mirrors that one-to-one as six method pointers (Before, After,
@@ -1466,7 +1467,8 @@ typedef struct kcdxSerializationInterface {
 // expose the raw interface pointer directly (`K.hook == kcdxHookInterface*`)
 // so nothing is hidden from raw-interface callers.
 //
-// The disassembler test (cornerstones.md / AP12). The COMMON path is the
+// The disassembler test — the engine does the heavy lifting; the author
+// declares intent. The COMMON path is the
 // positional `target` argument carrying a NAME — the Address Library entry
 // (`"IsInCombat"`), the explicit prefixed cross-plugin form
 // (`"redmoon.outfit.open_inventory"`), or the 1-dot engine-seed form
@@ -1476,9 +1478,10 @@ typedef struct kcdxSerializationInterface {
 // targets the library cannot yet name, lives in `opts`, and is labeled
 // `[advanced]` in-place below. The author identifies an un-named target
 // ONCE via an advanced locator, names it, and refers to it by name
-// thereafter (cornerstones.md "declare once / share / coexist").
+// thereafter (declare once / share / coexist).
 //
-// Threading (lua-callback-threading.md): C++ callbacks behave identically
+// Threading: the engine auto-marshals an off-thread hook hit to the main
+// thread before firing the callback. C++ callbacks behave identically
 // to Lua callbacks on off-thread fires; the `offThread` field on opts
 // selects marshal (default) / skip / error per the same model. The engine
 // queues off-thread fires onto the main thread; the original function
@@ -1514,7 +1517,7 @@ typedef enum kcdxMidResult {
 // id width (lua_registry::Append returns uint64_t).
 typedef uint64_t kcdxHookHandle;
 
-// Off-thread routing — per lua-callback-threading.md. Engine compares
+// Off-thread routing — the engine auto-marshals off-thread hits. Engine compares
 // the dispatch thread to the recorded main-thread ID; off-thread fires
 // route per the selected policy. Default (Marshal) is the right answer
 // for almost every site; the alternatives exist for the rare cases
@@ -1592,14 +1595,14 @@ typedef struct kcdxHookCaptureValue {
 //
 // Locator policy. The positional `target` argument is the COMMON path; the
 // engine resolves it via address_library::ResolveByName(target, owningPlugin)
-// (self > engine > other precedence — naming-namespaces.md). The fields in
+// (self > engine > other precedence). The fields in
 // this struct's "Function-entry locator" block are EXPERT/ADVANCED escape
 // hatches: pass an empty `target` (null or "") on the install method AND set
 // one of these instead when the target cannot yet be named. Each is labeled
-// `[advanced]` (cornerstones.md / AP12 — labeled expert-only escape hatch).
+// `[advanced]` (a labeled expert-only escape hatch).
 //
 // Owning identity (`owningPlugin`). Drives the self > engine > other-plugin
-// precedence walk in any bare-name locator (naming-namespaces.md). The
+// precedence walk in any bare-name locator. The
 // wrapper helpers thread this for you; raw-interface callers pass their own
 // handle (from kcdxInterface::GetPluginHandle). Pass kcdxInvalidPluginHandle
 // to disable self-tier resolution (engine-seed + other-plugin only,
@@ -1617,8 +1620,8 @@ typedef struct kcdxHookOptions {
     //     path; these are for targets the library cannot yet name) --------
     // The author identifies the target ONCE via one of these forms, names it
     // (publishes via [[address]] / kcdx.address or via a cross-plugin export),
-    // and refers to it by name thereafter (cornerstones.md "declare once /
-    // share / coexist"). All sentinel-null/zero when unset.
+    // and refers to it by name thereafter (declare once /
+    // share / coexist). All sentinel-null/zero when unset.
     const char* pattern;              // [advanced] AOB hex at function entry; null = unset
     uint64_t    addressId;            // [advanced] Address-Library numeric ID; 0 = unset
     const char* targetSymbol;         // [advanced] cross-plugin symbol-table lookup; null = unset
@@ -1669,13 +1672,13 @@ typedef struct kcdxHookOptions {
     const kcdxHookCapture* captures;
     uint32_t               captureCount;
 
-    // --- Off-thread routing (per lua-callback-threading.md) --------------
+    // --- Off-thread routing (engine auto-marshals off-thread hits) -------
     // Default (Marshal) is the right answer for almost every site. Pass
     // 0 (kcdxHookOffThread_Marshal) to take the default; Skip / Error
     // are for the rare cases the author asserts a main-thread invariant.
     kcdxHookOffThread offThread;
 
-    // --- Owning plugin identity (naming-namespaces.md) -------------------
+    // --- Owning plugin identity ------------------------------------------
     // Drives self > engine > other-plugin precedence for the bare-name
     // form of the positional `target` arg. The author's own plugin handle
     // (from kcdxInterface::GetPluginHandle). Pass kcdxInvalidPluginHandle
@@ -1686,7 +1689,7 @@ typedef struct kcdxHookOptions {
     kcdxPluginHandle owningPlugin;
 
     // --- APPEND-ONLY BELOW ---------------------------------------------
-    // New options fields go HERE, never mid-struct. Same AP11 discipline
+    // New options fields go HERE, never mid-struct. Same append-only discipline
     // as the kcdxHookInterface vtable: mid-struct insert shifts every
     // subsequent field's offset; a plugin DLL compiled against the older
     // header would read through the wrong offset → ACCESS_VIOLATION.
@@ -1706,7 +1709,7 @@ typedef struct kcdxHookInterface {
     // Install methods — one per hook variant (sub-verb-per-variant).
     // Mirrors kcdx.hook.before / .after / .around / .replace / .mid /
     // .callsite one-to-one. The variant IS the method name — there is no
-    // shared Install with a `mode` enum (lua-api-surface.md rule 4a).
+    // shared Install with a `mode` enum (variants are sub-verbs, not keys).
     //
     // Each method takes the COMMON path positionally:
     //   `target`   — Address-Library name OR explicit cross-plugin form
@@ -1805,7 +1808,7 @@ typedef struct kcdxHookInterface {
     // --- APPEND-ONLY BELOW (kcdxHookInterface_Version >= 2) ---------------
     // New members go HERE, at the END, never mid-struct: a plugin DLL
     // built against an older version reads the prefix members at their
-    // original offsets, so appending cannot shift them (AP11).
+    // original offsets, so appending cannot shift them (append-only ABI).
 } kcdxHookInterface;
 
 // -----------------------------------------------------------------------------
@@ -1815,7 +1818,7 @@ typedef struct kcdxHookInterface {
 // Fetched via kcdxInterface::QueryInterface(kcdxInterface_Bytes,
 // kcdxBytesInterface_Version). C++ DLLs register byte rewrites through this
 // interface; the surface is feature-parity with the Lua kcdx.bytes
-// (lua-api-surface.md: ONE model, two languages, full parity at all times).
+// (ONE model, two languages, full parity at all times).
 //
 // SHAPE — ONE operation, not sub-verbs. Unlike kcdxHookInterface (six install
 // methods, one per hook variant), a byte rewrite has a SINGLE operation: write
@@ -1842,7 +1845,8 @@ typedef struct kcdxHookInterface {
 // no deferral), use kcdxMemoryInterface::WriteBytes / ReadBytes instead — that
 // surface is unchanged and unaffected by this interface.
 //
-// The disassembler test (cornerstones.md / AP12). The COMMON path is
+// The disassembler test — the engine does the heavy lifting; the author
+// declares intent. The COMMON path is
 // opts->target carrying a NAME the engine resolves to an address (an Address
 // Library seed entry, an author-declared target, or the explicit prefixed
 // cross-plugin form). The author types a name and never hand-writes hex.
@@ -1868,8 +1872,8 @@ typedef uint64_t kcdxBytesHandle;
 //
 // LOCATOR CONTRACT — EXACTLY ONE locator must be set (exactly one of target /
 // pattern / addressId / targetSymbol non-null/non-zero). `target` is the COMMON
-// PATH — a NAME the engine resolves to an address (the disassembler test,
-// cornerstones.md / AP12). The other three are the labeled EXPERT/ADVANCED
+// PATH — a NAME the engine resolves to an address (the disassembler test —
+// the name carries address AND ABI). The other three are the labeled EXPERT/ADVANCED
 // escape hatch for sites the name table cannot yet name. Setting zero locators,
 // or more than one, is a Register-time rejection with a teaching error.
 typedef struct kcdxBytesOptions {
@@ -1884,15 +1888,15 @@ typedef struct kcdxBytesOptions {
     //     the labeled EXPERT/ADVANCED escape hatch) -----------------------
     // The COMMON PATH. A name the engine resolves to an address via
     // address_library::ResolveByName(target, owningPlugin) with self > engine
-    // > other precedence (naming-namespaces.md). An Address Library seed
+    // > other precedence. An Address Library seed
     // entry ("kcdx.<seedname>"), an author-declared target, the bare own-plugin
     // name, or the explicit cross-plugin form ("<author>.<plugin>.<bare>").
     // The author types one line and never hand-writes hex. null = unset.
     const char* target;
     // The three EXPERT/ADVANCED locators — use ONLY when the target cannot yet
     // be named. The author identifies the site ONCE via one of these, names it,
-    // and refers to it by name thereafter (cornerstones.md "declare once /
-    // share / coexist").
+    // and refers to it by name thereafter (declare once /
+    // share / coexist).
     const char* pattern;       // [advanced] AOB hex at the rewrite site; null = unset
     uint64_t    addressId;     // [advanced] Address-Library numeric ID; 0 = unset
     const char* targetSymbol;  // [advanced] cross-plugin published-symbol lookup; null = unset
@@ -1912,7 +1916,7 @@ typedef struct kcdxBytesOptions {
     const char* context;       // [advanced] AOB disambiguation for `pattern`; null = none
     const char* anchorString;  // [advanced] string anchor for `pattern`; null = none
 
-    // --- Owning plugin identity (naming-namespaces.md) -------------------
+    // --- Owning plugin identity ------------------------------------------
     // REQUIRED. Drives self > engine > other-plugin precedence for the
     // bare-name form of `target`. The author's own plugin handle (from
     // kcdxInterface::GetPluginHandle). Pass kcdxInvalidPluginHandle (or 0) to
@@ -1922,7 +1926,7 @@ typedef struct kcdxBytesOptions {
     kcdxPluginHandle owningPlugin;
 
     // --- APPEND-ONLY BELOW ---------------------------------------------
-    // New options fields go HERE, never mid-struct. Same AP11 discipline as
+    // New options fields go HERE, never mid-struct. Same append-only discipline as
     // kcdxHookOptions / the kcdxBytesInterface vtable: a mid-struct insert
     // shifts every subsequent field's offset; a plugin DLL compiled against
     // the older header would read through the wrong offset → ACCESS_VIOLATION.
@@ -1976,7 +1980,7 @@ typedef struct kcdxBytesInterface {
     // --- APPEND-ONLY BELOW (kcdxBytesInterface_Version >= 2) --------------
     // New members go HERE, at the END, never mid-struct: a plugin DLL built
     // against an older version reads the prefix members at their original
-    // offsets, so appending cannot shift them (AP11).
+    // offsets, so appending cannot shift them (append-only ABI).
 } kcdxBytesInterface;
 
 // -----------------------------------------------------------------------------

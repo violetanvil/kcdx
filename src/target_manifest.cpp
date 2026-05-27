@@ -46,7 +46,7 @@ std::string OptString(const toml::table& tbl, std::string_view key,
 // is a REJECT (was a silent drop — pattern/target_symbol/signature fell
 // through OptString to "" on the wrong type, and rva/address_id fell through
 // the is_integer() guard, so a mistyped locator silently registered no target
-// or the wrong one; AP14). The reject is surfaced via the same `err` channel
+// or the wrong one — a silent drop). The reject is surfaced via the same `err` channel
 // RegisterOneTarget already uses — the caller logs the rejected row and skips
 // it (one bad row does not kill the others).
 enum class TKind { String, Integer };
@@ -168,7 +168,7 @@ bool RegisterOneTarget(const toml::table& t,
 
     // signature: optional structured ABI in the kcdx.hook DSL. A pattern/rva
     // target SHOULD carry one (no name to carry the ABI — the disassembler
-    // test), but registration allows "" since we never invent an ABI (AP2).
+    // test), but registration allows "" since we never invent an ABI.
     std::string signature = OptString(t, "signature");
 
     std::string regErr;
@@ -223,7 +223,7 @@ void LoadTargetsFor(const std::string& pluginFolder,
         for (const auto& elem : *arr->as_array()) {
             if (!elem.is_table()) {
                 // Loud reject (was a silent `continue` that dropped a malformed
-                // [[target]] entry with no signal — AP14). Same teaching shape
+                // [[target]] entry with no signal). Same teaching shape
                 // as a shape-error row below.
                 LOG_WARN_KV("TARGETS", "rejected",
                     KV("plugin", pluginName),

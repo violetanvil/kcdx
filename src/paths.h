@@ -2,7 +2,7 @@
 
 // Filesystem layout for kcdx's engine-owned files.
 //
-// v0.2 layout (Phase 1+):
+// v0.2 layout:
 //   <game>/Bin/Win64MasterMasterSteamPGO/
 //   ├── KingdomCome.exe                      (vanilla)
 //   ├── WHGame.dll                           (vanilla)

@@ -1,6 +1,6 @@
 // kcdx.memory.dynamic_hook — runtime hook installation from Lua.
 //
-// Lua surface (Phase 5c.7b.2):
+// Lua surface:
 //
 //   local handle = kcdx.memory.dynamic_hook({
 //       name          = "my_hook",            -- string, required (logs + first-wins)
@@ -72,7 +72,7 @@ std::string GetStringField(lua_State* L, const char* key, const char* default_va
 
 // Pull a list-of-strings table field. Returns empty vector when missing.
 //
-// #12 (fail-state-logging.md / AP14): a NON-STRING entry is an ERROR, not an
+// #12 (fail loud, never silent-drop): a NON-STRING entry is an ERROR, not an
 // end-of-list marker. param_types DEFINES the native ABI — silently
 // truncating at the first non-string entry builds a JIT thunk for the WRONG
 // arity and marshals wrong into a native function (a crash risk). The list
@@ -118,7 +118,7 @@ std::vector<std::string> GetStringListField(lua_State* L, const char* key,
     return out;
 }
 
-// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+// --- Unknown-key rejection (fail loud, never silent-drop) ---------------
 //
 // The recognized option-key set for kcdx.memory.dynamic_hook. A typo'd
 // `pre_calback=` / `retrun_type=` would otherwise vanish silently, the
@@ -173,7 +173,7 @@ int Handle_Gc(lua_State* L) {
 //
 // NOT an integer: on KCD2, CryEngine's Lua 5.1 is LUA_NUMBER=float, so
 // pointer-magnitude values lose precision through the Lua stack. See
-// CLAUDE.md hard rule #17 and docs/lua-number-precision.md.
+// docs/lua-number-precision.md.
 int Handle_GetTarget(lua_State* L) {
     auto* ud = static_cast<HandleUd*>(
         luaL_checkudata(L, 1, kHandleMetatable));
@@ -212,7 +212,7 @@ int Lua_DynamicHook(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
 
     // Reject an unrecognized option key before reading anything — a typo'd
-    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    // key would otherwise vanish silently (fail loud, never silent-drop).
     {
         std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
             L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
@@ -243,13 +243,13 @@ int Lua_DynamicHook(lua_State* L) {
 
     // return_type: type-name string, default "void".
     //
-    // #12-followup (fail-state-logging.md / AP14, opposite polarity to the
+    // #12-followup (fail loud, never silent-drop — opposite polarity to the
     // param_types reject below): an ABSENT return_type keeps the "void"
     // default (legal, common). A PRESENT-but-non-string value must REJECT.
     // We read it AT THE CALLSITE rather than via the shared GetStringField
     // (which also serves `name` and whose lua_isstring permissiveness would
-    // coerce `return_type = 5` to "5" — the LUA_NUMBER=float gotcha,
-    // lua-precision.md). Leaving GetStringField untouched preserves `name`'s
+    // coerce `return_type = 5` to "5" — the LUA_NUMBER=float gotcha).
+    // Leaving GetStringField untouched preserves `name`'s
     // existing handling (a missing name still hits its required-field reject
     // above). Use lua_type == LUA_TSTRING, NOT lua_isstring.
     std::string return_type = "void";
@@ -314,7 +314,7 @@ int Lua_DynamicHook(lua_State* L) {
     auto rf = std::make_unique<kcdx::rom::runtime_func_t>();
 
     // JIT a trampoline. make_jit_func now routes through branch_pool
-    // (Phase 5c.7b.1) so the resulting address is within ±2 GB of
+    // so the resulting address is within ±2 GB of
     // target_addr — MinHook's 5-byte rel32 jmp can reach.
     uintptr_t jit_addr = rf->make_jit_func(
         return_type,

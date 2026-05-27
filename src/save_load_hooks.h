@@ -2,9 +2,9 @@
 
 namespace kcdx::save_load_hooks {
 
-// Install the five Phase 6 save/load lifecycle detours.
+// Install the five save/load lifecycle detours.
 //
-// Phase 6a hooks (verified live 2026-05-19, KCD2 release_1_5_1164953_841):
+// Function-entry hooks (verified live, KCD2 release_1_5_1164953_841):
 //
 //   - wh::framework::C_SaveGameManager::SaveGame              -> kcdxMessage_SaveGame
 //     7-arg function; the engine reads through the 6th arg deep in
@@ -19,17 +19,17 @@ namespace kcdx::save_load_hooks {
 //     compatibility. Plugins that need ONE fire per user load
 //     should listen for kcdxMessage_LoadGameSelected instead.
 //     `data` is currently null at this frame; the actual on-disk
-//     filename is exposed by the Phase 6b slot resolver below.
+//     filename is exposed by the slot resolver below.
 //
 //   - wh::framework::C_SaveGameManager::PostLoadGame          -> kcdxMessage_PostLoadGame
 //     Fires on successful loads only (LoadGame's tail path).
 //     Plugin-facing `data` is null.
 //
 //   - wh::framework::C_SaveGameManager::DeleteSavegame        -> kcdxMessage_DeleteGame
-//     Never observed firing in 2026-05-19 testing (no UI delete
-//     option in vanilla KCD2); hook installed for completeness.
+//     Never observed firing in testing (no UI delete option in vanilla
+//     KCD2); hook installed for completeness.
 //
-// Phase 6b hook:
+// Slot-resolver hook:
 //
 //   - wh::framework::SaveGameManager::sub::ResolveSlot @ 0x1819DDE78
 //     -> kcdxMessage_LoadGameSelected
@@ -41,9 +41,8 @@ namespace kcdx::save_load_hooks {
 //     pointer so plugins see one fire per user-visible load even
 //     though the engine resolves the record multiple times per load.
 //
-// Discovery + uniqueness audit + body-wide ABI analysis:
-// _research/phase6-save-load/SAVE-LOAD-CANDIDATES.md (Phase 6a) and
-// _research/phase6b-recon/SAVE-SELECTION-HOOK.md (Phase 6b).
+// Discovery + uniqueness audit + body-wide ABI analysis verified against
+// the binary.
 //
 // Called once from dllmain.cpp after kcdx::hooks::Install(). Returns
 // true if at least one of the five hooks installed.

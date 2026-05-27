@@ -1,6 +1,6 @@
 // kcdx::hook_chain — per-target chain of kcdx.hook callbacks. See
 // hook_chain.h for the model + conflict policy, and
-// docs/outstanding-work/smart-replace-conflict-detection.md for the
+// smart-replace conflict detection (future work) for the
 // footprint-coexistence upgrade this architecture is built to accept.
 //
 // This file is the NEW kcdx.hook dispatch path. The legacy
@@ -95,8 +95,8 @@ const char* SigTypeToJitString(kcdx::hook_signature::Type t) {
         // the original function with this exact ABI signature — calling
         // an int32-returning function as int64 reads the return from the
         // full RAX when the callee only wrote EAX (upper bits undefined),
-        // corrupting the result. (Root cause of CAP-20-around returning 0;
-        // see docs/known-issues/cap-20-around-wraps-original-wrong-result.md.)
+        // corrupting the result. (Root cause of an around-mode hook returning
+        // 0 when wrapping an int32 original.)
         // get_type_id maps each of these to the right asmjit width.
         case T::I8:  return "i8";
         case T::I16: return "i16";
@@ -127,8 +127,7 @@ void SignatureToJitStrings(const kcdx::hook_signature::Signature& sig,
 // §2  ChainEntry + Chain data model
 // ===========================================================================
 //
-// Footprint-readiness (see docs/outstanding-work/
-// smart-replace-conflict-detection.md): ChainEntry is a value in a
+// Footprint-readiness: ChainEntry is a value in a
 // std::vector<ChainEntry> — N entries, any mode mix. There is NO
 // distinguished "the replace" slot. The smart-coexistence upgrade adds
 // a `Footprint footprint;` member here and swaps the body of CanCoexist
@@ -194,7 +193,7 @@ struct ChainEntry {
     // explicit (same shape; the explicit-Skip option distinguishes
     // "asked for skip" from "asked for marshal but got Skip-degradation").
     // 2 = Error log per-fire + skip. Values match kcdxHookOffThread_*.
-    // See .claude/rules/lua-callback-threading.md.
+    // The engine auto-marshals off-thread hits to the main thread.
     uint8_t      offThread = 0;
 };
 
@@ -322,8 +321,8 @@ struct Chain {
 std::unordered_map<uintptr_t, std::unique_ptr<Chain>> g_chains;
 
 // Guards g_chains structure (Add appends; dispatch reads). The Lua-VM
-// single-thread contract (see .claude/rules/lua-callback-threading.md)
-// means dispatch is main-thread-only, but Add can run during the
+// single-thread contract (the engine marshals off-thread hits to the main
+// thread) means dispatch is main-thread-only, but Add can run during the
 // first-tick registration pass; a coarse mutex keeps the map consistent.
 // Dispatch takes it only to resolve target->Chain*, then releases before
 // the lua_pcall (which can run arbitrary Lua).
@@ -336,7 +335,7 @@ std::mutex g_chainsMu;
 lua_State* g_L = nullptr;
 
 // Per-hook dedup for the off-thread Skip / Marshal-degraded warn-once
-// line (.claude/rules/lua-callback-threading.md). Keyed by the
+// line. Keyed by the
 // ChainEntry::handleId for sig + callsite entries; the Mid path keys
 // on Chain::targetVa (mid is one-per-VA in v1 so handleId is also
 // stable, but targetVa makes the dedup intent self-evident and
@@ -384,8 +383,7 @@ bool OffThreadShouldSkip(uint8_t policy, uint64_t dedupKey,
     if (firstTime) {
         log::WarnF("hook_chain: off-thread %s '%s' (plugin '%s') at 0x%p "
                    "fired on tid=%lu (policy=%s) — skipping (warn-once-"
-                   "per-hook). v1 Marshal degrades to Skip per outcome P "
-                   "(.claude/rules/lua-callback-threading.md); a real "
+                   "per-hook). v1 Marshal degrades to Skip; a real "
                    "arg-snapshot Marshal is a future cycle if this warn "
                    "ever fires in practice.",
                    what, nameForLog ? nameForLog : "",
@@ -410,14 +408,14 @@ bool OffThreadShouldSkip(uint8_t policy, uint64_t dedupKey,
 // (replace/around) entry neutralized the function with ZERO log (#3); a
 // before/after/mid went inert every fire with ZERO log (#13).
 //
-// Hot-path contract (.claude/rules/lua-callback-threading.md): these are
+// Hot-path contract: these are
 // per-call dispatch paths on per-frame game functions. The steady-state LIVE
 // path (lua_isfunction passes) NEVER reaches this latch — zero log, zero alloc,
 // zero lock. Only the FIRST observation of a lost ref, per dedup key, logs;
 // thereafter the set lookup short-circuits. Same idiom + same keying as the
 // off-thread warn-once above (g_offThreadWarned): handleId for sig/callsite
 // entries, targetVa for mid (one-per-VA in v1). NOT a Lua static-const sentinel
-// (.claude/rules/lua-bridge.md AP5) — a plain integer set guarded by a mutex.
+// (use the live Lua C API, no kcdx-side sentinels) — a plain integer set guarded by a mutex.
 std::unordered_set<uint64_t> g_deadRefWarned;
 std::mutex                   g_deadRefWarnedMu;
 
@@ -493,8 +491,7 @@ bool CanCoexist(const Chain&                            chain,
                 "' hook; a '" + kcdx::hook_payload::ModeToken(incomingMode) +
                 "' hook cannot coexist with replace/around on the same "
                 "target in v1 (load-order-loses; smart footprint "
-                "coexistence is future work — see docs/outstanding-work/"
-                "smart-replace-conflict-detection.md)";
+                "coexistence is future work)";
             return false;
         }
     }
@@ -517,7 +514,7 @@ bool CanCoexist(const Chain&                            chain,
 // the lua_pcall) returns, so the bytes must outlive the Lua string the
 // author produced. We pin converted strings in a per-dispatch arena
 // cleared at the end of each top-level dispatch. Dispatch is
-// main-thread-only (.claude/rules/lua-callback-threading.md), so a
+// main-thread-only (the engine marshals off-thread hits), so a
 // single thread-local arena is safe.
 
 // Per-dispatch string-pin arena. PinUtf8 keeps a UTF-8 (cstr) buffer;
@@ -535,7 +532,7 @@ bool CanCoexist(const Chain&                            chain,
 // track nesting depth and clear the arena only when the outermost
 // dispatch (depth 0) exits. The depth is NOT a limiter — it exists
 // solely to time the arena clear correctly. Dispatch is main-thread-
-// only (.claude/rules/lua-callback-threading.md), so a thread-local
+// only (the engine marshals off-thread hits), so a thread-local
 // counter is sufficient.
 thread_local std::vector<std::unique_ptr<std::string>>  g_pinUtf8;
 thread_local std::vector<std::unique_ptr<std::wstring>> g_pinWide;
@@ -580,8 +577,8 @@ void PushSlot(lua_State* L, const uintptr_t* slot,
         case T::F64:  lua_pushnumber(L, (lua_Number)*(const double*)slot); break;
         case T::Ptr:
             // Pointers go through a kcdx.memory.pointer userdata, never
-            // lua_pushinteger (LUA_NUMBER=float loses pointer magnitude;
-            // see .claude/rules/lua-precision.md).
+            // lua_pushinteger (LUA_NUMBER=float loses pointer magnitude
+            // beyond 2^24).
             kcdx::lua_bind_helpers::PushPointer(
                 L, kcdx::lua_memory::pointer((uintptr_t)*slot));
             break;
@@ -731,7 +728,7 @@ void WriteReturn(lua_State* L, int idx, const Chain& chain,
 // skipped (resume past it). hook_chain owns its OWN flag (not
 // scripting::g_mid_skip_original) so it stays self-contained for the
 // eventual legacy-scripting discard. Main-thread-only dispatch
-// (.claude/rules/lua-callback-threading.md) means a plain byte suffices;
+// (the engine marshals off-thread hits) means a plain byte suffices;
 // MidDispatch clears it at entry and sets it from the callback's return.
 uint8_t g_midSkipOriginal = 0;
 
@@ -746,8 +743,8 @@ struct CaptureHandle {
 const char* const kCaptureHandleMetatable = "kcdx.hook.capture";
 
 // Push the slot value as a bare Lua value, per the capture type string.
-// f32/f64 -> number; ptr -> kcdx.memory.pointer userdata (exact, per
-// lua-precision.md); integer widths -> Lua integer (read at the slot's
+// f32/f64 -> number; ptr -> kcdx.memory.pointer userdata (exact, since
+// LUA_NUMBER is float); integer widths -> Lua integer (read at the slot's
 // width so the upper bits of a 16-byte slot don't leak in).
 void PushCaptureValue(lua_State* L, const CaptureHandle* h) {
     const std::string t = h->type;
@@ -821,7 +818,7 @@ int CaptureHandle_set(lua_State* L) {
 }
 
 // Lazily create the capture-handle metatable on the live state. Raw Lua C
-// API only (no static-const sentinel — .claude/rules/lua-bridge.md AP5).
+// API only (no kcdx-side static-const sentinel on the shared lua_State).
 void EnsureCaptureHandleMetatable(lua_State* L) {
     if (luaL_newmetatable(L, kCaptureHandleMetatable)) {
         lua_pushvalue(L, -1);
@@ -999,9 +996,9 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
     // DispatchPost each record once for a non-empty chain), not per chain
     // entry — keeps the 32-slot ring from being flooded by a many-hook chain
     // and answers "which detour did the game last run" — the missing link for
-    // the 0xC8 crash (docs/known-issues/save-load crash 0xC8 ...). ALWAYS-ON,
+    // the 0xC8 crash. ALWAYS-ON,
     // zero-allocation, no-log: a relaxed atomic bump + four stores
-    // (.claude/rules/lua-callback-threading.md hot-path contract). The
+    // (the on-thread fast path stays zero-allocation). The
     // borrowed name pointers are process-lifetime (Chains never destroyed).
     modification_inventory::RecordFire(
         target_func_ptr,
@@ -1021,10 +1018,10 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
         using Mode = kcdx::hook_payload::Mode;
         if (e.mode == Mode::After) continue;  // after fires in DispatchPost
 
-        // Off-thread routing branch. Per
-        // .claude/rules/lua-callback-threading.md: Marshal (0) / Skip
-        // (1) / Error (2) all skip the callback in v1; Marshal degrades
-        // to Skip-with-warn-once per Outcome P (no off-thread sites
+        // Off-thread routing branch. The engine marshals off-thread hits;
+        // in v1 Marshal (0) / Skip (1) / Error (2) all skip the callback;
+        // Marshal degrades
+        // to Skip-with-warn-once (no off-thread sites
         // observed in the cap-15..22 + cap-35 corpus — a real arg-
         // snapshot marshal is its own future cycle when this warn ever
         // fires). For replace/around we explicitly leave runOriginal
@@ -1286,7 +1283,7 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
     // Fire breadcrumb (mirror of DispatchPre/Post). A mid chain owns its
     // single callback on the Chain itself (midPluginName / midName), so the
     // owner comes from there. Same always-on, zero-allocation, no-log
-    // hot-path contract (.claude/rules/lua-callback-threading.md).
+    // hot-path contract (on-thread fast path stays zero-allocation).
     modification_inventory::RecordFire(target_func_ptr,
                                        chain->midPluginName.c_str(),
                                        chain->midName.c_str());
@@ -1454,7 +1451,7 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
     // unknown name): a dead hook is worse UX than a clear error.
     if (!p.addressName.empty()) {
         // (owningAuthor, owningPlugin) drive the self > engine > other
-        // precedence in ResolveByName (naming-namespaces.md): a bare
+        // precedence in ResolveByName: a bare
         // addressName resolves to this plugin's own target first, then the
         // engine seed, then any other plugin's target; an explicit form
         // resolves directly. Launch-time apply pass only — never a
@@ -1485,7 +1482,7 @@ uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
         // the SAME patch::Resolve pipeline this function already owns for a
         // directly-set pattern / target_symbol — so an author names an AOB
         // site once and every plugin hooks it BY NAME end-to-end
-        // (cornerstones.md §"author-declared targets are shareable").
+        // (author-declared targets are shareable).
         // Same real (author, plugin) the ResolveByName call above
         // threads — the binder now carries both on HookPayload.
         const kcdx::address_library::AuthorTarget* at =
@@ -1795,8 +1792,8 @@ void SetLuaState(lua_State* L) {
         }
         // Create the mid-capture-handle metatable once on the live
         // state, so MidDispatch can hand the callback handles with
-        // :get()/:set(). Raw Lua C API only (no static-const sentinel
-        // — lua-bridge.md AP5).
+        // :get()/:set(). Raw Lua C API only (no kcdx-side static-const
+        // sentinel on the shared lua_State).
         EnsureCaptureHandleMetatable(L);
     }
 }
@@ -1830,8 +1827,7 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
             "target already has a hook; a 'mid' hook needs sole ownership "
             "of its capture site in v1 (the JIT bakes one capture layout). "
             "The earlier hook wins by load order. (Footprint-based mid "
-            "coexistence is future work — see docs/outstanding-work/"
-            "smart-replace-conflict-detection.md.)";
+            "coexistence is future work.)";
         return res;
     }
 
@@ -2010,7 +2006,7 @@ AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
     //    [rip+disp]) and other indirect calls are out of scope: their
     //    displacement is not a rel32-to-callee we can recompute, so reject
     //    LOUDLY naming the actual opcode (this is an ABI fact verified at
-    //    install, never assumed — .claude/rules/anti-patterns.md AP10).
+    //    install, never assumed — probe the binary, don't theorize).
     const uint8_t opcode = *reinterpret_cast<const uint8_t*>(callsiteVa);
     if (opcode != 0xE8) {
         char buf[256];
@@ -2278,8 +2274,8 @@ AddResult Add(lua_State*                             L,
 // of the Lua-shaped BuildLuaCallThunk.
 //
 // Off-thread routing rides on payload.offThread → entry.offThread (or
-// chain.midOffThread). Per the locked decisions (Phase 3 sub-1 step
-// 5-main chunks 3+4), the C path uses the SAME warn-once-skip
+// chain.midOffThread). Per the locked decisions, the C path uses the
+// SAME warn-once-skip
 // degradation the Lua path uses; no separate v1 path.
 
 AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
@@ -2302,8 +2298,7 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
             "target already has a hook; a 'mid' hook needs sole ownership "
             "of its capture site in v1 (the JIT bakes one capture layout). "
             "The earlier hook wins by load order. (Footprint-based mid "
-            "coexistence is future work — see docs/outstanding-work/"
-            "smart-replace-conflict-detection.md.)";
+            "coexistence is future work.)";
         return res;
     }
 
@@ -2755,7 +2750,7 @@ bool Uninstall(uint64_t handleId) {
                     // reachable only via a Lua handle, which requires the
                     // VM up + g_L bound at first-tick). If it ever does,
                     // the ref leaks into Lua's registry table — log loudly
-                    // so it's discoverable rather than silenced (AP9).
+                    // so it's discoverable rather than silenced.
                     log::WarnF("hook_chain: Uninstall(%llu) mid: no lua_State "
                                "for unref (ref=%d leaked)",
                                (unsigned long long)handleId,

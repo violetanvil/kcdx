@@ -1,6 +1,6 @@
 // kcdx.command{...} — Lua-side console-command registration.
 //
-// A core authoring verb per .claude/rules/lua-api-surface.md: top-level
+// A core authoring verb: top-level
 // (like kcdx.hook / kcdx.on), configuring -> {named table}. A thin Lua
 // binder over the EXISTING, proven C++ console path (CAP-13): the engine
 // console code (console.{h,cpp}, kcdxConsoleInterface) is NOT touched —
@@ -45,15 +45,15 @@
 //     anonymous registration is observable — matching how kcdx.publish
 //     surfaces the anonymous case.
 //
-// Threading (AP6): the console callback fires on the MAIN THREAD (CryEngine
+// Threading (callback runs on the main thread): the console callback fires on the MAIN THREAD (CryEngine
 // dispatches console commands during the game loop — Interfaces.h:1022). So
 // lua_pcall'ing the stored Lua callback from inside the C thunk is
 // main-thread-safe. The thunk is pcall-isolated: a throwing Lua callback
 // logs loud (structured KV) and does not propagate out to the engine.
 //
-// Lua bridge (lua-bridge.md): the callback is stored as a luaL_ref into
+// Lua bridge (one shared lua_State): the callback is stored as a luaL_ref into
 // LUA_REGISTRYINDEX; the command-name -> ref mapping is an engine-side C++
-// std::unordered_map (NOT a Lua sentinel — AP5 / PROBE Q stays zero).
+// std::unordered_map (NOT a Lua sentinel — the frealloc canary stays zero).
 
 #include "lua_bind_command.h"
 
@@ -88,7 +88,7 @@ namespace kcdx::lua_bind_command {
 namespace {
 
 // command name -> Lua registry ref for its callback. Engine-side C++ (NOT
-// a Lua slot / sentinel — lua-bridge.md, AP5). The single C thunk
+// a Lua slot / sentinel on the shared lua_State). The single C thunk
 // (TheThunk) reads the fired command's name via GetArg(0) and looks the
 // ref up here. Names are unique across the process (console::RegisterCommand
 // refuses dups), so the key is unambiguous.
@@ -98,8 +98,8 @@ std::unordered_map<std::string, int> g_commandRefs;
 // One C thunk for EVERY kcdx.command-registered command. It identifies WHICH
 // command fired by reading GetArg(0) (the command name) and looks up the
 // matching Lua callback ref. Fires on the main thread (CryEngine console
-// dispatch), so pcall'ing the stored Lua ref against the live VM is safe
-// (AP6). pcall-isolated: a throwing callback logs loud and does NOT
+// dispatch), so pcall'ing the stored Lua ref against the live VM is safe.
+// pcall-isolated: a throwing callback logs loud and does NOT
 // propagate out to the engine.
 void TheThunk(const kcdxConsoleCmdArgs* args) {
     const kcdxConsoleInterface* console = kcdx::console::GetInterface();
@@ -186,7 +186,7 @@ void TheThunk(const kcdxConsoleCmdArgs* args) {
     }
 }
 
-// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+// --- Unknown-key rejection (fail loud, never silent-drop) ---------------
 //
 // The recognized option-key set for kcdx.command. A typo'd `callbak=` /
 // `descripton=` would otherwise be silently ignored, the author's intent
@@ -222,7 +222,7 @@ int Lua_Command(lua_State* L) {
     }
 
     // Reject an unrecognized option key before reading anything — a typo'd
-    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    // key would otherwise vanish silently (fail loud, never silent-drop).
     {
         std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
             L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
@@ -378,11 +378,10 @@ int Lua_Command(lua_State* L) {
 // console. Goes through CryEngine's IConsole::ExecuteString — the SAME
 // dispatch path user input uses, synchronous on the calling (main) thread,
 // so a kcdx.command-registered command's callback fires same-stack before
-// this returns (AP6-safe: kcdx.console.execute is called from plugin.lua /
+// this returns (main-thread-safe: kcdx.console.execute is called from plugin.lua /
 // a kcdx.on callback, both main-thread).
 //
-// A GROUPED-DOMAIN positional "do a thing" verb per
-// .claude/rules/lua-api-surface.md: kcdx.console.* is a domain sub-table
+// A GROUPED-DOMAIN positional "do a thing" verb: kcdx.console.* is a domain sub-table
 // (like kcdx.log.*), execute takes one positional string arg. This is the
 // Lua mirror of the C++ kcdxConsoleInterface::ExecuteString (Interfaces.h)
 // that CAP-13 already drives — bringing the Lua surface to parity.

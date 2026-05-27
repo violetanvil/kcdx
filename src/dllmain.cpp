@@ -21,11 +21,10 @@
 #include "watchdog_spawn.h"
 
 #include "probes/bugsplat_ctor_probe.h"  // KEEP — proven before_game-hook install
-                                         // machinery; Phase 11 generalizes it
-                                         // (docs/outstanding-work/before-game-hooks.md §5)
+                                         // machinery; a later phase generalizes it
 #include "probes/loc_dump_probe.h"       // loc runtime-dump feature, step 1: minimal
                                          // dev-mode probe (ctor capture + by-ID getter)
-#include "probes/fopen_override_probe.h" // Phase 8.5 pak-resolver probe (FOpen
+#include "probes/fopen_override_probe.h" // pak-resolver probe (FOpen
                                          // read-fires + override semantics)
 #include "mod_absorb/select_detour.h"    // Mod-loader absorb: production SELECT
                                          // detour (rebuilds the enabled list)
@@ -78,7 +77,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // we pass it is the final post-config value.
     kcdx::watchdog::Spawn();
 
-    // PHASE 3 (ctx B): WorkerInit — log::Init, the exception filter, and the
+    // STEP 3 (ctx B): WorkerInit — log::Init, the exception filter, and the
     // watchdog are all up. Reached after watchdog::Spawn (the last of the three).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::WorkerInit);
 
@@ -103,12 +102,12 @@ DWORD WINAPI WorkerThread(LPVOID) {
         return 1;
     }
 
-    // PHASE 4 (ctx B): GameDllMapped — WaitForGameDll returned successfully,
+    // STEP 4 (ctx B): GameDllMapped — WaitForGameDll returned successfully,
     // so WHGame.dll is mapped (the gate SetEvent fired). Reached only on the
     // success path (the timeout path above returns before getting here).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::GameDllMapped);
 
-    // PHASE 5 (ctx B): VersionDetected — detect the running KCD2 build NOW,
+    // STEP 5 (ctx B): VersionDetected — detect the running KCD2 build NOW,
     // the earliest WHGame-mapped point. DetectRuntimeGameVersion reads
     // GetModuleHandleW("WHGame.dll") + kcd_launcher.log / VS_VERSIONINFO, which
     // need only WHGame mapped (just confirmed by WaitForGameDll above), NOT the
@@ -165,14 +164,14 @@ DWORD WINAPI WorkerThread(LPVOID) {
         return 1;
     }
 
-    // PHASE 6 (ctx B): EngineHooksInstalled — hooks::Install succeeded
+    // STEP 6 (ctx B): EngineHooksInstalled — hooks::Install succeeded
     // (lua_pcall + update hooked; MinHook live). Reached only on the success
     // path (the failure return above precedes this).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
 
-    // PHASE 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
+    // STEP 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
     // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
-    // This installs the detour on the engine's mod-loader SELECT orchestrator
+    // This installs the detour on the engine's mod-loader SELECT driver
     // (wh::C_ModManager ModManager_Select, Address Library id 3100), here — after
     // EngineHooksInstalled (WHGame.dll mapped + MinHook live), before
     // EngineSubsystemsInit (where CSystem::Init runs the native mod-load). When
@@ -197,9 +196,9 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // Dev-mode-gated + idempotent internally; a no-op in production. (The
     // prior slot-1 by-int-ID getter target was retargeted away after it was
     // proven to be GetLanguageName, the wrong function.)
-    // DISABLED 2026-05-26 — loc RE/probe phase COMPLETE (find{text=} design
-    // settled; text→gameplay-function proven impossible via the loc path, see
-    // parallel-ghidra-research.md §6 + LOC-MANAGER-FINDINGS.md). The probe hooks
+    // DISABLED — loc RE/probe phase COMPLETE (find{text=} design settled;
+    // text→gameplay-function proven impossible via the loc path, established by
+    // Ghidra analysis against the binary). The probe hooks
     // LocalizeString, which fires ~11.6k×/session on the UI-text hot path +
     // RtlCaptureStackBackTrace per @-key — a real per-frame cost with no
     // remaining diagnostic purpose. Disarmed. The probe code + cap-43 stay as
@@ -207,14 +206,12 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // launch. Disabling this line installs NO loc hooks → zero runtime cost.
     // kcdx::probes::loc_dump_probe::Install();
 
-    // Phase 6 save/load lifecycle hooks. ABIs from ROUND 3 RECON via
-    // _research/phase6-save-load/phase6_abi_walker.py — full-body capstone analysis,
-    // not prologue-shape guessing. SaveGame correctly forwards all 7
-    // args. See _research/phase6-save-load/SAVE-LOAD-CANDIDATES.md
-    // §"ROUND 3 ABI RECON" for the derivation.
+    // Save/load lifecycle hooks. ABIs verified by full-body capstone
+    // analysis against the binary, not prologue-shape guessing. SaveGame
+    // correctly forwards all 7 args.
     kcdx::save_load_hooks::Install();
 
-    // Phase 6b kcdxSerializationInterface — subscribes to save/load
+    // kcdxSerializationInterface — subscribes to save/load
     // lifecycle messages for the cosave (.kcdx) read/write pipeline.
     // Must initialize AFTER save_load_hooks::Install so the messages
     // exist; the order also matches the engine-internal listener
@@ -234,7 +231,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::lua_bind_hook::RegisterHandlers();
     kcdx::lua_bind_bytes::RegisterHandlers();
 
-    // PHASE 8 (ctx B): EngineSubsystemsInit — save_load_hooks + serialization
+    // STEP 8 (ctx B): EngineSubsystemsInit — save_load_hooks + serialization
     // (after save_load) + the Kind::Hook/Kind::Bytes deferred-apply handlers
     // (before plugins) are all registered. Reached after the two
     // RegisterHandlers calls (the last of this group) and before DiscoverAndLoad.
@@ -246,17 +243,17 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // game `update` tick.
     kcdx::plugins::DiscoverAndLoad(kcdx::paths::PluginsDir());
 
-    // PHASE 9 (ctx B): PluginsLoaded — DiscoverAndLoad finished;
+    // STEP 9 (ctx B): PluginsLoaded — DiscoverAndLoad finished;
     // Plugin_Preload/Plugin_Load have fired for every plugin. (VersionDetected
     // is NO LONGER advanced here: version detection moved EARLY, to right after
     // GameDllMapped above — before hooks::Install. DiscoverAndLoad now relies on
     // g_runtimeGameVersion already being set, rather than detecting it.)
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::PluginsLoaded);
 
-    // Phase 8.5 pak-resolver probe (PROBE U.1, observe-only): install the
+    // Pak-resolver probe (observe-only): install the
     // CCryPak::FOpen body detour (Address Library id 1206) to (a) confirm the
     // resolver fires for asset READS at runtime and (b) log the early pak-
-    // resident virtual paths, so PROBE U.2's override-target is confirmed-
+    // resident virtual paths, so the override-target is confirmed-
     // firing, not guessed. Dev-mode-gated + idempotent; a no-op in production.
     //
     // address_library::Resolve(1206) gates on a g_runtimeGameVersion match, so
@@ -295,7 +292,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
 //
 // See docs/load-order.md §"Loader-safety contract for before_game zone".
 static void RunBeforeGameZoneInDllMain() {
-    // PHASE 0 (ctx A): PreInit — paths::Init + the log session stamp below.
+    // STEP 0 (ctx A): PreInit — paths::Init + the log session stamp below.
     // This is the first explicit advance; g_phase already starts at PreInit so
     // this marks the boot's start in the INIT_PHASE log without changing it.
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::PreInit);
@@ -320,7 +317,7 @@ static void RunBeforeGameZoneInDllMain() {
     // by this point every plugin has an Effective(zone, priority,
     // enabled) row computed.
     //
-    // PHASE 1 (ctx A): ConfigLoaded — every kcdx.toml parsed; load order
+    // STEP 1 (ctx A): ConfigLoaded — every kcdx.toml parsed; load order
     // RESOLVED. Reached as soon as LoadAllConfigs returns.
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::ConfigLoaded);
 
@@ -343,16 +340,15 @@ static void RunBeforeGameZoneInDllMain() {
     // targeting it.
     kcdx::ldr_notify::Register();
 
-    // KEEP (PROBE S/T, answered 2026-05-26): install the BugSplat ctor
+    // KEEP: install the BugSplat ctor
     // log-only hook at DllMain time (immediate if BugSplat64.dll is
-    // already mapped, otherwise via LDR notification). PROBE T CONFIRMED
-    // DllMain-time install timing catches the ctor call that worker-thread
-    // install (PROBE S) missed. This is the proven before_game-hook install
-    // machinery — Phase 11 generalizes it into the real builtin; it is NOT
-    // removed here (docs/outstanding-work/before-game-hooks.md §5).
+    // already mapped, otherwise via LDR notification). DllMain-time install
+    // timing catches the ctor call that worker-thread install missed
+    // (confirmed live). This is the proven before_game-hook install machinery —
+    // later work generalizes it into the real builtin; it is NOT removed here.
     kcdx::probes::bugsplat_ctor_probe::ArmLdrInstall();
 
-    // PHASE 2 (ctx A): BeforeGameApply — the before_game load-order slice is
+    // STEP 2 (ctx A): BeforeGameApply — the before_game load-order slice is
     // applied (ApplyAlreadyLoaded) and the LDR notifications are armed
     // (Register + ArmLdrInstall). DllMain returns right after this; the
     // WorkerThread (ctx B) was already spawned by the caller below.

@@ -1,9 +1,8 @@
 // kcdx.publish(event, payload) — Lua-side cross-plugin pub/sub broadcast.
 //
-// Phase 2b sub-9 of the manifest-only restructure — the last kcdx.on-series
-// item. A core authoring verb per .claude/rules/lua-api-surface.md:
-// top-level (like kcdx.on / kcdx.hook), positional "do a thing" args
-// (event, payload). The broadcast counterpart to kcdx.on subscription.
+// The last kcdx.on-series item. A core authoring verb: top-level (like
+// kcdx.on / kcdx.hook), positional "do a thing" args (event, payload).
+// The broadcast counterpart to kcdx.on subscription.
 //
 //   -- plugin "violetanvil" broadcasts a custom event:
 //   kcdx.publish("outfit_changed", { slot = 2, name = "Noble" })
@@ -16,7 +15,7 @@
 //       kcdx.log.info("MOD", "outfit -> %s", payload.name)
 //   end)
 //
-// DESIGN LOCKS (sub-9):
+// DESIGN LOCKS:
 //   * Lua-NATIVE layer — NOT the C++ kcdxMessage wire format. A Lua table
 //     has no byte form, so it cannot ride the messaging Thunk_Dispatch path
 //     (const void* + uint32_t). kcdx.publish shares the kcdx.on subscriber
@@ -31,13 +30,13 @@
 //   * NAMESPACING (fork 2): bare is MINE, prefix is THEIRS. The publisher
 //     names the BARE event; the engine prepends the owning plugin's
 //     qualified identity → "<author>.<plugin>.<event>" (the canonical
-//     dot per naming-namespaces.md). A subscriber hears it via
+//     dot separator). A subscriber hears it via
 //     kcdx.on("<author>.<plugin>.<event>", fn). The sender string IS the
 //     reference (no opaque reference-ID layer). While a plugin's
 //     [plugin].author is still empty during the corpus 2-dot transition,
 //     the engine falls back to the legacy 2-segment "<plugin>.<event>"
 //     form — same dot separator, just author-less, resolved via the
-//     2-segment legacy tier in naming-namespaces.md.
+//     2-segment legacy tier.
 //   * CALLER IDENTITY: the publishing plugin is resolved via
 //     lua_registry::OwningPluginForCurrentCall — the same mechanism kcdx.on
 //     (ready + lifecycle) uses. An anonymous publisher (resolves to "") is
@@ -47,8 +46,9 @@
 //
 // Threading: publish runs from plugin.lua or a kcdx.on callback, both
 // main-thread — the payload value rides the publish caller's Lua stack and
-// FirePublish fires each subscriber on that same thread (AP6 ok). No stored
-// sentinel (AP5): the payload is a stack value passed by lua_pushvalue.
+// FirePublish fires each subscriber on that same thread (main-thread-only,
+// upheld). No stored sentinel: the payload is a stack value passed by
+// lua_pushvalue.
 
 #include "lua_bind_publish.h"
 
@@ -101,12 +101,12 @@ int Lua_Publish(lua_State* L) {
         kcdx::lua_registry::OwningPluginForCurrentCall(
             L, callSiteFile, callSiteLine);
     // 2-dot namespace refactor — the canonical separator for every shared
-    // name is the dot (naming-namespaces.md). The publisher's qualified
+    // name is the dot. The publisher's qualified
     // event string is "<author>.<plugin>.<event>" when both manifest
     // components are present, falling back to the legacy 2-segment
     // "<plugin>.<event>" while a plugin's [plugin].author is still empty
     // during the corpus transition (resolved by the 2-segment legacy tier
-    // in naming-namespaces.md). The anonymous publisher fires under
+    // tier). The anonymous publisher fires under
     // "<anon>.<event>" — still dot, still observable.
     const std::string& publisher = owner.plugin;
     const std::string& publisherAuthor = owner.author;

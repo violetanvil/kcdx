@@ -103,7 +103,7 @@ ScanResult ResolveScan(const ScanEntry& s) {
     std::wstring wmod(s.module.begin(), s.module.end());
     if (!pe::OpenModule(wmod.c_str(), mv)) {
         // Module not loaded: leave moduleLoaded = false, no matches.
-        // AP2 — never fabricate a VA when the resolve cannot run.
+        // Never fabricate a VA when the resolve cannot run.
         return result;
     }
     result.moduleLoaded = true;
@@ -140,7 +140,7 @@ namespace {
 
 // Thin diagnostic logger over ResolveScan: emits the scan diagnostic log
 // lines (the legacy [[scan]] path's output, now dormant — g_scans has no
-// populator since Phase 5). Output here stays byte-for-byte identical to
+// populator anymore). Output here stays byte-for-byte identical to
 // the documented scan-demo output — ResolveScan changes what is RETURNED,
 // never what is LOGGED.
 void RunOne(const ScanEntry& s) {

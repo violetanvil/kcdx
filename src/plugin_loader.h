@@ -29,8 +29,8 @@ struct PluginManifest {
     // Identity — populated from [plugin] table.
     std::string name;             // STABLE PLUGIN ID. Under the 2-dot
                                   //   <author>.<plugin>.<bare> namespace model
-                                  //   (naming-namespaces.md, in transition),
-                                  //   this is the plugin name WITHIN its
+                                  //   (in transition), this is the plugin
+                                  //   name WITHIN its
                                   //   author's namespace; the full
                                   //   shared-namespace prefix is
                                   //   "<author>.<name>" — see `author` below.
@@ -42,7 +42,7 @@ struct PluginManifest {
     std::string displayName;      // optional; for UI. Defaults to `name`.
     std::string author;           // Namespace prefix under the 2-dot
                                   //   <author>.<plugin>.<bare> model
-                                  //   (naming-namespaces.md, in transition).
+                                  //   (in transition).
                                   //   The engine composes "<author>.<name>" as
                                   //   the plugin's identity in cross-plugin
                                   //   shared namespaces (hook/byte targets,
@@ -222,14 +222,14 @@ constexpr uint32_t kEngineVersion = 0x00010200u;  // 0.1.2 — kcdxPluginInfo.au
                                                   // gains its namespace-prefix
                                                   // semantic under the 2-dot
                                                   // <author>.<plugin>.<bare> model
-                                                  // (naming-namespaces.md, in
-                                                  // transition; resolver wiring
-                                                  // lands in subsequent steps).
+                                                  // (in transition; resolver
+                                                  // wiring lands in subsequent
+                                                  // steps).
                                                   // 0.1.1 — kcdxInterface gained
                                                   // ResolveSymbolAs +
                                                   // ResolveAddressByNameAs
                                                   // (append-only; gates the new
-                                                  // layout, AP11)
+                                                  // layout, fixed-offset ABI)
 
 // Live KCD2 build number, populated at engine startup from the WHGame.dll
 // file version. Reported via kcdxInterface::runtimeGameVersion. (The plugin
@@ -318,10 +318,10 @@ const std::string& NameForHandle(kcdxPluginHandle owner);
 
 // Convert a plugin handle to the registering plugin's [plugin].author (the
 // leading namespace component under the 2-dot <author>.<plugin>.<bare>
-// model — see naming-namespaces.md). Same invalid-handle discipline as
-// NameForHandle. An empty result is the in-progress namespace refactor's
-// "legacy 1-dot row" tier (the corpus today; step 6 of the refactor
-// populates [plugin].author across the manifests), which the resolver
+// model). Same invalid-handle discipline as NameForHandle. An empty
+// result is the in-progress namespace refactor's "legacy 1-dot row" tier
+// (the corpus today; a later step populates [plugin].author across the
+// manifests), which the resolver
 // tolerates by walking the legacy 1-dot scope under (plugin, name).
 const std::string& AuthorForHandle(kcdxPluginHandle owner);
 

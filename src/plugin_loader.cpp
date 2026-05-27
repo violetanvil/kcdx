@@ -514,7 +514,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         return;
     }
 
-    // Phase 1 — manifests already populated by config::LoadAllConfigs from
+    // Step 1 — manifests already populated by config::LoadAllConfigs from
     // each plugin's kcdx.toml [plugin] table. Build a Candidate list from
     // them, applying validation (game-version compat, kcdx_min_version).
     std::vector<Candidate> cands;
@@ -547,7 +547,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         return;
     }
 
-    // Phase 2 — name uniqueness. Two plugins with the same stable name is
+    // Step 2 — name uniqueness. Two plugins with the same stable name is
     // a load-time error; both abort.
     {
         std::unordered_map<std::string, size_t> firstSeen;
@@ -568,7 +568,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         }
     }
 
-    // Phase 3 — topo-sort by dependencies. Drops cycle members and any
+    // Step 3 — topo-sort by dependencies. Drops cycle members and any
     // plugin missing a required dep. Surviving cands are in load order.
     TopoSort(cands);
 
@@ -577,7 +577,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         return;
     }
 
-    // Phase 4 — resolve DLL entrypoints + LoadLibraryW. For TOML-only
+    // Step 4 — resolve DLL entrypoints + LoadLibraryW. For TOML-only
     // plugins (no DLL), still create a LoadedPlugin record so they appear
     // in g_plugins with a handle (for GetPluginHandle / GetPluginInfo
     // lookups from other plugins). They just have no module + no entry fns.
@@ -641,7 +641,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
 
     if (g_plugins.empty()) return;
 
-    // Phase 5 — Preload wave.
+    // Step 5 — Preload wave.
     const kcdxInterface* api = GetEngineInterface();
     for (auto& p : g_plugins) {
         if (!p.preloadFn) continue;
@@ -654,8 +654,8 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         // cause; PLUGIN_REJECTED was already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
             // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
-            // form (matches kcdx.plugin.is_rejected lookup shape per
-            // naming-namespaces.md). Pass the composed key here.
+            // form (matches kcdx.plugin.is_rejected lookup shape). Pass
+            // the composed key here.
             const std::string& rejectReason =
                 zone_gate::RejectReason(
                     p.manifest.author + "." + p.manifest.name);
@@ -697,7 +697,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         (void)ok;
     }
 
-    // Phase 6 — Load wave.
+    // Step 6 — Load wave.
     for (auto& p : g_plugins) {
         // load_order.toml disabled gate. Mark the plugin as not-loaded
         // so enumeration reflects the user's choice. The DLL stays in
@@ -706,8 +706,8 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
         // user-disabled cause; PLUGIN_REJECTED was already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
             // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
-            // form (matches kcdx.plugin.is_rejected lookup shape per
-            // naming-namespaces.md). Pass the composed key here.
+            // form (matches kcdx.plugin.is_rejected lookup shape). Pass
+            // the composed key here.
             const std::string& rejectReason =
                 zone_gate::RejectReason(
                     p.manifest.author + "." + p.manifest.name);
@@ -762,7 +762,7 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     log::InfoF("Plugin DLL loader: %zu of %zu plugin(s) loaded successfully",
                okCount, g_plugins.size());
 
-    // Phase 7 — Lifecycle: fire kcdxMessage_PostLoad, then kcdxMessage_PostPostLoad.
+    // Step 7 — Lifecycle: fire kcdxMessage_PostLoad, then kcdxMessage_PostPostLoad.
     // Plugin B's PostLoad handler can confirm plugin A is loaded (its Load
     // returned). Plugin B's PostPostLoad handler can confirm plugin A's
     // PostLoad handler returned — the wave is settled.
@@ -791,10 +791,9 @@ kcdxPluginHandle HandleOf(const char* name) {
 // is the index into g_plugins (assigned in DiscoverAndLoad); guard it exactly
 // as Thunk_Log does. An invalid / unknown handle yields "" — the anonymous
 // (engine-seed-only, no self tier) path, which is correct-but-narrower, never
-// a mis-attribution to the wrong owner. Moved out of interfaces.cpp at Phase
-// 3 sub-1 step 5-main chunk 4 so kcdxHookInterface thunks (which live in
-// src/hook_interface.cpp, not src/interfaces.cpp) can call it directly
-// without a TU-cross fanout helper.
+// a mis-attribution to the wrong owner. Moved out of interfaces.cpp so
+// kcdxHookInterface thunks (which live in src/hook_interface.cpp, not
+// src/interfaces.cpp) can call it directly without a TU-cross fanout helper.
 const std::string& NameForHandle(kcdxPluginHandle owner) {
     static const std::string kEmpty;
     if (owner == kcdxInvalidPluginHandle) return kEmpty;
@@ -805,13 +804,12 @@ const std::string& NameForHandle(kcdxPluginHandle owner) {
 
 // Convert a plugin handle to the registering plugin's [plugin].author
 // (the leading namespace component under the 2-dot
-// <author>.<plugin>.<bare> model — see naming-namespaces.md). Same
-// invalid-handle discipline as NameForHandle. An empty result is the
+// <author>.<plugin>.<bare> model). Same invalid-handle discipline as
+// NameForHandle. An empty result is the
 // in-progress namespace refactor's "legacy 1-dot row" tier (the corpus
-// today; step 6 of the refactor populates [plugin].author across the
+// today; a later step populates [plugin].author across the
 // manifests), which the resolver tolerates by walking the legacy 1-dot
-// scope under (plugin, name). Same step-5-main relocation as
-// NameForHandle.
+// scope under (plugin, name). Same relocation as NameForHandle.
 const std::string& AuthorForHandle(kcdxPluginHandle owner) {
     static const std::string kEmpty;
     if (owner == kcdxInvalidPluginHandle) return kEmpty;
@@ -860,8 +858,8 @@ void RunPostGameLoad(const kcdxInterface* api) {
         // already emitted loudly.
         if (!load_order::IsPluginEnabled(p.manifest.name)) {
             // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
-            // form (matches kcdx.plugin.is_rejected lookup shape per
-            // naming-namespaces.md). Pass the composed key here.
+            // form (matches kcdx.plugin.is_rejected lookup shape). Pass
+            // the composed key here.
             const std::string& rejectReason =
                 zone_gate::RejectReason(
                     p.manifest.author + "." + p.manifest.name);

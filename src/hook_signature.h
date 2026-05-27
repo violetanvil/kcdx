@@ -22,7 +22,7 @@
 //
 // This module is parser-only — it produces a typed Signature struct
 // that downstream code (lua_bind_hook, JIT codegen, the C++
-// kcdxHookInterface in Phase 3) consumes. No marshaling logic lives
+// kcdxHookInterface) consumes. No marshaling logic lives
 // here.
 //
 // Grammar (informal):
@@ -126,8 +126,8 @@ const char* TypeToken(Type t);
 
 // True iff the given name is reserved by the engine (rejected by
 // the parser if used as an arg name). Specifically: "hook_skip" and
-// "hook_retval". Exposed so other surfaces (e.g. C++ kcdxHookInterface
-// in Phase 3, or future arg-builder helpers) apply the same check.
+// "hook_retval". Exposed so other surfaces (e.g. C++ kcdxHookInterface,
+// or future arg-builder helpers) apply the same check.
 bool IsReservedArgName(const std::string& name);
 
 // Byte-compatibility of two signatures for sharing ONE marshaling

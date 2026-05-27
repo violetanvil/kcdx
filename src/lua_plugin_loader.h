@@ -3,9 +3,8 @@
 // kcdx::lua_plugin_loader — executes each enabled plugin's
 // [entrypoints].lua files against the live game lua_State.
 //
-// Phase 2b sub-4 of the manifest-only restructure (see
-// docs/outstanding-work/restructure-plan.md). The manifest parser
-// (config.cpp) records each plugin's lua entrypoints into
+// The manifest parser (config.cpp) records each plugin's lua
+// entrypoints into
 // PluginManifest::luaEntrypointsRel, but until this module nothing
 // RAN them. RunAll() is called from the first-update-tick orchestration
 // in hooks.cpp, after RegisterKcdxTable has made the kcdx.* surface

@@ -3,13 +3,12 @@
 // kcdx::hook_payload — the queued-intent payload for a kcdx.hook
 // registration.
 //
-// Phase 2b of the manifest-only restructure (see
-// docs/outstanding-work/restructure-plan.md). A kcdx.hook call builds
+// Part of the manifest-only restructure. A kcdx.hook call builds
 // one of these, stores it as the type-erased payload of a
 // kcdx::lua_registry::Entry (Kind::Hook), and the end-of-zone apply
 // pass casts it back to install the interception. This header is
-// data-only — no install logic lives here. Sub-3 fills the struct +
-// queues it; the per-mode apply routines (sub-4..9) consume it.
+// data-only — no install logic lives here. The binder fills the struct +
+// queues it; the per-mode apply routines consume it.
 //
 // The locator fields mirror kcdx::hook_engine::HookEntry's resolution
 // surface (pattern / target_symbol / address_id / callsite), since
@@ -30,7 +29,7 @@ namespace kcdx::hook_payload {
 // Which interception shape the author asked for. One-to-one with the
 // `mode = "..."` strings in the Lua surface. See the plan's "Hook
 // modes" table for per-mode dispatch semantics — those land in the
-// per-mode apply commits (sub-4..9). Sub-3 only validates that the
+// per-mode apply commits. The binder only validates that the
 // requested mode is one of these and stores it.
 enum class Mode : uint8_t {
     Before = 0,   // run callback before original, may mutate args
@@ -78,7 +77,7 @@ struct HookPayload {
 
     // The 2-dot namespace identity of the plugin that owns this
     // registration — `owningAuthor` (from [plugin].author) +
-    // `owningPlugin` (from [plugin].name), per naming-namespaces.md.
+    // `owningPlugin` (from [plugin].name).
     // Either may be "" for an anonymous / console / pak-script call;
     // `owningAuthor` is also "" for a plugin that has not yet declared
     // [plugin].author (the in-progress namespace refactor — step 6
@@ -92,7 +91,7 @@ struct HookPayload {
     // tier).
     //
     // Engine-internal struct (not in include/kcdx/Interfaces.h) so the
-    // append-only AP11 discipline does not apply — appending a new
+    // append-only ABI discipline does not apply — appending a new
     // identity field next to `owningPlugin` is free.
     std::string owningAuthor;
     std::string owningPlugin;
@@ -108,7 +107,7 @@ struct HookPayload {
     //
     // The COMMON path is `target = "<name>"` (lands in addressName below):
     // the author names the function and the engine carries its address AND
-    // verified signature (the disassembler test — cornerstones.md / AP12).
+    // verified signature (the disassembler test — the engine carries both).
     // The remaining locators (pattern / addressId / targetSymbol /
     // targetLuaCfunction / address) are EXPERT/ADVANCED forms for targets
     // the library can't name yet — an escape hatch, never the default path.
@@ -120,7 +119,7 @@ struct HookPayload {
     // string OR a number; a string lands here, a number in addressId).
     // Resolved via address_library::ResolveByName. Empty = not set. The
     // name carries address AND verified signature — the author never
-    // hand-writes hex/ABI for a named target (cornerstones.md / AP12).
+    // hand-writes hex/ABI for a named target (the disassembler test).
     std::string                   addressName;
     std::string                   targetSymbol;        // [advanced] cross-plugin symbol-table lookup
     std::string                   targetLuaCfunction;  // [advanced] e.g. "System.LogAlways"
@@ -188,8 +187,8 @@ struct HookPayload {
     // arg-snapshot Marshal is its own future cycle when the warn ever
     // fires. 1 = Skip with warn-once-per-hook; 2 = Error log per-fire +
     // skip. Values match kcdxHookOffThread_* in
-    // include/kcdx/Interfaces.h. See
-    // .claude/rules/lua-callback-threading.md.
+    // include/kcdx/Interfaces.h. The engine auto-marshals off-thread hits
+    // to the main thread.
     uint8_t offThread = 0;
 
     // C function pointer set by the kcdxHookInterface thunks; defaults

@@ -97,12 +97,12 @@ std::string BestEffortAuthorPluginKey(const toml::table& doc) {
 }
 
 // ===========================================================================
-// STRICT manifest validation (Batch B — fail-state-logging.md / AP14)
+// STRICT manifest validation (fail loud — never silently drop author input)
 //
 // The TOML manifest readers historically dropped unrecognized, misplaced, or
 // wrong-typed keys SILENTLY: a wrong-type value made Opt* fall through to its
 // fallback; an unknown key / unknown table was never iterated; a misplaced
-// engine-level [kcdx] key only WARNed. Each is an AP14 silent-ignore — a
+// engine-level [kcdx] key only WARNed. Each is a silent-ignore — a
 // user's authored intent vanishes with no trace (the 0xC8-bug class: an
 // `enabled=` in the wrong file was simply gone).
 //
@@ -205,12 +205,12 @@ bool ValidateTableKeys(const toml::table& tbl,
 // NEVER in a PLUGIN's [kcdx] (where only `test_suite_only` is valid). A
 // misplaced engine key in a plugin manifest is a REJECT (was a WARN — flipped
 // per the user-locked strict posture: a setting in the wrong file silently
-// vanishing is the 0xC8-bug class, AP14).
+// vanishing is the 0xC8-bug class — a write that misses its target but reports OK).
 //
 // EXACTLY THREE keys — LoadEngineConfig reads each one. `dev_log_cap_mb` +
 // `dev_log_max_files` were DROPPED (Batch B Decision 2): they were allowlisted
 // but LoadEngineConfig reads NEITHER (log retention is fixed at
-// kLogRetainCount), so a validate-OK-but-does-nothing knob — AP14
+// kLogRetainCount), so a validate-OK-but-does-nothing knob is a
 // silent-success (the author sets it, it validates, it has no effect). They
 // are NOT wired up (rejected option); if they appear in engine.toml they get a
 // "has no effect" WARN there (see LoadEngineConfig), NOT a reject (engine.toml
@@ -275,13 +275,13 @@ bool ParsePluginManifest(const toml::table& doc,
                          kcdx::plugins::PluginManifest& out,
                          std::string& err) {
     // ---- Recognized-key allowlists (declared next to the parser, not
-    // scattered as literals at each check site — toml-schema.md). Each entry
+    // scattered as literals at each check site). Each entry
     // pairs the key with the TOML kind it must carry when present. Verified
     // against every shipped test-plugin manifest + the builtin: none carry an
     // unknown key, so STRICT validation false-rejects no current plugin.
     //
-    // Cross-checked against the AS-BUILT reads below (toml-schema.md documents
-    // the same set): description/url/support_email/version/kcdx_min_version are
+    // Cross-checked against the AS-BUILT reads below (the manifest schema
+    // documents the same set): description/url/support_email/version/kcdx_min_version are
     // all genuinely read here (OptString at the lines below) — none is a
     // phantom; none the parser reads is omitted.
     static constexpr std::initializer_list<KeySpec> kPluginKeys = {
@@ -321,7 +321,7 @@ bool ParsePluginManifest(const toml::table& doc,
                   "]' (valid top-level tables: [kcdx], [plugin], "
                   "[entrypoints], [load_order]; legacy behavior tables like "
                   "[[patch]]/[[hook]]/[[mid_hook]]/[[trampoline]]/[[scan]] were "
-                  "removed in Phase 5 — behavior ships in plugin.lua / a DLL)";
+                  "removed — behavior ships in plugin.lua / a DLL)";
             return false;
         }
     }
@@ -344,7 +344,7 @@ bool ParsePluginManifest(const toml::table& doc,
         err = "[plugin] missing required field 'name'";
         return false;
     }
-    // Enforce the [plugin].name shape at discovery — naming-namespaces.md
+    // Enforce the [plugin].name shape at discovery — the namespace model
     // requires a charset-legal bare name (no '.', no '-', no uppercase, etc.)
     // and rejects the reserved 'kcdx' root + 'kcdx.' prefix. A plugin with an
     // illegal name corrupts every shared name it would export, so a HARD load
@@ -361,7 +361,7 @@ bool ParsePluginManifest(const toml::table& doc,
     out.displayName  = OptString(t, "display_name", out.name);
     out.author       = OptString(t, "author", "");
     // [plugin].author is the leading component of the 2-dot
-    // <author>.<plugin>.<bare> namespace prefix (naming-namespaces.md). It is
+    // <author>.<plugin>.<bare> namespace prefix. It is
     // OPTIONAL during the in-progress namespace-refactor transition — the
     // corpus is re-migrated in a later step, after which the field can be
     // made required. For now: empty is accepted (no validation, no prefix
@@ -416,7 +416,7 @@ bool ParsePluginManifest(const toml::table& doc,
     // by a separate parser (load_order.cpp::Read). Different files, different
     // parsers — no collision.
     //
-    // HARD rename (Phase 7 zone-rework subset): the legacy [plugin] keys
+    // HARD rename (zone-rework): the legacy [plugin] keys
     // default_position / default_priority are NO LONGER read. A plugin still
     // carrying them is parsed as if it set neither (the keys are silently
     // ignored, consistent with the prerelease fix-forward no-WARN stance).
@@ -428,7 +428,7 @@ bool ParsePluginManifest(const toml::table& doc,
         // STRICT [load_order] validation (#4 + #5): unknown key or wrong-typed
         // zone/priority is a REJECT (a mistyped priority="high" previously fell
         // through OptInt to the 50 default, silently discarding the author's
-        // intent — AP14).
+        // intent).
         if (lo && !ValidateTableKeys(*lo, "[load_order]", kLoadOrderKeys, err)) {
             return false;
         }
@@ -548,7 +548,7 @@ bool ParsePluginManifest(const toml::table& doc,
         // `lua` / `lua_after` accept string OR array-of-string (the
         // single-kind ValidateTableKeys can't express the union, so the check
         // is bespoke here). A mistyped entrypoint silently no-loading the
-        // plugin's code is exactly the AP14 silent-ignore.
+        // plugin's code is exactly the silent-ignore this guards against.
         for (const auto& [keyNode, valNode] : et) {
             std::string_view k = keyNode.str();
             if (k == "dll") {
@@ -715,8 +715,8 @@ void LoadEngineConfig(const fs::path& enginePath) {
         // NOT valid in engine.toml). An unknown key → Error + abort the engine
         // config load (dev mode stays off — the production default, matching
         // the existing parse-error / open-failure paths above). A misplaced
-        // engine key silently doing nothing is the AP14 shape this closes on
-        // the engine side too.
+        // engine key silently doing nothing is the silent-failure shape this
+        // closes on the engine side too.
         //
         // The two RETIRED keys (dev_log_cap_mb / dev_log_max_files) are a
         // MIDDLE case: not allowlisted (LoadEngineConfig reads neither — log
@@ -724,7 +724,7 @@ void LoadEngineConfig(const fs::path& enginePath) {
         // get a WARN naming the no-effect, then the load PROCEEDS (engine.toml
         // is not a plugin — a dead-but-recognized knob does not abort the
         // whole engine config the way a genuine unknown key does). This is the
-        // honest signal AP14 demands: the author hears their setting has no
+        // honest signal: the author hears their setting has no
         // effect rather than it silently validating-and-doing-nothing.
         for (const auto& [keyNode, valNode] : tbl) {
             (void)valNode;
@@ -827,7 +827,7 @@ void LoadOneFile(const fs::path& path, Source source) {
         // dropped in Batch B Decision 2 — read by nothing; they hit the
         // unknown-key reject branch below if set in a plugin [kcdx].)
         //
-        // STRICT posture (flipped from WARN — fail-state-logging.md / AP14):
+        // STRICT posture (flipped from WARN — fail loud, never silent-drop):
         //   - a MISPLACED engine-level key in a plugin's [kcdx]  → REJECT
         //     (was WARN — a `dev_mode` here silently never took effect, the
         //     0xC8-bug class: a setting in the wrong file vanishing).
@@ -905,7 +905,7 @@ void LoadOneFile(const fs::path& path, Source source) {
         // for the load-order sort to resolve the owning plugin's effective
         // zone + priority. (Behavior is no longer declared in TOML — the
         // legacy [[patch]]/[[hook]]/[[mid_hook]]/[[trampoline]]/[[scan]]
-        // parsers were removed in Phase 5; behavior ships in plugin.lua /
+        // parsers were removed; behavior ships in plugin.lua /
         // kcdxPlugin_Load.)
         std::string pluginName;    // empty if this file has no [plugin] table
         std::string pluginAuthor;  // empty when no [plugin].author OR no [plugin] table
@@ -945,7 +945,7 @@ void LoadOneFile(const fs::path& path, Source source) {
                 // "no [plugin] table" is fine — file is config-only (NOT a
                 // reject: the file legitimately declares no plugin). Every
                 // OTHER mErr is a genuine manifest REJECT — the plugin will
-                // not load. Severity matches consequence (fail-state-logging.md):
+                // not load. Severity matches consequence:
                 // a manifest that stops a plugin loading is Error, not Warn (a
                 // Warn here would scroll past the author who needs to fix it).
                 // Record the reject so kcdx.plugin.is_rejected sees it: keyed by
@@ -968,8 +968,8 @@ void LoadOneFile(const fs::path& path, Source source) {
         // no longer lives in TOML — it ships in code (kcdx.bytes / kcdx.hook
         // in plugin.lua, kcdxHookInterface in C++ plugin DLLs). The legacy
         // [[patch]] / [[hook]] / [[mid_hook]] / [[trampoline]] / [[scan]]
-        // tables were retired in the v0.2 restructure (Phase 4 migrated every
-        // plugin off them; Phase 5 deleted their parsers). LoadOneFile is now
+        // tables were retired in the v0.2 restructure (every plugin migrated
+        // off them, then their parsers were deleted). LoadOneFile is now
         // manifest-only: it parses [kcdx] + [plugin] + [entrypoints] above and
         // nothing else. A stray legacy behavior table in a kcdx.toml is
         // silently ignored (kcdx is prerelease — no external author tomls to

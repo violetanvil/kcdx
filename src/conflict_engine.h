@@ -9,7 +9,7 @@
 // kcdx::conflict_engine — single source of truth for inter-entry conflict
 // detection across [[patch]], [[hook]], and (future) [[mid_hook]].
 //
-// Before Phase 4b.3, conflict detection lived inside patch_engine and was
+// Originally, conflict detection lived inside patch_engine and was
 // patch-vs-patch only. Hook conflicts were handled ad-hoc inside
 // hook_engine's apply loop. Three problems with that:
 //   1. Cross-engine collisions (a [[patch]] overlapping a [[hook]] prologue)
@@ -34,13 +34,14 @@
 // apply order (g_applyOrder + BuildApplyOrder + EntryRef), and the pre-flight
 // driver RunPreFlight that built g_conflicts — all consumed by a dead apply
 // loop in hooks.cpp that walked g_patches/g_hooks (TOML-fed vectors with no
-// populator since Phase 5). Those were removed. The PATCH half below
+// populator after the TOML behavior tables were removed). Those were removed.
+// The PATCH half below
 // (g_resolvedPatches + ResolvePatches, the patch footprint loop, DetectConflicts,
 // the Find* lookups) survives as a dead-but-present builder: nothing CALLS the
 // builders now (g_conflicts is no longer populated), but patch::ApplyResolvedPatch
 // still LINKS the Find* readers, so the half is kept for the compile dependency
 // (same sanctioned dead-but-present status as patch::ApplyAll/PreFlightAll —
-// hook-engine.md §ApplyAll fallback paths).
+// the ApplyAll fallback paths kept for the Lua-runtime path / test harnesses).
 
 namespace kcdx::conflict_engine {
 
@@ -101,7 +102,7 @@ enum class Category {
     // apply; result is a mix that may be an invalid instruction.
     WriteOnWritePartial,
 
-    // Cross-engine (new in Phase 4b.3):
+    // Cross-engine:
 
     // Two [[hook]]s target the same function entry. First-wins in v0.1
     // (chained hooks are v0.2+). Second hook aborts; log line names the

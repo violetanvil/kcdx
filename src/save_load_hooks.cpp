@@ -21,14 +21,12 @@ namespace kcdx::save_load_hooks {
 
 namespace {
 
-// Tier-2 40-byte AOB signatures from
-// _research/phase6-save-load/SAVE-LOAD-CANDIDATES.md (Phase 6a) and
-// _research/phase6b-recon/SAVE-SELECTION-HOOK.md (Phase 6b). All verified
+// Tier-2 40-byte AOB signatures, verified against the binary. All verified
 // unique in WHGame.dll .text against KCD2 release_1_5_1164953_841.
 //
-// Arg ABIs come from _research/phase6-save-load/phase6_abi_walker.py (capstone-based
-// body-wide stack-arg analysis). Earlier rounds derived arg lists from
-// prologue-shape only — that's what produced the 3-arg-SaveGame bug
+// Arg ABIs come from capstone body-wide stack-arg analysis against the
+// binary. Earlier rounds derived arg lists from prologue-shape only —
+// that's what produced the 3-arg-SaveGame bug
 // that corrupted saves. Always use full-body analysis for new hook
 // targets.
 
@@ -48,7 +46,7 @@ const char* DELETE_SAVEGAME_SIG =
     "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC 40 "
     "48 63 EA 45 8B F8 8B D5 48 8B F1 E8 40 19 42 FF";
 
-// Slot resolver @ 0x1819DDE78 (Phase 6b). 24-byte function:
+// Slot resolver @ 0x1819DDE78. 24-byte function:
 //   movsxd rax, edx              ; sign-extend playline index
 //   lea rdx, [rax + rax*8]       ; * 9
 //   lea rcx, [rcx + rdx*8]       ; rcx += playline * 72 (struct stride)
@@ -59,12 +57,12 @@ const char* DELETE_SAVEGAME_SIG =
 // Fires inside LoadGame_wrapper's tail path on every load (multiple
 // times per user-visible load, since the engine re-resolves the
 // record at several stages). Returns the SaveGameRecord*; we read
-// the filename basename from [record+0x80] (live-confirmed 2026-05-19
+// the filename basename from [record+0x80] (live-confirmed
 // with two distinct loads producing "exit.whs" and "save561.whs").
 const char* SLOT_RESOLVER_SIG =
     "48 63 C2 48 8D 14 C0 48 8D 0C D1 41 8B D0 48 83 C1 08 E9 7D 5D D2 FE";
 
-// Phase 6a function-pointer typedefs.
+// Save/load function-pointer typedefs.
 using save_game_t = char (__fastcall*)(
     void*       self,
     const char* filename,
@@ -76,8 +74,8 @@ using save_game_t = char (__fastcall*)(
 
 using load_game_wrapper_t = char (__fastcall*)(
     void*    self,
-    uint32_t playline,   // re-labeled from "arg2" after Phase 6b confirmed
-    uint32_t slot);      // re-labeled from "reason" after Phase 6b confirmed
+    uint32_t playline,   // re-labeled from "arg2" after verification confirmed
+    uint32_t slot);      // re-labeled from "reason" after verification confirmed
 
 using post_load_game_t = char (__fastcall*)(
     void*    self,
@@ -89,7 +87,7 @@ using delete_savegame_t = char (__fastcall*)(
     int32_t  slot,
     uint32_t flags);
 
-// Phase 6b: slot resolver. Returns SaveGameRecord* in rax. ABI is
+// Slot resolver. Returns SaveGameRecord* in rax. ABI is
 // (rcx = SaveGameMgr_sub_object, edx = playline_idx, r8d = slot_idx).
 using slot_resolver_t = void* (__fastcall*)(
     void*   sub_object,
@@ -153,7 +151,7 @@ bool SafeReadPtr(const void* base, uintptr_t off, void*& out) {
 // so plugin-facing messages all carry the same basename shape. The
 // SaveGame hook receives full paths from the engine; the slot
 // resolver returns basenames directly. Normalizing to basename for
-// plugins (per design decision 2026-05-19).
+// plugins (per design decision).
 const char* Basename(const char* path) {
     if (!path) return nullptr;
     const char* slash = nullptr;
@@ -164,7 +162,7 @@ const char* Basename(const char* path) {
 }
 
 // -----------------------------------------------------------------
-// Hook bodies — Phase 6a
+// Hook bodies — save/load entry points
 // -----------------------------------------------------------------
 
 char __fastcall HookedSaveGame(void* self, const char* filename,
@@ -225,8 +223,8 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
         (unsigned long long)n, (unsigned)playline, (unsigned)slot);
 
     // Re-emit the engine-modification inventory at load-start. The 0xC8 load
-    // crash (docs/known-issues/save-load crash 0xC8 raised from WHGame.md) was
-    // invisible because nothing recorded what kcdx modifies on the load path;
+    // 0xC8 save-load crash was invisible because nothing recorded what
+    // kcdx modifies on the load path;
     // this gives a build-to-build diffable fingerprint right before the load
     // that crashes. SUMMARY at Info (always-on), per-target DETAIL at Debug.
     // Also refreshes the cached summary the crash guard dumps from its SEH
@@ -254,7 +252,8 @@ char __fastcall HookedLoadGameWrapper(void* self, uint32_t playline,
     // (The mid-hook JIT-buffer fingerprint scan that once ran here —
     // hook_engine::DumpMidHookFingerprints — was removed in the
     // apply-consolidation cut: the cap-04 diagnostic walked the now-deleted
-    // g_mid_hooks vector, which had no populator since Phase 5. Live mid-hooks
+    // g_mid_hooks vector, which had no populator after the legacy TOML
+    // path was removed. Live mid-hooks
     // live in hook_chain; the JIT-buffer integrity scan has no current consumer
     // (hook_chain has no JIT-buffer fingerprint — modification_inventory's
     // order-independent VA-fingerprint, logged just above, is a different
@@ -320,12 +319,12 @@ char __fastcall HookedDeleteSavegame(void* self, int32_t slot, uint32_t flags) {
 }
 
 // -----------------------------------------------------------------
-// Phase 6b production hook — slot resolver
+// Production hook — slot resolver
 // -----------------------------------------------------------------
 //
 // Reads the SaveGameRecord pointer from the original's return value
 // (rax), then dereferences [record+0x80] to get a const char* basename
-// (live-confirmed 2026-05-19: "exit.whs", "save561.whs"). Dedups by
+// (live-confirmed: "exit.whs", "save561.whs"). Dedups by
 // record pointer so plugins see one kcdxMessage_LoadGameSelected per
 // user-visible load even though the engine resolves the record
 // multiple times per load.
@@ -354,7 +353,7 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
     const char* base = nullptr;
     if (record) {
         // [record + 0x80] is a const char* (single indirection) to the
-        // savegame basename. Live-verified 2026-05-19 with two distinct
+        // savegame basename. Live-verified with two distinct
         // loads (record_off=0x80 deref → "exit.whs", "save561.whs").
         void* nameAddr = nullptr;
         if (SafeReadPtr(record, 0x80, nameAddr) && nameAddr &&
@@ -381,9 +380,9 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
     // stale/wrong playline for THIS load — the wrong cosave gets attached.
     // The only prior signal was the dev-gated KCDX_DEV FIRE line above
     // (invisible in production). Always-on Error: the [record+0x80] offset
-    // was live-verified 2026-05-19, so a null deref off a non-null record
+    // was live-verified, so a null deref off a non-null record
     // most likely means the offset MOVED on a game patch. Names the
-    // consequence, not just the event (fail-state-logging.md). Off the
+    // consequence, not just the event. Off the
     // dedup-`first` path because EVERY resolve with a bad deref mis-serves.
     if (record != nullptr && base == nullptr) {
         LOG_ERROR("SAVE_LOAD",
@@ -392,8 +391,8 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
             "kcdxMessage_LoadGameSelected SUPPRESSED and the pending-load "
             "playline NOT stamped, so this load uses a stale/wrong cosave "
             "playline (the [record+0x80] offset likely moved on a game "
-            "patch; was live-verified for release_1_5_1164953_841 on "
-            "2026-05-19). fire_n=%llu playline=%d slot=%d",
+            "patch; was live-verified for release_1_5_1164953_841). "
+            "fire_n=%llu playline=%d slot=%d",
             record, (unsigned long long)n, (int)playline_idx, (int)slot_idx);
     }
 

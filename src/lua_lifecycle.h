@@ -2,11 +2,11 @@
 
 // kcdx::lua_lifecycle — the kcdx.on lifecycle-event bridge.
 //
-// Phase 2b sub-8 of the manifest-only restructure. sub-7 built the
-// kcdx.on(name, fn) verb + the "ready" per-plugin post-apply signal
-// (which lives in lua_registry, fired from inside ApplyZone). This module
-// adds the OTHER kcdx.on names: the 9 game-lifecycle events that mirror
-// the existing engine kcdxMessage_* catalog.
+// An earlier step built the kcdx.on(name, fn) verb + the "ready"
+// per-plugin post-apply signal (which lives in lua_registry, fired from
+// inside ApplyZone). This module adds the OTHER kcdx.on names: the 9
+// game-lifecycle events that mirror the existing engine kcdxMessage_*
+// catalog.
 //
 // It is a PURE BRIDGE. The kcdxMessage_* lifecycle messages already fire
 // (C++ plugins subscribe to them via the messaging interface today). This
@@ -24,14 +24,14 @@
 // "ready" dispatch is coupled INTO ApplyZone. The lifecycle bridge is
 // fired from an engine messaging listener instead — no coupling to the
 // apply queue — so co-locating would mix two unrelated dispatch concerns
-// in an already-oversized file (one-file-one-concern, CLAUDE.md).
+// in an already-oversized file (one file, one concern).
 //
 // Threading: FireLifecycle is invoked only from the engine messaging
 // listener, which runs on the main thread for every one of the bridged
 // messages (the update tick for InputLoaded/NewGame; the load wave for
 // PostLoad/PostPostLoad; the main save/load thread for the save/load
 // events — the same path CAP-08 + CAP-12's Lua-adjacent cosave work
-// already run on safely). Main-thread-only contract upheld (AP6).
+// already run on safely). Main-thread-only contract upheld.
 
 #include <string>
 
@@ -68,7 +68,7 @@ void RegisterLifecycleCallback(const std::string& eventName,
                                const std::string& pluginName,
                                int callbackRef);
 
-// --- Custom-event pub/sub (Phase 2b sub-9: kcdx.publish) ---
+// --- Custom-event pub/sub (kcdx.publish) ---
 //
 // kcdx.publish is a Lua-NATIVE layer SHARING this same g_subscribers
 // registry: a custom event is just another event NAME, keyed by the full
@@ -77,7 +77,7 @@ void RegisterLifecycleCallback(const std::string& eventName,
 // RegisterCustomCallback; kcdx.publish stamps the publisher's namespace and
 // fans out via FirePublish. This is NOT the C++ kcdxMessage wire format — a
 // Lua table/value rides the Lua stack by reference, never serialized to
-// bytes (sub-9 design lock).
+// bytes (design lock).
 //
 // Register a Lua callback for a custom (cross-plugin) event. `eventName` is
 // the FULL "plugin:event" key (already validated to contain ':' by the
@@ -96,7 +96,7 @@ void RegisterCustomCallback(const std::string& eventName,
 // absolute stack index (1-based) of the payload
 // value to pass to each subscriber, or 0 to fire with NO argument.
 //
-// PAYLOAD-BY-REFERENCE (sub-9 fork 1): the payload is NOT copied or
+// PAYLOAD-BY-REFERENCE: the payload is NOT copied or
 // serialized. For each subscriber we lua_pushvalue(payloadIdx) — a fresh
 // stack reference to the SAME underlying Lua value — and pcall(cb, 1). A
 // table is therefore shared by reference across all subscribers and the
@@ -108,7 +108,7 @@ void RegisterCustomCallback(const std::string& eventName,
 // Each callback runs under lua_pcall; a throw is logged with the
 // subscriber's plugin name and does NOT abort the remaining callbacks
 // (mirrors FireLifecycle / FireReadyForZone). Main-thread-only: publish runs
-// from plugin.lua / a kcdx.on callback, both main-thread (AP6).
+// from plugin.lua / a kcdx.on callback, both main-thread.
 //
 // Returns the number of subscribers fired (0 if none registered).
 int FirePublish(const std::string& fullEventName, lua_State* L, int payloadIdx);

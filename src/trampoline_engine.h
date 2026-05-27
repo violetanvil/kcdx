@@ -27,7 +27,8 @@ struct TrampolineEntry {
     // up the plugin's effective zone + priority and by ApplyAll's
     // symbols::Register call to thread the full (author, plugin)
     // identity into the cross-plugin symbol table. Engine-internal
-    // struct, so appending the field is unconstrained by AP11.
+    // struct, so appending the field is unconstrained by the plugin-ABI
+    // append-only rule.
     std::string pluginAuthor;
     std::string pluginName;
     kcdx::config::Source source = kcdx::config::Source::User;

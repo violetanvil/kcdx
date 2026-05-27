@@ -286,9 +286,9 @@ ResolvedPatch Resolve(const PatchEntry& p) {
         // + self > other precedence + shared warn-once) — a bare
         // target_symbol resolves to this plugin's own export first, an
         // explicit "<author>.<plugin>.<name>" or "<plugin>.<name>"
-        // directly (naming-namespaces.md).
+        // directly.
         //
-        // Step 4 of the 2-dot namespace refactor: PatchEntry now carries
+        // PatchEntry now carries
         // pluginAuthor alongside pluginName, threaded in by lua_bind_bytes
         // (kcdx.bytes calls) or by config.cpp's LoadOneFile (TOML [[patch]]
         // rows). When pluginAuthor is empty (the corpus state before
@@ -465,8 +465,8 @@ bool WriteBytesAtAddr(uintptr_t addr, const PatchEntry& p) {
 }  // namespace
 
 void PreFlightAll() {
-    // Phase 4b.3 refactor: resolution + conflict detection live in
-    // conflict_engine now. patch_engine's PreFlightAll is retained as a
+    // Resolution + conflict detection live in conflict_engine now.
+    // patch_engine's PreFlightAll is retained as a
     // thin shim so the ApplyAll() entry point (and the Lua-runtime
     // ApplyPatch path) still has a way to populate g_resolved if the
     // unified conflict_engine::RunPreFlight wasn't called externally.
@@ -525,8 +525,8 @@ bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r) {
         p.appliedOK = true;
         log::InfoF("[%s] patch already applied; skipping (site addr 0x%p)",
                    p.name.c_str(), reinterpret_cast<void*>(r.patchAddr));
-        // FAULT-TIME TRACE (fail-state-logging.md / finding #15): a byte
-        // patch made INVISIBLE to the crash-guard modification inventory left
+        // FAULT-TIME TRACE: a byte patch made INVISIBLE to the crash-guard
+        // modification inventory left
         // a crash at/after a byte-patched site with no owner record. An
         // idempotent-skip is STILL a live byte mod at this VA (the replacement
         // bytes are present, regardless of whether THIS apply wrote them), so
@@ -570,7 +570,7 @@ bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r) {
                       "' modified bytes inside this patch's verify range "
                       "(see Conflict engine WARN above for details).");
         } else {
-            // FAIL-STATE (fail-state-logging.md / AP14): the conflict
+            // FAIL-STATE (fail loud, never a silent drop): the conflict
             // pre-flight matrix no longer runs on this path — RunPreFlight
             // (which once populated conflict_engine::g_conflicts) was removed
             // in the apply-consolidation cut, so the Find* lookup above is
@@ -618,7 +618,7 @@ bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r) {
                HexBytes(p.original).c_str(),
                HexBytes(p.replacement).c_str());
 
-    // FAULT-TIME TRACE (fail-state-logging.md / finding #15): record this
+    // FAULT-TIME TRACE: record this
     // byte mod in the crash-guard inventory so a crash at/after the patched
     // VA is attributable to its owner. `p.name.c_str()` is process-lifetime
     // stable (see the idempotent-skip path above for the lifetime proof).

@@ -16,10 +16,10 @@
 //
 // Wire format is documented in docs/lua/cosave.md. Keep the two in sync.
 //
-// Raw Lua C API only (lua-bridge.md): no kcdx-side static-const sentinel
-// is introduced (AP5 is N/A — only normal values are pushed). Numbers are
-// stored at the build's true sizeof(lua_Number) and round-trip EXACTLY
-// relative to the live value (lua-precision.md): on this CryEngine build
+// Raw Lua C API only: no kcdx-side static-const sentinel is introduced
+// (N/A — only normal values are pushed). Numbers are stored at the build's
+// true sizeof(lua_Number) and round-trip EXACTLY relative to the live
+// value: on this CryEngine build
 // lua_Number is float, so a stored number is the exact 4-byte float the
 // VM already holds — the codec neither widens-then-narrows nor claims to
 // restore precision the VM discarded before Serialize ever saw the value.

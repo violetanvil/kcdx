@@ -61,14 +61,15 @@ size_t EntryCountForRunningVersion();
 // the canonical reference for code that needs stability.
 //
 // `owningAuthor` + `owningPlugin` are the author + plugin namespace components
-// of the calling plugin (the 2-dot prefix per naming-namespaces.md). Either or
+// of the calling plugin (the 2-dot prefix in the shared-namespace model).
+// Either or
 // both may be "" for an anonymous / engine-internal resolve, or for a plugin
 // whose manifest has not yet populated [plugin].author (the corpus's actual
 // state during the in-progress namespace refactor — empty author is the
 // legacy 1-dot tier that the resolver tolerates without dropping a self-tier
 // match; step 4 of the refactor wires the real author through every binder).
 //
-// RESOLUTION (naming-namespaces.md):
+// RESOLUTION (shared-name model — self > engine > other):
 //   - A 3-segment name "<author>.<plugin>.<bare>" is an EXPLICIT plugin-export
 //     reference: callable from anywhere, NEVER warns; resolves directly to the
 //     author target {author, plugin, bare}.
@@ -94,7 +95,7 @@ size_t EntryCountForRunningVersion();
 //     FindResolvedAuthorTarget (below) for the winning author-target
 //     descriptor and routes its pattern / symbol through the patch/symbol
 //     pipeline itself (hook_chain::ResolveLocator does this). We never
-//     fabricate a VA here (AP2).
+//     fabricate a VA here.
 //
 // LAUNCH-TIME ONLY — runs during the registration/apply pass, never on a
 // hook-fire / runtime path (the resolved VA is cached in the binding).
@@ -110,7 +111,7 @@ uintptr_t ResolveByName(const char* name,
 // precedence — a seed row is NOT an author target).
 //
 // WHY THIS EXISTS — the leaf-module dependency rule (placement is invariant-
-// determined, see address-library.md / hook-engine.md): an author target of
+// determined): an author target of
 // kind Pattern / TargetSymbol cannot resolve to a VA inside this module,
 // because doing so would make address_library depend on the patch engine /
 // symbol table — inverting the dependency (the patch engine + symbol table
@@ -120,8 +121,8 @@ uintptr_t ResolveByName(const char* name,
 // Pattern / TargetSymbol author target, then routes that target's locatorStr
 // (the pattern string / symbol name) + signature through the SAME patch::
 // Resolve / symbol pipeline it already owns for a directly-set locator. This
-// closes the disassembler-test guarantee (cornerstones.md §"author-declared
-// targets are shareable"): an expert names a pattern site once, every
+// closes the disassembler-test guarantee (author-declared targets are
+// shareable): an expert names a pattern site once, every
 // non-expert hooks it BY NAME and it resolves end-to-end.
 //
 // Returned descriptor lifetime: a pointer into the resident g_authorTargets
@@ -167,14 +168,14 @@ const char* DescribeByName(const char* name);
 // verified ABI prose carried in the row's notes/description column; it
 // lets `kcdx.hook{ target = "<name>" }` supply the ABI so the author
 // never hand-writes a signature for a named target (the disassembler
-// test — .claude/rules/cornerstones.md / AP12).
+// test — the engine carries address AND ABI for a named target).
 //
 // Returns:
 //   - the entry's signature string when the row exists AND carries a
 //     verified, structured signature;
 //   - "" (empty, non-null) when the row exists but has NO verified
 //     signature yet (the prose carried no ABI to structure — we never
-//     invent one, per AP2). The caller treats "" as "name resolved but
+//     invent one). The caller treats "" as "name resolved but
 //     no ABI known: ask the author for an explicit signature=".
 //   - "" when the name is unknown (callers resolve the address via
 //     ResolveByName separately and report the unknown-name error there).
@@ -185,7 +186,7 @@ const char* DescribeByName(const char* name);
 // signature is descriptive metadata for the same row.
 //
 // `owningAuthor` + `owningPlugin` are the 2-dot namespace components of the
-// resolving plugin per naming-namespaces.md, or "" for anonymous / engine-
+// resolving plugin, or "" for anonymous / engine-
 // internal. The signature resolves by the SAME order as ResolveByName (self >
 // engine > other for a bare name; explicit form resolves directly and never
 // warns), so the returned ABI comes from the SAME row the address did. The
@@ -200,14 +201,14 @@ const char* ResolveSignatureByName(const char* name,
 // ===========================================================================
 //
 // The compiled-in seed (kEntries[]) is the engine's own name table. Authors
-// can ALSO declare their own targets (the disassembler-test guarantees in
-// cornerstones.md: an author identifies an un-named site via the expert hatch
+// can ALSO declare their own targets (the disassembler-test guarantees:
+// an author identifies an un-named site via the expert hatch
 // ONCE, names it, and shares it by name). Those author-declared targets live
 // in a SEPARATE runtime registry (not the constexpr seed) because they're
 // discovered at launch from plugin manifests, not baked into the binary.
 //
 // THIS HEADER SECTION IS THE STORAGE + VALIDATION LAYER ONLY. Precedence
-// resolution (self > engine > other per naming-namespaces.md) is a LATER step
+// resolution (self > engine > other) is a LATER step
 // and is NOT wired into ResolveByName here.
 
 // How an author-declared target locates its address. Mirrors the locator
@@ -225,7 +226,7 @@ enum class AuthorLocatorKind {
 // set is populated from plugin manifests during discovery, not compiled in.
 //
 // The owning author + plugin + bare target name together form the shared
-// name `<author>.<pluginName>.<bareName>` per naming-namespaces.md; the
+// name `<author>.<pluginName>.<bareName>`; the
 // engine derives the prefix, the author types only the bare name. During
 // the in-progress refactor `author` may be empty (the legacy 1-dot tier);
 // once every plugin's [plugin].author is populated the field becomes
@@ -240,7 +241,7 @@ struct AuthorTarget {
     std::string       signature;    // the structured ABI in the hook DSL ("" = none)
 };
 
-// Validate a `[plugin].name` per naming-namespaces.md: charset [a-z0-9_],
+// Validate a `[plugin].name`: charset [a-z0-9_],
 // length 2..32, and NOT the reserved engine root. Returns true when the name
 // is a legal namespace prefix; on failure returns false and fills `outError`
 // with a teaching message naming the rule.
@@ -253,7 +254,7 @@ struct AuthorTarget {
 //     "kcdx." (engine-namespace squatting)
 bool ValidatePluginName(const char* name, std::string& outError);
 
-// Validate a `[plugin].author` per naming-namespaces.md: charset [a-z0-9_],
+// Validate a `[plugin].author`: charset [a-z0-9_],
 // length 2..128, and NOT the reserved engine root. Same shape as
 // ValidatePluginName — author is the leading component of the 2-dot
 // `<author>.<plugin>.<bare>` shared-namespace prefix and must obey the same
@@ -288,7 +289,7 @@ bool ValidateAuthorName(const char* name, std::string& outError);
 // locators (pass "" for the numeric kinds); `locatorNum` carries it for Rva /
 // AddressId (pass 0 for the string kinds). `signature` is the structured ABI
 // in the kcdx.hook DSL, or "" when the author has none yet (we never invent
-// one — AP2).
+// one).
 //
 // Launch-time only. See the registry definition comment in the .cpp for the
 // resident / never-read-at-runtime invariant.
@@ -306,7 +307,7 @@ bool RegisterAuthorTarget(const char*       author,
 size_t AuthorTargetCount();
 
 // ===========================================================================
-// Aliases — per-plugin local handles (naming-namespaces.md §Aliasing).
+// Aliases — per-plugin local handles.
 // ===========================================================================
 //
 // `kcdx.alias(short, "plugin.name")` declares a LOCAL handle scoped to the

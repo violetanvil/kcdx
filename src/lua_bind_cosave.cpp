@@ -1,6 +1,6 @@
 // kcdx.cosave.* — Lua-side save/load persistence.
 //
-// A GROUPED capability DOMAIN per .claude/rules/lua-api-surface.md
+// A GROUPED capability DOMAIN
 // (kcdx.cosave.*, like kcdx.log.* / kcdx.console.*, NOT a top-level
 // verb). A thin Lua binder over the EXISTING, proven engine cosave
 // path (kcdxSerializationInterface, Version 2 — the C++ CAP-12 plugin
@@ -71,7 +71,7 @@
 // collision-detects + stores the string for the read side).
 //
 // ===========================================================================
-// Threading (AP6): RunSaveCallbacks / RunLoadCallbacks fire on the MAIN
+// Threading (callbacks run on the main thread): RunSaveCallbacks / RunLoadCallbacks fire on the MAIN
 // THREAD. They run synchronously inside serialization::OnEngineMessage, which
 // messaging::FireEngineMessage invokes inline on the calling thread; the
 // SaveGame / PostLoadGame messages are fired from the main-thread save/load
@@ -81,11 +81,11 @@
 // pcall-isolated: a throwing on_save/on_load logs loud (structured) and does
 // NOT propagate out into the engine's save/load frame.
 //
-// Lua bridge (lua-bridge.md, AP5): the on_save/on_load Lua fns are stored as
+// Lua bridge (one shared lua_State): the on_save/on_load Lua fns are stored as
 // luaL_refs into LUA_REGISTRYINDEX; the per-plugin {saveRef, loadRef, uid,
 // uidExplicit} mapping is an engine-side C++ std::unordered_map keyed by
 // kcdxPluginHandle (NOT a Lua slot / sentinel). records() is a plain
-// lua_pushcclosure C closure (NO static-const sentinel). PROBE Q stays zero.
+// lua_pushcclosure C closure (NO static-const sentinel). The frealloc canary stays zero.
 
 #include "lua_bind_cosave.h"
 
@@ -112,8 +112,8 @@ namespace kcdx::lua_bind_cosave {
 
 namespace {
 
-// Per-plugin cosave state. Engine-side C++ (NOT a Lua slot / sentinel —
-// lua-bridge.md, AP5), keyed by kcdxPluginHandle. The single save/load C
+// Per-plugin cosave state. Engine-side C++ (NOT a Lua slot / sentinel on
+// the shared lua_State), keyed by kcdxPluginHandle. The single save/load C
 // trampoline identifies WHICH plugin fired from its handle arg and looks up
 // the matching Lua ref here. SetSaveCallback/SetLoadCallback take the handle,
 // so the trampoline's argument is authoritative.
@@ -504,7 +504,7 @@ int Lua_Write(lua_State* L) {
 // first GetNextRecordInfo returns false and the iterator yields nothing.
 //
 // Implemented as a single stateful C closure (lua_pushcclosure — NOT a
-// static-const sentinel, AP5): each call advances the cursor and returns
+// kcdx-side static-const sentinel): each call advances the cursor and returns
 // (tagString, version, value), or nil when GetNextRecordInfo is false. A
 // record whose bytes fail to Deserialize (corrupt / incompatible) is SKIPPED
 // with a loud warning naming the tag — one bad record never aborts the

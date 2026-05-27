@@ -1,7 +1,7 @@
 // kcdx.scan{...} — Lua-side diagnostic AOB scan (address-discovery workbench).
 //
-// A core authoring verb per .claude/rules/lua-api-surface.md: top-level
-// (like kcdx.hook / kcdx.code / kcdx.bytes), configuring -> {named table}.
+// A core authoring verb: top-level (like kcdx.hook / kcdx.code /
+// kcdx.bytes), configuring -> {named table}.
 // A thin Lua binder over the EXISTING, proven scan_engine resolve path
 // (scan_engine::ResolveScan — the same locator pipeline the legacy
 // [[scan]] path used, shared with the byte-rewrite engines). The engine
@@ -26,7 +26,7 @@
 //
 // DESIGN NOTES:
 //   * The hand-written `pattern` (and `context`) is the LABELED EXPERT
-//     AOB hatch — by-design input here, NOT an AP12 hex-burden defect.
+//     AOB hatch — by-design input here, NOT an author hex-burden defect.
 //     kcdx.scan IS the tool an expert uses to discover an address they
 //     will then NAME (the disassembler test's "name it once" path).
 //   * Module-not-loaded is a count=0 result (NOT a (nil, err)) — a
@@ -40,14 +40,13 @@
 //     [[scan]] TOML path's (scan_engine::RunOne), now dormant. The Lua
 //     verb's job is resolve + return + a concise log.
 //
-// Lua precision (lua-precision.md): every returned VA is a POINTER — it
-// goes back as a kcdx.memory.pointer userdata via PushPointer, NEVER
-// lua_pushinteger (a VA must not round-trip through lua_Number=float).
-// count / offset are integers (not pointers) and use lua_pushinteger.
+// Lua precision: every returned VA is a POINTER — it goes back as a
+// kcdx.memory.pointer userdata via PushPointer, NEVER lua_pushinteger (a VA
+// must not round-trip through lua_Number=float). count / offset are
+// integers (not pointers) and use lua_pushinteger.
 //
-// Lua bridge (lua-bridge.md, AP5): raw Lua C API only; no kcdx-side
-// static-const sentinel. The pointer userdata is a raw lua_newuserdata
-// via PushPointer. PROBE Q stays zero.
+// Lua bridge: raw Lua C API only; no kcdx-side static-const sentinel. The
+// pointer userdata is a raw lua_newuserdata via PushPointer.
 
 #include "lua_bind_scan.h"
 
@@ -72,7 +71,7 @@ namespace kcdx::lua_bind_scan {
 
 namespace {
 
-// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+// --- Unknown-key rejection (fail loud, never a silent drop) -------------
 //
 // The recognized option-key set for kcdx.scan. A typo'd `patern=` /
 // `anchor_strng=` would otherwise be silently ignored, the author's intent
@@ -113,7 +112,7 @@ int Lua_Scan(lua_State* L) {
     }
 
     // Reject an unrecognized option key before reading anything — a typo'd
-    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    // key would otherwise vanish silently (fail loud, never a silent drop).
     {
         std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
             L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
@@ -328,7 +327,7 @@ int Lua_Scan(lua_State* L) {
         const scan_engine::ScanMatch& m = result.matches[i];
         lua_newtable(L);  // one match sub-table
 
-        // addr — a VA, MUST go through PushPointer (lua-precision.md).
+        // addr — a VA, MUST go through PushPointer (exact, not lossy).
         kcdx::lua_bind_helpers::PushPointer(
             L, kcdx::lua_memory::pointer(m.applyAddr));
         lua_setfield(L, -2, "addr");

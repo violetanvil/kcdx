@@ -50,8 +50,8 @@ ApplyHandler g_handlers[8] = {nullptr};  // sized to fit a few Kinds
 
 // Per-handle-id "this entry has been applied or failed" sweep counter.
 // Apply pass increments g_applyEpoch, then walks entries with
-// status==Pending and applies. Handles wait_applied via coroutine in
-// Phase 2i will sleep on g_applyEpoch advance.
+// status==Pending and applies. A future coroutine-based wait_applied
+// will sleep on g_applyEpoch advance.
 std::atomic<uint64_t> g_applyEpoch{0};
 
 // --- "ready" lifecycle callbacks (kcdx.on("ready", fn)) -----------------
@@ -76,7 +76,7 @@ std::unordered_map<std::string, std::vector<int>> g_readyCallbacks;
 //   :name()        -> string
 //   :applied()     -> true | false | nil   (Applied / Failed / Pending)
 //   :reason()      -> string | nil         (Failed only)
-//   :wait_applied() -> blocking yield  (Phase 2i; stub in 2a)
+//   :wait_applied() -> blocking yield  (future; currently a stub)
 //
 // We use a Lua userdata of sizeof(uint64_t) carrying the handle id.
 // Entry pointers are looked up by id every method invocation; this
@@ -125,8 +125,8 @@ int H_reason(lua_State* L) {
 }
 
 int H_wait_applied(lua_State* L) {
-    // Phase 2a stub. Phase 2i wires coroutine yield/resume. For now,
-    // surface a clear error so authors know what's coming.
+    // Current stub. A future version wires coroutine yield/resume. For
+    // now, surface a clear error so authors know what's coming.
     auto* h = HandleUd(L, 1);
     const Entry* e = Find(*h);
     if (e) {
@@ -138,9 +138,9 @@ int H_wait_applied(lua_State* L) {
         }
     }
     return luaL_error(L,
-        "handle:wait_applied() requires Phase 2i coroutine support; "
-        "use kcdx.on(\"ready\", function() ... handle:applied() ... end) "
-        "for now");
+        "handle:wait_applied() requires coroutine support (not yet "
+        "available); use kcdx.on(\"ready\", function() ... "
+        "handle:applied() ... end) for now");
 }
 
 int H_uninstall(lua_State* L) {

@@ -36,12 +36,12 @@ struct Entry {
     // Machine-readable function signature in the kcdx.hook DSL (see
     // src/hook_signature.h), STRUCTURED from the verified ABI prose in
     // `description`. "" = no verified ABI to structure yet (we never
-    // invent one — AP2). Appended at the END of the struct so the
+    // invent one). Appended at the END of the struct so the
     // positional kEntries[] initializers below stay in lockstep: every
     // row gains the signature value as its LAST field. This struct is
     // engine-internal (anonymous namespace, never in a kcdx*Interface),
-    // so adding a field is not a plugin-ABI break (AP11 covers only the
-    // plugin-facing interface structs).
+    // so adding a field is not a plugin-ABI break (append-only discipline
+    // covers only the plugin-facing interface structs).
     const char* signature;
 };
 
@@ -69,25 +69,25 @@ constexpr Entry kEntries[] = {
     { 1003, kGV_1_5_1164953, 0x00865FB4, "verified", "CGame_per_frame_ui_pump", "Per-tick UI/menu pump; direct callee of CGame::Update. __fastcall(rcx=this). Body has 5-iteration loop guarded by global flags; sets this->byte_at_0x2A2F. Used by test-plugins/cap-03-hook-lua_callback live-verified production. 25-byte sig is .text-unique; pattern '48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9'.", "void (ptr self)" },
     { 1004, kGV_1_5_1164953, 0x0056174C, "verified", "outfit_swap_callsite_aob", "Inner mid-function site for the outfit-swap-in-combat patch (offset +13 is the 'mov r14b, al' that becomes 'xor r14d, r14d'). NOT a function entry — site is in the middle of the player-action handler that calls IsInCombat. Live-verified by shipping mempatch-plugins/outfit-swap-in-combat and kcdx examples. 16-byte canonical AOB; consider context extension when used as a sole locator.", "" },
     { 1005, kGV_1_5_1164953, 0x00561745, "verified", "outfit_swap_callsite_context", "Same site as outfit_swap_callsite_aob (id 1004) extended 7 bytes upward to include the call-into-IsInCombat sequence ('mov rcx, [rax+0x90]; ...'). 23 bytes. Use as a more uniquely-positioned anchor when the 16-byte AOB feels too short.", "" },
-    { 1006, kGV_1_5_1164953, 0x005605BC, "verified", "IsInCombat_callsite_26b", "26-byte sig for the IsInCombat() callsite prologue: 'mov rax, [rcx+8]; mov rcx, [rax+0x90]; add rcx, 0x0B60; mov rax, [rcx]; call qword ptr [rax+8]; cmp al, 2'. Pattern '48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02'. Used by kcdx/examples/conflict-test-{hook-on-hook,hook-on-patch,patch-on-hook} as their hook target. RVA stored is the pattern-hit position; function entry is at RVA-4 (consumers using this as a function-entry anchor apply offset = -4, as in comp-02-hook-on-patch and the conflict-test mods). Live-verified by Phase 4b.3 conflict-matrix live tests.", "" },
+    { 1006, kGV_1_5_1164953, 0x005605BC, "verified", "IsInCombat_callsite_26b", "26-byte sig for the IsInCombat() callsite prologue: 'mov rax, [rcx+8]; mov rcx, [rax+0x90]; add rcx, 0x0B60; mov rax, [rcx]; call qword ptr [rax+8]; cmp al, 2'. Pattern '48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02'. Used by kcdx/examples/conflict-test-{hook-on-hook,hook-on-patch,patch-on-hook} as their hook target. RVA stored is the pattern-hit position; function entry is at RVA-4 (consumers using this as a function-entry anchor apply offset = -4, as in comp-02-hook-on-patch and the conflict-test mods). Live-verified by conflict-matrix live tests.", "" },
     { 1007, kGV_1_5_1164953, 0x00566040, "verified", "IsInCombat_callsite_with_stack_frame", "30-byte sig prefixed with 'sub rsp, 0x28' — a different call site to the same IsInCombat() vtable method from a calling routine with its own stack frame. Pattern '48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01' ends in `3C 01` (cmp al, 1), NOT `3C 02` (cmp al, 2). The `3C 02` variant is id 1006 at RVA 0x005605BC — two distinct call sites in WHGame.dll invoking the same IsInCombat() vtable slot but checking different combat-state thresholds (1 vs 2). Used by test-plugins/comp-03-hook-on-hook-A and -B for first-wins testing. Live-verified.", "" },
-    { 1008, kGV_1_5_1164953, 0x0086AD99, "verified", "gEnv_pConsole_mov_instruction", "The 'mov rcx, [rip+pConsole]' instruction inside the autoexec-executor function. RVA derived by muyuanjin's three-step resolver: (1) find 'exec autoexec.cfg' string in .rdata; (2) scan .text for any `48 8D 15 ? ? ? ?` LEA and check RIP-relative target == string address; (3) check 7 bytes preceding the matched LEA: if `4C 8B 92 18 01 00 00`, the MOV is at LEA-0x17 (V1.4+ layout, used by KCD2 1.5); else the MOV is at LEA-7 (older). pConsole_ptr_VA = MOV_VA + 7 + disp32(MOV+3..6); gEnv_VA = pConsole_ptr_VA - 0xA8. NOT a single-pattern AOB — must be resolved via the anchor (id 1011) at runtime. Live-verified by muyuanjin's shipping plugin against KCD2 1.4+. See _research/predecessor-sigs/muyuanjin-kcd2db/src/kcd2db.cpp.", "" },
+    { 1008, kGV_1_5_1164953, 0x0086AD99, "verified", "gEnv_pConsole_mov_instruction", "The 'mov rcx, [rip+pConsole]' instruction inside the autoexec-executor function. RVA derived by muyuanjin's three-step resolver: (1) find 'exec autoexec.cfg' string in .rdata; (2) scan .text for any `48 8D 15 ? ? ? ?` LEA and check RIP-relative target == string address; (3) check 7 bytes preceding the matched LEA: if `4C 8B 92 18 01 00 00`, the MOV is at LEA-0x17 (V1.4+ layout, used by KCD2 1.5); else the MOV is at LEA-7 (older). pConsole_ptr_VA = MOV_VA + 7 + disp32(MOV+3..6); gEnv_VA = pConsole_ptr_VA - 0xA8. NOT a single-pattern AOB — must be resolved via the anchor (id 1011) at runtime. Live-verified by muyuanjin's shipping plugin against KCD2 1.4+; resolver derived from a predecessor KCD project.", "" },
     { 1009, kGV_1_5_1164953, 0x0492B8A8, "verified", "gEnv_pConsole", "Static pointer slot in .data: gEnv->pConsole. Read this 8-byte pointer to get IConsole*. RVA derived by following the RIP-relative disp32 from id 1008. Will move per game build — Address Library updates it. Subtract 0xA8 to get gEnv base (id 1010).", "" },
     { 1010, kGV_1_5_1164953, 0x0492B800, "verified", "gEnv", "Static SSystemGlobalEnvironment instance base (gEnv). Derived as id 1009 RVA - 0xA8. Plugins read fields at known offsets: pScriptSystem (+0x28), pCryPak (+0x50), pGame (+0x90), pConsole (+0xA8), etc. Live-verified by muyuanjin/kcd2db.", "" },
     { 1011, kGV_1_5_1164953, 0x04095E58, "verified", "string_exec_autoexec_cfg", "String literal 'exec autoexec.cfg' in .rdata. Single LEA xref in .text from inside the engine's autoexec executor. Use as the seed anchor when the gEnv resolver SIG needs to be re-derived after a game update — find this string, find its single LEA xref, walk backwards to the pConsole MOV. Lives in .rdata not .text — status reflects RVA stability for the lifetime of this game build.", "" },
-    { 2000, kGV_1_5_1164953, 0x00B9A2B0, "verified", "IConsole_AddCommand", "IConsole::AddCommand(const char* sCommand, ConsoleCommandFunc func, int nFlags, const char* sHelp). __thiscall (rcx=IConsole*). Callback ABI: void __fastcall (IConsoleCmdArgs*). **vtable[33]** (NOT slot 32 — the canonical CryEngine ordering is swapped in this build). Originally recorded as slot 32 by the kcdx Phase 7 vtable-dump probe; corrected 2026-05-20 after Ghidra investigation showed slot 32 is the script-string overload. Three independent confirmations: (a) slot 33's body stores r8 raw at record [+0x20]; slot 32 runs r8 through CryString-assign at 0x1804f6ac8; (b) slot 33's duplicate-registration error says 'console command [%s] is already registered' while slot 32 says 'script command [%s] is already registered'; (c) the engine's own static wrapper at 0x180B99098 (used to register playerGoto / freeze / etc.) calls vtable[33] via [pConsole->vtable + 0x108]. Full evidence at _research/phase7-recon/DISPATCH-INVESTIGATION.md.", "" },
-    { 2001, kGV_1_5_1164953, 0x0100955C, "verified", "IConsole_RemoveCommand", "IConsole::RemoveCommand(const char* sName). __thiscall. vtable[34]. Live-verified by the Phase 7 probe; small function body matches the expected map-erase shape. Used for [[command]] cleanup on plugin unload (if/when v0.2 supports unload). -> bool (success flag; SETNZ BL / MOV AL,BL before RET — the engine returns the map-erase result, diverging from the canonical CryEngine 'void RemoveCommand' header per AP3). Verified by Ghidra 2026-05-22, _research/phase7-recon/_abi_console_return_types.txt.", "bool (ptr self, cstr sName)" },
-    { 2002, kGV_1_5_1164953, 0x007A5818, "verified", "IConsole_ExecuteString", "IConsole::ExecuteString(const char* command, bool bSilentMode, bool bDeferExecution). __thiscall. vtable[35]. Live-verified by the Phase 7 probe. Useful for plugins that want to programmatically execute console commands (e.g., binding a hotkey to a console command via Lua). -> void (entry-point 0x007A5818 and helper 0x007A586C both return with no eax/rax write — pure register-restore before RET; matches the canonical CryEngine header, binary-verified). Verified by Ghidra 2026-05-22, _research/phase7-recon/_abi_console_return_types.txt.", "void (ptr self, cstr command, bool bSilentMode, bool bDeferExecution)" },
-    { 2003, kGV_1_5_1164953, 0x009DF818, "verified", "IConsole_GetCVar", "IConsole::GetCVar(const char* name) -> ICVar*. __thiscall. vtable[23]. Live-verified by the Phase 7 probe (canonical CryEngine slot). Underpins kcdx.get_cvar_bool / get_cvar_int / get_cvar_float (Lua surface) and the C-side CVar lookup.", "ptr (ptr self, cstr name)" },
+    { 2000, kGV_1_5_1164953, 0x00B9A2B0, "verified", "IConsole_AddCommand", "IConsole::AddCommand(const char* sCommand, ConsoleCommandFunc func, int nFlags, const char* sHelp). __thiscall (rcx=IConsole*). Callback ABI: void __fastcall (IConsoleCmdArgs*). **vtable[33]** (NOT slot 32 — the canonical CryEngine ordering is swapped in this build). Slot empirically probed against the binary, not assumed from a header: Ghidra analysis showed slot 32 is the script-string overload. Three independent confirmations: (a) slot 33's body stores r8 raw at record [+0x20]; slot 32 runs r8 through CryString-assign at 0x1804f6ac8; (b) slot 33's duplicate-registration error says 'console command [%s] is already registered' while slot 32 says 'script command [%s] is already registered'; (c) the engine's own static wrapper at 0x180B99098 (used to register playerGoto / freeze / etc.) calls vtable[33] via [pConsole->vtable + 0x108].", "" },
+    { 2001, kGV_1_5_1164953, 0x0100955C, "verified", "IConsole_RemoveCommand", "IConsole::RemoveCommand(const char* sName). __thiscall. vtable[34]. Live-verified against the binary; small function body matches the expected map-erase shape. Used for [[command]] cleanup on plugin unload (if/when v0.2 supports unload). -> bool (success flag; SETNZ BL / MOV AL,BL before RET — the engine returns the map-erase result, diverging from the canonical CryEngine 'void RemoveCommand' header; return type empirically verified against the binary, not assumed from the header).", "bool (ptr self, cstr sName)" },
+    { 2002, kGV_1_5_1164953, 0x007A5818, "verified", "IConsole_ExecuteString", "IConsole::ExecuteString(const char* command, bool bSilentMode, bool bDeferExecution). __thiscall. vtable[35]. Live-verified against the binary. Useful for plugins that want to programmatically execute console commands (e.g., binding a hotkey to a console command via Lua). -> void (entry-point 0x007A5818 and helper 0x007A586C both return with no eax/rax write — pure register-restore before RET; matches the canonical CryEngine header, binary-verified).", "void (ptr self, cstr command, bool bSilentMode, bool bDeferExecution)" },
+    { 2003, kGV_1_5_1164953, 0x009DF818, "verified", "IConsole_GetCVar", "IConsole::GetCVar(const char* name) -> ICVar*. __thiscall. vtable[23]. Live-verified against the binary (canonical CryEngine slot). Underpins kcdx.get_cvar_bool / get_cvar_int / get_cvar_float (Lua surface) and the C-side CVar lookup.", "ptr (ptr self, cstr name)" },
     { 2004, kGV_1_5_1164953, 0x00B99098, "verified", "IConsole_AddCommand_static_wrapper", "Engine-side static function that resolves pConsole from its known .data slot and calls vtable[33] (AddCommand func-overload). Signature: void __fastcall(const char* name, ConsoleCommandFunc func, int nFlags, const char* sHelp). Used by the engine's own boot-time registrations (playerGoto, freeze, etc.). Plugins may prefer this over directly calling AddCommand because (a) no need to fetch pConsole first, (b) survives vtable shuffles across game patches as long as the wrapper itself stays at this RVA. Discovered by the Ghidra DISPATCH-INVESTIGATION.", "void (cstr name, ptr func, i32 nFlags, cstr sHelp)" },
     { 2005, kGV_1_5_1164953, 0x0100A3D4, "verified", "IConsole_AddCommand_script_overload", "IConsole::AddCommand(const char* sName, const char* sScriptFunc, int nFlags, const char* sHelp). **vtable[32]** — the SCRIPT-STRING overload (originally mis-labeled as the func-pointer overload at id 2000). Registers a console command whose body is a Lua source string (e.g., \\Game.Connect(%1)\\\"). Plugins typically want id 2000 (function-pointer form) instead", "" },
-    { 3000, kGV_1_5_1164953, 0, "unverified", "IGame_CompleteInit_vtable_idx", "IGame::CompleteInit() vtable index. muyuanjin confirms slot 4 (0-indexed) in V1.4+. __thiscall(rcx=IGame*). Fires exactly once during engine init, main thread. NOT a function-entry RVA — this is a vtable-slot integer. Address Library schema would need [[vtable_hook]] support (Phase 5+) to consume directly; for now, record as a known constant. Status unverified at the Address-Library API level until [[vtable_hook]] ships.", "" },
+    { 3000, kGV_1_5_1164953, 0, "unverified", "IGame_CompleteInit_vtable_idx", "IGame::CompleteInit() vtable index. muyuanjin confirms slot 4 (0-indexed) in V1.4+. __thiscall(rcx=IGame*). Fires exactly once during engine init, main thread. NOT a function-entry RVA — this is a vtable-slot integer. Address Library schema would need [[vtable_hook]] support to consume directly; for now, record as a known constant. Status unverified at the Address-Library API level until [[vtable_hook]] ships.", "" },
     { 3001, kGV_1_5_1164953, 0, "unverified", "IScriptSystem_CreateTable_vtable_idx", "IScriptSystem::CreateTable() vtable index = 13 (0-indexed). +1 from canonical 12 due to inserted unknown virtual. __thiscall. Same status caveat as id 3000.", "" },
     { 3002, kGV_1_5_1164953, 0, "unverified", "IScriptTable_SetValueAny_vtable_idx", "IScriptTable::SetValueAny() vtable index = 7 (0-indexed). +1 from canonical 6 due to inserted unknown virtual. __thiscall. Same caveat.", "" },
     { 3003, kGV_1_5_1164953, 0, "unverified", "IGame_GetIGameFramework_vtable_idx", "IGame::GetIGameFramework() vtable index = 16 (0-indexed). Returns IGameFramework*. __thiscall. Documented by muyuanjin in IDA at offset 0x80 (== 16 * 8). Same caveat.", "" },
     { 3004, kGV_1_5_1164953, 0, "unverified", "IGame_GetLongName_vtable_idx", "IGame::GetLongName() vtable index = 12 (0-indexed). __thiscall. Documented by muyuanjin at offset 0x60. Useful for plugin-side game identification. Same caveat.", "" },
     { 3005, kGV_1_5_1164953, 0, "unverified", "IGame_GetName_vtable_idx", "IGame::GetName() vtable index = 13 (0-indexed). __thiscall. Documented by muyuanjin at offset 0x68. Same caveat.", "" },
-    { 1100, kGV_1_5_1164953, 0x0071A0D8, "verified", "luaL_checktype", "luaL_checktype(L, narg, t). Cross-confirmed across many luaB_*/db_* wrappers: str_dump + luaB_next + luaB_rawget + luaB_rawset + tconcat + tinsert + tremove + db_sethook all call this RVA at the matching source position. See _research/phase8-fix-a/lua_rvas.csv.", "void (ptr L, i32 narg, i32 t)" },
+    { 1100, kGV_1_5_1164953, 0x0071A0D8, "verified", "luaL_checktype", "luaL_checktype(L, narg, t). Cross-confirmed across many luaB_*/db_* wrappers: str_dump + luaB_next + luaB_rawget + luaB_rawset + tconcat + tinsert + tremove + db_sethook all call this RVA at the matching source position. Verified against the binary.", "void (ptr L, i32 narg, i32 t)" },
     { 1101, kGV_1_5_1164953, 0x0071A49C, "verified", "lua_insert", "lua_insert(L, idx). Cross-confirmed in luaB_pcall (after lua_pcall) and luaB_xpcall (between settop and pcall); both match source's lua_insert call.", "void (ptr L, i32 idx)" },
     { 1102, kGV_1_5_1164953, 0x0071A4E4, "verified", "lua_remove", "lua_remove(L, idx). Call in luaopen_math matching lua_remove(L, -2) which removes the _LOADED table after registering; cross-confirmed in db_gethook.", "void (ptr L, i32 idx)" },
     { 1103, kGV_1_5_1164953, 0x0071CA90, "verified", "lua_type", "lua_type(L, idx) -> int. Cross-confirmed in luaB_type body + first call in luaB_setmetatable + db_sethook + luaB_tostring switch dispatch.", "i32 (ptr L, i32 idx)" },
@@ -177,7 +177,7 @@ constexpr Entry kEntries[] = {
     { 1187, kGV_1_5_1164953, 0x0399614C, "verified", "luaG_runerror", "luaG_runerror(L, fmt, ...). Internal ldebug.c error-message constructor (NOT LUA_API). Body matches source: saves variadic args; checks G(L)->storedebug flag at [g+0x22]; if set calls luaO_pushvfstring(L, fmt, argp); else calls luaO_pushfstring(L, \"[Error] Lua error...\") — the storedebug-dispatch is CryEngine-specific (vendor/lua/luaconf.h adds storedebug for memory-saving debug suppression).", "" },
     { 1188, kGV_1_5_1164953, 0x03998368, "verified", "luaO_pushfstring", "luaO_pushfstring(L, fmt, ...). Internal lobject.c varargs wrapper around luaO_pushvfstring. Body: save varargs to home space, lea r8=va_list_start, tail-call luaO_pushvfstring. Used by luaG_runerror's no-debug-info path.", "" },
     { 1189, kGV_1_5_1164953, 0x014492A8, "verified", "lua_newstate", "lua_newstate(allocf, ud) -> lua_State*. PGO-fused with luaL_newstate — accepts no allocator argument (callers pass xor ecx, edx, r8d) and directly calls l_alloc (0x71E2B0). Body matches lstate.c::lua_newstate exactly: allocates 0x268 bytes (= sizeof(LG)), initializes g->storedebug=1 at +0x22, gcpause/gcstepmul=200 at +0x90/+0x94, totalbytes=0x268 at +0x78, mainthread=L at +0xb0, L->l_G=g at +0x20; final call is luaD_rawrunprotected(L, f_luaopen, NULL) at 0x014493F0. Sole caller is CScriptSystem::Init (0x1448F38).", "" },
-    { 1190, kGV_1_5_1164953, 0x01449600, "verified", "luaL_openlibs", "luaL_openlibs(L). Sole xref to the static lualibs[] table at .rdata RVA 0x3B8B200 (NOT 0x3B8B210 — table actually starts 16 bytes earlier with the {\"\", luaopen_base} entry). Body is the canonical 3-call loop: lua_pushcclosure (0xB9D11C) + lua_pushstring (0x71EF54) + lua_call (0x144965C) per entry. The lualibs reference is at instr RVA 0x144960A inside this function. ENTRY AOB (verified .text-unique, EXACTLY 1 match at this RVA via _research/phase8-fix-a/aob_scan.py, 2026-05-23): '48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D' — 16 bytes, zero wildcards (mov [rsp+8],rbx; push rdi; sub rsp,0x20; mov rdi,rcx; + the lea rbx,[rip+disp32] opcode triplet, slice ending before the variable disp32). Entry-hooked by nobody, so the prologue stays pristine for a by-name pattern scan. Used by test-plugins/cap-33-author-targets as the §36 pattern-by-name target.", "void (ptr L)" },
+    { 1190, kGV_1_5_1164953, 0x01449600, "verified", "luaL_openlibs", "luaL_openlibs(L). Sole xref to the static lualibs[] table at .rdata RVA 0x3B8B200 (NOT 0x3B8B210 — table actually starts 16 bytes earlier with the {\"\", luaopen_base} entry). Body is the canonical 3-call loop: lua_pushcclosure (0xB9D11C) + lua_pushstring (0x71EF54) + lua_call (0x144965C) per entry. The lualibs reference is at instr RVA 0x144960A inside this function. ENTRY AOB (verified .text-unique against the binary, EXACTLY 1 match at this RVA): '48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D' — 16 bytes, zero wildcards (mov [rsp+8],rbx; push rdi; sub rsp,0x20; mov rdi,rcx; + the lea rbx,[rip+disp32] opcode triplet, slice ending before the variable disp32). Entry-hooked by nobody, so the prologue stays pristine for a by-name pattern scan. Used by test-plugins/cap-33-author-targets as the pattern-by-name target.", "void (ptr L)" },
     { 1191, kGV_1_5_1164953, 0x00F77CA4, "verified", "f_luaopen", "f_luaopen(L, ud). Static helper inside lua_newstate. Computed from lea rdx, [rip - 0x4d174c] at 0x014493E9 immediately before call luaD_rawrunprotected. Builds the initial state: stack_init, gt(L)=luaH_new(L,0,2), registry=luaH_new(L,0,2), luaS_resize(L, MINSTRTABSIZE), luaT_init, luaX_init, luaS_fix(luaS_newliteral(L, \"not enough memory\")). NOT LUA_API — internal.", "void (ptr L, ptr ud)" },
     { 1192, kGV_1_5_1164953, 0x0071E2B0, "verified", "l_alloc", "l_alloc(ud, ptr, osize, nsize) -> void*. Default CryEngine Lua allocator. Unique direct-callee of lua_newstate (0x14492A8). Body matches lua_Alloc signature: nsize==0 → free; otherwise heap-alloc via 0x71E1B0 (CryEngine heap function). NOT LUA_API — internal allocator hook.", "ptr (ptr ud, ptr block, u64 osize, u64 nsize)" },
     { 1193, kGV_1_5_1164953, 0x039936D0, "verified", "luaL_checkudata", "luaL_checkudata(L, ud, tname) -> void*. Body matches lauxlib.c:124 exactly: lua_touserdata(L,1) → null check → lua_getmetatable(L,1) → zero check → lua_getfield(L, LUA_REGISTRYINDEX=0xFFFFD8F0, tname) → lua_rawequal(L,-2,-1) → zero check → lua_settop(L,-3) → return p; error tail: luaL_typerror(L,1,tname). LUA_REGISTRYINDEX immediate (0xFFFFD8F0) at 0x3993707 confirms identification. One caller (0x39979a0).", "ptr (ptr L, i32 ud, cstr tname)" },
@@ -193,26 +193,26 @@ constexpr Entry kEntries[] = {
     { 1203, kGV_1_5_1164953, 0x01565018, "verified", "luaF_close", "luaF_close(L, level). Internal lfunc.c helper (NOT LUA_API). Called by lua_close to close all upvalues for the thread. Plugin stubs that need to close upvalues over a stack range (rare; mostly relevant if a plugin implements its own coroutine-like construct) can call this directly.", "void (ptr L, ptr level)" },
     { 1204, kGV_1_5_1164953, 0x00FEABA8, "verified", "luaC_separateudata", "luaC_separateudata(L, all). Internal lgc.c helper (NOT LUA_API). Called by lua_close with all=1 to separate userdata that have GC metamethods (so their __gc handlers can fire).", "u64 (ptr L, i32 all)" },
     { 1205, kGV_1_5_1164953, 0x0071E258, "verified", "luaM_realloc_", "luaM_realloc_(L, block, osize, nsize) -> void*. Internal lmem.c reallocator (NOT LUA_API). Routes all Lua memory management through g->frealloc. Used by close_state for array frees; also by lua_load (which we already have at 0x13E14D8) for ZIO buffer management.", "ptr (ptr L, ptr block, u64 osize, u64 nsize)" },
-    { 1206, kGV_1_5_1164953, 0x004614A0, "verified", "CCryPak_FOpen", "ICryPak::FOpen(const char* pName, const char* szMode, unsigned nFlags) -> FILE*-like handle (null on miss). Engine-wide open-by-path resolver; all file opens (read+write) route through it. __fastcall member: rcx=this(ICryPak*), rdx=pName, r8=szMode, r9d=nFlags(u32). this = *(gEnv+0x50) (gEnv_pCryPak id 1207); also reachable as ICryPak vtable slot 36 (offset +0x120) -- slot PROBED against the binary (a WriteCachePak caller calls *(vtable+0x120); decompiled body is FOpen), NOT a canonical CryEngine-header slot (AP3). Vtable RVA 0x03A95FA8 via RTTI .?AVCCryPak@@ COL 0x1841758C0. Verified tier-5 Ghidra+capstone: body does path strlen + 0x800 cap + mode-string parse; abi_walker confirms 4-arg fastcall, flags 32-bit; 12+ call sites pass (path, mode rb/wb/ab/wt/w+b, flags); sibling slots +0x148 FWrite, +0x1B8 FClose. See _research/phase8.5-pak-resolver/FINDINGS.md.", "ptr (ptr this, cstr pName, cstr szMode, u32 nFlags)" },
+    { 1206, kGV_1_5_1164953, 0x004614A0, "verified", "CCryPak_FOpen", "ICryPak::FOpen(const char* pName, const char* szMode, unsigned nFlags) -> FILE*-like handle (null on miss). Engine-wide open-by-path resolver; all file opens (read+write) route through it. __fastcall member: rcx=this(ICryPak*), rdx=pName, r8=szMode, r9d=nFlags(u32). this = *(gEnv+0x50) (gEnv_pCryPak id 1207); also reachable as ICryPak vtable slot 36 (offset +0x120) -- slot empirically probed against the binary (a WriteCachePak caller calls *(vtable+0x120); decompiled body is FOpen), NOT assumed from a canonical CryEngine header. Vtable RVA 0x03A95FA8 via RTTI .?AVCCryPak@@ COL 0x1841758C0. Verified via Ghidra+capstone analysis against the binary: body does path strlen + 0x800 cap + mode-string parse; body-wide stack-arg analysis confirms 4-arg fastcall, flags 32-bit; 12+ call sites pass (path, mode rb/wb/ab/wt/w+b, flags); sibling slots +0x148 FWrite, +0x1B8 FClose.", "ptr (ptr this, cstr pName, cstr szMode, u32 nFlags)" },
     { 1207, kGV_1_5_1164953, 0x0492B850, "verified", "gEnv_pCryPak", "Static pointer slot gEnv->pCryPak (ICryPak*). RVA = gEnv (id 1010, 0x0492B800) + 0x50. Deref for the ICryPak instance; *pCryPak is the CCryPak vtable (RVA 0x03A95FA8); FOpen at vtable+0x120 (CCryPak_FOpen id 1206). Offset 0x50 confirmed against the real build: DAT_18492b850 is the global 350+ functions deref to call FOpen, == gEnv+0x50; consistent with seed-1010 verified offsets pGame+0x90 / pConsole+0xA8 and env.h field order. See docs/mod-loader-absorb.md.", "" },
 
-    // --- Phase 8.5 mod-loader absorb (wh::C_ModManager orchestrator) ---
-    // The narrow-takeover hook target + its phase-1/phase-2 anchors. SELECT
-    // (3100) is LIVE-CONFIRMED (kcdx PROBE U.6 detour fired at this RVA from
-    // the worker thread before CSystem::Init completed selection); the others
-    // are capstone-E8-sweep + Ghidra confirmed. Full provenance + the 0x70-byte
+    // --- mod-loader absorb (wh::C_ModManager driver) ---
+    // The narrow-takeover hook target + its stage-1/stage-2 anchors. SELECT
+    // (3100) is live-confirmed (a detour fired at this RVA from the worker
+    // thread before CSystem::Init completed selection); the others are
+    // capstone-E8-sweep + Ghidra confirmed. Full provenance + the 0x70-byte
     // I_Mod record field map in docs/mod-loader-absorb.md.
-    { 3100, kGV_1_5_1164953, 0x00DA104C, "verified", "ModManager_Select", "wh::C_ModManager SELECTION orchestrator (FUN_180da104c) -- the mod-loader absorb hook target. __fastcall void(C_ModManager* this) -- this-only, void return (abi_walker: prologue reads only [rcx+0x18/0x20/0x30/0x38] member fields). Phase 1 of the engine mod-load: clears enabled list (this+0x30..0x38) + scanned list (this+0x18..0x20), Steam-workshop scan, alphabetical mods/ scan (FUN_180da1178), per-mod manifest validate (id 3104, 0x70 stride), mod_order.txt select+order (id 3103); fallback enables all scanned if no mod_order.txt. Invoked synchronously from the ctor (id 3101); reached by DIRECT call from CSystem::Init @ 0x1807A76FE, NOT in any vtable. LIVE-CONFIRMED: kcdx PROBE U.6 detour fired at this RVA from the worker thread BEFORE CSystem::Init completed selection (2026-05-26 boots) -- worker-thread install is in time. See docs/mod-loader-absorb.md.", "void (ptr this)" },
-    { 3101, kGV_1_5_1164953, 0x00DA0EB0, "verified", "ModManager_ctor", "wh::C_ModManager ctor/factory (FUN_180da0eb0). ABI: undefined8*(undefined8* outResult /*rcx*/, CSystem* sys /*rdx*/, CryString* modsDir /*r8*/) -- 3-arg fastcall. Allocates a 0x68-byte C_ModManager, sets vptr=wh::C_ModManager::vftable, stores sys at +8 and modsDir at +0x10, zero-inits the mod lists (+0x18..+0x58), registers console cmd wh_mod_GenerateReport, then calls SELECT (id 3100). Object stored into CSystem+0x2B30 so phase 2 + downstream find it. Reached by direct call from CSystem::Init @ 0x1807A76FE. Capstone E8-sweep confirmed. See docs/mod-loader-absorb.md.", "ptr (ptr outResult, ptr sys, ptr modsDir)" },
-    { 3102, kGV_1_5_1164953, 0x004D9058, "verified", "ModManager_Mount", "wh::C_ModManager MOUNT driver (FUN_1804d9058) -- phase 2. ABI: void(C_ModManager* modMgr /*rcx*/, CryString* modsDir /*rdx*/) -- 2-arg fastcall. Constructs the per-mod OpenPacks lambda (FUN_181ddc920) then iterates the ENABLED I_Mod list (modMgr+0x30) invoking it per mod; the lambda calls OpenPacks (pak-mgr vtable slot +0x48, the wildcard plural mount) with ('<modPath>/*.pak', 0x10400, 0). Called once from CSystem::Init @ 0x1807A7F1C, after the ctor. The narrow takeover does NOT detour this -- kcdx populates the enabled list in its order and lets native MOUNT run verbatim (localization/table-patch/mod.cfg passes not dropped). Capstone E8-sweep confirmed. See docs/mod-loader-absorb.md.", "void (ptr modMgr, ptr modsDir)" },
+    { 3100, kGV_1_5_1164953, 0x00DA104C, "verified", "ModManager_Select", "wh::C_ModManager SELECTION driver (FUN_180da104c) -- the mod-loader absorb hook target. __fastcall void(C_ModManager* this) -- this-only, void return (body-wide stack-arg analysis: prologue reads only [rcx+0x18/0x20/0x30/0x38] member fields). Stage 1 of the engine mod-load: clears enabled list (this+0x30..0x38) + scanned list (this+0x18..0x20), Steam-workshop scan, alphabetical mods/ scan (FUN_180da1178), per-mod manifest validate (id 3104, 0x70 stride), mod_order.txt select+order (id 3103); fallback enables all scanned if no mod_order.txt. Invoked synchronously from the ctor (id 3101); reached by DIRECT call from CSystem::Init @ 0x1807A76FE, NOT in any vtable. LIVE-CONFIRMED: a detour fired at this RVA from the worker thread BEFORE CSystem::Init completed selection -- worker-thread install is in time. See docs/mod-loader-absorb.md.", "void (ptr this)" },
+    { 3101, kGV_1_5_1164953, 0x00DA0EB0, "verified", "ModManager_ctor", "wh::C_ModManager ctor/factory (FUN_180da0eb0). ABI: undefined8*(undefined8* outResult /*rcx*/, CSystem* sys /*rdx*/, CryString* modsDir /*r8*/) -- 3-arg fastcall. Allocates a 0x68-byte C_ModManager, sets vptr=wh::C_ModManager::vftable, stores sys at +8 and modsDir at +0x10, zero-inits the mod lists (+0x18..+0x58), registers console cmd wh_mod_GenerateReport, then calls SELECT (id 3100). Object stored into CSystem+0x2B30 so stage 2 + downstream find it. Reached by direct call from CSystem::Init @ 0x1807A76FE. Capstone E8-sweep confirmed. See docs/mod-loader-absorb.md.", "ptr (ptr outResult, ptr sys, ptr modsDir)" },
+    { 3102, kGV_1_5_1164953, 0x004D9058, "verified", "ModManager_Mount", "wh::C_ModManager MOUNT driver (FUN_1804d9058) -- stage 2. ABI: void(C_ModManager* modMgr /*rcx*/, CryString* modsDir /*rdx*/) -- 2-arg fastcall. Constructs the per-mod OpenPacks lambda (FUN_181ddc920) then iterates the ENABLED I_Mod list (modMgr+0x30) invoking it per mod; the lambda calls OpenPacks (pak-mgr vtable slot +0x48, the wildcard plural mount) with ('<modPath>/*.pak', 0x10400, 0). Called once from CSystem::Init @ 0x1807A7F1C, after the ctor. The narrow takeover does NOT detour this -- kcdx populates the enabled list in its order and lets native MOUNT run verbatim (localization/table-patch/mod.cfg passes not dropped). Capstone E8-sweep confirmed. See docs/mod-loader-absorb.md.", "void (ptr modMgr, ptr modsDir)" },
     { 3103, kGV_1_5_1164953, 0x00DA1294, "verified", "ModManager_ReadModOrder", "wh::C_ModManager mod_order.txt reader (FUN_180da1294). ABI: undefined1(C_ModManager* this /*rcx*/) -> bool (1 if mod_order.txt opened). Reads <modsDir>/mod_order.txt via CCryFile helper FUN_1804605bc at nFlags 0x10006 line-by-line (strips '#', trims), matches each against the scanned records (this+0x18..0x20, 0x70 stride), appends matches to the enabled list (this+0x30) IN FILE ORDER. => mod_order.txt line order == enabled-list order == mount order. The INPUT the absorb subsumes: kcdx reads it as the vanilla baseline ordering, merges kcdx-plugins/ + [load_order] on top, writes the resolved order back to BOTH load_order.toml + mod_order.txt. See docs/mod-loader-absorb.md.", "u8 (ptr this)" },
     { 3104, kGV_1_5_1164953, 0x0243E7B8, "verified", "ModManager_ParseManifest", "wh::C_ModManager per-mod mod.manifest parse + version-gate (FUN_18243e7b8, image-base 0x180000000 + RVA 0x243E7B8). ABI: (modRecord* /*rcx*/). Reads mod.manifest, validates modid + the <version>/game-version gate (sibling FUN_182440c6c). Populates the 0x70-byte I_Mod record string fields (path/id/name/description/author/version/date -- field map in docs/mod-loader-absorb.md). The narrow takeover REUSES this (lets native SELECT run) so kcdx-built records get the engine's manifest parse + real vtables for free; kcdx only re-orders + appends. Capstone-confirmed via string anchors. See docs/mod-loader-absorb.md.", "" },
     // I_Mod concrete-class vtable BASE ADDRESSES (data RVAs to write into a
     // from-scratch record's +0x00/+0x18 slots) -- NOT vtable indices (cf. the
     // 3000-band index convention). Live-verified single-class + ASLR-stable
-    // across two boots (PROBE U.8/U.9, all 15 records identical).
-    { 3105, kGV_1_5_1164953, 0x046AAF00, "verified", "ImodVtable_primary", "The wh::I_Mod concrete-class PRIMARY vtable (record offset +0x00). ADDRESS OF THE VTABLE (data RVA to write into a synthesized record's +0x00 slot), NOT a vtable index. The mod-loader absorb builds I_Mod records from scratch and sets this at +0x00 so native MOUNT + downstream passes dispatch correctly. LIVE-VERIFIED across two boots: all 15 enabled records carry this identical vtable (PROBE U.9, 2026-05-27), VA-base resolves to this same RVA on both boots (ASLR-stable; U.8 base 0x7FF8FF470000 + U.9 base 0x7FF8FF000000 both yield 0x46AAF00); first 4 fn pointers read as real code. Single I_Mod concrete class confirmed. See docs/mod-loader-absorb.md.", "" },
-    { 3106, kGV_1_5_1164953, 0x046AAED8, "verified", "ImodVtable_subobject", "The wh::I_Mod concrete-class SUB-OBJECT vtable (record offset +0x18, second base of a multiple-inheritance layout). ADDRESS OF THE VTABLE (data RVA for the synthesized record's +0x18 slot), NOT a vtable index. Paired with ImodVtable_primary (id 3105); the absorb sets both when building a from-scratch I_Mod record. LIVE-VERIFIED identical across all 15 records on two boots, ASLR-stable to RVA 0x46AAED8 (PROBE U.8/U.9, 2026-05-27); fn pointers read as real code. See docs/mod-loader-absorb.md.", "" },
+    // across two boots (all 15 records identical).
+    { 3105, kGV_1_5_1164953, 0x046AAF00, "verified", "ImodVtable_primary", "The wh::I_Mod concrete-class PRIMARY vtable (record offset +0x00). ADDRESS OF THE VTABLE (data RVA to write into a synthesized record's +0x00 slot), NOT a vtable index. The mod-loader absorb builds I_Mod records from scratch and sets this at +0x00 so native MOUNT + downstream passes dispatch correctly. LIVE-VERIFIED across two boots: all 15 enabled records carry this identical vtable, VA-base resolves to this same RVA on both boots (ASLR-stable; bases 0x7FF8FF470000 + 0x7FF8FF000000 both yield 0x46AAF00); first 4 fn pointers read as real code. Single I_Mod concrete class confirmed. See docs/mod-loader-absorb.md.", "" },
+    { 3106, kGV_1_5_1164953, 0x046AAED8, "verified", "ImodVtable_subobject", "The wh::I_Mod concrete-class SUB-OBJECT vtable (record offset +0x18, second base of a multiple-inheritance layout). ADDRESS OF THE VTABLE (data RVA for the synthesized record's +0x18 slot), NOT a vtable index. Paired with ImodVtable_primary (id 3105); the absorb sets both when building a from-scratch I_Mod record. LIVE-VERIFIED identical across all 15 records on two boots, ASLR-stable to RVA 0x46AAED8; fn pointers read as real code. See docs/mod-loader-absorb.md.", "" },
 };
 
 constexpr size_t kEntryCount = sizeof(kEntries) / sizeof(kEntries[0]);
@@ -252,8 +252,8 @@ uintptr_t Resolve(uint64_t id) {
     // hash, but the address library is bounded by how many things
     // a maintainer manually catalogues.
     //
-    // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): Resolve
-    // returns 0 for FIVE distinct reasons — id not in table, id present
+    // FAIL-STATE INSTRUMENTATION (fail loud with a structured reason, never
+    // a silent zero): Resolve returns 0 for FIVE distinct reasons — id not in table, id present
     // but for a different game build, row not yet verified, no RVA, module
     // not loaded. A caller seeing 0 cannot tell "not configured" from
     // "version mismatch" from "unverified row". Emit a dev-gated Debug line
@@ -354,7 +354,7 @@ bool StrEq(const char* a, const char* b) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared-name resolution (naming-namespaces.md): self > engine > other, with
+// Shared-name resolution: self > engine > other, with
 // a warn-once-per-session-per-colliding-bare-name diagnostic.
 //
 // LAUNCH-TIME ONLY. Every helper below is reached exclusively from
@@ -464,7 +464,7 @@ const AuthorTarget* FindOtherAuthorTarget(const std::string& excludeAuthor,
 // author target it feeds that target's locatorStr (the pattern string / symbol
 // name) into the SAME patch::Resolve / symbol pipeline it already runs for a
 // directly-set pattern / target_symbol locator. The address comes from THAT
-// pipeline, not from here. We never fabricate a VA (AP2).
+// pipeline, not from here. We never fabricate a VA.
 uintptr_t ResolveAuthorTargetAddr(const AuthorTarget& t) {
     switch (t.kind) {
         case AuthorLocatorKind::Rva: {
@@ -482,8 +482,8 @@ uintptr_t ResolveAuthorTargetAddr(const AuthorTarget& t) {
     }
 }
 
-// Already-warned bare names this session (warn-once-per-session-per-name per
-// naming-namespaces.md). Shared by ResolveByName + ResolveSignatureByName so a
+// Already-warned bare names this session (warn-once-per-session-per-name).
+// Shared by ResolveByName + ResolveSignatureByName so a
 // bare name that collides warns ONCE total, not once per function. Launch-time
 // only (see the block comment above).
 std::set<std::string> g_warnedCollisions;
@@ -509,7 +509,7 @@ void WarnBareCollisionOnce(const char* bareName,
             "engine, another plugin} resolves self > engine > other; prefix "
             "the one you did not declare as \"<plugin>.<name>\" (or \"kcdx."
             "<name>\" for the engine seed) to pick it explicitly and silence "
-            "this warning (naming-namespaces.md)."));
+            "this warning."));
 }
 
 // Render the full 2-dot owner display string for an author target. When
@@ -563,7 +563,7 @@ void MaybeWarnCollision(const char* bareName,
 // `segments[0..count-1]` carry the pieces; count is 1, 2, or 3 (an empty name
 // returns count == 0; 4-or-more-segment names overflow and return count == 4
 // so callers can reject them as malformed). The engine parses on the dot —
-// it is semantic, not convention (naming-namespaces.md).
+// it is semantic, not convention.
 //
 // Under the 2-dot model:
 //   count == 1 → BARE name; resolves by self > engine > other precedence.
@@ -598,8 +598,8 @@ QualifiedName SplitQualified(const char* name) {
 // ONCE by ResolveBareWinner so ResolveByName and FindResolvedAuthorTarget share
 // the SAME precedence decision AND the SAME once-per-session collision warn
 // (the warn fires inside ResolveBareWinner, keyed by name, so a name that
-// already warned from one caller does not double-warn from the other —
-// naming-namespaces.md). `winner` names the tier; `authorTarget` is the winning
+// already warned from one caller does not double-warn from the other).
+// `winner` names the tier; `authorTarget` is the winning
 // author target when the winner is Self/Other, nullptr when Engine/None.
 struct BareResolution {
     enum class Tier { None, Self, Engine, Other } winner = Tier::None;
@@ -655,7 +655,7 @@ uintptr_t ResolveByName(const char* name,
     const std::string author = owningAuthor ? owningAuthor : "";
     const std::string plugin = owningPlugin ? owningPlugin : "";
 
-    // --- ALIAS substitution (naming-namespaces.md §Aliasing) — BEFORE the
+    // --- ALIAS substitution (per-plugin local handles) — BEFORE the
     // self > engine > other walk. If the calling plugin declared an alias by
     // this bare name, substitute its full target and resolve THAT. An alias is
     // a pure local add-on: it only fires when this plugin owns it, so it can
@@ -720,7 +720,7 @@ const AuthorTarget* FindResolvedAuthorTarget(const char* name,
     const std::string author = owningAuthor ? owningAuthor : "";
     const std::string plugin = owningPlugin ? owningPlugin : "";
 
-    // --- ALIAS substitution (naming-namespaces.md §Aliasing) — same as
+    // --- ALIAS substitution (per-plugin local handles) — same as
     // ResolveByName, BEFORE the dot-split / precedence walk. Local handle,
     // never displaces another tier.
     std::string aliased = ResolveAlias(author.c_str(), plugin.c_str(), name);
@@ -796,7 +796,7 @@ const char* DescribeByName(const char* name) {
 namespace {
 
 // The engine seed signature scan, factored out. Returns the row's structured
-// signature ("" when the row carries none yet — AP2: never invented), or
+// signature ("" when the row carries none yet — never invented), or
 // nullptr when the seed has no row by this name (so the caller can fall
 // through to the next precedence tier). Returned regardless of game_version /
 // status, like Describe() — the binder gates the ADDRESS via ResolveByName.
@@ -817,7 +817,7 @@ const char* ResolveSignatureByName(const char* name,
     const std::string author = owningAuthor ? owningAuthor : "";
     const std::string plugin = owningPlugin ? owningPlugin : "";
 
-    // --- ALIAS substitution (naming-namespaces.md §Aliasing) — same as
+    // --- ALIAS substitution (per-plugin local handles) — same as
     // ResolveByName, so the signature resolves from the SAME row the address
     // does. The aliased target string must outlive the bare-path locals below
     // (selfTarget etc. point into the registry, not into this string), so keep
@@ -899,7 +899,7 @@ std::vector<AuthorTarget> g_authorTargets;
 // populated once during discovery by RegisterAlias(), read only during the
 // apply pass (ResolveAlias, called at the top of name resolution). An alias
 // resolves ONLY in its declaring namespace, so it can never shadow an engine
-// name or another plugin's bare name (naming-namespaces.md §Aliasing).
+// name or another plugin's bare name (aliases are per-plugin local handles).
 std::map<std::string, std::map<std::string, std::string>> g_aliases;
 
 // Build the per-namespace alias-map key from the owning author + plugin. An
@@ -914,7 +914,7 @@ std::string AliasOwnerKey(const std::string& author,
 
 // True iff `c` is a legal char for a shared-name component: [a-z0-9_].
 // Uppercase, '.', '-', and everything else are rejected (the dot is the
-// reserved canonical separator the engine parses on — naming-namespaces.md).
+// reserved canonical separator the engine parses on).
 bool IsNameChar(char c) {
     return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
 }
@@ -935,8 +935,7 @@ bool ValidateNameComponent(const char* name, const char* what,
                            size_t maxLen = 32) {
     if (!name || name[0] == '\0') {
         outError = std::string(what) +
-                   " is empty — must be at least 2 chars of [a-z0-9_] "
-                   "(naming-namespaces.md).";
+                   " is empty — must be at least 2 chars of [a-z0-9_].";
         return false;
     }
     size_t len = 0;
@@ -946,22 +945,19 @@ bool ValidateNameComponent(const char* name, const char* what,
             outError = std::string(what) + " \"" + name +
                        "\" has an illegal character — only lowercase "
                        "[a-z0-9_] is allowed (no uppercase, '.', '-', or "
-                       "spaces). The dot is the reserved namespace separator "
-                       "(naming-namespaces.md).";
+                       "spaces). The dot is the reserved namespace separator.";
             return false;
         }
     }
     if (len < 2) {
         outError = std::string(what) + " \"" + name +
-                   "\" is too short — must be at least 2 chars "
-                   "(naming-namespaces.md).";
+                   "\" is too short — must be at least 2 chars.";
         return false;
     }
     if (len > maxLen) {
         outError = std::string(what) + " \"" + name +
                    "\" is too long — must be at most " +
-                   std::to_string(maxLen) + " chars "
-                   "(naming-namespaces.md).";
+                   std::to_string(maxLen) + " chars.";
         return false;
     }
     return true;
@@ -977,7 +973,7 @@ bool ValidatePluginName(const char* name, std::string& outError) {
     // 32 cap would force every kcdx_builtin_* plugin to truncate its plugin
     // name to fit the author prefix, distorting plugin names to fit prefix
     // length. Short components (aliases, bare target names) keep the default
-    // 32 cap they were always at. naming-namespaces.md was updated in lockstep.
+    // 32 cap they were always at.
     constexpr size_t kPluginNameMaxLen = 128;
     if (!ValidateNameComponent(name, "[plugin].name", outError,
                                kPluginNameMaxLen)) {
@@ -985,8 +981,8 @@ bool ValidatePluginName(const char* name, std::string& outError) {
     }
     // Reserved engine root: the exact value "kcdx" is the engine namespace;
     // any name starting "kcdx." would squat under the reserved root. Both are
-    // a hard rejection (naming-namespaces.md: "kcdx.* is reserved for the
-    // engine; [plugin].name = \"kcdx\" is rejected").
+    // a hard rejection ("kcdx.*" is reserved for the
+    // engine; [plugin].name = \"kcdx\" is rejected).
     //
     // Note: a literal "kcdx." can't actually reach here as a single component
     // because '.' fails the charset check above; we still guard the prefix
@@ -998,7 +994,7 @@ bool ValidatePluginName(const char* name, std::string& outError) {
             "[plugin].name \"" + std::string(name) +
             "\" is reserved — the \"kcdx\" namespace (and any \"kcdx.\" "
             "prefix) belongs to the engine. Pick your own short lowercase "
-            "id (naming-namespaces.md).";
+            "id.";
         return false;
     }
     return true;
@@ -1007,7 +1003,7 @@ bool ValidatePluginName(const char* name, std::string& outError) {
 bool ValidateAuthorName(const char* name, std::string& outError) {
     // Charset + length. [plugin].author shares the 128-char cap with
     // [plugin].name — both are namespace-prefix components in the 2-dot
-    // <author>.<plugin>.<bare> shared-namespace model (naming-namespaces.md);
+    // <author>.<plugin>.<bare> shared-namespace model;
     // engine-author families (kcdx_builtin_*, etc.) push longer values
     // naturally, and the runtime cost of a longer cap is nil (one strlen at
     // launch-time discovery only). Short components (aliases, bare target
@@ -1032,7 +1028,7 @@ bool ValidateAuthorName(const char* name, std::string& outError) {
             "[plugin].author \"" + std::string(name) +
             "\" is reserved — the \"kcdx\" namespace (and any \"kcdx.\" "
             "prefix) belongs to the engine. Pick your own short lowercase "
-            "id (naming-namespaces.md).";
+            "id.";
         return false;
     }
     return true;
@@ -1048,7 +1044,7 @@ bool RegisterAuthorTarget(const char*       author,
                           std::string&      outError) {
     // Validate the author (when non-empty) as the leading namespace
     // component — same charset / length / reserved-root rules as the
-    // plugin name (naming-namespaces.md). An empty author is accepted
+    // plugin name. An empty author is accepted
     // during the in-progress refactor (legacy 1-dot row); step 4 of the
     // refactor wires the real author through every binder and once the
     // corpus migrates the field becomes required.
@@ -1059,7 +1055,7 @@ bool RegisterAuthorTarget(const char*       author,
     }
     // Validate the owning plugin name as a namespace prefix (charset, length,
     // reserved-root) — a bad prefix corrupts every shared name this plugin
-    // exports (naming-namespaces.md: hard manifest rejection).
+    // exports (a bad prefix is a hard manifest rejection).
     if (!ValidatePluginName(pluginName, outError)) {
         return false;
     }
@@ -1071,7 +1067,7 @@ bool RegisterAuthorTarget(const char*       author,
     }
 
     // Validated — append. (Storage layer only: collision handling is the
-    // resolver's job per naming-namespaces.md, not the registry's.)
+    // resolver's job, not the registry's.)
     AuthorTarget t;
     t.author     = author ? author : "";
     t.pluginName = pluginName;
@@ -1099,8 +1095,8 @@ bool RegisterAlias(const char*  owningAuthor,
         outError =
             "kcdx.alias can only be called from a plugin script — the calling "
             "Lua chunk did not attribute to a [plugin] (anonymous console / pak "
-            "Lua cannot declare an alias). An alias is a per-plugin local handle "
-            "(naming-namespaces.md).";
+            "Lua cannot declare an alias). An alias is a per-plugin local "
+            "handle.";
         return false;
     }
     // The owning plugin name must be a legal namespace prefix (also rejects

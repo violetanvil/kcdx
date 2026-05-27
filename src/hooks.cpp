@@ -2,7 +2,7 @@
 
 #include <windows.h>
 #include <psapi.h>
-#include <intrin.h>  // for PROBE Q: _AddressOfReturnAddress
+#include <intrin.h>  // for the frealloc canary: _AddressOfReturnAddress
 
 #include <atomic>
 #include <cstdint>
@@ -64,7 +64,7 @@ using update_t = void(__cdecl*)(long long*, uint32_t, DWORD);
 update_t g_orig_update = nullptr;
 
 int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
-    // === DIAGNOSTIC (PROBE H): log every distinct L that flows through
+    // === DIAGNOSTIC (lua_State canary): log every distinct L that flows through
     // CryEngine's lua_pcall. If multiple distinct L pointers appear, we
     // captured one specific one (the first), but CryEngine uses several.
     // Calling lua_newtable on the wrong L would corrupt unrelated VM
@@ -98,11 +98,11 @@ int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
     return g_orig_lua_pcall(L, nargs, nresults, errfunc);
 }
 
-// === PROBE Q: frealloc interception to verify the dummynode hypothesis ===
+// === FREALLOC CANARY: frealloc interception to verify the dummynode hypothesis ===
 //
 // Hypothesis: WHGame's Lua eventually calls g->frealloc(g->ud, ptr, ...) on
 // our kcdx-static `dummynode_` pointer, mistaking it for a heap allocation.
-// PROBE Q hooks the captured `frealloc` and logs any call whose `block`
+// The canary hooks the captured `frealloc` and logs any call whose `block`
 // parameter falls inside kcdx.dll's image range.
 //
 // If we see such a call before the heap-corruption crash, hypothesis is
@@ -169,12 +169,12 @@ static void ArmFreallocProbe(lua_State* L) {
                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             reinterpret_cast<LPCWSTR>(&HookedFrealloc),
                             &kcdx_mod) || !kcdx_mod) {
-        log::Error("PROBE Q: GetModuleHandleEx for kcdx.asi failed");
+        log::Error("frealloc canary: GetModuleHandleEx for kcdx.asi failed");
         return;
     }
     MODULEINFO mi{};
     if (!GetModuleInformation(GetCurrentProcess(), kcdx_mod, &mi, sizeof(mi))) {
-        log::Error("PROBE Q: GetModuleInformation failed");
+        log::Error("frealloc canary: GetModuleInformation failed");
         return;
     }
     g_kcdx_image_base = reinterpret_cast<uintptr_t>(mi.lpBaseOfDll);
@@ -189,13 +189,13 @@ static void ArmFreallocProbe(lua_State* L) {
     // The Table is then popped, so it's eligible for GC; that's the
     // exact same code path cap-04 exercises, so this is a smaller-scale
     // probe of the same corruption — adding ~1 corrupting Table to the
-    // rootgc chain. PROBE N showed one such Table from HookedUpdate's
+    // rootgc chain. A prior probe showed one such Table from HookedUpdate's
     // main-thread frame doesn't crash on its own, so this is safe.
     {
         lua_createtable(L, 0, 0);
         void* tbl = const_cast<void*>(lua_topointer(L, -1));
         // Table struct layout per vendor/lua/lobject.h: node field at
-        // offset 0x20 (validated by PROBE P hex dumps).
+        // offset 0x20 (validated by hex dumps against the binary).
         if (tbl) {
             void** node_field = reinterpret_cast<void**>(
                 static_cast<uint8_t*>(tbl) + 0x20);
@@ -204,13 +204,13 @@ static void ArmFreallocProbe(lua_State* L) {
         lua_pop(L, 1);
     }
     if (!g_kcdx_dummynode) {
-        log::Error("PROBE Q: failed to resolve dummynode pointer");
+        log::Error("frealloc canary: failed to resolve dummynode pointer");
         return;
     }
     // VirtualQuery the dummynode address to confirm it's in the kcdx.dll image.
     MEMORY_BASIC_INFORMATION mbi{};
     if (VirtualQuery(g_kcdx_dummynode, &mbi, sizeof(mbi)) == 0) {
-        log::Error("PROBE Q: VirtualQuery on dummynode failed");
+        log::Error("frealloc canary: VirtualQuery on dummynode failed");
         return;
     }
     wchar_t mod_name[MAX_PATH] = {};
@@ -238,18 +238,18 @@ static void ArmFreallocProbe(lua_State* L) {
     // Step 3: hook g->frealloc via MinHook.
     global_State* g = L->l_G;
     if (!g || !g->frealloc) {
-        log::Error("PROBE Q: g->frealloc is null");
+        log::Error("frealloc canary: g->frealloc is null");
         return;
     }
     void* frealloc_addr = reinterpret_cast<void*>(g->frealloc);
     if (MH_CreateHook(frealloc_addr,
                       reinterpret_cast<LPVOID>(&HookedFrealloc),
                       reinterpret_cast<LPVOID*>(&g_orig_frealloc)) != MH_OK) {
-        log::Error("PROBE Q: MH_CreateHook(frealloc) failed");
+        log::Error("frealloc canary: MH_CreateHook(frealloc) failed");
         return;
     }
     if (MH_EnableHook(frealloc_addr) != MH_OK) {
-        log::Error("PROBE Q: MH_EnableHook(frealloc) failed");
+        log::Error("frealloc canary: MH_EnableHook(frealloc) failed");
         return;
     }
     LOG_DEBUG_KV("MID_HOOK", "probe_q.armed",
@@ -258,7 +258,7 @@ static void ArmFreallocProbe(lua_State* L) {
         log::KV("g_ud",          g->ud));
 
     // Record this engine self-instrumentation hook in the live modification
-    // inventory (PROBE Q / frealloc — the dual-Lua sentinel canary).
+    // inventory (the frealloc / dual-Lua sentinel canary).
     kcdx::modification_inventory::RegisterModification(
         reinterpret_cast<uintptr_t>(frealloc_addr),
         kcdx::modification_inventory::Category::Engine, "frealloc");
@@ -277,7 +277,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 kcdx::scripting::set_lua_state(L);
                 kcdx::hook_chain::SetLuaState(L);
 
-                // Phase 2b sub-4: execute each enabled plugin's
+                // Execute each enabled plugin's
                 // [entrypoints].lua now that kcdx.* is live + the VM is
                 // bound. Their kcdx.hook/.bytes/... calls queue intent
                 // into lua_registry; the deferred-apply pass
@@ -286,7 +286,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // session (internal latch). Each file is SEH-guarded so
                 // a faulty plugin.lua can't break the engine.
                 kcdx::lua_plugin_loader::RunAll(L);
-                // PROBE Q: arm the frealloc interceptor + resolve the
+                // Arm the frealloc canary + resolve the
                 // kcdx-static dummynode address. Runs once per session.
                 // See the function definition above for the design.
                 ArmFreallocProbe(L);
@@ -296,7 +296,8 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // (conflict_engine::RunPreFlight + a g_applyOrder dispatch
                 // loop over g_patches/g_hooks/g_mid_hooks) was removed in the
                 // apply-consolidation cut: those TOML-fed vectors have had no
-                // populator since Phase 5, so the loop was dead. The live
+                // populator after the TOML behavior tables were removed, so
+                // the loop was dead. The live
                 // apply path is the kcdx.* surface drained by ApplyZone below
                 // (kcdx.bytes/.hook via lua_registry + hook_chain) plus the
                 // before_game ldr_notify path. g_applyOrder/RunPreFlight no
@@ -305,7 +306,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
 
                 // Dormant scan diagnostic entries — locator-resolve only,
                 // no apply. The legacy [[scan]] TOML path that populated
-                // g_scans was removed in Phase 5, so g_scans is empty and
+                // g_scans was removed, so g_scans is empty and
                 // RunAll is effectively a no-op today; the live scan surface
                 // is the kcdx.scan Lua verb. The call stays here (and runs
                 // BEFORE patches/hooks apply) so that if a populator ever
@@ -322,7 +323,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // from its SEH handler — so boot and a later crash share the
                 // same content. Re-emitted at each save-load start
                 // (save_load_hooks.cpp) so the load path has a diffable signal
-                // for the 0xC8 load-crash bisect (docs/known-issues/).
+                // for the 0xC8 load-crash bisect.
                 kcdx::modification_inventory::LogInventory(
                     kcdx::log::Level::Info);
 
@@ -401,7 +402,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                                             "dev log")));
                 }
 
-                // Phase 7: resolve gEnv->pConsole + IConsole::AddCommand/
+                // Resolve gEnv->pConsole + IConsole::AddCommand/
                 // RemoveCommand via the Address Library and arm the
                 // [[command]] dispatch surface. After this returns true,
                 // plugin RegisterCommand calls succeed.
@@ -460,7 +461,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 log::Info("Firing kcdxMessage_InputLoaded...");
                 kcdx::messaging::FireEngineMessage(kcdxMessage_InputLoaded);
 
-                // PHASE 10 (ctx C): AfterGameApply — the after_game load-order
+                // STEP 10 (ctx C): AfterGameApply — the after_game load-order
                 // slice is applied (the ApplyZone(AfterGame) passes above) and
                 // the KCDX Lua table is registered (RegisterKcdxTable at the top
                 // of this one-shot block). Advanced once, from inside the
@@ -480,9 +481,9 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // so they participate in the same lifecycle as TOML-declared
     // entries. ApplyZone is idempotent: already-applied / already-
     // failed entries are skipped, so re-running per tick is cheap
-    // (no-op when queue is empty). Phase 2a apples after_game zone
-    // only; before_game zone applies after Phase 11 lands the early
-    // VM startup.
+    // (no-op when queue is empty). This applies the after_game zone
+    // only; the before_game zone applies once the early VM startup
+    // lands.
     kcdx::lua_registry::ApplyZone(kcdx::load_order::Zone::AfterGame);
 
     // Drain the task queue every tick. Plugins that called AddTask from
@@ -642,7 +643,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // 0 and simply tries again next tick (no false FAIL), exactly like cap-47's
     // empty-ring retry.
     //
-    // FALSIFIABLE (AP15): reverting RegisterModification(Category::Bytes,...)
+    // FALSIFIABLE (this row can actually go red): reverting RegisterModification(Category::Bytes,...)
     // on patch_engine's apply/idempotent-skip paths leaves bytes=0 forever →
     // this row never flips to PASS (stays PENDING, a visible suite gap), and if
     // it were asserted unconditionally it would FAIL. It reads the feature's
@@ -735,8 +736,8 @@ bool Install() {
         return false;
     }
 
-    // MinHook may already be initialized: PROBE T (and any future
-    // before_game-zone hook) calls MH_Initialize from kcdx.dll
+    // MinHook may already be initialized: the BugSplat ctor probe (and any
+    // future before_game-zone hook) calls MH_Initialize from kcdx.dll
     // DllMain so it can install detours before the game's startup
     // code reaches them. Treat ALREADY_INITIALIZED as the no-op
     // success path.
@@ -775,12 +776,11 @@ bool Install() {
 
     log::Info("Hooks installed: lua_pcall + update");
 
-    // bugsplat_ctor_probe (PROBE S/T) install timing note: worker-thread
-    // install (PROBE S, retired 2026-05-21) was too late — the ctor fired
-    // before this code ran. The install lives in src/dllmain.cpp
-    // RunBeforeGameZoneInDllMain via LdrRegisterDllNotification (PROBE T),
-    // NOT here. That probe is KEEP-for-Phase-11 (the proven before_game-hook
-    // install machinery; see docs/outstanding-work/before-game-hooks.md §5).
+    // bugsplat_ctor_probe install timing note: worker-thread install was too
+    // late — the ctor fired before this code ran. The install lives in
+    // src/dllmain.cpp RunBeforeGameZoneInDllMain via LdrRegisterDllNotification,
+    // NOT here. That probe is KEEP (the proven before_game-hook install
+    // machinery).
 
     return true;
 }

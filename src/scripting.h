@@ -12,7 +12,7 @@
 // Threading: protected by a single recursive_mutex. The pre/post/mid
 // callbacks are invoked from inside JIT trampolines on whichever thread
 // the target function ran on. Whether KCD2's Lua VM is safe to enter
-// from non-main threads is a Phase 5d question (verify before exposing
+// from non-main threads is an open question (verify before exposing
 // to plugins). Until that's confirmed, callbacks dispatched off the main
 // thread will be logged-and-skipped rather than executed.
 #pragma once
@@ -30,7 +30,7 @@ extern "C" {
 
 namespace kcdx::scripting {
 
-// === DIAGNOSTIC HELPER (heap-corruption investigation, 2026-05-20) ===
+// === DIAGNOSTIC HELPER (heap-corruption investigation) ===
 //
 // Dump a labeled snapshot of the Lua state's observable properties to
 // the dev log under category `MID_HOOK`. Captures:
@@ -44,21 +44,17 @@ namespace kcdx::scripting {
 //
 // Pure read; safe to call anywhere we have a valid L. Used to compare
 // snapshots across kcdx call sites to find the moment something diverges.
-// Kept until the heap-corruption issue is resolved; see
-// docs/known-issues/kcdx lua_newtable corrupts the process heap.md.
+// Kept until the heap-corruption issue is resolved.
 void LogLuaStateSnapshot(lua_State* L, const char* tag);
 
-// PROBE N: raw C-struct field dump of lua_State and global_State.
+// Raw C-struct field dump of lua_State and global_State.
 // Reads L->status / L->top / L->l_G / L->ci / L->savedpc / L->errorJmp /
 // L->nCcalls / etc. and the global state's frealloc/ud/gcstate/rootgc/
 // gray/totalbytes/mainthread. Used to find the discriminator between
-// RegisterKcdxTable's (safe) lua_newtable and PROBE M's (crashing)
-// lua_newtable when both fire on the same L at the same depth in the
-// same update tick. The Lua C API can't see whatever distinguishes
-// them — this probe reads the underlying struct directly. Pure read.
-//
-// See docs/known-issues/kcdx lua_newtable corrupts the process heap.md
-// for the investigation trail.
+// RegisterKcdxTable's (safe) lua_newtable and a crashing lua_newtable
+// when both fire on the same L at the same depth in the same update
+// tick. The Lua C API can't see whatever distinguishes them — this
+// reads the underlying struct directly. Pure read.
 void LogLuaStateRawStruct(lua_State* L, const char* tag);
 
 // Called once from hooks.cpp's first-update-tick when the game's
@@ -90,7 +86,7 @@ void register_pre_callback_from_top (uintptr_t target_func_ptr);
 void register_post_callback_from_top(uintptr_t target_func_ptr);
 void register_mid_callback_from_top (uintptr_t target_func_ptr);
 
-// Phase 5f: register a callback by dotted name (e.g., "Foo.Bar"). The
+// Register a callback by dotted name (e.g., "Foo.Bar"). The
 // name is stored verbatim and resolved lazily at first dispatch by
 // walking _G[Foo][Bar]. If the name fails to resolve when the hook
 // fires, the dispatcher logs a warn and lets the original run.
@@ -143,8 +139,8 @@ uintptr_t dynamic_hook_mid (const kcdx::rom::runtime_func_t::parameters_t* param
 // resume_addr, so the closing `ret` jumps past the captured
 // instruction instead of into MinHook's re-execute trampoline.
 //
-// Single-threaded by Lua-VM-callback contract (see
-// .claude/rules/lua-callback-threading.md), so std::atomic<uint8_t>
+// Single-threaded by Lua-VM-callback contract (the engine marshals an
+// off-thread hit to the main thread before firing), so std::atomic<uint8_t>
 // is overkill for correctness but free perf-wise (lock-free single-
 // byte load on x64). Kept atomic to document intent: this is
 // cross-thread-visible by mechanism (JIT thread reads, dispatcher

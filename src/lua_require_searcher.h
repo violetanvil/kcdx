@@ -3,14 +3,15 @@
 // kcdx::lua_require_searcher — plugin-scoped, plugin-isolated `require`
 // for plugin chunks (entrypoints AND require'd helpers).
 //
-// PROBLEM 1 (settled by the require-routing probe, committed 7640fde):
+// PROBLEM 1 (settled by a require-routing probe against the binary):
 // stock Lua 5.1 `require("helper")` from a plugin's plugin.lua ERRORS
 // `module 'helper' not found`. package.path (`;.\?.lua;!\lua\?.lua;...`)
 // reaches the EXE dir and cwd but NEVER a plugin's own install folder, so
 // a plugin shipping a sibling helper.lua cannot load it.
 //
-// PROBLEM 2 (the cross-plugin require-cache collision — KNOWN correctness
-// gap, AP13, fixed at the source here): there is ONE shared lua_State for
+// PROBLEM 2 (the cross-plugin require-cache collision — a known
+// correctness gap, fixed at the source here): there is ONE shared
+// lua_State for
 // all plugins, so Lua's _LOADED table (the registry-global module cache)
 // is SHARED across every plugin. Stock ll_require (vendor/lua/loadlib.c:
 // 449-485) checks `_LOADED[name]` keyed by the BARE module name at :454
@@ -58,14 +59,14 @@
 // MECHANISM — OWNER BINDING. The kcdx require closure binds the owner from
 // the LIVE OwnerScope (the file-scope owner state) at the moment it runs —
 // exactly as the file-resolver reads it. The load is synchronous and
-// main-thread-only (lua-callback-threading.md / AP6), so the live owner is
-// correct for the whole load including nested requires. This is the
+// main-thread-only, so the live owner is correct for the whole load
+// including nested requires. This is the
 // owner-binding guarantee: it comes from OwnerScope, NOT from fenv
 // inheritance and NOT from compile time.
 //
 // MECHANISM (b) — NAMESPACED CACHE, BYPASS _LOADED. A kcdx-owned cache
 // table (a GC-managed Lua table held by a registry ref — NOT _LOADED, NOT
-// a kcdx-side static-const sentinel; lua-bridge.md / AP5), keyed
+// a kcdx-side static-const sentinel), keyed
 // "<owner>:<modname>". The kcdx require closure: read owner from
 // OwnerScope; key = owner..":"..modname; if the cache has the key → return
 // the cached module (a WITHIN-PLUGIN second require("helper") hits this —
@@ -86,17 +87,17 @@
 //
 // SCOPED OWNER. "Which plugin owns the current load" is ENGINE-SIDE C++
 // state (a file-scope variable here), NOT a Lua registry slot the GC
-// touches (lua-bridge.md / AP5). The plugin loader sets it immediately
+// touches. The plugin loader sets it immediately
 // before its SYNCHRONOUS guard::Call that loads an entrypoint and clears
 // it immediately after (RAII) — so a require(...) executed inside the
 // chunk runs while the owner is still set. Main-thread only (loads are
-// main-thread; lua-callback-threading.md / AP6).
+// main-thread).
 //
 // NO STATIC-CONST SENTINEL. The require closure and the traceback-style
 // C functions are plain lua_CFunctions pushed via lua_pushcfunction /
 // lua_pushcclosure (raw Lua C API). The cache table is a live Lua table
 // pinned by luaL_ref into LUA_REGISTRYINDEX. kcdx introduces NO new
-// static-const Lua sentinel (lua-bridge.md / AP5; PROBE Q stays zero).
+// static-const Lua sentinel.
 
 #include <filesystem>
 #include <string>

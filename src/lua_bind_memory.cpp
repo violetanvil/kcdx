@@ -73,7 +73,7 @@ int Lua_GetModuleBaseAddress(lua_State* L) {
         mod = wmod.c_str();
     }
     if (!pe::OpenModule(mod, mv)) {
-        // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): a
+        // FAIL-STATE INSTRUMENTATION (fail loud, never silently drop): a
         // null-pointer return here is indistinguishable from success — the
         // author can't tell a typo'd module name from a not-yet-loaded one.
         // Name the failed module so the WHY is visible. Warn (not Error): an
@@ -98,7 +98,7 @@ int Lua_ScanPattern(lua_State* L) {
     std::string pat(p, plen);
     auto va = kcdx::patch::ScanModuleFirst(kDefaultModuleW, pat);
     if (!va.has_value()) {
-        // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): a
+        // FAIL-STATE INSTRUMENTATION (fail loud, never silently drop): a
         // no-match scan returns a null pointer that reads identical to a
         // resolved-to-0 success and to "module absent". Name the pattern +
         // module so "ran, 0 matches" is distinguishable. Warn: an
@@ -120,7 +120,7 @@ int Lua_ScanPatternFromModule(lua_State* L) {
     std::string pat(p, plen);
     auto va = kcdx::patch::ScanModuleFirst(Widen(m, mlen), pat);
     if (!va.has_value()) {
-        // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): see
+        // FAIL-STATE INSTRUMENTATION (fail loud, never silently drop): see
         // Lua_ScanPattern — name the pattern + module so a no-match scan is
         // distinguishable from a resolved-to-0 success / an absent module.
         log::WarnF("kcdx.memory.scan_pattern_from_module: pattern '%s' did not "
@@ -135,7 +135,7 @@ int Lua_ScanPatternFromModule(lua_State* L) {
 int Lua_Allocate(lua_State* L) {
     lua_Integer size = luaL_checkinteger(L, 1);
     if (size <= 0) {
-        // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): a
+        // FAIL-STATE INSTRUMENTATION (fail loud, never silently drop): a
         // rejected size returns a null pointer with no signal — name the
         // rejected size, mirroring the alloc-fail Error one line below (but
         // at Warn: bad author input, not a crash-class engine fault).

@@ -1,8 +1,7 @@
 // kcdx.on(event, fn) — Lua-side lifecycle / event subscription.
 //
-// Phase 2b sub-7 of the manifest-only restructure (see
-// docs/outstanding-work/ready-event-and-handle-assert.md). A core
-// authoring verb per .claude/rules/lua-api-surface.md: top-level (like
+// Part of the manifest-only restructure. A core
+// authoring verb: top-level (like
 // kcdx.hook), positional "do a thing" args (event, fn).
 //
 //   kcdx.on("ready", function()
@@ -13,8 +12,8 @@
 //       assert(my_hook:applied() == true)
 //   end)
 //
-// SCOPE: the kcdx.on binder + the "ready" event (sub-7) + the 9
-// game-lifecycle events (sub-8) + custom cross-plugin events (sub-9). Any
+// SCOPE: the kcdx.on binder + the "ready" event + the 9
+// game-lifecycle events + custom cross-plugin events. Any
 // name containing '.' is a qualified "<author>.<plugin>.<event>" (or the
 // legacy 2-segment "<plugin>.<event>" while a publisher's [plugin].author
 // is still empty during the corpus transition) subscription to a
@@ -66,7 +65,7 @@ namespace {
 //
 // On success returns nothing (the subscription is registered). On a bad
 // argument or an unknown event, returns (nil, teaching error) per the
-// kcdx-binder error convention (lua-api-surface.md §"errors teach").
+// kcdx-binder error convention (errors teach, in the author's terms).
 int Lua_On(lua_State* L) {
     // --- Validate `event` is a string ---
     if (lua_type(L, 1) != LUA_TSTRING) {
@@ -170,7 +169,7 @@ int Lua_On(lua_State* L) {
     // canonical dot. Prior to the 2-dot namespace refactor, kcdx.publish
     // stamped events as "<publisher>:<event>" and subscribers wrote that
     // same colon string. The canonical separator for every shared name is
-    // now the dot (naming-namespaces.md); the colon form is no longer
+    // now the dot; the colon form is no longer
     // accepted. We catch it explicitly so authors mid-migration get one
     // teaching error rather than a silent "no subscribers fired."
     if (event.find(':') != std::string::npos) {
@@ -181,8 +180,8 @@ int Lua_On(lua_State* L) {
             "\"<author>.<plugin>.<event>\" instead (e.g. "
             "\"walkabout.violetanvil.outfit_changed\"). The publisher in "
             "kcdx.publish stamps the dot form automatically; subscribers "
-            "subscribe to the same dot string. See "
-            ".claude/rules/naming-namespaces.md for the canonical separator.",
+            "subscribe to the same dot string. The dot is the canonical "
+            "namespace separator.",
             event.c_str());
         return 2;
     }
@@ -191,7 +190,7 @@ int Lua_On(lua_State* L) {
     // "<author>.<plugin>.<event>" (or the legacy 2-segment
     // "<plugin>.<event>" while a publisher's [plugin].author is still
     // empty during the corpus transition) subscription to another (or the
-    // same) plugin's kcdx.publish event (Phase 2b sub-9). It shares the
+    // same) plugin's kcdx.publish event. It shares the
     // SAME lifecycle subscriber registry, keyed by the full dotted string,
     // with the same GC-safe luaL_ref + OwningPluginForCurrentCall
     // attribution as the lifecycle/ready branches. (A published event is

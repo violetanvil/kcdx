@@ -154,7 +154,7 @@ kcdx::lua_memory::value_wrapper_t* CheckValueWrapper(lua_State* L, int idx) {
 // header for the contract. Body was de-duplicated VERBATIM from the seven
 // per-binder copies (lua_bind_{hook,bytes,code,command,scan,dynamic_call,
 // dynamic_hook}.cpp); each binder keeps its OWN kKnown[] and its OWN reject
-// message — only this loop is shared. (fail-state-logging.md / AP14.)
+// message — only this loop is shared. (Fail loud, never silent-drop.)
 std::string FindUnknownKey(lua_State* L, int tableIdx,
                            const char* const* known, size_t n) {
     // Normalize a possibly-relative index to an absolute one (lua_next
@@ -210,7 +210,7 @@ void to_lua(lua_State*                                       L,
     if (type.m_custom) {
         // Plugin-registered custom marshaler. Contract: feeder pushes
         // exactly one value onto the stack (stack effect +1). Will be
-        // exercised by Phase 5e when kcdxScriptingInterface::RegisterType
+        // exercised when kcdxScriptingInterface::RegisterType
         // lands.
         type.m_custom(L, params->get_arg_ptr(arg_index));
         return;

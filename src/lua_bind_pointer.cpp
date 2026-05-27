@@ -39,7 +39,7 @@ using kcdx::lua_memory::pointer;
 // (~2^47), the step size is 16MB. If you're reading a pointer from
 // memory and need to use it, use pointer:deref() instead (returns a
 // new pointer userdata) — that path stays in the safe channel.
-// See CLAUDE.md hard rule #17 + docs/lua-number-precision.md.
+// See docs/lua-number-precision.md.
 template <typename T>
 int Get(lua_State* L) {
     auto* p = CheckPointer(L, 1);
@@ -160,7 +160,7 @@ int IsValid(lua_State* L) {
 // LUA_NUMBER=float (24-bit mantissa). DO NOT pass the result back to
 // any kcdx API that expects an exact address (dynamic_hook target,
 // dynamic_call target, etc.) — pass the pointer userdata itself.
-// See CLAUDE.md hard rule #17 + docs/lua-number-precision.md.
+// See docs/lua-number-precision.md.
 int GetAddress(lua_State* L) {
     auto* p = CheckPointer(L, 1);
     lua_pushinteger(L, (lua_Integer)p->get_address());

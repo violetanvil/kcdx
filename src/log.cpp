@@ -98,8 +98,8 @@ std::atomic<bool>           g_initialized{false};
 std::string g_sessionStamp;
 
 // Engine-init thread id — captured at log::Init() (which runs from
-// DLL_PROCESS_ATTACH on the injector thread under the Phase 1+
-// launcher model). Used ONLY by the dev-log formatter (FormatDevLine
+// DLL_PROCESS_ATTACH on the injector thread under the own-launcher
+// model). Used ONLY by the dev-log formatter (FormatDevLine
 // below) to decide whether to emit a `tid=N` suffix on dev-log lines:
 // any line whose calling thread differs from this captured id gets the
 // suffix, so a worker / async / boot-phase log line is visibly
@@ -113,8 +113,8 @@ std::string g_sessionStamp;
 // What this variable is NOT: it is NOT the game's main-Lua-VM thread
 // (the per-frame update / Lua callback thread). For that, see
 // `g_gameMainThreadId` below + `IsGameMainThread()`. The two threads
-// are different in kcdx — conflating them was the bug behind Phase 3
-// sub-1 step 5-pre's invalid probe.
+// are different in kcdx — conflating them was the bug behind an earlier
+// invalid probe.
 DWORD g_engineInitThreadId = 0;
 
 // Game main thread id — captured later than `g_engineInitThreadId`,

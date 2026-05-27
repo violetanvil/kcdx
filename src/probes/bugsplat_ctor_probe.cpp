@@ -1,7 +1,7 @@
-// === PROBE S + PROBE T (answered 2026-05-26 — KEEP, not removed) ===
+// === BugSplat ctor-hook install machinery (KEEP, not removed) ===
 // see bugsplat_ctor_probe.h. This is the proven before_game-hook install
-// machinery; Phase 11 relocates it into the permanent engine home and
-// generalizes it (docs/outstanding-work/before-game-hooks.md §5).
+// machinery; a later relocation moves it into the permanent engine home
+// and generalizes it.
 
 #include "bugsplat_ctor_probe.h"
 
@@ -99,7 +99,7 @@ void* __fastcall HookedCtor(void*          self,
 
     BugSplatCtor_t orig = g_orig_ctor.load(std::memory_order_acquire);
     if (!orig) {
-        log::Error("PROBE S: orig ctor pointer null at dispatch");
+        log::Error("bugsplat ctor hook: orig ctor pointer null at dispatch");
         return self;  // best-effort no-op; the ctor returns void in
                       // source but the ABI returns rcx by convention
     }
@@ -119,7 +119,7 @@ bool Install() {
 
     HMODULE bsm = GetModuleHandleW(L"BugSplat64.dll");
     if (!bsm) {
-        log::Warn("PROBE S/T: BugSplat64.dll not loaded yet; cannot install ctor hook");
+        log::Warn("bugsplat ctor hook: BugSplat64.dll not loaded yet; cannot install ctor hook");
         // Roll back the latch so a later attempt (e.g. LDR callback)
         // can retry.
         g_installed.store(false, std::memory_order_release);
@@ -127,7 +127,7 @@ bool Install() {
     }
     void* target = reinterpret_cast<void*>(GetProcAddress(bsm, kMangledCtor));
     if (!target) {
-        log::WarnF("PROBE S/T: GetProcAddress(%s) returned null", kMangledCtor);
+        log::WarnF("bugsplat ctor hook: GetProcAddress(%s) returned null", kMangledCtor);
         g_installed.store(false, std::memory_order_release);
         return false;
     }
@@ -140,7 +140,7 @@ bool Install() {
     // ALREADY_INITIALIZED status is the no-op case.
     MH_STATUS si = MH_Initialize();
     if (si != MH_OK && si != MH_ERROR_ALREADY_INITIALIZED) {
-        log::WarnF("PROBE S/T: MH_Initialize failed: %d", (int)si);
+        log::WarnF("bugsplat ctor hook: MH_Initialize failed: %d", (int)si);
         g_installed.store(false, std::memory_order_release);
         return false;
     }
@@ -150,7 +150,7 @@ bool Install() {
                                 reinterpret_cast<void*>(&HookedCtor),
                                 &origPtr);
     if (s != MH_OK) {
-        log::WarnF("PROBE S/T: MH_CreateHook failed: %d", (int)s);
+        log::WarnF("bugsplat ctor hook: MH_CreateHook failed: %d", (int)s);
         g_installed.store(false, std::memory_order_release);
         return false;
     }
@@ -159,11 +159,11 @@ bool Install() {
 
     s = MH_EnableHook(target);
     if (s != MH_OK) {
-        log::WarnF("PROBE S/T: MH_EnableHook failed: %d", (int)s);
+        log::WarnF("bugsplat ctor hook: MH_EnableHook failed: %d", (int)s);
         return false;
     }
 
-    log::InfoF("PROBE S/T: MiniDmpSender ctor hook installed at %p "
+    log::InfoF("bugsplat ctor hook: MiniDmpSender ctor hook installed at %p "
                "(BugSplat64.dll base %p, target_rva=0x%llx)",
                target, bsm,
                (unsigned long long)((uintptr_t)target - (uintptr_t)bsm));
@@ -173,13 +173,12 @@ bool Install() {
     return true;
 }
 
-// === PROBE T: LDR-notification path ============================
+// === LDR-notification install path ============================
 //
 // Local declarations of the LDR notification structs / typedefs
-// (mirrors src/ldr_notify.cpp; not extracted to a header yet — when
-// Phase 11 relocates this into the permanent engine home these merge
-// with ldr_notify's copies, see
-// docs/outstanding-work/before-game-hooks.md §5/§8).
+// (mirrors src/ldr_notify.cpp; not extracted to a header yet — when a
+// later relocation moves this into the permanent engine home these merge
+// with ldr_notify's copies).
 
 namespace {
 
@@ -233,10 +232,10 @@ VOID CALLBACK LdrNotifyCallback(ULONG reason,
     // Install the ctor hook before WHGame.dll's init code can call it.
     bool ok = Install();
     if (ok) {
-        log::Info("PROBE T: ctor hook installed via LDR callback "
+        log::Info("bugsplat ctor hook: installed via LDR callback "
                   "(BugSplat64.dll just mapped, pre-its-DllMain)");
     } else {
-        log::Warn("PROBE T: LDR callback fired for BugSplat64.dll "
+        log::Warn("bugsplat ctor hook: LDR callback fired for BugSplat64.dll "
                   "but Install() returned false");
     }
 }
@@ -253,7 +252,7 @@ bool ArmLdrInstall() {
     if (GetModuleHandleW(L"BugSplat64.dll") != nullptr) {
         bool ok = Install();
         if (ok) {
-            log::Info("PROBE T: BugSplat64.dll already mapped at "
+            log::Info("bugsplat ctor hook: BugSplat64.dll already mapped at "
                       "kcdx.asi DllMain — ctor hook installed immediately");
         }
         return ok;
@@ -261,23 +260,23 @@ bool ArmLdrInstall() {
 
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (!ntdll) {
-        log::Warn("PROBE T: ntdll.dll handle null; can't register LDR notify");
+        log::Warn("bugsplat ctor hook: ntdll.dll handle null; can't register LDR notify");
         return false;
     }
     auto pRegister = reinterpret_cast<PFN_LdrRegisterDllNotification>(
         GetProcAddress(ntdll, "LdrRegisterDllNotification"));
     if (!pRegister) {
-        log::Warn("PROBE T: LdrRegisterDllNotification not found");
+        log::Warn("bugsplat ctor hook: LdrRegisterDllNotification not found");
         return false;
     }
 
     NTSTATUS s = pRegister(0, LdrNotifyCallback, nullptr, &g_ldrCookie);
     if (s != 0) {
-        log::WarnF("PROBE T: LdrRegisterDllNotification returned NTSTATUS 0x%08lx",
+        log::WarnF("bugsplat ctor hook: LdrRegisterDllNotification returned NTSTATUS 0x%08lx",
                    (unsigned long)s);
         return false;
     }
-    log::Info("PROBE T: LdrRegisterDllNotification armed for BugSplat64.dll mapping");
+    log::Info("bugsplat ctor hook: LdrRegisterDllNotification armed for BugSplat64.dll mapping");
     return true;
 }
 

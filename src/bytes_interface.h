@@ -13,7 +13,7 @@
 // bytes are not retained for restore). See include/kcdx/Interfaces.h:1648-1816
 // for the public ABI contract.
 //
-// Phase 3 sub-2 step 2. Mirrors src/hook_interface.{h,cpp} exactly so
+// Mirrors src/hook_interface.{h,cpp} exactly so
 // interfaces.cpp wires it identically (Thunk_QueryInterface case).
 
 #include "kcdx/Interfaces.h"

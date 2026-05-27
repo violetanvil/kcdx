@@ -1,9 +1,7 @@
 // kcdx.bytes — Lua-facing byte-rewrite registration.
 //
-// Phase 2a of the manifest-only restructure (see
-// docs/outstanding-work/restructure-plan.md §"Confirmed design
-// decisions" #2 — deferred-apply model). Succeeds the v0.1 [[patch]]
-// TOML schema:
+// Part of the manifest-only restructure (deferred-apply model).
+// Succeeds the v0.1 [[patch]] TOML schema:
 //
 //   local h, err = kcdx.bytes{
 //       name        = "outfit_swap_in_combat",
@@ -94,7 +92,7 @@ bool LuaTableBool(lua_State* L, int tableIdx, const char* key, bool fallback) {
     return out;
 }
 
-// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+// --- Unknown-key rejection (fail loud, never silent-drop) ---------------
 //
 // The recognized option-key set for kcdx.bytes. A typo'd `replacment=` /
 // `targt=` would otherwise be silently ignored, the author's intent lost.
@@ -142,7 +140,7 @@ int Lua_Bytes(lua_State* L) {
     }
 
     // Reject an unrecognized option key before reading anything — a typo'd
-    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    // key would otherwise vanish silently (fail loud, never silent-drop).
     {
         std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
             L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
@@ -197,7 +195,7 @@ int Lua_Bytes(lua_State* L) {
 
     // The owning plugin identity drives the self > engine > other
     // precedence in the name-resolution path below (ResolveByName /
-    // FindResolvedAuthorTarget, naming-namespaces.md). Fetch BOTH
+    // FindResolvedAuthorTarget, self > engine > other precedence). Fetch BOTH
     // components ONCE here and reuse them for the registry Entry stamp +
     // the PatchEntry's own author/plugin fields — no second
     // OwningPluginForCurrentCall stack-walk. callSiteFile/Line come back
@@ -209,8 +207,8 @@ int Lua_Bytes(lua_State* L) {
         kcdx::lua_registry::OwningPluginForCurrentCall(
             L, callSiteFile, callSiteLine);
 
-    // `target = "<name>"` — the COMMON-PATH locator (the disassembler test,
-    // cornerstones.md / AP12): the author names the site and the engine
+    // `target = "<name>"` — the COMMON-PATH locator (the disassembler test —
+    // the name carries the address): the author names the site and the engine
     // resolves WHERE, exactly as kcdx.hook's `target` does. Distinct from
     // `target_symbol` (the cross-plugin published-symbol table) — `target`
     // names an Address Library seed entry OR an author-declared target. The
@@ -256,7 +254,7 @@ int Lua_Bytes(lua_State* L) {
     //
     // kcdx.bytes is a byte rewrite, not a typed hook, so `target` resolves
     // ONLY an ADDRESS (no signature) — the disassembler-test parity with
-    // kcdx.hook (cornerstones.md / AP12): name the site, the engine resolves
+    // kcdx.hook (the disassembler test): name the site, the engine resolves
     // WHERE. Resolution is launch-time (registration pass), never a hot path.
     //
     // The bytes apply pass (ApplyBytesEntry → patch::ApplyPatch → Resolve)
@@ -412,7 +410,7 @@ int Lua_Bytes(lua_State* L) {
     // Anonymous (no owning plugin) entries copy the plugin name into
     // the PatchEntry so patch_engine log lines have meaningful
     // attribution — they get the script source filename as a
-    // placeholder until Phase 2h's [entrypoints].lua landing lets us
+    // placeholder until the [entrypoints].lua landing lets us
     // attribute properly. The author always threads through verbatim
     // (empty for anonymous; the manifest's [plugin].author otherwise).
     p->pluginAuthor = owner.author;

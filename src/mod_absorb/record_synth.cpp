@@ -18,12 +18,12 @@ namespace {
 constexpr const char* kCat = "MOD_ABSORB";
 
 // Address Library ids for the single I_Mod concrete-class vtable pair
-// (PROBE U.9, ASLR-stable; seed rows 3105/3106). Resolved at BuildRecord time,
+// (verified against the binary, ASLR-stable; seed rows 3105/3106). Resolved at BuildRecord time,
 // NEVER hardcoded as an RVA/VA — RVAs shift per game update.
 constexpr uint64_t kImodVtablePrimaryId   = 3105;  // ImodVtable_primary   -> +0x00
 constexpr uint64_t kImodVtableSubObjectId = 3106;  // ImodVtable_subobject -> +0x18
 
-// I_Mod record size + field offsets (PROBE U.6.3 — docs/mod-loader-absorb.md).
+// I_Mod record size + field offsets (verified against the binary — docs/mod-loader-absorb.md).
 constexpr size_t kRecordSize = 0x70;
 
 constexpr size_t kOffVtablePrimary   = 0x00;
@@ -62,7 +62,7 @@ struct alignas(16) RecordBuffer {
 //      data-16       data-12        data-8         data-4            data+0
 //
 // The engine reads nLength (at data-8) to size string copies during MOUNT.
-// PROBE C confirmed this layout against live native records (every native
+// This layout is confirmed against live native records (every native
 // field's data-8 int == its exact string length, data-12 == 1). Writing a bare
 // std::string::c_str() here put unrelated heap bytes where nLength lives → the
 // engine read a multi-GB garbage length → CryFatalError / memcpy AV (the
@@ -89,7 +89,7 @@ const char* InternCryString(const std::string& s) {
     auto buf = std::make_unique<std::vector<uint8_t>>(kCryStrHeader + s.size() + 1, 0);
     uint8_t* p = buf->data();
     // Header (little-endian int32s): [data-16]=0, [data-12]=nRefs(1),
-    // [data-8]=nLength, [data-4]=nAllocSize(==len). PROBE-C-verified offsets.
+    // [data-8]=nLength, [data-4]=nAllocSize(==len). Verified against the binary.
     const int32_t pad = 0, nRefs = 1, nAlloc = len;
     std::memcpy(p + 0,  &pad,    4);
     std::memcpy(p + 4,  &nRefs,  4);
@@ -119,7 +119,7 @@ void* BuildRecord(const ModRecordInput& in) {
         address_library::Resolve(kImodVtableSubObjectId);
 
     if (vtablePrimary == 0 || vtableSubObject == 0) {
-        // Fail LOUD + name the consequence (fail-state-logging.md): a record
+        // Fail LOUD + name the consequence: a record
         // with a null vtable crashes MOUNT on the first virtual dispatch, so
         // we refuse to build one and return nullptr for the caller to reject.
         LOG_ERROR_KV(kCat, "build_record_vtable_unresolved",
@@ -149,7 +149,7 @@ void* BuildRecord(const ModRecordInput& in) {
     // String fields — each is a CryStringT: build a real {nRefs,nLength,
     // nAllocSize,chars} buffer and store the pointer to its char data. A bare
     // char* here makes the engine read a garbage nLength (the
-    // mod-loader-takeover-mount-crash known-issue, PROBE C).
+    // mod-loader-takeover-mount-crash known-issue, verified against the binary).
     PutPtr(rec, kOffRootPathSlash,   InternCryString(in.rootPathSlash));
     PutPtr(rec, kOffId,              InternCryString(in.id));
     PutPtr(rec, kOffRootPathNoSlash, InternCryString(in.rootPathNoSlash));

@@ -17,8 +17,7 @@ namespace kcdx::zone_gate {
 // ============================================================================
 // Capability table — every shipped kcdx.* API the engine exposes.
 //
-// Per docs/outstanding-work/restructure-plan.md §"Capability gating" (the
-// authoritative table at lines 147-160), every API in this engine version
+// Per the capability-gating design, every API in this engine version
 // is RequireZone::Either — they all work from both before_game and
 // after_game. Deferred-registration handles the "called early but work
 // must happen later" cases (e.g. kcdx.command queues until pConsole, the
@@ -154,8 +153,8 @@ void EvaluateAllPlugins() {
 
         ++rejected;
 
-        // kcdx.plugin.is_rejected is queried cross-plugin per
-        // naming-namespaces.md (explicit `<author>.<plugin>` form);
+        // kcdx.plugin.is_rejected is queried cross-plugin in the
+        // explicit `<author>.<plugin>` form;
         // zone_gate's g_rejected map keys on that same form so the
         // lookup matches. load_order's g_effective stays bare-keyed
         // (different module, internal state, not author-facing).
@@ -165,8 +164,7 @@ void EvaluateAllPlugins() {
         load_order::SetEngineAccepted(m.name, false);
 
         // Loud (Error) and one line. The next sentence is the FIX — the
-        // author should know exactly what to edit and where. Shape per
-        // docs/outstanding-work/restructure-plan.md:165-168. The plugin
+        // author should know exactly what to edit and where. The plugin
         // name is rendered in the 2-dot `<author>.<plugin>` form to
         // match the shape authors query with via kcdx.plugin.is_rejected
         // (consistency between the log line and the lookup key).
@@ -199,7 +197,7 @@ void RecordParseReject(const std::string& folderPath,
     // Folder path is ALWAYS present — the stable internal record that holds
     // even when the reject is on the identity itself (no usable name). An
     // empty folderPath would be a caller bug; log it Error rather than
-    // silently storing an unqueryable empty key (AP14: a record nothing can
+    // silently storing an unqueryable empty key (a record nothing can
     // ever look up is a silent no-op).
     if (folderPath.empty()) {
         LOG_ERROR("ZONE_GATE",
@@ -254,7 +252,7 @@ const std::string& RejectReason(const std::string& name) {
 // Top-level placement (NOT `kcdx.<domain>.<verb>`) is intentional: the
 // capability table keys on the exact author-facing string, and the
 // matching string here is `kcdx.zone_gate_test_after_only` (one dot —
-// the engine seed form, lua-api-surface.md rule 5 / naming-namespaces.md
+// the engine seed form,
 // "1 dot — kcdx.<seedname>"). It is the only top-level entry on the
 // kcdx table outside the closed-set core verbs, and it is INTERNAL /
 // test-only — gets NO author-facing doc entry; this comment + the

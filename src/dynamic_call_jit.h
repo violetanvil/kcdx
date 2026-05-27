@@ -29,7 +29,7 @@
 // (read from detour_hook::get_original_ptr() AFTER InstallRuntime has
 // populated it). MinHook never relocates a trampoline post-create, so a
 // baked VA is stable for the session (kcdx never unhooks — hooks live
-// for the session, per .claude/rules/hook-engine.md).
+// for the session).
 //
 // Type strings use the same vocabulary as kcdx::rom::get_type_id /
 // get_type_info_from_string ("void", "i32"/"i64"/integer-ish, "float",
@@ -88,8 +88,8 @@ lua_CFunction BuildLuaCallThunk(uintptr_t                        targetVa,
 // Use case: kcdx.hook chain's C around `call_original` primitive — the
 // C author already holds the typed args and wants to invoke the
 // original with them, getting the typed return back. The lua_CFunction
-// shape is wrong here (Lua-stack-coupled, lossy per .claude/rules/lua-
-// precision.md for pointer-magnitude values).
+// shape is wrong here (Lua-stack-coupled, lossy for pointer-magnitude
+// values — LUA_NUMBER is float).
 void* BuildNativeCallThunk(uintptr_t                        targetVa,
                            const std::string&               returnType,
                            const std::vector<std::string>&  paramTypes);
@@ -98,8 +98,7 @@ void* BuildNativeCallThunk(uintptr_t                        targetVa,
 // with full knowledge of cFn + cSig + mode + (for Around)
 // callOriginalCThunk. The trampoline's own ABI varies by mode (see
 // hook_chain.cpp DispatchPre/Post/MidDispatch call sites for the exact
-// shapes). Author-facing cFn ABI is per the locked decisions (Phase 3
-// sub-1 step 5-main chunks 3+4):
+// shapes). Author-facing cFn ABI is per the locked decisions:
 //
 //   Mode::Before  — `void cFn(uintptr_t args[], int* outCount,
 //                              /* typed args from cSig */)`

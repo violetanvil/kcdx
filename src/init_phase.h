@@ -113,8 +113,8 @@ const char* Name(InitPhase p);
 //
 // When the current phase < p, logs a LOUD Error (category "INIT_PHASE", naming
 // the required vs current phase). A wrong-phase access is a correctness risk
-// (e.g. the FOpen-probe-broke-on-version=0 class of bug) → Error severity per
-// fail-state-logging.md. It does NOT abort the process and does NOT change the
+// (e.g. the FOpen-probe-broke-on-version=0 class of bug) → Error severity
+// (fail loud). It does NOT abort the process and does NOT change the
 // guarded code's behavior — the game keeps running; this is logging only.
 // -----------------------------------------------------------------------------
 #define KCDX_REQUIRE_PHASE(p)                                                 \

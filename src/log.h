@@ -143,7 +143,7 @@ inline bool IsDevModeEnabled() {
 
 // True iff the calling thread is the **engine-init thread** — the
 // thread that ran `log::Init` (typically kcdx.exe's
-// `CreateRemoteThread` injector thread under the Phase 1+ launcher
+// `CreateRemoteThread` injector thread under the own-launcher
 // model). Cheap: one TLS read + one int compare, no lock.
 //
 // Body reads the TU-local `g_engineInitThreadId` captured by Init().
@@ -154,13 +154,13 @@ inline bool IsDevModeEnabled() {
 // thread; the game main thread is captured later (after first
 // update-tick) via `hook_chain::SetLuaState` → `SetGameMainThread`.
 //
-// Conflating them was the design bug behind Phase 3 sub-1 step 5-pre's
-// invalid probe (every dispatch read `is_main=0` falsely because it
+// Conflating them was the design bug behind an earlier invalid probe
+// (every dispatch read `is_main=0` falsely because it
 // was comparing against the injector thread). The split — variable
 // + accessor per consumer — is the fix.
 //
-// See .claude/rules/lua-callback-threading.md for the two-variable
-// model.
+// The engine auto-marshals an off-thread hook hit to the main thread
+// before firing a callback; these two thread IDs serve that model.
 bool IsMainThread();
 
 // Record the **game main thread** id — the thread that runs the game's

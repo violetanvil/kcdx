@@ -12,7 +12,7 @@
 // :uninstall(). See include/kcdx/Interfaces.h:1346-1581 for the public
 // ABI contract.
 //
-// Phase 3 sub-1 step 5-main chunks 3+4. Vtable order matches the header
+// Vtable order matches the header
 // at :1515-1575 byte-for-byte.
 
 #include "kcdx/Interfaces.h"

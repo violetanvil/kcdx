@@ -12,7 +12,8 @@
 // (g_applyOrder + BuildApplyOrder + EntryRef), the pre-flight driver
 // RunPreFlight, and the FindHookOnHookAffecting lookup were removed. They
 // fed a dead apply loop in hooks.cpp that walked g_patches/g_hooks (TOML
-// vectors with no populator since Phase 5). The PATCH half below survives
+// vectors with no populator after the TOML behavior tables were removed).
+// The PATCH half below survives
 // as a dead-but-present builder kept for the compile dependency in
 // patch::ApplyResolvedPatch (the Find* readers); see the header banner.
 

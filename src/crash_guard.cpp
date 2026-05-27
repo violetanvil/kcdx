@@ -122,8 +122,8 @@ bool IsKernelOrNtdll(const char* moduleName) {
 // SymGetModuleBase64 callbacks resolve unwind data through it) to walk
 // an x64 stack — and kcdx NEVER calls SymInitialize anywhere in src/, so
 // the StackWalk64 form returned nothing, the loop found no non-kernel
-// frame, and FAULTED_CULPRIT never emitted (docs/known-issues/save-load
-// crash 0xC8 ... PROBE I "No FAULTED_CULPRIT line emitted"). The native
+// frame, and FAULTED_CULPRIT never emitted ("No FAULTED_CULPRIT line
+// emitted" in the 0xC8 save-load crash). The native
 // unwinder needs NO symbol handler, is allocation-free, and is the same
 // machinery Windows' own SEH dispatch uses — so it is SEH-filter-safe.
 //
@@ -136,7 +136,7 @@ bool IsKernelOrNtdll(const char* moduleName) {
 // can emit FAULTED_CULPRIT_NONE distinguishing "ran, genuinely no culprit"
 // from "the unwind broke" — a RaiseException-class fault that can't be
 // attributed must not read identically to one that has no culprit
-// (fail-state-logging.md AP14). The three reasons:
+// (fail loud with a structured reason, never a silent blank). The three reasons:
 //   "walk_exhausted"   — bounded walk ran its full length, every frame
 //                        resolved to a kernel/ntdll module (or no module).
 //   "stack_unreadable"  — a leaf-frame stack read faulted/was zero; the
@@ -307,7 +307,7 @@ void LogFault(const char* site, const char* pluginName,
             // Walk found NO culprit. Emit a loud line so an unattributable
             // RaiseException-class fault (the 0xC8 path) is distinguishable
             // from one that genuinely had no culprit above the kernel floor —
-            // a silent blank here reads as "ran, all clear" (AP14). The
+            // a silent blank here reads as "ran, all clear". The
             // reason names WHICH false-return branch fired. No-throw,
             // allocation-free, lock-free — same SEH-filter contract as the
             // FAULTED / FAULTED_CULPRIT lines above (walkReason is a fixed
@@ -326,7 +326,7 @@ void LogFault(const char* site, const char* pluginName,
     // load-start. The std::vector inventory globals are NOT iterated here
     // (allocation/lock risk inside the SEH handler) — only the pre-formatted
     // string is read. This is the kcdx-modification signal the 0xC8 load
-    // crash was missing (docs/known-issues/save-load crash 0xC8 ...).
+    // crash was missing.
     LOG_ERROR_KV("GUARD", "FAULTED_INVENTORY",
         KV::BareStr("site",      site ? site : "?"),
         KV::BareStr("inventory", ::kcdx::modification_inventory::LastInventorySummary()));
@@ -335,7 +335,7 @@ void LogFault(const char* site, const char* pluginName,
     // executed before dying, NEWEST-FIRST (Error, always-on). This names the
     // hook(s) the game last ran, the missing link the 0xC8 load crash needed:
     // its stack was pure-WHGame with no kcdx frame, but a kcdx detour fired
-    // ~10s earlier (docs/known-issues/save-load crash 0xC8 ...). Allocation-
+    // ~10s earlier. Allocation-
     // free: LastFires reads the fixed ring into a stack array, no lock, no
     // iteration of any std::vector. Skips empty slots; emits nothing if the
     // ring is empty (no hook ever fired this session).

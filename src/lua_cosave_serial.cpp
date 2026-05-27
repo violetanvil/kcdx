@@ -141,7 +141,7 @@ bool SerializeValue(lua_State* L, int idx, std::vector<uint8_t>& out,
             // Store the FULL lua_Number bytes as the VM holds them. On this
             // build lua_Number is float (4 bytes); we store sizeof(lua_Number)
             // — no widen-to-double-then-narrow, no assumed 8 bytes. Round-trip
-            // is exact relative to the live value (lua-precision.md).
+            // is exact relative to the live value.
             lua_Number n = lua_tonumber(L, idx);
             const uint8_t* p = reinterpret_cast<const uint8_t*>(&n);
             out.insert(out.end(), p, p + sizeof(lua_Number));

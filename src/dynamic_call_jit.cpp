@@ -237,7 +237,7 @@ void* BuildNativeCallThunk(uintptr_t                       targetVa,
 // BuildCDispatchThunk — engine→C-callback marshaling trampoline (per-mode).
 // ===========================================================================
 //
-// Phase 3 sub-1 step 5-main chunks 3+4. Emitted at AddC time with full
+// Emitted at AddC time with full
 // knowledge of cFn + cSig + mode. The trampoline's own ABI varies by
 // mode (see dynamic_call_jit.h doc-comment for the per-mode shapes);
 // internally each emits an asmjit Compiler function whose body:

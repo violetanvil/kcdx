@@ -1,7 +1,7 @@
 // scan_engine — dormant AOB-scan diagnostic resolver.
 //
-// The legacy `[[scan]]` TOML entry type was removed in Phase 5; g_scans
-// has no populator anymore, so the RunAll/RunOne byte-dump path below is
+// The legacy `[[scan]]` TOML entry type was removed; g_scans has no
+// populator anymore, so the RunAll/RunOne byte-dump path below is
 // dormant/unreachable. The LIVE scan surface is the kcdx.scan Lua verb
 // (lua_bind_scan.cpp), which calls ResolveScan directly. ResolveScan
 // itself stays live and shared.
@@ -69,7 +69,7 @@ struct ScanMatch {
 // turns this into the diagnostic log lines; the Lua binder consumes the
 // structured fields directly.
 struct ScanResult {
-    bool   moduleLoaded = false;            // false if pe::OpenModule failed (AP2: no fabricated VA).
+    bool   moduleLoaded = false;            // false if pe::OpenModule failed (no fabricated VA).
     size_t patternMatches = 0;              // hits.size().
     std::optional<size_t> contextMatches;   // set iff the entry carried a context pattern.
     std::vector<ScanMatch> matches;         // one per pattern hit, attributed.
@@ -79,7 +79,7 @@ struct ScanResult {
 // scan the executable sections for the pattern (and context if present),
 // and attribute every hit (applyAddr, module, module-relative offset).
 // On a module that is not loaded, returns moduleLoaded = false with no
-// matches — never a fabricated VA (AP2). Shared by RunOne (diagnostic
+// matches — never a fabricated VA. Shared by RunOne (diagnostic
 // logging) and the kcdx.scan Lua binder.
 ScanResult ResolveScan(const ScanEntry& s);
 

@@ -26,8 +26,8 @@ namespace {
 // CryEngine passes to our trampolines.
 using CryConsoleCommandFunc = void(__fastcall*)(void* /*IConsoleCmdArgs*/);
 
-// IConsole vtable accessors (live RVAs from _research/phase7-recon/
-// address-library-seed.csv, ids 2000–2003 verified by the Phase 7 probe).
+// IConsole vtable accessors (live RVAs from the Address Library,
+// ids 2000–2003 verified against the binary).
 using AddCommandFn    = void(__fastcall*)(void* iconsole,
                                           const char* sCommand,
                                           CryConsoleCommandFunc func,
@@ -340,8 +340,8 @@ void FlushPendingCommands() {
 // queued command with a LOUD per-command ERROR that names the command, the
 // owning plugin, and the reason — routed to the OWNING PLUGIN'S OWN log (via
 // the by-handle plugin log stream) so the author sees it where they look
-// (lua-api-surface.md rule 3: errors teach; anti-patterns.md AP13: no silent
-// orphan). Caller holds g_slotsMutex; g_ready stays false.
+// (errors teach, in the author's terms; no silent
+// orphan — fix the cause, never bury it). Caller holds g_slotsMutex; g_ready stays false.
 void DropPendingWithError(const char* reason) {
     if (g_pendingCommands.empty()) return;
     for (const auto& pc : g_pendingCommands) {
@@ -387,7 +387,7 @@ bool Init() {
     // every queued command is genuinely undeliverable. At each failure return
     // we drain+drop the pending queue with a loud per-command error (routed to
     // the owning plugin's log) under g_slotsMutex; the queue never silently
-    // orphans (anti-patterns.md AP13).
+    // orphans (no silent drop — fail loud).
 
     // Resolve gEnv->pConsole storage via Address Library id 1009.
     uintptr_t pConsole_storage = address_library::Resolve(1009);
@@ -409,9 +409,9 @@ bool Init() {
     }
 
     // Resolve AddCommand + RemoveCommand + ExecuteString via Address
-    // Library ids 2000 + 2001 + 2002 (the canonical-RVAs published by
-    // the Phase 7 probe, with id 2000 corrected to vtable[33] after
-    // the DISPATCH-INVESTIGATION).
+    // Library ids 2000 + 2001 + 2002 (RVAs verified against the binary,
+    // with id 2000 corrected to vtable[33] after the dispatch
+    // investigation).
     uintptr_t addCommandVA     = address_library::Resolve(2000);
     uintptr_t removeCommandVA  = address_library::Resolve(2001);
     uintptr_t executeStringVA  = address_library::Resolve(2002);

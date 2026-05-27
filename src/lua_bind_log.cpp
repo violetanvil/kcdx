@@ -1,7 +1,7 @@
 // kcdx.log.* — Lua-side logging surface.
 //
-// The first surface built to the full authoring-sublanguage convention
-// (.claude/rules/lua-api-surface.md): a grouped capability domain
+// The first surface built to the full authoring-sublanguage convention:
+// a grouped capability domain
 // (kcdx.log.<level>), positional "do a thing" args (category, message).
 //
 //   kcdx.log.info ("CATEGORY", "message")
@@ -23,7 +23,7 @@
 // kcdx::log.
 //
 // Until per-plugin attribution from a Lua call site is wired through to
-// kcdx::log's per-plugin streams (Phase 2h), these emit to the engine
+// kcdx::log's per-plugin streams, these emit to the engine
 // log with the author-supplied category. The category tag is the
 // author's; the engine log already prefixes the source.
 

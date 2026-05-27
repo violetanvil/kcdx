@@ -53,7 +53,7 @@ struct LoadCtx {
 // plugin), we leave the original message untouched — the file:line+detail
 // from piece 1 still survives. This is a plain lua_CFunction pushed via
 // lua_pushcfunction (raw C API), so it introduces no kcdx-side
-// static-const Lua sentinel (lua-bridge.md / AP5).
+// static-const Lua sentinel.
 int TracebackHandler(lua_State* L) {
     // Stack: [errmsg] (the value the chunk error'd with) at index 1.
     // debug.traceback handles a non-string message itself (it only prepends
@@ -95,7 +95,6 @@ void LoadOneFileGuarded(void* userdata) {
     // prior value and restore it on every exit path so steady-state stays
     // exactly as the engine left it (a future plugin load must never inherit
     // storedebug=on — that would defeat the memory-save the engine intends).
-    // See docs/known-issues/plugin-lua-errors-have-no-line-number.md.
     const int storedebugWas = lua_isstoredebuginfo(L);
     lua_storedebuginfo(L, 1);  // set BEFORE loadfile (parse-time line info)
 
@@ -226,7 +225,7 @@ enum class FileResult {
 // "lua_after entrypoint"); behavior is identical.
 //
 // Pre: caller has already gated on enabled + non-empty file list. Main
-// thread only (loads are main-thread; lua-callback-threading.md / AP6).
+// thread only (loads are main-thread).
 FileResult RunOneEntrypointFile(lua_State* L,
                                 const kcdx::plugins::LoadedPlugin& p,
                                 const std::string& rel,
@@ -295,8 +294,9 @@ FileResult RunOneEntrypointFile(lua_State* L,
             p.handle,
             std::string(slotLabel) + " '" + rel + "' " + kind + ": " + ctx.err);
 
-        // Regression assertion for AP12 #3 (plugin.lua error line-info
-        // quality). PURE READ of ctx.err — it does not touch
+        // Regression assertion for plugin.lua error line-info
+        // quality (errors must teach: file:line + detail). PURE READ of
+        // ctx.err — it does not touch
         // status/err/control flow. FIXTURE-AGNOSTIC: never checks the
         // plugin's name; reports on the line-info quality of WHATEVER
         // runtime error we just captured. Only RUNTIME errors qualify
@@ -374,8 +374,8 @@ void RunAll(lua_State* L) {
         // "disabled via load_order.toml" cadence.
         if (!kcdx::load_order::IsPluginEnabled(m.name)) {
             // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
-            // form (matches kcdx.plugin.is_rejected lookup shape per
-            // naming-namespaces.md). Pass the composed key here.
+            // form (matches kcdx.plugin.is_rejected lookup shape). Pass
+            // the composed key here.
             const std::string& rejectReason =
                 kcdx::zone_gate::RejectReason(m.author + "." + m.name);
             if (!rejectReason.empty()) {
@@ -461,8 +461,8 @@ void RunAfterEntrypoints(lua_State* L) {
         // user-disabled cause; PLUGIN_REJECTED was already emitted loudly.
         if (!kcdx::load_order::IsPluginEnabled(m.name)) {
             // zone_gate keys g_rejected on the 2-dot <author>.<plugin>
-            // form (matches kcdx.plugin.is_rejected lookup shape per
-            // naming-namespaces.md). Pass the composed key here.
+            // form (matches kcdx.plugin.is_rejected lookup shape). Pass
+            // the composed key here.
             const std::string& rejectReason =
                 kcdx::zone_gate::RejectReason(m.author + "." + m.name);
             if (!rejectReason.empty()) {

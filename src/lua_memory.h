@@ -1,7 +1,7 @@
 // lua_memory — pak-Lua-visible memory primitives, raw Lua C API only.
 //
 // Originally adapted from ReturnOfModding (xiaoxiao921/ReturnOfModdingBase,
-// `src/lua/bindings/memory.{hpp,cpp}` @ commit d30217b6). MIT.
+// `src/lua/bindings/memory.{hpp,cpp}`). MIT.
 //
 // What this exposes to pak Lua under the lowercase `kcdx.*` global:
 //   kcdx.memory.pointer(addr)              -- userdata + 22-method API
@@ -12,12 +12,12 @@
 //   kcdx.memory.free(ptr)                  -- heap free
 //
 // Why this matters: KCD2's pak-mod Lua sandbox has `package.loadlib`
-// compiled out (workspace memory `project-kcd2-lua-sandbox`). Without
-// kcdx, pak Lua cannot touch C++ at all. kcdx's `kcdx.memory.*` is the
+// compiled out. Without kcdx, pak Lua cannot touch C++ at all. kcdx's
+// `kcdx.memory.*` is the
 // **only bridge** for pak Lua mods to interact with native code.
 //
 // Naming: lowercase `kcdx.memory.*` matches RoM convention; the
-// PascalCase Phase-1-era `KCDX.ScanAndWrite` / `KCDX.ReadBytes` /
+// PascalCase legacy `KCDX.ScanAndWrite` / `KCDX.ReadBytes` /
 // `KCDX.GetWHGameBase` in lua_bind.cpp remain for backwards compat.
 #pragma once
 
@@ -44,7 +44,7 @@ constexpr const char* kValueWrapperMetatable = "kcdx.memory.value_wrapper";
 // --- pointer type ----------------------------------------------------------
 //
 // The userdata payload is a single uintptr_t. Methods read/write at
-// that address. Phase 1 of the v0.1 API; future versions may add
+// that address. The initial v0.1 API; future versions may add
 // patch_byte/word/dword/qword/etc. (RoM exposes those tied to the
 // patch_engine's byte_patch lifecycle, which kcdx doesn't have a Lua
 // surface for yet).

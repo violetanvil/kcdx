@@ -1,6 +1,6 @@
 // kcdx::bytes_interface — engine-side impl of kcdxBytesInterface.
 //
-// Phase 3 sub-2 step 2. Mirrors the Lua kcdx.bytes binder
+// Mirrors the Lua kcdx.bytes binder
 // (src/lua_bind_bytes.cpp Lua_Bytes) — same PatchEntry payload, same
 // exactly-one-locator rule, same target="<name>" name-resolution, same
 // Kind::Bytes lua_registry::Entry + deferred apply pass — but takes raw C
@@ -14,7 +14,7 @@
 // query quartet (IsApplied/GetReason/GetName/Uninstall) walks the registry by
 // handleId — the SAME Find() / SetStatus() pair the Lua metatable methods use
 // (src/lua_registry.cpp). Uninstall is the one divergence from hook_interface:
-// bytes has NO revert path (sub-1 step-2 decision; Interfaces.h:1805-1810), so
+// bytes has NO revert path (by design; Interfaces.h:1805-1810), so
 // it returns false + logs a teaching line rather than routing any uninstall.
 
 #include "bytes_interface.h"
@@ -201,7 +201,8 @@ kcdxBytesHandle Thunk_Register(const kcdxBytesOptions* opts) {
     }
 
     // target = "<name>" → resolve the NAME into a locator field. Same WHERE-
-    // resolution as kcdx.hook's `target` (the disassembler test, AP12);
+    // resolution as kcdx.hook's `target` (the disassembler test — the name
+    // resolves address AND ABI, the author writes no hex);
     // launch-time (registration pass), never a hot path.
     if (!targetName.empty()) {
         std::string err = ResolveTargetName(targetName, owner, *p);
@@ -274,7 +275,7 @@ kcdxBytesHandle Thunk_Register(const kcdxBytesOptions* opts) {
 // -----------------------------------------------------------------------
 // Query thunks (4) — mirror hook_interface.cpp's quartet. handleId 0 /
 // unknown / non-Bytes entries flow through the documented sentinel returns.
-// EXCEPTION: Uninstall has no revert path for bytes (sub-1 step-2 decision).
+// EXCEPTION: Uninstall has no revert path for bytes (by design).
 // -----------------------------------------------------------------------
 
 bool Thunk_IsApplied(kcdxBytesHandle h) {
@@ -310,8 +311,8 @@ const char* Thunk_GetName(kcdxBytesHandle h) {
 
 bool Thunk_Uninstall(kcdxBytesHandle h) {
     // A byte rewrite has NO revert path — the original bytes are not retained
-    // for restore, so a rewrite is permanent for the session (sub-1 step-2
-    // decision; Interfaces.h:1805-1810). Do NOT route through any chain
+    // for restore, so a rewrite is permanent for the session (by design;
+    // Interfaces.h:1805-1810). Do NOT route through any chain
     // uninstall (that's the Hook path). Return false + teach. Route the
     // teaching line to the owning plugin's log when we can find the entry by
     // handleId (matches GetName's lookup); engine-log always.
@@ -330,7 +331,7 @@ bool Thunk_Uninstall(kcdxBytesHandle h) {
 
 // -----------------------------------------------------------------------
 // Vtable instance. Order MATCHES include/kcdx/Interfaces.h:1767-1816
-// byte-for-byte (AP11). DO NOT reorder.
+// byte-for-byte (append-only ABI; fixed offsets). DO NOT reorder.
 // -----------------------------------------------------------------------
 
 kcdxBytesInterface g_bytesInterface = {

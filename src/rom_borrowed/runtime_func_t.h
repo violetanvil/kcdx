@@ -6,7 +6,7 @@
 //   - namespace lua::memory -> kcdx::rom
 //   - PolyHook2's big::detour_hook -> kcdx::detour_hook shim (MinHook-backed)
 //   - destructor's lua_manager-singleton cleanup gated behind kcdx::scripting
-//     existing (Phase 5c step 6+); for now the destructor just disables
+//     existing (a later step); for now the destructor just disables
 //     the hook
 //
 // Public-facing types (parameters_t, return_value_t, the pre/post/mid
@@ -27,13 +27,12 @@
 namespace kcdx::rom {
 
 class runtime_func_t {
-    // Phase 5c.7b.1: allocated from kcdx::trampoline::AllocateBranch
-    // (within +/-2 GB of WHGame.dll, alloc-only, no free) instead of
-    // heap-via-vector. The previous std::vector approach didn't
-    // guarantee rel32 reachability from the target function — could
-    // produce silently-truncated 5-byte E9 displacements when the
-    // heap wandered outside the 2GB window. Matches SKSE's
-    // BranchTrampoline pattern (subagent research 2026-05-18).
+    // Allocated from kcdx::trampoline::AllocateBranch (within +/-2 GB of
+    // WHGame.dll, alloc-only, no free) instead of heap-via-vector. The
+    // previous std::vector approach didn't guarantee rel32 reachability
+    // from the target function — could produce silently-truncated 5-byte
+    // E9 displacements when the heap wandered outside the 2GB window.
+    // Matches SKSE's BranchTrampoline pattern.
     void*                         m_jit_function_buffer = nullptr;
     size_t                        m_jit_function_size   = 0;
     asmjit::x86::Mem              m_args_stack;
@@ -78,7 +77,7 @@ public:
     void enable_hook()  { if (m_detour) m_detour->enable();  }
     void disable_hook() { if (m_detour) m_detour->disable(); }
 
-    // Phase 5g: when the install path bypasses m_detour (e.g.,
+    // When the install path bypasses m_detour (e.g.,
     // hook_engine::InstallRuntime calls MH_CreateHook directly to
     // share its g_installed first-wins map across TOML + runtime
     // hooks), the caller must write MinHook's returned pOriginal

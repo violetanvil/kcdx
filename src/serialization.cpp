@@ -1109,7 +1109,7 @@ void Init() {
     // listeners need a different path. Hook in via a direct call
     // from messaging.cpp's FireEngineMessage — see Init() below.
     //
-    // For Phase 6b implementation: just call the listeners
+    // Current implementation: just call the listeners
     // synchronously from a wrapper around FireEngineMessage. To
     // avoid touching messaging.cpp's API surface, we expose
     // serialization_internal::OnEngineMessage and call it from

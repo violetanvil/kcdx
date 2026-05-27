@@ -7,16 +7,17 @@
 // absorb (docs/mod-loader-absorb.md).
 //
 // kcdx IS the mod loader: it owns WHICH mods load and in what ORDER. To do
-// that with the "rebuild-wholesale" model (settled after PROBE U.7/U.8/U.9),
+// that with the "rebuild-wholesale" model (settled by verification against the binary),
 // kcdx must hand the native MOUNT pass an enabled-list of I_Mod records it
 // constructed itself — a kcdx-plugin has no native record to clone. This
 // module is the building block: given the author-facing strings, it allocates
 // + populates one 0x70-byte I_Mod record whose layout the native MOUNT pass +
 // every downstream pass (localization / table-patch / mod.cfg) accept verbatim.
 //
-// PROBE U.8 proved a kcdx-ALLOCATED record with harvested vtables survives
-// MOUNT; PROBE U.9 proved the I_Mod vtable pair is a single concrete class,
-// ASLR-stable across boots (seed rows 3105/3106). The OPEN this module closes
+// Verification against the binary proved a kcdx-ALLOCATED record with
+// harvested vtables survives MOUNT, and that the I_Mod vtable pair is a
+// single concrete class, ASLR-stable across boots (seed rows 3105/3106).
+// The OPEN this module closes
 // is whether kcdx-SYNTHESIZED string buffers (owned here, not copied from a
 // native record) also survive — so the strings are owned with the same
 // process-lifetime guarantee as the records and stay address-stable across
@@ -25,8 +26,8 @@
 namespace kcdx::mod_absorb {
 
 // The author-facing data a synthesized I_Mod record needs. NOT raw bytes — the
-// module maps each field onto the verified I_Mod offset (PROBE U.6.3,
-// docs/mod-loader-absorb.md "The I_Mod record layout").
+// module maps each field onto the verified I_Mod offset
+// (docs/mod-loader-absorb.md "The I_Mod record layout").
 struct ModRecordInput {
     std::string rootPathSlash;    // mod root dir WITH trailing '/'    -> +0x08
     std::string id;               // mod id / folder name              -> +0x10

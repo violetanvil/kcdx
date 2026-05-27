@@ -9,7 +9,7 @@ namespace kcdx::symbols {
 // legacy [[trampoline]] export field); consumed by patch_engine / hook_chain
 // when an entry uses target_symbol.
 //
-// NAMESPACE MODEL (naming-namespaces.md) — the SAME 2-dot
+// NAMESPACE MODEL — the SAME 2-dot
 // <author>.<plugin>.<name> model as author-targets; this REPLACES the old
 // globally-unique-or-reject scheme:
 //   - REGISTRATION: the author writes a BARE export name; the engine derives

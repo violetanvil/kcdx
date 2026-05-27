@@ -82,7 +82,7 @@ size_t ApplyAll() {
         // Register export if requested. `exportSymbol` is a BARE name; the
         // engine derives the <owner> prefix from the entry's pluginName and
         // publishes <owner>.<exportSymbol> — the SAME <pluginname>.<name>
-        // model as kcdx.code{export=} (naming-namespaces.md). A collision now
+        // model as kcdx.code{export=}. A collision now
         // only happens when the SAME plugin re-exports the SAME bare name.
         if (!t.exportSymbol.empty()) {
             uintptr_t addr = reinterpret_cast<uintptr_t>(region);

@@ -16,8 +16,8 @@
 //      that unpacks the engine's JIT-thunk ABI into typed params, invokes
 //      the author's callable, and writes back. The author never hand-writes
 //      `uintptr_t args[], int* outCount` or the per-mode mangled cFn shape
-//      — that mangling is the engine's heavy lifting (cornerstones.md /
-//      AP12), and hiding it is the entire point of this header.
+//      — that mangling is the engine's heavy lifting (the engine carries
+//      address AND ABI), and hiding it is the entire point of this header.
 //
 // THE 3-FLOOR MODEL (full reference: docs/cpp/wrapper.md):
 //
@@ -30,7 +30,7 @@
 //   Floor 4 (raw)        K.hook->Before(target, (void*)&cFn, &opts)
 //                         — the raw kcdxHookInterface. `K.hook` IS the
 //                           unchecked drop-down. Mid / Callsite have no
-//                           empowered helper (expert sub-verbs, per AP12):
+//                           empowered helper (expert sub-verbs):
 //                           the author drops to K.hook->Mid / ->Callsite.
 //
 //   (There is no Floor 3 "InstallRawUnchecked" — `K.hook` is the unchecked
@@ -91,7 +91,7 @@ struct Kcdx {
     // EnumeratePlugins, GetConflictReport, ResolveSymbol*, Log).
     const kcdxInterface* api = nullptr;
 
-    // Stashed identity (naming-namespaces.md). `self` is the handle the
+    // Stashed identity. `self` is the handle the
     // empowered helpers thread into opts.owningPlugin so the self-tier of
     // self > engine > other resolves the calling plugin.
     kcdxPluginHandle self   = kcdxInvalidPluginHandle;

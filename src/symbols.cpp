@@ -3,7 +3,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "log.h"              // LOG_WARN_KV (degenerate-input reject — AP14)
+#include "log.h"              // LOG_WARN_KV (degenerate-input reject — fail loud)
 #include "address_library.h"  // ResolveAlias / WarnBareCollisionShared (shared
                               // alias map + once-per-session collision dedup)
 
@@ -13,7 +13,7 @@ namespace {
 
 struct Entry {
     uintptr_t   addr = 0;
-    // Owning namespace (2-dot model — naming-namespaces.md):
+    // Owning namespace (2-dot model):
     //   ownerAuthor "" + ownerPlugin "" → anonymous (console / pak Lua); the
     //     symbol is stored under its bare name.
     //   ownerAuthor "" + ownerPlugin populated → legacy 1-dot row (the corpus's
@@ -53,7 +53,7 @@ std::string OwnerDisplay(const std::string& ownerAuthor,
 
 // Split a possibly-qualified reference into its dot-separated segments —
 // mirrors address_library::SplitQualified (the engine parses on the dot — it
-// is semantic, naming-namespaces.md). `count` is the number of segments
+// is semantic). `count` is the number of segments
 // produced; >3 means malformed (overflow).
 struct QName {
     std::string segments[3];
@@ -79,7 +79,7 @@ QName SplitQualified(const std::string& name) {
 bool Register(const std::string& bareName, uintptr_t addr,
               const std::string& ownerAuthor,
               const std::string& ownerPlugin) {
-    // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14): Register
+    // FAIL-STATE INSTRUMENTATION (fail loud, never a silent drop): Register
     // returns false for TWO distinct failures — a DEGENERATE input (addr==0
     // or empty bareName) and a DUPLICATE fully-qualified key (try_emplace did
     // not insert). The caller treats false as a COLLISION and logs the prior
@@ -123,7 +123,8 @@ std::optional<uintptr_t> Lookup(const std::string& name,
                                 const std::string& owningPlugin) {
     if (name.empty()) return std::nullopt;
 
-    // --- ALIAS substitution (naming-namespaces.md §Aliasing) — BEFORE the
+    // --- ALIAS substitution (a local handle resolving only in the
+    // declaring plugin's space) — BEFORE the
     // self > other walk, using the SAME per-namespace alias map as the
     // address resolver. A local handle; it only fires when the calling
     // namespace owns it, so it never shadows another plugin's bare export.

@@ -1,6 +1,6 @@
 // kcdx.memory.dynamic_call — Lua → native function invocation.
 //
-// Lua surface (Phase 5c.7c):
+// Lua surface:
 //
 //   local memcpy_addr = kcdx.memory.scan_pattern("48 89 5C 24 ...")
 //   local memcpy = kcdx.memory.dynamic_call({
@@ -15,10 +15,10 @@
 //          nil + error string on failure.
 //
 // Adapted from RoM's lua/bindings/memory.cpp `dynamic_call` and
-// `jit_lua_binded_func` at commit d30217b6. Adaptations:
-//   - asmjit camelCase → snake_case (matches kcdx Phase 5c.5 work)
+// `jit_lua_binded_func`. Adaptations:
+//   - asmjit camelCase → snake_case (matches kcdx convention)
 //   - JIT buffer routes through kcdx::trampoline::AllocateBranch
-//     (matches kcdx Phase 5c.7b.1) instead of new uint8_t[] + VirtualProtect
+//     instead of new uint8_t[] + VirtualProtect
 //   - Returns a userdata with __call rather than poisoning the Lua
 //     global namespace with `__dynamic_call_<addr>` per RoM
 //
@@ -137,8 +137,7 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
             // in `tmp` is a 32-bit FLOAT, NOT a double. Converting it as a
             // double (cvttsd2si / treating tmp as double) reinterprets the
             // float bit-pattern and yields garbage→0 — this was the cause
-            // of the call_original arg arriving as 0 (CAP-20-around). See
-            // docs/known-issues/cap-20-around-wraps-original-wrong-result.md.
+            // of the call_original arg arriving as 0 in an around-mode hook.
             // Read tmp AS A FLOAT, then convert to the target arg's width.
             asmjit::InvokeNode* lua_tofunc;
             cc.invoke(asmjit::Out(lua_tofunc),
@@ -250,10 +249,9 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
             // lua_pushnumber's FP arg is a 32-bit FLOAT in xmm0 — the vreg
             // we hand set_arg MUST be float-typed, or asmjit fails to wire
             // xmm0 (observed: the converted value sat in xmm1 with no move
-            // to xmm0, and lua_pushnumber read garbage → pushed 0.0). See
-            // docs/known-issues/cap-20-around-wraps-original-wrong-result.md.
+            // to xmm0, and lua_pushnumber read garbage → pushed 0.0).
             // NOTE: float lua_Number means int/ptr returns above 2^24 lose
-            // precision crossing the Lua boundary (lua-precision.md); for
+            // precision crossing the Lua boundary (LUA_NUMBER is float); for
             // pointer-magnitude values the PushPointer userdata path is the
             // correct surface, not lua_pushnumber.
             asmjit::x86::Vec push_reg = cc.new_xmm();
@@ -291,7 +289,7 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
             // Pointer pushed via lua_pushnumber (lua_Number=float width).
             // cvtsi2ss (int→float) so the vreg matches the float arg type;
             // see the integer branch above. WARNING: a float lua_Number
-            // can't represent a 48-bit pointer exactly (lua-precision.md) —
+            // can't represent a 48-bit pointer exactly (LUA_NUMBER is float) —
             // ptr returns through this path are lossy; PushPointer userdata
             // is the correct surface for pointer returns. Kept for parity
             // with the existing dynamic_call behavior.
@@ -337,7 +335,7 @@ uintptr_t JitTrampoline(uintptr_t                                  target_func_p
 
 namespace {  // reopen anon namespace for the rest of the TU-local helpers
 
-// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+// --- Unknown-key rejection (fail loud, never silent-drop) ---------------
 //
 // The recognized option-key set for kcdx.memory.dynamic_call. A typo'd
 // `retrun_type=` / `param_type=` would otherwise vanish silently, the
@@ -396,7 +394,7 @@ int Lua_DynamicCall(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
 
     // Reject an unrecognized option key before reading anything — a typo'd
-    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    // key would otherwise vanish silently (fail loud, never silent-drop).
     {
         std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
             L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
@@ -441,11 +439,11 @@ int Lua_DynamicCall(lua_State* L) {
 
     // return_type: type-name string, default "void"
     //
-    // #12-followup (fail-state-logging.md / AP14, opposite polarity to the
+    // #12-followup (fail loud, never silent-drop — opposite polarity to the
     // param_types reject below): an ABSENT return_type keeps the "void"
     // default (legal, common). A PRESENT-but-non-string value must REJECT —
     // it must NOT be coerced. On this build LUA_NUMBER=float and lua_isstring
-    // returns TRUE for NUMBERS (lua-precision.md), so the old
+    // returns TRUE for NUMBERS (LUA_NUMBER is float), so the old
     // `if (lua_isstring) take` silently coerced `return_type = 5` to "5" →
     // get_type_id("5") resolves a garbage/default type → wrong return
     // marshaling, no signal. A non-numeric non-string fell to the silent
@@ -477,7 +475,7 @@ int Lua_DynamicCall(lua_State* L) {
 
     // param_types: list-of-strings table, default empty
     //
-    // #12 (fail-state-logging.md / AP14): a NON-STRING entry is an ERROR, not
+    // #12 (fail loud, never silent-drop): a NON-STRING entry is an ERROR, not
     // an end-of-list marker. param_types DEFINES the native ABI — silently
     // truncating at the first non-string entry builds a JIT thunk for the
     // WRONG arity and marshals wrong into a native function (a crash risk).

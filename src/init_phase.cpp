@@ -37,7 +37,7 @@ void AdvanceTo(InitPhase p) {
         // Log it loudly as a correctness risk — but DO NOT roll g_phase back and
         // DO NOT abort: leaving g_phase at the highest reached phase keeps the
         // monotonic invariant true for downstream require-guards, and the game
-        // must keep running (fail-state-logging.md: log loud, don't abort).
+        // must keep running (log loud, don't abort).
         LOG_ERROR_KV("INIT_PHASE", "advance_non_monotonic",
             ::kcdx::log::KV::BareStr("attempted", Name(p)),
             ::kcdx::log::KV::BareStr("current", Name(prev)),

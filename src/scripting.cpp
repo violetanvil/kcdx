@@ -1,7 +1,7 @@
 // See scripting.h for what this is.
 #include "scripting.h"
 
-#include <windows.h>  // for PROBE C: GetModuleHandleEx + GetModuleFileNameA
+#include <windows.h>  // for the module-origin check: GetModuleHandleEx + GetModuleFileNameA
 
 #include <mutex>
 #include <unordered_map>
@@ -10,7 +10,7 @@
 extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
-#include "lstate.h"   // for PROBE N: raw lua_State / global_State struct reads
+#include "lstate.h"   // for raw lua_State / global_State struct reads
 }
 
 #include "crash_guard.h"
@@ -29,7 +29,7 @@ std::recursive_mutex g_lock;
 
 lua_State* g_lua_state = nullptr;
 
-// Phase 5g: thread-local re-entrancy guard. If a hook callback calls
+// Thread-local re-entrancy guard. If a hook callback calls
 // (transitively) into a function we've also hooked — e.g., hooked
 // lua_pcall and the callback uses System.LogAlways which internally
 // runs through pcall — without this guard we'd recurse infinitely
@@ -59,9 +59,9 @@ struct DispatchGuard {
 std::unordered_map<uintptr_t, kcdx::rom::runtime_func_t*> g_target_to_hook;
 
 // A callback is either a baked Lua-registry ref OR a dotted name we
-// resolve lazily at dispatch. Phase 5c-style "register_*_from_top"
-// produces refs; Phase 5f TOML "lua_callback = 'Foo.Bar'" produces
-// names. Both fire from the same dispatcher loop.
+// resolve lazily at dispatch. The "register_*_from_top" path produces
+// refs; the TOML "lua_callback = 'Foo.Bar'" path produces names. Both
+// fire from the same dispatcher loop.
 struct CallbackEntry {
     int         ref  = LUA_NOREF;   // -1 when name-only
     std::string name;               // empty when ref-only
@@ -160,7 +160,7 @@ uint8_t* get_mid_skip_flag_address() {
     return reinterpret_cast<uint8_t*>(&g_mid_skip_original);
 }
 
-// PROBE P helper: format a byte buffer as a lowercase-hex space-separated
+// Diagnostic helper: format a byte buffer as a lowercase-hex space-separated
 // string. Used to hex-dump fresh Tables for ABI comparison. 16 bytes
 // per chunk to keep grep-friendly.
 static std::string HexDump(const void* p, size_t n) {
@@ -176,7 +176,7 @@ static std::string HexDump(const void* p, size_t n) {
     return out;
 }
 
-// PROBE P: dump a Table-shaped memory region for ABI comparison.
+// Diagnostic: dump a Table-shaped memory region for ABI comparison.
 // Reads up to `bytes` bytes from `p` and logs them under `lstate.raw.tbl`.
 // VirtualQuery is used to confirm the page is committed before reading,
 // to avoid a probe-induced crash if `p` is garbage.
@@ -227,10 +227,10 @@ void LogLuaStateSnapshot(lua_State* L, const char* tag) {
 }
 
 void LogLuaStateRawStruct(lua_State* L, const char* tag) {
-    // PROBE N: dump raw C-struct fields of `lua_State` and `global_State`
+    // Dump raw C-struct fields of `lua_State` and `global_State`
     // straight off the pointer. The Lua C API summary in
     // LogLuaStateSnapshot returns identical values at the safe vs crashing
-    // newtable sites (proven by PROBE L). The question this answers: do
+    // newtable sites (verified against the binary). The question this answers: do
     // any *lower-level* struct fields differ that would discriminate one
     // call site from the other? If yes, that field is the smoking gun. If
     // no, the trigger is invisible to anything the Lua source code can

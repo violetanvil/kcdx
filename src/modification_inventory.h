@@ -7,12 +7,12 @@
 // its diagnostic summary.
 //
 // WHY THIS MODULE EXISTS (and why it does NOT read hook_engine::g_hooks):
-// The save-load crash (docs/known-issues/save-load crash 0xC8 ...) was
-// invisible because nothing recorded what kcdx actually modifies on the load
-// path. The first cut of this inventory read hook_engine::g_hooks /
-// g_patches / g_mid_hooks — but those legacy [[hook]]/[[patch]] vectors are
-// DEAD post-Phase-5 (empty, nothing populates them; the TOML parsers were
-// deleted). Reading them produced an all-zero inventory that mis-served the
+// The 0xC8 save-load crash was invisible because nothing recorded what kcdx
+// actually modifies on the load path. The first cut of this inventory read
+// hook_engine::g_hooks / g_patches / g_mid_hooks — but those legacy
+// [[hook]]/[[patch]] vectors are DEAD (empty, nothing populates them; the
+// TOML parsers were deleted). Reading them produced an all-zero inventory
+// that mis-served the
 // crash bisect. This module reads the LIVE modification sources instead:
 //
 //   1. hook_chain::g_chains    — the live kcdx.hook plugin hooks (the
@@ -34,14 +34,14 @@ namespace kcdx::modification_inventory {
 // summary line + per-target DETAIL).
 enum class Category : uint8_t {
     PluginHook = 0,  // "plugin_hook" — hook_chain (live kcdx.hook installs)
-    Engine     = 1,  // "engine"      — lua_pcall / update / frealloc (PROBE Q)
-    Lifecycle  = 2,  // "lifecycle"   — Phase 6 save/load hooks
+    Engine     = 1,  // "engine"      — lua_pcall / update / frealloc
+    Lifecycle  = 2,  // "lifecycle"   — save/load hooks
     Probe      = 3,  // "probe"       — dev probes (bugsplat_ctor / fopen / loc_dump)
     // APPEND-ONLY (do not reorder/insert above): a successful kcdx.bytes /
     // kcdxBytesInterface byte rewrite registers here so a crash at/after a
     // byte-patched site has a fault-time owner record in the inventory the
-    // crash guard dumps (fail-state-logging.md §"the fault-time trace exists
-    // before the fault"). Internal enum, not a plugin-facing ABI struct, but
+    // crash guard dumps (the fault-time trace exists before the fault).
+    // Internal enum, not a plugin-facing ABI struct, but
     // appended at the end regardless.
     Bytes      = 4,  // "bytes"       — kcdx.bytes / kcdxBytesInterface writes
 };
@@ -107,8 +107,8 @@ size_t LastBytesCount();
 // Fire breadcrumb — the last N hook detours the game executed
 // ===========================================================================
 //
-// WHY: the 0xC8 save-load crash (docs/known-issues/save-load crash 0xC8 ...)
-// fires ~10s after the load hooks complete, inside/after a kcdx detour, but
+// WHY: the 0xC8 save-load crash fires ~10s after the load hooks complete,
+// inside/after a kcdx detour, but
 // nothing logged WHICH detour the game last ran. The inventory above answers
 // "what did kcdx modify"; this answers "what did the game most recently
 // EXECUTE through kcdx" — the missing link to name the culprit from one log.
@@ -117,7 +117,7 @@ size_t LastBytesCount();
 // the hook_chain dispatch chokepoints (DispatchPre / DispatchPost /
 // MidDispatch) and dumped newest-first by the crash guard at fault time.
 //
-// HOT-PATH CONTRACT (.claude/rules/lua-callback-threading.md): RecordFire is
+// HOT-PATH CONTRACT: RecordFire is
 // ALWAYS-ON and ZERO-ALLOCATION — a relaxed atomic increment + a handful of
 // stores into a fixed slot. NO lock, NO allocation, NO logging. It is cheaper
 // than a dev-mode branch (which is itself a branch + a TLS/global read), so it

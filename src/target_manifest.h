@@ -7,8 +7,8 @@
 // A plugin folder MAY ship a `targets.toml` next to its `kcdx.toml`. It
 // declares the plugin's OWN author-declared hook/byte targets — the
 // "name an un-named site once, share it by name" half of the disassembler
-// test (cornerstones.md guarantees 1–3; naming-namespaces.md is the binding
-// model). Each `[[target]]` row carries:
+// test (declare-once / share-by-name / coexist; the <author>.<plugin>.<bare>
+// model is the binding). Each `[[target]]` row carries:
 //
 //   name          = "open_inventory"   # BARE name; the engine derives the
 //                                       # <pluginname> prefix from [plugin].name.
@@ -22,7 +22,7 @@
 //                                       # kcdx.hook DSL. SHOULD accompany a
 //                                       # pattern/rva target (no name carries
 //                                       # the ABI), but registration allows ""
-//                                       # — we never invent an ABI (AP2).
+//                                       # — we never invent an ABI.
 //
 // This is the STORAGE/REGISTRATION step only: each valid row is handed to
 // address_library::RegisterAuthorTarget. Precedence resolution and binder
@@ -40,7 +40,7 @@ namespace kcdx::config {
 // `pluginAuthor` may be "" during the in-progress namespace refactor (legacy
 // 1-dot scope — the plugin has not yet declared [plugin].author); when empty
 // the row registers under (empty author, pluginName, bareName), which the
-// resolver walks as the legacy 1-dot tier (naming-namespaces.md).
+// resolver walks as the legacy 1-dot tier.
 //
 // No-op when the file is absent. Called from config.cpp's discovery walk once
 // a plugin's folder + identity components are all known.

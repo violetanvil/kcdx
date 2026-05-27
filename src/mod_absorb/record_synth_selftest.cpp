@@ -11,8 +11,8 @@
 
 // cap-52 self-test — see record_synth_selftest.h for why this lives in engine
 // code (BuildRecord is engine-internal, not a plugin export). The assertions
-// below are falsifiable + each names the broken state it catches (AP15); the
-// null-vtable path reports FAIL loud (not a silent skip — AP14).
+// below are falsifiable + each names the broken state it catches; the
+// null-vtable path reports FAIL loud (not a silent skip).
 
 namespace kcdx::mod_absorb {
 
@@ -21,7 +21,7 @@ namespace {
 constexpr const char* kRow = "cap-52-mod-record-synth";
 
 // I_Mod record field offsets — MUST mirror record_synth.cpp's field map
-// (PROBE U.6.3, docs/mod-loader-absorb.md). The test reads the record BACK at
+// (docs/mod-loader-absorb.md). The test reads the record BACK at
 // these offsets, so a regression that moves a field in record_synth.cpp without
 // moving it here makes the strcmp-equality assertion FAIL (which is the intent:
 // the offsets are the contract under test).
@@ -111,7 +111,7 @@ void RunSelfTestOnce() {
     // Assertion 1: BuildRecord returns non-null.
     // [broken: vtable id 3105/3106 fails to resolve (version mismatch /
     //  unverified seed row) or the alloc is wrong → nullptr → FAIL LOUD here,
-    //  not a silent skip (AP14 / the module logs the consequence too).]
+    //  not a silent skip (the module logs the consequence too).]
     if (recA == nullptr) {
         std::snprintf(reason, sizeof(reason),
             "FAIL: BuildRecord(A) returned nullptr — I_Mod vtable id %llu/%llu "
@@ -143,7 +143,8 @@ void RunSelfTestOnce() {
 
     // Assertion 3: vtables == the Address-Library-resolved targets, non-null.
     // [broken: wrong/stale/hardcoded vtable → mismatch → FAIL. Resolve()ed
-    //  here too (AP1 — never hardcode the VA); same id the module uses.]
+    //  here too (never hardcode the VA — it shifts per game update); same id
+    //  the module uses.]
     const uintptr_t resolvedPrimary   = address_library::Resolve(kImodVtablePrimaryId);
     const uintptr_t resolvedSubObject = address_library::Resolve(kImodVtableSubObjectId);
     const void* vtPrimary   = ReadPtr(recA, kOffVtablePrimary);

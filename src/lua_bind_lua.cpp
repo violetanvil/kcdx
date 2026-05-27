@@ -1,6 +1,6 @@
 // kcdx.lua.* — Lua-VM introspection helpers.
 //
-// Phase 5c.7d ships a single function: kcdx.lua.cfunction_address.
+// Ships a single function: kcdx.lua.cfunction_address.
 // More may follow (kcdx.lua.cfunction_for_address, _registry_dump, etc.)
 // but this is the load-bearing one.
 //
@@ -45,8 +45,8 @@ namespace {
 // pushed through `lua_pushinteger`/`lua_pushnumber`. A C function
 // pointer like 0x7FFD46781D00 round-trips to 0x7FFD46800000, which
 // is then non-executable garbage. See `docs/lua-number-precision.md`
-// for the probe results that pinned this and `CLAUDE.md` hard rule
-// #17 for the engineering rule that fell out of it.
+// for the probe results that pinned this and the rule that fell out
+// of it: pointers must not round-trip through lua_Number.
 //
 // To hand the result to `kcdx.memory.dynamic_hook`, pass the userdata
 // directly as `target` — it already understands pointer userdata.

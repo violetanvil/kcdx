@@ -33,8 +33,7 @@ extern "C" {
 // this plugin's declared zone?" In a world where every shipped API is
 // `Either`, only a `Before`- or `After`-required entry can trip the gate.
 //
-// See docs/outstanding-work/restructure-plan.md §"Capability gating" for
-// the design.
+// See the capability-gating design for details.
 // ============================================================================
 
 namespace kcdx::zone_gate {
@@ -104,7 +103,7 @@ void EvaluateAllPlugins();
 // into g_manifests, so EvaluateAllPlugins never sees it and the zone-gate
 // g_rejected map cannot record it — yet kcdx.plugin.is_rejected must still
 // report it as rejected (otherwise a validation reject is indistinguishable
-// from a clean load; AP14 silent-accept). This is the ADDITIONAL source the
+// from a clean load — a silent accept). This is the ADDITIONAL source the
 // is_rejected accessor folds in alongside g_rejected; zone_gate's own
 // EvaluateAllPlugins path is untouched.
 //
@@ -149,7 +148,7 @@ const std::string& RejectReason(const std::string& name);
 // row in kCapabilities. The capability table is the gate's source of
 // truth; keeping the registered surface in sync with that table is
 // what this hook is for. INTERNAL / test-only — NOT documented in
-// docs/lua/ and NOT in the closed-set core verbs (lua-api-surface.md).
+// docs/lua/ and NOT in the closed-set core verbs.
 //
 // REMOVE this bind() (or repurpose it for a real shipped API) the day
 // the synthetic capability row goes — the table and the binder ship

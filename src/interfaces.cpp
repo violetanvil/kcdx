@@ -1,7 +1,7 @@
 // interfaces.cpp — the kcdxInterface instance plugins receive at load time.
 //
-// Phase 2 ships a working kcdxInterface with QueryInterface returning null
-// for everything (sub-interfaces land in Phases 3-7), but the
+// The initial kcdxInterface shipped with QueryInterface returning null
+// for everything (sub-interfaces landed later), but the
 // GetPluginInfo / GetPluginHandle / EnumeratePlugins / ResolveAddress
 // functions are real.
 //
@@ -112,7 +112,7 @@ const kcdxPluginInfo* Thunk_GetPluginInfo(const char* name) {
         // dead (always 0); versionIndependent is re-derived — an empty
         // `supports` list means the plugin pins no specific version. Both
         // fields stay in kcdxPluginInfo until a future interface-versioned
-        // cleanup retires them (kept now to preserve the ABI shape, AP11).
+        // cleanup retires them (kept now to preserve the fixed-offset ABI shape).
         info->runtimeCompatibleGameVersion = 0;
         info->versionIndependent           = p->manifest.supports.empty() ? 1 : 0;
         p->infoCache = std::move(info);
@@ -146,13 +146,13 @@ uintptr_t Thunk_ResolveAddressByName(const char* name) {
     // A single shared g_api is handed to every plugin (GetEngineInterfaceImpl),
     // so there is no per-call C++ identity to read here, and this may be called
     // from any context (Load, PostLoad, a hook callback) — a "current loading
-    // plugin" static would mis-attribute every later call (AP13 — a wrong owner
+    // plugin" static would mis-attribute every later call (a wrong owner
     // silently picks the wrong precedence tier), which is worse than "".
     // Passing "" / "" for (author, plugin) keeps an explicit-form reference
     // exact and a bare name on the engine-seed path. The C++/Lua parity gap
     // is CLOSED by the sibling Thunk_ResolveAddressByNameAs(owner, name)
     // below: a plugin that wants full self > engine > other precedence passes
-    // its OWN handle, which threads the self tier (naming-namespaces.md).
+    // its OWN handle, which threads the self tier.
     return kcdx::address_library::ResolveByName(name, "", "");
 }
 
@@ -177,8 +177,8 @@ uintptr_t Thunk_ResolveSymbolAs(kcdxPluginHandle owner, const char* name) {
     // precedence. When [plugin].author is still empty (the corpus
     // state before step 6) the resolver walks the legacy 1-dot scope
     // by (plugin, name), preserving observable behavior. NameForHandle
-    // / AuthorForHandle moved to plugin_loader.{h,cpp} at Phase 3
-    // sub-1 step 5-main chunk 4 (qualified namespace lookup here so
+    // / AuthorForHandle moved to plugin_loader.{h,cpp} (qualified
+    // namespace lookup here so
     // kcdxHookInterface thunks in src/hook_interface.cpp share the
     // same accessors).
     auto v = kcdx::symbols::Lookup(name,
@@ -250,7 +250,7 @@ uint32_t Thunk_GetConflictReport(uintptr_t target,
                                  kcdxConflictEntry* out,
                                  uint32_t cap) {
     // Collect matching entries across the legacy g_patches surface (empty
-    // since Phase 5 — kept guarded, scoped to Phase 11) and the LIVE sources
+    // now — kept guarded, scoped to a later cycle) and the LIVE sources
     // below (hook_chain participants + applied kcdx.bytes patches). Names are
     // stable for the process lifetime (PatchEntry strings, Chain-stable
     // storage), so we can hand out raw c_str() / aliased pointers.
@@ -283,7 +283,8 @@ uint32_t Thunk_GetConflictReport(uintptr_t target,
 
     // (The legacy g_hooks loop that once joined here was removed in the
     // apply-consolidation cut alongside conflict_engine::g_resolvedHooks —
-    // g_hooks had no populator since Phase 5, so it contributed nothing. The
+    // g_hooks had no populator after the TOML behavior tables were removed,
+    // so it contributed nothing. The
     // LIVE hook source is the hook_chain enumeration below; the LIVE byte
     // source is the kcdx.bytes GetAppliedBytesPatchesAtTarget enumeration.)
 

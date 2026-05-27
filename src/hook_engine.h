@@ -32,7 +32,7 @@ struct HookEntry {
     // anchors mid-function and step backward to the entry.
     patch::Pattern             pattern;
     std::string                targetSymbol;   // cross-plugin symbol-table lookup
-    uint64_t                   addressId = 0;  // kcdx Address Library id (Phase 7)
+    uint64_t                   addressId = 0;  // kcdx Address Library id
     int                        offset = 0;
     std::optional<patch::Pattern> context;
     patch::Anchor              anchor;
@@ -41,14 +41,14 @@ struct HookEntry {
     // The detour body. Plugin author's raw x86-64. v0.1 doesn't auto-wire a
     // call-original trampoline; plugin must either replace original entirely
     // (last instruction = ret), or bake in their own jump back to the
-    // MinHook-managed trampoline using a separate mechanism. Phase 5+ adds
-    // typed Lua callbacks that make this more accessible.
+    // MinHook-managed trampoline using a separate mechanism. Typed Lua
+    // callbacks make this more accessible.
     //
     // EXACTLY ONE of `bytes` or `lua_callback` must be non-empty. If both
     // are set or both are empty, the parser rejects the entry.
     std::vector<uint8_t> bytes;
 
-    // --- Phase 5f: TOML-driven Lua callback ----------------------------
+    // --- TOML-driven Lua callback --------------------------------------
     //
     // When lua_callback is non-empty, ApplyOneHook builds a runtime_func_t
     // trampoline (the same one kcdx.memory.dynamic_hook uses), JIT'd with
@@ -70,7 +70,7 @@ struct HookEntry {
     bool                     appliedOK = false;
 };
 
-// Phase 5g: [[mid_hook]] entries from kcdx.toml. Distinct from HookEntry
+// [[mid_hook]] entries from kcdx.toml. Distinct from HookEntry
 // because the install path is different (runtime_func_t::make_jit_midfunc
 // instead of make_jit_func) and the schema fields are different (captures
 // + stack_restore_offset instead of return_type).
@@ -151,18 +151,19 @@ struct MidHookEntry {
 // HISTORICAL (apply-consolidation cut): the TOML-fed engine state
 // (g_hooks / g_mid_hooks) and their apply orchestration (ApplyOneHook,
 // ApplyOneMidHook, ApplyAll, DumpMidHookFingerprints) were removed. Those
-// vectors had no populator since Phase 5, so the apply loop in hooks.cpp
+// vectors had no populator after the TOML behavior tables were removed,
+// so the apply loop in hooks.cpp
 // that walked them was dead code. The HookEntry / MidHookEntry /
 // CallOriginalMode definitions above are retained as dead-but-present types
 // (nothing constructs them now). The LIVE hook path is kcdx.hook /
 // kcdxHookInterface via src/hook_chain.cpp; it and kcdx.memory.dynamic_hook
 // install via InstallRuntime below.
 
-// --- Phase 5c.7b.2: runtime hook installation -----------------------------
+// --- runtime hook installation --------------------------------------------
 //
 // Parallel to ApplyOneHook but for hooks resolved at runtime (not from
 // TOML pre-flight). Used by kcdx.memory.dynamic_hook in pak Lua and by
-// (Phase 5+) future plugin-DLL APIs that install hooks programmatically.
+// future plugin-DLL APIs that install hooks programmatically.
 //
 // Caller responsibility:
 //   - resolve target_addr to an absolute VA
@@ -183,7 +184,7 @@ struct RuntimeInstallResult {
     std::string reason;            // populated when !ok, for the caller
                                    // to surface to its own Lua/log channel
     void*       pOriginal = nullptr;  // MinHook's trampoline-to-original
-                                      // pointer (Phase 5+: call-original
+                                      // pointer (for future call-original
                                       // support; v0.1 ignores). void* not
                                       // LPVOID to avoid pulling windows.h
                                       // into every consumer of this header.

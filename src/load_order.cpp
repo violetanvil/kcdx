@@ -76,7 +76,7 @@ void Read(const fs::path& loadOrderPath) {
     // launcher writes this file; a hand-edit with a typo'd key or wrong-typed
     // field previously dropped SILENTLY (a non-boolean `enabled` fell through
     // the `is_boolean()` guard; a wrong-typed zone/priority was ignored
-    // field-wise) — the 0xC8-bug class, AP14: a user's enable/disable or
+    // field-wise) — the 0xC8-bug class: a user's enable/disable or
     // ordering intent vanished with no trace. STRICT posture (flipped from
     // WARN to Error): a bad row is REJECTED loudly and skipped wholesale; the
     // remaining rows still apply (this is the user's override file, not a
@@ -250,7 +250,7 @@ void Resolve() {
         // lua/before slot, so "before_game zone but has after-work" is no
         // longer a contradiction to downgrade. The old full-plugin downgrade
         // (before_game → after_game at priority 50 with a warn) was a silent
-        // relocation (AP13) and is deleted; the author's choice is honored.
+        // relocation and is deleted; the author's choice is honored.
         Zone finalZone     = requestedZone;
         int  finalPriority = requestedPriority;
 

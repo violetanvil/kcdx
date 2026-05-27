@@ -1,6 +1,6 @@
 // kcdx::hook_interface — engine-side impl of kcdxHookInterface.
 //
-// Phase 3 sub-1 step 5-main chunks 3+4. Mirrors the Lua kcdx.hook.*
+// Mirrors the Lua kcdx.hook.*
 // binder (src/lua_bind_hook.cpp) — same payload shape, same load-order
 // rules, same ApplyHookEntry routing — but takes raw C inputs from a
 // C++ DLL plugin via the kcdxHookInterface vtable.
@@ -257,7 +257,8 @@ std::string ResolveSignature(const char* target,
             target, owner.author.c_str(), owner.plugin.c_str());
         if (entrySig && entrySig[0]) sigStr = entrySig;
     } else if (!sigStr.empty() && target && target[0]) {
-        // Sig-mismatch gate (AP12/AP13): the author named a target AND
+        // Sig-mismatch gate (the name should carry the ABI; an explicit
+        // override is detected, not silently accepted): the author named a target AND
         // hand-wrote an explicit opts->signature. The explicit one WINS
         // (the deliberate-override case — the author may know better than
         // the seed, or be overriding a stale row), but if the name ALSO
@@ -327,7 +328,7 @@ std::string ResolveSignature(const char* target,
             return "";
         }
         if (target && target[0]) {
-            // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14):
+            // FAIL-STATE INSTRUMENTATION (fail loud, never silently drop):
             // ResolveSignatureByName returns "" for TWO distinct cases — a
             // name that resolved to an address but carries no verified ABI
             // (the genuine "supply a signature" case), AND a name that does
@@ -366,7 +367,7 @@ std::string ResolveSignature(const char* target,
                 log::KV::BareStr("detail",
                     "target resolved to an address but carries no verified "
                     "ABI — the author must supply a signature (the engine "
-                    "never invents one, AP2)"));
+                    "never invents one)"));
             return std::string("target '") + target +
                    "' resolved to an address but has no signature — "
                    "kcdxHookInterface needs an ABI. Supply opts.signature, "
@@ -622,7 +623,7 @@ bool Thunk_Uninstall(kcdxHookHandle h) {
 
 // -----------------------------------------------------------------------
 // Vtable instance. Order MATCHES include/kcdx/Interfaces.h:1515-1575
-// byte-for-byte (AP11). DO NOT reorder.
+// byte-for-byte (append-only ABI; fixed offsets). DO NOT reorder.
 // -----------------------------------------------------------------------
 
 kcdxHookInterface g_hookInterface = {

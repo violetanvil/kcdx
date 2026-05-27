@@ -14,7 +14,8 @@ namespace kcdx::hook_engine {
 // HISTORICAL (apply-consolidation cut): the TOML-fed g_hooks / g_mid_hooks
 // vectors and their orchestration (ApplyOneHook, ApplyOneMidHook,
 // ApplyAll, DumpMidHookFingerprints, and the MakeLocatorPatch adapter)
-// were removed. Those vectors had no populator since Phase 5, so the apply
+// were removed. Those vectors had no populator after the TOML behavior
+// tables were removed, so the apply
 // loop in hooks.cpp that dispatched them was dead. The LIVE hook path is
 // kcdx.hook / kcdxHookInterface routed through src/hook_chain.cpp; both it
 // and kcdx.memory.dynamic_hook install via InstallRuntime (below), which
@@ -60,8 +61,7 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
 
     // Hand to MinHook. detour_addr is expected to already be within
     // ±2 GB of target_addr (caller's responsibility; e.g.,
-    // runtime_func_t::make_jit_func now routes through branch_pool
-    // since Phase 5c.7b.1).
+    // runtime_func_t::make_jit_func now routes through branch_pool).
     LPVOID pOriginalLp = nullptr;
     MH_STATUS rc = MH_CreateHook(reinterpret_cast<LPVOID>(target_addr),
                                  detour_addr,

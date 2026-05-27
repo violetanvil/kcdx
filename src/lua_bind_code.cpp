@@ -1,6 +1,6 @@
 // kcdx.code{...} — Lua-side code/trampoline-region allocation.
 //
-// A core authoring verb per .claude/rules/lua-api-surface.md: top-level
+// A core authoring verb: top-level
 // (like kcdx.hook / kcdx.bytes / kcdx.command), configuring -> {named
 // table}. A thin Lua binder over the EXISTING, proven trampoline pool +
 // symbol table (the legacy [[trampoline]] TOML schema used these same
@@ -34,7 +34,7 @@
 //     via symbols::Register(bareName, addr, owner). The author writes a
 //     BARE export name; the engine derives the <owner> prefix from the
 //     calling plugin and publishes <owner>.<export> — the SAME
-//     <pluginname>.<name> model as author-targets (naming-namespaces.md).
+//     <pluginname>.<name> model as author-targets.
 //     A dotted `export` is an author error (the engine supplies the
 //     prefix). This is EARLIER than the apply-pass target_symbol
 //     resolution — that ordering is correct (the symbol exists before any
@@ -53,12 +53,12 @@
 //     which the trampoline allocators accept (the handle is recorded for
 //     attribution only). We warn so the anonymous allocation is observable.
 //
-// Lua precision (lua-precision.md): the allocated address is a POINTER —
+// Lua precision (LUA_NUMBER is float): the allocated address is a POINTER —
 // it is returned as a kcdx.memory.pointer userdata via PushPointer, NEVER
 // lua_pushinteger (a VA must not round-trip through lua_Number=float).
 //
-// Lua bridge (lua-bridge.md): raw Lua C API only; no kcdx-side
-// static-const sentinel (AP5 / PROBE Q stays zero) — the pointer userdata
+// Lua bridge (one shared lua_State): raw Lua C API only; no kcdx-side
+// static-const sentinel (the frealloc canary stays zero) — the pointer userdata
 // is a raw lua_newuserdata via PushPointer.
 
 #include "lua_bind_code.h"
@@ -86,7 +86,7 @@ namespace kcdx::lua_bind_code {
 
 namespace {
 
-// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+// --- Unknown-key rejection (fail loud, never silent-drop) ---------------
 //
 // The recognized option-key set for kcdx.code. A typo'd `byts=` / `export=`
 // would otherwise be silently ignored, the author's intent lost. The
@@ -126,7 +126,7 @@ int Lua_Code(lua_State* L) {
     }
 
     // Reject an unrecognized option key before reading anything — a typo'd
-    // key would otherwise vanish silently (fail-state-logging.md / AP14).
+    // key would otherwise vanish silently (fail loud, never silent-drop).
     {
         std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
             L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
@@ -345,7 +345,7 @@ int Lua_Code(lua_State* L) {
     // ordering is correct, the symbol exists before any apply-pass
     // Lookup). ---
     //
-    // NAMESPACE MODEL (naming-namespaces.md): `export` is a BARE name; the
+    // NAMESPACE MODEL: `export` is a BARE name; the
     // engine derives the <owner> prefix from the calling plugin and stores the
     // symbol as <owner>.<export>. The author NEVER types their own prefix — a
     // dotted `export` is an author error. A bare collision is now per-namespace
@@ -361,7 +361,7 @@ int Lua_Code(lua_State* L) {
                 "kcdx.code{ name = \"%s\" }: `export` must be a BARE name — do "
                 "NOT type your own \"<plugin>.\" prefix. The engine derives it "
                 "from your [plugin].name and publishes the symbol as "
-                "\"<yourplugin>.%s\" (naming-namespaces.md). You wrote "
+                "\"<yourplugin>.%s\". You wrote "
                 "\"%s\".",
                 name.c_str(), exportSymbol.c_str(), exportSymbol.c_str());
             return 2;
@@ -401,7 +401,7 @@ int Lua_Code(lua_State* L) {
     }
 
     // --- Return a LIVE kcdx.memory.pointer userdata to the region. The
-    // address is a POINTER — push it via PushPointer (lua-precision.md),
+    // address is a POINTER — push it via PushPointer (LUA_NUMBER is float),
     // NEVER lua_pushinteger (a VA must not round-trip through
     // lua_Number=float). ---
     kcdx::lua_bind_helpers::PushPointer(L, kcdx::lua_memory::pointer(addr));
@@ -411,8 +411,8 @@ int Lua_Code(lua_State* L) {
 }  // namespace
 
 void bind(lua_State* L) {
-    // kcdx.code is a TOP-LEVEL verb (one of the 6 core authoring verbs per
-    // lua-api-surface.md rule 2), NOT a sub-table — the kcdx table is at
+    // kcdx.code is a TOP-LEVEL verb (one of the 6 core authoring verbs),
+    // NOT a sub-table — the kcdx table is at
     // the top of the stack; register the function directly on it (like
     // kcdx.hook / kcdx.bytes / kcdx.command).
     int kcdx_idx = lua_gettop(L);

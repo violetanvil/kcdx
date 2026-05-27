@@ -46,9 +46,9 @@ struct PatchEntry {
     // namespace refactor (legacy 1-dot scope — the plugin has not yet
     // declared [plugin].author); the symbol-table / address-library
     // resolvers tolerate an empty author by walking the legacy 1-dot
-    // tier under pluginName (naming-namespaces.md). Engine-internal
-    // struct (not in include/kcdx/Interfaces.h), so appending the new
-    // identity field is unconstrained by the append-only AP11 rule.
+    // tier under pluginName. Engine-internal struct (not in
+    // include/kcdx/Interfaces.h), so appending the new identity field is
+    // unconstrained by the plugin-ABI append-only rule.
     //
     // Used by the load-order sort to look up the plugin's effective
     // zone + priority, by logs to attribute entries to their plugin,
@@ -78,8 +78,7 @@ struct PatchEntry {
     //                   want to maintain their own AOBs.
     //
     // In every case the resolved VA gets `offset` added to produce
-    // the final write target (see _research/phase7-recon/
-    // id-assignment-policy.md §"pattern-hit semantics").
+    // the final write target (pattern-hit semantics).
     Pattern pattern;
     std::string targetSymbol;
     uint64_t addressId = 0;          // 0 = no address-library locator
@@ -142,7 +141,8 @@ struct PatchEntry {
     // regardless of locator — that is the point: it gives every applied
     // bytes-Register patch a stable post-apply write-range the conflict
     // report can fold in (COMP-15). Engine-internal struct field (not in
-    // include/kcdx/), so this append is unconstrained by AP11.
+    // include/kcdx/), so this append is unconstrained by the plugin-ABI
+    // append-only rule.
     uintptr_t appliedPatchAddr = 0;
 };
 
@@ -187,7 +187,7 @@ struct ResolvedPatch {
 // ResolvedPatch instead of calling this again.
 //
 // Conflict types and the conflict detection pass moved to conflict_engine
-// in Phase 4b.3 — patch_engine no longer owns those.
+// — patch_engine no longer owns those.
 ResolvedPatch Resolve(const PatchEntry& p);
 
 // Backwards-compat shim. Today this defers to conflict_engine::RunPreFlight

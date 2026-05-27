@@ -12,7 +12,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// New install layout (Phase 1+):
+// Install layout:
 //   <game-bin>/
 //   ├── kcdx.exe              (launcher; user runs this)
 //   ├── kcdx-engine/          (everything kcdx-owned)

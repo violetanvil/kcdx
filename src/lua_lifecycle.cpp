@@ -24,8 +24,8 @@ namespace kcdx::lua_lifecycle {
 
 namespace {
 
-// The 9 bridged events. The set is CLOSED (per the locked sub-8 design):
-// each maps to an existing engine kcdxMessage_*. "ready" is intentionally
+// The 9 bridged events. The set is CLOSED: each maps to an existing
+// engine kcdxMessage_*. "ready" is intentionally
 // absent — it stays a per-plugin post-apply signal in lua_registry.
 // kcdxMessage_LuaReady (9) is also absent — it's an internal pak-Lua
 // signal, not a kcdx.on name.

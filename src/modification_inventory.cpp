@@ -152,8 +152,8 @@ void LogInventory(log::Level summaryLevel) {
 
     // Per-target DETAIL at Debug (dev-only firehose): each VA + category +
     // OWNING plugin + hook name. Names WHO owns the chain (plugin + hook),
-    // not the generic surface name "kcdx.hook" — the attribution gap PROBE I
-    // flagged (docs/known-issues/save-load crash 0xC8 ...). An empty chain
+    // not the generic surface name "kcdx.hook" — the attribution gap a
+    // save-load crash diagnostic flagged. An empty chain
     // (no live owner) reports "" for plugin/hook; the VA is still emitted.
     for (const auto& t : chainTargets) {
         if (!t.va) continue;

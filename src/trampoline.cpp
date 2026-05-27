@@ -382,8 +382,8 @@ void* Thunk_Allocate(const kcdxCodeOptions* opts) {
             log::ErrorF("kcdx code Allocate [%s]: `exportName` must be a BARE "
                         "name — do NOT type your own \"<plugin>.\" prefix. The "
                         "engine derives it from your [plugin].author/.name and "
-                        "publishes the symbol as \"<author>.<plugin>.%s\" "
-                        "(naming-namespaces.md). You wrote \"%s\".",
+                        "publishes the symbol as \"<author>.<plugin>.%s\". "
+                        "You wrote \"%s\".",
                         name, exportName.c_str(), exportName.c_str());
             return nullptr;
         }
@@ -419,8 +419,8 @@ bool Thunk_Export(kcdxPluginHandle owner, const char* bareName,
     if (name.find('.') != std::string::npos) {
         log::ErrorF("kcdx code Export: `bareName` must be a BARE name — do NOT "
                     "type your own \"<plugin>.\" prefix. The engine derives it "
-                    "from `owner` and publishes \"<author>.<plugin>.%s\" "
-                    "(naming-namespaces.md). You wrote \"%s\".",
+                    "from `owner` and publishes \"<author>.<plugin>.%s\". "
+                    "You wrote \"%s\".",
                     name.c_str(), name.c_str());
         return false;
     }

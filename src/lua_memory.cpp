@@ -58,8 +58,8 @@ value_wrapper_t::value_wrapper_t(char* val, kcdx::rom::type_info_t type)
 // is actually a pointer/VA (common in dynamic_hook register captures
 // and dynamic_call return values), the Lua side will see a corrupted
 // address. The right fix is a dedicated type_info_t::ptr_ variant
-// that routes through PushPointer; tracked as a Phase 5g follow-up.
-// See CLAUDE.md hard rule #17 and docs/lua-number-precision.md.
+// that routes through PushPointer; tracked as a follow-up.
+// See docs/lua-number-precision.md.
 void value_wrapper_t::push_value(lua_State* L) const {
     switch (m_type.m_val) {
         case kcdx::rom::type_info_t::boolean_:

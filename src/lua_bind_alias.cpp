@@ -1,9 +1,8 @@
 // kcdx.alias(short, target) — Lua-side declaration of a per-plugin local
 // name handle.
 //
-// A "doing" call per .claude/rules/lua-api-surface.md: top-level, POSITIONAL
-// (two obvious args), NOT a configuring {named table}. Per
-// .claude/rules/naming-namespaces.md §Aliasing:
+// A "doing" call: top-level, POSITIONAL
+// (two obvious args), NOT a configuring {named table}. Aliasing model:
 //
 //   kcdx.alias("inv", "redmoon.open_inventory")
 //
@@ -18,7 +17,7 @@
 //     the address_library alias map). It CANNOT shadow an engine name or
 //     another plugin's bare name — substitution only fires when the calling
 //     plugin owns an alias by that exact short name, so it only ADDS a handle,
-//     never displaces resolution (naming-namespaces.md §Aliasing). It cannot
+//     never displaces resolution. It cannot
 //     collide with the reserved "kcdx." root (the short name's [a-z0-9_]
 //     charset forbids a dot, and "kcdx" itself is just a 4-char handle that
 //     resolves to its target — it does NOT touch the engine seed).
@@ -122,8 +121,8 @@ int Lua_Alias(lua_State* L) {
 }  // namespace
 
 void bind(lua_State* L) {
-    // kcdx.alias is a TOP-LEVEL "doing" verb (positional) per
-    // lua-api-surface.md — the kcdx table is at the top of the stack; register
+    // kcdx.alias is a TOP-LEVEL "doing" verb (positional) — the kcdx table
+    // is at the top of the stack; register
     // the function directly on it (like kcdx.on / kcdx.code).
     int kcdx_idx = lua_gettop(L);
     lua_pushcfunction(L, Lua_Alias);

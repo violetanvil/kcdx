@@ -22,7 +22,7 @@
 //   - ankerl::unordered_dense::map -> std::unordered_map
 //   - LOG(LEVEL) << msg -> kcdx::log::Level(msg) / log::LevelF for printf-style
 //   - big::detour_hook -> kcdx::detour_hook (MinHook-backed shim)
-//   - dtor's lua-manager cleanup deferred to Phase 5c step 6 (scripting module)
+//   - dtor's lua-manager cleanup deferred to a later step (scripting module)
 #include "runtime_func_t.h"
 
 #include <windows.h>
@@ -47,7 +47,7 @@ runtime_func_t::runtime_func_t() {
 }
 
 runtime_func_t::~runtime_func_t() {
-    // Phase 5c step 6 will add a scripting-module singleton equivalent of
+    // A later step will add a scripting-module singleton equivalent of
     // big::g_lua_manager and erase this hook's entry from it here. For
     // now, just disable the hook (kcdx::detour_hook's dtor also does this
     // best-effort, so this is belt-and-suspenders).
@@ -300,10 +300,9 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
     // Allocate executable memory from kcdx's branch_pool — within
     // +/-2 GB of WHGame.dll, so a 5-byte rel32 jmp from any hook
     // target site can reach this trampoline. Replaces upstream RoM's
-    // std::vector<uint8_t> + VirtualProtect approach (Phase 5c.7b.1,
-    // 2026-05-18).
+    // std::vector<uint8_t> + VirtualProtect approach.
     //
-    // owner=0 here means "engine, not a plugin." Once Phase 5e wires
+    // owner=0 here means "engine, not a plugin." Once a later step wires
     // RegisterFunction we'll thread the calling plugin's handle through.
     //
     // nearVa = target_func_ptr: anchor the buffer near the hook TARGET, not
@@ -679,8 +678,8 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
         log::KV("target_func_ptr", (void*)target_func_ptr),
         log::KV("code_size",       (int64_t)size));
 
-    // Same branch_pool allocation as make_jit_func — see Phase 5c.7b.1
-    // notes above. owner=0 (engine, not a plugin) until 5e wires it.
+    // Same branch_pool allocation as make_jit_func — see the notes
+    // above. owner=0 (engine, not a plugin) until a later step wires it.
     // nearVa = target_func_ptr anchors the mid trampoline near the mid-hook
     // target (the captured instruction's VA), so a target in a far module is
     // still rel32-reachable. nearVa=0 callers unchanged (WHGame anchor).

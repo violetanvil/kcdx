@@ -1,17 +1,15 @@
 // kcdx.plugin.* — Lua-side plugin introspection.
 //
-// A GROUPED capability DOMAIN per .claude/rules/lua-api-surface.md
-// (kcdx.plugin.*, like kcdx.cosave.* / kcdx.dev.*, NOT a top-level
-// verb — plugin introspection is a query domain, not one of the
-// closed-set core registration verbs).
+// A GROUPED capability DOMAIN (kcdx.plugin.*, like kcdx.cosave.* /
+// kcdx.dev.*, NOT a top-level verb — plugin introspection is a query
+// domain, not one of the closed-set core registration verbs).
 //
 // Today exposes ONE accessor:
 //
 //   kcdx.plugin.is_rejected(name) -> (bool, reason_or_nil)
 //       Was the named plugin rejected by zone_gate this session?
 //       `name` is the full prefixed plugin name "<author>.<plugin>"
-//       (naming-namespaces.md — every plugin's identity is the
-//       two-component pair). Returns:
+//       (every plugin's identity is the two-component pair). Returns:
 //         (true,  reason_string) -- rejected; reason teaches why
 //         (false, nil)           -- not rejected (loaded normally,
 //                                   or user-disabled, or unknown)
@@ -24,12 +22,12 @@
 // hook or silently doing nothing). The boolean is the predicate; the
 // reason is the same teaching string the gate logged.
 //
-// Threading (AP6): pure read of zone_gate's in-process map; no callback
+// Threading: pure read of zone_gate's in-process map; no callback
 // is fired. Called from plugin.lua / require() in the main thread.
 //
-// Lua bridge (lua-bridge.md, AP5): raw Lua C API, no static-const
-// sentinel, no userdata, no registry refs. Returns are string + bool
-// (lua-precision.md does not apply — no pointers).
+// Lua bridge: raw Lua C API, no static-const sentinel, no userdata, no
+// registry refs. Returns are string + bool (no pointers, so the
+// lua_Number=float precision caveat does not apply).
 
 #include "lua_bind_plugin.h"
 

@@ -23,9 +23,9 @@ namespace kcdx::lua_require_searcher {
 namespace {
 
 // The "current owning plugin" for the in-flight synchronous plugin chunk
-// load. ENGINE-SIDE C++ state (lua-bridge.md / AP5 — NOT a Lua registry
-// slot the GC touches). Main-thread only: loads are sequential on the main
-// thread (lua-callback-threading.md / AP6), so a plain non-atomic trio
+// load. ENGINE-SIDE C++ state (NOT a Lua registry slot the GC touches).
+// Main-thread only: loads are sequential on the main thread, so a plain
+// non-atomic trio
 // needs no lock — only the loader (set/clear via OwnerScope) and the kcdx
 // require closure (read, while the owner is still set because the load is
 // synchronous) touch it, both on the main thread. The closure binds the
@@ -43,8 +43,8 @@ std::atomic<bool> g_installed{false};
 //   * the namespaced module cache (keyed "<owner>:<modname>"), and
 //   * the shared kcdx env table (fenv for every plugin chunk; its
 //     `require` is the kcdx closure, __index falls through to _G).
-// Registry refs, NOT kcdx-side static-const sentinels (lua-bridge.md /
-// AP5; PROBE Q stays zero). LUA_NOREF until Install runs.
+// Registry refs, NOT kcdx-side static-const sentinels. LUA_NOREF until
+// Install runs.
 int g_cacheRef = LUA_NOREF;
 int g_envRef   = LUA_NOREF;
 
@@ -244,7 +244,7 @@ void Install(lua_State* L) {
 
     // (b) Create the namespaced module cache: a fresh GC-managed Lua table
     // pinned by a registry ref (NOT _LOADED, NOT a static-const sentinel —
-    // lua-bridge.md / AP5). Survives the whole session, so a within-plugin
+    // use the live Lua C API). Survives the whole session, so a within-plugin
     // require across DIFFERENT load windows (e.g. cap-27's plugin.lua in
     // RunAll + after.lua in RunAfterEntrypoints both require "state") hits
     // the same cache slot and gets the SAME table.
@@ -261,7 +261,7 @@ void Install(lua_State* L) {
     // plugin chunk that writes a bare global (`myglobal = x`) writes into
     // this env table (visible to other plugin chunks), NOT into _G. Writing
     // a bare global from plugin.lua is discouraged (one-global-`kcdx` rule,
-    // lua-api-surface.md); no plugin or test relies on a plugin chunk
+    // the one-global-`kcdx` rule); no plugin or test relies on a plugin chunk
     // mutating _G, so the write lands on the kcdx env (not silently
     // swallowed) and the chunk still reads it back. (cap-27 / cap-25 share
     // cross-file state through a require'd module + locals, never _G.)

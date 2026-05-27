@@ -39,14 +39,15 @@ namespace kcdx::probes::loc_dump_probe {
 
 namespace {
 
-// === Verified RE constants (LOC-MANAGER-FINDINGS.md) =================
+// === Verified RE constants ==========================================
 //
 // PROBE-LOCAL LABELED CONSTANTS, not Address Library IDs — a USER-APPROVED
 // DEFERRAL for this diagnostic step (mirrors bugsplat_ctor_probe's RVA-comment
-// style). The AP1 cleanup (promote to seed IDs) is deferred to feature
-// graduation by explicit user decision. This is NOT an oversight: a labeled-RVA
-// here is the sanctioned form for the probe; the seed-ID promotion lands when
-// the loc-dump feature graduates out of the probe stage.
+// style). Promoting these to resolved seed IDs (so the address is never a
+// hardcoded RVA) is deferred to feature graduation by explicit user decision.
+// This is NOT an oversight: a labeled-RVA here is the sanctioned form for the
+// probe; the seed-ID promotion lands when the loc-dump feature graduates out of
+// the probe stage.
 //
 // CLocalizedStringsManager ctor (FUN_1809f0ce4). First store is `*this =
 // vtable`; hooking it captures `this` (RCX = Win64 fastcall arg 1).
@@ -56,8 +57,8 @@ constexpr uintptr_t kCtorRva = 0x9f0ce4;
 // We do NOT hardcode their RVAs — we read each address off the captured
 // instance's LIVE vtable at runtime: `(*(void***)this)[21]` / `[22]`. This is
 // the robust path (no overload RVA to maintain, no ASLR base arithmetic) and
-// these are the slots the RE pins (LOC-MANAGER-FINDINGS.md §"Slot 21 + 22 thunk
-// ABIs"): slot 21 (offset 0xA8) = FUN_18051d514 (CryStringT overload), slot 22
+// these are the slots the RE pins (verified against the binary): slot 21
+// (offset 0xA8) = FUN_18051d514 (CryStringT overload), slot 22
 // (offset 0xB0) = FUN_18242e770 (raw C-string overload). Both thunk into the
 // inner FUN_18051d534; their OWN callers are the gameplay frames.
 constexpr size_t kLocSlot21 = 21;  // offset 0xA8
@@ -69,19 +70,20 @@ constexpr size_t kLocSlot22 = 22;  // offset 0xB0
 // but the ABI returns `this` in RAX by convention (the bugsplat probe documents
 // the same), so we type it returning void* and pass through.
 //
-// TWO-arg (verified — FUN_1809f0ce4 in _research/parallel-ghidra-research/
-// loc-manager-recon.txt): param_1 = `this` (RCX), param_2 = a system/context
-// pointer (RDX). The ctor stores it (`this[2] = param_2`) and makes a virtual
-// call through it (`(**(code**)(*param_2 + 0x2a0))(param_2)` at ~ctor+0x110).
-// The probe is observe-only: it passes `sysctx` through UNTOUCHED — never reads
-// or derefs it. (A one-arg typedef left RDX = register garbage, so the ctor's
-// `*param_2 + 0x2a0` deref faulted — AP2, arg-count wrong.)
+// TWO-arg (verified against the binary by Ghidra analysis — FUN_1809f0ce4):
+// param_1 = `this` (RCX), param_2 = a system/context pointer (RDX). The ctor
+// stores it (`this[2] = param_2`) and makes a virtual call through it
+// (`(**(code**)(*param_2 + 0x2a0))(param_2)` at ~ctor+0x110). The probe is
+// observe-only: it passes `sysctx` through UNTOUCHED — never reads or derefs
+// it. (A one-arg typedef left RDX = register garbage, so the ctor's
+// `*param_2 + 0x2a0` deref faulted — the arg count was wrong; the signature is
+// verified against the binary, not inferred from prologue shape.)
 using LocCtor_t = void* (__fastcall*)(void* self, void* sysctx);
 
-// LocalizeString overload typedefs — abi_walker + full-disasm verified
-// (LOC-MANAGER-FINDINGS.md §"Slot 21 + 22 thunk ABIs"; _abi_18051d514.txt /
-// _abi_18242e770.txt). Both are 4-arg __fastcall returning char (bool). The key
-// string is RDX in both, but the CryStringT overload (slot 21) needs ONE deref.
+// LocalizeString overload typedefs — verified against the binary by capstone
+// body-wide stack-arg analysis + full disassembly. Both are 4-arg __fastcall
+// returning char (bool). The key string is RDX in both, but the CryStringT
+// overload (slot 21) needs ONE deref.
 //
 // Slot 21 (FUN_18051d514) — CryStringT overload. `cryStr` (RDX) points at a
 // CryStringT whose char buffer pointer is stored at offset 0 (the thunk does
@@ -121,7 +123,7 @@ constexpr const char* kRowLoc     = "cap-43-loc-localizestring-fire";
 // bad/unmapped pointer is OBSERVED ("(null)") rather than crashing the game —
 // observe-only must never take down the process it observes, and the byte-by-
 // byte cap means an unterminated buffer never walks past `outCap` (a raw
-// strlen in the logger would — AP14: say it, don't go silent or crash). `out`
+// strlen in the logger would — fail loud, don't go silent or crash). `out`
 // is always NUL-terminated on return. `key` is the already-resolved char*
 // (slot 22: RDX directly; slot 21: the result of `*(const char**)cryStr`).
 void SnapshotKey(const char* key, char* out, size_t outCap) {
@@ -160,10 +162,10 @@ const char* DerefKeyPtrNoFault(const void* cryStr) {
 
 // === Decision-1 stack-shape probe (per-@-key call-stack capture) =====
 //
-// GOAL: the prior live run (LOC-MANAGER-FINDINGS.md §"LocalizeString retarget
-// LIVE result") showed caller_ra (the IMMEDIATE return address) collapses to a
-// SINGLE value — RVA 0x51d4a8, a universal text-FORMATTING chokepoint — across
-// all 11,589 fires. That immediate edge does NOT serve find{text=}: it points
+// GOAL: the prior live run showed caller_ra (the IMMEDIATE return address)
+// collapses to a SINGLE value — RVA 0x51d4a8, a universal text-FORMATTING
+// chokepoint — across all 11,589 fires. That immediate edge does NOT serve
+// find{text=}: it points
 // at the formatter, not "the inventory screen" / "the buff system". This probe
 // captures the frames ABOVE that chokepoint to answer the gating question:
 //
@@ -185,7 +187,7 @@ const char* DerefKeyPtrNoFault(const void* cryStr) {
 // WHGame.dll module range, resolved ONCE so each captured frame can be logged
 // as a base-relative RVA (comparable across runs / ASLR). Frames outside this
 // range left the game module and are logged raw-tagged (themselves informative
-// — the stack left WHGame.dll), never silently dropped (AP14).
+// — the stack left WHGame.dll), never silently dropped.
 struct WhgameRange {
     uintptr_t base = 0;
     uintptr_t end  = 0;  // base + image size (exclusive)
@@ -250,7 +252,7 @@ bool ShouldLogStackForKey(const char* key) {
 // snapshotted key (starts with '@'). frames[0] is the immediate caller (~the
 // 0x51d4a8 chokepoint); frames[1..] are what this probe exists to compare.
 //
-// Fail-state (AP14): RtlCaptureStackBackTrace returning 0 frames is logged as a
+// Fail-state: RtlCaptureStackBackTrace returning 0 frames is logged as a
 // distinct "captured=0" line — "ran and found nothing" is NOT a silent blank.
 void LogStackForKey(int slot, const char* key) {
     void* frames[8] = {};
@@ -407,7 +409,7 @@ char __fastcall HookedLocalizeStr22(void* self, const char* str, void* out, char
 // fully-enabled hook. Fail-state: each failure logs at Warn with the slot +
 // resolved target (recoverable — the OTHER slot may still install + fire);
 // severity matches consequence (a non-installed observe-only probe hook is a
-// missed observation, not a crash risk). Per fail-state-logging.md.
+// missed observation, not a crash risk).
 bool InstallOneLocSlot(void** vtable, size_t slot, void* detour,
                        void** origOut, const char* invName) {
     void* target = vtable[slot];

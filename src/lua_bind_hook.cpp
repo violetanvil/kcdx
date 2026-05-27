@@ -1,7 +1,6 @@
 // kcdx.hook — Lua-facing function-interception registration.
 //
-// Phase 2b sub-3 of the manifest-only restructure (see
-// docs/outstanding-work/restructure-plan.md). This is a game-mod
+// Part of the manifest-only restructure. This is a game-mod
 // authoring surface: a plugin's plugin.lua declares "when the game
 // calls this function, run my Lua callback" by calling kcdx.hook{...}.
 // It succeeds the v0.1 [[hook]] + [[mid_hook]] TOML schemas and the
@@ -26,8 +25,8 @@
 //
 // Locators: the common path is `target = "<name>"` (above) — the name
 // supplies BOTH address and verified signature, so no hand-written
-// signature/hex is needed (the disassembler test — cornerstones.md /
-// AP12). ADVANCED/EXPERT locators exist for targets the library can't
+// signature/hex is needed (the disassembler test — the name carries
+// address AND ABI). ADVANCED/EXPERT locators exist for targets the library can't
 // name yet — exactly one of `address` (raw VA/pointer), `pattern` (AOB),
 // `address_id` (numeric id), `target_symbol`, `target_lua_cfunction`, or
 // `mode = "callsite"` with a `target_callsite` sub-locator. These carry
@@ -111,8 +110,8 @@ int LuaTableInt(lua_State* L, int tableIdx, const char* key, int fallback) {
 }
 
 // Read a `key` that may be a kcdx.memory.pointer userdata, a raw
-// lightuserdata (exact VA — preferred for pointer-magnitude values; see
-// .claude/rules/lua-precision.md), or an integer VA. Returns 0 if absent
+// lightuserdata (exact VA — preferred for pointer-magnitude values, since
+// LUA_NUMBER is float), or an integer VA. Returns 0 if absent
 // / wrong type. Same target shape as kcdx.memory.dynamic_hook's `target`.
 uintptr_t LuaTableAddress(lua_State* L, int tableIdx, const char* key) {
     lua_getfield(L, tableIdx, key);
@@ -163,7 +162,7 @@ int TakeCallbackRef(lua_State* L, int tableIdx, const char* key) {
     return luaL_ref(L, LUA_REGISTRYINDEX);
 }
 
-// --- Unknown-key rejection (fail-state-logging.md / AP14) ---------------
+// --- Unknown-key rejection (fail loud, never silent-drop) ---------------
 //
 // The recognized option-key set for kcdx.hook. The binder reads only the
 // keys it knows via lua_getfield and historically IGNORED any sibling key —
@@ -219,7 +218,7 @@ bool ApplyHookEntry(kcdx::lua_registry::Entry& entry,
     // ChainEntry so a later kcdx.hook_chain::Uninstall(handleId) can find
     // and remove it.
     //
-    // Routing branch (Phase 3 sub-1 step 5-main chunks 3+4): a payload
+    // Routing branch: a payload
     // built by the kcdxHookInterface C thunks (src/hook_interface.cpp)
     // carries cFn != nullptr and routes through hook_chain::AddC.
     // Lua-built payloads leave cFn null and route through Add. The two
@@ -484,7 +483,7 @@ int Lua_Hook(lua_State* L) {
 
     // Reject an unrecognized option key BEFORE reading anything — a typo'd
     // key (signagure=, target_calsite=) would otherwise vanish silently, the
-    // author's intent lost with no trace (fail-state-logging.md / AP14).
+    // author's intent lost with no trace (fail loud, never silent-drop).
     {
         std::string bad = kcdx::lua_bind_helpers::FindUnknownKey(
             L, 1, kKnown, sizeof(kKnown) / sizeof(kKnown[0]));
@@ -507,8 +506,8 @@ int Lua_Hook(lua_State* L) {
     // off_thread = "marshal" (default) / "skip" / "error" — per-hook
     // off-thread routing policy. Mirrors kcdxHookOffThread_* on the
     // C++ side (include/kcdx/Interfaces.h:1362-1365) so the Lua + C++
-    // surfaces stay at parity (lua-api-surface.md). Absent → default 0
-    // (Marshal, degraded to Skip-with-warn-once per Outcome P in v1).
+    // surfaces stay at parity (one model, two languages). Absent → default 0
+    // (Marshal, degraded to Skip-with-warn-once in v1).
     {
         lua_getfield(L, 1, "off_thread");
         if (lua_type(L, -1) == LUA_TSTRING) {
@@ -521,9 +520,8 @@ int Lua_Hook(lua_State* L) {
                 lua_pushnil(L);
                 lua_pushfstring(L,
                     "kcdx.hook '%s': off_thread must be \"marshal\" "
-                    "(default), \"skip\", or \"error\" — got \"%s\". See "
-                    ".claude/rules/lua-callback-threading.md for the "
-                    "per-hook off-thread routing model.",
+                    "(default), \"skip\", or \"error\" — got \"%s\". This "
+                    "selects the per-hook off-thread routing policy.",
                     p->name.c_str(), s);
                 return 2;
             }
@@ -544,7 +542,7 @@ int Lua_Hook(lua_State* L) {
     // — the target signature lookup (ResolveSignatureByName) and, at
     // apply, ResolveLocator's ResolveByName — which take the
     // (author, plugin) pair for the self > engine > other precedence
-    // (naming-namespaces.md). Either field may be "" (anonymous caller
+    // (self > engine > other precedence). Either field may be "" (anonymous caller
     // → both empty; or a plugin whose [plugin].author is not yet
     // populated → author empty); pass through, never error. The same
     // callSiteFile/Line + owner are reused for the registry Entry below
@@ -584,7 +582,7 @@ int Lua_Hook(lua_State* L) {
     //                 function-entry scope, selected by omitting `mode`).
     // The BEHAVIOR (before/after/around/replace/mid) is ALWAYS attached
     // under its own key, never named in `mode`. A behavior name in `mode`
-    // is a teaching error (lua-api-surface.md §"errors teach"): it points
+    // is a teaching error (errors teach, in the author's terms): it points
     // the author at the behavior key, it does not just reject. We capture
     // the string here; a behavior-name `mode` is diagnosed after the
     // behavior key is known (so the message can name the actual key).
@@ -677,8 +675,7 @@ int Lua_Hook(lua_State* L) {
     // "callsite" (handled above → callsiteScope). ANY other string is an
     // author mistake: either they echoed the behavior name into `mode`
     // (the behavior key already declares it) or they typed an unknown
-    // scope. Teach the fix rather than just rejecting (lua-api-surface.md
-    // §"errors teach").
+    // scope. Teach the fix rather than just rejecting (errors teach).
     if (haveModeStr && !p->callsiteScope) {
         const char* attached = kcdx::hook_payload::ModeToken(p->mode);
         // Did they name the behavior they actually attached? Point them
@@ -732,7 +729,7 @@ int Lua_Hook(lua_State* L) {
 
     // `target = "<name>"` — the name-based locator that resolves BOTH the
     // address AND the verified signature from the Address Library. This is
-    // the COMMON path (the disassembler test — cornerstones.md / AP12): the
+    // the COMMON path (the disassembler test — the engine carries both): the
     // author names the function and the engine carries its ABI, so no
     // hand-written signature is needed. Implemented as the same name slot
     // address_id="name" already feeds (p->addressName → ResolveLocator's
@@ -858,7 +855,7 @@ int Lua_Hook(lua_State* L) {
     //      one; the author may know better than the seed, or be hooking a
     //      target the library can't name yet).
     //   2. The verified signature the Address Library carries for `target`
-    //      (the COMMON path — the name supplies the ABI; AP12). Used when
+    //      (the COMMON path — the name supplies the ABI). Used when
     //      the author gave NO explicit signature=.
     // Parse now so the apply pass never re-parses. If target resolved an
     // address but has NO verified signature AND no explicit signature= was
@@ -870,7 +867,7 @@ int Lua_Hook(lua_State* L) {
     bool        sigFromTarget = false;
     if (effectiveSig.empty() && haveTarget) {
         // (owningAuthor, owningPlugin) drive the self > engine > other
-        // precedence in ResolveSignatureByName (naming-namespaces.md):
+        // precedence in ResolveSignatureByName (self > engine > other):
         // the signature comes from the SAME row the address resolves to
         // (self target, else engine seed, else another plugin's target).
         // Launch-time binder pass only. The empty-author transition has
@@ -886,7 +883,8 @@ int Lua_Hook(lua_State* L) {
             sigFromTarget = true;
         }
     } else if (!effectiveSig.empty() && haveTarget) {
-        // Sig-mismatch gate (AP12/AP13): the author named a target AND
+        // Sig-mismatch gate (the name should carry the ABI; an explicit
+        // override is detected, not silently accepted): the author named a target AND
         // hand-wrote an explicit signature=. The explicit one WINS (the
         // deliberate-override case stays authoritative — effectiveSig is
         // untouched), but if the name ALSO carries a verified library ABI
@@ -953,7 +951,7 @@ int Lua_Hook(lua_State* L) {
     if (effectiveSig.empty()) {
         lua_pushnil(L);
         if (haveTarget) {
-            // FAIL-STATE INSTRUMENTATION (fail-state-logging.md / AP14):
+            // FAIL-STATE INSTRUMENTATION (fail loud, never silently drop):
             // ResolveSignatureByName returns "" for TWO distinct cases — a
             // name that resolved to an address but carries no verified ABI
             // (the genuine "supply a signature" case), AND a name that does
@@ -992,7 +990,7 @@ int Lua_Hook(lua_State* L) {
             }
             // The target resolved a NAME (a seed entry OR an author-declared
             // target) but carries no ABI — a hook NEEDS a signature, and the
-            // engine never invents one (AP2 / the disassembler test, AP12).
+            // engine never invents one (the disassembler test).
             // This is the folded pattern/rva-no-signature case: an author
             // target whose locator is a raw pattern or RVA can't carry an ABI
             // on its own, so its targets.toml row must add signature=. Teach
@@ -1003,7 +1001,7 @@ int Lua_Hook(lua_State* L) {
                 log::KV::BareStr("detail",
                     "target resolved to an address but carries no verified "
                     "ABI — the author must supply a signature (the engine "
-                    "never invents one, AP2)"));
+                    "never invents one)"));
             lua_pushfstring(L,
                 "kcdx.hook '%s': target '%s' resolved to an address but has "
                 "no signature — a hook needs an ABI. If '%s' is your own "

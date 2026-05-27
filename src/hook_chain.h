@@ -2,8 +2,7 @@
 
 // kcdx::hook_chain — per-target chain of kcdx.hook callbacks.
 //
-// Phase 2b sub-4 of the manifest-only restructure (see
-// docs/outstanding-work/restructure-plan.md). This is the NEW
+// Part of the manifest-only restructure. This is the NEW
 // function-interception dispatch surface for kcdx.hook. It supersedes
 // the legacy kcdx::scripting dynamic_hook_pre/post path (which stays as
 // reference until this is verified, then is removed — the codebase is
@@ -30,8 +29,8 @@
 //             original never runs, callback's return is the result.
 //
 // Conflict policy (v1, safe-but-blunt; smart footprint coexistence is
-// future work — see docs/outstanding-work/smart-replace-conflict-
-// detection.md): the FIRST hook on a target fixes the thunk's signature.
+// future work (smart-replace conflict detection)): the FIRST hook on a
+// target fixes the thunk's signature.
 // A later hook whose signature is incompatible, or that cannot coexist
 // with an already-present replace, is REJECTED (its Add* returns false
 // with a reason). Earlier-in-load-order wins. Compatible hooks chain.
@@ -168,7 +167,7 @@ std::vector<ConflictParticipant> GetParticipantsAtTarget(uintptr_t targetVa);
 // One live chain's modification-inventory record: its resolved target VA plus
 // the owning plugin + hook name, so the inventory DETAIL line names WHO owns a
 // chain rather than the generic surface name "kcdx.hook" (the attribution gap
-// PROBE I flagged in docs/known-issues/save-load crash 0xC8 ...). For a
+// in the 0xC8 save-load crash). For a
 // function-entry / callsite chain the owner is the FIRST entry's
 // (pluginName, name); for a mid chain it is (midPluginName, midName). An
 // empty chain (all entries uninstalled — the detour stays a no-op shim) has
