@@ -149,6 +149,7 @@ add_library(kcdx SHARED
     src/probes/bugsplat_ctor_probe.cpp
     src/probes/loc_dump_probe.cpp
     src/probes/fopen_override_probe.cpp
+    src/probes/mod_loader_probe.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

@@ -25,6 +25,8 @@
                                          // dev-mode probe (ctor capture + by-ID getter)
 #include "probes/fopen_override_probe.h" // Phase 8.5 pak-resolver probe (FOpen
                                          // read-fires + override semantics)
+#include "probes/mod_loader_probe.h"     // Phase 8.5 absorb PROBE U.6 (SELECT-
+                                         // detour timing + I_Mod record layout)
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -130,15 +132,17 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
 
     // PHASE 7 (ctx B): ModLoaderTakeoverArmed — the mod-loader SELECT detour.
-    // TODAY THERE IS NO OPERATION AT THIS PHASE: the absorb's SELECT detour is
-    // not yet built and PROBE U.6's mod_loader_probe::Install is held OUT of
-    // the boot until this refactor lands (docs/init.md §"The mod-loader absorb"
-    // / §"As-is"). The advance is a monotonic MARKER only, placed at the
-    // sequence position the detour WILL occupy (after EngineHooksInstalled,
-    // before EngineSubsystemsInit) so the phase order is honored and a later
-    // require-guard on >= ModLoaderTakeoverArmed is meaningful. It brackets no
-    // existing call — adding one here would be the absorb feature, out of scope
-    // for this pure refactor.
+    // PROBE U.6 (dev-mode-gated, observe-only): a log-only detour on the engine's
+    // mod-loader SELECT orchestrator (wh::C_ModManager FUN_180da104c), installed
+    // here — after EngineHooksInstalled (WHGame.dll mapped + MinHook live), before
+    // EngineSubsystemsInit (where CSystem::Init runs the native mod-load). Resolves
+    // the two probe-first gates for the absorb (docs/init.md §"The mod-loader
+    // absorb"): U.6.1 — does a worker-thread detour fire BEFORE the native mod-load
+    // (decides whether the narrow takeover installs at ctx-B here, or needs ctx-A /
+    // before_game timing); U.6.2 — the I_Mod 0x70-byte record layout kcdx must
+    // synthesize for kcdx-plugins/ entries. ALWAYS calls the original SELECT
+    // unchanged (no list mutation). No-op in production (dev-mode gate).
+    kcdx::probes::mod_loader_probe::Install();
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::ModLoaderTakeoverArmed);
 
     // Localization runtime-dump feature: arm the dev-mode probe
