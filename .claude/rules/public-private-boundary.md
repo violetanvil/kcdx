@@ -38,11 +38,14 @@ A path published by `publish-public.ps1`'s allowlist:
 - Root files: `README.md`, `LICENSE`, `CMakeLists.txt`, `build.ps1`,
   `package-release.ps1`.
 
-Private carve-outs inside `docs/` (live under a public dir but NOT published):
-`docs/outstanding-work/` + `docs/known-issues/` (internal planning + bug trails),
-and the superseded/internal-planning files `docs/design.md`, `docs/design-gaps.md`,
-`docs/phase5c7b-plan.md`. The user-facing reference is `docs/cpp/` + `docs/lua/`
-+ the operational docs (`init.md`, `load-order.md`, `logging.md`, …).
+Private carve-outs inside an otherwise-public dir (live under a public dir but
+NOT published): `docs/outstanding-work/` + `docs/known-issues/` (planning + bug
+trails); the superseded/planning files `docs/design.md`, `docs/design-gaps.md`,
+`docs/phase5c7b-plan.md`, `docs/phase5-rom-port-plan.md`, `docs/migration.md`,
+`docs/VERIFY_PHASE2.md`/`3`/`4`, `docs/archive/`; the archived v0.1 example
+plugins `examples/archive/`; and the RE tooling `tools/refdata-extractor/`. The
+user-facing reference is `docs/cpp/` + `docs/lua/` + the operational docs
+(`init.md`, `load-order.md`, `logging.md`, …).
 
 Anything else is private (`.claude/`, `CLAUDE.md`, `_research/`,
 `third-party-ghidra/`, `test-fixtures/`, `.gitignore`, `publish-public.ps1`, the

@@ -69,7 +69,19 @@ $PrivateSubpaths = @(
   # treats a non-slash-terminated entry as an exact file).
   'docs/design.md',
   'docs/design-gaps.md',
-  'docs/phase5c7b-plan.md'
+  'docs/phase5c7b-plan.md',
+  # Historical / superseded verification + planning docs and archived v0.1
+  # example plugins — internal records, not user-facing reference.
+  'docs/VERIFY_PHASE2.md',
+  'docs/VERIFY_PHASE3.md',
+  'docs/VERIFY_PHASE4.md',
+  'docs/archive/',
+  'docs/phase5-rom-port-plan.md',
+  'docs/migration.md',
+  'examples/archive/',
+  # RE tooling — the Ghidra reference-data extractor exposes the reverse-
+  # engineering methodology; keep it private with the rest of the RE toolchain.
+  'tools/refdata-extractor/'
 )
 
 # ALLOWLIST — the ONLY root-level files published. Note: `.gitignore` is
