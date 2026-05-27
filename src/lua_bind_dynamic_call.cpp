@@ -439,11 +439,39 @@ int Lua_DynamicCall(lua_State* L) {
         return 2;
     }
 
-    // return_type: string, default "void"
+    // return_type: type-name string, default "void"
+    //
+    // #12-followup (fail-state-logging.md / AP14, opposite polarity to the
+    // param_types reject below): an ABSENT return_type keeps the "void"
+    // default (legal, common). A PRESENT-but-non-string value must REJECT —
+    // it must NOT be coerced. On this build LUA_NUMBER=float and lua_isstring
+    // returns TRUE for NUMBERS (lua-precision.md), so the old
+    // `if (lua_isstring) take` silently coerced `return_type = 5` to "5" →
+    // get_type_id("5") resolves a garbage/default type → wrong return
+    // marshaling, no signal. A non-numeric non-string fell to the silent
+    // "void" default — either way the author's intent vanished. Use
+    // lua_type == LUA_TSTRING (NOT lua_isstring) for the genuine-string check.
     std::string return_type_str = "void";
     {
         lua_getfield(L, 1, "return_type");
-        if (lua_isstring(L, -1)) return_type_str = lua_tostring(L, -1);
+        const int t = lua_type(L, -1);
+        if (t == LUA_TNIL) {
+            // absent → keep the "void" default, no reject.
+        } else if (t == LUA_TSTRING) {
+            return_type_str = lua_tostring(L, -1);
+        } else {
+            const char* gotType = lua_typename(L, t);
+            lua_pop(L, 1);   // the bad return_type value
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.memory.dynamic_call: return_type is a %s — it must be a "
+                "type-name string (e.g. \"void\", \"i32\", \"ptr\"). "
+                "return_type defines how the native function's return value is "
+                "marshaled back to Lua; a non-string value would mis-resolve "
+                "the return type.",
+                gotType);
+            return 2;
+        }
         lua_pop(L, 1);
     }
 

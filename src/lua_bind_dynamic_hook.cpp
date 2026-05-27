@@ -241,7 +241,41 @@ int Lua_DynamicHook(lua_State* L) {
         return 2;
     }
 
-    std::string return_type = GetStringField(L, "return_type", "void");
+    // return_type: type-name string, default "void".
+    //
+    // #12-followup (fail-state-logging.md / AP14, opposite polarity to the
+    // param_types reject below): an ABSENT return_type keeps the "void"
+    // default (legal, common). A PRESENT-but-non-string value must REJECT.
+    // We read it AT THE CALLSITE rather than via the shared GetStringField
+    // (which also serves `name` and whose lua_isstring permissiveness would
+    // coerce `return_type = 5` to "5" — the LUA_NUMBER=float gotcha,
+    // lua-precision.md). Leaving GetStringField untouched preserves `name`'s
+    // existing handling (a missing name still hits its required-field reject
+    // above). Use lua_type == LUA_TSTRING, NOT lua_isstring.
+    std::string return_type = "void";
+    {
+        lua_getfield(L, 1, "return_type");
+        const int t = lua_type(L, -1);
+        if (t == LUA_TNIL) {
+            // absent → keep the "void" default, no reject.
+        } else if (t == LUA_TSTRING) {
+            return_type = lua_tostring(L, -1);
+        } else {
+            const char* gotType = lua_typename(L, t);
+            lua_pop(L, 1);   // the bad return_type value
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.memory.dynamic_hook '%s': return_type is a %s — it must "
+                "be a type-name string (e.g. \"void\", \"i32\", \"ptr\"). "
+                "return_type defines how the hooked function's return value is "
+                "marshaled to the Lua callbacks; a non-string value would "
+                "mis-resolve the return type.",
+                name.c_str(), gotType);
+            return 2;
+        }
+        lua_pop(L, 1);
+    }
+
     std::string paramErr;
     std::vector<std::string> param_types =
         GetStringListField(L, "param_types", paramErr);

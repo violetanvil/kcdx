@@ -20,6 +20,18 @@
 #     state: the walk silently truncates at the non-string entry → builds a
 #     thunk for the wrong arity → the call proceeds → FAIL.
 #
+#   * cap-50-return-type-nonstring (#12-followup): kcdx.memory.dynamic_call
+#     with a PRESENT-but-NON-STRING return_type (return_type = 5) is REJECTED
+#     with (nil, err) naming return_type — NOT coerced to "5" / defaulted to
+#     void. Opposite polarity to #12 (param_types). Feature-broken state: a
+#     non-string return_type is silently coerced/defaulted → dynamic_call
+#     returns a callable handle instead of rejecting → FAIL.
+#
+#   * cap-50-return-type-absent-ok (#12-followup guard): the AP15 inverted-shape
+#     guard. kcdx.memory.dynamic_call with NO return_type still defaults to
+#     "void" and returns a callable handle. Feature-broken state: the fix
+#     over-rejects a MISSING return_type → returns (nil, err) → FAIL.
+#
 #   * cap-50-null-return-distinguishable (#10): kcdx.memory.get_module_base_
 #     address on a definitely-absent module RAN and returned a NULL pointer
 #     userdata (not nil, not an error) — the call is observably "ran, found
@@ -45,6 +57,7 @@ kcdx_min_version    = "0.1.0"
 version_independent = true
 log_level           = "info"
 test_names          = ["cap-50-unknown-key", "cap-50-param-types-nonstring",
+                       "cap-50-return-type-nonstring", "cap-50-return-type-absent-ok",
                        "cap-50-null-return-distinguishable"]
 
 [entrypoints]

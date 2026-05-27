@@ -80,6 +80,73 @@ do
 end
 
 -- ====================================================================
+-- (#12-followup) cap-50-return-type-nonstring — a PRESENT-but-NON-STRING
+-- return_type is an ERROR, not a thing to coerce or default away. This is the
+-- OPPOSITE polarity to #12 (param_types): there the bad value truncated a
+-- list; here a non-string return_type was silently mis-served. On this build
+-- LUA_NUMBER=float and lua_isstring returns TRUE for numbers (lua-precision.md),
+-- so pre-fix `return_type = 5` coerced to "5" → get_type_id("5") resolved a
+-- garbage/default type → wrong return marshaling with no signal; a non-numeric
+-- non-string fell to the silent "void" default. Post-fix the binder rejects a
+-- present-non-string with (nil, err) naming return_type. (An ABSENT return_type
+-- still defaults to "void" — see cap-50-return-type-absent-ok below.)
+--
+-- target is the same harmless integer VA the param_types row uses: the reject
+-- fires at return_type validation BEFORE any JIT / invocation.
+--
+-- FALSIFIABLE (AP15): the feature-broken state is "a non-string return_type is
+-- silently coerced/defaulted → dynamic_call returns a callable handle
+-- (c ~= nil) instead of rejecting → FAIL". The pass reads the err the reject
+-- produced and that it names return_type.
+do
+    local c, err = kcdx.memory.dynamic_call{
+        target      = 0x12345678,   -- bogus VA; never reached (rejected first)
+        return_type = 5,            -- non-string → must REJECT, not coerce to "5"
+    }
+    local pass = (c == nil)
+                 and type(err) == "string"
+                 and err:find("return_type", 1, true) ~= nil
+    kcdx.test.report("cap-50-return-type-nonstring", pass,
+        pass and ("non-string return_type rejected with (nil, err): " .. err)
+             or  ("expected (nil, err) naming return_type (the non-string value "
+                  .. "rejected, not coerced/defaulted); got c=" .. tostring(c)
+                  .. " err=" .. tostring(err)
+                  .. " — a callable handle here means a non-string return_type "
+                  .. "was silently mis-served (coerced to \"5\" or defaulted to "
+                  .. "void), losing the author's intent with no signal"))
+end
+
+-- ====================================================================
+-- (#12-followup guard) cap-50-return-type-absent-ok — the AP15 inverted-shape
+-- guard for the reject above. An ABSENT return_type MUST keep defaulting to
+-- "void" (legal, common) and must NOT be rejected. A fix that over-rejected
+-- (treated nil/missing as a bad value) would FAIL this row. We call
+-- dynamic_call with NO return_type and NO param_types; the binder JITs a
+-- void/no-arg stub and returns a callable handle. We do NOT invoke the handle
+-- (the bogus target is never dereferenced — the JIT only emits code referencing
+-- the address; cap-20-dyncall confirms the build-and-return path), so this is
+-- safe.
+--
+-- FALSIFIABLE (AP15, inverted): the feature-broken state is "the fix rejects an
+-- absent return_type → dynamic_call returns (nil, err) instead of a handle
+-- (c == nil) → FAIL". The pass reads the actual returned handle.
+do
+    local c, err = kcdx.memory.dynamic_call{
+        target = 0x12345678,   -- bogus VA; never invoked (we only build the handle)
+        -- return_type ABSENT → must default to "void", NOT reject
+    }
+    local pass = (c ~= nil)
+    kcdx.test.report("cap-50-return-type-absent-ok", pass,
+        pass and ("absent return_type defaulted to void: a handle was returned "
+                  .. "(the present-non-string reject does not over-reject the "
+                  .. "absent/missing field)")
+             or  ("expected a non-nil handle for an absent return_type (absent → "
+                  .. "void default); got c=" .. tostring(c) .. " err="
+                  .. tostring(err) .. " — a reject here means the fix wrongly "
+                  .. "treats a MISSING return_type as a bad value (over-reject)"))
+end
+
+-- ====================================================================
 -- (#10) cap-50-null-return-distinguishable — get_module_base_address on a
 -- definitely-absent module RUNS and returns a NULL pointer userdata (not nil,
 -- not an error). The Lua-observable is "the call ran and returned a null
@@ -116,6 +183,9 @@ kcdx.log.info("CAP50",
     "kcdx.* binder validation self-test ran at load: cap-50-unknown-key "
     .. "(kcdx.hook rejects + names a typo'd key), cap-50-param-types-nonstring "
     .. "(dynamic_call rejects a non-string param_types entry, no silent "
-    .. "truncation), cap-50-null-return-distinguishable (get_module_base_"
+    .. "truncation), cap-50-return-type-nonstring (dynamic_call rejects a "
+    .. "present-non-string return_type, no coerce/default), cap-50-return-type-"
+    .. "absent-ok (an ABSENT return_type still defaults to void — over-reject "
+    .. "guard), cap-50-null-return-distinguishable (get_module_base_"
     .. "address returns an observable null pointer for an absent module; WARN "
     .. "agent-log-confirmed)")
