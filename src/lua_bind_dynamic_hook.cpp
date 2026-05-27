@@ -96,7 +96,7 @@ std::vector<std::string> GetStringListField(lua_State* L, const char* key,
             lua_pop(L, 1);  // end of array part — stop cleanly
             break;
         }
-        if (!lua_isstring(L, -1)) {
+        if (lua_type(L, -1) != LUA_TSTRING) {
             const char* gotType = lua_typename(L, lua_type(L, -1));
             lua_pop(L, 1);  // the bad entry
             char buf[160];

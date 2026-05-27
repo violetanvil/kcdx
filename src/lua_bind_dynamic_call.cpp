@@ -467,7 +467,7 @@ int Lua_DynamicCall(lua_State* L) {
                     lua_pop(L, 1);
                     break;
                 }
-                if (!lua_isstring(L, -1)) {
+                if (lua_type(L, -1) != LUA_TSTRING) {
                     const char* gotType = lua_typename(L, lua_type(L, -1));
                     lua_pop(L, 1);   // the bad entry
                     lua_pop(L, 1);   // the param_types table
