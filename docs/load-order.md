@@ -5,13 +5,15 @@ refuses to change because the request is impossible.
 
 ## Mental model
 
-One global ordered list of plugins. One immovable sentinel: `game.exe`.
+One global ordered list. One immovable sentinel: `game.exe`.
 The list naturally has two zones:
 
 ```
 [ kcdx_builtin.bugsplat_filename_fix ]  zone=before_game,  priority=30
 [ some_author.cool_fix               ]  zone=before_game,  priority=50
 ─── game.exe ───────────────────────────  (immovable sentinel)
+[ mods.inventory_in_dialogue         ]  zone=after_game,   priority=0
+[ mods.cool_pak_mod                  ]  zone=after_game,   priority=0
 [ ts.cap_04_midhook                  ]  zone=after_game,   priority=10
 [ some_author.tweak_mod              ]  zone=after_game,   priority=50
 [ some_author.late_arriving_mod      ]  zone=after_game,   priority=90
@@ -21,9 +23,43 @@ Each row is identified by the qualified `<author>.<plugin>` form the engine
 derives from the plugin's manifest (`[plugin].author` + `[plugin].name`) — the
 same `<author>.<plugin>`-prefixed model every shared-namespace surface uses.
 
-This mirrors the SKSE / MO2 / Vortex model. Plugins are rows; the
-sentinel is an immovable divider; users drag freely within their
+This mirrors the SKSE / MO2 / Vortex model. Rows are draggable; the
+sentinel is an immovable divider; users reorder freely within their
 capability limits.
+
+### kcdx IS the mod loader — plugins AND vanilla pak mods in one list
+
+kcdx is the KCD2 mod loader. It discovers, orders, and loads **both**:
+
+- **kcdx plugins** — a folder with a `kcdx.toml`, found in either
+  `kcdx-plugins/` OR the game's `mods/` directory (a kcdx plugin works dropped
+  in either place).
+- **vanilla pak mods** — a folder in `mods/` with a `mod.manifest` and **no**
+  `kcdx.toml` (the ordinary KCD2 mod format).
+
+Both kinds resolve into the SAME ordered list above — so a user with a mix of
+vanilla pak mods and kcdx plugins reorders them all from one place, the same
+way. The `kcdx.toml`'s presence is the sole classifier: present → kcdx plugin
+(its pak content loads the same way a vanilla mod's would, PLUS kcdx's extra
+capabilities); absent → vanilla pak mod.
+
+A vanilla pak mod appears in the list as a **`mods.<modid>`** row. This is the
+same `<author>.<plugin>` namespace model the rows above use, applied to vanilla
+mods — `mods` is the namespace, the `<modid>` from the mod's `mod.manifest` is
+the name. By default a pak mod sits at `zone=after_game`, `priority=0` (an early
+`after_game` block, so vanilla mods lead the author plugins), and within that
+block the pak mods keep their `mods/mod_order.txt` relative order. The human mod
+name (the `mod.manifest` `<name>`) rides along as a trailing `#` comment on the
+row, so you see the real mod name even though the row is keyed by `<modid>`.
+
+### Upgrading a vanilla pak mod into a kcdx plugin
+
+A mod author turns a vanilla pak mod into a kcdx plugin by dropping a
+`kcdx.toml` at the mod root. Nothing else changes: the same pak content loads
+the same way, PLUS the mod can now use kcdx's capabilities (hooks, byte
+patches, console commands, Lua). The upgrade is purely additive — the
+`kcdx.toml`'s presence is the only thing that reclassifies the folder from
+vanilla pak mod to kcdx plugin.
 
 Why the sentinel: WHGame.dll's `DllMain` is the only natural "phase
 break" in KCD2's startup. Some fixes (BugSplat filename, custom
@@ -35,18 +71,28 @@ can position other rows around.
 ## Sort key
 
 ```
-(Zone asc, plugin_effective_priority asc, plugin_name asc,
+(Zone asc, plugin_effective_priority asc, orderIndex asc, plugin_name asc,
  Source asc, entry.priority asc, entry.name asc)
 ```
 
 - **Zone** decides the side of the sentinel. `before_game = 0`,
   `after_game = 1`.
-- **Plugin effective priority** orders plugins within their zone.
+- **Plugin effective priority** orders rows within their zone.
   `0..100`; `0` = earliest, `100` = latest, `50` = middle (default).
-- **Plugin name** breaks priority ties for determinism.
+- **orderIndex** breaks priority ties by `mods/mod_order.txt` line position,
+  so vanilla pak mods at the same priority keep their `mod_order.txt` relative
+  order. A pak mod not listed in `mod_order.txt` sorts after the listed ones;
+  a kcdx plugin carries the maximum `orderIndex`, so among plugins this
+  tiebreaker is a no-op and their relative order still breaks on name.
+- **Plugin name** breaks remaining ties for determinism.
 - **Source** (`Engine < User`) preserves "engine fixes lead" for ties
   at the plugin level.
 - **Entry priority + name** order multiple entries inside one plugin.
+
+A vanilla pak mod sorts by this same key: `zone=after_game`, `priority=0`,
+`orderIndex` from its `mod_order.txt` line. To move a pak mod above or below
+others, change its priority in `load_order.toml` (below) exactly as you would
+for a plugin.
 
 The priority range is deliberately sparse: `0..100`. That gives
 users / authors room to insert "definitely before X" without
@@ -103,14 +149,30 @@ name      = "some_author.tweak_mod"
 zone      = "after_game"
 priority  = 50
 enabled   = true
+
+[[plugin]]
+name      = "mods.cool_pak_mod"   # Cool Pak Mod
+zone      = "after_game"
+priority  = 20                     # bumped above the default-0 pak block
+enabled   = true
 ```
+
+A **vanilla pak mod** is reordered exactly like a plugin: edit its
+`mods.<modid>` row — change `zone`, `priority`, or `enabled`, keyed by the
+`<modid>` from the mod's `mod.manifest`. kcdx owns the resolved order; the
+trailing `#` comment carries the human mod name so you can tell which mod a
+`<modid>` row is. kcdx discovers each pak mod on first run, seeds its initial
+position from `mods/mod_order.txt`, and writes its `mods.<modid>` row here so
+you can edit it; `mod_order.txt` is only the seed kcdx reads and keeps in sync
+— your `load_order.toml` edits are the authority.
 
 Per-field rules:
 
-- **`name`** — required. The qualified `<author>.<plugin>` form (author
-  taken from `[plugin].author`, plugin from `[plugin].name`). A row with
-  no `name`, or a `name` that doesn't match any discovered plugin's
-  qualified form, is skipped with a WARN line.
+- **`name`** — required. For a plugin: the qualified `<author>.<plugin>` form
+  (author taken from `[plugin].author`, plugin from `[plugin].name`). For a
+  vanilla pak mod: `mods.<modid>` (the `<modid>` from its `mod.manifest`). A
+  row with no `name`, or a `name` that doesn't match any discovered plugin or
+  pak mod, is skipped with a WARN line.
 - **`zone`** — optional. Missing → author default. Out-of-vocab values
   (anything other than `before_game` / `after_game`) get a WARN and
   fall back to author default.
