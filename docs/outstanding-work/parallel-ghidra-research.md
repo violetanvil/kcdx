@@ -138,7 +138,7 @@ Per function:
 | `auto_name` (`FUN_<va>`) | Ghidra (always populated) | the address authors pass for uncategorized fns |
 | `module`, `rva` | Ghidra | resolution |
 | `content_hash` (BLAKE3) | hash of fn bytes | per-version survival check |
-| `signature` | abi_walker (`_research/phase6-save-load/phase6_abi_walker.py`), NOT prologue-shape (AP2) | callback-hook arg marshalling |
+| `signature` | abi_walker (`phase6_abi_walker.py`), NOT prologue-shape — see §4e for the honest fidelity (width-typed floor now; caller-side register-arg estimate; verified static arity is NOT achievable; exact arity/types via the declare/share overlay, never fabricated) | callback-hook arg marshalling |
 | `decompile_quality` (`clean`/`partial`/`unanalyzable`) | Ghidra | engine gates `statement.*` on quality |
 
 Per statement (each clean/partial function):
@@ -205,6 +205,56 @@ The rework ADDS:
   - **`loc_content`** (`loc_key`, `on_screen_text`, `lang`) — the ~190K
     dialogue/quest/soul keys; text-queryable (find/retext a line) but carries no
     function edges (no gameplay function behind a spoken line).
+
+### 4e. The `signature` fidelity — DECIDED (A + B + D, NOT C)
+
+The abi_walker is the sanctioned ABI tool, but a cross-check during the build
+established what it can and CANNOT establish from a callee-body stack scan, and
+an architect review confirmed the engine consumes the seed signature at a fidelity
+that matches. (This decision was made during the §8 step-2 build; restored here
+after a doc regression.)
+
+**What the abi_walker proves from the callee body:** per-arg ACCESS WIDTH
+(8/16/32/64-bit) + a gpr-vs-xmm int/float hint. **What it does NOT prove:**
+- **True arity** — the raw stack-slot count is unreliable both ways (large-frame
+  locals inflate it; register-resident args never spilled are invisible). The
+  7-arg `SaveGame` recovery was a HUMAN reading caller-side setup, not the raw
+  count.
+- **Per-slot type** — width cannot distinguish `i32`/`u32`/`f32`, `ptr`/`i64`, or
+  `cstr`/`wstr`/`ptr`.
+
+**The engine already speaks this boundary** (`docs/lua/hook.md` `HOOK_SIG_GATE`):
+a wrong arg-count or return-width is a HARD conflict (`crash_risk=true`); a
+per-slot type nuance is a SOFT warning. A wrong arity in the seed is a crash risk
+with no warning — so a fabricated count is worse than none.
+
+**The decided strategy — three mechanisms, no fabrication:**
+- **(A) Honest width-typed seed for the whole binary, NOW.** `produce_signatures.py`
+  emits a WIDTH-TYPED signature using only the coarsest honest type (8-byte
+  gpr→`i64`, 4→`i32`, xmm→`f64`/`f32`), return marked unknown (`?`),
+  `signature_source = abi_walker`, `abi_confidence = count+width`. NEVER
+  `ptr`/`u*`/`cstr`/`wstr`. `observed_arg_slots` is an explicit lower-bound FLOOR,
+  not a verified count.
+- **(B) Caller-side REGISTER-arg estimate** (`produce_caller_reg_args.py`,
+  `caller_reg_args/`). A feasibility probe FALSIFIED "verified static arity"
+  (Outcome C: ~30% of functions are vtable-dispatched with NO static caller —
+  incl. `SaveGame`; and the stack-arg side is unfixable noise). The salvaged win:
+  the caller's REGISTER-arg count (rcx/rdx/r8/r9, capped at 4) recovers cleanly
+  (`FUN_180001050`→3). It ships as a NON-authoritative tighter floor
+  (`count+width+caller_reg`), merged over `signatures/` by `max(observed_arg_slots,
+  caller_reg_arg_count)`. NOT "verified" — exact only for ≤4-arg functions.
+- **(D) Exact per-slot types + exact arity** ride the Phase-9.3 declare/share
+  overlay (`kcdx.dll.declare` / `kcdx.functions.*`) — the cornerstone's
+  declare-once/share answer for what the engine cannot pre-know.
+- **(NOT C) Ghidra's typed prototype is NOT adopted as a verified signature** — it
+  stays the `signature_source = ghidra` floor that abi_walker (count+width) wins
+  over at merge.
+
+**Net author value:** discovery (`kcdx.find`), `kcdx.statement.*`, and
+`kcdx.hook mode=mid` do NOT touch the signature and are full. Only the typed
+entry-hook callback consumes it — and there the author hooks by name and gets
+address + a width-typed frame with a register-tightened floor, the engine flags
+any mismatch, and exact types/arity come from the declare/share overlay.
 
 ---
 
@@ -326,12 +376,25 @@ runtime-dump probe (§6) is the other not-yet-built tool.
 
 In dependency order. Each routes to the skill that gives it the right discipline.
 
+> **As-built location (2026-05-27):** the production extractor lives at top-level
+> **`tools/refdata-extractor/`** (`ghidra/` Java passes + launcher + vendored
+> BLAKE3 + the hash contract; `python/` emit passes + probes + the validation
+> harness; `run-parallel.ps1` the parallel orchestrator) — committed, tracked
+> tooling. (It was briefly misfiled under `_research/` + `third-party-ghidra/`
+> and lost when those gitignored trees were stripped; rebuilt into `tools/`,
+> commits `f64f4dc` + `614f563`.) The Ghidra install/project + the enumeration
+> CSV stay gitignored/local. The harness (`python/validate_extractor_output.py`)
+> is the falsifiable regression net — 26 checks vs independent anchors.
+
 | # | Step | Skill | Needs launch? | Status |
 |---|---|---|---|---|
 | 0 | Commit the reusable tooling + research logs + this plan | `/commit` | no | **DONE** (`fae1d86`, `f92afc3`) |
-| 1 | **Compute-sizing probe** — time statement+anchor+edge extraction on a ~1K-fn sample, extrapolate to 321K. The feasibility gate for the full-binary dump. | in-context measurement | no | pending |
-| 2 | **Build the production extractor** — statements + hash + signature + string/callee anchors + caller-graph edges, emitting the §4 CSV/JSONL. Mechanical batch job. | `/feature` | no | pending |
-| 3 | **Run the full dump** over WHGame.dll (+ the 4 separate DLLs); import to `data/reference.sqlite`. | batch run + maintainer import | no | pending |
+| 1 | **Compute-sizing probe** — decompile + abi_walker per-fn cost on a ~1K-fn sample, extrapolate to 321K. | in-context measurement | no | **DONE** (full-binary feasible; abi_walker ~4.7× cheaper than decompile) |
+| 2 | **Build the production extractor** — functions + statements + referenced_vars + call_edges (Java) + signatures + caller_reg_args (Python) → §4 CSV-per-table RVA-sharded dirs. | `/feature` | no | **DONE** (`tools/refdata-extractor/`; harness 26/26; BLAKE3 35/35) |
+| 2p | **Parallel orchestrator + RVA-range filter** — N workers over disjoint ranges on per-worker project copies, merge by disjoint shards. (Ghidra locks a project exclusively — per-worker COPIES are required, probe-verified.) | `/feature` | no | **DONE** (`run-parallel.ps1`; `614f563`) |
+| 3a | **Run the full dump** over WHGame.dll. | batch run | no | **DONE** (8-way parallel, 2026-05-27; 321,120 functions; 5.24M statements; 10.88M referenced_vars; 1.52M call_edges; output at `C:\kcdx-refdata\refdata-full-20260527-105617\`, 1.3 GB; every anchor verified at full scale) |
+| 3b | **Import the dump → `data/reference.sqlite`** (maintainer-side): build the §9.1 schema, load the CSV-per-table dirs, assign the append-only stable IDs (name+signature+caller-graph fingerprint). | maintainer import tool | no | **NEXT — not built** (no import tool, no `data/reference.sqlite`, no `vendor/sqlite/` yet) |
+| 3c | **Secondary DLLs** (BugSplat64, BugSplatRc64, Quatmosphere, WhGdk) — NOT yet imported into the Ghidra project; dump them after import (own re-run). | import + batch run | no | future |
 | L1 | **Loc-manager RE** — locate `CLocalizedStringsManager`, getters, int-ID = vector index. | `/research-disassembly` | no | **DONE** (`LOC-MANAGER-FINDINGS.md`) |
 | L2 | **Build the loc runtime-dump probe** — hook the by-ID getters / capture manager-`this`, walk the key↔id table, emit `caller↔id↔key` for `loc_gameplay`; + `loc_content` text table. Step 1 = minimal hook-fires/ABI probe (§6). | `/feature` | no (build); **yes** (run) | pending |
 | L3 | **Run the loc dump** (a play session) → integrate edges into `loc_gameplay` feeding `find{text=}`. | launch + import | **yes** | pending |
