@@ -385,3 +385,103 @@ No fresh Ghidra needed; no new `_research/` artifact produced.
 - The plugin interface ABIs (`kcdx*Interface`).
 - The existing `mod_absorb::record_synth` machinery — it stays; only WHERE
   it runs (worker thread vs sentinel callback) moves.
+
+## Probe findings — comprehensive ctor probe (commit `87a2a38`, 2026-05-27)
+
+The three-point probe ran twice (no-mods + with-mods boots) and resolved
+every uncertainty the narrow step-1 probe had surfaced. Full analysis in
+[`_research/init-cycle-recon/FINDINGS.md`](../../_research/init-cycle-recon/FINDINGS.md);
+this section captures the architecture-relevant pieces.
+
+### The C_ModManager layout (0x68 bytes) — confirmed
+
+| Offset | Width | Field | Notes |
+|---|---|---|---|
+| +0x00 | 8 | C_ModManager vtable | Static address (image RVA `0x3AA2E60`); 8/8 code pointers |
+| +0x08 | 8 | `CSystem* sys` (ctor arg2) | — |
+| +0x10 | 8 | `CryStringT modsDir` in-place | Content always "mods"; header `{pad=0, nRefs=1, nLength=4, nAllocSize=4}` |
+| +0x18..+0x28 | 3×8 | scanned-list `std::vector<I_Mod>` (0x70-stride INLINE records, NOT pointers) | begin / end / end_of_storage |
+| +0x30..+0x40 | 3×8 | enabled-list `std::vector<I_Mod*>` (8-byte stride) | begin / end / end_of_storage |
+| +0x48 / +0x50 / +0x58 | 3×8 | **unused — zero in both boots** | — |
+| +0x60 | 1 | initialized flag (byte=1) | Upper 7 bytes zero |
+
+The two vector triples have **different element strides**: the enabled
+list is pointers (8 bytes each), the scanned list is inline records
+(0x70 bytes each). Both first-element vtables match Address Library id
+3105 (`ImodVtable_primary`).
+
+**MOUNT iterates only the enabled list** (per seed row 3102: *"iterates
+the ENABLED wh::I_Mod list (modMgr+0x30)"*). The scanned list is an
+intermediate working set for SELECT's mod_order.txt + manifest-parse
+passes; nothing downstream of SELECT reads it.
+
+### POINT B vs POINT C — separating ctor writes from SELECT writes
+
+At POINT B (SELECT entry — post-ctor-zero-init, pre-SELECT-body), only
+four slots are non-zero in both boots: `+0x00` (vtable), `+0x08` (sys),
+`+0x10` (modsDir CryString), `+0x60` (init flag).
+
+At POINT C (ctor return — SELECT has run inline), six more slots become
+non-zero: the scanned-list triple (`+0x18`/`+0x20`/`+0x28`) and the
+enabled-list triple (`+0x30`/`+0x38`/`+0x40`).
+
+**This cleanly separates the ctor's responsibility from SELECT's.** The
+kcdx-owned replacement ctor in the implementation step writes only
+`+0x00`/`+0x08`/`+0x10`/`+0x60`; its caller (kcdx's own enabled-list
+builder, running on the worker thread) populates `+0x30`/`+0x38`/`+0x40`
+directly. The scanned list is left empty — MOUNT does not iterate it.
+
+### "kcdx owns the loader" — REVISED in light of probe findings
+
+The earlier RE finding lean was *"CALL the original ctor + SELECT, then
+wholesale-replace the enabled-list vector"*. The user overruled this in
+consult round 2: *"don't call the original, we do ours; we can call what
+the original calls if needed, but we do it through our loop."*
+
+The probe findings show this is fully viable:
+
+- The ctor's writes are 10 fields (4 ctor-direct + 6 from SELECT's
+  inline call). Kcdx can replicate all 10 directly using existing
+  machinery (`record_synth` already builds I_Mod records with correct
+  CryString headers, vtables ids 3105/3106, the absorb pattern).
+- The scanned list can be left empty (MOUNT does not iterate it).
+- The console command `wh_mod_GenerateReport` registration is a one-line
+  call kcdx can replicate (#5 in the follow-ups below) or explicitly
+  drop (it's a developer command, not a user-facing feature).
+- The three unused slots (`+0x48`/`+0x50`/`+0x58`) confirmed-zero in
+  both boots — kcdx leaves them zero.
+
+### The previous narrow probe was reading the wrong memory
+
+The narrow step-1 probe (commit `bf21802`) read `outResult` directly,
+which is the caller's stack slot, not the C_ModManager itself. The ctor
+stores into `*outResult` last (`mov [rsi], rbx`), so the object lives at
+`*outResult`. The "+0x30 = 'mods' ASCII" / "+0x48 = 15" / "+0x50 = 54"
+findings the narrow probe reported were ALL CSystem::Init's local stack
+data (its temporary CryString scratch for building the modsDir arg). The
+comprehensive probe corrects this and walks the actual heap object.
+
+### Address Library rows the implementation step needs
+
+These rows are needed before the kcdx-owned bracket can land. None of
+them existed before the probe; none block step 2 (Workshop walk in
+`pak_mod_registry`).
+
+| Function | RVA | Purpose |
+|---|---|---|
+| C_ModManager vtable | `0x03AA2E60` | Write into `+0x00` of the synthesized object |
+| WHGame allocator (`FUN_1804f7820`) | `0x004F7820` | Allocate the 0x68 block; dtor's free must match |
+| CryString placement-construct (`FUN_1804fd468`) | `0x004FD468` | Build the in-place CryString at `+0x10` |
+| CryString init-from-string (`FUN_1804f692c`) | `0x004F692C` | Init the stack-local CryString from the modsDir arg (already named `tmp_name_init` in phase7-recon work) |
+| Console-cmd register (`FUN_180B99098`) | `0x00B99098` | Register `wh_mod_GenerateReport` (optional — drop if we don't want the dev command) |
+
+Per [[project-kcdx-phase9-db-addrlib-unification]], these land via the
+DB unification path (the in-flight three-track work), not direct
+seed.csv edits. Surface to the user when step 4 needs them.
+
+### Open follow-up — the C_ModManager destructor
+
+Not analyzed yet. Will be needed at game shutdown / save-reload — kcdx's
+replacement ctor must allocate via WHGame's allocator (`FUN_1804f7820`,
+above) so the destructor's matching `free` call lines up. Add to the
+RE worklist before step 4.

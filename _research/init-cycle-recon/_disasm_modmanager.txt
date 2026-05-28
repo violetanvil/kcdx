@@ -1,0 +1,67 @@
+==============================================================================
+== ModManager_ctor@180DA0EB0   VA=0x180da0eb0  RVA=0xda0eb0
+==============================================================================
+  (56 instructions, 0xd9 bytes)
+
+--- WRITES to [base+N] where N < 0x100 (filtered) ---
+  0x180da0ef9  mov     [rbx+0x08]  <- reg=rbp
+  0x180da0f01  mov     [rbx+0x00]  <- reg=rax
+  0x180da0f15  mov     [rbx+0x18]  <- reg=rdi
+  0x180da0f1c  mov     [rbx+0x20]  <- reg=rdi
+  0x180da0f27  mov     [rbx+0x28]  <- reg=rdi
+  0x180da0f32  mov     [rbx+0x30]  <- reg=rdi
+  0x180da0f36  mov     [rbx+0x38]  <- reg=rdi
+  0x180da0f3a  mov     [rbx+0x40]  <- reg=rdi
+  0x180da0f3e  mov     [rbx+0x48]  <- reg=rdi
+  0x180da0f42  mov     [rbx+0x50]  <- reg=rdi
+  0x180da0f46  mov     [rbx+0x58]  <- reg=rdi
+  0x180da0f4a  mov     [rbx+0x60]  <- imm=0x1
+  0x180da0f60  mov     [rsi+0x00]  <- reg=rbx
+
+--- READS from [base+N] where N < 0x100 (filtered, dedup) ---
+  0x180da0ed1  lea     -> [rdi+0x68]
+  0x180da0ee5  mov     -> [r14+0x00]
+  0x180da0efd  lea     -> [rbx+0x10]
+
+--- CALL sites ---
+  0x180da0ed4  call 0x1804f7820  (RVA 0x4f7820)
+  0x180da0eed  call 0x1804f692c  (RVA 0x4f692c)
+  0x180da0f09  call 0x1804fd468  (RVA 0x4fd468)
+  0x180da0f4e  call 0x180b99098  (RVA 0xb99098)
+  0x180da0f56  call 0x180da104c  (RVA 0xda104c)
+  0x180da0f6e  call 0x1804fc884  (RVA 0x4fc884)
+
+--- INTERESTING immediates (potential data-section RVAs or ASCII) ---
+
+==============================================================================
+== ModManager_Select@180DA104C   VA=0x180da104c  RVA=0xda104c
+==============================================================================
+  (77 instructions, 0x12c bytes)
+
+--- WRITES to [base+N] where N < 0x100 (filtered) ---
+  0x180da104f  mov     [rax+0x10]  <- reg=rbx
+  0x180da1053  mov     [rax+0x18]  <- reg=rsi
+  0x180da1057  mov     [rax+0x20]  <- reg=rdi
+
+--- READS from [base+N] where N < 0x100 (filtered, dedup) ---
+  0x180da1064  lea     -> [rax+-0x5f]
+  0x180da106f  mov     -> [rcx+0x30]
+  0x180da1076  cmp     -> [rcx+0x38]
+  0x180da1080  mov     -> [rcx+0x20]
+  0x180da1084  mov     -> [rcx+0x18]
+  0x180da10f4  mov     -> [rcx+0x00]
+  0x180da1128  mov     -> [rbx+0x20]
+  0x180da112c  mov     -> [rbx+0x18]
+  0x180da115f  mov     -> [r11+0x38]
+  0x180da1163  mov     -> [r11+0x40]
+  0x180da1167  mov     -> [r11+0x48]
+
+--- CALL sites ---
+  0x180da10c2  call 0x180da0fb0  (RVA 0xda0fb0)
+  0x180da10e6  call 0x1804d4510  (RVA 0x4d4510)
+  0x180da1101  call [rax+0x20]  (vtable call)
+  0x180da1123  call 0x180da1178  (RVA 0xda1178)
+  0x180da113c  call 0x180da1294  (RVA 0xda1294)
+
+--- INTERESTING immediates (potential data-section RVAs or ASCII) ---
+
