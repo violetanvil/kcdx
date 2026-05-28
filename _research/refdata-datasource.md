@@ -14,31 +14,34 @@ C:\kcdx-refdata\
     functions/  statements/  referenced_vars/  call_edges/  signatures/  caller_reg_args/
     _MANIFEST.md
   db\
-    reference.sqlite        (~35 MB)   the USER DB  -> ships as a release asset
-    reference-dev.sqlite     (~1.13 GB) the DEV DB   -> on-demand author download
+    reference.sqlite        (~0.1 MB)  the USER production DB (curated-only) -> ships as a release asset
+    reference-dev.sqlite     (~1.13 GB) the DEV bulk discovery DB             -> on-demand author download
 ```
 
 **Schema: the LOCKED 9-table entity/version model** (`docs/outstanding-work/
-parallel-ghidra-research.md` §11.2). Rebuilt 2026-05-27 from the flat
-functions/signatures/caller_reg_args layout to: `entities` (the global kcdx_id
-id-authority) + `entity_versions` (per-byte-form validity intervals, with the
-abi_walker floor folded in) + `kcdx_overlay` + `kcdx_overlay_versions` (curated
-identity + temporal) + `modules` + `game_versions` + `meta`, plus DEV-only
-`statements` / `referenced_vars` / `call_edges`. The pairing trigger
-`trg_pair_overlay_version` is present in both DBs (silent at baseline). Built by
-`import_to_sqlite.py`; gated by `validate_db_shape.py` (25/25 against the real
-321K-function dump). `integrity_check=ok` on both; the name→address+verified-ABI
+parallel-ghidra-research.md` §11.2), with the streamlined three-track scope
+applied (§11.8): the USER production DB now carries CURATED ENTITIES ONLY (the
+~140 from the seed); the DEV bulk discovery DB carries the curated set PLUS the
+binary's full ~321K function table for `kcdx.find` discovery. Both built by
+`import_to_sqlite.py`; gated by `validate_db_shape.py` (29/29 against the real
+321K-function dump, including the new STREAMLINE checks that assert USER is
+narrowed correctly). `integrity_check=ok` on both; the name→address+verified-ABI
 resolution path verified against real rows.
 
-- **USER `reference.sqlite`** (~35 MB) — `modules` + `game_versions` + `entities`
-  + `entity_versions` (minus the dev-only `auto_name`/`decompile_quality`) +
-  `kcdx_overlay` (minus dev-only `source`/`notes`) + `kcdx_overlay_versions` +
-  `meta`. Ships with every kcdx release (a release asset, NOT committed to git).
-  The user-facing README is `data/reference/README.md`.
-- **DEV `reference-dev.sqlite`** (~1.13 GB) — all USER tables/columns in full +
-  `statements` + `referenced_vars` + `call_edges`. The discovery/inspection
-  dataset (`kcdx.find` / `kcdx_dev_inspect`); the maintainer's source-of-truth.
-  NOT shipped to users, NOT committed to git.
+- **USER `reference.sqlite`** (~0.1 MB, curated-only) — `modules` +
+  `game_versions` + `entities` (~140 curated) + `entity_versions` (~140; minus
+  the dev-only `auto_name`/`decompile_quality`) + `kcdx_overlay` (minus dev-only
+  `source`/`notes`) + `kcdx_overlay_versions` + `meta`. Ships with every kcdx
+  release (a release asset, NOT committed to git). The user-facing README is
+  `data/reference/README.md`. The bulk function table is NOT here — Track-2
+  plugins targeting uncurated functions declare them themselves via
+  `kcdx.declare(module, name, versions)`.
+- **DEV `reference-dev.sqlite`** (~1.13 GB, bulk superset) — everything in USER
+  in full + the bulk ~321K function entries + `statements` + `referenced_vars` +
+  `call_edges` + the dev-only columns. The discovery/inspection dataset
+  (`kcdx.find` / `kcdx_dev_inspect`); the maintainer's source-of-truth and the
+  author's on-demand download for finding uncurated targets to declare. NOT
+  shipped to users, NOT committed to git.
 
 **Handoff (2026-05-27):** both DBs at `C:\kcdx-refdata\db\` are in the locked
 schema the generator + engine consumer read. This UNBLOCKS that work. Remaining

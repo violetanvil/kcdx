@@ -258,6 +258,14 @@ any mismatch, and exact types/arity come from the declare/share overlay.
 
 ### 4f. The shipped artifacts — TWO DBs, user-vs-dev split — DECIDED 2026-05-27
 
+**SUPERSEDED by §11.8 STREAMLINE.** The section below describes the pre-streamline
+USER-as-bulk-superset framing (USER ~48 MB carrying ALL ~321K functions). The
+streamlined model narrowed USER to CURATED ONLY (~0.1 MB, ~140 entities); the
+bulk lives only in DEV (~1.13 GB) for `kcdx.find` author discovery. Read §11.8
+for the current model. The historical reasoning below is kept as the record of
+what the pre-streamline sizing analysis established (and why the bulk-USER
+framing seemed correct at the time).
+
 The import (§8 step 3b, `tools/refdata-extractor/python/import_to_sqlite.py`)
 produces **TWO** SQLite DBs from one full dump, NOT one. This split + the sizing
 below were decided against MEASURED full-binary numbers (the earlier ~150 KB /

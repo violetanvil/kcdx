@@ -173,16 +173,48 @@ def run_checks(dump_dir, user_db, dev_db):
     check("meta one row schema_version=1",
           len(mt) == 1 and mt[0][0] == 1, "got %s" % mt)
 
-    # --- 9. content_hash round-trip for a known function (rva 0x1050) ---
+    # --- 9. content_hash round-trip ---
+    # DEV: 0x1050 (an uncurated bulk function -- shipped only in DEV).
     dump_hash = dump_hash_for_rva(dump_dir, 0x1050)
     row = dc.execute(
         "SELECT ev.content_hash FROM entity_versions ev WHERE ev.rva = ?",
         (0x1050,)).fetchone()
     blob = row[0] if row else None
     got_hex = blob.hex() if isinstance(blob, (bytes, bytearray)) else None
-    check("content_hash BLOB for rva 0x1050 round-trips to dump hex",
+    check("DEV: content_hash BLOB for rva 0x1050 round-trips to dump hex",
           dump_hash is not None and got_hex == dump_hash,
           "db=%s dump=%s" % ((got_hex or "")[:16], (dump_hash or "")[:16]))
+    # USER: 0x71a5a4 (lua_pcall, seed id 1000 -- curated, present in USER).
+    dump_hash_curated = dump_hash_for_rva(dump_dir, 0x71a5a4)
+    urow = uc.execute(
+        "SELECT ev.content_hash FROM entity_versions ev WHERE ev.rva = ?",
+        (0x71a5a4,)).fetchone()
+    ublob = urow[0] if urow else None
+    ugot_hex = ublob.hex() if isinstance(ublob, (bytes, bytearray)) else None
+    check("USER: content_hash BLOB for curated rva 0x71a5a4 (lua_pcall) round-trips",
+          dump_hash_curated is not None and ugot_hex == dump_hash_curated,
+          "db=%s dump=%s" % ((ugot_hex or "")[:16], (dump_hash_curated or "")[:16]))
+
+    # --- 9b. STREAMLINE: USER is narrowed to curated entities only ---
+    # USER entities count must equal the count of distinct kcdx_ids touched by
+    # the curated overlay (= ~139 + minted curated-only entities). DEV stays
+    # bulk (the count check at #2 still asserts DEV >= functions + 6).
+    curated_ids = scalar(dc, "SELECT COUNT(DISTINCT kcdx_id) FROM kcdx_overlay")
+    u_ent = scalar(uc, "SELECT COUNT(*) FROM entities")
+    check("STREAMLINE: USER entities count == distinct curated kcdx_ids",
+          u_ent == curated_ids,
+          "USER entities=%d curated kcdx_ids=%d" % (u_ent, curated_ids))
+    u_ev = scalar(uc, "SELECT COUNT(*) FROM entity_versions")
+    check("STREAMLINE: USER entity_versions count == USER entities count",
+          u_ev == u_ent, "USER ev=%d entities=%d" % (u_ev, u_ent))
+    # The bulk 321K must NOT be in USER (the disjoint-purpose split).
+    u_bulk = scalar(uc, "SELECT COUNT(*) FROM entities WHERE kcdx_id BETWEEN 1 AND ?",
+                    (max(1, n_fn - curated_ids),))
+    # Sanity: an uncurated bulk RVA (0x1050) must not have an entity_versions row in USER.
+    u_bulk_row = uc.execute(
+        "SELECT 1 FROM entity_versions WHERE rva = ?", (0x1050,)).fetchone()
+    check("STREAMLINE: USER does NOT contain bulk function rva 0x1050",
+          u_bulk_row is None, "found a row" if u_bulk_row else "")
 
     # --- 10. trigger exists in BOTH dbs ---
     check("trg_pair_overlay_version exists in DEV",

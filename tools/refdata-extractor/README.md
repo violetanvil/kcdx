@@ -98,25 +98,26 @@ The import has **two modes**:
 ```bash
 # REBUILD (--rebuild): from-scratch baseline build from a dump dir.
 python tools/refdata-extractor/python/import_to_sqlite.py --rebuild <out>/refdata-full <out>/db
-#  -> <out>/db/reference.sqlite       (USER, ~35 MB)
-#     <out>/db/reference-dev.sqlite   (DEV,  ~1.13 GB)
+#  -> <out>/db/reference.sqlite       (USER production, curated-only, ~0.1 MB)
+#     <out>/db/reference-dev.sqlite   (DEV bulk discovery superset, ~1.13 GB)
 
 # UPDATE (default): the per-version incremental path. Detects whether the game on
-# disk is newer than the DB and (when the cross-version matcher lands) appends the
-# new version's intervals in place. Reads the on-disk version from the game's
+# disk is newer than the DB; reads the on-disk version from the game's
 # whdlversions.json (the shipped MasterMasterPGO config's build number; the DLL
 # carries no PE version resource).
 python tools/refdata-extractor/python/import_to_sqlite.py <out>/db <game-dir>
-#  exit 0 = DB already current; exit 3 = newer game version (matcher required)
+#  exit 0 = DB already current; exit 3 = newer game version (maintainer
+#  re-verifies the curated set against the new dump)
 ```
 
-The import produces **two** DBs on the locked **entity/version schema** — the
-user-vs-dev split:
+The import produces **two** DBs with **disjoint purposes** (per the streamlined
+three-track model — see `data/reference/README.md` for the full author-facing
+explanation):
 
-| DB | Tables | Size | Who ships / fetches it |
+| DB | Carries | Size | Who ships / fetches it |
 |---|---|---|---|
-| **USER** `reference.sqlite` | entities, entity_versions, kcdx_overlay, kcdx_overlay_versions, modules, game_versions, meta (dev-only columns dropped) | ~35 MB | every kcdx release — the per-launch survival check (`entity_versions.content_hash`) + the ABI a callback hook needs at install |
-| **DEV** `reference-dev.sqlite` | + statements + referenced_vars + call_edges (and the dev-only columns) | ~1.13 GB | on-demand author download — `kcdx.find` / `kcdx_dev_inspect` discovery |
+| **USER** `reference.sqlite` (production) | **curated entities only** (~140) + their per-version verified facts: `entities`, `entity_versions`, `kcdx_overlay`, `kcdx_overlay_versions`, `modules`, `game_versions`, `meta` | ~0.1 MB | every kcdx release — the engine resolves curated targets (`target = "IsInCombat"`) against this at launch |
+| **DEV** `reference-dev.sqlite` (discovery) | **bulk superset** — the curated set PLUS the binary's full ~321K function table, per-statement metadata, variable storage, call graph, abi_walker floor (`+ statements + referenced_vars + call_edges` + the dev-only columns + bulk `entity_versions` rows) | ~1.13 GB | on-demand author download — `kcdx.find` discovery of uncurated targets, which the author then declares in their own plugin via `kcdx.declare(module, name, versions)` |
 
 The schema is documented in full at `data/reference/README.md` (user) and
 `data/reference-dev/README.md` (dev). In brief:

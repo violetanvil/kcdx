@@ -709,8 +709,20 @@ def build_rows(dump_dir, dicts):
 
 # ---------------------------------------------------------------------------
 # Write one db (USER or DEV) from the shared row sets.
+#
+# USER (user_projection=True) is now the CURATED-ONLY production DB per the
+# streamlined three-track model (parallel-ghidra-research.md §11.8): kcdx tracks
+# only the curated set across versions; the bulk 321K functions live ONLY in
+# the DEV discovery DB (Track 3, on-demand author download for kcdx.find).
+# A Track-2 author hooking an uncurated function declares it themselves via
+# kcdx.declare(module, name, versions) -- the engine does NOT need bulk rows.
+#
+# USER thus FILTERS ROWS too, not just columns: entities/entity_versions ship
+# only for entities the curated overlay touches (the ~139 seed.csv rows +
+# any minted curated-only entities). Columns are filtered by USER_COLUMNS as
+# before; rows by the curated_kcdx_ids set computed from kcdx_overlay.
 # ---------------------------------------------------------------------------
-def write_db(db_path, rows, dicts, tables, user_projection):
+def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=None):
     if os.path.exists(db_path):
         os.remove(db_path)
     con = sqlite3.connect(db_path)
@@ -718,6 +730,17 @@ def write_db(db_path, rows, dicts, tables, user_projection):
 
     # Materialize dict lookup tables FIRST (the trigger references one by name).
     dict_entries = dicts.materialize(con)
+
+    # USER row-filter: entities/entity_versions narrow to the curated set.
+    # DEV writes all rows as before.
+    def filter_rows(t, rs):
+        if not user_projection or curated_kcdx_ids is None:
+            return rs
+        if t == "entities":
+            return [r for r in rs if r["kcdx_id"] in curated_kcdx_ids]
+        if t == "entity_versions":
+            return [r for r in rs if r["kcdx_id"] in curated_kcdx_ids]
+        return rs   # modules, game_versions, kcdx_overlay*, meta: no row filter
 
     for t in tables:
         cols = SCHEMA[t]
@@ -733,7 +756,7 @@ def write_db(db_path, rows, dicts, tables, user_projection):
 
         batch = []
         n = 0
-        for row in rows[t]:
+        for row in filter_rows(t, rows[t]):
             batch.append([row.get(c) for c in colnames])
             n += 1
             if len(batch) >= 20000:
@@ -789,24 +812,30 @@ def run_rebuild(dump_dir, out_dir):
     print(f"  entities={counts['entities']} entity_versions={counts['entity_versions']} "
           f"overlay={counts['kcdx_overlay']} overlay_versions={counts['kcdx_overlay_versions']}")
 
-    print(f"\n== DEV DB -> {dev_db}")
+    # Curated kcdx_ids: every entity touched by the curated overlay. This is
+    # the set that ships in the USER (production) DB; everything else lives
+    # only in the DEV bulk discovery DB. Per parallel-ghidra-research.md §11.8.
+    curated_kcdx_ids = {r["kcdx_id"] for r in rows["kcdx_overlay"]}
+    print(f"  curated kcdx_ids: {len(curated_kcdx_ids)} (USER will ship only these)")
+
+    print(f"\n== DEV DB (bulk discovery superset) -> {dev_db}")
     t0 = time.time()
     dd = write_db(dev_db, rows, dicts, DEV_TABLES, user_projection=False)
     dsz = os.path.getsize(dev_db)
     print(f"  built in {time.time()-t0:.0f}s; size {dsz/1e6:.1f} MB; dict entries {dd}")
 
-    print(f"\n== USER DB -> {user_db}")
+    print(f"\n== USER DB (production, curated-only) -> {user_db}")
     t0 = time.time()
-    ud = write_db(user_db, rows, dicts, USER_TABLES, user_projection=True)
+    ud = write_db(user_db, rows, dicts, USER_TABLES, user_projection=True,
+                  curated_kcdx_ids=curated_kcdx_ids)
     usz = os.path.getsize(user_db)
     print(f"  built in {time.time()-t0:.0f}s; size {usz/1e6:.1f} MB; dict entries {ud}")
 
     print(bar)
     print("SUMMARY")
-    print(f"  USER reference.sqlite     : {usz/1e6:8.1f} MB")
-    print(f"  DEV  reference-dev.sqlite : {dsz/1e6:8.1f} MB")
-    print(f"  functions={counts['functions']} curated_vtable={counts['curated_vtable']} "
-          f"entities={counts['entities']}")
+    print(f"  USER reference.sqlite     : {usz/1e6:8.1f} MB  (curated-only, {len(curated_kcdx_ids)} entities)")
+    print(f"  DEV  reference-dev.sqlite : {dsz/1e6:8.1f} MB  (bulk superset, {counts['entities']} entities)")
+    print(f"  functions={counts['functions']} curated_vtable={counts['curated_vtable']}")
     print(bar)
 
 

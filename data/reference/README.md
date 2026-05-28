@@ -1,10 +1,14 @@
-# reference.sqlite — the function reference database (user)
+# reference.sqlite — the curated reference database (user)
 
-`reference.sqlite` is the static reference database the kcdx engine consults at
-launch. Per game-binary entity (a function, a curated callsite, a vtable slot, a
-data slot) it carries the data the engine needs to (1) keep installed plugins
-working across game updates, and (2) resolve a hook target by name or id to its
-address and argument shape.
+`reference.sqlite` is the small static database the kcdx engine ships with every
+release. It carries the **curated set of named targets** kcdx maintains across
+game versions, plus the per-version verified facts (address, ABI, vtable slot,
+etc.) the engine needs to resolve a plugin's hook by name.
+
+This is the **production** reference DB. It is intentionally narrow: it carries
+only what kcdx tracks centrally — the curated targets — not the binary's full
+function table. Plugins that target uncurated functions declare them themselves
+(see "What this database does NOT carry" below).
 
 ## Not in this repo — it ships as a release asset
 
@@ -14,44 +18,79 @@ archive). After a user unpacks a release, the engine finds `reference.sqlite` in
 its install directory and opens it directly — nothing to download separately,
 configure, or decompress.
 
-- **Installed size:** ~35 MB on disk (the release archive compresses it for
-  download).
+- **Installed size:** ~0.1 MB on disk. Trivial — the database carries roughly the
+  curated-target count's worth of rows (currently ~140), not the binary's whole
+  function table.
 - **Launch cost:** negligible. The engine memory-maps the file and reads only the
-  rows for the entities a user's installed plugins actually touch — a handful of
-  milliseconds even for a large modlist. The file size does not affect launch
-  speed.
+  rows for the entities a user's installed plugins actually reference by curated
+  name — a handful of microseconds even for a large modlist.
 
-## The model — a stable id, with per-version validity intervals
+## The three-track model — what's in here vs what's NOT
 
-The database is built on three ideas that the rest of this document assumes:
+kcdx tracks targets across game versions on three tracks, scoped by who
+maintains them:
 
-1. **Every targetable entity has a stable `kcdx_id`.** A function, a curated
+1. **Curated set (Track 1).** A small, named, kcdx-maintained list of well-known
+   targets (`IsInCombat`, `lua_pcall`, the `IConsole` vtable slots, `gEnv`, etc.).
+   The maintainer keeps these current per game version, by hand. A plugin
+   references them by name (`target = "IsInCombat"`) and the engine resolves to
+   the per-version address and verified ABI. **This database is exactly that
+   list.**
+2. **Author-declared (Track 2).** A plugin that needs to hook a function NOT in
+   the curated set declares it in the plugin itself, supplying its own
+   per-version pattern/ABI via `kcdx.declare(module, name, versions)`. **Not in
+   this database** — the author owns it.
+3. **Bulk discovery (Track 3).** A separate, on-demand author download
+   (`reference-dev.sqlite`) carrying the binary's full function table for
+   discovery (`kcdx.find`). Authors use it to find uncurated targets that they
+   then declare in their plugin (Track 2). **Not in this database, not shipped
+   to users.**
+
+## The model — a stable id, with per-version verified facts
+
+The database is built on three ideas the rest of this document assumes:
+
+1. **Every curated target has a stable `kcdx_id`.** A function, a curated
    callsite, a vtable slot — each is one row in `entities`, with a `kcdx_id` that
    never changes and is never recycled. A plugin references a target by `kcdx_id`
    (or by a curated name that resolves to one); that reference keeps resolving
    across game updates even though the underlying address moves.
 
-2. **Facts that change between game versions are stored as validity intervals.**
-   An entity's bytes, address, and argument-shape can change when the game
-   patches. Each distinct form is one row in `entity_versions` with a
-   `valid_from` / `valid_through` version range. **`valid_through IS NULL` means
-   "this is the current form."** The engine reads the open (NULL) row for the
-   running version.
+2. **Per-version facts are stored as validity intervals.** A curated entity's
+   address, bytes, and argument-shape can change when the game patches. Each
+   distinct form is one row in `entity_versions` with a `valid_from` /
+   `valid_through` version range. **`valid_through IS NULL` means "this is the
+   current form."** The engine reads the open (NULL) row for the running version.
 
-3. **The curated layer is separate from the bulk.** Most entities are auto-derived
-   and carry only a coarse argument-width floor. A small curated set (`kcdx_overlay`)
-   carries a verified gameplay name and a verified argument signature. Curated
-   facts that move with the binary live in their own interval table
-   (`kcdx_overlay_versions`), so a verified signature is valid for a specific
-   version range just like a hash is.
+3. **Curated names and verified facts are separate.** A curated name
+   (`kcdx_overlay`) is version-independent ("IsInCombat" is still IsInCombat).
+   Its verified ABI / offset / vtable slot is per-version, in
+   `kcdx_overlay_versions`, because those facts can move with the binary.
 
-## The tables (user database)
+## What this database does NOT carry
+
+This is the production curated DB; it intentionally omits everything that isn't
+part of the curated cross-version tracking:
+
+- **The bulk function table** (the binary's other ~321,000 auto-named functions)
+  — lives only in the DEV discovery DB (`reference-dev.sqlite`).
+- **Per-statement metadata, call graph, variable storage** — DEV-only.
+- **The abi_walker argument-width floor for uncurated functions** — also
+  DEV-only. A Track-2 plugin hooking an uncurated function declares its own ABI
+  via `kcdx.declare`.
+
+A plugin that wants to hook an uncurated function does NOT look here. It uses
+`kcdx.find` against the DEV DB to discover the target, then declares it in its
+own plugin file with `kcdx.declare(module, name, versions)`, including the
+pattern AND the ABI.
+
+## The tables
 
 The user database has seven tables (plus `_dict_*` lookup tables — see Encoding).
 
 ### `entities` — the stable id authority
 
-One row per entity, ever. Version-independent identity.
+One row per curated entity, ever. Version-independent identity.
 
 | Column | Meaning |
 |---|---|
@@ -59,22 +98,22 @@ One row per entity, ever. Version-independent identity.
 | `entity_type` | `function` \| `vtable_slot` \| `data_slot` \| `callsite` \| `statement` (the last is reserved, not populated). Dictionary-encoded. |
 | `module_id` | which module the entity lives in → `modules.id`. |
 
-### `entity_versions` — per-version forms (the spine)
+### `entity_versions` — per-version forms
 
-One row per `(entity, version-interval)`. Carries everything that can change when
-the game patches, including the auto-derived argument-width floor.
+One row per `(curated entity, version-interval)`. Carries everything about a
+curated target that can change when the game patches.
 
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
 | `kcdx_id` | the entity → `entities.kcdx_id`. |
-| `content_hash` | BLAKE3 of the entity's on-disk bytes (32-byte blob). The cross-version survival check. `NULL` for non-byte entities (a vtable slot has no bytes). |
+| `content_hash` | BLAKE3 of the entity's on-disk bytes (32-byte blob). `NULL` for non-byte entities (a vtable slot has no bytes). |
 | `rva` | the entity's address in this version. Resolve `kcdx_id` → address from the open row. |
 | `length` | byte length — needed to reproduce the hashed span `[rva, rva+length)`. |
 | `value` | the resolved integer for a non-byte entity (a vtable slot index, a data-slot offset). `NULL` for functions. |
-| `signature` | the auto-derived argument-width floor (e.g. `? (i64, i32)`): one width-typed slot per detected argument, return unknown (`?`). An honest lower bound, never a verified type — use it only when no curated signature exists. |
-| `observed_arg_slots` | the floor's argument-slot count (a lower bound, not exact arity). |
-| `caller_reg_arg_count` | a caller-side register-argument estimate (≤4); a tighter lower bound on argument count. |
+| `signature` | the abi_walker width-floor for this entity (when computed). Kept for parity with the DEV DB; the *verified* signature lives in `kcdx_overlay_versions.signature`. |
+| `observed_arg_slots` | the floor's argument-slot count. |
+| `caller_reg_arg_count` | a caller-side register-argument estimate (≤4). |
 | `caller_arg_agreement` | whether the callsites agreed on that estimate. Dictionary-encoded. |
 | `valid_from` | first version this form held → `game_versions.id`. |
 | `valid_through` | last version this form was valid → `game_versions.id`. **`NULL` = current.** |
@@ -84,9 +123,9 @@ current form.
 
 ### `kcdx_overlay` — the curated name layer (version-independent)
 
-One row per curated **name**. Sparse — only entities a maintainer has named. A
-single `kcdx_id` may have more than one row (a renamed entity keeps its old name
-row, deprecated, alongside the new one), so `kcdx_id` here is **not** unique.
+One row per curated **name**. A single `kcdx_id` may have more than one row (a
+renamed entity keeps its old name row, deprecated, alongside the new one), so
+`kcdx_id` here is **not** unique.
 
 | Column | Meaning |
 |---|---|
@@ -99,14 +138,14 @@ row, deprecated, alongside the new one), so `kcdx_id` here is **not** unique.
 
 ### `kcdx_overlay_versions` — the curated verified facts (per-version)
 
-One row per `(curated name, version-interval)`. Holds the verified facts that move
-with the binary. Reached from a name via `overlay_id`.
+One row per `(curated name, version-interval)`. Holds the **verified** facts that
+move with the binary.
 
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
 | `overlay_id` | the name-row → `kcdx_overlay.id`. (The entity is reached through it: `overlay_id` → `kcdx_overlay.kcdx_id`.) |
-| `signature` | the **verified** argument signature for this version range — a real ABI, not the floor. `NULL` for kinds that have no signature (a callsite, a vtable slot, a data slot). |
+| `signature` | the verified argument signature for this version range — a real ABI, distinct from the floor in `entity_versions`. `NULL` for kinds that have no signature (a callsite, a vtable slot, a data slot). |
 | `offset` | for a `callsite`, the offset a consumer applies relative to the recorded address. |
 | `vtable_slot` | for a `vtable_index`, the slot integer. |
 | `status` | `verified` \| `unverified` — **only `verified` rows resolve at runtime.** Dictionary-encoded. |
@@ -114,7 +153,7 @@ with the binary. Reached from a name via `overlay_id`.
 | `valid_through` | last version valid → `game_versions.id`. **`NULL` = current.** |
 
 The address of a curated entity is **not** stored here — it comes from the
-entity's `entity_versions` open row (one source of truth for location).
+entity's `entity_versions` open row.
 
 ### `modules` — the module registry
 
@@ -142,9 +181,9 @@ Backs every `valid_from` / `valid_through`.
 | `schema_version` | the schema shape version — a consumer checks this before trusting the database. |
 | `abi_confidence` | the argument-floor policy string. |
 
-## How the engine resolves a target
+## How the engine resolves a curated target
 
-**Resolve a hook target by curated name** (`target = "IsInCombat"`):
+**Resolve by curated name** (`target = "IsInCombat"`):
 
 1. `kcdx_overlay` where `name = ?` → the name-row (`id`, `kcdx_id`, `kind`).
 2. `entity_versions` where `kcdx_id = ?` and `valid_through IS NULL` → the address
@@ -153,17 +192,23 @@ Backs every `valid_from` / `valid_through`.
    the **verified** `signature` (+ `vtable_slot` / `offset` by kind). Resolve only
    if `status = verified`.
 
-**Resolve by id** (`target = <kcdx_id>`): `entity_versions` where `kcdx_id = ?`
-and `valid_through IS NULL` → address. If the target is hooked as a callback and
-no curated signature exists, the engine falls back to the `entity_versions`
-argument-width floor.
+**Resolve by `kcdx_id`:** `entity_versions` where `kcdx_id = ?` and
+`valid_through IS NULL` → address.
 
-**Cross-version survival check.** When the game updates, the engine compares the
-current on-disk hash of each entity a plugin touched against the open
-`entity_versions.content_hash`. Unchanged → the plugin keeps working silently.
-Changed → a clear notice naming the entity, and the entry proceeds (or skips, if
-the author marked it safety-critical). Plugins do not break wholesale on a game
-update — only when an entity they specifically target actually changed.
+**Resolve an author-declared target** (`kcdx.declare(module, name, versions)`):
+not from this database. The engine reads the plugin's declare table for the
+running game version and resolves the pattern against the live binary.
+
+## Cross-version survival
+
+When the game updates and a plugin uses a curated target, the engine compares
+the plugin's authored-against `content_hash` against the open
+`entity_versions.content_hash` for the same `kcdx_id`. Unchanged → the plugin
+keeps working silently. Changed → a notice naming the target. **This only applies
+to curated targets** — Track-2 (author-declared) targets carry their own
+per-version patterns, and the survival check for them is "does the pattern
+resolve on the running version" plus runtime rollback if the hook misbehaves
+(see the engine's recovery model).
 
 ## Encoding
 
@@ -175,13 +220,16 @@ extension is required to read it.
 
 ## Per-version refresh
 
-The database is updated per game version. A target keeps its stable `kcdx_id`
-across versions, so a plugin that references an entity by name or id continues to
-resolve it even when the game updates and the entity moves — the engine reads the
-open (`valid_through IS NULL`) row for the running version.
+The database is updated per game version. The maintainer re-verifies the curated
+set when KCD2 patches and adds a new `game_versions` row + per-version
+intervals; targets that didn't move silently extend, targets that changed get a
+new interval, removed targets close. A curated target keeps its stable `kcdx_id`
+across versions, so a plugin that references it by name or id continues to
+resolve.
 
 ## The larger discovery dataset
 
-The per-statement metadata and the call graph that back the authoring/discovery
-tools are **not** in this user database — a separate, larger database serves
-those, fetched by mod authors when building plugins. See `data/reference-dev/`.
+The per-statement metadata, the call graph, the abi_walker floor for the binary's
+full function table — none of these are in this user database. They live in a
+separate, larger database (`reference-dev.sqlite`) that authors fetch on demand
+when building plugins. See `data/reference-dev/`.
