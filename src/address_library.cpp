@@ -18,11 +18,10 @@ namespace kcdx::address_library {
 
 namespace {
 
-// One row of the address library. Seeded from
-// data/address-library/seed.csv. Status maps to the policy in
-// data/address-library/policy.md — only "verified" rows resolve;
-// "unverified" rows are tracked but return 0 from Resolve() because
-// we don't promise their RVAs are correct yet.
+// One row of the address library. Seeded from kcdx's curated reference
+// data. Only "verified" rows resolve; "unverified" rows are tracked but
+// return 0 from Resolve() because we don't promise their RVAs are correct
+// yet.
 //
 // game_version uses the kcdxMakeGameVersion encoding: KCD2 build
 // 1.5.1164953 → (1<<24) | (5<<16) | (1164953 & 0xFFFF) = 0x010579D9.
@@ -45,21 +44,21 @@ struct Entry {
     const char* signature;
 };
 
-// Game-version constant for the build the seed CSV targets:
+// Game-version constant for the build the curated reference data targets:
 // release_1_5_1164953_841 → 1.5.1164953.
 constexpr uint32_t kGV_1_5_1164953 = kcdxMakeGameVersion(1, 5, 1164953);
 
-// Seed table — every row from data/address-library/seed.csv, in the
-// same order. When the CSV changes, regenerate this table. The
-// canonical source is data/address-library/seed.csv; this in-source
-// mirror is the compiled-in fallback.
+// Seed table — every row mirrored from the curated reference data, in the
+// same order. When the reference data changes, regenerate this table. The
+// curated reference data is canonical; this in-source array is the
+// compiled-in fallback.
 constexpr Entry kEntries[] = {
-    // Every row mirrors data/address-library/seed.csv exactly. The seed
-    // CSV is canonical; this in-source array is the compiled-in fallback
+    // Every row mirrors the curated reference data exactly. The curated
+    // data is canonical; this in-source array is the compiled-in fallback
     // returned by Resolve() / ResolveByName() / ForEachResolvable().
     //
-    // Each row carries a one-line description (from the seed's notes
-    // column) that ResolveDescription() exposes to plugin code. Plugin
+    // Each row carries a one-line description (the curated entity's notes
+    // prose) that ResolveDescription() exposes to plugin code. Plugin
     // authors call kcdx_addr_description("lua_pcall") to see what they
     // got back.
 

@@ -126,8 +126,8 @@ ABI_CONFIDENCE = "count+width+caller_reg"
 #                                  kcdx_id must resolve to an address_names_seed
 #                                  row; (kcdx_id, game_version) is unique.
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # tools/refdata-extractor/python -> repo
-SEED_DIR = os.path.join(REPO_ROOT, "data", "address-library")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # data/refdata-extractor/python -> repo
+SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
 MODULE_SEED_CSV           = os.path.join(SEED_DIR, "module_seed.csv")
 ADDRESS_NAMES_SEED_CSV    = os.path.join(SEED_DIR, "address_names_seed.csv")
 ADDRESS_VERSIONS_SEED_CSV = os.path.join(SEED_DIR, "address_versions_seed.csv")

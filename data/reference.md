@@ -10,9 +10,6 @@ only what kcdx tracks centrally — the curated targets — not the binary's ful
 function table. Plugins that target uncurated functions declare them themselves
 (see "What this database does NOT carry" below).
 
-For the seed authoring rules that produce this DB, see
-[`data/address-library/policy.md`](../address-library/policy.md).
-
 ## Not in this repo — it ships as a release asset
 
 The database is a **generated binary artifact**, not a tracked file. It is built
@@ -60,8 +57,8 @@ The database rests on three ideas the rest of this document assumes:
 2. **The kcdx_id IS the `address_names.id`.** `address_names` has one row per
    curated entity; its primary key column IS the kcdx_id. (There is no separate
    `kcdx_id` column; the PK is the handle.) Both `modules.id` and
-   `address_names.id` come from the seed CSVs verbatim (no autoincrement) — see
-   the policy doc for the canonical-id authority rule.
+   `address_names.id` are canonical maintainer-supplied integers (no
+   autoincrement); the import pipeline rejects null or duplicate ids.
 3. **Per-version resolve facts are stored as validity intervals.** A curated
    entity's address, bytes, and argument-shape can change when the game patches.
    Each distinct form is one row in `address_versions` with a `valid_from` /
@@ -262,8 +259,6 @@ game version. For rows whose RVA actually moved: ADD a new `address_versions`
 row with the new `valid_from`, new RVA/signature. For rows whose entity is
 gone or whose behavior changed: deprecate at the entity level (`is_deprecated
 = 1`, `deprecated_at_version = <new version>`).
-
-Full workflow rules: see [`data/address-library/policy.md`](../address-library/policy.md).
 
 ## The larger discovery dataset
 

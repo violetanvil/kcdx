@@ -1,5 +1,13 @@
 # Phase 8.5a - CryEngine pak/file resolver in WHGame.dll (KCD2 release_1_5_1164953_841)
 
+> **Note (2026-05-28):** Paths referenced below have moved.
+> `data/address-library/seed.csv` is now split into `data/seeds/address_names_seed.csv`
+> + `data/seeds/address_versions_seed.csv` + `data/seeds/module_seed.csv`
+> + `data/seeds/policy.md`. The address-library shape was also restructured —
+> see those files and the schema docs at `data/reference.md` + `data/reference-dev.md`
+> for the current authoring law. This file is a historical record and is not
+> maintained against the new layout.
+
 Goal: identify the function the game calls to open/resolve a game asset by virtual
 path, so kcdx can hook it, consult a virtual-path->plugin-file overlay map, return a
 replacement on a hit / fall through on a miss. Need the function (name + RVA), its ABI,

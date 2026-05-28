@@ -294,7 +294,7 @@ what the live result is.
 
 | Field | Value |
 |---|---|
-| What | Plugin calls `api->ResolveAddress(uint64_t id)` to get a runtime VA. The id-to-RVA mapping ships compiled into `kcdx.dll` at build time from `data/address-library/seed.csv`. Per-game-version entries gate resolution, so the same id keeps working across KCD2 patches (each patch adds new rows for its build identifier; rows for older builds stay around for compatibility-mode plugins). |
+| What | Plugin calls `api->ResolveAddress(uint64_t id)` to get a runtime VA. The id-to-RVA mapping ships compiled into `kcdx.dll` at build time from kcdx's curated address library. Per-game-version entries gate resolution, so the same id keeps working across KCD2 patches (each patch adds new rows for its build identifier; rows for older builds stay around for compatibility-mode plugins). |
 | Channels | (ii) C++ DLL, (iii) `kcdx.toml` via `address_id = N` (peer to `pattern` / `target_symbol` in `[[patch]]` / `[[hook]]` / `[[mid_hook]]`) |
 | Engine status | READY. |
 | Test plugin | DEFERRED — covered indirectly by the [[command]] surface (CAP-13 exercises ids 1009 + 2000 + 2001 transitively). A dedicated CAP-14 plugin would only add a `ResolveAddress(1000)` sanity check; not blocking. |

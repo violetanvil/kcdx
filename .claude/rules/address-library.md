@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/address_library.*"
-  - "data/address-library/**"
+  - "data/seeds/**"
   - "**/kcdx.toml"
   - "test-plugins/**/kcdx.toml"
   - "kcdx-engine/builtin/**/kcdx.toml"
@@ -9,9 +9,9 @@ paths:
 
 # Address Library — use IDs, not literal RVAs
 
-`src/address_library.{h,cpp}` compiles a seed CSV into `kEntries[]`. `kcdx::address_library::Resolve(uint64_t id)` does linear lookup gated on game-version match + `status == "verified"`. Plugin entry point: `api->ResolveAddress(id)`.
+`src/address_library.{h,cpp}` compiles a seed table into `kEntries[]`. `kcdx::address_library::Resolve(uint64_t id)` does linear lookup gated on game-version match. Plugin entry point: `api->ResolveAddress(id)`.
 
-Seed source of truth: [data/address-library/seed.csv](../../data/address-library/seed.csv) (in-repo). In-source mirror: [src/address_library.cpp::kEntries[]](../../src/address_library.cpp). Adding new IDs requires editing both. Naming + status policy: [data/address-library/policy.md](../../data/address-library/policy.md).
+**Note (2026-05-28):** The seed shape was redesigned — the single legacy `data/address-library/seed.csv` was split into three files under `data/seeds/`: `module_seed.csv` (module registry), `address_names_seed.csv` (per-entity stable), `address_versions_seed.csv` (per-version mutable). Status is no longer authored — it is derived per (kcdx_id, game_version) from `last_verified_at_version` plus entity-level supersession/deprecation flags. Authoring law: [data/seeds/policy.md](../../data/seeds/policy.md). In-source mirror: [src/address_library.cpp::kEntries[]](../../src/address_library.cpp). The engine consumer (refdb) is being rewritten to read the runtime DB at `data/reference.sqlite` directly; the in-source `kEntries[]` mirror is a transitional fallback.
 
 ## Rules
 

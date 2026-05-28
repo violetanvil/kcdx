@@ -110,7 +110,7 @@ DEV phases ("Phase 5c.7b", "sub-9") are the build-trace to strip.
 
 ## Out of scope for the table (handled per-site, flagged for the batch reviewer)
 
-- `data/address-library/seed.csv` — the `notes` column has dense provenance
+- `data/seeds/address_names_seed.csv` — the `notes` column has dense provenance
   prose (`kcdx-phase7-probe@<sha>`, "per AP3", `_research/...`). Dedicated pass.
   **Decided voice:** each notes row KEEPS the technical content (signature, vtable
   slot, calling convention, what the function does) plus a plain "verified against

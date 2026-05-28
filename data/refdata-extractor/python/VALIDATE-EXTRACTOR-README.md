@@ -9,7 +9,7 @@ independent-anchor harness instead of a game launch.
 ## Runbook
 
 ```
-python tools/refdata-extractor/python/validate_extractor_output.py
+python data/refdata-extractor/python/validate_extractor_output.py
 ```
 
 No arguments. The harness:

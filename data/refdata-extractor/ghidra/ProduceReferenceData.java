@@ -177,7 +177,7 @@ public class ProduceReferenceData extends GhidraScript {
         try {
             w.println("# kcdx reference-data dump -- MANIFEST");
             w.println();
-            w.println("Produced by `ProduceReferenceData.java` (tools/refdata-extractor) "
+            w.println("Produced by `ProduceReferenceData.java` (data/refdata-extractor) "
                     + "+ the two Python passes (signatures/ + caller_reg_args/).");
             w.println();
             w.println("- module        : " + module);

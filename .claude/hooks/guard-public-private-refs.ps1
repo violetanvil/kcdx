@@ -28,7 +28,7 @@ try {
     # planning + bug trails under docs/). Keep in sync with publish-public.ps1
     # $PrivateSubpaths.
     # Trailing '/' = directory prefix; otherwise an exact-file carve-out.
-    $privateSubpaths = @('docs/outstanding-work/','docs/known-issues/','docs/design.md','docs/design-gaps.md','docs/phase5c7b-plan.md','docs/VERIFY_PHASE2.md','docs/VERIFY_PHASE3.md','docs/VERIFY_PHASE4.md','docs/archive/','docs/phase5-rom-port-plan.md','docs/migration.md','examples/archive/','tools/refdata-extractor/')
+    $privateSubpaths = @('docs/outstanding-work/','docs/known-issues/','docs/design.md','docs/design-gaps.md','docs/phase5c7b-plan.md','docs/VERIFY_PHASE2.md','docs/VERIFY_PHASE3.md','docs/VERIFY_PHASE4.md','docs/archive/','docs/phase5-rom-port-plan.md','docs/migration.md','examples/archive/','data/refdata-extractor/','data/seeds/')
 
     $isPublic = $false
     foreach ($d in $publicDirs)  { if ($rel -like "$d*") { $isPublic = $true; break } }

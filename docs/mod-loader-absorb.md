@@ -7,7 +7,7 @@ WHICH mods load and in what ORDER — and kcdx plugins work dropped in EITHER
 
 This file is the tracked home for the reverse-engineering provenance and the
 settled design. The function RVAs live as append-only Address Library rows
-3100–3104 in `data/address-library/seed.csv` + `src/address_library.cpp`; this
+3100–3104 in `data/seeds/address_names_seed.csv` + `data/seeds/address_versions_seed.csv` + `src/address_library.cpp`; this
 doc holds the record layout + the design + the live-probe evidence those rows
 cite.
 

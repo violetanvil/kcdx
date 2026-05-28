@@ -4,7 +4,7 @@
 
 ## Current coverage
 
-89 of ~117 LUA_API/LUALIB_API functions identified in WHGame.dll (~79%). Per-row evidence in `data/address-library/seed.csv` rows 1100-1200 (Lua API surface) + 1183, 1184, 1191, 1192, 1201-1205 (internal helpers).
+89 of ~117 LUA_API/LUALIB_API functions identified in WHGame.dll (~79%). Per-row evidence in `data/seeds/address_names_seed.csv` rows 1100-1200 (Lua API surface) + 1183, 1184, 1191, 1192, 1201-1205 (internal helpers).
 
 | Bucket | Count | Status |
 |---|---|---|
@@ -119,7 +119,7 @@ These are NOT in WHGame.dll because CryEngine never calls them; the MSVC linker'
 ## Files that need to change for the shim build
 
 Already shipped:
-- `data/address-library/seed.csv` — 106 rows including 93 LUA_API + 13 internals
+- `data/seeds/address_names_seed.csv` — 106 rows including 93 LUA_API + 13 internals
 - `src/address_library.cpp::kEntries[]` — in-source mirror (synced with seed CSV)
 - Recon tooling: `_research/phase8-fix-a/{coff_inspect.py, callgraph_walk.py, string_xrefs.py, luaL_reg_scan.py}` + per-function notes
 
@@ -151,7 +151,7 @@ Additionally for FIX A specifically: at engine init, `kcdx::lua_shim::Resolve()`
 ## Pointers
 
 - Recon artifacts: `_research/phase8-fix-a/` — tooling, per-function notes, harvest CSV
-- Seed CSV: `data/address-library/seed.csv`
+- Seed CSV: `data/seeds/address_names_seed.csv`
 - Subagent reports: see git history for commits ab11e7c and 5e131c2 (each commit message references the agent IDs that produced the findings)
 - Investigation trail (pre-FIX A): `docs/known-issues/closed/kcdx lua_newtable corrupts the process heap.md`
 - PROBE Q implementation: `src/hooks.cpp::ArmFreallocProbe` + `HookedFrealloc`. Stays in production through FIX A.

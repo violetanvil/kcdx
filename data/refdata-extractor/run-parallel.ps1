@@ -59,13 +59,13 @@
 
 .EXAMPLE
   # REAL full 8-way dump (the user runs this)
-  pwsh ./tools/refdata-extractor/run-parallel.ps1 `
+  pwsh ./data/refdata-extractor/run-parallel.ps1 `
       -OutDir E:\refdata-full -Workers 8 -VersionTag release_1_5_1164953_841 `
       -WhgameDll "E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.dll"
 
 .EXAMPLE
   # inspect the 8 full-binary ranges cheaply
-  pwsh ./tools/refdata-extractor/run-parallel.ps1 -OutDir nul -DryRun
+  pwsh ./data/refdata-extractor/run-parallel.ps1 -OutDir nul -DryRun
 #>
 [CmdletBinding()]
 param(
@@ -90,7 +90,7 @@ Set-StrictMode -Version Latest
 $SHARD_SPAN = 0x100000
 
 # ---------------------------------------------------------------------------
-# Path resolution (this script lives at tools/refdata-extractor/run-parallel.ps1).
+# Path resolution (this script lives at data/refdata-extractor/run-parallel.ps1).
 # ---------------------------------------------------------------------------
 $ScriptRoot = $PSScriptRoot
 $RepoRoot   = (Resolve-Path (Join-Path $ScriptRoot "..\..")).Path

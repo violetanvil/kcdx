@@ -61,7 +61,7 @@ if (($RvaStart -ne "") -ne ($RvaEnd -ne "")) {
 # Resolve to absolute (Ghidra rejects '.'-relative project paths).
 $ProjectDirAbs = (Resolve-Path $ProjectDir).Path
 $OutDirAbs = [System.IO.Path]::GetFullPath($OutDir)
-$ScriptRoot = $PSScriptRoot                      # tools/refdata-extractor/ghidra
+$ScriptRoot = $PSScriptRoot                      # data/refdata-extractor/ghidra
 $Blake3Root = Join-Path $ScriptRoot "blake3"     # the Apache Blake3 package root
 
 # The Ghidra install lives in the (gitignored) third-party-ghidra/ tree.

@@ -173,7 +173,7 @@ frames up.
 are a thin curated layer, the SKSE-Address-Library model. A name is assigned ONLY
 where evidence pins it:
 
-- the function is already in `data/address-library/seed.csv`,
+- the function is already in `data/seeds/address_names_seed.csv`,
 - it matches a predecessor-sig anchor (`_research/predecessor-sigs/`: 15 CryEngine
   interface headers, yobson1's AOBs, muyuanjin's gEnv/vtable offsets),
 - a distinctive string/cvar literal identifies it.
@@ -266,7 +266,7 @@ for the current model. The historical reasoning below is kept as the record of
 what the pre-streamline sizing analysis established (and why the bulk-USER
 framing seemed correct at the time).
 
-The import (§8 step 3b, `tools/refdata-extractor/python/import_to_sqlite.py`)
+The import (§8 step 3b, `data/refdata-extractor/python/import_to_sqlite.py`)
 produces **TWO** SQLite DBs from one full dump, NOT one. This split + the sizing
 below were decided against MEASURED full-binary numbers (the earlier ~150 KB /
 ~7 MB estimates in `restructure-plan.md` §9.1 / §9.3 were written before the dump
@@ -451,7 +451,7 @@ runtime-dump probe (§6) is the other not-yet-built tool.
 In dependency order. Each routes to the skill that gives it the right discipline.
 
 > **As-built location (2026-05-27):** the production extractor lives at top-level
-> **`tools/refdata-extractor/`** (`ghidra/` Java passes + launcher + vendored
+> **`data/refdata-extractor/`** (`ghidra/` Java passes + launcher + vendored
 > BLAKE3 + the hash contract; `python/` emit passes + probes + the validation
 > harness; `run-parallel.ps1` the parallel orchestrator) — committed, tracked
 > tooling. (It was briefly misfiled under `_research/` + `third-party-ghidra/`
@@ -464,7 +464,7 @@ In dependency order. Each routes to the skill that gives it the right discipline
 |---|---|---|---|---|
 | 0 | Commit the reusable tooling + research logs + this plan | `/commit` | no | **DONE** (`fae1d86`, `f92afc3`) |
 | 1 | **Compute-sizing probe** — decompile + abi_walker per-fn cost on a ~1K-fn sample, extrapolate to 321K. | in-context measurement | no | **DONE** (full-binary feasible; abi_walker ~4.7× cheaper than decompile) |
-| 2 | **Build the production extractor** — functions + statements + referenced_vars + call_edges (Java) + signatures + caller_reg_args (Python) → §4 CSV-per-table RVA-sharded dirs. | `/feature` | no | **DONE** (`tools/refdata-extractor/`; harness 26/26; BLAKE3 35/35) |
+| 2 | **Build the production extractor** — functions + statements + referenced_vars + call_edges (Java) + signatures + caller_reg_args (Python) → §4 CSV-per-table RVA-sharded dirs. | `/feature` | no | **DONE** (`data/refdata-extractor/`; harness 26/26; BLAKE3 35/35) |
 | 2p | **Parallel orchestrator + RVA-range filter** — N workers over disjoint ranges on per-worker project copies, merge by disjoint shards. (Ghidra locks a project exclusively — per-worker COPIES are required, probe-verified.) | `/feature` | no | **DONE** (`run-parallel.ps1`; `614f563`) |
 | 3a | **Run the full dump** over WHGame.dll. | batch run | no | **DONE** (8-way parallel, 2026-05-27; 321,120 functions; 5.24M statements; 10.88M referenced_vars; 1.52M call_edges; output at `C:\kcdx-refdata\refdata-full-20260527-105617\`, 1.3 GB; every anchor verified at full scale) |
 | 3b | **Import the dump → SQLite** (maintainer-side, `import_to_sqlite.py`): build the encoded schema, load the CSV-per-table dirs, emit the USER + DEV DBs (the two-DB split + encoding + sizes are §4f). | maintainer import tool | no | **DONE (first cut; being reshaped by §11)** (`3c033be`; USER `reference.sqlite` 48MB/22MB-zip, DEV `reference-dev.sqlite` 1.13GB/397MB-zip; integrity-verified). **SUPERSEDED by the §11 finalized design:** the reshape adds the `function_hashes` history table, v1.5 baseline `kcdx_id` assignment for ALL functions, the curated `overlay`, the cut/fix pass, and the two deprecation axes. The cross-version MATCHER is the §11.6 sandbox problem (not this import). |
@@ -824,7 +824,7 @@ constant `curated`).
 
 #### The import tool: two modes + the verified version source
 
-The import is `tools/refdata-extractor/python/import_to_sqlite.py`, with two modes:
+The import is `data/refdata-extractor/python/import_to_sqlite.py`, with two modes:
 
 - **Rebuild mode (`--rebuild`, non-default):** from-scratch baseline build from a
   dump dir → a fresh DB. Builds the v1.5 baseline NOW; also the path to use if the
@@ -1038,7 +1038,7 @@ maintainer-editable only; promotion is a deliberate maintainer process" (§11.3)
 **This is NOT coded blind.** Building a matcher with no second version to
 validate against would be theorizing an unfalsifiable mechanism (AP10). The
 validation vehicle is a **synthetic two-version sandbox** at
-`tools/refdata-extractor/sandbox/` (the fixture DATA is gitignored — a real
+`data/refdata-extractor/sandbox/` (the fixture DATA is gitignored — a real
 WHGame.dll dump slice; the `make_sandbox.py` recipe + the matcher code are
 tracked):
 
@@ -1077,7 +1077,7 @@ otherwise as written.
    `entity_versions` (open intervals) + `versions` (the feature decomposition).
    UNBLOCKS the other agent (the generator + engine consumer read this shape).
 3. **The sandbox + the matcher + reconcile** (§11.6) — the
-   `tools/refdata-extractor/sandbox/` fixture (real v1 dump slice + authored v2
+   `data/refdata-extractor/sandbox/` fixture (real v1 dump slice + authored v2
    mutation + `ground_truth.csv`), then `match_versions.py` (phase 1, self-scored
    against ground truth) and `reconcile_transition.py` (phase 3, apply-to-DEV +
    project-USER). Built and validated against the sandbox; run for real when v1.6
@@ -1232,8 +1232,8 @@ unaffected); ONE apparatus simplifies:
 | `make_sandbox.py` + fixture | **Alive.** Validates whatever matcher we keep for the curated set. The 13 trip-up cases stay relevant. |
 | `entity_versions` as 321K-auto-tracked interval history | **Collapses** to bounded curated/targeted set. |
 | Reconcile / propose-only / `match_proposals` table machinery | **Re-scopes** to the bounded curated workflow — same propose-only contract, same maintainer-gated apply, just at 139-scale not 321K-scale. |
-| `tools/refdata-extractor/sandbox/BREAKAGE-MATRIX.md` (uncommitted scaffolding) | **Superseded + delete.** Its job (derive measures for the all-321K-tracked world) is dissolved by the three-track model. The reason is recorded in SANDBOX-STATUS so the deletion isn't unexplained. |
-| `tools/refdata-extractor/sandbox/SANDBOX-STATUS.md` | **Refresh.** Update to reflect the streamline: matcher re-scoped (not pending hash redesign); breakage-matrix superseded; three-track model is the answer. |
+| `data/refdata-extractor/sandbox/BREAKAGE-MATRIX.md` (uncommitted scaffolding) | **Superseded + delete.** Its job (derive measures for the all-321K-tracked world) is dissolved by the three-track model. The reason is recorded in SANDBOX-STATUS so the deletion isn't unexplained. |
+| `data/refdata-extractor/sandbox/SANDBOX-STATUS.md` | **Refresh.** Update to reflect the streamline: matcher re-scoped (not pending hash redesign); breakage-matrix superseded; three-track model is the answer. |
 | Track-2 `kcdx.declare(module, name, versions)` Lua surface | **Designed in this session, NOT implemented.** New work: author UX, engine-side resolver, integration with `kcdx.hook` / `kcdx.bytes` / `kcdx.code` so they accept the declared name as a target. |
 | Per-plugin user "attempt on undeclared versions" surfacing | **Designed, NOT implemented.** Default-ON; UI badge in `kcdx.exe` (two levels); not a per-plugin checkbox. |
 | Recovery + rollback machinery (install-time + runtime) | **Designed, NOT implemented.** Load-bearing for default-ON safety — tracked in restructure-plan as new outstanding work. Default-ON shipping waits on this. |
@@ -1405,7 +1405,7 @@ including the four C_ModManager init-cycle helpers added 2026-05-27.
 
 - [`_research/parallel-ghidra-research/inventory/ENUMERATION-FINDINGS.md`](../../_research/parallel-ghidra-research/inventory/ENUMERATION-FINDINGS.md) — the research log + reproduction recipes + raw numbers this plan rests on.
 - [`restructure-plan.md`](restructure-plan.md) — Phase 9.1-9.6; the engine work that consumes this data. Schema at its Phase 9.1.
-- [`data/address-library/policy.md`](../../data/address-library/policy.md) — naming + ID convention the curated overlay inherits.
+- [`data/seeds/policy.md`](../../data/seeds/policy.md) — naming + ID convention the curated overlay inherits.
 - [`.claude/rules/reverse-engineering.md`](../../.claude/rules/reverse-engineering.md) — the RE methodology + reuse ladder (the loc-manager + abi_walker steps follow it).
 - [`.claude/rules/cornerstones.md`](../../.claude/rules/cornerstones.md) — the disassembler test, satisfied here by discovery.
 - [`.claude/rules/results-driven.md`](../../.claude/rules/results-driven.md) — measure compute (step 1) + probe loc int-ID before theorizing (§6).

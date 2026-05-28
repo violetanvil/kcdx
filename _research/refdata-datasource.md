@@ -1,5 +1,13 @@
 # Reference-data — where the full datasource + the dev DB live (MAINTAINER, LOCAL)
 
+> **Note (2026-05-28):** Paths referenced below have moved. `tools/refdata-extractor/`
+> is now `data/refdata-extractor/`, `data/address-library/` is now `data/seeds/`
+> (split into `module_seed.csv` + `address_names_seed.csv` + `address_versions_seed.csv` +
+> `policy.md`), and the schema READMEs are now `data/reference.md` + `data/reference-dev.md`
+> (siblings to the gitignored DBs at `data/reference.sqlite` + `data/reference-dev.sqlite`).
+> This file is a historical record and is not maintained against the new layout —
+> consult the current schema docs and policy.md for the authoritative shape.
+
 PRIVATE / gitignored (`_research/`). Holds the local paths + maintainer detail
 that must NOT reach the public repo. The public-facing description of the user DB
 is `data/reference/README.md` (which deliberately names none of this).

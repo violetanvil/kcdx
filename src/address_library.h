@@ -15,8 +15,8 @@
 // DescribeByName(). The descriptions answer "what RVA did I just get?"
 // without forcing authors to grep a separate CSV.
 //
-// Seed data + ID assignment policy + per-row provenance:
-// data/address-library/.
+// Seed data + ID assignment policy + per-row provenance live in kcdx's
+// maintainer-side address-library inputs.
 
 namespace kcdx::address_library {
 
@@ -149,8 +149,8 @@ using ForEachResolvableCallback = bool (*)(uint64_t id, const char* name,
 void ForEachResolvable(ForEachResolvableCallback cb, void* userdata);
 
 // Fetch the description string for a given id. Returns the entry's
-// description column (the row's "notes" from data/address-library/seed.csv)
-// or nullptr if id is unknown to this kcdx build. Description is
+// description column (the row's curated "notes" prose) or nullptr if id is
+// unknown to this kcdx build. Description is
 // returned regardless of game_version match or status — even
 // unverified rows have descriptive notes worth surfacing for
 // diagnostics ("here's what we know, but we can't promise the RVA").

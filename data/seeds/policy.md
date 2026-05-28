@@ -1,15 +1,17 @@
 # Address Library — seed authoring policy
 
-**Authoritative law for the three seed files under `data/address-library/`.**
+**Authoritative law for the three seed files under `data/seeds/`.**
 
 This document governs the SEEDS ONLY — what the maintainer writes, in what
 shape, with what required fields. The shape of the generated SQLite DBs and
-the engine's runtime semantics are documented elsewhere (the READMEs at
-[`data/reference/`](../reference/) and [`data/reference-dev/`](../reference-dev/)).
-A rule in this file is binding on every seed-edit commit.
+the engine's runtime semantics are documented elsewhere
+([`data/reference.md`](../reference.md) and
+[`data/reference-dev.md`](../reference-dev.md)). A rule in this file is
+binding on every seed-edit commit.
 
-The importer enforces every rule below as a fail-loud check (`tools/refdata-extractor/python/import_to_sqlite.py`). The harness (`validate_db_shape.py`)
-re-asserts the same rules against the generated DBs.
+The importer enforces every rule below as a fail-loud check
+(`data/refdata-extractor/python/import_to_sqlite.py`). The harness
+(`validate_db_shape.py`) re-asserts the same rules against the generated DBs.
 
 ## The three seed files
 

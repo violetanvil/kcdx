@@ -39,10 +39,10 @@ import tempfile
 import pefile
 
 # ----------------------------------------------------------------------------
-# Paths (resolved from this file's location: tools/refdata-extractor/python/).
+# Paths (resolved from this file's location: data/refdata-extractor/python/).
 # ----------------------------------------------------------------------------
 HERE = os.path.dirname(os.path.abspath(__file__))
-EXTRACTOR_ROOT = os.path.dirname(HERE)                 # tools/refdata-extractor
+EXTRACTOR_ROOT = os.path.dirname(HERE)                 # data/refdata-extractor
 GHIDRA_DIR = os.path.join(EXTRACTOR_ROOT, "ghidra")
 BLAKE3_ROOT = os.path.join(GHIDRA_DIR, "blake3")
 LAUNCHER = os.path.join(GHIDRA_DIR, "produce-reference-data.ps1")

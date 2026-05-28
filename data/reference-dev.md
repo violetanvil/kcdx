@@ -27,11 +27,10 @@ A mod author wants to hook a game function. Two paths:
 ## Relationship to the production database
 
 The same five shared tables are here (`modules`, `game_versions`,
-`address_names`, `address_versions`, `meta`) — read [`data/reference/README.md`](../reference/README.md)
+`address_names`, `address_versions`, `meta`) — read [`data/reference.md`](reference.md)
 first for the shared model (`address_names.id` IS the kcdx_id, `address_versions`
 keys on `kcdx_id`, partial-unique-open-interval, derived verification state,
-etc.). The seed authoring rules for both DBs live in
-[`data/address-library/policy.md`](../address-library/policy.md).
+etc.).
 
 **This database is a superset.** It contains:
 

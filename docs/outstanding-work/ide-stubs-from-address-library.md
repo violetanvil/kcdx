@@ -6,7 +6,7 @@ Surfaced during Phase 2b sub-3 design pass. The Address Library
 already carries a `description` column per entry (provenance,
 signature, evidence trail). Today it lives only in the in-binary
 table at `src/address_library.cpp::kEntries[]` and the source CSV
-at `data/address-library/seed.csv`.
+at `data/seeds/address_names_seed.csv`.
 
 When mod authors write `kcdx.addr.lua_pcall` in their plugin.lua,
 a Lua-aware editor (VS Code + sumneko/luals, JetBrains IDEA-Lua,
@@ -31,7 +31,7 @@ Either:
 
 ## Design
 
-A build-time generator reads `data/address-library/seed.csv` and
+A build-time generator reads `data/seeds/address_names_seed.csv` and
 emits `kcdx-stubs.lua` — a Lua file the LSP parses but no game ever
 executes. Annotations follow the LuaCATS standard
 (<https://luals.github.io/wiki/annotations/>) so all major language
@@ -76,7 +76,7 @@ Distribution: the stub file ships in the release zip at
 
 - New: `tools/gen-lua-stubs.ps1` (or `.py`; pick whichever fits the
   release-tooling stack). Reads
-  `data/address-library/seed.csv` → emits `release-staging/kcdx-stubs/kcdx-stubs.lua`.
+  `data/seeds/address_names_seed.csv` → emits `release-staging/kcdx-stubs/kcdx-stubs.lua`.
 - Modified: `package-release.ps1` — call the generator; bundle the
   output into the release zip.
 - Modified: `docs/lua/index.md` — add an "Editor setup" section

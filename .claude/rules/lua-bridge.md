@@ -33,7 +33,7 @@ Any kcdx-allocated GCObject embedding a pointer to a kcdx-side static-const sent
 
 Drop static-link of vendored Lua entirely; resolve every `lua_*`/`luaL_*` symbol from WHGame.dll. Eliminates the dual-Lua design by construction. ~117 symbols.
 
-**Harvest done (2026-05-21)**: 93 of ~117 LUA_API/LUALIB_API + 13 internal helpers + 4 CScriptSystem anchors in [`data/address-library/seed.csv`](../../data/address-library/seed.csv) rows 1100-1205, mirrored into [`src/address_library.cpp::kEntries[]`](../../src/address_library.cpp). ~24 functions are confirmed inlined-by-PGO or linker-stripped — those get kcdx-side stubs in the shim.
+**Harvest done (2026-05-21)**: 93 of ~117 LUA_API/LUALIB_API + 13 internal helpers + 4 CScriptSystem anchors in the address-library seeds at [`data/seeds/`](../../data/seeds/) (rows 1100-1205 in the pre-2026-05-28 single-CSV seed; renumbered in the three-file split), mirrored into [`src/address_library.cpp::kEntries[]`](../../src/address_library.cpp). ~24 functions are confirmed inlined-by-PGO or linker-stripped — those get kcdx-side stubs in the shim.
 
 Critical knowledge for the shim build (layout constants, CScriptSystem anchors, per-function stub strategies) consolidated in [`docs/outstanding-work/fix-a-drop-static-lua.md`](../../docs/outstanding-work/fix-a-drop-static-lua.md). That doc is the canonical source of truth for everything Stage 2B needs.
 

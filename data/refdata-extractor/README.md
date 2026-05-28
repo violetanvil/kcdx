@@ -14,7 +14,7 @@ of the repo (heavy, reproducible, machine-specific inputs). The extractor
 ## Layout
 
 ```
-tools/refdata-extractor/
+data/refdata-extractor/
   ghidra/                         the Java/Ghidra passes (run via Ghidra -scriptPath)
     ProduceReferenceData.java     entry point -- drives the 3 Java passes
     produce-reference-data.ps1    launcher (deadlock defenses + range args)
@@ -68,14 +68,14 @@ shard-by-shard.
 
 ```powershell
 # 1. The Java side (functions/ statements/ referenced_vars/ call_edges/) over the full binary:
-pwsh tools/refdata-extractor/ghidra/produce-reference-data.ps1 `
+pwsh data/refdata-extractor/ghidra/produce-reference-data.ps1 `
     -ProjectDir <ghidra-project-dir> -ProjectName KCD2 `
     -OutDir <out>/refdata-full -Module WHGame.dll -VersionTag release_1_5_1164953_841
 
 # 2. The Python side (signatures/ caller_reg_args/), same out dir:
-python tools/refdata-extractor/python/produce_signatures.py \
+python data/refdata-extractor/python/produce_signatures.py \
     <WHGame.dll> <enum.csv> <out>/refdata-full
-python tools/refdata-extractor/python/produce_caller_reg_args.py \
+python data/refdata-extractor/python/produce_caller_reg_args.py \
     <WHGame.dll> <enum.csv> <out>/refdata-full
 ```
 
@@ -87,7 +87,7 @@ project exclusively, so concurrent workers each need their own copy of the proje
 The 8-way parallel runner wraps all of the above:
 
 ```powershell
-pwsh tools/refdata-extractor/run-parallel.ps1 -OutDir <out>/refdata-full -Workers 8 `
+pwsh data/refdata-extractor/run-parallel.ps1 -OutDir <out>/refdata-full -Workers 8 `
     -VersionTag release_1_5_1164953_841
 ```
 
@@ -97,7 +97,7 @@ The import has **two modes**:
 
 ```bash
 # REBUILD (--rebuild): from-scratch baseline build from a dump dir.
-python tools/refdata-extractor/python/import_to_sqlite.py --rebuild <out>/refdata-full <out>/db
+python data/refdata-extractor/python/import_to_sqlite.py --rebuild <out>/refdata-full <out>/db
 #  -> <out>/db/reference.sqlite       (USER production, curated-only, ~0.1 MB)
 #     <out>/db/reference-dev.sqlite   (DEV bulk discovery superset, ~1.13 GB)
 
@@ -105,13 +105,13 @@ python tools/refdata-extractor/python/import_to_sqlite.py --rebuild <out>/refdat
 # disk is newer than the DB; reads the on-disk version from the game's
 # whdlversions.json (the shipped MasterMasterPGO config's build number; the DLL
 # carries no PE version resource).
-python tools/refdata-extractor/python/import_to_sqlite.py <out>/db <game-dir>
+python data/refdata-extractor/python/import_to_sqlite.py <out>/db <game-dir>
 #  exit 0 = DB already current; exit 3 = newer game version (maintainer
 #  re-verifies the curated set against the new dump)
 ```
 
 The import produces **two** DBs with **disjoint purposes** (per the streamlined
-three-track model — see `data/reference/README.md` for the full author-facing
+three-track model — see `data/reference.md` for the full author-facing
 explanation):
 
 | DB | Carries | Size | Who ships / fetches it |
@@ -119,8 +119,8 @@ explanation):
 | **USER** `reference.sqlite` (production) | **curated entities only** (~140) + their per-version verified facts: `address_names`, `address_versions`, `modules`, `game_versions`, `meta` | ~0.1 MB | every kcdx release — the engine resolves curated targets (`target = "IsInCombat"`) against this at launch |
 | **DEV** `reference-dev.sqlite` (discovery) | **bulk superset** — the curated set PLUS the binary's full ~321K function table (as bulk `address_versions` rows with `kcdx_id NULL`), per-statement metadata, variable storage, call graph, abi_walker floor (`+ statements + referenced_vars + call_edges` + the dev-only columns) | ~1.3 GB | on-demand author download — `kcdx.find` discovery of uncurated targets, which the author then declares in their own plugin via `kcdx.declare(module, name, versions)` |
 
-The schema is documented in full at `data/reference/README.md` (user) and
-`data/reference-dev/README.md` (dev). In brief:
+The schema is documented in full at `data/reference.md` (user) and
+`data/reference-dev.md` (dev). In brief:
 
 - **`address_names`** is the curated entity registry; `id` IS the `kcdx_id` (autoincrement starting at 1) — the stable cross-version handle plugins reference. **`address_versions`** holds per-version validity intervals: one open row per entity (`valid_through IS NULL` = current), carrying the content_hash, address, kind, abi_walker argument-width floor, and the verified signature when curated. **`address_versions.kcdx_id` is NULLABLE** — set when the row is a curated entity (FK to `address_names.id`), NULL when the row is a bulk uncurated DEV function. The dev-only `statements`/`referenced_vars`/`call_edges` carry TWO FK columns each: `address_version_id` (always set, FK to `address_versions.id`, the universal "which function row" handle that `kcdx.find` walks) + `kcdx_id` (nullable, FK to `address_names.id`, set only when the owning function is curated). **`modules`** / **`game_versions`** are registries; **`meta`** is the one-row header.
 - **Why the user/dev split:** a mod user's runtime needs only the survival hashes + the marshalling ABI for the entities their plugins hook — the small USER DB (curated rows only). The per-statement metadata + the call graph + the bulk address_versions rows exist only for the author discovery/inspection surface → the larger DEV DB. (`call_edges` is dev-only: it powers `kcdx.find`'s caller-graph ranking + cross-version re-identification.)
@@ -132,7 +132,7 @@ The schema is documented in full at `data/reference/README.md` (user) and
 ## Verify it
 
 ```bash
-python tools/refdata-extractor/python/validate_extractor_output.py   # -> 26/26 PASS
+python data/refdata-extractor/python/validate_extractor_output.py   # -> 26/26 PASS
 ```
 
 The harness is the **falsifiable regression net**. It runs the full toolchain over
@@ -145,7 +145,7 @@ a nameable extractor-broken state that would flip it to FAIL. See
 The **DB-shape gate** verifies the import (downstream of the dump):
 
 ```bash
-python tools/refdata-extractor/python/validate_db_shape.py   # -> 25/25 PASS
+python data/refdata-extractor/python/validate_db_shape.py   # -> 25/25 PASS
 ```
 
 It builds both DBs from the dump and asserts 25 checks on the built schema: table
@@ -159,7 +159,7 @@ round-trip (USER + DEV), end-to-end name resolution, and FK closure on both
 The BLAKE3 primitive has its own gate:
 
 ```bash
-cd tools/refdata-extractor/ghidra/blake3
+cd data/refdata-extractor/ghidra/blake3
 javac org/apache/commons/codec/digest/Blake3.java Blake3SelfTest.java && java -cp . Blake3SelfTest
 # -> 35/35 official vectors PASS
 ```
