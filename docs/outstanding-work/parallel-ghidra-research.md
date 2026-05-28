@@ -937,6 +937,14 @@ single-version baseline has nothing to deprecate/remove).
 
 ### 11.5 What the v1.5 baseline import builds NOW
 
+**Schema-shape SUPERSEDED 2026-05-28 by §11.9** -- the entity_versions /
+kcdx_overlay / kcdx_overlay_versions tables named below are gone (flattened to
+address_names + address_versions). The *baseline-build narrative* (what gets
+populated and from where) still applies; the *table targets* now point at
+`address_versions` (which absorbed entity_versions + kcdx_overlay_versions)
+and `address_names` (which absorbed kcdx_overlay). Read §11.9 for the
+ground-truth table layout. The text below is kept as historical record.
+
 The matcher can't run with one version, but the baseline must exist so v2 has
 stable anchors and the matcher's raw signals are preserved:
 
@@ -1057,6 +1065,11 @@ The matcher arrives mechanically with the 2nd KCD2 version, but is BUILT and
 validated against the sandbox first.
 
 ### 11.7 Sequence (the immediate plan)
+
+**Schema-shape names SUPERSEDED 2026-05-28 by §11.9.** Item-2's mention of
+`entity_versions` + `versions` reflects the prior shape; under the flatten the
+target tables are `address_versions` and `game_versions`. The sequence is
+otherwise as written.
 
 1. **This design — written down** (this §11). The finalized shape, minus the
    matcher mechanism.
@@ -1271,13 +1284,15 @@ address_names.id" (entity-to-entity supersession).
 
 #### `address_names` -- the curated entity registry
 
-One row per curated entity, ever. `id` IS the kcdx_id (not autoincrement; the
-importer assigns it explicitly to match the bulk function set's rva-ordinal so
-the same kcdx_id resolves the same entity across rebuilds).
+One row per curated entity, ever. `id` IS the kcdx_id (AUTOINCREMENT starting
+at 1; sequential per the order curated entities are added). The kcdx_id is
+the stable cross-version handle a plugin references; it does NOT track the
+bulk function set's rva-ordinal (those are separate id-spaces -- see
+`address_versions` below).
 
 | Column | Meaning |
 |---|---|
-| `id` (PK) | the **kcdx_id** -- the stable cross-version handle plugins reference. Never changes, never recycled. There is NO separate kcdx_id column; the PK IS the handle. |
+| `id` (PK, AUTOINCREMENT) | the **kcdx_id** -- the stable cross-version handle plugins reference. Sequential 1..N in addition order. There is NO separate kcdx_id column; the PK IS the handle. |
 | `name` | the curated name (`IsInCombat`, etc.). Unique per row. |
 | `is_deprecated` | 1 if this entity is superseded by another entity. |
 | `superseded_by` | another `address_names.id` -- entity-to-entity supersession (rename + identity change). |
@@ -1286,14 +1301,17 @@ the same kcdx_id resolves the same entity across rebuilds).
 
 #### `address_versions` -- per-version resolve facts (the spine)
 
-One row per (entity, version-interval). `kcdx_id` references
-`address_names.id` (for curated entities) -- or, in the DEV DB, also covers the
-bulk 321K functions whose `kcdx_id`s are not in `address_names`.
+One row per (entity, version-interval). **`kcdx_id` is NULLABLE.** When set,
+FKs to `address_names.id` (the row is a curated entity). When NULL, the row is
+a bulk uncurated DEV function -- present only in the DEV DB, never in USER.
+
+In USER: every row has `kcdx_id IS NOT NULL` (curated only). In DEV: ~143
+curated rows + ~321K bulk rows with `kcdx_id NULL`.
 
 | Column | Meaning |
 |---|---|
-| `id` (PK) | row id. |
-| `kcdx_id` | the entity -> `address_names.id` (curated) OR a bulk-only kcdx_id (DEV-bulk). Non-unique. |
+| `id` (PK, AUTOINCREMENT) | the universal "which function row" handle. DEV-only tables (statements, referenced_vars, call_edges) FK on this column. Assigned in bulk-rva order 1..N(functions); minted seed-only rows (callsites, vtable_index) get ids N+1..N+M. |
+| `kcdx_id` | NULLABLE FK to `address_names.id`. Set when the row is a curated entity; NULL for uncurated bulk DEV rows. Non-unique (one open row per kcdx_id, partial-unique below). |
 | `kind` | `function` / `function_no_sig` / `function_variadic` / `callsite` / `data_slot` / `string_anchor` / `instruction_anchor` / `vtable_base` / `vtable_index`. Dict-encoded. |
 | `module_id` | -> `modules.id`. Per-version (a future re-architecture could move an entity between modules; trivial to support). |
 | `rva` | address in this version. NULL for non-byte kinds (`vtable_index`). |
@@ -1308,7 +1326,23 @@ bulk 321K functions whose `kcdx_id`s are not in `address_names`.
 | `auto_name` (DEV) | `FUN_<rva>` discovery label. |
 | `decompile_quality` (DEV) | `clean` / `partial` / `unanalyzable`. |
 | `valid_from` | -> `game_versions.id` -- first version this form held. |
-| `valid_through` | -> `game_versions.id`, NULL = current. Partial-unique index enforces at most one open row per kcdx_id. |
+| `valid_through` | -> `game_versions.id`, NULL = current. **Partial-unique index** `(kcdx_id) WHERE kcdx_id IS NOT NULL AND valid_through IS NULL` enforces at most one open row per *curated* entity. Bulk rows (kcdx_id NULL) don't participate. |
+
+#### DEV-only tables: TWO FKs to the owning function
+
+`statements`, `referenced_vars`, `call_edges` each carry two FK columns to their
+owning function:
+
+- **`address_version_id`** (FK to `address_versions.id`) -- ALWAYS SET. The
+  universal "which function row" pointer. `kcdx.find` walks this -- works for
+  both curated and uncurated bulk functions (kcdx.find primarily walks bulk).
+- **`kcdx_id`** (FK to `address_names.id`) -- NULLABLE, non-unique. Set only
+  when the owning function is curated. Ergonomic shortcut for curated-subset
+  joins; mostly NULL since most of the binary is uncurated.
+
+call_edges has both pairs (caller + callee): `caller_address_version_id`
+(always set), `callee_address_version_id` (always set), `caller_kcdx_id`
+(nullable), `callee_kcdx_id` (nullable).
 
 **Resolution path** (a plugin's `target = "name"`):
 
@@ -1321,6 +1355,18 @@ SELECT n.id AS kcdx_id, v.kind, v.rva, v.signature, v.status
 ```
 
 One join. The kind+address+signature come back from the single open row.
+
+**Bulk discovery walk** (a DEV-only `kcdx.find` use case):
+
+```sql
+SELECT v.rva, v.auto_name
+  FROM statements s
+  JOIN address_versions v ON v.id = s.address_version_id
+ WHERE s.string_ref = ?
+```
+
+Walks bulk statement → owning function via `address_version_id` (works for both
+curated and uncurated; `kcdx_id` would be NULL for 99.9% of cases).
 
 **What survived from §11.2:** the partial-unique-open-interval invariant (now
 on address_versions instead of entity_versions); the curated-only USER /

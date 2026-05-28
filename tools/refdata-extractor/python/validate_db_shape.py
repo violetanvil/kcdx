@@ -114,22 +114,38 @@ def run_checks(dump_dir, user_db, dev_db):
     check("DEV address_versions count >= functions count",
           n_av >= n_fn,
           "address_versions=%d functions=%d" % (n_av, n_fn))
-    # every kcdx_id 1..n_fn present (the function baseline).
-    present = scalar(dc, "SELECT COUNT(DISTINCT kcdx_id) FROM address_versions "
-                         "WHERE kcdx_id BETWEEN 1 AND ?", (n_fn,))
-    check("every kcdx_id 1..N(functions) present in address_versions",
+    # every dump-function id 1..n_fn must be a row in address_versions.id (the
+    # universal "which function row" handle assigned 1..N in rva order; not
+    # kcdx_id, which is curated-only now).
+    present = scalar(dc, "SELECT COUNT(*) FROM address_versions WHERE id BETWEEN 1 AND ?",
+                     (n_fn,))
+    check("every address_versions.id 1..N(functions) present",
           present == n_fn, "present=%d of %d" % (present, n_fn))
 
-    # --- 3. all baseline-open intervals + partial-unique-open ---
+    # --- 3. all baseline-open intervals + partial-unique-open (curated only) ---
     n_open = scalar(dc, "SELECT COUNT(*) FROM address_versions "
                         "WHERE valid_through IS NULL")
     check("address_versions all baseline-open (valid_through IS NULL)",
           n_open == n_av, "open=%d of %d" % (n_open, n_av))
+    # Partial-unique enforces "at most one open row per CURATED entity" (kcdx_id
+    # IS NOT NULL); bulk rows have kcdx_id NULL and don't participate.
     dup_open = scalar(dc,
         "SELECT COUNT(*) FROM (SELECT kcdx_id FROM address_versions "
-        "WHERE valid_through IS NULL GROUP BY kcdx_id HAVING COUNT(*) > 1)")
-    check("no entity has 2 open address_versions rows", dup_open == 0,
-          "entities-with-2-open=%d" % dup_open)
+        "WHERE kcdx_id IS NOT NULL AND valid_through IS NULL "
+        "GROUP BY kcdx_id HAVING COUNT(*) > 1)")
+    check("no curated entity has 2 open address_versions rows", dup_open == 0,
+          "curated-entities-with-2-open=%d" % dup_open)
+
+    # --- 3b. NEW: kcdx_id is nullable; bulk rows = NULL, curated = NOT NULL.
+    n_bulk = scalar(dc, "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NULL")
+    n_cur  = scalar(dc, "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL")
+    n_seed_for_split = len(imp.read_seed(imp.SEED_CSV))
+    check("DEV address_versions: curated count == seed.csv count",
+          n_cur == n_seed_for_split,
+          "curated=%d seed=%d" % (n_cur, n_seed_for_split))
+    check("DEV address_versions: bulk count == n_av - curated",
+          n_bulk == (n_av - n_cur),
+          "bulk=%d expected=%d" % (n_bulk, n_av - n_cur))
 
     # --- 4. USER address_versions has NO auto_name/decompile_quality; DEV does
     ucols = columns(uc, "address_versions")
@@ -213,23 +229,44 @@ def run_checks(dump_dir, user_db, dev_db):
           row is not None and row[1] is not None and row[2],
           "got %s" % (row,))
 
-    # --- 10. FK sanity: every address_names.id has at least one address_versions row.
+    # --- 10. FK sanity: every address_names.id has a curated address_versions
+    #         row (kcdx_id IS NOT NULL) pointing at it.
     orphan_an = scalar(dc, """
         SELECT COUNT(*) FROM address_names n
-        LEFT JOIN (SELECT DISTINCT kcdx_id FROM address_versions) v
+        LEFT JOIN (SELECT DISTINCT kcdx_id FROM address_versions WHERE kcdx_id IS NOT NULL) v
           ON v.kcdx_id = n.id
         WHERE v.kcdx_id IS NULL""")
-    check("every address_names.id has >=1 address_versions row",
+    check("every address_names.id has a curated address_versions row",
           orphan_an == 0, "orphans=%d" % orphan_an)
 
-    # Statements/edges FK to a kcdx_id present in DEV address_versions.
+    # Statements/edges FK to address_versions.id (always set; the universal
+    # handle that kcdx.find walks). kcdx_id on these tables is NULLABLE
+    # (curated only); the address_version_id is the real FK.
     orphan_st = scalar(dc, """
         SELECT COUNT(*) FROM statements s
-        LEFT JOIN (SELECT DISTINCT kcdx_id FROM address_versions) v
-          ON v.kcdx_id = s.kcdx_id
-        WHERE v.kcdx_id IS NULL""")
-    check("every statements.kcdx_id (DEV) resolves to an address_versions row",
+        LEFT JOIN address_versions v ON v.id = s.address_version_id
+        WHERE v.id IS NULL""")
+    check("every statements.address_version_id (DEV) resolves to an address_versions row",
           orphan_st == 0, "orphans=%d" % orphan_st)
+    # A statement's kcdx_id, when set, must match its function's kcdx_id.
+    mismatch_st_kcdx = scalar(dc, """
+        SELECT COUNT(*) FROM statements s
+        JOIN address_versions v ON v.id = s.address_version_id
+        WHERE s.kcdx_id IS NOT NULL AND s.kcdx_id != v.kcdx_id""")
+    check("statements.kcdx_id matches its function's address_versions.kcdx_id when set",
+          mismatch_st_kcdx == 0, "mismatches=%d" % mismatch_st_kcdx)
+
+    # --- 11. NEW: end-to-end kcdx.find walk -- a bulk statement's string_ref
+    #         resolves up to its function via address_version_id.
+    nm_walk = dc.execute("""
+        SELECT v.rva, v.auto_name
+          FROM statements s
+          JOIN address_versions v ON v.id = s.address_version_id
+         WHERE s.string_ref IS NOT NULL
+         LIMIT 1""").fetchone()
+    check("DEV kcdx.find walk: any string_ref statement resolves to its owning function",
+          nm_walk is not None and nm_walk[0] is not None,
+          "got %s" % (nm_walk,))
 
     uc.close()
     dc.close()

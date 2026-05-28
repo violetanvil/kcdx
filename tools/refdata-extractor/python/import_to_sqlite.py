@@ -146,15 +146,15 @@ SCHEMA = {
         ("ordinal", "INTEGER"),
         ("released", "TEXT"),
     ],
-    # address_names: ONE ROW PER ENTITY. `id` IS the kcdx_id (the stable
-    # cross-version handle plugins reference); not autoincrement -- the importer
-    # assigns it explicitly to match the rva-ordinal of the bulk function set,
-    # so the same kcdx_id resolves the same entity across rebuilds. `name` is
-    # the current canonical name for that entity. Renames overwrite name; an
-    # ENTITY-level deprecation (this whole entity superseded by another) is
-    # recorded via is_deprecated + superseded_by -> another address_names.id.
+    # address_names: ONE ROW PER CURATED ENTITY. `id` is autoincrement starting
+    # at 1 -- the kcdx_id is the row's auto-assigned id, sequential per the
+    # insertion order from seed.csv. kcdx_id only exists for curated entities;
+    # bulk-only DEV functions have NO kcdx_id (their address_versions row has
+    # kcdx_id = NULL). Renames overwrite name; ENTITY-level deprecation (this
+    # whole entity superseded by another) is recorded via is_deprecated +
+    # superseded_by -> another address_names.id.
     "address_names": [
-        ("id", "INTEGER PRIMARY KEY"),         # IS the kcdx_id; explicit, not autoincrement
+        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),   # IS the kcdx_id; 1, 2, 3, ...
         ("name", "TEXT"),
         ("is_deprecated", "INTEGER"),
         ("superseded_by", "INTEGER"),          # FK to another address_names.id (entity-to-entity)
@@ -162,14 +162,16 @@ SCHEMA = {
         ("notes", "TEXT"),                     # DEV-ONLY
     ],
     # address_versions: per-(entity, version-interval) resolve facts. kcdx_id
-    # non-unique; partial UNIQUE (kcdx_id) WHERE valid_through IS NULL enforces
-    # "at most one current form per entity." Every fact a consumer needs to
-    # resolve a name to an address + ABI lives here.
+    # is NULLABLE -- set when the row is a curated entity (FK to address_names.id),
+    # NULL when the row is a bulk-only DEV function (no curated name). Partial
+    # UNIQUE (kcdx_id) WHERE kcdx_id IS NOT NULL AND valid_through IS NULL
+    # enforces "at most one current form per CURATED entity." (Bulk rows are
+    # currently 1:1 with their function but not enforced as such.)
     "address_versions": [
         ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("kcdx_id", "INTEGER"),                # the stable entity handle
+        ("kcdx_id", "INTEGER"),                # NULLABLE FK to address_names.id (curated only)
         ("kind", "INTEGER"),                   # dict: function | callsite | vtable_base | etc.
-        ("module_id", "INTEGER"),              # FK to modules.id (per-version, theoretically)
+        ("module_id", "INTEGER"),              # FK to modules.id
         ("rva", "INTEGER"),
         ("length", "INTEGER"),
         ("content_hash", "BLOB"),
@@ -191,9 +193,17 @@ SCHEMA = {
         ("schema_version", "INTEGER"),
         ("abi_confidence", "TEXT"),
     ],
+    # DEV-only tables. Each row carries TWO FK columns to its owning function:
+    #   address_version_id -- FK to address_versions.id; ALWAYS SET. The
+    #     universal "which function row" pointer (works for both curated +
+    #     bulk; what kcdx.find walks).
+    #   kcdx_id            -- FK to address_names.id; NULLABLE, non-unique.
+    #     Set only when the owning function is curated. Ergonomic shortcut for
+    #     curated-subset joins; redundant with address_version_id otherwise.
     "statements": [   # DEV-ONLY
         ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("kcdx_id", "INTEGER"),
+        ("address_version_id", "INTEGER"),     # always set; -> address_versions.id
+        ("kcdx_id", "INTEGER"),                # nullable, non-unique; -> address_names.id when curated
         ("idx", "INTEGER"),
         ("kind", "INTEGER"),                    # dict
         ("pseudo_text", "TEXT"),
@@ -205,7 +215,8 @@ SCHEMA = {
     ],
     "referenced_vars": [   # DEV-ONLY
         ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("kcdx_id", "INTEGER"),
+        ("address_version_id", "INTEGER"),     # always set; -> address_versions.id
+        ("kcdx_id", "INTEGER"),                # nullable, non-unique
         ("statement_idx", "INTEGER"),
         ("var_name", "TEXT"),
         ("storage_kind", "INTEGER"),            # dict
@@ -215,8 +226,10 @@ SCHEMA = {
     ],
     "call_edges": [   # DEV-ONLY
         ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("caller_kcdx_id", "INTEGER"),
-        ("callee_kcdx_id", "INTEGER"),
+        ("caller_address_version_id", "INTEGER"),   # always set
+        ("callee_address_version_id", "INTEGER"),   # always set (call must resolve to land here)
+        ("caller_kcdx_id", "INTEGER"),              # nullable, non-unique; curated caller only
+        ("callee_kcdx_id", "INTEGER"),              # nullable, non-unique; curated callee only
         ("callsite_rva", "INTEGER"),
     ],
 }
@@ -464,7 +477,11 @@ def build_rows(dump_dir, dicts):
     rows["meta"].append({"id": 1, "schema_version": SCHEMA_VERSION,
                          "abi_confidence": ABI_CONFIDENCE})
 
-    # --- 1. read functions/, sort by rva, assign kcdx_id 1..N ---
+    # --- 1. read functions/, sort by rva, assign each function a stable
+    #         address_versions.id (av_id) 1..N. av_id is the universal "which
+    #         function row" handle -- statements/edges/etc. point at it. NOT
+    #         the same as kcdx_id (which is curated-only, autoincrement on
+    #         address_names, set later).
     print("  reading functions/ ...", flush=True)
     functions = []
     for r in iter_table(dump_dir, "functions"):
@@ -474,13 +491,14 @@ def build_rows(dump_dir, dicts):
         v = parse_int(r.get("rva", ""))
         return (v is None, v if v is not None else 0)
     functions.sort(key=fn_rva)
-    rva_to_kcdx = {}
+    rva_to_av_id = {}            # function rva -> address_versions.id
     for i, r in enumerate(functions, start=1):
         rv = parse_int(r.get("rva", ""))
         if rv is not None:
-            rva_to_kcdx[rv] = i
+            rva_to_av_id[rv] = i
     n_functions = len(functions)
-    print(f"  functions: {n_functions} rows -> kcdx_id 1..{n_functions}", flush=True)
+    print(f"  functions: {n_functions} rows -> address_versions.id 1..{n_functions}",
+          flush=True)
 
     # --- merge signatures/ + caller_reg_args/ onto functions BY RVA ---
     print("  reading signatures/ + caller_reg_args/ ...", flush=True)
@@ -495,17 +513,17 @@ def build_rows(dump_dir, dicts):
         if rv is not None:
             cra_by_rva[rv] = r
 
-    # --- 2. address_versions for each bulk function ---
-    # Default kind for the bulk = 'function'; curated rows that share an rva will
-    # OVERRIDE kind/status/value/etc. in the seed pass below by writing into
-    # versions_by_kcdx and re-emitting.
-    versions_by_kcdx = {}   # kcdx_id -> row dict (so seed pass can amend)
+    # --- 2. address_versions for each bulk function. kcdx_id is NULL (these
+    #        are uncurated; only the seed pass below promotes some to curated
+    #        and sets their kcdx_id).
+    versions_by_av_id = {}   # av_id -> row dict (so seed pass can amend)
     for i, r in enumerate(functions, start=1):
         rv = parse_int(r.get("rva", ""))
         sig = sig_by_rva.get(rv)
         cra = cra_by_rva.get(rv)
-        versions_by_kcdx[i] = {
-            "kcdx_id": i,
+        versions_by_av_id[i] = {
+            "id": i,                       # explicit; matches rva_to_av_id
+            "kcdx_id": None,               # NULL = uncurated bulk; seed pass sets when curated
             "kind": dicts.encode("address_versions", "kind", "function"),
             "module_id": MODULE_ID,
             "rva": rv,
@@ -519,9 +537,6 @@ def build_rows(dump_dir, dicts):
                                                  cra.get("agreement", "")) if cra else None,
             "offset": None,
             "vtable_slot": None,
-            # default status for bulk = 'unverified' (the abi_walker floor is not
-            # a verified ABI; curated rows overwrite to 'verified' when the seed
-            # says so).
             "status": dicts.encode("address_versions", "status", "unverified"),
             "auto_name": (r.get("auto_name") or None),
             "decompile_quality": dicts.encode("address_versions", "decompile_quality",
@@ -530,28 +545,30 @@ def build_rows(dump_dir, dicts):
             "valid_through": None,
         }
 
-    # --- 3. read seed.csv; mint curated-only entities; build address_names rows ---
+    # --- 3. read seed.csv; assign address_names.id 1..N (autoincrement); for
+    #        each seed row, either amend an existing bulk address_versions row
+    #        (setting kcdx_id = name_id) or mint a new address_versions row.
     seed = read_seed(SEED_CSV)
     print(f"  seed.csv: {len(seed)} curated rows", flush=True)
-    next_kcdx = n_functions + 1
-    seed_id_to_kcdx = {}   # seed.id -> kcdx_id
-    n_seed_mapped = 0      # seed rows whose rva matched a bulk function
-    n_seed_minted_addr = 0  # seed rows with an rva not in the dump (mint a new kcdx_id)
+    next_av_id = n_functions + 1   # for minted address_versions rows
+    n_seed_mapped = 0       # seed rows whose rva matched a bulk function
+    n_seed_minted_addr = 0  # seed rows with an rva not in the dump (mint a new av_id)
     n_seed_minted_noaddr = 0  # seed rows with no rva at all (vtable_index)
 
-    for s in seed:
+    for name_id, s in enumerate(seed, start=1):
         srva = (s.get("rva") or "").strip()
         if srva:
             rv = parse_int(srva)
-            kid = rva_to_kcdx.get(rv)
-            if kid is None:
+            av_id = rva_to_av_id.get(rv)
+            if av_id is None:
                 # seed code row whose rva is not in the dump (a curated address
                 # the bulk extractor didn't enumerate -- e.g. a callsite mid-fn).
-                kid = next_kcdx
-                next_kcdx += 1
-                versions_by_kcdx[kid] = {
-                    "kcdx_id": kid,
-                    "kind": None,   # filled below after infer_kind
+                av_id = next_av_id
+                next_av_id += 1
+                versions_by_av_id[av_id] = {
+                    "id": av_id,
+                    "kcdx_id": name_id,
+                    "kind": None,
                     "module_id": MODULE_ID,
                     "rva": rv,
                     "length": None,
@@ -574,19 +591,19 @@ def build_rows(dump_dir, dicts):
             else:
                 n_seed_mapped += 1
         else:
-            # vtable_index (or similar) -- no rva; mint a fresh kcdx_id with a
+            # vtable_index (or similar) -- no rva; mint a fresh av_id with a
             # version row that carries the slot integer.
-            kid = next_kcdx
-            next_kcdx += 1
-            seed_id_to_kcdx[s.get("id")] = kid
-            versions_by_kcdx[kid] = {
-                "kcdx_id": kid,
-                "kind": None,   # filled below
+            av_id = next_av_id
+            next_av_id += 1
+            versions_by_av_id[av_id] = {
+                "id": av_id,
+                "kcdx_id": name_id,
+                "kind": None,
                 "module_id": MODULE_ID,
                 "rva": None,
                 "length": None,
                 "content_hash": None,
-                "value": None,   # may be set below (slot int)
+                "value": None,
                 "signature": (s.get("signature") or None) or None,
                 "observed_arg_slots": None,
                 "caller_reg_arg_count": None,
@@ -602,11 +619,12 @@ def build_rows(dump_dir, dicts):
             }
             n_seed_minted_noaddr += 1
 
-        # Curated row: override kind/status/offset/vtable_slot on the version row,
-        # carry the verified signature, and emit an address_names row.
+        # Promote the address_versions row to curated: set kcdx_id and override
+        # kind/status/offset/vtable_slot. Carry the verified signature if present.
         kind = infer_kind(s)
         offset, vslot = kind_offset_and_slot(kind, (s.get("notes") or "").lower())
-        v = versions_by_kcdx[kid]
+        v = versions_by_av_id[av_id]
+        v["kcdx_id"] = name_id
         v["kind"] = dicts.encode("address_versions", "kind", kind)
         v["status"] = dicts.encode("address_versions", "status",
                                    s.get("status") or "verified")
@@ -616,10 +634,10 @@ def build_rows(dump_dir, dicts):
             v["offset"] = offset
         if vslot is not None:
             v["vtable_slot"] = vslot
-            v["value"] = vslot   # mirror slot int into the generic 'value' col
+            v["value"] = vslot
 
         rows["address_names"].append({
-            "id": kid,                         # id IS the kcdx_id
+            "id": name_id,                     # autoincrement 1..N; IS the kcdx_id
             "name": (s.get("name") or None),
             "is_deprecated": 0,
             "superseded_by": None,
@@ -627,27 +645,37 @@ def build_rows(dump_dir, dicts):
             "notes": (s.get("notes") or None),
         })
 
+    # rva -> kcdx_id (curated only) for the DEV-only tables' kcdx_id column.
+    # rva -> av_id (universal) for the DEV-only tables' address_version_id column.
+    rva_to_kcdx_id = {v["rva"]: v["kcdx_id"]
+                      for v in versions_by_av_id.values()
+                      if v["rva"] is not None and v["kcdx_id"] is not None}
+
     print(f"  address_names: {len(rows['address_names'])} rows "
           f"(seed: bulk-matched={n_seed_mapped}, "
           f"minted-with-rva={n_seed_minted_addr}, minted-no-rva={n_seed_minted_noaddr})",
           flush=True)
 
-    # Now emit the address_versions rows. Curated rows are already in
-    # versions_by_kcdx (amended); bulk rows pass through unchanged.
-    for kid in sorted(versions_by_kcdx.keys()):
-        rows["address_versions"].append(versions_by_kcdx[kid])
+    # Emit the address_versions rows in id order.
+    for av_id in sorted(versions_by_av_id.keys()):
+        rows["address_versions"].append(versions_by_av_id[av_id])
     n_addr_versions = len(rows["address_versions"])
-    n_curated_kcdx_ids = len({r["id"] for r in rows["address_names"]})   # id IS the kcdx_id
+    n_curated_kcdx_ids = len(rows["address_names"])
     print(f"  address_versions: {n_addr_versions} rows "
-          f"(curated kcdx_ids: {n_curated_kcdx_ids})", flush=True)
+          f"(curated: {n_curated_kcdx_ids}, "
+          f"bulk uncurated: {n_addr_versions - n_curated_kcdx_ids})", flush=True)
 
     # --- 8. statements (DEV) ---
+    # Each statement points at its owning function by address_version_id
+    # (always set; universal handle to the function row) + kcdx_id (nullable;
+    # set only when the function is curated).
     print("  reading statements/ ...", flush=True)
     n_st = 0
     for r in iter_table(dump_dir, "statements"):
-        kid = rva_to_kcdx.get(parse_int(r.get("function_rva", "")))
-        if kid is None:
-            continue
+        fn_rva = parse_int(r.get("function_rva", ""))
+        av_id = rva_to_av_id.get(fn_rva)
+        if av_id is None:
+            continue   # statement of a function not in the dump (shouldn't happen)
         callee = r.get("callee") or ""
         callee_rva = parse_int(r.get("callee_rva", ""))
         # NULL the callee when it is the redundant auto-name of callee_rva.
@@ -658,7 +686,8 @@ def build_rows(dump_dir, dicts):
         else:
             callee = callee or None
         rows["statements"].append({
-            "kcdx_id": kid,
+            "address_version_id": av_id,
+            "kcdx_id": rva_to_kcdx_id.get(fn_rva),   # NULL for uncurated
             "idx": parse_int(r.get("idx", "")),
             "kind": dicts.encode("statements", "kind", r.get("kind", "")),
             "pseudo_text": (r.get("pseudo_text") or None),
@@ -675,11 +704,13 @@ def build_rows(dump_dir, dicts):
     print("  reading referenced_vars/ ...", flush=True)
     n_rv = 0
     for r in iter_table(dump_dir, "referenced_vars"):
-        kid = rva_to_kcdx.get(parse_int(r.get("function_rva", "")))
-        if kid is None:
+        fn_rva = parse_int(r.get("function_rva", ""))
+        av_id = rva_to_av_id.get(fn_rva)
+        if av_id is None:
             continue
         rows["referenced_vars"].append({
-            "kcdx_id": kid,
+            "address_version_id": av_id,
+            "kcdx_id": rva_to_kcdx_id.get(fn_rva),   # NULL for uncurated
             "statement_idx": parse_int(r.get("statement_idx", "")),
             "var_name": (r.get("var_name") or None),
             "storage_kind": dicts.encode("referenced_vars", "storage_kind", r.get("storage_kind", "")),
@@ -691,19 +722,27 @@ def build_rows(dump_dir, dicts):
     print(f"  referenced_vars: {n_rv} rows", flush=True)
 
     # --- 10. call_edges (DEV) ---
+    # Each edge points at caller + callee functions via address_version_id
+    # (always set; the call must resolve to land here) + nullable kcdx_id for
+    # each side when curated.
     print("  reading call_edges/ ...", flush=True)
     n_ce = 0
     n_ce_skip = 0
     for r in iter_table(dump_dir, "call_edges"):
-        caller = rva_to_kcdx.get(parse_int(r.get("caller_rva", "")))
-        callee = rva_to_kcdx.get(parse_int(r.get("callee_rva", "")))
-        # callee_kcdx_id must reference an entity: skip empty/indirect/unknown.
-        if caller is None or callee is None:
+        caller_rva = parse_int(r.get("caller_rva", ""))
+        callee_rva = parse_int(r.get("callee_rva", ""))
+        caller_av = rva_to_av_id.get(caller_rva)
+        callee_av = rva_to_av_id.get(callee_rva)
+        # Both endpoints must land in the dump's function set (skip
+        # empty/indirect/external).
+        if caller_av is None or callee_av is None:
             n_ce_skip += 1
             continue
         rows["call_edges"].append({
-            "caller_kcdx_id": caller,
-            "callee_kcdx_id": callee,
+            "caller_address_version_id": caller_av,
+            "callee_address_version_id": callee_av,
+            "caller_kcdx_id": rva_to_kcdx_id.get(caller_rva),   # NULL for uncurated
+            "callee_kcdx_id": rva_to_kcdx_id.get(callee_rva),   # NULL for uncurated
             "callsite_rva": parse_int(r.get("callsite_rva", "")),
         })
         n_ce += 1
@@ -746,13 +785,14 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
     # them via the dict id).
     dict_entries = dicts.materialize(con)
 
-    # USER row-filter: address_versions narrows to the curated kcdx_ids.
-    # DEV writes all rows as before.
+    # USER row-filter: address_versions narrows to rows with a curated kcdx_id
+    # (kcdx_id IS NOT NULL = curated). Bulk uncurated rows (kcdx_id NULL) are
+    # DEV-only by construction. DEV writes all rows.
     def filter_rows(t, rs):
-        if not user_projection or curated_kcdx_ids is None:
+        if not user_projection:
             return rs
         if t == "address_versions":
-            return [r for r in rs if r["kcdx_id"] in curated_kcdx_ids]
+            return [r for r in rs if r["kcdx_id"] is not None]
         return rs   # modules, game_versions, address_names, meta: no row filter
 
     for t in tables:
@@ -782,19 +822,25 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
     # Indexes for the engine's lookup paths.
     con.execute('CREATE INDEX ix_av_kcdx ON address_versions(kcdx_id)')
     con.execute('CREATE INDEX ix_av_rva  ON address_versions(rva)')
-    # Partial-unique: at most one OPEN interval per entity. Enforces the "one
-    # current form per kcdx_id" invariant at write time.
+    # Partial-unique: at most one OPEN interval per CURATED entity. kcdx_id is
+    # NULL for bulk uncurated rows -- skip those (bulk has its own 1:1 av_id).
     con.execute('CREATE UNIQUE INDEX ix_av_open_unique ON address_versions(kcdx_id) '
-                'WHERE valid_through IS NULL')
+                'WHERE kcdx_id IS NOT NULL AND valid_through IS NULL')
     # address_names.id IS the kcdx_id (PK already indexed); only need a name index.
     con.execute('CREATE INDEX ix_an_name ON address_names(name)')
     if "statements" in tables:
-        con.execute('CREATE INDEX ix_st_kcdx ON statements(kcdx_id, idx)')
+        # Index by av_id (the universal handle kcdx.find walks) + idx for the
+        # statement-ordering query. kcdx_id is nullable; index it separately.
+        con.execute('CREATE INDEX ix_st_av ON statements(address_version_id, idx)')
+        con.execute('CREATE INDEX ix_st_kcdx ON statements(kcdx_id)')
     if "referenced_vars" in tables:
+        con.execute('CREATE INDEX ix_rv_av ON referenced_vars(address_version_id)')
         con.execute('CREATE INDEX ix_rv_kcdx ON referenced_vars(kcdx_id)')
     if "call_edges" in tables:
-        con.execute('CREATE INDEX ix_ce_caller ON call_edges(caller_kcdx_id)')
-        con.execute('CREATE INDEX ix_ce_callee ON call_edges(callee_kcdx_id)')
+        con.execute('CREATE INDEX ix_ce_caller_av ON call_edges(caller_address_version_id)')
+        con.execute('CREATE INDEX ix_ce_callee_av ON call_edges(callee_address_version_id)')
+        con.execute('CREATE INDEX ix_ce_caller_kcdx ON call_edges(caller_kcdx_id)')
+        con.execute('CREATE INDEX ix_ce_callee_kcdx ON call_edges(callee_kcdx_id)')
 
     con.commit()
     con.execute("VACUUM")
@@ -825,11 +871,9 @@ def run_rebuild(dump_dir, out_dir):
           f"address_versions={counts['address_versions']} "
           f"curated_kcdx_ids={counts['curated_kcdx_ids']}")
 
-    # Curated kcdx_ids: every entity touched by the curated overlay. This is
-    # the set that ships in the USER (production) DB; everything else lives
-    # only in the DEV bulk discovery DB. Per parallel-ghidra-research.md §11.8.
-    curated_kcdx_ids = {r["id"] for r in rows["address_names"]}   # id IS the kcdx_id
-    print(f"  curated kcdx_ids: {len(curated_kcdx_ids)} (USER will ship only these)")
+    # USER ships address_versions rows whose kcdx_id IS NOT NULL (the curated
+    # subset); the filter is now structural to the row (kcdx_id NULL <=> bulk).
+    print(f"  curated kcdx_ids: {counts['curated_kcdx_ids']} (USER will ship only these)")
 
     print(f"\n== DEV DB (bulk discovery superset) -> {dev_db}")
     t0 = time.time()
@@ -839,15 +883,14 @@ def run_rebuild(dump_dir, out_dir):
 
     print(f"\n== USER DB (production, curated-only) -> {user_db}")
     t0 = time.time()
-    ud = write_db(user_db, rows, dicts, USER_TABLES, user_projection=True,
-                  curated_kcdx_ids=curated_kcdx_ids)
+    ud = write_db(user_db, rows, dicts, USER_TABLES, user_projection=True)
     usz = os.path.getsize(user_db)
     print(f"  built in {time.time()-t0:.0f}s; size {usz/1e6:.1f} MB; dict entries {ud}")
 
     print(bar)
     print("SUMMARY")
-    print(f"  USER reference.sqlite     : {usz/1e6:8.1f} MB  (curated-only, {len(curated_kcdx_ids)} kcdx_ids)")
-    print(f"  DEV  reference-dev.sqlite : {dsz/1e6:8.1f} MB  (bulk superset, {counts['address_versions']} kcdx_ids)")
+    print(f"  USER reference.sqlite     : {usz/1e6:8.1f} MB  (curated-only, {counts['curated_kcdx_ids']} kcdx_ids)")
+    print(f"  DEV  reference-dev.sqlite : {dsz/1e6:8.1f} MB  (bulk superset, {counts['address_versions']} rows)")
     print(f"  functions={counts['functions']} "
           f"seed_minted_with_rva={counts['seed_minted_with_rva']} "
           f"seed_minted_no_rva={counts['seed_minted_no_rva']}")

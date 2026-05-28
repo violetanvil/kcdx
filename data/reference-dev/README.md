@@ -71,10 +71,16 @@ exist only here:
 
 ## Dev-only tables (the bulk discovery surface)
 
-These three tables exist only in the dev database. They key on the entity's
-`kcdx_id` (which matches `address_names.id` for curated entities, or the
-bulk-baseline kcdx_id for uncurated ones). They are the substance of what
-`kcdx.find` walks.
+These three tables exist only in the dev database. Each row carries **two** FK
+columns to its owning function:
+
+- `address_version_id` — **always set**; FK to `address_versions.id`. The
+  universal "which function row" pointer. This is what `kcdx.find` walks (works
+  for both curated and uncurated bulk functions).
+- `kcdx_id` — **nullable**, non-unique; FK to `address_names.id` when the
+  function is curated, `NULL` otherwise. An ergonomic shortcut for curated-subset
+  joins; redundant with `address_version_id` (mostly NULL in practice, since
+  ~99.9% of the binary is uncurated).
 
 ### `statements` — per-statement metadata
 
@@ -84,7 +90,8 @@ One row per decompiled statement of each analyzable function. Backs
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
-| `kcdx_id` | the owning function (matches `address_versions.kcdx_id`). |
+| `address_version_id` | the owning function row → `address_versions.id`. Always set. |
+| `kcdx_id` | the owning function's curated id → `address_names.id`. `NULL` for uncurated bulk functions (the vast majority). |
 | `idx` | the statement's ordinal within the function. |
 | `kind` | the statement kind (call / assign / branch / …). Dictionary-encoded. |
 | `pseudo_text` | the decompiled pseudo-code line. |
@@ -99,7 +106,8 @@ One row per decompiled statement of each analyzable function. Backs
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
-| `kcdx_id` | the owning function. |
+| `address_version_id` | the owning function row → `address_versions.id`. Always set. |
+| `kcdx_id` | the owning function's curated id → `address_names.id`. `NULL` for uncurated bulk. |
 | `statement_idx` | the owning statement's ordinal. |
 | `var_name` | the variable name, if recovered. |
 | `storage_kind` | register / stack / global / … Dictionary-encoded. |
@@ -115,11 +123,14 @@ anchor (a string, a callee) to the gameplay function an author wants.
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
-| `caller_kcdx_id` | the calling function. |
-| `callee_kcdx_id` | the called function. |
+| `caller_address_version_id` | the calling function row → `address_versions.id`. Always set. |
+| `callee_address_version_id` | the called function row → `address_versions.id`. Always set (a call has to land here). |
+| `caller_kcdx_id` | the calling function's curated id, if curated; `NULL` otherwise. |
+| `callee_kcdx_id` | the called function's curated id, if curated; `NULL` otherwise. |
 | `callsite_rva` | the address of the call instruction. |
 
-Indexed in both directions (by caller and by callee).
+Indexed in both directions (by caller's address_version_id, by callee's, and by
+both kcdx_ids).
 
 ## Encoding
 

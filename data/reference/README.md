@@ -88,12 +88,13 @@ Encoding).
 
 ### `address_names` — the curated entity registry
 
-One row per curated entity, ever. `id` IS the `kcdx_id` (the stable handle
-plugins reference); not autoincrement — the importer assigns it.
+One row per curated entity, ever. `id` IS the `kcdx_id` (autoincrement starting
+at 1; sequential per the order curated entities are added). The kcdx_id is the
+stable handle plugins reference.
 
 | Column | Meaning |
 |---|---|
-| `id` | the **kcdx_id**. Primary key. The stable handle a plugin references. Never changes, never recycled. |
+| `id` | autoincrement primary key — **IS the kcdx_id**. Sequential 1..N in addition order. Stable across rebuilds (an entity's kcdx_id never changes). |
 | `name` | the curated name (e.g. `IsInCombat`). Unique per row. |
 | `is_deprecated` | `1` if this entity is superseded by another entity; the row still resolves through the chain. |
 | `superseded_by` | another `address_names.id` (== another kcdx_id) — entity-to-entity supersession. |
@@ -101,12 +102,17 @@ plugins reference); not autoincrement — the importer assigns it.
 ### `address_versions` — per-version resolve facts (the spine)
 
 One row per `(entity, version-interval)`. Carries everything about an entity
-that can change when the game patches. `kcdx_id` references `address_names.id`.
+that can change when the game patches.
+
+In the USER (production) database, every row has `kcdx_id IS NOT NULL` and FKs
+to an `address_names.id` — only curated entities ship to users. In the DEV
+database the table is wider: every binary function gets a row too (for
+`kcdx.find` discovery), and those uncurated bulk rows have `kcdx_id IS NULL`.
 
 | Column | Meaning |
 |---|---|
-| `id` | row id. |
-| `kcdx_id` | the entity → `address_names.id`. Non-unique (one row per version for the same entity). |
+| `id` | row id (autoincrement). The universal "which function row" handle. DEV-only tables (statements, referenced_vars, call_edges) FK on this. |
+| `kcdx_id` | **NULLABLE** FK to `address_names.id`. Set when the row is a curated entity; `NULL` for uncurated bulk DEV rows. |
 | `kind` | the curated taxonomy: `function`, `function_no_sig`, `function_variadic`, `callsite`, `data_slot`, `string_anchor`, `instruction_anchor`, `vtable_base`, `vtable_index`. Dictionary-encoded. |
 | `module_id` | which module the entity lives in → `modules.id`. |
 | `rva` | the entity's address in this version. Resolve `kcdx_id` → address from the open row. `NULL` for non-byte entities (e.g. `vtable_index`). |
@@ -121,7 +127,7 @@ that can change when the game patches. `kcdx_id` references `address_names.id`.
 | `vtable_slot` | for a `vtable_index`, the slot integer (mirrors `value` for that kind). |
 | `status` | `verified` \| `unverified` — only `verified` rows resolve at runtime. Dictionary-encoded. |
 | `valid_from` | first version this form held → `game_versions.id`. |
-| `valid_through` | last version this form was valid → `game_versions.id`. **`NULL` = current.** A partial-unique index enforces at most one open row per `kcdx_id`. |
+| `valid_through` | last version this form was valid → `game_versions.id`. **`NULL` = current.** A partial-unique index enforces at most one open row per *curated* `kcdx_id` (bulk rows with `kcdx_id NULL` don't participate). |
 
 ### `modules` — the module registry
 

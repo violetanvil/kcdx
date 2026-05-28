@@ -80,8 +80,9 @@ the design doc):
 
 1. **DONE here** (this STATUS refresh) — record the re-scoping; delete the
    superseded BREAKAGE-MATRIX scaffolding.
-2. Collapse `entity_versions`' ambition (schema unchanged; populated only for
-   the bounded curated/targeted set, not auto-tracked across 321K).
+2. Narrow the `address_versions` populated set (DONE under the §11.9 flatten:
+   USER ships curated rows only -- those with `kcdx_id NOT NULL`; DEV keeps the
+   bulk for `kcdx.find`).
 3. Design + implement the **Track-2 `kcdx.declare(module, name, versions)`**
    surface (author UX; the engine resolver; integration with `kcdx.hook` /
    `bytes` / `code` so they accept a declared name as a target).

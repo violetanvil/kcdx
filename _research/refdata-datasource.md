@@ -18,30 +18,31 @@ C:\kcdx-refdata\
     reference-dev.sqlite     (~1.13 GB) the DEV bulk discovery DB             -> on-demand author download
 ```
 
-**Schema: the LOCKED 9-table entity/version model** (`docs/outstanding-work/
-parallel-ghidra-research.md` §11.2), with the streamlined three-track scope
-applied (§11.8): the USER production DB now carries CURATED ENTITIES ONLY (the
+**Schema: the FLATTENED 5-user-table model** (`docs/outstanding-work/
+parallel-ghidra-research.md` §11.9), with the streamlined three-track scope
+applied (§11.8): the USER production DB carries CURATED ENTITIES ONLY (the
 ~140 from the seed); the DEV bulk discovery DB carries the curated set PLUS the
 binary's full ~321K function table for `kcdx.find` discovery. Both built by
-`import_to_sqlite.py`; gated by `validate_db_shape.py` (29/29 against the real
-321K-function dump, including the new STREAMLINE checks that assert USER is
-narrowed correctly). `integrity_check=ok` on both; the name→address+verified-ABI
+`import_to_sqlite.py`; gated by `validate_db_shape.py` (25/25 against the real
+321K-function dump). `integrity_check=ok` on both; the name→address+verified-ABI
 resolution path verified against real rows.
 
 - **USER `reference.sqlite`** (~0.1 MB, curated-only) — `modules` +
-  `game_versions` + `entities` (~140 curated) + `entity_versions` (~140; minus
-  the dev-only `auto_name`/`decompile_quality`) + `kcdx_overlay` (minus dev-only
-  `source`/`notes`) + `kcdx_overlay_versions` + `meta`. Ships with every kcdx
-  release (a release asset, NOT committed to git). The user-facing README is
-  `data/reference/README.md`. The bulk function table is NOT here — Track-2
-  plugins targeting uncurated functions declare them themselves via
-  `kcdx.declare(module, name, versions)`.
-- **DEV `reference-dev.sqlite`** (~1.13 GB, bulk superset) — everything in USER
-  in full + the bulk ~321K function entries + `statements` + `referenced_vars` +
-  `call_edges` + the dev-only columns. The discovery/inspection dataset
-  (`kcdx.find` / `kcdx_dev_inspect`); the maintainer's source-of-truth and the
-  author's on-demand download for finding uncurated targets to declare. NOT
-  shipped to users, NOT committed to git.
+  `game_versions` + `address_names` (143 curated; `id` IS the kcdx_id,
+  autoincrement starting at 1) + `address_versions` (143 rows, all curated,
+  `kcdx_id NOT NULL` — minus the dev-only `auto_name`/`decompile_quality`
+  columns) + `meta`. Ships with every kcdx release (a release asset, NOT
+  committed to git). The user-facing README is `data/reference/README.md`. The
+  bulk function table is NOT here — Track-2 plugins targeting uncurated
+  functions declare them themselves via `kcdx.declare(module, name, versions)`.
+- **DEV `reference-dev.sqlite`** (~1.3 GB, bulk superset) — everything in USER
+  in full + the bulk ~321K function entries (as `address_versions` rows with
+  `kcdx_id NULL`) + `statements` + `referenced_vars` + `call_edges` + the
+  dev-only columns. The dev-only tables carry TWO FK columns each
+  (`address_version_id` always-set + `kcdx_id` nullable). The
+  discovery/inspection dataset (`kcdx.find` / `kcdx_dev_inspect`); the
+  maintainer's source-of-truth and the author's on-demand download for finding
+  uncurated targets to declare. NOT shipped to users, NOT committed to git.
 
 **Handoff (2026-05-27):** both DBs at `C:\kcdx-refdata\db\` are in the locked
 schema the generator + engine consumer read. This UNBLOCKS that work. Remaining

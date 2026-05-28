@@ -116,36 +116,18 @@ explanation):
 
 | DB | Carries | Size | Who ships / fetches it |
 |---|---|---|---|
-| **USER** `reference.sqlite` (production) | **curated entities only** (~140) + their per-version verified facts: `entities`, `entity_versions`, `kcdx_overlay`, `kcdx_overlay_versions`, `modules`, `game_versions`, `meta` | ~0.1 MB | every kcdx release — the engine resolves curated targets (`target = "IsInCombat"`) against this at launch |
-| **DEV** `reference-dev.sqlite` (discovery) | **bulk superset** — the curated set PLUS the binary's full ~321K function table, per-statement metadata, variable storage, call graph, abi_walker floor (`+ statements + referenced_vars + call_edges` + the dev-only columns + bulk `entity_versions` rows) | ~1.13 GB | on-demand author download — `kcdx.find` discovery of uncurated targets, which the author then declares in their own plugin via `kcdx.declare(module, name, versions)` |
+| **USER** `reference.sqlite` (production) | **curated entities only** (~140) + their per-version verified facts: `address_names`, `address_versions`, `modules`, `game_versions`, `meta` | ~0.1 MB | every kcdx release — the engine resolves curated targets (`target = "IsInCombat"`) against this at launch |
+| **DEV** `reference-dev.sqlite` (discovery) | **bulk superset** — the curated set PLUS the binary's full ~321K function table (as bulk `address_versions` rows with `kcdx_id NULL`), per-statement metadata, variable storage, call graph, abi_walker floor (`+ statements + referenced_vars + call_edges` + the dev-only columns) | ~1.3 GB | on-demand author download — `kcdx.find` discovery of uncurated targets, which the author then declares in their own plugin via `kcdx.declare(module, name, versions)` |
 
 The schema is documented in full at `data/reference/README.md` (user) and
 `data/reference-dev/README.md` (dev). In brief:
 
-- **`entities`** is the single global `kcdx_id` authority; every other table keys
-  to it. **`entity_versions`** holds per-version validity intervals (one open row,
-  `valid_through IS NULL`, per entity = the current form), carrying the
-  content_hash, address, and the abi_walker argument-width floor. **`kcdx_overlay`**
-  / **`kcdx_overlay_versions`** are the curated name layer (identity + the verified
-  per-version facts). **`modules`** / **`game_versions`** are registries; **`meta`**
-  is the one-row header.
-- **Why the user/dev split:** a mod user's runtime needs only the survival hashes
-  + the marshalling ABI for the entities their plugins hook — the small USER DB.
-  The per-statement metadata + the call graph exist only for the author
-  discovery/inspection surface → the larger DEV DB. (`call_edges` is dev-only: it
-  powers `kcdx.find`'s caller-graph ranking + cross-version re-identification.)
-- **Encoding (lossless):** content_hash → 32-byte BLOB; low-cardinality repetitive
-  text → INTEGER FK into `_dict_*` lookup tables; address/count cols → INTEGER.
-- **Append-only, updated in place:** the DB is NOT rebuilt per game version — the
-  default update mode appends the new version's intervals to the existing DB. A
-  pairing trigger keeps each curated entity's overlay-version interval in step
-  with its entity_versions interval.
-- **The DBs are generated artifacts** — out-dir, NOT in git; they ship as release
-  assets (the user DB in the release; the dev DB as a separate download).
-- **NOT YET DONE:** the cross-version matcher that re-identifies an entity after
-  its bytes change (so update mode can append a new game version's intervals).
-  Update mode currently detects a newer version and reports "matcher required"
-  (exit 3) without mutating the DB.
+- **`address_names`** is the curated entity registry; `id` IS the `kcdx_id` (autoincrement starting at 1) — the stable cross-version handle plugins reference. **`address_versions`** holds per-version validity intervals: one open row per entity (`valid_through IS NULL` = current), carrying the content_hash, address, kind, abi_walker argument-width floor, and the verified signature when curated. **`address_versions.kcdx_id` is NULLABLE** — set when the row is a curated entity (FK to `address_names.id`), NULL when the row is a bulk uncurated DEV function. The dev-only `statements`/`referenced_vars`/`call_edges` carry TWO FK columns each: `address_version_id` (always set, FK to `address_versions.id`, the universal "which function row" handle that `kcdx.find` walks) + `kcdx_id` (nullable, FK to `address_names.id`, set only when the owning function is curated). **`modules`** / **`game_versions`** are registries; **`meta`** is the one-row header.
+- **Why the user/dev split:** a mod user's runtime needs only the survival hashes + the marshalling ABI for the entities their plugins hook — the small USER DB (curated rows only). The per-statement metadata + the call graph + the bulk address_versions rows exist only for the author discovery/inspection surface → the larger DEV DB. (`call_edges` is dev-only: it powers `kcdx.find`'s caller-graph ranking + cross-version re-identification.)
+- **Encoding (lossless):** content_hash → 32-byte BLOB; low-cardinality repetitive text → INTEGER FK into `_dict_*` lookup tables; address/count cols → INTEGER.
+- **Append-only, updated in place:** the DB is NOT rebuilt per game version — the default update mode appends the new version's intervals to the existing DB.
+- **The DBs are generated artifacts** — out-dir, NOT in git; they ship as release assets (the user DB in the release; the dev DB as a separate download).
+- **NOT YET DONE:** the cross-version matcher that re-identifies an entity after its bytes change (so update mode can append a new game version's intervals). Update mode currently detects a newer version and reports "matcher required" (exit 3) without mutating the DB.
 
 ## Verify it
 
@@ -167,10 +149,12 @@ python tools/refdata-extractor/python/validate_db_shape.py   # -> 25/25 PASS
 ```
 
 It builds both DBs from the dump and asserts 25 checks on the built schema: table
-presence per DB, the USER/DEV column projection, the one-open-interval-per-entity
-invariant, `kcdx_overlay` = the seed count with a paired open `kcdx_overlay_versions`
-row each, the `content_hash` BLOB round-trip, the pairing trigger's presence +
-silence at baseline, and FK resolution — each falsifiable.
+presence per DB, the USER/DEV column projection, the one-open-interval-per-curated-
+entity invariant (partial-unique on address_versions.kcdx_id where not null), the
+`address_names` count == seed.csv count, the bulk-vs-curated row split on
+`address_versions` (bulk rows have `kcdx_id NULL`), the `content_hash` BLOB
+round-trip (USER + DEV), end-to-end name resolution, and FK closure on both
+`address_version_id` (universal) and `kcdx_id` (curated) — each falsifiable.
 
 The BLAKE3 primitive has its own gate:
 
