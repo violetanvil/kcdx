@@ -968,8 +968,9 @@ bool Open() {
     LOG_INFO_KV(kCategory, "opened",
         log::KV("path", dbPathUtf8),
         log::KV("schema_version", (long long)schemaVersion),
-        log::KV("game_version", tag),
-        log::KV("game_version_ordinal", (long long)g_gameVersionOrdinal));
+        log::KV("matched_game_version_tag", tag),
+        log::KV("matched_ordinal_for_cmp",
+                (long long)g_gameVersionOrdinal));
     return true;
 }
 
