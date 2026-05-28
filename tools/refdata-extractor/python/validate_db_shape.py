@@ -146,10 +146,14 @@ def run_checks(dump_dir, user_db, dev_db):
     check("DEV entity_versions includes auto_name + decompile_quality",
           "auto_name" in dcols and "decompile_quality" in dcols, "")
 
-    # --- 6. kcdx_overlay == 139; USER excludes source/notes, DEV includes ---
+    # --- 6. kcdx_overlay row count == seed.csv row count; USER excludes
+    #         source/notes, DEV includes. The expected count is derived from the
+    #         live seed.csv (not hardcoded) so additions to the seed pass without
+    #         a harness edit. ---
+    n_seed = len(imp.read_seed(imp.SEED_CSV))
     n_ov = scalar(dc, "SELECT COUNT(*) FROM kcdx_overlay")
-    check("kcdx_overlay row count == 139 (the seed)", n_ov == 139,
-          "got %d" % n_ov)
+    check("kcdx_overlay row count == seed.csv row count",
+          n_ov == n_seed, "kcdx_overlay=%d seed.csv=%d" % (n_ov, n_seed))
     uocols = columns(uc, "kcdx_overlay")
     docols = columns(dc, "kcdx_overlay")
     check("USER kcdx_overlay excludes source + notes",
@@ -157,10 +161,11 @@ def run_checks(dump_dir, user_db, dev_db):
     check("DEV kcdx_overlay includes source + notes",
           "source" in docols and "notes" in docols, "")
 
-    # --- 7. kcdx_overlay_versions == 139, all open ---
+    # --- 7. kcdx_overlay_versions row count == seed.csv row count, all open ---
     n_ovv = scalar(dc, "SELECT COUNT(*) FROM kcdx_overlay_versions")
     n_ovv_open = scalar(dc, "SELECT COUNT(*) FROM kcdx_overlay_versions WHERE valid_through IS NULL")
-    check("kcdx_overlay_versions row count == 139", n_ovv == 139, "got %d" % n_ovv)
+    check("kcdx_overlay_versions row count == seed.csv row count",
+          n_ovv == n_seed, "kcdx_overlay_versions=%d seed.csv=%d" % (n_ovv, n_seed))
     check("kcdx_overlay_versions all open (valid_through IS NULL)",
           n_ovv_open == n_ovv, "open=%d of %d" % (n_ovv_open, n_ovv))
 
