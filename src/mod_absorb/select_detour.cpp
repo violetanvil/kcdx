@@ -9,6 +9,7 @@
 
 #include "MinHook.h"
 
+#include "ctor_probe.h"
 #include "enabled_list_builder.h"
 #include "../address_library.h"
 #include "../log.h"
@@ -72,6 +73,13 @@ void WritePtr(uint8_t* base, size_t off, const void* value) {
 }
 
 void __fastcall HookedSelect(void* self) {
+    // POINT B observation — read the C_ModManager state BEFORE the original
+    // SELECT runs (post-ctor zero-init, pre-SELECT-body). One-shot inside the
+    // probe; observe-only; never mutates `self`. Riding the existing detour
+    // (one MinHook per site) — see ctor_probe.h and the init-cycle-ownership
+    // outstanding-work doc. Deleted with the rest of the probe in step 4.
+    kcdx::mod_absorb::ctor_probe::OnSelectEntry(self);
+
     // 1. Run the ORIGINAL SELECT first — it builds the native records AND runs
     //    the per-mod validation pass. The list MUST NOT be mutated before that
     //    completes (growing it mid-validation crashes the engine's own walk);
