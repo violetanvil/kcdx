@@ -58,10 +58,10 @@
                         EXIT -- no project copy, no worker launch, no merge.
 
 .EXAMPLE
-  # REAL full 8-way dump (the user runs this)
-  pwsh ./data/refdata-extractor/run-parallel.ps1 `
-      -OutDir E:\refdata-full -Workers 8 -VersionTag release_1_5_1164953_841 `
-      -WhgameDll "E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.dll"
+  # REAL full 8-way dump (everything defaults: ProjectDir, EnumCsv, WhgameDll
+  # resolve relative to the repo; OutDir derives from VersionTag into
+  # data/refdata-extractor/dump/refdata-<short-version>/).
+  pwsh ./data/refdata-extractor/run-parallel.ps1 -VersionTag release_1_5_1164953_841 -Workers 8
 
 .EXAMPLE
   # inspect the 8 full-binary ranges cheaply
@@ -128,9 +128,11 @@ $CallerPy   = Join-Path $PyDir "produce_caller_reg_args.py"
 
 if (-not $ProjectDir) { $ProjectDir = Join-Path $RepoRoot "third-party-ghidra\ghidra_project" }
 if (-not $EnumCsv)    { $EnumCsv = Join-Path $RepoRoot "_research\parallel-ghidra-research\inventory\WHGame.dll.functions.csv" }
-if (-not $WhgameDll)  {
-    $WhgameDll = "E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.dll"
-}
+# WHGame.dll default: the same copy the Ghidra project was analyzed against,
+# which every maintainer running this pipeline already has at this path. The
+# binary itself is gitignored (third-party-ghidra/WHGame.dll line in .gitignore).
+# Override with -WhgameDll to point at a different copy (e.g. a Steam install).
+if (-not $WhgameDll)  { $WhgameDll = Join-Path $RepoRoot "third-party-ghidra\WHGame.dll" }
 
 if (-not (Test-Path $EnumCsv))  { throw "enumeration CSV not found: $EnumCsv" }
 if ($Workers -lt 1) { throw "-Workers must be >= 1 (got $Workers)." }
