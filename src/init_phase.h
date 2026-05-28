@@ -73,17 +73,20 @@ enum class InitPhase {
     VersionDetected,
     // [ctx B] hooks::Install (lua_pcall + update); MinHook live.
     EngineHooksInstalled,
+    // [ctx B] the Kind::Hook/Kind::Bytes deferred-apply handlers are registered
+    // (before plugins), then DiscoverAndLoad runs; Plugin_Preload/Load fired.
+    // Plugins load BEFORE the mod-loader SELECT detour is armed, so the enabled
+    // list the takeover rebuilds reflects every loaded plugin.
+    PluginsLoaded,
     // [ctx B] the production mod-loader SELECT detour installed
     // (mod_absorb::InstallSelectDetour) — the takeover that rebuilds the enabled
-    // list. Worker-thread placement is confirmed in time (the detour fires
-    // before CSystem::Init completes mod selection). docs/init.md §"The
-    // mod-loader absorb".
+    // list, now over the already-loaded plugins. Worker-thread placement is
+    // confirmed in time (the detour fires before CSystem::Init completes mod
+    // selection). docs/init.md §"The mod-loader absorb".
     ModLoaderTakeoverArmed,
-    // [ctx B] save_load_hooks, serialization (after save_load), Kind handlers
-    // (before plugins).
+    // [ctx B] save_load_hooks, serialization (after save_load). Advances LAST of
+    // the ctx-B group, after the SELECT detour is armed.
     EngineSubsystemsInit,
-    // [ctx B] DiscoverAndLoad; Plugin_Preload/Load fired.
-    PluginsLoaded,
     // ─── (game begins executing; CSystem::Init runs; first update tick) ───
     // [ctx C] after_game load-order slice applied + KCDX Lua table registered.
     AfterGameApply,

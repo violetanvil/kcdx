@@ -78,12 +78,17 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
                                            possible is right after WHGame maps.
 6  EngineHooksInstalled               B    hooks::Install (lua_pcall + update);
                                            MinHook live
-7  ModLoaderTakeoverArmed             B    [absorb] the C_ModManager SELECT detour
-                                           installed — placement confirmed against
+7  PluginsLoaded                      B    RegisterHandlers (Kind::Hook +
+                                           Kind::Bytes) then DiscoverAndLoad;
+                                           Plugin_Preload/Load fired — BEFORE the
+                                           SELECT detour is armed
+8  ModLoaderTakeoverArmed             B    [absorb] the C_ModManager SELECT detour
+                                           installed (now over the already-loaded
+                                           plugins) — placement confirmed against
                                            the running binary (see below)
-8  EngineSubsystemsInit               B    save_load_hooks, serialization (after
-                                           save_load), Kind handlers (before plugins)
-9  PluginsLoaded                      B    DiscoverAndLoad; Plugin_Preload/Load fired
+9  EngineSubsystemsInit               B    save_load_hooks, serialization (after
+                                           save_load) — advances LAST of the ctx-B
+                                           group
 ─── (game begins executing; CSystem::Init runs; first update tick) ───
 10 AfterGameApply                     C    after_game load-order slice applied
                                            (the ONE apply-driver, after_game zone) +
@@ -98,8 +103,11 @@ Rules the enum enforces:
   a design error the phase identity surfaces).
 - **Spin-up-before-use.** A subsystem initializes at the EARLIEST phase before
   any phase that uses it. Version detection (phase 5) precedes every
-  version-gated read; Kind handlers (phase 8) precede plugin load (phase 9);
-  save/load messages (phase 8) precede serialization (phase 8, ordered within).
+  version-gated read; the Kind::Hook/Kind::Bytes handlers register before
+  DiscoverAndLoad — both within phase 7 PluginsLoaded — so a C++ plugin's
+  Load-time hook is accepted (`lua_registry::Append` needs the handler
+  registered); save/load messages (phase 9) precede serialization (phase 9,
+  ordered within).
 
 ## The ONE apply-in-load-order flow
 
@@ -142,12 +150,13 @@ the zone split doesn't exist.
 
 The kcdx "absorb the KCD2 mod loader" feature (the absorb design, see
 [`mod-loader-absorb.md`](mod-loader-absorb.md)) slots in as:
-- **phase 7 `ModLoaderTakeoverArmed`** — the SELECT-phase detour
+- **phase 8 `ModLoaderTakeoverArmed`** — the SELECT-phase detour
   (`wh::C_ModManager` SELECT driver) is kcdx INFRASTRUCTURE (like
-  `hooks::Install`), NOT a load-order entry. It is armed before
-  `CSystem::Init` runs the native SELECT, and the production takeover
-  (`mod_absorb::InstallSelectDetour`) rebuilds the enabled-mod list when the
-  detour fires.
+  `hooks::Install`), NOT a load-order entry. It is armed AFTER the plugins are
+  loaded (phase 7) and before `CSystem::Init` runs the native SELECT, and the
+  production takeover (`mod_absorb::InstallSelectDetour`) rebuilds the
+  enabled-mod list — now over the already-loaded plugins — when the detour
+  fires.
 - **Asset-overlay entries** (a plugin's / mod's assets) ARE load-order entries,
   applied THROUGH the takeover: kcdx, now owning SELECT, builds the engine's
   enabled-mod list FROM the resolved load order — so a synthesized I_Mod record
@@ -155,7 +164,7 @@ The kcdx "absorb the KCD2 mod loader" feature (the absorb design, see
   native MOUNT, in load-order order.
 - **Placement is confirmed in context B (worker thread).** A worker-thread
   detour installed at this phase fires before `CSystem::Init` completes mod
-  selection — confirmed against the running binary — so phase 7 sits in context
+  selection — confirmed against the running binary — so phase 8 sits in context
   B, not context A (the loader-lock / before_game machinery).
 
 ## As-is (today, until the refactor lands)
@@ -203,8 +212,8 @@ hard one-shot constraint the current model can't express.
    apply still fire from separate sites; collapsing them into one resolved-list-
    driven apply-driver (per §"The ONE apply-in-load-order flow") is the remaining
    gap-fix and a later step.
-4. **THEN the phase-7 context resolution** — re-slotted into the new model,
-   resolving phase 7's context (live-confirmed against the running binary).
+4. **THEN the phase-8 context resolution** — re-slotted into the new model,
+   resolving phase 8's context (live-confirmed against the running binary).
 5. **THEN the absorb feature** — builds on the verified phase model; the loader
    is an own-launcher with an A/B early/late context split, and its earlier "no
    `mods/` folder" stance is superseded (kcdx owns the loader).
@@ -219,4 +228,4 @@ behavior. Never both in one step on load-bearing working boot code.
   context split, which the phase context-pinning encodes (its earlier "no
   `mods/` folder" stance is superseded by the absorb).
 - The approved absorb design — see [`mod-loader-absorb.md`](mod-loader-absorb.md) —
-  whose phase-7 placement is live-confirmed against the running binary.
+  whose phase-8 placement is live-confirmed against the running binary.
