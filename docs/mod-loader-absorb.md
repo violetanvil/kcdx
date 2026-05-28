@@ -64,7 +64,22 @@ Steam-Workshop mod "Inventory In Dialogue + Quicksave"):
 | +0x38 | **author** | `VioletAnvil` |
 | +0x40 | **version** | `1.0.0` |
 | +0x48 | **created/modified date** | `2026-05-18` |
-| +0x50–0x6F | scalar/flag tail (zeroed for this record) | — |
+| +0x50 | scalar/flag (zeroed for this record) | — |
+| +0x58 | CryString-data **substring range BEGIN** ptr (predicate-read) | zero in kcdx records |
+| +0x60 | CryString-data **substring range END** ptr (predicate-read) | zero in kcdx records |
+| +0x68 | scalar/flag tail (zeroed for this record) | — |
+
+The +0x58/+0x60 pair is read by the per-mod search predicate
+`FUN_2440C6C` (the function that AVed during the post-step-4 vtable-VA
+crash). The predicate's prologue is `mov rbp, [rcx+0x60]; mov rbx,
+[rcx+0x58]; cmp rbx, rbp; jne <substring-search>` — when both pointers
+are zero (kcdx records leave the slot at the memset-zero baseline) the
+`cmp` succeeds, the predicate takes the equal-empty error-log branch
+(a `CryLog`-style sink at `0x1804D4510`), and the function returns
+without dereferencing either pointer. A non-zero begin with a non-zero
+end drives the substring scan loop further down. Which `mod.manifest`
+field these point at on a native record is not yet investigated;
+follow-up work owns mapping that.
 
 The string fields are **CryString** values, not bare `char*`. Each field holds
 a pointer to the char data, and IMMEDIATELY BEFORE those chars sits a fixed

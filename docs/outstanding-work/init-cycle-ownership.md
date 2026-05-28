@@ -574,60 +574,46 @@ kcdx_id=138 rva=…`, `ctor_bracket_complete obj=… enabled_n=79`, and no
 construction. Full refactor scope + 9.7-phase consumer plan in
 [restructure-plan.md §Phase 9.7](restructure-plan.md).
 
-### Crash #2 — `ModManager_ParseManifest` AV at `WHGame+0x243FC85` (OPEN — next-cycle target)
+### Crash #2 — virtual call on a vtable VA at `WHGame+0x2440C85` (RESOLVED 2026-05-28)
 
-**Symptom.** Second live boot post-step-4 (with the crash-#1 fix
-deployed) reached the menu init farther than any prior boot and AV'd at
-`WHGame+0x243FC85`. BugSplat's UnhandledExceptionFilter caught it before
-kcdx's `[GUARD] FAULTED` SEH could fire — watchdog records *"no
-kcdx-side dmp … SEH handler didn't run — crash class probably bypassed
-it: fast-fail, kernel kill, etc."*; BugSplat report MFA reads
-`WHGame!0243fc85`.
+**Status.** CLOSED. The initial framing ("`ModManager_ParseManifest`
+AV at `WHGame+0x243FC85`") was empirically wrong — BugSplat's MFA
+truncated the high digit of the RVA, and the actual crash was a
+different function entirely (the per-mod search predicate `FUN_2440C6C`
+at RVA `0x02440C6C` + 0x19, NOT `ModManager_ParseManifest`). Full
+investigation + Resolution paragraph in
+[`docs/known-issues/post-step-4 AV at WHGame+0x2440C85.md`](../known-issues/post-step-4%20AV%20at%20WHGame+0x2440C85.md).
 
-**RVA → function.** `0x243FC85 - 0x243E7B8 = 0x14CD` → **+0x14CD inside
-`ModManager_ParseManifest`** (seed kcdx_id 137, RVA `0x243E7B8`). Deep
-inside the body, not the prologue — past the early manifest-file open and
-into the field-population / version-gate logic.
+**One-paragraph mechanism.** The kcdx ctor bracket
+(`HookedCtor` in `src/mod_absorb/ctor_bracket.cpp`) returned the heap
+block pointer instead of the `outResult` slot pointer. The native ctor
+ends with `mov [rsi], rbx; mov rax, rsi; ret` where `rsi` was captured
+from arg1 (`rcx` = `outResult`), so the native ABI returns `outResult`
+(a slot pointer), NOT the heap block. The engine's call site in
+`CSystem::Init` immediately after the ctor passes the return as `rdx`
+to a unique_ptr-style install helper (`FUN_1819DDCA4`) whose first
+effective op is `mov rax, [rdx]` — it dereferences the slot pointer
+to get the heap address. With the bracket returning the heap pointer
+instead, the helper read `*heap_block` = the heap modMgr's first qword
+= the C_ModManager **vtable VA** the bracket had just written at
++0x00, and installed THAT into `csys[+0x2B30]` as if it were the
+modMgr pointer. Every later "get modMgr" path then resolved to the
+vtable VA; frame-4 in `CSystem::Init` dispatched on it, walked
+`[vtable+0x30, vtable+0x38)` as if it were an `I_Mod**` enabled-list
+range, and AVed at `WHGame+0x2440C85` reading `[I_Mod+0x60]` on
+garbage rcx (the 7th vtable slot's code bytes). The fix is one line
+— `return obj` → `return outResult` in `HookedCtor`.
 
-**Why this surfaced now.** The implemented step-4 bracket fully replaces
-ctor + SELECT — `ModManager_ParseManifest` is **never called by the
-bracket itself**. Synthesized records carry the strings `record_synth.cpp`
-sets (path, id, name, description, author, version, date — all wrapped as
-CryStringT with real headers) but do NOT carry the full state
-ParseManifest would populate. Something downstream — MOUNT itself, or a
-post-MOUNT pass — appears to invoke ParseManifest on a synthesized record
-that lacks state ParseManifest expects, and AVs inside it.
-
-**Design tension.** The RE recommendation in
-[§RE findings](#re-findings-research-disassembly-2026-05-27--pre-build-all-tier-12)
-of THIS doc was *"CALL the original ctor + SELECT, then wholesale-replace
-the enabled-list vector before the ctor's hook returns"* — explicitly
-to get the engine's own manifest parse + real vtables for free and avoid
-the keystone-crash-class kcdx already burned cycles avoiding
-(`project_kcdx_crystringt_record_fields` — garbage `nLength` →
-multi-GB alloc + CryFatalError during MOUNT). The implemented bracket
-chose the opposite path (full ctor + SELECT replacement, records from
-scratch). That choice cleared the SELECT-list-append-rejection crash that
-the narrow-takeover probe had hit, but it also bypassed the engine's own
-manifest parse — and crash #2 is plausibly the consequence.
-
-**Next-cycle scope (debug agent owns).** Three candidate paths, surface
-to /senior-architect-consult before implementing:
-1. **Populate the missing fields in `record_synth.cpp`** so a synthesized
-   record looks indistinguishable from a ParseManifest-populated one (the
-   "match the engine's record shape exactly" path; high upfront RE cost,
-   no behaviour change to the bracket).
-2. **Hook `ModManager_ParseManifest`** to detect kcdx-synthesized records
-   and short-circuit (skip the parse, return success); changes the
-   contract of an engine function but localises the workaround.
-3. **Revisit the round-2 design decision** and CALL the original ctor +
-   SELECT, then wholesale-replace the enabled-list vector (the RE
-   recommendation as written). The implemented bracket moves from
-   "replace the ctor" to "post-process the ctor's output."
-
-The decision belongs to the consult; the debug agent's first job is the
-ground-truth probe — which thread calls ParseManifest, with what record
-pointer, on what state delta.
+The three candidate paths the original §"Crash #2" surfaced
+(re-populate missing record fields / hook `ParseManifest` /
+revisit round-2 and call the original ctor) ALL rested on the
+"`ParseManifest` is being called on a kcdx record" misframing. None
+of them are needed — `ParseManifest` was never on the call stack, the
+synthesized records were never the consumer that AVed, and the
+round-2 "full replace, no original ctor call" decision stands. The
+cap-61 test plugin pins the regression: a bracket runtime crash makes
+its `kcdx.on("ready")` assertion non-firing, so the row never PASSes
+and no `suite: X/Y passing` line emits.
 
 ### Deferred-from-step-4 (independent of #1 / #2)
 

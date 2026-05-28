@@ -278,11 +278,26 @@ void* __fastcall HookedCtor(void* outResult, void* sys, void* modsDir) {
     // here, and the bracket matches that.
     WriteByteAt(base, kOffInitFlag, 1);
 
-    // Final epilogue mirror: *outResult = obj; return obj. The native
+    // Final epilogue mirror: *outResult = obj; return outResult. The native
     // disassembly ends with `mov [rsi], rbx; mov rax, rsi; ret`. rsi was the
-    // ctor's first arg (outResult); rbx held the allocated block. The
-    // bracket reproduces the same observable: write the heap block address
-    // into *outResult and return that same value to the caller.
+    // ctor's first arg (outResult, a slot the caller passed in); rbx held
+    // the allocated heap block. The native ABI therefore writes the heap
+    // block into *outResult AND returns outResult — the slot pointer — not
+    // the heap block. The engine's caller in CSystem::Init does
+    //   mov rdx, rax           ; rdx = ctor return
+    //   mov rcx, r13           ; rcx = &csys[+0x2B30] (install slot)
+    //   call FUN_1819DDCA4     ; unique_ptr move-assign install helper
+    // whose first effective op is `mov rax, [rdx]`: it expects rdx to be a
+    // slot pointer it can dereference, NOT the heap block itself.
+    //
+    // Returning the heap block here (as the bracket previously did) makes
+    // the helper read *heap_block = the modMgr's first qword = its vtable
+    // VA at +0x00, then install the vtable VA into csys[+0x2B30] as if it
+    // were the modMgr pointer. Every later "get modMgr" path then returns
+    // the vtable VA; the frame-4 lookup-by-name dispatch walks
+    // [vtable+0x30, vtable+0x38) as if it were the enabled-list begin/end
+    // and AVs reading [code_bytes+0x60] in FUN_2440C6C. The fix is one
+    // line: mirror the native epilogue's actual return.
     std::memcpy(outResult, &obj, sizeof(obj));
 
     LOG_INFO_KV(kCat, "ctor_bracket_complete",
@@ -295,7 +310,7 @@ void* __fastcall HookedCtor(void* outResult, void* sys, void* modsDir) {
             "points at the kcdx-owned process-lifetime g_enabledList; MOUNT "
             "will iterate kcdx's resolved order verbatim"));
 
-    return obj;
+    return outResult;
 }
 
 }  // namespace
