@@ -73,19 +73,24 @@ enum class InitPhase {
     VersionDetected,
     // [ctx B] hooks::Install (lua_pcall + update); MinHook live.
     EngineHooksInstalled,
+    // [ctx B] the production mod-loader SELECT detour INSTALLED
+    // (mod_absorb::InstallSelectDetour) — the takeover that rebuilds the enabled
+    // list. Install is EARLY (right after EngineHooksInstalled) so it wins the
+    // race against CSystem::Init's call to the original SELECT on the game's
+    // main thread — installing it later (e.g. after DiscoverAndLoad) loses that
+    // race (see docs/known-issues/step-1.5-init-reorder-broke-absorb-detour-
+    // race.md). The detour FIRE happens later, inside CSystem::Init, AFTER
+    // DiscoverAndLoad finishes on this worker thread — so the rebuilt enabled
+    // list reflects every loaded plugin. docs/init.md §"The mod-loader absorb".
+    ModLoaderTakeoverArmed,
     // [ctx B] the Kind::Hook/Kind::Bytes deferred-apply handlers are registered
     // (before plugins), then DiscoverAndLoad runs; Plugin_Preload/Load fired.
-    // Plugins load BEFORE the mod-loader SELECT detour is armed, so the enabled
-    // list the takeover rebuilds reflects every loaded plugin.
+    // Advances AFTER ModLoaderTakeoverArmed: the SELECT detour install is
+    // earlier (race-critical), but plugins LOAD before the detour FIRES inside
+    // CSystem::Init — so by fire time the enabled list reflects every plugin.
     PluginsLoaded,
-    // [ctx B] the production mod-loader SELECT detour installed
-    // (mod_absorb::InstallSelectDetour) — the takeover that rebuilds the enabled
-    // list, now over the already-loaded plugins. Worker-thread placement is
-    // confirmed in time (the detour fires before CSystem::Init completes mod
-    // selection). docs/init.md §"The mod-loader absorb".
-    ModLoaderTakeoverArmed,
     // [ctx B] save_load_hooks, serialization (after save_load). Advances LAST of
-    // the ctx-B group, after the SELECT detour is armed.
+    // the ctx-B group.
     EngineSubsystemsInit,
     // ─── (game begins executing; CSystem::Init runs; first update tick) ───
     // [ctx C] after_game load-order slice applied + KCDX Lua table registered.

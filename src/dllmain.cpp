@@ -169,6 +169,33 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // path (the failure return above precedes this).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
 
+    // STEP 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
+    // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
+    // This INSTALLS the detour on the engine's mod-loader SELECT driver
+    // (wh::C_ModManager ModManager_Select, Address Library id 3100), here —
+    // EARLY (right after EngineHooksInstalled, before the lengthy
+    // RegisterHandlers + DiscoverAndLoad sequence below) because the engine's
+    // CSystem::Init thread races us: it calls ModManager_Select within a
+    // second or two of WHGame init, on a DIFFERENT thread than this worker.
+    // Installing the detour AFTER DiscoverAndLoad (which takes ~2 sec on a
+    // populated plugin tree) loses that race — the original SELECT runs before
+    // MinHook has our detour in place, and the takeover silently never fires
+    // (see docs/known-issues/step-1.5-init-reorder-broke-absorb-detour-race.md).
+    //
+    // INSTALL ≠ FIRE: install just registers the hook with MinHook (must be
+    // EARLY, here). FIRE happens inside CSystem::Init (later, on the game's
+    // main thread), AFTER DiscoverAndLoad finishes on this worker thread. So
+    // when HookedSelect runs, the original SELECT runs first (builds the native
+    // records + per-mod validation), THEN kcdx WHOLESALE-REPLACES the enabled-
+    // list vector with kcdx's rebuilt list — a synthesized I_Mod record for
+    // every enabled discovered mod (vanilla pak mods + kcdx plugins alike), in
+    // kcdx's resolved load order. By fire time, g_manifests + the pak-mod
+    // Registry are both populated. The native MOUNT runs verbatim over kcdx's
+    // list. PRODUCTION (no dev-mode gate) — this IS the feature.
+    // See docs/mod-loader-absorb.md "Step 4".
+    kcdx::mod_absorb::InstallSelectDetour();
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::ModLoaderTakeoverArmed);
+
     // Register the deferred-apply handlers for the registry Kinds the C++
     // plugin interfaces queue (Kind::Hook via kcdxHookInterface, Kind::Bytes
     // via the future kcdxBytesInterface). These MUST run before
@@ -189,33 +216,16 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // accepted by lua_registry::Append.
     kcdx::plugins::DiscoverAndLoad(kcdx::paths::PluginsDir());
 
-    // STEP 7 (ctx B): PluginsLoaded — DiscoverAndLoad finished;
-    // Plugin_Preload/Plugin_Load have fired for every plugin. Plugins load
-    // BEFORE the mod-loader SELECT detour is armed (just below), so the enabled
-    // list the detour rebuilds reflects every loaded plugin. (VersionDetected
-    // is NOT advanced here: version detection moved EARLY, to right after
-    // GameDllMapped above — before hooks::Install. DiscoverAndLoad relies on
-    // g_runtimeGameVersion already being set, rather than detecting it.)
+    // STEP 8 (ctx B): PluginsLoaded — DiscoverAndLoad finished;
+    // Plugin_Preload/Plugin_Load have fired for every plugin. By the time the
+    // SELECT detour FIRES (later, inside CSystem::Init on the main thread),
+    // g_manifests is populated — so the rebuilt enabled list reflects every
+    // loaded plugin even though the detour was INSTALLED earlier (above).
+    // (VersionDetected is NOT advanced here: version detection moved EARLY, to
+    // right after GameDllMapped above — before hooks::Install. DiscoverAndLoad
+    // relies on g_runtimeGameVersion already being set, rather than detecting
+    // it.)
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::PluginsLoaded);
-
-    // STEP 8 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
-    // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
-    // This installs the detour on the engine's mod-loader SELECT driver
-    // (wh::C_ModManager ModManager_Select, Address Library id 3100), here — after
-    // EngineHooksInstalled (WHGame.dll mapped + MinHook live) and PluginsLoaded
-    // (plugins discovered/loaded), before EngineSubsystemsInit (save_load +
-    // serialization). When the detour FIRES (during CSystem::Init), it lets the
-    // original SELECT run, then WHOLESALE-REPLACES the enabled-list vector with
-    // kcdx's rebuilt list — a synthesized I_Mod record for every enabled
-    // discovered mod (vanilla pak mods + kcdx plugins alike), in kcdx's resolved
-    // load order. The native MOUNT then runs verbatim over kcdx's list.
-    // PRODUCTION (no dev-mode gate) — this IS the feature. By the time it fires,
-    // discovery + load_order::Resolve (ctx-A, LoadAllConfigs), the pak-mod
-    // version gate (ctx-B VersionDetected, above), and DiscoverAndLoad have all
-    // run, so the detour reads a ready resolved state. See
-    // docs/mod-loader-absorb.md "Step 4".
-    kcdx::mod_absorb::InstallSelectDetour();
-    kcdx::init::AdvanceTo(kcdx::init::InitPhase::ModLoaderTakeoverArmed);
 
     // Localization runtime-dump feature: arm the dev-mode probe
     // (CLocalizedStringsManager ctor capture + LocalizeString overload hooks on
