@@ -17,6 +17,11 @@
 //   3. A "mods.<modid>" Effective lookup after a synthetic register + Resolve:
 //      priority 0, after_game; a load_order.toml "mods.<modid>" row OVERRIDES
 //      zone/priority/enabled.
+//   3b. DiscoverWorkshop walks the <Steam>/steamapps/workshop/content/1771300/
+//       layout: a Workshop subdir with mod.manifest registers as fromWorkshop=
+//       true (folder name as the default modId — the Steam Workshop file ID),
+//       a Workshop subdir lacking mod.manifest is REJECTED LOUD (never silent-
+//       skip).
 //   4. The version gate: an Incompatible pak mod -> SetEngineAccepted(false)
 //      -> IsPluginEnabled("mods.<modid>") == false.
 //

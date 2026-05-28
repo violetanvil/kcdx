@@ -43,7 +43,16 @@ struct PakMod {
     std::string rootPathNoSlash;  // root dir WITHOUT trailing '/' (record +0x20)
     ModManifest manifest;         // the parsed mod.manifest (fields + <supports>)
     bool        fromModsDir = false;  // true: found under <game-root>/mods/;
-                                      // false: found under kcdx-plugins/.
+                                      // false: found under kcdx-plugins/ OR
+                                      // Steam Workshop (distinguish via
+                                      // fromWorkshop).
+    // Steam Workshop origin marker. true: this mod was registered by
+    // DiscoverWorkshop() from a <Steam>/steamapps/workshop/content/1771300/<id>/
+    // subdirectory. The folder NAME is the Steam Workshop file ID. Mutually
+    // exclusive with fromModsDir = true. Used by the discovery-funnel log
+    // breakdown so the user sees "N from mods/, M from kcdx-plugins/, K from
+    // Steam Workshop" at boot.
+    bool        fromWorkshop = false;
     // The mod's position in <modsDir>/mod_order.txt (0-based file line order).
     // -1 = NOT listed in mod_order.txt (sorts AFTER the listed ones; see the
     // load_order fold). Populated by Discover via the mod_order.txt index map.
@@ -95,6 +104,39 @@ std::unordered_map<std::string, int> ParseModOrderText(const std::string& text);
 // is known. A malformed/unreadable mod.manifest (ReadModManifest ok==false)
 // is logged LOUD by ReadModManifest and the folder is NOT registered.
 void Discover(const std::filesystem::path& root, bool fromModsDir);
+
+// Walk a Steam Workshop content root for KCD2 (appid 1771300) and register each
+// subscribed Workshop mod into Registry().
+//
+// `workshopRoot` is <Steam>/steamapps/workshop/content/1771300/ (composed by
+// paths::WorkshopContentDir()). Each IMMEDIATE subdirectory of workshopRoot is
+// a Steam Workshop item — its NAME is the Workshop file ID (e.g. "3728570527"),
+// and it contains a vanilla pak mod (mod.manifest + Data/*.pak). The walk is
+// ONE-LEVEL: workshop items live exactly one directory down from workshopRoot,
+// never nested in container folders the way kcdx-plugins/ folders can be.
+//
+// Classification per subdirectory:
+//   - has kcdx.toml                        -> SKIP (a kcdx plugin somehow
+//                                              dropped here; the plugin walker
+//                                              would own it, double-registration
+//                                              is a conflict).
+//   - has mod.manifest (no kcdx.toml)      -> register a PakMod with
+//                                              fromWorkshop = true.
+//   - neither                              -> REJECT loud (a Workshop subscription
+//                                              with no mod.manifest is malformed —
+//                                              never a silent skip).
+//
+// The modId resolves the same way as Discover(): manifest <modid> if present,
+// else the folder name (the Workshop file ID). Registration is UNCONDITIONAL of
+// game-version compatibility — the <supports> gate (ApplyVersionGate) runs over
+// the registry later, after the runtime version string is detected.
+//
+// `workshopRoot` empty / absent / not a directory is NOT an error (a player
+// without Steam, or without any KCD2 Workshop subscriptions, is a valid state):
+// the function returns silently with an info log naming the reason. The caller
+// gates via paths::WorkshopContentDir() returning empty for the no-Steam case,
+// so the typical path is "no Workshop → no call" rather than "call → skip".
+void DiscoverWorkshop(const std::filesystem::path& workshopRoot);
 
 // Run the kcdx-owned version gate over every registered pak mod, at the point
 // `runtimeVersionString` (g_runtimeGameVersionString, from wh_sys_version) is

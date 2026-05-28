@@ -1195,22 +1195,40 @@ void LoadAllConfigs(const std::wstring& pluginsDir) {
     // folders there are SKIPPED by Discover (the plugin walker owns them).
     kcdx::mod_absorb::Discover(fs::path(pluginsDir), /*fromModsDir=*/false);
 
+    // Steam Workshop walk — the THIRD pak-mod source kcdx absorbs (the original
+    // game's SELECT call walks the same workshop content dir; kcdx-pak-mod-
+    // registry covers what SELECT discovered so the init-cycle takeover can
+    // skip SELECT entirely). paths::WorkshopContentDir() resolves the Steam
+    // install dir from the registry and composes
+    // <Steam>/steamapps/workshop/content/1771300/. An empty return = Steam not
+    // installed OR no KCD2 Workshop subscriptions — DiscoverWorkshop handles
+    // empty/absent paths as an info-log skip, never an error.
+    {
+        std::wstring workshopDirW = kcdx::paths::WorkshopContentDir();
+        fs::path workshopDir(workshopDirW);
+        kcdx::mod_absorb::DiscoverWorkshop(workshopDir);
+    }
+
     // Populate each registered pak mod's mod_order.txt line index (the
     // vanilla baseline ordering seed, used as the secondary sort key in the
     // load_order fold). mod_order.txt lives in <game-root>/mods/.
     {
         auto orderMap = kcdx::mod_absorb::ReadModOrder(modsDir);
-        size_t fromMods = 0, fromPlugins = 0;
+        size_t fromMods = 0, fromPlugins = 0, fromWorkshop = 0;
         for (auto& mod : kcdx::mod_absorb::Registry()) {
             if (auto it = orderMap.find(mod.modId); it != orderMap.end()) {
                 mod.modOrderIndex = it->second;
             }
-            (mod.fromModsDir ? fromMods : fromPlugins) += 1;
+            if (mod.fromWorkshop)      ++fromWorkshop;
+            else if (mod.fromModsDir)  ++fromMods;
+            else                       ++fromPlugins;
         }
         log::InfoF("pak-mod discovery: %zu pak mod(s) — %zu from mods/, "
-                   "%zu from kcdx-plugins/ (version gate runs later, once the "
-                   "runtime game version is known)",
-                   kcdx::mod_absorb::Registry().size(), fromMods, fromPlugins);
+                   "%zu from kcdx-plugins/, %zu from Steam Workshop "
+                   "(version gate runs later, once the runtime game version "
+                   "is known)",
+                   kcdx::mod_absorb::Registry().size(),
+                   fromMods, fromPlugins, fromWorkshop);
     }
 
     // Load-order resolution. Discovery is done; entry vectors are

@@ -95,4 +95,24 @@ std::filesystem::path EngineDataDirPath();
 // (e.g. system.cfg's wh_sys_version, read by the unified version gate).
 std::filesystem::path GameRootDirPath();
 
+// Steam Workshop content directory for KCD2's appid (1771300):
+//   <Steam>/steamapps/workshop/content/1771300/
+//
+// The Steam install root is located via the registry (HKLM\Software\Valve\Steam
+// 'InstallPath', falling back to HKCU\Software\Valve\Steam 'SteamPath'). Each
+// immediate subdirectory of the returned path is a Steam Workshop item folder
+// keyed by the Workshop file ID (e.g. 3728570527/), and contains a vanilla pak
+// mod (mod.manifest + Data/*.pak).
+//
+// Returns an EMPTY string in any of these cases — none is an error, all are
+// valid installs (a player without Steam, a clean Steam install with no KCD2
+// Workshop subscriptions, KCD2 installed via non-Steam means):
+//   - Steam is not installed on this system (neither registry key resolves).
+//   - The composed workshop content path does not exist on disk.
+//
+// A non-empty return is a directory_iterator-walkable path WITH a trailing path
+// separator. Re-resolves the registry on every call; the lookup is cheap and the
+// registry is the source of truth, so no inter-launch caching.
+std::wstring WorkshopContentDir();
+
 }  // namespace kcdx::paths

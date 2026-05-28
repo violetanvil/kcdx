@@ -411,14 +411,34 @@ and is reorderable/disableable the same way.
 
 **Discovery is a separate pass.** The plugin discovery walk is untouched. A
 second pass (`mod_absorb::Discover`) owns the `mod.manifest` marker-file
-classification and runs over BOTH discovery roots (`kcdx-plugins/` and the
-vanilla `<game-root>/mods/`):
+classification and runs over THREE discovery roots — `kcdx-plugins/`, the
+vanilla `<game-root>/mods/`, and the Steam Workshop content root for KCD2
+(`<Steam>/steamapps/workshop/content/1771300/`):
 
 - A folder with a `kcdx.toml` is SKIPPED here — it is a kcdx plugin (even when
   dropped in `mods/`), and the plugin walk already claimed it. Not
   double-registered.
 - A folder with a `mod.manifest` and no `kcdx.toml` is registered as a pak mod.
 - Neither marker → recurse into it as a container.
+
+**The Workshop walk is one level deep and never recurses.** Steam stores each
+subscribed Workshop item exactly one directory below the content root, named by
+its Workshop file id (e.g. `.../1771300/3728570527/`). The walk inspects each
+immediate child and classifies it loudly:
+
+- A subdir containing a `kcdx.toml` is REJECTED with a clear error — Workshop is
+  a pak-mod distribution channel for this game, not a kcdx-plugin one. A kcdx
+  plugin belongs under `kcdx-plugins/`, not the Workshop content root.
+- A subdir containing a `mod.manifest` and no `kcdx.toml` registers as a pak mod
+  with `fromWorkshop = true`. The Workshop file id (the folder name, e.g.
+  `3728570527`) is used as the default `modId` when the `mod.manifest` does not
+  declare a `<modid>`, so a Workshop pak mod always has a stable, namespaced id.
+- A subdir with neither marker is REJECTED with a clear error naming the path —
+  never silent-skipped. An unexpected Workshop entry is surfaced, not hidden.
+- An empty, absent, or unreachable Workshop content root is a normal install
+  state — a player without Steam, or with Steam but no KCD2 Workshop
+  subscriptions, has nothing under that path. The walk logs an INFO line
+  (`discover_workshop_skipped`) and proceeds; it is not an error.
 
 Each registered pak mod becomes a `PakMod` record: its id (the manifest's
 `<modid>` if present, else the folder name), its root path (with and without a

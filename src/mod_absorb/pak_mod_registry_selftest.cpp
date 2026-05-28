@@ -225,6 +225,99 @@ void RunPakRegistrySelfTestOnce() {
     }
 
     // ========================================================================
+    // Assertion 3b (SYNTHETIC root): DiscoverWorkshop walks an immediate-
+    // subdirectory layout (NOT recursive) and registers each subdir that
+    // contains a mod.manifest as a PakMod with fromWorkshop=true, while
+    // rejecting subdirs lacking a mod.manifest (the malformed-Workshop-item
+    // case — FAIL LOUD per AP14, never a silent skip). Lay out:
+    //     <tmp>/3728570527/mod.manifest        (Workshop ID folder, valid)
+    //     <tmp>/4111222333/                    (no mod.manifest — must reject,
+    //                                            not register)
+    // After DiscoverWorkshop(<tmp>): registry contains a PakMod for the valid
+    // Workshop item with fromWorkshop=true and fromModsDir=false; the manifest-
+    // less folder is NOT in the registry.
+    // [broken: DiscoverWorkshop didn't walk subdirs -> 3728570527 missing ->
+    //  FAIL; the manifest-less folder silently registered -> a fromWorkshop
+    //  entry with no manifest in the registry -> FAIL; fromWorkshop flag not
+    //  set -> the funnel-summary log misattributes the source -> FAIL]
+    // ========================================================================
+    {
+        std::error_code ec;
+        const std::filesystem::path tmpWorkshop =
+            std::filesystem::temp_directory_path(ec) /
+            "kcdx_cap54_workshop_root";
+        std::filesystem::remove_all(tmpWorkshop, ec);  // clean any prior run
+        std::filesystem::create_directories(
+            tmpWorkshop / "3728570527", ec);
+        std::filesystem::create_directories(
+            tmpWorkshop / "4111222333", ec);
+        {
+            std::ofstream m(tmpWorkshop / "3728570527" / "mod.manifest",
+                            std::ios::binary | std::ios::trunc);
+            // No <modid> -> the loader must fall back to the folder name
+            // (the Steam Workshop file ID), proving the fallback works for the
+            // Workshop path the same way it does for mods/.
+            m << "<kcd_mod><info><name>Workshop Test Mod</name>"
+                 "<author>Selftest</author></info></kcd_mod>\n";
+        }
+        // 4111222333 deliberately has NO mod.manifest — DiscoverWorkshop must
+        // reject it (loud-log + not registered), never silently skip.
+
+        // Save the synthetic registry from assertion-3's setup so this sub-
+        // assertion's ClearRegistry+walk doesn't lose the three mods the
+        // version-gate assertion relies on next.
+        std::vector<PakMod> savedFromAssertion3 = Registry();
+        ClearRegistry();
+        DiscoverWorkshop(tmpWorkshop);
+
+        bool workshopRegistered = false;
+        bool workshopFromWorkshopFlag = false;
+        bool workshopFromModsDirFlag = false;
+        bool manifestlessRegistered = false;
+        for (const PakMod& m : Registry()) {
+            if (m.modId == "3728570527") {
+                workshopRegistered = true;
+                workshopFromWorkshopFlag = m.fromWorkshop;
+                workshopFromModsDirFlag  = m.fromModsDir;
+            }
+            if (m.modId == "4111222333") manifestlessRegistered = true;
+        }
+        std::filesystem::remove_all(tmpWorkshop, ec);
+
+        // Restore the assertion-3 synthetic registry so the version gate
+        // assertion below operates on the over_mod/incompat/plain triplet it
+        // expects.
+        ClearRegistry();
+        Registry() = savedFromAssertion3;
+
+        const bool ok =
+            workshopRegistered &&
+            workshopFromWorkshopFlag &&
+            !workshopFromModsDirFlag &&
+            !manifestlessRegistered;
+        if (!ok) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: DiscoverWorkshop classification wrong — workshop "
+                "3728570527 (has mod.manifest) registered=%d (expected 1), "
+                "fromWorkshop flag=%d (expected 1), fromModsDir flag=%d "
+                "(expected 0), manifest-less folder 4111222333 "
+                "registered=%d (expected 0; a Workshop subdir without "
+                "mod.manifest must REJECT loud, never silent-skip). The "
+                "Workshop walk must stamp fromWorkshop=true on every "
+                "registered entry and must NOT register a manifest-less "
+                "Workshop subdir.",
+                workshopRegistered ? 1 : 0,
+                workshopFromWorkshopFlag ? 1 : 0,
+                workshopFromModsDirFlag ? 1 : 0,
+                manifestlessRegistered ? 1 : 0);
+            restore();
+            std::error_code ec2; std::filesystem::remove(tempLoadOrder, ec2);
+            Fail(reason);
+            return;
+        }
+    }
+
+    // ========================================================================
     // Assertion 4 (UNIT, isolated global): the version gate. ApplyVersionGate
     // against a runtime string the "incompat" mod's <supports> (1.6*) does NOT
     // match must flip its engineAccepted=false -> IsPluginEnabled false, while a
@@ -271,9 +364,11 @@ void RunPakRegistrySelfTestOnce() {
         "0-based index; modOrderIndex orders the pak-mod block (index 0 before 1 "
         "despite name; -1 -> INT_MAX sorts last); the fold registers 'mods.<modid>' "
         "rows at after_game/priority-0 and a load_order.toml 'mods.<modid>' row "
-        "overrides zone/priority/enabled; ApplyVersionGate disables an Incompatible "
-        "pak mod (IsPluginEnabled false) while a no-restriction mod stays enabled. "
-        "Live load-order state restored.");
+        "overrides zone/priority/enabled; DiscoverWorkshop registers a manifest-"
+        "carrying subdir with fromWorkshop=true and REJECTS a manifest-less "
+        "Workshop subdir (no silent skip); ApplyVersionGate disables an "
+        "Incompatible pak mod (IsPluginEnabled false) while a no-restriction "
+        "mod stays enabled. Live load-order state restored.");
     kcdx::test::ReportResult(kRow, true, reason);
     kcdx::test::EmitSummaryIfChanged("cap-54 pak-mod-registry");
 }
