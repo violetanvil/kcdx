@@ -18,6 +18,10 @@ cmake-build-*/
 # from the tracked .java sources by the run recipe in Blake3SelfTest.java).
 *.class
 
+# Python bytecode caches (auto-generated when scripts run; never useful in git).
+__pycache__/
+*.pyc
+
 # IDE / tooling
 .vs/
 .vscode/
