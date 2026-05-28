@@ -81,7 +81,15 @@ $PrivateSubpaths = @(
   'examples/archive/',
   # RE tooling — the Ghidra reference-data extractor exposes the reverse-
   # engineering methodology; keep it private with the rest of the RE toolchain.
-  'tools/refdata-extractor/'
+  # Moved 2026-05-28 from tools/refdata-extractor/ to data/refdata-extractor/
+  # (the tool's output -- the SQLite DBs -- ships from data/, so the tool
+  # itself lives alongside its output rather than under tools/).
+  'data/refdata-extractor/',
+  # Reference-data seed CSVs + their authoring policy. Maintainer-only law
+  # for how rows enter the curated set; the GENERATED DBs (data/*.sqlite) +
+  # their schema docs (data/reference.md, data/reference-dev.md) are public,
+  # but the seeds themselves are private.
+  'data/seeds/'
 )
 
 # ALLOWLIST — the ONLY root-level files published. Note: `.gitignore` is
