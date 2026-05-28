@@ -7,13 +7,13 @@ one full dump from `WHGame.dll`, identified by the short dotted game version:
 dump/
 ├── README.md                  (this file; tracked)
 ├── refdata-1.5.1164953/       (one dump per KCD2 game version; gitignored)
-│   ├── functions/
-│   ├── statements/
-│   ├── referenced_vars/
-│   ├── call_edges/
-│   ├── signatures/
-│   ├── caller_reg_args/
-│   └── MANIFEST.md
+│   ├── functions/             (Ghidra pass output; CSV per RVA shard)
+│   ├── statements/            (Ghidra pass output)
+│   ├── referenced_vars/       (Ghidra pass output)
+│   ├── call_edges/            (Ghidra pass output)
+│   ├── signatures/            (Python pass output)
+│   ├── caller_reg_args/       (Python pass output)
+│   └── _MANIFEST.md           (the Ghidra extractor's run-record)
 ├── refdata-1.6.xxxxxxx/       (added when KCD2 ships a new build)
 └── ...
 ```

@@ -105,18 +105,21 @@ tools resolve "which dump to use" by default.
 The import has **two modes**:
 
 ```bash
-# REBUILD (--rebuild): from-scratch baseline build from a dump dir.
-python data/refdata-extractor/python/import_to_sqlite.py --rebuild data/refdata-extractor/dump/refdata-<version> data/
-#  -> data/reference.sqlite       (USER production, curated-only, ~0.1 MB)
-#     data/reference-dev.sqlite   (DEV bulk discovery superset, ~1.3 GB)
+# REBUILD (--rebuild <dump_dir> <out_dir>): from-scratch baseline build.
+# Reads from the dump_dir; writes BOTH DBs into the out_dir verbatim:
+#   <out_dir>/reference.sqlite       (USER production, curated-only)
+#   <out_dir>/reference-dev.sqlite   (DEV bulk discovery superset)
+python data/refdata-extractor/python/import_to_sqlite.py \
+    --rebuild data/refdata-extractor/dump/refdata-<version> data/
 
-# UPDATE (default): the per-version incremental path. Detects whether the game on
-# disk is newer than the DB; reads the on-disk version from the game's
-# whdlversions.json (the shipped MasterMasterPGO config's build number; the DLL
-# carries no PE version resource).
+# UPDATE (default; takes <out_dir> <game_dir>): the per-version incremental path.
+# Reads the existing DBs in <out_dir>, detects whether the game on disk is newer,
+# decides whether the maintainer needs to re-verify. Reads the on-disk version
+# from the game's whdlversions.json (the shipped MasterMasterPGO config's build
+# number; the DLL carries no PE version resource).
 python data/refdata-extractor/python/import_to_sqlite.py data/ <game-dir>
 #  exit 0 = DB already current; exit 3 = newer game version (maintainer
-#  re-verifies the curated set against the new dump)
+#  re-verifies the curated set against the new dump); exit 2 = usage error.
 ```
 
 The import produces **two** DBs with **disjoint purposes** (per the streamlined
@@ -131,7 +134,7 @@ explanation):
 The schema is documented in full at `data/reference.md` (user) and
 `data/reference-dev.md` (dev). In brief:
 
-- **`address_names`** is the curated entity registry; `id` IS the `kcdx_id` (autoincrement starting at 1) — the stable cross-version handle plugins reference. **`address_versions`** holds per-version validity intervals: one open row per entity (`valid_through IS NULL` = current), carrying the content_hash, address, kind, abi_walker argument-width floor, and the verified signature when curated. **`address_versions.kcdx_id` is NULLABLE** — set when the row is a curated entity (FK to `address_names.id`), NULL when the row is a bulk uncurated DEV function. The dev-only `statements`/`referenced_vars`/`call_edges` carry TWO FK columns each: `address_version_id` (always set, FK to `address_versions.id`, the universal "which function row" handle that `kcdx.find` walks) + `kcdx_id` (nullable, FK to `address_names.id`, set only when the owning function is curated). **`modules`** / **`game_versions`** are registries; **`meta`** is the one-row header.
+- **`address_names`** is the curated entity registry; `id` IS the `kcdx_id` — canonical from `data/seeds/address_names_seed.csv` (no autoincrement; null/duplicate id is a hard error). The kcdx_id is the stable cross-version handle plugins reference. **`address_versions`** holds per-version validity intervals: one open row per entity (`valid_through IS NULL` = current), carrying the content_hash, address, kind, abi_walker argument-width floor, the verified signature when curated, AND the per-version verification audit trail (`last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`). **`address_versions.kcdx_id` is NULLABLE** — set when the row is a curated entity (FK to `address_names.id`), NULL when the row is a bulk uncurated DEV function. The dev-only `statements`/`referenced_vars`/`call_edges` carry TWO FK columns each: `address_version_id` (always set, FK to `address_versions.id`, the universal "which function row" handle that `kcdx.find` walks) + `kcdx_id` (nullable, FK to `address_names.id`, set only when the owning function is curated). **`modules`** / **`game_versions`** are registries; **`meta`** is the one-row header.
 - **Why the user/dev split:** a mod user's runtime needs only the survival hashes + the marshalling ABI for the entities their plugins hook — the small USER DB (curated rows only). The per-statement metadata + the call graph + the bulk address_versions rows exist only for the author discovery/inspection surface → the larger DEV DB. (`call_edges` is dev-only: it powers `kcdx.find`'s caller-graph ranking + cross-version re-identification.)
 - **Encoding (lossless):** content_hash → 32-byte BLOB; low-cardinality repetitive text → INTEGER FK into `_dict_*` lookup tables; address/count cols → INTEGER.
 - **Append-only, updated in place:** the DB is NOT rebuilt per game version — the default update mode appends the new version's intervals to the existing DB.
@@ -154,16 +157,25 @@ a nameable extractor-broken state that would flip it to FAIL. See
 The **DB-shape gate** verifies the import (downstream of the dump):
 
 ```bash
-python data/refdata-extractor/python/validate_db_shape.py   # -> 25/25 PASS
+python data/refdata-extractor/python/validate_db_shape.py   # -> all PASS
 ```
 
-It builds both DBs from the dump and asserts 25 checks on the built schema: table
-presence per DB, the USER/DEV column projection, the one-open-interval-per-curated-
-entity invariant (partial-unique on address_versions.kcdx_id where not null), the
-`address_names` count == seed.csv count, the bulk-vs-curated row split on
+It builds both DBs from the dump and asserts a suite of checks on the built schema
+(currently 45+; the count grows as the schema does): table presence per DB, the
+USER/DEV column projection, the one-open-interval-per-curated-entity invariant
+(partial-unique on `address_versions.kcdx_id` where not null), the `address_names`
+count == `address_names_seed.csv` count, the canonical-id authority (address_names.id
+matches the seed's id set exactly), the bulk-vs-curated row split on
 `address_versions` (bulk rows have `kcdx_id NULL`), the `content_hash` BLOB
-round-trip (USER + DEV), end-to-end name resolution, and FK closure on both
-`address_version_id` (universal) and `kcdx_id` (curated) — each falsifiable.
+round-trip (USER + DEV), end-to-end name resolution, FK closure on both
+`address_version_id` (universal) and `kcdx_id` (curated), modules-table contents
+match `module_seed.csv`, supersession + deprecation pair-integrity + cycle
+detection, verification audit-trio integrity, and the version-ordering invariant
+(`last_verified_at_version >= valid_from`) — each falsifiable.
+
+The harness also drives `make_sandbox.py` indirectly via shared imports; the
+sandbox itself (`sandbox/make_sandbox.py`) is the in-flight cross-version
+matcher's fixture builder — separate work-in-progress, not on the live gate.
 
 The BLAKE3 primitive has its own gate:
 

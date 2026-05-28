@@ -78,12 +78,17 @@ verification state at the running game version V is derived from:
 - `address_names.superseded_by` and `address_names.superseded_at_version`
   on the entity.
 
-Derivation rule:
+Derivation rule (evaluated in order; first match wins):
 
 1. If `entity.is_deprecated` AND `V >= entity.deprecated_at_version`: **DEPRECATED.**
 2. Else if `entity.superseded_by` AND `V >= entity.superseded_at_version`: **SUPERSEDED** — the engine auto-walks to the successor.
 3. Else if `row.last_verified_at_version >= V` AND `row.valid_from <= V`: **VERIFIED.**
 4. Else: **UNVERIFIED.**
+
+An entity with both `is_deprecated = 1` and `superseded_by` set resolves
+as DEPRECATED (rule 1 fires before rule 2). Comparisons against `V` are
+**by `game_versions.ordinal`**, never by `tag` string (string compare
+breaks at two-digit minors).
 
 The engine attempts to resolve in all four cases — the state is informational
 (used to surface warnings to the plugin author at resolve time), not a gate.
@@ -149,19 +154,19 @@ database the table is wider: every binary function gets a row too (for
 
 | Column | Meaning |
 |---|---|
-| `id` | row id (autoincrement). The universal "which function row" handle. DEV-only tables (statements, referenced_vars, call_edges) FK on this. |
+| `id` | row id (autoincrement; assigned per-rebuild — NOT stable across rebuilds, so consumers should never persist it). The universal "which function row" handle. DEV-only tables (statements, referenced_vars, call_edges) FK on this. |
 | `kcdx_id` | **NULLABLE** FK to `address_names.id`. Set when the row is a curated entity; `NULL` for uncurated bulk DEV rows. |
 | `kind` | the curated taxonomy: `function`, `function_no_sig`, `function_variadic`, `callsite`, `data_slot`, `string_anchor`, `instruction_anchor`, `vtable_base`, `vtable_index`. Dictionary-encoded. |
 | `module_id` | which module the entity lives in → `modules.id`. |
 | `rva` | the entity's address in this version. Resolve `kcdx_id` → address from the open row. `NULL` for non-byte entities (e.g. `vtable_index`). |
 | `length` | byte length — needed to reproduce the hashed span `[rva, rva+length)`. |
 | `content_hash` | BLAKE3 of the entity's on-disk bytes (32-byte blob). `NULL` for non-byte entities. |
-| `value` | the resolved integer for a non-byte entity (a vtable slot index, a data-slot offset). |
+| `value` | the resolved integer for a non-byte entity. Today populated only for `vtable_index` rows (mirrors `vtable_slot`); reserved for future kinds (e.g. data-slot offsets). |
 | `signature` | the verified ABI for this version (or the abi_walker width-floor if no verified value was set). For kinds that have no signature (callsite, vtable slot, data slot), `NULL`. |
 | `observed_arg_slots` | abi_walker floor: arg-slot count. |
 | `caller_reg_arg_count` | caller-side register-argument estimate (≤4). |
 | `caller_arg_agreement` | whether the callsites agreed on that estimate. Dictionary-encoded. |
-| `offset` | for a `callsite`, the offset a consumer applies relative to the recorded address. |
+| `offset` | reserved for callsite consumer offsets — NOT populated by the current importer. Callsite-anchor consumers compute their offset from the `notes` prose on the entity (e.g. "consumers apply offset = -4"). |
 | `vtable_slot` | for a `vtable_index`, the slot integer (mirrors `value` for that kind). |
 | `last_verified_at_version` | nullable FK → `game_versions.id`. The LATEST game version maintainer sign-off has been recorded for this row. NULL = never verified. Paired with `verified_by` / `verified_date` / `evidence_kind` (all four set together or all four NULL). MUST be `>= valid_from` when set. |
 | `verified_by` | nullable TEXT. The person identifier who signed off on the verification at `last_verified_at_version`. |
@@ -185,16 +190,16 @@ Backs every `valid_from` / `valid_through` / `last_verified_at_version` /
 
 | Column | Meaning |
 |---|---|
-| `id` | version id. |
+| `id` | version id (autoincrement). FK target for every `valid_from` / `valid_through` / `*_at_version` column. Consumers join `address_versions.last_verified_at_version = game_versions.id` and read `tag` for display. |
 | `tag` | the human version string (e.g. `1.5.1164953`). |
-| `ordinal` | the monotonic sort key (the game build number); orders versions correctly. |
+| `ordinal` | the monotonic sort key (the game build number); orders versions correctly. Compare by `ordinal`, never by `tag` (string compare breaks at two-digit minors — `"1.10.x"` lex-sorts BELOW `"1.5.x"`). |
 | `released` | release date, if known. |
 
 ### `meta` — database header (one row)
 
 | Column | Meaning |
 |---|---|
-| `id` | always 1. |
+| `id` | row id (autoincrement). Always 1 today; the table holds exactly one row. |
 | `schema_version` | the schema shape version — a consumer checks this before trusting the database. |
 | `abi_confidence` | the argument-floor policy string. |
 
@@ -214,12 +219,23 @@ Backs every `valid_from` / `valid_through` / `last_verified_at_version` /
 
 ```sql
 SELECT n.id AS kcdx_id, v.kind, v.rva, v.signature,
-       v.last_verified_at_version, n.is_deprecated, n.superseded_by
+       v.valid_from, v.last_verified_at_version,
+       n.is_deprecated, n.deprecated_at_version, n.deprecation_replacement,
+       n.superseded_by, n.superseded_at_version
   FROM address_names n
   JOIN address_versions v
     ON v.kcdx_id = n.id AND v.valid_through IS NULL
  WHERE n.name = ?
 ```
+
+The derivation rule above wants every entity-level lifecycle field
+(`is_deprecated`, `deprecated_at_version`, `superseded_by`,
+`superseded_at_version`) plus the row-level version anchors (`valid_from`,
+`last_verified_at_version`) — both `*_at_version` fields gate the derived
+state. `deprecation_replacement` is the advisory pointer surfaced to the
+author in the warning when a row resolves DEPRECATED. To display human-
+readable version tags, join `game_versions` on each `_at_version` /
+`valid_from` / `last_verified_at_version` integer FK.
 
 **Resolve by `kcdx_id`:** skip the `address_names` name lookup; query
 `address_versions` directly. The supersession + deprecation flags still apply

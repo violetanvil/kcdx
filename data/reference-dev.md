@@ -61,14 +61,18 @@ exist only here:
 
 | Column | Meaning |
 |---|---|
-| `auto_name` | the disassembler's auto-generated label (`FUN_<rva>` form). A display label for inspection only — it is derived from the address and is **never** a resolution key (it moves every version). Absent from the production database. |
+| `auto_name` | the disassembler's auto-generated label as carried verbatim from the Ghidra dump (typically `FUN_<rva>` form, but the importer doesn't enforce the format). A display label for inspection only — it is derived from the address and is **never** a resolution key (it moves every version). Absent from the production database. |
 | `decompile_quality` | `clean` / `partial` / `unanalyzable` — gates whether the per-statement tools apply to this entity. Dictionary-encoded. Absent from the production database. |
 
 The verification audit trail columns
 (`last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`)
-ship to BOTH databases. They live on the same `address_versions` rows in the
-DEV DB that get filtered to USER. Bulk uncurated rows have all four NULL
-(nobody ever signs off on the bulk).
+ship to BOTH databases. Bulk uncurated rows have all four NULL (nobody ever
+signs off on the bulk).
+
+**Row-level filtering, not table-level.** USER and DEV share the
+`address_versions` table shape (modulo the two dev-only columns); USER
+DROPS rows whose `kcdx_id IS NULL` (the bulk uncurated rows). The filter
+is per-row, not per-table.
 
 ### `address_names` — no dev-only columns
 
@@ -105,7 +109,7 @@ One row per decompiled statement of each analyzable function. Backs
 | `byte_range_start` | the statement's machine-code start address. |
 | `byte_range_len` | the statement's machine-code byte length. |
 | `content_hash` | BLAKE3 of the statement's byte sub-range (32-byte blob). |
-| `callee` | the call target's name when it is a named function; `NULL` when the target is just an auto-named function (use the call graph for that case). |
+| `callee` | the call target's name when it is meaningful; the importer nulls the column when the value is the redundant auto-name of `callee_rva` (exact `FUN_<rva>` / `FUN_<padded-rva>` shapes). Other auto-name shapes survive verbatim. Use the call graph (`call_edges`) for the structural answer to "what does this statement call." |
 | `string_ref` | a string literal the statement references, if any — a discovery anchor. |
 
 ### `referenced_vars` — per-statement variable storage
@@ -143,7 +147,10 @@ both kcdx_ids).
 
 Identical to the production database — 32-byte blob hashes, dictionary-encoded
 low-cardinality columns (`_dict_<table>_<column>`), integer address/count columns,
-stock SQLite.
+stock SQLite. The `_dict_*` lookup tables ship to BOTH databases (the importer
+materializes every dict the row data references; tables that exist only in DEV
+contribute their own `_dict_statements_kind`, `_dict_referenced_vars_storage_kind`,
+`_dict_referenced_vars_data_type` lookups that USER doesn't carry).
 
 ## Why this is a separate artifact from the production DB
 

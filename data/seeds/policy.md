@@ -9,9 +9,12 @@ the engine's runtime semantics are documented elsewhere
 [`data/reference-dev.md`](../reference-dev.md)). A rule in this file is
 binding on every seed-edit commit.
 
-The importer enforces every rule below as a fail-loud check
-(`data/refdata-extractor/python/import_to_sqlite.py`). The harness
-(`validate_db_shape.py`) re-asserts the same rules against the generated DBs.
+Most rules below are enforced as fail-loud checks in the importer
+(`data/refdata-extractor/python/import_to_sqlite.py`); the harness
+(`validate_db_shape.py`) re-asserts them against the generated DBs.
+Rules explicitly marked **policy-only** are NOT auto-enforced — the
+maintainer is responsible for compliance (review, the test-suite matrix,
+the verification checkpoint).
 
 ## The three seed files
 
@@ -55,9 +58,11 @@ A row is rejected with a hard error if any REQUIRED column is empty.
 
 The `module` column references a `module_seed.csv` row. Resolution heuristic:
 
-1. If the value parses as an integer, look up `module_seed.csv.id` by that
-   integer.
-2. Else look up `module_seed.csv.name` by string match.
+1. **Int-first:** if the value parses as an integer, look up `module_seed.csv.id`
+   by that integer. If no module with that id exists = HARD ERROR (the
+   resolver does NOT fall through to step 2 once the value parsed as int).
+2. **By-name (only when not int):** if the value does not parse as an
+   integer, look up `module_seed.csv.name` by exact string match.
 3. No match = HARD ERROR.
 
 ## valid_from_version vs. last_verified_at_version
@@ -77,6 +82,17 @@ any game version V where `valid_from_version <= V <= last_verified_at_version`.
 `last_verified_at_version` MUST be `>= valid_from_version` when set. Violation
 is a HARD ERROR (you can't verify a row at a version older than where the row
 claims to start).
+
+**Version comparison caveat (string vs ordinal):** the importer compares
+version-tag strings with Python's `<` operator. This works for the current
+`<major>.<minor>.<build>` format as long as the minor stays a single digit
+(`"1.5.x" < "1.6.y"` lex-sorts correctly). The moment a two-digit minor
+ships (`"1.10.x"`), string compare breaks (`"1.10.x"` lex-sorts BELOW
+`"1.5.x"`). When that happens, the comparison must move to ordinal-based
+lookup via `game_versions.ordinal`. Until then, the string compare is
+correct AND the importer's "last_verified >= valid_from" check is the only
+gate that uses it on the seed side; the engine's runtime derivation
+already uses ordinal compare.
 
 ## Status is NOT an authored column
 
@@ -115,7 +131,7 @@ is NULL, all three MUST be NULL. Partial sets are a HARD ERROR.
 | Column | Format | Job |
 |---|---|---|
 | `verified_by` | TEXT — person identifier (e.g. `VioletAnvil`) | Who signed off. |
-| `verified_date` | `YYYY-MM-DD` (ISO). Other formats = HARD ERROR. | When. |
+| `verified_date` | `YYYY-MM-DD` (ISO). Other shapes = HARD ERROR. The check is shape-only (regex `^\d{4}-\d{2}-\d{2}$`), NOT semantic — `9999-99-99` passes the check. The maintainer is responsible for entering a real date. | When. |
 | `evidence_kind` | One of the enum below. | How (the evidence tier). |
 
 ### evidence_kind enum (quality ranking, strongest first)
@@ -173,11 +189,41 @@ Pair integrity: `is_deprecated = 1` and `deprecated_at_version` are
 both-or-neither. `deprecation_replacement` is allowed ONLY when
 `is_deprecated = 1`. Violation = HARD ERROR.
 
-## Test plugin requirement
+## Cross-seed FK + coverage checks (importer-enforced)
+
+Beyond the per-file rules above, the importer enforces a handful of
+cross-file invariants that catch typical authoring mistakes:
+
+- **`address_versions_seed.kcdx_id` MUST resolve to an existing
+  `address_names_seed.id`** (every per-version fact must reference an
+  entity). Violation = HARD ERROR.
+- **`last_verified_at_version` MUST resolve to a known `game_versions.tag`**
+  (the baseline importer today only knows `GAME_VERSION_TAG`; a tag string
+  that doesn't match an existing game_versions row fails loud).
+- **Every entity must have at least one baseline-version
+  `address_versions_seed` row** for the import's current `GAME_VERSION_TAG`.
+  A named entity with no resolve facts for the baseline version =
+  HARD ERROR.
+
+**Surprise the maintainer should know about:** the importer SILENTLY SKIPS
+`address_versions_seed` rows whose `valid_from_version != GAME_VERSION_TAG`
+of the current import run. Rows for future game versions can sit in the
+seed unmaterialized until an import run targets that version. If you add
+a `1.6.xxxxx` row today and the importer is still building against `1.5.x`,
+that 1.6 row is not in the output DB — it's not lost, just not yet
+materialized.
+
+## Test plugin requirement (policy-only)
 
 Every non-deprecated, non-superseded entity in `address_names_seed.csv` MUST
-be exercised by at least one `test-plugins/` plugin. The test plugin IS the
-re-verification mechanism when a new game version ships:
+be exercised by at least one `test-plugins/` plugin. **This is a policy
+rule, not an importer check** — the importer does NOT cross-reference
+`address_names_seed.csv` against the `test-plugins/` tree. Compliance is
+enforced by review (`/code-review`, `/verification-checkpoint`) and by the
+test-suite matrix at `test-plugins/README.md`.
+
+The test plugin IS the re-verification mechanism when a new game version
+ships:
 
 - New entity → MUST land with a `test-plugins/cap-NN` (or `comp-NN`) row in
   the same unit of work. A new entity without a test plugin is a policy
@@ -255,7 +301,10 @@ When KCD2 ships a new build:
 - Column order in the file MUST match the header literally — the importer
   reads by column name (DictReader) so order is human-readable cosmetics.
   Don't reorder existing rows' columns; do match the header on new rows.
-- `rva` is hex with `0x` prefix (e.g. `0x0071A5A4`).
+- `rva` SHOULD be hex with `0x` prefix (e.g. `0x0071A5A4`) for consistency
+  with existing rows. The importer's `parse_int` also accepts decimal, so
+  a decimal value would technically be parsed — but mixing formats in the
+  seed makes review harder and is a policy violation.
 - Empty cells are empty strings in the CSV (`,,`), interpreted as NULL by
   the importer.
 
