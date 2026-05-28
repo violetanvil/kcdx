@@ -28,6 +28,11 @@
                                          // read-fires + override semantics)
 #include "mod_absorb/select_detour.h"    // Mod-loader absorb: production SELECT
                                          // detour (rebuilds the enabled list)
+#include "mod_absorb/ctor_probe.h"       // init-cycle-ownership step 1: TRANSIENT
+                                         // read-only ctor probe. Delete this
+                                         // include + the install call below
+                                         // when step 4 of init-cycle-ownership
+                                         // lands the kcdx-owned ctor bracket.
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -168,6 +173,17 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // (lua_pcall + update hooked; MinHook live). Reached only on the success
     // path (the failure return above precedes this).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
+
+    // TRANSIENT: init-cycle-ownership step 1 — read-only ctor probe. Installs
+    // a one-shot MinHook detour on wh::C_ModManager ctor (Address Library id
+    // 3101) that snapshots the resulting C_ModManager state to the dev log
+    // and forwards to the original unchanged. The probe answers the question
+    // "does the ctor write any field beyond what seed.csv id 3101 documents?"
+    // before a later step replaces the ctor + SELECT call entirely. Delete
+    // this call (and ctor_probe.{h,cpp}) when step 4 of init-cycle-ownership
+    // lands the kcdx-owned init bracket — at that point kcdx becomes the
+    // writer of C_ModManager state and there is nothing left to compare.
+    kcdx::mod_absorb::ctor_probe::Install();
 
     // STEP 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
     // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
