@@ -11,11 +11,11 @@
 
 #include "ctor_probe.h"
 #include "enabled_list_builder.h"
-#include "../address_library.h"
 #include "../log.h"
+#include "../refdb.h"
 
 // SELECT detour — see select_detour.h for the full framing. Production
-// mod-loader takeover: detour ModManager_Select (Address Library id 3100), let
+// mod-loader takeover: detour ModManager_Select (refdb curated name), let
 // the original run, then wholesale-replace the enabled-list vector with kcdx's
 // rebuilt list in resolved load order. docs/mod-loader-absorb.md "Step 4".
 //
@@ -56,9 +56,9 @@ namespace {
 
 constexpr const char* kCat = "MOD_ABSORB";
 
-// ModManager_Select — Address Library id 3100. Resolved at install time (never
-// a hardcoded RVA — the row carries the per-build address + the verified ABI).
-constexpr uint64_t kSelectId = 3100;
+// ModManager_Select — refdb curated name "ModManager_Select". Resolved at
+// install time via refdb::ResolveByName (never a hardcoded RVA — the row
+// carries the per-build RVA + the verified ABI).
 
 // The enabled-mod list at C_ModManager+0x30 is a std::vector-style range of
 // 8-byte I_Mod pointers: +0x30 = begin, +0x38 = end, +0x40 = end_of_storage
@@ -69,8 +69,8 @@ constexpr size_t kListBeginOff   = 0x30;
 constexpr size_t kListEndOff     = 0x38;
 constexpr size_t kListEndCapOff  = 0x40;
 
-// __fastcall void(C_ModManager* this) — this-only, void return (Address Library
-// id 3100, verified ABI).
+// __fastcall void(C_ModManager* this) — this-only, void return (refdb-carried
+// verified ABI).
 using SelectFn_t = void (__fastcall*)(void* self);
 
 std::atomic<SelectFn_t> g_orig{nullptr};
@@ -434,18 +434,26 @@ bool InstallSelectDetour() {
         g_installed.store(false, std::memory_order_release);
         return false;
     }
+    const auto whgameBase = reinterpret_cast<uintptr_t>(whgame);
 
-    // Resolve the SELECT address by Address Library id (never a hardcoded RVA —
-    // the row carries the per-build address gated on a game-version match).
-    const uintptr_t target = address_library::Resolve(kSelectId);
-    if (target == 0) {
-        kcdx::log::WarnF("MOD_ABSORB: ModManager_Select (Address Library id "
-                         "%llu) did not resolve (version mismatch / unverified "
-                         "row) — mod-loader takeover inactive this boot",
-                         (unsigned long long)kSelectId);
+    // Resolve the SELECT address by refdb curated name (never a hardcoded RVA
+    // — the row carries the per-build RVA + the verified ABI, gated on the
+    // running build's game_versions row). found=false means the canonical
+    // name is not in the DB for the running build — fail-loud already logged
+    // by refdb under category REFDB; the install aborts.
+    const auto selRes = kcdx::refdb::ResolveByName("ModManager_Select");
+    if (!selRes.found) {
+        LOG_ERROR_KV(kCat, "install_failed",
+            kcdx::log::KV::BareStr("reason",
+                "refdb::ResolveByName(ModManager_Select) returned not-found — "
+                "the canonical name is absent or its row is not verified for "
+                "the running build; mod-loader takeover inactive this boot. "
+                "See the preceding REFDB ERROR for the specific reason token"),
+            kcdx::log::KV::BareStr("name", "ModManager_Select"));
         g_installed.store(false, std::memory_order_release);
         return false;
     }
+    const uintptr_t target = whgameBase + selRes.rva;
 
     // MinHook idempotent init (the worker-thread caller already initialized it).
     MH_STATUS si = MH_Initialize();
@@ -476,8 +484,8 @@ bool InstallSelectDetour() {
     }
 
     kcdx::log::InfoF("MOD_ABSORB: ModManager_Select detour installed at %p "
-                     "(Address Library id %llu) — mod-loader takeover armed",
-                     targetPtr, (unsigned long long)kSelectId);
+                     "(refdb name \"ModManager_Select\") — mod-loader "
+                     "takeover armed", targetPtr);
     return true;
 }
 

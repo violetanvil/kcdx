@@ -3,9 +3,10 @@
 // === C_ModManager init-cycle observation probe — TRANSIENT ==================
 //
 // A comprehensive read-only probe over the C_ModManager construction flow.
-// Three one-shot capture points, atomic-guarded; one MinHook detour (id 3101
-// ctor entry/exit) plus one in-line call from the existing SELECT detour
-// (id 3100, see select_detour.cpp). The probe never mutates the engine.
+// Three one-shot capture points, atomic-guarded; one MinHook detour on the
+// ModManager ctor (refdb curated name 'ModManager_ctor') plus one in-line call
+// from the existing SELECT detour (curated name 'ModManager_Select', see
+// select_detour.cpp). The probe never mutates the engine.
 //
 //   POINT A — ctor entry (before the original ctor runs). Logs args
 //             (outResult, sys, modsDir), the raw 0x68 bytes of *outResult
@@ -19,7 +20,8 @@
 //             BEFORE SELECT had any chance to populate fields. Reached by a
 //             call into ctor_probe::OnSelectEntry() at the top of
 //             select_detour.cpp's HookedSelect — NOT a second MinHook on
-//             id 3100. One hook per site.
+//             the SELECT site (curated name 'ModManager_Select'). One hook
+//             per site.
 //
 //   POINT C — ctor return (existing capture point — kept). The full 0x68
 //             dump WITH per-slot deref + classification + SEH-guarded
@@ -51,7 +53,7 @@
 //
 //   Outcome 1 — Walk 1 yields a valid I_Mod* vector in the normal-mods
 //     boot, count matches the number of mods, *begin's vtable matches
-//     Address Library id 3105. → +0x30/+0x38/+0x40 IS the enabled-list
+//     the refdb curated name 'ImodVtable_primary'. → +0x30/+0x38/+0x40 IS the enabled-list
 //     vector (confirms the absorb-doc); the "mods" ASCII observed in the
 //     no-mods boot was from an EMPTY vector's begin pointer being a stale
 //     or sentinel value.
@@ -101,8 +103,8 @@ namespace kcdx::mod_absorb::ctor_probe {
 // to ANSWER the question this boot).
 //
 // Returns true on a successful install OR if an install already succeeded
-// earlier this session. False on any failure (id 3101 did not resolve,
-// MH_Initialize failed, MH_CreateHook/Enable failed).
+// earlier this session. False on any failure (refdb 'ModManager_ctor' lookup
+// did not resolve, MH_Initialize failed, MH_CreateHook/Enable failed).
 bool Install();
 
 // POINT B entry — called from select_detour.cpp's HookedSelect at the TOP
@@ -110,9 +112,10 @@ bool Install();
 // fire returns immediately without dumping. SEH-guards every deref; safe to
 // call with any `self` value (a null self is logged and returns).
 //
-// This is NOT a second MinHook on id 3100 — the production SELECT detour
-// owns the only hook at that site, and this is a plain call into the probe
-// from inside that detour. One hook per site.
+// This is NOT a second MinHook on the SELECT site (curated name
+// 'ModManager_Select') — the production SELECT detour owns the only hook at
+// that site, and this is a plain call into the probe from inside that detour.
+// One hook per site.
 void OnSelectEntry(void* self);
 
 }  // namespace kcdx::mod_absorb::ctor_probe

@@ -9,8 +9,8 @@
 
 #include "MinHook.h"
 
-#include "../address_library.h"
 #include "../log.h"
+#include "../refdb.h"
 
 // Comprehensive init-cycle observation probe — see ctor_probe.h for the
 // framing (three capture points, two-boot outcome map, transient lifetime).
@@ -25,15 +25,13 @@ namespace {
 
 constexpr const char* kCat = "MOD_ABSORB_PROBE";
 
-// wh::C_ModManager ctor — Address Library id 3101. Resolved at install time
-// (never a hardcoded RVA); the row carries the per-build address plus the
-// verified ABI: __fastcall returning ptr, with 3 args
-// (ptr outResult /*rcx*/, ptr sys /*rdx*/, ptr modsDir /*r8*/).
-constexpr uint64_t kCtorId = 3101;
+// wh::C_ModManager ctor — refdb curated name "ModManager_ctor". Resolved at
+// install time via refdb::ResolveByName (never a hardcoded RVA); the row
+// carries the per-build RVA plus the verified ABI: __fastcall returning ptr,
+// with 3 args (ptr outResult /*rcx*/, ptr sys /*rdx*/, ptr modsDir /*r8*/).
 
-// C_ModManager state size (seed row 3101). The probe walks the full range
-// as 8-byte slots so any field the ctor writes shows up, whether or not the
-// seed prose predicted it.
+// C_ModManager state size. The probe walks the full range as 8-byte slots so
+// any field the ctor writes shows up.
 constexpr size_t kObjectSize = 0x68;
 
 using CtorFn_t = void* (__fastcall*)(void* outResult, void* sys, void* modsDir);
@@ -404,7 +402,7 @@ void WalkEnabledList(const void* obj) {
     if (!countSane || count == 0) return;
 
     // SEH-guarded deref of *begin = first I_Mod*. Then deref **begin = first
-    // I_Mod's vtable. Compare against id 3105 (primary vtable).
+    // I_Mod's vtable. Compare against the refdb-resolved I_Mod primary vtable.
     void* firstMod = nullptr;
     if (!SafeReadBytes(reinterpret_cast<const void*>(begin),
                        &firstMod, sizeof(firstMod))) {
@@ -421,17 +419,33 @@ void WalkEnabledList(const void* obj) {
     // First 0x40 bytes of the I_Mod record.
     DerefAndDump(firstMod, "walk1_first_imod_body", "walk1_enabled");
 
-    // Vtable check: read qword at firstMod, compare to address_library 3105.
+    // Vtable check: read qword at firstMod, compare to the refdb-resolved
+    // I_Mod primary vtable. The refdb returns a per-version RVA; bias by the
+    // WHGame base captured at Install() to get a VA. found=false here means the
+    // canonical name is not in the DB for the running build — fail-loud already
+    // logged by refdb under category REFDB; skip the compare and continue.
     void* imodVtable = nullptr;
     if (!SafeReadBytes(firstMod, &imodVtable, sizeof(imodVtable))) {
         LogDerefAv(firstMod, "walk1_first_imod_vtable_read");
         return;
     }
-    const uintptr_t expected = kcdx::address_library::Resolve(3105);
+    const auto primaryRes = kcdx::refdb::ResolveByName("ImodVtable_primary");
+    if (!primaryRes.found) {
+        LOG_ERROR_KV(kCat, "walk1_enabled",
+            kcdx::log::KV::BareStr("state", "first_imod_vtable_compare_skipped"),
+            kcdx::log::KV::BareStr("name",  "ImodVtable_primary"),
+            kcdx::log::KV::BareStr("detail",
+                "refdb::ResolveByName(ImodVtable_primary) returned not-found; "
+                "the vtable-compare diagnostic is skipped this fire (the probe "
+                "still observed the I_Mod pointer + first-record body). See the "
+                "preceding REFDB ERROR for the specific reason token"));
+        return;
+    }
+    const uintptr_t expected = g_whgameBase + primaryRes.rva;
     LOG_INFO_KV(kCat, "walk1_enabled",
         kcdx::log::KV::BareStr("state", "first_imod_vtable_compare"),
         kcdx::log::KV("actual",   reinterpret_cast<uintptr_t>(imodVtable)),
-        kcdx::log::KV("expected_id_3105", expected),
+        kcdx::log::KV("expected_imod_vtable_primary", expected),
         kcdx::log::KV("matches", reinterpret_cast<uintptr_t>(imodVtable)
                                  == expected));
 }
@@ -473,23 +487,38 @@ void WalkScannedList(const void* obj) {
         kcdx::log::KV("count_b_sane",   saneB));
 
     // If interpretation (b) yields a sane count > 0, dump the first record's
-    // first 0x40 bytes; its vtable at +0x00 should match id 3105 if it is
-    // truly a direct I_Mod record.
+    // first 0x40 bytes; its vtable at +0x00 should match the I_Mod primary
+    // vtable if it is truly a direct I_Mod record.
     if (saneB && countB > 0) {
         DerefAndDump(reinterpret_cast<const void*>(begin),
                      "walk2_first_record_body", "walk2_scanned");
         void* maybeVtable = nullptr;
         if (SafeReadBytes(reinterpret_cast<const void*>(begin),
                           &maybeVtable, sizeof(maybeVtable))) {
-            const uintptr_t expected = kcdx::address_library::Resolve(3105);
-            LOG_INFO_KV(kCat, "walk2_scanned",
-                kcdx::log::KV::BareStr("state",
-                                       "first_record_vtable_compare"),
-                kcdx::log::KV("actual", reinterpret_cast<uintptr_t>(maybeVtable)),
-                kcdx::log::KV("expected_id_3105", expected),
-                kcdx::log::KV("matches",
-                              reinterpret_cast<uintptr_t>(maybeVtable)
-                              == expected));
+            const auto primaryRes =
+                kcdx::refdb::ResolveByName("ImodVtable_primary");
+            if (!primaryRes.found) {
+                LOG_ERROR_KV(kCat, "walk2_scanned",
+                    kcdx::log::KV::BareStr("state",
+                        "first_record_vtable_compare_skipped"),
+                    kcdx::log::KV::BareStr("name", "ImodVtable_primary"),
+                    kcdx::log::KV::BareStr("detail",
+                        "refdb::ResolveByName(ImodVtable_primary) returned "
+                        "not-found; the vtable-compare diagnostic is skipped "
+                        "this fire. See the preceding REFDB ERROR for the "
+                        "specific reason token"));
+            } else {
+                const uintptr_t expected = g_whgameBase + primaryRes.rva;
+                LOG_INFO_KV(kCat, "walk2_scanned",
+                    kcdx::log::KV::BareStr("state",
+                                           "first_record_vtable_compare"),
+                    kcdx::log::KV("actual",
+                                  reinterpret_cast<uintptr_t>(maybeVtable)),
+                    kcdx::log::KV("expected_imod_vtable_primary", expected),
+                    kcdx::log::KV("matches",
+                                  reinterpret_cast<uintptr_t>(maybeVtable)
+                                  == expected));
+            }
         }
     }
 
@@ -686,19 +715,34 @@ void* __fastcall HookedCtor(void* outResult, void* sys, void* modsDir) {
                     sizeof(vtable));
         ValidateVtable(vtable, "+0x00_main_vtable");
 
-        // Compare against ImodVtable_primary (id 3105) — different class,
-        // but the seed prose's "id 3105/3106 for I_Mod" hint deserves an
-        // explicit compare line for the reader.
-        const uintptr_t expected3105 =
-            kcdx::address_library::Resolve(3105);
-        LOG_INFO_KV(kCat, "vtable_dump",
-            kcdx::log::KV::BareStr("compare", "+0x00_vs_id_3105"),
-            kcdx::log::KV("at_plus_00",
-                          reinterpret_cast<uintptr_t>(vtable)),
-            kcdx::log::KV("expected_id_3105", expected3105),
-            kcdx::log::KV("matches",
-                          reinterpret_cast<uintptr_t>(vtable)
-                          == expected3105));
+        // Compare against the refdb-resolved I_Mod primary vtable
+        // (curated name "ImodVtable_primary") — different class, but the seed
+        // prose's "I_Mod primary/subobject" hint deserves an explicit compare
+        // line for the reader. found=false → fail-loud already logged by
+        // refdb under category REFDB; skip the compare and continue the dump.
+        const auto primaryRes =
+            kcdx::refdb::ResolveByName("ImodVtable_primary");
+        if (!primaryRes.found) {
+            LOG_ERROR_KV(kCat, "vtable_dump",
+                kcdx::log::KV::BareStr("compare",
+                                       "+0x00_vs_imod_vtable_primary_skipped"),
+                kcdx::log::KV::BareStr("name", "ImodVtable_primary"),
+                kcdx::log::KV::BareStr("detail",
+                    "refdb::ResolveByName(ImodVtable_primary) returned "
+                    "not-found; the compare line is skipped this fire. See "
+                    "the preceding REFDB ERROR for the specific reason token"));
+        } else {
+            const uintptr_t expectedPrimary = g_whgameBase + primaryRes.rva;
+            LOG_INFO_KV(kCat, "vtable_dump",
+                kcdx::log::KV::BareStr("compare",
+                                       "+0x00_vs_imod_vtable_primary"),
+                kcdx::log::KV("at_plus_00",
+                              reinterpret_cast<uintptr_t>(vtable)),
+                kcdx::log::KV("expected_imod_vtable_primary", expectedPrimary),
+                kcdx::log::KV("matches",
+                              reinterpret_cast<uintptr_t>(vtable)
+                              == expectedPrimary));
+        }
     }
 
     // Vtable validation at +0x18 (sub-object vptr per ctor disassembly at
@@ -712,16 +756,30 @@ void* __fastcall HookedCtor(void* outResult, void* sys, void* modsDir) {
                     sizeof(subVtable));
         if (subVtable) {
             ValidateVtable(subVtable, "+0x18_sub_vtable");
-            const uintptr_t expected3106 =
-                kcdx::address_library::Resolve(3106);
-            LOG_INFO_KV(kCat, "vtable_dump",
-                kcdx::log::KV::BareStr("compare", "+0x18_vs_id_3106"),
-                kcdx::log::KV("at_plus_18",
-                              reinterpret_cast<uintptr_t>(subVtable)),
-                kcdx::log::KV("expected_id_3106", expected3106),
-                kcdx::log::KV("matches",
-                              reinterpret_cast<uintptr_t>(subVtable)
-                              == expected3106));
+            const auto subRes =
+                kcdx::refdb::ResolveByName("ImodVtable_subobject");
+            if (!subRes.found) {
+                LOG_ERROR_KV(kCat, "vtable_dump",
+                    kcdx::log::KV::BareStr("compare",
+                        "+0x18_vs_imod_vtable_subobject_skipped"),
+                    kcdx::log::KV::BareStr("name", "ImodVtable_subobject"),
+                    kcdx::log::KV::BareStr("detail",
+                        "refdb::ResolveByName(ImodVtable_subobject) returned "
+                        "not-found; the compare line is skipped this fire. "
+                        "See the preceding REFDB ERROR for the specific "
+                        "reason token"));
+            } else {
+                const uintptr_t expectedSub = g_whgameBase + subRes.rva;
+                LOG_INFO_KV(kCat, "vtable_dump",
+                    kcdx::log::KV::BareStr("compare",
+                                           "+0x18_vs_imod_vtable_subobject"),
+                    kcdx::log::KV("at_plus_18",
+                                  reinterpret_cast<uintptr_t>(subVtable)),
+                    kcdx::log::KV("expected_imod_vtable_subobject", expectedSub),
+                    kcdx::log::KV("matches",
+                                  reinterpret_cast<uintptr_t>(subVtable)
+                                  == expectedSub));
+            }
         }
     }
 
@@ -806,16 +864,21 @@ bool Install() {
             kcdx::log::KV("image_hi", g_whgameImageHi));
     }
 
-    const uintptr_t target = address_library::Resolve(kCtorId);
-    if (target == 0) {
+    // Resolve the ctor address via the refdb curated name. found=false means
+    // the canonical name is not in the DB for the running build — fail-loud
+    // already logged by refdb under category REFDB; the install aborts.
+    const auto ctorRes = kcdx::refdb::ResolveByName("ModManager_ctor");
+    if (!ctorRes.found) {
         LOG_ERROR_KV(kCat, "install_failed",
             kcdx::log::KV::BareStr("reason",
-                "ModManager_ctor (Address Library id 3101) did not resolve — "
-                "version mismatch or unverified row; the ctor probe is "
-                "inactive this boot"),
-            kcdx::log::KV("id", static_cast<uint64_t>(kCtorId)));
+                "refdb::ResolveByName(ModManager_ctor) returned not-found — "
+                "the canonical name is absent or its row is not verified for "
+                "the running build; the ctor probe is inactive this boot. "
+                "See the preceding REFDB ERROR for the specific reason token"),
+            kcdx::log::KV::BareStr("name", "ModManager_ctor"));
         return false;
     }
+    const uintptr_t target = g_whgameBase + ctorRes.rva;
 
     MH_STATUS si = MH_Initialize();
     if (si != MH_OK && si != MH_ERROR_ALREADY_INITIALIZED) {
@@ -856,7 +919,7 @@ bool Install() {
 
     LOG_INFO_KV(kCat, "install_ok",
         kcdx::log::KV("target", reinterpret_cast<uintptr_t>(targetPtr)),
-        kcdx::log::KV("id",     static_cast<uint64_t>(kCtorId)),
+        kcdx::log::KV::BareStr("name", "ModManager_ctor"),
         kcdx::log::KV::BareStr("detail",
             "init-cycle observation probe armed — POINT A (ctor entry), "
             "POINT B (SELECT entry via select_detour OnSelectEntry call), "

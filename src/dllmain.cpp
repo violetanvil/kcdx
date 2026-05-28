@@ -16,6 +16,7 @@
 #include "mod_absorb/order_persist.h"     // order persistence (step 5)
 #include "paths.h"
 #include "plugin_loader.h"
+#include "refdb.h"
 #include "save_load_hooks.h"
 #include "serialization.h"
 #include "watchdog_spawn.h"
@@ -133,6 +134,34 @@ DWORD WINAPI WorkerThread(LPVOID) {
         kcdx::plugins::DetectRuntimeGameVersionString();
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::VersionDetected);
 
+    // Open the reference database (SQLite, READ-ONLY) for the running game
+    // build. The DB is canonical: it carries the per-version RVA + verified
+    // ABI for every curated entity name the engine + plugins resolve. Open()
+    // needs g_runtimeGameVersionString populated to locate the running build's
+    // game_versions row — that just happened above (VersionDetected), so this
+    // is the earliest physically-achievable slot. On failure (DB absent /
+    // unopenable, schema mismatch, running version not in game_versions) the
+    // module logs a structured fail-loud ERROR with the distinct reason token
+    // (db_not_loaded / schema_version_mismatch / no_game_version_row); we fail
+    // the worker thread here because every downstream resolve-by-name lookup
+    // in the engine's init cycle depends on a live refdb, and a silent
+    // degraded-resolution path is the wrong shape — the engine cannot run
+    // without it, so the boot stops loudly rather than running with the
+    // canonical name table unreachable.
+    if (!kcdx::refdb::Open()) {
+        LOG_ERROR_KV("REFDB", "open_failed",
+            ::kcdx::log::KV::BareStr("detail",
+                "refdb::Open() returned false — the reference database is not "
+                "loaded this boot; every downstream resolve-by-name lookup "
+                "would fail. Aborting the worker thread: the engine cannot "
+                "install its hooks or run the init-cycle takeover without a "
+                "live refdb. Game will run vanilla. See the preceding REFDB "
+                "ERROR for the specific reason token (db_not_loaded / "
+                "schema_version_mismatch / no_game_version_row / ...)"));
+        return 1;
+    }
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::RefdbOpened);
+
     // Pak-mod version gate (mod-loader absorb, step 3). Discovery already ran
     // (config::LoadAllConfigs, in DllMain) and folded every pak mod into the
     // load_order model as a "mods.<modid>" row. The <supports> compatibility
@@ -175,11 +204,12 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
 
     // TRANSIENT: init-cycle-ownership step 1 — read-only ctor probe. Installs
-    // a one-shot MinHook detour on wh::C_ModManager ctor (Address Library id
-    // 3101) that snapshots the resulting C_ModManager state to the dev log
-    // and forwards to the original unchanged. The probe answers the question
-    // "does the ctor write any field beyond what seed.csv id 3101 documents?"
-    // before a later step replaces the ctor + SELECT call entirely. Delete
+    // a one-shot MinHook detour on wh::C_ModManager ctor (refdb curated name
+    // 'ModManager_ctor') that snapshots the resulting C_ModManager state to
+    // the dev log and forwards to the original unchanged. The probe answers
+    // the question "does the ctor write any field beyond what the refdb's
+    // 'ModManager_ctor' entry documents?" before a later step replaces the
+    // ctor + SELECT call entirely. Delete
     // this call (and ctor_probe.{h,cpp}) when step 4 of init-cycle-ownership
     // lands the kcdx-owned init bracket — at that point kcdx becomes the
     // writer of C_ModManager state and there is nothing left to compare.
@@ -201,7 +231,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // STEP 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
     // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
     // This INSTALLS the detour on the engine's mod-loader SELECT driver
-    // (wh::C_ModManager ModManager_Select, Address Library id 3100), here —
+    // (wh::C_ModManager ModManager_Select, refdb curated name 'ModManager_Select'), here —
     // EARLY (right after EngineHooksInstalled, before the lengthy
     // RegisterHandlers + DiscoverAndLoad sequence below) because the engine's
     // CSystem::Init thread races us: it calls ModManager_Select within a

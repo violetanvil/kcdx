@@ -19,6 +19,7 @@ const char* Name(InitPhase p) {
         case InitPhase::BeforeGameApply:         return "BeforeGameApply";
         case InitPhase::WorkerInit:              return "WorkerInit";
         case InitPhase::GameDllMapped:           return "GameDllMapped";
+        case InitPhase::RefdbOpened:             return "RefdbOpened";
         case InitPhase::EngineHooksInstalled:    return "EngineHooksInstalled";
         case InitPhase::ModLoaderTakeoverArmed:  return "ModLoaderTakeoverArmed";
         case InitPhase::PluginsLoaded:           return "PluginsLoaded";

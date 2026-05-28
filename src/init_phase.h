@@ -71,6 +71,17 @@ enum class InitPhase {
     // earliest physically-achievable point, ahead of hooks::Install and the
     // full plugin load.
     VersionDetected,
+    // [ctx B] refdb::Open() returned true — the SQLite-backed reference database
+    // is mapped READ-ONLY, schema_version + game_versions row both validated,
+    // and the connection is live on the worker thread. Every resolve-by-name
+    // lookup in this engine's path (refdb::ResolveByName) depends on
+    // >= RefdbOpened. Advances right after VersionDetected: refdb needs
+    // g_runtimeGameVersionString populated (that happens at VersionDetected) to
+    // locate the running build's game_versions row, so this is the earliest
+    // physically-achievable point. A refdb::Open() failure aborts the worker
+    // thread (the engine cannot resolve named targets without it), so a boot
+    // that reaches this phase has a usable refdb for the rest of the session.
+    RefdbOpened,
     // [ctx B] hooks::Install (lua_pcall + update); MinHook live.
     EngineHooksInstalled,
     // [ctx B] the production mod-loader SELECT detour INSTALLED

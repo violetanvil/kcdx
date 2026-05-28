@@ -5,8 +5,8 @@
 //
 // kcdx IS the mod loader. The native engine still constructs the manager
 // (wh::C_ModManager) and still MOUNTs, but kcdx owns WHICH mods load and in
-// what ORDER. This module detours the SELECT driver (ModManager_Select,
-// Address Library id 3100): it lets the original SELECT run (which builds the
+// what ORDER. This module detours the SELECT driver (refdb curated name
+// 'ModManager_Select'): it lets the original SELECT run (which builds the
 // native records + runs the per-mod validation pass), THEN wholesale-REPLACES
 // the engine's enabled-list vector (C_ModManager+0x30/+0x38/+0x40 =
 // begin/end/end_of_storage) with a kcdx-OWNED array of synthesized I_Mod*
@@ -27,8 +27,8 @@
 namespace kcdx::mod_absorb {
 
 // Install the production SELECT detour against the running WHGame.dll. The
-// target is Address Library id 3100 (ModManager_Select). Idempotent (a no-op
-// returning true if already installed this session). Returns true on a
+// target resolves via refdb curated name 'ModManager_Select'. Idempotent (a
+// no-op returning true if already installed this session). Returns true on a
 // successful install (or already-installed), false if WHGame.dll is not mapped,
 // the address does not resolve, or MinHook fails. Called from dllmain at the
 // ModLoaderTakeoverArmed init phase — after discovery + load_order::Resolve
