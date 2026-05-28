@@ -184,6 +184,29 @@ See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- brok
 
 ---
 
+## AP17 — Fixing the symptom without naming the root cause
+
+**Forbidden:** landing a fix whose `docs/known-issues/<title>.md` Resolution section cannot answer "why did this happen?" in one concrete mechanism paragraph — *what value was wrong, who wrote it, in what order, why the original code path made that wrong write inevitable*. A passing repro after a code change is identical-looking whether the change fixed the bug or merely masked it; the matrix passes either way. "X no longer crashes" / "the AV is gone" / "now boots to menu" are restatements of the symptom going away, NOT root cause.
+
+```markdown
+## Resolution
+- Root cause: removed the call that was triggering the AV.   <!-- AP17: not a mechanism -->
+- Fix: deleted ModManager_ParseManifest invocation.
+```
+
+```markdown
+## Resolution
+- Root cause: the manifest ptr written into [rbx+0x30] at frame-4 is a CryStringT
+  pointer-to-chars without the {pad,nRefs,nLength,nAllocSize} header preceding it;
+  the engine reads nLength from the 16 bytes BEFORE the chars, gets garbage,
+  passes it to CryStringT::reserve which calls the allocator with a multi-GB
+  size, the allocator's invariant assert fires.                <!-- mechanism -->
+```
+
+**Fix:** before landing, write the root cause as a falsifiable mechanism. If you cannot — "I don't know exactly why" / "it just stopped" — you don't know yet; another probe is owed (`results-driven.md`). The `Root cause:` paragraph names the data flow + control flow + the specific invariant the original path violated. A fix without root cause is **provisional masking**, not a fix — land it only on explicit user approval, and only under a labeled "Provisional mask, root cause unknown" Resolution section that says so.
+
+---
+
 ## Scope
 
 This file covers the class where code looks fine to every gate yet violates an invariant. Domain-specific wrong-ways live in their own rules (`hook-engine.md`, `lua-bridge.md`, `address-library.md`, `reverse-engineering.md`, `logging.md`). New entries append as new failure modes surface; cite the rule each pattern enforces.

@@ -92,11 +92,13 @@ Use the workspace logging API: `LOG_DEBUG_KV("CATEGORY", "action", KV("key", val
 
 Always cheaper to learn from a probe that can't change behavior. When you can answer the question with a read, read.
 
-### 2f. The "still need this?" audit between probes
+### 2f. The "still need this?" audit between probes — disable + archive, never revert
 
 - Did the probe answer its question? Update the Trail row.
-- Is the probe's code change still needed for the next probe? If not, **revert it** before the next launch. Stale diagnostics in place compound confusion.
-- Are any probes worth keeping as durable instrumentation? Fingerprinting code often is; outright bypasses are not.
+- Is the probe's code change still needed for the next probe? If not, **disable it in place** (`#if 0` block with the archive header per §3d) before the next launch. **Do NOT revert / delete the probe.** Stale LIVE diagnostics in place compound confusion (the no-two-live-probes rule, `guard-probe-stack.ps1`); ARCHIVED diagnostics are inert at compile time and don't.
+- Are any probes worth keeping as `durable` instrumentation (left enabled past bug close)? Pure-read fingerprinting code often is. Bypasses are NEVER durable — they go to `archived` status when their question is answered (revival would mean re-enabling the bypass deliberately, which the `#if 0` makes explicit).
+
+The archive shape is in §3d. The cost-paid investigative wiring (hook target, fingerprint method, captured fields, log category) is the cheapest jumping-off point for the next investigation into the same subsystem — throwing it away is waste (CLAUDE.md hard rule: probes are disabled + archived, never reverted or deleted).
 
 ### 2g. Historical-commit probes use worktrees
 
@@ -133,9 +135,13 @@ Watchdog crash zips: `<game>/Bin/.../kcdx-engine/logs/crash/crash_<ts>.zip`. Bug
 
 ## Phase 3: Fix and verify
 
-### 3a. Smallest fix the evidence supports
+### 3a. Smallest fix the evidence supports — AND the evidence MUST include root cause
 
-If you find yourself rewriting a whole subsystem to "fix" one corrupting call, stop — you're probably masking the bug. Sometimes the fix is "don't do the thing" — that's still a real fix; document the design trade-off in the known-issue's "Decision" section.
+The evidence supporting the fix must include the **root cause**, not just a repro that passes. A passing repro that comes from masking the bug is visually identical to a passing repro that comes from a real fix; the matrix passes either way. The Resolution section's `Root cause:` paragraph answers "why did this happen?" in mechanism terms — what value was wrong, who wrote it, in what order, why the original code path made that wrong write inevitable. *"X no longer crashes"* / *"now boots to menu"* / *"AV is gone"* are restatements of the symptom going away, NOT root cause (AP17 — non-negotiable per CLAUDE.md hard rule).
+
+Cannot write the mechanism paragraph → you do NOT know the cause yet; another probe is owed (`results-driven.md`). Do not land the fix. The single legitimate escape is an explicit user-approved "Provisional mask, root cause unknown" Resolution label, with the issue staying OPEN.
+
+If you find yourself rewriting a whole subsystem to "fix" one corrupting call, stop — you're probably masking the bug. Sometimes the fix is "don't do the thing" — that's still a real fix IF the mechanism paragraph names why "doing the thing" was always going to corrupt. Document the design trade-off in the known-issue's "Decision" section.
 
 ### 3b. Verify on the same repro
 
@@ -145,13 +151,29 @@ Same plugin set, same save-load steps, same engine config that produced the orig
 
 Run all `kcdx-engine/builtin/` + `plugins/` enabled at least once. Each fix must be checked against unrelated tests, not just the one it targets.
 
-### 3d. Update the known-issue file
+### 3d. Update the known-issue file + archive every closed probe in place
 
 - Add final probe results to the Trail.
-- Add "Resolution": which probe pinpointed cause, what the fix changed, what commit landed it.
+- Add "Resolution": Root cause (mechanism paragraph — gated per §3a; cannot land without it), Fix (commit + what changed + why it addresses the mechanism), Verification, Diagnostic archive, Doc updates.
 - Move "Open questions" → "Closed questions with answers" or strike through.
 - If a `CLAUDE.md` hard rule or `.claude/rules/*.md` was wrong, **update it in the same commit**.
-- Decide which diagnostic code becomes durable and remove the rest; record in "Active diagnostic instrumentation".
+- **Archive every closed probe in place.** For each `// === DIAGNOSTIC (PROBE X)` site, decide:
+  - **Durable** (left enabled past bug close): pure-read instrumentation that costs nothing when not called. Keep wired in; record in the known-issue's "Active diagnostic instrumentation" table with Status: `durable`.
+  - **Archived** (compile-disabled, kept in tree): everything else. Wrap the probe block in `#if 0` with the four-line header:
+
+    ```cpp
+    // === ARCHIVED PROBE <X> (<YYYY-MM-DD>): <outcome verdict from the Trail row>.
+    // === Root cause: <one-line mechanism from Resolution>.
+    // === See: docs/known-issues/<title>.md §Resolution.
+    // === Revive by flipping #if 0 -> #if 1.
+    #if 0
+        // (the original probe code — unchanged)
+        LOG_DEBUG_KV("CATEGORY", "probe_x.event", ...);
+    #endif
+    ```
+
+    Record in the known-issue's "Active diagnostic instrumentation" table with Status: `archived` + one-line root cause. Reverting (deleting the diagnostic site) is forbidden — the wiring is the cheapest jumping-off point for the next investigation into the same subsystem (CLAUDE.md hard rule).
+- **Migration to `_research/probe-archive/<probe-id>-<short>/<original-file>.cpp`** is reserved for source files exceeding 2 archived probes (one-file-one-concern accumulation guard). Default = in-place `#if 0`. Surface the migration decision to the user; do not auto-migrate.
 
 ### 3e. Update memory if the lesson is durable
 
@@ -171,7 +193,8 @@ A CryEngine quirk, Windows behavior, or mod-author footgun — write a new memor
 - Quoting an existing hard rule as a diagnosis. Rules describe past observations under specific conditions. Verify before invoking.
 - Designing a probe by re-reading the same code three times. Add an observation probe — even one `LOG_DEBUG_KV` tells you more than another readthrough.
 - Stashing without telling the user. `git stash push -u` is silent and bundles unsaved edits. Commit first, or tell them.
-- Reverting "obvious" code without an audit pass. List every diagnostic-only change; for each, decide keep/revert with a one-line reason. Tell the user.
+- **Reverting / deleting a probe.** Probes are disabled + archived in place (`#if 0` block per §3d), NEVER reverted (CLAUDE.md hard rule). The investigative wiring stays. Auditing each diagnostic-only change happens — but the verdict is `durable` (keep enabled), `archived` (`#if 0`), or — never — `revert`.
+- **Closing a bug without a root-cause mechanism paragraph.** AP17 — non-negotiable. Cannot write the mechanism → another probe is owed. "X no longer crashes" is not root cause.
 - Vague predictions ("might be the log system or the watchdog"). Pick the cheapest candidate, write the probe.
 - Multiple variables per probe. Decompose per 2b.
 

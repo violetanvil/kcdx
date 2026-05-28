@@ -56,20 +56,24 @@ If a `CLAUDE.md` hard rule, `.claude/rules/*.md`, or design doc is wrong or inco
 
 ## Active diagnostic instrumentation
 
-Probes whose code still lives in the tree. Each row: file, what it does, ship-safe.
+Probes whose code still lives in the tree. Each row: file, what it does, status.
+Status is one of: `live` (currently building, this investigation), `durable` (pure-read, kept enabled past bug close), `archived` (compile-disabled `#if 0` per debug/SKILL.md §3d).
 
-| File | What | Safe to ship? |
-|------|------|---------------|
-| `scripting.cpp::dynamic_hook_mid` | fingerprint logging on dispatch enter/exit | yes — pure read |
-| `runtime_func_t.cpp` | PROBE E reproducer (`lua_newtable; lua_pop`) | NO — remove before release |
+| File | What | Status |
+|------|------|--------|
+| `scripting.cpp::dynamic_hook_mid` | fingerprint logging on dispatch enter/exit | durable — pure read |
+| `runtime_func_t.cpp` | PROBE E reproducer (`lua_newtable; lua_pop`) | live (this investigation) |
+| `mod_absorb/post_bracket_probe.cpp` | PROBE B frame-4 vtable read | archived (#if 0; root cause: bracket built modMgr but never installed it into the engine's getter path) |
 
-When the bug closes, audit each row: keep or remove.
+When the bug closes, audit each row: keep durable, archive in-place (`#if 0`), or — never — delete.
 
-## Resolution (filled in when bug closes)
+## Resolution (filled in when bug closes — GATED)
 
-- **Root cause:** <one paragraph>
-- **Fix:** <commit, what it changed>
+**Cannot be filled until `Root cause:` answers "why?" in mechanism terms** (what value was wrong, who wrote it, in what order, why the original code path made that wrong write inevitable). "X no longer crashes" / "now boots" / "AV gone" are restatements of the symptom, NOT root cause (AP17, CLAUDE.md hard rule — non-negotiable). Cannot write the mechanism → another probe is owed; do not land the fix; leave Status: investigating. The single legitimate escape is an explicit user-approved `**Provisional mask, root cause unknown:**` label below — issue stays OPEN.
+
+- **Root cause:** <one paragraph in mechanism terms — data flow + control flow + the specific invariant the original path violated>
+- **Fix:** <commit, what it changed, why this addresses the mechanism above>
 - **Verification:** <same repro, same test suite>
-- **Diagnostic cleanup:** <kept-durable vs removed>
+- **Diagnostic archive:** <each probe's `#if 0` site + one-line revival hint; durable probes left enabled>
 - **Doc updates:** <rule changes, design.md updates, memory updates>
 ```

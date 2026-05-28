@@ -1,8 +1,13 @@
-# PreToolUse(Write|Edit) — stacked-diagnostic-probe guard (.claude/rules/results-driven.md §Live-game-unknowns).
+# PreToolUse(Write|Edit) — stacked-LIVE-diagnostic-probe guard
+# (.claude/rules/results-driven.md §"Probe-archive hygiene").
 # WARN-ONLY: never blocks. Fires when an edit ADDS a `// === DIAGNOSTIC (PROBE …)`
-# marker while another un-reverted probe marker already lives uncommitted in the
-# working tree (git diff HEAD adds). That is the "stack PROBE B.2 on un-reverted
-# PROBE B" shape /debug §2f forbids. Revert the prior probe before the next.
+# LIVE marker while another un-archived LIVE probe marker already exists
+# uncommitted in the working tree (git diff HEAD adds). That is the "stack
+# PROBE B.2 on un-archived PROBE B" shape /debug §2f forbids. Disable + archive
+# the prior probe (#if 0 with the four-line archive header per debug/SKILL.md
+# §3d) before adding the next. The DIAGNOSTIC regex naturally excludes
+# `// === ARCHIVED PROBE` headers, so archived sites do not trip this guard
+# even when many sit on disk simultaneously.
 $ErrorActionPreference = 'Stop'
 try {
     $raw = [Console]::In.ReadToEnd()
@@ -41,8 +46,10 @@ try {
     $old_n = ([regex]::Matches($old_content, $marker)).Count
     if ($new_n -le $old_n) { exit 0 }
 
-    # Is there an un-reverted probe marker ALREADY in the working tree, in some
+    # Is there an un-archived LIVE probe marker ALREADY in the working tree, in some
     # OTHER file? git diff HEAD added-lines carrying the marker, excluding $path.
+    # The regex only matches LIVE `// === DIAGNOSTIC (PROBE …)`; archived sites
+    # use `// === ARCHIVED PROBE` and are correctly skipped.
     # No git / not a repo -> stay silent (warn-only, never error). Resolve the
     # repo root first so the `src` pathspec is anchored correctly.
     $fileDir = Split-Path -Parent $path
@@ -65,7 +72,7 @@ try {
     }
 
     if ($hasOtherProbe) {
-        [Console]::Error.WriteLine("Probe-stack WARN: $editedLeaf adds a // === DIAGNOSTIC (PROBE ...) marker while another un-reverted probe site already exists uncommitted in src/. Stacking two live probes (e.g. PROBE B.2 on un-reverted PROBE B) confounds the next launch and violates one-variable-per-probe. Revert the prior probe before adding this one, unless you are explicitly building on it (.claude/rules/results-driven.md §Live-game-unknowns; debug/SKILL.md §2f). >2 probes or a hard bug -> switch to /debug for active-instrumentation tracking.")
+        [Console]::Error.WriteLine("Probe-stack WARN: $editedLeaf adds a // === DIAGNOSTIC (PROBE ...) LIVE marker while another un-archived LIVE probe site already exists uncommitted in src/. Stacking two live probes (e.g. PROBE B.2 on un-archived PROBE B) confounds the next launch and violates one-variable-per-probe. Disable + archive the prior probe (#if 0 with the four-line archive header per .claude/skills/debug/SKILL.md §3d) before adding this one, unless you are explicitly building on it (.claude/rules/results-driven.md §Probe-archive-hygiene; debug/SKILL.md §2f). NEVER revert / delete a probe (CLAUDE.md hard rule). >2 LIVE probes or a hard bug -> switch to /debug for active-instrumentation tracking.")
     }
     exit 0
 } catch {

@@ -51,6 +51,8 @@ Disciplines:
 
 **Interpretation:** bypass-still-crashes → subsystem innocent. Bypass-fixes → subsystem is doing the harmful thing; bisect within.
 
+**On bug close, archive (NEVER revert).** The bypass becomes `#if 0` with the four-line archive header per `debug/SKILL.md` §3d. Bypasses cannot be `durable` (they would un-init the subsystem at every launch) — `archived` is the only resting state.
+
 ---
 
 ## Pattern 3: Canary / fingerprint to detect memory clobbering
@@ -77,7 +79,7 @@ LOG_DEBUG_KV("CATEGORY", "fingerprint.checkpoint_name",
 
 **Interpretation:** fingerprint changes → block being written by someone (diff the bytes if you can dump them). Fingerprint identical → block intact; corruption elsewhere.
 
-Durable — keep fingerprint methods even after investigation. Cost nothing when not called.
+**Durable** — keep fingerprint methods enabled past bug close (cost nothing when not called). Record in the known-issue's "Active diagnostic instrumentation" table with Status: `durable`. Bypasses are NEVER durable — they go to Status: `archived` (compile-disabled `#if 0` per `debug/SKILL.md` §3d; revival would re-enable the bypass deliberately, which the `#if 0` makes explicit). Reverting / deleting any probe is forbidden (CLAUDE.md hard rule).
 
 ---
 
