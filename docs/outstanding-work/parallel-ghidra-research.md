@@ -1056,8 +1056,171 @@ validated against the sandbox first.
 
 **STATUS (2026-05-27):** items 1 + 2 DONE — the design is locked (§11) and both
 prod DBs are regenerated in the locked schema (the generator/engine agent is
-unblocked); the two-mode import CLI + version detector ship. Item 3 (the
-sandbox + matcher + reconcile) is IN PROGRESS.
+unblocked); the two-mode import CLI + version detector ship. Item 3's ambition
+was REDUCED — see §11.8 below.
+
+### 11.8 STREAMLINE (2026-05-27, late) — three tracks, no bulk matching
+
+The §11.6 design assumed the matcher would auto-track all 321,120 functions
+across versions via the validity-interval apparatus. Feasibility arithmetic
+killed that: even a 90% matcher on 321K leaves 32,000 unmatched per patch — no
+human reviews tens of thousands. **The size of the problem isn't the binary; it's
+the union of functions installed plugins ACTUALLY attach to**, which is bounded
+by AUTHORING EFFORT (human-scale: dozens to low thousands even for a deep TC).
+
+The streamlined model has THREE tracks; the §11.6 matcher is RE-SCOPED, NOT
+dropped (it stays useful at the right scale):
+
+| Track | Source | Scale | Cross-version mechanism | Matcher? |
+|---|---|---|---|---|
+| **1. Curated (kcdx-shipped named targets)** | maintainer, by hand, per patch | ~139, growing slowly | author writes `target = "IsInCombat"`; kcdx ships per-version mappings the maintainer maintains | **YES** — re-scoped to **assist the maintainer's per-patch re-verification of the small curated set** (auto-confirm hash-equal, propose for changed, flag ambiguous). Feasible because the input set is ~139, not 321K — at that scale even a mediocre matcher saves real work. |
+| **2. Author-declared (TC + bespoke)** | author, in their own plugin | bounded by author effort | `kcdx.declare(module, name, [versions_kv])` (§11.8.1 below); resolved once at launch against the running game version | **No** — the author owns their own versions; kcdx provides the canonical version string they key against |
+| **3. Bulk DEV DB (discovery)** | regenerated per game version | 321K per version | per-version snapshot only; `kcdx.find` / `kcdx_dev_inspect` consult it for WITHIN-version discovery | **No** — never cross-version-tracked. Authors who discover a bulk function via this DB then declare it in their own plugin (Track 2). |
+
+#### 11.8.1 Track-2 surface — `kcdx.declare(module, name, [versions_kv])`
+
+The universal mechanism for any value that depends on the game version — hook
+targets, output handling, constants, masks, offsets, anything. The shape:
+
+```lua
+-- per-version table: explicit keys + wildcard, no range objects
+kcdx.declare("WHGame.dll", "combatResolver", {
+  ["1.5.1164953"] = { pattern = "48 8B 05 ?? ?? ?? ?? 8B" },
+  ["1.6.*"]       = { pattern = "48 8B 0D ?? ?? ?? ?? 8B" },
+})
+
+-- a version-independent constant: per-version values
+kcdx.declare("WHGame.dll", "combatStateMask", {
+  ["1.5.1164953"] = 0x0F,
+  ["1.6.*"]       = 0x1F,
+})
+
+-- table omitted: attempt on ALL versions (the simpler "this works everywhere" path)
+kcdx.declare("WHGame.dll", "combatResolver", { pattern = "48 8B 05 ?? ?? ??" })
+
+-- thereafter, refer by name — engine resolves to the right per-version value:
+kcdx.hook{ target = "combatResolver", after = function(ret)
+  if (ret & "combatStateMask") ~= 0 then ... end
+end }
+```
+
+**Rules locked in this session:**
+- **`module` is REQUIRED** on every `declare` (positional first arg). No default
+  module — kcdx exists to enable cross-module plugins eventually, and a defaulted
+  module silently misroutes when secondaries get involved.
+- **Version keys:** explicit (`"1.5.1164953"`) and wildcard (`"1.5.*"`) only. NO
+  range objects (`{from=..., to=...}`).
+- **Table omitted** = attempt on all versions (the low-ceremony common case).
+- **Engine resolves ONCE at launch** using kcdx's canonical game-version string
+  (already verified — sourced from `<game>/whdlversions.json` MasterMasterPGO
+  config). Authors never see the version source; they just key on the version
+  string kcdx surfaces.
+- **The DB tables that back this:** `entities.module_id` already exists.
+  `kcdx.declare` is implemented purely Lua-side (author's plugin) + an engine
+  resolver — it does NOT write to the prod refs DBs.
+
+This generalization deprecates the older "the engine knows every function across
+all versions" framing — the engine doesn't have to, because the author tells it
+per-name what to look for.
+
+#### 11.8.2 The "attempt on undeclared versions" UX — default ON, UI badge
+
+Default behaviour is **DEFAULT ON** (the engine attempts to resolve a Track-2
+plugin on a game version it didn't declare for) — because the alternative
+(default OFF = silent breakage on every patch until every author ships an update)
+is a worse failure mode. Default-ON respects that most patches don't break most
+things.
+
+- **Only meaningful for Track-2 plugins on undeclared versions.** Pure curated
+  plugins are already version-safe (Track 1); Track-2 plugins running on a
+  declared version are already declared-safe.
+- **Surfaced as a UI badge** in the future `kcdx.exe` UI (pre-UI: a launch-log
+  line) — NOT a per-plugin checkbox the user must pre-decide. The badge fires
+  contextually when there IS something to surface. **Two badge levels:**
+  - *"Author certified through ≤ X; you're on Y. May or may not work."* —
+    untested-on-this-version; pattern hasn't been tried yet.
+  - *"Pattern did not resolve on your version."* — author's most-recent declared
+    pattern returned no address. Hotter badge; the plugin almost certainly does
+    not work as intended.
+
+#### 11.8.3 Safety architecture — graceful failure, NOT pre-checking
+
+The §11.6 / restructure-plan tenet-6 model was *"the engine pre-checks function
+hashes; refuses to install if the bytes changed."* That model rested on
+auto-tracking every function — which the streamline drops. **We can no longer
+pre-check most things.** The honest replacement is RECOVERY, not pre-check:
+
+- **Pure curated-name plugin:** survival works (the ~139 are tracked, the
+  maintainer carries the cross-version mapping). This is the only "we can
+  pre-check" path.
+- **Track-2 plugin on a declared version:** the author certified it — load and
+  run; runtime failures are caught (below) like any other.
+- **Track-2 plugin on an UNDECLARED version (default-ON path):** we cannot
+  pre-verify it will work. We can only catch failure modes:
+  - **Install-time failure** (pattern doesn't resolve, ABI mismatch, the bytes at
+    the site look wrong) → kcdx rolls back any partial installation for that
+    plugin, leaves the game state clean, the plugin doesn't load, badge fires.
+  - **Runtime failure** (a hook installed cleanly but fires with wrong args,
+    callback throws/crashes) → kcdx catches at the callback boundary, disables
+    the offending plugin for the rest of the session, badge upgrades to "failed
+    at runtime," game continues running.
+
+**Honest user promise:** *"plugins certified for your version work; plugins not
+certified may fail to install (handled cleanly) or fail at runtime (caught, the
+plugin disables, the game keeps running) — your save and game stability are
+protected, but a specific plugin may not function on an uncertified version."*
+That's the SKSE model — a plugin built for the wrong Skyrim version doesn't
+crash everything; it just doesn't work.
+
+**LOAD-BEARING ENGINE WORK (not yet built):** the recovery/rollback machinery
+default-ON safety REQUIRES is NOT in place today. Tracked as a new outstanding
+item in `restructure-plan.md` — see "Recovery + rollback for Track-2 plugins on
+undeclared versions" there. **Default-ON shipping waits on that work.**
+
+#### 11.8.4 What changes in the schema, given the streamline
+
+The schema itself stays mostly intact (the generator agent's consumption path is
+unaffected); ONE apparatus simplifies:
+
+- **`entity_versions` COLLAPSES in ambition.** It was sized for "auto-tracked
+  interval history for all 321K." That's no longer the job. It becomes:
+  per-version hash baselines for the BOUNDED SET kcdx actually tracks (the
+  curated 139 + any future targets the maintainer explicitly versions). Same
+  table; drastically smaller scale; no matcher driving it across the bulk.
+- **Bulk DEV DB becomes per-version snapshots** — one DB per game version, for
+  discovery only, never diffed across versions automatically.
+- **The pairing trigger stays** — still correct for the curated set's
+  overlay-versions.
+- **Everything else is unchanged.** `entities` (the global kcdx_id authority),
+  `kcdx_overlay` / `kcdx_overlay_versions`, `modules`, `game_versions`, `meta` —
+  all retained. The generator/engine agent's consumption path is intact.
+
+#### 11.8.5 What's parked vs dropped vs alive
+
+| Item | Status under the streamline |
+|---|---|
+| `match_versions.py` (the sandbox matcher) | **Re-scoped, NOT dropped.** Future role: maintainer-side assist for the curated 139 (auto-confirm + short review list per patch). Sandbox + ground-truth fixture stay as its validation harness. The 7/12 hard-case score is USEFUL at 139-scale, not failing. |
+| `make_sandbox.py` + fixture | **Alive.** Validates whatever matcher we keep for the curated set. The 13 trip-up cases stay relevant. |
+| `entity_versions` as 321K-auto-tracked interval history | **Collapses** to bounded curated/targeted set. |
+| Reconcile / propose-only / `match_proposals` table machinery | **Re-scopes** to the bounded curated workflow — same propose-only contract, same maintainer-gated apply, just at 139-scale not 321K-scale. |
+| `tools/refdata-extractor/sandbox/BREAKAGE-MATRIX.md` (uncommitted scaffolding) | **Superseded + delete.** Its job (derive measures for the all-321K-tracked world) is dissolved by the three-track model. The reason is recorded in SANDBOX-STATUS so the deletion isn't unexplained. |
+| `tools/refdata-extractor/sandbox/SANDBOX-STATUS.md` | **Refresh.** Update to reflect the streamline: matcher re-scoped (not pending hash redesign); breakage-matrix superseded; three-track model is the answer. |
+| Track-2 `kcdx.declare(module, name, versions)` Lua surface | **Designed in this session, NOT implemented.** New work: author UX, engine-side resolver, integration with `kcdx.hook` / `kcdx.bytes` / `kcdx.code` so they accept the declared name as a target. |
+| Per-plugin user "attempt on undeclared versions" surfacing | **Designed, NOT implemented.** Default-ON; UI badge in `kcdx.exe` (two levels); not a per-plugin checkbox. |
+| Recovery + rollback machinery (install-time + runtime) | **Designed, NOT implemented.** Load-bearing for default-ON safety — tracked in restructure-plan as new outstanding work. Default-ON shipping waits on this. |
+
+#### 11.8.6 Next steps when this resumes
+
+1. Refresh `SANDBOX-STATUS.md` + delete `BREAKAGE-MATRIX.md` (with reason
+   recorded in STATUS).
+2. Collapse `entity_versions` to the bounded curated/targeted set (schema is
+   already correct; the only change is ambition + what the importer/reconcile
+   populates).
+3. Design + implement the Track-2 surface (`kcdx.declare`, the resolver, the
+   integration with `kcdx.hook`/`bytes`/`code` so they accept a declared name).
+4. Design + implement the recovery/rollback machinery (the restructure-plan
+   item). Default-ON safety depends on it.
+5. Re-purpose the parked matcher to the curated-set assist role.
 
 ---
 
