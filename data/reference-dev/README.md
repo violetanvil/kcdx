@@ -27,9 +27,11 @@ A mod author wants to hook a game function. Two paths:
 ## Relationship to the production database
 
 The same five shared tables are here (`modules`, `game_versions`,
-`address_names`, `address_versions`, `meta`) — read `data/reference/README.md`
+`address_names`, `address_versions`, `meta`) — read [`data/reference/README.md`](../reference/README.md)
 first for the shared model (`address_names.id` IS the kcdx_id, `address_versions`
-keys on `kcdx_id`, partial-unique-open-interval, etc.).
+keys on `kcdx_id`, partial-unique-open-interval, derived verification state,
+etc.). The seed authoring rules for both DBs live in
+[`data/address-library/policy.md`](../address-library/policy.md).
 
 **This database is a superset.** It contains:
 
@@ -41,7 +43,8 @@ keys on `kcdx_id`, partial-unique-open-interval, etc.).
    functions (each with auto-name, hash, abi_walker floor signature, decompile
    quality), plus `statements` + `referenced_vars` + `call_edges`. These bulk
    `address_versions` rows have NO `address_names` row (the function is
-   uncurated; its kcdx_id is just the bulk-baseline id).
+   uncurated; the row has `kcdx_id IS NULL` and represents only a discovery
+   handle for `kcdx.find`).
 
 The bulk is **discovery data**, not cross-version-tracked data. It is
 regenerated per game version (one DEV DB per KCD2 version); it is not diffed
@@ -62,12 +65,17 @@ exist only here:
 | `auto_name` | the disassembler's auto-generated label (`FUN_<rva>` form). A display label for inspection only — it is derived from the address and is **never** a resolution key (it moves every version). Absent from the production database. |
 | `decompile_quality` | `clean` / `partial` / `unanalyzable` — gates whether the per-statement tools apply to this entity. Dictionary-encoded. Absent from the production database. |
 
-### `address_names` — two dev-only columns
+The verification audit trail columns
+(`last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`)
+ship to BOTH databases. They live on the same `address_versions` rows in the
+DEV DB that get filtered to USER. Bulk uncurated rows have all four NULL
+(nobody ever signs off on the bulk).
+
+### `address_names` — one dev-only column
 
 | Column | Meaning |
 |---|---|
-| `source` | the provenance tier of the curated name (how it was established). Dictionary-encoded. |
-| `notes` | the maintainer's provenance prose for the curated entry. Absent from the production database. |
+| `notes` | the maintainer's entity-level prose (what the entity is, why it was added). Absent from the production database. |
 
 ## Dev-only tables (the bulk discovery surface)
 
@@ -141,7 +149,7 @@ stock SQLite.
 ## Why this is a separate artifact from the production DB
 
 The production database stays small (~0.1 MB, ships with every release) by
-holding ONLY the curated cross-version-tracked set. This database is ~1.1 GB and
+holding ONLY the curated cross-version-tracked set. This database is ~1.3 GB and
 exists only to serve authors during plugin development. Splitting them means:
 
 - Every user's install is tiny + fast to launch (no bulk data to load).

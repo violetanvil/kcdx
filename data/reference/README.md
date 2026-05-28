@@ -10,6 +10,9 @@ only what kcdx tracks centrally — the curated targets — not the binary's ful
 function table. Plugins that target uncurated functions declare them themselves
 (see "What this database does NOT carry" below).
 
+For the seed authoring rules that produce this DB, see
+[`data/address-library/policy.md`](../address-library/policy.md).
+
 ## Not in this repo — it ships as a release asset
 
 The database is a **generated binary artifact**, not a tracked file. It is built
@@ -56,13 +59,40 @@ The database rests on three ideas the rest of this document assumes:
    game updates even when the target's address moves.
 2. **The kcdx_id IS the `address_names.id`.** `address_names` has one row per
    curated entity; its primary key column IS the kcdx_id. (There is no separate
-   `kcdx_id` column; the PK is the handle.)
+   `kcdx_id` column; the PK is the handle.) Both `modules.id` and
+   `address_names.id` come from the seed CSVs verbatim (no autoincrement) — see
+   the policy doc for the canonical-id authority rule.
 3. **Per-version resolve facts are stored as validity intervals.** A curated
    entity's address, bytes, and argument-shape can change when the game patches.
    Each distinct form is one row in `address_versions` with a `valid_from` /
    `valid_through` version range. **`valid_through IS NULL` means "this is the
-   current form."** The engine reads the open (NULL) row for the running version.
-   A partial-unique index guarantees at most one open row per entity.
+   current form."** A partial-unique index guarantees at most one open row per
+   curated entity.
+
+## Verification state is DERIVED, not stored
+
+The database has NO `status` column on `address_versions`. A row's
+verification state at the running game version V is derived from:
+
+- `address_versions.valid_from` and `address_versions.last_verified_at_version`
+  on the row itself.
+- `address_names.is_deprecated` and `address_names.deprecated_at_version`
+  on the entity.
+- `address_names.superseded_by` and `address_names.superseded_at_version`
+  on the entity.
+
+Derivation rule:
+
+1. If `entity.is_deprecated` AND `V >= entity.deprecated_at_version`: **DEPRECATED.**
+2. Else if `entity.superseded_by` AND `V >= entity.superseded_at_version`: **SUPERSEDED** — the engine auto-walks to the successor.
+3. Else if `row.last_verified_at_version >= V` AND `row.valid_from <= V`: **VERIFIED.**
+4. Else: **UNVERIFIED.**
+
+The engine attempts to resolve in all four cases — the state is informational
+(used to surface warnings to the plugin author at resolve time), not a gate.
+A row that flips to UNVERIFIED at the running version still returns its
+recorded RVA; the author sees "this target hasn't been re-verified for
+your game version, resolving anyway" in the log.
 
 ## What this database does NOT carry
 
@@ -75,6 +105,7 @@ part of the curated cross-version tracking:
 - **The abi_walker argument-width floor for uncurated functions** — also
   DEV-only. A Track-2 plugin hooking an uncurated function declares its own ABI
   via `kcdx.declare`.
+- **Entity-level prose notes** — DEV-only.
 
 A plugin that wants to hook an uncurated function does NOT look here. It uses
 `kcdx.find` against the DEV DB to discover the target, then declares it in its
@@ -88,21 +119,31 @@ Encoding).
 
 ### `address_names` — the curated entity registry
 
-One row per curated entity, ever. `id` IS the `kcdx_id` (autoincrement starting
-at 1; sequential per the order curated entities are added). The kcdx_id is the
-stable handle plugins reference.
+One row per curated entity, ever. `id` IS the `kcdx_id` (canonical from
+`address_names_seed.csv` — NOT autoincrement). The kcdx_id is the stable
+handle plugins reference.
+
+Two entity-level events, each version-anchored:
+
+- **Supersession** (cosmetic rename; engine auto-follows the chain).
+- **Deprecation** (behavior changed; engine warns at resolve time but
+  resolves; optional advisory pointer at the replacement).
 
 | Column | Meaning |
 |---|---|
-| `id` | autoincrement primary key — **IS the kcdx_id**. Sequential 1..N in addition order. Stable across rebuilds (an entity's kcdx_id never changes). |
-| `name` | the curated name (e.g. `IsInCombat`). Unique per row. |
-| `is_deprecated` | `1` if this entity is superseded by another entity; the row still resolves through the chain. |
-| `superseded_by` | another `address_names.id` (== another kcdx_id) — entity-to-entity supersession. |
+| `id` | primary key — **IS the kcdx_id**. Canonical from the seed file (never recycled, never renumbered). Stable across rebuilds. |
+| `name` | the curated name (e.g. `IsInCombat`). |
+| `superseded_by` | nullable FK → `address_names.id`. The direct successor in the supersession chain. The engine walks the chain at query time. Paired with `superseded_at_version`. |
+| `superseded_at_version` | nullable FK → `game_versions.id`. The supersession edge becomes active at this version inclusive. |
+| `is_deprecated` | `0` / `1`. Paired with `deprecated_at_version`. |
+| `deprecated_at_version` | nullable FK → `game_versions.id`. The deprecation becomes active at this version inclusive. |
+| `deprecation_replacement` | nullable FK → `address_names.id`. Advisory pointer surfaced to the author at resolve time ("X is deprecated; consider Y"). The engine does NOT auto-follow this — it is a DIFFERENT entity, not a rename. Allowed only when `is_deprecated = 1`. |
 
 ### `address_versions` — per-version resolve facts (the spine)
 
 One row per `(entity, version-interval)`. Carries everything about an entity
-that can change when the game patches.
+that can change when the game patches, plus the per-version verification
+audit trail.
 
 In the USER (production) database, every row has `kcdx_id IS NOT NULL` and FKs
 to an `address_names.id` — only curated entities ship to users. In the DEV
@@ -125,20 +166,25 @@ database the table is wider: every binary function gets a row too (for
 | `caller_arg_agreement` | whether the callsites agreed on that estimate. Dictionary-encoded. |
 | `offset` | for a `callsite`, the offset a consumer applies relative to the recorded address. |
 | `vtable_slot` | for a `vtable_index`, the slot integer (mirrors `value` for that kind). |
-| `status` | `verified` \| `unverified` — only `verified` rows resolve at runtime. Dictionary-encoded. |
-| `valid_from` | first version this form held → `game_versions.id`. |
+| `last_verified_at_version` | nullable FK → `game_versions.id`. The LATEST game version maintainer sign-off has been recorded for this row. NULL = never verified. Paired with `verified_by` / `verified_date` / `evidence_kind` (all four set together or all four NULL). MUST be `>= valid_from` when set. |
+| `verified_by` | nullable TEXT. The person identifier who signed off on the verification at `last_verified_at_version`. |
+| `verified_date` | nullable TEXT (`YYYY-MM-DD`). When the verification was signed off. |
+| `evidence_kind` | nullable dict-encoded enum: `live_production` / `live_test_plugin` / `maintainer_ghidra` / `predecessor_sig` / `pattern_scan` (strongest to weakest). The kind of evidence that backs the verification claim. |
+| `valid_from` | first version this form held → `game_versions.id`. The earliest version the row's `(module, rva, signature)` is correct for. NEVER changes once authored — re-verification for a later version mutates `last_verified_at_version`, not `valid_from`. |
 | `valid_through` | last version this form was valid → `game_versions.id`. **`NULL` = current.** A partial-unique index enforces at most one open row per *curated* `kcdx_id` (bulk rows with `kcdx_id NULL` don't participate). |
 
 ### `modules` — the module registry
 
 | Column | Meaning |
 |---|---|
-| `id` | module id. |
+| `id` | module id. Canonical from `module_seed.csv` (NOT autoincrement). |
 | `name` | the module filename (e.g. `WHGame.dll`). |
+| `path` | the install-relative directory the module lives in (e.g. `Bin/Win64MasterMasterSteamPGO`). |
 
 ### `game_versions` — the version registry
 
-Backs every `valid_from` / `valid_through`.
+Backs every `valid_from` / `valid_through` / `last_verified_at_version` /
+`*_at_version` column across the schema.
 
 | Column | Meaning |
 |---|---|
@@ -160,20 +206,27 @@ Backs every `valid_from` / `valid_through`.
 **Resolve by curated name** (`target = "IsInCombat"`):
 
 1. `address_names` where `name = ?` → the kcdx_id (= `address_names.id`).
-2. `address_versions` where `kcdx_id = ?` and `valid_through IS NULL` → the
+2. Walk the supersession chain at the running game version V — at each hop,
+   follow `superseded_by` IFF `V >= superseded_at_version`. Stop on the first
+   row whose active edge is NULL.
+3. `address_versions` where `kcdx_id = ?` and `valid_through IS NULL` → the
    open row carrying `rva`, `signature`, `kind`, etc. for the running version.
-   Resolve only if `status = verified`.
+4. Derive the verification state per the rule in the previous section. Resolve
+   in all states; surface a warning at resolve time when the state is
+   UNVERIFIED, DEPRECATED, or SUPERSEDED.
 
 ```sql
-SELECT n.id AS kcdx_id, v.kind, v.rva, v.signature, v.status
+SELECT n.id AS kcdx_id, v.kind, v.rva, v.signature,
+       v.last_verified_at_version, n.is_deprecated, n.superseded_by
   FROM address_names n
   JOIN address_versions v
     ON v.kcdx_id = n.id AND v.valid_through IS NULL
  WHERE n.name = ?
 ```
 
-**Resolve by `kcdx_id`:** skip `address_names`; just query
-`address_versions` where `kcdx_id = ?` and `valid_through IS NULL`.
+**Resolve by `kcdx_id`:** skip the `address_names` name lookup; query
+`address_versions` directly. The supersession + deprecation flags still apply
+(read them via the FK).
 
 **Resolve an author-declared target** (`kcdx.declare(module, name, versions)`):
 not from this database. The engine reads the plugin's declare table for the
@@ -200,13 +253,17 @@ extension is required to read it.
 
 ## Per-version refresh
 
-The database is updated per game version. The maintainer re-verifies the curated
-set when KCD2 patches and adds a new `game_versions` row + per-version
-intervals: targets that didn't move silently extend (the existing open row stays
-open), targets that changed get a new open interval (the old one's
-`valid_through` is set), removed targets close. A curated target keeps its
-stable `kcdx_id` across versions, so a plugin that references it by name or id
-continues to resolve.
+The database is updated per game version. Most rows do not change — their
+existing `(valid_from, last_verified_at_version)` pair still describes the
+version range they were last signed off for, and the engine derives "this row
+is unverified at the new version" automatically. For rows whose test plugin
+passes against the new binary: bump `last_verified_at_version` to the new
+game version. For rows whose RVA actually moved: ADD a new `address_versions`
+row with the new `valid_from`, new RVA/signature. For rows whose entity is
+gone or whose behavior changed: deprecate at the entity level (`is_deprecated
+= 1`, `deprecated_at_version = <new version>`).
+
+Full workflow rules: see [`data/address-library/policy.md`](../address-library/policy.md).
 
 ## The larger discovery dataset
 

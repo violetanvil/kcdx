@@ -5,8 +5,12 @@ Builds BOTH reference DBs (USER + DEV) from a dump dir via import_to_sqlite.py,
 then asserts the locked schema's shape against falsifiable answers: table
 presence per db, the kcdx_id baseline count, the all-open baseline intervals,
 the partial-unique-open-interval invariant, the USER/DEV column projection, the
-address_names seeding count (from seed.csv), the content_hash BLOB round-trip,
-and FK resolution.
+address_names seeding count (from address_names_seed.csv), modules registry
+from module_seed.csv, every address_names.id matches an address_names_seed.csv
+id, every address_versions baseline-version row matches an
+address_versions_seed.csv (kcdx_id, valid_from_version) tuple, every
+address_versions.module_id resolves, content_hash BLOB round-trip, FK
+resolution.
 
 Mirrors validate_extractor_output.py's shape: check()/PASS/FAIL, a VERDICT line,
 sys.exit(1) on any FAIL.
@@ -139,10 +143,16 @@ def run_checks(dump_dir, user_db, dev_db):
     # --- 3b. NEW: kcdx_id is nullable; bulk rows = NULL, curated = NOT NULL.
     n_bulk = scalar(dc, "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NULL")
     n_cur  = scalar(dc, "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL")
-    n_seed_for_split = len(imp.read_seed(imp.SEED_CSV))
-    check("DEV address_versions: curated count == seed.csv count",
-          n_cur == n_seed_for_split,
-          "curated=%d seed=%d" % (n_cur, n_seed_for_split))
+    names_seed_rows    = imp.read_address_names_seed(imp.ADDRESS_NAMES_SEED_CSV)
+    versions_seed_rows = imp.read_address_versions_seed(imp.ADDRESS_VERSIONS_SEED_CSV)
+    # Only versions-seed rows for the baseline import version are materialized
+    # by the importer today; the baseline curated count == that subset's count.
+    baseline_versions = [v for v in versions_seed_rows
+                         if v["valid_from_version"].strip() == imp.GAME_VERSION_TAG]
+    n_baseline = len(baseline_versions)
+    check("DEV address_versions: curated count == address_versions_seed.csv baseline count",
+          n_cur == n_baseline,
+          "curated=%d baseline-seed=%d" % (n_cur, n_baseline))
     check("DEV address_versions: bulk count == n_av - curated",
           n_bulk == (n_av - n_cur),
           "bulk=%d expected=%d" % (n_bulk, n_av - n_cur))
@@ -156,21 +166,61 @@ def run_checks(dump_dir, user_db, dev_db):
     check("DEV address_versions includes auto_name + decompile_quality",
           "auto_name" in dcols and "decompile_quality" in dcols, "")
 
-    # --- 5. address_names row count == seed.csv row count; USER excludes
-    #         source/notes, DEV includes. The expected count is derived from
-    #         the live seed.csv (not hardcoded) so seed additions pass without
+    # --- 5. address_names row count == address_names_seed.csv row count; USER
+    #         excludes source/notes, DEV includes. The expected count is derived
+    #         from the live seed (not hardcoded) so seed additions pass without
     #         a harness edit. ---
-    n_seed = len(imp.read_seed(imp.SEED_CSV))
+    n_seed = len(names_seed_rows)
     n_an = scalar(dc, "SELECT COUNT(*) FROM address_names")
-    check("address_names row count == seed.csv row count",
-          n_an == n_seed, "address_names=%d seed.csv=%d" % (n_an, n_seed))
+    check("address_names row count == address_names_seed.csv row count",
+          n_an == n_seed,
+          "address_names=%d address_names_seed.csv=%d" % (n_an, n_seed))
+    # Canonical-id authority: every address_names.id matches a canonical id in
+    # address_names_seed.csv ("id=address_names_seed.id, no autoincrement"
+    # invariant end-to-end).
+    seed_ids = sorted(int(r["id"]) for r in names_seed_rows)
+    db_ids = sorted(r[0] for r in dc.execute("SELECT id FROM address_names").fetchall())
+    check("address_names.id set matches address_names_seed.csv id set",
+          db_ids == seed_ids,
+          "extra-in-db=%s missing-in-db=%s" % (
+              sorted(set(db_ids) - set(seed_ids))[:5],
+              sorted(set(seed_ids) - set(db_ids))[:5]))
+
+    # Versions-seed FK closure: every address_versions_seed.kcdx_id resolves to
+    # an address_names_seed.id (the importer raises on violation, but defense-
+    # in-depth -- a manual edit between rebuilds shouldn't go undetected).
+    names_id_set = set(int(r["id"]) for r in names_seed_rows)
+    orphan_vsk = [int(v["kcdx_id"]) for v in versions_seed_rows
+                  if int(v["kcdx_id"]) not in names_id_set]
+    check("every address_versions_seed.kcdx_id resolves to address_names_seed.id",
+          not orphan_vsk, "orphan kcdx_ids (first 5)=%s" % (orphan_vsk[:5],))
+
+    # Every named entity has at least one baseline-version resolve fact (the
+    # importer enforces this, but the harness re-asserts it as a property of
+    # the as-written-on-disk seeds).
+    baseline_kids = set(int(v["kcdx_id"]) for v in baseline_versions)
+    uncovered = names_id_set - baseline_kids
+    check("every address_names_seed.id has a baseline address_versions_seed row",
+          not uncovered, "uncovered (first 5)=%s" % (sorted(uncovered)[:5],))
     uacols = columns(uc, "address_names")
     dacols = columns(dc, "address_names")
+    # `source` was DROPPED 2026-05-28 -- carries no information vs. the derived
+    # status. Verify it's gone from BOTH DBs (the column was meaningless on
+    # either side and should not have survived the cut).
     check("USER address_names excludes source + notes",
           "source" not in uacols and "notes" not in uacols,
           "user cols=%s" % uacols)
-    check("DEV address_names includes source + notes",
-          "source" in dacols and "notes" in dacols, "")
+    check("DEV address_names excludes source (dropped 2026-05-28); includes notes",
+          "source" not in dacols and "notes" in dacols,
+          "dev cols=%s" % dacols)
+    # Verification audit columns ship on BOTH DBs (the engine needs them on
+    # USER to derive status at resolve time).
+    check("USER address_versions has the verification audit trio + last_verified",
+          all(c in ucols for c in ("last_verified_at_version", "verified_by",
+                                    "verified_date", "evidence_kind")),
+          "user cols=%s" % ucols)
+    check("USER address_versions excludes legacy `status` column (dropped 2026-05-28)",
+          "status" not in ucols, "found status in user cols=%s" % ucols)
 
     # --- 6. game_versions + meta singletons ---
     gv = dc.execute("SELECT tag, ordinal FROM game_versions").fetchall()
@@ -180,6 +230,28 @@ def run_checks(dump_dir, user_db, dev_db):
     mt = dc.execute("SELECT schema_version FROM meta").fetchall()
     check("meta one row schema_version=1",
           len(mt) == 1 and mt[0][0] == 1, "got %s" % mt)
+
+    # --- 6b. modules table from module_seed.csv ---
+    module_seed = imp.read_module_seed(imp.MODULE_SEED_CSV)
+    # USER includes the `path` column (was added when module_seed got a path).
+    umcols = columns(uc, "modules")
+    check("USER modules table has (id, name, path)",
+          set(["id", "name", "path"]).issubset(set(umcols)),
+          "user cols=%s" % umcols)
+    # Every module_seed row materialized 1:1 with the canonical id.
+    db_mods = {r[0]: (r[1], r[2]) for r in dc.execute(
+        "SELECT id, name, path FROM modules").fetchall()}
+    seed_mods = {int(m["id"]): (m["name"].strip(), m["path"].strip()) for m in module_seed}
+    check("modules table matches module_seed.csv 1:1 (id, name, path)",
+          db_mods == seed_mods,
+          "db=%s seed=%s" % (db_mods, seed_mods))
+    # Every address_versions.module_id resolves to a modules row (FK closure).
+    orphan_mod = scalar(dc, """
+        SELECT COUNT(*) FROM address_versions v
+        LEFT JOIN modules m ON m.id = v.module_id
+        WHERE v.module_id IS NOT NULL AND m.id IS NULL""")
+    check("every address_versions.module_id resolves to a modules row",
+          orphan_mod == 0, "orphans=%d" % orphan_mod)
 
     # --- 7. content_hash round-trip ---
     # DEV: 0x1050 (an uncurated bulk function -- shipped only in DEV).
@@ -267,6 +339,125 @@ def run_checks(dump_dir, user_db, dev_db):
     check("DEV kcdx.find walk: any string_ref statement resolves to its owning function",
           nm_walk is not None and nm_walk[0] is not None,
           "got %s" % (nm_walk,))
+
+    # --- 12. SUPERSESSION + DEPRECATION integrity (USER suffices -- both DBs
+    #         share the same address_names rows; the importer raises on violations
+    #         so a passing build never reaches here with a bad row, but the
+    #         harness verifies defense-in-depth against any future direct writer).
+
+    # 12a. Pair integrity: superseded_by IS NULL <=> superseded_at_version IS NULL.
+    bad_sup_pair = scalar(uc, """
+        SELECT COUNT(*) FROM address_names
+        WHERE (superseded_by IS NULL) != (superseded_at_version IS NULL)""")
+    check("supersession pair integrity (superseded_by XNOR superseded_at_version)",
+          bad_sup_pair == 0, "violations=%d" % bad_sup_pair)
+
+    # 12b. Pair integrity: is_deprecated=1 <=> deprecated_at_version IS NOT NULL.
+    bad_dep_pair = scalar(uc, """
+        SELECT COUNT(*) FROM address_names
+        WHERE (is_deprecated = 1) != (deprecated_at_version IS NOT NULL)""")
+    check("deprecation pair integrity (is_deprecated XNOR deprecated_at_version)",
+          bad_dep_pair == 0, "violations=%d" % bad_dep_pair)
+
+    # 12c. deprecation_replacement requires is_deprecated=1.
+    bad_repl = scalar(uc, """
+        SELECT COUNT(*) FROM address_names
+        WHERE deprecation_replacement IS NOT NULL AND is_deprecated != 1""")
+    check("deprecation_replacement requires is_deprecated=1",
+          bad_repl == 0, "violations=%d" % bad_repl)
+
+    # 12d. FK closure: superseded_by + deprecation_replacement resolve to live ids.
+    orphan_sup = scalar(uc, """
+        SELECT COUNT(*) FROM address_names a
+        LEFT JOIN address_names b ON b.id = a.superseded_by
+        WHERE a.superseded_by IS NOT NULL AND b.id IS NULL""")
+    check("every superseded_by resolves to an address_names row",
+          orphan_sup == 0, "orphans=%d" % orphan_sup)
+    orphan_repl = scalar(uc, """
+        SELECT COUNT(*) FROM address_names a
+        LEFT JOIN address_names b ON b.id = a.deprecation_replacement
+        WHERE a.deprecation_replacement IS NOT NULL AND b.id IS NULL""")
+    check("every deprecation_replacement resolves to an address_names row",
+          orphan_repl == 0, "orphans=%d" % orphan_repl)
+
+    # 12e. FK closure: version anchors resolve to game_versions rows.
+    orphan_supv = scalar(uc, """
+        SELECT COUNT(*) FROM address_names a
+        LEFT JOIN game_versions g ON g.id = a.superseded_at_version
+        WHERE a.superseded_at_version IS NOT NULL AND g.id IS NULL""")
+    check("every superseded_at_version resolves to a game_versions row",
+          orphan_supv == 0, "orphans=%d" % orphan_supv)
+    orphan_depv = scalar(uc, """
+        SELECT COUNT(*) FROM address_names a
+        LEFT JOIN game_versions g ON g.id = a.deprecated_at_version
+        WHERE a.deprecated_at_version IS NOT NULL AND g.id IS NULL""")
+    check("every deprecated_at_version resolves to a game_versions row",
+          orphan_depv == 0, "orphans=%d" % orphan_depv)
+
+    # --- 13. VERIFICATION AUDIT integrity (USER + DEV; both DBs share the
+    #         same address_versions audit columns).
+    #
+    # 13a. Trio integrity: last_verified_at_version IS NULL <=> all three of
+    #      verified_by / verified_date / evidence_kind are NULL.
+    bad_verif_pair = scalar(uc, """
+        SELECT COUNT(*) FROM address_versions
+        WHERE (last_verified_at_version IS NULL) != (
+                  verified_by IS NULL
+              AND verified_date IS NULL
+              AND evidence_kind IS NULL)""")
+    check("verification trio integrity (last_verified_at_version XNOR verified_by+verified_date+evidence_kind)",
+          bad_verif_pair == 0, "violations=%d" % bad_verif_pair)
+
+    # 13b. FK closure: last_verified_at_version resolves to game_versions.
+    orphan_lvv = scalar(uc, """
+        SELECT COUNT(*) FROM address_versions v
+        LEFT JOIN game_versions g ON g.id = v.last_verified_at_version
+        WHERE v.last_verified_at_version IS NOT NULL AND g.id IS NULL""")
+    check("every last_verified_at_version resolves to a game_versions row",
+          orphan_lvv == 0, "orphans=%d" % orphan_lvv)
+
+    # 13c. last_verified_at_version.ordinal >= valid_from.ordinal (the row
+    #      can't be verified at a version older than where it starts).
+    bad_order = scalar(uc, """
+        SELECT COUNT(*) FROM address_versions v
+        JOIN game_versions gv_from ON gv_from.id = v.valid_from
+        JOIN game_versions gv_last ON gv_last.id = v.last_verified_at_version
+        WHERE v.last_verified_at_version IS NOT NULL
+          AND gv_last.ordinal < gv_from.ordinal""")
+    check("last_verified_at_version >= valid_from for every verified row",
+          bad_order == 0, "violations=%d" % bad_order)
+
+    # 13d. verified_date format check (YYYY-MM-DD).
+    bad_date = scalar(uc, """
+        SELECT COUNT(*) FROM address_versions
+        WHERE verified_date IS NOT NULL
+          AND verified_date NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'""")
+    check("verified_date format is YYYY-MM-DD when set",
+          bad_date == 0, "malformed=%d" % bad_date)
+
+    # 12f. Cycle detection on the superseded_by graph (version-ignorant; a
+    #      cycle is wrong regardless of which versions gate which edges).
+    direct = {r[0]: r[1] for r in uc.execute(
+        "SELECT id, superseded_by FROM address_names").fetchall()}
+    id_to_name = {r[0]: r[1] for r in uc.execute(
+        "SELECT id, name FROM address_names").fetchall()}
+    cycle = None
+    for start in direct:
+        if direct.get(start) is None:
+            continue
+        seen = [start]
+        cur = direct[start]
+        while cur is not None:
+            if cur in seen:
+                seen.append(cur)
+                cycle = " -> ".join(id_to_name.get(i, f"#{i}") for i in seen)
+                break
+            seen.append(cur)
+            cur = direct.get(cur)
+        if cycle:
+            break
+    check("no cycle in superseded_by graph", cycle is None,
+          "cycle=%s" % cycle if cycle else "")
 
     uc.close()
     dc.close()

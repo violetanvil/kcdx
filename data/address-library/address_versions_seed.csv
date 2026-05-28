@@ -1,0 +1,144 @@
+kcdx_id,valid_from_version,module,rva,signature,last_verified_at_version,verified_by,verified_date,evidence_kind
+1,1.5.1164953,WHGame.dll,0x0071A5A4,"i32 (ptr L, i32 nargs, i32 nresults, i32 errfunc)",1.5.1164953,VioletAnvil,2026-05-28,live_production
+2,1.5.1164953,WHGame.dll,0x00667B24,"void (ptr self, bool haveFocus, u32 updateFlags)",1.5.1164953,VioletAnvil,2026-05-28,live_production
+3,1.5.1164953,WHGame.dll,0x03993898,"i32 (ptr L, cstr filename)",1.5.1164953,VioletAnvil,2026-05-28,predecessor_sig
+4,1.5.1164953,WHGame.dll,0x00865FB4,void (ptr self),1.5.1164953,VioletAnvil,2026-05-28,live_production
+5,1.5.1164953,WHGame.dll,0x0056174C,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+6,1.5.1164953,WHGame.dll,0x00561745,,1.5.1164953,VioletAnvil,2026-05-28,pattern_scan
+7,1.5.1164953,WHGame.dll,0x005605BC,,1.5.1164953,VioletAnvil,2026-05-28,live_test_plugin
+8,1.5.1164953,WHGame.dll,0x00566040,,1.5.1164953,VioletAnvil,2026-05-28,live_test_plugin
+9,1.5.1164953,WHGame.dll,0x0086AD99,,1.5.1164953,VioletAnvil,2026-05-28,predecessor_sig
+10,1.5.1164953,WHGame.dll,0x0492B8A8,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+11,1.5.1164953,WHGame.dll,0x0492B800,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+12,1.5.1164953,WHGame.dll,0x04095E58,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+13,1.5.1164953,WHGame.dll,0x00B9A2B0,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+14,1.5.1164953,WHGame.dll,0x0100955C,"bool (ptr self, cstr sName)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+15,1.5.1164953,WHGame.dll,0x007A5818,"void (ptr self, cstr command, bool bSilentMode, bool bDeferExecution)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+16,1.5.1164953,WHGame.dll,0x009DF818,"ptr (ptr self, cstr name)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+17,1.5.1164953,WHGame.dll,0x00B99098,"void (cstr name, ptr func, i32 nFlags, cstr sHelp)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+18,1.5.1164953,WHGame.dll,0x0100A3D4,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+19,1.5.1164953,WHGame.dll,,,,,,
+20,1.5.1164953,WHGame.dll,,,,,,
+21,1.5.1164953,WHGame.dll,,,,,,
+22,1.5.1164953,WHGame.dll,,,,,,
+23,1.5.1164953,WHGame.dll,,,,,,
+24,1.5.1164953,WHGame.dll,,,,,,
+25,1.5.1164953,WHGame.dll,0x0071A0D8,"void (ptr L, i32 narg, i32 t)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+26,1.5.1164953,WHGame.dll,0x0071A49C,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+27,1.5.1164953,WHGame.dll,0x0071A4E4,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+28,1.5.1164953,WHGame.dll,0x0071CA90,"i32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+29,1.5.1164953,WHGame.dll,0x0071D06C,"void (ptr L, i32 idx, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+30,1.5.1164953,WHGame.dll,0x0071E46C,"void (ptr L, cstr s, u64 len)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+31,1.5.1164953,WHGame.dll,0x0071E4D4,"i32 (ptr L, i32 objindex)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+32,1.5.1164953,WHGame.dll,0x0071E77C,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+33,1.5.1164953,WHGame.dll,0x0071ECEC,"ptr (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+34,1.5.1164953,WHGame.dll,0x0071EF54,"void (ptr L, cstr s)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+35,1.5.1164953,WHGame.dll,0x0071F098,"void (ptr L, i32 narr, i32 nrec)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+36,1.5.1164953,WHGame.dll,0x0071F100,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+37,1.5.1164953,WHGame.dll,0x0071F128,"i32 (ptr L, i32 objindex)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+38,1.5.1164953,WHGame.dll,0x0071F4BC,"i32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+39,1.5.1164953,WHGame.dll,0x0071F6A8,"cstr (ptr L, i32 idx, ptr len)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+40,1.5.1164953,WHGame.dll,0x0071F6FC,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+41,1.5.1164953,WHGame.dll,0x0071FCE8,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+42,1.5.1164953,WHGame.dll,0x00718464,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+43,1.5.1164953,WHGame.dll,0x00720738,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+44,1.5.1164953,WHGame.dll,0x0041C200,"f32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+45,1.5.1164953,WHGame.dll,0x0041C230,"i32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+46,1.5.1164953,WHGame.dll,0x00B9CC48,"i32 (ptr L, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+47,1.5.1164953,WHGame.dll,0x00B9CE78,"cstr (ptr L, i32 tp)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+48,1.5.1164953,WHGame.dll,0x00B9D764,"u64 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+49,1.5.1164953,WHGame.dll,0x00B9C1AC,"i32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+50,1.5.1164953,WHGame.dll,0x00B9C2A4,"void (ptr L, i32 idx, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+51,1.5.1164953,WHGame.dll,0x00B9CAFC,"i64 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+52,1.5.1164953,WHGame.dll,0x00B9D0C0,"ptr (ptr L, u64 sz)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+53,1.5.1164953,WHGame.dll,0x00B9D11C,"void (ptr L, ptr fn, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+54,1.5.1164953,WHGame.dll,0x00ADB058,"cstr (ptr L, i32 idx, cstr fname, i32 szhint)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+55,1.5.1164953,WHGame.dll,0x00ADB44C,"void (ptr L, i32 idx, cstr k)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+56,1.5.1164953,WHGame.dll,0x00A2D840,"void (ptr L, i32 idx, cstr k)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+57,1.5.1164953,WHGame.dll,0x00A2D8B8,"i32 (ptr L, i32 what, i32 data)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+58,1.5.1164953,WHGame.dll,0x00A2DA68,"i32 (ptr L, ptr func, i32 mask, i32 count)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+59,1.5.1164953,WHGame.dll,0x00CAE9A8,"i32 (ptr L, i32 level, ptr ar)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+60,1.5.1164953,WHGame.dll,0x00CAEA88,"i32 (ptr L, cstr what, ptr ar)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+61,1.5.1164953,WHGame.dll,0x01250AC4,"f32 (ptr L, i32 narg)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+62,1.5.1164953,WHGame.dll,0x0144965C,"void (ptr L, i32 nargs, i32 nresults)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+63,1.5.1164953,WHGame.dll,0x016546F8,"i32 (ptr L, i32 obj, cstr e)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+64,1.5.1164953,WHGame.dll,0x013236D0,"void (ptr L, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+65,1.5.1164953,WHGame.dll,0x01323664,void (ptr B),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+66,1.5.1164953,WHGame.dll,0x013E14D8,"i32 (ptr L, ptr reader, ptr dt, cstr chunkname)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+67,1.5.1164953,WHGame.dll,0x00B9C9BC,"cstr (ptr L, i32 narg, ptr len)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+68,1.5.1164953,WHGame.dll,0x00B9CA08,"i64 (ptr L, i32 narg, i64 def)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+69,1.5.1164953,WHGame.dll,0x00B9CAB4,"i64 (ptr L, i32 narg)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+70,1.5.1164953,WHGame.dll,0x00B9CC20,"void (ptr L, i32 sz, cstr msg)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+71,1.5.1164953,WHGame.dll,0x00B9CE94,"void (ptr L, i32 narg)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+72,1.5.1164953,WHGame.dll,0x00B9D8E4,"void (ptr B, cstr s, u64 l)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+73,1.5.1164953,WHGame.dll,0x039930A4,"i32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+74,1.5.1164953,WHGame.dll,0x039930CC,"i32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+75,1.5.1164953,WHGame.dll,0x039930E8,"i32 (ptr L, i32 idx1, i32 idx2)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+76,1.5.1164953,WHGame.dll,0x03993060,"cstr (ptr L, i32 funcindex, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+77,1.5.1164953,WHGame.dll,0x03993134,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+78,1.5.1164953,WHGame.dll,0x03993178,"i32 (ptr L, i32 idx1, i32 idx2)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+79,1.5.1164953,WHGame.dll,0x039931C0,"i32 (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+80,1.5.1164953,WHGame.dll,0x03993244,"cstr (ptr L, i32 funcindex, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+81,1.5.1164953,WHGame.dll,0x039932C0,"ptr (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+82,1.5.1164953,WHGame.dll,0x039932DC,"void (ptr from, ptr to, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+83,1.5.1164953,WHGame.dll,0x039934C8,void (ptr B),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+84,1.5.1164953,WHGame.dll,0x0399355C,"i32 (ptr L, i32 narg, cstr extramsg)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+85,1.5.1164953,WHGame.dll,0x03993638,"i32 (ptr L, i32 narg, cstr def, ptr lst)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+86,1.5.1164953,WHGame.dll,0x0399375C,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+87,1.5.1164953,WHGame.dll,0x03993AA4,"cstr (ptr L, i32 narg, cstr def, ptr len)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+88,1.5.1164953,WHGame.dll,0x03993B00,ptr (ptr B),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+89,1.5.1164953,WHGame.dll,0x03993B24,"i32 (ptr L, i32 narg, cstr tname)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+90,1.5.1164953,WHGame.dll,0x03993B70,"void (ptr L, i32 level)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+91,1.5.1164953,WHGame.dll,0x03996250,"cstr (ptr L, ptr ar, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+92,1.5.1164953,WHGame.dll,0x039962B8,"cstr (ptr L, ptr ar, i32 n)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+93,1.5.1164953,WHGame.dll,0x0399605C,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+94,1.5.1164953,WHGame.dll,0x039966A4,"i32 (ptr L, i32 narg)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+95,1.5.1164953,WHGame.dll,0x03996EE4,"i32 (ptr L, ptr writer, ptr data)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+96,1.5.1164953,WHGame.dll,0x03992FFC,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+97,1.5.1164953,WHGame.dll,0x009299AC,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+98,1.5.1164953,WHGame.dll,0x00D815A4,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+99,1.5.1164953,WHGame.dll,0x007A671C,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+100,1.5.1164953,WHGame.dll,0x012DA578,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+101,1.5.1164953,WHGame.dll,0x012DAC38,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+102,1.5.1164953,WHGame.dll,0x012DAF40,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+103,1.5.1164953,WHGame.dll,0x019DFD0C,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+104,1.5.1164953,WHGame.dll,0x003B70F0,i32 (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+105,1.5.1164953,WHGame.dll,0x0071DD7C,"ptr (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+106,1.5.1164953,WHGame.dll,0x0071A628,"i32 (ptr L, ptr func, ptr u, i64 old_top, i64 ef)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+107,1.5.1164953,WHGame.dll,0x0071A6A8,"i32 (ptr L, ptr f, ptr ud)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+108,1.5.1164953,WHGame.dll,0x039934B4,"void (ptr B, cstr s)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+109,1.5.1164953,WHGame.dll,0x0399838C,"cstr (ptr L, cstr fmt, ptr argp)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+110,1.5.1164953,WHGame.dll,0x0071F1F8,"ptr (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+111,1.5.1164953,WHGame.dll,0x0071E7C0,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+112,1.5.1164953,WHGame.dll,0x0399614C,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+113,1.5.1164953,WHGame.dll,0x03998368,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+114,1.5.1164953,WHGame.dll,0x014492A8,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+115,1.5.1164953,WHGame.dll,0x01449600,void (ptr L),1.5.1164953,VioletAnvil,2026-05-28,live_test_plugin
+116,1.5.1164953,WHGame.dll,0x00F77CA4,"void (ptr L, ptr ud)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+117,1.5.1164953,WHGame.dll,0x0071E2B0,"ptr (ptr ud, ptr block, u64 osize, u64 nsize)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+118,1.5.1164953,WHGame.dll,0x039936D0,"ptr (ptr L, i32 ud, cstr tname)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+119,1.5.1164953,WHGame.dll,0x03B8AF70,,1.5.1164953,VioletAnvil,2026-05-28,predecessor_sig
+120,1.5.1164953,WHGame.dll,0x01448E60,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+121,1.5.1164953,WHGame.dll,0x01448F38,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+122,1.5.1164953,WHGame.dll,0x039AD63C,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+123,1.5.1164953,WHGame.dll,0x039989A4,void (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+124,1.5.1164953,WHGame.dll,0x00B9CCB8,"void (ptr L, i32 idx)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+125,1.5.1164953,WHGame.dll,0x0071D118,"i32 (ptr L, i32 t)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+126,1.5.1164953,WHGame.dll,0x039987B4,void (ptr L),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+127,1.5.1164953,WHGame.dll,0x03997070,"void (ptr L, ptr o, ptr v)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+128,1.5.1164953,WHGame.dll,0x01565018,"void (ptr L, ptr level)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+129,1.5.1164953,WHGame.dll,0x00FEABA8,"u64 (ptr L, i32 all)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+130,1.5.1164953,WHGame.dll,0x0071E258,"ptr (ptr L, ptr block, u64 osize, u64 nsize)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+131,1.5.1164953,WHGame.dll,0x004614A0,"ptr (ptr this, cstr pName, cstr szMode, u32 nFlags)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+132,1.5.1164953,WHGame.dll,0x0492B850,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+133,1.5.1164953,WHGame.dll,0x00DA104C,void (ptr this),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+134,1.5.1164953,WHGame.dll,0x00DA0EB0,"ptr (ptr outResult, ptr sys, ptr modsDir)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+135,1.5.1164953,WHGame.dll,0x004D9058,"void (ptr modMgr, ptr modsDir)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+136,1.5.1164953,WHGame.dll,0x00DA1294,u8 (ptr this),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+137,1.5.1164953,WHGame.dll,0x0243E7B8,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+138,1.5.1164953,WHGame.dll,0x046AAF00,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+139,1.5.1164953,WHGame.dll,0x046AAED8,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+140,1.5.1164953,WHGame.dll,0x03AA2E60,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+141,1.5.1164953,WHGame.dll,0x004F7820,ptr (i64 size),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+142,1.5.1164953,WHGame.dll,0x004FD468,"ptr (ptr dest, ptr source)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
+143,1.5.1164953,WHGame.dll,0x004F692C,"ptr (ptr dest, cstr source)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra
