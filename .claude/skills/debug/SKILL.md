@@ -41,6 +41,12 @@ If the bug already has a file, append to its Trail rather than starting a new on
 
 ## Phase 2: Investigate
 
+### 2.0. You write, build, and deploy the probe. The user only launches.
+
+You author the probe code (`// === DIAGNOSTIC (PROBE X)` site or `test-plugins/` probe plugin). You run `pwsh ./build.ps1`, copy the rebuilt artifact to the live install per `loader-architecture.md` deploy mapping, hash-verify the copy, and enable dev mode. The user runs ONE thing in the loop: the game launch. After the run, you read `kcdx-dev.log` directly.
+
+Asking "should I write the probe?", "should I build it?", or "should I deploy it?" is a FLOW defect — none of those are decisions (rule: `agent-builds-and-deploys.md`; probe-specific procedure: `results-driven.md` §"Live-game unknowns"). Surface a decision ONLY when there are two valid probe DESIGNS the user owns the call on (which site, which value to log, which subsystem to bypass).
+
 ### 2a. One variable per probe — and the probe must be theory-INDEPENDENT
 
 Each probe changes **exactly one thing**. A probe is build + game launch + observation, ~2 minutes. If you change three things, you've learned nothing.

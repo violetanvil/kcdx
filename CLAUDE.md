@@ -10,7 +10,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 
 - `pwsh ./build.ps1` → `build/Release/kcdx.exe` (launcher) + `kcdx.dll` (engine) + `kcdx-watchdog.exe`.
 - `./package-release.ps1 -Version X.Y.Z` → drag-drop zip (authoritative artifact→destination mapping).
-- **Live-test deploy (diff-scoped, manual).** Copy ONLY what your change rebuilt to the live install under `<game>/Bin/Win64MasterMasterSteamPGO/` (layout mirrors the zip): engine change → `kcdx-engine/kcdx.dll` (+ `kcdx-watchdog.exe` if rebuilt); launcher change → `kcdx.exe` at the bin root; test/user-plugin change → `kcdx-plugins/<name>/`; builtin-fix change → `kcdx-engine/builtin/<fix>/`. No `.asi`, no `dinput8.dll` (Phase 1+).
+- **Live-test deploy (diff-scoped, agent-run).** Copy ONLY what your change rebuilt to the live install under `<game>/Bin/Win64MasterMasterSteamPGO/` (layout mirrors the zip): engine change → `kcdx-engine/kcdx.dll` (+ `kcdx-watchdog.exe` if rebuilt); launcher change → `kcdx.exe` at the bin root; test/user-plugin change → `kcdx-plugins/<name>/`; builtin-fix change → `kcdx-engine/builtin/<fix>/`. The agent runs every copy and hash-verifies via PowerShell `Get-FileHash`; the user does not deploy. No `.asi`, no `dinput8.dll` (Phase 1+).
 
 ## Rules (auto-load on matching paths)
 
@@ -38,6 +38,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 | RE methodology (Ghidra, predecessor sigs, wiki) | [reverse-engineering.md](.claude/rules/reverse-engineering.md) |
 | Pak mod test fixtures | [pak-mods.md](.claude/rules/pak-mods.md) |
 | Test suite — every feature ships a permanent regression plugin | [test-suite.md](.claude/rules/test-suite.md) |
+| Agent builds and deploys; the user only launches — `build.ps1`, deploy copies, hash verify, dev-mode enable, log read are agent actions | [agent-builds-and-deploys.md](.claude/rules/agent-builds-and-deploys.md) |
 
 ## Hard rules (always-on)
 
@@ -52,6 +53,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 - **mempatch is deprecated.** All byte-rewrite, hook, trampoline, and engine-fix work ships through kcdx. Do not propose new mempatch work.
 - **Every feature ships a regression test.** New functionality is not done until a permanent `test-plugins/` plugin exercises it and a matrix row is recorded. See [test-suite.md](.claude/rules/test-suite.md) (AP7 in [anti-patterns.md](.claude/rules/anti-patterns.md)).
 - **Build-green is necessary, not sufficient.** A clean `pwsh ./build.ps1` proves compile + link, not that the feature works in-game or that an offset/ABI/vtable is right. The matrix is confirmed by a game launch; invariants by review. See [anti-patterns.md](.claude/rules/anti-patterns.md) §invariants-vs-gates.
+- **The agent builds and deploys; the user only launches.** `pwsh ./build.ps1`, every deploy copy to the live install, hash verification of each artifact, dev-mode enablement, and the `kcdx-dev.log` read after the run are AGENT actions invoked via the agent's tool surface. The user runs ONE thing in the loop: the game launch (and tells you it ran). A skill or output that asks the user to build, copy a file, or paste a log line is a FLOW defect — fix the surface, do not perform the ask. Probes are not an exception (a `/debug` probe is agent-written, agent-built, agent-deployed; only the launch is the user's). See [agent-builds-and-deploys.md](.claude/rules/agent-builds-and-deploys.md).
 - **No native code loading beyond plugin DLLs.** No `.obj` loading, no `.so` for Linux Proton (KCD2 has no native Linux build).
 
 ## Workflow skills — picking the right one

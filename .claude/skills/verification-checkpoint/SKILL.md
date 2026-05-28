@@ -9,14 +9,24 @@ The per-step build gate cannot prove a hook fires, a Lua surface marshals, or a 
 
 ## When this skill is invoked
 
-After `/execute` (or a small batch of related `/execute` cycles) has landed and committed its work, and before the user launches KCD2. Deploy and dev-mode enablement are already done by the orchestrator at the commit gate (`_shared/orchestrator-loop.md` §C step 6); the user reads the checklist, confirms each item or rejects it, then runs the game and signals back. The agent reads the `suite: X/Y passing` line from `kcdx-dev.log` itself — the user never reads the log.
+After `/execute` (or a small batch of related `/execute` cycles) has landed and committed its work, and before the user launches KCD2. Auto-invoked by the orchestrator at §F.1 when the diff hits the threshold (multiple behaviors / new failure path / hook-ABI-save-schema-prior-phase touch); the user does not make the dispatch call. The user reads the checklist, confirms each item or rejects it, then runs the game and signals back. The agent reads the `suite: X/Y passing` line from `kcdx-dev.log` itself — the user never reads the log.
 
-A single trivial cycle (one obvious behavior, already covered by one test-plugin auto-pass check) does not need this — just launch. Reach for the checkpoint when the change spans multiple behaviors, adds error paths, touches a hook/ABI/save surface, or modifies code from a prior phase.
+Deploy and dev-mode enablement happen at the orchestrator's commit gate (`_shared/orchestrator-loop.md` §C.6) AND are re-verified here at the launch gate (§"Deploy status" below) — defense in depth. A user invoking this skill standalone (no preceding `/execute`) gets the same deploy-freshness probe, so a stale live-install state is caught before the launch cycle is wasted.
 
 ## Format
 
 ```
 ## Pre-acceptance checkpoint: <one-line change description>
+
+### Deploy status (BLOCKING — checklist body is gated on this section)
+For every artifact this cycle (or batch) rebuilt, hash-compare the live-install copy against the `build/Release/...` source via `Get-FileHash`. Emit one line per artifact:
+- [x] kcdx-engine/kcdx.dll — live hash matches build/Release/kcdx.dll (<short-hash>)
+- [x] kcdx-engine/kcdx-watchdog.exe — live hash matches build/Release/kcdx-watchdog.exe (<short-hash>)
+- [x] kcdx-plugins/test-suite/cap-NN-<name>/ — live tree matches test-plugins/cap-NN-<name>/ source
+- [x] kcdx-engine/builtin/<fix>/kcdx.toml — manifest synced across all 3 plugin trees per memory `project_kcdx_deploy_all_plugin_trees`
+- ...
+
+**Any mismatch** = STOP. Do NOT emit the rest of the checklist. Surface the stale artifact list (source path → live destination → source hash vs live hash) and the likely cause (game running and holding the file open; wrong destination path; permission denied; cycle deployed only the dll and missed the watchdog/manifest sync). Re-run the deploy AND verify hashes equal before re-emitting the checkpoint. A user invoking this skill standalone gets the same gate — old build at the live install is caught here, not at launch.
 
 ### What was built
 <2–4 sentences summarizing the user- or author-observable behavior the change delivers>
@@ -26,8 +36,8 @@ A single trivial cycle (one obvious behavior, already covered by one test-plugin
 - `test-plugins/cap-NN-<name>/` — new regression plugin (commit <short-hash>)
 - ...
 
-### Build status
-- [x] `pwsh ./build.ps1` — zero warnings, exit 0; build/Release/kcdx.exe + kcdx.dll + kcdx-watchdog.exe produced
+### Build status (historical — verified by the orchestrator at the commit gate, not a user action)
+- [x] Build verified by orchestrator (`pwsh ./build.ps1` exit 0; build/Release/kcdx.exe + kcdx.dll + kcdx-watchdog.exe produced) — checkbox records the historical result per `agent-builds-and-deploys.md`; the user does not run build.ps1.
 - [x] Test plugin(s) present + matrix row(s) recorded in test-plugins/README.md (in-game result PENDING this launch)
 
 ### Behaviors to verify (one item per testable claim, no cap)
@@ -92,6 +102,6 @@ Never batch multiple corrections. Each rejected item gets surfaced + fixed + re-
 
 ## What this skill does NOT do
 
-- Does not launch the game — the user does (deploy + dev mode are already done by the orchestrator). When the user signals the run is done, the agent reads `kcdx-dev.log` itself and reports the matrix verdict; the user never reads the log.
+- Does not launch the game — the user does, after this skill has verified deploy hashes match (§"Deploy status"). When the user signals the run is done, the agent reads `kcdx-dev.log` itself and reports the matrix verdict; the user never reads the log.
 - Does not commit — `/execute` already committed the work; a matrix-row status update after the launch is a trivial direct `/commit`.
-- Does not modify code. A rejected item is fixed via a re-tasked `/execute` cycle.
+- Does not modify code. A rejected item is fixed via a re-tasked `/execute` cycle. A failed deploy-hash gate is fixed by re-running the deploy + re-verifying — not a code change.

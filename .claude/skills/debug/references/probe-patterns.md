@@ -87,12 +87,14 @@ Durable — keep fingerprint methods even after investigation. Cost nothing when
 
 **Cost:** one worktree + one extra build. Highest insight per probe.
 
+Agent-run sequence (you, not the user — per `agent-builds-and-deploys.md`):
+
 ```bash
 git worktree add -d /tmp/kcdx-prev <commit-sha>
 # Apply minimal reproducer probe (don't backport whole investigation)
 cd /tmp/kcdx-prev && pwsh ./build.ps1
 cp build/Release/kcdx.dll <game>/Bin/Win64MasterMasterSteamPGO/kcdx-engine/kcdx.dll
-# User reproduces
+# Hand the user the launch; they reproduce; you read the log
 git worktree remove --force /tmp/kcdx-prev
 ```
 

@@ -57,7 +57,7 @@ For `console` / `in-game`, the agent supplies the exact command string, save nam
 
 - Test plugins are **never deleted** when a feature stabilizes — they are the standing regression net.
 - A removed feature's test plugin is removed *with* the feature in the same change, and the matrix row struck — not before.
-- Before landing anything touching `src/` or `include/`, re-run the suite (launch with dev mode on, read the summary) and record the state at the commit SHA in the matrix.
+- Before landing anything touching `src/` or `include/`, re-run the suite: the agent builds + deploys + enables dev mode, the user launches once, the agent reads `kcdx-dev.log` and records the state at the commit SHA in the matrix (`agent-builds-and-deploys.md`).
 
 ## How to apply
 

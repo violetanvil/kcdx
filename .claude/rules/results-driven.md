@@ -17,7 +17,7 @@ Any question the running system, the binary, or a small experiment can answer:
 - "Will this hook fire at this site?" → install it in a probe plugin, log on entry.
 - "How many args / what ABI does this function take?" → walk the reuse ladder (`reverse-engineering.md`): Address Library row → prior `_research/` dumps → predecessor sigs → only then fresh abi_walker. Don't read the prologue and guess (AP2).
 - "Does this Address Library ID resolve to the right code?" → resolve it in a probe, log the target + a fingerprint.
-- "Does the game still boot / does cap-NN still pass?" → build the probe, hand the user the launch (below).
+- "Does the game still boot / does cap-NN still pass?" → write the probe, build + deploy it, hand the user the launch, read the log (below).
 - "Which call shape does the engine expect?" → a probe that distinguishes them, outcome→meaning map written first.
 - "Does plugin A's hook clobber plugin B's at this address?" → a two-plugin comp-NN fixture, not reasoning about apply order.
 
@@ -71,13 +71,14 @@ Brief (raw facts only):
 
 Dispatch via `Agent`, `subagent_type: general-purpose`. Run the probe it designs (or hand the user the launch).
 
-## Live-game unknowns — build the probe, hand over the launch
+## Live-game unknowns — agent writes, builds, deploys; user launches; agent reads the log
 
-kcdx's strongest tests are live launches, runnable only by the user.
+kcdx's strongest tests are live launches. The user runs ONE thing: the launch. Everything else is the agent's (`agent-builds-and-deploys.md`).
 
-1. **Build a minimal probe** isolating the unknown — a `test-plugins/` probe plugin or a `// === DIAGNOSTIC (PROBE X)` site (`.claude/skills/debug/references/probe-patterns.md`). One variable, logged with `LOG_DEBUG_KV` under a stable category tag, no unrelated noise.
-2. **Hand over the launch with the outcome map**, one block: *"This probe answers `<question>`. Launch with dev mode on, report the `<CATEGORY>` lines. Outcome A → do X; B → do Y."*
-3. **Stop and wait.** Don't propose the fix that "probably" follows.
+1. **You write the probe code.** A minimal probe isolating the unknown — a `test-plugins/` probe plugin or a `// === DIAGNOSTIC (PROBE X)` site (`.claude/skills/debug/references/probe-patterns.md`). One variable, logged with `LOG_DEBUG_KV` under a stable category tag, no unrelated noise. Asking "should I write the probe?" is a FLOW defect — it is not a decision.
+2. **You build and deploy the probe.** Run `pwsh ./build.ps1` yourself; confirm exit 0 + the three artifacts. Copy the rebuilt files to the live install per `loader-architecture.md` deploy mapping; hash-verify each copy. Enable dev mode (`<game-bin>/kcdx-engine/engine.toml` `dev_mode = true`) if not already on.
+3. **Hand the user the launch with the outcome map**, one block: *"Probe `<X>` answers `<question>`. Launch (deploy is done; dev mode is on). Outcome A → do X; B → do Y. Tell me it ran and I'll read the log."*
+4. **On run signal, read the log yourself.** Open the newest `<game-bin>/kcdx-engine/logs/kcdx-dev_<ts>.log`, grep the `<CATEGORY>` tag, report the outcome against the pre-committed map. Never ask the user to paste log lines. Don't propose the fix that "probably" follows — act on the result per §5 above ("Act on the result, not past it").
 
 **Probe-revert hygiene (applies outside `/debug` too).** A `// === DIAGNOSTIC (PROBE X)` engine edit is reverted before the next probe unless the next probe explicitly builds on it — never stack two un-reverted probe sites (the `/debug` rule, `debug/SKILL.md` §2f). A diagnostic edit is never committed: it's reverted once its question is answered. Running a probe loop here without entering `/debug` does not exempt the edit from this — if the loop runs more than two probes or the investigation turns hard, switch to `/debug` for the active-instrumentation tracking.
 

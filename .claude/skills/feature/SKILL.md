@@ -92,7 +92,7 @@ The shared loop handles dispatch, build-gate (manager runs `pwsh ./build.ps1` it
 
 ## C. Batched checkpoint after the last step
 
-After the final step commits, do NOT tell the user "done." Invoke `/verification-checkpoint`, which enumerates every behavior / failure path / integration point the feature introduced + a manual AP1–9 audit. The user walks the checklist, then does ONE game launch with dev mode on to confirm the test-suite matrix — batched once for the whole feature, not per step.
+After the final step commits, do NOT tell the user "done." Invoke `/verification-checkpoint`, which enumerates every behavior / failure path / integration point the feature introduced + a manual AP1–9 audit. The user walks the checklist, then does ONE game launch to confirm the test-suite matrix — batched once for the whole feature, not per step. Deploy + dev-mode enable + log read after the run are agent actions per `agent-builds-and-deploys.md`; the user only launches.
 
 A rejected checklist item → identify the owning step, re-task it via the orchestrator loop (fix lands as a new follow-up commit, never an amend), re-present the checkpoint.
 
