@@ -2,7 +2,7 @@
 
 `reference.sqlite` is the small static database the kcdx engine ships with every
 release. It carries the **curated set of named targets** kcdx maintains across
-game versions, plus the per-version verified facts (address, ABI, vtable slot,
+game versions, plus the per-version resolve facts (address, ABI, vtable slot,
 etc.) the engine needs to resolve a plugin's hook by name.
 
 This is the **production** reference DB. It is intentionally narrow: it carries
@@ -46,26 +46,23 @@ maintains them:
    then declare in their plugin (Track 2). **Not in this database, not shipped
    to users.**
 
-## The model — a stable id, with per-version verified facts
+## The model — a stable id, per-version resolve facts
 
-The database is built on three ideas the rest of this document assumes:
+The database rests on three ideas the rest of this document assumes:
 
-1. **Every curated target has a stable `kcdx_id`.** A function, a curated
-   callsite, a vtable slot — each is one row in `entities`, with a `kcdx_id` that
-   never changes and is never recycled. A plugin references a target by `kcdx_id`
-   (or by a curated name that resolves to one); that reference keeps resolving
-   across game updates even though the underlying address moves.
-
-2. **Per-version facts are stored as validity intervals.** A curated entity's
-   address, bytes, and argument-shape can change when the game patches. Each
-   distinct form is one row in `entity_versions` with a `valid_from` /
+1. **Every curated target has a stable `kcdx_id`.** The id is assigned once and
+   never changes or recycles. A plugin references a target by `kcdx_id` (or by a
+   curated name that resolves to one). That reference keeps resolving across
+   game updates even when the target's address moves.
+2. **The kcdx_id IS the `address_names.id`.** `address_names` has one row per
+   curated entity; its primary key column IS the kcdx_id. (There is no separate
+   `kcdx_id` column; the PK is the handle.)
+3. **Per-version resolve facts are stored as validity intervals.** A curated
+   entity's address, bytes, and argument-shape can change when the game patches.
+   Each distinct form is one row in `address_versions` with a `valid_from` /
    `valid_through` version range. **`valid_through IS NULL` means "this is the
    current form."** The engine reads the open (NULL) row for the running version.
-
-3. **Curated names and verified facts are separate.** A curated name
-   (`kcdx_overlay`) is version-independent ("IsInCombat" is still IsInCombat).
-   Its verified ABI / offset / vtable slot is per-version, in
-   `kcdx_overlay_versions`, because those facts can move with the binary.
+   A partial-unique index guarantees at most one open row per entity.
 
 ## What this database does NOT carry
 
@@ -86,74 +83,45 @@ pattern AND the ABI.
 
 ## The tables
 
-The user database has seven tables (plus `_dict_*` lookup tables — see Encoding).
+The user database has **five** tables (plus `_dict_*` lookup tables — see
+Encoding).
 
-### `entities` — the stable id authority
+### `address_names` — the curated entity registry
 
-One row per curated entity, ever. Version-independent identity.
+One row per curated entity, ever. `id` IS the `kcdx_id` (the stable handle
+plugins reference); not autoincrement — the importer assigns it.
 
 | Column | Meaning |
 |---|---|
-| `kcdx_id` | the stable id (primary key). The handle a plugin references; never recycled. |
-| `entity_type` | `function` \| `vtable_slot` \| `data_slot` \| `callsite` \| `statement` (the last is reserved, not populated). Dictionary-encoded. |
-| `module_id` | which module the entity lives in → `modules.id`. |
+| `id` | the **kcdx_id**. Primary key. The stable handle a plugin references. Never changes, never recycled. |
+| `name` | the curated name (e.g. `IsInCombat`). Unique per row. |
+| `is_deprecated` | `1` if this entity is superseded by another entity; the row still resolves through the chain. |
+| `superseded_by` | another `address_names.id` (== another kcdx_id) — entity-to-entity supersession. |
 
-### `entity_versions` — per-version forms
+### `address_versions` — per-version resolve facts (the spine)
 
-One row per `(curated entity, version-interval)`. Carries everything about a
-curated target that can change when the game patches.
+One row per `(entity, version-interval)`. Carries everything about an entity
+that can change when the game patches. `kcdx_id` references `address_names.id`.
 
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
-| `kcdx_id` | the entity → `entities.kcdx_id`. |
-| `content_hash` | BLAKE3 of the entity's on-disk bytes (32-byte blob). `NULL` for non-byte entities (a vtable slot has no bytes). |
-| `rva` | the entity's address in this version. Resolve `kcdx_id` → address from the open row. |
-| `length` | byte length — needed to reproduce the hashed span `[rva, rva+length)`. |
-| `value` | the resolved integer for a non-byte entity (a vtable slot index, a data-slot offset). `NULL` for functions. |
-| `signature` | the abi_walker width-floor for this entity (when computed). Kept for parity with the DEV DB; the *verified* signature lives in `kcdx_overlay_versions.signature`. |
-| `observed_arg_slots` | the floor's argument-slot count. |
-| `caller_reg_arg_count` | a caller-side register-argument estimate (≤4). |
-| `caller_arg_agreement` | whether the callsites agreed on that estimate. Dictionary-encoded. |
-| `valid_from` | first version this form held → `game_versions.id`. |
-| `valid_through` | last version this form was valid → `game_versions.id`. **`NULL` = current.** |
-
-There is at most one open (`valid_through IS NULL`) row per entity — that is the
-current form.
-
-### `kcdx_overlay` — the curated name layer (version-independent)
-
-One row per curated **name**. A single `kcdx_id` may have more than one row (a
-renamed entity keeps its old name row, deprecated, alongside the new one), so
-`kcdx_id` here is **not** unique.
-
-| Column | Meaning |
-|---|---|
-| `id` | the name-row id (primary key). |
-| `kcdx_id` | the entity this name annotates → `entities.kcdx_id` (non-unique). |
-| `name` | the gameplay name (e.g. `IsInCombat`). The resolution key a plugin can use instead of a raw id. May be `NULL` (a stable id can exist before a name is attached). |
+| `kcdx_id` | the entity → `address_names.id`. Non-unique (one row per version for the same entity). |
 | `kind` | the curated taxonomy: `function`, `function_no_sig`, `function_variadic`, `callsite`, `data_slot`, `string_anchor`, `instruction_anchor`, `vtable_base`, `vtable_index`. Dictionary-encoded. |
-| `is_deprecated` | `1` if this name is superseded; it still resolves (to the same entity), with a use-the-new-name notice. |
-| `superseded_by` | the name-row (`kcdx_overlay.id`) that replaces this one, if deprecated. |
-
-### `kcdx_overlay_versions` — the curated verified facts (per-version)
-
-One row per `(curated name, version-interval)`. Holds the **verified** facts that
-move with the binary.
-
-| Column | Meaning |
-|---|---|
-| `id` | row id. |
-| `overlay_id` | the name-row → `kcdx_overlay.id`. (The entity is reached through it: `overlay_id` → `kcdx_overlay.kcdx_id`.) |
-| `signature` | the verified argument signature for this version range — a real ABI, distinct from the floor in `entity_versions`. `NULL` for kinds that have no signature (a callsite, a vtable slot, a data slot). |
+| `module_id` | which module the entity lives in → `modules.id`. |
+| `rva` | the entity's address in this version. Resolve `kcdx_id` → address from the open row. `NULL` for non-byte entities (e.g. `vtable_index`). |
+| `length` | byte length — needed to reproduce the hashed span `[rva, rva+length)`. |
+| `content_hash` | BLAKE3 of the entity's on-disk bytes (32-byte blob). `NULL` for non-byte entities. |
+| `value` | the resolved integer for a non-byte entity (a vtable slot index, a data-slot offset). |
+| `signature` | the verified ABI for this version (or the abi_walker width-floor if no verified value was set). For kinds that have no signature (callsite, vtable slot, data slot), `NULL`. |
+| `observed_arg_slots` | abi_walker floor: arg-slot count. |
+| `caller_reg_arg_count` | caller-side register-argument estimate (≤4). |
+| `caller_arg_agreement` | whether the callsites agreed on that estimate. Dictionary-encoded. |
 | `offset` | for a `callsite`, the offset a consumer applies relative to the recorded address. |
-| `vtable_slot` | for a `vtable_index`, the slot integer. |
-| `status` | `verified` \| `unverified` — **only `verified` rows resolve at runtime.** Dictionary-encoded. |
-| `valid_from` | first version these verified facts hold → `game_versions.id`. |
-| `valid_through` | last version valid → `game_versions.id`. **`NULL` = current.** |
-
-The address of a curated entity is **not** stored here — it comes from the
-entity's `entity_versions` open row.
+| `vtable_slot` | for a `vtable_index`, the slot integer (mirrors `value` for that kind). |
+| `status` | `verified` \| `unverified` — only `verified` rows resolve at runtime. Dictionary-encoded. |
+| `valid_from` | first version this form held → `game_versions.id`. |
+| `valid_through` | last version this form was valid → `game_versions.id`. **`NULL` = current.** A partial-unique index enforces at most one open row per `kcdx_id`. |
 
 ### `modules` — the module registry
 
@@ -185,15 +153,21 @@ Backs every `valid_from` / `valid_through`.
 
 **Resolve by curated name** (`target = "IsInCombat"`):
 
-1. `kcdx_overlay` where `name = ?` → the name-row (`id`, `kcdx_id`, `kind`).
-2. `entity_versions` where `kcdx_id = ?` and `valid_through IS NULL` → the address
-   (`rva`) for the running version.
-3. `kcdx_overlay_versions` where `overlay_id = ?` and `valid_through IS NULL` →
-   the **verified** `signature` (+ `vtable_slot` / `offset` by kind). Resolve only
-   if `status = verified`.
+1. `address_names` where `name = ?` → the kcdx_id (= `address_names.id`).
+2. `address_versions` where `kcdx_id = ?` and `valid_through IS NULL` → the
+   open row carrying `rva`, `signature`, `kind`, etc. for the running version.
+   Resolve only if `status = verified`.
 
-**Resolve by `kcdx_id`:** `entity_versions` where `kcdx_id = ?` and
-`valid_through IS NULL` → address.
+```sql
+SELECT n.id AS kcdx_id, v.kind, v.rva, v.signature, v.status
+  FROM address_names n
+  JOIN address_versions v
+    ON v.kcdx_id = n.id AND v.valid_through IS NULL
+ WHERE n.name = ?
+```
+
+**Resolve by `kcdx_id`:** skip `address_names`; just query
+`address_versions` where `kcdx_id = ?` and `valid_through IS NULL`.
 
 **Resolve an author-declared target** (`kcdx.declare(module, name, versions)`):
 not from this database. The engine reads the plugin's declare table for the
@@ -203,7 +177,7 @@ running game version and resolves the pattern against the live binary.
 
 When the game updates and a plugin uses a curated target, the engine compares
 the plugin's authored-against `content_hash` against the open
-`entity_versions.content_hash` for the same `kcdx_id`. Unchanged → the plugin
+`address_versions.content_hash` for the same `kcdx_id`. Unchanged → the plugin
 keeps working silently. Changed → a notice naming the target. **This only applies
 to curated targets** — Track-2 (author-declared) targets carry their own
 per-version patterns, and the survival check for them is "does the pattern
@@ -222,10 +196,11 @@ extension is required to read it.
 
 The database is updated per game version. The maintainer re-verifies the curated
 set when KCD2 patches and adds a new `game_versions` row + per-version
-intervals; targets that didn't move silently extend, targets that changed get a
-new interval, removed targets close. A curated target keeps its stable `kcdx_id`
-across versions, so a plugin that references it by name or id continues to
-resolve.
+intervals: targets that didn't move silently extend (the existing open row stays
+open), targets that changed get a new open interval (the old one's
+`valid_through` is set), removed targets close. A curated target keeps its
+stable `kcdx_id` across versions, so a plugin that references it by name or id
+continues to resolve.
 
 ## The larger discovery dataset
 

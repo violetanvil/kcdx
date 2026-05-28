@@ -26,43 +26,43 @@ A mod author wants to hook a game function. Two paths:
 
 ## Relationship to the production database
 
-Everything in `data/reference/README.md` applies here unchanged for the curated
-portion — the same `entities` id authority, the same `entity_versions` model,
-the same `kcdx_overlay` / `kcdx_overlay_versions` split, the same `modules` /
-`game_versions` / `meta`. Read that document first.
+The same five shared tables are here (`modules`, `game_versions`,
+`address_names`, `address_versions`, `meta`) — read `data/reference/README.md`
+first for the shared model (`address_names.id` IS the kcdx_id, `address_versions`
+keys on `kcdx_id`, partial-unique-open-interval, etc.).
 
 **This database is a superset.** It contains:
 
-1. **Everything the production DB has** — the ~140 curated entities (so
-   `kcdx.find` can show "this is already known as IsInCombat — don't redeclare
-   it" alongside uncurated discoveries).
-2. **PLUS the bulk** — the binary's full function table (~321,000 functions)
-   with their auto-names, hashes, the abi_walker argument-width floor, decompile
-   quality, plus per-statement metadata, variable storage, and the call graph.
+1. **Everything the production DB has** — the ~140 curated `address_names` rows
+   and their corresponding `address_versions` rows, so `kcdx.find` can show
+   "this is already known as IsInCombat — don't redeclare it" alongside
+   uncurated discoveries.
+2. **PLUS the bulk** — `address_versions` rows for the binary's full ~321,000
+   functions (each with auto-name, hash, abi_walker floor signature, decompile
+   quality), plus `statements` + `referenced_vars` + `call_edges`. These bulk
+   `address_versions` rows have NO `address_names` row (the function is
+   uncurated; its kcdx_id is just the bulk-baseline id).
 
-The bulk is **discovery data**, not cross-version-tracked data. It is regenerated
-per game version (one DEV DB per KCD2 version); it is not diffed across versions
-automatically. An author updating their plugin for a new game version fetches the
-DEV DB for that version, re-runs `kcdx.find` to re-locate their targets, and
-updates their plugin's `kcdx.declare` rows.
+The bulk is **discovery data**, not cross-version-tracked data. It is
+regenerated per game version (one DEV DB per KCD2 version); it is not diffed
+across versions automatically. An author updating their plugin for a new game
+version fetches the DEV DB for that version, re-runs `kcdx.find` to re-locate
+their targets, and updates their plugin's `kcdx.declare` rows.
 
 ## Columns the dev database adds to the shared tables
 
-### `entity_versions` — populated for bulk functions + two dev-only columns
+### `address_versions` — two dev-only columns
 
-Production carries `entity_versions` rows only for curated entities. The dev DB
-carries them for **all** entities, including the bulk function table — so
-`kcdx.find` can show the abi_walker floor signature, the function length, the
-auto-name, etc. for an uncurated function being investigated.
-
-Two columns exist only in the dev DB:
+Production carries `address_versions` rows only for curated entities. The dev DB
+carries them for **every** entity in the binary (curated + bulk). Two columns
+exist only here:
 
 | Column | Meaning |
 |---|---|
-| `auto_name` | the disassembler's auto-generated label for the entity (`FUN_<rva>` form). A display label for inspection only — it is derived from the address and is **never** a resolution key (it moves every version). Absent from the production database. |
+| `auto_name` | the disassembler's auto-generated label (`FUN_<rva>` form). A display label for inspection only — it is derived from the address and is **never** a resolution key (it moves every version). Absent from the production database. |
 | `decompile_quality` | `clean` / `partial` / `unanalyzable` — gates whether the per-statement tools apply to this entity. Dictionary-encoded. Absent from the production database. |
 
-### `kcdx_overlay` — two dev-only columns
+### `address_names` — two dev-only columns
 
 | Column | Meaning |
 |---|---|
@@ -72,8 +72,9 @@ Two columns exist only in the dev DB:
 ## Dev-only tables (the bulk discovery surface)
 
 These three tables exist only in the dev database. They key on the entity's
-`kcdx_id` and contain entries for the bulk function table — they are the
-substance of what `kcdx.find` walks.
+`kcdx_id` (which matches `address_names.id` for curated entities, or the
+bulk-baseline kcdx_id for uncurated ones). They are the substance of what
+`kcdx.find` walks.
 
 ### `statements` — per-statement metadata
 
@@ -83,7 +84,7 @@ One row per decompiled statement of each analyzable function. Backs
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
-| `kcdx_id` | the owning function → `entities.kcdx_id`. |
+| `kcdx_id` | the owning function (matches `address_versions.kcdx_id`). |
 | `idx` | the statement's ordinal within the function. |
 | `kind` | the statement kind (call / assign / branch / …). Dictionary-encoded. |
 | `pseudo_text` | the decompiled pseudo-code line. |
@@ -98,7 +99,7 @@ One row per decompiled statement of each analyzable function. Backs
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
-| `kcdx_id` | the owning function → `entities.kcdx_id`. |
+| `kcdx_id` | the owning function. |
 | `statement_idx` | the owning statement's ordinal. |
 | `var_name` | the variable name, if recovered. |
 | `storage_kind` | register / stack / global / … Dictionary-encoded. |
@@ -114,8 +115,8 @@ anchor (a string, a callee) to the gameplay function an author wants.
 | Column | Meaning |
 |---|---|
 | `id` | row id. |
-| `caller_kcdx_id` | the calling function → `entities.kcdx_id`. |
-| `callee_kcdx_id` | the called function → `entities.kcdx_id`. |
+| `caller_kcdx_id` | the calling function. |
+| `callee_kcdx_id` | the called function. |
 | `callsite_rva` | the address of the call instruction. |
 
 Indexed in both directions (by caller and by callee).
@@ -129,7 +130,7 @@ stock SQLite.
 ## Why this is a separate artifact from the production DB
 
 The production database stays small (~0.1 MB, ships with every release) by
-holding ONLY the curated cross-version-tracked set. This database is ~1 GB and
+holding ONLY the curated cross-version-tracked set. This database is ~1.1 GB and
 exists only to serve authors during plugin development. Splitting them means:
 
 - Every user's install is tiny + fast to launch (no bulk data to load).

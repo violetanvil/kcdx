@@ -562,7 +562,15 @@ the hash changing is the very event being tracked. So `kcdx_id` is assigned once
 (v1.5 baseline) and re-attached to the same logical function in every later
 version by the cross-version matcher (§11.6).
 
-### 11.2 The schema — LOCKED (2026-05-27, except the matcher)
+### 11.2 The schema — LOCKED 2026-05-27 (SUPERSEDED 2026-05-28 by §11.9)
+
+**Superseded by §11.9 FLATTEN.** The 9-table entity/version + curated-overlay
+shape below is kept as the historical record of how the design got to the
+flatter form (it captures the entities + entity_versions + kcdx_overlay +
+kcdx_overlay_versions split that the flatten dissolved). Read §11.9 for the
+current 5-table USER + 8-table DEV schema (address_names + address_versions,
+no entities/entity_versions, no kcdx_overlay/kcdx_overlay_versions split, no
+pairing trigger).
 
 The schema is **9 tables** (+ `_dict_*`). The earlier separate `functions` /
 `signatures` / `caller_reg_args` tables are GONE — folded into `entity_versions`
@@ -1229,6 +1237,121 @@ unaffected); ONE apparatus simplifies:
 4. Design + implement the recovery/rollback machinery (the restructure-plan
    item). Default-ON safety depends on it.
 5. Re-purpose the parked matcher to the curated-set assist role.
+
+### 11.9 FLATTEN 2026-05-28 — the schema as actually shipped
+
+The §11.2 schema split entities (the kcdx_id authority) and entity_versions
+(temporal byte-form facts) into two tables, then split the curated layer into
+kcdx_overlay (identity) + kcdx_overlay_versions (temporal verified facts), and
+used a SQLite trigger to keep the two version tables paired across game-version
+inserts. That structure was correct but over-built once the streamline narrowed
+USER to curated-only:
+
+- `entities` only ever held (kcdx_id, entity_type, module_id) -- a thin
+  id-authority table whose every row had a matching entity_versions row.
+- `kcdx_overlay` held (id PK, kcdx_id FK non-unique, name, kind, ...) and was
+  1:1 with kcdx_overlay_versions in practice (no aliases at baseline).
+- The trigger existed solely to mirror entity_versions inserts onto
+  kcdx_overlay_versions -- only needed because the two were separate.
+
+Flattened: **one table for the curated names, one for the per-version resolve
+facts. No id-authority table, no two-table-split curated layer, no trigger.**
+
+The user direction (2026-05-28): "overlay is the canonical lookup for kcdx
+stuff. overlay id should be kcdx_id - this is the one that should never change.
+we just need to be able to map them to overlay_versions - which can now store
+the module ID and the stuff needed to resolve." Followed by: "address_names.id
+IS kcdx_id" (no separate kcdx_id column) and "superseded_by points to another
+address_names.id" (entity-to-entity supersession).
+
+**USER tables (5):** `modules`, `game_versions`, `address_names`,
+`address_versions`, `meta`.
+
+**DEV adds (3):** `statements`, `referenced_vars`, `call_edges`.
+
+#### `address_names` -- the curated entity registry
+
+One row per curated entity, ever. `id` IS the kcdx_id (not autoincrement; the
+importer assigns it explicitly to match the bulk function set's rva-ordinal so
+the same kcdx_id resolves the same entity across rebuilds).
+
+| Column | Meaning |
+|---|---|
+| `id` (PK) | the **kcdx_id** -- the stable cross-version handle plugins reference. Never changes, never recycled. There is NO separate kcdx_id column; the PK IS the handle. |
+| `name` | the curated name (`IsInCombat`, etc.). Unique per row. |
+| `is_deprecated` | 1 if this entity is superseded by another entity. |
+| `superseded_by` | another `address_names.id` -- entity-to-entity supersession (rename + identity change). |
+| `source` (DEV) | provenance tier dict. |
+| `notes` (DEV) | the maintainer's provenance prose. |
+
+#### `address_versions` -- per-version resolve facts (the spine)
+
+One row per (entity, version-interval). `kcdx_id` references
+`address_names.id` (for curated entities) -- or, in the DEV DB, also covers the
+bulk 321K functions whose `kcdx_id`s are not in `address_names`.
+
+| Column | Meaning |
+|---|---|
+| `id` (PK) | row id. |
+| `kcdx_id` | the entity -> `address_names.id` (curated) OR a bulk-only kcdx_id (DEV-bulk). Non-unique. |
+| `kind` | `function` / `function_no_sig` / `function_variadic` / `callsite` / `data_slot` / `string_anchor` / `instruction_anchor` / `vtable_base` / `vtable_index`. Dict-encoded. |
+| `module_id` | -> `modules.id`. Per-version (a future re-architecture could move an entity between modules; trivial to support). |
+| `rva` | address in this version. NULL for non-byte kinds (`vtable_index`). |
+| `length` | byte length (reproduces the hashed span). |
+| `content_hash` | BLAKE3 of the on-disk bytes (32-byte BLOB). NULL for non-byte kinds. |
+| `value` | integer payload for non-byte kinds (slot int, offset). |
+| `signature` | verified ABI for curated rows; abi_walker width-floor for bulk. |
+| `observed_arg_slots`, `caller_reg_arg_count`, `caller_arg_agreement` | abi_walker floor metadata. |
+| `offset` | callsite consumer offset. |
+| `vtable_slot` | mirrors `value` for `vtable_index` kind. |
+| `status` | `verified` / `unverified` -- only `verified` resolves at runtime. Dict-encoded. |
+| `auto_name` (DEV) | `FUN_<rva>` discovery label. |
+| `decompile_quality` (DEV) | `clean` / `partial` / `unanalyzable`. |
+| `valid_from` | -> `game_versions.id` -- first version this form held. |
+| `valid_through` | -> `game_versions.id`, NULL = current. Partial-unique index enforces at most one open row per kcdx_id. |
+
+**Resolution path** (a plugin's `target = "name"`):
+
+```sql
+SELECT n.id AS kcdx_id, v.kind, v.rva, v.signature, v.status
+  FROM address_names n
+  JOIN address_versions v
+    ON v.kcdx_id = n.id AND v.valid_through IS NULL
+ WHERE n.name = ?
+```
+
+One join. The kind+address+signature come back from the single open row.
+
+**What survived from §11.2:** the partial-unique-open-interval invariant (now
+on address_versions instead of entity_versions); the curated-only USER /
+bulk-superset DEV split (USER filters address_versions rows to those whose
+kcdx_id is in address_names; bulk rows live only in DEV); the lossless
+dictionary encoding; the kcdx_id-is-the-stable-handle promise (now realized
+as `address_names.id`).
+
+**What changed from §11.2:**
+- `entities` table: **dropped**. Its only version-independent column was
+  kcdx_id; the address-name registry IS the id authority.
+- `entity_versions` table: **renamed to address_versions** + absorbed
+  `kcdx_overlay_versions`' resolve fields (kind, signature, offset,
+  vtable_slot, status, module_id). One per-version table, not two.
+- `kcdx_overlay` (name registry): **renamed to address_names**, restructured:
+  no separate kcdx_id column (id IS the kcdx_id), no `kind` column (kind is
+  per-version on address_versions), supersession is entity-to-entity (an
+  entity replaces an entity, not a name replaces a name).
+- `kcdx_overlay_versions`: **dropped** -- folded into address_versions.
+- `trg_pair_overlay_version` (the pairing trigger): **dropped** -- there's no
+  second version table to pair with.
+
+**Schema-version bump:** `meta.schema_version` stays 1 during this iteration
+phase (consumers either accept the new shape or the old; rapid iteration =
+in-place schema churn until the engine consumer is built against the final
+form; bump to 2 when we lock).
+
+**Live state at commit time:** the import builds USER at ~0.1 MB / 143 curated
+kcdx_ids; DEV at ~1.13 GB / 321,138 kcdx_ids. The harness gates 21/21 against
+the real dump. Resolution path verified end-to-end for sample curated names
+including the four C_ModManager init-cycle helpers added 2026-05-27.
 
 ---
 

@@ -1,11 +1,12 @@
-"""validate_db_shape.py -- THE DB-SHAPE GATE for the entity/version-schema import.
+"""validate_db_shape.py -- THE DB-SHAPE GATE for the flattened address-name/
+address-version schema (2026-05-28).
 
 Builds BOTH reference DBs (USER + DEV) from a dump dir via import_to_sqlite.py,
-then asserts the LOCKED schema's shape against falsifiable answers: table
-presence per db, the kcdx_id authority count, the all-open baseline intervals,
+then asserts the locked schema's shape against falsifiable answers: table
+presence per db, the kcdx_id baseline count, the all-open baseline intervals,
 the partial-unique-open-interval invariant, the USER/DEV column projection, the
-overlay seeding count, the content_hash BLOB round-trip, the pairing trigger's
-existence + its no-fire-at-baseline guarantee, and FK resolution.
+address_names seeding count (from seed.csv), the content_hash BLOB round-trip,
+and FK resolution.
 
 Mirrors validate_extractor_output.py's shape: check()/PASS/FAIL, a VERDICT line,
 sys.exit(1) on any FAIL.
@@ -94,82 +95,68 @@ def run_checks(dump_dir, user_db, dev_db):
     dt = tables(dc)
 
     # --- 1. table presence per db ---
-    nine = {"modules", "game_versions", "entities", "entity_versions",
-            "kcdx_overlay", "kcdx_overlay_versions", "meta",
-            "statements", "referenced_vars", "call_edges"}
-    check("DEV has all 10 schema tables", nine.issubset(dt),
-          "missing=%s" % (nine - dt))
-    six = {"modules", "game_versions", "entities", "entity_versions",
-           "kcdx_overlay", "kcdx_overlay_versions", "meta"}
-    check("USER has the 7 user tables", six.issubset(ut), "missing=%s" % (six - ut))
+    dev_set = {"modules", "game_versions", "address_names", "address_versions",
+               "meta", "statements", "referenced_vars", "call_edges"}
+    check("DEV has all 8 schema tables", dev_set.issubset(dt),
+          "missing=%s" % (dev_set - dt))
+    user_set = {"modules", "game_versions", "address_names", "address_versions",
+                "meta"}
+    check("USER has the 5 user tables", user_set.issubset(ut),
+          "missing=%s" % (user_set - ut))
     dev_only = {"statements", "referenced_vars", "call_edges"}
     check("USER does NOT have statements/referenced_vars/call_edges",
           not (dev_only & ut), "present=%s" % (dev_only & ut))
 
-    # --- 2. entities count == functions + 6 curated; kcdx_id 1..N present ---
+    # --- 2. address_versions: every function rva from the dump has a row, +
+    #        curated-minted-with-rva rows + curated-minted-no-rva rows.
     n_fn = count_dump_functions(dump_dir)
-    n_ent = scalar(dc, "SELECT COUNT(*) FROM entities")
-    # entities = functions + 6 curated vtable + any minted seed-code-unmapped rows.
-    n_curated_vtable = scalar(
-        dc, "SELECT COUNT(*) FROM entities WHERE entity_type = "
-            "(SELECT id FROM _dict_entities_entity_type WHERE val='vtable_slot')")
-    check("entities count == functions + 6 curated vtable (+ minted seed)",
-          n_ent >= n_fn + 6 and n_curated_vtable == 6,
-          "entities=%d functions=%d curated_vtable=%d" % (n_ent, n_fn, n_curated_vtable))
+    n_av = scalar(dc, "SELECT COUNT(*) FROM address_versions")
+    check("DEV address_versions count >= functions count",
+          n_av >= n_fn,
+          "address_versions=%d functions=%d" % (n_av, n_fn))
     # every kcdx_id 1..n_fn present (the function baseline).
-    present = scalar(dc, "SELECT COUNT(*) FROM entities WHERE kcdx_id BETWEEN 1 AND ?",
-                     (n_fn,))
-    check("every kcdx_id 1..N(functions) present in entities",
+    present = scalar(dc, "SELECT COUNT(DISTINCT kcdx_id) FROM address_versions "
+                         "WHERE kcdx_id BETWEEN 1 AND ?", (n_fn,))
+    check("every kcdx_id 1..N(functions) present in address_versions",
           present == n_fn, "present=%d of %d" % (present, n_fn))
 
-    # --- 3. entity_versions: one row per entity, all open; count match ---
-    n_ev = scalar(dc, "SELECT COUNT(*) FROM entity_versions")
-    n_open = scalar(dc, "SELECT COUNT(*) FROM entity_versions WHERE valid_through IS NULL")
-    check("entity_versions count == entities count (one row per entity)",
-          n_ev == n_ent, "ev=%d entities=%d" % (n_ev, n_ent))
-    check("entity_versions all baseline-open (valid_through IS NULL)",
-          n_open == n_ev, "open=%d of %d" % (n_open, n_ev))
-
-    # --- 4. partial-unique-open-interval: no entity has 2 open ev rows ---
+    # --- 3. all baseline-open intervals + partial-unique-open ---
+    n_open = scalar(dc, "SELECT COUNT(*) FROM address_versions "
+                        "WHERE valid_through IS NULL")
+    check("address_versions all baseline-open (valid_through IS NULL)",
+          n_open == n_av, "open=%d of %d" % (n_open, n_av))
     dup_open = scalar(dc,
-        "SELECT COUNT(*) FROM (SELECT kcdx_id FROM entity_versions "
+        "SELECT COUNT(*) FROM (SELECT kcdx_id FROM address_versions "
         "WHERE valid_through IS NULL GROUP BY kcdx_id HAVING COUNT(*) > 1)")
-    check("no entity has 2 open entity_versions rows", dup_open == 0,
+    check("no entity has 2 open address_versions rows", dup_open == 0,
           "entities-with-2-open=%d" % dup_open)
 
-    # --- 5. USER ev has NO auto_name/decompile_quality; DEV does ---
-    ucols = columns(uc, "entity_versions")
-    dcols = columns(dc, "entity_versions")
-    check("USER entity_versions excludes auto_name + decompile_quality",
+    # --- 4. USER address_versions has NO auto_name/decompile_quality; DEV does
+    ucols = columns(uc, "address_versions")
+    dcols = columns(dc, "address_versions")
+    check("USER address_versions excludes auto_name + decompile_quality",
           "auto_name" not in ucols and "decompile_quality" not in ucols,
           "user cols=%s" % ucols)
-    check("DEV entity_versions includes auto_name + decompile_quality",
+    check("DEV address_versions includes auto_name + decompile_quality",
           "auto_name" in dcols and "decompile_quality" in dcols, "")
 
-    # --- 6. kcdx_overlay row count == seed.csv row count; USER excludes
-    #         source/notes, DEV includes. The expected count is derived from the
-    #         live seed.csv (not hardcoded) so additions to the seed pass without
+    # --- 5. address_names row count == seed.csv row count; USER excludes
+    #         source/notes, DEV includes. The expected count is derived from
+    #         the live seed.csv (not hardcoded) so seed additions pass without
     #         a harness edit. ---
     n_seed = len(imp.read_seed(imp.SEED_CSV))
-    n_ov = scalar(dc, "SELECT COUNT(*) FROM kcdx_overlay")
-    check("kcdx_overlay row count == seed.csv row count",
-          n_ov == n_seed, "kcdx_overlay=%d seed.csv=%d" % (n_ov, n_seed))
-    uocols = columns(uc, "kcdx_overlay")
-    docols = columns(dc, "kcdx_overlay")
-    check("USER kcdx_overlay excludes source + notes",
-          "source" not in uocols and "notes" not in uocols, "user cols=%s" % uocols)
-    check("DEV kcdx_overlay includes source + notes",
-          "source" in docols and "notes" in docols, "")
+    n_an = scalar(dc, "SELECT COUNT(*) FROM address_names")
+    check("address_names row count == seed.csv row count",
+          n_an == n_seed, "address_names=%d seed.csv=%d" % (n_an, n_seed))
+    uacols = columns(uc, "address_names")
+    dacols = columns(dc, "address_names")
+    check("USER address_names excludes source + notes",
+          "source" not in uacols and "notes" not in uacols,
+          "user cols=%s" % uacols)
+    check("DEV address_names includes source + notes",
+          "source" in dacols and "notes" in dacols, "")
 
-    # --- 7. kcdx_overlay_versions row count == seed.csv row count, all open ---
-    n_ovv = scalar(dc, "SELECT COUNT(*) FROM kcdx_overlay_versions")
-    n_ovv_open = scalar(dc, "SELECT COUNT(*) FROM kcdx_overlay_versions WHERE valid_through IS NULL")
-    check("kcdx_overlay_versions row count == seed.csv row count",
-          n_ovv == n_seed, "kcdx_overlay_versions=%d seed.csv=%d" % (n_ovv, n_seed))
-    check("kcdx_overlay_versions all open (valid_through IS NULL)",
-          n_ovv_open == n_ovv, "open=%d of %d" % (n_ovv_open, n_ovv))
-
-    # --- 8. game_versions + meta singletons ---
+    # --- 6. game_versions + meta singletons ---
     gv = dc.execute("SELECT tag, ordinal FROM game_versions").fetchall()
     check("game_versions one row tag=1.5.1164953 ordinal=1164953",
           len(gv) == 1 and gv[0][0] == "1.5.1164953" and gv[0][1] == 1164953,
@@ -178,21 +165,21 @@ def run_checks(dump_dir, user_db, dev_db):
     check("meta one row schema_version=1",
           len(mt) == 1 and mt[0][0] == 1, "got %s" % mt)
 
-    # --- 9. content_hash round-trip ---
+    # --- 7. content_hash round-trip ---
     # DEV: 0x1050 (an uncurated bulk function -- shipped only in DEV).
     dump_hash = dump_hash_for_rva(dump_dir, 0x1050)
     row = dc.execute(
-        "SELECT ev.content_hash FROM entity_versions ev WHERE ev.rva = ?",
+        "SELECT v.content_hash FROM address_versions v WHERE v.rva = ?",
         (0x1050,)).fetchone()
     blob = row[0] if row else None
     got_hex = blob.hex() if isinstance(blob, (bytes, bytearray)) else None
     check("DEV: content_hash BLOB for rva 0x1050 round-trips to dump hex",
           dump_hash is not None and got_hex == dump_hash,
           "db=%s dump=%s" % ((got_hex or "")[:16], (dump_hash or "")[:16]))
-    # USER: 0x71a5a4 (lua_pcall, seed id 1000 -- curated, present in USER).
+    # USER: 0x71a5a4 (lua_pcall -- curated, present in USER).
     dump_hash_curated = dump_hash_for_rva(dump_dir, 0x71a5a4)
     urow = uc.execute(
-        "SELECT ev.content_hash FROM entity_versions ev WHERE ev.rva = ?",
+        "SELECT v.content_hash FROM address_versions v WHERE v.rva = ?",
         (0x71a5a4,)).fetchone()
     ublob = urow[0] if urow else None
     ugot_hex = ublob.hex() if isinstance(ublob, (bytes, bytearray)) else None
@@ -200,59 +187,48 @@ def run_checks(dump_dir, user_db, dev_db):
           dump_hash_curated is not None and ugot_hex == dump_hash_curated,
           "db=%s dump=%s" % ((ugot_hex or "")[:16], (dump_hash_curated or "")[:16]))
 
-    # --- 9b. STREAMLINE: USER is narrowed to curated entities only ---
-    # USER entities count must equal the count of distinct kcdx_ids touched by
-    # the curated overlay (= ~139 + minted curated-only entities). DEV stays
-    # bulk (the count check at #2 still asserts DEV >= functions + 6).
-    curated_ids = scalar(dc, "SELECT COUNT(DISTINCT kcdx_id) FROM kcdx_overlay")
-    u_ent = scalar(uc, "SELECT COUNT(*) FROM entities")
-    check("STREAMLINE: USER entities count == distinct curated kcdx_ids",
-          u_ent == curated_ids,
-          "USER entities=%d curated kcdx_ids=%d" % (u_ent, curated_ids))
-    u_ev = scalar(uc, "SELECT COUNT(*) FROM entity_versions")
-    check("STREAMLINE: USER entity_versions count == USER entities count",
-          u_ev == u_ent, "USER ev=%d entities=%d" % (u_ev, u_ent))
-    # The bulk 321K must NOT be in USER (the disjoint-purpose split).
-    u_bulk = scalar(uc, "SELECT COUNT(*) FROM entities WHERE kcdx_id BETWEEN 1 AND ?",
-                    (max(1, n_fn - curated_ids),))
-    # Sanity: an uncurated bulk RVA (0x1050) must not have an entity_versions row in USER.
+    # --- 8. STREAMLINE: USER narrowed to curated kcdx_ids only.
+    # address_names.id IS the kcdx_id (PK; one row per entity).
+    curated_ids = scalar(dc, "SELECT COUNT(*) FROM address_names")
+    u_av = scalar(uc, "SELECT COUNT(*) FROM address_versions")
+    check("STREAMLINE: USER address_versions count == address_names count",
+          u_av == curated_ids,
+          "USER address_versions=%d address_names=%d" % (u_av, curated_ids))
+    # Sanity: an uncurated bulk RVA (0x1050) must NOT have an address_versions row in USER.
     u_bulk_row = uc.execute(
-        "SELECT 1 FROM entity_versions WHERE rva = ?", (0x1050,)).fetchone()
+        "SELECT 1 FROM address_versions WHERE rva = ?", (0x1050,)).fetchone()
     check("STREAMLINE: USER does NOT contain bulk function rva 0x1050",
           u_bulk_row is None, "found a row" if u_bulk_row else "")
 
-    # --- 10. trigger exists in BOTH dbs ---
-    check("trg_pair_overlay_version exists in DEV",
-          "trg_pair_overlay_version" in triggers(dc), "")
-    check("trg_pair_overlay_version exists in USER",
-          "trg_pair_overlay_version" in triggers(uc), "")
+    # --- 9. End-to-end resolution: a curated name resolves to a single row
+    #        with kind+rva+signature (the path a plugin's target = "..." takes).
+    nm = "IConsole_GetCVar"
+    row = uc.execute("""
+        SELECT n.id, v.rva, v.signature
+          FROM address_names n
+          JOIN address_versions v ON v.kcdx_id = n.id
+                                  AND v.valid_through IS NULL
+         WHERE n.name = ?""", (nm,)).fetchone()
+    check("USER end-to-end: name=%r resolves to address+signature" % nm,
+          row is not None and row[1] is not None and row[2],
+          "got %s" % (row,))
 
-    # --- 11. no duplicate overlay_versions (trigger did NOT fire at baseline) ---
-    # one overlay_versions row per overlay at baseline; >139 would mean the
-    # trigger forked extra rows.
-    check("no extra kcdx_overlay_versions rows (trigger silent at baseline)",
-          n_ovv == n_ov, "ovv=%d overlay=%d" % (n_ovv, n_ov))
-    dup_ovv = scalar(dc,
-        "SELECT COUNT(*) FROM (SELECT overlay_id FROM kcdx_overlay_versions "
-        "GROUP BY overlay_id HAVING COUNT(*) > 1)")
-    check("no overlay has 2 kcdx_overlay_versions rows", dup_ovv == 0,
-          "overlays-with-2=%d" % dup_ovv)
+    # --- 10. FK sanity: every address_names.id has at least one address_versions row.
+    orphan_an = scalar(dc, """
+        SELECT COUNT(*) FROM address_names n
+        LEFT JOIN (SELECT DISTINCT kcdx_id FROM address_versions) v
+          ON v.kcdx_id = n.id
+        WHERE v.kcdx_id IS NULL""")
+    check("every address_names.id has >=1 address_versions row",
+          orphan_an == 0, "orphans=%d" % orphan_an)
 
-    # --- 12. FK sanity: ev.kcdx_id, overlay.kcdx_id, statements.kcdx_id resolve ---
-    orphan_ev = scalar(dc,
-        "SELECT COUNT(*) FROM entity_versions ev "
-        "LEFT JOIN entities e ON e.kcdx_id = ev.kcdx_id WHERE e.kcdx_id IS NULL")
-    check("every entity_versions.kcdx_id resolves to an entities row",
-          orphan_ev == 0, "orphans=%d" % orphan_ev)
-    orphan_ov = scalar(dc,
-        "SELECT COUNT(*) FROM kcdx_overlay o "
-        "LEFT JOIN entities e ON e.kcdx_id = o.kcdx_id WHERE e.kcdx_id IS NULL")
-    check("every kcdx_overlay.kcdx_id resolves to an entities row",
-          orphan_ov == 0, "orphans=%d" % orphan_ov)
-    orphan_st = scalar(dc,
-        "SELECT COUNT(*) FROM statements s "
-        "LEFT JOIN entities e ON e.kcdx_id = s.kcdx_id WHERE e.kcdx_id IS NULL")
-    check("every statements.kcdx_id (DEV) resolves to an entities row",
+    # Statements/edges FK to a kcdx_id present in DEV address_versions.
+    orphan_st = scalar(dc, """
+        SELECT COUNT(*) FROM statements s
+        LEFT JOIN (SELECT DISTINCT kcdx_id FROM address_versions) v
+          ON v.kcdx_id = s.kcdx_id
+        WHERE v.kcdx_id IS NULL""")
+    check("every statements.kcdx_id (DEV) resolves to an address_versions row",
           orphan_st == 0, "orphans=%d" % orphan_st)
 
     uc.close()
