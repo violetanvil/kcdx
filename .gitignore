@@ -79,3 +79,11 @@ tools/refdata-extractor/sandbox/v2/
 tools/refdata-extractor/sandbox/v1.backup/
 tools/refdata-extractor/sandbox/v2.backup/
 tools/refdata-extractor/sandbox/ground_truth.csv
+
+# data/reference{,-dev}/ -- generated SQLite DBs produced by
+# tools/refdata-extractor/python/import_to_sqlite.py from the local dump under
+# C:\kcdx-refdata\refdata-full-*. The READMEs are tracked (the schema doc); the
+# .sqlite blobs are derived artifacts that ship as release assets (USER) /
+# on-demand author download (DEV), never committed.
+data/reference/*.sqlite
+data/reference-dev/*.sqlite
