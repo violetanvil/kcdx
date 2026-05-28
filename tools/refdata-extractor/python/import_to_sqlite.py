@@ -11,6 +11,25 @@ PRODUCES TWO artifacts from one full-dump dir + the curated seed:
   - DEV DB   (<out>/reference-dev.sqlite, the author/on-demand download): the FULL
     set incl. statements + referenced_vars + call_edges -- the discovery surface.
 
+TWO MODES:
+  - UPDATE (default): the per-version incremental path. Reads the most-recent
+    version already in the DB, reads the game's on-disk version, and -- if the
+    on-disk version is newer -- runs the version-update import (append a new
+    game_versions row + the matcher's close/open of intervals). The DB is
+    append-only / updated in place (NOT rebuilt). The version-update APPEND itself
+    needs the cross-version matcher, which is separate, not-yet-built work; until
+    it lands, update mode resolves the version comparison and reports either
+    "already current" or "newer version -> matcher required (not yet implemented)".
+  - REBUILD (--rebuild): the from-scratch baseline build from a dump dir. Builds
+    the v1.5 baseline; also the path to use if the schema itself changes.
+
+THE ON-DISK VERSION SOURCE (verified): the game DLL carries NO PE version
+resource. The version is in <game>/whdlversions.json, which holds PER-CONFIGURATION
+build ids; the SHIPPED config is MasterMasterPGO (the live game runs from
+Bin/Win64MasterMasterSteamPGO/). The detector reads that config's versionId, whose
+build number (e.g. 1164953) is the game's own monotonic counter -> the ordinal
+(backfill-safe); tag = branch (release_1_5) + build -> "1.5.1164953".
+
 SCHEMA (LOCKED -- 9 entity/version tables + _dict_* lookups):
   modules, game_versions, entities, entity_versions, kcdx_overlay,
   kcdx_overlay_versions, meta, statements (DEV), referenced_vars (DEV),
@@ -306,6 +325,85 @@ def read_seed(seed_csv):
     for r in rd:
         rows.append(r)
     return rows
+
+
+# ---------------------------------------------------------------------------
+# On-disk game version detection (update mode).
+# ---------------------------------------------------------------------------
+# The shipped game config, as it appears in whdlversions.json versionId strings
+# (the live game runs from Bin/Win64MasterMasterSteamPGO/). The DLL has no PE
+# version resource; this JSON is the source of truth.
+SHIPPED_CONFIG_TOKEN = "MasterMasterPGO"
+
+
+def read_game_version(game_dir):
+    """Parse <game_dir>/whdlversions.json -> (build_ordinal:int, tag:str).
+
+    The JSON's Configurations[] carry PER-CONFIG versionId strings like
+    'kcd2\\release_1_5\\PC\\MasterMasterPGO\\kcd2_release_1_5_PC_MasterMasterPGO_1164953_7490'.
+    We select the MasterMasterPGO config (the shipped build), extract its branch
+    (release_1_5) and build number (1164953). Returns (1164953, '1.5.1164953').
+
+    Raises a clear error if the file/config/build is absent (do NOT guess a
+    version -- a wrong version would corrupt the append).
+    """
+    import json
+    import re
+
+    path = os.path.join(game_dir, "whdlversions.json")
+    if not os.path.isfile(path):
+        raise RuntimeError("whdlversions.json not found in %s (the game version "
+                           "source; the DLL has no version resource)" % game_dir)
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    configs = data.get("Configurations") or []
+    chosen = None
+    for c in configs:
+        vid = (((c.get("SelectedVersion") or {}).get("versionId")) or "")
+        if SHIPPED_CONFIG_TOKEN in vid:
+            chosen = vid
+            break
+    if chosen is None:
+        raise RuntimeError("no %s configuration in whdlversions.json (cannot "
+                           "determine the shipped game build)" % SHIPPED_CONFIG_TOKEN)
+
+    # versionId tail: ..._<MasterMasterPGO>_<build>_<sub>. Pull branch + build.
+    branch = None
+    pb = data.get("Preset") or {}
+    branch = ((pb.get("Branch") or {}).get("Name")) or None  # e.g. 'release_1_5'
+    m = re.search(SHIPPED_CONFIG_TOKEN + r"_(\d+)_\d+\b", chosen)
+    if not m:
+        m = re.search(SHIPPED_CONFIG_TOKEN + r"_(\d+)", chosen)
+    if not m:
+        raise RuntimeError("could not parse a build number from versionId %r" % chosen)
+    build = int(m.group(1))
+
+    # tag = dotted branch version + build, e.g. release_1_5 -> '1.5' -> '1.5.1164953'.
+    tag_prefix = None
+    if branch:
+        bm = re.search(r"(\d+)_(\d+)", branch)
+        if bm:
+            tag_prefix = "%s.%s" % (bm.group(1), bm.group(2))
+    tag = ("%s.%d" % (tag_prefix, build)) if tag_prefix else str(build)
+    return build, tag
+
+
+def db_latest_ordinal(db_path):
+    """Return the max game_versions.ordinal in an existing DB, or None if the DB
+    or table is absent."""
+    if not os.path.isfile(db_path):
+        return None
+    con = sqlite3.connect(db_path)
+    try:
+        has = con.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                          "AND name='game_versions'").fetchone()
+        if not has:
+            return None
+        row = con.execute("SELECT MAX(ordinal) FROM game_versions").fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
 
 
 # ---------------------------------------------------------------------------
@@ -669,18 +767,15 @@ def write_db(db_path, rows, dicts, tables, user_projection):
     return dict_entries
 
 
-def main():
-    if len(sys.argv) < 3:
-        print("usage: python import_to_sqlite.py <dump_dir> <out_dir>")
-        sys.exit(2)
-    dump_dir, out_dir = sys.argv[1], sys.argv[2]
+def run_rebuild(dump_dir, out_dir):
+    """REBUILD mode: from-scratch baseline build of both DBs from a dump dir."""
     os.makedirs(out_dir, exist_ok=True)
-
     user_db = os.path.join(out_dir, "reference.sqlite")
     dev_db = os.path.join(out_dir, "reference-dev.sqlite")
 
     bar = "=" * 70
     print(bar)
+    print(f"[import_to_sqlite] mode: REBUILD (from-scratch baseline)")
     print(f"[import_to_sqlite] dump: {dump_dir}")
     print(f"[import_to_sqlite] seed: {SEED_CSV}")
     print(bar)
@@ -713,6 +808,74 @@ def main():
     print(f"  functions={counts['functions']} curated_vtable={counts['curated_vtable']} "
           f"entities={counts['entities']}")
     print(bar)
+
+
+def run_update(out_dir, game_dir):
+    """UPDATE mode (default): detect whether the on-disk game is newer than the
+    DB and, if so, run the version-update append. The append needs the
+    cross-version matcher (separate, not-yet-built); until then this resolves the
+    comparison and reports the decision without mutating the DB."""
+    bar = "=" * 70
+    print(bar)
+    print(f"[import_to_sqlite] mode: UPDATE (default; per-version incremental)")
+    print(bar)
+
+    user_db = os.path.join(out_dir, "reference.sqlite")
+    dev_db = os.path.join(out_dir, "reference-dev.sqlite")
+
+    # 1. most-recent version in the DB.
+    db_ord = db_latest_ordinal(dev_db)
+    if db_ord is None:
+        db_ord = db_latest_ordinal(user_db)
+    if db_ord is None:
+        print("  no existing DB with a game_versions row in %s." % out_dir)
+        print("  -> nothing to update. Run with --rebuild <dump_dir> to build the "
+              "baseline first.")
+        return
+    print(f"  DB latest version ordinal: {db_ord}")
+
+    # 2. on-disk game version.
+    build, tag = read_game_version(game_dir)
+    print(f"  game on disk: ordinal={build} tag={tag}  (from whdlversions.json, "
+          f"{SHIPPED_CONFIG_TOKEN})")
+
+    # 3. compare.
+    if build <= db_ord:
+        print(f"  -> DB is already current (on-disk {build} <= DB {db_ord}). "
+              f"Nothing to do.")
+        return
+    print(f"  -> NEWER game version detected (on-disk {build} > DB {db_ord}).")
+    print("  -> The version-update APPEND requires the cross-version matcher "
+          "(re-identifying each entity across the change to extend or split its")
+    print("     interval). That matcher is separate, not-yet-implemented work. "
+          "No DB mutation performed.")
+    print("  -> When the matcher lands, this path will: append a game_versions "
+          "row, then for each entity extend the open interval (unchanged) or")
+    print("     close+open it (changed); the pairing trigger forks the curated "
+          "overlay-version rows automatically.")
+    sys.exit(3)   # distinct exit: "newer version, matcher required".
+
+
+def main():
+    args = sys.argv[1:]
+    rebuild = False
+    if args and args[0] == "--rebuild":
+        rebuild = True
+        args = args[1:]
+
+    if rebuild:
+        if len(args) < 2:
+            print("usage: python import_to_sqlite.py --rebuild <dump_dir> <out_dir>")
+            sys.exit(2)
+        run_rebuild(args[0], args[1])
+    else:
+        if len(args) < 2:
+            print("usage (default UPDATE mode): "
+                  "python import_to_sqlite.py <out_dir> <game_dir>")
+            print("       (rebuild):            "
+                  "python import_to_sqlite.py --rebuild <dump_dir> <out_dir>")
+            sys.exit(2)
+        run_update(args[0], args[1])
 
 
 if __name__ == "__main__":

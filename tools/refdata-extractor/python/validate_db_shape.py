@@ -230,13 +230,8 @@ def main():
     scratch = tempfile.mkdtemp(prefix="kcdx-dbshape-validate-")
     try:
         print("==> building both DBs from %s ..." % dump_dir, flush=True)
-        # Drive the real importer.
-        argv_save = sys.argv
-        sys.argv = ["import_to_sqlite.py", dump_dir, scratch]
-        try:
-            imp.main()
-        finally:
-            sys.argv = argv_save
+        # Drive the real importer's REBUILD path directly (CLI-independent).
+        imp.run_rebuild(dump_dir, scratch)
         user_db = os.path.join(scratch, "reference.sqlite")
         dev_db = os.path.join(scratch, "reference-dev.sqlite")
 
