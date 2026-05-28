@@ -209,8 +209,8 @@ std::string ExtractCfgValue(const std::string& cfgText, const char* key) {
 // The reference DB (refdb game_versions.tag) stores the build tag as
 // `<major>.<minor>.<build>` (e.g. "1.5.1164953"); we parse out that triplet
 // and drop the trailing `_<patch>`. The PE-walk pattern (find .rdata bounds
-// off the IMAGE_DOS_HEADER → IMAGE_NT_HEADERS64 → section table) mirrors the
-// idiom in ctor_probe.cpp's ResolveWhgameBounds.
+// off the IMAGE_DOS_HEADER → IMAGE_NT_HEADERS64 → section table) is the
+// standard PE-section walk used elsewhere in the engine.
 //
 // The byte scan is a hand-rolled loop (not <regex>) — Windows-internal char
 // scan is simpler + smaller and the pattern is a strict literal+digit shape.

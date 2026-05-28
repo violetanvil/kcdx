@@ -78,20 +78,24 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
                                            possible is right after WHGame maps.
 6  EngineHooksInstalled               B    hooks::Install (lua_pcall + update);
                                            MinHook live
-7  ModLoaderTakeoverArmed             B    [absorb] the C_ModManager SELECT detour
-                                           INSTALLED. Install is EARLY (right
-                                           after EngineHooksInstalled) so it wins
-                                           the race against CSystem::Init's call
-                                           to the original SELECT on the game's
-                                           main thread; the detour FIRES later,
-                                           inside CSystem::Init, after the worker
+7  CtorBracketInstalled               B    [absorb] the C_ModManager ctor bracket
+                                           INSTALLED — kcdx FULLY replaces the
+                                           native ctor (and the SELECT call
+                                           inside it), synthesizing the
+                                           C_ModManager itself. Install is
+                                           EARLY (right after EngineHooksInstalled)
+                                           so it wins the race against
+                                           CSystem::Init's call to the native
+                                           ctor on the game's main thread; the
+                                           bracket FIRES later, inside
+                                           CSystem::Init, after the worker
                                            thread reaches PluginsLoaded
 8  PluginsLoaded                      B    RegisterHandlers (Kind::Hook +
                                            Kind::Bytes) then DiscoverAndLoad;
                                            Plugin_Preload/Load fired. Plugins load
-                                           AFTER the SELECT detour install (race-
-                                           critical) but BEFORE the detour FIRES,
-                                           so the rebuilt enabled list reflects
+                                           AFTER the bracket install (race-
+                                           critical) but BEFORE the bracket FIRES,
+                                           so the kcdx enabled list reflects
                                            every loaded plugin
 9  EngineSubsystemsInit               B    save_load_hooks, serialization (after
                                            save_load) — advances LAST of the ctx-B
@@ -157,23 +161,26 @@ the zone split doesn't exist.
 
 The kcdx "absorb the KCD2 mod loader" feature (the absorb design, see
 [`mod-loader-absorb.md`](mod-loader-absorb.md)) slots in as:
-- **phase 7 `ModLoaderTakeoverArmed`** — the SELECT-phase detour
-  (`wh::C_ModManager` SELECT driver) is kcdx INFRASTRUCTURE (like
+- **phase 7 `CtorBracketInstalled`** — the ctor bracket on the
+  `wh::C_ModManager` constructor is kcdx INFRASTRUCTURE (like
   `hooks::Install`), NOT a load-order entry. INSTALL is EARLY (right after
   `EngineHooksInstalled`, before `RegisterHandlers` + `DiscoverAndLoad`) so it
-  wins the race against `CSystem::Init` calling the original SELECT on the
-  game's main thread. The detour FIRES later, inside `CSystem::Init`, AFTER the
-  worker thread reaches phase 8 `PluginsLoaded` — so the rebuilt enabled list
-  reflects every loaded plugin even though the detour was installed earlier.
+  wins the race against `CSystem::Init` calling the native ctor on the
+  game's main thread. The bracket FIRES later, inside `CSystem::Init`, AFTER the
+  worker thread reaches phase 8 `PluginsLoaded` — so the kcdx enabled list
+  reflects every loaded plugin even though the bracket was installed earlier.
+  Inside the bracket kcdx fully synthesizes the C_ModManager (vtable, sys,
+  modsDir CryString, the enabled-list vector triple, the init flag) and the
+  native ctor + the native SELECT are NEVER called.
 - **Asset-overlay entries** (a plugin's / mod's assets) ARE load-order entries,
-  applied THROUGH the takeover: kcdx, now owning SELECT, builds the engine's
-  enabled-mod list FROM the resolved load order — so a synthesized I_Mod record
-  for every enabled mod (vanilla pak mod + kcdx plugin alike) mounts via the
-  native MOUNT, in load-order order.
+  applied THROUGH the takeover: kcdx, now owning ctor construction, builds the
+  engine's enabled-mod list FROM the resolved load order — so a synthesized
+  I_Mod record for every enabled mod (vanilla pak mod + kcdx plugin alike)
+  mounts via the native MOUNT, in load-order order.
 - **Placement is confirmed in context B (worker thread).** A worker-thread
-  detour installed at this phase fires before `CSystem::Init` completes mod
-  selection — confirmed against the running binary — so phase 7 sits in context
-  B, not context A (the loader-lock / before_game machinery).
+  hook installed at this phase fires before `CSystem::Init` reaches the ctor —
+  confirmed against the running binary — so phase 7 sits in context B, not
+  context A (the loader-lock / before_game machinery).
 
 ## As-is (today, until the refactor lands)
 

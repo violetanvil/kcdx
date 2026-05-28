@@ -27,13 +27,17 @@
                                          // dev-mode probe (ctor capture + by-ID getter)
 #include "probes/fopen_override_probe.h" // pak-resolver probe (FOpen
                                          // read-fires + override semantics)
-#include "mod_absorb/select_detour.h"    // Mod-loader absorb: production SELECT
-                                         // detour (rebuilds the enabled list)
-#include "mod_absorb/ctor_probe.h"       // init-cycle-ownership step 1: TRANSIENT
-                                         // read-only ctor probe. Delete this
-                                         // include + the install call below
-                                         // when step 4 of init-cycle-ownership
-                                         // lands the kcdx-owned ctor bracket.
+#include "mod_absorb/select_detour.h"    // Worker-side enabled-list build +
+                                         // readiness event (the SELECT detour
+                                         // itself was retired when kcdx took
+                                         // full ownership of the ctor; only
+                                         // the build/signal entry points
+                                         // remain).
+#include "mod_absorb/ctor_bracket.h"     // Mod-loader absorb: production
+                                         // ctor bracket — kcdx FULLY replaces
+                                         // ModManager_ctor, synthesizing the
+                                         // C_ModManager and writing the
+                                         // kcdx-built enabled list directly.
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -207,57 +211,46 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // path (the failure return above precedes this).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
 
-    // TRANSIENT: init-cycle-ownership step 1 — read-only ctor probe. Installs
-    // a one-shot MinHook detour on wh::C_ModManager ctor (refdb curated name
-    // 'ModManager_ctor') that snapshots the resulting C_ModManager state to
-    // the dev log and forwards to the original unchanged. The probe answers
-    // the question "does the ctor write any field beyond what the refdb's
-    // 'ModManager_ctor' entry documents?" before a later step replaces the
-    // ctor + SELECT call entirely. Delete
-    // this call (and ctor_probe.{h,cpp}) when step 4 of init-cycle-ownership
-    // lands the kcdx-owned init bracket — at that point kcdx becomes the
-    // writer of C_ModManager state and there is nothing left to compare.
-    kcdx::mod_absorb::ctor_probe::Install();
-
-    // Create the SELECT-detour readiness event NOW — BEFORE InstallSelectDetour
-    // below. The detour goes live the moment InstallSelectDetour returns, and
-    // the game thread can reach HookedSelect within milliseconds (CSystem::Init
+    // Create the ctor-bracket readiness event NOW — BEFORE InstallCtorBracket
+    // below. The bracket goes live the moment InstallCtorBracket returns, and
+    // the game thread can reach HookedCtor within milliseconds (CSystem::Init
     // is on a different thread, ahead of this worker on a populated plugin
-    // tree). The wait gate in HookedSelect is `if (event) WaitForSingleObject(...)`
+    // tree). The wait gate in HookedCtor is `if (event) WaitForSingleObject(...)`
     // — if the event were created later (deferred to BuildEnabledListOnWorker),
     // a game-thread call arriving in the install→build window would observe
     // a null handle, skip the wait, and race the worker's build (empty
     // enabled list, zero mods mounted on a clean install with plugins).
-    // CreateReadyEvent + InstallSelectDetour are paired on this same worker
+    // CreateReadyEvent + InstallCtorBracket are paired on this same worker
     // thread; the event handle is owned end-to-end by the worker side.
     kcdx::mod_absorb::CreateReadyEvent();
 
-    // STEP 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
-    // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
-    // This INSTALLS the detour on the engine's mod-loader SELECT driver
-    // (wh::C_ModManager ModManager_Select, refdb curated name 'ModManager_Select'), here —
-    // EARLY (right after EngineHooksInstalled, before the lengthy
-    // RegisterHandlers + DiscoverAndLoad sequence below) because the engine's
-    // CSystem::Init thread races us: it calls ModManager_Select within a
-    // second or two of WHGame init, on a DIFFERENT thread than this worker.
-    // Installing the detour AFTER DiscoverAndLoad (which takes ~2 sec on a
-    // populated plugin tree) loses that race — the original SELECT runs before
-    // MinHook has our detour in place, and the takeover silently never fires
-    // (see docs/known-issues/step-1.5-init-reorder-broke-absorb-detour-race.md).
+    // STEP 7 (ctx B): CtorBracketInstalled — the production mod-loader
+    // takeover. kcdx IS the mod loader: it owns WHICH mods load and in what
+    // ORDER, AND it constructs the engine's C_ModManager itself. This
+    // INSTALLS a MinHook detour on the engine's wh::C_ModManager ctor (refdb
+    // curated name 'ModManager_ctor'), here — EARLY (right after
+    // EngineHooksInstalled, before the lengthy RegisterHandlers +
+    // DiscoverAndLoad sequence below) because the engine's CSystem::Init
+    // thread races us: it calls ModManager_ctor within a second or two of
+    // WHGame init, on a DIFFERENT thread than this worker. Installing the
+    // bracket AFTER DiscoverAndLoad (which takes ~2 sec on a populated
+    // plugin tree) loses that race — the native ctor runs before MinHook
+    // has our bracket in place, and the takeover silently never fires.
     //
     // INSTALL ≠ FIRE: install just registers the hook with MinHook (must be
     // EARLY, here). FIRE happens inside CSystem::Init (later, on the game's
     // main thread), AFTER DiscoverAndLoad finishes on this worker thread. So
-    // when HookedSelect runs, the original SELECT runs first (builds the native
-    // records + per-mod validation), THEN kcdx WHOLESALE-REPLACES the enabled-
-    // list vector with kcdx's rebuilt list — a synthesized I_Mod record for
-    // every enabled discovered mod (vanilla pak mods + kcdx plugins alike), in
-    // kcdx's resolved load order. By fire time, g_manifests + the pak-mod
-    // Registry are both populated. The native MOUNT runs verbatim over kcdx's
-    // list. PRODUCTION (no dev-mode gate) — this IS the feature.
-    // See docs/mod-loader-absorb.md "Step 4".
-    kcdx::mod_absorb::InstallSelectDetour();
-    kcdx::init::AdvanceTo(kcdx::init::InitPhase::ModLoaderTakeoverArmed);
+    // when HookedCtor runs, it WAITS on g_kcdxReadyEvent (signaled at the
+    // end of BuildEnabledListOnWorker below) then FULLY synthesizes the
+    // C_ModManager from scratch — kcdx allocates the 0x68 block via
+    // WHGame's allocator, writes the vtable + sys + modsDir CryString + the
+    // kcdx-built enabled list directly at +0x30/+0x38/+0x40, sets the init
+    // flag at +0x60, and returns. The native ctor + the native SELECT NEVER
+    // run. By fire time, g_manifests + the pak-mod Registry are both
+    // populated. The native MOUNT runs verbatim over kcdx's list.
+    // PRODUCTION (no dev-mode gate) — this IS the feature.
+    kcdx::mod_absorb::InstallCtorBracket();
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::CtorBracketInstalled);
 
     // Register the deferred-apply handlers for the registry Kinds the C++
     // plugin interfaces queue (Kind::Hook via kcdxHookInterface, Kind::Bytes
@@ -290,38 +283,36 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // it.)
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::PluginsLoaded);
 
-    // Build the rebuilt enabled I_Mod* list eagerly on THIS (worker) thread,
-    // then SetEvent the readiness event the SELECT-detour callback waits on.
-    // Decouples the BUILD from the FIRE: previously BuildEnabledList ran
-    // INSIDE HookedSelect on the game's main thread, blocking it for the
-    // construction time. Now the worker builds it once (here, after every
-    // resolved state is final — DiscoverAndLoad just finished + the pak-mod
-    // version gate already ran above) and the game-thread callback only WAITS
-    // and READS.
+    // Build the kcdx enabled I_Mod* list eagerly on THIS (worker) thread,
+    // then SetEvent the readiness event the ctor-bracket callback waits on.
+    // The build is decoupled from the bracket's fire: the worker builds the
+    // list once (here, after every resolved state is final — DiscoverAndLoad
+    // just finished + the pak-mod version gate already ran above) and the
+    // game-thread callback only WAITS and READS.
     //
     // Threading model: parallel by default, ONE explicit wait point at the
-    // SELECT detour callback. Measured on a populated plugin tree: the game
-    // thread reaches SELECT ~1-2s before the worker finishes the build, so
-    // the SELECT-detour callback's wait blocks for that interval. This is the
-    // expected steady-state on a populated tree, not exceptional. On a clean
-    // install with no plugins the worker is past SetEvent already and the
-    // wait returns immediately. INFINITE is correct: the worker WILL signal
+    // ctor-bracket callback. Measured on a populated plugin tree: the game
+    // thread reaches the ctor ~1-2s before the worker finishes the build, so
+    // the bracket's wait blocks for that interval. This is the expected
+    // steady-state on a populated tree, not exceptional. On a clean install
+    // with no plugins the worker is past SetEvent already and the wait
+    // returns immediately. INFINITE is correct: the worker WILL signal
     // unless it hangs entirely.
     //
     // The readiness event handle is created by CreateReadyEvent (above, BEFORE
-    // InstallSelectDetour) — by the time SELECT can fire, the wait gate is
+    // InstallCtorBracket) — by the time the ctor can fire, the wait gate is
     // already a non-null handle. This call only BUILDS + signals.
     //
     // Must run BEFORE save_load_hooks::Install so the worker's hot path
     // "install hooks -> discover plugins -> build enabled list -> signal
-    // readiness" is contiguous (the engine-fix detour install order is
-    // unchanged: InstallSelectDetour above stays at the race-critical early
-    // slot — only what RUNS inside the detour moves).
+    // readiness" is contiguous (the bracket install order is unchanged:
+    // InstallCtorBracket above stays at the race-critical early slot — only
+    // what RUNS inside the bracket reads this list).
     kcdx::mod_absorb::BuildEnabledListOnWorker();
 
     // STEP 8b (ctx B): EnabledListBuiltAndReady — the worker finished building
-    // the rebuilt enabled list and SetEvented g_kcdxReadyEvent. From here on,
-    // any HookedSelect call on the game's main thread reads g_enabledList
+    // the kcdx enabled list and SetEvented g_kcdxReadyEvent. From here on,
+    // any HookedCtor call on the game's main thread reads g_enabledList
     // without blocking; before this point, the game-thread callback (if it
     // races ahead) blocks on the wait until this phase is reached.
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EnabledListBuiltAndReady);

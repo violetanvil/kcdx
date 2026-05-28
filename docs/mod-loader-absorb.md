@@ -90,9 +90,11 @@ CryString and carries the header described above.
 
 ## Detour viability — the three closed gates (live)
 
-A log-only, observe-only SELECT detour (since superseded by the production
-`mod_absorb::InstallSelectDetour`, Step 4), wired at the `ModLoaderTakeoverArmed`
-init phase, resolved every gate the narrow takeover rested on:
+A log-only, observe-only SELECT detour (since superseded — first by a
+production SELECT detour, then by the kcdx-owned ctor bracket
+`mod_absorb::InstallCtorBracket`, which fully replaces the native ctor and
+the SELECT call inside it), wired at the `CtorBracketInstalled` init phase,
+resolved every gate the narrow takeover rested on:
 
 - **TIMING — ctx-B is in time.** The worker-thread detour FIRED
   (`select_fire`, worker tid) at `WHGame+0xDA104C` **before** `CSystem::Init`
@@ -525,27 +527,31 @@ without-slash form. This matches the shape a native record carries and the
 shape the native `OpenPacks('<path>/*.pak')` mount expects, regardless of how
 the source path's separators were spelled.
 
-**The SELECT detour** (`src/mod_absorb/select_detour.{h,cpp}`,
-`InstallSelectDetour`) is the production takeover. It detours the SELECT
-driver (`ModManager_Select`, Address Library id 3100). On fire it:
+**The ctor bracket** (`src/mod_absorb/ctor_bracket.{h,cpp}`,
+`InstallCtorBracket`) is the production takeover. It detours the
+`wh::C_ModManager` constructor (refdb curated name `ModManager_ctor`). On
+fire it:
 
-1. Calls the ORIGINAL SELECT first — which builds the native records AND runs
-   the per-mod validation pass. The list must not be mutated before that
-   completes; mutating it mid-validation crashes the engine's own walk.
-2. Builds the rebuilt list (`BuildEnabledList`) and copies it into a
-   kcdx-OWNED, process-lifetime array (a module-static `std::vector<void*>`).
-   This array — and the records it points at — must outlive MOUNT and every
-   downstream pass, so it is never built on the stack.
-3. WHOLESALE-REPLACES the enabled-list vector: repoints begin / end /
-   end-of-storage (`C_ModManager+0x30 / +0x38 / +0x40`) at the kcdx array. This
-   is a full replace, not an append — repointing the vector at kcdx storage,
-   AFTER the native validation pass already ran, is the mechanism the binary
-   accepts.
+1. Waits on a manual-reset readiness event (signaled by the worker thread at
+   the end of `BuildEnabledListOnWorker`, after every plugin has loaded and
+   the kcdx enabled list is built). INFINITE wait — typical wall-clock is
+   ~1–2 s on a populated tree; the wait returns immediately on a steady-state
+   boot where the worker is already past SetEvent.
+2. Allocates the 0x68-byte C_ModManager via WHGame's own allocator (so the
+   matching destructor's free() lines up).
+3. Synthesizes the C_ModManager itself: writes the vtable at +0x00, the
+   `CSystem* sys` pointer at +0x08, builds an in-place CryString at +0x10
+   for the modsDir (mirroring the native helpers), writes the enabled-list
+   vector triple (begin / end / end-of-storage) at +0x30 / +0x38 / +0x40
+   pointing at a kcdx-OWNED, process-lifetime `std::vector<void*>`, sets the
+   init flag byte at +0x60, and leaves the scanned-list slots (+0x18/+0x20/
+   +0x28) and the unused slots (+0x48/+0x50/+0x58) zero. The native ctor
+   and the native SELECT are NEVER called.
 
 The native MOUNT (id 3102) is NOT detoured — it runs verbatim over kcdx's
-rebuilt list, mounting each record's `<path>/*.pak` and running the
-localization / table-patch / mod.cfg passes per record. The mount is
-path-driven, so it treats a synthesized kcdx record exactly like a native one.
+list, mounting each record's `<path>/*.pak` and running the localization /
+table-patch / mod.cfg passes per record. The mount is path-driven, so it
+treats a synthesized kcdx record exactly like a native one.
 
 **The takeover self-validates each record before the repoint.** Before kcdx
 repoints the enabled-list vector at its rebuilt list, every synthesized record

@@ -84,32 +84,34 @@ enum class InitPhase {
     RefdbOpened,
     // [ctx B] hooks::Install (lua_pcall + update); MinHook live.
     EngineHooksInstalled,
-    // [ctx B] the production mod-loader SELECT detour INSTALLED
-    // (mod_absorb::InstallSelectDetour) — the takeover that rebuilds the enabled
-    // list. Install is EARLY (right after EngineHooksInstalled) so it wins the
-    // race against CSystem::Init's call to the original SELECT on the game's
-    // main thread — installing it later (e.g. after DiscoverAndLoad) loses that
-    // race (see docs/known-issues/step-1.5-init-reorder-broke-absorb-detour-
-    // race.md). The detour FIRE happens later, inside CSystem::Init, AFTER
-    // DiscoverAndLoad finishes on this worker thread — so the rebuilt enabled
-    // list reflects every loaded plugin. docs/init.md §"The mod-loader absorb".
-    ModLoaderTakeoverArmed,
+    // [ctx B] the kcdx-owned ctor bracket INSTALLED
+    // (mod_absorb::InstallCtorBracket) — kcdx FULLY replaces ModManager_ctor,
+    // synthesizing the C_ModManager from scratch and writing kcdx's resolved
+    // enabled list directly. Install is EARLY (right after EngineHooksInstalled)
+    // so it wins the race against CSystem::Init's call to the native ctor on
+    // the game's main thread — installing it later (e.g. after DiscoverAndLoad)
+    // loses that race. The bracket FIRES later, inside CSystem::Init, AFTER
+    // DiscoverAndLoad finishes on this worker thread — and waits on
+    // g_kcdxReadyEvent before reading the kcdx-built list, so by fire time the
+    // enabled list reflects every loaded plugin. docs/init.md §"The mod-loader
+    // absorb".
+    CtorBracketInstalled,
     // [ctx B] the Kind::Hook/Kind::Bytes deferred-apply handlers are registered
     // (before plugins), then DiscoverAndLoad runs; Plugin_Preload/Load fired.
-    // Advances AFTER ModLoaderTakeoverArmed: the SELECT detour install is
-    // earlier (race-critical), but plugins LOAD before the detour FIRES inside
+    // Advances AFTER CtorBracketInstalled: the bracket install is earlier
+    // (race-critical), but plugins LOAD before the bracket FIRES inside
     // CSystem::Init — so by fire time the enabled list reflects every plugin.
     PluginsLoaded,
     // [ctx B] the rebuilt enabled I_Mod* list is BUILT on the worker thread
     // (mod_absorb::BuildEnabledListOnWorker) and the readiness event the
-    // SELECT-detour callback waits on is SIGNALED. By this phase, when the
-    // SELECT-detour callback fires on the game's main thread, its
-    // WaitForSingleObject returns immediately (the list is already built); if
-    // the game thread races ahead of the worker, it blocks here briefly until
-    // the worker reaches this phase. Decouples the BUILD (worker) from the
-    // FIRE (game thread inside CSystem::Init) so the game-thread observable
-    // outcome is unchanged but the construction cost is moved off the game
-    // thread's hot path.
+    // ctor-bracket callback waits on is SIGNALED. By this phase, when the
+    // ctor-bracket callback fires on the game's main thread inside
+    // CSystem::Init, its WaitForSingleObject returns immediately (the list is
+    // already built); if the game thread races ahead of the worker, it blocks
+    // here briefly until the worker reaches this phase. Decouples the BUILD
+    // (worker) from the FIRE (game thread inside CSystem::Init) so the
+    // game-thread observable outcome is unchanged but the construction cost
+    // is moved off the game thread's hot path.
     EnabledListBuiltAndReady,
     // [ctx B] save_load_hooks, serialization (after save_load). Advances LAST of
     // the ctx-B group.

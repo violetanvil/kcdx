@@ -300,15 +300,16 @@ GAME MAIN THREAD (running CSystem::Init in parallel with worker)
    IF kcdx's own Workshop walk is simpler than RE'ing the engine's, this
    sub-step may not be needed. Settle at `/feature` start.
 4. `/feature` — implement, ordered:
-   - Worker thread restructure (remove SELECT detour install).
-   - `pak_mod_registry` Workshop walk.
-   - `InstallCtorBracket` + ctor hook callback + `g_kcdxReadyEvent`.
-   - Move enabled-list build to worker; signal event when done.
+   - ~~Worker thread restructure (remove SELECT detour install).~~ DONE step 4.
+   - `pak_mod_registry` Workshop walk. (separate follow-up; not in step 4.)
+   - ~~`InstallCtorBracket` + ctor hook callback + `g_kcdxReadyEvent`.~~ DONE step 4.
+   - ~~Move enabled-list build to worker; signal event when done.~~ DONE earlier; preserved.
    - Doc updates (restructure-plan.md, load-order.md) for the
-     `before_game` widening.
-   - New `InitPhase` enum entry for the bracket.
-   - Test plugin: bracket fired, kcdx's list installed, vanilla SELECT
-     never ran. Matrix row.
+     `before_game` widening. (deferred per round-2 decision 4.)
+   - ~~New `InitPhase` enum entry for the bracket.~~ DONE step 4
+     (`ModLoaderTakeoverArmed` renamed to `CtorBracketInstalled`).
+   - ~~Test plugin: bracket fired, kcdx's list installed, vanilla SELECT
+     never ran. Matrix row.~~ DONE step 4 (cap-61).
 
 ## RE findings (research-disassembly, 2026-05-27 — pre-build, all tier-1/2)
 
@@ -485,3 +486,53 @@ Not analyzed yet. Will be needed at game shutdown / save-reload — kcdx's
 replacement ctor must allocate via WHGame's allocator (`FUN_1804f7820`,
 above) so the destructor's matching `free` call lines up. Add to the
 RE worklist before step 4.
+
+## Status (post-step-4)
+
+Step 4 LANDED: the kcdx-owned ctor bracket
+(`src/mod_absorb/ctor_bracket.{h,cpp}`, `InstallCtorBracket`) replaces the
+prior SELECT detour in full. The native `ModManager_ctor` and the native
+SELECT it tail-calls are NEVER invoked; kcdx allocates the 0x68-byte
+C_ModManager via WHGame's own allocator (refdb name `WHGame_allocator`),
+writes the vtable at +0x00 (refdb name `C_ModManager_vtable`), the
+`CSystem* sys` at +0x08, the in-place modsDir CryString at +0x10 (built
+via refdb names `CryString_init_from_string` + `CryString_placement_construct`),
+the enabled-list vector triple at +0x30/+0x38/+0x40 pointing at the
+kcdx-owned process-lifetime `std::vector<void*>` (built earlier on the
+worker thread by `BuildEnabledListOnWorker`, with a `WaitForSingleObject`
+on the manual-reset readiness event), the init flag at +0x60, and leaves
+the scanned-list slots (+0x18/+0x20/+0x28) and unused slots
+(+0x48/+0x50/+0x58) zero. The 0x68 block is memset-zeroed before the
+field writes so the allocator's contract (uninitialized) does not leak
+garbage into the unused slots.
+
+Surface deltas in this step:
+
+- CREATED: `src/mod_absorb/ctor_bracket.{h,cpp}`.
+- CREATED: `test-plugins/cap-61-init-cycle-ownership/`.
+- DELETED: `src/mod_absorb/ctor_probe.{h,cpp}` (the transient
+  observation probe — its question is answered, comprehensive findings
+  preserved in `_research/init-cycle-recon/FINDINGS.md`).
+- MODIFIED: `src/mod_absorb/select_detour.{h,cpp}` — the
+  MinHook detour on `ModManager_Select` and its `HookedSelect`
+  callback are gone; the worker-side build + signal machinery
+  (`CreateReadyEvent`, `BuildEnabledListOnWorker`, the storage for
+  the enabled list + diagnostic entries + readiness event handle)
+  survives, with two new accessors (`GetReadyEventHandle`,
+  `GetEnabledListData`) that the bracket reads on the game thread.
+- MODIFIED: `src/dllmain.cpp` — `InstallSelectDetour()` and the
+  `ctor_probe::Install()` ride-along call are gone; the bracket
+  install slots into the same worker-thread position the SELECT
+  detour install held (right after `EngineHooksInstalled`,
+  immediately after `CreateReadyEvent`, before
+  `BuildEnabledListOnWorker`).
+- MODIFIED: `src/init_phase.{h,cpp}` — `ModLoaderTakeoverArmed`
+  renamed to `CtorBracketInstalled` (same ordinal position, same
+  advance site in dllmain).
+- MODIFIED: `CMakeLists.txt` — drops `ctor_probe.cpp`, adds
+  `ctor_bracket.cpp`.
+- MODIFIED: `docs/init.md`, `docs/mod-loader-absorb.md` — prescriptive
+  references updated for the bracket.
+
+The Steam Workshop walk in `pak_mod_registry` (round-2 decision 2) is a
+SEPARATE follow-up cycle, not in step 4.

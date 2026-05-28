@@ -1,0 +1,78 @@
+# CAP-61 — init-cycle ownership: the kcdx-owned ctor bracket replaces the
+# native ModManager_ctor in full.
+#
+# WHAT THIS PLUGIN PROVES (step 4 of init-cycle-ownership):
+#   The kcdx ctor bracket (mod_absorb::InstallCtorBracket /
+#   src/mod_absorb/ctor_bracket.cpp) FIRED — kcdx fully synthesized the
+#   C_ModManager itself (vtable, sys, modsDir CryString, the enabled-list
+#   vector triple at +0x30/+0x38/+0x40 pointing at kcdx's pre-built I_Mod*
+#   array, the init flag at +0x60) and the native ctor + native SELECT
+#   were NEVER called.
+#
+# AUTO-PASS, BOOT-ONLY CHECK (Lua-side falsifiable):
+#   At kcdx.on("ready") the plugin asserts that THIS plugin's own identity
+#   ("ts.cap_61_init_cycle_ownership") is NOT rejected via
+#   kcdx.plugin.is_rejected. PASS iff is_rejected == false. FAIL iff
+#   is_rejected == true (the plugin was zone- or manifest-gated rejected,
+#   in which case ready may not even fire for it) or if no result returns
+#   (the plugin never reached ready because the engine never reached the
+#   first update tick — which would imply the kcdx loader stalled on the
+#   bracket's wait, or the bracket itself crashed and the engine could not
+#   proceed past CSystem::Init).
+#
+#   The honest scope: a successful `ready` fire from a kcdx plugin proves
+#   the kcdx loader pipeline (DiscoverAndLoad → Plugin_Load → first update
+#   tick) completed end-to-end past the C_ModManager construction point.
+#   The bracket either fired (kcdx fully replaced the ctor) OR the install
+#   failed and the native ctor + SELECT ran and the engine proceeded
+#   anyway. The DISCRIMINATING signal between those two cases is in the
+#   engine log:
+#
+#     MOD_ABSORB ctor_bracket_installed   — install path live
+#     MOD_ABSORB ctor_bracket_complete    — bracket FIRED (the auto-pass)
+#     MOD_ABSORB ctor_bracket_failed      — bracket aborted (FAIL)
+#     MOD_ABSORB ctor_bracket_install_failed — install never armed (FAIL)
+#
+#   The agent reads those lines from kcdx-dev.log after the launch. The
+#   Lua-side row pins the AUTO-DETECTABLE "ready fired for the plugin
+#   that depends on the C_ModManager being constructed" claim; the log
+#   pin records the bracket-fired-vs-native-fallback discrimination.
+#
+# FALSIFIABLE: a regression that breaks the bracket install OR the bracket
+# callback OR the worker-side build flips this row to FAIL via:
+#   - install failure → `ctor_bracket_install_failed` in the log; the
+#     readiness event signals normally but the native ctor runs, kcdx
+#     plugins still load → kcdx.on("ready") still fires → Lua row PASSES
+#     even though the bracket didn't fire. The agent catches this from
+#     the log grep, not the Lua row.
+#   - bracket runtime crash (allocator returns null, refdb miss, AV in
+#     CryString helpers) → the engine cannot construct the C_ModManager
+#     → CSystem::Init aborts → no first update tick → kcdx.on("ready")
+#     never fires → THIS plugin never reports → the row times out as
+#     PENDING in the suite (the genuine catastrophe signal).
+#   - readiness event never signals (worker thread hung) → HookedCtor
+#     waits INFINITE → CSystem::Init blocks → game hangs → user kills
+#     it → no `suite: X/Y passing` line in the log → matrix row stays
+#     PENDING. The agent catches this from the no-log state.
+#
+# ZONE-COMPATIBLE BY OMISSION:
+#   No [load_order] table → defaults after_game. Every capability the
+#   plugin uses (kcdx.on, kcdx.plugin.is_rejected, kcdx.test.report,
+#   kcdx.log.*) is RequireZone::Either, so the plugin is itself NOT
+#   rejected — the prerequisite for it to run + report at all.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_61_init_cycle_ownership"
+display_name        = "CAP-61 init-cycle ownership (ctor bracket)"
+author              = "ts"
+description         = "At kcdx.on('ready') asserts kcdx.plugin.is_rejected(self) == false — proving the kcdx loader pipeline reached the first update tick end-to-end past the C_ModManager construction point. The bracket-fired-vs-native discrimination (which path actually constructed the C_ModManager) is recorded by the agent post-launch from the MOD_ABSORB ctor_bracket_* log lines: ctor_bracket_complete = bracket fired; ctor_bracket_failed / ctor_bracket_install_failed = bracket inactive (the native path ran instead)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-61-bracket-reached-ready"]
+
+[entrypoints]
+lua = "plugin.lua"
