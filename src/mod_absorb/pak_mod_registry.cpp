@@ -195,7 +195,9 @@ void DiscoverWorkshop(const fs::path& workshopRoot) {
         // Workshop subscriptions, is a valid install state. Info-log the skip
         // with the reason so the discovery funnel is traceable.
         const char* reason = workshopRoot.empty()
-            ? "Steam not installed or workshop dir not on disk"
+            ? "KCD2 is not a Steam install (no Steam library detected via "
+              "filesystem walk) — Steam Workshop content is not applicable "
+              "for this install"
             : "workshop root absent or not a directory";
         LOG_INFO_KV("MOD_ABSORB", "discover_workshop_skipped",
             kcdx::log::KV("path", workshopRoot.string()),

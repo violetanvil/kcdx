@@ -34,6 +34,17 @@ bool     g_loaded = false;   // true only after schema + version both validated.
 int64_t  g_gameVersionId = 0;
 int64_t  g_gameVersionOrdinal = 0;
 
+// Version-mismatch mode flag. Set true at Open() when the running build's
+// version tag is absent from the game_versions table (no_game_version_row).
+// In mismatch mode the connection stays OPEN: resolves use only the
+// OPEN-interval rows (valid_through IS NULL) — the "latest verified" semantic —
+// instead of the ordinal-bounded covering-interval predicate. A plain bool
+// (not std::atomic) — the existing module-state pattern in this TU is plain
+// statics (g_db / g_loaded / the ordinals / the dict maps), all single-threaded
+// per the THREADSAFE=2 contract documented in refdb.h (Open and every resolve
+// run on the worker thread).
+bool     g_versionMismatchMode = false;
+
 // Dictionaries loaded once at Open() (id → val). The dicts are tiny
 // (single-digit row counts); an in-memory map avoids a JOIN per resolve and
 // keeps the resolution SQL flat. Chosen over per-query dict JOINs for that
@@ -261,20 +272,41 @@ bool Open() {
     }
 
     // Find the running build's version row. The covering-interval predicate
-    // compares ordinals, so the running ordinal must be known.
+    // compares ordinals when a row IS found; when the row is ABSENT (this
+    // engine running against a build the shipped reference.sqlite has not
+    // catalogued yet) the connection stays open in version-mismatch mode —
+    // resolves fall back to the OPEN-interval rows (valid_through IS NULL),
+    // i.e. the latest verified addresses, regardless of when they became
+    // valid. WARN (not ERROR) — the boot continues; plugins try to apply
+    // with those addresses; per-resolve failures remain fail-loud at the
+    // install site (the existing pattern), so a stale row that does not
+    // survive the on-disk hash check is rejected then with its own log line.
+    //
+    // The schema_version_mismatch and db_not_loaded paths above are still
+    // hard fails (the DB is structurally unreadable). Only the
+    // no_game_version_row case is now non-fatal.
     const std::string& tag = kcdx::plugins::g_runtimeGameVersionString;
     if (tag.empty() || !ResolveRunningGameVersion(tag)) {
-        LOG_ERROR_KV(kCategory, "open_failed",
+        g_versionMismatchMode = true;
+        g_gameVersionId = 0;
+        g_gameVersionOrdinal = 0;
+        LOG_WARN_KV(kCategory, "version_mismatch_mode",
             log::KV::BareStr("reason", "no_game_version_row"),
             log::KV("path", dbPathUtf8),
             log::KV("running_game_version", tag.empty() ? "(undetected)" : tag.c_str()),
             log::KV::BareStr("detail",
                 "the running game build's version tag is not present in "
-                "game_versions — this reference.sqlite was not built for the "
-                "running KCD2 version, so no covering interval can be selected; "
-                "install the reference.sqlite that matches this game build"));
-        Close();
-        return false;
+                "game_versions — proceeding with the OPEN interval rows "
+                "(valid_through IS NULL); resolves will use the latest "
+                "verified addresses regardless of version match. Plugin "
+                "failures at the individual resolve site remain fail-loud."));
+        g_loaded = true;
+        LOG_INFO_KV(kCategory, "opened",
+            log::KV("path", dbPathUtf8),
+            log::KV("schema_version", (long long)schemaVersion),
+            log::KV("game_version", tag.empty() ? "(undetected)" : tag.c_str()),
+            log::KV::BareStr("mode", "version_mismatch (open-interval rows only)"));
+        return true;
     }
 
     g_loaded = true;
@@ -304,11 +336,19 @@ NameResolution ResolveByName(const std::string& name) {
     // ordinals. status is gated to "verified" via its dict id (resolved at
     // Open()); only verified rows resolve at runtime.
     //
+    // VERSION-MISMATCH FALLBACK: when the running build's tag is not in
+    // game_versions (Open() set g_versionMismatchMode = true), there is no
+    // running ordinal to compare against. The resolver instead selects rows
+    // whose valid_through IS NULL — the OPEN-interval rows — yielding the
+    // "latest verified" facts the DB carries for each entity. The plugin's
+    // own per-resolve survival check (on-disk content_hash comparison) still
+    // rejects a stale row whose code has moved.
+    //
     // Returned columns: kcdx_id, rva, ev.value, ev.content_hash, kind(dict id),
     // ovv.signature, ovv.offset, ovv.vtable_slot, status(dict id), ev.length.
     // ev.length is appended LAST (column 9) so the existing 0..8 indices below
     // are unchanged — the survival check needs the span the content_hash covers.
-    static const char* kSql =
+    static const char* kSqlOrdinal =
         "SELECT o.kcdx_id, ev.rva, ev.value, ev.content_hash, o.kind, "
         "       ovv.signature, ovv.offset, ovv.vtable_slot, ovv.status, "
         "       ev.length "
@@ -328,9 +368,23 @@ NameResolution ResolveByName(const std::string& name) {
         // load-bearing for the current DB.
         "ORDER BY (ovv.status = ?) DESC "
         "LIMIT 1;";
+    static const char* kSqlOpenOnly =
+        "SELECT o.kcdx_id, ev.rva, ev.value, ev.content_hash, o.kind, "
+        "       ovv.signature, ovv.offset, ovv.vtable_slot, ovv.status, "
+        "       ev.length "
+        "FROM kcdx_overlay o "
+        "JOIN entity_versions ev ON ev.kcdx_id = o.kcdx_id "
+        "JOIN kcdx_overlay_versions ovv ON ovv.overlay_id = o.id "
+        "WHERE o.name = ? "
+        "  AND ev.valid_through IS NULL "
+        "  AND ovv.valid_through IS NULL "
+        "ORDER BY (ovv.status = ?) DESC "
+        "LIMIT 1;";
 
     sqlite3_stmt* st = nullptr;
-    int rc = sqlite3_prepare_v2(g_db, kSql, -1, &st, nullptr);
+    int rc = sqlite3_prepare_v2(g_db,
+        g_versionMismatchMode ? kSqlOpenOnly : kSqlOrdinal,
+        -1, &st, nullptr);
     if (rc != SQLITE_OK) {
         LOG_ERROR_KV(kCategory, "resolve_name_failed",
             log::KV::BareStr("reason", "query_error"),
@@ -340,11 +394,15 @@ NameResolution ResolveByName(const std::string& name) {
         return r;
     }
     sqlite3_bind_text(st, 1, name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(st, 2, g_gameVersionOrdinal);
-    sqlite3_bind_int64(st, 3, g_gameVersionOrdinal);
-    sqlite3_bind_int64(st, 4, g_gameVersionOrdinal);
-    sqlite3_bind_int64(st, 5, g_gameVersionOrdinal);
-    sqlite3_bind_int64(st, 6, g_verifiedStatusId);  // ORDER BY verified-first.
+    if (g_versionMismatchMode) {
+        sqlite3_bind_int64(st, 2, g_verifiedStatusId);  // ORDER BY verified-first.
+    } else {
+        sqlite3_bind_int64(st, 2, g_gameVersionOrdinal);
+        sqlite3_bind_int64(st, 3, g_gameVersionOrdinal);
+        sqlite3_bind_int64(st, 4, g_gameVersionOrdinal);
+        sqlite3_bind_int64(st, 5, g_gameVersionOrdinal);
+        sqlite3_bind_int64(st, 6, g_verifiedStatusId);  // ORDER BY verified-first.
+    }
 
     rc = sqlite3_step(st);
     if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
@@ -463,21 +521,29 @@ NameResolution DiagnoseNameMiss(const std::string& name) {
         return miss;
     }
 
-    // Name exists. Is there a covering entity_versions interval?
+    // Name exists. Is there a covering entity_versions interval? In
+    // version-mismatch mode there is no running ordinal — check for an
+    // open-interval row instead (the same "latest verified" relaxation the
+    // main query uses).
     bool hasEntityVersion = false;
     {
         sqlite3_stmt* st = nullptr;
-        if (sqlite3_prepare_v2(g_db,
-                "SELECT 1 FROM entity_versions ev "
-                "JOIN game_versions f ON f.id = ev.valid_from "
-                "LEFT JOIN game_versions t ON t.id = ev.valid_through "
-                "WHERE ev.kcdx_id = ? "
-                "  AND f.ordinal <= ? AND (ev.valid_through IS NULL OR t.ordinal >= ?) "
-                "LIMIT 1;",
-                -1, &st, nullptr) == SQLITE_OK) {
+        const char* kEvSql = g_versionMismatchMode
+            ? "SELECT 1 FROM entity_versions ev "
+              "WHERE ev.kcdx_id = ? AND ev.valid_through IS NULL "
+              "LIMIT 1;"
+            : "SELECT 1 FROM entity_versions ev "
+              "JOIN game_versions f ON f.id = ev.valid_from "
+              "LEFT JOIN game_versions t ON t.id = ev.valid_through "
+              "WHERE ev.kcdx_id = ? "
+              "  AND f.ordinal <= ? AND (ev.valid_through IS NULL OR t.ordinal >= ?) "
+              "LIMIT 1;";
+        if (sqlite3_prepare_v2(g_db, kEvSql, -1, &st, nullptr) == SQLITE_OK) {
             sqlite3_bind_int64(st, 1, kcdxId);
-            sqlite3_bind_int64(st, 2, g_gameVersionOrdinal);
-            sqlite3_bind_int64(st, 3, g_gameVersionOrdinal);
+            if (!g_versionMismatchMode) {
+                sqlite3_bind_int64(st, 2, g_gameVersionOrdinal);
+                sqlite3_bind_int64(st, 3, g_gameVersionOrdinal);
+            }
             hasEntityVersion = (sqlite3_step(st) == SQLITE_ROW);
             sqlite3_finalize(st);
         }
@@ -522,7 +588,12 @@ IdResolution ResolveById(uint64_t kcdx_id) {
     // signature (signature_is_floor_estimate stays true).
     // ev.length appended LAST (column 6) so the existing 0..5 indices below are
     // unchanged — the survival check needs the span the content_hash covers.
-    static const char* kSql =
+    //
+    // VERSION-MISMATCH FALLBACK: same shape as ResolveByName — when the
+    // running build's tag is not in game_versions, the resolver selects the
+    // OPEN-interval row (valid_through IS NULL) instead of the
+    // ordinal-bounded covering interval.
+    static const char* kSqlOrdinal =
         "SELECT ev.rva, ev.value, ev.content_hash, ev.signature, "
         "       ev.observed_arg_slots, ev.caller_reg_arg_count, ev.length "
         "FROM entity_versions ev "
@@ -531,9 +602,17 @@ IdResolution ResolveById(uint64_t kcdx_id) {
         "WHERE ev.kcdx_id = ? "
         "  AND f.ordinal <= ? AND (ev.valid_through IS NULL OR t.ordinal >= ?) "
         "LIMIT 1;";
+    static const char* kSqlOpenOnly =
+        "SELECT ev.rva, ev.value, ev.content_hash, ev.signature, "
+        "       ev.observed_arg_slots, ev.caller_reg_arg_count, ev.length "
+        "FROM entity_versions ev "
+        "WHERE ev.kcdx_id = ? AND ev.valid_through IS NULL "
+        "LIMIT 1;";
 
     sqlite3_stmt* st = nullptr;
-    int rc = sqlite3_prepare_v2(g_db, kSql, -1, &st, nullptr);
+    int rc = sqlite3_prepare_v2(g_db,
+        g_versionMismatchMode ? kSqlOpenOnly : kSqlOrdinal,
+        -1, &st, nullptr);
     if (rc != SQLITE_OK) {
         LOG_ERROR_KV(kCategory, "resolve_id_failed",
             log::KV::BareStr("reason", "query_error"),
@@ -543,8 +622,10 @@ IdResolution ResolveById(uint64_t kcdx_id) {
         return r;
     }
     sqlite3_bind_int64(st, 1, static_cast<sqlite3_int64>(kcdx_id));
-    sqlite3_bind_int64(st, 2, g_gameVersionOrdinal);
-    sqlite3_bind_int64(st, 3, g_gameVersionOrdinal);
+    if (!g_versionMismatchMode) {
+        sqlite3_bind_int64(st, 2, g_gameVersionOrdinal);
+        sqlite3_bind_int64(st, 3, g_gameVersionOrdinal);
+    }
 
     rc = sqlite3_step(st);
     if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
@@ -614,6 +695,7 @@ void Close() {
     g_gameVersionId = 0;
     g_gameVersionOrdinal = 0;
     g_verifiedStatusId = -1;
+    g_versionMismatchMode = false;
     g_kindDict.clear();
     g_statusDict.clear();
 }

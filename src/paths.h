@@ -95,24 +95,39 @@ std::filesystem::path EngineDataDirPath();
 // (e.g. system.cfg's wh_sys_version, read by the unified version gate).
 std::filesystem::path GameRootDirPath();
 
+// The Steam library root that contains the KCD2 install — the directory
+// holding both steamapps/ and libraryfolder.vdf. Detection is a filesystem
+// walk from GameRootDirPath: KCD2 sits at <lib>/steamapps/common/
+// KingdomComeDeliverance2/, so three parent_path() climbs land on <lib>;
+// the presence of <lib>/libraryfolder.vdf confirms it is a Steam library
+// root. Returns empty if KCD2 was not installed via Steam (Epic / GOG /
+// standalone — those install layouts do not produce a libraryfolder.vdf
+// at that ancestor). No registry I/O.
+std::filesystem::path SteamLibraryRoot();
+
+// True iff KCD2 is installed via Steam (SteamLibraryRoot() returns
+// non-empty). The single signal Workshop callers need to decide whether
+// Workshop content even applies.
+bool IsSteamInstall();
+
 // Steam Workshop content directory for KCD2's appid (1771300):
 //   <Steam>/steamapps/workshop/content/1771300/
 //
-// The Steam install root is located via the registry (HKLM\Software\Valve\Steam
-// 'InstallPath', falling back to HKCU\Software\Valve\Steam 'SteamPath'). Each
-// immediate subdirectory of the returned path is a Steam Workshop item folder
-// keyed by the Workshop file ID (e.g. 3728570527/), and contains a vanilla pak
-// mod (mod.manifest + Data/*.pak).
+// The Steam library root is located via SteamLibraryRoot() — a filesystem
+// walk that looks for libraryfolder.vdf in KCD2's library ancestor (NO
+// registry I/O). Each immediate subdirectory of the returned path is a
+// Steam Workshop item folder keyed by the Workshop file ID (e.g.
+// 3728570527/), and contains a vanilla pak mod (mod.manifest + Data/*.pak).
 //
 // Returns an EMPTY string in any of these cases — none is an error, all are
-// valid installs (a player without Steam, a clean Steam install with no KCD2
-// Workshop subscriptions, KCD2 installed via non-Steam means):
-//   - Steam is not installed on this system (neither registry key resolves).
+// valid installs (a player on a non-Steam install — Epic, GOG, standalone —
+// or a Steam install with no KCD2 Workshop subscriptions):
+//   - KCD2 is not a Steam install (libraryfolder.vdf absent in the expected
+//     ancestor; the caller logs the skip with that reason).
 //   - The composed workshop content path does not exist on disk.
 //
-// A non-empty return is a directory_iterator-walkable path WITH a trailing path
-// separator. Re-resolves the registry on every call; the lookup is cheap and the
-// registry is the source of truth, so no inter-launch caching.
+// A non-empty return is a directory_iterator-walkable path WITH a trailing
+// path separator. The filesystem walk is cheap; no inter-launch caching.
 std::wstring WorkshopContentDir();
 
 }  // namespace kcdx::paths

@@ -159,80 +159,56 @@ fs::path EngineDataDirPath() {
     return p;
 }
 
-namespace {
+fs::path SteamLibraryRoot() {
+    // KCD2's game root is <lib>/steamapps/common/KingdomComeDeliverance2/.
+    // Three parent_path() climbs land on the library root:
+    //   KingdomComeDeliverance2 -> common -> steamapps -> <lib>
+    // The library root is what carries libraryfolder.vdf (Steam writes this
+    // file in every library root on disk — present on the install drive
+    // regardless of where Steam itself lives). Its presence is the
+    // filesystem-side "this game is part of a Steam library" signal; absence
+    // is the "not a Steam install" signal (Epic / GOG / standalone). No
+    // positive Epic/GOG detection is needed — the consumer only cares
+    // whether Workshop content applies.
+    fs::path gameRoot = GameRootDirPath();
+    if (gameRoot.empty()) return {};
 
-// Read a REG_SZ value from a registry key under HKEY_LOCAL_MACHINE or
-// HKEY_CURRENT_USER. Returns the wide-string value on success, or an empty
-// string if the key/value is absent or the value type is not REG_SZ /
-// REG_EXPAND_SZ. The KCD2 appid (1771300) workshop dir composition is the only
-// caller, so this stays here as a TU-private helper instead of bloating the
-// public paths.h surface.
-std::wstring ReadRegistryStringValue(HKEY rootKey, const wchar_t* subKey,
-                                     const wchar_t* valueName) {
-    HKEY hKey = nullptr;
-    LONG status = RegOpenKeyExW(rootKey, subKey, 0, KEY_QUERY_VALUE | KEY_WOW64_32KEY, &hKey);
-    if (status != ERROR_SUCCESS) {
-        // Steam's registry layout lives under WOW6432Node on a 64-bit OS for
-        // HKLM but is plain on HKCU. Retry without the 32-bit view flag if the
-        // first probe missed; this covers both placements.
-        status = RegOpenKeyExW(rootKey, subKey, 0, KEY_QUERY_VALUE, &hKey);
-        if (status != ERROR_SUCCESS) return {};
-    }
-    DWORD type = 0;
-    DWORD cbData = 0;
-    status = RegQueryValueExW(hKey, valueName, nullptr, &type, nullptr, &cbData);
-    if (status != ERROR_SUCCESS ||
-        (type != REG_SZ && type != REG_EXPAND_SZ) ||
-        cbData == 0) {
-        RegCloseKey(hKey);
+    fs::path libRoot = gameRoot
+        .parent_path()   // common
+        .parent_path()   // steamapps
+        .parent_path();  // <lib>
+    if (libRoot.empty()) return {};
+
+    std::error_code ec;
+    fs::path marker = libRoot / L"libraryfolder.vdf";
+    if (!fs::exists(marker, ec) || !fs::is_regular_file(marker, ec)) {
         return {};
     }
-    // cbData is the byte size INCLUDING the (possibly-absent) null terminator.
-    // Size the buffer one wchar larger than the reported size so a value Steam
-    // wrote WITHOUT a trailing NUL still leaves the tail wchar zero — the
-    // strip-trailing-NULs loop then yields the right string either way.
-    std::wstring buf;
-    const DWORD bufWchars = (cbData / sizeof(wchar_t)) + 1;
-    buf.resize(bufWchars, L'\0');
-    DWORD cbBuf = bufWchars * static_cast<DWORD>(sizeof(wchar_t));
-    status = RegQueryValueExW(hKey, valueName, nullptr, &type,
-                              reinterpret_cast<LPBYTE>(buf.data()), &cbBuf);
-    RegCloseKey(hKey);
-    if (status != ERROR_SUCCESS) return {};
-    // Strip trailing NULs (RegQueryValueExW may or may not include them).
-    while (!buf.empty() && buf.back() == L'\0') buf.pop_back();
-    return buf;
+    return libRoot;
 }
 
-}  // namespace
+bool IsSteamInstall() {
+    return !SteamLibraryRoot().empty();
+}
 
 std::wstring WorkshopContentDir() {
-    // Try HKLM first (Steam's installer writes here on most 64-bit systems),
-    // then HKCU (per-user installs / non-admin setups). The value-name differs
-    // between the two paths Steam writes:
-    //   HKLM\Software\Valve\Steam     -> 'InstallPath'
-    //   HKCU\Software\Valve\Steam     -> 'SteamPath'
-    // (KEY_WOW64_32KEY handles the WOW6432Node redirection for HKLM on 64-bit OS.)
-    std::wstring steamRoot =
-        ReadRegistryStringValue(HKEY_LOCAL_MACHINE,
-                                L"Software\\Valve\\Steam",
-                                L"InstallPath");
-    if (steamRoot.empty()) {
-        steamRoot = ReadRegistryStringValue(HKEY_CURRENT_USER,
-                                            L"Software\\Valve\\Steam",
-                                            L"SteamPath");
-    }
-    if (steamRoot.empty()) return {};
+    // KCD2 Steam appid is 1771300. Workshop subscriptions land at
+    //   <lib>/steamapps/workshop/content/1771300/
+    // one immediate subdirectory per Workshop file ID (the directory NAME
+    // is the Workshop ID).
+    //
+    // If KCD2 is not a Steam install (no libraryfolder.vdf in the expected
+    // ancestor — see SteamLibraryRoot), short-circuit empty. The caller
+    // already logs the skip with the "not a Steam install" reason; this
+    // function emits no log of its own. If the library is Steam but the
+    // composed workshop path is not present on disk (the player has no KCD2
+    // Workshop subscriptions yet), also return empty — every absence is a
+    // valid install state, not an error.
+    fs::path lib = SteamLibraryRoot();
+    if (lib.empty()) return {};
 
-    // Compose <Steam>/steamapps/workshop/content/1771300/. The KCD2 Steam
-    // appid is 1771300 (verified in-store). Workshop subscriptions Steam
-    // downloads land here, one immediate subdirectory per Workshop file ID
-    // (the subdirectory NAME is the Workshop ID).
-    fs::path workshopPath(steamRoot);
-    workshopPath /= L"steamapps";
-    workshopPath /= L"workshop";
-    workshopPath /= L"content";
-    workshopPath /= L"1771300";
+    fs::path workshopPath = lib / L"steamapps" / L"workshop"
+                                / L"content" / L"1771300";
 
     std::error_code ec;
     if (!fs::exists(workshopPath, ec) || !fs::is_directory(workshopPath, ec)) {

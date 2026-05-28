@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -17,7 +18,7 @@
 #include "load_order.h"
 #include "log.h"
 #include "messaging.h"
-#include "paths.h"  // GameRootDirPath() — locate <game-root>/system.cfg for wh_sys_version
+#include "paths.h"
 #include "pe_helpers.h"
 #include "version_compat.h"  // shared game-version compat decision (pak-mod path shares it)
 #include "zone_gate.h"  // RejectReason() — distinguish engine-reject from user-disabled in skip-logs
@@ -203,50 +204,138 @@ std::string ExtractCfgValue(const std::string& cfgText, const char* key) {
     return {};
 }
 
-// Detect the running KCD2 version STRING from <game-root>/system.cfg's
-// wh_sys_version. The unified <supports> string-prefix-wildcard gate
-// (version_compat::DecideGameVersionCompatString) matches against this.
-// Graceful-degrade: "" on any failure (file absent/unreadable or no
-// wh_sys_version line) + a WARN naming system.cfg — mirrors the integer
-// path's "loading anyway", NOT a hard fail.
+// Detect the running KCD2 version STRING by pattern-scanning WHGame.dll's
+// .rdata for the canonical engine build tag `release_<major>_<minor>_<build>_<patch>`.
+// The reference DB (refdb game_versions.tag) stores the build tag as
+// `<major>.<minor>.<build>` (e.g. "1.5.1164953"); we parse out that triplet
+// and drop the trailing `_<patch>`. The PE-walk pattern (find .rdata bounds
+// off the IMAGE_DOS_HEADER → IMAGE_NT_HEADERS64 → section table) mirrors the
+// idiom in ctor_probe.cpp's ResolveWhgameBounds.
+//
+// The byte scan is a hand-rolled loop (not <regex>) — Windows-internal char
+// scan is simpler + smaller and the pattern is a strict literal+digit shape.
+// Graceful-degrade: "" + WARN on failure (WHGame not mapped, or .rdata yields
+// no match) — the unified <supports> gate then treats the runtime version as
+// unknown and loads mods/plugins anyway (same shape as the integer path).
 std::string DetectRuntimeGameVersionString() {
-    const fs::path cfgPath = paths::GameRootDirPath() / L"system.cfg";
-
-    std::error_code ec;
-    if (!fs::exists(cfgPath, ec)) {
-        LOG_WARN_KV("VERSION", "system.cfg not found — version-string gate "
-                    "(<supports>) will treat the runtime version as unknown "
-                    "and load mods/plugins anyway",
-                    log::KV("path", cfgPath.string()));
+    HMODULE whgame = GetModuleHandleW(L"WHGame.dll");
+    if (!whgame) {
+        LOG_WARN_KV("VERSION", "WHGame.dll not loaded — runtime version "
+                    "detection deferred",
+                    log::KV::BareStr("source",
+                        "WHGame.dll .rdata 'release_X_Y_Z_P' tag"));
         return {};
     }
 
-    std::ifstream in(cfgPath, std::ios::binary);
-    if (!in) {
-        LOG_WARN_KV("VERSION", "system.cfg present but unreadable — "
-                    "version-string gate will treat the runtime version as "
-                    "unknown and load mods/plugins anyway",
-                    log::KV("path", cfgPath.string()));
+    const auto base = reinterpret_cast<uintptr_t>(whgame);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(whgame);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+        LOG_WARN_KV("VERSION", "WHGame.dll .rdata did not contain a "
+                    "release_X_Y_Z_P pattern — version-string gate will treat "
+                    "the runtime version as unknown and load mods/plugins "
+                    "anyway",
+                    log::KV::BareStr("reason", "bad_dos_signature"));
+        return {};
+    }
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(
+        base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) {
+        LOG_WARN_KV("VERSION", "WHGame.dll .rdata did not contain a "
+                    "release_X_Y_Z_P pattern — version-string gate will treat "
+                    "the runtime version as unknown and load mods/plugins "
+                    "anyway",
+                    log::KV::BareStr("reason", "bad_nt_signature"));
         return {};
     }
 
-    std::stringstream ss;
-    ss << in.rdbuf();
-    const std::string text = ss.str();
-
-    const std::string value = ExtractCfgValue(text, "wh_sys_version");
-    if (value.empty()) {
-        LOG_WARN_KV("VERSION", "system.cfg has no wh_sys_version line — "
-                    "version-string gate will treat the runtime version as "
-                    "unknown and load mods/plugins anyway",
-                    log::KV("path", cfgPath.string()));
+    const uint8_t* rdataLo = nullptr;
+    const uint8_t* rdataHi = nullptr;
+    {
+        const auto* section = IMAGE_FIRST_SECTION(nt);
+        for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section) {
+            if (std::memcmp(section->Name, ".rdata", 6) == 0) {
+                rdataLo = reinterpret_cast<const uint8_t*>(
+                    base + section->VirtualAddress);
+                rdataHi = rdataLo + section->Misc.VirtualSize;
+                break;
+            }
+        }
+    }
+    if (!rdataLo || !rdataHi || rdataHi <= rdataLo) {
+        LOG_WARN_KV("VERSION", "WHGame.dll .rdata did not contain a "
+                    "release_X_Y_Z_P pattern — version-string gate will treat "
+                    "the runtime version as unknown and load mods/plugins "
+                    "anyway",
+                    log::KV::BareStr("reason", "rdata_section_not_found"));
         return {};
     }
 
-    LOG_INFO_KV("VERSION", "detected runtime version string from system.cfg",
-                log::KV("wh_sys_version", value),
-                log::KV("path", cfgPath.string()));
-    return value;
+    // Hand-rolled byte scan for `release_<digits>_<digits>_<digits>_<digits>`.
+    // Accept up to 3 digits / 3 digits / 8 digits / 4 digits per the spec; the
+    // observed live tag is `release_1_5_1164953_841` (1/1/7/3 digits). Take
+    // the FIRST match. The two known live occurrences both encode the same
+    // build, so either match yields the same result.
+    static constexpr char kPrefix[] = "release_";
+    constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;  // 8
+
+    auto isDigit = [](uint8_t c) { return c >= '0' && c <= '9'; };
+    auto consumeDigits = [&](const uint8_t* p, const uint8_t* end,
+                             size_t maxDigits, unsigned& out, size_t& consumed)
+        -> bool {
+        consumed = 0;
+        out = 0;
+        while (consumed < maxDigits && p + consumed < end
+               && isDigit(p[consumed])) {
+            out = out * 10 + static_cast<unsigned>(p[consumed] - '0');
+            ++consumed;
+        }
+        return consumed > 0;
+    };
+
+    for (const uint8_t* p = rdataLo;
+         p + kPrefixLen + 4 /*minimum body*/ <= rdataHi; ++p) {
+        if (std::memcmp(p, kPrefix, kPrefixLen) != 0) continue;
+        const uint8_t* q = p + kPrefixLen;
+        unsigned major = 0, minor = 0, build = 0, patch = 0;
+        size_t n = 0;
+        if (!consumeDigits(q, rdataHi, 3, major, n)) continue;
+        q += n;
+        if (q >= rdataHi || *q != '_') continue;
+        ++q;
+        if (!consumeDigits(q, rdataHi, 3, minor, n)) continue;
+        q += n;
+        if (q >= rdataHi || *q != '_') continue;
+        ++q;
+        if (!consumeDigits(q, rdataHi, 8, build, n)) continue;
+        q += n;
+        if (q >= rdataHi || *q != '_') continue;
+        ++q;
+        if (!consumeDigits(q, rdataHi, 4, patch, n)) continue;
+
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%u.%u.%u", major, minor, build);
+        const std::string value(buf);
+        char fullBuf[96];
+        std::snprintf(fullBuf, sizeof(fullBuf), "release_%u_%u_%u_%u",
+                      major, minor, build, patch);
+
+        const unsigned long long rva =
+            static_cast<unsigned long long>(p - reinterpret_cast<const uint8_t*>(base));
+        LOG_INFO_KV("VERSION",
+                    "detected runtime version string from WHGame.dll .rdata",
+                    log::KV("value", value),
+                    log::KV("full_tag", std::string(fullBuf)),
+                    log::KV("rva", rva),
+                    log::KV::BareStr("source",
+                        "WHGame.dll .rdata 'release_X_Y_Z_P' tag"));
+        return value;
+    }
+
+    LOG_WARN_KV("VERSION", "WHGame.dll .rdata did not contain a "
+                "release_X_Y_Z_P pattern — version-string gate will treat the "
+                "runtime version as unknown and load mods/plugins anyway",
+                log::KV::BareStr("reason", "pattern_not_found"));
+    return {};
 }
 
 namespace {

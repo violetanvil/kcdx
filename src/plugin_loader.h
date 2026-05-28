@@ -259,17 +259,21 @@ constexpr uint32_t kEngineVersion = 0x00010200u;  // 0.1.2 — kcdxPluginInfo.au
 // field plugins read via kcdxInterface::runtimeGameVersion.)
 extern uint32_t g_runtimeGameVersion;
 
-// Live KCD2 version STRING, populated at engine startup from
-// wh_sys_version in <game-root>/system.cfg (the source the vanilla mod
-// version gate compares against — see docs/mod-loader-absorb.md "Version
-// gate UNIFICATION"). This is the value the unified <supports> string-
-// prefix-wildcard gate (version_compat::DecideGameVersionCompatString)
-// matches mod/plugin `supports` patterns against. Empty "" if system.cfg is
-// absent/unreadable or has no wh_sys_version line — the gate then yields
-// UnknownGameVersion and the caller loads anyway with a WARN (graceful-
-// degrade, mirroring the integer path's "couldn't determine version,
-// loading anyway"). Set alongside g_runtimeGameVersion at the same init
-// point (dllmain.cpp worker thread, after WaitForGameDll).
+// Live KCD2 version STRING, populated at engine startup by pattern-scanning
+// WHGame.dll's .rdata for the canonical engine build tag
+// `release_<major>_<minor>_<build>_<patch>` and emitting
+// `<major>.<minor>.<build>` (e.g. "1.5.1164953"). This matches the form the
+// reference database stores in game_versions.tag — refdb::Open consumes this
+// string to locate the running build's game_versions row. The unified
+// <supports> string-prefix-wildcard gate
+// (version_compat::DecideGameVersionCompatString) also matches mod/plugin
+// `supports` patterns against this value (see docs/mod-loader-absorb.md
+// "Version gate UNIFICATION"). Empty "" if WHGame is not mapped or the
+// .rdata scan finds no match — the gate then yields UnknownGameVersion and
+// the caller loads anyway with a WARN (graceful-degrade, mirroring the
+// integer path's "couldn't determine version, loading anyway"). Set
+// alongside g_runtimeGameVersion at the same init point (dllmain.cpp worker
+// thread, after WaitForGameDll).
 extern std::string g_runtimeGameVersionString;
 
 // Detect the running KCD2 build by reading kcd_launcher.log's build header,
@@ -281,20 +285,23 @@ extern std::string g_runtimeGameVersionString;
 // per-plugin version-compat gate in DiscoverAndLoad then READS that value.
 uint32_t DetectRuntimeGameVersion();
 
-// Detect the running KCD2 version STRING by reading the `wh_sys_version`
-// setting from <game-root>/system.cfg (located via paths::GameRootDirPath()).
-// system.cfg is a CryEngine cfg text file: lines of `name = value` or
-// `name=value`, value optionally double-quoted. The lookup is
-// case-insensitive on the key, tolerates whitespace around '=', and strips
-// surrounding double quotes from the value. Returns the value string (e.g.
-// "1.5.5"), or "" if system.cfg is absent/unreadable or has no
-// wh_sys_version line (logged WARN naming system.cfg — graceful-degrade, NOT
-// a hard fail; mirrors DetectRuntimeGameVersion's "loading anyway" behavior).
-// Called once at WHGame-mapped time (ctx B, right after WaitForGameDll)
-// alongside DetectRuntimeGameVersion; the caller stores the result into
-// g_runtimeGameVersionString. Does NOT require WHGame mapped — it reads a
-// file — but is co-located with the integer detect for one version-detect
-// site.
+// Detect the running KCD2 version STRING by pattern-scanning WHGame.dll's
+// .rdata for the canonical engine build tag
+// `release_<major>_<minor>_<build>_<patch>`, returning
+// `<major>.<minor>.<build>` (e.g. "1.5.1164953"). The trailing `_<patch>`
+// is dropped — the reference database's game_versions.tag stores the
+// build tag in the dotted-triplet form, and refdb::Open matches against
+// it directly. The scan walks WHGame's PE headers to bound the .rdata
+// section, then runs a hand-rolled byte loop for the literal `release_`
+// prefix followed by four underscore-separated digit runs (capped at
+// 3/3/8/4 digits respectively, matching the live build's
+// `release_1_5_1164953_841` shape). Returns "" if WHGame.dll is not
+// mapped or .rdata yields no match (logged WARN — graceful-degrade,
+// NOT a hard fail; mirrors DetectRuntimeGameVersion's "loading anyway"
+// behavior). Called once at WHGame-mapped time (ctx B, right after
+// WaitForGameDll) alongside DetectRuntimeGameVersion; the caller stores
+// the result into g_runtimeGameVersionString. Requires WHGame mapped (a
+// GetModuleHandleW("WHGame.dll") must resolve non-null).
 std::string DetectRuntimeGameVersionString();
 
 // Extract the value of `key` from CryEngine cfg text (the body of a
