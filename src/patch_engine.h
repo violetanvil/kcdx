@@ -72,8 +72,8 @@ struct PatchEntry {
     //   - pattern:      AOB scan of the named module (the v1 path).
     //   - targetSymbol: lookup in the cross-plugin symbol table
     //                   (resolves to a [[trampoline]] / [[hook]] export).
-    //   - addressId:    lookup in kcdx's compiled-in Address Library
-    //                   (kcdx::address_library::Resolve). Stable across
+    //   - addressId:    lookup in kcdx's refdb cache by kcdx_id
+    //                   (kcdx::refdb::ResolveAddrById). Stable across
     //                   game patches; recommended for authors who don't
     //                   want to maintain their own AOBs.
     //

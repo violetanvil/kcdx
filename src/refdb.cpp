@@ -1,5 +1,7 @@
 #include "refdb.h"
 
+#include <windows.h>  // GetModuleHandleW for WhgameBase()
+
 #include <sqlite3.h>
 
 #include <climits>
@@ -11,6 +13,7 @@
 #include <string_view>
 #include <tuple>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "log.h"
@@ -94,6 +97,76 @@ using WarnKey = std::tuple<uint32_t, std::string, std::string>;
 std::set<WarnKey> g_warnedSuperseded;
 std::set<WarnKey> g_warnedDeprecated;
 std::set<WarnKey> g_warnedUnverified;
+
+// ---------------------------------------------------------------------------
+// In-memory CACHE — refdb owns the curated resolution surface.
+//
+// Open() bulk-builds this cache once: for every entity in address_names,
+// walks supersession at the running game version, picks the best
+// address_versions row, derives verification state, and stores the resolved
+// shape in two hash maps.
+//
+// Every subsequent ResolveByName / ResolveById call is an in-memory hash
+// lookup — zero SQL after Open().
+//
+// g_byName is keyed by the INPUT name (the address_names.name as written in
+// the row). If A is superseded by B at V, both g_byName["A"] and
+// g_byName["B"] resolve to a row whose post-walk identity is B — the
+// supersession walk happens at build, so the same final row is returned
+// regardless of which entry point the caller used.
+//
+// g_byId is keyed by the ORIGINAL kcdx_id (the address_names.id the caller
+// asked for); the row carries the post-supersession identity. Plugins that
+// hardcoded an old id keep resolving as long as that id still exists in
+// address_names.
+// ---------------------------------------------------------------------------
+
+struct CachedEntity {
+    uint64_t     kcdx_id = 0;       // post-supersession kcdx_id (the resolved identity).
+    std::string  name;              // post-supersession name (the resolved identity).
+    std::string  input_name;        // pre-supersession (the originally-keyed name in g_byName).
+    std::string  description;       // address_names.notes (post-supersession entity's notes).
+    uint64_t     rva = 0;           // closest-match address_versions.rva (RVA, not VA).
+    std::string  verified_signature;
+    std::string  kind;              // decoded via _dict_address_versions_kind.
+
+    int64_t      offset = 0;
+    bool         has_offset = false;
+    int64_t      vtable_slot = 0;
+    bool         has_vtable_slot = false;
+    int64_t      value = 0;
+    bool         has_value = false;
+    int64_t      length = 0;
+    bool         has_length = false;
+    int64_t      observed_arg_slots = 0;
+    int64_t      caller_reg_arg_count = 0;
+
+    std::vector<uint8_t> content_hash;
+    std::string  content_hash_hex;
+
+    bool         was_superseded = false;
+    bool         is_deprecated = false;
+    NameResolution::VerificationState verification_state =
+        NameResolution::VerificationState::Verified;
+
+    std::string  deprecation_replacement_name;  // empty if no replacement.
+};
+
+std::unordered_map<std::string, CachedEntity> g_byName;
+std::unordered_map<uint64_t,    CachedEntity> g_byId;
+
+// Resolve the WHGame.dll module base for RVA→VA conversion. Cached after the
+// first non-null hit; refdb's cache stores RVAs, and the WhgameBase() + rva
+// composition happens at lookup time so the value matches the loaded module
+// even if the cache was built before WHGame.dll was mapped (it won't be, but
+// belt-and-braces).
+uintptr_t WhgameBase() {
+    static uintptr_t cached = 0;
+    if (cached) return cached;
+    HMODULE m = GetModuleHandleW(L"WHGame.dll");
+    cached = reinterpret_cast<uintptr_t>(m);
+    return cached;
+}
 
 const char* kCategory = "REFDB";
 
@@ -335,89 +408,11 @@ void DecodeNameRow(sqlite3_stmt* st, NameRow* row) {
     }
 }
 
-// Load an address_names row by name. Returns found=false if the name is
-// unknown; the caller turns that into a name_unknown miss.
-NameRow LoadNameRowByName(const std::string& name) {
-    NameRow row;
-    sqlite3_stmt* st = nullptr;
-    int rc = sqlite3_prepare_v2(g_db,
-        "SELECT id, name, is_deprecated, deprecated_at_version, "
-        "       superseded_by, superseded_at_version, deprecation_replacement "
-        "FROM address_names WHERE name = ? LIMIT 1;",
-        -1, &st, nullptr);
-    if (rc != SQLITE_OK) {
-        LOG_ERROR_KV(kCategory, "name_load_failed",
-            kcdx::log::KV::BareStr("reason", "query_error"),
-            kcdx::log::KV("name", name),
-            kcdx::log::KV("sqlite_rc", (long long)rc),
-            kcdx::log::KV::BareStr("sqlite_msg", sqlite3_errmsg(g_db)));
-        return row;
-    }
-    sqlite3_bind_text(st, 1, name.c_str(), -1, SQLITE_TRANSIENT);
-    if (sqlite3_step(st) == SQLITE_ROW) DecodeNameRow(st, &row);
-    sqlite3_finalize(st);
-    return row;
-}
-
-// Load an address_names row by id. Used by ResolveById and by the
-// supersession chain walk inside ResolveByName / ResolveById.
-NameRow LoadNameRowById(int64_t id) {
-    NameRow row;
-    sqlite3_stmt* st = nullptr;
-    int rc = sqlite3_prepare_v2(g_db,
-        "SELECT id, name, is_deprecated, deprecated_at_version, "
-        "       superseded_by, superseded_at_version, deprecation_replacement "
-        "FROM address_names WHERE id = ? LIMIT 1;",
-        -1, &st, nullptr);
-    if (rc != SQLITE_OK) {
-        LOG_ERROR_KV(kCategory, "name_load_failed",
-            kcdx::log::KV::BareStr("reason", "query_error"),
-            kcdx::log::KV("kcdx_id", (long long)id),
-            kcdx::log::KV("sqlite_rc", (long long)rc),
-            kcdx::log::KV::BareStr("sqlite_msg", sqlite3_errmsg(g_db)));
-        return row;
-    }
-    sqlite3_bind_int64(st, 1, id);
-    if (sqlite3_step(st) == SQLITE_ROW) DecodeNameRow(st, &row);
-    sqlite3_finalize(st);
-    return row;
-}
-
-// Walk the supersession chain at the running game version V. Each hop is
-// gated on V >= entity.superseded_at_version (translated through the
-// ordinal map). Stops when the current entity's superseded_by is NULL OR
-// V < superseded_at_version. Returns the final entity row and (via the out
-// param) whether at least one hop was taken.
-NameRow WalkSupersessionChain(const NameRow& start, bool* outWasSuperseded) {
-    *outWasSuperseded = false;
-    NameRow current = start;
-    while (current.found && current.has_superseded_by) {
-        // Gate the hop on V >= superseded_at_version. A NULL
-        // superseded_at_version (id == 0) means the edge has no version anchor
-        // — treat as "edge inactive" so we don't walk past a malformed pair.
-        int64_t edgeOrd = OrdinalForVersionId(current.superseded_at_version_id);
-        if (edgeOrd < 0) break;
-        if (g_gameVersionOrdinal < edgeOrd) break;
-
-        NameRow next = LoadNameRowById(current.superseded_by);
-        if (!next.found) {
-            // Supersession edge points at a non-existent successor — malformed
-            // DB. Surface fail-loud; stop walking and return what we have.
-            LOG_ERROR_KV(kCategory, "supersession_target_missing",
-                log::KV::BareStr("reason", "query_error"),
-                log::KV("old_name", current.name),
-                log::KV("superseded_by_id", (long long)current.superseded_by),
-                log::KV::BareStr("detail",
-                    "address_names row's superseded_by points at an id that "
-                    "does not exist — malformed reference database; reinstall "
-                    "the kcdx release"));
-            break;
-        }
-        current = next;
-        *outWasSuperseded = true;
-    }
-    return current;
-}
+// NOTE: per-call SQL helpers (LoadNameRowByName, LoadNameRowById,
+// WalkSupersessionChain) were removed when refdb took ownership of the
+// in-memory cache. BuildCache() in this TU runs the equivalent walk once
+// over an in-memory snapshot of address_names, populating g_byName / g_byId.
+// Every subsequent resolve is a hash lookup.
 
 // ---------------------------------------------------------------------------
 // address_versions row selection — closest-match by component distance.
@@ -831,6 +826,292 @@ void LogNotLoaded(const char* what) {
             "reference.sqlite"));
 }
 
+// ---------------------------------------------------------------------------
+// Cache build.
+//
+// Called from Open() after the dicts + game_versions table are loaded. Streams
+// every address_names row, walks supersession at the running V, picks the
+// best address_versions row, derives verification state, populates
+// g_byName + g_byId.
+//
+// After BuildCache, every Resolve* call is a hash lookup. Zero SQL.
+// ---------------------------------------------------------------------------
+
+// Lift a final-row payload (effective entity + picked version row) into a
+// CachedEntity. `inputName` is the address_names.name that originally keyed
+// the entity (pre-supersession); `effective` is the entity after the walk.
+CachedEntity MakeCachedEntity(const std::string& inputName,
+                              const std::string& description,
+                              const NameRow& effective,
+                              bool walkedSupersession,
+                              const VersionRow& picked,
+                              NameResolution::VerificationState state,
+                              bool entityDeprecatedAtV) {
+    CachedEntity c;
+    c.kcdx_id = static_cast<uint64_t>(picked.kcdx_id);
+    c.name = effective.name;
+    c.input_name = inputName;
+    c.description = description;
+    c.rva = picked.has_rva ? static_cast<uint64_t>(picked.rva) : 0;
+    c.verified_signature = picked.signature;
+    c.kind = DecodeDict(g_kindDict, picked.kindId);
+    c.has_offset = picked.has_offset;
+    c.offset = picked.offset;
+    c.has_vtable_slot = picked.has_vtable_slot;
+    c.vtable_slot = picked.vtable_slot;
+    c.has_value = picked.has_value;
+    c.value = picked.value;
+    c.has_length = picked.has_length;
+    c.length = picked.length;
+    c.observed_arg_slots = picked.observed_arg_slots;
+    c.caller_reg_arg_count = picked.caller_reg_arg_count;
+    c.content_hash = picked.content_hash;
+    c.content_hash_hex = HashToHex(picked.content_hash.data(),
+                                    static_cast<int>(picked.content_hash.size()));
+    c.was_superseded = walkedSupersession;
+    c.is_deprecated = entityDeprecatedAtV;
+    c.verification_state = state;
+    if (effective.deprecation_replacement_id > 0) {
+        c.deprecation_replacement_name =
+            LookupDeprecationReplacementName(effective.deprecation_replacement_id);
+    }
+    return c;
+}
+
+// Stream every address_names row + its notes, walk supersession, pick the
+// best version row, derive state, populate g_byName + g_byId.
+// Returns true on success (rows may legitimately be skipped on data bugs;
+// any skipped entity is loud-logged).
+bool BuildCache() {
+    g_byName.clear();
+    g_byId.clear();
+
+    // Pull every address_names row first (id, name, notes + the entity-level
+    // edges DecodeNameRow already reads). Stored by id so the supersession
+    // walk can chase superseded_by within the in-memory set instead of
+    // re-querying SQLite per hop.
+    struct NameSlot {
+        NameRow      row;
+        std::string  notes;
+    };
+    std::unordered_map<int64_t, NameSlot> nameRows;
+
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_db,
+        "SELECT id, name, is_deprecated, deprecated_at_version, "
+        "       superseded_by, superseded_at_version, deprecation_replacement, "
+        "       notes "
+        "FROM address_names;",
+        -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kCategory, "cache_build_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("stage", "address_names_scan"),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_db)));
+        return false;
+    }
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        NameSlot slot;
+        DecodeNameRow(st, &slot.row);
+        const unsigned char* nt = sqlite3_column_text(st, 7);
+        if (nt) slot.notes = reinterpret_cast<const char*>(nt);
+        nameRows[slot.row.id] = std::move(slot);
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) {
+        LOG_ERROR_KV(kCategory, "cache_build_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("stage", "address_names_scan"),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_db)));
+        return false;
+    }
+
+    // Local supersession walker that follows the in-memory set instead of
+    // re-loading from SQLite per hop. Same semantics as WalkSupersessionChain.
+    auto walk = [&](const NameRow& start, bool* outWasSuperseded) -> NameRow {
+        *outWasSuperseded = false;
+        NameRow current = start;
+        while (current.found && current.has_superseded_by) {
+            int64_t edgeOrd = OrdinalForVersionId(current.superseded_at_version_id);
+            if (edgeOrd < 0) break;
+            if (g_gameVersionOrdinal < edgeOrd) break;
+            auto it = nameRows.find(current.superseded_by);
+            if (it == nameRows.end()) {
+                LOG_ERROR_KV(kCategory, "supersession_target_missing",
+                    log::KV::BareStr("reason", "query_error"),
+                    log::KV("old_name", current.name),
+                    log::KV("superseded_by_id", (long long)current.superseded_by),
+                    log::KV::BareStr("detail",
+                        "address_names row's superseded_by points at an id "
+                        "that does not exist \xe2\x80\x94 malformed reference "
+                        "database; reinstall the kcdx release"));
+                break;
+            }
+            current = it->second.row;
+            *outWasSuperseded = true;
+        }
+        return current;
+    };
+
+    size_t supersessionsResolved = 0;
+    size_t deprecations = 0;
+    size_t unverifiedAtV = 0;
+    size_t skippedNoVersionRows = 0;
+
+    // For each entity, walk supersession + pick best row + derive state +
+    // insert into both maps. The map key for g_byName is the INPUT entity's
+    // name (so deprecated names keep working); the cached payload is the
+    // FINAL row's identity + facts.
+    for (const auto& [id, slot] : nameRows) {
+        const NameRow& original = slot.row;
+        if (!original.found) continue;
+
+        bool walkedSupersession = false;
+        NameRow effective = walk(original, &walkedSupersession);
+
+        // The notes for the EFFECTIVE entity (post-walk). If the walk took a
+        // hop, look up the successor's notes in the same in-memory set; else
+        // reuse the slot's own notes.
+        std::string description;
+        if (walkedSupersession) {
+            auto it = nameRows.find(effective.id);
+            description = (it != nameRows.end()) ? it->second.notes : std::string();
+        } else {
+            description = slot.notes;
+        }
+
+        // Load every address_versions row for the effective entity. The
+        // builder already validates non-overlap; this is the same query
+        // LoadVersionRowsForEntity runs.
+        std::vector<VersionRow> rows;
+        if (!LoadVersionRowsForEntity(effective.id, &rows)) {
+            // query_error already logged; skip this entity.
+            ++skippedNoVersionRows;
+            continue;
+        }
+        if (rows.empty()) {
+            LOG_ERROR_KV(kCategory, "cache_skip_entity",
+                log::KV::BareStr("reason", "entity_has_no_version_rows"),
+                log::KV("kcdx_id", (long long)effective.id),
+                log::KV("name", effective.name),
+                log::KV::BareStr("detail",
+                    "entity exists in address_names but no address_versions "
+                    "row covers it \xe2\x80\x94 a data bug in the reference "
+                    "database; entity skipped from cache"));
+            ++skippedNoVersionRows;
+            continue;
+        }
+
+        int bestIdx = PickBestVersionRow(rows);
+        if (bestIdx < 0) {
+            ++skippedNoVersionRows;
+            continue;
+        }
+        const VersionRow& picked = rows[bestIdx];
+
+        bool entityDeprecatedAtV = false;
+        NameResolution::VerificationState state = DeriveVerificationState(
+            effective, walkedSupersession, picked, &entityDeprecatedAtV);
+
+        if (walkedSupersession) ++supersessionsResolved;
+        if (state == NameResolution::VerificationState::Deprecated) ++deprecations;
+        if (state == NameResolution::VerificationState::Unverified) ++unverifiedAtV;
+
+        CachedEntity row = MakeCachedEntity(original.name, description,
+                                            effective, walkedSupersession,
+                                            picked, state, entityDeprecatedAtV);
+        // Index BOTH maps under the input identity (so a caller asking for
+        // the old name / old id keeps resolving). Multiple superseded names
+        // can point at the same effective row; each gets its own map entry.
+        g_byName[original.name] = row;
+        g_byId[static_cast<uint64_t>(original.id)] = row;
+    }
+
+    LOG_INFO_KV(kCategory, "cache_built",
+        log::KV("name_count", (long long)g_byName.size()),
+        log::KV("id_count", (long long)g_byId.size()),
+        log::KV("supersessions_resolved", (long long)supersessionsResolved),
+        log::KV("deprecations", (long long)deprecations),
+        log::KV("unverified_at_v", (long long)unverifiedAtV),
+        log::KV("skipped_no_version_rows", (long long)skippedNoVersionRows));
+    return true;
+}
+
+// Project a cached entity into a NameResolution, firing any per-state warning
+// (deduped by ctx).
+NameResolution ProjectName(const CachedEntity& c,
+                           const std::string& inputName,
+                           const CallerContext& ctx) {
+    if (c.was_superseded) {
+        EmitSupersededWarning(ctx, inputName.empty() ? c.input_name : inputName,
+                              c.name);
+    }
+    if (c.verification_state == NameResolution::VerificationState::Deprecated) {
+        EmitDeprecatedWarning(ctx, c.name, c.deprecation_replacement_name);
+    }
+    if (c.verification_state == NameResolution::VerificationState::Unverified) {
+        EmitUnverifiedWarning(ctx, c.name, g_gameVersionTag);
+    }
+
+    NameResolution r;
+    r.found = true;
+    r.kcdx_id = c.kcdx_id;
+    r.rva = c.rva;
+    r.verified_signature = c.verified_signature;
+    r.kind = c.kind;
+    r.has_offset = c.has_offset;
+    r.offset = c.offset;
+    r.has_vtable_slot = c.has_vtable_slot;
+    r.vtable_slot = c.vtable_slot;
+    r.has_value = c.has_value;
+    r.value = c.value;
+    r.content_hash_hex = c.content_hash_hex;
+    r.content_hash = c.content_hash;
+    r.has_length = c.has_length;
+    r.length = c.length;
+    r.resolved_name = c.name;
+    r.was_superseded = c.was_superseded;
+    r.is_deprecated = c.is_deprecated;
+    r.verification_state = c.verification_state;
+    return r;
+}
+
+// Project a cached entity into an IdResolution, firing any per-state warning.
+IdResolution ProjectId(const CachedEntity& c, uint64_t inputId,
+                       const CallerContext& ctx) {
+    if (c.was_superseded) {
+        EmitSupersededWarning(ctx, c.input_name, c.name);
+    }
+    if (c.verification_state == NameResolution::VerificationState::Deprecated) {
+        EmitDeprecatedWarning(ctx, c.name, c.deprecation_replacement_name);
+    }
+    if (c.verification_state == NameResolution::VerificationState::Unverified) {
+        EmitUnverifiedWarning(ctx, c.name, g_gameVersionTag);
+    }
+
+    IdResolution r;
+    r.found = true;
+    r.kcdx_id = c.kcdx_id;
+    r.rva = c.rva;
+    r.floor_signature = c.verified_signature;  // honest lower bound — see header.
+    r.signature_is_floor_estimate = true;
+    r.observed_arg_slots = c.observed_arg_slots;
+    r.caller_reg_arg_count = c.caller_reg_arg_count;
+    r.has_value = c.has_value;
+    r.value = c.value;
+    r.content_hash_hex = c.content_hash_hex;
+    r.content_hash = c.content_hash;
+    r.has_length = c.has_length;
+    r.length = c.length;
+    r.was_superseded = c.was_superseded;
+    r.is_deprecated = c.is_deprecated;
+    r.verification_state = ToIdState(c.verification_state);
+    (void)inputId;
+    return r;
+}
+
 }  // namespace
 
 const char* SqliteVersion() {
@@ -955,6 +1236,17 @@ bool Open() {
                 "address_versions row by component distance (major/minor/build) "
                 "and surface every result as UNVERIFIED. Per-resolve failures "
                 "remain fail-loud."));
+        if (!BuildCache()) {
+            LOG_ERROR_KV(kCategory, "open_failed",
+                log::KV::BareStr("reason", "cache_build_failed"),
+                log::KV("path", dbPathUtf8),
+                log::KV::BareStr("detail",
+                    "refdb cache build failed during Open() \xe2\x80\x94 "
+                    "see prior cache_build_failed lines for the root cause; "
+                    "no verified resolution is available"));
+            Close();
+            return false;
+        }
         g_loaded = true;
         LOG_INFO_KV(kCategory, "opened",
             log::KV("path", dbPathUtf8),
@@ -964,6 +1256,17 @@ bool Open() {
         return true;
     }
 
+    if (!BuildCache()) {
+        LOG_ERROR_KV(kCategory, "open_failed",
+            log::KV::BareStr("reason", "cache_build_failed"),
+            log::KV("path", dbPathUtf8),
+            log::KV::BareStr("detail",
+                "refdb cache build failed during Open() \xe2\x80\x94 see "
+                "prior cache_build_failed lines for the root cause; no "
+                "verified resolution is available"));
+        Close();
+        return false;
+    }
     g_loaded = true;
     LOG_INFO_KV(kCategory, "opened",
         log::KV("path", dbPathUtf8),
@@ -974,118 +1277,10 @@ bool Open() {
     return true;
 }
 
-// Common resolve worker shared by ResolveByName and ResolveById. Takes the
-// already-loaded entity row, walks supersession, picks the best version row,
-// derives verification state, fires warnings.
-//
-// `inputName` is the name the caller asked for (or empty for ResolveById).
-// `inputId` is the id the caller asked for (or 0 for ResolveByName).
-// `ctx` routes warnings.
-//
-// Returns a NameResolution; ResolveById converts the relevant subset into
-// an IdResolution.
-namespace {
-
-NameResolution ResolveCommon(const NameRow& original,
-                              const std::string& inputName,
-                              uint64_t inputId,
-                              const CallerContext& ctx) {
-    NameResolution r;
-
-    // Walk the supersession chain at the running game version.
-    bool walkedSupersession = false;
-    NameRow effective = WalkSupersessionChain(original, &walkedSupersession);
-
-    if (walkedSupersession) {
-        EmitSupersededWarning(ctx,
-            inputName.empty() ? original.name : inputName,
-            effective.name);
-    }
-
-    // Load every address_versions row for the effective entity and pick the
-    // best match for V.
-    std::vector<VersionRow> rows;
-    if (!LoadVersionRowsForEntity(effective.id, &rows)) {
-        // query_error already logged.
-        return r;
-    }
-    if (rows.empty()) {
-        LOG_ERROR_KV(kCategory, "resolve_miss",
-            log::KV::BareStr("reason", "no_open_version"),
-            log::KV("input_name", inputName.empty() ? "(by-id)" : inputName.c_str()),
-            log::KV("input_id", (unsigned long long)inputId),
-            log::KV("effective_name", effective.name),
-            log::KV("effective_kcdx_id", (long long)effective.id),
-            log::KV::BareStr("detail",
-                "entity exists in address_names but no address_versions row "
-                "covers it \xe2\x80\x94 a data bug in the reference database"));
-        return r;
-    }
-
-    int bestIdx = PickBestVersionRow(rows);
-    if (bestIdx < 0) {
-        // Defensive: PickBestVersionRow only returns -1 on empty input which
-        // we already handled.
-        return r;
-    }
-    const VersionRow& picked = rows[bestIdx];
-
-    // Derive verification state. is_deprecated flag tracks whether the
-    // entity-level deprecation activated at V.
-    bool entityDeprecatedAtV = false;
-    NameResolution::VerificationState state = DeriveVerificationState(
-        effective, walkedSupersession, picked, &entityDeprecatedAtV);
-
-    // Fire DEPRECATED warning (in addition to the SUPERSEDED warning the
-    // walk already fired, if walked — these are distinct entity-level
-    // events per the new schema).
-    if (state == NameResolution::VerificationState::Deprecated) {
-        std::string replacementName = LookupDeprecationReplacementName(
-            effective.deprecation_replacement_id);
-        EmitDeprecatedWarning(ctx, effective.name, replacementName);
-    }
-    if (state == NameResolution::VerificationState::Unverified) {
-        EmitUnverifiedWarning(ctx, effective.name, g_gameVersionTag);
-    }
-
-    // Populate the result.
-    r.found = true;
-    r.kcdx_id = static_cast<uint64_t>(picked.kcdx_id);
-    r.rva = picked.has_rva ? static_cast<uint64_t>(picked.rva) : 0;
-    r.verified_signature = picked.signature;
-    r.kind = DecodeDict(g_kindDict, picked.kindId);
-    r.has_offset = picked.has_offset;
-    r.offset = picked.offset;
-    r.has_vtable_slot = picked.has_vtable_slot;
-    r.vtable_slot = picked.vtable_slot;
-    r.has_value = picked.has_value;
-    r.value = picked.value;
-    r.content_hash_hex = HashToHex(picked.content_hash.data(),
-                                    static_cast<int>(picked.content_hash.size()));
-    r.content_hash = picked.content_hash;
-    r.has_length = picked.has_length;
-    r.length = picked.length;
-    r.resolved_name = effective.name;
-    r.was_superseded = walkedSupersession;
-    r.is_deprecated = entityDeprecatedAtV;
-    r.verification_state = state;
-
-    LOG_DEBUG_KV(kCategory, "resolve_hit",
-        log::KV("input_name", inputName.empty() ? "(by-id)" : inputName.c_str()),
-        log::KV("input_id", (unsigned long long)inputId),
-        log::KV("effective_name", effective.name),
-        log::KV("kcdx_id", (unsigned long long)r.kcdx_id),
-        log::KV("rva", (unsigned long long)r.rva),
-        log::KV("kind", r.kind),
-        log::KV::BareStr("verification_state",
-            state == NameResolution::VerificationState::Verified ? "verified" :
-            state == NameResolution::VerificationState::Unverified ? "unverified" :
-            state == NameResolution::VerificationState::Deprecated ? "deprecated" :
-            "superseded"));
-    return r;
-}
-
-}  // namespace
+// =============================================================================
+// Resolution surfaces — every Resolve* call is an in-memory hash lookup against
+// the cache that Open() built. Per-call SQL was the pre-cache implementation.
+// =============================================================================
 
 NameResolution ResolveByName(const std::string& name, const CallerContext& ctx) {
     NameResolution r;
@@ -1094,8 +1289,8 @@ NameResolution ResolveByName(const std::string& name, const CallerContext& ctx) 
         return r;
     }
 
-    NameRow original = LoadNameRowByName(name);
-    if (!original.found) {
+    auto it = g_byName.find(name);
+    if (it == g_byName.end()) {
         LOG_DEBUG_KV(kCategory, "resolve_name_miss",
             log::KV::BareStr("reason", "name_unknown"),
             log::KV("name", name),
@@ -1106,8 +1301,19 @@ NameResolution ResolveByName(const std::string& name, const CallerContext& ctx) 
                 "an un-curated or misspelled target name"));
         return r;
     }
-
-    return ResolveCommon(original, name, 0, ctx);
+    r = ProjectName(it->second, name, ctx);
+    LOG_DEBUG_KV(kCategory, "resolve_hit",
+        log::KV("input_name", name),
+        log::KV("effective_name", r.resolved_name),
+        log::KV("kcdx_id", (unsigned long long)r.kcdx_id),
+        log::KV("rva", (unsigned long long)r.rva),
+        log::KV("kind", r.kind),
+        log::KV::BareStr("verification_state",
+            r.verification_state == NameResolution::VerificationState::Verified ? "verified" :
+            r.verification_state == NameResolution::VerificationState::Unverified ? "unverified" :
+            r.verification_state == NameResolution::VerificationState::Deprecated ? "deprecated" :
+            "superseded"));
+    return r;
 }
 
 IdResolution ResolveById(uint64_t kcdx_id, const CallerContext& ctx) {
@@ -1117,8 +1323,8 @@ IdResolution ResolveById(uint64_t kcdx_id, const CallerContext& ctx) {
         return r;
     }
 
-    NameRow original = LoadNameRowById(static_cast<int64_t>(kcdx_id));
-    if (!original.found) {
+    auto it = g_byId.find(kcdx_id);
+    if (it == g_byId.end()) {
         LOG_DEBUG_KV(kCategory, "resolve_id_miss",
             log::KV::BareStr("reason", "name_unknown"),
             log::KV("kcdx_id", (unsigned long long)kcdx_id),
@@ -1129,45 +1335,79 @@ IdResolution ResolveById(uint64_t kcdx_id, const CallerContext& ctx) {
                 "an unknown or out-of-range id"));
         return r;
     }
-
-    // The by-id and by-name paths share the resolution worker; ResolveById
-    // then projects the NameResolution payload into an IdResolution (the
-    // by-id surface exposes the floor + observed_arg_slots + caller_reg_arg_count
-    // instead of the verified signature shape).
-    NameResolution nameRes = ResolveCommon(original, std::string(), kcdx_id, ctx);
-    if (!nameRes.found) return r;
-
-    // Re-load the picked row from the DB to grab the floor-relevant columns
-    // — ResolveCommon does not expose VersionRow outside its scope. We have
-    // the entity id from the result; pick the best row again using the same
-    // function. (The duplicate query is cheap and keeps ResolveCommon's
-    // signature narrow.)
-    std::vector<VersionRow> rows;
-    if (!LoadVersionRowsForEntity(static_cast<int64_t>(nameRes.kcdx_id), &rows)
-            || rows.empty()) {
-        return r;
-    }
-    int idx = PickBestVersionRow(rows);
-    if (idx < 0) return r;
-    const VersionRow& picked = rows[idx];
-
-    r.found = true;
-    r.kcdx_id = nameRes.kcdx_id;
-    r.rva = nameRes.rva;
-    r.floor_signature = picked.signature;     // honest lower bound — never verified.
-    r.signature_is_floor_estimate = true;
-    r.observed_arg_slots = picked.observed_arg_slots;
-    r.caller_reg_arg_count = picked.caller_reg_arg_count;
-    r.has_value = nameRes.has_value;
-    r.value = nameRes.value;
-    r.content_hash_hex = nameRes.content_hash_hex;
-    r.content_hash = nameRes.content_hash;
-    r.has_length = nameRes.has_length;
-    r.length = nameRes.length;
-    r.was_superseded = nameRes.was_superseded;
-    r.is_deprecated = nameRes.is_deprecated;
-    r.verification_state = ToIdState(nameRes.verification_state);
+    r = ProjectId(it->second, kcdx_id, ctx);
+    LOG_DEBUG_KV(kCategory, "resolve_hit",
+        log::KV("input_id", (unsigned long long)kcdx_id),
+        log::KV("effective_name", it->second.name),
+        log::KV("kcdx_id", (unsigned long long)r.kcdx_id),
+        log::KV("rva", (unsigned long long)r.rva),
+        log::KV("kind", it->second.kind),
+        log::KV::BareStr("verification_state",
+            it->second.verification_state == NameResolution::VerificationState::Verified ? "verified" :
+            it->second.verification_state == NameResolution::VerificationState::Unverified ? "unverified" :
+            it->second.verification_state == NameResolution::VerificationState::Deprecated ? "deprecated" :
+            "superseded"));
     return r;
+}
+
+// =============================================================================
+// Cache-backed convenience helpers.
+// =============================================================================
+
+uintptr_t ResolveAddrByName(const std::string& name, const CallerContext& ctx) {
+    NameResolution r = ResolveByName(name, ctx);
+    if (!r.found) return 0;
+    if (r.rva == 0) return 0;       // row exists but no rva (vtable-index / data-slot kind).
+    uintptr_t base = WhgameBase();
+    if (!base) return 0;
+    return base + static_cast<uintptr_t>(r.rva);
+}
+
+uintptr_t ResolveAddrById(uint64_t kcdx_id, const CallerContext& ctx) {
+    IdResolution r = ResolveById(kcdx_id, ctx);
+    if (!r.found) return 0;
+    if (r.rva == 0) return 0;
+    uintptr_t base = WhgameBase();
+    if (!base) return 0;
+    return base + static_cast<uintptr_t>(r.rva);
+}
+
+std::string_view SignatureByName(const std::string& name, const CallerContext& ctx) {
+    (void)ctx;  // signature lookup never warns; callers warn via ResolveByName when needed.
+    auto it = g_byName.find(name);
+    if (it == g_byName.end()) return std::string_view{};
+    // Lifetime: the cached entity's verified_signature string lives as long
+    // as the entry stays in g_byName (i.e., until Close()). Callers that need
+    // to outlive Close() must copy.
+    return std::string_view(it->second.verified_signature);
+}
+
+void ForEachCached(
+    const std::function<bool(uint64_t kcdx_id,
+                             const std::string& name,
+                             uintptr_t va,
+                             NameResolution::VerificationState state)>& cb) {
+    if (!cb) return;
+    uintptr_t base = WhgameBase();
+    // Walk by id (every cached entity appears once in g_byId regardless of
+    // how many input-name aliases point at it in g_byName) — avoids emitting
+    // a deprecated name and its successor twice for the same kcdx_id.
+    for (const auto& [id, c] : g_byId) {
+        // Only entities the cache produced an entry for end up here, but
+        // skip rows with no rva (vtable-index / data-slot kinds — the
+        // caller's job to know how to consume `value` / `vtable_slot`
+        // via ResolveByName / ResolveById directly).
+        uintptr_t va = (c.rva && base) ? base + static_cast<uintptr_t>(c.rva) : 0;
+        if (!cb(c.kcdx_id, c.name, va, c.verification_state)) return;
+    }
+}
+
+size_t CachedRowCount() {
+    return g_byId.size();
+}
+
+bool HasName(const std::string& name) {
+    return g_byName.find(name) != g_byName.end();
 }
 
 void Close() {
@@ -1189,6 +1429,8 @@ void Close() {
     g_warnedSuperseded.clear();
     g_warnedDeprecated.clear();
     g_warnedUnverified.clear();
+    g_byName.clear();
+    g_byId.clear();
 }
 
 }  // namespace kcdx::refdb

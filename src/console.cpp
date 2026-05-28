@@ -11,11 +11,11 @@
 #include <utility>
 #include <vector>
 
-#include "address_library.h"
 #include "crash_guard.h"
 #include "dev.h"
 #include "log.h"
 #include "plugin_loader.h"
+#include "refdb.h"
 
 namespace kcdx::console {
 
@@ -389,14 +389,14 @@ bool Init() {
     // the owning plugin's log) under g_slotsMutex; the queue never silently
     // orphans (no silent drop — fail loud).
 
-    // Resolve gEnv->pConsole storage via Address Library id 1009.
-    uintptr_t pConsole_storage = address_library::Resolve(1009);
+    // Resolve gEnv->pConsole storage by canonical name.
+    uintptr_t pConsole_storage = refdb::ResolveAddrByName("gEnv_pConsole");
     if (!pConsole_storage) {
-        log::Warn("[console] Init: Address Library id 1009 (gEnv-pConsole-ptr) "
-                  "did not resolve — IConsole will be unavailable");
+        log::Warn("[console] Init: refdb name \"gEnv_pConsole\" did not "
+                  "resolve — IConsole will be unavailable");
         std::lock_guard<std::mutex> lock(g_slotsMutex);
-        DropPendingWithError("IConsole unavailable (Address Library id 1009 "
-                             "gEnv->pConsole did not resolve)");
+        DropPendingWithError("IConsole unavailable (refdb name "
+                             "\"gEnv_pConsole\" did not resolve)");
         return false;
     }
     void* iconsole = *reinterpret_cast<void**>(pConsole_storage);
@@ -408,20 +408,20 @@ bool Init() {
         return false;
     }
 
-    // Resolve AddCommand + RemoveCommand + ExecuteString via Address
-    // Library ids 2000 + 2001 + 2002 (RVAs verified against the binary,
-    // with id 2000 corrected to vtable[33] after the dispatch
-    // investigation).
-    uintptr_t addCommandVA     = address_library::Resolve(2000);
-    uintptr_t removeCommandVA  = address_library::Resolve(2001);
-    uintptr_t executeStringVA  = address_library::Resolve(2002);
+    // Resolve AddCommand + RemoveCommand + ExecuteString by canonical name.
+    // AddCommand maps to vtable[33] (the func-pointer overload); RVAs are
+    // empirically probed against the binary.
+    uintptr_t addCommandVA     = refdb::ResolveAddrByName("IConsole_AddCommand");
+    uintptr_t removeCommandVA  = refdb::ResolveAddrByName("IConsole_RemoveCommand");
+    uintptr_t executeStringVA  = refdb::ResolveAddrByName("IConsole_ExecuteString");
     if (!addCommandVA || !removeCommandVA || !executeStringVA) {
-        log::Warn("[console] Init: Address Library ids 2000/2001/2002 "
-                  "(AddCommand/RemoveCommand/ExecuteString) did not resolve");
+        log::Warn("[console] Init: refdb names IConsole_AddCommand / "
+                  "IConsole_RemoveCommand / IConsole_ExecuteString did not "
+                  "resolve");
         std::lock_guard<std::mutex> lock(g_slotsMutex);
-        DropPendingWithError("IConsole unavailable (Address Library ids "
-                             "2000/2001/2002 AddCommand/RemoveCommand/"
-                             "ExecuteString did not resolve)");
+        DropPendingWithError("IConsole unavailable (refdb names "
+                             "IConsole_AddCommand / IConsole_RemoveCommand / "
+                             "IConsole_ExecuteString did not resolve)");
         return false;
     }
 

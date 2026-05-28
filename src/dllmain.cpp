@@ -122,12 +122,13 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // GetModuleHandleW("WHGame.dll") + kcd_launcher.log / VS_VERSIONINFO, which
     // need only WHGame mapped (just confirmed by WaitForGameDll above), NOT the
     // engine initialized. Doing it HERE — before hooks::Install and the full
-    // plugin load — means g_runtimeGameVersion is known before every
-    // version-gated read (address_library::Resolve) and before the per-plugin
-    // compat gate in DiscoverAndLoad, which now READS this value rather than
-    // detecting it. Ctx-A (DllMain) detection is impossible: WHGame is not
-    // mapped under the loader lock (GetModuleHandleW returns null there), so
-    // this is the earliest achievable point.
+    // plugin load — means g_runtimeGameVersion is known before refdb::Open()
+    // (which uses it to locate the running build's game_versions row) and
+    // before the per-plugin compat gate in DiscoverAndLoad, which now READS
+    // this value rather than detecting it. Ctx-A (DllMain) detection is
+    // impossible: WHGame is not mapped under the loader lock
+    // (GetModuleHandleW returns null there), so this is the earliest
+    // achievable point.
     kcdx::plugins::g_runtimeGameVersion =
         kcdx::plugins::DetectRuntimeGameVersion();
     // The version STRING (wh_sys_version from <game-root>/system.cfg) — the
@@ -357,20 +358,20 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineSubsystemsInit);
 
     // Pak-resolver probe (observe-only): install the
-    // CCryPak::FOpen body detour (Address Library id 1206) to (a) confirm the
-    // resolver fires for asset READS at runtime and (b) log the early pak-
-    // resident virtual paths, so the override-target is confirmed-
-    // firing, not guessed. Dev-mode-gated + idempotent; a no-op in production.
+    // CCryPak::FOpen body detour (resolved by canonical name CCryPak_FOpen)
+    // to (a) confirm the resolver fires for asset READS at runtime and (b)
+    // log the early pak-resident virtual paths, so the override-target is
+    // confirmed-firing, not guessed. Dev-mode-gated + idempotent; a no-op in
+    // production.
     //
-    // address_library::Resolve(1206) gates on a g_runtimeGameVersion match, so
-    // this probe must run AFTER VersionDetected. That is now guaranteed early —
-    // the version is detected right after GameDllMapped (above), well before
-    // this point — so the probe's placement here is comfortably past
-    // VersionDetected. (Historically this had to sit after DiscoverAndLoad,
-    // which was where the version got set; that dependency is gone now that
-    // detection moved early, but the probe stays here.) The FOpen detour still
-    // arms well before any menu/save asset reads; the resolver fires
-    // continuously through boot→menu.
+    // refdb::ResolveAddrByName("CCryPak_FOpen") reads the in-memory cache
+    // built inside refdb::Open(), so this probe must run AFTER RefdbOpened.
+    // That is now guaranteed: refdb advances right after VersionDetected,
+    // well before this point. (Historically this had to sit after
+    // DiscoverAndLoad, which was where the version got set; that dependency
+    // is gone now that detection + refdb-open moved early, but the probe
+    // stays here.) The FOpen detour still arms well before any menu/save
+    // asset reads; the resolver fires continuously through boot→menu.
     //
     // (Was briefly disabled 2026-05-26 to isolate a parallel save-load crash
     // investigation; that crash is fixed and the baseline is clean, so it is

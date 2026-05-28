@@ -19,6 +19,7 @@
 #include "messaging.h"
 #include "patch_engine.h"
 #include "plugin_loader.h"
+#include "refdb.h"
 #include "scripting_interface.h"
 #include "serialization.h"
 #include "symbols.h"
@@ -136,7 +137,10 @@ uint32_t Thunk_EnumeratePlugins(kcdxPluginHandle* out, uint32_t cap) {
 }
 
 uintptr_t Thunk_ResolveAddress(uint64_t id) {
-    return kcdx::address_library::Resolve(id);
+    // Plugin-supplied numeric IDs are kcdx_ids in the refdb cache. A plugin
+    // that hardcoded a legacy seed ID (pre-flatten 1xxx / 2xxx / 3xxx) gets 0
+    // back if the id is unknown — the call site's existing error path fires.
+    return kcdx::refdb::ResolveAddrById(id);
 }
 
 uintptr_t Thunk_ResolveAddressByName(const char* name) {

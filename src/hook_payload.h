@@ -112,14 +112,15 @@ struct HookPayload {
     // targetLuaCfunction / address) are EXPERT/ADVANCED forms for targets
     // the library can't name yet — an escape hatch, never the default path.
     patch::Pattern                pattern;             // [advanced] AOB at the function entry
-    uint64_t                      addressId = 0;       // [advanced] Address Library numeric id
-    // Address Library entry by human-readable NAME (e.g. "lua_pcall").
-    // This is the landing slot for the COMMON path `target = "<name>"` and
-    // for `address_id = "<name>"` (the `address_id` opts key accepts a
-    // string OR a number; a string lands here, a number in addressId).
-    // Resolved via address_library::ResolveByName. Empty = not set. The
-    // name carries address AND verified signature — the author never
-    // hand-writes hex/ABI for a named target (the disassembler test).
+    uint64_t                      addressId = 0;       // [advanced] numeric kcdx_id in the refdb cache
+    // Curated entry by human-readable NAME (e.g. "lua_pcall"). This is the
+    // landing slot for the COMMON path `target = "<name>"` and for
+    // `address_id = "<name>"` (the `address_id` opts key accepts a string
+    // OR a number; a string lands here, a number in addressId). Resolved
+    // via address_library::ResolveByName, whose engine-seed tier delegates
+    // to the refdb cache. Empty = not set. The name carries address AND
+    // verified signature — the author never hand-writes hex/ABI for a
+    // named target (the disassembler test).
     std::string                   addressName;
     std::string                   targetSymbol;        // [advanced] cross-plugin symbol-table lookup
     std::string                   targetLuaCfunction;  // [advanced] e.g. "System.LogAlways"

@@ -80,7 +80,9 @@
 //                                     code.
 
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace kcdx::refdb {
@@ -299,5 +301,59 @@ IdResolution ResolveById(uint64_t kcdx_id,
 // decision at the later init step — resolution is identical in both; only
 // connection lifetime differs. This module does not gate on dev mode.)
 void Close();
+
+// =============================================================================
+// Cache-backed convenience helpers — added when refdb took ownership of the
+// curated cache (see CachedEntity in refdb.cpp).
+//
+// Open() bulk-builds an in-memory cache of every curated entity resolved at
+// the running game version (closest-match version row + supersession walk +
+// verification state — all the algorithms ResolveByName runs, executed once at
+// build instead of per-call). The helpers below are thin wrappers over the
+// cache so engine-internal callers don't write
+//   auto r = refdb::ResolveByName(name); return r.found ? WhgameBase() + r.rva : 0;
+// boilerplate at every site.
+//
+// All of these are LAUNCH-TIME safe (the cache is built inside Open() and
+// stays resident); they're also fine on hot paths because every lookup is an
+// in-memory hash hit.
+// =============================================================================
+
+// Convenience: name → VA (WhgameBase() + rva), 0 on miss. Logs the miss
+// reason at the underlying ResolveByName boundary. Used by engine-internal
+// call sites that just need an address. The CallerContext default is
+// engine-internal — every existing site stays correctly attributed.
+uintptr_t ResolveAddrByName(const std::string& name,
+                            const CallerContext& ctx = {});
+
+// Convenience: id → VA. Same purpose as ResolveAddrByName.
+uintptr_t ResolveAddrById(uint64_t kcdx_id,
+                          const CallerContext& ctx = {});
+
+// Verified ABI by name (empty string_view on miss, NEVER nullptr — the view
+// always points at a stable C string in the cache row, including the empty
+// terminator). Used by hook installation paths.
+std::string_view SignatureByName(const std::string& name,
+                                 const CallerContext& ctx = {});
+
+// Iterate every cached entry. Stops iterating when `cb` returns false.
+// Callback receives kcdx_id, the resolved (post-supersession) name, the
+// resolved VA (WhgameBase() + rva, 0 if the row has no rva or WHGame.dll is
+// not mapped), and the verification state.
+void ForEachCached(
+    const std::function<bool(uint64_t kcdx_id,
+                             const std::string& name,
+                             uintptr_t va,
+                             NameResolution::VerificationState state)>& cb);
+
+// Number of cache rows (== entities resolvable at the running game version).
+size_t CachedRowCount();
+
+// True iff the cache carries an entry for this name. Does NOT fire any
+// SUPERSEDED/DEPRECATED/UNVERIFIED warning — pure presence check. Used by the
+// address_library precedence walk to detect bare-name collisions between the
+// engine seed and an author-declared target without surfacing a per-state
+// warning at every collision check.
+bool HasName(const std::string& name);
 
 }  // namespace kcdx::refdb

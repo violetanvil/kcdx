@@ -5,8 +5,8 @@
 #include <memory>
 #include <vector>
 
-#include "../address_library.h"
 #include "../log.h"
+#include "../refdb.h"
 
 // Record synthesis — see record_synth.h for the surface + ownership contract,
 // docs/mod-loader-absorb.md for the I_Mod field map + the probe provenance.
@@ -17,11 +17,11 @@ namespace {
 
 constexpr const char* kCat = "MOD_ABSORB";
 
-// Address Library ids for the single I_Mod concrete-class vtable pair
-// (verified against the binary, ASLR-stable; seed rows 3105/3106). Resolved at BuildRecord time,
-// NEVER hardcoded as an RVA/VA — RVAs shift per game update.
-constexpr uint64_t kImodVtablePrimaryId   = 3105;  // ImodVtable_primary   -> +0x00
-constexpr uint64_t kImodVtableSubObjectId = 3106;  // ImodVtable_subobject -> +0x18
+// Canonical names for the single I_Mod concrete-class vtable pair (verified
+// against the binary, ASLR-stable). Resolved at BuildRecord time via the
+// refdb cache, NEVER hardcoded as an RVA/VA — RVAs shift per game update.
+constexpr const char* kImodVtablePrimaryName   = "ImodVtable_primary";    // -> record +0x00
+constexpr const char* kImodVtableSubObjectName = "ImodVtable_subobject";  // -> record +0x18
 
 // I_Mod record size + field offsets (verified against the binary — docs/mod-loader-absorb.md).
 constexpr size_t kRecordSize = 0x70;
@@ -110,13 +110,13 @@ void PutPtr(uint8_t* rec, size_t off, const void* value) {
 }  // namespace
 
 void* BuildRecord(const ModRecordInput& in) {
-    // Resolve the I_Mod vtable pair by Address Library id — NEVER a hardcoded
-    // RVA/VA (RVAs shift per game update). Resolve returns 0 on version mismatch
-    // / unverified row.
+    // Resolve the I_Mod vtable pair by canonical name — NEVER a hardcoded
+    // RVA/VA (RVAs shift per game update). ResolveAddrByName returns 0 on a
+    // cache miss (name unknown / row has no rva / module not mapped).
     const uintptr_t vtablePrimary =
-        address_library::Resolve(kImodVtablePrimaryId);
+        refdb::ResolveAddrByName(kImodVtablePrimaryName);
     const uintptr_t vtableSubObject =
-        address_library::Resolve(kImodVtableSubObjectId);
+        refdb::ResolveAddrByName(kImodVtableSubObjectName);
 
     if (vtablePrimary == 0 || vtableSubObject == 0) {
         // Fail LOUD + name the consequence: a record
@@ -124,15 +124,16 @@ void* BuildRecord(const ModRecordInput& in) {
         // we refuse to build one and return nullptr for the caller to reject.
         LOG_ERROR_KV(kCat, "build_record_vtable_unresolved",
                      log::KV("mod_id", in.id),
-                     log::KV("imod_vtable_primary_id", kImodVtablePrimaryId),
+                     log::KV("imod_vtable_primary_name", kImodVtablePrimaryName),
                      log::KV("imod_vtable_primary_va", reinterpret_cast<void*>(vtablePrimary)),
-                     log::KV("imod_vtable_subobject_id", kImodVtableSubObjectId),
+                     log::KV("imod_vtable_subobject_name", kImodVtableSubObjectName),
                      log::KV("imod_vtable_subobject_va", reinterpret_cast<void*>(vtableSubObject)),
                      log::KV("consequence",
-                        "I_Mod vtable id did not resolve (version mismatch / "
-                        "unverified seed row); a record with a null vtable WILL "
-                        "crash MOUNT on first virtual dispatch — record NOT built, "
-                        "returning nullptr"));
+                        "I_Mod vtable name did not resolve in the refdb cache "
+                        "(unknown / no rva / WHGame.dll not mapped); a record "
+                        "with a null vtable WILL crash MOUNT on first virtual "
+                        "dispatch \xe2\x80\x94 record NOT built, returning "
+                        "nullptr"));
         return nullptr;
     }
 

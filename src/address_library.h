@@ -3,20 +3,26 @@
 #include <cstdint>
 #include <string>
 
-// Address Library — id-to-RVA lookup compiled into kcdx.dll.
+// Address Library — plugin-precedence resolution surface.
 //
-// Plugins call api->ResolveAddress(id) to get a runtime VA for a
-// known function/data entry without hardcoding RVAs (which would
-// break on every KCD2 patch). The Address Library decouples the
-// stable plugin-facing IDs from the per-build RVAs.
+// The compiled-in seed table that used to live here (kEntries[] + the
+// per-row Entry struct + the kGV_* constant + Resolve(id) /
+// EntryCount{,ForRunningVersion} / ForEachResolvable / Describe / DescribeByName
+// / ResolveSignatureByName) was REMOVED when the refdb cache became the
+// single source of truth for the engine seed. address_library now owns only:
+//   - per-plugin aliases (kcdx.alias)
+//   - the author-declared targets registry
+//   - name validation (plugin name, author name, namespace components)
+//   - bare-name collision warning
+//   - the shared-name precedence walk (self > engine > other) — its
+//     engine-seed tier delegates to refdb::ResolveAddrByName / refdb::HasName
 //
-// Each entry also carries a description string (provenance + signature
-// + evidence trail) that plugin code can fetch via Describe()/
-// DescribeByName(). The descriptions answer "what RVA did I just get?"
-// without forcing authors to grep a separate CSV.
-//
-// Seed data + ID assignment policy + per-row provenance live in kcdx's
-// maintainer-side address-library inputs.
+// Engine-internal callers that just want an address by name go to refdb
+// directly (`kcdx::refdb::ResolveAddrByName("<canonical>")`). Engine-internal
+// callers with a stable kcdx_id go through `kcdx::refdb::ResolveAddrById`.
+// Plugin-facing surfaces that need the precedence walk + alias resolution
+// (the `kcdx.hook` / `kcdx.bytes` Lua binders, the C++ interface thunks)
+// keep calling ResolveByName here.
 
 namespace kcdx::address_library {
 
@@ -25,34 +31,7 @@ namespace kcdx::address_library {
 // returns a pointer to one, so the type must be visible before that point.
 struct AuthorTarget;
 
-// Resolve a known address-library ID against the running KCD2 build.
-// Returns the absolute VA (WHGame.dll base + RVA) on success, or 0
-// when:
-//   - id is unknown to this kcdx build's compiled-in database; OR
-//   - the row for `id` exists but its game_version doesn't match
-//     the running KCD2 (plugin needs an updated kcdx with a fresh
-//     RVA for this game build); OR
-//   - the row's status is anything other than "verified" (we don't
-//     promise resolution for unverified rows even when the RVA is
-//     present).
-//
-// Called from interfaces.cpp's Thunk_ResolveAddress.
-uintptr_t Resolve(uint64_t id);
-
-// Diagnostic: count of compiled-in entries (used by self-test).
-size_t EntryCount();
-
-// Diagnostic: count of entries whose game_version matches the
-// running build (i.e. entries that would resolve if the right id
-// were queried). Used by the engine's self-test and dev-log
-// startup summary.
-size_t EntryCountForRunningVersion();
-
-// Resolve a known address by NAME instead of numeric id. Names are
-// the kebab/snake-case labels in the seed CSV (e.g. "lua_pcall",
-// "cscriptsystem_init"). Returns the same VA as Resolve(id) for the
-// matching row, or 0 with the same rules (unknown name, wrong
-// game_version, unverified).
+// Resolve a known address by NAME, with plugin precedence + alias resolution.
 //
 // Used by kcdx.hook's locator path so authors can write
 //   kcdx.hook(kcdx.addr.lua_pcall, { ... })
@@ -136,62 +115,32 @@ const AuthorTarget* FindResolvedAuthorTarget(const char* name,
                                              const char* owningAuthor = "",
                                              const char* owningPlugin = "");
 
-// Iterate every entry that matches the running KCD2 build AND has
-// status "verified" — i.e. every row that would resolve via either
-// Resolve(id) or ResolveByName(name). Calls `cb` with the entry's
-// id, name, description, and resolved VA for each match. Used to
-// eagerly populate kcdx.addr.* at startup.
-//
-// Stops iterating when `cb` returns false.
-using ForEachResolvableCallback = bool (*)(uint64_t id, const char* name,
-                                           const char* description,
-                                           uintptr_t va, void* userdata);
-void ForEachResolvable(ForEachResolvableCallback cb, void* userdata);
+// NOTE: the following surfaces were REMOVED when refdb took ownership of the
+// curated cache. Callers migrated to refdb directly:
+//   - Resolve(id)                  -> kcdx::refdb::ResolveAddrById(id)
+//   - EntryCount()                 -> kcdx::refdb::CachedRowCount()
+//   - EntryCountForRunningVersion() -> kcdx::refdb::CachedRowCount()
+//   - ForEachResolvable(cb, ud)    -> kcdx::refdb::ForEachCached(cb)
+//   - Describe(id)                 -> (dropped; no engine callers)
+//   - DescribeByName(name)         -> (dropped; no engine callers)
+// Removed entirely from this header (and the corresponding `.cpp`
+// implementations): the linear-scan accessors that drove them were the
+// kEntries[]-table surface, which no longer exists.
 
-// Fetch the description string for a given id. Returns the entry's
-// description column (the row's curated "notes" prose) or nullptr if id is
-// unknown to this kcdx build. Description is
-// returned regardless of game_version match or status — even
-// unverified rows have descriptive notes worth surfacing for
-// diagnostics ("here's what we know, but we can't promise the RVA").
+// Fetch the verified function SIGNATURE for an address name. SAME precedence
+// walk as ResolveByName above (self > engine > other for a bare name; the
+// 1-dot / 2-dot explicit forms resolve directly and never warn), so the
+// returned ABI comes from the SAME row the address came from.
 //
-// String lifetime: process (compiled into .rdata).
-const char* Describe(uint64_t id);
-
-// Same as Describe() but by name. Returns nullptr if name is unknown.
-const char* DescribeByName(const char* name);
-
-// Fetch the machine-readable function SIGNATURE for a given Address
-// Library NAME, in the kcdx.hook signature DSL (see
-// src/hook_signature.h) — e.g. "i32 (ptr L, i32 nargs, i32 nresults,
-// i32 errfunc)" for lua_pcall. This is the STRUCTURED form of the
-// verified ABI prose carried in the row's notes/description column; it
-// lets `kcdx.hook{ target = "<name>" }` supply the ABI so the author
-// never hand-writes a signature for a named target (the disassembler
-// test — the engine carries address AND ABI for a named target).
+// The engine-seed tier delegates to kcdx::refdb::SignatureByName under the
+// hood — refdb owns the curated cache, the precedence walk lives here.
 //
-// Returns:
-//   - the entry's signature string when the row exists AND carries a
-//     verified, structured signature;
-//   - "" (empty, non-null) when the row exists but has NO verified
-//     signature yet (the prose carried no ABI to structure — we never
-//     invent one). The caller treats "" as "name resolved but
-//     no ABI known: ask the author for an explicit signature=".
-//   - "" when the name is unknown (callers resolve the address via
-//     ResolveByName separately and report the unknown-name error there).
+// Returns the row's structured signature ("" when the row exists but no
+// verified ABI is structured for it — we never invent one; "" also for a
+// name that no tier carries). Lifetime: process — caller may stash the
+// returned C-string for the rest of the session.
 //
-// Lifetime: process (compiled into .rdata). Returned independently of
-// game_version / status, mirroring Describe() — the binder gates the
-// address on ResolveByName (which enforces version + verified); the
-// signature is descriptive metadata for the same row.
-//
-// `owningAuthor` + `owningPlugin` are the 2-dot namespace components of the
-// resolving plugin, or "" for anonymous / engine-
-// internal. The signature resolves by the SAME order as ResolveByName (self >
-// engine > other for a bare name; explicit form resolves directly and never
-// warns), so the returned ABI comes from the SAME row the address did. The
-// bare-collision warn shares ResolveByName's once-per-session-per-name dedup
-// — a name that already warned there does not double-warn here.
+// LAUNCH-TIME ONLY — same invariant as ResolveByName.
 const char* ResolveSignatureByName(const char* name,
                                    const char* owningAuthor = "",
                                    const char* owningPlugin = "");

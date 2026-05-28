@@ -1662,6 +1662,100 @@ Without this front-door framing, the docs are a flat verb list; with it, the aut
 
 **Verification gate:** full test suite green; no plugin uses old surface forms; rule 4 + 4a documented; `kcdx.bytes` narrowed-remit doc landed; `docs/lua/index.md` leads with the tier model; `docs/lua/extensibility.md` exists and covers both directions; `kcdx.dll.declare` + `kcdx.functions.*` per-call docs landed; per-call `docs/lua/` and `docs/cpp/` entries cover every shipped capability per [docs-discipline.md](../../.claude/rules/docs-discipline.md).
 
+### Phase 9.7 — Curated-target sub-verb resolver (`kcdx.<verb>.<name>.<mode>`) via the refdb cache
+
+Phase 9.3 split the verb tree by MODE (`kcdx.hook.before/after/around/replace`), Phase 9.6 closed out rule 4a (sub-verbs over mode-as-table-key), and the refdb-owned cache (built in a precursor /execute cycle — see the "Substrate dependency" note below) put the curated target table in memory at boot. Phase 9.7 takes the next step: **the canonical target name itself becomes a sub-verb in the call path**, so the author writes the name in the same place they wrote the verb.
+
+**The shape:**
+
+```lua
+-- Curated target (in the refdb cache) → name is in the call path
+kcdx.hook.IsInCombat.before(callback)
+kcdx.hook.IsInCombat.after(callback)
+kcdx.hook.IsInCombat.replace(callback)
+kcdx.hook.IsInCombat.around(callback)
+kcdx.hook.IsInCombat.mid{captures = {...}, callback = my_fn}
+
+kcdx.statement.IsInCombat.replace_with(op)
+kcdx.statement.IsInCombat.insert_before(locator, callback)
+kcdx.statement.IsInCombat.insert_after(locator, callback)
+
+kcdx.bytes.IsInCombat{replacement = "..."}
+kcdx.scan.IsInCombat()
+kcdx.code.IsInCombat{...}
+
+-- Non-curated / author-declared / dynamic targets keep the explicit form
+kcdx.hook.before("WHGame.dll", "MyAuthorTarget", locator, callback)
+kcdx.hook{target = "MyAuthorTarget", before = callback}      -- legacy table form
+```
+
+A curated name is one in the refdb cache (today: ~140 entities; grows as RE work lands new rows). Non-curated paths (`kcdx.dll.declare` author-declared functions, dynamic name strings, raw addresses, `pattern` locators) keep the explicit-positional / table-driven form from Phase 9.3.
+
+**Substrate dependency.** Phase 9.7 depends on the **refdb-owned cache** landed in a precursor `/execute` cycle: at boot, `refdb::Open()` resolves every curated entity for the running game version (closest-match version row + supersession walk + state derivation) and stores the results in two in-memory hash maps (`g_byName`, `g_byId`). The cache row carries `kcdx_id`, post-supersession `name`, `rva`, `verified_signature`, `kind`, kind-specific fields (`offset` / `vtable_slot` / `value` / `length` / `content_hash`), and `verification_state`. The Lua-side smart resolver reads this cache; it never touches SQLite at runtime.
+
+The substrate cycle also migrates 13 engine-internal numeric-ID call sites to `refdb::ResolveAddrByName("<canonical>")` and shrinks `address_library.cpp` to its plugin-precedence / alias / author-target / validation surface. That cycle ships independently and closes the `record_synth` boot crash that motivated it.
+
+**Implementation pattern — smart resolver, NOT pre-generated tables.**
+
+The Lua binder does NOT materialize per-name-per-mode closures at boot. Verb tables (`kcdx.hook`, `kcdx.bytes`, `kcdx.statement`, `kcdx.scan`, `kcdx.code`) carry `__index` metamethods that resolve on demand:
+
+1. `kcdx.hook` is a Lua table with `__index = c_function`.
+2. Lookup of any name (`kcdx.hook.IsInCombat`) invokes the metamethod, which calls `refdb::ResolveByName(name)` — a hash lookup against `g_byName`, sub-microsecond. Miss → return nil. Hit → push a small verb-bound userdata with two upvalues: the cached entity and the verb tag (`"hook"`).
+3. The userdata's own `__index` resolves the mode (`.before` / `.after` / `.replace` / `.around` / `.mid`) against a per-verb static "valid modes for this kind" table. The kind drives validity — e.g., for `hook` + `function` kind: before/after/replace/around/mid all valid; for `hook` + `vtable_index` kind: only replace + before/after via vtable thunk are valid. Invalid mode → return nil. Valid → push a closure with `(entity, verb, mode)` baked in.
+4. The closure is what the author calls with `(callback)` or `{captures=..., callback=...}` — invoking the verb's existing install logic with the entity's address / signature / kind / etc. pre-resolved from the cache row.
+
+Cost at boot: ~5 C functions + ~5 metatables total (one per verb's `__index`). No per-name materialization. The refdb cache (~140 rows) is the only substantive data the surface touches.
+
+**Why this shape — UX wins:**
+
+- **Common path is the shortest path.** Curated-target hook becomes one fluent expression: `kcdx.hook.IsInCombat.before(fn)`. No positional repetition, no string quoting, no `target = "..."` table key. Matches the disassembler test's "name supplies address AND ABI" tenet — author types one name, engine carries everything else.
+- **Typo fails fast at the right place.** `kcdx.hook.IsInCombatt.before(fn)` returns nil at step 2 (the name lookup); the next `.before` access throws a Lua "attempt to index a nil value" error that names the slot the author typoed. No install-time silent skip. No "the engine accepted my code but my hook isn't firing" mystery.
+- **Kind-aware filtering is structural.** A mode that doesn't apply to an entity's kind returns nil at the mode-resolution step, so `kcdx.hook.SomeVTableIndex.before(fn)` errors at `.before` if `before` isn't valid for `vtable_index` kind — at author-time, not at install-time. No engine-side after-the-fact "I refused to install this" log line for the author to dig out.
+- **Validity rules are centralized.** The "which modes work for which kind" table lives in a single per-verb C++ array, not duplicated across 140 cache rows. Adding a new kind or a new mode is one edit.
+- **C++ side mirrors.** `kcdxHookInterface::IsInCombat::Before(callback)` (or the equivalent template specialization shape — to be settled at this phase's design step) mirrors the Lua surface. The full-parity invariant from `.claude/rules/lua-api-surface.md` is preserved: a curated target accessible by sub-verb in Lua is accessible by the same sub-verb shape in C++.
+
+**What the cache MUST provide.** Per the substrate cycle's `CachedEntity` design, the cache row already carries everything Phase 9.7 needs — no additional fields:
+
+| Field | How Phase 9.7 uses it |
+|---|---|
+| `kcdx_id` | Diagnostic; cross-reference to DB / log lines. |
+| `name` (post-supersession) | Identity for the verb-bound proxy. |
+| `rva` + `WhgameBase()` | Absolute VA for hook install / byte patch / scan validation. |
+| `verified_signature` | Hook-mode ABI binding (`kcdx.hook.<name>.before/.after/.around/.replace`). |
+| `kind` | Drives the per-verb "valid modes" check. |
+| `vtable_slot` / `offset` / `value` | Kind-specific install paths. |
+| `length` / `content_hash` | `kcdx.bytes.<name>` survival check (the hash-tracked per-target survival contract). |
+| `verification_state` | Resolver chooses to warn or filter (e.g., a DEPRECATED entity emits a one-shot WARN at the lookup that resolved it, redirecting authors to the replacement). |
+
+**Files (sketch — design step settles the exact shapes):**
+
+- `src/lua_bind_hook.cpp` — extend the existing binder with the `__index` metamethod path for curated targets; the explicit-positional + table forms from Phase 9.3 stay as the dynamic / author-declared / non-curated path.
+- `src/lua_bind_bytes.cpp` — same shape for `kcdx.bytes.<name>(...)`.
+- `src/lua_bind_statement.cpp` — same shape for `kcdx.statement.<name>.<op>(...)`.
+- `src/lua_bind_scan.cpp` — same shape for `kcdx.scan.<name>()`.
+- `src/lua_bind_code.cpp` — same shape for `kcdx.code.<name>(...)` (where a curated entity carries a default trampoline pool / size).
+- `include/kcdx/Interfaces.h` — C++ mirror: a templated / generated accessor shape that takes a curated name and returns a typed proxy with mode-resolved install methods. The exact ergonomics belong to this phase's design step.
+- The per-verb "valid modes for this kind" tables: one small static array per verb in the corresponding `src/lua_bind_*.cpp`, plus one in the C++ binding layer.
+
+**Documentation deliverable (`docs/lua/` + `docs/cpp/` per `docs-discipline.md`):**
+
+- Per-call entries for each verb in `docs/lua/` (`hook.md`, `bytes.md`, `statement.md`, `scan.md`, `code.md`) get a new section **before** the existing explicit-positional / table form, documenting the curated-target sub-verb form as the common path. The explicit / table forms stay, demoted to "use this when the target isn't curated (author-declared, dynamic name, raw address, pattern-located)."
+- The `docs/lua/index.md` front-door framing gets the new shape woven in — `kcdx.<verb>.<name>` is the one-liner an author types for a curated target.
+- Glossary terms in `docs/lua/index.md` glossary (and the C++ mirror in `docs/cpp/index.md` glossary):
+  - **Curated target** — an entity in the refdb cache (the kcdx-maintained address registry); accessible by name in the verb path.
+  - **Smart resolver** — the `__index`-driven Lua / templated-accessor C++ shape that resolves a curated name to its install function on demand, without pre-materializing per-name-per-mode closures.
+- C++ mirror entries in `docs/cpp/` (`hook.md`, `bytes.md`, `statement.md`, `scan.md`, `code.md`) — full entries marked NYI (per `docs-discipline.md` §3) until the C++ side ships in this phase. When both sides ship in this phase, the NYI markers are removed in the same commit.
+- The fallback path is documented (`kcdx.hook{target = "..."}` / `kcdx.hook.before("WHGame.dll", "Name", ...)`) as the dynamic / author-declared / non-curated form — not removed.
+
+**Verification gate:**
+
+- A new test plugin (next-free `cap-NN`) exercises the curated path against one cache-resident name across every valid mode for that name's kind. The plugin asserts PASS by calling each mode's install function and reporting fire (or static-bytes apply) from the callback / observable effect.
+- Negative test #1: typo at the name slot — `kcdx.hook.IsInCombatt.before(fn)` — produces a Lua error naming the typoed slot, NOT a silent skip. The plugin's manifest expects the error and reports PASS when it fires.
+- Negative test #2: invalid mode for kind — pick a name whose kind doesn't support `mid` and call `kcdx.hook.<name>.mid{...}` — the `.mid` access returns nil, the call raises "attempt to call a nil value", the plugin reports PASS.
+- Negative test #3: deprecated entity — pick a name whose `verification_state` is DEPRECATED in the running version, call `kcdx.hook.<name>.before(fn)`; the resolver emits a one-shot WARN naming the replacement, and the install still succeeds against the deprecated row (so the plugin keeps working). The plugin reports PASS when the WARN is present in the log and the hook fires.
+- C++ mirror test: a test DLL plugin uses the C++ shape against the same curated name in the same mode, reports PASS. Proves full-parity (`lua-api-surface.md`).
+- Suite stays X/Y green (no regressions in the existing Phase 9.3 sub-verb tests; the explicit-positional / table forms continue to work for non-curated paths).
+
 ### Phase 10 — `[[event]]` → `kcdx.on(...)` event catalog
 
 Addresses [docs/design-gaps.md](../../docs/design-gaps.md) gap #15 (game-event API beyond lifecycle messages).

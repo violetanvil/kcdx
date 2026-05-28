@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <cstring>
 
-#include "../address_library.h"
 #include "../log.h"
+#include "../refdb.h"
 
 // Synthesized-record self-validation — see record_validate.h for the surface +
 // the invariants + the keystone-crash provenance this guard exists to catch.
@@ -17,12 +17,12 @@ namespace {
 
 constexpr const char* kCat = "MOD_ABSORB";
 
-// Address Library ids for the I_Mod vtable pair (resolved at validate time —
-// NEVER a hardcoded RVA/VA). The same ids record_synth sets; the robust check
-// is "non-null + inside the WHGame image", and we additionally confirm the slot
-// equals the resolved id (record_synth writes exactly these).
-constexpr uint64_t kImodVtablePrimaryId   = 3105;
-constexpr uint64_t kImodVtableSubObjectId = 3106;
+// Canonical refdb names for the I_Mod vtable pair (resolved at validate time
+// — NEVER a hardcoded RVA/VA). The same names record_synth sets; the robust
+// check is "non-null + inside the WHGame image", and we additionally confirm
+// the slot equals the resolved address (record_synth writes exactly these).
+constexpr const char* kImodVtablePrimaryName   = "ImodVtable_primary";
+constexpr const char* kImodVtableSubObjectName = "ImodVtable_subobject";
 
 // I_Mod record field offsets — MUST mirror record_synth.cpp's field map
 // (docs/mod-loader-absorb.md "The I_Mod record layout").
@@ -135,8 +135,8 @@ bool ValidateSynthRecord(const void* rec,
         imgEnd  = imgBase + nt->OptionalHeader.SizeOfImage;
     }
 
-    const uintptr_t resolvedPrimary   = address_library::Resolve(kImodVtablePrimaryId);
-    const uintptr_t resolvedSubObject = address_library::Resolve(kImodVtableSubObjectId);
+    const uintptr_t resolvedPrimary   = refdb::ResolveAddrByName(kImodVtablePrimaryName);
+    const uintptr_t resolvedSubObject = refdb::ResolveAddrByName(kImodVtableSubObjectName);
 
     void* vtPrimary   = nullptr;
     void* vtSubObject = nullptr;

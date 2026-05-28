@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include "address_library.h"
+#include "refdb.h"
 #include "conflict_engine.h"
 #include "load_order.h"
 #include "log.h"
@@ -319,18 +320,19 @@ ResolvedPatch Resolve(const PatchEntry& p) {
         return r;
     }
 
-    // Locator path A2: address_id — resolves via kcdx's Address Library.
-    // Stable across game patches as long as the Library row matches the
+    // Locator path A2: address_id — resolves via the refdb cache by kcdx_id.
+    // Stable across game patches as long as the cache row matches the
     // running game build.
     if (p.addressId != 0) {
-        uintptr_t addr = kcdx::address_library::Resolve(p.addressId);
+        uintptr_t addr = kcdx::refdb::ResolveAddrById(p.addressId);
         if (!addr) {
             char idBuf[32];
             snprintf(idBuf, sizeof(idBuf), "%llu",
                      static_cast<unsigned long long>(p.addressId));
             r.reason = "address_id " + std::string(idBuf) +
-                       " did not resolve (unknown id, game-version "
-                       "mismatch, or row status != verified)";
+                       " did not resolve in the refdb cache (unknown "
+                       "kcdx_id, row carries no rva, or WHGame.dll not "
+                       "mapped)";
             log::ErrorF("[%s] aborted: %s", p.name.c_str(), r.reason.c_str());
             return r;
         }

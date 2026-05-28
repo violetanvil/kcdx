@@ -38,10 +38,10 @@
 
 #include "MinHook.h"
 
-#include "../address_library.h"
 #include "../dev.h"
 #include "../log.h"
 #include "../modification_inventory.h"  // RegisterModification (probe category)
+#include "../refdb.h"
 #include "../test.h"  // engine-internal probe self-report (same pattern as
                       // loc_dump_probe / cap-23: the behavior under test is
                       // engine machinery, so the engine reports; a manifest-
@@ -51,9 +51,12 @@ namespace kcdx::probes::fopen_override_probe {
 
 namespace {
 
-// === Address Library ids (landed Phase 8.5a, FINDINGS.md) ============
-constexpr uint64_t kIdFOpen     = 1206;  // CCryPak_FOpen body, RVA 0x004614A0
-constexpr uint64_t kIdPCryPak   = 1207;  // gEnv_pCryPak slot, RVA 0x0492B850
+// === Canonical refdb names for the FOpen body + gEnv->pCryPak slot. ====
+// Resolved via the refdb cache; the seed rows that back these names landed
+// during the Phase 8.5a RE work (CCryPak_FOpen body at WHGame+0x004614A0;
+// gEnv_pCryPak slot at WHGame+0x0492B850).
+constexpr const char* kNameFOpen   = "CCryPak_FOpen";
+constexpr const char* kNamePCryPak = "gEnv_pCryPak";
 
 // vtable slot 36 (offset +0x120) — used ONLY for the one-shot consistency
 // assertion (does *pCryPak's vtable[36] equal the Library's FOpen body?). The
@@ -356,12 +359,13 @@ bool Install() {
         return true;  // already installed this session
     }
 
-    // Resolve the FOpen body via the Address Library (AP1-clean: id 1206 landed
-    // 8.5a). Resolve returns 0 on unknown id / version mismatch / unverified.
-    uintptr_t fopenVA = kcdx::address_library::Resolve(kIdFOpen);
+    // Resolve the FOpen body via the refdb cache (seed row landed 8.5a).
+    // ResolveAddrByName returns 0 on a cache miss / row carries no rva /
+    // WHGame.dll not mapped.
+    uintptr_t fopenVA = kcdx::refdb::ResolveAddrByName(kNameFOpen);
     if (!fopenVA) {
-        log::Warn("FOPEN_PROBE: Resolve(1206 CCryPak_FOpen) returned 0 — "
-                  "wrong game version or unverified row; cannot install");
+        log::Warn("FOPEN_PROBE: refdb name \"CCryPak_FOpen\" did not resolve "
+                  "— cannot install");
         g_installed.store(false, std::memory_order_release);
         return false;
     }
@@ -376,9 +380,9 @@ bool Install() {
     }
 
     // One-shot consistency check: does *pCryPak's vtable[36] resolve to the
-    // same body the Library gave us? Confirms the gEnv+0x50 → vtable+0x120 reach
-    // matches id 1206 on this live build. Non-fatal — logged either way.
-    uintptr_t pCryPakSlotVA = kcdx::address_library::Resolve(kIdPCryPak);
+    // same body the cache gave us? Confirms the gEnv+0x50 → vtable+0x120 reach
+    // matches CCryPak_FOpen on this live build. Non-fatal — logged either way.
+    uintptr_t pCryPakSlotVA = kcdx::refdb::ResolveAddrByName(kNamePCryPak);
     if (pCryPakSlotVA) {
         void* pCryPak = *reinterpret_cast<void**>(pCryPakSlotVA);
         if (pCryPak) {
@@ -388,7 +392,7 @@ bool Install() {
                          log::KV("pCryPak",     pCryPak),
                          log::KV("vtable",      (void*)vtable),
                          log::KV("vtable[36]",  slotFn),
-                         log::KV("body_id1206", (void*)fopenVA),
+                         log::KV("body",        (void*)fopenVA),
                          log::KV("match",
                                  (uint64_t)(slotFn == (void*)fopenVA ? 1 : 0)));
             // (PROBE U.5 raw-OpenPack mount removed — the design re-scoped to

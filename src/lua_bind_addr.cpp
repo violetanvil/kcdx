@@ -30,60 +30,52 @@
 #include "lua_bind_addr.h"
 
 #include <cstdint>
+#include <string>
 
 extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
 }
 
-#include "address_library.h"
 #include "log.h"
 #include "lua_bind_helpers.h"
 #include "lua_memory.h"
+#include "refdb.h"
 
 namespace kcdx::lua_bind_addr {
 
-namespace {
-
-struct Ctx {
-    lua_State* L;
-    int        addrTableIdx;   // absolute stack index of kcdx.addr
-    size_t     count;
-};
-
-bool ForEachCb(uint64_t /*id*/, const char* name,
-               const char* /*description*/, uintptr_t va, void* userdata) {
-    auto* ctx = static_cast<Ctx*>(userdata);
-    if (!name || !name[0] || va == 0) return true;  // skip empty names
-    // PushPointer leaves a kcdx.memory.pointer userdata at the top
-    // of the stack. lua_setfield stores it at kcdx.addr[name] and
-    // pops it.
-    kcdx::lua_bind_helpers::PushPointer(
-        ctx->L, kcdx::lua_memory::pointer(va));
-    lua_setfield(ctx->L, ctx->addrTableIdx, name);
-    ctx->count++;
-    return true;
-}
-
-}  // namespace
-
 void bind(lua_State* L) {
     // Caller has the kcdx table on top of the Lua stack. We create
-    // kcdx.addr as a plain sub-table, populate from the Address
-    // Library, then leave the kcdx table on top for the next
-    // sub-binder.
+    // kcdx.addr as a plain sub-table, populate from the refdb cache,
+    // then leave the kcdx table on top for the next sub-binder.
     int kcdx_idx = lua_gettop(L);
 
     lua_newtable(L);                // [..., kcdx, addr]
     int addr_idx = lua_gettop(L);
 
-    Ctx ctx{L, addr_idx, 0};
-    kcdx::address_library::ForEachResolvable(&ForEachCb, &ctx);
+    size_t count = 0;
+    kcdx::refdb::ForEachCached(
+        [&](uint64_t /*id*/, const std::string& name, uintptr_t va,
+            kcdx::refdb::NameResolution::VerificationState state) {
+            if (name.empty() || va == 0) return true;
+            // Verified-only — keep the kcdx.addr table free of names whose
+            // running-V resolution carries a SUPERSEDED / DEPRECATED /
+            // UNVERIFIED caveat (refdb still resolves them via the curated
+            // path; kcdx.addr just doesn't surface them by-name).
+            if (state != kcdx::refdb::NameResolution::VerificationState::Verified) {
+                return true;
+            }
+            kcdx::lua_bind_helpers::PushPointer(
+                L, kcdx::lua_memory::pointer(va));
+            lua_setfield(L, addr_idx, name.c_str());
+            ++count;
+            return true;
+        });
 
     lua_setfield(L, kcdx_idx, "addr");  // kcdx.addr = addr; pops addr
 
-    log::InfoF("kcdx.addr: populated %zu name(s) from Address Library "
-               "(matching running KCD2 build)", ctx.count);
+    log::InfoF("kcdx.addr: populated %zu name(s) from refdb cache "
+               "(verified, matching running KCD2 build)", count);
 }
 
 }  // namespace kcdx::lua_bind_addr

@@ -60,8 +60,8 @@ enum class InitPhase {
     WorkerInit,
     // [ctx B] WaitForGameDll returned; WHGame.dll mapped.
     GameDllMapped,
-    // [ctx B] g_runtimeGameVersion known — everything version-gated
-    // (address_library::Resolve) depends on >= this phase.
+    // [ctx B] g_runtimeGameVersion known — refdb::Open() needs this to look
+    // up the running build's row in game_versions before resolving anything.
     //
     // Advances right after GameDllMapped, the earliest point WHGame.dll is
     // mapped — detection reads GetModuleHandleW("WHGame.dll") + kcd_launcher.log
@@ -73,14 +73,20 @@ enum class InitPhase {
     VersionDetected,
     // [ctx B] refdb::Open() returned true — the SQLite-backed reference database
     // is mapped READ-ONLY, schema_version + game_versions row both validated,
-    // and the connection is live on the worker thread. Every resolve-by-name
-    // lookup in this engine's path (refdb::ResolveByName) depends on
-    // >= RefdbOpened. Advances right after VersionDetected: refdb needs
-    // g_runtimeGameVersionString populated (that happens at VersionDetected) to
-    // locate the running build's game_versions row, so this is the earliest
-    // physically-achievable point. A refdb::Open() failure aborts the worker
-    // thread (the engine cannot resolve named targets without it), so a boot
-    // that reaches this phase has a usable refdb for the rest of the session.
+    // AND the in-memory cache is BUILT (refdb owns the resolved per-entity
+    // address + signature + state, bulk-built once at the running game version).
+    // EVERY name / id resolution in this engine — refdb::ResolveByName,
+    // refdb::ResolveById, refdb::ResolveAddrByName, refdb::ResolveAddrById,
+    // refdb::SignatureByName, address_library::ResolveByName (its engine-seed
+    // tier delegates here) — depends on >= RefdbOpened. Post-RefdbOpened, those
+    // resolves are in-memory hash lookups; no per-call SQL.
+    //
+    // Advances right after VersionDetected: refdb needs g_runtimeGameVersionString
+    // populated (that happens at VersionDetected) to locate the running build's
+    // game_versions row, so this is the earliest physically-achievable point. A
+    // refdb::Open() failure aborts the worker thread (the engine cannot resolve
+    // named targets without it), so a boot that reaches this phase has a usable
+    // refdb for the rest of the session.
     RefdbOpened,
     // [ctx B] hooks::Install (lua_pcall + update); MinHook live.
     EngineHooksInstalled,
@@ -122,8 +128,8 @@ enum class InitPhase {
 };
 
 // The current phase. Monotonic, advanced only via AdvanceTo(). Atomic because
-// it is written in context A/B and read across contexts (the version-gated
-// reads in address_library run from B, and from C once the absorb lands).
+// it is written in context A/B and read across contexts (refdb cache reads
+// from B, and from C once the absorb lands).
 extern std::atomic<InitPhase> g_phase;
 
 // Advance to `p`. Asserts a monotonic non-decreasing advance (a backward

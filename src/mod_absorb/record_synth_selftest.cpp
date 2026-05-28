@@ -6,7 +6,7 @@
 #include <string>
 
 #include "record_synth.h"
-#include "../address_library.h"
+#include "../refdb.h"
 #include "../test.h"
 
 // cap-52 self-test — see record_synth_selftest.h for why this lives in engine
@@ -38,8 +38,8 @@ constexpr size_t kOffCreatedDate     = 0x48;
 constexpr size_t kTailBegin          = 0x50;
 constexpr size_t kRecordSize         = 0x70;
 
-constexpr uint64_t kImodVtablePrimaryId   = 3105;
-constexpr uint64_t kImodVtableSubObjectId = 3106;
+constexpr const char* kImodVtablePrimaryName   = "ImodVtable_primary";
+constexpr const char* kImodVtableSubObjectName = "ImodVtable_subobject";
 
 // Read a pointer-width value out of the record at `off`.
 const void* ReadPtr(const void* rec, size_t off) {
@@ -114,12 +114,11 @@ void RunSelfTestOnce() {
     //  not a silent skip (the module logs the consequence too).]
     if (recA == nullptr) {
         std::snprintf(reason, sizeof(reason),
-            "FAIL: BuildRecord(A) returned nullptr — I_Mod vtable id %llu/%llu "
-            "did not resolve (version mismatch / unverified seed row), so no "
-            "record could be synthesized (a null-vtable record would crash "
-            "MOUNT). See the MOD_ABSORB Error line.",
-            (unsigned long long)kImodVtablePrimaryId,
-            (unsigned long long)kImodVtableSubObjectId);
+            "FAIL: BuildRecord(A) returned nullptr — refdb name %s/%s did "
+            "not resolve (cache miss / no rva on the row / WHGame.dll not "
+            "mapped), so no record could be synthesized (a null-vtable record "
+            "would crash MOUNT). See the MOD_ABSORB Error line.",
+            kImodVtablePrimaryName, kImodVtableSubObjectName);
         kcdx::test::ReportResult(kRow, false, reason);
         kcdx::test::EmitSummaryIfChanged("cap-52 record-synth");
         return;
@@ -141,24 +140,25 @@ void RunSelfTestOnce() {
         return;
     }
 
-    // Assertion 3: vtables == the Address-Library-resolved targets, non-null.
-    // [broken: wrong/stale/hardcoded vtable → mismatch → FAIL. Resolve()ed
-    //  here too (never hardcode the VA — it shifts per game update); same id
-    //  the module uses.]
-    const uintptr_t resolvedPrimary   = address_library::Resolve(kImodVtablePrimaryId);
-    const uintptr_t resolvedSubObject = address_library::Resolve(kImodVtableSubObjectId);
+    // Assertion 3: vtables == the refdb-resolved targets, non-null.
+    // [broken: wrong/stale/hardcoded vtable → mismatch → FAIL. Resolved here
+    //  too via the same canonical names the module uses (never hardcode the
+    //  VA — it shifts per game update).]
+    const uintptr_t resolvedPrimary   = refdb::ResolveAddrByName(kImodVtablePrimaryName);
+    const uintptr_t resolvedSubObject = refdb::ResolveAddrByName(kImodVtableSubObjectName);
     const void* vtPrimary   = ReadPtr(recA, kOffVtablePrimary);
     const void* vtSubObject = ReadPtr(recA, kOffVtableSubObject);
     if (resolvedPrimary == 0 || resolvedSubObject == 0 ||
         vtPrimary   != reinterpret_cast<const void*>(resolvedPrimary) ||
         vtSubObject != reinterpret_cast<const void*>(resolvedSubObject)) {
         std::snprintf(reason, sizeof(reason),
-            "FAIL: vtable mismatch — +0x00=%p vs Resolve(%llu)=%p, "
-            "+0x18=%p vs Resolve(%llu)=%p (a wrong/stale/hardcoded vtable, or "
-            "an unresolved id, would crash MOUNT on first virtual dispatch)",
-            vtPrimary, (unsigned long long)kImodVtablePrimaryId,
+            "FAIL: vtable mismatch — +0x00=%p vs ResolveAddrByName(%s)=%p, "
+            "+0x18=%p vs ResolveAddrByName(%s)=%p (a wrong/stale/hardcoded "
+            "vtable, or an unresolved name, would crash MOUNT on first "
+            "virtual dispatch)",
+            vtPrimary, kImodVtablePrimaryName,
             reinterpret_cast<const void*>(resolvedPrimary),
-            vtSubObject, (unsigned long long)kImodVtableSubObjectId,
+            vtSubObject, kImodVtableSubObjectName,
             reinterpret_cast<const void*>(resolvedSubObject));
         kcdx::test::ReportResult(kRow, false, reason);
         kcdx::test::EmitSummaryIfChanged("cap-52 record-synth");
@@ -195,9 +195,8 @@ void RunSelfTestOnce() {
     if (recB == nullptr) {
         std::snprintf(reason, sizeof(reason),
             "FAIL: BuildRecord(B) returned nullptr on the SECOND build "
-            "(vtable id %llu/%llu stopped resolving between builds)",
-            (unsigned long long)kImodVtablePrimaryId,
-            (unsigned long long)kImodVtableSubObjectId);
+            "(vtable name %s/%s stopped resolving between builds)",
+            kImodVtablePrimaryName, kImodVtableSubObjectName);
         kcdx::test::ReportResult(kRow, false, reason);
         kcdx::test::EmitSummaryIfChanged("cap-52 record-synth");
         return;
@@ -250,10 +249,9 @@ void RunSelfTestOnce() {
     // All assertions held.
     std::snprintf(reason, sizeof(reason),
         "2 records built (BuiltRecordCount delta=2); A's 8 string fields intact "
-        "after B built (container-stability proof); vtables = Resolve(%llu)/Resolve(%llu) "
+        "after B built (container-stability proof); vtables = ResolveAddrByName(%s)/ResolveAddrByName(%s) "
         "non-null; tail +0x50..0x6F zero",
-        (unsigned long long)kImodVtablePrimaryId,
-        (unsigned long long)kImodVtableSubObjectId);
+        kImodVtablePrimaryName, kImodVtableSubObjectName);
     kcdx::test::ReportResult(kRow, true, reason);
     kcdx::test::EmitSummaryIfChanged("cap-52 record-synth");
 }

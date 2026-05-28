@@ -39,6 +39,7 @@ extern "C" {
 #include <asmjit/asmjit.h>
 
 #include "address_library.h"   // ResolveByName (address_id = "name")
+#include "refdb.h"             // ResolveAddrById (address_id = numeric kcdx_id)
 #include "dynamic_call_jit.h"  // BuildLuaCallThunk (call_original over pOriginal)
 #include "hde/hde64.h"         // hde64_disasm (auto-decode mid resume offset)
 #include "hook_engine.h"       // InstallRuntime
@@ -1659,15 +1660,14 @@ uintptr_t ResolveCallsite(const kcdx::hook_payload::HookPayload& p,
                static_cast<uintptr_t>(static_cast<int64_t>(cs.offset));
     }
 
-    // address_id form: numeric Address Library id.
+    // address_id form: numeric kcdx_id in the refdb cache.
     if (cs.addressId != 0) {
-        uintptr_t va = kcdx::address_library::Resolve(cs.addressId);
+        uintptr_t va = kcdx::refdb::ResolveAddrById(cs.addressId);
         if (!va) {
             reason = "target_callsite.address_id " +
                      std::to_string((unsigned long long)cs.addressId) +
-                     " did not resolve in the Address Library (unknown id, "
-                     "or its entry doesn't match this game version / isn't "
-                     "verified)";
+                     " did not resolve in the refdb cache (unknown kcdx_id, "
+                     "row carries no rva, or WHGame.dll not mapped)";
             return 0;
         }
         return va + static_cast<uintptr_t>(static_cast<int64_t>(cs.offset));
