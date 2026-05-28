@@ -33,6 +33,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace kcdx::refdb {
 
@@ -83,6 +84,12 @@ struct NameResolution {
 
     std::string content_hash_hex;  // entity_versions.content_hash as hex; empty if NULL.
     std::string status;            // decoded status ("verified" for a found row).
+
+    // entity_versions.content_hash as the RAW 32-byte blob (empty if NULL) — the
+    // survival check needs the raw bytes to compare against an on-disk BLAKE3,
+    // not the hex form. Same source column as content_hash_hex; both populated
+    // together. Appended at the end of the struct (append-only).
+    std::vector<uint8_t> content_hash;
 };
 
 // Result of a resolve-by-KCDX_ID lookup (the bulk / un-curated path).
@@ -112,6 +119,10 @@ struct IdResolution {
     int64_t     value = 0;
 
     std::string content_hash_hex;
+
+    // entity_versions.content_hash as the RAW 32-byte blob (empty if NULL) —
+    // see NameResolution::content_hash. Appended at the end (append-only).
+    std::vector<uint8_t> content_hash;
 };
 
 // Open the reference database for the running game version.

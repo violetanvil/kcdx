@@ -36,6 +36,7 @@
 #include "mod_absorb/order_persist_selftest.h"  // cap-56 engine self-report
 #include "mod_absorb/mod_absorb_e2e_selftest.h"  // cap-57 engine self-report
 #include "mod_absorb/record_validate_selftest.h"  // cap-58 engine self-report
+#include "blake3_selftest.h"                       // cap-59 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — the BugSplat
 // ctor probe installs from kcdx.dll DllMain, not from hooks::Install.
@@ -623,6 +624,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // REJECT — the reject cases prove the guard checks the invariants rather than
     // passing everything. One-shot guarded internally.
     kcdx::mod_absorb::RunRecordValidateSelfTestOnce();
+
+    // cap-59-blake3-vectors: engine self-report for the BLAKE3 wrapper
+    // (src/blake3.cpp) over the vendored portable BLAKE3. Same timing as
+    // cap-52..58: no hook-fire / "ready" dependency — the hash is deterministic
+    // and works at boot. Hashes all 35 official BLAKE3 test-vector inputs and
+    // asserts the first 32 bytes match the canonical digest; this is the
+    // falsifiable proof the port is byte-identical to the canonical algorithm,
+    // which the survival check (src/survival.cpp) depends on. One-shot guarded
+    // internally.
+    kcdx::blake3::RunSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

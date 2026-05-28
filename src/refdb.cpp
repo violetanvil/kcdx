@@ -370,8 +370,13 @@ NameResolution ResolveByName(const std::string& name) {
         r.value = sqlite3_column_int64(st, 2);
     }
     if (sqlite3_column_type(st, 3) != SQLITE_NULL) {
-        r.content_hash_hex = HashToHex(sqlite3_column_blob(st, 3),
-                                       sqlite3_column_bytes(st, 3));
+        const void* blob = sqlite3_column_blob(st, 3);
+        int nbytes = sqlite3_column_bytes(st, 3);
+        r.content_hash_hex = HashToHex(blob, nbytes);
+        if (blob && nbytes > 0) {
+            const uint8_t* b = static_cast<const uint8_t*>(blob);
+            r.content_hash.assign(b, b + nbytes);  // raw blob for the survival check
+        }
     }
     r.kind = DecodeDict(g_kindDict, sqlite3_column_int64(st, 4));
     if (sqlite3_column_type(st, 5) != SQLITE_NULL) {
@@ -561,8 +566,13 @@ IdResolution ResolveById(uint64_t kcdx_id) {
         r.value = sqlite3_column_int64(st, 1);
     }
     if (sqlite3_column_type(st, 2) != SQLITE_NULL) {
-        r.content_hash_hex = HashToHex(sqlite3_column_blob(st, 2),
-                                       sqlite3_column_bytes(st, 2));
+        const void* blob = sqlite3_column_blob(st, 2);
+        int nbytes = sqlite3_column_bytes(st, 2);
+        r.content_hash_hex = HashToHex(blob, nbytes);
+        if (blob && nbytes > 0) {
+            const uint8_t* b = static_cast<const uint8_t*>(blob);
+            r.content_hash.assign(b, b + nbytes);  // raw blob for the survival check
+        }
     }
     if (sqlite3_column_type(st, 3) != SQLITE_NULL) {
         const unsigned char* sig = sqlite3_column_text(st, 3);

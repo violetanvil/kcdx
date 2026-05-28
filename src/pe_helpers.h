@@ -41,6 +41,24 @@ std::vector<uintptr_t> FindCStringsIn(const std::vector<SectionView>& sections,
 // Returns absolute VAs of the LEA instruction starts.
 std::vector<uintptr_t> FindLeaXrefsTo(const ModuleView& m, uintptr_t targetVA);
 
+// Map an RVA span to its file offset in a RAW ON-DISK PE buffer.
+//
+// `fileData`/`fileSize` are the bytes of a PE file as it sits on disk (e.g. the
+// whole WHGame.dll read from its backing file) — NOT a loaded/relocated image.
+// The function parses the file's OWN section headers (DOS + NT headers in the
+// buffer) and finds the section whose VirtualAddress range covers
+// [rva, rva+length), then maps it via the section's PointerToRawData.
+//
+// Returns true and writes the file offset to fileOffsetOut iff the WHOLE span
+// [rva, rva+length) lies within one section's raw on-disk data AND the resulting
+// file range fits inside fileData. Any failure (truncated headers, no covering
+// section, span crosses the section's raw-data end, or the file offset would run
+// past fileSize) returns false WITHOUT writing fileOffsetOut — the caller treats
+// a false return as a fail-loud "this RVA span is not on-disk-readable here",
+// never a silent zero. `length` must be > 0.
+bool RvaToFileOffsetOnDisk(const uint8_t* fileData, size_t fileSize,
+                           uint32_t rva, size_t length, size_t& fileOffsetOut);
+
 // Resolve x64 function bounds via .pdata RUNTIME_FUNCTION entries.
 // Returns true and fills [beginVA, endVA) if addressVA is inside any function.
 bool FindFunctionBoundsViaPdata(const ModuleView& m,

@@ -106,6 +106,64 @@ std::vector<uintptr_t> FindLeaXrefsTo(const ModuleView& m, uintptr_t targetVA) {
     return hits;
 }
 
+bool RvaToFileOffsetOnDisk(const uint8_t* fileData, size_t fileSize,
+                           uint32_t rva, size_t length, size_t& fileOffsetOut) {
+    if (!fileData || length == 0) return false;
+
+    // DOS header must fit and carry the MZ magic + a sane e_lfanew.
+    if (fileSize < sizeof(IMAGE_DOS_HEADER)) return false;
+    auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(fileData);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    if (dos->e_lfanew < 0) return false;
+    auto ntOff = static_cast<size_t>(dos->e_lfanew);
+
+    // NT headers must fit at e_lfanew and carry the PE signature.
+    if (ntOff > fileSize || fileSize - ntOff < sizeof(IMAGE_NT_HEADERS)) return false;
+    auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(fileData + ntOff);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+
+    // Section headers follow the optional header; bound the table against the
+    // buffer before walking it.
+    const WORD numSections = nt->FileHeader.NumberOfSections;
+    auto firstSec = IMAGE_FIRST_SECTION(nt);
+    auto secTableOff =
+        static_cast<size_t>(reinterpret_cast<const uint8_t*>(firstSec) - fileData);
+    if (secTableOff > fileSize) return false;
+    if ((fileSize - secTableOff) / sizeof(IMAGE_SECTION_HEADER) < numSections) {
+        return false;
+    }
+
+    // The span's end (exclusive). Guard the rva + length addition against
+    // overflow before forming the half-open interval.
+    const uint64_t spanBegin = rva;
+    const uint64_t spanEnd = spanBegin + length;
+    if (spanEnd < spanBegin) return false;  // overflow
+
+    for (WORD i = 0; i < numSections; ++i) {
+        const auto& sh = firstSec[i];
+        const uint64_t secVa = sh.VirtualAddress;
+        const uint64_t secRawSize = sh.SizeOfRawData;
+        const uint64_t secVaEnd = secVa + secRawSize;
+        if (secVaEnd < secVa) continue;  // malformed section, skip
+
+        // The WHOLE span must sit within this section's RAW on-disk data
+        // (bounded by SizeOfRawData, not VirtualSize — uninitialized tail bytes
+        // have no on-disk backing).
+        if (spanBegin < secVa || spanEnd > secVaEnd) continue;
+
+        const uint64_t rawBase = sh.PointerToRawData;
+        const uint64_t fileOff = rawBase + (spanBegin - secVa);
+        const uint64_t fileEnd = fileOff + length;
+        if (fileEnd < fileOff) return false;             // overflow
+        if (fileEnd > fileSize) return false;            // span runs past the buffer
+
+        fileOffsetOut = static_cast<size_t>(fileOff);
+        return true;
+    }
+
+    return false;  // no section covers the span
+}
+
 bool FindFunctionBoundsViaPdata(const ModuleView& m,
                                 uintptr_t addressVA,
                                 uintptr_t& beginVA,

@@ -65,6 +65,34 @@ target_compile_definitions(sqlite3 PRIVATE
 )
 
 # -----------------------------------------------------------------------------
+# BLAKE3 (vendored portable-path source, tri-licensed Apache-2.0 / Apache-2.0
+# with LLVM exception / CC0)
+#
+# Static lib linked into the engine for the survival check (content_hash
+# comparison against the on-disk game binary). The portable C fallback is the
+# only TU set vendored — the SIMD/.asm translation units are deliberately
+# omitted, so all four SIMD code paths are disabled at compile time and
+# blake3_dispatch.c routes to blake3_portable. This keeps the build
+# toolchain-agnostic (no nasm/.asm assembly step) at the cost of hashing speed;
+# the survival check hashes a small per-entity span at apply time, so the
+# portable path is fast enough.
+# MSVC_RUNTIME_LIBRARY is forced to MultiThreaded below (same as the other
+# vendored static libs) so the static runtime matches the rest of the link.
+# -----------------------------------------------------------------------------
+add_library(blake3 STATIC
+    vendor/blake3/blake3.c
+    vendor/blake3/blake3_dispatch.c
+    vendor/blake3/blake3_portable.c
+)
+target_include_directories(blake3 PUBLIC vendor/blake3)
+target_compile_definitions(blake3 PRIVATE
+    BLAKE3_NO_SSE2
+    BLAKE3_NO_SSE41
+    BLAKE3_NO_AVX2
+    BLAKE3_NO_AVX512
+)
+
+# -----------------------------------------------------------------------------
 # asmjit (vendored flat-copy, Zlib license)
 #
 # Used by the typed-marshaling trampolines for Lua-callback hooks and
@@ -188,6 +216,9 @@ add_library(kcdx SHARED
     src/mod_absorb/mod_absorb_e2e_selftest.cpp
     src/version_compat.cpp
     src/refdb.cpp
+    src/blake3.cpp
+    src/blake3_selftest.cpp
+    src/survival.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp
@@ -203,13 +234,14 @@ target_include_directories(kcdx PRIVATE
                              # [[mid_hook]] stack_restore_offset.
     vendor/tomlplusplus
     vendor/asmjit            # <asmjit/asmjit.h> for rom_borrowed/
+    vendor/blake3            # blake3.h for the survival-check content hash
 )
 
 # version.lib is needed for GetFileVersionInfo* calls in plugin_loader.cpp
 # asmjit is linked even when no hook uses lua_callback yet — the
 # typed-marshaling code references it; the linker dead-strips unused
 # asmjit code per-symbol.
-target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 version)
+target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 blake3 version)
 
 if(MSVC)
     target_compile_definitions(kcdx PRIVATE
@@ -222,6 +254,7 @@ if(MSVC)
     set_property(TARGET lua     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET sqlite3 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    set_property(TARGET blake3  PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
     # Emit a PDB beside build/Release/kcdx.dll so a kcdx crash frame
     # symbolicates offline (kcdx+offset crash dumps would otherwise have
