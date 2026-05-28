@@ -193,8 +193,15 @@ def mutate(v1, v1_rvas):
     # then apply the special mutations on top.
     v2_funcs = {}      # v2_rva -> v2 function row (list)
     rva_map = {}       # v1_rva -> v2_rva (for rewriting dependent tables)
+    changed_bodies = set()  # v1 rvas whose BYTES changed -> their statement hashes
+                            # must change too (real changed bytes change statement
+                            # bytes; a fixture that left statement hashes identical
+                            # would let the matcher cheat on a signal that does not
+                            # survive a real patch).
 
     def move(v1_rva, v2_rva, mutate_hash=False, new_name=None):
+        if mutate_hash:
+            changed_bodies.add(v1_rva)
         row = list(by_rva[v1_rva])
         row[ri] = hexs(v2_rva)
         if mutate_hash:
@@ -277,6 +284,7 @@ def mutate(v1, v1_rvas):
     v2_funcs[m_rva] = mrow
     rva_map[ra] = m_rva
     rva_map[rb] = m_rva          # both v1 fns now point at the merged v2 fn
+    changed_bodies.add(ra); changed_bodies.add(rb)   # merged body differs from both
     ground.append((hexs(m_rva), "MERGE", "%s|%s" % (hexs(ra), hexs(rb)), "merge"))
 
     # 10. FINGERPRINT-SWAP TRAP: swap_a and swap_b exchange their call-targets and
@@ -314,6 +322,11 @@ def mutate(v1, v1_rvas):
     def remap(rv):
         return rva_map.get(rv)   # None if the v1 fn was deleted/has no successor
 
+    # statement content_hash column index (statements table only) -- changed
+    # bodies must rotate their per-statement hashes too.
+    st_hdr = v1["statements"][0]
+    st_ch_i = st_hdr.index("content_hash")
+
     v2_data = {"functions": (fhdr, list(v2_funcs.values()))}
     for t in TABLES:
         if t == "functions":
@@ -330,6 +343,14 @@ def mutate(v1, v1_rvas):
                 if prv not in rva_map:
                     continue
             nr = list(r)
+            # CHANGED BODY: rotate this statement's content_hash (a real body change
+            # changes the statements' bytes -> their hashes). This denies the matcher
+            # the statement-hash-identity shortcut on changed functions, forcing it
+            # onto call-graph + string + position signals that DO survive a patch.
+            if t == "statements" and prv in changed_bodies:
+                h = nr[st_ch_i]
+                if isinstance(h, str) and len(h) == 64:
+                    nr[st_ch_i] = h[3:] + h[:3]
             for ci in cols:
                 old = parse_rva(nr[ci])
                 if old is None:
