@@ -536,3 +536,107 @@ Surface deltas in this step:
 
 The Steam Workshop walk in `pak_mod_registry` (round-2 decision 2) is a
 SEPARATE follow-up cycle, not in step 4.
+
+## Post-step-4 follow-ups — surfaced by live-launch verification
+
+Step 4 landed mechanically (bracket installs, records synthesize, MOUNT
+walks kcdx's list verbatim), but the larger plan's terminal goal — **boot
+to main menu** — is NOT yet met. Two crashes surfaced in live boots after
+step 4 deployed, in this order:
+
+### Crash #1 — I_Mod-vtable-null AV at `WHGame+0x244D085` (CLOSED)
+
+**Symptom.** First live boot post-step-4 AV'd at `WHGame+0x244D085` reading
+`[rcx+0x60]` from a synthesized I_Mod record whose vtable at +0x00 was 0.
+`rcx` carried instruction bytes (`6c894808245c8948`) instead of a pointer
+— a NULL-vtable dispatch the engine took into garbage.
+
+**Root cause.** `src/mod_absorb/record_synth.cpp::BuildRecord` resolved
+the I_Mod concrete-class vtables by the **legacy seed IDs 3105 / 3106**
+(`address_library::Resolve(3105)`, `Resolve(3106)`). The flattened DB
+schema re-keyed those entities to kcdx_ids 138 / 139; the static
+`kEntries[]` mirror in `address_library.cpp` was the only place the legacy
+IDs still resolved. After the seed flatten that table was a stale mirror
+and `Resolve(3105/3106)` returned 0 → record built with NULL vtable at
++0x00 → MOUNT's first virtual dispatch AV'd at the recorded RVA.
+
+**Fix.** Commit `498934c` (refdb-owns-the-cache refactor). `refdb::Open()`
+bulk-builds the curated cache once at boot; the engine-internal call sites
+in `record_synth.cpp` / `record_synth_selftest.cpp` / `record_validate.cpp`
+moved to `refdb::ResolveAddrByName("ImodVtable_primary")` and
+`ResolveAddrByName("ImodVtable_subobject")`. The static `kEntries[]` table
+was deleted; address_library shrank to the plugin-precedence / alias /
+author-target / validation surface. Live verification on 2026-05-28
+(`kcdx-dev_2026-05-28_15-27-10.log`) shows
+`[REFDB] cache_built name_count=143`, `resolve_hit input_name="ImodVtable_primary"
+kcdx_id=138 rva=…`, `ctor_bracket_complete obj=… enabled_n=79`, and no
+`[GUARD] FAULTED` at `module_rva=38014085`. The vtable-null AV is gone by
+construction. Full refactor scope + 9.7-phase consumer plan in
+[restructure-plan.md §Phase 9.7](restructure-plan.md).
+
+### Crash #2 — `ModManager_ParseManifest` AV at `WHGame+0x243FC85` (OPEN — next-cycle target)
+
+**Symptom.** Second live boot post-step-4 (with the crash-#1 fix
+deployed) reached the menu init farther than any prior boot and AV'd at
+`WHGame+0x243FC85`. BugSplat's UnhandledExceptionFilter caught it before
+kcdx's `[GUARD] FAULTED` SEH could fire — watchdog records *"no
+kcdx-side dmp … SEH handler didn't run — crash class probably bypassed
+it: fast-fail, kernel kill, etc."*; BugSplat report MFA reads
+`WHGame!0243fc85`.
+
+**RVA → function.** `0x243FC85 - 0x243E7B8 = 0x14CD` → **+0x14CD inside
+`ModManager_ParseManifest`** (seed kcdx_id 137, RVA `0x243E7B8`). Deep
+inside the body, not the prologue — past the early manifest-file open and
+into the field-population / version-gate logic.
+
+**Why this surfaced now.** The implemented step-4 bracket fully replaces
+ctor + SELECT — `ModManager_ParseManifest` is **never called by the
+bracket itself**. Synthesized records carry the strings `record_synth.cpp`
+sets (path, id, name, description, author, version, date — all wrapped as
+CryStringT with real headers) but do NOT carry the full state
+ParseManifest would populate. Something downstream — MOUNT itself, or a
+post-MOUNT pass — appears to invoke ParseManifest on a synthesized record
+that lacks state ParseManifest expects, and AVs inside it.
+
+**Design tension.** The RE recommendation in
+[§RE findings](#re-findings-research-disassembly-2026-05-27--pre-build-all-tier-12)
+of THIS doc was *"CALL the original ctor + SELECT, then wholesale-replace
+the enabled-list vector before the ctor's hook returns"* — explicitly
+to get the engine's own manifest parse + real vtables for free and avoid
+the keystone-crash-class kcdx already burned cycles avoiding
+(`project_kcdx_crystringt_record_fields` — garbage `nLength` →
+multi-GB alloc + CryFatalError during MOUNT). The implemented bracket
+chose the opposite path (full ctor + SELECT replacement, records from
+scratch). That choice cleared the SELECT-list-append-rejection crash that
+the narrow-takeover probe had hit, but it also bypassed the engine's own
+manifest parse — and crash #2 is plausibly the consequence.
+
+**Next-cycle scope (debug agent owns).** Three candidate paths, surface
+to /senior-architect-consult before implementing:
+1. **Populate the missing fields in `record_synth.cpp`** so a synthesized
+   record looks indistinguishable from a ParseManifest-populated one (the
+   "match the engine's record shape exactly" path; high upfront RE cost,
+   no behaviour change to the bracket).
+2. **Hook `ModManager_ParseManifest`** to detect kcdx-synthesized records
+   and short-circuit (skip the parse, return success); changes the
+   contract of an engine function but localises the workaround.
+3. **Revisit the round-2 design decision** and CALL the original ctor +
+   SELECT, then wholesale-replace the enabled-list vector (the RE
+   recommendation as written). The implemented bracket moves from
+   "replace the ctor" to "post-process the ctor's output."
+
+The decision belongs to the consult; the debug agent's first job is the
+ground-truth probe — which thread calls ParseManifest, with what record
+pointer, on what state delta.
+
+### Deferred-from-step-4 (independent of #1 / #2)
+
+- **`pak_mod_registry` Workshop walk** (round-2 decision 2). Kcdx
+  currently inherits the engine's Workshop scan via the original SELECT
+  pass; with SELECT gone the Workshop side of discovery is unowned. Not
+  a blocker for boot-to-menu; ships when the debug agent's choice for
+  crash #2 settles whether SELECT runs at all.
+- **Doc updates for `before_game` widening** (round-2 decision 4). Doc
+  sweep across [restructure-plan.md](restructure-plan.md) +
+  [load-order.md](../load-order.md); independent of every above
+  follow-up.
