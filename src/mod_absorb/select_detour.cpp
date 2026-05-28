@@ -18,6 +18,37 @@
 // mod-loader takeover: detour ModManager_Select (Address Library id 3100), let
 // the original run, then wholesale-replace the enabled-list vector with kcdx's
 // rebuilt list in resolved load order. docs/mod-loader-absorb.md "Step 4".
+//
+// Threading model (two threads, ONE wait point — parallel by default):
+//   WORKER thread (kcdx's WorkerThread)
+//     - CreateReadyEvent() creates g_kcdxReadyEvent (manual-reset, unsignaled)
+//       BEFORE InstallSelectDetour goes live. This is what makes the wait gate
+//       in HookedSelect honour its contract: by the time the detour can fire,
+//       the event handle exists. An earlier reorder regression that moved the
+//       SELECT-detour install too late observed the race this contract closes;
+//       the present design installs the detour and creates the event before
+//       DiscoverAndLoad runs, so the race window does not exist.
+//     - DiscoverAndLoad + the full plugin load + version gate run.
+//     - BuildEnabledListOnWorker() runs the BUILD: calls BuildEnabledList(...)
+//       into the module-static g_enabledList + g_entries, then SetEvents
+//       g_kcdxReadyEvent. Idempotent.
+//   GAME main thread (CSystem::Init), inside HookedSelect
+//     - Runs the ctor-probe ride-along (still the existing TRANSIENT probe).
+//     - Runs the original SELECT (native records + per-mod validation pass)
+//       in PARALLEL with the worker's build — the two touch disjoint state
+//       (engine-owned C_ModManager records vs kcdx-owned g_enabledList +
+//       g_entries) so concurrent execution is safe.
+//     - WaitForSingleObject(g_kcdxReadyEvent, INFINITE) — the only wait point,
+//       gating the wholesale-replace step only. On a populated tree, the
+//       worker is typically still building when orig returns; the wait
+//       blocks for the wall-clock difference between orig duration and
+//       worker-build duration (typically ~1-2s on a populated tree). On a
+//       clean install with no plugins, the worker is past SetEvent already
+//       and the wait returns immediately.
+//     - Wholesale-REPLACES the engine vector with kcdx's pre-built array.
+// Manual-reset event: stays signaled after the first SetEvent, so a re-entry
+// SELECT call's wait returns immediately (and the g_tookOver one-shot latch
+// still keeps the actual repoint single-shot).
 
 namespace kcdx::mod_absorb {
 
@@ -62,6 +93,33 @@ std::vector<void*> g_enabledList;
 // never dereferences it.
 void* g_emptySentinel = nullptr;
 
+// Parallel diagnostic vector. Built by the worker (BuildEnabledListOnWorker)
+// alongside g_enabledList; read by HookedSelect AFTER the readiness wait, for
+// the per-record DEBUG breakdown + vanilla/plugin counts. Module-static
+// (process-lifetime) so it survives the worker -> game-thread handoff. NOT
+// touched by the engine — kcdx-internal diagnostics only.
+std::vector<EnabledListEntry> g_entries;
+
+// Readiness event the SELECT-detour callback waits on. Manual-reset, initially
+// unsignaled. CreateReadyEvent (called by the worker BEFORE InstallSelectDetour)
+// creates the handle and stores it with release ordering; HookedSelect loads it
+// with acquire ordering before checking + waiting (the worker creates on one
+// thread, the game-thread callback reads on another — std::atomic establishes
+// the happens-before edge so the write is visible without relying on hardware
+// memory-model accidents). SetEvent fires once at the end of
+// BuildEnabledListOnWorker; the event stays signaled (manual-reset) for the
+// rest of the session so any re-entry SELECT call's wait returns immediately.
+std::atomic<HANDLE> g_kcdxReadyEvent{nullptr};
+
+// One-shot guard for CreateReadyEvent. Ensures a second call is a no-op; the
+// event is created exactly once per session.
+std::atomic<bool> g_eventCreatedOnce{false};
+
+// One-shot worker-build guard. Ensures BuildEnabledListOnWorker is a no-op on a
+// second call (defensive — the call site in dllmain is single, but the guard
+// keeps the function honest if some future caller invokes it twice).
+std::atomic<bool> g_workerBuiltOnce{false};
+
 void* ReadPtr(const uint8_t* base, size_t off) {
     void* v = nullptr;
     std::memcpy(&v, base + off, sizeof(v));
@@ -78,22 +136,61 @@ void __fastcall HookedSelect(void* self) {
     // probe; observe-only; never mutates `self`. Riding the existing detour
     // (one MinHook per site) — see ctor_probe.h and the init-cycle-ownership
     // outstanding-work doc. Deleted with the rest of the probe in step 4.
+    //
+    // MUST happen BEFORE the readiness wait below: the probe captures
+    // pre-SELECT C_ModManager state, and the wait should not delay that
+    // snapshot (the worker's build does not depend on this probe and vice
+    // versa).
     kcdx::mod_absorb::ctor_probe::OnSelectEntry(self);
 
     // 1. Run the ORIGINAL SELECT first — it builds the native records AND runs
     //    the per-mod validation pass. The list MUST NOT be mutated before that
     //    completes (growing it mid-validation crashes the engine's own walk);
-    //    wholesale-replace is safe only AFTER the original returns.
+    //    wholesale-replace is safe only AFTER the original returns. Running
+    //    orig BEFORE the wait below is the parallel order: the native
+    //    validation pass touches engine-owned C_ModManager records, the
+    //    worker's build populates the kcdx-owned g_enabledList + g_entries —
+    //    disjoint state, safe to run concurrently. On a populated tree the
+    //    wait below is hidden behind orig's wall-clock cost.
     SelectFn_t orig = g_orig.load(std::memory_order_acquire);
-    if (orig) {
-        orig(self);
-    } else {
+    if (!orig) {
         kcdx::log::Error("MOD_ABSORB: orig SELECT pointer null at dispatch — "
                          "cannot take over the enabled list this boot");
         return;
     }
+    orig(self);
 
-    // 2. One-shot: rebuild + replace exactly once. SELECT may be reachable more
+    // 2. Wait for the worker thread to finish building g_enabledList +
+    //    g_entries. This wait blocks the REPLACE step below (not the orig call
+    //    above — orig already ran in parallel with the worker's build). On a
+    //    populated tree the worker is typically still building when orig
+    //    returns, so this wait blocks for the wall-clock difference between
+    //    orig duration and worker-build duration (typically ~1-2s on a
+    //    populated tree). On a clean install with no plugins the worker is
+    //    past SetEvent already and the wait returns immediately.
+    //
+    //    INFINITE is correct: the worker WILL signal unless it hangs entirely
+    //    (in which case the game already cannot init). Acquire-load the
+    //    handle into a local once so a hypothetical second read cannot
+    //    observe a different value; pair with the release-store in
+    //    CreateReadyEvent to make the cross-thread write visible. The
+    //    defensive `if (handle)` guard handles the unlikely-but-possible
+    //    CreateEventW-failed case (logged loud at creation); the COMMON path
+    //    is the gate being TRUE because CreateReadyEvent ran on the worker
+    //    before InstallSelectDetour put this detour live.
+    HANDLE readyEvent = g_kcdxReadyEvent.load(std::memory_order_acquire);
+    if (readyEvent) {
+        LOG_DEBUG_KV(kCat, "enabled_list_wait_enter",
+                     kcdx::log::KV("detail",
+                         "HookedSelect about to WaitForSingleObject on "
+                         "g_kcdxReadyEvent (INFINITE) — confirms the wait is "
+                         "entered; on a clean install with non-trivial plugins "
+                         "this BLOCKS until BuildEnabledListOnWorker signals "
+                         "(typically ~1-2s; the game thread leads the worker)"));
+        WaitForSingleObject(readyEvent, INFINITE);
+    }
+
+    // 3. One-shot: rebuild + replace exactly once. SELECT may be reachable more
     //    than once across a session; the takeover applies to the first (boot)
     //    selection.
     bool expected = false;
@@ -120,28 +217,24 @@ void __fastcall HookedSelect(void* self) {
                      reinterpret_cast<uintptr_t>(origBegin)) / 8;
     }
 
-    // 3. Build kcdx's rebuilt enabled list (resolved load order, disabled +
-    //    failed-synth records excluded). Build into a LOCAL, then move into the
-    //    module-static store so the array the engine points at is
-    //    process-lifetime (a stack array would dangle when MOUNT walks it).
-    std::vector<EnabledListEntry> entries;
-    g_enabledList = BuildEnabledList(&entries);
-
+    // 4. The rebuilt enabled list is already in g_enabledList + g_entries
+    //    (built by the worker via BuildEnabledListOnWorker, signaled via
+    //    g_kcdxReadyEvent above). Just read it.
     const size_t n = g_enabledList.size();
 
     // Per-record DEBUG breakdown (dev-log-routed). Plain id + path; no probe
     // framing.
     size_t vanilla = 0, plugins = 0;
-    for (size_t i = 0; i < entries.size(); ++i) {
-        if (entries[i].isPlugin) ++plugins; else ++vanilla;
+    for (size_t i = 0; i < g_entries.size(); ++i) {
+        if (g_entries[i].isPlugin) ++plugins; else ++vanilla;
         LOG_DEBUG_KV(kCat, "takeover_record",
                      kcdx::log::KV("idx", (uint64_t)i),
-                     kcdx::log::KV("id", entries[i].id),
-                     kcdx::log::KV("path", entries[i].rootPathSlash),
-                     kcdx::log::KV("kind", entries[i].isPlugin ? "plugin" : "pak_mod"));
+                     kcdx::log::KV("id", g_entries[i].id),
+                     kcdx::log::KV("path", g_entries[i].rootPathSlash),
+                     kcdx::log::KV("kind", g_entries[i].isPlugin ? "plugin" : "pak_mod"));
     }
 
-    // 4. Repoint the vector at the kcdx-owned array. begin = &array[0];
+    // 5. Repoint the vector at the kcdx-owned array. begin = &array[0];
     //    end = end_of_storage = &array[N]. An EMPTY rebuilt list (n == 0) would
     //    leave the engine with zero enabled mods — repoint all three at a stable
     //    non-null sentinel address so begin == end == cap (a valid empty vector)
@@ -188,6 +281,144 @@ void __fastcall HookedSelect(void* self) {
 }
 
 }  // namespace
+
+void CreateReadyEvent() {
+    // Idempotent guard. A second call is a no-op.
+    bool expected = false;
+    if (!g_eventCreatedOnce.compare_exchange_strong(expected, true,
+                                                    std::memory_order_acq_rel)) {
+        return;
+    }
+
+    // Manual-reset, initially unsignaled. Created HERE — on the worker thread,
+    // BEFORE InstallSelectDetour goes live — so the wait gate in HookedSelect
+    // observes a non-null handle the moment the detour can fire. If creation
+    // were deferred to BuildEnabledListOnWorker (which runs AFTER
+    // InstallSelectDetour, after DiscoverAndLoad), a game-thread SELECT call
+    // arriving in the install→build window would see g_kcdxReadyEvent == null,
+    // skip the wait, and race the worker's build (empty enabled list, zero
+    // mods mounted). Co-locating creation with the consumer + sequencing it
+    // before the install closes that window.
+    HANDLE h = CreateEventW(nullptr, /*manualReset=*/TRUE,
+                            /*initialState=*/FALSE, nullptr);
+    if (!h) {
+        DWORD err = GetLastError();
+        LOG_ERROR_KV(kCat, "enabled_list_signal_failed",
+                     kcdx::log::KV("stage",   "CreateEventW"),
+                     kcdx::log::KV("win32_err", (uint64_t)err),
+                     kcdx::log::KV("detail",
+                         "CreateEventW for the SELECT-detour readiness event "
+                         "failed — HookedSelect will skip the wait and fall "
+                         "back to the existing g_tookOver one-shot path; the "
+                         "game-thread callback may run before the worker "
+                         "finishes building the list, in which case the "
+                         "fallback repoints whatever g_enabledList holds "
+                         "(empty if BuildEnabledList has not run yet)"));
+        // Leave g_kcdxReadyEvent at its initial null; the acquire-load in
+        // HookedSelect will observe null and skip the wait (defensive path).
+        return;
+    }
+
+    // Release-store so the acquire-load in HookedSelect on the game thread
+    // observes the fully-initialized handle (cross-thread visibility).
+    g_kcdxReadyEvent.store(h, std::memory_order_release);
+
+    LOG_INFO_KV(kCat, "enabled_list_event_created",
+                kcdx::log::KV("tid",
+                    (unsigned long long)GetCurrentThreadId()),
+                kcdx::log::KV("detail",
+                    "g_kcdxReadyEvent created (manual-reset, unsignaled) on "
+                    "the worker thread BEFORE InstallSelectDetour — the wait "
+                    "gate in HookedSelect will observe a non-null handle the "
+                    "moment the detour can fire"));
+}
+
+void BuildEnabledListOnWorker() {
+    // Idempotent guard. A second call is a no-op — the event is already
+    // signaled, and re-running BuildEnabledList would race the live engine
+    // vector that already points at g_enabledList[].
+    bool expected = false;
+    if (!g_workerBuiltOnce.compare_exchange_strong(expected, true,
+                                                   std::memory_order_acq_rel)) {
+        return;
+    }
+
+    LOG_INFO_KV(kCat, "enabled_list_build_start",
+                kcdx::log::KV("tid",
+                    (unsigned long long)GetCurrentThreadId()),
+                kcdx::log::KV("detail",
+                    "kcdx worker thread is building the rebuilt enabled list "
+                    "eagerly; the SELECT detour's game-thread callback will "
+                    "wait on the readiness event before reading it"));
+
+    // The readiness event must have been created earlier on this same worker
+    // thread by CreateReadyEvent (called BEFORE InstallSelectDetour). If the
+    // handle is null here, either CreateReadyEvent was not called (programming
+    // error — the WorkerThread sequence is broken) or CreateEventW itself
+    // failed (already logged loud at creation time). Log the programming-error
+    // case explicitly so the failure mode is named in the log trail; the build
+    // still proceeds (and SetEvent below will no-op on the null handle, which
+    // means HookedSelect's wait gate falls back to the defensive skip path).
+    HANDLE readyEvent = g_kcdxReadyEvent.load(std::memory_order_acquire);
+    if (!readyEvent) {
+        LOG_ERROR_KV(kCat, "enabled_list_event_missing",
+                     kcdx::log::KV("detail",
+                         "g_kcdxReadyEvent is null when BuildEnabledListOnWorker "
+                         "ran — CreateReadyEvent was not called before this "
+                         "point (or its CreateEventW failed and was already "
+                         "logged). The SELECT detour wait gate will fall back "
+                         "to the defensive skip path; if the game thread races "
+                         "ahead of the build, the engine will see an empty "
+                         "enabled list"));
+    }
+
+    // Build the rebuilt enabled list (resolved load order, disabled +
+    // failed-synth records excluded). Populates the module-static stores
+    // directly so HookedSelect reads them without further work.
+    g_enabledList = BuildEnabledList(&g_entries);
+
+    // Per-thread count breakdown for the build summary (mirrors the
+    // post-replace summary HookedSelect emits, just from the worker side, so a
+    // log trace shows the build-time + replace-time counts and they match).
+    size_t vanilla = 0, plugins = 0;
+    for (const EnabledListEntry& e : g_entries) {
+        if (e.isPlugin) ++plugins; else ++vanilla;
+    }
+    LOG_INFO_KV(kCat, "enabled_list_built",
+                kcdx::log::KV("count",   (uint64_t)g_enabledList.size()),
+                kcdx::log::KV("vanilla", (uint64_t)vanilla),
+                kcdx::log::KV("plugins", (uint64_t)plugins),
+                kcdx::log::KV("detail",
+                    "worker-thread build complete; g_enabledList + g_entries "
+                    "are ready for HookedSelect to read after the readiness "
+                    "event is signaled"));
+
+    // Signal readiness. Manual-reset: stays signaled for the rest of the
+    // session, so any HookedSelect call that arrives after this point returns
+    // from its wait immediately. Re-using the local acquire-loaded handle (no
+    // second atomic read — see the readEvent local above).
+    if (readyEvent) {
+        if (SetEvent(readyEvent)) {
+            LOG_INFO_KV(kCat, "enabled_list_signal",
+                        kcdx::log::KV("detail",
+                            "g_kcdxReadyEvent SetEvented (manual-reset); the "
+                            "SELECT-detour game-thread callback can now read "
+                            "g_enabledList without blocking"));
+        } else {
+            DWORD err = GetLastError();
+            LOG_ERROR_KV(kCat, "enabled_list_signal_failed",
+                         kcdx::log::KV("stage",   "SetEvent"),
+                         kcdx::log::KV("win32_err", (uint64_t)err),
+                         kcdx::log::KV("detail",
+                             "SetEvent on g_kcdxReadyEvent failed — the "
+                             "game-thread HookedSelect wait will block "
+                             "INFINITE on this boot; falling back to the "
+                             "existing g_tookOver one-shot path requires the "
+                             "wait to be skipped, which only happens when the "
+                             "event handle itself is null"));
+        }
+    }
+}
 
 bool InstallSelectDetour() {
     bool expected = false;

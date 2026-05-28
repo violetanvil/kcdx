@@ -185,6 +185,19 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // writer of C_ModManager state and there is nothing left to compare.
     kcdx::mod_absorb::ctor_probe::Install();
 
+    // Create the SELECT-detour readiness event NOW — BEFORE InstallSelectDetour
+    // below. The detour goes live the moment InstallSelectDetour returns, and
+    // the game thread can reach HookedSelect within milliseconds (CSystem::Init
+    // is on a different thread, ahead of this worker on a populated plugin
+    // tree). The wait gate in HookedSelect is `if (event) WaitForSingleObject(...)`
+    // — if the event were created later (deferred to BuildEnabledListOnWorker),
+    // a game-thread call arriving in the install→build window would observe
+    // a null handle, skip the wait, and race the worker's build (empty
+    // enabled list, zero mods mounted on a clean install with plugins).
+    // CreateReadyEvent + InstallSelectDetour are paired on this same worker
+    // thread; the event handle is owned end-to-end by the worker side.
+    kcdx::mod_absorb::CreateReadyEvent();
+
     // STEP 7 (ctx B): ModLoaderTakeoverArmed — the production mod-loader SELECT
     // detour. kcdx IS the mod loader: it owns WHICH mods load and in what ORDER.
     // This INSTALLS the detour on the engine's mod-loader SELECT driver
@@ -242,6 +255,42 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // relies on g_runtimeGameVersion already being set, rather than detecting
     // it.)
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::PluginsLoaded);
+
+    // Build the rebuilt enabled I_Mod* list eagerly on THIS (worker) thread,
+    // then SetEvent the readiness event the SELECT-detour callback waits on.
+    // Decouples the BUILD from the FIRE: previously BuildEnabledList ran
+    // INSIDE HookedSelect on the game's main thread, blocking it for the
+    // construction time. Now the worker builds it once (here, after every
+    // resolved state is final — DiscoverAndLoad just finished + the pak-mod
+    // version gate already ran above) and the game-thread callback only WAITS
+    // and READS.
+    //
+    // Threading model: parallel by default, ONE explicit wait point at the
+    // SELECT detour callback. Measured on a populated plugin tree: the game
+    // thread reaches SELECT ~1-2s before the worker finishes the build, so
+    // the SELECT-detour callback's wait blocks for that interval. This is the
+    // expected steady-state on a populated tree, not exceptional. On a clean
+    // install with no plugins the worker is past SetEvent already and the
+    // wait returns immediately. INFINITE is correct: the worker WILL signal
+    // unless it hangs entirely.
+    //
+    // The readiness event handle is created by CreateReadyEvent (above, BEFORE
+    // InstallSelectDetour) — by the time SELECT can fire, the wait gate is
+    // already a non-null handle. This call only BUILDS + signals.
+    //
+    // Must run BEFORE save_load_hooks::Install so the worker's hot path
+    // "install hooks -> discover plugins -> build enabled list -> signal
+    // readiness" is contiguous (the engine-fix detour install order is
+    // unchanged: InstallSelectDetour above stays at the race-critical early
+    // slot — only what RUNS inside the detour moves).
+    kcdx::mod_absorb::BuildEnabledListOnWorker();
+
+    // STEP 8b (ctx B): EnabledListBuiltAndReady — the worker finished building
+    // the rebuilt enabled list and SetEvented g_kcdxReadyEvent. From here on,
+    // any HookedSelect call on the game's main thread reads g_enabledList
+    // without blocking; before this point, the game-thread callback (if it
+    // races ahead) blocks on the wait until this phase is reached.
+    kcdx::init::AdvanceTo(kcdx::init::InitPhase::EnabledListBuiltAndReady);
 
     // Localization runtime-dump feature: arm the dev-mode probe
     // (CLocalizedStringsManager ctor capture + LocalizeString overload hooks on

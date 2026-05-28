@@ -89,6 +89,17 @@ enum class InitPhase {
     // earlier (race-critical), but plugins LOAD before the detour FIRES inside
     // CSystem::Init — so by fire time the enabled list reflects every plugin.
     PluginsLoaded,
+    // [ctx B] the rebuilt enabled I_Mod* list is BUILT on the worker thread
+    // (mod_absorb::BuildEnabledListOnWorker) and the readiness event the
+    // SELECT-detour callback waits on is SIGNALED. By this phase, when the
+    // SELECT-detour callback fires on the game's main thread, its
+    // WaitForSingleObject returns immediately (the list is already built); if
+    // the game thread races ahead of the worker, it blocks here briefly until
+    // the worker reaches this phase. Decouples the BUILD (worker) from the
+    // FIRE (game thread inside CSystem::Init) so the game-thread observable
+    // outcome is unchanged but the construction cost is moved off the game
+    // thread's hot path.
+    EnabledListBuiltAndReady,
     // [ctx B] save_load_hooks, serialization (after save_load). Advances LAST of
     // the ctx-B group.
     EngineSubsystemsInit,

@@ -22,6 +22,7 @@ const char* Name(InitPhase p) {
         case InitPhase::EngineHooksInstalled:    return "EngineHooksInstalled";
         case InitPhase::ModLoaderTakeoverArmed:  return "ModLoaderTakeoverArmed";
         case InitPhase::PluginsLoaded:           return "PluginsLoaded";
+        case InitPhase::EnabledListBuiltAndReady: return "EnabledListBuiltAndReady";
         case InitPhase::EngineSubsystemsInit:    return "EngineSubsystemsInit";
         case InitPhase::AfterGameApply:          return "AfterGameApply";
     }
