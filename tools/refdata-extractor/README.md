@@ -38,10 +38,16 @@ tools/refdata-extractor/
     produce_caller_reg_args.py    caller_reg_args/ table (register-arg estimate)
     size_abi_walker_cost.py       compute-sizing probe (cost measurement)
     probe_caller_arity.py         caller-arity feasibility probe
-    validate_extractor_output.py  THE GATE -- 26 checks vs independent anchors
+    validate_extractor_output.py  THE GATE -- 26 checks vs independent anchors (dump CSVs)
     VALIDATE-EXTRACTOR-README.md  the harness runbook + its falsifiability record
+    import_to_sqlite.py           dump + seed -> the two SQLite DBs (entity/version schema; rebuild + update modes)
+    validate_db_shape.py          THE DB-SHAPE GATE -- 25 checks on the built DB schema
   README.md                       (this file)
 ```
+
+The two gates are layered: `validate_extractor_output.py` checks the extractor's
+**dump CSV** output (upstream); `validate_db_shape.py` checks that
+`import_to_sqlite.py` builds the **DB** in the locked schema (downstream).
 
 ## The five output tables (→ reference.sqlite)
 
@@ -87,41 +93,58 @@ pwsh tools/refdata-extractor/run-parallel.ps1 -OutDir <out>/refdata-full -Worker
 
 ## Import → the two shipped DBs
 
+The import has **two modes**:
+
 ```bash
-python tools/refdata-extractor/python/import_to_sqlite.py <out>/refdata-full <out>/db
-#  -> <out>/db/reference.sqlite       (USER, ~48 MB)
+# REBUILD (--rebuild): from-scratch baseline build from a dump dir.
+python tools/refdata-extractor/python/import_to_sqlite.py --rebuild <out>/refdata-full <out>/db
+#  -> <out>/db/reference.sqlite       (USER, ~35 MB)
 #     <out>/db/reference-dev.sqlite   (DEV,  ~1.13 GB)
+
+# UPDATE (default): the per-version incremental path. Detects whether the game on
+# disk is newer than the DB and (when the cross-version matcher lands) appends the
+# new version's intervals in place. Reads the on-disk version from the game's
+# whdlversions.json (the shipped MasterMasterPGO config's build number; the DLL
+# carries no PE version resource).
+python tools/refdata-extractor/python/import_to_sqlite.py <out>/db <game-dir>
+#  exit 0 = DB already current; exit 3 = newer game version (matcher required)
 ```
 
-The import produces **two** DBs — the user-vs-dev split:
+The import produces **two** DBs on the locked **entity/version schema** — the
+user-vs-dev split:
 
-| DB | Tables | Size (disk / zipped) | Who ships / fetches it |
+| DB | Tables | Size | Who ships / fetches it |
 |---|---|---|---|
-| **USER** `reference.sqlite` | functions + signatures + caller_reg_args | 48 MB / 22 MB | every kcdx release — the per-launch survival check (`functions.content_hash`) + the ABI a callback hook needs at install (`functions.signature`) |
-| **DEV** `reference-dev.sqlite` | + statements + referenced_vars + call_edges | 1.13 GB / 397 MB | on-demand author download — `kcdx.find` / `kcdx_dev_inspect` discovery |
+| **USER** `reference.sqlite` | entities, entity_versions, kcdx_overlay, kcdx_overlay_versions, modules, game_versions, meta (dev-only columns dropped) | ~35 MB | every kcdx release — the per-launch survival check (`entity_versions.content_hash`) + the ABI a callback hook needs at install |
+| **DEV** `reference-dev.sqlite` | + statements + referenced_vars + call_edges (and the dev-only columns) | ~1.13 GB | on-demand author download — `kcdx.find` / `kcdx_dev_inspect` discovery |
 
-- **Why the split:** a mod user's runtime needs only the survival hashes + the
-  marshalling ABI for the functions their plugins hook — that is the small USER
-  DB. The per-statement metadata + the call graph exist only for the author
-  discovery/inspection surface, so they go in the larger DEV DB an author fetches
-  on demand. (`call_edges` is dev-only: it powers `kcdx.find`'s caller-graph
-  ranking, an author feature.)
+The schema is documented in full at `data/reference/README.md` (user) and
+`data/reference-dev/README.md` (dev). In brief:
+
+- **`entities`** is the single global `kcdx_id` authority; every other table keys
+  to it. **`entity_versions`** holds per-version validity intervals (one open row,
+  `valid_through IS NULL`, per entity = the current form), carrying the
+  content_hash, address, and the abi_walker argument-width floor. **`kcdx_overlay`**
+  / **`kcdx_overlay_versions`** are the curated name layer (identity + the verified
+  per-version facts). **`modules`** / **`game_versions`** are registries; **`meta`**
+  is the one-row header.
+- **Why the user/dev split:** a mod user's runtime needs only the survival hashes
+  + the marshalling ABI for the entities their plugins hook — the small USER DB.
+  The per-statement metadata + the call graph exist only for the author
+  discovery/inspection surface → the larger DEV DB. (`call_edges` is dev-only: it
+  powers `kcdx.find`'s caller-graph ranking + cross-version re-identification.)
 - **Encoding (lossless):** content_hash → 32-byte BLOB; low-cardinality repetitive
   text → INTEGER FK into `_dict_*` lookup tables; address/count cols → INTEGER.
-- **Seamless delivery:** the user DB ships UNCOMPRESSED inside the release zip
-  (the zip handles the download); the engine opens the plain `.sqlite` — no
-  decompression step, no install-time assembly.
-- **Launch cost is negligible** — the survival check is lazy + indexed (only the
-  functions a user's plugins hooked are queried; ~12 ms for a heavy total
-  conversion). The DB size does not affect launch speed (SQLite mmaps, reads only
-  touched pages).
-- **The DBs are generated artifacts** — they live at the out-dir, NOT in git; they
-  ship as release assets (the user DB in the release; the dev DB as a separate
-  download).
-- **NOT YET DONE:** stable-ID assignment (`functions.id` matched across game
-  versions). A single-version import has no prior IDs to match; a `--assign-ids`
-  follow-up adds it when the 2nd game version arrives. The current DB keys on
-  `rva` (correct for one version).
+- **Append-only, updated in place:** the DB is NOT rebuilt per game version — the
+  default update mode appends the new version's intervals to the existing DB. A
+  pairing trigger keeps each curated entity's overlay-version interval in step
+  with its entity_versions interval.
+- **The DBs are generated artifacts** — out-dir, NOT in git; they ship as release
+  assets (the user DB in the release; the dev DB as a separate download).
+- **NOT YET DONE:** the cross-version matcher that re-identifies an entity after
+  its bytes change (so update mode can append a new game version's intervals).
+  Update mode currently detects a newer version and reports "matcher required"
+  (exit 3) without mutating the DB.
 
 ## Verify it
 
@@ -135,6 +158,18 @@ function-enumeration CSV produced by a different tool; an independent BLAKE3
 recompute; cross-corroborated call edges; ground truth from the probes) — each with
 a nameable extractor-broken state that would flip it to FAIL. See
 `python/VALIDATE-EXTRACTOR-README.md`.
+
+The **DB-shape gate** verifies the import (downstream of the dump):
+
+```bash
+python tools/refdata-extractor/python/validate_db_shape.py   # -> 25/25 PASS
+```
+
+It builds both DBs from the dump and asserts 25 checks on the built schema: table
+presence per DB, the USER/DEV column projection, the one-open-interval-per-entity
+invariant, `kcdx_overlay` = the seed count with a paired open `kcdx_overlay_versions`
+row each, the `content_hash` BLOB round-trip, the pairing trigger's presence +
+silence at baseline, and FK resolution — each falsifiable.
 
 The BLAKE3 primitive has its own gate:
 
