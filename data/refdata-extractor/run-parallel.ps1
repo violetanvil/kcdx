@@ -72,7 +72,7 @@ param(
     [string] $ProjectDir,
     [string] $ProjectName = "KCD2",
     [string] $Module      = "WHGame.dll",
-    [Parameter(Mandatory = $true)][string] $OutDir,
+    [string] $OutDir,
     [int]    $Workers     = 8,
     [string] $VersionTag  = "release_1_5_1164953_841",
     [string] $EnumCsv,
@@ -94,6 +94,33 @@ $SHARD_SPAN = 0x100000
 # ---------------------------------------------------------------------------
 $ScriptRoot = $PSScriptRoot
 $RepoRoot   = (Resolve-Path (Join-Path $ScriptRoot "..\..")).Path
+
+# ---------------------------------------------------------------------------
+# Derive the short dotted game-version (e.g. "1.5.1164953") from the engine's
+# branch-style $VersionTag (e.g. "release_1_5_1164953_841"). The dump dir is
+# named refdata-<short-version> -- one dir per game version, never overwritten.
+# ---------------------------------------------------------------------------
+if ($VersionTag -match '^release_(\d+)_(\d+)_(\d+)(?:_\d+)?$') {
+    $ShortVersion = "{0}.{1}.{2}" -f $Matches[1], $Matches[2], $Matches[3]
+} else {
+    throw "VersionTag '$VersionTag' does not match expected shape 'release_M_N_BUILD[_SUB]'"
+}
+
+# Default OutDir = <repo>/data/refdata-extractor/dump/refdata-<short-version>.
+# An explicit -OutDir overrides (useful for ad-hoc / synthetic runs).
+if (-not $OutDir) {
+    $OutDir = Join-Path $ScriptRoot ("dump\refdata-{0}" -f $ShortVersion)
+}
+
+# If the target dir already exists, do NOT overwrite -- stop with a clear
+# message. To re-extract the same version the maintainer deletes the dir
+# first (conscious action, not a default).
+if (Test-Path $OutDir) {
+    Write-Host ("[run-parallel] Output dir already exists for game version " +
+                "$ShortVersion`:`n  $OutDir`n  ->  Nothing done. Delete the " +
+                "dir manually if you want to re-extract.") -ForegroundColor Yellow
+    exit 0
+}
 $Launcher   = Join-Path $ScriptRoot "ghidra\produce-reference-data.ps1"
 $PyDir      = Join-Path $ScriptRoot "python"
 $SigPy      = Join-Path $PyDir "produce_signatures.py"

@@ -80,10 +80,18 @@ data/refdata-extractor/sandbox/v1.backup/
 data/refdata-extractor/sandbox/v2.backup/
 data/refdata-extractor/sandbox/ground_truth.csv
 
+# refdata-extractor dump dirs: each refdata-<game-version>/ is ~1.3 GB of
+# Ghidra-extracted CSVs per game version, derived from a copy of WHGame.dll
+# and regenerable via run-parallel.ps1. The dump/README.md placeholder is
+# tracked (documents the dir's purpose + naming convention); the
+# refdata-<version>/ subdirs are not.
+data/refdata-extractor/dump/refdata-*/
+
 # data/reference.sqlite + data/reference-dev.sqlite -- generated SQLite DBs
-# produced by data/refdata-extractor/python/import_to_sqlite.py from the local
-# dump under C:\kcdx-refdata\refdata-full-*. The schema docs at data/reference.md
-# + data/reference-dev.md are tracked (public); the .sqlite blobs are derived
-# artifacts that ship via the release page (USER + DEV), never committed.
+# produced by data/refdata-extractor/python/import_to_sqlite.py from a local
+# dump under data/refdata-extractor/dump/refdata-<game-version>/. The schema
+# docs at data/reference.md + data/reference-dev.md are tracked (public);
+# the .sqlite blobs are derived artifacts that ship via the release page
+# (USER + DEV), never committed.
 data/reference.sqlite
 data/reference-dev.sqlite

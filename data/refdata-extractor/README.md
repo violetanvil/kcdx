@@ -87,9 +87,18 @@ project exclusively, so concurrent workers each need their own copy of the proje
 The 8-way parallel runner wraps all of the above:
 
 ```powershell
-pwsh data/refdata-extractor/run-parallel.ps1 -OutDir <out>/refdata-full -Workers 8 `
-    -VersionTag release_1_5_1164953_841
+pwsh data/refdata-extractor/run-parallel.ps1 -VersionTag release_1_5_1164953_841 -Workers 8
 ```
+
+The runner derives the output directory from `-VersionTag` automatically —
+the dump lands at `data/refdata-extractor/dump/refdata-<short-version>/`
+(e.g. `dump/refdata-1.5.1164953/`). `-OutDir` is an optional override for
+ad-hoc / synthetic runs. If a dir for the target game version already
+exists, the runner stops without overwriting; delete the dir manually to
+re-extract that same version.
+
+See `dump/README.md` for the dump-dir naming convention + how downstream
+tools resolve "which dump to use" by default.
 
 ## Import → the two shipped DBs
 
@@ -97,15 +106,15 @@ The import has **two modes**:
 
 ```bash
 # REBUILD (--rebuild): from-scratch baseline build from a dump dir.
-python data/refdata-extractor/python/import_to_sqlite.py --rebuild <out>/refdata-full <out>/db
-#  -> <out>/db/reference.sqlite       (USER production, curated-only, ~0.1 MB)
-#     <out>/db/reference-dev.sqlite   (DEV bulk discovery superset, ~1.13 GB)
+python data/refdata-extractor/python/import_to_sqlite.py --rebuild data/refdata-extractor/dump/refdata-<version> data/
+#  -> data/reference.sqlite       (USER production, curated-only, ~0.1 MB)
+#     data/reference-dev.sqlite   (DEV bulk discovery superset, ~1.3 GB)
 
 # UPDATE (default): the per-version incremental path. Detects whether the game on
 # disk is newer than the DB; reads the on-disk version from the game's
 # whdlversions.json (the shipped MasterMasterPGO config's build number; the DLL
 # carries no PE version resource).
-python data/refdata-extractor/python/import_to_sqlite.py <out>/db <game-dir>
+python data/refdata-extractor/python/import_to_sqlite.py data/ <game-dir>
 #  exit 0 = DB already current; exit 3 = newer game version (maintainer
 #  re-verifies the curated set against the new dump)
 ```

@@ -20,7 +20,8 @@ it + the local dump.
 
 Run:
   python make_sandbox.py [dump_dir] [n_slice]
-    dump_dir : the real dump (default C:\\kcdx-refdata\\refdata-full-20260527-105617)
+    dump_dir : a refdata-<version>/ dir produced by the extractor. Omit to use
+               the highest-version dir under ../dump/refdata-<version>/.
     n_slice  : how many functions to slice for v1 (default 200)
   -> writes sandbox/v1/, sandbox/v2/, sandbox/ground_truth.csv, + .backup/ copies.
 
@@ -41,12 +42,50 @@ for "the v1 identity" since match_versions assigns v1 kcdx_ids from the v1 slice
 import csv
 import glob
 import os
+import re
 import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SANDBOX = HERE
-DEFAULT_DUMP = r"C:\kcdx-refdata\refdata-full-20260527-105617"
+
+# The extractor writes one dump dir per game version into a `dump/` sibling of
+# `sandbox/`. Resolve relative to this script so it works on any maintainer's
+# clone.
+DUMP_ROOT = os.path.normpath(os.path.join(HERE, "..", "dump"))
+_VERSION_DIR_RE = re.compile(r"^refdata-(\d+\.\d+\.\d+)$")
+
+
+def find_latest_dump():
+    """Return (path, version_tag) of the newest dump dir under DUMP_ROOT, or
+    raise SystemExit with a helpful message if none exists."""
+    if not os.path.isdir(DUMP_ROOT):
+        sys.exit(
+            f"no dump root at {DUMP_ROOT}\n"
+            f"  -> create it and place a refdata-<version>/ dir there, or pass\n"
+            f"     an explicit dump_dir as the first argument.")
+    candidates = []
+    for entry in os.listdir(DUMP_ROOT):
+        full = os.path.join(DUMP_ROOT, entry)
+        if not os.path.isdir(full):
+            continue
+        m = _VERSION_DIR_RE.match(entry)
+        if not m:
+            continue
+        ver = m.group(1)
+        try:
+            ordinal = int(ver.split(".")[-1])
+        except ValueError:
+            ordinal = -1
+        candidates.append((ordinal, ver, full))
+    if not candidates:
+        sys.exit(
+            f"no `refdata-<version>/` dirs under {DUMP_ROOT}\n"
+            f"  -> run the extractor (data/refdata-extractor/run-parallel.ps1)\n"
+            f"     or pass an explicit dump_dir as the first argument.")
+    candidates.sort(reverse=True)
+    _, ver, path = candidates[0]
+    return path, ver
 
 TABLES = ["functions", "statements", "referenced_vars", "call_edges",
           "signatures", "caller_reg_args"]
@@ -374,10 +413,14 @@ def mutate(v1, v1_rvas):
 
 
 def main():
-    dump_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DUMP
+    if len(sys.argv) > 1:
+        dump_dir = sys.argv[1]
+        if not os.path.isdir(dump_dir):
+            sys.exit("dump dir not found: " + dump_dir)
+    else:
+        dump_dir, ver = find_latest_dump()
+        print(f"== using dump for game version {ver}: {dump_dir}")
     n_slice = int(sys.argv[2]) if len(sys.argv) > 2 else 200
-    if not os.path.isdir(dump_dir):
-        sys.exit("dump dir not found: " + dump_dir)
 
     print("== slicing v1 (%d functions) from %s" % (n_slice, dump_dir))
     v1, v1_rvas = slice_v1(dump_dir, n_slice)

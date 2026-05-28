@@ -5,6 +5,10 @@
 > (split into `module_seed.csv` + `address_names_seed.csv` + `address_versions_seed.csv` +
 > `policy.md`), and the schema READMEs are now `data/reference.md` + `data/reference-dev.md`
 > (siblings to the gitignored DBs at `data/reference.sqlite` + `data/reference-dev.sqlite`).
+> The Ghidra-extracted dump dirs no longer live at the absolute path
+> `C:\kcdx-refdata\refdata-full-<stamp>\` — they now live under the repo at
+> `data/refdata-extractor/dump/refdata-<game-version>/` (one dir per game version,
+> resolved relative to the script so the pipeline runs on any maintainer's clone).
 > This file is a historical record and is not maintained against the new layout —
 > consult the current schema docs and policy.md for the authoritative shape.
 

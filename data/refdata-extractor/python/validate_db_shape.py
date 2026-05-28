@@ -18,15 +18,19 @@ sys.exit(1) on any FAIL.
 RUN
 ---
     python validate_db_shape.py [dump_dir]
-(default dump_dir = C:\\kcdx-refdata\\refdata-full-20260527-105617). Builds into a
-temp out dir, runs the checks, cleans up.
+
+When dump_dir is omitted, the harness picks the highest-ordinal version dump
+under <repo>/data/refdata-extractor/dump/refdata-<game-version>/. Builds into
+a temp out dir, runs the checks, cleans up.
 
 NOTE: against the real dump (~321K rows) the build takes ~a minute. The real-dump
 run is the maintainer's gate; this harness can also point at a synthetic dump dir
 for a fast smoke test (any dir with the six dump-table subdirs + matching headers).
 """
 import csv
+import glob
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -36,7 +40,45 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import import_to_sqlite as imp   # noqa: E402
 
-DEFAULT_DUMP = r"C:\kcdx-refdata\refdata-full-20260527-105617"
+# The extractor writes one dump dir per game version into a `dump/` sibling of
+# `python/` and `ghidra/`. The dir name is `refdata-<version>` (e.g.
+# `refdata-1.5.1164953`). Resolved relative to this script so it works on any
+# maintainer's clone.
+DUMP_ROOT = os.path.normpath(os.path.join(HERE, "..", "dump"))
+_VERSION_DIR_RE = re.compile(r"^refdata-(\d+\.\d+\.\d+)$")
+
+
+def find_latest_dump():
+    """Return (path, version_tag) of the newest dump dir under DUMP_ROOT, or
+    raise SystemExit with a helpful message if none exists."""
+    if not os.path.isdir(DUMP_ROOT):
+        sys.exit(
+            f"no dump root at {DUMP_ROOT}\n"
+            f"  -> create it and place a refdata-<version>/ dir there, or pass\n"
+            f"     an explicit dump_dir as the first argument.")
+    candidates = []
+    for entry in os.listdir(DUMP_ROOT):
+        full = os.path.join(DUMP_ROOT, entry)
+        if not os.path.isdir(full):
+            continue
+        m = _VERSION_DIR_RE.match(entry)
+        if not m:
+            continue
+        ver = m.group(1)
+        # Sort key: the third dotted component is the monotonic build number.
+        try:
+            ordinal = int(ver.split(".")[-1])
+        except ValueError:
+            ordinal = -1
+        candidates.append((ordinal, ver, full))
+    if not candidates:
+        sys.exit(
+            f"no `refdata-<version>/` dirs under {DUMP_ROOT}\n"
+            f"  -> run the extractor (data/refdata-extractor/run-parallel.ps1)\n"
+            f"     or pass an explicit dump_dir as the first argument.")
+    candidates.sort(reverse=True)
+    _, ver, path = candidates[0]
+    return path, ver
 
 _results = []
 
@@ -465,9 +507,13 @@ def run_checks(dump_dir, user_db, dev_db):
 
 
 def main():
-    dump_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DUMP
-    if not os.path.isdir(dump_dir):
-        sys.exit("dump dir not found: " + dump_dir)
+    if len(sys.argv) > 1:
+        dump_dir = sys.argv[1]
+        if not os.path.isdir(dump_dir):
+            sys.exit("dump dir not found: " + dump_dir)
+    else:
+        dump_dir, ver = find_latest_dump()
+        print(f"==> using dump for game version {ver}: {dump_dir}", flush=True)
 
     scratch = tempfile.mkdtemp(prefix="kcdx-dbshape-validate-")
     try:
