@@ -105,7 +105,6 @@ part of the curated cross-version tracking:
 - **The abi_walker argument-width floor for uncurated functions** — also
   DEV-only. A Track-2 plugin hooking an uncurated function declares its own ABI
   via `kcdx.declare`.
-- **Entity-level prose notes** — DEV-only.
 
 A plugin that wants to hook an uncurated function does NOT look here. It uses
 `kcdx.find` against the DEV DB to discover the target, then declares it in its
@@ -138,6 +137,7 @@ Two entity-level events, each version-anchored:
 | `is_deprecated` | `0` / `1`. Paired with `deprecated_at_version`. |
 | `deprecated_at_version` | nullable FK → `game_versions.id`. The deprecation becomes active at this version inclusive. |
 | `deprecation_replacement` | nullable FK → `address_names.id`. Advisory pointer surfaced to the author at resolve time ("X is deprecated; consider Y"). The engine does NOT auto-follow this — it is a DIFFERENT entity, not a rename. Allowed only when `is_deprecated = 1`. |
+| `notes` | nullable TEXT. The maintainer's entity-level prose — what this entity is, why it was curated, references to upstream sources. For author consumption (the engine doesn't read it). |
 
 ### `address_versions` — per-version resolve facts (the spine)
 

@@ -205,12 +205,13 @@ def run_checks(dump_dir, user_db, dev_db):
     uacols = columns(uc, "address_names")
     dacols = columns(dc, "address_names")
     # `source` was DROPPED 2026-05-28 -- carries no information vs. the derived
-    # status. Verify it's gone from BOTH DBs (the column was meaningless on
-    # either side and should not have survived the cut).
-    check("USER address_names excludes source + notes",
-          "source" not in uacols and "notes" not in uacols,
+    # status. Verify it's gone from BOTH DBs.
+    # `notes` ships to BOTH DBs (promoted 2026-05-28; authors reading USER want
+    # entity-level prose, size impact is tiny).
+    check("USER address_names excludes source; includes notes",
+          "source" not in uacols and "notes" in uacols,
           "user cols=%s" % uacols)
-    check("DEV address_names excludes source (dropped 2026-05-28); includes notes",
+    check("DEV address_names excludes source; includes notes",
           "source" not in dacols and "notes" in dacols,
           "dev cols=%s" % dacols)
     # Verification audit columns ship on BOTH DBs (the engine needs them on

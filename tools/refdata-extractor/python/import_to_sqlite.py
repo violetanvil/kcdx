@@ -158,7 +158,7 @@ USER_COLUMNS = {
     "address_names":    ["id", "name",
                          "superseded_by", "superseded_at_version",
                          "is_deprecated", "deprecated_at_version",
-                         "deprecation_replacement"],
+                         "deprecation_replacement", "notes"],
     # `id` IS the kcdx_id (the stable cross-version handle); no separate kcdx_id
     # column. address_versions.kcdx_id references address_names.id.
     # excludes notes (DEV-only).

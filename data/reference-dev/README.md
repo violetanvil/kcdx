@@ -71,11 +71,11 @@ ship to BOTH databases. They live on the same `address_versions` rows in the
 DEV DB that get filtered to USER. Bulk uncurated rows have all four NULL
 (nobody ever signs off on the bulk).
 
-### `address_names` — one dev-only column
+### `address_names` — no dev-only columns
 
-| Column | Meaning |
-|---|---|
-| `notes` | the maintainer's entity-level prose (what the entity is, why it was added). Absent from the production database. |
+`address_names` ships identically to USER and DEV. The entity-level prose
+`notes` column ships to both (small enough to include, useful to authors
+reading either DB).
 
 ## Dev-only tables (the bulk discovery surface)
 
