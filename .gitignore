@@ -68,3 +68,14 @@ test-fixtures/pak-mods/**/*.pak
 # _research/: tracked (recon notes, scripts, wiki cache). Predecessor-sig clones
 # are shallow clones of third-party repos — keep them on disk, out of git.
 _research/predecessor-sigs/
+
+# refdata-extractor sandbox: the matcher CODE + the make_sandbox recipe are
+# tracked; the fixture DATA (a real WHGame.dll dump slice + the authored v2
+# mutation + backups) is derived/local and never committed (it would also leak
+# game-binary-derived content to the public allowlist). Regenerable via
+# make_sandbox.py.
+tools/refdata-extractor/sandbox/v1/
+tools/refdata-extractor/sandbox/v2/
+tools/refdata-extractor/sandbox/v1.backup/
+tools/refdata-extractor/sandbox/v2.backup/
+tools/refdata-extractor/sandbox/ground_truth.csv

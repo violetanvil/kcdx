@@ -909,12 +909,14 @@ attachment to that id. ID minting is **maintainer-only** (no in-game promote).
 | Axis | Lives on | Set when | Means |
 |---|---|---|---|
 | **Name** deprecation | `kcdx_overlay.is_deprecated` + `superseded_by` (→ another overlay ROW) | maintainer renames | "call it NewName; OldName still resolves to the SAME live function" |
-| **Function** removal | DERIVED from `entity_versions` (latest interval closed, no later open row) | the matcher finds no v2 match | "this function no longer EXISTS in the game" |
+| **Function** removal | DERIVED from `entity_versions` (latest interval closed, no later open row) | the maintainer CONFIRMS a `deleted_candidate` proposal (§11.6) | "this function no longer EXISTS in the game" |
 
 The name axis is rows in `kcdx_overlay` (a `kcdx_id` may have BOTH an OldName row
 — `is_deprecated=1`, `superseded_by`→the new row — and a NewName row, which is why
 `kcdx_id` is a non-unique FK there). The removal axis is NOT a column — it falls
-out of the interval model (§11.2). Both populate only when the matcher runs (a
+out of the interval model (§11.2), and is applied by `reconcile_transition.py`
+only for a maintainer-CONFIRMED deletion (never auto — a missed match looks like a
+deletion, §11.6). Both populate only when a version-update is reconciled (a
 single-version baseline has nothing to deprecate/remove).
 
 ### 11.5 What the v1.5 baseline import builds NOW
@@ -942,9 +944,8 @@ stable anchors and the matcher's raw signals are preserved:
 ### 11.6 The cross-version matcher — THE open problem (solved in a sandbox)
 
 **Problem.** Given function Y in v1.5 (rva, bytes, hash) and v1.6 where Y's rva
-moved AND its bytes changed, find the v1.6 function X that IS Y and give X the
-kcdx_id of Y. The hash can't do this (it changed). Identity must rest on
-near-invariants:
+moved AND its bytes changed, find the v1.6 function X that IS Y. The hash can't do
+this (it changed). Identity must rest on near-invariants:
 
 - **call-graph fingerprint** (who Y calls / who calls Y) — `call_edges`; a
   fixpoint match since edges are themselves expressed via other ids.
@@ -952,22 +953,89 @@ near-invariants:
 - **curated name + signature** — the ~139 high-confidence seeds that bootstrap.
 - **relative position / ordinal** — weak, tie-breaker only.
 
+**The matcher is PROPOSE-ONLY; it mints NOTHING and deletes NOTHING.** Minting a
+`kcdx_id` is an append-only, irreversible commitment to the id-space; closing an
+interval with no successor is an irreversible "removed." A MISSED match and a
+GENUINELY-NEW entity look IDENTICAL to the matcher (both: "no confident v1
+match") — and so do a MISSED match and a real DELETION from the v1 side. A
+silent guess either way corrupts the version history the DB exists to protect (a
+false "NEW" splits one logical function into two ids; a false "DELETED" buries a
+live function). So the matcher must NOT adjudicate "new" or "deleted" — it
+surfaces them for maintainer confirmation. Its output per entity:
+
+| Verdict | Meaning | Who acts |
+|---|---|---|
+| `MATCHED <v1_kcdx_id>` | confident re-identification | auto — extend/open the interval under the existing id |
+| `AMBIGUOUS [candidates]` | could be one of several v1 entities (split/merge/tie/trap) | maintainer picks |
+| `UNMATCHED` | no confident v1 match — *might* be new, *might* be a missed match | **maintainer verifies before any id is minted** |
+| `DELETED-CANDIDATE` | a v1 entity with no v2 match — *might* be removed, *might* be a missed match | maintainer confirms removal |
+
+**Three phases, two prod DBs, one scratch DB.** The matcher's proposals are
+durable worklist DATA (reviewed across sessions), so they live in a TABLE, in a
+SEPARATE per-transition scratch DB — not a flat report, not the prod DBs.
+
+- **Phase 1 — MATCH** (`match_versions.py`, automated, propose-only): reads the v1
+  prod DEV DB (the baseline `entities` + the matcher signals `call_edges` /
+  `statements.string_ref`) and the v2 dump; writes a `match_proposals` row per v2
+  entity into a gitignored scratch DB `transition_<v1>_to_<v2>.sqlite`, all
+  `resolution = pending`. NO prod mutation. The proposals table (DEV-tier
+  workflow data, never in any shipped DB):
+
+  | Column | Meaning |
+  |---|---|
+  | `id` | PK |
+  | `from_version` / `to_version` | the transition (FK→`game_versions`) |
+  | `v2_locator` | the v2 entity (its dump rva) |
+  | `verdict` | `matched` \| `ambiguous` \| `unmatched` \| `deleted_candidate` (dict) |
+  | `proposed_kcdx_id` | the best-guess existing id (NULL for `unmatched`) |
+  | `confidence` | a CONTINUOUS score 0.0–1.0 |
+  | `candidates` | for `ambiguous`: candidate ids + per-candidate scores |
+  | `evidence` | per-signal breakdown (call-graph overlap fraction, shared-string count, position delta) — why the score is what it is |
+  | `resolution` | `pending` \| `approved` \| `rejected` (dict) |
+  | `resolved_kcdx_id` | the maintainer's decision (matched id / chosen candidate / a mint-new request) |
+
+- **Phase 2 — REVIEW** (maintainer): triage `match_proposals` (sort by
+  `confidence`, inspect `evidence`), set `resolution` + `resolved_kcdx_id`. The
+  human gate; minting/deleting is decided HERE, never by the matcher.
+
+- **Phase 3 — RECONCILE** (`reconcile_transition.py`): apply ONLY
+  `resolution = approved` rows to the prod DEV DB — mint new `entities`/`kcdx_id`
+  for confirmed-new, close+open `entity_versions` for matched-but-changed,
+  close-with-no-successor for confirmed deletions, append the `game_versions`
+  row (the pairing trigger forks the curated overlay-versions automatically) —
+  **then re-derive the USER DB from DEV by the same `USER_COLUMNS` projection the
+  baseline import uses.** USER is ALWAYS a strict projection of DEV, so the two
+  prod DBs cannot drift; there is one definition of "what USER contains," shared
+  by the baseline build and every version update.
+
+Nothing irreversible happens without confirmation. Consistent with "the DB is
+maintainer-editable only; promotion is a deliberate maintainer process" (§11.3).
+
 **This is NOT coded blind.** Building a matcher with no second version to
 validate against would be theorizing an unfalsifiable mechanism (AP10). The
-validation vehicle is a **synthetic two-version sandbox**:
+validation vehicle is a **synthetic two-version sandbox** at
+`tools/refdata-extractor/sandbox/` (the fixture DATA is gitignored — a real
+WHGame.dll dump slice; the `make_sandbox.py` recipe + the matcher code are
+tracked):
 
-- A SEPARATE sandbox DB (not the shipped ones) where we can break things freely.
-- Two synthetic "DLL" fixtures with a known set of sample functions modeling what
-  WHGame.dll looks like today, then a COPY with **authored changes** to some
-  functions and not others — so we KNOW the ground-truth v1→v2 mapping (we made
-  the edits).
-- The fixture must be **comprehensive and test the edges**: a function whose
-  bytes changed but call-graph didn't; an rva move with no byte change; a
-  function split into two; two merged into one; a deleted function; a brand-new
-  function; a function whose only invariant is a string literal; a leaf with no
-  edges; a curated-named function.
-- The matcher is correct when its output matches the authored ground-truth across
-  all those edge cases. Only then does it run against a real v1.6.
+- **v1** = a real ~200-function slice of the actual WHGame.dll dump (real
+  functions, edges, hashes, strings — not toy data), copied into `sandbox/v1/`.
+- **v2** = an AUTHORED mutation of v1 (`make_sandbox.py` applies a hand-written
+  recipe), so we KNOW the ground-truth v1→v2 mapping by construction. Emitted
+  alongside as `ground_truth.csv` (per v2 entity: the expected
+  `MATCHED <id>` / `NEW` / `DELETED` / `SPLIT_OF` / `MERGE_OF`).
+- The mutation is **comprehensive on the trip-up cases**: identical; moved-
+  unchanged; changed-body-same-identity; changed+moved; deleted; added; split
+  (1→2); merged (2→1); **fingerprint-swap trap** (two functions exchange
+  call-targets/strings, to bait a cross-assignment); string-only-anchor leaf (no
+  edges); renamed-callee ripple (a neighbor's change shifts callers'
+  fingerprints); curated-entity changed (the overlay-version trigger path).
+- The matcher (`match_versions.py`) reads `sandbox/v1/` + `sandbox/v2/` (the two
+  dump dirs — "point it at both"), produces its report, and **self-scores against
+  `ground_truth.csv`**: it is correct when it confidently MATCHES what it should
+  AND correctly ABSTAINS (UNMATCHED/AMBIGUOUS/DELETED-CANDIDATE) on everything it
+  cannot be sure of — never silently minting or deleting. A false confident-match
+  and a silent mint are both FAILs; an honest abstention is a PASS.
 
 The matcher arrives mechanically with the 2nd KCD2 version, but is BUILT and
 validated against the sandbox first.
@@ -979,8 +1047,17 @@ validated against the sandbox first.
 2. **Generate the new DB** — the cut/fix pass + overlay + v1.5 baseline ids +
    `entity_versions` (open intervals) + `versions` (the feature decomposition).
    UNBLOCKS the other agent (the generator + engine consumer read this shape).
-3. **The sandbox + the matcher** (§11.6) — built and validated against synthetic
-   ground truth, then run when v1.6 lands.
+3. **The sandbox + the matcher + reconcile** (§11.6) — the
+   `tools/refdata-extractor/sandbox/` fixture (real v1 dump slice + authored v2
+   mutation + `ground_truth.csv`), then `match_versions.py` (phase 1, self-scored
+   against ground truth) and `reconcile_transition.py` (phase 3, apply-to-DEV +
+   project-USER). Built and validated against the sandbox; run for real when v1.6
+   lands.
+
+**STATUS (2026-05-27):** items 1 + 2 DONE — the design is locked (§11) and both
+prod DBs are regenerated in the locked schema (the generator/engine agent is
+unblocked); the two-mode import CLI + version detector ship. Item 3 (the
+sandbox + matcher + reconcile) is IN PROGRESS.
 
 ---
 
