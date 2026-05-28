@@ -41,6 +41,30 @@ target_include_directories(minhook PUBLIC vendor/minhook/include)
 target_include_directories(minhook PRIVATE vendor/minhook/src)
 
 # -----------------------------------------------------------------------------
+# SQLite 3 (vendored amalgamation, public domain)
+#
+# Static lib linked into the engine for the refdb module. Compile-options
+# match the recommended embedded read-mostly set:
+#   - SQLITE_OMIT_LOAD_EXTENSION: we never load extensions (also a safety win)
+#   - SQLITE_THREADSAFE=2: multi-thread mode — each thread its own connection,
+#     matching our single-connection-on-the-worker-thread use
+#   - SQLITE_DQS=0: disable the double-quoted-string-literal misfeature
+#   - SQLITE_DEFAULT_MEMSTATUS=0: skip per-alloc memory accounting (perf)
+#   - SQLITE_OMIT_DEPRECATED: drop deprecated interfaces
+# MSVC_RUNTIME_LIBRARY is forced to MultiThreaded below (same as minhook/lua)
+# so the static runtime matches the rest of the link.
+# -----------------------------------------------------------------------------
+add_library(sqlite3 STATIC vendor/sqlite/sqlite3.c)
+target_include_directories(sqlite3 PUBLIC vendor/sqlite)
+target_compile_definitions(sqlite3 PRIVATE
+    SQLITE_OMIT_LOAD_EXTENSION
+    SQLITE_THREADSAFE=2
+    SQLITE_DQS=0
+    SQLITE_DEFAULT_MEMSTATUS=0
+    SQLITE_OMIT_DEPRECATED
+)
+
+# -----------------------------------------------------------------------------
 # asmjit (vendored flat-copy, Zlib license)
 #
 # Used by the typed-marshaling trampolines for Lua-callback hooks and
@@ -163,6 +187,7 @@ add_library(kcdx SHARED
     src/mod_absorb/order_persist_selftest.cpp
     src/mod_absorb/mod_absorb_e2e_selftest.cpp
     src/version_compat.cpp
+    src/refdb.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp
@@ -184,7 +209,7 @@ target_include_directories(kcdx PRIVATE
 # asmjit is linked even when no hook uses lua_callback yet — the
 # typed-marshaling code references it; the linker dead-strips unused
 # asmjit code per-symbol.
-target_link_libraries(kcdx PRIVATE lua minhook asmjit version)
+target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 version)
 
 if(MSVC)
     target_compile_definitions(kcdx PRIVATE
@@ -196,6 +221,7 @@ if(MSVC)
     set_property(TARGET kcdx    PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET lua     PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    set_property(TARGET sqlite3 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
     # Emit a PDB beside build/Release/kcdx.dll so a kcdx crash frame
     # symbolicates offline (kcdx+offset crash dumps would otherwise have
