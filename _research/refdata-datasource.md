@@ -14,19 +14,36 @@ C:\kcdx-refdata\
     functions/  statements/  referenced_vars/  call_edges/  signatures/  caller_reg_args/
     _MANIFEST.md
   db\
-    reference.sqlite        (~50 MB)   the USER DB  -> ships as a release asset
-    reference.sqlite.zip    (~22 MB)   (the zipped form, for reference)
+    reference.sqlite        (~35 MB)   the USER DB  -> ships as a release asset
     reference-dev.sqlite     (~1.13 GB) the DEV DB   -> on-demand author download
-    reference-dev.sqlite.zip (~397 MB)
 ```
 
-- **USER `reference.sqlite`** — functions + signatures + caller_reg_args. Ships
-  with every kcdx release (a release asset, NOT committed to git). The
-  user-facing README is `data/reference/README.md`.
-- **DEV `reference-dev.sqlite`** — the full six tables (+ statements +
-  referenced_vars + call_edges). The discovery/inspection dataset
-  (`kcdx.find` / `kcdx_dev_inspect`). Mod AUTHORS fetch it on demand; it is the
-  maintainer's source-of-truth. NOT shipped to users, NOT committed to git.
+**Schema: the LOCKED 9-table entity/version model** (`docs/outstanding-work/
+parallel-ghidra-research.md` §11.2). Rebuilt 2026-05-27 from the flat
+functions/signatures/caller_reg_args layout to: `entities` (the global kcdx_id
+id-authority) + `entity_versions` (per-byte-form validity intervals, with the
+abi_walker floor folded in) + `kcdx_overlay` + `kcdx_overlay_versions` (curated
+identity + temporal) + `modules` + `game_versions` + `meta`, plus DEV-only
+`statements` / `referenced_vars` / `call_edges`. The pairing trigger
+`trg_pair_overlay_version` is present in both DBs (silent at baseline). Built by
+`import_to_sqlite.py`; gated by `validate_db_shape.py` (25/25 against the real
+321K-function dump). `integrity_check=ok` on both; the name→address+verified-ABI
+resolution path verified against real rows.
+
+- **USER `reference.sqlite`** (~35 MB) — `modules` + `game_versions` + `entities`
+  + `entity_versions` (minus the dev-only `auto_name`/`decompile_quality`) +
+  `kcdx_overlay` (minus dev-only `source`/`notes`) + `kcdx_overlay_versions` +
+  `meta`. Ships with every kcdx release (a release asset, NOT committed to git).
+  The user-facing README is `data/reference/README.md`.
+- **DEV `reference-dev.sqlite`** (~1.13 GB) — all USER tables/columns in full +
+  `statements` + `referenced_vars` + `call_edges`. The discovery/inspection
+  dataset (`kcdx.find` / `kcdx_dev_inspect`); the maintainer's source-of-truth.
+  NOT shipped to users, NOT committed to git.
+
+**Handoff (2026-05-27):** both DBs at `C:\kcdx-refdata\db\` are in the locked
+schema the generator + engine consumer read. This UNBLOCKS that work. Remaining
+import-side functionality (the two-mode CLI + `whdlversions.json` version
+detector) is additive and does not change the DB shape the generator reads.
 - **The raw CSV dump** — the per-table sharded output the import reads. Keep it;
   it is what `import_to_sqlite.py` re-imports, and the basis for the next
   game-version diff.
