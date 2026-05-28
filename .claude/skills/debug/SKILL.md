@@ -111,6 +111,64 @@ The archive shape is in §3d. The cost-paid investigative wiring (hook target, f
 - A probe contradicts an earlier conclusion → both can't be true. Figure out which probe was wrong and rerun.
 - **Hopped theories 2+ times on the same symptom** (theory A killed → B → …) → frame lost. Dispatch a **fresh-frame subagent** per `results-driven.md` §"Fresh-frame escalation": hand it the raw facts + killed-theories list, WITHHOLD your leading theory, ask it to design the most direct ground-truth observation.
 
+### 2.5. Gate A — every design fork auto-routes through architect-review (subagent dispatch, never raw to user)
+
+The `/debug` orchestrator is YOU; the discipline is the same as `/execute` §E.1. A design decision surfaced during `/debug` is NEVER surfaced raw to the user — dispatch `architect-review` as a subagent FIRST, read the structured review yourself, then compose the user-facing message from architect §3 if forwarding. The user decides; you do NOT decide; the architect verifies before either of you sees the fork.
+
+**Gate A fires when the debug agent is about to propose a fix that EITHER:**
+- Adds a new file under `src/` or `include/`, OR
+- Modifies more than one `src/` file, OR
+- Changes a function signature (grep every caller first per CLAUDE.md), OR
+- Touches a `.claude/rules/` file or `docs/design.md`, OR
+- Adds or changes a hook surface, ABI signature, vtable slot, Address Library entry, save/cosave field, or `[[...]]` schema, OR
+- The Trail-row interpretation cites "we should do X instead of Y" as a fork (a real design call).
+
+Trivial fixes (typo in a log message, comment fix, single-file ≤10 line change with no signature change and no rule touch) do NOT trigger Gate A — they go straight to §3a–§3d.
+
+**Dispatch via the `Agent` tool, NOT via `Skill`.** `subagent_type: general-purpose`. Prompt template:
+
+```
+You are the architect-review skill. Read cover-to-cover before producing output:
+
+  1. .claude/skills/architect-review/SKILL.md
+  2. .claude/skills/_shared/architectural-review.md
+  3. docs/design.md sections cited below + rule files matching the proposed fix's path scope
+
+Escalation context (from /debug orchestrator):
+
+  Bug under investigation:
+  <docs/known-issues/<title>.md path + Symptom section verbatim>
+
+  Trail summary (probe outcomes only, no chain-of-thought):
+  <verbatim Trail rows that survived the audit>
+
+  Proposed fix (the design call the debug agent wants to make):
+  <one-paragraph plain English: what change, where, why the agent thinks it addresses the bug>
+
+  Proposed fix diff (if any code already written):
+  <git diff, or "no diff — proposal-stage">
+
+  docs/design.md sections cited by the proposal:
+  <list, or "none cited">
+
+  Rule files matching the proposed fix's path scope:
+  <list>
+
+Produce the four-section structured review per architect-review/SKILL.md's
+output format. Your output returns to me — the /debug orchestrator — as
+a tool result. The user will NOT see it directly. §3 (Design decisions
+surfaced) is the only forwardable section; write it in plain-English so
+the user reads it cold when I forward.
+```
+
+**Read the tool result yourself. Apply architect §4:**
+
+- **`re-task-subagent`** (debug case = re-design the probe or revise the proposal) — Mechanical fix per architect's direction; do NOT surface to user. Re-frame the design proposal per the architect's §4 direction; if a new probe is needed, run §2a–§2g. Next user-facing message is the §F-style debug report (success path) or a different escalation if one arises.
+- **`forward-and-wait`** — Compose a user-facing escalation in the §E.2 shape from `_shared/orchestrator-loop.md` (lead from architect §1; findings line from architect §2; decision block from architect §3 with Recommendation + Why). NEVER include §4. NEVER paste architect's raw output. Wait for user decision; do not re-task or land the fix until user responds.
+- **`hold`** — Compose user-facing escalation: lead + findings + one-line *"architect declined to surface options; awaiting your direction."* Omit the decision block. Wait.
+
+**Hard rule — never paste architect's raw output to the user.** Raw output = your input; the user reads what YOU compose. If the user explicitly asks for the architect's reasoning, paste §1+§2+§3 (never §4) verbatim — only on explicit request.
+
 ### 2i. cdb one-liners
 
 ```
@@ -153,6 +211,69 @@ Run all `kcdx-engine/builtin/` + `plugins/` enabled at least once. Each fix must
 
 ### 3d. Update the known-issue file + archive every closed probe in place
 
+**Gate B — root-cause-verifier dispatch before the Resolution lands.** The Resolution paragraph IS the AP17 artifact; the debug agent and the Trail share a context that produced the mechanism theory. An unbiased verifier must read the known-issue file + the planned fix diff + the planned archive-header drafts BEFORE the Resolution is final. This mirrors `/execute` §C.1's step-review gate.
+
+**Gate B fires when ANY of the following holds for the planned fix:**
+- The fix diff touches `src/` or `include/` (any C++ change), OR
+- The Trail has 3+ probes (PROBE A, B, C, …), OR
+- The fix touches a hook surface, ABI signature, vtable slot, Address Library entry, save/cosave field, or `[[...]]` schema (the `/execute` §F.1 threshold).
+
+A doc-only / matrix-row-only / typo-fix close skips Gate B and proceeds straight to the checklist below.
+
+**Dispatch via the `Agent` tool, NOT via `Skill`.** `subagent_type: general-purpose`. Prompt template:
+
+```
+You are the root-cause-verifier skill. Read cover-to-cover before producing output:
+
+  1. .claude/skills/root-cause-verifier/SKILL.md
+  2. .claude/skills/_shared/architectural-review.md
+  3. .claude/rules/results-driven.md
+  4. .claude/rules/anti-patterns.md (AP10, AP17)
+  5. docs/design.md sections cited below + rule files matching the fix diff's path scope
+
+Verification context (from /debug orchestrator):
+
+  Known-issue file (full path; read in full):
+  <docs/known-issues/<title>.md path>
+
+  Planned fix diff:
+  <git diff HEAD of the in-flight working tree>
+
+  Planned archive-header drafts (one per probe being closed):
+  <each `// === ARCHIVED PROBE <X>` header verbatim as the debug agent intends to write>
+
+  docs/design.md sections cited by the proposal:
+  <list, or "none cited">
+
+  Rule files matching the fix diff's path scope:
+  <list>
+
+WITHHELD (per fresh-frame discipline):
+  - My (the debug agent's) chain of reasoning.
+  - Any "I'm confident the root cause is X" preamble.
+  - Prior verifier runs on this same bug.
+
+Produce the four-section structured review per root-cause-verifier/SKILL.md's
+output format. Your output returns to me — the /debug orchestrator — as
+a tool result. The user will NOT see it directly. Findings drive my next
+action per your §4.
+```
+
+**Read the tool result yourself. Apply verifier §4:**
+
+- **`land-fix`** — Resolution complete; land the fix verbatim, then proceed to the checklist below.
+- **`probe-required`** — Resolution does NOT land. Run the verifier's named probe per §2a–§2g. After the probe answers, redraft the Resolution paragraph from the new evidence and re-dispatch Gate B (each verifier run is independent — the next verifier reads the new Trail, not the prior verdict).
+- **`rewrite-resolution`** — Resolution paragraph claims more than the evidence supports. Rewrite the Resolution paragraph using the verifier's §4 verbatim text (it grounds the rewrite in actual Trail rows). Re-dispatch Gate B with the rewritten paragraph.
+- **`escalate-design`** — A design fork is hiding behind the fix. Go back to §2.5 Gate A; dispatch architect-review FIRST; resume Gate B only after the architect's verdict + user direction.
+
+**Hard rule — never paste verifier's raw output to the user.** Raw output = your input; the user reads what YOU compose from the §F-style debug report or escalation. If the user explicitly asks for the verifier's reasoning, paste §1+§2+§3 (never §4) verbatim — only on explicit request.
+
+**The verifier verdict is gated, not advisory.** A `probe-required` / `rewrite-resolution` / `escalate-design` verdict halts the close — the manager does NOT land the fix on a partial verifier verdict. "The verifier mostly agrees" is `Root cause incomplete` (per the verifier's own §1 verdict shape); treat as halt.
+
+**Gate A ↔ Gate B ping-pong guard.** If verifier returns `escalate-design` AND the subsequent architect-review returns `re-task-subagent` AND the re-tasked proposal returns to Gate B with the SAME design fork ⇒ the two gates disagree on the routing. Surface the disagreement to the user as an escalation (use the `_shared/orchestrator-loop.md` §E.2 shape; lead with "Gate A and Gate B disagree on routing — surfacing for direction"). Do NOT loop further. The user picks: a probe, a Resolution rewrite, or a design fork to land. Each gate's verdict pasted under "What's blocking" (verbatim §1 + §4 from each, only).
+
+After Gate B returns `land-fix`, proceed:
+
 - Add final probe results to the Trail.
 - Add "Resolution": Root cause (mechanism paragraph — gated per §3a; cannot land without it), Fix (commit + what changed + why it addresses the mechanism), Verification, Diagnostic archive, Doc updates.
 - Move "Open questions" → "Closed questions with answers" or strike through.
@@ -184,7 +305,7 @@ A CryEngine quirk, Windows behavior, or mod-author footgun — write a new memor
 ## Communication
 
 - **Before each launch:** one line stating what the probe tests and what each outcome means.
-- **After each crash report:** read the new log, summarize what advanced/eliminated, update the Trail, propose the next probe. Don't ask "shall I proceed" unless there's a real fork.
+- **After each crash report:** read the new log, summarize what advanced/eliminated, update the Trail, propose the next probe. Don't ask "shall I proceed" — a real fork (a design decision the user owns) is auto-routed through Gate A (§2.5), not surfaced raw. A probe-design choice is a fact you read the code to answer (`_shared/architectural-review.md` §"Independence from caller framing"), not a question for the user.
 - **Update the known-issue file every probe**, not in batches.
 - **Strategy pivots** (e.g., within-build bisection → across-commit) stated explicitly.
 

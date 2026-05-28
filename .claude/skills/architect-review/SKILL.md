@@ -1,11 +1,11 @@
 ---
 name: architect-review
-description: Used ONLY by the `/execute` orchestrator via SUBAGENT DISPATCH (Agent tool, subagent_type=general-purpose), NOT in-line. Orchestrator dispatches a general-purpose subagent with a brief pointing at this SKILL.md + .claude/skills/_shared/architectural-review.md; subagent reviews and returns structured output as tool result. NOT user-invokable — /architect-review typed by user → refuse, route to senior-architect-consult or senior-architect-reply. Project-wide review: keep the whole engine in mind, ground in docs/design.md + design laws, redirect subagent if drifted. Audience is the calling orchestrator; output is structured markdown returned via tool result. Orchestrator decides what to forward to user per §4 Recommended next action.
+description: Used ONLY by an orchestrator (`/execute` or `/debug`) via SUBAGENT DISPATCH (Agent tool, subagent_type=general-purpose), NOT in-line. Orchestrator dispatches a general-purpose subagent with a brief pointing at this SKILL.md + .claude/skills/_shared/architectural-review.md; subagent reviews and returns structured output as tool result. NOT user-invokable — /architect-review typed by user → refuse, route to senior-architect-consult or senior-architect-reply. Project-wide review: keep the whole engine in mind, ground in docs/design.md + design laws, redirect subagent if drifted. Audience is the calling orchestrator; output is structured markdown returned via tool result. Orchestrator decides what to forward to user per §4 Recommended next action.
 ---
 
 # Architect review — runs as subagent, output returns as tool result
 
-You are a general-purpose subagent dispatched by the `/execute` orchestrator; your output returns as a tool result, not seen by the user directly.
+You are a general-purpose subagent dispatched by an orchestrator (`/execute` per `_shared/orchestrator-loop.md` §E.1, or `/debug` per `debug/SKILL.md` §2.5 Gate A); your output returns as a tool result, not seen by the user directly. The orchestrator decides what to forward to the user per §4 Recommended next action.
 
 **Project-wide scope** — hold the whole engine's design intent per `docs/design.md` + `.claude/rules/`, no file scoping. One caller, one audience (both the orchestrator), no copy-paste-to-working-agent block.
 
@@ -14,13 +14,13 @@ You are a general-purpose subagent dispatched by the `/execute` orchestrator; yo
 ## Are you the right invocation?
 
 You are an orchestrator dispatch if ALL THREE hold:
-1. Prompt says "You are the architect-review skill" or names dispatch by an orchestrator.
-2. Prompt contains a structured escalation-context block (subagent's verbatim escalation, git-diff, authorized scope, design.md sections, rule files).
+1. Prompt says "You are the architect-review skill" or names dispatch by an orchestrator (`/execute` or `/debug`).
+2. Prompt contains a structured escalation-context block (subagent's verbatim escalation OR debug-agent's design-fork question; git-diff; authorized scope; design.md sections; rule files).
 3. Prompt directs output to return as a tool result.
 
 Otherwise → refuse and route:
 
-> *"This skill is invoked only by the orchestrator via subagent dispatch. For direct architectural discussion, use `senior-architect-consult`. For agent-question relay or response review, use `senior-architect-reply`. Stopping."*
+> *"This skill is invoked only by an orchestrator via subagent dispatch. For direct architectural discussion, use `senior-architect-consult`. For agent-question relay or response review, use `senior-architect-reply`. Stopping."*
 
 ---
 
