@@ -37,6 +37,7 @@
 #include "mod_absorb/mod_absorb_e2e_selftest.h"  // cap-57 engine self-report
 #include "mod_absorb/record_validate_selftest.h"  // cap-58 engine self-report
 #include "blake3_selftest.h"                       // cap-59 engine self-report
+#include "version_check_selftest.h"                // cap-60 engine self-report
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — the BugSplat
 // ctor probe installs from kcdx.dll DllMain, not from hooks::Install.
@@ -634,6 +635,17 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // which the survival check (src/survival.cpp) depends on. One-shot guarded
     // internally.
     kcdx::blake3::RunSelfTestOnce();
+
+    // cap-60-version-check-cache: engine self-report for the per-version
+    // survival-verification cache (src/version_check_cache.cpp) + the unified
+    // survival pass (src/survival_pass.cpp). Same timing as cap-52..59: no
+    // hook-fire / "ready" dependency — all three sub-checks (cache codec round-
+    // trip, invalidation forces a miss, the pass records CannotCheck for a non-
+    // byte ref + surfaces the posture) run on SYNTHETIC data at boot, with no
+    // live-resolution dependency (the pass is not yet wired into the live apply
+    // path). Drives + RESETS both modules' in-memory state in isolation and
+    // leaves an empty on-disk cache behind. One-shot guarded internally.
+    kcdx::version_check_selftest::RunSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

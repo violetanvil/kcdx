@@ -294,6 +294,7 @@ bool ParsePluginManifest(const toml::table& doc,
         {"version",                  TomlKind::String},
         {"kcdx_min_version",         TomlKind::String},
         {"log_level",                TomlKind::String},
+        {"on_changed_function",      TomlKind::String},
         {"supports",                 TomlKind::Array},
         {"dependencies",             TomlKind::Array},
         {"test_names",               TomlKind::Array},
@@ -471,6 +472,33 @@ bool ParsePluginManifest(const toml::table& doc,
         else {
             err = "[plugin] log_level: unknown level '" + lvl + "' "
                   "(expected trace|debug|info|warn|error|off)";
+            return false;
+        }
+    }
+
+    // on_changed_function — the per-plugin survival-check posture. Decides what
+    // the apply pass does when a function this plugin targets has changed in the
+    // running game binary (the per-version survival check finds the on-disk bytes
+    // no longer match the verified content_hash).
+    //
+    //   "warn_and_try"  → proceed with the binding, emit a warning (DEFAULT).
+    //   "refuse_entry"  → skip the affected binding with a teaching error; other
+    //                     bindings in the same plugin still apply.
+    //
+    // Absent → default WarnAndTry. An unknown value is a HARD manifest rejection
+    // (fail loud — a silent default-to-warn would discard the author's intent,
+    // e.g. a misspelled "refuse" silently weakening to warn-and-proceed).
+    {
+        std::string oc = OptString(t, "on_changed_function", "warn_and_try");
+        if      (oc == "warn_and_try")
+            out.onChangedFunction =
+                kcdx::plugins::PluginManifest::OnChangedFunction::WarnAndTry;
+        else if (oc == "refuse_entry")
+            out.onChangedFunction =
+                kcdx::plugins::PluginManifest::OnChangedFunction::RefuseEntry;
+        else {
+            err = "[plugin] on_changed_function: unknown value '" + oc + "' "
+                  "(expected warn_and_try|refuse_entry)";
             return false;
         }
     }

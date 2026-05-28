@@ -305,10 +305,13 @@ NameResolution ResolveByName(const std::string& name) {
     // Open()); only verified rows resolve at runtime.
     //
     // Returned columns: kcdx_id, rva, ev.value, ev.content_hash, kind(dict id),
-    // ovv.signature, ovv.offset, ovv.vtable_slot, status(dict id).
+    // ovv.signature, ovv.offset, ovv.vtable_slot, status(dict id), ev.length.
+    // ev.length is appended LAST (column 9) so the existing 0..8 indices below
+    // are unchanged — the survival check needs the span the content_hash covers.
     static const char* kSql =
         "SELECT o.kcdx_id, ev.rva, ev.value, ev.content_hash, o.kind, "
-        "       ovv.signature, ovv.offset, ovv.vtable_slot, ovv.status "
+        "       ovv.signature, ovv.offset, ovv.vtable_slot, ovv.status, "
+        "       ev.length "
         "FROM kcdx_overlay o "
         "JOIN entity_versions ev ON ev.kcdx_id = o.kcdx_id "
         "JOIN game_versions evf ON evf.id = ev.valid_from "
@@ -393,6 +396,10 @@ NameResolution ResolveByName(const std::string& name) {
     }
     int64_t statusId = sqlite3_column_int64(st, 8);
     r.status = DecodeDict(g_statusDict, statusId);
+    if (sqlite3_column_type(st, 9) != SQLITE_NULL) {
+        r.has_length = true;
+        r.length = sqlite3_column_int64(st, 9);
+    }
     sqlite3_finalize(st);
 
     // status gate: only "verified" rows resolve at runtime. A covering row that
@@ -513,9 +520,11 @@ IdResolution ResolveById(uint64_t kcdx_id) {
     // has no curated name). Returns the address + the argument-width FLOOR. The
     // floor is ALWAYS marked an estimate, never conflated with a verified
     // signature (signature_is_floor_estimate stays true).
+    // ev.length appended LAST (column 6) so the existing 0..5 indices below are
+    // unchanged — the survival check needs the span the content_hash covers.
     static const char* kSql =
         "SELECT ev.rva, ev.value, ev.content_hash, ev.signature, "
-        "       ev.observed_arg_slots, ev.caller_reg_arg_count "
+        "       ev.observed_arg_slots, ev.caller_reg_arg_count, ev.length "
         "FROM entity_versions ev "
         "JOIN game_versions f ON f.id = ev.valid_from "
         "LEFT JOIN game_versions t ON t.id = ev.valid_through "
@@ -581,6 +590,10 @@ IdResolution ResolveById(uint64_t kcdx_id) {
     r.observed_arg_slots = sqlite3_column_int64(st, 4);
     if (sqlite3_column_type(st, 5) != SQLITE_NULL)
         r.caller_reg_arg_count = sqlite3_column_int64(st, 5);
+    if (sqlite3_column_type(st, 6) != SQLITE_NULL) {
+        r.has_length = true;
+        r.length = sqlite3_column_int64(st, 6);
+    }
     sqlite3_finalize(st);
 
     r.found = true;

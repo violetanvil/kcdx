@@ -132,6 +132,27 @@ struct PluginManifest {
     std::string defaultPosition;        // "before_game" / "after_game" / "" (derive)
     int         defaultPriority = 50;   // 0..100, lower = earlier
 
+    // Per-plugin posture for the per-version survival check: what the apply
+    // pass does when a function this plugin targets has CHANGED in the running
+    // game binary (its on-disk [rva,rva+length) bytes no longer match the
+    // verified content_hash the reference DB recorded). Parsed from
+    // [plugin].on_changed_function.
+    //
+    //   WarnAndTry   — proceed with the binding anyway, emitting a warning log
+    //                  line in author terms (the DEFAULT when the key is absent).
+    //   RefuseEntry  — skip the affected binding with a teaching error; other
+    //                  bindings in the same plugin still apply (intra-plugin
+    //                  failure isolation).
+    //
+    // The pass RECORDS this posture alongside each entry's survival result; the
+    // ACTUAL apply-time enforcement is wired in a later step. An unknown string
+    // is a HARD manifest rejection (fail loud — not a silent default-to-warn).
+    enum class OnChangedFunction : uint8_t {
+        WarnAndTry  = 0,  // default
+        RefuseEntry = 1,
+    };
+    OnChangedFunction onChangedFunction = OnChangedFunction::WarnAndTry;
+
     // Entrypoints — populated from [entrypoints] table (all optional).
     std::string dllEntrypointRel; // Relative path from plugin folder. If empty,
                                   //   kcdx auto-discovers: if exactly one *.dll

@@ -90,6 +90,15 @@ struct NameResolution {
     // not the hex form. Same source column as content_hash_hex; both populated
     // together. Appended at the end of the struct (append-only).
     std::vector<uint8_t> content_hash;
+
+    // entity_versions.length — the byte span the content_hash was computed over
+    // ([rva, rva+length) on the on-disk binary). The survival check needs this
+    // to know HOW MANY bytes to hash; content_hash alone is insufficient. 0 when
+    // the column is NULL (a non-byte entity carries no span). has_length
+    // distinguishes "the row carries a span" (length may legitimately be any
+    // value) from "absent". Appended at the end (append-only).
+    bool        has_length = false;
+    int64_t     length = 0;
 };
 
 // Result of a resolve-by-KCDX_ID lookup (the bulk / un-curated path).
@@ -123,6 +132,12 @@ struct IdResolution {
     // entity_versions.content_hash as the RAW 32-byte blob (empty if NULL) —
     // see NameResolution::content_hash. Appended at the end (append-only).
     std::vector<uint8_t> content_hash;
+
+    // entity_versions.length — the byte span content_hash was computed over.
+    // See NameResolution::length. 0 + has_length=false when the column is NULL.
+    // Appended at the end (append-only).
+    bool        has_length = false;
+    int64_t     length = 0;
 };
 
 // Open the reference database for the running game version.
