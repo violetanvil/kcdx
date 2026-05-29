@@ -12,14 +12,22 @@
 //
 // Storage shape:
 //
-//   - g_entries : std::vector<DeclaredEntry>. Linear lookup is fine — TC
-//     scale is hundreds of entries, never millions; cache locality + no
-//     hash overhead beats a flat_map at that size, and we never sort by
-//     key. Re-Register on the same triple overwrites in place at the
-//     same slot (so the back-pointer the resolver returns stays valid
-//     for the rest of the session).
+//   - g_entries : std::deque<DeclaredEntry>. Node-stable storage —
+//     element addresses survive subsequent Register calls. A Register on
+//     an existing (declaringAuthor, declaringPlugin, name) triple still
+//     overwrites the slot in place at the same node; new triples
+//     allocate a new node without moving prior elements. Indexed access
+//     stays O(1). Linear lookup is fine — TC scale is hundreds of
+//     entries, never millions; cache locality across one deque chunk +
+//     no hash overhead beats a flat_map at that size, and we never sort
+//     by key. The back-pointers the resolver returns into entry slots
+//     are valid for the rest of the session by construction (no
+//     reallocation event exists).
 //
 //   - g_memo : std::vector<MemoEntry>, keyed by (entryIdx, runtimeVer).
+//     entryIdx indexes into g_entries; deque's stable indexed access
+//     keeps that key valid across subsequent appends. MemoEntry itself
+//     carries no cross-element pointers, so its std::vector is fine.
 //     One row per (entry, running version) the resolver has seen. On a
 //     Pattern hit, we run scan_engine::ResolveScan once and record the
 //     outcome here (success VA OR failure marker); subsequent lookups
@@ -47,6 +55,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <exception>
 #include <string>
 #include <utility>
@@ -65,12 +74,29 @@ namespace {
 // Storage
 // ---------------------------------------------------------------------------
 
-// The registry. Append-mostly; a Register on an existing
-// (declaringAuthor, declaringPlugin, name) triple OVERWRITES in place at
-// the same vector slot so back-pointers handed out by LookupForCaller
-// stay valid through a re-declare. Memoization tied to the prior entry
-// is dropped on overwrite (see DropMemoForEntry).
-std::vector<DeclaredEntry> g_entries;
+// The registry. Node-stable storage (std::deque<DeclaredEntry>):
+// element addresses survive subsequent Register calls. A Register on an
+// existing (declaringAuthor, declaringPlugin, name) triple OVERWRITES
+// the slot in place at the same node; new triples allocate a new node
+// without moving prior elements. Back-pointers handed out by
+// LookupForCaller therefore have a stable ADDRESS for the process
+// lifetime. The node's CONTENTS, however, are overwritten by an
+// existing-triple Register: the `g_entries[existing] = e;` copy-assign
+// in Register destroys the prior versions vector (including every inner
+// std::string valueStr and the chars they pointed at). Net contract for
+// a cached VersionEntry::valueStr.c_str() the caller holds:
+//
+//   - Cross-triple Register from any plugin: cached pointer SURVIVES.
+//     The deque node-stability guarantees prior nodes never move.
+//   - Same-triple re-Register from the owning plugin: cached pointer is
+//     INVALIDATED — the inner std::string is destroyed by copy-assign.
+//
+// The same-triple invalidation will be removed when valueStr storage
+// moves to a process-lifetime arena; at that point the broad
+// "process-lifetime; survives any subsequent Register" contract becomes
+// true unconditionally. Memoization tied to the prior entry is dropped
+// on overwrite (see DropMemoForEntry).
+std::deque<DeclaredEntry> g_entries;
 
 // Memoized per-(entryIdx, runtimeVersion) Pattern resolves. attempted
 // distinguishes "never resolved" (no row) from "resolved but failed"

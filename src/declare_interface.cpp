@@ -275,15 +275,7 @@ kcdxDeclaredValue Thunk_Get(const char* name, kcdxPluginHandle owningPlugin) {
     if (rd.valueIsString) {
         out.isString    = true;
         out.stringValue = nullptr;
-        // LIFETIME: rd is a stack value; rd.valueStr was COPIED out of the
-        // picked VersionEntry by LookupForCaller, so its .c_str() would
-        // dangle on return. The DeclaredEntry the store keeps lives for the
-        // process lifetime (declared_targets::ResolvedDeclared::entry's
-        // contract: registry never relocates after launch-time appends; a
-        // Register overwrite writes in place at the same slot). Ask the
-        // store's canonical picker for the chosen VersionEntry by pointer
-        // and surface ITS storage — that pointer is process-stable for the
-        // same reason (aliases into rd.entry->versions, which never moves).
+        // stringValue aliases the store's owned std::string; valid until the owning plugin re-Declares this same name (cross-triple Declares from any plugin do not invalidate it — deque node-stability).
         if (rd.entry) {
             const declared_targets::VersionEntry* picked =
                 declared_targets::FindPickedVersionEntry(

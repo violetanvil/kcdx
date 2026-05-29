@@ -1,0 +1,48 @@
+# CAP-63 — kcdx::bytes::Write empowered wrapper (C++) end-to-end.
+#
+# The empowered-floor C++ peer of cap-01's Lua kcdx.bytes test. Cap-39 covers
+# the RAW floor (K.bytes->Register(&opts)); this row covers the WRAPPER
+# floor (kcdx::bytes::Write(K, name, replacement)) — the one-liner the docs
+# put as the everyday path. Both raw + wrapper ship a permanent regression,
+# so the surface mirrors across both floors (the test suite GROWS not
+# MIGRATES — cap-39 stays exactly as it is).
+#
+# One falsifiable claim:
+#
+#   * CAP-63-wrapper-installs   The empowered wrapper installs at the same
+#       site cap-01's flat-table form covers (the verified-safe rewrite
+#       44 8A F0 -> 45 31 F6 at outfit_swap_callsite_aob, id 1004) and
+#       produces the same observable effect at the same memory address.
+#       At kcdxPlugin_PostGameLoad (after ApplyZone(AfterGame)): the read-
+#       back bytes at the resolved site equal `45 31 F6`. FALSIFIABLE: a
+#       wrapper that returns 0 from TryWrite (handle not produced), an
+#       apply that does not flip the live bytes, or a read-back returning
+#       anything other than `45 31 F6` => FAIL.
+#
+#       Coexistence with cap-01 (same site, same replacement): conflict
+#       engine WriteOnWriteFull idempotent-skip — not a rejection, both
+#       writers reach Status::Applied, the end-state bytes are `45 31 F6`
+#       regardless of apply interleaving. The observable holds whichever
+#       form applies first.
+#
+# Test mode: boot-only. The row self-verifies at kcdxPlugin_PostGameLoad
+# (fired after ApplyZone(AfterGame) and before InputLoaded — the same
+# established cap-29 / cap-36 / cap-39 pattern for byte-write observables).
+# An InputLoaded backstop reports a loud FAIL on the row if PostGameLoad
+# never fires.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_63_cpp_bytes_wrapper"
+display_name        = "CAP-63 kcdx::bytes::Write wrapper (C++)"
+author              = "ts"
+description         = "C++ DLL exercising the kcdx::bytes::Write empowered wrapper on Kcdx.h end-to-end: the one-line wrapper form installs the same verified-safe rewrite cap-01 covers (the empowered floor of the Lua kcdx.bytes flat-table form) and produces the same observable at the same site, coexisting with cap-01 + cap-39 via the conflict engine's WriteOnWriteFull idempotent-skip."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-63-wrapper-installs"]
+
+[entrypoints]
+dll = "cap-63.dll"

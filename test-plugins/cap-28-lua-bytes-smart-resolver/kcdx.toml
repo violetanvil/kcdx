@@ -1,0 +1,48 @@
+# CAP-28 — kcdx.bytes smart-resolver shape (kcdx.bytes.<name>{...}).
+#
+# Exercises the __index-driven smart-resolver Lua shape on kcdx.bytes that
+# resolves a named target to the install closure on demand. Two falsifiable
+# claims, both reported synchronously at plugin load (boot-only):
+#
+#   * CAP-28-typo-fails-fast — `kcdx.bytes.<bogus_name>{...}` returns nil at
+#       the name lookup, so the subsequent call raises "attempt to call a
+#       nil value". The test pcall-catches that error and asserts the error
+#       message names the typoed slot. FAILS if the bogus name DOES resolve
+#       (the typo-fails-fast contract is broken) OR if the error message
+#       does not contain the typoed name (the engine does not steer the
+#       author to the fix). This is the falsifiability gate for the smart
+#       resolver's "wrong name fails at the name access, not later at
+#       install time" guarantee.
+#
+#   * CAP-28-install-parity — `kcdx.bytes.<name>{...}` produces the SAME
+#       install outcome as the equivalent `kcdx.bytes{target=<name>, ...}`
+#       flat-table form. Two register sites in the same plugin (one each
+#       form), distinct names, same target (`outfit_swap_callsite_aob` id
+#       1004, the verified-safe rewrite cap-01 already drives — both forms
+#       coexist via the conflict engine's WriteOnWriteFull idempotent-skip,
+#       so an apply-order race never flips the observable). Both handles
+#       reach `:applied()==true` at `kcdx.on("ready")`; FAILS if either
+#       handle is missing or either's `:applied()` is not true (parity is
+#       broken between the two surface shapes).
+#
+# Test mode: boot-only. CAP-28-typo-fails-fast self-reports at plugin load
+# (the typo error is raised synchronously by the smart resolver). CAP-28-
+# install-parity self-reports from `kcdx.on("ready")` after the deferred
+# apply pass.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_28_lua_bytes_smart_resolver"
+display_name        = "CAP-28 kcdx.bytes smart-resolver shape"
+author              = "ts"
+description         = "Pure-Lua kcdx.bytes smart-resolver self-test: a typo at kcdx.bytes.<bad_name>{...} fails fast at the name access (the smart resolver returns nil → attempt-to-call-nil error naming the typoed slot), and the smart-resolver shape installs the same way the flat-table shape does (both handles reach applied()==true at ready, on the same site cap-01 already covers, coexisting via the conflict engine's WriteOnWriteFull idempotent-skip)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-28-typo-fails-fast",
+                       "CAP-28-install-parity"]
+
+[entrypoints]
+lua = "plugin.lua"

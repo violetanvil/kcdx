@@ -134,6 +134,38 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   (an expert names an AOB once, non-experts hook it by name). See
   [targets.md](targets.md).
 
+- **named target** — an entry in the unified named-target table the hook /
+  bytes verbs consume by name. Two population sources: **curated targets**
+  (engine-shipped, maintained by the kcdx maintainer, pre-checked for
+  byte-survival across game versions) and **declared targets** (plugin-supplied
+  via `kcdx.declare`, owned by the declaring plugin's `<author>.<plugin>`
+  namespace, per-version mapping owned by the author). The consumer cannot
+  tell which source backed a name — both reach the hook / bytes verbs through
+  the same resolver and install identically. See [declare.md](declare.md).
+
+- **curated target** — a named target supplied by the kcdx engine itself.
+  Lives in the engine seed under the reserved `kcdx.` root (the 1-dot
+  `kcdx.<seedname>` form); maintained by the kcdx maintainer, pre-checked for
+  byte-survival across game versions. The other population source of the
+  unified named-target table. See [addr.md](addr.md).
+
+- **declared target** — a named target supplied by a plugin via
+  `kcdx.declare`; owned by the declaring plugin's (author, plugin) namespace
+  (stamped as `<author>.<plugin>.<bare>`). The other population source of the
+  unified named-target table; the plugin-supplied peer of a curated target.
+  See [declare.md](declare.md).
+
+- **smart resolver** — the engine's name → address-and-verified-ABI lookup
+  the hook / bytes verbs route through. The `__index`-driven Lua shape
+  (`kcdx.hook.<name>.<mode>(fn)`, `kcdx.bytes.<name>{...}`) resolves a named
+  target to its install function on demand: a typo fails fast at the name
+  access (the `__index` returns nil); a kind-mismatch (e.g.
+  `kcdx.hook.<value-only-name>.before`) fails at the mode access. Walks
+  **self > engine > other-plugin** precedence: a bare name resolves to the
+  calling plugin's own declarations first, then engine-shipped names, then
+  other plugins' declarations. Explicit `"<author>.<plugin>.<bare>"` and
+  `"kcdx.<seedname>"` forms bypass the precedence walk and resolve directly.
+
 - **implicit namespace prefix** — the `<author>.<plugin>` the engine stamps on
   every shared name your plugin exports (a target, a `kcdx.code` export, a
   published event), derived from `[plugin].author` + `[plugin].name`. You write
@@ -230,6 +262,7 @@ it does not exist yet.
 | `kcdx.code` | allocate an executable code region you own (for a callback address the game calls, a cross-plugin extension point, or a shared helper). To intercept an existing game function, use `kcdx.hook` instead. | [code.md](code.md) |
 | `kcdx.scan` | validate an AOB pattern + discover an address (dev-time workbench) | [scan.md](scan.md) |
 | `kcdx.alias` | declare a short local handle for a long shared name | [alias.md](alias.md) |
+| `kcdx.declare` / `kcdx.declared` | declare a per-version named target your plugin owns (the author-declared peer of a curated engine name; hook/byte verbs consume it by name); read a declared VALUE entry back | [declare.md](declare.md) |
 | author-declared targets (`targets.toml`) | name a code site yourself, then hook/patch it by name | [targets.md](targets.md) |
 | `require` | load a sibling Lua file (multi-file plugins) | [require.md](require.md) |
 

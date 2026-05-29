@@ -2083,17 +2083,23 @@ typedef struct kcdxDeclareEntry {
 // `isString` discriminates the two payload slots when found is true; one of
 // `intValue` / `stringValue` is meaningful, the other is left at the default.
 //
-// `stringValue` is a stable pointer into the declared-targets store. The
-// store never relocates after launch-time appends (a Register overwrite
-// writes in place at the same slot), so the pointer is valid for the process
-// lifetime once Declare for that (author, plugin, name) has returned. The
-// pointer is NULL when isString is false (an integer-valued entry) or when
-// found is false (a miss).
+// `stringValue` points into the declared-targets store's owned std::string
+// storage, which uses node-stable container backing (each entry sits in a
+// stable container node). The pointer survives a subsequent Declare call on
+// a DIFFERENT (author, plugin, name) triple from any plugin — the
+// node-stable storage guarantees prior nodes never move when new triples
+// append. A re-Declare of the SAME (author, plugin, name) triple from your
+// own plugin currently invalidates every prior `stringValue` you cached for
+// that name; re-Get after re-Declaring. The same-triple invalidation will
+// be removed in a follow-up change that routes valueStr storage through a
+// process-lifetime arena; at that point the pointer becomes valid for the
+// process lifetime unconditionally. The pointer is NULL when isString is
+// false (an integer-valued entry) or when found is false (a miss).
 typedef struct kcdxDeclaredValue {
     bool        found;             // true iff Get found a VALUE entry on the running version
     bool        isString;          // discriminates intValue vs stringValue when found
     int64_t     intValue;          // populated when found && !isString
-    const char* stringValue;       // populated when found && isString; process-lifetime; null otherwise
+    const char* stringValue;       // populated when found && isString; lifetime per the contract above; null otherwise
 
     // --- APPEND-ONLY BELOW ---------------------------------------------
     // New fields go HERE, never mid-struct.

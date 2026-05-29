@@ -154,7 +154,7 @@ POD, returned by value ([`Interfaces.h`](../../include/kcdx/Interfaces.h)):
 | `found` | `bool` | `true` iff the name resolved to a VALUE entry on the running game version. PATTERN entries, no-match-version entries, and unknown names all return `false` — PATTERN entries are consumed through the hook / bytes verbs, not this accessor. |
 | `isString` | `bool` | Discriminator for the two payload slots; meaningful only when `found`. |
 | `intValue` | `int64_t` | The integer payload; populated when `found && !isString`. The C++ side has no LUA_NUMBER=float threshold — the full int64 is preserved. |
-| `stringValue` | `const char*` | The string payload; populated when `found && isString`. Process-lifetime — the pointer is stable into the declared-targets store and remains valid until process exit (the store never relocates entries after launch-time appends; a re-`Declare` writes in place at the same slot). null when `found` is false or when the payload is an integer. |
+| `stringValue` | `const char*` | The string payload; populated when `found && isString`. The pointer aliases into the declared-targets store's node-stable container, so it survives a subsequent `Declare` on a DIFFERENT `(author, plugin, bareName)` triple from any plugin (the node-stable storage guarantees prior nodes never move when new triples append). A re-`Declare` of the SAME triple from your own plugin currently invalidates every prior `stringValue` you cached for that name — re-`Get` after re-`Declare`. The same-triple invalidation will be removed in a follow-up change that routes `valueStr` storage through a process-lifetime arena; at that point the pointer becomes process-lifetime unconditionally. null when `found` is false or when the payload is an integer. |
 
 ### Errors
 

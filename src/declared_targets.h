@@ -142,9 +142,16 @@ struct ResolvedDeclared {
     bool         valueIsString = false;
 
     // Back-pointer to the registry entry, for log-attribution in the
-    // caller. Nullptr for Kind::NoEntry. Lifetime: process — the registry
-    // never relocates after launch-time appends (a Register overwrite
-    // writes in place at the same slot).
+    // caller. Nullptr for Kind::NoEntry. The DeclaredEntry node ADDRESS is
+    // stable for the process lifetime — deque-node-stable storage means
+    // new triples append new nodes that never move prior elements, AND
+    // existing-triple re-Register overwrites in place at the same node
+    // address. The node CONTENTS, however, are overwritten by an
+    // existing-triple re-Register from the owning plugin: any
+    // VersionEntry::valueStr cached via this pointer is invalidated by a
+    // same-triple re-Declare (cross-triple Declares from any plugin do
+    // NOT invalidate it). The same-triple invalidation will be removed
+    // when valueStr storage moves to a process-lifetime arena.
     const DeclaredEntry* entry = nullptr;
 };
 
@@ -231,11 +238,17 @@ ResolvedDeclared LookupForCaller(const std::string& callerAuthor,
 // entry is not the table-omitted "attempt on all versions" form, OR if the
 // entry has no versions at all.
 //
-// Returned pointer aliases into `e.versions` and is process-stable as long as
-// `e` itself stays alive (the registry never relocates after launch-time
-// appends; a Register overwrite writes in place at the same slot, dropping any
-// prior entry's memoization but preserving the slot's address). Callers walk
-// it for stable string-payload reads (e.g. valueStr.c_str()).
+// Returned pointer aliases into `e.versions`; deque-node-stable storage of
+// g_entries means `e` itself has a process-stable ADDRESS across subsequent
+// Register calls (new triples append new deque nodes, existing-triple
+// re-Register overwrites in place at the same node — preserving the node's
+// address). Callers reading string payloads via `valueStr.c_str()` get a
+// pointer that survives any Register on a DIFFERENT triple from any plugin;
+// a re-Register of the SAME triple from the owning plugin invalidates the
+// prior `valueStr` storage at the same node (the new entry's versions
+// vector is copy-assigned over the prior one, destroying the prior inner
+// std::string). The same-triple invalidation will be removed when
+// valueStr storage moves to a process-lifetime arena.
 //
 // Read-only; no logging side-effects; safe to call many times per launch.
 const VersionEntry* FindPickedVersionEntry(const DeclaredEntry& e,

@@ -1,0 +1,75 @@
+# CAP-62 — kcdxDeclareInterface (C++ mirror of kcdx.declare / kcdx.declared)
+# end-to-end + the load-bearing stringValue lifetime falsifiability repro.
+#
+# C++ DLL plugin that exercises the kcdxDeclareInterface ABI through the
+# Kcdx.h wrapper's K.declare accessor. Four rows:
+#
+#   * CAP-62-declare-get-roundtrip   The basic Declare + Get round-trip.
+#       Declare a per-version integer constant for the running game version.
+#       Call K.declare->Get on the bare name (SELF tier) and assert found ==
+#       true, isString == false, intValue matches the declared value.
+#       FALSIFIABLE: a registration failure (Declare returns false), a Get
+#       miss (found == false on a name we just declared), or an intValue
+#       mismatch all FAIL. Proves the C++ surface declares + reads back
+#       what the Lua peer would.
+#
+#   * CAP-62-stringvalue-content-survives-second-declare   The contract row.
+#       Declare a string-value canary entry; Get + cache its stringValue
+#       pointer; Declare a SECOND distinct triple (a different name with a
+#       different string payload); re-read the cached pointer and assert
+#       strcmp(cached, expected) == 0. Tests the contract surface the
+#       author actually cares about — the string they Got is still the
+#       string they Declared, after a subsequent Declare from any plugin
+#       landed.
+#
+#       FALSIFIABLE: a cached stringValue's content is not the value the
+#       author Declared, after a subsequent Declare from any plugin lands.
+#
+#   * CAP-62-stringvalue-address-survives-second-declare   The mechanism row.
+#       Same two-distinct-Declare setup as the content row; AFTER the
+#       second Declare lands, re-Get the canary name and assert the new
+#       stringValue pointer is address-identical (==) to the cached
+#       pointer from the first Get. Tests the mechanism that makes the
+#       contract true — under the deque-node-stable storage the
+#       declared-targets store uses, the cached pointer and the re-Get
+#       pointer are into the same valueStr slot inside the same deque
+#       node, so they MUST be address-equal by construction.
+#
+#       FALSIFIABLE: a cached stringValue pointer is not address-identical
+#       to the same name re-Got after a subsequent Declare lands — the
+#       mechanism check that holds regardless of whether content happens
+#       to survive via SSO + move on a particular STL implementation.
+#
+#   * CAP-62-pattern-entry-get-returns-miss   The accessor-contract proof.
+#       Declare a PATTERN entry (pattern + signature; valid declared name).
+#       Call K.declare->Get on its name. Assert found == false — the
+#       accessor returns a miss for pattern entries (pattern declarations
+#       are consumed by the hook / bytes verbs by name, not by the value
+#       accessor). FALSIFIABLE: a found == true on a pattern entry would
+#       mean the accessor leaked a pattern entry into the value-read path
+#       (likely surfacing an uninitialised intValue or stringValue).
+#
+# Test mode: boot-only. All four rows self-verify at kcdxPlugin_Load (the
+# author-declared store is reachable at the RefdbOpened init phase, which
+# Plugin_Load runs after — the K.declare->Declare / Get path is the same
+# code the Lua binder reaches synchronously). NO console gestures, NO
+# save/load.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_62_cpp_declare_interface"
+display_name        = "CAP-62 kcdxDeclareInterface (C++) + lifetime repro"
+author              = "ts"
+description         = "C++ DLL exercising kcdxDeclareInterface end-to-end via K.declare: a value-entry Declare + Get round-trip, a pattern-entry Get-returns-miss accessor-contract proof, and the load-bearing stringValue lifetime falsifiability pair (content row asserts the cached string survives a subsequent Declare from any plugin; address row asserts the cached pointer is address-identical to a re-Get after a subsequent Declare — the mechanism check that holds regardless of SSO + move behavior)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-62-declare-get-roundtrip",
+                       "CAP-62-stringvalue-content-survives-second-declare",
+                       "CAP-62-stringvalue-address-survives-second-declare",
+                       "CAP-62-pattern-entry-get-returns-miss"]
+
+[entrypoints]
+dll = "cap-62.dll"
