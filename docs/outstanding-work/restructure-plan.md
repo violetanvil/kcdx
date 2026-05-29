@@ -76,19 +76,19 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 | 8.5 — Asset replacement (pak overlay) | **NOT STARTED** (8.5a partial: `CCryPak_FOpen` named in refdb + observe-only FOPEN probe live; PRODUCTION asset-overlay map / hook / Lua surface NOT BUILT) |
 | 9 — High-level Lua surface (player.health/.position + inventory.add + stubs) | **NOT STARTED** |
 | 9.1 — SQLite reference DB + lookup primitive + per-plugin verification cache | **DB + ENGINE CONSUMER DONE** (`address_names` + `address_versions` schema ships; refdb owns the cache, commit `498934c`; `refdb::ResolveByName/ResolveById` is the lookup primitive — `hash_at` is not a separate symbol). `version_check.bin` cache plumbing ships; production FEED awaits Phase 9.2's `kcdx.declare`. |
-| 9.2 — Per-version survival mechanics | **MACHINERY 80%** (`src/survival_pass.{cpp,h}` + cache schema + self-test); **SURFACE + BINDER WIRING NOT BUILT** (no `kcdx.declare` / no `lua_bind_declare.cpp`; no production binder calls `RecordTouchedRef`; no apply-time `on_changed` enforcement). Re-spec required around `kcdx.declare`. |
+| 9.2 — **UNIFIED named-target surface**: `kcdx.declare` (Track-2 author entries) + smart-resolver sub-verb shape `kcdx.<verb>.<name>.<mode>` over the unified table (curated refdb rows + author declarations, same lookup table, same `__index` resolver) + C++ mirror | **CURATED SUBSTRATE DONE** (refdb cache, commit `498934c`); **DECLARE STORE + RESOLVER + SUB-VERB SURFACE NOT BUILT** — see merged Phase 9.2 below. `src/survival_pass.{cpp,h}` machinery is built but it's the **curated-track** safety mechanism only (per §11.8.3); Track-2 declared entries do not feed survival_pass, they go through the badge / recovery-rollback path. |
 | 9.3 — `kcdx.hook.*` / `kcdx.statement.*` split + `kcdx.locator.*` / `kcdx.op.*` + multi-region trampoline | **NOT STARTED** |
 | 9.4 — `kcdx.find{...}` + `kcdx_dev_inspect` console | **NOT STARTED** |
 | 9.5 — `kcdx.behavior.*` named-behavior catalog | **NOT STARTED** |
 | 9.6 — `kcdx.bytes` narrowing + rule 4/4a update + final migration | **NOT STARTED** |
-| 9.7 — Curated-target sub-verb resolver (`kcdx.<verb>.<name>.<mode>`) | **SUBSTRATE DONE** (refdb cache, commit `498934c`); **LUA + C++ SURFACE NOT BUILT** |
+| 9.7 — Curated-target sub-verb resolver | **MERGED into Phase 9.2** (2026-05-28) — declare + smart resolver were two halves of one surface (a named-entry table populated from curated refdb + author declare; smart resolver over that table); landing them sequentially would have shipped a transitional UX. |
 | 10 — `[[event]]` → `kcdx.on(...)` event catalog | **LIFECYCLE EVENTS DONE** (`messaging.cpp` wires every save/load/post-load/input-loaded/etc.); **GAMEPLAY EVENT CATALOG NOT STARTED** (the 10–15 NEW gameplay events damage_taken / dialogue_line_spoken / item_picked_up / etc. are NOT RE'd or hooked) |
 | 11a — FIX A shim integration | **NOT STARTED** (depends on `_research/phase8-fix-a/` RE — ~38% RVAs mapped at last writing) |
 | 11b — Force-load WHGame.dll from kcdx.dll DllMain | blocked on 11a |
 | 11c — Lua VM startup via shim | blocked on 11a |
 | 11d — Drop static Lua | blocked on 11a–c |
 
-**Substantive next-pickups (per the table above):** `kcdx.declare` (Phase 9.2's keystone surface — the §11.8 STREAMLINE replacement for the dropped `authored_against_game_version` mechanism) | Phase 9.7 Lua + C++ smart-resolver surface (substrate ready) | Phase 8.5 asset overlay (independent; high user-visible leverage) | Phase 9 high-level Lua surface (independent; pure RE + binder work). Each is one `/feature` cycle; pick by leverage. Phase 11 stays blocked on the FIX A RE.
+**Substantive next-pickups (per the table above):** **Phase 9.2 unified named-target surface** (`kcdx.declare` author entries + smart-resolver sub-verb `kcdx.<verb>.<name>.<mode>` over the unified curated+declared table + C++ mirror — the §11.8 STREAMLINE Track-2 deliverable, landing 9.2 and 9.7 as one feature because they're structurally one surface) | Phase 8.5 asset overlay (independent; high user-visible leverage) | Phase 9 high-level Lua surface (independent; pure RE + binder work). Each is one `/feature` cycle; pick by leverage. Phase 11 stays blocked on the FIX A RE.
 
 **Governance that POSTDATES the original plan prose — these RULES win where the prose below conflicts:**
 - `.claude/rules/lua-api-surface.md` — the authoring surface (Lua AND C++) is a **learnable sublanguage**; one `kcdx` global, core verbs top-level + grouped domains, configuring=`{table}`/doing=positional, and **full Lua↔C++ feature parity** (invariant on the shipped product; restructure builds Lua-first then backfills C++ per-phase).
@@ -1456,24 +1456,170 @@ The engine dispatches by argument type/shape (string vs integer; string-matching
 
 **Verification gate:** a synthetic test against a hand-built `reference.sqlite` with 100 rows calls `hash_at("test_function", "1.5.x")` and gets the expected hash; cache invalidation tested by modifying `toml_mtime` → cache miss → recheck runs.
 
-### Phase 9.2 — Per-version survival mechanics — **MACHINERY 80%; SURFACE (`kcdx.declare`) + BINDER WIRING NOT BUILT**
+### Phase 9.2 — Unified named-target surface: `kcdx.declare` + smart-resolver sub-verb shape over the unified table — **CURATED SUBSTRATE DONE; AUTHOR-DECLARE STORE + SMART RESOLVER + SUB-VERB SURFACE + C++ MIRROR NOT BUILT**
+
+**This phase MERGES the previously-separate Phase 9.2 (`kcdx.declare`) + Phase 9.7 (sub-verb resolver).** They were drafted as sequential phases against the original "engine hashes every plugin's touched function" framing; the §11.8 STREAMLINE replaced that framing, and the audit on 2026-05-28 surfaced that the two phases are **one surface with two population sources** (curated refdb rows + author declarations), accessed through one resolver. Landing them sequentially would have shipped a transitional UX (declare against the old flat `kcdx.hook{target=...}` shape for one release, then rewriting authors' code at 9.7). Unified, both tracks reach the same `kcdx.<verb>.<name>.<mode>` shape in the same cycle.
 
 **Status (2026-05-28 audit):**
-- **Done:** the engine-side machinery — `src/survival_pass.{cpp,h}` (collector + RunPass), `src/version_check_cache.{h}` (`FuncStatus` / `Posture` enum + cache schema), the `version_check.bin` write path, `src/survival.{cpp,h}` (the per-function SurvivalCheck routine). The self-test (`src/version_check_selftest.cpp`) calls RunPass with synthetic data each boot and writes the cache.
-- **Not built:** the AUTHOR SURFACE (`kcdx.declare(module, name, [versions_kv])`) — no `src/lua_bind_declare.cpp`, no C++ mirror. No production binder calls `RecordTouchedRef`. No apply-time enforcement of an `on_changed` posture is wired (the apply pass walks entries unconditionally).
-- **Re-spec required before resuming.** The original "engine hashes every plugin's touched function on every boot, refuses install on drift" model was SUPERSEDED by the §11.8 STREAMLINE three-track model (Curated / Track-2 author-declared / Bulk DEV). For Track-2 the safety contract becomes (a) author-supplied per-version pattern via `kcdx.declare` + (b) recovery + rollback at install/runtime — NOT pre-check. See `parallel-ghidra-research.md` §11.8 + the outstanding-work bullet "Recovery + rollback for Track-2 plugins…"
+- **Curated substrate DONE.** Commit `498934c` (the refdb-owns-the-cache refactor) put the curated entity cache in process memory at boot. `refdb::Open()` bulk-resolves every curated entity for the running game version (closest-match version row + supersession walk + verification-state derivation); the `CachedEntity` row carries `kcdx_id`, post-supersession `name`, `rva`, `verified_signature`, `kind`, kind-specific fields (`offset` / `vtable_slot` / `value` / `length` / `content_hash`), and `verification_state`. The Lua-side smart resolver reads this cache; never touches SQLite at runtime.
+- **`survival_pass` machinery built but scoped to the CURATED track only.** `src/survival_pass.{cpp,h}` + `src/version_check_cache.{h}` + `src/survival.{cpp,h}` + the `version_check.bin` write path are wired (self-test in `src/version_check_selftest.cpp` exercises them with synthetic data each boot). Per §11.8.3, survival_pass is the *"only 'we can pre-check' path"* — it ships per-version content hashes the maintainer maintains for ~139 curated entries. Track-2 declared entries do NOT feed survival_pass; their safety story is the badge + recovery/rollback path (separate outstanding-work item, default-ON shipping waits on it).
+- **NOT built:** author-declare store (`kcdx.declare(module, name, versions_kv)` + the runtime registry it populates); the smart-resolver `__index` shape over the unified curated-cache + declare-store table; the per-verb "valid modes for this kind" tables; the C++ mirror; the `kcdx.declared(name)` value accessor; the test plugins + per-call docs.
 
-The prose below is the HISTORICAL anchor (engine plumbing the original design called for) — kept because the survival_pass MACHINERY does match what's built; only the trigger (manifest hash-check enforcement) was replaced by `kcdx.declare`.
+#### What "unified named-target surface" means
 
-**Original-spec scope (kept here for the as-built machinery; the trigger surface is what changed):**
+ONE in-memory table of resolvable names. ONE smart resolver over it. TWO population sources:
 
-- Extend `lua_registry::Entry` with a `requires_hash_check` flag + a list of touched function names. Each hash-checked binding (`kcdx.hook.*`, `kcdx.statement.*`, etc., when those land in 9.3) sets the flag and appends the function name(s) it touched.
-- End of registration pass: for each plugin with `requires_hash_check` entries, run the version check (cache-hit or fresh resolve through refdb); record per-entry result; attach to each entry's handle.
-- Apply pass: an entry whose result is "changed function" respects its `on_changed` posture — `refuse_entry` skips the entry with a teaching error; `warn_and_try` proceeds with a warning log line.
-- **All failure messages in author terms.** The log mentions the function name and the plugin's behavior; never the hash, the SQLite row, or the cache. Internal mechanism is invisible to the author per the survival-contract design.
-- Other entries in the same plugin continue applying regardless of one entry's hash-check result. Failure isolation is intra-plugin too.
+| Population source | Owner | Identity | Per-version mechanism | Safety |
+|---|---|---|---|---|
+| **Curated refdb cache** (built today) | kcdx maintainer | `<name>` lives at the engine-reserved `kcdx.<name>` triple per `naming-namespaces.md` (1-dot explicit; bare-resolves at `engine` tier) | per-version row in `address_versions` (`rva` + `signature` + `content_hash` + `length` + `kind`); resolved at `refdb::Open()` against the running game version | `survival_pass`: per-version `content_hash` pre-checked at install (curated-only) |
+| **Author-declared store** (this phase) | plugin author, in their own `plugin.lua` | `<name>` lives at the declaring plugin's `<author>.<plugin>.<bare>` triple per `naming-namespaces.md` (3-dot explicit; bare-resolves at `self` tier from inside the declaring plugin) | per-version `versions_kv` table the author supplied (`["1.5.1164953"] = {pattern=...}` etc.); the engine resolves ONCE at launch against the running game version using kcdx's canonical version string (already verified — sourced from `<game>/whdlversions.json` MasterMasterPGO config) | no pre-check; badge fires "Author certified through ≤ X; you're on Y" on undeclared versions; install-time / runtime failure routes through recovery/rollback (separate outstanding-work item) |
 
-**Verification gate (when re-spec lands):** a test plugin authored against game version "1.5.x" with a hook on a function whose simulated 1.6 hash differs — with `on_changed = "refuse_entry"` the entry skips + warns; with `on_changed = "warn_and_try"` the entry proceeds + warns; other entries in the plugin continue regardless. Re-spec needs to reframe this around `kcdx.declare`'s declared-versions / undeclared-versions axis instead of the dropped `authored_against_game_version` manifest field.
+The author can't tell which source backed a name — that's the point. `kcdx.hook.IsInCombat.before(fn)` against a curated entity and `kcdx.hook.combatResolver.before(fn)` against the author's own declared name read identically, route through identical `__index` resolution, and install identically. The bare-name precedence walk (`self > engine > other` per `naming-namespaces.md`) is the disambiguation when names overlap: an author who declares `combatResolver` and is the calling plugin gets their own declaration first; a curated `combatResolver` resolves via `engine` for any other caller.
+
+#### Two surface shapes for declare + one for resolve
+
+**`kcdx.declare(module, name, [versions_kv])`** — populates the author-declared store. Per §11.8.1:
+
+```lua
+-- per-version table: explicit keys + wildcard, no range objects
+kcdx.declare("WHGame.dll", "combatResolver", {
+  ["1.5.1164953"] = { pattern = "48 8B 05 ?? ?? ?? ?? 8B" },
+  ["1.6.*"]       = { pattern = "48 8B 0D ?? ?? ?? ?? 8B" },
+})
+
+-- a version-independent constant: per-version values
+kcdx.declare("WHGame.dll", "combatStateMask", {
+  ["1.5.1164953"] = 0x0F,
+  ["1.6.*"]       = 0x1F,
+})
+
+-- table omitted: attempt on ALL versions (the simpler "this works everywhere" path)
+kcdx.declare("WHGame.dll", "combatResolver", { pattern = "48 8B 05 ?? ?? ??" })
+```
+
+Rules (locked in the §11.8 spec):
+- **`module` is REQUIRED** (positional first arg). No default — kcdx exists to enable cross-module plugins eventually, and a defaulted module silently misroutes when secondaries get involved.
+- **Version keys:** explicit (`"1.5.1164953"`) and wildcard (`"1.5.*"`) only. NO range objects.
+- **Table omitted** = attempt on all versions (the low-ceremony common case).
+- **Plugin-Lua-side + an engine resolver** — does NOT write to the prod refs DBs. The declaration store is in process memory, owned by the declaring plugin's `<author>.<plugin>` namespace.
+
+**`kcdx.<verb>.<name>.<mode>` sub-verb resolver** — the canonical access path for ANY name in the unified table, regardless of which source populated it:
+
+```lua
+kcdx.hook.IsInCombat.before(callback)          -- curated entity
+kcdx.hook.combatResolver.before(callback)      -- the author's own declared name
+kcdx.hook.IsInCombat.after(callback)
+kcdx.hook.IsInCombat.replace(callback)
+kcdx.hook.IsInCombat.around(callback)
+
+kcdx.statement.IsInCombat.replace_with(op)     -- curated or declared
+kcdx.bytes.IsInCombat{replacement = "..."}
+kcdx.scan.IsInCombat()
+kcdx.code.IsInCombat{...}
+```
+
+**`kcdx.declared(name)` value accessor** — for declared NON-address entries (the `["1.5.1164953"] = 0x0F` shape):
+
+```lua
+if (ret & kcdx.declared("combatStateMask")) ~= 0 then ... end
+```
+
+The §11.8.1 example's bare-string-in-arithmetic (`& "combatStateMask"`) is illustrative pseudocode; Lua doesn't coerce arbitrary strings to numbers in `&`. The accessor is the honest shape: the value form needs an explicit read, the address form (pattern declarations) routes through the same `kcdx.<verb>.<name>.<mode>` shape the curated track uses.
+
+**Fallback path is preserved.** The Phase 2 flat-table form (`kcdx.hook{ target = "combatResolver", before = fn }`) and the Phase 9.3 explicit-positional form (`kcdx.hook.before("WHGame.dll", "Name", ...)`) keep working for the dynamic / pattern-locator / raw-address paths. The sub-verb form is the documented common path for any name in the unified table; the flat/positional forms are documented as the dynamic-dispatch alternative.
+
+#### Implementation pattern — smart resolver, NOT pre-generated tables
+
+The Lua binder does NOT materialize per-name-per-mode closures at boot. Verb tables (`kcdx.hook`, `kcdx.bytes`, `kcdx.statement`, `kcdx.scan`, `kcdx.code`) carry `__index` metamethods that resolve on demand:
+
+1. `kcdx.hook` is a Lua table with `__index = c_function`.
+2. Lookup of any name (`kcdx.hook.combatResolver`) invokes the metamethod. The metamethod consults the **unified named-target resolver**: it walks self > engine > other per `naming-namespaces.md` (`self` = the calling plugin's author-declared entries via the calling-plugin context the Lua VM already carries; `engine` = the refdb curated cache; `other` = other plugins' declared entries). Miss → return nil. Hit → push a small verb-bound userdata with two upvalues: a unified `ResolvedTarget` and the verb tag (`"hook"`).
+3. The userdata's own `__index` resolves the mode (`.before` / `.after` / `.replace` / `.around` / `.mid`) against a per-verb static "valid modes for this kind" table. The kind drives validity — e.g., for `hook` + `function` kind: before/after/replace/around/mid all valid; for `hook` + `vtable_index` kind: only replace + before/after via vtable thunk are valid. Invalid mode → return nil. Valid → push a closure with `(target, verb, mode)` baked in.
+4. The closure is what the author calls with `(callback)` or `{captures=..., callback=...}` — invoking the verb's existing install logic with the target's address / signature / kind pre-resolved from the unified `ResolvedTarget`.
+
+Cost at boot: ~5 C functions + ~5 metatables total (one per verb's `__index`). No per-name materialization. The unified table (~140 curated + however many a plugin declares) is the only substantive data the surface touches.
+
+**Typo fails fast at the right place.** `kcdx.hook.IsInCombatt.before(fn)` returns nil at step 2 (the name lookup); the next `.before` access throws a Lua "attempt to index a nil value" error that names the slot the author typoed. No install-time silent skip. No "the engine accepted my code but my hook isn't firing" mystery.
+
+**Kind-aware filtering is structural.** A mode that doesn't apply to an entity's kind returns nil at the mode-resolution step, so `kcdx.hook.SomeVTableIndex.before(fn)` errors at `.before` if `before` isn't valid for `vtable_index` kind — at author-time, not at install-time. No engine-side after-the-fact "I refused to install this" log line for the author to dig out.
+
+#### Engine architecture — one resolver, two backing stores
+
+A single `named_target_resolver.{cpp,h}` module is the unified lookup entry point. It owns the `self > engine > other` walk and dispatches to:
+
+- **Engine tier (curated):** `refdb::ResolveByName(name)` → `CachedEntity` (the existing cache built by `refdb::Open()`). The resolver projects this into a `ResolvedTarget` carrying the same fields the smart-resolver pattern needs (rva, signature, kind, etc.).
+- **Self / other tier (declared):** a new `declared_targets.{cpp,h}` module — the in-memory store the `kcdx.declare` binder populates. Stores `(declaring_author, declaring_plugin, name, module, versions_kv)`. On lookup, picks the matching version-key entry (exact > wildcard; longest-match wildcard wins); if the entry is a `pattern`, runs `scan_engine::ResolveScan` once and memoizes the resolved VA; if the entry is a value, stores it directly. The resolver projects this into a `ResolvedTarget` of the same shape.
+
+The smart resolver's `__index` metamethod is the ONLY caller of the unified entry point. Existing binders (`lua_bind_hook.cpp`, `lua_bind_bytes.cpp`, etc.) continue to resolve names via `address_library::ResolveByName` for the flat-table fallback path. The two resolution paths coexist; over time the documented-common-path canonical is the smart resolver, the flat-table form is documented as dynamic-dispatch fallback.
+
+#### C++ mirror — full parity per `lua-api-surface.md`
+
+`kcdxHookInterface::IsInCombat::Before(callback)` (or the equivalent template specialization shape — settled at this phase's design step) mirrors the Lua surface. `kcdxDeclareInterface::Declare(module, name, versions)` mirrors `kcdx.declare`. The full-parity invariant from `.claude/rules/lua-api-surface.md` is preserved: every Lua surface ships with its C++ peer in this same multi-commit feature; both surfaces of one capability get test rows (Lua plugin + C++ DLL plugin, both exercising the same declared name).
+
+#### What the unified table MUST provide (per-`ResolvedTarget`)
+
+Same shape as the existing curated `CachedEntity`, with provenance:
+
+| Field | Source: curated | Source: declared | Use |
+|---|---|---|---|
+| `name` (post-supersession for curated) | `address_names.name` | `kcdx.declare` arg 2 | identity for verb-bound proxy |
+| `triple` (`author.plugin.bare`) | `kcdx.<name>` (engine tier) | `<declaring-author>.<declaring-plugin>.<bare>` | precedence walk + log attribution |
+| `module` | `modules.name` for the entity's `module_id` | `kcdx.declare` arg 1 | hook install / scan scope |
+| `rva` + `WhgameBase()` | `address_versions.rva` for the running version | resolved by `scan_engine::ResolveScan` on the declared `pattern` (memoized) | absolute VA |
+| `signature` | `address_versions.signature` (verified) | from a sibling `signature = ...` field in the declared per-version entry, when the author supplies one; otherwise hook-mode is rejected at install with a teaching error | hook-mode ABI binding |
+| `kind` | `address_versions.kind` (`function` / `vtable_index` / etc.) | derived: `function` if the declared entry is `{pattern=...}`, `value` if the declared entry is a literal | drives per-verb "valid modes" |
+| `vtable_slot` / `offset` / `value` | kind-specific fields from `address_versions` | kind-specific fields from the declared per-version entry | kind-specific install paths |
+| `length` / `content_hash` | `address_versions.length` / `content_hash` (curated track only) | NOT present for declared (Track-2 has no pre-checked hash) | `kcdx.bytes.<name>` survival check (curated-only path) |
+| `verification_state` | derived from supersession + deprecation + verified-at version | derived from "declared for running version" / "declared with wildcard match" / "declared for other versions only (badge fires)" | resolver chooses to warn or filter |
+
+#### Out of scope for this phase (tracked elsewhere; do NOT fold in)
+
+- **Apply-time enforcement of an `on_changed` posture for the CURATED track.** `survival_pass::RunPass` produces per-(plugin, function) results today (the self-test exercises this); the apply pass walks entries unconditionally. Wiring the apply pass to skip-or-warn based on a result is its own follow-up cycle. It is an engine-internal change on the curated track; this phase ships the unified author surface.
+- **Recovery + rollback machinery for Track-2 plugins on undeclared versions.** §11.8.3 + the outstanding-work bullet "Recovery + rollback for Track-2 plugins on undeclared versions" specify what this is. Load-bearing for default-ON shipping. Spec to live in `docs/outstanding-work/track2-recovery-rollback.md` (not yet written). Until it lands, default-ON behavior runs in "fail-loud-but-no-clean-rollback" mode — a Track-2 declared entry resolving against an undeclared version succeeds-with-WARN or fails-loud at install; the recovery/rollback guarantee follows.
+- **UI badge surfacing in `kcdx.exe`.** Pre-UI: the launch-log line per §11.8.2. The phase's verification gate asserts the log line; the UI badge is a `kcdx.exe` (interface project) deliverable.
+- **The Phase 9.3 surface split** (`kcdx.hook.before` / `kcdx.hook.after` etc. as separate sub-verbs from `kcdx.hook{}`). The smart resolver here uses sub-verb `.mode` access at the `ResolvedTarget` level; the *flat-table fallback* still uses `kcdx.hook{mode=fn}` until 9.3 lands the sub-verb split everywhere.
+
+#### Files (sketch — design step within the feature settles exact shapes)
+
+- New `src/declared_targets.{cpp,h}` — the in-memory store + version-key matcher (exact > longest-wildcard); the resolve entry point that runs `scan_engine::ResolveScan` for `pattern` entries and memoizes; the metadata accessor for `value` entries.
+- New `src/named_target_resolver.{cpp,h}` — the unified `self > engine > other` walk; dispatches to `declared_targets` (self/other) + `refdb` (engine); projects both into the unified `ResolvedTarget` shape.
+- New `src/lua_bind_declare.{cpp,h}` — `kcdx.declare(...)` + `kcdx.declared(name)` binders; registers declared entries under the calling plugin's `<author>.<plugin>` namespace.
+- New `src/declare_interface.cpp` + new entries on `kcdxDeclareInterface` in `include/kcdx/Interfaces.h` (APPEND-ONLY per AP11) + `kcdxInterface_Declare` enum + `interfaces.cpp` `QueryInterface` wire-up + `include/kcdx/Kcdx.h` wrapper member append.
+- `src/lua_bind_hook.cpp` — extend with the `__index` metamethod for the smart-resolver path; the existing flat-table / explicit-positional forms keep working as the dynamic / non-named-target path.
+- `src/lua_bind_bytes.cpp` — same `__index` extension for `kcdx.bytes.<name>(...)`.
+- `src/lua_bind_scan.cpp` — same shape for `kcdx.scan.<name>()`.
+- `src/lua_bind_code.cpp` — same shape for `kcdx.code.<name>(...)`.
+- `src/hook_interface.cpp` + `src/bytes_interface.cpp` + `src/code_interface.cpp` — C++ sub-verb mirror for each.
+- The per-verb "valid modes for this kind" tables: one small static array per verb in the corresponding `src/lua_bind_*.cpp`, plus one in the C++ binding layer.
+
+(Phase 9.3 will introduce `kcdx.statement.*` + `kcdx.locator.*` + `kcdx.op.*`; this phase does NOT pre-extend the smart resolver into those — they slot in when 9.3 lands their binders, the resolver entry points are designed to accept new verbs without churn.)
+
+#### Documentation deliverable (`docs/lua/` + `docs/cpp/` per `docs-discipline.md`)
+
+- Per-call entries for each verb in `docs/lua/` (`hook.md`, `bytes.md`, `scan.md`, `code.md`) get a new section **before** the existing flat-table / explicit-positional form, documenting the named-target sub-verb form as the common path for any name in the unified table. The fallback forms stay, documented as dynamic / pattern-locator / raw-address paths.
+- New `docs/lua/declare.md` — full reference for `kcdx.declare(module, name, versions_kv)` + `kcdx.declared(name)`. Lead with the "what does this do" framing (extends the unified named-target table with your own per-version names, accessible by the same `kcdx.<verb>.<name>` shape curated entities use); document version-key forms (explicit + wildcard); document the value vs pattern entry shapes; document the `<author>.<plugin>.<bare>` namespacing; document the badge behaviour on undeclared versions.
+- New `docs/cpp/declare.md` — C++ mirror, marked NYI until the C++ side ships in this same phase (then NYI marker is removed in the same commit per `docs-discipline.md` §3).
+- `docs/lua/index.md` + `docs/cpp/index.md` — front-door framing gets the unified shape woven in: `kcdx.<verb>.<name>` is the one-liner an author types for a curated target OR a name they declared; mention `kcdx.declare` as the way to add author-owned names to the same surface.
+- Glossary terms in `docs/lua/index.md` glossary (and the C++ mirror in `docs/cpp/index.md` glossary):
+  - **Named target** — an entry in the unified named-target table; sourced from curated refdb (engine-shipped) or from `kcdx.declare` (author-supplied). Accessible by name in the verb path.
+  - **Smart resolver** — the `__index`-driven Lua / templated-accessor C++ shape that resolves a named target to its install function on demand, without pre-materializing per-name-per-mode closures.
+  - **Curated target** — a named target from the kcdx-shipped refdb. Maintained by the kcdx maintainer; pre-checked for byte-survival across game versions on the curated track.
+  - **Declared target** — a named target supplied by a plugin via `kcdx.declare`. Owned by the declaring plugin's `<author>.<plugin>` namespace; per-version mapping owned by the author.
+
+#### Verification gate
+
+- **Curated path:** a test plugin exercises one cache-resident name across every valid mode for that name's kind via the smart resolver (`kcdx.hook.<curated>.before(fn)` etc.) and asserts PASS.
+- **Declared path — pattern entry:** a test plugin declares `kcdx.declare("WHGame.dll", "my_test_target", { ["1.5.1164953"] = { pattern = "..." } })` then hooks `kcdx.hook.my_test_target.before(fn)`; the hook fires; plugin reports PASS.
+- **Declared path — value entry:** a test plugin declares `kcdx.declare("WHGame.dll", "my_test_value", { ["1.5.1164953"] = 0x7F })` then reads `kcdx.declared("my_test_value") == 0x7F` and reports PASS.
+- **Cross-plugin reference:** plugin A declares `combatThing`; plugin B hooks `kcdx.hook["a.realism.combatThing"].before(fn)` via the prefixed form; hook fires; B reports PASS.
+- **Precedence — author-declared shadows curated of the same name (from inside the declaring plugin only):** plugin A declares `IsInCombat`; from inside A, `kcdx.hook.IsInCombat.before(fn)` resolves to A's declaration (self > engine); from inside any OTHER plugin, the same call resolves to the curated entry. Single test plugin with two binding sites proves both directions.
+- **Negative #1 — typo at the name slot:** `kcdx.hook.IsInCombatt.before(fn)` produces a Lua error naming the typoed slot, NOT a silent skip.
+- **Negative #2 — invalid mode for kind:** pick a name whose kind doesn't support `mid`; `.mid` access returns nil; the call raises "attempt to call a nil value"; PASS.
+- **Negative #3 — declared pattern doesn't resolve on the running version:** test plugin declares for a version that doesn't match the running one, OR a pattern that returns no matches; install fails LOUD; the engine log emits the "Pattern did not resolve on your version" badge-equivalent line per §11.8.2; plugin reports PASS by asserting the log line.
+- **Negative #4 — declared without a hook-usable signature on the running version:** test plugin declares only `{pattern = "..."}` (no signature) then tries `kcdx.hook.<name>.before(fn)`; install fails with the teaching error documented above (a callback hook needs a signature).
+- **Deprecated curated entity:** pick a name whose `verification_state` is DEPRECATED in the running version; `kcdx.hook.<name>.before(fn)`; resolver emits a one-shot WARN naming the replacement; install still succeeds against the deprecated row; PASS when WARN is in the log AND the hook fires.
+- **C++ mirror parity:** a C++ DLL test plugin uses `K.hook->IsInCombat::Before(callback)` (or the settled template-specialization shape) against the same curated name; PASS. Same against a declared name via `K.declare->Declare(...)` from the same DLL.
+- **Suite stays X/Y green** (no regressions in any prior Phase 9 row; the flat-table forms continue to work for non-named-target paths).
 
 ### Phase 9.3 — `kcdx.hook.*` + `kcdx.statement.*` split + `kcdx.locator.*` + `kcdx.op.*` value namespaces + multi-region trampoline pool — **NOT STARTED**
 
@@ -1725,106 +1871,13 @@ Without this front-door framing, the docs are a flat verb list; with it, the aut
 
 **Verification gate:** full test suite green; no plugin uses old surface forms; rule 4 + 4a documented; `kcdx.bytes` narrowed-remit doc landed; `docs/lua/index.md` leads with the tier model; `docs/lua/extensibility.md` exists and covers both directions; `kcdx.dll.declare` + `kcdx.functions.*` per-call docs landed; per-call `docs/lua/` and `docs/cpp/` entries cover every shipped capability per [docs-discipline.md](../../.claude/rules/docs-discipline.md).
 
-### Phase 9.7 — Curated-target sub-verb resolver (`kcdx.<verb>.<name>.<mode>`) via the refdb cache — **SUBSTRATE DONE (commit `498934c`); LUA + C++ SURFACE NOT BUILT**
+### Phase 9.7 — MERGED into Phase 9.2 (2026-05-28)
 
-**Status (2026-05-28 audit):**
-- **Substrate DONE:** the refdb-owned cache landed at commit `498934c` (the refdb-owns-the-cache refactor). `refdb::Open()` bulk-builds every curated entity resolved at the running game version (closest-match version row + supersession walk + verification state derivation); the cache row carries every field the smart resolver needs (per Phase 9.7's "What the cache MUST provide" table below). Engine-internal call sites moved to `refdb::ResolveAddrByName / ResolveAddrById / SignatureByName`; `address_library` shrank to the plugin-precedence surface.
-- **Lua surface NOT BUILT:** no `__index` metamethod on `kcdx.hook` / `kcdx.bytes` / `kcdx.statement` / `kcdx.scan` / `kcdx.code` for curated-target sub-verb lookup. Grep `src/lua_bind_hook.cpp` for `__index` returns hits only for the existing top-level shape, not the per-name resolver pattern.
-- **C++ surface NOT BUILT:** no curated-target accessor (`kcdxHookInterface::IsInCombat::Before(...)` or equivalent template specialization).
-- **Per-verb "valid modes for this kind" tables NOT BUILT.**
-- **Test plugin + docs NOT BUILT.**
+The smart-resolver sub-verb shape `kcdx.<verb>.<name>.<mode>` was originally drafted as its own phase against the curated refdb cache only. The audit on 2026-05-28 (during the `/feature` brief for `kcdx.declare`) surfaced that Phase 9.7's resolver and Phase 9.2's `kcdx.declare` are **two halves of one surface** — a unified named-target table populated from two sources (curated refdb + author declarations), accessed through one smart resolver. Sequencing them would have shipped a transitional UX (declare against the old flat `kcdx.hook{target=...}` shape, then a second author-visible rewrite at 9.7).
 
-Phase 9.3 will split the verb tree by MODE (`kcdx.hook.before/after/around/replace`), Phase 9.6 closes out rule 4a (sub-verbs over mode-as-table-key), and the refdb-owned cache (built in commit `498934c`, the substrate dependency below) put the curated target table in memory at boot. Phase 9.7 takes the next step: **the canonical target name itself becomes a sub-verb in the call path**, so the author writes the name in the same place they wrote the verb.
+**The full specification lives in Phase 9.2 above** ("Unified named-target surface"). It covers: the unified `ResolvedTarget` shape; the curated + declared population sources; the `self > engine > other` precedence walk; the `__index` smart resolver; the per-verb "valid modes for this kind" tables; the C++ mirror; the value-form `kcdx.declared(name)` accessor; the verification gate. Nothing from the original Phase 9.7 prose was dropped — the UX wins, files sketch, glossary terms, and verification cases are all carried forward in the unified phase.
 
-**The shape:**
-
-```lua
--- Curated target (in the refdb cache) → name is in the call path
-kcdx.hook.IsInCombat.before(callback)
-kcdx.hook.IsInCombat.after(callback)
-kcdx.hook.IsInCombat.replace(callback)
-kcdx.hook.IsInCombat.around(callback)
-kcdx.hook.IsInCombat.mid{captures = {...}, callback = my_fn}
-
-kcdx.statement.IsInCombat.replace_with(op)
-kcdx.statement.IsInCombat.insert_before(locator, callback)
-kcdx.statement.IsInCombat.insert_after(locator, callback)
-
-kcdx.bytes.IsInCombat{replacement = "..."}
-kcdx.scan.IsInCombat()
-kcdx.code.IsInCombat{...}
-
--- Non-curated / author-declared / dynamic targets keep the explicit form
-kcdx.hook.before("WHGame.dll", "MyAuthorTarget", locator, callback)
-kcdx.hook{target = "MyAuthorTarget", before = callback}      -- legacy table form
-```
-
-A curated name is one in the refdb cache (today: ~140 entities; grows as RE work lands new rows). Non-curated paths (`kcdx.dll.declare` author-declared functions, dynamic name strings, raw addresses, `pattern` locators) keep the explicit-positional / table-driven form from Phase 9.3.
-
-**Substrate dependency.** Phase 9.7 depends on the **refdb-owned cache** landed in a precursor `/execute` cycle: at boot, `refdb::Open()` resolves every curated entity for the running game version (closest-match version row + supersession walk + state derivation) and stores the results in two in-memory hash maps (`g_byName`, `g_byId`). The cache row carries `kcdx_id`, post-supersession `name`, `rva`, `verified_signature`, `kind`, kind-specific fields (`offset` / `vtable_slot` / `value` / `length` / `content_hash`), and `verification_state`. The Lua-side smart resolver reads this cache; it never touches SQLite at runtime.
-
-The substrate cycle also migrates 13 engine-internal numeric-ID call sites to `refdb::ResolveAddrByName("<canonical>")` and shrinks `address_library.cpp` to its plugin-precedence / alias / author-target / validation surface. That cycle ships independently and closes the `record_synth` boot crash that motivated it.
-
-**Implementation pattern — smart resolver, NOT pre-generated tables.**
-
-The Lua binder does NOT materialize per-name-per-mode closures at boot. Verb tables (`kcdx.hook`, `kcdx.bytes`, `kcdx.statement`, `kcdx.scan`, `kcdx.code`) carry `__index` metamethods that resolve on demand:
-
-1. `kcdx.hook` is a Lua table with `__index = c_function`.
-2. Lookup of any name (`kcdx.hook.IsInCombat`) invokes the metamethod, which calls `refdb::ResolveByName(name)` — a hash lookup against `g_byName`, sub-microsecond. Miss → return nil. Hit → push a small verb-bound userdata with two upvalues: the cached entity and the verb tag (`"hook"`).
-3. The userdata's own `__index` resolves the mode (`.before` / `.after` / `.replace` / `.around` / `.mid`) against a per-verb static "valid modes for this kind" table. The kind drives validity — e.g., for `hook` + `function` kind: before/after/replace/around/mid all valid; for `hook` + `vtable_index` kind: only replace + before/after via vtable thunk are valid. Invalid mode → return nil. Valid → push a closure with `(entity, verb, mode)` baked in.
-4. The closure is what the author calls with `(callback)` or `{captures=..., callback=...}` — invoking the verb's existing install logic with the entity's address / signature / kind / etc. pre-resolved from the cache row.
-
-Cost at boot: ~5 C functions + ~5 metatables total (one per verb's `__index`). No per-name materialization. The refdb cache (~140 rows) is the only substantive data the surface touches.
-
-**Why this shape — UX wins:**
-
-- **Common path is the shortest path.** Curated-target hook becomes one fluent expression: `kcdx.hook.IsInCombat.before(fn)`. No positional repetition, no string quoting, no `target = "..."` table key. Matches the disassembler test's "name supplies address AND ABI" tenet — author types one name, engine carries everything else.
-- **Typo fails fast at the right place.** `kcdx.hook.IsInCombatt.before(fn)` returns nil at step 2 (the name lookup); the next `.before` access throws a Lua "attempt to index a nil value" error that names the slot the author typoed. No install-time silent skip. No "the engine accepted my code but my hook isn't firing" mystery.
-- **Kind-aware filtering is structural.** A mode that doesn't apply to an entity's kind returns nil at the mode-resolution step, so `kcdx.hook.SomeVTableIndex.before(fn)` errors at `.before` if `before` isn't valid for `vtable_index` kind — at author-time, not at install-time. No engine-side after-the-fact "I refused to install this" log line for the author to dig out.
-- **Validity rules are centralized.** The "which modes work for which kind" table lives in a single per-verb C++ array, not duplicated across 140 cache rows. Adding a new kind or a new mode is one edit.
-- **C++ side mirrors.** `kcdxHookInterface::IsInCombat::Before(callback)` (or the equivalent template specialization shape — to be settled at this phase's design step) mirrors the Lua surface. The full-parity invariant from `.claude/rules/lua-api-surface.md` is preserved: a curated target accessible by sub-verb in Lua is accessible by the same sub-verb shape in C++.
-
-**What the cache MUST provide.** Per the substrate cycle's `CachedEntity` design, the cache row already carries everything Phase 9.7 needs — no additional fields:
-
-| Field | How Phase 9.7 uses it |
-|---|---|
-| `kcdx_id` | Diagnostic; cross-reference to DB / log lines. |
-| `name` (post-supersession) | Identity for the verb-bound proxy. |
-| `rva` + `WhgameBase()` | Absolute VA for hook install / byte patch / scan validation. |
-| `verified_signature` | Hook-mode ABI binding (`kcdx.hook.<name>.before/.after/.around/.replace`). |
-| `kind` | Drives the per-verb "valid modes" check. |
-| `vtable_slot` / `offset` / `value` | Kind-specific install paths. |
-| `length` / `content_hash` | `kcdx.bytes.<name>` survival check (the hash-tracked per-target survival contract). |
-| `verification_state` | Resolver chooses to warn or filter (e.g., a DEPRECATED entity emits a one-shot WARN at the lookup that resolved it, redirecting authors to the replacement). |
-
-**Files (sketch — design step settles the exact shapes):**
-
-- `src/lua_bind_hook.cpp` — extend the existing binder with the `__index` metamethod path for curated targets; the explicit-positional + table forms from Phase 9.3 stay as the dynamic / author-declared / non-curated path.
-- `src/lua_bind_bytes.cpp` — same shape for `kcdx.bytes.<name>(...)`.
-- `src/lua_bind_statement.cpp` — same shape for `kcdx.statement.<name>.<op>(...)`.
-- `src/lua_bind_scan.cpp` — same shape for `kcdx.scan.<name>()`.
-- `src/lua_bind_code.cpp` — same shape for `kcdx.code.<name>(...)` (where a curated entity carries a default trampoline pool / size).
-- `include/kcdx/Interfaces.h` — C++ mirror: a templated / generated accessor shape that takes a curated name and returns a typed proxy with mode-resolved install methods. The exact ergonomics belong to this phase's design step.
-- The per-verb "valid modes for this kind" tables: one small static array per verb in the corresponding `src/lua_bind_*.cpp`, plus one in the C++ binding layer.
-
-**Documentation deliverable (`docs/lua/` + `docs/cpp/` per `docs-discipline.md`):**
-
-- Per-call entries for each verb in `docs/lua/` (`hook.md`, `bytes.md`, `statement.md`, `scan.md`, `code.md`) get a new section **before** the existing explicit-positional / table form, documenting the curated-target sub-verb form as the common path. The explicit / table forms stay, demoted to "use this when the target isn't curated (author-declared, dynamic name, raw address, pattern-located)."
-- The `docs/lua/index.md` front-door framing gets the new shape woven in — `kcdx.<verb>.<name>` is the one-liner an author types for a curated target.
-- Glossary terms in `docs/lua/index.md` glossary (and the C++ mirror in `docs/cpp/index.md` glossary):
-  - **Curated target** — an entity in the refdb cache (the kcdx-maintained address registry); accessible by name in the verb path.
-  - **Smart resolver** — the `__index`-driven Lua / templated-accessor C++ shape that resolves a curated name to its install function on demand, without pre-materializing per-name-per-mode closures.
-- C++ mirror entries in `docs/cpp/` (`hook.md`, `bytes.md`, `statement.md`, `scan.md`, `code.md`) — full entries marked NYI (per `docs-discipline.md` §3) until the C++ side ships in this phase. When both sides ship in this phase, the NYI markers are removed in the same commit.
-- The fallback path is documented (`kcdx.hook{target = "..."}` / `kcdx.hook.before("WHGame.dll", "Name", ...)`) as the dynamic / author-declared / non-curated form — not removed.
-
-**Verification gate:**
-
-- A new test plugin (next-free `cap-NN`) exercises the curated path against one cache-resident name across every valid mode for that name's kind. The plugin asserts PASS by calling each mode's install function and reporting fire (or static-bytes apply) from the callback / observable effect.
-- Negative test #1: typo at the name slot — `kcdx.hook.IsInCombatt.before(fn)` — produces a Lua error naming the typoed slot, NOT a silent skip. The plugin's manifest expects the error and reports PASS when it fires.
-- Negative test #2: invalid mode for kind — pick a name whose kind doesn't support `mid` and call `kcdx.hook.<name>.mid{...}` — the `.mid` access returns nil, the call raises "attempt to call a nil value", the plugin reports PASS.
-- Negative test #3: deprecated entity — pick a name whose `verification_state` is DEPRECATED in the running version, call `kcdx.hook.<name>.before(fn)`; the resolver emits a one-shot WARN naming the replacement, and the install still succeeds against the deprecated row (so the plugin keeps working). The plugin reports PASS when the WARN is present in the log and the hook fires.
-- C++ mirror test: a test DLL plugin uses the C++ shape against the same curated name in the same mode, reports PASS. Proves full-parity (`lua-api-surface.md`).
-- Suite stays X/Y green (no regressions in the existing Phase 9.3 sub-verb tests; the explicit-positional / table forms continue to work for non-curated paths).
+The phase numbering preserves the 9.7 slot rather than renumbering 9.3–9.6 to avoid renumbering chains and to keep external references to "Phase 9.7" finding the redirect.
 
 ### Phase 10 — `[[event]]` → `kcdx.on(...)` event catalog — **LIFECYCLE EVENTS DONE; GAMEPLAY EVENT CATALOG NOT STARTED**
 
