@@ -100,6 +100,8 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 | `before_game` | Between kcdx.dll DllMain and WHGame.dll DllMain. LDR notification fires for any DLL mapped here. Phase 11+ adds: kcdx.dll force-loads WHGame.dll synchronously inside DllMain, fires the LDR notification, then spins up Lua VM via WHGame's compiled luaL_newstate before any before_game plugin runs. | Phases 1-10: DLL plugins only (Lua VM not started until first-update-tick). Phase 11+: DLL plugins AND Lua plugins (VM is up before any plugin runs). |
 | `after_game` | After WHGame.dll's DllMain completes, threaded into first-update-tick orchestration. | Everything. |
 
+`before_game` is a TIMING window, not a target-DLL gate. The LDR notification mechanism that drives the window (`src/ldr_notify.cpp::ApplyEntriesForModule`) applies a resolved before_game patch to **any** DLL mapped during it — WHGame.dll, other game-bin DLLs, third-party preloads — not just WHGame.dll. WHGame.dll's DllMain is the canonical timing anchor for *when* the window closes; the window's patches themselves may target any module mapped between kcdx.dll's DllMain and that close. The bugsplat-filename-fix builtin is the standing example: it declares `zone = "before_game"` but targets BugSplat64.dll, applied by the LDR notification when BugSplat64.dll maps. Wire-diagram steps below that name "WHGame" in an LDR-notification sequence step are describing the WHGame-mapping event specifically (the Phase 11+ force-load triggers it), not asserting LDR-window-targets-WHGame-only.
+
 A plugin declares its zone in `kcdx.toml` `[load_order].zone`. If omitted, kcdx defaults to `after_game` (the conservative choice — most plugins want WHGame alive when they run). **As-built today** (Phase-7 zone-rework subset, DONE): the per-plugin manifest parser (`src/config.cpp` `ParsePluginManifest`) reads `[load_order].zone` + `[load_order].priority` from the plugin's own doc, populating the internal `Manifest.defaultPosition` / `Manifest.defaultPriority` fields (the internal field names were left unchanged; only the TOML keys read FROM were renamed). The legacy `[plugin].default_position` / `[plugin].default_priority` keys are NO LONGER read (HARD rename, no transitional fallback — consistent with the prerelease fix-forward no-WARN stance). This per-plugin `[load_order]` table is parsed by `ParsePluginManifest`; the engine-wide override file `kcdx-engine/load_order.toml`'s top-level `[[plugin]]` rows are read by a SEPARATE parser (`load_order.cpp::Read`) — different files, no collision. (Before the rename, the per-plugin key was `[plugin].default_position`, and `[load_order]` was reserved for the override file only — that was the trap the COMP-13 fixture hit before this footnote was added; the rename closed it.)
 
 A Lua plugin trying to declare `zone = "before_game"` in Phases 1-10 produces a manifest-load error ("Lua-in-before_game requires phase 11+ FIX A shim + early-VM startup"). Phase 11+ removes that constraint.
@@ -640,8 +642,10 @@ kcdx.dll DllMain (loader-lock)
 ├── plugin_loader::TopoSort → unified ordered list
 ├── Install before_game patches/hooks against already-loaded modules (ntdll, kernel32, dinput8 if present, kcdx.dll itself)
 ├── Register LdrRegisterDllNotification for WHGame.dll mapping
-├── LoadLibraryW(L"WHGame.dll")
-│   ├── LDR notification fires → before_game patches/hooks for WHGame apply (bugsplat-filename-fix, etc.)
+├── LoadLibraryW(L"WHGame.dll") — synchronously maps WHGame + whatever its dependency chain pulls in
+│   ├── LDR notification fires for each newly-mapped module
+│   │   ├── before_game entries declaring WHGame.dll apply when WHGame itself maps
+│   │   └── before_game entries declaring other modules apply when the chain maps that module (e.g. bugsplat-filename-fix → BugSplat64.dll)
 │   └── WHGame.dll DllMain runs (BugSplat init sees patched colon-free string)
 ├── kcdx::lua_shim::Resolve() — GetProcAddress every lua_* and luaL_* symbol from WHGame.dll
 ├── luaL_newstate (via shim) → lua_State (WHGame's compiled Lua does the allocation; kcdx just called the function earlier than CryEngine would)
@@ -1778,7 +1782,7 @@ This phase depends on FIX A (the symbol-harvest work currently in progress at `_
 4. Walk manifests + load_order.
 5. Install before_game patches/hooks against already-loaded modules (ntdll, kernel32, kcdx.dll itself, dinput8.dll if present).
 6. Register `LdrRegisterDllNotification` for WHGame.dll mapping.
-7. `LoadLibraryW(L"WHGame.dll")` — synchronously maps the DLL. The LDR notification fires (our before_game patches/hooks targeting WHGame apply, including bugsplat-filename-fix). THEN WHGame.dll's own DllMain runs (BugSplat init now sees the patched colon-free string).
+7. `LoadLibraryW(L"WHGame.dll")` — synchronously maps the DLL, plus whatever its dependency chain pulls in. The LDR notification fires for each newly-mapped module; for each, the before_game patches/hooks declaring that module as their target apply (bugsplat-filename-fix's target is BugSplat64.dll, which lands here when WHGame's chain maps it; before_game entries declaring WHGame.dll apply when WHGame itself maps). THEN WHGame.dll's own DllMain runs (BugSplat init now sees the patched colon-free string).
 8. Initialize FIX A shim: `kcdx::lua_shim::Resolve()` populates the function-pointer table by `GetProcAddress` (or Address Library Resolve) against every `lua_*` and `luaL_*` symbol in WHGame.dll.
 9. Call WHGame's `luaL_newstate` via the shim. The `lua_State*` is allocated by WHGame's compiled Lua, with WHGame's sentinels.
 10. Register kcdx.* Lua tables in the new state.
