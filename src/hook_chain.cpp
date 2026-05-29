@@ -196,6 +196,18 @@ struct ChainEntry {
     // 2 = Error log per-fire + skip. Values match kcdxHookOffThread_*.
     // The engine auto-marshals off-thread hits to the main thread.
     uint8_t      offThread = 0;
+
+    // True iff this entry was registered by the engine itself (via the
+    // internal AddCEngine entry point) — the engine-direct migration moved
+    // every production hook (lua_pcall, frealloc canary, ModManager_ctor,
+    // BugSplat ctor, SaveGame, LoadGame) off raw MH_CreateHook onto AddC,
+    // and they stamp this flag so InsertOrdered sorts engine entries to the
+    // FRONT of the chain ahead of any plugin entry regardless of declared
+    // priority. The engine-always-first invariant is type-enforced (not
+    // priority-sentinel convention) so a plugin cannot impersonate engine
+    // ordering by picking an extreme priority. Default false keeps every
+    // existing plugin construction site unchanged.
+    bool         isEngine = false;
 };
 
 // A kcdx.hook entry that LOST a CanCoexist conflict at this target and
@@ -299,6 +311,13 @@ struct Chain {
     // per-VA in v1, so the id lives on Chain itself (not in entries).
     // Uninstall(handleId) matches against midHandleId for mid chains.
     uint64_t                 midHandleId = 0;
+    // Mid-level mirror of ChainEntry::isEngine — set true when the mid
+    // chain was installed via AddCEngine (the engine-direct migration path).
+    // Mid is one-per-VA in v1 so the engine flag lives on Chain itself,
+    // parallel to midKind / midHandleId. Read by the off-thread carve-out
+    // gate at MidDispatch (see the comment block at the gate) and by the
+    // dead-classifier bypass.
+    bool                     isMidEngine = false;
     // Parallel capture metadata (parsed by the binder). captureNames[i]
     // == "" means positional (handle table keyed 1..N); otherwise the
     // handle table is keyed by name. captureTypes drives per-slot
@@ -334,6 +353,22 @@ std::mutex g_chainsMu;
 // we capture our own copy so this module doesn't depend on the legacy
 // scripting TU.
 lua_State* g_L = nullptr;
+
+// Thread-local stamp flag used ONLY by the engine-direct migration path.
+// AddCEngine (defined below) sets this true on the calling thread, calls
+// AddC's regular install path, and the four ChainEntry construction sites
+// in AddC / AddCMid / AddCCallsite read this once + clear it to stamp the
+// entry's isEngine = true. Thread-local so a concurrent plugin AddC on
+// another thread cannot pick up the stamp. The flag is one-shot per
+// AddCEngine call — read-and-clear at the first ChainEntry construction
+// (the only one a single AddCEngine invocation reaches; AddC's three
+// branches each construct exactly one entry).
+thread_local bool t_addcEngineStamp = false;
+inline bool TakeEngineStamp() {
+    if (!t_addcEngineStamp) return false;
+    t_addcEngineStamp = false;
+    return true;
+}
 
 // Per-hook dedup for the off-thread Skip / Marshal-degraded warn-once
 // line. Keyed by the
@@ -486,6 +521,22 @@ bool CanCoexist(const Chain&                            chain,
         const bool existingExclusive =
             (e.mode == Mode::Replace || e.mode == Mode::Around);
         if (incomingExclusive || existingExclusive) {
+            // Engine entries are bootstrap targets — when the existing
+            // exclusive entry is engine-owned (today: ModManager_ctor's
+            // replace, the only engine replace), surface a teaching error
+            // that names the bootstrap-target nature and points at the
+            // docs. The wording is the canonical bootstrap-reject text
+            // referenced by docs/cpp/hook.md § "Bootstrap targets" and
+            // by the cap-NN-modmanager-reject regression rows; keep the
+            // substring "engine bootstrap point" stable for greppability.
+            if (e.isEngine && e.mode == Mode::Replace) {
+                whyNot =
+                    std::string(e.name) +
+                    " is an engine bootstrap point with a replace "
+                    "contract; cannot be additionally hooked. See "
+                    "docs/cpp/hook.md \xc2\xa7 Bootstrap targets.";
+                return false;
+            }
             whyNot =
                 std::string("target already has a '") +
                 kcdx::hook_payload::ModeToken(e.mode) +
@@ -1028,7 +1079,25 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
         // fires). For replace/around we explicitly leave runOriginal
         // alone: when the C/Lua callback is skipped, the original
         // function runs normally (its pre-hook default behavior).
-        if (!onMainThread) {
+        //
+        // Engine-stamped C-kind carve-out: an entry with isEngine=true +
+        // kind==C bypasses the off-thread filter. AP6 (no Lua callback
+        // off-thread) doesn't apply because the dispatch path contains no
+        // Lua callback — engine-stamped C entries are kcdx-internal C
+        // functions registered via AddCEngine (the engine team owns and
+        // audits them; plugins cannot stamp the engine identity). The
+        // bypass exists because the dispatcher's main-thread classifier
+        // depends on hook_chain::SetLuaState having run, and SetLuaState's
+        // trigger path IS an engine C-Before callback (the lua_pcall
+        // L-capture, src/hooks.cpp:HookedLuaPcall_Engine): gating that
+        // callback on the classifier creates a self-perpetuating dead-
+        // classifier deadlock. See .claude/rules/lua-callback-threading.md
+        // §Engine bootstrap carve-out for the three-hop loop the bypass
+        // breaks; see PROBE α in docs/known-issues/cap-59-fires...md for
+        // the observed evidence.
+        const bool isEngineCBypass =
+            e.isEngine && e.kind == ChainEntry::Kind::C;
+        if (!onMainThread && !isEngineCBypass) {
             OffThreadShouldSkip(e.offThread, e.handleId, "pre",
                                 target_func_ptr,
                                 e.name.c_str(), e.pluginName.c_str());
@@ -1161,8 +1230,12 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* params,
 
         // Off-thread routing branch (mirror of DispatchPre's). After
         // entries fire in Post; same per-entry policy + same dedup
-        // keying as Pre.
-        if (!onMainThread) {
+        // keying as Pre. Engine-stamped C-kind carve-out mirrors
+        // DispatchPre's — same predicate, same justification (see the
+        // comment block at DispatchPre's gate above).
+        const bool isEngineCBypass =
+            e.isEngine && e.kind == ChainEntry::Kind::C;
+        if (!onMainThread && !isEngineCBypass) {
             OffThreadShouldSkip(e.offThread, e.handleId, "post",
                                 target_func_ptr,
                                 e.name.c_str(), e.pluginName.c_str());
@@ -1294,7 +1367,15 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
     // entry handleId. The same Marshal-degraded-to-Skip + Skip + Error
     // policy applies; skip leaves g_midSkipOriginal clear so the JIT
     // runs the captured instruction (the original behavior pre-hook).
-    if (!log::IsGameMainThread()) {
+    // Engine-stamped C-kind carve-out: mirror of DispatchPre/Post's. Mid
+    // is one-per-VA so the engine flag lives on Chain (isMidEngine) not
+    // on a per-entry ChainEntry::isEngine. Same predicate shape (engine
+    // + C); same AP6-doesn't-apply justification. No engine mid sites
+    // exist today; carve-out lands now for parity so a future engine
+    // mid site cannot reintroduce the chicken-and-egg.
+    const bool isEngineCBypassMid =
+        chain->isMidEngine && chain->midKind == ChainEntry::Kind::C;
+    if (!log::IsGameMainThread() && !isEngineCBypassMid) {
         OffThreadShouldSkip(chain->midOffThread, chain->targetVa, "mid",
                             target_func_ptr,
                             chain->midName.c_str(),
@@ -1734,10 +1815,28 @@ bool RewriteCallDisplacement(uintptr_t callsiteVa, uintptr_t newTarget,
     return true;
 }
 
-// Insert an entry into the chain in load order (priority asc, name asc).
+// Insert an entry into the chain in load order.
+//
+// Engine entries (Kind::Engine — every kcdx engine-internal AddC install
+// via AddCEngine: lua_pcall, frealloc canary, ModManager_ctor, BugSplat
+// ctor, SaveGame, LoadGame) always sort to the FRONT of the chain, ahead
+// of every plugin entry, regardless of either side's declared priority.
+// The engine-always-first invariant is type-enforced via the isEngine
+// flag — NOT via a priority sentinel that any plugin could spoof. Within
+// the engine block and within the plugin block the existing
+// (priority asc, name asc) tiebreak applies, so two engine entries (or
+// two plugin entries) sort exactly as before.
+//
+// Engine-vs-plugin: engine always wins. Engine-vs-engine: priority + name.
+// Plugin-vs-plugin: priority + name (unchanged from the v0.1 comparator).
 void InsertOrdered(Chain& chain, ChainEntry&& e) {
     auto pos = chain.entries.begin();
     for (; pos != chain.entries.end(); ++pos) {
+        const bool eIsEngine = e.isEngine;
+        const bool pIsEngine = pos->isEngine;
+        if (eIsEngine && !pIsEngine) break;     // engine entry goes before plugin
+        if (!eIsEngine && pIsEngine) continue;  // plugin entry sorts after engine
+        // Same kind: existing (priority asc, name asc) tiebreak.
         if (e.priority < pos->priority) break;
         if (e.priority == pos->priority && e.name < pos->name) break;
     }
@@ -2288,6 +2387,16 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
     AddResult res;
     (void)priority;  // v1: one mid hook per VA, ordering is moot
 
+    // Consume any engine-stamp flag set on this thread by AddCEngine.
+    // Mid hooks live on Chain itself (not in entries) — the stamp lands
+    // on chain->isMidEngine (set below at the chain-construction site).
+    // No engine mid sites exist today (the engine-direct migration covers
+    // function-entry only: lua_pcall / frealloc / ModManager_ctor /
+    // BugSplat ctor / Save / Load), but the stamp routing is in place so
+    // a future engine mid site stamps the engine identity correctly +
+    // benefits from the dead-classifier carve-out at MidDispatch.
+    const bool midStamp = TakeEngineStamp();
+
     std::string reason;
     uintptr_t targetVa = ResolveLocator(payload, reason);
     if (!targetVa) { res.reason = std::move(reason); return res; }
@@ -2338,6 +2447,7 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
     newChain->capTypes          = payload.captureTypes;
     newChain->capNames          = payload.captureNames;
     newChain->midOffThread      = payload.offThread;
+    newChain->isMidEngine       = midStamp;
     newChain->rf                = std::make_unique<kcdx::rom::runtime_func_t>();
     newChain->midCDispatchThunk =
         kcdx::dynamic_call_jit::BuildCDispatchThunk(
@@ -2410,6 +2520,12 @@ AddResult AddCCallsite(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
+    // Consume the engine stamp; same one-shot contract as AddC's read.
+    // (Engine callsite migrations are not in scope today, but the path
+    // is symmetric for the future — a missing read would silently drop
+    // the engine identity on an engine-callsite install.)
+    const bool stamp = TakeEngineStamp();
+
     std::string reason;
     uintptr_t callsiteVa = ResolveCallsite(payload, reason);
     if (!callsiteVa) { res.reason = std::move(reason); return res; }
@@ -2445,6 +2561,7 @@ AddResult AddCCallsite(const kcdx::hook_payload::HookPayload& payload,
         e.name       = name;
         e.handleId   = handleId;
         e.offThread  = payload.offThread;
+        e.isEngine   = stamp;
         const bool needsCallOriginal = (payload.mode == Mode::Around);
         InsertOrdered(*chain, std::move(e));
         if (needsCallOriginal && !chain->callOriginalCThunk &&
@@ -2534,6 +2651,7 @@ AddResult AddCCallsite(const kcdx::hook_payload::HookPayload& payload,
     e.name       = name;
     e.handleId   = handleId;
     e.offThread  = payload.offThread;
+    e.isEngine   = stamp;
     newChain->entries.push_back(std::move(e));
 
     g_chains.emplace(callsiteVa, std::move(newChain));
@@ -2559,6 +2677,8 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
+    // Route mid / callsite WITHOUT touching t_addcEngineStamp — the
+    // called function consumes the stamp at its own construction site.
     if (payload.mode == kcdx::hook_payload::Mode::Mid) {
         return AddCMid(payload, cFn, cSig, pluginName, priority, name,
                        handleId);
@@ -2572,6 +2692,11 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
         res.reason = "internal: C hook has no parsed signature";
         return res;
     }
+
+    // Consume the engine-stamp flag (if AddCEngine set it on this thread).
+    // One-shot per call: the next non-engine plugin AddC on this thread
+    // sees stamp == false because TakeEngineStamp cleared the flag.
+    const bool stamp = TakeEngineStamp();
 
     std::string reason;
     uintptr_t targetVa = ResolveLocator(payload, reason);
@@ -2609,6 +2734,7 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
         e.name       = name;
         e.handleId   = handleId;
         e.offThread  = payload.offThread;
+        e.isEngine   = stamp;
         const bool needsCallOriginal =
             (payload.mode == kcdx::hook_payload::Mode::Around);
         InsertOrdered(*chain, std::move(e));
@@ -2694,6 +2820,7 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
     e.name       = name;
     e.handleId   = handleId;
     e.offThread  = payload.offThread;
+    e.isEngine   = stamp;
     newChain->entries.push_back(std::move(e));
 
     g_chains.emplace(targetVa, std::move(newChain));
@@ -2703,6 +2830,28 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
                kcdx::hook_payload::ModeToken(payload.mode), name.c_str(),
                pluginName.c_str(), (void*)targetVa, (void*)jit);
     return res;
+}
+
+AddResult AddCEngine(const kcdx::hook_payload::HookPayload& payload,
+                     void*                                  cFn,
+                     const kcdx::hook_signature::Signature& cSig,
+                     const std::string&                     pluginName,
+                     int                                    priority,
+                     const std::string&                     name,
+                     uint64_t                               handleId) {
+    // Set the thread-local stamp, route through the standard AddC body,
+    // let the construction site read the stamp into e.isEngine. The stamp
+    // is one-shot: AddC's TakeEngineStamp clears it on read, so a plugin
+    // AddC on the same thread immediately after sees stamp=false. The
+    // stamp survives the AddC -> AddCMid / AddCCallsite routing too —
+    // those branches take the stamp at their own construction sites.
+    t_addcEngineStamp = true;
+    AddResult r = AddC(payload, cFn, cSig, pluginName, priority, name, handleId);
+    // Defensive: clear the flag in case AddC returned before consuming it
+    // (e.g. a null-cFn / no-signature early exit). Otherwise the next
+    // plugin AddC on this thread would inherit the stamp.
+    t_addcEngineStamp = false;
+    return r;
 }
 
 // Uninstall a previously-Add()'d hook by registry handle id.

@@ -105,6 +105,27 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
                const std::string&                     name,
                uint64_t                               handleId);
 
+// Internal-only entry point — register an engine-owned hook on the chain
+// (the engine-direct migration: lua_pcall, frealloc canary, ModManager_ctor,
+// BugSplat ctor, SaveGame, LoadGame). Identical to AddC in every install
+// behavior — same chain-share / coexist rules, same JIT thunk wiring, same
+// load-order tiebreak within the engine block — except every entry created
+// here stamps ChainEntry::isEngine = true so InsertOrdered sorts engine
+// entries ahead of any plugin entry regardless of priority. Reserved for
+// engine internals; never called from a plugin-facing surface (the public
+// AddC is the only plugin path).
+//
+// `pluginName` should be "kcdx" by convention; `name` is the engine-side
+// site label (e.g. "engine.lua_pcall"). `priority` orders engine entries
+// among themselves only (engine-vs-plugin is decided by isEngine).
+AddResult AddCEngine(const kcdx::hook_payload::HookPayload& payload,
+                     void*                                  cFn,
+                     const kcdx::hook_signature::Signature& cSig,
+                     const std::string&                     pluginName,
+                     int                                    priority,
+                     const std::string&                     name,
+                     uint64_t                               handleId);
+
 // Uninstall a previously-Add()'d hook by registry handle id. Removes the
 // entry from its chain. The chain's MinHook detour STAYS installed for
 // the session (matching the documented "hooks live for the session"

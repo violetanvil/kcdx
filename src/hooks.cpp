@@ -17,6 +17,8 @@
 #include "log.h"
 #include "load_order.h"
 #include "hook_chain.h"
+#include "hook_payload.h"
+#include "hook_signature.h"
 #include "lua_bind.h"
 #include "lua_plugin_loader.h"
 #include "lua_registry.h"
@@ -59,23 +61,66 @@ const char* UPDATE_SIG = "48 8B C4 48 89 58 ? 48 89 70 ? 48 89 78 ? 55 41 54 41 
 
 std::atomic<lua_State*> g_L{nullptr};
 
-using lua_pcall_t = int(__cdecl*)(lua_State*, int, int, int);
-lua_pcall_t g_orig_lua_pcall = nullptr;
-
 using update_t = void(__cdecl*)(long long*, uint32_t, DWORD);
 update_t g_orig_update = nullptr;
 
-int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
-    // === DIAGNOSTIC (lua_State canary): log every distinct L that flows through
-    // CryEngine's lua_pcall. If multiple distinct L pointers appear, we
-    // captured one specific one (the first), but CryEngine uses several.
-    // Calling lua_newtable on the wrong L would corrupt unrelated VM
-    // state. Throttled: only log the first 8 distinct L values to keep
-    // the dev log small.
+// === Engine-direct lua_pcall hook (migrated from raw MH_CreateHook to
+// hook_chain::AddCEngine in the engine-direct migration) ===
+//
+// Pre-migration this was a direct MinHook detour calling g_orig_lua_pcall.
+// Post-migration this is a Before-mode chain entry registered as
+// engine.lua_pcall via AddCEngine; the chain owns the MinHook detour and
+// runs the original after every chain entry's Before callback. We keep the
+// SAME side-effect — g_L.store(L) is the live lua_State capture
+// HookedUpdate's first-tick latch reads to call hook_chain::SetLuaState — so
+// the bootstrap chain (lua_pcall captures L -> update tick reads L -> chain
+// dispatchers run callbacks) is unbroken across the migration. The
+// distinct-L diagnostic stays as-is (it was the dual-Lua sentinel canary;
+// noise-throttled to first 8 Ls).
+//
+// Per-mode ABI: Before is `void cFn(uintptr_t args[], int* outCount,
+// /* typed args... */)`. The Before mode never returns a value to the
+// hooked function (the chain runs the original after the Before chain
+// completes), so the callback is void.
+//
+// Signature: "i32 (ptr L, i32 nargs, i32 nresults, i32 errfunc)" — same
+// as the verified row in data/seeds/address_versions_seed.csv kcdx_id=1.
+extern "C" void HookedLuaPcall_Engine(uintptr_t args[], int* /*outCount*/,
+                                      lua_State* L,
+                                      int /*nargs*/, int /*nresults*/,
+                                      int /*errfunc*/) {
+    (void)args;
+    // === ARCHIVED PROBE alpha (2026-05-29): VERIFIED — chain C-Before callback
+    // runs on lua_pcall fires post-carve-out (lua_pcall_fire count=5, rate-
+    // limited; bootstrap classifier captured g_gameMainThreadId; cap-59 +
+    // cap-64 + cap-65 all PASS). Root cause was the dead-classifier
+    // chicken-and-egg in the chain dispatcher — fixed by the
+    // isEngine && Kind::C carve-out at hook_chain.cpp:1075 / :1209 / :1341.
+    // See: docs/known-issues/cap-59-fires picked a one-shot VM-init target
+    // that already ran by plugin load.md §Reframe 2026-05-29c +
+    // §Resolution (post-PROBE-α). Revive by flipping #if 0 → #if 1 if a
+    // future regression of the L-bootstrap loop is suspected.
+#if 0
+    {
+        static std::atomic<int> probe_alpha_pcall_count{0};
+        int n = probe_alpha_pcall_count.fetch_add(1, std::memory_order_relaxed);
+        if (n < 5) {
+            LOG_DEBUG_KV("PROBE_ALPHA", "lua_pcall_fire",
+                log::KV("fire_n", (int64_t)n),
+                log::KV("tid", (int64_t)::GetCurrentThreadId()),
+                log::KV("is_game_main_thread", (int64_t)(log::IsGameMainThread() ? 1 : 0)),
+                log::KV("L_arg", (void*)L));
+        }
+    }
+#endif
+    // L-bootstrap (load-bearing — see hook-engine.md §Engine-owned chain
+    // entries). HookedUpdate's first-tick latch reads g_L and only then
+    // calls hook_chain::SetLuaState(L); without this store the chain's
+    // dispatchers never bind to a live VM and no Lua callback ever fires.
     static std::atomic<lua_State*> seen[8] = {};
     static std::atomic<int> seen_n{0};
     lua_State* prev = g_L.load(std::memory_order_relaxed);
-    g_L.store(L, std::memory_order_relaxed);
+    g_L.store(L, std::memory_order_release);
     bool new_L = true;
     for (int i = 0; i < 8; ++i) {
         lua_State* s = seen[i].load(std::memory_order_relaxed);
@@ -93,11 +138,8 @@ int __cdecl HookedLuaPcall(lua_State* L, int nargs, int nresults, int errfunc) {
         LOG_DEBUG_KV("MID_HOOK", "lua_pcall.new_L_seen",
             log::KV("L",        (void*)L),
             log::KV("prev_g_L", (void*)prev),
-            log::KV("nargs",    (int64_t)nargs),
-            log::KV("nresults", (int64_t)nresults),
             log::KV("seen_n",   (int64_t)seen_n.load()));
     }
-    return g_orig_lua_pcall(L, nargs, nresults, errfunc);
 }
 
 // === FREALLOC CANARY: frealloc interception to verify the dummynode hypothesis ===
@@ -268,6 +310,31 @@ static void ArmFreallocProbe(lua_State* L) {
 
 void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     static std::atomic<bool> done{false};
+    // === ARCHIVED PROBE alpha (2026-05-29): VERIFIED — HookedUpdate fires
+    // (16,962 ticks observed in the dead-classifier-state launch), and the
+    // first-tick latch crosses if(L) post-carve-out (the "First update tick
+    // with live lua_State" line at line 337 fires within seconds of launch).
+    // Disambiguated three live possibilities for cap-59 plugin.lua not
+    // running post-migration: dead-classifier chicken-and-egg in chain
+    // dispatcher. See: docs/known-issues/cap-59-fires picked a one-shot
+    // VM-init target that already ran by plugin load.md §Reframe 2026-05-29c
+    // + §Resolution (post-PROBE-α). Revive by flipping #if 0 → #if 1 if a
+    // future bootstrap regression is suspected.
+#if 0
+    {
+        static std::atomic<int> probe_alpha_tick_count{0};
+        int tick_n = probe_alpha_tick_count.fetch_add(1, std::memory_order_relaxed);
+        if (tick_n < 5 || !done.load(std::memory_order_acquire)) {
+            lua_State* probeL = g_L.load(std::memory_order_acquire);
+            LOG_DEBUG_KV("PROBE_ALPHA", "update_tick",
+                log::KV("tick_n", (int64_t)tick_n),
+                log::KV("tid", (int64_t)::GetCurrentThreadId()),
+                log::KV("is_game_main_thread", (int64_t)(log::IsGameMainThread() ? 1 : 0)),
+                log::KV("g_L", (void*)probeL),
+                log::KV("done", (int64_t)(done.load(std::memory_order_acquire) ? 1 : 0)));
+        }
+    }
+#endif
     if (!done.load(std::memory_order_acquire)) {
         lua_State* L = g_L.load(std::memory_order_acquire);
         if (L) {
@@ -772,12 +839,13 @@ bool Install() {
         }
     }
 
-    if (MH_CreateHook(reinterpret_cast<LPVOID>(pcallAddr),
-                      reinterpret_cast<LPVOID>(&HookedLuaPcall),
-                      reinterpret_cast<LPVOID*>(&g_orig_lua_pcall)) != MH_OK) {
-        log::Error("MH_CreateHook(lua_pcall) failed");
-        return false;
-    }
+    // update STAYS direct MH_CreateHook — the single documented bootstrap
+    // exception (per hook-engine.md §"kcdx.hook chaining"). HookedUpdate
+    // calls hook_chain::SetLuaState AND drives the chain's per-frame
+    // DispatchPre/Post; making it itself a chain entry would self-deadlock
+    // (the chain dispatcher would be the function the chain dispatches
+    // through). Every OTHER engine-direct hook moved off raw MH onto
+    // hook_chain::AddCEngine in the engine-direct migration.
     if (MH_CreateHook(reinterpret_cast<LPVOID>(updateAddr),
                       reinterpret_cast<LPVOID>(&HookedUpdate),
                       reinterpret_cast<LPVOID*>(&g_orig_update)) != MH_OK) {
@@ -789,6 +857,41 @@ bool Install() {
         return false;
     }
 
+    // lua_pcall migration: register the engine's lua_pcall hook through
+    // the chain (AddCEngine — the engine-stamp internal entry point). The
+    // chain stamps Kind::Engine on the entry, owns the MinHook detour, and
+    // runs the original after the chain-Before callback fires. The
+    // bootstrap side-effect (g_L.store(L) in HookedLuaPcall_Engine) is
+    // preserved — HookedUpdate's first-tick latch still reads g_L to drive
+    // hook_chain::SetLuaState.
+    {
+        auto sigParse = kcdx::hook_signature::Parse(
+            "i32 (ptr L, i32 nargs, i32 nresults, i32 errfunc)");
+        if (!sigParse.ok) {
+            log::ErrorF("engine.lua_pcall: signature parse failed: %s",
+                        sigParse.error.c_str());
+            return false;
+        }
+        kcdx::hook_payload::HookPayload p;
+        p.mode         = kcdx::hook_payload::Mode::Before;
+        p.address      = pcallAddr;
+        p.signature    = sigParse.sig;
+        p.hasSignature = true;
+        p.owningPlugin = "kcdx";
+        p.owningAuthor = "kcdx";
+        p.name         = "engine.lua_pcall";
+        auto add = kcdx::hook_chain::AddCEngine(
+            p, reinterpret_cast<void*>(&HookedLuaPcall_Engine),
+            sigParse.sig, /*pluginName=*/"kcdx",
+            /*priority=*/0, /*name=*/"engine.lua_pcall",
+            /*handleId=*/0);
+        if (!add.ok) {
+            log::ErrorF("engine.lua_pcall: AddCEngine failed: %s",
+                        add.reason.c_str());
+            return false;
+        }
+    }
+
     // Record the engine self-instrumentation hooks in the live modification
     // inventory (category "engine"). These two install on every boot, so the
     // inventory is guaranteed non-empty even before any plugin hook lands.
@@ -797,7 +900,8 @@ bool Install() {
     kcdx::modification_inventory::RegisterModification(
         updateAddr, kcdx::modification_inventory::Category::Engine, "update");
 
-    log::Info("Hooks installed: lua_pcall + update");
+    log::Info("Hooks installed: lua_pcall (via hook_chain::AddCEngine) + "
+              "update (direct MH — the documented bootstrap exception)");
 
     // bugsplat_ctor_probe install timing note: worker-thread install was too
     // late — the ctor fired before this code ran. The install lives in

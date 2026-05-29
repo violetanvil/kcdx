@@ -335,6 +335,72 @@ sees the pristine bytes because it runs first; if the order were reversed it
 would see the hook's detour and abort.) Ordering is by *kind* — a patch always
 precedes a hook at the same site regardless of declaration or load order.
 
+## Bootstrap targets
+
+kcdx itself hooks a handful of game and runtime functions during engine boot
+(to drive the per-frame dispatch pump, capture the Lua state, gate
+save / load lifecycles, etc.). Every engine-internal hook now registers
+through the same `hook_chain` machinery your plugin uses, so a plugin hook on
+the same target chains alongside the engine's hook by load order — no
+"already hooked" rejection at the install path. The engine's chain entries
+always sort to the FRONT of the chain regardless of declared priority, so
+your plugin's `before` callback sees arguments after the engine's `before`
+ran (the engine's diagnostic instrumentation sees the call first, but your
+mutations still take effect for the actual call to the original).
+
+### Hookable engine targets
+
+These six targets are first-class `kcdx.hook` targets — install a hook on
+them the same way as any other named target. Each carries a verified ABI in
+the engine, so the name alone supplies address + signature for the
+function-entry targets named here:
+
+| Target name | Mode contract | What the engine itself does at this site |
+|---|---|---|
+| `lua_pcall` | shareable (before/after/around) | Captures the live `lua_State*` so the chain dispatchers can bind to the VM. |
+| `engine.frealloc_canary` | shareable (before/after/around) | Read-only image-range fingerprint of every `frealloc` call (the dual-Lua sentinel canary). The fingerprint check stays unperturbed by chain mediation — your hook sees every call too. |
+| `engine.modmanager_ctor` | **rejects all plugin coexistence** (engine `replace` contract) | kcdx fully replaces the game's mod-manager constructor with a `replace` chain entry: a plugin install on this target is rejected with `:applied() == false` and `:reason()` containing the substring `"engine bootstrap point"`. To react to mod load, subscribe to a `kcdx.publish` event the bracket emits (extension point TBD). |
+| `engine.bugsplat_ctor` | shareable | Hook on the BugSplat crash-reporter constructor (when present); the engine logs and lets the original run. |
+| `engine.savegame` | shareable | Fires `kcdx.on("save_game", ...)`; your `before` runs alongside. |
+| `engine.loadgame` | shareable | Fires `kcdx.on("pre_load_game", ...)`; your `before` runs alongside. |
+
+### One un-hookable target
+
+`update` (the per-frame loop that drives every other hook's dispatch) **cannot
+be hooked** from authors. The per-frame loop that drives every other hook's
+dispatch can't itself be hooked from authors without deadlocking the loop —
+the chain's per-frame dispatcher would be the function the chain dispatches
+through. If you need a per-tick hook, subscribe to
+`kcdx.on("input_loaded", ...)` + schedule work via a `kcdx.task.*` API —
+that fires on every game-main-thread tick without the dispatcher-recursion
+problem.
+
+### The engine-replace teaching error
+
+When you install on `engine.modmanager_ctor` (or any future engine `replace`
+site), the install returns `(nil, err)` and the engine logs:
+
+```
+engine.modmanager_ctor is an engine bootstrap point with a replace
+contract; cannot be additionally hooked. See docs/lua/hook.md §
+Bootstrap targets.
+```
+
+`h:reason()` returns the same text. The substring `"engine bootstrap point"`
+is the stable signal regression tests grep for.
+
+### Minimal snippet (a hook on `lua_pcall`)
+
+```lua
+kcdx.hook.lua_pcall.before(function(L, nargs, nresults, errfunc)
+    kcdx.log.info("PCALL", "fired")
+end)
+```
+
+The name `"lua_pcall"` resolves to the same target the engine's own
+`engine.lua_pcall` chain entry sits on — your `before` callback runs after
+the engine's `before` for every `lua_pcall` the game makes.
+
 ## Handle methods
 
 The userdata returned by `kcdx.hook` and `kcdx.bytes`:

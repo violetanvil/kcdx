@@ -404,6 +404,25 @@ typedef struct kcdxInterface {
     // shared kcdxInterface is handed to every plugin, so ResolveAddressByName
     // alone has no per-call identity to read; this overload threads it.
     uintptr_t (*ResolveAddressByNameAs)(kcdxPluginHandle owner, const char* name);
+
+    // Returns 1 if the calling thread is the engine-captured game main
+    // thread — the thread that first wrote a non-null `lua_State` into the
+    // engine's bootstrap latch. Returns 0 otherwise, AND returns 0 BEFORE
+    // bootstrap (`g_gameMainThreadId == 0` is the "not yet captured"
+    // sentinel; no real Windows thread has tid 0, so this is a clean
+    // negative).
+    //
+    // Surfaced to plugins so a regression test can falsifiably assert the
+    // "engine bootstrap classifier has bootstrapped" property — calling
+    // this from a known-main-thread context (e.g. inside a `kcdx.on("ready")`
+    // / kcdxMessage_LuaReady callback) returns 1 only if the chain
+    // dispatcher's main-thread classifier has captured a real thread id.
+    // A return of 0 from such a context is the chicken-and-egg dead-
+    // classifier signature; see docs/known-issues/cap-59-fires...md §
+    // Reframe 2026-05-29c for the bootstrap-loop mechanism.
+    //
+    // Cheap: one TLS read + one int compare, no lock.
+    uint32_t (*IsGameMainThread)();
 } kcdxInterface;
 
 // -----------------------------------------------------------------------------

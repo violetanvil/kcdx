@@ -1,0 +1,33 @@
+# CAP-64 — C++ peer of CAP-59 (kcdx.hook on lua_pcall via the C++ surface).
+#
+# Proves the engine-direct migration (lua_pcall moved off raw MH_CreateHook
+# onto hook_chain::AddCEngine) works end-to-end from a C++ plugin: a plugin
+# that installs `kcdxHookInterface::Before("lua_pcall", &cb)` now succeeds
+# AND its callback fires (pre-migration, the install hit
+# MH_ERROR_ALREADY_CREATED because the engine's own production hook owned
+# the MinHook slot at this VA; post-migration, the engine's hook is a
+# chain entry and the plugin install chains alongside).
+#
+# Test mode: boot-only. One row, CAP-64-fires, self-reports PASS from the
+# first callback fire (one-shot guarded — lua_pcall fires continuously from
+# the moment any Lua-from-C call dispatches, which is well within plugin
+# load + InputLoaded). An InputLoaded backstop reports loud FAIL if the
+# callback never fires — the falsifiable signal that the migration
+# regressed (a missed fire after the InputLoaded backstop window means the
+# chain install never wired the engine + plugin callbacks together).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_64_cpp_lua_pcall_fires"
+display_name        = "CAP-64 C++ hook on lua_pcall fires"
+author              = "ts"
+description         = "C++ peer of CAP-59 — proves kcdxHookInterface::Before on lua_pcall installs AND fires post-migration (the engine's own lua_pcall hook now chains via hook_chain::AddCEngine; a plugin install at the same VA chains alongside instead of failing MH_ERROR_ALREADY_CREATED). One-shot guarded self-report from the first callback fire; InputLoaded backstop reports loud FAIL if the callback never fires by then."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-64-fires"]
+
+[entrypoints]
+dll = "cap-64.dll"

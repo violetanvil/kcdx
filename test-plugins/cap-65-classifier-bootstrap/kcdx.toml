@@ -1,0 +1,35 @@
+# CAP-65 — engine bootstrap classifier regression row.
+#
+# Single row, CAP-65-classifier-bootstrapped: at InputLoaded (which fires
+# on the game main thread by construction, post-bootstrap), asserts that
+# kcdxInterface::IsGameMainThread() returns 1. The accessor returns 1 iff
+# log::g_gameMainThreadId has been captured by log::SetGameMainThread,
+# which is called from hook_chain::SetLuaState's first non-null L call,
+# which is gated on HookedUpdate's first-tick latch crossing if (g_L !=
+# null), which is gated on the engine's chain C-Before callback
+# HookedLuaPcall_Engine writing g_L on at least one lua_pcall fire.
+#
+# Goes RED specifically if the dead-classifier chicken-and-egg returns
+# (the carve-out at hook_chain.cpp DispatchPre/DispatchPost/MidDispatch
+# regresses, or a future engine entry trips the gate). A "cap-59
+# plugin.lua ran" assertion is not sufficient — the plugin could run for
+# unrelated reasons. This row keys on the load-bearing fact directly.
+#
+# See docs/known-issues/cap-59-fires...md § Reframe 2026-05-29c for the
+# three-hop bootstrap loop the carve-out breaks.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_65_classifier_bootstrap"
+display_name        = "CAP-65 engine bootstrap classifier"
+author              = "ts"
+description         = "Asserts the engine bootstrap classifier bootstrapped — kcdxInterface::IsGameMainThread()==1 at InputLoaded. Goes red specifically if the dead-classifier chicken-and-egg returns; not a proxy for 'cap-59 plugin.lua ran' (which could pass for unrelated reasons). The load-bearing fact: log::g_gameMainThreadId got captured."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-65-classifier-bootstrapped"]
+
+[entrypoints]
+dll = "cap-65.dll"

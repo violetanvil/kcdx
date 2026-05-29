@@ -206,6 +206,17 @@ uintptr_t Thunk_ResolveAddressByNameAs(kcdxPluginHandle owner,
         kcdx::plugins::NameForHandle(owner).c_str());
 }
 
+// Plugin-side accessor for the engine's bootstrap-classifier state. Returns
+// 1 iff log::IsGameMainThread() returns true on the caller's thread —
+// which requires log::g_gameMainThreadId to have been captured by
+// SetGameMainThread (called from hook_chain::SetLuaState's first non-null
+// L call; the engine bootstrap pump that the dead-classifier regression
+// at cap-59 broke + the carve-out at hook_chain.cpp:1075/1209/1341 fixes).
+// See docs/known-issues/cap-59-fires...md §Reframe 2026-05-29c.
+uint32_t Thunk_IsGameMainThread() {
+    return kcdx::log::IsGameMainThread() ? 1u : 0u;
+}
+
 // Level filter for plugin-side Log calls.
 //
 // kcdxLog_* enum is now strictly ordered by verbosity:
@@ -445,6 +456,7 @@ kcdxInterface g_api = {
     /*ResolveAddressByName=*/   Thunk_ResolveAddressByName,
     /*ResolveSymbolAs=*/        Thunk_ResolveSymbolAs,
     /*ResolveAddressByNameAs=*/ Thunk_ResolveAddressByNameAs,
+    /*IsGameMainThread=*/       Thunk_IsGameMainThread,
 };
 
 }  // namespace

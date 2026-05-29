@@ -31,7 +31,21 @@ Every dispatch site (`DispatchPre` / `DispatchPost` / `MidDispatch` in `hook_cha
 ## Rules
 
 - **Authors hook whatever they need.** Off-thread sites are first-class; the engine marshals. The previous "main-thread-only" framing was a v0.1 placeholder that overstated the constraint — the actual constraint is that `lua_pcall` runs on one thread, which the dispatcher enforces.
-- **No new dispatch path bypasses the guard.** Every new dispatcher (`hook_chain`, future `[[vtable_hook]]`, etc.) goes through the same thread-check helper. Inserting a `lua_pcall` site that skips the check is an AP6 violation.
+- **No new dispatch path bypasses the guard.** Every new dispatcher (`hook_chain`, future `[[vtable_hook]]`, etc.) goes through the same thread-check helper. Inserting a `lua_pcall` site that skips the check is an AP6 violation. The engine bootstrap carve-out (next rule) is the documented exception; no other bypass.
 - **The on-thread fast path stays zero-allocation.** TLS read + branch only. The marshal path allocates per-callback (arg arena, queue node); that cost is intrinsic to off-thread dispatch and acceptable per workspace performance discipline.
+
+## Engine bootstrap carve-out — engine-stamped C-kind chain entries bypass the off-thread filter
+
+Engine-stamped C-kind chain entries (`ChainEntry::isEngine == true && kind == ChainEntry::Kind::C` for `DispatchPre`/`DispatchPost`; the chain-level mirror `Chain::isMidEngine == true && midKind == Kind::C` for `MidDispatch`) bypass the off-thread filter at all three gate sites. AP6 (no Lua callback fires off-thread) does not apply — these are kcdx-internal C functions registered via `hook_chain::AddCEngine` (the engine team owns and audits them; plugins cannot stamp the engine identity, the class is closed by construction). The bypass is zero-cost: one-instruction predicate, no warn line, no map insert.
+
+The bypass exists because the dispatcher's main-thread classifier is itself bootstrapped by an engine C-Before callback. Gating that callback on the classifier creates a self-perpetuating dead-classifier deadlock — observed live as the cap-59-fires regression on 2026-05-29.
+
+The three-hop bootstrap loop the bypass breaks:
+
+1. The migrated chain C-Before callback `HookedLuaPcall_Engine` (`src/hooks.cpp`) writes `hooks.cpp::g_L` on every `lua_pcall` fire.
+2. `HookedUpdate` — `src/hooks.cpp`, installed by direct `MH_CreateHook` per the documented bootstrap-pump exception in `hook-engine.md`, deliberately NOT a chain entry — reads `g_L` in its first-tick latch and on `g_L != null` calls `hook_chain::SetLuaState(L)`.
+3. `SetLuaState` calls `log::SetGameMainThread` which captures `log::g_gameMainThreadId`. After this, `log::IsGameMainThread()` starts returning true for the main thread; the chain's three off-thread gates (`hook_chain.cpp` DispatchPre / DispatchPost / MidDispatch) start classifying correctly.
+
+Pre-`SetLuaState`, `log::IsGameMainThread()` returns false for every thread (the unset-capture default). Without the carve-out, every `lua_pcall` fire pre-bootstrap takes the `OffThreadShouldSkip + continue` path at the per-entry gate BEFORE the per-entry C-Before callback runs — hop 1 never executes, hop 2's latch never crosses `if (L)`, hop 3 never runs, the classifier stays dead forever. cap-59's `plugin.lua` (and every other Lua plugin's `plugin.lua` that loads via `lua_plugin_loader::RunAll(L)` from hop 2's latch) never executes. The carve-out is the type-level fix.
 
 Related: [docs/design.md §"Threading"](../../docs/design.md), `cornerstones.md` (engine does the heavy lifting), `anti-patterns.md` AP6.

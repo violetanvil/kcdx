@@ -155,6 +155,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | the DLL plugin shell (`kcdxPlugin_Load`, `[entrypoints] dll`, QueryInterface handshake) | Built | the plugin shell / manifest | [plugin-shell.md](plugin-shell.md) |
 | **`Kcdx.h` empowered wrapper (the common path)** — `kcdx::hook::Before/After/Around/Replace<Sig,&fn>(K, target)` + `struct Kcdx` | Built | `kcdx.hook` sub-verbs (typed natural callback, auto-threaded `owningPlugin`) | [wrapper.md](wrapper.md) |
 | `kcdxHookInterface` (raw floor under the wrapper; the only path for `Mid` / `Callsite`) | Built | `kcdx.hook` raw `{...}` form | [hook.md](hook.md) |
+| `kcdxHookInterface` bootstrap targets (hook the engine's own boot/runtime sites — `lua_pcall`, `engine.savegame`, …; they chain like any other target) | Built | `kcdx.hook` bootstrap targets | [hook.md](hook.md#bootstrap-targets) |
 | **`Kcdx.h` empowered wrapper (the common path)** — `kcdx::bytes::Write(K, target, replacement)` + `struct Kcdx` | Built | `kcdx.bytes` (positional name + replacement, auto-threaded `owningPlugin`) | [wrapper.md](wrapper.md) |
 | `kcdxBytesInterface::Register` (raw floor under the wrapper; the only path for the `[advanced]` `pattern` / `addressId` / `targetSymbol` locators) + `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (immediate raw write) | Built | `kcdx.bytes` raw `{...}` form | [bytes.md](bytes.md) |
 | `kcdxMessagingInterface::RegisterListener` (event/lifecycle) | Built | `kcdx.on` | [on.md](on.md) |

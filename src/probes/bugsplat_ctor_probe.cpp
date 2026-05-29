@@ -13,9 +13,12 @@
 
 #include "MinHook.h"
 
+#include <asmjit/asmjit.h>
+
 #include "../dev.h"
 #include "../log.h"
 #include "../modification_inventory.h"  // RegisterModification (probe category)
+#include "../rom_borrowed/runtime_func_t.h"  // PROBE Z (loader-lock asmjit)
 
 namespace kcdx::probes::bugsplat_ctor_probe {
 
@@ -106,6 +109,107 @@ void* __fastcall HookedCtor(void*          self,
     return orig(self, szDatabase, szApp, szVersion, szUser, flags);
 }
 
+// === ARCHIVED PROBE Z (2026-05-29): VERIFIED — asmjit codegen + branch_pool
+// VirtualAlloc + runtime_func_t dtor all complete under loader lock at the
+// bugsplat install site (jit_ptr=0x7FFF91990000 + dtor in 1ms, baseline
+// matrix unchanged at 113/149). Root cause: engine direct-MH sites bypass
+// hook_chain → MinHook returns MH_ERROR_ALREADY_CREATED on plugin install
+// at same target. See: docs/known-issues/cap-59-fires picked a one-shot
+// VM-init target that already ran by plugin load.md §Reframe 2026-05-29b
+// + §Resolution (post-PROBE-α). Revive by flipping #if 0 → #if 1 if a
+// future loader-lock asmjit/alloc regression is suspected.
+#if 0
+// === DIAGNOSTIC (PROBE Z): does runtime_func_t::make_jit_func (asmjit codegen
+//     + branch_pool VirtualAlloc) complete successfully when called from this
+//     install site under the Windows loader lock? Pre-VM site reached via BOTH
+//     kcdx.dll DllMain (direct call when BugSplat64 already mapped) AND the
+//     LDR-notification callback — both run under loader lock. Outcome decides
+//     the migration shape for the engine-direct MinHook sites (lua_pcall,
+//     ctor_bracket, bugsplat_ctor): pure-A.3 migrate-to-AddC requires this
+//     to succeed; a deadlock/fault/null-return means bugsplat stays direct-MH
+//     with adopt-on-already-created. Full outcome→meaning map in
+//     docs/known-issues/cap-59-fires picked a one-shot VM-init target that
+//     already ran by plugin load.md §"Active diagnostic instrumentation".
+//     One-shot: runs once per boot via the existing g_installed latch in
+//     Install(), and the local kProbeZRan flag below short-circuits any
+//     duplicate call paths. Does NOT install the JIT detour (the real ctor
+//     hook still uses MH_CreateHook); only exercises codegen + alloc.
+bool kcdx_probe_z_pre(const kcdx::rom::runtime_func_t::parameters_t* /*params*/,
+                      const uint8_t /*parameters_count*/,
+                      kcdx::rom::runtime_func_t::return_value_t* /*return_value*/,
+                      const uintptr_t /*target_func_ptr*/) {
+    return true;
+}
+
+std::atomic<bool> kProbeZRan{false};
+
+// SEH-only helper: no C++ objects in scope so __try/__except is legal here.
+// Caller pre-builds the FuncSignature so this function holds only POD locals.
+static uintptr_t SehCallMakeJit(kcdx::rom::runtime_func_t* rf,
+                                const asmjit::FuncSignature* sig,
+                                void* targetForNearVa,
+                                bool* outFaulted) {
+    uintptr_t jit = 0;
+    __try {
+        jit = rf->make_jit_func(*sig, asmjit::Arch::kX64,
+                                &kcdx_probe_z_pre, nullptr,
+                                reinterpret_cast<uintptr_t>(targetForNearVa));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *outFaulted = true;
+    }
+    return jit;
+}
+
+void RunProbeZ(void* targetForNearVa) {
+    bool expected = false;
+    if (!kProbeZRan.compare_exchange_strong(expected, true,
+                                            std::memory_order_acq_rel)) {
+        return;
+    }
+
+    LOG_DEBUG_KV("PROBE_Z", "entered",
+        log::KV("target", targetForNearVa),
+        log::KV::BareStr("note",
+            "loader-lock asmjit smoke test at bugsplat install site"));
+
+    LOG_DEBUG_KV("PROBE_Z", "start_make_jit_func",
+        log::KV("nearVa", targetForNearVa));
+
+    // Heap-allocate runtime_func_t + FuncSignature so their dtors live outside
+    // the SEH frame. Dtor of runtime_func_t disables-without-pOriginal per
+    // runtime_func_t.h:77 — safe even if make_jit_func returns 0 or faulted.
+    auto* rf = new kcdx::rom::runtime_func_t();
+    auto* probeSig = new asmjit::FuncSignature(asmjit::CallConvId::kCDecl,
+                                               asmjit::FuncSignature::kNoVarArgs,
+                                               asmjit::TypeId::kVoid);
+    bool faulted = false;
+    uintptr_t jit = SehCallMakeJit(rf, probeSig, targetForNearVa, &faulted);
+    delete probeSig;
+
+    if (faulted) {
+        LOG_DEBUG_KV("PROBE_Z", "make_jit_func_faulted",
+            log::KV::BareStr("verdict",
+                "SEH fault during codegen/alloc under loader lock — bugsplat must stay direct-MH"));
+    } else if (jit == 0) {
+        LOG_DEBUG_KV("PROBE_Z", "make_jit_func_returned_zero",
+            log::KV::BareStr("verdict",
+                "codegen or branch_pool allocation failed under loader lock — bugsplat must stay direct-MH or pre-init branch_pool earlier"));
+    } else {
+        LOG_DEBUG_KV("PROBE_Z", "make_jit_func_ret",
+            log::KV("jit_ptr", (void*)jit),
+            log::KV::BareStr("verdict",
+                "asmjit codegen + branch_pool VirtualAlloc both completed under loader lock — pre-VM sites can migrate to hook_chain::AddC"));
+    }
+
+    // Dtor runs here. If it hangs under loader lock the next probe line
+    // (dtor_ok) won't appear and the boot will freeze.
+    delete rf;
+
+    LOG_DEBUG_KV("PROBE_Z", "runtime_func_dtor_ok",
+        log::KV::BareStr("note", "rf dtor completed under loader lock"));
+}
+#endif  // === END ARCHIVED PROBE Z
+
 }  // namespace
 
 bool Install() {
@@ -144,6 +248,13 @@ bool Install() {
         g_installed.store(false, std::memory_order_release);
         return false;
     }
+
+    // PROBE Z call site (archived; see archive header at the function
+    // definition above). Revive in lockstep with the #if 0 block by
+    // flipping both to #if 1.
+#if 0
+    RunProbeZ(target);
+#endif
 
     void* origPtr = nullptr;
     MH_STATUS s = MH_CreateHook(target,

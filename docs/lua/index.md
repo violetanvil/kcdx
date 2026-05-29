@@ -255,6 +255,7 @@ it does not exist yet.
 |---|---|---|
 | the plugin shell / manifest | `kcdx.toml` keys — identity, entrypoints, engine settings | [plugin-shell.md](plugin-shell.md) |
 | `kcdx.hook` | intercept a game function (before/after/around/replace/mid) | [hook.md](hook.md) |
+| `kcdx.hook` bootstrap targets | hook the engine's own boot/runtime sites (`lua_pcall`, `engine.savegame`, …) — they chain like any other target | [hook.md](hook.md#bootstrap-targets) |
 | `kcdx.bytes` | rewrite bytes at a located site | [bytes.md](bytes.md) |
 | `kcdx.on` | subscribe to a lifecycle or custom event | [on.md](on.md) |
 | `kcdx.command` | register a console command | [command.md](command.md) |
