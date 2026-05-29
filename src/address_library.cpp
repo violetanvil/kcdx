@@ -9,8 +9,10 @@
 #include <string>
 #include <vector>
 
+#include "declared_targets.h"  // kcdx.declare store — self-tier integration source
 #include "init_phase.h"     // KCDX_REQUIRE_PHASE — refdb-ready observability guard
 #include "log.h"
+#include "plugin_loader.h"  // kcdx::plugins::g_runtimeGameVersionString — declared store version key
 #include "refdb.h"          // engine-seed address + signature resolution lives in refdb now
 
 // Address library — the plugin-precedence surface ONLY.
@@ -145,6 +147,109 @@ const AuthorTarget* FindOtherAuthorTarget(const std::string& excludeAuthor,
         if (t.bareName == bareName) return &t;
     }
     return nullptr;
+}
+
+// Self-tier query into the author-DECLARED store (the kcdx.declare population
+// source of the unified named-target table). Distinct from FindAuthorTarget
+// above, which queries the LEGACY author-target population (compile-in /
+// expert-hatch entries that materialize an AuthorTarget). Declared entries
+// never materialize an AuthorTarget — declared_targets did the scan itself
+// and returns a resolved VA + signature directly.
+//
+// The result struct collapses LookupForCaller's four Kinds into the two facts
+// address_library cares about:
+//
+//   - `hit`           — the (author, plugin, name) namespace is OCCUPIED in
+//                       the declared store; true for Pattern (success OR
+//                       failed scan), Value, and VersionMismatch — all three
+//                       claim the namespace under self-tier ownership even
+//                       when the engine can't currently turn them into a VA.
+//                       false ONLY for NoEntry.
+//   - `resolvedRva`   — the VA the caller returns from ResolveByName. Non-
+//                       zero only on Kind::Pattern with a successful scan;
+//                       0 for failed-scan Pattern, Value, and
+//                       VersionMismatch (the engine surfaces a 0 to the
+//                       caller; the more specific teaching log lines —
+//                       VersionMismatch warn, scan-failure error — were
+//                       already emitted by declared_targets).
+//   - `signature`     — the per-version verified signature the author
+//                       supplied alongside the pattern. "" when none.
+//                       Lifetime: process — the back-pointer points into
+//                       declared_targets' resident registry which never
+//                       relocates.
+//   - `isValue`       — distinguishes Kind::Value from a 0-VA Pattern
+//                       result. Address-library treats Value entries as a
+//                       hit-with-0-VA (the namespace is occupied — self-tier
+//                       wins precedence — but the entry resolves to a value
+//                       literal, not a function address; ResolveByName has
+//                       no value-bearing return shape, so it returns 0 the
+//                       same way a failed-scan Pattern does).
+struct DeclaredSelfHit {
+    bool        hit         = false;
+    uintptr_t   resolvedRva = 0;
+    const char* signature   = "";  // process-lifetime; "" when none supplied
+    bool        isValue     = false;
+};
+
+// Probe the declared store for (`author`, `plugin`, `name`) under the running
+// game version. SELF TIER ONLY — there is no OTHER-tier walk for declared
+// entries by design: a bare reference resolves self > engine, and a cross-
+// plugin reference to another plugin's declared entry must be written as the
+// full <author>.<plugin>.<bare> explicit form (which doesn't reach the bare
+// precedence walk). The address-library bare resolver layers this on top of
+// the legacy FindAuthorTarget self-tier query so a self-tier hit from EITHER
+// population source wins self precedence (and shadows the engine seed below
+// it). `name` is the bare component — the caller already split the
+// qualified form.
+DeclaredSelfHit ResolveDeclaredForOwner(const std::string& author,
+                                        const std::string& plugin,
+                                        const char* name) {
+    DeclaredSelfHit r;
+    if (!name || !name[0]) return r;
+    // Anonymous caller has no self tier in the declared store either:
+    // declared_targets rejects empty (author OR plugin) at Register time, so
+    // the lookup would always miss anyway — return early so the legacy
+    // FindAuthorTarget self-tier semantics for an anonymous lookup
+    // (no self-tier match) are mirrored exactly here.
+    if (plugin.empty()) return r;
+    const declared_targets::ResolvedDeclared res =
+        declared_targets::LookupForCaller(author, plugin, std::string(name),
+                                          ::kcdx::plugins::g_runtimeGameVersionString);
+    switch (res.kind) {
+        case declared_targets::ResolvedDeclared::Kind::NoEntry:
+            // Namespace not claimed in the declared store at this triple.
+            return r;
+        case declared_targets::ResolvedDeclared::Kind::VersionMismatch:
+            // Namespace IS claimed (a DeclaredEntry exists under this
+            // triple) but no per-version row matches the running game
+            // version. Self-tier wins precedence (the engine seed below
+            // does not get a shot); ResolveByName returns 0 because the
+            // engine has no VA to hand back at this version. The
+            // teaching warn already fired inside LookupForCaller.
+            r.hit = true;
+            return r;
+        case declared_targets::ResolvedDeclared::Kind::Pattern:
+            r.hit         = true;
+            r.resolvedRva = static_cast<uintptr_t>(res.resolvedRva);
+            r.signature   = res.signatureStr.c_str();
+            // resolvedRva == 0 here means the scan ran and returned !=1
+            // match — declared_targets already logged the specific cause;
+            // we propagate 0 to the caller the same way a failed legacy
+            // resolve does.
+            return r;
+        case declared_targets::ResolvedDeclared::Kind::Value:
+            // A value-literal declaration. Self-tier wins precedence but
+            // there is no function VA to return; address-library has no
+            // value-bearing return shape, so ResolveByName surfaces 0.
+            // isValue distinguishes the case from a failed-scan Pattern
+            // for callers that want to differentiate in future (today both
+            // collapse to "self-tier hit, 0 VA").
+            r.hit       = true;
+            r.isValue   = true;
+            r.signature = res.signatureStr.c_str();
+            return r;
+    }
+    return r;  // unreachable; silences strict-switch warnings.
 }
 
 // Resolve the address an author target locates, for the kinds resolvable
@@ -300,11 +405,26 @@ QualifiedName SplitQualified(const char* name) {
 // the SAME precedence decision AND the SAME once-per-session collision warn
 // (the warn fires inside ResolveBareWinner, keyed by name, so a name that
 // already warned from one caller does not double-warn from the other).
-// `winner` names the tier; `authorTarget` is the winning
-// author target when the winner is Self/Other, nullptr when Engine/None.
+// `winner` names the tier; `authorTarget` is the winning author target when
+// the winner is Self/Other and the winning population is the legacy
+// AuthorTarget store, nullptr otherwise.
+//
+// The declared-store self-tier win (kcdx.declare) is a separate self-tier
+// population that does NOT materialize an AuthorTarget: when `declaredIsSelf`
+// is true the self tier won via the declared store and the caller takes
+// `declaredVa` (the resolved VA, or 0 for a failed-scan / value / version-
+// mismatch entry — see DeclaredSelfHit) as the answer directly. The bare-
+// precedence walk treats either self-tier population as a self win for
+// shadowing / collision-warn purposes; there is no other-tier walk for the
+// declared store (declared entries do not participate in OTHER — to reach
+// another plugin's declared entry the author writes the full
+// <author>.<plugin>.<bare> explicit form, which does not reach the bare path).
 struct BareResolution {
     enum class Tier { None, Self, Engine, Other } winner = Tier::None;
-    const AuthorTarget* authorTarget = nullptr;  // non-null iff Self/Other won
+    const AuthorTarget* authorTarget = nullptr;  // non-null iff Self/Other won via the legacy store
+    bool                declaredIsSelf = false;  // true iff Self won via the declared store
+    uintptr_t           declaredVa     = 0;      // valid iff declaredIsSelf
+    const char*         declaredSig    = "";     // valid iff declaredIsSelf; "" when no sig
 };
 
 // Resolve a BARE name (no dot) by self > engine > other precedence and emit the
@@ -317,6 +437,15 @@ struct BareResolution {
 // self tier then matches an author-target registered with empty author + this
 // plugin name, which is the legacy 1-dot row (preserving the observable
 // resolution order the existing corpus relies on).
+//
+// SELF tier composes TWO populations — the legacy author-target store
+// (FindAuthorTarget) and the kcdx.declare declared store
+// (ResolveDeclaredForOwner). Legacy is queried first because most existing
+// rows live there; on a legacy miss the declared store is queried with the
+// same triple. Either population winning counts as a self-tier hit for
+// shadowing the engine seed and for the collision warn's `selfHit`. The
+// declared store does NOT participate in the OTHER tier by design — declared
+// entries are reached cross-plugin only via the explicit 3-segment form.
 BareResolution ResolveBareWinner(const char* name,
                                  const std::string& owningAuthor,
                                  const std::string& owningPlugin) {
@@ -324,11 +453,19 @@ BareResolution ResolveBareWinner(const char* name,
         owningPlugin.empty() ? nullptr
                              : FindAuthorTarget(owningAuthor, owningPlugin,
                                                 name);
+    // Probe the declared store only when the legacy self tier missed —
+    // legacy-first preserves the prior observable resolution order for the
+    // legacy rows already on disk. A self-tier hit in either population is
+    // treated identically for precedence + collision shadowing below.
+    DeclaredSelfHit declaredSelf{};
+    if (!selfTarget) {
+        declaredSelf = ResolveDeclaredForOwner(owningAuthor, owningPlugin, name);
+    }
     bool engineHit = SeedHasName(name);
     const AuthorTarget* otherTarget =
         FindOtherAuthorTarget(owningAuthor, owningPlugin, name);
 
-    bool selfHit  = (selfTarget != nullptr);
+    bool selfHit  = (selfTarget != nullptr) || declaredSelf.hit;
     bool otherHit = (otherTarget != nullptr);
 
     MaybeWarnCollision(name, owningAuthor, owningPlugin,
@@ -338,6 +475,14 @@ BareResolution ResolveBareWinner(const char* name,
     if (selfTarget) {
         r.winner = BareResolution::Tier::Self;
         r.authorTarget = selfTarget;
+    } else if (declaredSelf.hit) {
+        // The declared store won self. No AuthorTarget materializes — carry
+        // the resolved VA + signature so the caller (ResolveByName /
+        // ResolveSignatureByName) returns them directly without re-querying.
+        r.winner         = BareResolution::Tier::Self;
+        r.declaredIsSelf = true;
+        r.declaredVa     = declaredSelf.resolvedRva;
+        r.declaredSig    = declaredSelf.signature;
     } else if (engineHit) {
         r.winner = BareResolution::Tier::Engine;
     } else if (otherTarget) {
@@ -374,13 +519,33 @@ uintptr_t ResolveByName(const char* name,
 
     // --- 3-segment EXPLICIT plugin-export reference:
     //     "<author>.<plugin>.<bare>" — the 2-dot model's full form. Never
-    //     warns; resolves directly to the matching author target.
+    //     warns; resolves directly to the matching entry. The two SELF-
+    //     population sources are checked in order:
+    //       1. The legacy author-target store (pattern / RVA / address-id /
+    //          target-symbol declarations that materialize an AuthorTarget).
+    //       2. The kcdx.declare declared store (pattern / value declarations
+    //          that produce a resolved VA directly via declared_targets).
+    //     The explicit 3-segment form fully qualifies the triple; this is
+    //     where cross-plugin references to ANOTHER plugin's declared entry
+    //     land (the bare path does not walk OTHER for declared entries — to
+    //     reach a foreign declared entry the author writes this form). A
+    //     value-declaration miss (declared store hit with declaredIsSelf
+    //     true but no usable VA) returns 0, matching the bare-path semantics.
     if (q.count == 3) {
         const AuthorTarget* t =
             FindAuthorTarget(q.segments[0], q.segments[1],
                              q.segments[2].c_str());
-        if (!t) return 0;
-        return ResolveAuthorTargetAddr(*t);
+        if (t) return ResolveAuthorTargetAddr(*t);
+        DeclaredSelfHit d =
+            ResolveDeclaredForOwner(q.segments[0], q.segments[1],
+                                    q.segments[2].c_str());
+        if (d.hit) {
+            // d.resolvedRva is 0 for a Value entry, a failed-scan Pattern,
+            // or a VersionMismatch entry — that 0 propagates here; the
+            // teaching log line was already emitted by declared_targets.
+            return d.resolvedRva;
+        }
+        return 0;
     }
 
     // --- 2-segment EXPLICIT reference (legacy 1-dot form):
@@ -406,10 +571,20 @@ uintptr_t ResolveByName(const char* name,
     BareResolution res = ResolveBareWinner(eff, author, plugin);
     switch (res.winner) {
         case BareResolution::Tier::Self:
+            // Self tier — two population sources, distinguished by
+            // declaredIsSelf. The declared store carries its own resolved VA
+            // (declared_targets ran the scan); the legacy store materializes
+            // an AuthorTarget that ResolveAuthorTargetAddr turns into a VA
+            // (Rva / AddressId) or 0 (Pattern / TargetSymbol — the caller
+            // then asks FindResolvedAuthorTarget and routes through the
+            // patch/symbol pipeline, same as Self-tier legacy).
+            if (res.declaredIsSelf) return res.declaredVa;
+            return ResolveAuthorTargetAddr(*res.authorTarget);
         case BareResolution::Tier::Other:
-            // An author target won. Rva / AddressId become a VA here; Pattern /
-            // TargetSymbol return 0 (the caller asks FindResolvedAuthorTarget
-            // and routes them through the patch/symbol pipeline — see header).
+            // Other tier — only the legacy author-target store participates
+            // (the declared store does NOT walk OTHER for bare references by
+            // design; foreign declared entries are reached via the explicit
+            // 3-segment form). authorTarget is always non-null here.
             return ResolveAuthorTargetAddr(*res.authorTarget);
         case BareResolution::Tier::Engine:
             return SeedResolveAddr(eff);
@@ -436,7 +611,13 @@ const AuthorTarget* FindResolvedAuthorTarget(const char* name,
     if (q.count == 0 || q.count > 3) return nullptr;
 
     // --- 3-segment "<author>.<plugin>.<bare>": resolves directly to the
-    //     matching author target. Never warns.
+    //     matching legacy author target. Never warns. A declared-store entry
+    //     under this triple intentionally returns nullptr here — declared
+    //     entries do NOT materialize an AuthorTarget (declared_targets did
+    //     the scan itself and surfaces the VA through ResolveByName, so the
+    //     hook_chain pattern/symbol fallback this function feeds is not
+    //     needed for them; ResolveByName's 3-segment path returned the
+    //     resolved VA directly above).
     if (q.count == 3) {
         return FindAuthorTarget(q.segments[0], q.segments[1],
                                 q.segments[2].c_str());
@@ -454,10 +635,13 @@ const AuthorTarget* FindResolvedAuthorTarget(const char* name,
 
     // --- BARE reference: SAME precedence + SAME collision-warn dedup as
     // ResolveByName (ResolveBareWinner is the single shared decision point).
-    // Return the winning author target when Self/Other won; nullptr when the
-    // engine seed won (a seed row is not an author target) or nothing matched.
+    // Return the winning legacy author target when Self/Other won via the
+    // legacy store; nullptr when the engine seed won (a seed row is not an
+    // author target), when the self tier won via the DECLARED store (declared
+    // entries do not materialize an AuthorTarget — ResolveByName surfaced
+    // their VA directly above), or when nothing matched.
     BareResolution res = ResolveBareWinner(eff, author, plugin);
-    return res.authorTarget;  // non-null iff Self/Other won
+    return res.authorTarget;  // non-null iff Self/Other won via the legacy store
 }
 
 void WarnBareCollisionShared(const char*        bareName,
@@ -507,12 +691,22 @@ const char* ResolveSignatureByName(const char* name,
     QualifiedName q = SplitQualified(eff);
     if (q.count == 0 || q.count > 3) return "";
 
-    // --- 3-segment "<author>.<plugin>.<bare>" — direct lookup.
+    // --- 3-segment "<author>.<plugin>.<bare>" — direct lookup across BOTH
+    //     self-population sources, same order ResolveByName uses: legacy
+    //     author-target store first, then the kcdx.declare declared store.
+    //     A declared-entry signature is the per-version signatureStr the
+    //     author supplied alongside the pattern (process-lifetime via the
+    //     resident registry).
     if (q.count == 3) {
         const AuthorTarget* t =
             FindAuthorTarget(q.segments[0], q.segments[1],
                              q.segments[2].c_str());
-        return t ? t->signature.c_str() : "";
+        if (t) return t->signature.c_str();
+        DeclaredSelfHit d =
+            ResolveDeclaredForOwner(q.segments[0], q.segments[1],
+                                    q.segments[2].c_str());
+        if (d.hit) return d.signature;  // "" when none was supplied
+        return "";
     }
 
     // --- 2-segment legacy/1-dot explicit form. "kcdx.<rest>" → seed
@@ -527,28 +721,46 @@ const char* ResolveSignatureByName(const char* name,
         return t ? t->signature.c_str() : "";
     }
 
-    // --- BARE reference: SAME order as ResolveByName (self > engine > other).
-    // The signature must come from the SAME row the address came from, so the
-    // ABI matches the resolved function. Share the collision dedup with
-    // ResolveByName: a bare name that already warned there does not double-warn
-    // here (first warn this session wins, keyed by the name).
+    // --- BARE reference: SAME order as ResolveByName (self > engine > other),
+    // SAME two self-tier population sources (legacy author-target store +
+    // kcdx.declare declared store). The signature must come from the SAME row
+    // the address came from, so the ABI matches the resolved function. Share
+    // the collision dedup with ResolveByName: a bare name that already warned
+    // there does not double-warn here (first warn this session wins, keyed by
+    // the name). NOTE: routing through ResolveBareWinner would require an
+    // extra SeedSignature call when engine wins (the winner type tells us
+    // engine but not the signature string); the inline form below mirrors
+    // ResolveBareWinner's logic while keeping the engine-signature read on
+    // the same path that needs it.
     const AuthorTarget* selfTarget =
         plugin.empty() ? nullptr : FindAuthorTarget(author, plugin, eff);
+    // Probe the declared store only on a legacy self-tier miss — same legacy-
+    // first ordering as ResolveBareWinner so the two resolvers agree on which
+    // self-tier population wins for a name that lives in both.
+    DeclaredSelfHit declaredSelf{};
+    if (!selfTarget) {
+        declaredSelf = ResolveDeclaredForOwner(author, plugin, eff);
+    }
     const char* engineSig = SeedSignature(eff);
     bool engineHit = (engineSig != nullptr);
     const AuthorTarget* otherTarget =
         FindOtherAuthorTarget(author, plugin, eff);
 
-    bool selfHit  = (selfTarget != nullptr);
+    bool selfHit  = (selfTarget != nullptr) || declaredSelf.hit;
     bool otherHit = (otherTarget != nullptr);
 
     MaybeWarnCollision(eff, author, plugin,
                        selfHit, engineHit, otherHit, otherTarget);
 
-    // (1) self, (2) engine, (3) other — the signature from the winning row.
-    if (selfTarget) return selfTarget->signature.c_str();
-    if (engineHit)  return engineSig;
-    if (otherTarget) return otherTarget->signature.c_str();
+    // (1) self (legacy then declared), (2) engine, (3) other — the signature
+    // from the winning row. A declared-self hit's signature is the
+    // per-version signatureStr the author supplied; "" when none was supplied
+    // (we never invent one — same invariant as the engine-seed signature
+    // null/empty distinction).
+    if (selfTarget)        return selfTarget->signature.c_str();
+    if (declaredSelf.hit)  return declaredSelf.signature;
+    if (engineHit)         return engineSig;
+    if (otherTarget)       return otherTarget->signature.c_str();
     return "";
 }
 
