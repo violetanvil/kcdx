@@ -103,7 +103,7 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
 ─── (game begins executing; CSystem::Init runs; first update tick) ───
 10 AfterGameApply                     C    after_game load-order slice applied
                                            (the ONE apply-driver, after_game zone) +
-                                           KCDX Lua table registered
+                                           kcdx Lua table registered
 ```
 
 Rules the enum enforces:

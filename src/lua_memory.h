@@ -16,9 +16,7 @@
 // `kcdx.memory.*` is the
 // **only bridge** for pak Lua mods to interact with native code.
 //
-// Naming: lowercase `kcdx.memory.*` matches RoM convention; the
-// PascalCase legacy `KCDX.ScanAndWrite` / `KCDX.ReadBytes` /
-// `KCDX.GetWHGameBase` in lua_bind.cpp remain for backwards compat.
+// Naming: lowercase `kcdx.memory.*` matches RoM convention.
 #pragma once
 
 #include <cstdint>

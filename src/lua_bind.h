@@ -6,14 +6,12 @@ struct lua_State;
 
 namespace kcdx::lua_bind {
 
-// Registers a global `KCDX` table with three functions:
-//   KCDX.ScanAndWrite(spec)  -- spec is a table mirroring the TOML schema.
-//                                    Runs the patch through patch_engine::ApplyPatch
-//                                    so all safety checks apply. Returns (ok, msg).
-//   KCDX.ReadBytes(addr, n)  -- read n bytes at absolute address `addr`,
-//                                    return them as a string of hex pairs separated
-//                                    by spaces. Validates the address is readable.
-//   KCDX.GetWHGameBase()     -- returns WHGame.dll base address as a Lua number.
+// Registers the lowercase `kcdx` Lua global by walking every sub-binder
+// (kcdx::lua_memory::bind, kcdx::lua_bind_log::bind, kcdx::lua_bind_hook::bind,
+// …) to populate kcdx.memory.*, kcdx.log.*, kcdx.hook.*, etc., then publishes
+// the populated table as `_G.kcdx`. Drains any kcdxScriptingInterface
+// RegisterFunction queue, flips IsKcdxGlobalReady() true, and fires
+// kcdxMessage_LuaReady.
 //
 // Safe to call once after the lua_State* is captured.
 void RegisterKcdxTable(lua_State* L);

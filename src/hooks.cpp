@@ -274,7 +274,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
             bool expected = false;
             if (done.compare_exchange_strong(expected, true,
                                              std::memory_order_acq_rel)) {
-                log::Info("First update tick with live lua_State — registering KCDX + applying patches/hooks");
+                log::Info("First update tick with live lua_State — registering kcdx + applying patches/hooks");
                 kcdx::lua_bind::RegisterKcdxTable(L);
                 kcdx::scripting::set_lua_state(L);
                 kcdx::hook_chain::SetLuaState(L);
@@ -465,7 +465,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
 
                 // STEP 10 (ctx C): AfterGameApply — the after_game load-order
                 // slice is applied (the ApplyZone(AfterGame) passes above) and
-                // the KCDX Lua table is registered (RegisterKcdxTable at the top
+                // the kcdx Lua table is registered (RegisterKcdxTable at the top
                 // of this one-shot block). Advanced once, from inside the
                 // first-update-tick latch (this whole block runs exactly once per
                 // session via the `done` compare_exchange). The per-tick

@@ -123,7 +123,7 @@ enum class InitPhase {
     // the ctx-B group.
     EngineSubsystemsInit,
     // ─── (game begins executing; CSystem::Init runs; first update tick) ───
-    // [ctx C] after_game load-order slice applied + KCDX Lua table registered.
+    // [ctx C] after_game load-order slice applied + kcdx Lua table registered.
     AfterGameApply,
 };
 

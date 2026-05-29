@@ -76,7 +76,7 @@ struct Entry {
     // a registry round-trip.
     uint64_t handleId = 0;
     // The plugin that owns this registration. Empty when called from
-    // ad-hoc Lua (KCDX.ScanAndWrite-style; legacy path). Used by the
+    // ad-hoc Lua with no owning plugin context. Used by the
     // apply pass to attribute log lines and conflict resolution.
     std::string pluginName;
     // Per-author intra-plugin sort key. Author hint, ignored when the

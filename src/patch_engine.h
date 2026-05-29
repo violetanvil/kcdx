@@ -213,10 +213,9 @@ void PreFlightAll();
 bool ApplyResolvedPatch(PatchEntry& p, const ResolvedPatch& r);
 
 // Apply a single patch by re-resolving (no pre-flight context). Used by the
-// Lua KCDX.ScanAndWrite runtime path and the kcdx.bytes apply handler
-// (ApplyBytesEntry). Does not benefit from pre-flight's "incidental overlap"
-// tolerance. Non-const for the same appliedPatchAddr/appliedOK caching as
-// ApplyResolvedPatch.
+// kcdx.bytes apply handler (ApplyBytesEntry). Does not benefit from
+// pre-flight's "incidental overlap" tolerance. Non-const for the same
+// appliedPatchAddr/appliedOK caching as ApplyResolvedPatch.
 bool ApplyPatch(PatchEntry& p);
 
 // Apply all patches in g_patches. Internally calls PreFlightAll() first.
