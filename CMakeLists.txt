@@ -170,6 +170,7 @@ add_library(kcdx SHARED
     src/scripting_interface.cpp
     src/dev.cpp
     src/scan_engine.cpp
+    src/declared_targets.cpp
     src/target_manifest.cpp
     src/test.cpp
     src/lua_bind_dev.cpp
