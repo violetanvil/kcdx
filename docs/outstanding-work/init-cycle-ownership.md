@@ -304,8 +304,9 @@ GAME MAIN THREAD (running CSystem::Init in parallel with worker)
    - `pak_mod_registry` Workshop walk. (separate follow-up; not in step 4.)
    - ~~`InstallCtorBracket` + ctor hook callback + `g_kcdxReadyEvent`.~~ DONE step 4.
    - ~~Move enabled-list build to worker; signal event when done.~~ DONE earlier; preserved.
-   - Doc updates (restructure-plan.md, load-order.md) for the
-     `before_game` widening. (deferred per round-2 decision 4.)
+   - ~~Doc updates (restructure-plan.md, load-order.md) for the
+     `before_game` widening.~~ DONE post-step-4 (commits 9264d6a +
+     43a9c14).
    - ~~New `InitPhase` enum entry for the bracket.~~ DONE step 4
      (`ModLoaderTakeoverArmed` renamed to `CtorBracketInstalled`).
    - ~~Test plugin: bracket fired, kcdx's list installed, vanilla SELECT
@@ -622,7 +623,11 @@ and no `suite: X/Y passing` line emits.
   pass; with SELECT gone the Workshop side of discovery is unowned. Not
   a blocker for boot-to-menu; ships when the debug agent's choice for
   crash #2 settles whether SELECT runs at all.
-- **Doc updates for `before_game` widening** (round-2 decision 4). Doc
+- ~~**Doc updates for `before_game` widening** (round-2 decision 4). Doc
   sweep across [restructure-plan.md](restructure-plan.md) +
   [load-order.md](../load-order.md); independent of every above
-  follow-up.
+  follow-up.~~ DONE post-step-4 (commits 9264d6a + 43a9c14). The
+  WHGame-specific framing in both docs was widened to name `before_game`
+  as a TIMING window with the LDR-notify mechanism's any-DLL reach.
+  The `pak_mod_registry` Workshop walk above is the only deferred-from-
+  step-4 item still open.
