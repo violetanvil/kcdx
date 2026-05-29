@@ -99,3 +99,9 @@ data/refdata-extractor/dump/refdata-*/
 # (USER + DEV), never committed.
 data/reference.sqlite
 data/reference-dev.sqlite
+
+# data/maintainer-tool/.maintainer-tool-cache.json -- the seed editor's
+# per-machine link table (per-module DLL paths on the maintainer's local disk
+# + recent-paths history). Per-machine state, never committed. See
+# data/maintainer-tool/requirements.md R12.
+data/maintainer-tool/.maintainer-tool-cache.json

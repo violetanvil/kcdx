@@ -89,7 +89,13 @@ $PrivateSubpaths = @(
   # for how rows enter the curated set; the GENERATED DBs (data/*.sqlite) +
   # their schema docs (data/reference.md, data/reference-dev.md) are public,
   # but the seeds themselves are private.
-  'data/seeds/'
+  'data/seeds/',
+  # Maintainer seed-editing tool. The tool consumes data/seeds/ + the shared
+  # validator module extracted from data/refdata-extractor/python/; nothing
+  # under it is for mod authors. Source, requirements doc, packaging
+  # config, and per-machine cache all stay private. See
+  # data/maintainer-tool/requirements.md R10.
+  'data/maintainer-tool/'
 )
 
 # ALLOWLIST — the ONLY root-level files published. Note: `.gitignore` is
