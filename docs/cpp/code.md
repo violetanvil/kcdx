@@ -3,10 +3,33 @@
 
 Allocate executable memory the plugin owns, fill it with machine code, and
 publish its address as a named symbol. The C++ mirror of the core Lua verb
-`kcdx.code{...}` ([../lua/code.md](../lua/code.md)). Use it to inject code (not
-just rewrite equal-length bytes — that is [`kcdxBytesInterface`](bytes.md)):
-build a routine other hooks branch to, or reserve a NOP region other plugins
-patch into by symbol.
+`kcdx.code{...}` ([../lua/code.md](../lua/code.md)).
+
+**Use `kcdxTrampolineInterface` for three cases:**
+
+1. **The game calls your code.** A game function pointer (vtable slot,
+   callback registration, fn-pointer table) needs to point at *your* code.
+   There is no game function to hook — you are producing the address itself.
+   Allocate the code via `Allocate(...)`, then write the returned address
+   into the slot via [`kcdxBytesInterface::Register`](bytes.md) (or the
+   memory-write helpers on `kcdxInterface`).
+2. **A cross-plugin extension point.** Reserve a NOP region published as a
+   symbol (via `kcdxCodeOptions::exportName`) so other plugins can hook the
+   symbol via [`kcdxBytesInterface`](bytes.md)'s `target_symbol` locator —
+   their own behaviour fills your reserved region. You author the
+   convention; other plugins fill it in.
+3. **A shared helper several of your own hooks branch to.** Lay out a
+   common helper as one block of code your hooks call into, rather than as
+   N independent trampolines.
+
+**To run your C++ at an existing game function, use
+[`kcdxHookInterface`](hook.md) instead** — it allocates the trampoline and
+wires the ABI for you; you never see the address. `kcdxHookInterface` covers
+function-entry, mid-instruction, and callsite interception with full
+register/memory capture and run-or-skip control. **To rewrite bytes at an
+existing site (length-preserving), use [`kcdxBytesInterface`](bytes.md).**
+Reach for `kcdxTrampolineInterface` only when you are producing a new
+addressable site rather than acting on an existing one.
 
 This page documents `kcdxTrampolineInterface` **v2** as built and verified
 (`kcdxTrampolineInterface_Version == 2`,

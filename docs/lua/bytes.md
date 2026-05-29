@@ -5,6 +5,52 @@ Rewrite bytes at a located site. Succeeds the v0.1 `[[patch]]` TOML schema. A
 replacement must be the same length as the original it overwrites — adding code
 goes through `kcdx.hook`.
 
+## Common path — `kcdx.bytes.<name>{...}`
+
+The everyday shape: name the site, pass the rewrite payload in a single
+table.
+
+```lua
+local h = kcdx.bytes.outfit_swap_callsite_aob{
+    original    = "44 8A F0",
+    replacement = "90 90 90",
+}
+```
+
+`<name>` is any name in the unified named-target table — a curated engine
+entry, your own [author-declared target](targets.md), or a name you exposed
+via `kcdx.declare`. Bytes is a single-mode verb, so the userdata returned by
+`kcdx.bytes.<name>` is directly callable with the options table — no per-mode
+access. The locator is fixed by the name; the options table carries the
+rewrite payload (`replacement` is required; `original` /
+`offset` / `idempotent` / `context` / `anchor_string` are optional).
+
+**Fail-loud resolution** (every wrong step errors at the wrong-step's access,
+not later at install time):
+
+1. **Typo at `<name>`** → the engine returns `nil` from the name index, so
+   `kcdx.bytes.outfit_swap_calsite_aob{...}` raises Lua's "attempt to index
+   a nil value" naming the typoed slot. The author sees WHICH name they got
+   wrong.
+2. **Missing options table** → calling the resolved userdata without a table
+   raises a teaching error naming the required `replacement` key.
+3. **Forbidden key in the options table** (`target` / `pattern` /
+   `address_id` / `target_symbol` — the locator-providing keys, fixed by the
+   name) → a teaching error pointing at the conflicting key.
+4. **Valid resolve + valid options** → the engine dispatches the rewrite
+   with the site pre-resolved.
+5. **Apply-time failure** (locator misses on the running build, the site's
+   current bytes don't match `original`, a conflict is lost) → registration
+   still returns a real handle; `:applied()` reads `false` and `:reason()`
+   carries the apply-time message. Read those in a `kcdx.on("ready", ...)`
+   callback (same contract as the flat-table form below).
+
+## Fallback — `kcdx.bytes{...}` flat-table form
+
+The flat-table form remains available for cases the smart-resolver shape does
+not cover: the advanced/expert locators (`pattern` / `address_id` /
+`target_symbol`) for sites the name table cannot yet name.
+
 **Call shape:** a single named-field table. Returns a **handle** on successful
 registration, or `(nil, err)` on a bad call. Like `kcdx.hook`, the actual write
 is [deferred](index.md#2-glossary) to the apply pass.
@@ -26,7 +72,8 @@ is [deferred](index.md#2-glossary) to the apply pass.
 
 ## Locators
 
-The byte rewrite needs to find its site. The **common path** is by name:
+The flat-table form needs to find its site. By name (the same name the
+smart-resolver shape consumes):
 
 - **`target = "<name>"`** — a named site. The name resolves the **address** (a
   byte rewrite is untyped, so unlike `kcdx.hook` no signature is involved). The

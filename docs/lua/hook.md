@@ -4,8 +4,60 @@
 Intercept a game function: run your Lua callback when the game calls it, and
 optionally change its arguments, its return value, or whether it runs at all.
 
-**Call shape:** a single named-field table. Returns a **handle** on successful
-registration, or `(nil, err)` on a bad call.
+## Common path — `kcdx.hook.<name>.<mode>(callback)`
+
+The everyday shape: name the target, pick a mode, pass your callback.
+
+```lua
+local h = kcdx.hook.IsInCombat.before(function(self) end)
+```
+
+`<name>` is any name in the unified named-target table — a curated engine
+entry (e.g. `IsInCombat`), your own [author-declared target](targets.md), or a
+name you exposed via `kcdx.declare`. `<mode>` is one of `before` / `after` /
+`around` / `replace` / `mid` (for a kind=`function` target). The engine
+resolves the address AND the verified ABI from the name — you write no hex
+and no signature.
+
+**Fail-loud resolution** (every wrong step errors at the wrong-step's access,
+not later at install time):
+
+1. **Typo at `<name>`** → the engine returns `nil` from the name index, so
+   `kcdx.hook.IsInComat.before(fn)` raises Lua's "attempt to index a nil
+   value" naming the typoed slot. The author sees WHICH name they got wrong.
+2. **Invalid mode for the resolved kind** → kind-aware filter rejects a hook
+   mode the target cannot accept (a vtable-only entity rejects `.before` at
+   the mode access, not at install). The next access raises "attempt to call
+   a nil value" naming the mode slot.
+3. **Valid resolve + valid mode** → the engine dispatches the install with
+   the target pre-resolved (the name carries the address; if it carries a
+   verified signature, the ABI carries too).
+4. **Apply-time failure** (the locator resolves but the conflict is lost, or
+   the running build has moved the row) → registration still returns a real
+   handle; `:applied()` reads `false` and `:reason()` carries the apply-time
+   message. Read those in a `kcdx.on("ready", ...)` callback (same contract
+   as the flat-table form below).
+
+The callback signature follows the resolved ABI exactly the same as the
+flat-table form — see [Modes](#modes) for the per-mode callback shapes.
+
+An optional knob table can follow the callback:
+`kcdx.hook.IsInCombat.before(fn, { off_thread = "marshal" })`. The keys it
+accepts are everything the flat-table form accepts EXCEPT the locator-
+providing keys (`target` / `address` / `address_id` / `pattern` /
+`target_symbol` / `target_lua_cfunction`) and the mode keys (`before` /
+`after` / `around` / `replace` / `mid`) — those are fixed by the
+`kcdx.hook.<name>.<mode>` shape. Passing a forbidden key is a teaching
+error.
+
+## Fallback — `kcdx.hook{...}` flat-table form
+
+The flat-table form remains available for cases the smart-resolver shape does
+not cover: dynamic target selection at runtime, the advanced/expert locators
+(`pattern` / `address` / `address_id` / `target_symbol` /
+`target_lua_cfunction`), and `mode = "callsite"`. **Call shape:** a single
+named-field table. Returns a **handle** on successful registration, or
+`(nil, err)` on a bad call.
 
 ```lua
 local h = kcdx.hook{ name = "...", target = "...", before = function(...) ... end }
@@ -63,7 +115,8 @@ local h = kcdx.hook{
 
 ## Locators
 
-The hook needs to find its target. The **common path** is by name:
+The flat-table form needs to find its target. By name (the same name the
+smart-resolver shape consumes):
 
 - **`target = "<name>"`** — a named function. The name resolves **both** the
   address and the verified signature, so you write no hex and no ABI. This is

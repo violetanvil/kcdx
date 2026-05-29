@@ -1,11 +1,37 @@
 # kcdx.code
 > Part of the [kcdx Lua API](index.md).
 
-Allocate a region of executable memory and (optionally) fill it with machine
-code and publish its address as a named symbol. Succeeds the v0.1
-`[[trampoline]]` TOML schema. Use it to inject code (not just rewrite
-equal-length bytes — that is `kcdx.bytes`): build a routine other hooks branch
-to, or reserve a NOP region other plugins patch into by symbol.
+**Use `kcdx.code` for three cases:**
+
+1. **The game calls your code.** A game function pointer (vtable slot,
+   callback registration, fn-pointer table) needs to point at *your* code.
+   There is no game function to hook — you are producing the address itself.
+   Allocate the code with `kcdx.code`, then write the returned address into
+   the slot via [`kcdx.bytes`](bytes.md) or [`kcdx.memory.write_ptr`](memory.md).
+2. **A cross-plugin extension point.** Reserve a NOP region published as a
+   symbol (via `export = "..."`) so other plugins can
+   [`kcdx.bytes{ target_symbol = ... }`](bytes.md) their own behaviour into
+   it. You author the convention; other plugins fill it in.
+3. **A shared helper several of your own hooks branch to.** Lay out a common
+   helper as one block of code your hooks call into, rather than as N
+   independent trampolines.
+
+**To run your Lua at an existing game function, use [`kcdx.hook`](hook.md)
+instead** — it allocates the trampoline and wires the ABI for you; you never
+see the address. `kcdx.hook` covers function-entry, mid-instruction, and
+callsite interception with full register/memory capture and run-or-skip
+control. **To rewrite bytes at an existing site (length-preserving), use
+[`kcdx.bytes`](bytes.md).** Reach for `kcdx.code` only when you are producing
+a new addressable site rather than acting on an existing one.
+
+> **There is no `kcdx.code.<name>{...}` form.** `kcdx.code` produces new
+> executable regions; it doesn't operate against an existing named site. To
+> publish your allocated region under a name other plugins can reach, set
+> `export = "..."` on the call below; consumers reach it via
+> [`kcdx.hook{ target_symbol = "..." }`](hook.md) (or `kcdx.bytes` with
+> `target_symbol`). The named-target sub-verb shape on `kcdx.hook` /
+> `kcdx.bytes` dispatches against an already-resolved site; `kcdx.code` is
+> the producer side of that boundary.
 
 **Call shape:** a single named-field table. Unlike `kcdx.hook`/`kcdx.bytes`,
 `kcdx.code` is **not deferred** — it allocates *immediately at the call* and

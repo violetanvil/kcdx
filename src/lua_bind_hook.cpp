@@ -75,6 +75,7 @@ extern "C" {
 }
 
 #include "address_library.h"   // ResolveSignatureByName (target = "name")
+#include "declared_targets.h"  // smart-resolver presence/kind probe (author-declared store)
 #include "hook_chain.h"
 #include "hook_payload.h"
 #include "hook_signature.h"
@@ -84,6 +85,8 @@ extern "C" {
 #include "lua_memory.h"
 #include "lua_registry.h"
 #include "patch_engine.h"
+#include "plugin_loader.h"     // g_runtimeGameVersionString (declared-store lookup arg) + HandleOf (refdb CallerContext attribution)
+#include "refdb.h"             // smart-resolver kind probe (engine seed)
 #include "scripting.h"
 
 namespace kcdx::lua_bind_hook {
@@ -1092,6 +1095,528 @@ int Lua_Hook(lua_State* L) {
     return kcdx::lua_registry::PushHandleOrError(L, handleId, err);
 }
 
+// =============================================================================
+// Smart-resolver surface — kcdx.hook.<name>.<mode>(callback)
+// =============================================================================
+//
+// kcdx.hook is registered as a TABLE with two metamethods:
+//   __call  → forwards to the flat-table form (Lua_Hook) so the legacy
+//             kcdx.hook{ target = "...", before = fn } shape keeps working
+//             unchanged.
+//   __index → smart-resolver: kcdx.hook.<name> probes the unified named-
+//             target table (declared store + engine seed + cross-plugin
+//             legacy author targets). Miss → returns nil (so .<mode>
+//             throws "attempt to index a nil value" naming the typoed
+//             slot). Hit → returns a verb-bound userdata that carries
+//             (resolved name, owner identity, kind) baked in via a
+//             metatable on which:
+//                __index resolves the mode (.before/.after/.replace/
+//                        .around/.mid) against the per-kind valid-mode
+//                        set. Invalid mode for kind → returns nil (so
+//                        the call throws "attempt to call a nil value").
+//                        Valid mode → returns a closure carrying
+//                        (name, mode, author, plugin) as upvalues.
+//                __call  is rejected with a teaching error — "specify a
+//                        mode like .before(fn)".
+//
+// The mode closure synthesizes a flat-table form on the Lua stack
+// ({ target = "<name>", <mode> = <callback> }) and dispatches to the
+// existing Lua_Hook C function via lua_call. The install codepath is
+// thus identical to the flat-table form's — same signature resolution,
+// same locator validation, same off_thread parsing, same conflict
+// engine, same handle return. The smart resolver is a thin
+// re-projection that pre-resolves "this name exists" and "this mode is
+// valid for this kind" up-front, so the author gets fail-fast errors
+// at .name / .mode access instead of generic install-time rejections.
+//
+// Out of scope here (kept on the flat-table form): mode="callsite",
+// raw address= / pattern= / address_id= / target_symbol= /
+// target_lua_cfunction= locators, captures= for mid mode. Those paths
+// have no name to drive the resolver and stay on the explicit table
+// form.
+
+// (We are still inside the file-wide anonymous namespace opened above —
+// no second `namespace {` here; the helpers below share the same TU-
+// local linkage as Lua_Hook / ApplyHookEntry / the LuaTable* helpers.)
+
+// Per-verb userdata payload. Carries the resolved name, the owner the
+// closure must report as ITS owner when it dispatches install (the
+// closure runs at .mode(callback) time, on the SAME call stack as the
+// original kcdx.hook.<name>.<mode>(callback), so the owner is the same
+// — but we capture it at __index time anyway so the closure does not
+// re-walk the stack), and the kind string the kcdx.hook valid-mode
+// table is indexed by. Plain POD; no std::string members (lua_newuserdata
+// is bit-blittable storage with no destructor — placement-new + an __gc
+// metamethod would be required for non-trivial members and there is no
+// long-lived state to clean). The strings live on the userdata's
+// envtable (set by Lua_HookIndex via lua_setfenv); the C struct only
+// carries the lengths for cheap recovery, but actually the envtable
+// alone is enough — keep the userdata size at one byte (the metatable
+// identity is the lookup key).
+//
+// One per resolved kcdx.hook.<name> access. Discarded by the GC after
+// the .mode call (the closure's upvalues are what survives).
+struct ResolvedHookUd {
+    char unused;
+};
+
+// The metatable's registry key for the verb-bound userdata. Identifies
+// the userdata's type when the .mode __index metamethod walks the
+// argument list.
+constexpr const char* kHookResolvedMt = "kcdx.hook.resolved";
+
+// Valid hook modes per resolved kind. Built by READING the existing
+// Lua_Hook parser's kModeKeys[] set — that array is the single source
+// of truth for the modes the flat-table form accepts; the smart
+// resolver does not invent a parallel list. For kind == "function" the
+// full set applies (the parser accepts all 5). Every other kind in the
+// schema (vtable_index, callsite, data_slot, value, …) has NO valid
+// hook mode today — the existing engine has no install path that turns
+// a non-function name into a hook (a vtable hook engine, a data-slot
+// watcher, etc. are tracked phases that have not landed). Returning
+// false for every mode on those kinds is the correct kind-aware
+// filtering: the smart resolver fails fast with "attempt to call a nil
+// value" at the .mode slot, instead of pretending an install would
+// succeed.
+//
+// When a future engine surface adds (e.g.) a vtable-index hook path,
+// extending this gate by adding "vtable_index" → { "replace" } here +
+// a corresponding install branch in Lua_Hook keeps the smart resolver
+// surface aligned with the install path — same source-of-truth pattern
+// the parser's kModeKeys[] follows today.
+bool IsValidHookModeForKind(const std::string& kind, const std::string& mode) {
+    if (kind == "function" || kind.empty()) {
+        // kind.empty() covers legacy author targets (which carry no kind
+        // metadata) and the declared-store default — both are treated as
+        // function-shaped, matching how the flat-table form installs them.
+        return (mode == "before"  || mode == "after"  ||
+                mode == "around"  || mode == "replace" ||
+                mode == "mid");
+    }
+    return false;
+}
+
+// Look up the resolved name's KIND. Probes the same population sources
+// the install path reaches: the engine seed (refdb), then the author-
+// declared store (with the calling plugin's namespace). Returns "" when
+// no source carries a kind — the legacy author-target store is the
+// catch-all, treated as "function" by IsValidHookModeForKind via the
+// kind.empty() branch.
+//
+// NOT a presence probe — call this only after Probe* established the
+// name resolves. The refdb branch fires its deduped SUPERSEDED/
+// DEPRECATED/UNVERIFIED warn for the name. Refdb dedups per
+// (pluginHandle, callType, name); attributing the ctx to the calling
+// plugin + callType="kcdx.hook" collapses every kcdx.hook.<name>
+// access by THIS plugin into one warn for the session, instead of
+// one per __index keystroke. (The install pass itself doesn't reach
+// this warn path — Lua_Hook resolves through address_library, which
+// hits refdb via the single-arg ResolveAddrByName / SignatureByName
+// helpers that don't emit the deduped warn — so the dedup defended
+// here is across repeated smart-resolver accesses, not across
+// access-then-install.) A bare engine-internal ctx would key the
+// warn at a different slot than any plugin-attributed call ever
+// reaches, double-firing on every keystroke against a state-flagged
+// entity.
+std::string KindForResolvedName(const std::string& name,
+                                const std::string& author,
+                                const std::string& plugin) {
+    // 1. Engine seed via refdb (the curated cache built at refdb::Open).
+    //    HasName is a pure presence check (no warn); ResolveByName fires
+    //    the deduped state warn. We only ResolveByName when HasName hits,
+    //    so a name that is solely in the declared store doesn't trigger a
+    //    spurious refdb warn.
+    if (kcdx::refdb::HasName(name)) {
+        // Plugin-attributed ctx — see the dedup paragraph above. An
+        // anonymous caller (empty plugin name) maps via HandleOf to
+        // kcdxInvalidPluginHandle; refdb's dedup key accepts that as-is
+        // and dedups the same way every other (handle, callType, name)
+        // key does — no special-case logic.
+        kcdx::refdb::CallerContext ctx;
+        ctx.pluginHandle = ::kcdx::plugins::HandleOf(plugin.c_str());
+        ctx.callType     = "kcdx.hook";
+        kcdx::refdb::NameResolution r =
+            kcdx::refdb::ResolveByName(name, ctx);
+        if (r.found && !r.kind.empty()) return r.kind;
+        return "function";  // engine seed with no kind column → function shape
+    }
+    // 2. Declared store (self tier — the only declared-store path the
+    //    bare smart resolver consumes; a cross-plugin declared reference
+    //    arrives as the 3-segment explicit form and would not reach the
+    //    bare __index branch).
+    if (!plugin.empty()) {
+        kcdx::declared_targets::ResolvedDeclared d =
+            kcdx::declared_targets::LookupForCaller(
+                author, plugin, name,
+                ::kcdx::plugins::g_runtimeGameVersionString);
+        if (d.entry) {
+            // Pattern: kindTag the author authored (default "function"
+            // per declared_targets validation). Value: the entry has no
+            // address and no hook-mode shape — return "value" so the
+            // valid-mode gate rejects every hook mode.
+            if (d.kind == kcdx::declared_targets::ResolvedDeclared::Kind::Value) {
+                return "value";
+            }
+            if (!d.kindTag.empty()) return d.kindTag;
+            return "function";
+        }
+    }
+    // 3. Legacy author-target store — no kind metadata. Treated as
+    //    "function" by the empty-string branch in IsValidHookModeForKind.
+    return "";
+}
+
+// Probe whether `name` resolves to ANY population source the install
+// path would consult. Owner identity feeds the self > engine > other
+// precedence in the leaf-module resolver (same path the flat-table
+// form's install reaches). Returns true when the name has a tier;
+// false on a genuine miss (typo / un-declared name).
+//
+// The resolver may fire the once-per-session bare-collision warn —
+// that is fine: the install path would fire the same warn at the same
+// dedup key. Firing it at smart-resolver __index time (vs install
+// time) makes it visible earlier, never duplicates.
+bool ResolveProbe(const std::string& name,
+                  const std::string& author,
+                  const std::string& plugin) {
+    // VA-bearing population (engine seed via refdb, declared store
+    // Pattern with successful scan, Rva/AddressId legacy author target).
+    if (kcdx::address_library::ResolveByName(
+            name.c_str(), author.c_str(), plugin.c_str()) != 0) {
+        return true;
+    }
+    // Non-VA author-target kinds (Pattern / TargetSymbol — the leaf
+    // module can't turn them into a VA; the install path routes them
+    // through hook_chain::ResolveLocator). The smart resolver counts
+    // these as resolved — install will follow the same fallback.
+    if (kcdx::address_library::FindResolvedAuthorTarget(
+            name.c_str(), author.c_str(), plugin.c_str()) != nullptr) {
+        return true;
+    }
+    // Declared-store entries that don't resolve to a VA in this leaf
+    // (VersionMismatch — entry exists but no row matches the running
+    // version; Value — no address). The namespace is occupied even
+    // when no VA comes back, so the smart resolver surfaces this as a
+    // hit and the install path emits the version-mismatch / value-vs-
+    // hook teaching error from there.
+    if (!plugin.empty()) {
+        kcdx::declared_targets::ResolvedDeclared d =
+            kcdx::declared_targets::LookupForCaller(
+                author, plugin, name,
+                ::kcdx::plugins::g_runtimeGameVersionString);
+        if (d.kind != kcdx::declared_targets::ResolvedDeclared::Kind::NoEntry) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Forward decls — the metatable wiring is mutually recursive via the
+// upvalues stamped on the closure.
+int Lua_HookCall(lua_State* L);
+int Lua_HookIndex(lua_State* L);
+int Lua_HookResolvedIndex(lua_State* L);
+int Lua_HookResolvedCall(lua_State* L);
+int Lua_HookModeInstall(lua_State* L);
+
+// The kcdx.hook table's __call metamethod. The metamethod receives the
+// table as arg 1 and the author's positional args after. The flat-table
+// form Lua_Hook expects its option table at arg 1, so we forward arg 2
+// (the author's options table) AND every other arg the author passed,
+// preserving the (nil, err) shape on parse failure.
+//
+//   kcdx.hook{ target = "...", before = fn }
+//     → __call(<kcdx.hook table>, <options table>)
+//     → forward <options table> as arg 1 of Lua_Hook.
+int Lua_HookCall(lua_State* L) {
+    // Forward args 2..N to Lua_Hook. (arg 1 is the kcdx.hook table
+    // itself, supplied by Lua's __call dispatcher — not user-visible.)
+    const int n = lua_gettop(L);
+    lua_pushcfunction(L, Lua_Hook);
+    for (int i = 2; i <= n; ++i) lua_pushvalue(L, i);
+    // Lua_Hook returns either 1 (handle) or 2 (nil, err) — request
+    // LUA_MULTRET and propagate exactly what it returned.
+    lua_call(L, n - 1, LUA_MULTRET);
+    return lua_gettop(L) - n;
+}
+
+// The kcdx.hook table's __index metamethod. arg 1 = the kcdx.hook
+// table; arg 2 = the key the author accessed (the name they want to
+// hook).
+//
+// Non-string keys (an author who wrote kcdx.hook[1] or similar) are
+// passed through as a miss — return nil, so the next access errors
+// loud rather than the metamethod itself doing something surprising.
+int Lua_HookIndex(lua_State* L) {
+    if (lua_type(L, 2) != LUA_TSTRING) {
+        lua_pushnil(L);
+        return 1;
+    }
+    const char* nameCStr = lua_tostring(L, 2);
+    std::string name = nameCStr ? nameCStr : "";
+    if (name.empty()) { lua_pushnil(L); return 1; }
+
+    // Owner of the calling plugin — drives self > engine > other in
+    // the unified resolver, AND is captured into the mode closure's
+    // upvalues so the install dispatch at .mode(cb) time uses the
+    // SAME (author, plugin) the __index probe used. Capturing at
+    // __index means the closure is owner-pure with respect to the
+    // call site that produced it (the install can never accidentally
+    // mis-attribute when the same closure is moved across owners,
+    // because the upvalues hold the original).
+    std::string callSiteFile;
+    int         callSiteLine = 0;
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
+
+    if (!ResolveProbe(name, owner.author, owner.plugin)) {
+        // The typo-fails-fast gate: the name doesn't resolve in any
+        // population source. Return nil so the next access (e.g.
+        // .before) raises Lua's "attempt to index a nil value"
+        // naming this slot — the author sees WHICH name they typed
+        // wrong without an opaque install-time message later.
+        lua_pushnil(L);
+        return 1;
+    }
+
+    // Kind probe — drives the .mode validity gate at the next level.
+    // The legacy author-target case returns "" and is treated as
+    // function-shaped by IsValidHookModeForKind.
+    std::string kind = KindForResolvedName(name, owner.author, owner.plugin);
+
+    // Allocate the verb-bound userdata. The payload is a one-byte
+    // marker; the resolved facts (name, owner, kind) live on the
+    // userdata's envtable (one Lua table per userdata, freed by GC
+    // when the userdata becomes unreachable). The envtable carries
+    // string fields cheaply — no placement-new / __gc dance for
+    // std::string members on the C struct.
+    auto* ud = static_cast<ResolvedHookUd*>(
+        lua_newuserdata(L, sizeof(ResolvedHookUd)));
+    ud->unused = 0;
+    luaL_getmetatable(L, kHookResolvedMt);
+    lua_setmetatable(L, -2);
+    // envtable: { name, author, plugin, kind }
+    lua_newtable(L);
+    lua_pushstring(L, name.c_str());        lua_setfield(L, -2, "name");
+    lua_pushstring(L, owner.author.c_str()); lua_setfield(L, -2, "author");
+    lua_pushstring(L, owner.plugin.c_str()); lua_setfield(L, -2, "plugin");
+    lua_pushstring(L, kind.c_str());         lua_setfield(L, -2, "kind");
+    lua_setfenv(L, -2);
+    return 1;
+}
+
+// The verb-bound userdata's __index — resolves the mode against the
+// per-kind valid-mode table. arg 1 = the userdata; arg 2 = the mode
+// name (the author wrote .before / .after / etc.).
+//
+// Returns nil for an invalid mode for this kind (so the next call
+// raises "attempt to call a nil value"), or a closure for a valid
+// one. Non-string keys (someone writing ud[1]) miss as nil.
+int Lua_HookResolvedIndex(lua_State* L) {
+    if (lua_type(L, 2) != LUA_TSTRING) {
+        lua_pushnil(L);
+        return 1;
+    }
+    const char* modeCStr = lua_tostring(L, 2);
+    std::string mode = modeCStr ? modeCStr : "";
+
+    // Recover (name, author, plugin, kind) from the userdata's envtable.
+    lua_getfenv(L, 1);
+    lua_getfield(L, -1, "kind");
+    std::string kind = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+    lua_pop(L, 1);
+
+    if (!IsValidHookModeForKind(kind, mode)) {
+        // Kind-aware structural filter. Returning nil here is what
+        // makes kcdx.hook.<vtable-only-name>.before(fn) fail at the
+        // .before access with "attempt to call a nil value" instead
+        // of producing a misleading install error later.
+        lua_pop(L, 1);  // envtable
+        lua_pushnil(L);
+        return 1;
+    }
+
+    // Build the install closure. Upvalues:
+    //   1: name (string)
+    //   2: mode (string — matches one of kModeKeys')
+    //   3: author (string — may be "")
+    //   4: plugin (string — may be "")
+    lua_getfield(L, -1, "name");   const std::string name   = lua_isstring(L, -1) ? lua_tostring(L, -1) : ""; lua_pop(L, 1);
+    lua_getfield(L, -1, "author"); const std::string author = lua_isstring(L, -1) ? lua_tostring(L, -1) : ""; lua_pop(L, 1);
+    lua_getfield(L, -1, "plugin"); const std::string plugin = lua_isstring(L, -1) ? lua_tostring(L, -1) : ""; lua_pop(L, 1);
+    lua_pop(L, 1);  // envtable
+
+    lua_pushstring(L, name.c_str());
+    lua_pushstring(L, mode.c_str());
+    lua_pushstring(L, author.c_str());
+    lua_pushstring(L, plugin.c_str());
+    lua_pushcclosure(L, Lua_HookModeInstall, 4);
+    return 1;
+}
+
+// The verb-bound userdata's __call metamethod. Reached when the author
+// calls the userdata WITHOUT going through a mode — kcdx.hook.IsInCombat(cb).
+// For a multi-mode verb this is always an author error; surface the
+// mode names so the fix is obvious.
+int Lua_HookResolvedCall(lua_State* L) {
+    lua_getfenv(L, 1);
+    lua_getfield(L, -1, "name");
+    std::string name = lua_isstring(L, -1) ? lua_tostring(L, -1) : "?";
+    lua_pop(L, 2);
+    lua_pushnil(L);
+    lua_pushfstring(L,
+        "kcdx.hook.%s(...) is not valid — specify a mode like "
+        ".before(fn) / .after(fn) / .around(fn) / .replace(fn) / .mid(fn). "
+        "(Or use the flat-table form: kcdx.hook{ target = \"%s\", before "
+        "= fn }.)",
+        name.c_str(), name.c_str());
+    return 2;
+}
+
+// The closure returned by Lua_HookResolvedIndex. Upvalues 1..4 carry
+// (name, mode, author, plugin); the author's call arg(s) carry the
+// callback and any optional knobs.
+//
+// Builder-B dispatch: synthesize the flat-table form { target =
+// <name>, <mode> = <callback>, ... } and call Lua_Hook through Lua's
+// own call mechanism. Lua_Hook returns either 1 value (handle) or 2
+// (nil, err); LUA_MULTRET propagates exactly what it returned.
+//
+// Author call shapes accepted:
+//   .mode(callback)                  — bare callback, no extra options.
+//   .mode(callback, { off_thread = ... })
+//                                    — callback + optional knob table;
+//                                      the knob table is shallow-merged
+//                                      into the synthesized table after
+//                                      the callback is set, so an
+//                                      author-supplied target= /
+//                                      <mode>= would override and is
+//                                      rejected before merge.
+//
+// `captures = ...` on the knob table is intentionally NOT carried —
+// the smart resolver routes hook modes only (mid uses captures, and
+// IsValidHookModeForKind rejects mid for any non-function kind today;
+// for function kind mid IS valid, and the knob table is the right
+// home for captures — pass it through and let Lua_Hook's existing
+// captures parser handle it).
+int Lua_HookModeInstall(lua_State* L) {
+    const char* nameCStr   = lua_tostring(L, lua_upvalueindex(1));
+    const char* modeCStr   = lua_tostring(L, lua_upvalueindex(2));
+    // author/plugin upvalues are reserved for future use (e.g. an
+    // attribution stamp on the synthesized table if a divergence ever
+    // matters); the install path re-walks the stack via
+    // OwningPluginForCurrentCall, which returns the SAME owner this
+    // closure was minted under because the closure runs on the same
+    // call stack as the original kcdx.hook.<name>.<mode>(cb) call.
+    (void)lua_upvalueindex(3);
+    (void)lua_upvalueindex(4);
+    std::string name = nameCStr ? nameCStr : "";
+    std::string mode = modeCStr ? modeCStr : "";
+
+    if (lua_gettop(L) < 1) {
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.hook.%s.%s(): missing required callback argument — "
+            "pass a function (e.g. kcdx.hook.%s.%s(function(...) end)).",
+            name.c_str(), mode.c_str(), name.c_str(), mode.c_str());
+        return 2;
+    }
+    if (!lua_isfunction(L, 1)) {
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.hook.%s.%s(callback, [opts]): the first argument must "
+            "be a function — got %s.",
+            name.c_str(), mode.c_str(), luaL_typename(L, 1));
+        return 2;
+    }
+    // Optional knob table. Reject a knob table that re-supplies target /
+    // the chosen mode / a conflicting mode key — those are owned by the
+    // closure, not the author.
+    bool haveOpts = (lua_gettop(L) >= 2) && lua_istable(L, 2);
+    if (haveOpts) {
+        static const char* const kForbidden[] = {
+            "target", "address", "address_id", "pattern",
+            "target_symbol", "target_lua_cfunction",
+            "before", "after", "around", "replace", "mid",
+        };
+        for (const char* fk : kForbidden) {
+            lua_getfield(L, 2, fk);
+            const bool present = !lua_isnil(L, -1);
+            lua_pop(L, 1);
+            if (present) {
+                lua_pushnil(L);
+                lua_pushfstring(L,
+                    "kcdx.hook.%s.%s(callback, opts): the opts table "
+                    "cannot supply '%s' — the locator and mode are "
+                    "fixed by the kcdx.hook.<name>.<mode> form. Drop "
+                    "the '%s' key, or switch to the flat-table form "
+                    "(kcdx.hook{...}) if you need to override.",
+                    name.c_str(), mode.c_str(), fk, fk);
+                return 2;
+            }
+        }
+    }
+
+    // Synthesize the flat-table form: { target = name, <mode> = cb, ...opts }.
+    lua_pushcfunction(L, Lua_Hook);
+    lua_newtable(L);
+    const int synthIdx = lua_gettop(L);
+    lua_pushstring(L, name.c_str());
+    lua_setfield(L, synthIdx, "target");
+    lua_pushvalue(L, 1);                       // callback
+    lua_setfield(L, synthIdx, mode.c_str());
+
+    // Shallow-merge the optional knob table — every other key the
+    // author put there flows into the synthesized table, so things
+    // like off_thread / name / description / captures / signature
+    // (for mid) ride through to Lua_Hook unchanged.
+    if (haveOpts) {
+        lua_pushnil(L);
+        while (lua_next(L, 2) != 0) {
+            // key at -2, value at -1.
+            // Copy (key, value) onto the top, then assign into synthIdx.
+            lua_pushvalue(L, -2);   // key
+            lua_pushvalue(L, -2);   // value
+            lua_settable(L, synthIdx);
+            lua_pop(L, 1);          // pop value; keep key for next lua_next
+        }
+    }
+
+    // Dispatch through Lua's own call mechanism so Lua_Hook's lua_*
+    // return shape is preserved verbatim. Stack: [..., Lua_Hook, table].
+    lua_call(L, 1, LUA_MULTRET);
+    return lua_gettop(L) - (haveOpts ? 2 : 1);  // discount the args the author passed
+}
+
+// Install the per-verb metatables in LUA_REGISTRYINDEX. Idempotent
+// (luaL_newmetatable is a no-op when the name is already registered).
+void EnsureSmartResolverMetatables(lua_State* L) {
+    // kcdx.hook table metatable — __call (forwards to flat-table form)
+    // and __index (smart resolver).
+    if (luaL_newmetatable(L, "kcdx.hook.verb") != 0) {
+        lua_pushcfunction(L, Lua_HookCall);
+        lua_setfield(L, -2, "__call");
+        lua_pushcfunction(L, Lua_HookIndex);
+        lua_setfield(L, -2, "__index");
+        lua_pushstring(L, "kcdx.hook.verb");
+        lua_setfield(L, -2, "__metatable");  // hide from pak Lua
+    }
+    lua_pop(L, 1);
+
+    // Resolved-userdata metatable — __index (per-kind mode resolver)
+    // and __call (multi-mode-verb misuse error).
+    if (luaL_newmetatable(L, kHookResolvedMt) != 0) {
+        lua_pushcfunction(L, Lua_HookResolvedIndex);
+        lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, Lua_HookResolvedCall);
+        lua_setfield(L, -2, "__call");
+        lua_pushstring(L, kHookResolvedMt);
+        lua_setfield(L, -2, "__metatable");
+    }
+    lua_pop(L, 1);
+}
+
 }  // namespace
 
 // Register the Kind::Hook deferred-apply handler. ENGINE state, not
@@ -1110,13 +1635,22 @@ void RegisterHandlers() {
 }
 
 void bind(lua_State* L) {
-    // Lua-surface wiring ONLY. The Kind::Hook apply handler is registered
+    // Lua-surface wiring. The Kind::Hook apply handler is registered
     // earlier, at engine init, by RegisterHandlers() — by the time bind()
     // runs (first-update-tick) the handler is already in place.
     kcdx::lua_registry::EnsureHandleMetatable(L);
+    EnsureSmartResolverMetatables(L);
 
-    lua_pushcfunction(L, Lua_Hook);
-    lua_setfield(L, -2, "hook");
+    // kcdx.hook is a TABLE with two metamethods:
+    //   __call  → forwards to the flat-table form (kcdx.hook{...}).
+    //   __index → smart resolver (kcdx.hook.<name>.<mode>(cb)).
+    // Both shapes coexist; existing test plugins that call kcdx.hook{...}
+    // route through __call and reach the same Lua_Hook parser unchanged.
+    int kcdx_idx = lua_gettop(L);
+    lua_newtable(L);
+    luaL_getmetatable(L, "kcdx.hook.verb");
+    lua_setmetatable(L, -2);
+    lua_setfield(L, kcdx_idx, "hook");
 }
 
 }  // namespace kcdx::lua_bind_hook

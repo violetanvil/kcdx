@@ -44,6 +44,22 @@ if (!hook) { /* engine version mismatch — fail loud, do not skip silently */ }
 A null return means the running engine does not implement that
 interface/version.
 
+## Named-target sub-verb shape — `kcdxHookInterface::<Name>::<Mode>(callback)` (NYI)
+
+The C++ peer of Lua's `kcdx.hook.<name>.<mode>(callback)` smart-resolver
+shape ([../lua/hook.md](../lua/hook.md)). **Not yet implemented (NYI)** — the
+parity mirror lands in a follow-up step that exposes a typed name-keyed
+sub-verb (the planned form is a template specialization keyed by the resolved
+name, e.g. `kcdxHookInterface::IsInCombat::Before(callback)`, where the
+engine carries the address AND the verified ABI so the callback type is
+deduced from the resolved signature — no `target` string, no `opts->signature`
+on a named-target install). The NYI marker is removed when this surface
+ships and the cross-language parity coverage exercises both sides. Until
+then, the raw `Before` / `After` / `Around` / `Replace` / `Mid` / `Callsite`
+install methods below (which take a `target` string + `kcdxHookOptions`) are
+the only C++ install path; they ARE at full parity with the flat-table
+`kcdx.hook{...}` form on the Lua side.
+
 ## The surface — six install sub-verbs + four query methods
 
 `kcdxHookInterface` mirrors the Lua `kcdx.hook.before / .after / .around /

@@ -227,7 +227,7 @@ it does not exist yet.
 | `kcdx.on` | subscribe to a lifecycle or custom event | [on.md](on.md) |
 | `kcdx.command` | register a console command | [command.md](command.md) |
 | `kcdx.publish` | broadcast a custom event to subscribers | [publish.md](publish.md) |
-| `kcdx.code` | allocate executable memory, fill + export it | [code.md](code.md) |
+| `kcdx.code` | allocate an executable code region you own (for a callback address the game calls, a cross-plugin extension point, or a shared helper). To intercept an existing game function, use `kcdx.hook` instead. | [code.md](code.md) |
 | `kcdx.scan` | validate an AOB pattern + discover an address (dev-time workbench) | [scan.md](scan.md) |
 | `kcdx.alias` | declare a short local handle for a long shared name | [alias.md](alias.md) |
 | author-declared targets (`targets.toml`) | name a code site yourself, then hook/patch it by name | [targets.md](targets.md) |

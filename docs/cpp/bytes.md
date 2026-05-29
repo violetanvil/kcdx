@@ -41,6 +41,21 @@ if (!bytes) { /* engine version mismatch — fail loud, do not skip silently */ 
 A null return means the running engine does not implement that
 interface/version.
 
+## Named-target sub-verb shape — `kcdxBytesInterface::<Name>{...}` (NYI)
+
+The C++ peer of Lua's `kcdx.bytes.<name>{...}` smart-resolver shape
+([../lua/bytes.md](../lua/bytes.md)). **Not yet implemented (NYI)** — the
+parity mirror lands in a follow-up step that exposes a typed name-keyed
+sub-verb (the planned form is a template specialization keyed by the resolved
+name, e.g. `kcdxBytesInterface::outfit_swap_callsite_aob{...}` where the
+locator is fixed by the name and the options struct carries only the rewrite
+payload — no `target` string, no other locator fields). The NYI marker is
+removed when this surface ships and the cross-language parity coverage
+exercises both sides. Until then, the raw `Register` method below (which
+takes a full `kcdxBytesOptions` including a `target` string) is the only C++
+install path; it IS at full parity with the flat-table `kcdx.bytes{...}` form
+on the Lua side.
+
 ## The surface — one `Register` + four query methods
 
 Unlike [`kcdxHookInterface`](hook.md) (six install sub-verbs, one per hook

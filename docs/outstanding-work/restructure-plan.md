@@ -1513,10 +1513,9 @@ kcdx.hook.IsInCombat.replace(callback)
 kcdx.hook.IsInCombat.around(callback)
 
 kcdx.bytes.IsInCombat{replacement = "..."}
-kcdx.code.IsInCombat{...}
 ```
 
-(`kcdx.statement.<name>.<op>` is Phase 9.3 scope and slots into the same smart-resolver shape when that phase lands; this phase wires only hook + bytes + code. `kcdx.scan` does NOT get the sub-verb shape — it's the AOB-discovery workbench (it PRODUCES inputs to the unified table, doesn't consume them), so a name in the table is by definition already resolved. See "Scan workflow" below.)
+(`kcdx.statement.<name>.<op>` is Phase 9.3 scope and slots into the same smart-resolver shape when that phase lands; this phase wires only hook + bytes. `kcdx.scan` and `kcdx.code` do NOT get the sub-verb shape — both PRODUCE inputs to the unified table (scan returns addresses the author wraps in `kcdx.declare`; code allocates fresh executable regions the author publishes via `export` as new named symbols). The smart-resolver shape exists to dispatch a verb against an already-resolved named site; the producer-side verbs have no resolved site to dispatch against. See "Scan workflow" + "Code workflow" below.)
 
 **`kcdx.declared(name)` value accessor** — for declared NON-address entries (the `["1.5.1164953"] = 0x0F` shape):
 
@@ -1530,7 +1529,7 @@ The §11.8.1 example's bare-string-in-arithmetic (`& "combatStateMask"`) is illu
 
 #### Implementation pattern — smart resolver, NOT pre-generated tables
 
-The Lua binder does NOT materialize per-name-per-mode closures at boot. Verb tables `kcdx.hook` / `kcdx.bytes` / `kcdx.code` carry `__index` metamethods that resolve on demand. (`kcdx.statement` extends to the same shape when Phase 9.3 lands its binder; `kcdx.scan` is excluded by design — see "Scan workflow" below.)
+The Lua binder does NOT materialize per-name-per-mode closures at boot. Verb tables `kcdx.hook` / `kcdx.bytes` carry `__index` metamethods that resolve on demand. (`kcdx.statement` extends to the same shape when Phase 9.3 lands its binder; `kcdx.scan` + `kcdx.code` are excluded by design — see "Scan workflow" and "Code workflow" below.)
 
 1. `kcdx.hook` is a Lua table with `__index = c_function`.
 2. Lookup of any name (`kcdx.hook.combatResolver`) invokes the metamethod. The metamethod consults the **unified named-target resolver**: it walks self > engine > other per `naming-namespaces.md` (`self` = the calling plugin's author-declared entries via the calling-plugin context the Lua VM already carries; `engine` = the refdb curated cache; `other` = other plugins' declared entries). Miss → return nil. Hit → push a small verb-bound userdata with two upvalues: a unified `ResolvedTarget` and the verb tag (`"hook"`).
@@ -1571,6 +1570,10 @@ What this phase DOES ship for the scan side: a `kcdx_scan` **console command** t
 
 The console command shares the existing `scan_engine::ResolveScan` path with `kcdx.scan` (one new shared helper, two callers); both surfaces emit the same log lines so the dev-log workflow keeps working. Without this, declare's pattern-based expert hatch is gated behind the same multi-minute round trip the discovery problem already had — declare-with-discovery is a complete workflow only when both ship together. Matches the disassembler-test cornerstone: the engine does the heavy iteration; the author declares intent.
 
+#### Code workflow — `kcdx.code` is producer-side and excluded by the same rule
+
+`kcdx.code` is similarly excluded from the smart-resolver shape: it PRODUCES new executable code sites (which other verbs then consume by name via the symbol table). The smart-resolver shape exists to dispatch a verb against a resolved named site; allocating a fresh code region is producer-side work, not consumer-side. `kcdx.code{name=, bytes=, size=, pool=, export=}` allocates a region of executable memory and returns a live `kcdx.memory.pointer`; the optional `export = "..."` publishes the allocated region as a symbol under the calling plugin's `<author>.<plugin>.<bare>` namespace. The consumer side is `kcdx.hook{ target_symbol = "..." }` — that's where the named binding happens, against a resolved site. A `kcdx.code.<name>{...}` shape has no meaningful binding because the name isn't an existing site the verb operates against; the verb's whole job is to allocate something fresh. Same producer-vs-consumer asymmetry that excludes `kcdx.scan` above. `kcdx.code{...}` Lua form stays unchanged in this phase.
+
 #### What the unified table MUST provide (per-`ResolvedTarget`)
 
 Same shape as the existing curated `CachedEntity`, with provenance:
@@ -1602,17 +1605,18 @@ Same shape as the existing curated `CachedEntity`, with provenance:
 - New `src/declare_interface.cpp` + new entries on `kcdxDeclareInterface` in `include/kcdx/Interfaces.h` (APPEND-ONLY per AP11) + `kcdxInterface_Declare` enum + `interfaces.cpp` `QueryInterface` wire-up + `include/kcdx/Kcdx.h` wrapper member append.
 - `src/lua_bind_hook.cpp` — extend with the `__index` metamethod for the smart-resolver path; the existing flat-table / explicit-positional forms keep working as the dynamic / non-named-target path.
 - `src/lua_bind_bytes.cpp` — same `__index` extension for `kcdx.bytes.<name>(...)`.
-- `src/lua_bind_code.cpp` — same shape for `kcdx.code.<name>(...)`.
+- `src/lua_bind_code.cpp` — UNCHANGED. `kcdx.code` is producer-side and excluded from the smart-resolver shape (see "Code workflow" above).
 - `src/lua_bind_scan.cpp` — extract the arg-parse + scan-engine-call body of `Lua_Scan` into a shared `RunScan(ScanEntry) -> ScanResult` helper so the `kcdx_scan` console command can call the same code path. The Lua-binding entry shape is unchanged.
 - New `kcdx_scan` console command registration — file TBD at the step's start (where the existing `kcdx_*` console commands are registered); argv parses into a `ScanEntry`, calls the shared `RunScan` helper, prints to console + emits the existing log lines.
-- `src/hook_interface.cpp` + `src/bytes_interface.cpp` + `src/code_interface.cpp` — C++ sub-verb mirror for each.
+- `src/hook_interface.cpp` + `src/bytes_interface.cpp` — C++ sub-verb mirror for each. `src/code_interface.cpp` is NOT extended with a sub-verb mirror (the Lua side has no sub-verb shape on `kcdx.code` by design — see "Code workflow" above).
 - The per-verb "valid modes for this kind" tables: one small static array per verb in the corresponding `src/lua_bind_*.cpp`, plus one in the C++ binding layer.
 
-(Phase 9.3 will introduce `kcdx.statement.*` + `kcdx.locator.*` + `kcdx.op.*`; this phase does NOT pre-extend the smart resolver into those — they slot in when 9.3 lands their binders, the resolver entry points are designed to accept new verbs without churn. `kcdx.scan` is excluded from the smart-resolver shape by design — see "Scan workflow" above.)
+(Phase 9.3 will introduce `kcdx.statement.*` + `kcdx.locator.*` + `kcdx.op.*`; this phase does NOT pre-extend the smart resolver into those — they slot in when 9.3 lands their binders, the resolver entry points are designed to accept new verbs without churn. `kcdx.scan` and `kcdx.code` are excluded from the smart-resolver shape by design — see "Scan workflow" + "Code workflow" above.)
 
 #### Documentation deliverable (`docs/lua/` + `docs/cpp/` per `docs-discipline.md`)
 
-- Per-call entries for each verb in `docs/lua/` (`hook.md`, `bytes.md`, `code.md`) get a new section **before** the existing flat-table / explicit-positional form, documenting the named-target sub-verb form as the common path for any name in the unified table. The fallback forms stay, documented as dynamic / pattern-locator / raw-address paths.
+- Per-call entries for each verb in `docs/lua/` (`hook.md`, `bytes.md`) get a new section **before** the existing flat-table / explicit-positional form, documenting the named-target sub-verb form as the common path for any name in the unified table. The fallback forms stay, documented as dynamic / pattern-locator / raw-address paths.
+- `docs/lua/code.md` does NOT get a sub-verb section — `kcdx.code` is producer-side (it allocates fresh executable memory and optionally publishes the region as a symbol via `export`; the consumer side is `kcdx.hook{ target_symbol = "..." }`). The existing `kcdx.code{...}` doc stays as the Lua surface and gets a one-line clarifier near the top stating plainly that `kcdx.code.<name>{...}` is not a valid shape and pointing at `kcdx.hook{ target_symbol = ... }` as the consumer-side counterpart.
 - `docs/lua/scan.md` does NOT get a sub-verb section — the existing `kcdx.scan{pattern=...}` doc stays as the Lua surface, EXTENDED with a new section documenting the `kcdx_scan` console command (the in-game iterative AOB discovery workflow; argv shape; the discover-then-declare loop ending in `kcdx.declare`). The console command becomes the documented common path for AOB discovery; `kcdx.scan{...}` Lua form is documented as the runtime-conditional-scan alternative.
 - New `docs/lua/declare.md` — full reference for `kcdx.declare(module, name, versions_kv)` + `kcdx.declared(name)`. Lead with the "what does this do" framing (extends the unified named-target table with your own per-version names, accessible by the same `kcdx.<verb>.<name>` shape curated entities use); document version-key forms (explicit + wildcard); document the value vs pattern entry shapes; document the `<author>.<plugin>.<bare>` namespacing; document the badge behaviour on undeclared versions.
 - New `docs/cpp/declare.md` — C++ mirror, marked NYI until the C++ side ships in this same phase (then NYI marker is removed in the same commit per `docs-discipline.md` §3).

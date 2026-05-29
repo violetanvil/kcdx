@@ -45,10 +45,13 @@ extern "C" {
 }
 
 #include "address_library.h"
+#include "declared_targets.h"  // smart-resolver presence probe (author-declared store)
 #include "log.h"
 #include "lua_bind_helpers.h"  // FindUnknownKey (shared unknown-key gate)
 #include "lua_registry.h"
 #include "patch_engine.h"
+#include "plugin_loader.h"     // g_runtimeGameVersionString (declared-store lookup arg)
+#include "refdb.h"             // smart-resolver presence probe (engine seed)
 
 namespace kcdx::lua_bind_bytes {
 
@@ -425,6 +428,217 @@ int Lua_Bytes(lua_State* L) {
     return kcdx::lua_registry::PushHandleOrError(L, handleId, err);
 }
 
+// =============================================================================
+// Smart-resolver surface — kcdx.bytes.<name>{...}
+// =============================================================================
+//
+// kcdx.bytes is registered as a TABLE with two metamethods:
+//   __call  → forwards to the flat-table form (Lua_Bytes) so the legacy
+//             kcdx.bytes{ target = "...", replacement = "..." } shape
+//             keeps working unchanged.
+//   __index → smart-resolver: kcdx.bytes.<name> probes the unified
+//             named-target table (declared store + engine seed + cross-
+//             plugin legacy author targets). Miss → returns nil (so
+//             the next access raises "attempt to index a nil value"
+//             naming the typoed slot). Hit → returns a verb-bound
+//             userdata that carries (resolved name, owner identity)
+//             baked in via a metatable on which __call IS the install
+//             (single-mode verb — no per-mode access).
+//
+// The install closure synthesizes a flat-table form { target = "<name>",
+// ...opts } and dispatches to the existing Lua_Bytes C function via
+// lua_call. The install codepath is identical to the flat-table form's
+// — same locator validation, same length-match check, same apply pass.
+//
+// Out of scope here (kept on the flat-table form): raw pattern= /
+// address_id= / target_symbol= locators. Those paths have no name to
+// drive the resolver and stay on the explicit table form.
+
+// (We are still inside the file-wide anonymous namespace opened above —
+// no second `namespace {` here; the helpers below share the same TU-
+// local linkage as Lua_Bytes / ApplyBytesEntry / the LuaTable* helpers.)
+
+// One-byte payload; the resolved facts live on the userdata's envtable
+// (name, author, plugin), same shape as the kcdx.hook smart-resolver
+// userdata.
+struct ResolvedBytesUd {
+    char unused;
+};
+
+constexpr const char* kBytesResolvedMt = "kcdx.bytes.resolved";
+
+// Probe whether `name` resolves to ANY population source the install
+// path would consult. Same shape as the kcdx.hook probe (the unified
+// table backs both verbs).
+bool ResolveProbe(const std::string& name,
+                  const std::string& author,
+                  const std::string& plugin) {
+    if (kcdx::address_library::ResolveByName(
+            name.c_str(), author.c_str(), plugin.c_str()) != 0) {
+        return true;
+    }
+    if (kcdx::address_library::FindResolvedAuthorTarget(
+            name.c_str(), author.c_str(), plugin.c_str()) != nullptr) {
+        return true;
+    }
+    if (!plugin.empty()) {
+        kcdx::declared_targets::ResolvedDeclared d =
+            kcdx::declared_targets::LookupForCaller(
+                author, plugin, name,
+                ::kcdx::plugins::g_runtimeGameVersionString);
+        if (d.kind != kcdx::declared_targets::ResolvedDeclared::Kind::NoEntry) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int Lua_BytesCall(lua_State* L);
+int Lua_BytesIndex(lua_State* L);
+int Lua_BytesResolvedCall(lua_State* L);
+
+// The kcdx.bytes table's __call metamethod — forwards args 2..N to
+// Lua_Bytes (arg 1 is the kcdx.bytes table itself, supplied by the
+// __call dispatcher).
+int Lua_BytesCall(lua_State* L) {
+    const int n = lua_gettop(L);
+    lua_pushcfunction(L, Lua_Bytes);
+    for (int i = 2; i <= n; ++i) lua_pushvalue(L, i);
+    lua_call(L, n - 1, LUA_MULTRET);
+    return lua_gettop(L) - n;
+}
+
+// The kcdx.bytes table's __index metamethod — the smart resolver.
+int Lua_BytesIndex(lua_State* L) {
+    if (lua_type(L, 2) != LUA_TSTRING) {
+        lua_pushnil(L);
+        return 1;
+    }
+    const char* nameCStr = lua_tostring(L, 2);
+    std::string name = nameCStr ? nameCStr : "";
+    if (name.empty()) { lua_pushnil(L); return 1; }
+
+    std::string callSiteFile;
+    int         callSiteLine = 0;
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
+
+    if (!ResolveProbe(name, owner.author, owner.plugin)) {
+        // Typo-fails-fast: the name doesn't resolve anywhere.
+        lua_pushnil(L);
+        return 1;
+    }
+
+    // Allocate the verb-bound userdata; stash (name, author, plugin)
+    // on the envtable. Bytes is a single-mode verb — the userdata's
+    // __call IS the install, no per-mode access required.
+    auto* ud = static_cast<ResolvedBytesUd*>(
+        lua_newuserdata(L, sizeof(ResolvedBytesUd)));
+    ud->unused = 0;
+    luaL_getmetatable(L, kBytesResolvedMt);
+    lua_setmetatable(L, -2);
+    lua_newtable(L);
+    lua_pushstring(L, name.c_str());         lua_setfield(L, -2, "name");
+    lua_pushstring(L, owner.author.c_str()); lua_setfield(L, -2, "author");
+    lua_pushstring(L, owner.plugin.c_str()); lua_setfield(L, -2, "plugin");
+    lua_setfenv(L, -2);
+    return 1;
+}
+
+// The verb-bound userdata's __call metamethod — IS the install.
+// Single-mode verb: the author writes kcdx.bytes.<name>{ replacement =
+// "..." }, the closure synthesizes { target = name, ...opts } and
+// dispatches to Lua_Bytes.
+//
+//   arg 1: the userdata.
+//   arg 2: the options table (required — at minimum carries
+//          replacement=, plus any of original=/idempotent=/offset=
+//          /context=/anchor_string=).
+//
+// Forbidden in the opts: target= / pattern= / address_id= /
+// target_symbol= (those are the locator-providing keys, fixed by the
+// smart-resolver name).
+int Lua_BytesResolvedCall(lua_State* L) {
+    lua_getfenv(L, 1);
+    lua_getfield(L, -1, "name");
+    std::string name = lua_isstring(L, -1) ? lua_tostring(L, -1) : "?";
+    lua_pop(L, 2);
+
+    if (lua_gettop(L) < 2 || !lua_istable(L, 2)) {
+        lua_pushnil(L);
+        lua_pushfstring(L,
+            "kcdx.bytes.%s(...): expected a single table argument "
+            "(at minimum { replacement = \"...\" }). The smart-resolver "
+            "form fixes the locator (the name); the table carries the "
+            "rewrite payload.",
+            name.c_str());
+        return 2;
+    }
+
+    // Reject locator keys the closure already supplies.
+    static const char* const kForbidden[] = {
+        "target", "pattern", "address_id", "target_symbol",
+    };
+    for (const char* fk : kForbidden) {
+        lua_getfield(L, 2, fk);
+        const bool present = !lua_isnil(L, -1);
+        lua_pop(L, 1);
+        if (present) {
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "kcdx.bytes.%s(opts): the opts table cannot supply "
+                "'%s' — the locator is fixed by the kcdx.bytes.<name> "
+                "form. Drop the '%s' key, or switch to the flat-table "
+                "form (kcdx.bytes{...}) if you need to override.",
+                name.c_str(), fk, fk);
+            return 2;
+        }
+    }
+
+    // Synthesize { target = name, ...opts }. Build a fresh table at
+    // the top of the stack; copy every author-supplied key onto it;
+    // stamp target= last so the merge can't shadow it.
+    lua_pushcfunction(L, Lua_Bytes);
+    lua_newtable(L);
+    const int synthIdx = lua_gettop(L);
+    lua_pushnil(L);
+    while (lua_next(L, 2) != 0) {
+        // key at -2, value at -1.
+        lua_pushvalue(L, -2);   // key copy
+        lua_pushvalue(L, -2);   // value copy
+        lua_settable(L, synthIdx);
+        lua_pop(L, 1);          // pop value; keep key for next lua_next
+    }
+    lua_pushstring(L, name.c_str());
+    lua_setfield(L, synthIdx, "target");
+
+    lua_call(L, 1, LUA_MULTRET);
+    return lua_gettop(L) - 2;  // discount the (self, opts) args
+}
+
+void EnsureSmartResolverMetatables(lua_State* L) {
+    // kcdx.bytes table metatable — __call + __index.
+    if (luaL_newmetatable(L, "kcdx.bytes.verb") != 0) {
+        lua_pushcfunction(L, Lua_BytesCall);
+        lua_setfield(L, -2, "__call");
+        lua_pushcfunction(L, Lua_BytesIndex);
+        lua_setfield(L, -2, "__index");
+        lua_pushstring(L, "kcdx.bytes.verb");
+        lua_setfield(L, -2, "__metatable");
+    }
+    lua_pop(L, 1);
+
+    // Resolved-userdata metatable — __call only (single-mode verb).
+    if (luaL_newmetatable(L, kBytesResolvedMt) != 0) {
+        lua_pushcfunction(L, Lua_BytesResolvedCall);
+        lua_setfield(L, -2, "__call");
+        lua_pushstring(L, kBytesResolvedMt);
+        lua_setfield(L, -2, "__metatable");
+    }
+    lua_pop(L, 1);
+}
+
 }  // namespace
 
 // Register the Kind::Bytes deferred-apply handler. ENGINE state, not
@@ -442,16 +656,22 @@ void RegisterHandlers() {
 }
 
 void bind(lua_State* L) {
-    // Lua-surface wiring ONLY. The Kind::Bytes apply handler is registered
+    // Lua-surface wiring. The Kind::Bytes apply handler is registered
     // earlier, at engine init, by RegisterHandlers().
 
     // Make sure the registry handle metatable exists before any
     // kcdx.bytes call can produce a handle userdata.
     kcdx::lua_registry::EnsureHandleMetatable(L);
+    EnsureSmartResolverMetatables(L);
 
-    // kcdx.bytes is a plain C function on the kcdx table.
-    lua_pushcfunction(L, Lua_Bytes);
-    lua_setfield(L, -2, "bytes");
+    // kcdx.bytes is a TABLE with two metamethods:
+    //   __call  → forwards to the flat-table form (kcdx.bytes{...}).
+    //   __index → smart resolver (kcdx.bytes.<name>{...}).
+    int kcdx_idx = lua_gettop(L);
+    lua_newtable(L);
+    luaL_getmetatable(L, "kcdx.bytes.verb");
+    lua_setmetatable(L, -2);
+    lua_setfield(L, kcdx_idx, "bytes");
 }
 
 }  // namespace kcdx::lua_bind_bytes
