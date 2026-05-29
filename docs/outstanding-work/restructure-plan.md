@@ -76,7 +76,7 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 | 8.5 — Asset replacement (pak overlay) | **NOT STARTED** (8.5a partial: `CCryPak_FOpen` named in refdb + observe-only FOPEN probe live; PRODUCTION asset-overlay map / hook / Lua surface NOT BUILT) |
 | 9 — High-level Lua surface (player.health/.position + inventory.add + stubs) | **NOT STARTED** |
 | 9.1 — SQLite reference DB + lookup primitive + per-plugin verification cache | **DB + ENGINE CONSUMER DONE** (`address_names` + `address_versions` schema ships; refdb owns the cache, commit `498934c`; `refdb::ResolveByName/ResolveById` is the lookup primitive — `hash_at` is not a separate symbol). `version_check.bin` cache plumbing ships; production FEED awaits Phase 9.2's `kcdx.declare`. |
-| 9.2 — **UNIFIED named-target surface**: `kcdx.declare` (Track-2 author entries) + smart-resolver sub-verb shape `kcdx.<verb>.<name>.<mode>` over the unified table (curated refdb rows + author declarations, same lookup table, same `__index` resolver) + C++ mirror | **CURATED SUBSTRATE DONE** (refdb cache, commit `498934c`); **DECLARE STORE + RESOLVER + SUB-VERB SURFACE NOT BUILT** — see merged Phase 9.2 below. `src/survival_pass.{cpp,h}` machinery is built but it's the **curated-track** safety mechanism only (per §11.8.3); Track-2 declared entries do not feed survival_pass, they go through the badge / recovery-rollback path. |
+| 9.2 — **UNIFIED named-target surface**: `kcdx.declare` (Track-2 author entries) + smart-resolver sub-verb shape `kcdx.<verb>.<name>.<mode>` on hook/bytes/code over the unified table (curated refdb rows + author declarations, same lookup table, same `__index` resolver, routed through the existing owner-aware `address_library::ResolveByName`) + C++ mirror + `kcdx_scan` console command (in-game iterative AOB discovery — the discover-then-declare loop is gated behind it). `kcdx.scan` is excluded from the smart-resolver shape by design (it PRODUCES inputs to the table, doesn't consume them). | **CURATED SUBSTRATE DONE** (refdb cache, commit `498934c`); **DECLARE STORE + RESOLVER EXTENSION + SUB-VERB SURFACE + C++ MIRROR + `kcdx_scan` CONSOLE COMMAND NOT BUILT** — see merged Phase 9.2 below. `src/survival_pass.{cpp,h}` machinery is built but it's the **curated-track** safety mechanism only (per §11.8.3); Track-2 declared entries do not feed survival_pass, they go through the badge / recovery-rollback path. |
 | 9.3 — `kcdx.hook.*` / `kcdx.statement.*` split + `kcdx.locator.*` / `kcdx.op.*` + multi-region trampoline | **NOT STARTED** |
 | 9.4 — `kcdx.find{...}` + `kcdx_dev_inspect` console | **NOT STARTED** |
 | 9.5 — `kcdx.behavior.*` named-behavior catalog | **NOT STARTED** |
@@ -88,7 +88,7 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 | 11c — Lua VM startup via shim | blocked on 11a |
 | 11d — Drop static Lua | blocked on 11a–c |
 
-**Substantive next-pickups (per the table above):** **Phase 9.2 unified named-target surface** (`kcdx.declare` author entries + smart-resolver sub-verb `kcdx.<verb>.<name>.<mode>` over the unified curated+declared table + C++ mirror — the §11.8 STREAMLINE Track-2 deliverable, landing 9.2 and 9.7 as one feature because they're structurally one surface) | Phase 8.5 asset overlay (independent; high user-visible leverage) | Phase 9 high-level Lua surface (independent; pure RE + binder work). Each is one `/feature` cycle; pick by leverage. Phase 11 stays blocked on the FIX A RE.
+**Substantive next-pickups (per the table above):** **Phase 9.2 unified named-target surface** (`kcdx.declare` author entries + smart-resolver sub-verb `kcdx.<verb>.<name>.<mode>` on hook/bytes/code over the unified curated+declared table + C++ mirror + `kcdx_scan` console command — the §11.8 STREAMLINE Track-2 deliverable, landing 9.2 and 9.7 as one feature because they're structurally one surface; `kcdx_scan` console folded in because declare's pattern expert hatch is unusable end-to-end without it) | Phase 8.5 asset overlay (independent; high user-visible leverage) | Phase 9 high-level Lua surface (independent; pure RE + binder work). Each is one `/feature` cycle; pick by leverage. Phase 11 stays blocked on the FIX A RE.
 
 **Governance that POSTDATES the original plan prose — these RULES win where the prose below conflicts:**
 - `.claude/rules/lua-api-surface.md` — the authoring surface (Lua AND C++) is a **learnable sublanguage**; one `kcdx` global, core verbs top-level + grouped domains, configuring=`{table}`/doing=positional, and **full Lua↔C++ feature parity** (invariant on the shipped product; restructure builds Lua-first then backfills C++ per-phase).
@@ -1512,11 +1512,11 @@ kcdx.hook.IsInCombat.after(callback)
 kcdx.hook.IsInCombat.replace(callback)
 kcdx.hook.IsInCombat.around(callback)
 
-kcdx.statement.IsInCombat.replace_with(op)     -- curated or declared
 kcdx.bytes.IsInCombat{replacement = "..."}
-kcdx.scan.IsInCombat()
 kcdx.code.IsInCombat{...}
 ```
+
+(`kcdx.statement.<name>.<op>` is Phase 9.3 scope and slots into the same smart-resolver shape when that phase lands; this phase wires only hook + bytes + code. `kcdx.scan` does NOT get the sub-verb shape — it's the AOB-discovery workbench (it PRODUCES inputs to the unified table, doesn't consume them), so a name in the table is by definition already resolved. See "Scan workflow" below.)
 
 **`kcdx.declared(name)` value accessor** — for declared NON-address entries (the `["1.5.1164953"] = 0x0F` shape):
 
@@ -1530,7 +1530,7 @@ The §11.8.1 example's bare-string-in-arithmetic (`& "combatStateMask"`) is illu
 
 #### Implementation pattern — smart resolver, NOT pre-generated tables
 
-The Lua binder does NOT materialize per-name-per-mode closures at boot. Verb tables (`kcdx.hook`, `kcdx.bytes`, `kcdx.statement`, `kcdx.scan`, `kcdx.code`) carry `__index` metamethods that resolve on demand:
+The Lua binder does NOT materialize per-name-per-mode closures at boot. Verb tables `kcdx.hook` / `kcdx.bytes` / `kcdx.code` carry `__index` metamethods that resolve on demand. (`kcdx.statement` extends to the same shape when Phase 9.3 lands its binder; `kcdx.scan` is excluded by design — see "Scan workflow" below.)
 
 1. `kcdx.hook` is a Lua table with `__index = c_function`.
 2. Lookup of any name (`kcdx.hook.combatResolver`) invokes the metamethod. The metamethod consults the **unified named-target resolver**: it walks self > engine > other per `naming-namespaces.md` (`self` = the calling plugin's author-declared entries via the calling-plugin context the Lua VM already carries; `engine` = the refdb curated cache; `other` = other plugins' declared entries). Miss → return nil. Hit → push a small verb-bound userdata with two upvalues: a unified `ResolvedTarget` and the verb tag (`"hook"`).
@@ -1545,16 +1545,31 @@ Cost at boot: ~5 C functions + ~5 metatables total (one per verb's `__index`). N
 
 #### Engine architecture — one resolver, two backing stores
 
-A single `named_target_resolver.{cpp,h}` module is the unified lookup entry point. It owns the `self > engine > other` walk and dispatches to:
+**The unified lookup entry point is the EXISTING `address_library::ResolveByName`** (owner-aware: takes `name` + `owningAuthor` + `owningPlugin`). It already owns the `self > engine > other` walk via `ResolveBareWinner`. The phase extends it with one new source — declared entries register as an additional `AuthorTarget` provider — and the existing precedence machinery handles the rest. The original spec sketched a separate `named_target_resolver.{cpp,h}` module; the audit confirmed the existing resolver IS that module under a different name, so spawning a new file would duplicate the precedence walk that already exists (the flat-table form `kcdx.hook{target=...}` routes through this same resolver today).
 
-- **Engine tier (curated):** `refdb::ResolveByName(name)` → `CachedEntity` (the existing cache built by `refdb::Open()`). The resolver projects this into a `ResolvedTarget` carrying the same fields the smart-resolver pattern needs (rva, signature, kind, etc.).
-- **Self / other tier (declared):** a new `declared_targets.{cpp,h}` module — the in-memory store the `kcdx.declare` binder populates. Stores `(declaring_author, declaring_plugin, name, module, versions_kv)`. On lookup, picks the matching version-key entry (exact > wildcard; longest-match wildcard wins); if the entry is a `pattern`, runs `scan_engine::ResolveScan` once and memoizes the resolved VA; if the entry is a value, stores it directly. The resolver projects this into a `ResolvedTarget` of the same shape.
+- **Engine tier (curated):** `address_library::ResolveByName` already consults `SeedHasName` / `SeedResolveAddr` at the engine tier, which read the refdb cache built by `refdb::Open()`. The smart resolver projects the resulting `NameResolution` (or the `AuthorTarget` for a self/other winner) into a `ResolvedTarget` carrying the fields the smart-resolver pattern needs (rva, signature, kind, etc.).
+- **Self / other tier (declared):** a new `declared_targets.{cpp,h}` module — the in-memory store the `kcdx.declare` binder populates. Stores `(declaring_author, declaring_plugin, name, module, versions_kv)`. Declared entries register into the existing `AuthorTarget` machinery as a new source kind; `FindAuthorTarget` / `FindOtherAuthorTarget` consult declared entries in addition to the existing patch/symbol sources. On resolve, `ResolveAuthorTargetAddr` routes a declared-source winner through `declared_targets::LookupForCaller`, which picks the matching version-key entry (exact > longest-wildcard) and — for a `pattern` entry — runs `scan_engine::ResolveScan` once and memoizes the resolved VA; for a value entry stores it directly. The Q4 no-match-version case fires the §11.8.2 badge-equivalent log line from here.
 
-The smart resolver's `__index` metamethod is the ONLY caller of the unified entry point. Existing binders (`lua_bind_hook.cpp`, `lua_bind_bytes.cpp`, etc.) continue to resolve names via `address_library::ResolveByName` for the flat-table fallback path. The two resolution paths coexist; over time the documented-common-path canonical is the smart resolver, the flat-table form is documented as dynamic-dispatch fallback.
+The smart resolver's `__index` metamethod calls `address_library::ResolveByName` directly. The existing flat-table form `kcdx.hook{target=...}` already calls the same resolver today, so the two surface shapes coexist and route through one resolution path — over time the documented common path is the smart resolver, the flat-table form is documented as the dynamic-dispatch alternative for raw addresses / patterns without a declared name / etc.
 
 #### C++ mirror — full parity per `lua-api-surface.md`
 
 `kcdxHookInterface::IsInCombat::Before(callback)` (or the equivalent template specialization shape — settled at this phase's design step) mirrors the Lua surface. `kcdxDeclareInterface::Declare(module, name, versions)` mirrors `kcdx.declare`. The full-parity invariant from `.claude/rules/lua-api-surface.md` is preserved: every Lua surface ships with its C++ peer in this same multi-commit feature; both surfaces of one capability get test rows (Lua plugin + C++ DLL plugin, both exercising the same declared name).
+
+#### Scan workflow — `kcdx_scan` console command + the discover-then-declare loop
+
+`kcdx.scan` is the AOB-discovery workbench: author hands it a hex pattern, scan_engine returns matches. It PRODUCES inputs to the unified named-target table (the resolved address becomes the value an author wraps in `kcdx.declare`); it does NOT consume the table. So the smart-resolver `__index` shape — which exists to consume a named entry — does not apply to it. A `kcdx.scan.<name>()` proxy would be a no-op over an address the table has already resolved; ceremony confusing what `kcdx.scan` is for. `kcdx.scan{pattern=...}` Lua form stays unchanged in this phase for runtime conditional scans (rare but legitimate — a plugin that needs to discover an address at boot rather than declare it ahead of time).
+
+What this phase DOES ship for the scan side: a `kcdx_scan` **console command** that lets the author iterate AOB patterns in-game in seconds instead of the multi-minute compile-launch-grep cycle the Lua-only `kcdx.scan` currently forces. The console workflow:
+
+1. Launch the game (one launch, normal).
+2. Open the in-game console (`~`).
+3. `kcdx_scan WHGame.dll "48 8B 88 ?? ?? ?? ?? 48"` → console prints `[scan] 0 matches` / `[scan] 3 matches: WHGame.dll+0x...`.
+4. Iterate the pattern until it resolves uniquely (seconds per iteration).
+5. Paste the working pattern into `kcdx.declare("WHGame.dll", "myTarget", {["1.5.1164953"] = {pattern="...", signature="..."}})` in the author's `plugin.lua`.
+6. Reference by name everywhere: `kcdx.hook.myTarget.before(fn)`.
+
+The console command shares the existing `scan_engine::ResolveScan` path with `kcdx.scan` (one new shared helper, two callers); both surfaces emit the same log lines so the dev-log workflow keeps working. Without this, declare's pattern-based expert hatch is gated behind the same multi-minute round trip the discovery problem already had — declare-with-discovery is a complete workflow only when both ship together. Matches the disassembler-test cornerstone: the engine does the heavy iteration; the author declares intent.
 
 #### What the unified table MUST provide (per-`ResolvedTarget`)
 
@@ -1581,22 +1596,24 @@ Same shape as the existing curated `CachedEntity`, with provenance:
 
 #### Files (sketch — design step within the feature settles exact shapes)
 
-- New `src/declared_targets.{cpp,h}` — the in-memory store + version-key matcher (exact > longest-wildcard); the resolve entry point that runs `scan_engine::ResolveScan` for `pattern` entries and memoizes; the metadata accessor for `value` entries.
-- New `src/named_target_resolver.{cpp,h}` — the unified `self > engine > other` walk; dispatches to `declared_targets` (self/other) + `refdb` (engine); projects both into the unified `ResolvedTarget` shape.
-- New `src/lua_bind_declare.{cpp,h}` — `kcdx.declare(...)` + `kcdx.declared(name)` binders; registers declared entries under the calling plugin's `<author>.<plugin>` namespace.
+- New `src/declared_targets.{cpp,h}` — the in-memory store + version-key matcher (exact > longest-wildcard); the resolve entry point that runs `scan_engine::ResolveScan` for `pattern` entries and memoizes; the metadata accessor for `value` entries; the Q4 no-match-version badge log line.
+- Extend `src/address_library.{cpp,h}` — declared entries register as a new `AuthorTarget` source kind so `FindAuthorTarget` / `FindOtherAuthorTarget` / `ResolveAuthorTargetAddr` consult `declared_targets` alongside the existing patch/symbol sources. No new module; the existing `ResolveByName` IS the unified entry point per Q2.
+- New `src/lua_bind_declare.{cpp,h}` — `kcdx.declare(...)` + `kcdx.declared(name)` binders; registers declared entries under the calling plugin's `<author>.<plugin>` namespace; enforces the Q1 hard-reject for `{pattern=...}` entries without a sibling signature.
 - New `src/declare_interface.cpp` + new entries on `kcdxDeclareInterface` in `include/kcdx/Interfaces.h` (APPEND-ONLY per AP11) + `kcdxInterface_Declare` enum + `interfaces.cpp` `QueryInterface` wire-up + `include/kcdx/Kcdx.h` wrapper member append.
 - `src/lua_bind_hook.cpp` — extend with the `__index` metamethod for the smart-resolver path; the existing flat-table / explicit-positional forms keep working as the dynamic / non-named-target path.
 - `src/lua_bind_bytes.cpp` — same `__index` extension for `kcdx.bytes.<name>(...)`.
-- `src/lua_bind_scan.cpp` — same shape for `kcdx.scan.<name>()`.
 - `src/lua_bind_code.cpp` — same shape for `kcdx.code.<name>(...)`.
+- `src/lua_bind_scan.cpp` — extract the arg-parse + scan-engine-call body of `Lua_Scan` into a shared `RunScan(ScanEntry) -> ScanResult` helper so the `kcdx_scan` console command can call the same code path. The Lua-binding entry shape is unchanged.
+- New `kcdx_scan` console command registration — file TBD at the step's start (where the existing `kcdx_*` console commands are registered); argv parses into a `ScanEntry`, calls the shared `RunScan` helper, prints to console + emits the existing log lines.
 - `src/hook_interface.cpp` + `src/bytes_interface.cpp` + `src/code_interface.cpp` — C++ sub-verb mirror for each.
 - The per-verb "valid modes for this kind" tables: one small static array per verb in the corresponding `src/lua_bind_*.cpp`, plus one in the C++ binding layer.
 
-(Phase 9.3 will introduce `kcdx.statement.*` + `kcdx.locator.*` + `kcdx.op.*`; this phase does NOT pre-extend the smart resolver into those — they slot in when 9.3 lands their binders, the resolver entry points are designed to accept new verbs without churn.)
+(Phase 9.3 will introduce `kcdx.statement.*` + `kcdx.locator.*` + `kcdx.op.*`; this phase does NOT pre-extend the smart resolver into those — they slot in when 9.3 lands their binders, the resolver entry points are designed to accept new verbs without churn. `kcdx.scan` is excluded from the smart-resolver shape by design — see "Scan workflow" above.)
 
 #### Documentation deliverable (`docs/lua/` + `docs/cpp/` per `docs-discipline.md`)
 
-- Per-call entries for each verb in `docs/lua/` (`hook.md`, `bytes.md`, `scan.md`, `code.md`) get a new section **before** the existing flat-table / explicit-positional form, documenting the named-target sub-verb form as the common path for any name in the unified table. The fallback forms stay, documented as dynamic / pattern-locator / raw-address paths.
+- Per-call entries for each verb in `docs/lua/` (`hook.md`, `bytes.md`, `code.md`) get a new section **before** the existing flat-table / explicit-positional form, documenting the named-target sub-verb form as the common path for any name in the unified table. The fallback forms stay, documented as dynamic / pattern-locator / raw-address paths.
+- `docs/lua/scan.md` does NOT get a sub-verb section — the existing `kcdx.scan{pattern=...}` doc stays as the Lua surface, EXTENDED with a new section documenting the `kcdx_scan` console command (the in-game iterative AOB discovery workflow; argv shape; the discover-then-declare loop ending in `kcdx.declare`). The console command becomes the documented common path for AOB discovery; `kcdx.scan{...}` Lua form is documented as the runtime-conditional-scan alternative.
 - New `docs/lua/declare.md` — full reference for `kcdx.declare(module, name, versions_kv)` + `kcdx.declared(name)`. Lead with the "what does this do" framing (extends the unified named-target table with your own per-version names, accessible by the same `kcdx.<verb>.<name>` shape curated entities use); document version-key forms (explicit + wildcard); document the value vs pattern entry shapes; document the `<author>.<plugin>.<bare>` namespacing; document the badge behaviour on undeclared versions.
 - New `docs/cpp/declare.md` — C++ mirror, marked NYI until the C++ side ships in this same phase (then NYI marker is removed in the same commit per `docs-discipline.md` §3).
 - `docs/lua/index.md` + `docs/cpp/index.md` — front-door framing gets the unified shape woven in: `kcdx.<verb>.<name>` is the one-liner an author types for a curated target OR a name they declared; mention `kcdx.declare` as the way to add author-owned names to the same surface.
@@ -1619,7 +1636,8 @@ Same shape as the existing curated `CachedEntity`, with provenance:
 - **Negative #4 — declared without a hook-usable signature on the running version:** test plugin declares only `{pattern = "..."}` (no signature) then tries `kcdx.hook.<name>.before(fn)`; install fails with the teaching error documented above (a callback hook needs a signature).
 - **Deprecated curated entity:** pick a name whose `verification_state` is DEPRECATED in the running version; `kcdx.hook.<name>.before(fn)`; resolver emits a one-shot WARN naming the replacement; install still succeeds against the deprecated row; PASS when WARN is in the log AND the hook fires.
 - **C++ mirror parity:** a C++ DLL test plugin uses `K.hook->IsInCombat::Before(callback)` (or the settled template-specialization shape) against the same curated name; PASS. Same against a declared name via `K.declare->Declare(...)` from the same DLL.
-- **Suite stays X/Y green** (no regressions in any prior Phase 9 row; the flat-table forms continue to work for non-named-target paths).
+- **`kcdx_scan` console command:** a test plugin auto-passes on "command registered" boot check (looked up via the existing IConsole query path used by the other `kcdx_*` commands). In-game test-mode = `console`, exact argv = `kcdx_scan WHGame.dll "<known-good pattern for a stable WHGame.dll byte sequence>"`, falsifiable observable = the expected match count + apply addr visible in console output AND mirrored to `kcdx-dev.log`. The existing `cap-32-scan` row for the Lua `kcdx.scan{...}` form stays green (no regression).
+- **Suite stays X/Y green** (no regressions in any prior Phase 9 row; the flat-table forms continue to work for non-named-target paths; the existing `kcdx.scan{...}` Lua form is unchanged).
 
 ### Phase 9.3 — `kcdx.hook.*` + `kcdx.statement.*` split + `kcdx.locator.*` + `kcdx.op.*` value namespaces + multi-region trampoline pool — **NOT STARTED**
 
