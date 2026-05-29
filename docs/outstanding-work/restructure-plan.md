@@ -55,7 +55,40 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 
 ## As-built status + governance (read this before "continuing in order")
 
-**Built + live-verified:** Phase 1 (launcher, paths) and Phase 2 subs 1–9 + the AP12 disassembler-test batch + the multi-file-plugin feature + `kcdx.command` + the per-entry-zone (both-phase) feature + `kcdx.code` + `kcdx.cosave.*` + `kcdx.scan` + `zone_gate` (the `kcdx.hook` surface with all six modes — before/after/around/replace + mid + callsite — chaining, locators incl. address_id-by-name; the name-carries-the-ABI `target=` form; `kcdx.on` lifecycle bridge + `ready`; `kcdx.publish` cross-plugin pub/sub; plugin-scoped `require` + complete source attribution; `kcdx.log.*`; C++ `ResolveAddressByName`; `kcdx.command` + `kcdx.console.execute` over the proven console path; the both-phase execution model — deferred-then-immediate command arming, load-order-priority `lua`/`lua_after` entrypoints, `kcdxPlugin_PostGameLoad` C++ export, kcdx-owned `require`; `kcdx.code` trampoline allocation over the pool + symbol table; `kcdx.cosave.*` save/load persistence with a name-derived UID + string-tag records — interface Version 1→2, CAP-12 migrated to the named path; `kcdx.scan` diagnostic-AOB-validation verb over `scan_engine::ResolveScan` with per-match module attribution; `zone_gate` per-API `requireZone` capability gating with the two-flag `userEnabled && engineAccepted` model, single-gate single-checkpoint enforcement, the `kcdx.plugin.is_rejected` accessor, and PLUGIN_REJECTED teaching log line per plan:165-168 shape). Suite verified per feature checkpoint (per `test-plugins/README.md`); `cap-04-c` is the one known pre-existing FAIL (legacy mid-hook auto-skip — the new `hook_chain` did NOT inherit it; CAP-21-skip proves the fresh dispatcher is clean), the rest are standing `[manual]`/in-game rows. The authoritative sub-by-sub ledger is the Phase 2 section below; per-row live evidence is `test-plugins/README.md`; chronology is `git log`. **Phase 2 is now COMPLETE — all seven core verbs (`kcdx.hook`/`bytes`/`code`/`on`/`command`/`publish`/`scan`) + the `kcdx.*` domains + `docs/lua/` reference + `zone_gate` capability gating + the `kcdx.plugin.*` introspection domain are DONE.** Phases 3–11 not started — see each phase.
+**Built + live-verified:** Phase 1 (launcher, paths) and Phase 2 subs 1–9 + the AP12 disassembler-test batch + the multi-file-plugin feature + `kcdx.command` + the per-entry-zone (both-phase) feature + `kcdx.code` + `kcdx.cosave.*` + `kcdx.scan` + `zone_gate` (the `kcdx.hook` surface with all six modes — before/after/around/replace + mid + callsite — chaining, locators incl. address_id-by-name; the name-carries-the-ABI `target=` form; `kcdx.on` lifecycle bridge + `ready`; `kcdx.publish` cross-plugin pub/sub; plugin-scoped `require` + complete source attribution; `kcdx.log.*`; C++ `ResolveAddressByName`; `kcdx.command` + `kcdx.console.execute` over the proven console path; the both-phase execution model — deferred-then-immediate command arming, load-order-priority `lua`/`lua_after` entrypoints, `kcdxPlugin_PostGameLoad` C++ export, kcdx-owned `require`; `kcdx.code` trampoline allocation over the pool + symbol table; `kcdx.cosave.*` save/load persistence with a name-derived UID + string-tag records — interface Version 1→2, CAP-12 migrated to the named path; `kcdx.scan` diagnostic-AOB-validation verb over `scan_engine::ResolveScan` with per-match module attribution; `zone_gate` per-API `requireZone` capability gating with the two-flag `userEnabled && engineAccepted` model, single-gate single-checkpoint enforcement, the `kcdx.plugin.is_rejected` accessor, and PLUGIN_REJECTED teaching log line per plan:165-168 shape). Suite verified per feature checkpoint (per `test-plugins/README.md`); `cap-04-c` is the one known pre-existing FAIL (legacy mid-hook auto-skip — the new `hook_chain` did NOT inherit it; CAP-21-skip proves the fresh dispatcher is clean), the rest are standing `[manual]`/in-game rows. The authoritative sub-by-sub ledger is the Phase 2 section below; per-row live evidence is `test-plugins/README.md`; chronology is `git log`. **Phase 2 is now COMPLETE — all seven core verbs (`kcdx.hook`/`bytes`/`code`/`on`/`command`/`publish`/`scan`) + the `kcdx.*` domains + `docs/lua/` reference + `zone_gate` capability gating + the `kcdx.plugin.*` introspection domain are DONE.**
+
+**Phase ledger (2026-05-28 audit):**
+
+| Phase | Status |
+|---|---|
+| 1 — launcher exe + paths | **DONE** (live-verified) |
+| 2 — Lua API skeleton (7 core verbs + domains + `docs/lua/` + zone_gate + `kcdx.plugin.*`) | **DONE** |
+| 3 sub-1 — `kcdxHookInterface` v1 + `Kcdx.h` wrapper + sig-mismatch gate | **DONE** (`cdd5e7a` / `b5e548a` / `d5c3314`) |
+| 3 sub-2 — `kcdxBytesInterface` | **DONE** (`2b2e6f5`) |
+| 3 sub-3 — `kcdxCodeInterface` (trampoline) | **DONE** (`38f9dd5`) |
+| 4 — migrate test suite + engine builtin | **DONE for plugins** (corpus migrated; audit confirms 0 legacy behavior tables in production manifests). **bugsplat builtin DLL is BLOCKED on Phase 11** (manifest-only stub ships today). |
+| 5 — delete old TOML behavior parsers | **DONE** (`95854fe`) |
+| 6 — probe code cleanup (narrow subset) | **DONE** (`3f66c47`) |
+| 7 — zone-rework subset | **DONE** (`54d7d4d`) |
+| 7 — `before_game` doc widening (round-2 decision 4 from init-cycle-ownership) | **DONE post-step-4** (`9264d6a` + `43a9c14`) |
+| 7 — `authored_against_game_version` / `on_changed_function` manifest fields | **SUPERSEDED 2026-05-27** by §11.8 STREAMLINE three-track model. Original spec WILL NOT BE BUILT; replacement is `kcdx.declare` (under Phase 9.2). |
+| 8 — ASI-loader cleanup (docs) | **DONE** (2026-05-26) |
+| 8.5 — Asset replacement (pak overlay) | **NOT STARTED** (8.5a partial: `CCryPak_FOpen` named in refdb + observe-only FOPEN probe live; PRODUCTION asset-overlay map / hook / Lua surface NOT BUILT) |
+| 9 — High-level Lua surface (player.health/.position + inventory.add + stubs) | **NOT STARTED** |
+| 9.1 — SQLite reference DB + lookup primitive + per-plugin verification cache | **DB + ENGINE CONSUMER DONE** (`address_names` + `address_versions` schema ships; refdb owns the cache, commit `498934c`; `refdb::ResolveByName/ResolveById` is the lookup primitive — `hash_at` is not a separate symbol). `version_check.bin` cache plumbing ships; production FEED awaits Phase 9.2's `kcdx.declare`. |
+| 9.2 — Per-version survival mechanics | **MACHINERY 80%** (`src/survival_pass.{cpp,h}` + cache schema + self-test); **SURFACE + BINDER WIRING NOT BUILT** (no `kcdx.declare` / no `lua_bind_declare.cpp`; no production binder calls `RecordTouchedRef`; no apply-time `on_changed` enforcement). Re-spec required around `kcdx.declare`. |
+| 9.3 — `kcdx.hook.*` / `kcdx.statement.*` split + `kcdx.locator.*` / `kcdx.op.*` + multi-region trampoline | **NOT STARTED** |
+| 9.4 — `kcdx.find{...}` + `kcdx_dev_inspect` console | **NOT STARTED** |
+| 9.5 — `kcdx.behavior.*` named-behavior catalog | **NOT STARTED** |
+| 9.6 — `kcdx.bytes` narrowing + rule 4/4a update + final migration | **NOT STARTED** |
+| 9.7 — Curated-target sub-verb resolver (`kcdx.<verb>.<name>.<mode>`) | **SUBSTRATE DONE** (refdb cache, commit `498934c`); **LUA + C++ SURFACE NOT BUILT** |
+| 10 — `[[event]]` → `kcdx.on(...)` event catalog | **LIFECYCLE EVENTS DONE** (`messaging.cpp` wires every save/load/post-load/input-loaded/etc.); **GAMEPLAY EVENT CATALOG NOT STARTED** (the 10–15 NEW gameplay events damage_taken / dialogue_line_spoken / item_picked_up / etc. are NOT RE'd or hooked) |
+| 11a — FIX A shim integration | **NOT STARTED** (depends on `_research/phase8-fix-a/` RE — ~38% RVAs mapped at last writing) |
+| 11b — Force-load WHGame.dll from kcdx.dll DllMain | blocked on 11a |
+| 11c — Lua VM startup via shim | blocked on 11a |
+| 11d — Drop static Lua | blocked on 11a–c |
+
+**Substantive next-pickups (per the table above):** `kcdx.declare` (Phase 9.2's keystone surface — the §11.8 STREAMLINE replacement for the dropped `authored_against_game_version` mechanism) | Phase 9.7 Lua + C++ smart-resolver surface (substrate ready) | Phase 8.5 asset overlay (independent; high user-visible leverage) | Phase 9 high-level Lua surface (independent; pure RE + binder work). Each is one `/feature` cycle; pick by leverage. Phase 11 stays blocked on the FIX A RE.
 
 **Governance that POSTDATES the original plan prose — these RULES win where the prose below conflicts:**
 - `.claude/rules/lua-api-surface.md` — the authoring surface (Lua AND C++) is a **learnable sublanguage**; one `kcdx` global, core verbs top-level + grouped domains, configuring=`{table}`/doing=positional, and **full Lua↔C++ feature parity** (invariant on the shipped product; restructure builds Lua-first then backfills C++ per-phase).
@@ -1254,20 +1287,19 @@ As-built deviations from the planned shape above (decided during the cycle):
 - **Step-review L-finding (5-pre-fix)**: `s_gameMainThreadCaptured` static-bool sentinel in `SetLuaState` is defensive — `SetGameMainThread` is already idempotent. Comment justifies it on intent-clarity grounds. Either keep as-is or drop the sentinel + shrink the comment. Cosmetic.
 - **Sig-mismatch gate — RESOLVED (landed `18f5e6a` + cap-38 row finalization `d8e4ac3`).** ~~On the named-target + explicit-`opts.signature`-both-present combination, `hook_interface.cpp` ResolveSignature (`:252-258`) trusts the explicit signature outright and never cross-checks it against the verified Address-Library ABI it has in hand — so a named target + a WRONG explicit signature is silently accepted (an author footgun on the exact surface AP12 protects).~~ Fixed with the user-decided **behavior-c: WARN + keep the explicit sig** (2026-05-25). When a hook names a target carrying a verified ABI AND the author also passes an explicit signature, the engine consults the verified ABI to DETECT the conflict, emits a teaching WARN (`HOOK_SIG_GATE` / `explicit_overrides_verified`) when they are NOT `SignaturesCompatible`, then PROCEEDS with the explicit sig (the deliberate-override case stays authoritative). Both surfaces gated: `src/hook_interface.cpp` `ResolveSignature` + `src/lua_bind_hook.cpp` signature resolution; `SignaturesCompatible` promoted from a `hook_chain.cpp` file-local to a `hook_signature.h`-declared surface (body still in `hook_chain.cpp`). Regression: **cap-38** (`cap-38-sig-mismatch-gate/` C++ + `cap-38-sig-mismatch-gate-lua/` Lua, both naming `kcdx.lua_settable` + the wrong `void (ptr L)` sig) — an auto `gate-proceeds` row per surface (handle non-zero / applied / fires) + a `[manual]` `gate-warn` log-assert row per surface (orchestrator greps the WARN KV line; pre-fix NO line → FAIL). Kcdx.h's named common path leaves `opts.signature` null so the wrapper never trips this; a raw-floor caller still benefits from the WARN.
 
-### Phase 4 — migrate test suite + engine builtin
+### Phase 4 — migrate test suite + engine builtin — **DONE**
 
-**Phase 4a — pilot plugin first. DONE (live-verified `1d0faf1`, 2026-05-25: suite 99/107, CAP-01 PASS).** Migrated `cap-01-patch` end-to-end from `[[patch]]` TOML + verifier DLL → a pure-Lua `kcdx.bytes` plugin (same site/bytes, self-verifies at `kcdx.on("ready")` via `h:applied()` + a `kcdx.scan` read-back). Suite green with cap-01 on the new path, the other plugins still on the legacy TOML path. **Pilot finding (informs 4b):** the migration must move a `[[patch]]` `pattern=` locator that spans the mutated bytes to a `target=`/`address_id` NAME locator — the first launch FAILED because cap-01's pattern AOB ended in `44 8A F0` and cap-39 (same site, by name) rewrote it first, so the pattern scanned 0 matches; switching cap-01 to `target="outfit_swap_callsite_aob"` + `offset=13` (the disassembler-test name locator) fixed it (cap-39-first → idempotent-skip → applied). Original plan flow below retained.
+**Status (2026-05-28 audit):** every shipping plugin is on the new code surface (`plugin.lua` / DLL using `kcdx.*` Lua + `kcdx*Interface` C++). Audit: `grep -rE "^\[\[(patch|hook|mid_hook|trampoline|scan)\]\]" test-plugins/**/kcdx.toml kcdx-engine/builtin/**/kcdx.toml` returns ONE match — `test-plugins/cap-49-fix-stray-table/kcdx.toml` — which is a Phase-5 reject FIXTURE (the `[[patch]]` IS the stray top-level table whose silent-unparse-then-load-reject is the row's contract; see cap-49-observer's `cap-49-reject-stray-table` row). Phase 4a's pilot finding stays as the historical anchor; Phase 4b/4c shipped without a doc-recorded landing commit pair (the migration was incremental across the Phase 5 narrow cut and after).
+
+**Phase 4a — pilot plugin first. DONE (live-verified `1d0faf1`, 2026-05-25: suite 99/107, CAP-01 PASS).** Migrated `cap-01-patch` end-to-end from `[[patch]]` TOML + verifier DLL → a pure-Lua `kcdx.bytes` plugin (same site/bytes, self-verifies at `kcdx.on("ready")` via `h:applied()` + a `kcdx.scan` read-back). Suite green with cap-01 on the new path, the other plugins still on the legacy TOML path. **Pilot finding (informs 4b):** the migration must move a `[[patch]]` `pattern=` locator that spans the mutated bytes to a `target=`/`address_id` NAME locator — the first launch FAILED because cap-01's pattern AOB ended in `44 8A F0` and cap-39 (same site, by name) rewrote it first, so the pattern scanned 0 matches; switching cap-01 to `target="outfit_swap_callsite_aob"` + `offset=13` (the disassembler-test name locator) fixed it (cap-39-first → idempotent-skip → applied). Original plan flow below retained as the as-built record.
 
 Before the batch migration, migrate ONE test plugin (recommended: `cap-01-patch` — simplest case, exercises `kcdx.bytes`) end-to-end to the new API. Verify the suite stays green with this one plugin on the new path and the others still on the legacy TOML path. This validates the new API actually works at the plugin author level, not just internally. If something breaks, the diagnostic surface is tiny (one plugin to look at).
 
-**Phase 4b — batch migration.** Once Phase 4a is green, migrate the remaining 20 test plugins in batches of ~5 per commit. Each batch:
-- Replaces behavior TOML with `plugin.lua` or DLL using new APIs.
-- Validates batch passes 21/21 before merging — engine launches, all expected tests pass, no new errors in logs.
-- A failing batch is reverted to that batch's first commit (`git revert`); plan continues with the failed plugin diagnosed before retrying.
+**Phase 4b — batch migration. DONE.** Every test plugin in `test-plugins/` ships behavior in `plugin.lua` / DLL using `kcdx.*` / `kcdx*Interface`. The corpus migration completed without an explicit landing-commit pair recorded here; the doc lagged the work. Audit confirms 0 legacy behavior tables in production manifests (the one `[[patch]]` survivor is `cap-49-fix-stray-table`'s reject fixture, by design).
 
-**Phase 4c — engine builtin migration (bugsplat-filename-fix).** Last in this phase because it requires the new API to be proven by Phase 4a+4b first. Migrate `engine/builtin/bugsplat-filename-fix/` to a DLL using the new `kcdxHookInterface` (intercept BugSplat ctor, mutate `szApp`). Verify the BugSplat dmp now lands with a sanitized filename — closes the original investigation arc. Flip `engine/load_order.toml` to enable the new bugsplat fix.
+**Phase 4c — engine builtin migration (bugsplat-filename-fix). MANIFEST-ONLY STUB ships; the DLL fix is BLOCKED on Phase 11.** `kcdx-engine/builtin/bugsplat-filename-fix/kcdx.toml` exists as a manifest-only stub (no `plugin.lua`, no DLL, `enabled = false` per the doc's earlier note). The actual filename-fix DLL was deferred because the surface the fix needs — Lua-in-before_game / DllMain-timed installs on a foreign-module export — lands at Phase 11 (per the bugsplat probe carried over from Phase 6 + the `before-game-hooks.md` outstanding-work spec). The `f03ca83` debug-agent commit that closed the unrelated step-4 boot AV is NOT this builtin's landing.
 
-**End state:** every shipping plugin uses the new APIs. The old TOML behavior parsers are now genuinely unused (still compiled, but nothing populates anything via them). Suite 21/21 + bugsplat verified.
+**End state (achieved for plugins; pending for bugsplat builtin):** every shipping test plugin uses the new APIs; the old TOML behavior parsers were genuinely unused once the migration completed (Phase 5 then deleted them, narrow cut). Bugsplat-filename-fix lands at Phase 11.
 
 ### Phase 5 — delete old TOML behavior parsers — **DONE (narrow cut, live-verified `95854fe`, 2026-05-26: suite 102/109, only the pre-existing CAP-20-target-nosig FAIL; 55/55 manifests valid).**
 
@@ -1291,7 +1323,7 @@ Before the batch migration, migrate ONE test plugin (recommended: `cap-01-patch`
 
 **Zone-rework subset — DONE + live-verified (`54d7d4d`, 2026-05-26: suite 102/109; COMP-13-zone-reject, COMP-03, COMP-11 all PASS — the zone-via-new-key gate chain + the priority orderings survived the rename; 55/55 manifests valid).** The per-plugin manifest hints were renamed from `[plugin].default_position` / `[plugin].default_priority` to a new per-plugin `[load_order]` table (`zone` + `priority`), a HARD rename: `ParsePluginManifest` (`src/config.cpp`) reads ONLY the new `[load_order]` keys; the legacy `[plugin]` keys are no longer read (silently ignored). The internal `Manifest.defaultPosition` / `Manifest.defaultPriority` fields and their `load_order.cpp` consumers were left unchanged (only the TOML keys read FROM changed). The static per-API `requireZone` gate (zone_gate) was already live and is unaffected — it reads the internal zone field that `ParsePluginManifest` still populates. All plugins carrying the old keys (11: the 3 named here plus cap-36/-36-lua/-37/-38/-38-lua, comp-03-A/-B, comp-11-a/-b) were migrated to `[load_order]`.
 
-**Survival manifest fields — DEFERRED to Phase 9.1/9.2, AND MATERIALLY SUPERSEDED 2026-05-27 (read this before resuming).** The `authored_against_game_version` / `on_changed_function` fields below are NOT built. The original mechanism described here — *"the engine pre-checks every hooked function's hash against the SQLite reference DB and refuses-to-install on drift"* — rests on auto-tracking all ~321K binary functions across versions, which feasibility arithmetic killed (see `docs/outstanding-work/parallel-ghidra-research.md` §11.8 "STREAMLINE"). The streamlined model has THREE tracks (curated ~139 / author-declared via `kcdx.declare(module, name, versions)` / bulk DEV-DB discovery only), and the pre-check primitive (`hash_at`) only applies to the curated track. For author-declared (Track 2) the safety model becomes **recovery + rollback** (see the new outstanding-work bullet "Recovery + rollback for Track-2 plugins…"), not pre-check.
+**Survival manifest fields — SUPERSEDED 2026-05-27 by the §11.8 STREAMLINE three-track model. The `authored_against_game_version` / `on_changed_function` fields below WILL NOT BE BUILT as specified.** The original mechanism — *"the engine pre-checks every hooked function's hash against the SQLite reference DB and refuses-to-install on drift"* — rests on auto-tracking all ~321K binary functions across versions, which feasibility arithmetic killed (see `parallel-ghidra-research.md` §11.8 "STREAMLINE"). The streamlined model has THREE tracks (curated ~139 / author-declared via `kcdx.declare(module, name, versions)` / bulk DEV-DB discovery only). The pre-check primitive applies ONLY to the curated track (and is now `refdb::ResolveByName` itself — the engine carries per-version address + signature + content_hash + length per curated entity, see Phase 9.1). For author-declared (Track 2) the safety model becomes (a) author-supplied per-version `kcdx.declare` resolution + (b) **recovery + rollback at install/runtime** for any Track-2 plugin running on a version it didn't declare for (see the new outstanding-work bullet "Recovery + rollback for Track-2 plugins…"), not pre-check.
 
 **What SURVIVES of the original below + what SUPERSEDES:**
 - ✅ The `warn_and_try` default *posture* (warn, attempt anyway) SURVIVES — it aligns with the new default-ON UX. The user keeps mods running across patches by default; warnings/badges surface what may break.
@@ -1300,7 +1332,7 @@ Before the batch migration, migrate ONE test plugin (recommended: `cap-01-patch`
 - ❌ "Engine derives 'uses hash-checked primitive' from runtime registrations" is SUPERSEDED — the new derivation is "the plugin uses Track-2 (`kcdx.declare`) declarations, and the running game version isn't in their declared set."
 - ❌ The per-call `on_changed = "refuse_entry"` override syntax is SUPERSEDED in part — the per-call override still makes sense for safety-critical entries, but the trigger (a hash check vs the new "pattern doesn't resolve / sanity check fails") differs.
 
-Re-spec when this resumes; the prose below is a HISTORICAL anchor, not the current direction.
+**The current direction is `kcdx.declare(module, name, [versions_kv])` (§11.8.1 of parallel-ghidra-research.md) — not built yet (no `lua_bind_declare.cpp`); its landing surface is Phase 9.2's re-spec, not this Phase-7 block.** The prose below is a HISTORICAL anchor of the original design, kept to document what was REPLACED, not what to build.
 
 - [src/load_order.cpp](../../src/load_order.cpp): `DeriveMinZone` becomes a read of `[load_order].zone` from the manifest. No more vector scans.
 - Per-API `requireZone` check live (Lua + C++).
@@ -1337,21 +1369,25 @@ Author's first interaction with the field is one paste from the error message. N
 - Word-search the repo for "kcdx.asi", "Ultimate ASI Loader", "dinput8". Each hit removed or annotated as legacy. **DONE (2026-05-26):** prescriptive-stale references in PRESCRIPTIVE docs prose + `src/` code-comments reframed `.asi`/Ultimate-ASI/dinput8 → `kcdx.dll` / own-launcher injection. Comments + prose only — zero code/logic changes. Files touched: `docs/dev-mode.md`, `docs/load-order.md`, `docs/logging.md`, `docs/design-gaps.md`, `docs/phase5c7b-plan.md`; `src/dllmain.cpp`, `src/ldr_notify.{cpp,h}`, `src/log.cpp`, `src/hooks.cpp`, `src/config.cpp`, `src/address_library.h`, `src/watchdog/main.cpp`, `src/watchdog_spawn.h`, `src/probes/bugsplat_ctor_probe.{cpp,h}`. Already-correct legacy framing CONFIRMED (not touched): `.claude/rules/loader-architecture.md`, `docs/loader-architecture.md`, `README.md`, `CLAUDE.md`. Survivor sweep: every remaining `kcdx.asi`/`dinput8`/`Ultimate ASI Loader` reference in `docs/` + `.claude/` + `CLAUDE.md` is exempt/historical (migration.md, VERIFY_PHASE*, design.md SUPERSEDED, restructure-plan.md as-built record, known-issues/closed/) or explicit legacy framing — no prescriptive survivor. THREE runtime STRING LITERALS left unchanged (logic, out of scope for a comment/prose sweep, SURFACED): `src/config.cpp:676` (`L"kcdx.asi"` filename-exclusion compare in plugin discovery), `src/log.cpp:643` (`SetConsoleTitleA("kcdx.asi")` console-title cosmetic), `src/hooks.cpp:163` + `src/probes/bugsplat_ctor_probe.cpp:253` (PROBE log-line text). These are runtime behavior, not prose — flagged for a separate logic-touching change if desired.
 - Final README + docs sweep. **README confirmed already current** (own-launcher framing). In-game verification gate (Phase-8 §"verification" line below) still pending the next launch.
 
-### Phase 8.5 — Asset replacement (kcdx absorbs pak mods)
+### Phase 8.5 — Asset replacement (kcdx absorbs pak mods) — **NOT STARTED (8.5a partial: pak resolver IDENTIFIED but not detoured for asset overlay)**
+
+**Status (2026-05-28 audit):** 8.5a is PARTIAL — `CCryPak_FOpen` is named in refdb (kcdx_id 131) + the observe-only FOPEN probe (`src/probes/fopen_override_probe.cpp`) detours the body in dev mode for path classification, NOT for asset replacement. 8.5b/c/d/e are NOT BUILT — no `[entrypoints].assets` parse, no overlay map, no `kcdx.assets.*` Lua surface (grep `src/lua_bind*.cpp` for `assets` returns nothing), no `kcdxAssetInterface`, no `cap-XX-asset-replace` plugin. The pak-mod ABSORB path (mod-loader takeover landing pak mods into MOUNT verbatim) is a SEPARATE feature already complete — that is NOT this phase. This phase is OVERLAY: a kcdx plugin shipping a single loose file that OVERRIDES a pak-resident asset by virtual path.
 
 The "kcdx replaces pak mods" section above is this phase's scope. Sub-phases:
 
-- **Phase 8.5a**: hook the game's pak resolver. Identify `CrySystem::ICryPak::OpenResource` (or equivalent) via existing Address Library + Ghidra. Add to `address-library/database.csv`.
-- **Phase 8.5b**: parse `[entrypoints].assets` directories at plugin discovery. Build an in-memory overlay map keyed by virtual path → (plugin, file_path).
-- **Phase 8.5c**: in the pak resolver hook, check the overlay map first. On hit, return plugin file. On miss, fall through to vanilla.
-- **Phase 8.5d**: ship the Lua surface (`kcdx.assets.replace`, `kcdx.assets.replace_static`, conflict reporting).
-- **Phase 8.5e**: test plugin (`cap-XX-asset-replace`) that replaces a known-safe game file + verifies the replacement is visible in-game.
+- **Phase 8.5a**: hook the game's pak resolver. **PARTIAL** — `CCryPak_FOpen` is named in refdb (`src/mod_absorb/...` uses the resolved address via `refdb::ResolveAddrByName("CCryPak_FOpen")`; FOPEN probe at `src/probes/fopen_override_probe.cpp` detours observe-only in dev mode). The PRODUCTION asset-overlay hook is not installed.
+- **Phase 8.5b**: parse `[entrypoints].assets` directories at plugin discovery. **NOT BUILT** — no parse, no in-memory overlay map.
+- **Phase 8.5c**: in the pak resolver hook, check the overlay map first. **NOT BUILT**.
+- **Phase 8.5d**: ship the Lua surface (`kcdx.assets.replace`, `kcdx.assets.replace_static`, conflict reporting). **NOT BUILT**.
+- **Phase 8.5e**: test plugin (`cap-XX-asset-replace`) that replaces a known-safe game file + verifies the replacement is visible in-game. **NOT BUILT**.
 
 After Phase 8.5, the `pak-mods.md` workspace rule is rewritten to "pak mods are deprecated; use `[entrypoints].assets` — see `docs/asset-replacement.md`." Existing pak mods keep working; kcdx is the path forward for new TC work.
 
 **Verification gate**: a TOML-only plugin with `[entrypoints].assets = "assets/"` containing a known-safe replacement (e.g. a UI string in a menu) loads, the in-game UI shows the replacement, the engine log emits the overlay-hit line, and a second plugin replacing the same file gets a "lost to plugin X" log line per existing conflict-report shape.
 
-### Phase 9 — High-level Lua surface: 3 real capabilities + namespace structure for the rest
+### Phase 9 — High-level Lua surface: 3 real capabilities + namespace structure for the rest — **NOT STARTED**
+
+**Status (2026-05-28 audit):** zero `kcdx.player.*` / `kcdx.inventory.*` / `kcdx.world.*` / `kcdx.dialogue.*` / `kcdx.quest.*` binder in `src/lua_bind*.cpp`. None of the three "ships real" items (player.health, player.position, inventory.add) are built; the namespace stub tables are not registered. No `cap-XX-player-*` / `cap-XX-inventory-*` test plugin.
 
 Addresses [docs/design-gaps.md](../../docs/design-gaps.md) gap #16 (high-level Lua surface for gameplay).
 
@@ -1373,11 +1409,18 @@ Each ships with its corresponding Address Library entries (added in this phase i
 
 **Verification:** the 3 real items ship with regression tests. A test plugin calls `kcdx.player.health:set(50); assert(kcdx.player.health:get() == 50)` — failing the assert fails the test. Same for position and inventory.add.
 
-### Phase 9.1 — SQLite reference DB + `hash_at()` + per-plugin verification cache
+### Phase 9.1 — SQLite reference DB + lookup primitive + per-plugin verification cache — **DB + ENGINE CONSUMER DONE; survival-cache PLUMBED-BUT-NOT-FED**
 
-**SCHEMA SUPERSEDED 2026-05-28** — read `docs/outstanding-work/parallel-ghidra-research.md` §11.9 for the ACTUAL shipped schema. The flat `functions` / `statements` / `applicable_ops` / `behaviors` / `meta` shape sketched below was the pre-RE-evidence design; what shipped is `address_names` + `address_versions` (the kcdx-curated registry + per-version resolve facts, flattened from the intermediate entities/entity_versions/kcdx_overlay/kcdx_overlay_versions design) plus DEV-only `statements`/`referenced_vars`/`call_edges` carrying the universal `address_version_id` FK + nullable `kcdx_id` FK. The `hash_at(name, version)` lookup primitive becomes a one-join `SELECT` over `address_names`→`address_versions` (curated only); the bulk function table for `kcdx.find` discovery lives in DEV as `address_versions` rows with `kcdx_id NULL`. `behaviors` / `applicable_ops` tables were never built and are deferred indefinitely (no current consumer; behavior catalog work is its own thing). The **engine consumer** (`src/refdb.{cpp,h}`, `src/survival_pass.h`) is currently consuming an intermediate version of the schema; its update to the §11.9 shape is tracked separately. The cache + `version_check.bin` notes below remain accurate.
+**Status (2026-05-28 audit):**
+- **DB ships** at `data/reference.sqlite`, USER schema = `address_names` + `address_versions` + the dictionary/registry tables (see `data/reference.md` + `parallel-ghidra-research.md` §11.9 for the actual schema).
+- **Lookup primitive is `refdb::ResolveByName(name)` / `ResolveById(kcdx_id)`** — refdb owns the bulk-built in-memory cache (commit `498934c`, the refdb-owns-the-cache refactor). The originally-planned standalone `hash_at(name, version)` C++ helper was never built as a separate symbol — the cached `address_versions.content_hash` + `length` are fields on `refdb::NameResolution` / `CachedEntity` instead, accessed via the existing resolve. Same effective primitive, different shape.
+- **Per-plugin verification cache (`version_check.bin`) exists** at `<kcdx-engine>/cache/version_check.bin` and `survival_pass::RunPass` writes it — but no PRODUCTION binder calls `RecordTouchedRef`, so the cache contains only the self-test's synthetic data (see `src/version_check_selftest.cpp`). The cache PLUMBING ships; the production FEED awaits Phase 9.2's binder wiring against the §11.8 STREAMLINE model.
+- **`behaviors` / `applicable_ops` DB tables** — never built; deferred indefinitely. No current consumer.
+- **`statements` / `referenced_vars` / `call_edges`** — DEV-only tables (the bulk function table for `kcdx.find` discovery); not consumed by production (Phase 9.4 is not built).
 
-The infrastructure phase for cross-version survival. Engine ships function/statement metadata as a single SQLite file; every hash-checked primitive (Phases 9.2+) routes through one lookup primitive.
+**SCHEMA SUPERSEDED 2026-05-28** — read `parallel-ghidra-research.md` §11.9 for the shipped schema. The original `functions` / `statements` / `applicable_ops` / `behaviors` / `meta` flat shape sketched below was the pre-RE-evidence design; reading the section below is HISTORICAL anchoring, not specification.
+
+The infrastructure phase for cross-version survival. Engine ships function/statement metadata as a single SQLite file; every cross-version consumer (Phase 9.2's enforcement, Phase 9.4's discovery) routes through the refdb cache lookup.
 
 **Scope:**
 
@@ -1410,21 +1453,28 @@ The engine dispatches by argument type/shape (string vs integer; string-matching
 
 **Verification gate:** a synthetic test against a hand-built `reference.sqlite` with 100 rows calls `hash_at("test_function", "1.5.x")` and gets the expected hash; cache invalidation tested by modifying `toml_mtime` → cache miss → recheck runs.
 
-### Phase 9.2 — Per-version survival mechanics (engine plumbing)
+### Phase 9.2 — Per-version survival mechanics — **MACHINERY 80%; SURFACE (`kcdx.declare`) + BINDER WIRING NOT BUILT**
 
-Wires the Phase 7 manifest fields to the Phase 9.1 lookup primitive. Engine-only phase; no new author surface.
+**Status (2026-05-28 audit):**
+- **Done:** the engine-side machinery — `src/survival_pass.{cpp,h}` (collector + RunPass), `src/version_check_cache.{h}` (`FuncStatus` / `Posture` enum + cache schema), the `version_check.bin` write path, `src/survival.{cpp,h}` (the per-function SurvivalCheck routine). The self-test (`src/version_check_selftest.cpp`) calls RunPass with synthetic data each boot and writes the cache.
+- **Not built:** the AUTHOR SURFACE (`kcdx.declare(module, name, [versions_kv])`) — no `src/lua_bind_declare.cpp`, no C++ mirror. No production binder calls `RecordTouchedRef`. No apply-time enforcement of an `on_changed` posture is wired (the apply pass walks entries unconditionally).
+- **Re-spec required before resuming.** The original "engine hashes every plugin's touched function on every boot, refuses install on drift" model was SUPERSEDED by the §11.8 STREAMLINE three-track model (Curated / Track-2 author-declared / Bulk DEV). For Track-2 the safety contract becomes (a) author-supplied per-version pattern via `kcdx.declare` + (b) recovery + rollback at install/runtime — NOT pre-check. See `parallel-ghidra-research.md` §11.8 + the outstanding-work bullet "Recovery + rollback for Track-2 plugins…"
 
-**Scope:**
+The prose below is the HISTORICAL anchor (engine plumbing the original design called for) — kept because the survival_pass MACHINERY does match what's built; only the trigger (manifest hash-check enforcement) was replaced by `kcdx.declare`.
+
+**Original-spec scope (kept here for the as-built machinery; the trigger surface is what changed):**
 
 - Extend `lua_registry::Entry` with a `requires_hash_check` flag + a list of touched function names. Each hash-checked binding (`kcdx.hook.*`, `kcdx.statement.*`, etc., when those land in 9.3) sets the flag and appends the function name(s) it touched.
-- End of registration pass: for each plugin with `requires_hash_check` entries, run the version check (cache-hit or fresh `hash_at` lookup); record per-entry result; attach to each entry's handle.
+- End of registration pass: for each plugin with `requires_hash_check` entries, run the version check (cache-hit or fresh resolve through refdb); record per-entry result; attach to each entry's handle.
 - Apply pass: an entry whose result is "changed function" respects its `on_changed` posture — `refuse_entry` skips the entry with a teaching error; `warn_and_try` proceeds with a warning log line.
 - **All failure messages in author terms.** The log mentions the function name and the plugin's behavior; never the hash, the SQLite row, or the cache. Internal mechanism is invisible to the author per the survival-contract design.
 - Other entries in the same plugin continue applying regardless of one entry's hash-check result. Failure isolation is intra-plugin too.
 
-**Verification gate:** a test plugin authored against game version "1.5.x" with a hook on a function whose simulated 1.6 hash differs — with `on_changed = "refuse_entry"` the entry skips + warns; with `on_changed = "warn_and_try"` the entry proceeds + warns; other entries in the plugin continue regardless.
+**Verification gate (when re-spec lands):** a test plugin authored against game version "1.5.x" with a hook on a function whose simulated 1.6 hash differs — with `on_changed = "refuse_entry"` the entry skips + warns; with `on_changed = "warn_and_try"` the entry proceeds + warns; other entries in the plugin continue regardless. Re-spec needs to reframe this around `kcdx.declare`'s declared-versions / undeclared-versions axis instead of the dropped `authored_against_game_version` manifest field.
 
-### Phase 9.3 — `kcdx.hook.*` + `kcdx.statement.*` split + `kcdx.locator.*` + `kcdx.op.*` value namespaces + multi-region trampoline pool
+### Phase 9.3 — `kcdx.hook.*` + `kcdx.statement.*` split + `kcdx.locator.*` + `kcdx.op.*` value namespaces + multi-region trampoline pool — **NOT STARTED**
+
+**Status (2026-05-28 audit):** zero `kcdx.statement.*` / `kcdx.locator.*` / `kcdx.op.*` / `kcdx.functions.*` / `kcdx.dll.declare` binders in `src/lua_bind*.cpp`. The `kcdx.hook` mode surface still ships as mode-as-key (the Phase 2 shape) — the sub-verb split (`kcdx.hook.before/after/around/replace`) is not built. No `kcdxStatementInterface` / `kcdxFunctionsInterface` in `include/`. Multi-region trampoline pool not extended (current `src/trampoline.cpp` is single-region).
 
 The biggest surface phase. Lands the unified locator vocabulary + the two distinct site-modification namespaces + the value namespaces they consume + the trampoline-pool capacity work to support it.
 
@@ -1546,7 +1596,9 @@ Each op carries a byte-emit function the engine invokes at apply time. The engin
 
 **Verification gate:** every existing hook test plugin (`cap-03-hook-lua-callback`, `cap-04-midhook`, `cap-20-hook-modes`, `cap-21-mid`, `cap-22-callsite`, etc.) migrates to the new sub-verb shape; suite stays 21/21 green. New `cap-XX-statement-replace` test verifies `kcdx.statement.replace_with(kcdx.functions.WHGame.fn, kcdx.op.return_const(0))` produces the expected runtime cost shape (zero per-call Lua dispatch — verified by absence of dispatch log lines during a tight loop hitting the target). New `cap-XX-plugin-fn-declare` test: plugin A declares a function via `kcdx.dll.declare`; plugin B (depending on A) hooks `kcdx.functions["a.test"].DeclaredFn` and the hook fires — proves cross-plugin function access without disassembly. New `cap-XX-pdb-autoload` test: a test plugin ships a PDB; `kcdx.functions["test.pdbmod"].InternalNonExportedFn` resolves to a non-exported function's address; a static `replace_with_noop` on it applies — proves PDB-sourced addresses work without declaration.
 
-### Phase 9.4 — `kcdx.find{...}` discovery surface + `kcdx_dev_inspect` console command
+### Phase 9.4 — `kcdx.find{...}` discovery surface + `kcdx_dev_inspect` console command — **NOT STARTED**
+
+**Status (2026-05-28 audit):** no `src/lua_bind_find.cpp`; no `kcdx_find` / `kcdx_dev_inspect` console command registered. The bulk DEV DB tables `statements` / `referenced_vars` / `call_edges` exist (per Phase 9.1) but no consumer reads them.
 
 Without discovery, statement-level modding requires Ghidra. With it, authors find what they need from what they already know about the game (a string they saw, a CVAR they read about, a function they suspect).
 
@@ -1570,7 +1622,9 @@ Both resolve via the SQLite reference DB; no new author-facing concepts beyond t
 
 **Verification gate:** test plugin uses `kcdx.find({string = "test_marker"})` against a reference DB containing a known function with that string → returns expected function name + statement list. Empty-criteria search returns `{}`. Synthetic 600-row search returns 500 records + `_truncated = true` + `_total_matches = 600`. Console: `kcdx_find` and `kcdx_dev_inspect` parse module + criteria correctly; not-found path produces the documented teaching error.
 
-### Phase 9.5 — `kcdx.behavior.*` named-behavior catalog (two-tier: engine-shipped + plugin-declared)
+### Phase 9.5 — `kcdx.behavior.*` named-behavior catalog (two-tier: engine-shipped + plugin-declared) — **NOT STARTED**
+
+**Status (2026-05-28 audit):** no `src/lua_bind_behavior.cpp`. No engine-shipped catalog at `data/behavior-catalog/`. The `behaviors` DB table referenced in the original Phase 9.1 sketch was never built (per the Phase 9.1 status note above).
 
 The simple-modder surface. Author writes one line; never sees a function name, statement, or op. Two tiers of behaviors coexist: engine-shipped (reserved `kcdx.behavior.*` namespace) and plugin-declared (standard `<author>.<plugin>.<bare>` namespace), unified through the same `set`/`get`/`list` verbs.
 
@@ -1627,7 +1681,9 @@ The tweak plugin has no statement-level knowledge; it consumes the behaviors Rea
 
 **Verification gate:** test plugin uses `kcdx.behavior.set("test_behavior", true)` against a `kcdx.behavior.*` catalog entry → underlying byte rewrite applies. Behavior-only plugin without `authored_against_game_version` still loads (exempt). `kcdx.behavior.list()` returns engine + plugin behaviors; `kcdx.behavior.list("redmoon.")` filters to redmoon's. Cross-plugin test: plugin A declares `a.test.foo`; plugin B calls `kcdx.behavior.set("a.test.foo", "value")`; implementation fires with the value.
 
-### Phase 9.6 — `kcdx.bytes` narrowing + Lua API rule update + final migration
+### Phase 9.6 — `kcdx.bytes` narrowing + Lua API rule update + final migration — **NOT STARTED**
+
+**Status (2026-05-28 audit):** `kcdx.bytes` still serves its Phase 2 remit (function-internal + non-function bytes both); the narrowing to "non-function only + labeled-expert `pattern` hatch" is not landed. Rule 4 / 4a in `.claude/rules/lua-api-surface.md` already documents the sub-verb model (struck during the 2026-05-28 doc updates that documented Phase 9.7's smart-resolver direction) — confirm against the rule file before landing. `docs/lua/extensibility.md` does not exist.
 
 The cleanup phase. Rewrites the design rule that governs the surface; narrows `kcdx.bytes` to its post-9.3 remit; migrates any remaining test plugins.
 
@@ -1666,9 +1722,16 @@ Without this front-door framing, the docs are a flat verb list; with it, the aut
 
 **Verification gate:** full test suite green; no plugin uses old surface forms; rule 4 + 4a documented; `kcdx.bytes` narrowed-remit doc landed; `docs/lua/index.md` leads with the tier model; `docs/lua/extensibility.md` exists and covers both directions; `kcdx.dll.declare` + `kcdx.functions.*` per-call docs landed; per-call `docs/lua/` and `docs/cpp/` entries cover every shipped capability per [docs-discipline.md](../../.claude/rules/docs-discipline.md).
 
-### Phase 9.7 — Curated-target sub-verb resolver (`kcdx.<verb>.<name>.<mode>`) via the refdb cache
+### Phase 9.7 — Curated-target sub-verb resolver (`kcdx.<verb>.<name>.<mode>`) via the refdb cache — **SUBSTRATE DONE (commit `498934c`); LUA + C++ SURFACE NOT BUILT**
 
-Phase 9.3 split the verb tree by MODE (`kcdx.hook.before/after/around/replace`), Phase 9.6 closed out rule 4a (sub-verbs over mode-as-table-key), and the refdb-owned cache (built in a precursor /execute cycle — see the "Substrate dependency" note below) put the curated target table in memory at boot. Phase 9.7 takes the next step: **the canonical target name itself becomes a sub-verb in the call path**, so the author writes the name in the same place they wrote the verb.
+**Status (2026-05-28 audit):**
+- **Substrate DONE:** the refdb-owned cache landed at commit `498934c` (the refdb-owns-the-cache refactor). `refdb::Open()` bulk-builds every curated entity resolved at the running game version (closest-match version row + supersession walk + verification state derivation); the cache row carries every field the smart resolver needs (per Phase 9.7's "What the cache MUST provide" table below). Engine-internal call sites moved to `refdb::ResolveAddrByName / ResolveAddrById / SignatureByName`; `address_library` shrank to the plugin-precedence surface.
+- **Lua surface NOT BUILT:** no `__index` metamethod on `kcdx.hook` / `kcdx.bytes` / `kcdx.statement` / `kcdx.scan` / `kcdx.code` for curated-target sub-verb lookup. Grep `src/lua_bind_hook.cpp` for `__index` returns hits only for the existing top-level shape, not the per-name resolver pattern.
+- **C++ surface NOT BUILT:** no curated-target accessor (`kcdxHookInterface::IsInCombat::Before(...)` or equivalent template specialization).
+- **Per-verb "valid modes for this kind" tables NOT BUILT.**
+- **Test plugin + docs NOT BUILT.**
+
+Phase 9.3 will split the verb tree by MODE (`kcdx.hook.before/after/around/replace`), Phase 9.6 closes out rule 4a (sub-verbs over mode-as-table-key), and the refdb-owned cache (built in commit `498934c`, the substrate dependency below) put the curated target table in memory at boot. Phase 9.7 takes the next step: **the canonical target name itself becomes a sub-verb in the call path**, so the author writes the name in the same place they wrote the verb.
 
 **The shape:**
 
@@ -1760,11 +1823,15 @@ Cost at boot: ~5 C functions + ~5 metatables total (one per verb's `__index`). N
 - C++ mirror test: a test DLL plugin uses the C++ shape against the same curated name in the same mode, reports PASS. Proves full-parity (`lua-api-surface.md`).
 - Suite stays X/Y green (no regressions in the existing Phase 9.3 sub-verb tests; the explicit-positional / table forms continue to work for non-curated paths).
 
-### Phase 10 — `[[event]]` → `kcdx.on(...)` event catalog
+### Phase 10 — `[[event]]` → `kcdx.on(...)` event catalog — **LIFECYCLE EVENTS DONE; GAMEPLAY EVENT CATALOG NOT STARTED**
+
+**Status (2026-05-28 audit):**
+- **Done:** `kcdx.on(<lifecycle_event>, fn)` is a shipped Phase 2 surface; the lifecycle event catalog is wired through `src/messaging.cpp` and consumed widely (cap-24 lifecycle-events row PASSes; every save/load / post-load / input-loaded / new-game / pre-load-game / post-load-game / save-game / load-game-selected / delete-game / ready event is registered and tested).
+- **Not built:** the 10–15 NEW gameplay events the phase committed to (damage_taken / damage_dealt / save_created / dialogue_line_spoken / item_picked_up / location_entered / combat_started / combat_ended / perk_unlocked / level_up / quest_stage_advanced / npc_interacted_with) — none of these are RE'd or hooked. No `kcdx.on("damage_taken", …)` consumer exists; no test plugin exercises a gameplay event subscription.
 
 Addresses [docs/design-gaps.md](../../docs/design-gaps.md) gap #15 (game-event API beyond lifecycle messages).
 
-The today-unimplemented `[[event]]` table mentioned in design.md but never landed becomes `kcdx.on(...)`. Lifecycle messages get a documented catalog of named event strings (already wired via [src/messaging.cpp](../../src/messaging.cpp)). Phase 10 ships the lifecycle catalog plus the FIRST 10-15 gameplay events from RE work (candidate list per gap #15: damage taken/dealt, save created, dialogue line spoken, item picked up, location entered, combat started/ended, perk unlocked, level-up, quest stage advanced, NPC interacted with). Each event is one kcdx-owned hook against the underlying CryEngine call path; plugins subscribe via `kcdx.on(...)` and get the event without each plugin re-hooking the same function.
+The today-unimplemented `[[event]]` table mentioned in design.md but never landed becomes `kcdx.on(...)`. Lifecycle messages get a documented catalog of named event strings (already wired via [src/messaging.cpp](../../src/messaging.cpp) — DONE). Phase 10 ships the lifecycle catalog plus the FIRST 10-15 gameplay events from RE work (candidate list per gap #15: damage taken/dealt, save created, dialogue line spoken, item picked up, location entered, combat started/ended, perk unlocked, level-up, quest stage advanced, NPC interacted with). Each event is one kcdx-owned hook against the underlying CryEngine call path; plugins subscribe via `kcdx.on(...)` and get the event without each plugin re-hooking the same function.
 
 **Event sites are hash-tracked the same as direct hooks.** Each gameplay event's underlying hook is a function-name reference in the SQLite reference DB; when KCD2 updates and changes the function backing an event, subscribers to that event get the same `on_changed` posture handling as a direct `kcdx.hook.*` call would. Authors subscribing via `kcdx.on(...)` to a broken event get a teaching error naming the event + the underlying function; other event subscriptions in the same plugin continue working regardless. Same survival contract as direct hooks, applied uniformly.
 
