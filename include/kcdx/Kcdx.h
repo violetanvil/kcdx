@@ -3,7 +3,7 @@
 // This is the EMPOWERED floor on top of include/kcdx/Interfaces.h. The
 // raw interfaces (Interfaces.h) are the always-available floor — every
 // capability is reachable through `api->QueryInterface(...)` without ever
-// including this header. Kcdx.h layers two conveniences:
+// including this header. Kcdx.h layers three conveniences:
 //
 //   1. `struct Kcdx` — one Init() call fetches every shipped sub-interface
 //      and stashes the plugin's identity (handle + author/plugin names), so
@@ -18,6 +18,14 @@
 //      `uintptr_t args[], int* outCount` or the per-mode mangled cFn shape
 //      — that mangling is the engine's heavy lifting (the engine carries
 //      address AND ABI), and hiding it is the entire point of this header.
+//
+//   3. `namespace kcdx::bytes` — `Write(K, target, replacement)` /
+//      `TryWrite(...)` helpers over `kcdxBytesInterface::Register`. The
+//      author supplies a name and a replacement string positionally; the
+//      wrapper builds the options struct, threads `owningPlugin = K.self`,
+//      and auto-logs on a zero handle. A byte rewrite has no callback to
+//      adapt (the engine writes bytes; no per-mode codegen is needed), so
+//      the bytes wrapper is shape-simpler than the hook wrapper.
 //
 // THE 3-FLOOR MODEL (full reference: docs/cpp/wrapper.md):
 //
@@ -102,6 +110,7 @@ struct Kcdx {
     // implement that interface/version).
     const kcdxHookInterface*          hook         = nullptr;  // floor-4 hook drop-down
     const kcdxBytesInterface*         bytes        = nullptr;  // kcdx.bytes peer
+    const kcdxDeclareInterface*       declare      = nullptr;  // kcdx.declare / kcdx.declared peer
     const kcdxMemoryInterface*        memory       = nullptr;
     const kcdxConsoleInterface*       console      = nullptr;
     const kcdxTrampolineInterface*    code         = nullptr;  // kcdx.code peer
@@ -133,6 +142,9 @@ struct Kcdx {
             api->QueryInterface(kcdxInterface_Hook, kcdxHookInterface_Version));
         bytes = static_cast<const kcdxBytesInterface*>(
             api->QueryInterface(kcdxInterface_Bytes, kcdxBytesInterface_Version));
+        declare = static_cast<const kcdxDeclareInterface*>(
+            api->QueryInterface(kcdxInterface_Declare,
+                                kcdxDeclareInterface_Version));
         memory = static_cast<const kcdxMemoryInterface*>(
             api->QueryInterface(kcdxInterface_Memory, kcdxMemoryInterface_Version));
         console = static_cast<const kcdxConsoleInterface*>(
@@ -543,4 +555,54 @@ void Replace(const Kcdx& K, const char* target,
 }
 
 }  // namespace hook
+
+// =============================================================================
+// namespace kcdx::bytes — the empowered floor over kcdxBytesInterface
+// =============================================================================
+//
+// The C++ peer of Lua's `kcdx.bytes{...}` smart-resolver shape. The author
+// supplies a name + a replacement string; this wrapper builds the
+// kcdxBytesOptions, threads `owningPlugin = K.self`, calls
+// `K.bytes->Register(&opts)`, and (for the void+log form) auto-logs on a zero
+// handle. No per-mode adapter codegen — a byte rewrite has no callback to
+// adapt; the options struct carries `replacement` directly.
+//
+// Floor model (see docs/cpp/wrapper.md "The 3-floor model"):
+//   Floor 1 (empowered)  kcdx::bytes::Write(K, "open_inventory_check", "90 90 90")
+//                         — auto-threaded owningPlugin, auto-log on failure.
+//   Floor 2 (Try*)       kcdx::bytes::TryWrite(K, target, replacement)
+//                         — returns the handle for programmatic branching.
+//   Floor 4 (raw)        K.bytes->Register(&opts) — the unchecked raw
+//                         kcdxBytesInterface; reach for it for the [advanced]
+//                         locator-only paths the wrapper does not pre-fill
+//                         positionally (pattern / addressId / targetSymbol).
+
+namespace bytes {
+
+inline kcdxBytesHandle TryWrite(const Kcdx& K, const char* target,
+                                const char* replacement,
+                                const kcdxBytesOptions* userOpts = nullptr) {
+    if (!K.bytes) {
+        K.log.Error("BYTES",
+            "kcdx::bytes::Write on a Kcdx with no Bytes interface — call "
+            "Kcdx::Init (and check its return) before installing byte rewrites");
+        return 0;
+    }
+    kcdxBytesOptions opts = userOpts ? *userOpts : kcdxBytesOptions{};
+    opts.owningPlugin = K.self;
+    if (target)      opts.target      = target;
+    if (replacement) opts.replacement = replacement;
+    return K.bytes->Register(&opts);
+}
+
+inline void Write(const Kcdx& K, const char* target, const char* replacement,
+                  const kcdxBytesOptions* userOpts = nullptr) {
+    kcdxBytesHandle h = TryWrite(K, target, replacement, userOpts);
+    if (h == 0)
+        K.log.Error("BYTES", "kcdx::bytes::Write('%s') failed to register "
+                    "(handle 0) — see the engine log for the teaching reason",
+                    target ? target : "<advanced-locator>");
+}
+
+}  // namespace bytes
 }  // namespace kcdx

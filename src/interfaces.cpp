@@ -12,6 +12,7 @@
 #include "bytes_interface.h"
 #include "conflict_engine.h"
 #include "console.h"
+#include "declare_interface.h"
 #include "hook_chain.h"
 #include "hook_interface.h"
 #include "load_order.h"
@@ -86,6 +87,11 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxBytesInterface_Version) return nullptr;
         return const_cast<kcdxBytesInterface*>(
             kcdx::bytes_interface::GetInterface());
+
+    case kcdxInterface_Declare:
+        if (version > kcdxDeclareInterface_Version) return nullptr;
+        return const_cast<kcdxDeclareInterface*>(
+            kcdx::declare_interface::GetInterface());
 
     default:
         return nullptr;

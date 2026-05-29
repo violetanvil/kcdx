@@ -198,6 +198,7 @@ add_library(kcdx SHARED
     src/hook_chain.cpp
     src/hook_interface.cpp
     src/bytes_interface.cpp
+    src/declare_interface.cpp
     src/dynamic_call_jit.cpp
     src/probes/bugsplat_ctor_probe.cpp
     src/probes/loc_dump_probe.cpp

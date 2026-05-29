@@ -150,6 +150,13 @@ typedef struct kcdxPluginInfo {
 // -----------------------------------------------------------------------------
 
 // Sub-interface identifiers passed to kcdxInterface::QueryInterface.
+//
+// IDs are APPEND-ONLY: a new sub-interface gets the next free integer at the
+// END of the enum and is never renumbered. A plugin DLL compiled against the
+// old header passes the old integer; the engine's QueryInterface switch
+// recognises it at the same slot. Inserting a value in the middle would
+// renumber every subsequent ID and break every previously-compiled plugin's
+// QueryInterface call by silently routing it to the wrong interface.
 enum kcdxInterfaceID {
     kcdxInterface_Messaging      = 1,
     kcdxInterface_Trampoline     = 2,
@@ -160,6 +167,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Console        = 7,  // IConsole::AddCommand thunk
     kcdxInterface_Hook           = 8,  // C++ kcdx.hook mirror
     kcdxInterface_Bytes          = 9,  // C++ kcdx.bytes mirror
+    kcdxInterface_Declare        = 10, // C++ kcdx.declare / kcdx.declared mirror
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -1982,6 +1990,201 @@ typedef struct kcdxBytesInterface {
     // against an older version reads the prefix members at their original
     // offsets, so appending cannot shift them (append-only ABI).
 } kcdxBytesInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxDeclareInterface — C++ mirror of the Lua kcdx.declare / kcdx.declared surface
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Declare,
+// kcdxDeclareInterface_Version). C++ DLL plugins populate the author-declared
+// track of the unified named-target table through this interface; the surface
+// is feature-parity with the Lua kcdx.declare(...) / kcdx.declared(name) calls
+// (ONE model, two languages, full parity at all times).
+//
+// SHAPE — two methods. Declare(...) is the write surface (a plugin declares a
+// per-version named target under its own <author>.<plugin>.<bare> triple). Get
+// (name) is the read surface for VALUE entries (the bitmask / constant form;
+// PATTERN declarations are consumed by name through the hook / bytes verbs,
+// not through this accessor).
+//
+// SAME validation, SAME store-layer dispatch as the Lua surface — Declare
+// routes to the same declared-targets store the Lua binder writes to, so the
+// resulting registry entries are indistinguishable by source. A C++ plugin's
+// declared name resolves identically to a Lua plugin's declared name; a Lua
+// plugin can hook a name a C++ plugin declared and vice versa.
+//
+// The author-declared store is owned by the calling plugin's
+// <author>.<plugin>  namespace prefix — Declare reads the (author, plugin)
+// pair off the supplied owningPlugin handle (the same self > engine > other
+// precedence mechanism the hook / bytes interfaces use), so a bare name
+// resolves to the calling plugin's own declaration first.
+//
+// Phase gating: Declare and Get both reach the declared-targets store, which
+// requires the engine to be at or past the refdb-ready phase (the running
+// game version string + the scan engine are reachable from there). In
+// practice this means Declare / Get are safe from kcdxPlugin_Load,
+// kcdxPlugin_PostGameLoad, and any kcdxMessage_* callback — they are NOT
+// safe from a DllMain-time hook or a pre-engine-init context.
+
+#define kcdxDeclareInterface_Version 1u
+
+// One per-version entry the author passes to Declare. The kindTag string
+// discriminates the payload shape AND drives the hook-mode validity gate at
+// install time (kindTag == "function" — the default for a pattern entry —
+// triggers the pattern-without-signature rejection; set kindTag to a non-
+// function tag to declare a data slot / value the author does not intend to
+// hook).
+//
+// Mirrors src/declared_targets.h struct VersionEntry one-to-one: the binder
+// translates this POD form into the store's VersionEntry shape with no
+// semantic re-interpretation.
+//
+//   - versionKey: the version string the author is declaring for. Exact
+//     ("1.5.1164953") or wildcard ("1.5.*" / "1.*.*" — any suffix component
+//     may be a bare '*'). Malformed keys are rejected by Declare with a
+//     teaching error.
+//   - patternStr: the AOB byte pattern at the rewrite/hook site (e.g.
+//     "48 8B 05 ?? ?? ?? ?? 8B"). null or empty = no pattern (this entry
+//     is a value entry, see valueInt / valueStr below).
+//   - signatureStr: the ABI signature DSL ("i32 (ptr)" etc.) for a pattern
+//     entry. Required when patternStr is set AND the entry is intended for
+//     hook use (kindTag empty or "function"); the engine cannot infer an
+//     ABI from a pattern. null = unset.
+//   - kindTag: the entry-kind tag ("function" default for a pattern entry;
+//     "data_slot" / "value" / etc. opt out of hook-mode usage). null =
+//     engine substitutes the default per the entry's shape.
+//   - valueInt / valueStr / valueIsString: the literal value the entry
+//     carries (for a non-pattern value entry). valueIsString discriminates
+//     the two value slots; ignored when patternStr is set. valueStr is
+//     copied into the store at Declare time — caller need not retain it.
+typedef struct kcdxDeclareEntry {
+    const char* versionKey;        // REQUIRED — exact or wildcard
+    const char* patternStr;        // null = value entry
+    const char* signatureStr;      // null = no signature (rejected for hook-use patterns)
+    const char* kindTag;           // null = engine substitutes default
+    int64_t     valueInt;          // populated for value entries when !valueIsString
+    const char* valueStr;          // populated for value entries when valueIsString; null otherwise
+    bool        valueIsString;     // discriminator for valueInt vs valueStr
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New fields go HERE, never mid-struct. Same append-only discipline as
+    // kcdxHookOptions / kcdxBytesOptions: a mid-struct insert shifts every
+    // subsequent field's offset; a plugin DLL compiled against the older
+    // header would read through the wrong offset → ACCESS_VIOLATION.
+} kcdxDeclareEntry;
+
+// Result of kcdxDeclareInterface::Get(name). Returned by value (no heap, no
+// out-param). `found` discriminates a Value hit from every miss case
+// (Kind::NoEntry / Kind::VersionMismatch / Kind::Pattern in the store's
+// terms) — PATTERN entries also return found == false from this accessor
+// because they have no value payload to surface; consume them through the
+// hook / bytes verbs.
+//
+// `isString` discriminates the two payload slots when found is true; one of
+// `intValue` / `stringValue` is meaningful, the other is left at the default.
+//
+// `stringValue` is a stable pointer into the declared-targets store. The
+// store never relocates after launch-time appends (a Register overwrite
+// writes in place at the same slot), so the pointer is valid for the process
+// lifetime once Declare for that (author, plugin, name) has returned. The
+// pointer is NULL when isString is false (an integer-valued entry) or when
+// found is false (a miss).
+typedef struct kcdxDeclaredValue {
+    bool        found;             // true iff Get found a VALUE entry on the running version
+    bool        isString;          // discriminates intValue vs stringValue when found
+    int64_t     intValue;          // populated when found && !isString
+    const char* stringValue;       // populated when found && isString; process-lifetime; null otherwise
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New fields go HERE, never mid-struct.
+} kcdxDeclaredValue;
+
+typedef struct kcdxDeclareInterface {
+    // ------------------------------------------------------------------
+    // Declare a per-version named target. Same write surface as the Lua
+    // kcdx.declare(module, name, versions_kv) call.
+    //
+    //   module     — REQUIRED. The module the declared target lives in
+    //                (e.g. "WHGame.dll"). No default — a defaulted module
+    //                silently misroutes when secondary modules become a
+    //                concern.
+    //   bareName   — REQUIRED. The bare name the plugin is declaring. The
+    //                engine stamps it as <author>.<plugin>.<bareName>
+    //                from the owningPlugin's manifest, matching the Lua
+    //                binder. Charset [a-z0-9_], 2..128 chars.
+    //   entries    — REQUIRED. Pointer to an array of count
+    //                kcdxDeclareEntry rows (the per-version table). The
+    //                engine COPIES every field it needs at Declare time;
+    //                the caller need not retain the array or its string
+    //                contents after Declare returns. Must be non-null
+    //                and count must be > 0 (an empty declaration is an
+    //                author bug — Declare rejects with a teaching error).
+    //   count      — the number of entries in the array.
+    //   owningPlugin — REQUIRED. Drives the <author>.<plugin> prefix
+    //                under which the bare name is registered, AND the
+    //                self-tier of self > engine > other for any later
+    //                resolution by the calling plugin. Pass the author's
+    //                own handle (from kcdxInterface::GetPluginHandle on
+    //                the manifest's [plugin].name). Passing
+    //                kcdxInvalidPluginHandle rejects the declaration —
+    //                an unattributed declaration has nowhere to live in
+    //                the precedence walk (same rule as the Lua binder).
+    //
+    // Returns true on accept; false on reject. The engine logs a teaching
+    // error under category "DECLARED_TARGET" / "DECLARED_TARGET_BIND" on
+    // every reject path — the author reads the cause in the dev log.
+    //
+    // Idempotent per (author, plugin, bareName): a second Declare with the
+    // same triple REPLACES the first cleanly (the prior memoization is
+    // dropped so the new declaration resolves fresh).
+    //
+    // Launch-time only — Declare is intended to be called from
+    // kcdxPlugin_Load. The author-declared store is built during plugin
+    // load; calling Declare from a DllMain-time hook or before refdb is
+    // open trips the engine's phase gate.
+    bool (*Declare)(const char* module,
+                    const char* bareName,
+                    const kcdxDeclareEntry* entries,
+                    size_t count,
+                    kcdxPluginHandle owningPlugin);
+
+    // ------------------------------------------------------------------
+    // Read a declared VALUE entry's payload. Same read surface as the
+    // Lua kcdx.declared(name) call.
+    //
+    //   name        — either a bare 1-segment name (resolves against the
+    //                 calling plugin's own declarations — the SELF tier
+    //                 only) OR a 3-segment "<author>.<plugin>.<bare>"
+    //                 explicit form (resolves against the named plugin's
+    //                 declared store directly, mirroring the Lua binder).
+    //                 No other dot-count is meaningful for declared-value
+    //                 reads — anything else returns a miss.
+    //   owningPlugin — drives the SELF tier of the 1-segment lookup
+    //                  (the (author, plugin) is read off the handle, same
+    //                  as Declare). Passing kcdxInvalidPluginHandle on a
+    //                  1-segment name reads an empty owner (no self tier);
+    //                  the 3-segment explicit form is unaffected by the
+    //                  owner.
+    //
+    // Returns a kcdxDeclaredValue. `found == true` iff the name resolved
+    // to a VALUE entry on the running game version. PATTERN entries,
+    // NoEntry, and VersionMismatch all return `found == false` — PATTERN
+    // entries are consumed by name through the hook / bytes verbs, not
+    // through this accessor.
+    //
+    // The C++ side carries no LUA_NUMBER=float precision threshold: the
+    // 2^24-mantissa rounding the Lua kcdx.declared accessor faces is a
+    // CryEngine Lua VM property, not a kcdx limitation. Integer values
+    // are surfaced as the full int64_t.
+    //
+    // Read-only; idempotent; safe to call many times per launch.
+    kcdxDeclaredValue (*Get)(const char* name, kcdxPluginHandle owningPlugin);
+
+    // --- APPEND-ONLY BELOW (kcdxDeclareInterface_Version >= 2) -----------
+    // New members go HERE, at the END, never mid-struct: a plugin DLL built
+    // against an older version reads the prefix members at their original
+    // offsets, so appending cannot shift them (append-only ABI).
+} kcdxDeclareInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)

@@ -283,24 +283,17 @@ bool ValidateVersionKey(const std::string& key, std::string& outError) {
 }
 
 // ---------------------------------------------------------------------------
-// Version-key matching
+// Version-key matching — helpers (the public picker is FindPickedVersionEntry
+// below, outside this anonymous namespace; the helpers stay file-local).
 // ---------------------------------------------------------------------------
 //
 // Per spec:
 //   - Empty versions vector → "attempt on all versions" (the table-omitted
-//     form). Always matches; the matcher's "picked" entry in that case is
-//     the (synthesized) attempt-all form, signalled by returning
-//     entries.size() as the picked index — the caller treats that as
-//     "use the entry's first/only attempt-all data" — but the
-//     table-omitted form is a value-less / pattern-less marker (just
-//     "attempt anywhere"). In practice an attempt-all declaration still
-//     carries a payload at the entry level via the "table omitted"
-//     sugar — but the table-present form moves the payload INTO a
-//     single VersionEntry-shaped slot. The store therefore models
-//     attempt-all as `versions` being empty, and the caller fabricates
-//     an "any-version Pattern" by reading the entry-level data the Lua
-//     binder is going to attach. This module does not yet decide the
-//     storage shape for that data — see "Open question" below.
+//     form). The store models attempt-all as `versions` being empty; the
+//     caller short-circuits to the attempt-all path before reaching the
+//     picker, so the picker is never asked to pick from an empty vector
+//     (the public accessor returns nullptr if it is, matching the no-match
+//     contract).
 //
 //   - Exact match wins outright (a key equal to the runtime version
 //     string).
@@ -311,16 +304,9 @@ bool ValidateVersionKey(const std::string& key, std::string& outError) {
 //     Implementation: simple string-prefix match on the up-to-first-'*'
 //     portion of each version key.
 //
-//   - No matches → return std::string::npos (the "VersionMismatch"
-//     signal). The caller treats this as Kind::VersionMismatch and emits
-//     the badge log once-per-session-per-tuple.
-//
-// Returns the picked index into the entry's `versions` vector, or
-// std::string::npos on no-match. For the empty-versions case (attempt-
-// all form), the function is not called — the caller short-circuits to
-// the attempt-all path before reaching here.
-
-constexpr size_t kNoMatch = static_cast<size_t>(-1);
+//   - No matches → return nullptr (the "VersionMismatch" signal). The
+//     caller treats this as Kind::VersionMismatch and emits the badge log
+//     once-per-session-per-tuple.
 
 // Length of the exact prefix portion of a version key (the substring
 // before the first '*'). For an exact key this is the whole key length;
@@ -353,32 +339,6 @@ bool WildcardMatches(const std::string& key, const std::string& version) {
         if (key[i] != version[i]) return false;
     }
     return true;
-}
-
-// Pick the best-matching VersionEntry index for the running version, per
-// the exact > longest-wildcard rule. Returns kNoMatch on no match.
-size_t PickVersionEntry(const std::vector<VersionEntry>& versions,
-                        const std::string& runtimeVersion) {
-    // Pass 1: any exact match wins outright.
-    for (size_t i = 0; i < versions.size(); ++i) {
-        if (!IsWildcardKey(versions[i].versionKey) &&
-            ExactMatches(versions[i].versionKey, runtimeVersion)) {
-            return i;
-        }
-    }
-    // Pass 2: longest wildcard prefix wins.
-    size_t bestIdx = kNoMatch;
-    size_t bestLen = 0;
-    for (size_t i = 0; i < versions.size(); ++i) {
-        if (!IsWildcardKey(versions[i].versionKey)) continue;
-        if (!WildcardMatches(versions[i].versionKey, runtimeVersion)) continue;
-        const size_t prefixLen = ExactPrefixLen(versions[i].versionKey);
-        if (bestIdx == kNoMatch || prefixLen > bestLen) {
-            bestIdx = i;
-            bestLen = prefixLen;
-        }
-    }
-    return bestIdx;
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +429,30 @@ uint64_t ResolvePatternToVA(const DeclaredEntry& e,
 // ===========================================================================
 // Public API
 // ===========================================================================
+
+const VersionEntry* FindPickedVersionEntry(const DeclaredEntry& e,
+                                           const std::string& runtimeVersion) {
+    // Pass 1: any exact match wins outright.
+    for (const VersionEntry& v : e.versions) {
+        if (!IsWildcardKey(v.versionKey) &&
+            ExactMatches(v.versionKey, runtimeVersion)) {
+            return &v;
+        }
+    }
+    // Pass 2: longest wildcard prefix wins.
+    const VersionEntry* best = nullptr;
+    size_t bestLen = 0;
+    for (const VersionEntry& v : e.versions) {
+        if (!IsWildcardKey(v.versionKey)) continue;
+        if (!WildcardMatches(v.versionKey, runtimeVersion)) continue;
+        const size_t prefixLen = ExactPrefixLen(v.versionKey);
+        if (best == nullptr || prefixLen > bestLen) {
+            best = &v;
+            bestLen = prefixLen;
+        }
+    }
+    return best;
+}
 
 bool Register(const DeclaredEntry& e) {
     // Identity validation
@@ -635,8 +619,8 @@ ResolvedDeclared LookupForCaller(const std::string& callerAuthor,
     }
 
     // Versioned form: pick the best entry per the matcher.
-    const size_t pickedIdx = PickVersionEntry(e.versions, runtimeVersion);
-    if (pickedIdx == kNoMatch) {
+    const VersionEntry* pickedPtr = FindPickedVersionEntry(e, runtimeVersion);
+    if (pickedPtr == nullptr) {
         // Build a comma-joined list of declared keys for the warn line.
         std::string declared;
         for (size_t i = 0; i < e.versions.size(); ++i) {
@@ -656,7 +640,7 @@ ResolvedDeclared LookupForCaller(const std::string& callerAuthor,
         return out;
     }
 
-    const VersionEntry& picked = e.versions[pickedIdx];
+    const VersionEntry& picked = *pickedPtr;
 
     if (picked.isPattern) {
         // Memoize: one resolve per (entryIdx, runtimeVersion). The memo

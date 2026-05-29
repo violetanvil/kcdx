@@ -225,6 +225,22 @@ ResolvedDeclared LookupForCaller(const std::string& callerAuthor,
                                  const std::string& name,
                                  const std::string& runtimeVersion);
 
+// Pick the VersionEntry that matches `runtimeVersion` per the canonical
+// exact-then-longest-wildcard rule: an exact key wins outright; otherwise the
+// longest-prefix wildcard wins. Returns nullptr if no version matches AND the
+// entry is not the table-omitted "attempt on all versions" form, OR if the
+// entry has no versions at all.
+//
+// Returned pointer aliases into `e.versions` and is process-stable as long as
+// `e` itself stays alive (the registry never relocates after launch-time
+// appends; a Register overwrite writes in place at the same slot, dropping any
+// prior entry's memoization but preserving the slot's address). Callers walk
+// it for stable string-payload reads (e.g. valueStr.c_str()).
+//
+// Read-only; no logging side-effects; safe to call many times per launch.
+const VersionEntry* FindPickedVersionEntry(const DeclaredEntry& e,
+                                           const std::string& runtimeVersion);
+
 // Reset all registry + memoization + warn-dedup state. For tests and
 // self-test isolation. Never called during normal operation.
 void Reset();

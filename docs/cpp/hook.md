@@ -5,21 +5,56 @@ Intercept a game function: run your C++ callback when the game calls it, and
 optionally change its arguments, return value, or whether it runs at all. The
 C++ mirror of the core Lua verb `kcdx.hook{...}` ([../lua/hook.md](../lua/hook.md)).
 
-> For the everyday path, prefer the **empowered wrapper** in
-> [`include/kcdx/Kcdx.h`](../../include/kcdx/Kcdx.h) —
-> `kcdx::hook::Before/After/Around/Replace<Sig, &fn>(K, target)` lets you write
-> a natural typed callback instead of the mangled per-mode `cFn` ABI shown
-> below. See [wrapper.md](wrapper.md). This raw interface is the
-> always-available **floor** underneath it (and the only path for the Mid /
-> Callsite sub-verbs, which the wrapper does not wrap). Read this page when you
-> need the raw floor: a callback whose ABI doesn't templatize, or the Mid /
-> Callsite sub-verbs.
-
 This page documents `kcdxHookInterface` **v2** as built and verified
 (`kcdxHookInterface_Version == 2`, [`Interfaces.h`](../../include/kcdx/Interfaces.h)).
 The `cap-36-cpp-hook-interface` regression plugin exercises every method
 end-to-end (7/7 PASS); `cap-42-cpp-mid-skip` exercises the v2 `Mid` int-return
 run/skip (the C++ mirror of the Lua mid `return "skip"`).
+
+## The common path — `kcdx::hook::Before<Sig, &fn>(K, target)` (the wrapper floor)
+
+The everyday C++ install path is the **empowered wrapper** in
+[`include/kcdx/Kcdx.h`](../../include/kcdx/Kcdx.h) — the C++ peer of Lua's
+`kcdx.hook.<mode>(target, callback)` sub-verb shape
+([../lua/hook.md](../lua/hook.md)). You write a **natural typed callback** in
+the original target's signature; the header emits the per-mode adapter that
+unpacks the engine's JIT-thunk ABI, calls your callable, and writes back. The
+wrapper auto-threads `owningPlugin = K.self`, derives the ABI signature from
+the C++ function-pointer type, and auto-logs on failure — no `nullptr` opts
+ceremony, no hand-written `uintptr_t args[], int* outCount`, no per-mode
+mangled `cFn` shape.
+
+```cpp
+#include "kcdx/Kcdx.h"
+
+static Kcdx K;
+
+// Natural callback, by-reference arg mutation.
+void on_is_in_combat(int& flag) { flag = 1; }   // force "in combat"
+
+extern "C" __declspec(dllexport)
+bool kcdxPlugin_Load(const kcdxInterface* api) {
+    if (!K.Init(api, "redmoon", "outfit")) return true;   // logs why; Hook missing
+    kcdx::hook::Before<int(int), &on_is_in_combat>(K, "IsInCombat");
+    return true;
+}
+```
+
+The name `"IsInCombat"` carries both address and verified ABI; `opts` is
+omitted entirely. `Before`/`After`/`Around`/`Replace` are the four wrapped
+modes; `Mid` and `Callsite` are expert sub-verbs (register captures and
+call-instruction sub-locators are disassembler-tier inputs) and drop to the
+raw interface below. Full wrapper reference — the natural callback shapes per
+mode, the `Try*` handle-returning variants, the empowerment-frame floor model
+— in [wrapper.md](wrapper.md), particularly its [3-floor model](wrapper.md#the-3-floor-model).
+
+## The raw floor (drop-down) — `kcdxHookInterface`
+
+Read the sections below when you need the unchecked raw interface: a callback
+whose ABI doesn't templatize, the `Mid` / `Callsite` sub-verbs the wrapper
+does not wrap, or when you want the raw `void*` callback path. This is the
+**always-available floor** under the wrapper; everything the wrapper does is
+reachable through it directly (see [wrapper.md §3-floor model](wrapper.md#the-3-floor-model)).
 
 > **v2 — `Mid` callback gained an `int` return.** The `Mid` callback ABI is now
 > `int cFn(kcdxHookCaptureValue*, int)` returning a [`kcdxMidResult`](#mid)
@@ -43,22 +78,6 @@ if (!hook) { /* engine version mismatch — fail loud, do not skip silently */ }
 
 A null return means the running engine does not implement that
 interface/version.
-
-## Named-target sub-verb shape — `kcdxHookInterface::<Name>::<Mode>(callback)` (NYI)
-
-The C++ peer of Lua's `kcdx.hook.<name>.<mode>(callback)` smart-resolver
-shape ([../lua/hook.md](../lua/hook.md)). **Not yet implemented (NYI)** — the
-parity mirror lands in a follow-up step that exposes a typed name-keyed
-sub-verb (the planned form is a template specialization keyed by the resolved
-name, e.g. `kcdxHookInterface::IsInCombat::Before(callback)`, where the
-engine carries the address AND the verified ABI so the callback type is
-deduced from the resolved signature — no `target` string, no `opts->signature`
-on a named-target install). The NYI marker is removed when this surface
-ships and the cross-language parity coverage exercises both sides. Until
-then, the raw `Before` / `After` / `Around` / `Replace` / `Mid` / `Callsite`
-install methods below (which take a `target` string + `kcdxHookOptions`) are
-the only C++ install path; they ARE at full parity with the flat-table
-`kcdx.hook{...}` form on the Lua side.
 
 ## The surface — six install sub-verbs + four query methods
 

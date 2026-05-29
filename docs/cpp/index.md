@@ -109,6 +109,23 @@ spellings noted where they differ:
   vocabulary (the C++ mirror of the Lua `target`/`signature`/`before`/… surface);
   see [hook.md](hook.md).
 
+- **named target** — an entry in the unified named-target table the hook /
+  bytes verbs consume by name. Two population sources: **curated targets**
+  (engine-shipped, maintained by the kcdx maintainer, pre-checked for byte-
+  survival across game versions) and **declared targets** (plugin-supplied
+  via `kcdxDeclareInterface::Declare`, owned by the declaring plugin's
+  `<author>.<plugin>` namespace, per-version mapping owned by the author).
+  The consumer cannot tell which source backed a name — both reach the hook
+  / bytes verbs through the same resolver and install identically. See
+  [declare.md](declare.md).
+
+- **smart resolver** — the engine's name → address-and-verified-ABI lookup
+  the hook / bytes verbs route through. Walks **self > engine > other-plugin**
+  precedence: a bare name resolves to the calling plugin's own declarations
+  first, then engine-shipped names, then other plugins' declarations.
+  Explicit `"<author>.<plugin>.<bare>"` and `"kcdx.<seedname>"` forms bypass
+  the precedence walk and resolve directly.
+
 - **dev mode** — engine setting (`engine.toml`, `dev_mode = true`) gating the
   test suite and debug/trace logging. Same as Lua; `ReportTestResult` is a no-op
   when off.
@@ -136,15 +153,17 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | C++ surface | Status | Lua counterpart | File |
 |---|---|---|---|
 | the DLL plugin shell (`kcdxPlugin_Load`, `[entrypoints] dll`, QueryInterface handshake) | Built | the plugin shell / manifest | [plugin-shell.md](plugin-shell.md) |
-| `kcdxHookInterface` (function interception) | Built | `kcdx.hook` | [hook.md](hook.md) |
-| `Kcdx.h` empowered wrapper (`kcdx::hook::Before/After/Around/Replace<Sig,&fn>`, `struct Kcdx`) | Single-surface | `kcdx.hook` sub-verbs (Lua's native peer; no mangled ABI to hide) | [wrapper.md](wrapper.md) |
-| `kcdxBytesInterface::Register` (deferred locator-based byte rewrite) + `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (immediate raw write) | Built | `kcdx.bytes` | [bytes.md](bytes.md) |
+| **`Kcdx.h` empowered wrapper (the common path)** — `kcdx::hook::Before/After/Around/Replace<Sig,&fn>(K, target)` + `struct Kcdx` | Built | `kcdx.hook` sub-verbs (typed natural callback, auto-threaded `owningPlugin`) | [wrapper.md](wrapper.md) |
+| `kcdxHookInterface` (raw floor under the wrapper; the only path for `Mid` / `Callsite`) | Built | `kcdx.hook` raw `{...}` form | [hook.md](hook.md) |
+| **`Kcdx.h` empowered wrapper (the common path)** — `kcdx::bytes::Write(K, target, replacement)` + `struct Kcdx` | Built | `kcdx.bytes` (positional name + replacement, auto-threaded `owningPlugin`) | [wrapper.md](wrapper.md) |
+| `kcdxBytesInterface::Register` (raw floor under the wrapper; the only path for the `[advanced]` `pattern` / `addressId` / `targetSymbol` locators) + `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (immediate raw write) | Built | `kcdx.bytes` raw `{...}` form | [bytes.md](bytes.md) |
 | `kcdxMessagingInterface::RegisterListener` (event/lifecycle) | Built | `kcdx.on` | [on.md](on.md) |
 | `kcdxConsoleInterface::RegisterCommand`/`GetArg*` (console command) | Built | `kcdx.command` | [command.md](command.md) |
 | `kcdxMessagingInterface::Dispatch` (custom event broadcast) | Built | `kcdx.publish` | [publish.md](publish.md) |
 | `kcdxTrampolineInterface` (code allocation) — `Allocate` (all-in-one alloc+fill+pad+export) + `Export` (standalone publish) + the raw `AllocateFromBranchPool`/`LocalPool` floor (v2) | Built | `kcdx.code` | [code.md](code.md) |
 | `kcdxInterface::GetConflictReport` (enumerate patch / hook / kcdx.hook entries at a target — winners + rejected losers) | Built | `kcdx.conflict` (**NYI** — owed Lua mirror) | [hook.md](hook.md#conflict-report) |
 | `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
+| `kcdxDeclareInterface::Declare` / `Get` (author-declared per-version named targets + value reads) | Built | `kcdx.declare` / `kcdx.declared` | [declare.md](declare.md) |
 | `kcdxTargetInterface::RegisterTarget` (author-declared named targets) | **NYI** | author-declared targets (`targets.toml`) | [targets.md](targets.md) |
 | `kcdxTargetInterface::RegisterAlias` (short local name handle) | **NYI** | `kcdx.alias` | [alias.md](alias.md) |
 | `require` (sibling-file loading) | Single-surface | `require` | [require.md](require.md) |

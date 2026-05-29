@@ -26,6 +26,53 @@ This page documents `kcdxBytesInterface` **v1** as built and verified
 `cap-39-cpp-bytes` regression plugin exercises it end-to-end (the C++ peer of
 `cap-01`'s Lua `kcdx.bytes` coverage — parity is tested, not assumed).
 
+## The common path — `kcdx::bytes::Write(K, target, replacement)` (the wrapper floor)
+
+The everyday C++ rewrite path is the **empowered wrapper** in
+[`include/kcdx/Kcdx.h`](../../include/kcdx/Kcdx.h) — the C++ peer of Lua's
+`kcdx.bytes.<name>{ replacement = "..." }` smart-resolver shape
+([../lua/bytes.md](../lua/bytes.md)). You supply a **name** and a
+**replacement string** positionally; the wrapper builds the
+`kcdxBytesOptions`, threads `owningPlugin = K.self`, calls
+`K.bytes->Register(&opts)`, and auto-logs on a zero handle. No
+`kcdxBytesOptions opts = {}` ceremony, no manual `owningPlugin` threading, no
+`if (h == 0) log…` boilerplate.
+
+```cpp
+#include "kcdx/Kcdx.h"
+
+static Kcdx K;
+
+extern "C" __declspec(dllexport)
+bool kcdxPlugin_Load(const kcdxInterface* api) {
+    if (!K.Init(api, "redmoon", "outfit")) return true;   // logs why; Bytes missing
+    kcdx::bytes::Write(K, "outfit_swap_callsite_aob", "45 31 F6");
+    return true;
+}
+```
+
+The name `"outfit_swap_callsite_aob"` carries the address; the replacement is
+the same-length rewrite (a `[[patch]]` over the curated site that
+`cap-01` / `cap-39-cpp-bytes` also exercise). `Write` is the everyday
+fire-and-log form; `TryWrite` is the handle-returning variant for
+programmatic branching. Pass an optional `const kcdxBytesOptions*` third arg
+to set the `[advanced]` knobs (`name`, `description`, `original` verify
+bytes, `module`, `offset`, `idempotent`); the wrapper copies your struct and
+overwrites only `owningPlugin` + the positional `target`/`replacement`. Full
+wrapper reference — the floor model, when to drop down — in
+[wrapper.md](wrapper.md), particularly its
+[3-floor model](wrapper.md#the-3-floor-model).
+
+## The raw floor (drop-down) — `kcdxBytesInterface`
+
+Read the sections below when you need the unchecked raw interface: an
+`[advanced]` locator path the wrapper does not pre-fill positionally
+(`pattern` / `addressId` / `targetSymbol` instead of `target`), or any other
+case that wants the raw struct in your hands. This is the
+**always-available floor** under the wrapper; everything the wrapper does is
+reachable through it directly (see
+[wrapper.md §3-floor model](wrapper.md#the-3-floor-model)).
+
 ## Fetching the interface
 
 Like every capability interface, fetch it once via `QueryInterface` and cache
@@ -40,21 +87,6 @@ if (!bytes) { /* engine version mismatch — fail loud, do not skip silently */ 
 
 A null return means the running engine does not implement that
 interface/version.
-
-## Named-target sub-verb shape — `kcdxBytesInterface::<Name>{...}` (NYI)
-
-The C++ peer of Lua's `kcdx.bytes.<name>{...}` smart-resolver shape
-([../lua/bytes.md](../lua/bytes.md)). **Not yet implemented (NYI)** — the
-parity mirror lands in a follow-up step that exposes a typed name-keyed
-sub-verb (the planned form is a template specialization keyed by the resolved
-name, e.g. `kcdxBytesInterface::outfit_swap_callsite_aob{...}` where the
-locator is fixed by the name and the options struct carries only the rewrite
-payload — no `target` string, no other locator fields). The NYI marker is
-removed when this surface ships and the cross-language parity coverage
-exercises both sides. Until then, the raw `Register` method below (which
-takes a full `kcdxBytesOptions` including a `target` string) is the only C++
-install path; it IS at full parity with the flat-table `kcdx.bytes{...}` form
-on the Lua side.
 
 ## The surface — one `Register` + four query methods
 
@@ -199,10 +231,13 @@ Operate on a handle returned by `Register`
   `kcdx.bytes` handle,
   which raises the equivalent teaching error.
 
-## Minimal snippet
+## Minimal snippet (raw floor)
 
-A copy-paste-runnable deferred rewrite by **named target** (the everyday path),
-using the [`Kcdx.h`](wrapper.md) wrapper's pre-fetched `K.bytes` + `K.memory`:
+A copy-paste-runnable deferred rewrite calling `Register` directly. The
+everyday path is the [`kcdx::bytes::Write`](#the-common-path--kcdxbyteswritek-target-replacement-the-wrapper-floor)
+wrapper above; reach for this raw shape when you need an `[advanced]`
+locator path (`pattern` / `addressId` / `targetSymbol`) or any other case
+that wants the raw struct in your hands.
 
 ```cpp
 #include "kcdx/Interfaces.h"
