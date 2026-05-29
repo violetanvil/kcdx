@@ -61,12 +61,20 @@ patches, console commands, Lua). The upgrade is purely additive — the
 `kcdx.toml`'s presence is the only thing that reclassifies the folder from
 vanilla pak mod to kcdx plugin.
 
-Why the sentinel: WHGame.dll's `DllMain` is the only natural "phase
-break" in KCD2's startup. Some fixes (BugSplat filename, custom
-ICompatibility flags, etc.) MUST run before WHGame.dll's `DllMain` to
+Why the sentinel: WHGame.dll's `DllMain` is the canonical timing anchor
+for the "before_game" window — it is the only natural "phase break" in
+KCD2's startup. Some fixes (BugSplat filename, custom ICompatibility
+flags, etc.) MUST be in place before WHGame.dll's `DllMain` runs to
 take effect; everything else runs after the engine has finished
 booting. The sentinel materializes that phase break as a row the user
 can position other rows around.
+
+`before_game` is a TIMING window, not a target-DLL gate. The LDR
+notification mechanism that drives the window applies a resolved
+before_game patch to **any** DLL mapped during it — WHGame.dll, other
+game-bin DLLs, third-party preloads — not just WHGame.dll. The sentinel
+names *when* the window closes, not *which* DLL the window's patches
+may target.
 
 ## Sort key
 
@@ -105,7 +113,8 @@ A `[load_order]` table per plugin's `kcdx.toml`, with two optional keys:
 ```toml
 [load_order]
 # Where should this plugin sit by default?
-#   "before_game"  — applied before WHGame.dll's DllMain
+#   "before_game"  — applied during the LDR window (before WHGame.dll's
+#                    DllMain; targets any DLL mapped during the window)
 #                    (only valid if all entries are zone-flexible)
 #   "after_game"   — applied at first update tick (default for user plugins)
 #   ""  (omitted)  — kcdx derives from capabilities. Engine builtins
