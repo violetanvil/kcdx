@@ -301,7 +301,12 @@ GAME MAIN THREAD (running CSystem::Init in parallel with worker)
    sub-step may not be needed. Settle at `/feature` start.
 4. `/feature` — implement, ordered:
    - ~~Worker thread restructure (remove SELECT detour install).~~ DONE step 4.
-   - `pak_mod_registry` Workshop walk. (separate follow-up; not in step 4.)
+   - ~~`pak_mod_registry` Workshop walk. (separate follow-up; not in
+     step 4.)~~ DONE — already shipped in `DiscoverWorkshop`
+     (`src/mod_absorb/pak_mod_registry.cpp`), wired into
+     `config.cpp::LoadAllConfigs` (line 1209), cap-54 self-test
+     assertion 3b regression-covers the Workshop walk. Live boot
+     `15:27:10.572` registered 7 Workshop mods into the enabled list.
    - ~~`InstallCtorBracket` + ctor hook callback + `g_kcdxReadyEvent`.~~ DONE step 4.
    - ~~Move enabled-list build to worker; signal event when done.~~ DONE earlier; preserved.
    - ~~Doc updates (restructure-plan.md, load-order.md) for the
@@ -616,18 +621,29 @@ cap-61 test plugin pins the regression: a bracket runtime crash makes
 its `kcdx.on("ready")` assertion non-firing, so the row never PASSes
 and no `suite: X/Y passing` line emits.
 
-### Deferred-from-step-4 (independent of #1 / #2)
+### Deferred-from-step-4 (independent of #1 / #2) — ALL CLOSED
 
-- **`pak_mod_registry` Workshop walk** (round-2 decision 2). Kcdx
+- ~~**`pak_mod_registry` Workshop walk** (round-2 decision 2). Kcdx
   currently inherits the engine's Workshop scan via the original SELECT
   pass; with SELECT gone the Workshop side of discovery is unowned. Not
   a blocker for boot-to-menu; ships when the debug agent's choice for
-  crash #2 settles whether SELECT runs at all.
+  crash #2 settles whether SELECT runs at all.~~ DONE — `DiscoverWorkshop`
+  is shipped in [`src/mod_absorb/pak_mod_registry.cpp`](../../src/mod_absorb/pak_mod_registry.cpp)
+  and called from [`config.cpp::LoadAllConfigs`](../../src/config.cpp)
+  at line 1209. cap-54 assertion 3b regression-covers the synthetic
+  Workshop root walk + fromWorkshop flag + reject-no-manifest. Live
+  boot evidence (`kcdx-dev_2026-05-28_15-27-10.log` line 15:27:10.572):
+  `discover_workshop_start path="…\steamapps\workshop\content\1771300\"`
+  + 7 Workshop mods registered (znpcoverhaul, xnude, instagather,
+  ebapmod, more_weight, smoothcutscenes, inventory_in_dialogue_quicksave)
+  + funnel breakdown `7 from mods/, 0 from kcdx-plugins/, 7 from Steam
+  Workshop` + Workshop entries fold into the enabled list (idx 7–12)
+  + MOUNT walks kcdx's list verbatim.
 - ~~**Doc updates for `before_game` widening** (round-2 decision 4). Doc
   sweep across [restructure-plan.md](restructure-plan.md) +
   [load-order.md](../load-order.md); independent of every above
   follow-up.~~ DONE post-step-4 (commits 9264d6a + 43a9c14). The
   WHGame-specific framing in both docs was widened to name `before_game`
   as a TIMING window with the LDR-notify mechanism's any-DLL reach.
-  The `pak_mod_registry` Workshop walk above is the only deferred-from-
-  step-4 item still open.
+
+Step 4 ships with zero open follow-ups.
