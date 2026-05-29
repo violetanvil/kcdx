@@ -796,7 +796,7 @@ Both dropped as single-version/single-module relics the new model obsoletes.)
 |---|---|
 | `entities.kcdx_id` / `entity_type` | maintainer-assigned at the v1.5 baseline (id 1..321120 per dumped function; `entity_type=function` for the dump, slots/sites from the curated seed). |
 | `entities.module_id`, `modules.name` | maintainer-supplied at import (the dumped module's filename). |
-| `game_versions.tag` / `ordinal` | `<game>/whdlversions.json`, the **MasterMasterPGO** config's `versionId` — `tag=1.5.1164953` (branch `release_1_5` + build), `ordinal=1164953` (the game's monotonic build number). PROBE-verified; the DLL has no version resource. |
+| `game_versions.tag` / `ordinal` | `<game>/whdlversions.json`, the **MasterMasterPGO** config's `versionId` — `tag=1.5.1164953` (branch `release_1_5` + build), `ordinal=1164953` (the game's monotonic build number). PROBE-verified. (The DLL has no PE VS_VERSIONINFO resource, but it does intern the version twice as a `.rdata` string — at va=0x183c3edef and va=0x183dba258 in 1.5.1164953 — so tools other than this importer may also read it from the DLL directly.) |
 | `entity_versions.rva` / `length` | Ghidra `Function.getEntryPoint()−imageBase` / `getBody().getNumAddresses()` (FunctionPass). |
 | `entity_versions.content_hash` | BLAKE3 of on-disk `[rva, rva+length)`, no normalization (hash contract; `ContentHash.java`). |
 | `entity_versions.value` | the resolved integer for non-byte kinds (vtable slot / data offset) — from the curated seed. |

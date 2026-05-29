@@ -27,12 +27,20 @@ TWO MODES:
   - REBUILD (--rebuild): the from-scratch baseline build from a dump dir. Builds
     the v1.5 baseline; also the path to use if the schema itself changes.
 
-THE ON-DISK VERSION SOURCE (verified): the game DLL carries NO PE version
-resource. The version is in <game>/whdlversions.json, which holds PER-CONFIGURATION
-build ids; the SHIPPED config is MasterMasterPGO (the live game runs from
-Bin/Win64MasterMasterSteamPGO/). The detector reads that config's versionId, whose
-build number (e.g. 1164953) is the game's own monotonic counter -> the ordinal
-(backfill-safe); tag = branch (release_1_5) + build -> "1.5.1164953".
+THE ON-DISK VERSION SOURCE this importer uses: <game>/whdlversions.json, which
+holds PER-CONFIGURATION build ids; the SHIPPED config is MasterMasterPGO (the
+live game runs from Bin/Win64MasterMasterSteamPGO/). The detector reads that
+config's versionId, whose build number (e.g. 1164953) is the game's own
+monotonic counter -> the ordinal (backfill-safe); tag = branch (release_1_5)
++ build -> "1.5.1164953".
+
+Note: the DLL itself ALSO carries the version, just not as a PE VS_VERSIONINFO
+resource. It is interned twice as a .rdata string ("release_1_5_1164953_841";
+verified at va=0x183c3edef and va=0x183dba258 in the 1.5.1164953 build, see
+_research/init-cycle-recon/_version_strings.txt). The importer uses
+whdlversions.json because it's a structured JSON parse rather than a binary
+.rdata scan -- not because the DLL lacks the version. Other tools (e.g. the
+maintainer seed editor) MAY resolve from the DLL directly.
 
 SCHEMA (FLATTENED 2026-05-28; 5 user tables + 3 DEV-only + _dict_* lookups):
   USER: modules, game_versions, address_names, address_versions, meta.
@@ -615,7 +623,9 @@ def read_address_versions_seed(path):
 # ---------------------------------------------------------------------------
 # The shipped game config, as it appears in whdlversions.json versionId strings
 # (the live game runs from Bin/Win64MasterMasterSteamPGO/). The DLL has no PE
-# version resource; this JSON is the source of truth.
+# VS_VERSIONINFO resource; this JSON is the source THIS importer uses. (The
+# version IS also interned in WHGame.dll's .rdata -- see the module docstring
+# at the top of this file -- but parsing JSON is simpler than scanning .rdata.)
 SHIPPED_CONFIG_TOKEN = "MasterMasterPGO"
 
 
@@ -636,7 +646,10 @@ def read_game_version(game_dir):
     path = os.path.join(game_dir, "whdlversions.json")
     if not os.path.isfile(path):
         raise RuntimeError("whdlversions.json not found in %s (the game version "
-                           "source; the DLL has no version resource)" % game_dir)
+                           "source this importer parses; an alternative is the "
+                           "DLL's own .rdata version string -- see the module "
+                           "docstring -- but this importer uses the JSON)"
+                           % game_dir)
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 

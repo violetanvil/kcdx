@@ -116,7 +116,10 @@ python data/refdata-extractor/python/import_to_sqlite.py \
 # Reads the existing DBs in <out_dir>, detects whether the game on disk is newer,
 # decides whether the maintainer needs to re-verify. Reads the on-disk version
 # from the game's whdlversions.json (the shipped MasterMasterPGO config's build
-# number; the DLL carries no PE version resource).
+# number; the importer uses this JSON because it is a simpler parse than the
+# DLL's own .rdata string -- the DLL carries no PE VS_VERSIONINFO resource,
+# but it does intern the version twice as a .rdata string, which other tools
+# may scan directly).
 python data/refdata-extractor/python/import_to_sqlite.py data/ <game-dir>
 #  exit 0 = DB already current; exit 3 = newer game version (maintainer
 #  re-verifies the curated set against the new dump); exit 2 = usage error.
