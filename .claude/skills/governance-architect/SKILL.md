@@ -59,8 +59,8 @@ Read the relevant files. Identify:
 ### 5. Implement
 After sign-off: write/edit files following established conventions (SKILL.md frontmatter shape; hook stdin-JSON / `exit 2`-blocks / `exit 0`-warns conventions; rule `paths:` frontmatter; settings.json structure). Register hooks in settings.json. Update CLAUDE.md's rules table / skill-picker / key-paths when adding files. Smoke-test the hook on synthetic JSON input where useful (pipe a `@{ tool_input = @{ ... } } | ConvertTo-Json` through it). Apply the agent-optimization rules below to every line you write.
 
-### 6. Commit per the cycle
-Commit at chunk completion via `/commit`. Specific-file staging only. Commit message carries the rationale — the skill body does NOT. No Claude-attribution trailer. Do NOT auto-create branches — commit to the current branch (`concurrency-git.md`); branch/worktree decisions are the user's.
+### 6. Commit the milestone
+After sign-off + implementation, invoke `/commit` on the touched files — this is the cycle's durable artifact per CLAUDE.md "Commit at coherent milestones." Specific-file staging only. Commit message carries the rationale — the skill body does NOT. No Claude-attribution trailer. Do NOT auto-create branches — commit to the current branch (`concurrency-git.md`); branch/worktree decisions are the user's. If the user picked options but hasn't approved a particular file edit yet, that file stays uncommitted — only land what's user-blessed.
 
 ## Skills are agent-optimized — not human-optimized
 

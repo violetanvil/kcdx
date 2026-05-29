@@ -70,6 +70,12 @@ Break into sub-buckets only when ≥5 findings of distinct types. Otherwise the 
 
 ---
 
+## Close — milestone check
+
+This skill's output is a copy-paste reply for the user to send. The reply itself is not an edit. But if the user's relayed turn caused YOU to update a rule, a doc, or a known-issue file to back the reply (e.g., a rule was wrong and you fixed it as part of the audit), that edit IS a durable artifact → invoke `/commit` on the touched files before stopping. The reply is the user's to relay; the rule edit is yours to land per CLAUDE.md "Commit at coherent milestones." If no files were edited (reply-only turn), no commit.
+
+---
+
 ## Anti-patterns
 
 - Don't slip into consultation framing in the copy-paste block — the user already picked; no "consider doing X" / debate.

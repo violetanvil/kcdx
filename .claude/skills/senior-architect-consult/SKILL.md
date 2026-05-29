@@ -33,6 +33,12 @@ Skip sections that don't apply. "tldr" / "just yes/no" → take + lean only.
 
 ---
 
+## Close — milestone check
+
+Before stopping, ask: did this turn produce a durable artifact (a rule rewrite landed per user direction, a `docs/design.md` clarification, a new outstanding-work entry)? If yes → invoke `/commit` on the specific files this skill touched. If no (discussion only, no edit landed, or the user is still deciding) → leave the working tree as-is for the next turn. The bar is "closed loop, captured outcome" per CLAUDE.md "Commit at coherent milestones"; do not ask the user "should I commit?" — apply the rule.
+
+---
+
 ## Anti-patterns
 
 - Don't produce a "Recommended response" / "tell the agent X" block. Wrong skill — route to `senior-architect-reply`.

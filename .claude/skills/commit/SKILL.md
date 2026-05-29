@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Land verified changes. Called by `/execute` after it passes build + step-review for a step; called by `/governance-architect` after a verified chunk; called directly by the user only for trivial single-file edits already made by hand (markdown typos, comment fixes, matrix-row status updates). Not the right tool for non-trivial work — use `/execute` instead. Runs `pwsh ./build.ps1` if C++/build files changed, drafts a commit message in the repo's existing style, applies a cohesion heuristic, stages specific files by name, commits. Honors CLAUDE.md hard rules and the no-Claude-attribution workspace rule: build.ps1 is the build path, specific-file staging only, no push, no amend, no --no-verify.
+description: Land a coherent milestone. Called at the end of any cycle/skill/flow that produced a durable artifact — an `/execute` step, a `/feature` step, a `/debug` investigation with evidence captured, a `/governance-architect` rule rewrite, a `/senior-architect-consult` discussion that ended in an edit, a `/research-disassembly` fact with provenance, a trivial hand-edit. The bar is "closed loop, captured outcome," not "how it got produced." NOT for mid-investigation state (a probe that hasn't fired, an unanswered question, a discarded hypothesis) — leave the working tree as live state. Runs `pwsh ./build.ps1` if C++/build files changed, drafts a commit message in the repo's existing style, applies a cohesion heuristic, stages specific files by name, commits. Honors CLAUDE.md hard rules and the no-Claude-attribution workspace rule: build.ps1 is the build path, specific-file staging only, no push, no amend, no --no-verify.
 ---
 
 # Commit
@@ -53,6 +53,12 @@ The landing step underneath `/execute`: stages + commits with a build-gate and c
 - Does not launch the game — in-game verification is the user's, at the checkpoint.
 - Does not push, amend, or pass `--no-verify`.
 
-## When to invoke directly
+## When to invoke
 
-Direct user invocation is for trivial single-file edits already made by hand: markdown typos, comment fixes, a `test-plugins/README.md` matrix-row status update after a game-launch confirmed a result. Everything non-trivial routes through `/execute` (which calls this skill internally after step-review clears). The build-gate + cohesion-heuristic + message-style logic is the same regardless of caller.
+Self-invoke at the end of any work cycle that produced a durable artifact:
+
+- **Orchestrator close** — `/execute` step landed + step-review clean; `/feature` step landed; `/governance-architect` rule rewrite + sign-off; `/debug` investigation that captured evidence (working probe + known-issue updated; root cause documented; verified fix).
+- **Discussion close that landed an edit** — `/senior-architect-consult` or `/senior-architect-reply` ended in a rule/doc edit; `/research-disassembly` produced a `_research/` artifact ready to land.
+- **Trivial hand-edit** — markdown typo, comment fix, `test-plugins/README.md` matrix-row status update after a game-launch confirmed a result.
+
+Do NOT self-invoke when the working tree carries mid-investigation state: a probe that didn't fire, an unanswered design question, a discarded hypothesis, an in-flight draft. Leave it as live working-tree state for the next iteration. The build-gate + cohesion-heuristic + message-style logic is the same regardless of caller.

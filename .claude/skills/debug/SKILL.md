@@ -300,6 +300,21 @@ After Gate B returns `land-fix`, proceed:
 
 A CryEngine quirk, Windows behavior, or mod-author footgun — write a new memory or update existing. Don't write memories for "fixed the typo on line 42".
 
+### 3f. Commit at each milestone (in-investigation cadence)
+
+`/debug` is iterative — commit cadence follows the milestone rule per CLAUDE.md "Commit at coherent milestones." Apply per turn:
+
+| Turn outcome | Commit? |
+|---|---|
+| Probe fired + evidence captured + Trail row written | YES — invoke `/commit` on the probe code + known-issue file |
+| Probe didn't fire / returned nothing useful, no doc written | NO — leave the probe in the tree as live state for the next iteration |
+| Probe didn't fire BUT you wrote the Trail row explaining why + what to try next | YES — the *understanding* is the durable artifact |
+| Verifier returned `land-fix`, fix lands + Resolution + archive | YES — the per-§3d in-same-commit rule (Resolution + rule edits + probe archive headers together) |
+| Verifier returned `probe-required` / `rewrite-resolution` | NO — investigation continues; the working tree carries the in-flight state |
+| Verifier returned `escalate-design` | NO until architect + user resolve the fork |
+
+The investigation is a sequence of milestone commits, not one terminal commit. Do not batch — a written-up Trail row is its own commit; the eventual fix is a separate commit landing per §3d.
+
 ---
 
 ## Communication

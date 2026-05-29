@@ -65,3 +65,7 @@ For each fact requested:
 ## 6. Handoff — verifying ≠ recording
 
 This skill VERIFIES the fact and produces the provenance. Writing it into the `data/seeds/` files (entity row in `address_names_seed.csv`, per-version fact in `address_versions_seed.csv`) + `src/address_library.cpp::kEntries[]` is a code edit — the working flow (`/execute`, or the caller that requested the research). State the exact prose + field value ready to paste; let the recording happen as its own reviewed change. (Append-only IDs; edit both seeds and the `kEntries[]` mirror — `address-library.md`.)
+
+## 7. Close — milestone-commit the `_research/` artifact
+
+If a fresh disassembly produced a new `_research/<phase>/` script + output (per §5), that's a durable artifact regardless of whether the recording into the seed/kEntries has happened yet — the next agent finds it at ladder tier 2 instead of re-disassembling. Invoke `/commit` on the `_research/` files this turn produced before stopping, per CLAUDE.md "Commit at coherent milestones." Verified-fact-only turns (no new `_research/` files written — the fact came from existing prose or a prior dump) commit nothing from this skill; the recording commit is the caller's.
