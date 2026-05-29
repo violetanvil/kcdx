@@ -17,22 +17,26 @@
 -- end-to-end install (claim 1).
 
 -- ====================================================================
--- (1) CAP-59-fires — kcdx.hook.luaopen_math.before(fn) on a curated
+-- (1) CAP-59-fires — kcdx.hook.lua_pcall.before(fn) on a curated
 --     engine-seed entry installs AND the callback fires.
 --
--- Target choice: `luaopen_math` — an UNHOOKED verified leaf called
--- EXACTLY ONCE during Lua boot (cap-33/cap-34/cap-35 all install no-op
--- hooks on it without colliding with production hooks). One fire per
--- boot is enough: we self-report PASS from the FIRST fire and the
--- one-shot guard makes subsequent fires (if any) inert.
+-- Target choice: `lua_pcall` — a curated verified leaf called
+-- continuously throughout the session (every Lua-from-C invocation
+-- routes through it). Critically, lua_pcall is called many times AFTER
+-- plugin load — unlike one-shot Lua-state-init functions like
+-- luaopen_math, which execute during luaL_openlibs at VM creation
+-- (BEFORE plugin scripts run) and have zero future call sites by the
+-- time a plugin can install a hook. lua_pcall fires from the next Lua
+-- callback the engine dispatches, which happens within milliseconds of
+-- plugin load. One fire per session is enough: we self-report PASS from
+-- the FIRST fire and the one-shot guard makes subsequent fires inert.
 --
 -- The smart resolver shape: NO `kcdx.` prefix — the __index access
 -- key is the bare seed name. ResolveBareWinner walks self > engine >
--- other; the bare `luaopen_math` hits the engine seed and the smart
--- resolver returns the install closure. (cap-35's plugins use the
--- 2-segment explicit form `kcdx.luaopen_math` via the flat-table
--- target=; cap-59 uses the bare smart-resolver form — same target,
--- different surface.)
+-- other; the bare `lua_pcall` hits the engine seed and the smart
+-- resolver returns the install closure. (cap-03 / cap-04 use the
+-- flat-table form `kcdx.hook{target="lua_pcall", ...}`; cap-59 uses
+-- the bare smart-resolver form — same target, different surface.)
 --
 -- FALSIFIABLE: if the smart resolver fails to resolve the bare engine
 -- seed name (returns nil from __index), `.before` raises and registration
@@ -47,30 +51,31 @@ local g_handle  = nil    -- captured from the install path; nil if .before faile
 
 do
     local ok, errOrHandle = pcall(function()
-        -- The smart resolver: kcdx.hook.luaopen_math → resolved userdata;
+        -- The smart resolver: kcdx.hook.lua_pcall → resolved userdata;
         -- .before → install closure; (fn) → install. Returns the handle
         -- (or (nil, err) on a bad call inside Lua_Hook).
-        return kcdx.hook.luaopen_math.before(function(L)
-            -- L is the lua_State* arg the seed's signature ("i32 (ptr L)")
-            -- promises. We don't read it; the callback's job is to fire
-            -- once and self-report.
+        return kcdx.hook.lua_pcall.before(function(L, nargs, nresults, errfunc)
+            -- L is the lua_State*; the other args come from lua_pcall's
+            -- signature ("i32 (ptr L, i32 nargs, i32 nresults, i32
+            -- errfunc)"). We don't read them; the callback's job is to
+            -- fire once and self-report.
             if g_fired then return end       -- one-shot guard
             g_fired = true
             kcdx.test.report("CAP-59-fires", true,
-                "kcdx.hook.luaopen_math.before(fn) installed AND fired — "
+                "kcdx.hook.lua_pcall.before(fn) installed AND fired — "
                 .. "the smart-resolver install path resolved the bare "
                 .. "engine-seed name (self > engine > other walk hit the "
                 .. "engine tier), wired the detour, and the callback "
-                .. "received its first fire on the luaopen_math boot call")
+                .. "received its first fire on the next lua_pcall call")
         end)
     end)
 
     if not ok then
         kcdx.test.report("CAP-59-fires", false,
-            "kcdx.hook.luaopen_math.before(fn) raised at registration: "
+            "kcdx.hook.lua_pcall.before(fn) raised at registration: "
             .. tostring(errOrHandle) .. " — the smart resolver did not "
             .. "produce a callable installer for the bare engine-seed "
-            .. "name `luaopen_math` (the typo-fails-fast gate or the "
+            .. "name `lua_pcall` (the typo-fails-fast gate or the "
             .. "kind-aware filter falsely rejected a valid name)")
         return  -- skip the rest; the install never happened
     end
@@ -78,10 +83,10 @@ do
     g_handle = errOrHandle
     if g_handle == nil then
         kcdx.test.report("CAP-59-fires", false,
-            "kcdx.hook.luaopen_math.before(fn) returned nil at registration "
+            "kcdx.hook.lua_pcall.before(fn) returned nil at registration "
             .. "— the install path rejected a known-good curated name + "
             .. "valid mode (the smart resolver did not produce a working "
-            .. "installer for `luaopen_math.before`)")
+            .. "installer for `lua_pcall.before`)")
         return
     end
 end
@@ -165,29 +170,32 @@ else
 end
 
 -- ====================================================================
--- InputLoaded backstop — if the luaopen_math callback NEVER fires
--- during boot, the one-shot guard never trips and CAP-59-fires never
--- self-reports. Convert that to a loud FAIL on the input_loaded
--- lifecycle event (which fires well after luaopen_math; a missed
--- luaopen_math fire by then is a real regression, not "not yet").
+-- InputLoaded backstop — if the lua_pcall callback NEVER fires between
+-- plugin load and input_loaded, the one-shot guard never trips and
+-- CAP-59-fires never self-reports. Convert that to a loud FAIL on the
+-- input_loaded lifecycle event. lua_pcall is called continuously from
+-- the moment plugin Lua starts running (every Lua-from-C callsite uses
+-- it), so a missed fire by input_loaded means the smart-resolver
+-- install never reached the dispatch path — a real regression.
 -- ====================================================================
 
 kcdx.on("input_loaded", function()
     if not g_fired then
         kcdx.test.report("CAP-59-fires", false,
-            "the kcdx.hook.luaopen_math.before(fn) callback did NOT fire "
+            "the kcdx.hook.lua_pcall.before(fn) callback did NOT fire "
             .. "between plugin load and input_loaded — the install path "
             .. "wired no detour (handle=" .. tostring(g_handle)
             .. (g_handle and (", :applied()=" .. tostring(g_handle:applied())
                 .. ", :reason()=" .. tostring(g_handle:reason())) or "")
-            .. "). luaopen_math fires once during the lualib init wave "
-            .. "well before input_loaded, so a missed fire here means the "
-            .. "smart-resolver install never reached the dispatch path")
+            .. "). lua_pcall fires continuously from plugin-load onward "
+            .. "(every Lua-from-C callsite); a missed fire by input_loaded "
+            .. "means the smart-resolver install never reached the "
+            .. "dispatch path")
     end
 end)
 
 kcdx.log.info("CAP59",
-    "registered the kcdx.hook.luaopen_math.before(fn) smart-resolver "
+    "registered the kcdx.hook.lua_pcall.before(fn) smart-resolver "
     .. "install (CAP-59-fires self-reports from the first callback fire) "
     .. "+ the kcdx.hook.cap59_data_slot_target.before nil-access probe "
     .. "(CAP-59-invalid-mode-nil self-reports inline)")

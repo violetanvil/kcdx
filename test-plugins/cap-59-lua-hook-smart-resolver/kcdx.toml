@@ -5,16 +5,22 @@
 # both reported synchronously at plugin load OR from the first callback
 # fire (boot-only):
 #
-#   * CAP-59-fires — `kcdx.hook.luaopen_math.before(fn)` on the curated
-#       engine-seed entry (`luaopen_math` — an unhooked leaf called EXACTLY
-#       ONCE during boot per cap-35's design note) actually installs and
-#       FIRES. The test self-reports PASS from the FIRST callback fire (a
-#       one-shot guarded report — polling fire-count at ready/input_loaded
-#       is unreliable because the callback may already have fired or not
-#       yet fired at those checkpoints). FAILS if the callback never fires
-#       (the smart resolver's install path never wired the detour) OR if
-#       the install returns nil at registration (the resolver did not
-#       produce a callable for a known-good curated name + valid mode).
+#   * CAP-59-fires — `kcdx.hook.lua_pcall.before(fn)` on the curated
+#       engine-seed entry (`lua_pcall` — called continuously by every
+#       Lua-from-C dispatch, including those that fire from the moment the
+#       plugin Lua surface comes online) actually installs and FIRES. The
+#       test self-reports PASS from the FIRST callback fire (a one-shot
+#       guarded report — polling fire-count at ready/input_loaded is
+#       unreliable because the callback may already have fired or not yet
+#       fired at those checkpoints). lua_pcall is the right target choice
+#       because it fires AFTER plugin load: targets called only during
+#       Lua-VM init (e.g. luaopen_math, called once during luaL_openlibs
+#       at VM creation) have already executed by the time plugin scripts
+#       run, so a hook installed at boot has zero future call sites to
+#       fire on. FAILS if the callback never fires (the smart resolver's
+#       install path never wired the detour) OR if the install returns
+#       nil at registration (the resolver did not produce a callable for
+#       a known-good curated name + valid mode).
 #
 #   * CAP-59-invalid-mode-nil — the smart resolver's kind-aware filter
 #       rejects an INVALID-MODE-FOR-KIND access by returning nil at the
@@ -32,9 +38,10 @@
 # Test mode: boot-only. CAP-59-invalid-mode-nil self-reports at plugin
 # load (the nil access raises synchronously). CAP-59-fires self-reports
 # from the callback's first fire (one-shot guarded). An InputLoaded
-# backstop reports FAIL on CAP-59-fires if the callback never fires
-# during boot (luaopen_math fires once during the lualib init wave, well
-# before InputLoaded — a missed fire is a real regression).
+# backstop reports FAIL on CAP-59-fires if the callback never fires by
+# then — lua_pcall fires continuously from plugin load onward, so a
+# missed fire by InputLoaded is a real regression in the smart-resolver
+# install path.
 
 [kcdx]
 test_suite_only = true
@@ -43,7 +50,7 @@ test_suite_only = true
 name                = "cap_59_lua_hook_smart_resolver"
 display_name        = "CAP-59 kcdx.hook smart-resolver shape"
 author              = "ts"
-description         = "Pure-Lua kcdx.hook smart-resolver self-test: kcdx.hook.luaopen_math.before(fn) on a curated engine-seed entry installs AND fires (one-shot guarded self-report from the first callback fire), and kcdx.hook.<declared-data_slot-name>.before returns nil at the mode access (the kind-aware filter rejects an invalid mode for a non-function-kind declared target — exercised via a self-declared kind=data_slot entry so the test is independent of which curated entries currently carry a non-function kind in the runtime DB)."
+description         = "Pure-Lua kcdx.hook smart-resolver self-test: kcdx.hook.lua_pcall.before(fn) on a curated engine-seed entry installs AND fires (one-shot guarded self-report from the first callback fire — lua_pcall is called continuously from plugin load onward, unlike one-shot VM-init functions like luaopen_math that fire before plugin scripts run), and kcdx.hook.<declared-data_slot-name>.before returns nil at the mode access (the kind-aware filter rejects an invalid mode for a non-function-kind declared target — exercised via a self-declared kind=data_slot entry so the test is independent of which curated entries currently carry a non-function kind in the runtime DB)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
