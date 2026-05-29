@@ -120,10 +120,6 @@ local declared = kcdx.declare("WHGame.dll", "cap59_data_slot_target", {
         pattern = "DE AD BE EF DE AD BE EF",
         kind    = "data_slot",
     },
-    ["*"] = {
-        pattern = "DE AD BE EF DE AD BE EF",
-        kind    = "data_slot",
-    },
 })
 
 if declared ~= true then
