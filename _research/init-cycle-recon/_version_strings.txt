@@ -1,0 +1,8 @@
+[RELEASE] section=.rdata rva=0x3c3edef va=0x183c3edef
+  match = b'release_1_5_1164953_841'
+  ctx   = 'MasterSteamPGO...* description: release_1_5_1164953_841..Using Microsoft (tm) C++ Stand'
+
+[RELEASE] section=.rdata rva=0x3dba258 va=0x183dba258
+  match = b'release_1_5_1164953_841'
+  ctx   = 'd.:.....wh_sys_LastLoadedSave...release_1_5_1164953_841.MasterMasterSteamPGO....%s_%s..'
+
