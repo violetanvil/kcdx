@@ -65,7 +65,7 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 | 2 — Lua API skeleton (7 core verbs + domains + `docs/lua/` + zone_gate + `kcdx.plugin.*`) | **DONE** |
 | 3 sub-1 — `kcdxHookInterface` v1 + `Kcdx.h` wrapper + sig-mismatch gate | **DONE** (`cdd5e7a` / `b5e548a` / `d5c3314`) |
 | 3 sub-2 — `kcdxBytesInterface` | **DONE** (`2b2e6f5`) |
-| 3 sub-3 — `kcdxCodeInterface` (trampoline) | **DONE** (`38f9dd5`) |
+| 3 sub-3 — `kcdxTrampolineInterface` v2 (extends raw pool floor with `Allocate`+`Export`, the `kcdx.code` C++ mirror) | **DONE** (`38f9dd5`) |
 | 4 — migrate test suite + engine builtin | **DONE for plugins** (corpus migrated; audit confirms 0 legacy behavior tables in production manifests). **bugsplat builtin DLL is BLOCKED on Phase 11** (manifest-only stub ships today). |
 | 5 — delete old TOML behavior parsers | **DONE** (`95854fe`) |
 | 6 — probe code cleanup (narrow subset) | **DONE** (`3f66c47`) |
@@ -526,11 +526,14 @@ enum kcdxInterfaceID {
     kcdxInterface_Console        = 7,   // existing
     kcdxInterface_Hook           = 8,   // NEW — kcdx.hook equivalent
     kcdxInterface_Bytes          = 9,   // NEW — kcdx.bytes equivalent
-    kcdxInterface_Code           = 10,  // NEW — kcdx.code equivalent
+    // (kcdx.code is the high-level peer of the existing kcdxInterface_Trampoline
+    // raw-pool floor — Allocate + Export were appended to kcdxTrampolineInterface
+    // v2 rather than spawning a parallel interface. No new enum entry was added.
+    // See the Phase 3 sub-3 ledger below for the extend-not-new-interface decision.)
 };
 ```
 
-`kcdxHookInterface::Install`, `kcdxBytesInterface::Write`, `kcdxCodeInterface::Allocate` take options structs that parallel the Lua opts tables exactly. Detour callbacks have the same `args/call_original` shape — kcdx's JIT thunk (`runtime_func_t`) is the dispatch surface for both Lua and C++.
+`kcdxHookInterface::Install`, `kcdxBytesInterface::Write`, `kcdxTrampolineInterface::Allocate` (v2) take options structs that parallel the Lua opts tables exactly. Detour callbacks have the same `args/call_original` shape — kcdx's JIT thunk (`runtime_func_t`) is the dispatch surface for both Lua and C++.
 
 The legacy `kcdxPluginVersionData` exported data block (from [src/plugin_loader.h:84](../../src/plugin_loader.h#L84) — already replaced by `kcdx.toml` per the existing design) is fully removed. One source of identity: the manifest.
 
@@ -551,7 +554,7 @@ struct Kcdx {
     // (graceful degradation across kcdx versions). Check before use.
     const kcdxHookInterface*       hook       = nullptr;
     const kcdxBytesInterface*      bytes      = nullptr;
-    const kcdxCodeInterface*       code       = nullptr;
+    const kcdxTrampolineInterface* code       = nullptr;  // kcdx.code peer (v2)
     const kcdxMessagingInterface*  messaging  = nullptr;
     const kcdxTaskInterface*       task       = nullptr;
     const kcdxTrampolineInterface* trampoline = nullptr;
@@ -901,7 +904,7 @@ These are NOT rewritten by the restructure. The change is only WHO calls them: t
 | `patch_engine::Resolve` (locator pipeline) | [src/patch_engine.cpp](../../src/patch_engine.cpp) | Used by `kcdx.bytes` + `kcdxBytesInterface::Write` |
 | `conflict_engine` (pre-flight + apply order) | [src/conflict_engine.cpp](../../src/conflict_engine.cpp) | Runs incrementally; each API call slots in + verifies |
 | `hook_engine::InstallRuntime` (MinHook + first-wins) | [src/hook_engine.cpp](../../src/hook_engine.cpp) | Already the runtime path; promoted to primary |
-| Trampoline pools | [src/trampoline.cpp](../../src/trampoline.cpp) | Backs `kcdx.code` + `kcdxCodeInterface` |
+| Trampoline pools | [src/trampoline.cpp](../../src/trampoline.cpp) | Backs `kcdx.code` + `kcdxTrampolineInterface` v2 (`Allocate`/`Export`) |
 | `ldr_notify` (LDR notification path) | [src/ldr_notify.cpp](../../src/ldr_notify.cpp) | Extended for arbitrary kcdx-API-registered entries from DLL Preload |
 | `load_order` (zones, priorities, overrides) | [src/load_order.cpp](../../src/load_order.cpp) | `DeriveMinZone` becomes a manifest-field read instead of a vector scan |
 | Messaging (kcdxMessage_*) | [src/messaging.cpp](../../src/messaging.cpp) | Extended with `<sender>:<event>` pub/sub naming for kcdx.publish |
@@ -1078,7 +1081,7 @@ Executed as a sequence of independently-verified **subs** (each ships its `test-
 ### Phase 3 — C++ DLL API parity (additive) + ergonomic wrapper
 
 - New: `src/hook_interface.cpp`, `src/bytes_interface.cpp`, `src/code_interface.cpp`.
-- Extend [include/kcdx/Interfaces.h](../../include/kcdx/Interfaces.h) with `kcdxHookInterface`, `kcdxBytesInterface`, `kcdxCodeInterface`.
+- Extend [include/kcdx/Interfaces.h](../../include/kcdx/Interfaces.h) with `kcdxHookInterface`, `kcdxBytesInterface`, and the v2 extension to the existing `kcdxTrampolineInterface` (the `kcdx.code` C++ mirror appends `Allocate`+`Export` to the raw pool floor rather than spawning a parallel `kcdxCodeInterface` — see Phase 3 sub-3 ledger).
 - Wire into `QueryInterface` in [src/interfaces.cpp](../../src/interfaces.cpp).
 - **New ergonomic wrapper**: `include/kcdx/Kcdx.h` ships in this phase. Header-only struct that pre-fetches every sub-interface + builds a logger from one `Init(api, "my.name")` call. Pattern mirrors existing `kcdxLogger`. README's "writing a C++ plugin" example uses the wrapper.
 - **`docs/cpp/`** (per-interface files fronted by `docs/cpp/index.md`) written alongside the new interfaces. Every method on every interface documented. Worked example for a typical C++ plugin (using `Kcdx.h`). Phase 3 ships incomplete if the doc is missing.
@@ -1115,7 +1118,7 @@ Executed as ordered sub-steps. Each ships its `test-plugins/` regression per `.c
 
 **Phase 3 sub-1 step 5-main is COMPLETE (live-verified `cdd5e7a`, 2026-05-25).** `kcdxHookInterface` v1 is live + verified end-to-end for real C++ DLL authors: all 6 sub-verbs (Before/After/Around/Replace/Mid/Callsite) + 4 query methods, native C dispatch through the shared `hook_chain` (one chain per target, load-order-decides spans Lua + C++ — proven by the cap-36 cross-language chaining row), off_thread routing parity, AP11-safe ABI.
 
-**Phase 3 sub-1 (extended) is now COMPLETE (closed 2026-05-25).** All steps landed + live-verified: 1–3 (Uninstall, Lua + cap-35), 4 (`kcdxHookInterface` v1 ABI), 5-pre/5-pre-fix (the off-thread probe + thread-id split), 5-main ch.1–5 + fix (`kcdxHookInterface` end-to-end, native C dispatch, cap-36), 6 + 6-AP7-fix (`Kcdx.h` wrapper + cap-37), 7 (folded into cap-36), the sig-mismatch gate (cap-38), and 8 (this docs/ledger close). Suite 94/102 (sole FAIL `CAP-20-target-nosig` is pre-existing, unrelated). **Next in Phase 3: sub-2 `kcdxBytesInterface` (C++ `kcdx.bytes` mirror) + sub-3 `kcdxCodeInterface` (C++ `kcdx.code` mirror) — neither built yet (no `src/bytes_interface.cpp` / `src/code_interface.cpp`, no header decls).**
+**Phase 3 sub-1 (extended) is now COMPLETE (closed 2026-05-25).** All steps landed + live-verified: 1–3 (Uninstall, Lua + cap-35), 4 (`kcdxHookInterface` v1 ABI), 5-pre/5-pre-fix (the off-thread probe + thread-id split), 5-main ch.1–5 + fix (`kcdxHookInterface` end-to-end, native C dispatch, cap-36), 6 + 6-AP7-fix (`Kcdx.h` wrapper + cap-37), 7 (folded into cap-36), the sig-mismatch gate (cap-38), and 8 (this docs/ledger close). Suite 94/102 (sole FAIL `CAP-20-target-nosig` is pre-existing, unrelated). **Next in Phase 3: sub-2 `kcdxBytesInterface` (C++ `kcdx.bytes` mirror) + sub-3 `kcdxTrampolineInterface` v2 — `Allocate`+`Export` appended onto the existing trampoline interface as the C++ `kcdx.code` mirror — neither built yet (no `src/bytes_interface.cpp`, no v2 extension to `src/trampoline.cpp`, no header decls).**
 
 **Probe outcome (post-`ebc7367` re-run, 2026-05-24): OUTCOME P.** Pre-committed map per `.claude/rules/results-driven.md` was P / Q / R; P landed:
 
@@ -1129,7 +1132,7 @@ Executed as ordered sub-steps. Each ships its `test-plugins/` regression per `.c
 - **`offThread = "skip"` and `offThread = "error"` ship working** — immediately useful for authors who hook a site they know might fire off-thread.
 - **The substantive engine work of step 5-main is the C dispatch path** (ChainEntry tagged union + AddC + the 10 thunks + QueryInterface wire-up + the `HookPayload::offThread` field + the Lua `off_thread` parser). Off-thread routing is the small surface; ABI wiring is the bulk.
 
-**Phase 3 sub-1 (extended) — ALL STEPS DONE (closed 2026-05-25; see the ledger above + the completion note).** The step-by-step plan below is retained as the as-built record. Remaining Phase 3 work is sub-2 (`kcdxBytesInterface`) + sub-3 (`kcdxCodeInterface`).
+**Phase 3 sub-1 (extended) — ALL STEPS DONE (closed 2026-05-25; see the ledger above + the completion note).** The step-by-step plan below is retained as the as-built record. Remaining Phase 3 work is sub-2 (`kcdxBytesInterface`) + sub-3 (`kcdxTrampolineInterface` v2 — `Allocate`+`Export` appended for the `kcdx.code` C++ mirror).
 
 #### Phase 3 sub-2 — `kcdxBytesInterface` (C++ `kcdx.bytes` mirror)
 
@@ -1181,13 +1184,13 @@ CAP-39 2/2 PASS).** `kcdxBytesInterface` v1 is live for real C++ DLL authors: th
 path, the no-revert Uninstall, conflict-engine participation via the shared
 `lua_registry` `Kind::Bytes` apply pass. Both surfaces of the byte-rewrite
 capability now ship a regression (parity-is-tested). **Next in Phase 3: sub-3
-`kcdxCodeInterface` (C++ `kcdx.code` mirror) — shipped, see the sub-3 ledger
+`kcdxTrampolineInterface` v2 (`Allocate`+`Export`, the C++ `kcdx.code` mirror) — shipped, see the sub-3 ledger
 below.**
 
 #### Phase 3 sub-3 — `kcdx.code` C++ mirror (`kcdxTrampolineInterface` v2)
 
 The C++ DLL author's parity surface for the code-allocation verb. **Decision:
-EXTEND the existing `kcdxTrampolineInterface`, not a new `kcdxCodeInterface`.**
+EXTEND the existing `kcdxTrampolineInterface`, not a new parallel interface.**
 The interface already carried the raw `AllocateFromBranchPool`/`LocalPool` floor
 (Phase 4); the all-in-one `Allocate(kcdxCodeOptions*)` + standalone `Export`
 are the high-level peers of that floor — the same surface, one tier up — so they
@@ -1225,7 +1228,7 @@ plugin's OWN export; threading `K.self` as owner lets the self-tier resolve it
 `Export` are the high-level peers of the raw `AllocateFromBranchPool`/`LocalPool`
 floor that already lived on `kcdxTrampolineInterface` — same surface, one tier
 up — so they append (version bump v1→v2, AP11 append-only) rather than spawning
-a parallel `kcdxCodeInterface`. The raw pool methods coexist (`Allocate` is built
+a parallel interface. The raw pool methods coexist (`Allocate` is built
 on them); documented as peers in `docs/cpp/code.md`.
 
 **Suite count expectation.** sub-3 adds **+3** permanent rows (CAP-40's three);
