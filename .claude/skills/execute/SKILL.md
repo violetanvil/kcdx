@@ -87,20 +87,13 @@ Run exactly one cycle of the shared orchestrator loop per `.claude/skills/_share
 
 ## D. Per-cycle report
 
-After the cycle succeeds AND has been committed, emit:
+After the cycle succeeds AND has been committed AND deploy hashes verified per `_shared/orchestrator-loop.md` §C.6, emit per `_shared/orchestrator-loop.md` §F.2.
 
-```
-Execute brief landed and committed as <short-hash>.
+Lead: `Execute brief landed and committed as <short-hash>.`
 
-What landed: <one paragraph from subagent's deliverable, factual>
-Build: clean (`pwsh ./build.ps1` exited 0; kcdx.exe + kcdx.dll + kcdx-watchdog.exe produced)
-Test plugin: <test-plugins/<row-id>-<name> added/updated; matrix row recorded — in-game result pending the checkpoint launch>
-Files modified: <list>
-Deployed: <diff-scoped artifacts copied to the live install + destinations, per orchestrator-loop §C step 6; "nothing — docs/governance-only diff" if none>
-Test procedure (run verbatim): <numbered procedure per test-suite.md "The test procedure">
+Tail: `Execute cycle complete. Stopping. Run the procedure above, then tell me it ran (e.g. "test run") — I'll read the matrix from kcdx-dev.log and report.`
 
-Execute cycle complete. Stopping. Launch the game with dev mode on to confirm the test-suite matrix, or run /verification-checkpoint first if the change spans several behaviors.
-```
+The checkpoint dispatch is mechanical per §F.1 — the manager evaluates the diff against the threshold and either renders the verification-checkpoint output inline or emits the trivial-launch block. The user is never asked which.
 
 Stop. The skill does not auto-chain into another cycle. If the user has more work, they invoke `/execute` again.
 

@@ -59,7 +59,20 @@ Load-bearing step. The manager runs verification, not the subagent.
 
 If all five pass → step succeeded. Invoke `/commit` to land the step's changes (cohesion heuristic auto-commits without user approval — a single step is a cohesive chunk). After commit, advance the step-review marker per §C.1. Capture the commit hash for the caller's report.
 
-6. **Deploy the diff-scoped artifacts AND enable dev mode** so the user's launch tests what was just committed and the suite actually runs. Copy ONLY what this change rebuilt, to its real destination per `.claude/rules/loader-architecture.md` (engine C++ change → `kcdx-engine/kcdx.dll`, + `kcdx-watchdog.exe` if rebuilt; test/user-plugin change → `kcdx-plugins/<name>/`; launcher change → `kcdx.exe` at the bin root; builtin-fix change → `kcdx-engine/builtin/<fix>/`). Then ensure `<kcdx-engine>/engine.toml` has `dev_mode = true` (create it if absent, per `docs/dev-mode.md`) — without it the test suite self-skips. Enabling dev mode is the agent's job, never a user step. A docs-only / governance-only diff deploys nothing and skips dev-mode. Game-bin root is in CLAUDE.md ("Game install paths"). Report what was deployed in the §F report.
+6. **Deploy the diff-scoped artifacts, verify each copy landed, AND enable dev mode** so the user's launch tests what was just committed and the suite actually runs.
+
+   **a. Copy.** ONLY what this change rebuilt, to its real destination per `.claude/rules/loader-architecture.md`:
+   - engine C++ change → `kcdx-engine/kcdx.dll`, + `kcdx-watchdog.exe` if rebuilt;
+   - launcher change → `kcdx.exe` at the bin root;
+   - builtin-fix change → `kcdx-engine/builtin/<fix>/`;
+   - test/user-plugin change → its real live-install path per CLAUDE.md "Game install paths" + memory `project_kcdx_test_suite_deploy_layout` (existing suite plugins live under `kcdx-plugins/test-suite/<cap-NN>/`, not top-level — locate the real folder before redeploying);
+   - manifest/allowlist schema change → sync `kcdx.toml` across ALL THREE plugin trees per memory `project_kcdx_deploy_all_plugin_trees` (`kcdx-engine/builtin/`, `kcdx-plugins/`, `kcdx-plugins/test-suite/`) — missing one rejects those plugins at load.
+
+   **b. Verify each copy.** For every artifact copied in §6a, hash-compare the live-install file against its `build/Release/...` source (PowerShell `Get-FileHash`). Mismatch on ANY artifact = deploy failed. Do NOT proceed; surface to user via §E with the failed artifact list (which `build/Release/...` source, which live-install destination, source hash vs live hash). Common causes: file locked by a running game process; permission denied; wrong destination path. Resolve before continuing. Do NOT enable dev mode and do NOT emit the §F report until every artifact hashes equal.
+
+   **c. Enable dev mode.** Ensure `<kcdx-engine>/engine.toml` has `dev_mode = true` (create it if absent, per `docs/dev-mode.md`) — without it the test suite self-skips. Enabling dev mode is the agent's job, never a user step.
+
+   A docs-only / governance-only diff deploys nothing, skips §6a–§6c, and reports "nothing deployed — docs/governance-only diff" in §F. Game-bin root is in CLAUDE.md ("Game install paths"). Report what was deployed AND that hashes verified in the §F report.
 
 Proceed to §F.
 
@@ -240,7 +253,26 @@ Then STOP. Do not proceed. Do not dispatch another subagent.
 
 ## F. Per-cycle report to user
 
-After a cycle succeeds AND has been committed, the caller emits its own report shape. The shared minimum:
+After a cycle succeeds AND has been committed AND deploy hashes verified per §C.6, the caller emits its own report shape.
+
+### F.1 — Checkpoint dispatch decision (mechanical, agent-owned)
+
+BEFORE emitting the §F report, the manager decides whether to auto-invoke `verification-checkpoint`. Do NOT ask the user. The threshold is mechanical:
+
+**Auto-invoke `verification-checkpoint`** if ANY of the following holds for the cycle's diff:
+- Spans 2+ distinct testable behaviors (more than one falsifiable claim).
+- Adds 1+ new failure/error/abort branch.
+- Touches a hook surface, ABI signature, vtable slot, Address Library entry, save/cosave field, or `[[...]]` schema.
+- Modifies code from a prior phase (any file in HEAD before this cycle began).
+
+**Skip the checkpoint, emit the trivial-launch tail** only when ALL of:
+- One testable behavior.
+- No new failure path.
+- No hook/ABI/save/schema/prior-phase touch.
+
+When the threshold fires, render the verification-checkpoint output as the §F body (per `verification-checkpoint/SKILL.md` "Format"), prefixed with the caller's lead and followed by the caller's tail. The checkpoint runs its `### Deploy status` freshness probe as its first section regardless of §C.6 having just run — defense in depth against partial deploys, locked files, and stale live-install state from another chat.
+
+### F.2 — Report shape
 
 ```
 <Caller-specific lead — e.g., "Execute brief landed and committed as <short-hash>">
@@ -249,16 +281,21 @@ What landed: <one paragraph from subagent's deliverable, factual>
 Build: clean (`pwsh ./build.ps1` exited 0; kcdx.exe + kcdx.dll + kcdx-watchdog.exe produced)
 Test plugin: <test-plugins/<row-id>-<name> added/updated; matrix row recorded — in-game result pending the checkpoint launch>
 Files modified: <list>
-Deployed: <diff-scoped artifacts copied to the live install + their destinations, per §C step 6; dev mode enabled (engine.toml); "nothing — docs/governance-only diff" if none>
+Deployed: <diff-scoped artifacts copied + destinations + hashes verified per §C.6; dev mode enabled (engine.toml); "nothing — docs/governance-only diff" if none>
+
+[If F.1 fires: render verification-checkpoint output here, starting with ### Deploy status.]
+[If F.1 skips: render the trivial-launch block below.]
 
 What this proves: <one plain-English falsifiable sentence — what the run confirms or denies>.
 What I'll look for: <the exact log signal — the matrix row(s) that must read PASS, plus the `FAIL <row>:` text that would deny it>.
 
 Test procedure (run verbatim):
-<Render the user-keyboard-only procedure per `.claude/rules/test-suite.md` ("The test procedure"): the canonical launch-to-menu (Launch → reach menu → Quit → tell me it ran), with the subagent's declared `console`/`in-game` user gestures inserted between "Reach the main menu" and "Quit", each tagged with the matrix row it confirms. A `boot-only` declaration renders the canonical steps unchanged. Do NOT include deploy, dev-mode, or log-read steps — those are already done (deploy + dev mode) or are mine to do after you signal (log read).>
+<Render the user-keyboard-only procedure per `.claude/rules/test-suite.md` ("The test procedure"): the canonical launch-to-menu (Launch → reach menu → Quit → tell me it ran), with the subagent's declared `console`/`in-game` user gestures inserted between "Reach the main menu" and "Quit", each tagged with the matrix row it confirms. A `boot-only` declaration renders the canonical steps unchanged. Do NOT include deploy, dev-mode, or log-read steps — those are already done (deploy + dev mode + hash-verified) or are mine to do after you signal (log read).>
 
-<Caller-specific tail — e.g., "Execute cycle complete; stopping. Run the procedure above, then tell me it ran (e.g. \"test run\") — I'll read the matrix from kcdx-dev.log and report. Or invoke /verification-checkpoint first.">
+<Caller-specific tail — e.g., "Execute cycle complete; stopping. Run the procedure above, then tell me it ran (e.g. \"test run\") — I'll read the matrix from kcdx-dev.log and report.">
 ```
+
+The "or invoke /verification-checkpoint first" hint is REMOVED from the caller tail. The manager already made that call mechanically at F.1; offering it to the user re-delegates an agent-owned decision.
 
 **On the user's run signal** (e.g. "test run" / "review logs"): read the newest `<kcdx-engine>/logs/kcdx-dev_<ts>.log`, find the `suite: X/Y passing` line + any `FAIL <row>:` lines, and report the verdict against the "What I'll look for" claim. Do NOT ask the user to read the log.
 
