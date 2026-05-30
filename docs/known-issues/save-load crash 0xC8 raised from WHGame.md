@@ -2,7 +2,7 @@
 
 **Status:** investigating — CAUSE CONFIRMED kcdx. Loading a save crashes ~10s after kcdx's save-load hooks fire; boot-to-menu is unaffected. **Clean game (kcdx removed from Steam launch options) loads the same saves with NO crash.** kcdx is the cause; the open question is WHICH part of kcdx. The absent kcdx stack frame means the corruption is latent (set up earlier by kcdx, tripped by the engine ~10s later).
 
-**See also:** [KI-0001](KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) — a structurally different third shape (STATUS_HEAP_CORRUPTION with kcdx Lua GC fully symbolicated on stack) introduced post-engine-direct-migration commit `1c01c9d`. Different exception code (0xC0000374 vs 0xC8/0xC0000005), different stack family. Filed separately because the mechanism families do not overlap.
+**See also:** [KI-0001](closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) — a structurally different third shape (STATUS_HEAP_CORRUPTION with kcdx Lua GC fully symbolicated on stack) surfaced after engine-direct-migration commit `1c01c9d`. Different exception code (0xC0000374 vs 0xC8/0xC0000005), different stack family. FIXED 2026-05-29 as the FIX-C mirror — kcdx's vendored Lua GC was freeing WHGame's static sentinel objects (dummynode + array sentinel), guarded by `kcdx_node_freeable` + `kcdx_array_freeable`. Filed separately because the mechanism families did not overlap; the 0xC8 shape this file tracks is still open.
 
 ## Symptom (required)
 

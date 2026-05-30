@@ -48,7 +48,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
-| [KI-0001](KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) | 2026-05-29 | Save-load STATUS_HEAP_CORRUPTION on the chain-mediated lua_pcall path |
+| [KI-0001](closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) | 2026-05-29 | Save-load STATUS_HEAP_CORRUPTION on the chain-mediated lua_pcall path — FIXED |
 
 ## Current open (pre-KI-NNNN)
 
@@ -60,6 +60,14 @@ allocation sequence.
 
 ## Closed (historical reference)
 
+- [closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md](closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md)
+  — save-load STATUS_HEAP_CORRUPTION (0xC0000374) at `kcdx!luaC_step`
+  GC frees on WHGame's sentinel objects. The FIX-C mirror: kcdx's
+  vendored Lua GC freed WHGame's static-`.rdata` `dummynode_` (and
+  later the `t->array` sentinel) the same way WHGame's GC was freeing
+  kcdx's pre-FIX-C. FIXED 2026-05-29 via `kcdx_node_freeable` +
+  `kcdx_array_freeable` guards in `vendor/lua/ltable.c`; cap-66
+  regression row guards both sites.
 - [closed/kcdx lua_newtable corrupts the process heap.md](closed/kcdx%20lua_newtable%20corrupts%20the%20process%20heap.md)
   — dual-Lua dummynode sentinel mismatch. FIXED 2026-05-20 via
   FIX C (vendored Lua patch); PROBE Q canary in production as
