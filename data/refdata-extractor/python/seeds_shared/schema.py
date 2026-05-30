@@ -213,6 +213,16 @@ ADDRESS_KINDS = ("function", "function_variadic", "function_no_sig", "callsite",
                  "vtable_index", "vtable_base", "data_slot", "string_anchor",
                  "instruction_anchor")
 
+# The function kind-classes — the subset of ADDRESS_KINDS whose identity IS a
+# contiguous code body, so a body-hash fingerprint (content_hash + length) is a
+# meaningful survival check. Only these PROMOTE a matched bulk row (keeping its
+# fingerprint); every other kind mints with the fingerprint columns NULL,
+# regardless of whether its rva coincides with a bulk function entry. This is
+# the SINGLE definition both the rebuild promote-gate (build_rows) and the
+# incremental apply path consume, so the two writers cannot drift on which kinds
+# carry a fingerprint. See data/maintainer-tool/fingerprint-per-kind.md.
+FUNCTION_KINDS = ("function", "function_no_sig", "function_variadic")
+
 # Legal evidence_kind enum values. Order is the quality ranking (live-tier
 # strongest; pattern-scan-only weakest). The importer fails loud on any other
 # value when last_verified_at_version is set.

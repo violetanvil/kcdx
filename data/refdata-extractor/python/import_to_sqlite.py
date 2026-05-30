@@ -561,8 +561,11 @@ def build_rows(dump_dir, dicts):
                     verified_date=vdt, evidence_kind_id=ekn_id,
                     offset=offset, vtable_slot=vslot)
                 n_seed_minted_addr += 1
-            else:
-                # Promote the matched bulk row (keep its fingerprint columns).
+            elif kind in ss.FUNCTION_KINDS:
+                # Function kind whose RVA matches a bulk row: PROMOTE it, keeping
+                # the bulk fingerprint columns (length/content_hash/abi_walker).
+                # The fingerprint is a function-body checksum the survival check
+                # re-hashes; it is meaningful only for a function.
                 versions_by_av_id[av_id] = ss.build_curated_row(
                     av_id, kid, base_row=versions_by_av_id[av_id],
                     module_id=module_id, rva=rv,
@@ -571,6 +574,25 @@ def build_rows(dump_dir, dicts):
                     verified_date=vdt, evidence_kind_id=ekn_id,
                     offset=offset, vtable_slot=vslot)
                 n_seed_mapped += 1
+            else:
+                # NON-function kind whose RVA coincides with a bulk function
+                # entry (e.g. a callsite or wrapper at a function's first byte):
+                # MINT with base_row=None so the fingerprint columns stay NULL.
+                # A function-body hash is the wrong survival datum for a
+                # callsite/data_slot/etc. (it resolves by AOB/derivation, not a
+                # body checksum), so it must NOT inherit the bulk fingerprint.
+                # This MINTS a fresh av_id rather than promoting the bulk row in
+                # place, leaving the bulk row uncurated (kcdx_id NULL) as it was.
+                av_id = next_av_id
+                next_av_id += 1
+                versions_by_av_id[av_id] = ss.build_curated_row(
+                    av_id, kid, base_row=None,
+                    module_id=module_id, rva=rv,
+                    valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
+                    signature=sig, lvv_id=lvv_id, verified_by=vby,
+                    verified_date=vdt, evidence_kind_id=ekn_id,
+                    offset=offset, vtable_slot=vslot)
+                n_seed_minted_addr += 1
         else:
             av_id = next_av_id
             next_av_id += 1
@@ -973,6 +995,30 @@ def _db_evidence_kind_id(con, val, where):
     return row[0]
 
 
+def _db_dict_id(con, table, col, val, where):
+    """Look up the EXISTING dict id for a (table, col, val) from the DB's
+    _dict_<table>_<col> table. Same reuse-not-re-encode rule as
+    _db_evidence_kind_id: the rebuild minted these ids; apply must reuse them so a
+    minted/promoted row's dict-encoded column (e.g. `kind`) matches the rebuild's
+    id, not a fresh-from-1 id. A value absent from the dict table means it was
+    never seen at rebuild time -> refuse (a new dict value needs a --rebuild).
+
+    `kind` is the column that matters here: every curated row carries a kind, and
+    all nine kinds are seen during a rebuild (the bulk pass registers `function`
+    first; the seed pass registers the rest), so a function/callsite/... kind
+    always resolves. The refusal guards a hypothetical never-before-seen kind."""
+    if val is None or val == "":
+        return None
+    tbl = f"_dict_{table}_{col}"
+    row = con.execute(f'SELECT id FROM "{tbl}" WHERE val = ?', (val,)).fetchone()
+    if row is None:
+        raise RuntimeError(
+            f"{where}: {col}={val!r} is not a known dict value in the DB "
+            f"({tbl}); a new {col} value needs a --rebuild, it cannot be "
+            f"introduced by an incremental apply")
+    return row[0]
+
+
 def _validate_full_seed_state():
     """Run the FULL seed-CSV validation gate (plan.md S6 'Validation gate'):
     read all three seeds through the shared validators and run every cross-row
@@ -1044,29 +1090,79 @@ def _validate_full_seed_state():
     resolve_and_check_name_refs(name_rows, name_to_id, tag_to_id)
     check_supersession_acyclic(name_rows)
 
-    return versions_seed
+    # name_rows are now RESOLVED (seed strings replaced by ids in place), exactly
+    # as build_rows leaves them before write_db -- so the add-entity names INSERT
+    # below writes the same column values the rebuild would. Index them by id for
+    # the add path (the per-entity name row), and expose the kind-inference cues
+    # (name + entity-level notes live on the NAMES seed, never the versions seed;
+    # the versions seed supplies only rva + signature). build_rows' kind_cue is
+    # {rva, signature (from versions seed), name, notes (from names seed)}.
+    names_by_id = {r["id"]: r for r in name_rows}
+    id_to_name = {r["id"]: r["name"] for r in name_rows}
+    notes_by_kid = {int(ns["id"]): (ns.get("notes") or "") for ns in names_seed}
+
+    return {
+        "versions_seed": versions_seed,
+        "names_by_id": names_by_id,        # id -> RESOLVED address_names row dict
+        "id_to_name": id_to_name,          # id -> name (kind cue)
+        "notes_by_kid": notes_by_kid,      # id -> raw notes string (kind cue)
+        "modules_by_id": modules_by_id,
+        "modules_by_name": modules_by_name,
+    }
 
 
-def _seed_reverify_rows(versions_seed):
-    """From the validated versions seed, yield the per-row audit-trio facts the
-    re-verify diff compares against the DB. Only baseline-version rows with a
-    present audit trio are candidates (a row with no audit trio cannot be a
-    re-verify). Returns list of dicts: kcdx_id, valid_from_tag, lvv_tag,
-    verified_by, verified_date, evidence_kind."""
+# Function kind-classes drive the fingerprint-vs-NULL decision (context.md
+# decision 3; plan.md S3). The kind-class -- NOT the rva-match -- decides:
+#   (a) ss.FUNCTION_KINDS -> promote a bulk row, KEEP its fingerprint columns.
+#   (b) RVA-bearing non-function kinds -> mint, fingerprint columns NULL.
+#   (c) vtable_index (rva-less)        -> mint, all NULL.
+# FUNCTION_KINDS is the single shared definition in seeds_shared.schema (ss.),
+# so the rebuild promote-gate and this apply path cannot drift.
+APPLY_BASELINE_REFUSE_EXIT = 5   # function-kind add with no bulk baseline.
+
+
+def _seed_action_rows(state):
+    """From the validated seed state, build the per-row action facts the apply
+    diff classifies against each DB. Returns list of dicts -- one per
+    baseline-version versions-seed row -- carrying everything BOTH the re-verify
+    and the add/promote paths need, kind-derived ONCE here (kind derivation is
+    DB-independent; only present-vs-absent classification is per-DB).
+
+    Mirrors build_rows lines 514-584 for the kind/offset/vtable_slot derivation:
+    the kind cue is {rva, signature (from the VERSIONS seed), name, notes (from
+    the NAMES seed)} -- the versions seed carries no name/notes column."""
+    versions_seed = state["versions_seed"]
+    id_to_name = state["id_to_name"]
+    notes_by_kid = state["notes_by_kid"]
+
     out = []
     for vs in versions_seed:
         vfv_tag = vs["valid_from_version"].strip()
         if vfv_tag != GAME_VERSION_TAG:
             continue
+        kid = int(vs["kcdx_id"])
+        srva = (vs.get("rva") or "").strip()
+        sig = (vs.get("signature") or "").strip()
         lvv = (vs.get("last_verified_at_version") or "").strip()
         vby = (vs.get("verified_by") or "").strip()
         vdt = (vs.get("verified_date") or "").strip()
         ekn = (vs.get("evidence_kind") or "").strip()
-        if not any([lvv, vby, vdt, ekn]):
-            continue   # no audit trio -> nothing to re-verify
+
+        nm = id_to_name.get(kid, "")
+        notes_for_kind = notes_by_kid.get(kid, "")
+        kind = infer_kind({"rva": srva, "signature": sig, "name": nm,
+                           "notes": notes_for_kind})
+        offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
+
         out.append({
-            "kcdx_id": int(vs["kcdx_id"]),
+            "kcdx_id": kid,
+            "module": vs["module"].strip(),
             "valid_from_tag": vfv_tag,
+            "rva": parse_int(srva) if srva else None,
+            "kind": kind,
+            "signature": sig,
+            "offset": offset,
+            "vtable_slot": vslot,
             "lvv_tag": lvv,
             "verified_by": vby or None,
             "verified_date": vdt or None,
@@ -1075,74 +1171,319 @@ def _seed_reverify_rows(versions_seed):
     return out
 
 
-def _apply_one_db(con, candidates, which):
-    """Compute + apply the re-verify delta for one open DB connection.
+def _resolve_module_id(con, raw, where):
+    """Map the seed `module` value (id int or name) to modules.id in the open DB.
+    Mirrors build_rows' _resolve_module, but reads the DB's modules table rather
+    than the in-memory seed (apply never builds the seed module rows)."""
+    try:
+        mid = int(raw)
+        row = con.execute("SELECT id FROM modules WHERE id = ?", (mid,)).fetchone()
+        if row is not None:
+            return row[0]
+        raise RuntimeError(
+            f"{where}: module={raw!r} parses as int but no modules row has id={mid}")
+    except ValueError:
+        pass
+    row = con.execute("SELECT id FROM modules WHERE name = ?", (raw,)).fetchone()
+    if row is None:
+        raise RuntimeError(
+            f"{where}: module={raw!r} matches no modules row by name")
+    return row[0]
 
-    For each candidate seed row, look it up by (kcdx_id, valid_from-as-id).
-      - absent from DB        -> NOT a re-verify (an add; OUT OF SCOPE this step):
-                                 count 'skipped_add', do NOT write.
-      - present, trio matches  -> no-op.
-      - present, trio differs  -> re-verify UPDATE (audit-trio columns only).
 
-    The whole delta is wrapped in one BEGIN; ...; COMMIT; per DB. Returns
-    (n_reverified, n_noop, n_skipped_add)."""
-    n_re = n_noop = n_skip = 0
-    updates = []   # (lvv_id, verified_by, verified_date, ekn_id, kcdx_id, vf_id)
+def _next_av_id(con):
+    """MAX(id)+1 from this DB's address_versions (the mint id; context.md
+    decision / brief item 3). Queried PER-DB -- the user and dev DBs carry
+    different max ids (dev has the ~321K bulk rows; user only the curated set),
+    so apply must NOT assume they match. The id is an internal handle; the oracle
+    compares row-SETS keyed by (kcdx_id, valid_from) with id EXCLUDED, so a valid
+    non-colliding id that differs from the rebuild's is acceptable."""
+    row = con.execute("SELECT MAX(id) FROM address_versions").fetchone()
+    return (row[0] or 0) + 1
 
-    for c in candidates:
-        where = (f"{which} DB (kcdx_id={c['kcdx_id']}, "
-                 f"valid_from={c['valid_from_tag']!r})")
-        vf_id = _db_tag_to_id(con, c["valid_from_tag"], where)
-        lvv_id = _db_tag_to_id(con, c["lvv_tag"], where) if c["lvv_tag"] else None
-        ekn_id = _db_evidence_kind_id(con, c["evidence_kind"], where)
 
-        row = con.execute(
+def _read_bulk_row(con, rva):
+    """Read the bulk (uncurated) address_versions row at `rva` from the DEV DB as
+    a dict shaped like build_curated_row's `base_row` (the same keys build_bulk_row
+    emits). Returns None if no bulk row at that rva. Used by the function-kind
+    PROMOTE path: build_curated_row copies this dict and overwrites the curated/
+    audit fields, KEEPING the fingerprint columns -- byte-identical to how the
+    rebuild promotes from its in-memory bulk dict."""
+    cols = [c for c, _ in SCHEMA["address_versions"]]
+    sel = ",".join(f'"{c}"' for c in cols)
+    row = con.execute(
+        f'SELECT {sel} FROM address_versions WHERE rva = ? AND kcdx_id IS NULL',
+        (rva,)).fetchone()
+    if row is None:
+        return None
+    return dict(zip(cols, row))
+
+
+def _projected_insert(con, av_row, user_projection):
+    """INSERT one fully-built address_versions row dict into the open DB, applying
+    the same column projection write_db uses (USER drops the DEV-only columns).
+    The row dict is the build_curated_row output (all DEV columns present); the
+    USER projection emits only USER_COLUMNS['address_versions']."""
+    cols = [c for c, _ in SCHEMA["address_versions"]]
+    if user_projection:
+        allowed = USER_COLUMNS["address_versions"]
+        cols = [c for c in cols if c in allowed]
+    placeholders = ",".join("?" * len(cols))
+    con.execute(
+        f'INSERT INTO address_versions ({",".join(cols)}) VALUES ({placeholders})',
+        [av_row.get(c) for c in cols])
+
+
+def _insert_names_row(con, name_row, user_projection):
+    """INSERT one RESOLVED address_names row dict into the open DB. address_names
+    is all-rows in BOTH DBs (USER drops only `notes`, the lone DEV-only column).
+    The row dict is a resolved name row from _validate_full_seed_state (seed
+    strings already replaced by ids), so its supersession/deprecation FKs match
+    what the rebuild writes."""
+    cols = [c for c, _ in SCHEMA["address_names"]]
+    if user_projection:
+        allowed = USER_COLUMNS["address_names"]
+        cols = [c for c in cols if c in allowed]
+    placeholders = ",".join("?" * len(cols))
+    con.execute(
+        f'INSERT INTO address_names ({",".join(cols)}) VALUES ({placeholders})',
+        [name_row.get(c) for c in cols])
+
+
+# The supersession + deprecation columns -- the names-side state step 5 owns.
+# A change to any of these on an EXISTING names row is out of scope here.
+_NAME_DEP_SUP_COLS = ("superseded_by", "superseded_at_version", "is_deprecated",
+                      "deprecated_at_version", "deprecation_replacement")
+
+
+def _count_skipped_name_edits(con, state):
+    """Count (do NOT write) deprecate/supersede edits on EXISTING names rows.
+
+    For every kcdx_id whose names row is already in this DB, compare the resolved
+    seed names row's deprecation/supersession columns against the DB row. Any diff
+    is a step-5 edit -> count it skipped, leave the DB untouched. `is_deprecated`
+    is normalized (DB stores 0/1; seed resolves to 0/1 already)."""
+    n = 0
+    for kid, name_row in state["names_by_id"].items():
+        db = con.execute(
+            f'SELECT {",".join(_NAME_DEP_SUP_COLS)} FROM address_names '
+            f'WHERE id = ?', (kid,)).fetchone()
+        if db is None:
+            continue   # brand-new entity -> handled by the add path, not here
+        db_vals = tuple(db)
+        seed_vals = tuple(
+            (1 if name_row.get(c) else 0) if c == "is_deprecated"
+            else name_row.get(c)
+            for c in _NAME_DEP_SUP_COLS)
+        if db_vals != seed_vals:
+            n += 1
+    return n
+
+
+def _apply_one_db(con, actions, state, which, user_projection):
+    """Compute + apply the full apply delta for one open DB connection.
+
+    For each per-row action fact, look the row up by (kcdx_id, valid_from-as-id):
+      - PRESENT -> re-verify (audit-trio UPDATE) or no-op (step-3 path).
+      - ABSENT  -> an ADD, sub-classified:
+          * the kcdx_id has NO address_versions row at all -> add-entity
+            (also INSERT the address_names row).
+          * the kcdx_id has a row at a DIFFERENT valid_from -> add-versions-row
+            (close the prior open interval, then INSERT the new row).
+        The kind-class (NOT the rva-match) decides fingerprint-vs-NULL:
+          (a) function kind -> PROMOTE the bulk row (KEEP fingerprint); the
+              baseline-present gate refuses if the DEV DB has no bulk row at the
+              rva (never mints a NULL-fingerprint function).
+          (b) rva-bearing non-function kind -> mint, fingerprint NULL.
+          (c) vtable_index -> mint, all NULL.
+
+    Each ACTION is wrapped in its own BEGIN; ...; COMMIT; (plan.md S6). A
+    deprecate/supersede edit on an EXISTING names row is OUT OF SCOPE (step 5):
+    counted as skipped, never written. Returns a counts dict."""
+    counts = {"reverified": 0, "noop": 0, "added_entity": 0,
+              "added_versions_row": 0, "skipped_dep_sup": 0}
+
+    # Detect (and SKIP -- step 5 scope) deprecation/supersession edits on EXISTING
+    # names rows: compare the resolved seed names row against the DB names row for
+    # every kcdx_id already present in this DB. A differing supersession edge or
+    # deprecation pair is counted skipped and NOT written (plan.md S3 deprecate/
+    # supersede is out of scope here). Brand-new entities are handled by the add
+    # path below (their names row is INSERTed there), so they are not counted here.
+    counts["skipped_dep_sup"] = _count_skipped_name_edits(con, state)
+
+    for a in actions:
+        kid = a["kcdx_id"]
+        where = (f"{which} DB (kcdx_id={kid}, valid_from={a['valid_from_tag']!r})")
+        vf_id = _db_tag_to_id(con, a["valid_from_tag"], where)
+        lvv_id = _db_tag_to_id(con, a["lvv_tag"], where) if a["lvv_tag"] else None
+        ekn_id = _db_evidence_kind_id(con, a["evidence_kind"], where)
+
+        existing = con.execute(
             "SELECT last_verified_at_version, verified_by, verified_date, "
             "evidence_kind FROM address_versions WHERE kcdx_id = ? AND "
-            "valid_from = ?", (c["kcdx_id"], vf_id)).fetchone()
-        if row is None:
-            n_skip += 1   # add (out of scope) -- count, do not write
-            continue
-        cur = (row[0], row[1], row[2], row[3])
-        new = (lvv_id, c["verified_by"], c["verified_date"], ekn_id)
-        if cur == new:
-            n_noop += 1
-            continue
-        updates.append((lvv_id, c["verified_by"], c["verified_date"], ekn_id,
-                        c["kcdx_id"], vf_id))
-        n_re += 1
+            "valid_from = ?", (kid, vf_id)).fetchone()
 
-    # One transaction for the whole DB's delta.
-    con.execute("BEGIN")
-    try:
-        for u in updates:
-            con.execute(
-                "UPDATE address_versions SET last_verified_at_version = ?, "
-                "verified_by = ?, verified_date = ?, evidence_kind = ? "
-                "WHERE kcdx_id = ? AND valid_from = ?", u)
-        con.execute("COMMIT")
-    except Exception:
-        con.execute("ROLLBACK")
-        raise
-    return n_re, n_noop, n_skip
+        if existing is not None:
+            # PRESENT -> re-verify or no-op. The audit trio is the only mutable
+            # part (plan.md S2). A change to a deprecation/supersession edge on
+            # the names row is step-5 scope and not handled here.
+            cur = (existing[0], existing[1], existing[2], existing[3])
+            new = (lvv_id, a["verified_by"], a["verified_date"], ekn_id)
+            if cur == new:
+                counts["noop"] += 1
+                continue
+            con.execute("BEGIN")
+            try:
+                con.execute(
+                    "UPDATE address_versions SET last_verified_at_version = ?, "
+                    "verified_by = ?, verified_date = ?, evidence_kind = ? "
+                    "WHERE kcdx_id = ? AND valid_from = ?",
+                    (lvv_id, a["verified_by"], a["verified_date"], ekn_id,
+                     kid, vf_id))
+                con.execute("COMMIT")
+            except Exception:
+                con.execute("ROLLBACK")
+                raise
+            counts["reverified"] += 1
+            continue
+
+        # ABSENT -> an ADD. Distinguish add-entity (kcdx_id unknown to the DB)
+        # from add-versions-row (kcdx_id present at a different valid_from).
+        entity_rows = con.execute(
+            "SELECT id, valid_from FROM address_versions WHERE kcdx_id = ?",
+            (kid,)).fetchall()
+        is_add_entity = len(entity_rows) == 0
+
+        # Derive the curated row via the SHARED row-builder, kind-class-gated.
+        module_id = _resolve_module_id(con, a["module"], where)
+        kind_id = _db_dict_id(con, "address_versions", "kind", a["kind"], where)
+
+        if a["kind"] in ss.FUNCTION_KINDS:
+            # (a) PROMOTE. The baseline-present gate: the DEV DB must carry a bulk
+            # row at this rva. No bulk row -> REFUSE (never mint a NULL-finger-
+            # print function -- that would disguise a missing baseline as a real
+            # entity; plan.md S3 baseline-present check). The user DB has no bulk
+            # rows, so the gate reads the DEV connection passed in `state`.
+            dev_con = state["dev_con"]
+            base_row = _read_bulk_row(dev_con, a["rva"]) if a["rva"] is not None else None
+            if base_row is None:
+                raise BaselineRefusal(
+                    f"{where}: no bulk baseline for version "
+                    f"{a['valid_from_tag']} at rva "
+                    f"{('0x%X' % a['rva']) if a['rva'] is not None else None}; "
+                    f"run --rebuild for {a['valid_from_tag']} before adding "
+                    f"function-kind entities")
+            if user_projection:
+                # USER INSERTs the projected curated row (built from the DEV bulk
+                # base so the fingerprint carries identically into both DBs).
+                av_id = _next_av_id(con)
+                av_row = ss.build_curated_row(
+                    av_id, kid, base_row=base_row, module_id=module_id,
+                    rva=a["rva"], valid_from_id=vf_id, kind_id=kind_id,
+                    signature=a["signature"], lvv_id=lvv_id,
+                    verified_by=a["verified_by"], verified_date=a["verified_date"],
+                    evidence_kind_id=ekn_id, offset=a["offset"],
+                    vtable_slot=a["vtable_slot"])
+            else:
+                # DEV does an IN-PLACE UPDATE of the bulk row (reuse its id; keep
+                # fingerprint), mirroring the rebuild's promote-in-place.
+                av_id = base_row["id"]
+                av_row = ss.build_curated_row(
+                    av_id, kid, base_row=base_row, module_id=module_id,
+                    rva=a["rva"], valid_from_id=vf_id, kind_id=kind_id,
+                    signature=a["signature"], lvv_id=lvv_id,
+                    verified_by=a["verified_by"], verified_date=a["verified_date"],
+                    evidence_kind_id=ekn_id, offset=a["offset"],
+                    vtable_slot=a["vtable_slot"])
+        else:
+            # (b)/(c) MINT, fingerprint NULL. base_row=None for both; rva is None
+            # for vtable_index. No baseline gate (these never read a bulk row).
+            av_id = _next_av_id(con)
+            av_row = ss.build_curated_row(
+                av_id, kid, base_row=None, module_id=module_id,
+                rva=a["rva"], valid_from_id=vf_id, kind_id=kind_id,
+                signature=a["signature"], lvv_id=lvv_id,
+                verified_by=a["verified_by"], verified_date=a["verified_date"],
+                evidence_kind_id=ekn_id, offset=a["offset"],
+                vtable_slot=a["vtable_slot"])
+
+        # One BEGIN/COMMIT per action. add-versions-row closes the prior open
+        # interval FIRST (so ix_av_open_unique -- kcdx_id IS NOT NULL AND
+        # valid_through IS NULL -- is never violated).
+        con.execute("BEGIN")
+        try:
+            if is_add_entity:
+                name_row = state["names_by_id"].get(kid)
+                if name_row is None:
+                    raise RuntimeError(
+                        f"{where}: add-entity has no address_names_seed row for "
+                        f"kcdx_id={kid} (validation should have caught this)")
+                _insert_names_row(con, name_row, user_projection)
+            else:
+                # add-versions-row: close the prior open interval. valid_through
+                # := the prior-version id is the standard close; with a single
+                # baseline version the prior open row's valid_from is the close
+                # boundary (this exercises the interval-close machinery; the real
+                # multi-version close lands when a 2nd game_versions row exists).
+                prev_vf = max(r[1] for r in entity_rows)
+                con.execute(
+                    "UPDATE address_versions SET valid_through = ? "
+                    "WHERE kcdx_id = ? AND valid_through IS NULL",
+                    (prev_vf, kid))
+            if user_projection:
+                _projected_insert(con, av_row, user_projection=True)
+            else:
+                if a["kind"] in ss.FUNCTION_KINDS:
+                    # DEV promote: UPDATE the bulk row in place (keep its id).
+                    _promote_bulk_in_place(con, av_row)
+                else:
+                    _projected_insert(con, av_row, user_projection=False)
+            con.execute("COMMIT")
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
+        counts["added_entity" if is_add_entity else "added_versions_row"] += 1
+
+    return counts
+
+
+class BaselineRefusal(RuntimeError):
+    """Raised when a function-kind add has no bulk baseline at its rva in the DEV
+    DB. Caught in run_apply -> a clear refuse message + a distinct exit code."""
+
+
+def _promote_bulk_in_place(con, av_row):
+    """DEV-DB promote: UPDATE the existing bulk row (matched by its reused id) to
+    the curated row, setting kcdx_id + the curated/audit/derived columns and
+    KEEPING the fingerprint columns (length/content_hash/observed_arg_slots/
+    caller_reg_arg_count/caller_arg_agreement/auto_name/decompile_quality). The
+    fingerprint is already what build_curated_row copied from base_row, so writing
+    the FULL row back (every DEV column) is equivalent and simplest -- it changes
+    only the curated/audit/identity columns, leaving the fingerprint untouched."""
+    cols = [c for c, _ in SCHEMA["address_versions"] if c != "id"]
+    set_clause = ",".join(f'"{c}" = ?' for c in cols)
+    con.execute(
+        f'UPDATE address_versions SET {set_clause} WHERE id = ?',
+        [av_row.get(c) for c in cols] + [av_row["id"]])
 
 
 def run_apply(out_dir, dll_path):
-    """APPLY mode: incremental seed->DB applier. This step implements the
-    re-verify action (audit-trio UPDATE) end to end; INSERT-requiring rows
-    (add-entity / add-versions-row) are counted as skipped, not written.
+    """APPLY mode: incremental seed->DB applier. Implements re-verify (audit-trio
+    UPDATE) plus the two add actions: add-entity (a new names row + a new versions
+    row) and add-versions-row (close the prior open interval + insert).
 
     Spine (plan.md S3 'Running an incremental build'):
       1. resolve target version from the linked DLL (.rdata resolver)
       2. validate the FULL seed CSV state (abort with no DB write on failure)
       3. open BOTH DBs read-write (refuse if a baseline is missing)
-      4/5/6. per DB, compute the re-verify delta + apply it (user then dev),
-             each DB's delta in one BEGIN/COMMIT
+      4/5/6. classify the seed-vs-DB delta + apply it per DB (user then dev),
+             each ACTION in its own BEGIN/COMMIT; function-kind adds first pass
+             the baseline-present gate (no bulk row -> REFUSE, no write either DB)
       7. report counts
     """
     bar = "=" * 70
     print(bar)
-    print("[import_to_sqlite] mode: APPLY (incremental; re-verify)")
+    print("[import_to_sqlite] mode: APPLY (incremental)")
     print(bar)
 
     # 1. Resolve the target version from the linked DLL (.rdata resolver). This
@@ -1162,9 +1503,9 @@ def run_apply(out_dir, dll_path):
 
     # 2. Validate the FULL seed CSV state. Any failure aborts before any DB open
     #    or write (RuntimeError propagates -> non-zero exit; nothing written).
-    versions_seed = _validate_full_seed_state()
-    candidates = _seed_reverify_rows(versions_seed)
-    print(f"  seed validated; {len(candidates)} audit-trio row(s) to diff")
+    state = _validate_full_seed_state()
+    actions = _seed_action_rows(state)
+    print(f"  seed validated; {len(actions)} versions-seed row(s) to diff")
 
     # 3. Open BOTH DBs read-write (refuse if a baseline is missing).
     user_db = os.path.join(out_dir, "reference.sqlite")
@@ -1172,10 +1513,19 @@ def run_apply(out_dir, dll_path):
     ucon = _open_rw(user_db, "user (reference.sqlite)")
     try:
         dcon = _open_rw(dev_db, "dev (reference-dev.sqlite)")
+        # The function-kind PROMOTE reads the bulk fingerprint from the DEV DB
+        # for BOTH passes (the user DB has no bulk rows). Stash the dev connection
+        # so the user pass can read it for the baseline-present gate; the gate
+        # fires BEFORE the user pass writes, so a missing baseline refuses with
+        # neither DB touched.
+        state["dev_con"] = dcon
         try:
             # 4/5/6. Apply user first, then dev (plan.md S6 user->dev order).
-            u_re, u_noop, u_skip = _apply_one_db(ucon, candidates, "user")
-            d_re, d_noop, d_skip = _apply_one_db(dcon, candidates, "dev")
+            u = _apply_one_db(ucon, actions, state, "user", user_projection=True)
+            d = _apply_one_db(dcon, actions, state, "dev", user_projection=False)
+        except BaselineRefusal as e:
+            print(f"  REFUSE: {e}")
+            sys.exit(APPLY_BASELINE_REFUSE_EXIT)
         finally:
             dcon.close()
     finally:
@@ -1183,11 +1533,12 @@ def run_apply(out_dir, dll_path):
 
     # 7. Report. Nothing silent.
     print(bar)
-    print("APPLY SUMMARY (re-verify)")
-    print(f"  user DB : {u_re} re-verified, {u_noop} no-op, "
-          f"{u_skip} skipped (add -- step 4)")
-    print(f"  dev  DB : {d_re} re-verified, {d_noop} no-op, "
-          f"{d_skip} skipped (add -- step 4)")
+    print("APPLY SUMMARY")
+    for label, c in (("user", u), ("dev", d)):
+        print(f"  {label:4s} DB : {c['reverified']} re-verified, {c['noop']} no-op, "
+              f"{c['added_entity']} added-entity, "
+              f"{c['added_versions_row']} added-versions-row, "
+              f"{c['skipped_dep_sup']} skipped (deprecate/supersede -- step 5)")
     print(bar)
 
 

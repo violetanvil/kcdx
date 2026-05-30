@@ -3,17 +3,29 @@ extraction (db-updator Phase 1, step 1).
 
 WHAT THIS PROVES
 ----------------
-The seeds_shared/ extraction is a behaviour-preserving refactor: the rebuild
-path's output (both DBs, every table, including the _dict_* lookup tables) must
-be BYTE-IDENTICAL pre- and post-refactor. This test rebuilds reference.sqlite +
+This is the rebuild-output gate: a fresh rebuild of reference.sqlite +
 reference-dev.sqlite from the local dump at
   data/refdata-extractor/dump/refdata-1.5.1164953
-into a temp out_dir, then asserts a per-table content hash + row count against a
-recorded baseline snapshot (tests/oracle_baseline.json).
+must match, per-table (content hash + row count, including the _dict_* lookup
+tables), the recorded baseline snapshot (tests/oracle_baseline.json). It is the
+oracle the incremental `apply` path is checked against: apply must produce the
+same rows a rebuild would.
 
-The baseline was captured from the PRE-refactor code (run with --capture once,
-before the extraction). After the extraction, this test must pass unchanged
-against that same baseline -- that is the proof the row sets did not drift.
+BASELINE PROVENANCE
+-------------------
+The baseline was FIRST captured from the pre-`seeds_shared`-extraction code, to
+prove the extraction (db-updator step 1) was byte-for-byte behaviour-preserving
+-- which it was. It was RE-CAPTURED at step 4 when the rebuild's promote path was
+corrected to gate on kind-class: a non-function curated row whose rva coincides
+with a bulk function entry (today: id 8 callsite @ 0x566040, id 17 data_slot @
+0xB99098) now MINTS with a NULL fingerprint instead of inheriting the host
+function's content_hash+length (a body-hash is not a meaningful survival datum
+for a callsite/data_slot -- see data/maintainer-tool/fingerprint-per-kind.md).
+That correction intentionally changed the output for those 2 rows (+2 dev rows;
+their USER/DEV curated rows lose the wrongly-inherited fingerprint), so the
+baseline was re-recorded from the corrected rebuild. Re-capture with --capture
+ONLY for a deliberate, reviewed output change like that one -- never to paper
+over an unexplained drift.
 
 The hash is over the ORDERED rows of each table exactly as the importer emits
 them (the importer fixes row order: address_versions by id, dump-driven tables
