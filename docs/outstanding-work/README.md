@@ -31,6 +31,7 @@ Rules:
 
 ## Current entries
 
+- [db-updator-phase1/](db-updator-phase1/README.md) — **active, not started.** Incremental `apply` mode for `import_to_sqlite.py` — land hand-edited seed-CSV deltas into both reference DBs without a full rebuild, sharing one row-builder with rebuild. Phase 1 of the maintainer-tool flow. Phase tree authored by /plan; canonical phase-grain ledger in [db-updator-phase1/README.md](db-updator-phase1/README.md).
 - [restructure/](restructure/README.md) — **active, in progress.** Manifest-only TOML, Lua-first authoring, owned launcher (kcdx.exe), unified ordered list, kcdx absorbs pak mods. 12-phase plan; Phases 1-10 ship the new author surface; Phase 11 consumes FIX A. Authoritative spec for kcdx v0.2+; supersedes large sections of `docs/design.md`. The folder is the navigable form — one subdir per phase, one document per shippable step, the canonical phase-grain status ledger in [`restructure/README.md`](restructure/README.md); the original monolithic plan is preserved verbatim at [`restructure/00-original-plan.md`](restructure/00-original-plan.md).
 - [fix-a-drop-static-lua.md](fix-a-drop-static-lua.md) — drop static-linked `vendor/lua`, route every `lua_*` through WHGame.dll's symbols. Independently in progress at `_research/phase8-fix-a/` (~38% RVAs mapped as of plan finalization). Phase 11 of the restructure plan consumes this.
 - [phase6-listener.md](phase6-listener.md) — CryEngine `IGameFrameworkListener` as second-source-of-truth for save/load
