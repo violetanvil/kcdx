@@ -15,6 +15,15 @@ PRODUCES TWO artifacts from one full-dump dir + the curated seed triple:
     (auto_name, decompile_quality, source, notes). The discovery surface for
     `kcdx.find`.
 
+THE SHARED CORE (seeds_shared/): the schema declaration, the seed validators,
+the value/dict codec, and the single address_versions row-builder were extracted
+into the private seeds_shared/ package (db-updator Phase 1) so this file's
+REBUILD path and the future incremental `apply` path share ONE definition of a
+row and cannot drift. This file keeps the full-rebuild ORCHESTRATION (dump
+reads, the bulk insert loop, the dev-table builds, write_db, run_rebuild,
+read_game_version, the CLI); the shared definitions live in seeds_shared/ and are
+re-exported here as module attributes for existing importers.
+
 TWO MODES:
   - UPDATE (default): the per-version incremental path. Reads the most-recent
     version already in the DB, reads the game's on-disk version, and -- if the
@@ -45,23 +54,7 @@ maintainer seed editor) MAY resolve from the DLL directly.
 SCHEMA (FLATTENED 2026-05-28; 5 user tables + 3 DEV-only + _dict_* lookups):
   USER: modules, game_versions, address_names, address_versions, meta.
   DEV adds: statements, referenced_vars, call_edges.
-
-  address_names  (id PK, name, is_deprecated, superseded_by, source [DEV],
-                  notes [DEV]) -- the curated NAME registry. `id` IS the kcdx_id
-                  (the stable cross-version handle plugins reference); one row
-                  per entity. superseded_by -> another address_names.id (entity-
-                  level deprecation: "this entity is replaced by that one").
-  address_versions (id PK, kcdx_id non-unique, kind, module_id, rva, length,
-                    content_hash, value, signature, observed_arg_slots,
-                    caller_reg_arg_count, caller_arg_agreement, offset,
-                    vtable_slot, status, auto_name [DEV], decompile_quality [DEV],
-                    valid_from, valid_through) -- per-(entity, version-interval)
-                    resolve facts. Partial UNIQUE (kcdx_id) WHERE valid_through
-                    IS NULL enforces "at most one current form per entity."
-
-  Every table has an autoincrement INTEGER PK `id`. kcdx_id is the stable
-  cross-version handle; it lives on address_versions (and is referenced by
-  address_names + the DEV statements/referenced_vars/call_edges).
+  The full declaration lives in seeds_shared/schema.py.
 
 ID AUTHORITY:
   Every functions/ row is assigned a kcdx_id 1..N in ascending-rva order. That
@@ -91,11 +84,44 @@ import sqlite3
 import sys
 import time
 
+# The shared seed->DB core (schema, validators, value/dict codec, the single
+# address_versions row-builder). Extracted from this file so the REBUILD path
+# here and the future incremental `apply` path share ONE definition of a row and
+# cannot drift (db-updator Phase 1). Ensure this file's own dir is importable so
+# `import seeds_shared` resolves whether run as a script or imported by a sibling
+# harness (e.g. validate_db_shape.py).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import seeds_shared as ss   # noqa: E402
+
+# Re-export the shared surface as module attributes so existing importers of
+# import_to_sqlite (validate_db_shape.py uses imp.read_module_seed / imp.parse_int
+# / etc.) keep working unchanged after the extraction.
+from seeds_shared import (   # noqa: E402,F401
+    SCHEMA,
+    USER_COLUMNS,
+    DEV_TABLES,
+    USER_TABLES,
+    DICT_COLS,
+    EVIDENCE_KIND_ENUM,
+    ADDRESS_KINDS,
+    parse_int,
+    hash_blob,
+    Dicts,
+    read_module_seed,
+    read_address_names_seed,
+    read_address_versions_seed,
+)
+
 # Allow very large quoted CSV fields (seed notes can be long).
 csv.field_size_limit(1 << 24)
 
 # ---------------------------------------------------------------------------
 # Constants for this baseline import (single game version).
+#
+# These parameterize the single-version baseline REBUILD orchestration (which
+# game_versions / meta rows to emit) -- NOT the schema shape -- so they stay in
+# the orchestrator here rather than in seeds_shared/. The row-builder takes the
+# version id as an argument, keeping it version-agnostic.
 # ---------------------------------------------------------------------------
 GAME_VERSION_TAG = "1.5.1164953"
 GAME_VERSION_ORDINAL = 1164953
@@ -140,257 +166,6 @@ MODULE_SEED_CSV           = os.path.join(SEED_DIR, "module_seed.csv")
 ADDRESS_NAMES_SEED_CSV    = os.path.join(SEED_DIR, "address_names_seed.csv")
 ADDRESS_VERSIONS_SEED_CSV = os.path.join(SEED_DIR, "address_versions_seed.csv")
 
-# Dict-encoded columns, keyed by the SCHEMA table+column name (post-transform).
-# `address_names.source` REMOVED 2026-05-28 (carried no information; "verified"
-# duplicated status, which is now derived). `address_versions.status` REMOVED
-# 2026-05-28 (status is derived from verification audit columns + entity
-# flags). `address_versions.evidence_kind` ADDED 2026-05-28.
-DICT_COLS = {
-    "address_versions":      ["kind", "caller_arg_agreement",
-                              "decompile_quality", "evidence_kind"],
-    "statements":            ["kind"],
-    "referenced_vars":       ["storage_kind", "data_type"],
-}
-
-# USER db column allowlists (per table). Tables NOT listed here are DEV-only.
-# A column omitted from the list is dropped from the USER CREATE TABLE + insert.
-# Under the FLATTENED schema (2026-05-28) there is no entities/entity_versions
-# split: address_names is the (kcdx_id, name) registry, address_versions carries
-# every per-version resolve fact for any curated address (the kcdx_id is the
-# stable handle plugins reference). For the USER (production) DB, only address-
-# names whose kcdx_id has at least one row in address_versions ship; bulk
-# discovery functions live in DEV-only tables under their own bulk id-space.
-USER_COLUMNS = {
-    "modules":          ["id", "name", "path"],
-    "game_versions":    ["id", "tag", "ordinal", "released"],
-    "address_names":    ["id", "name",
-                         "superseded_by", "superseded_at_version",
-                         "is_deprecated", "deprecated_at_version",
-                         "deprecation_replacement", "notes"],
-    # `id` IS the kcdx_id (the stable cross-version handle); no separate kcdx_id
-    # column. address_versions.kcdx_id references address_names.id.
-    # excludes notes (DEV-only).
-    # The verification audit columns ship to USER -- the engine needs them to
-    # derive status at resolve time (a plugin author resolving target="X" at
-    # current game_version V needs to see "is this row verified at V?", which
-    # is exactly the (valid_from <= V <= last_verified_at_version) test).
-    "address_versions": ["id", "kcdx_id", "kind", "module_id", "rva", "length",
-                         "content_hash", "value", "signature",
-                         "observed_arg_slots", "caller_reg_arg_count",
-                         "caller_arg_agreement", "offset", "vtable_slot",
-                         "last_verified_at_version", "verified_by",
-                         "verified_date", "evidence_kind",
-                         "valid_from", "valid_through"],
-    # excludes auto_name, decompile_quality (DEV-only discovery labels)
-    "meta":             ["id", "schema_version", "abi_confidence"],
-}
-
-# Full schema (DEV): every table, every column, with its SQL column type.
-# BLOB = content_hash; INTEGER = dict/int/fk; TEXT = the rest.
-SCHEMA = {
-    # modules.id and address_names.id are NOT autoincrement -- both come from
-    # the seed files (module_seed.csv.id, address_names_seed.csv.id). The importer
-    # fails loud on null or duplicate id in either file. address_versions.id
-    # stays autoincrement (internal row id; hypothetically could change between
-    # rebuilds and that's fine as long as resolution still walks correctly).
-    "modules": [
-        ("id", "INTEGER PRIMARY KEY"),            # from module_seed.csv.id
-        ("name", "TEXT"),
-        ("path", "TEXT"),                         # install-relative path
-    ],
-    "game_versions": [
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("tag", "TEXT"),
-        ("ordinal", "INTEGER"),
-        ("released", "TEXT"),
-    ],
-    # address_names: ONE ROW PER CURATED ENTITY. `id` is the canonical kcdx_id
-    # supplied by address_names_seed.csv (NOT autoincrement; the importer
-    # fails loud on null or duplicate id in either seed file). The id is
-    # stable across rebuilds for the same address_names_seed.csv row.
-    #
-    # Two distinct entity-level events, each with its own version anchor:
-    #
-    # (1) SUPERSESSION (cosmetic rename, version-gated, engine AUTO-FOLLOWS):
-    #     `superseded_by` -> address_names.id of the direct successor (NOT the
-    #     terminal -- the engine walks the chain at query time, applying the
-    #     version filter at each hop). `superseded_at_version` -> game_versions.id;
-    #     the supersession edge becomes active at that version inclusive. Both
-    #     paired (both NULL or both NOT NULL). Resolution: at any game version V,
-    #     resolve(name) walks the chain, following each edge IFF
-    #     edge.superseded_at_version.ordinal <= V; stops on the first row whose
-    #     active edge is NULL.
-    #
-    # (2) DEPRECATION (entity behavior changed; engine WARNS but does not
-    #     redirect): `is_deprecated` 0/1 paired with `deprecated_at_version`.
-    #     The optional `deprecation_replacement` -> address_names.id is an
-    #     advisory pointer surfaced in the warning ("X is deprecated; consider
-    #     switching to Y") -- the engine does NOT auto-follow it. The two flags
-    #     are orthogonal: a rename (1) shares an address with its successor; a
-    #     deprecation (2) does not, and the replacement (when given) is a
-    #     DIFFERENT entity with different functionality.
-    "address_names": [
-        ("id", "INTEGER PRIMARY KEY"),                 # IS the kcdx_id; from address_names_seed.csv.id
-        ("name", "TEXT"),
-        # supersession pair (cosmetic rename; engine auto-follows, version-gated)
-        ("superseded_by", "INTEGER"),                  # FK to address_names.id (direct successor)
-        ("superseded_at_version", "INTEGER"),          # FK to game_versions.id; supersession applies >= this
-        # deprecation pair (behavior changed; engine warns, does not redirect)
-        ("is_deprecated", "INTEGER"),                  # 0/1
-        ("deprecated_at_version", "INTEGER"),          # FK to game_versions.id; deprecation applies >= this
-        ("deprecation_replacement", "INTEGER"),        # nullable FK to address_names.id; "consider switching to" advisory
-        # prose (DEV only)
-        ("notes", "TEXT"),                             # DEV-ONLY (entity-level prose)
-    ],
-    # address_versions: per-(entity, version-interval) resolve facts. kcdx_id
-    # is NULLABLE -- set when the row is a curated entity (FK to address_names.id),
-    # NULL when the row is a bulk-only DEV function (no curated name). Partial
-    # UNIQUE (kcdx_id) WHERE kcdx_id IS NOT NULL AND valid_through IS NULL
-    # enforces "at most one current form per CURATED entity." (Bulk rows are
-    # currently 1:1 with their function but not enforced as such.)
-    "address_versions": [
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("kcdx_id", "INTEGER"),                # NULLABLE FK to address_names.id (curated only)
-        ("kind", "INTEGER"),                   # dict: function | callsite | vtable_base | etc.
-        ("module_id", "INTEGER"),              # FK to modules.id
-        ("rva", "INTEGER"),
-        ("length", "INTEGER"),
-        ("content_hash", "BLOB"),
-        ("value", "INTEGER"),                  # slot int for vtable_index, offset for data_slot
-        ("signature", "TEXT"),                 # verified ABI; for un-curated bulk this is the abi_walker floor
-        ("observed_arg_slots", "INTEGER"),
-        ("caller_reg_arg_count", "INTEGER"),
-        ("caller_arg_agreement", "INTEGER"),   # dict
-        ("offset", "INTEGER"),                 # callsite consumer offset
-        ("vtable_slot", "INTEGER"),            # vtable_index slot integer (mirrors value for that kind)
-        # Verification audit trail (added 2026-05-28). The `status` column was
-        # REMOVED -- status is derived from
-        #   (current_version, valid_from, last_verified_at_version) PLUS
-        # entity-level supersession + deprecation flags on address_names.
-        # See policy.md.
-        ("last_verified_at_version", "INTEGER"), # nullable FK to game_versions.id; NULL = never verified
-        ("verified_by", "TEXT"),                 # nullable person identifier
-        ("verified_date", "TEXT"),               # nullable ISO YYYY-MM-DD
-        ("evidence_kind", "INTEGER"),            # nullable dict (EVIDENCE_KIND_ENUM)
-        ("auto_name", "TEXT"),                 # DEV-ONLY (FUN_<rva> for bulk discovery)
-        ("decompile_quality", "INTEGER"),      # dict, DEV-ONLY
-        ("valid_from", "INTEGER"),             # FK to game_versions.id (== valid_from_version)
-        ("valid_through", "INTEGER"),          # NULL = current (open interval)
-    ],
-    "meta": [
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("schema_version", "INTEGER"),
-        ("abi_confidence", "TEXT"),
-    ],
-    # DEV-only tables. Each row carries TWO FK columns to its owning function:
-    #   address_version_id -- FK to address_versions.id; ALWAYS SET. The
-    #     universal "which function row" pointer (works for both curated +
-    #     bulk; what kcdx.find walks).
-    #   kcdx_id            -- FK to address_names.id; NULLABLE, non-unique.
-    #     Set only when the owning function is curated. Ergonomic shortcut for
-    #     curated-subset joins; redundant with address_version_id otherwise.
-    "statements": [   # DEV-ONLY
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("address_version_id", "INTEGER"),     # always set; -> address_versions.id
-        ("kcdx_id", "INTEGER"),                # nullable, non-unique; -> address_names.id when curated
-        ("idx", "INTEGER"),
-        ("kind", "INTEGER"),                    # dict
-        ("pseudo_text", "TEXT"),
-        ("byte_range_start", "INTEGER"),
-        ("byte_range_len", "INTEGER"),
-        ("content_hash", "BLOB"),
-        ("callee", "TEXT"),
-        ("string_ref", "TEXT"),
-    ],
-    "referenced_vars": [   # DEV-ONLY
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("address_version_id", "INTEGER"),     # always set; -> address_versions.id
-        ("kcdx_id", "INTEGER"),                # nullable, non-unique
-        ("statement_idx", "INTEGER"),
-        ("var_name", "TEXT"),
-        ("storage_kind", "INTEGER"),            # dict
-        ("storage_detail", "TEXT"),
-        ("size_bytes", "INTEGER"),
-        ("data_type", "INTEGER"),               # dict
-    ],
-    "call_edges": [   # DEV-ONLY
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("caller_address_version_id", "INTEGER"),   # always set
-        ("callee_address_version_id", "INTEGER"),   # always set (call must resolve to land here)
-        ("caller_kcdx_id", "INTEGER"),              # nullable, non-unique; curated caller only
-        ("callee_kcdx_id", "INTEGER"),              # nullable, non-unique; curated callee only
-        ("callsite_rva", "INTEGER"),
-    ],
-}
-
-# Table sets per db.
-DEV_TABLES = ["modules", "game_versions", "address_names", "address_versions",
-              "meta", "statements", "referenced_vars", "call_edges"]
-USER_TABLES = ["modules", "game_versions", "address_names", "address_versions",
-               "meta"]
-
-# The 9 kinds for address_versions.kind (covering every curated row type seen
-# in the address seeds + the bulk function default).
-ADDRESS_KINDS = ("function", "function_variadic", "function_no_sig", "callsite",
-                 "vtable_index", "vtable_base", "data_slot", "string_anchor",
-                 "instruction_anchor")
-
-# Pairing trigger: NO LONGER NEEDED.
-# Under the prior schema (entities + entity_versions + kcdx_overlay +
-# kcdx_overlay_versions) a trigger had to mirror entity_versions inserts onto
-# overlay_versions to keep two parallel version tables in sync across game-
-# version updates. The flattened schema has ONLY address_versions -- one place
-# to write per version. The maintainer-side update path inserts an
-# address_versions row directly; no second table to keep paired. The trigger
-# dropped here lived solely to bridge the two tables.
-
-
-# ---------------------------------------------------------------------------
-# Helpers (reused encoding policy from the prior cut).
-# ---------------------------------------------------------------------------
-def parse_int(v):
-    if v is None or v == "":
-        return None
-    try:
-        return int(v, 16) if v.startswith("0x") else int(v)
-    except (ValueError, AttributeError):
-        return None
-
-
-def hash_blob(v):
-    """64-hex TEXT -> 32-byte BLOB; '' -> None."""
-    if isinstance(v, str) and len(v) == 64:
-        try:
-            return bytes.fromhex(v)
-        except ValueError:
-            return None
-    return None
-
-
-class Dicts:
-    """Per-(table, col) value -> small INTEGER id, materialized at the end."""
-    def __init__(self):
-        self._d = {}   # (table, col) -> { value(str): int_id }
-
-    def encode(self, table, col, value):
-        if value is None or value == "":
-            return None
-        d = self._d.setdefault((table, col), {})
-        return d.setdefault(value, len(d) + 1)   # 1-based ids
-
-    def ensure(self, table, col, value):
-        """Pre-register a value (so the trigger can look it up) and return id."""
-        return self.encode(table, col, value)
-
-    def materialize(self, con):
-        n = 0
-        for (t, c), d in self._d.items():
-            con.execute(f'CREATE TABLE "_dict_{t}_{c}" (id INTEGER PRIMARY KEY, val TEXT)')
-            con.executemany(f'INSERT INTO "_dict_{t}_{c}" VALUES (?,?)',
-                            [(i, v) for v, i in d.items()])
-            n += len(d)
-        return n
-
 
 # ---------------------------------------------------------------------------
 # Dump readers.
@@ -407,215 +182,6 @@ def iter_table(dump_dir, table):
             rd = csv.DictReader(f)
             for row in rd:
                 yield row
-
-
-def _read_canonical_seed(path, kind):
-    """Read a seed CSV with a canonical maintainer-supplied `id` column. Skips
-    '#'-prefixed comment lines. Fails LOUD on:
-      - any row whose `id` is empty or non-integer (no autoincrement; the id
-        must be supplied by the maintainer)
-      - any duplicate id within the file
-
-    Returns list[dict] of rows. `kind` is "address" or "module" -- only used in
-    error messages.
-    """
-    rows = []
-    with open(path, newline="", encoding="utf-8", errors="replace") as f:
-        lines = [ln for ln in f if not ln.lstrip().startswith("#")]
-    rd = csv.DictReader(lines)
-    seen_ids = {}
-    for lineno, r in enumerate(rd, start=2):     # header is line 1
-        rid_raw = (r.get("id") or "").strip()
-        if not rid_raw:
-            raise RuntimeError(
-                f"{kind}_seed.csv:{lineno}: empty id (canonical ids are "
-                f"maintainer-supplied; no autoincrement)")
-        try:
-            rid = int(rid_raw)
-        except ValueError:
-            raise RuntimeError(
-                f"{kind}_seed.csv:{lineno}: id={rid_raw!r} is not an integer")
-        if rid in seen_ids:
-            raise RuntimeError(
-                f"{kind}_seed.csv:{lineno}: duplicate id={rid} (first seen "
-                f"at line {seen_ids[rid]})")
-        seen_ids[rid] = lineno
-        rows.append(r)
-    return rows
-
-
-def read_module_seed(path):
-    """Read module_seed.csv. Schema: id, name, path. The id is the canonical
-    modules.id; name + path are the maintainer-supplied module identity. Both
-    name and path are required (empty = HARD ERROR)."""
-    rows = _read_canonical_seed(path, "module")
-    for r in rows:
-        name = (r.get("name") or "").strip()
-        modpath = (r.get("path") or "").strip()
-        if not name:
-            raise RuntimeError(
-                f"module_seed.csv: row id={r['id']} has empty `name`")
-        if not modpath:
-            raise RuntimeError(
-                f"module_seed.csv: row id={r['id']} has empty `path`")
-    return rows
-
-
-def read_address_names_seed(path):
-    """Read address_names_seed.csv. Schema:
-      id, name,
-      superseded_by, superseded_at_version,
-      is_deprecated, deprecated_at_version, deprecation_replacement,
-      notes
-
-    The id is the canonical address_names.id (== kcdx_id, the stable cross-
-    version handle plugins reference). `name` is required (empty = HARD ERROR).
-    Supersession + deprecation pair integrity is resolved later (after the
-    versions seed is read; the post-loop pass in build_rows runs the cross-row
-    validation).
-
-    The legacy `source` column was DROPPED 2026-05-28 -- it carried no
-    information ("verified" duplicating status, which is now derived from
-    last_verified_at_version + the entity-level supersession/deprecation
-    flags, not an authored column)."""
-    rows = _read_canonical_seed(path, "address_names")
-    for r in rows:
-        name = (r.get("name") or "").strip()
-        if not name:
-            raise RuntimeError(
-                f"address_names_seed.csv: row id={r['id']} has empty `name`")
-    return rows
-
-
-# Legal evidence_kind enum values. Order is the quality ranking (live-tier
-# strongest; pattern-scan-only weakest). The importer fails loud on any other
-# value when last_verified_at_version is set.
-EVIDENCE_KIND_ENUM = (
-    "live_production",
-    "live_test_plugin",
-    "maintainer_ghidra",
-    "predecessor_sig",
-    "pattern_scan",
-)
-_VERIFIED_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
-
-def read_address_versions_seed(path):
-    """Read address_versions_seed.csv. Schema:
-      kcdx_id, valid_from_version, module, rva, signature,
-      last_verified_at_version, verified_by, verified_date, evidence_kind
-
-    No `id` column -- row identity is the (kcdx_id, valid_from_version) tuple
-    (a 1.5 row + a 1.6 row for the same entity is two rows, each with its own
-    valid_from_version). `kcdx_id`, `valid_from_version`, `module` are REQUIRED
-    (empty = HARD ERROR). `rva`/`signature` MAY be empty (vtable_index kind has
-    no RVA; un-verified rows may lack a signature).
-
-    Verification audit pair:
-      - When last_verified_at_version is set, verified_by + verified_date +
-        evidence_kind ALL three must be set. (Else "verified by what / when /
-        how?" is unanswerable.)
-      - When last_verified_at_version is NULL/empty, all three of verified_by
-        / verified_date / evidence_kind MUST be empty.
-      - last_verified_at_version >= valid_from_version (you can't verify a
-        row for a version older than the version the row claims to start at).
-      - verified_date format: YYYY-MM-DD.
-      - evidence_kind: must be in EVIDENCE_KIND_ENUM when set.
-
-    The `status` column was REMOVED 2026-05-28 -- status is derived at query
-    time from (current_version, valid_from_version, last_verified_at_version)
-    plus the entity-level supersession/deprecation flags on address_names. See
-    policy.md for the derivation rule.
-
-    Fails LOUD on:
-      - missing required column
-      - duplicate (kcdx_id, valid_from_version) tuple
-      - audit-pair integrity violation
-      - last_verified_at_version < valid_from_version
-      - malformed verified_date
-      - unknown evidence_kind
-
-    Returns list[dict] in file order."""
-    rows = []
-    with open(path, newline="", encoding="utf-8", errors="replace") as f:
-        lines = [ln for ln in f if not ln.lstrip().startswith("#")]
-    rd = csv.DictReader(lines)
-    seen = {}    # (kcdx_id:int, valid_from_version:str) -> lineno
-    for lineno, r in enumerate(rd, start=2):
-        kid_raw = (r.get("kcdx_id") or "").strip()
-        vfv     = (r.get("valid_from_version") or "").strip()
-        module  = (r.get("module") or "").strip()
-        lvv     = (r.get("last_verified_at_version") or "").strip()
-        vby     = (r.get("verified_by") or "").strip()
-        vdate   = (r.get("verified_date") or "").strip()
-        ekind   = (r.get("evidence_kind") or "").strip()
-
-        if not kid_raw:
-            raise RuntimeError(
-                f"address_versions_seed.csv:{lineno}: empty kcdx_id")
-        try:
-            kid = int(kid_raw)
-        except ValueError:
-            raise RuntimeError(
-                f"address_versions_seed.csv:{lineno}: kcdx_id={kid_raw!r} "
-                f"is not an integer")
-        if not vfv:
-            raise RuntimeError(
-                f"address_versions_seed.csv:{lineno}: empty valid_from_version "
-                f"(kcdx_id={kid})")
-        if not module:
-            raise RuntimeError(
-                f"address_versions_seed.csv:{lineno}: empty module "
-                f"(kcdx_id={kid}, valid_from_version={vfv!r}); reference a "
-                f"module_seed.csv row by id or name")
-        key = (kid, vfv)
-        if key in seen:
-            raise RuntimeError(
-                f"address_versions_seed.csv:{lineno}: duplicate "
-                f"(kcdx_id={kid}, valid_from_version={vfv!r}) -- first at "
-                f"line {seen[key]}")
-        seen[key] = lineno
-
-        # Audit-pair integrity: last_verified_at_version IS NULL <=> all three
-        # audit columns NULL.
-        audit_present_count = sum(1 for x in (vby, vdate, ekind) if x)
-        if lvv:
-            if audit_present_count != 3:
-                raise RuntimeError(
-                    f"address_versions_seed.csv:{lineno}: "
-                    f"last_verified_at_version={lvv!r} is set but the audit "
-                    f"trio (verified_by, verified_date, evidence_kind) is "
-                    f"incomplete -- got verified_by={vby!r}, "
-                    f"verified_date={vdate!r}, evidence_kind={ekind!r}")
-            # last_verified >= valid_from (string compare is fine for the
-            # release_M_N.BUILD tag format; lexicographic order = real order).
-            if lvv < vfv:
-                raise RuntimeError(
-                    f"address_versions_seed.csv:{lineno}: "
-                    f"last_verified_at_version={lvv!r} < "
-                    f"valid_from_version={vfv!r} (you can't verify a row at a "
-                    f"version older than the version the row starts at)")
-            # Date format check.
-            if not _VERIFIED_DATE_RE.match(vdate):
-                raise RuntimeError(
-                    f"address_versions_seed.csv:{lineno}: "
-                    f"verified_date={vdate!r} must be YYYY-MM-DD")
-            # Evidence kind enum check.
-            if ekind not in EVIDENCE_KIND_ENUM:
-                raise RuntimeError(
-                    f"address_versions_seed.csv:{lineno}: "
-                    f"evidence_kind={ekind!r} is not in the enum "
-                    f"{EVIDENCE_KIND_ENUM}")
-        else:
-            if audit_present_count != 0:
-                raise RuntimeError(
-                    f"address_versions_seed.csv:{lineno}: "
-                    f"last_verified_at_version is empty but at least one of "
-                    f"the audit trio is set -- got verified_by={vby!r}, "
-                    f"verified_date={vdate!r}, evidence_kind={ekind!r}")
-
-        rows.append(r)
-    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -704,6 +270,10 @@ def db_latest_ordinal(db_path):
 
 # ---------------------------------------------------------------------------
 # Overlay kind inference (heuristic; covers the 9 values, never crashes).
+#
+# Kept in the orchestrator (not seeds_shared/) because it is heuristic
+# INTERPRETATION of the seed `notes`/`rva`, not row assembly. build_rows derives
+# kind/offset/vtable_slot here and hands them to the shared row-builder.
 # ---------------------------------------------------------------------------
 def infer_kind(seed_row):
     rva = (seed_row.get("rva") or "").strip()
@@ -757,6 +327,10 @@ def kind_offset_and_slot(kind, notes):
 # same kcdx_id. The USER projection filters out address_versions rows whose
 # kcdx_id is not referenced by any address_names row -- so the bulk 321K stay
 # in DEV only, the curated ~140 ship to USER.
+#
+# Every address_versions row -- bulk AND curated -- is constructed by the shared
+# row-builder in seeds_shared/row_builder.py (build_bulk_row / build_curated_row)
+# so the rebuild here and a future incremental `apply` emit byte-identical rows.
 # ---------------------------------------------------------------------------
 def build_rows(dump_dir, dicts):
     rows = {t: [] for t in DEV_TABLES}
@@ -831,41 +405,24 @@ def build_rows(dump_dir, dicts):
 
     # --- 2. address_versions for each bulk function. kcdx_id is NULL (these
     #        are uncurated; only the seed pass below promotes some to curated
-    #        and sets their kcdx_id).
+    #        and sets their kcdx_id). Built via the shared row-builder.
     versions_by_av_id = {}   # av_id -> row dict (so seed pass can amend)
     for i, r in enumerate(functions, start=1):
         rv = parse_int(r.get("rva", ""))
         sig = sig_by_rva.get(rv)
         cra = cra_by_rva.get(rv)
-        versions_by_av_id[i] = {
-            "id": i,                       # explicit; matches rva_to_av_id
-            "kcdx_id": None,               # NULL = uncurated bulk; seed pass sets when curated
-            "kind": dicts.encode("address_versions", "kind", "function"),
-            "module_id": bulk_module_id,
-            "rva": rv,
-            "length": parse_int(r.get("length", "")),
-            "content_hash": hash_blob(r.get("content_hash", "")),
-            "value": None,
-            "signature": (sig.get("signature") if sig else None) or None,
-            "observed_arg_slots": parse_int(sig.get("observed_arg_slots", "")) if sig else None,
-            "caller_reg_arg_count": parse_int(cra.get("caller_reg_arg_count", "")) if cra else None,
-            "caller_arg_agreement": dicts.encode("address_versions", "caller_arg_agreement",
-                                                 cra.get("agreement", "")) if cra else None,
-            "offset": None,
-            "vtable_slot": None,
-            # Bulk rows are uncurated -- no maintainer ever signed off on them.
-            # All four audit columns NULL; status is derived (always "unverified"
-            # at any current_version for a NULL last_verified_at_version).
-            "last_verified_at_version": None,
-            "verified_by": None,
-            "verified_date": None,
-            "evidence_kind": None,
-            "auto_name": (r.get("auto_name") or None),
-            "decompile_quality": dicts.encode("address_versions", "decompile_quality",
+        versions_by_av_id[i] = ss.build_bulk_row(
+            i, rv, r, sig, cra,
+            module_id=bulk_module_id,
+            valid_from_id=GAME_VERSION_ID,
+            kind_id=dicts.encode("address_versions", "kind", "function"),
+            agreement_id=(dicts.encode("address_versions", "caller_arg_agreement",
+                                       cra.get("agreement", "")) if cra else None),
+            decompile_quality_id=dicts.encode("address_versions", "decompile_quality",
                                               r.get("decompile_quality", "")),
-            "valid_from": GAME_VERSION_ID,
-            "valid_through": None,
-        }
+            length=parse_int(r.get("length", "")),
+            content_hash=hash_blob(r.get("content_hash", "")),
+        )
 
     # --- 3a. read address_names_seed.csv -> address_names table. One row per
     #         curated entity, ever. address_names.id == address_names_seed.id ==
@@ -886,7 +443,7 @@ def build_rows(dump_dir, dicts):
             "id": nid,                          # canonical; IS the kcdx_id
             "name": ns["name"].strip(),
             # Pre-resolution: these hold STRINGS (names + tags) from the seed.
-            # The post-loop pass below resolves them to ids once the name -> id
+            # The cross-row pass below resolves them to ids once the name -> id
             # map is complete.
             "superseded_by":          sb_name,
             "superseded_at_version":  sb_ver,
@@ -900,8 +457,9 @@ def build_rows(dump_dir, dicts):
     #         For each row, resolve (kcdx_id, valid_from_version, module);
     #         either amend an existing bulk address_versions row (when the
     #         seed's RVA matched a bulk-dump function for the current import
-    #         version) or mint a fresh address_versions row. Every kcdx_id must
-    #         resolve to an address_names_seed row.
+    #         version) or mint a fresh address_versions row -- both via the
+    #         shared row-builder. Every kcdx_id must resolve to an
+    #         address_names_seed row.
     versions_seed = read_address_versions_seed(ADDRESS_VERSIONS_SEED_CSV)
     print(f"  address_versions_seed.csv: {len(versions_seed)} curated facts",
           flush=True)
@@ -950,12 +508,7 @@ def build_rows(dump_dir, dicts):
     for vs in versions_seed:
         kid = int(vs["kcdx_id"])
         vfv_tag = vs["valid_from_version"].strip()
-        if kid not in valid_kcdx_ids:
-            raise RuntimeError(
-                f"address_versions_seed.csv: kcdx_id={kid} "
-                f"(valid_from_version={vfv_tag!r}) has no row in "
-                f"address_names_seed.csv (every versions row must reference "
-                f"an existing entity)")
+        ss.check_kcdx_id_known(kid, vfv_tag, valid_kcdx_ids)
         # Only rows for the baseline import version are materialized today.
         # Future-version rows live in the seed but get materialized when the
         # importer is re-run with that version's dump.
@@ -982,100 +535,54 @@ def build_rows(dump_dir, dicts):
 
         kind_cue = {"rva": srva, "signature": sig, "name": nm, "notes": notes_for_kind}
 
+        # Derive the kind + offset/slot (heuristic interpretation lives here);
+        # the shared row-builder assembles the column dict from these.
+        kind = infer_kind(kind_cue)
+        offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
+        kind_id = dicts.encode("address_versions", "kind", kind)
+
         if srva:
             rv = parse_int(srva)
             av_id = rva_to_av_id.get(rv)
             if av_id is None:
                 av_id = next_av_id
                 next_av_id += 1
-                versions_by_av_id[av_id] = {
-                    "id": av_id,
-                    "kcdx_id": kid,
-                    "kind": None,
-                    "module_id": module_id,
-                    "rva": rv,
-                    "length": None,
-                    "content_hash": None,
-                    "value": None,
-                    "signature": sig or None,
-                    "observed_arg_slots": None,
-                    "caller_reg_arg_count": None,
-                    "caller_arg_agreement": None,
-                    "offset": None,
-                    "vtable_slot": None,
-                    "last_verified_at_version": lvv_id,
-                    "verified_by": vby or None,
-                    "verified_date": vdt or None,
-                    "evidence_kind": ekn_id,
-                    "auto_name": None,
-                    "decompile_quality": None,
-                    "valid_from": GAME_VERSION_ID,
-                    "valid_through": None,
-                }
+                versions_by_av_id[av_id] = ss.build_curated_row(
+                    av_id, kid, base_row=None,
+                    module_id=module_id, rva=rv,
+                    valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
+                    signature=sig, lvv_id=lvv_id, verified_by=vby,
+                    verified_date=vdt, evidence_kind_id=ekn_id,
+                    offset=offset, vtable_slot=vslot)
                 n_seed_minted_addr += 1
             else:
+                # Promote the matched bulk row (keep its fingerprint columns).
+                versions_by_av_id[av_id] = ss.build_curated_row(
+                    av_id, kid, base_row=versions_by_av_id[av_id],
+                    module_id=module_id, rva=rv,
+                    valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
+                    signature=sig, lvv_id=lvv_id, verified_by=vby,
+                    verified_date=vdt, evidence_kind_id=ekn_id,
+                    offset=offset, vtable_slot=vslot)
                 n_seed_mapped += 1
         else:
             av_id = next_av_id
             next_av_id += 1
-            versions_by_av_id[av_id] = {
-                "id": av_id,
-                "kcdx_id": kid,
-                "kind": None,
-                "module_id": module_id,
-                "rva": None,
-                "length": None,
-                "content_hash": None,
-                "value": None,
-                "signature": sig or None,
-                "observed_arg_slots": None,
-                "caller_reg_arg_count": None,
-                "caller_arg_agreement": None,
-                "offset": None,
-                "vtable_slot": None,
-                "last_verified_at_version": lvv_id,
-                "verified_by": vby or None,
-                "verified_date": vdt or None,
-                "evidence_kind": ekn_id,
-                "auto_name": None,
-                "decompile_quality": None,
-                "valid_from": GAME_VERSION_ID,
-                "valid_through": None,
-            }
+            versions_by_av_id[av_id] = ss.build_curated_row(
+                av_id, kid, base_row=None,
+                module_id=module_id, rva=None,
+                valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
+                signature=sig, lvv_id=lvv_id, verified_by=vby,
+                verified_date=vdt, evidence_kind_id=ekn_id,
+                offset=offset, vtable_slot=vslot)
             n_seed_minted_noaddr += 1
-
-        # Promote to curated: set kcdx_id (already), kind, audit columns, off/vslot.
-        kind = infer_kind(kind_cue)
-        offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
-        v = versions_by_av_id[av_id]
-        v["kcdx_id"] = kid
-        v["kind"] = dicts.encode("address_versions", "kind", kind)
-        v["last_verified_at_version"] = lvv_id
-        v["verified_by"] = vby or None
-        v["verified_date"] = vdt or None
-        v["evidence_kind"] = ekn_id
-        if sig:
-            v["signature"] = sig
-        if offset is not None:
-            v["offset"] = offset
-        if vslot is not None:
-            v["vtable_slot"] = vslot
-            v["value"] = vslot
 
     # Every kcdx_id in address_names_seed.csv must have a matching row in
     # address_versions_seed.csv for the baseline import version -- else the
     # entity has a name but no resolve facts.
     covered_kids = {v["kcdx_id"] for v in versions_by_av_id.values()
                     if v["kcdx_id"] is not None}
-    uncovered = valid_kcdx_ids - covered_kids
-    if uncovered:
-        sample = sorted(uncovered)[:5]
-        raise RuntimeError(
-            f"address_names_seed.csv has {len(uncovered)} kcdx_id(s) with no "
-            f"address_versions_seed.csv row for "
-            f"valid_from_version={GAME_VERSION_TAG!r} "
-            f"(first 5: {sample}); every named entity needs at least one "
-            f"resolve fact for the baseline version")
+    ss.check_every_entity_covered(valid_kcdx_ids, covered_kids, GAME_VERSION_TAG)
 
     # rva -> kcdx_id (curated only) for the DEV-only tables' kcdx_id column.
     # rva -> av_id (universal) for the DEV-only tables' address_version_id column.
@@ -1085,89 +592,19 @@ def build_rows(dump_dir, dicts):
 
     # --- 4. RESOLVE supersession / deprecation references + integrity checks.
     #
-    # address_names_seed.csv records the DIRECT supersession edge by NAME ("at this version,
-    # b supersedes a") + the version it became active. The engine walks the
-    # chain at query time, applying the version filter at each hop -- no
-    # compaction. deprecation_replacement is an advisory pointer (engine surfaces
-    # it in the warning, does NOT auto-follow).
-    #
-    # All validation runs here, fail-loud: unknown names, unknown version tags,
-    # paired-fields integrity (XOR), cycle in superseded_by graph.
+    # The cross-row checks (pair integrity, name/tag FK resolution, supersession
+    # acyclicity) live in seeds_shared/validators.py so the rebuild and a future
+    # apply share them. They mutate the address_names rows in place, replacing
+    # the seed strings with resolved ids.
     name_to_id = {r["name"]: r["id"] for r in rows["address_names"] if r["name"]}
     tag_to_id  = {gv["tag"]: gv["id"] for gv in rows["game_versions"]}
 
-    def _resolve_name(rid, rname, col, val):
-        nid = name_to_id.get(val)
-        if nid is None:
-            raise RuntimeError(
-                f"address_names_seed.csv row id={rid} name={rname!r}: {col}={val!r} but no "
-                f"seed row has that name")
-        if nid == rid and col == "superseded_by":
-            raise RuntimeError(
-                f"address_names_seed.csv row id={rid} name={rname!r}: {col} points at itself")
-        return nid
+    ss.resolve_and_check_name_refs(rows["address_names"], name_to_id, tag_to_id)
 
-    def _resolve_tag(rid, rname, col, val):
-        gvid = tag_to_id.get(val)
-        if gvid is None:
-            raise RuntimeError(
-                f"address_names_seed.csv row id={rid} name={rname!r}: {col}={val!r} but no "
-                f"game_versions row has that tag")
-        return gvid
-
-    for r in rows["address_names"]:
-        rid, rname = r["id"], r["name"]
-
-        # Supersession pair integrity: both-or-neither.
-        sb, sbv = r["superseded_by"], r["superseded_at_version"]
-        if (sb is None) != (sbv is None):
-            raise RuntimeError(
-                f"address_names_seed.csv row id={rid} name={rname!r}: superseded_by and "
-                f"superseded_at_version must be set together "
-                f"(got superseded_by={sb!r}, superseded_at_version={sbv!r})")
-        if sb is not None:
-            r["superseded_by"]         = _resolve_name(rid, rname, "superseded_by", sb)
-            r["superseded_at_version"] = _resolve_tag(rid, rname, "superseded_at_version", sbv)
-
-        # Deprecation pair integrity: is_deprecated=1 <=> deprecated_at_version set.
-        dep, depv = r["is_deprecated"], r["deprecated_at_version"]
-        if bool(dep) != (depv is not None):
-            raise RuntimeError(
-                f"address_names_seed.csv row id={rid} name={rname!r}: is_deprecated and "
-                f"deprecated_at_version must be set together "
-                f"(got is_deprecated={dep}, deprecated_at_version={depv!r})")
-        if depv is not None:
-            r["deprecated_at_version"] = _resolve_tag(rid, rname, "deprecated_at_version", depv)
-
-        # deprecation_replacement only valid when is_deprecated=1.
-        dr = r["deprecation_replacement"]
-        if dr is not None and not dep:
-            raise RuntimeError(
-                f"address_names_seed.csv row id={rid} name={rname!r}: deprecation_replacement="
-                f"{dr!r} requires is_deprecated=1")
-        if dr is not None:
-            r["deprecation_replacement"] = _resolve_name(rid, rname, "deprecation_replacement", dr)
-
-    # Cycle detection on the supersession graph -- a cycle is wrong regardless
-    # of which versions gate which edges (the version-ignorant graph reachable
-    # via superseded_by must be acyclic). Walk each chain to a terminal; abort
-    # if we revisit any node.
-    n_superseded = sum(1 for r in rows["address_names"] if r["superseded_by"] is not None)
+    n_superseded = ss.check_supersession_acyclic(rows["address_names"])
     if n_superseded:
-        print(f"  supersession: {n_superseded} edge(s); validating acyclicity...",
+        print(f"  supersession: {n_superseded} edge(s); acyclicity validated",
               flush=True)
-        direct = {r["id"]: r["superseded_by"] for r in rows["address_names"]}
-        id_to_name = {r["id"]: r["name"] for r in rows["address_names"]}
-        for r in rows["address_names"]:
-            seen = [r["id"]]
-            cur = direct.get(r["id"])
-            while cur is not None:
-                if cur in seen:
-                    seen.append(cur)
-                    chain = " -> ".join(id_to_name.get(i, f"#{i}") for i in seen)
-                    raise RuntimeError(f"address_names_seed.csv supersession cycle: {chain}")
-                seen.append(cur)
-                cur = direct.get(cur)
 
     print(f"  address_names: {len(rows['address_names'])} rows "
           f"(seed: bulk-matched={n_seed_mapped}, "

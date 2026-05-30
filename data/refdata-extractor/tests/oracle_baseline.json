@@ -1,0 +1,122 @@
+{
+  "dev": {
+    "_dict_address_versions_caller_arg_agreement": {
+      "count": 11,
+      "hash": "068017b646118d86ce7e866b57bb54f2f43aa2a8a98cbfd469ba1da51cc3cecc"
+    },
+    "_dict_address_versions_decompile_quality": {
+      "count": 2,
+      "hash": "9b5828860d60bec8ad6d0c92835a85d30cad0c09f4f2cdc3fdb3ee5c406529a7"
+    },
+    "_dict_address_versions_evidence_kind": {
+      "count": 5,
+      "hash": "39d8f6acad86f3086f71e617504506af74536dadc1fe106c4d001d009edc1f27"
+    },
+    "_dict_address_versions_kind": {
+      "count": 9,
+      "hash": "cebc96fe15ed25b8f7020c8749d9fad9c7d3164f5cfd2341b212074bb3b7475d"
+    },
+    "_dict_referenced_vars_data_type": {
+      "count": 385,
+      "hash": "cd882e552c1d03cdbc64855da33f36f7ee458c8ea0d53038097b05a10d4386ad"
+    },
+    "_dict_referenced_vars_storage_kind": {
+      "count": 6,
+      "hash": "cb4bf7e046669e85e26f87d8c1b651376b75b901550751f689d140c9fba1aaac"
+    },
+    "_dict_statements_kind": {
+      "count": 7,
+      "hash": "b20b1d33e72267d38025cdc96e855aca3da1916cdb7c31fa9b6cdd00248b9c90"
+    },
+    "address_names": {
+      "count": 143,
+      "hash": "6105fc38b7883c18399eb4844ff15c024b2f14cc4195a828f2c0ace55028de1b"
+    },
+    "address_versions": {
+      "count": 321138,
+      "hash": "96d1c6a97621e6d88d58d7ef2687acedbf939410ba76f07363cef0dff66d3961"
+    },
+    "call_edges": {
+      "count": 1293022,
+      "hash": "aaf2ae7f087ea96823148a11eaf9d0f18fa3c1966fd4fdc6733831ba5e6df33d"
+    },
+    "game_versions": {
+      "count": 1,
+      "hash": "79473f4155d7c15896ff0c6c53ec25e71c10c84445dcb4591f2339e549ad968d"
+    },
+    "meta": {
+      "count": 1,
+      "hash": "ef905ab627fd55a36a9982c2434ed7f109c2e74d3dac3e2f00f41ae7a14f11ab"
+    },
+    "modules": {
+      "count": 1,
+      "hash": "e718bfb08d3b6b4565309825a0487060d08e6efcacd754b508982c1b789ab13f"
+    },
+    "referenced_vars": {
+      "count": 10883443,
+      "hash": "d87f8a6bfcf0e12ad6a57f8ed3df35691bed8137c7e387848c313a2f275eeb1f"
+    },
+    "sqlite_sequence": {
+      "count": 6,
+      "hash": "a7f3feaad10869f8f29ff156e467a6597babe3e385e6c3780e8f2afeb89c69c0"
+    },
+    "statements": {
+      "count": 5240326,
+      "hash": "efc17220fe72dfcd6d9b3ab0b7102aca9522b199fcccdfcfeff1d5dcdcfb8a43"
+    }
+  },
+  "user": {
+    "_dict_address_versions_caller_arg_agreement": {
+      "count": 11,
+      "hash": "068017b646118d86ce7e866b57bb54f2f43aa2a8a98cbfd469ba1da51cc3cecc"
+    },
+    "_dict_address_versions_decompile_quality": {
+      "count": 2,
+      "hash": "9b5828860d60bec8ad6d0c92835a85d30cad0c09f4f2cdc3fdb3ee5c406529a7"
+    },
+    "_dict_address_versions_evidence_kind": {
+      "count": 5,
+      "hash": "39d8f6acad86f3086f71e617504506af74536dadc1fe106c4d001d009edc1f27"
+    },
+    "_dict_address_versions_kind": {
+      "count": 9,
+      "hash": "cebc96fe15ed25b8f7020c8749d9fad9c7d3164f5cfd2341b212074bb3b7475d"
+    },
+    "_dict_referenced_vars_data_type": {
+      "count": 385,
+      "hash": "cd882e552c1d03cdbc64855da33f36f7ee458c8ea0d53038097b05a10d4386ad"
+    },
+    "_dict_referenced_vars_storage_kind": {
+      "count": 6,
+      "hash": "cb4bf7e046669e85e26f87d8c1b651376b75b901550751f689d140c9fba1aaac"
+    },
+    "_dict_statements_kind": {
+      "count": 7,
+      "hash": "b20b1d33e72267d38025cdc96e855aca3da1916cdb7c31fa9b6cdd00248b9c90"
+    },
+    "address_names": {
+      "count": 143,
+      "hash": "6105fc38b7883c18399eb4844ff15c024b2f14cc4195a828f2c0ace55028de1b"
+    },
+    "address_versions": {
+      "count": 143,
+      "hash": "fce41b44e5e0b7b7833f49c9e988379403877f1520c9807e576fe85ea1e5662d"
+    },
+    "game_versions": {
+      "count": 1,
+      "hash": "79473f4155d7c15896ff0c6c53ec25e71c10c84445dcb4591f2339e549ad968d"
+    },
+    "meta": {
+      "count": 1,
+      "hash": "ef905ab627fd55a36a9982c2434ed7f109c2e74d3dac3e2f00f41ae7a14f11ab"
+    },
+    "modules": {
+      "count": 1,
+      "hash": "e718bfb08d3b6b4565309825a0487060d08e6efcacd754b508982c1b789ab13f"
+    },
+    "sqlite_sequence": {
+      "count": 3,
+      "hash": "51984b9a81e151879c9f07960205cc8d0c3074eea9ea1508dd550fbe5f4f7360"
+    }
+  }
+}
