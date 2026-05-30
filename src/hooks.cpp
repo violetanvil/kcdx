@@ -40,6 +40,7 @@
 #include "mod_absorb/record_validate_selftest.h"  // cap-58 engine self-report
 #include "blake3_selftest.h"                       // cap-59 engine self-report
 #include "version_check_selftest.h"                // cap-60 engine self-report
+#include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — the BugSplat
 // ctor probe installs from kcdx.dll DllMain, not from hooks::Install.
@@ -160,18 +161,13 @@ lua_Alloc_t g_orig_frealloc = nullptr;
 uintptr_t g_kcdx_image_base = 0;
 size_t    g_kcdx_image_size = 0;
 
-// === DIAGNOSTIC (PROBE A): WHGame.dll image range. Theory under test —
-// kcdx's vendored luaH_free, running during kcdx's GC sweep on the SHARED
-// g->rootgc, frees a WHGame-allocated Table's t->node when that node is
-// WHGame's static-const dummynode_ (a .rdata sentinel inside WHGame.dll's
-// IMAGE, not a heap block). The `t->node != kcdx_dummynode` guard at
-// ltable.c:405 is TRUE for WHGame's node, so luaM_freearray → frealloc is
-// called on a non-heap pointer → RtlSizeHeap faults (0xC0000374). A block
-// in WHGame.dll's loaded IMAGE reaching frealloc is impossible for a legit
-// heap allocation → it is the sentinel-free smoking gun. PROBE Q is blind
-// to this (its block ∈ kcdx.dll image test never matches a WHGame node).
-// Outcome: a frealloc whose block ∈ WHGame image (esp. nsize==0 free) with
-// caller_ra in luaH_free → theory confirmed. Resolved at probe-arm time.
+// === ARCHIVED PROBE A (2026-05-29): CONFIRMED the WHGame→kcdx dummynode free.
+// === WHGame.dll image range, used to flag a frealloc block ∈ WHGame image (the
+// === sentinel-free smoking gun). Root cause: kcdx's GC freed WHGame's .rdata
+// === dummynode_; fixed by kcdx_node_freeable in vendor/lua/ltable.c.
+// === See: docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md §Resolution.
+// === Revive by flipping #if 0 -> #if 1 if a dual-Lua GC hazard recurs.
+#if 0
 uintptr_t g_whgame_image_base = 0;
 size_t    g_whgame_image_size = 0;
 
@@ -181,6 +177,7 @@ static bool IsInWhGameImage(const void* p) {
     return addr >= g_whgame_image_base &&
            addr <  g_whgame_image_base + g_whgame_image_size;
 }
+#endif
 
 // Our static-Lua's `&dummynode_` (resolved by creating a temp Table at
 // probe-arm time and reading its t->node). Logged for sanity, then used
@@ -214,15 +211,14 @@ static void* __cdecl HookedFrealloc(void* ud, void* block, size_t osize,
             log::KV("is_dummynode",
                 (int64_t)(block == g_kcdx_dummynode ? 1 : 0)));
     }
-    // === DIAGNOSTIC (PROBE A): a frealloc whose `block` lands inside
-    // WHGame.dll's loaded IMAGE is the corrupting sentinel-free we predicted
-    // — a static-const Node (WHGame's dummynode_) cannot be a heap block, so
-    // passing it to frealloc faults RtlSizeHeap. caller_ra pins the call site
-    // (expected: luaM_freearray ← luaH_free). nsize==0 marks a true free.
-    // No throttle — this fires at most a handful of times before the crash
-    // and is the smoking gun. theory-INDEPENDENT: it logs the raw block
-    // provenance; if it never fires yet the crash persists, the mechanism is
-    // NOT the WHGame-dummynode free and we re-observe.
+    // === ARCHIVED PROBE A (2026-05-29): CONFIRMED — fired once as the last line
+    // === before the 0xC0000374 abort with block ∈ WHGame image, nsize=0 (free),
+    // === osize=40 (=sizeof(Node)), caller_ra in kcdx luaH_free→luaM_realloc_.
+    // === Root cause: kcdx's GC freed WHGame's .rdata dummynode_ sentinel (the
+    // === FIX-C mirror); fixed by kcdx_node_freeable in vendor/lua/ltable.c.
+    // === See: docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md §Resolution.
+    // === Revive by flipping #if 0 -> #if 1 if a dual-Lua GC hazard recurs.
+#if 0
     else if (IsInWhGameImage(block)) {
         void* ret_slot = _AddressOfReturnAddress();
         void* caller_ra = ret_slot ? *static_cast<void**>(ret_slot) : nullptr;
@@ -235,6 +231,7 @@ static void* __cdecl HookedFrealloc(void* ud, void* block, size_t osize,
             log::KV("is_free",    (int64_t)(nsize == 0 ? 1 : 0)),
             log::KV("kcdx_dummynode", g_kcdx_dummynode));
     }
+#endif
     // Pass through unchanged so we don't intervene in the corruption
     // chain. If we returned NULL, Lua would throw LUA_ERRMEM and the
     // crash signature changes — masking what we want to observe.
@@ -271,9 +268,13 @@ static void ArmFreallocProbe(lua_State* L) {
         log::KV("size", (int64_t)g_kcdx_image_size),
         log::KV("end",  (void*)(g_kcdx_image_base + g_kcdx_image_size)));
 
-    // === DIAGNOSTIC (PROBE A): resolve WHGame.dll's image range so
-    // HookedFrealloc can flag a `block` that lands inside WHGame's loaded
-    // image (a static-const sentinel being freed — the crash mechanism).
+    // === ARCHIVED PROBE A (2026-05-29): CONFIRMED. Resolved WHGame.dll's image
+    // === range so HookedFrealloc could flag a sentinel-free block ∈ WHGame
+    // === image. Root cause: kcdx's GC freed WHGame's .rdata dummynode_; fixed by
+    // === kcdx_node_freeable in vendor/lua/ltable.c.
+    // === See: docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md §Resolution.
+    // === Revive by flipping #if 0 -> #if 1 if a dual-Lua GC hazard recurs.
+#if 0
     {
         HMODULE whgame_mod = GetModuleHandleW(L"WHGame.dll");
         MODULEINFO wmi{};
@@ -292,6 +293,7 @@ static void ArmFreallocProbe(lua_State* L) {
                        "WHGame-image block classification disabled");
         }
     }
+#endif
 
     // Step 2: resolve our static-Lua's dummynode_ by creating a temp
     // Table (which makes t->node = &dummynode_) and reading the field.
@@ -778,6 +780,13 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // path). Drives + RESETS both modules' in-memory state in isolation and
     // leaves an empty on-disk cache behind. One-shot guarded internally.
     kcdx::version_check_selftest::RunSelfTestOnce();
+
+    // cap-66-node-classifier: KI-0001 permanent regression. Asserts the
+    // vendored-Lua crash guard (kcdx_node_freeable in vendor/lua/ltable.c)
+    // classifies a module-image (.rdata) sentinel as NOT-freeable, so kcdx's GC
+    // never hands a foreign Lua copy's dummynode to frealloc (the 0xC0000374
+    // save-load heap corruption). Boot-only, one-shot guarded internally.
+    kcdx::ki0001::RunSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

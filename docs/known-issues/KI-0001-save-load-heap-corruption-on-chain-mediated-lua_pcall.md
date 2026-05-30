@@ -1,13 +1,13 @@
 ---
 id: KI-0001
 opened: 2026-05-29
-status: open
+status: fixed
 commit_at_filing: 1c01c9d6e25c5b76a9c8c4a8bbc3e8e7f6c6b6a5
 ---
 
 # KI-0001 — Save-load STATUS_HEAP_CORRUPTION on the chain-mediated lua_pcall path
 
-**Status:** OPEN — not yet investigated.
+**Status:** FIXED 2026-05-29 (Option A — the FIX-C mirror in `vendor/lua/ltable.c`). Root cause + verification in §Resolution. Structural cure deferred to restructure Phase 11 (FIX A).
 
 ## Symptom (required)
 
@@ -63,6 +63,7 @@ Empirical observations only — quoted from the launch at 2026-05-29 16:25:25 (`
 |------|--------|--------|
 | 2026-05-29 | Re-walked `crash_2026-05-29_16-25-25.zip` dmp via `cdb .ecxr; k 30` | CONFIRMED the filed stack verbatim: 0xC0000374 at `RtlSizeHeap` ← WHGame frealloc ← `kcdx!HookedFrealloc` ← `kcdx!luaM_realloc_` ← `kcdx!luaH_free+0x38` ← `kcdx!luaC_step` ← `kcdx!lua_pcall` ← `DispatchPre`. Ground truth matches the report. |
 | 2026-05-29 | PROBE A: read-only — flag a frealloc `block` ∈ WHGame.dll image (sentinel-free smoking gun) | CONFIRMED. One fire, the LAST line before abort: `block=0x7FFEE76E9C40` ∈ WHGame image, `nsize=0` (free), `osize=40` (=sizeof(Node)), `caller_ra` in kcdx `luaH_free→luaM_realloc_`. kcdx's GC freed WHGame's `dummynode_`. |
+| 2026-05-29 | FIX (Option A): `kcdx_node_freeable` guard in `vendor/lua/ltable.c` (luaH_free/resize/luaH_resizearray/newkey/unbound_search); skip free when `t->node` is a foreign `.rdata` sentinel (VirtualQuery MEM_IMAGE, cached). Re-ran the exact repro. | VERIFIED. No crash; slot-99 load completed TWICE; PROBE A silent (0 fires); session survived ~10s past load EXIT under a HEAVIER re-entrant storm (5879 d2 / 319 d3 vs 2156 / 175). suite 131→133 across kPreLoadGame→kPostLoadGame. |
 
 ## Open questions
 
@@ -84,12 +85,98 @@ Causal hypotheses; each labeled `(NOT verified)` per the AP17 facts-vs-hypothesi
 
 | Probe | Site | What it captures | Status |
 |-------|------|------------------|--------|
-| PROBE A | `src/hooks.cpp` `HookedFrealloc` + `ArmFreallocProbe` (`IsInWhGameImage`, `g_whgame_image_base/size`) | A frealloc `block` ∈ WHGame.dll image — a static-const sentinel being freed (kcdx's GC freeing WHGame's `dummynode_`). Logs `block`/`osize`/`nsize`/`caller_ra`/`is_free`. | live (pending fix-close → archive) |
+| PROBE A | `src/hooks.cpp` `HookedFrealloc` + `ArmFreallocProbe` (`IsInWhGameImage`, `g_whgame_image_base/size`) | A frealloc `block` ∈ WHGame.dll image — a static-const sentinel being freed (kcdx's GC freeing WHGame's `dummynode_`). Logs `block`/`osize`/`nsize`/`caller_ra`/`is_free`. | archived (`#if 0`). Root cause: kcdx's GC freed WHGame's `.rdata` dummynode_; fixed by `kcdx_node_freeable` in `vendor/lua/ltable.c`. |
 | PROBE Q | `src/hooks.cpp` `HookedFrealloc` (kcdx-image branch) | A frealloc `block` ∈ kcdx.dll image (the FIX-C direction). Reads zero. | durable (permanent FIX-C regression guard, `lua-bridge.md`) |
 
 ## Resolution (filled when bug closes — GATED)
 
-(Empty — `/debug` writes the Resolution after PROBE-X identifies root cause in falsifiable mechanism terms per AP17.)
+**Status:** FIXED (Option A — the FIX-C mirror). Superseded structurally by restructure Phase 11 (FIX A).
+
+**Root cause:** kcdx and WHGame.dll each statically embed Lua 5.1, each with its
+own `static const Node dummynode_` in its own `.rdata` at a DIFFERENT address,
+and both copies drive ONE shared `global_State` / `g->rootgc`. When kcdx's
+vendored garbage collector runs a sweep (`luaC_step` → `luaH_free`,
+`vendor/lua/ltable.c:404`) on a `Table` that **WHGame's** Lua allocated with an
+empty hash part, that Table's `t->node` field holds **WHGame's** `&dummynode_`.
+The free guard `if (t->node != dummynode)` at `ltable.c:405` compares against
+**kcdx's** `&dummynode_`; WHGame's sentinel is a different address, so the
+condition is TRUE and `luaM_freearray` → `luaM_realloc_` → `g->frealloc`
+(WHGame's allocator) is called on WHGame's `.rdata` sentinel. That pointer is in
+a mapped module image, not a heap allocation, so `RtlSizeHeap` reads a
+nonexistent heap header, sees garbage, and raises `STATUS_HEAP_CORRUPTION`
+(0xC0000374). The chain-mediated `lua_pcall` migration (commit `1c01c9d`) made
+this path routine: it put kcdx-vendored `lua_pcall → luaD_call → luaC_step`
+(kcdx's GC) on the dispatch path of every `lua_pcall` fire — via cap-59's
+Lua-kind `before` callback dispatched at `hook_chain.cpp` `DispatchPre:1167`
+(`lua_pcall(L, nargs, LUA_MULTRET, 0)`, kcdx's vendored copy) — so under
+save-load's heavy Lua activity kcdx's GC sweeps the shared `rootgc` and meets
+WHGame-allocated empty-hash Tables. Pre-migration the thin direct `MH_CreateHook`
+detour never invoked kcdx's `lua_pcall`/GC on this path, so the latent bug stayed
+dormant.
+
+This is the EXACT INVERSE of FIX C (`setnodevector`, `ltable.c:280`). FIX C
+stops kcdx from ever *writing* its dummynode into a Table so WHGame's GC won't
+free kcdx's sentinel (the kcdx→WHGame direction). It does nothing about kcdx's
+GC *running on a WHGame-created Table* (the WHGame→kcdx direction). The dual-Lua
+sentinel hazard was always symmetric (FIX C's own comment describes both
+directions); only the kcdx→WHGame half had been closed.
+
+**Confirmed by PROBE A** (read-only frealloc classifier, `src/hooks.cpp`
+`HookedFrealloc`): fired exactly once, as the last log line before the abort —
+`block=0x7FFEE76E9C40` ∈ WHGame.dll image `[0x7FFEE3CA0000, 0x7FFEE97CB000)`,
+`nsize=0` (a free), `osize=40` (= `sizeof(Node)` in the vendored layout),
+`caller_ra` resolving into kcdx's `luaH_free → luaM_realloc_` frame. The crash
+dump `crash_2026-05-29_17-19-57.zip` (`16940.dmp`) is the identical 0xC0000374
+stack. PROBE Q stayed silent throughout because its `block ∈ kcdx.dll image`
+test is structurally blind to a WHGame-image block (this is the mirror of FIX C,
+not FIX C's own direction).
+
+**Fix:** `vendor/lua/ltable.c` — a new `kcdx_node_freeable(n)` discriminator
+replaces the bare `n != dummynode` / `n == dummynode` comparisons at every site
+that frees or size-reads `t->node` (`luaH_free`, `resize`, `luaH_resizearray`,
+`newkey`, `unbound_search`, `luaH_isdummy`). A node is freeable ONLY if it is a
+real heap allocation; ANY loaded-module-image (`.rdata`) node — kcdx's OWN
+dummynode or a foreign copy's — is treated as a non-freeable sentinel. The
+discriminator uses `VirtualQuery`: `MEMORY_BASIC_INFORMATION.Type == MEM_IMAGE`
+is a module image (sentinel, skip), `MEM_PRIVATE` is heap (free). Module images
+and heap allocations are disjoint by OS construction — a mapped image is never
+returned by an allocator — so the test is robust and ASLR-safe with no harvest
+of WHGame's dummynode address. The foreign sentinel is cached on first discovery
+(KCD2 has exactly two Lua copies → one foreign sentinel), so steady-state GC
+sweep is pointer compares, not a syscall per free.
+
+**Verification:** re-ran the exact repro (slot-99 save-load with cap-59's
+Lua-kind `lua_pcall` chain entry installed). `kcdx-dev_2026-05-29_17-46-08.log`:
+no crash; slot-99 load completed TWICE (`HookedLoadGameWrapper` fire_n=1 AND
+fire_n=2); PROBE A silent (zero `probe_a.whgame_image_block` lines); session
+survived ~10s past the second load's EXIT under a HEAVIER re-entrant storm than
+the crash run (5879 depth=2 / 319 depth=3 vs the crash's 2156 / 175); suite
+advanced 131→133 across `kPreLoadGame`→`kPostLoadGame` (the save-load lifecycle
+that previously corrupted the heap dispatched cleanly).
+
+**Structural cure (supersedes this fix):** restructure **Phase 11** (FIX A) —
+kcdx.dll force-loads WHGame.dll and resolves every `lua_*` from WHGame's compiled
+copy via the FIX A shim, dropping kcdx's static-linked Lua entirely. One compiled
+Lua body, one sentinel set → the dual-Lua sentinel hazard (both directions) dies
+by construction. `restructure-plan.md` §Phase 11 / 11d names this exact mechanism
+(line 1955: "kcdx has NO compiled Lua of its own… One body, one sentinel set,
+hazard impossible"). Phase 11 is blocked on the FIX A symbol harvest and runs
+after Phases 1–10. **CAP-66-save-load-survives must be re-run as part of Phase
+11d's verification gate** (whose own criterion — "PROBE Q canary stays silent
+across a full save-load cycle, the canonical dual-Lua hazard repro" — subsumes
+it). When Phase 11d lands, the `kcdx_node_freeable` guard + PROBE A + cap-66 all
+retire together.
+
+**Diagnostic archive:** PROBE A (`src/hooks.cpp` `HookedFrealloc` WHGame-image
+branch + `IsInWhGameImage` + `g_whgame_image_base/size` + the `ArmFreallocProbe`
+WHGame-image resolution) → archived in place per the probe-archive rule (see the
+Active diagnostic instrumentation table). PROBE Q stays `durable` (the FIX-C
+regression guard, `lua-bridge.md`).
+
+**Doc / rule updates:** `.claude/rules/lua-bridge.md` gains the WHGame→kcdx
+direction of the hazard + this fix (the rule previously documented only the
+kcdx→WHGame / FIX-C direction). `test-plugins/README.md` adds the cap-66 matrix
+section + rows.
 
 ## See also
 

@@ -86,6 +86,78 @@ static const Node dummynode_ = {
 };
 
 
+/* kcdx FIX (KI-0001): the mirror of FIX C (see setnodevector below).
+ *
+ * kcdx and WHGame.dll each statically embed their own Lua 5.1, each with its
+ * own `static const Node dummynode_` at a different `.rdata` address, and both
+ * drive ONE shared global_State / g->rootgc. FIX C stops kcdx from ever
+ * *writing* its dummynode into a Table, so WHGame's GC never frees kcdx's
+ * sentinel. But the reverse was left open: when kcdx's own GC sweeps a Table
+ * that WHGame ALLOCATED (empty hash part → t->node == &WHGame's dummynode_),
+ * the `t->node != dummynode` guard below compares against *kcdx's* dummynode,
+ * sees a mismatch (WHGame's sentinel lives at a different address), and calls
+ * luaM_freearray on WHGame's `.rdata` sentinel → g->frealloc → RtlSizeHeap
+ * faults with STATUS_HEAP_CORRUPTION (0xC0000374). Confirmed by PROBE A:
+ * docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md.
+ *
+ * Discriminator: a real (freeable) node array is a HEAP allocation; any
+ * dummynode sentinel — kcdx's OR WHGame's — lives in a loaded module's mapped
+ * IMAGE (`.rdata`). VirtualQuery's MEMORY_BASIC_INFORMATION.Type is MEM_IMAGE
+ * for module image pages and MEM_PRIVATE for heap, and the two regions are
+ * disjoint by OS construction — a mapped image is never returned by an
+ * allocator. So "is this node freeable" == "is it NOT in a module image".
+ * This needs no harvest of WHGame's dummynode address and is ASLR-safe.
+ *
+ * The structural cure is FIX A / restructure Phase 11 (drop kcdx's static Lua
+ * entirely; resolve all lua_* from WHGame → one compiled body, one sentinel
+ * set, hazard impossible). This guard retires when Phase 11d lands.
+ */
+#if defined(_WIN32)
+#include <windows.h>
+/* Hot-path note: luaH_free runs once per swept table (thousands per GC cycle),
+ * so a VirtualQuery per call would be a real regression. The foreign sentinel
+ * (WHGame's dummynode_) is a SINGLE fixed `.rdata` address per process. We
+ * VirtualQuery only to DISCOVER it (a finite, tiny number of times — at most
+ * the few distinct foreign Lua copies, in practice one), cache it, then every
+ * later call is two pointer compares with no syscall. Real heap nodes are
+ * recognized by exclusion: not kcdx's dummynode, not the cached foreign one.
+ *
+ * A heap node never matches a cached sentinel (the cache only ever holds an
+ * address proven MEM_IMAGE), so a false "don't free" is impossible.
+ *
+ * Topology assumption: KCD2 has exactly TWO compiled Lua bodies (kcdx's +
+ * WHGame's) → exactly ONE foreign sentinel. Once it is cached, any node !=
+ * both known sentinels is provably heap, so the syscall is skipped. If a third
+ * Lua copy were ever introduced, KCDX_MAX_FOREIGN_DUMMIES below must grow (the
+ * discovery VirtualQuery stays live until that many distinct foreign sentinels
+ * are cached). FIX A / Phase 11 removes kcdx's copy entirely and retires all of
+ * this — one body, one sentinel, no discrimination needed. */
+#define KCDX_MAX_FOREIGN_DUMMIES 1
+static const Node *kcdx_foreign_dummy[KCDX_MAX_FOREIGN_DUMMIES] = {NULL};
+static int kcdx_foreign_count = 0;
+static int kcdx_node_is_freeable (const Node *n) {
+  MEMORY_BASIC_INFORMATION mbi;
+  int i;
+  if (n == dummynode) return 0;          /* kcdx's own sentinel — fast path */
+  for (i = 0; i < kcdx_foreign_count; i++)
+    if (n == kcdx_foreign_dummy[i]) return 0;  /* cached foreign sentinel — fast path */
+  if (kcdx_foreign_count >= KCDX_MAX_FOREIGN_DUMMIES) return 1;  /* all foreign sentinels known; n is heap */
+  /* Discovery path only (runs until all foreign sentinels are cached). */
+  if (VirtualQuery(n, &mbi, sizeof(mbi)) == 0) return 1;  /* query failed: free as before */
+  if (mbi.Type == MEM_IMAGE) {                            /* foreign .rdata sentinel */
+    kcdx_foreign_dummy[kcdx_foreign_count++] = n;
+    return 0;
+  }
+  return 1;  /* MEM_PRIVATE heap — a real node array */
+}
+#define kcdx_node_freeable(n)  kcdx_node_is_freeable(n)
+#else
+/* Non-Windows: no dual-Lua hazard (KCD2 is Windows-only); preserve stock
+ * Lua 5.1 semantics — only kcdx's own dummynode is non-freeable. */
+#define kcdx_node_freeable(n)  ((n) != dummynode)
+#endif
+
+
 /*
 ** hash for lua_Numbers
 */
@@ -340,13 +412,15 @@ static void resize (lua_State *L, Table *t, int nasize, int nhsize) {
     if (!ttisnil(gval(old)))
       setobjt2t(L, luaH_set(L, t, key2tval(old)), gval(old));
   }
-  if (nold != dummynode)
+  if (kcdx_node_freeable(nold))  /* kcdx KI-0001: skip a foreign .rdata sentinel */
     luaM_freearray(L, nold, twoto(oldhsize), Node);  /* free old array */
 }
 
 
 void luaH_resizearray (lua_State *L, Table *t, int nasize) {
-  int nsize = (t->node == dummynode) ? 0 : sizenode(t);
+  /* kcdx KI-0001: a foreign (.rdata) sentinel means the hash part is empty,
+   * same as kcdx's own dummynode — treat both as size 0. !freeable == sentinel. */
+  int nsize = !kcdx_node_freeable(t->node) ? 0 : sizenode(t);
   resize(L, t, nasize, nsize);
 }
 
@@ -402,7 +476,7 @@ Table *luaH_new (lua_State *L, int narray, int nhash) {
 
 
 void luaH_free (lua_State *L, Table *t) {
-  if (t->node != dummynode)
+  if (kcdx_node_freeable(t->node))  /* kcdx KI-0001: skip a foreign .rdata sentinel */
     luaM_freearray(L, t->node, sizenode(t), Node);
   luaM_freearray(L, t->array, t->sizearray, TValue);
   luaM_free(L, t);
@@ -428,7 +502,10 @@ static Node *getfreepos (Table *t) {
 */
 static TValue *newkey (lua_State *L, Table *t, const TValue *key) {
   Node *mp = mainposition(t, key);
-  if (!ttisnil(gval(mp)) || mp == dummynode) {
+  /* kcdx KI-0001: !freeable recognizes a foreign (.rdata) sentinel too, so
+   * inserting into a WHGame-allocated empty-hash table grows it instead of
+   * writing into WHGame's read-only dummynode. */
+  if (!ttisnil(gval(mp)) || !kcdx_node_freeable(mp)) {
     Node *othern;
     Node *n = getfreepos(t);  /* get a free place */
     if (n == NULL) {  /* cannot find a free place? */
@@ -600,7 +677,7 @@ int luaH_getn (Table *t) {
     return i;
   }
   /* else must find a boundary in hash part */
-  else if (t->node == dummynode)  /* hash part is empty? */
+  else if (!kcdx_node_freeable(t->node))  /* kcdx KI-0001: hash part empty (own OR foreign sentinel)? */
     return j;  /* that is easy... */
   else return unbound_search(t, j);
 }
@@ -613,6 +690,23 @@ Node *luaH_mainposition (const Table *t, const TValue *key) {
   return mainposition(t, key);
 }
 
-int luaH_isdummy (Node *n) { return n == dummynode; }
+int luaH_isdummy (Node *n) { return !kcdx_node_freeable(n); }  /* kcdx KI-0001: own OR foreign sentinel */
 
 #endif
+
+
+/* kcdx KI-0001 regression hooks (always compiled — consumed by the
+ * cap-66 engine self-test in src/ki0001_node_classifier_selftest.cpp).
+ *
+ * kcdx_test_node_freeable exposes the static crash-guard discriminator so the
+ * self-test can assert it classifies each pointer class correctly:
+ *   - kcdx's own dummynode (.rdata)          -> NOT freeable (0)
+ *   - a pointer inside a loaded module image -> NOT freeable (0)  [the bug class]
+ *   - a heap allocation                      -> freeable     (1)
+ * A regression that makes the guard free a foreign .rdata sentinel (the
+ * 0xC0000374 crash) flips the module-image case to 1 and the row goes red.
+ * kcdx_test_own_dummynode hands the self-test kcdx's sentinel address. */
+const void *kcdx_test_own_dummynode (void) { return (const void *)dummynode; }
+int kcdx_test_node_freeable (const void *n) {
+  return kcdx_node_freeable((const Node *)n);
+}

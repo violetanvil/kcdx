@@ -9,9 +9,14 @@ paths:
 
 # Lua bridge — dual-Lua sentinel hazard
 
-kcdx statically embeds Lua 5.1 from `vendor/lua/`. WHGame.dll independently statically embeds its own Lua 5.1. Both copies operate on one shared `lua_State`. Each copy has its own `static const` sentinel objects (`dummynode_`, etc.) in its own `.rdata`.
+kcdx statically embeds Lua 5.1 from `vendor/lua/`. WHGame.dll independently statically embeds its own Lua 5.1. Both copies operate on one shared `lua_State` / `global_State` / `g->rootgc`. Each copy has its own `static const` sentinel objects (`dummynode_`, etc.) in its own `.rdata`, at a DIFFERENT address.
 
-Any kcdx-allocated GCObject embedding a pointer to a kcdx-side static-const sentinel is misinterpreted by WHGame's GC — it compares against its own sentinel address, sees a mismatch, treats kcdx's sentinel as a heap allocation, and frees it → `STATUS_HEAP_CORRUPTION` on the next allocator activity.
+**The hazard is BIDIRECTIONAL** — whichever copy's GC sweeps a Table the OTHER copy allocated mis-handles the foreign sentinel, because each copy's `t->node != dummynode` guard compares against its OWN `.rdata` address:
+
+- **kcdx → WHGame** (closed by FIX C): a kcdx-allocated GCObject embedding kcdx's static-const sentinel is misinterpreted by WHGame's GC — it compares against its own sentinel address, sees a mismatch, treats kcdx's sentinel as a heap allocation, and frees it → `STATUS_HEAP_CORRUPTION`.
+- **WHGame → kcdx** (closed by the KI-0001 fix): kcdx's GC sweeps a WHGame-allocated empty-hash Table whose `t->node` is WHGame's `dummynode_`; kcdx's `t->node != dummynode` guard (kcdx's address) is TRUE, so kcdx frees WHGame's `.rdata` sentinel → `STATUS_HEAP_CORRUPTION`. Surfaced when the chain-mediated `lua_pcall` migration put kcdx's GC on the dispatch path of every `lua_pcall` fire. See `docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md`.
+
+PROBE Q (below) detects only the kcdx→WHGame direction (`block ∈ kcdx.dll image`); it is structurally blind to the WHGame→kcdx direction (the freed block is in WHGame's image). Both directions vanish by construction under FIX A / restructure Phase 11 (one compiled Lua body, one sentinel set).
 
 ## Rules
 
@@ -21,9 +26,13 @@ Any kcdx-allocated GCObject embedding a pointer to a kcdx-side static-const sent
 - **Marshaled types** (pointer, value_wrapper_t): push as raw userdata via `lua_newuserdata` + `luaL_setmetatable`.
 - **Before adopting any C++↔Lua glue library**, verify it doesn't introduce additional static-const sentinels — run PROBE Q.
 
-## FIX C (in production)
+## FIX C (in production) — closes the kcdx → WHGame direction
 
 `vendor/lua/ltable.c::setnodevector` patched to always allocate a real 1-Node array when caller passes `size==0`. `luaH_new` patched to use `NULL` as temporary `t->node` placeholder. kcdx never writes the dummynode sentinel into any Table.
+
+## KI-0001 fix (in production) — closes the WHGame → kcdx direction
+
+`vendor/lua/ltable.c::kcdx_node_freeable(n)` replaces the bare `n != dummynode` / `n == dummynode` comparisons at every free/size-read site (`luaH_free`, `resize`, `luaH_resizearray`, `newkey`, `unbound_search`, `luaH_isdummy`). A node is freeable ONLY if it is a real heap allocation; ANY loaded-module-image (`.rdata`) node — kcdx's own dummynode OR a foreign copy's — is a non-freeable sentinel. Discriminator: `VirtualQuery` `MEM_IMAGE` (module image → skip) vs `MEM_PRIVATE` (heap → free); module images and heap allocations are disjoint by OS construction, so the test is robust + ASLR-safe with no sentinel-address harvest. The single foreign sentinel is cached on first discovery (KCD2 = exactly two Lua copies), so steady-state GC sweep is pointer compares, not a syscall per free. Both FIX C and this fix retire under FIX A / Phase 11.
 
 ## PROBE Q canary (permanent regression guard)
 
