@@ -48,7 +48,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
-| — | — | (no KI-NNNN bugs filed yet) |
+| [KI-0001](KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) | 2026-05-29 | Save-load STATUS_HEAP_CORRUPTION on the chain-mediated lua_pcall path |
 
 ## Current open (pre-KI-NNNN)
 
