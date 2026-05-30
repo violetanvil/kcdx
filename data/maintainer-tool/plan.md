@@ -69,11 +69,41 @@ single `UPDATE`; adding a new curated entity is `INSERT` + (`UPDATE` or
 `INSERT`); neither needs the dump, the bulk function table, or the dev-only
 tables.
 
-The full rebuild is preserved for two cases:
-- **Baseline build.** First time a game version is onboarded.
-- **Schema migration.** When the schema itself changes.
+**The precondition that makes the skip valid: the target version's bulk
+baseline is already present.** Steps 1–4 produce content keyed to a *game
+version*, not to which curated entities exist — the ~321K `functions/` rows, the
+merged signatures, the dev-only tables are all per-version. Once a version's
+baseline has been built (steps 1–4 ran once for that version), those steps are
+DONE for that version and never need re-running for a curated edit *at that same
+version*. That is precisely why `apply` can skip them: it promotes from / amends
+bulk rows that are already in the DB.
 
-Day-to-day curated edits use incremental `apply`, not rebuild.
+The skip is therefore conditional, not universal. `apply` is valid ONLY when the
+seed row's `valid_from_version` is a version whose bulk baseline is present in
+the DB. Two cases where it is NOT present:
+
+- **A version never baselined.** Adding a row whose `valid_from_version` is a
+  build that has not had steps 1–4 run for it → there are no bulk rows at that
+  version to promote from. `apply` MUST refuse and direct the operator to run a
+  rebuild (baseline) for that version first — it must NOT silently mint a
+  function row with NULL fingerprint columns (that would record a function-kind
+  entity with no `length`/`content_hash`/abi_walker data, masking a missing
+  baseline as a real row). See the §3 baseline-present check.
+- **Non-function kinds are exempt.** `callsite` / `data_slot` / `string_anchor`
+  / `instruction_anchor` / `vtable_base` / `vtable_index` mint NULL-fingerprint
+  by design (§3 cases (b)/(c)); they never read a bulk row, so they do not
+  depend on the version baseline and `apply` accepts them regardless.
+
+The full rebuild is preserved for three cases:
+- **Baseline build.** First time a game version is onboarded — this is what
+  makes the version's bulk baseline present so later `apply`s can skip 1–4.
+- **Schema migration.** When the schema itself changes.
+- **Reconciliation.** The rebuild is always the ground-truth oracle: re-running
+  it from the seeds reproduces the DB an `apply` sequence should have produced
+  (the shared row-builder in §5 is what guarantees they agree).
+
+Day-to-day curated edits at an already-baselined version use incremental
+`apply`, not rebuild.
 
 ## 2. Where each address-versions field comes from <a name="2-where-each-field-comes-from"></a>
 
@@ -196,9 +226,25 @@ VALUES (:kcdx_id, :name, NULL, NULL, 0, NULL, NULL, :notes);
   `rva` is empty; the row carries an integer slot. MINT with `rva` NULL and all
   five fingerprint columns NULL (same INSERT shape as (b), with `:rva` NULL).
 
-**Mismatch check.** When a function-kind row (a) matches a bulk row whose
-`valid_from` does not match the seed row's `valid_from_version`, the action is
-REFUSED — "your dev DB is from a different game version than your seed expects."
+**Baseline-present check (function kinds only).** Before promoting a
+function-kind row (a), the script confirms the target version's bulk baseline is
+present and consistent. Two refusal conditions, both surfaced clearly rather
+than written through:
+
+- **No baseline for the target version.** No bulk row exists at the seed's RVA
+  for `valid_from_version` (the version was never run through a rebuild) →
+  REFUSE: "no bulk baseline for version X; run a rebuild for X before adding
+  function-kind entities at that version." The script must NOT fall back to
+  minting a NULL-fingerprint function row — that would record a function with no
+  `length`/`content_hash`/abi_walker data, disguising a missing baseline as a
+  real entity.
+- **Wrong baseline version.** A bulk row exists at the RVA but its `valid_from`
+  does not match the seed row's `valid_from_version` → REFUSE: "your dev DB is
+  from a different game version than your seed expects."
+
+Non-function kinds (b)/(c) skip this check entirely — they mint NULL-fingerprint
+by design and never read a bulk row, so they do not depend on the version
+baseline (see §1).
 
 ### Add a new versions row (existing entity, moved/renamed at a new version)
 
@@ -233,8 +279,11 @@ check before either writes.
 
 **Dev DB is required for actions that promote a function-kind row** (they read
 the bulk row's fingerprint); optional for actions that only touch metadata or
-mint non-function kinds. The script refuses an action whose prereq isn't met
-with a clear message.
+mint non-function kinds. "Dev DB required" here means more than *linked* — it
+means the **target version's bulk baseline is present in it** (§1, §3 baseline-
+present check). A linked-but-not-baselined-for-this-version dev DB still fails a
+function-kind add. The script refuses an action whose prereq isn't met with a
+clear message.
 
 | Action | Dev DB required? | Reason |
 |---|---|---|
