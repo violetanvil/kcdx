@@ -65,7 +65,8 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 | Situation | Skill |
 |---|---|
 | Close a coherent milestone with a commit (a written-up investigation, a working probe with captured evidence, a finalized rule rewrite, a trivial hand-edit) — the closing step of any skill that produced a durable artifact | `/commit` |
-| New multi-part feature (a `[[...]]` TOML primitive, a `kcdx.*` Lua surface, a new interface — parser + engine + binding + test plugin spanning several commits) | `/feature` |
+| Structure a SETTLED goal into a trackable work-plan tree (multi-phase, authored-not-built) — `docs/outstanding-work/<slug>/` with context.md + phase-grain top ledger + per-phase step ledgers + commit-grain step docs | `/plan` (structure-only; design forks route to `/senior-architect-consult`; does NOT build — `/feature`/`/execute` consume a step doc as their `Source work-item`) |
+| New multi-part feature (a `[[...]]` TOML primitive, a `kcdx.*` Lua surface, a new interface — parser + engine + binding + test plugin spanning several commits) — built NOW in one motion | `/feature` |
 | Non-trivial **single-commit** change (bug fix, refactor, RE patch site, outstanding-work item, one code-review finding) — one brief = one cycle = one commit | `/execute` |
 | Architectural question before code (you are the audience) | `/senior-architect-consult` |
 | Relaying a downstream agent's question / proposal / claim (the agent is the audience of the reply) | `/senior-architect-reply` |
