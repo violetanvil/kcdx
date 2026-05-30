@@ -32,7 +32,14 @@ PROBE Q (below) detects only the kcdx→WHGame direction (`block ∈ kcdx.dll im
 
 ## KI-0001 fix (in production) — closes the WHGame → kcdx direction
 
-`vendor/lua/ltable.c::kcdx_node_freeable(n)` replaces the bare `n != dummynode` / `n == dummynode` comparisons at every free/size-read site (`luaH_free`, `resize`, `luaH_resizearray`, `newkey`, `unbound_search`, `luaH_isdummy`). A node is freeable ONLY if it is a real heap allocation; ANY loaded-module-image (`.rdata`) node — kcdx's own dummynode OR a foreign copy's — is a non-freeable sentinel. Discriminator: `VirtualQuery` `MEM_IMAGE` (module image → skip) vs `MEM_PRIVATE` (heap → free); module images and heap allocations are disjoint by OS construction, so the test is robust + ASLR-safe with no sentinel-address harvest. The single foreign sentinel is cached on first discovery (KCD2 = exactly two Lua copies), so steady-state GC sweep is pointer compares, not a syscall per free. Both FIX C and this fix retire under FIX A / Phase 11.
+A Table has TWO `.rdata`-sentinel-bearing fields when empty: `t->node` (the dummynode) AND `t->array` (the empty-array sentinel). `vendor/lua/ltable.c::kcdx_ptr_freeable(p)` (a node-typed view `kcdx_node_freeable` wraps it) replaces the bare `== / != dummynode` comparisons at every site that frees, reallocs, or size-reads EITHER field:
+
+- **`t->node`** — `luaH_free`, `resize`, `luaH_resizearray`, `newkey`, `luaH_getn`/`unbound_search`, `luaH_isdummy`.
+- **`t->array`** — `luaH_free` (the array free) and `setarrayvector` (the realloc; a foreign sentinel is dropped to `NULL`/0 so the realloc allocates fresh). `resize`'s array-shrink is sentinel-safe by construction (a sentinel array is empty, never shrinks).
+
+A pointer is freeable ONLY if it is a real heap allocation; ANY loaded-module-image (`.rdata`) pointer — kcdx's own sentinels OR a foreign copy's node/array sentinels — is non-freeable. Discriminator: `VirtualQuery` `MEM_IMAGE` (module image → skip) vs `MEM_PRIVATE`/`MEM_MAPPED` (heap → free); module images and heap allocations are disjoint by OS construction, so the test is robust + ASLR-safe with no sentinel-address harvest and handles any number of distinct sentinels. One `VirtualQuery` per guarded pointer (same order as `luaH_free`'s existing frealloc calls; Performance is the last cornerstone and this guard is temporary). Both FIX C and this fix retire under FIX A / Phase 11.
+
+**Lesson (a node-only first fix crashed again):** the hazard is per-SENTINEL-FIELD, not just the dummynode. Guarding `t->node` alone passed the discriminator unit test but still crashed on the unguarded `t->array` free. Every kcdx GC site that hands a Table's node OR array pointer to the allocator must apply the discriminator. A unit test of the discriminator does NOT prove call-site coverage — only the live save-load repro exercises every site.
 
 ## PROBE Q canary (permanent regression guard)
 

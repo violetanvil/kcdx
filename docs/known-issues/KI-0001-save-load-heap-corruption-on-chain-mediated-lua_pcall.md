@@ -63,7 +63,9 @@ Empirical observations only — quoted from the launch at 2026-05-29 16:25:25 (`
 |------|--------|--------|
 | 2026-05-29 | Re-walked `crash_2026-05-29_16-25-25.zip` dmp via `cdb .ecxr; k 30` | CONFIRMED the filed stack verbatim: 0xC0000374 at `RtlSizeHeap` ← WHGame frealloc ← `kcdx!HookedFrealloc` ← `kcdx!luaM_realloc_` ← `kcdx!luaH_free+0x38` ← `kcdx!luaC_step` ← `kcdx!lua_pcall` ← `DispatchPre`. Ground truth matches the report. |
 | 2026-05-29 | PROBE A: read-only — flag a frealloc `block` ∈ WHGame.dll image (sentinel-free smoking gun) | CONFIRMED. One fire, the LAST line before abort: `block=0x7FFEE76E9C40` ∈ WHGame image, `nsize=0` (free), `osize=40` (=sizeof(Node)), `caller_ra` in kcdx `luaH_free→luaM_realloc_`. kcdx's GC freed WHGame's `dummynode_`. |
-| 2026-05-29 | FIX (Option A): `kcdx_node_freeable` guard in `vendor/lua/ltable.c` (luaH_free/resize/luaH_resizearray/newkey/unbound_search); skip free when `t->node` is a foreign `.rdata` sentinel (VirtualQuery MEM_IMAGE, cached). Re-ran the exact repro. | VERIFIED. No crash; slot-99 load completed TWICE; PROBE A silent (0 fires); session survived ~10s past load EXIT under a HEAVIER re-entrant storm (5879 d2 / 319 d3 vs 2156 / 175). suite 131→133 across kPreLoadGame→kPostLoadGame. |
+| 2026-05-29 | FIX (Option A, node-only): `kcdx_node_freeable` guard on the `t->node` free/size sites only. Re-ran the exact repro. | PARTIAL. That run (17:46:08) did NOT crash, but a LATER run (18:04:20) crashed identically — the 17:46 run did not exercise the array-free path; it was a false all-clear, not a fix verification. |
+| 2026-05-29 | RE-OBSERVE (dump `49300.dmp`, cap-66 build): walk the new 0xC0000374 stack + disassemble `luaH_free` to find WHICH of its 3 frees faulted | `luaH_free+0x39` is the **`t->array`** free (`movsxd r8,[rbx+38h]`=sizearray, `rdx=[rbx+18h]`=t->array), NOT the guarded `t->node` free (`+0x14` je-skips correctly). Freed block `rsi=0x7FFEE76E9C40` ∈ WHGame image. The node guard works; **`t->array` is unguarded** and points at a WHGame sentinel too. |
+| 2026-05-29 | FIX (Option A, complete): generalize discriminator to `kcdx_ptr_freeable` (any pointer); guard the `t->array` free in `luaH_free` + the `setarrayvector` realloc (drop foreign sentinel to NULL → fresh alloc). `resize` shrink is sentinel-safe by construction (empty array never shrinks). | VERIFIED (`kcdx-dev_2026-05-29_18-10-29.log`). No crash; slot-99 loaded TWICE; survived ~44s past the 2nd load ENTER (crash window is ~18s) under 5883 d2 / 319 d3 (~2.7× the crash run's 2156/175); suite 130→132→134 across the load lifecycle. The array-free path that faulted at 18:04 now exercised heavily + clean. |
 
 ## Open questions
 
@@ -131,28 +133,49 @@ stack. PROBE Q stayed silent throughout because its `block ∈ kcdx.dll image`
 test is structurally blind to a WHGame-image block (this is the mirror of FIX C,
 not FIX C's own direction).
 
-**Fix:** `vendor/lua/ltable.c` — a new `kcdx_node_freeable(n)` discriminator
-replaces the bare `n != dummynode` / `n == dummynode` comparisons at every site
-that frees or size-reads `t->node` (`luaH_free`, `resize`, `luaH_resizearray`,
-`newkey`, `unbound_search`, `luaH_isdummy`). A node is freeable ONLY if it is a
-real heap allocation; ANY loaded-module-image (`.rdata`) node — kcdx's OWN
-dummynode or a foreign copy's — is treated as a non-freeable sentinel. The
-discriminator uses `VirtualQuery`: `MEMORY_BASIC_INFORMATION.Type == MEM_IMAGE`
-is a module image (sentinel, skip), `MEM_PRIVATE` is heap (free). Module images
-and heap allocations are disjoint by OS construction — a mapped image is never
-returned by an allocator — so the test is robust and ASLR-safe with no harvest
-of WHGame's dummynode address. The foreign sentinel is cached on first discovery
-(KCD2 has exactly two Lua copies → one foreign sentinel), so steady-state GC
-sweep is pointer compares, not a syscall per free.
+**Fix:** `vendor/lua/ltable.c` — a `kcdx_ptr_freeable(p)` discriminator (a node
+view `kcdx_node_freeable` wraps it) replaces the bare `== / != dummynode`
+comparisons at EVERY site that frees, reallocs, or size-reads a Table's `t->node`
+OR `t->array`:
 
-**Verification:** re-ran the exact repro (slot-99 save-load with cap-59's
-Lua-kind `lua_pcall` chain entry installed). `kcdx-dev_2026-05-29_17-46-08.log`:
-no crash; slot-99 load completed TWICE (`HookedLoadGameWrapper` fire_n=1 AND
-fire_n=2); PROBE A silent (zero `probe_a.whgame_image_block` lines); session
-survived ~10s past the second load's EXIT under a HEAVIER re-entrant storm than
-the crash run (5879 depth=2 / 319 depth=3 vs the crash's 2156 / 175); suite
-advanced 131→133 across `kPreLoadGame`→`kPostLoadGame` (the save-load lifecycle
-that previously corrupted the heap dispatched cleanly).
+- **`t->node`:** `luaH_free`, `resize` (old-node free), `luaH_resizearray`
+  (size read), `newkey` (grow decision), `luaH_getn`/`unbound_search` (empty-hash
+  read), `luaH_isdummy`.
+- **`t->array`:** `luaH_free` (the array free — the site that faulted in the
+  cap-66 build) and `setarrayvector` (the realloc — a foreign sentinel is dropped
+  to `NULL`/0 so the realloc is a fresh allocation, mirroring FIX C's node
+  handling). `resize`'s array-shrink (`ltable.c:481` original) is sentinel-safe by
+  construction: a sentinel array has `sizearray == 0`, so the shrink branch
+  (`nasize < oldasize`) cannot execute on it.
+
+A pointer is freeable ONLY if it is a real heap allocation; ANY loaded-module-
+image (`.rdata`) pointer — kcdx's OWN sentinels or a foreign copy's node/array
+sentinels — is non-freeable. The discriminator uses `VirtualQuery`:
+`MEMORY_BASIC_INFORMATION.Type == MEM_IMAGE` is a module image (sentinel, skip),
+`MEM_PRIVATE`/`MEM_MAPPED` is heap (free). Module images and heap allocations are
+disjoint by OS construction — a mapped image is never returned by an allocator —
+so the test is robust, ASLR-safe, needs no sentinel-address harvest, and handles
+ANY number of distinct foreign sentinels (node + array, per Lua copy). One
+`VirtualQuery` per guarded pointer; each `luaH_free` already makes 2–3 frealloc
+syscalls so the added cost is the same order, the cornerstone order puts
+Performance last, and the guard is temporary (retires at FIX A / Phase 11). A
+MEM_IMAGE-region cache is the documented follow-up if a measured GC-sweep frame
+hitch ever appears — deliberately omitted now to keep the crash-guard obviously
+correct.
+
+**Verification:** the node-only fix produced a FALSE all-clear
+(`kcdx-dev_2026-05-29_17-46-08.log` did not exercise the array-free path; a later
+run, `49300.dmp`, crashed identically on `t->array`). The COMPLETE fix (node +
+array) was verified on the exact repro at `kcdx-dev_2026-05-29_18-10-29.log`:
+no crash; slot-99 loaded TWICE (`HookedLoadGameWrapper` fire_n=1 AND fire_n=2);
+the session ran to 18:12:03 — ~44s past the second load's ENTER, far beyond the
+~18s crash window the unfixed engine died in — under a re-entrant storm of 5883
+depth=2 / 319 depth=3 (~2.7× the crash run's 2156 / 175), i.e. the array-free
+path that faulted at 18:04 was exercised heavily and stayed clean; suite advanced
+130→132→134 across `kPreLoadGame`→`kPostLoadGame` (the save-load lifecycle that
+previously corrupted the heap dispatched cleanly). The process-discipline lesson:
+"no crash" on a run that did not exercise the faulting path is not a fix
+verification — the run must demonstrably hit the path that crashed.
 
 **Structural cure (supersedes this fix):** restructure **Phase 11** (FIX A) —
 kcdx.dll force-loads WHGame.dll and resolves every `lua_*` from WHGame's compiled
@@ -172,6 +195,21 @@ branch + `IsInWhGameImage` + `g_whgame_image_base/size` + the `ArmFreallocProbe`
 WHGame-image resolution) → archived in place per the probe-archive rule (see the
 Active diagnostic instrumentation table). PROBE Q stays `durable` (the FIX-C
 regression guard, `lua-bridge.md`).
+
+**Residual (asserted, not probed) + the designated detector.** The "node + array
+is the complete set of foreign-sentinel free sites" conclusion is verified for
+kcdx's vendored tree (the only `static const` written into a heap GCObject field
+then freed is the empty-Table node/array; `luaO_nilobject_` and `loadlib.c`'s
+`sentinel_` are returned/compared values, never freed). It rests on WHGame's
+embedded Lua 5.1 sharing the standard invariant (its empty-collection sentinels
+live in `.rdata`; no novel sentinel in some other GCObject field). That is the
+universal Lua 5.1 design and the crash evidence is consistent with it, but it is
+an assumption about a foreign binary, not a probe. **PROBE A is the standing
+detector:** if a non-ltable foreign-sentinel free is ever suspected, revive it
+(`#if 0 → #if 1`) — a `block ∈ WHGame image` fire at a `caller_ra` OTHER than
+`luaH_free` / `setarrayvector` means another sentinel field is live and needs its
+own guard. The discriminator (`kcdx_ptr_freeable`) would already classify such a
+pointer correctly; the open item is only whether every call site invokes it.
 
 **Doc / rule updates:** `.claude/rules/lua-bridge.md` gains the WHGame→kcdx
 direction of the hazard + this fix (the rule previously documented only the
@@ -193,7 +231,9 @@ as the last log line before the abort, with `block` inside WHGame.dll's image
 luaM_realloc_` frame. The crash dump (`crash_2026-05-29_17-19-57.zip`,
 `16940.dmp`) is the identical 0xC0000374 stack as the filed one.
 
-**Mechanism (falsifiable):** kcdx and WHGame each statically embed Lua 5.1,
+**Mechanism (falsifiable):** *(`ltable.c` line citations below are stock-Lua 5.1
+anchors — the kcdx-patched file has shifted line numbers; cite by function name.)*
+kcdx and WHGame each statically embed Lua 5.1,
 each with its own `static const Node dummynode_` at a different `.rdata`
 address, and both drive ONE shared `global_State` / `g->rootgc`. The
 chain-mediated `lua_pcall` migration (commit `1c01c9d`) put kcdx-vendored
@@ -218,3 +258,17 @@ describes both directions); only the kcdx→WHGame half was closed. Running
 kcdx's GC on the shared state was rare pre-migration (the thin direct detour
 never invoked kcdx's `lua_pcall`/GC on this path); the migration made it
 routine under save-load, surfacing the un-closed half.
+
+**The hazard is per-SENTINEL, not just the dummynode (corrected after the
+node-only fix still crashed).** A first fix guarded only `t->node`. The cap-66
+build then faulted again with the IDENTICAL stack — re-observation via
+disassembly of the new dump (`49300.dmp`) showed the fault was at
+`luaH_free+0x39`, the **`t->array`** free (`luaM_freearray(L, t->array,
+t->sizearray, TValue)` at `ltable.c:481`), NOT the now-guarded `t->node` free
+(`+0x14` correctly skips). The freed block (`rsi=0x7FFEE76E9C40`) is again in
+WHGame's image. A WHGame-allocated Table with an empty array part points
+`t->array` at WHGame's empty-array `.rdata` sentinel, the SAME mechanism as the
+dummynode but on the array field. The earlier "the dummynode is the only
+faulting site" conclusion was WRONG — there are at least two foreign sentinels
+per Lua copy (node + array), and every kcdx GC site that frees or reallocs
+either field must apply the discriminator.
