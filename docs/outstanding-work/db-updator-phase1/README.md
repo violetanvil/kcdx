@@ -23,6 +23,9 @@ row flips to `DONE` only when every step in the phase is `DONE`.
 
 - **[Phase 1 — the db updator](phase-01-db-updator/README.md)** — extract the
   shared module, add the `.rdata` resolver, build `apply` across its SQL
-  families (re-verify → add/promote → deprecate/supersede). Ends in a state
-  where a maintainer hand-edits the seeds and runs `apply` to update both DBs
-  incrementally, with `--rebuild` available as the reconciliation oracle.
+  families (re-verify → add/promote → per-kind survival datum → deprecate/
+  supersede). Ends in a state where a maintainer hand-edits the seeds and runs
+  `apply` to update both DBs incrementally, with `--rebuild` available as the
+  reconciliation oracle. The DB-side per-kind survival fingerprint
+  (`survival` table + populate) is step 5; the engine consumer half is tracked
+  separately (see the phase README's split note).
