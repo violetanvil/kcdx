@@ -21,11 +21,12 @@ Fixed shape, exactly these columns:
 
 | Step | Status | Commit |
 |---|---|---|
-| `<step id — short label>` | `<NOT STARTED \| IN PROGRESS \| DONE \| BLOCKED \| SUPERSEDED>` | `<short hash when DONE, — otherwise>` |
+| `<step id — short label>` | `<NOT STARTED \| IN PROGRESS \| DONE \| BLOCKED \| SUPERSEDED>` | `<(landed) until backfilled, then the short hash; — when not DONE>` |
 
 Rules:
 - **One ledger per doc.** A doc with a ledger does NOT also carry a status-prose paragraph or per-header `— DONE` tags — those drift against the table. The ledger wins.
-- **The orchestrator writes the row, not a human.** A landed step's row flips to `DONE` + short hash in the SAME commit as the step's diff. This is a gated step of the orchestrator cycle (`../../.claude/skills/_shared/orchestrator-loop.md` §C), not a follow-up edit.
+- **The orchestrator writes the row, not a human.** A landed step's row flips to `DONE` in the SAME commit as the step's diff. This is a gated step of the orchestrator cycle (`../../.claude/skills/_shared/orchestrator-loop.md` §C), not a follow-up edit.
+- **The hash backfills one commit later — a commit cannot contain its own hash.** The step's own commit lands `DONE` + `(landed)` in the Commit cell (NOT a hash — the landing commit's hash does not exist yet when that commit is built). The real short hash is filled by the NEXT ledger-touching commit: the next step flips its own row AND replaces the prior row's `(landed)` with the now-known hash. The final step of a plan leaves a trailing `(landed)`; a tiny follow-up commit backfills it. Never write a hash into the commit that the hash names — that yields the PRIOR commit's hash (the stale-hash bug).
 - **Status vocabulary is closed.** `BLOCKED`/`SUPERSEDED` rows state the blocker/successor in the step label (e.g. `11b force-load — blocked on 11a`), not in an extra column.
 - **The active "go-to" plan doc is born with a ledger.** Whatever doc currently drives sequenced work carries this table from creation; its retirement does not retire the convention — the next active plan inherits it. A multi-phase plan tree (top README + `phase-NN-<slug>/` subdirs + per-step docs + `context.md`) is authored by `/plan` from a settled goal; the executing cycle (`/feature` / `/execute`) reads a step doc as its `Source work-item` and flips its ledger row.
 
