@@ -83,6 +83,7 @@ For each step in order, run one cycle of `.claude/skills/_shared/orchestrator-lo
 | **Per-step test bar** | The step's test plugin / sub-test, or "exercised at step N" if a later step owns the test. The final test-plugin step always names the `cap-NN` + matrix row. |
 | **Resolved ambiguities** | The §A.2 decisions relevant to this step, verbatim. |
 | **Touches-existing-code flag** | `true` if the step modifies a file in HEAD; triggers the inline impact-analysis (grep every caller). |
+| **Source work-item** | The active plan-doc ledger row this step lands, as `<doc path> → <ledger step id>` — the cycle flips it to `DONE` + hash in the step's commit (`_shared/orchestrator-loop.md` §C item 3). A feature driven by no plan doc (decomposed in-conversation, tracked nowhere) → `none`; if the feature warrants tracking, add its ledger to the active plan doc first per `docs/outstanding-work/README.md` §"Status ledger". |
 
 The shared loop handles dispatch, build-gate (manager runs `pwsh ./build.ps1` itself), step-review, re-task-on-progress / escalate-on-stuck, and architect-review routing. After each step commits, emit the §F per-cycle report and proceed to the next step.
 

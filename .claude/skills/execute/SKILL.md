@@ -76,6 +76,7 @@ For the shared orchestrator loop's per-cycle injection (per `_shared/orchestrato
 | **Per-step test bar** | The `test-plugins/` plugin (existing sub-test or new `cap-NN`/`comp-NN`) per `.claude/rules/test-suite.md`. If the brief is vague on the test plugin, surface to user during §A.3. |
 | **Resolved ambiguities** | None — execute has no resolved plan. Section reads "none" in the subagent brief. |
 | **Touches-existing-code flag** | `true` (always — execute targets existing code by definition). Inline impact-analysis procedure per `_shared/orchestrator-loop.md` §A.5 is always injected. |
+| **Source work-item** | If the brief's **Why** cites a tracked item (an `outstanding-work/` entry or a plan-doc ledger step), set `<doc path> → <ledger step id>` — the cycle flips that row to `DONE` + hash in the commit (`_shared/orchestrator-loop.md` §C item 3). An ad-hoc change tracked nowhere (a one-off bug fix, a self-caught issue) → `none`. |
 
 ---
 

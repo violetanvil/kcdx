@@ -16,6 +16,7 @@ Per cycle, the calling skill provides:
 - **Per-step test bar** — the `test-plugins/` regression plugin (existing or new) that will exercise the change, named per `.claude/rules/test-suite.md`. A new feature names a new `cap-NN`/`comp-NN` plugin + matrix row; a behavior change to an existing feature names a sub-test in that feature's plugin. "No test plugin" is never an acceptable answer for new functionality. The subagent must also return a **test-mode declaration** per `.claude/rules/test-suite.md` ("The test procedure") — `boot-only` / `console` / `in-game`, with the exact command / save / gesture + falsifiable observable for the latter two. The subagent declares the mode; it does NOT write the numbered list and does NOT claim the procedure ran.
 - **Resolved ambiguities** — any decisions the caller already secured from the user. Empty when none apply.
 - **Touches-existing-code flag** — `true` if the step modifies a file already in HEAD or from prior work; triggers the inline impact-analysis procedure in §A.5.
+- **Source work-item** — the tracked work-item this step lands, as `<doc path> → <ledger step id>`, OR `none` for an untracked one-off. When set, the step's diff MUST flip that ledger row to `DONE` + short hash in the SAME commit (§C item 3); the ledger contract is `docs/outstanding-work/README.md` §"Status ledger". `none` skips the write-back entirely.
 
 ---
 
@@ -53,11 +54,12 @@ Load-bearing step. The manager runs verification, not the subagent.
 
 1. **Build clean?** Run `pwsh ./build.ps1` yourself via the PowerShell tool. Read the actual output. Do NOT take the subagent's word. Confirm exit 0 AND that `build/Release/kcdx.exe` + `kcdx.dll` + `kcdx-watchdog.exe` were produced. Any compile error / link error / warning → step failed.
 2. **Test plugin present?** The named `test-plugins/` plugin (or sub-test) from the per-step test bar exists in the diff, is suite-gated (`test_suite_only = true`), calls `ReportTestResult`/`kcdx.test.report`, and has its matrix row in `test-plugins/README.md`. Absent for new functionality → step failed (AP7). The plugin's in-game *result* is verified later at the checkpoint, not here. The subagent's deliverable also carries a test-mode declaration (§A.4); missing → re-task for it before §F.
-3. **Step-review clean?** Dispatch step-review per §C.1. Apply its §4 next-action.
-4. **Files modified only in authorized scope?** Check `git diff --name-only` against caller-provided authorized scope. Out-of-scope modifications → escalate, do not re-task.
-5. **Anything the manager cannot evaluate confidently?** Escalate, do not re-task.
+3. **Source-ledger row updated?** If the caller-injected **Source work-item** is set (not `none`), the diff MUST flip that ledger row to `DONE` + this commit's short hash, in the source doc named, per `docs/outstanding-work/README.md` §"Status ledger". Absent for a tracked step → step failed (same class as a missing test plugin); re-task for it. `none` skips this check. The commit's own short hash isn't known until §C-commit, so the row carries the hash the manager fills at commit time (the subagent writes `DONE` + leaves the hash cell `(pending)`; the manager replaces `(pending)` with the short hash in the same `/commit`).
+4. **Step-review clean?** Dispatch step-review per §C.1. Apply its §4 next-action.
+5. **Files modified only in authorized scope?** Check `git diff --name-only` against caller-provided authorized scope. Out-of-scope modifications → escalate, do not re-task. (The source doc named in the Source work-item is in-scope by construction.)
+6. **Anything the manager cannot evaluate confidently?** Escalate, do not re-task.
 
-If all five pass → step succeeded. Invoke `/commit` to land the step's changes (cohesion heuristic auto-commits without user approval — a single step is a cohesive chunk). After commit, advance the step-review marker per §C.1. Capture the commit hash for the caller's report.
+If all six pass → step succeeded. Invoke `/commit` to land the step's changes (cohesion heuristic auto-commits without user approval — a single step is a cohesive chunk). After commit, advance the step-review marker per §C.1. Capture the commit hash for the caller's report.
 
 6. **Deploy the diff-scoped artifacts, verify each copy landed, AND enable dev mode** so the user's launch tests what was just committed and the suite actually runs.
 
@@ -105,6 +107,9 @@ Review context:
   Per-step test bar:
   <named test-suite plugin + matrix row per §A.4>
 
+  Source work-item:
+  <the `<doc> → <ledger step id>` from §"Caller-injected parameters", or "none">
+
 Produce the four-section structured review per step-review/SKILL.md's
 output format. Your output returns to me — the orchestrator — as a tool
 result. The user will NOT see it directly. §3 (Design decisions surfaced)
@@ -114,7 +119,7 @@ reads it cold when I forward.
 
 **Read the tool result yourself. Apply §4 next-action:**
 
-- **`commit-step`** — Diff clean. Proceed to §C step 4 → §F. After commit lands, write `.git/step-review-state/<sanitized-branch>` (line 1 = new commit hash, line 2 = ISO 8601 UTC timestamp). Sanitize branch name by replacing `/` with `--`.
+- **`commit-step`** — Diff clean. Proceed through the remaining §C checks (scope, manager-confidence) → §F. After commit lands, write `.git/step-review-state/<sanitized-branch>` (line 1 = new commit hash, line 2 = ISO 8601 UTC timestamp). Sanitize branch name by replacing `/` with `--`.
 - **`re-task-subagent`** — Mechanical fixes only. Use step-review's §4 direction to construct the next re-task brief (§D applies; counts as a different failure signal if the prior re-task was for a different cause). Do NOT commit; do NOT advance the marker. Dispatch the step's subagent.
 - **`escalate`** — Design issue or rule violation needs user input. Compose §E escalation; §E.1 auto-routes through architect-review first. Do NOT commit; do NOT advance the marker.
 
@@ -307,6 +312,7 @@ The "or invoke /verification-checkpoint first" hint is REMOVED from the caller t
 - **Manager always runs `pwsh ./build.ps1` itself at the §C commit gate.** Subagent's claim of build status is irrelevant until the manager runs the command and sees the output (AP8).
 - **Build-green is necessary, not sufficient.** It does not prove the feature works in-game. Game-launch verification of the matrix is the user's, batched to the checkpoint.
 - **Step-review gates every commit** per §C.1.
+- **A tracked step's source-ledger row flips to `DONE` + short hash in the step's own commit** per §C item 3, when the caller injected a Source work-item. The commit message is not the completion record — the ledger row is. `none` (untracked one-off) skips it.
 - **Pattern-detection re-task per §D, no numeric cap.** Re-task freely while making progress; escalate when stuck.
 - **Auto-route every §E escalation through architect-review** per §E.1.
 - **No batching cycles.** One cycle at a time, with verification + per-cycle report between each.

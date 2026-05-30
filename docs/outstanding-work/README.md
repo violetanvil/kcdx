@@ -13,6 +13,22 @@ Each file holds exactly:
 
 No history. No "why we deferred this v3 of the discussion". Pointer to deeper docs (`design-gaps.md`, recon dossiers) at the bottom if needed.
 
+## Status ledger — the canonical "I completed this" surface
+
+A multi-step entry (a phased plan, an item that lands across several commits) carries ONE status ledger and no other status surface. It is the single source of truth for step completion — not prose paragraphs, not inline `— DONE` header tags, not the commit log alone.
+
+Fixed shape, exactly these columns:
+
+| Step | Status | Commit |
+|---|---|---|
+| `<step id — short label>` | `<NOT STARTED \| IN PROGRESS \| DONE \| BLOCKED \| SUPERSEDED>` | `<short hash when DONE, — otherwise>` |
+
+Rules:
+- **One ledger per doc.** A doc with a ledger does NOT also carry a status-prose paragraph or per-header `— DONE` tags — those drift against the table. The ledger wins.
+- **The orchestrator writes the row, not a human.** A landed step's row flips to `DONE` + short hash in the SAME commit as the step's diff. This is a gated step of the orchestrator cycle (`../../.claude/skills/_shared/orchestrator-loop.md` §C), not a follow-up edit.
+- **Status vocabulary is closed.** `BLOCKED`/`SUPERSEDED` rows state the blocker/successor in the step label (e.g. `11b force-load — blocked on 11a`), not in an extra column.
+- **The active "go-to" plan doc is born with a ledger.** Whatever doc currently drives sequenced work carries this table from creation; its retirement does not retire the convention — the next active plan inherits it.
+
 ## Current entries
 
 - [restructure-plan.md](restructure-plan.md) — **active, in progress.** Manifest-only TOML, Lua-first authoring, owned launcher (kcdx.exe), unified ordered list, kcdx absorbs pak mods. 12-phase plan; Phases 1-10 ship the new author surface; Phase 11 consumes FIX A. Authoritative spec for kcdx v0.2+; supersedes large sections of `docs/design.md`.
