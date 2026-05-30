@@ -55,7 +55,7 @@ The shape — settled at the design step when the trigger fires:
 
 - **Lifetime.** The boxed lambda's storage outlives the hook. The wrapper
   owns it; uninstall releases it. A handle-typed wrapper
-  (cf. [`restructure-plan.md`](restructure-plan.md) Phase 12 sub-3 row 3 —
+  (cf. [`restructure/00-original-plan.md`](restructure/00-original-plan.md) Phase 12 sub-3 row 3 —
   `kcdx::Handle`) lets the wrapper hold the storage in the handle struct so
   RAII handles the release; settled at the design step.
 
@@ -100,7 +100,7 @@ phases are complete).
 
 - [`include/kcdx/Kcdx.h:22-44`](../../include/kcdx/Kcdx.h#L22-L44) — the 3-floor
   model + the current capturing-lambda constraint documentation.
-- [`restructure-plan.md`](restructure-plan.md) Phase 12 — empowered-wrapper
+- [`restructure/00-original-plan.md`](restructure/00-original-plan.md) Phase 12 — empowered-wrapper
   sweep + UX polish (the closing C++ ergonomics phase that this entry tracks
   outside of, because it needs an engine ABI extension).
 - [`smart-replace-conflict-detection.md`](smart-replace-conflict-detection.md) —

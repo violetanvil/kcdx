@@ -10,7 +10,7 @@ written for two audiences:
 The restructure is staged across multiple phases. Each section below
 flags which phase introduced its change so you can find the
 corresponding commit + verification gate in
-[`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md).
+[`outstanding-work/restructure/`](outstanding-work/restructure/README.md).
 
 ## Phase 1 — install layout flip
 
@@ -111,11 +111,11 @@ The seven behavior table-arrays (`[[patch]]`, `[[hook]]`,
 function-call APIs: `kcdx.hook(...)`, `kcdx.bytes(...)`, etc.
 
 `kcdx.toml` collapses to identity + dependencies + entrypoints. See
-[`restructure-plan.md`](outstanding-work/restructure-plan.md)
+[`restructure/00-original-plan.md`](outstanding-work/restructure/00-original-plan.md)
 sections "The new TOML manifest shape" and "The Lua API surface".
 
 ## See also
 
-- [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md) — full restructure spec
+- [`outstanding-work/restructure/`](outstanding-work/restructure/README.md) — full restructure spec (phase tree + ledger; the original monolithic plan is preserved at `restructure/00-original-plan.md`)
 - [`loader-architecture.md`](loader-architecture.md) — install layout rationale
 - [`logging.md`](logging.md) — engine log + per-plugin log conventions

@@ -180,7 +180,7 @@ but deterministic rather than raced.
 - **Reverse-engineering** (`.claude/rules/reverse-engineering.md`): a new
   game-function (the immediate caller of id 3100) is a fact to resolve via
   the reuse ladder, not Ghidra-first. Hence step 1.
-- **Restructure plan** (`docs/outstanding-work/restructure-plan.md`): the
+- **Restructure plan** (`docs/outstanding-work/restructure/00-original-plan.md`): the
   zone model adapts to the new sentinel; the wider question of
   `before_game` semantics is settled at consult round 2.
 
@@ -214,7 +214,7 @@ but deterministic rather than raced.
 4. **`before_game` semantics:** doc-only fix. The mechanism in
    `src/ldr_notify.cpp` already applies `before_game` patches to any
    mapped DLL via `ApplyEntriesForModule`. The WHGame-specific framing in
-   `docs/outstanding-work/restructure-plan.md` + `docs/load-order.md` was
+   `docs/outstanding-work/restructure/00-original-plan.md` + `docs/load-order.md` was
    a documentation defect from when the mechanism's scope was narrower.
    Docs catch up to code.
 5. **New bracket is engine-internal**, not a new author-facing zone.
@@ -309,7 +309,7 @@ GAME MAIN THREAD (running CSystem::Init in parallel with worker)
      `15:27:10.572` registered 7 Workshop mods into the enabled list.
    - ~~`InstallCtorBracket` + ctor hook callback + `g_kcdxReadyEvent`.~~ DONE step 4.
    - ~~Move enabled-list build to worker; signal event when done.~~ DONE earlier; preserved.
-   - ~~Doc updates (restructure-plan.md, load-order.md) for the
+   - ~~Doc updates (restructure/00-original-plan.md, load-order.md) for the
      `before_game` widening.~~ DONE post-step-4 (commits 9264d6a +
      43a9c14).
    - ~~New `InitPhase` enum entry for the bracket.~~ DONE step 4
@@ -578,7 +578,7 @@ author-target / validation surface. Live verification on 2026-05-28
 kcdx_id=138 rva=…`, `ctor_bracket_complete obj=… enabled_n=79`, and no
 `[GUARD] FAULTED` at `module_rva=38014085`. The vtable-null AV is gone by
 construction. Full refactor scope + 9.7-phase consumer plan in
-[restructure-plan.md §Phase 9.7](restructure-plan.md).
+[restructure/00-original-plan.md §Phase 9.7](restructure/00-original-plan.md).
 
 ### Crash #2 — virtual call on a vtable VA at `WHGame+0x2440C85` (RESOLVED 2026-05-28)
 
@@ -640,7 +640,7 @@ and no `suite: X/Y passing` line emits.
   Workshop` + Workshop entries fold into the enabled list (idx 7–12)
   + MOUNT walks kcdx's list verbatim.
 - ~~**Doc updates for `before_game` widening** (round-2 decision 4). Doc
-  sweep across [restructure-plan.md](restructure-plan.md) +
+  sweep across [restructure/00-original-plan.md](restructure/00-original-plan.md) +
   [load-order.md](../load-order.md); independent of every above
   follow-up.~~ DONE post-step-4 (commits 9264d6a + 43a9c14). The
   WHGame-specific framing in both docs was widened to name `before_game`

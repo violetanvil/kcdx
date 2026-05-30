@@ -1,5 +1,15 @@
 # Plan — kcdx restructure: manifest-only TOML, Lua-first authoring, owned launcher
 
+> **PRESERVED REFERENCE — the original monolithic plan, kept verbatim.** The
+> live, navigable breakdown is the phase subdirectories under
+> [`restructure/`](../README.md): one subdir per phase, one document per shippable
+> step, with the canonical status ledger in [`README.md`](../README.md). This file
+> is retained because (a) it holds the shared spec the per-step docs lean on
+> (the model, the Lua/C++ surface reference, lifecycle, launcher, the Critical
+> files / Risk register / Verification plan tail) and (b) deep cross-links from
+> peer docs cite its sections and line ranges. Its content is NOT re-edited as
+> work lands — step status lives in the ledger, not here.
+
 ## Context
 
 kcdx today couples behavior declaration to TOML schemas (`[[patch]]`, `[[hook]]`, `[[mid_hook]]`, `[[trampoline]]`, `[[scan]]`, `[[command]]`, `[[event]]`). Authors learn seven entry types, three mutually-exclusive locator fields, two body shapes (`bytes` vs `lua_callback`), and a separate `[plugin]` manifest section — just to express "intercept this function." The growth was organic; now it shows. A SKSE veteran reads it and asks "where is the function-call API?"; a new modder reads it and asks "which verb do I use?"
@@ -88,7 +98,7 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 | 11c — Lua VM startup via shim | blocked on 11a |
 | 11d — Drop static Lua | blocked on 11a–c |
 
-**Substantive next-pickups (per the table above):** **Phase 9.2 residual — `kcdx_scan` console command** (in-game iterative AOB discovery; the discover-then-declare loop is gated behind it; the `kcdx.scan{...}` Lua diagnostic equivalent already ships) | **engine-direct hook migration — 5 remaining sites** (`frealloc` canary, `ModManager_ctor`, `MiniDmpSender` ctor, `SaveGame`, `LoadGame`; engine machinery + canonical first site `engine.lua_pcall` shipped at commit `1c01c9d`; each remaining site is one `/execute` cycle paired with Lua + C++ test plugins per `lua-api-surface.md` parity — full spec at [`docs/outstanding-work/engine-direct-hook-migration.md`](engine-direct-hook-migration.md)) | Phase 8.5 asset overlay (independent; high user-visible leverage) | Phase 9 high-level Lua surface (independent; pure RE + binder work). Each is one `/feature` cycle except the engine-direct sites which are one `/execute` cycle each; pick by leverage. Phase 11 stays blocked on the FIX A RE.
+**Substantive next-pickups (per the table above):** **Phase 9.2 residual — `kcdx_scan` console command** (in-game iterative AOB discovery; the discover-then-declare loop is gated behind it; the `kcdx.scan{...}` Lua diagnostic equivalent already ships) | **engine-direct hook migration — 5 remaining sites** (`frealloc` canary, `ModManager_ctor`, `MiniDmpSender` ctor, `SaveGame`, `LoadGame`; engine machinery + canonical first site `engine.lua_pcall` shipped at commit `1c01c9d`; each remaining site is one `/execute` cycle paired with Lua + C++ test plugins per `lua-api-surface.md` parity — full spec at [`docs/outstanding-work/engine-direct-hook-migration.md`](../engine-direct-hook-migration.md)) | Phase 8.5 asset overlay (independent; high user-visible leverage) | Phase 9 high-level Lua surface (independent; pure RE + binder work). Each is one `/feature` cycle except the engine-direct sites which are one `/execute` cycle each; pick by leverage. Phase 11 stays blocked on the FIX A RE.
 
 **Governance that POSTDATES the original plan prose — these RULES win where the prose below conflicts:**
 - `.claude/rules/lua-api-surface.md` — the authoring surface (Lua AND C++) is a **learnable sublanguage**; one `kcdx` global, core verbs top-level + grouped domains, configuring=`{table}`/doing=positional, and **full Lua↔C++ feature parity** (invariant on the shipped product; restructure builds Lua-first then backfills C++ per-phase).
@@ -99,7 +109,7 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 - `docs/outstanding-work/ready-event-and-handle-assert.md` — the `kcdx.on("ready")` post-apply event (future; unblocks deferred handle:applied() asserts).
 - **Recovery + rollback for Track-2 plugins on undeclared game versions** — LOAD-BEARING for the streamlined per-version survival model (`docs/outstanding-work/parallel-ghidra-research.md` §11.8). The pre-version-detection survival model (tenets 6/7/8 + Phase 7/9.1 below) assumed the engine could pre-check every hooked function's hash and refuse-to-install on drift. The streamline drops that ambition (the bulk auto-tracking that backed it was infeasible — see §11.8) and replaces "prevent the unsafe install" with "survive the unsafe install gracefully + roll back." Default-ON "attempt on undeclared versions" is safe ONLY IF: (a) install-time failures (pattern doesn't resolve, ABI mismatch, sanity check fails) cleanly roll back any partial installation for the offending plugin and leave the game state clean; (b) runtime callback failures (wrong args, crash inside a Lua/C++ callback) are caught at the boundary, disable the offending plugin for the rest of the session, and the game keeps running. NOT in place today — `conflict_engine` + apply-zones exist but the rollback-on-partial-install path + SEH-bracketed callback dispatch + the auto-disable-and-badge mechanism are unbuilt. Default-ON shipping waits on this. Belongs alongside the §11.8 streamline; spec to live in `docs/outstanding-work/track2-recovery-rollback.md` (not yet written).
 
-**RESOLVED — `[plugin].name` + `[plugin].author` enforcement at discovery + 2-dot corpus migration.** Originally tracked as the 1-dot enforcement follow-up from the author-targets feature; superseded by the 2-dot namespace refactor (`naming-namespaces.md`). End-state landed 2026-05-23: `ValidatePluginName` (charset `[a-z0-9_]`, length 2–128) AND `ValidateAuthorName` (same shape, same length, rejects the reserved `kcdx` engine root) are now both wired into `config.cpp` `ParsePluginManifest` as HARD load-rejections. The full plugin corpus has been re-migrated to the 2-dot `<author>.<plugin>.<bare>` model: all 39 test plugins under `[plugin].author = "ts"` + valid bare `[plugin].name` (e.g. `ts.cap_01_patch`, `ts.comp_09_pubsub_a`), the builtin under `[plugin].author = "kcdx_builtin"`, hello-plugin under `[plugin].author = "violetanvil"`. The 1-dot enforcement (commit `cf9053f`) was the stepping stone; the 2-dot refactor is the end-state. See CAP-34 in [`../../test-plugins/README.md`](../../test-plugins/README.md) for the model's regression coverage.
+**RESOLVED — `[plugin].name` + `[plugin].author` enforcement at discovery + 2-dot corpus migration.** Originally tracked as the 1-dot enforcement follow-up from the author-targets feature; superseded by the 2-dot namespace refactor (`naming-namespaces.md`). End-state landed 2026-05-23: `ValidatePluginName` (charset `[a-z0-9_]`, length 2–128) AND `ValidateAuthorName` (same shape, same length, rejects the reserved `kcdx` engine root) are now both wired into `config.cpp` `ParsePluginManifest` as HARD load-rejections. The full plugin corpus has been re-migrated to the 2-dot `<author>.<plugin>.<bare>` model: all 39 test plugins under `[plugin].author = "ts"` + valid bare `[plugin].name` (e.g. `ts.cap_01_patch`, `ts.comp_09_pubsub_a`), the builtin under `[plugin].author = "kcdx_builtin"`, hello-plugin under `[plugin].author = "violetanvil"`. The 1-dot enforcement (commit `cf9053f`) was the stepping stone; the 2-dot refactor is the end-state. See CAP-34 in [`../../test-plugins/README.md`](../../../test-plugins/README.md) for the model's regression coverage.
 
 ## The model
 
@@ -124,7 +134,7 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 
 **Priority semantics:** 0 = earliest in zone, 100 = latest in zone, 50 = middle (default). Sparse range gives user / author room to insert "definitely before X" without renumbering.
 
-**Enabled flag** is the single toggle (per [`.claude/rules/loader-architecture.md`](../../.claude/rules/loader-architecture.md) work shipped 2026-05-21 in commit `4c0bcab`). The `.disabled` folder-rename mechanism is already gone.
+**Enabled flag** is the single toggle (per [`.claude/rules/loader-architecture.md`](../../../.claude/rules/loader-architecture.md) work shipped 2026-05-21 in commit `4c0bcab`). The `.disabled` folder-rename mechanism is already gone.
 
 ### Zones and what runs in them
 
@@ -296,7 +306,7 @@ This is the author-facing surface. Every former TOML entry-type collapses into a
 
 ### Naming and lifecycle
 
-- One global, lowercase `kcdx`. The legacy uppercase `KCDX` global (`KCDX.ScanAndWrite` etc. from [src/lua_bind.cpp](../../src/lua_bind.cpp)) is deleted. Surface shape per `lua-api-surface.md`: core authoring verbs are top-level (`kcdx.hook`, `kcdx.bytes`, `kcdx.code`, `kcdx.on`, `kcdx.command`, `kcdx.scan`); everything else is a grouped domain (`kcdx.log.*`, `kcdx.memory.*`, `kcdx.addr.*`, `kcdx.test.*`, `kcdx.cosave.*`, gameplay `kcdx.player.*` etc.). Call shape: configuring something → `{named table}`; doing something → positional args.
+- One global, lowercase `kcdx`. The legacy uppercase `KCDX` global (`KCDX.ScanAndWrite` etc. from [src/lua_bind.cpp](../../../src/lua_bind.cpp)) is deleted. Surface shape per `lua-api-surface.md`: core authoring verbs are top-level (`kcdx.hook`, `kcdx.bytes`, `kcdx.code`, `kcdx.on`, `kcdx.command`, `kcdx.scan`); everything else is a grouped domain (`kcdx.log.*`, `kcdx.memory.*`, `kcdx.addr.*`, `kcdx.test.*`, `kcdx.cosave.*`, gameplay `kcdx.player.*` etc.). Call shape: configuring something → `{named table}`; doing something → positional args.
 - A plugin's `plugin.lua` runs at the plugin's slot in the unified ordered list. By default that's after WHGame.dll init (after_game zone). Phase 11+ enables before_game timing.
 - **API calls queue intent.** `kcdx.hook{...}` returns a handle immediately; the actual install happens at the end-of-zone apply pass (`lua_registry::ApplyZone`) after every plugin in the zone has registered — so conflict resolution sees all intent before any byte changes. The handle exposes `:applied()` (nil = Pending, true = Applied, false = Failed), `:reason()`, `:name()`.
 - **Acting on apply outcomes is via the `ready` event (NOT YET BUILT).** A plugin that needs to run code once its hooks are live — or assert `handle:applied()` — registers `kcdx.on("ready", fn)`, fired after the plugin's zone apply pass. This is tracked as outstanding work (`docs/outstanding-work/ready-event-and-handle-assert.md`); `handle:wait_applied()` is a stub until then. (The earlier "each plugin.lua runs in its own coroutine + `wait_applied()` yields" design is deferred; not built.)
@@ -535,7 +545,7 @@ enum kcdxInterfaceID {
 
 `kcdxHookInterface::Install`, `kcdxBytesInterface::Write`, `kcdxTrampolineInterface::Allocate` (v2) take options structs that parallel the Lua opts tables exactly. Detour callbacks have the same `args/call_original` shape — kcdx's JIT thunk (`runtime_func_t`) is the dispatch surface for both Lua and C++.
 
-The legacy `kcdxPluginVersionData` exported data block (from [src/plugin_loader.h:84](../../src/plugin_loader.h#L84) — already replaced by `kcdx.toml` per the existing design) is fully removed. One source of identity: the manifest.
+The legacy `kcdxPluginVersionData` exported data block (from [src/plugin_loader.h:84](../../../src/plugin_loader.h#L84) — already replaced by `kcdx.toml` per the existing design) is fully removed. One source of identity: the manifest.
 
 Plugin exports unchanged: `kcdxPlugin_Preload` and `kcdxPlugin_Load`. Both receive `const kcdxInterface*`. From within them, the plugin calls `api->QueryInterface(kcdxInterface_Hook, kcdxHookInterface_Version)` to install hooks.
 
@@ -601,8 +611,8 @@ The wrapper ships in Phase 3 alongside the new sub-interfaces. Lives in `include
 
 ### Critical files for the C++ wrapper
 
-- New: [include/kcdx/Kcdx.h](../../include/kcdx/Kcdx.h) — the wrapper struct + inline `Init` impl
-- Modified: [README.md](../../README.md) — "writing a C++ plugin" example uses `Kcdx` not raw QueryInterface
+- New: [include/kcdx/Kcdx.h](../../../include/kcdx/Kcdx.h) — the wrapper struct + inline `Init` impl
+- Modified: [README.md](../../../README.md) — "writing a C++ plugin" example uses `Kcdx` not raw QueryInterface
 - Modified: every DLL test plugin under `test-plugins/` and the bugsplat-filename-fix DLL — adopt the wrapper rather than hand-rolled QueryInterface calls
 
 ## Plugin discovery + lifecycle
@@ -760,9 +770,9 @@ Document this in `docs/lua/` (the "plugin lifecycle" topic — see `docs/lua/ind
 
 ### Critical files for discovery + lifecycle
 
-- [src/config.cpp](../../src/config.cpp) — collapse `LoadOneFile` to manifest-only. Delete `ParseOnePatch`, `ParseOneHook`, `ParseOneMidHook`, `ParseOneTrampoline`, `ParseOneScan` and their global-vector population (~600 LOC drop).
-- [src/plugin_loader.cpp](../../src/plugin_loader.cpp) — extend `DiscoverAndLoad` to dispatch Lua entrypoints + interleave with DLL Preload/Load by sorted list, not fixed wave.
-- [src/hooks.cpp](../../src/hooks.cpp) — `HookedUpdate` first-tick handler orchestrates the AFTER_GAME PASS (current first-tick apply loop is repurposed).
+- [src/config.cpp](../../../src/config.cpp) — collapse `LoadOneFile` to manifest-only. Delete `ParseOnePatch`, `ParseOneHook`, `ParseOneMidHook`, `ParseOneTrampoline`, `ParseOneScan` and their global-vector population (~600 LOC drop).
+- [src/plugin_loader.cpp](../../../src/plugin_loader.cpp) — extend `DiscoverAndLoad` to dispatch Lua entrypoints + interleave with DLL Preload/Load by sorted list, not fixed wave.
+- [src/hooks.cpp](../../../src/hooks.cpp) — `HookedUpdate` first-tick handler orchestrates the AFTER_GAME PASS (current first-tick apply loop is repurposed).
 
 ## The launcher exe (`kcdx.exe`)
 
@@ -891,7 +901,7 @@ After Phase 8.5, the pak-mods.md workspace rule is rewritten to "pak mods are de
 - New: `src/asset_overlay.cpp` / `src/asset_overlay.h` — overlay map + pak resolver hook.
 - New: `src/lua_bind_assets.cpp` — `kcdx.assets.*` Lua surface.
 - New: `docs/asset-replacement.md` — author-facing guide for asset overlay.
-- Modified: [src/config.cpp](../../src/config.cpp) — parse `[entrypoints].assets`.
+- Modified: [src/config.cpp](../../../src/config.cpp) — parse `[entrypoints].assets`.
 - Modified: `.claude/rules/pak-mods.md` — annotate as deprecated; point at asset-replacement.md.
 - Modified: `_research/phase8-fix-a/` (or sibling) — RE work to identify the pak resolver vtable.
 
@@ -901,19 +911,19 @@ These are NOT rewritten by the restructure. The change is only WHO calls them: t
 
 | Engine | File | Notes |
 |---|---|---|
-| `patch_engine::Resolve` (locator pipeline) | [src/patch_engine.cpp](../../src/patch_engine.cpp) | Used by `kcdx.bytes` + `kcdxBytesInterface::Write` |
-| `conflict_engine` (pre-flight + apply order) | [src/conflict_engine.cpp](../../src/conflict_engine.cpp) | Runs incrementally; each API call slots in + verifies |
-| `hook_engine::InstallRuntime` (MinHook + first-wins) | [src/hook_engine.cpp](../../src/hook_engine.cpp) | Already the runtime path; promoted to primary |
-| Trampoline pools | [src/trampoline.cpp](../../src/trampoline.cpp) | Backs `kcdx.code` + `kcdxTrampolineInterface` v2 (`Allocate`/`Export`) |
-| `ldr_notify` (LDR notification path) | [src/ldr_notify.cpp](../../src/ldr_notify.cpp) | Extended for arbitrary kcdx-API-registered entries from DLL Preload |
-| `load_order` (zones, priorities, overrides) | [src/load_order.cpp](../../src/load_order.cpp) | `DeriveMinZone` becomes a manifest-field read instead of a vector scan |
-| Messaging (kcdxMessage_*) | [src/messaging.cpp](../../src/messaging.cpp) | Extended with `<sender>:<event>` pub/sub naming for kcdx.publish |
-| Serialization (cosave) | [src/serialization.cpp](../../src/serialization.cpp), [src/save_load_hooks.cpp](../../src/save_load_hooks.cpp) | Lua wrapper added (`kcdx.cosave.*`) |
-| crash_guard + watchdog | [src/crash_guard.cpp](../../src/crash_guard.cpp), [src/watchdog/main.cpp](../../src/watchdog/main.cpp) | Unchanged |
-| log + deferred-log buffer | [src/log.cpp](../../src/log.cpp) | Existing infrastructure (already shipped). The restructure ADDS responsibility for per-plugin error attribution: when an apply-pass failure occurs, the engine's log call must include the plugin name + registration call-site so the same error lands in both the engine log AND the offending plugin's log. log.cpp's existing per-plugin stream support handles this; the restructure just wires the apply-pass dispatcher to call `EmitPlugin(...)` alongside `EmitEngine(...)` for any error that has an owning plugin. |
-| Symbols (cross-plugin) | [src/symbols.cpp](../../src/symbols.cpp) | `kcdx.code(... export=...)` populates |
-| Address Library | [src/address_library.cpp](../../src/address_library.cpp) | Unchanged |
-| Console | [src/console.cpp](../../src/console.cpp) | `kcdx.command` routes here |
+| `patch_engine::Resolve` (locator pipeline) | [src/patch_engine.cpp](../../../src/patch_engine.cpp) | Used by `kcdx.bytes` + `kcdxBytesInterface::Write` |
+| `conflict_engine` (pre-flight + apply order) | [src/conflict_engine.cpp](../../../src/conflict_engine.cpp) | Runs incrementally; each API call slots in + verifies |
+| `hook_engine::InstallRuntime` (MinHook + first-wins) | [src/hook_engine.cpp](../../../src/hook_engine.cpp) | Already the runtime path; promoted to primary |
+| Trampoline pools | [src/trampoline.cpp](../../../src/trampoline.cpp) | Backs `kcdx.code` + `kcdxTrampolineInterface` v2 (`Allocate`/`Export`) |
+| `ldr_notify` (LDR notification path) | [src/ldr_notify.cpp](../../../src/ldr_notify.cpp) | Extended for arbitrary kcdx-API-registered entries from DLL Preload |
+| `load_order` (zones, priorities, overrides) | [src/load_order.cpp](../../../src/load_order.cpp) | `DeriveMinZone` becomes a manifest-field read instead of a vector scan |
+| Messaging (kcdxMessage_*) | [src/messaging.cpp](../../../src/messaging.cpp) | Extended with `<sender>:<event>` pub/sub naming for kcdx.publish |
+| Serialization (cosave) | [src/serialization.cpp](../../../src/serialization.cpp), [src/save_load_hooks.cpp](../../../src/save_load_hooks.cpp) | Lua wrapper added (`kcdx.cosave.*`) |
+| crash_guard + watchdog | [src/crash_guard.cpp](../../../src/crash_guard.cpp), [src/watchdog/main.cpp](../../../src/watchdog/main.cpp) | Unchanged |
+| log + deferred-log buffer | [src/log.cpp](../../../src/log.cpp) | Existing infrastructure (already shipped). The restructure ADDS responsibility for per-plugin error attribution: when an apply-pass failure occurs, the engine's log call must include the plugin name + registration call-site so the same error lands in both the engine log AND the offending plugin's log. log.cpp's existing per-plugin stream support handles this; the restructure just wires the apply-pass dispatcher to call `EmitPlugin(...)` alongside `EmitEngine(...)` for any error that has an owning plugin. |
+| Symbols (cross-plugin) | [src/symbols.cpp](../../../src/symbols.cpp) | `kcdx.code(... export=...)` populates |
+| Address Library | [src/address_library.cpp](../../../src/address_library.cpp) | Unchanged |
+| Console | [src/console.cpp](../../../src/console.cpp) | `kcdx.command` routes here |
 
 The net engine code change is small. The vast majority of source under `src/` is untouched. The shape changes; the engines don't.
 
@@ -921,7 +931,7 @@ The net engine code change is small. The vast majority of source under `src/` is
 
 ### Engine builtin: `engine/builtin/bugsplat-filename-fix/`
 
-The current `[[patch]]`-based LEA-rewrite was empirically disproven (PROBE R/S/T, 2026-05-21 — see [docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md](../../docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md)). The real fix intercepts BugSplat64.dll's `MiniDmpSender` constructor.
+The current `[[patch]]`-based LEA-rewrite was empirically disproven (PROBE R/S/T, 2026-05-21 — see [docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md](../../../docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md)). The real fix intercepts BugSplat64.dll's `MiniDmpSender` constructor.
 
 New shape (DLL only, since pre-Phase-11 Lua can't run before_game):
 
@@ -974,11 +984,11 @@ About two-thirds become Lua-only; one-third stays DLL. The migration happens in 
 
 | Probe | Status |
 |---|---|
-| PROBE Q (frealloc canary, [src/hooks.cpp](../../src/hooks.cpp)) | **Keep**. Permanent FIX C regression guard per [.claude/rules/lua-bridge.md](../../.claude/rules/lua-bridge.md). |
+| PROBE Q (frealloc canary, [src/hooks.cpp](../../../src/hooks.cpp)) | **Keep**. Permanent FIX C regression guard per [.claude/rules/lua-bridge.md](../../../.claude/rules/lua-bridge.md). |
 | PROBE H (lua_State variance log) | **Keep**. Refactor from inline block in HookedLuaPcall to named helper. |
 | Phase5gReadback | **Removed (Phase 6, 2026-05-26)**. Dead code from a closed investigation. |
 | PROBE R (CreateFileW probe, `src/probes/createfilew_probe.cpp`) | **Removed (Phase 6, 2026-05-26)**. Question answered (the broken-dmp CreateFileW caller is BugSplat64.dll); file deleted. |
-| PROBE S+T (MiniDmpSender ctor probe, [src/probes/bugsplat_ctor_probe.cpp](../../src/probes/bugsplat_ctor_probe.cpp)) | **KEEP — carried to Phase 11**. The diagnostic became the proven before_game-hook install machinery ([before-game-hooks.md](before-game-hooks.md) §5); it relocates/generalizes into the real builtin at Phase 11, not deleted at Phase 6. |
+| PROBE S+T (MiniDmpSender ctor probe, [src/probes/bugsplat_ctor_probe.cpp](../../../src/probes/bugsplat_ctor_probe.cpp)) | **KEEP — carried to Phase 11**. The diagnostic became the proven before_game-hook install machinery ([before-game-hooks.md](../before-game-hooks.md) §5); it relocates/generalizes into the real builtin at Phase 11, not deleted at Phase 6. |
 
 After Phase 6, `src/probes/` retains `bugsplat_ctor_probe.{h,cpp}` (the Phase-11 install-machinery prototype); `createfilew_probe.*` is gone.
 
@@ -1008,7 +1018,7 @@ Two steps, both before any restructure code touches a file:
 > historical reference for the engine internals that survive the restructure
 > (patch_engine, conflict_engine, ldr_notify, etc.) but the schema, lifecycle, and
 > author surface have all been replaced. **The current authoritative design is
-> [`docs/outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md).**
+> [`docs/outstanding-work/restructure-plan.md`](00-original-plan.md).**
 > Each phase of the restructure that touches an engine surface should update both
 > this doc (to mark the relevant section superseded) AND the restructure plan
 > (to record what changed).
@@ -1033,9 +1043,9 @@ This phase is the install-layout migration. The user-visible change is biggest h
 - The builtin fixes move with the engine folder: `kcdx-engine/builtin/` → `engine/builtin/`.
 
 **Code changes:**
-- [src/paths.cpp](../../src/paths.cpp): find self by `kcdx.dll` (was `kcdx.asi`). kcdx.dll lives at `<game-bin>/engine/kcdx.dll`. Engine-data root is `<game-bin>/engine/` (sibling of kcdx.dll, same folder as the engine binary itself). Plugin scan root is `<game-bin>/plugins/`. Builtin discovery walks `<game-bin>/engine/builtin/`.
-- [package-release.ps1](../../package-release.ps1): release zip now includes `kcdx.exe` at the game-bin root + `engine/` (containing kcdx.dll, kcdx-watchdog.exe, engine.toml template, builtin/, empty logs/) + empty `plugins/`. NO dinput8.dll. NO ASI extension anywhere.
-- Docs sweep: [README.md](../../README.md), [docs/loader-architecture.md](../../docs/loader-architecture.md) — install instructions point at running `kcdx.exe`; Ultimate ASI Loader is removed from prerequisites entirely.
+- [src/paths.cpp](../../../src/paths.cpp): find self by `kcdx.dll` (was `kcdx.asi`). kcdx.dll lives at `<game-bin>/engine/kcdx.dll`. Engine-data root is `<game-bin>/engine/` (sibling of kcdx.dll, same folder as the engine binary itself). Plugin scan root is `<game-bin>/plugins/`. Builtin discovery walks `<game-bin>/engine/builtin/`.
+- [package-release.ps1](../../../package-release.ps1): release zip now includes `kcdx.exe` at the game-bin root + `engine/` (containing kcdx.dll, kcdx-watchdog.exe, engine.toml template, builtin/, empty logs/) + empty `plugins/`. NO dinput8.dll. NO ASI extension anywhere.
+- Docs sweep: [README.md](../../../README.md), [docs/loader-architecture.md](../../../docs/loader-architecture.md) — install instructions point at running `kcdx.exe`; Ultimate ASI Loader is removed from prerequisites entirely.
 
 **Existing installs migration (one-time, user-side):** the release notes describe a clean reinstall — uninstall the old kcdx.asi + dinput8.dll, install the new layout. The repo is unshipped so no real users have to do this; the only existing install is ours.
 
@@ -1081,18 +1091,18 @@ Executed as a sequence of independently-verified **subs** (each ships its `test-
 ### Phase 3 — C++ DLL API parity (additive) + ergonomic wrapper
 
 - New: `src/hook_interface.cpp`, `src/bytes_interface.cpp`, `src/code_interface.cpp`.
-- Extend [include/kcdx/Interfaces.h](../../include/kcdx/Interfaces.h) with `kcdxHookInterface`, `kcdxBytesInterface`, and the v2 extension to the existing `kcdxTrampolineInterface` (the `kcdx.code` C++ mirror appends `Allocate`+`Export` to the raw pool floor rather than spawning a parallel `kcdxCodeInterface` — see Phase 3 sub-3 ledger).
-- Wire into `QueryInterface` in [src/interfaces.cpp](../../src/interfaces.cpp).
+- Extend [include/kcdx/Interfaces.h](../../../include/kcdx/Interfaces.h) with `kcdxHookInterface`, `kcdxBytesInterface`, and the v2 extension to the existing `kcdxTrampolineInterface` (the `kcdx.code` C++ mirror appends `Allocate`+`Export` to the raw pool floor rather than spawning a parallel `kcdxCodeInterface` — see Phase 3 sub-3 ledger).
+- Wire into `QueryInterface` in [src/interfaces.cpp](../../../src/interfaces.cpp).
 - **New ergonomic wrapper**: `include/kcdx/Kcdx.h` ships in this phase. Header-only struct that pre-fetches every sub-interface + builds a logger from one `Init(api, "my.name")` call. Pattern mirrors existing `kcdxLogger`. README's "writing a C++ plugin" example uses the wrapper.
 - **`docs/cpp/`** (per-interface files fronted by `docs/cpp/index.md`) written alongside the new interfaces. Every method on every interface documented. Worked example for a typical C++ plugin (using `Kcdx.h`). Phase 3 ships incomplete if the doc is missing.
 - **FULL PARITY with the as-built Lua surface is the bar** (`.claude/rules/lua-api-surface.md`): `kcdxHookInterface` must express every `kcdx.hook` capability — all modes (before/after/around/replace + mid/callsite when built), every locator (address / address_id by name|number / target_symbol / pattern), chaining, the `call_original` callable for around — idiomatic in C++ (an options-struct + `mode` field rather than mode-as-key; typed params rather than positional Lua values; whatever C++ form mirrors mutate-by-return). NO Lua-only or C++-only capability. Each capability gets a C++ test plugin (parity is tested, not assumed). Already landed early as the C++ side of sub-4b: `ResolveAddressByName` on `kcdxInterface` — APPEND-ONLY (AP11; new interface members go at the struct END or pre-built plugins crash on load).
-- **C++ author-target precedence — DONE/CLOSED (landed via the symbols-fix cycle; from the author-targets feature, `naming-namespaces.md`).** The Lua `kcdx.hook{ target = "<name>" }` path resolves names with self > engine > other-plugin precedence because the binder threads the calling plugin's identity (`OwningPluginForCurrentCall`). The anonymous C++ `kcdxInterface::ResolveAddressByName(const char* name)` thunk has **no per-call plugin identity** — `g_api` is one shared struct handed by-pointer to every plugin — so it resolves **engine-seed + explicit-prefix only** (the `""`-owner path: safe, not wrong, no self tier). **Closed: the APPEND-ONLY `ResolveAddressByNameAs(kcdxPluginHandle owner, const char* name)` overload now ships on `kcdxInterface`** (placed after the `// --- APPEND-ONLY BELOW ---` marker, sibling to the symbol-resolution `ResolveSymbolAs(owner, name)`). The caller passes its own handle; the thunk threads it as the owner, reaching the same self > engine > other precedence as Lua. Documented as a built entry in [`docs/cpp/addr.md`](../cpp/addr.md) (and marked single-surface there — no Lua `*As` mirror is owed, since Lua threads identity natively). No longer outstanding.
+- **C++ author-target precedence — DONE/CLOSED (landed via the symbols-fix cycle; from the author-targets feature, `naming-namespaces.md`).** The Lua `kcdx.hook{ target = "<name>" }` path resolves names with self > engine > other-plugin precedence because the binder threads the calling plugin's identity (`OwningPluginForCurrentCall`). The anonymous C++ `kcdxInterface::ResolveAddressByName(const char* name)` thunk has **no per-call plugin identity** — `g_api` is one shared struct handed by-pointer to every plugin — so it resolves **engine-seed + explicit-prefix only** (the `""`-owner path: safe, not wrong, no self tier). **Closed: the APPEND-ONLY `ResolveAddressByNameAs(kcdxPluginHandle owner, const char* name)` overload now ships on `kcdxInterface`** (placed after the `// --- APPEND-ONLY BELOW ---` marker, sibling to the symbol-resolution `ResolveSymbolAs(owner, name)`). The caller passes its own handle; the thunk threads it as the owner, reaching the same self > engine > other precedence as Lua. Documented as a built entry in [`docs/cpp/addr.md`](../../cpp/addr.md) (and marked single-surface there — no Lua `*As` mirror is owed, since Lua threads identity natively). No longer outstanding.
 
 **End state:** DLLs reach every Lua capability via the wrapper (or raw QueryInterface). Existing DLL plugins (CAP-07, CAP-09, CAP-13, CAP-16-A/B) unaffected. Test suite green. **`docs/cpp/` exists (per-interface files fronted by `docs/cpp/index.md`) and covers every C++ surface; Lua↔C++ parity holds.**
 
 #### Phase 3 sub-1 (extended) — `kcdxHookInterface` + Kcdx.h wrapper + Uninstall
 
-Executed as ordered sub-steps. Each ships its `test-plugins/` regression per `.claude/rules/test-suite.md`. Per-step handoff doc: [`phase-3-sub-1-extended.md`](phase-3-sub-1-extended.md).
+Executed as ordered sub-steps. Each ships its `test-plugins/` regression per `.claude/rules/test-suite.md`. Per-step handoff doc: [`phase-3-sub-1-extended.md`](../phase-3-sub-1-extended.md).
 
 **Done (live-verified) — AUTHORITATIVE LEDGER.** Same contract as Phase 2b's ledger: add a row in the SAME unit of work that lands the step.
 
@@ -1306,8 +1316,8 @@ Before the batch migration, migrate ONE test plugin (recommended: `cap-01-patch`
 
 ### Phase 5 — delete old TOML behavior parsers — **DONE (narrow cut, live-verified `95854fe`, 2026-05-26: suite 102/109, only the pre-existing CAP-20-target-nosig FAIL; 55/55 manifests valid).**
 
-- Dropped ~642 LOC from [src/config.cpp](../../src/config.cpp): `ParseOnePatch`, `ParseOneHook`, `ParseOneMidHook`, `ParseOneTrampoline`, `ParseOneScan` + their array-walking blocks in `LoadOneFile` + the now-unused `#include "scan_engine.h"`. `LoadOneFile` is manifest-only ([kcdx]/[plugin]/[entrypoints]).
-- The bugsplat builtin's `[[patch]]` (the last legacy behavior table) was retired with it — the folder is now a metadata-only Phase-11 stub (`enabled=false`), pointing at [before-game-hooks.md](before-game-hooks.md) for the real fix.
+- Dropped ~642 LOC from [src/config.cpp](../../../src/config.cpp): `ParseOnePatch`, `ParseOneHook`, `ParseOneMidHook`, `ParseOneTrampoline`, `ParseOneScan` + their array-walking blocks in `LoadOneFile` + the now-unused `#include "scan_engine.h"`. `LoadOneFile` is manifest-only ([kcdx]/[plugin]/[entrypoints]).
+- The bugsplat builtin's `[[patch]]` (the last legacy behavior table) was retired with it — the folder is now a metadata-only Phase-11 stub (`enabled=false`), pointing at [before-game-hooks.md](../before-game-hooks.md) for the real fix.
 - **NARROW cut (user-decided):** the legacy globals (`g_patches`/`g_hooks`/`g_mid_hooks`/`g_trampolines`) + their consumers (`conflict_engine`/`hook_engine`/`ldr_notify`/`interfaces.cpp` GetConflictReport legacy loops) + the config.cpp-local sort lambdas over them are NOT deleted — they stay declared, are never populated (always empty), iterate inert. Removing that dead consumer machinery is a separate later pass.
 - **No migration WARN:** kcdx is prerelease with no external plugins, so a stray legacy `[[patch]]` is silently unparsed (boots fine, no behavior) — fix-forward, nothing to be compatible with. (Supersedes the original "a WARN line tells the user" bullet — that was for a shipped-product compatibility scenario that can't occur prerelease.)
 - **Follow-up (tracked):** `toml-schema.md` + any rule doc still describing `[[patch]]`/`[[hook]]`/etc. as live schema is now stale and needs a rule-doc rewrite (governance-adjacent; deliberately not folded into the code-deletion commit).
@@ -1318,9 +1328,9 @@ Before the batch migration, migrate ONE test plugin (recommended: `cap-01-patch`
 
 - **DONE** — deleted `src/probes/createfilew_probe.*` (PROBE R — answered: the broken-dmp CreateFileW caller is BugSplat64.dll; that finding reframed the whole investigation, question closed) + its `Install()` call site and `#include` in `hooks.cpp` (and the PROBE R comment), plus its `CMakeLists.txt` source row.
 - **DONE** — deleted Phase5gReadback dead code (the function + its call site in `HookedUpdate`; the Phase5gReadback-only locals `t`/`L_now` and the `tick_count` static went with it — `done` is shared with surviving registration logic and stays).
-- **KEEP** `src/probes/bugsplat_ctor_probe.*` (PROBE S/T) + the `ArmLdrInstall()` call site in `dllmain.cpp` — it is the Phase-11 before_game-hook install machinery (the proven prototype, live-confirmed 2026-05-26; [before-game-hooks.md](before-game-hooks.md) §5). It relocates/graduates into the real builtin at Phase 11, NOT deleted here. The "remove after fix" lifecycle comments were relabeled to KEEP-for-Phase-11 this commit.
+- **KEEP** `src/probes/bugsplat_ctor_probe.*` (PROBE S/T) + the `ArmLdrInstall()` call site in `dllmain.cpp` — it is the Phase-11 before_game-hook install machinery (the proven prototype, live-confirmed 2026-05-26; [before-game-hooks.md](../before-game-hooks.md) §5). It relocates/graduates into the real builtin at Phase 11, NOT deleted here. The "remove after fix" lifecycle comments were relabeled to KEEP-for-Phase-11 this commit.
 - Keep PROBE Q + PROBE H (permanent canaries — untouched).
-- **DEFERRED to Phase 11** — [docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md](../../docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md) stays OPEN until the before_game-hook fix lands (designed + de-risked, not built). Do NOT graduate to `closed/` yet.
+- **DEFERRED to Phase 11** — [docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md](../../../docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md) stays OPEN until the before_game-hook fix lands (designed + de-risked, not built). Do NOT graduate to `closed/` yet.
 
 ### Phase 7 — capability gating rework + per-version survival manifest fields
 
@@ -1337,7 +1347,7 @@ Before the batch migration, migrate ONE test plugin (recommended: `cap-01-patch`
 
 **The current direction is `kcdx.declare(module, name, [versions_kv])` (§11.8.1 of parallel-ghidra-research.md) — not built yet (no `lua_bind_declare.cpp`); its landing surface is Phase 9.2's re-spec, not this Phase-7 block.** The prose below is a HISTORICAL anchor of the original design, kept to document what was REPLACED, not what to build.
 
-- [src/load_order.cpp](../../src/load_order.cpp): `DeriveMinZone` becomes a read of `[load_order].zone` from the manifest. No more vector scans.
+- [src/load_order.cpp](../../../src/load_order.cpp): `DeriveMinZone` becomes a read of `[load_order].zone` from the manifest. No more vector scans.
 - Per-API `requireZone` check live (Lua + C++).
 - Verify: a `kcdx.toml` with `[load_order].zone = "before_game"` whose `plugin.lua` calls `kcdx.hook.before(...)` (an after_game-only API in this engine version) is REJECTED at manifest validation with the clear engine-log error message documented in "Capability gating."
 
@@ -1392,7 +1402,7 @@ After Phase 8.5, the `pak-mods.md` workspace rule is rewritten to "pak mods are 
 
 **Status (2026-05-28 audit):** zero `kcdx.player.*` / `kcdx.inventory.*` / `kcdx.world.*` / `kcdx.dialogue.*` / `kcdx.quest.*` binder in `src/lua_bind*.cpp`. None of the three "ships real" items (player.health, player.position, inventory.add) are built; the namespace stub tables are not registered. No `cap-XX-player-*` / `cap-XX-inventory-*` test plugin.
 
-Addresses [docs/design-gaps.md](../../docs/design-gaps.md) gap #16 (high-level Lua surface for gameplay).
+Addresses [docs/design-gaps.md](../../../docs/design-gaps.md) gap #16 (high-level Lua surface for gameplay).
 
 Per workspace priority #2 (capability) and the rule "we don't ship 80% solutions" — Phase 9 commits to THREE real, working capabilities that prove the namespace design end-to-end, plus the namespace skeleton for everything else that will land incrementally.
 
@@ -1466,7 +1476,7 @@ The engine dispatches by argument type/shape (string vs integer; string-matching
 - **Author-declare store DONE.** `src/declared_targets.{cpp,h}` ships the runtime registry (`std::deque<DeclaredEntry>` per the cycle-2 storage swap commit `2dac79b`); `src/lua_bind_declare.cpp` ships `kcdx.declare(module, name, [versions_kv])` per the §11.8.1 spec; `src/declare_interface.{cpp,h}` + `kcdxDeclareInterface` in `include/kcdx/Interfaces.h` ship the C++ peer. cap-62 (`test-plugins/cap-62-cpp-declare-interface/`) is the C++ regression net.
 - **Smart-resolver sub-verb surface DONE.** `lua_bind_hook` + `lua_bind_bytes` carry the `__index`-driven `kcdx.<verb>.<name>.<mode>` shape over the unified curated-cache + declare-store table. Per-verb "valid modes for this kind" filtering ships (cap-59 `CAP-59-invalid-mode-nil` row exercises the kind-aware filter on a `kind="data_slot"` declared entry). cap-28 (Lua bytes smart-resolver) + cap-59 (Lua hook smart-resolver) are the Lua regression nets.
 - **C++ mirror DONE.** `kcdxHookInterface` + `kcdxBytesInterface` + `kcdxDeclareInterface` ship the per-verb sub-method surface; `include/kcdx/Kcdx.h` ships the empowered floor (`kcdx::hook::Before<Sig, &fn>(K, name)`, `kcdx::bytes::Write(K, name, replacement)`, `kcdx::declare::*` namespace). cap-63 (`test-plugins/cap-63-cpp-bytes-wrapper/`) + cap-64 (`test-plugins/cap-64-cpp-lua-pcall-fires/`) + cap-65 (`test-plugins/cap-65-classifier-bootstrap/`) are the C++ regression nets.
-- **Engine-direct AP4 carve-out DONE for the canonical first site `engine.lua_pcall`.** Commit `1c01c9d` migrated the engine's own `lua_pcall` hook off raw `MH_CreateHook` onto `hook_chain::AddCEngine` (Kind::Engine identity; engine-first comparator front-sort; three-gate off-thread carve-out for engine-stamped C entries to break the dead-classifier chicken-and-egg discovered via PROBE α). This unblocked cap-59-fires (Lua hook on `lua_pcall` now actually fires) + cap-64 (C++ peer of cap-59) + cap-65 (load-bearing classifier-bootstrap regression). 5 sibling engine-direct sites (`frealloc` canary, `ModManager_ctor`, `MiniDmpSender` ctor, `SaveGame`, `LoadGame`) remain on raw-MinHook; tracked at [`engine-direct-hook-migration.md`](engine-direct-hook-migration.md). `update` is the SOLE documented bootstrap-pump exception (self-referential dispatch).
+- **Engine-direct AP4 carve-out DONE for the canonical first site `engine.lua_pcall`.** Commit `1c01c9d` migrated the engine's own `lua_pcall` hook off raw `MH_CreateHook` onto `hook_chain::AddCEngine` (Kind::Engine identity; engine-first comparator front-sort; three-gate off-thread carve-out for engine-stamped C entries to break the dead-classifier chicken-and-egg discovered via PROBE α). This unblocked cap-59-fires (Lua hook on `lua_pcall` now actually fires) + cap-64 (C++ peer of cap-59) + cap-65 (load-bearing classifier-bootstrap regression). 5 sibling engine-direct sites (`frealloc` canary, `ModManager_ctor`, `MiniDmpSender` ctor, `SaveGame`, `LoadGame`) remain on raw-MinHook; tracked at [`engine-direct-hook-migration.md`](../engine-direct-hook-migration.md). `update` is the SOLE documented bootstrap-pump exception (self-referential dispatch).
 - **KI-0001 sentinel-mirror fix landed** during cycle-1 verification — `vendor/lua/ltable.c` now guards against kcdx's vendored Lua GC freeing WHGame's `.rdata` sentinel objects (the FIX-C inverse: kcdx-Lua → WHGame-sentinel free direction, vs the original FIX-C's WHGame-Lua → kcdx-sentinel free direction). `kcdx_node_freeable` + `kcdx_array_freeable` guards; cap-66 regression row.
 - **`kcdx.scan{...}` Lua diagnostic DONE.** `src/lua_bind_scan.cpp` ships the address-discovery workbench shape (pattern + module + offset + context + anchor opts → log diagnostic with matches + nearby strings). This is the LUA surface, distinct from the `kcdx_scan` console verb below.
 - **`kcdx.declared(name)` value accessor DONE.** Ships in `src/lua_bind_declare.cpp` for declared non-address entries (`["1.5.1164953"] = 0x0F` value-kind shape). cap-62's matrix exercises it.
@@ -1817,7 +1827,7 @@ The simple-modder surface. Author writes one line; never sees a function name, s
 **Scope:**
 
 - New `src/lua_bind_behavior.cpp`:
-  - `kcdx.behavior.declare(name, spec)` — a plugin declares a behavior it implements. Stamped as `<plugin.author>.<plugin.name>.<name>` per [naming-namespaces.md](../../.claude/rules/naming-namespaces.md); appears in `list()` under the full prefixed name; callable from any plugin via the full name or via bare-name precedence (self > engine > other).
+  - `kcdx.behavior.declare(name, spec)` — a plugin declares a behavior it implements. Stamped as `<plugin.author>.<plugin.name>.<name>` per [naming-namespaces.md](../../../.claude/rules/naming-namespaces.md); appears in `list()` under the full prefixed name; callable from any plugin via the full name or via bare-name precedence (self > engine > other).
   - `kcdx.behavior.set(name, value)` — sets a behavior (engine's OR another plugin's). Resolves name with self > engine > other precedence; calls the resolved behavior's `implementation` function with `value`. `value` accepts any Lua type (bool, int, float, string, table, function); the behavior's implementation validates per its own logic. No engine type-gating.
   - `kcdx.behavior.get(name)` — returns the current set value (or the spec's `default` field if never set).
   - `kcdx.behavior.list([filter])` — returns all available behaviors, optionally filtered by name prefix (`kcdx.behavior.list("kcdx.")` for engine-shipped only; `kcdx.behavior.list("redmoon.")` for all of redmoon's; no filter for everything).
@@ -1906,7 +1916,7 @@ Without this front-door framing, the docs are a flat verb list; with it, the aut
 - **Extend another plugin (author B):** subscribe to A's events (`kcdx.on("a:event", ...)`); reconfigure A's behaviors (`kcdx.behavior.set("a.behavior", ...)`); wrap A's Lua functions (plain Lua); hook A's declared C++ functions by name (`kcdx.hook.*`). The doc names the one boundary case — A's stripped, undeclared, compiled internal — as the rare expert fallback (RE it, or ask A to add a one-line `kcdx.dll.declare`).
 - Leads with events/behaviors/Lua (zero friction for both sides); function-level hooking documented as the lower-level tool; the RE case explicitly the boundary of supported extension.
 
-**Verification gate:** full test suite green; no plugin uses old surface forms; rule 4 + 4a documented; `kcdx.bytes` narrowed-remit doc landed; `docs/lua/index.md` leads with the tier model; `docs/lua/extensibility.md` exists and covers both directions; `kcdx.dll.declare` + `kcdx.functions.*` per-call docs landed; per-call `docs/lua/` and `docs/cpp/` entries cover every shipped capability per [docs-discipline.md](../../.claude/rules/docs-discipline.md).
+**Verification gate:** full test suite green; no plugin uses old surface forms; rule 4 + 4a documented; `kcdx.bytes` narrowed-remit doc landed; `docs/lua/index.md` leads with the tier model; `docs/lua/extensibility.md` exists and covers both directions; `kcdx.dll.declare` + `kcdx.functions.*` per-call docs landed; per-call `docs/lua/` and `docs/cpp/` entries cover every shipped capability per [docs-discipline.md](../../../.claude/rules/docs-discipline.md).
 
 **Empowered C++ wrapper for `kcdx.bytes`.** Also ships in this phase since this is bytes' next unshipped phase. The raw `kcdxBytesInterface::Register(&opts)` is the always-available floor (Phase 3 sub-2, DONE); the empowered helper layers on top in `include/kcdx/Kcdx.h`, peer to the existing `kcdx::hook::*` helpers:
 
@@ -1928,9 +1938,9 @@ The phase numbering preserves the 9.7 slot rather than renumbering 9.3–9.6 to 
 - **Done:** `kcdx.on(<lifecycle_event>, fn)` is a shipped Phase 2 surface; the lifecycle event catalog is wired through `src/messaging.cpp` and consumed widely (cap-24 lifecycle-events row PASSes; every save/load / post-load / input-loaded / new-game / pre-load-game / post-load-game / save-game / load-game-selected / delete-game / ready event is registered and tested).
 - **Not built:** the 10–15 NEW gameplay events the phase committed to (damage_taken / damage_dealt / save_created / dialogue_line_spoken / item_picked_up / location_entered / combat_started / combat_ended / perk_unlocked / level_up / quest_stage_advanced / npc_interacted_with) — none of these are RE'd or hooked. No `kcdx.on("damage_taken", …)` consumer exists; no test plugin exercises a gameplay event subscription.
 
-Addresses [docs/design-gaps.md](../../docs/design-gaps.md) gap #15 (game-event API beyond lifecycle messages).
+Addresses [docs/design-gaps.md](../../../docs/design-gaps.md) gap #15 (game-event API beyond lifecycle messages).
 
-The today-unimplemented `[[event]]` table mentioned in design.md but never landed becomes `kcdx.on(...)`. Lifecycle messages get a documented catalog of named event strings (already wired via [src/messaging.cpp](../../src/messaging.cpp) — DONE). Phase 10 ships the lifecycle catalog plus the FIRST 10-15 gameplay events from RE work (candidate list per gap #15: damage taken/dealt, save created, dialogue line spoken, item picked up, location entered, combat started/ended, perk unlocked, level-up, quest stage advanced, NPC interacted with). Each event is one kcdx-owned hook against the underlying CryEngine call path; plugins subscribe via `kcdx.on(...)` and get the event without each plugin re-hooking the same function.
+The today-unimplemented `[[event]]` table mentioned in design.md but never landed becomes `kcdx.on(...)`. Lifecycle messages get a documented catalog of named event strings (already wired via [src/messaging.cpp](../../../src/messaging.cpp) — DONE). Phase 10 ships the lifecycle catalog plus the FIRST 10-15 gameplay events from RE work (candidate list per gap #15: damage taken/dealt, save created, dialogue line spoken, item picked up, location entered, combat started/ended, perk unlocked, level-up, quest stage advanced, NPC interacted with). Each event is one kcdx-owned hook against the underlying CryEngine call path; plugins subscribe via `kcdx.on(...)` and get the event without each plugin re-hooking the same function.
 
 **Event sites are hash-tracked the same as direct hooks.** Each gameplay event's underlying hook is a function-name reference in the SQLite reference DB; when KCD2 updates and changes the function backing an event, subscribers to that event get the same `on_changed` posture handling as a direct `kcdx.hook.*` call would. Authors subscribing via `kcdx.on(...)` to a broken event get a teaching error naming the event + the underlying function; other event subscriptions in the same plugin continue working regardless. Same survival contract as direct hooks, applied uniformly.
 
@@ -2020,11 +2030,11 @@ Phase 11 is complete when 11d's verification is green.
 
 The closing C++ ergonomics phase. Phase 3 sub-1/sub-2/sub-3 shipped the raw `kcdxHookInterface` / `kcdxBytesInterface` / `kcdxTrampolineInterface` v2 + the empowered `kcdx::hook::*` wrapper layer on hook only (sub-1 step 6). Phase 9.2 ships the empowered `kcdx::declare::Function/Value` wrappers alongside `kcdxDeclareInterface`. Phase 9.6 ships the empowered `kcdx::bytes::Replace` wrapper alongside the `kcdx.bytes` narrowing. Phase 12 sweeps the remaining shipped raw surfaces that have no future-phase home of their own — code / task / cosave — and lands the wrapper-machinery correctness fix + UX polish.
 
-**Direction (user-locked 2026-05-28, in the `/senior-architect-reply` thread for the hook docs flip — Option C):** the canonical Lua-mirror peer for any named surface is the empowered wrapper; the raw `K.<verb>->...(&opts)` form is the labeled raw-floor drop-down per [`docs/cpp/wrapper.md`](../cpp/wrapper.md) §"The 3-floor model". Every wrapper that lands flips the matching `docs/cpp/<verb>.md` to lead with the empowered shape and demote the raw form.
+**Direction (user-locked 2026-05-28, in the `/senior-architect-reply` thread for the hook docs flip — Option C):** the canonical Lua-mirror peer for any named surface is the empowered wrapper; the raw `K.<verb>->...(&opts)` form is the labeled raw-floor drop-down per [`docs/cpp/wrapper.md`](../../cpp/wrapper.md) §"The 3-floor model". Every wrapper that lands flips the matching `docs/cpp/<verb>.md` to lead with the empowered shape and demote the raw form.
 
-**Naming convention (user-locked):** per-surface namespace, matching the shipped `kcdx::hook::*` exactly. Autocomplete after `kcdx::code::` shows only code verbs; mirrors Lua's `kcdx.code.` chain shape; predictable per [`.claude/rules/lua-api-surface.md`](../../.claude/rules/lua-api-surface.md) rule 1.
+**Naming convention (user-locked):** per-surface namespace, matching the shipped `kcdx::hook::*` exactly. Autocomplete after `kcdx::code::` shows only code verbs; mirrors Lua's `kcdx.code.` chain shape; predictable per [`.claude/rules/lua-api-surface.md`](../../../.claude/rules/lua-api-surface.md) rule 1.
 
-**Each row ships its own `test-plugins/cap-NN-cpp-<surface>-wrapper/` regression per [`.claude/rules/test-suite.md`](../../.claude/rules/test-suite.md) — both surfaces of the capability (raw + wrapper) under permanent regression, paralleling cap-36 (raw hook) + cap-37 (hook wrapper) from Phase 3 sub-1.**
+**Each row ships its own `test-plugins/cap-NN-cpp-<surface>-wrapper/` regression per [`.claude/rules/test-suite.md`](../../../.claude/rules/test-suite.md) — both surfaces of the capability (raw + wrapper) under permanent regression, paralleling cap-36 (raw hook) + cap-37 (hook wrapper) from Phase 3 sub-1.**
 
 #### Phase 12 sub-1 — empowered wrappers for code / task / cosave
 
@@ -2033,11 +2043,11 @@ The closing C++ ergonomics phase. Phase 3 sub-1/sub-2/sub-3 shipped the raw `kcd
 | **1** | `kcdx::code::Allocate(K, "name", {.bytes=, .size=, .exportName=})` — required (name) positional, options-struct trailing (bytes / bytesSize-deduced / size / pool / exportName). Auto-threads `owningPlugin = K.self`. Wraps `K.code->Allocate(&opts)` (`kcdxTrampolineInterface_Version >= 2`). Header-only in `Kcdx.h`. | A | 9→4 lines (~56%), ranked #3 |
 | **2** | `kcdx::task::Run(K, []{...})` — boxes a (capturing) lambda into a `kcdxTask` whose `Run()` invokes the lambda and whose `Dispose()` does `delete this`. Wraps `K.task->AddTask(new …)`. Header-only in `Kcdx.h`. Captures stored in the boxed task (storage owned by the wrapper). | B | 7→1 lines (~86%), ranked #6 |
 | **3** | `kcdx::cosave::Save(K, 'UID', [](auto& w){ w.Record("tag", ver, [&](){ w.WriteU32(n); }); })` + `kcdx::cosave::Load(K, [](auto& r){ for (auto rec : r) { … } })`. Boxes the SetUniqueID + SetSaveCallback / SetLoadCallback registration; the `auto& w` / `auto& r` writer/reader objects fuse the OpenRecordNamed + WriteRecordData pairing (you can't forget the pair) and expose typed `WriteU32` / `WriteBlob` / `WriteString` / `ReadU32` / etc. helpers. Wraps `K.serialization->*`. Header-only in `Kcdx.h`. | B | 10→4 lines (~60%), ranked #7 |
-| **4** | Docs sweep — flip [`docs/cpp/code.md`](../cpp/code.md) common-path lead to the wrapper form; update [`docs/cpp/cosave.md`](../cpp/cosave.md) common-path lead to the new wrapper; new [`docs/cpp/task.md`](../cpp/task.md) (the existing surface is undocumented today) leading with `kcdx::task::Run`. Demote raw forms to the "raw floor / drop-down" section anchored at [`docs/cpp/wrapper.md`](../cpp/wrapper.md) §3-floor model. Pull NYI markers on every newly-empowered surface. [`docs/cpp/index.md`](../cpp/index.md) map updated. Per [`docs-discipline.md`](../../.claude/rules/docs-discipline.md). | docs | docs-discipline coverage |
+| **4** | Docs sweep — flip [`docs/cpp/code.md`](../../cpp/code.md) common-path lead to the wrapper form; update [`docs/cpp/cosave.md`](../../cpp/cosave.md) common-path lead to the new wrapper; new [`docs/cpp/task.md`](../../cpp/task.md) (the existing surface is undocumented today) leading with `kcdx::task::Run`. Demote raw forms to the "raw floor / drop-down" section anchored at [`docs/cpp/wrapper.md`](../../cpp/wrapper.md) §3-floor model. Pull NYI markers on every newly-empowered surface. [`docs/cpp/index.md`](../../cpp/index.md) map updated. Per [`docs-discipline.md`](../../../.claude/rules/docs-discipline.md). | docs | docs-discipline coverage |
 
 #### Phase 12 sub-2 — `sig_traits::dsl_token<T>` correctness fix
 
-**The wrapper-machinery silent-miscompilation hazard (item E from the 2026-05-28 wrapper-improvements audit).** Today the primary template at [`include/kcdx/Kcdx.h:188-191`](../../include/kcdx/Kcdx.h#L188-L191) defaults unrecognized types to `"ptr"`. Silent hazard — `Before<MyEnum(int)>` where `MyEnum` is `enum class : uint16_t` emits `ptr (i32)` and the engine reads the wrong width on the return. Fix: convert the primary template into a `static_assert(sizeof(T) == 0, "Unsupported type in hook signature DSL — specialize kcdx::detail::dsl_token<YourType> in your TU, or use a primitive the wrapper recognizes.")` so the miscompilation fires at compile-time. Existing specializations in `Kcdx.h:198-214` unchanged. Test row asserts the gate fires (compile-failure smoke test on a deliberately-unsupported type).
+**The wrapper-machinery silent-miscompilation hazard (item E from the 2026-05-28 wrapper-improvements audit).** Today the primary template at [`include/kcdx/Kcdx.h:188-191`](../../../include/kcdx/Kcdx.h#L188-L191) defaults unrecognized types to `"ptr"`. Silent hazard — `Before<MyEnum(int)>` where `MyEnum` is `enum class : uint16_t` emits `ptr (i32)` and the engine reads the wrong width on the return. Fix: convert the primary template into a `static_assert(sizeof(T) == 0, "Unsupported type in hook signature DSL — specialize kcdx::detail::dsl_token<YourType> in your TU, or use a primitive the wrapper recognizes.")` so the miscompilation fires at compile-time. Existing specializations in `Kcdx.h:198-214` unchanged. Test row asserts the gate fires (compile-failure smoke test on a deliberately-unsupported type).
 
 #### Phase 12 sub-3 — wrapper UX polish (A + B + F from the audit)
 
@@ -2048,13 +2058,13 @@ Header-only ergonomic improvements to the existing wrapper machinery. None chang
 | **1** | **Auto-`Init()` (A).** Today `K.Init(api, "redmoon", "outfit")` requires the author to retype their `[plugin].author` + `[plugin].name` as string literals in their own DLL — duplicates `kcdx.toml`, and a typo (e.g. `"redomon"`) silently breaks identity threading (the resolved `K.self` becomes `kcdxInvalidPluginHandle` and every self-tier name resolution misses). Two implementation options; settled at the sub-step design step: **(a) CMake-generated header.** kcdx ships a CMake helper macro that parses the plugin's `kcdx.toml` at configure-time and emits `kcdx_plugin_id.h` with `inline constexpr const char* kcdxPluginAuthor = "…"; …Name = "…";`. `K.Init(api)` (no string args) reads them. **(b) Engine thunk.** Append `kcdxInterface::GetSelfPluginInfo(HMODULE dll)` to the root interface (AP11 append-only); engine maps the calling DLL's `HMODULE` → plugin record (the loader already knows). `K.Init(api)` calls it. (a) is the simpler ship; (b) makes copy-paste of plugin shells less brittle. | #2 | 1 line per plugin Init + closes the silent-typo footgun |
 | **2** | **`KCDX_PLUGIN(...)` macro (B).** Synthesizes the `static Kcdx K;` global + the `kcdxPlugin_Load` entry point: `KCDX_PLUGIN("redmoon", "outfit") { K.log.Info(...); kcdx::hook::Before<...>(K, "IsInCombat"); return true; }`. Removes the boilerplate every plugin pays. Composes with step 1 — if (a) ships the macro reads identity from the generated header, no string args needed. | #3 | 4-5 lines per plugin shell |
 | **3** | **Typed `kcdx::Handle` wrapper (F).** Today `auto h = TryBefore<...>(K, "name");` returns a raw `kcdxHookHandle` and the author calls `K.hook->IsApplied(h)` / `GetReason(h)` / `Uninstall(h)` against the raw handle. The wrapper would be `struct kcdx::Handle { kcdxHookHandle h; const kcdxHookInterface* iface; bool Applied() const { return iface->IsApplied(h); } const char* Reason() const; bool Uninstall(); };` so `auto h = TryBefore<...>(K, "name"); if (!h.Applied()) log.Warn("...", h.Reason());` reads as a typed handle, not a raw integer. Same shape for `kcdxBytesHandle`. The `Try*` forms in `kcdx::hook` change return type from `kcdxHookHandle` to `kcdx::Handle` (mild source-incompatibility for any caller that stored the raw type; sub-step ledger row notes the migration). | #4 | 1-3 lines per Try*-using plugin |
-| **4** | Docs sweep — [`docs/cpp/wrapper.md`](../cpp/wrapper.md) updated to lead with the auto-`Init()` shape (string-literal form demoted to "if you need to override"); add a `KCDX_PLUGIN` macro section; update the handle examples to use `kcdx::Handle`. Update [`docs/cpp/plugin-shell.md`](../cpp/plugin-shell.md) to lead with the macro. | docs | docs-discipline coverage |
+| **4** | Docs sweep — [`docs/cpp/wrapper.md`](../../cpp/wrapper.md) updated to lead with the auto-`Init()` shape (string-literal form demoted to "if you need to override"); add a `KCDX_PLUGIN` macro section; update the handle examples to use `kcdx::Handle`. Update [`docs/cpp/plugin-shell.md`](../../cpp/plugin-shell.md) to lead with the macro. | docs | docs-discipline coverage |
 
 #### Phase 12 — outstanding tracked (capturing-lambda gap)
 
-The per-hook context slot for capturing-lambda support in `kcdx::hook::*` is an engine ABI change (`void* userdata` on `kcdxHookOptions` + JIT thunk threading + the wrapper's capturing-lambda overload), not a wrapper-only edit. Strictly more risk and more scope than Phase 12's header-only sweep. Tracked as its own outstanding-work entry: [`hook-capturing-lambda-context-slot.md`](hook-capturing-lambda-context-slot.md). Lands when its trigger fires.
+The per-hook context slot for capturing-lambda support in `kcdx::hook::*` is an engine ABI change (`void* userdata` on `kcdxHookOptions` + JIT thunk threading + the wrapper's capturing-lambda overload), not a wrapper-only edit. Strictly more risk and more scope than Phase 12's header-only sweep. Tracked as its own outstanding-work entry: [`hook-capturing-lambda-context-slot.md`](../hook-capturing-lambda-context-slot.md). Lands when its trigger fires.
 
-**Verification gate (Phase 12):** every shipped raw C++ surface has its empowered-wrapper peer in `Kcdx.h`; every wrapper's surface line-saving matches the audit's ranked ROI; `docs/cpp/*.md` common paths lead with the wrapper, raw forms demoted; the `dsl_token` static_assert fires on a deliberately-unsupported type (compile-failure smoke test); auto-`Init()` reads identity from the manifest; `KCDX_PLUGIN` macro synthesizes the shell; `kcdx::Handle` wrapper carries the typed handle API; full test suite green; per-call `docs/cpp/` entries cover every shipped wrapper per [docs-discipline.md](../../.claude/rules/docs-discipline.md).
+**Verification gate (Phase 12):** every shipped raw C++ surface has its empowered-wrapper peer in `Kcdx.h`; every wrapper's surface line-saving matches the audit's ranked ROI; `docs/cpp/*.md` common paths lead with the wrapper, raw forms demoted; the `dsl_token` static_assert fires on a deliberately-unsupported type (compile-failure smoke test); auto-`Init()` reads identity from the manifest; `KCDX_PLUGIN` macro synthesizes the shell; `kcdx::Handle` wrapper carries the typed handle API; full test suite green; per-call `docs/cpp/` entries cover every shipped wrapper per [docs-discipline.md](../../../.claude/rules/docs-discipline.md).
 
 ## Test discipline
 
@@ -2154,7 +2164,7 @@ These measurements are recorded in `docs/performance.md` as they're taken. Autho
 - `docs/lua/` (per-call files fronted by `docs/lua/index.md`) — **REQUIRED** author-facing Lua API reference (Phase 2). Every function in the `kcdx.*` namespace documented: signature, semantics, error modes, performance notes (hot-path warnings per Performance Discipline section), example. The Lua API is the primary author surface; without complete docs we fail priority #1 (UX) by construction.
 - `docs/cpp/` (per-interface files fronted by `docs/cpp/index.md`) — **REQUIRED** author-facing C++ API reference (Phase 3). Same coverage as `docs/lua/` but for the C++ plugin path: how to use `Kcdx.h`, how each sub-interface works, what to do in `kcdxPlugin_Preload` vs `kcdxPlugin_Load`, performance notes mirror `docs/lua/`.
 - `vendor/sqlite/sqlite3.{c,h}` — vendored SQLite amalgamation (Phase 9.1)
-- `data/reference.sqlite` — build artifact; per-function/per-statement/per-behavior reference data (Phase 9.1; populated by parallel Ghidra research per [`parallel-ghidra-research.md`](parallel-ghidra-research.md))
+- `data/reference.sqlite` — build artifact; per-function/per-statement/per-behavior reference data (Phase 9.1; populated by parallel Ghidra research per [`parallel-ghidra-research.md`](../parallel-ghidra-research.md))
 - `data/behavior-catalog/behaviors.toml` — human-authored named-behavior catalog imported into reference.sqlite at build time (Phase 9.5)
 - `src/hashref.{cpp,h}` — `hash_at(function_name, game_version)` lookup primitive over SQLite (Phase 9.1)
 - `src/version_check_cache.{cpp,h}` — per-plugin verification cache at `engine/cache/version_check.bin` (Phase 9.1)
@@ -2173,40 +2183,40 @@ These measurements are recorded in `docs/performance.md` as they're taken. Autho
 
 ### Modified
 
-- [src/config.cpp](../../src/config.cpp) — manifest-only LoadOneFile (Phase 5 deletes ~600 LOC; Phase 2 adds `[entrypoints]` parsing)
-- [src/plugin_loader.h](../../src/plugin_loader.h) — add `entrypoints.luaFiles` vector + new wave orchestration helpers
-- [src/plugin_loader.cpp](../../src/plugin_loader.cpp) — unified ordered list dispatch
-- [src/lua_bind.cpp](../../src/lua_bind.cpp) — wire new sub-binders; drop legacy uppercase `KCDX` table
-- [src/scripting.cpp](../../src/scripting.cpp) — extend dispatchers for `around` mode + `after`-return-mutation
-- [src/lua_memory.cpp](../../src/lua_memory.cpp) — named-arg lookup for hook callbacks
-- [src/messaging.cpp](../../src/messaging.cpp) — `<sender>:<event>` pub/sub
-- [src/hooks.cpp](../../src/hooks.cpp) — first-update-tick handler orchestrates AFTER_GAME PASS (unified ordered list)
-- [src/load_order.cpp](../../src/load_order.cpp) — `DeriveMinZone` reads manifest field instead of vector scan
-- [src/ldr_notify.cpp](../../src/ldr_notify.cpp) — handle kcdx-API-registered before_game entries from DLL Preload
-- [src/console.cpp](../../src/console.cpp) — wire built-in `kcdx_list_plugins` command (always-on; not test-suite-gated)
-- [.claude/rules/pak-mods.md](../../.claude/rules/pak-mods.md) — annotated as deprecated (Phase 8.5); points at docs/asset-replacement.md
-- [src/paths.cpp](../../src/paths.cpp) — find self by `kcdx.dll` (was `kcdx.asi`); engine-data root is `<game-bin>/engine/` (was `kcdx-engine/`); plugin scan root stays `<game-bin>/plugins/`; builtin discovery walks `<game-bin>/engine/builtin/`
-- [include/kcdx/Interfaces.h](../../include/kcdx/Interfaces.h) — add 3 new sub-interface structs
-- [src/interfaces.cpp](../../src/interfaces.cpp) — wire new interfaces into QueryInterface
-- [CMakeLists.txt](../../CMakeLists.txt) — `kcdx.asi` → `kcdx.dll`; new `kcdx-launcher` target (→ `kcdx.exe`); new source files
-- [package-release.ps1](../../package-release.ps1) — bundle launcher + DLL
-- [README.md](../../README.md) — install instructions + author guide
-- [docs/loader-architecture.md](../../docs/loader-architecture.md) — promote v0.2 layout to current
-- [.claude/rules/toml-schema.md](../../.claude/rules/toml-schema.md), [.claude/rules/hook-engine.md](../../.claude/rules/hook-engine.md) — rewrite for new shape
-- [.claude/rules/lua-api-surface.md](../../.claude/rules/lua-api-surface.md) — rule 4 rewritten (required→positional + optional→trailing table); new rule 4a (discrete behavioral variants are sub-verbs, not table keys) (Phase 9.6, but the rule change ships in the doc-cycle that produced this restructure plan)
-- [src/trampoline.cpp](../../src/trampoline.cpp) — multi-region on-demand branch-pool expansion at TC scale (Phase 9.3)
-- [src/lua_registry.h](../../src/lua_registry.h) + [src/lua_registry.cpp](../../src/lua_registry.cpp) — `requires_hash_check` flag, touched-functions list, per-entry `on_changed` posture (Phase 9.2)
-- [src/lua_bind_hook.cpp](../../src/lua_bind_hook.cpp) — completely rewritten for the sub-verb shape per Phase 9.3 (`kcdx.hook.before/after/around/replace/insert_before/insert_after`)
-- [src/lua_bind_bytes.cpp](../../src/lua_bind_bytes.cpp) — narrowed remit per Phase 9.6 (non-function bytes + labeled-expert pattern hatch)
-- [data/seeds/policy.md](../../data/seeds/policy.md) — per-version row model with hash-based auto-verification (Phase 9.1)
-- [docs/migration.md](../../docs/migration.md) — section on "what happens when KCD2 updates" (Phase 9.2)
+- [src/config.cpp](../../../src/config.cpp) — manifest-only LoadOneFile (Phase 5 deletes ~600 LOC; Phase 2 adds `[entrypoints]` parsing)
+- [src/plugin_loader.h](../../../src/plugin_loader.h) — add `entrypoints.luaFiles` vector + new wave orchestration helpers
+- [src/plugin_loader.cpp](../../../src/plugin_loader.cpp) — unified ordered list dispatch
+- [src/lua_bind.cpp](../../../src/lua_bind.cpp) — wire new sub-binders; drop legacy uppercase `KCDX` table
+- [src/scripting.cpp](../../../src/scripting.cpp) — extend dispatchers for `around` mode + `after`-return-mutation
+- [src/lua_memory.cpp](../../../src/lua_memory.cpp) — named-arg lookup for hook callbacks
+- [src/messaging.cpp](../../../src/messaging.cpp) — `<sender>:<event>` pub/sub
+- [src/hooks.cpp](../../../src/hooks.cpp) — first-update-tick handler orchestrates AFTER_GAME PASS (unified ordered list)
+- [src/load_order.cpp](../../../src/load_order.cpp) — `DeriveMinZone` reads manifest field instead of vector scan
+- [src/ldr_notify.cpp](../../../src/ldr_notify.cpp) — handle kcdx-API-registered before_game entries from DLL Preload
+- [src/console.cpp](../../../src/console.cpp) — wire built-in `kcdx_list_plugins` command (always-on; not test-suite-gated)
+- [.claude/rules/pak-mods.md](../../../.claude/rules/pak-mods.md) — annotated as deprecated (Phase 8.5); points at docs/asset-replacement.md
+- [src/paths.cpp](../../../src/paths.cpp) — find self by `kcdx.dll` (was `kcdx.asi`); engine-data root is `<game-bin>/engine/` (was `kcdx-engine/`); plugin scan root stays `<game-bin>/plugins/`; builtin discovery walks `<game-bin>/engine/builtin/`
+- [include/kcdx/Interfaces.h](../../../include/kcdx/Interfaces.h) — add 3 new sub-interface structs
+- [src/interfaces.cpp](../../../src/interfaces.cpp) — wire new interfaces into QueryInterface
+- [CMakeLists.txt](../../../CMakeLists.txt) — `kcdx.asi` → `kcdx.dll`; new `kcdx-launcher` target (→ `kcdx.exe`); new source files
+- [package-release.ps1](../../../package-release.ps1) — bundle launcher + DLL
+- [README.md](../../../README.md) — install instructions + author guide
+- [docs/loader-architecture.md](../../../docs/loader-architecture.md) — promote v0.2 layout to current
+- [.claude/rules/toml-schema.md](../../../.claude/rules/toml-schema.md), [.claude/rules/hook-engine.md](../../../.claude/rules/hook-engine.md) — rewrite for new shape
+- [.claude/rules/lua-api-surface.md](../../../.claude/rules/lua-api-surface.md) — rule 4 rewritten (required→positional + optional→trailing table); new rule 4a (discrete behavioral variants are sub-verbs, not table keys) (Phase 9.6, but the rule change ships in the doc-cycle that produced this restructure plan)
+- [src/trampoline.cpp](../../../src/trampoline.cpp) — multi-region on-demand branch-pool expansion at TC scale (Phase 9.3)
+- [src/lua_registry.h](../../../src/lua_registry.h) + [src/lua_registry.cpp](../../../src/lua_registry.cpp) — `requires_hash_check` flag, touched-functions list, per-entry `on_changed` posture (Phase 9.2)
+- [src/lua_bind_hook.cpp](../../../src/lua_bind_hook.cpp) — completely rewritten for the sub-verb shape per Phase 9.3 (`kcdx.hook.before/after/around/replace/insert_before/insert_after`)
+- [src/lua_bind_bytes.cpp](../../../src/lua_bind_bytes.cpp) — narrowed remit per Phase 9.6 (non-function bytes + labeled-expert pattern hatch)
+- [data/seeds/policy.md](../../../data/seeds/policy.md) — per-version row model with hash-based auto-verification (Phase 9.1)
+- [docs/migration.md](../../../docs/migration.md) — section on "what happens when KCD2 updates" (Phase 9.2)
 - 21 test plugin folders — each gets new `kcdx.toml` + `plugin.lua` or updated `.cpp`
 
 ### Deleted
 
 - `src/probes/createfilew_probe.{h,cpp}` (Phase 6)
-- `src/probes/bugsplat_ctor_probe.{h,cpp}` — NOT deleted at Phase 6; KEEP as the Phase-11 before_game-hook install machinery ([before-game-hooks.md](before-game-hooks.md) §5). It relocates/generalizes at Phase 11.
-- The uppercase `KCDX.*` Lua compat table at [src/lua_bind.cpp:184-196](../../src/lua_bind.cpp#L184-L196) (Phase 2)
+- `src/probes/bugsplat_ctor_probe.{h,cpp}` — NOT deleted at Phase 6; KEEP as the Phase-11 before_game-hook install machinery ([before-game-hooks.md](../before-game-hooks.md) §5). It relocates/generalizes at Phase 11.
+- The uppercase `KCDX.*` Lua compat table at [src/lua_bind.cpp:184-196](../../../src/lua_bind.cpp#L184-L196) (Phase 2)
 
 ## Verification plan
 
@@ -2226,7 +2236,7 @@ The 21/21 test-suite aggregator (`kcdx::test::EmitSummaryIfChanged`) is the cano
 
 **Phase 5 (parser deletion):** Re-add a deliberately-broken `[[patch]]` to a test plugin's `kcdx.toml`. Boot. Confirm the section is ignored + WARN line emitted. Suite remains 21/21.
 
-**Phase 6 (probe cleanup, narrow subset):** Confirm no `createfilew_probe.cpp` in `src/probes/` and engine log shows no `PROBE R` lines. `bugsplat_ctor_probe.cpp` STAYS (KEEP for Phase 11 — [before-game-hooks.md](before-game-hooks.md) §5); its `PROBE S/T` install path remains live (dev-gated). Confirm Phase5gReadback / `5g-readback` lines are gone from the dev log.
+**Phase 6 (probe cleanup, narrow subset):** Confirm no `createfilew_probe.cpp` in `src/probes/` and engine log shows no `PROBE R` lines. `bugsplat_ctor_probe.cpp` STAYS (KEEP for Phase 11 — [before-game-hooks.md](../before-game-hooks.md) §5); its `PROBE S/T` install path remains live (dev-gated). Confirm Phase5gReadback / `5g-readback` lines are gone from the dev log.
 
 **Phase 7 (capability gating):** Hand-write a `kcdx.toml` with `[load_order].zone = "before_game"` for a plugin whose `plugin.lua` calls `kcdx.hook(...)`. Confirm the plugin is REJECTED at manifest validation (does not load) with the documented engine-log error message.
 
@@ -2249,9 +2259,9 @@ Phase 0 IS the snapshot commit. `git tag v0.1-final` so we have a recovery point
 
 ## Parallel work (runs alongside this plan)
 
-- **FIX A symbol harvest** ([docs/outstanding-work/fix-a-drop-static-lua.md](../../docs/outstanding-work/fix-a-drop-static-lua.md)) is actively in progress at `_research/phase8-fix-a/` (38% RVAs mapped at plan finalization). FIX A is independently tracked and ships independently; this restructure plan's Phase 11 simply consumes FIX A once it's done. Phases 1-10 can land without FIX A; Phase 11 is the next item after FIX A and Phases 1-10 are both complete.
+- **FIX A symbol harvest** ([docs/outstanding-work/fix-a-drop-static-lua.md](../../../docs/outstanding-work/fix-a-drop-static-lua.md)) is actively in progress at `_research/phase8-fix-a/` (38% RVAs mapped at plan finalization). FIX A is independently tracked and ships independently; this restructure plan's Phase 11 simply consumes FIX A once it's done. Phases 1-10 can land without FIX A; Phase 11 is the next item after FIX A and Phases 1-10 are both complete.
 
-- **Ghidra dump for the SQLite reference DB** ([docs/outstanding-work/parallel-ghidra-research.md](parallel-ghidra-research.md)) — the per-function and per-statement metadata that populates `engine/hashes/reference.sqlite` for Phases 9.1+ comes from a parallel research effort. The orchestration brief in `parallel-ghidra-research.md` describes the deliverable shape, parallelization model (per-DLL × per-subsystem subagent partitions), quality gates, and the maintainer-side post-processing flow. Authorization-gated: the user dispatches an orchestrator agent that reads the brief, proposes partitions for sign-off, then runs subagents in parallel. Phase 9.1+ engine work can proceed in parallel using a hand-built `reference.sqlite` with a few dozen synthetic rows for testing while real data accumulates. The SQLite ships populated by the time Phase 9.3's surface lands.
+- **Ghidra dump for the SQLite reference DB** ([docs/outstanding-work/parallel-ghidra-research.md](../parallel-ghidra-research.md)) — the per-function and per-statement metadata that populates `engine/hashes/reference.sqlite` for Phases 9.1+ comes from a parallel research effort. The orchestration brief in `parallel-ghidra-research.md` describes the deliverable shape, parallelization model (per-DLL × per-subsystem subagent partitions), quality gates, and the maintainer-side post-processing flow. Authorization-gated: the user dispatches an orchestrator agent that reads the brief, proposes partitions for sign-off, then runs subagents in parallel. Phase 9.1+ engine work can proceed in parallel using a hand-built `reference.sqlite` with a few dozen synthetic rows for testing while real data accumulates. The SQLite ships populated by the time Phase 9.3's surface lands.
 
 ## Out of scope (explicitly deferred to later versions)
 

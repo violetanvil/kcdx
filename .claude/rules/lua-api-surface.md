@@ -58,7 +58,7 @@ not a shipped one.
 ### Timing: invariant on the SHIPPED product; sequenced during the restructure
 
 Full parity is a hard invariant for the **finished** product. The v0.2
-restructure (`docs/outstanding-work/restructure-plan.md`) is built in ONE
+restructure (`docs/outstanding-work/restructure/`) is built in ONE
 language first (Lua), then backfilled to parity — restructure one surface
 to settle WHAT we're building, then mirror to C++. During the
 restructure, a Lua-only capability carries a **tracked parity debt** (the

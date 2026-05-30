@@ -9,7 +9,7 @@ follow-up here. No silent stale doc, no buried someday-maybe — every gap
 is either fixed or tracked with a real next step (no-deferred-correctness,
 AP13).
 
-Items fixed inline in the audit are NOT listed here (restructure-plan.md
+Items fixed inline in the audit are NOT listed here (restructure/00-original-plan.md
 line-40 summary, test-plugins/README.md roll-up header, design.md banner,
 design-gaps.md gap statuses #1/#2/#12/#14, the VERIFY_PHASE2/3/4 archived
 banners). What remains below is the deferred deep rewrites + cross-doc
@@ -27,20 +27,20 @@ the schema (manifest-only TOML), the install model (owned `kcdx.exe`
 launcher), and the author surface (`kcdx.*` Lua/C++ API).
 
 **Mitigated inline:** a dated SUPERSEDED banner at the top points readers
-at `restructure-plan.md` (authoritative design) + `docs/lua/index.md` (current
+at `restructure/00-original-plan.md` (authoritative design) + `docs/lua/index.md` (current
 author API). The banner already enumerates which engine-internals sections
 remain accurate (patch_engine, conflict_engine, ldr_notify, trampoline
 pools, messaging, serialization, address library, console).
 
 **Why deferred:** a body rewrite is feature-sized (58 KB) and the
-restructure plan defines its own end state: per `restructure-plan.md`'s
+restructure plan defines its own end state: per `restructure/00-original-plan.md`'s
 own banner, at restructure completion this doc is EITHER fully replaced by
 the restructure plan as the live spec OR retained as the engine-internals
 reference with the schema/author-surface sections deleted. That decision
 is part of the restructure's late phases, not this docs pass.
 
 **Real next step:** at the restructure's documentation-consolidation phase
-(end of the phase sequence in `restructure-plan.md`), execute the
+(end of the phase sequence in `restructure/00-original-plan.md`), execute the
 banner's stated fork — retire design.md to an engine-internals-only
 reference (strip the `[[...]]` schema + install/lifecycle sections) or
 fold it into the restructure plan. Until then the banner prevents a reader
@@ -65,7 +65,7 @@ would be inventing an unbuilt migration.
 **Real next step:** when restructure Phase 5 (manifest-only TOML — removes
 the seven behavior table-arrays) lands, fill in the Phase 5 section with
 the concrete per-plugin migration steps in the SAME unit of work that lands
-Phase 5 (per `restructure-plan.md` Phase 5: "Phase 5's deletion of the old
+Phase 5 (per `restructure/00-original-plan.md` Phase 5: "Phase 5's deletion of the old
 TOML behavior parsers updates the same doc with the schema-level migration
 steps"). No action needed before then.
 

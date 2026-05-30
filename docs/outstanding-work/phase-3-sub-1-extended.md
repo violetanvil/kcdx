@@ -170,7 +170,7 @@ documented (3 floors if option 2 picked in step 6, 4 otherwise).
 **`docs/cpp/index.md`** — `hook.md` flipped NYI→LIVE in the map;
 `wrapper.md` added.
 
-**`docs/outstanding-work/restructure-plan.md`** — Phase 3 sub-1 ledger
+**`docs/outstanding-work/restructure/00-original-plan.md`** — Phase 3 sub-1 ledger
 row + commits; cite this doc as the design-history source.
 
 **Verification-checkpoint** — one game launch confirms cap-NN-cpp-hook-
@@ -178,7 +178,7 @@ interface rows PASS; cap-35 still 5/5; no regression on existing hook
 rows.
 
 **Scope:** `docs/cpp/hook.md`, `docs/cpp/wrapper.md` (new),
-`docs/cpp/index.md`, `docs/outstanding-work/restructure-plan.md`,
+`docs/cpp/index.md`, `docs/outstanding-work/restructure/00-original-plan.md`,
 `test-plugins/README.md`.
 
 ---
@@ -205,7 +205,7 @@ specific path per `concurrency-git.md` rule 2 — never `-A`:
 - `.claude/rules/lua-callback-threading.md`
 - `CLAUDE.md`
 - `docs/design.md`
-- `docs/outstanding-work/restructure-plan.md` (Phase 3 + Phase 8.5
+- `docs/outstanding-work/restructure/00-original-plan.md` (Phase 3 + Phase 8.5
   prose; line 1234 references the sub-verb migration as Phase 8.5
   work, predating step 4's redesign — that mention is now stale)
 - `src/lua_lifecycle.h`

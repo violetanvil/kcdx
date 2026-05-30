@@ -181,7 +181,7 @@ verification — the run must demonstrably hit the path that crashed.
 kcdx.dll force-loads WHGame.dll and resolves every `lua_*` from WHGame's compiled
 copy via the FIX A shim, dropping kcdx's static-linked Lua entirely. One compiled
 Lua body, one sentinel set → the dual-Lua sentinel hazard (both directions) dies
-by construction. `restructure-plan.md` §Phase 11 / 11d names this exact mechanism
+by construction. `restructure/00-original-plan.md` §Phase 11 / 11d names this exact mechanism
 (line 1955: "kcdx has NO compiled Lua of its own… One body, one sentinel set,
 hazard impossible"). Phase 11 is blocked on the FIX A symbol harvest and runs
 after Phases 1–10. **CAP-66-save-load-survives must be re-run as part of Phase

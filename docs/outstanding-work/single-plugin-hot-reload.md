@@ -1,6 +1,6 @@
 # Single-plugin hot reload (`kcdx_reload_plugin <name>`)
 
-**Status:** out-of-scope for the v0.2 restructure; tracked here per [restructure-plan.md "Out of scope"](restructure-plan.md). Revisit when authors actively ask for it or kcdx ships beyond ~50 active plugin authors where iteration friction is felt across the community.
+**Status:** out-of-scope for the v0.2 restructure; tracked here per [restructure/00-original-plan.md "Out of scope"](restructure/00-original-plan.md). Revisit when authors actively ask for it or kcdx ships beyond ~50 active plugin authors where iteration friction is felt across the community.
 
 ## Goal
 
@@ -39,6 +39,6 @@ Likely shape (subject to design when revisited):
 
 ## Related
 
-- [restructure-plan.md](restructure-plan.md) §"Out of scope" — where this is referenced
+- [restructure/00-original-plan.md](restructure/00-original-plan.md) §"Out of scope" — where this is referenced
 - [.claude/rules/hook-engine.md](../../.claude/rules/hook-engine.md) — chained-hook removal semantics this feature depends on
 - [src/hook_chain.cpp](../../src/hook_chain.cpp) — the existing chain mediator that would need an unhook path

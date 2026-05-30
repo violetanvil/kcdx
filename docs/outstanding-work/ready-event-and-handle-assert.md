@@ -32,7 +32,7 @@ When any of these is needed:
 ## Design
 
 The restructure plan already specifies the surface
-(`docs/outstanding-work/restructure-plan.md` §"kcdx.on ... ready"): ONE
+(`docs/outstanding-work/restructure/00-original-plan.md` §"kcdx.on ... ready"): ONE
 event name, `"ready"`, routed per-plugin by zone. After `ApplyZone(zone)`
 installs that zone's entries, the engine fires `"ready"` to every plugin
 in that zone whose `plugin.lua` registered `kcdx.on("ready", fn)`. At
@@ -62,7 +62,7 @@ that point every handle the plugin created has a final `:applied()` /
 
 ## Related
 
-- `docs/outstanding-work/restructure-plan.md` — `kcdx.on` / "ready"
+- `docs/outstanding-work/restructure/00-original-plan.md` — `kcdx.on` / "ready"
   event spec.
 - `src/lua_registry.cpp` — `H_wait_applied` stub; the `"ready"` routing
   hooks in here.

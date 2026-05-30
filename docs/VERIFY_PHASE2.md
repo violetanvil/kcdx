@@ -2,7 +2,7 @@
 
 > **ARCHIVED (as-built note, 2026-05-22) — superseded by the
 > `/verification-checkpoint` skill + the restructure phases in
-> [`outstanding-work/restructure-plan.md`](outstanding-work/restructure-plan.md).**
+> [`outstanding-work/restructure/`](outstanding-work/restructure/README.md).**
 > This is a v0.1-phase-numbering manual-verification checklist (the
 > v0.1 "Phase 2 = plugin loader" numbering, NOT the restructure's
 > Phase 2). It is kept as a historical record of how the v0.1 plugin

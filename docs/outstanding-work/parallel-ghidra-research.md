@@ -188,7 +188,7 @@ handles absent gracefully). This is AP10 discipline applied to the overlay.
 
 ### 4d. SQLite schema delta
 
-The schema in [`restructure-plan.md`](restructure-plan.md) Phase 9.1 (functions +
+The schema in [`restructure/00-original-plan.md`](restructure/00-original-plan.md) Phase 9.1 (functions +
 statements + applicable_ops + behaviors + meta) is sound and mostly unchanged.
 The rework ADDS:
 
@@ -269,7 +269,7 @@ framing seemed correct at the time).
 The import (§8 step 3b, `data/refdata-extractor/python/import_to_sqlite.py`)
 produces **TWO** SQLite DBs from one full dump, NOT one. This split + the sizing
 below were decided against MEASURED full-binary numbers (the earlier ~150 KB /
-~7 MB estimates in `restructure-plan.md` §9.1 / §9.3 were written before the dump
+~7 MB estimates in `restructure/00-original-plan.md` §9.1 / §9.3 were written before the dump
 existed and are wrong at full scale — see the corrections below).
 
 **USER DB — `reference.sqlite`, ships in every kcdx release (~48 MB on disk /
@@ -279,7 +279,7 @@ existed and are wrong at full scale — see the corrections below).
   **survival check** (`functions.content_hash`), and (b) the **marshalling ABI a
   callback hook needs at install time** (`functions.signature` — confirmed
   load-bearing: a `kcdx.hook` a user's plugin installs needs the signature to
-  marshal args; compiled C++ has no runtime-queryable ABI, `restructure-plan.md`
+  marshal args; compiled C++ has no runtime-queryable ABI, `restructure/00-original-plan.md`
   §9.3 "The signature is the one irreducible thing"). `signatures`/`caller_reg_args`
   are the abi_walker floor (§4e). Dropping `signatures` would break callback-hook
   plugins for end users — so it MUST ship.
@@ -316,10 +316,10 @@ launch-perf one — which is why chasing it smaller (e.g. dropping the 157K-row
 **Delivery is seamless — no decompression code.** The ~48 MB `reference.sqlite`
 ships UNCOMPRESSED inside the release zip (the zip's deflate gives the ~22 MB
 download for free); the engine opens the plain `.sqlite` directly. This honors
-`restructure-plan.md` §9.1 "No CSV, no diff chain, no install-time assembly step"
+`restructure/00-original-plan.md` §9.1 "No CSV, no diff chain, no install-time assembly step"
 — do NOT add an engine-side decompress step.
 
-**Corrections to `restructure-plan.md` §9.1 / §9.3** (stale pre-dump estimates):
+**Corrections to `restructure/00-original-plan.md` §9.1 / §9.3** (stale pre-dump estimates):
 - "~150 KB" is the SQLite *amalgamation* (the vendored library), NOT the DB — the
   user DB is ~48 MB, the dev DB ~1.13 GB.
 - "~7 MB resident, ~200-300 ms one-time" (§9.3, the EAGER `kcdx.functions.*`
@@ -472,7 +472,7 @@ In dependency order. Each routes to the skill that gives it the right discipline
 | L1 | **Loc-manager RE** — locate `CLocalizedStringsManager`, getters, int-ID = vector index. | `/research-disassembly` | no | **DONE** (`LOC-MANAGER-FINDINGS.md`) |
 | L2 | **Build the loc runtime-dump probe** — hook the by-ID getters / capture manager-`this`, walk the key↔id table, emit `caller↔id↔key` for `loc_gameplay`; + `loc_content` text table. Step 1 = minimal hook-fires/ABI probe (§6). | `/feature` | no (build); **yes** (run) | pending |
 | L3 | **Run the loc dump** (a play session) → integrate edges into `loc_gameplay` feeding `find{text=}`. | launch + import | **yes** | pending |
-| 7 | **Engine-side** Phase 9.1-9.4 (SQLite load, `hash_at`, `kcdx.find`, console cmds) consume the data — per `restructure-plan.md`. | `/feature` per phase | per phase | future |
+| 7 | **Engine-side** Phase 9.1-9.4 (SQLite load, `hash_at`, `kcdx.find`, console cmds) consume the data — per `restructure/00-original-plan.md`. | `/feature` per phase | per phase | future |
 
 Compute-sizing (step 1) gates step 2's scope: it confirms whether full-binary
 extraction is a feasible batch job vs needing a bounded subset. Per
@@ -1203,7 +1203,7 @@ crash everything; it just doesn't work.
 
 **LOAD-BEARING ENGINE WORK (not yet built):** the recovery/rollback machinery
 default-ON safety REQUIRES is NOT in place today. Tracked as a new outstanding
-item in `restructure-plan.md` — see "Recovery + rollback for Track-2 plugins on
+item in `restructure/00-original-plan.md` — see "Recovery + rollback for Track-2 plugins on
 undeclared versions" there. **Default-ON shipping waits on that work.**
 
 #### 11.8.4 What changes in the schema, given the streamline
@@ -1404,7 +1404,7 @@ including the four C_ModManager init-cycle helpers added 2026-05-27.
 ## Related
 
 - [`_research/parallel-ghidra-research/inventory/ENUMERATION-FINDINGS.md`](../../_research/parallel-ghidra-research/inventory/ENUMERATION-FINDINGS.md) — the research log + reproduction recipes + raw numbers this plan rests on.
-- [`restructure-plan.md`](restructure-plan.md) — Phase 9.1-9.6; the engine work that consumes this data. Schema at its Phase 9.1.
+- [`restructure/00-original-plan.md`](restructure/00-original-plan.md) — Phase 9.1-9.6; the engine work that consumes this data. Schema at its Phase 9.1.
 - [`data/seeds/policy.md`](../../data/seeds/policy.md) — naming + ID convention the curated overlay inherits.
 - [`.claude/rules/reverse-engineering.md`](../../.claude/rules/reverse-engineering.md) — the RE methodology + reuse ladder (the loc-manager + abi_walker steps follow it).
 - [`.claude/rules/cornerstones.md`](../../.claude/rules/cornerstones.md) — the disassembler test, satisfied here by discovery.

@@ -17,7 +17,7 @@ the BugSplat colon-filename fix (§6), which needs to hook
 `BugSplat64.dll!MiniDmpSender::MiniDmpSender` at DllMain time.
 
 **Why deferred (not a blocker we hit — a sequencing decision):** the restructure
-plan (`restructure-plan.md:166,98`) designs `kcdx.hook` as `requireZone=After`
+plan (`restructure/00-original-plan.md:166,98`) designs `kcdx.hook` as `requireZone=After`
 for phases 1-10 and `Either` from Phase 11, *because* before_game Lua hooks need
 the Lua VM up in DllMain, which needs **FIX A** (`fix-a-drop-static-lua.md` —
 drop static-linked vendored Lua, route `lua_*` through WHGame.dll's symbols so
@@ -227,6 +227,6 @@ before_game-plugin sweep must account for it).
 - `docs/known-issues/BugSplat dmp files don't reach disk for AV crashes.md` — the
   full PROBE R/S/T/BG1 trail + verified ABI + the 2026-05-26 reframe.
 - `fix-a-drop-static-lua.md` — the Phase 11 dependency the Lua tier needs.
-- `restructure-plan.md:159-176` (Capability gating) + `:96-98` (zone declaration,
+- `restructure/00-original-plan.md:159-176` (Capability gating) + `:96-98` (zone declaration,
   Lua-before_game Phase 11 constraint) + `:166` (`kcdx.hook` After→Either).
 - `src/probes/bugsplat_ctor_probe.cpp` — the proven install machinery to generalize.

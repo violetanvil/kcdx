@@ -97,7 +97,7 @@ The shape — settled at the design step when the trigger fires:
 
 ## Why deferred (the audit's wording)
 
-From the 2026-05-28 wrapper-improvements audit (`restructure-plan.md`
+From the 2026-05-28 wrapper-improvements audit (`restructure/00-original-plan.md`
 Phase 12 background):
 
 > **Reads-clarity weakest case:** console. The raw form is already a
@@ -114,7 +114,7 @@ might be a fair argument to ship the wrapper anyway.
 
 ## Related
 
-- [`restructure-plan.md`](restructure-plan.md) Phase 12 — the empowered
+- [`restructure/00-original-plan.md`](restructure/00-original-plan.md) Phase 12 — the empowered
   wrapper sweep that this entry was deliberately deferred from.
 - [`include/kcdx/Kcdx.h:22-44`](../../include/kcdx/Kcdx.h#L22-L44) — the
   3-floor model that anchors the docs flip.
