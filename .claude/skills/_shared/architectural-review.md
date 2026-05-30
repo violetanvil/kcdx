@@ -8,7 +8,7 @@ Framework only — calling skill defines caller, audience, and Step 6 output. Al
 
 Verify load-bearing claims (claims the agent uses to justify their action) against code or primary source. No inference. Background framing is not load-bearing.
 
-**A comment is a claim, not evidence — whatever it asserts.** Code comments, matrix Notes, and `docs/known-issues/` lines record what the author *believed*; they carry the author's confidence, not proof. Verify the assertion against the thing it describes — the running system for runtime behavior (an existing log, a probe, or `results-driven.md` §"theory-INDEPENDENT"; e.g. "by InputLoaded, X has been called thousands of times" / "the observer fires here"), the function body / seed.csv row / `kEntries[]` / Ghidra for a static fact (arg count, offset, vtable slot, a held-lock or control-flow invariant). Never load-bearing because the source says it. Two in-repo texts repeating the same claim is one source cited twice, not corroboration.
+**A comment is a claim, not evidence — whatever it asserts.** Code comments, matrix Notes, and `docs/known-issues/` lines record what the author *believed*; they carry the author's confidence, not proof. Verify the assertion against the thing it describes — the running system for runtime behavior (an existing log, a probe, or `results-driven.md` §"theory-INDEPENDENT"; e.g. "by InputLoaded, X has been called thousands of times" / "the observer fires here"), the function body / seed CSV row under `data/seeds/` / Ghidra for a static fact (arg count, offset, vtable slot, a held-lock or control-flow invariant). Never load-bearing because the source says it. Two in-repo texts repeating the same claim is one source cited twice, not corroboration.
 
 ---
 
@@ -33,7 +33,7 @@ A question **about the code** — what a path does, where a value resolves, whet
 
 Most claims resolve to file:line. Counts → grep + count. Behavior → read the body. "Build is green" → run `pwsh ./build.ps1`, confirm exit 0 + `build/Release/kcdx.exe` + `kcdx.dll` + `kcdx-watchdog.exe` produced.
 
-**Categorical: hook-signature / ABI / wire-format / vtable-index / serialization claims.** Read the function body (or the seed.csv / `kEntries[]` row, or the Ghidra evidence) in-repo BEFORE issuing direction or surfacing options. Evidence unavailable this session → flag the gap. Never reason from rule-knowledge or training-data recall on these — see `.claude/rules/reverse-engineering.md` §"ABI extraction".
+**Categorical: hook-signature / ABI / wire-format / vtable-index / serialization claims.** Read the function body (or the seed CSV row under `data/seeds/`, or the Ghidra evidence) in-repo BEFORE issuing direction or surfacing options. Evidence unavailable this session → flag the gap. Never reason from rule-knowledge or training-data recall on these — see `.claude/rules/reverse-engineering.md` §"ABI extraction".
 
 ### 2. External sources only when the project doesn't carry the answer
 

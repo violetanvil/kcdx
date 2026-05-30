@@ -37,7 +37,7 @@ Genuinely not checkable yet (no API path, no observable signal, no fixture)? Sta
 
 3. **One variable per probe.** Changing N things → the outcome map must decompose into N attributable sub-outcomes. Can't decompose → split it on paper first.
 
-4. **Static evidence before live probes.** `seed.csv`/`kEntries[]`, prior `_research/` dumps, predecessor sigs, Ghidra, an existing log, or a read-only in-process probe answers it → that is the test. Reach for a live launch only for runtime behavior no static source settles.
+4. **Static evidence before live probes.** The seed CSVs under `data/seeds/` (the reference-DB source), prior `_research/` dumps, predecessor sigs, Ghidra, an existing log, or a read-only in-process probe answers it → that is the test. Reach for a live launch only for runtime behavior no static source settles.
 
 5. **Act on the result, not past it.** Do what the answer says; do not re-theorize beyond it. A new question = a new probe with its own map.
 

@@ -44,14 +44,15 @@ try {
     $old_filtered = & $filter_approved $old_content
 
     # ── AP1 — raw RVA where an Address Library ID belongs ─────────────────────
-    # Shape: a base/module pointer plus a 6+ hex-digit literal offset. address_*
-    # files legitimately carry RVAs (the seed/kEntries themselves) — skip them.
-    if ($path -notmatch 'address_library' -and $path -notmatch '[\\/]rom_borrowed[\\/]') {
+    # Shape: a base/module pointer plus a 6+ hex-digit literal offset. The
+    # Address Library source legitimately carries RVAs — the seed CSVs under
+    # data/seeds/ and the address_library translation unit — skip those.
+    if ($path -notmatch 'address_library' -and $path -notmatch '[\\/]seeds[\\/]' -and $path -notmatch '[\\/]rom_borrowed[\\/]') {
         $rva_re = '\b\w+\s*\+\s*0x[0-9a-fA-F]{6,}\b'
         $new_count = ([regex]::Matches($new_filtered, $rva_re)).Count
         $old_count = ([regex]::Matches($old_filtered, $rva_re)).Count
         if ($new_count -gt $old_count) {
-            [Console]::Error.WriteLine("Anti-pattern WARN (AP1 raw RVA): $path adds a hardcoded base+offset literal. RVAs shift per KCD2 update — resolve by Address Library ID instead (seed.csv + kEntries[], .claude/rules/address-library.md). Bypass: '// approved: <reason>' on the line after user sign-off.")
+            [Console]::Error.WriteLine("Anti-pattern WARN (AP1 raw RVA): $path adds a hardcoded base+offset literal. RVAs shift per KCD2 update — resolve by Address Library ID instead (add a row to the seed CSVs under data/seeds/; the reference DB regenerates from them — .claude/rules/address-library.md). Bypass: '// approved: <reason>' on the line after user sign-off.")
         }
     }
 

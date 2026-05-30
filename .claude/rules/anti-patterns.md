@@ -29,7 +29,7 @@ Each AP below is a **detection signature** — the forbidden code shape a review
 auto fn = reinterpret_cast<UpdateFn>(base + 0x180ABCDEF);  // hardcoded offset
 ```
 
-**Fix:** add a row to the seed CSV + `src/address_library.cpp::kEntries[]`, resolve by ID. IDs are append-only — never renumber. Resolution order: `address-library.md`.
+**Fix:** add a row to the seed CSVs under `data/seeds/` (the DB regenerates from them — no in-source table to sync), resolve by ID. IDs are append-only — never renumber. Resolution order: `address-library.md`.
 
 ---
 

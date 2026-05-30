@@ -26,7 +26,7 @@ A diff that REMOVES any of:
 - A C++ interface / interface method (`kcdx*Interface`), or an exported entry
   point (`extern "C"`, `kcdxPlugin_Load`).
 - A TOML table or key (a `[[...]]` table, a `[section]`, a manifest key).
-- A public parser / schema (`ParseOne*`, an Address Library `kEntries[]` row's
+- A public parser / schema (`ParseOne*`, an Address Library seed row's
   semantics, a console command, a save/cosave field).
 - Any engine behaviour an author or user could previously observe.
 
@@ -69,5 +69,5 @@ match.
   it is genuinely historical by location/framing.
 
 Related: `docs-discipline.md` (the additive direction), `toml-schema.md`
-(manifest keys), `address-library.md` (`kEntries[]` is append-only — deletion
+(manifest keys), `address-library.md` (seed rows are append-only — deletion
 applies to a row's documented semantics, not its ID).

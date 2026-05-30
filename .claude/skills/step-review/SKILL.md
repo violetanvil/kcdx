@@ -35,7 +35,7 @@ Read `.claude/skills/_shared/architectural-review.md` cover-to-cover before prod
 ### 1. Substantive correctness
 
 - Does the code do what its comments claim? Read function bodies for any non-trivial change.
-- Are `// SOURCE:` citations valid? An ABI/offset/vtable claim must trace to an Address Library ID (check the seed.csv / `kEntries[]` row), abi_walker output, or Ghidra evidence — never a recalled canonical CryEngine layout. Spot-check.
+- Are `// SOURCE:` citations valid? An ABI/offset/vtable claim must trace to an Address Library ID (check the seed CSV row under `data/seeds/`), abi_walker output, or Ghidra evidence — never a recalled canonical CryEngine layout. Spot-check.
 - Does the diff include the test plugin (or sub-test) the per-step test bar named? Read the plugin: does it actually exercise the new behavior and call `ReportTestResult`/`kcdx.test.report`, or just declare itself?
 - Numeric/count claims in the subagent's report — compare to the actual diff.
 

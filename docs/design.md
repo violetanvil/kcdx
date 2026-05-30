@@ -1043,10 +1043,9 @@ during the same conflict-engine pre-flight that runs pattern-based
 locators, so address-id-based entries participate in the unified
 priority + first-wins matrix.
 
-Authors add IDs by editing both the canonical seed files (`data/seeds/address_names_seed.csv` + `data/seeds/address_versions_seed.csv`)
-and the in-source mirror at `src/address_library.cpp::kEntries[]`
-(a code-gen step in a later phase will collapse these into a single
-source of truth).
+Authors add IDs by editing the canonical seed files (`data/seeds/address_names_seed.csv` + `data/seeds/address_versions_seed.csv`);
+the reference DB (`data/reference.sqlite`) regenerates from those seeds,
+which are the single source of truth.
 
 ---
 

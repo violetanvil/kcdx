@@ -300,7 +300,7 @@ what the live result is.
 | Test plugin | DEFERRED — covered indirectly by the [[command]] surface (CAP-13 exercises ids 1009 + 2000 + 2001 transitively). A dedicated CAP-14 plugin would only add a `ResolveAddress(1000)` sanity check; not blocking. |
 | Auto-pass check | None as of v0.1; relies on CAP-13's transitive verification. |
 | Last result | LIVE (transitively, via CAP-13). |
-| Notes | The SKSE-equivalent that lets plugins survive KCD2 patches without re-doing AOB scans. Seed contains 12 verified rows (1000–1011 + 2000–2003) and 6 vtable-index constants (3000–3005) reserved for future `[[vtable_hook]]`. Authors add new ids by editing the CSV + the in-source mirror at `src/address_library.cpp::kEntries[]`. |
+| Notes | The SKSE-equivalent that lets plugins survive KCD2 patches without re-doing AOB scans. Seed contains 12 verified rows (1000–1011 + 2000–2003) and 6 vtable-index constants (3000–3005) reserved for future `[[vtable_hook]]`. Authors add new ids by editing the seed CSVs under `data/seeds/`; the reference DB regenerates from them. |
 
 ## CAP-15: `inlinePatchesToml` (C++ plugin ships patches inline)
 

@@ -206,7 +206,7 @@ Write via a Bash heredoc (single-quoted `'EOF'` to prevent `$` expansion in the 
 ### 1. Substantive correctness
 
 - Does the code do what its comments claim? Read function bodies.
-- Are `// SOURCE:` citations valid? An ABI/offset/vtable claim must trace to an Address Library ID (check the seed.csv / `kEntries[]` row), abi_walker output, or Ghidra evidence — not a recalled canonical layout. Spot-check.
+- Are `// SOURCE:` citations valid? An ABI/offset/vtable claim must trace to an Address Library ID (check the seed CSV row under `data/seeds/`), abi_walker output, or Ghidra evidence — not a recalled canonical layout. Spot-check.
 - Does the test plugin actually exercise the behavior (calls `ReportTestResult`/`kcdx.test.report` on a real check), not just declare itself?
 - Numeric claims in the agent's commit message — compare to the actual diff.
 
