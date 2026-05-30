@@ -1,0 +1,197 @@
+# DLL: WHGame.dll  image_base=0x180000000
+# .text rva=0x1000 size=0x3a01000
+# .rdata rva=0x3a02000 size=0xecf000
+==============================================================================
+
+## CALLSITE ids 5,6,7,8 — AOB + .text-uniqueness
+
+--- id 5: outfit_swap_callsite_aob (16-byte canonical)  RVA=0x56174c
+    bytes@RVA: 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0 E8 D7 A9 3B 00 48 8D 15 28 70 52 03 48 8B 88 28
+      0x18056174c: add rcx, 0xb60
+      0x180561753: mov rax, qword ptr [rcx]
+      0x180561756: call qword ptr [rax + 8]
+      0x180561759: mov r14b, al
+      0x18056175c: call 0x18091c138
+      0x180561761: lea rdx, [rip + 0x3527028]
+
+--- id 6: outfit_swap_callsite_context (5's site -7, 23 bytes)  RVA=0x561745
+    bytes@RVA: 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0 E8 D7 A9 3B 00 48 8D 15 28
+      0x180561745: mov rcx, qword ptr [rax + 0x90]
+      0x18056174c: add rcx, 0xb60
+      0x180561753: mov rax, qword ptr [rcx]
+      0x180561756: call qword ptr [rax + 8]
+      0x180561759: mov r14b, al
+      0x18056175c: call 0x18091c138
+
+--- id 7: IsInCombat_callsite_26b (cmp al,2)  RVA=0x5605bc
+    bytes@RVA: 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02 0F 94 C0 48 83 C4
+      0x1805605bc: mov rax, qword ptr [rcx + 8]
+      0x1805605c0: mov rcx, qword ptr [rax + 0x90]
+      0x1805605c7: add rcx, 0xb60
+      0x1805605ce: mov rax, qword ptr [rcx]
+      0x1805605d1: call qword ptr [rax + 8]
+      0x1805605d4: cmp al, 2
+      0x1805605d6: sete al
+    prose AOB (26b): 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02
+    matches stored RVA: True   .text hits: 1 (UNIQUE)
+        hit @ RVA 0x5605bc
+
+--- id 8: IsInCombat_callsite_with_stack_frame (cmp al,1, 30 bytes)  RVA=0x566040
+    bytes@RVA: 48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01 0F 94
+      0x180566040: sub rsp, 0x28
+      0x180566044: mov rax, qword ptr [rcx + 8]
+      0x180566048: mov rcx, qword ptr [rax + 0x90]
+      0x18056604f: add rcx, 0xb60
+      0x180566056: mov rax, qword ptr [rcx]
+      0x180566059: call qword ptr [rax + 8]
+      0x18056605c: cmp al, 1
+    prose AOB (30b): 48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01
+    matches stored RVA: True   .text hits: 1 (UNIQUE)
+        hit @ RVA 0x566040
+
+--- id 5/6 derivation: shortest unique prefix from the site bytes
+    id 5 RVA=0x56174c: unique at 14 bytes (no wildcards):
+      48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44
+    id 6 RVA=0x561745: unique at 21 bytes (no wildcards):
+      48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44
+
+
+## STRING_ANCHOR id 12 — 'exec autoexec.cfg'
+
+    present in .rdata: True
+    rva=0x4095e58 va=0x184095e58
+    literal bytes (with NUL): 65 78 65 63 20 61 75 74 6F 65 78 65 63 2E 63 66 67 00
+    ascii: 'exec autoexec.cfg'
+    occurrences in .rdata: 1
+    .text LEA(rip) xrefs to the string: 1 (UNIQUE)
+        lea rdx, [rip->str] @ RVA 0x86adb0
+
+## INSTRUCTION_ANCHOR id 9 — gEnv_pConsole_mov, resolver chain
+
+    step1: string anchor (id 12) at rva 0x4095e58
+    step2: `48 8D 15` LEA->string xrefs: 1
+      LEA @ RVA 0x86adb0  preceding7=4c8b9218010000
+      kind=V1.4+ -> pConsole MOV @ RVA 0x86ad99 (matches seed id9 RVA 0x86AD99: True)
+      MOV bytes: 48 8B 0D 08 0B 0C 04
+        decoded: mov rcx, qword ptr [rip + 0x40c0b08]
+      expected shape '48 8B 0D ?? ?? ?? ??' (mov rcx,[rip]): True
+      -> gEnv_pConsole ptr slot rva=0x492b8a8 (seed id10 = 0x0492B8A8: True)
+      -> gEnv = pConsole - 0xA8 = 0x492b800 (seed id11 = 0x0492B800: True)
+
+## DATA_SLOT ids 10,11,132 — derivation rules
+
+    id 10 gEnv_pConsole: follow disp32 from instruction_anchor id 9 (MOV).
+      computed above; seed RVA 0x0492B8A8
+    id 11 gEnv: id 10 RVA - 0xA8 = 0x492b800 (seed 0x0492B800: True)
+    id 132 gEnv_pCryPak: id 11 (gEnv) RVA + 0x50 = 0x492b850 (seed 0x0492B850: True)
+
+## VTABLE_BASE ids 119,138,139,140 — contiguous .text-ptr slot count
+
+--- id 138 ImodVtable_primary  RVA=0x46aaf00 (VA 0x1846aaf00)
+    contiguous .text-pointing slots: 3
+      slot[0] = 0x181a719e0  -> .text RVA 0x1a719e0
+      slot[1] = 0x181a72b60  -> .text RVA 0x1a72b60
+      slot[2] = 0x181a72b70  -> .text RVA 0x1a72b70
+      slot[3] = 0x184186670   <- NOT .text (table end)
+--- id 139 ImodVtable_subobject  RVA=0x46aaed8 (VA 0x1846aaed8)
+    contiguous .text-pointing slots: 4
+      slot[0] = 0x182434e9c  -> .text RVA 0x2434e9c
+      slot[1] = 0x1819def2c  -> .text RVA 0x19def2c
+      slot[2] = 0x1805f6000  -> .text RVA 0x5f6000
+      slot[3] = 0x182442a00  -> .text RVA 0x2442a00
+      slot[4] = 0x1841865f8   <- NOT .text (table end)
+--- id 140 C_ModManager_vtable  RVA=0x3aa2e60 (VA 0x183aa2e60)
+    contiguous .text-pointing slots: 18
+      slot[0] = 0x1806386e0  -> .text RVA 0x6386e0
+      slot[1] = 0x182435160  -> .text RVA 0x2435160
+      slot[2] = 0x1804d9ad8  -> .text RVA 0x4d9ad8
+      slot[3] = 0x1804d9058  -> .text RVA 0x4d9058
+      slot[4] = 0x18193da6c  -> .text RVA 0x193da6c
+      slot[5] = 0x1804d9b1c  -> .text RVA 0x4d9b1c
+      slot[6] = 0x1824352a0  -> .text RVA 0x24352a0
+      slot[7] = 0x18243e3f8  -> .text RVA 0x243e3f8
+      slot[8] = 0x18243e480  -> .text RVA 0x243e480
+      slot[9] = 0x18243e508  -> .text RVA 0x243e508
+      slot[10] = 0x182440598  -> .text RVA 0x2440598
+      slot[11] = 0x1818c98c8  -> .text RVA 0x18c98c8
+      slot[12] = 0x18243dec8  -> .text RVA 0x243dec8
+      slot[13] = 0x18243f21c  -> .text RVA 0x243f21c
+      slot[14] = 0x182440c18  -> .text RVA 0x2440c18
+      slot[15] = 0x18243de18  -> .text RVA 0x243de18
+      slot[16] = 0x18243e794  -> .text RVA 0x243e794
+      slot[17] = 0x181a72b30  -> .text RVA 0x1a72b30
+      slot[18] = 0x6d726f6674616c50   <- NOT .text (table end)
+--- id 119 CScriptSystem_vtable (prose says 69 slots)  RVA=0x3b8af70 (VA 0x183b8af70)
+    contiguous .text-pointing slots: 69
+      slot[0] = 0x1839ad8f0  -> .text RVA 0x39ad8f0
+      slot[1] = 0x180a2d674  -> .text RVA 0xa2d674
+      slot[2] = 0x1839b0648  -> .text RVA 0x39b0648
+      slot[3] = 0x1839b05ec  -> .text RVA 0x39b05ec
+      slot[4] = 0x1839aeac0  -> .text RVA 0x39aeac0
+      slot[5] = 0x1804d2ecc  -> .text RVA 0x4d2ecc
+      slot[6] = 0x1804d46e4  -> .text RVA 0x4d46e4
+      slot[7] = 0x1839b0c8c  -> .text RVA 0x39b0c8c
+      slot[8] = 0x1839b0d5c  -> .text RVA 0x39b0d5c
+      slot[9] = 0x1839b0028  -> .text RVA 0x39b0028
+      slot[10] = 0x1839b0124  -> .text RVA 0x39b0124
+      slot[11] = 0x1839ae3a8  -> .text RVA 0x39ae3a8
+      slot[12] = 0x18071f724  -> .text RVA 0x71f724
+      slot[13] = 0x18071a204  -> .text RVA 0x71a204
+      slot[14] = 0x181509da8  -> .text RVA 0x1509da8
+      slot[15] = 0x180904fec  -> .text RVA 0x904fec
+      slot[16] = 0x1839adba0  -> .text RVA 0x39adba0
+      slot[17] = 0x1819dd4e0  -> .text RVA 0x19dd4e0
+      slot[18] = 0x1807197ac  -> .text RVA 0x7197ac
+      slot[19] = 0x18071a494  -> .text RVA 0x71a494
+      slot[20] = 0x180a2f18c  -> .text RVA 0xa2f18c
+      slot[21] = 0x1839ae4d8  -> .text RVA 0x39ae4d8
+      slot[22] = 0x1819b8168  -> .text RVA 0x19b8168
+      slot[23] = 0x1819a3a34  -> .text RVA 0x19a3a34
+      slot[24] = 0x1839aeb48  -> .text RVA 0x39aeb48
+      slot[25] = 0x1808eb6c8  -> .text RVA 0x8eb6c8
+      slot[26] = 0x1839adf58  -> .text RVA 0x39adf58
+      slot[27] = 0x1808eb714  -> .text RVA 0x8eb714
+      slot[28] = 0x18117d588  -> .text RVA 0x117d588
+      slot[29] = 0x1839b000c  -> .text RVA 0x39b000c
+      slot[30] = 0x18071f1d8  -> .text RVA 0x71f1d8
+      slot[31] = 0x180a2d80c  -> .text RVA 0xa2d80c
+      slot[32] = 0x180adb3c4  -> .text RVA 0xadb3c4
+      slot[33] = 0x180a2d608  -> .text RVA 0xa2d608
+      slot[34] = 0x1839adfe8  -> .text RVA 0x39adfe8
+      slot[35] = 0x180caea08  -> .text RVA 0xcaea08
+      slot[36] = 0x180a2d7c4  -> .text RVA 0xa2d7c4
+      slot[37] = 0x1803b70f0  -> .text RVA 0x3b70f0
+      slot[38] = 0x1803a58f4  -> .text RVA 0x3a58f4
+      slot[39] = 0x1839b06a4  -> .text RVA 0x39b06a4
+      slot[40] = 0x1839ada8c  -> .text RVA 0x39ada8c
+      slot[41] = 0x1839aec44  -> .text RVA 0x39aec44
+      slot[42] = 0x1839ae960  -> .text RVA 0x39ae960
+      slot[43] = 0x1839ae360  -> .text RVA 0x39ae360
+      slot[44] = 0x1803b70f0  -> .text RVA 0x3b70f0
+      slot[45] = 0x1803b70f0  -> .text RVA 0x3b70f0
+      slot[46] = 0x1803b70f0  -> .text RVA 0x3b70f0
+      slot[47] = 0x1803b70f0  -> .text RVA 0x3b70f0
+      slot[48] = 0x181a721b0  -> .text RVA 0x1a721b0
+      slot[49] = 0x1839aeddc  -> .text RVA 0x39aeddc
+      slot[50] = 0x1803b70f0  -> .text RVA 0x3b70f0
+      slot[51] = 0x1839afdb8  -> .text RVA 0x39afdb8
+      slot[52] = 0x1819b5188  -> .text RVA 0x19b5188
+      slot[53] = 0x1819b5180  -> .text RVA 0x19b5180
+      slot[54] = 0x1839b05cc  -> .text RVA 0x39b05cc
+      slot[55] = 0x180a66920  -> .text RVA 0xa66920
+      slot[56] = 0x181ab4120  -> .text RVA 0x1ab4120
+      slot[57] = 0x181ab4110  -> .text RVA 0x1ab4110
+      slot[58] = 0x1814f5738  -> .text RVA 0x14f5738
+      slot[59] = 0x1839afa90  -> .text RVA 0x39afa90
+      slot[60] = 0x1839adc40  -> .text RVA 0x39adc40
+      slot[61] = 0x1839add74  -> .text RVA 0x39add74
+      slot[62] = 0x18071e174  -> .text RVA 0x71e174
+      slot[63] = 0x18071cbe8  -> .text RVA 0x71cbe8
+      slot[64] = 0x1839b0b94  -> .text RVA 0x39b0b94
+      slot[65] = 0x1839b0708  -> .text RVA 0x39b0708
+      slot[66] = 0x1839afb34  -> .text RVA 0x39afb34
+      slot[67] = 0x18066cf70  -> .text RVA 0x66cf70
+      slot[68] = 0x1839aebac  -> .text RVA 0x39aebac
+      slot[69] = 0x1840bb8d0   <- NOT .text (table end)
+
+    NOTE id 138/139 are in a writable data section (relocated import thunks), not .rdata — handled by the off-range message above if so.
