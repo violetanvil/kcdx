@@ -18,7 +18,18 @@ Applies to BOTH "find an address" AND "find an ABI fact" (return type / arg coun
 2. **Check prior `_research/<phase>/` disassembly dumps** — `phase6-save-load/`, `phase6b-recon/`, `phase7-recon/`, `phase8-fix-a/`, `cap03-recon/` hold `_abi_<address>.txt` dumps + recon docs + the worker scripts that made them. Grep for the address/name BEFORE re-disassembling — the IConsole/save-load functions are likely already decompiled here.
 3. **Check predecessor sigs** in `_research/predecessor-sigs/` — `yobson1/kcd2lua` (KCD2 1.5; `lua_pcall`, `update`, `luaL_loadfile`) and `muyuanjin/kcd2db` (gEnv resolver via `"exec autoexec.cfg"` string anchor, 12+ verified vtable offsets). For any sig they cover, work is already done.
 4. **Check cached Warhorse wiki** at `_research/warhorse_wiki/`. Wiki is a JavaScript SPA — fetch articles via YouTrack REST API, never WebFetch the article URL.
-5. **Only then, fresh disassembly** for facts none of the above cover — the pre-analyzed Ghidra project (below) or the `pefile + capstone` scripts; for ABI/arg facts the abi_walker, never prologue-shape guessing. Drop the new script + raw output under `_research/<phase>/` so the next agent finds it at tier 2.
+5. **Only then, fresh disassembly** for facts none of the above cover — the pre-analyzed Ghidra project (below) or the `pefile + capstone` scripts; for ABI/arg facts the abi_walker, never prologue-shape guessing. Drop the new script + raw output into one investigation dir per the layout below so the next agent finds it at tier 2.
+
+## `_research/` layout — one investigation, one dir
+
+Every fresh-disassembly investigation that produces artifacts lands in ONE new directory. Applies to all callers that write here — `/research-disassembly`, `/debug` probe recon, `/feature` recon — not just one skill.
+
+- **Dir name: `<task-slug>-recon/`** — a short kebab-case slug for the investigation (`init-cycle-recon`, `pak-resolver-recon`, `console-print-recon`). No phase number; phases are no longer the tracking unit. Existing `phaseN-<slug>/` dirs are historical — leave them, do not rename or backfill.
+- **One investigation = one dir.** Never leave artifacts loose at `_research/` root; never mix a new investigation's files into an unrelated existing dir. Reuse a dir only to extend the SAME investigation.
+- **In-dir layout:**
+  - `FINDINGS.md` — one per dir, summarizing the verified facts + provenance (the tier-2 entry point the next agent reads first).
+  - `<verb>_<noun>.py` — worker scripts (`find_genv.py`, `dump_wrapper.py`).
+  - `_abi_<addr>.txt` and other `_`-prefixed files — raw generated dumps (leading underscore = machine-generated, not hand-authored).
 
 ## Ghidra
 

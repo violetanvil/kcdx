@@ -60,7 +60,7 @@ For each fact requested:
 - **The fact** — stated as the kcdx signature-DSL primitive where applicable (`void` / `bool` / `i32` / `ptr` / a full `ret (args)` shape per `hook_signature.h`), or "ambiguous — leave unverified."
 - **The tier it came from** — "already in seed row 2003 prose," "captured in `_research/phase7-recon/_abi_<addr>.txt`," or "fresh Ghidra, script `<name>.java`."
 - **The evidence** — the decompiled return-path snippet / the abi_walker output / whether `eax` is set / whether callers consume the return. Enough that it can go into the seed row's notes as verified provenance (prose convention: a `-> <type>` arrow, like row 2003 `GetCVar ... -> ICVar*`).
-- **A new `_research/` artifact** if you ran a fresh disassembly — drop the script + its raw output under the relevant `_research/<phase>/` so the NEXT agent finds it at ladder tier 2 instead of re-disassembling.
+- **A new `_research/` artifact** if you ran a fresh disassembly — drop the script + its raw output into one `<task-slug>-recon/` dir per the `_research/` layout in `reverse-engineering.md` (one investigation = one dir; `FINDINGS.md` + `<verb>_<noun>.py` scripts + `_abi_<addr>.txt` dumps), so the NEXT agent finds it at ladder tier 2 instead of re-disassembling.
 
 ## 6. Handoff — verifying ≠ recording
 
@@ -68,4 +68,4 @@ This skill VERIFIES the fact and produces the provenance. Writing it into the `d
 
 ## 7. Close — milestone-commit the `_research/` artifact
 
-If a fresh disassembly produced a new `_research/<phase>/` script + output (per §5), that's a durable artifact regardless of whether the recording into the seed/kEntries has happened yet — the next agent finds it at ladder tier 2 instead of re-disassembling. Invoke `/commit` on the `_research/` files this turn produced before stopping, per CLAUDE.md "Commit at coherent milestones." Verified-fact-only turns (no new `_research/` files written — the fact came from existing prose or a prior dump) commit nothing from this skill; the recording commit is the caller's.
+If a fresh disassembly produced a new `<task-slug>-recon/` dir (per §5), that's a durable artifact regardless of whether the recording into the seed/kEntries has happened yet — the next agent finds it at ladder tier 2 instead of re-disassembling. Invoke `/commit` on the `_research/` files this turn produced before stopping, per CLAUDE.md "Commit at coherent milestones." Verified-fact-only turns (no new `_research/` files written — the fact came from existing prose or a prior dump) commit nothing from this skill; the recording commit is the caller's.
