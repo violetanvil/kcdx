@@ -1,0 +1,67 @@
+vtable-base candidates: 1
+
+=== IConsole vtable base @ RVA 0x03dce840 (VA 0x183dce840) section=.rdata ===
+  slot[ 0]  off=0x000  VA=0x182473984  RVA 0x02473984  sect=.text
+  slot[ 1]  off=0x008  VA=0x1803a58f4  RVA 0x003a58f4  sect=.text
+  slot[ 2]  off=0x010  VA=0x180b9bc4c  RVA 0x00b9bc4c  sect=.text
+  slot[ 3]  off=0x018  VA=0x180b9bb34  RVA 0x00b9bb34  sect=.text
+  slot[ 4]  off=0x020  VA=0x18247e3b4  RVA 0x0247e3b4  sect=.text
+  slot[ 5]  off=0x028  VA=0x180e369fc  RVA 0x00e369fc  sect=.text
+  slot[ 6]  off=0x030  VA=0x18247e398  RVA 0x0247e398  sect=.text
+  slot[ 7]  off=0x038  VA=0x1806003d8  RVA 0x006003d8  sect=.text
+  slot[ 8]  off=0x040  VA=0x180b9ade0  RVA 0x00b9ade0  sect=.text
+  slot[ 9]  off=0x048  VA=0x180b9ace8  RVA 0x00b9ace8  sect=.text
+  slot[10]  off=0x050  VA=0x18158ea04  RVA 0x0158ea04  sect=.text
+  slot[11]  off=0x058  VA=0x1809b82e0  RVA 0x009b82e0  sect=.text
+  slot[12]  off=0x060  VA=0x182474460  RVA 0x02474460  sect=.text
+  slot[13]  off=0x068  VA=0x18247ecd0  RVA 0x0247ecd0  sect=.text
+  slot[14]  off=0x070  VA=0x1808f0f28  RVA 0x008f0f28  sect=.text
+  slot[15]  off=0x078  VA=0x182476ebc  RVA 0x02476ebc  sect=.text
+  slot[16]  off=0x080  VA=0x180b97384  RVA 0x00b97384  sect=.text
+  slot[17]  off=0x088  VA=0x182482374  RVA 0x02482374  sect=.text
+  slot[18]  off=0x090  VA=0x181a736e0  RVA 0x01a736e0  sect=.text
+  slot[19]  off=0x098  VA=0x181a737e0  RVA 0x01a737e0  sect=.text
+  slot[20]  off=0x0a0  VA=0x1824823a4  RVA 0x024823a4  sect=.text
+  slot[21]  off=0x0a8  VA=0x182477ce0  RVA 0x02477ce0  sect=.text
+  slot[22]  off=0x0b0  VA=0x181a736f0  RVA 0x01a736f0  sect=.text
+  slot[23]  off=0x0b8  VA=0x1809df818  RVA 0x009df818  sect=.text  <-- KNOWN GetCVar
+  slot[24]  off=0x0c0  VA=0x181a72da0  RVA 0x01a72da0  sect=.text
+  slot[25]  off=0x0c8  VA=0x18066cf70  RVA 0x0066cf70  sect=.text
+  slot[26]  off=0x0d0  VA=0x1808dff08  RVA 0x008dff08  sect=.text
+  slot[27]  off=0x0d8  VA=0x18247c878  RVA 0x0247c878  sect=.text
+  slot[28]  off=0x0e0  VA=0x180863dd0  RVA 0x00863dd0  sect=.text
+  slot[29]  off=0x0e8  VA=0x1824754a4  RVA 0x024754a4  sect=.text
+  slot[30]  off=0x0f0  VA=0x18052f65c  RVA 0x0052f65c  sect=.text
+  slot[31]  off=0x0f8  VA=0x1809aec44  RVA 0x009aec44  sect=.text
+  slot[32]  off=0x100  VA=0x18100a3d4  RVA 0x0100a3d4  sect=.text  <-- KNOWN AddCommand(script)
+  slot[33]  off=0x108  VA=0x180b9a2b0  RVA 0x00b9a2b0  sect=.text  <-- KNOWN AddCommand(func)
+  slot[34]  off=0x110  VA=0x18100955c  RVA 0x0100955c  sect=.text  <-- KNOWN RemoveCommand
+  slot[35]  off=0x118  VA=0x1807a5818  RVA 0x007a5818  sect=.text  <-- KNOWN ExecuteString
+  slot[36]  off=0x120  VA=0x1824770b8  RVA 0x024770b8  sect=.text
+  slot[37]  off=0x128  VA=0x1808ebc98  RVA 0x008ebc98  sect=.text
+  slot[38]  off=0x130  VA=0x181a73720  RVA 0x01a73720  sect=.text
+  slot[39]  off=0x138  VA=0x180d914a0  RVA 0x00d914a0  sect=.text
+  slot[40]  off=0x140  VA=0x180d912d0  RVA 0x00d912d0  sect=.text
+  slot[41]  off=0x148  VA=0x182474ea8  RVA 0x02474ea8  sect=.text
+  slot[42]  off=0x150  VA=0x18247c914  RVA 0x0247c914  sect=.text
+  slot[43]  off=0x158  VA=0x18100a724  RVA 0x0100a724  sect=.text
+  slot[44]  off=0x160  VA=0x18100992c  RVA 0x0100992c  sect=.text
+  slot[45]  off=0x168  VA=0x180b98a24  RVA 0x00b98a24  sect=.text
+  slot[46]  off=0x170  VA=0x18247804c  RVA 0x0247804c  sect=.text
+  slot[47]  off=0x178  VA=0x18247ef1c  RVA 0x0247ef1c  sect=.text
+  slot[48]  off=0x180  VA=0x18052fd98  RVA 0x0052fd98  sect=.text
+  slot[49]  off=0x188  VA=0x1819dd5cc  RVA 0x019dd5cc  sect=.text
+  slot[50]  off=0x190  VA=0x182476f38  RVA 0x02476f38  sect=.text
+  slot[51]  off=0x198  VA=0x180b99e8c  RVA 0x00b99e8c  sect=.text
+  slot[52]  off=0x1a0  VA=0x181a73700  RVA 0x01a73700  sect=.text
+  slot[53]  off=0x1a8  VA=0x181a73790  RVA 0x01a73790  sect=.text
+  slot[54]  off=0x1b0  VA=0x1824752dc  RVA 0x024752dc  sect=.text
+  slot[55]  off=0x1b8  VA=0x1809ae6e8  RVA 0x009ae6e8  sect=.text
+  slot[56]  off=0x1c0  VA=0x181a73660  RVA 0x01a73660  sect=.text
+  slot[57]  off=0x1c8  VA=0x1803b70f0  RVA 0x003b70f0  sect=.text
+  slot[58]  off=0x1d0  VA=0x1824777a0  RVA 0x024777a0  sect=.text
+  slot[59]  off=0x1d8  VA=0x181684a80  RVA 0x01684a80  sect=.text
+  slot[60]  off=0x1e0  VA=0x180daa864  RVA 0x00daa864  sect=.text
+  slot[61]  off=0x1e8  VA=0x182477bbc  RVA 0x02477bbc  sect=.text
+  slot[62]  off=0x1f0  VA=0x181002688  RVA 0x01002688  sect=.text
+  slot[63]  off=0x1f8  VA=0x180b9a490  RVA 0x00b9a490  sect=.text
