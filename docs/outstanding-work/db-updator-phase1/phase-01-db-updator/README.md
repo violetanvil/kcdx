@@ -11,7 +11,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| 1 extract `seeds_shared/` (schema + validators + dict_codec + row_builder); rebuild = thin caller | DONE | 9f3c1f2 |
+| 1 extract `seeds_shared/` (schema + validators + dict_codec + row_builder); rebuild = thin caller | DONE | 8f2922d |
 | 2 `.rdata` `version_resolver` (scan + hard intern-agreement) | NOT STARTED | — |
 | 3 `apply` scaffold + re-verify path (resolve → validate → delta → audit-trio UPDATE) | NOT STARTED | — |
 | 4 `apply` add-entity + add-versions-row (kind-class branch + baseline-present gate) | NOT STARTED | — |
