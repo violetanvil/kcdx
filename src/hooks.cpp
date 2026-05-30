@@ -160,6 +160,28 @@ lua_Alloc_t g_orig_frealloc = nullptr;
 uintptr_t g_kcdx_image_base = 0;
 size_t    g_kcdx_image_size = 0;
 
+// === DIAGNOSTIC (PROBE A): WHGame.dll image range. Theory under test —
+// kcdx's vendored luaH_free, running during kcdx's GC sweep on the SHARED
+// g->rootgc, frees a WHGame-allocated Table's t->node when that node is
+// WHGame's static-const dummynode_ (a .rdata sentinel inside WHGame.dll's
+// IMAGE, not a heap block). The `t->node != kcdx_dummynode` guard at
+// ltable.c:405 is TRUE for WHGame's node, so luaM_freearray → frealloc is
+// called on a non-heap pointer → RtlSizeHeap faults (0xC0000374). A block
+// in WHGame.dll's loaded IMAGE reaching frealloc is impossible for a legit
+// heap allocation → it is the sentinel-free smoking gun. PROBE Q is blind
+// to this (its block ∈ kcdx.dll image test never matches a WHGame node).
+// Outcome: a frealloc whose block ∈ WHGame image (esp. nsize==0 free) with
+// caller_ra in luaH_free → theory confirmed. Resolved at probe-arm time.
+uintptr_t g_whgame_image_base = 0;
+size_t    g_whgame_image_size = 0;
+
+static bool IsInWhGameImage(const void* p) {
+    if (!p || !g_whgame_image_base) return false;
+    uintptr_t addr = reinterpret_cast<uintptr_t>(p);
+    return addr >= g_whgame_image_base &&
+           addr <  g_whgame_image_base + g_whgame_image_size;
+}
+
 // Our static-Lua's `&dummynode_` (resolved by creating a temp Table at
 // probe-arm time and reading its t->node). Logged for sanity, then used
 // to make the in-range check more useful (any frealloc with block ==
@@ -191,6 +213,27 @@ static void* __cdecl HookedFrealloc(void* ud, void* block, size_t osize,
             log::KV("caller_ra",  caller_ra),
             log::KV("is_dummynode",
                 (int64_t)(block == g_kcdx_dummynode ? 1 : 0)));
+    }
+    // === DIAGNOSTIC (PROBE A): a frealloc whose `block` lands inside
+    // WHGame.dll's loaded IMAGE is the corrupting sentinel-free we predicted
+    // — a static-const Node (WHGame's dummynode_) cannot be a heap block, so
+    // passing it to frealloc faults RtlSizeHeap. caller_ra pins the call site
+    // (expected: luaM_freearray ← luaH_free). nsize==0 marks a true free.
+    // No throttle — this fires at most a handful of times before the crash
+    // and is the smoking gun. theory-INDEPENDENT: it logs the raw block
+    // provenance; if it never fires yet the crash persists, the mechanism is
+    // NOT the WHGame-dummynode free and we re-observe.
+    else if (IsInWhGameImage(block)) {
+        void* ret_slot = _AddressOfReturnAddress();
+        void* caller_ra = ret_slot ? *static_cast<void**>(ret_slot) : nullptr;
+        LOG_DEBUG_KV("MID_HOOK", "probe_a.whgame_image_block",
+            log::KV("ud",         ud),
+            log::KV("block",      block),
+            log::KV("osize",      (int64_t)osize),
+            log::KV("nsize",      (int64_t)nsize),
+            log::KV("caller_ra",  caller_ra),
+            log::KV("is_free",    (int64_t)(nsize == 0 ? 1 : 0)),
+            log::KV("kcdx_dummynode", g_kcdx_dummynode));
     }
     // Pass through unchanged so we don't intervene in the corruption
     // chain. If we returned NULL, Lua would throw LUA_ERRMEM and the
@@ -227,6 +270,28 @@ static void ArmFreallocProbe(lua_State* L) {
         log::KV("base", (void*)g_kcdx_image_base),
         log::KV("size", (int64_t)g_kcdx_image_size),
         log::KV("end",  (void*)(g_kcdx_image_base + g_kcdx_image_size)));
+
+    // === DIAGNOSTIC (PROBE A): resolve WHGame.dll's image range so
+    // HookedFrealloc can flag a `block` that lands inside WHGame's loaded
+    // image (a static-const sentinel being freed — the crash mechanism).
+    {
+        HMODULE whgame_mod = GetModuleHandleW(L"WHGame.dll");
+        MODULEINFO wmi{};
+        if (whgame_mod &&
+            GetModuleInformation(GetCurrentProcess(), whgame_mod, &wmi,
+                                 sizeof(wmi))) {
+            g_whgame_image_base = reinterpret_cast<uintptr_t>(wmi.lpBaseOfDll);
+            g_whgame_image_size = wmi.SizeOfImage;
+            LOG_DEBUG_KV("MID_HOOK", "probe_a.whgame_image",
+                log::KV("base", (void*)g_whgame_image_base),
+                log::KV("size", (int64_t)g_whgame_image_size),
+                log::KV("end",  (void*)(g_whgame_image_base +
+                                        g_whgame_image_size)));
+        } else {
+            log::Error("PROBE A: GetModuleHandle/Info(WHGame.dll) failed — "
+                       "WHGame-image block classification disabled");
+        }
+    }
 
     // Step 2: resolve our static-Lua's dummynode_ by creating a temp
     // Table (which makes t->node = &dummynode_) and reading the field.
