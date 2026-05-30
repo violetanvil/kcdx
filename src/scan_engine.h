@@ -83,6 +83,17 @@ struct ScanResult {
 // logging) and the kcdx.scan Lua binder.
 ScanResult ResolveScan(const ScanEntry& s);
 
+// Resolve a scan AND emit the concise diagnostic log lines (the
+// `[scan '<name>'] ...` workbench feedback): module-not-loaded via
+// log::ErrorF, the match summary via log::InfoF. Returns the same
+// ScanResult ResolveScan produces so the caller builds its own output —
+// the Lua binder its return table, the console command its console print.
+// This is the shared resolve+log path both author-facing scan surfaces
+// route through, so the dev-log format cannot drift between them. It does
+// NOT build any return value beyond the ScanResult and prints to no
+// in-game console.
+ScanResult RunScan(const ScanEntry& s);
+
 // Run every loaded scan: resolve via the same locator pipeline used by
 // [[patch]] / [[hook]], log the outcome. Safe to call on the first
 // update tick (same point [[patch]] applies happen).

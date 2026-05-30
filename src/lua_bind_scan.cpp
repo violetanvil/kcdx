@@ -60,12 +60,11 @@ extern "C" {
 #include "lauxlib.h"
 }
 
-#include "log.h"
 #include "lua_bind_helpers.h"  // PushPointer
 #include "lua_memory.h"        // kcdx::lua_memory::pointer
 #include "lua_registry.h"      // OwningPluginForCurrentCall
 #include "patch_engine.h"      // patch::ParsePattern, patch::Anchor variants
-#include "scan_engine.h"       // ScanEntry, ScanResult, ResolveScan
+#include "scan_engine.h"       // ScanEntry, ScanResult, RunScan
 
 namespace kcdx::lua_bind_scan {
 
@@ -287,30 +286,11 @@ int Lua_Scan(lua_State* L) {
     entry.pluginName = kcdx::lua_registry::OwningPluginForCurrentCall(
         L, callSiteFile, callSiteLine).plugin;
 
-    // --- Resolve (no logging happens inside ResolveScan) ---
-    scan_engine::ScanResult result = scan_engine::ResolveScan(entry);
-
-    // --- Concise diagnostic log (the workbench feedback). Does NOT
-    //     duplicate scan_engine::FormatBytesAt — the full byte-dump was
-    //     the legacy [[scan]] TOML path's, now dormant. ---
-    if (!result.moduleLoaded) {
-        log::ErrorF("[scan '%s'] module '%s' not loaded (0 matches)",
-                    name.c_str(), entry.module.c_str());
-    } else {
-        log::InfoF("[scan '%s'] pattern matches: %zu",
-                   name.c_str(), result.patternMatches);
-        if (result.contextMatches) {
-            log::InfoF("[scan '%s'] context matches: %zu",
-                       name.c_str(), *result.contextMatches);
-        }
-        for (size_t i = 0; i < result.matches.size(); ++i) {
-            const scan_engine::ScanMatch& m = result.matches[i];
-            log::InfoF("[scan '%s'] match %zu: %s+0x%llX -> apply addr 0x%p",
-                       name.c_str(), i + 1, m.module.c_str(),
-                       (unsigned long long)m.relOffset,
-                       reinterpret_cast<void*>(m.applyAddr));
-        }
-    }
+    // --- Resolve + emit the concise diagnostic log (the workbench
+    //     feedback). RunScan does ResolveScan + the shared `[scan '<name>']`
+    //     log lines; the console-command surface routes through the same
+    //     helper so the dev-log format cannot drift between the two. ---
+    scan_engine::ScanResult result = scan_engine::RunScan(entry);
 
     // --- Build the result table: { count, matches = {...}, addr } ---
     lua_newtable(L);  // result table (return value)

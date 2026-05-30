@@ -136,6 +136,34 @@ ScanResult ResolveScan(const ScanEntry& s) {
     return result;
 }
 
+ScanResult RunScan(const ScanEntry& s) {
+    ScanResult result = ResolveScan(s);
+
+    // --- Concise diagnostic log (the workbench feedback). Does NOT
+    //     duplicate FormatBytesAt — the full byte-dump was the legacy
+    //     [[scan]] TOML path's, now dormant. ---
+    if (!result.moduleLoaded) {
+        log::ErrorF("[scan '%s'] module '%s' not loaded (0 matches)",
+                    s.name.c_str(), s.module.c_str());
+    } else {
+        log::InfoF("[scan '%s'] pattern matches: %zu",
+                   s.name.c_str(), result.patternMatches);
+        if (result.contextMatches) {
+            log::InfoF("[scan '%s'] context matches: %zu",
+                       s.name.c_str(), *result.contextMatches);
+        }
+        for (size_t i = 0; i < result.matches.size(); ++i) {
+            const ScanMatch& m = result.matches[i];
+            log::InfoF("[scan '%s'] match %zu: %s+0x%llX -> apply addr 0x%p",
+                       s.name.c_str(), i + 1, m.module.c_str(),
+                       (unsigned long long)m.relOffset,
+                       reinterpret_cast<void*>(m.applyAddr));
+        }
+    }
+
+    return result;
+}
+
 namespace {
 
 // Thin diagnostic logger over ResolveScan: emits the scan diagnostic log
