@@ -39,6 +39,20 @@
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-destructive-ops.ps1" }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/tripwire-dynamic-deletion.ps1" }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/tripwire-dynamic-deletion.ps1" }
+        ]
+      }
     ]
   }
 }

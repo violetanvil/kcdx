@@ -36,7 +36,9 @@ A destructive command (`git revert`, `git reset --hard`, `git clean -f`, `rm -r`
 
 4. **Shared-index / shared-tree mutations (WARN — flow-neutral).** Broad staging (`git add -A`/`-u`/`--all`/`.`, `git commit -a`) can sweep ANOTHER chat's in-flight files into your commit (rule 2) — stage by exact path. `git checkout <branch>` / `git switch` / `git stash` mutate the ONE tree every chat shares (rule 3) — `stash push -u` silently captures untracked files another chat authored. These warn but never block.
 
-Three `PreToolUse` hooks on `Bash`/`PowerShell` enforce this at command-time: `guard-force-push.ps1` auto-safens `--force`→`--force-with-lease` (rewrites the command, never blocks); `guard-destructive-ops.ps1` WARNS the recoverable + shared-tree set and BLOCKS (exit 2) the local-irreversible set. A block is a pause, not a veto: re-confirm live state, then re-issue.
+The command-text guards above are blind to a deletion done by an invoked SCRIPT or a variable/glob-expanded `rm` — the dangerous part isn't a literal token they can match. `tripwire-dynamic-deletion.ps1` (`PostToolUse`) is the consequence-side backstop: after a script/interpreter invocation or a dynamic `rm`, it checks the working tree for an UNSTAGED tracked deletion (a file gone that the agent did NOT `git rm`) and loudly WARNS if one appears. Detection-only (the action already ran) — recover with `git checkout -- <path>` BEFORE committing.
+
+Four hooks on `Bash`/`PowerShell` enforce this. `PreToolUse` (command-time): `guard-force-push.ps1` auto-safens `--force`→`--force-with-lease` (rewrites the command, never blocks); `guard-destructive-ops.ps1` WARNS the recoverable + shared-tree set and BLOCKS (exit 2) the local-irreversible set. `PostToolUse` (consequence-time): `tripwire-dynamic-deletion.ps1` warns on a surprise unstaged deletion. A block is a pause, not a veto: re-confirm live state, then re-issue.
 
 ## Remotes — this IS the private repo; public is an allowlisted snapshot
 
