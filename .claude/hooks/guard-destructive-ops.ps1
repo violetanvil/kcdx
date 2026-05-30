@@ -46,6 +46,58 @@ try {
         }
     }
 
+    # --- SCOPE-FENCE: broad staging across the SHARED index (concurrency-git.md
+    # rule 2). The #1 contamination vector — a broad add sweeps ANOTHER chat's
+    # in-flight files into your commit. With the session touched-set sidecar
+    # (track-touched-files.ps1), this fires ONLY on the contaminating case: a
+    # dirty tracked file NOT in this agent's touched set -> BLOCK. All-own-work
+    # -> SILENT (the honest broad-add the old always-WARN nagged on). No sidecar
+    # yet (no edits / no session_id) -> fall back to the WARN.
+    $isBroadStage = ($cmd -match "(?i)${cp}git\s+add\s+(?:-A\b|-u\b|--all\b|\.(?:\s|$))") -or
+                    ($cmd -match "(?i)${cp}git\s+commit\b[^\n|&;]*\s-[a-z]*a")
+    if ($isBroadStage) {
+        $fenceWhy = "broad `git add`/`commit -a` stages across the SHARED index and can sweep another parallel chat's in-flight files into YOUR commit (concurrency-git.md rule 2). Stage by exact path: git add <specific files>"
+        $sid = $data.session_id
+        $cwd = $data.cwd
+        $foreign = $null
+        if ($sid -and $cwd) {
+            $gitDir = & git -C $cwd rev-parse --git-dir 2>$null
+            if ($LASTEXITCODE -eq 0 -and $gitDir) {
+                if (-not [System.IO.Path]::IsPathRooted($gitDir)) { $gitDir = Join-Path $cwd $gitDir }
+                $sidecar = Join-Path $gitDir ("kcdx-touched-" + ($sid -replace '[^A-Za-z0-9_-]','_') + ".txt")
+                if (Test-Path -LiteralPath $sidecar -PathType Leaf) {
+                    $touched = @([System.IO.File]::ReadAllLines($sidecar) | Where-Object { $_ })
+                    # Dirty TRACKED set: porcelain lines whose index/worktree col is not '?'.
+                    $porc = & git -C $cwd status --porcelain 2>$null
+                    if ($LASTEXITCODE -eq 0) {
+                        $foreign = @()
+                        foreach ($line in ($porc -split "`n")) {
+                            if ($line.Length -lt 4) { continue }
+                            if ($line.Substring(0,2) -eq '??') { continue }   # untracked — a broad add can stage it, but it's not a tracked-file sweep; rule-2 risk is the tracked clobber
+                            $p = $line.Substring(3).Trim() -replace '\\','/'
+                            # Rename "old -> new": take the destination.
+                            if ($p -match '->') { $p = ($p -split '->')[-1].Trim() }
+                            if ($touched -notcontains $p) { $foreign += $p }
+                        }
+                    }
+                }
+            }
+        }
+        # $foreign tri-state: $null = couldn't judge (no sidecar/session/cwd) -> WARN;
+        # @() = judged, all dirty files are own work -> SILENT OK (the honest broad-add);
+        # non-empty = a stranger's file would be swept -> BLOCK.
+        if ($null -ne $foreign -and $foreign.Count -gt 0) {
+            $shown = ($foreign | Select-Object -First 10) -join ', '
+            $more = if ($foreign.Count -gt 10) { " (+$($foreign.Count - 10) more)" } else { '' }
+            [Console]::Error.WriteLine("Scope-fence BLOCK: this broad stage would sweep $($foreign.Count) tracked file(s) THIS session never edited — almost certainly another parallel chat's in-flight work (concurrency-git.md rule 2): $shown$more. Stage YOUR files by exact path instead: git add <your specific files>. This is the documented commit-contamination vector; the block is a pause, not a veto — if these files are genuinely yours, add them explicitly.")
+            exit 2
+        }
+        if ($null -ne $foreign) { exit 0 }   # judged clean — silent, no nag on honest own-work staging
+        # Couldn't judge (no sidecar yet / no session_id) -> WARN, don't block honest work.
+        [Console]::Error.WriteLine("Destructive-op WARN: $fenceWhy. This does not block.")
+        exit 0
+    }
+
     # --- WARN set: recoverable / flow-neutral, but surface the parallel-tree risk ---
     # Each proceeds (exit 0); the call is never interrupted. These catch the
     # documented parallel-chat hazards (concurrency-git.md rules 2 + 3) that have
@@ -54,11 +106,6 @@ try {
         @{ rx = "(?i)${cp}git\s+revert\b";                       why = "git revert creates a commit that undoes prior work" }
         @{ rx = "(?i)${cp}git\s+checkout\b[^\n|&;]*\s--\s";      why = "git checkout -- <path> discards working-tree edits to those paths" }
         @{ rx = "(?i)${cp}git\s+restore\b(?![^\n|&;]*--staged)"; why = "git restore <path> discards working-tree edits to those paths" }
-        # Broad staging — the #1 parallel-chat commit-contamination vector
-        # (concurrency-git.md rule 2). A broad add sweeps ANOTHER chat's staged
-        # files into your commit. Stage by exact path instead.
-        @{ rx = "(?i)${cp}git\s+add\s+(?:-A\b|-u\b|--all\b|\.(?:\s|$))"; why = "broad `git add` (-A / -u / --all / .) stages files across the SHARED index — it can sweep another parallel chat's in-flight files into YOUR commit (concurrency-git.md rule 2). Stage by exact path: git add <specific files>" }
-        @{ rx = "(?i)${cp}git\s+commit\b[^\n|&;]*\s-[a-z]*a";        why = "`git commit -a` auto-stages every tracked modified file — across the shared tree, that can pull another parallel chat's edits into your commit (concurrency-git.md rule 2). Stage exact paths, then commit" }
         # Shared-tree mutation — concurrency-git.md rule 3. checkout <branch> /
         # switch / stash all change the ONE working tree every chat shares.
         @{ rx = "(?i)${cp}git\s+checkout\s+(?!-{1,2}(?:\s|$))(?!-b\b)\S";  why = "`git checkout <branch>` switches the SHARED working tree — it changes the branch (and can clobber uncommitted edits) for every parallel chat, not just this one (concurrency-git.md rule 3). Don't switch branches on your own initiative" }
