@@ -207,6 +207,23 @@ See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- brok
 
 ---
 
+## AP18 — Adding an Address Library seed row without explicit user approval
+
+**Forbidden:** appending a NEW entity/version row to `data/seeds/address_names_seed.csv` or `data/seeds/address_versions_seed.csv` without the user's explicit sign-off on that specific entity. A seed addition grows the Address Library DB — a new curated game-binary target (RVA / AOB pattern / vtable slot / game-struct offset) the project commits to maintaining across game versions — and that growth is the user's decision, not the agent's.
+
+```diff
+# data/seeds/address_names_seed.csv
++144,SaveGame,,,,,,"7-arg save hook target"        # AP18: new entity, no user approval
+# data/seeds/address_versions_seed.csv
++144,1.5.1164953,WHGame.dll,0x019DDE78,...          # AP18: lands the DB row u.gated
+```
+
+**Detection signature (scan a diff against this shape):** a diff that ADDS a data row (not a comment, not the header) to either curated seed CSV, with no recorded user approval of the entity in the landing conversation. An UPDATE to an existing row (re-verify, bump `last_verified_at_version`, deprecate, supersede) is NOT this AP — only a NEW entity/version row is. Resolving a game address by name/id in code (AP1's fix) is NOT this AP either — that is the always-on expectation, not a gated DB addition.
+
+**Fix:** STOP before writing the row; surface the proposed entity to the user (name + what it targets + why it's needed) and get explicit approval, THEN append. Per `address-library.md` + `data/seeds/policy.md` §"DB additions require explicit approval". Warn-only `guard-seed-approval.ps1` flags the addition at author-time; the review gates carry the hard check.
+
+---
+
 ## Scope
 
 This file covers the class where code looks fine to every gate yet violates an invariant. Domain-specific wrong-ways live in their own rules (`hook-engine.md`, `lua-bridge.md`, `address-library.md`, `reverse-engineering.md`, `logging.md`). New entries append as new failure modes surface; cite the rule each pattern enforces.

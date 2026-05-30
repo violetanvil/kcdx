@@ -213,6 +213,7 @@ Write via a Bash heredoc (single-quoted `'EOF'` to prevent `$` expansion in the 
 ### 2. Discipline compliance — CLAUDE.md hard rules
 
 - Game-function offsets via Address Library ID, not raw RVA (AP1); ABI from abi_walker, not prologue shape (AP2); vtable index probed, not header-derived (AP3).
+- **Seed addition gated (AP18).** If the diff ADDS a row to `data/seeds/address_names_seed.csv` or `address_versions_seed.csv` (a NEW entity/version, not an UPDATE to an existing row), the landing must carry explicit user approval of that entity. A seed addition with no recorded approval is a finding — the Address Library DB grows only on the user's say-so (`data/seeds/policy.md` §"DB additions require explicit approval"). An UPDATE (re-verify / bump `last_verified_at_version` / deprecate / supersede) is exempt.
 - No new mempatch work — everything ships through kcdx.
 - Every new feature ships its permanent `test-plugins/` plugin + matrix row in the same change (AP7); a behavior-change bug fix adds a sub-test reproducing the bug.
 - Subtractive sweep (`deletion-hygiene.md`): a deleted public surface (`kcdx.*` surface, `kcdx*Interface` method/exported entry point, TOML table/key, `ParseOne*`/schema/console command/cosave field) leaves no prescriptive survivor — grep `docs/`, `.claude/rules/`, `CLAUDE.md` for references describing it as a CURRENT path; flag each (fix in the same change). Exempt as historical: `docs/design.md` superseded sections, `**/migration*.md`, `**/known-issues/**`, `**/closed/**`, `**/archive*/**`, comparative "succeeds/replaces X" framing. Prescriptive-vs-historical is judgment, not string-match.
@@ -234,7 +235,7 @@ Auto-load `.claude/rules/*.md` matching the paths the diff touches. Check:
 
 ### 4. Anti-pattern scan
 
-Load `.claude/rules/anti-patterns.md` and scan the diff against AP1–9. Name the specific pattern when found, cite file:line, link the AP row.
+Load `.claude/rules/anti-patterns.md` and scan the diff against every entry (AP1–AP18). Name the specific pattern when found, cite file:line, link the AP row.
 
 ### 5. Duplication detection
 

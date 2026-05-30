@@ -29,6 +29,33 @@ re-verifying for a new game version, deprecating an entity — every change is
 an UPDATE to existing column values, or an APPEND of a new row. Never a
 renumber, never a delete-and-rewrite.
 
+## DB additions require explicit approval
+
+**Adding a NEW entity or version row to `address_names_seed.csv` or
+`address_versions_seed.csv` requires explicit maintainer approval before it
+lands.** This is the one authoring action that grows the Address Library DB —
+a new curated game-binary target (RVA, byte/AOB pattern, vtable slot, or
+game-struct offset) committing the project to maintain that address across
+game versions. The maintainer approves the specific entity BEFORE the seed
+row is written; an addition that lands without that sign-off is unauthorized.
+
+Scope: this gates the **seed-row ADDITION** (a new data row). It does NOT
+gate the in-code side — resolving a game address by name/id instead of a raw
+literal is the always-on expectation (plugins and engine code resolve through
+the Address Library, never hardcode an RVA), not a per-use approval. Nor does
+it gate an UPDATE to an existing row (re-verifying
+a version, bumping `last_verified_at_version`, deprecating/superseding) — those
+mutate an already-approved entity. Only the appearance of a NEW entity/version
+row is the approval point.
+
+Enforcement (mirrors the other seed-authoring rules — author-time reminder +
+review gate, NOT an importer hard error): a warn-only author-time check flags
+any edit that adds a row to either curated seed CSV; the change-review pass
+treats a seed addition with no recorded approval as a finding. **Policy-only**
+at the importer level — the importer does not verify approval (it cannot see
+the maintainer's sign-off); compliance is the maintainer's, enforced by
+review.
+
 ## ID assignment
 
 - `module_seed.csv.id`, `address_names_seed.csv.id` — canonical, maintainer-

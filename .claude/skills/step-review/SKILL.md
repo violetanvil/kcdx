@@ -42,6 +42,7 @@ Read `.claude/skills/_shared/architectural-review.md` cover-to-cover before prod
 ### 2. Discipline compliance — CLAUDE.md hard rules
 
 - Game-function offsets resolved via Address Library ID, not raw RVA (AP1). ABI from the abi_walker, not prologue shape (AP2). vtable index probed against the binary, not the header (AP3).
+- **Seed addition gated (AP18).** If this diff ADDS a row to `data/seeds/address_names_seed.csv` or `address_versions_seed.csv` (a NEW entity/version, not an UPDATE to an existing row), the step must carry explicit user approval of that entity in the review context. A seed addition with no recorded approval is a finding (`data/seeds/policy.md` §"DB additions require explicit approval"). An UPDATE (re-verify / bump `last_verified_at_version` / deprecate / supersede) is exempt.
 - No new mempatch work — byte-rewrite / hook / trampoline / engine-fix ships through kcdx.
 - Every new feature ships its permanent `test-plugins/` plugin + matrix row in this same diff (AP7); a behavior-change bug fix adds a sub-test reproducing the bug.
 - **Source-ledger row updated.** If the review context names a **Source work-item** (not `none`), the diff must flip that ledger row to `DONE` with the Commit cell `(landed)` — NOT a hash — in the named doc, per `docs/outstanding-work/README.md` §"Status ledger". A tracked step whose source-doc row is unchanged is a finding (same class as a missing test plugin). A hash written into the Commit cell of THIS step's diff is ALSO a finding — a commit can't contain its own hash, so any hash here is the prior commit's (the stale-hash bug); the cell must read `(landed)` and backfill one commit later. `none` → skip this check.
@@ -65,7 +66,7 @@ Auto-load `.claude/rules/*.md` matching the paths the diff touches. Check:
 
 ### 4. Anti-pattern scan
 
-Load `.claude/rules/anti-patterns.md` (AP1–9). Scan the diff against every entry. Name the specific pattern when found, cite file:line.
+Load `.claude/rules/anti-patterns.md` (AP1–AP18). Scan the diff against every entry. Name the specific pattern when found, cite file:line.
 
 ### 5. Duplication detection
 
