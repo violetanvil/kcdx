@@ -19,6 +19,18 @@ Multiple Claude Code chats run against this ONE repository at once — one share
 
 5. **Check before you assume.** Before any commit, `git branch --show-current` + `git status` — another chat may have changed the branch or left the tree dirty. Read state, don't assume.
 
+## Destructive ops — confirm LIVE state, never act on stale/cancelled output
+
+A destructive command (`git revert`, `git reset --hard`, `git clean -f`, `rm -r`/`Remove-Item -Recurse`, `git checkout -- <path>`, `git restore <path>`) acts on the working tree's CURRENT state. A tool result that was true when produced is NOT a confirmed fact now — a cancelled call, a superseded parallel-tool output, or a parallel chat's edit can have invalidated it. Acting destructively on a stale reading deletes the wrong thing.
+
+1. **Re-confirm before destroying.** Before issuing any destructive command, RE-OBSERVE the state it acts on: re-run the read that justified it (a cancelled or superseded parallel-tool result is not evidence), then `git status` + `git branch --show-current`. The shared tree means another chat's edits may be present that your earlier read never saw (rule 1).
+
+2. **Target by exact path, never blanket.** Delete/revert the specific files you confirmed, never a directory-wide `rm -r` / `git clean` / `git reset --hard` on an inferred set. Blanket destruction on a stale reading is the misfire this section exists to stop.
+
+3. **Recoverability tiers.** `git revert` (a new commit) and `git checkout -- <file>` / `git restore <file>` (tracked, restorable from HEAD) are recoverable. `rm -r` / `Remove-Item -Recurse` / `git clean -f` (untracked, no reflog) and `git reset --hard` (uncommitted edits, plus clobbers parallel chats — rule 3) are NOT. Treat the irreversible set as a deliberate stop: re-confirm fully, then re-issue.
+
+The warn-only `guard-destructive-ops.ps1` (`PreToolUse` on `Bash`/`PowerShell`) surfaces this at command-time — it WARNS on the recoverable set and BLOCKS (exit 2) the irreversible set, so a stale-state delete pauses for re-confirmation before it runs. The block is a pause, not a veto: re-confirm live state, then re-issue.
+
 ## Remotes — this IS the private repo; public is an allowlisted snapshot
 
 This repo has TWO remotes. The local tree is the comprehensive **private** repo.
