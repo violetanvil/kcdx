@@ -8,10 +8,11 @@ in the design sessions.
 
 - **Phase 1 — the `apply` script (headless, no UI).** Humans keep hand-editing
   the three seed CSVs under `data/seeds/` (as they do today). A script reads
-  those CSVs and performs the DB actions: a full **rebuild** (already exists) and
-  a new **incremental add** that lands CSV rows not yet in the DB into BOTH the
-  user DB and the dev DB, without dropping and rebuilding. **The script writes
-  no CSV** — the CSV is human-authored input; the script is the CSV→DB applier.
+  those CSVs and performs the DB actions: the full **rebuild** (exists today as
+  `--rebuild`) and a new **incremental add** (TO BUILD) that will land CSV rows
+  not yet in the DB into BOTH the user DB and the dev DB, without dropping and
+  rebuilding. **The script writes no CSV** — the CSV is human-authored input;
+  the script is the CSV→DB applier.
 - **Phase 2 — the tool (GUI).** Built later, on top of the proven Phase-1
   applier. The GUI is what eventually replaces CSV hand-editing; until it stands
   on its own, the CSV stays the authoring surface.
@@ -27,6 +28,36 @@ starts.
 > flow writes the DBs (user + dev) and the human-edits-CSV / script-applies-DB
 > split is the agreed Phase-1 shape. R1/R6 are to be amended to match this two-
 > phase architecture in the same change that lands Phase 1.
+
+## Status — what exists vs. what this plan designs
+
+**This is a design plan. Nothing in Phase 1 is built yet except the rebuild
+path it inherits.** Everything below describes the *intended* architecture; do
+not read any of it as runnable today.
+
+**Exists now:**
+- `import_to_sqlite.py --rebuild` — the full baseline build (drops + rebuilds
+  both DBs from the dump + seeds).
+- The three hand-edited seed CSVs under `data/seeds/`.
+- Game-version resolution via `whdlversions.json`
+  ([import_to_sqlite.py](../refdata-extractor/python/import_to_sqlite.py)
+  `read_game_version`).
+- The privacy carve-outs: `data/maintainer-tool/` and `data/refdata-extractor/`
+  are already in `publish-public.ps1`'s `$PrivateSubpaths`.
+
+**Designed here, NOT yet built (the Phase-1 work):**
+- The incremental `apply` mode (§1, §3) — the `apply` subcommand, the
+  seed-vs-DB delta, the per-action SQL. Does not exist; the importer has only
+  `--rebuild`.
+- The `seeds_shared/` module (§5) — `schema.py`, `validators.py`,
+  `row_builder.py`, `dict_codec.py`, `version_resolver.py`. None exist; their
+  contents are still inline in `import_to_sqlite.py`.
+- The `.rdata` version resolver and the `--dll` argument (§3, §7). The importer
+  deliberately uses `whdlversions.json` today; the `.rdata` scan is unwritten.
+
+So §3's `python import_to_sqlite.py apply --dll …` command, §5's "the importer
+becomes a thin caller", and §8's `seeds_shared/` tree are all the TARGET state
+that the Phase-1 build produces — not the current state.
 
 ## Contents
 
@@ -384,10 +415,13 @@ already-private `refdata-extractor/` tree):
   importer).
 - `version_resolver.py` — the `.rdata` scanner (§7).
 
-**The importer becomes a thin caller.** `build_rows` calls
-`validators.read_*`, `schema.SCHEMA`, `row_builder.build`, `dict_codec`. Its
-full-rebuild orchestration (the dump reads, the bulk insert, the dev tables)
-stays in the importer — that's the baseline/migration path.
+**The importer becomes a thin caller (target state — not yet refactored).**
+After the extraction, `build_rows` calls `validators.read_*`, `schema.SCHEMA`,
+`row_builder.build`, `dict_codec` instead of holding them inline. Today all of
+these live inside `import_to_sqlite.py`; pulling them into `seeds_shared/` is
+part of the Phase-1 build. Its full-rebuild orchestration (the dump reads, the
+bulk insert, the dev tables) stays in the importer — that's the
+baseline/migration path.
 
 **The incremental `apply` mode is a sibling entry point in the same importer
 module**, sharing all of `seeds_shared/`. It does step-5/step-6-equivalent work
