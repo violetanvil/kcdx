@@ -33,7 +33,15 @@ kcdx (commit + Resolution section appended to the trail), fixed
 upstream, or the workaround is promoted to a permanent design
 choice in `../design.md`. Top-level `known-issues/` lists only
 open issues so a fresh agent can see at a glance what still
-needs attention.
+needs attention. A `provisional-mask` issue stays OPEN and
+top-level until its real root cause lands.
+
+Graduation is one move, in the closing commit: `git mv` the file
+into `closed/`, repoint its `## KI index` row link to the
+`closed/` path (the index stays one flat table; the link path
+reflects open-vs-closed) and append ` — FIXED` to its Summary,
+and add a `## Closed (historical reference)` bullet. The dir and
+the index agree at all times.
 
 ## File naming
 

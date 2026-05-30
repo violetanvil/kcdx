@@ -295,6 +295,11 @@ After Gate B returns `land-fix`, proceed:
 
     Record in the known-issue's "Active diagnostic instrumentation" table with Status: `archived` + one-line root cause. Reverting (deleting the diagnostic site) is forbidden — the wiring is the cheapest jumping-off point for the next investigation into the same subsystem (CLAUDE.md hard rule).
 - **Migration to `_research/probe-archive/<probe-id>-<short>/<original-file>.cpp`** is reserved for source files exceeding 2 archived probes (one-file-one-concern accumulation guard). Default = in-place `#if 0`. Surface the migration decision to the user; do not auto-migrate.
+- **Graduate the file to `closed/`.** A KI file with a complete §Resolution is no longer open — the top-level `docs/known-issues/` dir lists only open issues (`docs/known-issues/README.md` header). In the SAME close commit:
+  - `git mv docs/known-issues/<file>.md docs/known-issues/closed/<file>.md` (NOT plain `mv` — `git mv` preserves rename tracking; `concurrency-git.md` exact-path staging applies to both the source-delete and dest-add the rename produces).
+  - In `docs/known-issues/README.md`, repoint the file's `## KI index` row link to the new `closed/<file>.md` path and append ` — FIXED` (or the matching status) to its Summary cell — the index stays one flat table; the link path is what reflects open-vs-closed. Then add a bullet under `## Closed (historical reference)` (link + one-line root-cause summary + `FIXED <date>` + commit/regression-row ref). Delete any `## Current open (pre-KI-NNNN)` bullet if the closed file was a pre-KI one.
+  - Repoint any relative doc links inside the moved file that pointed at sibling top-level files — they now resolve from inside `closed/` (a sibling becomes `../<file>.md`).
+- **Do NOT graduate a provisional-mask close.** A `status: provisional-mask` issue (user-approved escape per §3a) stays OPEN and stays top-level — the move runs ONLY after Gate B returns `land-fix`, or after a doc-only/typo close that legitimately skipped Gate B. `probe-required` / `rewrite-resolution` / `escalate-design` never reach this checklist.
 
 ### 3e. Update memory if the lesson is durable
 
