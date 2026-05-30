@@ -1,15 +1,24 @@
 # Known-issue file template
 
-Copy into `kcdx/docs/known-issues/<title>.md`. Replace `<placeholder>` text. Append rows to Trail as probes complete.
+Copy into `kcdx/docs/known-issues/KI-NNNN-<slug>.md`. Replace `<placeholder>` text. Append rows to Trail as probes complete.
 
-Sections marked **(required)** must exist before the first probe is logged.
+`/report-bug` writes the OPEN subset (frontmatter + Symptom + Facts + Open questions; Trail/Resolution left empty). `/debug` fills the rest. Sections marked **(required)** must exist before the first probe is logged.
+
+KI-NNNN allocation: scan `docs/known-issues/` AND `docs/known-issues/closed/` for the highest `KI-####` across both, increment by 1. First bug = `KI-0001`. The 14 pre-KI-NNNN human-readable files do not carry IDs; they are not part of the allocation sequence.
 
 ---
 
 ```markdown
-# <one-line title — what's broken, where>
+---
+id: KI-NNNN
+opened: YYYY-MM-DD
+status: open
+commit_at_filing: <40-char hash>
+---
 
-**Status:** <open|investigating|resolved>. <One line on user-visible state.>
+# KI-NNNN — <one-line title — what's broken, where>
+
+**Status:** <open|investigating|resolved>. <One line on user-visible state. `/report-bug` writes `OPEN — not yet investigated`.>
 
 ## Symptom (required)
 
@@ -27,7 +36,7 @@ Exception code: `<0xC0000374 STATUS_HEAP_CORRUPTION>`.
 
 ## Facts (required)
 
-Empirical observations. Each bullet is a fact, not a hypothesis. Update as probes confirm or eliminate.
+Empirical observations only. Each bullet is a fact, not a hypothesis. Update as probes confirm or eliminate. If `/report-bug` captured no observables, this section says `None captured yet — symptom-only report.` — never fabricate evidence.
 
 - <Concrete observation 1>
 - <Concrete observation 2>
@@ -40,13 +49,13 @@ Empirical observations. Each bullet is a fact, not a hypothesis. Update as probe
 | YYYY-MM-DD | PROBE A: <≤15 words: one variable changed> | <outcome verdict>. <one clause interpretation>. |
 | YYYY-MM-DD | PROBE B: ... | ... |
 
-Add row **before launching** with `pending` Result, then update **immediately after** with strict format (≤200 chars, two sentences max).
+Add row **before launching** with `pending` Result, then update **immediately after** with strict format (≤200 chars, two sentences max). `/report-bug` leaves this empty.
 
 ## Open questions
 
-Hypotheses that haven't been tested, with the probe that would test them.
+Hypotheses that haven't been tested, with the probe that would test them. Causal claims live ONLY here, labeled — never in Facts.
 
-- **<hypothesis>** — Probe: <one-line concrete experiment>.
+- **<hypothesis (NOT verified)>** — Probe: <one-line concrete experiment>.
 
 Move to "Resolved" when answered, or delete if redundant with Trail.
 

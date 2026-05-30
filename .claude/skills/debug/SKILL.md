@@ -33,9 +33,9 @@ Cite past memories as **context**, not **conclusions**. Re-verify before invokin
 
 ### 1d. Open the per-issue file
 
-`kcdx/docs/known-issues/<title>.md`. Title is human-readable. Template at [`references/known-issue-template.md`](references/known-issue-template.md). Fill Symptom, Facts (start small), Trail, Open questions.
+`kcdx/docs/known-issues/KI-NNNN-<slug>.md` (new bugs) or a pre-KI human-readable `<title>.md` (the 14 legacy files). Template at [`references/known-issue-template.md`](references/known-issue-template.md). Fill Symptom, Facts (start small), Trail, Open questions.
 
-If the bug already has a file, append to its Trail rather than starting a new one.
+If the bug already has a file — including one filed by `/report-bug` (OPEN, empty Trail) — append to its Trail rather than starting a new one. A `/report-bug` file is your starting point: its Symptom + Facts are the ground truth you begin from; its Open-questions hypotheses are unverified, re-verify before acting.
 
 ---
 

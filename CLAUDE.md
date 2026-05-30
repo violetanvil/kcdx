@@ -71,6 +71,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 | Relaying a downstream agent's question / proposal / claim (the agent is the audience of the reply) | `/senior-architect-reply` |
 | Skeptical review of code on disk (commit, PR, file, pending changes) | `/code-review` |
 | Pre-launch checklist before the one game launch that confirms the test-suite matrix | `/verification-checkpoint` |
+| File a bug for later — record symptom + evidence, no investigation now | `/report-bug` (writes one `KI-NNNN` known-issue doc, OPEN, Trail/Resolution empty; commits; stops — `/debug KI-NNNN` picks it up) |
 | Hard bug whose cause isn't obvious from the symptom | `/debug` (auto-dispatches `architect-review` on design forks per §2.5 Gate A; auto-dispatches `root-cause-verifier` on Resolution per §3d Gate B; never surfaces raw to user) |
 | Verify a game-function fact from the binary (address, ABI, return type, vtable slot) — reuse-first, fresh Ghidra last | `/research-disassembly` |
 | Designing / auditing the governance infrastructure itself (`.claude/`, CLAUDE.md) | `/governance-architect` |

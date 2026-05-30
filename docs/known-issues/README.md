@@ -35,7 +35,22 @@ choice in `../design.md`. Top-level `known-issues/` lists only
 open issues so a fresh agent can see at a glance what still
 needs attention.
 
-## Current open
+## File naming
+
+New bugs use `KI-NNNN-<slug>.md` with YAML frontmatter (`id` / `opened` /
+`status` / `commit_at_filing`). IDs are unique across `known-issues/` AND
+`known-issues/closed/`; the next ID is the highest `KI-####` across both
+dirs plus one. First bug = `KI-0001`. The pre-KI-NNNN files below keep
+their human-readable names and carry no ID — they are not part of the
+allocation sequence.
+
+## KI index (newest first)
+
+| ID | Opened | Summary |
+|----|--------|---------|
+| — | — | (no KI-NNNN bugs filed yet) |
+
+## Current open (pre-KI-NNNN)
 
 - [BugSplat dmp files don't reach disk for AV crashes.md](BugSplat%20dmp%20files%20don't%20reach%20disk%20for%20AV%20crashes.md)
   — KCD2's BugSplat upload chain writes the dmp under a filename
