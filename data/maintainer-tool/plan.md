@@ -155,6 +155,65 @@ the column projection differs (some columns are dev-only). Every INSERT/PROMOTE
 goes through the SINGLE shared row-builder (§5) — the column lists below are the
 rows that builder emits, not hand-maintained SQL parallel to the importer's.
 
+### Running an incremental build — the operator procedure
+
+The human edits the seed CSVs by hand, then runs `apply`. The script does the
+rest. Concretely, one incremental build is:
+
+1. **Edit the seeds.** Hand-edit the relevant CSV(s) under `data/seeds/`:
+   `address_names_seed.csv` (a new entity's name row), `address_versions_seed.csv`
+   (the entity's per-version facts / the audit trio / a new versions row),
+   `module_seed.csv` (only when a new module is introduced). The CSV is the
+   authoring surface in Phase 1.
+
+2. **Invoke the script:**
+
+   ```
+   python import_to_sqlite.py apply --dll <path-to-linked-WHGame.dll>
+   ```
+
+   `apply` is the incremental mode (alongside the existing `--rebuild`). The
+   `--dll` argument is the linked module DLL used to resolve the current game
+   version via the `.rdata` scan (§7); it can also come from the per-module link
+   cache (R12) so the path need not be retyped each run. No dump directory is
+   required — `apply` never reads the `functions/` dump.
+
+3. **The script resolves the target version.** Scan the linked DLL's `.rdata`
+   for the version string, apply the hard intern-agreement check (§7). A refused
+   DLL (fewer than 2 interns, or disagreeing interns) aborts here before any DB
+   is opened.
+
+4. **The script validates the full CSV state** through the shared validator (§5)
+   — every rule the importer's `read_*_seed` + cross-row checks enforce
+   (canonical-id, audit-trio integrity, supersession acyclicity, FK closure,
+   `(kcdx_id, valid_from_version)` uniqueness, `evidence_kind` enum,
+   `verified_date` format). **Any failure aborts with no DB write.** The
+   validator runs over the WHOLE seed state, not just the changed rows — an edit
+   that breaks an invariant elsewhere is caught.
+
+5. **The script computes the diff: which seed rows are not yet reflected in the
+   DB.** For each seed row, look up whether the DB already carries it
+   (`address_names` by `id`; `address_versions` by `(kcdx_id, valid_from)`).
+   Rows already present and unchanged → no-op. Rows present with a changed audit
+   trio → re-verify UPDATE. Rows absent → add-entity / add-versions-row. This is
+   what makes the run *incremental* — only the delta is written.
+
+6. **The script applies the delta to BOTH DBs**, per the per-action SQL below,
+   in user→dev order, each action wrapped `BEGIN; ...; COMMIT;` (§6). Each
+   function-kind add first passes the baseline-present check (no baseline /
+   wrong baseline → REFUSE, see below); each row is constructed by the shared
+   row-builder so the two DBs and a hypothetical rebuild agree by construction.
+
+7. **The script reports** what it did: N re-verified, N entities added, N
+   versions rows added, N no-ops, and any refusals with their reason. Nothing
+   silent.
+
+A run that touches a version with no bulk baseline (a brand-new game build)
+refuses the function-kind rows at step 6 and tells the operator to run
+`--rebuild` for that version first (§1). The rebuild is also always available as
+the reconciliation oracle: `python import_to_sqlite.py --rebuild` from the same
+seeds reproduces what the `apply` sequence should have produced.
+
 ### Re-verify
 
 Mutates one existing `address_versions` row's audit trio.
