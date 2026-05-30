@@ -119,8 +119,7 @@ These are NOT in WHGame.dll because CryEngine never calls them; the MSVC linker'
 ## Files that need to change for the shim build
 
 Already shipped:
-- `data/seeds/address_names_seed.csv` — 106 rows including 93 LUA_API + 13 internals
-- `src/address_library.cpp::kEntries[]` — in-source mirror (synced with seed CSV)
+- `data/seeds/address_names_seed.csv` — 106 rows including 93 LUA_API + 13 internals. The reference DB (`data/reference.sqlite`) regenerates from these seed rows; there is no in-source mirror to sync (the compiled `kEntries[]` table was removed when the DB took ownership of the curated cache).
 - Recon tooling: `_research/phase8-fix-a/{coff_inspect.py, callgraph_walk.py, string_xrefs.py, luaL_reg_scan.py}` + per-function notes
 
 Still to do (Stage 2B — shim build):

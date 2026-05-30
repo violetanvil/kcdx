@@ -6,8 +6,8 @@
 > 16-byte AOB `48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D` was scanned
 > against `WHGame.dll`'s `.text` (EXACTLY 1 match, at the function's own RVA)
 > by the now-built `_research/phase8-fix-a/aob_scan.py` (the previously-unbuilt
-> uniqueness scanner). It is recorded in seed.csv / `kEntries[]` id 1190's
-> notes. `cap-33-author-targets`'s `CAP-33-pattern-by-name` row was repointed
+> uniqueness scanner). It is recorded in the seed CSVs under `data/seeds/`
+> (id 1190's notes; the reference DB regenerates from them). `cap-33-author-targets`'s `CAP-33-pattern-by-name` row was repointed
 > from the blocked id-1003 prologue AOB (`ui_pump_by_pattern`) to a pattern
 > locator on the luaL_openlibs AOB (`openlibs_by_pattern`) + its verified
 > signature, so the §36 "author names a target BY AOB PATTERN and hooks it BY
@@ -91,8 +91,9 @@ nothing entry-hooks:
    ready `aob_scan.py`** — `_research/phase8-fix-a/README.md:101` lists it
    as an unbuilt "when populated" deliverable. The uniqueness scan is work
    to WRITE, not run.
-5. **Record the verified AOB** in that seed row's notes (and `kEntries[]`
-   mirror per `address-library.md`).
+5. **Record the verified AOB** in that seed row's notes under `data/seeds/`
+   (the reference DB regenerates from the seed rows — no in-source mirror to
+   sync, per `address-library.md`).
 
 ## 4. Revisit trigger
 

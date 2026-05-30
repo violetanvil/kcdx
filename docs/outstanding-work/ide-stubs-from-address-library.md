@@ -4,9 +4,11 @@
 
 Surfaced during Phase 2b sub-3 design pass. The Address Library
 already carries a `description` column per entry (provenance,
-signature, evidence trail). Today it lives only in the in-binary
-table at `src/address_library.cpp::kEntries[]` and the source CSV
-at `data/seeds/address_names_seed.csv`.
+signature, evidence trail). Today it lives in the reference DB
+(`data/reference.sqlite`), generated from the source seed CSVs
+under `data/seeds/` (`address_names_seed.csv` et al.); there is no
+in-source mirror (the compiled `kEntries[]` table was removed when
+the DB took ownership of the curated cache).
 
 When mod authors write `kcdx.addr.lua_pcall` in their plugin.lua,
 a Lua-aware editor (VS Code + sumneko/luals, JetBrains IDEA-Lua,
