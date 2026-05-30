@@ -27,9 +27,16 @@ A destructive command (`git revert`, `git reset --hard`, `git clean -f`, `rm -r`
 
 2. **Target by exact path, never blanket.** Delete/revert the specific files you confirmed, never a directory-wide `rm -r` / `git clean` / `git reset --hard` on an inferred set. Blanket destruction on a stale reading is the misfire this section exists to stop.
 
-3. **Recoverability tiers.** `git revert` (a new commit) and `git checkout -- <file>` / `git restore <file>` (tracked, restorable from HEAD) are recoverable. `rm -r` / `Remove-Item -Recurse` / `git clean -f` (untracked, no reflog) and `git reset --hard` (uncommitted edits, plus clobbers parallel chats — rule 3) are NOT. Treat the irreversible set as a deliberate stop: re-confirm fully, then re-issue.
+3. **Recoverability axis — local is reflog-recoverable; network is gone.** Tier by what can be undone:
+   - **Recoverable (WARN):** `git revert` (a new commit), `git checkout -- <file>` / `git restore <file>` (tracked, restorable from HEAD).
+   - **Local-irreversible (BLOCK):** `rm -r` / `Remove-Item -Recurse` / `git clean -f` (untracked, no reflog) and `git reset --hard` (uncommitted edits gone). A no-pathspec form hits the ENTIRE shared tree — every parallel chat's edits — not a scoped subset; scope it.
+   - **Network-irreversible (the worst — auto-safened):** `git push --force` past a peer's pushed commits has NO remote reflog. The auto-safener rewrites bare `--force`/`-f` → `--force-with-lease`, which REFUSES on a remote that moved under you (the parallel-chat collision) instead of obliterating it. A non-colliding force-push still succeeds — flow uninterrupted.
 
-The warn-only `guard-destructive-ops.ps1` (`PreToolUse` on `Bash`/`PowerShell`) surfaces this at command-time — it WARNS on the recoverable set and BLOCKS (exit 2) the irreversible set, so a stale-state delete pauses for re-confirmation before it runs. The block is a pause, not a veto: re-confirm live state, then re-issue.
+   Treat each irreversible tier as a deliberate stop: re-confirm fully, then re-issue.
+
+4. **Shared-index / shared-tree mutations (WARN — flow-neutral).** Broad staging (`git add -A`/`-u`/`--all`/`.`, `git commit -a`) can sweep ANOTHER chat's in-flight files into your commit (rule 2) — stage by exact path. `git checkout <branch>` / `git switch` / `git stash` mutate the ONE tree every chat shares (rule 3) — `stash push -u` silently captures untracked files another chat authored. These warn but never block.
+
+Three `PreToolUse` hooks on `Bash`/`PowerShell` enforce this at command-time: `guard-force-push.ps1` auto-safens `--force`→`--force-with-lease` (rewrites the command, never blocks); `guard-destructive-ops.ps1` WARNS the recoverable + shared-tree set and BLOCKS (exit 2) the local-irreversible set. A block is a pause, not a veto: re-confirm live state, then re-issue.
 
 ## Remotes — this IS the private repo; public is an allowlisted snapshot
 

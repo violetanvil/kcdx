@@ -20,7 +20,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 | SKSE / F4SE parity (naming, interfaces) | [skse-parity.md](.claude/rules/skse-parity.md) |
 | TOML schema conventions | [toml-schema.md](.claude/rules/toml-schema.md) |
 | Hook engine invariants (MinHook, conflict_engine, apply order) | [hook-engine.md](.claude/rules/hook-engine.md) |
-| Git concurrency — no auto-branch; parallel chats share one tree; destructive ops re-confirm live state (warn/block hook `guard-destructive-ops.ps1`) | [concurrency-git.md](.claude/rules/concurrency-git.md) |
+| Git concurrency — no auto-branch; parallel chats share one tree; destructive ops re-confirm live state (hooks `guard-destructive-ops.ps1` warn/block + `guard-force-push.ps1` auto-safen `--force`→`--force-with-lease`) | [concurrency-git.md](.claude/rules/concurrency-git.md) |
 | Public/private boundary — a public-facing file references NOTHING private (paths or AI-dev vocabulary); `guard-public-private-refs.ps1` warns at author-time | [public-private-boundary.md](.claude/rules/public-private-boundary.md) |
 | Results-driven — test/probe the unknown, don't theorize | [results-driven.md](.claude/rules/results-driven.md) |
 | Anti-patterns (passes-every-gate-yet-wrong; AP1–16) | [anti-patterns.md](.claude/rules/anti-patterns.md) |
