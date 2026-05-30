@@ -36,6 +36,10 @@ from .row_builder import (
     build_bulk_row,
     build_curated_row,
 )
+from .version_resolver import (
+    resolve_version,
+    VersionResolveError,
+)
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
@@ -45,4 +49,5 @@ __all__ = [
     "resolve_and_check_name_refs", "check_supersession_acyclic",
     "check_kcdx_id_known", "check_every_entity_covered",
     "build_bulk_row", "build_curated_row",
+    "resolve_version", "VersionResolveError",
 ]
