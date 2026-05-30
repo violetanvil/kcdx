@@ -13,7 +13,7 @@ Shared spec: [`../context.md`](../context.md).
 |---|---|---|
 | 1 extract `seeds_shared/` (schema + validators + dict_codec + row_builder); rebuild = thin caller | DONE | 8f2922d |
 | 2 `.rdata` `version_resolver` (scan + hard intern-agreement) | DONE | eb1aa2c |
-| 3 `apply` scaffold + re-verify path (resolve → validate → delta → audit-trio UPDATE) | NOT STARTED | — |
+| 3 `apply` scaffold + re-verify path (resolve → validate → delta → audit-trio UPDATE) | DONE | (landed) |
 | 4 `apply` add-entity + add-versions-row (kind-class branch + baseline-present gate) | NOT STARTED | — |
 | 5 `apply` deprecate + supersede (names-side UPDATE + acyclicity gate) | NOT STARTED | — |
 

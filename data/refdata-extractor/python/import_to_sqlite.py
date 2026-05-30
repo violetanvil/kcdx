@@ -110,6 +110,12 @@ from seeds_shared import (   # noqa: E402,F401
     read_module_seed,
     read_address_names_seed,
     read_address_versions_seed,
+    check_kcdx_id_known,
+    check_every_entity_covered,
+    resolve_and_check_name_refs,
+    check_supersession_acyclic,
+    resolve_version,
+    VersionResolveError,
 )
 
 # Allow very large quoted CSV fields (seed notes can be long).
@@ -900,8 +906,329 @@ def run_update(out_dir, game_dir):
     sys.exit(3)   # distinct exit: "newer version, matcher required".
 
 
+# ---------------------------------------------------------------------------
+# APPLY mode (incremental seed->DB applier; db-updator Phase 1).
+#
+# Lands hand-edited seed-CSV deltas into BOTH reference DBs (user + dev) WITHOUT
+# a full rebuild. This step (Phase 1, step 3) wires the full spine and implements
+# the SIMPLEST action -- re-verify (the audit-trio UPDATE). Add-entity /
+# add-versions-row / deprecate / supersede are later steps (plan.md S3); a seed
+# row that would require an INSERT is counted and SKIPPED here, never inserted.
+#
+# Re-verify mutates only the four audit-trio columns of an existing
+# address_versions row (last_verified_at_version, verified_by, verified_date,
+# evidence_kind) -- see plan.md S2 "Where each field comes from" + S3 "Re-verify".
+# It needs no dump and no dev-DB fingerprint read, so it is the right first action
+# to exercise the scaffold (resolve version -> validate full seed -> diff -> write
+# both DBs) without the kind-class complexity.
+#
+# The re-verify path is IDEMPOTENT: the UPDATE's predicate selects the same row
+# and the column values derive purely from the CSV, so applying twice == once.
+# ---------------------------------------------------------------------------
+APPLY_VERSION_REFUSE_EXIT = 4   # distinct from run_update's sys.exit(3).
+
+
+def _open_rw(db_path, which):
+    """Open an existing reference DB read-write. Refuse (clear message) if the
+    file is missing -- re-verify amends an existing row, so a baseline must
+    already be present (plan.md S3 step 3)."""
+    if not os.path.isfile(db_path):
+        raise RuntimeError(
+            f"no baseline {which} DB at {db_path}; run --rebuild first "
+            f"(apply amends existing rows, it does not build the baseline)")
+    return sqlite3.connect(db_path)
+
+
+def _db_tag_to_id(con, tag, where):
+    """Map a game_versions.tag (e.g. '1.5.1164953') to its game_versions.id FK.
+    The audit-trio columns (last_verified_at_version, valid_from) store
+    game_versions.id ints; the seed carries TAGS. Refuse if the tag is absent
+    (a version the DB was never built for)."""
+    row = con.execute("SELECT id FROM game_versions WHERE tag = ?", (tag,)).fetchone()
+    if row is None:
+        raise RuntimeError(
+            f"{where}: version tag {tag!r} is not present in the DB's "
+            f"game_versions table; the baseline was never built for it "
+            f"(run --rebuild for that version first)")
+    return row[0]
+
+
+def _db_evidence_kind_id(con, val, where):
+    """Look up the EXISTING dict id for an evidence_kind value from the DB's
+    _dict_address_versions_evidence_kind table. CRITICAL: we must reuse the dict
+    id the rebuild minted -- calling Dicts().encode() fresh would start ids at 1
+    and not match the DB's existing ids. A value absent from the dict table means
+    it was never seen at rebuild time; that needs a rebuild, so we refuse (a new
+    evidence_kind cannot be introduced by an incremental re-verify)."""
+    if val is None or val == "":
+        return None
+    row = con.execute(
+        "SELECT id FROM _dict_address_versions_evidence_kind WHERE val = ?",
+        (val,)).fetchone()
+    if row is None:
+        raise RuntimeError(
+            f"{where}: evidence_kind {val!r} is not a known dict value in the DB "
+            f"(_dict_address_versions_evidence_kind); a new evidence_kind needs a "
+            f"--rebuild, it cannot be introduced by an incremental apply")
+    return row[0]
+
+
+def _validate_full_seed_state():
+    """Run the FULL seed-CSV validation gate (plan.md S6 'Validation gate'):
+    read all three seeds through the shared validators and run every cross-row
+    check, exactly as build_rows does. Raises RuntimeError on ANY failure so the
+    caller aborts before opening or writing a DB.
+
+    This mirrors build_rows' seed-read + validator-call sequence WITHOUT the dump
+    reads: read_module_seed / read_address_names_seed / read_address_versions_seed
+    (each fail-loud on structure), then check_kcdx_id_known per versions row,
+    check_every_entity_covered, resolve_and_check_name_refs,
+    check_supersession_acyclic over the FULL seed state."""
+    module_rows = read_module_seed(MODULE_SEED_CSV)
+    modules_by_id = {}
+    modules_by_name = {}
+    for m in module_rows:
+        mid = int(m["id"])
+        modules_by_id[mid] = mid
+        modules_by_name[m["name"].strip()] = mid
+
+    names_seed = read_address_names_seed(ADDRESS_NAMES_SEED_CSV)
+    valid_kcdx_ids = {int(ns["id"]) for ns in names_seed}
+
+    versions_seed = read_address_versions_seed(ADDRESS_VERSIONS_SEED_CSV)
+
+    # Per-row: kcdx_id must be a known name id, and module must resolve. Only
+    # baseline-version rows are covered/materialized (mirrors build_rows).
+    covered_kids = set()
+    for vs in versions_seed:
+        kid = int(vs["kcdx_id"])
+        vfv_tag = vs["valid_from_version"].strip()
+        check_kcdx_id_known(kid, vfv_tag, valid_kcdx_ids)
+        if vfv_tag != GAME_VERSION_TAG:
+            continue
+        where = (f"address_versions_seed.csv (kcdx_id={kid}, "
+                 f"valid_from_version={vfv_tag!r})")
+        raw_mod = vs["module"].strip()
+        try:
+            mid = int(raw_mod)
+            if mid not in modules_by_id:
+                raise RuntimeError(
+                    f"{where}: module id {mid} matches no module_seed.csv row")
+        except ValueError:
+            if raw_mod not in modules_by_name:
+                raise RuntimeError(
+                    f"{where}: module {raw_mod!r} matches no module_seed.csv row "
+                    f"by name")
+        covered_kids.add(kid)
+
+    check_every_entity_covered(valid_kcdx_ids, covered_kids, GAME_VERSION_TAG)
+
+    # Cross-row name/tag resolution + supersession acyclicity over the full
+    # name seed. Build the same pre-resolution name rows build_rows constructs.
+    name_rows = []
+    for ns in names_seed:
+        dep = (ns.get("is_deprecated") or "").strip()
+        name_rows.append({
+            "id": int(ns["id"]),
+            "name": ns["name"].strip(),
+            "superseded_by": (ns.get("superseded_by") or "").strip() or None,
+            "superseded_at_version": (ns.get("superseded_at_version") or "").strip() or None,
+            "is_deprecated": 1 if dep in ("1", "true", "yes") else 0,
+            "deprecated_at_version": (ns.get("deprecated_at_version") or "").strip() or None,
+            "deprecation_replacement": (ns.get("deprecation_replacement") or "").strip() or None,
+            "notes": (ns.get("notes") or None),
+        })
+    name_to_id = {r["name"]: r["id"] for r in name_rows if r["name"]}
+    # tag_to_id: the baseline version tag is the one game_versions row.
+    tag_to_id = {GAME_VERSION_TAG: GAME_VERSION_ID}
+    resolve_and_check_name_refs(name_rows, name_to_id, tag_to_id)
+    check_supersession_acyclic(name_rows)
+
+    return versions_seed
+
+
+def _seed_reverify_rows(versions_seed):
+    """From the validated versions seed, yield the per-row audit-trio facts the
+    re-verify diff compares against the DB. Only baseline-version rows with a
+    present audit trio are candidates (a row with no audit trio cannot be a
+    re-verify). Returns list of dicts: kcdx_id, valid_from_tag, lvv_tag,
+    verified_by, verified_date, evidence_kind."""
+    out = []
+    for vs in versions_seed:
+        vfv_tag = vs["valid_from_version"].strip()
+        if vfv_tag != GAME_VERSION_TAG:
+            continue
+        lvv = (vs.get("last_verified_at_version") or "").strip()
+        vby = (vs.get("verified_by") or "").strip()
+        vdt = (vs.get("verified_date") or "").strip()
+        ekn = (vs.get("evidence_kind") or "").strip()
+        if not any([lvv, vby, vdt, ekn]):
+            continue   # no audit trio -> nothing to re-verify
+        out.append({
+            "kcdx_id": int(vs["kcdx_id"]),
+            "valid_from_tag": vfv_tag,
+            "lvv_tag": lvv,
+            "verified_by": vby or None,
+            "verified_date": vdt or None,
+            "evidence_kind": ekn or None,
+        })
+    return out
+
+
+def _apply_one_db(con, candidates, which):
+    """Compute + apply the re-verify delta for one open DB connection.
+
+    For each candidate seed row, look it up by (kcdx_id, valid_from-as-id).
+      - absent from DB        -> NOT a re-verify (an add; OUT OF SCOPE this step):
+                                 count 'skipped_add', do NOT write.
+      - present, trio matches  -> no-op.
+      - present, trio differs  -> re-verify UPDATE (audit-trio columns only).
+
+    The whole delta is wrapped in one BEGIN; ...; COMMIT; per DB. Returns
+    (n_reverified, n_noop, n_skipped_add)."""
+    n_re = n_noop = n_skip = 0
+    updates = []   # (lvv_id, verified_by, verified_date, ekn_id, kcdx_id, vf_id)
+
+    for c in candidates:
+        where = (f"{which} DB (kcdx_id={c['kcdx_id']}, "
+                 f"valid_from={c['valid_from_tag']!r})")
+        vf_id = _db_tag_to_id(con, c["valid_from_tag"], where)
+        lvv_id = _db_tag_to_id(con, c["lvv_tag"], where) if c["lvv_tag"] else None
+        ekn_id = _db_evidence_kind_id(con, c["evidence_kind"], where)
+
+        row = con.execute(
+            "SELECT last_verified_at_version, verified_by, verified_date, "
+            "evidence_kind FROM address_versions WHERE kcdx_id = ? AND "
+            "valid_from = ?", (c["kcdx_id"], vf_id)).fetchone()
+        if row is None:
+            n_skip += 1   # add (out of scope) -- count, do not write
+            continue
+        cur = (row[0], row[1], row[2], row[3])
+        new = (lvv_id, c["verified_by"], c["verified_date"], ekn_id)
+        if cur == new:
+            n_noop += 1
+            continue
+        updates.append((lvv_id, c["verified_by"], c["verified_date"], ekn_id,
+                        c["kcdx_id"], vf_id))
+        n_re += 1
+
+    # One transaction for the whole DB's delta.
+    con.execute("BEGIN")
+    try:
+        for u in updates:
+            con.execute(
+                "UPDATE address_versions SET last_verified_at_version = ?, "
+                "verified_by = ?, verified_date = ?, evidence_kind = ? "
+                "WHERE kcdx_id = ? AND valid_from = ?", u)
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    return n_re, n_noop, n_skip
+
+
+def run_apply(out_dir, dll_path):
+    """APPLY mode: incremental seed->DB applier. This step implements the
+    re-verify action (audit-trio UPDATE) end to end; INSERT-requiring rows
+    (add-entity / add-versions-row) are counted as skipped, not written.
+
+    Spine (plan.md S3 'Running an incremental build'):
+      1. resolve target version from the linked DLL (.rdata resolver)
+      2. validate the FULL seed CSV state (abort with no DB write on failure)
+      3. open BOTH DBs read-write (refuse if a baseline is missing)
+      4/5/6. per DB, compute the re-verify delta + apply it (user then dev),
+             each DB's delta in one BEGIN/COMMIT
+      7. report counts
+    """
+    bar = "=" * 70
+    print(bar)
+    print("[import_to_sqlite] mode: APPLY (incremental; re-verify)")
+    print(bar)
+
+    # 1. Resolve the target version from the linked DLL (.rdata resolver). This
+    #    is the apply path's primary version source (NOT whdlversions.json).
+    try:
+        tag, ordinal = resolve_version(dll_path)
+    except VersionResolveError as e:
+        print(f"  version resolve FAILED: {e}")
+        sys.exit(APPLY_VERSION_REFUSE_EXIT)
+    print(f"  target version (from DLL .rdata): tag={tag} ordinal={ordinal}")
+    if tag != GAME_VERSION_TAG:
+        # The baseline + seeds only know GAME_VERSION_TAG today; a different
+        # linked DLL means the DB has no baseline for it. Refuse clearly.
+        print(f"  REFUSE: linked DLL is version {tag!r} but the baseline + seeds "
+              f"only cover {GAME_VERSION_TAG!r}; run --rebuild for {tag!r} first.")
+        sys.exit(APPLY_VERSION_REFUSE_EXIT)
+
+    # 2. Validate the FULL seed CSV state. Any failure aborts before any DB open
+    #    or write (RuntimeError propagates -> non-zero exit; nothing written).
+    versions_seed = _validate_full_seed_state()
+    candidates = _seed_reverify_rows(versions_seed)
+    print(f"  seed validated; {len(candidates)} audit-trio row(s) to diff")
+
+    # 3. Open BOTH DBs read-write (refuse if a baseline is missing).
+    user_db = os.path.join(out_dir, "reference.sqlite")
+    dev_db = os.path.join(out_dir, "reference-dev.sqlite")
+    ucon = _open_rw(user_db, "user (reference.sqlite)")
+    try:
+        dcon = _open_rw(dev_db, "dev (reference-dev.sqlite)")
+        try:
+            # 4/5/6. Apply user first, then dev (plan.md S6 user->dev order).
+            u_re, u_noop, u_skip = _apply_one_db(ucon, candidates, "user")
+            d_re, d_noop, d_skip = _apply_one_db(dcon, candidates, "dev")
+        finally:
+            dcon.close()
+    finally:
+        ucon.close()
+
+    # 7. Report. Nothing silent.
+    print(bar)
+    print("APPLY SUMMARY (re-verify)")
+    print(f"  user DB : {u_re} re-verified, {u_noop} no-op, "
+          f"{u_skip} skipped (add -- step 4)")
+    print(f"  dev  DB : {d_re} re-verified, {d_noop} no-op, "
+          f"{d_skip} skipped (add -- step 4)")
+    print(bar)
+
+
+def _usage(code):
+    print("usage (default UPDATE mode): "
+          "python import_to_sqlite.py <out_dir> <game_dir>")
+    print("       (rebuild):            "
+          "python import_to_sqlite.py --rebuild <dump_dir> <out_dir>")
+    print("       (apply):              "
+          "python import_to_sqlite.py apply <out_dir> --dll <path-to-WHGame.dll>")
+    sys.exit(code)
+
+
 def main():
     args = sys.argv[1:]
+
+    # APPLY subcommand: `apply <out_dir> --dll <path>` (db-updator Phase 1).
+    # The link cache that would make --dll optional is Phase 2; for the MVP
+    # --dll is required.
+    if args and args[0] == "apply":
+        rest = args[1:]
+        dll_path = None
+        positional = []
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--dll":
+                if i + 1 >= len(rest):
+                    print("apply: --dll requires a path argument")
+                    _usage(2)
+                dll_path = rest[i + 1]
+                i += 2
+            else:
+                positional.append(rest[i])
+                i += 1
+        if len(positional) < 1 or dll_path is None:
+            print("apply: requires <out_dir> and --dll <path-to-WHGame.dll> "
+                  "(--dll is required for the MVP; the link cache is Phase 2)")
+            _usage(2)
+        run_apply(positional[0], dll_path)
+        return
+
     rebuild = False
     if args and args[0] == "--rebuild":
         rebuild = True
@@ -914,11 +1241,7 @@ def main():
         run_rebuild(args[0], args[1])
     else:
         if len(args) < 2:
-            print("usage (default UPDATE mode): "
-                  "python import_to_sqlite.py <out_dir> <game_dir>")
-            print("       (rebuild):            "
-                  "python import_to_sqlite.py --rebuild <dump_dir> <out_dir>")
-            sys.exit(2)
+            _usage(2)
         run_update(args[0], args[1])
 
 
