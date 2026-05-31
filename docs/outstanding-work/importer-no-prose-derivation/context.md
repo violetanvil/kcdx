@@ -159,6 +159,34 @@ id 19 → 4, id 20 → 13, id 21 → 7, id 22 → 16, id 23 → 12, id 24 → 13
 `seed-to-db-migration-mapping.md` — the downstream migration that consumes these
 authored columns. This plan lands first.
 
+### Phase-1 call-site-data audit result (COMPLETE — both halves done)
+
+The call-site (CONSUME-side) audit walked `refdb.h` (`NameResolution`),
+`refdb.cpp` (the SELECT + bind + populate), `address_library.cpp`, and every
+hook/patch/scan consumer, cross-referenced against the 44-finding
+hardcoded-address-audit. Confirmed facts:
+
+- **Live seed CSV has NONE of `value`/`offset`/`vtable_slot`/`struct_offset`** —
+  the importer SYNTHESIZES `value`/`offset`/`vtable_slot` into the DB (today via
+  the F1 regex / hardwired NULL). So all four are CSV-column ADDs.
+- **Per-kind call-site coverage:** function/no_sig/variadic → `rva` + `signature`
+  + survival fingerprint (✓); callsite → `rva` (✓) + consumer `offset` (FINDING
+  F2, no CSV authoring) + survival aob (✓); vtable_index → `vtable_slot` (FINDING
+  F1, regex-fed) ; vtable_base → `rva` + survival slot_count (✓); data_slot →
+  `rva` + survival rule/derives_from (✓) + `offset` if a consumer needs it (F2,
+  conditional); string_anchor → survival anchor_string (✓); instruction_anchor →
+  survival aob (✓). The audit's **struct_offset** finding (IConsole vtable +0xB8)
+  has NO column anywhere → the new `struct_offset` column.
+- **The resolved fields are plumbed-but-DORMANT — `refdb.cpp` is the ONLY reader
+  of `NameResolution.offset`/`.vtable_slot`/`.value`.** Every hook/patch `.offset`
+  is the hook's OWN param, not the resolved datum. So **Phase 2's engine change is
+  append-only-safe (AP11)**: adding `struct_offset` to the SELECT + struct breaks
+  zero live consumers; the apply==rebuild oracle (+ deliberate baseline
+  re-capture) is the only gate that moves.
+- **No design forks — the column set is mechanical.** The set above + the
+  `struct_offset` validator (non-negative int, NULL otherwise) are fully decided;
+  Phase 2 implements with no fresh decision.
+
 ## Source material
 
 - The importer: `data/refdata-extractor/python/import_to_sqlite.py`.
