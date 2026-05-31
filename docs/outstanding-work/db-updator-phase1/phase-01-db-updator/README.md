@@ -16,8 +16,8 @@ Shared spec: [`../context.md`](../context.md).
 | 2 `.rdata` `version_resolver` (scan + hard intern-agreement) | DONE | eb1aa2c |
 | 3 `apply` scaffold + re-verify path (resolve → validate → delta → audit-trio UPDATE) | DONE | a6e956e |
 | 4 `apply` add-entity + add-versions-row (kind-class branch + baseline-present gate) | DONE | 6bfd634 |
-| 5.1 survival machinery: seed columns + `survival` table + populate-from-fields + oracle (DB-side; engine consumer separate) | DONE | (landed) |
-| 5.2 fill the seed survival fields with verified per-kind data (research-disassembly; parallel to 5.1) | NOT STARTED | — |
+| 5.1 survival machinery: seed columns + `survival` table + populate-from-fields + oracle (DB-side; engine consumer separate) | DONE | 54efc60 |
+| 5.2 fill the seed survival fields with verified per-kind data (research-disassembly; parallel to 5.1) | DONE | 90f6724 (verify) + 6a78f17 (fill + explicit kind column) |
 | 6 `apply` deprecate + supersede (names-side UPDATE + acyclicity gate) | NOT STARTED | — |
 
 ## Step docs
