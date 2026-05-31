@@ -21,13 +21,20 @@ A rebuild emits the per-kind survival datum correctly:
     when the av row itself carries no fingerprint -- a function with no bulk
     baseline; the survival row NEVER forges a hash the av row lacks).
   - A non-function survival row carries its seed survival datum when present and
-    an EMPTY payload when not. Today step 5.2 has not filled any seed survival
-    column, so EVERY non-function payload (aob / anchor_string / rule /
-    slot_count) is empty -- the SHAPE assertion this step locks. As 5.2 fills the
-    columns these tighten to value assertions.
+    an EMPTY payload when not. Step 5.2 filled 14 rows: callsite (5-8) carry an
+    aob + expect_unique=1; string_anchor (12) carries an anchor_string +
+    expect_unique=1; instruction_anchor (9) carries an aob + derives_from +
+    expect_unique=1; data_slot (10/11/132) carry a rule + derives_from;
+    vtable_base (119/138/139/140) carry a slot_count. The vtable_index rows
+    (19-24) stay EMPTY (deferred on the runtime-vtable path). This step asserts
+    the filled kinds are non-empty and the deferred kind is still empty.
   - derives_from is set where the kind has a dependency AND the seed column is
-    filled. Today NO seed survival_derives_from is filled, so derives_from is
-    empty everywhere -- assert the SHAPE (the column exists, is currently empty).
+    filled: the data_slot -> instruction_anchor -> string_anchor chain (10->9,
+    11->10, 132->11, 9->12). vtable_index's base ref is still unfilled, so its
+    derives_from stays empty.
+  - expect_unique is set (=1) on the search-locating kinds the handoff verified
+    unique (callsite 5-8, instruction_anchor 9, string_anchor 12) and NULL on
+    every other kind.
 
 This is the rebuild-side counterpart of the apply==rebuild survival assertions in
 test_apply_add_entity.py (which prove apply writes a survival row byte-identical
@@ -223,22 +230,63 @@ def _function_rows_carry_hash(out):
             con.close()
 
 
-def _nonfunction_payload_empty_today(out):
-    """Step 5.1 SHAPE assertion: with step 5.2 unfilled, EVERY non-function
-    survival payload is empty, and NO survival row carries a function fingerprint
-    on a non-function form. (This tightens to value assertions as 5.2 fills.)"""
+def _sv_by_kid(con):
+    """{kcdx_id: survival-row dict} for the OPEN curated rows, joining survival to
+    its address_versions row."""
+    out = {}
+    for row in con.execute(
+            "SELECT a.kcdx_id, s.kind_form, s.aob, s.anchor_string, s.rule, "
+            "s.slot_count, s.expect_unique, s.derives_from, s.content_hash, "
+            "s.length FROM survival s JOIN address_versions a "
+            "ON s.address_version_id = a.id "
+            "WHERE a.kcdx_id IS NOT NULL AND a.valid_through IS NULL"):
+        out[row[0]] = {
+            "kind_form": row[1], "aob": row[2], "anchor_string": row[3],
+            "rule": row[4], "slot_count": row[5], "expect_unique": row[6],
+            "derives_from": row[7], "content_hash": row[8], "length": row[9]}
+    return out
+
+
+def _filled_kinds_carry_values(out):
+    """Step 5.2 value assertions: the 14 filled rows carry their seed datum, and
+    NO non-function row carries a function fingerprint. The vtable_index rows
+    (19-24) stay EMPTY (deferred). NEVER assert a guessed value -- just non-empty
+    for the filled kinds + empty for the deferred kind."""
     for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
         con = sqlite3.connect(os.path.join(out, fn))
         try:
-            nonempty = con.execute(
-                "SELECT COUNT(*) FROM survival WHERE kind_form != 'function_hash' "
-                "AND (aob IS NOT NULL OR anchor_string IS NOT NULL "
-                "OR rule IS NOT NULL OR slot_count IS NOT NULL)"
-            ).fetchone()[0]
-            assert nonempty == 0, (
-                f"[{which}] {nonempty} non-function survival row(s) have a "
-                f"non-empty payload, but step 5.2 has filled no seed survival "
-                f"column -- a value appeared from nowhere (guessed or notes-parsed?)")
+            sv = _sv_by_kid(con)
+            # callsite (aob form): aob present.
+            for kid in (5, 6, 7, 8):
+                assert sv[kid]["aob"], f"[{which}] callsite {kid} has empty aob"
+            # instruction_anchor (aob form): aob present + derives_from set.
+            assert sv[9]["aob"], f"[{which}] instruction_anchor 9 has empty aob"
+            assert sv[9]["derives_from"] is not None, (
+                f"[{which}] instruction_anchor 9 has no derives_from")
+            # string_anchor (literal form): anchor_string present.
+            assert sv[12]["anchor_string"], (
+                f"[{which}] string_anchor 12 has empty anchor_string")
+            # data_slot (derivation form): rule + derives_from set.
+            for kid in (10, 11, 132):
+                assert sv[kid]["rule"], f"[{which}] data_slot {kid} has empty rule"
+                assert sv[kid]["derives_from"] is not None, (
+                    f"[{which}] data_slot {kid} has no derives_from")
+            # vtable_base (table_shape form): slot_count set.
+            for kid in (119, 138, 139, 140):
+                assert sv[kid]["slot_count"] is not None, (
+                    f"[{which}] vtable_base {kid} has empty slot_count")
+            # vtable_index (slot_target form): still fully EMPTY (deferred).
+            for kid in (19, 20, 21, 22, 23, 24):
+                r = sv[kid]
+                assert r["kind_form"] == "slot_target", (
+                    f"[{which}] vtable_index {kid} kind_form={r['kind_form']!r}")
+                assert (r["aob"] is None and r["anchor_string"] is None
+                        and r["rule"] is None and r["slot_count"] is None
+                        and r["expect_unique"] is None
+                        and r["derives_from"] is None), (
+                    f"[{which}] vtable_index {kid} has a non-empty payload "
+                    f"(deferred kind must stay empty): {r}")
+            # No non-function row carries a function fingerprint.
             fp_on_nonfn = con.execute(
                 "SELECT COUNT(*) FROM survival WHERE kind_form != 'function_hash' "
                 "AND (content_hash IS NOT NULL OR length IS NOT NULL)"
@@ -250,24 +298,65 @@ def _nonfunction_payload_empty_today(out):
             con.close()
 
 
-def _derives_from_shape(out):
-    """Step 5.1 SHAPE assertion: derives_from is set where the kind has a
-    dependency AND the seed column is filled. Today NO survival_derives_from is
-    filled, so derives_from is empty everywhere -- assert the column exists and is
-    currently all-NULL (the SHAPE; it carries a real av-id once 5.2 fills the
-    seed)."""
+def _expect_unique_set_on_unique_locators(out):
+    """Step 5.2: expect_unique=1 on the search-locating kinds the handoff verified
+    .text-unique (callsite 5-8, instruction_anchor 9, string_anchor 12), and NULL
+    on every other survival row."""
+    unique_kids = {5, 6, 7, 8, 9, 12}
+    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
+        con = sqlite3.connect(os.path.join(out, fn))
+        try:
+            sv = _sv_by_kid(con)
+            for kid in unique_kids:
+                assert sv[kid]["expect_unique"] == 1, (
+                    f"[{which}] kid {kid} expect_unique="
+                    f"{sv[kid]['expect_unique']!r}, expected 1")
+            for kid, r in sv.items():
+                if kid not in unique_kids:
+                    assert r["expect_unique"] is None, (
+                        f"[{which}] kid {kid} ({r['kind_form']}) carries "
+                        f"expect_unique={r['expect_unique']!r}, expected NULL")
+            # Exactly 6 survival rows carry expect_unique.
+            n = con.execute(
+                "SELECT COUNT(*) FROM survival WHERE expect_unique IS NOT NULL"
+            ).fetchone()[0]
+            assert n == 6, (
+                f"[{which}] {n} survival rows carry expect_unique, expected 6")
+        finally:
+            con.close()
+
+
+def _derives_from_chain(out):
+    """Step 5.2: derives_from walks the survival DAG the handoff authored --
+    data_slot 132 -> 11 -> 10 -> instruction_anchor 9 -> string_anchor 12. Each
+    survival.derives_from FK resolves to the dependency entity's curated
+    address_versions row, which back-maps to the expected kcdx_id. Exactly 4
+    survival rows carry a derives_from (9, 10, 11, 132)."""
+    expected = {9: 12, 10: 9, 11: 10, 132: 11}
     for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
         con = sqlite3.connect(os.path.join(out, fn))
         try:
             cols = [c[1] for c in con.execute('PRAGMA table_info("survival")')]
             assert "derives_from" in cols, (
                 f"[{which}] survival table has no derives_from column")
+            av_to_kid = {r[0]: r[1] for r in con.execute(
+                "SELECT id, kcdx_id FROM address_versions "
+                "WHERE kcdx_id IS NOT NULL")}
+            sv = _sv_by_kid(con)
+            for kid, dep_kid in expected.items():
+                dfrom = sv[kid]["derives_from"]
+                assert dfrom is not None, (
+                    f"[{which}] kid {kid} has no derives_from (expected -> "
+                    f"{dep_kid})")
+                assert av_to_kid.get(dfrom) == dep_kid, (
+                    f"[{which}] kid {kid} derives_from av {dfrom} -> kid "
+                    f"{av_to_kid.get(dfrom)}, expected kid {dep_kid}")
             n_set = con.execute(
                 "SELECT COUNT(*) FROM survival WHERE derives_from IS NOT NULL"
             ).fetchone()[0]
-            assert n_set == 0, (
-                f"[{which}] {n_set} survival row(s) have derives_from set, but no "
-                f"seed survival_derives_from is filled yet (step 5.2)")
+            assert n_set == len(expected), (
+                f"[{which}] {n_set} survival row(s) have derives_from set, "
+                f"expected {len(expected)} (the 9/10/11/132 chain)")
         finally:
             con.close()
 
@@ -287,12 +376,16 @@ def test_survival_function_rows_carry_hash(rebuilt):  # noqa: F811
     _function_rows_carry_hash(rebuilt)
 
 
-def test_survival_nonfunction_payload_empty_today(rebuilt):  # noqa: F811
-    _nonfunction_payload_empty_today(rebuilt)
+def test_survival_filled_kinds_carry_values(rebuilt):  # noqa: F811
+    _filled_kinds_carry_values(rebuilt)
 
 
-def test_survival_derives_from_shape(rebuilt):  # noqa: F811
-    _derives_from_shape(rebuilt)
+def test_survival_expect_unique_set_on_unique_locators(rebuilt):  # noqa: F811
+    _expect_unique_set_on_unique_locators(rebuilt)
+
+
+def test_survival_derives_from_chain(rebuilt):  # noqa: F811
+    _derives_from_chain(rebuilt)
 
 
 if __name__ == "__main__":
@@ -304,10 +397,12 @@ if __name__ == "__main__":
         print("PASS test_survival_kind_form_correct")
         _function_rows_carry_hash(out)
         print("PASS test_survival_function_rows_carry_hash")
-        _nonfunction_payload_empty_today(out)
-        print("PASS test_survival_nonfunction_payload_empty_today")
-        _derives_from_shape(out)
-        print("PASS test_survival_derives_from_shape")
+        _filled_kinds_carry_values(out)
+        print("PASS test_survival_filled_kinds_carry_values")
+        _expect_unique_set_on_unique_locators(out)
+        print("PASS test_survival_expect_unique_set_on_unique_locators")
+        _derives_from_chain(out)
+        print("PASS test_survival_derives_from_chain")
         print("\nall survival-table oracle tests passed")
     finally:
         _cleanup_rebuild()
