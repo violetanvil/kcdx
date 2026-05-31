@@ -34,6 +34,19 @@ fresh design decision. (If the audit surfaces a value whose correct authored
 form is genuinely ambiguous, that is an unsettled fork → STOP and route to the
 user, do not guess.)
 
+**Call-site-data audit (HARD requirement — user directive).** Beyond "what the
+importer WRITES," audit "what every resolved address is CONSUMED WITH at its call
+site." For each address kind, determine every field the engine needs to actually
+CALL/use an address (consumer offset, vtable slot, struct/byte offset, arg
+datum), by reading the engine read-side (`src/refdb.cpp` SELECT + `NameResolution`
+struct + every consumer of a resolved field) AND cross-referencing
+`docs/outstanding-work/hardcoded-address-audit.md` (44 findings; kinds: pattern,
+rva, vtable_slot ×5, struct_offset ×1). Every such field MUST map to an authored
+seed column; a call-site-needed field with no seed column is a finding. Output:
+the confirmed comprehensive per-kind column set (incl. whether `struct_offset`
+needs a new column) that Phase 2 implements — "capture all of that in our seeds,
+full stop."
+
 **Dependencies.** None — first step.
 
 **Reference.** [`../context.md`](../context.md) findings F1–F4 + the out-of-scope

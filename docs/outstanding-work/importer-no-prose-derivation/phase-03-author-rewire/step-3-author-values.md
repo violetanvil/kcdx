@@ -8,12 +8,14 @@ not even a transient migration script (decision 3). This is a seed data change.
 **Scope (commit-grain).**
 - For ids 19–24 (`vtable_index`), read each row's `notes` in
   `data/seeds/address_names_seed.csv`, extract the slot int by hand, and author
-  it into the new slot column on the matching `data/seeds/address_versions_seed.csv`
-  row. Known values from the audit (to be confirmed against notes at author time):
-  id 19 → 4, id 20 → 13, id 21 → 7, id 22 → 16, id 23 → 12, id 24 → 13.
-- For any `data_slot` (or other kind) the Phase-1 audit found needs an authored
-  offset/datum, author it into its new column the same way (read source →
-  transcribe → verify).
+  it into the new `vtable_index` column on the matching
+  `data/seeds/address_versions_seed.csv` row. Values from the audit (confirm
+  against notes at author time): id 19 → 4, id 20 → 13, id 21 → 7, id 22 → 16,
+  id 23 → 12, id 24 → 13.
+- No other kind needs a hand-authored av-row datum (the Phase-1 fork resolved
+  that data_slot's offset already lives in `survival_rule` and callsites need no
+  apply-offset — see `../context.md` resolved column plan). The `vtable_index`
+  column is the only authoring this step does.
 - **User verification gate:** present the authored values (the 6 slots + any
   others) for the user to confirm against the notes BEFORE the commit. The user
   experiencing/confirming the values is the acceptance — the agent does not

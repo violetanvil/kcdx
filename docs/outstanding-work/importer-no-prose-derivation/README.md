@@ -11,7 +11,7 @@ Shared spec: [`context.md`](context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| Phase 1 — audit + column design | NOT STARTED | — |
+| Phase 1 — audit + column design | IN PROGRESS | — |
 | Phase 2 — schema: explicit per-kind columns | NOT STARTED | — |
 | Phase 3 — author values + rewire readers + delete prose machinery | NOT STARTED | — |
 

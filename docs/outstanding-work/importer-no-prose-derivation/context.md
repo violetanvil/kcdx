@@ -82,6 +82,83 @@ These are NOT prose-derivation; leave them:
   the shared `seeds_shared/row_builder.build_curated_row` is the single column
   assembler; both paths feed it from the authored columns, never from prose.
 
+## Phase-1 audit result (landed — the value-provenance proof)
+
+Full end-to-end audit of the importer's three written tables. Every column
+accounted for; the defect surface is entirely in `address_versions`
+(`value` / `offset` / `vtable_slot`). `address_names` and `survival` are clean.
+
+**Confirmed:** F1 (vtable slot regex on `notes`, live at `import_to_sqlite.py:564`
++ `:1238` via `kind_offset_and_slot`), F2 (`offset` hardwired NULL — a needed
+value with no authored column), F3 (dead `infer_kind`, zero callers), F4
+(`value`/`offset`/`vtable_slot` sprawl). Two additional findings:
+
+- **A1 — `notes_by_kid` is the prose plumbing F1 rides on.** Built at
+  `:518` (rebuild) + `:1187` (apply); its ONLY remaining consumer is the F1
+  regex (kind is now authored). Removing F1 makes this plumbing dead — remove it
+  too.
+- **A2 — `value`'s "offset for data_slot" meaning is fictional in code.** No path
+  ever writes `value` from that meaning; `value` is a pure mirror of
+  `vtable_slot` (`row_builder.py:154`). The schema comment's dual purpose is not
+  real → collapsing `value` away is provably safe.
+
+### Resolved column plan (CORRECTED — comprehensive, keep + author, never delete)
+
+**A delete-the-columns lean was WRONG and is superseded.** New evidence: the C++
+engine's runtime SELECT (`src/refdb.cpp:543`) reads `value`, `offset`, AND
+`vtable_slot` into `NameResolution` — they are plumbed for the imminent
+**hardcoded-address migration** (see `docs/outstanding-work/hardcoded-address-audit.md`:
+44 findings, incl. 5 `vtable_slot`, 1 `struct_offset`/vtable-byte-offset, 17
+not-yet-in-DB). Those fields are NOT dead — they are load-bearing for what lands
+next. `value` looking like a "dead mirror" (the superseded A2) was only true
+because nothing authored it YET; post-migration each is a real authored datum.
+
+**The defect was never the columns — only the prose REGEX that fed one of them.**
+
+**User decisions (locked):**
+1. **Comprehensive** — establish an explicit authored, validated seed column for
+   EVERY address-kind's datum the schema needs. Keep `value`/`offset`/`vtable_slot`
+   + the engine reads; ADD `struct_offset` (the audit's vtable-byte-offset kind
+   has no column home today). No kind left prose-or-NULL.
+2. **Call-site-data capture is a HARD requirement (user directive, verbatim):**
+   *"we will need to look at our current addresses and confirm what data we are
+   using to call them, and ensure we capture all of that in our seeds, full
+   stop."* So the audit widens beyond "what the importer WRITES" to "what every
+   resolved address is CONSUMED WITH at its call site" — every field the engine
+   needs to actually CALL an address (offset, slot, struct offset, arg datum)
+   must have an authored seed column. A field needed to call an address that has
+   no seed column is a finding.
+3. **This plan is the PREREQUISITE** for the hardcoded-address migration (kept a
+   separate downstream plan). It builds the authored-column surface + kills the
+   regex; the migration writes into the columns this establishes.
+
+| action | item | detail |
+|---|---|---|
+| **KEEP + AUTHOR** | `vtable_slot` (versions seed col → `address_versions.vtable_slot`) | sourced from an AUTHORED cell, not the F1 regex; validator: non-negative int when present; vtable_index kind |
+| **KEEP + AUTHOR** | `offset` (versions seed col → `address_versions.offset`) | authored consumer offset (callsite / any kind the call-site audit shows needs it); no longer hardwired NULL |
+| **KEEP + AUTHOR** | `value` (versions seed col → `address_versions.value`) | authored per-kind integer datum; no longer a silent `vtable_slot` mirror |
+| **ADD + AUTHOR** | `struct_offset` (new versions seed col + schema + engine SELECT/struct) | the audit's vtable-byte-offset kind (1 finding); needs its own column home + engine read |
+| **DELETE** | `kind_offset_and_slot()` (`import_to_sqlite.py:321`) | the prose regex — outputs become direct authored-column reads |
+| **DELETE** | `infer_kind()` (`:295`) | dead, zero callers (F3) |
+| **REMOVE** | `notes_by_kid` prose plumbing (`:518`, `:1187`, consumers) | dead once the regex is gone (A1) |
+
+Per-kind datum coverage target (Phase 1 confirms the exact set against the
+call-site audit; all kinds get ONE authored home):
+function/function_no_sig/function_variadic → fingerprint (DUMP); callsite →
+authored `offset` + survival `aob`; data_slot → survival `rule`/`derives_from`
+(+ authored `offset` if the call-site audit shows a consumer needs it on the hot
+row); vtable_index → authored `vtable_slot`; vtable_base → survival `slot_count`;
+string_anchor → survival `anchor_string`; instruction_anchor → survival `aob`;
+struct_offset-bearing → the new `struct_offset` column. ZERO prose-parsing; the
+exact column set is finalized by Phase 1's call-site audit, not assumed here.
+
+The 6 vtable_index values to hand-author (Step 3; user-verified against notes):
+id 19 → 4, id 20 → 13, id 21 → 7, id 22 → 16, id 23 → 12, id 24 → 13.
+
+**Coupled plan:** `docs/outstanding-work/hardcoded-address-audit.md` +
+`seed-to-db-migration-mapping.md` — the downstream migration that consumes these
+authored columns. This plan lands first.
+
 ## Source material
 
 - The importer: `data/refdata-extractor/python/import_to_sqlite.py`.

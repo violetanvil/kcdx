@@ -4,12 +4,12 @@
 the prose machinery entirely. After this step the importer reconstructs NO value
 from `notes` or inference — the plan's goal is met.
 
-**Scope (commit-grain).**
+**Scope (commit-grain).** Per the resolved column plan in `../context.md`:
 - Rewire `build_rows` (~line 564) and `_seed_action_rows` (~line 1238) +
-  `_apply_one_db` to READ the new authored per-kind columns instead of calling
-  `kind_offset_and_slot()`. The slot/offset values now flow from the CSV column
-  straight into `build_curated_row` (which already accepts `offset` /
-  `vtable_slot` params — feed them from the authored cells).
+  `_apply_one_db` to READ the authored `vtable_index` column instead of calling
+  `kind_offset_and_slot()`. The slot value flows from the CSV cell straight into
+  `build_curated_row`'s `vtable_slot` param. (No `offset` to feed — that column
+  is deleted.)
 - DELETE `kind_offset_and_slot()` entirely (lines ~321–334).
 - DELETE the dead `infer_kind()` (lines ~295–318 — F3, zero live callers).
 - Update `seeds_shared/row_builder.py`'s module docstring: it currently states

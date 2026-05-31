@@ -14,7 +14,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| 2 add explicit per-kind columns + collapse sprawl + validators | NOT STARTED | — |
+| 2 author per-kind columns (keep value/offset/vtable_slot + add struct_offset) + engine read sync + validators | NOT STARTED | — |
 
 ## Step docs
 
@@ -22,14 +22,18 @@ Shared spec: [`../context.md`](../context.md).
 
 ## Verification gate (phase end)
 
-- The new per-kind columns exist in `data/seeds/address_versions_seed.csv`'s
-  header and in `seeds_shared/schema.py`'s `address_versions` column list, named
-  per the Phase-1 plan; the `value`/`offset`/`vtable_slot` sprawl is collapsed
-  per decision 2.
-- `seeds_shared/validators.py` validates each new column (shape + which kinds may
-  carry it), as a FORMAT validator on an authored column — never a prose parse.
-- All oracles green; `test_rebuild_oracle` byte-identical after a DELIBERATE,
-  documented `oracle_baseline.json` re-capture for the column-shape change (the
-  existing rows' new columns are empty, so the only baseline diff is the schema
-  column set).
-- No value authored yet and no writer rewired — that is Phase 3.
+- Every per-kind datum column the Phase-1 call-site audit confirmed exists as an
+  AUTHORED column in `data/seeds/address_versions_seed.csv`'s header + in
+  `seeds_shared/schema.py`'s `address_versions` list; `struct_offset` added;
+  `value`/`offset`/`vtable_slot` KEPT (not deleted).
+- The C++ engine read-side is in sync: `refdb.cpp`'s `kVersionSelectColumns` +
+  column-bind + `NameResolution` carry the column set (append-only per AP11). A
+  schema/SELECT mismatch is a DB-load failure — both move together.
+- `seeds_shared/validators.py` validates each per-kind column (shape + which
+  kinds carry it), a FORMAT validator on an authored column — never a prose parse.
+- **FULL build green** (`pwsh ./build.ps1` exit 0 + artifacts) — this phase
+  touches engine code, so the build gate is mandatory, not oracle-only. PLUS all
+  mini-dump apply oracles + `test_rebuild_oracle` green; `test_rebuild_oracle`
+  byte-identical after a DELIBERATE, documented `oracle_baseline.json` re-capture
+  for the column-set change (existing rows' new columns empty).
+- No value authored yet and no regex removed — that is Phase 3.

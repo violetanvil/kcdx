@@ -6,19 +6,33 @@ overlapping `value`/`offset`/`vtable_slot` columns into the explicit per-kind
 set, and make the validators enforce each. Columns are present but empty for
 existing rows; no value authoring, no reader rewiring.
 
-**Scope (commit-grain).**
-- Add the new per-kind column(s) named in the Phase-1 plan to
-  `data/seeds/address_versions_seed.csv`'s header (all existing rows get the new
-  empty cell(s) — a pure header/width change, values stay blank).
-- Add the same columns to `seeds_shared/schema.py`'s `address_versions` column
-  list (+ `USER_COLUMNS` projection as the plan dictates); collapse the
-  `value` / `offset` / `vtable_slot` sprawl into the explicit per-kind columns
-  per decision 2 (remove the overloaded column(s) the plan retires; keep the
-  schema's BLOB/INTEGER/TEXT typing law intact).
-- `seeds_shared/validators.py`: a FORMAT validator per new column — shape check +
-  which kinds may carry it (e.g. only `vtable_index` carries the slot column).
-  These validate an authored column; they are NOT prose parsers (distinct from
-  the out-of-scope legitimate validators in `../context.md`).
+**Scope (commit-grain).** Per the CORRECTED comprehensive column plan in
+`../context.md` (keep + author the engine-read columns; the delete-lean is
+superseded — these fields are load-bearing for the downstream hardcoded-address
+migration). The EXACT column set is whatever Phase 1's call-site-data audit
+finalized; the below is the expected shape:
+- For EVERY per-kind datum column Phase 1 confirmed, ensure
+  `data/seeds/address_versions_seed.csv` has an explicit AUTHORED column:
+  `vtable_slot`, `offset`, `value` (these already exist in the DB schema but were
+  not authored from the seed — add/confirm the seed-CSV header column for each),
+  and ADD `struct_offset` (new column — the audit's vtable-byte-offset kind has
+  no home today). All existing rows get empty cells (values authored in Step 3 /
+  by the migration).
+- In `seeds_shared/schema.py`: keep `value`/`offset`/`vtable_slot`; ADD
+  `struct_offset` (INTEGER) to the `address_versions` list + `USER_COLUMNS`.
+  Keep the BLOB/INTEGER/TEXT typing law.
+- In `src/refdb.cpp`: extend `kVersionSelectColumns` + the column-bind block +
+  `NameResolution` (append-only, AP11) to carry `struct_offset` — the engine
+  read-side stays in sync with the schema (a column the DB has but the SELECT
+  omits, or vice versa, is a load failure). This makes Step 2 a coordinated
+  schema + engine-read change → the FULL build gate (`pwsh ./build.ps1`), not
+  oracle-only.
+- In `seeds_shared/row_builder.py`: `build_curated_row` reads each authored
+  per-kind column straight from the seed cell (stop the `value = vtable_slot`
+  mirror — `value` becomes its own authored datum); `build_bulk_row` carries the
+  columns as NULL for bulk.
+- `seeds_shared/validators.py`: a FORMAT validator per per-kind column (shape +
+  which kinds may carry it). Authored-column validators, NOT prose parsers.
 - Keep `row_builder.build_curated_row` / `build_bulk_row` writing the new columns
   as NULL for now (no value source yet) so rebuild + apply still emit the same
   rows; the rewire to READ authored values is Step 3.
