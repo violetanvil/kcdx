@@ -13,7 +13,7 @@ Shared spec: [`context.md`](context.md). Authoritative design:
 
 | Step | Status | Commit |
 |---|---|---|
-| Phase 1 — the db updator | NOT STARTED | — |
+| Phase 1 — the db updator | DONE | 15b23ff |
 
 The per-step ledger lives in
 [`phase-01-db-updator/README.md`](phase-01-db-updator/README.md). This top-level
