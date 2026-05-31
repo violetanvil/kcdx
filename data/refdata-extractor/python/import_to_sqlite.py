@@ -1384,34 +1384,132 @@ def _insert_survival_row(con, sv_row, user_projection):
         [sv_row.get(c) for c in cols])
 
 
-# The supersession + deprecation columns -- the names-side state step 5 owns.
-# A change to any of these on an EXISTING names row is out of scope here.
+# The supersession + deprecation columns -- the names-side entity-level state.
+# A change to any of these on an EXISTING names row is the deprecate/supersede
+# delta this step classifies + applies (db-updator step 6).
 _NAME_DEP_SUP_COLS = ("superseded_by", "superseded_at_version", "is_deprecated",
                       "deprecated_at_version", "deprecation_replacement")
 
+# The supersession (predecessor-edge) subset and the deprecation subset. A names
+# edit is classified by which subset changed; both are independent names-side
+# UPDATEs that the validator's pair-integrity + acyclicity gate has already
+# accepted over the FULL seed state before any of this runs.
+_SUP_COLS = ("superseded_by", "superseded_at_version")
+_DEP_COLS = ("is_deprecated", "deprecated_at_version", "deprecation_replacement")
 
-def _count_skipped_name_edits(con, state):
-    """Count (do NOT write) deprecate/supersede edits on EXISTING names rows.
+
+def _classify_name_edits(con, state):
+    """Classify (do NOT write) the deprecate/supersede edits on EXISTING names
+    rows for one open DB.
 
     For every kcdx_id whose names row is already in this DB, compare the resolved
-    seed names row's deprecation/supersession columns against the DB row. Any diff
-    is a step-5 edit -> count it skipped, leave the DB untouched. `is_deprecated`
-    is normalized (DB stores 0/1; seed resolves to 0/1 already)."""
-    n = 0
+    seed names row's entity-level supersession/deprecation columns against the DB
+    row. Returns (deprecate_actions, supersede_actions, n_other_skipped):
+      - supersede_actions -- the supersession-edge subset changed (the
+        predecessor gained/changed superseded_by + superseded_at_version). Each is
+        {kcdx_id, superseded_by, superseded_at_version} -- the resolved ids to
+        write. (Supersede's SUCCESSOR entity Y lands via the existing add-entity
+        path; it is a separate versions-seed action, not handled here.)
+      - deprecate_actions -- the deprecation subset changed (is_deprecated +
+        deprecated_at_version + optional deprecation_replacement). Each is
+        {kcdx_id, is_deprecated, deprecated_at_version, deprecation_replacement}.
+      - n_other_skipped -- a names row whose columns differ but in neither subset
+        we apply (e.g. an UN-deprecate / UN-supersede back to NULL, which Phase 1
+        does not yet model); counted, not written.
+
+    `is_deprecated` is normalized (DB stores 0/1; the resolved seed row already
+    carries 0/1). A brand-new entity (no DB names row) is the add path's job and
+    is not classified here. A row whose dep/sup columns already MATCH the DB is a
+    no-op (not counted in any bucket -- nothing to do)."""
+    deprecate_actions = []
+    supersede_actions = []
+    n_other = 0
     for kid, name_row in state["names_by_id"].items():
         db = con.execute(
             f'SELECT {",".join(_NAME_DEP_SUP_COLS)} FROM address_names '
             f'WHERE id = ?', (kid,)).fetchone()
         if db is None:
             continue   # brand-new entity -> handled by the add path, not here
-        db_vals = tuple(db)
-        seed_vals = tuple(
-            (1 if name_row.get(c) else 0) if c == "is_deprecated"
-            else name_row.get(c)
-            for c in _NAME_DEP_SUP_COLS)
-        if db_vals != seed_vals:
-            n += 1
-    return n
+        db_map = dict(zip(_NAME_DEP_SUP_COLS, db))
+        seed_map = {
+            c: ((1 if name_row.get(c) else 0) if c == "is_deprecated"
+                else name_row.get(c))
+            for c in _NAME_DEP_SUP_COLS}
+        if db_map == seed_map:
+            continue   # no-op: nothing changed on this entity's edges
+
+        # A NEW supersession edge: the predecessor had no superseded_by in the DB
+        # and the seed now sets one (Phase 1 models setting the edge, not clearing
+        # or rewriting an existing one).
+        sup_changed = any(db_map[c] != seed_map[c] for c in _SUP_COLS)
+        new_supersede = (sup_changed and db_map["superseded_by"] is None
+                         and seed_map["superseded_by"] is not None)
+        # A NEW deprecation: the entity was not deprecated in the DB and the seed
+        # now deprecates it (Phase 1 models setting deprecation, not un-setting).
+        dep_changed = any(db_map[c] != seed_map[c] for c in _DEP_COLS)
+        new_deprecate = (dep_changed and not db_map["is_deprecated"]
+                         and seed_map["is_deprecated"])
+
+        if new_supersede:
+            supersede_actions.append({
+                "kcdx_id": kid,
+                "superseded_by": seed_map["superseded_by"],
+                "superseded_at_version": seed_map["superseded_at_version"],
+            })
+        if new_deprecate:
+            deprecate_actions.append({
+                "kcdx_id": kid,
+                "is_deprecated": seed_map["is_deprecated"],
+                "deprecated_at_version": seed_map["deprecated_at_version"],
+                "deprecation_replacement": seed_map["deprecation_replacement"],
+            })
+        if not (new_supersede or new_deprecate):
+            # A diff we do not yet model (un-deprecate, un-supersede, or rewriting
+            # an existing edge) -> count skipped, leave the DB untouched.
+            n_other += 1
+    return deprecate_actions, supersede_actions, n_other
+
+
+def _apply_deprecate(con, action):
+    """Apply one deprecate action: UPDATE the entity's address_names row to set
+    is_deprecated + deprecated_at_version + (optional) deprecation_replacement.
+    Its own BEGIN; ...; COMMIT; (plan.md S6). The resolved ids in `action` already
+    match what the rebuild writes (validation ran the resolution + pair-integrity
+    + acyclicity gate over the full seed). address_names is all-rows in BOTH DBs,
+    so the projection does not drop any of these columns -- the UPDATE is the same
+    for user + dev."""
+    kid = action["kcdx_id"]
+    con.execute("BEGIN")
+    try:
+        con.execute(
+            "UPDATE address_names SET is_deprecated = ?, "
+            "deprecated_at_version = ?, deprecation_replacement = ? WHERE id = ?",
+            (action["is_deprecated"], action["deprecated_at_version"],
+             action["deprecation_replacement"], kid))
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
+def _apply_supersede(con, action):
+    """Apply one supersede action: UPDATE the PREDECESSOR's address_names row to
+    set superseded_by + superseded_at_version. Its own BEGIN; ...; COMMIT;
+    (plan.md S6). The successor entity Y lands via the existing add-entity path (a
+    separate versions-seed action); this writes ONLY the predecessor edge. The
+    resolved ids in `action` already match the rebuild's (validation's acyclicity
+    + pair-integrity gate accepted the full seed before any write)."""
+    kid = action["kcdx_id"]
+    con.execute("BEGIN")
+    try:
+        con.execute(
+            "UPDATE address_names SET superseded_by = ?, "
+            "superseded_at_version = ? WHERE id = ?",
+            (action["superseded_by"], action["superseded_at_version"], kid))
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
 
 
 def _apply_one_db(con, actions, state, which, user_projection):
@@ -1432,18 +1530,31 @@ def _apply_one_db(con, actions, state, which, user_projection):
           (c) vtable_index -> mint, all NULL.
 
     Each ACTION is wrapped in its own BEGIN; ...; COMMIT; (plan.md S6). A
-    deprecate/supersede edit on an EXISTING names row is OUT OF SCOPE (step 5):
-    counted as skipped, never written. Returns a counts dict."""
+    deprecate/supersede edit on an EXISTING names row is a names-side UPDATE
+    (db-updator step 6); an edit we do not yet model (un-deprecate / rewrite an
+    existing edge) is counted skipped, never written. Returns a counts dict."""
     counts = {"reverified": 0, "noop": 0, "added_entity": 0,
-              "added_versions_row": 0, "skipped_dep_sup": 0}
+              "added_versions_row": 0, "deprecated": 0, "superseded": 0,
+              "skipped_dep_sup": 0}
 
-    # Detect (and SKIP -- step 5 scope) deprecation/supersession edits on EXISTING
-    # names rows: compare the resolved seed names row against the DB names row for
-    # every kcdx_id already present in this DB. A differing supersession edge or
-    # deprecation pair is counted skipped and NOT written (plan.md S3 deprecate/
-    # supersede is out of scope here). Brand-new entities are handled by the add
-    # path below (their names row is INSERTed there), so they are not counted here.
-    counts["skipped_dep_sup"] = _count_skipped_name_edits(con, state)
+    # Classify the entity-level deprecation/supersession edits on EXISTING names
+    # rows: compare the resolved seed names row against the DB names row for every
+    # kcdx_id already present in this DB. A NEW deprecation or a NEW supersession
+    # edge is applied below as its own names-side UPDATE; an edit we do not yet
+    # model is counted skipped (plan.md S3). Brand-new entities are handled by the
+    # add path below (their names row -- supersession/deprecation FKs included --
+    # is INSERTed there), so they are not classified here. The full-seed validator
+    # already ran the pair-integrity + acyclicity gate, so no cycle / half-set pair
+    # can reach the write below.
+    deprecate_actions, supersede_actions, n_skipped = _classify_name_edits(
+        con, state)
+    counts["skipped_dep_sup"] = n_skipped
+    for da in deprecate_actions:
+        _apply_deprecate(con, da)
+        counts["deprecated"] += 1
+    for sa in supersede_actions:
+        _apply_supersede(con, sa)
+        counts["superseded"] += 1
 
     for a in actions:
         kid = a["kcdx_id"]
@@ -1691,7 +1802,8 @@ def run_apply(out_dir, dll_path):
         print(f"  {label:4s} DB : {c['reverified']} re-verified, {c['noop']} no-op, "
               f"{c['added_entity']} added-entity, "
               f"{c['added_versions_row']} added-versions-row, "
-              f"{c['skipped_dep_sup']} skipped (deprecate/supersede -- step 5)")
+              f"{c['deprecated']} deprecated, {c['superseded']} superseded, "
+              f"{c['skipped_dep_sup']} skipped (unmodeled names edit)")
     print(bar)
 
 
