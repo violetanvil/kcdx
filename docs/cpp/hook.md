@@ -193,7 +193,7 @@ set **exactly one**. On a locator that carries no signature (e.g. a raw
 engine to carry the ABI from, and the install fails when it is null.
 
 Identify an un-named target **once** via an advanced locator, name it (publish
-via `[[address]]` / `kcdx.address` or a cross-plugin export), and refer to it
+via `kcdx.address` or a cross-plugin export), and refer to it
 by name thereafter (declare the hex once, share the name, coexist with engine names).
 
 ## Options (`kcdxHookOptions`)
