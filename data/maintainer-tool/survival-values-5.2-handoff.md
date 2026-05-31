@@ -84,12 +84,13 @@ byte hash (slot pointers relocate per build). `derives_from` = (none).
 | 139 | 4 | 0x1841865F8 (.rdata COL) |
 | 140 | 18 | 0x6D726F6674616C50 (ASCII "Platform…", string boundary) |
 
-**⚠ id 140 notes discrepancy (separate UPDATE owed, NOT this pass).** The id-140
-seed `notes` and `_research/init-cycle-recon/FINDINGS.md` both say "8 function
-pointers". The binary structural count is **18** (18 contiguous reloc'd `.text`
-qwords before the "Platform" string boundary). The "8" was a runtime probe that
-read only the first 8 speculatively. The survival datum is **18**; the id-140
-`notes` prose should be corrected to 18 when next touched.
+**id 140 notes discrepancy — RESOLVED.** The id-140 seed `notes` formerly said
+"8 function pointers"; the binary structural count is **18** (18 contiguous
+reloc'd `.text` qwords before the "Platform" string boundary; the "8" was a
+runtime probe that read only the first 8 speculatively). Both the survival
+`slot_count` (= 18) and the id-140 `notes` prose now state 18.
+(`_research/init-cycle-recon/FINDINGS.md` may still carry the legacy "8" — that
+is a historical recon note, not the authoritative seed.)
 
 ## vtable_index — DEFERRED (ids 19–24)
 
