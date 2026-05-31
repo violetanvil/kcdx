@@ -1,0 +1,4978 @@
+[
+ {
+  "id": "1",
+  "name": "lua_pcall",
+  "kind": "function",
+  "rva": "0x0071A5A4",
+  "sig": "i32 (ptr L, i32 nargs, i32 nresults, i32 errfunc)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 37,
+  "derived_argcount_lb": 4,
+  "regcount": 4,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "xor eax, eax (w4)",
+   "sub rax, qword ptr [rbx + 0x40] (w8)"
+  ]
+ },
+ {
+  "id": "2",
+  "name": "CGame_Update",
+  "kind": "function",
+  "rva": "0x00667B24",
+  "sig": "void (ptr self, bool haveFocus, u32 updateFlags)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "bool",
+   "u32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 1235,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "call rax (w8)",
+   "mov al, byte ptr [rsi + 0x598] (w1)",
+   "test al, al (w1)",
+   "mov al, r14b (w1)"
+  ]
+ },
+ {
+  "id": "3",
+  "name": "luaL_loadfile",
+  "kind": "function",
+  "rva": "0x03993898",
+  "sig": "i32 (ptr L, cstr filename)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "cstr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 128,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "cmp eax, -1 (w4)",
+   "cmp eax, 0x1b (w4)",
+   "mov rax, qword ptr [rsp + 0x28] (w8)",
+   "mov eax, r14d (w4)"
+  ]
+ },
+ {
+  "id": "4",
+  "name": "CGame_per_frame_ui_pump",
+  "kind": "function",
+  "rva": "0x00865FB4",
+  "sig": "void (ptr self)",
+  "ret": "void",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 61,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rcx] (w8)",
+   "test rax, rax (w8)",
+   "mov rax, qword ptr [rcx] (w8)",
+   "test al, al (w1)"
+  ]
+ },
+ {
+  "id": "14",
+  "name": "IConsole_RemoveCommand",
+  "kind": "function",
+  "rva": "0x0100955C",
+  "sig": "bool (ptr self, cstr sName)",
+  "ret": "bool",
+  "argtypes": [
+   "ptr",
+   "cstr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 27,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 3,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "test rax, rax (w8)",
+   "mov al, bl (w1)"
+  ]
+ },
+ {
+  "id": "15",
+  "name": "IConsole_ExecuteString",
+  "kind": "function",
+  "rva": "0x007A5818",
+  "sig": "void (ptr self, cstr command, bool bSilentMode, bool bDeferExecution)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "cstr",
+   "bool",
+   "bool"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 21,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 1,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "4": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "16",
+  "name": "IConsole_GetCVar",
+  "kind": "function",
+  "rva": "0x009DF818",
+  "sig": "ptr (ptr self, cstr name)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "cstr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 52,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "xor eax, eax (w4)",
+   "mov rax, qword ptr [rcx] (w8)",
+   "test eax, eax (w4)",
+   "mov rax, qword ptr [rbx + 0x28] (w8)"
+  ]
+ },
+ {
+  "id": "25",
+  "name": "luaL_checktype",
+  "kind": "function",
+  "rva": "0x0071A0D8",
+  "sig": "void (ptr L, i32 narg, i32 t)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 11,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "cmp eax, r10d (w4)"
+  ]
+ },
+ {
+  "id": "26",
+  "name": "lua_insert",
+  "kind": "function",
+  "rva": "0x0071A49C",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 22,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rcx] (w8)",
+   "mov eax, dword ptr [rcx + 8] (w4)"
+  ]
+ },
+ {
+  "id": "27",
+  "name": "lua_remove",
+  "kind": "function",
+  "rva": "0x0071A4E4",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 17,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r11 + 0x10] (w8)",
+   "add rax, -0x10 (w8)",
+   "mov eax, dword ptr [r10 + 8] (w4)"
+  ]
+ },
+ {
+  "id": "28",
+  "name": "lua_type",
+  "kind": "function",
+  "rva": "0x0071CA90",
+  "sig": "i32 (ptr L, i32 idx)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 10,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "cmp rax, rcx (w8)",
+   "mov eax, dword ptr [rax + 8] (w4)",
+   "or eax, 0xffffffff (w4)"
+  ]
+ },
+ {
+  "id": "29",
+  "name": "lua_rawgeti",
+  "kind": "function",
+  "rva": "0x0071D06C",
+  "sig": "void (ptr L, i32 idx, i32 n)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 47,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 4
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rdx] (w8)",
+   "mov eax, dword ptr [rdx + 8] (w4)",
+   "mov eax, dword ptr [rsp + 0x40] (w4)",
+   "mov rax, qword ptr [r9 + 0x20] (w8)"
+  ]
+ },
+ {
+  "id": "30",
+  "name": "lua_pushlstring",
+  "kind": "function",
+  "rva": "0x0071E46C",
+  "sig": "void (ptr L, cstr s, u64 len)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "cstr",
+   "u64"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 28,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r9 + 0x70] (w8)"
+  ]
+ },
+ {
+  "id": "31",
+  "name": "lua_getmetatable",
+  "kind": "function",
+  "rva": "0x0071E4D4",
+  "sig": "i32 (ptr L, i32 objindex)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 24,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "xor eax, eax (w4)",
+   "mov rax, qword ptr [r10 + 0x10] (w8)",
+   "mov eax, 1 (w4)",
+   "mov rax, qword ptr [r10 + 0x20] (w8)"
+  ]
+ },
+ {
+  "id": "32",
+  "name": "lua_settop",
+  "kind": "function",
+  "rva": "0x0071E77C",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 20,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "movsxd rax, edx (w8)",
+   "inc rax (w8)",
+   "shl rax, 4 (w8)",
+   "add rax, qword ptr [rcx + 0x10] (w8)"
+  ]
+ },
+ {
+  "id": "33",
+  "name": "lua_touserdata",
+  "kind": "function",
+  "rva": "0x0071ECEC",
+  "sig": "ptr (ptr L, i32 idx)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 14,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rax] (w8)",
+   "add rax, 0x28 (w8)",
+   "mov rax, qword ptr [rax] (w8)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "34",
+  "name": "lua_pushstring",
+  "kind": "function",
+  "rva": "0x0071EF54",
+  "sig": "void (ptr L, cstr s)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "cstr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 34,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rcx + 0x70] (w8)"
+  ]
+ },
+ {
+  "id": "35",
+  "name": "lua_createtable",
+  "kind": "function",
+  "rva": "0x0071F098",
+  "sig": "void (ptr L, i32 narr, i32 nrec)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 28,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r9 + 0x70] (w8)"
+  ]
+ },
+ {
+  "id": "36",
+  "name": "lua_pushvalue",
+  "kind": "function",
+  "rva": "0x0071F100",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 11,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "mov eax, dword ptr [rax + 8] (w4)"
+  ]
+ },
+ {
+  "id": "37",
+  "name": "lua_setmetatable",
+  "kind": "function",
+  "rva": "0x0071F128",
+  "sig": "i32 (ptr L, i32 objindex)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 34,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov al, byte ptr [rdx + 9] (w1)",
+   "test al, 4 (w1)",
+   "cmp eax, 7 (w4)",
+   "mov rax, qword ptr [r10 + 0x20] (w8)"
+  ]
+ },
+ {
+  "id": "38",
+  "name": "lua_next",
+  "kind": "function",
+  "rva": "0x0071F4BC",
+  "sig": "i32 (ptr L, i32 idx)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 18,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "39",
+  "name": "lua_tolstring",
+  "kind": "function",
+  "rva": "0x0071F6A8",
+  "sig": "cstr (ptr L, i32 idx, ptr len)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 24,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r10] (w8)",
+   "add rax, 0x18 (w8)",
+   "mov rax, qword ptr [r10] (w8)"
+  ]
+ },
+ {
+  "id": "40",
+  "name": "lua_gettable",
+  "kind": "function",
+  "rva": "0x0071F6FC",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 121,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "shl rax, cl (w8)",
+   "sub eax, r13d (w4)",
+   "movsxd rax, dword ptr [r9 + 0xc] (w8)",
+   "mov rax, qword ptr [r8 + 0x20] (w8)"
+  ]
+ },
+ {
+  "id": "42",
+  "name": "lua_rawget",
+  "kind": "function",
+  "rva": "0x00718464",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 15,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "mov eax, dword ptr [rax + 8] (w4)"
+  ]
+ },
+ {
+  "id": "43",
+  "name": "lua_rawset",
+  "kind": "function",
+  "rva": "0x00720738",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 32,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rdi + 0x10] (w8)",
+   "mov rax, qword ptr [rax - 0x10] (w8)",
+   "mov al, byte ptr [rdx + 9] (w1)",
+   "test al, 4 (w1)"
+  ]
+ },
+ {
+  "id": "44",
+  "name": "lua_tonumber",
+  "kind": "function",
+  "rva": "0x0041C200",
+  "sig": "f32 (ptr L, i32 idx)",
+  "ret": "f32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 14,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "45",
+  "name": "lua_isnumber",
+  "kind": "function",
+  "rva": "0x0041C230",
+  "sig": "i32 (ptr L, i32 idx)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 15,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov eax, ecx (w4)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "46",
+  "name": "lua_checkstack",
+  "kind": "function",
+  "rva": "0x00B9CC48",
+  "sig": "i32 (ptr L, i32 n)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 33,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "shl eax, 4 (w4)",
+   "mov rax, qword ptr [rbx + 0x28] (w8)",
+   "mov eax, 1 (w4)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "47",
+  "name": "lua_typename",
+  "kind": "function",
+  "rva": "0x00B9CE78",
+  "sig": "cstr (ptr L, i32 tp)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 8,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "movsxd rax, edx (w8)",
+   "mov rax, qword ptr [rcx + rax*8] (w8)",
+   "lea lea rax, [rip + 0x34e9ef5] (w8)"
+  ]
+ },
+ {
+  "id": "48",
+  "name": "lua_objlen",
+  "kind": "function",
+  "rva": "0x00B9D764",
+  "sig": "u64 (ptr L, i32 idx)",
+  "ret": "u64",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 21,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rax] (w8)",
+   "mov rax, qword ptr [rax + 0x10] (w8)"
+  ]
+ },
+ {
+  "id": "49",
+  "name": "lua_toboolean",
+  "kind": "function",
+  "rva": "0x00B9C1AC",
+  "sig": "i32 (ptr L, i32 idx)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 13,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "mov eax, 1 (w4)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "50",
+  "name": "lua_rawseti",
+  "kind": "function",
+  "rva": "0x00B9C2A4",
+  "sig": "void (ptr L, i32 idx, i32 n)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 33,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rdi + 0x10] (w8)",
+   "mov rax, qword ptr [rax - 0x10] (w8)",
+   "mov al, byte ptr [rdx + 9] (w1)",
+   "test al, 4 (w1)"
+  ]
+ },
+ {
+  "id": "51",
+  "name": "lua_tointeger",
+  "kind": "function",
+  "rva": "0x00B9CAFC",
+  "sig": "i64 (ptr L, i32 idx)",
+  "ret": "i64",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 7,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "cvttss2si rax, dword ptr [rax] (w8)"
+  ]
+ },
+ {
+  "id": "52",
+  "name": "lua_newuserdata",
+  "kind": "function",
+  "rva": "0x00B9D0C0",
+  "sig": "ptr (ptr L, u64 sz)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "u64"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 25,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r8 + 0x70] (w8)",
+   "add rax, 0x28 (w8)"
+  ]
+ },
+ {
+  "id": "53",
+  "name": "lua_pushcclosure",
+  "kind": "function",
+  "rva": "0x00B9D11C",
+  "sig": "void (ptr L, ptr fn, i32 n)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 48,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r9 + 0x70] (w8)",
+   "mov rax, qword ptr [rcx + rdx] (w8)",
+   "mov eax, dword ptr [rcx + rdx + 8] (w4)",
+   "mov rax, qword ptr [rbx + 0x10] (w8)"
+  ]
+ },
+ {
+  "id": "54",
+  "name": "luaL_findtable",
+  "kind": "function",
+  "rva": "0x00ADB058",
+  "sig": "cstr (ptr L, i32 idx, cstr fname, i32 szhint)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr",
+   "i32"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 73,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "inc rax (w8)",
+   "test eax, eax (w4)",
+   "cmp eax, 5 (w4)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "55",
+  "name": "lua_getfield",
+  "kind": "function",
+  "rva": "0x00ADB44C",
+  "sig": "void (ptr L, i32 idx, cstr k)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 26,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "56",
+  "name": "lua_setfield",
+  "kind": "function",
+  "rva": "0x00A2D840",
+  "sig": "void (ptr L, i32 idx, cstr k)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 27,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "57",
+  "name": "lua_gc",
+  "kind": "function",
+  "rva": "0x00A2D8B8",
+  "sig": "i32 (ptr L, i32 what, i32 data)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 44,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "cmova rax, rdi (w8)",
+   "cmp rax, rcx (w8)",
+   "mov rax, qword ptr [rbx + 0x78] (w8)",
+   "mov eax, edi (w4)"
+  ]
+ },
+ {
+  "id": "58",
+  "name": "lua_sethook",
+  "kind": "function",
+  "rva": "0x00A2DA68",
+  "sig": "i32 (ptr L, ptr func, i32 mask, i32 count)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 12,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "4": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "mov eax, 1 (w4)"
+  ]
+ },
+ {
+  "id": "59",
+  "name": "lua_getstack",
+  "kind": "function",
+  "rva": "0x00CAE9A8",
+  "sig": "i32 (ptr L, i32 level, ptr ar)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 27,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r9 + 8] (w8)",
+   "movabs rax, 0xcccccccccccccccd (w8)",
+   "mov eax, r10d (w4)"
+  ]
+ },
+ {
+  "id": "60",
+  "name": "lua_getinfo",
+  "kind": "function",
+  "rva": "0x00CAEA88",
+  "sig": "i32 (ptr L, cstr what, ptr ar)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "cstr",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 42,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rcx + 8] (w8)",
+   "test rax, rax (w8)",
+   "test rax, rax (w8)",
+   "mov eax, ebp (w4)"
+  ]
+ },
+ {
+  "id": "61",
+  "name": "luaL_checknumber",
+  "kind": "function",
+  "rva": "0x01250AC4",
+  "sig": "f32 (ptr L, i32 narg)",
+  "ret": "f32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 23,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "62",
+  "name": "lua_call",
+  "kind": "function",
+  "rva": "0x0144965C",
+  "sig": "void (ptr L, i32 nargs, i32 nresults)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 17,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "lea lea eax, [rdx + 1] (w4)"
+  ]
+ },
+ {
+  "id": "63",
+  "name": "luaL_getmetafield",
+  "kind": "function",
+  "rva": "0x016546F8",
+  "sig": "i32 (ptr L, i32 obj, cstr e)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 11,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "64",
+  "name": "lua_concat",
+  "kind": "function",
+  "rva": "0x013236D0",
+  "sig": "void (ptr L, i32 n)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 13,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "65",
+  "name": "luaL_pushresult",
+  "kind": "function",
+  "rva": "0x01323664",
+  "sig": "void (ptr B)",
+  "ret": "void",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 11,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "66",
+  "name": "lua_load",
+  "kind": "function",
+  "rva": "0x013E14D8",
+  "sig": "i32 (ptr L, ptr reader, ptr dt, cstr chunkname)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "ptr",
+   "cstr"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 41,
+  "derived_argcount_lb": 4,
+  "regcount": 4,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rip + 0x2796c54] (w8)",
+   "cmovne rax, r9 (w8)",
+   "mov rax, qword ptr [rdi + 0xb0] (w8)",
+   "mov eax, ebx (w4)"
+  ]
+ },
+ {
+  "id": "67",
+  "name": "luaL_checklstring",
+  "kind": "function",
+  "rva": "0x00B9C9BC",
+  "sig": "cstr (ptr L, i32 narg, ptr len)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 16,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "test rax, rax (w8)",
+   "mov rax, rbx (w8)"
+  ]
+ },
+ {
+  "id": "68",
+  "name": "luaL_optinteger",
+  "kind": "function",
+  "rva": "0x00B9CA08",
+  "sig": "i64 (ptr L, i32 narg, i64 def)",
+  "ret": "i64",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i64"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 17,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)",
+   "mov rax, r10 (w8)"
+  ]
+ },
+ {
+  "id": "69",
+  "name": "luaL_checkinteger",
+  "kind": "function",
+  "rva": "0x00B9CAB4",
+  "sig": "i64 (ptr L, i32 narg)",
+  "ret": "i64",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 22,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "test rax, rax (w8)",
+   "mov rax, rsi (w8)",
+   "test eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "70",
+  "name": "luaL_checkstack",
+  "kind": "function",
+  "rva": "0x00B9CC20",
+  "sig": "void (ptr L, i32 sz, cstr msg)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 12,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "71",
+  "name": "luaL_checkany",
+  "kind": "function",
+  "rva": "0x00B9CE94",
+  "sig": "void (ptr L, i32 narg)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 8,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "cmp eax, -1 (w4)"
+  ]
+ },
+ {
+  "id": "72",
+  "name": "luaL_addlstring",
+  "kind": "function",
+  "rva": "0x00B9D8E4",
+  "sig": "void (ptr B, cstr s, u64 l)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "cstr",
+   "u64"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 27,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   1
+  ],
+  "rax_writes_tail": [
+   "mov al, byte ptr [rsi] (w1)"
+  ]
+ },
+ {
+  "id": "73",
+  "name": "lua_iscfunction",
+  "kind": "function",
+  "rva": "0x039930A4",
+  "sig": "i32 (ptr L, i32 idx)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 12,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rax] (w8)",
+   "mov eax, ecx (w4)"
+  ]
+ },
+ {
+  "id": "74",
+  "name": "lua_isstring",
+  "kind": "function",
+  "rva": "0x039930CC",
+  "sig": "i32 (ptr L, i32 idx)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 9,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "add eax, -3 (w4)",
+   "cmp eax, 1 (w4)",
+   "mov eax, ecx (w4)"
+  ]
+ },
+ {
+  "id": "75",
+  "name": "lua_lessthan",
+  "kind": "function",
+  "rva": "0x039930E8",
+  "sig": "i32 (ptr L, i32 idx1, i32 idx2)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 24,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "cmp rax, rcx (w8)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "76",
+  "name": "lua_getupvalue",
+  "kind": "function",
+  "rva": "0x03993060",
+  "sig": "cstr (ptr L, i32 funcindex, i32 n)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 19,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "78",
+  "name": "lua_rawequal",
+  "kind": "function",
+  "rva": "0x03993178",
+  "sig": "i32 (ptr L, i32 idx1, i32 idx2)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 23,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "cmp rax, rcx (w8)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "79",
+  "name": "lua_setfenv",
+  "kind": "function",
+  "rva": "0x039931C0",
+  "sig": "i32 (ptr L, i32 idx)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 39,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r10 + 0x10] (w8)",
+   "mov rax, qword ptr [rax - 0x10] (w8)",
+   "mov rax, qword ptr [r10 + 0x10] (w8)",
+   "mov eax, ebx (w4)"
+  ]
+ },
+ {
+  "id": "80",
+  "name": "lua_setupvalue",
+  "kind": "function",
+  "rva": "0x03993244",
+  "sig": "cstr (ptr L, i32 funcindex, i32 n)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 36,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "test rax, rax (w8)",
+   "mov rax, r10 (w8)"
+  ]
+ },
+ {
+  "id": "81",
+  "name": "lua_tothread",
+  "kind": "function",
+  "rva": "0x039932C0",
+  "sig": "ptr (ptr L, i32 idx)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 9,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "xor eax, eax (w4)",
+   "mov rax, qword ptr [rax] (w8)"
+  ]
+ },
+ {
+  "id": "82",
+  "name": "lua_xmove",
+  "kind": "function",
+  "rva": "0x039932DC",
+  "sig": "void (ptr from, ptr to, i32 n)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 23,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rcx + 0x10] (w8)",
+   "mov rax, qword ptr [r8 + rdx] (w8)",
+   "mov eax, dword ptr [r8 + rdx - 8] (w4)"
+  ]
+ },
+ {
+  "id": "83",
+  "name": "luaL_addvalue",
+  "kind": "function",
+  "rva": "0x039934C8",
+  "sig": "void (ptr B)",
+  "ret": "void",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 40,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 2,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "84",
+  "name": "luaL_argerror",
+  "kind": "function",
+  "rva": "0x0399355C",
+  "sig": "i32 (ptr L, i32 narg, cstr extramsg)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 55,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)",
+   "test eax, eax (w4)",
+   "mov rax, qword ptr [rsp + 0x48] (w8)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "85",
+  "name": "luaL_checkoption",
+  "kind": "function",
+  "rva": "0x03993638",
+  "sig": "i32 (ptr L, i32 narg, cstr def, ptr lst)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr",
+   "ptr"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 99,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 2,
+    "slot_maxw": 8
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 2,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "movzx eax, byte ptr [rdx] (w4)",
+   "sub eax, r9d (w4)",
+   "test eax, eax (w4)",
+   "mov eax, r8d (w4)"
+  ]
+ },
+ {
+  "id": "87",
+  "name": "luaL_optlstring",
+  "kind": "function",
+  "rva": "0x03993AA4",
+  "sig": "cstr (ptr L, i32 narg, cstr def, ptr len)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr",
+   "ptr"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 31,
+  "derived_argcount_lb": 4,
+  "regcount": 4,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "or rax, 0xffffffffffffffff (w8)",
+   "inc rax (w8)",
+   "xor eax, eax (w4)",
+   "mov rax, r10 (w8)"
+  ]
+ },
+ {
+  "id": "88",
+  "name": "luaL_prepbuffer",
+  "kind": "function",
+  "rva": "0x03993B00",
+  "sig": "ptr (ptr B)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 12,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)",
+   "lea lea rax, [rbx + 0x18] (w8)"
+  ]
+ },
+ {
+  "id": "89",
+  "name": "luaL_typerror",
+  "kind": "function",
+  "rva": "0x03993B24",
+  "sig": "i32 (ptr L, i32 narg, cstr tname)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 76,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 2,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)",
+   "test eax, eax (w4)",
+   "mov rax, qword ptr [rsp + 0x48] (w8)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "90",
+  "name": "luaL_where",
+  "kind": "function",
+  "rva": "0x03993B70",
+  "sig": "void (ptr L, i32 level)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 32,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rip + 0xf69440] (w8)",
+   "xor rax, rsp (w8)",
+   "test eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "91",
+  "name": "lua_getlocal",
+  "kind": "function",
+  "rva": "0x03996250",
+  "sig": "cstr (ptr L, ptr ar, i32 n)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 29,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "movsxd rax, dword ptr [rdx + 0x74] (w8)",
+   "mov rax, qword ptr [rcx + 0x50] (w8)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "92",
+  "name": "lua_setlocal",
+  "kind": "function",
+  "rva": "0x039962B8",
+  "sig": "cstr (ptr L, ptr ar, i32 n)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 29,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "movsxd rax, dword ptr [rdx + 0x74] (w8)",
+   "mov rax, qword ptr [rcx + 0x50] (w8)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "93",
+  "name": "lua_error",
+  "kind": "function",
+  "rva": "0x0399605C",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 68,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rcx + 0xa8] (w8)",
+   "test rax, rax (w8)",
+   "mov rax, qword ptr [rcx + 0x20] (w8)",
+   "mov rax, qword ptr [rbx + 0x20] (w8)"
+  ]
+ },
+ {
+  "id": "94",
+  "name": "lua_resume",
+  "kind": "function",
+  "rva": "0x039966A4",
+  "sig": "i32 (ptr L, i32 narg)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 41,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "movsxd rax, edx (w8)",
+   "shl rax, 4 (w8)",
+   "test eax, eax (w4)",
+   "mov eax, edi (w4)"
+  ]
+ },
+ {
+  "id": "95",
+  "name": "lua_dump",
+  "kind": "function",
+  "rva": "0x03996EE4",
+  "sig": "i32 (ptr L, ptr writer, ptr data)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 34,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "xor rax, rsp (w8)",
+   "lea lea rax, [rip + 0x27aa] (w8)",
+   "xor eax, eax (w4)",
+   "mov eax, dword ptr [rbp - 0x24] (w4)"
+  ]
+ },
+ {
+  "id": "96",
+  "name": "lua_getfenv",
+  "kind": "function",
+  "rva": "0x03992FFC",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 28,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r10 + 0x10] (w8)",
+   "mov rax, qword ptr [rdx + 0x78] (w8)",
+   "mov eax, dword ptr [rdx + 0x80] (w4)",
+   "mov rax, qword ptr [rax] (w8)"
+  ]
+ },
+ {
+  "id": "97",
+  "name": "luaopen_math",
+  "kind": "function",
+  "rva": "0x009299AC",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 98,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "cmp eax, 5 (w4)",
+   "test rax, rax (w8)",
+   "mov rax, qword ptr [rbx + 0x10] (w8)",
+   "lea lea eax, [rdi - 2] (w4)"
+  ]
+ },
+ {
+  "id": "98",
+  "name": "luaopen_table",
+  "kind": "function",
+  "rva": "0x00D815A4",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 70,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rax + 0x10] (w8)",
+   "cmp eax, 5 (w4)",
+   "test rax, rax (w8)",
+   "mov eax, 1 (w4)"
+  ]
+ },
+ {
+  "id": "99",
+  "name": "luaopen_debug",
+  "kind": "function",
+  "rva": "0x007A671C",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 70,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rax + 0x10] (w8)",
+   "cmp eax, 5 (w4)",
+   "test rax, rax (w8)",
+   "mov eax, 1 (w4)"
+  ]
+ },
+ {
+  "id": "100",
+  "name": "luaopen_base",
+  "kind": "function",
+  "rva": "0x012DA578",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 72,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rax + 0x10] (w8)",
+   "cmp eax, 5 (w4)",
+   "test rax, rax (w8)",
+   "mov eax, 2 (w4)"
+  ]
+ },
+ {
+  "id": "101",
+  "name": "luaopen_string",
+  "kind": "function",
+  "rva": "0x012DAC38",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 107,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rax + 0x10] (w8)",
+   "cmp eax, 5 (w4)",
+   "test rax, rax (w8)",
+   "mov eax, 1 (w4)"
+  ]
+ },
+ {
+  "id": "102",
+  "name": "luaopen_package",
+  "kind": "function",
+  "rva": "0x012DAF40",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 188,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rip + 0x2dc40dd] (w8)",
+   "mov rax, qword ptr [rax + rdi*8] (w8)",
+   "test rax, rax (w8)",
+   "mov eax, 1 (w4)"
+  ]
+ },
+ {
+  "id": "103",
+  "name": "luaopen_os",
+  "kind": "function",
+  "rva": "0x019DFD0C",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 70,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rax + 0x10] (w8)",
+   "cmp eax, 5 (w4)",
+   "test rax, rax (w8)",
+   "mov eax, 1 (w4)"
+  ]
+ },
+ {
+  "id": "104",
+  "name": "luaopen_io",
+  "kind": "function",
+  "rva": "0x003B70F0",
+  "sig": "i32 (ptr L)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 1,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "105",
+  "name": "index2adr",
+  "kind": "function",
+  "rva": "0x0071DD7C",
+  "sig": "ptr (ptr L, i32 idx)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 54,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea eax, [r8 - 1] (w4)",
+   "mov rax, rdx (w8)",
+   "lea lea rax, [rcx + 0x78] (w8)",
+   "lea lea rax, [rcx + 0x88] (w8)"
+  ]
+ },
+ {
+  "id": "106",
+  "name": "luaD_pcall",
+  "kind": "function",
+  "rva": "0x0071A628",
+  "sig": "i32 (ptr L, ptr func, ptr u, i64 old_top, i64 ef)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "ptr",
+   "i64",
+   "i64"
+  ],
+  "declared_argcount": 5,
+  "walker": "OK",
+  "ninsns": 33,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "5": {
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, rsp (w8)",
+   "mov rax, qword ptr [rsp + 0x60] (w8)",
+   "test eax, eax (w4)",
+   "mov eax, esi (w4)"
+  ]
+ },
+ {
+  "id": "107",
+  "name": "luaD_rawrunprotected",
+  "kind": "function",
+  "rva": "0x0071A6A8",
+  "sig": "i32 (ptr L, ptr f, ptr ud)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 34,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rsp + 0x40] (w8)",
+   "test eax, eax (w4)",
+   "mov rax, qword ptr [rsp + 0x40] (w8)",
+   "mov eax, dword ptr [rbp + 0x50] (w4)"
+  ]
+ },
+ {
+  "id": "108",
+  "name": "luaL_addstring",
+  "kind": "function",
+  "rva": "0x039934B4",
+  "sig": "void (ptr B, cstr s)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "cstr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 5,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "109",
+  "name": "luaO_pushvfstring",
+  "kind": "function",
+  "rva": "0x0399838C",
+  "sig": "cstr (ptr L, cstr fmt, ptr argp)",
+  "ret": "cstr",
+  "argtypes": [
+   "ptr",
+   "cstr",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 139,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "shl rax, 4 (w8)",
+   "mov rax, qword ptr [rdi] (w8)",
+   "mov rax, qword ptr [rax - 0x10] (w8)",
+   "add rax, 0x18 (w8)"
+  ]
+ },
+ {
+  "id": "110",
+  "name": "lua_topointer",
+  "kind": "function",
+  "rva": "0x0071F1F8",
+  "sig": "ptr (ptr L, i32 idx)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 30,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "add rax, 0x28 (w8)",
+   "mov rax, qword ptr [rax] (w8)",
+   "xor eax, eax (w4)",
+   "mov rax, qword ptr [rax] (w8)"
+  ]
+ },
+ {
+  "id": "111",
+  "name": "lua_settable",
+  "kind": "function",
+  "rva": "0x0071E7C0",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 14,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [],
+  "rax_writes_tail": []
+ },
+ {
+  "id": "115",
+  "name": "luaL_openlibs",
+  "kind": "function",
+  "rva": "0x01449600",
+  "sig": "void (ptr L)",
+  "ret": "void",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 25,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rip - 0x16f0a3] (w8)",
+   "mov rax, qword ptr [rbx + 8] (w8)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "116",
+  "name": "f_luaopen",
+  "kind": "function",
+  "rva": "0x00F77CA4",
+  "sig": "void (ptr L, ptr ud)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 74,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rdi + 0x20] (w8)",
+   "mov rax, qword ptr [rbp + 0x78] (w8)",
+   "shl rax, 2 (w8)"
+  ]
+ },
+ {
+  "id": "117",
+  "name": "l_alloc",
+  "kind": "function",
+  "rva": "0x0071E2B0",
+  "sig": "ptr (ptr ud, ptr block, u64 osize, u64 nsize)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "u64",
+   "u64"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 63,
+  "derived_argcount_lb": 0,
+  "regcount": 0,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 2,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, rbx (w8)"
+  ]
+ },
+ {
+  "id": "118",
+  "name": "luaL_checkudata",
+  "kind": "function",
+  "rva": "0x039936D0",
+  "sig": "ptr (ptr L, i32 ud, cstr tname)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "i32",
+   "cstr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 38,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "test eax, eax (w4)",
+   "test eax, eax (w4)",
+   "mov rax, rdi (w8)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "123",
+  "name": "lua_close",
+  "kind": "function",
+  "rva": "0x039989A4",
+  "sig": "void (ptr L)",
+  "ret": "void",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 85,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 2,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "jmp rax (w8)",
+   "mov rax, qword ptr [rcx + 0x20] (w8)",
+   "mov rax, qword ptr [rbx + 0x50] (w8)",
+   "test eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "124",
+  "name": "lua_replace",
+  "kind": "function",
+  "rva": "0x00B9CCB8",
+  "sig": "void (ptr L, i32 idx)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 47,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rbx + 0x10] (w8)",
+   "mov rax, qword ptr [rcx + 0x50] (w8)",
+   "mov rax, qword ptr [rbx + 0x28] (w8)",
+   "mov rax, qword ptr [rbx + 0x10] (w8)"
+  ]
+ },
+ {
+  "id": "125",
+  "name": "luaL_ref",
+  "kind": "function",
+  "rva": "0x0071D118",
+  "sig": "i32 (ptr L, i32 t)",
+  "ret": "i32",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 128,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov eax, edi (w4)",
+   "test rax, rax (w8)",
+   "and al, 0xfb (w1)",
+   "mov rax, qword ptr [rcx + 0x40] (w8)"
+  ]
+ },
+ {
+  "id": "126",
+  "name": "close_state",
+  "kind": "function",
+  "rva": "0x039987B4",
+  "sig": "void (ptr L)",
+  "ret": "void",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 55,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rdi] (w8)",
+   "mov rax, qword ptr [rbp + 0x10] (w8)",
+   "jmp rax (w8)"
+  ]
+ },
+ {
+  "id": "127",
+  "name": "luaC_barrierf",
+  "kind": "function",
+  "rva": "0x03997070",
+  "sig": "void (ptr L, ptr o, ptr v)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 12,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1
+  ],
+  "rax_writes_tail": [
+   "mov al, byte ptr [rdx + 9] (w1)",
+   "and al, 0xf8 (w1)"
+  ]
+ },
+ {
+  "id": "128",
+  "name": "luaF_close",
+  "kind": "function",
+  "rva": "0x01565018",
+  "sig": "void (ptr L, ptr level)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 47,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r9 + 0x20] (w8)",
+   "mov rax, qword ptr [rcx] (w8)",
+   "mov eax, dword ptr [rcx + 8] (w4)",
+   "mov rax, qword ptr [rdx + 0x28] (w8)"
+  ]
+ },
+ {
+  "id": "129",
+  "name": "luaC_separateudata",
+  "kind": "function",
+  "rva": "0x00FEABA8",
+  "sig": "u64 (ptr L, i32 all)",
+  "ret": "u64",
+  "argtypes": [
+   "ptr",
+   "i32"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 51,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "test al, 3 (w1)",
+   "mov rax, rbp (w8)",
+   "test al, 8 (w1)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "130",
+  "name": "luaM_realloc_",
+  "kind": "function",
+  "rva": "0x0071E258",
+  "sig": "ptr (ptr L, ptr block, u64 osize, u64 nsize)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "u64",
+   "u64"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 24,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": false,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rdi + 0x10] (w8)",
+   "call rax (w8)",
+   "test rax, rax (w8)"
+  ]
+ },
+ {
+  "id": "131",
+  "name": "CCryPak_FOpen",
+  "kind": "function",
+  "rva": "0x004614A0",
+  "sig": "ptr (ptr this, cstr pName, cstr szMode, u32 nFlags)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "cstr",
+   "cstr",
+   "u32"
+  ],
+  "declared_argcount": 4,
+  "walker": "OK",
+  "ninsns": 269,
+  "derived_argcount_lb": 4,
+  "regcount": 4,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "4": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 4,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [r13 + 0x10] (w8)",
+   "sub rax, r8 (w8)",
+   "sar rax, 3 (w8)",
+   "imul rax, r9 (w8)"
+  ]
+ },
+ {
+  "id": "133",
+  "name": "ModManager_Select",
+  "kind": "function",
+  "rva": "0x00DA104C",
+  "sig": "void (ptr this)",
+  "ret": "void",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 77,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rbp - 0x11] (w8)",
+   "test al, al (w1)",
+   "mov rax, qword ptr [rbx + 0x18] (w8)",
+   "cmp rax, qword ptr [rbx + 0x20] (w8)"
+  ]
+ },
+ {
+  "id": "134",
+  "name": "ModManager_ctor",
+  "kind": "function",
+  "rva": "0x00DA0EB0",
+  "sig": "ptr (ptr outResult, ptr sys, ptr modsDir)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 3,
+  "walker": "OK",
+  "ninsns": 58,
+  "derived_argcount_lb": 3,
+  "regcount": 3,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 3,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "3": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "test rax, rax (w8)",
+   "lea lea rax, [rip + 0x2d01f67] (w8)",
+   "mov rax, rsi (w8)"
+  ]
+ },
+ {
+  "id": "135",
+  "name": "ModManager_Mount",
+  "kind": "function",
+  "rva": "0x004D9058",
+  "sig": "void (ptr modMgr, ptr modsDir)",
+  "ret": "void",
+  "argtypes": [
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 12,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "lea lea rax, [rip + 0x38e47e2] (w8)",
+   "lea lea rax, [r11 - 0x48] (w8)"
+  ]
+ },
+ {
+  "id": "136",
+  "name": "ModManager_ReadModOrder",
+  "kind": "function",
+  "rva": "0x00DA1294",
+  "sig": "u8 (ptr this)",
+  "ret": "u8",
+  "argtypes": [
+   "ptr"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 169,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 0,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   1,
+   8
+  ],
+  "rax_writes_tail": [
+   "test al, al (w1)",
+   "mov rax, qword ptr [rax] (w8)",
+   "test al, al (w1)",
+   "mov al, dil (w1)"
+  ]
+ },
+ {
+  "id": "141",
+  "name": "WHGame_allocator",
+  "kind": "function",
+  "rva": "0x004F7820",
+  "sig": "ptr (i64 size)",
+  "ret": "ptr",
+  "argtypes": [
+   "i64"
+  ],
+  "declared_argcount": 1,
+  "walker": "OK",
+  "ninsns": 17,
+  "derived_argcount_lb": 1,
+  "regcount": 1,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 0,
+    "slot_maxw": 0
+   }
+  },
+  "ret_widths_seen": [
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rip + 0x4fa3c42] (w8)",
+   "call rax (w8)"
+  ]
+ },
+ {
+  "id": "142",
+  "name": "CryString_placement_construct",
+  "kind": "function",
+  "rva": "0x004FD468",
+  "sig": "ptr (ptr dest, ptr source)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "ptr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 51,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": true,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov eax, dword ptr [rdx + rax] (w4)",
+   "lea lea rax, [rip + 0x4f7db77] (w8)",
+   "mov rax, rbx (w8)",
+   "xor eax, eax (w4)"
+  ]
+ },
+ {
+  "id": "143",
+  "name": "CryString_init_from_string",
+  "kind": "function",
+  "rva": "0x004F692C",
+  "sig": "ptr (ptr dest, cstr source)",
+  "ret": "ptr",
+  "argtypes": [
+   "ptr",
+   "cstr"
+  ],
+  "declared_argcount": 2,
+  "walker": "OK",
+  "ninsns": 76,
+  "derived_argcount_lb": 2,
+  "regcount": 2,
+  "stack_max": 0,
+  "per_arg": {
+   "1": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 2,
+    "slot_maxw": 8
+   },
+   "2": {
+    "reg_used_before_write": true,
+    "reg_ptr": false,
+    "reg_width": 8,
+    "slot_reads": 1,
+    "slot_maxw": 8
+   }
+  },
+  "ret_widths_seen": [
+   4,
+   8
+  ],
+  "rax_writes_tail": [
+   "mov rax, qword ptr [rsi] (w8)",
+   "mov rax, rsi (w8)",
+   "mov eax, ebx (w4)",
+   "xor eax, eax (w4)"
+  ]
+ }
+]

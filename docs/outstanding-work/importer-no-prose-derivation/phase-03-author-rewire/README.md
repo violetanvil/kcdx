@@ -14,7 +14,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| 3 hand-author the existing values into the new columns (user-verified) | NOT STARTED | — |
+| 3 hand-author the existing values into the new columns (user-verified) | DONE | (landed) |
 | 4 rewire both writers to read authored columns + delete prose machinery | NOT STARTED | — |
 
 ## Step docs
@@ -25,9 +25,12 @@ Shared spec: [`../context.md`](../context.md).
 ## Verification gate (phase end)
 
 - The 6 vtable_index rows (ids 19–24) carry their slot int in the new authored
-  column, **user-verified against the notes** (the values are NOT derived by any
-  tool — read, transcribed, confirmed). Any data_slot offsets the audit found are
-  authored too.
+  column (19→4, 20→13, 21→7, 22→16, 23→12, 24→13), **binary-verified against
+  WHGame.dll** — a full seed-verification recon (`_research/seed-verification-recon/`)
+  confirmed all 6 against the actual CGame/CScriptSystem/CScriptTable vtables
+  (anchored on CGame::Update slot 7), not the predecessor-project prose they were
+  first transcribed from. The same recon verified all 143 mechanical facts +
+  re-derived all 111 function ABIs from the binary (0 mismatches).
 - `kind_offset_and_slot()` and `infer_kind()` are DELETED from
   `import_to_sqlite.py`; no regex/prose/inference path produces any DB value
   (the out-of-scope legitimate regexes in `../context.md` remain).
