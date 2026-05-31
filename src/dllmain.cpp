@@ -64,7 +64,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     kcdx::log::InfoF("engine data directory: %s", engineUtf8);
 
     // LoadAllConfigs has already run inside DllMain (synchronously, so
-    // before_game-zoned [[patch]] entries could apply against ntdll /
+    // before_game-zoned byte-patch entries could apply against ntdll /
     // kernel32 / etc. that were already mapped, and the LDR-notification
     // callback could be registered for WHGame.dll). The idempotence
     // guard inside LoadAllConfigs makes this call a no-op that simply
@@ -385,7 +385,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
 // Synchronous DllMain-phase work for the before_game-zone path.
 //
 // Reads + parses every plugin's kcdx.toml, computes load-order
-// resolution, applies before_game-zoned [[patch]] entries to any
+// resolution, applies before_game-zoned byte-patch entries to any
 // already-loaded target module, and registers an LdrRegisterDllNotification
 // callback so future module loads (notably WHGame.dll) get their
 // before_game patches applied right after they're mapped, BEFORE
@@ -437,7 +437,7 @@ static void RunBeforeGameZoneInDllMain() {
     // WorkerThread above). The enum reflects this: VersionDetected sits after
     // GameDllMapped, not in this ctx-A function.
 
-    // Apply before_game [[patch]] entries against modules already mapped
+    // Apply before_game byte-patch entries against modules already mapped
     // (ntdll, kernel32, and kcdx.dll itself — the launcher injected us via
     // CreateRemoteThread(LoadLibraryW) before the game's own startup ran).
     kcdx::ldr_notify::ApplyAlreadyLoaded();

@@ -310,7 +310,7 @@ bool ParsePluginManifest(const toml::table& doc,
     };
     // ---- Top-level TABLE allowlist (#6): a plugin kcdx.toml has exactly four
     // valid top-level tables. A stray legacy behavior table
-    // ([[patch]]/[[hook]]/[[mid_hook]]/[[trampoline]]/[[scan]]) — previously
+    // (one of the removed TOML behavior primitives) — previously
     // silently unparsed — is now a REJECT naming the table. The [kcdx] table is
     // read by LoadOneFile (not here), but it IS a valid top-level table, so it
     // must be in this allowlist or it would self-reject.
@@ -919,7 +919,7 @@ void LoadOneFile(const fs::path& path, Source source) {
         // We still want to COUNT the plugin so the user sees
         // "N test_suite_only plugin(s) gated off (dev mode disabled; ...)"
         // at boot. Bump the
-        // counter and skip everything else (no [[patch]]/[[hook]]
+        // counter and skip everything else (no legacy TOML behavior
         // entries register, plugin DLLs early-return at Plugin_Load).
         if (isTestSuiteOnly && !kcdx::dev::IsEnabled()) {
             kcdx::test::IncrementGatedOffCount();
@@ -932,9 +932,8 @@ void LoadOneFile(const fs::path& path, Source source) {
         // capture the plugin name + author here for manifest registration and
         // for the load-order sort to resolve the owning plugin's effective
         // zone + priority. (Behavior is no longer declared in TOML — the
-        // legacy [[patch]]/[[hook]]/[[mid_hook]]/[[trampoline]]/[[scan]]
-        // parsers were removed; behavior ships in plugin.lua /
-        // kcdxPlugin_Load.)
+        // legacy behavior-table parsers were removed; behavior ships in
+        // plugin.lua / kcdxPlugin_Load.)
         std::string pluginName;    // empty if this file has no [plugin] table
         std::string pluginAuthor;  // empty when no [plugin].author OR no [plugin] table
         {
@@ -995,9 +994,8 @@ void LoadOneFile(const fs::path& path, Source source) {
         // Plugin BEHAVIOR (patches, hooks, mid-hooks, trampolines, scans)
         // no longer lives in TOML — it ships in code (kcdx.bytes / kcdx.hook
         // in plugin.lua, kcdxHookInterface in C++ plugin DLLs). The legacy
-        // [[patch]] / [[hook]] / [[mid_hook]] / [[trampoline]] / [[scan]]
-        // tables were retired in the v0.2 restructure (every plugin migrated
-        // off them, then their parsers were deleted). LoadOneFile is now
+        // behavior tables were retired in an earlier version (every plugin
+        // migrated off them, then their parsers were deleted). LoadOneFile is now
         // manifest-only: it parses [kcdx] + [plugin] + [entrypoints] above and
         // nothing else. A stray legacy behavior table in a kcdx.toml is
         // silently ignored (kcdx is prerelease — no external author tomls to
