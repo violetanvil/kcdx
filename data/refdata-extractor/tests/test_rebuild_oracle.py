@@ -50,6 +50,19 @@ address_versions audit columns were untouched). The re-capture was deliberate
 and inspected (the expect_unique column present; the 14 rows carry their values;
 vtable_index still empty; function rows still carry the hash) before recording.
 
+It was RE-CAPTURED AGAIN at importer-no-prose-derivation Phase 2 step 2 when the
+four AUTHORED per-kind datum seed columns were established: `value` / `offset` /
+`vtable_slot` gained an explicit authored seed-CSV column (they already existed
+in the DB schema), and a NEW `struct_offset` INTEGER column was added to the
+address_versions schema + the engine SELECT. The columns are EMPTY for every
+current row (value authoring is Phase 3), so only the `address_versions` table's
+content hash moved -- the new NULL `struct_offset` cell on all 143 curated rows
+(USER) and all 321140 rows (DEV) -- with NO row-count change, NO table-set
+change, and no other table touched. The re-capture was deliberate and inspected
+(only address_versions drifted, both DBs, content-hash only; the offset/
+vtable_slot/value values are byte-identical because every authored cell is empty)
+before recording.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 

@@ -13,7 +13,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| 1 exhaustive value-provenance audit + per-kind column plan | DONE | (landed) |
+| 1 exhaustive value-provenance audit + per-kind column plan | DONE | 02271c0 |
 
 ## Step docs
 

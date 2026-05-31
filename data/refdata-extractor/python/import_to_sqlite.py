@@ -562,6 +562,24 @@ def build_rows(dump_dir, dicts):
         # entity notes for the vtable_index slot int.
         kind = ss.authored_kind(vs)
         offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
+        # AUTHORED per-kind datum columns (importer-no-prose-derivation Phase 2).
+        # Each has its own explicit seed column now. AUTHORED-WINS-ELSE-FALLBACK:
+        # when the authored `offset`/`vtable_slot` cell is present it wins; when
+        # absent, the existing derived behaviour (kind_offset_and_slot / NULL)
+        # still applies, so the current all-empty rows emit byte-identically.
+        # Phase 3 deletes the fallback. struct_offset is pure NEW plumbing
+        # (authored cell -> column, no prior derived source). `value` is NOT
+        # wired here this step: build_curated_row has no `value` parameter (it
+        # synthesises value from vtable_slot), and every current `value` cell is
+        # empty, so adding a value-authored path would only risk changing emitted
+        # rows -- Phase 3 makes `value` its own authored datum.
+        a_offset = parse_int(vs.get("offset") or "")
+        a_vslot  = parse_int(vs.get("vtable_slot") or "")
+        struct_offset = parse_int(vs.get("struct_offset") or "")
+        if a_offset is not None:
+            offset = a_offset
+        if a_vslot is not None:
+            vslot = a_vslot
         kind_id = dicts.encode("address_versions", "kind", kind)
 
         # Capture the survival inputs for this curated entity (the kind string +
@@ -592,7 +610,7 @@ def build_rows(dump_dir, dicts):
                     valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
                     signature=sig, lvv_id=lvv_id, verified_by=vby,
                     verified_date=vdt, evidence_kind_id=ekn_id,
-                    offset=offset, vtable_slot=vslot)
+                    offset=offset, vtable_slot=vslot, struct_offset=struct_offset)
                 n_seed_minted_addr += 1
             elif kind in ss.FUNCTION_KINDS:
                 # Function kind whose RVA matches a bulk row: PROMOTE it, keeping
@@ -605,7 +623,7 @@ def build_rows(dump_dir, dicts):
                     valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
                     signature=sig, lvv_id=lvv_id, verified_by=vby,
                     verified_date=vdt, evidence_kind_id=ekn_id,
-                    offset=offset, vtable_slot=vslot)
+                    offset=offset, vtable_slot=vslot, struct_offset=struct_offset)
                 n_seed_mapped += 1
             else:
                 # NON-function kind whose RVA coincides with a bulk function
@@ -624,7 +642,7 @@ def build_rows(dump_dir, dicts):
                     valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
                     signature=sig, lvv_id=lvv_id, verified_by=vby,
                     verified_date=vdt, evidence_kind_id=ekn_id,
-                    offset=offset, vtable_slot=vslot)
+                    offset=offset, vtable_slot=vslot, struct_offset=struct_offset)
                 n_seed_minted_addr += 1
         else:
             av_id = next_av_id
@@ -1236,6 +1254,17 @@ def _seed_action_rows(state):
         notes_for_kind = notes_by_kid.get(kid, "")
         kind = ss.authored_kind(vs)
         offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
+        # AUTHORED per-kind datum columns (importer-no-prose-derivation Phase 2).
+        # Same AUTHORED-WINS-ELSE-FALLBACK seam build_rows uses, so apply and
+        # rebuild read the columns identically. `value` is not wired (see
+        # build_rows); struct_offset is new plumbing (authored cell or NULL).
+        a_offset = parse_int(vs.get("offset") or "")
+        a_vslot  = parse_int(vs.get("vtable_slot") or "")
+        struct_offset = parse_int(vs.get("struct_offset") or "")
+        if a_offset is not None:
+            offset = a_offset
+        if a_vslot is not None:
+            vslot = a_vslot
 
         # Survival inputs (db-updator step 5.1): the raw survival seed cells, kept
         # alongside the action so the add path can build the survival row via the
@@ -1251,6 +1280,7 @@ def _seed_action_rows(state):
             "signature": sig,
             "offset": offset,
             "vtable_slot": vslot,
+            "struct_offset": struct_offset,
             "lvv_tag": lvv,
             "verified_by": vby or None,
             "verified_date": vdt or None,
@@ -1628,7 +1658,7 @@ def _apply_one_db(con, actions, state, which, user_projection):
                     signature=a["signature"], lvv_id=lvv_id,
                     verified_by=a["verified_by"], verified_date=a["verified_date"],
                     evidence_kind_id=ekn_id, offset=a["offset"],
-                    vtable_slot=a["vtable_slot"])
+                    vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
             else:
                 # DEV does an IN-PLACE UPDATE of the bulk row (reuse its id; keep
                 # fingerprint), mirroring the rebuild's promote-in-place.
@@ -1639,7 +1669,7 @@ def _apply_one_db(con, actions, state, which, user_projection):
                     signature=a["signature"], lvv_id=lvv_id,
                     verified_by=a["verified_by"], verified_date=a["verified_date"],
                     evidence_kind_id=ekn_id, offset=a["offset"],
-                    vtable_slot=a["vtable_slot"])
+                    vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
         else:
             # (b)/(c) MINT, fingerprint NULL. base_row=None for both; rva is None
             # for vtable_index. No baseline gate (these never read a bulk row).

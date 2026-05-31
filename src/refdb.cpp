@@ -134,6 +134,8 @@ struct CachedEntity {
     bool         has_offset = false;
     int64_t      vtable_slot = 0;
     bool         has_vtable_slot = false;
+    int64_t      struct_offset = 0;
+    bool         has_struct_offset = false;
     int64_t      value = 0;
     bool         has_value = false;
     int64_t      length = 0;
@@ -454,6 +456,8 @@ struct VersionRow {
     int64_t     offset = 0;
     bool        has_vtable_slot = false;
     int64_t     vtable_slot = 0;
+    bool        has_struct_offset = false;
+    int64_t     struct_offset = 0;
     int64_t     observed_arg_slots = 0;
     int64_t     caller_reg_arg_count = 0;
     int64_t     last_verified_at_version_id = 0;  // 0 == NULL.
@@ -477,6 +481,7 @@ struct VersionRow {
 //   11 last_verified_at_version
 //   12 valid_from
 //   13 valid_through
+//   14 struct_offset
 void DecodeVersionRow(sqlite3_stmt* st, VersionRow* row) {
     row->valid = true;
     row->kcdx_id = sqlite3_column_int64(st, 0);
@@ -526,6 +531,10 @@ void DecodeVersionRow(sqlite3_stmt* st, VersionRow* row) {
         row->has_valid_through = true;
         row->valid_through_id = sqlite3_column_int64(st, 13);
     }
+    if (sqlite3_column_type(st, 14) != SQLITE_NULL) {
+        row->has_struct_offset = true;
+        row->struct_offset = sqlite3_column_int64(st, 14);
+    }
 
     // Parse the interval endpoint tags. valid_through NULL ("open") parses
     // as (0,0,0) but is never used for distance — the cover-wins branch
@@ -542,7 +551,8 @@ constexpr const char* kVersionSelectColumns =
     "v.kcdx_id, v.kind, v.rva, v.signature, v.value, v.content_hash, "
     "v.length, v.offset, v.vtable_slot, "
     "v.observed_arg_slots, v.caller_reg_arg_count, "
-    "v.last_verified_at_version, v.valid_from, v.valid_through";
+    "v.last_verified_at_version, v.valid_from, v.valid_through, "
+    "v.struct_offset";
 
 // Compare two parsed tag triples lexicographically (major→minor→build).
 // Returns <0 if a < b, 0 if equal, >0 if a > b.
@@ -859,6 +869,8 @@ CachedEntity MakeCachedEntity(const std::string& inputName,
     c.offset = picked.offset;
     c.has_vtable_slot = picked.has_vtable_slot;
     c.vtable_slot = picked.vtable_slot;
+    c.has_struct_offset = picked.has_struct_offset;
+    c.struct_offset = picked.struct_offset;
     c.has_value = picked.has_value;
     c.value = picked.value;
     c.has_length = picked.has_length;
@@ -1067,6 +1079,8 @@ NameResolution ProjectName(const CachedEntity& c,
     r.vtable_slot = c.vtable_slot;
     r.has_value = c.has_value;
     r.value = c.value;
+    r.has_struct_offset = c.has_struct_offset;
+    r.struct_offset = c.struct_offset;
     r.content_hash_hex = c.content_hash_hex;
     r.content_hash = c.content_hash;
     r.has_length = c.has_length;

@@ -174,6 +174,15 @@ struct NameResolution {
         Superseded,
     };
     VerificationState verification_state = VerificationState::Verified;
+
+    // address_versions.struct_offset — the AUTHORED vtable/struct byte offset
+    // (e.g. IConsole vtable +0xB8) for a kind that consumes one; NULL
+    // (has_struct_offset=false) otherwise — a 0 is a real value, not a
+    // sentinel for missing. Appended at the END (append-only). Plumbed but not
+    // yet consumed by any caller (the hardcoded-address migration is the first
+    // consumer).
+    bool        has_struct_offset = false;
+    int64_t     struct_offset = 0;
 };
 
 // Result of a resolve-by-KCDX_ID lookup (the by-id path).

@@ -270,6 +270,11 @@ def read_address_versions_seed(path):
         # (check_survival_derives_from_known), not done here per-row.
         _validate_survival_cols(r, lineno, kid, vfv)
 
+        # AUTHORED per-kind datum columns (importer-no-prose-derivation Phase 2).
+        # FORMAT validators only -- all OPTIONAL / NULL-valid; a malformed PRESENT
+        # value is a HARD ERROR.
+        _validate_datum_cols(r, lineno, kid, vfv)
+
         rows.append(r)
     return rows
 
@@ -336,6 +341,52 @@ def _validate_survival_cols(r, lineno, kid, vfv):
         raise RuntimeError(
             f"{where}: survival_expect_unique={eu!r} must be '0' or '1' "
             f"(empty allowed)")
+
+
+def _validate_datum_cols(r, lineno, kid, vfv):
+    """Format-validate the AUTHORED per-kind datum columns on ONE
+    address_versions seed row (importer-no-prose-derivation Phase 2). EMPTY is
+    always allowed (the kind doesn't use the column, or it is not authored yet);
+    a malformed PRESENT value is a HARD ERROR. These validate already-authored
+    columns -- they are NOT prose parsers. Columns:
+
+      value         -- a per-kind integer datum. Non-negative int when present.
+      offset        -- a consumer offset (callsite / data_slot). SIGNED int when
+                       present (a consumer offset can be negative, e.g. an
+                       IsInCombat-style offset=-4 reading behind the pointer).
+      vtable_slot   -- a vtable_index slot integer. Non-negative int when present.
+      struct_offset -- a vtable/struct byte offset (e.g. IConsole vtable +0xB8).
+                       Non-negative int when present.
+    """
+    where = (f"address_versions_seed.csv:{lineno} (kcdx_id={kid}, "
+             f"valid_from_version={vfv!r})")
+
+    def _nonneg_int(col):
+        raw = (r.get(col) or "").strip()
+        if not raw:
+            return
+        try:
+            if int(raw) < 0:
+                raise ValueError
+        except ValueError:
+            raise RuntimeError(
+                f"{where}: {col}={raw!r} is not a non-negative integer "
+                f"(empty allowed)")
+
+    def _signed_int(col):
+        raw = (r.get(col) or "").strip()
+        if not raw:
+            return
+        try:
+            int(raw)
+        except ValueError:
+            raise RuntimeError(
+                f"{where}: {col}={raw!r} is not an integer (empty allowed)")
+
+    _nonneg_int("value")
+    _signed_int("offset")
+    _nonneg_int("vtable_slot")
+    _nonneg_int("struct_offset")
 
 
 # ---------------------------------------------------------------------------

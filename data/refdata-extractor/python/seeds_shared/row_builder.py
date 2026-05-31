@@ -45,7 +45,8 @@ inference machinery along.
 
 def build_bulk_row(av_id, rv, dump_row, sig_row, cra_row, *,
                    module_id, valid_from_id, kind_id, agreement_id,
-                   decompile_quality_id, length, content_hash):
+                   decompile_quality_id, length, content_hash,
+                   struct_offset=None):
     """One uncurated dump function -> its bulk address_versions row.
 
     kcdx_id is NULL (uncurated; the seed pass promotes some of these to curated
@@ -84,13 +85,16 @@ def build_bulk_row(av_id, rv, dump_row, sig_row, cra_row, *,
         "decompile_quality": decompile_quality_id,
         "valid_from": valid_from_id,
         "valid_through": None,
+        # struct_offset: NULL for bulk (uncurated dump rows carry no authored
+        # vtable/struct byte offset).
+        "struct_offset": struct_offset,
     }
 
 
 def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
                       valid_from_id, kind_id, signature,
                       lvv_id, verified_by, verified_date, evidence_kind_id,
-                      offset=None, vtable_slot=None):
+                      offset=None, vtable_slot=None, struct_offset=None):
     """THE shared curated address_versions row constructor.
 
     `base_row` is the matched bulk dict (function-kind promote) or None (mint).
@@ -102,8 +106,18 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
       - promote (base_row given): copy the bulk dict, then overwrite the curated
         fields; signature only overwritten when the seed supplied one (so a
         promoted function with no seed signature keeps the dump/abi_walker
-        floor); offset / vtable_slot only set when derived non-None; vtable_slot
-        also mirrors into `value`.
+        floor); offset / vtable_slot / struct_offset only set when non-None;
+        vtable_slot also mirrors into `value`.
+
+    value / offset / vtable_slot / struct_offset are now AUTHORED per-kind seed
+    columns (importer-no-prose-derivation Phase 2). The caller passes the
+    authored cell when present, else the current derived value (the
+    authored-wins-else-fallback seam lives in the importer's build_rows /
+    _seed_action_rows -- Phase 3 removes the fallback). The `value = vtable_slot`
+    mirror is RETAINED in this step: for the current all-empty seed cells it
+    changes no emitted row (vtable_slot is None for every existing row, so the
+    mirror branch never runs). struct_offset is pure NEW plumbing -- NULL for
+    every current row.
     """
     if base_row is None:
         v = {
@@ -129,6 +143,7 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
             "decompile_quality": None,
             "valid_from": valid_from_id,
             "valid_through": None,
+            "struct_offset": None,
         }
     else:
         # Promote: keep the bulk row's fingerprint + DEV columns; overwrite the
@@ -152,6 +167,8 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
     if vtable_slot is not None:
         v["vtable_slot"] = vtable_slot
         v["value"] = vtable_slot
+    if struct_offset is not None:
+        v["struct_offset"] = struct_offset
     return v
 
 

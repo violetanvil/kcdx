@@ -14,7 +14,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| 2 author per-kind columns (keep value/offset/vtable_slot + add struct_offset) + engine read sync + validators | NOT STARTED | — |
+| 2 author per-kind columns (keep value/offset/vtable_slot + add struct_offset) + engine read sync + validators | DONE | (landed) |
 
 ## Step docs
 

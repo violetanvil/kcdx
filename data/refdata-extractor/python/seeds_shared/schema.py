@@ -58,7 +58,7 @@ USER_COLUMNS = {
                          "caller_arg_agreement", "offset", "vtable_slot",
                          "last_verified_at_version", "verified_by",
                          "verified_date", "evidence_kind",
-                         "valid_from", "valid_through"],
+                         "valid_from", "valid_through", "struct_offset"],
     # excludes auto_name, decompile_quality (DEV-only discovery labels)
     "meta":             ["id", "schema_version", "abi_confidence"],
     # survival ships to USER: it is curated-entity data the (future) engine
@@ -140,13 +140,13 @@ SCHEMA = {
         ("rva", "INTEGER"),
         ("length", "INTEGER"),
         ("content_hash", "BLOB"),
-        ("value", "INTEGER"),                  # slot int for vtable_index, offset for data_slot
+        ("value", "INTEGER"),                  # AUTHORED per-kind integer datum (its own seed column)
         ("signature", "TEXT"),                 # verified ABI; for un-curated bulk this is the abi_walker floor
         ("observed_arg_slots", "INTEGER"),
         ("caller_reg_arg_count", "INTEGER"),
         ("caller_arg_agreement", "INTEGER"),   # dict
-        ("offset", "INTEGER"),                 # callsite consumer offset
-        ("vtable_slot", "INTEGER"),            # vtable_index slot integer (mirrors value for that kind)
+        ("offset", "INTEGER"),                 # AUTHORED consumer offset (callsite / data_slot; its own seed column)
+        ("vtable_slot", "INTEGER"),            # AUTHORED vtable_index slot integer (its own seed column)
         # Verification audit trail (added 2026-05-28). The `status` column was
         # REMOVED -- status is derived from
         #   (current_version, valid_from, last_verified_at_version) PLUS
@@ -160,6 +160,10 @@ SCHEMA = {
         ("decompile_quality", "INTEGER"),      # dict, DEV-ONLY
         ("valid_from", "INTEGER"),             # FK to game_versions.id (== valid_from_version)
         ("valid_through", "INTEGER"),          # NULL = current (open interval)
+        # AUTHORED vtable/struct byte offset (e.g. IConsole vtable +0xB8). Its
+        # own seed column; appended at the END so existing positional column
+        # expectations elsewhere (engine SELECT, oracle) are not disturbed.
+        ("struct_offset", "INTEGER"),
     ],
     "meta": [
         ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),

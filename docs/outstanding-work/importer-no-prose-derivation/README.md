@@ -12,7 +12,7 @@ Shared spec: [`context.md`](context.md).
 | Step | Status | Commit |
 |---|---|---|
 | Phase 1 — audit + column design | DONE | (landed) |
-| Phase 2 — schema: explicit per-kind columns | NOT STARTED | — |
+| Phase 2 — schema: explicit per-kind columns | DONE | (landed) |
 | Phase 3 — author values + rewire readers + delete prose machinery | NOT STARTED | — |
 
 The per-step ledgers live in each `phase-NN-*/README.md`. This top row flips to
