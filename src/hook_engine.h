@@ -10,7 +10,7 @@
 
 namespace kcdx::hook_engine {
 
-// One [[hook]] entry parsed from a kcdx.toml file. Locator fields reuse the
+// One hook entry (the in-memory shape kcdx.hook builds). Locator fields reuse the
 // patch engine's types (Pattern, Anchor variants) since the
 // pattern/context/anchor resolution path is identical.
 struct HookEntry {
@@ -70,7 +70,7 @@ struct HookEntry {
     bool                     appliedOK = false;
 };
 
-// [[mid_hook]] entries from kcdx.toml. Distinct from HookEntry
+// Mid-function hook entries (kcdx.hook mode=mid). Distinct from HookEntry
 // because the install path is different (runtime_func_t::make_jit_midfunc
 // instead of make_jit_func) and the schema fields are different (captures
 // + stack_restore_offset instead of return_type).
@@ -95,7 +95,7 @@ struct HookEntry {
 // after the mov. Set to 0 to re-execute the captured instruction itself
 // after the callback (rare; only useful when the capture is a no-op
 // observability tap rather than an override).
-// call_original mode for [[mid_hook]] — decides whether the captured
+// call_original mode for mid-function hooks (kcdx.hook mode=mid) — decides whether the captured
 // instruction at the hook site runs after the Lua callback returns.
 //
 //   True   — default; original instruction always runs (compile-time

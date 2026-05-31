@@ -240,7 +240,7 @@ target_include_directories(kcdx PRIVATE
     vendor/minhook/include
     vendor/minhook/src       # hde/hde64.h — used by hook_engine to
                              # auto-decode instruction length for
-                             # [[mid_hook]] stack_restore_offset.
+                             # mid-function hook (kcdx.hook mode=mid) stack_restore_offset calculation.
     vendor/tomlplusplus
     vendor/asmjit            # <asmjit/asmjit.h> for rom_borrowed/
     vendor/blake3            # blake3.h for the survival-check content hash

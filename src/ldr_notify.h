@@ -5,7 +5,7 @@
 namespace kcdx::ldr_notify {
 
 // ============================================================================
-// LDR DLL notification — apply before_game-zone [[patch]] entries
+// LDR DLL notification — apply before_game-zone byte-patch entries
 // against modules at the moment they're mapped, BEFORE that module's
 // own DllMain runs.
 //
@@ -35,14 +35,14 @@ namespace kcdx::ldr_notify {
 //               std::iostream.
 //
 // Per the loader-safety contract, before_game zone only accepts
-// [[patch]] entries. Capability gating in load_order.cpp already
+// byte-patch entries. Capability gating in load_order.cpp already
 // downgrades hook/mid_hook/trampoline plugins to after_game.
 //
 // This module is a no-op when KCDX_BEFORE_GAME_ZONE != "1" (the
 // env-var feature flag during PR 2 bring-up).
 // ============================================================================
 
-// Walk before_game-zone [[patch]] entries; apply any whose target
+// Walk before_game-zone byte-patch entries; apply any whose target
 // module is currently mapped in this process. Used once at DllMain
 // to handle modules that loaded before kcdx.dll did.
 //

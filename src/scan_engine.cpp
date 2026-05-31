@@ -2,7 +2,7 @@
 //
 // Implementation strategy: this is a thin wrapper around the existing
 // patch::FindAllInBuffer + pe::ExecutableSections helpers. Identical
-// scan path to [[patch]] (so identical match counts) but no write,
+// scan path to byte patches (so identical match counts) but no write,
 // no verify, no apply phase.
 
 #include "scan_engine.h"

@@ -7,15 +7,15 @@
 #include "patch_engine.h"
 
 // kcdx::conflict_engine — single source of truth for inter-entry conflict
-// detection across [[patch]], [[hook]], and (future) [[mid_hook]].
+// detection across byte patches, hooks, and mid-function hooks (kcdx.bytes, kcdx.hook, kcdx.hook mode=mid).
 //
 // Originally, conflict detection lived inside patch_engine and was
 // patch-vs-patch only. Hook conflicts were handled ad-hoc inside
 // hook_engine's apply loop. Three problems with that:
-//   1. Cross-engine collisions (a [[patch]] overlapping a [[hook]] prologue)
+//   1. Cross-engine collisions (a byte patch overlapping a hook prologue)
 //      had no centralized detection.
 //   2. Per-engine code duplicated overlap math and conflict reporting.
-//   3. Future engines ([[mid_hook]] etc.) would each have to know about
+//   3. Future engines (e.g. mid-function hooks) would each have to know about
 //      every other engine's footprints.
 //
 // This module centralizes:
@@ -50,8 +50,8 @@ namespace kcdx::conflict_engine {
 // classification rules (e.g., HookPrologue writes are 5 bytes regardless
 // of what the prologue actually is).
 enum class WriteKind {
-    Patch,         // [[patch]] same-length byte rewrite
-    HookPrologue,  // 5-byte rel32 jmp MinHook installs at a [[hook]] target
+    Patch,         // byte patch (kcdx.bytes): same-length byte rewrite
+    HookPrologue,  // 5-byte rel32 jmp MinHook installs at a hook target (kcdx.hook)
                    // (or 14-byte abs64 jmp if rel32 can't reach — pre-flight
                    // conservatively models 5 bytes; install-time may differ)
     // Future: TrampolineRegion (for inter-trampoline collisions, currently
@@ -75,7 +75,7 @@ struct WriteFootprint {
 };
 
 // One thing-that-will-be-read-and-verified-against-pristine. Currently only
-// [[patch]] produces these (its `original` field). Hooks don't verify; they
+// byte patches (kcdx.bytes) produce these (its `original` field). Hooks don't verify; they
 // just install. Future engines may add their own.
 struct ReadFootprint {
     std::string name;
@@ -104,18 +104,18 @@ enum class Category {
 
     // Cross-engine:
 
-    // Two [[hook]]s target the same function entry. First-wins in v0.1
-    // (chained hooks are v0.2+). Second hook aborts; log line names the
-    // first hook.
+    // Two hooks target the same function entry. In load order, the first applies
+    // (chained hooks coexist in the kcdx.hook model). A non-coexisting second
+    // hook aborts; the log line names the first hook.
     HookOnHook,
 
-    // [[hook]]'s 5-byte rel32-jmp footprint overlaps an EARLIER [[patch]]'s
+    // A hook's 5-byte rel32-jmp footprint overlaps an EARLIER byte patch's
     // write range. MinHook will relocate the prologue including the patched
     // bytes — the patch effectively survives inside the hook's trampoline.
     // Informational; no abort; both apply.
     HookOverlapsEarlierPatch,
 
-    // [[patch]] write range overlaps an EARLIER [[hook]]'s 5-byte rel32-jmp
+    // A byte patch write range overlaps an EARLIER hook's 5-byte rel32-jmp
     // footprint. The patch's verify-against-original will fail because the
     // bytes at that address are now the E9 jmp, not the function's
     // original prologue. Patch aborts; log line names the hook.

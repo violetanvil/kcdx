@@ -81,8 +81,8 @@ void push_pointer(lua_State* L, pointer p);
 //
 // Wraps a raw byte slot from a runtime_func_t parameters_t or
 // return_value_t alongside its type_info_t so Lua callbacks can
-// :get() / :set(newVal) the value. Used by [[hook]] lua_callback and
-// [[mid_hook]] arg marshaling.
+// :get() / :set(newVal) the value. Used by kcdx.hook lua_callback and
+// kcdx.hook mode=mid arg marshaling.
 class value_wrapper_t {
     char*                   m_value = nullptr;
     kcdx::rom::type_info_t  m_type{kcdx::rom::type_info_t::none_};

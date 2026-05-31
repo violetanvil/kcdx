@@ -95,8 +95,8 @@ ScanResult ResolveScan(const ScanEntry& s);
 ScanResult RunScan(const ScanEntry& s);
 
 // Run every loaded scan: resolve via the same locator pipeline used by
-// [[patch]] / [[hook]], log the outcome. Safe to call on the first
-// update tick (same point [[patch]] applies happen).
+// byte patches and hooks, log the outcome. Safe to call on the first
+// update tick (same point byte-patch applies happen).
 void RunAll();
 
 }  // namespace kcdx::scan_engine

@@ -6,7 +6,7 @@
 // global state holding the live lua_State, a non-owning
 // target_func_ptr -> runtime_func_t* map, and per-target vectors of
 // Lua-registry refs resolved from "module.function" strings declared
-// in [[hook]] / [[mid_hook]] kcdx.toml entries. Callbacks are stored as
+// in kcdx.hook entries (including mid-function hooks). Callbacks are stored as
 // `int` registry refs (luaL_ref) and invoked via raw lua_pcall.
 //
 // Threading: protected by a single recursive_mutex. The pre/post/mid
@@ -67,7 +67,7 @@ void set_lua_state(lua_State* L);
 // runtime_func_t callbacks read this to know whether the VM is up.
 lua_State* lua_state();
 
-// Non-owning registration. The caller (lua_memory.cpp / future [[hook]]
+// Non-owning registration. The caller (lua_memory.cpp / future kcdx.hook
 // installer) owns the runtime_func_t lifetime; this map just lets
 // dispatchers find the right pre/post/mid descriptors by target_func_ptr.
 void register_hook(uintptr_t target_func_ptr, kcdx::rom::runtime_func_t* hook);
@@ -97,7 +97,7 @@ void register_pre_callback_by_name (uintptr_t target_func_ptr, const std::string
 void register_post_callback_by_name(uintptr_t target_func_ptr, const std::string& name);
 void register_mid_callback_by_name (uintptr_t target_func_ptr, const std::string& name);
 
-// Clear all callbacks for a target (used when a [[hook]] is being
+// Clear all callbacks for a target (used when a hook (kcdx.hook) is being
 // uninstalled). luaL_unref's each stored ref so Lua can GC the
 // functions. Does not unregister the runtime_func_t itself.
 void clear_callbacks(uintptr_t target_func_ptr);
@@ -130,7 +130,7 @@ uintptr_t dynamic_hook_mid (const kcdx::rom::runtime_func_t::parameters_t* param
                             size_t                                         param_count,
                             uintptr_t                                      target_func_ptr);
 
-// Skip-original flag for [[mid_hook]] call_original="auto" mode.
+// Skip-original flag for mid-function hooks (kcdx.hook mode=mid) call_original="auto" mode.
 //
 // Set by dynamic_hook_mid post-pcall when the Lua callback sets
 // `args._skip = true` on the captures table. Read by the JIT'd

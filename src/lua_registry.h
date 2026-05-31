@@ -41,8 +41,8 @@ namespace kcdx::lua_registry {
 // type the binder builds and a per-kind apply handler the registry
 // invokes during ApplyZone.
 enum class Kind {
-    Bytes,        // succeeds [[patch]]
-    Hook,         // succeeds [[hook]] + [[mid_hook]] + dynamic_hook
+    Bytes,        // the kcdx.bytes surface (succeeds the legacy patch table)
+    Hook,         // the kcdx.hook surface incl. mode=mid + dynamic_hook (succeeds the legacy hook tables)
     // Code, Command, Cosave, Scan ... added by later commits.
 };
 

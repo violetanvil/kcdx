@@ -188,12 +188,13 @@ enum kcdxLogLevel {
 };
 
 // Per-entry record returned by kcdxInterface::GetConflictReport. Describes
-// one [[patch]], [[hook]], or kcdx.hook entry that overlaps a queried
+// one byte-patch entry (kcdx.bytes), hook entry (kcdx.hook), or higher-level
+// entry that overlaps a queried
 // target address. For kcdx.hook (the new function-interception surface),
 // this reports BOTH the live-chain winners (applied != 0) AND the
 // CanCoexist-rejected losers (applied == 0) at the target.
 //
-// Scope note: [[mid_hook]] / kcdx.hook mode=mid conflicts are NOT reported
+// Scope note: mid-function hook conflicts (kcdx.hook mode=mid) are NOT reported
 // (mid hooks reject via sole-ownership, not the chain's CanCoexist path;
 // the legacy path never reported mid conflicts either — same contract).
 //
@@ -245,7 +246,7 @@ typedef struct kcdxInterface {
     uintptr_t (*ResolveAddress)(uint64_t id);
 
     // Look up a cross-plugin symbol by name. Symbols are registered by
-    // `[[trampoline]]` / `[[hook]]` TOML entries with an `export = "..."`
+    // code exports (kcdx.code{export=...}) and hook entries (kcdx.hook{export=...}) with an `export = "..."`
     // field — the cross-plugin symbol table. Returns
     // 0 (== nullptr) if the symbol is not registered.
     //
@@ -328,17 +329,17 @@ typedef struct kcdxInterface {
     // Used by test plugins (COMP-01/02/03 and friends) to assert that a
     // declared conflict was detected + resolved as expected.
     //
-    // For [[patch]] entries the "target" matches if the patch's write
+    // For byte-patch entries (kcdx.bytes) the "target" matches if the patch's write
     // range contains the queried address (write footprint covers
     // [patchVa, patchVa + replacement_len)).
     //
-    // For [[hook]] entries the "target" matches if the hook's resolved
+    // For hook entries (kcdx.hook) the "target" matches if the hook's resolved
     // function entry address equals the queried address.
     //
     // ALSO reports kcdx.hook (the new function-interception surface)
     // entries whose resolved target VA equals the queried address — both
     // the live-chain winners (applied != 0) AND the CanCoexist-rejected
-    // losers (applied == 0). [[mid_hook]] / kcdx.hook mode=mid conflicts
+    // losers (applied == 0). Mid-function hook conflicts (kcdx.hook mode=mid)
     // are NOT reported (mid hooks reject via sole-ownership, not the
     // chain's CanCoexist path; the legacy path never reported mid
     // conflicts either — same contract).
@@ -379,7 +380,7 @@ typedef struct kcdxInterface {
     // other (there is NO engine-seed tier for symbols — the engine seed is
     // the Address Library, a separate surface). Pass YOUR OWN handle (the
     // one from GetPluginHandle in your Plugin_Load) as `owner` so a BARE
-    // name resolves to your own kcdx.code{export=} / [[trampoline]] export
+    // name resolves to your own kcdx.code{export=} / kcdx.hook{export=} symbols
     // first; an explicit "<plugin>.<name>" resolves directly regardless of
     // owner. Pass kcdxInvalidPluginHandle (or a handle the engine doesn't
     // know) to resolve anonymously (equivalent to ResolveSymbol). Returns
@@ -1206,7 +1207,7 @@ typedef struct kcdxScriptingInterface {
 //
 // The functions here go through the same patch_engine code paths
 // kcdx uses internally — pattern syntax (hex pairs + `?` wildcards)
-// matches the [[patch]] / [[hook]] schema exactly.
+// matches the kcdx.bytes / kcdx.hook Lua schema exactly.
 //
 // Lifecycle:
 //   - Safe to call from kcdxPlugin_Load.
@@ -1237,7 +1238,7 @@ typedef struct kcdxMemoryInterface {
     //
     // SAFETY: the write must be code that's safe to execute mid-function.
     // For patches, same-length rewrites of single instructions are the
-    // documented contract (matches mempatch's [[patch]] same-length rule).
+    // documented contract (matches the same-length rule for byte patches).
     int (*WriteBytes)(uintptr_t addr, const void* bytes, size_t size);
 
     // Read `size` bytes at `addr` into `out`. No page-protect dance
@@ -1646,7 +1647,7 @@ typedef struct kcdxHookOptions {
     // --- Function-entry locator (EXPERT/ADVANCED — `target` is the common
     //     path; these are for targets the library cannot yet name) --------
     // The author identifies the target ONCE via one of these forms, names it
-    // (publishes via [[address]] / kcdx.address or via a cross-plugin export),
+    // (publishes via kcdx.address or via a cross-plugin export),
     // and refers to it by name thereafter (declare once /
     // share / coexist). All sentinel-null/zero when unset.
     const char* pattern;              // [advanced] AOB hex at function entry; null = unset

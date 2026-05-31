@@ -40,8 +40,8 @@ struct PatchEntry {
     std::string sourceFile;   // for error messages — path of the toml that contributed this patch
     // 2-dot namespace identity of the plugin this entry belongs to:
     // `pluginAuthor` (from the owning kcdx.toml's [plugin].author) +
-    // `pluginName` (from [plugin].name). Stamped by LoadOneFile (for
-    // TOML [[patch]] rows) or by lua_bind_bytes (for kcdx.bytes calls),
+    // `pluginName` (from [plugin].name). Stamped by lua_bind_bytes (for
+    // kcdx.bytes calls) or the C++ bytes interface (kcdxBytesInterface),
     // alongside `source`. `pluginAuthor` may be "" during the in-progress
     // namespace refactor (legacy 1-dot scope — the plugin has not yet
     // declared [plugin].author); the symbol-table / address-library
@@ -71,7 +71,7 @@ struct PatchEntry {
     //
     //   - pattern:      AOB scan of the named module (the v1 path).
     //   - targetSymbol: lookup in the cross-plugin symbol table
-    //                   (resolves to a [[trampoline]] / [[hook]] export).
+    //                   (resolves to a kcdx.code{export=} / kcdx.hook{export=} symbol).
     //   - addressId:    lookup in kcdx's refdb cache by kcdx_id
     //                   (kcdx::refdb::ResolveAddrById). Stable across
     //                   game patches; recommended for authors who don't

@@ -8,9 +8,9 @@
 
 namespace kcdx::trampoline_engine {
 
-// One [[trampoline]] entry parsed from a kcdx.toml file. Unlike [[patch]]
-// and [[hook]], [[trampoline]] doesn't target an address in WHGame.dll —
-// it allocates fresh executable memory from kcdx's trampoline pools and
+// One kcdx.code allocation (from a kcdx.toml file). Unlike byte patches
+// and hooks, kcdx.code allocates fresh executable memory rather than targeting
+// an address in WHGame.dll — it takes from kcdx's trampoline pools and
 // fills it with the supplied bytes. Optional `export` registers the
 // allocated address as a named symbol other plugins can resolve via
 // target_symbol.
@@ -65,7 +65,7 @@ struct AppliedTrampoline {
     std::string name;
 };
 
-// Allocate every [[trampoline]] entry's region, copy bytes in, NOP-pad the
+// Allocate every kcdx.code allocation's region, copy bytes in, NOP-pad the
 // tail, register exports in the symbol table. Called from HookedUpdate
 // once at startup, BEFORE hook_engine::ApplyAll and patch::ApplyAll's
 // symbol-import pass (those need the symbol table populated first).

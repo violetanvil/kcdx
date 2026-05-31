@@ -129,8 +129,8 @@ std::vector<size_t> FindAllInBuffer(const uint8_t* data, size_t size, const Patt
 }
 
 // Important caveat for callers: this scans the LIVE in-memory image,
-// which means any patches kcdx has already applied (TOML [[patch]] /
-// [[hook]] entries that ran during first-update-tick) are visible. An
+// which means any patches kcdx has already applied (kcdx.bytes /
+// kcdx.hook entries that ran during first-update-tick) are visible. An
 // AOB that matched the pristine binary may no longer match if the bytes
 // it covers were rewritten. Pak Lua callers calling kcdx.memory.scan_pattern
 // after game-load are scanning post-patch state — pick patterns that
@@ -279,8 +279,8 @@ ResolvedPatch Resolve(const PatchEntry& p) {
     }
 
     // Locator path A: target_symbol — resolves via the global symbol table.
-    // Used when a patch wants to write into another plugin's [[trampoline]]
-    // region. No module / pattern / context / anchor needed.
+    // Used when a patch wants to write into another plugin's code region (allocated via kcdx.code).
+    // No module / pattern / context / anchor needed.
     if (!p.targetSymbol.empty()) {
         // Pass the consuming plugin's full (author, plugin) identity so
         // the symbol resolves by the namespace model (alias substitution
@@ -291,8 +291,8 @@ ResolvedPatch Resolve(const PatchEntry& p) {
         //
         // PatchEntry now carries
         // pluginAuthor alongside pluginName, threaded in by lua_bind_bytes
-        // (kcdx.bytes calls) or by config.cpp's LoadOneFile (TOML [[patch]]
-        // rows). When pluginAuthor is empty (the corpus state before
+        // (kcdx.bytes calls) or the C++ bytes interface (kcdxBytesInterface).
+        // When pluginAuthor is empty (the corpus state before
         // step 6) the symbol table walks the legacy 1-dot scope under
         // (pluginName, bareName), identical to today's observable
         // behavior.
