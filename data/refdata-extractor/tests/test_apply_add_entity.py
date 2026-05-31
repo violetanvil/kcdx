@@ -58,8 +58,12 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PYDIR = os.path.normpath(os.path.join(HERE, "..", "python"))
+# Apply<->rebuild oracles run against a small committed REAL excerpt of the dump
+# (tests/fixtures/mini-dump/, built by make_mini_dump.py) so each rebuild is
+# milliseconds, not a 17M-row ingest. Full-dump fidelity lives in
+# test_rebuild_oracle.py (which owns the committed baseline snapshot).
 DUMP_DIR = os.path.normpath(
-    os.path.join(HERE, "..", "dump", "refdata-1.5.1164953"))
+    os.path.join(HERE, "fixtures", "mini-dump", "refdata-1.5.1164953"))
 DLL_PATH = os.path.normpath(
     os.path.join(HERE, "..", "..", "..", "third-party-ghidra", "WHGame.dll"))
 REPO_ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
