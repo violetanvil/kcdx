@@ -78,11 +78,15 @@ A row is rejected with a hard error if any REQUIRED column is empty.
 `deprecated_at_version`, `deprecation_replacement`, `notes`.
 
 **`address_versions_seed.csv`** — required: `kcdx_id`, `valid_from_version`,
-`module`. Optional (NULL-valid): `rva`, `signature`,
+`module`, `kind`. Optional (NULL-valid): `rva`, `signature`,
 `last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`,
-and the five survival columns `survival_aob`, `survival_anchor_string`,
-`survival_derives_from`, `survival_rule`, `survival_slot_count` (see
-§"Survival columns").
+and the six survival columns `survival_aob`, `survival_anchor_string`,
+`survival_derives_from`, `survival_rule`, `survival_slot_count`,
+`survival_expect_unique` (see §"Survival columns").
+
+`kind` sits right after `rva` in the column order (it is core row-identity,
+authored alongside the rva/signature). It is one of the nine address kinds (see
+§"Address kinds"). An empty or out-of-enum `kind` is a HARD ERROR.
 
 ## Module column resolution (`address_versions_seed.csv.module`)
 
@@ -94,6 +98,39 @@ The `module` column references a `module_seed.csv` row. Resolution heuristic:
 2. **By-name (only when not int):** if the value does not parse as an
    integer, look up `module_seed.csv.name` by exact string match.
 3. No match = HARD ERROR.
+
+## Address kinds (the `kind` column)
+
+`kind` classifies what an address row IS. It is **AUTHORED** — the maintainer
+writes the kind into the seed cell. It was previously GUESSED by the importer
+from the entity's `notes` prose, which silently mis-classified rows whose prose
+lacked a magic cue (e.g. `gEnv` read as a function instead of a data slot;
+`CScriptSystem_vtable` read as a function instead of a vtable base). The kind
+gates the survival `kind_form`, the fingerprint-vs-NULL branch, and the bulk-row
+promote gate, so a wrong kind silently dropped authored data. It is now an
+explicit required column.
+
+The nine legal kinds:
+
+| Kind | What it is |
+|---|---|
+| `function` | A regular function entry (has a verified signature). |
+| `function_variadic` | A variadic function entry (`...` in the arg list). |
+| `function_no_sig` | A real function entry whose signature is not yet known. |
+| `callsite` | A mid-function call instruction (NOT a function entry). |
+| `vtable_index` | A vtable SLOT INDEX constant (no RVA; slot-only). |
+| `vtable_base` | A concrete-class vtable base ADDRESS (the pointer table). |
+| `data_slot` | A static `.data` pointer slot (resolved by a derivation). |
+| `string_anchor` | An `.rdata` string literal used as an anchor. |
+| `instruction_anchor` | A specific instruction used as an anchor (e.g. a `mov`). |
+
+The function kinds (`function` / `function_variadic` / `function_no_sig`) carry a
+body-hash fingerprint and PROMOTE a matching bulk-dump row; every other kind
+MINTS with the fingerprint columns NULL (a body hash is the wrong survival datum
+for a callsite / data_slot / vtable / string). When authoring a new row's kind,
+the importer's `infer_kind` heuristic can produce a first guess, but the authored
+value is the source of truth — verify it against this list and the actual RE
+finding before writing.
 
 ## valid_from_version vs. last_verified_at_version
 
@@ -186,7 +223,7 @@ evidence exists, the row's `last_verified_at_version` stays NULL.
 
 ## Survival columns (the per-kind survival datum)
 
-`address_versions_seed.csv` carries five OPTIONAL per-version columns that hold
+`address_versions_seed.csv` carries six OPTIONAL per-version columns that hold
 the **survival datum** — the load-bearing fact a future engine survival check
 re-verifies to answer "at the current game version, is the thing this row names
 still the thing it was verified to be?" The check's *form* mirrors how the kind
@@ -195,7 +232,7 @@ slot by re-running its derivation, and so on. Each curated row maps to exactly
 one row in the generated `survival` table; the importer reads these columns and
 populates that table.
 
-All five are NULL-valid. A kind uses only the column(s) its form needs; the rest
+All six are NULL-valid. A kind uses only the column(s) its form needs; the rest
 stay empty. An unfilled column = an empty survival payload (the importer emits
 the survival row with the right `kind_form` and an empty payload — never a
 guessed value, never a value parsed from `notes`). A **malformed PRESENT** value
@@ -208,6 +245,7 @@ is a HARD ERROR; an EMPTY value is always allowed.
 | `survival_derives_from` | An INTEGER kcdx_id. Must reference an existing `address_names_seed.csv` entity (cross-row FK check, like `kcdx_id`). | `data_slot` (→ its instruction/anchor); `instruction_anchor` (→ its string_anchor); `vtable_index` (→ its vtable_base) | The cross-row survival-DAG edge: the entity this row's survival derivation depends on. The importer resolves the kcdx_id to the dependency's `address_versions.id` (the `survival.derives_from` FK). |
 | `survival_rule` | A structured derivation-rule string (grammar below). The importer does NOT parse the grammar — any non-empty string is accepted at author time; the future engine consumer parses it. | `data_slot` | The derivation rule the survival check re-runs to reach the slot. |
 | `survival_slot_count` | A non-negative INTEGER. | `vtable_base` | The expected vtable slot count (the survival check reads N qwords + asserts each is a `.text` pointer). |
+| `survival_expect_unique` | A boolean — exactly `1` or `0` (empty = NULL). Any other value = HARD ERROR. | `callsite`, `instruction_anchor`, `string_anchor` | Whether the locator is expected to resolve to exactly ONE site at the current version: the AOB-unique assertion for `callsite`/`instruction_anchor` (the `survival_aob` pattern matches exactly one `.text` span), and the unique-xref assertion for `string_anchor` (the literal has exactly one `.text` xref). A `1` lets the survival check fail loud on an ambiguous re-match (the locator went stale into non-uniqueness). |
 
 **`survival_rule` grammar (the minimal form step 5.2 authors).** A data_slot is
 reached by following a RIP-relative displacement from an anchor, or by a fixed
@@ -239,9 +277,11 @@ its body fingerprint (`content_hash` + `length`), already on the
 `address_versions` row from the bulk promote. The importer reuses it; the
 maintainer never hand-authors a function's survival columns.
 
-The five columns are read + format-validated by the importer (`seeds_shared/
+The six columns are read + format-validated by the importer (`seeds_shared/
 validators.py`); the `survival_derives_from` FK closure is a cross-seed check
-(below). The generated `survival` table shape lives in `seeds_shared/schema.py`;
+(below). `survival_expect_unique` is used by the search-locating kinds
+(`callsite` + `instruction_anchor` via the AOB-unique assertion, `string_anchor`
+via the unique-xref assertion); the other kinds leave it empty. The generated `survival` table shape lives in `seeds_shared/schema.py`;
 the per-kind survival design rationale is in
 [`data/maintainer-tool/fingerprint-per-kind.md`](../maintainer-tool/fingerprint-per-kind.md).
 

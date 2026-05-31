@@ -15,9 +15,11 @@ PER-KIND DISPATCH (the kind-class decides kind_form + which payload column(s)):
          authoring). When the av row has no fingerprint (a function with no bulk
          baseline) these are simply NULL.
   callsite, instruction_anchor
-      -> kind_form='aob'; payload = the seed survival_aob column.
+      -> kind_form='aob'; payload = the seed survival_aob column +
+         survival_expect_unique (the AOB-unique assertion).
   string_anchor
-      -> kind_form='literal'; payload = the seed survival_anchor_string column.
+      -> kind_form='literal'; payload = the seed survival_anchor_string column +
+         survival_expect_unique (the unique-xref assertion).
   data_slot
       -> kind_form='derivation'; payload = the seed survival_rule column;
          derives_from set (resolved from the seed survival_derives_from kcdx_id).
@@ -74,7 +76,8 @@ def survival_kind_form(kind):
 
 
 def build_survival_row(av_id, kind, *, survival_aob=None, anchor_string=None,
-                       rule=None, slot_count=None, derives_from_av_id=None,
+                       rule=None, slot_count=None, expect_unique=None,
+                       derives_from_av_id=None,
                        content_hash=None, length=None):
     """THE shared survival-row constructor: one curated address_versions row ->
     its `survival` column dict (1:1).
@@ -87,6 +90,9 @@ def build_survival_row(av_id, kind, *, survival_aob=None, anchor_string=None,
       anchor_string      -- seed survival_anchor_string (literal form).
       rule               -- seed survival_rule (derivation form).
       slot_count         -- seed survival_slot_count as int (table_shape form).
+      expect_unique      -- seed survival_expect_unique as int 0/1 (aob +
+                            literal forms: the AOB-unique / unique-xref
+                            assertion); None for the forms that don't use it.
       derives_from_av_id -- the dependency entity's RESOLVED address_versions.id
                             (the caller maps survival_derives_from kcdx_id -> av_id),
                             or None.
@@ -110,6 +116,7 @@ def build_survival_row(av_id, kind, *, survival_aob=None, anchor_string=None,
         "anchor_string": None,
         "rule": None,
         "slot_count": None,
+        "expect_unique": None,
         "content_hash": None,
         "length": None,
     }
@@ -123,11 +130,14 @@ def build_survival_row(av_id, kind, *, survival_aob=None, anchor_string=None,
         v["length"] = length
     elif form == "aob":
         # callsite / instruction_anchor: the AOB pattern (with the ? wildcard mask
-        # folded in). Empty until step 5.2 fills survival_aob.
+        # folded in) + the AOB-unique assertion. Empty until step 5.2.
         v["aob"] = survival_aob or None
+        v["expect_unique"] = expect_unique
     elif form == "literal":
-        # string_anchor: the literal bytes. Empty until step 5.2.
+        # string_anchor: the literal bytes + the unique-xref assertion. Empty
+        # until step 5.2.
         v["anchor_string"] = anchor_string or None
+        v["expect_unique"] = expect_unique
     elif form == "derivation":
         # data_slot: the derivation rule (+ derives_from, already set above from
         # the resolved kcdx_id). Empty rule until step 5.2.

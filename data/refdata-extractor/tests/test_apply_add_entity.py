@@ -214,10 +214,12 @@ def _a_non_function_rva(seed_dir):
     return cand
 
 
-def _add_entity(seed_dir, name, rva_int, notes, signature):
+def _add_entity(seed_dir, name, rva_int, notes, signature, kind):
     """Append a new curated entity: a names row (fresh id, no supersession/
     deprecation) + a versions row at the baseline version with a full audit trio.
-    Returns the new kcdx_id. `rva_int` None -> rva-less (vtable_index) row."""
+    `kind` is an AUTHORED required column on the versions seed (no longer inferred
+    from notes), so the caller states it. Returns the new kcdx_id. `rva_int`
+    None -> rva-less (vtable_index) row."""
     kid = _max_kcdx_id(seed_dir) + 1
 
     nfields, nrows = _read_csv(os.path.join(seed_dir, "address_names_seed.csv"))
@@ -234,6 +236,7 @@ def _add_entity(seed_dir, name, rva_int, notes, signature):
         "valid_from_version": GVT,
         "module": "WHGame.dll",
         "rva": rva_str,
+        "kind": kind,
         "signature": signature,
         "last_verified_at_version": GVT,
         "verified_by": "oracle_add_test",
@@ -412,7 +415,7 @@ def _add_entity_function_oracle(b):
         rva = _a_free_bulk_function_rva(edit_seed)
         kid = _add_entity(edit_seed, "oracle_added_fn", rva,
                           notes="A brand-new curated function for the add oracle.",
-                          signature="i32 (ptr a, i32 b)")
+                          signature="i32 (ptr a, i32 b)", kind="function")
 
         # Path A: rebuild the EDITED seeds (ground truth).
         _rebuild_into(edit_seed, rebuild_edit)
@@ -473,12 +476,12 @@ def _add_entity_nonfunction_oracle(b):
         kid_ds = _add_entity(
             edit_seed, "oracle_added_data_slot", rva,
             notes="A static .data pointer slot for the add oracle. data slot.",
-            signature="")
+            signature="", kind="data_slot")
         # (c) vtable_index -- rva-less. notes carry a slot int the deriver parses.
         kid_vt = _add_entity(
             edit_seed, "oracle_added_vtable_idx", None,
             notes="vtable index = 7 (0-indexed) for the add oracle.",
-            signature="")
+            signature="", kind="vtable_index")
 
         _rebuild_into(edit_seed, rebuild_edit)
         apply_out = _fresh_apply_baseline(b)
@@ -645,7 +648,7 @@ def _add_idempotence(b):
         rva = _a_free_bulk_function_rva(edit_seed)
         kid = _add_entity(edit_seed, "oracle_idem_fn", rva,
                           notes="Idempotence add-oracle function.",
-                          signature="void (ptr a)")
+                          signature="void (ptr a)", kind="function")
 
         apply_out = _fresh_apply_baseline(b)
         _apply_into(edit_seed, apply_out)          # first apply: does the add

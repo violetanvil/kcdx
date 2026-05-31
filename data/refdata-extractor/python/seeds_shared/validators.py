@@ -28,13 +28,13 @@ are not duplicated here. The cross-row checks that were INLINE in build_rows are
 factored into the named functions above so build_rows (and a future apply path)
 call them rather than re-implementing them.
 
-Imports the EVIDENCE_KIND_ENUM from schema.py (one-way: schema holds the enums,
-validators consume them -- no circular import).
+Imports ADDRESS_KINDS + EVIDENCE_KIND_ENUM from schema.py (one-way: schema holds
+the enums, validators consume them -- no circular import).
 """
 import csv
 import re
 
-from .schema import EVIDENCE_KIND_ENUM
+from .schema import ADDRESS_KINDS, EVIDENCE_KIND_ENUM
 
 # Allow very large quoted CSV fields (seed notes can be long). Set on import so
 # any consumer of this module gets the raised limit without re-stating it.
@@ -132,14 +132,19 @@ def read_address_names_seed(path):
 
 def read_address_versions_seed(path):
     """Read address_versions_seed.csv. Schema:
-      kcdx_id, valid_from_version, module, rva, signature,
+      kcdx_id, valid_from_version, module, rva, kind, signature,
       last_verified_at_version, verified_by, verified_date, evidence_kind
 
     No `id` column -- row identity is the (kcdx_id, valid_from_version) tuple
     (a 1.5 row + a 1.6 row for the same entity is two rows, each with its own
-    valid_from_version). `kcdx_id`, `valid_from_version`, `module` are REQUIRED
-    (empty = HARD ERROR). `rva`/`signature` MAY be empty (vtable_index kind has
-    no RVA; un-verified rows may lack a signature).
+    valid_from_version). `kcdx_id`, `valid_from_version`, `module`, `kind` are
+    REQUIRED (empty = HARD ERROR). `rva`/`signature` MAY be empty (vtable_index
+    kind has no RVA; un-verified rows may lack a signature).
+
+    `kind` is an AUTHORED column (one of ADDRESS_KINDS) -- it is no longer
+    inferred from the entity's notes prose. address_versions_seed.csv holds
+    CURATED rows only, so kind is required on every row; an empty or out-of-enum
+    kind is a HARD ERROR.
 
     Verification audit pair:
       - When last_verified_at_version is set, verified_by + verified_date +
@@ -159,6 +164,7 @@ def read_address_versions_seed(path):
 
     Fails LOUD on:
       - missing required column
+      - empty or out-of-enum `kind`
       - duplicate (kcdx_id, valid_from_version) tuple
       - audit-pair integrity violation
       - last_verified_at_version < valid_from_version
@@ -175,6 +181,7 @@ def read_address_versions_seed(path):
         kid_raw = (r.get("kcdx_id") or "").strip()
         vfv     = (r.get("valid_from_version") or "").strip()
         module  = (r.get("module") or "").strip()
+        kind    = (r.get("kind") or "").strip()
         lvv     = (r.get("last_verified_at_version") or "").strip()
         vby     = (r.get("verified_by") or "").strip()
         vdate   = (r.get("verified_date") or "").strip()
@@ -198,6 +205,18 @@ def read_address_versions_seed(path):
                 f"address_versions_seed.csv:{lineno}: empty module "
                 f"(kcdx_id={kid}, valid_from_version={vfv!r}); reference a "
                 f"module_seed.csv row by id or name")
+        # `kind` is authored + required on every (curated) row; it is no longer
+        # inferred from notes prose. Empty or out-of-enum = HARD ERROR.
+        if not kind:
+            raise RuntimeError(
+                f"address_versions_seed.csv:{lineno}: empty kind "
+                f"(kcdx_id={kid}, valid_from_version={vfv!r}); kind is an "
+                f"authored required column -- one of {ADDRESS_KINDS}")
+        if kind not in ADDRESS_KINDS:
+            raise RuntimeError(
+                f"address_versions_seed.csv:{lineno}: kind={kind!r} "
+                f"(kcdx_id={kid}, valid_from_version={vfv!r}) is not in the "
+                f"address-kind enum {ADDRESS_KINDS}")
         key = (kid, vfv)
         if key in seen:
             raise RuntimeError(
@@ -275,6 +294,10 @@ def _validate_survival_cols(r, lineno, kid, vfv):
                                  string is accepted at author time.
       survival_slot_count     -- an INTEGER slot count (vtable_base). Must parse
                                  as a non-negative int when present.
+      survival_expect_unique  -- a boolean 0/1 (callsite/instruction_anchor:
+                                 AOB-unique assertion; string_anchor: unique-xref
+                                 assertion). Must be exactly '0' or '1' when
+                                 present; anything else is a HARD ERROR.
     """
     where = (f"address_versions_seed.csv:{lineno} (kcdx_id={kid}, "
              f"valid_from_version={vfv!r})")
@@ -307,6 +330,12 @@ def _validate_survival_cols(r, lineno, kid, vfv):
             raise RuntimeError(
                 f"{where}: survival_slot_count={sc!r} is not a non-negative "
                 f"integer")
+
+    eu = (r.get("survival_expect_unique") or "").strip()
+    if eu and eu not in ("0", "1"):
+        raise RuntimeError(
+            f"{where}: survival_expect_unique={eu!r} must be '0' or '1' "
+            f"(empty allowed)")
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +436,28 @@ def check_supersession_acyclic(address_names_rows):
                 seen.append(cur)
                 cur = direct.get(cur)
     return n_superseded
+
+
+def authored_kind(vs_row):
+    """Return the AUTHORED kind for one address_versions_seed row, validated.
+
+    The curated path (rebuild build_rows + incremental apply) calls this instead
+    of inferring the kind from the entity's notes prose. read_address_versions_seed
+    already enforces present + in-enum at file-read time; this is the per-row
+    accessor both writers share so they cannot drift on how the column is read,
+    and it re-checks defensively. Empty / out-of-enum = HARD ERROR (curated rows
+    only)."""
+    kid = (vs_row.get("kcdx_id") or "").strip()
+    kind = (vs_row.get("kind") or "").strip()
+    if not kind:
+        raise RuntimeError(
+            f"address_versions_seed.csv: kcdx_id={kid} has empty kind "
+            f"(kind is an authored required column -- one of {ADDRESS_KINDS})")
+    if kind not in ADDRESS_KINDS:
+        raise RuntimeError(
+            f"address_versions_seed.csv: kcdx_id={kid} kind={kind!r} is not in "
+            f"the address-kind enum {ADDRESS_KINDS}")
+    return kind
 
 
 def check_kcdx_id_known(kid, vfv_tag, valid_kcdx_ids):

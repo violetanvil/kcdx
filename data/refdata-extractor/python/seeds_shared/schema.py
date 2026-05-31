@@ -66,7 +66,7 @@ USER_COLUMNS = {
     # projection (the whole table is curated -- there are no bulk survival rows).
     "survival":         ["id", "address_version_id", "kind_form", "derives_from",
                          "aob", "anchor_string", "rule", "slot_count",
-                         "content_hash", "length"],
+                         "expect_unique", "content_hash", "length"],
 }
 
 # Full schema (DEV): every table, every column, with its SQL column type.
@@ -232,6 +232,7 @@ SCHEMA = {
         ("anchor_string", "TEXT"),             # literal form (string_anchor): the literal bytes
         ("rule", "TEXT"),                      # derivation form (data_slot): the derivation rule (e.g. disp32@<kid> / <kid>-0xA8)
         ("slot_count", "INTEGER"),             # table_shape form (vtable_base): expected slot count
+        ("expect_unique", "INTEGER"),          # nullable 0/1: aob (callsite/instruction_anchor) AOB-unique + literal (string_anchor) unique-xref assertion
         # function_hash form (function kinds): carry the body fingerprint already
         # on the address_versions row (no seed authoring -- reused). slot_target
         # (vtable_index) would also carry a target body hash, but its population

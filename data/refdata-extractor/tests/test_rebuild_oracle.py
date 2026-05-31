@@ -36,6 +36,20 @@ sqlite_sequence hash changed; nothing else moved. The re-capture was deliberate
 and inspected (survival rows == curated entity count, correct kind_form per kind,
 empty payloads where 5.2 has not filled) before being recorded.
 
+It was RE-CAPTURED AGAIN at step 5.2 on two coordinated changes: (1) a new
+`survival_expect_unique` INTEGER column was appended to the `survival` table
+(the AOB-unique / unique-xref assertion for the search-locating kinds), and
+(2) the 14 verified survival values were transcribed into the seed -- callsite
+AOBs (ids 5-8), the `exec autoexec.cfg` string anchor (12), the
+instruction-anchor shape + its derives_from (9), the data_slot derivation rules
++ their derives_from chain (10/11/132), and the vtable_base slot counts
+(119/138/139/140). So the `survival` table's content hash + column set changed
+(the new column + the now-non-empty payload cells on 14 rows); the vtable_index
+rows (19-24) stayed empty and nothing outside the `survival` table moved (the
+address_versions audit columns were untouched). The re-capture was deliberate
+and inspected (the expect_unique column present; the 14 rows carry their values;
+vtable_index still empty; function rows still carry the hash) before recording.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 

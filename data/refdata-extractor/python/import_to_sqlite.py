@@ -278,9 +278,19 @@ def db_latest_ordinal(db_path):
 # ---------------------------------------------------------------------------
 # Overlay kind inference (heuristic; covers the 9 values, never crashes).
 #
-# Kept in the orchestrator (not seeds_shared/) because it is heuristic
-# INTERPRETATION of the seed `notes`/`rva`, not row assembly. build_rows derives
-# kind/offset/vtable_slot here and hands them to the shared row-builder.
+# NO LONGER ON ANY LIVE IMPORT PATH. `kind` is now an AUTHORED column in
+# address_versions_seed.csv (read via seeds_shared.validators.authored_kind);
+# the rebuild + apply curated paths read it directly. This heuristic guessed the
+# kind from the entity's notes prose, which silently mis-classified rows whose
+# prose lacked a magic cue (e.g. gEnv -> function_no_sig instead of data_slot,
+# CScriptSystem_vtable -> function_no_sig instead of vtable_base). The kind gates
+# the survival kind_form, the fingerprint-vs-NULL branch, and the bulk-row
+# promote gate, so a wrong kind silently dropped authored data.
+#
+# Kept (not deleted) as a maintainer REFERENCE classifier: when authoring the
+# `kind` cell for a NEW seed row, run this against the row to get a first guess,
+# then verify it against ADDRESS_KINDS + the actual RE finding before writing.
+# It is a one-shot authoring aid, not an import-time dependency.
 # ---------------------------------------------------------------------------
 def infer_kind(seed_row):
     rva = (seed_row.get("rva") or "").strip()
@@ -502,9 +512,9 @@ def build_rows(dump_dir, dicts):
             f"(this baseline import only knows {GAME_VERSION_TAG!r}; future "
             f"versions need their own game_versions row in the meta seed first)")
 
-    # Build (kcdx_id, name) lookup for kind inference: address_names carries the
-    # name; the versions-seed kind heuristic still wants to see it.
-    id_to_name = {int(ns["id"]): ns["name"].strip() for ns in names_seed}
+    # (kcdx_id, notes) lookup: kind is now AUTHORED on the versions seed (no
+    # longer inferred from notes), but kind_offset_and_slot still reads the
+    # entity notes to pull the vtable_index slot int.
     notes_by_kid = {int(ns["id"]): (ns.get("notes") or "") for ns in names_seed}
 
     next_av_id = n_functions + 1
@@ -532,7 +542,6 @@ def build_rows(dump_dir, dicts):
         where = (f"address_versions_seed.csv (kcdx_id={kid}, "
                  f"valid_from_version={vfv_tag!r})")
         module_id = _resolve_module(vs["module"].strip(), where)
-        nm = id_to_name.get(kid, "")
         notes_for_kind = notes_by_kid.get(kid, "")
 
         srva = (vs.get("rva") or "").strip()
@@ -547,11 +556,11 @@ def build_rows(dump_dir, dicts):
         lvv_id = _resolve_version_tag(lvv, where) if lvv else None
         ekn_id = dicts.encode("address_versions", "evidence_kind", ekn) if ekn else None
 
-        kind_cue = {"rva": srva, "signature": sig, "name": nm, "notes": notes_for_kind}
-
-        # Derive the kind + offset/slot (heuristic interpretation lives here);
-        # the shared row-builder assembles the column dict from these.
-        kind = infer_kind(kind_cue)
+        # Read the AUTHORED kind column (no longer inferred from notes prose).
+        # ss.authored_kind re-validates present + in-enum; the seed reader already
+        # enforced it at file-read time. kind_offset_and_slot still consumes the
+        # entity notes for the vtable_index slot int.
+        kind = ss.authored_kind(vs)
         offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
         kind_id = dicts.encode("address_versions", "kind", kind)
 
@@ -560,12 +569,14 @@ def build_rows(dump_dir, dicts):
         # rows are finalized (so kcdx_id -> av_id is known for derives_from). The
         # survival columns are NULL-valid; step 5.2 fills them. NEVER parse notes.
         sdf = (vs.get("survival_derives_from") or "").strip()
+        seu = (vs.get("survival_expect_unique") or "").strip()
         survival_inputs_by_kid[kid] = {
             "kind": kind,
             "survival_aob": (vs.get("survival_aob") or "").strip() or None,
             "anchor_string": (vs.get("survival_anchor_string") or "").strip() or None,
             "rule": (vs.get("survival_rule") or "").strip() or None,
             "slot_count": parse_int(vs.get("survival_slot_count") or ""),
+            "expect_unique": int(seu) if seu else None,
             "derives_from_kid": int(sdf) if sdf else None,
         }
 
@@ -705,6 +716,7 @@ def build_rows(dump_dir, dicts):
             anchor_string=si["anchor_string"],
             rule=si["rule"],
             slot_count=si["slot_count"],
+            expect_unique=si["expect_unique"],
             derives_from_av_id=derives_from_av_id,
             content_hash=v.get("content_hash"),
             length=v.get("length")))
@@ -1201,11 +1213,11 @@ def _seed_action_rows(state):
     and the add/promote paths need, kind-derived ONCE here (kind derivation is
     DB-independent; only present-vs-absent classification is per-DB).
 
-    Mirrors build_rows lines 514-584 for the kind/offset/vtable_slot derivation:
-    the kind cue is {rva, signature (from the VERSIONS seed), name, notes (from
-    the NAMES seed)} -- the versions seed carries no name/notes column."""
+    Mirrors build_rows for the kind/offset/vtable_slot derivation: kind is the
+    AUTHORED column on the versions seed (read via ss.authored_kind, no longer
+    inferred); kind_offset_and_slot still reads the entity notes (from the NAMES
+    seed) for the vtable_index slot int."""
     versions_seed = state["versions_seed"]
-    id_to_name = state["id_to_name"]
     notes_by_kid = state["notes_by_kid"]
 
     out = []
@@ -1221,10 +1233,8 @@ def _seed_action_rows(state):
         vdt = (vs.get("verified_date") or "").strip()
         ekn = (vs.get("evidence_kind") or "").strip()
 
-        nm = id_to_name.get(kid, "")
         notes_for_kind = notes_by_kid.get(kid, "")
-        kind = infer_kind({"rva": srva, "signature": sig, "name": nm,
-                           "notes": notes_for_kind})
+        kind = ss.authored_kind(vs)
         offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
 
         # Survival inputs (db-updator step 5.1): the raw survival seed cells, kept
@@ -1250,6 +1260,9 @@ def _seed_action_rows(state):
             "survival_anchor_string": (vs.get("survival_anchor_string") or "").strip() or None,
             "survival_rule": (vs.get("survival_rule") or "").strip() or None,
             "survival_slot_count": parse_int(vs.get("survival_slot_count") or ""),
+            "survival_expect_unique": (
+                int((vs.get("survival_expect_unique") or "").strip())
+                if (vs.get("survival_expect_unique") or "").strip() else None),
             "survival_derives_from_kid": int(sdf) if sdf else None,
         })
     return out
@@ -1573,6 +1586,7 @@ def _apply_one_db(con, actions, state, which, user_projection):
                 anchor_string=a["survival_anchor_string"],
                 rule=a["survival_rule"],
                 slot_count=a["survival_slot_count"],
+                expect_unique=a["survival_expect_unique"],
                 derives_from_av_id=derives_from_av_id,
                 content_hash=av_row.get("content_hash"),
                 length=av_row.get("length"))
