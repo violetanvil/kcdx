@@ -1,0 +1,203 @@
+
+=== id32 lua_settop @ 0x71e77c  (seed hint: cold-path? prose: settop)
+  0x71e77c  85d2             test edx, edx
+  0x71e77e  7820             js 0x18071e7a0
+  0x71e780  4c63c2           movsxd r8, edx
+  0x71e783  4d03c0           add r8, r8
+  0x71e786  488b5118         mov rdx, qword ptr [rcx + 0x18]
+  0x71e78a  4c8b4910         mov r9, qword ptr [rcx + 0x10]
+  [pre-context decode from rva-8]:
+    0x71e774  40415e         pop r14
+    0x71e777  415c           pop r12
+    0x71e779  5f             pop rdi
+    0x71e77a  c3             ret 
+    0x71e77b  cc             int3 
+    0x71e77c  85d2           test edx, edx  <-- RVA
+    0x71e77e  7820           js 0x18071e7a0
+    0x71e780  4c63c2         movsxd r8, edx
+
+=== id47 lua_typename @ 0xb9ce78  (seed hint: cmp tp,-1 fast-path)
+  0xb9ce78  83faff           cmp edx, -1
+  0xb9ce7b  740f             je 0x180b9ce8c
+  0xb9ce7d  4863c2           movsxd rax, edx
+  0xb9ce80  488d0d79145003   lea rcx, [rip + 0x3501479]
+  0xb9ce87  488b04c1         mov rax, qword ptr [rcx + rax*8]
+  0xb9ce8b  c3               ret 
+  [pre-context decode from rva-8]:
+    0xb9ce70  83c420         add esp, 0x20
+    0xb9ce73  5b             pop rbx
+    0xb9ce74  c3             ret 
+    0xb9ce75  cc             int3 
+    0xb9ce76  cc             int3 
+    0xb9ce77  cc             int3 
+    0xb9ce78  83faff         cmp edx, -1  <-- RVA
+    0xb9ce7b  740f           je 0x180b9ce8c
+    0xb9ce7d  4863c2         movsxd rax, edx
+
+=== id58 lua_sethook @ 0xa2da68  (seed hint: test rdx)
+  0xa2da68  4885d2           test rdx, rdx
+  0xa2da6b  7405             je 0x180a2da72
+  0xa2da6d  4585c0           test r8d, r8d
+  0xa2da70  7505             jne 0x180a2da77
+  0xa2da72  4533c0           xor r8d, r8d
+  0xa2da75  33d2             xor edx, edx
+  [pre-context decode from rva-8]:
+    0xa2da60  2448           and al, 0x48
+    0xa2da62  4883c420       add rsp, 0x20
+    0xa2da66  5f             pop rdi
+    0xa2da67  c3             ret 
+    0xa2da68  4885d2         test rdx, rdx  <-- RVA
+    0xa2da6b  7405           je 0x180a2da72
+    0xa2da6d  4585c0         test r8d, r8d
+
+=== id59 lua_getstack @ 0xcae9a8  (seed hint: mov r9,[rcx+0x28])
+  0xcae9a8  4c8b4928         mov r9, qword ptr [rcx + 0x28]
+  0xcae9ac  4c8bd9           mov r11, rcx
+  0xcae9af  41ba01000000     mov r10d, 1
+  0xcae9b5  85d2             test edx, edx
+  0xcae9b7  7e20             jle 0x180cae9d9
+  0xcae9b9  4d3b4b50         cmp r9, qword ptr [r11 + 0x50]
+  [pre-context decode from rva-8]:
+    0xcae9a0  498be3         mov rsp, r11
+    0xcae9a3  5f             pop rdi
+    0xcae9a4  c3             ret 
+    0xcae9a5  cc             int3 
+    0xcae9a6  cc             int3 
+    0xcae9a7  cc             int3 
+    0xcae9a8  4c8b4928       mov r9, qword ptr [rcx + 0x28]  <-- RVA
+    0xcae9ac  4c8bd9         mov r11, rcx
+
+=== id72 luaL_addlstring @ 0xb9d8e4  (seed hint: test r8 / strlen prep)
+  0xb9d8e4  4d85c0           test r8, r8
+  0xb9d8e7  7456             je 0x180b9d93f
+  0xb9d8e9  48895c2408       mov qword ptr [rsp + 8], rbx
+  0xb9d8ee  48896c2410       mov qword ptr [rsp + 0x10], rbp
+  0xb9d8f3  4889742418       mov qword ptr [rsp + 0x18], rsi
+  0xb9d8f8  57               push rdi
+  [pre-context decode from rva-8]:
+    0xb9d8dc  415f           pop r15
+    0xb9d8de  415e           pop r14
+    0xb9d8e0  5f             pop rdi
+    0xb9d8e1  c3             ret 
+    0xb9d8e2  cc             int3 
+    0xb9d8e3  cc             int3 
+    0xb9d8e4  4d85c0         test r8, r8  <-- RVA
+    0xb9d8e7  7456           je 0x180b9d93f
+
+=== id82 lua_xmove @ 0x39932dc  (seed hint: mov rbx,rdx (xmove 3x site))
+  0x39932dc  4c8bda           mov r11, rdx
+  0x39932df  4c8bc9           mov r9, rcx
+  0x39932e2  483bca           cmp rcx, rdx
+  0x39932e5  743f             je 0x183993326
+  0x39932e7  4d63d0           movsxd r10, r8d
+  0x39932ea  4d8bc2           mov r8, r10
+  [pre-context decode from rva-8]:
+    0x39932d4  8b00           mov eax, dword ptr [rax]
+    0x39932d6  4883c428       add rsp, 0x28
+    0x39932da  c3             ret 
+    0x39932db  cc             int3 
+    0x39932dc  4c8bda         mov r11, rdx  <-- RVA
+    0x39932df  4c8bc9         mov r9, rcx
+
+=== id105 index2adr @ 0x71dd7c  (seed hint: test edx; js — lapi helper)
+  0x71dd7c  85d2             test edx, edx
+  0x71dd7e  7f35             jg 0x18071ddb5
+  0x71dd80  b8f0d8ffff       mov eax, 0xffffd8f0
+  0x71dd85  3bd0             cmp edx, eax
+  0x71dd87  7f20             jg 0x18071dda9
+  0x71dd89  448d40fe         lea r8d, [rax - 2]
+  [pre-context decode from rva-8]:
+    0x71dd74  e958faffff     jmp 0x18071d7d1
+    0x71dd79  cc             int3 
+    0x71dd7a  cc             int3 
+    0x71dd7b  cc             int3 
+    0x71dd7c  85d2           test edx, edx  <-- RVA
+    0x71dd7e  7f35           jg 0x18071ddb5
+
+=== id108 luaL_addstring @ 0x39934b4  (seed hint: or r8,-1 inline strlen then jmp addlstring)
+  0x39934b4  4983c8ff         or r8, 0xffffffffffffffff
+  0x39934b8  49ffc0           inc r8
+  0x39934bb  42803c0200       cmp byte ptr [rdx + r8], 0
+  0x39934c0  75f6             jne 0x1839934b8
+  0x39934c2  e91da420fd       jmp 0x180b9d8e4
+  0x39934c7  cc               int3 
+  [pre-context decode from rva-8]:
+    0x39934ac  4883c420       add rsp, 0x20
+    0x39934b0  5f             pop rdi
+    0x39934b1  c3             ret 
+    0x39934b2  cc             int3 
+    0x39934b3  cc             int3 
+    0x39934b4  4983c8ff       or r8, 0xffffffffffffffff  <-- RVA
+    0x39934b8  49ffc0         inc r8
+
+=== id112 luaG_runerror @ 0x399614c  (seed hint: mov rbx,rsp variadic prologue)
+  0x399614c  4c8bdc           mov r11, rsp
+  0x399614f  49895310         mov qword ptr [r11 + 0x10], rdx
+  0x3996153  4d894318         mov qword ptr [r11 + 0x18], r8
+  0x3996157  4d894b20         mov qword ptr [r11 + 0x20], r9
+  0x399615b  53               push rbx
+  0x399615c  4883ec20         sub rsp, 0x20
+  [pre-context decode from rva-8]:
+    0x3996144  0033           add byte ptr [rbx], dh
+    0x3996146  c04883c4       ror byte ptr [rax - 0x7d], 0xc4
+    0x399614a  28c3           sub bl, al
+    0x399614c  4c8bdc         mov r11, rsp  <-- RVA
+    0x399614f  49895310       mov qword ptr [r11 + 0x10], rdx
+
+=== id121 CScriptSystem_Init @ 0x1448f38  (seed hint: mov [rsp+x],al)
+  0x1448f38  4488442418       mov byte ptr [rsp + 0x18], r8b
+  0x1448f3d  53               push rbx
+  0x1448f3e  4883ec30         sub rsp, 0x30
+  0x1448f42  488bd9           mov rbx, rcx
+  0x1448f45  48899198000000   mov qword ptr [rcx + 0x98], rdx
+  [pre-context decode from rva-8]:
+    0x1448f30  4883c420       add rsp, 0x20
+    0x1448f34  5f             pop rdi
+    0x1448f35  c3             ret 
+    0x1448f36  cc             int3 
+    0x1448f37  cc             int3 
+    0x1448f38  4488442418     mov byte ptr [rsp + 0x18], r8b  <-- RVA
+    0x1448f3d  53             push rbx
+
+=== id127 luaC_barrierf @ 0x3997070  (seed hint: mov rcx,[rcx+0x20])
+  0x3997070  488b4920         mov rcx, qword ptr [rcx + 0x20]
+  0x3997074  80792101         cmp byte ptr [rcx + 0x21], 1
+  0x3997078  7508             jne 0x183997082
+  0x399707a  498bd0           mov rdx, r8
+  0x399707d  e9e291d8fc       jmp 0x180720264
+  0x3997082  8a4920           mov cl, byte ptr [rcx + 0x20]
+  [pre-context decode from rva-8]:
+
+=== id135 ModManager_Mount @ 0x4d9058  (seed hint: mov rbx,rsp; ... 48 prologue)
+  0x4d9058  4c8bdc           mov r11, rsp
+  0x4d905b  4883ec68         sub rsp, 0x68
+  0x4d905f  488d05e2478e03   lea rax, [rip + 0x38e47e2]
+  0x4d9066  498953c0         mov qword ptr [r11 - 0x40], rdx
+  0x4d906a  498943b8         mov qword ptr [r11 - 0x48], rax
+  [pre-context decode from rva-8]:
+    0x4d9050  20498b         and byte ptr [rcx - 0x75], cl
+    0x4d9053  e35f           jrcxz 0x1804d90b4
+    0x4d9055  c3             ret 
+    0x4d9056  cc             int3 
+    0x4d9057  cc             int3 
+    0x4d9058  4c8bdc         mov r11, rsp  <-- RVA
+    0x4d905b  4883ec68       sub rsp, 0x68
+
+=== id104 luaopen_io @ 0x3b70f0  (seed hint: STUB: ret 0 thunk per prose)
+  0x3b70f0  c20000           ret 0
+  0x3b70f3  cc               int3 
+  0x3b70f4  48895c2408       mov qword ptr [rsp + 8], rbx
+  0x3b70f9  48896c2410       mov qword ptr [rsp + 0x10], rbp
+  0x3b70fe  4889742418       mov qword ptr [rsp + 0x18], rsi
+  0x3b7103  57               push rdi
+  [pre-context decode from rva-8]:
+    0x3b70e8  cc             int3 
+    0x3b70e9  cc             int3 
+    0x3b70ea  cc             int3 
+    0x3b70eb  cc             int3 
+    0x3b70ec  cc             int3 
+    0x3b70ed  cc             int3 
+    0x3b70ee  cc             int3 
+    0x3b70ef  cc             int3 
+    0x3b70f0  c20000         ret 0  <-- RVA
+    0x3b70f3  cc             int3 

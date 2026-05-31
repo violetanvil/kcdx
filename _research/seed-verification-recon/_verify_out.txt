@@ -1,0 +1,153 @@
+# WHGame.dll image base in header: 0x180000000; assuming 0x180000000
+# sections: .text[0x1000..0x3a02000]X, .rdata[0x3a02000..0x48d1000], .data[0x48d1000..0x56876f0], .pdata[0x5688000..0x59df000], _RDATA[0x59df000..0x59f2400], .rsrc[0x59f3000..0x59f3200], .reloc[0x59f4000..0x5b2a200]
+# 143 version rows
+
+id|name|kind|rva|sect|check|result|detail
+1|lua_pcall|function|0x0071A5A4|.text/exec|entry|ENTRY|48895c24
+2|CGame_Update|function|0x00667B24|.text/exec|entry|ENTRY|488bc448
+3|luaL_loadfile|function|0x03993898|.text/exec|entry|ENTRY|48895c24
+4|CGame_per_frame_ui_pump|function|0x00865FB4|.text/exec|entry|ENTRY|48895c24
+5|outfit_swap_callsite_aob|callsite|0x0056174C|.text|aob_match|CONFIRMED|aob@rva=True; text_matches=1 first=0x56174c
+6|outfit_swap_callsite_context|callsite|0x00561745|.text|aob_match|CONFIRMED|aob@rva=True; text_matches=1 first=0x561745
+7|IsInCombat_callsite_26b|callsite|0x005605BC|.text|aob_match|CONFIRMED|aob@rva=True; text_matches=1 first=0x5605bc
+8|IsInCombat_callsite_with_stack_frame|callsite|0x00566040|.text|aob_match|CONFIRMED|aob@rva=True; text_matches=1 first=0x566040
+9|gEnv_pConsole_mov_instruction|instruction_anchor|0x0086AD99|.text|aob_match|CONFIRMED|aob@rva=True; text_matches=>5 first=0x29be
+10|gEnv_pConsole|data_slot|0x0492B8A8|.data|placement|INFO|rule='disp32@9' derives_from=9 (derivation re-run below)
+11|gEnv|data_slot|0x0492B800|.data|placement|INFO|rule='10-0xA8' derives_from=10 (derivation re-run below)
+12|string_exec_autoexec_cfg|string_anchor|0x04095E58|.rdata|string|CONFIRMED|want='exec autoexec.cfg' got=b'exec autoexec.cfg\x00'
+13|IConsole_AddCommand|function_no_sig|0x00B9A2B0|.text/exec|entry|ENTRY|48895c24
+14|IConsole_RemoveCommand|function|0x0100955C|.text/exec|entry|ENTRY|48895c24
+15|IConsole_ExecuteString|function|0x007A5818|.text/exec|entry|ENTRY|48895c24
+16|IConsole_GetCVar|function|0x009DF818|.text/exec|entry|ENTRY|48895c24
+17|IConsole_AddCommand_static_wrapper|data_slot|0x00B99098|.text|placement|INFO|rule='' derives_from= (derivation re-run below)
+18|IConsole_AddCommand_script_overload|function_no_sig|0x0100A3D4|.text/exec|entry|ENTRY|48895c24
+19|IGame_CompleteInit_vtable_idx|vtable_index|-|-|slot_index|NEEDS_INTERFACE_VTABLE|seed_slot=4
+20|IScriptSystem_CreateTable_vtable_idx|vtable_index|-|-|slot_index|NEEDS_INTERFACE_VTABLE|seed_slot=13
+21|IScriptTable_SetValueAny_vtable_idx|vtable_index|-|-|slot_index|NEEDS_INTERFACE_VTABLE|seed_slot=7
+22|IGame_GetIGameFramework_vtable_idx|vtable_index|-|-|slot_index|NEEDS_INTERFACE_VTABLE|seed_slot=16
+23|IGame_GetLongName_vtable_idx|vtable_index|-|-|slot_index|NEEDS_INTERFACE_VTABLE|seed_slot=12
+24|IGame_GetName_vtable_idx|vtable_index|-|-|slot_index|NEEDS_INTERFACE_VTABLE|seed_slot=13
+25|luaL_checktype|function|0x0071A0D8|.text/exec|entry|ENTRY|40534883
+26|lua_insert|function|0x0071A49C|.text/exec|entry|ENTRY|4883ec28
+27|lua_remove|function|0x0071A4E4|.text/exec|entry|ENTRY|4883ec28
+28|lua_type|function|0x0071CA90|.text/exec|entry|ENTRY|4883ec28
+29|lua_rawgeti|function|0x0071D06C|.text/exec|entry|ENTRY|4883ec28
+30|lua_pushlstring|function|0x0071E46C|.text/exec|entry|ENTRY|48895c24
+31|lua_getmetatable|function|0x0071E4D4|.text/exec|entry|ENTRY|4883ec28
+32|lua_settop|function|0x0071E77C|.text/exec|entry|UNUSUAL|85d27820
+33|lua_touserdata|function|0x0071ECEC|.text/exec|entry|ENTRY|4883ec28
+34|lua_pushstring|function|0x0071EF54|.text/exec|entry|ENTRY|48895c24
+35|lua_createtable|function|0x0071F098|.text/exec|entry|ENTRY|48895c24
+36|lua_pushvalue|function|0x0071F100|.text/exec|entry|ENTRY|4883ec28
+37|lua_setmetatable|function|0x0071F128|.text/exec|entry|ENTRY|4883ec28
+38|lua_next|function|0x0071F4BC|.text/exec|entry|ENTRY|40534883
+39|lua_tolstring|function|0x0071F6A8|.text/exec|entry|ENTRY|48895c24
+40|lua_gettable|function|0x0071F6FC|.text/exec|entry|ENTRY|4883ec28
+41|luaC_step|function_no_sig|0x0071FCE8|.text/exec|entry|ENTRY|48895c24
+42|lua_rawget|function|0x00718464|.text/exec|entry|ENTRY|40534883
+43|lua_rawset|function|0x00720738|.text/exec|entry|ENTRY|48895c24
+44|lua_tonumber|function|0x0041C200|.text/exec|entry|ENTRY|4883ec38
+45|lua_isnumber|function|0x0041C230|.text/exec|entry|ENTRY|4883ec38
+46|lua_checkstack|function|0x00B9CC48|.text/exec|entry|ENTRY|48895c24
+47|lua_typename|function|0x00B9CE78|.text/exec|entry|UNUSUAL|83faff74
+48|lua_objlen|function|0x00B9D764|.text/exec|entry|ENTRY|40534883
+49|lua_toboolean|function|0x00B9C1AC|.text/exec|entry|ENTRY|4883ec28
+50|lua_rawseti|function|0x00B9C2A4|.text/exec|entry|ENTRY|48895c24
+51|lua_tointeger|function|0x00B9CAFC|.text/exec|entry|ENTRY|4883ec38
+52|lua_newuserdata|function|0x00B9D0C0|.text/exec|entry|ENTRY|48895c24
+53|lua_pushcclosure|function|0x00B9D11C|.text/exec|entry|ENTRY|48895c24
+54|luaL_findtable|function|0x00ADB058|.text/exec|entry|ENTRY|488bc448
+55|lua_getfield|function|0x00ADB44C|.text/exec|entry|ENTRY|48895c24
+56|lua_setfield|function|0x00A2D840|.text/exec|entry|ENTRY|48895c24
+57|lua_gc|function|0x00A2D8B8|.text/exec|entry|ENTRY|48895c24
+58|lua_sethook|function|0x00A2DA68|.text/exec|entry|UNUSUAL|4885d274
+59|lua_getstack|function|0x00CAE9A8|.text/exec|entry|UNUSUAL|4c8b4928
+60|lua_getinfo|function|0x00CAEA88|.text/exec|entry|ENTRY|48895c24
+61|luaL_checknumber|function|0x01250AC4|.text/exec|entry|ENTRY|48895c24
+62|lua_call|function|0x0144965C|.text/exec|entry|ENTRY|48895c24
+63|luaL_getmetafield|function|0x016546F8|.text/exec|entry|ENTRY|40534883
+64|lua_concat|function|0x013236D0|.text/exec|entry|ENTRY|48895c24
+65|luaL_pushresult|function|0x01323664|.text/exec|entry|ENTRY|40534883
+66|lua_load|function|0x013E14D8|.text/exec|entry|ENTRY|48895c24
+67|luaL_checklstring|function|0x00B9C9BC|.text/exec|entry|ENTRY|48895c24
+68|luaL_optinteger|function|0x00B9CA08|.text/exec|entry|ENTRY|40534883
+69|luaL_checkinteger|function|0x00B9CAB4|.text/exec|entry|ENTRY|48895c24
+70|luaL_checkstack|function|0x00B9CC20|.text/exec|entry|ENTRY|48895c24
+71|luaL_checkany|function|0x00B9CE94|.text/exec|entry|ENTRY|4883ec28
+72|luaL_addlstring|function|0x00B9D8E4|.text/exec|entry|UNUSUAL|4d85c074
+73|lua_iscfunction|function|0x039930A4|.text/exec|entry|ENTRY|4883ec28
+74|lua_isstring|function|0x039930CC|.text/exec|entry|ENTRY|4883ec28
+75|lua_lessthan|function|0x039930E8|.text/exec|entry|ENTRY|40534883
+76|lua_getupvalue|function|0x03993060|.text/exec|entry|ENTRY|4883ec28
+77|lua_pushfstring|function_variadic|0x03993134|.text/exec|entry|ENTRY|48895424
+78|lua_rawequal|function|0x03993178|.text/exec|entry|ENTRY|40534883
+79|lua_setfenv|function|0x039931C0|.text/exec|entry|ENTRY|40534883
+80|lua_setupvalue|function|0x03993244|.text/exec|entry|ENTRY|40534883
+81|lua_tothread|function|0x039932C0|.text/exec|entry|ENTRY|4883ec28
+82|lua_xmove|function|0x039932DC|.text/exec|entry|UNUSUAL|4c8bda4c
+83|luaL_addvalue|function|0x039934C8|.text/exec|entry|ENTRY|48895c24
+84|luaL_argerror|function|0x0399355C|.text/exec|entry|ENTRY|40535657
+85|luaL_checkoption|function|0x03993638|.text/exec|entry|ENTRY|40534883
+86|luaL_error|function_no_sig|0x0399375C|.text/exec|entry|ENTRY|488bc448
+87|luaL_optlstring|function|0x03993AA4|.text/exec|entry|ENTRY|48895c24
+88|luaL_prepbuffer|function|0x03993B00|.text/exec|entry|ENTRY|40534883
+89|luaL_typerror|function|0x03993B24|.text/exec|entry|ENTRY|48895c24
+90|luaL_where|function|0x03993B70|.text/exec|entry|ENTRY|40534881
+91|lua_getlocal|function|0x03996250|.text/exec|entry|ENTRY|48895c24
+92|lua_setlocal|function|0x039962B8|.text/exec|entry|ENTRY|48895c24
+93|lua_error|function|0x0399605C|.text/exec|entry|ENTRY|48895c24
+94|lua_resume|function|0x039966A4|.text/exec|entry|ENTRY|48895c24
+95|lua_dump|function|0x03996EE4|.text/exec|entry|ENTRY|48895c24
+96|lua_getfenv|function|0x03992FFC|.text/exec|entry|ENTRY|4883ec28
+97|luaopen_math|function|0x009299AC|.text/exec|entry|ENTRY|488bc448
+98|luaopen_table|function|0x00D815A4|.text/exec|entry|ENTRY|48895c24
+99|luaopen_debug|function|0x007A671C|.text/exec|entry|ENTRY|48895c24
+100|luaopen_base|function|0x012DA578|.text/exec|entry|ENTRY|48895c24
+101|luaopen_string|function|0x012DAC38|.text/exec|entry|ENTRY|488bc448
+102|luaopen_package|function|0x012DAF40|.text/exec|entry|ENTRY|488bc448
+103|luaopen_os|function|0x019DFD0C|.text/exec|entry|ENTRY|48895c24
+104|luaopen_io|function|0x003B70F0|.text/exec|entry|ENTRY|c20000cc
+105|index2adr|function|0x0071DD7C|.text/exec|entry|UNUSUAL|85d27f35
+106|luaD_pcall|function|0x0071A628|.text/exec|entry|ENTRY|488bc448
+107|luaD_rawrunprotected|function|0x0071A6A8|.text/exec|entry|ENTRY|48895c24
+108|luaL_addstring|function|0x039934B4|.text/exec|entry|UNUSUAL|4983c8ff
+109|luaO_pushvfstring|function|0x0399838C|.text/exec|entry|ENTRY|40535556
+110|lua_topointer|function|0x0071F1F8|.text/exec|entry|ENTRY|4883ec28
+111|lua_settable|function|0x0071E7C0|.text/exec|entry|ENTRY|40534883
+112|luaG_runerror|function_variadic|0x0399614C|.text/exec|entry|UNUSUAL|4c8bdc49
+113|luaO_pushfstring|function_no_sig|0x03998368|.text/exec|entry|ENTRY|488bc448
+114|lua_newstate|function_no_sig|0x014492A8|.text/exec|entry|ENTRY|48895c24
+115|luaL_openlibs|function|0x01449600|.text/exec|entry|ENTRY|48895c24
+116|f_luaopen|function|0x00F77CA4|.text/exec|entry|ENTRY|48895c24
+117|l_alloc|function|0x0071E2B0|.text/exec|entry|ENTRY|48895c24
+118|luaL_checkudata|function|0x039936D0|.text/exec|entry|ENTRY|48895c24
+119|CScriptSystem_vtable|vtable_base|0x03B8AF70|.rdata|slot_count|CONFIRMED|contig_code_ptrs=69 first3=['0x39ad8f0', '0xa2d674', '0x39b0648']
+120|CScriptSystem_ctor|function_no_sig|0x01448E60|.text/exec|entry|ENTRY|48895c24
+121|CScriptSystem_Init|function_no_sig|0x01448F38|.text/exec|entry|UNUSUAL|44884424
+122|CScriptSystem_dtor|function_no_sig|0x039AD63C|.text/exec|entry|ENTRY|48895c24
+123|lua_close|function|0x039989A4|.text/exec|entry|ENTRY|48895c24
+124|lua_replace|function|0x00B9CCB8|.text/exec|entry|ENTRY|48895c24
+125|luaL_ref|function|0x0071D118|.text/exec|entry|ENTRY|48895c24
+126|close_state|function|0x039987B4|.text/exec|entry|ENTRY|48895c24
+127|luaC_barrierf|function|0x03997070|.text/exec|entry|UNUSUAL|488b4920
+128|luaF_close|function|0x01565018|.text/exec|entry|ENTRY|48895c24
+129|luaC_separateudata|function|0x00FEABA8|.text/exec|entry|ENTRY|48895c24
+130|luaM_realloc_|function|0x0071E258|.text/exec|entry|ENTRY|48895c24
+131|CCryPak_FOpen|function|0x004614A0|.text/exec|entry|ENTRY|40555356
+132|gEnv_pCryPak|data_slot|0x0492B850|.data|placement|INFO|rule='11+0x50' derives_from=11 (derivation re-run below)
+133|ModManager_Select|function|0x00DA104C|.text/exec|entry|ENTRY|488bc448
+134|ModManager_ctor|function|0x00DA0EB0|.text/exec|entry|ENTRY|48895c24
+135|ModManager_Mount|function|0x004D9058|.text/exec|entry|UNUSUAL|4c8bdc48
+136|ModManager_ReadModOrder|function|0x00DA1294|.text/exec|entry|ENTRY|48895c24
+137|ModManager_ParseManifest|function_no_sig|0x0243E7B8|.text/exec|entry|ENTRY|488bc448
+138|ImodVtable_primary|vtable_base|0x046AAF00|.rdata|slot_count|CONFIRMED|contig_code_ptrs=3 first3=['0x1a719e0', '0x1a72b60', '0x1a72b70']
+139|ImodVtable_subobject|vtable_base|0x046AAED8|.rdata|slot_count|CONFIRMED|contig_code_ptrs=4 first3=['0x2434e9c', '0x19def2c', '0x5f6000']
+140|C_ModManager_vtable|vtable_base|0x03AA2E60|.rdata|slot_count|CONFIRMED|contig_code_ptrs=18 first3=['0x6386e0', '0x2435160', '0x4d9ad8']
+141|WHGame_allocator|function|0x004F7820|.text/exec|entry|ENTRY|40534883
+142|CryString_placement_construct|function|0x004FD468|.text/exec|entry|ENTRY|48895c24
+143|CryString_init_from_string|function|0x004F692C|.text/exec|entry|ENTRY|48895c24
+
+# ---- data_slot / gEnv chain derivation re-run ----
+id9 mov@0x86ad99 bytes=488b0d080b0c04 disp32=0x40c0b08 -> pConsole_ptr RVA 0x492b8a8  (seed id10=0x0492B8A8)
+  gEnv = pConsole_ptr - 0xA8 = 0x492b800  (seed id11=0x0492B800)
+  gEnv+0x50 = pCryPak = 0x492b850  (seed id132=0x0492B850)
