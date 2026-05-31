@@ -534,7 +534,7 @@ def _baseline_refusal(b):
         assert bogus not in _curated_rvas(edit_seed)
         _add_entity(edit_seed, "oracle_no_baseline_fn", bogus,
                     notes="A function with no bulk baseline (refusal test).",
-                    signature="void (ptr a)")
+                    signature="void (ptr a)", kind="function")
 
         apply_out = _fresh_apply_baseline(b)
         user_db = os.path.join(apply_out, "reference.sqlite")

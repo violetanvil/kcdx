@@ -52,8 +52,11 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PYDIR = os.path.normpath(os.path.join(HERE, "..", "python"))
+# Runs against the small committed REAL dump excerpt (tests/fixtures/mini-dump/,
+# built by make_mini_dump.py) for a fast rebuild; full-dump fidelity is covered
+# by test_rebuild_oracle.py.
 DUMP_DIR = os.path.normpath(
-    os.path.join(HERE, "..", "dump", "refdata-1.5.1164953"))
+    os.path.join(HERE, "fixtures", "mini-dump", "refdata-1.5.1164953"))
 # The linked DLL the .rdata version resolver reads (apply's version source).
 DLL_PATH = os.path.normpath(
     os.path.join(HERE, "..", "..", "..", "third-party-ghidra", "WHGame.dll"))

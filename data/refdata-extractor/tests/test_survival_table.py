@@ -55,8 +55,11 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PYDIR = os.path.normpath(os.path.join(HERE, "..", "python"))
+# Runs against the small committed REAL dump excerpt (tests/fixtures/mini-dump/,
+# built by make_mini_dump.py) for a fast rebuild; full-dump fidelity is covered
+# by test_rebuild_oracle.py.
 DUMP_DIR = os.path.normpath(
-    os.path.join(HERE, "..", "dump", "refdata-1.5.1164953"))
+    os.path.join(HERE, "fixtures", "mini-dump", "refdata-1.5.1164953"))
 
 sys.path.insert(0, PYDIR)
 import import_to_sqlite as imp  # noqa: E402
