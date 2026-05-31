@@ -22,7 +22,7 @@ MinHook is the sole detour engine. Already vendored. Do not introduce PolyHook2 
 
 `kcdx::conflict_engine` is the single source of truth for pairwise overlap detection. patch_engine and hook_engine **produce** footprints (writes + reads, with priority + name); conflict_engine **classifies** and **logs**.
 
-- When adding a new engine (e.g. future `[[vtable_hook]]`), register footprints with conflict_engine.
+- When adding a new engine (e.g. a future vtable-hooking primitive), register footprints with conflict_engine.
 - Do NOT add cross-engine knowledge to the new engine.
 - Do NOT modify patch/hook engines to know about the new engine.
 - Extend `WriteKind` and `Category` enums; do not add ad-hoc overlap loops.

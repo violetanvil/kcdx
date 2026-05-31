@@ -58,7 +58,7 @@ call_vtable(pConsole, 32, ...);   // canonical-header slot; KCD2 uses 33
 
 **Forbidden:** calling MinHook directly, or calling `patch::ApplyAll()` / `hook_engine::ApplyAll()` from production orchestration in `hooks.cpp`.
 
-**Fix:** produce a footprint (writes + reads + priority + name); let conflict_engine classify and log. New engine (e.g. `[[vtable_hook]]`) → extend `WriteKind`/`Category`, register footprints, add no cross-engine knowledge. Per `hook-engine.md`.
+**Fix:** produce a footprint (writes + reads + priority + name); let conflict_engine classify and log. New engine (e.g. a future vtable-hooking primitive) → extend `WriteKind`/`Category`, register footprints, add no cross-engine knowledge. Per `hook-engine.md`.
 
 ---
 

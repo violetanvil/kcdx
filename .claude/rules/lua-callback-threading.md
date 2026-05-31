@@ -31,7 +31,7 @@ Every dispatch site (`DispatchPre` / `DispatchPost` / `MidDispatch` in `hook_cha
 ## Rules
 
 - **Authors hook whatever they need.** Off-thread sites are first-class; the engine marshals. The previous "main-thread-only" framing was a v0.1 placeholder that overstated the constraint — the actual constraint is that `lua_pcall` runs on one thread, which the dispatcher enforces.
-- **No new dispatch path bypasses the guard.** Every new dispatcher (`hook_chain`, future `[[vtable_hook]]`, etc.) goes through the same thread-check helper. Inserting a `lua_pcall` site that skips the check is an AP6 violation. The engine bootstrap carve-out (next rule) is the documented exception; no other bypass.
+- **No new dispatch path bypasses the guard.** Every new dispatcher (`hook_chain`, a future vtable-hooking primitive, etc.) goes through the same thread-check helper. Inserting a `lua_pcall` site that skips the check is an AP6 violation. The engine bootstrap carve-out (next rule) is the documented exception; no other bypass.
 - **The on-thread fast path stays zero-allocation.** TLS read + branch only. The marshal path allocates per-callback (arg arena, queue node); that cost is intrinsic to off-thread dispatch and acceptable per workspace performance discipline.
 
 ## Engine bootstrap carve-out — engine-stamped C-kind chain entries bypass the off-thread filter
