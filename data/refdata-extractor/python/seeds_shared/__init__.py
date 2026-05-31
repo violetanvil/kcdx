@@ -18,6 +18,7 @@ from .schema import (
     EVIDENCE_KIND_ENUM,
     ADDRESS_KINDS,
     FUNCTION_KINDS,
+    SURVIVAL_KIND_FORMS,
 )
 from .dict_codec import (
     parse_int,
@@ -32,10 +33,15 @@ from .validators import (
     check_supersession_acyclic,
     check_kcdx_id_known,
     check_every_entity_covered,
+    check_survival_derives_from_known,
 )
 from .row_builder import (
     build_bulk_row,
     build_curated_row,
+)
+from .survival_builder import (
+    build_survival_row,
+    survival_kind_form,
 )
 from .version_resolver import (
     resolve_version,
@@ -44,11 +50,13 @@ from .version_resolver import (
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
-    "EVIDENCE_KIND_ENUM", "ADDRESS_KINDS", "FUNCTION_KINDS",
+    "EVIDENCE_KIND_ENUM", "ADDRESS_KINDS", "FUNCTION_KINDS", "SURVIVAL_KIND_FORMS",
     "parse_int", "hash_blob", "Dicts",
     "read_module_seed", "read_address_names_seed", "read_address_versions_seed",
     "resolve_and_check_name_refs", "check_supersession_acyclic",
     "check_kcdx_id_known", "check_every_entity_covered",
+    "check_survival_derives_from_known",
     "build_bulk_row", "build_curated_row",
+    "build_survival_row", "survival_kind_form",
     "resolve_version", "VersionResolveError",
 ]

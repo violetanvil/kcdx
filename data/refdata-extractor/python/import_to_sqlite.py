@@ -112,6 +112,7 @@ from seeds_shared import (   # noqa: E402,F401
     read_address_versions_seed,
     check_kcdx_id_known,
     check_every_entity_covered,
+    check_survival_derives_from_known,
     resolve_and_check_name_refs,
     check_supersession_acyclic,
     resolve_version,
@@ -511,6 +512,13 @@ def build_rows(dump_dir, dicts):
     n_seed_minted_addr = 0
     n_seed_minted_noaddr = 0
 
+    # Per-kcdx_id survival inputs captured during the seed loop (the kind string
+    # + the row's raw survival seed cells). After the curated rows are finalized
+    # we map kcdx_id -> av_id and build the `survival` table via the shared
+    # builder (db-updator step 5.1). Keyed by kcdx_id: one curated entity per kid
+    # at the baseline version, 1:1 with its curated address_versions row.
+    survival_inputs_by_kid = {}
+
     for vs in versions_seed:
         kid = int(vs["kcdx_id"])
         vfv_tag = vs["valid_from_version"].strip()
@@ -546,6 +554,20 @@ def build_rows(dump_dir, dicts):
         kind = infer_kind(kind_cue)
         offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
         kind_id = dicts.encode("address_versions", "kind", kind)
+
+        # Capture the survival inputs for this curated entity (the kind string +
+        # the raw survival seed cells). The survival row is built AFTER the av
+        # rows are finalized (so kcdx_id -> av_id is known for derives_from). The
+        # survival columns are NULL-valid; step 5.2 fills them. NEVER parse notes.
+        sdf = (vs.get("survival_derives_from") or "").strip()
+        survival_inputs_by_kid[kid] = {
+            "kind": kind,
+            "survival_aob": (vs.get("survival_aob") or "").strip() or None,
+            "anchor_string": (vs.get("survival_anchor_string") or "").strip() or None,
+            "rule": (vs.get("survival_rule") or "").strip() or None,
+            "slot_count": parse_int(vs.get("survival_slot_count") or ""),
+            "derives_from_kid": int(sdf) if sdf else None,
+        }
 
         if srva:
             rv = parse_int(srva)
@@ -612,6 +634,10 @@ def build_rows(dump_dir, dicts):
                     if v["kcdx_id"] is not None}
     ss.check_every_entity_covered(valid_kcdx_ids, covered_kids, GAME_VERSION_TAG)
 
+    # Survival DAG FK closure: every non-empty survival_derives_from must point at
+    # an existing entity (shared with apply via seeds_shared.validators).
+    ss.check_survival_derives_from_known(versions_seed, valid_kcdx_ids)
+
     # rva -> kcdx_id (curated only) for the DEV-only tables' kcdx_id column.
     # rva -> av_id (universal) for the DEV-only tables' address_version_id column.
     rva_to_kcdx_id = {v["rva"]: v["kcdx_id"]
@@ -647,6 +673,44 @@ def build_rows(dump_dir, dicts):
     print(f"  address_versions: {n_addr_versions} rows "
           f"(curated: {n_curated_kcdx_ids}, "
           f"bulk uncurated: {n_addr_versions - n_curated_kcdx_ids})", flush=True)
+
+    # --- survival (db-updator step 5.1) ---
+    # One `survival` row per CURATED address_versions row, via the shared builder
+    # (so rebuild + apply emit identical survival rows). function kinds carry the
+    # body fingerprint already on the av row (reused); the search/derivation kinds
+    # carry their seed survival datum when present (step 5.2) and an empty payload
+    # when not. derives_from: the seed's survival_derives_from kcdx_id maps to the
+    # dependency entity's curated address_versions.id.
+    kid_to_av_id = {v["kcdx_id"]: v["id"]
+                    for v in versions_by_av_id.values()
+                    if v["kcdx_id"] is not None}
+    n_surv = 0
+    for av_id in sorted(versions_by_av_id.keys()):
+        v = versions_by_av_id[av_id]
+        if v["kcdx_id"] is None:
+            continue   # bulk uncurated rows get no survival datum
+        si = survival_inputs_by_kid.get(v["kcdx_id"])
+        if si is None:
+            # A curated row with no captured survival input would mean the seed
+            # loop never saw it -- impossible for a baseline curated entity. Fail
+            # loud rather than silently skip (the survival table must be 1:1).
+            raise RuntimeError(
+                f"build_rows: curated address_versions id={av_id} "
+                f"(kcdx_id={v['kcdx_id']}) has no survival input captured")
+        df_kid = si["derives_from_kid"]
+        derives_from_av_id = kid_to_av_id.get(df_kid) if df_kid is not None else None
+        rows["survival"].append(ss.build_survival_row(
+            av_id, si["kind"],
+            survival_aob=si["survival_aob"],
+            anchor_string=si["anchor_string"],
+            rule=si["rule"],
+            slot_count=si["slot_count"],
+            derives_from_av_id=derives_from_av_id,
+            content_hash=v.get("content_hash"),
+            length=v.get("length")))
+        n_surv += 1
+    print(f"  survival: {n_surv} rows (1:1 with curated address_versions)",
+          flush=True)
 
     # --- 8. statements (DEV) ---
     # Each statement points at its owning function by address_version_id
@@ -824,6 +888,11 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
         con.execute('CREATE INDEX ix_ce_callee_av ON call_edges(callee_address_version_id)')
         con.execute('CREATE INDEX ix_ce_caller_kcdx ON call_edges(caller_kcdx_id)')
         con.execute('CREATE INDEX ix_ce_callee_kcdx ON call_edges(callee_kcdx_id)')
+    if "survival" in tables:
+        # 1:1 join key (survival -> its owning av row) + the DAG walk key
+        # (derives_from). Both DBs carry the survival table.
+        con.execute('CREATE UNIQUE INDEX ix_sv_av ON survival(address_version_id)')
+        con.execute('CREATE INDEX ix_sv_derives ON survival(derives_from)')
 
     con.commit()
     con.execute("VACUUM")
@@ -1069,6 +1138,10 @@ def _validate_full_seed_state():
 
     check_every_entity_covered(valid_kcdx_ids, covered_kids, GAME_VERSION_TAG)
 
+    # Survival DAG FK closure (db-updator step 5.1): every non-empty
+    # survival_derives_from references an existing entity. Shared with rebuild.
+    check_survival_derives_from_known(versions_seed, valid_kcdx_ids)
+
     # Cross-row name/tag resolution + supersession acyclicity over the full
     # name seed. Build the same pre-resolution name rows build_rows constructs.
     name_rows = []
@@ -1154,6 +1227,11 @@ def _seed_action_rows(state):
                            "notes": notes_for_kind})
         offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
 
+        # Survival inputs (db-updator step 5.1): the raw survival seed cells, kept
+        # alongside the action so the add path can build the survival row via the
+        # SAME shared builder the rebuild uses. NULL-valid; step 5.2 fills them.
+        sdf = (vs.get("survival_derives_from") or "").strip()
+
         out.append({
             "kcdx_id": kid,
             "module": vs["module"].strip(),
@@ -1167,6 +1245,12 @@ def _seed_action_rows(state):
             "verified_by": vby or None,
             "verified_date": vdt or None,
             "evidence_kind": ekn or None,
+            # survival seed cells (raw; the builder maps them to the payload).
+            "survival_aob": (vs.get("survival_aob") or "").strip() or None,
+            "survival_anchor_string": (vs.get("survival_anchor_string") or "").strip() or None,
+            "survival_rule": (vs.get("survival_rule") or "").strip() or None,
+            "survival_slot_count": parse_int(vs.get("survival_slot_count") or ""),
+            "survival_derives_from_kid": int(sdf) if sdf else None,
         })
     return out
 
@@ -1248,6 +1332,43 @@ def _insert_names_row(con, name_row, user_projection):
     con.execute(
         f'INSERT INTO address_names ({",".join(cols)}) VALUES ({placeholders})',
         [name_row.get(c) for c in cols])
+
+
+def _resolve_derives_from_av_id(con, df_kid):
+    """Map a survival_derives_from kcdx_id -> the dependency entity's curated
+    address_versions.id in THIS open DB (the survival DAG edge is an FK to
+    address_versions.id, but the seed carries a kcdx_id). Returns None when the
+    seed has no dependency (df_kid is None). Picks the OPEN interval row
+    (valid_through IS NULL) -- the current curated form of the dependency, the
+    same row the rebuild's kid_to_av_id maps to (the baseline has one open row
+    per curated entity). A df_kid with no curated row in the DB -> refuse (the
+    full-seed validator already FK-checked it against the names seed; a missing
+    DB row means the dependency entity itself was never added)."""
+    if df_kid is None:
+        return None
+    row = con.execute(
+        "SELECT id FROM address_versions WHERE kcdx_id = ? AND "
+        "valid_through IS NULL", (df_kid,)).fetchone()
+    if row is None:
+        raise RuntimeError(
+            f"survival_derives_from kcdx_id={df_kid} has no curated "
+            f"address_versions row in the DB (add the dependency entity first)")
+    return row[0]
+
+
+def _insert_survival_row(con, sv_row, user_projection):
+    """INSERT one fully-built survival row dict into the open DB, applying the
+    same column projection write_db uses (`id` is autoincrement, omitted; USER
+    drops any DEV-only survival column -- there are none today, so USER == DEV for
+    survival). The row dict is the build_survival_row output."""
+    cols = [c for c, _ in SCHEMA["survival"] if c != "id"]
+    if user_projection:
+        allowed = USER_COLUMNS["survival"]
+        cols = [c for c in cols if c in allowed]
+    placeholders = ",".join("?" * len(cols))
+    con.execute(
+        f'INSERT INTO survival ({",".join(cols)}) VALUES ({placeholders})',
+        [sv_row.get(c) for c in cols])
 
 
 # The supersession + deprecation columns -- the names-side state step 5 owns.
@@ -1438,6 +1559,24 @@ def _apply_one_db(con, actions, state, which, user_projection):
                     _promote_bulk_in_place(con, av_row)
                 else:
                     _projected_insert(con, av_row, user_projection=False)
+            # Survival row for the new curated entity (db-updator step 5.1), in
+            # the SAME transaction + via the SAME shared builder the rebuild uses,
+            # so apply's survival row is byte-identical to a rebuild's. function
+            # kinds reuse the av row's fingerprint; the rest carry the seed datum
+            # (empty until step 5.2). derives_from: map the seed kcdx_id -> the
+            # dependency's curated av_id in this DB.
+            derives_from_av_id = _resolve_derives_from_av_id(
+                con, a["survival_derives_from_kid"])
+            sv_row = ss.build_survival_row(
+                av_row["id"], a["kind"],
+                survival_aob=a["survival_aob"],
+                anchor_string=a["survival_anchor_string"],
+                rule=a["survival_rule"],
+                slot_count=a["survival_slot_count"],
+                derives_from_av_id=derives_from_av_id,
+                content_hash=av_row.get("content_hash"),
+                length=av_row.get("length"))
+            _insert_survival_row(con, sv_row, user_projection)
             con.execute("COMMIT")
         except Exception:
             con.execute("ROLLBACK")

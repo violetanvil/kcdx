@@ -42,6 +42,12 @@ csv.field_size_limit(1 << 24)
 
 _VERIFIED_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# An AOB token is either a 2-hex byte (e.g. 48, 8B, ff) or a wildcard (? or ??).
+# The wildcard mask is FOLDED INTO survival_aob (a '?' token = "this byte is a
+# don't-care"), so there is NO separate mask column. Tokens are whitespace-
+# separated; an empty value is allowed (step 5.2 hasn't filled it yet).
+_AOB_TOKEN_RE = re.compile(r"^(?:[0-9A-Fa-f]{2}|\?\??)$")
+
 
 # ---------------------------------------------------------------------------
 # Per-file seed readers.
@@ -238,8 +244,69 @@ def read_address_versions_seed(path):
                     f"the audit trio is set -- got verified_by={vby!r}, "
                     f"verified_date={vdate!r}, evidence_kind={ekind!r}")
 
+        # Survival columns (db-updator step 5.1). All OPTIONAL / NULL-valid -- an
+        # empty value is fine (the kind doesn't use the column, or step 5.2 has
+        # not filled it yet). A malformed PRESENT value is a HARD ERROR. The
+        # survival_derives_from FK closure is a CROSS-row check
+        # (check_survival_derives_from_known), not done here per-row.
+        _validate_survival_cols(r, lineno, kid, vfv)
+
         rows.append(r)
     return rows
+
+
+def _validate_survival_cols(r, lineno, kid, vfv):
+    """Format-validate the per-version survival columns on ONE address_versions
+    seed row (db-updator step 5.1). EMPTY is always allowed; a malformed PRESENT
+    value is a HARD ERROR. Columns:
+
+      survival_aob            -- whitespace-separated AOB tokens, each a 2-hex
+                                 byte or a '?'/'??' wildcard (the mask is folded
+                                 into the pattern). Any other token is malformed.
+      survival_anchor_string  -- free text (the literal bytes for string_anchor);
+                                 no format check (any non-empty value accepted).
+      survival_derives_from   -- an INTEGER kcdx_id (the dependency entity). Must
+                                 parse as int when present (FK closure checked
+                                 cross-row in check_survival_derives_from_known).
+      survival_rule           -- a structured derivation-rule string (the grammar
+                                 is documented in data/seeds/policy.md). The
+                                 importer does NOT parse the grammar here -- it is
+                                 the future engine consumer's job; any non-empty
+                                 string is accepted at author time.
+      survival_slot_count     -- an INTEGER slot count (vtable_base). Must parse
+                                 as a non-negative int when present.
+    """
+    where = (f"address_versions_seed.csv:{lineno} (kcdx_id={kid}, "
+             f"valid_from_version={vfv!r})")
+
+    aob = (r.get("survival_aob") or "").strip()
+    if aob:
+        toks = aob.split()
+        for t in toks:
+            if not _AOB_TOKEN_RE.match(t):
+                raise RuntimeError(
+                    f"{where}: survival_aob token {t!r} is malformed -- each "
+                    f"token must be a 2-hex byte (e.g. 48, 8B) or a wildcard "
+                    f"('?' / '??'); got {aob!r}")
+
+    dfrom = (r.get("survival_derives_from") or "").strip()
+    if dfrom:
+        try:
+            int(dfrom)
+        except ValueError:
+            raise RuntimeError(
+                f"{where}: survival_derives_from={dfrom!r} is not an integer "
+                f"kcdx_id")
+
+    sc = (r.get("survival_slot_count") or "").strip()
+    if sc:
+        try:
+            if int(sc) < 0:
+                raise ValueError
+        except ValueError:
+            raise RuntimeError(
+                f"{where}: survival_slot_count={sc!r} is not a non-negative "
+                f"integer")
 
 
 # ---------------------------------------------------------------------------
@@ -366,3 +433,28 @@ def check_every_entity_covered(valid_kcdx_ids, covered_kids, game_version_tag):
             f"valid_from_version={game_version_tag!r} "
             f"(first 5: {sample}); every named entity needs at least one "
             f"resolve fact for the baseline version")
+
+
+def check_survival_derives_from_known(versions_seed, valid_kcdx_ids):
+    """A non-empty survival_derives_from on an address_versions_seed row must
+    reference an existing address_names_seed entity (the same FK closure as
+    check_kcdx_id_known, applied to the survival DAG edge). The survival check
+    walks data_slot -> instruction_anchor -> string_anchor (and vtable_index ->
+    vtable_base) in dependency order, so a dangling derives_from would break the
+    walk; catch it at validation time. EMPTY survival_derives_from = fine (no
+    dependency / not yet authored). Runs over the FULL versions seed, shared by
+    rebuild and apply.
+    """
+    for r in versions_seed:
+        dfrom = (r.get("survival_derives_from") or "").strip()
+        if not dfrom:
+            continue
+        kid = int(r["kcdx_id"])   # already validated as int by the reader
+        vfv = r["valid_from_version"].strip()
+        ref = int(dfrom)          # already validated as int by _validate_survival_cols
+        if ref not in valid_kcdx_ids:
+            raise RuntimeError(
+                f"address_versions_seed.csv (kcdx_id={kid}, "
+                f"valid_from_version={vfv!r}): survival_derives_from={ref} has "
+                f"no row in address_names_seed.csv (the survival dependency "
+                f"must reference an existing entity)")

@@ -57,12 +57,16 @@
       "hash": "d87f8a6bfcf0e12ad6a57f8ed3df35691bed8137c7e387848c313a2f275eeb1f"
     },
     "sqlite_sequence": {
-      "count": 6,
-      "hash": "e52c270e860232f8579636fc3c962ed88232259610f2b4fad15b7bb89ea24b01"
+      "count": 7,
+      "hash": "224ae01b1384b927c58df8968227abf637110b14510f1ccd0c1f3d585993f221"
     },
     "statements": {
       "count": 5240326,
       "hash": "efc17220fe72dfcd6d9b3ab0b7102aca9522b199fcccdfcfeff1d5dcdcfb8a43"
+    },
+    "survival": {
+      "count": 143,
+      "hash": "0b8e6d698831ec0605e2773f693e3bdbceb75aba22a936a9ab29eb7529f90b8a"
     }
   },
   "user": {
@@ -115,8 +119,12 @@
       "hash": "e718bfb08d3b6b4565309825a0487060d08e6efcacd754b508982c1b789ab13f"
     },
     "sqlite_sequence": {
-      "count": 3,
-      "hash": "0f53c6228184b39b3fe60439c7ef641f87069894e219f1195c7d0a38ad029bd9"
+      "count": 4,
+      "hash": "d0d86f052a1c487f1cca42a269431cf59ad640fd43ffd38720d699054cadf5c7"
+    },
+    "survival": {
+      "count": 143,
+      "hash": "0b8e6d698831ec0605e2773f693e3bdbceb75aba22a936a9ab29eb7529f90b8a"
     }
   }
 }

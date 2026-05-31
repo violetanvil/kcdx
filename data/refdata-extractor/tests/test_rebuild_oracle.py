@@ -23,9 +23,21 @@ function's content_hash+length (a body-hash is not a meaningful survival datum
 for a callsite/data_slot -- see data/maintainer-tool/fingerprint-per-kind.md).
 That correction intentionally changed the output for those 2 rows (+2 dev rows;
 their USER/DEV curated rows lose the wrongly-inherited fingerprint), so the
-baseline was re-recorded from the corrected rebuild. Re-capture with --capture
-ONLY for a deliberate, reviewed output change like that one -- never to paper
-over an unexplained drift.
+baseline was re-recorded from the corrected rebuild.
+
+It was RE-CAPTURED AGAIN at step 5.1 when the `survival` sibling table was added:
+the rebuild now emits one `survival` row per curated address_versions row (the
+per-kind survival datum, kind-discriminated; function kinds reuse the av row's
+body fingerprint, the search/derivation kinds carry their seed survival columns
+which step 5.2 fills -- empty payload until then). The new table appears in BOTH
+DBs (USER + DEV ship the curated survival datum) plus its autoincrement
+sqlite_sequence bump, so the baseline gained the `survival` table entry and the
+sqlite_sequence hash changed; nothing else moved. The re-capture was deliberate
+and inspected (survival rows == curated entity count, correct kind_form per kind,
+empty payloads where 5.2 has not filled) before being recorded.
+
+Re-capture with --capture ONLY for a deliberate, reviewed output change like
+those -- never to paper over an unexplained drift.
 
 The hash is over the ORDERED rows of each table exactly as the importer emits
 them (the importer fixes row order: address_versions by id, dump-driven tables

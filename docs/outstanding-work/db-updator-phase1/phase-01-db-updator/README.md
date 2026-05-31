@@ -16,7 +16,8 @@ Shared spec: [`../context.md`](../context.md).
 | 2 `.rdata` `version_resolver` (scan + hard intern-agreement) | DONE | eb1aa2c |
 | 3 `apply` scaffold + re-verify path (resolve → validate → delta → audit-trio UPDATE) | DONE | a6e956e |
 | 4 `apply` add-entity + add-versions-row (kind-class branch + baseline-present gate) | DONE | 6bfd634 |
-| 5 per-kind survival fingerprint: `survival` table + populate (DB-side; engine consumer separate) | NOT STARTED | — |
+| 5.1 survival machinery: seed columns + `survival` table + populate-from-fields + oracle (DB-side; engine consumer separate) | DONE | (landed) |
+| 5.2 fill the seed survival fields with verified per-kind data (research-disassembly; parallel to 5.1) | NOT STARTED | — |
 | 6 `apply` deprecate + supersede (names-side UPDATE + acyclicity gate) | NOT STARTED | — |
 
 ## Step docs
@@ -25,7 +26,7 @@ Shared spec: [`../context.md`](../context.md).
 2. [step-2-version-resolver.md](step-2-version-resolver.md)
 3. [step-3-apply-reverify.md](step-3-apply-reverify.md)
 4. [step-4-apply-add-entity.md](step-4-apply-add-entity.md)
-5. [step-5-survival-fingerprint.md](step-5-survival-fingerprint.md)
+5. [step-5.1-survival-machinery.md](step-5.1-survival-machinery.md) + [step-5.2-fill-survival-seed.md](step-5.2-fill-survival-seed.md) (parallel)
 6. [step-6-apply-deprecate-supersede.md](step-6-apply-deprecate-supersede.md)
 
 ## Verification gate (phase end)
@@ -50,10 +51,31 @@ The phase is done when, on the same hand-edited seeds:
 
 ## Note on the survival fingerprint split
 
-Step 5 is the **DB-side** half of the per-kind survival fingerprint system: the
-`survival` table + populating its per-kind datum. The **engine consumer** half
-(per-kind `SurvivalCheck` dispatch, the production binder feed, the
-dependency-DAG walk at check time, apply-time `on_changed` enforcement) is
-engine work, NOT db-updator scope — it is tracked in the restructure plan's
-survival lineage. Design for both halves:
+Step 5 is the **DB-side** half of the per-kind survival fingerprint system. It
+splits into two PARALLEL sub-steps:
+
+- **5.1 — machinery** (the code): add the per-kind survival COLUMNS to
+  `address_versions_seed.csv`, add the `survival` table to the schema, have
+  apply+rebuild populate the `survival` table FROM those seed columns, and
+  extend the oracle. 5.1 defines the seed column shape 5.2 writes into; it does
+  NOT author the per-kind values (where a seed column is empty, the survival row
+  carries the datum empty — never a guess).
+- **5.2 — data** (the values): a research-disassembly pass that FILLS the new
+  seed columns with verified per-kind survival data (the AOB pattern+mask per
+  callsite, the slot count per vtable_base, the derivation rule per data_slot,
+  the instruction shape per instruction_anchor, the string per string_anchor),
+  authored against the binary — NOT parsed from the `notes` prose (a probe
+  confirmed prose extraction is unreliable: AOB hex is present for some
+  callsites but not all; slot counts for some vtable_bases but not all).
+
+They run in parallel: 5.1 lands the columns + machinery (empty values valid);
+5.2 fills the values into those columns. Each verified per-kind value is a seed
+UPDATE to an existing approved row (not a new-row addition), so policy.md's
+new-row-approval gate does not block 5.2 — but the survival columns' SHAPE is
+5.1's deliverable and must land (or be agreed) before 5.2 writes into it.
+
+The **engine consumer** half (per-kind `SurvivalCheck` dispatch, the production
+binder feed, the dependency-DAG walk at check time, apply-time `on_changed`
+enforcement) is engine work, NOT db-updator scope — tracked in the restructure
+plan's survival lineage. Design for all of it:
 [`data/maintainer-tool/fingerprint-per-kind.md`](../../../../data/maintainer-tool/fingerprint-per-kind.md).

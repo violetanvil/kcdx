@@ -79,7 +79,10 @@ A row is rejected with a hard error if any REQUIRED column is empty.
 
 **`address_versions_seed.csv`** — required: `kcdx_id`, `valid_from_version`,
 `module`. Optional (NULL-valid): `rva`, `signature`,
-`last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`.
+`last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`,
+and the five survival columns `survival_aob`, `survival_anchor_string`,
+`survival_derives_from`, `survival_rule`, `survival_slot_count` (see
+§"Survival columns").
 
 ## Module column resolution (`address_versions_seed.csv.module`)
 
@@ -181,6 +184,67 @@ is NULL, all three MUST be NULL. Partial sets are a HARD ERROR.
 A value not in the enum = HARD ERROR. No `inferred` tier — if no real
 evidence exists, the row's `last_verified_at_version` stays NULL.
 
+## Survival columns (the per-kind survival datum)
+
+`address_versions_seed.csv` carries five OPTIONAL per-version columns that hold
+the **survival datum** — the load-bearing fact a future engine survival check
+re-verifies to answer "at the current game version, is the thing this row names
+still the thing it was verified to be?" The check's *form* mirrors how the kind
+resolves: an AOB-matched kind is re-checked by re-matching the AOB, a derived
+slot by re-running its derivation, and so on. Each curated row maps to exactly
+one row in the generated `survival` table; the importer reads these columns and
+populates that table.
+
+All five are NULL-valid. A kind uses only the column(s) its form needs; the rest
+stay empty. An unfilled column = an empty survival payload (the importer emits
+the survival row with the right `kind_form` and an empty payload — never a
+guessed value, never a value parsed from `notes`). A **malformed PRESENT** value
+is a HARD ERROR; an EMPTY value is always allowed.
+
+| Column | Format | Used by kind(s) | Job |
+|---|---|---|---|
+| `survival_aob` | Whitespace-separated AOB tokens; each token is a 2-hex byte (`48`, `8B`, `ff`) or a wildcard (`?` / `??`). The wildcard mask is FOLDED INTO this column — there is NO separate mask column. | `callsite`, `instruction_anchor` | The AOB pattern (bytes + mask) the survival check scans `.text` for. |
+| `survival_anchor_string` | Free text — the literal string bytes. No importer format check (any non-empty value accepted). | `string_anchor` | The literal the survival check searches `.rdata` for. |
+| `survival_derives_from` | An INTEGER kcdx_id. Must reference an existing `address_names_seed.csv` entity (cross-row FK check, like `kcdx_id`). | `data_slot` (→ its instruction/anchor); `instruction_anchor` (→ its string_anchor); `vtable_index` (→ its vtable_base) | The cross-row survival-DAG edge: the entity this row's survival derivation depends on. The importer resolves the kcdx_id to the dependency's `address_versions.id` (the `survival.derives_from` FK). |
+| `survival_rule` | A structured derivation-rule string (grammar below). The importer does NOT parse the grammar — any non-empty string is accepted at author time; the future engine consumer parses it. | `data_slot` | The derivation rule the survival check re-runs to reach the slot. |
+| `survival_slot_count` | A non-negative INTEGER. | `vtable_base` | The expected vtable slot count (the survival check reads N qwords + asserts each is a `.text` pointer). |
+
+**`survival_rule` grammar (the minimal form step 5.2 authors).** A data_slot is
+reached by following a RIP-relative displacement from an anchor, or by a fixed
+offset from another slot. The rule string encodes which:
+
+- `disp32@<kid>` — follow the 32-bit RIP-relative displacement at the
+  instruction the entity `<kid>` names (the anchor row). Example: `disp32@9`
+  (follow the disp32 at instruction_anchor id 9). Pair this with
+  `survival_derives_from = <kid>`.
+- `<kid>-0x<hex>` / `<kid>+0x<hex>` — a fixed signed offset from the `.data`
+  slot the entity `<kid>` resolves to. Example: `10-0xA8` (`gEnv = pConsole −
+  0xA8`, where id 10 is `pConsole`). Pair this with `survival_derives_from =
+  <kid>`.
+
+Keep the rule and `survival_derives_from` consistent: the `<kid>` named in the
+rule is the entity the dependency edge points at. (The grammar is intentionally
+small — extend it here, in this section, when a new derivation shape is needed.)
+
+**`vtable_index` is DEFERRED.** Its survival datum (resolve the base, take the
+slot, hash the target function's body) needs the runtime-vtable verification
+path. Leave its survival columns empty — the importer emits its survival row with
+`kind_form = slot_target` and an empty payload; population lands with that future
+path. The base reference is carried via `survival_derives_from` (the vtable_base
+entity) when authored; the slot INDEX is the row's existing `value` / vtable-slot
+datum, not a new column.
+
+**`function` kinds need no survival authoring.** A function's survival datum is
+its body fingerprint (`content_hash` + `length`), already on the
+`address_versions` row from the bulk promote. The importer reuses it; the
+maintainer never hand-authors a function's survival columns.
+
+The five columns are read + format-validated by the importer (`seeds_shared/
+validators.py`); the `survival_derives_from` FK closure is a cross-seed check
+(below). The generated `survival` table shape lives in `seeds_shared/schema.py`;
+the per-kind survival design rationale is in
+[`data/maintainer-tool/fingerprint-per-kind.md`](../maintainer-tool/fingerprint-per-kind.md).
+
 ## Supersession (entity rename; engine auto-follows)
 
 A cosmetic rename: the new entity occupies the same address with the same
@@ -231,6 +295,9 @@ cross-file invariants that catch typical authoring mistakes:
   `address_versions_seed` row** for the import's current `GAME_VERSION_TAG`.
   A named entity with no resolve facts for the baseline version =
   HARD ERROR.
+- **A non-empty `survival_derives_from` MUST resolve to an existing
+  `address_names_seed.id`** (the survival-DAG dependency edge must reference a
+  real entity). Violation = HARD ERROR. EMPTY = allowed (no dependency).
 
 **Surprise the maintainer should know about:** the importer SILENTLY SKIPS
 `address_versions_seed` rows whose `valid_from_version != GAME_VERSION_TAG`
