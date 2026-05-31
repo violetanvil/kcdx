@@ -52,7 +52,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
 ```
 
 The name `"outfit_swap_callsite_aob"` carries the address; the replacement is
-the same-length rewrite (a `[[patch]]` over the curated site that
+the same-length rewrite (a `kcdx.bytes` patch over the curated site that
 `cap-01` / `cap-39-cpp-bytes` also exercise). `Write` is the everyday
 fire-and-log form; `TryWrite` is the handle-returning variant for
 programmatic branching. Pass an optional `const kcdxBytesOptions*` third arg

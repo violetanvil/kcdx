@@ -5,7 +5,7 @@
 //
 // RoM uses PolyHook2 (via its detour_hook). kcdx uses MinHook (already
 // vendored, already used for the engine's lua_pcall / update hooks +
-// the [[hook]] schema). This class encapsulates the adaptation so the
+// the kcdx.hook surface). This class encapsulates the adaptation so the
 // rest of the rom-borrowed code doesn't need PolyHook2 references.
 
 #include <cstdint>

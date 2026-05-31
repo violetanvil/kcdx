@@ -54,7 +54,7 @@ struct DispatchGuard {
     bool is_outermost() const { return !was_set; }
 };
 
-// Non-owning. Lifetime of runtime_func_t lives in the [[hook]]
+// Non-owning. Lifetime of runtime_func_t lives in the kcdx.hook
 // installer (or, eventually, Lua-side memory.dynamic_hook userdata).
 std::unordered_map<uintptr_t, kcdx::rom::runtime_func_t*> g_target_to_hook;
 

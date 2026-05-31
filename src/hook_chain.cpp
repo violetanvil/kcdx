@@ -1517,7 +1517,7 @@ uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
 // ===========================================================================
 
 // Resolve a HookPayload's function-entry locator to an absolute VA via
-// the patch-engine locator pipeline (same path [[hook]]/kcdx.bytes use).
+// the patch-engine locator pipeline (same path kcdx.hook/kcdx.bytes use).
 // Returns 0 + reason on failure.
 uintptr_t ResolveLocator(const kcdx::hook_payload::HookPayload& p,
                          std::string& reason) {

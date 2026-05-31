@@ -89,7 +89,7 @@ size_t ApplyAll() {
             std::string fullName =
                 t.pluginName.empty() ? t.exportSymbol
                                      : (t.pluginName + "." + t.exportSymbol);
-            // Step 4 of the 2-dot namespace refactor: the [[trampoline]]
+            // Step 4 of the 2-dot namespace refactor: the kcdx.code
             // entry now carries the manifest's [plugin].author alongside
             // pluginName, so the symbol table sees the full
             // <author>.<plugin>.<bare> identity. When [plugin].author is

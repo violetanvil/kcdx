@@ -540,7 +540,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
 
                 // Resolve gEnv->pConsole + IConsole::AddCommand/
                 // RemoveCommand via the Address Library and arm the
-                // [[command]] dispatch surface. After this returns true,
+                // kcdx.command dispatch surface. After this returns true,
                 // plugin RegisterCommand calls succeed.
                 kcdx::console::Init();
 

@@ -26,7 +26,7 @@ The remaining tree:
 Via `add_subdirectory(vendor/asmjit)` in the top-level CMakeLists.txt. The
 asmjit target is linked into kcdx.asi. We don't expose asmjit symbols to
 plugin authors — it's an engine-internal dep for the typed-marshaling
-trampolines used by `[[hook]] lua_callback` and `[[mid_hook]]`.
+trampolines used by the `kcdx.hook` interface with Lua callbacks and by the mid-function hook interface.
 
 ## When to update
 

@@ -100,7 +100,7 @@ static const char* kKnown[] = {
 //
 //   name   (string, required)  : name for logs + export diagnostics.
 //   bytes  (string, optional)  : initial machine-code bytes (hex string,
-//                                same parse as [[trampoline]]).
+//                                same parse as kcdx.code).
 //   size   (integer, optional) : total alloc size; defaults to #bytes. If
 //                                > #bytes the tail is NOP-padded (0x90) so
 //                                other plugins can patch into the unused

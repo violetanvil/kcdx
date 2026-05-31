@@ -64,8 +64,8 @@ the wrong type.
 pattern matches: N`, an optional `[scan 'name'] context matches: N`, and one
 `[scan 'name'] match N: <module>+0x<rel> -> apply addr 0x<addr>` per hit. When
 the module is not loaded it logs `[scan 'name'] module 'X' not loaded
-(0 matches)`. (The full byte-dump diagnostic lives in the `[[scan]]` TOML
-primitive, not in this Lua path.)
+(0 matches)`. (The full byte-dump diagnostic was part of the now-removed
+legacy scan path, not this Lua path.)
 
 ## Minimal snippet
 

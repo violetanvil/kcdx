@@ -8,7 +8,7 @@ namespace kcdx::trampoline {
 const kcdxTrampolineInterface* GetInterface();
 
 // Allocate from the branch pool. Engine-internal entry point used by the
-// hook engine (for raw-bytes detour bodies in [[hook]] entries) in addition
+// hook engine (for raw-bytes detour bodies in kcdx.hook entries) in addition
 // to plugin-facing AllocateFromBranchPool.
 //
 // `nearVa` controls where the reservation is anchored so a 5-byte rel32 jmp

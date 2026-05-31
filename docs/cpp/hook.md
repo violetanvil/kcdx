@@ -606,7 +606,7 @@ registration overlaps `target`.
 **Order.** Entries are sorted by `(priority asc, name asc)` — the same order
 kcdx uses to apply.
 
-**Scope note.** `[[mid_hook]]` / `kcdx.hook` mode=`mid` conflicts are NOT
+**Scope note.** Mid-function hook (`kcdx.hook` mode=`mid`) conflicts are NOT
 reported: mid hooks reject via sole-ownership (the `FindChain`-non-null path),
 not the chain's `CanCoexist` path, and the legacy path never reported mid
 conflicts either — same contract.
