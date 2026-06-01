@@ -11,9 +11,9 @@ Shared spec: [`context.md`](context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| Phase 1 — audit + column design | DONE | (landed) |
-| Phase 2 — schema: explicit per-kind columns | DONE | (landed) |
-| Phase 3 — author values + rewire readers + delete prose machinery | NOT STARTED | — |
+| Phase 1 — audit + column design | DONE | 02271c0 |
+| Phase 2 — schema: explicit per-kind columns | DONE | 78f7f27 |
+| Phase 3 — author values + rewire readers + delete prose machinery | DONE | (landed) |
 
 The per-step ledgers live in each `phase-NN-*/README.md`. This top row flips to
 `DONE` only when every step in the phase is `DONE`.

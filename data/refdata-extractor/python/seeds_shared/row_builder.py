@@ -33,13 +33,14 @@ Two builders, mirroring the two rebuild row sources:
                              keeps a promoted row and a minted row byte-identical
                              to the rebuild's inline construction.
 
-The kind/offset/vtable_slot DERIVATION (infer_kind + kind_offset_and_slot) stays
-in import_to_sqlite.py: it is heuristic interpretation of the seed `notes`/`rva`,
-not row assembly. The caller derives kind/offset/vtable_slot and the dict-encoded
-kind id, then hands them to build_curated_row. This keeps the row-builder a pure
-column-assembly function (no Dicts dependency, no heuristics) that `apply` can
-call with its own version id and derived kind without dragging the rebuild's
-inference machinery along.
+There is NO derivation. kind / offset / vtable_slot / struct_offset are AUTHORED
+seed columns: the caller reads each straight from the address_versions_seed.csv
+cell (kind via ss.authored_kind; the per-kind datum cells via parse_int), encodes
+the kind id, and hands them to build_curated_row. No prose parsing, no `notes`
+interpretation, no heuristic inference for any value the importer writes. This
+keeps the row-builder a pure column-assembly function (no Dicts dependency, no
+heuristics) that both the rebuild and `apply` call with the SAME authored column
+values, so they emit byte-identical rows.
 """
 
 

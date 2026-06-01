@@ -276,65 +276,6 @@ def db_latest_ordinal(db_path):
 
 
 # ---------------------------------------------------------------------------
-# Overlay kind inference (heuristic; covers the 9 values, never crashes).
-#
-# NO LONGER ON ANY LIVE IMPORT PATH. `kind` is now an AUTHORED column in
-# address_versions_seed.csv (read via seeds_shared.validators.authored_kind);
-# the rebuild + apply curated paths read it directly. This heuristic guessed the
-# kind from the entity's notes prose, which silently mis-classified rows whose
-# prose lacked a magic cue (e.g. gEnv -> function_no_sig instead of data_slot,
-# CScriptSystem_vtable -> function_no_sig instead of vtable_base). The kind gates
-# the survival kind_form, the fingerprint-vs-NULL branch, and the bulk-row
-# promote gate, so a wrong kind silently dropped authored data.
-#
-# Kept (not deleted) as a maintainer REFERENCE classifier: when authoring the
-# `kind` cell for a NEW seed row, run this against the row to get a first guess,
-# then verify it against ADDRESS_KINDS + the actual RE finding before writing.
-# It is a one-shot authoring aid, not an import-time dependency.
-# ---------------------------------------------------------------------------
-def infer_kind(seed_row):
-    rva = (seed_row.get("rva") or "").strip()
-    sig = (seed_row.get("signature") or "").strip()
-    name = (seed_row.get("name") or "").lower()
-    notes = (seed_row.get("notes") or "").lower()
-
-    if not rva:
-        return "vtable_index"   # ids 3000-3005, empty rva
-    if "callsite" in name or "callsite" in notes or "not a function entry" in notes:
-        return "callsite"
-    if "vtable base" in notes or "vtable base address" in notes or "concrete-class" in notes:
-        return "vtable_base"
-    if ".data pointer" in notes or "static .data" in notes or "data slot" in notes \
-            or "static pointer slot" in notes:
-        return "data_slot"
-    if ".rdata string" in notes or "string literal" in notes:
-        return "string_anchor"
-    if "instruction" in notes or "mov rcx" in notes:
-        return "instruction_anchor"
-    if "..." in name or "variadic" in name or "variadic" in notes:
-        return "function_variadic"
-    if sig:
-        return "function"
-    return "function_no_sig"   # real entry, empty signature
-
-
-def kind_offset_and_slot(kind, notes):
-    """offset stays NULL for the unblock. vtable_slot: parse a trailing slot int
-    from vtable_index notes only when trivially present, else NULL."""
-    offset = None
-    vtable_slot = None
-    if kind == "vtable_index" and notes:
-        # notes like "...vtable index = 13 (0-indexed)..." or "slot 4 (0-indexed)".
-        import re
-        m = re.search(r"index\s*=\s*(\d+)", notes)
-        if not m:
-            m = re.search(r"slot\s+(\d+)\s*\(0-indexed\)", notes)
-        if m:
-            vtable_slot = int(m.group(1))
-    return offset, vtable_slot
-
-
-# ---------------------------------------------------------------------------
 # The full transform: dump + seed -> in-memory row sets for every table.
 # Returns a dict table -> list[dict-of-column->value], plus the Dicts encoder.
 #
@@ -512,11 +453,6 @@ def build_rows(dump_dir, dicts):
             f"(this baseline import only knows {GAME_VERSION_TAG!r}; future "
             f"versions need their own game_versions row in the meta seed first)")
 
-    # (kcdx_id, notes) lookup: kind is now AUTHORED on the versions seed (no
-    # longer inferred from notes), but kind_offset_and_slot still reads the
-    # entity notes to pull the vtable_index slot int.
-    notes_by_kid = {int(ns["id"]): (ns.get("notes") or "") for ns in names_seed}
-
     next_av_id = n_functions + 1
     n_seed_mapped = 0
     n_seed_minted_addr = 0
@@ -542,7 +478,6 @@ def build_rows(dump_dir, dicts):
         where = (f"address_versions_seed.csv (kcdx_id={kid}, "
                  f"valid_from_version={vfv_tag!r})")
         module_id = _resolve_module(vs["module"].strip(), where)
-        notes_for_kind = notes_by_kid.get(kid, "")
 
         srva = (vs.get("rva") or "").strip()
         sig  = (vs.get("signature") or "").strip()
@@ -558,28 +493,17 @@ def build_rows(dump_dir, dicts):
 
         # Read the AUTHORED kind column (no longer inferred from notes prose).
         # ss.authored_kind re-validates present + in-enum; the seed reader already
-        # enforced it at file-read time. kind_offset_and_slot still consumes the
-        # entity notes for the vtable_index slot int.
+        # enforced it at file-read time.
         kind = ss.authored_kind(vs)
-        offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
-        # AUTHORED per-kind datum columns (importer-no-prose-derivation Phase 2).
-        # Each has its own explicit seed column now. AUTHORED-WINS-ELSE-FALLBACK:
-        # when the authored `offset`/`vtable_slot` cell is present it wins; when
-        # absent, the existing derived behaviour (kind_offset_and_slot / NULL)
-        # still applies, so the current all-empty rows emit byte-identically.
-        # Phase 3 deletes the fallback. struct_offset is pure NEW plumbing
-        # (authored cell -> column, no prior derived source). `value` is NOT
-        # wired here this step: build_curated_row has no `value` parameter (it
-        # synthesises value from vtable_slot), and every current `value` cell is
-        # empty, so adding a value-authored path would only risk changing emitted
-        # rows -- Phase 3 makes `value` its own authored datum.
-        a_offset = parse_int(vs.get("offset") or "")
-        a_vslot  = parse_int(vs.get("vtable_slot") or "")
+        # AUTHORED per-kind datum columns. Each has its own explicit seed column;
+        # offset / vtable_slot / struct_offset are read straight from the authored
+        # cells (parse_int -> int or NULL). NO prose parsing, NO inference, NO
+        # fallback -- the authored column is the SOLE source. `value` is not wired
+        # here (build_curated_row has no `value` parameter; it synthesises value
+        # from vtable_slot).
+        offset = parse_int(vs.get("offset") or "")
+        vslot  = parse_int(vs.get("vtable_slot") or "")
         struct_offset = parse_int(vs.get("struct_offset") or "")
-        if a_offset is not None:
-            offset = a_offset
-        if a_vslot is not None:
-            vslot = a_vslot
         kind_id = dicts.encode("address_versions", "kind", kind)
 
         # Capture the survival inputs for this curated entity (the kind string +
@@ -653,7 +577,7 @@ def build_rows(dump_dir, dicts):
                 valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
                 signature=sig, lvv_id=lvv_id, verified_by=vby,
                 verified_date=vdt, evidence_kind_id=ekn_id,
-                offset=offset, vtable_slot=vslot)
+                offset=offset, vtable_slot=vslot, struct_offset=struct_offset)
             n_seed_minted_noaddr += 1
 
     # Every kcdx_id in address_names_seed.csv must have a matching row in
@@ -1196,19 +1120,16 @@ def _validate_full_seed_state():
     # name_rows are now RESOLVED (seed strings replaced by ids in place), exactly
     # as build_rows leaves them before write_db -- so the add-entity names INSERT
     # below writes the same column values the rebuild would. Index them by id for
-    # the add path (the per-entity name row), and expose the kind-inference cues
-    # (name + entity-level notes live on the NAMES seed, never the versions seed;
-    # the versions seed supplies only rva + signature). build_rows' kind_cue is
-    # {rva, signature (from versions seed), name, notes (from names seed)}.
+    # the add path (the per-entity name row). kind / offset / vtable_slot /
+    # struct_offset are all AUTHORED versions-seed columns now -- no notes cue is
+    # read for any value.
     names_by_id = {r["id"]: r for r in name_rows}
     id_to_name = {r["id"]: r["name"] for r in name_rows}
-    notes_by_kid = {int(ns["id"]): (ns.get("notes") or "") for ns in names_seed}
 
     return {
         "versions_seed": versions_seed,
         "names_by_id": names_by_id,        # id -> RESOLVED address_names row dict
-        "id_to_name": id_to_name,          # id -> name (kind cue)
-        "notes_by_kid": notes_by_kid,      # id -> raw notes string (kind cue)
+        "id_to_name": id_to_name,          # id -> name
         "modules_by_id": modules_by_id,
         "modules_by_name": modules_by_name,
     }
@@ -1231,12 +1152,11 @@ def _seed_action_rows(state):
     and the add/promote paths need, kind-derived ONCE here (kind derivation is
     DB-independent; only present-vs-absent classification is per-DB).
 
-    Mirrors build_rows for the kind/offset/vtable_slot derivation: kind is the
-    AUTHORED column on the versions seed (read via ss.authored_kind, no longer
-    inferred); kind_offset_and_slot still reads the entity notes (from the NAMES
-    seed) for the vtable_index slot int."""
+    Mirrors build_rows: kind / offset / vtable_slot / struct_offset are all
+    AUTHORED columns on the versions seed (kind via ss.authored_kind; the per-kind
+    datum cells via parse_int). NO prose parsing, NO inference -- the authored
+    columns are the sole source, read here exactly as build_rows reads them."""
     versions_seed = state["versions_seed"]
-    notes_by_kid = state["notes_by_kid"]
 
     out = []
     for vs in versions_seed:
@@ -1251,20 +1171,14 @@ def _seed_action_rows(state):
         vdt = (vs.get("verified_date") or "").strip()
         ekn = (vs.get("evidence_kind") or "").strip()
 
-        notes_for_kind = notes_by_kid.get(kid, "")
         kind = ss.authored_kind(vs)
-        offset, vslot = kind_offset_and_slot(kind, notes_for_kind.lower())
-        # AUTHORED per-kind datum columns (importer-no-prose-derivation Phase 2).
-        # Same AUTHORED-WINS-ELSE-FALLBACK seam build_rows uses, so apply and
-        # rebuild read the columns identically. `value` is not wired (see
-        # build_rows); struct_offset is new plumbing (authored cell or NULL).
-        a_offset = parse_int(vs.get("offset") or "")
-        a_vslot  = parse_int(vs.get("vtable_slot") or "")
+        # AUTHORED per-kind datum columns -- read straight from the authored cells,
+        # identically to build_rows (the same authored columns, the same way), so
+        # apply == rebuild. NO prose parsing, NO inference, NO fallback. `value` is
+        # not wired (see build_rows).
+        offset = parse_int(vs.get("offset") or "")
+        vslot  = parse_int(vs.get("vtable_slot") or "")
         struct_offset = parse_int(vs.get("struct_offset") or "")
-        if a_offset is not None:
-            offset = a_offset
-        if a_vslot is not None:
-            vslot = a_vslot
 
         # Survival inputs (db-updator step 5.1): the raw survival seed cells, kept
         # alongside the action so the add path can build the survival row via the
@@ -1680,7 +1594,7 @@ def _apply_one_db(con, actions, state, which, user_projection):
                 signature=a["signature"], lvv_id=lvv_id,
                 verified_by=a["verified_by"], verified_date=a["verified_date"],
                 evidence_kind_id=ekn_id, offset=a["offset"],
-                vtable_slot=a["vtable_slot"])
+                vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
 
         # One BEGIN/COMMIT per action. add-versions-row closes the prior open
         # interval FIRST (so ix_av_open_unique -- kcdx_id IS NOT NULL AND

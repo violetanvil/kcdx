@@ -14,8 +14,8 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| 3 hand-author the existing values into the new columns (user-verified) | DONE | (landed) |
-| 4 rewire both writers to read authored columns + delete prose machinery | NOT STARTED | — |
+| 3 hand-author the existing values into the new columns (user-verified) | DONE | a72736b |
+| 4 rewire both writers to read authored columns + delete prose machinery | DONE | (landed) |
 
 ## Step docs
 
