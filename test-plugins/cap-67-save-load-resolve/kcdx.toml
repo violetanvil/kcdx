@@ -1,0 +1,46 @@
+# CAP-67 — the five save/load targets resolve through the Address Library by
+# canonical name to a NON-ZERO address.
+#
+# The save/load lifecycle hooks (src/save_load_hooks.cpp) used to runtime-AOB-
+# scan for their five targets; they now resolve each through the Address Library
+# by name (refdb::ResolveAddrByName). This plugin is the regression net for that
+# switch: it asserts each of the five curated entities is present in kcdx.addr
+# (the Lua-visible Address Library snapshot) as a non-nil pointer.
+#
+# kcdx.addr.<name> is a one-shot snapshot built at kcdx-global init: a name
+# appears as a kcdx.memory.pointer ONLY if it resolved on the running build to a
+# NON-ZERO VA AND is verification-state Verified. An entity that fails to resolve
+# (name unknown, rva==0, or not verified) is SKIPPED — its kcdx.addr.<name> is
+# nil. So a non-nil kcdx.addr.<name> IS the falsifiable "resolves by name to a
+# non-zero address" proof; each row FAILS if its entity is nil.
+#
+# What it proves (all boot-only, no player gesture — kcdx.addr is populated at
+# init, read synchronously at plugin load):
+#   * CAP-67-savegame        : kcdx.addr.SaveGame is a non-nil pointer.
+#   * CAP-67-loadgame        : kcdx.addr.LoadGame_wrapper is a non-nil pointer.
+#   * CAP-67-postloadgame    : kcdx.addr.PostLoadGame is a non-nil pointer.
+#   * CAP-67-deletesavegame  : kcdx.addr.DeleteSavegame is a non-nil pointer.
+#   * CAP-67-slotresolver    : kcdx.addr.SaveGameRecord_SlotResolver is a
+#                              non-nil pointer.
+#
+# Each row FAILS if its entity resolved to 0 (absent from kcdx.addr) — the
+# regression that would mean the by-name switch lost a target.
+#
+# Test mode: boot-only. All five rows resolve + report synchronously at plugin
+# load. No console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_67_save_load_resolve"
+display_name        = "CAP-67 save/load targets resolve by name"
+author              = "ts"
+description         = "Asserts the five save/load lifecycle targets (SaveGame, LoadGame_wrapper, PostLoadGame, DeleteSavegame, SaveGameRecord_SlotResolver) each resolve through the Address Library by canonical name to a non-zero address — present in kcdx.addr as a non-nil pointer. Regression net for the runtime-AOB-scan -> resolve-by-name switch in save_load_hooks.cpp."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-67-savegame", "CAP-67-loadgame", "CAP-67-postloadgame", "CAP-67-deletesavegame", "CAP-67-slotresolver"]
+
+[entrypoints]
+lua = "plugin.lua"

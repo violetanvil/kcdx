@@ -21,6 +21,8 @@ By db_status:
 | not_in_db (coverage — new seed row owed) | 17 |
 | uncertain | 0 |
 
+**Resolved since the audit:** the 5 `src/save_load_hooks.cpp` operative locators (the 4 `*_SIG` patterns + `SLOT_RESOLVER_SIG`) moved to the DB as seed rows ids 144–148 and now resolve by name; their 4 `not_in_db` pattern rows + the slot-resolver pattern row are `resolved`, and the 3 comment-only RVA rows (2 in `.cpp`, 1 in `.h`) are reclassified `comment-only` (no runtime dependency). The by-kind / by-status counts above are the original audit snapshot and have NOT been recomputed — see the `src/save_load_hooks.cpp` + `src/save_load_hooks.h` sections for the per-row resolved/comment-only status.
+
 **Method.** The codebase was fanned out into per-region slices (engine hooks/save, resolve/scan, lua-binders, probes, mod-absorb, rom-misc, public-headers, test-plugins C++, test-plugins Lua/TOML, builtin/examples/docs). Each slice was read in full and hex-grepped; every candidate literal was then re-read in place by an independent verifier and cross-referenced against both seed CSVs (`data/seeds/address_names_seed.csv` and `data/seeds/address_versions_seed.csv`) to set `db_status`. A **finding** here is an in-source literal that locates a position in the game binary `WHGame.dll` — an RVA/VA (code or data), an AOB byte pattern used as a scan locator, a vtable slot index, or a vtable byte offset reaching a game-interface method — that lives outside the address database. Literals that are *not* game-binary locators (OS error codes, hash constants, alignment/capacity math, file-format magic, CryEngine flag bitsets passed to named calls, kcdx-owned asset paths, deliberately-bogus `DEADBEEF` sentinels) are out of scope and listed in Appendix A.
 
 **Intentionally excluded as the legitimate homes for raw addresses:** `data/seeds/` (the seed CSVs ARE the DB source-of-truth), `_research/` (Ghidra dumps / RE working notes), `third-party-ghidra/` (the analyzed project + binaries), and `vendor/` (third-party code). Literals there are expected and are not findings.
@@ -143,21 +145,23 @@ Grouped by file (sorted). Every occurrence is its own row; duplicates within a f
 
 ### [`src/save_load_hooks.cpp`](../../src/save_load_hooks.cpp)
 
+**RESOLVED (the 5 operative locators).** The 4 SIG-pattern rows + the slot-resolver SIG below were the live runtime locators; all five sites now resolve through the Address Library by name (`Install()` calls `refdb::ResolveAddrByName`), and the `*_SIG` constants were deleted. The five entities are seed rows ids 144–148 (`SaveGame` / `LoadGame_wrapper` / `PostLoadGame` / `DeleteSavegame` / `SaveGameRecord_SlotResolver`), exercised by `test-plugins/cap-67-save-load-resolve`. The remaining rows here are comment-only provenance (no runtime dependency); the slot-resolver inline-disasm block was kept as provenance. Line numbers below are pre-resolution.
+
 | line | literal | kind | targets | db_status | note |
 |---|---|---|---|---|---|
-| 33 | `4C 8B DC 49 89 5B 08 49 89 73 18 49 89 7B 20 55 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 50 40 8A 7D 58 48 8D 05 B2 A6` | pattern | WHGame.dll SaveGame (7-arg __fastcall) | not_in_db | `SAVE_GAME_SIG`, scanned at line 486. Save/load lifecycle absent from DB. |
-| 37 | `48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 41 8B D8 8B FA 48 8B F1 E8 C0 F1 FF FF 48 8D 8E C8 00 00 00 66 C7 86 C0 00` | pattern | WHGame.dll LoadGame_wrapper (char __fastcall (self, playline, slot)) | not_in_db | `LOAD_GAME_WRAPPER_SIG`, scanned at line 488. |
-| 41 | `48 89 5C 24 10 55 56 57 41 56 41 57 48 8D 6C 24 C9 48 81 EC 90 00 00 00 49 8B F8 8B DA 48 8B F1 E8 7F F1 35 FE 4C 8B B8` | pattern | WHGame.dll PostLoadGame (char __fastcall (self, arg2, arg3)) | not_in_db | `POST_LOAD_GAME_SIG`, scanned at line 490. |
-| 45 | `48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC 40 48 63 EA 45 8B F8 8B D5 48 8B F1 E8 40 19 42 FF` | pattern | WHGame.dll DeleteSavegame (char __fastcall (self, int32 slot, u32 flags)) | not_in_db | `DELETE_SAVEGAME_SIG`, scanned at line 492. |
-| 49 | `0x1819DDE78` | rva | SaveGameManager slot-resolver function entry (RVA 0x019DDE78); inline-disasm header comment | not_in_db | Comment-only; runtime locator is `SLOT_RESOLVER_SIG` (line 62). |
-| 55 | `0x180703c0c` | rva | Internal jmp target inside the resolver body (vector_get / SaveGameRecord-lookup helper) | not_in_db | Comment-only disassembly transcription; no runtime dependency. Weakest finding (RE working-note in a .cpp comment). |
-| 62 | `48 63 C2 48 8D 14 C0 48 8D 0C D1 41 8B D0 48 83 C1 08 E9 7D 5D D2 FE` | pattern | WHGame.dll SaveGameRecord slot resolver @ 0x1819DDE78 (RVA 0x019DDE78); returns SaveGameRecord* in rax | not_in_db | `SLOT_RESOLVER_SIG`, scanned at line 494. The operative DB-bypass for this site (the .h/.cpp RVA comments are its provenance). |
+| 33 | `4C 8B DC 49 89 5B 08 49 89 73 18 49 89 7B 20 55 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 50 40 8A 7D 58 48 8D 05 B2 A6` | pattern | WHGame.dll SaveGame (7-arg __fastcall) | resolved | Was `SAVE_GAME_SIG`; deleted. Now seed id 144 `SaveGame`, resolved by name. |
+| 37 | `48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 41 8B D8 8B FA 48 8B F1 E8 C0 F1 FF FF 48 8D 8E C8 00 00 00 66 C7 86 C0 00` | pattern | WHGame.dll LoadGame_wrapper (char __fastcall (self, playline, slot)) | resolved | Was `LOAD_GAME_WRAPPER_SIG`; deleted. Now seed id 145 `LoadGame_wrapper`, resolved by name. |
+| 41 | `48 89 5C 24 10 55 56 57 41 56 41 57 48 8D 6C 24 C9 48 81 EC 90 00 00 00 49 8B F8 8B DA 48 8B F1 E8 7F F1 35 FE 4C 8B B8` | pattern | WHGame.dll PostLoadGame (char __fastcall (self, arg2, arg3)) | resolved | Was `POST_LOAD_GAME_SIG`; deleted. Now seed id 146 `PostLoadGame`, resolved by name. |
+| 45 | `48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC 40 48 63 EA 45 8B F8 8B D5 48 8B F1 E8 40 19 42 FF` | pattern | WHGame.dll DeleteSavegame (char __fastcall (self, int32 slot, u32 flags)) | resolved | Was `DELETE_SAVEGAME_SIG`; deleted. Now seed id 147 `DeleteSavegame`, resolved by name. |
+| 49 | `0x1819DDE78` | rva | SaveGameManager slot-resolver function entry (RVA 0x019DDE78); inline-disasm header comment | comment-only | Provenance comment block (kept). Runtime resolution is now seed id 148 `SaveGameRecord_SlotResolver`, by name. |
+| 55 | `0x180703c0c` | rva | Internal jmp target inside the resolver body (vector_get / SaveGameRecord-lookup helper) | comment-only | Comment-only disassembly transcription; no runtime dependency. Weakest finding (RE working-note in a .cpp comment). |
+| 62 | `48 63 C2 48 8D 14 C0 48 8D 0C D1 41 8B D0 48 83 C1 08 E9 7D 5D D2 FE` | pattern | WHGame.dll SaveGameRecord slot resolver @ 0x1819DDE78 (RVA 0x019DDE78); returns SaveGameRecord* in rax | resolved | Was `SLOT_RESOLVER_SIG`; deleted. Now seed id 148 `SaveGameRecord_SlotResolver`, resolved by name. |
 
 ### [`src/save_load_hooks.h`](../../src/save_load_hooks.h)
 
 | line | literal | kind | targets | db_status | note |
 |---|---|---|---|---|---|
-| 34 | `0x1819DDE78` | rva | SaveGameManager slot-resolver function entry (the LoadGameSelected hook target); doc comment | not_in_db | Comment-only provenance; runtime resolution is the AOB scan in the .cpp. Same site as the .cpp SLOT_RESOLVER_SIG. |
+| 34 | `0x1819DDE78` | rva | SaveGameManager slot-resolver function entry (the LoadGameSelected hook target); doc comment | comment-only | Comment-only provenance; runtime resolution is now seed id 148 `SaveGameRecord_SlotResolver`, resolved by name. |
 
 ### [`test-plugins/cap-03-hook-lua-callback/plugin.lua`](../../test-plugins/cap-03-hook-lua-callback/plugin.lua)
 

@@ -142,3 +142,8 @@ kcdx_id,valid_from_version,module,rva,kind,signature,last_verified_at_version,ve
 141,1.5.1164953,WHGame.dll,0x004F7820,function,ptr (i64 size),1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,,,,,,,,
 142,1.5.1164953,WHGame.dll,0x004FD468,function,"ptr (ptr dest, ptr source)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,,,,,,,,
 143,1.5.1164953,WHGame.dll,0x004F692C,function,"ptr (ptr dest, cstr source)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,,,,,,,,
+144,1.5.1164953,WHGame.dll,0x03581B04,function,"char (ptr self, cstr filename, u8 reason, u8 flag_a, u32 arg5, u8 flag_b, cstr description)",1.5.1164953,VioletAnvil,2026-05-31,live_production,,,,,,,,,,
+145,1.5.1164953,WHGame.dll,0x025BCEEC,function,"char (ptr self, u32 playline, u32 slot)",1.5.1164953,VioletAnvil,2026-05-31,live_production,,,,,,,,,,
+146,1.5.1164953,WHGame.dll,0x025BCF94,function,"char (ptr self, u32 arg2, ptr arg3)",1.5.1164953,VioletAnvil,2026-05-31,live_production,,,,,,,,,,
+147,1.5.1164953,WHGame.dll,0x025BC510,function,"char (ptr self, i32 slot, u32 flags)",1.5.1164953,VioletAnvil,2026-05-31,live_production,,,,,,,,,,
+148,1.5.1164953,WHGame.dll,0x019DDE78,function,"ptr (ptr sub_object, i32 playline_idx, i32 slot_idx)",1.5.1164953,VioletAnvil,2026-05-31,live_production,,,,,,,,,,

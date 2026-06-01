@@ -5,15 +5,13 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <vector>
 
 #include "MinHook.h"
 #include "dev.h"
 #include "modification_inventory.h"
 #include "log.h"
 #include "messaging.h"
-#include "patch_engine.h"
-#include "pe_helpers.h"
+#include "refdb.h"
 #include "serialization.h"
 #include "kcdx/Interfaces.h"
 
@@ -21,32 +19,21 @@ namespace kcdx::save_load_hooks {
 
 namespace {
 
-// Tier-2 40-byte AOB signatures, verified against the binary. All verified
-// unique in WHGame.dll .text against KCD2 release_1_5_1164953_841.
+// The five save/load targets resolve through the Address Library by canonical
+// name (refdb::ResolveAddrByName) — the name supplies the address AND the
+// verified ABI. Each row's RVA was the .text-unique scan hit these hooks
+// previously located at runtime; resolving by name yields the identical VA
+// (base + the same RVA), with the body fingerprint carrying the cross-version
+// survival check. Names: SaveGame, LoadGame_wrapper, PostLoadGame,
+// DeleteSavegame, SaveGameRecord_SlotResolver.
 //
 // Arg ABIs come from capstone body-wide stack-arg analysis against the
 // binary. Earlier rounds derived arg lists from prologue-shape only —
-// that's what produced the 3-arg-SaveGame bug
-// that corrupted saves. Always use full-body analysis for new hook
-// targets.
+// that's what produced the 3-arg-SaveGame bug that corrupted saves. Always
+// use full-body analysis for new hook targets.
 
-const char* SAVE_GAME_SIG =
-    "4C 8B DC 49 89 5B 08 49 89 73 18 49 89 7B 20 55 41 54 41 55 41 56 41 57 "
-    "48 8B EC 48 83 EC 50 40 8A 7D 58 48 8D 05 B2 A6";
-
-const char* LOAD_GAME_WRAPPER_SIG =
-    "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 41 8B D8 8B FA 48 8B F1 E8 "
-    "C0 F1 FF FF 48 8D 8E C8 00 00 00 66 C7 86 C0 00";
-
-const char* POST_LOAD_GAME_SIG =
-    "48 89 5C 24 10 55 56 57 41 56 41 57 48 8D 6C 24 C9 48 81 EC 90 00 00 00 "
-    "49 8B F8 8B DA 48 8B F1 E8 7F F1 35 FE 4C 8B B8";
-
-const char* DELETE_SAVEGAME_SIG =
-    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC 40 "
-    "48 63 EA 45 8B F8 8B D5 48 8B F1 E8 40 19 42 FF";
-
-// Slot resolver @ 0x1819DDE78. 24-byte function:
+// Slot-resolver provenance @ 0x1819DDE78 (entity SaveGameRecord_SlotResolver).
+// 23-byte function:
 //   movsxd rax, edx              ; sign-extend playline index
 //   lea rdx, [rax + rax*8]       ; * 9
 //   lea rcx, [rcx + rdx*8]       ; rcx += playline * 72 (struct stride)
@@ -59,8 +46,6 @@ const char* DELETE_SAVEGAME_SIG =
 // record at several stages). Returns the SaveGameRecord*; we read
 // the filename basename from [record+0x80] (live-confirmed
 // with two distinct loads producing "exit.whs" and "save561.whs").
-const char* SLOT_RESOLVER_SIG =
-    "48 63 C2 48 8D 14 C0 48 8D 0C D1 41 8B D0 48 83 C1 08 E9 7D 5D D2 FE";
 
 // Save/load function-pointer typedefs.
 using save_game_t = char (__fastcall*)(
@@ -423,27 +408,6 @@ void* __fastcall HookedSlotResolver(void* sub_object, int32_t playline_idx,
 // Install plumbing
 // -----------------------------------------------------------------
 
-uintptr_t FindUniqueSig(const pe::ModuleView& mod, const char* sig,
-                        const char* label) {
-    auto pat = kcdx::patch::ParsePattern(sig);
-    auto sections = pe::ExecutableSections(mod);
-    std::vector<uintptr_t> all;
-    for (const auto& sec : sections) {
-        auto offs = kcdx::patch::FindAllInBuffer(sec.data, sec.size, pat);
-        for (size_t off : offs) {
-            all.push_back(reinterpret_cast<uintptr_t>(sec.data + off));
-        }
-    }
-    if (all.size() != 1) {
-        log::WarnF("[phase6] %s sig: %zu matches (need exactly 1) — skipping hook",
-                   label, all.size());
-        return 0;
-    }
-    log::InfoF("[phase6] %s found at 0x%p", label,
-               reinterpret_cast<void*>(all[0]));
-    return all[0];
-}
-
 bool VerifyExecutable(void* p, const char* label) {
     MEMORY_BASIC_INFORMATION mbi{};
     if (VirtualQuery(p, &mbi, sizeof(mbi)) == 0) {
@@ -477,22 +441,17 @@ bool InstallOne(uintptr_t target, void* detour, void** trampoline,
 }  // namespace
 
 bool Install() {
-    pe::ModuleView whgame;
-    if (!pe::OpenModule(L"WHGame.dll", whgame)) {
-        log::Error("[phase6] WHGame.dll not loaded — refusing to install hooks");
-        return false;
-    }
-
-    uintptr_t saveGame        = FindUniqueSig(whgame, SAVE_GAME_SIG,
-                                              "SaveGame");
-    uintptr_t loadGameWrapper = FindUniqueSig(whgame, LOAD_GAME_WRAPPER_SIG,
-                                              "LoadGame(wrapper)");
-    uintptr_t postLoadGame    = FindUniqueSig(whgame, POST_LOAD_GAME_SIG,
-                                              "PostLoadGame");
-    uintptr_t deleteSavegame  = FindUniqueSig(whgame, DELETE_SAVEGAME_SIG,
-                                              "DeleteSavegame");
-    uintptr_t slotResolver    = FindUniqueSig(whgame, SLOT_RESOLVER_SIG,
-                                              "SlotResolver");
+    // Resolve each target through the Address Library by canonical name: the
+    // name yields the VA (base + the curated RVA) directly, with no runtime
+    // AOB scan. A 0 return means the entity did not resolve on this build (name
+    // unknown, unverified, or WHGame.dll not mapped) — InstallOne then skips
+    // that hook with a warning, the same fail-loud-and-skip behaviour the scan
+    // had on a non-unique match.
+    uintptr_t saveGame        = refdb::ResolveAddrByName("SaveGame");
+    uintptr_t loadGameWrapper = refdb::ResolveAddrByName("LoadGame_wrapper");
+    uintptr_t postLoadGame    = refdb::ResolveAddrByName("PostLoadGame");
+    uintptr_t deleteSavegame  = refdb::ResolveAddrByName("DeleteSavegame");
+    uintptr_t slotResolver    = refdb::ResolveAddrByName("SaveGameRecord_SlotResolver");
 
     MH_Initialize();
 
