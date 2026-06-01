@@ -19,4 +19,16 @@ const kcdxConsoleInterface* GetInterface();
 // functionality is unaffected.
 bool Init();
 
+// Print one plain line to the in-game `~` console overlay via CryEngine's
+// IConsole::PrintLine. The shared engine entry both the C++ interface thunk
+// (kcdxConsoleInterface::Print) and the Lua surface (kcdx.console.print) route
+// through.
+//
+// Returns true on success. Returns false (with a WARN — never a silent no-op)
+// if the console surface isn't ready yet, or if IConsole::PrintLine did not
+// resolve (a reference DB that predates the PrintLine entity); returns false
+// for a null/empty string (a no-op that reports it did nothing). The author's
+// string is passed through verbatim — PrintLine owns the line.
+bool PrintLine(const char* text);
+
 }  // namespace kcdx::console

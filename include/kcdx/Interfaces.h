@@ -1275,7 +1275,7 @@ typedef struct kcdxConsoleCmdArgs kcdxConsoleCmdArgs;
 // signature and pass it to RegisterCommand. Called on the main thread.
 typedef void (*kcdxConsoleCommandCallback)(const kcdxConsoleCmdArgs* args);
 
-#define kcdxConsoleInterface_Version 1u
+#define kcdxConsoleInterface_Version 2u
 
 typedef struct kcdxConsoleInterface {
     // Register a console command. `name` must be unique across the
@@ -1326,6 +1326,18 @@ typedef struct kcdxConsoleInterface {
     // Returns true on success, false if the IConsole surface isn't
     // ready (i.e. before kcdxMessage_InputLoaded fires).
     bool         (*ExecuteString)(const char* commandLine);
+
+    // --- APPEND-ONLY BELOW ---
+
+    // Print one plain line to the in-game `~` console overlay. The line
+    // appears verbatim (no command-syntax wrapper, no prefix) — the engine
+    // owns the trailing newline, so pass your text without one.
+    //
+    // Returns true on success. Returns false if the console surface isn't
+    // ready yet (before kcdxMessage_InputLoaded), if the underlying print
+    // path could not be resolved on this game build, or for a null/empty
+    // string. A refusal is logged — it is never a silent no-op.
+    bool         (*Print)(const char* text);
 } kcdxConsoleInterface;
 
 // -----------------------------------------------------------------------------

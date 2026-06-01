@@ -419,6 +419,45 @@ int Lua_ConsoleExecute(lua_State* L) {
     return 1;
 }
 
+// kcdx.console.print(text)
+//
+// Print one plain line to the in-game `~` console overlay. Goes through
+// CryEngine's IConsole::PrintLine — the line appears verbatim (no
+// command-syntax wrapper, no prefix). Main-thread-safe: kcdx.console.print is
+// called from plugin.lua / a kcdx.on callback, both main-thread.
+//
+// A GROUPED-DOMAIN positional "do a thing" verb: kcdx.console.* is a domain
+// sub-table (like kcdx.log.*), print takes one positional string arg. This is
+// the Lua mirror of the C++ kcdxConsoleInterface::Print. Both surfaces route
+// through the shared engine entry console::PrintLine.
+//
+//   local ok = kcdx.console.print("hello")
+//
+// Returns true on success, false if the console surface isn't ready or the
+// print path is unavailable on this build (mirrors the C++ Print bool return).
+// On a bad arg, returns (nil, teaching error) per the kcdx-binder error
+// convention.
+int Lua_ConsolePrint(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.console.print(text): expects a single string argument — "
+            "the line to print to the in-game ~ console (e.g. "
+            "kcdx.console.print(\"hello\")).");
+        return 2;
+    }
+    const char* line = lua_tostring(L, 1);
+
+    // Route through the shared engine entry (NOT the interface thunk) — both
+    // the Lua surface and the C++ thunk call console::PrintLine. A false return
+    // (surface not ready / print path unavailable) is the same observable as
+    // the C++ Print refusing: the call shape was valid, so push a boolean, not
+    // an arg error.
+    bool ok = kcdx::console::PrintLine(line);
+    lua_pushboolean(L, ok ? 1 : 0);
+    return 1;
+}
+
 }  // namespace
 
 void bind(lua_State* L) {
@@ -438,6 +477,8 @@ void bind(lua_State* L) {
     lua_newtable(L);
     lua_pushcfunction(L, Lua_ConsoleExecute);
     lua_setfield(L, -2, "execute");
+    lua_pushcfunction(L, Lua_ConsolePrint);
+    lua_setfield(L, -2, "print");
     lua_setfield(L, kcdx_idx, "console");
 }
 

@@ -38,6 +38,11 @@ using ExecuteStringFn  = void(__fastcall*)(void* iconsole,
                                            const char* command,
                                            bool bSilentMode,
                                            bool bDeferExecution);
+// IConsole::PrintLine(const char* s) — paints one plain line onto the in-game
+// `~` console overlay. 2-arg __thiscall/fastcall: rcx = IConsole*, rdx = const
+// char* s. The slot/RVA lives in the reference DB (entity "IConsole_PrintLine"),
+// resolved by name at Init().
+using PrintLineFn      = void(__fastcall*)(void* iconsole, const char* s);
 
 
 // Resolved IConsole state. Populated by Init() at the first update tick.
@@ -45,6 +50,7 @@ void*            g_iconsole       = nullptr;
 AddCommandFn     g_AddCommand     = nullptr;
 RemoveCommandFn  g_RemoveCommand  = nullptr;
 ExecuteStringFn  g_ExecuteString  = nullptr;
+PrintLineFn      g_PrintLine      = nullptr;
 std::atomic<bool> g_ready         {false};
 
 // Per-slot registration record. We pre-allocate kMaxCommands slots and
@@ -316,6 +322,14 @@ bool Thunk_ExecuteString(const char* commandLine) {
     return true;
 }
 
+// Plugin-facing thunk for kcdxConsoleInterface::Print. Both the C++ thunk and
+// the Lua kcdx.console.print binder route through the shared engine entry
+// console::PrintLine — this thunk is a thin pass-through so the interface and
+// the Lua surface share one code path.
+bool Thunk_Print(const char* text) {
+    return PrintLine(text);
+}
+
 // Drain g_pendingCommands through the ONE registration path (RegisterCommandNow)
 // in FIFO order, then clear the queue. Caller holds g_slotsMutex; g_ready must
 // already be true (the surface is armed). Called once, from Init(), right after
@@ -371,12 +385,34 @@ kcdxConsoleInterface g_iface = {
     /*GetArg=*/           Thunk_GetArg,
     /*GetCommandLine=*/   Thunk_GetCommandLine,
     /*ExecuteString=*/    Thunk_ExecuteString,
+    /*Print=*/            Thunk_Print,
 };
 
 }  // namespace
 
 const kcdxConsoleInterface* GetInterface() {
     return &g_iface;
+}
+
+bool PrintLine(const char* text) {
+    if (!g_ready.load(std::memory_order_acquire)) {
+        log::Warn("[console] PrintLine refused: IConsole not ready "
+                  "(call later than kcdxMessage_InputLoaded)");
+        return false;
+    }
+    if (!g_PrintLine) {
+        log::Warn("[console] PrintLine refused: IConsole::PrintLine did not "
+                  "resolve (reference DB predates the PrintLine entity)");
+        return false;
+    }
+    // ExecuteString's null/empty handling: a null or empty string is a no-op
+    // that reports it did nothing (returns false) rather than calling through.
+    if (!text || !*text) return false;
+    // Pass the author's string through verbatim — PrintLine itself owns the
+    // line (it normalizes a trailing newline). Do NOT append a newline or
+    // mutate the text.
+    g_PrintLine(g_iconsole, text);
+    return true;
 }
 
 bool Init() {
@@ -431,13 +467,31 @@ bool Init() {
     g_RemoveCommand  = reinterpret_cast<RemoveCommandFn>(removeCommandVA);
     g_ExecuteString  = reinterpret_cast<ExecuteStringFn>(executeStringVA);
 
+    // Resolve IConsole::PrintLine by canonical name — SOFT/optional. PrintLine
+    // is a newer reference-DB entity than AddCommand/RemoveCommand/ExecuteString;
+    // an older DB that predates it must NOT fail the whole console surface (the
+    // command + ExecuteString paths above are independent of PrintLine). A miss
+    // logs a WARN and leaves g_PrintLine null, so console::PrintLine returns
+    // false gracefully (fail loud at the call, never a silent no-op) while
+    // commands keep working.
+    uintptr_t printLineVA = refdb::ResolveAddrByName("IConsole_PrintLine");
+    if (!printLineVA) {
+        log::Warn("[console] Init: refdb name \"IConsole_PrintLine\" did not "
+                  "resolve — kcdx.console.print will be unavailable (console "
+                  "commands are unaffected)");
+        g_PrintLine = nullptr;
+    } else {
+        g_PrintLine = reinterpret_cast<PrintLineFn>(printLineVA);
+    }
+
     {
         std::lock_guard<std::mutex> lock(g_slotsMutex);
         g_ready.store(true, std::memory_order_release);
         log::InfoF("[console] ready: IConsole=0x%p, AddCommand=0x%p, "
-                   "RemoveCommand=0x%p, %zu slots available",
+                   "RemoveCommand=0x%p, PrintLine=0x%p, %zu slots available",
                    iconsole, reinterpret_cast<void*>(addCommandVA),
-                   reinterpret_cast<void*>(removeCommandVA), kMaxCommands);
+                   reinterpret_cast<void*>(removeCommandVA),
+                   reinterpret_cast<void*>(g_PrintLine), kMaxCommands);
         // Drain the deferred-registration queue NOW that the surface is armed,
         // FIFO, through the single RegisterCommandNow path.
         FlushPendingCommands();
