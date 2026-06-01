@@ -29,6 +29,7 @@
 #include "../dev.h"
 #include "../log.h"
 #include "../modification_inventory.h"  // RegisterModification (probe category)
+#include "../refdb.h"  // kcdx::refdb::ResolveAddrByName — ctor target by Address Library name
 #include "../test.h"  // kcdx::test::ReportResult — engine-internal probe self-report
                       // (same pattern as lua_plugin_loader.cpp's cap-23 report:
                       //  the behavior under test is engine machinery, so the engine
@@ -41,17 +42,19 @@ namespace {
 
 // === Verified RE constants ==========================================
 //
-// PROBE-LOCAL LABELED CONSTANTS, not Address Library IDs — a USER-APPROVED
-// DEFERRAL for this diagnostic step (mirrors bugsplat_ctor_probe's RVA-comment
-// style). Promoting these to resolved seed IDs (so the address is never a
-// hardcoded RVA) is deferred to feature graduation by explicit user decision.
-// This is NOT an oversight: a labeled-RVA here is the sanctioned form for the
-// probe; the seed-ID promotion lands when the loc-dump feature graduates out of
-// the probe stage.
+// CLocalizedStringsManager ctor — resolved by its Address Library name
+// CLocalizedStringsManager_ctor (no hardcoded RVA). First store is `*this =
+// vtable`; hooking it captures `this` (RCX = Win64 fastcall arg 1). The ctor's
+// hardcoded RVA was promoted to an Address Library seed entity by explicit user
+// decision, overriding the earlier deferral that kept it a labeled probe-local
+// constant; the install site below resolves the VA via refdb at runtime.
 //
-// CLocalizedStringsManager ctor (FUN_1809f0ce4). First store is `*this =
-// vtable`; hooking it captures `this` (RCX = Win64 fastcall arg 1).
-constexpr uintptr_t kCtorRva = 0x9f0ce4;
+// The two LocalizeString slots below stay labeled constexpr for a DIFFERENT
+// reason: they are C++ vtable ORDINALS (read off the live captured vtable at
+// runtime), NOT game addresses. Recording them as vtable_index seed rows awaits
+// a runtime vtable-hook consumer that does not exist yet — until then, a
+// labeled-ordinal constant is the right form for them (there is no RVA to
+// promote).
 
 // The two PUBLIC LocalizeString overloads are manager vtable slots 21 and 22.
 // We do NOT hardcode their RVAs — we read each address off the captured
@@ -536,9 +539,17 @@ bool Install() {
         return true;  // already installed this session
     }
 
-    HMODULE whgame = GetModuleHandleW(L"WHGame.dll");
-    if (!whgame) {
-        log::Warn("LOC_DUMP: WHGame.dll not mapped yet; cannot install ctor hook");
+    // Resolve the ctor through the Address Library by canonical name: the name
+    // yields the VA (WHGame.dll base + the curated RVA) directly. A 0 return
+    // means the entity did not resolve on this build (name unknown/unverified,
+    // or WHGame.dll not mapped) — the same not-yet-ready / bad-target condition
+    // the old GetModuleHandleW(L"WHGame.dll") null-check guarded. Skip the
+    // install (allowing retry) rather than hook a 0 target.
+    uintptr_t ctorVA = kcdx::refdb::ResolveAddrByName("CLocalizedStringsManager_ctor");
+    if (!ctorVA) {
+        log::Warn("LOC_DUMP: CLocalizedStringsManager_ctor did not resolve "
+                  "(WHGame.dll not mapped or name unverified); cannot install "
+                  "ctor hook");
         g_installed.store(false, std::memory_order_release);  // allow retry
         return false;
     }
@@ -554,8 +565,7 @@ bool Install() {
         return false;
     }
 
-    void* ctorTarget = reinterpret_cast<void*>(
-        reinterpret_cast<uintptr_t>(whgame) + kCtorRva);
+    void* ctorTarget = reinterpret_cast<void*>(ctorVA);
 
     void* origPtr = nullptr;
     MH_STATUS s = MH_CreateHook(ctorTarget,
@@ -578,9 +588,8 @@ bool Install() {
     }
 
     log::InfoF("LOC_DUMP: CLocalizedStringsManager ctor hook installed at %p "
-               "(WHGame.dll base %p, ctor_rva=0x%llx)",
-               ctorTarget, reinterpret_cast<void*>(whgame),
-               (unsigned long long)kCtorRva);
+               "(resolved by Address Library name CLocalizedStringsManager_ctor)",
+               ctorTarget);
     kcdx::modification_inventory::RegisterModification(
         reinterpret_cast<uintptr_t>(ctorTarget),
         kcdx::modification_inventory::Category::Probe, "loc_dump:ctor");
