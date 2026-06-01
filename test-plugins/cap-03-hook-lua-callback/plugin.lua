@@ -2,13 +2,12 @@
 -- [[hook]] + pak-Lua-callback to kcdx.hook{before}; same site, same
 -- observable (the hook callback fires), pure-Lua now.
 --
--- The target is an un-named direct callee of CGame::Update
--- (0x180865FB4 in KCD2 1.5.1164953) — no Address Library name, so the
--- locator stays the SAME pattern= AOB the old [[hook]] block used, with
--- signature="void (ptr)" (the void __fastcall(this_ptr*) ABI: return_type
--- "void", param_types ["ptr"]). This is the labeled expert hatch for a
--- target the library can't name yet (the common path is a target name; the
--- raw pattern is the expert escape hatch), NOT a gap.
+-- The target is the menu/UI pump — a direct callee of CGame::Update — now
+-- CURATED in the Address Library as `CGame_per_frame_ui_pump`. So cap-03
+-- resolves it BY NAME (the common path): the name carries the address AND the
+-- verified ABI `void (ptr self)` — no hex, no hand-written signature. An
+-- earlier version used a raw AOB pattern because the entity wasn't curated
+-- yet; that's now migrated to the by-name locator.
 --
 -- The before callback does NOT dereference the ptr (object layout unknown;
 -- the test only confirms the dispatch chain fired). CAP-03 PASS asserts the
@@ -25,9 +24,6 @@
 -- migration attempts (reported at ready, then input_loaded, both too early).
 -- The correct observable is event-driven: the moment the hook fires, report
 -- PASS. The hook firing IS the thing under test; we report when it happens.
-
-local PATTERN =
-    "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 80 B9 C1 05 00 00 00 48 8B D9"
 
 -- PASS is STICKY + TERMINAL. A one-shot hook that has already fired ONCE cannot
 -- un-fire — so once CAP-03 reports PASS it must NEVER report FAIL afterwards.
@@ -70,8 +66,7 @@ local fire_count = 0
 
 local h = kcdx.hook{
     name      = "cap03_update_callee",
-    pattern   = PATTERN,            -- un-named site: expert AOB hatch
-    signature = "void (ptr)",       -- void __fastcall(this_ptr*); ptr not deref'd
+    target    = "CGame_per_frame_ui_pump",  -- curated Address Library name: carries the address AND the verified ABI
     before    = function(this_ptr)  -- single `this` arg; we only count fires
         fire_count = fire_count + 1
         report_fired(fire_count)    -- self-report PASS on the first fire
