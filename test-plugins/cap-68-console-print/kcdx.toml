@@ -1,0 +1,41 @@
+# CAP-68 — kcdx.console.print(text): print one plain line to the in-game `~`
+# console overlay (Lua surface).
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-32-scan / cap-67-save-load-resolve are the structural mirrors).
+#
+# What it proves:
+#   * CAP-68-callable (boot-only): kcdx.console.print is a function AND, once the
+#     console surface is armed (input_loaded), a call with a valid string returns
+#     a BOOLEAN (not nil / not an error). FAILS if the binding is missing or
+#     returns the wrong type.
+#   * CAP-68-badarg (boot-only): kcdx.console.print(123) (non-string) returns
+#     (nil, err) with err a string naming the `string` arg. FAILS if a bad arg
+#     does not produce the teaching error. No overlay needed — boot-checkable.
+#   * CAP-68-overlay (console): at input_loaded, calls
+#     kcdx.console.print("CAP68_CONSOLE_PRINT_OVERLAY_OK"). The auto-pass asserts
+#     the call RETURNED TRUE (the surface accepted the line); the OVERLAY LINE
+#     appearing on the `~` console is the MANUAL observable the user eyeballs
+#     (overlay-paint is human-perceptual, no machine signal). Auto-pass = "call
+#     returned true"; the printed line is the manual confirmation.
+#
+# Test mode: CAP-68-callable + CAP-68-badarg are boot-only (launch-to-menu
+# confirms them). CAP-68-overlay is `console`: the auto-pass (call returned
+# true) self-reports from the input_loaded fire; the printed overlay line is the
+# manual eyeball — open the `~` console and look for the line.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_68_console_print"
+display_name        = "CAP-68 kcdx.console.print line to the ~ overlay"
+author              = "ts"
+description         = "Pure-Lua kcdx.console.print self-test: the binding is a function returning a boolean once the console surface is armed (CAP-68-callable), a non-string arg returns (nil, teaching-err) naming `string` (CAP-68-badarg), and a valid print at input_loaded returns true with the line painting the ~ overlay (CAP-68-overlay; auto-pass=call-returned-true, manual=the overlay line)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-68-callable", "CAP-68-badarg", "CAP-68-overlay"]
+
+[entrypoints]
+lua = "plugin.lua"

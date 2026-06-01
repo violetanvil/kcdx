@@ -605,4 +605,45 @@ inline void Write(const Kcdx& K, const char* target, const char* replacement,
 }
 
 }  // namespace bytes
+
+// =============================================================================
+// namespace kcdx::console — the empowered floor over kcdxConsoleInterface::Print
+// =============================================================================
+//
+// The C++ peer of Lua's `kcdx.console.print(text)`. The author passes one
+// plain string; this wrapper null-guards the interface + slot and forwards to
+// `K.console->Print(text)`. Unlike the hook / bytes wrappers there is no
+// options struct to build and no per-mode codegen — a console print is a single
+// one-arg call — so the wrapper's value is the null-guard and the namespace
+// symmetry (an author scanning the `kcdx::<domain>::` namespaces finds console
+// alongside hook / bytes).
+//
+// The null-guard is genuine safety: `Print` is the append-only v2 slot on
+// kcdxConsoleInterface. A plugin compiled against a newer header but loaded by
+// an OLDER engine sees `K.console == nullptr` (the version-mismatched
+// QueryInterface returns null) or a null `Print` field — the wrapper returns a
+// safe `false` instead of dereferencing a null function pointer. The raw
+// `K.console->Print(text)` floor carries no such guard.
+//
+// Floor model (see docs/cpp/wrapper.md "The 3-floor model"):
+//   Floor 1 (empowered)  kcdx::console::print(K, "hello")
+//                         — null-guards K.console + ->Print, returns false on a
+//                           missing slot instead of crashing.
+//   Floor 4 (raw)        K.console->Print("hello") — the unchecked raw
+//                         kcdxConsoleInterface slot.
+
+namespace console {
+
+// Print one plain line to the in-game `~` console overlay. The empowered peer
+// of K.console->Print — same behavior, the Kcdx-handle-first house shape, with
+// a null-guard so an older-engine `Print == nullptr` returns false rather than
+// crashing. Returns true if the line was accepted; false if the console
+// interface/slot is unavailable, the surface isn't ready, or the print path
+// could not be resolved on this game build (the engine logs a refusal — never a
+// silent no-op).
+inline bool print(const Kcdx& K, const char* text) {
+    return (K.console && K.console->Print) ? K.console->Print(text) : false;
+}
+
+}  // namespace console
 }  // namespace kcdx

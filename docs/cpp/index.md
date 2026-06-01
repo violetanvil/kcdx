@@ -176,7 +176,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxInterface::Log` + `kcdxLogger` + `kcdxLogLevel` | Built | `kcdx.log.*` | [log.md](log.md) |
 | `kcdxMemoryInterface::ScanPattern`/`GetModuleBase`/`Read`/`WriteBytes` (+ NYI dynamic_call/dynamic_hook) | Built / partial | `kcdx.memory.*` | [memory.md](memory.md) |
 | `kcdxInterface::ResolveAddress`/`ResolveAddressByName`/`ResolveSymbol` | Built | `kcdx.addr` | [addr.md](addr.md) |
-| `kcdxConsoleInterface::ExecuteString` | Built | `kcdx.console.*` | [console.md](console.md) |
+| `kcdxConsoleInterface::Print` / `ExecuteString` (+ `kcdx::console::print` wrapper) | Built | `kcdx.console.*` | [console.md](console.md) |
 | `kcdxInterface::ReportTestResult` | Built | `kcdx.test.*` | [test.md](test.md) |
 | `kcdxSerializationInterface` (per-save plugin data; `OpenRecordNamed`/`GetRecordTagName`, Version 2) | Built (name-derived UID **NYI**) | `kcdx.cosave.*` | [cosave.md](cosave.md) |
 | `kcdxPluginInfoInterface` (plugin introspection — is another plugin rejected) | **NYI** | `kcdx.plugin.*` | [plugin.md](plugin.md) |

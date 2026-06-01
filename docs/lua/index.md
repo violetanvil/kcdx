@@ -274,7 +274,7 @@ it does not exist yet.
 | `kcdx.log.*` | structured logging (info/warn/error/debug/trace) | [log.md](log.md) |
 | `kcdx.memory.*` | direct memory access + runtime native interop | [memory.md](memory.md) |
 | `kcdx.addr` | Address Library name → pointer snapshot table | [addr.md](addr.md) |
-| `kcdx.console.*` | run a console command line from Lua | [console.md](console.md) |
+| `kcdx.console.*` | print a line to the `~` console / run a console command line from Lua | [console.md](console.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
 | `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |
 | `kcdx.plugin.*` | plugin introspection (is another plugin rejected/loaded) | [plugin.md](plugin.md) |

@@ -1116,6 +1116,36 @@ what the live result is.
 
 ---
 
+## CAP-68: `kcdx.console.print(text)` — print a line to the `~` console overlay (Lua)
+
+| Field | Value |
+|---|---|
+| What | The Lua `kcdx.console.print(text)` grouped-domain verb: one positional string, the line to paint to the in-game `~` console overlay (verbatim, no command-syntax wrapper, no prefix). Returns `true` if the surface accepted the line, `false` if the surface isn't ready / the print path is unavailable on this build, and `(nil, err)` on a non-string arg. Routes through the shared engine entry `console::PrintLine` (`IConsole::PrintLine`, vtable[26]) that the C++ `Print` slot also calls — the two surfaces share one engine path. |
+| Channels | Pure Lua (`plugin.lua`, no DLL). C++/Lua PARITY: CAP-69 is the C++ peer (the same console-print capability via `K.console->Print` + the `kcdx::console::print` wrapper). |
+| Engine status | LIVE — the Lua surface (`src/lua_bind_command.cpp` `Lua_ConsolePrint`, registered as `kcdx.console.print`) ships; this is its regression coverage. |
+| Test plugin | [`cap-68-console-print/`](cap-68-console-print/) — pure-Lua (no `CMakeLists.txt` entry needed, like cap-32 / cap-67). |
+| Auto-pass check | **CAP-68-callable** (`boot-only`): at `input_loaded` (surface armed), `type(kcdx.console.print)=="function"` AND a valid-string call returns a `boolean` (called under `pcall` — `pcall` true, return type boolean). FALSIFIABLE: a missing binding (type ~= function) or a wrong/error return → FAIL. **CAP-68-badarg** (`boot-only`): `kcdx.console.print(123)` returns `(nil, err)` with `err` a string containing `"string"` (the binder rejects a non-string before touching the surface, so no overlay is needed). FALSIFIABLE: a bad arg not producing the teaching error (a boolean / nil-err / err not naming the arg) → FAIL. **CAP-68-overlay** (`console`): at `input_loaded`, `kcdx.console.print("CAP68_CONSOLE_PRINT_OVERLAY_OK")` returns `true` — auto-pass on the call returning true (the surface accepted it). FALSIFIABLE: a `false`/non-true return (surface not ready / print path unavailable) → FAIL. |
+| Manual observable | **CAP-68-overlay** the overlay-paint is the manual eyeball: open the `~` console and confirm the line `CAP68_CONSOLE_PRINT_OVERLAY_OK` is painted. Overlay-paint is human-perceptual (no machine-readable signal), so the auto-pass asserts the call returned true and the printed line is the user confirmation. |
+| Last result | PENDING (initial launch). |
+| Notes | `kcdx.console.print` is the everyday "show the user a line" verb (distinct from `kcdx.console.execute`, which runs a command line). The badarg row is fully boot-checkable; the callable + overlay rows need the surface armed (input_loaded). cap-67 is the highest prior cap row; cap-68 is the next free id. |
+
+---
+
+## CAP-69: `kcdxConsoleInterface::Print` + `kcdx::console::print` — console print from C++ (both floors)
+
+| Field | Value |
+|---|---|
+| What | C++ peer of CAP-68. Exercises the console-print capability from the C++ surface, BOTH floors: the raw `K.console->Print(text)` (the v2 `kcdxConsoleInterface` method) AND the empowered `kcdx::console::print(K, text)` wrapper (in `include/kcdx/Kcdx.h` — null-guards `K.console` + `->Print`, then forwards). Each prints a distinct marker line at `kcdxMessage_InputLoaded` (the console surface is armed by then) and routes through the same engine `console::PrintLine` entry the Lua surface uses. The C++ regression coverage for the console-print capability. |
+| Channels | C++ DLL (`cap-69.dll`). C++/Lua PARITY: CAP-68 is the Lua peer (`kcdx.console.print`). The C++ side ships BOTH floors here: `CAP-69-cpp-raw` = raw `K.console->Print`; `CAP-69-cpp-wrapper` = empowered `kcdx::console::print(K, ...)`. |
+| Engine status | LIVE — the raw v2 `Print` method (`kcdxConsoleInterface_Version == 2`) and the `kcdx::console::print` wrapper both ship; this is their regression coverage. |
+| Test plugin | [`cap-69-cpp-console-print/`](cap-69-cpp-console-print/) — C++ DLL (its own `CMakeLists.txt` builds `cap-69.dll`). |
+| Auto-pass check | Both rows `console`-mode. **CAP-69-cpp-raw**: at `InputLoaded`, `K.console != null && K.console->Print != null` (the v2 method resolved) AND `K.console->Print("CAP69_CPP_RAW_OVERLAY_OK")` returns `true`. FALSIFIABLE: a null interface/slot → FAIL (rebuild against a v2 engine); a `false` return (surface not ready / print path unresolved) → FAIL. **CAP-69-cpp-wrapper**: at the same `InputLoaded` fire, `kcdx::console::print(K, "CAP69_CPP_WRAPPER_OVERLAY_OK")` returns `true` (the wrapper null-guards then forwards). FALSIFIABLE: a `false` return (the null-guard trips on an older engine, or the surface refuses) → FAIL. Both report on the first `InputLoaded` fire (one-shot guarded). |
+| Manual observable | The overlay-paint is the manual eyeball: open the `~` console and confirm both lines `CAP69_CPP_RAW_OVERLAY_OK` and `CAP69_CPP_WRAPPER_OVERLAY_OK` are painted. Overlay-paint is human-perceptual (no machine-readable signal), so each auto-pass asserts the call returned true and the printed lines are the user confirmation. |
+| Last result | PENDING (initial launch). |
+| Notes | Mirrors cap-39 / cap-63's two-floor C++ coverage shape (raw floor + empowered wrapper, both as permanent rows). The wrapper's null-guard is the floor-1 value beyond the raw slot: a plugin built against a newer header but run on an older engine gets a safe `false` from `kcdx::console::print` instead of a null-call crash. cap-68 is the highest prior cap row; cap-69 is the next free id. |
+
+---
+
 # Section 3: Real-world mod scenarios
 
 Sanity-check the matrix by walking real mod ideas end-to-end. For
@@ -1314,6 +1344,11 @@ schema — CAP-04 is now the mid-on-`kcdx.code` composition). Earlier roll-up:
 | CAP-67-postloadgame | ⏳ PENDING | save-load-resolve-by-name | Pure-Lua: `kcdx.addr.PostLoadGame` is a non-nil pointer — entity (seed id 146) resolved by name to a non-zero verified VA. FALSIFIABLE: nil → loud FAIL (`cap-67-save-load-resolve`) |
 | CAP-67-deletesavegame | ⏳ PENDING | save-load-resolve-by-name | Pure-Lua: `kcdx.addr.DeleteSavegame` is a non-nil pointer — entity (seed id 147) resolved by name to a non-zero verified VA. FALSIFIABLE: nil → loud FAIL (`cap-67-save-load-resolve`) |
 | CAP-67-slotresolver | ⏳ PENDING | save-load-resolve-by-name | Pure-Lua: `kcdx.addr.SaveGameRecord_SlotResolver` is a non-nil pointer — entity (seed id 148) resolved by name to a non-zero verified VA. FALSIFIABLE: nil → loud FAIL (`cap-67-save-load-resolve`) |
+| CAP-68-callable | ⏳ PENDING | console-print | `boot-only`. Pure-Lua: at `input_loaded`, `type(kcdx.console.print)=="function"` AND a valid-string call (under `pcall`) returns a `boolean`. FALSIFIABLE: missing binding (type ~= function) / `pcall` error / non-boolean return → FAIL. The Lua surface for printing a line to the `~` overlay (`cap-68-console-print`) |
+| CAP-68-badarg | ⏳ PENDING | console-print | `boot-only`. Pure-Lua: `kcdx.console.print(123)` returns `(nil, err)` with `err` a string containing `"string"` (the binder rejects a non-string before the surface is touched — no overlay needed). FALSIFIABLE: a boolean / nil-err / err not naming the arg → FAIL (`cap-68-console-print`) |
+| CAP-68-overlay | ⏳ PENDING | console-print | `console`. Pure-Lua: at `input_loaded`, `kcdx.console.print("CAP68_CONSOLE_PRINT_OVERLAY_OK")` returns `true` — auto-pass on call-returned-true (surface accepted the line). MANUAL: open `~` and confirm the line is painted (overlay-paint is perceptual, no machine signal). FALSIFIABLE: a non-true return (surface not ready / print path unavailable) → FAIL (`cap-68-console-print`) |
+| CAP-69-cpp-raw | ⏳ PENDING | console-print | `console`. C++ DLL: at `InputLoaded`, `K.console != null && K.console->Print != null` (v2 method resolved) AND `K.console->Print("CAP69_CPP_RAW_OVERLAY_OK")` returns `true`. Auto-pass on call-returned-true; MANUAL overlay eyeball. FALSIFIABLE: null interface/slot → FAIL (rebuild against v2); `false` return → FAIL. The raw-floor C++ peer of cap-68 (`cap-69-cpp-console-print`) |
+| CAP-69-cpp-wrapper | ⏳ PENDING | console-print | `console`. C++ DLL: at `InputLoaded`, `kcdx::console::print(K, "CAP69_CPP_WRAPPER_OVERLAY_OK")` (the Kcdx.h empowered wrapper — null-guards then forwards) returns `true`. Auto-pass on call-returned-true; MANUAL overlay eyeball. FALSIFIABLE: a `false` return (null-guard trips on an older engine, or the surface refuses) → FAIL. The empowered-floor C++ peer of cap-68 (`cap-69-cpp-console-print`) |
 | COMP-02 | ✅ PASS | _migration_ | `kcdx.bytes` patch + `kcdx.hook` detour on ONE function-entry VA (id 1006, offset −4); cross-engine coexist. `GetConflictReport(entry VA)` = 2 entries — `comp02_patch`(kind=Patch,applied) + `comp02_hook`(kind=Hook,applied). Patch engine + hook_chain coexist like legacy `[[patch]]`+`[[hook]]`. The probe launch caught a patch-after-hook apply-order bug (patch byte-verify aborted on the hook's `E9`); fixed by the ApplyZone kind rank (Bytes before Hook) — patch writes pristine bytes first, hook then detours the patched prologue (`comp-02-hook-on-patch`) |
 | COMP-03 | ✅ LIVE | _ | hook-on-hook A + B; conflict report verified |
 | PROBE-COMP-CRASH | ✅ LIVE | _ | conflict-report-crash regression guard |

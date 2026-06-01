@@ -1,0 +1,42 @@
+# CAP-69 — C++ peer of CAP-68 (kcdx.console.print via the C++ surface).
+#
+# Exercises BOTH C++ floors of the console-print capability (full-parity test
+# mandate): the raw floor (K.console->Print) AND the empowered wrapper
+# (kcdx::console::print(K, ...) in Kcdx.h). C++ DLL plugin; builds via its own
+# CMakeLists.txt (cap-69.dll), like cap-64 / cap-65 — not via build.ps1.
+#
+# What it proves (both rows `console`-mode — call-returned-true auto-pass +
+# manual overlay eyeball, same split as cap-68):
+#   * CAP-69-cpp-raw: at kcdxMessage_InputLoaded (console surface armed),
+#     K.console != null && K.console->Print != null (the v2 interface method
+#     resolved) AND K.console->Print("CAP69_CPP_RAW_OVERLAY_OK") returns true.
+#     FALSIFIABLE: null interface/slot, or a false return → FAIL.
+#   * CAP-69-cpp-wrapper: at the same InputLoaded fire,
+#     kcdx::console::print(K, "CAP69_CPP_WRAPPER_OVERLAY_OK") returns true (the
+#     wrapper null-guards then forwards to K.console->Print). FALSIFIABLE: a
+#     false return (null-guard trips on an older engine, or the surface refuses)
+#     → FAIL.
+#   The auto-pass for each is "call returned true"; the printed marker line
+#   appearing on the `~` console overlay is the manual observable the user
+#   eyeballs (overlay-paint has no machine-readable signal).
+#
+# Test mode: `console`. The auto-pass (call returned true) self-reports from the
+# InputLoaded fire; the printed overlay lines (CAP69_CPP_RAW_OVERLAY_OK /
+# CAP69_CPP_WRAPPER_OVERLAY_OK) are the manual eyeball — open the `~` console
+# and look for them.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_69_cpp_console_print"
+display_name        = "CAP-69 C++ kcdx.console.print to the ~ overlay"
+author              = "ts"
+description         = "C++ peer of CAP-68 — proves the console-print capability from the C++ surface, BOTH floors: the raw K.console->Print (the v2 kcdxConsoleInterface method) AND the empowered kcdx::console::print(K, ...) wrapper. Each prints a marker line at kcdxMessage_InputLoaded and PASSES on the call returning true; the printed overlay line is the manual eyeball."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-69-cpp-raw", "CAP-69-cpp-wrapper"]
+
+[entrypoints]
+dll = "cap-69.dll"
