@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <cstdio>   // snprintf (cap-47 self-report reason)
 #include <cstring>  // strcmp  (cap-47 owner-name check)
-#include <vector>
 
 #include "MinHook.h"
 #include "console.h"
@@ -23,9 +22,8 @@
 #include "lua_plugin_loader.h"
 #include "lua_registry.h"
 #include "messaging.h"
-#include "patch_engine.h"
-#include "pe_helpers.h"
 #include "plugin_loader.h"  // plugins::RunPostGameLoad + GetEngineInterface
+#include "refdb.h"
 #include "scan_engine.h"
 #include "scripting.h"
 #include "task.h"
@@ -54,11 +52,6 @@ extern "C" {
 namespace kcdx::hooks {
 
 namespace {
-
-// Signatures derived from yobson1/kcd2lua (last AOB update 2025-10-03 against
-// KCD2 1.3). These may need refresh if the game updates significantly.
-const char* PCALL_SIG  = "48 89 5C 24 ? 57 48 83 EC 40 33 C0 41 8B F8";
-const char* UPDATE_SIG = "48 8B C4 48 89 58 ? 48 89 70 ? 48 89 78 ? 55 41 54 41 55 41 56 41 57 48 8D A8 ? ? ? ? 48 81 EC ? ? ? ? 0F 29 70 ? 0F 29 78 ? 44 0F 29 40 ? 44 0F 29 48 ? 44 0F 29 50 ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 48 8B F1";
 
 std::atomic<lua_State*> g_L{nullptr};
 
@@ -843,22 +836,6 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     g_orig_update(p1, p2, p3);
 }
 
-uintptr_t FindUniqueSig(const pe::ModuleView& mod, const char* sig, const char* label) {
-    auto pat = kcdx::patch::ParsePattern(sig);
-    auto sections = pe::ExecutableSections(mod);
-    std::vector<uintptr_t> all;
-    for (const auto& sec : sections) {
-        auto offs = kcdx::patch::FindAllInBuffer(sec.data, sec.size, pat);
-        for (size_t off : offs) all.push_back(reinterpret_cast<uintptr_t>(sec.data + off));
-    }
-    if (all.size() != 1) {
-        log::ErrorF("%s sig: %zu matches (need exactly 1)", label, all.size());
-        return 0;
-    }
-    log::InfoF("%s found at 0x%p", label, reinterpret_cast<void*>(all[0]));
-    return all[0];
-}
-
 bool VerifyExecutable(void* p, const char* label) {
     MEMORY_BASIC_INFORMATION mbi{};
     if (VirtualQuery(p, &mbi, sizeof(mbi)) == 0) {
@@ -881,18 +858,15 @@ lua_State* CurrentLuaState() {
 }
 
 bool Install() {
-    pe::ModuleView whgame;
-    if (!pe::OpenModule(L"WHGame.dll", whgame)) {
-        log::Error("WHGame.dll not loaded — refusing to install hooks");
-        return false;
-    }
-    log::InfoF("WHGame.dll base 0x%p size 0x%zx",
-               reinterpret_cast<const void*>(whgame.baseBytes), whgame.size);
-
-    uintptr_t pcallAddr  = FindUniqueSig(whgame, PCALL_SIG,  "lua_pcall");
-    uintptr_t updateAddr = FindUniqueSig(whgame, UPDATE_SIG, "update");
+    // Resolve the two engine-bootstrap targets through the Address Library by
+    // canonical name: the name yields the VA (base + the curated RVA) directly,
+    // with no runtime AOB scan. ResolveAddrByName returns 0 when the entity does
+    // not resolve on this build (name unknown/unverified, or WHGame.dll not
+    // mapped); the abort below + VerifyExecutable reject a bad/zero target.
+    uintptr_t pcallAddr  = refdb::ResolveAddrByName("lua_pcall");
+    uintptr_t updateAddr = refdb::ResolveAddrByName("CGame_Update");
     if (!pcallAddr || !updateAddr) {
-        log::Error("aborting hook install — required sigs not unique");
+        log::Error("aborting hook install — lua_pcall/CGame_Update name resolution failed");
         return false;
     }
     if (!VerifyExecutable(reinterpret_cast<void*>(pcallAddr), "lua_pcall") ||
