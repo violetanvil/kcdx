@@ -1,24 +1,28 @@
 # Maintainer tool — requirements
 
-The approved requirements for the seed-editing maintainer tool. This file holds
-ONLY requirements the user has explicitly approved. Design (UI framework,
-screen flow, command surface, evidence-flow scope) is not in this file until
-each piece is approved.
+The approved requirements for the maintainer tool. This file holds ONLY
+requirements the user has explicitly approved.
 
-## R1 — Scope: seed editor only
+> **⚠️ R1 and R6 are SUPERSEDED (2026-06-02) by [`design.md`](design.md).** The
+> settled design inverts the source of truth: the tool edits the reference DB
+> **directly** and **auto-exports** the seed CSVs as a derived, git-tracked diff
+> layer (DB authoritative; CSVs no longer hand-edited). R1's "seed-editor-only /
+> does-not-build-the-DB" framing and R6's "CSV-editor MVP" framing are replaced
+> by that DB-direct architecture. R2–R5 and R7–R12 below remain in force and are
+> built on top of the DB-direct design. See [`design.md`](design.md) §3
+> (source-of-truth inversion) and §10 (decision record).
 
-The tool is a seed editor for the three CSVs under `data/seeds/`:
+## R1 — Scope (SUPERSEDED — see design.md §3)
 
-- `module_seed.csv`
-- `address_names_seed.csv`
-- `address_versions_seed.csv`
+R1 originally scoped the tool to editing the three seed CSVs under `data/seeds/`
+and excluded building the SQLite DBs. **That framing is superseded:** under
+[`design.md`](design.md) the tool edits `reference.sqlite` directly and exports
+the three CSVs (`module_seed.csv`, `address_names_seed.csv`,
+`address_versions_seed.csv`) as a derived diff layer. The seed CSVs survive as
+the git-tracked export — they are no longer the hand-authored surface.
 
-The tool does NOT run the reference-data extractor and does NOT build the
-SQLite reference databases. Those workloads stay in
-`data/refdata-extractor/` and are out of scope for this tool.
-
-**Why:** the user clarified that the dump pipeline and the seed editor are
-separate concerns; conflating them was the wrong framing.
+**Why superseded:** the goal moved from a CSV editor to taking the Address
+Library off hand-edited CSVs entirely — the DB becomes the authoring surface.
 
 ## R2 — Portability: runs on any Windows machine with the seed CSVs
 
@@ -76,19 +80,29 @@ to a future approved requirement.
 **Why:** the user said the verification surface needs to do "some more complex
 things" — i.e. record-only across all tiers is insufficient.
 
-## R6 — MVP scope: Job 2 only (re-verify a single entity)
+## R6 — MVP scope: Job 2 only (re-verify a single entity) — *MVP scope still Job 2; the WRITE TARGET is SUPERSEDED, see design.md*
 
 The first shipping version of the tool covers exactly one workflow end-to-end:
 **Job 2 — re-verify an existing curated entity at the current game version.**
-Nothing else.
+Nothing else. **(The Job-2 MVP scope still holds; what changed is the surface —
+see the banner below and [`design.md`](design.md) §6.)**
 
-"End-to-end" means: load the three seed CSVs through the shared validator
-module (R3); browse the curated entity list; pick an entity; see its current-
-version row; enter the audit trio (`last_verified_at_version`, `verified_by`,
-`verified_date`, `evidence_kind`); validate the prospective edit through the
-shared validator; write the change atomically to `address_versions_seed.csv`
-preserving line order; exit with seeds the importer accepts on the next
-`--rebuild`.
+> **⚠️ SUPERSEDED write path (2026-06-02).** R6 originally wrote the edit to
+> `address_versions_seed.csv` and exited "with seeds the importer accepts on the
+> next `--rebuild`." Under [`design.md`](design.md) §6 the Job-2 MVP edits the
+> reference DB **directly** (validated, atomic), then **auto-exports** the three
+> CSVs (diff-preserved) and commits, with a bidirectional byte-identity
+> round-trip as the oracle. The maintainer sees the exported CSV diff as the
+> acceptance signal. The workflow (re-verify one entity, update the audit trio)
+> is unchanged; the write target (DB-first, CSV-exported) is the supersession.
+
+"End-to-end" (under design.md §6) means: load the curated entity set through the
+shared validator module (R3); browse the curated entity list; pick an entity;
+see its current-version row (+ full version history per R8); enter the audit trio
+(`last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`);
+validate the prospective edit through the shared validator; write atomically to
+the **DB**; auto-export the three CSVs diff-preserved; round-trip oracle; show the
+CSV diff; commit on confirm.
 
 The MVP does NOT include: a worklist of entities-needing-re-verification, a
 dump-read for hash checks, AOB uniqueness scans against `WHGame.dll`, test-
@@ -96,8 +110,8 @@ plugin coverage validation, a new `game_versions` row registration flow, or
 any of Jobs 1, 3, 4, 5, 6.
 
 **Why:** Job 2 is the highest-frequency workflow and a self-contained primitive
-that later jobs reuse. Shipping it alone stops CSV hand-edits for the most
-common operation immediately, without staging a larger UI surface that has not
+that later jobs reuse. Shipping it alone takes the most common operation off
+CSV hand-edits immediately, without staging a larger UI surface that has not
 been exercised yet.
 
 ## R7 — The six jobs (full scope; MVP is Job 2 only)

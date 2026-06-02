@@ -1,13 +1,25 @@
 # Address Library — seed authoring policy
 
-**Authoritative law for the three seed files under `data/seeds/`.**
+**Authoritative law for the column-level invariants of the three seed files
+under `data/seeds/`.**
 
-This document governs the SEEDS ONLY — what the maintainer writes, in what
-shape, with what required fields. The shape of the generated SQLite DBs and
-the engine's runtime semantics are documented elsewhere
-([`data/reference.md`](../reference.md) and
-[`data/reference-dev.md`](../reference-dev.md)). A rule in this file is
-binding on every seed-edit commit.
+This document governs the per-row, per-column rules — required fields, id
+assignment, the audit trio, supersession/deprecation integrity, the survival
+columns, version semantics, the CSV file format. Those invariants are binding
+regardless of HOW a row is produced.
+
+> **Source-of-truth note (2026-06-02 — see
+> [`data/maintainer-tool/design.md`](../maintainer-tool/design.md)).** Under the
+> settled maintainer-tool design the **reference DB is the authoring surface**;
+> the three seed CSVs are a **deterministic export** of the DB (the git-tracked
+> diff/review layer), produced by the tool, no longer hand-edited. Every rule in
+> this file still binds — it now binds on the **DB-write path** (enforced by the
+> shared validator before any write) and on the export (the exported CSV obeys the
+> file-format rules below and round-trips byte-identically). Where this file says
+> "what the maintainer writes," read it as the invariant the authored row must
+> satisfy, on whichever surface it is authored. The DB shape + the engine's
+> runtime semantics are documented in [`data/reference.md`](../reference.md) and
+> [`data/reference-dev.md`](../reference-dev.md).
 
 Most rules below are enforced as fail-loud checks in the importer
 (`data/refdata-extractor/python/import_to_sqlite.py`); the harness

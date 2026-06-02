@@ -1,33 +1,31 @@
-# Maintainer tool — design plan
+# Maintainer tool — design plan (Phase 1)
 
-The architectural plan for the seed→DB maintainer flow. Derived from
-[requirements.md](requirements.md) (R1–R12) plus the decisions worked through
-in the design sessions.
+The architectural plan for the headless seed→DB **applier** (Phase 1). Derived
+from [requirements.md](requirements.md) plus the decisions worked through in the
+design sessions.
 
-**The flow is built in two phases, with a hard seam between them:**
+> **⚠️ The Phase-2 framing below is SUPERSEDED (2026-06-02) by
+> [`design.md`](design.md).** This doc described Phase 2 as a GUI that *edits the
+> seed CSVs* while "the CSV stays the authoring surface." The settled design
+> inverts that: the GUI edits the reference DB **directly** and **auto-exports**
+> the CSVs as a derived, git-tracked diff layer (DB authoritative; CSVs no longer
+> hand-edited), guaranteed by a bidirectional byte-identity round-trip. **Phase 1
+> below (the headless `apply` core, `seeds_shared/` extraction, the `.rdata`
+> version resolver) remains accurate and is the foundation the DB-direct tool is
+> built on.** For the Phase-2 / tool design read [`design.md`](design.md), not §9
+> of this doc.
 
-- **Phase 1 — the `apply` script (headless, no UI).** Humans keep hand-editing
-  the three seed CSVs under `data/seeds/` (as they do today). A script reads
-  those CSVs and performs the DB actions: the full **rebuild** (exists today as
-  `--rebuild`) and a new **incremental add** (TO BUILD) that will land CSV rows
-  not yet in the DB into BOTH the user DB and the dev DB, without dropping and
-  rebuilding. **The script writes no CSV** — the CSV is human-authored input;
-  the script is the CSV→DB applier.
-- **Phase 2 — the tool (GUI).** Built later, on top of the proven Phase-1
-  applier. The GUI is what eventually replaces CSV hand-editing; until it stands
-  on its own, the CSV stays the authoring surface.
+**Phase 1 — the `apply` script (headless, no UI).** A script reads the seed CSVs
+and performs the DB actions: the full **rebuild** (`--rebuild`) and an
+**incremental apply** that lands CSV rows not yet in the DB into BOTH the user DB
+and the dev DB, without dropping and rebuilding. In Phase 1 the CSV is still the
+input the script reads. This doc commits the Phase-1 architecture (the
+incremental SQL shapes, the shared-module extraction, the version resolver).
 
-This doc commits the Phase-1 architecture (the incremental SQL shapes, the
-shared-module extraction, the version resolver). Phase 2's surface — screens,
-forms, dense/nested lists, the CSV-writing path, atomic multi-file CSV
-transactions — is deliberately out of scope here and is specced when Phase 2
-starts.
-
-> **Requirements note.** R1/R6 as written scope the tool to seed-CSV editing
-> and explicitly exclude building the DBs. That scope has been superseded: the
-> flow writes the DBs (user + dev) and the human-edits-CSV / script-applies-DB
-> split is the agreed Phase-1 shape. R1/R6 are to be amended to match this two-
-> phase architecture in the same change that lands Phase 1.
+**Phase 2 (the tool) — see [`design.md`](design.md).** The GUI edits the DB
+directly and exports the CSVs; the source-of-truth inversion, the round-trip
+contract, the data-core seam, and the Job-2 MVP are all settled there. §9 of this
+doc (below) is the superseded sketch, kept only as historical context.
 
 ## Status — what exists vs. what this plan designs
 

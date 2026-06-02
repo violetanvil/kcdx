@@ -3,8 +3,18 @@
 The production **reference-data extractor** — a headless toolchain that
 mechanically extracts, per WHGame.dll function, the reference data that backs the
 author surface (`kcdx.find`, `kcdx.hook`, `kcdx.statement.*`). It emits **five
-RVA-sharded CSV-per-table directories**, which a maintainer import turns into the
-shipped `reference.sqlite`.
+RVA-sharded CSV-per-table directories** (the bulk dump), which the import turns
+into the shipped `reference.sqlite` baseline.
+
+> **Source-of-truth note (2026-06-02 — see
+> [`../maintainer-tool/design.md`](../maintainer-tool/design.md)).** Two distinct
+> CSV roles must not be conflated: (1) the **bulk dump** this extractor emits (the
+> `functions/`/`statements/`/… sharded tables — the per-version baseline input to
+> `--rebuild`); and (2) the **curated seed CSVs** under `data/seeds/`. Under the
+> settled maintainer-tool design the curated layer is authored **DB-first** — the
+> maintainer tool edits `reference.sqlite` directly and **auto-exports** the seed
+> CSVs as a derived, git-tracked diff layer (no longer hand-edited). This
+> extractor's bulk dump is unchanged; the curated CSV↔DB direction inverted.
 
 It runs against **a local Ghidra install + an analyzed Ghidra project of
 WHGame.dll**, plus a function-enumeration CSV — all produced locally and kept out
@@ -141,7 +151,7 @@ The schema is documented in full at `data/reference.md` (user) and
 - **Why the user/dev split:** a mod user's runtime needs only the survival hashes + the marshalling ABI for the entities their plugins hook — the small USER DB (curated rows only). The per-statement metadata + the call graph + the bulk address_versions rows exist only for the author discovery/inspection surface → the larger DEV DB. (`call_edges` is dev-only: it powers `kcdx.find`'s caller-graph ranking + cross-version re-identification.)
 - **Encoding (lossless):** content_hash → 32-byte BLOB; low-cardinality repetitive text → INTEGER FK into `_dict_*` lookup tables; address/count cols → INTEGER.
 - **Append-only, updated in place:** the DB is NOT rebuilt per game version — the default update mode appends the new version's intervals to the existing DB.
-- **The DBs are generated artifacts** — out-dir, NOT in git; they ship as release assets (the user DB in the release; the dev DB as a separate download).
+- **The DBs ship as release assets** — out-dir, NOT in git (the user DB in the release; the dev DB as a separate download). Note (per [`../maintainer-tool/design.md`](../maintainer-tool/design.md)): for the CURATED layer the DB is the authoring surface and the `data/seeds/` CSVs are its git-tracked export — so the curated facts ARE version-controlled (via the exported CSVs), even though the built `.sqlite` files are not. The BULK dev superset (the ~321K dump rows) remains a generated-from-dump artifact.
 - **NOT YET DONE:** the cross-version matcher that re-identifies an entity after its bytes change (so update mode can append a new game version's intervals). Update mode currently detects a newer version and reports "matcher required" (exit 3) without mutating the DB.
 
 ## Verify it
