@@ -11,6 +11,7 @@
 
 #include "MinHook.h"
 #include "console.h"
+#include "console_commands_scan.h"
 #include "init_phase.h"
 #include "modification_inventory.h"
 #include "log.h"
@@ -536,6 +537,13 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // kcdx.command dispatch surface. After this returns true,
                 // plugin RegisterCommand calls succeed.
                 kcdx::console::Init();
+
+                // Register the engine-owned kcdx_scan console command now that
+                // the console surface is armed. Sits after Init() so the
+                // command registers immediately (Init failure accept-defers it
+                // through the same queue plugin commands use, then drops it
+                // loudly if the surface never comes up).
+                kcdx::console_commands_scan::Register();
 
                 // Apply the after_game registration queue NOW — before
                 // any "ready" signal. plugin.lua (RunAll, above) queued

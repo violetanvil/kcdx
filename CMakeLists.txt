@@ -144,6 +144,7 @@ add_library(kcdx SHARED
     src/serialization.cpp
     src/address_library.cpp
     src/console.cpp
+    src/console_commands_scan.cpp
     src/lua_bind.cpp
     src/plugin_loader.cpp
     src/interfaces.cpp
