@@ -1,16 +1,26 @@
 # System-baseline reconciliation — `/migrate-repo` plan
 
-**Status:** OPEN — Phase 1 landed (`32af8ef`, `e52ad3e`); Phases P1d/P2/P3/P4 remain, deferred to focused follow-on passes.
-**Run:** `/setup-repo` → `/adapt-repo` (landed `b83dd66`) → `/migrate-repo` (Phase 1 landed `32af8ef` + `e52ad3e`; remaining phases deferred).
+**Status:** OPEN — migrate-owned phases (P1, P1d, P2, P3) ALL DONE. P4 (hook swap) + P5 routed to `/execute` (authoring/build work outside migrate's lane).
+**Run:** `/setup-repo` → `/adapt-repo` (`b83dd66`) → `/migrate-repo` — P1 `32af8ef`+`e52ad3e`, P2 `04ec9a9`, P1d `72ab147`, P3 `6a92e27`. P4/P5 → `/execute`.
 
-## Resume guide (for the next pass)
+## Migrate close (the 4 migrate-owned phases)
 
-Phase 1 (rule floor + probe-conflict resolution + index sync) is committed. The remaining phases each cross into a specific skill's domain — run each as its own focused pass:
-- **P1d (6 diverged-rule merges):** re-run `/migrate-repo` to resume, OR hand to `/governance-architect`. anti-patterns.md is CONSENT-GATED (accept-prompt on write). Recommendations from the audit: skeptical-expert→adopt-system; public-private-boundary→keep-repo; results-driven/deletion-hygiene/logging→merge (system body + kcdx specifics to `.claude/repo/<name>.append.md`); anti-patterns→merge (system class-floor + kcdx AP1–18 table, consent-gated).
-- **P2 (TD tree + 3 refiles):** re-run `/migrate-repo`, OR `/tech-debt` to create the tree on first file. Refile declare-value-string-arena→TD-0001, lua-callback-main-thread-guard→TD-0002, engine-direct-hook-migration→TD-0003 (each `git mv` + reference-fixup sweep). Add `docs/tech-debt/` to the `public-private-boundary.md` private carve-out list + `publish-public.ps1` `$PrivateSubpaths`.
-- **P3 (14 skill collision-removes):** `/governance-architect` (skill-body authoring) or re-run `/migrate-repo`. Each: author `.claude/repo/<name>.append.md` capturing the bespoke skill's kcdx specifics FIRST, then `git rm -r .claude/skills/<name>/`. The `debug` removal MUST move `.claude/skills/debug/SKILL.md` off the `#if 0` model (gate follow-on). Also remove the 2 bespoke `_shared/{architectural-review,orchestrator-loop}.md` copies.
-- **P4 (hook-engine swap):** drop the 6 exact-twin `.ps1`, fold the 4-mechanism `.ps1` into system config/engine, then `/execute` to PORT the 5 bespoke guards (public-private-refs, seed-approval, probe-stack, comment-density, push-target) to repo-local `.py` — authoring work, each verified per-guard.
-- **P5 (`/execute`):** deprecated-toml-token-cleanup sweep; migrate ~15 `#if 0` blocks → `_research/probe-archive/` + sweep stale references.
+All gated by governance-mode architect-review (PROCEED) with zero-content-loss verified per the user's primary constraint (make-new → compare-vs-old → remove):
+- **P1** (`32af8ef`) — 24 system rules adopted verbatim + the probe-residue conflict resolved (no-residue model; CLAUDE.md + results-driven.md rewritten).
+- **P1b** (`e52ad3e`) — known-issues index synced (8 open + 2 closed rows).
+- **P2** (`04ec9a9`) — `docs/tech-debt/` tree + 3 refiles (TD-0001..0003) via lossless `git mv` (R100) + reference-fixup + carve-out sync ×3.
+- **P1d** (`72ab147`) — 5 diverged rules merged toward the system body (public-private-boundary kept); zero kcdx-content loss verified old-vs-new; AP1–18 byte-preserved.
+- **P3** (`6a92e27`) — 14 bespoke skills + 2 `_shared` fragments collision-removed; 16 appends authored + verified BEFORE removal; probe-patterns relocated lossless; system bodies confirmed present. Removals + preservation atomic in one commit.
+
+## P4 — hand to `/execute` (hook-engine swap; NEW authoring, outside migrate's lane)
+
+The 15 kcdx PowerShell `.ps1` guards → system Python `.py` engine. Per the reconcile-governance audit:
+- **Drop (6 exact-twin `.ps1`):** guard-git-lock, guard-force-push, guard-destructive-ops, track-touched-files, tripwire-dynamic-deletion, guard-anti-pattern-consent — a system `~/.claude/hooks/*.py` twin already covers each (registered globally).
+- **Fold (4 mechanism `.ps1`):** guard-write + guard-edit (≥300-line cap → system `guard-file-line-cap.py` + `.claude/hooks/line-cap.json`); guard-review-files (→ system `guard-immutable-docs.py`); guard-anti-patterns (AP-catalog delta → system `engine-detectors.py` + an AP detector JSON).
+- **PORT (5 bespoke `.ps1` → repo-local `.py`):** guard-public-private-refs, guard-seed-approval, guard-probe-stack, guard-comment-density, guard-push-target — no system twin; each ported guard MUST be verified it actually FIRES (a silent no-op is the failure mode). Rewire `.claude/settings.json` registration from `pwsh -File *.ps1` to `python3 *.py`. Seed the system baseline detectors (`polling.json`, `concurrency-primitives.json`) tuned to C++/Lua.
+  ⚠ A partially-rewired `settings.json` leaves guards unprotected — do the swap as one coherent `/execute` cycle (or a tight sequence), verifying each guard fires before dropping its `.ps1`.
+
+## P5 — `/execute` (deferred source-logic work)
 
 ## Resolved decisions (§C sign-off)
 
