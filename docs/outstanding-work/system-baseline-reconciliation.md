@@ -29,7 +29,21 @@ Phase 1 (rule floor + probe-conflict resolution + index sync) is committed. The 
 | P1c | Probe-residue conflict: adopt system no-residue model → rewrote CLAUDE.md probe hard-rule + results-driven.md §"Probe leaves no residue" | migrate | DONE (gate PROCEED) |
 | P1d | 6 diverged-rule merges: skeptical-expert (merged inline), public-private-boundary (KEPT), results-driven (merged, P1c no-residue intact), deletion-hygiene (merged), logging (merged), anti-patterns (merged — AP1–18 byte-identical, class-floor added) | migrate | DONE (gate PROCEED; zero kcdx-content loss verified old-vs-new; consent-gate fires on anti-patterns write) |
 | P2 | TD tree + refile TD-0001..0003 + reference-fixup sweep | migrate | DONE (gate PROCEED; git mv R100 hash-identical; refs swept clean; carve-out synced ×3; delinked one test-plugins private ref — other pre-existing leaks remain) |
-| P3 | 14 skill collision-removes (append-authored → dir-removed), each its own gated commit | migrate | TODO |
+| P3 | 14 skill collision-removes (append-authored → dir-removed) | migrate | DONE (gate PROCEED; 16 appends authored + verified, probe-patterns relocated lossless, refs fixed, system bodies confirmed present — removals + preservation staged atomically) |
+
+### P3 preservation contract (author ALL before any `git rm -r`)
+
+The HIGH-risk loss targets (author these FIRST — they carry the bulk of kcdx substance):
+1. **`.claude/repo/orchestrator-loop.append.md`** — build cmd (`pwsh ./build.ps1` + 3 artifacts), §C.6 deploy+`Get-FileHash`+dev-mode (all 3 plugin trees), plans root `docs/outstanding-work/`, AP1-18 + RE-evidence rule, §F game-launch + `suite: X/Y` read, `root-cause-verifier` as domain verifier.
+2. **`.claude/repo/architectural-review.append.md`** — design anchor `docs/design.md`+cornerstones, RE evidence order (`data/seeds/`→predecessor sigs→wiki→Ghidra, NOT WebFetch), §2 hook-engine/conflict_engine/MinHook/AP4, §3 lua-bridge sentinel + IConsole vtable[33] + save/load asymmetry + KV logging, AP1-18 table, disassembler-test/cornerstones.
+3. **`.claude/repo/debug.append.md`** — cdb.exe crash-dump recipe + watchdog crash-zip + BugSplat locations; consolidated probe methodology (6 pattern shapes + priority order, from probe-patterns.md); probe-Trail format + KI-section discipline (from known-issue-template.md); Gate-A design-surface threshold; provisional-mask policy.
+4. **Relocate** `debug/references/probe-patterns.md` worked C++ skeletons → `docs/re-reference/probe-patterns.md` (lossless git mv; append points at it). `known-issue-template.md` → distilled into the debug append (its probe-Trail/section discipline) + the system report-bug/doc-organization shape covers the tree — then removed with debug/.
+
+Thin per-skill appends (mostly template-covered): execute, feature(MED), code-review, commit(MED), governance-architect(SMALL — accepts system-layer scope broadening), plan(MED), report-bug(MED), architect-review, step-review, root-cause-verifier, senior-architect-consult, senior-architect-reply, verification-checkpoint(HEAVY).
+
+Dangling-ref fixes: `results-driven.md:68` → new `docs/re-reference/probe-patterns.md`; the report-bug template pointer → doc-organization shape.
+Sub-content: `code-review/main/86fcf46/` — leave in place (path survives in system code-review). The 2 `_shared` fragments swap to system bodies AFTER their appends are authored.
+Decisions: KI template SUPERSEDED by system shape (verified — kcdx probe-Trail discipline → debug append); probe-patterns skeletons RELOCATED; governance-architect broadening ACCEPTED.
 | P4 | Hook-engine swap: drop 6 twins, fold 4 mechanisms; **5 bespoke guard ports → `/execute`** | migrate + /execute | TODO |
 | P5 (deferred → /execute) | `deprecated-toml-token-cleanup` deletion sweep; **migrate existing ~15 `#if 0` probe blocks → `_research/probe-archive/`** (per P1c decision) + sweep their stale references (`test-plugins/README.md:1071-1073`, the 2 KI trail mentions of "the probe-archive hygiene rule") to past-tense; `src/hooks.cpp` over-threshold | /execute | DEFERRED |
 
