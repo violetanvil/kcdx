@@ -3,6 +3,31 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-02 — db_editor reuses the existing run_apply path (D13)
+
+Surfaced mid-build (Phase 1 step 3): `db_editor` must run every write through the single
+validator gate (design §5/§8, R3 — no rule reimplemented), but the validator has no
+row-level entry point (its per-row rules are inline in the CSV-file reader), and
+`db_editor`'s writes reach cross-row invariants (supersession acyclicity for Jobs 4/5,
+tuple-uniqueness for Jobs 1/6) a row-level check cannot see.
+
+- **Decision (D13):** `db_editor` is the headless in-process entry point to the EXISTING
+  `import_to_sqlite.run_apply` validated atomic applier — refactor `run_apply`'s CLI shape
+  (`sys.exit`/prints/`--dll`) into a library-callable form `db_editor` invokes. Zero rule
+  logic in `db_editor`; the whole-state gate covers row-level AND cross-row invariants;
+  one path generalises to all six jobs.
+- **Constraint:** the refactor preserves the existing apply==rebuild oracle byte-identically.
+- **Rejected:** A (export→validate→commit per edit — the verbatim-gate-reuse fallback if
+  the refactor proves too heavy), B (validate-before-open), C (add a row-level validator
+  entry — modifies the shared gate + cannot see cross-row invariants, so the fork would
+  reappear worse at steps 4/5).
+- **Surfaced via architect-review** (it found `run_apply` already covers the whole v1 job
+  catalog, which the first framing missed); the user chose D.
+
+**Integrated in:** §5 (db_editor responsibility — the mechanism) + §10 D13. Reshapes plan
+steps 3/4/5 — each becomes a thin caller of the refactored run_apply library entry for its
+job, not a separate write shape.
+
 ## 2026-06-02 — importer persists NULL for a blank authored field (round-trip fix)
 
 Surfaced while building the CSV exporter (Phase-1 step 1 of the maintainer-tool plan): the

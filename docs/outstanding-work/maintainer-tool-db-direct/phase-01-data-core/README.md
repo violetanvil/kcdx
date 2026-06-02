@@ -18,8 +18,9 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 |---|---|---|
 | 1b importer: NULL signature on curated function-kind rows with a blank seed cell | DONE | d5e7297 |
 | 1 csv_exporter.py — DB → 3 seed CSVs, deterministic + diff-preserved | DONE | 9751d9f |
-| 2 round-trip oracle — bidirectional byte-identity (export/import) | DONE | (landed) |
-| 3 db_editor.py — validated atomic version-row UPDATE (audit-trio + full-column) | NOT STARTED | — |
+| 2 round-trip oracle — bidirectional byte-identity (export/import) | DONE | ed1a228 |
+| 3 db_editor.py — wraps run_apply (D13); audit-trio re-verify UPDATE | DONE | (landed) |
+| 3c db_editor full-column correction — applier present-row extension (probe-first) | NOT STARTED | — |
 | 4 db_editor.py — validated atomic INSERT (new version Job 6 + new entity Job 1) | NOT STARTED | — |
 | 5 db_editor.py — validated atomic lifecycle UPDATE (supersede/deprecate Jobs 4/5) | NOT STARTED | — |
 | 6 field_delta.py — saved-vs-prospective field-delta computation (D8) | NOT STARTED | — |
@@ -30,6 +31,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 1. [step-1-csv-exporter.md](step-1-csv-exporter.md)
 2. [step-2-round-trip-oracle.md](step-2-round-trip-oracle.md)
 3. [step-3-db-editor-update.md](step-3-db-editor-update.md)
+3c. [step-3c-db-editor-full-column.md](step-3c-db-editor-full-column.md)
 4. [step-4-db-editor-insert.md](step-4-db-editor-insert.md)
 5. [step-5-db-editor-lifecycle.md](step-5-db-editor-lifecycle.md)
 6. [step-6-field-delta.md](step-6-field-delta.md)

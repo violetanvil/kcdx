@@ -1660,6 +1660,20 @@ class BaselineRefusal(RuntimeError):
     DB. Caught in run_apply -> a clear refuse message + a distinct exit code."""
 
 
+class VersionRefusal(RuntimeError):
+    """Raised by the library applier apply_seeds when the linked DLL's resolved
+    version can't be used: the .rdata resolver failed, or the DLL is a version the
+    baseline + seeds don't cover. The CLI wrapper run_apply catches it and maps it
+    to the historical APPLY_VERSION_REFUSE_EXIT message + exit code (so the CLI's
+    observable behavior is unchanged); an in-process caller (db_editor) catches the
+    typed exception directly. Carries the resolved tag (or None on resolve failure)
+    for a precise in-process error message."""
+
+    def __init__(self, message, *, tag=None):
+        super().__init__(message)
+        self.tag = tag
+
+
 def _promote_bulk_in_place(con, av_row):
     """DEV-DB promote: UPDATE the existing bulk row (matched by its reused id) to
     the curated row, setting kcdx_id + the curated/audit/derived columns and
@@ -1675,10 +1689,18 @@ def _promote_bulk_in_place(con, av_row):
         [av_row.get(c) for c in cols] + [av_row["id"]])
 
 
-def run_apply(out_dir, dll_path):
-    """APPLY mode: incremental seed->DB applier. Implements re-verify (audit-trio
-    UPDATE) plus the two add actions: add-entity (a new names row + a new versions
-    row) and add-versions-row (close the prior open interval + insert).
+def apply_seeds(out_dir, dll_path, *, log=None):
+    """APPLY mode, LIBRARY entry: the incremental seed->DB applier as a callable
+    that takes parameters and RETURNS a result -- no sys.exit, no CLI parsing, and
+    no print-as-sole-output-channel. The CLI wrapper run_apply (below) and the
+    in-process db_editor both invoke this; the apply==rebuild oracle is unchanged
+    because the body is the same classify->validate->apply sequence run_apply ran,
+    only the OUTPUT CHANNEL (exceptions instead of sys.exit, a returned dict
+    instead of a printed summary) moved out.
+
+    Implements re-verify (audit-trio UPDATE) plus the two add actions: add-entity
+    (a new names row + a new versions row) and add-versions-row (close the prior
+    open interval + insert).
 
     Spine (plan.md S3 'Running an incremental build'):
       1. resolve target version from the linked DLL (.rdata resolver)
@@ -1687,33 +1709,48 @@ def run_apply(out_dir, dll_path):
       4/5/6. classify the seed-vs-DB delta + apply it per DB (user then dev),
              each ACTION in its own BEGIN/COMMIT; function-kind adds first pass
              the baseline-present gate (no bulk row -> REFUSE, no write either DB)
-      7. report counts
+
+    Parameters:
+      out_dir  -- the directory holding the two reference DBs (reference.sqlite +
+                  reference-dev.sqlite) the apply amends in place.
+      dll_path -- the linked WHGame.dll the .rdata version resolver reads (the
+                  apply path's version source).
+      log      -- an optional callable(str) for progress lines; None suppresses
+                  them (the in-process caller wants no prints, the CLI passes
+                  print). The RESULT is returned, never only printed.
+
+    Returns a dict:
+      {"tag", "ordinal", "n_actions", "counts": {"user": <c>, "dev": <c>}}
+    where each <c> is the per-DB counts dict _apply_one_db returns.
+
+    Raises (no sys.exit -- the caller maps these to its own exit/UI behaviour):
+      VersionResolveError -- the DLL's .rdata version could not be resolved.
+      VersionRefusal      -- the DLL is a version the baseline + seeds don't cover.
+      BaselineRefusal     -- a function-kind add has no bulk baseline (no DB write).
+      RuntimeError        -- a seed-state validation failure (no DB open/write).
     """
-    bar = "=" * 70
-    print(bar)
-    print("[import_to_sqlite] mode: APPLY (incremental)")
-    print(bar)
+    def _emit(msg):
+        if log is not None:
+            log(msg)
 
     # 1. Resolve the target version from the linked DLL (.rdata resolver). This
-    #    is the apply path's primary version source (NOT whdlversions.json).
-    try:
-        tag, ordinal = resolve_version(dll_path)
-    except VersionResolveError as e:
-        print(f"  version resolve FAILED: {e}")
-        sys.exit(APPLY_VERSION_REFUSE_EXIT)
-    print(f"  target version (from DLL .rdata): tag={tag} ordinal={ordinal}")
+    #    is the apply path's primary version source (NOT whdlversions.json). A
+    #    resolve failure PROPAGATES (VersionResolveError) -- the caller decides how
+    #    to surface it; nothing is opened or written.
+    tag, ordinal = resolve_version(dll_path)
+    _emit(f"  target version (from DLL .rdata): tag={tag} ordinal={ordinal}")
     if tag != GAME_VERSION_TAG:
         # The baseline + seeds only know GAME_VERSION_TAG today; a different
         # linked DLL means the DB has no baseline for it. Refuse clearly.
-        print(f"  REFUSE: linked DLL is version {tag!r} but the baseline + seeds "
-              f"only cover {GAME_VERSION_TAG!r}; run --rebuild for {tag!r} first.")
-        sys.exit(APPLY_VERSION_REFUSE_EXIT)
+        raise VersionRefusal(
+            f"linked DLL is version {tag!r} but the baseline + seeds only cover "
+            f"{GAME_VERSION_TAG!r}; run --rebuild for {tag!r} first.", tag=tag)
 
-    # 2. Validate the FULL seed CSV state. Any failure aborts before any DB open
-    #    or write (RuntimeError propagates -> non-zero exit; nothing written).
+    # 2. Validate the FULL seed CSV state. Any failure raises (RuntimeError) before
+    #    any DB open or write -- nothing written on a validation abort.
     state = _validate_full_seed_state()
     actions = _seed_action_rows(state)
-    print(f"  seed validated; {len(actions)} versions-seed row(s) to diff")
+    _emit(f"  seed validated; {len(actions)} versions-seed row(s) to diff")
 
     # 3. Open BOTH DBs read-write (refuse if a baseline is missing).
     user_db = os.path.join(out_dir, "reference.sqlite")
@@ -1725,24 +1762,52 @@ def run_apply(out_dir, dll_path):
         # for BOTH passes (the user DB has no bulk rows). Stash the dev connection
         # so the user pass can read it for the baseline-present gate; the gate
         # fires BEFORE the user pass writes, so a missing baseline refuses with
-        # neither DB touched.
+        # neither DB touched. BaselineRefusal PROPAGATES (the user pass raises it
+        # before writing; nothing committed in either DB).
         state["dev_con"] = dcon
         try:
             # 4/5/6. Apply user first, then dev (plan.md S6 user->dev order).
             u = _apply_one_db(ucon, actions, state, "user", user_projection=True)
             d = _apply_one_db(dcon, actions, state, "dev", user_projection=False)
-        except BaselineRefusal as e:
-            print(f"  REFUSE: {e}")
-            sys.exit(APPLY_BASELINE_REFUSE_EXIT)
         finally:
             dcon.close()
     finally:
         ucon.close()
 
+    return {"tag": tag, "ordinal": ordinal, "n_actions": len(actions),
+            "counts": {"user": u, "dev": d}}
+
+
+def run_apply(out_dir, dll_path):
+    """APPLY mode, CLI wrapper: thin shell over the library applier apply_seeds.
+    Prints the banner + progress + the per-DB summary, and maps the library's
+    typed refusals to the historical exit codes + messages so the command-line
+    behaviour (and the apply==rebuild oracle tests that call run_apply) is
+    byte-for-byte unchanged. The actual classify/validate/apply work is entirely
+    in apply_seeds -- this function adds only the print + sys.exit shell the CLI
+    needs and the in-process db_editor does not."""
+    bar = "=" * 70
+    print(bar)
+    print("[import_to_sqlite] mode: APPLY (incremental)")
+    print(bar)
+
+    try:
+        result = apply_seeds(out_dir, dll_path, log=print)
+    except VersionResolveError as e:
+        print(f"  version resolve FAILED: {e}")
+        sys.exit(APPLY_VERSION_REFUSE_EXIT)
+    except VersionRefusal as e:
+        print(f"  REFUSE: {e}")
+        sys.exit(APPLY_VERSION_REFUSE_EXIT)
+    except BaselineRefusal as e:
+        print(f"  REFUSE: {e}")
+        sys.exit(APPLY_BASELINE_REFUSE_EXIT)
+
     # 7. Report. Nothing silent.
     print(bar)
     print("APPLY SUMMARY")
-    for label, c in (("user", u), ("dev", d)):
+    for label in ("user", "dev"):
+        c = result["counts"][label]
         print(f"  {label:4s} DB : {c['reverified']} re-verified, {c['noop']} no-op, "
               f"{c['added_entity']} added-entity, "
               f"{c['added_versions_row']} added-versions-row, "

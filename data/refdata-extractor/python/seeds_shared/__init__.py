@@ -56,6 +56,14 @@ from .round_trip import (
     hash_curated_tables,
     RoundTripError,
 )
+from .seed_csv_edit import (
+    update_row_in_place,
+)
+from .db_editor import (
+    update_version_row,
+    EDITABLE_VERSION_COLUMNS,
+    DbEditError,
+)
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
@@ -71,4 +79,6 @@ __all__ = [
     "resolve_version", "VersionResolveError",
     "export_seeds",
     "round_trip", "hash_curated_tables", "RoundTripError",
+    "update_row_in_place",
+    "update_version_row", "EDITABLE_VERSION_COLUMNS", "DbEditError",
 ]

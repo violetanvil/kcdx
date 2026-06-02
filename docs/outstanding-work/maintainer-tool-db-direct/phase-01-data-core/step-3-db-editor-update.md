@@ -1,16 +1,23 @@
-# Step 3 — db_editor.py: validated atomic version-row UPDATE
+# Step 3 — db_editor.py: validated atomic version-row UPDATE (audit-trio re-verify)
 
-**What.** Add `data/refdata-extractor/python/seeds_shared/db_editor.py` with its
-first write shape: the **version-row UPDATE** — a validated, atomic update of one
-`address_versions` row. Covers both the audit-trio re-verify (Job 2 / US-3: bump
-`last_verified_at_version` + `verified_by` + `verified_date` + `evidence_kind`) AND
-the full-column correction (US-5: any of `module`, `kind`, `rva`, `signature`, the
-trio, the six survival columns). The identity key `valid_from_version` and the entity
-identity (`kcdx_id`, `name`) are never mutated (R8, `policy.md`). It runs the shared
-validator (`validators.py`, R3) over the prospective post-action state BEFORE any
-write; a validation failure aborts with NO write. The write is one atomic transaction.
-This is the DB-write unit the GUI field editor (Phase 2 step 10) + save-confirm
-(step 11) call.
+**What.** Add `data/refdata-extractor/python/seeds_shared/db_editor.py` as the headless
+in-process entry point to the validated atomic applier (D13 — `db_editor` wraps the
+refactored `import_to_sqlite.run_apply`/`apply_seeds`, never reimplements a rule). Its
+first write shape: the **audit-trio re-verify** (Job 2 / US-3: bump
+`last_verified_at_version` + `verified_by` + `verified_date` + `evidence_kind` on one
+`address_versions` row). The identity key `valid_from_version` and the entity identity
+(`kcdx_id`, `name`) are never mutated (R8, `policy.md`). The prospective state is gated
+through the shared validator BEFORE any write; a validation failure aborts with NO write.
+This is the DB-write unit the GUI field editor (Phase 2 step 10) + save-confirm (step 11)
+call for re-verify.
+
+**Scope narrowed mid-build (the full-column US-5 correction is now step 3c).** The
+full-column correction (change an existing row's `module` / `kind` / `rva` / `signature`
+/ survival columns) is split out: the existing applier's present-row branch updates ONLY
+the audit trio, and extending it has undecided re-promote/survival semantics for a
+kind/rva change (a probe-first design call). `db_editor` + the bridge accept a valid
+full-column edit; only the applier sub-capability is missing — see
+[`step-3c-db-editor-full-column.md`](step-3c-db-editor-full-column.md).
 
 **Scope.** One new module `db_editor.py` + its UPDATE entry point (the INSERT and
 lifecycle shapes are steps 4–5; they extend this same module). Reuses `validators.py`

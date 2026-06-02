@@ -171,6 +171,16 @@ Each new unit's single responsibility (`structure-by-responsibility.md`):
   audit-trio + full-row UPDATE for Job 2 / US-5, the INSERT shapes for Jobs 1/6, and
   the lifecycle UPDATE for Jobs 4/5 — all in v1 per §9/D7). It runs the shared
   validator (R3) BEFORE any write; a validation failure aborts with no write.
+  **Mechanism (D13, settled 2026-06-02):** `db_editor` does NOT author a parallel
+  write/validate path — it is the headless, in-process entry point to the EXISTING
+  validated atomic applier `import_to_sqlite.run_apply` (which already classifies the
+  six job actions, gates the whole prospective seed state through the single validator
+  — row-level AND cross-row, e.g. supersession acyclicity / tuple-uniqueness — and
+  applies per-DB in `BEGIN/COMMIT`). The work is to refactor `run_apply`'s CLI shape
+  (`sys.exit` / prints / `--dll`) into a library-callable form `db_editor` invokes,
+  preserving the existing apply==rebuild oracle byte-identically. This is the single
+  gate the design demands (the validator has no row-level entry point; a per-row check
+  could not see the cross-row invariants Jobs 4/5/6 require — see §10 D13).
 - **The GUI (`data/maintainer-tool/`, `ui/`)** — presentation only. It renders the
   navigator, the entity detail, the version history/compare, the field editor, the
   create flows, and the field-delta confirm (the seven screens in `ui/screens/`) and
@@ -414,6 +424,7 @@ Settled in the UI design dialogue 2026-06-02 (the second pass, building the UI l
 | D10 | Default row (unlinked) | **Newest authored row** (highest `valid_from_version`) is default-selected when no DLL is linked. | Nothing pre-selected until the maintainer picks. |
 | D11 | New-row approval (AP18) | Creating a new entity (Job 1) or new version (Job 6) is **approval-gated in the confirm step** (an explicit acknowledgment before it lands); an UPDATE is not gated. | Treat a new row like any UPDATE (no approval gate) — violates `policy.md` AP18. |
 | D12 | New-version "nothing changed" | Saving a new version identical to its source is **blocked with steering copy** routing the maintainer to re-verify the existing row instead of creating a duplicate. | Silently allow a duplicate version row; or clear the audit trio on a new version (the user chose prefill-all + the nothing-changed guard). |
+| D13 | How `db_editor` reuses the single validator gate | `db_editor` is the **headless in-process entry point to the existing `import_to_sqlite.run_apply`** validated atomic applier (refactor its CLI shape to a library entry); zero rule logic in `db_editor`, the whole-state gate covers row-level AND cross-row invariants, one path generalises to all six jobs. *(Settled mid-build 2026-06-02; the validator has no row-level entry point and a per-row check could not see the cross-row invariants Jobs 4/5/6 need — surfaced via architect-review, the user chose D over export-then-validate (A) / validate-before-open (B) / add-a-row-level-validator (C, partial-coverage).)* | A — export→validate→commit per edit (verbatim gate reuse, the fallback). B — validate-before-open. C — row-level validator entry (can't see cross-row invariants; modifies the shared gate). |
 
 These supersede the earlier repo-owns-the-format / CSV-editor decisions recorded in
 `requirements.md` R1/R6 and `plan.md` §"two-phase", and the Job-2-only MVP framing.
