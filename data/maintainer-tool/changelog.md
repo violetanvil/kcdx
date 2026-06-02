@@ -3,6 +3,30 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-02 — importer persists NULL for a blank authored field (round-trip fix)
+
+Surfaced while building the CSV exporter (Phase-1 step 1 of the maintainer-tool plan): the
+importer (`row_builder.build_curated_row`) promoted the bulk-dump `abi_walker` floor
+signature (`? (...)`) onto curated `function_no_sig` / `function_variadic` rows whose seed
+`signature` cell was blank. The DB then carried a signature the seed left empty, so the
+exporter could not reconstruct the blank cell and the byte-identity round-trip
+(`export(import(CSVs)) == CSVs`, D2) failed on 12 rows.
+
+- **Decision:** the importer persists NULL for any authored field the seed left blank — it
+  must not promote a bulk-dump value onto a curated row's blank cell. A curated
+  function-kind row with a blank seed `signature` keeps the DB `signature` NULL.
+- **Why safe:** the survival/fingerprint path keys these kinds on the body-hash
+  (`function_hash`), not the signature — NULLing the floor signature on a curated row
+  changes no survival behavior.
+- **Why it matters:** restores DB↔CSV information-equivalence (design §4) at the source —
+  the invariant the whole round-trip contract rests on.
+
+**Integrated in:** §4 (the information-equivalence consequence). Lands as plan step 1b
+(`row_builder` fix + a re-import round-trip oracle on the affected rows), ordered before
+the exporter (step 1) can commit byte-identical.
+**Why:** the exporter (step 1) demands the exact round-trip the §4 invariant promises; the
+pre-existing import behavior violated it. Settled by the user 2026-06-02 during the build.
+
 ## 2026-06-02 — UI design layer authored; v1 expanded to the full six-job tool
 
 Authored the UI design layer ([`ui/design.md`](ui/design.md) + seven screen specs under

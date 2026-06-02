@@ -105,10 +105,12 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
     Mirrors import_to_sqlite.py's original step-6 exactly:
       - mint (base_row is None): fresh dict, fingerprints NULL.
       - promote (base_row given): copy the bulk dict, then overwrite the curated
-        fields; signature only overwritten when the seed supplied one (so a
-        promoted function with no seed signature keeps the dump/abi_walker
-        floor); offset / vtable_slot / struct_offset only set when non-None;
-        vtable_slot also mirrors into `value`.
+        fields; signature is the AUTHORED seed cell, NULL when blank (a promoted
+        function with no seed signature does NOT inherit the dump/abi_walker
+        floor `? (...)` -- the DB carries only what the seed authored, so
+        DB<->CSV stay information-equivalent for the round-trip); offset /
+        vtable_slot / struct_offset only set when non-None; vtable_slot also
+        mirrors into `value`.
 
     value / offset / vtable_slot / struct_offset are now AUTHORED per-kind seed
     columns (importer-no-prose-derivation Phase 2). The caller passes the
@@ -148,7 +150,8 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
         }
     else:
         # Promote: keep the bulk row's fingerprint + DEV columns; overwrite the
-        # curated identity + audit fields.
+        # curated identity + audit fields. (signature is set in the common tail
+        # below -- authored-wins-else-NULL, applied to promote + mint alike.)
         v = dict(base_row)
         v["kcdx_id"] = kid
         v["kind"] = kind_id
@@ -156,13 +159,16 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
         v["verified_by"] = verified_by or None
         v["verified_date"] = verified_date or None
         v["evidence_kind"] = evidence_kind_id
-        if signature:
-            v["signature"] = signature
 
     # Common promote tail (applies to mint + promote alike, matching the
-    # original's post-construction block).
-    if signature:
-        v["signature"] = signature
+    # original's post-construction block). signature persists the AUTHORED seed
+    # cell, NULL when blank -- a blank seed signature on a PROMOTED function-kind
+    # row must NOT inherit the bulk-dump abi_walker floor (`? (...)`): the DB
+    # carries only what the seed authored, keeping DB<->CSV information-equivalent
+    # (design.md round-trip contract). The survival/fingerprint path keys
+    # function kinds on the body-hash (survival_builder.py function_hash), not
+    # the signature, so NULLing the floor changes no survival behaviour.
+    v["signature"] = signature or None
     if offset is not None:
         v["offset"] = offset
     if vtable_slot is not None:

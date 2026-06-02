@@ -34,6 +34,7 @@ engine capability (`FIX-A`, `Phase-11`), or a named source-fix mechanism.
 | [TD-0001](TD-0001-declare-value-string-arena.md) | 2026-06-01 | Open | silent same-triple re-Declare use-after-free on cached `stringValue` | the value-string arena (`src/declared_targets.cpp`) source-fix |
 | [TD-0002](TD-0002-lua-callback-main-thread-guard.md) | 2026-06-01 | Open | dynamic dispatchers `lua_pcall` with no main-thread check (AP13 gap) | the `GetCurrentThreadId()` guard in `src/scripting.cpp` |
 | [TD-0003](TD-0003-engine-direct-hook-migration.md) | 2026-06-01 | Open | 5 engine-direct `MH_CreateHook` sites bypass `hook_chain` (AP4 gap) | migrate all 5 to `hook_chain::AddCEngine` (+ 10 test rows) |
+| [TD-0004](TD-0004-rebuild-oracle-baseline-recapture.md) | 2026-06-02 | Open | rebuild-oracle baseline stale (8 entities + no-prose rewrite + sig-NULL) | inspected `--capture` of `oracle_baseline.json` + provenance note |
 
 ## Closed
 

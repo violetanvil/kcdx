@@ -16,6 +16,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 
 | Step | Status | Commit |
 |---|---|---|
+| 1b importer: NULL signature on curated function-kind rows with a blank seed cell | DONE | (landed) |
 | 1 csv_exporter.py — DB → 3 seed CSVs, deterministic + diff-preserved | NOT STARTED | — |
 | 2 round-trip oracle — bidirectional byte-identity (export/import) | NOT STARTED | — |
 | 3 db_editor.py — validated atomic version-row UPDATE (audit-trio + full-column) | NOT STARTED | — |
@@ -25,6 +26,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 
 ## Step docs
 
+1b. [step-1b-importer-null-blank-signature.md](step-1b-importer-null-blank-signature.md)
 1. [step-1-csv-exporter.md](step-1-csv-exporter.md)
 2. [step-2-round-trip-oracle.md](step-2-round-trip-oracle.md)
 3. [step-3-db-editor-update.md](step-3-db-editor-update.md)

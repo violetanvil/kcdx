@@ -121,7 +121,15 @@ INVARIANT (both directions):
 Consequences this design carries forward:
 
 - **DB and CSV are information-equivalent.** No field lives only in the DB or only
-  in the CSV. The export cannot invent a column; the import cannot drop one. (A
+  in the CSV. The export cannot invent a column; the import cannot drop one. **The
+  importer must therefore persist NULL for any authored field the seed left blank —
+  it must not promote a bulk-dump value onto a curated row's blank cell.** (Settled
+  2026-06-02, surfaced by the exporter: the importer was writing the bulk `abi_walker`
+  floor signature onto curated `function_no_sig` / `function_variadic` rows whose seed
+  `signature` cell was blank, so the DB carried a value the seed left empty and the
+  round-trip could not reconstruct the blank. The fix: a curated function-kind row with
+  a blank seed `signature` keeps the DB `signature` NULL. Safe — the survival/fingerprint
+  path keys these kinds on the body-hash, not the signature.) (A
   derived/cache column the CSV does not mirror would break this — such a column is
   forbidden on the authored surface; it belongs to the bulk-dump dev-only tables,
   which the export does not touch.)
