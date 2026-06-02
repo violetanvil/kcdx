@@ -56,7 +56,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
-| [KI-0002](KI-0002-scan-zero-matches-at-input-loaded.md) | 2026-06-01 | scan_engine resolves 0 matches at input_loaded (works at plugin load) — Open |
+| [KI-0002](closed/KI-0002-scan-zero-matches-at-input-loaded.md) | 2026-06-01 | CAP-70 scan found 0 at input_loaded — fixture scanned a co-resident-hooked site, not a scan bug — FIXED |
 | [KI-0001](closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) | 2026-05-29 | Save-load STATUS_HEAP_CORRUPTION on the chain-mediated lua_pcall path — FIXED |
 
 ## Current open (pre-KI-NNNN)
@@ -69,6 +69,17 @@ allocation sequence.
 
 ## Closed (historical reference)
 
+- [closed/KI-0002-scan-zero-matches-at-input-loaded.md](closed/KI-0002-scan-zero-matches-at-input-loaded.md)
+  — CAP-70-result found 0 matches at `input_loaded` for a verified site.
+  Root cause: NOT a scan bug — the fixture scanned the luaL_openlibs entry
+  AOB, which the co-resident cap-33 plugin entry-hooks (a 5-byte `JMP`
+  detour over the prologue) before `input_loaded`, so the AOB's leading
+  bytes were gone (PROBE 2 observed the bytes change `48 89 5C 24 08` →
+  `E9 0E 75 BA FE`; section enumeration byte-identical). A fixture-stability
+  defect — the 2nd time this row picked a co-resident-mutated site (after a
+  cap-39 rewrite). FIXED 2026-06-01 via `96dce1e` — repointed the scan to a
+  detour-immune deep-interior `.text`-unique site (WHGame.dll+0x9800), user-
+  confirmed `CAP-70-result PASS`.
 - [closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md](closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md)
   — save-load STATUS_HEAP_CORRUPTION (0xC0000374) at `kcdx!luaC_step`
   GC frees on WHGame's sentinel objects. The FIX-C mirror: kcdx's

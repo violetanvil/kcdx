@@ -1,7 +1,9 @@
 ---
 id: KI-0002
 opened: 2026-06-01
-status: Open
+status: Closed
+closed: 2026-06-01
+closed_by_commit: 96dce1e
 commit_at_filing: 20af53a590b3a41f98d9a0642a56912a5efcf5c6
 ---
 
@@ -219,9 +221,41 @@ prologue stays pristine" immediately before entry-hooking it
   is the SAME class of defect as the prior cap-39-rewrite iteration — the
   fixture repeatedly picks a site another suite plugin mutates before
   input_loaded. **The scan-engine "input_loaded resolves 0" framing of this KI
-  is a misdiagnosis; there is no scan bug.** (Fix design — how to make
-  KI-0002/cap-70 stable — is the next step; this section records the verified
-  mechanism per the root-cause-before-fix bar.)
+  is a misdiagnosis; there is no scan bug.**
+
+- **Fix (commit `96dce1e`):** repoint the CAP-70 scan AOB (used by both
+  CAP-70-dispatch's console line and CAP-70-result's `kcdx.scan{}`) off the
+  co-resident-hooked luaL_openlibs entry to a **detour-immune deep-interior
+  site**: `41 03 EC 33 DF 41 03 45 CC C4 E2 50 F2 FA 03 C3` at WHGame.dll+0x9800.
+  This site is verified `.text`-unique (count==1), sits 4035 bytes past its
+  function entry (no 5-byte `kcdx.hook` entry detour can reach the match window),
+  is referenced by no suite plugin, and is operand-free (build-stable) — verified
+  against the binary with capstone (`_research/ki2-detour-immune-scan-site/FINDINGS.md`).
+  It is a raw `pattern=` literal, not a seed row. This addresses the MECHANISM:
+  the match window no longer starts at a hookable prologue, so no co-resident
+  detour can clobber it; CAP-70-result still asserts `count==1`, so it FAILs only
+  if the resolve path genuinely regresses (decoupled from co-resident hooks). The
+  same change corrects the false "luaL_openlibs is entry-hooked by nobody"
+  premise in cap-33's `plugin.lua` + `targets.toml` + the cap-33 README cells
+  (cap-33 entry-hooks luaL_openlibs ITSELF; its by-name scan resolves at
+  registration time, before its own detour applies), and records the durable
+  lesson in the CAP-70 README Notes (an entry-prologue scan-finding assertion at
+  `input_loaded` is co-resident-hostage; use a detour-immune deep-interior site).
+  The throwaway `probe-ki2-scan-timing/` isolator fixture was removed.
+
+- **Verification:** the cause-test CAP-70-result is the smallest test exercising
+  the failing-path element the Evidence named (the `kcdx.scan{}` resolve at
+  `input_loaded`). User-confirmed live (launch `kcdx-dev_2026-06-01_19-52-58.log`):
+  `RESULT name=CAP-70-result verdict=PASS` — `count==1`,
+  `matches[1].module=="WHGame.dll"`, `matches[1].offset==38912` (0x9800), and
+  `[scan 'cap70_deep_interior_verify'] pattern matches: 1`. CAP-70-dispatch +
+  CAP-70-badargv PASS; CAP-33-pattern-by-name (the writer plugin) still PASS (the
+  comment corrections changed no behavior). The other suite FAILs in that log
+  (CAP-20/CAP-28/CAP-34 — Address-Library resolution rows) pre-date this fix
+  (present in the prior `19-04-52` log) and were untouched by it — no regression.
+  Root cause verified by the gated root-cause-verifier (`land-fix`); the PROBE 2
+  diagnostic stays archived in place (`src/scan_engine.cpp` `#if 0 KI2-RESOLVE`)
+  as the cheapest jumping-off point for the next scan-path investigation.
 
 ## Reproduction
 
