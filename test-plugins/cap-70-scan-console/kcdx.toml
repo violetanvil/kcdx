@@ -1,0 +1,59 @@
+# CAP-70 — kcdx_scan in-game console command: drive it via kcdx.console.execute
+# and assert the engine console surface dispatched it. The Lua-driven regression
+# net for the engine-owned `~`-console command (src/console_commands_scan.cpp).
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-26-lua-command / cap-32-scan are the structural mirrors).
+#
+# kcdx_scan is NOT a kcdx.* surface — it is a console verb (a `~`-console
+# command, registered unconditionally at console::Init). It has no Lua/C++
+# parity obligation; it IS the cross-surface in-game AOB-discovery tool. So
+# this plugin drives it the same way a user would type it: through CryEngine's
+# IConsole::ExecuteString, reached from Lua via kcdx.console.execute(line). That
+# call fires the command SYNCHRONOUSLY on the main thread and returns true if
+# the console surface accepted + dispatched the line. cap-26 is the exact
+# template (it drives a Lua-registered command the same way); cap-70 mirrors it
+# against the ENGINE-owned kcdx_scan command.
+#
+# What it proves (the surface is armed at input_loaded, so both rows fire there):
+#   * CAP-70-dispatch: kcdx.console.execute('kcdx_scan WHGame.dll "<pattern>"')
+#     returns true — the console surface accepted + dispatched the kcdx_scan
+#     command. The pattern is cap-32's LIVE-PROVEN outfit-swap AOB (already
+#     verified to resolve to count==1 on WHGame.dll), so the manual overlay
+#     observable rests on a verified site, not a fresh RE guess. AUTO-PASS =
+#     execute returned true (the command exists + dispatched); FALSIFIABLE: if
+#     kcdx_scan is not registered or the surface isn't ready, execute returns
+#     false → FAIL.
+#   * CAP-70-badargv: kcdx.console.execute('kcdx_scan') (missing module +
+#     pattern) returns true — the command DISPATCHED and ran its fail-loud
+#     usage-line path internally without destabilising the game. AUTO-PASS =
+#     execute returned true; FALSIFIABLE: execute returns false or the game
+#     destabilises → FAIL.
+#
+# The machine auto-pass for BOTH rows is "execute returned true" (the command
+# dispatched). The PAINTED kcdx_scan output (`[scan] 1 matches:` + the
+# `WHGame.dll+0x...` line for dispatch; the usage line for badargv) is
+# human-perceptual — confirmed by the manual `~`-overlay eyeball, NOT by a
+# machine signal (the acceptance-signal split: assert the dispatch, eyeball the
+# paint).
+#
+# Test mode: CAP-70-dispatch + CAP-70-badargv are both `console` — the console
+# surface must be ARMED (input_loaded) for ExecuteString to dispatch, and the
+# painted output is a `~`-overlay eyeball. Both rows self-fire from Lua at
+# input_loaded; the user's only extra gesture is opening `~` to read the paint.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_70_scan_console"
+display_name        = "CAP-70 kcdx_scan console command dispatch"
+author              = "ts"
+description         = "Pure-Lua regression net for the engine-owned kcdx_scan ~-console command: kcdx.console.execute drives 'kcdx_scan WHGame.dll \"<known-good AOB>\"' and asserts the console surface dispatched it (execute==true), plus a missing-argv dispatch that proves the fail-loud usage path runs without crashing. The painted overlay output is the manual eyeball."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-70-dispatch", "CAP-70-badargv"]
+
+[entrypoints]
+lua = "plugin.lua"
