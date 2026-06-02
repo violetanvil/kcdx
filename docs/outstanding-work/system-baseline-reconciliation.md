@@ -16,7 +16,7 @@
 | Phase | Scope | Owner | Status |
 |---|---|---|---|
 | P1a | Adopt 24 missing system rules (verbatim, frontmatter preserved) | migrate | DONE (gate PROCEED) |
-| P1b | Mechanical index fixes M1/M2 (known-issues README rows) | migrate | TODO |
+| P1b | Mechanical index fixes M1/M2 (known-issues README rows) | migrate | DONE (8 open + 2 closed rows added) |
 | P1c | Probe-residue conflict: adopt system no-residue model → rewrote CLAUDE.md probe hard-rule + results-driven.md §"Probe leaves no residue" | migrate | DONE (gate PROCEED) |
 | P1d | 6 diverged-rule merges: skeptical-expert (merge→append), public-private-boundary (keep-repo), results-driven (merge→append), deletion-hygiene (merge→append), logging (merge→append), anti-patterns (merge, CONSENT-GATED) | migrate | TODO |
 | P2 | TD tree + refile TD-0001..0003 + reference-fixup sweep | migrate | TODO |

@@ -66,6 +66,22 @@ allocation sequence.
   containing a colon (`Kingdom Come: Deliverance II`). Windows
   rejects, dmp is lost. Working around via in-process
   `MiniDumpWriteDump` from kcdx-watchdog; upstream bug remains.
+- [cap-36 C++ hook installs fail — apply handler not registered at Load time.md](cap-36%20C%2B%2B%20hook%20installs%20fail%20%E2%80%94%20apply%20handler%20not%20registered%20at%20Load%20time.md)
+  — C++ hook installs fail: the apply handler is not registered at Load time.
+- [cap-38 cpp before-observer never fires on a named game target.md](cap-38%20cpp%20before-observer%20never%20fires%20on%20a%20named%20game%20target.md)
+  — C++ before-observer never fires on a named game target.
+- [cap-59-fires picked a one-shot VM-init target that already ran by plugin load.md](cap-59-fires%20picked%20a%20one-shot%20VM-init%20target%20that%20already%20ran%20by%20plugin%20load.md)
+  — REOPENED: a production-MinHook'd target is un-hookable via `kcdx.hook` (`MH_ERROR_ALREADY_CREATED`).
+- [mod-loader-takeover-mount-crash.md](mod-loader-takeover-mount-crash.md)
+  — native MOUNT CryFatalErrors (~2.7GB alloc) over kcdx's synthesized records during loader takeover.
+- [plugin-lua-errors-have-no-line-number.md](plugin-lua-errors-have-no-line-number.md)
+  — plugin.lua errors surface with no line number or detail.
+- [post-step-4 AV at WHGame+0x2440C85.md](post-step-4%20AV%20at%20WHGame%2B0x2440C85.md)
+  — AV: a virtual call on a vtable VA mistaken for a modMgr object (status RESOLVED in-body; pending close-move).
+- [save-load crash 0xC8 raised from WHGame.md](save-load%20crash%200xC8%20raised%20from%20WHGame.md)
+  — save-load `RaiseException(0xC8)` from a pure-WHGame stack ~10s post-load; cause confirmed kcdx, which part open.
+- [step-1.5-init-reorder-broke-absorb-detour-race.md](step-1.5-init-reorder-broke-absorb-detour-race.md)
+  — init reorder lost the SELECT-detour install/fire race; diagnosed, fix pending.
 
 ## Closed (historical reference)
 
@@ -97,3 +113,7 @@ allocation sequence.
   — `[[mid_hook]] call_original=false / "auto"` codegen unmasked
   by FIX C. FIXED 2026-05-20 via commit `03dd155`; CAP-04 sub-tests
   all PASS.
+- [closed/cap-20-around-wraps-original-wrong-result.md](closed/cap-20-around-wraps-original-wrong-result.md)
+  — around-wraps-original returned the wrong result. FIXED; CAP-20 regression row guards it.
+- [closed/cap-21-cap-22 trampoline not reachable from far targets.md](closed/cap-21-cap-22%20trampoline%20not%20reachable%20from%20far%20targets.md)
+  — trampoline not reachable from far targets (rel32 out of range). FIXED; CAP-21/CAP-22 rows guard it.
