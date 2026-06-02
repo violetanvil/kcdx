@@ -1,6 +1,6 @@
 # System-baseline reconciliation — `/migrate-repo` plan
 
-**Status:** OPEN — migrate-owned phases (P1, P1d, P2, P3) ALL DONE. P4 (hook swap) + P5 routed to `/execute` (authoring/build work outside migrate's lane).
+**Status:** COMPLETE — all phases landed. Migrate-owned (P1, P1b, P1c, P1d, P2, P3) + the `/execute`-routed build/authoring phases (P4 Cycles 1-2, P5 Cycles 1-2) are all DONE and gated. kcdx is fully conformed to the system baseline.
 **Run:** `/setup-repo` → `/adapt-repo` (`b83dd66`) → `/migrate-repo` — P1 `32af8ef`+`e52ad3e`, P2 `04ec9a9`, P1d `72ab147`, P3 `6a92e27`. P4/P5 → `/execute`.
 
 ## Migrate close (the 4 migrate-owned phases)
@@ -57,7 +57,7 @@ Decisions: KI template SUPERSEDED by system shape (verified — kcdx probe-Trail
 | P4 Cycle 1 | Drop 6 twins + fold 4 mechanisms + rewire settings.json + carve 2 thin repo guards (deletion-sweep, rationale-consent) for what no system hook covers | /execute | DONE (adf237f; step-review PROCEED; zero-loss verified — 2 gaps caught + closed) |
 | P4 Cycle 2 | Port all 7 repo `.ps1` guards (the 5 bespoke + the 2 Cycle-1-carved) → repo-local `.py`, each fire-verified for behavioral parity; settings.json fully Python | /execute | DONE (bbbb664; step-review PROCEED; 26 parity cases + independent re-verify; zero `.ps1` guard remains) |
 | P5 Cycle 1 | Extract ALL probe code from `src/` → `_research/probe-archive/` (9 inline `#if 0` strips + 2 whole-file dead probes removed + bugsplat PROBE Z block + cap-43 struck); KEEP fopen + bugsplat live infra; sweep stale refs | /execute | DONE (1d3319f; build GREEN; step-review PROCEED after 2 HALT-and-fix rounds; whole-file probes archived as R100 renames; PROBE Q intact) |
-| P5 Cycle 2 | `deprecated-toml-token-cleanup` deletion sweep (6 open questions resolved) + `hardcoded-address-audit.md` probe-file survivors → past-tense | /execute | DONE-pending-commit (build GREEN; step-review PROCEED; most catalogued FIX rows were already past-tense in source — only config.cpp:324 error string + the audit doc genuinely needed it; 139 KEEP/historical untouched; cap-49 reject-fixture preserved) |
+| P5 Cycle 2 | `deprecated-toml-token-cleanup` deletion sweep (6 open questions resolved) + `hardcoded-address-audit.md` probe-file survivors → past-tense | /execute | DONE (7578bfe; build GREEN; step-review PROCEED; most catalogued FIX rows were already past-tense in source — only config.cpp:324 error string + the audit doc genuinely needed it; 139 KEEP/historical untouched; cap-49 reject-fixture preserved) |
 
 **P1a+P1c gate follow-ons (architect-review, non-blocking):** P3's `debug` collision-remove MUST update `.claude/skills/debug/SKILL.md` (lines ~98, ~297) off the `#if 0`-in-place model or it will contradict the adopted no-residue rules. P5 reference-fixup sweeps the test-plugins/KI trail `#if 0` mentions alongside the source-block migration.
 
