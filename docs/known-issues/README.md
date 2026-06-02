@@ -56,6 +56,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
+| [KI-0002](KI-0002-scan-zero-matches-at-input-loaded.md) | 2026-06-01 | scan_engine resolves 0 matches at input_loaded (works at plugin load) — Open |
 | [KI-0001](closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) | 2026-05-29 | Save-load STATUS_HEAP_CORRUPTION on the chain-mediated lua_pcall path — FIXED |
 
 ## Current open (pre-KI-NNNN)
