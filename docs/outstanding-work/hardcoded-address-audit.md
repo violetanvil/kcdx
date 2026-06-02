@@ -26,11 +26,11 @@ By db_status:
 - **Phase 1 — `src/save_load_hooks.cpp` (ids 144–148).** The 5 operative locators (4 `*_SIG` patterns + `SLOT_RESOLVER_SIG`) → resolve by name. **Live-verified** (the 5 resolve `verification_state=verified` and install; the load-path hooks fire in-game). The 3 comment-only RVA rows (`.cpp` :49/:55, `.h` :34) are `comment-only` (no runtime dependency).
 - **Phase 2a — `src/hooks.cpp` (ids 1, 2).** `lua_pcall` + `CGame_Update` engine-bootstrap hooks: `FindUniqueSig(*_SIG)` → `refdb::ResolveAddrByName`. **Live-verified** (both resolve + install; `lua_pcall` fires, PROBE Q reads zero).
 - **Phase 2b — `test-plugins/cap-03-hook-lua-callback/plugin.lua` (id 4).** Relit AOB pattern → `target = "CGame_per_frame_ui_pump"` (the name carries address + ABI). **Live-verified** (resolves by name; CAP-03 PASS).
-- **Phase 3 — `src/probes/loc_dump_probe.cpp` (id 149, new entity `CLocalizedStringsManager_ctor`).** Hardcoded `kCtorRva = 0x9f0ce4` → resolve by name. **STATICALLY verified, runtime-UNEXERCISED by design:** the loc_dump probe is deliberately disarmed (`dllmain.cpp:338` commented out — its `LocalizeString` hook fires ~11.6k×/session with no remaining diagnostic purpose), so the ctor-resolution path does not execute at runtime. The resolution is correct by construction — id 149 carries `rva = 0x9f0ce4` (identical to the deleted constant), `ResolveAddrByName` = `WhgameBase() + rva`, and the identical mechanism is live-proven by ids 144–148 — but the in-game install-via-name is not exercised while the probe is off. This is a weaker (but legitimate) verification tier than Phases 1/2.
+- **Phase 3 — the `loc_dump` probe (id 149, new entity `CLocalizedStringsManager_ctor`).** Hardcoded `kCtorRva = 0x9f0ce4` → resolve by name. **STATICALLY verified, runtime-UNEXERCISED by design:** the loc_dump probe was already disarmed when this audit ran (its `LocalizeString` hook fired ~11.6k×/session with no remaining diagnostic purpose), so the ctor-resolution path never executed at runtime. The resolution is correct by construction — id 149 carries `rva = 0x9f0ce4` (identical to the deleted constant), `ResolveAddrByName` = `WhgameBase() + rva`, and the identical mechanism is live-proven by ids 144–148 — but the in-game install-via-name was not exercised while the probe was off. This is a weaker (but legitimate) verification tier than Phases 1/2. (The probe source has since been extracted out of `src/` to `_research/probe-archive/` per working-artifacts hygiene — see "Latent cleanup owed" below.)
 
 **Deliberately NOT migrated (correctly left as-is, not findings):** `cap-32-scan` (the raw AOB is the test input for `kcdx.scan{pattern=}`); `cap-33-author-targets` (the pattern row tests the by-name-pattern author-target path); the LocalizeString vtable slots 21/22 (C++ vtable *ordinals* read off the live object — not game addresses; recording them as `vtable_index` rows awaits a runtime vtable-hook consumer that does not exist); the `examples/archive/v0.1-schema/**` legacy demos + pure-prose comment RVAs (out of the chosen scope: production `src/` + active `test-plugins/`).
 
-**Latent cleanup owed (working-artifacts).** `src/probes/loc_dump_probe.cpp` is a disarmed/commented-out probe in live source — which `working-artifacts.md` says should leave no corpse in `src/` (extract to `_research/` + remove). The Phase-3 migration curated id 149 for it; eventually loc_dump should either graduate to a real feature or be extracted-and-removed, and id 149 follows whichever happens (deprecate the entity if the probe is removed).
+**Latent cleanup — DONE (working-artifacts).** When this audit was written, `src/probes/loc_dump_probe.{cpp,h}` was a disarmed probe still sitting in live source — which `working-artifacts.md` says should leave no corpse in `src/` (extract to `_research/` + remove). That extraction has since landed: both files were moved out of `src/probes/` to `_research/probe-archive/` (as `loc_dump_probe.cpp.txt` / `loc_dump_probe.h.txt`), and the live source no longer carries the probe. The Phase-3 migration curated id 149 for it; id 149 stays in the DB as the captured RE finding (the next investigation reconstructs the probe from the archive). Should loc_dump later graduate to a real feature, id 149 carries forward; if the entity is retired, deprecate it.
 
 **By-status recount (the original snapshot's 44 occurrences, after the sweep).** The 27 `already_in_db` rows split: the operative relits in `hooks.cpp` (2), `cap-03` (1), and the `fopen_override_probe` slot/`gEnv` comment relits are migrated or comment-only; the `examples/archive/**` rows stay relit-but-out-of-scope (archived). The 17 `not_in_db` rows: 5 save/load + 1 loc-ctor are now seeded (ids 144–149); the rest (the BugSplat disproven literals, the archived `post_bracket_probe` frame-4 RVA) stay un-seeded by design (disproven / archived). The original by-kind / by-status tables above are the **audit snapshot** — kept as the historical baseline; this note is the post-sweep status of record.
 
@@ -123,9 +123,9 @@ Grouped by file (sorted). Every occurrence is its own row; duplicates within a f
 | 60 | `48 89 5C 24 ? 57 48 83 EC 40 33 C0 41 8B F8` | pattern | WHGame.dll lua_pcall (RVA 0x0071A5A4) | already_in_db | id 1 `lua_pcall`. `PCALL_SIG`, scanned at line 892 via FindUniqueSig — should `refdb`-resolve by name. Seed prose carries the identical literal. |
 | 61 | `48 8B C4 48 89 58 ? 48 89 70 ? 48 89 78 ? 55 41 54 41 55 41 56 41 57 48 8D A8 ? ? ? ? 48 81 EC ? ? ? ? 0F 29 70 ? 0F 29 78 ? 44 0F 29 40 ? 44 0F 29 48 ? 44 0F 29 50 ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 48 8B F1` | pattern | WHGame.dll CGame::Update per-frame tick (RVA 0x00667B24) | already_in_db | id 2 `CGame_Update`. `UPDATE_SIG`, scanned at line 893 — should resolve by name. |
 
-### [`src/mod_absorb/post_bracket_probe.cpp`](../../src/mod_absorb/post_bracket_probe.cpp)
+### `post_bracket_probe.cpp` (extracted to [`_research/probe-archive/post_bracket_probe.cpp.txt`](../../_research/probe-archive/post_bracket_probe.cpp.txt))
 
-(Whole file is an ARCHIVED probe under `#if 0` — compile-disabled, not in production. Literals are still real.)
+(At audit time the whole file was an archived, compile-disabled probe still sitting in `src/mod_absorb/`. It has since been extracted out of `src/` to `_research/probe-archive/` per working-artifacts hygiene — the live source no longer carries it. The literals below are the audit snapshot; they are now captured RE provenance in the archive, not in-source code.)
 
 | line | literal | kind | targets | db_status | note |
 |---|---|---|---|---|---|
@@ -141,18 +141,22 @@ Grouped by file (sorted). Every occurrence is its own row; duplicates within a f
 | 56–57, 88–89 | `0x004614A0`, `0x0492B850`, `0x1804609d0` | rva | 0x004614A0 = CCryPak_FOpen body; 0x0492B850 = gEnv_pCryPak static slot; 0x1804609d0 = FClose (vtable +0x1B8) | already_in_db | id 131 (0x004614A0), id 132 (0x0492B850); FClose covered by id 131 prose. **Comment-only** — live path resolves by name (lines 365/385). Hygiene/relit-in-comment. |
 | 64 | `36` (0x120/8) | vtable_slot | ICryPak::FOpen vtable slot 36 (offset +0x120) on live *gEnv->pCryPak; one-shot reach-consistency assertion | already_in_db | id 131 `CCryPak_FOpen` prose curates this slot. Detour itself is name-resolved; only the slot literal is relit. |
 
-### [`src/probes/loc_dump_probe.cpp`](../../src/probes/loc_dump_probe.cpp)
+### `loc_dump_probe.cpp` (extracted to [`_research/probe-archive/loc_dump_probe.cpp.txt`](../../_research/probe-archive/loc_dump_probe.cpp.txt))
+
+(At audit time this file lived in `src/probes/`. It has since been extracted out of `src/` to `_research/probe-archive/` per working-artifacts hygiene — the live source no longer carries it. The literals below are the audit snapshot; they are now captured RE provenance in the archive.)
 
 | line | literal | kind | targets | db_status | note |
 |---|---|---|---|---|---|
 | 54 | `0x9f0ce4` | rva | CLocalizedStringsManager ctor (FUN_1809f0ce4); base+RVA → MH_CreateHook detour target | not_in_db | `kCtorRva`. Self-labeled 'USER-APPROVED DEFERRAL' (seed promotion deferred to feature graduation). |
 | 64–65 | `21`, `22` (offsets 0xA8 / 0xB0) | vtable_slot | CLocalizedStringsManager vtable slots 21 (CryStringT LocalizeString overload) & 22 (raw C-string overload) | not_in_db | `kLocSlot21`/`kLocSlot22`. Overload RVAs read off live vtable (clean); the slot indices themselves are the hard-coded locators (AP3). |
 
-### [`src/probes/loc_dump_probe.h`](../../src/probes/loc_dump_probe.h)
+### `loc_dump_probe.h` (extracted to [`_research/probe-archive/loc_dump_probe.h.txt`](../../_research/probe-archive/loc_dump_probe.h.txt))
+
+(At audit time this header lived in `src/probes/`. It has since been extracted out of `src/` to `_research/probe-archive/` per working-artifacts hygiene — the live source no longer carries it. The AP16 published-header concern below is moot now the header is no longer in a public-facing tree. The literals are the audit snapshot.)
 
 | line | literal | kind | targets | db_status | note |
 |---|---|---|---|---|---|
-| 24, 26–27 | `0x9f0ce4`, slot 21 (0xA8), slot 22 (0xB0) | rva | Documentation-prose form of the ctor RVA + LocalizeString vtable slots 21/22 | not_in_db | 'Verified RE facts' block embeds the same un-seeded locators. Also an AP16 public/private concern (FUN_/RVA prose in a published header). |
+| 24, 26–27 | `0x9f0ce4`, slot 21 (0xA8), slot 22 (0xB0) | rva | Documentation-prose form of the ctor RVA + LocalizeString vtable slots 21/22 | not_in_db | 'Verified RE facts' block embeds the same un-seeded locators. Was also an AP16 public/private concern (FUN_/RVA prose in a then-published header). |
 
 ### [`src/save_load_hooks.cpp`](../../src/save_load_hooks.cpp)
 
@@ -227,7 +231,7 @@ These are the cheapest migrations: the entity already exists, the code just need
 
 > The `0x004614A0`/`0x0492B850`/`0x1804609d0` triple at `fopen_override_probe.cpp:56–57,88–89` is one finding row but covers three seed-mapped RVAs; the FClose RVA (0x1804609d0) has no dedicated row and is covered by id 131's curated sibling-slot prose (+0x1B8 = FClose). All three are comment-only.
 
-**Archived/low-weight note:** the `post_bracket_probe.cpp` rows live in a `#if 0` block; the `examples/archive/v0.1-schema/**` and `docs/VERIFY_PHASE4.md` rows are archived/superseded material. They are real relits but carry low hygiene urgency.
+**Archived/low-weight note:** the `post_bracket_probe.cpp` rows were in an archived, compile-disabled block at audit time and the file has since been extracted to `_research/probe-archive/`; the `examples/archive/v0.1-schema/**` and `docs/VERIFY_PHASE4.md` rows are archived/superseded material. They are real relits but carry low hygiene urgency.
 
 ---
 

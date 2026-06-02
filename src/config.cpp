@@ -320,8 +320,8 @@ bool ParsePluginManifest(const toml::table& doc,
             tbl != "load_order") {
             err = "unknown top-level table '[" + std::string(tbl) +
                   "]' (valid top-level tables: [kcdx], [plugin], "
-                  "[entrypoints], [load_order]; legacy behavior tables like "
-                  "[[patch]]/[[hook]]/[[mid_hook]]/[[trampoline]]/[[scan]] were "
+                  "[entrypoints], [load_order]; legacy behavior tables "
+                  "(the previous TOML schemas) were "
                   "removed — behavior ships in plugin.lua / a DLL)";
             return false;
         }
