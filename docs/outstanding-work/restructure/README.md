@@ -76,7 +76,7 @@ Independent work that can land now (each by leverage, not phase order):
 - **Phase 9.2 residual** — the `kcdx_scan` console command closes 9.2.
 - **Engine-direct hook migration** — 5 remaining `MH_CreateHook` sites move to
   `hook_chain::AddCEngine`; one `/execute` cycle per site; full spec at
-  [`../engine-direct-hook-migration.md`](../engine-direct-hook-migration.md).
+  [`../../tech-debt/TD-0003-engine-direct-hook-migration.md`](../../tech-debt/TD-0003-engine-direct-hook-migration.md).
 - **Phase 8.5 asset overlay** — independent, high user-visible leverage; one
   `/feature` cycle.
 - **Phase 9 high-level Lua surface** — independent, pure RE + binder work; one
@@ -89,8 +89,8 @@ design-settled-but-unbuilt features, tracked debt. Most relevant to the live
 phases:
 - [`../fix-a-drop-static-lua.md`](../fix-a-drop-static-lua.md) — Phase 11 unblocker.
 - [`../before-game-hooks.md`](../before-game-hooks.md) — Phase 11 consumer (bugsplat builtin).
-- [`../engine-direct-hook-migration.md`](../engine-direct-hook-migration.md) — the 5-site migration.
-- [`../declare-value-string-arena.md`](../declare-value-string-arena.md) — declare-store completion (cycle 2).
+- [`../../tech-debt/TD-0003-engine-direct-hook-migration.md`](../../tech-debt/TD-0003-engine-direct-hook-migration.md) — the 5-site migration (tech-debt TD-0003).
+- [`../../tech-debt/TD-0001-declare-value-string-arena.md`](../../tech-debt/TD-0001-declare-value-string-arena.md) — declare-store completion (tech-debt TD-0001).
 - **Recovery + rollback for Track-2 plugins** — load-bearing for the §11.8
   STREAMLINE default-ON shipping; spec not yet written
   (`../track2-recovery-rollback.md`).

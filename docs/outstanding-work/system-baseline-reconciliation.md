@@ -28,7 +28,7 @@ Phase 1 (rule floor + probe-conflict resolution + index sync) is committed. The 
 | P1b | Mechanical index fixes M1/M2 (known-issues README rows) | migrate | DONE (8 open + 2 closed rows added) |
 | P1c | Probe-residue conflict: adopt system no-residue model → rewrote CLAUDE.md probe hard-rule + results-driven.md §"Probe leaves no residue" | migrate | DONE (gate PROCEED) |
 | P1d | 6 diverged-rule merges: skeptical-expert (merge→append), public-private-boundary (keep-repo), results-driven (merge→append), deletion-hygiene (merge→append), logging (merge→append), anti-patterns (merge, CONSENT-GATED) | migrate | TODO |
-| P2 | TD tree + refile TD-0001..0003 + reference-fixup sweep | migrate | TODO |
+| P2 | TD tree + refile TD-0001..0003 + reference-fixup sweep | migrate | DONE (gate PROCEED; git mv R100 hash-identical; refs swept clean; carve-out synced ×3; delinked one test-plugins private ref — other pre-existing leaks remain) |
 | P3 | 14 skill collision-removes (append-authored → dir-removed), each its own gated commit | migrate | TODO |
 | P4 | Hook-engine swap: drop 6 twins, fold 4 mechanisms; **5 bespoke guard ports → `/execute`** | migrate + /execute | TODO |
 | P5 (deferred → /execute) | `deprecated-toml-token-cleanup` deletion sweep; **migrate existing ~15 `#if 0` probe blocks → `_research/probe-archive/`** (per P1c decision) + sweep their stale references (`test-plugins/README.md:1071-1073`, the 2 KI trail mentions of "the probe-archive hygiene rule") to past-tense; `src/hooks.cpp` over-threshold | /execute | DEFERRED |
