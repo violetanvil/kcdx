@@ -51,6 +51,11 @@ from .version_resolver import (
 from .csv_exporter import (
     export_seeds,
 )
+from .round_trip import (
+    round_trip,
+    hash_curated_tables,
+    RoundTripError,
+)
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
@@ -65,4 +70,5 @@ __all__ = [
     "build_survival_row", "survival_kind_form",
     "resolve_version", "VersionResolveError",
     "export_seeds",
+    "round_trip", "hash_curated_tables", "RoundTripError",
 ]
