@@ -842,68 +842,36 @@ Or in Steam right-click → Properties → Launch Options: paste the path. Steam
 
 ## kcdx replaces pak mods (asset replacement is in scope)
 
-Per priorities, "general mechanism over special case" — and the existing pak-mod ecosystem is a special case that lives outside kcdx. For total conversion viability, **kcdx must absorb pak mods' capability set entirely**, then exceed it. Two coexisting asset-replacement systems is a UX foot-gun (which load order wins? do pak mods see kcdx-applied bytes?); the right answer is "kcdx handles everything."
+> **The settled asset-replacement design lives in
+> [`phase-08.5-asset-replacement/asset-design.md`](phase-08.5-asset-replacement/asset-design.md)**
+> — the authoritative `§`-structured spec the Phase 8.5 steps build against. This
+> section is preserved only for the *why-in-scope* rationale (below); its earlier
+> mechanism detail (path-match auto-overlay, a `replace`/`replace_static` surface,
+> the 8.5a–e sub-phase sketch) is **superseded by that doc** and should not be
+> built from. Key changes the settled design made: replacement is an EXPLICIT
+> per-asset declaration (a sidecar) or a code call — never an implicit path-match
+> auto-apply; the cross-plugin surface is the navigable `kcdx.plugin.<author>.<plugin>.*`
+> namespace (not a quoted owner-string arg); the resolver-hook mechanism (the
+> per-open `CCryPak::FOpen` redirect, NOT search-path registration) and the
+> per-class transparent staging are settled there with their RE evidence.
 
-This means kcdx ships an asset-replacement surface that can do everything pak mods can do today:
+For total conversion viability, **kcdx must absorb pak mods' capability set
+entirely**, then exceed it — "general mechanism over special case." Two coexisting
+asset-replacement systems is a UX foot-gun (which load order wins? do pak mods see
+kcdx-applied bytes?); the right answer is "kcdx handles everything." Without it,
+kcdx can't support TCs (a large TC ships tens of GB of replacement assets the
+existing pak-mod path can't load-order-manage cleanly); shipping "kcdx for code +
+pak mods for assets" forces two parallel ecosystems with two load orders that
+don't talk — the "Y does 80%" anti-pattern. That is why asset replacement is in
+scope, not deferred.
 
-- **File replacement** — substitute a vanilla `.dds`, `.cgf`, `.cdf`, `.xml`, `.lua` (game-side script), `.ogg`, etc. with the plugin's version.
-- **Pak overlay** — multiple plugins can stack their replacements; load order decides who wins for any specific file.
-- **Compressed delivery** — plugins ship their assets in a structured archive (probably zip-without-compression like KCD2's pak format, or just a flat folder inside the plugin's install directory).
-
-Plus things pak mods can't do today:
-
-- **Asset-aware conflict detection** — two plugins replacing the same file get a clear "plugin A wins; plugin B's version of <file> is suppressed" log line, same shape as today's hook conflict reporting.
-- **Conditional asset replacement** — Lua-side decision logic (`if kcdx.world.region() == "talmberg" then use this DDS else that one`).
-- **Dynamic asset injection** — plugins can register virtual paths at runtime that the game's file-load functions resolve into plugin-supplied bytes (no on-disk file needed).
-
-### How it integrates with the new schema
-
-A plugin declares asset entrypoints alongside Lua/DLL ones:
-
-```toml
-[entrypoints]
-lua    = "plugin.lua"           # optional
-dll    = "bin/my-plugin.dll"    # optional
-assets = "assets/"              # NEW: folder of files to overlay on game's vanilla paks
-```
-
-The `assets/` folder mirrors the game's pak structure. A file at `<plugin>/assets/Libs/UI/MainMenu.gfx` overlays the vanilla `Libs/UI/MainMenu.gfx`. The kcdx engine hooks the game's file-load path (probably `CrySystem`'s `OpenFile` / pak resolver) so when the game asks for `Libs/UI/MainMenu.gfx`, kcdx checks every loaded plugin's `assets/` folders in load-order priority and returns the highest-priority hit.
-
-Lua side, dynamic injection looks like:
-
-```lua
-kcdx.assets.replace("Libs/UI/MainMenu.gfx", function()
-    -- return the raw bytes the game should see
-    return my_dynamically_generated_gfx_data
-end)
-
-kcdx.assets.replace_static("Libs/UI/HUD.gfx", kcdx.plugin_path .. "/assets/my-hud.gfx")
-```
-
-### Why this is in scope, not deferred
-
-Without asset replacement, kcdx can't support TCs — Fallout: London ships ~30 GB of replacement assets and the existing pak mod path can't be load-order-managed cleanly. Shipping "kcdx for code + pak mods for assets" forces TC authors to maintain two parallel ecosystems with two load orders that don't talk. That's the "Y does 80%" anti-pattern: shipping code-only kcdx is the easier path that doesn't fully solve TC.
-
-### Scoping for this plan
-
-The asset replacement system is a meaningful chunk of engine work. It sits as **Phase 8.5** between Phase 8 (ASI cleanup) and Phase 9 (high-level Lua surface). Sub-phases:
-
-- **Phase 8.5a**: hook the game's pak resolver. Identify `CrySystem::ICryPak::OpenResource` (or equivalent) via existing Address Library + Ghidra. Add to address-library/database.csv.
-- **Phase 8.5b**: parse `[entrypoints].assets` directories at plugin discovery. Build an in-memory overlay map keyed by virtual path → (plugin, file_path).
-- **Phase 8.5c**: in the pak resolver hook, check the overlay map first. On hit, return plugin file. On miss, fall through to vanilla.
-- **Phase 8.5d**: ship the Lua surface (`kcdx.assets.replace`, `kcdx.assets.replace_static`, conflict reporting).
-- **Phase 8.5e**: test plugin (`cap-XX-asset-replace`) that replaces a known-safe game file (probably a UI string in a menu) + verifies the replacement is visible in-game. Regression test ships alongside.
-
-After Phase 8.5, the pak-mods.md workspace rule is rewritten to "pak mods are deprecated; use [entrypoints].assets — see docs/asset-replacement.md." Existing pak mods keep working (we don't break vanilla KCD2 modding), but kcdx is the path forward for new TC work.
-
-### Critical files for asset replacement
-
-- New: `src/asset_overlay.cpp` / `src/asset_overlay.h` — overlay map + pak resolver hook.
-- New: `src/lua_bind_assets.cpp` — `kcdx.assets.*` Lua surface.
-- New: `docs/asset-replacement.md` — author-facing guide for asset overlay.
-- Modified: [src/config.cpp](../../../src/config.cpp) — parse `[entrypoints].assets`.
-- Modified: `.claude/rules/pak-mods.md` — annotate as deprecated; point at asset-replacement.md.
-- Modified: `_research/phase8-fix-a/` (or sibling) — RE work to identify the pak resolver vtable.
+It sits as **Phase 8.5** between Phase 8 and Phase 9. Steps 1–2 (the production
+`CCryPak::FOpen` hook + the `[entrypoints].assets` parse + the load-order overlay
+map) are built and live (`9e524ae`, `2588b33`); steps 3–5 are re-decomposed
+against the settled design doc above. After the phase, `pak-mods.md` is rewritten
+to "pak mods are deprecated; use the asset surface — see `docs/asset-replacement.md`"
+(the public author guide, authored when the surface lands); existing pak mods keep
+working.
 
 ## Engine internals that stay intact
 
