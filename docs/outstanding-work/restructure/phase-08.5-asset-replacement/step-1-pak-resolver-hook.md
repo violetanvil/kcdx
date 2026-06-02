@@ -1,6 +1,6 @@
 # Phase 8.5 step 1 — hook the game's pak resolver (production overlay hook)
 
-**Status: PARTIAL.** Ledger row: [`README.md`](README.md) → step 1.
+**Status: DONE.** Ledger row: [`README.md`](README.md) → step 1.
 
 ## What
 
@@ -8,20 +8,19 @@ Install the PRODUCTION asset-overlay hook on the game's pak resolver
 (`CCryPak_FOpen`), so a virtual-path open can be redirected to a loose
 overlay file before the pak-resident asset is read.
 
-## As-built (partial)
+## As-built
 
-- `CCryPak_FOpen` is named in refdb (kcdx_id 131); `src/mod_absorb/...` uses the
-  resolved address via `refdb::ResolveAddrByName("CCryPak_FOpen")`.
-- An observe-only FOPEN probe (`src/probes/fopen_override_probe.cpp`) detours the
-  body in dev mode for **path classification only** — NOT for asset replacement.
-
-## Remaining
-
-The production hook that actually redirects an open to an overlay file is not
-installed. This step installs it through the conflict engine (`hook_chain`), not
-a raw `MH_CreateHook` — register a footprint, resolve by name. The redirect
-decision (overlay map lookup) is step 3; this step lands the production hook site
-with a pass-through body so step 3 can fill the decision.
+- The PRODUCTION asset-overlay hook is installed on `CCryPak::FOpen` through the
+  conflict engine (`hook_chain::AddCEngine`) in `src/asset_overlay.cpp` — not a
+  raw `MH_CreateHook`. The target resolves by the canonical name `CCryPak_FOpen`
+  (existing seed kcdx_id 131, verified ABI).
+- The hook body is **pass-through**: it calls the original unchanged. The
+  overlay-map redirect decision (virtual-path → loose file) is step 3; this step
+  lands the production hook site so step 3 can fill the decision.
+- The earlier observe-only FOPEN probe (whose runtime unknowns U.1 read-fires and
+  U.4 override-acceptance were resolved) was captured to
+  `_research/probe-archive/fopen-override.md` and removed from `src/` — the live
+  source carries no diagnostic residue.
 
 ## Test bar
 

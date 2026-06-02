@@ -202,7 +202,7 @@ add_library(kcdx SHARED
     src/declare_interface.cpp
     src/dynamic_call_jit.cpp
     src/probes/bugsplat_ctor_probe.cpp
-    src/probes/fopen_override_probe.cpp
+    src/asset_overlay.cpp
     src/mod_absorb/record_synth.cpp
     src/mod_absorb/record_synth_selftest.cpp
     src/mod_absorb/mod_manifest.cpp

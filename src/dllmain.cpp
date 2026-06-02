@@ -23,8 +23,8 @@
 
 #include "probes/bugsplat_ctor_probe.h"  // KEEP — proven before_game-hook install
                                          // machinery; a later phase generalizes it
-#include "probes/fopen_override_probe.h" // pak-resolver probe (FOpen
-                                         // read-fires + override semantics)
+#include "asset_overlay.h"               // production pak-resolver overlay hook
+                                         // (CCryPak::FOpen, via the conflict engine)
 #include "mod_absorb/select_detour.h"    // Worker-side enabled-list build +
                                          // readiness event (the SELECT detour
                                          // itself was retired when kcdx took
@@ -336,27 +336,18 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // phase now marks only the save/load + serialization subsystems.
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineSubsystemsInit);
 
-    // Pak-resolver probe (observe-only): install the
-    // CCryPak::FOpen body detour (resolved by canonical name CCryPak_FOpen)
-    // to (a) confirm the resolver fires for asset READS at runtime and (b)
-    // log the early pak-resident virtual paths, so the override-target is
-    // confirmed-firing, not guessed. Dev-mode-gated + idempotent; a no-op in
-    // production.
+    // Production pak-resolver overlay hook: install the CCryPak::FOpen hook
+    // (resolved by canonical name CCryPak_FOpen) through the conflict engine
+    // (hook_chain::AddCEngine), so a later step can redirect a virtual-path
+    // open to a loose overlay file. This step lands the hook SITE with a
+    // pass-through body (call original unchanged). Idempotent.
     //
-    // refdb::ResolveAddrByName("CCryPak_FOpen") reads the in-memory cache
-    // built inside refdb::Open(), so this probe must run AFTER RefdbOpened.
-    // That is now guaranteed: refdb advances right after VersionDetected,
-    // well before this point. (Historically this had to sit after
-    // DiscoverAndLoad, which was where the version got set; that dependency
-    // is gone now that detection + refdb-open moved early, but the probe
-    // stays here.) The FOpen detour still arms well before any menu/save
-    // asset reads; the resolver fires continuously through boot→menu.
-    //
-    // (Was briefly disabled 2026-05-26 to isolate a parallel save-load crash
-    // investigation; that crash is fixed and the baseline is clean, so it is
-    // re-enabled now. U.1 already succeeded once: cap-44-fopen-read-fires PASS;
-    // reach_check match=1; 64 read opens captured.)
-    kcdx::probes::fopen_override_probe::Install();
+    // It resolves the target by name, which reads the in-memory cache built
+    // inside refdb::Open(), so it must run AFTER RefdbOpened. That is
+    // guaranteed: refdb advances right after VersionDetected, well before this
+    // point. The hook arms well before any menu/save asset reads; the resolver
+    // fires continuously through boot→menu.
+    kcdx::asset_overlay::Install();
 
     return 0;
 }

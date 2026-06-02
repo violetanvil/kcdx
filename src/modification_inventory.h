@@ -34,9 +34,9 @@ namespace kcdx::modification_inventory {
 // summary line + per-target DETAIL).
 enum class Category : uint8_t {
     PluginHook = 0,  // "plugin_hook" — hook_chain (live kcdx.hook installs)
-    Engine     = 1,  // "engine"      — lua_pcall / update / frealloc
+    Engine     = 1,  // "engine"      — lua_pcall / update / frealloc / fopen_overlay
     Lifecycle  = 2,  // "lifecycle"   — save/load hooks
-    Probe      = 3,  // "probe"       — dev probes (bugsplat_ctor / fopen)
+    Probe      = 3,  // "probe"       — dev probes (bugsplat_ctor)
     // APPEND-ONLY (do not reorder/insert above): a successful kcdx.bytes /
     // kcdxBytesInterface byte rewrite registers here so a crash at/after a
     // byte-patched site has a fault-time owner record in the inventory the
@@ -55,7 +55,7 @@ enum class Category : uint8_t {
 //
 // `targetVa` is the resolved runtime VA the detour sits on. `name` points to a
 // string literal (process-lifetime) identifying the install (e.g. "lua_pcall",
-// "SaveGame", "fopen_override"). Idempotent per (targetVa, category): a repeat
+// "SaveGame", "fopen_overlay"). Idempotent per (targetVa, category): a repeat
 // registration of the same target+category is ignored (probes are idempotent /
 // retried; double-registration must not double-count).
 //

@@ -1,6 +1,6 @@
 # Phase 8.5 — asset replacement (kcdx absorbs pak mods)
 
-**Status: NOT STARTED** (8.5a partial). Detail: [`../00-original-plan.md`](../00-original-plan.md) §"Phase 8.5" + §"kcdx replaces pak mods".
+**Status: IN PROGRESS** (step 1 landed — production overlay hook installed; steps 2–5 not built). Detail: [`../00-original-plan.md`](../00-original-plan.md) §"Phase 8.5" + §"kcdx replaces pak mods".
 
 This phase is **OVERLAY**: a kcdx plugin shipping a single loose file that
 OVERRIDES a pak-resident asset by virtual path. (The pak-mod ABSORB path —
@@ -16,7 +16,7 @@ for new TC asset work.
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — hook the game's pak resolver (production overlay hook)](step-1-pak-resolver-hook.md) | PARTIAL — resolver named + observe-only probe; production hook not installed | — |
+| [1 — hook the game's pak resolver (production overlay hook)](step-1-pak-resolver-hook.md) | DONE — production overlay hook installed via hook_chain::AddCEngine (pass-through body); FOPEN probe archived + removed | (landed) |
 | [2 — parse `[entrypoints].assets` + build overlay map](step-2-parse-assets-overlay-map.md) | NOT STARTED | — |
 | [3 — overlay-map check in the resolver hook](step-3-resolver-overlay-check.md) | NOT STARTED | — |
 | [4 — `kcdx.assets.*` Lua surface + `kcdxAssetInterface`](step-4-assets-surface.md) | NOT STARTED | — |
