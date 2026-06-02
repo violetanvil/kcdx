@@ -4,71 +4,35 @@
       {
         "matcher": "Write",
         "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-write.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-comment-density.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-patterns.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-probe-stack.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-review-files.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-public-private-refs.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-seed-approval.ps1" }
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-seed-approval.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-deletion-sweep.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-rationale-consent.ps1" }
         ]
       },
       {
         "matcher": "Edit",
         "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-edit.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-comment-density.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-patterns.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-probe-stack.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-review-files.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-anti-pattern-consent.ps1" },
           { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-public-private-refs.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-seed-approval.ps1" }
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-seed-approval.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-deletion-sweep.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-rationale-consent.ps1" }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-git-lock.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-push-target.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-force-push.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-destructive-ops.ps1" }
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-push-target.ps1" }
         ]
       },
       {
         "matcher": "PowerShell",
         "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-git-lock.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-push-target.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-force-push.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-destructive-ops.ps1" }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/tripwire-dynamic-deletion.ps1" }
-        ]
-      },
-      {
-        "matcher": "PowerShell",
-        "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/tripwire-dynamic-deletion.ps1" }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/track-touched-files.ps1" }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/track-touched-files.ps1" }
+          { "type": "command", "command": "pwsh -NoProfile -File .claude/hooks/guard-push-target.ps1" }
         ]
       }
     ]

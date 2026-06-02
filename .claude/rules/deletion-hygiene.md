@@ -46,7 +46,7 @@ A NEW comparative aside in a non-exempt file (a fresh "like the old `[[patch]]`"
 ## How to apply
 
 - `step-review` / `code-review` run the survivor sweep when the diff deletes a surface (each skill's §2). A surviving prescriptive reference is a finding.
-- The warn-only deletion hook (`guard-anti-patterns.ps1`) fires a proactive sweep reminder at author-time; the review gates carry the actual check.
+- The warn-only deletion hook (`guard-deletion-sweep.ps1`) fires a proactive sweep reminder at author-time; the review gates carry the actual check.
 - No annotation escape — a survivor is not silenced by a marker; it is fixed or it is genuinely historical by location/framing.
 
 ## What this is NOT
