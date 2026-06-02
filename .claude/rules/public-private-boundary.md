@@ -52,7 +52,7 @@ Anything else is private (`.claude/`, `CLAUDE.md`, `_research/`,
 `third-party-ghidra/`, `test-fixtures/`, `.gitignore`, `publish-public.ps1`, the
 `docs/` carve-outs above). Private files may reference anything — the rule
 constrains only public files. (Carve-outs must stay in sync across
-`publish-public.ps1` `$PrivateSubpaths`, `guard-public-private-refs.ps1`, and
+`publish-public.ps1` `$PrivateSubpaths`, `guard-public-private-refs.py`, and
 this list.)
 
 ## What is a "private reference" (forbidden in public files)
@@ -114,7 +114,7 @@ preserved every time; only the private pointer is dropped.
 
 ## Enforcement
 
-- **Author-time:** `guard-public-private-refs.ps1` (PreToolUse on Write/Edit)
+- **Author-time:** `guard-public-private-refs.py` (PreToolUse on Write/Edit)
   WARNS when a public-facing file gains a private reference. Warn-only — it does
   not block, but a flagged write is a finding to fix before publish.
 - **Review-time:** `code-review` / `step-review` treat a surviving private

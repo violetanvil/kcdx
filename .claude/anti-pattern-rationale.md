@@ -2,7 +2,7 @@
 
 The durable record of **why** each anti-pattern in `.claude/rules/anti-patterns.md` exists. This file has no `paths:` frontmatter and is referenced by nothing — it never auto-loads into agent context. Its job is audit, not enforcement: the detection signatures live in `anti-patterns.md`, the prescriptions live in the matching `.claude/rules/*.md`, and the reasoning lives here.
 
-**Writing here requires the user's express consent.** Two PreToolUse consent guards split this duty: the repo `guard-rationale-consent.ps1` forces an accept-prompt on every edit to THIS file; the system consent guard does the same for `anti-patterns.md`. Both emit `permissionDecision: "ask"` — an accept-prompt, not a warning. An agent cannot silently add an anti-pattern or rewrite its rationale — every change surfaces to the user for an explicit accept. An AP entry whose rationale here was not blessed by the user is an unauthorized rule; the accept-prompt is the bless.
+**Writing here requires the user's express consent.** Two PreToolUse consent guards split this duty: the repo `guard-rationale-consent.py` forces an accept-prompt on every edit to THIS file; the system consent guard does the same for `anti-patterns.md`. Both emit `permissionDecision: "ask"` — an accept-prompt, not a warning. An agent cannot silently add an anti-pattern or rewrite its rationale — every change surfaces to the user for an explicit accept. An AP entry whose rationale here was not blessed by the user is an unauthorized rule; the accept-prompt is the bless.
 
 One section per AP, numbered to match `anti-patterns.md`. New AP → a new section here, accepted by the user at write time.
 

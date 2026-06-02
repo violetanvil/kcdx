@@ -199,7 +199,7 @@ report("loaded", true)   -- always true once the plugin loads; tests nothing
 See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- broken link on public -->
 ```
 
-**Fix:** state the fact self-contained — keep the knowledge, drop the private pointer. "per AP3" → "this slot is empirically probed against the binary, not assumed from a header"; a `.claude/rules/` link → restate the rule inline; `_research/...` provenance → "verified via Ghidra analysis". AP-numbers and rule-file citations are **internal shorthand — legitimate in a private file, never in a public-facing one.** Per `public-private-boundary.md`; warn-only `guard-public-private-refs.ps1` flags it at author-time.
+**Fix:** state the fact self-contained — keep the knowledge, drop the private pointer. "per AP3" → "this slot is empirically probed against the binary, not assumed from a header"; a `.claude/rules/` link → restate the rule inline; `_research/...` provenance → "verified via Ghidra analysis". AP-numbers and rule-file citations are **internal shorthand — legitimate in a private file, never in a public-facing one.** Per `public-private-boundary.md`; warn-only `guard-public-private-refs.py` flags it at author-time.
 
 ---
 
@@ -239,7 +239,7 @@ See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- brok
 
 **Detection signature (scan a diff against this shape):** a diff that ADDS a data row (not a comment, not the header) to either curated seed CSV, with no recorded user approval of the entity in the landing conversation. An UPDATE to an existing row (re-verify, bump `last_verified_at_version`, deprecate, supersede) is NOT this AP — only a NEW entity/version row is. Resolving a game address by name/id in code (AP1's fix) is NOT this AP either — that is the always-on expectation, not a gated DB addition.
 
-**Fix:** STOP before writing the row; surface the proposed entity to the user (name + what it targets + why it's needed) and get explicit approval, THEN append. Per `address-library.md` + `data/seeds/policy.md` §"DB additions require explicit approval". Warn-only `guard-seed-approval.ps1` flags the addition at author-time; the review gates carry the hard check.
+**Fix:** STOP before writing the row; surface the proposed entity to the user (name + what it targets + why it's needed) and get explicit approval, THEN append. Per `address-library.md` + `data/seeds/policy.md` §"DB additions require explicit approval". Warn-only `guard-seed-approval.py` flags the addition at author-time; the review gates carry the hard check.
 
 ---
 

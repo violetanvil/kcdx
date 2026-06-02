@@ -304,7 +304,7 @@ Every FIX in an allowlisted public-facing path (`docs/`, `include/`, `src/`,
   accuracy (the never-built `[[vtable_hook]]` placeholder → "vtable-hooking
   primitive").
 - **No replacement still needs a boundary re-check** beyond the standard
-  author-time `guard-public-private-refs.ps1` warn pass when each edit is
+  author-time `guard-public-private-refs.py` warn pass when each edit is
   written.
 
 ---
