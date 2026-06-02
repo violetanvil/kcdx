@@ -18,17 +18,34 @@
 # What it proves (the surface is armed at input_loaded, so both rows fire there):
 #   * CAP-70-dispatch: kcdx.console.execute('kcdx_scan WHGame.dll "<pattern>"')
 #     returns true — the console surface accepted + dispatched the kcdx_scan
-#     command. The pattern is cap-32's LIVE-PROVEN outfit-swap AOB (already
-#     verified to resolve to count==1 on WHGame.dll), so the manual overlay
-#     observable rests on a verified site, not a fresh RE guess. AUTO-PASS =
-#     execute returned true (the command exists + dispatched); FALSIFIABLE: if
-#     kcdx_scan is not registered or the surface isn't ready, execute returns
-#     false → FAIL.
+#     command. The pattern is luaL_openlibs' .text-UNIQUE entry-prologue AOB
+#     (verified EXACTLY 1 match on WHGame.dll), a STABLE site that nothing
+#     byte-rewrites and nothing entry-hooks — so it still resolves to 1 match at
+#     input_loaded, AFTER the ApplyZone byte-patch pass. (The prior fixture used
+#     cap-32's outfit-swap AOB, whose tail cap-39 rewrites during that apply
+#     pass, leaving 0 matches by input_loaded — a fixture-stability defect, not a
+#     kcdx_scan bug.) AUTO-PASS = execute returned true (the command exists +
+#     dispatched); FALSIFIABLE: if kcdx_scan is not registered or the surface
+#     isn't ready, execute returns false → FAIL.
 #   * CAP-70-badargv: kcdx.console.execute('kcdx_scan') (missing module +
 #     pattern) returns true — the command DISPATCHED and ran its fail-loud
 #     usage-line path internally without destabilising the game. AUTO-PASS =
 #     execute returned true; FALSIFIABLE: execute returns false or the game
 #     destabilises → FAIL.
+#   * CAP-70-result: asserts the scan FINDING, not just dispatch. The kcdx.scan{}
+#     Lua verb and the kcdx_scan console command share scan_engine::RunScan, so
+#     calling kcdx.scan{} against the same verified luaL_openlibs AOB exercises
+#     the identical resolve path with a machine-checkable return. Asserts
+#     count==1 at the verified site, matches[1].module=="WHGame.dll", and
+#     matches[1].offset is a positive number — NOT an exact RVA (the module-
+#     relative offset exceeds the LUA_NUMBER=float exact-2^24 grid AND shifts per
+#     game build, so an exact compare is flaky-by-construction). This catches a
+#     scan that stopped resolving — a regression the execute==true dispatch row
+#     CANNOT make, since a registered command that finds nothing still returns
+#     true. FALSIFIABLE: count!=1 (site stopped resolving / scan regressed) or
+#     wrong module/offset (resolved the wrong site) → FAIL. boot-only: kcdx.scan{}
+#     resolves + returns synchronously at the input_loaded fire — no overlay, no
+#     player gesture.
 #
 # The machine auto-pass for BOTH rows is "execute returned true" (the command
 # dispatched). The PAINTED kcdx_scan output (`[scan] 1 matches:` + the
@@ -41,6 +58,8 @@
 # surface must be ARMED (input_loaded) for ExecuteString to dispatch, and the
 # painted output is a `~`-overlay eyeball. Both rows self-fire from Lua at
 # input_loaded; the user's only extra gesture is opening `~` to read the paint.
+# CAP-70-result is `boot-only` — kcdx.scan{} resolves + returns synchronously at
+# the input_loaded fire, machine-checkable with no overlay and no player gesture.
 
 [kcdx]
 test_suite_only = true
@@ -49,11 +68,11 @@ test_suite_only = true
 name                = "cap_70_scan_console"
 display_name        = "CAP-70 kcdx_scan console command dispatch"
 author              = "ts"
-description         = "Pure-Lua regression net for the engine-owned kcdx_scan ~-console command: kcdx.console.execute drives 'kcdx_scan WHGame.dll \"<known-good AOB>\"' and asserts the console surface dispatched it (execute==true), plus a missing-argv dispatch that proves the fail-loud usage path runs without crashing. The painted overlay output is the manual eyeball."
+description         = "Pure-Lua regression net for the engine-owned kcdx_scan ~-console command: kcdx.console.execute drives 'kcdx_scan WHGame.dll \"<known-good AOB>\"' and asserts the console surface dispatched it (execute==true), plus a missing-argv dispatch that proves the fail-loud usage path runs without crashing, plus a result-assertion (CAP-70-result) that asserts the scan FINDING (count==1 at the verified luaL_openlibs site) via the kcdx.scan{} verb over the shared resolve path. The painted overlay output is the manual eyeball; the result assertion is machine-checkable boot-only."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
-test_names          = ["CAP-70-dispatch", "CAP-70-badargv"]
+test_names          = ["CAP-70-dispatch", "CAP-70-badargv", "CAP-70-result"]
 
 [entrypoints]
 lua = "plugin.lua"
