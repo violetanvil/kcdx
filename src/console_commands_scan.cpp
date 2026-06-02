@@ -124,7 +124,7 @@ void Callback(const kcdxConsoleCmdArgs* args) {
     } catch (const std::exception& e) {
         std::string msg = "[scan] parse error in pattern: ";
         msg += e.what();
-        msg += " — pattern is an AOB byte string with optional ?? wildcards "
+        msg += " -- pattern is an AOB byte string with optional ?? wildcards "
                "(e.g. \"48 8B 88 ?? ?? ?? ?? 48\").";
         console::PrintLine(msg.c_str());
         return;
@@ -211,7 +211,7 @@ void Register() {
     // kcdx_scan; it is NOT dev-mode-gated.
     console::GetInterface()->RegisterCommand(
         kcdxInvalidPluginHandle, "kcdx_scan",
-        "kcdx_scan <module> \"<AOB pattern>\" — iterate an AOB pattern "
+        "kcdx_scan <module> \"<AOB pattern>\" -- iterate an AOB pattern "
         "in-game; prints matches to the console.",
         &Callback);
 }
