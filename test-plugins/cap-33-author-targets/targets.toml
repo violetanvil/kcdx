@@ -22,11 +22,17 @@
 # opcode triplet — the slice stops BEFORE the RIP-relative disp32, the first
 # variable byte; every byte kept is fixed, zero wildcards).
 #
-# WHY THIS RESOLVES (vs the prior id-1003 attempt that was BLOCKED): luaL_openlibs
-# is entry-hooked by NOBODY — production hooks lua_pcall (1000)/CGame::Update
-# (1001)/l_alloc (1192); no test plugin hooks or targets it. So its entry prologue
-# stays pristine and the by-NAME pattern scan finds it (the post-patch-scan caveat
-# patch_engine.cpp:124-130 does not bite — nothing overwrote the prologue). It is
+# WHY THIS RESOLVES (vs the prior id-1003 attempt that was BLOCKED): the by-NAME
+# pattern scan runs at REGISTRATION time (plugin load), BEFORE this plugin's own
+# before-hook is applied at the first-update-tick apply pass — so at the moment
+# the scan runs the entry prologue is still pristine and the AOB matches (the
+# post-patch-scan caveat patch_engine.cpp:124-130 does not bite — nothing has
+# overwritten the prologue yet). NOTE: this plugin ITSELF entry-hooks
+# luaL_openlibs (that IS the proof) — once the apply pass installs the before-hook
+# the first 5 prologue bytes become a JMP detour, so a SCAN of this same AOB at a
+# later lifecycle point (e.g. input_loaded) would find 0. cap-33's resolution is
+# unaffected because it resolves at registration; a scan-finding assertion at
+# input_loaded must use a detour-immune deep-interior site (see cap-70). It is
 # called EXACTLY ONCE at Lua boot (CScriptSystem::Init), so a no-op before-hook is
 # minimal-frequency, and it is DISTINCT from the prefix/alias target (id 1172) and
 # the bytes target (id 1124) — no overlap. The minting is recorded in seed.csv

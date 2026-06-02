@@ -7,9 +7,13 @@
 --   * openlibs_by_pattern  — a PATTERN locator + signature (the share-guarantee
 --                            row), luaL_openlibs (seed id 1190). The 16-byte entry
 --                            AOB is .text-UNIQUE (1 match, minted + confirmed by
---                            an AOB scan against the binary) and the function
---                            is entry-hooked by NOBODY, so the by-name pattern
---                            scan resolves it end-to-end — the share-guarantee proof.
+--                            an AOB scan against the binary). THIS plugin's
+--                            cap33_pattern_by_name hook entry-hooks it — the
+--                            by-name PATTERN SCAN resolves at REGISTRATION time
+--                            (plugin load, before this plugin's own hook applies),
+--                            which is what proves the share guarantee; by the time
+--                            the detour is installed the prologue's first 5 bytes
+--                            are a JMP, but the resolution already happened.
 --   * luaopen_math_by_id   — luaopen_math by address_id=1172 (RVA, no scan →
 --                            immune to the prologue overwrite). A VERIFIED leaf
 --                            that NOTHING entry-hooks (distinct from the bytes
@@ -43,11 +47,14 @@
 -- the call site (the disassembler test's sharpest edge — one expert names an
 -- AOB site once, every other author hooks it by name with no hex).
 -- The target is luaL_openlibs (seed id 1190) — its 16-byte entry AOB is
--- .text-unique (confirmed by an AOB scan against the binary) and NOTHING
--- entry-hooks it, so the prologue stays pristine and the by-name pattern scan
--- resolves end-to-end. If the binder did not get the signature FROM the target
--- it would reject ("a signature is required"); install with no inline sig IS
--- the proof the name supplied both.
+-- .text-unique (confirmed by an AOB scan against the binary). THIS hook
+-- (cap33_pattern_by_name, target "openlibs_by_pattern") entry-hooks it, so the
+-- prologue's first 5 bytes become a JMP detour once this plugin's apply pass
+-- runs. That is fine for the proof: the by-name PATTERN SCAN resolves at
+-- REGISTRATION time (plugin load, BEFORE the detour is installed), so the name
+-- supplies the address end-to-end while the prologue is still pristine. If the
+-- binder did not get the signature FROM the target it would reject ("a signature
+-- is required"); install with no inline sig IS the proof the name supplied both.
 -- ====================================================================
 local hPattern = kcdx.hook{
     name   = "cap33_pattern_by_name",
