@@ -13,7 +13,7 @@
 # no hex and no hand-written ABI — the pattern resolves the WHERE and this
 # signature carries the ABI, both delivered by the bare name.
 #
-# Pattern + signature both target luaL_openlibs (Address Library id 1190,
+# Pattern + signature both target luaL_openlibs (Address Library id 115,
 # verified RVA 0x01449600, sig "void (ptr L)"). The AOB is the 16-byte
 # .text-unique entry prologue minted + uniqueness-confirmed (EXACTLY 1 match,
 # at the function's own RVA) by an AOB scan against the binary:
@@ -36,7 +36,7 @@
 # called EXACTLY ONCE at Lua boot (CScriptSystem::Init), so a no-op before-hook is
 # minimal-frequency, and it is DISTINCT from the prefix/alias target (id 1172) and
 # the bytes target (id 1124) — no overlap. The minting is recorded in seed.csv
-# id 1190's notes.
+# id 115's notes.
 [[target]]
 name      = "openlibs_by_pattern"
 pattern   = "48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D"

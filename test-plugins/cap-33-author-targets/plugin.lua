@@ -5,7 +5,7 @@
 -- (ts.cap_33_author_targets, derived from [plugin].author + [plugin].name — the author never types
 -- the prefix):
 --   * openlibs_by_pattern  — a PATTERN locator + signature (the share-guarantee
---                            row), luaL_openlibs (seed id 1190). The 16-byte entry
+--                            row), luaL_openlibs (seed id 115). The 16-byte entry
 --                            AOB is .text-UNIQUE (1 match, minted + confirmed by
 --                            an AOB scan against the binary). THIS plugin's
 --                            cap33_pattern_by_name hook entry-hooks it — the
@@ -46,7 +46,7 @@
 -- signature carries the ABI, both delivered by the bare name with zero hex at
 -- the call site (the disassembler test's sharpest edge — one expert names an
 -- AOB site once, every other author hooks it by name with no hex).
--- The target is luaL_openlibs (seed id 1190) — its 16-byte entry AOB is
+-- The target is luaL_openlibs (seed id 115) — its 16-byte entry AOB is
 -- .text-unique (confirmed by an AOB scan against the binary). THIS hook
 -- (cap33_pattern_by_name, target "openlibs_by_pattern") entry-hooks it, so the
 -- prologue's first 5 bytes become a JMP detour once this plugin's apply pass

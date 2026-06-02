@@ -190,7 +190,7 @@ Grouped by file (sorted). Every occurrence is its own row; duplicates within a f
 
 | line | literal | kind | targets | db_status | note |
 |---|---|---|---|---|---|
-| 36 | `48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D` | pattern | luaL_openlibs entry prologue (RVA 0x01449600, sig 'void (ptr L)') | already_in_db | kcdx_id 115 `luaL_openlibs` (file calls it 1190). Sibling `[[target]]` rows in the same file use `address_id =`; this one relits the AOB. Deliberate expert-hatch demo, but duplicates a curated entity. |
+| 36 | `48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D` | pattern | luaL_openlibs entry prologue (RVA 0x01449600, sig 'void (ptr L)') | already_in_db | kcdx_id 115 `luaL_openlibs` (the cap-33 fixture + docs originally mis-cited it as id 1190; corrected to 115). Sibling `[[target]]` rows in the same file use `address_id =`; this one relits the AOB. Deliberate expert-hatch demo, but duplicates a curated entity. |
 
 ---
 

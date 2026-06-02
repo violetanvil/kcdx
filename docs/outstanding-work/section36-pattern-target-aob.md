@@ -2,12 +2,12 @@
 
 > **Status: RESOLVED (2026-05-23).** The missing RE datum was minted: a
 > verified, `.text`-unique, function-ENTRY-prologue AOB for **luaL_openlibs**
-> (Address Library id 1190, RVA 0x01449600), which nothing entry-hooks. The
+> (Address Library id 115, RVA 0x01449600), which nothing entry-hooks. The
 > 16-byte AOB `48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D` was scanned
 > against `WHGame.dll`'s `.text` (EXACTLY 1 match, at the function's own RVA)
 > by the now-built `_research/phase8-fix-a/aob_scan.py` (the previously-unbuilt
 > uniqueness scanner). It is recorded in the seed CSVs under `data/seeds/`
-> (id 1190's notes; the reference DB regenerates from them). `cap-33-author-targets`'s `CAP-33-pattern-by-name` row was repointed
+> (id 115's notes; the reference DB regenerates from them). `cap-33-author-targets`'s `CAP-33-pattern-by-name` row was repointed
 > from the blocked id-1003 prologue AOB (`ui_pump_by_pattern`) to a pattern
 > locator on the luaL_openlibs AOB (`openlibs_by_pattern`) + its verified
 > signature, so the §36 "author names a target BY AOB PATTERN and hooks it BY
