@@ -58,9 +58,12 @@ from .round_trip import (
 )
 from .seed_csv_edit import (
     update_row_in_place,
+    append_row,
 )
 from .db_editor import (
     update_version_row,
+    create_version,
+    create_entity,
     EDITABLE_VERSION_COLUMNS,
     DbEditError,
 )
@@ -79,6 +82,7 @@ __all__ = [
     "resolve_version", "VersionResolveError",
     "export_seeds",
     "round_trip", "hash_curated_tables", "RoundTripError",
-    "update_row_in_place",
-    "update_version_row", "EDITABLE_VERSION_COLUMNS", "DbEditError",
+    "update_row_in_place", "append_row",
+    "update_version_row", "create_version", "create_entity",
+    "EDITABLE_VERSION_COLUMNS", "DbEditError",
 ]

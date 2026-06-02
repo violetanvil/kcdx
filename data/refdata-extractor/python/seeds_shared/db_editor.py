@@ -32,21 +32,35 @@ diff apply_seeds computes is EXACTLY the GUI's one-row delta (the export of the
 unedited DB round-trips to a no-op; only the edited row differs), so the applier's
 existing re-verify / full-column UPDATE classification lands the change.
 
-SCOPE -- this module's UPDATE shape (Phase 1 step 3)
----------------------------------------------------
-update_version_row: the version-row UPDATE for one existing address_versions row
--- both the audit-trio re-verify (Job 2 / US-3) and the full-column correction
-(US-5: module / kind / rva / signature / the trio / the survival columns). The
-identity key valid_from_version and the entity identity (kcdx_id, name) are NEVER
-mutated -- they are the row's lookup key, not editable fields.
+SCOPE -- this module's edit shapes
+----------------------------------
+update_version_row (step 3): the version-row UPDATE for one existing
+address_versions row -- both the audit-trio re-verify (Job 2 / US-3) and the
+full-column correction (US-5). The identity key valid_from_version and the entity
+identity (kcdx_id, name) are NEVER mutated -- they are the row's lookup key.
 
-The INSERT shapes (Jobs 1/6 -- new entity / new version) and the lifecycle UPDATE
-(Jobs 4/5 -- supersede / deprecate) are LATER steps. They are different
-action-classes the SAME apply path already handles (apply_seeds classifies
-add-entity / add-versions-row / deprecate / supersede from the prospective seed),
-so each adds a thin entry point over the SAME _drive_apply_over_prospective_seed
-bridge below -- this module is structured to grow them without touching the bridge
-or the applier. They are NOT built here.
+create_version (step 4, Job 6 / US-6): append a NEW address_versions row for an
+EXISTING entity. The prospective-seed edit appends a versions-seed row; apply_seeds
+classifies it as add-versions-row (or add-entity if the entity had no row yet -- it
+cannot here, the entity already exists). The (kcdx_id, valid_from_version)
+tuple-uniqueness is the validator's HARD ERROR; this entry surfaces it cleanly, it
+does not reimplement it.
+
+create_entity (step 4, Job 1 / US-7): append a NEW address_names row (next free
+kcdx_id, append-only) + its first address_versions row. apply_seeds classifies it
+as add-entity. The next-free-id helper finds the highest existing names-seed id + 1.
+
+Both INSERT entries SURFACE the AP18 new-row approval flag (a returned marker the
+GUI gates on -- D11/policy.md; db_editor does NOT self-approve the DB addition) and
+drive the SAME _drive_apply_over_prospective_seed bridge over a prospective seed
+that has a NEW row appended -- the bridge + the applier are untouched.
+
+The lifecycle UPDATE (Jobs 4/5 -- supersede / deprecate) is a LATER step (step 5).
+It is a names-side UPDATE the SAME apply path already classifies (apply_seeds
+classifies deprecate / supersede from the prospective seed), so it adds a thin entry
+over the SAME bridge -- update the prospective address_names seed's lifecycle cells
+in place (via seed_csv_edit.update_row_in_place, keyed on the names id) and drive
+apply_seeds. This module is structured to grow it without touching the bridge.
 """
 import os
 import shutil
@@ -78,6 +92,35 @@ EDITABLE_VERSION_COLUMNS = frozenset({
 
 # The identity key (lookup, never editable) of an address_versions seed row.
 _VERSION_IDENTITY_COLUMNS = ("kcdx_id", "valid_from_version")
+
+# The full authored column set of an address_versions seed row a CREATE may set --
+# the identity key (kcdx_id, valid_from_version) PLUS every editable column. A
+# create_version / create_entity authors a whole NEW row, so unlike an UPDATE it
+# DOES set the identity key (that is the point: a new (kcdx_id, valid_from) tuple).
+# A cell naming any column outside this set is a caller bug (DbEditError); the
+# REQUIRED-column / enum / FK / tuple-uniqueness rules are the validator's, not
+# checked here. (`name` lives on the address_names seed; it is create_entity's
+# argument, never a versions-row column.)
+_VERSION_AUTHORED_COLUMNS = frozenset(_VERSION_IDENTITY_COLUMNS) | EDITABLE_VERSION_COLUMNS
+
+# The columns policy.md S"Required columns" requires non-empty on EVERY
+# address_versions row. The validator (apply_seeds' gate) is the enforcer -- a HARD
+# ERROR on any empty required cell. create_version inherits them from the source row
+# (prefill); create_entity's caller supplies them on the first row. Named here only
+# for the create_entity argument contract (the GUI/caller passes first_version_columns
+# carrying at least these); a missing one is surfaced by the validator as a clean
+# error, NOT reimplemented as a db_editor-side check.
+_VERSION_REQUIRED_COLUMNS = ("valid_from_version", "module", "kind")
+
+# The columns the AP18 "nothing changed" signal (D12) compares between a new version
+# row and its source row: every authored versions-seed column EXCEPT the identity
+# key valid_from_version. When the prospective new row equals its source on all of
+# these (only valid_from_version differs), the new version carries no new
+# information -- the GUI steers the maintainer to re-verify the source instead of
+# minting a duplicate (D12). `kcdx_id` is identical by construction (same entity),
+# so it is inert in the comparison but harmless to include.
+_NOTHING_CHANGED_COMPARE_COLUMNS = tuple(
+    sorted(_VERSION_AUTHORED_COLUMNS - {"valid_from_version"}))
 
 
 class DbEditError(RuntimeError):
@@ -225,3 +268,278 @@ def _reject_identity_and_unknown_edits(edits):
             raise DbEditError(
                 f"column {col!r} is not an editable address_versions column "
                 f"(editable: {sorted(EDITABLE_VERSION_COLUMNS)})")
+
+
+# ---------------------------------------------------------------------------
+# The INSERT shapes (step 4) -- new version (Job 6 / US-6) + new entity (Job 1 /
+# US-7). Both append a NEW row to the prospective seed and drive the SAME bridge;
+# both SURFACE the AP18 new-row flag (D11) the GUI gates on.
+# ---------------------------------------------------------------------------
+def _read_seed_rows(csv_path):
+    """The data rows of a seed CSV as a list of dicts (skipping `#`-comment lines
+    the same way the seed readers do). Used to read the exported prospective seed
+    for the next-free-id scan + the nothing-changed source-row lookup -- a plain
+    read, no format mutation."""
+    import csv
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        lines = [ln for ln in f if not ln.lstrip().startswith("#")]
+    return [dict(r) for r in csv.DictReader(lines)]
+
+
+def _next_free_kcdx_id(names_csv_path):
+    """The next free kcdx_id = highest existing address_names_seed.id + 1
+    (policy.md S"ID assignment": maintainer-supplied integers, NO autoincrement,
+    APPEND-ONLY, never recycle, no bands -- the next free integer is the next id).
+    An empty names seed (no rows) starts at 1. Reads the exported PROSPECTIVE seed
+    (the current DB's full curated set), so the assigned id never collides with an
+    existing entity; the validator's duplicate-id HARD ERROR is the backstop."""
+    rows = _read_seed_rows(names_csv_path)
+    ids = [int(r["id"]) for r in rows if (r.get("id") or "").strip()]
+    return (max(ids) + 1) if ids else 1
+
+
+def _reject_unknown_version_cells(cells, *, where):
+    """Guard a CREATE's versions-row cells: every column must be an authored
+    address_versions seed column (the identity key OR an editable column). An
+    unknown column is a caller bug (DbEditError) -- surfaced before the row is ever
+    written to the prospective seed. This is a caller-SHAPE check ONLY; the
+    REQUIRED-column / enum / FK / tuple-uniqueness rules are the validator's."""
+    for col in cells:
+        if col not in _VERSION_AUTHORED_COLUMNS:
+            raise DbEditError(
+                f"{where}: column {col!r} is not an authored address_versions seed "
+                f"column (authored: {sorted(_VERSION_AUTHORED_COLUMNS)})")
+
+
+def _cell(value):
+    """A seed cell string from a caller value: None -> '' (an empty/NULL cell),
+    else str(value). Mirrors seed_csv_edit's cell convention so the comparison the
+    nothing-changed signal does is string-vs-string against the exported seed."""
+    return "" if value is None else str(value)
+
+
+def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
+                   *, log=None, work_dir=None):
+    """Validate + atomically APPEND a new address_versions row (a new game-version
+    row, Job 6 / US-6) for the EXISTING entity `kcdx_id`, driving the existing
+    seed->DB applier. The new row's identity key is (kcdx_id, valid_from_version);
+    its other cells come from `columns` (the GUI prefills them from a source row).
+    apply_seeds classifies the appended row as add-versions-row.
+
+    Parameters:
+      out_dir            -- the directory holding reference.sqlite +
+                            reference-dev.sqlite (the DBs the apply amends).
+      dll_path           -- the linked WHGame.dll the version resolver reads.
+      kcdx_id            -- the EXISTING entity id (int) the new version belongs to.
+      valid_from_version -- the new row's version tag (str) -- its identity key half
+                            (prefilled from the linked DLL when linked, US-6).
+      columns            -- {column: value} for the new row's other authored cells
+                            (module / kind / rva / signature / the trio / survival /
+                            ...). Keys must be authored address_versions columns
+                            (the identity key may appear too but is taken from the
+                            kcdx_id / valid_from_version args); values are seed-cell
+                            values (None -> '' = NULL). The REQUIRED columns
+                            (module, kind -- valid_from_version is the arg) must be
+                            present + non-empty or the validator rejects the row.
+      log                -- optional callable(str) for the applier's progress lines.
+      work_dir           -- optional scratch dir; a temp dir is created + removed
+                            when omitted. NOTHING is written under data/seeds/.
+
+    Returns a dict on success (no exception == the row landed atomically):
+      {"result": <apply_seeds result dict>,
+       "ap18_new_row": True,        # SURFACE the AP18 flag -- a new DB row landed;
+                                    # the GUI confirm step GATES on this (D11). This
+                                    # is a MARKER, not a db_editor-side approval.
+       "addition_kind": "version", # what was added (a new version of an entity).
+       "kcdx_id": <int>, "valid_from_version": <str>,
+       "nothing_changed": <bool>}   # D12: True IFF the new row equals its source
+                                    # row on every authored column except
+                                    # valid_from_version (the GUI steers to
+                                    # re-verify instead of minting a duplicate).
+
+    Raises (no DB write unless the apply reaches the per-DB BEGIN/COMMIT):
+      DbEditError  -- `columns` names a non-authored column, or `kcdx_id` matches no
+                      existing entity in the exported seed (a caller-shape error).
+      RuntimeError -- the shared validator rejected the prospective seed state (the
+                      single gate -- a DUPLICATE (kcdx_id, valid_from_version) tuple,
+                      a missing REQUIRED column, an out-of-enum kind/evidence_kind,
+                      an unresolvable module/survival FK, a malformed value). The DB
+                      is byte-identical to before (apply_seeds validates before any
+                      DB open).
+      VersionResolveError / VersionRefusal / BaselineRefusal -- as apply_seeds
+                      raises them (a function-kind row needs a bulk baseline; no DB
+                      write).
+    """
+    _reject_unknown_version_cells(columns, where="create_version")
+
+    user_db = os.path.join(out_dir, "reference.sqlite")
+    if not os.path.isfile(user_db):
+        raise DbEditError(
+            f"no reference.sqlite under {out_dir!r}; create_version amends an "
+            f"existing DB (run a rebuild to create the baseline first)")
+
+    owns_work_dir = work_dir is None
+    work_dir = work_dir or tempfile.mkdtemp(prefix="db_editor_create_version_")
+    try:
+        prospective = os.path.join(work_dir, "prospective_seed")
+        os.makedirs(prospective, exist_ok=True)
+        export_seeds(user_db, prospective)
+
+        names_csv = os.path.join(prospective, ADDRESS_NAMES_SEED_NAME)
+        versions_csv = os.path.join(prospective, ADDRESS_VERSIONS_SEED_NAME)
+
+        # The entity must already exist (this is a NEW VERSION of an EXISTING
+        # entity, not a new entity). A missing entity is a caller-shape error
+        # surfaced before the apply -- distinct from the validator's later FK check,
+        # so the GUI can tell 'you picked a non-existent entity' apart from 'the
+        # validator rejected the row'.
+        names_ids = {(r.get("id") or "").strip()
+                     for r in _read_seed_rows(names_csv)}
+        if str(kcdx_id) not in names_ids:
+            raise DbEditError(
+                f"create_version: kcdx_id={kcdx_id} matches no existing entity in "
+                f"the exported seed; a new VERSION needs an existing entity (use "
+                f"create_entity to mint a brand-new entity)")
+
+        # D12 "nothing changed": the new row's source is the entity's existing row
+        # whose authored cells the new row prefills from. Compute the signal BEFORE
+        # the append by comparing the prospective new row against every existing row
+        # for this entity on the non-valid_from authored columns; the signal fires
+        # when the new row is identical to a source row except valid_from_version.
+        new_cells = {col: _cell(val) for col, val in columns.items()}
+        new_cells["kcdx_id"] = str(kcdx_id)
+        new_cells["valid_from_version"] = str(valid_from_version)
+        nothing_changed = _new_version_nothing_changed(
+            versions_csv, kcdx_id, new_cells)
+
+        # Append the new versions row to the prospective seed (diff-preserved). The
+        # row carries the identity key + the prefilled cells; the validator gates
+        # tuple-uniqueness + required + enum + FK.
+        seed_csv_edit.append_row(versions_csv, new_cells)
+
+        result = _drive_apply_over_prospective_seed(
+            out_dir, dll_path, prospective, log=log)
+        return {
+            "result": result,
+            "ap18_new_row": True,
+            "addition_kind": "version",
+            "kcdx_id": int(kcdx_id),
+            "valid_from_version": str(valid_from_version),
+            "nothing_changed": nothing_changed,
+        }
+    finally:
+        if owns_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _new_version_nothing_changed(versions_csv, kcdx_id, new_cells):
+    """D12: True IFF the prospective new version row (`new_cells`) equals SOME
+    existing row of the same entity on every authored column except
+    valid_from_version. Reads the exported prospective versions seed for the
+    entity's existing rows and compares cell strings. An entity with no existing row
+    (cannot happen via create_version -- the caller checked the entity exists, and
+    an existing entity has >=1 baseline row) -> False (nothing to be identical to)."""
+    existing = [r for r in _read_seed_rows(versions_csv)
+                if (r.get("kcdx_id") or "").strip() == str(kcdx_id)]
+    for src in existing:
+        if all((src.get(col) or "") == (new_cells.get(col) or "")
+               for col in _NOTHING_CHANGED_COMPARE_COLUMNS):
+            return True
+    return False
+
+
+def create_entity(out_dir, dll_path, name, first_version_columns,
+                  *, log=None, work_dir=None):
+    """Validate + atomically APPEND a brand-NEW entity (Job 1 / US-7): a new
+    address_names row (assigned the next free kcdx_id, append-only) + its first
+    address_versions row, driving the existing seed->DB applier. apply_seeds
+    classifies the appended versions row as add-entity (its kcdx_id is unknown to
+    the DB) and INSERTs the names row alongside it.
+
+    Parameters:
+      out_dir               -- the directory holding the two reference DBs.
+      dll_path              -- the linked WHGame.dll the version resolver reads.
+      name                  -- the new entity's canonical name (str) -- the
+                               address_names row's `name` cell.
+      first_version_columns -- {column: value} for the first address_versions row's
+                               authored cells. MUST carry the REQUIRED columns
+                               (policy.md): valid_from_version, module, kind. The
+                               audit trio is all-set-or-all-null (a brand-new
+                               unverified row leaves it all-null); the validator
+                               gates the trio integrity + the required columns + the
+                               kind enum + the FKs. Keys must be authored
+                               address_versions columns; values are seed cells
+                               (None -> '' = NULL).
+      log                   -- optional callable(str) for progress lines.
+      work_dir              -- optional scratch dir; a temp dir is created + removed
+                               when omitted. NOTHING is written under data/seeds/.
+
+    Returns a dict on success:
+      {"result": <apply_seeds result dict>,
+       "ap18_new_row": True,        # SURFACE the AP18 flag (a new entity landed);
+                                    # the GUI confirm GATES on it (D11). A MARKER.
+       "addition_kind": "entity",
+       "kcdx_id": <int>,            # the next-free id assigned (append-only).
+       "name": <str>}
+
+    Raises (no DB write unless the apply reaches the per-DB BEGIN/COMMIT):
+      DbEditError  -- first_version_columns names a non-authored column, or `name`
+                      is empty (a caller-shape error surfaced before the apply).
+      RuntimeError -- the shared validator rejected the prospective seed state (a
+                      missing REQUIRED column -- no module/kind/valid_from_version --
+                      a duplicate id/name, an out-of-enum kind, a partial trio, an
+                      unresolvable FK). The DB is byte-identical to before.
+      VersionResolveError / VersionRefusal / BaselineRefusal -- as apply_seeds
+                      raises them (a function-kind first row needs a bulk baseline).
+    """
+    _reject_unknown_version_cells(first_version_columns, where="create_entity")
+    if not (name or "").strip():
+        raise DbEditError(
+            "create_entity: a new entity needs a non-empty name (the address_names "
+            "row's `name` cell)")
+
+    user_db = os.path.join(out_dir, "reference.sqlite")
+    if not os.path.isfile(user_db):
+        raise DbEditError(
+            f"no reference.sqlite under {out_dir!r}; create_entity amends an "
+            f"existing DB (run a rebuild to create the baseline first)")
+
+    owns_work_dir = work_dir is None
+    work_dir = work_dir or tempfile.mkdtemp(prefix="db_editor_create_entity_")
+    try:
+        prospective = os.path.join(work_dir, "prospective_seed")
+        os.makedirs(prospective, exist_ok=True)
+        export_seeds(user_db, prospective)
+
+        names_csv = os.path.join(prospective, ADDRESS_NAMES_SEED_NAME)
+        versions_csv = os.path.join(prospective, ADDRESS_VERSIONS_SEED_NAME)
+
+        # Assign the next free kcdx_id from the exported (current-DB) names seed --
+        # append-only, highest existing + 1; the maintainer never types it (US-7).
+        kid = _next_free_kcdx_id(names_csv)
+
+        # Append the address_names row (id + name; the lifecycle FK cells default to
+        # '' -- a brand-new entity is neither superseded nor deprecated). Then the
+        # first address_versions row carrying the new id + the caller's first-row
+        # cells. Both appends are diff-preserved; the validator gates the whole
+        # resulting state (required columns, trio integrity, kind enum, the FKs, the
+        # every-entity-covered baseline rule).
+        seed_csv_edit.append_row(names_csv, {"id": str(kid), "name": name})
+
+        version_cells = {col: _cell(val)
+                         for col, val in first_version_columns.items()}
+        version_cells["kcdx_id"] = str(kid)
+        seed_csv_edit.append_row(versions_csv, version_cells)
+
+        result = _drive_apply_over_prospective_seed(
+            out_dir, dll_path, prospective, log=log)
+        return {
+            "result": result,
+            "ap18_new_row": True,
+            "addition_kind": "entity",
+            "kcdx_id": kid,
+            "name": name,
+        }
+    finally:
+        if owns_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
