@@ -1,7 +1,16 @@
 # System-baseline reconciliation — `/migrate-repo` plan
 
-**Status:** OPEN — signed off; applying in phases.
-**Run:** `/setup-repo` → `/adapt-repo` (landed `b83dd66`) → `/migrate-repo` (this pass).
+**Status:** OPEN — Phase 1 landed (`32af8ef`, `e52ad3e`); Phases P1d/P2/P3/P4 remain, deferred to focused follow-on passes.
+**Run:** `/setup-repo` → `/adapt-repo` (landed `b83dd66`) → `/migrate-repo` (Phase 1 landed `32af8ef` + `e52ad3e`; remaining phases deferred).
+
+## Resume guide (for the next pass)
+
+Phase 1 (rule floor + probe-conflict resolution + index sync) is committed. The remaining phases each cross into a specific skill's domain — run each as its own focused pass:
+- **P1d (6 diverged-rule merges):** re-run `/migrate-repo` to resume, OR hand to `/governance-architect`. anti-patterns.md is CONSENT-GATED (accept-prompt on write). Recommendations from the audit: skeptical-expert→adopt-system; public-private-boundary→keep-repo; results-driven/deletion-hygiene/logging→merge (system body + kcdx specifics to `.claude/repo/<name>.append.md`); anti-patterns→merge (system class-floor + kcdx AP1–18 table, consent-gated).
+- **P2 (TD tree + 3 refiles):** re-run `/migrate-repo`, OR `/tech-debt` to create the tree on first file. Refile declare-value-string-arena→TD-0001, lua-callback-main-thread-guard→TD-0002, engine-direct-hook-migration→TD-0003 (each `git mv` + reference-fixup sweep). Add `docs/tech-debt/` to the `public-private-boundary.md` private carve-out list + `publish-public.ps1` `$PrivateSubpaths`.
+- **P3 (14 skill collision-removes):** `/governance-architect` (skill-body authoring) or re-run `/migrate-repo`. Each: author `.claude/repo/<name>.append.md` capturing the bespoke skill's kcdx specifics FIRST, then `git rm -r .claude/skills/<name>/`. The `debug` removal MUST move `.claude/skills/debug/SKILL.md` off the `#if 0` model (gate follow-on). Also remove the 2 bespoke `_shared/{architectural-review,orchestrator-loop}.md` copies.
+- **P4 (hook-engine swap):** drop the 6 exact-twin `.ps1`, fold the 4-mechanism `.ps1` into system config/engine, then `/execute` to PORT the 5 bespoke guards (public-private-refs, seed-approval, probe-stack, comment-density, push-target) to repo-local `.py` — authoring work, each verified per-guard.
+- **P5 (`/execute`):** deprecated-toml-token-cleanup sweep; migrate ~15 `#if 0` blocks → `_research/probe-archive/` + sweep stale references.
 
 ## Resolved decisions (§C sign-off)
 
