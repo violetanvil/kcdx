@@ -114,7 +114,8 @@ as each lands. PROBE 1 is designed to KILL the "timing" theory if it is wrong
 | # | Probe | One variable | Status |
 |---|-------|--------------|--------|
 | 1 | Same-pattern, both-timings 2×2 isolator: a fixture that runs the SAME luaL_openlibs AOB via `kcdx.scan{}` at BOTH plugin-load AND input_loaded, AND runs cap-32's outfit-swap AOB at input_loaded — logging raw `count` at each cell. Holds pattern constant across timing (and timing constant across pattern), so one launch fills the empty 2×2 cells and attributes the 0 to timing-alone vs target-alone vs both. Fixture: `test-plugins/probe-ki2-scan-timing/` (throwaway). | timing (with pattern held), then pattern (with timing held) | **DONE** — see PROBE 1 outcome below |
-| 2 | (gated on PROBE 1) If PROBE 1 shows the SAME pattern goes 1→0 across timing → instrument `ResolveScan` internals (section count, each exec-section `[VA, VirtualSize)`, modBase, the scanned-range coverage of the target RVA) at both timings, logged, to observe WHICH section field differs. If PROBE 1 shows it is target-RVA-dependent (high RVA fails at BOTH timings) → instrument the section that SHOULD cover 0x1449600 and observe whether its `VirtualSize` truncates before the target. | the differing section field | PLANNED |
+| 2 | PROBE 1 showed the SAME pattern goes 1→0 across timing → instrument `ResolveScan` internals at both timings (engine `#if 1 // === DIAGNOSTIC (PROBE KI2-RESOLVE)` in `src/scan_engine.cpp`, name-gated to the `ki2_openlibs` cells): module base + SizeOfImage, every exec section's `[VA, VA+VirtualSize)` + whether it covers target RVA 0x1449600, and the raw 16 bytes at base+0x1449600 (WindowReadable-guarded). One launch logs `KI2RESOLVE` at BOTH timings (the probe fixture scans both cells). Outcome S = section coverage changed; Outcome B = bytes at target overwritten; Outcome N = both same yet count flips (re-observe ScanAll). | the differing read (section coverage vs target bytes) | **DONE** — Outcome B (target bytes overwritten by a JMP detour); see below |
+| 3 | Outcome B → find WHO writes the `E9` detour over luaL_openlibs' entry, and why the fixture premise ("entry-hooked by nobody") is false. Static-first: grep the engine for a hook/detour installer targeting luaL_openlibs / lua_newstate / the bootstrap Lua init at that RVA, since the scan path is exonerated. | which installer writes the entry detour | **DONE** — cap-33-author-targets entry-hooks luaL_openlibs; see Root cause below |
 
 ### PROBE 1 outcome (ran 2026-06-01, log `kcdx-dev_2026-06-01_18-56-49.log`)
 
@@ -160,6 +161,67 @@ PROBE 1 outcome→meaning map (pre-committed, flat — no expected outcome):
 - **any cell returns `module not loaded`** → `OpenModule` failed at that
   timing (contradicts the current read) → the divergence is in module
   resolution, not the scan. Next: instrument OpenModule.
+
+### PROBE 2 outcome (ran 2026-06-01, log `kcdx-dev_2026-06-01_19-04-52.log`)
+
+`KI2RESOLVE` internals, both timings, name-gated to the `ki2_openlibs` cells:
+
+| Field | plugin-load (`ki2_openlibs_load`) | input_loaded (`ki2_openlibs_input`) |
+|---|---|---|
+| module base / `size_of_image` | 140705898364928 / 95596544 | **identical** |
+| `.text` rva / vsize / end_rva | 4096 / 60821018 / 60825114 | **identical** |
+| `.text` `covers_target` (RVA 0x1449600) | true | **true** |
+| **raw 16 bytes at base+0x1449600** | `48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D` | `E9 0E 75 BA FE 57 48 83 EC 20 48 8B F9 48 8D 1D` |
+
+**Outcome B — the bytes at the target were overwritten.** Section enumeration is
+IDENTICAL at both timings (Outcome S falsified: `.text` covers 0x1449600 both
+times, same base/size). The ONLY change is the first **5 bytes** at the target:
+`48 89 5C 24 08` → `E9 0E 75 BA FE`. `E9` is the x86 `JMP rel32` opcode — a 5-byte
+relative-jump detour installed over luaL_openlibs' prologue. The trailing 11
+bytes (`57 48 83 EC 20 …`) are untouched. The scan is CORRECT: the AOB's leading
+5 bytes are genuinely gone by input_loaded, so 0 matches is the right answer for
+a now-detoured site. The bug is NOT in the scan.
+
+### PROBE 3 outcome (static — the writer; 2026-06-01)
+
+Static grep of `test-plugins/**/*.lua` for `luaL_openlibs` → the writer is the
+**cap-33-author-targets** suite plugin (co-resident in the live install,
+confirmed present at `kcdx-plugins/test-suite/cap-33-author-targets/`). It
+installs `kcdx.hook{ name = "cap33_pattern_by_name", target = "openlibs_by_pattern" }`
+(`test-plugins/cap-33-author-targets/plugin.lua:52`) — a before-mode hook on the
+**luaL_openlibs entry** (its `openlibs_by_pattern` declared target IS the
+luaL_openlibs 16-byte entry AOB). A before-mode `kcdx.hook` installs a trampoline
+detour = a `JMP rel32` over the first 5 prologue bytes. That `E9 0E 75 BA FE` is
+cap-33's hook. cap-33's own comment even asserts "NOTHING entry-hooks it, so the
+prologue stays pristine" immediately before entry-hooking it
+(`plugin.lua:45-47`) — the same false premise cap-70/KI-0002 inherited.
+
+## Resolution
+
+- **Root cause:** the cap-70-result / KI-0002 fixture scans the luaL_openlibs
+  16-byte entry AOB (`48 89 5C 24 08 57 …`) at `input_loaded` on the false
+  premise that "nothing entry-hooks luaL_openlibs, so the prologue stays
+  pristine." That premise is wrong: the co-resident **cap-33-author-targets**
+  suite plugin installs a before-mode `kcdx.hook` on the SAME luaL_openlibs
+  entry (`target = "openlibs_by_pattern"`), and that hook applies at the
+  first-update-tick apply pass, which runs BEFORE `input_loaded`. The hook
+  overwrites the first **5 bytes** of the prologue (`48 89 5C 24 08`) with a
+  `JMP rel32` detour (`E9 0E 75 BA FE`), so by `input_loaded` the AOB's leading
+  5 bytes no longer exist in the image. PROBE 2 observed this directly: section
+  enumeration and module base are byte-identical at both timings; ONLY the first
+  5 bytes at base+0x1449600 changed, from the prologue to an `E9` jump. The scan
+  engine is correct at every step — `OpenModule` succeeds, `.text` covers the
+  target, `FindAllInBuffer` faithfully finds 1 pristine match at load and 0
+  after the detour. The wrong value is the fixture's AOB-vs-site choice (an
+  entry AOB over a site a co-resident plugin entry-hooks before input_loaded);
+  the original code path made the 0 inevitable because the AOB's match window
+  starts at byte 0 of a prologue another plugin's 5-byte detour clobbers. This
+  is the SAME class of defect as the prior cap-39-rewrite iteration — the
+  fixture repeatedly picks a site another suite plugin mutates before
+  input_loaded. **The scan-engine "input_loaded resolves 0" framing of this KI
+  is a misdiagnosis; there is no scan bug.** (Fix design — how to make
+  KI-0002/cap-70 stable — is the next step; this section records the verified
+  mechanism per the root-cause-before-fix bar.)
 
 ## Reproduction
 
