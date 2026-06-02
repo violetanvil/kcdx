@@ -48,6 +48,9 @@ from .version_resolver import (
     resolve_version,
     VersionResolveError,
 )
+from .csv_exporter import (
+    export_seeds,
+)
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
@@ -61,4 +64,5 @@ __all__ = [
     "build_bulk_row", "build_curated_row",
     "build_survival_row", "survival_kind_form",
     "resolve_version", "VersionResolveError",
+    "export_seeds",
 ]

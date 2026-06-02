@@ -16,8 +16,8 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| 1b importer: NULL signature on curated function-kind rows with a blank seed cell | DONE | (landed) |
-| 1 csv_exporter.py — DB → 3 seed CSVs, deterministic + diff-preserved | NOT STARTED | — |
+| 1b importer: NULL signature on curated function-kind rows with a blank seed cell | DONE | d5e7297 |
+| 1 csv_exporter.py — DB → 3 seed CSVs, deterministic + diff-preserved | DONE | (landed) |
 | 2 round-trip oracle — bidirectional byte-identity (export/import) | NOT STARTED | — |
 | 3 db_editor.py — validated atomic version-row UPDATE (audit-trio + full-column) | NOT STARTED | — |
 | 4 db_editor.py — validated atomic INSERT (new version Job 6 + new entity Job 1) | NOT STARTED | — |
