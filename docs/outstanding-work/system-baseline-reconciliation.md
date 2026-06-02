@@ -54,7 +54,7 @@ Thin per-skill appends (mostly template-covered): execute, feature(MED), code-re
 Dangling-ref fixes: `results-driven.md:68` → new `docs/re-reference/probe-patterns.md`; the report-bug template pointer → doc-organization shape.
 Sub-content: `code-review/main/86fcf46/` — leave in place (path survives in system code-review). The 2 `_shared` fragments swap to system bodies AFTER their appends are authored.
 Decisions: KI template SUPERSEDED by system shape (verified — kcdx probe-Trail discipline → debug append); probe-patterns skeletons RELOCATED; governance-architect broadening ACCEPTED.
-| P4 Cycle 1 | Drop 6 twins + fold 4 mechanisms + rewire settings.json + carve 2 thin repo guards (deletion-sweep, rationale-consent) for what no system hook covers | /execute | DONE-pending-commit (step-review PROCEED; zero-loss verified — 2 gaps caught + closed) |
+| P4 Cycle 1 | Drop 6 twins + fold 4 mechanisms + rewire settings.json + carve 2 thin repo guards (deletion-sweep, rationale-consent) for what no system hook covers | /execute | DONE (adf237f; step-review PROCEED; zero-loss verified — 2 gaps caught + closed) |
 | P4 Cycle 2 | Port the 5 bespoke `.ps1` guards (public-private-refs, seed-approval, probe-stack, comment-density, push-target) → repo-local `.py`, each fire-verified | /execute | TODO |
 | P5 (deferred → /execute) | `deprecated-toml-token-cleanup` deletion sweep; **migrate existing ~15 `#if 0` probe blocks → `_research/probe-archive/`** (per P1c decision) + sweep their stale references (`test-plugins/README.md:1071-1073`, the 2 KI trail mentions of "the probe-archive hygiene rule") to past-tense; `src/hooks.cpp` over-threshold | /execute | DEFERRED |
 
