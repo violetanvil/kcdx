@@ -594,14 +594,27 @@ bool ParsePluginManifest(const toml::table& doc,
                           ", expected string or array of strings)";
                     return false;
                 }
+            } else if (k == "assets") {
+                // `assets = "assets/"` — a directory (relative to the plugin
+                // root) of loose files overlaid onto the game's vanilla paks.
+                // String-only, mirroring `dll`; a non-string is a REJECT (a
+                // mistyped assets value silently no-overlaying the plugin's
+                // files is the silent-ignore this guards against).
+                if (!valNode.is_string()) {
+                    err = "[entrypoints] key 'assets' has wrong type (is " +
+                          std::string(NodeKindName(valNode)) +
+                          ", expected string)";
+                    return false;
+                }
             } else {
                 err = "[entrypoints] unknown key '" + std::string(k) +
-                      "' (recognized: dll, lua, lua_after)";
+                      "' (recognized: dll, lua, lua_after, assets)";
                 return false;
             }
         }
 
         out.dllEntrypointRel      = OptString(et, "dll");
+        out.assetsEntrypointRel   = OptString(et, "assets");
         // No "dll_after" key: a C++ plugin's after-game work is an OPTIONAL
         // kcdxPlugin_PostGameLoad export on the SAME plugin DLL (the `dll`
         // entrypoint), mirroring how Preload/Load coexist on one module —

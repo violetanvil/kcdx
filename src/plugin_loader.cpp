@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "asset_overlay.h"  // BuildOverlayMap() — built once after load-order resolution
 #include "crash_guard.h"
 #include "load_order.h"
 #include "log.h"
@@ -850,6 +851,15 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     for (const auto& p : g_plugins) if (p.loaded) ++okCount;
     log::InfoF("Plugin DLL loader: %zu of %zu plugin(s) loaded successfully",
                okCount, g_plugins.size());
+
+    // Step 6.5 — Build the asset-overlay map. g_plugins is now fully populated
+    // and load_order::Resolve already ran (ctx-A), so the unified load order is
+    // final — BuildOverlayMap reuses load_order::Of for precedence (it does not
+    // re-derive the order). This is the earliest point at which the map can be
+    // built from the resolved order, and it runs well before the CCryPak::FOpen
+    // resolver hook is installed (asset_overlay::Install, later in the worker)
+    // and far before any menu/save asset read consults it.
+    kcdx::asset_overlay::BuildOverlayMap();
 
     // Step 7 — Lifecycle: fire kcdxMessage_PostLoad, then kcdxMessage_PostPostLoad.
     // Plugin B's PostLoad handler can confirm plugin A is loaded (its Load

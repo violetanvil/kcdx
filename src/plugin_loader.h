@@ -183,6 +183,17 @@ struct PluginManifest {
     // (per-entry-zone execution model).
     std::vector<std::string> luaAfterEntrypointsRel;
 
+    // [entrypoints] assets = "assets/" — the OPTIONAL asset-overlay slot. A
+    // single directory path relative to the plugin folder; its loose files are
+    // overlaid onto the game's vanilla paks (a file at <plugin>/assets/Libs/UI/
+    // X.gfx overlays the vanilla Libs/UI/X.gfx). The asset-overlay map builder
+    // (asset_overlay.cpp) walks this dir relative to folderPath at discovery,
+    // keying each file's path-relative-to-the-assets-root as its virtual asset
+    // path; the CCryPak::FOpen resolver hook consults that map. Empty = no
+    // assets entrypoint. NOT an array — the design specifies one assets/ dir
+    // (mirrors `dll`'s single-string shape, not `lua`'s string-or-array).
+    std::string assetsEntrypointRel;
+
     // The after-game C++ slot is NOT a separate DLL file. A C++ plugin is
     // ONE compiled DLL with optional exports (kcdxPlugin_Preload /
     // kcdxPlugin_Load / kcdxPlugin_PostGameLoad), mirroring how Preload and

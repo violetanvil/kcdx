@@ -16,8 +16,8 @@ for new TC asset work.
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — hook the game's pak resolver (production overlay hook)](step-1-pak-resolver-hook.md) | DONE — production overlay hook installed via hook_chain::AddCEngine (pass-through body); FOPEN probe archived + removed | (landed) |
-| [2 — parse `[entrypoints].assets` + build overlay map](step-2-parse-assets-overlay-map.md) | NOT STARTED | — |
+| [1 — hook the game's pak resolver (production overlay hook)](step-1-pak-resolver-hook.md) | DONE — production overlay hook installed via hook_chain::AddCEngine (pass-through body); FOPEN probe archived + removed | 9e524ae |
+| [2 — parse `[entrypoints].assets` + build overlay map](step-2-parse-assets-overlay-map.md) | DONE — `assets` key parsed (strict), `assetsEntrypointRel` on the manifest, load-order overlay map + normalization helper built at discovery | (landed) |
 | [3 — overlay-map check in the resolver hook](step-3-resolver-overlay-check.md) | NOT STARTED | — |
 | [4 — `kcdx.assets.*` Lua surface + `kcdxAssetInterface`](step-4-assets-surface.md) | NOT STARTED | — |
 | [5 — `cap-XX-asset-replace` test plugin](step-5-test-plugin.md) | NOT STARTED | — |
