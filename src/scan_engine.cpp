@@ -216,12 +216,31 @@ ScanResult RunScan(const ScanEntry& s) {
             log::InfoF("[scan '%s'] context matches: %zu",
                        s.name.c_str(), *result.contextMatches);
         }
-        for (size_t i = 0; i < result.matches.size(); ++i) {
+        // Bound the per-match dev-log lines so a degenerate over-broad pattern
+        // can't flood the log (a `48 89 5C 24`-class pattern produces 100k+
+        // matches). The full count is already on the `pattern matches:` line
+        // above; the RETURNED matches vector stays uncapped (both callers read
+        // every match). Cap is the same value the console overlay uses for the
+        // same guard — independent sink, intentionally-equal value (the overlay
+        // cap lives in console_commands_scan.cpp).
+        constexpr size_t kMaxLoggedMatches = 16;
+        const size_t logged =
+            result.matches.size() < kMaxLoggedMatches ? result.matches.size()
+                                                       : kMaxLoggedMatches;
+        for (size_t i = 0; i < logged; ++i) {
             const ScanMatch& m = result.matches[i];
             log::InfoF("[scan '%s'] match %zu: %s+0x%llX -> apply addr 0x%p",
                        s.name.c_str(), i + 1, m.module.c_str(),
                        (unsigned long long)m.relOffset,
                        reinterpret_cast<void*>(m.applyAddr));
+        }
+        if (result.matches.size() > kMaxLoggedMatches) {
+            // Make the bound EXPLICIT so the log reader sees the lines were
+            // intentionally capped, not truncated by a bug.
+            log::InfoF("[scan '%s'] ... and %zu more (total %zu)",
+                       s.name.c_str(),
+                       result.matches.size() - kMaxLoggedMatches,
+                       result.matches.size());
         }
     }
 
