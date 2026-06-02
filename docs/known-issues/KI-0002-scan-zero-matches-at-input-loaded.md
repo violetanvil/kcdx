@@ -71,6 +71,96 @@ All from one launch, `kcdx-engine/logs/kcdx-dev_2026-06-01_18-46-54.log` (commit
   points. Do not fix on a timing theory before observing which step returns
   empty.
 
+## Code-read findings (static, before any live probe — 2026-06-01)
+
+Read of the full resolve path (`src/scan_engine.cpp` `ResolveScan` →
+`src/pe_helpers.cpp` `OpenModule` / `Sections` / `ExecutableSections` →
+`patch::FindAllInBuffer`):
+
+- **The resolve path carries NO timing-dependent state.** `OpenModule` is
+  `GetModuleHandleW("WHGame.dll")` + a fresh read of the live image's
+  `IMAGE_DOS_HEADER` / `IMAGE_NT_HEADERS`. `Sections` walks
+  `IMAGE_FIRST_SECTION(nt)` and reads each header's `VirtualAddress` +
+  `Misc.VirtualSize` from the loaded image every call. `ScanAll` scans
+  `[baseBytes+VA, +VirtualSize)`. Nothing caches, nothing is lifecycle-gated.
+  On a pure code read, this path returns the **same** result at any timing —
+  so a real input_loaded≠load divergence must come from a fact OUTSIDE this
+  code that differs by timing (the bytes at the site change), or the two
+  compared cells are not the same scan.
+- **The diagnostic line distinguishes the failure step.** A `not loaded`
+  branch logs `[scan '…'] module '…' not loaded`; the Evidence quotes
+  `pattern matches: 0` (the moduleLoaded==true branch). So `OpenModule`
+  SUCCEEDED at input_loaded — the 0 is from `ScanAll` (section enumeration or
+  the byte scan), not from a failed module open.
+- **The two observed cells confound TWO variables, not one.** The working
+  control (cap-32, `pattern matches: 1`) scans the outfit-swap AOB
+  (RVA 0x56174C) at **plugin load**. The failing cell (cap-70-result,
+  `pattern matches: 0`) scans the luaL_openlibs AOB (RVA 0x1449600, ~21 MB
+  in) at **input_loaded**. They differ in BOTH timing AND pattern/target-RVA.
+  No cell has ever held pattern constant across the two timings — so "timing
+  is the isolated variable" (KI Evidence) is unproven. The earlier outfit-swap
+  cell at input_loaded is poisoned (cap-39 rewrites its tail at the apply pass,
+  which runs before input_loaded), so it cannot serve as the timing-isolating
+  cell either.
+- SCAN_ARGV (archived) already established the inputs (argc/parsed pattern/
+  module) arrive byte-clean — the 0 is in the resolve, not the inputs.
+
+## Probe plan (persisted before running — plan-persistence)
+
+Theory-independent, one variable each, falsifiable. Run in order; flip Status
+as each lands. PROBE 1 is designed to KILL the "timing" theory if it is wrong
+(its outcome map has an outcome that falsifies timing).
+
+| # | Probe | One variable | Status |
+|---|-------|--------------|--------|
+| 1 | Same-pattern, both-timings 2×2 isolator: a fixture that runs the SAME luaL_openlibs AOB via `kcdx.scan{}` at BOTH plugin-load AND input_loaded, AND runs cap-32's outfit-swap AOB at input_loaded — logging raw `count` at each cell. Holds pattern constant across timing (and timing constant across pattern), so one launch fills the empty 2×2 cells and attributes the 0 to timing-alone vs target-alone vs both. Fixture: `test-plugins/probe-ki2-scan-timing/` (throwaway). | timing (with pattern held), then pattern (with timing held) | **DONE** — see PROBE 1 outcome below |
+| 2 | (gated on PROBE 1) If PROBE 1 shows the SAME pattern goes 1→0 across timing → instrument `ResolveScan` internals (section count, each exec-section `[VA, VirtualSize)`, modBase, the scanned-range coverage of the target RVA) at both timings, logged, to observe WHICH section field differs. If PROBE 1 shows it is target-RVA-dependent (high RVA fails at BOTH timings) → instrument the section that SHOULD cover 0x1449600 and observe whether its `VirtualSize` truncates before the target. | the differing section field | PLANNED |
+
+### PROBE 1 outcome (ran 2026-06-01, log `kcdx-dev_2026-06-01_18-56-49.log`)
+
+Observed (raw `KI2PROBE` lines):
+
+- **CELL A** — luaL_openlibs AOB @ **plugin-load**: `count=1` (offset 2.12721e+07 ≈ 0x1449600). 
+- **CELL B** — luaL_openlibs AOB @ **input_loaded**: `count=0`.
+- **CELL C** — outfit-swap AOB @ **input_loaded**: `count=0`.
+
+**Verdict: timing IS the isolated variable.** The SAME pattern (luaL_openlibs)
+resolves to **1 at plugin-load** and **0 at input_loaded** — pattern held
+constant, only timing changed, count flipped 1→0 (CELL A vs CELL B). This
+**falsifies** the "high-RVA target unreachable" theory: CELL A==1 proves the
+scan reaches RVA 0x1449600 at plugin-load, so the site is reachable; it goes
+missing only at input_loaded. CELL B==0 also confirms the bug reproduces
+through this probe's isolated `kcdx.scan{}` seam (not specific to cap-70's
+console-execute context). CELL C==0 is consistent with the cap-39-rewrite
+explanation but is now moot — CELL A vs B alone settles the cause as timing.
+
+**The mechanism narrows hard.** The resolve path (`ResolveScan`/`Sections`)
+carries no timing state and re-reads the live image every call — yet the SAME
+in-memory bytes are found at load and absent at input_loaded. So between the
+two timings, what the scan READS at the target changed: either the section
+enumeration (a section's `VirtualAddress`/`VirtualSize` differs, so the
+scanned range no longer covers 0x1449600), or the bytes at 0x1449600
+themselves were overwritten by input_loaded (despite the seed note "entry-hooked
+by nobody" — something else writes there). PROBE 2 observes which, directly.
+
+PROBE 1 outcome→meaning map (pre-committed, flat — no expected outcome):
+- **luaL_openlibs at load = 1, at input_loaded = 0** (and outfit-swap at
+  input_loaded behaves per its own rewrite) → timing IS the isolated variable
+  for THIS site; the divergence is real and timing-bound. Next: PROBE 2
+  section-internals branch.
+- **luaL_openlibs at load = 0 too** → NOT timing; the high-RVA target is
+  unreachable by the scan at every timing → the cap-70 site/fixture is wrong
+  again (a target-RVA / section-coverage bug, not a timing bug). Next: PROBE 2
+  section-coverage branch.
+- **luaL_openlibs at load = 1, at input_loaded = 1** → the bug does NOT
+  reproduce through `kcdx.scan{}` at input_loaded in isolation → the 0 is
+  specific to the cap-70 fixture's context (e.g. another plugin's apply pass,
+  or the console-execute path), not the resolve → re-scope to what cap-70 does
+  differently from this isolator.
+- **any cell returns `module not loaded`** → `OpenModule` failed at that
+  timing (contradicts the current read) → the divergence is in module
+  resolution, not the scan. Next: instrument OpenModule.
+
 ## Reproduction
 
 Reliable, every launch (with dev mode on):
