@@ -3,7 +3,7 @@
 # a real fault / a moved offset, so neither auto-passes at boot: each row is a
 # MANIFEST-STUB tracked PENDING (test_names) until the manual / in-game
 # observation confirms the new always-on Error line in the log. Same stub
-# pattern as cap-43 / cap-45 / cap-46 (the engine owns the behavior; the manifest
+# pattern as cap-45 / cap-46 (the engine owns the behavior; the manifest
 # holds the row name); confirmation is a post-run log grep, the cap-38
 # `-gate-warn` / cap-47 Part-1 `[manual]` convention — a blank == FAIL.
 #

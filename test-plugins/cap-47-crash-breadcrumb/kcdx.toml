@@ -15,7 +15,7 @@
 #           hook (via hook_chain::GetAllChainTargets returning {va, plugin,
 #           hook}) instead of the generic "kcdx.hook".
 #
-# Unlike cap-43/44/45/46 (pure manifest stubs), this plugin carries a
+# Unlike cap-44/45/46 (pure manifest stubs), this plugin carries a
 # plugin.lua: it must LEAVE A BREADCRUMB so the engine self-check has a fire
 # to find. It allocates a tiny int(int) stub via kcdx.code, installs a
 # `before` hook on it, and dynamic_calls the stub from kcdx.on("ready") so the

@@ -202,7 +202,6 @@ add_library(kcdx SHARED
     src/declare_interface.cpp
     src/dynamic_call_jit.cpp
     src/probes/bugsplat_ctor_probe.cpp
-    src/probes/loc_dump_probe.cpp
     src/probes/fopen_override_probe.cpp
     src/mod_absorb/record_synth.cpp
     src/mod_absorb/record_synth_selftest.cpp
@@ -213,7 +212,6 @@ add_library(kcdx SHARED
     src/mod_absorb/enabled_list_builder.cpp
     src/mod_absorb/select_detour.cpp
     src/mod_absorb/ctor_bracket.cpp
-    src/mod_absorb/post_bracket_probe.cpp
     src/mod_absorb/record_validate.cpp
     src/mod_absorb/enabled_list_builder_selftest.cpp
     src/mod_absorb/record_validate_selftest.cpp

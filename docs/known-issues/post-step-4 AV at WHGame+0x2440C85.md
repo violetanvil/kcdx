@@ -200,12 +200,13 @@ and no `suite: X/Y passing` line is emitted). Re-PASSes post-fix.
 SEH-guarded log line that walks the singleton chain at
 `*0x0492B8A8 → *that[0] → *(vt+0xB8)` to settle the open question
 about who writes the global and what the virtual+0xB8 thunk resolves
-to. The probe was then archived in place per the probe-archive
-hygiene rule: the `.h` and `.cpp` are wrapped in `#if 0` with the
-four-line archive header, and the `InstallPostBracketProbe()` call
-site in `src/dllmain.cpp` is removed so the dormant probe never
-installs. The file pair stays on disk as the cheapest jumping-off
-point for the next investigation into the same call site.
+to. The probe's finding + full instrumentation wiring were then
+captured to `_research/probe-archive/` (per the no-residue rule —
+`working-artifacts.md`) and the `post_bracket_probe.{h,cpp}` source
+pair removed from `src/` (the `InstallPostBracketProbe()` call site
+was already gone). The archived wiring at
+`_research/probe-archive/post_bracket_probe.cpp.txt` is the cheapest
+jumping-off point for the next investigation into the same call site.
 
 **Doc updates.** `docs/outstanding-work/init-cycle-ownership.md`
 §"Crash #2" closed and pointed back here.
@@ -234,6 +235,6 @@ rather than the substring search). Cap-61's matrix row in
 - `_research/init-cycle-recon/disasm_validator.py` — disasm of
   `FUN_2440C6C`, the predicate that AVed (confirms it reads
   `[rcx+0x58]` then `[rcx+0x60]` then `cmp rbx, rbp`).
-- `src/mod_absorb/post_bracket_probe.{h,cpp}` — PROBE B (archived
-  `#if 0` in place; the four-line header points back to this
-  Resolution section).
+- `_research/probe-archive/post_bracket_probe.{cpp,h}.txt` — PROBE B
+  wiring + finding (extracted from `src/` to the probe archive; the
+  4-line header points back to this Resolution section).

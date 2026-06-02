@@ -17,8 +17,8 @@
 // redirect ONE confirmed pak path to a loose sentinel, observe which file the
 // game loaded. Resolves #2.
 //
-// Mirrors loc_dump_probe's MinHook install discipline, but resolves the target
-// through the Address Library (ids 1206 + 1207) — the seed rows exist, so the
+// Mirrors bugsplat_ctor_probe's MinHook install discipline, but resolves the
+// target through the Address Library (ids 1206 + 1207) — the seed rows exist, so the
 // AP1-clean path is used. Detours the FUNCTION BODY (process-wide), not the
 // vtable slot: that matches what an overlay hook actually does and needs no
 // live-instance capture. id 1207 is used only for a one-shot consistency check
@@ -43,9 +43,9 @@
 #include "../modification_inventory.h"  // RegisterModification (probe category)
 #include "../refdb.h"
 #include "../test.h"  // engine-internal probe self-report (same pattern as
-                      // loc_dump_probe / cap-23: the behavior under test is
-                      // engine machinery, so the engine reports; a manifest-
-                      // only plugin registers the names for PENDING tracking).
+                      // cap-23: the behavior under test is engine machinery, so
+                      // the engine reports; a manifest-only plugin registers the
+                      // names for PENDING tracking).
 
 namespace kcdx::probes::fopen_override_probe {
 

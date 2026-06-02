@@ -85,29 +85,6 @@ extern "C" void HookedLuaPcall_Engine(uintptr_t args[], int* /*outCount*/,
                                       int /*nargs*/, int /*nresults*/,
                                       int /*errfunc*/) {
     (void)args;
-    // === ARCHIVED PROBE alpha (2026-05-29): VERIFIED — chain C-Before callback
-    // runs on lua_pcall fires post-carve-out (lua_pcall_fire count=5, rate-
-    // limited; bootstrap classifier captured g_gameMainThreadId; cap-59 +
-    // cap-64 + cap-65 all PASS). Root cause was the dead-classifier
-    // chicken-and-egg in the chain dispatcher — fixed by the
-    // isEngine && Kind::C carve-out at hook_chain.cpp:1075 / :1209 / :1341.
-    // See: docs/known-issues/cap-59-fires picked a one-shot VM-init target
-    // that already ran by plugin load.md §Reframe 2026-05-29c +
-    // §Resolution (post-PROBE-α). Revive by flipping #if 0 → #if 1 if a
-    // future regression of the L-bootstrap loop is suspected.
-#if 0
-    {
-        static std::atomic<int> probe_alpha_pcall_count{0};
-        int n = probe_alpha_pcall_count.fetch_add(1, std::memory_order_relaxed);
-        if (n < 5) {
-            LOG_DEBUG_KV("PROBE_ALPHA", "lua_pcall_fire",
-                log::KV("fire_n", (int64_t)n),
-                log::KV("tid", (int64_t)::GetCurrentThreadId()),
-                log::KV("is_game_main_thread", (int64_t)(log::IsGameMainThread() ? 1 : 0)),
-                log::KV("L_arg", (void*)L));
-        }
-    }
-#endif
     // L-bootstrap (load-bearing — see hook-engine.md §Engine-owned chain
     // entries). HookedUpdate's first-tick latch reads g_L and only then
     // calls hook_chain::SetLuaState(L); without this store the chain's
@@ -155,24 +132,6 @@ lua_Alloc_t g_orig_frealloc = nullptr;
 uintptr_t g_kcdx_image_base = 0;
 size_t    g_kcdx_image_size = 0;
 
-// === ARCHIVED PROBE A (2026-05-29): CONFIRMED the WHGame→kcdx dummynode free.
-// === WHGame.dll image range, used to flag a frealloc block ∈ WHGame image (the
-// === sentinel-free smoking gun). Root cause: kcdx's GC freed WHGame's .rdata
-// === dummynode_; fixed by kcdx_node_freeable in vendor/lua/ltable.c.
-// === See: docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md §Resolution.
-// === Revive by flipping #if 0 -> #if 1 if a dual-Lua GC hazard recurs.
-#if 0
-uintptr_t g_whgame_image_base = 0;
-size_t    g_whgame_image_size = 0;
-
-static bool IsInWhGameImage(const void* p) {
-    if (!p || !g_whgame_image_base) return false;
-    uintptr_t addr = reinterpret_cast<uintptr_t>(p);
-    return addr >= g_whgame_image_base &&
-           addr <  g_whgame_image_base + g_whgame_image_size;
-}
-#endif
-
 // Our static-Lua's `&dummynode_` (resolved by creating a temp Table at
 // probe-arm time and reading its t->node). Logged for sanity, then used
 // to make the in-range check more useful (any frealloc with block ==
@@ -205,27 +164,6 @@ static void* __cdecl HookedFrealloc(void* ud, void* block, size_t osize,
             log::KV("is_dummynode",
                 (int64_t)(block == g_kcdx_dummynode ? 1 : 0)));
     }
-    // === ARCHIVED PROBE A (2026-05-29): CONFIRMED — fired once as the last line
-    // === before the 0xC0000374 abort with block ∈ WHGame image, nsize=0 (free),
-    // === osize=40 (=sizeof(Node)), caller_ra in kcdx luaH_free→luaM_realloc_.
-    // === Root cause: kcdx's GC freed WHGame's .rdata dummynode_ sentinel (the
-    // === FIX-C mirror); fixed by kcdx_node_freeable in vendor/lua/ltable.c.
-    // === See: docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md §Resolution.
-    // === Revive by flipping #if 0 -> #if 1 if a dual-Lua GC hazard recurs.
-#if 0
-    else if (IsInWhGameImage(block)) {
-        void* ret_slot = _AddressOfReturnAddress();
-        void* caller_ra = ret_slot ? *static_cast<void**>(ret_slot) : nullptr;
-        LOG_DEBUG_KV("MID_HOOK", "probe_a.whgame_image_block",
-            log::KV("ud",         ud),
-            log::KV("block",      block),
-            log::KV("osize",      (int64_t)osize),
-            log::KV("nsize",      (int64_t)nsize),
-            log::KV("caller_ra",  caller_ra),
-            log::KV("is_free",    (int64_t)(nsize == 0 ? 1 : 0)),
-            log::KV("kcdx_dummynode", g_kcdx_dummynode));
-    }
-#endif
     // Pass through unchanged so we don't intervene in the corruption
     // chain. If we returned NULL, Lua would throw LUA_ERRMEM and the
     // crash signature changes — masking what we want to observe.
@@ -261,33 +199,6 @@ static void ArmFreallocProbe(lua_State* L) {
         log::KV("base", (void*)g_kcdx_image_base),
         log::KV("size", (int64_t)g_kcdx_image_size),
         log::KV("end",  (void*)(g_kcdx_image_base + g_kcdx_image_size)));
-
-    // === ARCHIVED PROBE A (2026-05-29): CONFIRMED. Resolved WHGame.dll's image
-    // === range so HookedFrealloc could flag a sentinel-free block ∈ WHGame
-    // === image. Root cause: kcdx's GC freed WHGame's .rdata dummynode_; fixed by
-    // === kcdx_node_freeable in vendor/lua/ltable.c.
-    // === See: docs/known-issues/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md §Resolution.
-    // === Revive by flipping #if 0 -> #if 1 if a dual-Lua GC hazard recurs.
-#if 0
-    {
-        HMODULE whgame_mod = GetModuleHandleW(L"WHGame.dll");
-        MODULEINFO wmi{};
-        if (whgame_mod &&
-            GetModuleInformation(GetCurrentProcess(), whgame_mod, &wmi,
-                                 sizeof(wmi))) {
-            g_whgame_image_base = reinterpret_cast<uintptr_t>(wmi.lpBaseOfDll);
-            g_whgame_image_size = wmi.SizeOfImage;
-            LOG_DEBUG_KV("MID_HOOK", "probe_a.whgame_image",
-                log::KV("base", (void*)g_whgame_image_base),
-                log::KV("size", (int64_t)g_whgame_image_size),
-                log::KV("end",  (void*)(g_whgame_image_base +
-                                        g_whgame_image_size)));
-        } else {
-            log::Error("PROBE A: GetModuleHandle/Info(WHGame.dll) failed — "
-                       "WHGame-image block classification disabled");
-        }
-    }
-#endif
 
     // Step 2: resolve our static-Lua's dummynode_ by creating a temp
     // Table (which makes t->node = &dummynode_) and reading the field.
@@ -371,31 +282,6 @@ static void ArmFreallocProbe(lua_State* L) {
 
 void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     static std::atomic<bool> done{false};
-    // === ARCHIVED PROBE alpha (2026-05-29): VERIFIED — HookedUpdate fires
-    // (16,962 ticks observed in the dead-classifier-state launch), and the
-    // first-tick latch crosses if(L) post-carve-out (the "First update tick
-    // with live lua_State" line at line 337 fires within seconds of launch).
-    // Disambiguated three live possibilities for cap-59 plugin.lua not
-    // running post-migration: dead-classifier chicken-and-egg in chain
-    // dispatcher. See: docs/known-issues/cap-59-fires picked a one-shot
-    // VM-init target that already ran by plugin load.md §Reframe 2026-05-29c
-    // + §Resolution (post-PROBE-α). Revive by flipping #if 0 → #if 1 if a
-    // future bootstrap regression is suspected.
-#if 0
-    {
-        static std::atomic<int> probe_alpha_tick_count{0};
-        int tick_n = probe_alpha_tick_count.fetch_add(1, std::memory_order_relaxed);
-        if (tick_n < 5 || !done.load(std::memory_order_acquire)) {
-            lua_State* probeL = g_L.load(std::memory_order_acquire);
-            LOG_DEBUG_KV("PROBE_ALPHA", "update_tick",
-                log::KV("tick_n", (int64_t)tick_n),
-                log::KV("tid", (int64_t)::GetCurrentThreadId()),
-                log::KV("is_game_main_thread", (int64_t)(log::IsGameMainThread() ? 1 : 0)),
-                log::KV("g_L", (void*)probeL),
-                log::KV("done", (int64_t)(done.load(std::memory_order_acquire) ? 1 : 0)));
-        }
-    }
-#endif
     if (!done.load(std::memory_order_acquire)) {
         lua_State* L = g_L.load(std::memory_order_acquire);
         if (L) {
@@ -462,7 +348,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // test-plugins/cap-45-load-hook-inventory/). The behavior under
                 // test is engine machinery (LogInventory ran + emitted a
                 // summary with a nonzero modification count), so the engine
-                // reports it directly — same pattern as cap-43/cap-44. Reported
+                // reports it directly — same pattern as cap-44. Reported
                 // right after the boot LogInventory call so it observes the
                 // same counts the summary line just emitted.
                 //
@@ -496,7 +382,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // now sets the stamp set-once before either log opens, so the
                 // engine log + dev log share one stamp. This site runs at boot,
                 // long after the dev log is open, so DevLogName() is populated.
-                // Engine reports directly — same pattern as cap-43/44/45.
+                // Engine reports directly — same pattern as cap-44/45.
                 {
                     const std::string& stamp   = kcdx::log::SessionStamp();
                     const std::string& devName = kcdx::log::DevLogName();

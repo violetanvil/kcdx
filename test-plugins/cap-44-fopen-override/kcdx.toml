@@ -2,10 +2,10 @@
 #
 # The behavior under test is ENGINE machinery, not an author surface: the
 # dev-mode FOpen probe (src/probes/fopen_override_probe.{cpp,h}, armed from the
-# worker thread alongside loc_dump_probe). This kcdx.toml is a MANIFEST-ONLY
+# worker thread). This kcdx.toml is a MANIFEST-ONLY
 # STUB — no plugin.lua, no DLL — whose sole job is to pre-register the matrix
-# rows via test_names so they show PENDING until resolved. Same pattern as
-# cap-43-loc-dump (engine reports directly, manifest stub holds the names).
+# rows via test_names so they show PENDING until resolved (the engine-self-report
+# stub pattern: the engine reports directly, a manifest stub holds the names).
 #
 # This probe resolves the two RUNTIME unknowns the Phase-8.5a RE flagged before
 # the asset-overlay design (8.5b-e) rests on them

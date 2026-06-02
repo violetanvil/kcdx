@@ -36,7 +36,7 @@ enum class Category : uint8_t {
     PluginHook = 0,  // "plugin_hook" — hook_chain (live kcdx.hook installs)
     Engine     = 1,  // "engine"      — lua_pcall / update / frealloc
     Lifecycle  = 2,  // "lifecycle"   — save/load hooks
-    Probe      = 3,  // "probe"       — dev probes (bugsplat_ctor / fopen / loc_dump)
+    Probe      = 3,  // "probe"       — dev probes (bugsplat_ctor / fopen)
     // APPEND-ONLY (do not reorder/insert above): a successful kcdx.bytes /
     // kcdxBytesInterface byte rewrite registers here so a crash at/after a
     // byte-patched site has a fault-time owner record in the inventory the

@@ -31,8 +31,8 @@
 //       from U.1, rewrite pName to a loose sentinel copy and log/observe which
 //       file the game loaded. Resolves #2.
 //
-// Mirrors loc_dump_probe / bugsplat_ctor_probe install discipline (dev-mode-
-// gated, idempotent latch, atomic orig-pointer, Win64-fastcall typing), but
+// Mirrors bugsplat_ctor_probe's install discipline (dev-mode-gated, idempotent
+// latch, atomic orig-pointer, Win64-fastcall typing), but
 // resolves its target through the ADDRESS LIBRARY (ids 1206 CCryPak_FOpen +
 // 1207 gEnv_pCryPak) rather than a labeled RVA constant — the seed rows exist
 // (landed 8.5a), so the AP1-clean path is available here and is used.
@@ -47,7 +47,7 @@ namespace kcdx::probes::fopen_override_probe {
 // Arm the probe: install the MinHook detour on CCryPak::FOpen's function body
 // (Address Library id 1206), resolved against the running WHGame.dll build.
 // Installed from the worker-thread path (after hooks::Install → WHGame mapped +
-// MinHook initialized), the same point loc_dump_probe installs. Idempotent.
+// MinHook initialized). Idempotent.
 // Returns true on success; a no-op (returns false) when dev mode is off.
 bool Install();
 

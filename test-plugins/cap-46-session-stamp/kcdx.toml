@@ -5,7 +5,7 @@
 # EnsureSessionStamp) and the dev log's derived filename. This kcdx.toml is a
 # MANIFEST-ONLY STUB — no plugin.lua, no DLL — whose sole job is to pre-register
 # the matrix row via test_names so it shows PENDING until the engine reports it.
-# Same pattern as cap-43-loc-dump / cap-44-fopen-override / cap-45-load-inventory
+# Same pattern as cap-44-fopen-override / cap-45-load-inventory
 # (engine reports directly via kcdx::test::ReportResult; a manifest stub holds
 # the name).
 #

@@ -23,8 +23,6 @@
 
 #include "probes/bugsplat_ctor_probe.h"  // KEEP — proven before_game-hook install
                                          // machinery; a later phase generalizes it
-#include "probes/loc_dump_probe.h"       // loc runtime-dump feature, step 1: minimal
-                                         // dev-mode probe (ctor capture + by-ID getter)
 #include "probes/fopen_override_probe.h" // pak-resolver probe (FOpen
                                          // read-fires + override semantics)
 #include "mod_absorb/select_detour.h"    // Worker-side enabled-list build +
@@ -317,25 +315,6 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // without blocking; before this point, the game-thread callback (if it
     // races ahead) blocks on the wait until this phase is reached.
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EnabledListBuiltAndReady);
-
-    // Localization runtime-dump feature: arm the dev-mode probe
-    // (CLocalizedStringsManager ctor capture + LocalizeString overload hooks on
-    // vtable slots 21/22 for key capture). Runs here, after hooks::Install
-    // (WHGame.dll mapped + MinHook initialized), and BEFORE CryEngine's system
-    // init constructs the loc manager — so the ctor detour is live when the
-    // ctor runs (it installs the LocalizeString hooks off the captured vtable).
-    // Dev-mode-gated + idempotent internally; a no-op in production. (The
-    // prior slot-1 by-int-ID getter target was retargeted away after it was
-    // proven to be GetLanguageName, the wrong function.)
-    // DISABLED — loc RE/probe phase COMPLETE (find{text=} design settled;
-    // text→gameplay-function proven impossible via the loc path, established by
-    // Ghidra analysis against the binary). The probe hooks
-    // LocalizeString, which fires ~11.6k×/session on the UI-text hot path +
-    // RtlCaptureStackBackTrace per @-key — a real per-frame cost with no
-    // remaining diagnostic purpose. Disarmed. The probe code + cap-43 stay as
-    // the loc-probe regression/evidence base; re-enable only for a fresh loc
-    // launch. Disabling this line installs NO loc hooks → zero runtime cost.
-    // kcdx::probes::loc_dump_probe::Install();
 
     // Save/load lifecycle hooks. ABIs verified by full-body capstone
     // analysis against the binary, not prologue-shape guessing. SaveGame

@@ -57,42 +57,6 @@ void Callback(const kcdxConsoleCmdArgs* args) {
 
     int argc = iface->GetArgCount(args);
 
-#if 0  // === ARCHIVED PROBE SCAN_ARGV (2026-06-01): argv arrives INTACT (argc==3, arg2==full pattern, parsed==16 bytes, module=='WHGame.dll'); the 0-match was a test-FIXTURE defect (cap-70 scanned a cap-39-rewritten site post-apply), NOT a kcdx_scan bug.
-       // Root cause: the cap-70 fixture scanned cap-32's outfit-swap AOB whose
-       //   tail bytes cap-39 rewrites at the apply pass, so by input_loaded the
-       //   pattern was gone -> kcdx_scan correctly reported 0. Repointed the
-       //   fixture to luaL_openlibs' .text-unique, un-rewritten, un-hooked entry
-       //   AOB; kcdx_scan itself was never wrong.
-       // Confirmed: argc==3, arg2 == the full "48 81 ... F0" quoted token (quotes
-       //   stripped, kept whole); parsed pattern_bytes==16; module_len==10.
-       // Revive by flipping #if 0 -> #if 1 to re-observe the argv a future scan
-       //   command receives.
-    // PROBE SCAN_ARGV — how does the console tokenizer hand a quoted AOB to the
-    //   command? A user-typed `kcdx_scan WHGame.dll "48 81 ..."` resolved to 0
-    //   matches against a site verified to resolve to 1; observe the RAW argc +
-    //   every GetArg(i) before any use, so the next action is driven by ground
-    //   truth (which arg the pattern landed in, whether quotes were stripped,
-    //   whether it was split across args), not a tokenization theory.
-    //   Outcome A: argc==3, arg2 == the full "48 81 ... F0" (quotes stripped,
-    //              kept whole) -> the pattern arrives intact; 0-match cause is
-    //              elsewhere (ParsePattern? the scan itself?). Re-observe there.
-    //   Outcome B: argc>3, the pattern split across arg2..argN (each byte/run a
-    //              separate arg) -> the tokenizer split on spaces inside quotes;
-    //              fix = rejoin arg2..end (or read the raw command line).
-    //   Outcome C: arg2 carries leading/trailing quote chars, or a leading
-    //              space -> trim/strip before ParsePattern.
-    {
-        LOG_DEBUG_KV("SCAN_ARGV", "raw",
-                     log::KV("argc", static_cast<long long>(argc)));
-        for (int i = 0; i < argc; ++i) {
-            const char* a = iface->GetArg(args, i);
-            LOG_DEBUG_KV("SCAN_ARGV", "arg",
-                         log::KV("i", static_cast<long long>(i)),
-                         log::KV("val", a ? a : "<null>"));
-        }
-    }
-#endif
-
     if (argc < 3) {
         console::PrintLine(kUsage);
         return;
@@ -129,35 +93,6 @@ void Callback(const kcdxConsoleCmdArgs* args) {
         console::PrintLine(msg.c_str());
         return;
     }
-
-#if 0  // === ARCHIVED PROBE SCAN_ARGV (2026-06-01): parsed pattern is byte-clean (pattern_bytes==16, module_len==10) — the 0-match was a test-FIXTURE defect (cap-70 scanned a cap-39-rewritten site post-apply), NOT a kcdx_scan bug.
-       // Root cause: same as the argv-dump block above — the cap-70 fixture's
-       //   pattern was a site cap-39 rewrites at the apply pass, gone by
-       //   input_loaded; the inputs were always clean, the site was the problem.
-       //   Fixture repointed to luaL_openlibs' un-rewritten .text-unique AOB.
-       // Confirmed: pattern.bytes.size()==16 AND entry.module.size()==10 — both
-       //   inputs byte-clean (no hidden CR / NBSP / trailing space).
-       // Revive by flipping #if 0 -> #if 1 to re-observe the parsed pattern +
-       //   module a future scan command yields.
-    // SCAN_ARGV settled Outcome A: arg2 arrives intact. Next checkable: does
-    // ParsePattern produce the SAME byte vector cap-32's working path does for
-    // the identical 16-byte string? Log the parsed pattern's size + the raw
-    // module string with explicit length, so a hidden trailing char (CR, NBSP,
-    // space) on either string — invisible in a plain log print — shows as a
-    // size != 16 or a module length != 10 ("WHGame.dll").
-    //   Outcome A: pattern.bytes.size()==16 AND module len==10 -> both inputs
-    //              are byte-clean; the 0-match cause is NOT the inputs.
-    //   Outcome B: size != 16 -> the pattern string carried a hidden char that
-    //              changed the parse; trim it before ParsePattern.
-    //   Outcome C: module len != 10 -> the module arg carried a hidden char so
-    //              OpenModule opened nothing / the wrong module; trim it.
-    LOG_DEBUG_KV("SCAN_ARGV", "parsed",
-                 log::KV("pattern_bytes",
-                         static_cast<long long>(entry.pattern.bytes.size())),
-                 log::KV("module_len",
-                         static_cast<long long>(entry.module.size())),
-                 log::KV("module", entry.module.c_str()));
-#endif
 
     // Resolve + emit the concise dev-log lines (RunScan owns that logging; do
     // NOT re-log here).

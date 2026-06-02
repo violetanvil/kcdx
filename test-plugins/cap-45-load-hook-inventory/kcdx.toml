@@ -6,9 +6,9 @@
 # start, plus its cached summary that the crash guard dumps from the SEH
 # handler. This kcdx.toml is a MANIFEST-ONLY STUB — no plugin.lua, no DLL —
 # whose sole job is to pre-register the matrix row via test_names so it shows
-# PENDING until the engine reports it. Same pattern as cap-43-loc-dump /
-# cap-44-fopen-override (engine reports directly via kcdx::test::ReportResult;
-# a manifest stub holds the name).
+# PENDING until the engine reports it. Same pattern as cap-44-fopen-override
+# (engine reports directly via kcdx::test::ReportResult; a manifest stub holds
+# the name).
 #
 # What it proves:
 #   cap-45-load-inventory  The boot LogInventory call ran and emitted the
