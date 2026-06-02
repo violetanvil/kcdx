@@ -7,6 +7,25 @@ paths:
 
 # Anti-patterns and the invariants-vs-gates frame
 
+This file carries TWO layers. The **system AP-class floor** (immediately below) is the language-agnostic set of CLASSES every repo inherits — each a shape to reject. The **kcdx numbered table (AP1–AP18)** that follows is this repo's concrete, domain-worded instances. Every system class stays represented by at least one kcdx AP; kcdx adds domain-specific rows beyond the classes; a class is never deleted. A surfaced option matching any class — system or numbered — is labeled and cannot be Recommended (§"Surfacing-an-option self-check").
+
+## The system AP classes (the floor — each a shape to reject)
+
+The build gate and the test gate are **necessary but not sufficient.** They check that nothing is obviously broken; they do not check that the system does what it is supposed to do. The **invariant** is the goal — the property the gate exists to protect. Any change that satisfies a gate while violating the invariant the gate protects is **rejected**, regardless of how green the build looks. Each class is a shape to reject; the kcdx AP1–18 below state the concrete, numbered, domain-worded instances.
+
+- **cfg-test early-return** — a test-only conditional that early-returns or shims behavior inside production code; the test exercises the wrapper, the real path ships unverified while coverage counts it covered. (kcdx instance: AP15.) **Instead:** test the real path with a real fixture; if it genuinely cannot run in tests, exempt it through the bucket-2/3 flow with primary-source justification — never a test-only shim.
+- **DI-only-for-tests** — a function-pointer/seam injected solely so a test can substitute a fake; the seam exists for the test, not the design. **Instead:** test against the real collaborator or a real fixture; introduce a seam only when the design needs more than one implementation.
+- **extract-then-test-wrapper** — extract logic into a helper, then test only the thin wrapper; the moved behavior is now untested, the wrapper test passes vacuously. (kcdx instance: AP15.) **Instead:** test the extracted behavior directly.
+- **ABI / wire invention** — inventing an ABI byte, wire field, offset, serialization slot, or interface signature without the design source's pre-approval; a guessed contract is a silent breaking change. (kcdx instances: AP1, AP2, AP3, AP11.) **Instead:** read the authoritative record (the function body / the spec / the disassembly) and surface any contract change for pre-approval before writing it.
+- **stub-returns-Ok** — a verifier/parser/validator/check that returns success unconditionally; the gate looks present but checks nothing. (kcdx instance: AP14.) **Instead:** implement the real check or surface that it cannot be implemented yet — never a green stub.
+- **self-reported-gate** — claiming a gate passed ("it builds", "tests pass", "N% coverage") without the command output that proves it. (kcdx instance: AP8.) **Instead:** the manager runs the gate itself and reads the output; a self-report is not evidence.
+- **coverage-gaming** — exempting items, lowering a threshold, dropping a check, or adding a suppression to make a coverage/test failure disappear rather than fixing it. (kcdx instances: AP7, AP9.) **Instead:** fix the failure at its source, or surface the exemption as an explicit per-instance user ask.
+- **bucket self-designation** — self-labeling a closure as exempt without surfaced user approval; the label is the agent's framing, not a fact. (kcdx adjacent: AP18 — a gated DB addition is the user's call, not the agent's.) **Instead:** run the bucket-1 challenge first; surface the exempt designation for approval — never self-assign it.
+- **deferred-correctness-gap** — a known-wrong code path buried as a someday-maybe instead of fixed or surfaced; "handled defensively so it won't crash" treats safe as fixed. (kcdx instances: AP13, AP17.) **Instead:** fix it in the same unit of work, or surface it as an explicit fix-now / next-cycle / genuine-scope decision (`design-authority.md`); never a quiet deferral.
+- **silent-success** — a path that swallows an error, drops unparseable input, no-ops a degenerate value, or returns success having done nothing; author intent vanishes with no signal. (kcdx instance: AP14.) **Instead:** fail loud with a structured error naming what was rejected and why (`logging.md`, `input-validation.md`); a validate-OK path must actually do the work.
+
+## The kcdx invariants-vs-gates frame
+
 The build gate (`pwsh ./build.ps1` green) and the test gate (`test-plugins/` matrix `X/Y passing`) are **necessary but not sufficient** — several can be silently defeated. The invariants are the goal:
 
 - A hook installs through the conflict engine; two plugins on one site can't silently clobber each other.
@@ -224,6 +243,10 @@ See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- brok
 
 ---
 
+## Surfacing-an-option self-check
+
+Before any surfaced option (per `_shared/architectural-review.md` §"Design decisions surface"), audit each option against the AP classes above AND the numbered AP1–18 table. An option matching one is labeled prominently — `[AP<N> hit — <pattern>]` — and **cannot be marked Recommended**; a rule-compliant alternative must be surfaced first.
+
 ## Scope
 
-This file covers the class where code looks fine to every gate yet violates an invariant. Domain-specific wrong-ways live in their own rules (`hook-engine.md`, `lua-bridge.md`, `address-library.md`, `reverse-engineering.md`, `logging.md`). New entries append as new failure modes surface; cite the rule each pattern enforces.
+This file covers the class where code looks fine to every gate yet violates an invariant. The system AP-class floor at the top is the language-agnostic set every repo inherits; AP1–18 are kcdx's domain instances of it. Every class stays represented; a class is never deleted; new domain rows append as new failure modes surface. Domain-specific wrong-ways live in their own rules (`hook-engine.md`, `lua-bridge.md`, `address-library.md`, `reverse-engineering.md`, `logging.md`); cite the rule each pattern enforces.
