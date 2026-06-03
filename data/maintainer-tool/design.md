@@ -9,6 +9,17 @@
 > how it behaves) lives in [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/)
 > — the screen specs a builder conforms to. This doc fixes WHAT the tool does; the UI
 > docs fix what it looks like. **Changelog:** [`changelog.md`](changelog.md).
+> **Delivery (revised 2026-06-02 — web-app pivot, §10 D14–D18):** the tool is a
+> **Dockerized web app** — a Python (FastAPI/Flask) backend wrapping the headless
+> data-core + a React frontend — committing to the server-side git checkout on confirm,
+> so maintainers manage the Address Library from any browser (including a phone). This
+> SUPERSEDES the earlier PySide6 desktop-`.exe` plan (D6 local-commit + §8 `.exe`
+> distribution + the server-side DLL resolver). The data-core (§5) + the round-trip /
+> validator invariants (§4, §8 R3) carry over unchanged. The **UI design layer**
+> (`ui/design.md` + the 7 screens) is re-expressed desktop→web in a separate `/ui-design`
+> pass (see `changelog.md` — not edited from this doc). **Auth / login / hosting / the
+> web portal are OUT of scope** — the app exposes auth-ready seams (an injected commit
+> identity + an env push credential), wired by the operator (D17).
 > **v1 scope (revised 2026-06-02):** v1 is the COMPLETE tool — the full six-job catalog
 > (see §9), not the Job-2-only MVP the first draft scoped. The "build in steps" note
 > below still holds (the data-core lands before the GUI); the *deferral* of Jobs 1/3/4/5/6
@@ -39,9 +50,12 @@
 ## 1. Vision <a name="1-vision"></a>
 
 Move the Address Library off hand-edited seed CSVs: the maintainer edits the
-reference DB **directly** through a GUI, which **auto-exports** the three seed CSVs
-as a deterministic, git-tracked diff layer on every committed change, guaranteed
-correct by a **bidirectional byte-identity round-trip**.
+reference DB **directly** through a **web app** (any browser, including a phone),
+which **auto-exports** the three seed CSVs as a deterministic, git-tracked diff layer
+on every committed change, guaranteed correct by a **bidirectional byte-identity
+round-trip**. (The surface is a Dockerized web app — a Python backend over the headless
+data-core + a React frontend, committing server-side on confirm; see the delivery note +
+§8 + §10 D14–D18. The earlier PySide6 desktop plan is superseded.)
 
 **v1 success criteria.** A maintainer manages the entire reference DB end-to-end through
 the GUI — browses/searches/filters the curated set, views any entity's full record and
@@ -71,7 +85,7 @@ order), but nothing in the catalog is out of v1's scope.
 | **Data-core** | the headless, Qt-free authoring logic in `seeds_shared/` (validators, row-builder, the new exporter + DB-editor). The GUI is a thin shell over it. |
 | **Job 2** | re-verify one curated entity at the current game version (update the audit trio). The v1 MVP workflow (`requirements.md` R6). |
 | **Audit trio** | `last_verified_at_version` + `verified_by` + `verified_date` + `evidence_kind` — the per-row verification record (`policy.md` §"Verification audit trail"). |
-| **The tool** | the PySide6/Qt6 GUI, PyInstaller-bundled single `.exe`, private, living in `data/maintainer-tool/` (`requirements.md` R9, R10). |
+| **The tool** | the maintainer web app — a Python backend over the data-core + a React frontend, Docker-delivered, private, living in `data/maintainer-tool/` (D14, R9, R10). |
 
 ## 3. The source-of-truth inversion <a name="3-source-of-truth-inversion"></a>
 
@@ -143,23 +157,31 @@ Consequences this design carries forward:
 
 ## 5. Structure — the responsibility units <a name="5-structure"></a>
 
-**Decision: a headless data-core in `seeds_shared/`; the GUI is a thin shell.**
-Satisfies `headless-testable.md` by construction (the whole authoring path is
-exercisable with zero Qt). The importer reuses the exporter.
+**Decision: a headless data-core in `seeds_shared/`; the web app is a thin shell over it.**
+Satisfies `headless-testable.md` by construction (the whole authoring path is exercisable
+with zero UI). The importer reuses the exporter. (The data-core is delivery-agnostic — the
+desktop shell and the web backend both call the same units; the web pivot, D14, changes only
+the shell.)
 
 ```
 data/refdata-extractor/python/
-  seeds_shared/                  (headless, Qt-free, fully unit-testable)
+  seeds_shared/                  (headless, UI-free, fully unit-testable — LANDED, Phase 1)
     schema.py        validators.py    row_builder.py    dict_codec.py
-    version_resolver.py            (.rdata scan — exists)
-    csv_exporter.py     <- NEW: DB -> the 3 CSVs, diff-preserved (R11)
-    db_editor.py        <- NEW: validated, atomic DB-edit transactions
-    (round-trip oracle test exercises csv_exporter + db_editor)
-  import_to_sqlite.py            (reuses csv_exporter for any DB->CSV need)
+    version_resolver.py            (.rdata scan — the test-of-record for the JS port, D15)
+    csv_exporter.py                DB -> the 3 CSVs, diff-preserved (R11)
+    db_editor.py                   validated, atomic DB-edit transactions (wraps apply_seeds, D13)
+    field_delta.py                 saved-vs-prospective field delta (D8) + nothing-changed (D12)
+    round_trip.py                  bidirectional byte-identity oracle (D2)
+  import_to_sqlite.py            (apply_seeds — the single validated applier db_editor drives)
 
-data/maintainer-tool/
-  <the PySide6 GUI — a thin presentation shell that CALLS the data-core>
-  (Qt widgets/screens only; NO authoring logic lives here)
+data/maintainer-tool/            (the web app — D14; a thin shell over the data-core)
+  backend/   <- the Python (FastAPI/Flask) API over the data-core + git commit/push (D16)
+             + the auth-ready seams (injected identity + env push credential, D17);
+             a thin adapter maps a chosen version tag -> the data-core's params (no DLL server-side).
+  frontend/  <- the React app (the 7 screens re-expressed for web) + the client-side
+             JS .rdata resolver (D15). NO authoring logic — it calls the API.
+  Dockerfile / compose  <- the image + the volume-mounted-checkout layout (D18).
+  (NO validation, SQL, or export logic in the backend/frontend — they call the data-core.)
 ```
 
 Each new unit's single responsibility (`structure-by-responsibility.md`):
@@ -181,13 +203,21 @@ Each new unit's single responsibility (`structure-by-responsibility.md`):
   preserving the existing apply==rebuild oracle byte-identically. This is the single
   gate the design demands (the validator has no row-level entry point; a per-row check
   could not see the cross-row invariants Jobs 4/5/6 require — see §10 D13).
-- **The GUI (`data/maintainer-tool/`, `ui/`)** — presentation only. It renders the
-  navigator, the entity detail, the version history/compare, the field editor, the
-  create flows, and the field-delta confirm (the seven screens in `ui/screens/`) and
-  calls down into the data-core. It holds no validation, no SQL, no export logic.
+- **The backend (`data/maintainer-tool/backend/`)** — the Python API over the data-core
+  (D14). It exposes the six jobs + browse/view/compare as endpoints, runs the data-core's
+  save spine on a confirmed edit, and performs the git commit + push (D16) using the
+  injected identity + env credential (D17). It adapts a chosen version tag → the data-core's
+  parameters (no DLL server-side). It holds NO validation/SQL/export rule logic — it calls
+  the data-core (R3).
+- **The frontend (`data/maintainer-tool/frontend/`, `ui/`)** — presentation only (D14). The
+  React app renders the navigator, entity detail, version history/compare, field editor,
+  create flows, and the field-delta confirm (the seven screens, re-expressed for web in the
+  `/ui-design` pass) + the client-side JS `.rdata` resolver (D15); it calls the API. No
+  authoring logic.
 
-Dependency direction: GUI → data-core → (schema, validators). The data-core depends
-on nothing in the GUI. The round-trip oracle is a data-core test, no Qt.
+Dependency direction: frontend → backend (API) → data-core → (schema, validators). The
+data-core depends on nothing in the shell (backend or frontend); it is delivery-agnostic.
+The round-trip oracle is a data-core test, no UI.
 
 ## 6. User stories & acceptance — the full six-job tool <a name="6-user-stories"></a>
 
@@ -197,11 +227,11 @@ surface is specified visually in [`ui/screens/`](ui/screens/); the story names W
 screen spec names how it looks. The save spine (validate → write → export → round-trip →
 field-delta confirm → atomic commit) is shared by every mutating story (US-3…US-10).
 
-**US-1 — Load.** As a maintainer, I launch the tool and it loads the curated entity
-set through the data-core.
-**Acceptance:** the tool launches with no Ghidra / `WHGame.dll` / dump prerequisite
-(R2); the curated entity list is shown; if no DB/seeds resolve at `<exe-dir>/../seeds/`
-or the DB path, the empty state explains why (§7).
+**US-1 — Load.** As a maintainer, I open the web app and it loads the curated entity
+set through the data-core (the backend reads the DB/seeds from the mounted checkout).
+**Acceptance:** the app loads with no Ghidra / `WHGame.dll` / dump prerequisite
+(R2); the curated entity list is shown; if no DB/seeds resolve at the configured
+checkout path (D18), the empty state explains why (§7).
 
 **US-2 — Browse & pick.** As a maintainer, I browse the curated entities and select
 one to re-verify.
@@ -270,25 +300,32 @@ history) and diffs their columns dynamically; differing fields are marked (a gly
 band, not color-alone — R8/UX); identical fields render plain; the column count drives
 dynamic horizontal scroll; editing a column enters the edit-existing flow (US-5).
 
-**US-10 — Verification context (the DLL link).** As a maintainer, I link a game DLL so the
-tool can resolve the game version and mark/verify rows against it — but I am never blocked
-when I haven't.
-**Acceptance:** linking a DLL runs the `.rdata` resolver (US current-row resolution below);
-the resolved version marks the matching row and is the prefill source for a new version;
-**no action requires a linked DLL** — every flow proceeds unlinked with an advisory
-"can't verify — no DLL linked" warning; any resolver failure (or the unlinked state) is
-**overridable** by an explicit "I accept — save anyway" (the tool's verification is
-advisory; the maintainer is final authority — §10 D9/D12).
+**US-10 — Verification context (the version pick + the client-side DLL check).** As a
+maintainer, I tell the app which game version an edit targets — by picking from a version
+dropdown (the default, works from a phone), OR by linking a game DLL on MY machine so the
+app reads the version from it — and I am never blocked.
+**Acceptance:** the version dropdown is populated from the known game versions (the
+`game_versions` tags the server holds); selecting one is the verification context, and
+default-selects/marks the matching row. **Linking a DLL is client-side** (§10 D15): the
+browser reads a locally-picked DLL via the File API and runs the `.rdata` scan IN THE
+BROWSER (a JS port of the resolver), sending the server ONLY the resolved version string —
+never the DLL. The resolved version then marks the matching row + is the new-version prefill
+source. **No action requires either** — every flow proceeds with just a picked version (or
+none → newest-row default, D10), with an advisory "not verified against a DLL" notice; any
+resolver failure or unverified state is **overridable** by an explicit "I accept — save
+anyway" (verification is advisory; the maintainer is final authority — §10 D9/D12).
 
-**Current-version row resolution (R12).** When a DLL is linked, the "current"/"matches
-linked DLL" row is the one whose `[valid_from, valid_through]` interval contains the linked
-module's `.rdata`-resolved ordinal. **The resolver reads the real version string out of the
-linked DLL's `.rdata` bytes** (the `release_M_N_BUILD_SUB` intern), requiring ≥2 agreeing
-interns — a DLL with `<2` or disagreeing interns fails to resolve (an advisory warning +
-override, never a block — D9). **When no DLL is linked, the tool default-selects the newest
-authored row** (highest `valid_from_version`) — deterministic, always-works; there is no
-blocking "degraded mode" (D10). The resolver is the existing `version_resolver.py`, bound
-not rebuilt.
+**Current-version row resolution (R12).** The "current"/"matches" row is the one whose
+`[valid_from, valid_through]` interval contains the resolved ordinal. **The resolver reads
+the real version string from a DLL's `.rdata` bytes** (the `release_M_N_BUILD_SUB` intern),
+requiring ≥2 agreeing interns — `<2` or disagreeing interns fails (advisory + override,
+never a block — D9). **On the web app this scan runs CLIENT-SIDE** — a small JS port of the
+resolver in the browser, reading a locally-picked DLL (no upload; only the version tag
+crosses the wire). The Python `version_resolver.py` stays the **test-of-record**: a
+cross-implementation test asserts the JS port and the Python resolver agree on a known DLL
+(D15). **When no version is resolved/picked, the app default-selects the newest authored
+row** (highest `valid_from_version`) — deterministic, always-works; no blocking "degraded
+mode" (D10).
 
 ## 7. UX & states <a name="7-ux-states"></a>
 
@@ -310,8 +347,8 @@ maintainer). Git is invisible: the result reads "Saved `<entity> <version>`", ne
 **Required states (each screen specifies the ones that apply — `ui/screens/`):**
 
 - **Populated** — the resting view (list, detail, editor, compare).
-- **Empty** — no DB/seeds resolved (names where the tool looked: `<exe-dir>/../seeds/`, the
-  DB path); no entity selected; no search match (each with distinct, cause-appropriate
+- **Empty** — no DB/seeds resolved (names where the backend looked: the configured checkout
+  path, D18); no entity selected; no search match (each with distinct, cause-appropriate
   copy) — never a blank surface.
 - **Loading** — the data-core load / entity load in flight (a one-shot, not a hot path).
 - **Validation error** — inline, field-level, the shared validator's verdict on the
@@ -323,9 +360,11 @@ maintainer). Git is invisible: the result reads "Saved `<entity> <version>`", ne
   anyway" override for an unresolved verify state (D9/D12).
 - **Save result** — "Saved" (success) or "Save blocked — files locked, Retry" (a live
   shared-index lock → retry, never a forced reap; §8). In the persistent status bar.
-- **Verification-context states** — "No DLL linked" (advisory, normal — never a block),
-  "Linked: version `<v>`", "couldn't resolve version (interns disagree)" (advisory +
-  override). NOT a "degraded mode" — the tool always works unlinked (D9/D10).
+- **Verification-context states** — a picked version (the dropdown default), or "checked
+  against your DLL: version `<v>`" (client-side resolve), or "not verified against a DLL"
+  (advisory, normal — never a block), or "couldn't resolve version from that DLL (interns
+  disagree)" (advisory + override). NOT a "degraded mode" — the app always works without a
+  DLL (D9/D10/D15).
 - **Edge content** — many version rows (history/compare scroll; horizontal scroll in
   compare when columns exceed width); long names/signatures wrap or truncate without
   reflowing siblings (the layout-stable law — `ui/design.md` law 1).
@@ -335,37 +374,43 @@ The maintainer never reads a raw log — the field delta and the status-bar resu
 signals. A state change updates content in place; nothing jumps (layout stability is law 1
 of the UI layer).
 
-**Accessibility & consistency:** standard Qt6 widgets, every field/control/list-row
-keyboard-reachable and labelled, read-only identity state conveyed by more than color, one
-consistent layout idiom (the UI layer's token system + component silhouettes). Full
-accessibility + token discipline is `ui/design.md`.
+**Accessibility & consistency:** the React component library's accessible primitives (the
+web equivalent of the desktop widget set), every field/control/list-row keyboard-reachable
+and labelled, read-only identity state conveyed by more than color, one consistent layout
+idiom, responsive to a phone viewport. Full accessibility + token discipline + the
+desktop→web re-expression is `ui/design.md` (the `/ui-design` pass).
 
 ## 8. Constraints <a name="8-constraints"></a>
 
-- **Distribution (R9):** single self-contained Windows `.exe` (PyInstaller bundles
-  Python + PySide6 + the data-core). Lives in `data/maintainer-tool/`; resolves seeds
-  via `<exe-dir>/../seeds/`. Release artifact, gitignored, published on the private
-  GitHub Releases page.
+- **Distribution (R9 — web app, D14/D18):** a **Docker image** — a Python (FastAPI/Flask)
+  backend serving the API + the built React frontend, over the headless data-core. The git
+  checkout (the repo with `data/seeds/` + the reference DB) lives on a **mounted volume at a
+  configured path** the container reads/writes/commits; the image carries only the app code.
+  The operator provides the volume + the push credential (below). The exact image packaging
+  (single image vs a `docker-compose` backend+frontend split) is an explicit-but-open
+  sub-decision (D14), not blocking. (Supersedes the PyInstaller `.exe`.)
 - **Privacy (R10):** all of `data/maintainer-tool/` is private (the publish-public
-  `$PrivateSubpaths` carve-out). The tool freely imports the private data-core.
-- **Version resolution (R12):** per-module linked DLL, `.rdata` version scan, hard
-  intern-agreement, sidecar cache `data/maintainer-tool/.maintainer-tool-cache.json`
-  (gitignored, next to the `.exe`), interval-contains-ordinal current-row filter.
-  **The link is advisory, never required** (D9): unlinked is a normal working state
-  (default-select the newest authored row — D10), every action proceeds with a
-  "can't verify — no DLL linked" warning, and a resolver failure or the unlinked state
-  is overridable by an explicit "I accept — save anyway". (Replaces the earlier
-  blocking "degraded mode" framing.)
-- **The tool commits on Confirm — under the repo's git-concurrency discipline**
-  (`concurrency-git.md`). The tool is another writer of the shared `.git`/index, so
-  its commit MUST: stage by **exact path** (only the DB + the three CSVs — never
-  `-A`/`.`/`-u`); **respect a live `index.lock`** (block-and-retry, never reap a live
-  lock); author its own commit message. This is the existing committer discipline
-  applied to the tool, not a new policy. (A maintainer machine not running parallel
-  kcdx chats faces little of this race; the discipline holds regardless.)
-- **Validation is the data-core's, single-source (R3):** every invariant runs through
-  the shared validator module; the GUI and the importer both consume it; no rule is
-  reimplemented in the tool.
+  `$PrivateSubpaths` carve-out). The backend freely imports the private data-core.
+- **Version resolution (R12, D15):** the `.rdata` version scan (hard intern-agreement,
+  interval-contains-ordinal current-row filter) runs **CLIENT-SIDE** — a small JS port in
+  the browser, reading a locally-picked DLL via the File API; only the resolved version tag
+  reaches the server (no DLL upload). The Python `version_resolver.py` is the
+  **test-of-record** (a cross-implementation test asserts the two agree on a known DLL).
+  **Verification is advisory, never required** (D9): a picked-from-dropdown version (or the
+  newest-row default — D10) works without any DLL; a resolver failure or unverified state is
+  overridable by an explicit "I accept — save anyway".
+- **The backend commits + pushes on Confirm — under the repo's git-concurrency discipline**
+  (`concurrency-git.md`, D16). On a confirmed edit the backend stages by **exact path** (only
+  the DB + the three CSVs — never `-A`/`.`/`-u`), **respects a live `index.lock`**
+  (block-and-retry, never reap), authors the commit message, AND **pushes to the GitHub
+  remote** so the edit is durable beyond the container. The commit **author identity** comes
+  from the request context the operator's login layer supplies; the **push credential** is
+  **env-injected** — the app is auth-ready, the operator wires the login/credential (D17;
+  auth/hosting out of scope). A documented dev default lets the app boot + run locally
+  without the operator's auth layer (a fallback identity, push skippable) for testing.
+- **Validation is the data-core's, single-source (R3):** every invariant runs through the
+  shared validator module; the web backend and the importer both consume it (the data-core
+  unchanged from desktop); no rule is reimplemented in the frontend or the backend.
 
 ## 9. Scope — in / out <a name="9-scope"></a>
 
@@ -374,17 +419,29 @@ DB end-to-end — load, browse/search/filter, view any entity's full record + al
 rows, side-by-side version compare, and the full job catalog: **Job 1** (create entity),
 **Job 2** (re-verify the audit trio), **Job 4** (supersede), **Job 5** (deprecate),
 **Job 6** (create version), plus **editing any existing version's full columns** (general
-correction). The advisory DLL-link verification context (D9). The shared save spine
-(validate → write → auto-export → round-trip → field-delta confirm → atomic commit). The
-data-core units (`csv_exporter.py`, `db_editor.py`, plus the editor shapes each job needs
-— INSERT for Jobs 1/6, the lifecycle UPDATE for Jobs 4/5, the audit-trio/full-row UPDATE
-for Job 2 / US-5) + the round-trip oracle test. The full PySide6 GUI (`ui/`).
+correction). The advisory verification context (D9) — a version dropdown + the client-side
+DLL check (D15). The shared save spine (validate → write → auto-export → round-trip →
+field-delta confirm → atomic commit + push). The data-core units (`csv_exporter.py`,
+`db_editor.py`, plus the editor shapes each job needs — INSERT for Jobs 1/6, the lifecycle
+UPDATE for Jobs 4/5, the audit-trio/full-row UPDATE for Job 2 / US-5) + the round-trip
+oracle test. **The web app (D14): the Python backend** (the API over the data-core + the
+git commit/push + the auth-ready seams), **the React frontend** (the 7 screens re-expressed
+for web + the client-side JS resolver), **and the Docker image + volume layout** (D18). The
+UI design layer is re-expressed desktop→web in the `/ui-design` pass (`ui/`).
 
-This v1 spans the catalog; it may be BUILT in steps (the data-core before the GUI; the
-jobs in a dependency-sensible order, `incremental-delivery.md`), but no catalog job is out
-of scope. (Supersedes the first draft's Job-2-only MVP scope — §10 D7.)
+This v1 spans the catalog; it may be BUILT in steps (the data-core before the backend +
+frontend; the jobs in a dependency-sensible order, `incremental-delivery.md`), but no
+catalog job is out of scope. (Supersedes the first draft's Job-2-only MVP scope — §10 D7.)
 
-**Out of v1 (genuinely not built):**
+**Out of v1 (genuinely not built — the operator's, per D17):**
+
+- **Auth / login / hosting / the web portal / the reverse proxy / TLS / the push
+  credential itself.** The app exposes auth-ready seams (an env-injected push credential +
+  a request-context commit identity, D17); the operator wires the login + provides the
+  credential + hosts the container. The build delivers the Docker image + the seams, not
+  the surrounding deployment.
+
+**Out of v1 (deferred, as before):**
 
 - **Job 3 — the new-game-version campaign** (the bulk delta report unchanged/moved/gone
   against a fresh dump dir). Job 3 is a batch *workflow* over the same primitives v1
@@ -412,7 +469,7 @@ Settled in the design dialogue 2026-06-02 (each the user's call, per
 | D3 | Sequencing | DB-direct from day one. No CSV-editor surface ever built. ~~MVP is Job 2 only.~~ **(Job-2-only superseded by D7 — v1 is the full catalog.)** | Ship CSV-editor MVP first, flip later (throwaway R11 CSV-write path + a migration phase). |
 | D4 | Data-layer seam | Headless data-core in `seeds_shared/` (`csv_exporter` + `db_editor`); GUI is a thin shell. | Logic inside the maintainer-tool package (backwards importer dependency; GUI-entangled core). |
 | D5 | Save/commit UX | validate → write DB → auto-export → round-trip → confirm → commit. ~~show the CSV diff for confirm/revert.~~ **(The confirm surface is a plain-language field delta, not the CSV diff — superseded by D8.)** | Silent export + success toast (no edit-time view of the actual change). |
-| D6 | Commit boundary | The tool commits on Confirm (exact-path staging + live-lock respect + self-authored message). | Tool writes files only, committing left to the separate `/commit` flow. *(Agent flagged the parallel-chat index-race concern per `concurrency-git.md`; user chose tool-commits with the guards baked in.)* |
+| D6 | Commit boundary | The tool commits on Confirm (exact-path staging + live-lock respect + self-authored message). **(Web pivot D16: the SERVER backend commits to its volume-mounted checkout AND pushes to GitHub on confirm; the local-desktop framing is superseded — the discipline is unchanged, the writer moved to the server.)** | Tool writes files only, committing left to the separate `/commit` flow. *(Agent flagged the parallel-chat index-race concern per `concurrency-git.md`; user chose tool-commits with the guards baked in.)* |
 
 Settled in the UI design dialogue 2026-06-02 (the second pass, building the UI layer):
 
@@ -420,11 +477,23 @@ Settled in the UI design dialogue 2026-06-02 (the second pass, building the UI l
 |---|---|---|---|
 | D7 | v1 scope | **v1 is the complete six-job tool** (Jobs 1/2/4/5/6 + edit-any-version + compare), built in steps but nothing deferred. | Job-2-only MVP with Jobs 1/3/4/5/6 deferred to later phases (the first draft). User: "the entire tool will be v1 when complete… all of this is required." |
 | D8 | The confirm surface | A **plain-language field delta** (`field: old → new`, only changed fields) is the human's acceptance signal; the literal CSV diff is oracle-verified + lands in the commit, but is not shown. | Show the git-style CSV diff as the acceptance surface (the maintainer reads CSV cells — less clarity); or field-delta + collapsible CSV diff. |
-| D9 | DLL link / verification | **Advisory, never required.** Any action proceeds unlinked with a "can't verify" warning; a resolver failure or the unlinked state is overridable by an explicit "I accept — save anyway" (the maintainer is final authority over a tool error). | DLL-link required for version-stamping actions (blocks work); or a blocking "degraded mode" when unlinked. |
-| D10 | Default row (unlinked) | **Newest authored row** (highest `valid_from_version`) is default-selected when no DLL is linked. | Nothing pre-selected until the maintainer picks. |
+| D9 | Verification | **Advisory, never required.** Any action proceeds with just a picked version (or none) and a "not verified against a DLL" notice; a resolver failure or unverified state is overridable by an explicit "I accept — save anyway" (the maintainer is final authority over a tool error). *(Web pivot D15: the DLL check is client-side; verification is otherwise unchanged.)* | DLL required for version-stamping actions (blocks work); or a blocking "degraded mode". |
+| D10 | Default row (unresolved) | **Newest authored row** (highest `valid_from_version`) is default-selected when no version is resolved/picked. | Nothing pre-selected until the maintainer picks. |
 | D11 | New-row approval (AP18) | Creating a new entity (Job 1) or new version (Job 6) is **approval-gated in the confirm step** (an explicit acknowledgment before it lands); an UPDATE is not gated. | Treat a new row like any UPDATE (no approval gate) — violates `policy.md` AP18. |
 | D12 | New-version "nothing changed" | Saving a new version identical to its source is **blocked with steering copy** routing the maintainer to re-verify the existing row instead of creating a duplicate. | Silently allow a duplicate version row; or clear the audit trio on a new version (the user chose prefill-all + the nothing-changed guard). |
 | D13 | How `db_editor` reuses the single validator gate | `db_editor` is the **headless in-process entry point to the existing `import_to_sqlite.run_apply`** validated atomic applier (refactor its CLI shape to a library entry); zero rule logic in `db_editor`, the whole-state gate covers row-level AND cross-row invariants, one path generalises to all six jobs. *(Settled mid-build 2026-06-02; the validator has no row-level entry point and a per-row check could not see the cross-row invariants Jobs 4/5/6 need — surfaced via architect-review, the user chose D over export-then-validate (A) / validate-before-open (B) / add-a-row-level-validator (C, partial-coverage).)* | A — export→validate→commit per edit (verbatim gate reuse, the fallback). B — validate-before-open. C — row-level validator entry (can't see cross-row invariants; modifies the shared gate). |
 
+Settled in the web-app pivot dialogue 2026-06-02 (the third pass — the tool becomes a
+hostable web app instead of a PySide6 desktop `.exe`):
+
+| # | Decision | Settled value | Rejected alternative |
+|---|---|---|---|
+| D14 | Delivery surface | A **Dockerized web app** — a Python (FastAPI/Flask) backend wrapping the headless data-core + a **React frontend** (a component library strong on forms/lists/dropdowns/modals; the 7 screens map to its table/form/modal primitives). Reachable from any browser incl. a phone. *(Sub-decisions explicit-but-open: the component lib (Mantine vs MUI); the image packaging (single image vs `docker-compose` split).)* | PySide6 desktop `.exe` (one machine, no phone/web — the superseded plan). A non-Python backend shelling to the data-core (a process boundary + two languages for no gain). |
+| D15 | DLL version resolver | **Client-side** — a small JS port of the `.rdata` scan runs in the browser on a locally-picked DLL (File API, no upload); only the resolved version tag reaches the server. Python `version_resolver.py` stays the test-of-record (a cross-impl agreement test). A version **dropdown** is the default (phone-friendly); link-a-DLL-to-verify is the at-a-machine path. | Server holds the game DLL(s) + resolves server-side (ships multi-GB binaries into the image; licensing; only versions the server has). Pyodide (CPython-in-WASM) to run the Python resolver unchanged (~6–10 MB runtime for a ~30-line scan). Dropdown-only, no client resolver in v1. |
+| D16 | Server commit + push | The backend **commits to its volume-mounted checkout AND pushes to GitHub on confirm** (D6's exact-path / live-lock / self-authored-message discipline, unchanged — the writer moved to the server). Push so edits are durable beyond the container. | Commit locally, push as a separate/manual step (a container's un-pushed commits are fragile if it is recreated). |
+| D17 | Auth seam (auth out of scope) | The app is **auth-agnostic but auth-ready**: the commit **author identity** comes from the request context the operator's login supplies; the **push credential** is **env-injected**. No login/auth/hosting/portal code from the build — only the documented seams (env var names, the identity field the API expects). A dev default lets the app boot + run locally without the operator's auth, for testing. | Build the auth/login/hosting (out of the user's stated scope — the user wires it). No dev default (the app can't be tested standalone before auth is wired). |
+| D18 | Container data layout | The git checkout (`data/seeds/` + the reference DB) lives on a **mounted volume at a configured path** the container reads/writes/commits; the image carries only the app code; the operator provides the volume + the push credential. | Bake the repo into the image (heavy, stale). Bind-mount the host's existing clone (tighter host coupling) — recorded as an operator option, not the app's assumption. |
+
 These supersede the earlier repo-owns-the-format / CSV-editor decisions recorded in
-`requirements.md` R1/R6 and `plan.md` §"two-phase", and the Job-2-only MVP framing.
+`requirements.md` R1/R6 and `plan.md` §"two-phase", the Job-2-only MVP framing, **and the
+PySide6 desktop-`.exe` delivery (D14–D18 — the tool is now a hostable web app).**

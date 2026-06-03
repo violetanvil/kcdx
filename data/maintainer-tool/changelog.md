@@ -3,6 +3,62 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-02 — web-app pivot: Dockerized web app supersedes the PySide6 desktop tool
+
+The tool becomes a **hostable web app** instead of a PySide6 desktop `.exe`, so maintainers
+manage the Address Library from any browser (including a phone) "on the go." The entire
+headless data-core (Phase 1: csv_exporter, db_editor, field_delta, the validator, the
+round-trip oracle) carries over UNCHANGED — only the shell changes.
+
+- **D14 — Delivery:** a Dockerized web app — a Python (FastAPI/Flask) backend wrapping the
+  data-core + a React frontend (a component lib strong on forms/lists/dropdowns/modals).
+  Sub-decisions explicit-but-open: the component lib (Mantine vs MUI); the image packaging
+  (single image vs compose).
+- **D15 — DLL resolver client-side:** the `.rdata` version scan is ported to a small JS
+  function that runs in the browser on a locally-picked DLL (File API, no upload — only the
+  version tag reaches the server). `version_resolver.py` stays the test-of-record (a
+  cross-impl agreement test). A version dropdown is the phone-friendly default.
+- **D16 — Server commit + push:** the backend commits to its volume-mounted checkout AND
+  pushes to GitHub on confirm (D6's exact-path / live-lock / self-authored-message discipline
+  unchanged; the writer moved server-side).
+- **D17 — Auth out of scope, auth-ready seams:** the commit identity comes from the request
+  context the operator's login supplies; the push credential is env-injected. No
+  login/auth/hosting/portal code from the build — only the seams + a dev default for local
+  testing.
+- **D18 — Container data layout:** the git checkout (`data/seeds/` + the reference DB) lives
+  on a mounted volume at a configured path; the image carries only app code; the operator
+  provides the volume + credential.
+- **Superseded:** D6 local-commit → server commit+push (D16); §8 PySide6 `.exe` distribution
+  → Docker (D14/D18); US-10/R12 server-side DLL resolver → client-side (D15); D9/D10 "DLL
+  link" framing → version-pick + client check.
+
+**Integrated in:** the delivery note (frontmatter), §1, §5 (the structure — backend +
+frontend units + the data-core tree), §6 US-10, §7 (the verification-context + accessibility
+states), §8 (R9 distribution, R12 resolver, the commit constraint, R3), §9 (in: the web
+stack; out: auth/hosting), §10 (D6/D9/D10 amended; D14–D18 added).
+
+### UI-layer hand-off (action for `/ui-design` — NOT done here)
+
+The UI design layer (`ui/design.md` + the 7 screens `ui/screens/s01–s07`) was authored for
+**PySide6 desktop** — a desktop window skeleton, Qt component silhouettes, a desktop two-pane
+layout. It needs a **desktop→web re-expression**, which is `/ui-design`'s job, not `/design`'s
+(`/design` edits the TRD + this changelog only):
+
+- The window skeleton → a **responsive web layout** (the two-pane navigator+detail must
+  reflow for a phone viewport — likely a list→detail drill-down on narrow screens).
+- The component silhouettes (PySide6 widgets) → the **React component library's** primitives
+  (table, form inputs, dropdowns, modals).
+- The DLL-link surface (s07) → the **version dropdown + the client-side "check against a local
+  DLL" control** (D15), not a desktop file-link.
+- **Carries over unchanged:** the information architecture (navigator / entity detail /
+  version compare / field-delta confirm / the states), the interaction laws (layout
+  stability, advisory verification, atomic confirmed transaction, the single-gate, read-only
+  identity), and the field-delta confirm as the human surface (D8). ~80% of the UI design is
+  toolkit-agnostic and survives.
+
+Run `/ui-design` to re-express the UI layer for web, then `/plan` to re-decompose Phase 2+
+for the web stack (Phase 1 data-core carries over).
+
 ## 2026-06-02 — db_editor reuses the existing run_apply path (D13)
 
 Surfaced mid-build (Phase 1 step 3): `db_editor` must run every write through the single
