@@ -1,0 +1,421 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (521 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1527 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: DumpFOpenHandleConstruct.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\DumpFOpenHandleConstruct.java (HeadlessAnalyzer)  
+INFO  DumpFOpenHandleConstruct.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> CCryPak::FOpen (id 131, slot 36, RVA 0x4614A0) @ 1804614a0 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> ================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Ghidra inferred prototype: undefined FUN_1804614a0() (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Function size (addrs): 1307 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+ulonglong FUN_1804614a0(longlong *param_1,longlong param_2,char *param_3,uint param_4)
+
+{
+  longlong *plVar1;
+  code *pcVar2;
+  longlong lVar3;
+  char cVar4;
+  ulonglong uVar5;
+  undefined8 uVar6;
+  longlong *plVar7;
+  undefined8 uVar8;
+  undefined8 *puVar9;
+  longlong lVar10;
+  uint uVar11;
+  longlong lVar12;
+  uint uVar13;
+  char *pcVar15;
+  uint uVar16;
+  uint uVar17;
+  ulonglong uVar18;
+  undefined1 auStack_8b8 [32];
+  uint local_898 [2];
+  char *local_890;
+  longlong local_888;
+  uint local_880;
+  uint local_87c;
+  undefined1 local_878 [16];
+  char local_868 [16];
+  undefined1 local_858 [2048];
+  ulonglong local_58;
+  ulonglong uVar14;
+  
+  local_58 = DAT_1848fcfc0 ^ (ulonglong)auStack_8b8;
+  uVar5 = 0xffffffffffffffff;
+  uVar18 = 0;
+  uVar13 = 0;
+  uVar14 = 0;
+  do {
+    uVar5 = uVar5 + 1;
+  } while (*(char *)(param_2 + uVar5) != '\0');
+  if (0x7ff < uVar5) {
+    return 0;
+  }
+  local_890 = param_3;
+  local_888 = param_2;
+  FUN_1804613d0(local_878,param_1);
+  local_87c = param_4 & 4;
+  local_898[0] = *(uint *)(param_1[0x45] + 0x20);
+  FUN_180ab5db4(local_868,0x10,param_3,0xffffffffffffffff);
+  pcVar15 = local_868;
+  while (local_868[0] != '\0') {
+    if ((local_868[0] + 0xa8U & 0xdf) == 0) {
+      *pcVar15 = ' ';
+    }
+    pcVar15 = pcVar15 + 1;
+    local_868[0] = *pcVar15;
+  }
+  uVar17 = param_4 | 1;
+  uVar16 = 0x8000;
+  cVar4 = *param_3;
+  uVar5 = uVar18;
+  pcVar15 = param_3;
+  while (cVar4 != '\0') {
+    if (cVar4 < 'b') {
+      if ((cVar4 == 'a') || (cVar4 == '+')) {
+        uVar16 = uVar16 | 2;
+LAB_180461828:
+        uVar5 = 0x800000;
+      }
+      else {
+        if (cVar4 == 'C') goto LAB_1821ef2c0;
+        if (cVar4 == 'D') {
+          uVar16 = uVar16 | 0x40;
+        }
+        else {
+          if (cVar4 == 'N') goto LAB_1821ef2b6;
+          if (cVar4 == 'R') {
+            uVar16 = uVar16 | 0x10;
+          }
+          else if (cVar4 == 'S') {
+            uVar16 = uVar16 | 0x20;
+          }
+          else if (cVar4 == 'T') {
+            uVar16 = uVar16 | 0x1000;
+          }
+          else if (cVar4 == 'X') goto LAB_180461843;
+        }
+      }
+    }
+    else if (cVar4 == 'b') {
+      uVar16 = uVar16 & 0xffffbfff | 0x8000;
+    }
+    else if (cVar4 == 'c') {
+LAB_1821ef2c0:
+      uVar16 = uVar16 | 0x80000000;
+    }
+    else if (cVar4 == 'n') {
+LAB_1821ef2b6:
+      uVar16 = uVar16 & 0x7fffffff;
+    }
+    else if (cVar4 == 'r') {
+      uVar16 = uVar16 & 0xfffffffc;
+    }
+    else if (cVar4 == 't') {
+      uVar16 = uVar16 & 0xffff7fff | 0x4000;
+    }
+    else {
+      if (cVar4 == 'w') {
+        uVar16 = uVar16 | 1;
+        goto LAB_180461828;
+      }
+      if (cVar4 == 'x') {
+LAB_180461843:
+        uVar17 = uVar17 | 1;
+      }
+    }
+    uVar13 = (uint)uVar5;
+    pcVar15 = pcVar15 + 1;
+    cVar4 = *pcVar15;
+  }
+  uVar11 = uVar13 | 0x10000;
+  if ((uVar17 & 0x10000) == 0) {
+    uVar11 = uVar13;
+  }
+  uVar13 = uVar11 | 0x1000000;
+  if ((uVar17 & 0x1000000) == 0) {
+    uVar13 = uVar11;
+  }
+  local_880 = uVar17;
+  uVar6 = (**(code **)(*param_1 + 8))(param_1,param_2,local_858,uVar13);
+  uVar13 = local_898[0];
+  if ((uVar16 & 3) == 0) {
+    if ((local_898[0] == 0) ||
+       ((local_898[0] == 3 && (cVar4 = FUN_18241ad60(uVar6), cVar4 != '\0')))) {
+      if ((param_4 & 0x10) == 0) {
+        uVar5 = FUN_1809b2b28();
+      }
+      else {
+        uVar5 = FUN_182423e08(uVar6,local_868);
+      }
+      if (uVar5 != 0) {
+        (**(code **)(*param_1 + 0x2c8))(param_1,uVar6,local_890);
+        (**(code **)(*param_1 + 0x268))(param_1,uVar5,local_888);
+        uVar18 = uVar5;
+        goto LAB_180461703;
+      }
+    }
+    FUN_180462ddc(param_1,&local_888,uVar6,local_898);
+    lVar3 = local_888;
+    if (local_888 == 0) {
+      if ((local_87c != 0) || (uVar13 != 2)) {
+        if ((param_4 & 0x10) == 0) {
+          uVar5 = FUN_1809b2b28();
+        }
+        else {
+          uVar5 = FUN_182423e08(uVar6,local_868);
+        }
+        uVar14 = uVar18;
+        if (uVar5 != 0) {
+          (**(code **)(*param_1 + 0x2c8))(param_1,uVar6,local_890);
+          uVar14 = uVar5;
+        }
+      }
+    }
+    else {
+      (**(code **)(*param_1 + 0x2c8))(param_1,uVar6,local_890);
+      FUN_1823c8fe4(&local_890,param_1 + 2);
+      plVar1 = param_1 + 8;
+      lVar10 = *plVar1;
+      lVar12 = param_1[9] - lVar10 >> 3;
+      uVar14 = lVar12 * -0x5555555555555555;
+      if (uVar14 != 0) {
+        plVar7 = (longlong *)(lVar10 + 8);
+        do {
+          if (*plVar7 == 0) break;
+          uVar18 = uVar18 + 1;
+          plVar7 = plVar7 + 3;
+        } while (uVar18 < uVar14);
+      }
+      if (uVar18 == uVar14) {
+        uVar5 = uVar18 + 1;
+        if (uVar5 < uVar14) {
+          lVar10 = lVar10 + uVar5 * 0x18;
+          FUN_1814bd30c(lVar10,param_1[9]);
+          param_1[9] = lVar10;
+        }
+        else if (uVar14 < uVar5) {
+          if ((ulonglong)((param_1[10] - lVar10 >> 3) * -0x5555555555555555) < uVar5) {
+            FUN_1814bd0d0(plVar1);
+          }
+          else {
+            lVar10 = FUN_1814bd1d4(param_1[9],uVar5 + lVar12 * 0x5555555555555555);
+            param_1[9] = lVar10;
+          }
+        }
+      }
+      if (((local_880 & 1) != 0) && (*(longlong *)(*(longlong *)(lVar3 + 0x18) + 0x40) == 0)) {
+        uVar16 = uVar16 | 0x40000000;
+      }
+      FUN_1823c9004(*plVar1 + uVar18 * 0x18,lVar3,local_898[0] & 0x400000 | uVar16);
+      FUN_180cdc760(local_890);
+      uVar14 = uVar18 + 1;
+    }
+    FUN_180396b1c(&local_888);
+    uVar18 = uVar14;
+  }
+  else {
+    (**(code **)(*param_1 + 0x2c8))(param_1,uVar6,param_3);
+    pcVar2 = *(code **)(*param_1 + 0x238);
+    uVar8 = FUN_1804f692c(&local_890,uVar6);
+    puVar9 = (undefined8 *)FUN_18051c894(&local_888,uVar8,1);
+    cVar4 = (*pcVar2)(param_1,*puVar9,0,uVar17);
+    FUN_1804fc884(&local_888);
+    FUN_1804fc884(&local_890);
+    if (cVar4 != '\0') {
+      if ((param_4 & 0x10) == 0) {
+        uVar18 = FUN_1809b2b28();
+      }
+      else {
+        uVar18 = FUN_182423e08(uVar6,local_868);
+      }
+    }
+  }
+LAB_180461703:
+  FUN_1804613fc(local_878);
+  return uVar18;
+}
+
+ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> FOpen loose-handle producer 0x9B2B28 (returns the handle uVar18) @ 1809b2b28 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> ================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Ghidra inferred prototype: undefined FUN_1809b2b28() (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Function size (addrs): 188 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+FILE * FUN_1809b2b28(undefined8 param_1,wchar_t *param_2)
+
+{
+  wchar_t *pwVar1;
+  wchar_t *pwVar2;
+  char cVar3;
+  longlong *plVar4;
+  longlong lVar5;
+  FILE *pFVar6;
+  wchar_t *local_res18;
+  wchar_t *local_res20;
+  undefined8 local_18 [2];
+  
+  pFVar6 = (FILE *)0x0;
+  plVar4 = (longlong *)(**(code **)(*DAT_18492b8c0 + 0x1a8))();
+  cVar3 = (**(code **)(*plVar4 + 0x1c8))(plVar4,param_1);
+  if (cVar3 != '\0') {
+    local_res20 = param_2;
+    lVar5 = FUN_1805c3ee8();
+    local_res18 = (wchar_t *)(lVar5 + 0xc);
+    FUN_1809b2be4(&local_res18,&local_res20);
+    local_18[0] = param_1;
+    lVar5 = FUN_1805c3ee8();
+    local_res20 = (wchar_t *)(lVar5 + 0xc);
+    FUN_1809b2be4(&local_res20,local_18);
+    pwVar2 = local_res20;
+    pwVar1 = local_res18;
+    pFVar6 = _wfopen(local_res20,local_res18);
+    FUN_1804fdaf8(pwVar2 + -6);
+    FUN_1804fdaf8(pwVar1 + -6);
+  }
+  return pFVar6;
+}
+
+ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> FOpen loose-path handle builder 0x51C894 (puVar9 = ...(&buf, path, 1)) @ 18051c894 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> ================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Ghidra inferred prototype: undefined FUN_18051c894() (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Function size (addrs): 79 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+undefined8 FUN_18051c894(undefined8 param_1,undefined8 *param_2,int param_3)
+
+{
+  char *pcVar1;
+  undefined8 uVar2;
+  char *pcVar3;
+  
+  pcVar1 = (char *)*param_2;
+  pcVar3 = pcVar1 + (longlong)*(int *)(pcVar1 + -8) + -2;
+  do {
+    if (pcVar3 < pcVar1) {
+      uVar2 = FUN_1821fb808();
+      return uVar2;
+    }
+    if (*pcVar3 == '/') {
+LAB_18051c8cf:
+      param_3 = param_3 + -1;
+      if (param_3 == 0) {
+LAB_18051c8d5:
+        FUN_180690468();
+        return param_1;
+      }
+    }
+    else {
+      if (*pcVar3 == ':') goto LAB_18051c8d5;
+      if (*pcVar3 == '\\') goto LAB_18051c8cf;
+    }
+    pcVar3 = pcVar3 + -1;
+  } while( true );
+}
+
+ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> FOpen alt-handle producer 0x2423E08 (param_4&0x10 branch) @ 182423e08 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> ================================================================================ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Ghidra inferred prototype: undefined FUN_182423e08() (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   Function size (addrs): 183 (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+FILE * FUN_182423e08(LPCSTR param_1,char *param_2)
+
+{
+  int _FileHandle;
+  char *pcVar1;
+  HANDLE hObject;
+  FILE *pFVar2;
+  DWORD DVar3;
+  DWORD dwCreationDisposition;
+  
+  pcVar1 = strchr(param_2,0x72);
+  if (pcVar1 == (char *)0x0) {
+    DVar3 = 4;
+  }
+  else {
+    dwCreationDisposition = 3;
+    pcVar1 = strchr(param_2,0x2b);
+    DVar3 = 3;
+    if (pcVar1 == (char *)0x0) {
+      DVar3 = 0x80000000;
+      goto LAB_182423e57;
+    }
+  }
+  dwCreationDisposition = DVar3;
+  DVar3 = 0xc0000000;
+LAB_182423e57:
+  hObject = CreateFileA(param_1,DVar3,0,(LPSECURITY_ATTRIBUTES)0x0,dwCreationDisposition,0,
+                        (HANDLE)0x0);
+  if (hObject != (HANDLE)0xffffffffffffffff) {
+    _FileHandle = _open_osfhandle((intptr_t)hObject,0);
+    if ((_FileHandle != -1) && (pFVar2 = _fdopen(_FileHandle,param_2), pFVar2 != (FILE *)0x0)) {
+      return pFVar2;
+    }
+    CloseHandle(hObject);
+  }
+  return (FILE *)0x0;
+}
+
+ (GhidraScript)  
+INFO  DumpFOpenHandleConstruct.java> 
+done. (GhidraScript)  
