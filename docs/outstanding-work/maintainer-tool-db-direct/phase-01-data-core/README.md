@@ -22,8 +22,8 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 | 3 db_editor.py — wraps run_apply (D13); audit-trio re-verify UPDATE | DONE | 855e913 |
 | 3c db_editor full-column correction — applier present-row extension (probe-first) | NOT STARTED | — |
 | 4 db_editor.py — validated atomic INSERT (new version Job 6 + new entity Job 1) | DONE | 6e07f59 |
-| 5 db_editor.py — validated atomic lifecycle UPDATE (supersede/deprecate Jobs 4/5) | DONE | (landed) |
-| 6 field_delta.py — saved-vs-prospective field-delta computation (D8) | NOT STARTED | — |
+| 5 db_editor.py — validated atomic lifecycle UPDATE (supersede/deprecate Jobs 4/5) | DONE | fe61fc9 |
+| 6 field_delta.py — saved-vs-prospective field-delta computation (D8) | DONE | (landed) |
 
 ## Step docs
 

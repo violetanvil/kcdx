@@ -118,15 +118,12 @@ _VERSION_AUTHORED_COLUMNS = frozenset(_VERSION_IDENTITY_COLUMNS) | EDITABLE_VERS
 # error, NOT reimplemented as a db_editor-side check.
 _VERSION_REQUIRED_COLUMNS = ("valid_from_version", "module", "kind")
 
-# The columns the AP18 "nothing changed" signal (D12) compares between a new version
-# row and its source row: every authored versions-seed column EXCEPT the identity
-# key valid_from_version. When the prospective new row equals its source on all of
-# these (only valid_from_version differs), the new version carries no new
-# information -- the GUI steers the maintainer to re-verify the source instead of
-# minting a duplicate (D12). `kcdx_id` is identical by construction (same entity),
-# so it is inert in the comparison but harmless to include.
-_NOTHING_CHANGED_COMPARE_COLUMNS = tuple(
-    sorted(_VERSION_AUTHORED_COLUMNS - {"valid_from_version"}))
+# The AP18 "nothing changed" signal (D12) -- whether a new version row is identical
+# to its source on every authored column except valid_from_version -- is computed by
+# the SHARED pure primitive field_delta.is_new_version_nothing_changed (the single
+# source of that verdict; _new_version_nothing_changed below delegates to it per
+# existing source row). The comparison column set lives there (the authored version
+# columns minus valid_from_version, derived from the seed header), not duplicated here.
 
 # The identity key (lookup, never editable) of an address_names seed row -- the id
 # (== kcdx_id). A lifecycle UPDATE (supersede / deprecate, Jobs 4/5) matches the row
@@ -453,16 +450,18 @@ def _new_version_nothing_changed(versions_csv, kcdx_id, new_cells):
     """D12: True IFF the prospective new version row (`new_cells`) equals SOME
     existing row of the same entity on every authored column except
     valid_from_version. Reads the exported prospective versions seed for the
-    entity's existing rows and compares cell strings. An entity with no existing row
-    (cannot happen via create_version -- the caller checked the entity exists, and
-    an existing entity has >=1 baseline row) -> False (nothing to be identical to)."""
+    entity's existing rows; the per-row dict-vs-dict equality is the SHARED
+    primitive field_delta.is_new_version_nothing_changed (the single source of the
+    "identical except valid_from_version" verdict -- this function owns finding the
+    entity's existing rows, field_delta owns the pure comparison). An entity with no
+    existing row (cannot happen via create_version -- the caller checked the entity
+    exists, and an existing entity has >=1 baseline row) -> False (nothing to be
+    identical to)."""
+    from .field_delta import is_new_version_nothing_changed
     existing = [r for r in _read_seed_rows(versions_csv)
                 if (r.get("kcdx_id") or "").strip() == str(kcdx_id)]
-    for src in existing:
-        if all((src.get(col) or "") == (new_cells.get(col) or "")
-               for col in _NOTHING_CHANGED_COMPARE_COLUMNS):
-            return True
-    return False
+    return any(is_new_version_nothing_changed(src, new_cells)
+               for src in existing)
 
 
 def create_entity(out_dir, dll_path, name, first_version_columns,

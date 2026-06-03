@@ -69,6 +69,10 @@ from .db_editor import (
     EDITABLE_VERSION_COLUMNS,
     DbEditError,
 )
+from .field_delta import (
+    field_delta,
+    is_new_version_nothing_changed,
+)
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
@@ -88,4 +92,5 @@ __all__ = [
     "update_version_row", "create_version", "create_entity",
     "supersede_entity", "deprecate_entity",
     "EDITABLE_VERSION_COLUMNS", "DbEditError",
+    "field_delta", "is_new_version_nothing_changed",
 ]
