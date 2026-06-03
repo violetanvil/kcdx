@@ -281,13 +281,47 @@ def read_entity_detail(out_dir, kcdx_id):
         con.close()
 
 
+# The READ CONTRACT for read_version_rows -- the EXPLICIT display/editable columns
+# the maintainer sees on s02 (version table) + s03 (full-record compare), per design
+# US-5 (the editable-columns spec) + policy.md. This is an allowlist: only these
+# cross the wire. Three classes of address_versions column are DELIBERATELY EXCLUDED
+# and never returned --
+#   * content_hash -- the engine-computed BLAKE3 body fingerprint (a BLOB). DERIVED,
+#     not maintainer-authored (policy.md S"function kinds need no survival authoring":
+#     a function's survival datum is content_hash+length, reused by the importer,
+#     never hand-authored); never shown on s02/s03. Dropping it is the point of this
+#     contract -- the engine fingerprint stays out of the display surface.
+#   * auto_name / decompile_quality -- schema.py marks both DEV-ONLY (bulk-discovery
+#     scaffolding, not a curated display column).
+#   * id -- the internal autoincrement PRIMARY KEY row handle, never a display column.
+# Order mirrors the schema/display grouping; valid_from + valid_through are REQUIRED
+# (the newest-first sort + status derivation key on valid_from; valid_through marks
+# the current/closed interval). The per-row derived `status` is ADDED on top (below);
+# kind/evidence_kind are dict-decoded to their display strings (caller_arg_agreement
+# stays a raw id -- today's surface does not decode it).
+_VERSION_DISPLAY_COLUMNS = (
+    "kcdx_id",                      # identity (read-only)
+    "kind",                         # dict-decoded below
+    "module_id",                    # module FK; surface resolves it (raw, as today)
+    "rva", "length",
+    "value",                        # authored per-kind datum
+    "signature",
+    "observed_arg_slots", "caller_reg_arg_count", "caller_arg_agreement",  # survival
+    "offset", "vtable_slot", "struct_offset",   # authored consumer/vtable/struct cols
+    "last_verified_at_version", "verified_by", "verified_date", "evidence_kind",  # audit trio (+ek dict-decoded)
+    "valid_from", "valid_through",  # identity / interval window (sort + status key on valid_from)
+)
+
+
 def read_version_rows(out_dir, kcdx_id):
     """The entity's address_versions rows, NEWEST-first (s02 S"Contents": newest
-    first), each as a full-column dict carrying its derived `status` (via
-    derive_status). The full USER address_versions columns are returned (the s02
-    version table + s03 history/compare consume them); the dict-encoded `kind` /
-    `evidence_kind` cells are decoded to their display strings, and an extra
-    "status" key carries the per-row derived status at the DB's current ordinal.
+    first), each as a display-column dict carrying its derived `status` (via
+    derive_status). Only the design DISPLAY/EDITABLE columns are returned (the
+    _VERSION_DISPLAY_COLUMNS allowlist above -- s02 version table + s03 history/
+    compare; the engine-computed content_hash and the DEV-ONLY columns never cross
+    the wire); the dict-encoded `kind` / `evidence_kind` cells are decoded to their
+    display strings, and an extra "status" key carries the per-row derived status at
+    the DB's current ordinal.
 
     NEWEST-first is ordered by the row's valid_from ORDINAL descending (the version
     a row is valid from -- not the internal autoincrement id), so the current
@@ -311,8 +345,7 @@ def read_version_rows(out_dir, kcdx_id):
             return []
         entity = _entity_lifecycle_ordinals(nrow, gv_ordinals)
 
-        cols = [c[1] for c in con.execute(
-            'PRAGMA table_info("address_versions")')]
+        cols = _VERSION_DISPLAY_COLUMNS
         rows = con.execute(
             f'SELECT {",".join(chr(34) + c + chr(34) for c in cols)} '
             f'FROM address_versions WHERE kcdx_id = ?', (kcdx_id,)).fetchall()

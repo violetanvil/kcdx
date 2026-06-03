@@ -413,6 +413,24 @@ def _entity_detail_not_found_returns_none(b):
 
 
 # --- read_version_rows ---------------------------------------------------------
+# The read CONTRACT for read_version_rows: the EXACT key set every returned row
+# carries -- the design DISPLAY/EDITABLE columns (US-5 + s02/s03) PLUS the derived
+# "status". This pins the column allowlist (_VERSION_DISPLAY_COLUMNS) so a future
+# widening (e.g. content_hash leaking back) breaks the test, not the wire contract.
+_EXPECTED_VERSION_ROW_KEYS = {
+    "kcdx_id", "kind", "module_id", "rva", "length", "value", "signature",
+    "observed_arg_slots", "caller_reg_arg_count", "caller_arg_agreement",
+    "offset", "vtable_slot", "struct_offset",
+    "last_verified_at_version", "verified_by", "verified_date", "evidence_kind",
+    "valid_from", "valid_through",
+    "status",
+}
+# The columns the contract DROPS -- they exist on the DB row but must NEVER cross the
+# wire: content_hash (engine-computed BLAKE3 fingerprint, policy.md), auto_name /
+# decompile_quality (DEV-ONLY, schema.py), id (internal PK row handle).
+_DROPPED_VERSION_COLUMNS = ("content_hash", "auto_name", "decompile_quality", "id")
+
+
 def _version_rows_carry_status_and_newest_first(b):
     out = _fresh_db(b)
     try:
@@ -421,6 +439,35 @@ def _version_rows_carry_status_and_newest_first(b):
         rows = read_version_rows(out, kid)
         assert rows, "read_version_rows returned no rows for a known entity"
         cur = _current_ordinal_from_db(out)
+
+        # THE READ CONTRACT: each row's key set is EXACTLY the display columns + status
+        # -- the dropped columns (content_hash / auto_name / decompile_quality / id)
+        # never cross the wire even when present on the DB row. content_hash in
+        # particular is populated on a function row by the bulk promote, so its absence
+        # from the output is a real "present in DB, dropped from contract" assertion.
+        for r in rows:
+            assert set(r) == _EXPECTED_VERSION_ROW_KEYS, (
+                f"version row key set drifted from the display contract: "
+                f"unexpected {set(r) - _EXPECTED_VERSION_ROW_KEYS}, "
+                f"missing {_EXPECTED_VERSION_ROW_KEYS - set(r)}")
+            for dropped in _DROPPED_VERSION_COLUMNS:
+                assert dropped not in r, (
+                    f"{dropped!r} leaked into the version-row read contract: {r}")
+
+        # content_hash is genuinely ON the underlying DB row for this entity (a
+        # function row carries the bulk-promote fingerprint) -- proving the absence
+        # above is a DROP, not just an unpopulated column.
+        con = sqlite3.connect(os.path.join(out, "reference.sqlite"))
+        try:
+            ch = con.execute(
+                "SELECT content_hash FROM address_versions "
+                "WHERE kcdx_id = ? AND content_hash IS NOT NULL LIMIT 1",
+                (kid,)).fetchone()
+        finally:
+            con.close()
+        assert ch is not None, (
+            "fixture precondition: the chosen entity's DB row should carry a "
+            "content_hash (bulk-promote fingerprint) so the drop assertion is real")
 
         # Each row carries a derived status.
         for r in rows:
