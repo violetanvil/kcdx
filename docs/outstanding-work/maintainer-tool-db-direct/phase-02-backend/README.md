@@ -21,7 +21,8 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 |---|---|---|
 | 1 backend skeleton + data-core import seam + version-tag→params adapter + health/load endpoint | DONE | c0b270c |
 | 1b data-core tag seam — optional `version=` on apply_seeds + 5 db_editor writes (A2; oracle-preserving) | DONE | 7ddb2a1 |
-| 2 read API — curated set + entity detail + version rows + derived status | NOT STARTED | — |
+| 2a data-core read seam — read_curated_set/read_entity_detail/read_version_rows + the single derive_status (policy.md 4-rule); the rule logic lives in the data-core, not the backend (D13/law 6) | NOT STARTED | — |
+| 2b backend read endpoints — call 2a + serialize to JSON (curated set / entity detail / version rows) | NOT STARTED | — |
 | 3 field-delta API (D8) — saved-vs-prospective | NOT STARTED | — |
 | 4 save API — the six job shapes (validate→write→export→round-trip), no commit yet | NOT STARTED | — |
 | 5 git commit + push on confirm (D16) + auth-ready seams (D17, + dev default) | NOT STARTED | — |
@@ -30,7 +31,8 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 
 1. [step-1-backend-skeleton-adapter.md](step-1-backend-skeleton-adapter.md)
 1b. [step-1b-data-core-tag-seam.md](step-1b-data-core-tag-seam.md)
-2. [step-2-read-api.md](step-2-read-api.md)
+2a. [step-2a-data-core-read-seam.md](step-2a-data-core-read-seam.md)
+2b. [step-2b-backend-read-endpoints.md](step-2b-backend-read-endpoints.md)
 3. [step-3-field-delta-api.md](step-3-field-delta-api.md)
 4. [step-4-save-api.md](step-4-save-api.md)
 5. [step-5-commit-push-seams.md](step-5-commit-push-seams.md)

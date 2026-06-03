@@ -81,6 +81,20 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   settled 2026-06-02** — additive + oracle-preserving, NOT a `dll_path`→`version` replacement;
   implements the D13/D15 "thin adapter maps a chosen version tag → the data-core's params"
   contract.)
+- **The READ-for-display surface lives in the data-core, not the backend** (design section 5,
+  R3/law 6/D13): the LANDED data-core surface is write + validate + export + round-trip -- it
+  has NO read/query function for the display set, and the status derivation
+  (DEPRECATED/SUPERSEDED/VERIFIED/UNVERIFIED) existed ONLY as prose in `data/seeds/policy.md`
+  section "Status is NOT an authored column" (no function anywhere). So P2 step 2a adds a
+  read+derive module to `seeds_shared` -- `read_curated_set` / `read_entity_detail` /
+  `read_version_rows` (read the reference DB) + the single
+  `derive_status(current_version, row, entity)` implementing policy.md's 4-rule precedence ONCE
+  -- and the backend (step 2b) just calls it + serializes JSON. **Read-seam decision, settled
+  2026-06-02** -- the rule logic (status derivation) belongs in the data-core where every
+  invariant lives (D13/law 6); the backend reimplementing it (or the React frontend deriving it
+  in JS) was rejected as a law-6 violation that drifts. Mirrors the 1b precedent: the data-core
+  was built for write; the read-for-display surface didn't exist, so it is built IN the
+  data-core. Status logic lives once, tested against policy.md, reusable by any consumer.
 - **DB↔CSV information-equivalence + the round-trip** (design §4): every save re-asserts the
   byte-identity round-trip before commit; a divergence aborts with no write.
 - **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
@@ -117,7 +131,8 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
 | Data-core (csv_exporter / round_trip / db_editor / field_delta) | **Phase 1 — DONE** | landed; delivery-agnostic, the backend calls it |
 | Backend skeleton + version-tag→data-core-params adapter (D14/§5) | P2 step 1 — DONE (c0b270c) | no DLL server-side; a health/load endpoint |
 | Data-core tag seam — optional `version=` on `apply_seeds` + 5 db_editor writes (A2, D13/D15) | P2 step 1b | additive + oracle-preserving; the producer the save API (step 4) consumes |
-| Read API — curated set + entity detail + version rows + derived status | P2 step 2 | feeds s01/s02/s03 |
+| Data-core read seam — read_curated_set/read_entity_detail/read_version_rows + the single derive_status (policy.md 4-rule) | P2 step 2a | the rule logic lives in the data-core (D13/law 6), not the backend; the producer the read endpoints consume |
+| Read API — curated set + entity detail + version rows + derived status | P2 step 2b | the backend calls step 2a + serializes JSON; feeds s01/s02/s03 |
 | Field-delta API (D8) | P2 step 3 | wraps `field_delta` |
 | Save API — the six job shapes (data-core save spine) | P2 step 4 | validate→write→export→round-trip; not yet committing; **consumes step 1b's tag seam** |
 | Git commit + push on confirm (D16) + auth-ready seams (D17) | P2 step 5 | exact-path/live-lock/push; injected identity + env credential + dev default |
