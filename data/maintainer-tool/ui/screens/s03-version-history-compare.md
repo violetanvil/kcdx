@@ -3,39 +3,40 @@
 **Phase & fidelity:** v1, high.
 
 ## Purpose / when shown
-Shown in the right pane (under s02's version area) when the maintainer opens **Show
-history** or **Compare versions**. Lets them see all of an entity's past game-version
-rows, and compare two or more of them side-by-side with the differing fields clearly
-marked — and edit any version directly from there. "Version" here = a game-version
-`address_versions` row (a data row), NOT a git revision; the compare diffs the DB rows
-dynamically, never commit history.
+Shown in s02's version area when the maintainer opens **Show history** or **Compare
+versions** (the detail region on wide screens; within the full-screen drill-down on phone).
+Lets them see all of an entity's past game-version rows, and compare two or more of them
+side-by-side with the differing fields clearly marked — and edit any version directly from
+there. "Version" here = a game-version `address_versions` row (a data row), NOT a git
+revision; the compare diffs the DB rows dynamically, never commit history.
 
 ## Region & position
-The right pane's version area (below the s02 header/lifecycle). History is an expanded
-version table; compare replaces the single-row s04 editor with an N-column table. The
-pane scrolls vertically; the compare table scrolls **horizontally** when the column count
-× content width exceeds the pane width (dynamic — fits until it doesn't; law 1 keeps
-non-compare elements fixed).
+The detail region's version area (below the s02 header/lifecycle). History is an expanded
+version table (`Table`); compare replaces the single-row s04 editor with an N-column
+`Table`. The region scrolls vertically; the compare table scrolls **horizontally** within a
+`ScrollArea` when the column count × content width exceeds the available width (dynamic —
+fits until it doesn't; law 1 keeps non-compare elements fixed). On phone the compare table's
+horizontal scroll is the primary way 2–3 version columns fit a narrow viewport.
 
 ## Contents
 
 ### History (Show history)
-| Element | Component | Data bound | Intent emitted |
+| Element | Component (Mantine) | Data bound | Intent emitted |
 |---|---|---|---|
-| Version row | `version table row` ×N (newest first) | each `address_versions` row: version tag (mono) · `kind` · `verified_date` · `evidence_kind` | `select_version(valid_from)` → s04 |
-| `[Hide history]` | `ghost button` | collapses to current-row-only | `toggle_history()` |
-| `[Compare versions]` | `ghost button` | enters multi-select | `open_compare()` |
+| Version row | `version table row` (`Table` row) ×N (newest first) | each `address_versions` row: version tag (mono) · `kind` · `verified_date` · `evidence_kind` | `select_version(valid_from)` → s04 |
+| `[Hide history]` | `button` (subtle) | collapses to current-row-only | `toggle_history()` |
+| `[Compare versions]` | `button` (subtle) | enters multi-select | `open_compare()` |
 
 ### Compare (Compare versions)
-| Element | Component | Data bound | Intent emitted |
+| Element | Component (Mantine) | Data bound | Intent emitted |
 |---|---|---|---|
-| Row select checkbox | checkbox per `version table row` | the set to compare (≥2) | `toggle_compare_select(valid_from)` |
-| `[Compare (N)]` | `primary button` | the selected set | `show_compare(set)` |
-| Field-name gutter | `field row (read-only)` labels | the union of version-row columns | — |
-| Version column | `diff cell` ×fields, per selected version | each version's full column set | `select_version_column(valid_from)` → enters edit (s04) |
+| Row select checkbox | `Checkbox` per `version table row` | the set to compare (≥2) | `toggle_compare_select(valid_from)` |
+| `[Compare (N)]` | `button` (primary) | the selected set | `show_compare(set)` |
+| Field-name gutter | `field row (read-only)` labels (`Table` left column) | the union of version-row columns | — |
+| Version column | `diff cell` ×fields, per selected version (`Table` column) | each version's full column set | `select_version_column(valid_from)` → enters edit (s04) |
 | Diff marker | marker glyph + `diff_band` row | a field whose value differs across the compared set | — |
-| `[Edit <version>]` | `secondary button` per column | — | `edit_version(valid_from)` → s04 (with the edit-existing confirmation) |
-| `[Exit compare]` | `ghost button` | back to history/current | `close_compare()` |
+| `[Edit <version>]` | `button` (default) per column | — | `edit_version(valid_from)` → s04 (with the edit-existing confirmation) |
+| `[Exit compare]` | `button` (subtle) | back to history/current | `close_compare()` |
 
 **Diff marking:** every field is listed for every compared version (full records visible);
 a field whose values DIFFER across the set gets a marker glyph + a `diff_band` row band;
@@ -76,3 +77,11 @@ editing an existing version `<v>`, not creating a new one") before fields become
 - **Law 7** — diff marker is a glyph, not color-alone; read-only identity columns hold the
   read-only treatment.
 - **Law 9** — `diff_band` + all dims via tokens.
+
+## Responsive behavior
+- **Wide:** the compare table fits 2–3 columns inline; more scroll horizontally within the
+  detail pane.
+- **Phone:** within the full-screen drill-down; the compare table's `ScrollArea` horizontal
+  scroll is the primary fit mechanism (the field-name gutter stays sticky-left so the
+  maintainer keeps the field labels while scrolling version columns). `[Edit <version>]`
+  opens s04 as a full-screen sheet (the edit-existing confirmation precedes it).

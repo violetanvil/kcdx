@@ -10,21 +10,22 @@ Two related authoring flows that GROW the Address Library, both approval-gated (
   for an existing entity, prefilled from a chosen source row.
 
 ## Region & position
-New entity: a modal card over the panes (a fresh entity has no detail pane yet). New
-version: opens the s04 field-editor pattern in the right pane, prefilled, with a clear
-"NEW VERSION (from `<source>`)" banner. Both dim/overlay per law 2; on save they land and
-the new row appears selected in s02.
+New entity: an **overlay surface** (`Modal` centered on wide, full-screen sheet on phone) —
+a fresh entity has no detail view yet. New version: opens the s04 field-editor pattern in
+the detail region (an inline prefilled form on wide; a full-screen sheet on phone), with a
+clear "NEW VERSION (from `<source>`)" banner. Both dim/overlay per law 2; on save they land
+and the new row appears selected in s02.
 
 ## Contents
 
 ### New entity (Job 1)
-| Element | Component | Data bound | Intent emitted |
+| Element | Component (Mantine) | Data bound | Intent emitted |
 |---|---|---|---|
 | `kcdx_id` | `field row (read-only)` | next free integer (auto, `policy.md` §"ID assignment") | — (tool-assigned, not hand-typed) |
-| `name` | `text well` | `address_names.name` | `edit_new_entity('name', v)` |
+| `name` | `text well` (`TextInput`) | `address_names.name` | `edit_new_entity('name', v)` |
 | first version row | `s04 field editor` (blank) | a new `address_versions` row | `edit_field(...)` |
-| `[Review changes]` | `primary button` | enabled when required fields valid | `review_changes()` → s06 |
-| `[Cancel]` | `secondary button` | — | `close_create()` |
+| `[Review changes]` | `button` (primary) | enabled when required fields valid | `review_changes()` → s06 |
+| `[Cancel]` | `button` (subtle) | — | `close_create()` |
 
 `kcdx_id` is **tool-assigned** (next free integer, no autoincrement, append-only) — the
 maintainer never types it (the disassembler-test principle: the tool supplies identity, the
@@ -33,18 +34,18 @@ author declares intent). Required first-row columns (`policy.md` §"Required col
 brand-new unverified row is all-null).
 
 ### New version (Job 6)
-| Element | Component | Data bound | Intent emitted |
+| Element | Component (Mantine) | Data bound | Intent emitted |
 |---|---|---|---|
-| Source banner | `warning banner` (info variant) | "NEW VERSION of `<name>` (from `<source v>`)" | — |
-| `valid_from_version` | `text well` | the new row's identity key (the game version this row is for) | `edit_field('valid_from_version', v)` |
+| Source banner | `warning banner` (`Alert`, info) | "NEW VERSION of `<name>` (from `<source v>`)" | — |
+| `valid_from_version` | `text well` / `Select` (the version dropdown) | the new row's identity key (the game version this row is for) | `edit_field('valid_from_version', v)` |
 | all other columns | `s04 field editor` (prefilled) | copied from the source row, including the audit trio | `edit_field(...)` |
-| `[Review changes]` | `primary button` | enabled when valid AND ≥1 change vs source | `review_changes()` → s06 |
-| `[Cancel]` | `secondary button` | — | `close_create()` |
+| `[Review changes]` | `button` (primary) | enabled when valid AND ≥1 change vs source | `review_changes()` → s06 |
+| `[Cancel]` | `button` (subtle) | — | `close_create()` |
 
 **Prefill (the decided rule):** a new version prefills **all columns from the source row,
 including the audit trio**. `valid_from_version` is the field the maintainer sets — the one
-column that defines the new game version (prefilled from the linked DLL's resolved version
-when a DLL is linked, s07; editable regardless, law 4).
+column that defines the new game version (prefilled from the version&verify surface's pick
+or the client-DLL-resolved version when checked, s02/D15; editable regardless, law 4).
 
 **Nothing-changed guard (the decided warning):** if the maintainer tries to save a new
 version with **no field changed from the source** (other than `valid_from_version`), a
@@ -62,12 +63,12 @@ field; the guard names the right alternative rather than silently allowing a dup
   `module`, a duplicate `(kcdx_id, valid_from_version)` tuple (HARD ERROR — `policy.md`).
 - **Nothing-changed (new version)** — the steering `warning banner` (above); save blocked
   until a field differs.
-- **Unlinked / resolver-failure** — `valid_from_version` can't be auto-resolved: the
-  advisory warning + the "I accept — save anyway" override (law 4); the maintainer types
-  the version manually.
+- **Unverified / resolver-failure** — `valid_from_version` can't be auto-resolved (no
+  client DLL check / interns disagree): the advisory warning + the "I accept — save anyway"
+  override (law 4, D15); the maintainer picks/types the version manually.
 - **Disabled** — `[Review changes]` disabled until required fields validate.
-- **Edge content** — a long first-version `signature` wraps; the modal scrolls internally
-  rather than growing past the window.
+- **Edge content** — a long first-version `signature` wraps; the overlay scrolls internally
+  (the modal/sheet body scrolls) rather than growing past the viewport.
 
 ## Links in / out
 - **In:** s01 `+ New entity`; s02/s03 `+ New version`.
@@ -78,10 +79,19 @@ field; the guard names the right alternative rather than silently allowing a dup
 ## Applicable laws
 - **Law 1** — prefilled fields + dirty markers + the nothing-changed banner reserve space;
   no reflow.
-- **Law 2** — new-entity is a modal; new-version overlays the right pane; panes persist.
-- **Law 4** — `valid_from_version` resolution is advisory + overridable.
-- **Law 6** — required-column + tuple-uniqueness + trio integrity are the validator's.
+- **Law 2** — new-entity + new-version are the overlay layer (modal/sheet); the navigation
+  shell persists beneath.
+- **Law 4** — `valid_from_version` resolution is advisory + overridable (D15).
+- **Law 6** — required-column + tuple-uniqueness + trio integrity are the validator's (API).
 - **Law 7** — `kcdx_id` (assigned) and `valid_from_version` (once set, the row's key)
   render with the read-only treatment after entry.
 - **Law 8** — a new entity / new version is approval-gated in s06 before it lands.
 - **Law 9** — tokens only.
+
+## Responsive behavior
+- **Wide:** new-entity is a centered `Modal`; new-version renders inline (prefilled) in the
+  detail region.
+- **Phone:** both open as full-screen sheets (slide up, fill the viewport, a header with the
+  flow name + a close ✕); the sheet body scrolls; `[Review changes]` is pinned reachable at
+  the bottom of the sheet. On save the new row appears selected in s02 (the detail
+  drill-down).
