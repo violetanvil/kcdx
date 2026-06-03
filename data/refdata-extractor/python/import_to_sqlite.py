@@ -1689,7 +1689,7 @@ def _promote_bulk_in_place(con, av_row):
         [av_row.get(c) for c in cols] + [av_row["id"]])
 
 
-def apply_seeds(out_dir, dll_path, *, log=None):
+def apply_seeds(out_dir, dll_path, *, version=None, log=None):
     """APPLY mode, LIBRARY entry: the incremental seed->DB applier as a callable
     that takes parameters and RETURNS a result -- no sys.exit, no CLI parsing, and
     no print-as-sole-output-channel. The CLI wrapper run_apply (below) and the
@@ -1703,7 +1703,8 @@ def apply_seeds(out_dir, dll_path, *, log=None):
     open interval + insert).
 
     Spine (plan.md S3 'Running an incremental build'):
-      1. resolve target version from the linked DLL (.rdata resolver)
+      1. resolve target version from the linked DLL (.rdata resolver), OR take the
+         caller-supplied pre-resolved version (see `version` below)
       2. validate the FULL seed CSV state (abort with no DB write on failure)
       3. open BOTH DBs read-write (refuse if a baseline is missing)
       4/5/6. classify the seed-vs-DB delta + apply it per DB (user then dev),
@@ -1714,7 +1715,15 @@ def apply_seeds(out_dir, dll_path, *, log=None):
       out_dir  -- the directory holding the two reference DBs (reference.sqlite +
                   reference-dev.sqlite) the apply amends in place.
       dll_path -- the linked WHGame.dll the .rdata version resolver reads (the
-                  apply path's version source).
+                  apply path's version source). Supply this OR `version`, never
+                  both and never neither (a ValueError otherwise).
+      version  -- a pre-resolved (tag, ordinal); when given, the DLL is not read --
+                  the caller already resolved the version, e.g. the web backend per
+                  data/maintainer-tool/design.md D15 (no DLL server-side). Supply
+                  EXACTLY ONE of dll_path / version. The (tag, ordinal) is trusted
+                  exactly as resolve_version would have returned it; the
+                  tag != GAME_VERSION_TAG refusal gate still fires on the supplied
+                  tag.
       log      -- an optional callable(str) for progress lines; None suppresses
                   them (the in-process caller wants no prints, the CLI passes
                   print). The RESULT is returned, never only printed.
@@ -1724,6 +1733,8 @@ def apply_seeds(out_dir, dll_path, *, log=None):
     where each <c> is the per-DB counts dict _apply_one_db returns.
 
     Raises (no sys.exit -- the caller maps these to its own exit/UI behaviour):
+      ValueError          -- neither dll_path nor version was supplied, or BOTH were
+                             (a caller programming error -- never a silent pick).
       VersionResolveError -- the DLL's .rdata version could not be resolved.
       VersionRefusal      -- the DLL is a version the baseline + seeds don't cover.
       BaselineRefusal     -- a function-kind add has no bulk baseline (no DB write).
@@ -1733,12 +1744,27 @@ def apply_seeds(out_dir, dll_path, *, log=None):
         if log is not None:
             log(msg)
 
-    # 1. Resolve the target version from the linked DLL (.rdata resolver). This
-    #    is the apply path's primary version source (NOT whdlversions.json). A
-    #    resolve failure PROPAGATES (VersionResolveError) -- the caller decides how
-    #    to surface it; nothing is opened or written.
-    tag, ordinal = resolve_version(dll_path)
-    _emit(f"  target version (from DLL .rdata): tag={tag} ordinal={ordinal}")
+    # 0. EXACTLY ONE of dll_path / version. A caller passing both is a programming
+    #    error (which version is authoritative?) -- refuse loudly rather than
+    #    silently prefer one; a caller passing neither has no version source at all.
+    if (dll_path is None) == (version is None):
+        raise ValueError(
+            "apply_seeds needs EXACTLY ONE of dll_path or version: supply a DLL to "
+            "resolve the version from, OR a pre-resolved (tag, ordinal) -- never "
+            "both and never neither.")
+
+    # 1. Determine the target version. Either the caller pre-resolved it (the web
+    #    backend per D15 -- no DLL server-side) and passed `version`, or we resolve
+    #    it from the linked DLL's .rdata interns (the apply path's primary version
+    #    source, NOT whdlversions.json). A resolve failure PROPAGATES
+    #    (VersionResolveError) -- the caller decides how to surface it; nothing is
+    #    opened or written.
+    if version is not None:
+        tag, ordinal = version
+        _emit(f"  target version (pre-resolved by caller): tag={tag} ordinal={ordinal}")
+    else:
+        tag, ordinal = resolve_version(dll_path)
+        _emit(f"  target version (from DLL .rdata): tag={tag} ordinal={ordinal}")
     if tag != GAME_VERSION_TAG:
         # The baseline + seeds only know GAME_VERSION_TAG today; a different
         # linked DLL means the DB has no baseline for it. Refuse clearly.

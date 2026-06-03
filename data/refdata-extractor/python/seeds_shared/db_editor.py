@@ -156,14 +156,20 @@ def _seed_paths(seed_dir):
 
 
 def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
-                                       *, log=None):
+                                       *, version=None, log=None):
     """Drive import_to_sqlite.apply_seeds over the prospective seeds under
     prospective_seed_dir, repointing the importer's three seed-path module
     constants for the duration (the round_trip.py / apply-oracle convention),
     restoring them after. Returns apply_seeds' result dict; propagates every typed
-    error it raises (VersionResolveError / VersionRefusal / BaselineRefusal /
-    RuntimeError) so the caller surfaces the precise reason -- a validation failure
-    means NO DB write (apply_seeds validates before opening any DB).
+    error it raises (ValueError / VersionResolveError / VersionRefusal /
+    BaselineRefusal / RuntimeError) so the caller surfaces the precise reason -- a
+    validation failure means NO DB write (apply_seeds validates before opening any
+    DB).
+
+    `version` is a pre-resolved (tag, ordinal); when given, the DLL is not read --
+    the caller already resolved the version, e.g. the web backend per
+    data/maintainer-tool/design.md D15. It threads straight to apply_seeds, which
+    requires EXACTLY ONE of dll_path / version.
 
     import_to_sqlite is imported lazily so this seeds_shared submodule carries no
     import-time dependency on import_to_sqlite (which imports seeds_shared)."""
@@ -174,14 +180,14 @@ def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
     (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
      imp.ADDRESS_VERSIONS_SEED_CSV) = _seed_paths(prospective_seed_dir)
     try:
-        return imp.apply_seeds(out_dir, dll_path, log=log)
+        return imp.apply_seeds(out_dir, dll_path, version=version, log=log)
     finally:
         (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
          imp.ADDRESS_VERSIONS_SEED_CSV) = saved
 
 
 def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
-                       *, log=None, work_dir=None):
+                       *, version=None, log=None, work_dir=None):
     """Validate + atomically apply a one-row UPDATE to the address_versions row
     identified by (kcdx_id, valid_from_version), driving the existing seed->DB
     applier. Covers the audit-trio re-verify (Job 2 / US-3) and the full-column
@@ -192,6 +198,12 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
       out_dir            -- the directory holding reference.sqlite +
                             reference-dev.sqlite (the DBs the apply amends).
       dll_path           -- the linked WHGame.dll the version resolver reads.
+      version            -- a pre-resolved (tag, ordinal); when given, the DLL is
+                            not read -- the caller already resolved the version,
+                            e.g. the web backend per
+                            data/maintainer-tool/design.md D15. Supply EXACTLY ONE
+                            of dll_path / version (apply_seeds raises ValueError on
+                            neither or both).
       kcdx_id            -- the entity id (int) identifying the row to edit.
       valid_from_version -- the version tag (str) identifying the row to edit.
       edits              -- {column: new_value} for the columns the GUI changed.
@@ -259,7 +271,7 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
         #    shared gate BEFORE opening any DB -- a validation failure raises here
         #    with NO DB write; a valid edit lands per-DB in BEGIN/COMMIT.
         return _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, log=log)
+            out_dir, dll_path, prospective, version=version, log=log)
     finally:
         if owns_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
@@ -333,7 +345,7 @@ def _cell(value):
 
 
 def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
-                   *, log=None, work_dir=None):
+                   *, version=None, log=None, work_dir=None):
     """Validate + atomically APPEND a new address_versions row (a new game-version
     row, Job 6 / US-6) for the EXISTING entity `kcdx_id`, driving the existing
     seed->DB applier. The new row's identity key is (kcdx_id, valid_from_version);
@@ -344,6 +356,12 @@ def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
       out_dir            -- the directory holding reference.sqlite +
                             reference-dev.sqlite (the DBs the apply amends).
       dll_path           -- the linked WHGame.dll the version resolver reads.
+      version            -- a pre-resolved (tag, ordinal); when given, the DLL is
+                            not read -- the caller already resolved the version,
+                            e.g. the web backend per
+                            data/maintainer-tool/design.md D15. Supply EXACTLY ONE
+                            of dll_path / version (apply_seeds raises ValueError on
+                            neither or both).
       kcdx_id            -- the EXISTING entity id (int) the new version belongs to.
       valid_from_version -- the new row's version tag (str) -- its identity key half
                             (prefilled from the linked DLL when linked, US-6).
@@ -432,7 +450,7 @@ def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
         seed_csv_edit.append_row(versions_csv, new_cells)
 
         result = _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, log=log)
+            out_dir, dll_path, prospective, version=version, log=log)
         return {
             "result": result,
             "ap18_new_row": True,
@@ -465,7 +483,7 @@ def _new_version_nothing_changed(versions_csv, kcdx_id, new_cells):
 
 
 def create_entity(out_dir, dll_path, name, first_version_columns,
-                  *, log=None, work_dir=None):
+                  *, version=None, log=None, work_dir=None):
     """Validate + atomically APPEND a brand-NEW entity (Job 1 / US-7): a new
     address_names row (assigned the next free kcdx_id, append-only) + its first
     address_versions row, driving the existing seed->DB applier. apply_seeds
@@ -475,6 +493,12 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
     Parameters:
       out_dir               -- the directory holding the two reference DBs.
       dll_path              -- the linked WHGame.dll the version resolver reads.
+      version               -- a pre-resolved (tag, ordinal); when given, the DLL
+                               is not read -- the caller already resolved the
+                               version, e.g. the web backend per
+                               data/maintainer-tool/design.md D15. Supply EXACTLY
+                               ONE of dll_path / version (apply_seeds raises
+                               ValueError on neither or both).
       name                  -- the new entity's canonical name (str) -- the
                                address_names row's `name` cell.
       first_version_columns -- {column: value} for the first address_versions row's
@@ -548,7 +572,7 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
         seed_csv_edit.append_row(versions_csv, version_cells)
 
         result = _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, log=log)
+            out_dir, dll_path, prospective, version=version, log=log)
         return {
             "result": result,
             "ap18_new_row": True,
@@ -573,7 +597,7 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
 # never mutated.
 # ---------------------------------------------------------------------------
 def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
-                                action, log, work_dir):
+                                action, log, work_dir, version=None):
     """Shared driver for the lifecycle UPDATEs: export the current DB to a temp
     seed, fold `edits` into the address_names row keyed on `id == kcdx_id` (via
     seed_csv_edit.update_row_in_place, diff-preserved), and drive the existing
@@ -581,7 +605,10 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
     (pair-integrity / self-supersede / cycle / replacement-without-deprecated) is
     the validator's RuntimeError out of apply_seeds -- NO DB write occurs (apply_seeds
     validates the full names seed before opening any DB). `action` is the addition
-    label for the returned dict ('supersede' / 'deprecate').
+    label for the returned dict ('supersede' / 'deprecate'). `version` is a
+    pre-resolved (tag, ordinal) threaded to apply_seeds; when given, the DLL is not
+    read (the caller already resolved the version, e.g. the web backend per
+    data/maintainer-tool/design.md D15 -- supply EXACTLY ONE of dll_path / version).
 
     Returns a dict on success:
       {"result": <apply_seeds result dict>,
@@ -635,7 +662,7 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
         #    violation raises here with NO DB write; a valid edit lands per-DB in
         #    BEGIN/COMMIT.
         result = _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, log=log)
+            out_dir, dll_path, prospective, version=version, log=log)
         return {"result": result, "action": action, "kcdx_id": int(kcdx_id)}
     finally:
         if owns_work_dir:
@@ -643,7 +670,8 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
 
 
 def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
-                     superseded_at_version, *, log=None, work_dir=None):
+                     superseded_at_version, *, version=None, log=None,
+                     work_dir=None):
     """Validate + atomically set the SUPERSESSION edge on the existing address_names
     row `kcdx_id` (Job 4 / US-8): superseded_by + superseded_at_version TOGETHER,
     driving the existing seed->DB applier. The successor name + the version are
@@ -657,6 +685,12 @@ def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
       out_dir               -- the directory holding reference.sqlite +
                                reference-dev.sqlite (the DBs the apply amends).
       dll_path              -- the linked WHGame.dll the version resolver reads.
+      version               -- a pre-resolved (tag, ordinal); when given, the DLL is
+                               not read -- the caller already resolved the version,
+                               e.g. the web backend per
+                               data/maintainer-tool/design.md D15. Supply EXACTLY
+                               ONE of dll_path / version (apply_seeds raises
+                               ValueError on neither or both).
       kcdx_id               -- the entity id (int) of the row being superseded (X).
       superseded_by         -- the SUCCESSOR entity's canonical name (str), as the
                                seed carries it (the validator resolves it to an id).
@@ -685,12 +719,12 @@ def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
     }
     return _drive_names_lifecycle_edit(
         out_dir, dll_path, kcdx_id, edits,
-        action="supersede", log=log, work_dir=work_dir)
+        action="supersede", log=log, work_dir=work_dir, version=version)
 
 
 def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
                      deprecated_at_version=None, deprecation_replacement=None,
-                     log=None, work_dir=None):
+                     version=None, log=None, work_dir=None):
     """Validate + atomically set the DEPRECATION flags on the existing address_names
     row `kcdx_id` (Job 5 / US-8): is_deprecated + deprecated_at_version TOGETHER,
     with deprecation_replacement allowed ONLY when deprecated, driving the existing
@@ -703,6 +737,12 @@ def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
     Parameters:
       out_dir                 -- the directory holding the two reference DBs.
       dll_path                -- the linked WHGame.dll the version resolver reads.
+      version                 -- a pre-resolved (tag, ordinal); when given, the DLL
+                                 is not read -- the caller already resolved the
+                                 version, e.g. the web backend per
+                                 data/maintainer-tool/design.md D15. Supply EXACTLY
+                                 ONE of dll_path / version (apply_seeds raises
+                                 ValueError on neither or both).
       kcdx_id                 -- the entity id (int) to deprecate.
       is_deprecated           -- True to set the flag (seed cell '1'); False/None to
                                  CLEAR it (seed cell '' -- un-deprecate). The
@@ -742,4 +782,4 @@ def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
     }
     return _drive_names_lifecycle_edit(
         out_dir, dll_path, kcdx_id, edits,
-        action="deprecate", log=log, work_dir=work_dir)
+        action="deprecate", log=log, work_dir=work_dir, version=version)
