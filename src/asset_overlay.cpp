@@ -57,7 +57,46 @@ constexpr const char* kFOpenSig =
 
 std::atomic<bool> g_installed{false};
 
+// === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) =======================
+// THROWAWAY — discriminator marker for the step-1 ordering probe (removed in
+// step 2 with the SEAM-A probe block below; results-driven.md / working-
+// artifacts.md — no residue). The step-1 AdjustFileName hook installed at the
+// correct address but its first_adjustfilename_call marker NEVER fired through
+// boot->menu while the menu's assets loaded. THE DISCRIMINATING QUESTION: does
+// the FOpen hook fire on the same boot when AdjustFileName does not? FOpen
+// fires + AdjustFileName silent → the menu reaches files via FOpen WITHOUT
+// slot 1 (design's single-chokepoint claim is false for this path). Shares the
+// step-1 category kProbeCtorVsReadCat so the manager greps ONE category for
+// ctor_fired + first_adjustfilename_call + first_fopen_call.
+//
+// Category is the SAME shared probe category the SEAM-A block's step-1 markers
+// use ("PROBE_CTOR_VS_READ"). Declared here (the FOpen hook at OverlayFOpen
+// precedes the SEAM-A block textually) so OverlayFOpen below can reference it;
+// the SEAM-A block reuses this same constant — one greppable category.
+constexpr const char* kProbeCtorVsReadCat = "PROBE_CTOR_VS_READ";
+std::atomic<bool> g_probeLoggedFirstFOpen{false};
+// === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
+
 }  // namespace
+
+// === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) =======================
+// THROWAWAY — SHARED monotonic ordering counter for the step-1 ordering probe.
+// The two markers (first_fopen_call here, ctor_fired in ctor_bracket.cpp) fired
+// at the SAME millisecond on the SAME thread in the prior run — coincident at
+// wall-clock resolution, so the ORDER was unresolved. Same-thread means the
+// order is DETERMINISTIC; this counter exposes it: each marker fetch-adds once
+// (on its first fire) and logs the sequence number, so N<M vs M<N gives a
+// DEFINITE order regardless of the ms clock. Defined here with external
+// linkage (NOT in the anonymous namespace) so ctor_bracket.cpp's marker, in a
+// different translation unit, fetch-adds from the SAME counter (declared extern
+// there). Relaxed ordering: a pure ordering TAG — the only consumer is the log,
+// which compares the two emitted values; no happens-before edge to publish (the
+// fetch_add is itself atomic, so each emitted seq is unique and monotone;
+// concurrency.md — relaxed is correct for a counter nobody synchronizes against).
+// Removed in step 3 (HOOK 1) with the rest of the probe residue (results-
+// driven.md / working-artifacts.md — no residue in live source).
+std::atomic<uint64_t> g_probeOrderSeq{0};
+// === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
 
 // The C function AddCEngine installs (the chain's `cFn`), Before mode. ABI is
 // the chain's Before-mode cFn shape — `void cFn(uintptr_t args[], int* outCount,
@@ -78,6 +117,38 @@ extern "C" void OverlayFOpen(uintptr_t /*args*/[], int* /*outCount*/,
                              const char* /*pName*/,
                              const char* /*szMode*/,
                              uint32_t    /*nFlags*/) {
+    // === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
+    // FIRST-FOpen-call marker, one-shot atomic latch at the VERY TOP of the
+    // body so the FIRST FOpen of the session emits exactly one marker. This is
+    // the discriminator: the step-1 AdjustFileName hook installed correctly but
+    // its first_adjustfilename_call NEVER fired through boot->menu. If THIS
+    // fires while AdjustFileName stays silent, the menu reaches files via FOpen
+    // WITHOUT slot 1. Relaxed ordering: a pure "have I logged this yet" latch,
+    // no happens-before edge to publish (concurrency.md — a counter nobody
+    // synchronizes against). RESPECTS the no-per-call-log invariant below: the
+    // one-shot guard logs exactly ONCE, never per call (FOpen is hot — ~680
+    // call sites). Removed in step 2 with the SEAM-A probe.
+    {
+        bool expected = false;
+        if (g_probeLoggedFirstFOpen.compare_exchange_strong(
+                expected, true, std::memory_order_relaxed)) {
+            // Ordering tag from the SHARED counter (defined above; ctor_fired in
+            // ctor_bracket.cpp fetch-adds from the same one). Relaxed: pure
+            // ordering tag, only the log compares the two values (concurrency.md
+            // — no happens-before edge needed). Read ONCE on this first fire.
+            const uint64_t seq =
+                g_probeOrderSeq.fetch_add(1, std::memory_order_relaxed);
+            LOG_DEBUG_KV(kProbeCtorVsReadCat, "first_fopen_call",
+                         kcdx::log::KV("order_seq", seq),
+                         kcdx::log::KV::BareStr("detail",
+                             "engine's FIRST CCryPak::FOpen call this session — "
+                             "compare order_seq against ctor_fired's; lower seq "
+                             "fired first (definite order regardless of the ms "
+                             "clock)"));
+        }
+    }
+    // === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===============
+
     // Pass-through: the chain runs the original after this returns.
 }
 
@@ -205,13 +276,13 @@ std::atomic<bool> g_seamALoggedDdsHit{false};
 // BEFORE the engine's first overridable asset read, deciding where the
 // resolution seam installs. Removed in step 2 with the rest of the SEAM-A
 // probe (results-driven.md / working-artifacts.md — no residue). One shared
-// probe category (kProbeCtorVsReadCat) so the manager greps TWO lines.
+// probe category (kProbeCtorVsReadCat, defined earlier beside the FOpen probe)
+// so the manager greps ONE category for all three markers.
 //
 // This marker fires on the FIRST AdjustFileName call of the session,
 // regardless of overlay hit/miss — it captures "the engine's first
 // overridable asset read happened" with a timestamp comparable to the
 // HookedCtor "ctor_fired" marker in src/mod_absorb/ctor_bracket.cpp.
-constexpr const char* kProbeCtorVsReadCat = "PROBE_CTOR_VS_READ";
 std::atomic<bool> g_probeLoggedFirstAdjust{false};
 // === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
 
