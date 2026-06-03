@@ -1,0 +1,6 @@
+# kcdx maintainer-tool backend -- test/dev dependencies (design D14).
+# Pinned to a stable minor range (dependencies.md: pin, do not float to latest).
+# Installed on top of requirements.txt for the pytest suite.
+-r requirements.txt
+pytest>=8.3,<10
+httpx>=0.27,<0.29

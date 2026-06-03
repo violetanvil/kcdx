@@ -1,0 +1,5 @@
+# kcdx maintainer-tool backend -- runtime dependencies (design D14).
+# Pinned to a stable minor range (dependencies.md: pin, do not float to latest).
+# License audit + one-line purpose: see README.md "Dependencies".
+fastapi>=0.136,<0.137
+uvicorn>=0.48,<0.49
