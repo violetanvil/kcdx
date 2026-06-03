@@ -22,6 +22,17 @@ endpoints in step 5 resolve). A validation failure aborts with NO write + NO ope
 placeholder (the A2 + 4a decisions now settle the threading — surface a deletion-hygiene sweep
 of that stale "surfaced fork" docstring).
 
+**SQLite thread-affinity constraint (from 4a's review — load-bearing).** The 4a deferred-commit
+handle holds two open SQLite connections across the user's confirm. The data-core opens them with
+the default `check_same_thread=True`, and FastAPI runs sync endpoints in a threadpool — so the
+confirm/cancel handler (step 5) may run on a DIFFERENT thread than the save handler that opened
+the connections, which would make `commit(handle)`/`rollback(handle)` raise `ProgrammingError`.
+4b must resolve this when it holds the handle: EITHER open the held connections with
+`check_same_thread=False` and serialize access itself (the held-txn registry is single-owner per
+save, so a simple lock/single-consumer suffices — `concurrency.md`), OR pin the save→confirm→
+cancel handlers for one pending save to a single thread/executor. Decide + document the mechanism;
+a held connection used cross-thread is the failure this guards.
+
 **Out of scope.** The git commit + push + the confirm/cancel endpoints that COMMIT/ROLLBACK the
 held transaction (step 5). No frontend. No new validation/SQL/rule logic (the data-core's).
 
