@@ -24,8 +24,9 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 | 2a data-core read seam — read_curated_set/read_entity_detail/read_version_rows + the single derive_status (policy.md 4-rule); the rule logic lives in the data-core, not the backend (D13/law 6) | DONE | 73966eb |
 | 2b backend read endpoints — call 2a + serialize to JSON (curated set / entity detail / version rows) | DONE | 5cfa556 |
 | 3 field-delta API (D8) — saved-vs-prospective | DONE | 8224fc3 |
-| 4 save API — the six job shapes (validate→write→export→round-trip), no commit yet | NOT STARTED | — |
-| 5 git commit + push on confirm (D16) + auth-ready seams (D17, + dev default) | NOT STARTED | — |
+| 4a data-core deferred-commit seam — apply_seeds runs validate→write→round-trip then RETURNS the open connections uncommitted; commit(conns)/rollback(conns) exposed (THE write mechanism for the maintainer tool — DB changes commit only on confirm); additive + oracle-preserving | NOT STARTED | — |
+| 4b backend save endpoints — the six job shapes, each opening a deferred-commit txn via 4a, returning the result+delta for the confirm gate; the txn is held for step 5's commit-on-confirm | NOT STARTED | — |
+| 5 git commit + push on confirm (D16) — COMMIT the held 4a txn + the git commit as ONE confirm transaction + auth-ready seams (D17, + dev default) | NOT STARTED | — |
 
 ## Step docs
 
@@ -34,7 +35,8 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 2a. [step-2a-data-core-read-seam.md](step-2a-data-core-read-seam.md)
 2b. [step-2b-backend-read-endpoints.md](step-2b-backend-read-endpoints.md)
 3. [step-3-field-delta-api.md](step-3-field-delta-api.md)
-4. [step-4-save-api.md](step-4-save-api.md)
+4a. [step-4a-data-core-deferred-commit-seam.md](step-4a-data-core-deferred-commit-seam.md)
+4b. [step-4b-backend-save-endpoints.md](step-4b-backend-save-endpoints.md)
 5. [step-5-commit-push-seams.md](step-5-commit-push-seams.md)
 
 ## Verification gate (phase end)

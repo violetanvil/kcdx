@@ -95,6 +95,26 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   in JS) was rejected as a law-6 violation that drifts. Mirrors the 1b precedent: the data-core
   was built for write; the read-for-display surface didn't exist, so it is built IN the
   data-core. Status logic lives once, tested against policy.md, reusable by any consumer.
+- **Deferred commit is THE write mechanism for the maintainer tool** (design §7 save spine;
+  user-settled 2026-06-03): EVERY DB change the tool makes goes through a deferred-commit
+  transaction -- open a transaction on both DBs, run validate -> write -> export -> round-trip
+  INSIDE it, RETURN the open (uncommitted) connections, and COMMIT only when the user confirms
+  (ROLLBACK on cancel or any failure). "On Cancel nothing lands" holds literally -- an
+  uncommitted transaction is invisible and discardable; no file copy, no 1.3GB DEV-DB
+  duplication, no live mutation before confirm. The LANDED data-core does NOT expose this: a
+  GROUND-TRUTH probe of import_to_sqlite.apply_seeds confirmed it opens BOTH DBs (user + dev),
+  commits each action INTERNALLY (per-action `BEGIN`/`COMMIT`, _apply_one_db), then CLOSES both
+  before returning (import_to_sqlite.py:1784-1801) -- the transaction is fully internal and gone
+  by return. So P2 step 4a adds a deferred-commit MODE to apply_seeds (additive + oracle-
+  preserving, the 1b pattern: the existing internal-commit path stays for desktop/CLI/tests):
+  run the writes under ONE outer transaction per DB (not per-action auto-commit), skip the
+  COMMIT, and return the two open connections + the result; the data-core also exposes
+  commit(conns) / rollback(conns). The backend (step 4b) holds the connections across the
+  confirm; step 5 COMMITs the held transaction together with the git commit as ONE confirm
+  transaction. OPEN sub-decision (surfaced at 4a build time, not pre-decided): the two-DB commit
+  ORDERING (user + dev are two separate SQLite files; a COMMIT of the first succeeding then the
+  second failing is a split state -- the "atomic" guarantee's edge, settled once the seam's
+  exact commit sequence is written).
 - **DB↔CSV information-equivalence + the round-trip** (design §4): every save re-asserts the
   byte-identity round-trip before commit; a divergence aborts with no write.
 - **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
@@ -134,8 +154,9 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
 | Data-core read seam — read_curated_set/read_entity_detail/read_version_rows + the single derive_status (policy.md 4-rule) | P2 step 2a | the rule logic lives in the data-core (D13/law 6), not the backend; the producer the read endpoints consume |
 | Read API — curated set + entity detail + version rows + derived status | P2 step 2b | the backend calls step 2a + serializes JSON; feeds s01/s02/s03 |
 | Field-delta API (D8) | P2 step 3 | wraps `field_delta` |
-| Save API — the six job shapes (data-core save spine) | P2 step 4 | validate→write→export→round-trip; not yet committing; **consumes step 1b's tag seam** |
-| Git commit + push on confirm (D16) + auth-ready seams (D17) | P2 step 5 | exact-path/live-lock/push; injected identity + env credential + dev default |
+| Data-core deferred-commit seam — apply_seeds returns open uncommitted connections + commit/rollback (THE tool's write mechanism) | P2 step 4a | additive + oracle-preserving; the producer the save endpoints + step 5 consume |
+| Save API — the six job shapes (data-core save spine) | P2 step 4b | each opens a deferred-commit txn via 4a, returns result+delta for the confirm gate; **consumes step 1b's tag seam + 4a's deferred-commit seam**; holds the txn for step 5 |
+| Git commit + push on confirm (D16) + auth-ready seams (D17) | P2 step 5 | COMMIT the held 4a txn + the git commit as ONE confirm transaction; exact-path/live-lock/push; injected identity + env credential + dev default |
 | Container data layout — backend reads the checkout (D18) | P2 step 1 (consumes) + P5 step 16 (provides) | configured checkout path |
 | Frontend skeleton + Mantine theme (tokens) + responsive app shell (D14, laws) | P3 step 6 | the API client; the two-pane ↔ drill-down shell |
 | s01 navigator (search/filter/list/chips) | P3 step 7 | `ui/screens/s01` |
