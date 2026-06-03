@@ -81,6 +81,28 @@ from .read_api import (
     DbReadError,
 )
 
+# The deferred-commit surface (step 4a -- THE maintainer-tool write mechanism) lives
+# in import_to_sqlite (it operates on apply_seeds' open connections), NOT in a
+# seeds_shared submodule. seeds_shared MUST NOT import import_to_sqlite at import
+# time (import_to_sqlite imports seeds_shared -- a top-level import here would cycle;
+# see db_editor's lazy-import note). So these four names are re-exported LAZILY via
+# __getattr__ (PEP 562): `from seeds_shared import DeferredCommit, commit, rollback,
+# DeferredCommitError` resolves them from import_to_sqlite on FIRST access, after the
+# module graph is built -- the backend (step 4b) imports them through this surface
+# without a circular import. Additive: no existing name's binding changes.
+_DEFERRED_COMMIT_NAMES = frozenset({
+    "DeferredCommit", "DeferredCommitError", "commit", "rollback",
+})
+
+
+def __getattr__(name):
+    """PEP 562 lazy attribute resolution for the deferred-commit surface only. Any
+    other unknown attribute is a real AttributeError (the normal behaviour)."""
+    if name in _DEFERRED_COMMIT_NAMES:
+        import import_to_sqlite as _imp
+        return getattr(_imp, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
     "EVIDENCE_KIND_ENUM", "ADDRESS_KINDS", "FUNCTION_KINDS", "SURVIVAL_KIND_FORMS",
@@ -102,4 +124,8 @@ __all__ = [
     "field_delta", "is_new_version_nothing_changed",
     "derive_status", "read_curated_set", "read_entity_detail",
     "read_version_rows", "DbReadError",
+    # Lazily re-exported from import_to_sqlite via __getattr__ (the deferred-commit
+    # write mechanism -- step 4a): the handle type, its misuse error, and the
+    # commit/rollback the maintainer-tool backend drives on confirm/cancel.
+    "DeferredCommit", "DeferredCommitError", "commit", "rollback",
 ]

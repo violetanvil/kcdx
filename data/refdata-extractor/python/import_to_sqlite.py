@@ -1414,49 +1414,51 @@ def _classify_name_edits(con, state):
     return deprecate_actions, supersede_actions, n_other
 
 
-def _apply_deprecate(con, action):
+def _apply_deprecate(con, action, tx):
     """Apply one deprecate action: UPDATE the entity's address_names row to set
     is_deprecated + deprecated_at_version + (optional) deprecation_replacement.
-    Its own BEGIN; ...; COMMIT; (plan.md S6). The resolved ids in `action` already
-    match what the rebuild writes (validation ran the resolution + pair-integrity
-    + acyclicity gate over the full seed). address_names is all-rows in BOTH DBs,
-    so the projection does not drop any of these columns -- the UPDATE is the same
-    for user + dev."""
+    Its own per-action transaction via `tx` (plan.md S6) -- BEGIN/COMMIT immediate,
+    SAVEPOINT/RELEASE inside the held outer txn deferred. The resolved ids in
+    `action` already match what the rebuild writes (validation ran the resolution +
+    pair-integrity + acyclicity gate over the full seed). address_names is all-rows
+    in BOTH DBs, so the projection does not drop any of these columns -- the UPDATE
+    is the same for user + dev."""
     kid = action["kcdx_id"]
-    con.execute("BEGIN")
+    tx.begin()
     try:
         con.execute(
             "UPDATE address_names SET is_deprecated = ?, "
             "deprecated_at_version = ?, deprecation_replacement = ? WHERE id = ?",
             (action["is_deprecated"], action["deprecated_at_version"],
              action["deprecation_replacement"], kid))
-        con.execute("COMMIT")
+        tx.commit()
     except Exception:
-        con.execute("ROLLBACK")
+        tx.rollback()
         raise
 
 
-def _apply_supersede(con, action):
+def _apply_supersede(con, action, tx):
     """Apply one supersede action: UPDATE the PREDECESSOR's address_names row to
-    set superseded_by + superseded_at_version. Its own BEGIN; ...; COMMIT;
-    (plan.md S6). The successor entity Y lands via the existing add-entity path (a
-    separate versions-seed action); this writes ONLY the predecessor edge. The
-    resolved ids in `action` already match the rebuild's (validation's acyclicity
-    + pair-integrity gate accepted the full seed before any write)."""
+    set superseded_by + superseded_at_version. Its own per-action transaction via
+    `tx` (plan.md S6) -- BEGIN/COMMIT immediate, SAVEPOINT/RELEASE inside the held
+    outer txn deferred. The successor entity Y lands via the existing add-entity
+    path (a separate versions-seed action); this writes ONLY the predecessor edge.
+    The resolved ids in `action` already match the rebuild's (validation's
+    acyclicity + pair-integrity gate accepted the full seed before any write)."""
     kid = action["kcdx_id"]
-    con.execute("BEGIN")
+    tx.begin()
     try:
         con.execute(
             "UPDATE address_names SET superseded_by = ?, "
             "superseded_at_version = ? WHERE id = ?",
             (action["superseded_by"], action["superseded_at_version"], kid))
-        con.execute("COMMIT")
+        tx.commit()
     except Exception:
-        con.execute("ROLLBACK")
+        tx.rollback()
         raise
 
 
-def _apply_one_db(con, actions, state, which, user_projection):
+def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
     """Compute + apply the full apply delta for one open DB connection.
 
     For each per-row action fact, look the row up by (kcdx_id, valid_from-as-id):
@@ -1473,10 +1475,20 @@ def _apply_one_db(con, actions, state, which, user_projection):
           (b) rva-bearing non-function kind -> mint, fingerprint NULL.
           (c) vtable_index -> mint, all NULL.
 
-    Each ACTION is wrapped in its own BEGIN; ...; COMMIT; (plan.md S6). A
+    Each ACTION is wrapped in its own per-action transaction via the `tx` control
+    object (plan.md S6). IMMEDIATE (deferred=False, default): that is a real
+    BEGIN; ...; COMMIT; per action -- byte-identical to before. DEFERRED
+    (deferred=True, step 4a): each action is a SAVEPOINT/RELEASE pair nested inside
+    one outer txn the caller opened + holds, so nothing commits until commit(handle)
+    -- the WRITE logic is identical, only WHEN it commits differs. A
     deprecate/supersede edit on an EXISTING names row is a names-side UPDATE
     (db-updator step 6); an edit we do not yet model (un-deprecate / rewrite an
     existing edge) is counted skipped, never written. Returns a counts dict."""
+    # The per-action transaction seam: BEGIN/COMMIT in immediate mode (default) vs
+    # SAVEPOINT/RELEASE inside the caller's held outer txn in deferred mode. Threaded
+    # to every action site below + the two lifecycle helpers so the deferred mode
+    # holds ALL of this DB's writes in one outer txn.
+    tx = _Tx(con, deferred)
     counts = {"reverified": 0, "noop": 0, "added_entity": 0,
               "added_versions_row": 0, "deprecated": 0, "superseded": 0,
               "skipped_dep_sup": 0}
@@ -1494,10 +1506,10 @@ def _apply_one_db(con, actions, state, which, user_projection):
         con, state)
     counts["skipped_dep_sup"] = n_skipped
     for da in deprecate_actions:
-        _apply_deprecate(con, da)
+        _apply_deprecate(con, da, tx)
         counts["deprecated"] += 1
     for sa in supersede_actions:
-        _apply_supersede(con, sa)
+        _apply_supersede(con, sa, tx)
         counts["superseded"] += 1
 
     for a in actions:
@@ -1521,7 +1533,7 @@ def _apply_one_db(con, actions, state, which, user_projection):
             if cur == new:
                 counts["noop"] += 1
                 continue
-            con.execute("BEGIN")
+            tx.begin()
             try:
                 con.execute(
                     "UPDATE address_versions SET last_verified_at_version = ?, "
@@ -1529,9 +1541,9 @@ def _apply_one_db(con, actions, state, which, user_projection):
                     "WHERE kcdx_id = ? AND valid_from = ?",
                     (lvv_id, a["verified_by"], a["verified_date"], ekn_id,
                      kid, vf_id))
-                con.execute("COMMIT")
+                tx.commit()
             except Exception:
-                con.execute("ROLLBACK")
+                tx.rollback()
                 raise
             counts["reverified"] += 1
             continue
@@ -1596,10 +1608,11 @@ def _apply_one_db(con, actions, state, which, user_projection):
                 evidence_kind_id=ekn_id, offset=a["offset"],
                 vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
 
-        # One BEGIN/COMMIT per action. add-versions-row closes the prior open
-        # interval FIRST (so ix_av_open_unique -- kcdx_id IS NOT NULL AND
-        # valid_through IS NULL -- is never violated).
-        con.execute("BEGIN")
+        # One per-action transaction (tx -- BEGIN/COMMIT immediate, SAVEPOINT/RELEASE
+        # deferred). add-versions-row closes the prior open interval FIRST (so
+        # ix_av_open_unique -- kcdx_id IS NOT NULL AND valid_through IS NULL -- is
+        # never violated).
+        tx.begin()
         try:
             if is_add_entity:
                 name_row = state["names_by_id"].get(kid)
@@ -1646,9 +1659,9 @@ def _apply_one_db(con, actions, state, which, user_projection):
                 content_hash=av_row.get("content_hash"),
                 length=av_row.get("length"))
             _insert_survival_row(con, sv_row, user_projection)
-            con.execute("COMMIT")
+            tx.commit()
         except Exception:
-            con.execute("ROLLBACK")
+            tx.rollback()
             raise
         counts["added_entity" if is_add_entity else "added_versions_row"] += 1
 
@@ -1689,7 +1702,203 @@ def _promote_bulk_in_place(con, av_row):
         [av_row.get(c) for c in cols] + [av_row["id"]])
 
 
-def apply_seeds(out_dir, dll_path, *, version=None, log=None):
+# ---------------------------------------------------------------------------
+# Per-action transaction control -- the ONE seam the deferred-commit mode turns.
+#
+# WHY a control object instead of raw con.execute("BEGIN"/"COMMIT"/"ROLLBACK"):
+# the apply path wraps EACH action in its own BEGIN; ...; COMMIT; (plan.md S6), so
+# every action self-commits and the connection is closed before apply_seeds
+# returns -- there is no seam to hold the transaction open across the maintainer's
+# confirm. The deferred-commit mode (step 4a) needs the per-action writes to stay
+# PENDING in ONE outer transaction per DB that the caller commits later, while
+# keeping the default path BYTE-IDENTICAL for every desktop/CLI/test caller.
+#
+# A naive "skip the COMMITs in deferred mode" cannot work: a COMMIT ENDS the SQLite
+# transaction, so letting the per-action COMMITs fire would close the very txn we
+# need to hold; and skipping BEGIN/COMMIT entirely would let the driver auto-manage
+# each statement, again ending the hold. The clean primitive is SAVEPOINT/RELEASE:
+# a SAVEPOINT nests inside the outer txn and a RELEASE pops the marker WITHOUT
+# ending the outer txn (verified: an outer BEGIN stays in_transaction across N
+# SAVEPOINT/RELEASE pairs). So:
+#   - IMMEDIATE (default): begin/commit/rollback emit BEGIN / COMMIT / ROLLBACK --
+#     exactly the statements the code emitted before; the default path is unchanged.
+#   - DEFERRED: begin/commit/rollback emit SAVEPOINT sN / RELEASE sN /
+#     (ROLLBACK TO sN; RELEASE sN), all nested inside the single outer BEGIN
+#     apply_seeds opened and never committed. A per-action error path rolls back
+#     ONLY its savepoint (ROLLBACK TO + RELEASE), never the outer txn -- a bare
+#     ROLLBACK would abort the WHOLE held txn, which is why deferred rollback is
+#     savepoint-scoped.
+# The object is payload-agnostic: it issues only transaction-control SQL, so the
+# write logic in _apply_one_db is identical in both modes -- only WHEN/whether the
+# work commits differs, never WHAT is written (the convergence the 4a test pins).
+# ---------------------------------------------------------------------------
+class _Tx:
+    """Per-action transaction control for one DB connection, in one of two modes.
+    IMMEDIATE (default) emits BEGIN/COMMIT/ROLLBACK -- byte-identical to the
+    pre-4a code. DEFERRED emits SAVEPOINT/RELEASE/(ROLLBACK TO+RELEASE) inside an
+    already-open outer transaction the caller commits later."""
+
+    def __init__(self, con, deferred):
+        self.con = con
+        self.deferred = deferred
+        # Monotonic savepoint counter: each action gets a UNIQUE name (actions never
+        # nest -- a begin() is matched by its commit()/rollback() before the next
+        # begin()), so a name is never live-duplicated.
+        self._n = 0
+        self._sp = None
+
+    def begin(self):
+        if self.deferred:
+            self._n += 1
+            self._sp = f"_kcdx_sp_{self._n}"
+            self.con.execute(f"SAVEPOINT {self._sp}")
+        else:
+            self.con.execute("BEGIN")
+
+    def commit(self):
+        if self.deferred:
+            # RELEASE pops the savepoint INTO the outer txn (does NOT end it).
+            self.con.execute(f"RELEASE {self._sp}")
+        else:
+            self.con.execute("COMMIT")
+
+    def rollback(self):
+        if self.deferred:
+            # Undo ONLY this action's savepoint; the outer txn stays open + holds
+            # every prior released action. A bare ROLLBACK here would kill the
+            # whole held txn -- never that in deferred mode.
+            self.con.execute(f"ROLLBACK TO {self._sp}")
+            self.con.execute(f"RELEASE {self._sp}")
+        else:
+            self.con.execute("ROLLBACK")
+
+
+class DeferredCommit:
+    """The handle a deferred-commit apply_seeds returns: the two OPEN, uncommitted
+    DB connections (user + dev) plus the apply result dict. The caller (the
+    maintainer-tool backend, step 4b) holds it across the user's confirm and calls
+    commit(handle) on Confirm or rollback(handle) on Cancel -- 'on Cancel nothing
+    lands' is then LITERAL: an uncommitted transaction is invisible to every other
+    connection and is discarded whole on ROLLBACK, with no file copy and no live
+    mutation before confirm (design S7; plan-spec 'Deferred commit is THE write
+    mechanism').
+
+    A deferred apply leaves an OUTER `BEGIN` open on each connection (the per-action
+    writes are SAVEPOINT/RELEASE pairs nested inside it -- see _Tx). commit() COMMITs
+    both outer txns + closes; rollback() ROLLBACKs both + closes. The handle is
+    single-use: once finished (committed or rolled back) a second commit/rollback is
+    a clear error (DeferredCommitError), never a crash or a partial state.
+
+    `result` carries the same dict the immediate path returns (tag / ordinal /
+    n_actions / counts) so a deferred caller has the identical post-apply summary;
+    `out_dir` is the directory whose two DBs the held txns belong to."""
+
+    def __init__(self, ucon, dcon, result, out_dir):
+        self.ucon = ucon
+        self.dcon = dcon
+        self.result = result
+        self.out_dir = out_dir
+        self._finished = False   # set once committed OR rolled back (single-use)
+
+    @property
+    def finished(self):
+        return self._finished
+
+
+class DeferredCommitError(RuntimeError):
+    """Raised on a misuse of a DeferredCommit handle: a commit/rollback on a handle
+    already committed or rolled back (single-use). Distinct from a write/validation
+    failure -- it is a CALLER protocol error (the held txn is already resolved), so
+    the caller can tell 'I double-committed' apart from 'the COMMIT itself failed'."""
+
+
+def commit(handle):
+    """COMMIT the held deferred-commit transaction on BOTH DBs, then close both
+    connections. Idempotent-safe: a commit on an already-finished handle raises
+    DeferredCommitError (single-use), never a crash or a partial second write.
+
+    TWO-DB COMMIT ORDERING -- the surfaced 'atomic guarantee's edge' (plan-spec
+    'OPEN sub-decision'; step 4a). The user + dev DBs are two SEPARATE SQLite files,
+    so a single OS-atomic two-file commit does not exist; if the first COMMIT
+    succeeds and the second fails (disk-full, I/O error) the result is a SPLIT state
+    -- one DB advanced, the other not. The implemented ordering is USER-DB-FIRST,
+    DEV-DB-SECOND, chosen deliberately:
+      - The USER DB (reference.sqlite) is the SHIPPED artifact -- the curated set
+        that goes in every kcdx release and the maintainer-tool reads back. The DEV
+        DB (reference-dev.sqlite) is the on-demand bulk superset; a DEV DB lagging
+        the USER DB by one edit is the more-recoverable split (re-run the same edit
+        in deferred mode -- the USER row already matches, so apply diffs only the DEV
+        side; the convergence/idempotency the applier already has makes the re-apply
+        safe).
+      - The inverse (dev-first) would leave the SHIPPED DB stale while the bulk DB
+        advanced -- the worse split, since the shipped artifact is the one a release
+        and the tool surface depend on.
+    On a second-COMMIT failure the FIRST DB is ALREADY committed (SQLite gives no
+    cross-file rollback) -- this function re-raises the underlying error AFTER
+    marking the handle finished + closing both connections, so the caller (step 4b)
+    surfaces the split to the operator. It does NOT silently swallow it and does NOT
+    pretend atomicity across two files. (A future single-file or attached-DB layout
+    would close this edge; today's two-file layout cannot, by construction.)"""
+    if handle.finished:
+        raise DeferredCommitError(
+            "commit() on an already-finished DeferredCommit handle (it was already "
+            "committed or rolled back; a handle is single-use)")
+    handle._finished = True
+    try:
+        # USER first (the shipped DB), DEV second -- see the ordering rationale above.
+        handle.ucon.execute("COMMIT")
+        handle.dcon.execute("COMMIT")
+    finally:
+        # Always close BOTH, even if the second COMMIT raised (the first is already
+        # durable; leaving a connection open would leak a file handle + a lock).
+        _close_quiet(handle.ucon)
+        _close_quiet(handle.dcon)
+
+
+def rollback(handle):
+    """ROLLBACK the held deferred-commit transaction on BOTH DBs, then close both
+    connections -- the literal 'on Cancel nothing lands'. Idempotent-safe: a
+    rollback on an already-finished handle raises DeferredCommitError (single-use).
+    Order does not matter for rollback (neither DB has committed; both held txns are
+    discarded), so both are rolled back unconditionally and both are closed."""
+    if handle.finished:
+        raise DeferredCommitError(
+            "rollback() on an already-finished DeferredCommit handle (it was already "
+            "committed or rolled back; a handle is single-use)")
+    handle._finished = True
+    try:
+        # Both txns are uncommitted; discard each. ROLLBACK on a connection with no
+        # open txn is harmless, so a partially-applied handle still rolls back clean.
+        _rollback_quiet(handle.ucon)
+        _rollback_quiet(handle.dcon)
+    finally:
+        _close_quiet(handle.ucon)
+        _close_quiet(handle.dcon)
+
+
+def _rollback_quiet(con):
+    """ROLLBACK a connection's open transaction; swallow the 'no transaction is
+    active' case (a handle whose outer BEGIN never opened on this DB) -- logged via
+    the swallow being the documented safe case, not an error to surface."""
+    try:
+        con.execute("ROLLBACK")
+    except sqlite3.OperationalError:
+        # No active transaction to roll back -- the safe, expected case when the
+        # outer BEGIN never opened on this connection. Nothing to undo.
+        pass
+
+
+def _close_quiet(con):
+    """Close a connection, swallowing a double-close (the connection is already
+    closed) -- closing is idempotent from the caller's view."""
+    try:
+        con.close()
+    except sqlite3.ProgrammingError:
+        # Already closed -- idempotent close, the safe expected case.
+        pass
+
+
+def apply_seeds(out_dir, dll_path, *, version=None, log=None, defer_commit=False):
     """APPLY mode, LIBRARY entry: the incremental seed->DB applier as a callable
     that takes parameters and RETURNS a result -- no sys.exit, no CLI parsing, and
     no print-as-sole-output-channel. The CLI wrapper run_apply (below) and the
@@ -1727,10 +1936,25 @@ def apply_seeds(out_dir, dll_path, *, version=None, log=None):
       log      -- an optional callable(str) for progress lines; None suppresses
                   them (the in-process caller wants no prints, the CLI passes
                   print). The RESULT is returned, never only printed.
+      defer_commit -- DEFAULT False = the historical path: each action self-commits
+                  in its own BEGIN/COMMIT, both DBs close, a result DICT is returned
+                  (byte-identical to before -- every landed oracle exercises this).
+                  When True (step 4a -- THE maintainer-tool write mechanism): the
+                  per-DB writes run under ONE outer transaction per DB (the
+                  per-action commits become SAVEPOINT/RELEASE pairs nested inside
+                  it, never committed), the connections are NOT closed, and a
+                  DeferredCommit HANDLE is returned carrying the two OPEN,
+                  uncommitted connections + the result dict. The caller commits the
+                  held txns later via commit(handle) / discards via rollback(handle).
+                  Validation + the version/baseline refusals still gate BEFORE any
+                  DB open, exactly as in the default path.
 
-    Returns a dict:
-      {"tag", "ordinal", "n_actions", "counts": {"user": <c>, "dev": <c>}}
-    where each <c> is the per-DB counts dict _apply_one_db returns.
+    Returns:
+      defer_commit=False -- a dict:
+        {"tag", "ordinal", "n_actions", "counts": {"user": <c>, "dev": <c>}}
+      where each <c> is the per-DB counts dict _apply_one_db returns.
+      defer_commit=True  -- a DeferredCommit handle whose `.result` is that SAME
+        dict and whose `.ucon`/`.dcon` are the two open uncommitted connections.
 
     Raises (no sys.exit -- the caller maps these to its own exit/UI behaviour):
       ValueError          -- neither dll_path nor version was supplied, or BOTH were
@@ -1739,6 +1963,9 @@ def apply_seeds(out_dir, dll_path, *, version=None, log=None):
       VersionRefusal      -- the DLL is a version the baseline + seeds don't cover.
       BaselineRefusal     -- a function-kind add has no bulk baseline (no DB write).
       RuntimeError        -- a seed-state validation failure (no DB open/write).
+    On a refusal/validation/baseline/apply error in DEFERRED mode, both connections
+    are rolled back + closed before the error propagates -- a deferred failure leaves
+    NO open txn and NO partial write, the same no-write guarantee as the default path.
     """
     def _emit(msg):
         if log is not None:
@@ -1781,6 +2008,52 @@ def apply_seeds(out_dir, dll_path, *, version=None, log=None):
     # 3. Open BOTH DBs read-write (refuse if a baseline is missing).
     user_db = os.path.join(out_dir, "reference.sqlite")
     dev_db = os.path.join(out_dir, "reference-dev.sqlite")
+
+    if defer_commit:
+        # DEFERRED MODE -- run validate (above, already done) -> the per-DB writes
+        # under ONE outer txn per DB -> RETURN the open uncommitted connections.
+        # The per-action commits become SAVEPOINT/RELEASE pairs nested inside each
+        # outer BEGIN (see _Tx); the outer BEGIN is opened here and NEVER committed
+        # by apply_seeds -- commit(handle)/rollback(handle) resolve it later. On ANY
+        # error here, both txns are rolled back + both connections closed before the
+        # error propagates, so a deferred failure leaves NO open txn and NO write --
+        # the same no-write guarantee the default path gives.
+        ucon = _open_rw(user_db, "user (reference.sqlite)")
+        try:
+            dcon = _open_rw(dev_db, "dev (reference-dev.sqlite)")
+        except BaseException:
+            _close_quiet(ucon)
+            raise
+        try:
+            state["dev_con"] = dcon
+            # Open the held outer transaction on EACH DB. Every per-action write
+            # below nests as a SAVEPOINT inside these; nothing commits until the
+            # caller's commit(handle).
+            ucon.execute("BEGIN")
+            dcon.execute("BEGIN")
+            # 4/5/6. Apply user first, then dev (plan.md S6 user->dev order), each
+            # action a SAVEPOINT/RELEASE inside its outer txn (deferred=True).
+            u = _apply_one_db(ucon, actions, state, "user",
+                              user_projection=True, deferred=True)
+            d = _apply_one_db(dcon, actions, state, "dev",
+                              user_projection=False, deferred=True)
+        except BaseException:
+            # No commit happened; discard both held txns + close. _rollback_quiet
+            # tolerates a connection whose BEGIN never opened (e.g. the dcon BEGIN
+            # raised). The original error propagates.
+            _rollback_quiet(ucon)
+            _rollback_quiet(dcon)
+            _close_quiet(ucon)
+            _close_quiet(dcon)
+            raise
+        result = {"tag": tag, "ordinal": ordinal, "n_actions": len(actions),
+                  "counts": {"user": u, "dev": d}}
+        # Connections stay OPEN + uncommitted; the handle carries them to the caller.
+        return DeferredCommit(ucon, dcon, result, out_dir)
+
+    # IMMEDIATE MODE (default) -- byte-identical to the pre-4a path: each action
+    # self-commits in its own BEGIN/COMMIT (deferred=False), both DBs close before
+    # return, a result dict is returned. Untouched so every landed oracle stays green.
     ucon = _open_rw(user_db, "user (reference.sqlite)")
     try:
         dcon = _open_rw(dev_db, "dev (reference-dev.sqlite)")

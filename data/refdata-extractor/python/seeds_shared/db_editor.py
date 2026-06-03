@@ -156,12 +156,14 @@ def _seed_paths(seed_dir):
 
 
 def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
-                                       *, version=None, log=None):
+                                       *, version=None, log=None,
+                                       defer_commit=False):
     """Drive import_to_sqlite.apply_seeds over the prospective seeds under
     prospective_seed_dir, repointing the importer's three seed-path module
     constants for the duration (the round_trip.py / apply-oracle convention),
-    restoring them after. Returns apply_seeds' result dict; propagates every typed
-    error it raises (ValueError / VersionResolveError / VersionRefusal /
+    restoring them after. Returns apply_seeds' result (a result DICT in the default
+    immediate path; a DeferredCommit HANDLE when defer_commit=True); propagates
+    every typed error it raises (ValueError / VersionResolveError / VersionRefusal /
     BaselineRefusal / RuntimeError) so the caller surfaces the precise reason -- a
     validation failure means NO DB write (apply_seeds validates before opening any
     DB).
@@ -170,6 +172,20 @@ def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
     the caller already resolved the version, e.g. the web backend per
     data/maintainer-tool/design.md D15. It threads straight to apply_seeds, which
     requires EXACTLY ONE of dll_path / version.
+
+    `defer_commit` threads straight to apply_seeds (step 4a -- THE maintainer-tool
+    write mechanism): when True, apply_seeds runs validate -> the per-DB writes under
+    one held outer txn per DB and RETURNS a DeferredCommit handle (the two open
+    uncommitted connections + result) instead of committing+closing; the caller
+    commits via import_to_sqlite.commit(handle) / discards via .rollback(handle).
+    The export of the CURRENT DB that BUILT the prospective seed already happened in
+    the caller (before this drive) -- it read the COMMITTED pre-edit state, so the
+    prospective seed is correct regardless of mode; deferring changes only whether
+    the resulting delta commits, not the seed it diffs against.
+
+    The seed-path-constant repointing is restored in `finally` -- it runs even in
+    deferred mode (the constants are global importer state, not the held txn), so a
+    held-open handle does not leave the importer's seed paths pointed at a temp dir.
 
     import_to_sqlite is imported lazily so this seeds_shared submodule carries no
     import-time dependency on import_to_sqlite (which imports seeds_shared)."""
@@ -180,14 +196,16 @@ def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
     (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
      imp.ADDRESS_VERSIONS_SEED_CSV) = _seed_paths(prospective_seed_dir)
     try:
-        return imp.apply_seeds(out_dir, dll_path, version=version, log=log)
+        return imp.apply_seeds(out_dir, dll_path, version=version, log=log,
+                               defer_commit=defer_commit)
     finally:
         (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
          imp.ADDRESS_VERSIONS_SEED_CSV) = saved
 
 
 def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
-                       *, version=None, log=None, work_dir=None):
+                       *, version=None, log=None, work_dir=None,
+                       defer_commit=False):
     """Validate + atomically apply a one-row UPDATE to the address_versions row
     identified by (kcdx_id, valid_from_version), driving the existing seed->DB
     applier. Covers the audit-trio re-verify (Job 2 / US-3) and the full-column
@@ -215,10 +233,22 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
       work_dir           -- optional scratch dir for the export + edit; a temp dir
                             is created + removed when omitted. NOTHING is written
                             under data/seeds/ -- the prospective seed lives here.
+                            (Safe to remove even in deferred mode: the held
+                            connections point at out_dir's DBs, NOT this temp seed --
+                            apply_seeds read the seed CSVs before returning.)
+      defer_commit       -- DEFAULT False (immediate -- the historical behaviour;
+                            returns the apply result dict). When True (step 4a):
+                            the edit lands under a HELD outer txn that does NOT
+                            commit; the return is a DeferredCommit HANDLE (carrying
+                            the two open uncommitted connections + the result) the
+                            caller commits via import_to_sqlite.commit(handle) on
+                            confirm / discards via .rollback(handle) on cancel.
 
-    Returns apply_seeds' result dict on success (the per-DB counts -- for a valid
-    edit the edited row shows as 1 re-verified or is folded into the full-column
-    delta).
+    Returns:
+      defer_commit=False -- apply_seeds' result dict (the per-DB counts -- for a
+                            valid edit the edited row shows as 1 re-verified or is
+                            folded into the full-column delta).
+      defer_commit=True  -- a DeferredCommit handle (the held, uncommitted edit).
 
     Raises (no DB write occurs unless the apply reaches the per-DB BEGIN/COMMIT):
       DbEditError         -- the edit names a non-editable / unknown column, tries
@@ -230,6 +260,8 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
                              to before (apply_seeds validates before any DB open).
       VersionResolveError / VersionRefusal / BaselineRefusal -- as apply_seeds
                              raises them (version/baseline refusals; no DB write).
+                             In deferred mode a refusal still leaves NO held txn and
+                             NO write (apply_seeds rolls back + closes on error).
     """
     _reject_identity_and_unknown_edits(edits)
 
@@ -269,9 +301,11 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
         # 3. Drive the existing validated atomic applier over the prospective seed.
         #    apply_seeds validates the WHOLE prospective state through the single
         #    shared gate BEFORE opening any DB -- a validation failure raises here
-        #    with NO DB write; a valid edit lands per-DB in BEGIN/COMMIT.
+        #    with NO DB write; a valid edit lands per-DB in BEGIN/COMMIT (immediate)
+        #    or under a held outer txn returned as a handle (defer_commit=True).
         return _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, version=version, log=log)
+            out_dir, dll_path, prospective, version=version, log=log,
+            defer_commit=defer_commit)
     finally:
         if owns_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
@@ -345,7 +379,7 @@ def _cell(value):
 
 
 def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
-                   *, version=None, log=None, work_dir=None):
+                   *, version=None, log=None, work_dir=None, defer_commit=False):
     """Validate + atomically APPEND a new address_versions row (a new game-version
     row, Job 6 / US-6) for the EXISTING entity `kcdx_id`, driving the existing
     seed->DB applier. The new row's identity key is (kcdx_id, valid_from_version);
@@ -377,8 +411,21 @@ def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
       work_dir           -- optional scratch dir; a temp dir is created + removed
                             when omitted. NOTHING is written under data/seeds/.
 
-    Returns a dict on success (no exception == the row landed atomically):
-      {"result": <apply_seeds result dict>,
+    `defer_commit` (DEFAULT False): when True (step 4a), the new-version append lands
+    under a HELD outer txn that does NOT commit -- the returned dict's "result" field
+    is the DeferredCommit HANDLE (the two open uncommitted connections + the apply
+    result) instead of the plain apply result dict; the AP18 + nothing_changed flags
+    still compute (they read the prospective seed, not the committed DB) and are
+    returned alongside. The caller gates on ap18_new_row / nothing_changed, then
+    commits via import_to_sqlite.commit(result["result"]) on confirm or discards via
+    .rollback(result["result"]) on cancel.
+
+    Returns a dict on success (no exception == the row landed -- committed in
+    immediate mode, HELD uncommitted in deferred mode):
+      {"result": <apply result>,   # immediate: apply_seeds' result dict.
+                                    # deferred: a DeferredCommit handle (.result
+                                    # carries that same apply dict; .ucon/.dcon are
+                                    # the held connections to commit/rollback later).
        "ap18_new_row": True,        # SURFACE the AP18 flag -- a new DB row landed;
                                     # the GUI confirm step GATES on this (D11). This
                                     # is a MARKER, not a db_editor-side approval.
@@ -449,8 +496,13 @@ def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
         # tuple-uniqueness + required + enum + FK.
         seed_csv_edit.append_row(versions_csv, new_cells)
 
+        # In deferred mode `result` is the DeferredCommit handle (held, uncommitted);
+        # in immediate mode it is apply_seeds' result dict. Either way it rides the
+        # "result" slot -- the AP18 + nothing_changed flags computed above are
+        # returned alongside so the confirm gate has them regardless of commit mode.
         result = _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, version=version, log=log)
+            out_dir, dll_path, prospective, version=version, log=log,
+            defer_commit=defer_commit)
         return {
             "result": result,
             "ap18_new_row": True,
@@ -483,7 +535,7 @@ def _new_version_nothing_changed(versions_csv, kcdx_id, new_cells):
 
 
 def create_entity(out_dir, dll_path, name, first_version_columns,
-                  *, version=None, log=None, work_dir=None):
+                  *, version=None, log=None, work_dir=None, defer_commit=False):
     """Validate + atomically APPEND a brand-NEW entity (Job 1 / US-7): a new
     address_names row (assigned the next free kcdx_id, append-only) + its first
     address_versions row, driving the existing seed->DB applier. apply_seeds
@@ -514,8 +566,15 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
       work_dir              -- optional scratch dir; a temp dir is created + removed
                                when omitted. NOTHING is written under data/seeds/.
 
-    Returns a dict on success:
-      {"result": <apply_seeds result dict>,
+    `defer_commit` (DEFAULT False): when True (step 4a), the new-entity append lands
+    under a HELD outer txn that does NOT commit -- the returned dict's "result" field
+    is the DeferredCommit HANDLE instead of the plain apply result dict; ap18_new_row
+    still surfaces. The caller commits via import_to_sqlite.commit(result["result"])
+    on confirm / discards via .rollback(result["result"]) on cancel.
+
+    Returns a dict on success (committed immediate, HELD uncommitted deferred):
+      {"result": <apply result>,   # immediate: apply_seeds' result dict.
+                                    # deferred: a DeferredCommit handle.
        "ap18_new_row": True,        # SURFACE the AP18 flag (a new entity landed);
                                     # the GUI confirm GATES on it (D11). A MARKER.
        "addition_kind": "entity",
@@ -571,8 +630,11 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
         version_cells["kcdx_id"] = str(kid)
         seed_csv_edit.append_row(versions_csv, version_cells)
 
+        # `result` is the DeferredCommit handle in deferred mode, apply_seeds' dict
+        # immediate -- it rides the "result" slot; ap18_new_row surfaces either way.
         result = _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, version=version, log=log)
+            out_dir, dll_path, prospective, version=version, log=log,
+            defer_commit=defer_commit)
         return {
             "result": result,
             "ap18_new_row": True,
@@ -597,7 +659,8 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
 # never mutated.
 # ---------------------------------------------------------------------------
 def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
-                                action, log, work_dir, version=None):
+                                action, log, work_dir, version=None,
+                                defer_commit=False):
     """Shared driver for the lifecycle UPDATEs: export the current DB to a temp
     seed, fold `edits` into the address_names row keyed on `id == kcdx_id` (via
     seed_csv_edit.update_row_in_place, diff-preserved), and drive the existing
@@ -610,8 +673,13 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
     read (the caller already resolved the version, e.g. the web backend per
     data/maintainer-tool/design.md D15 -- supply EXACTLY ONE of dll_path / version).
 
-    Returns a dict on success:
-      {"result": <apply_seeds result dict>,
+    `defer_commit` threads to apply_seeds (step 4a): when True the lifecycle edit
+    lands under a HELD outer txn that does NOT commit -- the returned dict's "result"
+    is the DeferredCommit HANDLE the caller commits/rolls back later.
+
+    Returns a dict on success (committed immediate, HELD uncommitted deferred):
+      {"result": <apply result>,  # immediate: apply_seeds' result dict.
+                                   # deferred: a DeferredCommit handle.
        "action": <str>,           # 'supersede' or 'deprecate'
        "kcdx_id": <int>}          # the entity edited (identity unchanged)
 
@@ -662,7 +730,8 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
         #    violation raises here with NO DB write; a valid edit lands per-DB in
         #    BEGIN/COMMIT.
         result = _drive_apply_over_prospective_seed(
-            out_dir, dll_path, prospective, version=version, log=log)
+            out_dir, dll_path, prospective, version=version, log=log,
+            defer_commit=defer_commit)
         return {"result": result, "action": action, "kcdx_id": int(kcdx_id)}
     finally:
         if owns_work_dir:
@@ -671,7 +740,7 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
 
 def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
                      superseded_at_version, *, version=None, log=None,
-                     work_dir=None):
+                     work_dir=None, defer_commit=False):
     """Validate + atomically set the SUPERSESSION edge on the existing address_names
     row `kcdx_id` (Job 4 / US-8): superseded_by + superseded_at_version TOGETHER,
     driving the existing seed->DB applier. The successor name + the version are
@@ -703,8 +772,13 @@ def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
                                is created + removed when omitted. NOTHING is written
                                under data/seeds/.
 
-    Returns {"result": <apply_seeds result>, "action": "supersede", "kcdx_id": <int>}
-    on success (no exception == the edge landed atomically in both DBs).
+    `defer_commit` (DEFAULT False): when True (step 4a) the edge lands under a HELD
+    outer txn -- the returned "result" is a DeferredCommit handle the caller
+    commits/rolls back later (import_to_sqlite.commit / .rollback).
+
+    Returns {"result": <apply result>, "action": "supersede", "kcdx_id": <int>} on
+    success (committed in immediate mode, HELD uncommitted in deferred mode --
+    "result" is then a DeferredCommit handle).
 
     Raises (no DB write occurs unless the apply reaches the per-DB BEGIN/COMMIT):
       DbEditError  -- `kcdx_id` matches no existing entity in the exported seed.
@@ -719,12 +793,13 @@ def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
     }
     return _drive_names_lifecycle_edit(
         out_dir, dll_path, kcdx_id, edits,
-        action="supersede", log=log, work_dir=work_dir, version=version)
+        action="supersede", log=log, work_dir=work_dir, version=version,
+        defer_commit=defer_commit)
 
 
 def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
                      deprecated_at_version=None, deprecation_replacement=None,
-                     version=None, log=None, work_dir=None):
+                     version=None, log=None, work_dir=None, defer_commit=False):
     """Validate + atomically set the DEPRECATION flags on the existing address_names
     row `kcdx_id` (Job 5 / US-8): is_deprecated + deprecated_at_version TOGETHER,
     with deprecation_replacement allowed ONLY when deprecated, driving the existing
@@ -759,8 +834,13 @@ def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
       work_dir                -- optional scratch dir; a temp dir is created + removed
                                  when omitted. NOTHING is written under data/seeds/.
 
-    Returns {"result": <apply_seeds result>, "action": "deprecate", "kcdx_id": <int>}
-    on success (no exception == the flags landed atomically in both DBs).
+    `defer_commit` (DEFAULT False): when True (step 4a) the flags land under a HELD
+    outer txn -- the returned "result" is a DeferredCommit handle the caller
+    commits/rolls back later (import_to_sqlite.commit / .rollback).
+
+    Returns {"result": <apply result>, "action": "deprecate", "kcdx_id": <int>} on
+    success (committed in immediate mode, HELD uncommitted in deferred mode --
+    "result" is then a DeferredCommit handle).
 
     Raises (no DB write occurs unless the apply reaches the per-DB BEGIN/COMMIT):
       DbEditError  -- `kcdx_id` matches no existing entity in the exported seed.
@@ -782,4 +862,5 @@ def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
     }
     return _drive_names_lifecycle_edit(
         out_dir, dll_path, kcdx_id, edits,
-        action="deprecate", log=log, work_dir=work_dir, version=version)
+        action="deprecate", log=log, work_dir=work_dir, version=version,
+        defer_commit=defer_commit)
