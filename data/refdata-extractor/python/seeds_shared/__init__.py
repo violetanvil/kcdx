@@ -73,6 +73,13 @@ from .field_delta import (
     field_delta,
     is_new_version_nothing_changed,
 )
+from .read_api import (
+    derive_status,
+    read_curated_set,
+    read_entity_detail,
+    read_version_rows,
+    DbReadError,
+)
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
@@ -93,4 +100,6 @@ __all__ = [
     "supersede_entity", "deprecate_entity",
     "EDITABLE_VERSION_COLUMNS", "DbEditError",
     "field_delta", "is_new_version_nothing_changed",
+    "derive_status", "read_curated_set", "read_entity_detail",
+    "read_version_rows", "DbReadError",
 ]
