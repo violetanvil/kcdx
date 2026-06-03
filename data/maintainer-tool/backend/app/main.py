@@ -17,6 +17,7 @@ from fastapi import FastAPI
 
 from . import adapter
 from .config import load_config
+from .routes_confirm import router as confirm_router
 from .routes_delta import router as delta_router
 from .routes_read import router as read_router
 from .routes_save import router as save_router
@@ -48,6 +49,14 @@ app.include_router(delta_router)
 # Save-previews/Confirm-transacts model). Their own router (structure-by-
 # responsibility); the step-5 confirm endpoints run the actual transaction.
 app.include_router(save_router)
+
+# The Confirm transaction + Cancel (POST /confirm/*, /cancel) -- the synchronous atomic
+# save (step 5): start txn -> DB ops (deferred) -> commit DB -> export CSVs -> integrity
+# -> git commit/push to private, rollback-everything on failure. Its own router
+# (structure-by-responsibility); the git plumbing + the cheap integrity check are the
+# backend's own concern (app.git_commit / app.csv_integrity), the write+validate are the
+# data-core's (D13/R3).
+app.include_router(confirm_router)
 
 
 def _checkout_status(config):

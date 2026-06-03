@@ -77,6 +77,18 @@ DeferredCommitError = _seeds_shared.DeferredCommitError
 commit = _seeds_shared.commit
 rollback = _seeds_shared.rollback
 
+# The D21 SCOPED restore-point (step 4d -- the POST-commit half of the robust
+# rollback). commit(handle) is one-way (it COMMITs + closes both connections, so the
+# deferred rollback above is gone after it) AND the export runs post-commit (it reads
+# the committed DB on a fresh connection). A failure THERE (export/integrity/git) is
+# undone by restore(handle): it RE-OPENS both DBs, restores the touched rows + each DB's
+# sqlite_sequence from the capture the handle carries (apply_direct_edit captured it
+# before the commit), byte-identical incl. PK. It restores DB ROWS + sequence ONLY -- the
+# data/db-export/ CSVs are a backend FILE artifact (D20) the backend reverts itself (the
+# CSV-revert split, D13/law 6). Lazily re-exported from seeds_shared (PEP 562) for the
+# same no-import-cycle reason as commit/rollback.
+restore = _seeds_shared.restore
+
 # The two authored-column-order headers field_delta takes as its `field_order` arg
 # (csv_exporter owns them; seeds_shared.__init__ does not re-export them). The
 # field-delta endpoint (routes_delta) re-orders the delta deterministically by these

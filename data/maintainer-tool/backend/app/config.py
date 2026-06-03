@@ -30,6 +30,13 @@ CHECKOUT_ENV_VAR = "KCDX_CHECKOUT"
 _SEED_SUBDIR = os.path.join("data", "seeds")
 _SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
                "address_versions_seed.csv")
+# WHY data/db-export/ (D20): the maintainer tool NEVER writes data/seeds/ -- those
+# are the frozen one-time run_rebuild bootstrap input (the DB's genesis). The DB is
+# the originator (D1/D19); its deterministic per-save CSV export is the git-tracked
+# DIFF RECORD and lands in its OWN derived location, data/db-export/. Same three
+# basenames, distinct dir. config carries BOTH: seed_dir (the bootstrap, read by the
+# load endpoint) and db_export_dir (Confirm's write target).
+_DB_EXPORT_SUBDIR = os.path.join("data", "db-export")
 # The reference DBs the data-core write path amends (out_dir holds both).
 USER_DB_NAME = "reference.sqlite"
 DEV_DB_NAME = "reference-dev.sqlite"
@@ -59,6 +66,19 @@ class Config:
     @property
     def seed_files(self):
         return tuple(os.path.join(self.seed_dir, f) for f in _SEED_FILES)
+
+    @property
+    def db_export_dir(self):
+        """The derived-export dir Confirm writes the three CSVs to (D20) --
+        data/db-export/, NOT data/seeds/ (the frozen bootstrap). The git commit
+        stages the DB (at out_dir) + these three CSVs by exact path."""
+        return os.path.join(self.checkout_path, _DB_EXPORT_SUBDIR)
+
+    @property
+    def db_export_files(self):
+        """The three derived-export CSV paths under data/db-export/ (D20) -- the
+        files Confirm exports the committed DB to + stages + integrity-checks."""
+        return tuple(os.path.join(self.db_export_dir, f) for f in _SEED_FILES)
 
     @property
     def out_dir(self):
