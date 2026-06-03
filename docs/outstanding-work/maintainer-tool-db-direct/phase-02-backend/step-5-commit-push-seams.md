@@ -1,74 +1,97 @@
-# Step 5 — Confirm: one synchronous atomic transaction (DB ops → CSV → commit DB → commit git)
+# Step 5 — Confirm: one synchronous atomic transaction (direct-write → export → commit DB → git)
 
-**What.** Add the **Confirm** endpoint that runs the whole queued save as ONE synchronous,
-atomic transaction while the page waits for a success/failure status (and a trivial **Cancel**
-that does nothing — no state was held). On Confirm, the backend takes the entity + the edit +
-the chosen version tag and runs, in the one request:
-1. **start the transaction** (the 4a deferred-commit seam — open both DBs under a held outer txn);
-2. **run all DB operations** (the chosen `db_editor` write, `version=` from the 1b adapter, deferred);
-3. **run all CSV operations** (export the in-transaction DB state to the `data/seeds/` CSVs,
-   diff-preserved) + the **round-trip oracle** (byte-identity — the design §7 round-trip, owed here);
-4. **commit the DB** (the 4a `commit(handle)` — USER-first then DEV, the settled ordering);
-5. **commit + push git** (stage the DB + 3 CSVs by **exact path** — never `-A`/`.`/`-u` — respect
-   a live `index.lock` block-and-retry, author the commit message, push to the private remote).
+**What.** Add the **Confirm** + **Cancel** endpoints that close the save spine as ONE synchronous
+atomic transaction while the page waits (D16/D19). On Confirm, the backend takes the entity + the
+edit + the chosen version tag and runs, in the one request:
+1. resolve the version tag (the 1b adapter, `version=`, no DLL server-side);
+2. **start the deferred-commit transaction** (the 4a seam — open both DBs under a held outer txn);
+3. **run the DIRECT-DB write** (the 4c direct-write path — direct INSERT/UPDATE reusing
+   `_apply_one_db`'s helpers, validated against the prospective DB state, deferred/uncommitted);
+4. **export** the in-transaction DB state to the **`data/db-export/`** CSVs (D20 — the derived
+   record, NOT `data/seeds/`), diff-preserved;
+5. **cheap integrity check** (re-export the committed DB, assert the CSV record is byte-identical
+   — NOT the full bidirectional round-trip, which rebuilds the 1.3 GB bulk DB + needs the dump);
+6. **commit the DB** (the 4a `commit(handle)` — USER-first then DEV, the settled ordering);
+7. **git commit + push**: stage the DB + the 3 `data/db-export/` CSVs by **exact path** (never
+   `-A`/`.`/`-u`), author the commit (the request-context identity), push to the **private**
+   remote (the env-credential seam).
 
-**If ANY step fails, roll back everything** (the deferred txn's `rollback(handle)` undoes the DB;
-the CSV export is reverted to its pre-Confirm state; no git commit happens) and return a FAILURE
-status to the waiting page. On success, return "Saved `<entity> <version>`". This is the literal
-"on Cancel/failure nothing lands" (design §7) — the transaction opens AND closes inside this one
-request, nothing is held across the maintainer's think-time (plan-spec §"Cross-step invariants").
+**If ANY step fails, roll back everything** — the **robust rollback** the user required: the
+deferred-commit `rollback(handle)` discards the whole txn INCLUDING `sqlite_sequence`/PK
+auto-increment bumps (so a re-Confirm reuses the same next id, no orphaned sequence advance); the
+`data/db-export/` CSV write is reverted to its pre-Confirm state; no git commit happens. The page
+gets a FAILURE status. On success, "Saved `<entity> <version>`". The transaction opens AND closes
+inside the one Confirm request — nothing held across think-time.
 
-**The post-DB-commit failure (settled by the model).** Steps 1–4 are inside the deferred txn, so
-a failure there rolls back cleanly (nothing committed). The remaining edge: step 4 (DB commit)
-succeeds, then step 5 (git) fails. The model's answer is **roll back everything** — but a
-committed SQLite txn cannot be un-committed, so order to AVOID the edge: run the CSV export +
-round-trip (step 3) and stage the git changes BEFORE the DB commit where possible, so the only
-post-DB-commit action is the git `commit`+`push` of already-staged content; a git failure there
-leaves the DB committed + the CSVs written + staged (a re-Confirm/retry re-commits the same staged
-content — git is idempotent on identical content) and the page shows "saved, commit failed —
-retry". Settle the exact step order + the git-failure recovery when the sequence is written, and
-SURFACE it (it is the DB-authoritative D1 edge: the DB + CSVs are the source of truth, git is the
-durable mirror that retries). The two-DB-commit ordering (USER-first, 4a) composes under it.
+**Reuse the kept step-5 WIP.** The uncommitted step-5 machinery — `routes_confirm.py`,
+`git_commit.py`, `csv_integrity.py` — is KEPT in the tree and reused: the Confirm-endpoint shape,
+the git commit/push (exact-path staging, push-to-private, the auth seams), and the cheap integrity
+check survive the direct-write pivot. The rework changes only: (a) the WRITE underneath (route
+through 4c's direct-write, not the seed-rebuild `db_editor`); (b) the export target
+(`data/db-export/`, not `data/seeds/`); (c) the index.lock handling (below); (d) the rollback (the
+robust deferred-commit ROLLBACK now genuinely undoes a committed-then-failed write).
+
+**Event-driven index.lock (no poll — user-settled).** The previous WIP used a sleep-poll loop
+waiting for a live `.git/index.lock` to clear (`polling.md` violation). Rework it event-driven:
+run the git command and **key off git's own non-zero exit** (git fails immediately with
+`Unable to create '.git/index.lock': File exists` on a locked index) → surface "busy — retry" to
+the page (or a bounded retry driven by git's RETURN, not a clock). NO `sleep`-loop / file-stat
+poll. The lock is NEVER reaped (reaping a live lock = index corruption, `concurrency-git.md`
+rule 5).
+
+**The confirm ORDER + post-DB-commit failure (settled by the robust rollback).** Steps 2–5 are
+inside the deferred txn — a failure there rolls back cleanly (nothing committed). The robust
+rollback the user required closes the post-DB-commit edge too: if step 6 (commit) succeeds but
+step 7 (git) fails, the rollback restores the DB (incl. PK sequence) so DB and git stay in
+lockstep — "on failure nothing lands" holds literally, the user's explicit model. (Reverting a
+committed SQLite txn is what the deferred-commit ROLLBACK + the captured restore-point provide;
+4c owns the restore-point capture.)
 
 **Auth-ready seams (D17).** The commit **author identity** comes from the request-context field
 the operator's login supplies; the **push credential** is **env-injected** (a documented env var
-name). The app builds NO login/auth/hosting — only the seams. A **dev default** lets the backend
-boot + run locally without the operator's auth (a fallback identity; push skippable / against a
-local remote) so the whole Save→Confirm→commit path is testable standalone.
+name). NO login/auth/hosting built — only the seams. A **dev default** lets the backend boot + run
+locally without the operator's auth (a fallback identity; push skippable / against a local remote)
+so the whole Save→Confirm→commit path is testable standalone.
 
-**Scope.** The Confirm endpoint (the 5-step synchronous transaction) + the Cancel endpoint
-(a no-op success — nothing was started). The exact-path/live-lock git discipline, the
-identity-from-request-context seam, the env-credential seam, the dev default. No auth/login/hosting
-(the operator's, D17). No frontend, no Docker.
+**Scope.** The Confirm endpoint (the synchronous transaction, steps 1–7) + the Cancel endpoint
+(a no-op success — nothing was started). The direct-write call (4c), the `data/db-export/` export,
+the cheap integrity check, the exact-path/event-driven-lock git discipline, the robust rollback,
+the identity-from-request-context seam, the env-credential seam, the dev default. No auth/login/
+hosting (the operator's, D17). No frontend, no Docker.
 
 **Test bar.** A backend test (`pytest`) on the mini-dump checkout, real API → real data-core →
 real DBs + a **throwaway local bare git remote** (NOT real GitHub):
-- a successful Confirm: the DB holds the new value AND the 3 `data/seeds/` CSVs are updated AND a
-  git commit landed staging ONLY the DB + 3 CSVs by exact path (assert only those paths staged)
-  with the request-context identity as the author, AND the push reached the throwaway remote;
-- a failure injected at each step (an invalid edit → caught at DB ops; a round-trip divergence; a
-  git failure) → **the DB + CSVs are byte-identical to before** (rollback-everything — the
-  load-bearing atomicity proof) and the page gets a FAILURE status;
-- a live `index.lock` blocks-and-retries (never reaps);
+- a successful Confirm (UPDATE + at least one CREATE shape + a create-version-at-a-new-tag): the
+  DB holds the new value, the 3 `data/db-export/` CSVs are updated, a git commit staged ONLY the
+  DB + the 3 `data/db-export/` CSVs by exact path (assert only those staged) with the
+  request-context identity as author, AND the push reached the throwaway remote;
+- a failure injected at each step (invalid edit → caught at the direct-write; integrity
+  divergence; git failure) → **the DB + CSVs byte-identical to before, INCLUDING the
+  `sqlite_sequence` values** (the robust-rollback proof) + a FAILURE status;
+- a live `.git/index.lock` → git's own non-zero exit surfaces "busy — retry" (NO poll, NEVER
+  reaps — assert the lock still present after);
 - the dev default boots + commits without the operator's credential;
-- Cancel is a no-op (nothing was written).
-Touches the git layer → the inline impact-analysis applies (honor `concurrency-git.md` exact-path
-staging + no broad add).
+- Cancel is a no-op (nothing written).
+Touches the git layer → honor `concurrency-git.md` (exact-path staging, no broad add, push to
+private only, no hand-push to public, no auto-branch).
 
-**Dependencies.** Step 4b (the Save preview the maintainer reviews before Confirm — Confirm
-re-sends the same edit) + step 4a (the deferred-commit seam Confirm opens+commits in the one
-request) + step 1b (the `version=` adapter) + step 2a (the export/round-trip surface). Sequenced
-after 4b.
+**Dependencies.** Step 4c (the direct-write path Confirm calls) + step 4b-rework (the preview the
+maintainer reviews before Confirm — Confirm re-sends the same edit) + step 4a (the deferred-commit
+seam Confirm opens+commits in the one request) + step 1b (the `version=` adapter). The kept step-5
+WIP (`routes_confirm.py` / `git_commit.py` / `csv_integrity.py`) is the reuse base. Sequenced after
+4c + 4b-rework.
 
 **Touches existing code / shared tree.** YES — it writes to the shared `.git`/index. Honor
-`concurrency-git.md` (exact-path staging, live-lock block-and-retry, no auto-branch, no hand push
+`concurrency-git.md` (exact-path staging, event-driven lock handling, no auto-branch, no hand push
 to `public`). The push target is the private remote; the test must NOT push to a real remote.
 
 **Design authority.** [`data/maintainer-tool/design.md`](../../../../data/maintainer-tool/design.md)
-§7 (the save spine) + §8 (the commit constraint — exact-path/live-lock/push) + §10 D1 (DB
-authoritative, CSVs the derived layer) + D16 (server commit + push) + D17 (auth-ready seams + dev
-default). `.claude/rules/concurrency-git.md` (the committer discipline + the remote topology).
-The frontend surface: [`ui/screens/s06-save-confirm.md`](../../../../data/maintainer-tool/ui/screens/s06-save-confirm.md)
+§7 (the save spine) + §8 (the commit constraint — exact-path/lock/push) + §10 **D19** (direct-write
++ robust rollback) + **D20** (the `data/db-export/` target) + D1 (DB authoritative) + D16 (server
+commit + push) + D17 (auth-ready seams + dev default). `.claude/rules/concurrency-git.md` (the
+committer discipline + the remote topology) + `.claude/rules/polling.md` (the event-driven lock
+handling, no poll). The frontend surface:
+[`ui/screens/s06-save-confirm.md`](../../../../data/maintainer-tool/ui/screens/s06-save-confirm.md)
 (the "Saved" / "blocked — Retry" toast the result feeds; the page WAITS for the status; git is
 invisible — law 5).
 

@@ -26,7 +26,9 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 | 3 field-delta API (D8) — saved-vs-prospective | DONE | 8224fc3 |
 | 4a data-core deferred-commit seam — apply_seeds runs validate→write→round-trip then RETURNS the open connections uncommitted; commit(conns)/rollback(conns) exposed (THE write mechanism for the maintainer tool — DB changes commit only on confirm); additive + oracle-preserving | DONE | 63a2a92 |
 | 4b save (preview) endpoints — the six job shapes: validate the prospective edit + return the field-delta (NO write, NO held txn); the maintainer reviews the diff before Confirm | DONE | f348857 |
-| 5 Confirm transaction (D16) — ONE synchronous request: start txn → DB ops → CSV export → commit DB → git commit/push → success/failure; rollback-everything on any failure + auth-ready seams (D17, + dev default) | NOT STARTED | — |
+| 4c data-core DIRECT-WRITE path (D19) — rework db_editor from the seed-rebuild bridge to direct-DB INSERT/UPDATE reusing _apply_one_db's write helpers (8 behaviors preserved); validate the PROSPECTIVE DB STATE; inside the 4a deferred-commit txn (ROLLBACK resets PK auto-increments); create-version-at-a-new-tag now works; export target → data/db-export/ (D20) | NOT STARTED | — |
+| 4b-rework re-target the preview Save's validate to the PROSPECTIVE DB STATE (the 4c direct-write validate path), not the seed-validate path (validate_prospective_seeds) | NOT STARTED | — |
+| 5 Confirm transaction (D16/D19) — ONE synchronous request: open the 4a txn → 4c DIRECT-write → export to data/db-export/ (D20) → cheap integrity check → commit DB → git commit/push → success/failure; ROBUST rollback-everything (PK auto-increment reset) on any failure; EVENT-DRIVEN index.lock (git's exit, no poll); auth-ready seams (D17, + dev default); reuses the kept step-5 WIP git/auth machinery | NOT STARTED | — |
 
 ## Step docs
 
@@ -37,6 +39,8 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 3. [step-3-field-delta-api.md](step-3-field-delta-api.md)
 4a. [step-4a-data-core-deferred-commit-seam.md](step-4a-data-core-deferred-commit-seam.md)
 4b. [step-4b-backend-save-endpoints.md](step-4b-backend-save-endpoints.md)
+4c. [step-4c-data-core-direct-write.md](step-4c-data-core-direct-write.md)
+4b-rework. [step-4b-rework-validate-prospective-db.md](step-4b-rework-validate-prospective-db.md)
 5. [step-5-commit-push-seams.md](step-5-commit-push-seams.md)
 
 ## Verification gate (phase end)

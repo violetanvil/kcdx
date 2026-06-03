@@ -119,8 +119,31 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   cross-file atomic commit; user-first makes the only possible split "USER (shipped curated)
   committed, DEV (bulk) lagging" -- the more-recoverable split (a re-apply diffs only the DEV
   side). A truly-atomic two-file commit (ATTACH/single-file) was deferred as a follow-on.
-- **DB↔CSV information-equivalence + the round-trip** (design §4): every save re-asserts the
-  byte-identity round-trip before commit; a divergence aborts with no write.
+- **The WRITE is DIRECT-DB, not a seed rebuild (D19/D20, settled 2026-06-03)** — the DB is the
+  ORIGINATOR. A maintainer edit is a DIRECT INSERT/UPDATE through the applier's EXISTING
+  `_apply_one_db` write helpers (fed edit parameters, not CSV-diff-derived actions), NOT the
+  export-seed→edit→`apply_seeds`-rebuild bridge the original D13 recorded. A ground-truth probe
+  established that `_apply_one_db` ALREADY runs the real INSERT/UPDATE — the seed-rebuild was only
+  the wrapper — so P2 step 4c reuses those helpers directly, preserving the 8 load-bearing
+  behaviors (the 1:1 survival INSERT, the interval-close-before-add, the function-kind
+  promote-vs-mint + fingerprint + `BaselineRefusal`, the per-DB column projection, FK-id
+  resolution-never-minting, the two-DB USER-first ordering, the D12/AP18 markers). The SAME
+  validator gate runs, re-targeted to the **prospective DB state** (step 4b's preview re-points to
+  it too — step 4b-rework). The direct write runs inside the 4a deferred-commit txn; its `ROLLBACK`
+  discards the whole txn INCLUDING `sqlite_sequence`/PK-autoincrement bumps = the **robust
+  post-failure rollback** the user required. After a successful write, `export_seeds` exports the
+  DB → the derived record at **`data/db-export/`** (D20), NOT `data/seeds/` (the frozen one-time
+  `run_rebuild` bootstrap input). **`create-version`-at-a-new-game-tag now works** — a direct
+  INSERT (new `game_versions` row + interval-close + new `address_versions` row) bypasses the
+  seed-rebuild's `GAME_VERSION_TAG`/baseline-matcher gate that materialised zero rows. The
+  `run_rebuild` bootstrap is UNCHANGED.
+- **DB↔CSV information-equivalence + the integrity check** (design §4): the full bidirectional
+  round-trip (`import(export(DB))==DB` AND `export(import(CSVs))==CSVs`) is the BUILD-time oracle
+  (it rebuilds the 1.3GB bulk DB + needs the dump — not run per save). The maintainer tool's
+  per-save integrity check is the cheap `export(DB)`-is-deterministic direction (re-export the
+  committed DB, assert the `data/db-export/` record matches). A divergence on Confirm triggers the
+  robust rollback (the DB + CSVs restored, nothing lands) — the export-visibility constraint means
+  the export+check runs AFTER the DB commit inside the txn, and a failure rolls the txn back.
 - **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
   interaction laws"): layout stability (law 1), the responsive navigation shell (law 2),
   user-driven navigation (law 3), advisory verification + the override (law 4), the atomic
@@ -159,8 +182,10 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
 | Read API — curated set + entity detail + version rows + derived status | P2 step 2b | the backend calls step 2a + serializes JSON; feeds s01/s02/s03 |
 | Field-delta API (D8) | P2 step 3 | wraps `field_delta` |
 | Data-core deferred-commit seam — apply_seeds returns open uncommitted connections + commit/rollback (makes Confirm's txn atomic within one request) | P2 step 4a | additive + oracle-preserving; Confirm (step 5) opens+commits it in one request |
-| Save (preview) API — the six job shapes: validate the prospective edit + return the field-delta (NO write, NO held txn) | P2 step 4b | the maintainer reviews the diff before Confirm; **consumes step 1b's tag seam + step 3's field-delta**; reworked from the held-txn model |
-| Confirm transaction (D16) + auth-ready seams (D17) | P2 step 5 | ONE synchronous request: start txn → DB ops → CSV export → commit DB → git commit/push → success/failure; rollback-everything on any failure; exact-path/live-lock/push; injected identity + env credential + dev default |
+| Save (preview) API — the six job shapes: validate the prospective edit + return the field-delta (NO write, NO held txn) | P2 step 4b (landed f348857) | the maintainer reviews the diff before Confirm; **consumes step 1b's tag seam + step 3's field-delta**; its validate re-targets to prospective DB state in step 4b-rework |
+| Data-core DIRECT-WRITE path (D19) — db_editor reworked to direct-DB INSERT/UPDATE reusing _apply_one_db's helpers (8 behaviors); validate prospective DB state; inside the 4a txn (ROLLBACK resets PK auto-increments); create-version-at-a-new-tag works; export → data/db-export/ (D20) | P2 step 4c | the PRODUCER the Confirm consumes; reworks the landed db_editor from the seed-rebuild bridge; **consumes 4a + 1b**; additive/oracle-preserving where it touches landed code |
+| Preview Save validate re-targeted to prospective DB state (D19) | P2 step 4b-rework | re-points 4b's preview validate from the seed-validate path to 4c's prospective-DB-state validate (one gate, DB-targeted); **consumes 4c** |
+| Confirm transaction (D16/D19/D20) + auth-ready seams (D17) | P2 step 5 | ONE synchronous request: open 4a txn → 4c DIRECT-write → export to data/db-export/ → cheap integrity check → commit DB → git commit/push; ROBUST rollback (PK reset) on any failure; EVENT-DRIVEN index.lock (git's exit, no poll); injected identity + env credential + dev default; **reuses the kept step-5 WIP git/auth machinery**; **consumes 4c + 4b-rework + 4a + 1b** |
 | Container data layout — backend reads the checkout (D18) | P2 step 1 (consumes) + P5 step 16 (provides) | configured checkout path |
 | Frontend skeleton + Mantine theme (tokens) + responsive app shell (D14, laws) | P3 step 6 | the API client; the two-pane ↔ drill-down shell |
 | s01 navigator (search/filter/list/chips) | P3 step 7 | `ui/screens/s01` |
