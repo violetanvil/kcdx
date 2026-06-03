@@ -1,9 +1,11 @@
-# Finding — `ICVar::GetIVal` is vtable slot 2 (+0x10), `i32 (ptr self)` __thiscall
+# Finding — ICVar accessor slots: `GetIVal` slot 2 (+0x10), `GetFVal` slot 4 (+0x20)
 
 Verified 2026-06-03 against `WHGame.dll` (release_1_5_1164953_841), fresh Ghidra +
-RTTI walk + an independent gated body-read verifier (PROCEED). This is the accessor
-that reads a CVar's stored 32-bit integer value off the `ICVar*` that
-`IConsole::GetCVar` (seed id 16, vtable[23], 0x009DF818) returns.
+RTTI walk + independent gated body-read verifiers (both PROCEED). These are the
+accessors that read a CVar's stored value off the `ICVar*` that `IConsole::GetCVar`
+(seed id 16, vtable[23], 0x009DF818) returns. Two new entities back `kcdx.cvar.*`:
+`ICVar_GetIVal` (slot 2) and `ICVar_GetFVal` (slot 4). The int section is below; the
+float section follows it (§"GetFVal").
 
 ## The verified fact (ready for the `ICVar_GetIVal` seed entity, AP18-gated)
 
@@ -61,20 +63,58 @@ leaning WITHHELD), via its own RTTI route, and returned **PROCEED**: slot 2, +0x
 none. The `this+0x48` field offset is NOT part of the claim (it can shift per build) —
 the verified facts are the slot index, the offset, the signature, and the getter shape.
 
-## Status — verified, AWAITING AP18 user approval before any seed row
+## GetFVal — ICVar slot 4 (+0x20), `f32 (ptr self)` __thiscall
 
-This finding is the provenance for a NEW Address Library entity `ICVar_GetIVal`. Per
-AP18 the row is NOT written until the user signs off on the specific entity. The seed
-entry, ready to paste on approval:
+Same method, same day, gated PROCEED. The float-read accessor for `kcdx.cvar.get_float`.
 
-- `address_names_seed.csv`: a new id (highest+1, append-only) `ICVar_GetIVal`, notes:
-  *"ICVar::GetIVal() -> int. __thiscall (rcx=ICVar*). vtable[2] / +0x10. Reads the CVar's
-  stored 32-bit int value. Verified against the binary: CXConsoleVariableInt vtable
-  @0x183a7e638 slot-2 body returns *(int*)(this+0x48); slot-3 GetI64Val reads the same
-  field as int64. The ICVar* comes from IConsole::GetCVar (id 16). Canonical CryEngine
-  slot — NOT shifted in this build (unlike AddCommand). Gated body-read verified."*
-- `address_versions_seed.csv`: version `1.5.1164953`, `signature = "i32 (ptr self)"`.
-  RVA is NOT applicable as a static row — GetIVal is a vtable-slot fact (the concrete
-  body @ 0x181a72450 is one class's impl; the SLOT is the stable contract). Record per
-  the vtable-ID convention (ids 3000+ are vtable INDEX constants) OR as a slot-fact in
-  notes — the user's call on the exact row shape at approval.
+- **Slot:** 4 · **Offset:** +0x20 · **Signature:** `f32 (ptr self)` __thiscall (returns
+  the stored float).
+- **Concrete class:** `CXConsoleVariableFloat` (RTTI `.?AVCXConsoleVariableFloat@@`,
+  name @ 0x184a48058 → COL @ 0x184173688 → vtable @ **0x183ab7858**).
+- **GetFVal body** (slot 4 target @ **0x181a73680**, size 6):
+  ```c
+  undefined4 FUN_181a73680(longlong this) { return *(undefined4 *)(this + 0x48); }
+  ```
+  Returns the raw 4-byte field at `this+0x48` — the stored float bit pattern.
+- **Field-type proof** (why `f32`, not Ghidra's default int): on the SAME float class,
+  slot 2 (GetIVal @ 0x181a736d0) = `return (int)*(float*)(this+0x48)` and slot 3
+  (GetI64Val @ 0x181a73690) = `return (longlong)*(float*)(this+0x48)` — BOTH read
+  `this+0x48` AS a float. So the backing field is a float; slot 4 returns it natively.
+  The slot semantics are stable across concrete classes: slot 2 = int-typed read, slot
+  4 = float-typed read; the FIELD type differs per class (int class stores int, float
+  class stores float), the SLOT contract does not.
+- Gate (§4.5): independent verifier re-read cold via its own RTTI route → **PROCEED**,
+  concerns none, the `f32` return justified by the field being float (slots 2/3 read it
+  via `*(float*)`), not by auto-typing.
+
+## Status — both verified + gated; AP18 approval: GetIVal APPROVED, GetFVal PENDING
+
+Provenance for TWO new Address Library entities backing `kcdx.cvar.*`. The recording is
+the maintainer-tool flow's job (DB-owner lane); per `data/seeds/policy.md` §"Test plugin
+requirement" both land in the SAME unit of work as the `cap-NN` test plugin. The
+maintainer-tool handoff spec (exact fields, the repo's IConsole-method recording
+convention) is the canonical source — see the feature's handoff summary.
+
+**Recording shape (repo convention — `kind=function`, NOT `vtable_index`):** every
+existing IConsole/ICVar vtable METHOD (GetCVar id16, AddCommand id13, ExecuteString
+id15, PrintLine id150/151) is recorded `kind=function` with the concrete slot-target
+RVA + signature, the vtable slot in `notes`. `vtable_index` is reserved for pure
+slot-INDEX constants with no callable target (the ids-3000+ convention). So both new
+entities record `kind=function`:
+
+- **`ICVar_GetIVal`** (AP18 APPROVED 2026-06-03) — rva `0x181a72450`, sig `i32 (ptr self)`,
+  notes: *"ICVar::GetIVal() -> int. __thiscall (rcx=ICVar*). vtable[2] / +0x10. Reads the
+  CVar's stored int. CXConsoleVariableInt vtable @0x183a7e638 slot-2 returns
+  *(int*)(this+0x48); slot-3 GetI64Val reads same field as int64. ICVar* from
+  IConsole::GetCVar (id 16). Canonical slot, NOT shifted (unlike AddCommand). Gated."*
+- **`ICVar_GetFVal`** (AP18 PENDING — surfaced for the user with this float verification)
+  — rva `0x181a73680`, sig `f32 (ptr self)`, notes: *"ICVar::GetFVal() -> float.
+  __thiscall (rcx=ICVar*). vtable[4] / +0x20. Reads the CVar's stored float.
+  CXConsoleVariableFloat vtable @0x183ab7858 slot-4 returns the float field at
+  this+0x48 (slots 2/3 read it via *(float*), proving the field type). ICVar* from
+  IConsole::GetCVar (id 16). Canonical slot. Gated."*
+
+Per `address-library.md` New-game-version: each entity also needs `valid_from_version =
+1.5.1164953`, `last_verified_at_version = 1.5.1164953`, `verified_by = VioletAnvil`,
+`verified_date = 2026-06-03`, `evidence_kind = maintainer_ghidra` (upgrades to
+`live_test_plugin` once the cap-NN plugin exercises it).
