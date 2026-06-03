@@ -1,0 +1,938 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (568 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1538 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: DumpFmodFileSystem.java  (HeadlessAnalyzer)  
+TextureStreamReadPath.java:22: error: cannot find symbol
+import ghidra.program.model.data.Data;
+                                ^
+  symbol:   class Data
+  location: package ghidra.program.model.data
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+TextureStreamReadPath.java:100: error: cannot find symbol
+            Data d = dataIt.next();
+            ^
+  symbol:   class Data
+  location: class TextureStreamReadPath
+TextureStreamReadPath.java:111: error: cannot find symbol
+                Data d = getDataAt(x);
+                ^
+  symbol:   class Data
+  location: class TextureStreamReadPath
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\TextureStreamReadPath.java
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\DumpFmodFileSystem.java (HeadlessAnalyzer)  
+INFO  DumpFmodFileSystem.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> FMOD setFileSystem caller (registers FS callbacks) @ call-site 0xD30040 @ 180d30040 (GhidraScript)  
+INFO  DumpFmodFileSystem.java> ================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   entry: 180d2fde4   proto: undefined FUN_180d2fde4() (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   size (addrs): 1596 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+undefined8 FUN_180d2fde4(longlong param_1,undefined8 *param_2,undefined8 param_3)
+
+{
+  System **ppSVar1;
+  System **ppSVar2;
+  System *this;
+  undefined8 *puVar3;
+  longlong *plVar4;
+  char cVar5;
+  FMOD_RESULT FVar6;
+  int iVar7;
+  uint uVar8;
+  undefined8 uVar9;
+  char *pcVar10;
+  longlong lVar11;
+  undefined8 *puVar12;
+  undefined8 *puVar13;
+  undefined8 *puVar14;
+  bool bVar15;
+  undefined1 auStackY_268 [32];
+  uint local_228;
+  uint local_224;
+  uint local_220;
+  FMOD_RESULT local_21c;
+  char *local_218;
+  undefined8 *local_210;
+  undefined8 *puStack_208;
+  undefined8 local_200;
+  undefined4 local_1f8 [4];
+  undefined4 local_1e8;
+  undefined1 local_188 [32];
+  undefined1 local_168 [32];
+  char local_148 [256];
+  ulonglong local_48;
+  
+  local_48 = DAT_1848fcfc0 ^ (ulonglong)auStackY_268;
+  FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                ,0x218,"About to initialize FMOD Studio. Headers: %x. Master bank: %s",0x20221);
+  if (*(int *)(param_1 + 0xd8) != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 2;
+    goto LAB_180d303e4;
+  }
+  *(undefined4 *)(param_1 + 0xd8) = 1;
+  *(undefined4 *)(param_1 + 0xdc) = 1;
+  FMOD_Memory_Initialize(0,0,FUN_18076be38);
+  ppSVar1 = (System **)(param_1 + 0xe0);
+  *ppSVar1 = (System *)0x0;
+  FVar6 = FMOD::Studio::System::create(ppSVar1,0x20221);
+  if (FVar6 != 0) {
+LAB_180d303da:
+    *(undefined4 *)(param_1 + 0xdc) = 3;
+    goto LAB_180d303e4;
+  }
+  ppSVar2 = (System **)(param_1 + 0xe8);
+  *ppSVar2 = (System *)0x0;
+  FVar6 = FMOD::Studio::System::getCoreSystem(*ppSVar1,ppSVar2);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 7;
+    goto LAB_180d303e4;
+  }
+  bVar15 = false;
+  if (DAT_18547c588 != (longlong *)0x0) {
+    iVar7 = (**(code **)(*DAT_18547c588 + 0x10))();
+    bVar15 = iVar7 != 0;
+  }
+  uVar8 = (**(code **)(*DAT_18547c4f8 + 0x10))();
+  iVar7 = (**(code **)(*DAT_18547c500 + 0x10))(DAT_18547c500);
+  if (((0 < iVar7) && (0 < (int)uVar8)) &&
+     (FVar6 = FMOD::System::setDSPBufferSize(*ppSVar2,uVar8,iVar7), FVar6 != 0)) {
+    *(undefined4 *)(param_1 + 0xdc) = 6;
+    goto LAB_180d303e4;
+  }
+  memset(local_1f8,0,0x68);
+  local_1f8[0] = 0x68;
+  local_1e8 = (**(code **)(*DAT_18547c550 + 0x10))();
+  FVar6 = FMOD::System::setAdvancedSettings(*ppSVar2,(FMOD_ADVANCEDSETTINGS *)local_1f8);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 4;
+    goto LAB_180d303e4;
+  }
+  iVar7 = (**(code **)(*DAT_18547c558 + 0x10))();
+  FVar6 = FMOD::System::setSoftwareChannels(*ppSVar2,iVar7);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 5;
+    goto LAB_180d303e4;
+  }
+  iVar7 = (**(code **)(*DAT_18547c530 + 0x10))();
+  if (!bVar15) {
+    uVar8 = 0;
+  }
+  else {
+    uVar8 = 0x10000;
+  }
+  FVar6 = FMOD::Studio::System::initialize(*ppSVar1,iVar7,(uint)bVar15,uVar8,(void *)0x0);
+  if (FVar6 != 0) goto LAB_180d303da;
+  FMOD::System::setFileSystem
+            (*ppSVar2,FUN_181224d1c,FUN_1813437b4,FUN_180460788,FUN_1810b6d84,
+             (_func_FMOD_RESULT_FMOD_ASYNCREADINFO_ptr_void_ptr *)0x0,
+             (_func_FMOD_RESULT_FMOD_ASYNCREADINFO_ptr_void_ptr *)0x0,-1);
+  FVar6 = FMOD::System::getVersion(*ppSVar2,&local_228);
+  FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                ,0x2f2,"FMOD version check: Headers %x, Binaries %x");
+  if (local_228 < 0x20221) {
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                  ,0x2f5,
+                  "FMOD ERROR: The binaries are older than their header files. Mismatch can cause errors."
+                 );
+  }
+  local_200 = 0;
+  local_218 = "Quatmosphere.dll";
+  local_210 = (undefined8 *)0x0;
+  puStack_208 = (undefined8 *)0x0;
+  FUN_1803e6aac(&local_210,0,&local_218);
+  puVar14 = puStack_208;
+  puVar12 = local_210;
+  if (local_210 == puStack_208) {
+LAB_180d30164:
+    puVar13 = local_210;
+    puVar3 = puStack_208;
+    if (FVar6 != 0) goto LAB_180d30194;
+  }
+  else {
+    do {
+      pcVar10 = (char *)*puVar12;
+      FVar6 = FMOD::System::loadPlugin(*ppSVar2,pcVar10,&local_224,0);
+      if (FVar6 == 0) {
+        local_21c = FMOD::System::getPluginInfo
+                              (*ppSVar2,local_224,(FMOD_PLUGINTYPE *)&local_218,local_148,0x100,
+                               &local_220);
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                      ,0x321,
+                      "Quatmosphere: File \'%s\' loaded, plugin name \'%s\', version %d (0x%x)",
+                      pcVar10);
+        FVar6 = local_21c;
+        goto LAB_180d30164;
+      }
+      puVar12 = puVar12 + 1;
+      puVar13 = local_210;
+      puVar3 = puStack_208;
+    } while (puVar12 != puVar14);
+LAB_180d30194:
+    for (; puVar13 != puVar3; puVar13 = puVar13 + 1) {
+      FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                    ,0x32b,"Quatmosphere: Plugin file \'%s\' failed to load.",*puVar13);
+    }
+  }
+  FUN_180413714(&local_210);
+  plVar4 = DAT_18547c4d0;
+  this = *(System **)(param_1 + 0xe0);
+  *(Bank **)(param_1 + 0xf8) = (Bank *)0x0;
+  uVar9 = (**(code **)(*plVar4 + 0x10))(plVar4,local_188);
+  pcVar10 = (char *)FUN_180b474e0(local_168,uVar9);
+  if (0xf < *(ulonglong *)(pcVar10 + 0x18)) {
+    pcVar10 = *(char **)pcVar10;
+  }
+  FVar6 = FMOD::Studio::System::loadBankFile(this,pcVar10,0,(Bank **)(param_1 + 0xf8));
+  FUN_1804f4090(local_168);
+  FUN_1804f4090(local_188);
+  if (FVar6 == 0) {
+    FUN_180d2ec6c(param_1);
+    lVar11 = FUN_18076b184(&DAT_184927370,0x78);
+    *(longlong *)(param_1 + 0xf0) = lVar11;
+    if (lVar11 != 0) {
+      uVar9 = FUN_1804f26bc(local_188,param_2);
+      FUN_180b47020(lVar11,uVar9);
+    }
+    cVar5 = FUN_180d2f7c8(*(undefined8 *)(param_1 + 0xf0));
+    puVar14 = param_2;
+    if (cVar5 == '\0') {
+      if (0xf < (ulonglong)param_2[3]) {
+        puVar14 = (undefined8 *)*param_2;
+      }
+      pcVar10 = 
+      "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t load master bank \'%s\'"
+      ;
+      uVar9 = 0x34a;
+    }
+    else {
+      cVar5 = FUN_180d2fc34(*(undefined8 *)(param_1 + 0xf0));
+      if (cVar5 != '\0') {
+        cVar5 = FUN_1803c436c(*(undefined8 *)(param_1 + 0xf0));
+        if (cVar5 == '\0') {
+          if (0xf < (ulonglong)param_2[3]) {
+            puVar14 = (undefined8 *)*param_2;
+          }
+          pcVar10 = 
+          "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t fetch event descriptions (\'%s\')"
+          ;
+          uVar9 = 0x35a;
+        }
+        else {
+          cVar5 = FUN_180d2f5b4(*(undefined8 *)(param_1 + 0xf0));
+          if (cVar5 != '\0') {
+            FMOD::System::createSound
+                      (*ppSVar2,"EngineAssets/Sound/short-silence.ogg",0,
+                       (FMOD_CREATESOUNDEXINFO *)0x0,(Sound **)(param_1 + 0x240));
+            FMOD::System::set3DSettings(*ppSVar2,0.0,DAT_184098dc4,DAT_184098dc4);
+            *(undefined4 *)(param_1 + 0xd8) = 2;
+            if (0xf < (ulonglong)param_2[3]) {
+              puVar14 = (undefined8 *)*param_2;
+            }
+            FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                          ,0x371,"CryAudioImplFmod: initializeFmodStudio succeeds (banks: %s, %s)",
+                          puVar14);
+            FUN_180d2f3b0(param_1);
+            FUN_180d2f8ac();
+            FUN_1804f4090(param_2);
+            FUN_1804f4090(param_3);
+            return 1;
+          }
+          if (0xf < (ulonglong)param_2[3]) {
+            puVar14 = (undefined8 *)*param_2;
+          }
+          pcVar10 = 
+          "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t link event descriptions (\'%s\')"
+          ;
+          uVar9 = 0x362;
+        }
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                      ,uVar9,pcVar10,puVar14);
+        *(undefined4 *)(param_1 + 0xdc) = 0xc;
+        goto LAB_180d303e4;
+      }
+      if (0xf < (ulonglong)param_2[3]) {
+        puVar14 = (undefined8 *)*param_2;
+      }
+      pcVar10 = 
+      "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t load master bank sample data \'%s\'"
+      ;
+      uVar9 = 0x352;
+    }
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                  ,uVar9,pcVar10,puVar14);
+    *(undefined4 *)(param_1 + 0xdc) = 0xb;
+  }
+  else {
+    *(undefined4 *)(param_1 + 0xdc) = 10;
+  }
+LAB_180d303e4:
+  FUN_1804f4090(param_2);
+  FUN_1804f4090(param_3);
+  return 0;
+}
+
+ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+---- ASM window: around setFileSystem call 0xD30040 (callback LEAs) ---- (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffc6  JMP 0x180d303e4 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffcb  MOV RCX,qword ptr [0x18547c530] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffd2  MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffd5  CALL qword ptr [RAX + 0x10] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffd8  MOV RCX,qword ptr [R13] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffdc  MOV EDX,EAX (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffde  MOV qword ptr [RSP + 0x20],RBX (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffe3  TEST R12B,R12B (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffe6  JZ 0x180d2fff6 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffe8  MOV R9D,0x10000 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2ffee  MOV R8D,0x1 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2fff4  JMP 0x180d2fffc (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2fff6  XOR R9D,R9D (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2fff9  XOR R8D,R8D (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d2fffc  CALL qword ptr [0x183a04228] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30002  TEST EAX,EAX (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30004  JNZ 0x180d303da (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d3000a  MOV RCX,qword ptr [R15] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d3000d  LEA RAX,[0x1810b6d84] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30014  MOV dword ptr [RSP + 0x38],0xffffffff (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d3001c  LEA R9,[0x180460788] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30023  MOV qword ptr [RSP + 0x30],RBX (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30028  LEA R8,[0x1813437b4] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d3002f  MOV qword ptr [RSP + 0x28],RBX (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30034  LEA RDX,[0x181224d1c] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d3003b  MOV qword ptr [RSP + 0x20],RAX (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30040  CALL qword ptr [0x183a040a0] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30046  MOV RCX,qword ptr [R15] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30049  LEA RDX,[RSP + 0x40] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d3004e  CALL qword ptr [0x183a040a8] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30054  MOV ECX,dword ptr [RSP + 0x40] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d30058  LEA R8,[0x183e035f0] (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   180d3005f  MOV dword ptr [RSP + 0x20],ECX (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> loadBankFile caller @ 0xD301EE @ 180d301ee (GhidraScript)  
+INFO  DumpFmodFileSystem.java> ================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   entry: 180d2fde4   proto: undefined FUN_180d2fde4() (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   size (addrs): 1596 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+undefined8 FUN_180d2fde4(longlong param_1,undefined8 *param_2,undefined8 param_3)
+
+{
+  System **ppSVar1;
+  System **ppSVar2;
+  System *this;
+  undefined8 *puVar3;
+  longlong *plVar4;
+  char cVar5;
+  FMOD_RESULT FVar6;
+  int iVar7;
+  uint uVar8;
+  undefined8 uVar9;
+  char *pcVar10;
+  longlong lVar11;
+  undefined8 *puVar12;
+  undefined8 *puVar13;
+  undefined8 *puVar14;
+  bool bVar15;
+  undefined1 auStackY_268 [32];
+  uint local_228;
+  uint local_224;
+  uint local_220;
+  FMOD_RESULT local_21c;
+  char *local_218;
+  undefined8 *local_210;
+  undefined8 *puStack_208;
+  undefined8 local_200;
+  undefined4 local_1f8 [4];
+  undefined4 local_1e8;
+  undefined1 local_188 [32];
+  undefined1 local_168 [32];
+  char local_148 [256];
+  ulonglong local_48;
+  
+  local_48 = DAT_1848fcfc0 ^ (ulonglong)auStackY_268;
+  FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                ,0x218,"About to initialize FMOD Studio. Headers: %x. Master bank: %s",0x20221);
+  if (*(int *)(param_1 + 0xd8) != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 2;
+    goto LAB_180d303e4;
+  }
+  *(undefined4 *)(param_1 + 0xd8) = 1;
+  *(undefined4 *)(param_1 + 0xdc) = 1;
+  FMOD_Memory_Initialize(0,0,FUN_18076be38);
+  ppSVar1 = (System **)(param_1 + 0xe0);
+  *ppSVar1 = (System *)0x0;
+  FVar6 = FMOD::Studio::System::create(ppSVar1,0x20221);
+  if (FVar6 != 0) {
+LAB_180d303da:
+    *(undefined4 *)(param_1 + 0xdc) = 3;
+    goto LAB_180d303e4;
+  }
+  ppSVar2 = (System **)(param_1 + 0xe8);
+  *ppSVar2 = (System *)0x0;
+  FVar6 = FMOD::Studio::System::getCoreSystem(*ppSVar1,ppSVar2);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 7;
+    goto LAB_180d303e4;
+  }
+  bVar15 = false;
+  if (DAT_18547c588 != (longlong *)0x0) {
+    iVar7 = (**(code **)(*DAT_18547c588 + 0x10))();
+    bVar15 = iVar7 != 0;
+  }
+  uVar8 = (**(code **)(*DAT_18547c4f8 + 0x10))();
+  iVar7 = (**(code **)(*DAT_18547c500 + 0x10))(DAT_18547c500);
+  if (((0 < iVar7) && (0 < (int)uVar8)) &&
+     (FVar6 = FMOD::System::setDSPBufferSize(*ppSVar2,uVar8,iVar7), FVar6 != 0)) {
+    *(undefined4 *)(param_1 + 0xdc) = 6;
+    goto LAB_180d303e4;
+  }
+  memset(local_1f8,0,0x68);
+  local_1f8[0] = 0x68;
+  local_1e8 = (**(code **)(*DAT_18547c550 + 0x10))();
+  FVar6 = FMOD::System::setAdvancedSettings(*ppSVar2,(FMOD_ADVANCEDSETTINGS *)local_1f8);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 4;
+    goto LAB_180d303e4;
+  }
+  iVar7 = (**(code **)(*DAT_18547c558 + 0x10))();
+  FVar6 = FMOD::System::setSoftwareChannels(*ppSVar2,iVar7);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 5;
+    goto LAB_180d303e4;
+  }
+  iVar7 = (**(code **)(*DAT_18547c530 + 0x10))();
+  if (!bVar15) {
+    uVar8 = 0;
+  }
+  else {
+    uVar8 = 0x10000;
+  }
+  FVar6 = FMOD::Studio::System::initialize(*ppSVar1,iVar7,(uint)bVar15,uVar8,(void *)0x0);
+  if (FVar6 != 0) goto LAB_180d303da;
+  FMOD::System::setFileSystem
+            (*ppSVar2,FUN_181224d1c,FUN_1813437b4,FUN_180460788,FUN_1810b6d84,
+             (_func_FMOD_RESULT_FMOD_ASYNCREADINFO_ptr_void_ptr *)0x0,
+             (_func_FMOD_RESULT_FMOD_ASYNCREADINFO_ptr_void_ptr *)0x0,-1);
+  FVar6 = FMOD::System::getVersion(*ppSVar2,&local_228);
+  FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                ,0x2f2,"FMOD version check: Headers %x, Binaries %x");
+  if (local_228 < 0x20221) {
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                  ,0x2f5,
+                  "FMOD ERROR: The binaries are older than their header files. Mismatch can cause errors."
+                 );
+  }
+  local_200 = 0;
+  local_218 = "Quatmosphere.dll";
+  local_210 = (undefined8 *)0x0;
+  puStack_208 = (undefined8 *)0x0;
+  FUN_1803e6aac(&local_210,0,&local_218);
+  puVar14 = puStack_208;
+  puVar12 = local_210;
+  if (local_210 == puStack_208) {
+LAB_180d30164:
+    puVar13 = local_210;
+    puVar3 = puStack_208;
+    if (FVar6 != 0) goto LAB_180d30194;
+  }
+  else {
+    do {
+      pcVar10 = (char *)*puVar12;
+      FVar6 = FMOD::System::loadPlugin(*ppSVar2,pcVar10,&local_224,0);
+      if (FVar6 == 0) {
+        local_21c = FMOD::System::getPluginInfo
+                              (*ppSVar2,local_224,(FMOD_PLUGINTYPE *)&local_218,local_148,0x100,
+                               &local_220);
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                      ,0x321,
+                      "Quatmosphere: File \'%s\' loaded, plugin name \'%s\', version %d (0x%x)",
+                      pcVar10);
+        FVar6 = local_21c;
+        goto LAB_180d30164;
+      }
+      puVar12 = puVar12 + 1;
+      puVar13 = local_210;
+      puVar3 = puStack_208;
+    } while (puVar12 != puVar14);
+LAB_180d30194:
+    for (; puVar13 != puVar3; puVar13 = puVar13 + 1) {
+      FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                    ,0x32b,"Quatmosphere: Plugin file \'%s\' failed to load.",*puVar13);
+    }
+  }
+  FUN_180413714(&local_210);
+  plVar4 = DAT_18547c4d0;
+  this = *(System **)(param_1 + 0xe0);
+  *(Bank **)(param_1 + 0xf8) = (Bank *)0x0;
+  uVar9 = (**(code **)(*plVar4 + 0x10))(plVar4,local_188);
+  pcVar10 = (char *)FUN_180b474e0(local_168,uVar9);
+  if (0xf < *(ulonglong *)(pcVar10 + 0x18)) {
+    pcVar10 = *(char **)pcVar10;
+  }
+  FVar6 = FMOD::Studio::System::loadBankFile(this,pcVar10,0,(Bank **)(param_1 + 0xf8));
+  FUN_1804f4090(local_168);
+  FUN_1804f4090(local_188);
+  if (FVar6 == 0) {
+    FUN_180d2ec6c(param_1);
+    lVar11 = FUN_18076b184(&DAT_184927370,0x78);
+    *(longlong *)(param_1 + 0xf0) = lVar11;
+    if (lVar11 != 0) {
+      uVar9 = FUN_1804f26bc(local_188,param_2);
+      FUN_180b47020(lVar11,uVar9);
+    }
+    cVar5 = FUN_180d2f7c8(*(undefined8 *)(param_1 + 0xf0));
+    puVar14 = param_2;
+    if (cVar5 == '\0') {
+      if (0xf < (ulonglong)param_2[3]) {
+        puVar14 = (undefined8 *)*param_2;
+      }
+      pcVar10 = 
+      "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t load master bank \'%s\'"
+      ;
+      uVar9 = 0x34a;
+    }
+    else {
+      cVar5 = FUN_180d2fc34(*(undefined8 *)(param_1 + 0xf0));
+      if (cVar5 != '\0') {
+        cVar5 = FUN_1803c436c(*(undefined8 *)(param_1 + 0xf0));
+        if (cVar5 == '\0') {
+          if (0xf < (ulonglong)param_2[3]) {
+            puVar14 = (undefined8 *)*param_2;
+          }
+          pcVar10 = 
+          "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t fetch event descriptions (\'%s\')"
+          ;
+          uVar9 = 0x35a;
+        }
+        else {
+          cVar5 = FUN_180d2f5b4(*(undefined8 *)(param_1 + 0xf0));
+          if (cVar5 != '\0') {
+            FMOD::System::createSound
+                      (*ppSVar2,"EngineAssets/Sound/short-silence.ogg",0,
+                       (FMOD_CREATESOUNDEXINFO *)0x0,(Sound **)(param_1 + 0x240));
+            FMOD::System::set3DSettings(*ppSVar2,0.0,DAT_184098dc4,DAT_184098dc4);
+            *(undefined4 *)(param_1 + 0xd8) = 2;
+            if (0xf < (ulonglong)param_2[3]) {
+              puVar14 = (undefined8 *)*param_2;
+            }
+            FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                          ,0x371,"CryAudioImplFmod: initializeFmodStudio succeeds (banks: %s, %s)",
+                          puVar14);
+            FUN_180d2f3b0(param_1);
+            FUN_180d2f8ac();
+            FUN_1804f4090(param_2);
+            FUN_1804f4090(param_3);
+            return 1;
+          }
+          if (0xf < (ulonglong)param_2[3]) {
+            puVar14 = (undefined8 *)*param_2;
+          }
+          pcVar10 = 
+          "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t link event descriptions (\'%s\')"
+          ;
+          uVar9 = 0x362;
+        }
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                      ,uVar9,pcVar10,puVar14);
+        *(undefined4 *)(param_1 + 0xdc) = 0xc;
+        goto LAB_180d303e4;
+      }
+      if (0xf < (ulonglong)param_2[3]) {
+        puVar14 = (undefined8 *)*param_2;
+      }
+      pcVar10 = 
+      "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t load master bank sample data \'%s\'"
+      ;
+      uVar9 = 0x352;
+    }
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                  ,uVar9,pcVar10,puVar14);
+    *(undefined4 *)(param_1 + 0xdc) = 0xb;
+  }
+  else {
+    *(undefined4 *)(param_1 + 0xdc) = 10;
+  }
+LAB_180d303e4:
+  FUN_1804f4090(param_2);
+  FUN_1804f4090(param_3);
+  return 0;
+}
+
+ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> createSound caller @ 0xD3035B @ 180d3035b (GhidraScript)  
+INFO  DumpFmodFileSystem.java> ================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   entry: 180d2fde4   proto: undefined FUN_180d2fde4() (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   size (addrs): 1596 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+undefined8 FUN_180d2fde4(longlong param_1,undefined8 *param_2,undefined8 param_3)
+
+{
+  System **ppSVar1;
+  System **ppSVar2;
+  System *this;
+  undefined8 *puVar3;
+  longlong *plVar4;
+  char cVar5;
+  FMOD_RESULT FVar6;
+  int iVar7;
+  uint uVar8;
+  undefined8 uVar9;
+  char *pcVar10;
+  longlong lVar11;
+  undefined8 *puVar12;
+  undefined8 *puVar13;
+  undefined8 *puVar14;
+  bool bVar15;
+  undefined1 auStackY_268 [32];
+  uint local_228;
+  uint local_224;
+  uint local_220;
+  FMOD_RESULT local_21c;
+  char *local_218;
+  undefined8 *local_210;
+  undefined8 *puStack_208;
+  undefined8 local_200;
+  undefined4 local_1f8 [4];
+  undefined4 local_1e8;
+  undefined1 local_188 [32];
+  undefined1 local_168 [32];
+  char local_148 [256];
+  ulonglong local_48;
+  
+  local_48 = DAT_1848fcfc0 ^ (ulonglong)auStackY_268;
+  FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                ,0x218,"About to initialize FMOD Studio. Headers: %x. Master bank: %s",0x20221);
+  if (*(int *)(param_1 + 0xd8) != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 2;
+    goto LAB_180d303e4;
+  }
+  *(undefined4 *)(param_1 + 0xd8) = 1;
+  *(undefined4 *)(param_1 + 0xdc) = 1;
+  FMOD_Memory_Initialize(0,0,FUN_18076be38);
+  ppSVar1 = (System **)(param_1 + 0xe0);
+  *ppSVar1 = (System *)0x0;
+  FVar6 = FMOD::Studio::System::create(ppSVar1,0x20221);
+  if (FVar6 != 0) {
+LAB_180d303da:
+    *(undefined4 *)(param_1 + 0xdc) = 3;
+    goto LAB_180d303e4;
+  }
+  ppSVar2 = (System **)(param_1 + 0xe8);
+  *ppSVar2 = (System *)0x0;
+  FVar6 = FMOD::Studio::System::getCoreSystem(*ppSVar1,ppSVar2);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 7;
+    goto LAB_180d303e4;
+  }
+  bVar15 = false;
+  if (DAT_18547c588 != (longlong *)0x0) {
+    iVar7 = (**(code **)(*DAT_18547c588 + 0x10))();
+    bVar15 = iVar7 != 0;
+  }
+  uVar8 = (**(code **)(*DAT_18547c4f8 + 0x10))();
+  iVar7 = (**(code **)(*DAT_18547c500 + 0x10))(DAT_18547c500);
+  if (((0 < iVar7) && (0 < (int)uVar8)) &&
+     (FVar6 = FMOD::System::setDSPBufferSize(*ppSVar2,uVar8,iVar7), FVar6 != 0)) {
+    *(undefined4 *)(param_1 + 0xdc) = 6;
+    goto LAB_180d303e4;
+  }
+  memset(local_1f8,0,0x68);
+  local_1f8[0] = 0x68;
+  local_1e8 = (**(code **)(*DAT_18547c550 + 0x10))();
+  FVar6 = FMOD::System::setAdvancedSettings(*ppSVar2,(FMOD_ADVANCEDSETTINGS *)local_1f8);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 4;
+    goto LAB_180d303e4;
+  }
+  iVar7 = (**(code **)(*DAT_18547c558 + 0x10))();
+  FVar6 = FMOD::System::setSoftwareChannels(*ppSVar2,iVar7);
+  if (FVar6 != 0) {
+    *(undefined4 *)(param_1 + 0xdc) = 5;
+    goto LAB_180d303e4;
+  }
+  iVar7 = (**(code **)(*DAT_18547c530 + 0x10))();
+  if (!bVar15) {
+    uVar8 = 0;
+  }
+  else {
+    uVar8 = 0x10000;
+  }
+  FVar6 = FMOD::Studio::System::initialize(*ppSVar1,iVar7,(uint)bVar15,uVar8,(void *)0x0);
+  if (FVar6 != 0) goto LAB_180d303da;
+  FMOD::System::setFileSystem
+            (*ppSVar2,FUN_181224d1c,FUN_1813437b4,FUN_180460788,FUN_1810b6d84,
+             (_func_FMOD_RESULT_FMOD_ASYNCREADINFO_ptr_void_ptr *)0x0,
+             (_func_FMOD_RESULT_FMOD_ASYNCREADINFO_ptr_void_ptr *)0x0,-1);
+  FVar6 = FMOD::System::getVersion(*ppSVar2,&local_228);
+  FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                ,0x2f2,"FMOD version check: Headers %x, Binaries %x");
+  if (local_228 < 0x20221) {
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                  ,0x2f5,
+                  "FMOD ERROR: The binaries are older than their header files. Mismatch can cause errors."
+                 );
+  }
+  local_200 = 0;
+  local_218 = "Quatmosphere.dll";
+  local_210 = (undefined8 *)0x0;
+  puStack_208 = (undefined8 *)0x0;
+  FUN_1803e6aac(&local_210,0,&local_218);
+  puVar14 = puStack_208;
+  puVar12 = local_210;
+  if (local_210 == puStack_208) {
+LAB_180d30164:
+    puVar13 = local_210;
+    puVar3 = puStack_208;
+    if (FVar6 != 0) goto LAB_180d30194;
+  }
+  else {
+    do {
+      pcVar10 = (char *)*puVar12;
+      FVar6 = FMOD::System::loadPlugin(*ppSVar2,pcVar10,&local_224,0);
+      if (FVar6 == 0) {
+        local_21c = FMOD::System::getPluginInfo
+                              (*ppSVar2,local_224,(FMOD_PLUGINTYPE *)&local_218,local_148,0x100,
+                               &local_220);
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                      ,0x321,
+                      "Quatmosphere: File \'%s\' loaded, plugin name \'%s\', version %d (0x%x)",
+                      pcVar10);
+        FVar6 = local_21c;
+        goto LAB_180d30164;
+      }
+      puVar12 = puVar12 + 1;
+      puVar13 = local_210;
+      puVar3 = puStack_208;
+    } while (puVar12 != puVar14);
+LAB_180d30194:
+    for (; puVar13 != puVar3; puVar13 = puVar13 + 1) {
+      FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                    ,0x32b,"Quatmosphere: Plugin file \'%s\' failed to load.",*puVar13);
+    }
+  }
+  FUN_180413714(&local_210);
+  plVar4 = DAT_18547c4d0;
+  this = *(System **)(param_1 + 0xe0);
+  *(Bank **)(param_1 + 0xf8) = (Bank *)0x0;
+  uVar9 = (**(code **)(*plVar4 + 0x10))(plVar4,local_188);
+  pcVar10 = (char *)FUN_180b474e0(local_168,uVar9);
+  if (0xf < *(ulonglong *)(pcVar10 + 0x18)) {
+    pcVar10 = *(char **)pcVar10;
+  }
+  FVar6 = FMOD::Studio::System::loadBankFile(this,pcVar10,0,(Bank **)(param_1 + 0xf8));
+  FUN_1804f4090(local_168);
+  FUN_1804f4090(local_188);
+  if (FVar6 == 0) {
+    FUN_180d2ec6c(param_1);
+    lVar11 = FUN_18076b184(&DAT_184927370,0x78);
+    *(longlong *)(param_1 + 0xf0) = lVar11;
+    if (lVar11 != 0) {
+      uVar9 = FUN_1804f26bc(local_188,param_2);
+      FUN_180b47020(lVar11,uVar9);
+    }
+    cVar5 = FUN_180d2f7c8(*(undefined8 *)(param_1 + 0xf0));
+    puVar14 = param_2;
+    if (cVar5 == '\0') {
+      if (0xf < (ulonglong)param_2[3]) {
+        puVar14 = (undefined8 *)*param_2;
+      }
+      pcVar10 = 
+      "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t load master bank \'%s\'"
+      ;
+      uVar9 = 0x34a;
+    }
+    else {
+      cVar5 = FUN_180d2fc34(*(undefined8 *)(param_1 + 0xf0));
+      if (cVar5 != '\0') {
+        cVar5 = FUN_1803c436c(*(undefined8 *)(param_1 + 0xf0));
+        if (cVar5 == '\0') {
+          if (0xf < (ulonglong)param_2[3]) {
+            puVar14 = (undefined8 *)*param_2;
+          }
+          pcVar10 = 
+          "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t fetch event descriptions (\'%s\')"
+          ;
+          uVar9 = 0x35a;
+        }
+        else {
+          cVar5 = FUN_180d2f5b4(*(undefined8 *)(param_1 + 0xf0));
+          if (cVar5 != '\0') {
+            FMOD::System::createSound
+                      (*ppSVar2,"EngineAssets/Sound/short-silence.ogg",0,
+                       (FMOD_CREATESOUNDEXINFO *)0x0,(Sound **)(param_1 + 0x240));
+            FMOD::System::set3DSettings(*ppSVar2,0.0,DAT_184098dc4,DAT_184098dc4);
+            *(undefined4 *)(param_1 + 0xd8) = 2;
+            if (0xf < (ulonglong)param_2[3]) {
+              puVar14 = (undefined8 *)*param_2;
+            }
+            FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                          ,0x371,"CryAudioImplFmod: initializeFmodStudio succeeds (banks: %s, %s)",
+                          puVar14);
+            FUN_180d2f3b0(param_1);
+            FUN_180d2f8ac();
+            FUN_1804f4090(param_2);
+            FUN_1804f4090(param_3);
+            return 1;
+          }
+          if (0xf < (ulonglong)param_2[3]) {
+            puVar14 = (undefined8 *)*param_2;
+          }
+          pcVar10 = 
+          "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t link event descriptions (\'%s\')"
+          ;
+          uVar9 = 0x362;
+        }
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                      ,uVar9,pcVar10,puVar14);
+        *(undefined4 *)(param_1 + 0xdc) = 0xc;
+        goto LAB_180d303e4;
+      }
+      if (0xf < (ulonglong)param_2[3]) {
+        puVar14 = (undefined8 *)*param_2;
+      }
+      pcVar10 = 
+      "[FMOD] CB_FmodStudioWrapper::InitializeFmodStudio -- Bank wrapper couldn\'t load master bank sample data \'%s\'"
+      ;
+      uVar9 = 0x352;
+    }
+    FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySoundSystem\\implementations\\CryAudioImplFmod\\FmodWrapper.cpp"
+                  ,uVar9,pcVar10,puVar14);
+    *(undefined4 *)(param_1 + 0xdc) = 0xb;
+  }
+  else {
+    *(undefined4 *)(param_1 + 0xdc) = 10;
+  }
+LAB_180d303e4:
+  FUN_1804f4090(param_2);
+  FUN_1804f4090(param_3);
+  return 0;
+}
+
+ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> loadBankFile caller @ 0xB473D8 (separate site) @ 180b473d8 (GhidraScript)  
+INFO  DumpFmodFileSystem.java> ================================================================================ (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   entry: 180b47330   proto: undefined FUN_180b47330() (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   size (addrs): 322 (GhidraScript)  
+INFO  DumpFmodFileSystem.java>   --- decompiled C --- (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_180b47330(undefined1 *param_1,undefined1 param_2,undefined1 param_3)
+
+{
+  undefined8 uVar1;
+  undefined8 *puVar2;
+  char ***pppcVar3;
+  longlong *plVar4;
+  undefined1 auStack_68 [32];
+  undefined4 local_48;
+  longlong *local_40;
+  char **local_38 [3];
+  ulonglong local_20;
+  ulonglong local_18;
+  
+  local_18 = DAT_1848fcfc0 ^ (ulonglong)auStack_68;
+  if (*(int *)(param_1 + 0x68) < 1) {
+    if ((*(longlong *)(param_1 + 0x30) != 0) || (*(int *)(param_1 + 4) != 0)) {
+      plVar4 = (longlong *)(param_1 + 0x10);
+      if (0xf < *(ulonglong *)(param_1 + 0x28)) {
+        plVar4 = (longlong *)*plVar4;
+      }
+      FUN_180619f70(&PTR_vftable_184930268,3,
+                    "LoadMetadataAsync when m_pFmodStudioBank already exists or state is not \'CREATED\' (%s)"
+                    ,plVar4);
+    }
+    FUN_180b47474(param_1,local_38);
+    pppcVar3 = local_38;
+    if (0xf < local_20) {
+      pppcVar3 = (char ***)local_38[0];
+    }
+    FMOD::Studio::System::loadBankFile
+              (*(System **)(DAT_18547c4d8 + 0xe0),(char *)pppcVar3,1,(Bank **)(param_1 + 0x30));
+    *(undefined4 *)(param_1 + 4) = 2;
+    *param_1 = param_2;
+    param_1[3] = param_3;
+    if (*(longlong *)(param_1 + 0x70) == 0) {
+      local_48 = 4;
+      puVar2 = (undefined8 *)FUN_180b47540(&local_40);
+      uVar1 = *puVar2;
+      *puVar2 = 0;
+      plVar4 = *(longlong **)(param_1 + 0x70);
+      *(undefined8 *)(param_1 + 0x70) = uVar1;
+      if (plVar4 != (longlong *)0x0) {
+        (**(code **)(*plVar4 + 0x28))(plVar4,1);
+      }
+      if (local_40 != (longlong *)0x0) {
+        (**(code **)(*local_40 + 0x28))(local_40,1);
+      }
+      *(undefined4 *)(*(longlong *)(param_1 + 0x70) + 0x1c) = 1;
+    }
+    *(undefined4 *)(param_1 + 0x68) = 1;
+    FUN_1804f4754(local_38);
+  }
+  else {
+    *(int *)(param_1 + 0x68) = *(int *)(param_1 + 0x68) + 1;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  DumpFmodFileSystem.java> 
+done. (GhidraScript)  

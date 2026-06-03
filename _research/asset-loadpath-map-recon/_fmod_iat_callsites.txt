@@ -1,0 +1,6 @@
+setFileSystem  (IAT rva 0x3a040a0): 0 call site(s)
+seekData       (IAT rva 0x3a040c8): 0 call site(s)
+readData       (IAT rva 0x3a040d0): 0 call site(s)
+createSound    (IAT rva 0x3a04140): 0 call site(s)
+createStream   (IAT rva 0x3a04150): 0 call site(s)
+loadBankFile   (IAT rva 0x3a04230): 0 call site(s)
