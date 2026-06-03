@@ -55,10 +55,11 @@ nothing else. The backend has **no DLL server-side**, so the adapter maps a
 maintainer-chosen **version tag** → the resolved `VersionContext(tag, ordinal)`
 the data-core needs, validated against the known game versions the server holds
 (the built DB's `game_versions` rows, with the data-core baseline constant as the
-floor). **How that resolved context threads into the data-core's `dll_path`-shaped
-write call is an open integration decision** surfaced to the user — not needed for
-step 1 (no write endpoint yet); `adapter.data_core_dll_param` raises a clear
-`NotImplementedError` naming the fork rather than fabricating a `dll_path`.
+floor). The resolved `VersionContext` IS the data-core's `version=(tag, ordinal)`
+param (the step-1b seam — supply `version` and the data-core skips the DLL scan
+entirely, no DLL server-side); a save endpoint passes it as `version=` with
+`dll_path=None`, so there is no `dll_path` to fabricate. The adapter owns the
+tag → context resolution; the save endpoints (`app.routes_save`) own consuming it.
 
 ## Dependencies
 

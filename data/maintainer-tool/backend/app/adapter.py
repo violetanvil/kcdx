@@ -28,19 +28,18 @@ It holds NO data-core rule logic -- it does not validate seed content, run SQL, 
 touch the write gate. It maps a tag to the version facts; the data-core's gate is
 still the single validator on any write (D13/R3).
 
-WHAT IS DELIBERATELY *NOT* WIRED HERE (a surfaced design fork -- steps 2-5)
---------------------------------------------------------------------------
-HOW the resolved `VersionContext` reaches the data-core's WRITE call is an open
-integration decision, because the data-core's write signature accepts only
-`dll_path` and calls `resolve_version(dll_path)` ITSELF -- there is no tag-accepting
-seam in the data-core today. The candidate mechanisms (extend the data-core to
-accept a pre-resolved (tag, ordinal); have the adapter inject the resolved pair
-past resolve_version at call time; or hold one canonical reference DLL server-side)
-are a design choice the user owns (design-authority) and are NOT needed for THIS
-step (s01 ships no read/save/commit endpoint). The adapter therefore resolves the
-version context and STOPS at the data-core's param boundary; `data_core_dll_param`
-raises a clear NotImplementedError naming the fork rather than fabricating a
-dll_path. The decision is surfaced in the step report.
+HOW THE RESOLVED VersionContext REACHES THE DATA-CORE WRITE (settled, step 1b + 4a)
+----------------------------------------------------------------------------------
+The earlier open fork -- how a chosen tag threads into a write call whose signature
+accepted only `dll_path` -- is SETTLED. Step 1b (A2) added an OPTIONAL pre-resolved
+`version=(tag, ordinal)` param to apply_seeds + the five db_editor write functions:
+supply `version` and the data-core skips the DLL `.rdata` scan entirely (no DLL
+server-side, D15). So a save endpoint passes `version=(ctx.tag, ctx.ordinal)` +
+`dll_path=None` -- the adapter's `VersionContext` IS the data-core's param. There is
+no `dll_path` to fabricate; the adapter resolves the context, the endpoint passes it.
+This adapter therefore owns ONLY the tag -> `VersionContext` resolution; how it is
+consumed (the `version=` keyword on a deferred-commit write) is the save endpoint's
+(app.routes_save), not a translation step here.
 """
 import os
 import sqlite3
@@ -119,22 +118,3 @@ def resolve_tag(config, version_tag):
             f"version tag {version_tag!r} is not a known game version "
             f"(known: {sorted(versions)}); the server holds no baseline for it")
     return VersionContext(tag=version_tag, ordinal=versions[version_tag])
-
-
-def data_core_dll_param(version_context):
-    """The data-core's write functions take a `dll_path`; the backend has no DLL.
-    Threading the already-resolved `version_context` into a data-core WRITE call
-    is an OPEN design fork (the data-core's write signature accepts only a DLL path
-    and calls resolve_version itself -- there is no tag-accepting seam in the
-    data-core today). That decision is the user's (design-authority) and is not
-    needed for s01 (no write endpoint yet).
-
-    Raising here -- rather than fabricating a dll_path -- keeps the adapter honest:
-    it resolves the version context (its design-determined job) and refuses to
-    invent the unsettled threading. The write steps (2-5) replace this once the
-    user settles the mechanism (surfaced in the step report)."""
-    raise NotImplementedError(
-        "threading a resolved version tag into the data-core's dll_path-shaped "
-        "write call is an unsettled integration decision (the data-core write "
-        "signature accepts only dll_path and resolves the version itself); "
-        "surfaced to the user, settled before steps 2-5 wire the write path")

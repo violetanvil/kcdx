@@ -26,10 +26,11 @@ route, which imports the real seeds_shared in-process). Cases:
      names (S5). Asserted against the REAL adapter over the resolved checkout +
      against the data-core's own baseline constant.
 
-  5. The adapter REFUSES to fabricate a dll_path: data_core_dll_param raises
-     NotImplementedError (the surfaced integration fork -- the adapter resolves the
-     version context and stops at the data-core's param boundary; the write-call
-     threading is the user's open decision, steps 2-5).
+  5. The adapter resolves ONLY a VersionContext (no dll_path fabrication): the
+     tag -> (tag, ordinal) resolution IS the data-core's `version=` param (the 1b
+     seam -- no DLL server-side). A save endpoint passes that VersionContext as
+     `version=` (step 4b's test_save_endpoints asserts the write side); the adapter
+     exposes the context and nothing else.
 
 SEED/BASELINE FIXTURE
 ---------------------
@@ -205,9 +206,15 @@ def test_adapter_known_versions_floor_without_db(empty_checkout):
 
 
 # ----------------------------------------------------------------------------
-# Case 5: the adapter REFUSES to fabricate a dll_path (the surfaced fork).
+# Case 5: the adapter resolves ONLY a VersionContext -- the (tag, ordinal) the
+# data-core's `version=` param wants (the 1b seam, no DLL server-side). The fork
+# the placeholder once named is settled: there is no dll_path to fabricate. The
+# save endpoint passes this context as version= (test_save_endpoints, step 4b).
 # ----------------------------------------------------------------------------
-def test_adapter_refuses_to_fabricate_dll_path():
-    ctx = adapter.VersionContext(tag=GVT, ordinal=GVO)
-    with pytest.raises(NotImplementedError):
-        adapter.data_core_dll_param(ctx)
+def test_adapter_resolves_version_context_no_dll(resolved_checkout):
+    config = load_config(checkout_override=resolved_checkout)
+    ctx = adapter.resolve_tag(config, GVT)
+    assert ctx == adapter.VersionContext(tag=GVT, ordinal=GVO), ctx
+    # The resolution reads no DLL: it maps the tag to the known-versions ordinal.
+    # The (tag, ordinal) pair is exactly what a save passes as version=.
+    assert (ctx.tag, ctx.ordinal) == (GVT, GVO)

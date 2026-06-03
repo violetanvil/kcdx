@@ -19,6 +19,7 @@ from . import adapter
 from .config import load_config
 from .routes_delta import router as delta_router
 from .routes_read import router as read_router
+from .routes_save import router as save_router
 
 # One module logger, event-driven (logging.md): the failure branches below log on
 # the data-core read failure, never per request.
@@ -41,6 +42,12 @@ app.include_router(read_router)
 # The field-delta endpoint (POST /field-delta) the s06 confirm surface calls -- a
 # distinct concern from the read routes, so its own router (structure-by-responsibility).
 app.include_router(delta_router)
+
+# The save endpoints (POST /save/*) -- the six job shapes, each opening a held
+# deferred-commit transaction (step 4b). Their own router + held-save registry
+# (structure-by-responsibility); the step-5 confirm/cancel endpoints resolve the held
+# txn through app.pending_saves.
+app.include_router(save_router)
 
 
 def _checkout_status(config):
