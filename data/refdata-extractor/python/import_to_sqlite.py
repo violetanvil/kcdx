@@ -1791,13 +1791,24 @@ class DeferredCommit:
 
     `result` carries the same dict the immediate path returns (tag / ordinal /
     n_actions / counts) so a deferred caller has the identical post-apply summary;
-    `out_dir` is the directory whose two DBs the held txns belong to."""
+    `out_dir` is the directory whose two DBs the held txns belong to.
 
-    def __init__(self, ucon, dcon, result, out_dir):
+    `restore_point` carries the SCOPED restore-point (design D21) captured by
+    apply_direct_edit BEFORE the writes landed: only the touched rows + each DB's
+    sqlite_sequence values, a few KB regardless of DB size. The deferred ROLLBACK
+    (rollback(handle)) covers a PRE-commit failure; restore(handle) consumes this
+    capture to undo a POST-commit failure (export/integrity/git), where commit(handle)
+    has already COMMITted + closed both connections and the held txn is gone. It is
+    None on the bootstrap/immediate path (defer_commit=False) -- only the
+    maintainer-tool deferred path captures it (the post-commit rollback is only
+    reachable through the deferred handle the backend holds across confirm)."""
+
+    def __init__(self, ucon, dcon, result, out_dir, restore_point=None):
         self.ucon = ucon
         self.dcon = dcon
         self.result = result
         self.out_dir = out_dir
+        self.restore_point = restore_point   # the D21 scoped restore-point (deferred path)
         self._finished = False   # set once committed OR rolled back (single-use)
 
     @property
@@ -1896,6 +1907,440 @@ def _close_quiet(con):
     except sqlite3.ProgrammingError:
         # Already closed -- idempotent close, the safe expected case.
         pass
+
+
+# ---------------------------------------------------------------------------
+# The SCOPED restore-point (design D21) -- the POST-commit half of the robust
+# rollback ("on ANY failure nothing lands, incl. PK auto-increment reset").
+#
+# WHY a second mechanism (not the deferred ROLLBACK): commit(handle) is one-way --
+# it COMMITs both held txns and CLOSES both connections, after which the deferred
+# rollback is gone AND the export (which runs POST-commit, reading the committed DB
+# on its own fresh connection) is the first place a failure can surface. A failure
+# THERE (export / integrity / git) must still undo the committed write. The
+# restore-point is that undo.
+#
+# WHY scoped, not a file copy (D21's rejected alternative): a maintainer edit touches
+# only a few rows across at most four tables (address_versions / survival /
+# game_versions / address_names). Capturing those rows + each DB's sqlite_sequence
+# watermark is a few KB regardless of DB size -- a `shutil.copy2` of the ~1.3 GB DEV
+# DB per committing confirm is the worse mechanism the cornerstone order (the cheaper
+# mechanism for the same guarantee wins) rejects.
+#
+# WHY the capture is a DATA-CORE capability (D13/law 6): it owns the write semantics,
+# holds the open connections at capture time, and knows exactly which rows the edit
+# touches. The backend cannot capture this without re-implementing which-rows-each-job-
+# touches -- a write-semantics leak D21 explicitly rejects.
+#
+# THE FOUR TOUCHED TABLES + how each is written (so the capture covers every shape):
+#   address_versions -- INSERT (add / new-tag, new id = MAX(id)+1, bumps the seq);
+#       UPDATE the audit trio (re-verify, by (kcdx_id, valid_from)); UPDATE
+#       valid_through (interval-close, by kcdx_id); full-row in-place UPDATE (the DEV
+#       function-kind PROMOTE, by the reused bulk-row id -- a row whose id is BELOW
+#       the seq, so the seq-boundary sweep alone would MISS it: its prior values are
+#       captured by the per-entity partition + the rva bulk-row capture).
+#   survival         -- INSERT only (autoincrement id; 1:1 with a new av row).
+#   game_versions    -- INSERT only (new-tag; autoincrement id).
+#   address_names    -- INSERT (add-entity, id = the kcdx_id, NOT autoincrement);
+#       UPDATE (deprecate / supersede, by id).
+#
+# THE CSV-REVERT SPLIT (D13/law 6): this restore restores the DB ROWS + sqlite_sequence
+# -- the write SEMANTICS the data-core owns. It does NOT touch the data/db-export/ CSVs:
+# those are a backend FILE artifact (D20), and the backend (step 5) reverts them (it
+# re-exports from the restored DB, or keeps a pre-edit CSV copy -- step 5's concern).
+# Keeping CSV file-handling out of the data-core is the same law that puts the
+# restore-point IN the data-core: write-semantics here, file-artifact handling in the
+# backend.
+# ---------------------------------------------------------------------------
+
+# The tables a maintainer edit can touch, and which carry an AUTOINCREMENT id
+# (sqlite_sequence-backed -- the seq watermark must be reset on restore so a
+# subsequent INSERT reuses the same next id). address_names.id IS the kcdx_id
+# (seed-supplied, NOT autoincrement) -- it has no sqlite_sequence row, so it is
+# restored by row content alone (no seq reset).
+_RP_TOUCHED_TABLES = ("address_versions", "survival", "game_versions", "address_names")
+_RP_AUTOINC_TABLES = ("address_versions", "survival", "game_versions")
+
+
+def _rp_table_cols(con, table):
+    """The column names of `table` in this open DB, in declared order (PRAGMA order).
+    Used to read+rewrite whole rows generically -- USER and DEV differ by projection,
+    so the columns are read from the live DB, never assumed from SCHEMA."""
+    return [c[1] for c in con.execute(f'PRAGMA table_info("{table}")')]
+
+
+def _rp_seq_value(con, table):
+    """The sqlite_sequence watermark for an AUTOINCREMENT table on this open
+    connection (the highest-ever-used rowid; the next INSERT uses seq+1), or None if
+    the table has no sqlite_sequence row yet. Read on the HELD connection so it sees
+    the pre-write committed value (the capture runs before any INSERT bumps it)."""
+    has = con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name='sqlite_sequence'").fetchone()
+    if not has:
+        return None
+    row = con.execute("SELECT seq FROM sqlite_sequence WHERE name = ?",
+                      (table,)).fetchone()
+    return row[0] if row else None
+
+
+def _writing_kcdx_ids(con, actions, state, new_tag_kcdx_id):
+    """The MINIMAL set of entity ids the edit actually WRITES on ONE DB -- the scope
+    the restore-point captures + deletes against. This is what makes the capture
+    O(edits), not O(entities): `actions` carries one row per curated entity (the whole
+    prospective set), but only the CHANGED ones are written. Determined by the SAME
+    cheap present/no-op/add classification _apply_one_db runs (a READ, not the write
+    logic), so the touched set matches what the write touches:
+
+      - a versions action whose row is PRESENT and whose audit trio is UNCHANGED is a
+        no-op (no write) -> excluded;
+      - a versions action that is PRESENT-and-changed (re-verify) or ABSENT (add) ->
+        a write -> included;
+      - a deprecate/supersede edit on an EXISTING names row (from _classify_name_edits,
+        the same classifier _apply_one_db uses) -> a names-side write -> included;
+      - the new-tag entity (NOT in `actions`) -> a write -> included.
+
+    A SUPERSET is safe (still byte-identical on restore); the point of the minimal set
+    is the few-KB scope, not correctness (which the seq boundary + key-set delete on
+    restore guarantee regardless). Run per-DB because present-vs-absent is per-DB."""
+    writing = set()
+
+    # Versions-side: classify present/no-op/add exactly as _apply_one_db reads it.
+    for a in actions:
+        kid = a["kcdx_id"]
+        where = f"restore-point classify (kcdx_id={kid})"
+        try:
+            vf_id = _db_tag_to_id(con, a["valid_from_tag"], where)
+        except RuntimeError:
+            # The tag is not in THIS DB yet (cannot happen for a current-tag action on
+            # a built DB) -- treat as a write to be safe (over-capture is harmless).
+            writing.add(kid)
+            continue
+        lvv_id = _db_tag_to_id(con, a["lvv_tag"], where) if a["lvv_tag"] else None
+        ekn_id = _db_evidence_kind_id(con, a["evidence_kind"], where)
+        existing = con.execute(
+            "SELECT last_verified_at_version, verified_by, verified_date, "
+            "evidence_kind FROM address_versions WHERE kcdx_id = ? AND "
+            "valid_from = ?", (kid, vf_id)).fetchone()
+        if existing is None:
+            writing.add(kid)            # ABSENT -> an add (a write)
+            continue
+        cur = (existing[0], existing[1], existing[2], existing[3])
+        new = (lvv_id, a["verified_by"], a["verified_date"], ekn_id)
+        if cur != new:
+            writing.add(kid)            # PRESENT-and-changed -> re-verify (a write)
+        # else: a no-op -> not written, not captured.
+
+    # Names-side: the SAME classifier _apply_one_db uses for deprecate/supersede.
+    deprecate_actions, supersede_actions, _ = _classify_name_edits(con, state)
+    for da in deprecate_actions:
+        writing.add(da["kcdx_id"])
+    for sa in supersede_actions:
+        writing.add(sa["kcdx_id"])
+
+    if new_tag_kcdx_id is not None:
+        writing.add(int(new_tag_kcdx_id))
+    return writing
+
+
+def _capture_one_db(con, kcdx_ids, rvas):
+    """Capture the SCOPED prior state of ONE open DB before the edit's writes land.
+
+    `kcdx_ids` -- the MINIMAL set of entity ids the edit writes on this DB (from
+        _writing_kcdx_ids -- the changed entities + the new-tag entity), so the capture
+        is O(edits), never O(entities). It is ALSO the delete key-set restore uses (an
+        add-entity INSERTs a names row at a NEW kcdx_id that has no prior row to
+        capture but IS in this set, so restore deletes it by key -- the autoincrement
+        seq boundary does NOT cover address_names, whose id is the seed-supplied
+        kcdx_id, not an autoincrement).
+    `rvas` -- the rvas of function-kind adds, whose DEV-side PROMOTE mutates an
+        EXISTING bulk row (kcdx_id IS NULL) in place -- a row the kcdx_id partition
+        does NOT cover, so its prior uncurated values are captured by rva.
+
+    Returns {"cols": {table: [col,...]}, "rows": {table: [tuple,...]},
+             "seq": {table: seq-or-None}, "key_ids": [kcdx_id,...]} -- the prior rows
+    of the touched key-partition, each autoincrement table's seq watermark, and the
+    delete key-set. Read on the HELD connection so every value is the pre-write
+    committed state (the capture runs BEFORE _apply_one_db mutates anything)."""
+    cap = {"cols": {}, "rows": {}, "seq": {}}
+    for t in _RP_TOUCHED_TABLES:
+        cap["cols"][t] = _rp_table_cols(con, t)
+    for t in _RP_AUTOINC_TABLES:
+        cap["seq"][t] = _rp_seq_value(con, t)
+
+    id_list = sorted(kcdx_ids)
+    cap["key_ids"] = id_list           # the delete key-set restore uses (by kcdx_id)
+    ph = ",".join("?" * len(id_list)) if id_list else None
+
+    av_cols = cap["cols"]["address_versions"]
+    av_sel = ",".join(f'"{c}"' for c in av_cols)
+    av_rows = list(con.execute(
+        f'SELECT {av_sel} FROM address_versions WHERE kcdx_id IN ({ph})',
+        id_list)) if id_list else []
+    # The DEV function-kind PROMOTE mutates the BULK row at the add's rva in place
+    # (kcdx_id IS NULL) -- capture its prior uncurated values by id so restore can
+    # write them back. (On USER there is no bulk row at the rva, so this matches none.)
+    captured_av_ids = {r[av_cols.index("id")] for r in av_rows}
+    for rva in sorted({rv for rv in rvas if rv is not None}):
+        for r in con.execute(
+                f'SELECT {av_sel} FROM address_versions WHERE rva = ? '
+                f'AND kcdx_id IS NULL', (rva,)):
+            if r[av_cols.index("id")] not in captured_av_ids:
+                av_rows.append(r)
+    cap["rows"]["address_versions"] = av_rows
+
+    # survival rows are keyed off address_version_id -- capture the prior survival
+    # rows of every captured av row (the 1:1 siblings).
+    all_av_ids = sorted({r[av_cols.index("id")] for r in av_rows})
+    sv_cols = cap["cols"]["survival"]
+    sv_sel = ",".join(f'"{c}"' for c in sv_cols)
+    if all_av_ids:
+        avph = ",".join("?" * len(all_av_ids))
+        cap["rows"]["survival"] = list(con.execute(
+            f'SELECT {sv_sel} FROM survival WHERE address_version_id IN ({avph})',
+            all_av_ids))
+    else:
+        cap["rows"]["survival"] = []
+
+    nm_cols = cap["cols"]["address_names"]
+    nm_sel = ",".join(f'"{c}"' for c in nm_cols)
+    cap["rows"]["address_names"] = list(con.execute(
+        f'SELECT {nm_sel} FROM address_names WHERE id IN ({ph})',
+        id_list)) if id_list else []
+
+    # game_versions is a tiny shared dimension (a handful of rows); the only write to
+    # it is the new-tag INSERT. Capturing the whole table is O(versions) (~1-2 rows) --
+    # not a SELECT * concern, and it makes the new-tag restore trivially complete (the
+    # prior table is the answer; restore's seq boundary drops the new-tag INSERT).
+    gv_cols = cap["cols"]["game_versions"]
+    gv_sel = ",".join(f'"{c}"' for c in gv_cols)
+    cap["rows"]["game_versions"] = list(con.execute(
+        f'SELECT {gv_sel} FROM game_versions'))
+    return cap
+
+
+def _affected_rvas(actions):
+    """The rvas of function-kind ADD actions -- the only writes that mutate an EXISTING
+    bulk row in place (the DEV PROMOTE). A re-verify/UPDATE never reads a bulk row; a
+    non-function add MINTs (no bulk row). Capturing these rvas lets the restore write
+    back the prior uncurated bulk row the promote overwrote. (A superset is harmless --
+    an rva with no bulk row captures nothing.)"""
+    return {a["rva"] for a in actions
+            if a.get("kind") in ss.FUNCTION_KINDS and a.get("rva") is not None}
+
+
+class RestorePoint:
+    """The SCOPED restore-point (design D21) -- the captured prior state of the touched
+    rows + each DB's sqlite_sequence watermark, captured by apply_direct_edit BEFORE
+    the edit's writes landed. Carried on the DeferredCommit handle; consumed by
+    restore(handle) on a POST-commit failure. A few KB regardless of DB size (only the
+    O(edits) touched rows + the seq values -- never a file copy).
+
+    `user`/`dev` each: {"cols": {table: [col,...]}, "rows": {table: [tuple,...]},
+    "seq": {table: seq-or-None}, "key_ids": [kcdx_id,...]} -- the prior rows, the seq
+    watermarks, and the writing key-set (the kcdx_ids restore deletes for the non-
+    autoincrement address_names table). `out_dir` is the directory whose two DBs the
+    restore re-opens (commit(handle) closed the deferred connections)."""
+
+    def __init__(self, out_dir, user, dev):
+        self.out_dir = out_dir
+        self.user = user
+        self.dev = dev
+
+
+def _capture_restore_point(out_dir, ucon, dcon, actions, state, new_tag_kcdx_id):
+    """Capture the scoped restore-point on the HELD (pre-write) connections (design
+    D21). Runs INSIDE apply_direct_edit, AFTER BEGIN but BEFORE _apply_one_db mutates
+    anything, so every captured value is the pre-write committed state. Reads only the
+    O(edits) touched key-partition + the seq watermarks -- the few-KB scoped capture,
+    never a SELECT * or a file copy.
+
+    The writing key-set is computed PER-DB (present-vs-absent differs USER vs DEV) by
+    the same classification _apply_one_db runs, so the capture scope matches the write
+    scope on each DB exactly."""
+    rvas = _affected_rvas(actions)
+    user = _capture_one_db(
+        ucon, _writing_kcdx_ids(ucon, actions, state, new_tag_kcdx_id), rvas)
+    dev = _capture_one_db(
+        dcon, _writing_kcdx_ids(dcon, actions, state, new_tag_kcdx_id), rvas)
+    return RestorePoint(out_dir, user, dev)
+
+
+def _restore_one_db(con, cap):
+    """Restore ONE DB to its captured pre-edit state, inside one txn on a freshly
+    re-opened connection. Delete-all-then-reinsert-all: DELETE every row the edit could
+    have written (the captured prior-state rows + every INSERT, identified by the seq
+    watermark AND the writing-entity key-set -- see step 1 for why both predicates are
+    needed), THEN re-INSERT every captured prior row verbatim, THEN reset each
+    autoincrement seq watermark. Byte-identical to before the edit, INCLUDING
+    sqlite_sequence, by construction: the captured rows ARE the prior state of every
+    row the edit UPDATEd/promoted/closed, and the delete-set is a SUPERSET of every row
+    it actually wrote (so no INSERT survives and no UPDATE keeps its new value). The
+    tables carry no engine-enforced FKs (the validator owns referential integrity), so
+    delete/reinsert order is free; deletes-then-inserts keeps the snapshot semantics
+    obvious."""
+    con.execute("BEGIN")
+    key_ids = cap.get("key_ids", [])
+    key_ph = ",".join("?" * len(key_ids)) if key_ids else None
+
+    # 1. DELETE everything the edit could have written, table by table. Three delete
+    #    predicates compose to cover every write shape WITHOUT re-deriving which id a
+    #    given INSERT minted:
+    #      (a) id IN captured_ids -- the rows we hold prior state for (UPDATEd /
+    #          promoted-in-place / interval-closed); reinserted verbatim in step 2.
+    #      (b) id > seq watermark -- an INSERT that took a NEW id ABOVE the watermark
+    #          (the common autoincrement add).
+    #      (c) kcdx_id IN key_ids (address_versions) / id IN key_ids (address_names) --
+    #          an INSERT for a writing entity whose new id is NOT above the watermark.
+    #          The load-bearing case the seq boundary alone MISSES: an add-entity's
+    #          address_names row lands at the seed-supplied kcdx_id (address_names is
+    #          NOT autoincrement, so there is no seq watermark above which it sits) --
+    #          caught only by the writing-entity key-set. (The USER function-kind av
+    #          add uses _next_av_id = MAX(id)+1, ABOVE the watermark -> predicate (b);
+    #          the DEV function-kind promote is an in-place UPDATE of the existing bulk
+    #          row -> predicate (a). So (c)'s genuinely-low-id case is the names add.)
+    #    survival has no kcdx_id; its INSERTs are caught by (b) (autoincrement) and by
+    #    cascading from the av rows about to be deleted (its address_version_id points
+    #    at a deleted av row) -- computed below.
+
+    # The av id-set being deleted (captured-id ∪ id>seq ∪ kcdx_id-in-key-set) -- survival
+    # cascades off it (a survival row whose owning av row is deleted is itself deleted).
+    av_cols = cap["cols"]["address_versions"]
+    av_idx = av_cols.index("id")
+    av_kidx = av_cols.index("kcdx_id")
+    av_seq = cap["seq"].get("address_versions")
+    av_boundary = av_seq if av_seq is not None else 0
+    deleted_av_ids = set()
+    for r in con.execute("SELECT id FROM address_versions WHERE id > ?",
+                         (av_boundary,)):
+        deleted_av_ids.add(r[0])
+    if key_ids:
+        for r in con.execute(
+                f"SELECT id FROM address_versions WHERE kcdx_id IN ({key_ph})",
+                key_ids):
+            deleted_av_ids.add(r[0])
+    deleted_av_ids.update(r[av_idx] for r in cap["rows"]["address_versions"])
+
+    # address_versions: delete (a) ∪ (b) ∪ (c).
+    if deleted_av_ids:
+        idl = sorted(deleted_av_ids)
+        ph = ",".join("?" * len(idl))
+        con.execute(f"DELETE FROM address_versions WHERE id IN ({ph})", idl)
+
+    # survival: delete (b) id>seq ∪ cascade from the deleted av rows.
+    sv_seq = cap["seq"].get("survival")
+    sv_boundary = sv_seq if sv_seq is not None else 0
+    con.execute("DELETE FROM survival WHERE id > ?", (sv_boundary,))
+    if deleted_av_ids:
+        idl = sorted(deleted_av_ids)
+        ph = ",".join("?" * len(idl))
+        con.execute(
+            f"DELETE FROM survival WHERE address_version_id IN ({ph})", idl)
+
+    # game_versions: delete (a) captured-ids ∪ (b) id>seq (the new-tag INSERT).
+    gv_cols = cap["cols"]["game_versions"]
+    gv_idx = gv_cols.index("id")
+    gv_captured = [r[gv_idx] for r in cap["rows"]["game_versions"]]
+    if gv_captured:
+        ph = ",".join("?" * len(gv_captured))
+        con.execute(f"DELETE FROM game_versions WHERE id IN ({ph})", gv_captured)
+    gv_seq = cap["seq"].get("game_versions")
+    gv_boundary = gv_seq if gv_seq is not None else 0
+    con.execute("DELETE FROM game_versions WHERE id > ?", (gv_boundary,))
+
+    # address_names: delete (a) captured-ids (an UPDATEd entity, reinserted in step 2)
+    # ∪ (c) id IN key_ids (an add-entity's new names row at the seed-supplied kcdx_id --
+    # not autoincrement, so no seq boundary covers it).
+    nm_cols = cap["cols"]["address_names"]
+    nm_idx = nm_cols.index("id")
+    nm_del = {r[nm_idx] for r in cap["rows"]["address_names"]} | set(key_ids)
+    if nm_del:
+        idl = sorted(nm_del)
+        ph = ",".join("?" * len(idl))
+        con.execute(f"DELETE FROM address_names WHERE id IN ({ph})", idl)
+
+    # 2. Re-INSERT every captured prior row verbatim (restoring an UPDATEd row's prior
+    #    values, or re-establishing a row a delete removed that the edit only UPDATEd --
+    #    e.g. the DEV promote's prior bulk row, or an interval-close's prior open row).
+    for t in _RP_TOUCHED_TABLES:
+        cols = cap["cols"][t]
+        rows = cap["rows"][t]
+        if rows:
+            colnames = ",".join(f'"{c}"' for c in cols)
+            placeholders = ",".join("?" * len(cols))
+            con.executemany(
+                f'INSERT INTO "{t}" ({colnames}) VALUES ({placeholders})',
+                rows)
+
+    # 3. Reset each autoincrement table's sqlite_sequence to the captured watermark so
+    #    a subsequent INSERT reuses the same next id (the PK-reset half of "nothing
+    #    lands"). If the table had NO seq row before (capture None) but one exists now
+    #    (the edit's INSERT created it), DELETE it; otherwise UPDATE it back.
+    for t in _RP_AUTOINC_TABLES:
+        seq_before = cap["seq"].get(t)
+        if seq_before is None:
+            con.execute("DELETE FROM sqlite_sequence WHERE name = ?", (t,))
+        else:
+            # The row may not exist if nothing has ever been inserted; UPSERT-style.
+            cur = con.execute(
+                "SELECT 1 FROM sqlite_sequence WHERE name = ?", (t,)).fetchone()
+            if cur is None:
+                con.execute(
+                    "INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)",
+                    (t, seq_before))
+            else:
+                con.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = ?",
+                            (seq_before, t))
+
+    con.execute("COMMIT")
+
+
+def restore(handle):
+    """Undo a COMMITTED maintainer edit on a POST-commit failure, restoring both DBs
+    byte-identical to before the edit INCLUDING sqlite_sequence (design D21). Called by
+    the backend (step 5) when the export / integrity / git step fails AFTER
+    commit(handle) already COMMITted + closed the connections -- the deferred ROLLBACK
+    is gone by then, so this scoped restore-point is the only undo left.
+
+    It RE-OPENS the connections (commit closed the deferred ones), restores the touched
+    rows + resets each autoincrement table's sqlite_sequence from the capture the handle
+    carries, COMMITs, and closes. Only the DB-write semantics are restored here; the
+    data/db-export/ CSVs are a backend file artifact (D20) reverted by step 5 (the CSV-
+    revert split, D13/law 6) -- this entry does NOT touch them.
+
+    Idempotent-safe: restoring to the captured prior state is convergent -- a second
+    restore re-applies the same delete-then-reinsert + seq-reset and lands the same
+    byte-identical state (a no-op in effect). A handle with no restore_point (the
+    immediate/bootstrap path never captured one) is a clear error -- restore is a
+    deferred-path-only capability.
+
+    Raises RuntimeError if the handle carries no restore-point (it was not produced by
+    the deferred maintainer-tool path)."""
+    rp = getattr(handle, "restore_point", None)
+    if rp is None:
+        raise RuntimeError(
+            "restore() on a handle with no restore-point: the scoped restore-point is "
+            "captured only on the deferred maintainer-tool path (apply_direct_edit "
+            "defer_commit=True). The immediate/bootstrap path never reaches a "
+            "post-commit failure, so it captures none.")
+    user_db = os.path.join(rp.out_dir, "reference.sqlite")
+    dev_db = os.path.join(rp.out_dir, "reference-dev.sqlite")
+    ucon = _open_rw(user_db, "user (reference.sqlite)")
+    try:
+        dcon = _open_rw(dev_db, "dev (reference-dev.sqlite)")
+    except BaseException:
+        _close_quiet(ucon)
+        raise
+    try:
+        _restore_one_db(ucon, rp.user)
+        _restore_one_db(dcon, rp.dev)
+    except BaseException:
+        _rollback_quiet(ucon)
+        _rollback_quiet(dcon)
+        raise
+    finally:
+        _close_quiet(ucon)
+        _close_quiet(dcon)
 
 
 def apply_seeds(out_dir, dll_path, *, version=None, log=None, defer_commit=False):
@@ -2414,6 +2859,19 @@ def apply_direct_edit(out_dir, prospective_seed_dir, *, version, log=None,
         state["dev_con"] = dcon
         ucon.execute("BEGIN")
         dcon.execute("BEGIN")
+        # 2b. SCOPED restore-point (design D21) -- captured on the HELD connections
+        #     AFTER BEGIN but BEFORE any write, so it sees the pre-write committed
+        #     state (the BEGIN does not change a connection's view of its own DB). It
+        #     captures ONLY the O(edits) touched rows + each DB's sqlite_sequence
+        #     watermark -- a few KB, never a SELECT * or a file copy. Captured ONLY on
+        #     the deferred path (the post-commit failure restore is reachable only
+        #     through the handle the backend holds across confirm); the immediate path
+        #     skips it (it commits in this call -- there is no post-commit window). The
+        #     capture is read-only -- it does not change the DB the oracles compare.
+        restore_point = (
+            _capture_restore_point(out_dir, ucon, dcon, actions, state,
+                                   new_tag_kcdx_id)
+            if defer_commit else None)
         # 3. Current-tag actions -- the direct _apply_one_db call (convergence proven).
         u = _apply_one_db(ucon, actions, state, "user",
                           user_projection=True, deferred=True)
@@ -2446,8 +2904,10 @@ def apply_direct_edit(out_dir, prospective_seed_dir, *, version, log=None,
         # Held, uncommitted -- the handle carries the open connections to the caller
         # (commit(handle)/rollback(handle) resolve the txn; the ROLLBACK discards
         # sqlite_sequence/PK-autoincrement bumps too -- the robust post-failure
-        # rollback, design D19).
-        return DeferredCommit(ucon, dcon, result, out_dir)
+        # rollback, design D19). It ALSO carries the scoped restore-point (D21) so a
+        # POST-commit failure (after commit(handle) closed the connections) can be
+        # undone via restore(handle).
+        return DeferredCommit(ucon, dcon, result, out_dir, restore_point=restore_point)
 
     # Immediate: commit USER-first then DEV (the 4a ordering) + close. Used by the
     # convergence oracle (direct == seed-rebuild) and any non-deferred caller.

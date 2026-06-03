@@ -92,6 +92,10 @@ from .read_api import (
 # without a circular import. Additive: no existing name's binding changes.
 _DEFERRED_COMMIT_NAMES = frozenset({
     "DeferredCommit", "DeferredCommitError", "commit", "rollback",
+    # The D21 scoped restore-point (post-commit undo): the capture type + the entry
+    # the backend (step 5) calls on a post-commit failure. Re-exported lazily for the
+    # same no-cycle reason as commit/rollback (they live in import_to_sqlite).
+    "RestorePoint", "restore",
 })
 
 
@@ -128,4 +132,7 @@ __all__ = [
     # write mechanism -- step 4a): the handle type, its misuse error, and the
     # commit/rollback the maintainer-tool backend drives on confirm/cancel.
     "DeferredCommit", "DeferredCommitError", "commit", "rollback",
+    # The D21 scoped restore-point (step 4d): the capture type + the post-commit-undo
+    # entry the backend (step 5) calls when export/integrity/git fails after commit.
+    "RestorePoint", "restore",
 ]
