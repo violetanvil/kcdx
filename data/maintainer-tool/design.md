@@ -1,6 +1,15 @@
 # Maintainer tool — design (DB-direct authoring with CSV auto-export)
 
-> **Status:** v1 (settled). Date: 2026-06-02.
+> **Status:** v1 (settled). Date: 2026-06-02 (write mechanism revised 2026-06-03).
+> **Write mechanism (revised 2026-06-03 — §10 D19/D20):** a maintainer edit is a
+> **DIRECT INSERT/UPDATE on the DB** (the DB is the originator, D1), reusing the applier's
+> existing `_apply_one_db` write helpers — NOT the seed-CSV-rebuild bridge the original D13
+> recorded. The same single validator gate runs, re-targeted to the prospective DB state; the
+> deferred-commit transaction's `ROLLBACK` gives a robust post-failure rollback (incl. PK
+> auto-increment reset). The derived CSV export now writes to **`data/db-export/`** (D20),
+> not back to the bootstrap `data/seeds/` (which stays the frozen one-time `run_rebuild`
+> input). `create-version`-at-a-new-game-tag now works (a direct INSERT bypasses the
+> seed-rebuild's baseline gate). The `run_rebuild` bootstrap is unchanged.
 > **Scope:** the Address Library maintainer sub-system — `data/maintainer-tool/`,
 > `data/seeds/`, and the `data/refdata-extractor/python/` toolchain that links them.
 > This is the data sub-repo's own design doc; it is NOT `docs/design.md` (that doc
@@ -50,12 +59,14 @@
 ## 1. Vision <a name="1-vision"></a>
 
 Move the Address Library off hand-edited seed CSVs: the maintainer edits the
-reference DB **directly** through a **web app** (any browser, including a phone),
-which **auto-exports** the three seed CSVs as a deterministic, git-tracked diff layer
-on every committed change, guaranteed correct by a **bidirectional byte-identity
-round-trip**. (The surface is a Dockerized web app — a Python backend over the headless
-data-core + a React frontend, committing server-side on confirm; see the delivery note +
-§8 + §10 D14–D18. The earlier PySide6 desktop plan is superseded.)
+reference DB **directly** (a real INSERT/UPDATE on the DB rows — the DB is the
+originator, D19) through a **web app** (any browser, including a phone), which
+**auto-exports** the three CSVs as a deterministic, git-tracked diff record on every
+committed change, written to the **derived-export location `data/db-export/`** (NOT back
+to the bootstrap `data/seeds/`, D20), guaranteed correct by an integrity check. (The
+surface is a Dockerized web app — a Python backend over the headless data-core + a React
+frontend, committing server-side on confirm; see the delivery note + §8 + §10 D14–D20.
+The earlier PySide6 desktop plan is superseded.)
 
 **v1 success criteria.** A maintainer manages the entire reference DB end-to-end through
 the GUI — browses/searches/filters the curated set, views any entity's full record and
@@ -80,8 +91,9 @@ order), but nothing in the catalog is out of v1's scope.
 | Term | Meaning |
 |---|---|
 | **Reference DB** | `reference.sqlite` (USER, curated ~143 entities) + `reference-dev.sqlite` (DEV, bulk superset). Generated today; the **authoritative authoring surface** under this design. |
-| **Seed CSVs** | the three files under `data/seeds/` (`module_seed.csv`, `address_names_seed.csv`, `address_versions_seed.csv`). Today hand-authored; under this design a **deterministic export** of the DB — the git-tracked diff/review layer, never hand-edited. |
-| **The round-trip** | `import(export(DB)) == DB` AND `export(import(CSVs)) == CSVs`. The correctness oracle that makes the DB↔CSV pair safe. |
+| **Bootstrap seeds** | the three files under `data/seeds/` (`module_seed.csv`, `address_names_seed.csv`, `address_versions_seed.csv`). The genesis input: `run_rebuild` reads them for ONE FINAL from-dump rebuild to construct the DB, after which they are frozen — never written by the maintainer tool (D20). |
+| **The derived export (CSV record)** | the three CSVs the maintainer tool exports from the DB on every committed save, written to **`data/db-export/`** — the git-tracked diff/review record of the DB's history (D1/D19/D20). The DB is the originator; this is its deterministic export, distinct from the bootstrap seeds the DB was born from. |
+| **The round-trip / integrity check** | `import(export(DB)) == DB` AND `export(import(CSVs)) == CSVs` — the full bidirectional oracle (a BUILD-time gate). The maintainer tool's per-save integrity check is the cheap `export(DB)`-is-deterministic direction (re-export the committed DB, assert the CSV record matches); the full bidirectional round-trip rebuilds the bulk DB + needs the dump, so it stays the build-time oracle, not run per save. |
 | **Data-core** | the headless, Qt-free authoring logic in `seeds_shared/` (validators, row-builder, the new exporter + DB-editor). The GUI is a thin shell over it. |
 | **Job 2** | re-verify one curated entity at the current game version (update the audit trio). The v1 MVP workflow (`requirements.md` R6). |
 | **Audit trio** | `last_verified_at_version` + `verified_by` + `verified_date` + `evidence_kind` — the per-row verification record (`policy.md` §"Verification audit trail"). |
@@ -93,33 +105,42 @@ order), but nothing in the catalog is out of v1's scope.
 (derived, never hand-edited).
 
 ```
-AUTHORING:   tool -> reference.sqlite        (direct, validated edits)
-                   |
-                   v  (deterministic export on every committed change)
-GIT-TRACKED: data/seeds/*.csv                (derived, diffable, reviewed)
-                   |
-                   v  (import, the existing baseline path)
-GENERATED:   reference.sqlite + reference-dev.sqlite
+BOOTSTRAP (one-time genesis, unchanged):
+  Ghidra dump + data/seeds/*.csv  --run_rebuild-->  reference.sqlite + reference-dev.sqlite
+
+AUTHORING (every maintainer edit, the inverted path — D19):
+  tool --direct INSERT/UPDATE-->  reference.sqlite + reference-dev.sqlite   (validated, deferred-commit txn)
+                                          |
+                                          v  (deterministic export on every committed change)
+  GIT-TRACKED RECORD:  data/db-export/*.csv          (derived, diffable, reviewed — D20)
 ```
+The DB is the originator. The bootstrap seeds (`data/seeds/`) build the DB ONCE; thereafter
+every edit writes the DB directly and exports the derived record to `data/db-export/` — the
+seeds are never re-read on the authoring path, and the export never writes back to `data/seeds/`.
 
 What the inversion changes:
 
-- **The CSVs survive** as a derived export. The git/review/publish-allowlist
-  machinery is untouched: `data/seeds/` stays a private carve-out (the
-  publish-public allowlist), `policy.md`'s file-format rules (UTF-8,
-  `QUOTE_MINIMAL`, `#`-comments, header-literal column order) still describe the
-  exported shape, and a reviewer still reads a human-readable CSV diff.
-- **The CSV is no longer hand-edited.** The tool writes the DB; the export writes
-  the CSVs. `policy.md` §"DB additions require explicit approval" (AP18), the audit
-  trio, supersession/deprecation pair integrity, and the survival columns are now
-  invariants on the **DB-write path** — the same rules, a different surface.
-- **No new publish-boundary story is needed** — the boundary is unchanged because
-  the CSVs still exist and still carry the published projection.
+- **The CSVs survive** as a derived export — now at **`data/db-export/`** (D20), a
+  new private path (private by default — the publish-public allowlist is opt-in, so a
+  new `data/` subdir is not published unless added). `policy.md`'s file-format rules
+  (UTF-8, `QUOTE_MINIMAL`, `#`-comments, header-literal column order) still describe the
+  exported shape, and a reviewer still reads a human-readable CSV diff. `data/seeds/`
+  stays a private carve-out too, but as the **frozen bootstrap input** (read once by
+  `run_rebuild`), not the maintainer-tool's write target.
+- **The CSV is no longer hand-edited, and the DB is no longer rebuilt from it.** The
+  tool writes the DB **directly** (D19); the export writes the `data/db-export/` record.
+  `policy.md` §"DB additions require explicit approval" (AP18), the audit trio,
+  supersession/deprecation pair integrity, and the survival columns are now invariants on
+  the **DB-write path** (validated against the prospective DB state) — the same rules, a
+  different surface.
+- **No new publish-boundary story is needed** — the boundary is unchanged because the
+  CSVs still exist (now under `data/db-export/`, also private) and still carry the
+  published projection.
 
 What the inversion does NOT change: the column-level authoring law (`policy.md`),
 the survival design (`fingerprint-per-kind.md`), the `.rdata` version resolver
-(`plan.md` §7 / `requirements.md` R12), the privacy carve-out (R10), or the single
-`.exe` distribution (R9).
+(`plan.md` §7 / `requirements.md` R12), the privacy carve-out (R10), the `run_rebuild`
+one-time bootstrap, or the web-app delivery (D14–D18).
 
 ## 4. The round-trip contract <a name="4-round-trip-contract"></a>
 
@@ -169,7 +190,7 @@ data/refdata-extractor/python/
     schema.py        validators.py    row_builder.py    dict_codec.py
     version_resolver.py            (.rdata scan — the test-of-record for the JS port, D15)
     csv_exporter.py                DB -> the 3 CSVs, diff-preserved (R11)
-    db_editor.py                   validated, atomic DB-edit transactions (wraps apply_seeds, D13)
+    db_editor.py                   validated, atomic DIRECT-DB-edit transactions (reuses _apply_one_db's write helpers, D19)
     field_delta.py                 saved-vs-prospective field delta (D8) + nothing-changed (D12)
     round_trip.py                  bidirectional byte-identity oracle (D2)
   import_to_sqlite.py            (apply_seeds — the single validated applier db_editor drives)
@@ -193,16 +214,27 @@ Each new unit's single responsibility (`structure-by-responsibility.md`):
   audit-trio + full-row UPDATE for Job 2 / US-5, the INSERT shapes for Jobs 1/6, and
   the lifecycle UPDATE for Jobs 4/5 — all in v1 per §9/D7). It runs the shared
   validator (R3) BEFORE any write; a validation failure aborts with no write.
-  **Mechanism (D13, settled 2026-06-02):** `db_editor` does NOT author a parallel
-  write/validate path — it is the headless, in-process entry point to the EXISTING
-  validated atomic applier `import_to_sqlite.run_apply` (which already classifies the
-  six job actions, gates the whole prospective seed state through the single validator
-  — row-level AND cross-row, e.g. supersession acyclicity / tuple-uniqueness — and
-  applies per-DB in `BEGIN/COMMIT`). The work is to refactor `run_apply`'s CLI shape
-  (`sys.exit` / prints / `--dll`) into a library-callable form `db_editor` invokes,
-  preserving the existing apply==rebuild oracle byte-identically. This is the single
-  gate the design demands (the validator has no row-level entry point; a per-row check
-  could not see the cross-row invariants Jobs 4/5/6 require — see §10 D13).
+  **Mechanism (D19, settled 2026-06-03 — supersedes the D13 seed-rebuild bridge):**
+  `db_editor` does NOT author a parallel write/validate path, AND it does NOT rebuild
+  the DB from seed CSVs. It performs the six jobs as **DIRECT DB INSERT/UPDATE** through
+  the existing applier's `_apply_one_db` **write helpers** (the real `INSERT`/`UPDATE`
+  statements that already run inside `import_to_sqlite`), fed **edit parameters** rather
+  than CSV-diff-derived actions. Those helpers carry the 8 load-bearing behaviors a
+  naive direct write would lose — the 1:1 `survival` sibling INSERT, the interval-close
+  before an add, the function-kind promote-vs-mint + fingerprint-carry + `BaselineRefusal`
+  gate, the per-DB column projection, and FK-id resolution (never minting) — so reusing
+  them preserves them. The **same single whole-state validator gate** runs (row-level AND
+  cross-row — supersession acyclicity / tuple-uniqueness / pair-integrity / FK closure),
+  re-targeted to the **prospective DB state** instead of a prospective seed CSV. The write
+  runs inside the **deferred-commit transaction** (the connection-level seam): the DB ops
+  land uncommitted, and on Confirm the txn commits (USER-first then DEV); on any downstream
+  failure the txn `ROLLBACK`s — discarding the change INCLUDING `sqlite_sequence`/PK
+  auto-increment bumps (the robust post-failure rollback). After a successful write,
+  `csv_exporter.export_seeds` exports the committed DB → the **derived CSV record at
+  `data/db-export/`** (diff-preserved, D20). The original `run_rebuild` bootstrap (Ghidra
+  dump + `data/seeds/*.csv` → DB) is the ONE-TIME genesis build, unchanged. This is the
+  single gate the design demands; the validator has no row-level entry point, so the
+  prospective-DB-state validation reuses the whole-state gate (see §10 D19 + D13).
 - **The backend (`data/maintainer-tool/backend/`)** — the Python API over the data-core
   (D14). It exposes the six jobs + browse/view/compare as endpoints, runs the data-core's
   save spine on a confirmed edit, and performs the git commit + push (D16) using the
@@ -481,7 +513,7 @@ Settled in the UI design dialogue 2026-06-02 (the second pass, building the UI l
 | D10 | Default row (unresolved) | **Newest authored row** (highest `valid_from_version`) is default-selected when no version is resolved/picked. | Nothing pre-selected until the maintainer picks. |
 | D11 | New-row approval (AP18) | Creating a new entity (Job 1) or new version (Job 6) is **approval-gated in the confirm step** (an explicit acknowledgment before it lands); an UPDATE is not gated. | Treat a new row like any UPDATE (no approval gate) — violates `policy.md` AP18. |
 | D12 | New-version "nothing changed" | Saving a new version identical to its source is **blocked with steering copy** routing the maintainer to re-verify the existing row instead of creating a duplicate. | Silently allow a duplicate version row; or clear the audit trio on a new version (the user chose prefill-all + the nothing-changed guard). |
-| D13 | How `db_editor` reuses the single validator gate | `db_editor` is the **headless in-process entry point to the existing `import_to_sqlite.run_apply`** validated atomic applier (refactor its CLI shape to a library entry); zero rule logic in `db_editor`, the whole-state gate covers row-level AND cross-row invariants, one path generalises to all six jobs. *(Settled mid-build 2026-06-02; the validator has no row-level entry point and a per-row check could not see the cross-row invariants Jobs 4/5/6 need — surfaced via architect-review, the user chose D over export-then-validate (A) / validate-before-open (B) / add-a-row-level-validator (C, partial-coverage).)* | A — export→validate→commit per edit (verbatim gate reuse, the fallback). B — validate-before-open. C — row-level validator entry (can't see cross-row invariants; modifies the shared gate). |
+| D13 | How `db_editor` reuses the single validator gate | `db_editor` reuses the existing validated applier's **write helpers + the single whole-state validator gate** — zero rule logic in `db_editor`, the gate covers row-level AND cross-row invariants, one path generalises to all six jobs. *(Settled mid-build 2026-06-02; the validator has no row-level entry point and a per-row check could not see the cross-row invariants Jobs 4/5/6 need.)* **⚠ Mechanism superseded by D19 (2026-06-03):** the original D13 mechanism wrapped `import_to_sqlite.run_apply` — the seed-CSV-REBUILD bridge (export the DB → edit a temp seed CSV → re-apply by diffing the prospective seed against the DB). That contradicts D1 (the DB is the originator, not rebuilt from seeds). D19 corrects it: `db_editor` performs **direct-DB INSERT/UPDATE** through the applier's existing `_apply_one_db` write helpers (fed edit parameters, not CSV-diff-derived actions), inside the deferred-commit transaction. The gate-reuse insight (one whole-state validator, all six jobs) is UNCHANGED and preserved; only the rebuild-bridge mechanism is replaced by direct writes. See D19. | A — export→validate→commit per edit. B — validate-before-open. C — row-level validator entry (can't see cross-row invariants). |
 
 Settled in the web-app pivot dialogue 2026-06-02 (the third pass — the tool becomes a
 hostable web app instead of a PySide6 desktop `.exe`):
@@ -493,6 +525,8 @@ hostable web app instead of a PySide6 desktop `.exe`):
 | D16 | Server commit + push | The backend **commits to its volume-mounted checkout AND pushes to GitHub on confirm** (D6's exact-path / live-lock / self-authored-message discipline, unchanged — the writer moved to the server). Push so edits are durable beyond the container. | Commit locally, push as a separate/manual step (a container's un-pushed commits are fragile if it is recreated). |
 | D17 | Auth seam (auth out of scope) | The app is **auth-agnostic but auth-ready**: the commit **author identity** comes from the request context the operator's login supplies; the **push credential** is **env-injected**. No login/auth/hosting/portal code from the build — only the documented seams (env var names, the identity field the API expects). A dev default lets the app boot + run locally without the operator's auth, for testing. | Build the auth/login/hosting (out of the user's stated scope — the user wires it). No dev default (the app can't be tested standalone before auth is wired). |
 | D18 | Container data layout | The git checkout (`data/seeds/` + the reference DB) lives on a **mounted volume at a configured path** the container reads/writes/commits; the image carries only the app code; the operator provides the volume + the push credential. | Bake the repo into the image (heavy, stale). Bind-mount the host's existing clone (tighter host coupling) — recorded as an operator option, not the app's assumption. |
+| D19 | The maintainer write mechanism (DB-direct, not seed-rebuild) | **A maintainer edit is a DIRECT INSERT/UPDATE on the DB rows** — the DB is the originator (D1). `db_editor` performs the six jobs as direct DB ops through the applier's EXISTING `_apply_one_db` write helpers (the av/names/survival INSERTs, the interval-close, the function-kind promote-vs-mint + fingerprint-carry + `BaselineRefusal` gate, the per-DB column projection, the FK-id resolution-never-minting), fed **edit parameters** instead of CSV-diff-derived actions — NOT the export-seed→edit→`apply_seeds`-rebuild bridge (the original D13 mechanism). The **same single validator gate** runs, re-targeted to the **prospective DB state** (the DB as it would be after the write) instead of seed CSVs — every invariant (tuple-uniqueness, audit-trio integrity, supersession pair-integrity + acyclicity, FK closure, enum/required) still holds. The write runs inside the **deferred-commit transaction (4a, reused verbatim — connection-level)**; its `ROLLBACK` discards the whole txn including `sqlite_sequence`/PK-autoincrement bumps, giving the robust **post-failure rollback** (reset auto-increments etc.) on ANY downstream failure (export/CSV/git). After a successful write, **`csv_exporter.export_seeds` exports the DB → the derived CSV record at `data/db-export/`** (diff-preserved). **`create-version`-at-a-new-game-tag now WORKS** — a direct INSERT (the new `game_versions` row + the interval-close + the new `address_versions` row) bypasses the seed-rebuild's `GAME_VERSION_TAG`/baseline-matcher gate that materialised zero rows; the UX is prefill-from-the-last-working-version + a version-bump diff. The original **`run_rebuild` bootstrap** (Ghidra dump + `data/seeds/*.csv` → DB, a one-time build) is UNCHANGED. *(Settled 2026-06-03 — corrects D13's mechanism to match D1's vision; the gate-reuse insight is preserved, only the rebuild bridge is replaced by direct writes. The 8 load-bearing behaviors above must all be preserved by the direct path — they ARE `_apply_one_db`'s helpers, so reusing them preserves them.)* | The seed-rebuild bridge (the original D13 — contradicts D1, can't create a new-tag version, an indirection per edit). A parallel hand-written direct-SQL path (re-implements `_apply_one_db`'s 8 behaviors + risks drift from the bootstrap's write logic). |
+| D20 | Seeds vs the derived export (the two CSV roles, separated) | The three CSVs serve TWO roles, now **physically separated**. **`data/seeds/*.csv` = the bootstrap seeds** (genesis): `run_rebuild` reads them for ONE FINAL from-dump rebuild to construct the DB, after which they are frozen genesis input — never written by the maintainer tool. **`data/db-export/*.csv` = the derived export record** (the living history): the maintainer tool exports the DB here on every confirmed save (diff-preserved) and git-commits it — the git-trackable diff/review layer D1 names. The DB is the originator; `data/db-export/` is its exported record, distinct from the seeds the DB was born from. `data/db-export/` is a new private path (defaults to private — the publish allowlist is opt-in). | Keep writing the export back to `data/seeds/` (conflates the genesis seeds with the living export; "seeds" misleads — it implies the DB is rebuilt FROM them, the exact wrong model). Rename/move `data/seeds/` itself (a large survivor sweep across the bootstrap pipeline + allowlist + every reference, for the incremental path's benefit only — deferred; the seeds keep their path + name for the final rebuild). |
 
 These supersede the earlier repo-owns-the-format / CSV-editor decisions recorded in
 `requirements.md` R1/R6 and `plan.md` §"two-phase", the Job-2-only MVP framing, **and the

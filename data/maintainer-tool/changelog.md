@@ -3,6 +3,44 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-03 — write mechanism: DIRECT-DB writes (not seed-rebuild); CSV export to data/db-export/
+
+The maintainer write path is corrected to match D1's vision (DB is the originator). The
+original D13 mechanism wrapped `import_to_sqlite.apply_seeds` — the seed-CSV-REBUILD bridge
+(export the DB → edit a temp seed CSV → re-apply by diffing the prospective seed against the
+DB). That contradicts D1 (the DB is rebuilt from seeds on every edit) and could not create a
+version at a new game tag (the seed-rebuild's `GAME_VERSION_TAG`/baseline-matcher gate
+materialised zero rows). This revision makes the mechanism match the vision.
+
+- **D19 — the write mechanism is DIRECT-DB.** A maintainer edit is a direct INSERT/UPDATE
+  through the applier's EXISTING `_apply_one_db` write helpers (fed edit parameters, not
+  CSV-diff actions) — preserving the 8 load-bearing behaviors (the 1:1 survival INSERT, the
+  interval-close, the function-kind promote-vs-mint + fingerprint + `BaselineRefusal` gate,
+  per-DB column projection, FK-id resolution-never-minting). The same single validator gate
+  runs, re-targeted to the **prospective DB state**. The write runs inside the deferred-commit
+  transaction (4a, reused verbatim); its `ROLLBACK` discards the whole txn incl.
+  `sqlite_sequence`/PK-autoincrement bumps — the robust post-failure rollback the user
+  required. `create-version`-at-a-new-tag now works (a direct INSERT bypasses the baseline
+  gate). The `run_rebuild` bootstrap (Ghidra dump + seeds → DB, one-time) is unchanged.
+- **D20 — seeds vs the derived export, physically separated.** `data/seeds/*.csv` = the
+  bootstrap seeds (genesis; read once by `run_rebuild`, then frozen). `data/db-export/*.csv`
+  = the derived export record (the living git-tracked history the tool writes on every save).
+  The export no longer writes back to `data/seeds/`. `data/db-export/` is a new private path
+  (private by default — the publish allowlist is opt-in).
+- **D13 — mechanism superseded by D19; the gate-reuse insight preserved.** The "one
+  whole-state validator, all six jobs, zero rule logic in `db_editor`" decision stands; only
+  the seed-rebuild bridge mechanism is replaced by direct writes.
+
+**Integrated in:** §10 D19 + D20 (new) + D13 (mechanism superseded), §5 (the `db_editor`
+mechanism paragraph), §1 (vision: direct write + the `data/db-export/` target), §2 (glossary:
+bootstrap seeds vs the derived export), §3 (the inversion diagram + the export target + the
+privacy note), the frontmatter banner.
+**Why:** D13's seed-rebuild mechanism contradicted D1 (DB-as-originator) and made
+create-version-at-a-new-tag a silent no-op. A ground-truth probe of the data-core showed
+`apply_seeds`/`_apply_one_db` ALREADY run the real direct SQL — the seed-rebuild was only the
+wrapper — so reusing those write helpers directly is the surgical correction (preserves the 8
+behaviors, reuses the deferred-commit seam, fixes the new-tag gap). User-settled 2026-06-03.
+
 ## 2026-06-02 — web-app pivot: Dockerized web app supersedes the PySide6 desktop tool
 
 The tool becomes a **hostable web app** instead of a PySide6 desktop `.exe`, so maintainers
