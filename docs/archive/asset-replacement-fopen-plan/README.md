@@ -1,4 +1,13 @@
-# Asset replacement — implementation plan
+# Asset replacement — implementation plan [ARCHIVED — SUPERSEDED]
+
+> **ARCHIVED 2026-06-02 — SUPERSEDED, do not build from this tree.** This plan was
+> decomposed around the superseded `CCryPak::FOpen`-redirect mechanism and framed
+> the scope as "asset replacement". The live plan is the full **asset system** at
+> [`../../outstanding-work/asset-system/`](../../outstanding-work/asset-system/README.md),
+> decomposed against the canonical design
+> [`../../design/asset-replacement.md`](../../design/asset-replacement.md) (kcdx OWNS
+> resolution by REPLACING `CCryPak::AdjustFileName`, `sys_pakPriority`-independent,
+> seam installed in the ready-bracket). Kept here for history only.
 
 kcdx's asset-replacement surface: one `assets/` folder, explicit replacement
 declarations (sidecar or code), navigable cross-plugin references, transparent
