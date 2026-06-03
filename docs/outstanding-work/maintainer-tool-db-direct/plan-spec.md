@@ -1,137 +1,135 @@
-# plan-spec — maintainer-tool-db-direct
+# plan-spec — maintainer-tool-db-direct (web app)
 
-The shared spec every step in this plan leans on. Steps cross-link here rather
-than restating context.
+The shared spec every step in this plan leans on. Steps cross-link here rather than
+restating context.
 
 ## Goal
 
-Build the maintainer tool: DB-direct authoring of the Address Library with CSV
-auto-export — **the complete six-job tool**. A maintainer manages the entire
-reference DB through one function-first GUI: browse/search/filter the curated set,
-view any entity's full record and all its game-version rows, compare versions
-side-by-side, and author any of the six jobs (create entity, re-verify, supersede,
-deprecate, create version, plus correcting any existing version's full columns).
-Every mutation: validate → write DB → auto-export the 3 seed CSVs (byte-identity
-round-trip) → show a plain-language field delta → commit as one atomic transaction
-— no hand-edit of any CSV, git invisible to the maintainer.
+Build the maintainer tool — DB-direct authoring of the Address Library with CSV
+auto-export — as **the complete six-job web app** (v1). A small set of trusted
+maintainers manages the entire reference DB from any browser (including a phone):
+browse/search/filter, view any entity's full record + all game-version rows, compare
+versions side-by-side, and author all six jobs (create entity, re-verify, supersede,
+deprecate, create version, plus edit any existing version's full columns). Every
+mutation validates, writes the DB, auto-exports the three seed CSVs (byte-identity
+round-trip), shows a plain-language field delta, and commits + pushes server-side as
+one atomic transaction — no CSV hand-edit, git invisible.
 
 ## The settled design — the authority every step builds to
 
-Two design artifacts, both settled:
+Three artifacts, all settled:
 
-- **[`data/maintainer-tool/design.md`](../../../data/maintainer-tool/design.md)**
-  (v1-revised, committed `2c03145`) — the TRD: WHAT the tool does. §6 (US-1…US-10),
-  §9 (scope), §10 (D1–D12).
+- **[`data/maintainer-tool/design.md`](../../../data/maintainer-tool/design.md)** — the
+  TRD (WHAT the tool does). Web-pivoted: §5 (the backend + frontend units over the
+  data-core), §6 (US-1…US-10), §8 (R9 Docker, R12 client resolver, the server commit),
+  §9 (scope), §10 (D1–D18). Committed at the web pivot (`32df16d`).
 - **[`data/maintainer-tool/ui/design.md`](../../../data/maintainer-tool/ui/design.md)**
-  + **[`ui/screens/`](../../../data/maintainer-tool/ui/screens/)** — the UI design
-  layer: what it looks like + how it behaves (window skeleton, 9 interaction laws,
-  token system, 7 screen specs s01–s07).
+  + **[`ui/screens/`](../../../data/maintainer-tool/ui/screens/)** — the UI design layer:
+  the React + Mantine responsive app shell, the 9 interaction laws, the token system, and
+  the 6 screen specs (s01–s06). Committed at the web re-expression (`8c170c8`).
 
-Every step that builds a surface dereferences to the named §section / screen spec —
-the step doc is a pointer, not a replacement (`.claude/rules/spec-conformance.md`).
-Supporting authority: `data/seeds/policy.md` (the column-level invariants the shared
-validator enforces), `requirements.md` R2–R5/R7–R12.
+Every step that builds a surface dereferences to the named §section / screen spec — the
+step doc is a pointer, not a replacement (`.claude/rules/spec-conformance.md`). Supporting
+authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R2–R5/R7–R12.
 
-### Settled decisions (verbatim, from design.md §10)
+### Settled decisions (verbatim, from design.md §10 — the web-relevant set)
 
-- **D1 — Source of truth:** DB authoritative; CSVs auto-exported as the git-tracked
-  diff layer (derived, never hand-edited).
-- **D2 — Round-trip contract:** bidirectional byte-identity —
-  `import(export(DB)) == DB` AND `export(import(CSVs)) == CSVs` (diff-preserved).
-- **D3 — Sequencing:** DB-direct from day one; no CSV-editor surface ever built.
-- **D4 — Data-layer seam:** headless data-core in `seeds_shared/`
-  (`csv_exporter` + `db_editor`); the PySide6 GUI is a thin shell over it.
-- **D5 — Save/commit UX:** validate → write DB → auto-export → round-trip → confirm
-  → commit.
-- **D6 — Commit boundary:** the tool commits on Confirm — exact-path staging (only
-  the DB + the 3 CSVs, never `-A`/`.`/`-u`), respect a live `index.lock`
-  (block-and-retry, never reap), self-authored message. One atomic commit per save.
-- **D7 — v1 scope:** v1 is the COMPLETE six-job tool (Jobs 1/2/4/5/6 +
-  edit-any-version + compare) — built in steps, nothing deferred.
-- **D8 — Confirm surface:** a plain-language field delta (`field: old → new`, only
-  changed fields) is the human's acceptance signal; the literal CSV diff is
-  oracle-verified + lands in the commit but is not shown to the maintainer.
-- **D9 — DLL link / verification:** advisory, never required. Any action proceeds
-  unlinked with a "can't verify" warning; a resolver failure or the unlinked state
-  is overridable by an explicit "I accept — save anyway" (the maintainer is final
-  authority over a tool error).
-- **D10 — Default row (unlinked):** newest authored row (highest
-  `valid_from_version`) is default-selected when no DLL is linked.
-- **D11 — New-row approval (AP18):** creating a new entity (Job 1) or new version
-  (Job 6) is approval-gated in the confirm step; an UPDATE is not gated.
-- **D12 — New-version "nothing changed":** saving a new version identical to its
-  source is blocked with steering copy routing the maintainer to re-verify the
-  existing row instead of creating a duplicate.
+- **D1 — Source of truth:** DB authoritative; CSVs auto-exported as the git-tracked diff
+  layer (derived, never hand-edited).
+- **D2 — Round-trip contract:** bidirectional byte-identity (`import(export(DB))==DB` AND
+  `export(import(CSVs))==CSVs`).
+- **D5/D8 — Save/confirm UX:** validate → write → auto-export → round-trip → a
+  **plain-language field delta** (`field: old → new`) → commit. The field delta is the
+  human's acceptance signal; the CSV diff is oracle-verified, not shown.
+- **D11 — New-row approval (AP18):** create entity (Job 1) or version (Job 6) is
+  approval-gated in the confirm step; an UPDATE is not.
+- **D12 — New-version "nothing changed":** a new version identical to its source is blocked
+  with steering copy → re-verify instead.
+- **D13 — db_editor reuses the applier:** `db_editor` is the in-process entry point to
+  `import_to_sqlite.apply_seeds` (the single validated atomic applier); zero rule logic in
+  the tool.
+- **D14 — Delivery:** a Dockerized web app — a Python (FastAPI/Flask) backend over the
+  data-core + a **React + Mantine** frontend. (Component lib = Mantine; image packaging
+  single-vs-compose resolved in P5.)
+- **D15 — DLL resolver client-side:** the `.rdata` scan is a small **JS port** running in
+  the browser on a locally-picked DLL (File API, no upload — only the version tag reaches
+  the server); `version_resolver.py` is the test-of-record (a cross-impl agreement test). A
+  version **dropdown** is the phone-friendly default.
+- **D16 — Server commit + push:** the backend commits to its volume-mounted checkout AND
+  pushes to GitHub on confirm (exact-path staging, live-lock respect, self-authored message
+  — `concurrency-git.md`).
+- **D17 — Auth out of scope, auth-ready seams:** the commit identity comes from the request
+  context the operator's login supplies; the push credential is env-injected. No
+  login/auth/hosting/portal from the build — only the seams + a dev default for local
+  testing.
+- **D18 — Container data layout:** the git checkout (`data/seeds/` + the reference DB) on a
+  mounted volume at a configured path; the image carries only app code.
 
 ## Cross-step invariants
 
-- **The data-core is headless + Qt-free** (`.claude/rules/headless-testable.md`,
-  design §5). All authoring logic (`csv_exporter`, `db_editor`, the round-trip
-  check, the field-delta computation) is exercisable with zero Qt; the GUI calls
-  down, never the reverse. Every Phase-1 step ships a
-  `data/refdata-extractor/tests/test_*.py` oracle (the existing convention:
-  `test_rebuild_oracle.py`, `test_apply_*.py`, `test_version_resolver.py`, run with
-  the mini-dump fixture at `tests/fixtures/mini-dump/`).
-- **DB↔CSV information-equivalence** (design §4): no field lives only in the DB or
-  only in the CSV. The exporter invents no column; the importer drops none.
-- **The shared validator (R3) is the single gate** — every invariant runs through
-  `seeds_shared/validators.py`; the GUI and the importer both consume it; no rule is
-  reimplemented in the tool (UI design.md law 6). A DB write does not begin until the
-  validator accepts the prospective post-action state.
-- **`policy.md` column invariants bind on the DB-write path** — AP18 new-entity/
-  version approval (D11), the audit trio (all-set-or-all-null), `evidence_kind` /
-  `kind` enums, `verified_date` shape, the read-only triple (`kcdx_id` / `name` /
-  `valid_from_version`), supersession/deprecation pair-integrity + acyclicity,
-  `(kcdx_id, valid_from_version)` tuple-uniqueness, append-only id-assignment.
-- **The 9 interaction laws bind on every GUI step**
-  (`data/maintainer-tool/ui/design.md` §"Global interaction laws") — layout
-  stability (no element jumps, law 1), two-pane persistence (law 2), user-driven
-  navigation (law 3), advisory verification (law 4), atomic confirmed transaction
-  (law 5), single-validator gate (law 6), read-only identity (law 7), approval-gated
-  new rows (law 8), no raw values at a call site (law 9). Each GUI step cites the
-  laws it obeys.
-- **Incremental order** (`.claude/rules/incremental-delivery.md`): the data-core
-  lands + is oracle-tested before any GUI exists; the GUI spine (read/edit/save an
-  existing version) lands before the jobs built on it (create/compare/lifecycle);
-  each step rests on a proven lower step. No step builds a surface whose dependency
-  is not yet built.
+- **The data-core is the single authority, reached through the API** (design §5, R3/law 6):
+  the backend imports `seeds_shared` and calls its public surface; the frontend calls the
+  API. NO validation/SQL/export/rule logic in the backend or the frontend — every invariant
+  is the data-core's. The data-core public surface (LANDED, Phase 1):
+  `export_seeds`, `round_trip`, `update_version_row`, `create_version`, `create_entity`,
+  `supersede_entity`, `deprecate_entity`, `field_delta`, `is_new_version_nothing_changed`.
+  (These take `out_dir, dll_path, …`; the backend's version-tag adapter supplies the params
+  with no DLL server-side — P2 step 1.)
+- **DB↔CSV information-equivalence + the round-trip** (design §4): every save re-asserts the
+  byte-identity round-trip before commit; a divergence aborts with no write.
+- **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
+  interaction laws"): layout stability (law 1), the responsive navigation shell (law 2),
+  user-driven navigation (law 3), advisory verification + the override (law 4), the atomic
+  confirmed transaction (law 5), the single-validator gate (law 6), read-only identity
+  (law 7), AP18 approval-gated new rows (law 8), no raw values at a call site (law 9). Each
+  frontend step cites the laws it obeys.
+- **Verification is advisory** (D9/D15, law 4): a picked-or-resolved version (or the
+  newest-row default — D10) always works; an unverified state warns + is overridable ("I
+  accept — save anyway"). The client DLL check uploads nothing.
+- **Incremental order** (`.claude/rules/incremental-delivery.md`): the data-core (P1) before
+  the backend; the backend API before the frontend that calls it; the frontend spine
+  (edit-an-existing-version) before the full jobs (create/compare/lifecycle); the client
+  resolver before the create flows that prefill from it; Docker packages a working app.
 
 ## Reuse — what already exists (do not rebuild)
 
-- `seeds_shared/`: `schema.py`, `validators.py`, `row_builder.py`,
-  `dict_codec.py`, `version_resolver.py` (the `.rdata` scan + intern-agreement —
-  R12; the GUI CONSUMES it for the DLL-link, does not rebuild it).
-- `import_to_sqlite.py`: `--rebuild` + the incremental `apply` path (Phase-1
-  db-updator, done). The exporter reuses `import_to_sqlite.py`'s read side for the
-  round-trip oracle.
-- `tests/`: the mini-dump fixture + `oracle_baseline.json` + the existing
-  `test_*.py` oracles — the new oracles join this tree.
-- Privacy: `data/maintainer-tool/` is already in `publish-public.ps1`
-  `$PrivateSubpaths` (R10 — done, out of scope here).
+- **Phase 1 — the data-core (BUILT + landed, all oracles green):**
+  `seeds_shared/{csv_exporter, round_trip, db_editor, field_delta, version_resolver,
+  validators, row_builder, dict_codec, schema}.py` + `import_to_sqlite.apply_seeds` (the
+  validated atomic applier db_editor drives). Delivery-agnostic — the web backend calls it
+  unchanged. (Open Phase-1 follow-ons, already filed, NOT re-planned here: step 3c —
+  full-column correction, probe-first; TD-0004 — the rebuild-oracle baseline re-capture.)
+- `version_resolver.py` — the Python `.rdata` resolver; the **test-of-record** for the JS
+  port (P4 step 11), not rebuilt.
+- `tests/` — the mini-dump fixture + the existing oracle tree.
+- Privacy: `data/maintainer-tool/` is already a private carve-out (R10 — done).
 
 ## Coverage map — every design element → its step (or deferral)
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| DE-A — `csv_exporter.py` (DB→3 CSVs, deterministic, diff-preserved) | P1 step 1 | design §5; enforces DB↔CSV equivalence |
-| DE-B — bidirectional byte-identity round-trip oracle | P1 step 2 | design §4; re-asserted in every GUI save |
-| DE-C — `db_editor.py` version-row UPDATE (audit-trio + full-column; Job 2 / US-5) | P1 step 3 | design §5, §6 US-3/US-4/US-5 |
-| DE-D — `db_editor.py` INSERT shapes (new version Job 6 + new entity Job 1) | P1 step 4 | design §6 US-6/US-7; `policy.md` id-assignment + tuple-uniqueness + AP18 |
-| DE-E — `db_editor.py` lifecycle UPDATE (supersede/deprecate Jobs 4/5) | P1 step 5 | design §6 US-8; `policy.md` pair-integrity + acyclicity |
-| DE-F — field-delta computation (`field: old → new`, D8) | P1 step 6 | design §10 D8; headless, feeds s06 |
-| DE-G — `.rdata` version resolver + intern-agreement (R12) | P3 step 12 (consumes) | resolver already built; the DLL-link binds it |
-| DE-H — s01 navigator (search + status/kind filters + list + chips) | P2 step 8 | `ui/screens/s01-navigator.md` |
-| DE-I — s02 entity detail (header read-only + version table) | P2 step 9 (read) + P3 step 15 (lifecycle edit) | `ui/screens/s02-entity-detail.md` |
-| DE-J — s03 version history + side-by-side compare | P3 step 16 | `ui/screens/s03-version-history-compare.md` |
-| DE-K — s04 field editor (view/edit full row, dirty markers, validation) | P2 step 10 | `ui/screens/s04-field-editor.md` |
-| DE-L — s05 create (new entity Job 1 + new version Job 6) | P3 step 13 (version) + step 14 (entity) | `ui/screens/s05-create.md` |
-| DE-M — s06 save-confirm (field-delta + approval + override) | P2 step 11 | `ui/screens/s06-save-confirm.md` |
-| DE-N — s07 status bar + DLL-link (verification context) | P3 step 12 | `ui/screens/s07-status-dll-link.md` |
-| DE-O — atomic save→commit transaction (one commit/save, D6, law 5) | P2 step 11 | design §8, `.claude/rules/concurrency-git.md` |
-| DE-P — UX states (empty/loading/val-err/write-fail/unlinked/resolver/compare-edge) | distributed: empty+loading→step7, val-err→step10, write-fail→step11, unlinked/resolver→step12, compare-edge→step16 | design §7, each screen spec |
-| DE-Q — the 9 interaction laws | binding on every GUI step (P2–P3); token layer → step 7 | `ui/design.md` §"Global interaction laws" |
-| DE-R — PyInstaller single-`.exe` + `<exe-dir>/../seeds/` resolution (R9) | P4 step 17 | design §8 |
-| privacy carve-out (R10) | OUT-OF-SCOPE | already done — `data/maintainer-tool/` in `$PrivateSubpaths` |
-| Job 3 — new-game-version campaign (bulk delta report) | OUT-OF-SCOPE (design §9) | a batch workflow over v1's per-entity primitives; not in v1 |
-| driven evidence flows (R5) | OUT-OF-SCOPE (design §9) | `pattern_scan` / `live_test_plugin` automation; values authorable, automation not built |
-| multi-file rename journal (R11) | OUT-OF-SCOPE (design §9) | reserved, not built until the atomic-rename window bites |
+| Data-core (csv_exporter / round_trip / db_editor / field_delta) | **Phase 1 — DONE** | landed; delivery-agnostic, the backend calls it |
+| Backend skeleton + version-tag→data-core-params adapter (D14/§5) | P2 step 1 | no DLL server-side; a health/load endpoint |
+| Read API — curated set + entity detail + version rows + derived status | P2 step 2 | feeds s01/s02/s03 |
+| Field-delta API (D8) | P2 step 3 | wraps `field_delta` |
+| Save API — the six job shapes (data-core save spine) | P2 step 4 | validate→write→export→round-trip; not yet committing |
+| Git commit + push on confirm (D16) + auth-ready seams (D17) | P2 step 5 | exact-path/live-lock/push; injected identity + env credential + dev default |
+| Container data layout — backend reads the checkout (D18) | P2 step 1 (consumes) + P5 step 16 (provides) | configured checkout path |
+| Frontend skeleton + Mantine theme (tokens) + responsive app shell (D14, laws) | P3 step 6 | the API client; the two-pane ↔ drill-down shell |
+| s01 navigator (search/filter/list/chips) | P3 step 7 | `ui/screens/s01` |
+| s02 entity detail (read) + version dropdown + default-row | P3 step 8 (read) + P4 step 14 (lifecycle edit) | `ui/screens/s02` |
+| s04 field editor (dirty/was/validation) | P3 step 9 | `ui/screens/s04` |
+| s06 save-confirm (field-delta modal/sheet) + toast + atomic save→commit | P3 step 10 | `ui/screens/s06`; calls P2 s4+s5 |
+| Client-side JS `.rdata` resolver + cross-impl test (D15) | P4 step 11 | the "check against a local DLL" control in s02 |
+| s05 create new version (Job 6) | P4 step 12 | `ui/screens/s05`; AP18 + nothing-changed |
+| s05 create new entity (Job 1) | P4 step 13 | `ui/screens/s05`; id-assignment + AP18 |
+| s02 lifecycle editing (supersede/deprecate Jobs 4/5) | P4 step 14 | `ui/screens/s02` lifecycle |
+| s03 history + side-by-side compare | P4 step 15 | `ui/screens/s03` |
+| Docker image + volume layout (D14/D18) | P5 step 16 | image packaging single-vs-compose resolved here |
+| UX states (every screen) | distributed across the frontend steps | each screen's empty/loading/error/disabled/edge |
+| The 9 interaction laws (`ui/design.md`) | binding on every frontend step (P3–P4) | shell + theme → P3 step 6 |
+| step 3c (full-column) / TD-0004 (baseline) | OPEN FOLLOW-ONS | already filed; not re-planned here |
+| Auth / login / hosting / the web portal (D17) | OUT-OF-SCOPE | the operator's |
+| Job 3 — new-game-version campaign | OUT-OF-SCOPE (design §9) | a batch workflow over v1's primitives |
+| driven evidence flows (R5) | OUT-OF-SCOPE (design §9) | values authorable; automation not built |
+| multi-file rename journal (R11) | OUT-OF-SCOPE (design §9) | reserved |
