@@ -32,6 +32,7 @@ if _DATA_CORE_PYDIR not in sys.path:
 # seam's surface is auditable -- a backend that needs a new data-core function
 # adds it here, in one place.
 import seeds_shared as _seeds_shared  # noqa: E402
+from seeds_shared import csv_exporter as _csv_exporter  # noqa: E402
 
 # The write/edit entry points (db_editor) -- the six jobs the later steps wire to
 # endpoints. Each takes (out_dir, dll_path, ...); the dll_path adapter (app.adapter)
@@ -59,6 +60,14 @@ round_trip = _seeds_shared.round_trip
 RoundTripError = _seeds_shared.RoundTripError
 field_delta = _seeds_shared.field_delta
 is_new_version_nothing_changed = _seeds_shared.is_new_version_nothing_changed
+
+# The two authored-column-order headers field_delta takes as its `field_order` arg
+# (csv_exporter owns them; seeds_shared.__init__ does not re-export them). The
+# field-delta endpoint (routes_delta) re-orders the delta deterministically by these
+# (design §7 layout stability) -- version-row vs lifecycle(names)-row edit. Re-exported
+# here so the whole data-core surface the backend touches lives on this one seam.
+ADDRESS_VERSIONS_CSV_HEADER = _csv_exporter.ADDRESS_VERSIONS_CSV_HEADER
+ADDRESS_NAMES_CSV_HEADER = _csv_exporter.ADDRESS_NAMES_CSV_HEADER
 
 # The version resolver (the data-core's DLL .rdata scan). The backend does NOT
 # call this server-side (no DLL); it is re-exported so the version-tag adapter +

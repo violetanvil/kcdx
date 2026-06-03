@@ -17,6 +17,7 @@ from fastapi import FastAPI
 
 from . import adapter
 from .config import load_config
+from .routes_delta import router as delta_router
 from .routes_read import router as read_router
 
 # One module logger, event-driven (logging.md): the failure branches below log on
@@ -36,6 +37,10 @@ app = FastAPI(
 # their own module (structure-by-responsibility); main.py stays the app + health
 # coordinator.
 app.include_router(read_router)
+
+# The field-delta endpoint (POST /field-delta) the s06 confirm surface calls -- a
+# distinct concern from the read routes, so its own router (structure-by-responsibility).
+app.include_router(delta_router)
 
 
 def _checkout_status(config):
