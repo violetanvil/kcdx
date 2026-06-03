@@ -349,6 +349,17 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // fires continuously through boot→menu.
     kcdx::asset_overlay::Install();
 
+    // === DIAGNOSTIC (PROBE SEAM-A) — THROWAWAY ============================
+    // Asset-resolution-OWNERSHIP seam probe: an Around hook on
+    // CCryPak::AdjustFileName (id 152, the resolution-decision root) that
+    // returns the kcdx loose path on an overlay HIT and calls original on a
+    // MISS. Same phase + ordering rationale as the FOpen Install above (after
+    // RefdbOpened; arms before any menu/save asset read). Dev-mode-gated +
+    // idempotent inside InstallSeamAProbe. REMOVED with the probe plugin when
+    // the seam is captured (results-driven.md / working-artifacts.md).
+    kcdx::asset_overlay::InstallSeamAProbe();
+    // === END DIAGNOSTIC (PROBE SEAM-A) ====================================
+
     return 0;
 }
 

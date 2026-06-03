@@ -28,6 +28,17 @@ namespace {
 
 constexpr const char* kCat = "MOD_ABSORB";
 
+// === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) =======================
+// THROWAWAY — step-1 probe (docs/design/asset-replacement.md §8/§9 unknown 1).
+// Shared probe category with the first_adjustfilename_call marker in
+// src/asset_overlay.cpp so the manager greps TWO lines and compares
+// timestamps. Removed in step 2 (results-driven.md / working-artifacts.md —
+// no residue). One-shot latch; relaxed ordering (a "have I logged this yet"
+// latch, no happens-before edge — concurrency.md).
+constexpr const char* kProbeCtorVsReadCat = "PROBE_CTOR_VS_READ";
+std::atomic<bool>     g_probeLoggedCtorFired{false};
+// === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
+
 // C_ModManager layout (verified live two-boot against the running binary —
 // the corrected 0x68-byte layout). Only the offsets the bracket WRITES are
 // named; the un-named offsets are left at the allocator's initial value
@@ -117,6 +128,27 @@ void* __fastcall HookedCtor(void* outResult, void* sys, void* modsDir) {
                 "vs. a new allocation)"));
         return nullptr;
     }
+
+    // === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
+    // CTOR-FIRE timestamp. One-shot marker at HookedCtor's top, on the genuine
+    // first ctor entry (past the reentry latch), BEFORE the resolve work and
+    // the g_kcdxReadyEvent wait — so its timestamp marks ctor ENTRY, comparable
+    // against first_adjustfilename_call in src/asset_overlay.cpp. Relaxed
+    // ordering: a pure "have I logged this yet" latch (concurrency.md). Removed
+    // in step 2.
+    {
+        bool probeExpected = false;
+        if (g_probeLoggedCtorFired.compare_exchange_strong(
+                probeExpected, true, std::memory_order_relaxed)) {
+            LOG_DEBUG_KV(kProbeCtorVsReadCat, "ctor_fired",
+                kcdx::log::KV::BareStr("detail",
+                    "ModManager_ctor (HookedCtor) entered — compare its "
+                    "timestamp against first_adjustfilename_call; ctor "
+                    "at-or-before the first read => the ready-bracket install "
+                    "point holds"));
+        }
+    }
+    // === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===============
 
     if (!outResult) {
         LOG_ERROR_KV(kCat, "ctor_bracket_failed",

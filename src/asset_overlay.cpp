@@ -17,6 +17,7 @@
 #include <system_error>
 #include <vector>
 
+#include "dev.h"
 #include "hook_chain.h"
 #include "hook_payload.h"
 #include "hook_signature.h"
@@ -141,6 +142,250 @@ bool Install() {
                reinterpret_cast<void*>(fopenVA));
     return true;
 }
+
+// === DIAGNOSTIC (PROBE SEAM-A) =============================================
+// THROWAWAY — settles the asset-resolution-OWNERSHIP seam (OQ #1-3 from
+// _research/phase8.5-pak-resolver/RESOLUTION-OWNERSHIP-synthesis.md). REMOVED
+// with the probe plugin (test-plugins/probe-asset-overlay/) + the staging when
+// the seam is captured (results-driven.md / working-artifacts.md no-residue).
+//
+// THE QUESTION: does REPLACING CCryPak::AdjustFileName (kcdx_id 152, vtable
+// slot 1, the resolution-decision root) in Around mode let kcdx OWN asset
+// resolution for BOTH asset classes (handle-consumed .lua + memory-mapped
+// .dds), independent of sys_pakPriority (default mode 2, no user.cfg this
+// run), with stock resolution preserved on the miss path?
+//
+// THE SEAM (verified by the 5-front research): every by-name consumer + both
+// asset classes route vpath -> AdjustFileName BEFORE any disk/pak touch; it
+// returns the resolved concrete-path string. Owning it owns resolution above
+// the per-mode existence gate. The kcdx body, on an overlay HIT, returns the
+// plugin's loose-asset path directly (bypassing the engine's pak-only search);
+// on a MISS, calls the original (the engine resolves stock content unchanged).
+//
+// Around cFn ABI for id 152 `ptr (ptr this, cstr pName, ptr outBuf, u32
+// nFlags)` (read from src/dynamic_call_jit.cpp §CFnSigFor / hook_chain.cpp
+// §DispatchExclusive — NOT invented): call_original is prepended as a typed
+// fnptr (pointer-width in RCX), then the typed args; the cFn's returned ptr is
+// written into rv by the dispatch thunk and BECOMES the resolver's result.
+
+constexpr const char* kSeamACat = "SEAMA_PROBE";
+
+// Canonical refdb name for the resolution-decision root. Seed row kcdx_id 152
+// (CCryPak_AdjustFileName, body at WHGame+0x0006205C, vtable slot 1) exists —
+// resolve by NAME, no RVA literal, no new seed row (AP1).
+constexpr const char* kNameAdjustFileName = "CCryPak_AdjustFileName";
+
+// SOURCE: verified seed signature for kcdx_id 152 (data/seeds/
+// address_versions_seed.csv) — `ptr (ptr this, cstr pName, ptr outBuf, u32
+// nFlags)`. Win64 __fastcall: RCX=this, RDX=pName, R8=outBuf, R9D=nFlags;
+// returns the resolved concrete-path string (into outBuf, also returned).
+constexpr const char* kAdjustFileNameSig =
+    "ptr (ptr this, cstr pName, ptr outBuf, u32 nFlags)";
+
+std::atomic<bool> g_seamAInstalled{false};
+
+// Typed call_original for the Around cFn (matches the seed ABI exactly).
+using AdjustFileName_t = void* (*)(void* self, const char* pName,
+                                   void* outBuf, uint32_t nFlags);
+
+// One-shot guards so the hot resolver does NOT log per call (AdjustFileName
+// fires constantly — logging.md / memory.md). Distinct-class nFlags lines are
+// deduped to two atomic flips (bit-28 seen / bit-28 absent), and the hit-path
+// markers fire once each. Relaxed ordering is correct here: these are pure
+// "have I logged this yet" latches with no happens-before edge to publish
+// (concurrency.md — a counter nobody synchronizes against).
+std::atomic<bool> g_seamALoggedFlagsWithBit28{false};
+std::atomic<bool> g_seamALoggedFlagsNoBit28{false};
+std::atomic<bool> g_seamALoggedLuaHit{false};
+std::atomic<bool> g_seamALoggedDdsHit{false};
+
+// === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) =======================
+// THROWAWAY — step-1 probe (docs/design/asset-replacement.md §8/§9 unknown 1).
+// Settles whether ModManager_ctor (the ready-bracket's HookedCtor) fires
+// BEFORE the engine's first overridable asset read, deciding where the
+// resolution seam installs. Removed in step 2 with the rest of the SEAM-A
+// probe (results-driven.md / working-artifacts.md — no residue). One shared
+// probe category (kProbeCtorVsReadCat) so the manager greps TWO lines.
+//
+// This marker fires on the FIRST AdjustFileName call of the session,
+// regardless of overlay hit/miss — it captures "the engine's first
+// overridable asset read happened" with a timestamp comparable to the
+// HookedCtor "ctor_fired" marker in src/mod_absorb/ctor_bracket.cpp.
+constexpr const char* kProbeCtorVsReadCat = "PROBE_CTOR_VS_READ";
+std::atomic<bool> g_probeLoggedFirstAdjust{false};
+// === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
+
+// The Around cFn. ABI per the seed signature + the §CFnSigFor Around shape:
+// (call_original, this, pName, outBuf, nFlags) -> resolved-path ptr.
+//
+// STEP 1 (this probe) is OBSERVE-ONLY: the seam logs the first-call timestamp
+// (the ordering marker), the nFlags class, and any overlay HIT it SEES — then
+// ALWAYS calls the original. It never writes outBuf. So it proves the seam is
+// installed + reachable + when it first fires, without overriding anything.
+//
+// HIT  (pName normalizes to a key in the overlay map): log that the seam saw
+//       the HIT (per asset class), then fall through to the original. The
+//       actual override (write the loose path via outBuf) is STEP 2's
+//       production seam — deferred until the caller-side outBuf capacity is
+//       verified from the binary (an unbounded write here would be an
+//       out-of-bounds hazard on a long path — anti-patterns.md ABI-invention).
+// MISS (every other vpath): call the original — the engine resolves stock
+//       content unchanged. The fall-through MUST be clean so a non-overlaid
+//       open is never perturbed (this is the hottest path).
+//
+// INVARIANT: null/guard everything; an empty overlay map (not yet built when
+// AdjustFileName first fires in early boot) is a clean miss -> call original.
+extern "C" void* SeamAAdjustFileName(AdjustFileName_t call_original,
+                                     void*            self,
+                                     const char*      pName,
+                                     void*            outBuf,
+                                     uint32_t         nFlags) {
+    // === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
+    // FIRST-call timestamp. One-shot atomic latch at the VERY TOP of the body
+    // (before any overlay-map work) so the FIRST overridable asset read of the
+    // session emits exactly one timestamped marker, hit or miss. Relaxed
+    // ordering: a pure "have I logged this yet" latch, no happens-before edge
+    // to publish (concurrency.md — a counter nobody synchronizes against). The
+    // resolver is hot; NEVER log per call (logging.md / memory.md).
+    {
+        bool expected = false;
+        if (g_probeLoggedFirstAdjust.compare_exchange_strong(
+                expected, true, std::memory_order_relaxed)) {
+            LOG_DEBUG_KV(kProbeCtorVsReadCat, "first_adjustfilename_call",
+                         kcdx::log::KV::BareStr("detail",
+                             "engine's FIRST overridable asset read (first "
+                             "AdjustFileName call this session) — compare its "
+                             "timestamp against ctor_fired"));
+        }
+    }
+    // === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===============
+
+    // OQ#2 instrumentation — log the nFlags the resolver sees, deduped to ONE
+    // line per bit-28 class (NEVER per-call). Cheap atomic test-and-set on the
+    // hot path; no allocation, no lock.
+    const bool bit28 = (nFlags & 0x10000000u) != 0;
+    if (bit28) {
+        bool expected = false;
+        if (g_seamALoggedFlagsWithBit28.compare_exchange_strong(
+                expected, true, std::memory_order_relaxed)) {
+            LOG_DEBUG_KV(kSeamACat, "nflags_bit28_set",
+                         kcdx::log::KV("nFlags", nFlags),
+                         kcdx::log::KV("bit28", 1));
+        }
+    } else {
+        bool expected = false;
+        if (g_seamALoggedFlagsNoBit28.compare_exchange_strong(
+                expected, true, std::memory_order_relaxed)) {
+            LOG_DEBUG_KV(kSeamACat, "nflags_bit28_clear",
+                         kcdx::log::KV("nFlags", nFlags),
+                         kcdx::log::KV("bit28", 0));
+        }
+    }
+
+    // MISS guard: null pName or empty/missing map -> straight call-original.
+    if (!pName) return call_original(self, pName, outBuf, nFlags);
+
+    const std::string key = NormalizeVPath(pName);
+    const OverlayMap& m = GetOverlayMap();
+    auto found = m.find(key);
+    if (found == m.end()) {
+        // MISS — stock resolution preserved (OQ#1). The straight fall-through.
+        return call_original(self, pName, outBuf, nFlags);
+    }
+
+    // HIT — kcdx WOULD own this path. For STEP 1 (the ordering probe) the seam
+    // only OBSERVES the HIT and logs it; it does NOT write outBuf. The
+    // override write (return the plugin's loose-asset path via outBuf) is
+    // STEP 2's production-seam work — deferred here because the caller-side
+    // outBuf capacity is not yet verified from the binary, so an unbounded
+    // memcpy into it would be an out-of-bounds write on a long loose path
+    // (a write into an engine buffer whose size we asserted, never read —
+    // anti-patterns.md ABI-invention). Step 1's question (ctor-vs-first-read
+    // ordering) does not need the write; on a HIT we fall through to the
+    // original so a non-overridden open is never perturbed.
+    const std::string& diskPath = found->second.diskPath;
+
+    // One-shot HIT markers per asset class (deduped — never per-call). The .dds
+    // is memory-mapped; the .lua is handle-consumed. Distinct markers so the
+    // log shows the seam SAW both classes — proving the seam is reachable for
+    // each — without yet overriding either (the write is step 2).
+    const bool isDds = key.size() >= 4 &&
+                       key.compare(key.size() - 4, 4, ".dds") == 0;
+    if (isDds) {
+        bool expected = false;
+        if (g_seamALoggedDdsHit.compare_exchange_strong(
+                expected, true, std::memory_order_relaxed)) {
+            LOG_DEBUG_KV(kSeamACat, "overlay_hit_dds_observed",
+                         kcdx::log::KV("vpath", key),
+                         kcdx::log::KV("disk", diskPath));
+        }
+    } else {
+        bool expected = false;
+        if (g_seamALoggedLuaHit.compare_exchange_strong(
+                expected, true, std::memory_order_relaxed)) {
+            LOG_DEBUG_KV(kSeamACat, "overlay_hit_handle_observed",
+                         kcdx::log::KV("vpath", key),
+                         kcdx::log::KV("disk", diskPath));
+        }
+    }
+
+    // STEP 1: observe-only — no outBuf write. Fall through to the original so
+    // the engine resolves the asset unchanged (the override write is step 2,
+    // after the outBuf capacity is verified from the binary).
+    return call_original(self, pName, outBuf, nFlags);
+}
+
+// Install the SEAM-A Around hook on CCryPak::AdjustFileName (id 152) through
+// the conflict engine (hook_chain::AddCEngine, Around mode). Mirrors the FOpen
+// AddCEngine install (Install() above) — resolve by name, parse the seed ABI,
+// register the engine-stamped chain entry — but Around not Before. Dev-mode-
+// gated (probe). Must run AFTER RefdbOpened. Idempotent.
+bool InstallSeamAProbe() {
+    if (!kcdx::dev::IsEnabled()) return true;  // probe is dev-mode-only
+
+    bool expected = false;
+    if (!g_seamAInstalled.compare_exchange_strong(expected, true,
+                                                  std::memory_order_acq_rel)) {
+        return true;  // already installed this session
+    }
+
+    auto sigParse = kcdx::hook_signature::Parse(kAdjustFileNameSig);
+    if (!sigParse.ok) {
+        log::ErrorF("SEAMA_PROBE: AdjustFileName signature parse failed: %s",
+                    sigParse.error.c_str());
+        g_seamAInstalled.store(false, std::memory_order_release);
+        return false;
+    }
+
+    kcdx::hook_payload::HookPayload p;
+    p.mode         = kcdx::hook_payload::Mode::Around;
+    p.addressName  = kNameAdjustFileName;
+    p.signature    = sigParse.sig;
+    p.hasSignature = true;
+    p.owningPlugin = "kcdx";
+    p.owningAuthor = "kcdx";
+    p.name         = "engine.seama_adjustfilename_probe";
+
+    auto add = kcdx::hook_chain::AddCEngine(
+        p, reinterpret_cast<void*>(&SeamAAdjustFileName),
+        sigParse.sig, /*pluginName=*/"kcdx",
+        /*priority=*/0, /*name=*/"engine.seama_adjustfilename_probe",
+        /*handleId=*/0);
+    if (!add.ok) {
+        log::ErrorF("SEAMA_PROBE: AddCEngine(AdjustFileName, Around) failed: %s",
+                    add.reason.c_str());
+        g_seamAInstalled.store(false, std::memory_order_release);
+        return false;
+    }
+
+    uintptr_t va = kcdx::refdb::ResolveAddrByName(kNameAdjustFileName);
+    log::InfoF("SEAMA_PROBE: AdjustFileName Around hook installed (id 152, via "
+               "hook_chain::AddCEngine; Around) at %p — overlay HIT returns the "
+               "kcdx loose path, MISS calls original",
+               reinterpret_cast<void*>(va));
+    return true;
+}
+// === END DIAGNOSTIC (PROBE SEAM-A) =========================================
 
 // === Overlay map ============================================================
 

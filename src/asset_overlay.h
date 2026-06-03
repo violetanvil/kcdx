@@ -35,6 +35,17 @@ namespace kcdx::asset_overlay {
 // refdb::Open()). Idempotent. Returns true on success.
 bool Install();
 
+// === DIAGNOSTIC (PROBE SEAM-A) — THROWAWAY ==================================
+// Install the asset-resolution-OWNERSHIP seam probe: an Around hook on
+// CCryPak::AdjustFileName (kcdx_id 152, the resolution-decision root) via
+// hook_chain::AddCEngine. On an overlay-map HIT the hook returns the plugin's
+// loose-asset path directly (kcdx owns resolution above the engine's mode
+// gate); on a MISS it calls the original (stock resolution preserved). Dev-
+// mode-gated. Must run AFTER RefdbOpened. Idempotent. REMOVED with the probe
+// plugin + instrumentation when the seam is captured (results-driven.md).
+bool InstallSeamAProbe();
+// === END DIAGNOSTIC (PROBE SEAM-A) =========================================
+
 // === Overlay map — virtual-asset-path -> winning loose-file on disk =========
 //
 // The lookup the resolver hook (a later step) consults: the engine asks for a
