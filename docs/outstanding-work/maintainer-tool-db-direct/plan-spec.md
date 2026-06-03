@@ -129,11 +129,13 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   promote-vs-mint + fingerprint + `BaselineRefusal`, the per-DB column projection, FK-id
   resolution-never-minting, the two-DB USER-first ordering, the D12/AP18 markers). The SAME
   validator gate runs, re-targeted to the **prospective DB state** (step 4b's preview re-points to
-  it too — step 4b-rework). The direct write runs inside the 4a deferred-commit txn; its `ROLLBACK`
-  discards the whole txn INCLUDING `sqlite_sequence`/PK-autoincrement bumps = the **robust
-  post-failure rollback** the user required. After a successful write, `export_seeds` exports the
-  DB → the derived record at **`data/db-export/`** (D20), NOT `data/seeds/` (the frozen one-time
-  `run_rebuild` bootstrap input). **`create-version`-at-a-new-game-tag now works** — a direct
+  it too — step 4b-rework). The direct write runs inside the 4a deferred-commit txn; a PRE-commit
+  failure (validation) `ROLLBACK`s the held txn (discarding the change incl. `sqlite_sequence`/PK
+  bumps — nothing committed). A POST-commit failure (export/integrity/git) is undone by the 4d
+  **scoped restore-point** (D21) — the deferred rollback is gone once the txn commits; together
+  they give the robust rollback on ANY failure (D21). After a successful write, `export_seeds`
+  exports the DB → the derived record at **`data/db-export/`** (D20), NOT `data/seeds/` (the frozen
+  one-time `run_rebuild` bootstrap input). **`create-version`-at-a-new-game-tag now works** — a direct
   INSERT (new `game_versions` row + interval-close + new `address_versions` row) bypasses the
   seed-rebuild's `GAME_VERSION_TAG`/baseline-matcher gate that materialised zero rows. The
   `run_rebuild` bootstrap is UNCHANGED.
@@ -141,9 +143,22 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   round-trip (`import(export(DB))==DB` AND `export(import(CSVs))==CSVs`) is the BUILD-time oracle
   (it rebuilds the 1.3GB bulk DB + needs the dump — not run per save). The maintainer tool's
   per-save integrity check is the cheap `export(DB)`-is-deterministic direction (re-export the
-  committed DB, assert the `data/db-export/` record matches). A divergence on Confirm triggers the
-  robust rollback (the DB + CSVs restored, nothing lands) — the export-visibility constraint means
-  the export+check runs AFTER the DB commit inside the txn, and a failure rolls the txn back.
+  committed DB, assert the `data/db-export/` record matches). The export+check runs AFTER the DB
+  commit (the export-visibility constraint: `export_seeds` opens its own fresh connection and
+  cannot read the uncommitted held txn). A divergence there is a POST-commit failure → the 4d
+  scoped restore-point undoes the committed write (the DB rows + `sqlite_sequence` + the
+  `data/db-export/` CSVs restored, nothing lands — D21), NOT the deferred ROLLBACK (gone after
+  commit).
+- **The robust rollback is TWO mechanisms split at the irreversible commit (D21, settled
+  2026-06-03)** — `commit(handle)` is one-way (COMMITs + closes both connections; the deferred
+  rollback raises after it). (a) PRE-commit failure (validation) → the deferred-commit `ROLLBACK`
+  (4a). (b) POST-commit failure (export/integrity/git) → a SCOPED restore-point (P2 step 4d), a
+  DATA-CORE capability (D13/law 6 — it owns the write semantics + the open connections + knows the
+  touched rows): captured BEFORE the commit (only the touched rows across
+  `address_versions`/`survival`/`game_versions`/`address_names` in both DBs + `sqlite_sequence` +
+  the `data/db-export/` CSVs — a few KB, never the ~1.3GB DEV DB), restored on a post-commit
+  failure (the rows + the sequence + the CSVs). Step 5 calls it; the full-file snapshot the step-5
+  WIP built is dropped.
 - **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
   interaction laws"): layout stability (law 1), the responsive navigation shell (law 2),
   user-driven navigation (law 3), advisory verification + the override (law 4), the atomic
@@ -185,7 +200,9 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
 | Save (preview) API — the six job shapes: validate the prospective edit + return the field-delta (NO write, NO held txn) | P2 step 4b (landed f348857) | the maintainer reviews the diff before Confirm; **consumes step 1b's tag seam + step 3's field-delta**; its validate re-targets to prospective DB state in step 4b-rework |
 | Data-core DIRECT-WRITE path (D19) — db_editor reworked to direct-DB INSERT/UPDATE reusing _apply_one_db's helpers (8 behaviors); validate prospective DB state; inside the 4a txn (ROLLBACK resets PK auto-increments); create-version-at-a-new-tag works; export → data/db-export/ (D20) | P2 step 4c | the PRODUCER the Confirm consumes; reworks the landed db_editor from the seed-rebuild bridge; **consumes 4a + 1b**; additive/oracle-preserving where it touches landed code |
 | Preview Save validate re-targeted to prospective DB state (D19) | P2 step 4b-rework | re-points 4b's preview validate from the seed-validate path to 4c's prospective-DB-state validate (one gate, DB-targeted); **consumes 4c** |
-| Confirm transaction (D16/D19/D20) + auth-ready seams (D17) | P2 step 5 | ONE synchronous request: open 4a txn → 4c DIRECT-write → export to data/db-export/ → cheap integrity check → commit DB → git commit/push; ROBUST rollback (PK reset) on any failure; EVENT-DRIVEN index.lock (git's exit, no poll); injected identity + env credential + dev default; **reuses the kept step-5 WIP git/auth machinery**; **consumes 4c + 4b-rework + 4a + 1b** |
+| Data-core SCOPED restore-point (D21) — capture touched rows + sqlite_sequence + db-export CSVs before commit; restore on a post-commit failure (a few KB, never the 1.3GB DEV DB; a data-core capability per D13/law 6) | P2 step 4d | the post-commit-rollback half of D21 (the deferred ROLLBACK is the pre-commit half); the PRODUCER step 5 calls; **consumes 4c + 4a** |
+| Robust rollback — deferred ROLLBACK (pre-commit) + scoped restore-point (post-commit), incl. PK reset (D21) | P2 step 4a (pre-commit) + 4d (post-commit) + 5 (orchestrates) | the two-mechanism rollback split at the irreversible commit |
+| Confirm transaction (D16/D19/D20/D21) + auth-ready seams (D17) | P2 step 5 | ONE synchronous request: open 4a txn → 4c DIRECT-write → commit DB → export to data/db-export/ → cheap integrity check → git commit/push; ROBUST rollback on any failure (deferred ROLLBACK pre-commit; the 4d scoped restore-point post-commit, incl. PK reset); EVENT-DRIVEN index.lock (git's exit, no poll); injected identity + env credential + dev default; **reuses the kept step-5 WIP git/auth machinery (drops its full-file snapshot → calls 4d)**; **consumes 4c + 4b-rework + 4d + 4a + 1b** |
 | Container data layout — backend reads the checkout (D18) | P2 step 1 (consumes) + P5 step 16 (provides) | configured checkout path |
 | Frontend skeleton + Mantine theme (tokens) + responsive app shell (D14, laws) | P3 step 6 | the API client; the two-pane ↔ drill-down shell |
 | s01 navigator (search/filter/list/chips) | P3 step 7 | `ui/screens/s01` |

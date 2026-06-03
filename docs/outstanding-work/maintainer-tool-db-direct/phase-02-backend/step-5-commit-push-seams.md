@@ -16,20 +16,25 @@ edit + the chosen version tag and runs, in the one request:
    `-A`/`.`/`-u`), author the commit (the request-context identity), push to the **private**
    remote (the env-credential seam).
 
-**If ANY step fails, roll back everything** — the **robust rollback** the user required: the
-deferred-commit `rollback(handle)` discards the whole txn INCLUDING `sqlite_sequence`/PK
-auto-increment bumps (so a re-Confirm reuses the same next id, no orphaned sequence advance); the
-`data/db-export/` CSV write is reverted to its pre-Confirm state; no git commit happens. The page
-gets a FAILURE status. On success, "Saved `<entity> <version>`". The transaction opens AND closes
-inside the one Confirm request — nothing held across think-time.
+**If ANY step fails, roll back everything** — the **robust rollback** the user required, two
+mechanisms split at the irreversible commit (D21): a **PRE-commit failure** (the direct-write /
+validation) → the deferred-commit `rollback(handle)` (4a) discards the held txn incl.
+`sqlite_sequence`/PK bumps (nothing committed). A **POST-commit failure** (export / integrity /
+git) → the **4d scoped restore-point** undoes the committed write (the touched rows + the
+`sqlite_sequence` + the `data/db-export/` CSVs restored) — the deferred rollback is gone once the
+txn commits. Either way, nothing lands; the page gets a FAILURE status. On success, "Saved
+`<entity> <version>`". The transaction opens AND closes inside the one Confirm request — nothing
+held across think-time.
 
 **Reuse the kept step-5 WIP.** The uncommitted step-5 machinery — `routes_confirm.py`,
 `git_commit.py`, `csv_integrity.py` — is KEPT in the tree and reused: the Confirm-endpoint shape,
 the git commit/push (exact-path staging, push-to-private, the auth seams), and the cheap integrity
 check survive the direct-write pivot. The rework changes only: (a) the WRITE underneath (route
 through 4c's direct-write, not the seed-rebuild `db_editor`); (b) the export target
-(`data/db-export/`, not `data/seeds/`); (c) the index.lock handling (below); (d) the rollback (the
-robust deferred-commit ROLLBACK now genuinely undoes a committed-then-failed write).
+(`data/db-export/`, not `data/seeds/`); (c) the index.lock handling (below); (d) the post-commit
+rollback — DROP the WIP's full-file snapshot (`restore_point.py`) and CALL the **4d data-core
+scoped restore-point** (capture-before-commit, restore-on-post-commit-failure; a few KB, never the
+1.3GB DEV DB).
 
 **Event-driven index.lock (no poll — user-settled).** The previous WIP used a sleep-poll loop
 waiting for a live `.git/index.lock` to clear (`polling.md` violation). Rework it event-driven:
@@ -39,13 +44,16 @@ the page (or a bounded retry driven by git's RETURN, not a clock). NO `sleep`-lo
 poll. The lock is NEVER reaped (reaping a live lock = index corruption, `concurrency-git.md`
 rule 5).
 
-**The confirm ORDER + post-DB-commit failure (settled by the robust rollback).** Steps 2–5 are
-inside the deferred txn — a failure there rolls back cleanly (nothing committed). The robust
-rollback the user required closes the post-DB-commit edge too: if step 6 (commit) succeeds but
-step 7 (git) fails, the rollback restores the DB (incl. PK sequence) so DB and git stay in
-lockstep — "on failure nothing lands" holds literally, the user's explicit model. (Reverting a
-committed SQLite txn is what the deferred-commit ROLLBACK + the captured restore-point provide;
-4c owns the restore-point capture.)
+**The confirm ORDER + post-DB-commit failure (settled by the two-mechanism rollback, D21).**
+The direct-write + validation run inside the deferred txn — a failure there `rollback(handle)`s
+cleanly (nothing committed). After the DB commit (which is irreversible), the export / integrity
+/ git steps run (the export MUST read the committed DB — `export_seeds` opens its own fresh
+connection, can't see the uncommitted txn). If any of THOSE fails, the deferred rollback is gone,
+so the **4d scoped restore-point** (captured before the commit) undoes the committed write — the
+touched rows + the `sqlite_sequence` (PK reset) + the `data/db-export/` CSVs restored — so DB and
+git stay in lockstep, "on failure nothing lands" holds literally. (Reverting a committed SQLite
+write is what the 4d scoped restore-point provides; the deferred ROLLBACK covers only the
+pre-commit failure. **4d owns the restore-point capture** — a data-core capability, D13/law 6.)
 
 **Auth-ready seams (D17).** The commit **author identity** comes from the request-context field
 the operator's login supplies; the **push credential** is **env-injected** (a documented env var
@@ -75,11 +83,12 @@ real DBs + a **throwaway local bare git remote** (NOT real GitHub):
 Touches the git layer → honor `concurrency-git.md` (exact-path staging, no broad add, push to
 private only, no hand-push to public, no auto-branch).
 
-**Dependencies.** Step 4c (the direct-write path Confirm calls) + step 4b-rework (the preview the
-maintainer reviews before Confirm — Confirm re-sends the same edit) + step 4a (the deferred-commit
-seam Confirm opens+commits in the one request) + step 1b (the `version=` adapter). The kept step-5
-WIP (`routes_confirm.py` / `git_commit.py` / `csv_integrity.py`) is the reuse base. Sequenced after
-4c + 4b-rework.
+**Dependencies.** Step 4c (the direct-write path Confirm calls) + step 4d (the scoped
+restore-point Confirm calls on a post-commit failure) + step 4b-rework (the preview the maintainer
+reviews before Confirm — Confirm re-sends the same edit) + step 4a (the deferred-commit seam
+Confirm opens+commits in the one request) + step 1b (the `version=` adapter). The kept step-5 WIP
+(`routes_confirm.py` / `git_commit.py` / `csv_integrity.py`) is the reuse base; its full-file
+`restore_point.py` is dropped (replaced by the 4d call). Sequenced after 4c + 4b-rework + 4d.
 
 **Touches existing code / shared tree.** YES — it writes to the shared `.git`/index. Honor
 `concurrency-git.md` (exact-path staging, event-driven lock handling, no auto-branch, no hand push
