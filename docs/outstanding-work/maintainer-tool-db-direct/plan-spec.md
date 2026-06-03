@@ -111,10 +111,14 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   COMMIT, and return the two open connections + the result; the data-core also exposes
   commit(conns) / rollback(conns). The backend (step 4b) holds the connections across the
   confirm; step 5 COMMITs the held transaction together with the git commit as ONE confirm
-  transaction. OPEN sub-decision (surfaced at 4a build time, not pre-decided): the two-DB commit
-  ORDERING (user + dev are two separate SQLite files; a COMMIT of the first succeeding then the
-  second failing is a split state -- the "atomic" guarantee's edge, settled once the seam's
-  exact commit sequence is written).
+  transaction. The two-DB commit ORDERING sub-decision is SETTLED (user-confirmed 2026-06-03,
+  landed in 63a2a92): commit() does USER-first then DEV, re-raising on a DEV-COMMIT failure
+  (never swallowed). user + dev are two separate SQLite files with no cross-file atomic commit;
+  user-first makes the only possible split "USER (the shipped curated DB) committed, DEV (the
+  on-demand bulk DB) lagging" -- the more-recoverable split (a re-apply diffs only the DEV side,
+  the applier's convergence making it safe), and the shipped DB the tool reads back is always
+  correct. A truly-atomic two-file commit (ATTACH / single-file layout) was deferred as a
+  potential follow-on, out of 4a's additive scope.
 - **DB↔CSV information-equivalence + the round-trip** (design §4): every save re-asserts the
   byte-identity round-trip before commit; a divergence aborts with no write.
 - **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
