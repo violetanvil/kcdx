@@ -20,6 +20,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 | Step | Status | Commit |
 |---|---|---|
 | 1 backend skeleton + data-core import seam + version-tag→params adapter + health/load endpoint | DONE | c0b270c |
+| 1b data-core tag seam — optional `version=` on apply_seeds + 5 db_editor writes (A2; oracle-preserving) | NOT STARTED | — |
 | 2 read API — curated set + entity detail + version rows + derived status | NOT STARTED | — |
 | 3 field-delta API (D8) — saved-vs-prospective | NOT STARTED | — |
 | 4 save API — the six job shapes (validate→write→export→round-trip), no commit yet | NOT STARTED | — |
@@ -28,6 +29,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 ## Step docs
 
 1. [step-1-backend-skeleton-adapter.md](step-1-backend-skeleton-adapter.md)
+1b. [step-1b-data-core-tag-seam.md](step-1b-data-core-tag-seam.md)
 2. [step-2-read-api.md](step-2-read-api.md)
 3. [step-3-field-delta-api.md](step-3-field-delta-api.md)
 4. [step-4-save-api.md](step-4-save-api.md)

@@ -73,8 +73,14 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   is the data-core's. The data-core public surface (LANDED, Phase 1):
   `export_seeds`, `round_trip`, `update_version_row`, `create_version`, `create_entity`,
   `supersede_entity`, `deprecate_entity`, `field_delta`, `is_new_version_nothing_changed`.
-  (These take `out_dir, dll_path, …`; the backend's version-tag adapter supplies the params
-  with no DLL server-side — P2 step 1.)
+  (These take `out_dir, dll_path, …` and resolve the version FROM the DLL themselves. The
+  web app has no DLL server-side — so P2 step 1b adds an OPTIONAL pre-resolved `version=(tag,
+  ordinal)` param to `apply_seeds` + the five `db_editor` write functions: supply `version`
+  → the data-core skips the DLL read; supply `dll_path` → unchanged (desktop + every landed
+  test). The backend's adapter passes the browser-resolved `version`, no DLL server-side. **A2,
+  settled 2026-06-02** — additive + oracle-preserving, NOT a `dll_path`→`version` replacement;
+  implements the D13/D15 "thin adapter maps a chosen version tag → the data-core's params"
+  contract.)
 - **DB↔CSV information-equivalence + the round-trip** (design §4): every save re-asserts the
   byte-identity round-trip before commit; a divergence aborts with no write.
 - **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
@@ -109,10 +115,11 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
 | Design element | Covered by | Notes |
 |---|---|---|
 | Data-core (csv_exporter / round_trip / db_editor / field_delta) | **Phase 1 — DONE** | landed; delivery-agnostic, the backend calls it |
-| Backend skeleton + version-tag→data-core-params adapter (D14/§5) | P2 step 1 | no DLL server-side; a health/load endpoint |
+| Backend skeleton + version-tag→data-core-params adapter (D14/§5) | P2 step 1 — DONE (c0b270c) | no DLL server-side; a health/load endpoint |
+| Data-core tag seam — optional `version=` on `apply_seeds` + 5 db_editor writes (A2, D13/D15) | P2 step 1b | additive + oracle-preserving; the producer the save API (step 4) consumes |
 | Read API — curated set + entity detail + version rows + derived status | P2 step 2 | feeds s01/s02/s03 |
 | Field-delta API (D8) | P2 step 3 | wraps `field_delta` |
-| Save API — the six job shapes (data-core save spine) | P2 step 4 | validate→write→export→round-trip; not yet committing |
+| Save API — the six job shapes (data-core save spine) | P2 step 4 | validate→write→export→round-trip; not yet committing; **consumes step 1b's tag seam** |
 | Git commit + push on confirm (D16) + auth-ready seams (D17) | P2 step 5 | exact-path/live-lock/push; injected identity + env credential + dev default |
 | Container data layout — backend reads the checkout (D18) | P2 step 1 (consumes) + P5 step 16 (provides) | configured checkout path |
 | Frontend skeleton + Mantine theme (tokens) + responsive app shell (D14, laws) | P3 step 6 | the API client; the two-pane ↔ drill-down shell |
