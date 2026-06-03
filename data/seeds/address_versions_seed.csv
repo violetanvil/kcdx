@@ -150,3 +150,7 @@ kcdx_id,valid_from_version,module,rva,kind,signature,last_verified_at_version,ve
 149,1.5.1164953,WHGame.dll,0x009F0CE4,function,"ptr (ptr self, ptr sysctx)",1.5.1164953,VioletAnvil,2026-06-01,maintainer_ghidra,,,,,,,,,,
 150,1.5.1164953,WHGame.dll,0x008DFF08,function,"void (ptr self, cstr s)",1.5.1164953,VioletAnvil,2026-06-01,maintainer_ghidra,,,,,,,,,,
 151,1.5.1164953,WHGame.dll,0x0247C878,function,"void (ptr self, cstr s)",1.5.1164953,VioletAnvil,2026-06-01,maintainer_ghidra,,,,,,,,,,
+152,1.5.1164953,WHGame.dll,0x0006205C,function,"ptr (ptr this, cstr pName, ptr outBuf, u32 nFlags)",1.5.1164953,VioletAnvil,2026-06-02,maintainer_ghidra,,,,,,,,,1,
+153,1.5.1164953,WHGame.dll,0x000631F0,function,"i32 (ptr this, cstr pName, ptr outPak)",1.5.1164953,VioletAnvil,2026-06-02,maintainer_ghidra,,,,,,,,,,
+154,1.5.1164953,WHGame.dll,0x009C9CB4,function,"i32 (ptr this, cstr pName)",1.5.1164953,VioletAnvil,2026-06-02,maintainer_ghidra,,,,,,,,,,
+155,1.5.1164953,WHGame.dll,0x000621BC,function,"ptr (ptr this, cstr pName, ptr outBuf)",1.5.1164953,VioletAnvil,2026-06-02,maintainer_ghidra,,,,,,,,,,

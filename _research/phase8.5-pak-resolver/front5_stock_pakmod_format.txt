@@ -1,0 +1,130 @@
+FRONT 5 — STOCK pak-mod format dissection (backward-compat contract)
+=====================================================================
+Primary evidence = real on-disk shipped mods (NOT a WHGame.dll decompile).
+Method: raw header bytes (xxd) + Python `zipfile`/`struct` parse of the real
+.pak files + read of the real mod.manifest files.
+
+Files dissected:
+  E:/SteamLibrary/.../mods/easytoseeherbs/                (Lucas182, Nexus)
+    Data/easytoseeherbs.pak    9,433,143 bytes
+    mod.manifest               361 bytes
+  E:/SteamLibrary/.../mods/MH_Rebalanced_Sharpening_X3/   (Mharius, Nexus)
+    Data/mh_rebalanced_sharpening.pak   659 bytes
+    mod.manifest                        338 bytes
+
+(a) .pak CONTAINER FORMAT — VERDICT: standard PKZIP, DEFLATE-CAPABLE
+--------------------------------------------------------------------
+Wiki KM-A-58 claim ("a ZIP archive without compression") is FALSE as a
+hard rule. Both real paks are STANDARD PKZIP archives that DO use DEFLATE.
+
+easytoseeherbs.pak (measured):
+  - Local file header at offset 0: 50 4B 03 04  (PK\x03\x04). No proprietary
+    CryPak header prepended; the file IS a zip from byte 0.
+  - version_needed = 20  (PKZIP 2.0 baseline = DEFLATE-capable)
+  - 1 entry, compress_type = 8 (DEFLATE).  csize=9,432,897  usize=44,739,384
+  - EOCD (PK\x05\x06) at 9,433,121: total_entries=1, cd_offset=9,433,001,
+    cd_size=120, comment_len=0.
+  - Central dir hdr sig = 50 4B 01 02 (PK\x01\x02), standard.
+  - No zip64 (no PK\x06\x07 locator). GP flags=0x0000: no data-descriptor
+    (bit3=0), no UTF-8 name flag (bit11=0). CRC check (testzip) passes.
+
+mh_rebalanced_sharpening.pak (measured):
+  - PK\x03\x04 at offset 0; version_needed=20.
+  - 3 entries: 2 are zero-size STORED directory markers
+      "Libs/Tables/" (m=0) and "Libs/Tables/rpg/" (m=0),
+    1 is the content file
+      "Libs/Tables/rpg/rpg_param__mh_rebalanced_sharpening.xml"
+      m=8 (DEFLATE) csize=243 usize=558 crc=933a0235.
+  - EOCD comment empty. CRC check passes.
+
+So: STORED dir entries + DEFLATE content entries coexist in one pak. The
+format is "whatever a standard zip writer emits"; compression is per-entry
+and the engine accepts both stored and deflated.
+
+ENGINE-SIDE CROSS-REFERENCE (reuse, not re-walk) — confirms the reader:
+  _research/phase8.5-pak-resolver/_u5_worker2.txt (already-decompiled
+  PakOpenPackU5 string dump) shows the CryEngine ZipDir reader strings:
+    @183dd0a40 "...it doesn't even contain the CDREnd structure..."
+    @183dd0ae0 "Cannot find Central Directory Record in pak..."
+    @183dd0c20 "Central Directory Record is followed by a comment of
+                inconsistent length..."  (so EOCD comment IS tolerated)
+    @183dd1250 "Central Directory contains file descriptors pointing
+                outside the archive file boundaries..."
+    @183dd14a0 "ZipDir::CacheRW::WriteCDR"
+    @183dd17a0 "[ZipDir] HEADERS_CDR_SIGNED not yet supported"  <-- engine
+                does NOT support encrypted/signed central directories.
+  _pakpriority_cvar_reg.txt:239 "When exporting paks, embed Zlib headers
+    into PKZip headers."  -> the engine's own exporter writes DEFLATE/zlib
+    into PKZip headers; compressed paks are first-class, not foreign.
+  => The engine consumes paks via classic CryEngine ZipDir: CDREnd = zip
+     EOCD; reads central directory; STORED + DEFLATE; comment tolerated;
+     no zip64 seen; signed/encrypted CDR explicitly unsupported.
+
+(b) mod.manifest SHAPE — XML, root <kcd_mod><info>
+--------------------------------------------------
+UTF-8 XML, declared <?xml version="1.0" encoding="utf-8"?>. Structure:
+  <kcd_mod><info> ... </info></kcd_mod>
+
+Fields observed across the two real mods (union):
+  <name>            display name        (both)
+  <description>     free text           (both)
+  <author>          author handle       (both)
+  <version>         mod version string  (both: "3.0", "1.0")
+  <modid>           THE load key         (both: "easytoseeherbs",
+                                          "mh_rebalanced_sharpening")
+  <modifies_level>  bool "false"        (herbs only)
+  <created_on>      date string         (both; "2025-02-15" vs "2025")
+  <dependencies>    container, empty    (MH only)
+
+modid is the load-order / mount identity key — it is what mod_order.txt
+lists and what kcdx's own test manifests use (<modid>kcdx_test_paklua</modid>).
+The schema is LENIENT: optional fields appear/absent per mod (no <dependencies>
+in herbs; no <modifies_level> in MH), date format is freeform. Any kcdx
+parser must treat every field except <modid> as optional and tolerate
+freeform values.
+
+(c) INTERNAL DIRECTORY STRUCTURE -> vpath mapping
+-------------------------------------------------
+The pak entry name IS the game virtual path, forward-slashed, rooted at the
+game data root (the same namespace as the stock Data/*.pak):
+  easytoseeherbs: Objects/natural/vegetation/grass/grass_groups/
+                  plants_grass_merged_diff.dds
+                  -> overrides the stock asset at vpath
+                     Objects/natural/vegetation/grass/.../plants_grass_merged_diff.dds
+  MH:             Libs/Tables/rpg/rpg_param__mh_rebalanced_sharpening.xml
+                  -> a Libs/Tables data-table override.
+No leading "Data/" inside the pak; the on-disk Data/<mod>.pak wrapper dir is
+the MOUNT location, the entry names are root-relative vpaths. Paths use '/',
+entries can include explicit zero-size dir markers (MH) or not (herbs).
+
+ENUMERATION / ORDER context (on-disk, for synthesis):
+  mods/<modid>/Data/<name>.pak   = the mount unit (one pak per mod here).
+  mods/<modid>/mod.manifest      = identity/metadata sidecar.
+  mods/mod_order.txt             = load order, one modid per line, file order
+                                   = mount order. Header in the real file says
+                                   "managed by kcdx — order reflects kcdx's
+                                   resolved load order" (kcdx already owns this
+                                   file). Lists modids, not dir names
+                                   (mh_rebalanced_sharpening, not the
+                                   MH_Rebalanced_Sharpening_X3 dir name) =>
+                                   the dir name and modid differ; modid is the
+                                   key, resolved FROM the manifest, not the dir.
+
+COMPATIBILITY CONTRACT (what a kcdx-owned resolver MUST keep consuming):
+  1. Read mods/<dir>/Data/*.pak as a STANDARD zip (PK\x03\x04 at byte 0),
+     STORED + DEFLATE per entry, no zip64 assumed, EOCD-comment tolerant,
+     CDR not signed/encrypted. Use a stock zip reader; no custom container.
+  2. Read mods/<dir>/mod.manifest as UTF-8 XML <kcd_mod><info>; require only
+     <modid>; treat all other fields optional + freeform; tolerate
+     <dependencies>/<modifies_level> presence-or-absence.
+  3. Map each pak entry name verbatim as a forward-slashed root-relative
+     vpath into the game data namespace (overrides stock when the vpath
+     collides — that override IS the mod's effect).
+  4. modid (from the manifest) is the mount identity; dir name may differ;
+     mod_order.txt order = mount order.
+  => A stock Nexus/Workshop pak mod loads with ZERO author changes iff the
+     kcdx resolver honors 1-4. Nothing in the on-disk format is kcdx-specific.
+
+Confidence: (a),(b),(c) VERIFIED from real on-disk bytes/manifests this session.
+Engine-reader cross-ref (ZipDir/CDREnd/HEADERS_CDR_SIGNED) reused from prior
+decompile dump _u5_worker2.txt (VERIFIED there, cited not re-walked).

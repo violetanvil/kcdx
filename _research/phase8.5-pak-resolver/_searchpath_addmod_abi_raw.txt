@@ -1,0 +1,147 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (584 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1627 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: PakAddModABI.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\PakAddModABI.java (HeadlessAnalyzer)  
+INFO  PakAddModABI.java> 
+===== DECOMP CCryPak slot19 AddMod (search-path push_back) @ 0x1819af1a8 ===== (GhidraScript)  
+INFO  PakAddModABI.java>   name: FUN_1819af1a8  conv: unknown  params: 0  RVA 0x19af1a8 (GhidraScript)  
+INFO  PakAddModABI.java>   signature: undefined FUN_1819af1a8(void) (GhidraScript)  
+INFO  PakAddModABI.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_1819af1a8(longlong param_1)
+
+{
+  int iVar1;
+  undefined8 *puVar2;
+  undefined1 auStack_168 [32];
+  longlong local_148 [2];
+  undefined1 local_138 [16];
+  char *local_128;
+  char local_120 [264];
+  ulonglong local_18;
+  
+  local_18 = DAT_1848fcfc0 ^ (ulonglong)auStack_168;
+  FUN_1804628a0(local_138);
+  FUN_180464788(local_138,0x5c,0x2f);
+  FUN_1804d785c(local_138);
+  for (puVar2 = *(undefined8 **)(param_1 + 0x198); puVar2 != *(undefined8 **)(param_1 + 0x1a0);
+      puVar2 = puVar2 + 1) {
+    iVar1 = _stricmp((char *)*puVar2,local_128);
+    if (iVar1 == 0) goto LAB_1819af233;
+  }
+  FUN_1806962e0(local_148,local_138);
+  FUN_18041d3a8((undefined8 *)(param_1 + 0x198),local_148);
+  FUN_1804fdaf8(local_148[0] + -0xc);
+LAB_1819af233:
+  if ((local_128 != local_120) && (local_128 != (char *)0x0)) {
+    iVar1 = (*DAT_18549b488)(local_128,0);
+    LOCK();
+    DAT_1851ddb24 = DAT_1851ddb24 + iVar1;
+    UNLOCK();
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  PakAddModABI.java> 
+================================================================== (GhidraScript)  
+INFO  PakAddModABI.java> DIRECT CALLERS of slot19 body 0x1819af1a8 (GhidraScript)  
+INFO  PakAddModABI.java> ================================================================== (GhidraScript)  
+INFO  PakAddModABI.java>   xref from 0x1857db9cc  type=DATA  in fn=(none) (GhidraScript)  
+INFO  PakAddModABI.java>   xref from 0x184837aa0  type=DATA  in fn=(none) (GhidraScript)  
+INFO  PakAddModABI.java>   xref from 0x183a96040  type=DATA  in fn=(none) (GhidraScript)  
+INFO  PakAddModABI.java>   (total xrefs: 3; distinct calling functions: 0) (GhidraScript)  
+INFO  PakAddModABI.java> 
+===== DECOMP FUN_18041d3a8 (vector push_back onto [+0x198]) @ 0x18041d3a8 ===== (GhidraScript)  
+INFO  PakAddModABI.java>   name: FUN_18041d3a8  conv: unknown  params: 0  RVA 0x41d3a8 (GhidraScript)  
+INFO  PakAddModABI.java>   signature: undefined FUN_18041d3a8(void) (GhidraScript)  
+INFO  PakAddModABI.java> 
+void FUN_18041d3a8(longlong param_1,undefined8 param_2)
+
+{
+  longlong lVar1;
+  
+  lVar1 = *(longlong *)(param_1 + 8);
+  if (lVar1 != *(longlong *)(param_1 + 0x10)) {
+    FUN_1804fd468(lVar1);
+    *(longlong *)(param_1 + 8) = *(longlong *)(param_1 + 8) + 8;
+    return;
+  }
+  FUN_18041defc(param_1,lVar1,param_2);
+  return;
+}
+
+ (GhidraScript)  
+INFO  PakAddModABI.java> 
+===== DECOMP FUN_1806962e0 (CryStringT ctor/copy for the new entry) @ 0x1806962e0 ===== (GhidraScript)  
+INFO  PakAddModABI.java>   name: FUN_1806962e0  conv: unknown  params: 0  RVA 0x6962e0 (GhidraScript)  
+INFO  PakAddModABI.java>   signature: undefined FUN_1806962e0(void) (GhidraScript)  
+INFO  PakAddModABI.java> 
+longlong * FUN_1806962e0(longlong *param_1,size_t *param_2)
+
+{
+  size_t _Size;
+  longlong lVar1;
+  
+  lVar1 = FUN_1804fda6c();
+  *param_1 = lVar1 + 0xc;
+  _Size = *param_2;
+  if (_Size != 0) {
+    FUN_1804f778c(param_1,_Size);
+    if ((void *)*param_1 != (void *)param_2[2]) {
+      memcpy((void *)*param_1,(void *)param_2[2],_Size);
+    }
+  }
+  return param_1;
+}
+
+ (GhidraScript)  
+INFO  PakAddModABI.java> 
+done. (GhidraScript)  

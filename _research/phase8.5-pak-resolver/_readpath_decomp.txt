@@ -1,0 +1,559 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (576 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1588 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: PakReadPathDecomp.java  (HeadlessAnalyzer)  
+PakOpenMount.java:27: error: cannot find symbol
+import ghidra.program.model.listing.DefinedDataIterator;
+                                   ^
+  symbol:   class DefinedDataIterator
+  location: package ghidra.program.model.listing
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+PakOpenMount.java:95: error: cannot find symbol
+        DefinedDataIterator it = DefinedDataIterator.definedStrings(currentProgram);
+        ^
+  symbol:   class DefinedDataIterator
+  location: class PakOpenMount
+PakOpenMount.java:95: error: cannot find symbol
+        DefinedDataIterator it = DefinedDataIterator.definedStrings(currentProgram);
+                                 ^
+  symbol:   variable DefinedDataIterator
+  location: class PakOpenMount
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\PakOpenMount.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\PakReadPathDecomp.java (HeadlessAnalyzer)  
+INFO  PakReadPathDecomp.java> CCryPak vtable @ 0x183a95fa8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 34 (+0x110) = 0x182419354  fn=FUN_182419354 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 35 (+0x118) = 0x182418de4  fn=FUN_182418de4 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 36 (+0x120) = 0x1804614a0  fn=FUN_1804614a0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 37 (+0x128) = 0x182418ec8  fn=FUN_182418ec8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 38 (+0x130) = 0x180461304  fn=FUN_180461304 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 39 (+0x138) = 0x18051e1f8  fn=FUN_18051e1f8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 40 (+0x140) = 0x18051cd00  fn=FUN_18051cd00 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 41 (+0x148) = 0x180a700c8  fn=FUN_180a700c8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 42 (+0x150) = 0x182418ed4  fn=FUN_182418ed4 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 43 (+0x158) = 0x182418c40  fn=FUN_182418c40 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 44 (+0x160) = 0x18241a960  fn=FUN_18241a960 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 45 (+0x168) = 0x182418b48  fn=FUN_182418b48 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 46 (+0x170) = 0x180460c08  fn=FUN_180460c08 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 47 (+0x178) = 0x18241dd6c  fn=FUN_18241dd6c (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 48 (+0x180) = 0x18241acec  fn=FUN_18241acec (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 49 (+0x188) = 0x18241ccec  fn=FUN_18241ccec (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 50 (+0x190) = 0x1819d1f58  fn=FUN_1819d1f58 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 51 (+0x198) = 0x180462770  fn=FUN_180462770 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 52 (+0x1a0) = 0x182417d6c  fn=FUN_182417d6c (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 53 (+0x1a8) = 0x18046068c  fn=FUN_18046068c (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 54 (+0x1b0) = 0x180460cdc  fn=FUN_180460cdc (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 55 (+0x1b8) = 0x1804609d0  fn=FUN_1804609d0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   slot 56 (+0x1c0) = 0x180961d48  fn=FUN_180961d48 (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP slot40 (+0x140) CLAIM: FRead @ 0x18051cd00 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_18051cd00  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x18051cd00  size: 318 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_18051cd00(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+undefined8 FUN_18051cd00(longlong *param_1,FILE *param_2,longlong *param_3)
+
+{
+  longlong *plVar1;
+  undefined1 *puVar2;
+  undefined8 uVar3;
+  longlong lVar4;
+  longlong lVar5;
+  undefined1 *puVar6;
+  undefined1 local_res8 [8];
+  undefined1 local_28 [16];
+  
+  FUN_1804613d0(local_28,param_1);
+  FUN_1823c905c(local_res8,param_1 + 2);
+  puVar6 = (undefined1 *)((longlong)&param_2[-1]._tmpfname + 7);
+  puVar2 = (undefined1 *)FUN_180427e40(param_1 + 8);
+  if (puVar6 < puVar2) {
+    uVar3 = FUN_18051ce40(param_1[8] + (longlong)puVar6 * 0x18,param_3);
+    FUN_1823c9054(local_res8);
+  }
+  else {
+    FUN_1823c9054(local_res8);
+    plVar1 = param_1 + 0x14;
+    uVar3 = 0;
+    if (*plVar1 == 0) {
+      lVar4 = (**(code **)(*param_1 + 0x170))(param_1,param_2);
+      *param_3 = lVar4;
+      lVar4 = FUN_1804f7820(0x20);
+      if (lVar4 != 0) {
+        FUN_182415848(lVar4,(int)*param_3);
+      }
+      FUN_1807b6540(plVar1);
+      *(FILE **)(*plVar1 + 0x18) = param_2;
+      fseek(param_2,0,0);
+      lVar4 = *param_3;
+      lVar5 = FUN_1804d7ab4(*(undefined8 *)(*plVar1 + 0x10),1,lVar4,param_2);
+      if (lVar5 == lVar4) {
+        uVar3 = *(undefined8 *)(*plVar1 + 0x10);
+      }
+      else {
+        FUN_1807b6540(plVar1,0);
+      }
+    }
+    else {
+      FUN_180a607a4(8,0,"!Cannot have more then 1 FGetCachedFileData at the same time");
+    }
+  }
+  FUN_1804613fc(local_28);
+  return uVar3;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DISASM slot40 (+0x140) CLAIM: FRead @ 0x18051cd00 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd00: MOV qword ptr [RSP + 0x10],RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd05: MOV qword ptr [RSP + 0x18],RBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd0a: PUSH RSI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd0b: PUSH RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd0c: PUSH R14 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd0e: SUB RSP,0x30 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd12: MOV RBP,RDX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd15: MOV RBX,RCX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd18: MOV RDX,RCX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd1b: MOV R14,R8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd1e: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd23: CALL 0x1804613d0  -> 0x1804613d0 (FUN_1804613d0) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd28: LEA RDX,[RBX + 0x10] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd2c: LEA RCX,[RSP + 0x50] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd31: CALL 0x1823c905c  -> 0x1823c905c (FUN_1823c905c) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd36: LEA RCX,[RBX + 0x40] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd3a: LEA R8,[RBP + -0x1] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd3e: CALL 0x180427e40  -> 0x180427e40 (FUN_180427e40) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd43: CMP R8,RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd46: JNC 0x18051cd6e  -> 0x18051cd6e (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd48: MOV RAX,qword ptr [RBX + 0x40] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd4c: LEA RCX,[R8 + R8*0x2] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd50: MOV RDX,R14 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd53: LEA RCX,[RAX + RCX*0x8] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd57: CALL 0x18051ce40  -> 0x18051ce40 (FUN_18051ce40) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd5c: LEA RCX,[RSP + 0x50] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd61: MOV RDI,RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd64: CALL 0x1823c9054  -> 0x1823c9054 (FUN_1823c9054) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd69: JMP 0x18051ce1e  -> 0x18051ce1e (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd6e: LEA RCX,[RSP + 0x50] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd73: CALL 0x1823c9054  -> 0x1823c9054 (FUN_1823c9054) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd78: LEA RSI,[RBX + 0xa0] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd7f: XOR EDI,EDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd81: CMP qword ptr [RSI],RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd84: JZ 0x18051cd9c  -> 0x18051cd9c (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd86: LEA R8,[0x183dba720] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd8d: XOR EDX,EDX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd8f: LEA ECX,[RDI + 0x8] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd92: CALL 0x180a607a4  -> 0x180a607a4 (FUN_180a607a4) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd97: JMP 0x18051ce1e  -> 0x18051ce1e (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd9c: MOV RAX,qword ptr [RBX] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cd9f: MOV RDX,RBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cda2: MOV RCX,RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cda5: CALL qword ptr [RAX + 0x170] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdab: MOV ECX,0x20 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdb0: MOV qword ptr [R14],RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdb3: CALL 0x1804f7820  -> 0x1804f7820 (FUN_1804f7820) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdb8: TEST RAX,RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdbb: JZ 0x18051cdca  -> 0x18051cdca (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdbd: MOV EDX,dword ptr [R14] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdc0: MOV RCX,RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdc3: CALL 0x182415848  -> 0x182415848 (FUN_182415848) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdc8: JMP 0x18051cdcd  -> 0x18051cdcd (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdca: MOV RAX,RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdcd: MOV RDX,RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdd0: MOV RCX,RSI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdd3: CALL 0x1807b6540  -> 0x1807b6540 (FUN_1807b6540) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdd8: MOV RAX,qword ptr [RSI] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cddb: XOR R8D,R8D (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdde: XOR EDX,EDX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cde0: MOV RCX,RBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cde3: MOV qword ptr [RAX + 0x18],RBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cde7: CALL 0x182423f40  -> 0x182423f40 (fseek) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdec: MOV RCX,qword ptr [RSI] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdef: MOV R9,RBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdf2: MOV RBX,qword ptr [R14] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdf5: MOV EDX,0x1 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdfa: MOV R8,RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051cdfd: MOV RCX,qword ptr [RCX + 0x10] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce01: CALL 0x1804d7ab4  -> 0x1804d7ab4 (FUN_1804d7ab4) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce06: CMP RAX,RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce09: JZ 0x18051ce17  -> 0x18051ce17 (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce0b: XOR EDX,EDX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce0d: MOV RCX,RSI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce10: CALL 0x1807b6540  -> 0x1807b6540 (FUN_1807b6540) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce15: JMP 0x18051ce1e  -> 0x18051ce1e (FUN_18051cd00) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce17: MOV RAX,qword ptr [RSI] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce1a: MOV RDI,qword ptr [RAX + 0x10] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce1e: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce23: CALL 0x1804613fc  -> 0x1804613fc (FUN_1804613fc) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce28: MOV RBX,qword ptr [RSP + 0x58] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce2d: MOV RAX,RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce30: MOV RBP,qword ptr [RSP + 0x60] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce35: ADD RSP,0x30 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce39: POP R14 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce3b: POP RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce3c: POP RSI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18051ce3d: RET (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP slot37 (+0x128) read-consume neighbor (FGetSize?) @ 0x182418ec8 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_182418ec8  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x182418ec8  size: 11 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_182418ec8(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+void FUN_182418ec8(undefined8 param_1,undefined8 param_2,undefined8 param_3)
+
+{
+  FUN_1809b2b28(param_2,param_3);
+  return;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP slot38 (+0x130) read-consume neighbor (FSeek?) @ 0x180461304 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_180461304  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x180461304  size: 202 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_180461304(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+undefined8
+FUN_180461304(longlong param_1,undefined8 param_2,undefined8 param_3,undefined8 param_4,
+             longlong param_5)
+
+{
+  undefined8 uVar1;
+  undefined8 local_res8;
+  undefined1 local_28 [16];
+  
+  FUN_1804613d0(local_28,param_1);
+  FUN_1823c905c(&local_res8,param_1 + 0x10);
+  if (param_5 - 1U <
+      (ulonglong)
+      ((*(longlong *)(param_1 + 0x48) - *(longlong *)(param_1 + 0x40) >> 3) * -0x5555555555555555))
+  {
+    uVar1 = FUN_1804618b4(*(longlong *)(param_1 + 0x40) + (param_5 - 1U) * 0x18,param_2,param_3,
+                          param_4);
+    FUN_180506f94(local_res8);
+  }
+  else {
+    FUN_180506f94(local_res8);
+    uVar1 = FUN_1804d7ab4(param_2,param_3,param_4,param_5);
+  }
+  FUN_1804613fc(local_28);
+  return uVar1;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP slot39 (+0x138) read-consume neighbor (FTell/FEof?) @ 0x18051e1f8 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_18051e1f8  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x18051e1f8  size: 193 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_18051e1f8(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+undefined8 FUN_18051e1f8(longlong param_1,undefined8 param_2,undefined8 param_3,FILE *param_4)
+
+{
+  undefined1 *puVar1;
+  undefined8 uVar2;
+  undefined1 *puVar3;
+  undefined1 local_res8 [8];
+  undefined1 local_18 [16];
+  
+  FUN_1804613d0(local_18,param_1);
+  FUN_1823c905c(local_res8);
+  puVar3 = (undefined1 *)((longlong)&param_4[-1]._tmpfname + 7);
+  puVar1 = (undefined1 *)FUN_180427e40(param_1 + 0x40);
+  if (puVar3 < puVar1) {
+    uVar2 = FUN_18051e2bc(*(longlong *)(param_1 + 0x40) + (longlong)puVar3 * 0x18,param_2,param_3);
+    FUN_1823c9054(local_res8);
+  }
+  else {
+    FUN_1823c9054(local_res8);
+    fseek(param_4,0,0);
+    uVar2 = FUN_1804d7ab4(param_2,1,param_3,param_4);
+  }
+  FUN_1804613fc(local_18);
+  return uVar2;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP FUN_1804605bc — shared CCryFile open helper (0x10006), seed id 136 @ 0x1804605bc ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_1804605bc  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x1804605bc  size: 221 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_1804605bc(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+bool FUN_1804605bc(longlong param_1,undefined8 param_2,char *param_3)
+
+{
+  FILE **_File;
+  FILE *pFVar1;
+  undefined1 auStack_168 [32];
+  char local_148;
+  undefined1 local_147 [271];
+  ulonglong local_38;
+  
+  local_38 = DAT_1848fcfc0 ^ (ulonglong)auStack_168;
+  local_148 = '\0';
+  memset(local_147,0,0x103);
+  FUN_180ab5db4(&local_148,0x104,param_2,0xffffffffffffffff);
+  _File = (FILE **)(param_1 + 0x108);
+  if (*_File != (FILE *)0x0) {
+    FUN_180460570(param_1);
+  }
+  FUN_180ab5db4(param_1,0x104,&local_148,0xffffffffffffffff);
+  if (*(longlong **)(param_1 + 0x110) == (longlong *)0x0) {
+    fopen_s(_File,&local_148,param_3);
+  }
+  else {
+    pFVar1 = (FILE *)(**(code **)(**(longlong **)(param_1 + 0x110) + 0x120))();
+    *_File = pFVar1;
+  }
+  return *_File != (FILE *)0x0;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DISASM FUN_1804605bc — shared CCryFile open helper @ 0x1804605bc ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605bc: PUSH RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605be: PUSH RBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605bf: PUSH RSI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605c0: PUSH RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605c1: SUB RSP,0x148 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605c8: MOV RAX,qword ptr [0x1848fcfc0] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605cf: XOR RAX,RSP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605d2: MOV qword ptr [RSP + 0x130],RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605da: MOV RSI,R8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605dd: MOV byte ptr [RSP + 0x20],0x0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605e2: MOV RBX,RDX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605e5: MOV RDI,RCX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605e8: XOR EDX,EDX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605ea: LEA RCX,[RSP + 0x21] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605ef: MOV R8D,0x103 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605f5: MOV EBP,R9D (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605f8: CALL 0x181d938b3  -> 0x181d938b3 (memset) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1804605fd: OR R9,-0x1 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460601: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460606: MOV R8,RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460609: MOV EDX,0x104 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046060e: CALL 0x180ab5db4  -> 0x180ab5db4 (FUN_180ab5db4) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460613: LEA RBX,[RDI + 0x108] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046061a: CMP qword ptr [RBX],0x0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046061e: JNZ 0x180460680  -> 0x180460680 (FUN_1804605bc) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460620: OR R9,-0x1 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460624: LEA R8,[RSP + 0x20] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460629: MOV EDX,0x104 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046062e: MOV RCX,RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460631: CALL 0x180ab5db4  -> 0x180ab5db4 (FUN_180ab5db4) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460636: MOV RCX,qword ptr [RDI + 0x110] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046063d: LEA RDX,[RSP + 0x20] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460642: MOV R8,RSI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460645: TEST RCX,RCX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460648: JZ 0x1821ef24e  -> 0x1821ef24e (FUN_1804605bc) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046064e: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460651: MOV R9D,EBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460654: CALL qword ptr [RAX + 0x120] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046065a: MOV qword ptr [RBX],RAX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046065d: CMP qword ptr [RBX],0x0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460661: SETNZ AL (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460664: MOV RCX,qword ptr [RSP + 0x130] (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046066c: XOR RCX,RSP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046066f: CALL 0x181c1e8c0  -> 0x181c1e8c0 (__security_check_cookie) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460674: ADD RSP,0x148 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046067b: POP RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046067c: POP RSI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046067d: POP RBP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046067e: POP RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x18046067f: RET (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460680: MOV RCX,RDI (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460683: CALL 0x180460570  -> 0x180460570 (FUN_180460570) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x180460688: JMP 0x180460620  -> 0x180460620 (FUN_1804605bc) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1821ef24e: MOV RCX,RBX (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1821ef251: CALL qword ptr [0x183a03c68]  -> 0x389 (fopen_s) (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1821ef257: NOP (GhidraScript)  
+INFO  PakReadPathDecomp.java>   0x1821ef258: JMP 0x18046065d  -> 0x18046065d (FUN_1804605bc) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== callers of FUN_1804605bc (CCryFile helper) ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1856b7f58 type=DATA in ? (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1847bc8f4 type=DATA in ? (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x180454e6a type=UNCONDITIONAL_CALL in FUN_180454c9c (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1804641a5 type=UNCONDITIONAL_CALL in FUN_180463f98 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1807b5fbd type=UNCONDITIONAL_CALL in FUN_1807b5ed4 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1804d4209 type=UNCONDITIONAL_CALL in FUN_1804d4198 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1807b5c3b type=UNCONDITIONAL_CALL in FUN_1807b5bac (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x180da25e1 type=UNCONDITIONAL_CALL in FUN_180da255c (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1804dd642 type=UNCONDITIONAL_CALL in FUN_1804dd5e4 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x181953daf type=UNCONDITIONAL_CALL in FUN_181953d28 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x18372a6b5 type=UNCONDITIONAL_CALL in FUN_18372a604 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x183731c5e type=UNCONDITIONAL_CALL in FUN_1837317d4 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x180771db3 type=UNCONDITIONAL_CALL in FUN_180771bd8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x180da131f type=UNCONDITIONAL_CALL in FUN_180da1294 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x180da3f66 type=UNCONDITIONAL_CALL in FUN_180da3f10 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x181dde61a type=UNCONDITIONAL_CALL in FUN_181dde5c0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x181ddeec9 type=UNCONDITIONAL_CALL in FUN_181ddee80 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x18243e82c type=UNCONDITIONAL_CALL in FUN_18243e7b8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x180da166c type=UNCONDITIONAL_CALL in FUN_180da15c8 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1811a6c08 type=UNCONDITIONAL_CALL in FUN_1811a6b88 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1811a6ca8 type=UNCONDITIONAL_CALL in FUN_1811a6b88 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1811a6cf4 type=UNCONDITIONAL_CALL in FUN_1811a6b88 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1811a6d5c type=UNCONDITIONAL_CALL in FUN_1811a6b88 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1811a6dbe type=UNCONDITIONAL_CALL in FUN_1811a6b88 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   ref from 0x1811a6e0f type=UNCONDITIONAL_CALL in FUN_1811a6b88 (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP FUN_1804613d0 — top-of-FWrite/FClose helper (handle->pak-entry lock?) @ 0x1804613d0 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_1804613d0  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x1804613d0  size: 41 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_1804613d0(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+longlong * FUN_1804613d0(longlong *param_1,longlong param_2)
+
+{
+  undefined4 uVar1;
+  
+  *param_1 = param_2;
+  uVar1 = (**(code **)(**(longlong **)(param_2 + 0x200) + 0x40))(*(longlong **)(param_2 + 0x200),0);
+  *(undefined4 *)(param_1 + 1) = uVar1;
+  return param_1;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP FUN_180462014 — predicate in FWrite (pak-handle test?) @ 0x180462014 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_180462014  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x180462014  size: 71 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_180462014(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+undefined4 FUN_180462014(longlong param_1)
+
+{
+  BOOLEAN BVar1;
+  DWORD DVar2;
+  
+  DVar2 = GetCurrentThreadId();
+  if (*(DWORD *)(param_1 + 0x1c) == DVar2) {
+    *(int *)(param_1 + 0x18) = *(int *)(param_1 + 0x18) + 1;
+  }
+  else {
+    BVar1 = TryAcquireSRWLockExclusive((PSRWLOCK)(param_1 + 0x10));
+    if (BVar1 == '\x01') {
+      *(DWORD *)(param_1 + 0x1c) = DVar2;
+    }
+    else {
+      FUN_1803d928c((PSRWLOCK)(param_1 + 0x10));
+    }
+  }
+  return 1;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP FUN_180506f94 — pak-arm leaf in FWrite @ 0x180506f94 ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_180506f94  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x180506f94  size: 142 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_180506f94(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+void FUN_180506f94(int *param_1)
+
+{
+  int iVar1;
+  BOOLEAN BVar2;
+  DWORD DVar3;
+  
+  LOCK();
+  iVar1 = *param_1;
+  *param_1 = *param_1 + -1;
+  UNLOCK();
+  DVar3 = GetCurrentThreadId();
+  if (param_1[7] == DVar3) {
+    param_1[6] = param_1[6] + 1;
+  }
+  else {
+    BVar2 = TryAcquireSRWLockExclusive((PSRWLOCK)(param_1 + 4));
+    if (BVar2 != '\x01') {
+      if (iVar1 != 1) {
+        return;
+      }
+      if (param_1[1] == 0) {
+        return;
+      }
+      SetEvent(*(HANDLE *)(param_1 + 2));
+      return;
+    }
+    param_1[7] = DVar3;
+  }
+  if (param_1[6] == 0) {
+    param_1[7] = 0;
+    ReleaseSRWLockExclusive((PSRWLOCK)(param_1 + 4));
+  }
+  else {
+    param_1[6] = param_1[6] + -1;
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+===== DECOMP FUN_1804613fc — tail-of-FWrite/FClose helper (unlock?) @ 0x1804613fc ===== (GhidraScript)  
+INFO  PakReadPathDecomp.java>   name: FUN_1804613fc  conv: unknown  params: 0 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   entry: 0x1804613fc  size: 62 (GhidraScript)  
+INFO  PakReadPathDecomp.java>   signature: undefined FUN_1804613fc(void) (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+void FUN_1804613fc(longlong *param_1)
+
+{
+  float fVar1;
+  float fVar2;
+  
+  fVar2 = (float)(**(code **)(**(longlong **)(*param_1 + 0x200) + 0x40))
+                           (*(longlong **)(*param_1 + 0x200),0);
+  fVar1 = *(float *)(param_1 + 1);
+  *(float *)(param_1 + 1) = fVar2 - fVar1;
+  *(float *)(*param_1 + 0x208) = (fVar2 - fVar1) + *(float *)(*param_1 + 0x208);
+  return;
+}
+
+ (GhidraScript)  
+INFO  PakReadPathDecomp.java> 
+done. (GhidraScript)  
