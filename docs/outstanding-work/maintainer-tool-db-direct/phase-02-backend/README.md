@@ -22,7 +22,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 | 1 backend skeleton + data-core import seam + version-tag→params adapter + health/load endpoint | DONE | c0b270c |
 | 1b data-core tag seam — optional `version=` on apply_seeds + 5 db_editor writes (A2; oracle-preserving) | DONE | 7ddb2a1 |
 | 2a data-core read seam — read_curated_set/read_entity_detail/read_version_rows + the single derive_status (policy.md 4-rule); the rule logic lives in the data-core, not the backend (D13/law 6) | DONE | 73966eb |
-| 2b backend read endpoints — call 2a + serialize to JSON (curated set / entity detail / version rows) | NOT STARTED | — |
+| 2b backend read endpoints — call 2a + serialize to JSON (curated set / entity detail / version rows) | DONE | 5cfa556 |
 | 3 field-delta API (D8) — saved-vs-prospective | NOT STARTED | — |
 | 4 save API — the six job shapes (validate→write→export→round-trip), no commit yet | NOT STARTED | — |
 | 5 git commit + push on confirm (D16) + auth-ready seams (D17, + dev default) | NOT STARTED | — |
