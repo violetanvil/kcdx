@@ -1,6 +1,7 @@
 ---
 paths:
-  - "src/address_library.*"
+  - "src/**"
+  - "include/**"
   - "data/seeds/**"
   - "**/kcdx.toml"
   - "test-plugins/**/kcdx.toml"

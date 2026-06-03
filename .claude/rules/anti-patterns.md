@@ -40,15 +40,15 @@ Each AP below is a **detection signature** — the forbidden code shape a review
 
 ---
 
-## AP1 — Raw RVA instead of an Address Library ID
+## AP1 — Hardcoded game address instead of an Address Library name/id
 
-**Forbidden:**
+**Forbidden:** a literal per-version-volatile game-binary target in `.cpp`/`.h` — an RVA / module offset, an AOB or byte-pattern locator, a vtable slot index, or a game-struct member offset — used to reach a game function or field. Anything whose correct value shifts when KCD2 patches.
 
 ```cpp
 auto fn = reinterpret_cast<UpdateFn>(base + 0x180ABCDEF);  // hardcoded offset
 ```
 
-**Fix:** add a row to the seed CSVs under `data/seeds/` (the DB regenerates from them — no in-source table to sync), resolve by ID. IDs are append-only — never renumber. Resolution order: `address-library.md`.
+**Fix:** resolve by name/id through the DB (`kcdx::ResolveAddress` / `ResolveByName` / `target = "<name>"`); the name supplies address AND verified ABI. A new entity goes in the DB via the seed CSVs under `data/seeds/` (user-approved, AP18), never an in-source literal. IDs are append-only — never renumber. The full in-source prohibition + the narrow non-address exception: `no-hardcoded-addresses.md`. Resolution order + DB shape: `address-library.md`.
 
 ---
 
