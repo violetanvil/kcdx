@@ -3,6 +3,39 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-03 — robust rollback: two mechanisms split at the irreversible commit (D21); correct the contradictory D19/§7 text
+
+The earlier D19/§7 text claimed "the deferred-commit ROLLBACK gives the robust post-failure
+rollback on ANY downstream failure (export/CSV/git)." Architect-review proved that internally
+contradictory: the data-core's commit(handle) COMMITs+closes both connections one-way (after it
+the deferred rollback raises), AND the export MUST run post-commit (export_seeds opens its own
+fresh connection and cannot read the uncommitted held txn). So the deferred rollback covers only
+a PRE-commit failure; export/integrity/git all run POST-commit, where it is unavailable.
+
+- **D21 (new) — the robust rollback is TWO mechanisms split at the commit.** (a) PRE-commit
+  failure (validation) → the deferred-commit ROLLBACK (4a) discards the held txn incl.
+  sqlite_sequence/PK bumps. (b) POST-commit failure (export/integrity/git) → a SCOPED
+  restore-point, a DATA-CORE capability (D13/law 6 — it owns the write semantics + the open
+  connections + knows the touched rows): before the irreversible commit it captures ONLY the
+  touched rows (address_versions/survival/game_versions/address_names, both DBs) + each DB's
+  sqlite_sequence + the data/db-export/ CSVs; on a post-commit failure it restores those rows,
+  resets the sequence, reverts the CSVs. A few-KB capture regardless of DB size — the ~1.3GB
+  DEV DB is never copied. Rejected: a full-file snapshot (copies 1.3GB per confirm — the
+  cornerstone order picks the cheaper mechanism for the same guarantee); git-failure-leaves-
+  DB-ahead-retryable (contradicts "nothing lands"); a backend restore-point (write-semantics
+  rule logic in the backend = a D13/law-6 violation).
+- **D19 + §5 + §7 + the frontmatter banner corrected** — the deferred rollback covers
+  PRE-commit; the scoped restore-point (D21) covers POST-commit; together a robust rollback on
+  ANY failure.
+
+**Integrated in:** §10 D21 (new) + D19 (rollback clause corrected), §5 (the db_editor mechanism
+paragraph), §7 (the save spine — Save-previews/Confirm-transacts + the two-mechanism rollback),
+the frontmatter banner.
+**Why:** the deferred-commit rollback cannot undo a post-commit failure (the commit is
+irreversible + the export must read the committed DB), so "on failure nothing lands" needs a
+separate pre-commit-captured restore-point; the scoped (touched-rows) form delivers the
+guarantee at a few-KB cost vs a 1.3GB file copy. User-settled 2026-06-03 (architect-review).
+
 ## 2026-06-03 — write mechanism: DIRECT-DB writes (not seed-rebuild); CSV export to data/db-export/
 
 The maintainer write path is corrected to match D1's vision (DB is the originator). The
