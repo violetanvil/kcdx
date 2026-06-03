@@ -62,14 +62,16 @@ field_delta = _seeds_shared.field_delta
 is_new_version_nothing_changed = _seeds_shared.is_new_version_nothing_changed
 
 # The deferred-commit surface (step 4a -- THE maintainer-tool write mechanism) the
-# save endpoints (step 4b) + the confirm/cancel endpoints (step 5) drive. A save
-# calls a db_editor write with defer_commit=True and gets back a DeferredCommit
-# HANDLE (the two open, uncommitted connections + the apply result); the held txn is
-# committed via commit(handle) on confirm / discarded via rollback(handle) on cancel,
-# a misuse (double-commit) raising DeferredCommitError. These four live in
-# import_to_sqlite (they operate on apply_seeds' open connections) and are re-exported
-# from seeds_shared LAZILY (PEP 562 __getattr__) to avoid the import cycle -- accessed
-# as attributes here so the lazy resolution fires on first use, not at import time.
+# step-5 CONFIRM endpoint drives. Confirm calls a db_editor write with
+# defer_commit=True and gets back a DeferredCommit HANDLE (the two open, uncommitted
+# connections + the apply result), then commits via commit(handle) on success /
+# discards via rollback(handle) on failure -- the WHOLE transaction inside the one
+# Confirm request (Save-previews/Confirm-transacts; nothing held across think-time).
+# Step 4b's Save endpoints do NOT use this -- a Save is preview-only (validate_only,
+# NO write); these names exist on the seam for step 5. They live in import_to_sqlite
+# (they operate on apply_seeds' open connections) and are re-exported from seeds_shared
+# LAZILY (PEP 562 __getattr__) to avoid the import cycle -- accessed as attributes here
+# so the lazy resolution fires on first use, not at import time.
 DeferredCommit = _seeds_shared.DeferredCommit
 DeferredCommitError = _seeds_shared.DeferredCommitError
 commit = _seeds_shared.commit

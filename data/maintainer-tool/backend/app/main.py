@@ -43,10 +43,10 @@ app.include_router(read_router)
 # distinct concern from the read routes, so its own router (structure-by-responsibility).
 app.include_router(delta_router)
 
-# The save endpoints (POST /save/*) -- the six job shapes, each opening a held
-# deferred-commit transaction (step 4b). Their own router + held-save registry
-# (structure-by-responsibility); the step-5 confirm/cancel endpoints resolve the held
-# txn through app.pending_saves.
+# The save (PREVIEW) endpoints (POST /save/*) -- the six job shapes, each VALIDATING
+# the prospective edit + returning the field-delta with NO DB write (step 4b,
+# Save-previews/Confirm-transacts model). Their own router (structure-by-
+# responsibility); the step-5 confirm endpoints run the actual transaction.
 app.include_router(save_router)
 
 

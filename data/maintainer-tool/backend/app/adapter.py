@@ -28,18 +28,19 @@ It holds NO data-core rule logic -- it does not validate seed content, run SQL, 
 touch the write gate. It maps a tag to the version facts; the data-core's gate is
 still the single validator on any write (D13/R3).
 
-HOW THE RESOLVED VersionContext REACHES THE DATA-CORE WRITE (settled, step 1b + 4a)
-----------------------------------------------------------------------------------
-The earlier open fork -- how a chosen tag threads into a write call whose signature
-accepted only `dll_path` -- is SETTLED. Step 1b (A2) added an OPTIONAL pre-resolved
-`version=(tag, ordinal)` param to apply_seeds + the five db_editor write functions:
-supply `version` and the data-core skips the DLL `.rdata` scan entirely (no DLL
-server-side, D15). So a save endpoint passes `version=(ctx.tag, ctx.ordinal)` +
-`dll_path=None` -- the adapter's `VersionContext` IS the data-core's param. There is
+HOW THE RESOLVED VersionContext REACHES THE DATA-CORE (settled, step 1b)
+-----------------------------------------------------------------------
+The earlier open fork -- how a chosen tag threads into a data-core call whose
+signature accepted only `dll_path` -- is SETTLED. Step 1b (A2) added an OPTIONAL
+pre-resolved `version=(tag, ordinal)` param to apply_seeds + the five db_editor
+functions: supply `version` and the data-core skips the DLL `.rdata` scan entirely
+(no DLL server-side, D15). So a save endpoint passes `version=(ctx.tag, ctx.ordinal)`
++ `dll_path=None` -- the adapter's `VersionContext` IS the data-core's param. There is
 no `dll_path` to fabricate; the adapter resolves the context, the endpoint passes it.
 This adapter therefore owns ONLY the tag -> `VersionContext` resolution; how it is
-consumed (the `version=` keyword on a deferred-commit write) is the save endpoint's
-(app.routes_save), not a translation step here.
+consumed (the `version=` keyword on a data-core call -- a Save's dry validate
+`validate_only=True`, a Confirm's write) is the endpoint's (app.routes_save /
+the step-5 confirm), not a translation step here.
 """
 import os
 import sqlite3

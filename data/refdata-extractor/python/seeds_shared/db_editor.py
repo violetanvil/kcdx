@@ -157,35 +157,43 @@ def _seed_paths(seed_dir):
 
 def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
                                        *, version=None, log=None,
-                                       defer_commit=False):
-    """Drive import_to_sqlite.apply_seeds over the prospective seeds under
-    prospective_seed_dir, repointing the importer's three seed-path module
-    constants for the duration (the round_trip.py / apply-oracle convention),
-    restoring them after. Returns apply_seeds' result (a result DICT in the default
-    immediate path; a DeferredCommit HANDLE when defer_commit=True); propagates
-    every typed error it raises (ValueError / VersionResolveError / VersionRefusal /
-    BaselineRefusal / RuntimeError) so the caller surfaces the precise reason -- a
-    validation failure means NO DB write (apply_seeds validates before opening any
-    DB).
+                                       defer_commit=False, validate_only=False):
+    """Drive import_to_sqlite over the prospective seeds under prospective_seed_dir,
+    repointing the importer's three seed-path module constants for the duration (the
+    round_trip.py / apply-oracle convention), restoring them after. Returns the
+    importer's result; propagates every typed error it raises (ValueError /
+    VersionResolveError / VersionRefusal / BaselineRefusal / RuntimeError) so the
+    caller surfaces the precise reason -- a validation failure means NO DB write
+    (the importer validates before opening any DB).
+
+    THREE drive modes (the caller picks one; the prospective-seed build above is
+    identical for all three -- only what is done with the validated state differs):
+      validate_only=True -- run import_to_sqlite.validate_prospective_seeds: the
+          dry-validate gate that STOPS before any DB open (the Save-PREVIEW seam,
+          step 4b). Returns {"tag", "ordinal"}; NO DB open, NO write, NO handle --
+          the DB is byte-identical. The save endpoints (app.routes_save) drive this.
+      defer_commit=True  -- run apply_seeds under one held outer txn per DB and
+          RETURN a DeferredCommit handle (the two open uncommitted connections);
+          Confirm (step 5) commits/rolls back. (validate_only takes precedence -- a
+          caller asking to validate never writes; the two are not combined.)
+      both False (default) -- run apply_seeds immediate: write + commit + close, a
+          result dict (the historical path; every landed oracle exercises it).
 
     `version` is a pre-resolved (tag, ordinal); when given, the DLL is not read --
     the caller already resolved the version, e.g. the web backend per
-    data/maintainer-tool/design.md D15. It threads straight to apply_seeds, which
-    requires EXACTLY ONE of dll_path / version.
+    data/maintainer-tool/design.md D15. It threads straight through, which requires
+    EXACTLY ONE of dll_path / version.
 
-    `defer_commit` threads straight to apply_seeds (step 4a -- THE maintainer-tool
-    write mechanism): when True, apply_seeds runs validate -> the per-DB writes under
-    one held outer txn per DB and RETURNS a DeferredCommit handle (the two open
-    uncommitted connections + result) instead of committing+closing; the caller
-    commits via import_to_sqlite.commit(handle) / discards via .rollback(handle).
     The export of the CURRENT DB that BUILT the prospective seed already happened in
     the caller (before this drive) -- it read the COMMITTED pre-edit state, so the
-    prospective seed is correct regardless of mode; deferring changes only whether
-    the resulting delta commits, not the seed it diffs against.
+    prospective seed is correct regardless of mode; the mode changes only whether
+    (and how) the resulting delta commits, not the seed it diffs against. In
+    validate_only mode nothing commits at all -- the seed is validated and discarded.
 
-    The seed-path-constant repointing is restored in `finally` -- it runs even in
-    deferred mode (the constants are global importer state, not the held txn), so a
-    held-open handle does not leave the importer's seed paths pointed at a temp dir.
+    The seed-path-constant repointing is restored in `finally` -- it runs in every
+    mode (the constants are global importer state, not the held txn), so neither a
+    held-open handle nor the validate path leaves the importer's seed paths pointed
+    at a temp dir.
 
     import_to_sqlite is imported lazily so this seeds_shared submodule carries no
     import-time dependency on import_to_sqlite (which imports seeds_shared)."""
@@ -196,6 +204,10 @@ def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
     (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
      imp.ADDRESS_VERSIONS_SEED_CSV) = _seed_paths(prospective_seed_dir)
     try:
+        if validate_only:
+            # The Save-PREVIEW gate: validate the prospective state, NO DB write.
+            return imp.validate_prospective_seeds(out_dir, dll_path, version=version,
+                                                  log=log)
         return imp.apply_seeds(out_dir, dll_path, version=version, log=log,
                                defer_commit=defer_commit)
     finally:
@@ -205,7 +217,7 @@ def _drive_apply_over_prospective_seed(out_dir, dll_path, prospective_seed_dir,
 
 def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
                        *, version=None, log=None, work_dir=None,
-                       defer_commit=False):
+                       defer_commit=False, validate_only=False):
     """Validate + atomically apply a one-row UPDATE to the address_versions row
     identified by (kcdx_id, valid_from_version), driving the existing seed->DB
     applier. Covers the audit-trio re-verify (Job 2 / US-3) and the full-column
@@ -243,8 +255,17 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
                             the two open uncommitted connections + the result) the
                             caller commits via import_to_sqlite.commit(handle) on
                             confirm / discards via .rollback(handle) on cancel.
+      validate_only      -- DEFAULT False. When True (the Save-PREVIEW seam, step
+                            4b): the prospective edit is VALIDATED through the
+                            data-core's gate and the call STOPS before any DB open --
+                            NO write, NO held txn, the DB byte-identical. Returns
+                            {"tag","ordinal"} on a valid edit; raises the validator's
+                            error on an invalid one (the same verdict apply_seeds
+                            would give). Takes precedence over defer_commit.
 
     Returns:
+      validate_only=True -- {"tag","ordinal"} (the version the edit validated
+                            against); the DB is untouched (Save preview).
       defer_commit=False -- apply_seeds' result dict (the per-DB counts -- for a
                             valid edit the edited row shows as 1 re-verified or is
                             folded into the full-column delta).
@@ -298,14 +319,17 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
                 f"valid_from_version={valid_from_version!r}) in the exported seed; "
                 f"the identity key matches no existing row (a stale or wrong key)")
 
-        # 3. Drive the existing validated atomic applier over the prospective seed.
-        #    apply_seeds validates the WHOLE prospective state through the single
-        #    shared gate BEFORE opening any DB -- a validation failure raises here
-        #    with NO DB write; a valid edit lands per-DB in BEGIN/COMMIT (immediate)
-        #    or under a held outer txn returned as a handle (defer_commit=True).
+        # 3. Drive the existing validated gate over the prospective seed.
+        #    validate_only=True (the Save-PREVIEW seam, step 4b) runs the data-core's
+        #    validation gate and STOPS before any DB open -- a validation failure
+        #    raises here with NO DB write, a valid edit returns {"tag","ordinal"} +
+        #    the DB is byte-identical. Otherwise apply_seeds validates the WHOLE
+        #    prospective state BEFORE opening any DB and a valid edit lands per-DB in
+        #    BEGIN/COMMIT (immediate) or under a held outer txn returned as a handle
+        #    (defer_commit=True).
         return _drive_apply_over_prospective_seed(
             out_dir, dll_path, prospective, version=version, log=log,
-            defer_commit=defer_commit)
+            defer_commit=defer_commit, validate_only=validate_only)
     finally:
         if owns_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
@@ -379,7 +403,8 @@ def _cell(value):
 
 
 def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
-                   *, version=None, log=None, work_dir=None, defer_commit=False):
+                   *, version=None, log=None, work_dir=None, defer_commit=False,
+                   validate_only=False):
     """Validate + atomically APPEND a new address_versions row (a new game-version
     row, Job 6 / US-6) for the EXISTING entity `kcdx_id`, driving the existing
     seed->DB applier. The new row's identity key is (kcdx_id, valid_from_version);
@@ -419,6 +444,14 @@ def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
     returned alongside. The caller gates on ap18_new_row / nothing_changed, then
     commits via import_to_sqlite.commit(result["result"]) on confirm or discards via
     .rollback(result["result"]) on cancel.
+
+    `validate_only` (DEFAULT False): when True (the Save-PREVIEW seam, step 4b), the
+    prospective append is VALIDATED through the data-core's gate and the call STOPS
+    before any DB open -- the returned dict's "result" is the validator's
+    {"tag","ordinal"} verdict, NO write, NO held txn, the DB byte-identical. The
+    ap18_new_row / nothing_changed flags still surface (they read the prospective
+    seed) so the Save preview shows them (D11/D12) before any write. An invalid
+    prospective row raises the validator's error. Takes precedence over defer_commit.
 
     Returns a dict on success (no exception == the row landed -- committed in
     immediate mode, HELD uncommitted in deferred mode):
@@ -496,13 +529,16 @@ def create_version(out_dir, dll_path, kcdx_id, valid_from_version, columns,
         # tuple-uniqueness + required + enum + FK.
         seed_csv_edit.append_row(versions_csv, new_cells)
 
-        # In deferred mode `result` is the DeferredCommit handle (held, uncommitted);
-        # in immediate mode it is apply_seeds' result dict. Either way it rides the
-        # "result" slot -- the AP18 + nothing_changed flags computed above are
-        # returned alongside so the confirm gate has them regardless of commit mode.
+        # `result` rides the "result" slot regardless of drive mode: in validate_only
+        # mode (the Save-PREVIEW seam) it is the validator's {"tag","ordinal"} verdict
+        # and NO DB write happened; in deferred mode a DeferredCommit handle (held,
+        # uncommitted); in immediate mode apply_seeds' result dict. The AP18 +
+        # nothing_changed flags computed above read the PROSPECTIVE SEED (not the DB),
+        # so they are correct in every mode -- the Save preview surfaces them (D11/D12)
+        # before any write, exactly as the confirm gate would.
         result = _drive_apply_over_prospective_seed(
             out_dir, dll_path, prospective, version=version, log=log,
-            defer_commit=defer_commit)
+            defer_commit=defer_commit, validate_only=validate_only)
         return {
             "result": result,
             "ap18_new_row": True,
@@ -535,7 +571,8 @@ def _new_version_nothing_changed(versions_csv, kcdx_id, new_cells):
 
 
 def create_entity(out_dir, dll_path, name, first_version_columns,
-                  *, version=None, log=None, work_dir=None, defer_commit=False):
+                  *, version=None, log=None, work_dir=None, defer_commit=False,
+                  validate_only=False):
     """Validate + atomically APPEND a brand-NEW entity (Job 1 / US-7): a new
     address_names row (assigned the next free kcdx_id, append-only) + its first
     address_versions row, driving the existing seed->DB applier. apply_seeds
@@ -571,6 +608,14 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
     is the DeferredCommit HANDLE instead of the plain apply result dict; ap18_new_row
     still surfaces. The caller commits via import_to_sqlite.commit(result["result"])
     on confirm / discards via .rollback(result["result"]) on cancel.
+
+    `validate_only` (DEFAULT False): when True (the Save-PREVIEW seam, step 4b), the
+    prospective new entity is VALIDATED through the data-core's gate and the call
+    STOPS before any DB open -- the returned dict's "result" is the validator's
+    {"tag","ordinal"} verdict, NO write, NO held txn, the DB byte-identical;
+    ap18_new_row still surfaces (read from the prospective seed) for the Save preview
+    (D11). An invalid prospective entity raises the validator's error. Takes
+    precedence over defer_commit.
 
     Returns a dict on success (committed immediate, HELD uncommitted deferred):
       {"result": <apply result>,   # immediate: apply_seeds' result dict.
@@ -630,11 +675,13 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
         version_cells["kcdx_id"] = str(kid)
         seed_csv_edit.append_row(versions_csv, version_cells)
 
-        # `result` is the DeferredCommit handle in deferred mode, apply_seeds' dict
-        # immediate -- it rides the "result" slot; ap18_new_row surfaces either way.
+        # `result` rides the "result" slot regardless of drive mode: the validator's
+        # {"tag","ordinal"} (validate_only -- NO DB write), a DeferredCommit handle
+        # (deferred), or apply_seeds' dict (immediate). ap18_new_row surfaces in every
+        # mode (read from the prospective seed, not the DB).
         result = _drive_apply_over_prospective_seed(
             out_dir, dll_path, prospective, version=version, log=log,
-            defer_commit=defer_commit)
+            defer_commit=defer_commit, validate_only=validate_only)
         return {
             "result": result,
             "ap18_new_row": True,
@@ -660,7 +707,7 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
 # ---------------------------------------------------------------------------
 def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
                                 action, log, work_dir, version=None,
-                                defer_commit=False):
+                                defer_commit=False, validate_only=False):
     """Shared driver for the lifecycle UPDATEs: export the current DB to a temp
     seed, fold `edits` into the address_names row keyed on `id == kcdx_id` (via
     seed_csv_edit.update_row_in_place, diff-preserved), and drive the existing
@@ -677,8 +724,16 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
     lands under a HELD outer txn that does NOT commit -- the returned dict's "result"
     is the DeferredCommit HANDLE the caller commits/rolls back later.
 
-    Returns a dict on success (committed immediate, HELD uncommitted deferred):
-      {"result": <apply result>,  # immediate: apply_seeds' result dict.
+    `validate_only` (the Save-PREVIEW seam, step 4b): when True the prospective
+    lifecycle edit is VALIDATED through the data-core's gate and the drive STOPS
+    before any DB open -- the returned dict's "result" is the validator's
+    {"tag","ordinal"} verdict, NO write, NO held txn, the DB byte-identical. Takes
+    precedence over defer_commit.
+
+    Returns a dict on success (validated no-write validate_only; committed immediate;
+    HELD uncommitted deferred):
+      {"result": <apply result>,  # validate_only: {"tag","ordinal"} (no DB write).
+                                   # immediate: apply_seeds' result dict.
                                    # deferred: a DeferredCommit handle.
        "action": <str>,           # 'supersede' or 'deprecate'
        "kcdx_id": <int>}          # the entity edited (identity unchanged)
@@ -724,14 +779,15 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
                 f"no address_names seed row for id={kcdx_id} in the exported seed; "
                 f"the identity key matches no existing entity (a stale or wrong id)")
 
-        # 3. Drive the existing validated atomic applier. apply_seeds validates the
-        #    WHOLE prospective names seed (pair-integrity, no-self-supersede,
-        #    acyclicity, replacement-requires-deprecated) BEFORE opening any DB -- a
-        #    violation raises here with NO DB write; a valid edit lands per-DB in
-        #    BEGIN/COMMIT.
+        # 3. Drive the existing validated gate. The data-core validates the WHOLE
+        #    prospective names seed (pair-integrity, no-self-supersede, acyclicity,
+        #    replacement-requires-deprecated) BEFORE opening any DB -- a violation
+        #    raises here with NO DB write. validate_only STOPS there (Save preview, no
+        #    write); otherwise a valid edit lands per-DB in BEGIN/COMMIT (immediate)
+        #    or under a held outer txn (deferred).
         result = _drive_apply_over_prospective_seed(
             out_dir, dll_path, prospective, version=version, log=log,
-            defer_commit=defer_commit)
+            defer_commit=defer_commit, validate_only=validate_only)
         return {"result": result, "action": action, "kcdx_id": int(kcdx_id)}
     finally:
         if owns_work_dir:
@@ -740,7 +796,7 @@ def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
 
 def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
                      superseded_at_version, *, version=None, log=None,
-                     work_dir=None, defer_commit=False):
+                     work_dir=None, defer_commit=False, validate_only=False):
     """Validate + atomically set the SUPERSESSION edge on the existing address_names
     row `kcdx_id` (Job 4 / US-8): superseded_by + superseded_at_version TOGETHER,
     driving the existing seed->DB applier. The successor name + the version are
@@ -794,12 +850,13 @@ def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
     return _drive_names_lifecycle_edit(
         out_dir, dll_path, kcdx_id, edits,
         action="supersede", log=log, work_dir=work_dir, version=version,
-        defer_commit=defer_commit)
+        defer_commit=defer_commit, validate_only=validate_only)
 
 
 def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
                      deprecated_at_version=None, deprecation_replacement=None,
-                     version=None, log=None, work_dir=None, defer_commit=False):
+                     version=None, log=None, work_dir=None, defer_commit=False,
+                     validate_only=False):
     """Validate + atomically set the DEPRECATION flags on the existing address_names
     row `kcdx_id` (Job 5 / US-8): is_deprecated + deprecated_at_version TOGETHER,
     with deprecation_replacement allowed ONLY when deprecated, driving the existing
@@ -863,4 +920,4 @@ def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
     return _drive_names_lifecycle_edit(
         out_dir, dll_path, kcdx_id, edits,
         action="deprecate", log=log, work_dir=work_dir, version=version,
-        defer_commit=defer_commit)
+        defer_commit=defer_commit, validate_only=validate_only)

@@ -2077,6 +2077,72 @@ def apply_seeds(out_dir, dll_path, *, version=None, log=None, defer_commit=False
             "counts": {"user": u, "dev": d}}
 
 
+def validate_prospective_seeds(out_dir, dll_path=None, *, version=None, log=None):
+    """DRY-VALIDATE the prospective seed state — run apply_seeds' validation gate
+    and STOP before any DB open or write. The Save-PREVIEW seam (maintainer-tool
+    step 4b): the maintainer-tool's Save shows the field-delta + the validator's
+    verdict for a prospective edit WITHOUT touching the DB; the write happens only
+    on Confirm (step 5). This runs the SAME gate apply_seeds runs at its step 2
+    (`_validate_full_seed_state` + the version-tag refusal) so a Save's verdict is
+    the data-core's single validator (design D13/law 6), never a backend re-impl.
+
+    WHY a separate entry, not apply_seeds(defer_commit=...): every apply_seeds path
+    OPENS both DBs and writes (immediate or held). A Save must leave the DB
+    BYTE-IDENTICAL — no open connection, no held txn, nothing to commit/rollback.
+    So this entry runs steps 0–2 of apply_seeds' spine and RETURNS at the boundary,
+    before step 3 (the DB open). The seed-path module constants name the prospective
+    seed (the db_editor.validate_* callers repoint them exactly as the write path
+    does); this entry reads them through `_validate_full_seed_state` — identical to
+    the write path's gate, so the verdict is the same.
+
+    Parameters mirror apply_seeds' version contract: supply EXACTLY ONE of dll_path
+    / version (the maintainer-tool always passes `version=(tag, ordinal)`, no DLL
+    server-side — D15). `log` is an optional progress callable.
+
+    Returns {"tag", "ordinal"} — the resolved version the Save validated against —
+    on success. Raises the SAME typed errors apply_seeds raises before its DB open,
+    and like that path leaves NO DB write (here there is no DB open at all):
+      ValueError          -- neither dll_path nor version, or both.
+      VersionResolveError -- a DLL .rdata version could not be resolved.
+      VersionRefusal      -- the version is one the baseline + seeds don't cover.
+      RuntimeError        -- a seed-state validation failure (the shared validator's
+                             verdict — a duplicate tuple, partial trio, supersession
+                             cycle, missing required column, …).
+    """
+    def _emit(msg):
+        if log is not None:
+            log(msg)
+
+    # 0. EXACTLY ONE of dll_path / version — the same caller contract apply_seeds
+    #    enforces; a Save with neither/both is a backend bug, surfaced loudly.
+    if (dll_path is None) == (version is None):
+        raise ValueError(
+            "validate_prospective_seeds needs EXACTLY ONE of dll_path or version: "
+            "supply a DLL to resolve the version from, OR a pre-resolved (tag, "
+            "ordinal) — never both and never neither.")
+
+    # 1. Determine + refuse the target version, identically to apply_seeds step 1.
+    #    The maintainer-tool pre-resolves it (version=, no DLL — D15); a DLL path is
+    #    accepted for parity with apply_seeds' contract.
+    if version is not None:
+        tag, ordinal = version
+        _emit(f"  target version (pre-resolved by caller): tag={tag} ordinal={ordinal}")
+    else:
+        tag, ordinal = resolve_version(dll_path)
+        _emit(f"  target version (from DLL .rdata): tag={tag} ordinal={ordinal}")
+    if tag != GAME_VERSION_TAG:
+        raise VersionRefusal(
+            f"version {tag!r} is not covered: the baseline + seeds only cover "
+            f"{GAME_VERSION_TAG!r}; run --rebuild for {tag!r} first.", tag=tag)
+
+    # 2. Run the FULL seed-state validation gate. Any failure raises (RuntimeError)
+    #    — the SAME gate apply_seeds runs at its step 2. NO DB open follows: this
+    #    entry returns the validated version, the write is the Confirm step's.
+    _validate_full_seed_state()
+    _emit("  prospective seed validated (no DB write — Save preview)")
+    return {"tag": tag, "ordinal": ordinal}
+
+
 def run_apply(out_dir, dll_path):
     """APPLY mode, CLI wrapper: thin shell over the library applier apply_seeds.
     Prints the banner + progress + the per-DB summary, and maps the library's

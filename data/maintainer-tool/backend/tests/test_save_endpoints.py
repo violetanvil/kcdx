@@ -1,33 +1,25 @@
-"""test_save_endpoints.py -- the backend save endpoints (Phase 2 step 4b).
+"""test_save_endpoints.py -- the backend save (PREVIEW) endpoints (Phase 2 step 4b).
 
 WHAT THIS PROVES
 ----------------
-The six save endpoints drive the data-core's DEFERRED-COMMIT write path end-to-end
+The six save endpoints DRY-VALIDATE a prospective edit and return the field-delta
 over the REAL app + the REAL data-core + the REAL mini-dump DBs (no mock of either --
 the R3/law-6 self-check: TestClient drives FastAPI against the real /save/* routes,
-which call real seeds_shared.db_editor in defer_commit mode). The backend is a THIN
-CALLER: each case asserts the endpoint OPENS a held transaction (the write is
-written-but-UNCOMMITTED -- a separate read-only DB read still sees the OLD value),
-surfaces the data-core's result/flags, and -- on an invalid edit -- aborts with an
-HTTP error, NO write, NO held txn. The write CORRECTNESS is the data-core's oracles
-(test_db_editor_*); this step asserts the endpoint drives the deferred seam + holds
-the txn for step 5.
+which call real seeds_shared.db_editor in validate_only mode). The backend is a THIN
+CALLER: each case asserts the endpoint returns the field-delta + the validator's
+verdict (valid/invalid) + the create flags (AP18 / nothing_changed), and -- the
+load-bearing property -- WRITES NOTHING: a Save (valid OR invalid) leaves the DB
+BYTE-IDENTICAL. The write CORRECTNESS is the data-core's oracles (test_db_editor_* +
+test_validate_prospective); this step asserts the endpoint drives the dry-validate
+seam + shapes the preview for s06.
 
-THE HELD-BUT-UNCOMMITTED PROOF (the load-bearing assertion)
-----------------------------------------------------------
-After a successful save the transaction is HELD OPEN, not committed. A SEPARATE
-read-only connection to the SAME user DB still reads the PRE-edit value (an
-uncommitted SQLite transaction is invisible to other connections). That is the proof
-the endpoint opened a deferred txn and did NOT commit -- step 5 owns the commit.
-
-THE THREAD-AFFINITY PROOF (the step's load-bearing constraint)
---------------------------------------------------------------
-The data-core opens the held connections with check_same_thread=True; the save runs
-on the registry's per-save single-thread executor so the connections belong to that
-thread, and step 5's commit/rollback run on the SAME executor. A test rolls the held
-txn back THROUGH the registry's executor (the step-5 seam) and asserts the DB is
-byte-identical -- proving the held txn is discardable from a different request thread
-without the cross-thread sqlite3.ProgrammingError the constraint warns of.
+THE NO-WRITE PROOF (the load-bearing assertion)
+-----------------------------------------------
+Save is PREVIEW-ONLY (plan-spec "Save-previews / Confirm-transacts -- NOTHING held
+across think-time", user-settled 2026-06-03). After ANY Save -- valid, invalid, a
+create, a lifecycle edit -- the DB file is BYTE-IDENTICAL to before. There is no held
+transaction, no registry, no open connection to check: the proof IS the byte-identical
+DB. The write is the Confirm step's (step 5), not this one.
 
 RUN
 ---
@@ -37,7 +29,6 @@ import hashlib
 import logging
 import os
 import shutil
-import sqlite3
 import sys
 import tempfile
 
@@ -56,10 +47,8 @@ sys.path.insert(0, BACKEND_DIR)
 sys.path.insert(0, DATA_CORE_PYDIR)
 
 import import_to_sqlite as imp                      # noqa: E402
-from app import data_core                           # noqa: E402
 from app.config import CHECKOUT_ENV_VAR             # noqa: E402
 from app.main import app                            # noqa: E402
-from app.pending_saves import REGISTRY              # noqa: E402
 
 DUMP_DIR = os.path.join(DATA_CORE_TESTS, "fixtures", "mini-dump",
                         "refdata-1.5.1164953")
@@ -67,14 +56,14 @@ SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
               "address_versions_seed.csv")
 
 GVT = imp.GAME_VERSION_TAG          # "1.5.1164953" -- the only known version
-GVO = imp.GAME_VERSION_ORDINAL
 
 
 def _build_resolved_checkout():
     """A temp checkout laid out as app.config derives it -- <root>/data/seeds/ with
     the three seed CSVs + the rebuilt reference DBs (the read-test's pattern). Each
-    save test gets a FRESH checkout (function scope) so a held/aborted save never
-    pollutes another test's DB. Skips (not fails) if the mini-dump fixture is absent."""
+    save test gets a FRESH checkout (function scope) -- though a preview writes
+    nothing, a fresh DB keeps the byte-identical baseline unambiguous per test.
+    Skips (not fails) if the mini-dump fixture is absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
@@ -100,8 +89,7 @@ def _build_resolved_checkout():
 
 @pytest.fixture()
 def checkout():
-    """A FRESH resolved checkout per test (function scope) -- a held save leaves its
-    txn open until reaped, so each test must not see another's DB state."""
+    """A FRESH resolved checkout per test (function scope)."""
     root = _build_resolved_checkout()
     yield root
     shutil.rmtree(root, ignore_errors=True)
@@ -125,102 +113,67 @@ def _user_db(checkout_root):
     return os.path.join(_out_dir(checkout_root), "reference.sqlite")
 
 
+def _dev_db(checkout_root):
+    return os.path.join(_out_dir(checkout_root), "reference-dev.sqlite")
+
+
 def _db_hash(checkout_root):
-    """A content hash of the user DB file -- the byte-identical proof for the
-    no-write-on-invalid + the rollback-leaves-clean cases. Read after closing every
-    handle the test opened (a held save keeps its OWN connections open, but the FILE
-    on disk is unchanged until commit, so the bytes match the pre-save hash)."""
-    with open(_user_db(checkout_root), "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
+    """A content hash over BOTH reference DB FILES -- the byte-identical no-write
+    proof. A Save is preview-only: the files are unchanged before and after every
+    Save (valid or invalid), so this hash matches the pre-save hash."""
+    h = hashlib.sha256()
+    for db in (_user_db(checkout_root), _dev_db(checkout_root)):
+        with open(db, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
 
 
-def _read_trio_cell(checkout_root, kcdx_id, valid_from, column):
-    """Read one address_versions cell from a SEPARATE read-only connection -- the
-    held-but-uncommitted proof. An uncommitted save's edit is invisible here, so this
-    returns the PRE-edit value while the txn is held. The column is a raw DB column
-    (the data-core stores last_verified_at_version as a game_versions.id FK; we read
-    verified_by/verified_date which are plain text -- visible old-vs-not changes)."""
-    con = sqlite3.connect(f"file:{_user_db(checkout_root)}?mode=ro", uri=True)
-    try:
-        row = con.execute(
-            f"SELECT av.{column} FROM address_versions av "
-            "JOIN game_versions gv ON av.valid_from = gv.id "
-            "WHERE av.kcdx_id = ? AND gv.tag = ?",
-            (kcdx_id, valid_from)).fetchone()
-        return row[0] if row else None
-    finally:
-        con.close()
+def _field(body, name):
+    """The (old, new) of one field in the response's field_delta list, or None."""
+    for c in body["field_delta"]:
+        if c["field"] == name:
+            return (c["old"], c["new"])
+    return None
 
 
-def _count_versions(checkout_root, kcdx_id):
-    """Count an entity's address_versions rows from a SEPARATE read-only connection --
-    the held-but-uncommitted proof for a create-version (the new row is invisible
-    until commit)."""
-    con = sqlite3.connect(f"file:{_user_db(checkout_root)}?mode=ro", uri=True)
-    try:
-        return con.execute(
-            "SELECT COUNT(*) FROM address_versions WHERE kcdx_id = ?",
-            (kcdx_id,)).fetchone()[0]
-    finally:
-        con.close()
-
-
-def _reap(save_id):
-    """Roll back + discard a held save through the registry's executor (the step-5
-    cancel SEAM) so a test's held txn does not leak into the next test. Idempotent --
-    a missing save_id is a no-op. This IS the minimal internal rollback-via-registry
-    the step builds to test the held state can be cleaned up; the HTTP cancel endpoint
-    is step 5."""
-    if save_id in REGISTRY.pending_ids():
-        REGISTRY.run_on_executor(save_id, data_core.rollback)
-        REGISTRY.discard(save_id)
+# A NEW game-version tag for a new VERSION ROW (the row's valid_from_version, a seed
+# cell -- distinct from the RESOLUTION version_tag, which stays GVT/known). A new
+# version at a NEW tag validates cleanly + surfaces the AP18/D12 flags but
+# materializes 0 rows (the apply diff materializes only baseline-version rows --
+# policy.md; the data-core's own create_version oracle uses this exact pattern). It is
+# the constructible valid preview for create-version in a single-version fixture.
+NEW_ROW_TAG = "1.6.2000000"
 
 
 # ============================================================================
-# The six job shapes -- each opens a held deferred-commit save (written-but-
-# UNCOMMITTED: a separate read still sees the OLD value), returns a save_id + the
-# result/flags, and is reaped (rolled back) so the txn does not leak.
+# The six job shapes -- each Save VALIDATES a valid prospective edit, returns the
+# field-delta + valid:true (+ the create flags), and WRITES NOTHING (byte-identical).
 # ============================================================================
-def test_update_version_holds_uncommitted(checkout, client_at):
+def test_update_version_previews_valid(checkout, client_at):
     client = client_at(checkout)
-    # The PRE-edit verified_by on (kcdx_id=1, GVT) -- the held-state baseline.
-    before = _read_trio_cell(checkout, 1, GVT, "verified_by")
-    assert before is not None
+    db_before = _db_hash(checkout)
 
     resp = client.post("/save/update-version", json={
         "version_tag": GVT,
         "kcdx_id": 1,
         "valid_from_version": GVT,
         "edits": {"verified_by": "ChangedReviewer"},
-        "saved": {"verified_by": before},
+        "saved": {"verified_by": "OldReviewer"},
         "prospective": {"verified_by": "ChangedReviewer"},
     })
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    save_id = body["save_id"]
-    try:
-        assert save_id in REGISTRY.pending_ids(), "the txn must be HELD"
-        # HELD-BUT-UNCOMMITTED: a separate read still sees the OLD verified_by.
-        assert _read_trio_cell(checkout, 1, GVT, "verified_by") == before, \
-            "the held (uncommitted) edit must be invisible to a separate read"
-        # The field delta surfaced (the data-core's, over saved/prospective).
-        assert any(c["field"] == "verified_by" for c in body["field_delta"]), body
-        # An UPDATE is NOT AP18-gated.
-        assert "ap18_new_row" not in body, body
-    finally:
-        _reap(save_id)
+    assert body["valid"] is True, body
+    assert body["errors"] == [], body
+    # The field delta surfaced (the data-core's, over saved/prospective).
+    assert _field(body, "verified_by") == ("OldReviewer", "ChangedReviewer"), body
+    # An UPDATE is NOT AP18-gated.
+    assert "ap18_new_row" not in body, body
+    # NO WRITE: the DB is byte-identical -- a Save preview touches nothing.
+    assert _db_hash(checkout) == db_before, "a Save preview must not touch the DB"
 
 
-# A NEW game-version tag for the new VERSION ROW (the row's valid_from_version, a seed
-# cell -- distinct from the RESOLUTION version_tag, which stays GVT/known). A new
-# version at a NEW tag validates cleanly + surfaces the AP18/D12 flags but
-# materializes 0 rows (the apply diff materializes only baseline-version rows --
-# policy.md; the data-core's own create_version oracle uses this exact pattern). It is
-# the constructible held-success for create-version in a single-version fixture.
-NEW_ROW_TAG = "1.6.2000000"
-
-
-def test_create_version_holds_uncommitted_and_flags_ap18(checkout, client_at):
+def test_create_version_previews_valid_and_flags_ap18(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
     # A NEW version row for an existing entity at a NEW valid_from_version, with a
@@ -238,28 +191,19 @@ def test_create_version_holds_uncommitted_and_flags_ap18(checkout, client_at):
     })
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    save_id = body["save_id"]
-    try:
-        assert save_id in REGISTRY.pending_ids(), "the txn must be HELD"
-        # AP18 surfaced for a new version (D11); D12 nothing_changed is FALSE (rva
-        # differs from the source).
-        assert body["ap18_new_row"] is True, body
-        assert body["addition_kind"] == "version", body
-        assert body["nothing_changed"] is False, body
-        # HELD-BUT-UNCOMMITTED: the DB file is byte-identical until commit.
-        assert _db_hash(checkout) == db_before, \
-            "the held (uncommitted) create-version must not touch the DB file"
-    finally:
-        _reap(save_id)
+    assert body["valid"] is True, body
+    # AP18 surfaced for a new version (D11); D12 nothing_changed is FALSE (rva differs).
+    assert body["ap18_new_row"] is True, body
+    assert body["addition_kind"] == "version", body
+    assert body["nothing_changed"] is False, body
+    assert _db_hash(checkout) == db_before, "the create-version preview wrote nothing"
 
 
-def test_create_entity_holds_uncommitted_and_flags_ap18(checkout, client_at):
+def test_create_entity_previews_valid_and_flags_ap18(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
     # A data_slot kind at a high RVA MINTS (fingerprint NULL) without the
-    # function-kind bulk-baseline gate (mirrors the data-core's create-entity oracle,
-    # which uses a non-function kind so the test exercises the INSERT machinery, not
-    # the function-promote baseline). 0x09000000 is well past any function entry.
+    # function-kind bulk-baseline gate (mirrors the data-core's create-entity oracle).
     resp = client.post("/save/create-entity", json={
         "version_tag": GVT,
         "name": "kcdx_test_new_entity",
@@ -272,24 +216,15 @@ def test_create_entity_holds_uncommitted_and_flags_ap18(checkout, client_at):
     })
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    save_id = body["save_id"]
-    try:
-        assert save_id in REGISTRY.pending_ids(), "the txn must be HELD"
-        # AP18 surfaced for a new entity (D11).
-        assert body["ap18_new_row"] is True, body
-        assert body["addition_kind"] == "entity", body
-        assert isinstance(body["kcdx_id"], int) and body["kcdx_id"] > 0, body
-        # HELD-BUT-UNCOMMITTED: the new entity is invisible to a separate read (the
-        # DB FILE is byte-identical until commit).
-        assert _db_hash(checkout) == db_before, \
-            "the held (uncommitted) new entity must not touch the DB file"
-        assert _count_versions(checkout, body["kcdx_id"]) == 0, \
-            "the new entity's row is invisible to a separate read until commit"
-    finally:
-        _reap(save_id)
+    assert body["valid"] is True, body
+    # AP18 surfaced for a new entity (D11); the assigned id surfaced.
+    assert body["ap18_new_row"] is True, body
+    assert body["addition_kind"] == "entity", body
+    assert isinstance(body["kcdx_id"], int) and body["kcdx_id"] > 0, body
+    assert _db_hash(checkout) == db_before, "the create-entity preview wrote nothing"
 
 
-def test_supersede_holds_uncommitted(checkout, client_at):
+def test_supersede_previews_valid(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
     # Supersede entity 1 BY entity 2 (CGame_Update) at GVT -- a valid edge (no self-
@@ -304,18 +239,13 @@ def test_supersede_holds_uncommitted(checkout, client_at):
     })
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    save_id = body["save_id"]
-    try:
-        assert save_id in REGISTRY.pending_ids(), "the txn must be HELD"
-        assert "ap18_new_row" not in body, "supersede is an UPDATE, not AP18-gated"
-        # HELD-BUT-UNCOMMITTED: the DB file is byte-identical until commit.
-        assert _db_hash(checkout) == db_before, \
-            "the held (uncommitted) supersede must not touch the DB file"
-    finally:
-        _reap(save_id)
+    assert body["valid"] is True, body
+    assert _field(body, "superseded_by") == ("", "CGame_Update"), body
+    assert "ap18_new_row" not in body, "supersede is an UPDATE, not AP18-gated"
+    assert _db_hash(checkout) == db_before, "the supersede preview wrote nothing"
 
 
-def test_deprecate_holds_uncommitted(checkout, client_at):
+def test_deprecate_previews_valid(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
     resp = client.post("/save/deprecate", json={
@@ -328,30 +258,21 @@ def test_deprecate_holds_uncommitted(checkout, client_at):
     })
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    save_id = body["save_id"]
-    try:
-        assert save_id in REGISTRY.pending_ids(), "the txn must be HELD"
-        assert "ap18_new_row" not in body, "deprecate is an UPDATE, not AP18-gated"
-        assert _db_hash(checkout) == db_before, \
-            "the held (uncommitted) deprecate must not touch the DB file"
-    finally:
-        _reap(save_id)
+    assert body["valid"] is True, body
+    assert "ap18_new_row" not in body, "deprecate is an UPDATE, not AP18-gated"
+    assert _db_hash(checkout) == db_before, "the deprecate preview wrote nothing"
 
 
 # ============================================================================
-# The D12 nothing-changed verdict fires for an identical new version.
+# The D12 nothing-changed verdict fires for an identical new version preview.
 # ============================================================================
 def test_create_version_nothing_changed_fires(checkout, client_at):
     """A new version IDENTICAL to its source on every authored column except
     valid_from_version surfaces nothing_changed=True (D12 -- steer to re-verify). Use
     a NULL-trio non-function source (kcdx_id 19, a vtable_index with vtable_slot=4) so
-    the identical copy at the NEW tag is itself apply-valid; the new-tag row validates
-    + surfaces the flags (and materializes 0 rows -- the single-version-fixture
-    pattern). The held txn is reaped."""
+    the identical copy at the NEW tag is itself apply-valid."""
     client = client_at(checkout)
     db_before = _db_hash(checkout)
-    # An IDENTICAL copy of entity 19's source row at the new tag -- same module/kind/
-    # vtable_slot, NULL trio. Only valid_from_version differs -> nothing_changed True.
     resp = client.post("/save/create-version", json={
         "version_tag": GVT,
         "kcdx_id": 19,
@@ -364,114 +285,123 @@ def test_create_version_nothing_changed_fires(checkout, client_at):
     })
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    save_id = body["save_id"]
-    try:
-        assert body["ap18_new_row"] is True, body
-        assert body["nothing_changed"] is True, \
-            "D12 nothing_changed must fire for an identical-except-valid_from copy"
-        assert _db_hash(checkout) == db_before, "the held create-version writes nothing"
-    finally:
-        _reap(save_id)
+    assert body["valid"] is True, body
+    assert body["ap18_new_row"] is True, body
+    assert body["nothing_changed"] is True, \
+        "D12 nothing_changed must fire for an identical-except-valid_from copy"
+    assert _db_hash(checkout) == db_before, "the create-version preview wrote nothing"
 
 
 # ============================================================================
-# Invalid edits per shape -> HTTP error, NO save_id, DB byte-identical, logged.
+# Invalid edits per shape -> valid:false + the validator's error, DB byte-identical,
+# logged. The field-delta is still shown (WHAT was tried alongside WHY it is invalid).
 # ============================================================================
 def test_invalid_update_unknown_column_aborts(checkout, client_at, caplog):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
-    pending_before = REGISTRY.pending_ids()
     with caplog.at_level(logging.WARNING, logger="app.routes_save"):
         resp = client.post("/save/update-version", json={
             "version_tag": GVT,
             "kcdx_id": 1,
             "valid_from_version": GVT,
-            # `kcdx_id` is the identity key -- never editable (DbEditError).
+            # `kcdx_id` is the identity key -- never editable (DbEditError -> 422,
+            # a malformed edit SHAPE, the caller's bug -- not a validation verdict).
             "edits": {"kcdx_id": "999"},
         })
     assert resp.status_code == 422, resp.text
-    assert REGISTRY.pending_ids() == pending_before, "no held txn on an invalid edit"
     assert _db_hash(checkout) == db_before, "the DB is byte-identical on a reject"
-    assert any("save rejected" in r.message for r in caplog.records), \
+    assert any("save preview rejected" in r.message for r in caplog.records), \
         [r.message for r in caplog.records]
 
 
-def test_invalid_update_malformed_date_aborts(checkout, client_at):
+def test_invalid_update_malformed_date_previews_invalid(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
-    pending_before = REGISTRY.pending_ids()
-    # A partial trio / malformed verified_date is the validator's reject. Set only
-    # verified_date to a malformed value while the other trio cells stay -> the
-    # validator rejects (a malformed date / a trio that is no longer all-set-or-null).
+    # A malformed verified_date is the validator's reject (a CONTENT verdict, not a
+    # shape error) -> 200 valid:false + the error, NOT an HTTP error.
     resp = client.post("/save/update-version", json={
         "version_tag": GVT,
         "kcdx_id": 1,
         "valid_from_version": GVT,
         "edits": {"verified_date": "not-a-date"},
+        "saved": {"verified_date": ""},
+        "prospective": {"verified_date": "not-a-date"},
     })
-    assert resp.status_code == 422, resp.text
-    assert REGISTRY.pending_ids() == pending_before, "no held txn on a validator reject"
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valid"] is False, body
+    assert body["errors"] and isinstance(body["errors"][0], str), body
     assert _db_hash(checkout) == db_before, "the DB is byte-identical on a reject"
 
 
-def test_invalid_create_entity_missing_required_aborts(checkout, client_at):
+def test_invalid_create_entity_missing_required_previews_invalid(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
-    pending_before = REGISTRY.pending_ids()
     # Missing required `module` / `kind` on the first version row -> the validator
-    # rejects (no write, no held txn).
+    # rejects (a content verdict) -> 200 valid:false. No write.
     resp = client.post("/save/create-entity", json={
         "version_tag": GVT,
         "name": "kcdx_missing_required",
         "first_version_columns": {"valid_from_version": GVT},
+        "saved": {},
+        "prospective": {"name": "kcdx_missing_required"},
     })
-    assert resp.status_code == 422, resp.text
-    assert REGISTRY.pending_ids() == pending_before
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valid"] is False, body
+    assert body["errors"], body
     assert _db_hash(checkout) == db_before, "no write on an invalid create-entity"
 
 
-def test_invalid_supersede_self_aborts(checkout, client_at):
+def test_invalid_supersede_self_previews_invalid(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
-    pending_before = REGISTRY.pending_ids()
     # Entity 1 superseding ITSELF (superseded_by == its own name "lua_pcall") is a
-    # validator HARD ERROR (no self-supersede) -> 422, no write.
+    # validator HARD ERROR (no self-supersede) -> 200 valid:false, no write.
     resp = client.post("/save/supersede", json={
         "version_tag": GVT,
         "kcdx_id": 1,
         "superseded_by": "lua_pcall",
         "superseded_at_version": GVT,
+        "saved": {"superseded_by": ""},
+        "prospective": {"superseded_by": "lua_pcall"},
     })
-    assert resp.status_code == 422, resp.text
-    assert REGISTRY.pending_ids() == pending_before
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valid"] is False, body
+    assert body["errors"], body
     assert _db_hash(checkout) == db_before, "no write on a self-supersede"
 
 
-def test_invalid_deprecate_replacement_without_deprecated_aborts(checkout, client_at):
+def test_invalid_deprecate_replacement_without_deprecated_previews_invalid(checkout,
+                                                                           client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
-    pending_before = REGISTRY.pending_ids()
     # deprecation_replacement set while NOT deprecated is a validator HARD ERROR
-    # (replacement-requires-deprecated) -> 422, no write.
+    # (replacement-requires-deprecated) -> 200 valid:false, no write.
     resp = client.post("/save/deprecate", json={
         "version_tag": GVT,
         "kcdx_id": 1,
         "is_deprecated": False,
         "deprecation_replacement": "CGame_Update",
+        "saved": {"deprecation_replacement": ""},
+        "prospective": {"deprecation_replacement": "CGame_Update"},
     })
-    assert resp.status_code == 422, resp.text
-    assert REGISTRY.pending_ids() == pending_before
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valid"] is False, body
+    assert body["errors"], body
     assert _db_hash(checkout) == db_before, "no write on replacement-without-deprecated"
 
 
 # ============================================================================
 # The version= path (no DLL): a valid tag resolves via the adapter; an unknown tag
-# -> the adapter's VersionTagError -> an HTTP error. No dll_path ever read.
+# -> the adapter's VersionTagError -> an HTTP 422 (bad input, before the data-core).
+# No dll_path ever read; the DB is byte-identical.
 # ============================================================================
 def test_unknown_version_tag_aborts(checkout, client_at, caplog):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
-    pending_before = REGISTRY.pending_ids()
     with caplog.at_level(logging.WARNING, logger="app.routes_save"):
         resp = client.post("/save/update-version", json={
             "version_tag": "9.9.9999999",      # not a known game version
@@ -481,44 +411,6 @@ def test_unknown_version_tag_aborts(checkout, client_at, caplog):
         })
     assert resp.status_code == 422, resp.text
     assert "not a known game version" in resp.text
-    assert REGISTRY.pending_ids() == pending_before, "no held txn on an unknown tag"
     assert _db_hash(checkout) == db_before, "the DB is byte-identical on an unknown tag"
     assert any("unknown version tag" in r.message for r in caplog.records), \
         [r.message for r in caplog.records]
-
-
-# ============================================================================
-# The thread-affinity mechanism: the save runs on the registry's executor, the
-# handle is retrievable by save_id, and a rollback THROUGH the registry's executor
-# (the step-5 cancel seam) leaves the DB byte-identical -- the held txn discardable
-# from a different request thread with no cross-thread sqlite3.ProgrammingError.
-# ============================================================================
-def test_registry_holds_handle_and_rollback_via_executor_leaves_clean(checkout,
-                                                                       client_at):
-    client = client_at(checkout)
-    db_before = _db_hash(checkout)
-    resp = client.post("/save/update-version", json={
-        "version_tag": GVT,
-        "kcdx_id": 1,
-        "valid_from_version": GVT,
-        "edits": {"verified_by": "ThreadAffinityProbe"},
-    })
-    assert resp.status_code == 200, resp.text
-    save_id = resp.json()["save_id"]
-
-    # The registry HOLDS the handle for a later commit/rollback (step 5's seam).
-    assert save_id in REGISTRY.pending_ids()
-    handle = REGISTRY.get(save_id)
-    assert handle is not None and not handle.finished, "the handle is held, open"
-
-    # Roll back THROUGH the registry's executor -- the SAME thread that opened the
-    # connections (thread affinity). On a different thread this would raise
-    # sqlite3.ProgrammingError; through the executor it succeeds, proving the seam.
-    REGISTRY.run_on_executor(save_id, data_core.rollback)
-    assert handle.finished, "the held txn is rolled back (discarded)"
-    REGISTRY.discard(save_id)
-    assert save_id not in REGISTRY.pending_ids(), "the reaped save is gone"
-
-    # The held txn was DISCARDED, never committed -> the DB is byte-identical.
-    assert _db_hash(checkout) == db_before, \
-        "rolling back the held txn leaves the DB byte-identical (nothing landed)"
