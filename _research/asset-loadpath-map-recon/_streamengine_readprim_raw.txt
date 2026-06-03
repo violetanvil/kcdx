@@ -1,0 +1,426 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (592 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1759 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: StreamEngineReadPrim.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\StreamEngineReadPrim.java (HeadlessAnalyzer)  
+INFO  StreamEngineReadPrim.java> 
+================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> DirectStorage-vs-normal selector ('Fallbacking to normal stream engine') @0x180d2ad38 (GhidraScript)  
+INFO  StreamEngineReadPrim.java> ================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   proto: undefined FUN_180d2ad38()  size(addrs)=202 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- offset/token scan --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java>     HIT dstorage-token  token="DirectStorage" x1 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- body --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+undefined8 FUN_180d2ad38(longlong param_1)
+
+{
+  longlong *plVar1;
+  longlong lVar2;
+  undefined8 uVar3;
+  int local_res8 [2];
+  
+  uVar3 = 0;
+  plVar1 = *(longlong **)(param_1 + 0xcc0);
+  if (plVar1 != (longlong *)0x0) {
+    (**(code **)(*plVar1 + 0x20))(plVar1,"Initializing Stream Engine...");
+  }
+  if (DAT_1849272d4 != 0) {
+    lVar2 = (**(code **)(*DAT_18492b908 + 0xa28))();
+    *(longlong *)(param_1 + 0x6a8) = lVar2;
+    if (lVar2 == 0) {
+      FUN_180a607a4(8,0,
+                    "Error creating DirectStorage StreamEngine. Fallbacking to normal stream engine instead."
+                   );
+    }
+  }
+  if (*(longlong *)(param_1 + 0x6a8) == 0) {
+    if (DAT_18549b490 == 0) {
+      FUN_18045ad00();
+    }
+    lVar2 = (*DAT_18549b480)(0x210,local_res8,0);
+    LOCK();
+    DAT_1851ddb18 = DAT_1851ddb18 + local_res8[0];
+    UNLOCK();
+    LOCK();
+    DAT_1851ddb20 = DAT_1851ddb20 + 0x210;
+    UNLOCK();
+    LOCK();
+    DAT_1851ddb1c = DAT_1851ddb1c + 1;
+    UNLOCK();
+    if (lVar2 != 0) {
+      uVar3 = FUN_180d2a2b8(lVar2);
+    }
+    *(undefined8 *)(param_1 + 0x6a8) = uVar3;
+  }
+  return 1;
+}
+
+ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> CStreamEngine init FUN_180d2a2b8 @0x180d2a2b8 (GhidraScript)  
+INFO  StreamEngineReadPrim.java> ================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   proto: undefined FUN_180d2a2b8()  size(addrs)=694 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- offset/token scan --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java>     (no CCryPak read/open offset, no pak global, no dstorage/Win32-IO token in body) (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- body --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+undefined8 * FUN_180d2a2b8(undefined8 *param_1)
+
+{
+  undefined8 uVar1;
+  longlong lVar2;
+  longlong *plVar3;
+  undefined1 local_res8 [8];
+  code *local_28;
+  undefined4 uStack_20;
+  
+  *param_1 = CStreamEngine::vftable;
+  param_1[1] = CStreamEngine::vftable;
+  param_1[2] = CStreamEngine::vftable;
+  param_1[3] = 0;
+  param_1[4] = 0;
+  uVar1 = FUN_1804520ac(1);
+  lVar2 = FUN_181ab5270(uVar1);
+  *(longlong *)lVar2 = lVar2;
+  *(longlong *)(lVar2 + 8) = lVar2;
+  *(longlong *)(lVar2 + 0x10) = lVar2;
+  *(undefined2 *)(lVar2 + 0x18) = 0x101;
+  param_1[3] = lVar2;
+  param_1[5] = 0;
+  InitializeSRWLock((PSRWLOCK)(param_1 + 5));
+  param_1[6] = 0;
+  param_1[7] = 0;
+  param_1[8] = 0;
+  param_1[9] = 0;
+  param_1[10] = 0;
+  InitializeSRWLock((PSRWLOCK)(param_1 + 10));
+  param_1[0xb] = 0;
+  param_1[0xc] = 0;
+  param_1[0xd] = 0;
+  param_1[0xe] = 0;
+  _vector_constructor_iterator_(param_1 + 0xf,8,3,FUN_1803f2110);
+  param_1[0x12] = 0;
+  param_1[0x13] = 0;
+  param_1[0x14] = 0;
+  param_1[0x15] = 0;
+  param_1[0x16] = 0;
+  param_1[0x17] = 0;
+  FUN_180d29614(param_1 + 0x18);
+  param_1[0x1a] = 0;
+  param_1[0x1b] = 0;
+  param_1[0x1c] = 0;
+  memset(param_1 + 0x27,0,0x58);
+  FUN_1804f692c(local_res8,"TextureStreaming");
+  FUN_180b475f8(param_1 + 0x32,local_res8,1);
+  FUN_1804fc884(local_res8);
+  FUN_1804f692c(local_res8,"TerrainStreaming");
+  FUN_180b475f8(param_1 + 0x36,local_res8,1);
+  FUN_1804fc884(local_res8);
+  FUN_1804f692c(local_res8,"MergedMeshStreaming");
+  FUN_180b475f8(param_1 + 0x3a,local_res8,1);
+  FUN_1804fc884(local_res8);
+  FUN_1804f692c(local_res8,"AnimationStreaming");
+  FUN_180b475f8(param_1 + 0x3e,local_res8,1);
+  FUN_1804fc884();
+  *(undefined4 *)(param_1 + 0x26) = 0;
+  *(undefined1 *)((longlong)param_1 + 300) = 0;
+  *(bool *)((longlong)param_1 + 0xec) = DAT_18492720c != 0;
+  DAT_18547bad8 = param_1 + 0x1e;
+  *(undefined4 *)(param_1 + 0x1d) = 0;
+  *DAT_18547bad8 = 0;
+  param_1[0x1f] = 0;
+  param_1[0x20] = 0;
+  param_1[0x21] = 0;
+  param_1[0x22] = 0;
+  param_1[0x23] = 0;
+  param_1[0x24] = 0;
+  *(undefined4 *)(param_1 + 0x25) = 0;
+  FUN_180d2972c(param_1);
+  plVar3 = (longlong *)(**(code **)(*DAT_18492b8c0 + 0x2a0))();
+  (**(code **)(*plVar3 + 8))
+            (plVar3,-(ulonglong)(param_1 != (undefined8 *)0x0) & (ulonglong)(param_1 + 1),
+             "CStreamEngine",1);
+  plVar3 = (longlong *)FUN_182419ce4();
+  uVar1 = (**(code **)(*plVar3 + 0x328))(plVar3);
+  local_28 = FUN_1819516b4;
+  uStack_20 = 0;
+  FUN_1807d7490(uVar1,&local_28,param_1);
+  return param_1;
+}
+
+ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> StreamEngine.cpp FUN_1804898d0 @0x1804898d0 (GhidraScript)  
+INFO  StreamEngineReadPrim.java> ================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   proto: undefined FUN_1804898d0()  size(addrs)=349 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- offset/token scan --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java>     (no CCryPak read/open offset, no pak global, no dstorage/Win32-IO token in body) (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- body --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+void FUN_1804898d0(longlong param_1)
+
+{
+  longlong *plVar1;
+  longlong *plVar2;
+  int iVar3;
+  ulonglong uVar4;
+  longlong lVar5;
+  longlong lVar6;
+  int iVar7;
+  longlong *local_28;
+  longlong local_20;
+  
+  if (DAT_18547bad5 == '\0') {
+    plVar1 = (longlong *)(param_1 + 0x60);
+    DAT_18547bad5 = 1;
+    iVar7 = 0;
+    FUN_18048a710(plVar1);
+    FUN_1803d928c(param_1 + 0x50);
+    FUN_18048b0d0(param_1 + 0x38,plVar1);
+    FUN_18042deb4(param_1 + 0x50);
+    uVar4 = *(longlong *)(param_1 + 0x68) - *plVar1 >> 4;
+    if (0 < (int)uVar4) {
+      lVar6 = 0;
+      uVar4 = uVar4 & 0xffffffff;
+      do {
+        FUN_18039b0f8(&local_28,*plVar1 + lVar6);
+        plVar2 = local_28;
+        iVar3 = (**(code **)(*local_28 + 0x68))(local_28);
+        if ((iVar3 == -0xffffff0) && (lVar5 = (**(code **)(*DAT_18492b8c0 + 0x1a8))(), lVar5 == 0))
+        {
+          (**(code **)(*DAT_18492b8c0 + 0x630))(DAT_18492b8c0,2);
+        }
+        (**(code **)(*plVar2 + 0x98))(plVar2);
+        FUN_180489d14(param_1 + 0x18,&local_28);
+        iVar7 = iVar7 + 1;
+        if ((0 < DAT_1849271ec) && (DAT_1849271ec < iVar7)) {
+          FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\StreamEngine\\StreamEngine.cpp"
+                        ,0x2d4,"sys_streaming_max_finalize_per_frame is now deprecated");
+        }
+        if (local_20 != 0) {
+          FUN_1804f67e8();
+        }
+        lVar6 = lVar6 + 0x10;
+        uVar4 = uVar4 - 1;
+      } while (uVar4 != 0);
+    }
+    FUN_18048a710(plVar1);
+    DAT_18547bad5 = '\0';
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> StreamAsyncFileRequest.cpp FUN_1804647fc @0x1804647fc (GhidraScript)  
+INFO  StreamEngineReadPrim.java> ================================================================================ (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   proto: undefined FUN_1804647fc()  size(addrs)=869 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- offset/token scan --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java>     HIT FReopen/FReadRaw(slot38/39)  token="+ 0x138" x1 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>     HIT FGetCachedFileData(slot40)  token="+ 0x140" x1 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>     HIT pCryPak(gEnv+0x50)  token="DAT_18492b850" x2 (GhidraScript)  
+INFO  StreamEngineReadPrim.java>   --- body --- (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+int FUN_1804647fc(longlong param_1,undefined8 param_2,longlong param_3)
+
+{
+  uint *puVar1;
+  uint uVar2;
+  bool bVar3;
+  undefined8 uVar4;
+  int *piVar5;
+  char cVar6;
+  undefined1 uVar7;
+  undefined4 uVar8;
+  int iVar9;
+  ulonglong uVar10;
+  undefined8 uVar11;
+  uint uVar12;
+  uint uVar13;
+  int iVar14;
+  ulonglong uVar15;
+  byte bVar16;
+  longlong lVar17;
+  bool bVar18;
+  int local_88 [2];
+  int *local_80;
+  int *local_78;
+  longlong local_70;
+  longlong local_68;
+  longlong local_60;
+  longlong local_58;
+  longlong local_50;
+  undefined8 local_48;
+  
+  uVar4 = DAT_18492b850;
+  FUN_180463984(DAT_18492b850,&local_70,*(undefined8 *)(param_3 + 0x108));
+  uVar11 = 0;
+  uVar8 = 0;
+  if (local_70 != 0) {
+    uVar11 = *(undefined8 *)(local_70 + 0x18);
+    uVar8 = *(undefined4 *)(local_70 + 0x20);
+  }
+  uVar8 = FUN_180463abc(uVar4,uVar11,uVar8);
+  cVar6 = FUN_180464ea8(param_2,uVar8);
+  if (cVar6 == '\0') {
+    cVar6 = FUN_180465eac();
+    uVar2 = *(uint *)(param_1 + 0xa4);
+    iVar14 = *(int *)(param_1 + 0xd8) - *(int *)(param_1 + 0xd0);
+    bVar16 = *(byte *)(param_1 + 0xa4) & 1;
+    uVar7 = FUN_180465b88();
+    if (bVar16 == 0) {
+      uVar12 = 0;
+    }
+    else {
+      uVar12 = *(int *)(param_1 + 0x6c) - *(int *)(param_1 + 0x70);
+    }
+    local_68 = (ulonglong)uVar12 + *(longlong *)(param_1 + 0x98);
+    local_60 = (**(code **)(*DAT_18492b8c0 + 0x210))();
+    puVar1 = (uint *)(param_1 + 0xd4);
+    uVar13 = iVar14 - *puVar1;
+    uVar12 = uVar13;
+    if ((cVar6 != '\0') && (uVar12 = 0x100000, uVar13 < 0x100000)) {
+      uVar12 = uVar13;
+    }
+    while (uVar12 != 0) {
+      uVar15 = (ulonglong)uVar12;
+      uVar10 = (ulonglong)(*(longlong *)(param_1 + 0x88) != 0);
+      FUN_18050b898(local_88,param_1 + 0x14,uVar10);
+      iVar9 = *(int *)(param_1 + 0x60);
+      if ((iVar9 != 0) || (iVar9 = FUN_180464b64(param_1,param_2), iVar9 != 0)) {
+LAB_180464b2b:
+        LOCK();
+        *local_80 = *local_80 - local_88[0];
+        UNLOCK();
+        goto LAB_180464b3b;
+      }
+      lVar17 = (ulonglong)*puVar1 + local_68;
+      bVar3 = false;
+      local_78 = (int *)0x0;
+      if ((uVar2 >> 3 & 1) == 0) {
+        lVar17 = FUN_18245839c(param_1,uVar15,CONCAT71((int7)(uVar10 >> 8),uVar7) ^ 1,&local_78);
+        if (lVar17 == 0) {
+          iVar9 = -0xffffff7;
+          goto LAB_180464b2b;
+        }
+        bVar3 = true;
+        *local_78 = 1;
+      }
+      piVar5 = local_78;
+      iVar9 = *puVar1 + *(int *)(param_1 + 0xd0);
+      if (local_70 == 0) {
+        FUN_180da2678(param_3,iVar9,0);
+        uVar10 = FUN_180460b08(param_3,lVar17);
+        bVar18 = uVar10 == uVar15;
+      }
+      else {
+        iVar9 = FUN_180464b88(*(undefined8 *)(local_70 + 0x18),*(undefined8 *)(local_70 + 0x28),
+                              lVar17,iVar9,uVar15);
+        bVar18 = iVar9 == 0;
+      }
+      if (!bVar18) {
+        FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\StreamEngine\\StreamAsyncFileRequest.cpp"
+                      ,0x32f,
+                      "Error: Streaming read failed. File:\'%s\', pak:\'%s\', offset:%u, size:%u",
+                      *(undefined8 *)(param_1 + 0x20),*(undefined8 *)(param_1 + 0x28),
+                      *(int *)(param_1 + 0xd0) + *puVar1,uVar12);
+        if (bVar3) {
+          uVar11 = FUN_18245a7a4();
+          FUN_18245fa7c(uVar11,lVar17,(longlong)piVar5[1]);
+        }
+        iVar9 = -0xffffffc;
+        goto LAB_180464b2b;
+      }
+      LOCK();
+      *local_80 = *local_80 - local_88[0];
+      UNLOCK();
+      uVar13 = *puVar1;
+      local_88[0] = 0;
+      if (bVar16 != 0) {
+        *(int *)(local_60 + 0x140) = DAT_1849271e8 << 10;
+        local_58 = local_60 + 0xa8;
+        local_48 = DAT_18547bae8;
+        local_50 = local_60 + 0x138;
+        FUN_18059dc90(param_1,&local_58,lVar17,piVar5,uVar12,uVar13 + uVar12 == iVar14);
+      }
+      if (piVar5 != (int *)0x0) {
+        LOCK();
+        iVar9 = *piVar5;
+        *piVar5 = *piVar5 + -1;
+        UNLOCK();
+        if (iVar9 == 1) {
+          uVar11 = FUN_18245a7a4();
+          FUN_18245fa7c(uVar11,lVar17);
+        }
+      }
+      *puVar1 = *puVar1 + uVar12;
+      uVar12 = 0x100000;
+      if (iVar14 - *puVar1 < 0x100000) {
+        uVar12 = iVar14 - *puVar1;
+      }
+      LOCK();
+      *local_80 = *local_80;
+      UNLOCK();
+    }
+    iVar9 = 0;
+  }
+  else {
+    iVar9 = -0xffffff1;
+  }
+LAB_180464b3b:
+  FUN_180396b1c(&local_70);
+  return iVar9;
+}
+
+ (GhidraScript)  
+INFO  StreamEngineReadPrim.java> 
+done. (GhidraScript)  

@@ -1,0 +1,222 @@
+
+==================================================================
+FN FUN_1804d5b74 @0x1804d5b74
+CALLERS (1): [FUN_1804d5580@0x1804d5580]
+------------------------------------------------------------------
+
+undefined8 * FUN_1804d5b74(longlong param_1,undefined8 *param_2,undefined8 param_3,int param_4)
+
+{
+  longlong *plVar1;
+  char cVar2;
+  longlong lVar3;
+  
+  FUN_1804f6ac8(param_1,param_3);
+  FUN_1804d6610(param_1);
+  lVar3 = FUN_1809b2b28(param_3,&DAT_183a53718);
+  plVar1 = (longlong *)(param_1 + 8);
+  *plVar1 = lVar3;
+  if ((param_4 != 0) && (lVar3 != 0)) {
+    FUN_1804d79d4(plVar1,0);
+  }
+  if (*plVar1 == 0) {
+    FUN_1804d6610(param_1);
+    FUN_180a607a4(8,0,"Cannot open file in binary mode for reading, probably missing file");
+    *param_2 = 0;
+  }
+  else {
+    cVar2 = FUN_1804d6910(plVar1,param_3);
+    if (cVar2 == '\0') {
+      FUN_180a607a4(8,2,"Failed to open \'%s\' for unbuffered IO.",param_3);
+    }
+    FUN_1804d6034(param_1,param_2,param_3);
+  }
+  return param_2;
+}
+
+
+
+==================================================================
+FN FUN_180461a5c @0x180461a5c
+CALLERS (4): [FUN_1804607e4@0x1804607e4, FUN_180461964@0x180461964, FUN_180464b88@0x180464b88, FUN_18241c9b4@0x18241c9b4]
+------------------------------------------------------------------
+
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+ulonglong FUN_180461a5c(longlong param_1,int *param_2,longlong param_3,longlong param_4,char param_5
+                       ,longlong param_6,ulonglong param_7,char param_8)
+
+{
+  uint uVar1;
+  ulonglong uVar2;
+  char cVar3;
+  DWORD DVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  int iVar7;
+  ulonglong uVar8;
+  longlong lVar9;
+  int *piVar10;
+  undefined8 uVar11;
+  uint uVar12;
+  undefined1 auStack_308 [32];
+  undefined1 *local_2e8;
+  undefined4 local_2e0;
+  undefined8 local_2d8;
+  longlong local_2d0;
+  undefined8 local_2c8;
+  int *local_2c0;
+  int *local_2b8;
+  longlong local_2b0;
+  DWORD local_2a8;
+  int local_2a0;
+  ulonglong local_298;
+  longlong local_290;
+  longlong local_288;
+  undefined8 local_280;
+  undefined8 local_278;
+  undefined1 local_270 [24];
+  undefined1 local_258 [256];
+  undefined1 local_158 [256];
+  ulonglong local_58;
+  
+  local_58 = DAT_1848fcfc0 ^ (ulonglong)auStack_308;
+  if (param_2 == (int *)0x0) {
+    return 0x10;
+  }
+  if (param_2[2] == 0) {
+    return 0;
+  }
+  local_290 = param_1;
+  uVar8 = FUN_180461ea4();
+  if ((int)uVar8 != 0) {
+    return uVar8;
+  }
+  local_280 = 0;
+  uVar11 = **(undefined8 **)(param_1 + 0x998);
+  uVar8 = param_7;
+  if (param_7 == 0xffffffffffffffff) {
+    uVar8 = (ulonglong)(uint)param_2[1];
+  }
+  local_298 = uVar8;
+  local_278 = uVar11;
+  cVar3 = FUN_180461e90(param_2);
+  if ((cVar3 == '\0') && (param_4 != 0)) {
+    uVar8 = param_7;
+    param_3 = param_4;
+    uVar2 = param_7;
+    if ((longlong)param_7 < 0) {
+      param_7 = (ulonglong)(uint)param_2[2];
+      uVar8 = param_7;
+      uVar2 = param_7;
+    }
+  }
+  else {
+    uVar2 = local_298;
+    if (param_3 == 0) {
+      if (param_4 == 0) {
+        uVar12 = 0x10;
+        goto LAB_180461e37;
+      }
+      param_3 = param_4;
+      uVar2 = uVar8;
+      if (param_5 != '\0') {
+        param_3 = FUN_18241da74(uVar11,param_2[1],"ZipDir::Cache::ReadFile",0);
+        FUN_182474e84(&local_280,param_3);
+      }
+    }
+  }
+  local_298 = uVar2;
+  FUN_181ab4e48(local_270,*(longlong *)(param_1 + 0x998) + 8);
+  param_1 = param_1 + 8;
+  lVar9 = FUN_180461fa0(param_1,(ulonglong)(uint)param_2[3] + param_6,0);
+  if (lVar9 == 0) {
+    if (param_3 == 0) {
+      uVar12 = 9;
+    }
+    else {
+      local_288 = FUN_180461ed8(param_1,param_3,uVar8);
+      uVar12 = 1;
+      if (local_288 == 1) {
+        FUN_181ab4e68(local_270);
+        if ((param_8 == '\0') || (cVar3 = FUN_180461e68(param_2), cVar3 == '\0')) {
+          uVar12 = 0;
+          if ((param_4 == 0) || (param_5 == '\0')) goto LAB_180461e37;
+          cVar3 = FUN_180461e90(param_2);
+          if (cVar3 != '\0') {
+            local_2e8 = (undefined1 *)(*(longlong *)(local_290 + 0x998) + 8);
+            iVar7 = FUN_18076e34c(local_290,param_2,param_3,param_4);
+            if (iVar7 != 0) {
+              FUN_181de10f0();
+              FUN_181de10f0();
+              local_2e8 = local_258;
+              FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\ZipDirCache.cpp"
+                            ,0x15f,
+                            "Could not decompress file. First 16 bytes: %s, last 16 bytes: %s",
+                            local_158);
+              goto LAB_180461e25;
+            }
+          }
+          if (((*param_2 == 0) || (param_6 != 0)) ||
+             ((param_7 != 0xffffffffffffffff && (param_7 != (uint)param_2[2])))) goto LAB_180461e37;
+          iVar7 = FUN_18061230c(0,param_4,param_2[2]);
+          if (*param_2 == iVar7) {
+            *param_2 = 0;
+            goto LAB_180461e37;
+          }
+          lVar9 = (**(code **)(*DAT_18492b8c0 + 0x1a8))();
+          if (lVar9 == 0) {
+            (**(code **)(*DAT_18492b8c0 + 0x630))(DAT_18492b8c0,2);
+          }
+        }
+LAB_180461e25:
+        uVar12 = 0xf;
+        goto LAB_180461e37;
+      }
+      piVar10 = _errno();
+      iVar7 = *piVar10;
+      DVar4 = GetLastError();
+      uVar11 = FUN_1804d706c(param_1);
+      uVar5 = FUN_182477184(local_290 + 8);
+      uVar6 = FUN_1824771a4(local_290 + 8);
+      local_2b0 = local_288;
+      local_2c0 = (int *)CONCAT44(local_2c0._4_4_,1);
+      local_2c8 = CONCAT44(local_2c8._4_4_,(int)local_298);
+      local_2e8 = (undefined1 *)CONCAT44(local_2e8._4_4_,uVar6);
+      local_2e0 = uVar5;
+      local_2d8 = uVar11;
+      local_2d0 = param_3;
+      local_2b8 = param_2;
+      local_2a8 = DVar4;
+      local_2a0 = iVar7;
+      FUN_180a607a4(8,1,"ZipDir::FRead failed (%p (%i, %i, %lli), %p, %i, %i, %p) = %lli, %i, %i",
+                    local_290 + 8);
+    }
+  }
+  else {
+    piVar10 = _errno();
+    iVar7 = *piVar10;
+    DVar4 = GetLastError();
+    uVar1 = param_2[3];
+    lVar9 = local_290 + 8;
+    uVar11 = FUN_1804d706c(lVar9);
+    uVar5 = FUN_182477184(lVar9);
+    uVar6 = FUN_1824771a4(lVar9);
+    local_2b0 = CONCAT44(local_2b0._4_4_,iVar7);
+    local_2b8 = (int *)CONCAT44(local_2b8._4_4_,DVar4);
+    local_2c8 = 0;
+    uVar12 = 1;
+    local_2e8 = (undefined1 *)CONCAT44(local_2e8._4_4_,uVar6);
+    local_2e0 = uVar5;
+    local_2d8 = uVar11;
+    local_2d0 = param_6 + (ulonglong)uVar1;
+    local_2c0 = param_2;
+    FUN_180a607a4(8,1,"ZipDir::FSeek failed (%p (%i, %i, %lli), %lli, %i, %p) = %i, %i",lVar9);
+  }
+  FUN_181ab4e68(local_270);
+LAB_180461e37:
+  thunk_FUN_180ec5420(&local_280);
+  return (ulonglong)uVar12;
+}
+
+

@@ -1,0 +1,186 @@
+########## refs to DAT_1849272b8 (sys_UncachedStreamReads value) ##########
+  fn 0x180464b88
+  fn 0x180e36ae0
+
+==================================================================
+FN FUN_182423e08 @0x182423e08
+CALLERS (1): [FUN_1804614a0@0x1804614a0]
+------------------------------------------------------------------
+
+FILE * FUN_182423e08(LPCSTR param_1,char *param_2)
+
+{
+  int _FileHandle;
+  char *pcVar1;
+  HANDLE hObject;
+  FILE *pFVar2;
+  DWORD DVar3;
+  DWORD dwCreationDisposition;
+  
+  pcVar1 = strchr(param_2,0x72);
+  if (pcVar1 == (char *)0x0) {
+    DVar3 = 4;
+  }
+  else {
+    dwCreationDisposition = 3;
+    pcVar1 = strchr(param_2,0x2b);
+    DVar3 = 3;
+    if (pcVar1 == (char *)0x0) {
+      DVar3 = 0x80000000;
+      goto LAB_182423e57;
+    }
+  }
+  dwCreationDisposition = DVar3;
+  DVar3 = 0xc0000000;
+LAB_182423e57:
+  hObject = CreateFileA(param_1,DVar3,0,(LPSECURITY_ATTRIBUTES)0x0,dwCreationDisposition,0,
+                        (HANDLE)0x0);
+  if (hObject != (HANDLE)0xffffffffffffffff) {
+    _FileHandle = _open_osfhandle((intptr_t)hObject,0);
+    if ((_FileHandle != -1) && (pFVar2 = _fdopen(_FileHandle,param_2), pFVar2 != (FILE *)0x0)) {
+      return pFVar2;
+    }
+    CloseHandle(hObject);
+  }
+  return (FILE *)0x0;
+}
+
+
+
+==================================================================
+FN FUN_1804d6910 @0x1804d6910
+CALLERS (1): [FUN_1804d5b74@0x1804d5b74]
+------------------------------------------------------------------
+
+undefined1 FUN_1804d6910(longlong param_1,LPCSTR param_2)
+
+{
+  char cVar1;
+  HANDLE pvVar2;
+  
+  cVar1 = FUN_1804d6974();
+  if ((cVar1 != '\0') &&
+     (pvVar2 = CreateFileA(param_2,0x80000000,1,(LPSECURITY_ATTRIBUTES)0x0,3,0x20000080,(HANDLE)0x0)
+     , pvVar2 != (HANDLE)0xffffffffffffffff)) {
+    *(HANDLE *)(param_1 + 8) = pvVar2;
+    return 1;
+  }
+  return 0;
+}
+
+
+
+==================================================================
+FN FUN_18192d410 @0x18192d410
+CALLERS (1): [FUN_18192d2dc@0x18192d2dc]
+------------------------------------------------------------------
+
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+/* WARNING: Type propagation algorithm not settling */
+
+HANDLE FUN_18192d410(undefined8 param_1)
+
+{
+  ulonglong uVar1;
+  BOOL BVar2;
+  ulonglong uVar3;
+  HANDLE pvVar4;
+  undefined1 auStackY_388 [32];
+  char acStack_349 [273];
+  CHAR local_238 [272];
+  CHAR local_128 [272];
+  ulonglong local_18;
+  
+  local_18 = DAT_1848fcfc0 ^ (ulonglong)auStackY_388;
+  FUN_1809b2910(param_1,local_238);
+  BVar2 = GetVolumePathNameA(local_238,local_128,0x104);
+  if ((BVar2 != 0) &&
+     (BVar2 = GetVolumeNameForVolumeMountPointA(local_128,(LPSTR)((longlong)acStack_349 + 1),0x104),
+     BVar2 != 0)) {
+    uVar1 = 0xffffffffffffffff;
+    do {
+      uVar3 = uVar1;
+      uVar1 = uVar3 + 1;
+    } while (acStack_349[uVar3 + 2] != '\0');
+    if ((uVar3 + 1 != 0) && (acStack_349[uVar3 + 1] == '\\')) {
+      if (0x103 < uVar3) {
+                    /* WARNING: Subroutine does not return */
+        FUN_181c1eea8();
+      }
+      acStack_349[uVar3 + 1] = 0;
+    }
+    pvVar4 = CreateFileA((LPCSTR)((longlong)acStack_349 + 1),0,7,(LPSECURITY_ATTRIBUTES)0x0,3,
+                         0x2000000,(HANDLE)0x0);
+    return pvVar4;
+  }
+  return (HANDLE)0x0;
+}
+
+
+
+==================================================================
+FN FUN_182476768 @0x182476768
+CALLERS (1): [FUN_182423f48@0x182423f48]
+------------------------------------------------------------------
+
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+bool FUN_182476768(undefined8 param_1,LPCSTR param_2)
+
+{
+  DWORD DVar1;
+  HMODULE hModule;
+  FARPROC pFVar2;
+  HANDLE hObject;
+  HANDLE pvVar3;
+  INT_PTR IVar4;
+  char *pcVar5;
+  bool bVar6;
+  undefined1 auStackY_598 [32];
+  char local_548 [1296];
+  ulonglong local_38;
+  
+  local_38 = DAT_1848fcfc0 ^ (ulonglong)auStackY_598;
+  bVar6 = false;
+  hModule = LoadLibraryA("DBGHELP.DLL");
+  memset(local_548,0,0x504);
+  if (hModule == (HMODULE)0x0) {
+    pcVar5 = "DBGHELP.DLL not found";
+  }
+  else {
+    pFVar2 = GetProcAddress(hModule,"MiniDumpWriteDump");
+    if (pFVar2 == (FARPROC)0x0) {
+      pcVar5 = "DBGHELP.DLL too old";
+    }
+    else {
+      hObject = CreateFileA(param_2,0x40000000,2,(LPSECURITY_ATTRIBUTES)0x0,2,0x80,(HANDLE)0x0);
+      if (hObject == (HANDLE)0xffffffffffffffff) {
+        DVar1 = GetLastError();
+        FUN_180b9d4b8(local_548,"Failed to create dump file \'%s\' (error %d)",param_2,DVar1);
+        pcVar5 = local_548;
+      }
+      else {
+        GetCurrentThreadId();
+        DVar1 = GetCurrentProcessId();
+        pvVar3 = GetCurrentProcess();
+        IVar4 = (*pFVar2)(pvVar3,(ulonglong)DVar1,hObject,0x1002);
+        bVar6 = (int)IVar4 == 0;
+        if (bVar6) {
+          DVar1 = GetLastError();
+          FUN_180b9d4b8(local_548,"Failed to save dump file to \'%s\' (error %d)",param_2,DVar1);
+        }
+        else {
+          FUN_180b9d4b8(local_548,"Saved dump file to \'%s\'",param_2);
+        }
+        bVar6 = !bVar6;
+        pcVar5 = local_548;
+        CloseHandle(hObject);
+      }
+    }
+  }
+  FUN_1804d4510("d:\\buildagent\\work\\7ffb7f119a855ecb\\code\\CryEngine\\CrySystem\\WindowsErrorReporting.cpp"
+                ,0x69,&DAT_183a6c49c,pcVar5);
+  return bVar6;
+}
+
+

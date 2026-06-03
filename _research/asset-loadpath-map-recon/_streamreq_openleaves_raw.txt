@@ -1,0 +1,249 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (624 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1826 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: StreamReqOpenLeaves.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\StreamReqOpenLeaves.java (HeadlessAnalyzer)  
+INFO  StreamReqOpenLeaves.java> 
+================ FUN_180463984 pak-entry lookup (called w/ handle param_3+0x108) @0x180463984 ================ (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   size(addrs)=159 (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   scan[FUN_180463984 pak-entry lookup (called w/ handle param_3+0x108)]: (none) (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+longlong * FUN_180463984(longlong param_1,longlong *param_2,longlong param_3)
+
+{
+  int *piVar1;
+  longlong *plVar2;
+  char cVar3;
+  
+  piVar1 = (int *)(param_1 + 0x10);
+  cVar3 = FUN_180462014(piVar1);
+  if (cVar3 != '\0') {
+    LOCK();
+    *piVar1 = *piVar1 + 1;
+    UNLOCK();
+    FUN_18042deb4(param_1 + 0x20);
+  }
+  if (param_3 - 1U <
+      (ulonglong)
+      ((*(longlong *)(param_1 + 0x48) - *(longlong *)(param_1 + 0x40) >> 3) * -0x5555555555555555))
+  {
+    plVar2 = *(longlong **)(*(longlong *)(param_1 + 0x40) + 8 + (param_3 - 1U) * 0x18);
+    *param_2 = (longlong)plVar2;
+    if (plVar2 != (longlong *)0x0) {
+      (**(code **)(*plVar2 + 8))();
+    }
+  }
+  else {
+    *param_2 = 0;
+  }
+  FUN_180506f94(piVar1);
+  return param_2;
+}
+
+ (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+================ FUN_180460b08 read leaf (loose/local_70==0 branch) @0x180460b08 ================ (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   size(addrs)=91 (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   scan[FUN_180460b08 read leaf (loose/local_70==0 branch)]: handle@+0x108  (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+void FUN_180460b08(longlong param_1,void *param_2,size_t param_3)
+
+{
+  longlong *plVar1;
+  
+  plVar1 = *(longlong **)(param_1 + 0x110);
+  if (plVar1 != (longlong *)0x0) {
+    (**(code **)(*plVar1 + 0x130))(plVar1,param_2,1,param_3,*(undefined8 *)(param_1 + 0x108));
+    return;
+  }
+                    /* WARNING: Could not recover jumptable at 0x000180460b5c. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  fread(param_2,1,param_3,*(FILE **)(param_1 + 0x108));
+  return;
+}
+
+ (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+================ FUN_180464b88 read leaf (pak/local_70!=0 branch) @0x180464b88 ================ (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   size(addrs)=625 (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   scan[FUN_180464b88 read leaf (pak/local_70!=0 branch)]: (none) (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+undefined8
+FUN_180464b88(longlong param_1,longlong param_2,longlong param_3,ulonglong param_4,ulonglong param_5
+             )
+
+{
+  longlong lVar1;
+  ulonglong uVar2;
+  longlong lVar3;
+  bool bVar4;
+  char cVar5;
+  DWORD DVar6;
+  BOOL BVar7;
+  DWORD DVar8;
+  ulonglong uVar9;
+  undefined8 uVar10;
+  void *_Src;
+  ulonglong uVar11;
+  ulonglong uVar12;
+  ulonglong uVar13;
+  ulonglong uVar14;
+  DWORD local_res10 [2];
+  longlong local_res18;
+  ulonglong local_res20;
+  ulonglong in_stack_ffffffffffffff88;
+  undefined8 in_stack_ffffffffffffff90;
+  undefined4 uVar15;
+  undefined8 in_stack_ffffffffffffff98;
+  undefined4 uVar16;
+  uint in_stack_ffffffffffffffa0;
+  int local_58 [2];
+  undefined1 local_50 [24];
+  
+  if (param_2 == 0) {
+    return 0x10;
+  }
+  if (*(int *)(param_2 + 8) == 0) {
+LAB_180464d68:
+    uVar10 = 0;
+  }
+  else {
+    lVar1 = param_1 + 8;
+    bVar4 = false;
+    local_res18 = param_3;
+    cVar5 = FUN_18039abd0(lVar1);
+    if ((cVar5 == '\0') && (DAT_1849272b8 != 0)) {
+      FUN_181ab4e48(local_50,*(longlong *)(param_1 + 0x998) + 8);
+      if (*(HANDLE *)(param_1 + 0x10) != (HANDLE)0xffffffffffffffff) {
+        if (param_5 == 0) {
+          param_5 = (ulonglong)*(uint *)(param_2 + 4);
+        }
+        lVar3 = *(longlong *)(param_1 + 0x18);
+        param_4 = param_4 + *(uint *)(param_2 + 0xc);
+        uVar11 = -lVar3 & param_4;
+        uVar14 = lVar3 + -1 + (param_4 - uVar11) + param_5 & ~(lVar3 - 1U);
+        local_58[0] = (int)(uVar11 >> 0x20);
+        local_res20 = param_4;
+        DVar6 = SetFilePointer(*(HANDLE *)(param_1 + 0x10),(LONG)uVar11,local_58,0);
+        uVar15 = (undefined4)((ulonglong)in_stack_ffffffffffffff90 >> 0x20);
+        if ((DVar6 == 0xffffffff) && (local_58[0] == -1)) {
+          DVar6 = GetLastError();
+          FUN_180a607a4(8,1,
+                        "ZipDir::ReadFileStreaming SetFilePointer() failed (m_zipFile:%p, pFileEntry:%p) = %i, nSectorOffset:%u"
+                        ,lVar1,param_2,CONCAT44(uVar15,DVar6),uVar11);
+LAB_180464db9:
+          FUN_181ab4e68(local_50);
+          return 1;
+        }
+        uVar11 = -(param_4 - uVar11);
+        param_3 = local_res18;
+        while (local_res18 = param_3, (longlong)uVar11 < (longlong)param_5) {
+          local_res10[0] = 0;
+          in_stack_ffffffffffffff88 = 0;
+          uVar9 = 0x20000;
+          if ((longlong)uVar14 < 0x20000) {
+            uVar9 = uVar14;
+          }
+          BVar7 = ReadFile(*(HANDLE *)(param_1 + 0x10),*(LPVOID *)(param_1 + 0x20),(DWORD)uVar9,
+                           local_res10,(LPOVERLAPPED)0x0);
+          DVar6 = local_res10[0];
+          uVar15 = (undefined4)((ulonglong)in_stack_ffffffffffffff90 >> 0x20);
+          uVar16 = (undefined4)((ulonglong)in_stack_ffffffffffffff98 >> 0x20);
+          if (BVar7 == 0) {
+            DVar8 = GetLastError();
+            FUN_180a607a4(8,1,
+                          "ZipDir::ReadFileStreaming ReadFile() failed (m_zipFile:%p, pFileEntry:%p) = %i, nToRead:%u, nRead:%u"
+                          ,lVar1,param_2,CONCAT44(uVar15,DVar8),CONCAT44(uVar16,(DWORD)uVar9),DVar6)
+            ;
+            goto LAB_180464db9;
+          }
+          uVar12 = (ulonglong)local_res10[0];
+          uVar9 = 0;
+          if (-1 < (longlong)uVar11) {
+            uVar9 = uVar11;
+          }
+          uVar2 = uVar12 + uVar11;
+          uVar13 = param_5;
+          if ((longlong)uVar2 <= (longlong)param_5) {
+            uVar13 = uVar2;
+          }
+          _Src = (void *)(*(longlong *)(param_1 + 0x20) - uVar11);
+          if (-1 < (longlong)uVar11) {
+            _Src = *(void **)(param_1 + 0x20);
+          }
+          memcpy((void *)(local_res18 + uVar9),_Src,uVar13 - uVar9);
+          uVar14 = uVar14 - uVar12;
+          param_4 = local_res20;
+          uVar11 = uVar2;
+          param_3 = local_res18;
+        }
+        bVar4 = true;
+      }
+      FUN_181ab4e68(local_50);
+      if (bVar4) goto LAB_180464d68;
+    }
+    uVar10 = FUN_180461a5c(param_1,param_2,param_3,0,in_stack_ffffffffffffff88 & 0xffffffffffffff00,
+                           param_4,param_5,in_stack_ffffffffffffffa0 & 0xffffff00);
+  }
+  return uVar10;
+}
+
+ (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+########## callers of StreamAsyncFileRequest FUN_1804647fc ########## (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   <- <no-fn>@1856b82a0 (DATA) (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   <- <no-fn>@1847bcc48 (DATA) (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   <- FUN_1807b54b4 @0x1807b54b4 (UNCONDITIONAL_CALL) (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   <- FUN_1807b5d58 @0x1807b5d58 (UNCONDITIONAL_CALL) (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   scan[caller 0x1807b54b4]: StreamAsyncFileRequest pCryPak  (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   scan[caller 0x1807b5d58]: StreamAsyncFileRequest pCryPak  (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+########## FOpen(0x4614A0) callers that also touch +0x108 (handle mint sites) ########## (GhidraScript)  
+INFO  StreamReqOpenLeaves.java>   FOpen direct refs: 3 (GhidraScript)  
+INFO  StreamReqOpenLeaves.java> 
+done. (GhidraScript)  

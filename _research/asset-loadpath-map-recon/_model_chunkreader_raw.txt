@@ -1,0 +1,450 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (573 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1569 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: ModelChunkReaderTrace.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\ModelChunkReaderTrace.java (HeadlessAnalyzer)  
+INFO  ModelChunkReaderTrace.java> 
+================================================================================ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> FUNC FUN_180980d4c @ 0x180980d4c  note=chunk-file reader (LoadChunkFileContent delegate)  size=181 (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>   LANES: (none named) (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     ulonglong FUN_180980d4c(longlong param_1,undefined8 param_2,undefined8 param_3,longlong *param_4,
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>                            undefined8 param_5,undefined4 param_6)
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       char cVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       ulonglong uVar2;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       undefined8 uVar3;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       cVar1 = (**(code **)(*param_4 + 0x18))(param_4);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       if ((cVar1 == '\0') && (cVar1 = (**(code **)(*param_4 + 0x20))(param_4,param_3), cVar1 == '\0')) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         uVar3 = (**(code **)(*param_4 + 0x88))(param_4);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         uVar2 = FUN_1804f6ac8(param_1 + 0xa0,uVar3);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         return uVar2 & 0xffffffffffffff00;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       if (DAT_18492b8c0 != (longlong *)0x0) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         (**(code **)(*DAT_18492b8c0 + 0x60))(DAT_18492b8c0,"CLoaderCGF::LoadCGF",0x66);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       uVar2 = FUN_1806a24e4(param_1,param_2,param_3,param_4,param_5,param_6);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       return uVar2;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> 
+================================================================================ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> FUNC FUN_180980e18 @ 0x180980e18  note=chunk-reader init (CLoadLogListener install)  size=323 (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>   LANES: (none named) (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     longlong FUN_180980e18(longlong param_1,undefined8 param_2,undefined8 param_3,undefined1 param_4)
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       longlong lVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x20) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x28) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x30) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x38) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x40) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x48) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x50) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x58) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x60) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x68) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x70) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x78) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       lVar1 = FUN_1804fda6c();
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(longlong *)(param_1 + 0xa0) = lVar1 + 0xc;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x2d8) = param_2;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x2e0) = param_3;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined4 *)(param_1 + 0x2e8) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x2f0) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x2f8) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       lVar1 = FUN_1804f7820(0x20);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(longlong *)lVar1 = lVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(longlong *)(lVar1 + 8) = lVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(longlong *)(param_1 + 0x2f0) = lVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x300) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x308) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x310) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x318) = 7;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 800) = 8;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined4 *)(param_1 + 0x2e8) = 0x3f800000;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_1803b59e4((undefined8 *)(param_1 + 0x300),0x10,*(undefined8 *)(param_1 + 0x2f0));
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x1b0) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       memset((void *)(param_1 + 0x1c0),0,0x100);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined1 *)(param_1 + 0x2d1) = param_4;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined4 *)(param_1 + 0x2c0) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined1 *)(param_1 + 0x2d0) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined8 *)(param_1 + 0x80) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined4 *)(param_1 + 0x2d4) = 4;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       return param_1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> 
+================================================================================ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> FUNC FUN_18052c4f8 @ 0x18052c4f8  note=LoadStatObj default-cgf loader  size=426 (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>   LANES: (none named) (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     undefined8
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     FUN_18052c4f8(longlong param_1,undefined8 param_2,char *param_3,undefined8 param_4,byte param_5,
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>                  uint param_6)
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       char cVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       undefined8 uVar2;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       longlong lVar3;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       undefined8 *puVar4;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       undefined1 auStack_198 [32];
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       undefined8 local_178;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       uint local_170;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       undefined8 *local_168;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       uint local_160;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       char local_15c;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       undefined1 local_15b [275];
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       ulonglong local_48;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       local_48 = DAT_1848fcfc0 ^ (ulonglong)auStack_198;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       local_170 = param_6;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       local_178 = param_4;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_18052dd60(param_1,&local_168,param_2,param_3);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       if (local_168 == (undefined8 *)0x0) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         lVar3 = thunk_FUN_1803cd1b0();
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         if (lVar3 == 0) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           puVar4 = (undefined8 *)0x0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         else {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           puVar4 = (undefined8 *)FUN_1803c7304(lVar3);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         *(uint *)(puVar4 + 0x2f) = *(uint *)(puVar4 + 0x2f) | local_160;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         param_5 = -(*(int *)(DAT_1854950e0 + 0x280) != 0) & param_5;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         if (param_5 != 0) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           *(char *)((longlong)puVar4 + 0x154) = '\x01';
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         if (local_15c != '\0') {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           param_6 = param_6 | 2;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         cVar1 = FUN_18137ab98(puVar4,local_15b,param_6);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         if (cVar1 == '\0') {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           (**(code **)*puVar4)(puVar4,1);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           if ((param_3 != (char *)0x0) && (*param_3 != '\0')) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>             return 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           return *(undefined8 *)(param_1 + 0x248);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         FUN_18119a464(puVar4,param_5,param_6);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         if (*(char *)((longlong)puVar4 + 0x154) == '\0') {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           FUN_180d787b4(puVar4,1);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         FUN_18052c670(puVar4,0);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         FUN_18052d6cc(param_1,puVar4);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       else {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         if ((param_5 == 0) && (*(char *)((longlong)local_168 + 0x154) != '\0')) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           FUN_180d787b4(local_168,1);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         puVar4 = local_168;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         if ((*(byte *)((longlong)local_168 + 0x17c) & 2) == 0) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>           FUN_18119a464(local_168,param_5,param_6);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       uVar2 = FUN_18052c480(puVar4,param_3,param_4);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       return uVar2;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> 
+================================================================================ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> FUNC FUN_18048c838 @ 0x18048c838  note=CGF content instance ctor (param_5,param_4)  size=135 (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>   LANES: (none named) (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     undefined8 * FUN_18048c838(undefined8 *param_1,undefined1 param_2,undefined1 param_3)
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       longlong lVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined4 *)(param_1 + 1) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *param_1 = CReadOnlyChunkFile::vftable;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       lVar1 = FUN_1804fda6c();
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       param_1[2] = lVar1 + 0xc;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined1 *)((longlong)param_1 + 0x3d) = param_3;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       param_1[3] = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       param_1[4] = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       param_1[5] = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       param_1[6] = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined4 *)(param_1 + 7) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined1 *)((longlong)param_1 + 0x3c) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined1 *)((longlong)param_1 + 0x3e) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       *(undefined1 *)((longlong)param_1 + 0x3f) = param_2;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       param_1[8] = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       return param_1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> 
+================================================================================ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> FUNC FUN_180980c64 @ 0x180980c64  note=chunk-reader teardown  size=230 (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>   LANES: (none named) (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     void FUN_180980c64(longlong param_1)
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       longlong lVar1;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       lVar1 = *(longlong *)(param_1 + 0x300);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       if (lVar1 != 0) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         FUN_181ab5140(lVar1,*(longlong *)(param_1 + 0x310) - lVar1 & 0xfffffffffffffff8);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         *(undefined8 *)(param_1 + 0x300) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         *(undefined8 *)(param_1 + 0x308) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         *(undefined8 *)(param_1 + 0x310) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_1804139e4();
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_181ab4e10(*(undefined8 *)(param_1 + 0x2f0),0x20);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_1804fdaf8(*(longlong *)(param_1 + 0xa0) + -0xc);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       lVar1 = *(longlong *)(param_1 + 0x68);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       if (lVar1 != 0) {
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         FUN_181ab5140(lVar1,((*(longlong *)(param_1 + 0x78) - lVar1) / 0x30) * 0x30);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         *(undefined8 *)(param_1 + 0x68) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         *(undefined8 *)(param_1 + 0x70) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>         *(undefined8 *)(param_1 + 0x78) = 0;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_1803f7338(param_1 + 0x50);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_180a673b4(param_1 + 0x38);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       FUN_180a673b4(param_1 + 0x20);
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>       return;
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     }
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java>     
+ (GhidraScript)  
+INFO  ModelChunkReaderTrace.java> 
+done. (GhidraScript)  
