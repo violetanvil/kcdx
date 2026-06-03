@@ -63,6 +63,28 @@ change, and no other table touched. The re-capture was deliberate and inspected
 vtable_slot/value values are byte-identical because every authored cell is empty)
 before recording.
 
+It was RE-CAPTURED AGAIN when the curated set grew 143 -> 157: fourteen
+RE-verified curated entities were added across prior cycles (ids 144-157 -- the
+SaveGame family 144-148, CLocalizedStringsManager_ctor 149, IConsole_PrintLine/
+PrintLinePlus 150-151, the four CCryPak asset-resolution entities 152-155, and
+ICVar_GetIVal/GetFVal 156-157), and the `vtable_slot` authored column was filled
+on the vtable_index rows (ids 19-24, 152) from the binary. The committed seeds
+are ground truth; the rebuild reproduces them, so the baseline was re-recorded at
+157. The drift was inspected + fully explained before recording: USER
+address_names/address_versions/survival 143 -> 157 (the 14 added curated rows;
+survival is 1:1 with curated), the sqlite_sequence high-water bump, DEV
+address_versions +4 (minted-no-rva 20 -> 24), and -- the only initially-surprising
+lines -- DEV statements/referenced_vars/call_edges content-hash drift at UNCHANGED
+row counts: those bulk tables carry a nullable `kcdx_id` cell set from
+`rva_to_kcdx_id`, which flips NULL -> id for the 14 newly-curated functions
+(present in the bulk dump), a mechanical consequence of curating dump functions.
+NO table that should be untouched moved (modules / meta / game_versions / every
+_dict_* table are byte-identical). Coordinated with a one-time seed normalization:
+`address_versions_seed.csv` ids 156/157 carried cosmetic quotes around a
+comma-free signature (`"i32 (ptr self)"`) that QUOTE_MINIMAL does not emit; the
+seed was re-exported to the canonical form (the four quote chars dropped, RE facts
+byte-identical) so the export/round-trip oracles round-trip.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 
