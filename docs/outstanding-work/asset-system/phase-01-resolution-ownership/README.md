@@ -16,7 +16,7 @@ when `DONE`, `—` otherwise.
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — probe: seam-install ordering (`ModManager_ctor` vs first read)](step-1-probe-install-ordering.md) | NOT STARTED | — |
+| [1 — probe: seam-install ordering (`HookedCtor` vs first `FOpen`, sequence-counter)](step-1-probe-install-ordering.md) | NOT STARTED | — |
 | [2 — probe: does DirectStorage bypass the seam for textures?](step-2-probe-directstorage-bypass.md) | NOT STARTED | — |
 | [3 — HOOK 1: REPLACE `AdjustFileName` (the resolution decision; remove FOpen/SEAM-A residue)](step-3-hook1-adjustfilename-decision.md) | NOT STARTED | — |
 | [4 — HOOK 2: return kcdx's own CRT `FILE*` for the loose open](step-4-hook2-own-filehandle-open.md) | NOT STARTED | — |
