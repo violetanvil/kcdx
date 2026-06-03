@@ -27,7 +27,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 | 4a data-core deferred-commit seam — apply_seeds runs validate→write→round-trip then RETURNS the open connections uncommitted; commit(conns)/rollback(conns) exposed (THE write mechanism for the maintainer tool — DB changes commit only on confirm); additive + oracle-preserving | DONE | 63a2a92 |
 | 4b save (preview) endpoints — the six job shapes: validate the prospective edit + return the field-delta (NO write, NO held txn); the maintainer reviews the diff before Confirm | DONE | f348857 |
 | 4c data-core DIRECT-WRITE path (D19) — rework db_editor from the seed-rebuild bridge to direct-DB INSERT/UPDATE reusing _apply_one_db's write helpers (8 behaviors preserved); validate the PROSPECTIVE DB STATE; inside the 4a deferred-commit txn (ROLLBACK resets PK auto-increments); create-version-at-a-new-tag now works; export target → data/db-export/ (D20) | DONE | 94afc30 |
-| 4b-rework re-target the preview Save's validate to the PROSPECTIVE DB STATE (the 4c direct-write validate path), not the seed-validate path (validate_prospective_seeds) | NOT STARTED | — |
+| 4b-rework re-target the preview Save's validate to the PROSPECTIVE DB STATE (the 4c direct-write validate path), not the seed-validate path (validate_prospective_seeds) | DONE | 687ea94 |
 | 5 Confirm transaction (D16/D19) — ONE synchronous request: open the 4a txn → 4c DIRECT-write → export to data/db-export/ (D20) → cheap integrity check → commit DB → git commit/push → success/failure; ROBUST rollback-everything (PK auto-increment reset) on any failure; EVENT-DRIVEN index.lock (git's exit, no poll); auth-ready seams (D17, + dev default); reuses the kept step-5 WIP git/auth machinery | NOT STARTED | — |
 
 ## Step docs
