@@ -2077,6 +2077,412 @@ def apply_seeds(out_dir, dll_path, *, version=None, log=None, defer_commit=False
             "counts": {"user": u, "dev": d}}
 
 
+# ---------------------------------------------------------------------------
+# DIRECT-WRITE mode (the maintainer-tool write mechanism; design D19/D20).
+#
+# WHY this exists vs apply_seeds: design D1 makes the DB the ORIGINATOR -- a
+# maintainer edit is a DIRECT INSERT/UPDATE on the DB, NOT a seed rebuild. A
+# ground-truth probe established that _apply_one_db ALREADY runs the real
+# INSERT/UPDATE statements; apply_seeds is the SEED-CSV-rebuild WRAPPER around them
+# (it re-opens the DBs, re-runs the GAME_VERSION_TAG/VersionRefusal gate -- which
+# materialises ZERO rows for a NEW game tag -- and applies the diff). The direct
+# drive below KEEPS the write helpers + the whole-state validator and DROPS the
+# wrapper: it opens the deferred-commit txn ITSELF and calls _apply_one_db DIRECTLY
+# on the held connections. PROVEN convergent (a direct _apply_one_db call over the
+# SAME validated state produces a DB byte-identical to apply_seeds(defer_commit) +
+# commit), so the rework preserves the mechanism; what it unlocks is create-version
+# AT A NEW game tag (the wrapper's GAME_VERSION_TAG gate forbade it).
+#
+# PROSPECTIVE-DB-STATE VALIDATION (design D19): the validation re-targets to the
+# prospective DB STATE (the DB as it would be AFTER the edit). The prospective state
+# is materialised as the prospective SEED -- export(committed DB) + the edit folded
+# in -- which the round-trip contract (import(export(DB))==DB, design D2/D4) makes a
+# FAITHFUL serialisation of the prospective DB rows: validating the prospective seed
+# IS validating the prospective DB state. This reuses the SINGLE whole-state
+# validator gate UNCHANGED (_validate_full_seed_state -- the same tuple-uniqueness /
+# audit-trio / supersession-acyclicity / FK-closure / enum invariants), so the gate
+# sees the SAME invariants it always has, DB-sourced -- never a reimplemented
+# row-level check (the validator has no row-level entry point; D13/D19). A failure
+# aborts BEFORE any DB open -- the DB is byte-identical.
+# ---------------------------------------------------------------------------
+def _pointed_at_seed(prospective_seed_dir):
+    """Repoint the importer's three seed-path module constants at the prospective
+    seed dir for the duration of a validate/state-build, restoring them after. The
+    same global-constant convention the rebuild oracles + the prior bridge used;
+    needed because _validate_full_seed_state reads MODULE_SEED_CSV/etc. by name. A
+    context manager so the restore runs on every path (success or raise)."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def _cm():
+        saved = (MODULE_SEED_CSV, ADDRESS_NAMES_SEED_CSV, ADDRESS_VERSIONS_SEED_CSV)
+        globals()["MODULE_SEED_CSV"], globals()["ADDRESS_NAMES_SEED_CSV"], \
+            globals()["ADDRESS_VERSIONS_SEED_CSV"] = _seed_paths_in(
+                prospective_seed_dir)
+        try:
+            yield
+        finally:
+            (globals()["MODULE_SEED_CSV"], globals()["ADDRESS_NAMES_SEED_CSV"],
+             globals()["ADDRESS_VERSIONS_SEED_CSV"]) = saved
+    return _cm()
+
+
+def _seed_paths_in(seed_dir):
+    return (os.path.join(seed_dir, "module_seed.csv"),
+            os.path.join(seed_dir, "address_names_seed.csv"),
+            os.path.join(seed_dir, "address_versions_seed.csv"))
+
+
+def _validate_prospective_db_state(prospective_seed_dir):
+    """Run the SINGLE whole-state validator gate against the prospective DB state,
+    materialised as the prospective seed (export(DB)+edit). Returns the resolved
+    `state` (the same dict _validate_full_seed_state returns -- names_by_id, the
+    module lookups, the validated versions seed). Raises the validator's RuntimeError
+    (or a typed reader error) on any invariant violation -- the caller aborts with NO
+    DB write. Reuses _validate_full_seed_state UNCHANGED (the SAME invariants the
+    bridge + the rebuild run), only fed the prospective seed instead of data/seeds/.
+    """
+    with _pointed_at_seed(prospective_seed_dir):
+        return _validate_full_seed_state()
+
+
+def _new_tag_ordinal(new_tag, version):
+    """The ordinal for a NEW game tag's game_versions row. The maintainer-tool
+    resolves the new version client-side (design D15) and passes version=(new_tag,
+    new_ordinal) -- use that ordinal directly when version's TAG matches the new tag.
+    When it does NOT match (a dll_path caller resolves the DLL's OWN -- older --
+    version, which can never be the new tag), derive the ordinal from the new tag's
+    last dotted segment: tag == '<major>.<minor>.<build>' and ordinal == build (the
+    DOCUMENTED tag<->ordinal relationship -- read_game_version builds the tag exactly
+    so, GAME_VERSION_TAG '1.5.1164953' <-> GAME_VERSION_ORDINAL 1164953). This is the
+    deterministic tag->ordinal map, NOT a guess. A new tag whose last segment is not an
+    integer is a malformed tag -- refuse loudly rather than fabricate an ordinal."""
+    vtag, vordinal = version
+    if vtag == new_tag:
+        return vordinal
+    last = str(new_tag).rsplit(".", 1)[-1]
+    try:
+        return int(last)
+    except ValueError:
+        raise RuntimeError(
+            f"create-version-at-new-tag: cannot derive an ordinal from new tag "
+            f"{new_tag!r} (its last dotted segment {last!r} is not an integer build "
+            f"number); the tag<->ordinal map needs '<branch>.<build>' form, or pass "
+            f"version=(tag, ordinal) with the resolved ordinal")
+
+
+def _insert_game_version(con, tag, ordinal):
+    """INSERT the new game_versions row (tag, ordinal) the create-version-at-a-NEW-tag
+    path needs, returning its assigned id. The bridge could NEVER do this -- its
+    GAME_VERSION_TAG/VersionRefusal gate refused any tag the DB had no baseline for,
+    so a new-tag create-version materialised ZERO rows. The direct path INSERTs the
+    tag (so it now EXISTS) before closing the prior interval + inserting the new
+    address_versions row. `released` is NULL (the maintainer authors the tag+ordinal;
+    the release date is not part of the curated edit). Runs in BOTH DBs (the tag is a
+    shared dimension; user + dev both carry the game_versions table)."""
+    con.execute(
+        "INSERT INTO game_versions (tag, ordinal, released) VALUES (?, ?, NULL)",
+        (tag, ordinal))
+    row = con.execute("SELECT id FROM game_versions WHERE tag = ?",
+                      (tag,)).fetchone()
+    return row[0]
+
+
+def _apply_new_tag_version(con, action, state, which, user_projection, tx,
+                           new_tag, new_ordinal):
+    """Apply ONE create-version-at-a-NEW-game-tag to one open DB, under `tx` (the
+    deferred-commit savepoint seam). The action is the new address_versions row's
+    facts (the same shape _seed_action_rows emits, but for a tag _seed_action_rows
+    FILTERS OUT because it is not GAME_VERSION_TAG). Steps, all reusing _apply_one_db's
+    OWN write helpers so the row shape is byte-identical to any other add:
+      1. INSERT the new game_versions row (the tag now EXISTS in this DB).
+      2. resolve the FK ids (module, kind, evidence_kind, valid_from=the new gv id,
+         last_verified) via the SAME _db_* helpers -- look up, never mint.
+      3. function-kind PROMOTE-vs-mint + BaselineRefusal (the SAME gate add uses):
+         a function kind needs a DEV bulk baseline at its rva.
+      4. close the entity's prior OPEN interval (valid_through := the prior version's
+         id) BEFORE the INSERT (the ix_av_open_unique partial-unique constraint).
+      5. _projected_insert (USER) / _promote_bulk_in_place|_projected_insert (DEV) the
+         new av row + _insert_survival_row the 1:1 survival sibling -- the SAME helpers
+         every other add uses, so the 8 load-bearing behaviors all land identically.
+    This is the ONE genuinely-new write the bridge never did (the game_versions
+    INSERT). Everything after step 1 is _apply_one_db's add-versions-row tail, reused
+    verbatim against the freshly-inserted tag."""
+    kid = action["kcdx_id"]
+    where = (f"{which} DB (kcdx_id={kid}, valid_from={new_tag!r}; new-tag create)")
+
+    tx.begin()
+    try:
+        # 1. The new tag now EXISTS in this DB.
+        vf_id = _insert_game_version(con, new_tag, new_ordinal)
+
+        # 2. FK ids -- look up the EXISTING dict/module ids, never mint (behavior 5).
+        #    last_verified resolves against the NOW-present tag set (the new tag was
+        #    just inserted, so a row verified AT the new tag resolves too).
+        lvv_id = _db_tag_to_id(con, action["lvv_tag"], where) if action["lvv_tag"] else None
+        ekn_id = _db_evidence_kind_id(con, action["evidence_kind"], where)
+        module_id = _resolve_module_id(con, action["module"], where)
+        kind_id = _db_dict_id(con, "address_versions", "kind", action["kind"], where)
+
+        # 3. PROMOTE-vs-mint + BaselineRefusal (behavior 3) -- the SAME kind-class gate
+        #    _apply_one_db's add path runs.
+        if action["kind"] in ss.FUNCTION_KINDS:
+            dev_con = state["dev_con"]
+            base_row = (_read_bulk_row(dev_con, action["rva"])
+                        if action["rva"] is not None else None)
+            if base_row is None:
+                raise BaselineRefusal(
+                    f"{where}: no bulk baseline at rva "
+                    f"{('0x%X' % action['rva']) if action['rva'] is not None else None}; "
+                    f"run --rebuild before adding function-kind entities")
+            av_id = _next_av_id(con) if user_projection else base_row["id"]
+            av_row = ss.build_curated_row(
+                av_id, kid, base_row=base_row, module_id=module_id,
+                rva=action["rva"], valid_from_id=vf_id, kind_id=kind_id,
+                signature=action["signature"], lvv_id=lvv_id,
+                verified_by=action["verified_by"], verified_date=action["verified_date"],
+                evidence_kind_id=ekn_id, offset=action["offset"],
+                vtable_slot=action["vtable_slot"], struct_offset=action["struct_offset"])
+        else:
+            av_id = _next_av_id(con)
+            av_row = ss.build_curated_row(
+                av_id, kid, base_row=None, module_id=module_id,
+                rva=action["rva"], valid_from_id=vf_id, kind_id=kind_id,
+                signature=action["signature"], lvv_id=lvv_id,
+                verified_by=action["verified_by"], verified_date=action["verified_date"],
+                evidence_kind_id=ekn_id, offset=action["offset"],
+                vtable_slot=action["vtable_slot"], struct_offset=action["struct_offset"])
+
+        # 4. Close the prior OPEN interval BEFORE the INSERT (behavior 2). A
+        #    create-version is always for an EXISTING entity (the caller checked it),
+        #    so there is a prior open row to close. valid_through := the prior
+        #    version's id (the close boundary), keeping ix_av_open_unique satisfied.
+        prev_rows = con.execute(
+            "SELECT valid_from FROM address_versions WHERE kcdx_id = ? "
+            "AND valid_through IS NULL", (kid,)).fetchall()
+        prev_vf = max(r[0] for r in prev_rows)
+        con.execute(
+            "UPDATE address_versions SET valid_through = ? "
+            "WHERE kcdx_id = ? AND valid_through IS NULL", (prev_vf, kid))
+
+        # 5. INSERT the new av row (behavior 4: per-DB projection) + the 1:1 survival
+        #    sibling (behavior 1), via the SAME helpers every add uses.
+        if user_projection:
+            _projected_insert(con, av_row, user_projection=True)
+        elif action["kind"] in ss.FUNCTION_KINDS:
+            _promote_bulk_in_place(con, av_row)
+        else:
+            _projected_insert(con, av_row, user_projection=False)
+        derives_from_av_id = _resolve_derives_from_av_id(
+            con, action["survival_derives_from_kid"])
+        sv_row = ss.build_survival_row(
+            av_row["id"], action["kind"],
+            survival_aob=action["survival_aob"],
+            anchor_string=action["survival_anchor_string"],
+            rule=action["survival_rule"],
+            slot_count=action["survival_slot_count"],
+            expect_unique=action["survival_expect_unique"],
+            derives_from_av_id=derives_from_av_id,
+            content_hash=av_row.get("content_hash"),
+            length=av_row.get("length"))
+        _insert_survival_row(con, sv_row, user_projection)
+        tx.commit()
+    except Exception:
+        tx.rollback()
+        raise
+
+
+def _new_tag_action_from_seed(prospective_seed_dir, state, kcdx_id, new_tag):
+    """Build the single add-versions-row action for the create-version-at-a-NEW-tag
+    path. _seed_action_rows FILTERS to GAME_VERSION_TAG, so it never emits the new-tag
+    row; this reads the SAME prospective versions seed and builds the one action for
+    the (kcdx_id, new_tag) row using the SAME column derivation _seed_action_rows uses
+    (ss.authored_kind + parse_int over the authored cells), so the resulting row is
+    identical in shape to any other add action -- only the valid_from tag differs."""
+    versions_seed = read_address_versions_seed(
+        os.path.join(prospective_seed_dir, "address_versions_seed.csv"))
+    for vs in versions_seed:
+        if (int(vs["kcdx_id"]) == int(kcdx_id)
+                and vs["valid_from_version"].strip() == new_tag):
+            srva = (vs.get("rva") or "").strip()
+            sdf = (vs.get("survival_derives_from") or "").strip()
+            return {
+                "kcdx_id": int(kcdx_id),
+                "module": vs["module"].strip(),
+                "valid_from_tag": new_tag,
+                "rva": parse_int(srva) if srva else None,
+                "kind": ss.authored_kind(vs),
+                "signature": (vs.get("signature") or "").strip(),
+                "offset": parse_int(vs.get("offset") or ""),
+                "vtable_slot": parse_int(vs.get("vtable_slot") or ""),
+                "struct_offset": parse_int(vs.get("struct_offset") or ""),
+                "lvv_tag": (vs.get("last_verified_at_version") or "").strip(),
+                "verified_by": (vs.get("verified_by") or "").strip() or None,
+                "verified_date": (vs.get("verified_date") or "").strip() or None,
+                "evidence_kind": (vs.get("evidence_kind") or "").strip() or None,
+                "survival_aob": (vs.get("survival_aob") or "").strip() or None,
+                "survival_anchor_string": (vs.get("survival_anchor_string") or "").strip() or None,
+                "survival_rule": (vs.get("survival_rule") or "").strip() or None,
+                "survival_slot_count": parse_int(vs.get("survival_slot_count") or ""),
+                "survival_expect_unique": (
+                    int((vs.get("survival_expect_unique") or "").strip())
+                    if (vs.get("survival_expect_unique") or "").strip() else None),
+                "survival_derives_from_kid": int(sdf) if sdf else None,
+            }
+    raise RuntimeError(
+        f"create-version-at-new-tag: no prospective seed row for "
+        f"(kcdx_id={kcdx_id}, valid_from_version={new_tag!r}) -- the append did not "
+        f"land (an internal db_editor error, not a maintainer edit error)")
+
+
+def apply_direct_edit(out_dir, prospective_seed_dir, *, version, log=None,
+                      defer_commit=False, new_tag=None, new_tag_kcdx_id=None):
+    """DIRECT-WRITE drive (design D19): validate the prospective DB state, then write
+    the edit DIRECTLY to BOTH DBs via _apply_one_db's write helpers -- NOT through
+    apply_seeds' seed-rebuild wrapper. THE maintainer-tool incremental write path; the
+    six db_editor write functions drive it.
+
+    Spine:
+      1. validate the PROSPECTIVE DB STATE (the prospective seed = export(DB)+edit, a
+         faithful serialisation of the post-edit DB rows -- _validate_prospective_db_state
+         reuses the single whole-state validator UNCHANGED). A failure raises BEFORE
+         any DB open -- NO write, the DB byte-identical.
+      2. open BOTH DBs, BEGIN the held outer txn on each (the 4a deferred seam).
+      3. apply the CURRENT-tag actions via _apply_one_db DIRECTLY on the held
+         connections (user then dev) -- the reuse the convergence probe proved.
+      4. if new_tag is set, apply the create-version-at-a-NEW-tag action (the new
+         game_versions INSERT + interval-close + new av row) via _apply_new_tag_version
+         -- the write the bridge could never do.
+      5. return a DeferredCommit handle (defer_commit=True) OR commit+close +return the
+         result dict (defer_commit=False). On ANY error both txns roll back + close --
+         NO partial write, NO open txn (the same no-write guarantee as apply_seeds).
+
+    Parameters:
+      out_dir              -- the directory holding reference.sqlite + reference-dev.sqlite.
+      prospective_seed_dir -- the dir holding the prospective seed (export(DB)+edit) the
+                              db_editor write function built; the validation + the
+                              new-tag action read it. NOTHING under data/seeds/.
+      version              -- the (tag, ordinal) the edit targets, ALWAYS pre-resolved
+                              (the maintainer-tool resolves it client-side, design D15;
+                              no DLL server-side). For a current-tag edit tag ==
+                              GAME_VERSION_TAG; for a new-tag create-version it is the
+                              NEW (tag, ordinal) and new_tag must equal tag.
+      defer_commit         -- True (default for the maintainer-tool): return the
+                              DeferredCommit handle the caller commits/rolls back on
+                              confirm/cancel. False: commit+close immediately, return
+                              the result dict (used by the convergence oracle).
+      new_tag/new_tag_kcdx_id -- set together for create-version-at-a-NEW-tag: the new
+                              game tag + the entity it adds a version for. None for every
+                              current-tag job.
+
+    Returns: a DeferredCommit handle (defer_commit=True) or a result dict
+    {"tag","ordinal","n_actions","counts"} (defer_commit=False).
+
+    Raises: RuntimeError (validator), BaselineRefusal (function-kind add, no bulk
+    baseline), or a typed reader error -- each BEFORE or WITHOUT a committed write.
+    """
+    def _emit(msg):
+        if log is not None:
+            log(msg)
+
+    tag, ordinal = version
+
+    # 1. Validate the PROSPECTIVE DB STATE (reuses the single whole-state validator).
+    #    For a NEW-tag create-version the prospective seed carries a row at new_tag;
+    #    the whole-state validator format-checks + tuple-uniqueness-checks it and
+    #    FK-checks its kcdx_id, while the GAME_VERSION_TAG-scoped coverage check
+    #    ignores it (a new tag does not change the baseline-coverage invariant). A
+    #    failure raises here -- NO DB open below.
+    state = _validate_prospective_db_state(prospective_seed_dir)
+    actions = _seed_action_rows(state)   # current-(GAME_VERSION_)tag actions only
+    _emit(f"  prospective DB state validated; {len(actions)} current-tag action(s)"
+          + (f" + 1 new-tag create at {new_tag}" if new_tag else ""))
+
+    user_db = os.path.join(out_dir, "reference.sqlite")
+    dev_db = os.path.join(out_dir, "reference-dev.sqlite")
+
+    # 2/3/4. Open both DBs, BEGIN the held outer txn on each, write DIRECTLY via the
+    #        _apply_one_db helpers. On ANY error roll back + close both (no partial
+    #        write, no open txn) -- the same guarantee apply_seeds' deferred path gives.
+    ucon = _open_rw(user_db, "user (reference.sqlite)")
+    try:
+        dcon = _open_rw(dev_db, "dev (reference-dev.sqlite)")
+    except BaseException:
+        _close_quiet(ucon)
+        raise
+    try:
+        state["dev_con"] = dcon
+        ucon.execute("BEGIN")
+        dcon.execute("BEGIN")
+        # 3. Current-tag actions -- the direct _apply_one_db call (convergence proven).
+        u = _apply_one_db(ucon, actions, state, "user",
+                          user_projection=True, deferred=True)
+        d = _apply_one_db(dcon, actions, state, "dev",
+                          user_projection=False, deferred=True)
+        # 4. The create-version-at-a-NEW-tag write (the game_versions INSERT the
+        #    bridge could never do). One action per DB, the SAME write helpers.
+        if new_tag is not None:
+            new_ordinal = _new_tag_ordinal(new_tag, version)
+            na = _new_tag_action_from_seed(
+                prospective_seed_dir, state, new_tag_kcdx_id, new_tag)
+            _apply_new_tag_version(ucon, na, state, "user", True,
+                                   _Tx(ucon, True), new_tag, new_ordinal)
+            _apply_new_tag_version(dcon, na, state, "dev", False,
+                                   _Tx(dcon, True), new_tag, new_ordinal)
+            u["added_versions_row"] += 1
+            d["added_versions_row"] += 1
+    except BaseException:
+        _rollback_quiet(ucon)
+        _rollback_quiet(dcon)
+        _close_quiet(ucon)
+        _close_quiet(dcon)
+        raise
+
+    result = {"tag": tag, "ordinal": ordinal,
+              "n_actions": len(actions) + (1 if new_tag else 0),
+              "counts": {"user": u, "dev": d}}
+
+    if defer_commit:
+        # Held, uncommitted -- the handle carries the open connections to the caller
+        # (commit(handle)/rollback(handle) resolve the txn; the ROLLBACK discards
+        # sqlite_sequence/PK-autoincrement bumps too -- the robust post-failure
+        # rollback, design D19).
+        return DeferredCommit(ucon, dcon, result, out_dir)
+
+    # Immediate: commit USER-first then DEV (the 4a ordering) + close. Used by the
+    # convergence oracle (direct == seed-rebuild) and any non-deferred caller.
+    try:
+        ucon.execute("COMMIT")
+        dcon.execute("COMMIT")
+    finally:
+        _close_quiet(ucon)
+        _close_quiet(dcon)
+    return result
+
+
+def validate_direct_edit(prospective_seed_dir, *, version, log=None):
+    """DRY-VALIDATE the prospective DB state for the direct-write path and STOP before
+    any DB open -- the Save-PREVIEW seam (maintainer-tool step 4b-rework re-points the
+    preview here). Runs the SAME single whole-state validator apply_direct_edit runs at
+    its step 1, against the prospective DB state (the prospective seed = export(DB)+edit),
+    and returns the validated {"tag","ordinal"} WITHOUT opening or writing any DB -- the
+    DB is byte-identical. A validation failure raises the validator's RuntimeError (or a
+    typed reader error), exactly as the write path would, with NO write.
+
+    `version` is the pre-resolved (tag, ordinal) the edit targets (current OR new tag --
+    the validate path does not write the game_versions row, so a new tag validates the
+    same way: the whole-state validator format/uniqueness/FK-checks the new-tag row and
+    the baseline-coverage check ignores it)."""
+    def _emit(msg):
+        if log is not None:
+            log(msg)
+
+    tag, ordinal = version
+    _validate_prospective_db_state(prospective_seed_dir)
+    _emit("  prospective DB state validated (no DB write -- Save preview)")
+    return {"tag": tag, "ordinal": ordinal}
+
+
 def validate_prospective_seeds(out_dir, dll_path=None, *, version=None, log=None):
     """DRY-VALIDATE the prospective seed state — run apply_seeds' validation gate
     and STOP before any DB open or write. The Save-PREVIEW seam (maintainer-tool
