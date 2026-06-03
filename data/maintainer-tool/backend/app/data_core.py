@@ -43,6 +43,16 @@ supersede_entity = _seeds_shared.supersede_entity
 deprecate_entity = _seeds_shared.deprecate_entity
 DbEditError = _seeds_shared.DbEditError
 
+# The read-for-display surface (read_api) the backend's read endpoints call
+# (step 2b). read_curated_set / read_entity_detail / read_version_rows return the
+# already-derived rows the frontend binds; DbReadError signals a missing curated DB
+# (the read-path counterpart to /health's empty/error state). The backend CALLS
+# these and serializes the result -- it derives no status and runs no SQL (D13/R3).
+read_curated_set = _seeds_shared.read_curated_set
+read_entity_detail = _seeds_shared.read_entity_detail
+read_version_rows = _seeds_shared.read_version_rows
+DbReadError = _seeds_shared.DbReadError
+
 # The export + round-trip + field-delta surface the save spine uses (later steps).
 export_seeds = _seeds_shared.export_seeds
 round_trip = _seeds_shared.round_trip

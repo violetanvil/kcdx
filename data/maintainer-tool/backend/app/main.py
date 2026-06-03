@@ -10,20 +10,32 @@ No read/save/commit endpoints yet (steps 2-5). The app holds NO data-core rule
 logic (D13/R3): it imports the data-core through the app.data_core seam and reads
 the checkout through app.config; every rule is the data-core's.
 """
+import logging
 import os
 
 from fastapi import FastAPI
 
 from . import adapter
 from .config import load_config
+from .routes_read import router as read_router
+
+# One module logger, event-driven (logging.md): the failure branches below log on
+# the data-core read failure, never per request.
+log = logging.getLogger(__name__)
 
 app = FastAPI(
     title="kcdx maintainer tool -- backend",
     description="The Python API over the headless Address Library data-core "
                 "(design D14). Step 1: skeleton + config + import seam + "
-                "version-tag adapter + health/load.",
+                "version-tag adapter + health/load. Step 2b: read endpoints "
+                "(curated set / entity detail / version rows).",
     version="0.1.0",
 )
+
+# The read-for-display endpoints (GET /entities, /entities/{id}, /.../versions) --
+# their own module (structure-by-responsibility); main.py stays the app + health
+# coordinator.
+app.include_router(read_router)
 
 
 def _checkout_status(config):
@@ -45,6 +57,12 @@ def _checkout_status(config):
     except Exception as exc:  # the seam/DB read failed -- report it, don't crash
         versions = {}
         versions_error = f"{type(exc).__name__}: {exc}"
+        # logging.md: the failure branch logs before it returns -- name the
+        # data-core seam read failure + the checkout path it looked at, so a
+        # swallowed-into-versions_error read failure is never silent.
+        log.warning(
+            "data-core known-versions read failed (checkout_path=%s, "
+            "user_db=%s): %s", config.checkout_path, config.user_db, exc)
 
     # "resolved" == the checkout yields what the tool needs to load: the curated
     # USER DB + all three seed CSVs. Missing either -> empty/error (US-1, S7).
