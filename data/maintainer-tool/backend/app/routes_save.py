@@ -18,10 +18,13 @@ deserializes the body, resolves the chosen version tag via the step-1 adapter
 (`version=(tag, ordinal)`, NO DLL server-side -- the 1b seam), calls the data-core's
 DRY-VALIDATE path (`validate_only=True` -- the validator runs, no DB write), computes
 the field-delta via data_core.field_delta, and SURFACES the verdict. The VALIDATION
-is the data-core's single gate (D13 -- the data-core's validate_prospective_seeds runs
-the same gate apply_seeds runs, before any DB open); the backend reimplements no
-validation / SQL / delta / rule logic. An invalid edit (the data-core's verdict) maps
-to `valid: false` + the validator's error, with NO write (a preview never writes).
+is the data-core's single gate (D13/D19 -- `validate_only=True` routes through
+db_editor to import_to_sqlite.validate_direct_edit, which validates the PROSPECTIVE DB
+STATE: the prospective DB rows -- the DB as it would be after the direct write -- run
+through the same whole-state validator the direct write runs, before any DB write).
+The backend reimplements no validation / SQL / delta / rule logic. An invalid edit
+(the data-core's verdict) maps to `valid: false` + the validator's error, with NO
+write (a preview never writes).
 
 THE VERSION PASSING (the 1b seam, no DLL -- the settled fork)
 -------------------------------------------------------------
