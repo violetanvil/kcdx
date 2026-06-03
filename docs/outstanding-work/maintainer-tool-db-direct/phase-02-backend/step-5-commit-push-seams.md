@@ -1,57 +1,75 @@
-# Step 5 — confirm transaction: COMMIT the held DB txn + git commit + push (D16) + auth-ready seams (D17)
+# Step 5 — Confirm: one synchronous atomic transaction (DB ops → CSV → commit DB → commit git)
 
-**What.** Add the **confirm + cancel** endpoints that close the save spine as ONE atomic
-transaction (D16): on **Confirm**, COMMIT the held deferred-commit DB transaction (step 4a/4b)
-AND do the server-side git **commit + push** of the DB + 3 CSVs — both as one confirm
-transaction (the DB COMMIT and the git commit land together, or neither does); on **Cancel**,
-ROLLBACK the held DB transaction (nothing lands — the literal "on Cancel nothing lands", design
-§7). The git side: stage by **exact path** (only the DB + the 3 CSVs — never `-A`/`.`/`-u`),
-respect a live `index.lock` (block-and-retry, never reap), author the commit message, and
-**push to the GitHub remote** so the edit is durable beyond the container (`concurrency-git.md`).
-Add the **auth-ready seams** (D17): the commit **author identity** comes from the request-context
-field the operator's login supplies; the **push credential** is **env-injected** (a documented
-env var name). The app builds NO login/auth/hosting — only the seams. A **dev default** lets the
-backend boot + run locally without the operator's auth (a fallback identity; push skippable /
-against a local remote) so the whole save→confirm→commit path is testable standalone.
+**What.** Add the **Confirm** endpoint that runs the whole queued save as ONE synchronous,
+atomic transaction while the page waits for a success/failure status (and a trivial **Cancel**
+that does nothing — no state was held). On Confirm, the backend takes the entity + the edit +
+the chosen version tag and runs, in the one request:
+1. **start the transaction** (the 4a deferred-commit seam — open both DBs under a held outer txn);
+2. **run all DB operations** (the chosen `db_editor` write, `version=` from the 1b adapter, deferred);
+3. **run all CSV operations** (export the in-transaction DB state to the `data/seeds/` CSVs,
+   diff-preserved) + the **round-trip oracle** (byte-identity — the design §7 round-trip, owed here);
+4. **commit the DB** (the 4a `commit(handle)` — USER-first then DEV, the settled ordering);
+5. **commit + push git** (stage the DB + 3 CSVs by **exact path** — never `-A`/`.`/`-u` — respect
+   a live `index.lock` block-and-retry, author the commit message, push to the private remote).
 
-**The confirm ORDER (a real correctness decision — surface at build time):** the held DB
-transaction COMMIT and the git commit must compose so a failure of one does not orphan the
-other (e.g. DB COMMIT succeeds, then the git commit fails — the DB now has an uncommitted-to-git
-change; or the reverse). Settle the ordering + the failure handling (DB-commit-then-git, with a
-git failure triggering... what? a compensating action? the export-is-from-the-committed-DB so a
-git failure leaves the DB ahead) once the exact sequence is written, and SURFACE it to the user
-(design-authority) — it composes with 4a's two-DB-commit ordering decision.
+**If ANY step fails, roll back everything** (the deferred txn's `rollback(handle)` undoes the DB;
+the CSV export is reverted to its pre-Confirm state; no git commit happens) and return a FAILURE
+status to the waiting page. On success, return "Saved `<entity> <version>`". This is the literal
+"on Cancel/failure nothing lands" (design §7) — the transaction opens AND closes inside this one
+request, nothing is held across the maintainer's think-time (plan-spec §"Cross-step invariants").
 
-**Scope.** The confirm endpoint (COMMIT the held 4a txn + the git commit+push) + the cancel
-endpoint (ROLLBACK the held txn), the exact-path/live-lock discipline, the
-identity-from-request-context seam, the env-credential seam, and the dev default. The held-txn
-registry the save (4b) populated is resolved here. No auth/login/hosting (the operator's, D17).
-No frontend, no Docker.
+**The post-DB-commit failure (settled by the model).** Steps 1–4 are inside the deferred txn, so
+a failure there rolls back cleanly (nothing committed). The remaining edge: step 4 (DB commit)
+succeeds, then step 5 (git) fails. The model's answer is **roll back everything** — but a
+committed SQLite txn cannot be un-committed, so order to AVOID the edge: run the CSV export +
+round-trip (step 3) and stage the git changes BEFORE the DB commit where possible, so the only
+post-DB-commit action is the git `commit`+`push` of already-staged content; a git failure there
+leaves the DB committed + the CSVs written + staged (a re-Confirm/retry re-commits the same staged
+content — git is idempotent on identical content) and the page shows "saved, commit failed —
+retry". Settle the exact step order + the git-failure recovery when the sequence is written, and
+SURFACE it (it is the DB-authoritative D1 edge: the DB + CSVs are the source of truth, git is the
+durable mirror that retries). The two-DB-commit ordering (USER-first, 4a) composes under it.
 
-**Test bar.** A backend test (`pytest`): a confirmed save commits the DB + 3 CSVs by exact
-path (assert only those paths staged) with the request-context identity as the author;
-a live `index.lock` blocks-and-retries (never reaps); the push is asserted against a
-**throwaway local bare remote** (or a mocked push) — NOT a real GitHub push; the dev default
-boots without the operator's credential. Touches the git layer → the inline impact-analysis
-applies (grep how the existing committer discipline in `concurrency-git.md` is honored;
-confirm exact-path staging + no broad add).
+**Auth-ready seams (D17).** The commit **author identity** comes from the request-context field
+the operator's login supplies; the **push credential** is **env-injected** (a documented env var
+name). The app builds NO login/auth/hosting — only the seams. A **dev default** lets the backend
+boot + run locally without the operator's auth (a fallback identity; push skippable / against a
+local remote) so the whole Save→Confirm→commit path is testable standalone.
 
-**Dependencies.** Step 4b (the save endpoints that open + hold the deferred-commit transaction
-this step COMMITs/ROLLBACKs) + step 4a (the deferred-commit seam's commit/rollback the confirm
-calls). Sequenced after 4b — the confirm has no held transaction to commit until the save spine
-opens one.
+**Scope.** The Confirm endpoint (the 5-step synchronous transaction) + the Cancel endpoint
+(a no-op success — nothing was started). The exact-path/live-lock git discipline, the
+identity-from-request-context seam, the env-credential seam, the dev default. No auth/login/hosting
+(the operator's, D17). No frontend, no Docker.
+
+**Test bar.** A backend test (`pytest`) on the mini-dump checkout, real API → real data-core →
+real DBs + a **throwaway local bare git remote** (NOT real GitHub):
+- a successful Confirm: the DB holds the new value AND the 3 `data/seeds/` CSVs are updated AND a
+  git commit landed staging ONLY the DB + 3 CSVs by exact path (assert only those paths staged)
+  with the request-context identity as the author, AND the push reached the throwaway remote;
+- a failure injected at each step (an invalid edit → caught at DB ops; a round-trip divergence; a
+  git failure) → **the DB + CSVs are byte-identical to before** (rollback-everything — the
+  load-bearing atomicity proof) and the page gets a FAILURE status;
+- a live `index.lock` blocks-and-retries (never reaps);
+- the dev default boots + commits without the operator's credential;
+- Cancel is a no-op (nothing was written).
+Touches the git layer → the inline impact-analysis applies (honor `concurrency-git.md` exact-path
+staging + no broad add).
+
+**Dependencies.** Step 4b (the Save preview the maintainer reviews before Confirm — Confirm
+re-sends the same edit) + step 4a (the deferred-commit seam Confirm opens+commits in the one
+request) + step 1b (the `version=` adapter) + step 2a (the export/round-trip surface). Sequenced
+after 4b.
 
 **Touches existing code / shared tree.** YES — it writes to the shared `.git`/index. Honor
-`concurrency-git.md` (exact-path staging, live-lock block-and-retry, no auto-branch, no hand
-push to `public`). The push target is the private remote per the repo's remote topology; the
-test must NOT push to a real remote.
+`concurrency-git.md` (exact-path staging, live-lock block-and-retry, no auto-branch, no hand push
+to `public`). The push target is the private remote; the test must NOT push to a real remote.
 
 **Design authority.** [`data/maintainer-tool/design.md`](../../../../data/maintainer-tool/design.md)
-§8 (the commit constraint — exact-path/live-lock/push) + §10 D16 (server commit + push) +
-D17 (auth-ready seams + dev default). `.claude/rules/concurrency-git.md` (the committer
-discipline + the remote topology). The frontend surface:
-[`ui/screens/s06-save-confirm.md`](../../../../data/maintainer-tool/ui/screens/s06-save-confirm.md)
-(the "Saved" / "blocked — Retry" toast the result feeds; git is invisible — law 5).
+§7 (the save spine) + §8 (the commit constraint — exact-path/live-lock/push) + §10 D1 (DB
+authoritative, CSVs the derived layer) + D16 (server commit + push) + D17 (auth-ready seams + dev
+default). `.claude/rules/concurrency-git.md` (the committer discipline + the remote topology).
+The frontend surface: [`ui/screens/s06-save-confirm.md`](../../../../data/maintainer-tool/ui/screens/s06-save-confirm.md)
+(the "Saved" / "blocked — Retry" toast the result feeds; the page WAITS for the status; git is
+invisible — law 5).
 
-**Disassembler-test / author-burden.** N/A — git plumbing; no author-facing game-function
-input.
+**Disassembler-test / author-burden.** N/A — git plumbing; no author-facing game-function input.

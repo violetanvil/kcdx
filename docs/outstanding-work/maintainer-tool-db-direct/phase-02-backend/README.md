@@ -25,8 +25,8 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 | 2b backend read endpoints — call 2a + serialize to JSON (curated set / entity detail / version rows) | DONE | 5cfa556 |
 | 3 field-delta API (D8) — saved-vs-prospective | DONE | 8224fc3 |
 | 4a data-core deferred-commit seam — apply_seeds runs validate→write→round-trip then RETURNS the open connections uncommitted; commit(conns)/rollback(conns) exposed (THE write mechanism for the maintainer tool — DB changes commit only on confirm); additive + oracle-preserving | DONE | 63a2a92 |
-| 4b backend save endpoints — the six job shapes, each opening a deferred-commit txn via 4a, returning the result+delta for the confirm gate; the txn is held for step 5's commit-on-confirm | DONE | 671859f |
-| 5 git commit + push on confirm (D16) — COMMIT the held 4a txn + the git commit as ONE confirm transaction + auth-ready seams (D17, + dev default) | NOT STARTED | — |
+| 4b save (preview) endpoints — the six job shapes: validate the prospective edit + return the field-delta (NO write, NO held txn); the maintainer reviews the diff before Confirm | NEEDS REWORK | 671859f |
+| 5 Confirm transaction (D16) — ONE synchronous request: start txn → DB ops → CSV export → commit DB → git commit/push → success/failure; rollback-everything on any failure + auth-ready seams (D17, + dev default) | NOT STARTED | — |
 
 ## Step docs
 

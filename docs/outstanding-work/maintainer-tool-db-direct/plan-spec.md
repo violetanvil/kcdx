@@ -95,30 +95,30 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
   in JS) was rejected as a law-6 violation that drifts. Mirrors the 1b precedent: the data-core
   was built for write; the read-for-display surface didn't exist, so it is built IN the
   data-core. Status logic lives once, tested against policy.md, reusable by any consumer.
-- **Deferred commit is THE write mechanism for the maintainer tool** (design §7 save spine;
-  user-settled 2026-06-03): EVERY DB change the tool makes goes through a deferred-commit
-  transaction -- open a transaction on both DBs, run validate -> write -> export -> round-trip
-  INSIDE it, RETURN the open (uncommitted) connections, and COMMIT only when the user confirms
-  (ROLLBACK on cancel or any failure). "On Cancel nothing lands" holds literally -- an
-  uncommitted transaction is invisible and discardable; no file copy, no 1.3GB DEV-DB
-  duplication, no live mutation before confirm. The LANDED data-core does NOT expose this: a
-  GROUND-TRUTH probe of import_to_sqlite.apply_seeds confirmed it opens BOTH DBs (user + dev),
-  commits each action INTERNALLY (per-action `BEGIN`/`COMMIT`, _apply_one_db), then CLOSES both
-  before returning (import_to_sqlite.py:1784-1801) -- the transaction is fully internal and gone
-  by return. So P2 step 4a adds a deferred-commit MODE to apply_seeds (additive + oracle-
-  preserving, the 1b pattern: the existing internal-commit path stays for desktop/CLI/tests):
-  run the writes under ONE outer transaction per DB (not per-action auto-commit), skip the
-  COMMIT, and return the two open connections + the result; the data-core also exposes
-  commit(conns) / rollback(conns). The backend (step 4b) holds the connections across the
-  confirm; step 5 COMMITs the held transaction together with the git commit as ONE confirm
-  transaction. The two-DB commit ORDERING sub-decision is SETTLED (user-confirmed 2026-06-03,
-  landed in 63a2a92): commit() does USER-first then DEV, re-raising on a DEV-COMMIT failure
-  (never swallowed). user + dev are two separate SQLite files with no cross-file atomic commit;
-  user-first makes the only possible split "USER (the shipped curated DB) committed, DEV (the
-  on-demand bulk DB) lagging" -- the more-recoverable split (a re-apply diffs only the DEV side,
-  the applier's convergence making it safe), and the shipped DB the tool reads back is always
-  correct. A truly-atomic two-file commit (ATTACH / single-file layout) was deferred as a
-  potential follow-on, out of 4a's additive scope.
+- **The save flow is Save-previews / Confirm-transacts -- NOTHING is held across the user's
+  think-time** (design §7 save spine; user-settled 2026-06-03, REVISED 2026-06-03 from a
+  held-transaction model to a Confirm-time transaction model). The maintainer edits an entity's
+  fields locally, hits **Save** -> the backend VALIDATES the prospective edit + returns the
+  field-delta (`field: old -> new`) for review (NO DB write, NO transaction, NO held state);
+  reviews the diff, hits **Confirm** -> the backend runs the WHOLE queued transaction
+  SYNCHRONOUSLY in the one request while the page waits: start txn -> DB ops -> CSV export ->
+  commit DB -> git commit/push -> return success/failure; ANY failure rolls back everything
+  (the page gets a failure status, nothing lands). The transaction opens AND closes inside the
+  single Confirm request -- there is NO transaction held open between Save and Confirm, so no
+  registry, no executor-per-save, no leak, no reaper, no cross-request thread-affinity problem.
+- **The deferred-commit seam (step 4a, landed 63a2a92) makes Confirm's transaction atomic
+  WITHIN the one request.** A GROUND-TRUTH probe confirmed the landed apply_seeds opens both
+  DBs, commits each action INTERNALLY, then closes both before returning -- so to make
+  DB-ops + CSV-export + commit atomic, 4a added a deferred-commit MODE (additive +
+  oracle-preserving): run the writes under ONE outer transaction per DB, skip the per-action
+  COMMIT, return the open connections + commit(handle)/rollback(handle). Confirm (step 5) opens
+  this transaction, does the work, COMMITs on success / ROLLBACKs on any failure -- all inside
+  the one Confirm request (NOT held across think-time, the revision above). The two-DB commit
+  ORDERING is SETTLED (user-confirmed 2026-06-03, landed in 63a2a92): commit() does USER-first
+  then DEV, re-raising on a DEV-COMMIT failure. user + dev are two separate SQLite files with no
+  cross-file atomic commit; user-first makes the only possible split "USER (shipped curated)
+  committed, DEV (bulk) lagging" -- the more-recoverable split (a re-apply diffs only the DEV
+  side). A truly-atomic two-file commit (ATTACH/single-file) was deferred as a follow-on.
 - **DB↔CSV information-equivalence + the round-trip** (design §4): every save re-asserts the
   byte-identity round-trip before commit; a divergence aborts with no write.
 - **The 9 interaction laws bind on every frontend step** (`ui/design.md` §"Global
@@ -158,9 +158,9 @@ authority: `data/seeds/policy.md` (column-level invariants), `requirements.md` R
 | Data-core read seam — read_curated_set/read_entity_detail/read_version_rows + the single derive_status (policy.md 4-rule) | P2 step 2a | the rule logic lives in the data-core (D13/law 6), not the backend; the producer the read endpoints consume |
 | Read API — curated set + entity detail + version rows + derived status | P2 step 2b | the backend calls step 2a + serializes JSON; feeds s01/s02/s03 |
 | Field-delta API (D8) | P2 step 3 | wraps `field_delta` |
-| Data-core deferred-commit seam — apply_seeds returns open uncommitted connections + commit/rollback (THE tool's write mechanism) | P2 step 4a | additive + oracle-preserving; the producer the save endpoints + step 5 consume |
-| Save API — the six job shapes (data-core save spine) | P2 step 4b | each opens a deferred-commit txn via 4a, returns result+delta for the confirm gate; **consumes step 1b's tag seam + 4a's deferred-commit seam**; holds the txn for step 5 |
-| Git commit + push on confirm (D16) + auth-ready seams (D17) | P2 step 5 | COMMIT the held 4a txn + the git commit as ONE confirm transaction; exact-path/live-lock/push; injected identity + env credential + dev default |
+| Data-core deferred-commit seam — apply_seeds returns open uncommitted connections + commit/rollback (makes Confirm's txn atomic within one request) | P2 step 4a | additive + oracle-preserving; Confirm (step 5) opens+commits it in one request |
+| Save (preview) API — the six job shapes: validate the prospective edit + return the field-delta (NO write, NO held txn) | P2 step 4b | the maintainer reviews the diff before Confirm; **consumes step 1b's tag seam + step 3's field-delta**; reworked from the held-txn model |
+| Confirm transaction (D16) + auth-ready seams (D17) | P2 step 5 | ONE synchronous request: start txn → DB ops → CSV export → commit DB → git commit/push → success/failure; rollback-everything on any failure; exact-path/live-lock/push; injected identity + env credential + dev default |
 | Container data layout — backend reads the checkout (D18) | P2 step 1 (consumes) + P5 step 16 (provides) | configured checkout path |
 | Frontend skeleton + Mantine theme (tokens) + responsive app shell (D14, laws) | P3 step 6 | the API client; the two-pane ↔ drill-down shell |
 | s01 navigator (search/filter/list/chips) | P3 step 7 | `ui/screens/s01` |
