@@ -1,6 +1,6 @@
-# Phase 2 step 8 — `kcdxAssetInterface` C++ mirror (full parity)
+# Phase 2 step 9 — `kcdxAssetInterface` C++ mirror (full parity)
 
-**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 8.
+**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 9.
 
 ## What
 
@@ -23,7 +23,7 @@ the `// --- APPEND-ONLY BELOW ---` marker, the positional initializer order in
   `structure-by-responsibility.md`).
 - **Docs move with the surface** (`docs-discipline.md`): each method ships its
   `docs/cpp/` entry + glossary term + matrix row, SAME step; remove any NYI marker
-  step 7 left on the C++ side.
+  step 8 left on the C++ side.
 
 ## Test bar
 
@@ -36,8 +36,8 @@ live-confirmed via the launch.
 
 ## Dependencies
 
-**Step 7** (the Lua surface + the shared engine-side resolution the C++ thunks call
-— the mirror wraps the same path). Ordered after step 7 so there is a resolution
+**Step 8** (the Lua surface + the shared engine-side resolution the C++ thunks call
+— the mirror wraps the same path). Ordered after step 8 so there is a resolution
 path to mirror, and parity can be tested Lua-vs-C++ (`.claude/rules/incremental-delivery.md`).
 
 ## Reference

@@ -7,10 +7,11 @@ cross-plugin references, runtime registration/publishing, transparent per-class
 handling. The most-touched mod-authoring surface for total conversions.
 
 **Settled design:** [`../../design/asset-replacement.md`](../../design/asset-replacement.md)
-(the canonical `§`-structured TRD, committed `eea0fdb` — kcdx OWNS resolution by
-REPLACING `CCryPak::AdjustFileName`, `sys_pakPriority`-independent, seam installed
-in the already-shipping ready-bracket). **Shared spec + coverage map:**
-[`plan-spec.md`](plan-spec.md).
+**v2** (the canonical `§`-structured TRD, committed `9c891b1` — the seam is TWO
+coordinated hooks: HOOK 1 replaces `CCryPak::AdjustFileName` (slot 1, id 152) for
+the resolution DECISION, HOOK 2 returns kcdx's own CRT `FILE*` for the loose OPEN;
+both install in the already-shipping ready-bracket; `sys_pakPriority` neither set
+nor depended on). **Shared spec + coverage map:** [`plan-spec.md`](plan-spec.md).
 
 The `[entrypoints].assets` parse + the load-order overlay map (`2588b33`) are
 **already built + live** — the landed foundation (see `plan-spec.md`). The
@@ -30,20 +31,23 @@ when `DONE`, `—` otherwise.
 
 | Phase | Status | Commit |
 |---|---|---|
-| [1 — resolution ownership (the AdjustFileName seam, probe-gated)](phase-01-resolution-ownership/README.md) | NOT STARTED | — |
+| [1 — resolution ownership (the TWO-hook seam, probe-gated)](phase-01-resolution-ownership/README.md) | NOT STARTED | — |
 | [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | NOT STARTED | — |
 | [3 — regression coverage](phase-03-regression/README.md) | NOT STARTED | — |
 
 ## Phase intents
 
-- **Phase 1 — resolution ownership.** Probe the seam-install ordering FIRST
-  (`ModManager_ctor` vs the first asset read, design §8), then replace
-  `CCryPak::AdjustFileName` with the kcdx-owned resolver (overlay HIT → kcdx's
-  path, MISS → call through to the engine leaves), removing the dead FOpen/SEAM-A
-  residue. Probe the handle-consumed resolution + build transparent staging to its
-  result. Then the per-asset sidecar declarative model + load-order conflict
-  reporting. Ends with overlay replacement working in-game for both asset classes,
-  and stock paks resolving unchanged.
+- **Phase 1 — resolution ownership (the two-hook seam).** Two probes FIRST: the
+  seam-install ordering (`ModManager_ctor` vs the first asset read, §8 — findings
+  captured) and the DirectStorage texture-arm bypass (§7 caveat, default-off,
+  confirm before shipping). Then the two hooks: HOOK 1 replaces
+  `CCryPak::AdjustFileName` (the resolution DECISION — overlay HIT decides kcdx's
+  file wins, MISS calls through the leaves; removes the dead FOpen/SEAM-A residue);
+  HOOK 2 returns kcdx's own CRT `FILE*` for the loose OPEN (no dependence on the
+  engine's loose-search), installed alongside HOOK 1 in the ready-bracket. Then the
+  per-asset sidecar declarative model + load-order conflict reporting. Ends with
+  overlay replacement working in-game (add-new via the loose lane, replace-vanilla
+  via the resolver redirect into the pak/mount lane), and stock paks unchanged.
 - **Phase 2 — author surface.** The navigable `kcdx.plugin.<author>.<plugin>.*`
   namespace (`__index` resolver chain, the general cross-plugin primitive); the
   stale-comment sweep; the `kcdx.assets.*` Lua surface (add/reference/publish/

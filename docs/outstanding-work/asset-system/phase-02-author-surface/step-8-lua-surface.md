@@ -1,6 +1,6 @@
-# Phase 2 step 7 — `kcdx.assets.*` Lua surface (reference / publish / register / replace)
+# Phase 2 step 8 — `kcdx.assets.*` Lua surface (reference / publish / register / replace)
 
-**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 7.
+**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 8.
 
 ## What
 
@@ -8,7 +8,7 @@ The `kcdx.assets.*` Lua surface — the author's code-side entry to the asset sy
 (design §5). Five verbs: `get_by_path(path)` (resolve own asset → loadable path,
 US-2), `get_by_name(name)` (resolve own published asset, US-5), `replace(target,
 with)` (runtime replacement, US-6), `declare(name, file)` (runtime publish, US-5),
-`register(vpath, file)` (runtime add, US-6). Cross-plugin reference uses the step-5
+`register(vpath, file)` (runtime add, US-6). Cross-plugin reference uses the step-6
 navigable namespace (`kcdx.plugin.<a>.<p>.assets.get_by_path(...)`); the string-key
 form `kcdx.assets.replace("author.plugin.asset", with)` is the equivalent for a
 dynamic/quoted key the dotted form can't express (design §6). Own-asset calls take
@@ -22,12 +22,12 @@ no owner prefix (the engine knows the calling plugin).
   loadable path (resolution) or applies (register/replace/declare); a path to a
   file not in the plugin's `assets/`, or a non-existent published name, returns a
   teaching error naming the missing thing (AP14).
-- Wire the `.assets.*` leaf on the step-5 plugin handle (cross-plugin form).
+- Wire the `.assets.*` leaf on the step-6 plugin handle (cross-plugin form).
 - Register the table in `RegisterKcdxTable` (`src/lua_bind.cpp`).
 - **Docs move with the surface** (`docs-discipline.md`): each verb ships its
   `docs/lua/` entry (call shape, args, return, error behavior, runnable snippet) +
   any new glossary term + a matrix row, SAME step. The C++ mirror's `docs/cpp/`
-  entry lands in step 8 (or a NYI marker here per `docs-discipline.md`).
+  entry lands in step 9 (or a NYI marker here per `docs-discipline.md`).
 
 ## Test bar
 
@@ -40,11 +40,12 @@ teaching error. Build green; live-confirmed via the launch (`acceptance-signal.m
 
 ## Dependencies
 
-**Step 5** (the navigable namespace — the cross-plugin `kcdx.plugin.<a>.<p>.assets.*`
-form resolves through it) and **Phase 1 step 2/3** (the resolution seam + the
-loadable path a `get_by_path` hands back is what the seam resolves — the design §9
-probe-2 settles that path's shape). Ordered after both so the verbs return a path
-that actually resolves (`.claude/rules/incremental-delivery.md`).
+**Step 6** (the navigable namespace — the cross-plugin `kcdx.plugin.<a>.<p>.assets.*`
+form resolves through it) and **Phase 1 steps 3 + 4** (HOOK 1 + HOOK 2 — the
+two-hook seam that resolves AND serves; what `get_by_path`/`get_by_name` hand back
+is a path/handle the seam serves). Ordered after the seam + the namespace so the
+verbs return something that actually resolves and serves
+(`.claude/rules/incremental-delivery.md`).
 
 ## Reference
 

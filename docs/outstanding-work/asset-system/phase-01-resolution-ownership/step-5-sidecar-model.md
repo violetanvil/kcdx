@@ -1,6 +1,6 @@
-# Phase 1 step 4 — sidecar declarative model + load-order conflict report
+# Phase 1 step 5 — sidecar declarative model + load-order conflict report
 
-**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 4.
+**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 5.
 
 ## What
 
@@ -30,7 +30,7 @@ reporting is already built, `2588b33`).
 
 ## Test bar
 
-A `cap-NN` suite-gated test plugin (the permanent regression home is step 9; this
+A `cap-NN` suite-gated test plugin (the permanent regression home is step 10; this
 step ships the sidecar-parse coverage as part of its deliverable per
 `test-suite.md`): a TOML-only declarative replacement applies in-game; a sidecar
 with a missing `replaces` target produces the LOUD teaching error in the log (a
@@ -40,10 +40,10 @@ green. Live-confirmed via the launch (`acceptance-signal.md`).
 
 ## Dependencies
 
-**Step 2** (the seam consults the overlay map this step feeds) and **step 3** (the
-resolution handles both classes, so a sidecar-declared overlay of either class
-applies). Ordered after both so a declared overlay actually resolves when this
-step lands (`.claude/rules/incremental-delivery.md`).
+**Step 3** (HOOK 1 — the resolver consults the overlay map this step feeds) and
+**step 4** (HOOK 2 — serves the bytes, so a sidecar-declared overlay of any class
+applies end-to-end). Ordered after both hooks so a declared overlay actually
+resolves AND serves when this step lands (`.claude/rules/incremental-delivery.md`).
 
 ## Reference
 

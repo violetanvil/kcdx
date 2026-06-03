@@ -7,114 +7,135 @@ step doc leans on this spec rather than restating shared context.
 This is NOT "asset replacement" alone — replacement is one capability among
 several. The system lets an author: **add** new assets on systems they create,
 **reference** any asset (own or another mod's) in Lua/C++, **publish** stable
-names as a cross-mod contract, **compose** on top of another mod's asset pack, and
-**replace** vanilla or another mod's assets — all with zero engine knowledge and
-no implicit magic.
+names as a cross-mod contract, **compose** on top of another mod's asset pack,
+and **replace** vanilla or another mod's assets — all with zero engine knowledge
+and no implicit magic.
 
 - **Goal:** ship kcdx's asset system — author drops files in one `assets/` folder;
   references any asset (own or another mod's) by path or published name through a
   navigable namespace; declares replacements explicitly (sidecar or code);
-  registers/publishes assets at runtime; with transparent per-class handling and
-  zero engine knowledge.
+  registers/publishes assets at runtime; with transparent class-agnostic serving
+  and zero engine knowledge.
 - **Settled design (the authority — build to IT, not to a step's prose summary):**
   [`../../design/asset-replacement.md`](../../design/asset-replacement.md)
-  (the canonical `§`-structured TRD, committed `eea0fdb`). Every step doc cites the
-  specific `§` it builds. `.claude/rules/spec-conformance.md`: a step doc is a
-  pointer to that design, never a replacement.
+  **v2** (the canonical TRD, committed `9c891b1`; changelog
+  `../../design/asset-replacement-changelog.md`). Every step doc cites the specific
+  `§` it builds. `.claude/rules/spec-conformance.md`: a step doc is a pointer to
+  that design, never a replacement.
+
+## The seam — TWO coordinated hooks (the v2 mechanism every Phase-1 step builds to)
+
+The design's §7, gated against the load-path research (commit `3193e84`) + the
+FOpen-handle finding (commit `e6e8e27`):
+
+- **HOOK 1 — the resolution DECISION:** replace `CCryPak::AdjustFileName` (slot 1,
+  id 152) via `hook_chain::AddCEngine`. kcdx decides which file wins, for every
+  asset class and BOTH byte-lanes (loose + mount/stream), above the
+  `sys_pakPriority` gate. MISS → call through the leaves (ids 153/154/155) so stock
+  content (incl. a stock Nexus/Workshop pak, US-7) resolves unchanged. This reaches
+  **replace-vanilla** (the pak/mount lane).
+- **HOOK 2 — the loose OPEN:** on a declared-overlay hit, kcdx opens the loose file
+  itself and returns its OWN CRT `FILE*` (gate-verified: FRead's OS arm serves any
+  `FILE*` whose `handle−1 ≫ pak-handle-count`). kcdx never depends on the engine's
+  loose-search finding the file — it owns the handle. This serves **add-new** and
+  the loose side of replace.
+
+Why two hooks (the v1 correction): every class opens via FOpen but bytes arrive on
+two lanes — loose (FOpen mints a `FILE*`) and mount/stream (pak-resident read on a
+mount-minted handle, NOT FOpen); the resolver is `sys_pakPriority`-gated (pak-only
+at the default), so slot-1-alone can't serve loose bytes and FOpen-alone can't
+replace a pak asset. Owning the decision + the open covers both. (The v1
+"single-FOpen-hook / FOpen-calls-slot-1 / independent-of-sys_pakPriority" framing
+was the falsified inference the AP19 gate caught.)
 
 ## Landed foundation (built — this plan builds ON these, does not rebuild them)
 
 - **`[entrypoints].assets` parse + the load-order overlay map** (vpath → loose
   file; `NormalizeVPath`; built at discovery), `src/config.cpp` +
   `src/asset_overlay.cpp` + `src/plugin_loader.{h,cpp}` — committed `2588b33`. The
-  map (vpath → winning OverlayEntry) and its load-order conflict reporting are
-  built; the resolution seam that CONSULTS the map is this plan's P1.
+  map + its load-order conflict reporting are built; the two hooks that CONSULT/
+  SERVE it are this plan's Phase 1.
+- The **ctor-vs-first-read ordering probe** (P1-s1) already fired with findings
+  captured (`_research/phase8.5-pak-resolver/step1-ordering-probe-finding.md` +
+  the dual-marker probe in `src/asset_overlay.cpp` / `src/mod_absorb/ctor_bracket.cpp`).
 
-NOT foundation — to be removed by P1: the throwaway `InstallSeamAProbe()` SEAM-A
-diagnostic + the dead `CCryPak::FOpen` probe hook in `src/asset_overlay.{h,cpp}`.
-The earlier "production FOpen overlay hook" (`9e524ae`) is superseded — the FOpen
-hook is NOT the mechanism (design §7); P1-s2 replaces it with the `AdjustFileName`
-seam and removes the FOpen/SEAM-A residue (`.claude/rules/working-artifacts.md` —
-a probe leaves no residue in live source).
+NOT foundation — removed by P1-s3 (HOOK 1): the throwaway `InstallSeamAProbe()`
+SEAM-A diagnostic + the dead `CCryPak::FOpen` probe hook in
+`src/asset_overlay.{h,cpp}` (the FOpen hook is not the mechanism — design §7).
 
 ## Cross-step invariants (hold across every step)
 
-- **kcdx OWNS asset resolution by REPLACING `CCryPak::AdjustFileName`** (the
-  resolution-decision root, slot 1, id 152) — NOT by hooking `CCryPak::FOpen`. On
-  an overlay HIT the kcdx replacement returns kcdx's path; on a MISS it falls
-  through to the engine's leaves (pak-membership 153, disk-existence 154,
-  root-prefix 155) so stock content resolves unchanged (design §7). Owning the one
-  seam owns BOTH asset classes (memory-mapped + handle-consumed).
-- **Resolution is independent of `sys_pakPriority`.** kcdx's overlay decision sits
-  ABOVE the engine's per-mode existence table; kcdx neither sets nor depends on the
-  CVar. `sys_pakPriority` is NOT a mechanism, fallback, or dependency anywhere in
-  this plan (design §7, §12 — a dev-mode CVar a game update could change is an
-  unacceptable durability risk).
-- **The seam is live before the engine's first asset read** — installed inside the
-  already-shipping ready-bracket (before `SetEvent(g_kcdxReadyEvent)`), so the
-  game-init thread blocks at `ModManager_ctor` until the seam is live (design §8).
-  The `ModManager_ctor`-vs-first-read ordering is P1-s1's probe.
+- **The seam is the two hooks above** — HOOK 1 (resolver decision, id 152) + HOOK 2
+  (own-`FILE*` loose open). Independent of `sys_pakPriority` (kcdx neither sets nor
+  depends on it — owns the decision above the gate + the handle beneath the search).
+- **Both hooks install in the already-shipping ready-bracket** (before
+  `SetEvent(g_kcdxReadyEvent)`), so both are live before the engine's first asset
+  read (design §8); the `ModManager_ctor`-vs-first-read ordering is P1-s1's probe.
 - **Explicit declaration, never implicit path-match.** A file's presence in
-  `assets/` does NOT replace anything; a replacement is an explicit sidecar or code
+  `assets/` replaces nothing; a replacement is an explicit sidecar or code
   declaration. A mistyped target fails LOUD (`anti-patterns.md` AP14), never a
   silent orphan (design §4.1).
 - **Resolve game facts by name/id, never a literal** (`no-hardcoded-addresses.md`,
   AP1). `CCryPak_AdjustFileName` (id 152), `CCryPak_IsFileInPak` (153),
   `CCryPak_DoesFileExistOnDisk` (154), `CCryPak_AdjustFileName_RootPrefix` (155) —
-  seed rows exist; **no new seed row this plan** (AP18).
+  seed rows exist; **no new seed row this plan** (AP18). (The id-152 seed PROSE is
+  falsified and corrected by P2-s7's sweep — design §10.2.)
 - **Full Lua↔C++ parity** (`lua-api-surface.md`) — every author surface ships its
   Lua verb AND its `kcdxAssetInterface` C++ mirror; parity is tested.
 - **Docs move with the surface** (`docs-discipline.md`) — each `kcdx.assets.*`
   verb / interface method ships its `docs/lua/` + `docs/cpp/` entry + glossary term
   + a test row in the SAME step.
-- **The author never sees the asset-class distinction** (memory-mapped vs
-  handle-consumed) — handling is transparent (design §4.3, the disassembler test).
-- **A stock Nexus/Workshop pak loads unchanged** — the overlay-miss fall-through to
-  the pak-membership leaf (id 153) resolves stock pak content exactly as today
-  (design §3 US-7, §7); a regression row proves it.
+- **The author never sees the asset-class distinction** — the two hooks serve every
+  class the same way from `assets/`; no `<game>/Data/` staging (HOOK 2 owns the
+  handle — design §4.3, the disassembler test).
+- **A stock Nexus/Workshop pak loads unchanged** — HOOK 1's MISS fall-through to
+  the pak-membership leaf (id 153) resolves stock pak content as today (design §3
+  US-7, §7); a regression row proves it.
 
 ## Coverage map — every design element → its covering step (or explicit deferral)
 
 `.claude/rules/spec-conformance.md` — the durable proof the plan accounts for the
-whole design. A later `/execute` / review reads this to verify every element shipped.
+whole design (v2).
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| §8 seam-install ordering (does `ModManager_ctor` precede first read) | P1-s1 (probe) | the gating unknown; falsifying outcome surfaces a fork |
-| §7 the resolution seam — REPLACE `AdjustFileName` (id 152) + call-through leaves | P1-s2 | removes the FOpen/SEAM-A residue; memory-mapped override live end-to-end |
-| §4.3 / §9-probe-2 handle-consumed resolution + transparent staging | P1-s3 (probe + build) | does `.lua`/`.xml` resolve from `assets/` or need staging — built to the result |
-| §4.2 declarative sidecar (`replaces` / `replaces_plugin`+`replaces_path` / `name`) | P1-s4 | feeds the overlay map; loud error on missing target (AP14) |
-| §4.4 load-order conflict resolution + report line | P1-s4 | winner/suppressed shape; map's conflict reporting already built (2588b33) |
-| US-1 — replace a vanilla asset, no code (declarative) | P1-s2 (resolution) + P1-s4 (sidecar) | dominant TC case; memory-mapped live-verified |
-| US-4 — replace another mod's asset (chain) | P1-s4 (sidecar target) + P1-s2 (resolution) | target = name or owner+path; load-order conflict |
-| US-7 — stock Nexus/Workshop pak loads unchanged | P1-s2 (miss fall-through) + P3-s9 (regression row) | backward-compat; the overlay-miss path resolves stock paks |
-| §6 navigable `kcdx.plugin.<author>.<plugin>.*` namespace (`__index` chain) | P2-s5 | the general cross-plugin primitive; US-3 enabler |
-| §10.2 stale-comment sweep (research/design prose on dotted `__index`) | P2-s6 (own step) | distinct concern; commit-grain on its own; cites the as-built P2-s5 |
-| §5 `kcdx.assets.*` Lua surface (`get_by_path`/`get_by_name`/`replace`/`declare`/`register`) | P2-s7 | + the string-key cross-plugin form |
-| US-2 — reference own asset by path | P2-s7 (`get_by_path`) | own = no owner prefix |
-| US-3 — reference another mod's asset (navigable ns) | P2-s5 (namespace) + P2-s7 (surface) | `kcdx.plugin.<a>.<p>.assets.*` |
-| US-5 — publish a name as a contract | P1-s4 (`name` sidecar) + P2-s7 (`declare`) | only named assets published; no enumeration |
-| US-6 — runtime register / replace | P2-s7 (`register` / `replace`) | programmatic equivalents of the sidecar |
-| §5 / §10.1 C++ mirror surface (`kcdxAssetInterface`, full parity) | P2-s8 | each Lua verb's mirror, append-only ABI |
-| §11 manipulation (texture transforms) | **DEFERRED (§11)** | reserved + NYI doc entry; heavy codec dep, use case not concrete — built later if requested |
-| §10.1 public author guide (`docs/lua/` + `docs/cpp/` entries) | ships per-step with each surface (`docs-discipline.md`) | each verb's entry lands in its building step; not a separate build step |
+| §8 seam-install ordering (`ModManager_ctor` vs first read) | P1-s1 (probe) | the gating unknown; findings captured; a falsifying outcome surfaces a fork |
+| §7 DirectStorage texture-arm bypass (flagged-unverified, default-off) | P1-s2 (probe) | confirm whether DS bypasses the seam for textures before the seam ships (user-chosen probe over deferral) |
+| §7 HOOK 1 — resolution DECISION (replace `AdjustFileName` id 152) + call-through leaves | P1-s3 | reaches all classes + both lanes; removes the FOpen/SEAM-A residue |
+| §7 HOOK 2 — loose OPEN (return kcdx's own CRT `FILE*`) | P1-s4 | serves the loose file without the engine's loose-search; installs w/ HOOK 1 |
+| §4.2 declarative sidecar (`replaces` / `replaces_plugin`+`replaces_path` / `name`) | P1-s5 | feeds the overlay map; loud error on missing target (AP14) |
+| §4.4 load-order conflict resolution + report line | P1-s5 | winner/suppressed shape (map's conflict reporting built, `2588b33`) |
+| US-1 — replace a vanilla asset, no code | P1-s3 (decision) + P1-s4 (open) + P1-s5 (sidecar) | dominant TC case; vanilla = pak-resident, reached via HOOK 1's resolver redirect |
+| US-4 — replace another mod's asset (chain) | P1-s5 (sidecar target) + P1-s3/s4 | target = name or owner+path; load-order conflict |
+| US-7 — stock Nexus/Workshop pak loads unchanged | P1-s3 (MISS fall-through) + P3-s10 (regression row) | backward-compat |
+| §6 navigable `kcdx.plugin.<author>.<plugin>.*` namespace (`__index` chain) | P2-s6 | the general cross-plugin primitive; US-3 enabler |
+| §10.2 stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose) | P2-s7 (own step) | TWO targets; commit-grain on its own; the seed-prose fix is an AP19/AP2 correction |
+| §5 `kcdx.assets.*` Lua surface (`get_by_path`/`get_by_name`/`replace`/`declare`/`register`) | P2-s8 | + the string-key cross-plugin form |
+| US-2 — reference own asset by path | P2-s8 (`get_by_path`) | own = no owner prefix |
+| US-3 — reference another mod's asset (navigable ns) | P2-s6 (namespace) + P2-s8 (surface) | `kcdx.plugin.<a>.<p>.assets.*` |
+| US-5 — publish a name as a contract | P1-s5 (`name` sidecar) + P2-s8 (`declare`) | only named assets published; no enumeration |
+| US-6 — runtime register / replace | P2-s8 (`register` / `replace`) | programmatic equivalents of the sidecar |
+| §5 / §10.1 C++ mirror (`kcdxAssetInterface`, full parity) | P2-s9 | each Lua verb's mirror, append-only ABI |
+| §9 per-lane runtime acceptance (HOOK 2 serves `.lua`; HOOK 1 reaches pak/mount lane for vanilla replace) | P1-s4 (live check) + P3-s10 | the static seam is gated; this is runtime acceptance |
+| §9 cFn-ABI pointer-return (HOOK 2's `FILE*` through the hook chain) | P1-s4 | hook-chain mechanics, settled at build |
+| §11 manipulation (texture transforms) | **DEFERRED (§11)** | reserved + NYI doc entry; heavy codec dep, use case not concrete |
+| §10.1 public author guide (`docs/lua/` + `docs/cpp/` entries) | ships per-step with each surface (`docs-discipline.md`) | each verb's entry lands in its building step |
 
 Every design element resolves to a step or an explicit deferral.
 
-## Build-gated unknowns (the plan's opening probes — `results-driven.md`)
+## Build-gated probes (the plan's opening unknowns — `results-driven.md`)
 
-Two mechanisms rest on unverified facts the build resolves by probe FIRST; the
-dependent surface is built to whatever the probe resolves, never guessed:
+The seam is gated-verified statically (the two hooks, §7). Two runtime unknowns
+are resolved by probe FIRST; the dependent surface is built to the result:
 
-1. **Seam-install ordering (P1-s1).** Does `ModManager_ctor` fire BEFORE the
-   engine's first overridable asset read? Settles WHERE the seam installs in
-   kcdx's init sequence (design §8). A falsifying outcome (first read earlier than
-   the ctor) is a surfaced design fork, not a silent workaround.
-2. **Handle-consumed resolution + staging (P1-s3).** Does a declared overlay served
-   from the plugin's `assets/` dir resolve end-to-end for the handle-consumed class
-   (`.lua`/`.xml`) through the replaced seam, or does that class need kcdx to stage
-   the file under a kcdx-managed root first? The memory-mapped class is live-verified
-   (design §7); this class is the probe. Settles §4.3's staging question + the path
-   `get_by_path`/`get_by_name` hand back (P2-s7). The staging lifecycle
-   (ephemeral-regenerate vs tracked-invalidate) is pinned AFTER this probe, never
-   designed on an unverified resolution.
+1. **Seam install ordering (P1-s1).** Does `ModManager_ctor` fire BEFORE the first
+   overridable asset read? Settles WHERE both hooks install (design §8). Findings
+   already captured; a falsifying outcome is a surfaced fork.
+2. **DirectStorage bypass (P1-s2).** Does the optional DirectStorage texture path
+   (`dstorage.dll`, default-off) bypass the seam? Confirm before the seam ships
+   (user-chosen probe over deferral). Outcome: covered → no action; bypasses →
+   surface the DS-texture gap as a fork (scope-out or own a DS seam).
+
+The per-lane SERVE confirmations (HOOK 2 serves a `.lua`; HOOK 1's redirect reaches
+the pak/mount lane for a vanilla replace) are RUNTIME ACCEPTANCES of the
+gate-verified static seam — checked live at P1-s4 + P3-s10, not mechanism-unknowns.

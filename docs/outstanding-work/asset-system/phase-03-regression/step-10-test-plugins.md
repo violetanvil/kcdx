@@ -1,6 +1,6 @@
-# Phase 3 step 9 — permanent asset-system test plugin(s) + matrix rows
+# Phase 3 step 10 — permanent asset-system test plugin(s) + matrix rows
 
-**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 9.
+**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 10.
 
 ## What
 
@@ -18,14 +18,18 @@ backward-compat pak) that no single earlier step owned.
   capability, `comp-NN` for a conflict/interaction), suite-gated, self-checking via
   `ReportTestResult(...)` / `kcdx.test.report(...)`. Matrix rows in
   `test-plugins/README.md`. Cases:
-  - **US-1** override applies (a declarative `.dds` overlay renders; the overlay-HIT
-    log line present).
+  - **US-1 (replace-vanilla, pak/mount lane)** a declarative overlay of a vanilla
+    (pak-resident) asset renders — HOOK 1's resolver redirect makes the pak/mount
+    lane serve kcdx's file; the overlay-HIT log line present.
+  - **add-new (loose lane, HOOK 2)** a declared loose asset the game never requests
+    is served via the own-`FILE*` open (a handle-consumed `.lua`/`.xml` reads
+    kcdx's bytes) — the lane the prior path-redirect failed.
   - **US-3** a cross-plugin reference resolves (`kcdx.plugin.<a>.<p>.assets.get_by_name`
     returns a loadable path).
   - **US-4** the chain/conflict path: two plugins replace the same target → the
     load-order winner serves, the loser is reported (the §4.4 conflict line).
   - **US-7** a stock Nexus/Workshop pak (a `test-fixtures/pak-mods/` fixture)
-    resolves unchanged through the overlay-miss fall-through to the pak-membership
+    resolves unchanged through HOOK 1's MISS fall-through to the pak-membership
     leaf (id 153).
 - Each row carries a FALSIFIABLE claim (AP15 — state what makes it FAIL); prefer an
   auto-pass boot check, flag `[manual]` only where an in-game gesture is irreducible.
@@ -40,12 +44,12 @@ regressed). The rows are recorded in `test-plugins/README.md`.
 
 ## Dependencies
 
-**Phase 1 (steps 2–4)** — override, sidecar, conflict resolution exist to test.
-**Phase 2 (steps 5, 7, 8)** — the namespace + Lua + C++ surfaces exist to test
-cross-plugin reference + parity. Ordered last so every capability it asserts is
-built (`.claude/rules/incremental-delivery.md`). (Earlier steps each ship their own
-same-change coverage per `test-suite.md`; this step is the consolidated permanent
-matrix + the cross-capability cases.)
+**Phase 1 (steps 3–5)** — HOOK 1 (decision), HOOK 2 (open), sidecar/conflict exist
+to test. **Phase 2 (steps 6, 8, 9)** — the namespace + Lua + C++ surfaces exist to
+test cross-plugin reference + parity. Ordered last so every capability it asserts
+is built (`.claude/rules/incremental-delivery.md`). (Earlier steps each ship their
+own same-change coverage per `test-suite.md`; this step is the consolidated
+permanent matrix + the cross-capability cases.)
 
 ## Reference
 
