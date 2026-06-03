@@ -31,17 +31,14 @@ from .config import load_config
 
 
 def _json_safe(value):
-    """Make a data-core value JSON-transportable at the API boundary WITHOUT
-    reshaping it. A read_version_rows row carries raw `bytes` columns (the
-    address_versions `content_hash` BLOB the importer stores); JSON has no bytes
-    type and FastAPI's encoder rejects a non-UTF-8 blob. Render any bytes value as
-    a lowercase hex string -- the lossless, JSON-native representation of a binary
-    hash. This is SERIALIZATION (the API edge making a value wire-safe), not rule
-    logic: it computes/derives/re-shapes nothing the data-core returned, exactly as
-    the int/str columns pass through unchanged. Payload-agnostic -- it keys on the
-    bytes TYPE, never a column name, so a new binary column needs no change here."""
-    if isinstance(value, (bytes, bytearray)):
-        return value.hex()
+    """The API edge's serialization seam -- recurse a data-core return into a
+    JSON-transportable shape, deriving/reshaping NOTHING. The read endpoints return
+    the data-core's plain dicts/lists of JSON-native scalars (int / str / None), so
+    this only walks the nested structure and passes every scalar through unchanged.
+    Its job is the boundary contract, not a transform: it marks (and the endpoint
+    tests assert) that the backend reshapes nothing the data-core returned (D13/R3 --
+    the backend computes nothing). The recursion is the structural guarantee; a
+    scalar is returned as-is."""
     if isinstance(value, dict):
         return {k: _json_safe(v) for k, v in value.items()}
     if isinstance(value, list):
@@ -118,10 +115,12 @@ def get_entity_versions(kcdx_id: int):
     """The entity's version rows, NEWEST-first, each with its derived status (s02
     version table, s03 history/compare).
 
-    Returns read_version_rows' list verbatim -- full columns, the per-row `status`
-    already derived and `kind`/`evidence_kind` already decoded by the data-core. An
-    unknown id yields [] (the 2a no-rows contract), distinct from the entity-detail
-    404; the frontend treats [] as "no versions" for that id."""
+    Returns read_version_rows' list verbatim -- the curated display columns (the
+    data-core's _VERSION_DISPLAY_COLUMNS allowlist; the engine-computed content_hash
+    and the dev-only columns never cross the wire), the per-row `status` already
+    derived and `kind`/`evidence_kind` already decoded by the data-core. An unknown
+    id yields [] (the 2a no-rows contract), distinct from the entity-detail 404; the
+    frontend treats [] as "no versions" for that id."""
     config = load_config()
     try:
         return _json_safe(data_core.read_version_rows(config.out_dir, kcdx_id))

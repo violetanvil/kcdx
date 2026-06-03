@@ -146,9 +146,9 @@ def test_list_entities_surfaces_curated_set(resolved_checkout, client_at):
 
     # The endpoint SURFACES read_curated_set's values -- count matches, and the
     # endpoint did not drop/add rows (thin caller, no re-derivation). _json_safe is
-    # the API-boundary serialization (bytes->hex) the endpoint applies; the curated
-    # set has no bytes column, so this is identity here, but the comparison stays
-    # honest about the boundary.
+    # the API-boundary serialization seam the endpoint applies (recurse, reshape
+    # nothing); the comparison applies the same seam so it stays honest about the
+    # boundary.
     expected = _json_safe(data_core.read_curated_set(_out_dir(resolved_checkout)))
     assert len(body) == len(expected), (len(body), len(expected))
     assert body == expected, "endpoint must pass through read_curated_set verbatim"
@@ -174,7 +174,7 @@ def test_get_entity_surfaces_identity_and_lifecycle(resolved_checkout, client_at
     assert resp.status_code == 200, resp.text
     body = resp.json()
     # The endpoint passes through read_entity_detail's dict verbatim (modulo the
-    # JSON-boundary serialization -- the detail dict has no bytes column, identity).
+    # JSON-boundary serialization seam -- recurse, reshape nothing).
     expected = _json_safe(
         data_core.read_entity_detail(_out_dir(resolved_checkout), kcdx_id))
     assert body == expected, "endpoint must surface read_entity_detail verbatim"
@@ -215,19 +215,12 @@ def test_get_entity_versions_newest_first_with_status(resolved_checkout, client_
     assert isinstance(body, list) and body, "expected >=1 version row"
 
     # The endpoint surfaces read_version_rows verbatim (thin caller), modulo the
-    # JSON-boundary serialization: the address_versions `content_hash` column is a
-    # raw bytes BLOB JSON can't carry, so the API edge renders bytes->hex (_json_safe,
-    # payload-agnostic, no rule logic). The comparison applies the same boundary to
-    # the data-core's raw return, proving the endpoint reshapes NOTHING beyond making
-    # bytes wire-safe.
+    # JSON-boundary serialization seam (_json_safe -- recurse the structure, reshape
+    # nothing). The data-core returns the curated display columns as JSON-native
+    # scalars, so applying the same seam to its raw return proves the endpoint
+    # reshapes NOTHING.
     expected = _json_safe(data_core.read_version_rows(out_dir, kcdx_id))
     assert body == expected, "endpoint must surface read_version_rows verbatim"
-
-    # The content_hash BLOB surfaced as a lossless hex string (the serialization
-    # boundary fired, and is correct).
-    raw = data_core.read_version_rows(out_dir, kcdx_id)
-    if raw and isinstance(raw[0].get("content_hash"), (bytes, bytearray)):
-        assert body[0]["content_hash"] == raw[0]["content_hash"].hex()
 
     # Each row carries a derived status; the data-core orders them newest-first --
     # the endpoint preserves that order (it serializes the list as-returned).
