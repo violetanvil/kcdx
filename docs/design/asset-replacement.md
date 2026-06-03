@@ -1,30 +1,44 @@
 # Asset replacement — the settled design
 
-**Status:** v1 (settled 2026-06-02). **Supersedes:** the prior Phase 8.5
-asset-design at `docs/outstanding-work/restructure/phase-08.5-asset-replacement/asset-design.md`
+**Status:** v2 (mechanism settled 2026-06-03; changelog `asset-replacement-changelog.md`).
+**Supersedes:** the prior Phase 8.5 asset-design at
+`docs/outstanding-work/restructure/phase-08.5-asset-replacement/asset-design.md`
 (now trimmed to a pointer here) AND the asset-replacement section in
 `docs/outstanding-work/restructure/00-original-plan.md` §"kcdx replaces pak
-mods". **Authoritative for:** the asset-replacement build — the executor builds
-to THIS doc, not to a step-doc summary of it (`.claude/rules/spec-conformance.md`).
+mods". **Authoritative for:** the asset-system build — the executor builds to
+THIS doc, not to a step-doc summary of it (`.claude/rules/spec-conformance.md`).
 
 This is the canonical spec for how a mod author adds, replaces, and references
 game assets in kcdx — the most-touched mod-authoring surface for total
 conversions. The design optimizes for author UX first (the disassembler test:
 the author declares files + intent, never engine internals — `cornerstones.md`).
 
-**Key changes from the prior (Phase-8.5) design:**
-- **Mechanism corrected to the verified seam.** kcdx **owns asset resolution by
-  REPLACING `CCryPak::AdjustFileName` (the resolution-decision root), not by
-  hooking `CCryPak::FOpen`.** The prior doc named FOpen (slot 36) as the hook and
-  framed the design as riding the engine's `sys_pakPriority` mode; the 5-front
-  disassembly superseded both — see §7.
-- **`sys_pakPriority` dropped entirely.** kcdx's resolution is **independent of
-  `sys_pakPriority`** — the overlay decision sits ABOVE the engine's per-mode
-  existence-test table. The CVar is not a dependency, not a fallback, not
-  mentioned as a mechanism. (A dev-mode CVar a game update could silently change
-  is an unacceptable durability risk for the most crucial author surface.)
-- **Seam install timing settled** (§8) — the seam installs inside the
-  already-shipping ready-bracket; a build-step-1 probe confirms the ordering.
+**Key changes in v2 (the seam, settled on the gated load-path research — see the
+changelog + §7):**
+- **The seam is TWO coordinated hooks, not one.** kcdx owns (1) the resolution
+  DECISION by replacing `CCryPak::AdjustFileName` (slot 1, id 152) — which file
+  wins, for every asset class and both byte-lanes — AND (2) the loose-overlay
+  OPEN by returning its own CRT `FILE*` (the Around-`FOpen` mechanism, gate-verified
+  end-to-end). kcdx owns both the which-file decision and the handle, and depends
+  on the vanilla engine's loose-search for NEITHER (§7).
+- **Why two hooks (the gated finding that corrects v1):** the load-path map
+  (commit `3193e84`) established that every class opens via `FOpen` but bytes
+  arrive on TWO lanes — a loose lane (`FOpen` mints a `FILE*`) and a mount/stream
+  lane (pak-resident assets read on a mount-minted handle). The resolver (slot 1)
+  IS `sys_pakPriority`-gated — at the published default it tests pak-only, so a
+  loose overlay is never resolved for a vanilla path by the engine's own search.
+  Owning the resolver makes kcdx decide which file wins above that gate; owning
+  the open (return our `FILE*`) makes kcdx serve the loose file without ever
+  depending on the engine's loose-search succeeding. The v1 claims "a single
+  replaced function is the whole seam" and "independent of `sys_pakPriority`
+  because we sit above the table" were the FOpen-era framing — corrected here.
+- **`sys_pakPriority` is still NOT a mechanism kcdx sets or rides** — kcdx neither
+  sets the CVar nor depends on its value, because kcdx owns both the decision
+  (above the gate) and the open (its own handle). The durability point holds: no
+  dependence on a dev-mode CVar a game update could change.
+- **Seam install timing** (§8) — both hooks install inside the already-shipping
+  ready-bracket; the `ModManager_ctor`-vs-first-read ordering is a build-step-1
+  probe.
 
 ---
 
@@ -45,16 +59,22 @@ v1 success criteria:
   so a mod's effect is readable and a typo is a loud error, never a silent no-op.
 - A stock Nexus/Workshop pak mod loads unchanged, today (§7 backward-compat).
 
-**Top-level architecture decision: kcdx OWNS asset resolution.** The same way
-kcdx replaced the native mod loader (kcdx is now the mod loader), kcdx replaces
-the engine's asset-resolution decision and runs it to kcdx's own spec. It does
-NOT negotiate with the engine's `sys_pakPriority` modes or its loose-file search
-behavior — it sits ABOVE them and decides which bytes win. The single replaced
-function (§7) is the entire ownership surface; everything else (the pak mount
-machinery, the read path, the existence leaves) is the engine's and is reused by
-calling through. This is what makes startup-asset mods possible (kcdx resolves
-before the game's first asset read, §8) and what makes the system durable against
-a game update changing a mode CVar.
+**Top-level architecture decision: kcdx OWNS both the asset-resolution DECISION
+and the loose-overlay OPEN.** The same way kcdx replaced the native mod loader
+(kcdx is now the mod loader), kcdx takes over the engine's asset-resolution
+decision and the loose-file open, and runs them to its own spec. Two coordinated
+hooks (§7): (1) replace `CCryPak::AdjustFileName` (slot 1) so kcdx decides WHICH
+file wins — above the engine's `sys_pakPriority` mode gate, for every asset class
+and both byte-lanes; (2) on a loose-overlay hit, return kcdx's OWN CRT `FILE*` so
+the engine reads kcdx's file without kcdx depending on the engine's loose-search
+ever finding it. kcdx negotiates with neither the `sys_pakPriority` modes nor the
+loose-file search behavior — it owns the decision above them and the handle
+beneath them. Everything else (the pak mount machinery, the read family, the
+existence leaves) is the engine's and is reused by calling through on a miss. This
+is what makes startup-asset mods possible (kcdx resolves before the game's first
+asset read, §8), what makes "replace ANY asset" reach the pak/mount lane (the
+resolver decision is the one point every lane consults — §7), and what makes the
+system durable against a game update changing a mode CVar or a loose-search rule.
 
 ---
 
@@ -208,24 +228,23 @@ point on that tradeoff. A sidecar declares, per asset:
 `kcdx.assets.declare(name, file)` (+ C++ mirrors) — the runtime equivalents, for
 replacement/publishing decided in code. Full Lua↔C++ parity (`lua-api-surface.md`).
 
-### §4.3 Transparent staging — the author never sees the asset class
+### §4.3 Class-agnostic serving — the author never sees the asset class
 
 The author's rule is uniform: drop the file in `assets/`, declare what it
-replaces. Because **both asset classes route through the one resolution seam**
-(§7), kcdx resolves a declared overlay to the plugin's loose `assets/` file
-directly for BOTH classes — the seam returns kcdx's path, and the engine's
-unmodified read family then serves kcdx's bytes by the handle the resolved path
-produces. The author never needs to know which class is which; exposing that
-would fail the disassembler test (`cornerstones.md`).
+replaces. The two-hook seam (§7) serves every class the same way, from the
+plugin's own `assets/` dir: HOOK 1 (the resolver) decides kcdx's overlay wins;
+HOOK 2 (the own-`FILE*` open) opens the loose file from `assets/` and hands the
+engine the handle — the read family then serves kcdx's bytes. The author never
+needs to know which class is which; exposing that would fail the disassembler
+test (`cornerstones.md`).
 
-**One build-gated unknown remains here** (§9): whether a declared overlay served
-straight from the plugin's `assets/` dir resolves end-to-end for the
-handle-consumed class through the replaced seam, or whether that class needs kcdx
-to stage the file under a kcdx-managed root first. The memory-mapped class is
-verified (live, §7). The handle-consumed resolution + any staging lifecycle is
-**pinned by the build's first probe (§9), not guessed in this doc.** The author's
-surface (§5) is class-agnostic regardless of which the probe shows — staging, if
-needed, is internal.
+**No `<game>/Data/` staging is needed** — the v1 "stage the handle-consumed class
+under a kcdx-managed engine-searched root" question is RETIRED (§9): because HOOK 2
+returns kcdx's OWN handle, kcdx never relies on the engine's loose-search finding
+the file at a particular root, so there is no staging tree to manage and no
+staging lifecycle (ephemeral-vs-tracked) to design. The file is served straight
+from `assets/`. (The remaining item is the §9 runtime confirmation that the
+own-`FILE*` open serves end-to-end per lane — an acceptance, not a staging design.)
 
 ### §4.4 Conflict resolution — load order, declared
 
@@ -310,71 +329,89 @@ resolves against the calling plugin (the engine knows who you are;
 
 ---
 
-## §7 RE evidence — the verified seam (the design rests on these facts)
+## §7 RE evidence — the verified seam (TWO hooks; the design rests on these gated facts)
 
-Every fact below is verified against WHGame.dll (`release_1_5_1164953_841`), from
-the 5-front asset-resolution disassembly (fresh Ghidra + capstone + live probes,
-2026-06-02); the provenance is the verified value + its evidence tier per
-`reverse-engineering.md`. The seed entities are already authored (no new seed row
-— `anti-patterns.md` AP18).
+Every fact below is verified against WHGame.dll (`release_1_5_1164953_841`) and
+GATED by an independent body-read verifier before it shipped as authority (the
+asset load-path map, commit `3193e84`; the FOpen-handle finding, commit `e6e8e27`;
+both per `research-disassembly/SKILL.md` §4.5 / `anti-patterns.md` AP19). The seed
+entities are already authored (no new seed row — AP18). NOTE: the id-152 seed
+PROSE still carries the v1 "FOpen calls slot 1 / single chokepoint / independent
+of sys_pakPriority" claim — that prose is FALSIFIED by the load-path map and is a
+build-deliverable correction (§10.2), not the authority here.
 
-**The one structural fact that drives the whole design:** resolution funnels
-through a SINGLE method that runs BEFORE any disk/pak touch, and the loose-vs-pak
-choice is baked into the handle at open-time — there is no per-read resolution. So
-owning that one method owns resolution for BOTH asset classes.
+**The two structural facts that drive the seam (gated, read in the bodies):**
 
-- **The resolution seam — REPLACE this.** `CCryPak::AdjustFileName` (kcdx_id
-  **152**, RVA `0x6205C`, ICryPak vtable **slot 1**, offset `+0x8`) is the
-  resolution-decision root: every by-name file consumer (FOpen, exists, get-size,
-  enumerate, delete, copy — 9+ slots) calls `(*(*pCryPak+8))(this, name, buf, …)`
-  to resolve a vpath to a concrete path STRING before any disk/pak touch. kcdx
-  replaces this method's body (Around/Replace via `hook_chain::AddCEngine`): on a
-  declared-overlay HIT it returns kcdx's path; on a MISS it falls through to the
-  engine precedence. Owning it makes both classes obey kcdx, **independent of
-  `sys_pakPriority`**, because the overlay check sits ABOVE the per-mode
-  existence-test table. *Evidence:* fresh Ghidra decompile of slot 1 + the 9+
-  consumer-slot decompiles confirming they all call `*(vtable+0x8)`.
-- **Call-through leaves (REUSE — do not reimplement), invoked from inside the
-  kcdx replacement on an overlay miss so stock content resolves unchanged:**
-  - **Pak membership** `CCryPak::IsFileInPak` (kcdx_id **153**, RVA `0x631F0`) —
-    binary-searches the loaded-pak directory index (`this+0x120..0x128`),
-    origin-agnostic (any mounted pak, stock or kcdx). The fall-through on an
-    overlay miss → every stock pak asset (incl. a stock Nexus/Workshop pak mod,
-    US-7) resolves exactly as today. *Evidence:* fresh Ghidra decompile.
-  - **Disk existence** `CCryPak::DoesFileExistOnDisk` (kcdx_id **154**, RVA
-    `0x9C9CB4`) — the OS file-attribute query for the loose-disk arm. *Evidence:*
-    fresh Ghidra decompile.
-  - **Root-prefix normalizer** `CCryPak::AdjustFileName_RootPrefix` (kcdx_id
-    **155**, RVA `0x621BC`) — prepends the game data root (`this+0x188`) or matches
-    a recognized root for a bare/relative vpath, before the existence checks. kcdx
-    reproduces or calls through it so stock vpaths still root correctly.
-    *Evidence:* fresh Ghidra decompile.
-- **The reused engine machinery (touch nothing):** the entire handle-consume read
-  family (FRead slot 40 `0x51CD00`, FSeek/FTell/FEof/FWrite/FClose — pure
-  handle-tag dispatch, zero resolution logic); `CCryFile::Open` (kcdx_id 136 — a
-  thin shell over FOpen, adds no resolution); the pak mount/archive machinery
-  (OpenPack / OpenPacks / the ZipDir central-directory parser / rank-insert — kcdx
-  drives the engine to mount its own paks via the engine's own OpenPack, it does
-  not reimplement the zip index). `CCryPak::FOpen` (kcdx_id 131, slot 36,
-  `0x4614A0`) is NOT hooked — once slot 1 is owned, a FOpen hook is redundant and
-  WRONG: it would miss the 9 other by-name surfaces an overlay can be reached
-  through (existence/enumerate/size). *Evidence:* the slot table (front 1) + the
-  FRead decompile (front 3) + real-file PKZIP verification (front 5).
-- **Override is confirmed live for the memory-mapped class** at the plugin's own
-  `assets/` path. *Evidence:* live probe — a `.dds` overlay from the plugin's
-  `assets/` dir rendered in-game (the menu logo visibly changed). The seam was
-  verified the RIGHT mechanism; the handle-consumed class's end-to-end resolution
-  is the §9 build probe.
-- **`sys_pakPriority` is NOT a mechanism here.** The CVar's modes (files>paks /
-  paks>files / paks-only / mods-prefix) govern the ENGINE's own precedence among
-  the existence leaves. kcdx's overlay decision sits ABOVE that table, so the seam
-  owns resolution regardless of the CVar's value — kcdx neither sets nor depends
-  on it. (A dev-mode CVar a game update could change is an unacceptable durability
-  risk for this surface; the seam-replace removes the dependency entirely.)
+1. **Every asset class OPENS via `CCryPak::FOpen` (slot 36), but BYTES arrive on
+   TWO lanes.** The load-path map read each class's open-site body — texture
+   (`FUN_1807b5ed4`→CCryFile::Open), model (`CReadOnlyChunkFile::Read`
+   `FUN_18051cba0`), audio (FMOD `useropen` `FUN_181224d1c`), script/XML
+   (CCryFile::Open `FUN_1804605bc`) — all open through `FOpen`. No class
+   memory-maps (zero `CreateFileMapping`/`MapViewOfFile` imports). But:
+   - **LOOSE lane** — when resolution picks a loose file, `FOpen` mints a CRT
+     `FILE*` (`FUN_1809b2b28`→`_wfopen`); the read family (slot 38/40) serves it
+     via its OS arm. FRead's dispatch is INDEX-vs-COUNT: `handle−1` vs the
+     pak-handle vector element count (`FUN_180427e40` = the `std::vector` size
+     idiom); a real `FILE*` is a heap pointer so `handle−1 ≫ count` → OS arm
+     (gate-verified, `e6e8e27`). **This is the lane kcdx's own-`FILE*` open serves.**
+   - **MOUNT/STREAM lane** — when resolution picks a PAK-resident asset, bytes are
+     read by `ZipDir::ReadFileStreaming` (`FUN_180464b88`) on a `CreateFileA`
+     handle minted at pak-MOUNT (slot 72 `FUN_1804d5580`), NOT via `FOpen`.
 
-(The detailed RE write-ups + probe findings live in the private RE tree; this doc
-states the verified facts the design rests on. The public author-facing guide
-restates only the *what*, never the RE provenance — `public-private-boundary.md`.)
+2. **The resolution DECISION is `sys_pakPriority`-gated, and it is the one point
+   BOTH lanes consult.** `CCryPak::AdjustFileName` (kcdx_id **152**, RVA `0x6205C`,
+   slot 1) decides which concrete file a vpath resolves to, for every by-name
+   consumer. At the published default (`sys_pakPriority 2`) its search tests
+   **pak-only, no loose fallback** (gate-verified in the resolver body
+   `FUN_18046205c`) — so the engine's OWN search never resolves a vanilla path to
+   a loose overlay. That is WHY an FOpen-only override cannot replace a vanilla
+   (pak-resident) asset, and why kcdx must own the DECISION, not just an open.
+
+**The seam — TWO coordinated hooks (this is the corrected mechanism):**
+
+- **HOOK 1 — the resolution DECISION: replace `CCryPak::AdjustFileName` (slot 1,
+  id 152)** via `hook_chain::AddCEngine` (Around/Replace). On a declared-overlay
+  HIT, kcdx returns its overlay's identity; on a MISS, it calls through to the
+  engine leaves so stock content (incl. a stock Nexus/Workshop pak, US-7) resolves
+  unchanged. Because the resolver runs BEFORE every lane's read and BOTH lanes
+  consult it, owning it makes kcdx decide which file wins for ALL classes and BOTH
+  lanes — above the `sys_pakPriority` gate. This is what reaches replace-vanilla
+  (the pak/mount lane). *Evidence:* gated resolver-body decompile (`3193e84`).
+- **HOOK 2 — the loose OPEN: return kcdx's OWN CRT `FILE*`.** For a loose overlay
+  (a kcdx-managed file — an add-new asset, or a vanilla replacement kcdx serves
+  loose), kcdx opens the file itself (`_wfopen`/`fopen`) and the seam returns that
+  `FILE*`, which the read family serves via its OS arm (fact 1, gate-verified
+  `e6e8e27`). This means kcdx does NOT depend on the engine's loose-search finding
+  the overlay (the layer the prior path-redirect FAILED at) — kcdx owns the handle
+  directly, so the loose lane works regardless of file location or `sys_pakPriority`.
+  *Decision (settled 2026-06-03):* return-our-own-`FILE*` over a path-only redirect,
+  so kcdx is never barred by a vanilla-engine loose-search unknown.
+- **Call-through leaves (REUSE on a MISS — do not reimplement):** pak-membership
+  `CCryPak::IsFileInPak` (id **153**, `0x631F0`), disk-existence
+  `CCryPak::DoesFileExistOnDisk` (id **154**, `0x9C9CB4`), root-prefix normalizer
+  `CCryPak::AdjustFileName_RootPrefix` (id **155**, `0x621BC`). On an overlay miss
+  the resolver falls through to these so stock resolution is byte-identical to
+  today. *Evidence:* fresh Ghidra decompiles (gated).
+- **Reused engine machinery (touch nothing):** the read family (FRead slot 40
+  `0x51CD00` + slot 38 `0x461304` + FSeek/FTell/FEof/FClose — handle-tag dispatch,
+  zero resolution logic); the pak mount/archive machinery (OpenPack slots 6/7/9,
+  the ZipDir parser, rank-insert — kcdx already drives the native mount via
+  `pak_mod_registry`). kcdx adds the two hooks above; everything else is the
+  engine's, reused by calling through.
+- **Override is confirmed live for the memory-mapped class** (a `.dds` overlay
+  from a plugin's `assets/` dir rendered in-game). The remaining end-to-end runtime
+  confirmation (a handle-consumed `.lua` served via the own-`FILE*` open, and the
+  resolver-redirect reaching the pak/mount lane for a vanilla replace) is the §9
+  build probe.
+- **DirectStorage caveat (flagged-unverified, default OFF).** A texture served via
+  the optional DirectStorage path (`dstorage.dll`, `wh_sys_streaming_directstorage_enabled`
+  default 0) may open its own handle outside `FOpen`. Default-off, so not on the
+  common path; resolve before claiming "the seam serves DirectStorage textures."
+
+(The detailed RE write-ups + gated findings live in the private RE tree
+[`_research/asset-loadpath-map-recon/`, `_research/asset-fopen-handle-recon/`];
+this doc states the verified facts the design rests on. The public author-facing
+guide restates only the *what*, never the RE provenance — `public-private-boundary.md`.)
 
 ---
 
@@ -394,12 +431,13 @@ and live in production today — it is how the mod-loader takeover works
 → SetEvent; `src/mod_absorb/ctor_bracket.cpp` HookedCtor's
 `WaitForSingleObject(g_kcdxReadyEvent, INFINITE)`).
 
-The asset-resolution seam installs **inside this same window** — kcdx installs the
-`AdjustFileName` replacement (and resolves the refdb facts it needs — ids 152–155)
-**before it signals `g_kcdxReadyEvent`**. So the game-init thread blocks at
-`ModManager_ctor` until the seam is live; resolution is owned before the game
-proceeds past the ctor. No new wait-mechanism is built — the seam slots into the
-one that already ships.
+**Both seam hooks install inside this same window** — kcdx installs the
+`AdjustFileName` replacement (HOOK 1) and the loose-open own-`FILE*` hook (HOOK 2),
+and resolves the refdb facts they need (ids 152–155), **before it signals
+`g_kcdxReadyEvent`**. So the game-init thread blocks at `ModManager_ctor` until
+both hooks are live; resolution + the loose-open are owned before the game proceeds
+past the ctor. No new wait-mechanism is built — the hooks slot into the one that
+already ships.
 
 **The one ordering fact the build must confirm — a step-1 probe.** The bracket
 guarantees the game waits *at* `ModManager_ctor`. What is NOT yet verified is
@@ -429,25 +467,33 @@ the same surfaced finding.)
 
 ## §9 Build-gated unknowns (recorded — NOT design forks; the build's first probes)
 
-The simple-replacement case (US-1, memory-mapped) is **verified live**. Two
-mechanisms rest on unverified facts the build resolves by probe FIRST, per
-`.claude/rules/results-driven.md` — the design does not guess them, and the
-dependent surface is built to whatever the probe resolves:
+The mechanism is now gated-verified statically (the two-hook seam, §7); what
+remains are RUNTIME confirmations the build resolves by probe FIRST, per
+`.claude/rules/results-driven.md` — the design does not guess them. The earlier
+v1 "does a loose handle-consumed overlay resolve / does it need staging?" unknown
+is RETIRED: HOOK 2 (return kcdx's own `FILE*`) removes the dependence on the
+engine's loose-search, so there is no path-resolution-into-the-engine to probe and
+no `<game>/Data/` staging to design — kcdx owns the handle directly. The remaining
+build-gated runtime confirmations:
 
 1. **Seam install ordering** (§8) — does `ModManager_ctor` fire before the first
-   asset read? **Build step 1's probe.** Settles WHERE the seam installs; a
-   falsifying outcome is a surfaced design fork.
-2. **Handle-consumed end-to-end resolution + staging** — does a declared overlay
-   served from the plugin's `assets/` dir resolve end-to-end for the
-   handle-consumed class (`.lua`/`.xml`) through the replaced seam, or does that
-   class need kcdx to stage the file under a kcdx-managed root first? The
-   memory-mapped class is verified; this class is the probe. Settles §4.3's
-   staging question and the path `get_by_path`/`get_by_name` hand back. The
-   staging lifecycle (ephemeral-regenerate vs tracked-invalidate) is pinned AFTER
-   this probe settles the mechanism, never designed on an unverified resolution.
+   asset read? **Build step 1's probe** (the existing ctor-vs-first-read probe).
+   Settles WHERE the two hooks install; a falsifying outcome is a surfaced fork.
+2. **The two hooks serve end-to-end, live, per lane** — one probe confirms: (a) a
+   handle-consumed `.lua` overlay served via HOOK 2's own-`FILE*` open reads
+   kcdx's bytes in-game (the gate-verified static mechanism, confirmed live); and
+   (b) HOOK 1's resolver-redirect makes the pak/mount lane serve kcdx's file for a
+   vanilla (pak-resident) REPLACE. The static seam is gated; this is the runtime
+   acceptance, not a mechanism unknown.
+3. **The cFn-ABI pointer-return** — HOOK 2 returns a `FILE*` (pointer-width) into
+   the resolver/FOpen `rv` slot through the kcdx hook chain; a build item to
+   confirm the chain threads a pointer return cleanly (hook-chain mechanics, not a
+   binary fact).
+4. **DirectStorage texture arm** (default OFF, §7 caveat) — confirm it does not
+   bypass the seam for textures, OR scope it out for v1 as a default-off path.
 
-These are the build's opening probes (ordered before the surfaces that depend on
-them — `.claude/rules/incremental-delivery.md`), not design forks.
+These are the build's opening probes/confirmations (ordered before the surfaces
+that depend on them — `.claude/rules/incremental-delivery.md`), not design forks.
 
 ---
 
@@ -495,6 +541,19 @@ resolution works — NOT the (correct) production binder comments. (The actual e
 land via the build/execute flow, recorded here as a deliverable so `/plan`
 schedules it.)
 
+**Second sweep target — the falsified id-152 seed prose.** The
+`data/seeds/address_names_seed.csv` row for `CCryPak_AdjustFileName` (id 152) still
+asserts the v1 claim: "Every by-name file consumer (FOpen, …) calls `*(*pCryPak+8)`
+… the single chokepoint kcdx replaces … independent of sys_pakPriority." The gated
+load-path map (`3193e84`) FALSIFIED this — FOpen does NOT call slot 1, and the
+resolver IS `sys_pakPriority`-gated (pak-only at the default). A build step
+corrects the id-152 prose to the verified two-lane / two-hook model (slot 1 is the
+resolution DECISION every by-name consumer's eventual resolution flows through, but
+FOpen mints the handle independently; the seam is the resolver + the own-`FILE*`
+open, not slot-1-alone). Editing the seed CSVs is the working/`/execute` flow
+(not `/design`'s scope), recorded here so `/plan` schedules it. This is itself an
+AP19/AP2 correction — a falsified inference left in an authoritative record.
+
 ---
 
 ## §11 Out of scope (deferred, reserved)
@@ -516,9 +575,10 @@ schedules it.)
 
 | Concern | Pick |
 |---|---|
-| **The ownership mechanism** | **REPLACE `CCryPak::AdjustFileName` (slot 1, id 152)** — kcdx owns the resolution decision, reusing the pak/disk/normalizer leaves (153/154/155) + read family + mount machinery by calling through. **Rejected:** hooking `CCryPak::FOpen` (slot 36) — misses the 9 other by-name surfaces an overlay reaches through; the prior design's mechanism, superseded by the 5-front RE. |
-| **`sys_pakPriority` as a mechanism** | **Rejected — dropped entirely.** kcdx's overlay decision sits ABOVE the engine's per-mode existence table, so resolution is independent of the CVar. A dev-mode CVar a game update could silently change is an unacceptable durability risk; the seam-replace removes the dependency. (Non-negotiable.) |
-| **Seam install timing** | Install the seam inside the already-shipping ready-bracket (before `SetEvent(g_kcdxReadyEvent)`), so it is live before the first asset read; a build-step-1 probe confirms the `ModManager_ctor`-vs-first-read ordering, a falsifying outcome is surfaced. **Rejected:** wiring it in without confirming the ordering (the unverified-timing assumption that caused the `hits=0` result); rejected: building a new wait-mechanism (the ready-bracket already ships). |
+| **The ownership mechanism (v2 — corrected)** | **TWO coordinated hooks: (1) replace `CCryPak::AdjustFileName` (slot 1, id 152) for the resolution DECISION + (2) return kcdx's own CRT `FILE*` for the loose OPEN.** Owning the decision reaches all classes + both byte-lanes (incl. pak-resident replace, above the `sys_pakPriority` gate); owning the open serves the loose file without depending on the engine's loose-search. Cornerstone-settled (UX #1 + Capability #2 win; Perf #3 — per-FS-query, off the per-read hot path — never traded up). **Rejected:** slot-1-alone (the v1 claim "single chokepoint, FOpen calls slot 1" — FALSIFIED by the load-path map; FOpen mints the handle independently, and slot-1-alone leaves the loose-open at the mercy of the engine's pak-only-at-default search). **Rejected:** hooking only `CCryPak::FOpen` (covers loose add-new but NOT pak-resident replace — the resolver decides that). **Rejected:** kcdx-mounts-a-pak (rides the proven pak path but fights the loose-file author UX with a pack/repack lifecycle — loses UX #1). |
+| **The loose OPEN — own-`FILE*` vs path-redirect** | **Return kcdx's own CRT `FILE*` (HOOK 2)** — gate-verified end-to-end (`e6e8e27`): FRead's OS arm serves any `FILE*` (`handle−1 ≫ pak-count`). **Rejected:** a path-only redirect (return the overlay path, let the engine's `FOpen` open it) — depends on the engine's loose-search finding the file at the default, the exact layer the prior redirect FAILED at; user-settled to not be barred by a vanilla-engine loose-search unknown. |
+| **`sys_pakPriority` as a mechanism** | **Rejected — neither set nor depended on.** kcdx owns the DECISION (above the mode gate) and the OPEN (its own handle), so resolution does not ride the CVar. The resolver IS gated (pak-only at the default — the load-path map; the v1 "independent because we sit above the table" was true of the decision but missed that an FOpen-only override still couldn't replace a pak asset). A dev-mode CVar a game update could change stays out of the mechanism. (Non-negotiable.) |
+| **Seam install timing** | Install BOTH hooks inside the already-shipping ready-bracket (before `SetEvent(g_kcdxReadyEvent)`), so both are live before the first asset read; a build-step-1 probe confirms the `ModManager_ctor`-vs-first-read ordering, a falsifying outcome is surfaced. **Rejected:** wiring in without confirming the ordering (the unverified-timing assumption that caused the `hits=0` result); rejected: a new wait-mechanism (the ready-bracket already ships). |
 | **Auto-apply by path-match** | **Rejected** — implicit, obfuscated, a typo silently no-ops (AP14). Replacement is explicitly declared. |
 | **Replacement declaration home** | A per-asset sidecar (scope = placement) AND a code verb; mirrors override having declarative + programmatic forms. **Rejected:** a central plugin-wide replacement map (too much abstract typing). |
 | **Cross-plugin reference shape** | Navigable `kcdx.plugin.<author>.<plugin>.*` via chained `__index` (the `kcdx.hook` pattern), with `kcdx.assets.replace("author.plugin.asset", with)` as the string-key equivalent for dynamic/quoted keys. **Rejected:** an owner-string arg (`get_by_path("author.plugin", "path")` — clunky); rejected: a packed single delimiter (`"author.plugin::path"` — a fragile new delimiter); rejected: a function-call-only accessor with no dotted navigation (breaks surfaces-mirror, contradicts the verbatim ask). |
