@@ -11,7 +11,7 @@ This file carries TWO layers. The **system AP-class floor** (immediately below) 
 
 ## The system AP classes (the floor — each a shape to reject)
 
-The build gate and the test gate are **necessary but not sufficient.** They check that nothing is obviously broken; they do not check that the system does what it is supposed to do. The **invariant** is the goal — the property the gate exists to protect. Any change that satisfies a gate while violating the invariant the gate protects is **rejected**, regardless of how green the build looks. Each class is a shape to reject; the kcdx AP1–18 below state the concrete, numbered, domain-worded instances.
+The build gate and the test gate are **necessary but not sufficient.** They check that nothing is obviously broken; they do not check that the system does what it is supposed to do. The **invariant** is the goal — the property the gate exists to protect. Any change that satisfies a gate while violating the invariant the gate protects is **rejected**, regardless of how green the build looks. Each class is a shape to reject; the kcdx AP1–19 below state the concrete, numbered, domain-worded instances.
 
 - **cfg-test early-return** — a test-only conditional that early-returns or shims behavior inside production code; the test exercises the wrapper, the real path ships unverified while coverage counts it covered. (kcdx instance: AP15.) **Instead:** test the real path with a real fixture; if it genuinely cannot run in tests, exempt it through the bucket-2/3 flow with primary-source justification — never a test-only shim.
 - **DI-only-for-tests** — a function-pointer/seam injected solely so a test can substitute a fake; the seam exists for the test, not the design. **Instead:** test against the real collaborator or a real fixture; introduce a seam only when the design needs more than one implementation.
@@ -243,10 +243,26 @@ See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- brok
 
 ---
 
+## AP19 — A call-graph edge (or cross-front synthesis claim) asserted without reading the caller's body
+
+**Forbidden:** asserting "function A calls B" / "every consumer routes through X" / "the path goes through Y" as a static fact without reading A's (the caller's) decompiled body and seeing the call. Inferring the edge from "B is reached by other consumers," a slot/vtable pattern ("A is a by-name slot, the pattern says those call B"), the function's name, or a synthesis that stitches multi-front outputs into the cleanest narrative. AP2 forbids guessing a single function's ABI from its prologue; this forbids guessing a CALL-EDGE between functions from anything but the caller's body. A research-disassembly synthesis whose load-bearing call-graph rests on unread edges is this AP.
+
+```
+synthesis: "FOpen (slot 36) calls AdjustFileName (slot 1), then mints a handle"
+  evidence: front-1 — "9 by-name slots call *(vtable+0x8)"; FOpen is a by-name slot
+  ACTUAL: FOpen's body (0x4614A0) decompile contains NO call to 0x6205c   # AP19: edge inferred from a slot pattern, never read in FOpen's body
+```
+
+**Detection signature (scan a finding/synthesis against this shape):** a load-bearing "A calls B" / "routes through X" claim whose stated evidence is *another function's* behavior, a slot/by-name pattern, a name, or "the fronts together imply it" — with no cite to a call site read in A's OWN body (`A at 0x… → call 0x<B>`). A claim that A's body was NOT read this turn, asserted as an edge rather than marked "unverified — A's body not read," is the hit. (A *runtime* "does execution actually reach X?" question is a `/debug` probe, not a static edge claim — not this AP, a different tool.)
+
+**Fix:** read the caller's body for the call (cite the site), or mark the edge **unverified** (`research-disassembly/SKILL.md` §3.5 — the default for an unread edge is "no edge"). For a multi-front synthesis, the synthesizer re-grounds each load-bearing edge in the owning body and a claim becoming design authority / a seed row is gated by an independent body-read verifier before it ships (`research-disassembly/SKILL.md` §4.5; `_shared/verification-contract.md`). Per `reverse-engineering.md` + `results-driven.md` (a checkable fact is read, not inferred).
+
+---
+
 ## Surfacing-an-option self-check
 
-Before any surfaced option (per `_shared/architectural-review.md` §"Design decisions surface"), audit each option against the AP classes above AND the numbered AP1–18 table. An option matching one is labeled prominently — `[AP<N> hit — <pattern>]` — and **cannot be marked Recommended**; a rule-compliant alternative must be surfaced first.
+Before any surfaced option (per `_shared/architectural-review.md` §"Design decisions surface"), audit each option against the AP classes above AND the numbered AP1–19 table. An option matching one is labeled prominently — `[AP<N> hit — <pattern>]` — and **cannot be marked Recommended**; a rule-compliant alternative must be surfaced first.
 
 ## Scope
 
-This file covers the class where code looks fine to every gate yet violates an invariant. The system AP-class floor at the top is the language-agnostic set every repo inherits; AP1–18 are kcdx's domain instances of it. Every class stays represented; a class is never deleted; new domain rows append as new failure modes surface. Domain-specific wrong-ways live in their own rules (`hook-engine.md`, `lua-bridge.md`, `address-library.md`, `reverse-engineering.md`, `logging.md`); cite the rule each pattern enforces.
+This file covers the class where code looks fine to every gate yet violates an invariant. The system AP-class floor at the top is the language-agnostic set every repo inherits; AP1–19 are kcdx's domain instances of it. Every class stays represented; a class is never deleted; new domain rows append as new failure modes surface. Domain-specific wrong-ways live in their own rules (`hook-engine.md`, `lua-bridge.md`, `address-library.md`, `reverse-engineering.md`, `logging.md`); cite the rule each pattern enforces.

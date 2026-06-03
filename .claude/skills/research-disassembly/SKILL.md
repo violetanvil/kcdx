@@ -47,9 +47,33 @@ If a higher tier *partially* answers (e.g. seed prose has args but not the retur
 
 ---
 
+## 3.5 Every claim is read in the body that OWNS it — call-edges + cross-front synthesis (AP2, AP19)
+
+A static fact about ONE function is read in that function (§3). The same bar binds two facts the single-function framing missed — the seam where an inference ships as ground truth:
+
+- **A call-edge claim ("A calls B") is grounded by reading A's body for the call to B** — never inferred. "B is reached by other consumers," "B is a by-name slot the pattern says everyone calls," "A is the kind of function that would call B" are NOT evidence A calls B. Read A's decompiled body; the call to B is there (cite the call site — `A at 0x… → call 0x<B>`) or the edge does not exist. A call-graph arrow you did not read in the caller's body is an AP19 inference, not a fact.
+- **The DEFAULT for an unread edge is "no edge," not "probably an edge."** Honest-uncertainty (§4) applies to edges: if A's body is not read this turn, the answer is "A→B unverified — A's body not read," never an asserted arrow.
+- **Synthesis re-grounds; it does not assemble.** When findings come from multiple fronts/sources, the synthesizer treats each front's output as a CLAIM to re-verify, not a fact to stitch into a narrative. Every LOAD-BEARING claim the synthesis rests on — especially any cross-front call-edge — is read in the owning body BEFORE it ships. A synthesis whose elegance ("one universal chokepoint") outruns its reads is the failure this section exists to stop: the clean story is a hypothesis, the bodies are the fact.
+
+> **Self-check before asserting any "A calls B" / "everything routes through X":** *Did I read A's body (X's callers' bodies) and SEE the call this turn?* If no, it is an inference — mark it unverified or read the body. A runtime "does the path actually reach X?" question is a `/debug` probe, not a static edge claim (the intro's runtime-vs-static line) — the static fact is whether the call exists in the body; whether execution reaches it at runtime is `/debug`'s.
+
+---
+
 ## 4. Honest-uncertainty is a valid answer — never invent (AP2)
 
 If a fact is genuinely ambiguous from the binary, the answer is **"ambiguous — leave unverified,"** not a best guess. An empty `signature`/return field is correct; an invented one is an AP2 violation that ships a wrong ABI. The Address Library only carries facts structured from verified evidence. Say what you could and couldn't determine, and why.
+
+---
+
+## 4.5 Fanning out parallel fronts — the synthesizer re-grounds, a gate confirms before authority
+
+A big target gets split across parallel disassembly fronts (one per vtable region / subsystem / call cluster), then a synthesizer assembles the answer. Govern BOTH halves — the fronts and the synthesizer are where an inference enters:
+
+- **Each front returns CLAIMS + evidence, never assembled conclusions.** A front's deliverable is `<claim> — <evidence>`: the body snippet, the dump line, the call site read (`0x… → call 0x…`), the slot decompile. NOT "X is the chokepoint" / "everything routes through Y" — those are conclusions the front did not earn from its own slice. A front states only what it read in the bodies it was given.
+- **The synthesizer's job is to RE-GROUND, not to stitch.** It does NOT weave front outputs into the cleanest narrative; it takes each LOAD-BEARING claim the answer rests on — every cross-front call-edge above all (§3.5) — and reads the owning body to confirm it before the synthesis asserts it. An edge that spans two fronts (front-1 says "A is a by-name slot," front-3 says "B resolves paths" → "∴ A calls B") is the exact unread inference AP19 forbids: the synthesizer reads A's body or marks the edge unverified.
+- **A claim that will become DESIGN AUTHORITY or a seed row is GATED before it ships** (`_shared/verification-contract.md`). A self-asserted disassembly finding is the AP8 "self-reported gate" shape — "I read the body, trust me" is not evidence. Before a load-bearing claim becomes the basis for a design decision or a `data/seeds/` row, dispatch a gated body-read verifier: a fresh subagent (per the verification-contract dispatch discipline — `Agent` tool, WITHHELD = the synthesizer's leaning, independence citation, gated verdict) re-reads the owning body for that specific claim and returns PROCEED (the call/fact is in the body, cite the site) or HALT (not in the body / contradicts it / unread). A HALT blocks the claim from shipping as authority — it returns to "unverified" or to a fresh read, never ships on the synthesizer's word. This is the disassembly counterpart to `step-review` (gates a commit) and `root-cause-verifier` (gates a Resolution); a load-bearing fact has the same independent-read gate.
+
+A single-fact, single-front lookup (the common case) does not fan out and needs no synthesizer gate — its §3/§3.5 body-read IS the grounding. The gate fires for the multi-front synthesis whose claim becomes authority — the case that shipped an unread edge.
 
 ---
 
