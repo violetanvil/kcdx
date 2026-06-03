@@ -40,7 +40,8 @@ A path published by `publish-public.ps1`'s allowlist:
 
 Private carve-outs inside an otherwise-public dir (live under a public dir but
 NOT published): `docs/outstanding-work/` + `docs/known-issues/` + `docs/tech-debt/`
-(planning + bug + tech-debt trails); the superseded/planning files `docs/design.md`, `docs/design-gaps.md`,
+(planning + bug + tech-debt trails); the internal design-spec tree `docs/design/`
+(TRDs that state RE provenance + governance citations); the superseded/planning files `docs/design.md`, `docs/design-gaps.md`,
 `docs/phase5c7b-plan.md`, `docs/phase5-rom-port-plan.md`, `docs/migration.md`,
 `docs/VERIFY_PHASE2.md`/`3`/`4`, `docs/archive/`; the archived v0.1 example
 plugins `examples/archive/`; the RE tooling `data/refdata-extractor/`; and the

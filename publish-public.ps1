@@ -65,6 +65,10 @@ $PrivateSubpaths = @(
   'docs/outstanding-work/',
   'docs/known-issues/',
   'docs/tech-debt/',
+  # Internal design specs (TRDs). These state RE provenance + governance
+  # citations; the user-facing reference is docs/cpp/ + docs/lua/ + the
+  # operational docs. The whole docs/design/ subtree is private.
+  'docs/design/',
   # Superseded / internal planning docs that sit at docs/ root but are not
   # user-facing reference (exact-path carve-outs; the StartsWith match below
   # treats a non-slash-terminated entry as an exact file).

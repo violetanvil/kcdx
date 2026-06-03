@@ -4,13 +4,19 @@ kcdx's asset-replacement surface: one `assets/` folder, explicit replacement
 declarations (sidecar or code), navigable cross-plugin references, transparent
 per-class staging. The most-touched mod-authoring surface for total conversions.
 
-**Settled design:** [`../restructure/phase-08.5-asset-replacement/asset-design.md`](../restructure/phase-08.5-asset-replacement/asset-design.md)
-(committed `9bb4bb1`). **Shared spec + coverage map:** [`plan-spec.md`](plan-spec.md).
+**Settled design:** [`../../design/asset-replacement.md`](../../design/asset-replacement.md)
+(the canonical, corrected design). **Shared spec + coverage map:** [`plan-spec.md`](plan-spec.md).
 
-The production `CCryPak::FOpen` hook (`9e524ae`) + the `[entrypoints].assets` parse
-and load-order overlay map (`2588b33`) are **already built + live** — the landed
-foundation this plan builds on (see `plan-spec.md`). This tree picks up from there;
-the FOpen hook body is currently pass-through and Phase 1 fills it.
+> **⚠ This tree NEEDS RE-PLANNING against the corrected seam (2026-06-02).** It
+> was decomposed around the superseded `CCryPak::FOpen`-redirect mechanism. The
+> canonical design REPLACES `CCryPak::AdjustFileName` (slot 1, id 152) — reusing
+> the pak/disk/normalizer leaves (153/154/155) by calling through, **independent
+> of `sys_pakPriority`** — and installs the seam inside the already-shipping
+> ready-bracket (canonical doc §7–§8). The phase intents + step docs below still
+> describe the old FOpen mechanism; re-run `/plan` against the canonical doc
+> before `/execute` consumes any step. The `[entrypoints].assets` parse +
+> load-order overlay map (`2588b33`) remain valid landed foundation; the earlier
+> FOpen probe site is removed in favor of the production `AdjustFileName` seam.
 
 This tree is the navigable plan: one phase subdir, one doc per shippable
 (commit-grain) step. A landed step flips its step-grain row in the phase README;

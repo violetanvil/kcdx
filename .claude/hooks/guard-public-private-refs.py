@@ -40,7 +40,8 @@ def main():
     # planning + bug trails under docs/). Keep in sync with publish-public
     # $PrivateSubpaths. Trailing '/' = directory prefix; else an exact-file carve-out.
     private_subpaths = ['docs/outstanding-work/', 'docs/known-issues/',
-                        'docs/tech-debt/', 'docs/design.md', 'docs/design-gaps.md',
+                        'docs/tech-debt/', 'docs/design/', 'docs/design.md',
+                        'docs/design-gaps.md',
                         'docs/phase5c7b-plan.md', 'docs/VERIFY_PHASE2.md',
                         'docs/VERIFY_PHASE3.md', 'docs/VERIFY_PHASE4.md',
                         'docs/archive/', 'docs/phase5-rom-port-plan.md',
