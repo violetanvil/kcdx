@@ -55,12 +55,18 @@ GUI gates on -- D11/policy.md; db_editor does NOT self-approve the DB addition) 
 drive the SAME _drive_apply_over_prospective_seed bridge over a prospective seed
 that has a NEW row appended -- the bridge + the applier are untouched.
 
-The lifecycle UPDATE (Jobs 4/5 -- supersede / deprecate) is a LATER step (step 5).
-It is a names-side UPDATE the SAME apply path already classifies (apply_seeds
-classifies deprecate / supersede from the prospective seed), so it adds a thin entry
-over the SAME bridge -- update the prospective address_names seed's lifecycle cells
-in place (via seed_csv_edit.update_row_in_place, keyed on the names id) and drive
-apply_seeds. This module is structured to grow it without touching the bridge.
+supersede_entity / deprecate_entity (step 5, Jobs 4/5 / US-8): the entity-level
+lifecycle UPDATE on an EXISTING address_names row. supersede sets superseded_by +
+superseded_at_version together; deprecate sets is_deprecated + deprecated_at_version
+together (with deprecation_replacement allowed only when deprecated). Each is a
+names-side UPDATE the SAME apply path already classifies (apply_seeds classifies
+deprecate / supersede from the prospective names seed and gates pair-integrity,
+no-self-supersede, supersession acyclicity, and replacement-requires-deprecated via
+validators.py) -- so each is a thin entry over the SAME bridge: update the
+prospective address_names seed's lifecycle cells in place (via
+seed_csv_edit.update_row_in_place, keyed on the names id) and drive apply_seeds. The
+entity identity (id, name) is never mutated. These are UPDATEs to an already-approved
+entity -- NOT AP18-gated (AP18 gates new ROWS only), so no ap18_new_row flag.
 """
 import os
 import shutil
@@ -121,6 +127,17 @@ _VERSION_REQUIRED_COLUMNS = ("valid_from_version", "module", "kind")
 # so it is inert in the comparison but harmless to include.
 _NOTHING_CHANGED_COMPARE_COLUMNS = tuple(
     sorted(_VERSION_AUTHORED_COLUMNS - {"valid_from_version"}))
+
+# The identity key (lookup, never editable) of an address_names seed row -- the id
+# (== kcdx_id). A lifecycle UPDATE (supersede / deprecate, Jobs 4/5) matches the row
+# by this key and never mutates it OR the entity's name. The lifecycle cells a
+# supersede sets (superseded_by + superseded_at_version) and a deprecate sets
+# (is_deprecated + deprecated_at_version + optional deprecation_replacement) are
+# written by the entry points below; the pair-integrity / no-self-supersede /
+# acyclicity / replacement-requires-deprecated rules are the validator's
+# (apply_seeds' gate: resolve_and_check_name_refs + check_supersession_acyclic over
+# the FULL prospective names seed), NOT reimplemented here.
+_NAMES_IDENTITY_COLUMNS = ("id",)
 
 
 class DbEditError(RuntimeError):
@@ -543,3 +560,187 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
     finally:
         if owns_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# The lifecycle UPDATE shapes (step 5) -- supersede (Job 4 / US-8) + deprecate
+# (Job 5 / US-8). Both edit an EXISTING address_names row's lifecycle columns and
+# drive the SAME bridge; apply_seeds classifies the resulting deprecate/supersede
+# from the prospective names seed and gates the pair-integrity / no-self-supersede /
+# acyclicity / replacement-requires-deprecated rules (validators.py:
+# resolve_and_check_name_refs + check_supersession_acyclic). These are UPDATEs to an
+# already-approved entity, NOT new rows -- NOT AP18-gated (AP18 gates ADDITIONS only;
+# the returned dict carries no ap18_new_row flag). The entity identity (id, name) is
+# never mutated.
+# ---------------------------------------------------------------------------
+def _drive_names_lifecycle_edit(out_dir, dll_path, kcdx_id, edits, *,
+                                action, log, work_dir):
+    """Shared driver for the lifecycle UPDATEs: export the current DB to a temp
+    seed, fold `edits` into the address_names row keyed on `id == kcdx_id` (via
+    seed_csv_edit.update_row_in_place, diff-preserved), and drive the existing
+    validated atomic applier over the prospective seed. A validation failure
+    (pair-integrity / self-supersede / cycle / replacement-without-deprecated) is
+    the validator's RuntimeError out of apply_seeds -- NO DB write occurs (apply_seeds
+    validates the full names seed before opening any DB). `action` is the addition
+    label for the returned dict ('supersede' / 'deprecate').
+
+    Returns a dict on success:
+      {"result": <apply_seeds result dict>,
+       "action": <str>,           # 'supersede' or 'deprecate'
+       "kcdx_id": <int>}          # the entity edited (identity unchanged)
+
+    Raises (no DB write unless the apply reaches the per-DB BEGIN/COMMIT):
+      DbEditError  -- `kcdx_id` matches no existing address_names row in the exported
+                      seed (a stale/wrong key -- a caller-shape error before the apply).
+      RuntimeError -- the shared validator rejected the resulting prospective seed
+                      state (the single gate -- a half-set lifecycle pair, a self-
+                      supersede, a supersession cycle, a deprecation_replacement set
+                      without is_deprecated, or an unresolvable successor/replacement
+                      name). The DB is byte-identical to before.
+      VersionResolveError / VersionRefusal / BaselineRefusal -- as apply_seeds raises
+                      them (no DB write)."""
+    user_db = os.path.join(out_dir, "reference.sqlite")
+    if not os.path.isfile(user_db):
+        raise DbEditError(
+            f"no reference.sqlite under {out_dir!r}; {action} amends an existing DB "
+            f"(run a rebuild to create the baseline first)")
+
+    owns_work_dir = work_dir is None
+    work_dir = work_dir or tempfile.mkdtemp(prefix=f"db_editor_{action}_")
+    try:
+        # 1. Export the CURRENT DB to a temp seed dir (the prospective-seed base);
+        #    the export round-trips the unedited DB to a no-op, so only the lifecycle
+        #    cells produce a delta. Writes NOTHING under data/seeds/.
+        prospective = os.path.join(work_dir, "prospective_seed")
+        os.makedirs(prospective, exist_ok=True)
+        export_seeds(user_db, prospective)
+
+        # 2. Fold the lifecycle edit into the prospective address_names seed,
+        #    diff-preserved, matched on the row's id (== kcdx_id). A non-match is a
+        #    caller error (a stale/unknown id) surfaced before the apply -- distinct
+        #    from the validator's later rejection of the lifecycle content.
+        names_csv = os.path.join(prospective, ADDRESS_NAMES_SEED_NAME)
+        matched = seed_csv_edit.update_row_in_place(
+            names_csv,
+            key_columns=_NAMES_IDENTITY_COLUMNS,
+            key_values=(str(kcdx_id),),
+            edits=edits)
+        if not matched:
+            raise DbEditError(
+                f"no address_names seed row for id={kcdx_id} in the exported seed; "
+                f"the identity key matches no existing entity (a stale or wrong id)")
+
+        # 3. Drive the existing validated atomic applier. apply_seeds validates the
+        #    WHOLE prospective names seed (pair-integrity, no-self-supersede,
+        #    acyclicity, replacement-requires-deprecated) BEFORE opening any DB -- a
+        #    violation raises here with NO DB write; a valid edit lands per-DB in
+        #    BEGIN/COMMIT.
+        result = _drive_apply_over_prospective_seed(
+            out_dir, dll_path, prospective, log=log)
+        return {"result": result, "action": action, "kcdx_id": int(kcdx_id)}
+    finally:
+        if owns_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def supersede_entity(out_dir, dll_path, kcdx_id, superseded_by,
+                     superseded_at_version, *, log=None, work_dir=None):
+    """Validate + atomically set the SUPERSESSION edge on the existing address_names
+    row `kcdx_id` (Job 4 / US-8): superseded_by + superseded_at_version TOGETHER,
+    driving the existing seed->DB applier. The successor name + the version are
+    written into the prospective names seed; apply_seeds classifies + gates the
+    supersession (pair-integrity both-or-neither, no self-supersede, no cycle in the
+    supersede graph -- validators.py, NOT reimplemented here). This is an UPDATE to an
+    approved entity, NOT a new row -- NOT AP18-gated. The entity identity (id, name)
+    is never mutated.
+
+    Parameters:
+      out_dir               -- the directory holding reference.sqlite +
+                               reference-dev.sqlite (the DBs the apply amends).
+      dll_path              -- the linked WHGame.dll the version resolver reads.
+      kcdx_id               -- the entity id (int) of the row being superseded (X).
+      superseded_by         -- the SUCCESSOR entity's canonical name (str), as the
+                               seed carries it (the validator resolves it to an id).
+                               An empty/None value with a set version is a half-set
+                               pair the validator rejects.
+      superseded_at_version -- the game-version TAG (str) the supersession takes
+                               effect at. Half-set the same way.
+      log                   -- optional callable(str) for the applier's progress lines.
+      work_dir              -- optional scratch dir for the export + edit; a temp dir
+                               is created + removed when omitted. NOTHING is written
+                               under data/seeds/.
+
+    Returns {"result": <apply_seeds result>, "action": "supersede", "kcdx_id": <int>}
+    on success (no exception == the edge landed atomically in both DBs).
+
+    Raises (no DB write occurs unless the apply reaches the per-DB BEGIN/COMMIT):
+      DbEditError  -- `kcdx_id` matches no existing entity in the exported seed.
+      RuntimeError -- the shared validator rejected the prospective seed state (the
+                      single gate -- a half-set superseded_by/superseded_at_version
+                      pair, a row superseding ITSELF, a supersession CYCLE, or an
+                      unresolvable successor name). The DB is byte-identical to before.
+      VersionResolveError / VersionRefusal / BaselineRefusal -- as apply_seeds raises."""
+    edits = {
+        "superseded_by": superseded_by,
+        "superseded_at_version": superseded_at_version,
+    }
+    return _drive_names_lifecycle_edit(
+        out_dir, dll_path, kcdx_id, edits,
+        action="supersede", log=log, work_dir=work_dir)
+
+
+def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
+                     deprecated_at_version=None, deprecation_replacement=None,
+                     log=None, work_dir=None):
+    """Validate + atomically set the DEPRECATION flags on the existing address_names
+    row `kcdx_id` (Job 5 / US-8): is_deprecated + deprecated_at_version TOGETHER,
+    with deprecation_replacement allowed ONLY when deprecated, driving the existing
+    seed->DB applier. The flags are written into the prospective names seed;
+    apply_seeds gates the pair-integrity (both-or-neither) + the
+    replacement-requires-deprecated rule (validators.py, NOT reimplemented here). This
+    is an UPDATE to an approved entity, NOT a new row -- NOT AP18-gated. The entity
+    identity (id, name) is never mutated.
+
+    Parameters:
+      out_dir                 -- the directory holding the two reference DBs.
+      dll_path                -- the linked WHGame.dll the version resolver reads.
+      kcdx_id                 -- the entity id (int) to deprecate.
+      is_deprecated           -- True to set the flag (seed cell '1'); False/None to
+                                 CLEAR it (seed cell '' -- un-deprecate). The
+                                 deprecated_at_version must agree (both-or-neither):
+                                 set the version when deprecating, leave it None when
+                                 clearing, or the validator rejects the half-set pair.
+      deprecated_at_version   -- the game-version TAG (str) the deprecation takes
+                                 effect at; None when clearing.
+      deprecation_replacement -- optional successor/replacement entity NAME (str) the
+                                 engine surfaces as advisory (does NOT auto-follow).
+                                 Allowed ONLY when is_deprecated is set; setting it
+                                 while not deprecated is a validator HARD ERROR.
+      log                     -- optional callable(str) for the applier's progress.
+      work_dir                -- optional scratch dir; a temp dir is created + removed
+                                 when omitted. NOTHING is written under data/seeds/.
+
+    Returns {"result": <apply_seeds result>, "action": "deprecate", "kcdx_id": <int>}
+    on success (no exception == the flags landed atomically in both DBs).
+
+    Raises (no DB write occurs unless the apply reaches the per-DB BEGIN/COMMIT):
+      DbEditError  -- `kcdx_id` matches no existing entity in the exported seed.
+      RuntimeError -- the shared validator rejected the prospective seed state (the
+                      single gate -- a half-set is_deprecated/deprecated_at_version
+                      pair, or a deprecation_replacement set without is_deprecated, or
+                      an unresolvable replacement name). The DB is byte-identical to
+                      before.
+      VersionResolveError / VersionRefusal / BaselineRefusal -- as apply_seeds raises."""
+    # The seed cell conventions (policy.md / the export): is_deprecated is '1' when
+    # set, '' when cleared; deprecation_replacement is written only as the caller
+    # supplies it -- a None replacement clears the cell. The validator owns the
+    # both-or-neither + replacement-requires-deprecated rules; db_editor only writes
+    # the cells the caller asked for.
+    edits = {
+        "is_deprecated": "1" if is_deprecated else "",
+        "deprecated_at_version": deprecated_at_version,
+        "deprecation_replacement": deprecation_replacement,
+    }
+    return _drive_names_lifecycle_edit(
+        out_dir, dll_path, kcdx_id, edits,
+        action="deprecate", log=log, work_dir=work_dir)
