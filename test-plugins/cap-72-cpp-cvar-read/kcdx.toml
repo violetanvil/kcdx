@@ -1,0 +1,48 @@
+# CAP-72 — C++ peer of CAP-71 (kcdx.cvar.* CVar read via the C++ surface).
+#
+# Exercises the CVar-read capability from the C++ surface — the v3
+# kcdxConsoleInterface accessors GetCVarInt / GetCVarBool / GetCVarFloat that
+# mirror the Lua kcdx.cvar.* surface (full-parity test mandate). C++ DLL plugin;
+# builds via its own CMakeLists.txt (cap-72.dll), like cap-69 — not via build.ps1.
+#
+# What it proves (all boot-only — sys_pakPriority is a CONFIRMED boot-present
+# int CVar, so the reads fire at kcdxMessage_InputLoaded with no player gesture
+# and each result is fully machine-checkable from the bool-return + out-param —
+# there is NO perceptual overlay to eyeball, unlike cap-69's print rows):
+#   * CAP-72-callable: at InputLoaded, K.console != null && GetCVarInt != null
+#     (the v3 method resolved) AND K.console->GetCVarInt("sys_pakPriority", &v)
+#     returns true and writes v in 0..3 (a plausible small pakPriority mode for
+#     a CVar that demonstrably exists). FALSIFIABLE: null interface/accessor →
+#     FAIL (rebuild against v3); a false return / out-of-range value → FAIL.
+#   * CAP-72-float: GetCVarFloat("sys_pakPriority", &f) returns true (the GetFVal
+#     accessor path read a CVar that exists; value-agnostic — read SUCCEEDED).
+#   * CAP-72-bool: GetCVarBool("sys_pakPriority", &b) returns true (= int != 0;
+#     value-agnostic).
+#   * CAP-72-miss: GetCVarInt("kcdx_nonexistent_cvar_xyz", &v) returns false AND
+#     leaves v UNTOUCHED (at a sentinel) — the no-garbage-write contract. A miss
+#     is distinguishable from a real 0; never a fabricated value. FALSIFIABLE: a
+#     true return or a mutated out-param for a bogus name → FAIL.
+#
+# Cross-surface parity: CAP-71 (Lua) is the peer — it reads the SAME
+# sys_pakPriority via kcdx.cvar.get_int/get_bool/get_float. Both call the same
+# engine cvar:: core, so the CAP-72-callable and CAP-71-callable rows MUST
+# report the same observed int value (the human reads both rows).
+#
+# Test mode: boot-only — launch-to-menu confirms every row; no console gesture,
+# no in-game gesture, no overlay eyeball.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_72_cpp_cvar_read"
+display_name        = "CAP-72 C++ kcdx.cvar.* CVar read (v3 accessors)"
+author              = "ts"
+description         = "C++ peer of CAP-71 — proves the CVar-read capability from the C++ surface via the v3 kcdxConsoleInterface accessors. GetCVarInt reads a plausible small mode for the confirmed boot-present sys_pakPriority (CAP-72-callable), GetCVarFloat/GetCVarBool read the same CVar (CAP-72-float/-bool), and a bogus CVar name returns false with the out-param UNTOUCHED — the no-garbage-write contract (CAP-72-miss). All report at kcdxMessage_InputLoaded; a null v3 accessor reports FAIL (rebuild against v3)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-72-callable", "CAP-72-float", "CAP-72-bool", "CAP-72-miss"]
+
+[entrypoints]
+dll = "cap-72.dll"

@@ -11,8 +11,8 @@ when it lands (`incremental-delivery.md`).
 | Step | Status | Commit |
 | [1 — engine CVar-read core](step-1-engine-cvar-core.md) | DONE | bc71351 |
 | [2 — Lua surface](step-2-lua-surface.md) | DONE | ce5371d |
-| [3 — C++ mirror](step-3-cpp-mirror.md) | DONE | (landed) |
-| [4 — regression plugin cap-71](step-4-test-plugin.md) | NOT STARTED | — |
+| [3 — C++ mirror](step-3-cpp-mirror.md) | DONE | 4b85b6f |
+| [4 — regression plugins cap-71 (Lua) + cap-72 (C++)](step-4-test-plugin.md) | DONE | (landed) |
 | [5 — docs + glossary](step-5-docs.md) | NOT STARTED | — |
 
 ## Verification gate

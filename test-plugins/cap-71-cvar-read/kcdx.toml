@@ -1,0 +1,50 @@
+# CAP-71 — kcdx.cvar.get_int / .get_bool / .get_float: read a game CVar's value
+# by name (Lua surface).
+#
+# This plugin is PURE LUA (no DLL): pure-Lua plugins need no CMakeLists entry
+# (cap-68 / cap-70 are the structural mirrors).
+#
+# What it proves (all boot-only — sys_pakPriority is a CONFIRMED boot-present
+# int CVar, so the reads fire at input_loaded with no player gesture and each
+# result is fully machine-checkable — there is NO perceptual overlay):
+#   * CAP-71-badarg (boot): kcdx.cvar.get_int(123) (non-string) returns
+#     (nil, err) with err a string naming the `string` arg. The binder rejects
+#     a non-string before touching the surface. FAILS if a bad arg does not
+#     produce the teaching error.
+#   * CAP-71-callable (boot): at input_loaded, kcdx.cvar.get_int is a function
+#     AND get_int("sys_pakPriority") returns a number in 0..3 (a plausible small
+#     pakPriority mode) for a CVar that demonstrably exists. FAILS if the
+#     binding is missing / wrong type / the read fails / the value is out of the
+#     plausible mode range.
+#   * CAP-71-float (boot): get_float("sys_pakPriority") returns a number (the
+#     GetFVal accessor path read a CVar that exists; value-agnostic — asserts
+#     the read SUCCEEDED, not a specific value).
+#   * CAP-71-bool (boot): get_bool("sys_pakPriority") returns a boolean
+#     (= int != 0; value-agnostic).
+#   * CAP-71-miss (boot): get_int("kcdx_nonexistent_cvar_xyz") returns nil — a
+#     non-existent CVar reads as nil (the no-garbage-write contract), NEVER a
+#     fabricated value. FAILS if a bogus name returns a non-nil value.
+#
+# Cross-surface parity: CAP-72 (C++ DLL) is the peer — it reads the SAME
+# sys_pakPriority via K.console->GetCVarInt/Bool/Float. Both call the same
+# engine cvar:: core, so the CAP-71-callable and CAP-72-callable rows MUST
+# report the same observed int value (the human reads both rows).
+#
+# Test mode: boot-only — launch-to-menu confirms every row; no console gesture,
+# no in-game gesture, no overlay eyeball.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_71_cvar_read"
+display_name        = "CAP-71 kcdx.cvar.* CVar read (Lua)"
+author              = "ts"
+description         = "Pure-Lua kcdx.cvar.* self-test: get_int reads a plausible small mode for the confirmed boot-present sys_pakPriority (CAP-71-callable), get_float/get_bool read the same CVar (CAP-71-float/-bool), a non-string arg returns (nil, teaching-err) naming `string` (CAP-71-badarg), and a bogus CVar name returns nil with no fabricated value (CAP-71-miss). C++ peer: cap-72."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-71-callable", "CAP-71-badarg", "CAP-71-float", "CAP-71-bool", "CAP-71-miss"]
+
+[entrypoints]
+lua = "plugin.lua"
