@@ -72,11 +72,12 @@ SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
 DB_FILES = ("reference.sqlite", "reference-dev.sqlite")
 
 # The exact paths Confirm stages, relative to the checkout root (must match
-# routes_confirm._staged_rel_paths): the two DBs at data/seeds/ (where the data-core
-# builds them) + the three derived CSVs at data/db-export/ (D20 -- the export target).
+# routes_confirm._staged_rel_paths): the two DBs at data/ (config.out_dir, where the
+# data-core builds them) + the three derived CSVs at data/db-export/ (D20 -- the export
+# target). NOT data/seeds/ -- that holds the frozen bootstrap CSVs only.
 STAGED_REL_PATHS = sorted([
-    "data/seeds/reference.sqlite",
-    "data/seeds/reference-dev.sqlite",
+    "data/reference.sqlite",
+    "data/reference-dev.sqlite",
     "data/db-export/module_seed.csv",
     "data/db-export/address_names_seed.csv",
     "data/db-export/address_versions_seed.csv",
@@ -120,21 +121,22 @@ def _build_git_checkout():
 
     root = tempfile.mkdtemp(prefix="confirm_checkout_")
     seed_dir = os.path.join(root, "data", "seeds")
+    out_dir = os.path.join(root, "data")               # config.out_dir == data/ (the DBs)
     export_dir = os.path.join(root, "data", "db-export")
     os.makedirs(seed_dir, exist_ok=True)
     os.makedirs(export_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
 
-    # Rebuild the two reference DBs into the checkout's data/seeds/ (the read-test pattern),
-    # then SEED data/db-export/ with one export of the just-built USER DB.
+    # Rebuild the two reference DBs into the checkout's data/ (config.out_dir, NOT
+    # data/seeds/), then SEED data/db-export/ with one export of the just-built USER DB.
     saved = (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
              imp.ADDRESS_VERSIONS_SEED_CSV)
     imp.MODULE_SEED_CSV = os.path.join(seed_dir, "module_seed.csv")
     imp.ADDRESS_NAMES_SEED_CSV = os.path.join(seed_dir, "address_names_seed.csv")
     imp.ADDRESS_VERSIONS_SEED_CSV = os.path.join(seed_dir, "address_versions_seed.csv")
     try:
-        imp.run_rebuild(DUMP_DIR, seed_dir)
+        imp.run_rebuild(DUMP_DIR, out_dir)
     finally:
         (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
          imp.ADDRESS_VERSIONS_SEED_CSV) = saved
@@ -142,7 +144,7 @@ def _build_git_checkout():
     # Seed the derived-export record (data/db-export/) from the rebuilt DB so the export
     # target already tracks the current DB state pre-Confirm.
     from seeds_shared.csv_exporter import export_seeds as _export_seeds
-    _export_seeds(os.path.join(seed_dir, "reference.sqlite"), export_dir)
+    _export_seeds(os.path.join(out_dir, "reference.sqlite"), export_dir)
 
     # git init + a baseline commit of the DBs + the db-export CSVs (so the Confirm commit
     # has a parent and the changed-files assertion is unambiguous).
@@ -194,12 +196,17 @@ def _seed_dir(root):
     return os.path.join(root, "data", "seeds")
 
 
+def _out_dir(root):
+    # config.out_dir == <checkout>/data -- where the reference DBs live (NOT data/seeds/).
+    return os.path.join(root, "data")
+
+
 def _export_dir(root):
     return os.path.join(root, "data", "db-export")
 
 
 def _user_db(root):
-    return os.path.join(_seed_dir(root), "reference.sqlite")
+    return os.path.join(_out_dir(root), "reference.sqlite")
 
 
 def _db_rows_hash(db_path):
@@ -245,7 +252,7 @@ def _state_hash(root):
     reset (the 4d restore-point) and the CSV record reverted (the backend CSV-revert)."""
     h = hashlib.sha256()
     for f in DB_FILES:
-        h.update(_db_rows_hash(os.path.join(_seed_dir(root), f)).encode())
+        h.update(_db_rows_hash(os.path.join(_out_dir(root), f)).encode())
     for f in SEED_FILES:
         with open(os.path.join(_export_dir(root), f), "rb") as fh:
             h.update(fh.read())

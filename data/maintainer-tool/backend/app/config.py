@@ -102,10 +102,13 @@ class Config:
     @property
     def out_dir(self):
         """The directory holding the two reference DBs the data-core amends
-        (the data-core's `out_dir` param). Today the DBs sit beside the seeds
-        under data/seeds/'s parent -- the data-core builds them into the same
-        checkout; the load endpoint reports which DBs actually resolve."""
-        return os.path.join(self.checkout_path, "data", "seeds")
+        (the data-core's `out_dir` param). The DBs live at
+        <checkout>/data/{reference,reference-dev}.sqlite -- under data/, NOT
+        data/seeds/ (which holds the frozen bootstrap seed CSVs only; no .sqlite
+        is there). run_rebuild writes <out_dir>/reference.sqlite and the release
+        ships it at data/reference.sqlite, so out_dir is <checkout>/data. The
+        load endpoint reports which DBs actually resolve."""
+        return os.path.join(self.checkout_path, "data")
 
     @property
     def user_db(self):

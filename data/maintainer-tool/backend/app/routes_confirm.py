@@ -381,15 +381,16 @@ def _extract_handle(write_result):
 
 def _staged_rel_paths():
     """The files Confirm stages, as paths RELATIVE to the checkout root, BY EXACT NAME
-    (never a broad add): the two reference DBs (at config.out_dir -- data/seeds/, where
-    the data-core builds + amends them) PLUS the three derived-export CSVs at
+    (never a broad add): the two reference DBs (at config.out_dir -- data/, where the
+    data-core builds + amends them) PLUS the three derived-export CSVs at
     data/db-export/ (D20 -- NOT data/seeds/, which holds the frozen bootstrap CSVs the
     maintainer tool never writes). The DB is the originator; the data/db-export/ CSVs are
-    its git-tracked diff record."""
+    its git-tracked diff record. These DB paths MUST match config.out_dir (data/) --
+    staging a path the data-core never wrote would commit a stale/absent file."""
     return [
-        # The reference DBs -- the data-core amends them in place at config.out_dir.
-        "data/seeds/reference.sqlite",
-        "data/seeds/reference-dev.sqlite",
+        # The reference DBs -- the data-core amends them in place at config.out_dir (data/).
+        "data/reference.sqlite",
+        "data/reference-dev.sqlite",
         # The derived CSV record (D20) -- the export target, NOT the bootstrap seeds.
         "data/db-export/module_seed.csv",
         "data/db-export/address_names_seed.csv",

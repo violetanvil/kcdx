@@ -88,19 +88,21 @@ GVO = imp.GAME_VERSION_ORDINAL      # 1164953
 # ----------------------------------------------------------------------------
 def _build_resolved_checkout():
     """A temp dir laid out as a real checkout: <root>/data/seeds/ holds the three
-    seed CSVs AND the rebuilt reference.sqlite + reference-dev.sqlite. Returns the
-    checkout root. Skips (not fails) if the data-core fixture inputs are absent."""
+    seed CSVs (the frozen bootstrap), and <root>/data/ (config.out_dir) holds the
+    rebuilt reference.sqlite + reference-dev.sqlite. Returns the checkout root. Skips
+    (not fails) if the data-core fixture inputs are absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_checkout_")
     seed_dir = os.path.join(root, "data", "seeds")
+    out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
 
-    # Rebuild the reference DBs into the checkout's seed dir (config.out_dir ==
-    # data/seeds), pointing the importer's seed-path constants at the checkout's
+    # Rebuild the reference DBs into the checkout's data/ dir (config.out_dir == data/,
+    # NOT data/seeds/), pointing the importer's seed-path constants at the checkout's
     # seeds for the duration (the data-core apply-oracle convention).
     saved = (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
              imp.ADDRESS_VERSIONS_SEED_CSV)
@@ -109,7 +111,7 @@ def _build_resolved_checkout():
     imp.ADDRESS_VERSIONS_SEED_CSV = os.path.join(seed_dir,
                                                  "address_versions_seed.csv")
     try:
-        imp.run_rebuild(DUMP_DIR, seed_dir)
+        imp.run_rebuild(DUMP_DIR, out_dir)
     finally:
         (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
          imp.ADDRESS_VERSIONS_SEED_CSV) = saved

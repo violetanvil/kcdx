@@ -60,15 +60,17 @@ GVT = imp.GAME_VERSION_TAG          # "1.5.1164953" -- the only known version
 
 def _build_resolved_checkout():
     """A temp checkout laid out as app.config derives it -- <root>/data/seeds/ with
-    the three seed CSVs + the rebuilt reference DBs (the read-test's pattern). Each
-    save test gets a FRESH checkout (function scope) -- though a preview writes
-    nothing, a fresh DB keeps the byte-identical baseline unambiguous per test.
-    Skips (not fails) if the mini-dump fixture is absent."""
+    the three seed CSVs (the frozen bootstrap) + <root>/data/ (config.out_dir) with the
+    rebuilt reference DBs (the read-test's pattern). Each save test gets a FRESH checkout
+    (function scope) -- though a preview writes nothing, a fresh DB keeps the
+    byte-identical baseline unambiguous per test. Skips (not fails) if the mini-dump
+    fixture is absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_save_checkout_")
     seed_dir = os.path.join(root, "data", "seeds")
+    out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
@@ -80,7 +82,8 @@ def _build_resolved_checkout():
     imp.ADDRESS_VERSIONS_SEED_CSV = os.path.join(seed_dir,
                                                  "address_versions_seed.csv")
     try:
-        imp.run_rebuild(DUMP_DIR, seed_dir)
+        # Rebuild into out_dir (data/), where config.out_dir resolves the DBs.
+        imp.run_rebuild(DUMP_DIR, out_dir)
     finally:
         (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
          imp.ADDRESS_VERSIONS_SEED_CSV) = saved
@@ -106,7 +109,8 @@ def client_at(monkeypatch):
 
 
 def _out_dir(checkout_root):
-    return os.path.join(checkout_root, "data", "seeds")
+    # config.out_dir == <checkout>/data (the DBs live there, NOT data/seeds/).
+    return os.path.join(checkout_root, "data")
 
 
 def _user_db(checkout_root):
