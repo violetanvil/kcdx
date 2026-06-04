@@ -3,6 +3,19 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-04 — `verified_date` defaults to today (overrideable); s04 field grid
+
+Two UX decisions settled during the Phase-3 live acceptance:
+
+- **`verified_date` defaults to today** (US-3 acceptance amended) — pre-filled on the audit-trio
+  edit + on create (US-6/US-1), always overrideable; a UI convenience, never a silent write (the
+  value still shows in the field delta). Surfaced in Phase 3; built in Phase 4 (the create flows +
+  the audit-trio edit are wired there).
+- **s04 field layout: a vertical list → a content-sized responsive grid** (`ui/screens/s04-field-editor.md`
+  §"Region & position") — short fields narrow + 2–3 per row, long fields full-width, grouped under
+  the existing sub-headings, collapses to one column on phone. Law 1 (the per-field reserved
+  dirty/was/error space) holds within each grid cell.
+
 ## 2026-06-04 — backend CORS allowlist (the served frontend is a separate origin)
 
 The FastAPI backend now sets a `CORSMiddleware` so the browser-served frontend (a separate
