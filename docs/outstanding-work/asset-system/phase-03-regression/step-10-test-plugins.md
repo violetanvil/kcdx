@@ -24,6 +24,18 @@ backward-compat pak) that no single earlier step owned.
   - **add-new (loose lane, HOOK 2)** a declared loose asset the game never requests
     is served via the own-`FILE*` open (a handle-consumed `.lua`/`.xml` reads
     kcdx's bytes) — the lane the prior path-redirect failed.
+  - **handle-consumed `.lua` serve-AND-EXECUTE (the Phase-1 acceptance residual).**
+    Phase-1 acceptance PROVED HOOK 2 *serves* a handle-consumed `.lua` overlay
+    (own-`FILE*` returned for `scripts/main.lua`, `map=HIT` +
+    `probe_fopen_hc_served` live 2026-06-04). What it did NOT prove is the served
+    chunk EXECUTING — `scripts/main.lua` is the already-init'd boot chunk (opened
+    by HOOK 2, not re-run mid-game). This row keys the overlay on a **startup
+    script the engine RUNS on a save load** (`scripts/startup/sl_saveload.lua` or
+    a peer the FOpen observer saw run on load — NOT `main.lua`), with an in-chunk
+    marker, and asserts the marker reaches `kcd.log` (`[manual]` `in-game` — the
+    save-load gesture is irreducible). FALSIFIABLE: no marker after the save load →
+    FAIL (served-but-not-executed). Closes the only Phase-1 residual. Recon:
+    `_research/asset-fopen-handle-recon/seamA-handle-consumed-served-LIVE.md`.
   - **US-3** a cross-plugin reference resolves (`kcdx.plugin.<a>.<p>.assets.get_by_name`
     returns a loadable path).
   - **US-4** the chain/conflict path: two plugins replace the same target → the

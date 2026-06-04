@@ -35,28 +35,36 @@ when `DONE`, `—` otherwise.
 | [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | NOT STARTED | — |
 | [3 — regression coverage](phase-03-regression/README.md) | NOT STARTED | — |
 
-## Where we are (2026-06-04) — Phase 1 built, batched acceptance + follow-ups owed
+## Where we are (2026-06-04) — Phase 1 ACCEPTANCE-CLOSED; Phase 2 next
 
-**Phase 1 is fully built + committed** (every step DONE in the phase-1 ledger):
-the two-hook seam (HOOK 1 AdjustFileName resolver `4a687f3`; HOOK 2 own-`FILE*`
-loose open `9590dd4`) + the declaration-required sidecar model (`2b0bd1b`), on the
-probe-gated foundation (ordering `d0eadc5`, DS-bypass, outBuf-contract `c28f53d`).
+**Phase 1 is fully built, committed, and acceptance-closed** (every step DONE in
+the phase-1 ledger): the two-hook seam (HOOK 1 AdjustFileName resolver `4a687f3`;
+HOOK 2 own-`FILE*` loose open `9590dd4`) + the declaration-required sidecar model
+(`2b0bd1b`), on the probe-gated foundation (ordering `d0eadc5`, DS-bypass,
+outBuf-contract `c28f53d`).
 
-**Proven LIVE:** the `.dds` memory-mapped overlay serves end-to-end through both
-hooks — including the cross-runtime `FILE*` question (kcdx's `/MT` CRT handle read
-by the game's separate CRT — the dual-Lua hazard class), confirmed portable (the
-gray rectangle rendered, no crash). The two hooks install in the ready-bracket and
-key off the overlay map.
+**Acceptance launch — PASSED (2026-06-04, batched).** All 4 cap-73 matrix rows
+GREEN (see `test-plugins/README.md`):
+- **cap-73 sidecar rows (boot-only)** — declared-applies (keyed by declared
+  target), missing-target (loud reject, not silent), conflict (load-order
+  winner/suppressed line). All confirmed live in `kcdx-dev.log`.
+- **`.dds` memory-mapped lane** — overlay serves end-to-end through both hooks;
+  the cross-runtime `FILE*` (kcdx's `/MT` CRT handle read by the game's separate
+  CRT — the dual-Lua hazard class) is portable (gray rectangle rendered, no crash).
+- **handle-consumed `.lua` lane (step-4 gate: BYTES served via own-`FILE*`)** —
+  PROVEN in-game. A save load opens 28,266 distinct handle-consumed vpaths
+  (`.xml`/`.lua`/`.cfg`) through `CCryPak::FOpen`; HOOK 2 recognizes a keyed
+  `.lua` overlay (`map=HIT`) and returns its own CRT `FILE*` for it
+  (`probe_fopen_hc_served vpath="scripts/main.lua"`). Finding:
+  `_research/asset-fopen-handle-recon/seamA-handle-consumed-served-LIVE.md`.
 
-**Owed before Phase 1 is acceptance-closed (a batched launch, not new code):**
-- **Phase-1 acceptance launch** — cap-73's 3 sidecar rows (declared-applies /
-  missing-target-loud-error / conflict-line) confirmed in-game, AND the
-  **handle-consumed (`.lua`/`.xml`) lane** proven end-to-end. The handle-consumed
-  lane is NOT exercisable at boot-to-menu (the engine doesn't open those through
-  CCryPak that early — ground-truth from the boot-vpath observer); it needs an
-  **in-game gesture** (load a save/level so the engine opens a game script/data
-  through CCryPak). Natural home: the Phase-3 step-10 regression plugin (a
-  `console`/`in-game`-mode test), per `_research/asset-fopen-handle-recon/FINDINGS.md`.
+**One residual moved to Phase-3 step-10 (NOT a defect, NOT a Phase-1 blocker):**
+the served-`.lua`-EXECUTES marker (`KCDX_SEAMA_LUA_LOADED`) needs a startup
+script the engine RUNS on a save load (`scripts/main.lua` is the already-init'd
+boot chunk — opened by HOOK 2, not re-run mid-game, so its served bytes don't
+execute this load). The permanent step-10 regression plugin uses a startup-script
+vehicle (`scripts/startup/sl_saveload.lua` etc., which the FOpen observer saw the
+engine run on load) to prove serve-AND-execute end-to-end.
 
 **Two scoped follow-ups surfaced during Phase 1 (deferred with a named trigger,
 NOT dropped):**

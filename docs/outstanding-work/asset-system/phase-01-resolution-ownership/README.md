@@ -37,7 +37,12 @@ when `DONE`, `—` otherwise.
 - **Step 4 (HOOK 2)** verified by a declared overlay's BYTES served end-to-end
   in-game — both lanes: a handle-consumed `.lua`/`.xml` served via the own-`FILE*`
   open, AND a vanilla (pak-resident) replace served via HOOK 1's redirect reaching
-  the pak/mount lane.
+  the pak/mount lane. **MET (acceptance 2026-06-04):** the `.dds` memory-mapped
+  lane serves end-to-end (gray rectangle + `overlay_opened`), and HOOK 2 serves a
+  handle-consumed `.lua` overlay via own-`FILE*` on a save load (`map=HIT` +
+  `probe_fopen_hc_served vpath="scripts/main.lua"`). Residual (served-`.lua`
+  EXECUTES marker, needs a startup-script vehicle) → Phase-3 step-10;
+  `_research/asset-fopen-handle-recon/seamA-handle-consumed-served-LIVE.md`.
 - **Step 5** verified by a TOML-only declarative replacement applying in-game, a
   missing-target sidecar failing LOUD (AP14), and the load-order conflict report
   line for two declarations of the same target.
