@@ -1,5 +1,40 @@
 # Asset-replacement design — changelog (newest first)
 
+## 2026-06-04 (later) — §5.3: cross-mod resolution defined; the "later phase" over-deferral corrected
+
+- **The error corrected.** §12 "Cross-plugin reference shape" SETTLED the cross-mod
+  reference form (the `<author>.<plugin>.<bare>` namespace + string-key, *rejecting*
+  the owner-string-arg alternative) — cross-mod reference + replace (US-3/US-4) were
+  never deferred. But the build + the earlier §5.1/§5.2 wording deferred their
+  RESOLUTION to "a later phase" (`asset_sidecar.h` `PublishedName`/`PluginPathPair`
+  comments; the build-time `overlay_decl_scoped_out` path; the §5.1 "later phase"
+  framing this changelog's own prior entry introduced). That over-deferral
+  contradicted §12 and the US-4 acceptance. User direction: cross-mod replace IS in
+  scope; correct it.
+- **§5.3 (new) — the resolution mechanism (the user settled every fork in a consult):**
+  a published name resolves to **the vpath its asset SERVES AT** (its add-new vpath,
+  or the vanilla vpath it replaces) — the same index every shared name uses
+  (`naming-namespaces.md`), the exact `hook` shape (name → resolved target, the
+  disassembler test). Cross-mod `replace` = (1) resolve the packed name → serve-vpath
+  (the published-name store carries it), (2) key the overlay store by that vpath, B
+  wins by load order. The owner+path pair (`replaces_plugin`+`replaces_path`) resolves
+  the same two-hop way. The runtime verb AND the declarative sidecar share the one
+  resolution. **Rejected:** resolving to only the publisher's own path (fails US-4 for
+  the A-replaces-vanilla / B-replaces-A chain).
+- **§5.1 amended:** the published-name store carries BOTH the loadable disk path
+  (`get_by_name`) AND the resolved vpath (cross-mod `replace`).
+- **§5.2 amended + §12 row added.** Build split refined: own-namespace verbs +
+  vanilla `replace` first; cross-mod resolution its own step after, against §5.3.
+  Until it lands, a cross-mod `replace` target returns a teaching error
+  ("cross-mod resolution lands next step"), never a silent non-serve (AP14).
+- **Integrated in:** §5.1 (store-shape bullet), §5.2 (build split), §5.3 (new), §12
+  (new row).
+- **Why:** building to a spec that deferred cross-mod resolution is what produced the
+  non-serving runtime `replace` packed form; the spec is corrected FIRST
+  (`spec-conformance.md`) so the build (the build-time `scoped_out` path, the runtime
+  verbs, the store shape, the sidecar forms) lands against the right mechanism. The
+  author surface (the verb shapes) is UNCHANGED — only the engine-side resolution.
+
 ## 2026-06-04 — §5.1/§5.2: the runtime-store mechanism settled (the §5 verb-table gap)
 
 - **The gap.** v2 specified the five `kcdx.assets.*` verb SHAPES (§5) but was

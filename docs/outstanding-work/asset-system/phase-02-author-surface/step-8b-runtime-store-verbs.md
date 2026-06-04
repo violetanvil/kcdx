@@ -45,9 +45,16 @@ confirmed it genuine), routed to a focused consult, and settled in design §5.1
   reads/writes `asset_namespace`. `declare` publishes `<author>.<plugin>.<name>`;
   `get_by_name` resolves a published name (own, no prefix) to a loadable path;
   `register` adds a runtime vpath→file overlay; `replace` registers a runtime
-  replacement (incl. the string-key `replace("author.plugin.asset", with)` cross-
-  plugin form). A missing name / bad target → a teaching error (AP14), never a
-  silent nil.
+  replacement of a **vanilla-path** target (the dominant US-6 case). A missing
+  name / bad target / bad file → a teaching error (AP14), never a silent nil.
+- **The packed CROSS-MOD `replace` form is NOT built here — it returns a teaching
+  error** ("cross-mod resolution lands next step", design §5.3). A `replace`
+  target that parses as a packed `<author>.<plugin>.<bare>` name (vs a vanilla
+  vpath) returns `(nil, teaching_err)` — never a silent store-write-that-won't-serve
+  (the AP13/AP14 defect the original five-verb attempt hit). The cross-mod
+  resolution + serve is **step 8c** (§5.3). The own-namespace `get_by_name` (a
+  pure read of the caller's OWN published names) IS built here; only the cross-mod
+  RESOLUTION (a name → another mod's serve-vpath) waits for 8c.
 - **Wire the `.assets.get_by_name` leaf** on the step-6 cross-plugin handle (the
   §6 `kcdx.plugin.<a>.<p>.assets.get_by_name` form resolves through it into the
   published-name store).

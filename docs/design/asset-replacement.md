@@ -318,12 +318,17 @@ runtime store** that does not exist yet. The settled mechanism:
   read; a later mutation joins the resolution path going forward).
 - **A new responsibility unit owns both runtime stores:
   `src/asset_namespace.{h,cpp}`.** It holds the runtime-overlay store (for
-  `register`/`replace`) AND the published-name→path store (for
+  `register`/`replace`) AND the **published-name store** (for
   `declare`/`get_by_name`/the §6 `get_by_name` cross-plugin form). Distinct
   responsibility from `asset_overlay.cpp` (the build-time map + the hooks), so it
   is its own unit (`structure-by-responsibility.md`, `no-monolith.md`), not bolted
   onto the hot-path resolver file. The resolver consults this unit alongside the
   build-time map.
+- **The published-name store carries BOTH the loadable disk path AND the resolved
+  vpath** (the serve-vpath of §5.3). `get_by_name` returns the disk path (US-3 — a
+  loadable path); cross-mod `replace` needs the **resolved vpath** to key the
+  overlay store (§5.3). One store keyed by the packed `<author>.<plugin>.<bare>`
+  name, carrying both.
 
 ### §5.2 Build split — `get_by_path` ships first; the runtime four follow
 
@@ -333,6 +338,58 @@ the §5.1 mechanism. The four carry an NYI doc entry + a deliberately-failing
 matrix row pinning their contract until built (`docs-discipline.md`,
 `test-suite.md`). This is dependency-ordering (`incremental-delivery.md`), not a
 capability cut — the end state is all five verbs at full Lua↔C++ parity.
+
+The own-namespace runtime verbs (`declare`/`get_by_name`/`register`) and the
+**vanilla-path `replace`** build first (the dominant US-6 case); the **cross-mod
+resolution** (`§5.3` — a packed published name or an owner+path pair as a
+`replace`/sidecar target) builds as its own step AFTER, against §5.3. Until that
+step lands, a cross-mod `replace` target returns a teaching error ("cross-mod
+resolution lands next step"), never a silent non-serve (`anti-patterns.md` AP14).
+
+### §5.3 Cross-mod resolution — a published name resolves to the vpath its asset SERVES AT
+
+The cross-mod reference shape was settled in §12 (the `<author>.<plugin>.<bare>`
+namespace + the string-key form; the owner-string-arg alternative was *rejected*).
+This is its **resolution mechanism** — the prior "resolved by a later phase"
+framing in §5.1/§5.2 and `asset_sidecar.h` was an over-deferral corrected here:
+cross-mod reference + replace are IN SCOPE, resolved through the SAME index every
+shared name uses (`naming-namespaces.md` — which explicitly lists asset overlays).
+
+**The parallel to `hook` is exact** (the disassembler test, `cornerstones.md`):
+
+| `hook` (the index) | `assets` (the same index) |
+|---|---|
+| author writes a target **name** | author writes a published **name** |
+| index resolves name → **address + verified ABI** | index resolves name → **the vpath the asset SERVES AT** |
+| `<author>.<plugin>.<bare>`, self > engine > other | `<author>.<plugin>.<bare>`, self > engine > other |
+| engine carries the address; author writes no hex | engine carries the vpath; author writes no path for a cross-mod target |
+
+**A published name resolves to the vpath its asset OCCUPIES / SERVES AT** — its
+own add-new vpath if the published asset is an add-new, OR the vanilla vpath it
+replaces if the published asset is itself a replacement. This is the literal
+reading of §3 US-4 "B's asset serves where A's would": B wins the exact vpath A's
+published asset serves at. One uniform rule — a name → its serve-vpath — the same
+shape as a hook name → its resolved address.
+
+**Cross-mod `replace` is two hops:** (1) resolve the packed name → the resolved
+vpath (the published-name store carries it, §5.1); (2) key the overlay store
+(runtime store for the code verb; build-time map for the sidecar form) by THAT
+vpath, B winning by load order (§4.4 conflict). When the engine opens that vpath,
+kcdx serves B's `with`.
+
+**The owner+path pair (`replaces_plugin` + `replaces_path`, the unnamed cross-mod
+by-path form) resolves the SAME two-hop way** — addressed by (owner, path) instead
+of by published name: resolve to that plugin's asset at that path → its
+serve-vpath → key the overlay store by it. No separate mechanism; the by-path
+equivalent of the name form (§12 "Cross-plugin reference shape").
+
+**Both the runtime verb and the declarative sidecar use this one resolution.** The
+runtime `replace("author.plugin.bare", with)` and the sidecar `replaces =
+"author.plugin.bare"` / `replaces_plugin`+`replaces_path` resolve identically —
+the same name→serve-vpath lookup, the same overlay-store keying, the same
+load-order conflict. The build-time `BuildOverlayMap` path keys the resolved vpath
+(NOT the prior `overlay_decl_scoped_out` deferral); the runtime path keys the
+runtime store.
 
 ---
 
@@ -634,6 +691,7 @@ AP19/AP2 correction — a falsified inference left in an authoritative record.
 | **Auto-apply by path-match** | **Rejected** — implicit, obfuscated, a typo silently no-ops (AP14). Replacement is explicitly declared. |
 | **Replacement declaration home** | A per-asset sidecar (scope = placement) AND a code verb; mirrors override having declarative + programmatic forms. **Rejected:** a central plugin-wide replacement map (too much abstract typing). |
 | **Cross-plugin reference shape** | Navigable `kcdx.plugin.<author>.<plugin>.*` via chained `__index` (the `kcdx.hook` pattern), with `kcdx.assets.replace("author.plugin.asset", with)` as the string-key equivalent for dynamic/quoted keys. **Rejected:** an owner-string arg (`get_by_path("author.plugin", "path")` — clunky); rejected: a packed single delimiter (`"author.plugin::path"` — a fragile new delimiter); rejected: a function-call-only accessor with no dotted navigation (breaks surfaces-mirror, contradicts the verbatim ask). |
+| **Cross-mod resolution (settled 2026-06-04, §5.3)** | **A published name resolves to the vpath its asset SERVES AT** (its add-new vpath, or the vanilla vpath it replaces) — the same index every shared name uses (`naming-namespaces.md`), the exact `hook` shape (name → resolved target). Cross-mod `replace` = resolve name → serve-vpath, key the overlay store by it, B wins by load order. The owner+path pair resolves the same two-hop way. Runtime verb + declarative sidecar share the one resolution. **Rejected:** resolving a published name to only the publisher's own path (fails US-4 when A's asset is itself a vanilla replacement — B would key A's private path, never the vanilla vpath the engine opens). **Corrected:** the prior "cross-mod resolution is a later phase" framing (`asset_sidecar.h` `PublishedName` comment, the build-time `overlay_decl_scoped_out` path, the original §5.1/§5.2 wording) — an over-deferral contradicting this row's own settled shape; cross-mod reference + replace are in scope, §5.3. |
 | **Search-path registration (`AddMod`) as the overlay mechanism** | **Rejected** — pak-only-searched at the published default; does not serve loose overlays, and is orthogonal to the resolution decision the seam owns. The seam-replace is the mechanism. |
 | **Manipulation this phase** | **Deferred** (reserved + NYI) — heavy codec dependency, use case not concrete. |
 | **Asset-class staging visible to the author** | **Rejected** — the engine stages transparently (if staging is needed at all — §9 probe 2); the author's rule is class-agnostic (disassembler test). |

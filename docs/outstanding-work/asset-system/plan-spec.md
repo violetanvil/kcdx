@@ -106,18 +106,19 @@ whole design (v2).
 | §4.2 declarative sidecar (`replaces` / `replaces_plugin`+`replaces_path` / `name`) | P1-s5 | feeds the overlay map; loud error on missing target (AP14) |
 | §4.4 load-order conflict resolution + report line | P1-s5 | winner/suppressed shape (map's conflict reporting built, `2588b33`) |
 | US-1 — replace a vanilla asset, no code | P1-s3 (decision) + P1-s4 (open) + P1-s5 (sidecar) | dominant TC case; vanilla = pak-resident, reached via HOOK 1's resolver redirect |
-| US-4 — replace another mod's asset (chain) | P1-s5 (sidecar target) + P1-s3/s4 | target = name or owner+path; load-order conflict |
+| US-4 — replace another mod's asset (chain) | P1-s5 (sidecar PARSE of the cross-mod target) + **P2-s8c (cross-mod RESOLUTION + serve)** + P1-s3/s4 (the seam serves the keyed vpath) | target = name or owner+path → resolved to the serve-vpath (§5.3); B wins by load order (§4.4). The P1-s5 parse modeled the target kinds; s8c resolves + keys them |
 | US-7 — stock Nexus/Workshop pak loads unchanged | P1-s3 (MISS fall-through) + P3-s10 (regression row) | backward-compat |
 | §6 navigable `kcdx.plugin.<author>.<plugin>.*` namespace (`__index` chain) | P2-s6 | the general cross-plugin primitive; US-3 enabler |
 | §10.2 stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose) | P2-s7 (own step) | TWO targets; commit-grain on its own; the seed-prose fix is an AP19/AP2 correction |
 | §5 `kcdx.assets.get_by_path` (the pure-read verb) + the `kcdx.assets.*` table | P2-s8 | depends on no runtime store; ships first (§5.2 build split) |
 | §5 `kcdx.assets.{get_by_name,declare,register,replace}` (the four runtime verbs) | P2-s8b | + the string-key cross-plugin form; depend on the §5.1 store |
 | §5.1 runtime-store mechanism (`asset_namespace` unit, RCU snapshot, separate from the build-time map) | P2-s8b | settled 2026-06-04 (consult); the four runtime verbs build to it |
+| §5.3 cross-mod resolution (a published name / owner+path → the serve-vpath; the SAME index as hook) | P2-s8c | settled 2026-06-04; corrects the "later phase" over-deferral. Runtime `replace` packed form + the declarative sidecar `PublishedName`/`PluginPathPair` + the build-time `scoped_out` path → key the resolved vpath |
 | US-2 — reference own asset by path | P2-s8 (`get_by_path`) | own = no owner prefix |
-| US-3 — reference another mod's asset (navigable ns) | P2-s6 (namespace) + P2-s8 (`get_by_path` form) + P2-s8b (`get_by_name` form) | `kcdx.plugin.<a>.<p>.assets.*` |
-| US-5 — publish a name as a contract | P1-s5 (`name` sidecar) + P2-s8b (`declare` + `get_by_name`) | only named assets published; no enumeration |
-| US-6 — runtime register / replace | P2-s8b (`register` / `replace`) | programmatic equivalents of the sidecar; take-effect "thereafter" (§3 US-6) |
-| §5 / §10.1 C++ mirror (`kcdxAssetInterface`, full parity) | P2-s9 | each BUILT Lua verb's mirror, append-only ABI; ordered after s8b (mirrors the full surface) |
+| US-3 — reference another mod's asset (navigable ns) | P2-s6 (namespace) + P2-s8 (`get_by_path` form) + P2-s8b (own `get_by_name`) + **P2-s8c (cross-mod `get_by_name` resolution)** | `kcdx.plugin.<a>.<p>.assets.*`; the cross-mod RESOLUTION is s8c |
+| US-5 — publish a name as a contract | P1-s5 (`name` sidecar parse) + P2-s8b (`declare` + own `get_by_name`) | only named assets published; no enumeration |
+| US-6 — runtime register / replace | P2-s8b (`register` + vanilla-path `replace`) + **P2-s8c (cross-mod `replace`)** | programmatic equivalents of the sidecar; take-effect "thereafter" (§3 US-6); cross-mod packed form resolves at s8c |
+| §5 / §10.1 C++ mirror (`kcdxAssetInterface`, full parity) | P2-s9 | each BUILT Lua verb's mirror, append-only ABI; ordered after s8c (mirrors the full surface incl. cross-mod) |
 | §9 per-lane runtime acceptance (HOOK 2 serves `.lua`; HOOK 1 reaches pak/mount lane for vanilla replace) | P1-s4 (live check) + P3-s10 | the static seam is gated; this is runtime acceptance |
 | §9 cFn-ABI pointer-return (HOOK 2's `FILE*` through the hook chain) | P1-s4 | hook-chain mechanics, settled at build |
 | §11 manipulation (texture transforms) | **DEFERRED (§11)** | reserved + NYI doc entry; heavy codec dep, use case not concrete |
