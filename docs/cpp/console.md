@@ -5,14 +5,18 @@ Print a line to, or run a command line through, the in-game `~` console
 programmatically. **Built** — `kcdxConsoleInterface::Print` and
 `kcdxConsoleInterface::ExecuteString` in
 [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h)
-(`kcdxConsoleInterface_Version == 2`).
+(`kcdxConsoleInterface_Version == 3`). The same interface also carries the CVar
+readers `GetCVarInt` / `GetCVarBool` / `GetCVarFloat` (the additions that took
+the version to 3) — documented in [cvar.md](cvar.md).
 
 > **Note — shared interface.** The C++ header bundles command *registration*,
-> command *execution*, and line *printing* into one `kcdxConsoleInterface`,
-> whereas the Lua surface splits registration across `kcdx.command` and puts
-> execution + printing under `kcdx.console`. This file documents `Print` and
-> `ExecuteString` to keep the C++ and Lua folders structurally parallel; the
-> registration half of the same interface lives in [command.md](command.md).
+> command *execution*, line *printing*, and *CVar reading* into one
+> `kcdxConsoleInterface`, whereas the Lua surface splits registration across
+> `kcdx.command`, puts execution + printing under `kcdx.console`, and puts CVar
+> reading under `kcdx.cvar`. This file documents `Print` and `ExecuteString` to
+> keep the C++ and Lua folders structurally parallel; the registration half of
+> the same interface lives in [command.md](command.md), and the CVar readers in
+> [cvar.md](cvar.md).
 > Fetch the interface once via
 > `QueryInterface(kcdxInterface_Console, kcdxConsoleInterface_Version)` — or use
 > the pre-fetched `K.console` field on the [`Kcdx.h`](wrapper.md) handle.

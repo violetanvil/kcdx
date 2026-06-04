@@ -218,6 +218,11 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   which fires *after* the file is written and carries no write window — so cosave
   data must be written from `on_save`, never from `kcdx.on("save_game")`.
 
+- **CVar** — a console variable: a CryEngine engine setting addressable by
+  name — the values you see and set in the in-game `~` console. kcdx reads them
+  by their console name with [`kcdx.cvar.*`](cvar.md); you supply the name (from
+  a modding wiki, the `~` console, or a config), the engine resolves the rest.
+
 - **dev mode** — an engine setting (`engine.toml`, `dev_mode = true`) that
   enables the test suite, debug/trace logging, and dev-only diagnostics.
 
@@ -275,6 +280,9 @@ it does not exist yet.
 | `kcdx.memory.*` | direct memory access + runtime native interop | [memory.md](memory.md) |
 | `kcdx.addr` | Address Library name → pointer snapshot table | [addr.md](addr.md) |
 | `kcdx.console.*` | print a line to the `~` console / run a console command line from Lua | [console.md](console.md) |
+| `kcdx.cvar.get_int` | read a game CVar's integer value by name | [cvar.md](cvar.md) |
+| `kcdx.cvar.get_bool` | read a game CVar as on/off (its int value `!= 0`) | [cvar.md](cvar.md) |
+| `kcdx.cvar.get_float` | read a game CVar's float value by name | [cvar.md](cvar.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
 | `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |
 | `kcdx.plugin.*` | plugin introspection (is another plugin rejected/loaded) | [plugin.md](plugin.md) |

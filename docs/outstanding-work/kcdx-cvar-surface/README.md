@@ -22,8 +22,8 @@ steps below are BLOCKED until it lands.
 | [1 — engine CVar-read core (`src/cvar.{h,cpp}`)](phase-01-cvar-read/step-1-engine-cvar-core.md) | DONE | bc71351 |
 | [2 — Lua surface `kcdx.cvar.get_int/get_bool/get_float`](phase-01-cvar-read/step-2-lua-surface.md) | DONE | ce5371d |
 | [3 — C++ mirror `kcdxConsoleInterface::GetCVar{Int,Bool,Float}` (v2→3)](phase-01-cvar-read/step-3-cpp-mirror.md) | DONE | 4b85b6f |
-| [4 — regression plugins `cap-71` (Lua) + `cap-72` (C++) — both surfaces](phase-01-cvar-read/step-4-test-plugin.md) | DONE | (landed) |
-| [5 — docs `kcdx.cvar.*` + glossary "CVar"](phase-01-cvar-read/step-5-docs.md) | NOT STARTED | — |
+| [4 — regression plugins `cap-71` (Lua) + `cap-72` (C++) — both surfaces](phase-01-cvar-read/step-4-test-plugin.md) | DONE | 5100eef |
+| [5 — docs `kcdx.cvar.*` + glossary "CVar"](phase-01-cvar-read/step-5-docs.md) | DONE | (landed) |
 
 ## Phase verification gate
 
