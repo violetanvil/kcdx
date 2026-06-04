@@ -1,0 +1,24 @@
+# CAP-73-conflict-b — half of the same-target conflict pair (peer: cap-73-
+# conflict-a). See cap-73-conflict-a for the full framing. This plugin loads
+# LATER (higher priority number) so it is the SUPPRESSED loser; the conflict
+# line names it as suppressed and cap_73_conflict_a as the winner.
+#
+# Test mode: boot-only. launch-to-menu; the agent reads the ASSET_OVERLAY
+# conflict line (verified once, named by cap-73-conflict-a).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_73_conflict_b"
+display_name        = "CAP-73 asset sidecar — conflict (B, the later-loading loser)"
+author              = "ts"
+description         = "Half of the same-target conflict pair (peer: cap_73_conflict_a). Loads later, so it is suppressed; the §4.4 conflict-report line names it suppressed. Boot-only."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+
+[load_order]
+priority = 70
+
+[entrypoints]
+assets = "assets/"

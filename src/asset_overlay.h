@@ -73,15 +73,21 @@ using OverlayMap = std::unordered_map<std::string, OverlayEntry>;
 // it, never re-derives it.
 std::string NormalizeVPath(const std::string& vpath);
 
-// Build the overlay map from the discovered plugins IN UNIFIED LOAD ORDER.
-// Walks each plugin's assetsEntrypointRel dir (relative to its folderPath);
-// each loose file's path-relative-to-the-assets-root is its virtual asset
-// path. Insertions happen in load order, so the LOAD-ORDER WINNER occupies the
-// slot and any later plugin overlaying the same vpath is reported as suppressed
-// (a conflict-report log line, winner/suppressed shape). A vpath escaping the
-// assets root ('..' traversal) is logged + skipped (that file only, not the
-// plugin). Emits one discovery summary (entry count + per-entry vpath ->
-// winner) at LOG_DEBUG so the build is observable in kcdx-dev.log.
+// Build the overlay map from the discovered plugins IN UNIFIED LOAD ORDER,
+// keyed by DECLARED TARGET (design asset-replacement.md §4.1: existence ≠
+// replacement). For each plugin in load order, parses its co-located
+// `replaces.toml` sidecars (asset_sidecar::LoadDeclarationsFor) and keys the
+// map by each VANILLA-PATH declaration's declared target (normalized via
+// NormalizeVPath, so the resolver's runtime lookup matches). A file present in
+// assets/ with NO sidecar declaration replaces NOTHING — it does not enter this
+// map (it is referenceable via a later phase's index, not an auto-applied
+// overlay). Declarations are processed in load order, so the LOAD-ORDER WINNER
+// occupies a target's slot and a later plugin declaring the SAME target is
+// reported as suppressed (the established winner/suppressed conflict-report
+// line, §4.4). A cross-mod / published-name target (a US-3/US-4 reference) is
+// NOT a vanilla vpath the engine requests — it is reported (overlay_decl_-
+// scoped_out) and consumed by a later phase, not keyed here. Emits one
+// discovery summary at LOG_DEBUG so the build is observable in kcdx-dev.log.
 //
 // Call AFTER load-order resolution (g_plugins populated, load_order::Resolve
 // run) and BEFORE the resolver hook would first read the map. Reuses

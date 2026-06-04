@@ -134,6 +134,19 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   (an expert names an AOB once, non-experts hook it by name). See
   [targets.md](targets.md).
 
+- **asset sidecar (`replaces.toml`)** — an opt-in metadata TOML co-located with
+  an asset in your `assets/` tree, declaring what the asset replaces (and/or a
+  published name) via `[[asset]]` rows. The no-code path to replace a vanilla
+  (or another mod's) asset; mirrors the [`targets.toml`](targets.md) idiom for
+  code sites, applied to assets. See [assets.md](assets.md).
+
+- **declared replacement** — making the engine serve your asset where it would
+  have served a vanilla (or another mod's) asset, stated by an explicit
+  `replaces` declaration in a [`replaces.toml`](assets.md). Always declared,
+  never inferred from a path that coincides with a vanilla path: a file with no
+  declaration is referenceable but replaces nothing (existence is not
+  replacement).
+
 - **named target** — an entry in the unified named-target table the hook /
   bytes verbs consume by name. Two population sources: **curated targets**
   (engine-shipped, maintained by the kcdx maintainer, pre-checked for
@@ -270,6 +283,7 @@ it does not exist yet.
 | `kcdx.alias` | declare a short local handle for a long shared name | [alias.md](alias.md) |
 | `kcdx.declare` / `kcdx.declared` | declare a per-version named target your plugin owns (the author-declared peer of a curated engine name; hook/byte verbs consume it by name); read a declared VALUE entry back | [declare.md](declare.md) |
 | author-declared targets (`targets.toml`) | name a code site yourself, then hook/patch it by name | [targets.md](targets.md) |
+| asset replacement (`replaces.toml`) | replace a vanilla (or another mod's) asset with your own, no code — declare it in a co-located sidecar | [assets.md](assets.md) |
 | `require` | load a sibling Lua file (multi-file plugins) | [require.md](require.md) |
 
 ### Domains

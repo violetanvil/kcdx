@@ -1,0 +1,38 @@
+# CAP-73-applies — a TOML-only declarative asset replacement is KEYED into the
+# overlay map by its DECLARED TARGET (asset-replacement design §4.1: existence ≠
+# replacement; the no-code sidecar path, §4.2).
+#
+# This plugin ships ONE asset under assets/ and ONE co-located replaces.toml
+# declaring it replaces a vanilla path. Under declaration-required keying, the
+# file overlays the target ONLY because the sidecar declares it (NOT by its path
+# coinciding with the vanilla path). The overlay map keys the declared target;
+# BuildOverlayMap emits one `overlay_entry vpath=<target> winner=<this plugin>`
+# line at boot (ASSET_OVERLAY category).
+#
+# What it proves (boot-only): the declarative sidecar PARSE path keys a
+# vanilla-path replacement into the overlay map. FALSIFIABLE — the agent greps
+# kcdx-dev.log for `ASSET_OVERLAY overlay_entry vpath=libs/ui/textures/...
+# winner=cap_73_applies`; FAILS if that line is absent (the declaration was not
+# parsed / not keyed). This is the parse-path coverage; the in-game perceptual
+# render + the permanent regression home are step 10's.
+#
+# NOTE: the asset is a tiny placeholder (NOT a renderable .dds) — cap-73 proves
+# the SIDECAR PARSE + map-keying, not the in-game texture render. A
+# non-requested target is keyed-but-never-served, so no real menu asset is
+# touched at boot.
+#
+# Test mode: boot-only. launch-to-menu; the agent reads the overlay_entry line.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_73_applies"
+display_name        = "CAP-73 asset sidecar — declared replacement keyed"
+author              = "ts"
+description         = "A TOML-only declarative replacement (a co-located replaces.toml) is keyed into the overlay map by its declared vanilla target. Proves the no-code sidecar parse path (§4.1/§4.2). Boot-only: the agent greps the ASSET_OVERLAY overlay_entry line."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+
+[entrypoints]
+assets = "assets/"

@@ -1,0 +1,6 @@
+# File-scope sidecar (one sibling asset, no `file` key — §4.2). Declares the
+# co-located placeholder overlays a vanilla path. Under declaration-required
+# keying (§4.1) THIS line is why the file overlays the target — not a path
+# coincidence.
+[[asset]]
+replaces = "Libs/UI/Textures/CAP73Placeholder.dds"

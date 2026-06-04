@@ -1,0 +1,34 @@
+# CAP-73-missing — a sidecar naming a MISSING target fails LOUD (AP14: errors
+# that teach), never a silent orphan (asset-replacement design §4.1 — a mistyped
+# target is the exact failure §4.1 + AP14 exist to catch).
+#
+# This plugin ships a replaces.toml whose row names a `file` that does NOT exist
+# in its assets/ tree (a mistyped target). The sidecar parser rejects the row
+# LOUD with a teaching line naming the bad target + the sidecar + the plugin,
+# and SKIPS it (one bad row never kills siblings) — it does NOT silently key a
+# bogus overlay. (This step's missing-target check is on the ROW's named file +
+# the form-ambiguity cases — fully checkable at boot without the engine. The
+# vanilla-vpath existence oracle, calling the engine's existence leaves at
+# build-time, is a scoped follow-up gated on the §8 install-timing probe.)
+#
+# What it proves (boot-only): a malformed declaration fails LOUD. FALSIFIABLE —
+# the agent greps kcdx-dev.log for `ASSET_SIDECAR rejected ... reason=...` for
+# this plugin; FAILS if the bad row is SILENTLY dropped with no reject line (the
+# AP15 falsifiability bar: the row must go red if the bad target is swallowed).
+#
+# Test mode: boot-only. launch-to-menu; the agent reads the ASSET_SIDECAR
+# rejected line.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_73_missing"
+display_name        = "CAP-73 asset sidecar — missing target fails loud"
+author              = "ts"
+description         = "A replaces.toml row names a target file that does not exist — the parser rejects it LOUD with a teaching line and skips it, never a silent orphan (§4.1, AP14). Boot-only: the agent greps the ASSET_SIDECAR rejected line."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+
+[entrypoints]
+assets = "assets/"

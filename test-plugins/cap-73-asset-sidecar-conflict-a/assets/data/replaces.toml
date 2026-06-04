@@ -1,0 +1,5 @@
+# File-scope sidecar — declares the same target as cap-73-conflict-b. The
+# load-order winner (lower priority loads earlier) takes the slot; the loser is
+# suppressed with the §4.4 conflict-report line.
+[[asset]]
+replaces = "Data/cap73_shared_target.xml"

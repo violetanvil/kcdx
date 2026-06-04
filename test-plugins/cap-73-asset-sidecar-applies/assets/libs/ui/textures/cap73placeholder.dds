@@ -1,0 +1,1 @@
+CAP-73 placeholder asset. Declaration-required keying proves the sidecar parse path; this file is keyed-but-never-served (the engine never requests its declared target at boot), so it need not be a renderable .dds for the parse-path coverage.

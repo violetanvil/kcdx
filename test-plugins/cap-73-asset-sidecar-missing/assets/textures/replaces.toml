@@ -1,0 +1,9 @@
+# A directory-level sidecar whose row names a `file` that does NOT exist in this
+# directory — a mistyped target. The parser rejects it LOUD (ASSET_SIDECAR
+# rejected, reason names the missing file), never a silent orphan (§4.1, AP14).
+# This directory ships NO real asset, so file-scope (no `file` key) would itself
+# error too; the row uses an explicit `file` to make the missing-target the
+# precise failure under test.
+[[asset]]
+file     = "this_file_does_not_exist.dds"
+replaces = "Libs/UI/Textures/Whatever.dds"

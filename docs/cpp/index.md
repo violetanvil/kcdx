@@ -166,6 +166,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
 | `kcdxDeclareInterface::Declare` / `Get` (author-declared per-version named targets + value reads) | Built | `kcdx.declare` / `kcdx.declared` | [declare.md](declare.md) |
 | `kcdxTargetInterface::RegisterTarget` (author-declared named targets) | **NYI** | author-declared targets (`targets.toml`) | [targets.md](targets.md) |
+| asset replacement — the `replaces.toml` sidecar (no-code, language-neutral) + `kcdxAssetInterface` (programmatic replace/declare/register) | Built (sidecar) / **NYI** (interface) | asset replacement (`replaces.toml`) | [assets.md](assets.md) |
 | `kcdxTargetInterface::RegisterAlias` (short local name handle) | **NYI** | `kcdx.alias` | [alias.md](alias.md) |
 | `require` (sibling-file loading) | Single-surface | `require` | [require.md](require.md) |
 

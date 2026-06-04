@@ -19,11 +19,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <iterator>  // std::size (wmode bound)
-#include <system_error>
 #include <vector>
 
+#include "asset_sidecar.h"  // LoadDeclarationsFor — the no-code declaration parse
 #include "hook_chain.h"
 #include "hook_payload.h"
 #include "hook_signature.h"
@@ -36,8 +35,6 @@
 namespace kcdx::asset_overlay {
 
 namespace {
-
-namespace fs = std::filesystem;
 
 // Stable log category for the overlay-map build + the resolver hits (greppable
 // in kcdx-dev.log).
@@ -505,123 +502,94 @@ std::vector<const plugins::LoadedPlugin*> PluginsInLoadOrder() {
 void BuildOverlayMap() {
     g_overlayMap.clear();
 
-    size_t walked      = 0;  // plugins with a non-empty assets entrypoint
-    size_t fileCount   = 0;  // loose files inserted as a winning slot
-    size_t suppressed  = 0;  // files that lost a vpath to an earlier plugin
-    size_t escaped     = 0;  // files skipped for '..' traversal
+    // DECLARATION-REQUIRED keying (design §4.1: existence ≠ replacement). A
+    // file in a plugin's assets/ dir overlays a target ONLY when a co-located
+    // `replaces.toml` sidecar DECLARES it (asset_sidecar.cpp parses the
+    // declarations). The map is keyed by the DECLARED TARGET (the vanilla vpath
+    // the author names in `replaces`), NOT by the file's own path-in-assets.
+    // The prior implicit-by-path keying — every file auto-applying if its path
+    // coincidentally matched a vanilla path — is REPLACED: it is the
+    // obfuscation §4.1 rejects (a mistyped path silently no-ops). An undeclared
+    // file is referenceable (US-2/US-3, a later phase's index) but replaces
+    // NOTHING — it simply does not enter this replacement map.
+    //
+    // Vanilla-existence oracle: a `replaces` VANILLA-PATH target's existence is
+    // checkable against the engine's existence leaves (IsFileInPak id 153 /
+    // DoesFileExistOnDisk id 154), but whether those are safely callable at
+    // THIS build-time point (worker thread, before the engine's first asset
+    // read — the §8 ctor-vs-first-read ordering is itself a build probe) is an
+    // unverified runtime unknown (results-driven.md — do not theorize it). So
+    // the vanilla-vpath existence check is passed nullptr (disabled) this step;
+    // the resolver's own MISS path is the backstop for a non-existent vanilla
+    // target (it resolves nothing, the file is simply never served). The OTHER
+    // missing-target / malformed teaches (ambiguous both-forms, incomplete
+    // pair, a mistyped `file` the row names, unknown key, wrong type) are fully
+    // checkable HERE without the engine and DO fire loud (AP14). Wiring the
+    // live 153/154 vanilla-existence oracle is a scoped follow-up gated on the
+    // §8 install-timing probe.
+
+    size_t walked        = 0;  // plugins scanned for sidecars
+    size_t entries       = 0;  // vanilla-path declarations keyed into the map
+    size_t suppressed    = 0;  // declarations that lost a target to an earlier one
+    size_t scopedOut     = 0;  // cross-mod/published-name targets (later phase)
+    size_t published     = 0;  // declarations carrying a `name` (publish — later)
 
     for (const plugins::LoadedPlugin* pp : PluginsInLoadOrder()) {
-        const plugins::PluginManifest& m = pp->manifest;
-        if (m.assetsEntrypointRel.empty()) continue;  // no assets entrypoint
-
-        const fs::path assetsRoot = m.folderPath / m.assetsEntrypointRel;
-        std::error_code ec;
-
-        // A declared `assets` dir that does not exist / is not a directory is
-        // the author's overlay silently not happening — WARN naming the plugin
-        // + the resolved path it looked for (never a silent skip; AP14).
-        if (!fs::exists(assetsRoot, ec) || !fs::is_directory(assetsRoot, ec)) {
-            log::WarnF("Plugin '%s' declares [entrypoints] assets = \"%s\" but "
-                       "the resolved directory does not exist: %s — no assets "
-                       "will be overlaid for this plugin",
-                       m.name.c_str(), m.assetsEntrypointRel.c_str(),
-                       assetsRoot.string().c_str());
-            continue;
-        }
+        if (pp->manifest.assetsEntrypointRel.empty()) continue;
         ++walked;
 
-        // Canonical assets root for the traversal-escape check below.
-        const fs::path assetsRootCanon = fs::weakly_canonical(assetsRoot, ec);
-        const fs::path escapeBase = ec ? assetsRoot : assetsRootCanon;
+        // Parse every replaces.toml in this plugin's assets/ tree. Rejected
+        // rows are logged + skipped inside (the teaching errors — the AP14
+        // loud-fail path). nullptr = the vanilla-existence oracle is disabled
+        // this step (see the block comment above).
+        std::vector<asset_sidecar::Declaration> decls;
+        asset_sidecar::LoadDeclarationsFor(*pp, /*vanillaExists=*/nullptr, decls);
 
-        size_t pluginFiles = 0;
-        for (auto it = fs::recursive_directory_iterator(
-                 assetsRoot, fs::directory_options::skip_permission_denied, ec);
-             !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-            const fs::directory_entry& de = *it;
-            std::error_code fec;
-            if (!de.is_regular_file(fec)) continue;  // dirs/symlinks-to-dirs: descend/skip
+        for (auto& d : decls) {
+            if (!d.publishName.empty()) ++published;
 
-            const fs::path& disk = de.path();
-
-            // The virtual asset path is the file's path RELATIVE to the assets
-            // root, in generic ('/') form. lexically_relative gives the
-            // portable relative path without touching the filesystem.
-            const fs::path rel = disk.lexically_relative(assetsRoot);
-            const std::string vpath = rel.generic_string();
-
-            // Path safety (input-validation.md §Paths): a vpath that escapes
-            // the assets root via '..' is a contract violation — log + skip
-            // THIS file (not the whole plugin). Confirm structurally (the
-            // relative path has no ".." segment) AND that the canonical file
-            // stays under the canonical root (catches a symlink pointing out).
-            bool escapes = false;
-            for (const auto& seg : rel) {
-                if (seg == "..") { escapes = true; break; }
-            }
-            if (!escapes) {
-                const fs::path diskCanon = fs::weakly_canonical(disk, fec);
-                if (!fec) {
-                    // Component-wise containment, NOT a string prefix: a raw
-                    // prefix test admits a sibling sharing a name prefix
-                    // (root ".../assets" would "contain" ".../assets-evil/x").
-                    // lexically_relative gives "" when diskCanon is not under
-                    // escapeBase, and a leading ".." component when it climbs
-                    // out — either means the canonical file escaped the root.
-                    const fs::path under = diskCanon.lexically_relative(escapeBase);
-                    if (under.empty() || under.begin() == under.end() ||
-                        *under.begin() == "..") {
-                        escapes = true;
-                    }
-                }
-            }
-            if (escapes) {
-                log::WarnF("Plugin '%s': asset overlay path '%s' escapes the "
-                           "assets root (%s) — skipping this file",
-                           m.name.c_str(), vpath.c_str(),
-                           assetsRoot.string().c_str());
-                ++escaped;
+            if (!d.routesToOverlay) {
+                // A cross-mod / published-name target — NOT a vanilla vpath the
+                // engine requests (it is a US-3/US-4 reference resolved by a
+                // later phase). Out of THIS step's resolver/FOpen lookup; report
+                // it so the declaration is observable, do not key the map.
+                ++scopedOut;
+                LOG_DEBUG_KV(kCat, "overlay_decl_scoped_out",
+                             kcdx::log::KV("plugin", d.owningPlugin),
+                             kcdx::log::KV("target", d.kind ==
+                                 asset_sidecar::TargetKind::PluginPathPair
+                                 ? (d.replacesPlugin + ":" + d.replacesPath)
+                                 : d.target),
+                             kcdx::log::KV("disk", d.diskPath),
+                             kcdx::log::KV("why",
+                                 std::string("cross-mod reference — resolved by "
+                                 "a later phase, not this step's vpath lookup")));
                 continue;
             }
 
-            const std::string key = NormalizeVPath(vpath);
-
+            // A vanilla-path declaration — key the map by the DECLARED TARGET.
             // Load-order precedence: the FIRST plugin (earliest in load order)
-            // to claim a vpath WINS the slot; a later plugin's same-vpath file
-            // is suppressed. Mirrors the established winner/suppressed conflict
-            // report (conflict_engine.cpp): name the winner, the suppressed
-            // owner, why (load order), and the fix (a lower 'priority' number).
+            // to declare a target WINS the slot; a later plugin declaring the
+            // SAME target is suppressed with the established winner/suppressed
+            // conflict-report line (the §4.4 conflict, reused from the prior
+            // build — name winner / suppressed / why (load order) / the fix).
+            const std::string& key = d.overlayKey;
             auto found = g_overlayMap.find(key);
             if (found != g_overlayMap.end()) {
-                log::WarnF("Asset overlay conflict on '%s': plugin '%s' wins "
-                           "(it loads earlier); plugin '%s' is suppressed for "
-                           "this file. If you wanted '%s' to win, give it a "
-                           "lower 'priority' number in its kcdx.toml.",
-                           vpath.c_str(), found->second.owningPlugin.c_str(),
-                           m.name.c_str(), m.name.c_str());
+                log::WarnF("Asset replacement conflict on target '%s': plugin "
+                           "'%s' wins (it loads earlier); plugin '%s' is "
+                           "suppressed for this target. If you wanted '%s' to "
+                           "win, give it a lower 'priority' number in its "
+                           "kcdx.toml.",
+                           d.target.c_str(), found->second.owningPlugin.c_str(),
+                           d.owningPlugin.c_str(), d.owningPlugin.c_str());
                 ++suppressed;
                 continue;
             }
 
-            g_overlayMap.emplace(key, OverlayEntry{m.name, disk.string()});
-            ++fileCount;
-            ++pluginFiles;
-        }
-
-        // A walk error (iterator bailed mid-tree) is a failure state — log it,
-        // never swallow (logging.md). A declared-but-empty assets dir (0 files,
-        // no error) is the author's overlay silently not happening — WARN.
-        if (ec) {
-            log::WarnF("Plugin '%s': error walking assets dir %s: %s — overlay "
-                       "for this plugin may be incomplete",
-                       m.name.c_str(), assetsRoot.string().c_str(),
-                       ec.message().c_str());
-        } else if (pluginFiles == 0) {
-            log::WarnF("Plugin '%s' declares [entrypoints] assets = \"%s\" but "
-                       "the directory (%s) contains no files — nothing to "
-                       "overlay",
-                       m.name.c_str(), m.assetsEntrypointRel.c_str(),
-                       assetsRoot.string().c_str());
+            g_overlayMap.emplace(key,
+                                 OverlayEntry{d.owningPlugin, d.diskPath});
+            ++entries;
         }
     }
 
@@ -630,9 +598,10 @@ void BuildOverlayMap() {
     // load, so logging here is unrestricted (logging.md / memory.md).
     LOG_DEBUG_KV(kCat, "overlay_map_built",
                  kcdx::log::KV("plugins_with_assets", walked),
-                 kcdx::log::KV("entries", fileCount),
+                 kcdx::log::KV("entries", entries),
                  kcdx::log::KV("suppressed", suppressed),
-                 kcdx::log::KV("escaped", escaped));
+                 kcdx::log::KV("scoped_out", scopedOut),
+                 kcdx::log::KV("published_pending", published));
 
     // Per-entry dump (vpath -> winning plugin) so the map is fully observable
     // in kcdx-dev.log. Discovery-time, bounded by the loaded plugin set — not a

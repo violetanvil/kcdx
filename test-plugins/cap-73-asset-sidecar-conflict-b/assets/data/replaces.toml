@@ -1,0 +1,4 @@
+# File-scope sidecar — declares the SAME target as cap-73-conflict-a. This
+# plugin loads later, so it is the suppressed loser (the §4.4 conflict line).
+[[asset]]
+replaces = "Data/cap73_shared_target.xml"

@@ -20,8 +20,8 @@ when `DONE`, `—` otherwise.
 | [2 — probe: does DirectStorage bypass the seam for textures?](step-2-probe-directstorage-bypass.md) | DONE | (landed) |
 | 2b — verify: AdjustFileName caller-side `outBuf` capacity (settles the HIT-write contract before step 3) | DONE | c28f53d |
 | [3 — HOOK 1: REPLACE `AdjustFileName` (the resolution decision; remove FOpen/SEAM-A residue)](step-3-hook1-adjustfilename-decision.md) | DONE | 4a687f3 |
-| [4 — HOOK 2: return kcdx's own CRT `FILE*` for the loose open](step-4-hook2-own-filehandle-open.md) | DONE | (landed) |
-| [5 — sidecar declarative model + load-order conflict report](step-5-sidecar-model.md) | NOT STARTED | — |
+| [4 — HOOK 2: return kcdx's own CRT `FILE*` for the loose open](step-4-hook2-own-filehandle-open.md) | DONE | 9590dd4 |
+| [5 — sidecar declarative model + load-order conflict report](step-5-sidecar-model.md) | DONE | (landed) |
 
 ## Phase verification gate
 

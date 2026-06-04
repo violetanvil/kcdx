@@ -1,0 +1,35 @@
+# CAP-73-conflict-a — half of the same-target conflict pair (peer: cap-73-
+# conflict-b). Two plugins each DECLARE a replacement of the SAME target; the
+# load-order winner serves and the loser is suppressed with the established
+# winner/suppressed conflict-report line (asset-replacement design §4.4; the
+# overlay map's conflict reporting is reused, not reimplemented).
+#
+# Both plugins declare `replaces = "Data/cap73_shared_target.xml"`. At boot,
+# BuildOverlayMap keys the target for whichever plugin loads earlier and emits
+# `Asset replacement conflict on target 'Data/cap73_shared_target.xml': plugin
+# '<winner>' wins ...; plugin '<loser>' is suppressed ...` (ASSET_OVERLAY).
+#
+# What it proves (boot-only): two declarations of one target resolve by load
+# order with the winner/suppressed conflict line. FALSIFIABLE — the agent greps
+# kcdx-dev.log for the `Asset replacement conflict on target` line naming both
+# plugins; FAILS if no conflict line fires (both silently kept / one silently
+# dropped).
+#
+# Test mode: boot-only. launch-to-menu; the agent reads the conflict line.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_73_conflict_a"
+display_name        = "CAP-73 asset sidecar — conflict (A, the earlier-loading winner)"
+author              = "ts"
+description         = "Half of the same-target conflict pair (peer: cap_73_conflict_b). Both declare a replacement of the same target; the load-order winner serves, the loser is suppressed with the conflict-report line (§4.4). Boot-only: the agent greps the ASSET_OVERLAY conflict line."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+
+[load_order]
+priority = 30
+
+[entrypoints]
+assets = "assets/"
