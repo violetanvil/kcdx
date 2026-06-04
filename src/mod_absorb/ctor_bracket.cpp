@@ -22,34 +22,11 @@
 // free() lines up), writes all required fields itself, and never calls the
 // captured original.
 
-// === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) =======================
-// THROWAWAY — the SHARED monotonic ordering counter is DEFINED in
-// src/asset_overlay.cpp (namespace kcdx::asset_overlay, external linkage,
-// outside its anonymous namespace); declared here so this TU's ctor_fired
-// marker fetch-adds from the SAME counter. Declared at the kcdx::asset_overlay
-// scope (NOT inside an anonymous namespace — an extern must keep external
-// linkage to bind the definition). One counter, two markers, one definite
-// order. Removed in step 3 (HOOK 1) with the rest of the probe residue
-// (results-driven.md / working-artifacts.md).
-namespace kcdx::asset_overlay { extern std::atomic<uint64_t> g_probeOrderSeq; }
-// === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
-
 namespace kcdx::mod_absorb {
 
 namespace {
 
 constexpr const char* kCat = "MOD_ABSORB";
-
-// === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) =======================
-// THROWAWAY — step-1 probe (docs/design/asset-replacement.md §8/§9 unknown 1).
-// Shared probe category with the first_fopen_call marker in
-// src/asset_overlay.cpp so the manager greps the two lines and compares their
-// order_seq. Removed in step 3 (HOOK 1) (results-driven.md / working-
-// artifacts.md — no residue). One-shot latch; relaxed ordering (a "have I
-// logged this yet" latch, no happens-before edge — concurrency.md).
-constexpr const char* kProbeCtorVsReadCat = "PROBE_CTOR_VS_READ";
-std::atomic<bool>     g_probeLoggedCtorFired{false};
-// === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
 
 // C_ModManager layout (verified live two-boot against the running binary —
 // the corrected 0x68-byte layout). Only the offsets the bracket WRITES are
@@ -140,36 +117,6 @@ void* __fastcall HookedCtor(void* outResult, void* sys, void* modsDir) {
                 "vs. a new allocation)"));
         return nullptr;
     }
-
-    // === DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===================
-    // CTOR-FIRE timestamp. One-shot marker at HookedCtor's top, on the genuine
-    // first ctor entry (past the reentry latch), BEFORE the resolve work and
-    // the g_kcdxReadyEvent wait — so its timestamp marks ctor ENTRY, comparable
-    // against first_adjustfilename_call in src/asset_overlay.cpp. Relaxed
-    // ordering: a pure "have I logged this yet" latch (concurrency.md). Removed
-    // in step 2.
-    {
-        bool probeExpected = false;
-        if (g_probeLoggedCtorFired.compare_exchange_strong(
-                probeExpected, true, std::memory_order_relaxed)) {
-            // Ordering tag from the SHARED counter (defined in asset_overlay.cpp;
-            // first_fopen_call fetch-adds from the same one). Relaxed: pure
-            // ordering tag, only the log compares the two values (concurrency.md
-            // — no happens-before edge needed). Read ONCE on this first fire.
-            const uint64_t seq = kcdx::asset_overlay::g_probeOrderSeq.fetch_add(
-                1, std::memory_order_relaxed);
-            LOG_DEBUG_KV(kProbeCtorVsReadCat, "ctor_fired",
-                kcdx::log::KV("order_seq", seq),
-                kcdx::log::KV::BareStr("detail",
-                    "ModManager_ctor (HookedCtor) entered — compare order_seq "
-                    "against first_fopen_call's; ctor_fired's lower seq => the "
-                    "ctor fired first => the ready-bracket install point holds; "
-                    "first_fopen_call's seq <= ctor_fired's => first FOpen "
-                    "at-or-before the ctor => install point too late (surface a "
-                    "design fork)"));
-        }
-    }
-    // === END DIAGNOSTIC (PROBE: ctor-vs-first-read ordering) ===============
 
     if (!outResult) {
         LOG_ERROR_KV(kCat, "ctor_bracket_failed",

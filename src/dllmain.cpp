@@ -336,11 +336,13 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // phase now marks only the save/load + serialization subsystems.
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineSubsystemsInit);
 
-    // Production pak-resolver overlay hook: install the CCryPak::FOpen hook
-    // (resolved by canonical name CCryPak_FOpen) through the conflict engine
-    // (hook_chain::AddCEngine), so a later step can redirect a virtual-path
-    // open to a loose overlay file. This step lands the hook SITE with a
-    // pass-through body (call original unchanged). Idempotent.
+    // Production HOOK 1 — the asset resolution decision: install the
+    // CCryPak::AdjustFileName resolver hook (resolved by canonical name
+    // CCryPak_AdjustFileName, id 152) through the conflict engine
+    // (hook_chain::AddCEngine, Around), so kcdx owns which file a virtual path
+    // resolves to — an overlay HIT writes the kcdx path into outBuf and returns
+    // it; a MISS calls the original (stock resolution byte-identical).
+    // Idempotent.
     //
     // It resolves the target by name, which reads the in-memory cache built
     // inside refdb::Open(), so it must run AFTER RefdbOpened. That is
@@ -348,17 +350,6 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // point. The hook arms well before any menu/save asset reads; the resolver
     // fires continuously through boot→menu.
     kcdx::asset_overlay::Install();
-
-    // === DIAGNOSTIC (PROBE SEAM-A) — THROWAWAY ============================
-    // Asset-resolution-OWNERSHIP seam probe: an Around hook on
-    // CCryPak::AdjustFileName (id 152, the resolution-decision root) that
-    // returns the kcdx loose path on an overlay HIT and calls original on a
-    // MISS. Same phase + ordering rationale as the FOpen Install above (after
-    // RefdbOpened; arms before any menu/save asset read). Dev-mode-gated +
-    // idempotent inside InstallSeamAProbe. REMOVED with the probe plugin when
-    // the seam is captured (results-driven.md / working-artifacts.md).
-    kcdx::asset_overlay::InstallSeamAProbe();
-    // === END DIAGNOSTIC (PROBE SEAM-A) ====================================
 
     return 0;
 }
