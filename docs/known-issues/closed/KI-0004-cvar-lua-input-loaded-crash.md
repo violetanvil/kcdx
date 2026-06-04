@@ -1,7 +1,9 @@
 ---
 id: KI-0004
 opened: 2026-06-03
-status: open
+status: Closed
+closed: 2026-06-03
+closed_by_commit: 54ebf4e
 commit_at_filing: 5f42a0a685a10c4df77491d6a329f1ec4d1571c8
 ---
 
@@ -79,14 +81,52 @@ entirely in the cap-72 TEST PLUGIN's reporting code; the engine `cvar::` core, t
 interface, and the GetCVar→ICVar dispatch are all confirmed CORRECT (the 4 rows
 reported PASS with real values before the epilogue check fired).
 
-## Fix (settled)
+## Fix (as landed)
 
-In `cap-72.cpp`, replace the unbounded `wsprintfA(buf, ...)` into `char buf[256]` with
-a bounded formatter — `wnsprintfA(buf, ARRAYSIZE(buf), ...)` (the size-bounded
-shlwapi sibling) OR a larger buffer sized to the longest format — at every one of the
-8 call sites. Bounded truncation is acceptable for a test reason string (the row's
-PASS/FAIL is the signal; the prose is human-readable detail). No engine/interface
-change — a single-file test-plugin fix.
+In `cap-72.cpp`, the unbounded `wsprintfA(buf, ...)` into `char buf[256]` was replaced
+with the bounded **`snprintf(buf, sizeof(buf), ...)`** (the standard-C size-bounded
+formatter that every other C++ test plugin already uses — cap-04/07/08/09/12/13;
+cap-72 was the lone deviation) at all 8 reason-formatting sites, plus `#include
+<cstdio>`. `snprintf` caps the write at `sizeof(buf)` and null-terminates, so the
+overrun is structurally impossible. Bounded truncation of an over-256-byte reason is
+acceptable — the row's int PASS/FAIL passed to `ReportTestResult` is the signal; the
+prose is human-readable detail. No engine/interface change — a single-file
+test-plugin fix.
+
+## Resolution
+
+**Root cause:** `cap-72.cpp` formatted every `ReportTestResult` reason string into a
+fixed `char buf[256]` using the **unbounded `wsprintfA(buf, "<format>", ...)`** (no
+size parameter). The CAP-72-callable reason string, after `%s`→"sys_pakPriority" +
+`%d`→"2" expansion, is **369 bytes** — a 113-byte overrun of the 256-byte stack
+buffer (the literal format text alone is 353 bytes; measured at Gate B). `wsprintfA`
+wrote past `buf[256]`, overwriting the `/GS` stack canary; the stack-cookie check
+fired `__fastfail` (`int 29h`, `c0000409` / `FAST_FAIL_STACK_COOKIE_CHECK_FAILURE`,
+`FAIL_FAST_STACK_BUFFER_OVERRUN`) on the function epilogue in
+`cap_72!kcdxPlugin_Load`. The order: the four reason strings were formatted (overrun)
+and the rows logged PASS *first*, then the cookie check fired on return — which is why
+all four CAP-72 rows appear in the log and the dispatch then dies. cap-71 (Lua) never
+ran because cap-72's crash aborted the InputLoaded dispatch. The original path made
+the overflow INEVITABLE: an unbounded formatter writing a statically-too-long string
+into a fixed buffer overflows on every successful read. The engine `cvar::` core, the
+v3 `kcdxConsoleInterface`, and the GetCVar→ICVar→vtable[2/4] dispatch were NEVER the
+cause — they produced correct live values (GetCVarInt sys_pakPriority=2, the miss
+sentinel survived) before the epilogue check fired.
+
+**Fix:** commit `54ebf4e` — `wsprintfA(buf, ...)` → `snprintf(buf, sizeof(buf), ...)`
+at all 8 sites + `#include <cstdio>` (see §Fix). Bounds the write so the overrun
+cannot occur; conforms cap-72 to the universal repo idiom.
+
+**Verification:** Gate B (root-cause-verifier) independently re-read the minidump
+(confirmed `c0000409` / cookie-check-failure / faulting module `cap_72`, stack-resident
+reason-text fragments) and measured the 369-byte overrun → `land-fix`. The fix is
+user-confirmed live: the launch at `kcdx-dev_2026-06-03_23-45-49.log` booted to menu
+with **NO new crash bundle**, and all 9 cvar rows reported **PASS** — CAP-71 (Lua)
+badarg/callable/float/bool/miss + CAP-72 (C++) callable/float/bool/miss. cap-71, which
+crash-aborted before, now runs to completion. cap-72 IS the regression test (the
+crashing test now completes). The 22 unrelated FAILs in that run are pre-existing
+author-target/Address-Library-resolve failures (CAP-20/28/33/34/COMP-12), out of
+scope for this KI.
 
 ## Facts
 
