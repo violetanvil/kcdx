@@ -18,6 +18,20 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). UI design:
 [`data/maintainer-tool/ui/design.md`](../../../../data/maintainer-tool/ui/design.md) +
 [`ui/screens/`](../../../../data/maintainer-tool/ui/screens/).
 
+## Settled before build (2026-06-03 — captured so they survive the session)
+
+- **Frontend stack: Vite + React + TypeScript** + Vitest/@testing-library/react + npm — a
+  client-only SPA over the FastAPI backend (no SSR). Recorded as a closed sub-decision in
+  [`data/maintainer-tool/design.md`](../../../../data/maintainer-tool/design.md) D14.
+- **Linux-container-compat by construction from step 6** (the Docker image lands at Phase 5,
+  D18): `.gitattributes` LF pin for the frontend tree, an `npm ci`-clean `package-lock.json`
+  (linux optional-dep entries present), exact-case imports. Build discipline now; image at P5.
+- **Sequencing — build the schema fold (`../../schema-flatten-survival-fold/`) FIRST.** This
+  spine's field editor (step 9) + API client (step 6) should build against the FINAL flat
+  schema (D22/§11 survival fold), not get refactored after it lands. Phase 3 resumes after the
+  fold. A `/feature` run was started + parked mid-dispatch at step 6 (the stack + Linux-compat
+  above are its settled audit decisions); re-running `/feature` here resumes from these.
+
 ## Step ledger
 
 | Step | Status | Commit |
