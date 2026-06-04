@@ -23,7 +23,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). UI design:
 | 11 client-side JS `.rdata` resolver (D15) + the "check against a local DLL" control (s02) + cross-impl test | DONE | frontend-repo 2bc6de5 + kcdx 631b9c9 (Python agreement test) |
 | 12 s05 create new version (Job 6) — prefill, nothing-changed guard, AP18 approval | DONE | frontend-repo 7e4ac3d |
 | 13 s05 create new entity (Job 1) — id-assignment, first version row, AP18 approval | DONE | frontend-repo 4ac95f9 |
-| 14 s02 lifecycle editing (Jobs 4/5) — supersede + deprecate forms, pair-integrity | NOT STARTED | — |
+| 14 s02 lifecycle editing (Jobs 4/5) — supersede + deprecate forms, pair-integrity | DONE | frontend-repo 902fc21 (notes read-only — no Phase-2 notes-write endpoint; surfaced) |
 | 15 s03 version history + side-by-side compare — N-column, marked diffs, edit-from-compare | NOT STARTED | — |
 
 ## Step docs
