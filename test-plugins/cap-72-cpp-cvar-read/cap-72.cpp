@@ -33,6 +33,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 
 #include "kcdx/Interfaces.h"
 #include "kcdx/Kcdx.h"
@@ -101,7 +102,7 @@ void OnMessage(kcdxMessage* msg) {
         bool got = g_K.console->GetCVarInt(kCVarInt, &v);
         if (got && v >= 0 && v <= 3) {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "K.console->GetCVarInt(\"%s\", &v) returned true and wrote v=%d "
                 "at InputLoaded — a plausible small pakPriority mode (0..3) for "
                 "a CVar that demonstrably exists. Cross-surface parity: the Lua "
@@ -112,7 +113,7 @@ void OnMessage(kcdxMessage* msg) {
             g_K.api->ReportTestResult(g_K.self, kRowCallable, 1, buf);
         } else {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "GetCVarInt(\"%s\", &v) read mismatch: returned %s, v=%d "
                 "(want true + a value in 0..3 — the read of a CVar that exists "
                 "must succeed and write a plausible small mode).",
@@ -134,7 +135,7 @@ void OnMessage(kcdxMessage* msg) {
         bool got = g_K.console->GetCVarFloat(kCVarInt, &f);
         if (got) {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "K.console->GetCVarFloat(\"%s\", &f) returned true at "
                 "InputLoaded — the GetFVal accessor path read a CVar that "
                 "demonstrably exists (value-agnostic: the float reading of a "
@@ -144,7 +145,7 @@ void OnMessage(kcdxMessage* msg) {
             g_K.api->ReportTestResult(g_K.self, kRowFloat, 1, buf);
         } else {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "GetCVarFloat(\"%s\", &f) returned false at InputLoaded — the "
                 "float read of a CVar that exists must succeed → FAIL.",
                 kCVarInt);
@@ -161,7 +162,7 @@ void OnMessage(kcdxMessage* msg) {
         bool got = g_K.console->GetCVarBool(kCVarInt, &b);
         if (got) {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "K.console->GetCVarBool(\"%s\", &b) returned true (b=%s) at "
                 "InputLoaded — GetCVarBool (= int != 0) read a CVar that "
                 "demonstrably exists (value-agnostic: the bool reflects the "
@@ -170,7 +171,7 @@ void OnMessage(kcdxMessage* msg) {
             g_K.api->ReportTestResult(g_K.self, kRowBool, 1, buf);
         } else {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "GetCVarBool(\"%s\", &b) returned false at InputLoaded — the "
                 "bool read of a CVar that exists must succeed → FAIL.",
                 kCVarInt);
@@ -190,7 +191,7 @@ void OnMessage(kcdxMessage* msg) {
         bool got = g_K.console->GetCVarInt(kCVarBogus, &v);
         if (!got && v == kSentinel) {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "GetCVarInt(\"%s\", &v) returned false and left v UNTOUCHED "
                 "(still the 0x%08X sentinel) at InputLoaded — a non-existent "
                 "CVar reads as false with NO write (the no-garbage-write "
@@ -200,7 +201,7 @@ void OnMessage(kcdxMessage* msg) {
             g_K.api->ReportTestResult(g_K.self, kRowMiss, 1, buf);
         } else {
             char buf[256];
-            wsprintfA(buf,
+            snprintf(buf, sizeof(buf),
                 "miss contract mismatch for bogus \"%s\": returned %s, v=0x%08X "
                 "(want false + v UNTOUCHED at the 0x%08X sentinel — a "
                 "non-existent CVar must return false and write nothing, never a "
