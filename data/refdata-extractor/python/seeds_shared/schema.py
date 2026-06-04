@@ -53,10 +53,10 @@ USER_COLUMNS = {
     # current game_version V needs to see "is this row verified at V?", which
     # is exactly the (valid_from <= V <= last_verified_at_version) test).
     # The folded survival columns (aob/anchor_string/rule/slot_count/
-    # expect_unique/derives_from) ship to USER for the same reason survival's
-    # USER_COLUMNS entry did: they are curated survival data the engine survival
-    # pass reads at the user tier (the whole survival set is curated -- no bulk
-    # survival rows). Appended at the END (additive; D22 / design §11.2).
+    # expect_unique/derives_from) ship to USER: they are curated survival/re-find
+    # data the engine survival pass reads at the user tier (the whole curated set
+    # is curated -- no bulk survival rows). Appended at the END (D22 / design
+    # §11.2 -- the former `survival` sibling table folded onto these columns).
     "address_versions": ["id", "kcdx_id", "kind", "module_id", "rva", "length",
                          "content_hash", "value", "signature",
                          "observed_arg_slots", "caller_reg_arg_count",
@@ -68,12 +68,6 @@ USER_COLUMNS = {
                          "expect_unique", "derives_from"],
     # excludes auto_name, decompile_quality (DEV-only discovery labels)
     "meta":             ["id", "schema_version", "abi_confidence"],
-    # survival ships to USER: it is curated-entity data the (future) engine
-    # survival pass reads at the user tier. Every survival column is in the USER
-    # projection (the whole table is curated -- there are no bulk survival rows).
-    "survival":         ["id", "address_version_id", "kind_form", "derives_from",
-                         "aob", "anchor_string", "rule", "slot_count",
-                         "expect_unique", "content_hash", "length"],
 }
 
 # Full schema (DEV): every table, every column, with its SQL column type.
@@ -234,49 +228,15 @@ SCHEMA = {
         ("callee_kcdx_id", "INTEGER"),              # nullable, non-unique; curated callee only
         ("callsite_rva", "INTEGER"),
     ],
-    # survival: the per-kind survival datum, a SIBLING table 1:1 with a CURATED
-    # address_versions row (one survival row per curated entity-version; bulk
-    # uncurated functions get none). The future engine survival pass reads it,
-    # dispatching on `kind_form`; the hot resolve path never touches it (hot/cold
-    # separation, same grain as the other sibling tables). Ships to USER + DEV
-    # (curated-entity data the engine consumer needs at the user tier).
-    #
-    # Decided (db-updator step 5.1): a kind-discriminated payload + a first-class
-    # `derives_from` FK (the cross-row dependency DAG: data_slot ->
-    # instruction_anchor -> string_anchor; vtable_index -> vtable_base) so the
-    # survival check can walk in dependency order. Payload columns are typed +
-    # mutually-exclusive by kind_form (only the column(s) a kind uses are set;
-    # the rest NULL) -- the seed is hand-authored (step 5.2), and typed columns
-    # are far more authorable than a packed blob.
-    #
-    # See data/maintainer-tool/fingerprint-per-kind.md (the per-kind datum + this
-    # table shape) and data/seeds/policy.md (the seed columns step 5.2 fills).
-    "survival": [
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("address_version_id", "INTEGER"),     # FK -> address_versions.id (1:1; the entity this survives)
-        ("kind_form", "TEXT"),                 # function_hash | aob | literal | derivation | table_shape | slot_target
-        ("derives_from", "INTEGER"),           # nullable FK -> address_versions.id (the DAG edge); resolved from survival_derives_from kcdx_id
-        # Kind-typed payload columns. Each kind_form uses a subset; the rest NULL.
-        ("aob", "TEXT"),                       # aob form (callsite/instruction_anchor): pattern bytes + folded ? wildcard mask
-        ("anchor_string", "TEXT"),             # literal form (string_anchor): the literal bytes
-        ("rule", "TEXT"),                      # derivation form (data_slot): the derivation rule (e.g. disp32@<kid> / <kid>-0xA8)
-        ("slot_count", "INTEGER"),             # table_shape form (vtable_base): expected slot count
-        ("expect_unique", "INTEGER"),          # nullable 0/1: aob (callsite/instruction_anchor) AOB-unique + literal (string_anchor) unique-xref assertion
-        # function_hash form (function kinds): carry the body fingerprint already
-        # on the address_versions row (no seed authoring -- reused). slot_target
-        # (vtable_index) would also carry a target body hash, but its population
-        # is DEFERRED (gated on the runtime-vtable path), so these stay NULL there.
-        ("content_hash", "BLOB"),              # function_hash: BLAKE3 of the body span (from the av row)
-        ("length", "INTEGER"),                 # function_hash: the span length the hash covers (from the av row)
-    ],
 }
 
-# Table sets per db. `survival` ships to BOTH (curated survival datum the engine
-# consumer reads at the user tier), so it is in USER_TABLES as well as DEV_TABLES.
+# Table sets per db. The curated survival/re-find data lives on address_versions
+# (D22 / design §11.2 -- the former `survival` sibling table folded onto av
+# columns), so there is no separate survival table in either set.
 DEV_TABLES = ["modules", "game_versions", "address_names", "address_versions",
-              "meta", "statements", "referenced_vars", "call_edges", "survival"]
+              "meta", "statements", "referenced_vars", "call_edges"]
 USER_TABLES = ["modules", "game_versions", "address_names", "address_versions",
-               "meta", "survival"]
+               "meta"]
 
 # The 9 kinds for address_versions.kind (covering every curated row type seen
 # in the address seeds + the bulk function default).
@@ -293,25 +253,6 @@ ADDRESS_KINDS = ("function", "function_variadic", "function_no_sig", "callsite",
 # incremental apply path consume, so the two writers cannot drift on which kinds
 # carry a fingerprint. See data/maintainer-tool/fingerprint-per-kind.md.
 FUNCTION_KINDS = ("function", "function_no_sig", "function_variadic")
-
-# The legal survival.kind_form values (the survival check's dispatch tag). One
-# per ADDRESS_KIND class:
-#   function_hash -> function / function_no_sig / function_variadic (body hash)
-#   aob           -> callsite / instruction_anchor (AOB re-match)
-#   literal       -> string_anchor (literal presence)
-#   derivation    -> data_slot (re-run the derivation rule)
-#   table_shape   -> vtable_base (slot-count + pointer-table shape)
-#   slot_target   -> vtable_index (resolve base + index -> target body hash; the
-#                    payload population is DEFERRED on the runtime-vtable path)
-# The single shared definition both the rebuild and apply survival builders use.
-SURVIVAL_KIND_FORMS = (
-    "function_hash",
-    "aob",
-    "literal",
-    "derivation",
-    "table_shape",
-    "slot_target",
-)
 
 # Legal evidence_kind enum values. Order is the quality ranking (live-tier
 # strongest; pattern-scan-only weakest). The importer fails loud on any other

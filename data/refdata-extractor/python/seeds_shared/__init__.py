@@ -18,7 +18,6 @@ from .schema import (
     EVIDENCE_KIND_ENUM,
     ADDRESS_KINDS,
     FUNCTION_KINDS,
-    SURVIVAL_KIND_FORMS,
 )
 from .dict_codec import (
     parse_int,
@@ -111,7 +110,7 @@ def __getattr__(name):
 
 __all__ = [
     "SCHEMA", "USER_COLUMNS", "DEV_TABLES", "USER_TABLES", "DICT_COLS",
-    "EVIDENCE_KIND_ENUM", "ADDRESS_KINDS", "FUNCTION_KINDS", "SURVIVAL_KIND_FORMS",
+    "EVIDENCE_KIND_ENUM", "ADDRESS_KINDS", "FUNCTION_KINDS",
     "parse_int", "hash_blob", "Dicts",
     "read_module_seed", "read_address_names_seed", "read_address_versions_seed",
     "authored_kind",

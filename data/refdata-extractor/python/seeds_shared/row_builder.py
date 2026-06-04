@@ -125,11 +125,13 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
     every current row.
 
     The six folded survival columns (aob / anchor_string / rule / slot_count /
-    expect_unique / derives_from) are NEW plumbing too (D22 / design §11.2 -- the
-    survival sibling table folding into address_versions). NULL for every current
-    row this step: every caller passes None, so each cell is NULL on both the mint
-    and promote paths. Step 2 populates them from the seed; this step only adds the
-    keyword args + the keys so the row dict + INSERT carry them (additive).
+    expect_unique / derives_from) carry the per-kind re-find facts ON the av row
+    (D22 / design §11.2 -- the former `survival` sibling table folded into
+    address_versions, the sole home). A caller passes the per-kind cells (the
+    rebuild + every add/update path compute them from survival_builder's per-kind
+    dispatch via folded_av_cells); an unpassed cell stays NULL on both the mint
+    and promote paths. content_hash/length are NOT folded columns -- they are the
+    av row's body fingerprint, set by the promote/mint gate.
     """
     if base_row is None:
         v = {

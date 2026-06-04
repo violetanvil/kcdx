@@ -184,31 +184,32 @@ def _byte_identity(b):
 
 def _survival_cols_source_the_av_fold(b):
     """The exported `survival_*` CSV columns are sourced from the av row's FOLDED
-    columns (D22 / design S11.2 -- the av row is the flat source), NOT the survival
-    sibling table. This PROVES the fold-forward source: when the survival table is
-    deleted (Phase 3 step 6) the export is unchanged, because the exporter never
-    reads that table.
+    columns (D22 / design S11.2 -- the av row is the flat source, the former survival
+    sibling table having been folded onto it and DELETED). The exporter reads no
+    survival table (there is none); it reads the folded av columns.
 
-    Falsifiable + survival-table-independent: drop the survival table from a COPY of
-    the DB entirely, export, and assert (a) the export still succeeds and (b) each
-    exported `survival_*` cell equals the av row's folded column read straight from
-    the DB. A reader of the survival table would error/blank here; only an av-row
-    reader reproduces the cells. The derives_from cell is checked as the inverted
-    kcdx_id (the CSV carries the dependency entity's kcdx_id; the av column the
-    resolved av_id)."""
+    Falsifiable: the rebuilt DB has NO survival table (the fold deleted it), so the
+    export can ONLY source these cells from the av row. Assert (a) the DB has no
+    survival table, (b) the export succeeds, and (c) each exported `survival_*` cell
+    equals the av row's folded column read straight from the DB. The derives_from cell
+    is checked as the inverted kcdx_id (the CSV carries the dependency entity's
+    kcdx_id; the av column the resolved av_id)."""
     import csv
     import sqlite3
 
     work = tempfile.mkdtemp(prefix="export_avfold_")
     try:
-        # A copy of the DB with the survival table DROPPED -- so a survival-reading
-        # exporter would fail/blank, and only an av-row reader reproduces the cells.
+        # A copy of the rebuilt DB -- it has no survival table (the fold deleted it),
+        # so only an av-row reader reproduces the survival_* cells.
         db = os.path.join(work, "reference.sqlite")
         shutil.copy2(b["user_db"], db)
         con = sqlite3.connect(db)
         try:
-            con.execute("DROP TABLE survival")
-            con.commit()
+            present = {r[0] for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            assert "survival" not in present, (
+                "the rebuilt DB still has a `survival` table (the fold should have "
+                "deleted it)")
             # Ground truth read straight from the av row's folded columns, keyed by
             # kcdx_id, with derives_from inverted av_id -> kcdx_id (the CSV form).
             av_to_kcdx = {r[0]: r[1] for r in con.execute(

@@ -460,9 +460,11 @@ def build_rows(dump_dir, dicts):
 
     # Per-kcdx_id survival inputs captured during the seed loop (the kind string
     # + the row's raw survival seed cells). After the curated rows are finalized
-    # we map kcdx_id -> av_id and build the `survival` table via the shared
-    # builder (db-updator step 5.1). Keyed by kcdx_id: one curated entity per kid
-    # at the baseline version, 1:1 with its curated address_versions row.
+    # we map kcdx_id -> av_id and fold the per-kind re-find cells ONTO the av row
+    # (D22/§11.2 — the former `survival` sibling table is folded into
+    # address_versions; survival_builder is reused PURELY as the per-kind dispatch
+    # folded_av_cells reads). Keyed by kcdx_id: one curated entity per kid at the
+    # baseline version, 1:1 with its curated address_versions row.
     survival_inputs_by_kid = {}
 
     for vs in versions_seed:
@@ -507,9 +509,10 @@ def build_rows(dump_dir, dicts):
         kind_id = dicts.encode("address_versions", "kind", kind)
 
         # Capture the survival inputs for this curated entity (the kind string +
-        # the raw survival seed cells). The survival row is built AFTER the av
-        # rows are finalized (so kcdx_id -> av_id is known for derives_from). The
-        # survival columns are NULL-valid; step 5.2 fills them. NEVER parse notes.
+        # the raw survival seed cells). The folded re-find cells are computed +
+        # folded onto the av row AFTER the av rows are finalized (so kcdx_id ->
+        # av_id is known for derives_from; D22/§11.2 — no separate survival table).
+        # The folded columns are NULL-valid. NEVER parse notes.
         sdf = (vs.get("survival_derives_from") or "").strip()
         seu = (vs.get("survival_expect_unique") or "").strip()
         survival_inputs_by_kid[kid] = {
@@ -627,55 +630,52 @@ def build_rows(dump_dir, dicts):
           f"(curated: {n_curated_kcdx_ids}, "
           f"bulk uncurated: {n_addr_versions - n_curated_kcdx_ids})", flush=True)
 
-    # --- survival (db-updator step 5.1) ---
-    # One `survival` row per CURATED address_versions row, via the shared builder
-    # (so rebuild + apply emit identical survival rows). function kinds carry the
-    # body fingerprint already on the av row (reused); the search/derivation kinds
-    # carry their seed survival datum when present (step 5.2) and an empty payload
-    # when not. derives_from: the seed's survival_derives_from kcdx_id maps to the
-    # dependency entity's curated address_versions.id.
+    # --- folded survival/re-find cells (D22 / design §11.2) ---
+    # The former `survival` sibling table is folded onto address_versions: each
+    # CURATED av row carries its six folded re-find cells (aob/anchor_string/rule/
+    # slot_count/expect_unique/derives_from). The per-kind dispatch
+    # (survival_builder._KIND_TO_FORM) decides which cells a kind populates; function
+    # kinds carry the body fingerprint already on the av row (content_hash/length,
+    # NOT folded columns); the search/derivation kinds carry their seed datum when
+    # present and an empty cell when not. derives_from: the seed's
+    # survival_derives_from kcdx_id maps to the dependency entity's curated av id.
+    # build_survival_row is reused PURELY as the kind-dispatch that folded_av_cells
+    # extracts the six cells from (its return dict's kind_form/content_hash/length
+    # are not folded cells and are ignored); the `survival` table is gone, so there
+    # is no second write target -- the av columns are the sole home.
     kid_to_av_id = {v["kcdx_id"]: v["id"]
                     for v in versions_by_av_id.values()
                     if v["kcdx_id"] is not None}
-    n_surv = 0
+    n_folded = 0
     for av_id in sorted(versions_by_av_id.keys()):
         v = versions_by_av_id[av_id]
         if v["kcdx_id"] is None:
-            continue   # bulk uncurated rows get no survival datum
+            continue   # bulk uncurated rows carry no folded survival cells
         si = survival_inputs_by_kid.get(v["kcdx_id"])
         if si is None:
             # A curated row with no captured survival input would mean the seed
             # loop never saw it -- impossible for a baseline curated entity. Fail
-            # loud rather than silently skip (the survival table must be 1:1).
+            # loud rather than silently skip (every curated row gets its cells).
             raise RuntimeError(
                 f"build_rows: curated address_versions id={av_id} "
                 f"(kcdx_id={v['kcdx_id']}) has no survival input captured")
         df_kid = si["derives_from_kid"]
         derives_from_av_id = kid_to_av_id.get(df_kid) if df_kid is not None else None
-        sv_row = ss.build_survival_row(
+        # FOLD (D22 / design §11.2): write the per-kind dispatch's six payload cells
+        # onto the av row's folded columns -- in place, so the row already emitted
+        # into rows["address_versions"] (same dict object) carries them. The av row's
+        # content_hash/length are NOT touched (they are the resolve-path body
+        # fingerprint already on the row, not folded columns).
+        v.update(ss.folded_av_cells(ss.build_survival_row(
             av_id, si["kind"],
             survival_aob=si["survival_aob"],
             anchor_string=si["anchor_string"],
             rule=si["rule"],
             slot_count=si["slot_count"],
             expect_unique=si["expect_unique"],
-            derives_from_av_id=derives_from_av_id,
-            content_hash=v.get("content_hash"),
-            length=v.get("length"))
-        rows["survival"].append(sv_row)
-        # FOLD (D22 / design §11.2): write the SAME per-kind dispatch's six payload
-        # cells onto the av row's folded columns -- in place, so the row already
-        # emitted into rows["address_versions"] (same dict object) carries them.
-        # The dual-write: the survival row above is STILL written; this populates
-        # the av columns from the SAME built dict, so each av folded cell EQUALS its
-        # survival row's cell by construction (the 157/157 equivalence). One source
-        # (build_survival_row's _KIND_TO_FORM dispatch), two write targets. The av
-        # row's content_hash/length are NOT touched (they are the resolve-path body
-        # fingerprint already on the row, not folded columns).
-        v.update(ss.folded_av_cells(sv_row))
-        n_surv += 1
-    print(f"  survival: {n_surv} rows (1:1 with curated address_versions)",
-          flush=True)
+            derives_from_av_id=derives_from_av_id)))
+        n_folded += 1
+    print(f"  folded survival cells: {n_folded} curated rows", flush=True)
 
     # --- 8. statements (DEV) ---
     # Each statement points at its owning function by address_version_id
@@ -853,11 +853,6 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
         con.execute('CREATE INDEX ix_ce_callee_av ON call_edges(callee_address_version_id)')
         con.execute('CREATE INDEX ix_ce_caller_kcdx ON call_edges(caller_kcdx_id)')
         con.execute('CREATE INDEX ix_ce_callee_kcdx ON call_edges(callee_kcdx_id)')
-    if "survival" in tables:
-        # 1:1 join key (survival -> its owning av row) + the DAG walk key
-        # (derives_from). Both DBs carry the survival table.
-        con.execute('CREATE UNIQUE INDEX ix_sv_av ON survival(address_version_id)')
-        con.execute('CREATE INDEX ix_sv_derives ON survival(derives_from)')
 
     con.commit()
     con.execute("VACUUM")
@@ -1191,9 +1186,10 @@ def _seed_action_rows(state):
         vslot  = parse_int(vs.get("vtable_slot") or "")
         struct_offset = parse_int(vs.get("struct_offset") or "")
 
-        # Survival inputs (db-updator step 5.1): the raw survival seed cells, kept
-        # alongside the action so the add path can build the survival row via the
-        # SAME shared builder the rebuild uses. NULL-valid; step 5.2 fills them.
+        # Survival inputs: the raw survival seed cells, kept alongside the action
+        # so the add path can fold the per-kind re-find cells onto the av row via
+        # the SAME per-kind dispatch the rebuild uses (D22/§11.2 — no separate
+        # survival table). NULL-valid.
         sdf = (vs.get("survival_derives_from") or "").strip()
 
         out.append({
@@ -1340,21 +1336,6 @@ def _resolve_derives_from_av_id(con, df_kid):
             f"survival_derives_from kcdx_id={df_kid} has no curated "
             f"address_versions row in the DB (add the dependency entity first)")
     return row[0]
-
-
-def _insert_survival_row(con, sv_row, user_projection):
-    """INSERT one fully-built survival row dict into the open DB, applying the
-    same column projection write_db uses (`id` is autoincrement, omitted; USER
-    drops any DEV-only survival column -- there are none today, so USER == DEV for
-    survival). The row dict is the build_survival_row output."""
-    cols = [c for c, _ in SCHEMA["survival"] if c != "id"]
-    if user_projection:
-        allowed = USER_COLUMNS["survival"]
-        cols = [c for c in cols if c in allowed]
-    placeholders = ",".join("?" * len(cols))
-    con.execute(
-        f'INSERT INTO survival ({",".join(cols)}) VALUES ({placeholders})',
-        [sv_row.get(c) for c in cols])
 
 
 # The supersession + deprecation columns -- the names-side entity-level state.
@@ -1525,14 +1506,17 @@ def _present_row_non_trio_differs(con, av_id, a, *, module_id_fn, kind_id_fn):
             or a["struct_offset"] != db_struct):
         return True
 
-    # The survival payload cells (compared decoded, kind-agnostically): a survival
-    # edit (e.g. survival_aob / survival_rule / survival_slot_count) with no av-cell
-    # change still requires a full-column UPDATE to rebuild the survival row.
-    sv = con.execute(
+    # The folded survival/re-find cells (compared decoded, kind-agnostically): a
+    # survival edit (e.g. survival_aob / survival_rule / survival_slot_count) with
+    # no other av-cell change still requires a full-column UPDATE to rewrite the
+    # folded columns. These now live ON the av row (D22 / design §11.2 -- the
+    # former `survival` sibling table folded into address_versions), so they are
+    # read straight from the av row, not a sibling survival table.
+    fold = con.execute(
         'SELECT aob, anchor_string, rule, slot_count, expect_unique, derives_from '
-        'FROM survival WHERE address_version_id = ?', (av_id,)).fetchone()
-    if sv is not None:
-        db_aob, db_anchor, db_rule, db_slot, db_eu, db_derives = sv
+        'FROM address_versions WHERE id = ?', (av_id,)).fetchone()
+    if fold is not None:
+        db_aob, db_anchor, db_rule, db_slot, db_eu, db_derives = fold
         a_derives = _resolve_derives_from_av_id(
             con, a["survival_derives_from_kid"])
         if (a["survival_aob"] != db_aob
@@ -1556,30 +1540,32 @@ def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
     Same kind-class gate the ADD path runs (~_apply_one_db's add tail):
       - function kind  -> PROMOTE: read the DEV bulk row at the (possibly NEW) rva
         via _read_bulk_row(dev_con, rva); build_curated_row(base_row=<bulk>) carries
-        the NEW content_hash + length; the survival row is the function_hash form
-        with the new fingerprint. NO bulk baseline -> RAISE BaselineRefusal (the
-        ONE designed apply != rebuild seam -- see the comment below).
+        the NEW content_hash + length; the folded re-find cells use the function form
+        (the body fingerprint, not the search/derivation cells). NO bulk baseline ->
+        RAISE BaselineRefusal (the ONE designed apply != rebuild seam -- see below).
       - non-function   -> MINT: build_curated_row(base_row=None), content_hash/length
-        NULL; the survival row is the kind's non-function kind_form.
+        NULL; the folded re-find cells carry the kind's non-function payload.
     Both DBs: USER projects the curated row; DEV carries the full DEV column set.
     The av row is UPDATEd in place (its id reused -- the direct-write model is
-    id-stable, design D19 §3/§4: an edit is a DIRECT UPDATE, NOT a re-keying rebuild)
-    and its 1:1 survival row is rebuilt (DELETE the stale row + INSERT the rebuilt
-    one) so apply reaches the SAME logical curated state a from-scratch rebuild would
-    describe for this entity (the design's convergence contract -- proven against the
-    seed-rebuild path by the convergence oracle), id-agnostically."""
+    id-stable, design D19 §3/§4: an edit is a DIRECT UPDATE, NOT a re-keying rebuild),
+    its folded survival/re-find cells rewritten as part of the full-row UPDATE (the
+    `folded` cells, D22 / design §11.2 -- no separate survival table), so apply
+    reaches the SAME logical curated state a from-scratch rebuild would describe for
+    this entity (the design's convergence contract -- proven against the seed-rebuild
+    path by the convergence oracle), id-agnostically."""
     kid = a["kcdx_id"]
     module_id = _resolve_module_id(con, a["module"], where)
     kind_id = _db_dict_id(con, "address_versions", "kind", a["kind"], where)
 
-    # FOLD (D22 / design §11.2): the six folded av columns come from the SAME per-kind
-    # dispatch the (still-rebuilt) survival row uses below. Resolve derives_from + build
-    # the folded cells ONCE here (derives_from points at a DIFFERENT entity's OPEN row,
-    # unaffected by THIS row's UPDATE), pass them into build_curated_row below, and reuse
-    # the resolved derives_from for the survival DELETE+INSERT -- one source, two write
-    # targets. content_hash/length are NOT folded columns (they are the av row's body
-    # fingerprint, set by build_curated_row's promote/mint gate), so the av-id/fingerprint
-    # args to this throwaway build_survival_row do not affect the extracted folded cells.
+    # FOLD (D22 / design §11.2): the six folded av columns come from the per-kind
+    # dispatch (survival_builder._KIND_TO_FORM). Resolve derives_from + build the
+    # folded cells here (derives_from points at a DIFFERENT entity's OPEN row,
+    # unaffected by THIS row's UPDATE) and pass them into build_curated_row below --
+    # the av columns are the sole home of the survival data (no separate survival
+    # table). content_hash/length are NOT folded columns (they are the av row's body
+    # fingerprint, set by build_curated_row's promote/mint gate), so the av-id/finger-
+    # print args to this throwaway build_survival_row do not affect the extracted
+    # folded cells (build_survival_row is reused purely as the kind dispatch).
     derives_from_av_id = _resolve_derives_from_av_id(
         con, a["survival_derives_from_kid"])
     folded = ss.folded_av_cells(ss.build_survival_row(
@@ -1683,33 +1669,12 @@ def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
 
     # UPDATE the row in place (id reused -- the direct-write id-stable model). The
     # full-row write covers every projected curated column at once, so module/kind/
-    # rva/signature/the per-kind datum AND the fingerprint (PROMOTE-carried or
-    # NULL-minted) all land together. USER drops the DEV-only columns (same
-    # projection write_db + _projected_insert use).
+    # rva/signature/the per-kind datum, the fingerprint (PROMOTE-carried or
+    # NULL-minted), AND the folded survival/re-find cells (the `folded` cells passed
+    # into build_curated_row above -- D22 / design §11.2, the av columns are the sole
+    # home of the survival data now) all land together. USER drops the DEV-only
+    # columns (same projection write_db + _projected_insert use).
     _projected_update(con, av_row, user_projection)
-
-    # Rebuild the 1:1 survival row through the SAME builder the ADD path uses, so
-    # the survival kind_form + payload match what a rebuild would describe for the
-    # new kind (function_hash carries the new fingerprint; a non-function kind_form
-    # carries the seed datum). DELETE the stale survival row + INSERT the rebuilt
-    # one (the survival id is autoincrement; a fresh id is id-agnostic to the oracle,
-    # the same handle-vs-payload split the ADD path's survival INSERT relies on).
-    # DUAL-WRITE (D22 / design §11.2): the survival row is STILL rebuilt here -- the av
-    # row's folded cells were populated from this SAME per-kind dispatch (the `folded`
-    # cells above), so each av folded cell equals this survival row's cell. derives_from
-    # was resolved once at the top of this function and is reused (not re-resolved).
-    sv_row = ss.build_survival_row(
-        av_id, a["kind"],
-        survival_aob=a["survival_aob"],
-        anchor_string=a["survival_anchor_string"],
-        rule=a["survival_rule"],
-        slot_count=a["survival_slot_count"],
-        expect_unique=a["survival_expect_unique"],
-        derives_from_av_id=derives_from_av_id,
-        content_hash=av_row.get("content_hash"),
-        length=av_row.get("length"))
-    con.execute("DELETE FROM survival WHERE address_version_id = ?", (av_id,))
-    _insert_survival_row(con, sv_row, user_projection)
 
 
 def _projected_update(con, av_row, user_projection):
@@ -1814,10 +1779,11 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
             # Only-trio differs -> the unchanged trio-UPDATE path below
             # (byte-identical -- an idempotent rewrite of the four audit cells).
             # A non-trio column differs -> the full-column UPDATE: rebuild the
-            # curated row + its survival row through the SAME machinery the ADD
-            # path uses (build_curated_row + the kind-class PROMOTE/mint/REFUSE
-            # gate + build_survival_row), as an UPDATE of THIS row (same av_id,
-            # same identity key), NOT an INSERT.
+            # curated row (incl. its folded re-find cells ON the row, D22/§11.2 --
+            # no separate survival table) through the SAME machinery the ADD path
+            # uses (build_curated_row + the kind-class PROMOTE/mint/REFUSE gate +
+            # the per-kind folded-cell dispatch), as an UPDATE of THIS row (same
+            # av_id, same identity key), NOT an INSERT.
             non_trio_changed = _present_row_non_trio_differs(
                 con, av_id, a, module_id_fn=lambda: _resolve_module_id(
                     con, a["module"], where),
@@ -1869,17 +1835,15 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
         module_id = _resolve_module_id(con, a["module"], where)
         kind_id = _db_dict_id(con, "address_versions", "kind", a["kind"], where)
 
-        # FOLD (D22 / design §11.2): the six folded av columns come from the SAME
-        # per-kind dispatch the (still-written) survival row uses. Build the survival
-        # row's folded cells ONCE here -- derives_from resolves against the dependency
-        # entity's OPEN-interval row (a DIFFERENT entity, unaffected by this action's
-        # write) -- and pass them into build_curated_row below + reuse the resolved
-        # derives_from for the in-tx survival INSERT. content_hash/length are the
-        # survival row's body-fingerprint args (function_hash form) but are NOT folded
-        # columns, so an av_id placeholder is fine for the folded-cell extraction. The
-        # in-tx survival INSERT (still written) rebuilds the row with the real av_id +
-        # fingerprint; folded_av_cells reads only the six kind-dispatched cells, which
-        # depend on neither av_id nor the fingerprint. One source, two write targets.
+        # FOLD (D22 / design §11.2): the six folded av columns come from the per-kind
+        # dispatch (survival_builder._KIND_TO_FORM) -- the sole home of the survival
+        # data (no separate survival table). Build the folded cells here -- derives_from
+        # resolves against the dependency entity's OPEN-interval row (a DIFFERENT
+        # entity, unaffected by this action's write) -- and pass them into
+        # build_curated_row below. content_hash/length are NOT folded columns, so an
+        # av_id placeholder is fine for the folded-cell extraction (folded_av_cells
+        # reads only the six kind-dispatched cells, which depend on neither av_id nor
+        # the fingerprint; build_survival_row is reused purely as the kind dispatch).
         derives_from_av_id = _resolve_derives_from_av_id(
             con, a["survival_derives_from_kid"])
         folded = ss.folded_av_cells(ss.build_survival_row(
@@ -1975,27 +1939,10 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
                     _promote_bulk_in_place(con, av_row)
                 else:
                     _projected_insert(con, av_row, user_projection=False)
-            # Survival row for the new curated entity (db-updator step 5.1), in
-            # the SAME transaction + via the SAME shared builder the rebuild uses,
-            # so apply's survival row is byte-identical to a rebuild's. function
-            # kinds reuse the av row's fingerprint; the rest carry the seed datum.
-            # DUAL-WRITE (D22 / design §11.2): the survival table is STILL written
-            # here (unchanged) -- the av folded columns above were populated from this
-            # SAME per-kind dispatch (the `folded` cells), so each av folded cell
-            # equals this survival row's cell by construction. derives_from was
-            # resolved once above (a DIFFERENT entity's OPEN row -- this action's
-            # write does not move it) and is reused here, not re-resolved.
-            sv_row = ss.build_survival_row(
-                av_row["id"], a["kind"],
-                survival_aob=a["survival_aob"],
-                anchor_string=a["survival_anchor_string"],
-                rule=a["survival_rule"],
-                slot_count=a["survival_slot_count"],
-                expect_unique=a["survival_expect_unique"],
-                derives_from_av_id=derives_from_av_id,
-                content_hash=av_row.get("content_hash"),
-                length=av_row.get("length"))
-            _insert_survival_row(con, sv_row, user_projection)
+            # The new curated entity's folded survival/re-find cells already landed
+            # ON the av row above (the `**folded` cells passed into build_curated_row
+            # -- D22 / design §11.2, the av columns are the sole home; no separate
+            # survival table to write).
             tx.commit()
         except Exception:
             tx.rollback()
@@ -2258,25 +2205,26 @@ def _close_quiet(con):
 # restore-point is that undo.
 #
 # WHY scoped, not a file copy (D21's rejected alternative): a maintainer edit touches
-# only a few rows across at most four tables (address_versions / survival /
-# game_versions / address_names). Capturing those rows + each DB's sqlite_sequence
-# watermark is a few KB regardless of DB size -- a `shutil.copy2` of the ~1.3 GB DEV
-# DB per committing confirm is the worse mechanism the cornerstone order (the cheaper
-# mechanism for the same guarantee wins) rejects.
+# only a few rows across at most three tables (address_versions / game_versions /
+# address_names). Capturing those rows + each DB's sqlite_sequence watermark is a few
+# KB regardless of DB size -- a `shutil.copy2` of the ~1.3 GB DEV DB per committing
+# confirm is the worse mechanism the cornerstone order (the cheaper mechanism for the
+# same guarantee wins) rejects.
 #
 # WHY the capture is a DATA-CORE capability (D13/law 6): it owns the write semantics,
 # holds the open connections at capture time, and knows exactly which rows the edit
 # touches. The backend cannot capture this without re-implementing which-rows-each-job-
 # touches -- a write-semantics leak D21 explicitly rejects.
 #
-# THE FOUR TOUCHED TABLES + how each is written (so the capture covers every shape):
+# THE THREE TOUCHED TABLES + how each is written (so the capture covers every shape):
 #   address_versions -- INSERT (add / new-tag, new id = MAX(id)+1, bumps the seq);
 #       UPDATE the audit trio (re-verify, by (kcdx_id, valid_from)); UPDATE
 #       valid_through (interval-close, by kcdx_id); full-row in-place UPDATE (the DEV
 #       function-kind PROMOTE, by the reused bulk-row id -- a row whose id is BELOW
 #       the seq, so the seq-boundary sweep alone would MISS it: its prior values are
-#       captured by the per-entity partition + the rva bulk-row capture).
-#   survival         -- INSERT only (autoincrement id; 1:1 with a new av row).
+#       captured by the per-entity partition + the rva bulk-row capture). The folded
+#       survival/re-find cells (D22 / design §11.2) ride ON the av row, so capturing
+#       the whole av row captures them too -- no separate survival table to capture.
 #   game_versions    -- INSERT only (new-tag; autoincrement id).
 #   address_names    -- INSERT (add-entity, id = the kcdx_id, NOT autoincrement);
 #       UPDATE (deprecate / supersede, by id).
@@ -2295,8 +2243,8 @@ def _close_quiet(con):
 # subsequent INSERT reuses the same next id). address_names.id IS the kcdx_id
 # (seed-supplied, NOT autoincrement) -- it has no sqlite_sequence row, so it is
 # restored by row content alone (no seq reset).
-_RP_TOUCHED_TABLES = ("address_versions", "survival", "game_versions", "address_names")
-_RP_AUTOINC_TABLES = ("address_versions", "survival", "game_versions")
+_RP_TOUCHED_TABLES = ("address_versions", "game_versions", "address_names")
+_RP_AUTOINC_TABLES = ("address_versions", "game_versions")
 
 
 def _rp_table_cols(con, table):
@@ -2426,18 +2374,9 @@ def _capture_one_db(con, kcdx_ids, rvas):
                 av_rows.append(r)
     cap["rows"]["address_versions"] = av_rows
 
-    # survival rows are keyed off address_version_id -- capture the prior survival
-    # rows of every captured av row (the 1:1 siblings).
-    all_av_ids = sorted({r[av_cols.index("id")] for r in av_rows})
-    sv_cols = cap["cols"]["survival"]
-    sv_sel = ",".join(f'"{c}"' for c in sv_cols)
-    if all_av_ids:
-        avph = ",".join("?" * len(all_av_ids))
-        cap["rows"]["survival"] = list(con.execute(
-            f'SELECT {sv_sel} FROM survival WHERE address_version_id IN ({avph})',
-            all_av_ids))
-    else:
-        cap["rows"]["survival"] = []
+    # The folded survival/re-find cells (D22 / design §11.2) ride ON the av row, so
+    # they are already captured by the whole-av-row capture above -- no separate
+    # survival table to capture.
 
     nm_cols = cap["cols"]["address_names"]
     nm_sel = ",".join(f'"{c}"' for c in nm_cols)
@@ -2536,12 +2475,11 @@ def _restore_one_db(con, cap):
     #          add uses _next_av_id = MAX(id)+1, ABOVE the watermark -> predicate (b);
     #          the DEV function-kind promote is an in-place UPDATE of the existing bulk
     #          row -> predicate (a). So (c)'s genuinely-low-id case is the names add.)
-    #    survival has no kcdx_id; its INSERTs are caught by (b) (autoincrement) and by
-    #    cascading from the av rows about to be deleted (its address_version_id points
-    #    at a deleted av row) -- computed below.
+    #    (The folded survival/re-find cells ride ON the av row -- D22 / design §11.2 --
+    #    so they are restored with the av row's prior values; no separate survival
+    #    table to delete or reinsert.)
 
-    # The av id-set being deleted (captured-id ∪ id>seq ∪ kcdx_id-in-key-set) -- survival
-    # cascades off it (a survival row whose owning av row is deleted is itself deleted).
+    # The av id-set being deleted (captured-id ∪ id>seq ∪ kcdx_id-in-key-set).
     av_cols = cap["cols"]["address_versions"]
     av_idx = av_cols.index("id")
     av_kidx = av_cols.index("kcdx_id")
@@ -2563,16 +2501,6 @@ def _restore_one_db(con, cap):
         idl = sorted(deleted_av_ids)
         ph = ",".join("?" * len(idl))
         con.execute(f"DELETE FROM address_versions WHERE id IN ({ph})", idl)
-
-    # survival: delete (b) id>seq ∪ cascade from the deleted av rows.
-    sv_seq = cap["seq"].get("survival")
-    sv_boundary = sv_seq if sv_seq is not None else 0
-    con.execute("DELETE FROM survival WHERE id > ?", (sv_boundary,))
-    if deleted_av_ids:
-        idl = sorted(deleted_av_ids)
-        ph = ",".join("?" * len(idl))
-        con.execute(
-            f"DELETE FROM survival WHERE address_version_id IN ({ph})", idl)
 
     # game_versions: delete (a) captured-ids ∪ (b) id>seq (the new-tag INSERT).
     gv_cols = cap["cols"]["game_versions"]
@@ -2985,8 +2913,10 @@ def _apply_new_tag_version(con, action, state, which, user_projection, tx,
       4. close the entity's prior OPEN interval (valid_through := the prior version's
          id) BEFORE the INSERT (the ix_av_open_unique partial-unique constraint).
       5. _projected_insert (USER) / _promote_bulk_in_place|_projected_insert (DEV) the
-         new av row + _insert_survival_row the 1:1 survival sibling -- the SAME helpers
-         every other add uses, so the 8 load-bearing behaviors all land identically.
+         new av row -- with its folded survival/re-find cells ON the row (the `**folded`
+         cells in build_curated_row; D22 / design §11.2, the av columns are the sole
+         home, no separate survival table) -- the SAME helpers every other add uses, so
+         the load-bearing behaviors all land identically.
     This is the ONE genuinely-new write the bridge never did (the game_versions
     INSERT). Everything after step 1 is _apply_one_db's add-versions-row tail, reused
     verbatim against the freshly-inserted tag."""
@@ -3006,6 +2936,23 @@ def _apply_new_tag_version(con, action, state, which, user_projection, tx,
         module_id = _resolve_module_id(con, action["module"], where)
         kind_id = _db_dict_id(con, "address_versions", "kind", action["kind"], where)
 
+        # FOLD (D22 / design §11.2): the six folded av columns come from the per-kind
+        # dispatch (survival_builder._KIND_TO_FORM) -- the sole home of the survival
+        # data (no separate survival table). Build them here + pass them into
+        # build_curated_row below so a new-tag create-version lands them like every
+        # other add/update path; derives_from resolves against the dependency entity's
+        # OPEN-interval row (a DIFFERENT entity, unaffected by this action's write).
+        derives_from_av_id = _resolve_derives_from_av_id(
+            con, action["survival_derives_from_kid"])
+        folded = ss.folded_av_cells(ss.build_survival_row(
+            None, action["kind"],
+            survival_aob=action["survival_aob"],
+            anchor_string=action["survival_anchor_string"],
+            rule=action["survival_rule"],
+            slot_count=action["survival_slot_count"],
+            expect_unique=action["survival_expect_unique"],
+            derives_from_av_id=derives_from_av_id))
+
         # 3. PROMOTE-vs-mint + BaselineRefusal (behavior 3) -- the SAME kind-class gate
         #    _apply_one_db's add path runs.
         if action["kind"] in ss.FUNCTION_KINDS:
@@ -3024,7 +2971,8 @@ def _apply_new_tag_version(con, action, state, which, user_projection, tx,
                 signature=action["signature"], lvv_id=lvv_id,
                 verified_by=action["verified_by"], verified_date=action["verified_date"],
                 evidence_kind_id=ekn_id, offset=action["offset"],
-                vtable_slot=action["vtable_slot"], struct_offset=action["struct_offset"])
+                vtable_slot=action["vtable_slot"], struct_offset=action["struct_offset"],
+                **folded)
         else:
             av_id = _next_av_id(con)
             av_row = ss.build_curated_row(
@@ -3033,7 +2981,8 @@ def _apply_new_tag_version(con, action, state, which, user_projection, tx,
                 signature=action["signature"], lvv_id=lvv_id,
                 verified_by=action["verified_by"], verified_date=action["verified_date"],
                 evidence_kind_id=ekn_id, offset=action["offset"],
-                vtable_slot=action["vtable_slot"], struct_offset=action["struct_offset"])
+                vtable_slot=action["vtable_slot"], struct_offset=action["struct_offset"],
+                **folded)
 
         # 4. Close the prior OPEN interval BEFORE the INSERT (behavior 2). A
         #    create-version is always for an EXISTING entity (the caller checked it),
@@ -3047,27 +2996,16 @@ def _apply_new_tag_version(con, action, state, which, user_projection, tx,
             "UPDATE address_versions SET valid_through = ? "
             "WHERE kcdx_id = ? AND valid_through IS NULL", (prev_vf, kid))
 
-        # 5. INSERT the new av row (behavior 4: per-DB projection) + the 1:1 survival
-        #    sibling (behavior 1), via the SAME helpers every add uses.
+        # 5. INSERT the new av row (behavior 4: per-DB projection), via the SAME
+        #    helpers every add uses. The folded survival/re-find cells land ON the av
+        #    row (the `**folded` cells in build_curated_row above -- D22 / design
+        #    §11.2, the av columns are the sole home; no separate survival table).
         if user_projection:
             _projected_insert(con, av_row, user_projection=True)
         elif action["kind"] in ss.FUNCTION_KINDS:
             _promote_bulk_in_place(con, av_row)
         else:
             _projected_insert(con, av_row, user_projection=False)
-        derives_from_av_id = _resolve_derives_from_av_id(
-            con, action["survival_derives_from_kid"])
-        sv_row = ss.build_survival_row(
-            av_row["id"], action["kind"],
-            survival_aob=action["survival_aob"],
-            anchor_string=action["survival_anchor_string"],
-            rule=action["survival_rule"],
-            slot_count=action["survival_slot_count"],
-            expect_unique=action["survival_expect_unique"],
-            derives_from_av_id=derives_from_av_id,
-            content_hash=av_row.get("content_hash"),
-            length=av_row.get("length"))
-        _insert_survival_row(con, sv_row, user_projection)
         tx.commit()
     except Exception:
         tx.rollback()

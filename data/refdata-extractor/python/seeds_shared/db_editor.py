@@ -619,7 +619,8 @@ def create_entity(out_dir, dll_path, name, first_version_columns,
     address_names row (assigned the next free kcdx_id, append-only) + its first
     address_versions row, via the DIRECT-DB write path (D19 — reuses _apply_one_db's
     add-entity helpers; no seed rebuild). The direct path INSERTs the names row + its
-    first versions row + the 1:1 survival sibling in the held transaction.
+    first versions row (carrying its folded survival/re-find cells ON the av row —
+    D22/§11.2, no separate survival table) in the held transaction.
 
     Parameters:
       out_dir               -- the directory holding the two reference DBs.

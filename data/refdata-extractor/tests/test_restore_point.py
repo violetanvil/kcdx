@@ -83,7 +83,7 @@ NEW_TAG = dw.NEW_TAG
 # --------------------------------------------------------------------------
 # sqlite_sequence over BOTH DBs (the PK-reset proof reads the autoincrement tables).
 # --------------------------------------------------------------------------
-_AUTOINC = ("address_versions", "survival", "game_versions")
+_AUTOINC = ("address_versions", "game_versions")
 
 
 def _all_seqs(out_dir):
@@ -377,8 +377,10 @@ def _scope_is_bounded(b):
 
         rp = handle.restore_point
         assert rp is not None, "deferred path captured no restore-point"
-        # The captured rows of the per-DB partition (av + survival + names; the tiny
-        # game_versions dimension is whole, ~1-2 rows). A single-entity re-verify
+        # The captured rows of the per-DB partition (av + names; the folded survival/
+        # re-find cells ride on the av row, so they are captured with it -- no separate
+        # survival table -- and the tiny game_versions dimension is whole, ~1-2 rows).
+        # A single-entity re-verify
         # touches ONE entity, so the captured av+names rows are a small constant, NOT
         # the table size -- the scoped-not-snapshot proof.
         for tag, cap in (("user", rp.user), ("dev", rp.dev)):

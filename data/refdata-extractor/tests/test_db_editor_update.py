@@ -21,23 +21,23 @@ wrapper, no stubbed gate). Cases:
      row) -- a POSITIVE oracle (the step-3c applier extension landed). The applier's
      present-row branch (import_to_sqlite._apply_one_db) now detects a non-trio
      change and runs a full-column UPDATE through the SAME machinery the ADD path
-     uses (build_curated_row + the kind-class PROMOTE/mint/REFUSE gate +
-     build_survival_row), as an UPDATE of the existing row (same av_id, same
-     identity key), NOT an INSERT. The settled semantics (step report / design.md
-     §6 US-5 + §10 D13/D19), asserted below:
+     uses (build_curated_row + the kind-class PROMOTE/mint/REFUSE gate + the folded
+     re-find cells from the per-kind dispatch), as an UPDATE of the existing row (same
+     av_id, same identity key), NOT an INSERT. The settled semantics (step report /
+     design.md §6 US-5 + §10 D13/D19), asserted below:
        1. rva change (function) to an rva WITH a bulk baseline -> RE-PROMOTE: the
-          row carries the NEW bulk fn's content_hash + length; the survival
-          function_hash carries the new fingerprint.
+          row carries the NEW bulk fn's content_hash + length (the function survival
+          datum lives on the av row; no folded re-find cell for a function).
        2. rva change (function) to an rva with NO bulk baseline -> REFUSE
           (BaselineRefusal), NO write. The ONE designed apply != rebuild seam (a
           from-scratch rebuild would silently MINT a NULL-fingerprint function; the
           interactive applier refuses rather than mint -- user-approved). Asserted
           as the refusal, NOT a byte-match.
-       3. kind change -> the survival kind_form rebuilds, the av fingerprint
-          recomputes by kind-class (function -> PROMOTE/REFUSE; non-function ->
-          mint, fingerprint NULL).
-       4. signature-only change -> the fingerprint + survival row are UNTOUCHED;
-          only the signature cell changes.
+       3. kind change -> the folded re-find cells rebuild for the new kind, the av
+          fingerprint recomputes by kind-class (function -> PROMOTE/REFUSE;
+          non-function -> mint, fingerprint NULL).
+       4. signature-only change -> the fingerprint + folded re-find cells are
+          UNTOUCHED; only the signature cell changes.
        5. audit-trio-only change -> the existing trio-UPDATE path (byte-identical;
           covered by case 1 above -- not regressed).
      apply==rebuild is proven by the whole-DB convergence fingerprint: the direct
@@ -180,30 +180,25 @@ def _av_row_decoded(db_path, kcdx_id, valid_from_tag):
         con.close()
 
 
-def _survival_for(db_path, kcdx_id, valid_from_tag):
-    """The 1:1 survival row for the curated (kcdx_id, valid_from) entity as a dict,
-    with the autoincrement `id` + the FK `address_version_id` excluded (internal
-    handles that legitimately differ by id), so the comparison is the survival
-    payload + kind_form, not its numbering. content_hash stays bytes (comparable)."""
+def _folded_for(db_path, kcdx_id, valid_from_tag):
+    """The folded survival/re-find cells of the curated (kcdx_id, valid_from) av row
+    as a dict (D22 / design §11.2 -- the former 1:1 `survival` sibling folded onto the
+    av row, no separate table). The six re-find columns + the body fingerprint
+    (content_hash/length), so a full-column edit's effect on the folded data is
+    checkable. content_hash stays bytes (comparable)."""
     con = sqlite3.connect(db_path)
     try:
         vf = con.execute("SELECT id FROM game_versions WHERE tag = ?",
                          (valid_from_tag,)).fetchone()[0]
-        av = con.execute(
-            "SELECT id FROM address_versions WHERE kcdx_id = ? AND valid_from = ?",
-            (kcdx_id, vf)).fetchone()
-        if av is None:
-            return None
-        cols = [c[1] for c in con.execute('PRAGMA table_info("survival")')]
         row = con.execute(
-            f'SELECT {",".join(chr(34)+c+chr(34) for c in cols)} '
-            f'FROM survival WHERE address_version_id = ?', (av[0],)).fetchone()
+            "SELECT aob, anchor_string, rule, slot_count, expect_unique, "
+            "derives_from, content_hash, length FROM address_versions "
+            "WHERE kcdx_id = ? AND valid_from = ?", (kcdx_id, vf)).fetchone()
         if row is None:
             return None
-        d = dict(zip(cols, row))
-        d.pop("id", None)
-        d.pop("address_version_id", None)
-        return d
+        return dict(zip(
+            ("aob", "anchor_string", "rule", "slot_count", "expect_unique",
+             "derives_from", "content_hash", "length"), row))
     finally:
         con.close()
 
@@ -249,7 +244,7 @@ def _hash_table(db_path, table):
         con.close()
 
 
-_SNAP_TABLES = ("address_versions", "address_names", "survival")
+_SNAP_TABLES = ("address_versions", "address_names")
 
 
 def _snapshot(out_dir):
@@ -629,12 +624,15 @@ def _full_column_update(b):
             "[rva re-promote] content_hash did not re-promote to the new bulk fn")
         assert after["content_hash"] is not None and after["length"] is not None, (
             "[rva re-promote] re-promoted row lost its fingerprint")
-        # survival function_hash carries the NEW fingerprint.
-        sv = _survival_for(udb, kid, vf_tag)
-        assert sv is not None and sv["kind_form"] == "function_hash", (
-            "[rva re-promote] survival not function_hash")
-        assert sv["content_hash"] == after["content_hash"], (
-            "[rva re-promote] survival fingerprint not the new body hash")
+        # function row: NO folded re-find cell; the body fingerprint (content_hash/
+        # length) on the av row IS the survival datum and carries the NEW fingerprint.
+        fc = _folded_for(udb, kid, vf_tag)
+        assert fc is not None and all(
+            fc[c] is None for c in ("aob", "anchor_string", "rule", "slot_count",
+                                    "expect_unique")), (
+            "[rva re-promote] function row carries a folded re-find cell")
+        assert fc["content_hash"] == after["content_hash"], (
+            "[rva re-promote] folded fingerprint not the new body hash")
     finally:
         shutil.rmtree(out, ignore_errors=True)
 
@@ -667,8 +665,8 @@ def _full_column_update(b):
     finally:
         shutil.rmtree(out, ignore_errors=True)
 
-    # ---- sub-case 3: kind change (function -> non-function). The survival
-    # kind_form rebuilds; the av fingerprint recomputes by kind-class (a
+    # ---- sub-case 3: kind change (function -> non-function). The folded re-find
+    # cells rebuild for the new kind; the av fingerprint recomputes by kind-class (a
     # non-function kind mints -> content_hash/length NULL); apply==rebuild.
     out = _assert_apply_equals_rebuild(
         b, kid, vf_tag, {"kind": "data_slot"}, "kind fn->non-fn")
@@ -678,17 +676,23 @@ def _full_column_update(b):
         assert after["kind"] == "data_slot", "[kind change] kind did not change"
         assert after["content_hash"] is None and after["length"] is None, (
             "[kind change] non-function kind kept a fingerprint (must mint NULL)")
-        sv = _survival_for(udb, kid, vf_tag)
-        assert sv is not None and sv["kind_form"] == "derivation", (
-            "[kind change] survival kind_form did not rebuild for the new kind")
+        # The folded re-find cells rebuilt for the new (non-function) kind: the
+        # function body fingerprint is NOT leaked into them, and with no survival
+        # datum supplied for the new data_slot kind the re-find cells are NULL.
+        fc = _folded_for(udb, kid, vf_tag)
+        assert fc is not None and fc["content_hash"] is None, (
+            "[kind change] folded fingerprint not cleared on the kind change")
+        assert all(fc[c] is None for c in ("aob", "anchor_string", "rule",
+                                           "slot_count", "expect_unique")), (
+            "[kind change] folded re-find cells did not rebuild empty for the new kind")
     finally:
         shutil.rmtree(out, ignore_errors=True)
 
-    # ---- sub-case 4: signature-only. The fingerprint + survival row are
+    # ---- sub-case 4: signature-only. The fingerprint + folded re-find cells are
     # UNTOUCHED (signature is not part of the body hash); only the signature cell
     # changes; apply==rebuild.
     before = _av_row_decoded(user_db, kid, vf_tag)
-    before_sv = _survival_for(user_db, kid, vf_tag)
+    before_fc = _folded_for(user_db, kid, vf_tag)
     out = _assert_apply_equals_rebuild(
         b, kid, vf_tag, {"signature": "void (corrected sig)"}, "signature-only")
     try:
@@ -700,9 +704,9 @@ def _full_column_update(b):
             "[signature-only] fingerprint changed (must be untouched)")
         assert after["length"] == before["length"], (
             "[signature-only] length changed (must be untouched)")
-        after_sv = _survival_for(udb, kid, vf_tag)
-        assert after_sv == before_sv, (
-            "[signature-only] survival row changed (must be untouched)")
+        after_fc = _folded_for(udb, kid, vf_tag)
+        assert after_fc == before_fc, (
+            "[signature-only] folded re-find cells changed (must be untouched)")
     finally:
         shutil.rmtree(out, ignore_errors=True)
 

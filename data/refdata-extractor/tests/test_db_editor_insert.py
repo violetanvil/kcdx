@@ -204,7 +204,7 @@ def _hash_table(db_path, table):
         con.close()
 
 
-_SNAP_TABLES = ("address_versions", "address_names", "survival")
+_SNAP_TABLES = ("address_versions", "address_names")
 
 
 def _snapshot(out_dir):

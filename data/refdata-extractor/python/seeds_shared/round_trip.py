@@ -31,7 +31,7 @@ THE TWO HALVES (both reuse production code -- no re-implementation):
 WHAT "== DB" COMPARES (the curated authored surface, NOT the bulk dev tables):
   the per-table content hash of the USER curated tables only --
   schema.USER_TABLES (modules, game_versions, address_names, address_versions,
-  meta, survival). The DEV-only bulk discovery tables (call_edges / statements /
+  meta). The DEV-only bulk discovery tables (call_edges / statements /
   referenced_vars / the _dict_* discovery lookups in the dev superset) are NOT
   part of the round-trip authored surface (design S4: a derived/cache column
   belongs to the bulk-dump dev-only tables, which the export does not touch), so

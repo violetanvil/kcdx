@@ -223,7 +223,16 @@ is per-kind (a 32-byte hash for function; AOB+mask for callsite; a derivation
 rule for data_slot; base-ref+index+target-hash for vtable_index). One
 fingerprint per row, dispatched on kind inside the checker.
 
-## Schema decision (design, not built) — a sibling `survival` table
+## Schema decision (SUPERSEDED by D22 / design §11.2) — a sibling `survival` table
+
+> **SUPERSEDED (D22 / [`design.md`](design.md) §11.2):** the sibling-table storage
+> below is no longer the schema. The survival datum was FOLDED onto `address_versions`
+> as nullable typed columns (`aob`/`anchor_string`/`rule`/`slot_count`/`expect_unique`/
+> `derives_from`; the body fingerprint stays as `content_hash`/`length`), the
+> `kind_form` discriminator was DELETED (the `kind` column determines the form), and the
+> `survival` sibling table was removed. The per-kind datum DEFINITIONS above remain
+> valid; only the storage shape changed. The text below is the prior (sibling-table)
+> decision, kept for history.
 
 **Decision: store the survival datum in a sibling `survival` table, 1:1 with
 `address_versions`, with a kind-discriminated payload and a first-class

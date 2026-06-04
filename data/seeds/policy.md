@@ -118,9 +118,9 @@ writes the kind into the seed cell. It was previously GUESSED by the importer
 from the entity's `notes` prose, which silently mis-classified rows whose prose
 lacked a magic cue (e.g. `gEnv` read as a function instead of a data slot;
 `CScriptSystem_vtable` read as a function instead of a vtable base). The kind
-gates the survival `kind_form`, the fingerprint-vs-NULL branch, and the bulk-row
-promote gate, so a wrong kind silently dropped authored data. It is now an
-explicit required column.
+gates which folded survival/re-find cells a row populates, the fingerprint-vs-NULL
+branch, and the bulk-row promote gate, so a wrong kind silently dropped authored
+data. It is now an explicit required column.
 
 The nine legal kinds:
 
@@ -240,21 +240,21 @@ the **survival datum** — the load-bearing fact a future engine survival check
 re-verifies to answer "at the current game version, is the thing this row names
 still the thing it was verified to be?" The check's *form* mirrors how the kind
 resolves: an AOB-matched kind is re-checked by re-matching the AOB, a derived
-slot by re-running its derivation, and so on. Each curated row maps to exactly
-one row in the generated `survival` table; the importer reads these columns and
-populates that table.
+slot by re-running its derivation, and so on. The importer reads these six seed
+columns and populates the FOLDED survival/re-find columns on the curated row's
+`address_versions` row (D22 / design §11.2 — the former `survival` sibling table
+folded onto `address_versions` and deleted; the av row is the sole home).
 
 All six are NULL-valid. A kind uses only the column(s) its form needs; the rest
-stay empty. An unfilled column = an empty survival payload (the importer emits
-the survival row with the right `kind_form` and an empty payload — never a
-guessed value, never a value parsed from `notes`). A **malformed PRESENT** value
-is a HARD ERROR; an EMPTY value is always allowed.
+stay empty. An unfilled column = an empty folded cell (the importer leaves the
+folded av cell empty — never a guessed value, never a value parsed from `notes`).
+A **malformed PRESENT** value is a HARD ERROR; an EMPTY value is always allowed.
 
 | Column | Format | Used by kind(s) | Job |
 |---|---|---|---|
 | `survival_aob` | Whitespace-separated AOB tokens; each token is a 2-hex byte (`48`, `8B`, `ff`) or a wildcard (`?` / `??`). The wildcard mask is FOLDED INTO this column — there is NO separate mask column. | `callsite`, `instruction_anchor` | The AOB pattern (bytes + mask) the survival check scans `.text` for. |
 | `survival_anchor_string` | Free text — the literal string bytes. No importer format check (any non-empty value accepted). | `string_anchor` | The literal the survival check searches `.rdata` for. |
-| `survival_derives_from` | An INTEGER kcdx_id. Must reference an existing `address_names_seed.csv` entity (cross-row FK check, like `kcdx_id`). | `data_slot` (→ its instruction/anchor); `instruction_anchor` (→ its string_anchor); `vtable_index` (→ its vtable_base) | The cross-row survival-DAG edge: the entity this row's survival derivation depends on. The importer resolves the kcdx_id to the dependency's `address_versions.id` (the `survival.derives_from` FK). |
+| `survival_derives_from` | An INTEGER kcdx_id. Must reference an existing `address_names_seed.csv` entity (cross-row FK check, like `kcdx_id`). | `data_slot` (→ its instruction/anchor); `instruction_anchor` (→ its string_anchor); `vtable_index` (→ its vtable_base) | The cross-row survival-DAG edge: the entity this row's survival derivation depends on. The importer resolves the kcdx_id to the dependency's `address_versions.id` (the folded `address_versions.derives_from` self-FK). |
 | `survival_rule` | A structured derivation-rule string (grammar below). The importer does NOT parse the grammar — any non-empty string is accepted at author time; the future engine consumer parses it. | `data_slot` | The derivation rule the survival check re-runs to reach the slot. |
 | `survival_slot_count` | A non-negative INTEGER. | `vtable_base` | The expected vtable slot count (the survival check reads N qwords + asserts each is a `.text` pointer). |
 | `survival_expect_unique` | A boolean — exactly `1` or `0` (empty = NULL). Any other value = HARD ERROR. | `callsite`, `instruction_anchor`, `string_anchor` | Whether the locator is expected to resolve to exactly ONE site at the current version: the AOB-unique assertion for `callsite`/`instruction_anchor` (the `survival_aob` pattern matches exactly one `.text` span), and the unique-xref assertion for `string_anchor` (the literal has exactly one `.text` xref). A `1` lets the survival check fail loud on an ambiguous re-match (the locator went stale into non-uniqueness). |
@@ -278,11 +278,10 @@ small — extend it here, in this section, when a new derivation shape is needed
 
 **`vtable_index` is DEFERRED.** Its survival datum (resolve the base, take the
 slot, hash the target function's body) needs the runtime-vtable verification
-path. Leave its survival columns empty — the importer emits its survival row with
-`kind_form = slot_target` and an empty payload; population lands with that future
-path. The base reference is carried via `survival_derives_from` (the vtable_base
-entity) when authored; the slot INDEX is the row's existing `value` / vtable-slot
-datum, not a new column.
+path. Leave its survival columns empty — the importer leaves its folded av cells
+empty; population lands with that future path. The base reference is carried via
+`survival_derives_from` (the vtable_base entity) when authored; the slot INDEX is
+the row's existing `value` / vtable-slot datum, not a new column.
 
 **`function` kinds need no survival authoring.** A function's survival datum is
 its body fingerprint (`content_hash` + `length`), already on the
@@ -293,7 +292,8 @@ The six columns are read + format-validated by the importer (`seeds_shared/
 validators.py`); the `survival_derives_from` FK closure is a cross-seed check
 (below). `survival_expect_unique` is used by the search-locating kinds
 (`callsite` + `instruction_anchor` via the AOB-unique assertion, `string_anchor`
-via the unique-xref assertion); the other kinds leave it empty. The generated `survival` table shape lives in `seeds_shared/schema.py`;
+via the unique-xref assertion); the other kinds leave it empty. The folded
+survival/re-find columns on `address_versions` live in `seeds_shared/schema.py`;
 the per-kind survival design rationale is in
 [`data/maintainer-tool/fingerprint-per-kind.md`](../maintainer-tool/fingerprint-per-kind.md).
 

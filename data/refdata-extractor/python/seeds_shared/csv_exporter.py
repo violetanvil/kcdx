@@ -17,7 +17,9 @@ column the CSV schema carries and invents no column the CSV does not. The CSV
 column set is NOT the DB column set -- the importer reshapes on read (kcdx_id ==
 address_names.id; the seed `module` name -> modules.id FK; the seed
 `valid_from_version` tag -> game_versions.id FK; the `kind`/`evidence_kind`
-strings -> _dict_* ids; the six survival_* cells -> a sibling `survival` row).
+strings -> _dict_* ids; the six survival_* cells -> the FOLDED address_versions
+columns aob/anchor_string/rule/slot_count/expect_unique/derives_from -- D22 /
+design §11.2, the former `survival` sibling table folded onto av columns).
 This exporter inverts each reshape:
 
   module_seed.csv            <- modules                  (id, name, path)
@@ -26,10 +28,10 @@ This exporter inverts each reshape:
   address_versions_seed.csv  <- address_versions JOIN modules JOIN game_versions
                                 (the curated rows; the survival_* CSV cells come
                                 from the av row's FOLDED columns -- aob/anchor_string/
-                                rule/slot_count/expect_unique/derives_from -- now
-                                that the survival sibling table is folded INTO
-                                address_versions, the flat source of truth. D22 /
-                                design S11.2.)
+                                rule/slot_count/expect_unique/derives_from -- the
+                                flat source of truth, the former `survival` sibling
+                                table having been folded onto address_versions and
+                                deleted. D22 / design S11.2.)
 
 REUSE (no duplicated column knowledge):
   - seeds_shared.schema      -- USER_COLUMNS (the per-table column projection) +
@@ -416,8 +418,9 @@ def export_seeds(db_path, seed_dir):
     `db_path` -- a reference DB (the USER reference.sqlite carries the full
                  curated set; the DEV reference-dev.sqlite works too -- the
                  curated WHERE filters bulk rows). The three curated tables read
-                 are modules / address_names / address_versions (+ game_versions,
-                 survival, and the _dict_* lookups for decoding).
+                 are modules / address_names / address_versions (+ game_versions
+                 and the _dict_* lookups for decoding; the survival/re-find cells
+                 are folded columns ON address_versions -- D22 / design §11.2).
     `seed_dir` -- the directory the three CSVs are written into. When a target CSV
                  already exists, its header order + `#`-comment positions + line
                  terminator + trailing-newline are preserved (diff-preservation);

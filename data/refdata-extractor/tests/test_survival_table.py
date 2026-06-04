@@ -1,45 +1,45 @@
-"""test_survival_table.py -- the rebuild SHAPE oracle for the `survival` table
-(db-updator Phase 1, step 5.1).
+"""test_survival_table.py -- the rebuild SHAPE oracle for the FOLDED survival/re-find
+columns on address_versions (D22 / design §11.2; schema-flatten-survival-fold Phase 3).
 
 WHAT THIS PROVES
 ----------------
-A rebuild emits the per-kind survival datum correctly:
+The former `survival` sibling table is folded onto `address_versions` and DELETED
+(D22 / design §11.2): the six re-find cells (aob/anchor_string/rule/slot_count/
+expect_unique/derives_from) are first-class nullable columns ON the curated av row,
+and the body fingerprint (content_hash/length) stays on the av row as before. A
+rebuild emits the per-kind folded datum correctly -- the same assertions the old
+survival-table oracle carried, repointed to the av columns now that the sibling
+table is gone:
 
-  - ONE survival row per CURATED address_versions row (1:1), in BOTH the USER and
-    DEV DBs (the survival table ships to both -- curated-entity data the engine
-    consumer reads at the user tier). No bulk uncurated function gets a survival
-    row.
-  - The kind_form is correct per address kind:
-      function / function_no_sig / function_variadic -> 'function_hash'
-      callsite / instruction_anchor                  -> 'aob'
-      string_anchor                                  -> 'literal'
-      data_slot                                      -> 'derivation'
-      vtable_base                                    -> 'table_shape'
-      vtable_index                                   -> 'slot_target'
-  - A function survival row carries the body fingerprint REUSED from its
-    address_versions row: content_hash + length equal the av row's (NULL only
-    when the av row itself carries no fingerprint -- a function with no bulk
-    baseline; the survival row NEVER forges a hash the av row lacks).
-  - A non-function survival row carries its seed survival datum when present and
-    an EMPTY payload when not. Step 5.2 filled 14 rows: callsite (5-8) carry an
-    aob + expect_unique=1; string_anchor (12) carries an anchor_string +
-    expect_unique=1; instruction_anchor (9) carries an aob + derives_from +
-    expect_unique=1; data_slot (10/11/132) carry a rule + derives_from;
-    vtable_base (119/138/139/140) carry a slot_count. The vtable_index rows
-    (19-24) stay EMPTY (deferred on the runtime-vtable path). This step asserts
-    the filled kinds are non-empty and the deferred kind is still empty.
-  - derives_from is set where the kind has a dependency AND the seed column is
-    filled: the data_slot -> instruction_anchor -> string_anchor chain (10->9,
-    11->10, 132->11, 9->12). vtable_index's base ref is still unfilled, so its
-    derives_from stays empty.
+  - The six folded columns exist on address_versions with the right SQL types, in
+    BOTH the USER and DEV DBs.
+  - The folded cells per kind are populated correctly (the per-kind dispatch
+    survival_builder._KIND_TO_FORM decides which cells a kind uses):
+      callsite / instruction_anchor -> aob (+ expect_unique on the verified-unique)
+      string_anchor                 -> anchor_string (+ expect_unique)
+      data_slot                     -> rule (+ derives_from)
+      vtable_base                   -> slot_count
+      vtable_index                  -> all folded cells EMPTY (deferred), but the
+                                       row exists like any other curated row.
+      function kinds                -> NO folded re-find cell; the body fingerprint
+                                       (content_hash/length) stays on the av row.
+  - Step 5.2 filled 14 rows: callsite (5-8) carry an aob + expect_unique=1;
+    string_anchor (12) carries an anchor_string + expect_unique=1;
+    instruction_anchor (9) carries an aob + derives_from + expect_unique=1; data_slot
+    (10/11/132) carry a rule + derives_from; vtable_base (119/138/139/140) carry a
+    slot_count. The vtable_index rows (19-24) stay EMPTY (deferred on the
+    runtime-vtable path).
+  - derives_from walks the DAG the handoff authored (132->11->10->9->12); exactly 4
+    curated rows carry a derives_from (9, 10, 11, 132).
   - expect_unique is set (=1) on the search-locating kinds the handoff verified
-    unique (callsite 5-8, instruction_anchor 9, string_anchor 12) and NULL on
-    every other kind.
+    unique (callsite 5-8, instruction_anchor 9, string_anchor 12) and NULL elsewhere.
+  - The 156/157 ICVar accessor rows carry their RE-verified vtable_slot/struct_offset
+    in the structured columns (id156 slot 2/+0x10; id157 slot 4/+0x20).
 
-This is the rebuild-side counterpart of the apply==rebuild survival assertions in
-test_apply_add_entity.py (which prove apply writes a survival row byte-identical
-to a rebuild's). The apply-equals-rebuild oracle for the survival table at large
-is carried by test_rebuild_oracle.py (the per-table hash now includes `survival`).
+The apply==rebuild equivalence for the folded columns is carried by
+test_direct_write.py (the direct-write path writes the SAME folded av cells a rebuild
+would) and the whole-DB rebuild oracle (test_rebuild_oracle.py, whose per-table hash
+now covers the folded columns on address_versions; the `survival` table is gone).
 
 RUN
 ---
@@ -65,20 +65,13 @@ sys.path.insert(0, PYDIR)
 import import_to_sqlite as imp  # noqa: E402
 import seeds_shared as ss       # noqa: E402,F401
 
-# kind -> expected survival kind_form (the single shared mapping under test).
-_EXPECTED_FORM = {
-    "function":           "function_hash",
-    "function_no_sig":    "function_hash",
-    "function_variadic":  "function_hash",
-    "callsite":           "aob",
-    "instruction_anchor": "aob",
-    "string_anchor":      "literal",
-    "data_slot":          "derivation",
-    "vtable_base":        "table_shape",
-    "vtable_index":       "slot_target",
-}
+# kind -> the folded re-find cell(s) a kind populates (the single shared dispatch
+# survival_builder._KIND_TO_FORM decides). function kinds use the body fingerprint
+# (content_hash/length on the av row), NOT a folded re-find cell.
+_FUNCTION_KINDS = ("function", "function_no_sig", "function_variadic")
 
-# The payload columns NOT used by function_hash (must be NULL on a function row).
+# The folded re-find payload columns a function-kind av row must NOT carry (the
+# search/derivation cells; the function form uses only content_hash + length).
 _NON_FUNCTION_PAYLOAD = ("aob", "anchor_string", "rule", "slot_count")
 
 
@@ -93,7 +86,7 @@ def _get_rebuild():
     if "out" not in _REBUILD:
         if not os.path.isdir(DUMP_DIR):
             raise SystemExit(f"dump dir not found: {DUMP_DIR}")
-        out = tempfile.mkdtemp(prefix="survival_oracle_")
+        out = tempfile.mkdtemp(prefix="folded_oracle_")
         _REBUILD["out"] = out
         imp.run_rebuild(DUMP_DIR, out)
     return _REBUILD["out"]
@@ -131,215 +124,42 @@ def _decoded_kind_by_av(con):
         "SELECT id, kind FROM address_versions WHERE kcdx_id IS NOT NULL")}
 
 
-def _one_to_one_with_curated(out):
-    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
-        con = sqlite3.connect(os.path.join(out, fn))
-        try:
-            n_sv = con.execute("SELECT COUNT(*) FROM survival").fetchone()[0]
-            n_cur = con.execute(
-                "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL"
-            ).fetchone()[0]
-            assert n_sv == n_cur, (
-                f"[{which}] survival rows {n_sv} != curated address_versions "
-                f"{n_cur} (must be 1:1)")
-            # Every survival row points at a CURATED av row (none at a bulk row).
-            bad = con.execute(
-                "SELECT COUNT(*) FROM survival s JOIN address_versions a "
-                "ON s.address_version_id = a.id WHERE a.kcdx_id IS NULL"
-            ).fetchone()[0]
-            assert bad == 0, (
-                f"[{which}] {bad} survival row(s) point at a bulk (uncurated) "
-                f"address_versions row")
-            # Every curated av row has exactly one survival row.
-            uncovered = con.execute(
-                "SELECT COUNT(*) FROM address_versions a WHERE a.kcdx_id IS NOT NULL "
-                "AND NOT EXISTS (SELECT 1 FROM survival s "
-                "WHERE s.address_version_id = a.id)"
-            ).fetchone()[0]
-            assert uncovered == 0, (
-                f"[{which}] {uncovered} curated av row(s) have no survival row")
-        finally:
-            con.close()
-
-
-def _kind_form_correct(out):
-    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
-        con = sqlite3.connect(os.path.join(out, fn))
-        try:
-            kind_by_av = _decoded_kind_by_av(con)
-            rows = con.execute(
-                "SELECT address_version_id, kind_form FROM survival").fetchall()
-            for av_id, form in rows:
-                kind = kind_by_av.get(av_id)
-                assert kind is not None, (
-                    f"[{which}] survival av_id={av_id} maps to no curated kind")
-                exp = _EXPECTED_FORM.get(kind)
-                assert exp is not None, (
-                    f"[{which}] address kind {kind!r} has no expected survival "
-                    f"form in the test map (a new kind needs one)")
-                assert form == exp, (
-                    f"[{which}] av_id={av_id} kind={kind!r}: kind_form={form!r} "
-                    f"!= expected {exp!r}")
-        finally:
-            con.close()
-
-
-def _function_rows_carry_hash(out):
-    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
-        con = sqlite3.connect(os.path.join(out, fn))
-        try:
-            # A function survival row's content_hash + length equal its av row's;
-            # NULL only when the av row itself is NULL (never forged).
-            forged = con.execute(
-                "SELECT COUNT(*) FROM survival s JOIN address_versions a "
-                "ON s.address_version_id = a.id WHERE s.kind_form='function_hash' "
-                "AND s.content_hash IS NULL AND a.content_hash IS NOT NULL"
-            ).fetchone()[0]
-            assert forged == 0, (
-                f"[{which}] {forged} function survival row(s) dropped a hash the "
-                f"av row carries")
-            mism = con.execute(
-                "SELECT COUNT(*) FROM survival s JOIN address_versions a "
-                "ON s.address_version_id = a.id WHERE s.kind_form='function_hash' "
-                "AND s.content_hash IS NOT NULL AND s.content_hash != a.content_hash"
-            ).fetchone()[0]
-            assert mism == 0, (
-                f"[{which}] {mism} function survival hash != av hash")
-            lmism = con.execute(
-                "SELECT COUNT(*) FROM survival s JOIN address_versions a "
-                "ON s.address_version_id = a.id WHERE s.kind_form='function_hash' "
-                "AND IFNULL(s.length,-1) != IFNULL(a.length,-1)"
-            ).fetchone()[0]
-            assert lmism == 0, (
-                f"[{which}] {lmism} function survival length != av length")
-            # At least SOME function rows actually carry a hash (the reuse path is
-            # exercised, not vacuously all-NULL).
-            with_hash = con.execute(
-                "SELECT COUNT(*) FROM survival WHERE kind_form='function_hash' "
-                "AND content_hash IS NOT NULL").fetchone()[0]
-            assert with_hash > 0, (
-                f"[{which}] no function survival row carries a content_hash "
-                f"(the fingerprint-reuse path looks dead)")
-            # A function row uses ONLY content_hash + length -- the other payload
-            # columns stay NULL.
-            for pc in _NON_FUNCTION_PAYLOAD:
-                bad = con.execute(
-                    f'SELECT COUNT(*) FROM survival WHERE kind_form=\'function_hash\' '
-                    f'AND "{pc}" IS NOT NULL').fetchone()[0]
-                assert bad == 0, (
-                    f"[{which}] {bad} function survival row(s) have non-empty "
-                    f"{pc} (function_hash uses only content_hash+length)")
-        finally:
-            con.close()
-
-
-def _sv_by_kid(con):
-    """{kcdx_id: survival-row dict} for the OPEN curated rows, joining survival to
-    its address_versions row."""
+def _folded_by_kid(con):
+    """{kcdx_id: folded-cell dict} for the OPEN curated av rows (the folded re-find
+    columns + the body fingerprint, read straight from address_versions)."""
     out = {}
     for row in con.execute(
-            "SELECT a.kcdx_id, s.kind_form, s.aob, s.anchor_string, s.rule, "
-            "s.slot_count, s.expect_unique, s.derives_from, s.content_hash, "
-            "s.length FROM survival s JOIN address_versions a "
-            "ON s.address_version_id = a.id "
-            "WHERE a.kcdx_id IS NOT NULL AND a.valid_through IS NULL"):
+            "SELECT kcdx_id, kind, aob, anchor_string, rule, slot_count, "
+            "expect_unique, derives_from, content_hash, length "
+            "FROM address_versions "
+            "WHERE kcdx_id IS NOT NULL AND valid_through IS NULL"):
         out[row[0]] = {
-            "kind_form": row[1], "aob": row[2], "anchor_string": row[3],
+            "kind": row[1], "aob": row[2], "anchor_string": row[3],
             "rule": row[4], "slot_count": row[5], "expect_unique": row[6],
             "derives_from": row[7], "content_hash": row[8], "length": row[9]}
     return out
 
 
-def _filled_kinds_carry_values(out):
-    """Step 5.2 value assertions: the 14 filled rows carry their seed datum, and
-    NO non-function row carries a function fingerprint. The vtable_index rows
-    (19-24) stay EMPTY (deferred). NEVER assert a guessed value -- just non-empty
-    for the filled kinds + empty for the deferred kind."""
+def _no_survival_table(out):
+    """The `survival` sibling table is GONE in both DBs (D22 / design §11.2 -- folded
+    onto address_versions and deleted)."""
     for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
         con = sqlite3.connect(os.path.join(out, fn))
         try:
-            sv = _sv_by_kid(con)
-            # callsite (aob form): aob present.
-            for kid in (5, 6, 7, 8):
-                assert sv[kid]["aob"], f"[{which}] callsite {kid} has empty aob"
-            # instruction_anchor (aob form): aob present + derives_from set.
-            assert sv[9]["aob"], f"[{which}] instruction_anchor 9 has empty aob"
-            assert sv[9]["derives_from"] is not None, (
-                f"[{which}] instruction_anchor 9 has no derives_from")
-            # string_anchor (literal form): anchor_string present.
-            assert sv[12]["anchor_string"], (
-                f"[{which}] string_anchor 12 has empty anchor_string")
-            # data_slot (derivation form): rule + derives_from set.
-            for kid in (10, 11, 132):
-                assert sv[kid]["rule"], f"[{which}] data_slot {kid} has empty rule"
-                assert sv[kid]["derives_from"] is not None, (
-                    f"[{which}] data_slot {kid} has no derives_from")
-            # vtable_base (table_shape form): slot_count set.
-            for kid in (119, 138, 139, 140):
-                assert sv[kid]["slot_count"] is not None, (
-                    f"[{which}] vtable_base {kid} has empty slot_count")
-            # vtable_index (slot_target form): still fully EMPTY (deferred).
-            for kid in (19, 20, 21, 22, 23, 24):
-                r = sv[kid]
-                assert r["kind_form"] == "slot_target", (
-                    f"[{which}] vtable_index {kid} kind_form={r['kind_form']!r}")
-                assert (r["aob"] is None and r["anchor_string"] is None
-                        and r["rule"] is None and r["slot_count"] is None
-                        and r["expect_unique"] is None
-                        and r["derives_from"] is None), (
-                    f"[{which}] vtable_index {kid} has a non-empty payload "
-                    f"(deferred kind must stay empty): {r}")
-            # No non-function row carries a function fingerprint.
-            fp_on_nonfn = con.execute(
-                "SELECT COUNT(*) FROM survival WHERE kind_form != 'function_hash' "
-                "AND (content_hash IS NOT NULL OR length IS NOT NULL)"
-            ).fetchone()[0]
-            assert fp_on_nonfn == 0, (
-                f"[{which}] {fp_on_nonfn} non-function survival row(s) carry a "
-                f"function fingerprint (content_hash/length is function_hash-only)")
+            present = {r[0] for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            assert "survival" not in present, (
+                f"[{which}] the `survival` table still exists (the fold should have "
+                f"deleted it)")
         finally:
             con.close()
 
 
-def _expect_unique_set_on_unique_locators(out):
-    """Step 5.2: expect_unique=1 on the search-locating kinds the handoff verified
-    .text-unique (callsite 5-8, instruction_anchor 9, string_anchor 12), and NULL
-    on every other survival row."""
-    unique_kids = {5, 6, 7, 8, 9, 12}
-    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
-        con = sqlite3.connect(os.path.join(out, fn))
-        try:
-            sv = _sv_by_kid(con)
-            for kid in unique_kids:
-                assert sv[kid]["expect_unique"] == 1, (
-                    f"[{which}] kid {kid} expect_unique="
-                    f"{sv[kid]['expect_unique']!r}, expected 1")
-            for kid, r in sv.items():
-                if kid not in unique_kids:
-                    assert r["expect_unique"] is None, (
-                        f"[{which}] kid {kid} ({r['kind_form']}) carries "
-                        f"expect_unique={r['expect_unique']!r}, expected NULL")
-            # Exactly 6 survival rows carry expect_unique.
-            n = con.execute(
-                "SELECT COUNT(*) FROM survival WHERE expect_unique IS NOT NULL"
-            ).fetchone()[0]
-            assert n == 6, (
-                f"[{which}] {n} survival rows carry expect_unique, expected 6")
-        finally:
-            con.close()
-
-
-def _av_folded_columns_present(out):
-    """schema-flatten-survival-fold Phase 1 step 1: the six folded survival
-    columns exist on address_versions with the right SQL types after a rebuild,
-    in BOTH DBs (they ship to USER + DEV). The SQL types match the former
-    `survival` SCHEMA entry's same-named columns (aob/anchor_string/rule TEXT;
-    slot_count/expect_unique/derives_from INTEGER).
-
-    (Step 1's all-NULL invariant is SUPERSEDED by step 2, which populates these
-    columns from the per-kind dispatch -- the populate + the equivalence-vs-survival
-    proof are _av_folded_cells_equal_survival. This assertion now owns only the
-    column PRESENCE + TYPE contract, the part step 2 does not change.)"""
+def _folded_columns_present(out):
+    """The six folded survival/re-find columns exist on address_versions with the
+    right SQL types in BOTH DBs (aob/anchor_string/rule TEXT;
+    slot_count/expect_unique/derives_from INTEGER -- the former `survival` SCHEMA
+    entry's SQL types)."""
     expected_types = {
         "aob": "TEXT", "anchor_string": "TEXT", "rule": "TEXT",
         "slot_count": "INTEGER", "expect_unique": "INTEGER",
@@ -356,136 +176,148 @@ def _av_folded_columns_present(out):
                     f"(the fold did not add it)")
                 assert info[col] == ty, (
                     f"[{which}] address_versions.{col} type={info[col]!r} "
-                    f"!= expected {ty!r} (must match survival's SQL type)")
+                    f"!= expected {ty!r}")
         finally:
             con.close()
 
 
-def _av_folded_cells_equal_survival(out):
-    """schema-flatten-survival-fold Phase 1 step 2 -- THE equivalence proof (the
-    safety proof the Phase-3 survival-table delete rests on).
-
-    For EVERY curated address_versions row, its six folded cells
-    (aob/anchor_string/rule/slot_count/expect_unique/derives_from) EQUAL its 1:1
-    `survival` row's corresponding cells, row-for-row, across BOTH DBs. This is a
-    real per-row join+compare that goes RED if ANY cell diverges -- the falsifiable
-    proof that the av folded columns carry exactly what the survival table carries,
-    so dropping the survival table loses nothing.
-
-    Falsifiable: it joins survival -> address_versions on address_version_id and
-    asserts each of the six folded columns is pairwise-equal (NULL==NULL included);
-    a populate path that wrote a different value to the av column than to the
-    survival cell -- or skipped a kind -- would surface as a non-empty mismatch
-    list. It also asserts the join is COMPLETE (every curated av row compared) and
-    that the compared count == the curated count (no row silently skipped), and
-    that the av columns are actually POPULATED where the kind uses them (not
-    vacuously all-NULL on both sides)."""
-    folded = ("aob", "anchor_string", "rule", "slot_count", "expect_unique",
-              "derives_from")
-    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
-        con = sqlite3.connect(os.path.join(out, fn))
-        try:
-            # 1:1 join survival -> its owning curated av row. Compare each folded
-            # column pairwise; IS-based equality so NULL==NULL counts as equal and
-            # a NULL-vs-value divergence counts as a mismatch.
-            n_compared = 0
-            mismatches = []
-            for row in con.execute(
-                    "SELECT a.id, a.kcdx_id, "
-                    "a.aob, s.aob, a.anchor_string, s.anchor_string, "
-                    "a.rule, s.rule, a.slot_count, s.slot_count, "
-                    "a.expect_unique, s.expect_unique, "
-                    "a.derives_from, s.derives_from "
-                    "FROM address_versions a JOIN survival s "
-                    "ON s.address_version_id = a.id "
-                    "WHERE a.kcdx_id IS NOT NULL"):
-                av_id, kid = row[0], row[1]
-                n_compared += 1
-                pairs = row[2:]
-                for i, col in enumerate(folded):
-                    av_val = pairs[2 * i]
-                    sv_val = pairs[2 * i + 1]
-                    if av_val != sv_val:
-                        mismatches.append(
-                            f"av id={av_id} kid={kid} col={col}: "
-                            f"av={av_val!r} != survival={sv_val!r}")
-            assert not mismatches, (
-                f"[{which}] {len(mismatches)} folded-cell divergence(s) between the "
-                f"av row and its survival row (the fold is NOT equivalent):\n  "
-                + "\n  ".join(mismatches[:20]))
-
-            # The join is complete: every curated av row was compared (none lacked a
-            # survival row to join, which would silently DROP it from the proof).
-            n_curated = con.execute(
-                "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL"
-            ).fetchone()[0]
-            assert n_compared == n_curated, (
-                f"[{which}] equivalence compared {n_compared} rows but there are "
-                f"{n_curated} curated av rows -- {n_curated - n_compared} were not "
-                f"joined (a curated av row with no survival row would escape the proof)")
-
-            # Not vacuous: the av folded columns are actually POPULATED where a kind
-            # uses them (callsite/string_anchor/data_slot/vtable_base rows gained
-            # their cells), not all-NULL on both sides (which would pass trivially).
-            n_av_populated = con.execute(
-                "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL AND "
-                "(aob IS NOT NULL OR anchor_string IS NOT NULL OR rule IS NOT NULL "
-                "OR slot_count IS NOT NULL OR expect_unique IS NOT NULL "
-                "OR derives_from IS NOT NULL)").fetchone()[0]
-            assert n_av_populated > 0, (
-                f"[{which}] no curated av row carries a folded cell -- the populate "
-                f"path looks dead (equivalence would pass vacuously all-NULL)")
-        finally:
-            con.close()
-
-
-def _function_rows_have_null_folded_cells(out):
-    """schema-flatten-survival-fold step 2: a function-kind curated av row carries
-    NO folded survival cell (aob/anchor_string/rule/slot_count/expect_unique all
-    NULL; derives_from NULL unless the seed supplied survival_derives_from). Its
-    content_hash/length stay on the av row as the body fingerprint (NOT folded
-    columns -- untouched by the fold). Mirrors the survival-row invariant
-    (_function_rows_carry_hash's _NON_FUNCTION_PAYLOAD check) on the av side."""
+def _function_rows_carry_hash_not_folded(out):
+    """A function-kind curated av row carries the body fingerprint (content_hash +
+    length) and NO folded re-find cell (aob/anchor_string/rule/slot_count NULL;
+    expect_unique NULL). Mirrors the old survival-row invariant on the av side."""
     for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
         con = sqlite3.connect(os.path.join(out, fn))
         try:
             kind_by_av = _decoded_kind_by_av(con)
-            fn_avs = [av for av, k in kind_by_av.items()
-                      if k in ("function", "function_no_sig", "function_variadic")]
+            fn_avs = [av for av, k in kind_by_av.items() if k in _FUNCTION_KINDS]
             assert fn_avs, f"[{which}] no function-kind curated rows in the fixture"
             ph = ",".join("?" * len(fn_avs))
-            bad = con.execute(
-                f"SELECT COUNT(*) FROM address_versions WHERE id IN ({ph}) AND "
-                f"(aob IS NOT NULL OR anchor_string IS NOT NULL OR rule IS NOT NULL "
-                f"OR slot_count IS NOT NULL OR expect_unique IS NOT NULL)",
-                fn_avs).fetchone()[0]
-            assert bad == 0, (
-                f"[{which}] {bad} function-kind av row(s) carry a folded "
-                f"search/derivation cell (function_hash uses only the body "
-                f"fingerprint, not the folded columns)")
+            # No function row carries a folded search/derivation cell.
+            for pc in _NON_FUNCTION_PAYLOAD:
+                bad = con.execute(
+                    f'SELECT COUNT(*) FROM address_versions WHERE id IN ({ph}) '
+                    f'AND "{pc}" IS NOT NULL', fn_avs).fetchone()[0]
+                assert bad == 0, (
+                    f"[{which}] {bad} function-kind av row(s) carry a folded {pc} "
+                    f"(function kinds use only the body fingerprint, not the folded "
+                    f"re-find cells)")
+            bad_eu = con.execute(
+                f'SELECT COUNT(*) FROM address_versions WHERE id IN ({ph}) '
+                f'AND expect_unique IS NOT NULL', fn_avs).fetchone()[0]
+            assert bad_eu == 0, (
+                f"[{which}] {bad_eu} function-kind av row(s) carry expect_unique")
+            # At least SOME function rows actually carry a body fingerprint (the
+            # reuse path is exercised, not vacuously all-NULL).
+            with_hash = con.execute(
+                f'SELECT COUNT(*) FROM address_versions WHERE id IN ({ph}) '
+                f'AND content_hash IS NOT NULL', fn_avs).fetchone()[0]
+            assert with_hash > 0, (
+                f"[{which}] no function-kind av row carries a content_hash (the "
+                f"fingerprint path looks dead)")
+        finally:
+            con.close()
+
+
+def _filled_kinds_carry_values(out):
+    """Step 5.2 value assertions, on the folded av columns: the 14 filled rows carry
+    their seed datum; the vtable_index rows (19-24) stay EMPTY (deferred). NEVER
+    assert a guessed value -- just non-empty for the filled kinds + empty for the
+    deferred kind. Plus: no non-function row carries a function fingerprint."""
+    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
+        con = sqlite3.connect(os.path.join(out, fn))
+        try:
+            fc = _folded_by_kid(con)
+            # callsite (aob form): aob present.
+            for kid in (5, 6, 7, 8):
+                assert fc[kid]["aob"], f"[{which}] callsite {kid} has empty aob"
+            # instruction_anchor (aob form): aob present + derives_from set.
+            assert fc[9]["aob"], f"[{which}] instruction_anchor 9 has empty aob"
+            assert fc[9]["derives_from"] is not None, (
+                f"[{which}] instruction_anchor 9 has no derives_from")
+            # string_anchor (literal form): anchor_string present.
+            assert fc[12]["anchor_string"], (
+                f"[{which}] string_anchor 12 has empty anchor_string")
+            # data_slot (derivation form): rule + derives_from set.
+            for kid in (10, 11, 132):
+                assert fc[kid]["rule"], f"[{which}] data_slot {kid} has empty rule"
+                assert fc[kid]["derives_from"] is not None, (
+                    f"[{which}] data_slot {kid} has no derives_from")
+            # vtable_base (table_shape form): slot_count set.
+            for kid in (119, 138, 139, 140):
+                assert fc[kid]["slot_count"] is not None, (
+                    f"[{which}] vtable_base {kid} has empty slot_count")
+            # vtable_index (deferred): all folded cells EMPTY.
+            for kid in (19, 20, 21, 22, 23, 24):
+                r = fc[kid]
+                assert (r["aob"] is None and r["anchor_string"] is None
+                        and r["rule"] is None and r["slot_count"] is None
+                        and r["expect_unique"] is None
+                        and r["derives_from"] is None), (
+                    f"[{which}] vtable_index {kid} has a non-empty folded cell "
+                    f"(deferred kind must stay empty): {r}")
+            # No non-function row carries a function fingerprint.
+            kind_by_av = _decoded_kind_by_av(con)
+            nonfn_avs = [av for av, k in kind_by_av.items()
+                         if k not in _FUNCTION_KINDS]
+            ph = ",".join("?" * len(nonfn_avs))
+            fp_on_nonfn = con.execute(
+                f'SELECT COUNT(*) FROM address_versions WHERE id IN ({ph}) AND '
+                f'(content_hash IS NOT NULL OR length IS NOT NULL)',
+                nonfn_avs).fetchone()[0]
+            assert fp_on_nonfn == 0, (
+                f"[{which}] {fp_on_nonfn} non-function av row(s) carry a function "
+                f"fingerprint (content_hash/length is function-only)")
+        finally:
+            con.close()
+
+
+def _expect_unique_set_on_unique_locators(out):
+    """Step 5.2: expect_unique=1 on the search-locating kinds the handoff verified
+    .text-unique (callsite 5-8, instruction_anchor 9, string_anchor 12), and NULL on
+    every other curated av row."""
+    unique_kids = {5, 6, 7, 8, 9, 12}
+    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
+        con = sqlite3.connect(os.path.join(out, fn))
+        try:
+            fc = _folded_by_kid(con)
+            for kid in unique_kids:
+                assert fc[kid]["expect_unique"] == 1, (
+                    f"[{which}] kid {kid} expect_unique="
+                    f"{fc[kid]['expect_unique']!r}, expected 1")
+            for kid, r in fc.items():
+                if kid not in unique_kids:
+                    assert r["expect_unique"] is None, (
+                        f"[{which}] kid {kid} ({r['kind']}) carries "
+                        f"expect_unique={r['expect_unique']!r}, expected NULL")
+            # Exactly 6 curated av rows carry expect_unique.
+            n = con.execute(
+                "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL "
+                "AND expect_unique IS NOT NULL").fetchone()[0]
+            assert n == 6, (
+                f"[{which}] {n} curated av rows carry expect_unique, expected 6")
         finally:
             con.close()
 
 
 def _derives_from_chain(out):
-    """Step 5.2: derives_from walks the survival DAG the handoff authored --
-    data_slot 132 -> 11 -> 10 -> instruction_anchor 9 -> string_anchor 12. Each
-    survival.derives_from FK resolves to the dependency entity's curated
-    address_versions row, which back-maps to the expected kcdx_id. Exactly 4
-    survival rows carry a derives_from (9, 10, 11, 132)."""
+    """Step 5.2: derives_from walks the DAG the handoff authored -- data_slot
+    132 -> 11 -> 10 -> instruction_anchor 9 -> string_anchor 12. Each av.derives_from
+    FK resolves to the dependency entity's curated av row, which back-maps to the
+    expected kcdx_id. Exactly 4 curated av rows carry a derives_from (9, 10, 11, 132)."""
     expected = {9: 12, 10: 9, 11: 10, 132: 11}
     for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
         con = sqlite3.connect(os.path.join(out, fn))
         try:
-            cols = [c[1] for c in con.execute('PRAGMA table_info("survival")')]
+            cols = [c[1] for c in con.execute(
+                'PRAGMA table_info("address_versions")')]
             assert "derives_from" in cols, (
-                f"[{which}] survival table has no derives_from column")
+                f"[{which}] address_versions has no derives_from column")
             av_to_kid = {r[0]: r[1] for r in con.execute(
                 "SELECT id, kcdx_id FROM address_versions "
                 "WHERE kcdx_id IS NOT NULL")}
-            sv = _sv_by_kid(con)
+            fc = _folded_by_kid(con)
             for kid, dep_kid in expected.items():
-                dfrom = sv[kid]["derives_from"]
+                dfrom = fc[kid]["derives_from"]
                 assert dfrom is not None, (
                     f"[{which}] kid {kid} has no derives_from (expected -> "
                     f"{dep_kid})")
@@ -493,11 +325,35 @@ def _derives_from_chain(out):
                     f"[{which}] kid {kid} derives_from av {dfrom} -> kid "
                     f"{av_to_kid.get(dfrom)}, expected kid {dep_kid}")
             n_set = con.execute(
-                "SELECT COUNT(*) FROM survival WHERE derives_from IS NOT NULL"
-            ).fetchone()[0]
+                "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL "
+                "AND derives_from IS NOT NULL").fetchone()[0]
             assert n_set == len(expected), (
-                f"[{which}] {n_set} survival row(s) have derives_from set, "
+                f"[{which}] {n_set} curated av row(s) have derives_from set, "
                 f"expected {len(expected)} (the 9/10/11/132 chain)")
+        finally:
+            con.close()
+
+
+def _icvar_slot_offset_cells(out):
+    """schema-flatten-survival-fold Phase 3: the 156/157 ICVar accessor rows carry
+    their RE-verified vtable_slot/struct_offset in the now-first-class structured
+    columns (the §11 convention: a resolvable fact lives in its column, not only the
+    notes prose). id156 ICVar_GetIVal = vtable[2] / +0x10; id157 ICVar_GetFVal =
+    vtable[4] / +0x20 (decimal: slot 2/4, struct_offset 16/32)."""
+    expected = {156: (2, 16), 157: (4, 32)}
+    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
+        con = sqlite3.connect(os.path.join(out, fn))
+        try:
+            for kid, (slot, soff) in expected.items():
+                row = con.execute(
+                    "SELECT vtable_slot, struct_offset FROM address_versions "
+                    "WHERE kcdx_id = ? AND valid_through IS NULL", (kid,)).fetchone()
+                assert row is not None, (
+                    f"[{which}] no curated av row for kcdx_id={kid}")
+                assert row[0] == slot, (
+                    f"[{which}] kid {kid} vtable_slot={row[0]!r}, expected {slot}")
+                assert row[1] == soff, (
+                    f"[{which}] kid {kid} struct_offset={row[1]!r}, expected {soff}")
         finally:
             con.close()
 
@@ -505,63 +361,51 @@ def _derives_from_chain(out):
 # --------------------------------------------------------------------------
 # pytest entry points.
 # --------------------------------------------------------------------------
-def test_survival_one_to_one_with_curated(rebuilt):  # noqa: F811
-    _one_to_one_with_curated(rebuilt)
+def test_survival_table_deleted(rebuilt):  # noqa: F811
+    _no_survival_table(rebuilt)
 
 
-def test_survival_kind_form_correct(rebuilt):  # noqa: F811
-    _kind_form_correct(rebuilt)
+def test_folded_columns_present(rebuilt):  # noqa: F811
+    _folded_columns_present(rebuilt)
 
 
-def test_survival_function_rows_carry_hash(rebuilt):  # noqa: F811
-    _function_rows_carry_hash(rebuilt)
+def test_function_rows_carry_hash_not_folded(rebuilt):  # noqa: F811
+    _function_rows_carry_hash_not_folded(rebuilt)
 
 
-def test_survival_filled_kinds_carry_values(rebuilt):  # noqa: F811
+def test_filled_kinds_carry_values(rebuilt):  # noqa: F811
     _filled_kinds_carry_values(rebuilt)
 
 
-def test_survival_expect_unique_set_on_unique_locators(rebuilt):  # noqa: F811
+def test_expect_unique_set_on_unique_locators(rebuilt):  # noqa: F811
     _expect_unique_set_on_unique_locators(rebuilt)
 
 
-def test_survival_derives_from_chain(rebuilt):  # noqa: F811
+def test_derives_from_chain(rebuilt):  # noqa: F811
     _derives_from_chain(rebuilt)
 
 
-def test_av_folded_columns_present(rebuilt):  # noqa: F811
-    _av_folded_columns_present(rebuilt)
-
-
-def test_av_folded_cells_equal_survival(rebuilt):  # noqa: F811
-    _av_folded_cells_equal_survival(rebuilt)
-
-
-def test_function_rows_have_null_folded_cells(rebuilt):  # noqa: F811
-    _function_rows_have_null_folded_cells(rebuilt)
+def test_icvar_slot_offset_cells(rebuilt):  # noqa: F811
+    _icvar_slot_offset_cells(rebuilt)
 
 
 if __name__ == "__main__":
     try:
         out = _get_rebuild()
-        _one_to_one_with_curated(out)
-        print("PASS test_survival_one_to_one_with_curated")
-        _kind_form_correct(out)
-        print("PASS test_survival_kind_form_correct")
-        _function_rows_carry_hash(out)
-        print("PASS test_survival_function_rows_carry_hash")
+        _no_survival_table(out)
+        print("PASS test_survival_table_deleted")
+        _folded_columns_present(out)
+        print("PASS test_folded_columns_present")
+        _function_rows_carry_hash_not_folded(out)
+        print("PASS test_function_rows_carry_hash_not_folded")
         _filled_kinds_carry_values(out)
-        print("PASS test_survival_filled_kinds_carry_values")
+        print("PASS test_filled_kinds_carry_values")
         _expect_unique_set_on_unique_locators(out)
-        print("PASS test_survival_expect_unique_set_on_unique_locators")
+        print("PASS test_expect_unique_set_on_unique_locators")
         _derives_from_chain(out)
-        print("PASS test_survival_derives_from_chain")
-        _av_folded_columns_present(out)
-        print("PASS test_av_folded_columns_present")
-        _av_folded_cells_equal_survival(out)
-        print("PASS test_av_folded_cells_equal_survival")
-        _function_rows_have_null_folded_cells(out)
-        print("PASS test_function_rows_have_null_folded_cells")
-        print("\nall survival-table oracle tests passed")
+        print("PASS test_derives_from_chain")
+        _icvar_slot_offset_cells(out)
+        print("PASS test_icvar_slot_offset_cells")
+        print("\nall folded survival-column oracle tests passed")
     finally:
         _cleanup_rebuild()

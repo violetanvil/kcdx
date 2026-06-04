@@ -130,6 +130,27 @@ and inspected (only address_versions drifted, both DBs, content-hash only; the a
 folded cells now equal the survival cells row-for-row; the survival table did NOT
 move) before recording.
 
+It was RE-CAPTURED AGAIN at the schema-flatten-survival-fold Phase 3 step 6 -- the
+DELETE + finalize -- when the `survival` sibling table was folded onto
+address_versions and DELETED (D22 / design §11.2). Every consumer (exporter, engine,
+read seam) had already been migrated to read the folded av columns over Phases 1-2;
+the folded cells were proven equal to the survival rows row-for-row (157/157). So
+deleting the table loses nothing. The drift is EXACTLY two coordinated changes,
+verified FIRST before recording: (1) the `survival` table is GONE from BOTH DBs (the
+table-set shrinks by one in each, USER 14 -> 13 tables, DEV 17 -> 16; the
+sqlite_sequence count drops by one and its content hash changes as the survival
+autoincrement entry is removed) and (2) the `address_versions` content hash moves in
+BOTH DBs because the 156/157 ICVar accessor rows gained their RE-verified
+vtable_slot/struct_offset in the structured columns (id156 slot 2 / +0x10; id157 slot
+4 / +0x20 -- moved from the notes prose to their first-class cells per the §11
+convention). NO row-count change on any surviving table; address_names / game_versions
+/ meta / modules / statements / referenced_vars / call_edges / every _dict_* table
+BYTE-IDENTICAL. The verify was run first and confirmed the ONLY drift was the survival
+table removal (both DBs) + the two address_versions content hashes (the 156/157
+cells); the re-capture was deliberate and inspected (survival gone, the table set
+shrunk by one, the 156/157 cells carry their slot/offset, nothing else moved) before
+recording.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 

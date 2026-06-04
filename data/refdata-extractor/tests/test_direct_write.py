@@ -17,7 +17,8 @@ game tag (the bridge's GAME_VERSION_TAG gate materialised zero rows there). Case
     (export+fold -> apply_seeds(defer_commit)+commit, reconstructed here). The direct
     write changes the MECHANISM, not the result.
 
-  THE 8 BEHAVIORS -- a create-version asserts the 1:1 survival row + the prior
+  THE 8 BEHAVIORS -- a create-version asserts the folded survival/re-find cells landed
+    ON the new av row (D22 / design §11.2 -- no separate survival table) + the prior
     interval closed; a function-kind add asserts promote-vs-mint (fingerprint carried)
     + BaselineRefusal on a missing baseline; an add asserts per-DB projection (USER vs
     DEV columns) + FK-id resolution (no minted id).
@@ -502,11 +503,13 @@ def _convergence_fold_populate(b):
 
 
 def _fold_av_equals_survival_after_direct_write(b):
-    """schema-flatten-survival-fold step 2: AFTER a direct-write that populates a folded
-    cell, the av row's folded columns EQUAL its 1:1 survival row's cells in BOTH DBs --
-    the same equivalence proof the rebuild oracle (test_survival_table.py) carries, here
-    on the DIRECT-write path. Falsifiable: a join+compare that goes RED if the direct
-    write put a different value on the av column than on the survival cell."""
+    """schema-flatten-survival-fold Phase 3: AFTER a direct-write that populates a
+    folded cell, the av row's folded columns carry the edited value in BOTH DBs --
+    the survival/re-find data lives ON the av row now (D22 / design §11.2, the former
+    survival sibling table folded onto av columns and deleted). Falsifiable: reads the
+    folded cells off the av row and asserts the edit's value landed; the convergence
+    test (_convergence_fold_populate) separately pins direct-write == seed-rebuild for
+    the same edit."""
     user_db = os.path.join(b["out"], "reference.sqlite")
     picked = _pick_search_locating_row(user_db)
     assert picked is not None, "no search-locating curated row in the fixture"
@@ -521,26 +524,21 @@ def _fold_av_equals_survival_after_direct_write(b):
     try:
         _commit_direct(db_editor.update_version_row(
             out, None, kid, vf_tag, dict(edits), version=_ver(b), defer_commit=True))
-        folded = ("aob", "anchor_string", "rule", "slot_count", "expect_unique",
-                  "derives_from")
         for which in ("reference.sqlite", "reference-dev.sqlite"):
             con = sqlite3.connect(os.path.join(out, which))
             try:
                 row = con.execute(
-                    "SELECT a.aob, s.aob, a.anchor_string, s.anchor_string, "
-                    "a.rule, s.rule, a.slot_count, s.slot_count, "
-                    "a.expect_unique, s.expect_unique, a.derives_from, s.derives_from "
-                    "FROM address_versions a JOIN survival s "
-                    "ON s.address_version_id = a.id "
-                    "WHERE a.kcdx_id = ? AND a.valid_from = "
+                    "SELECT aob, anchor_string, expect_unique "
+                    "FROM address_versions "
+                    "WHERE kcdx_id = ? AND valid_from = "
                     "(SELECT id FROM game_versions WHERE tag = ?)",
                     (kid, vf_tag)).fetchone()
                 assert row is not None, (
-                    f"[{which}] no joined av+survival row for the edited entity")
-                for i, col in enumerate(folded):
-                    assert row[2 * i] == row[2 * i + 1], (
-                        f"[{which}] edited row folded {col}: av={row[2 * i]!r} != "
-                        f"survival={row[2 * i + 1]!r} (direct-write fold diverged)")
+                    f"[{which}] no av row for the edited entity")
+                # expect_unique landed on the av row.
+                assert row[2] == 1, (
+                    f"[{which}] edited expect_unique did not land on the av row: "
+                    f"{row[2]!r}")
                 # The edit actually landed (non-vacuous): the aob/anchor_string the
                 # edit set is present on the av row.
                 if kind == "string_anchor":
@@ -685,15 +683,37 @@ def _convergence_deprecate(b):
 # THE 8 BEHAVIORS (the helpers ARE _apply_one_db's, so reuse preserves them --
 # but verify each lands).
 # ==========================================================================
-def _behaviors_create_version_new_tag_survival_and_interval(b):
-    """A create-version (at a NEW tag, the materialising path) asserts behavior 1
-    (the 1:1 survival sibling row landed) + behavior 2 (the prior interval closed)."""
+def _behaviors_create_version_new_tag_folded_and_interval(b):
+    """A create-version (at a NEW tag, the materialising path) asserts behavior 1 (the
+    new av row carries its folded survival/re-find cells -- D22 / design §11.2, the av
+    columns are the sole home, no separate survival table) + behavior 2 (the prior
+    interval closed). The new-tag row prefills ALL columns from the source row, so its
+    folded cells must EQUAL the source row's -- the falsifiable proof the new-tag path
+    populates the folded av columns (it would go RED if create-version dropped the
+    `**folded` populate)."""
     out = _fresh_db(b)
+    _FOLDED = ("aob", "anchor_string", "rule", "slot_count", "expect_unique",
+               "derives_from")
     try:
         user_db = os.path.join(out, "reference.sqlite")
         kid, vf_tag = _pick_nonfunction_row(user_db, null_trio=True)
         cols = _seed_source_row(user_db, kid, vf_tag)
         cols["signature"] = "void (new tag bump)"   # a real change
+
+        # The source row's folded cells (pre-write), per DB -- the prefill source the
+        # new-tag row must reproduce.
+        def _folded_of(dbp, valid_from_tag):
+            con = sqlite3.connect(dbp)
+            try:
+                return con.execute(
+                    "SELECT aob, anchor_string, rule, slot_count, expect_unique, "
+                    "derives_from FROM address_versions WHERE kcdx_id = ? AND "
+                    "valid_from = (SELECT id FROM game_versions WHERE tag = ?)",
+                    (kid, valid_from_tag)).fetchone()
+            finally:
+                con.close()
+        src_folded = {which: _folded_of(os.path.join(out, which), vf_tag)
+                      for which in ("reference.sqlite", "reference-dev.sqlite")}
 
         ret = db_editor.create_version(out, None, kid, NEW_TAG, dict(cols),
                                        version=(NEW_TAG, 2000000), defer_commit=True)
@@ -714,14 +734,17 @@ def _behaviors_create_version_new_tag_survival_and_interval(b):
                     f"rows (expected 1 -- the new tag's)")
                 assert len(closed_rows) >= 1, (
                     f"[{which}] prior interval NOT closed (no closed row)")
-                # behavior 1: every curated av row of this entity has a 1:1 survival row.
-                for (av_id, _vt) in rows:
-                    n = con.execute(
-                        "SELECT COUNT(*) FROM survival WHERE address_version_id = ?",
-                        (av_id,)).fetchone()[0]
-                    assert n == 1, (
-                        f"[{which}] survival 1:1 behavior failed: av {av_id} has {n} "
-                        f"survival rows (expected exactly 1)")
+                # behavior 1: the new-tag (OPEN) av row carries the folded survival/
+                # re-find cells, equal to the source row's (the prefill source). This
+                # is the av-column home of the former 1:1 survival sibling.
+                new_folded = con.execute(
+                    "SELECT aob, anchor_string, rule, slot_count, expect_unique, "
+                    "derives_from FROM address_versions WHERE kcdx_id = ? AND "
+                    "valid_through IS NULL", (kid,)).fetchone()
+                assert new_folded == src_folded[which], (
+                    f"[{which}] new-tag folded cells {new_folded!r} != source "
+                    f"{src_folded[which]!r} (create-version dropped the folded "
+                    f"av-column populate)")
             finally:
                 con.close()
     finally:
@@ -971,10 +994,9 @@ def _robust_rollback_resets_pk(b):
         # The address_versions sqlite_sequence watermark BEFORE any add.
         user_db = os.path.join(out, "reference.sqlite")
         seq_before = _seq_value(user_db, "address_versions")
-        surv_before = _seq_value(user_db, "survival")
 
-        # A deferred create-entity (an INSERT that bumps the av + survival PK seqs),
-        # then ROLLBACK -- the held txn is discarded.
+        # A deferred create-entity (an INSERT that bumps the av PK seq), then
+        # ROLLBACK -- the held txn is discarded.
         ret = db_editor.create_entity(out, None, "direct_oracle_rollback",
                                       dict(first), version=_ver(b), defer_commit=True)
         rollback(ret["result"])
@@ -984,15 +1006,13 @@ def _robust_rollback_resets_pk(b):
             "rollback did NOT discard the deferred write -- the DB differs; "
             f"differing: {sorted(k for k in before_fp if before_fp.get(k) != after_fp.get(k))}")
         # The sqlite_sequence watermark is back to its pre-write value (the PK bump
-        # was discarded with the txn) -- the robust-rollback PK-reset.
+        # was discarded with the txn) -- the robust-rollback PK-reset. (The folded
+        # survival/re-find cells ride on the av row, so there is no separate survival
+        # PK seq to reset -- D22 / design §11.2.)
         seq_after = _seq_value(user_db, "address_versions")
-        surv_after = _seq_value(user_db, "survival")
         assert seq_after == seq_before, (
             f"address_versions sqlite_sequence NOT reset by rollback: "
             f"{seq_before} -> {seq_after} (a PK-autoincrement bump survived)")
-        assert surv_after == surv_before, (
-            f"survival sqlite_sequence NOT reset by rollback: "
-            f"{surv_before} -> {surv_after}")
 
         # PROOF the next id is reused: a fresh add after the rollback gets the SAME
         # next id a fresh add on the untouched baseline would. Run the add on the
@@ -1056,8 +1076,8 @@ def test_convergence_deprecate(baseline):  # noqa: F811
     _convergence_deprecate(baseline)
 
 
-def test_behaviors_survival_and_interval_close(baseline):  # noqa: F811
-    _behaviors_create_version_new_tag_survival_and_interval(baseline)
+def test_behaviors_folded_and_interval_close(baseline):  # noqa: F811
+    _behaviors_create_version_new_tag_folded_and_interval(baseline)
 
 
 def test_behaviors_function_promote_and_baseline_refusal(baseline):  # noqa: F811
@@ -1087,12 +1107,12 @@ if __name__ == "__main__":
         _convergence_full_column(b);           print("PASS convergence: full-column UPDATE")
         _convergence_fold_populate(b);         print("PASS convergence: fold-populate (folded survival cell)")
         _fold_av_equals_survival_after_direct_write(b)
-        print("PASS fold: av folded cells == survival after direct-write")
+        print("PASS fold: folded cells land on the av row after direct-write")
         _convergence_create_entity(b);         print("PASS convergence: create-entity")
         _convergence_supersede(b);             print("PASS convergence: supersede")
         _convergence_deprecate(b);             print("PASS convergence: deprecate")
-        _behaviors_create_version_new_tag_survival_and_interval(b)
-        print("PASS behaviors: 1:1 survival + interval-close")
+        _behaviors_create_version_new_tag_folded_and_interval(b)
+        print("PASS behaviors: folded av cells + interval-close")
         _behaviors_function_promote_fingerprint_and_baseline_refusal(b)
         print("PASS behaviors: function promote + BaselineRefusal")
         _behaviors_projection_and_no_minted_fk(b)

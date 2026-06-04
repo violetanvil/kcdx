@@ -1,13 +1,19 @@
-"""seeds_shared.survival_builder -- THE single survival-row constructor.
+"""seeds_shared.survival_builder -- THE single per-kind survival/re-find dispatch.
 
-Maps a curated entity's (kind, the row's survival seed columns, the function
-fingerprint when applicable, the resolved derives_from address_version_id) to the
-`survival` column dict that gets INSERTed -- ONE per curated address_versions row.
-The rebuild path (build_rows) and the incremental apply path BOTH call
-build_survival_row, so the two writers cannot emit a different survival shape --
-the same no-drift discipline as build_curated_row (row_builder.py).
+Maps a curated entity's (kind, the row's survival seed columns, the resolved
+derives_from address_version_id) to the per-kind payload dict whose six folded
+cells (aob/anchor_string/rule/slot_count/expect_unique/derives_from) populate the
+FOLDED survival/re-find columns ON the address_versions row (D22 / design §11.2 --
+the former `survival` sibling table folded onto av columns; there is no survival
+table anymore). `folded_av_cells` extracts those six cells from this dispatch's
+output; the rebuild path (build_rows) and the incremental apply path BOTH go through
+it, so the two writers cannot populate the folded columns differently -- the same
+no-drift discipline as build_curated_row (row_builder.py). (The function retains its
+historical `build_survival_row` name + its kind_form/content_hash/length output keys;
+those keys are NOT folded cells -- folded_av_cells ignores them -- so the dispatch is
+unchanged while the survival-ROW write target is gone.)
 
-PER-KIND DISPATCH (the kind-class decides kind_form + which payload column(s)):
+PER-KIND DISPATCH (the kind-class decides the form + which payload column(s)):
 
   function / function_no_sig / function_variadic
       -> kind_form='function_hash'; payload = content_hash + length, REUSED from
@@ -48,29 +54,27 @@ pure column-assembly function, no DB/lookup access -- mirroring row_builder.py's
 from .schema import FUNCTION_KINDS
 
 
-# The six survival payload columns that FOLD onto the address_versions row (D22 /
-# design §11.2 -- the survival sibling table folding into address_versions). These
-# are EXACTLY the keys build_survival_row computes for each kind; the fold writes
-# the SAME per-kind dispatch's output onto the av row's same-named columns. The one
-# source of "which six cells fold" -- the av-row populate + the (still-written)
-# survival row read this single list, so the two write targets cannot diverge.
+# The six survival/re-find payload columns that live ON the address_versions row
+# (D22 / design §11.2 -- the former `survival` sibling table folded onto av columns).
+# These are EXACTLY the keys build_survival_row's per-kind dispatch computes; the
+# av-row populate reads them through this single list, the one source of "which six
+# cells fold."
 FOLDED_SURVIVAL_COLS = ("aob", "anchor_string", "rule", "slot_count",
                         "expect_unique", "derives_from")
 
 
 def folded_av_cells(survival_row):
-    """Extract the six FOLDED av columns from a built survival-row dict (D22 /
-    design §11.2). The fold's single source: the av row's aob/anchor_string/rule/
-    slot_count/expect_unique/derives_from cells ARE the same per-kind dispatch
-    output build_survival_row already computed for the (still-written) survival
-    row -- so the av folded cells equal the survival row's cells by construction,
-    row-for-row (the 157/157 equivalence the Phase-3 delete rests on). No second
-    per-kind branch: this reads the SAME dict _KIND_TO_FORM dispatched into.
+    """Extract the six FOLDED av columns from a build_survival_row dispatch dict (D22 /
+    design §11.2). The av row's aob/anchor_string/rule/slot_count/expect_unique/
+    derives_from cells ARE the per-kind dispatch output build_survival_row computes;
+    this reads them straight out of that dict -- no second per-kind branch. The av
+    columns are the sole home of the survival/re-find data (no survival table).
 
-    `content_hash`/`length` are NOT folded columns -- they already live on the av
-    row as its body fingerprint (the resolve-path columns survival reused); they
-    stay where they are, untouched. Returns a dict of the six folded keys -> values
-    suitable to pass as build_curated_row's six folded kwargs."""
+    `content_hash`/`length` and `kind_form` are NOT folded columns -- content_hash/
+    length already live on the av row as its body fingerprint (the resolve-path
+    columns), and kind_form is gone with the survival table; this ignores them.
+    Returns a dict of the six folded keys -> values suitable to pass as
+    build_curated_row's six folded kwargs."""
     return {c: survival_row.get(c) for c in FOLDED_SURVIVAL_COLS}
 
 
