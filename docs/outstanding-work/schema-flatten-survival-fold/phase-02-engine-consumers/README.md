@@ -16,7 +16,7 @@ ResolveResult contract). Engine authority: [`src/refdb.h`](../../../../src/refdb
 | Step | Status | Commit |
 |---|---|---|
 | 4 engine SELECT + decode + ResolveResult — src/refdb.cpp DecodeVersionRow reads the folded columns; ResolveResult (refdb.h) gains the fields (append-only); the survival pass reads av columns, not the sibling | DONE | 926e18b |
-| 5 read seam + backend — read_api.read_version_rows surfaces the folded columns (per the curated display set); the maintainer-tool backend passes them through | NOT STARTED | — |
+| 5 read seam + backend — read_api.read_version_rows surfaces the folded columns (per the curated display set); the maintainer-tool backend passes them through | DONE | 428c7cd |
 
 ## Step docs
 
