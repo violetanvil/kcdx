@@ -31,6 +31,13 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). UI design:
   schema (D22/§11 survival fold), not get refactored after it lands. Phase 3 resumes after the
   fold. A `/feature` run was started + parked mid-dispatch at step 6 (the stack + Linux-compat
   above are its settled audit decisions); re-running `/feature` here resumes from these.
+  **The fold is now COMPLETE (`schema-flatten-survival-fold/` closed `274421a`) — this
+  precondition is MET; Phase 3 is unblocked.** The 6 folded survival columns
+  (`aob`/`anchor_string`/`rule`/`slot_count`/`expect_unique`/`derives_from`) are in
+  `read_version_rows`' display contract (`read_api.py` `_VERSION_DISPLAY_COLUMNS`) and serialize
+  through the backend read endpoint (`routes_read.py`) — s02 (step 8) surfaces them, s04
+  (step 9) edits them, per US-5's "six survival columns". The step docs build against the final
+  flat schema as authored; no edit was needed.
 
 ## Step ledger
 
