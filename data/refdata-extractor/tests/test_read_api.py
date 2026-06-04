@@ -421,6 +421,11 @@ _EXPECTED_VERSION_ROW_KEYS = {
     "kcdx_id", "kind", "module_id", "rva", "length", "value", "signature",
     "observed_arg_slots", "caller_reg_arg_count", "caller_arg_agreement",
     "offset", "vtable_slot", "struct_offset",
+    # The six folded survival columns (D22/S11.2 -- the former `survival` sibling
+    # folded onto address_versions). They ARE in the display contract: the survival
+    # re-find data the maintainer authors/sees on s02/s03 (design US-5 + S11.2),
+    # curated display columns like offset/vtable_slot/struct_offset.
+    "aob", "anchor_string", "rule", "slot_count", "expect_unique", "derives_from",
     "last_verified_at_version", "verified_by", "verified_date", "evidence_kind",
     "valid_from", "valid_through",
     "status",

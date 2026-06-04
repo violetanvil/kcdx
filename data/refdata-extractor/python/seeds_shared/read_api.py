@@ -294,6 +294,12 @@ def read_entity_detail(out_dir, kcdx_id):
 #   * auto_name / decompile_quality -- schema.py marks both DEV-ONLY (bulk-discovery
 #     scaffolding, not a curated display column).
 #   * id -- the internal autoincrement PRIMARY KEY row handle, never a display column.
+# The six folded survival columns (aob/anchor_string/rule/slot_count/expect_unique/
+# derives_from -- D22/S11.2, the former `survival` sibling folded onto address_versions)
+# ARE in the allowlist: they are the survival re-find data the maintainer authors and
+# sees on s02/s03 (design US-5 "the six survival columns" + S11.2), curated display
+# columns like offset/vtable_slot/struct_offset -- distinct from the DROPPED internal
+# columns above.
 # Order mirrors the schema/display grouping; valid_from + valid_through are REQUIRED
 # (the newest-first sort + status derivation key on valid_from; valid_through marks
 # the current/closed interval). The per-row derived `status` is ADDED on top (below);
@@ -308,6 +314,7 @@ _VERSION_DISPLAY_COLUMNS = (
     "signature",
     "observed_arg_slots", "caller_reg_arg_count", "caller_arg_agreement",  # survival
     "offset", "vtable_slot", "struct_offset",   # authored consumer/vtable/struct cols
+    "aob", "anchor_string", "rule", "slot_count", "expect_unique", "derives_from",  # folded survival cols (D22/S11.2): the survival re-find data the maintainer authors/sees on s02/s03 (US-5), now first-class av columns
     "last_verified_at_version", "verified_by", "verified_date", "evidence_kind",  # audit trio (+ek dict-decoded)
     "valid_from", "valid_through",  # identity / interval window (sort + status key on valid_from)
 )
