@@ -300,7 +300,14 @@ selected row.
 **Acceptance:** `evidence_kind` is picked from the `policy.md` enum; all four trio
 fields move together (the trio is all-set-or-all-null per `policy.md`); inline
 validation rejects a malformed `verified_date` / out-of-enum `evidence_kind` /
-partial trio BEFORE any write.
+partial trio BEFORE any write. **`verified_date` defaults to today** when the
+maintainer (re-)verifies a row — pre-filled on the audit-trio edit and on create
+(US-6 / US-1), always **overrideable** (the maintainer can type a different date).
+The default is a UI convenience (a pre-filled value the maintainer accepts or
+changes), never a silent write — the value is still shown and confirmed in the
+field delta. *(Settled during the Phase-3 live acceptance; built in Phase 4 where
+the create flows + the audit-trio edit are wired — the Phase-3 spine surfaces the
+field, the default-to-today + the create flows are Phase 4.)*
 
 **US-4 — Validate, write, export, confirm, commit.** As a maintainer, I save and the
 tool lands the change end-to-end.

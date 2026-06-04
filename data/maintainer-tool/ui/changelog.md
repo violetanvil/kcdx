@@ -4,6 +4,33 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-04 — s04 field-editor: per-field tooltips + kind-conditional field visibility
+
+- **s04 §"Contents" / §"Region & position" / new §"Field relevance by kind"** — the field editor
+  gains two UX features found during live acceptance (user-approved):
+  - **Per-field tooltips** — every field (editable + the read-only identity key) carries a
+    plain-language tooltip on a keyboard-focusable `?` info affordance beside its label (the
+    Survival sub-heading carries a group tooltip). Content is SOURCED from
+    [`../../seeds/policy.md`](../../seeds/policy.md) + the schema.py column comments — domain facts,
+    not invented. The map lives in one place (`frontend/src/editor/fieldModel.ts` `FIELD_TOOLTIPS`).
+  - **Kind-conditional field visibility** — the editor shows the fields the current `kind` USES
+    (the per-kind used set, grounded in policy.md §"Address kinds" + §"Survival columns"), hides the
+    empty-irrelevant ones, and ALWAYS shows a populated stray (an irrelevant field carrying a value)
+    flagged "not used by this kind". Changing the `kind` Select updates the visible set live. The
+    kind→field map is captured in the new §"Field relevance by kind" (policy.md as authority) and
+    encoded in `fieldModel.ts` `KIND_FIELD_RELEVANCE`.
+  - Save/validate/dirty-tracking behavior is unchanged — only which fields render + the tooltips.
+    Law 1 (reserved dirty/was/error space) holds per SHOWN field; law 9 (theme tokens) preserved.
+
+## 2026-06-04 — s04 field-editor layout: vertical list → content-sized grid
+
+- **s04 §"Region & position"** — the field editor changes from a vertical field list to a
+  responsive grid sized to content: short fields (version tag, kind, dates, the survival
+  integers, evidence_kind) are narrow, 2–3 per row on wide; long fields (signature, aob,
+  anchor_string) span the full width. Grouped under the existing sub-headings; collapses to one
+  column on phone. The per-field law-1 reserved space (dirty marker + "was:" + error line) still
+  holds within each grid cell. User-approved during live acceptance.
+
 ## 2026-06-02 — desktop → web re-expression (the web-app pivot)
 
 Re-expressed the UI layer from a PySide6 desktop GUI to a **React + Mantine web app**,
