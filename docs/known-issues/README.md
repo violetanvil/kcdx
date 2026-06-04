@@ -56,6 +56,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
+| [KI-0004](KI-0004-cvar-lua-input-loaded-crash.md) | 2026-06-03 | Boot crash after deploying the kcdx.cvar.* Lua plugin (cap-71); C++ cvar path (cap-72) clean — Lua binding path suspect — OPEN |
 | [KI-0003](KI-0003-engine-hang-during-boot-while-multitasking.md) | 2026-06-02 | Engine hung during boot while multitasking; force-quit; did not recur — OPEN |
 | [KI-0002](closed/KI-0002-scan-zero-matches-at-input-loaded.md) | 2026-06-01 | CAP-70 scan found 0 at input_loaded — fixture scanned a co-resident-hooked site, not a scan bug — FIXED |
 | [KI-0001](closed/KI-0001-save-load-heap-corruption-on-chain-mediated-lua_pcall.md) | 2026-05-29 | Save-load STATUS_HEAP_CORRUPTION on the chain-mediated lua_pcall path — FIXED |
