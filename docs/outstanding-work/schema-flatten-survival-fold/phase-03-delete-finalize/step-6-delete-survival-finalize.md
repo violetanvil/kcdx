@@ -19,7 +19,12 @@ the sibling deleted, all oracles green.
 - `survival_builder.py` — reduced to `_KIND_TO_FORM` (the kind→form dispatch the av build needs)
   or deleted if inlined; no survival-row constructor.
 - `csv_exporter.py` / `round_trip.py` — drop any `survival`-table handling (the folded columns are
-  av columns now).
+  av columns now). SPECIFICALLY (P1.3 step-review forward-pointer): remove `survival` from
+  `schema.USER_TABLES` (the table-set the round-trip + write_db iterate) so the round-trip stops
+  hashing a table that no longer exists, AND confirm `round_trip.py`'s present-set guard
+  (`round_trip.py:97-98`) handles `survival`'s absence cleanly. The exporter itself is already
+  survival-table-independent (P1.3, `aad…`/`ad0…` — proven by the survival-DROP export test), so
+  only the `USER_TABLES` removal + the round-trip present-set are the remaining survival touchpoints.
 - Deletion-hygiene (`.claude/rules/deletion-hygiene.md`): `tests/test_survival_table.py`
   removed/repointed to the av columns; sweep any doc/comment naming the `survival` table as a
   current structure (the design §11 records the fold — repoint references to the av columns /
