@@ -85,6 +85,26 @@ comma-free signature (`"i32 (ptr self)"`) that QUOTE_MINIMAL does not emit; the
 seed was re-exported to the canonical form (the four quote chars dropped, RE facts
 byte-identical) so the export/round-trip oracles round-trip.
 
+It was RE-CAPTURED AGAIN at the schema-flatten-survival-fold Phase 1 step 1 when
+the six folded survival columns were added to the `address_versions` schema
+(D22 / design §11.2 -- the additive FIRST move of folding the `survival` sibling
+table into `address_versions`): `aob` / `anchor_string` / `rule` TEXT,
+`slot_count` / `expect_unique` INTEGER, and `derives_from` INTEGER (a nullable
+self-FK -> `address_versions.id`, the same shape as the existing valid_through /
+superseded_by self-FK columns). The SQL types match the former `survival` SCHEMA
+entry's same-named columns exactly. The six columns are NULL for EVERY row this
+step (no populate logic -- that is step 2; no reader consumes them yet), so ONLY
+the `address_versions` table's content hash moved -- the six new NULL cells on
+all 157 curated rows (USER) and all 321144 rows (DEV) -- with NO row-count change,
+NO table-set change, and -- critically for an additive-fold step -- the `survival`
+table BYTE-IDENTICAL (its content hash + row count unchanged in both DBs, the fold
+not yet touching it) and no other table touched. The verify was run FIRST and
+confirmed the ONLY drift was the two `address_versions` content hashes (USER +
+DEV); the re-capture was deliberate and inspected (only address_versions drifted,
+both DBs, content-hash only; survival + every other table byte-identical; the new
+cells are all NULL because every build_curated_row caller passes None) before
+recording.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 

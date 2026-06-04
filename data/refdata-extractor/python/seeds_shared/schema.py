@@ -52,13 +52,20 @@ USER_COLUMNS = {
     # derive status at resolve time (a plugin author resolving target="X" at
     # current game_version V needs to see "is this row verified at V?", which
     # is exactly the (valid_from <= V <= last_verified_at_version) test).
+    # The folded survival columns (aob/anchor_string/rule/slot_count/
+    # expect_unique/derives_from) ship to USER for the same reason survival's
+    # USER_COLUMNS entry did: they are curated survival data the engine survival
+    # pass reads at the user tier (the whole survival set is curated -- no bulk
+    # survival rows). Appended at the END (additive; D22 / design §11.2).
     "address_versions": ["id", "kcdx_id", "kind", "module_id", "rva", "length",
                          "content_hash", "value", "signature",
                          "observed_arg_slots", "caller_reg_arg_count",
                          "caller_arg_agreement", "offset", "vtable_slot",
                          "last_verified_at_version", "verified_by",
                          "verified_date", "evidence_kind",
-                         "valid_from", "valid_through", "struct_offset"],
+                         "valid_from", "valid_through", "struct_offset",
+                         "aob", "anchor_string", "rule", "slot_count",
+                         "expect_unique", "derives_from"],
     # excludes auto_name, decompile_quality (DEV-only discovery labels)
     "meta":             ["id", "schema_version", "abi_confidence"],
     # survival ships to USER: it is curated-entity data the (future) engine
@@ -164,6 +171,24 @@ SCHEMA = {
         # own seed column; appended at the END so existing positional column
         # expectations elsewhere (engine SELECT, oracle) are not disturbed.
         ("struct_offset", "INTEGER"),
+        # Folded survival columns (D22 / design §11.2 -- the `survival` sibling
+        # table is being folded into address_versions). The genuinely-
+        # survival-only re-find facts move up as nullable typed columns, gated
+        # by `kind` like every other location/ABI cell. SQL types match the
+        # former survival SCHEMA entry's same-named columns exactly. Appended at
+        # the END (same append-only discipline as struct_offset above) so
+        # existing positional column expectations (engine SELECT, oracle,
+        # exporter) are not disturbed. ADDITIVE first move of the fold: NULL on
+        # every row until step 2 populates them; no reader consumes them yet.
+        ("aob", "TEXT"),                       # aob form (callsite/instruction_anchor): pattern bytes + folded ? wildcard mask
+        ("anchor_string", "TEXT"),             # literal form (string_anchor): the literal bytes
+        ("rule", "TEXT"),                      # derivation form (data_slot): the derivation rule
+        ("slot_count", "INTEGER"),             # table_shape form (vtable_base): expected slot count
+        ("expect_unique", "INTEGER"),          # nullable 0/1: AOB-unique / unique-xref assertion (search-locating kinds)
+        # derives_from: nullable self-FK -> address_versions.id (the survival-DAG
+        # edge); same shape as valid_through / superseded_by -- a plain INTEGER,
+        # FK by-convention not enforced. NOT polymorphism (design §11.2).
+        ("derives_from", "INTEGER"),
     ],
     "meta": [
         ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),

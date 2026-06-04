@@ -95,7 +95,9 @@ def build_bulk_row(av_id, rv, dump_row, sig_row, cra_row, *,
 def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
                       valid_from_id, kind_id, signature,
                       lvv_id, verified_by, verified_date, evidence_kind_id,
-                      offset=None, vtable_slot=None, struct_offset=None):
+                      offset=None, vtable_slot=None, struct_offset=None,
+                      aob=None, anchor_string=None, rule=None, slot_count=None,
+                      expect_unique=None, derives_from=None):
     """THE shared curated address_versions row constructor.
 
     `base_row` is the matched bulk dict (function-kind promote) or None (mint).
@@ -121,6 +123,13 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
     changes no emitted row (vtable_slot is None for every existing row, so the
     mirror branch never runs). struct_offset is pure NEW plumbing -- NULL for
     every current row.
+
+    The six folded survival columns (aob / anchor_string / rule / slot_count /
+    expect_unique / derives_from) are NEW plumbing too (D22 / design §11.2 -- the
+    survival sibling table folding into address_versions). NULL for every current
+    row this step: every caller passes None, so each cell is NULL on both the mint
+    and promote paths. Step 2 populates them from the seed; this step only adds the
+    keyword args + the keys so the row dict + INSERT carry them (additive).
     """
     if base_row is None:
         v = {
@@ -147,6 +156,19 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
             "valid_from": valid_from_id,
             "valid_through": None,
             "struct_offset": None,
+            # Folded survival columns (D22 / design §11.2). NULL on the minted
+            # dict; populated only when the caller passes the authored cell
+            # (step 2 wires that). The promote branch (a copied bulk base_row)
+            # does not carry these keys, so the common tail below sets each
+            # when non-None -- keeping a promoted row's dict consistent with a
+            # minted row's. ADDITIVE plumbing this step: every caller passes
+            # None, so every cell is NULL.
+            "aob": None,
+            "anchor_string": None,
+            "rule": None,
+            "slot_count": None,
+            "expect_unique": None,
+            "derives_from": None,
         }
     else:
         # Promote: keep the bulk row's fingerprint + DEV columns; overwrite the
@@ -176,6 +198,24 @@ def build_curated_row(av_id, kid, *, base_row=None, module_id, rva,
         v["value"] = vtable_slot
     if struct_offset is not None:
         v["struct_offset"] = struct_offset
+    # Folded survival columns (D22 / design §11.2) -- set only when the caller
+    # passes the authored cell, matching offset/vtable_slot/struct_offset above.
+    # The INSERT reads row.get(col), so an unset key writes NULL; a None arg
+    # leaves the column NULL (the mint dict seeds them None; the promote dict has
+    # no such key, also -> NULL). This step's callers all pass None (additive,
+    # pre-populate); step 2 wires the authored values.
+    if aob is not None:
+        v["aob"] = aob
+    if anchor_string is not None:
+        v["anchor_string"] = anchor_string
+    if rule is not None:
+        v["rule"] = rule
+    if slot_count is not None:
+        v["slot_count"] = slot_count
+    if expect_unique is not None:
+        v["expect_unique"] = expect_unique
+    if derives_from is not None:
+        v["derives_from"] = derives_from
     return v
 
 

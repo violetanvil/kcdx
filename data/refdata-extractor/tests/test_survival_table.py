@@ -329,6 +329,45 @@ def _expect_unique_set_on_unique_locators(out):
             con.close()
 
 
+def _av_folded_columns_present(out):
+    """schema-flatten-survival-fold Phase 1 step 1: the six folded survival
+    columns exist on address_versions with the right SQL types after a rebuild,
+    in BOTH DBs (they ship to USER + DEV). ADDITIVE first move -- this step adds
+    the columns and asserts they are NULL on every row (no populate logic yet;
+    step 2 fills them). The SQL types match the former `survival` SCHEMA entry's
+    same-named columns (aob/anchor_string/rule TEXT; slot_count/expect_unique/
+    derives_from INTEGER)."""
+    expected_types = {
+        "aob": "TEXT", "anchor_string": "TEXT", "rule": "TEXT",
+        "slot_count": "INTEGER", "expect_unique": "INTEGER",
+        "derives_from": "INTEGER",
+    }
+    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
+        con = sqlite3.connect(os.path.join(out, fn))
+        try:
+            info = {c[1]: c[2] for c in con.execute(
+                'PRAGMA table_info("address_versions")')}
+            for col, ty in expected_types.items():
+                assert col in info, (
+                    f"[{which}] address_versions has no {col!r} column "
+                    f"(the fold did not add it)")
+                assert info[col] == ty, (
+                    f"[{which}] address_versions.{col} type={info[col]!r} "
+                    f"!= expected {ty!r} (must match survival's SQL type)")
+            # Additive invariant for THIS step: every folded cell is NULL (no
+            # populate logic yet -- step 2). A non-NULL cell here means a
+            # populate path leaked in early.
+            for col in expected_types:
+                n = con.execute(
+                    f'SELECT COUNT(*) FROM address_versions '
+                    f'WHERE "{col}" IS NOT NULL').fetchone()[0]
+                assert n == 0, (
+                    f"[{which}] {n} address_versions row(s) have a non-NULL "
+                    f"{col} (this additive step populates none)")
+        finally:
+            con.close()
+
+
 def _derives_from_chain(out):
     """Step 5.2: derives_from walks the survival DAG the handoff authored --
     data_slot 132 -> 11 -> 10 -> instruction_anchor 9 -> string_anchor 12. Each
@@ -391,6 +430,10 @@ def test_survival_derives_from_chain(rebuilt):  # noqa: F811
     _derives_from_chain(rebuilt)
 
 
+def test_av_folded_columns_present(rebuilt):  # noqa: F811
+    _av_folded_columns_present(rebuilt)
+
+
 if __name__ == "__main__":
     try:
         out = _get_rebuild()
@@ -406,6 +449,8 @@ if __name__ == "__main__":
         print("PASS test_survival_expect_unique_set_on_unique_locators")
         _derives_from_chain(out)
         print("PASS test_survival_derives_from_chain")
+        _av_folded_columns_present(out)
+        print("PASS test_av_folded_columns_present")
         print("\nall survival-table oracle tests passed")
     finally:
         _cleanup_rebuild()
