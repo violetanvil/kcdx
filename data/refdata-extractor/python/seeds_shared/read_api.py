@@ -143,6 +143,17 @@ def _version_ordinals(con):
             for r in con.execute("SELECT id, ordinal FROM game_versions")}
 
 
+def _version_tags(con):
+    """The `game_versions.id -> tag` map -- the FK->TAG lookup, the SAME one-place FK
+    resolution as `_version_ordinals` (law 6) but producing the version TAG STRING the
+    WRITE path keys a row by. The read API resolves the ordinal (for sort + status) AND
+    the tag (the identity key the maintainer tool's save/confirm endpoints + resolve_tag
+    consume) from the one game_versions read, so the frontend sends the tag the write
+    path expects -- never the ordinal the FK silently resolved to."""
+    return {r["id"]: r["tag"]
+            for r in con.execute("SELECT id, tag FROM game_versions")}
+
+
 def _current_ordinal(con):
     """The current (max) game_versions.ordinal in the DB -- the baseline the
     importer wrote, the version status is derived at (step doc: do NOT hardcode
@@ -305,6 +316,16 @@ def read_entity_detail(out_dir, kcdx_id):
 # the current/closed interval). The per-row derived `status` is ADDED on top (below);
 # kind/evidence_kind are dict-decoded to their display strings (caller_arg_agreement
 # stays a raw id -- today's surface does not decode it).
+#
+# THE TWO REPRESENTATIONS OF valid_from / valid_through (ordinal AND tag)
+# ----------------------------------------------------------------------
+# `valid_from` / `valid_through` here are the FK-resolved ORDINALS (the sort + status
+# derivation key on the ordinal -- policy.md "ordinal compare"). ALONGSIDE them the
+# reader ADDS the version-TAG STRINGS `valid_from_version` / `valid_through_version`
+# (derived below from the same game_versions read via `_version_tags`). The tag is the
+# IDENTITY KEY the maintainer tool's save/confirm/resolve_tag path keys a row by; the
+# ordinal is INTERNAL (sort + status) and would be rejected by resolve_tag. BOTH ship
+# per row: the ordinal for display/sort/status, the tag for the write identity.
 _VERSION_DISPLAY_COLUMNS = (
     "kcdx_id",                      # identity (read-only)
     "kind",                         # dict-decoded below
@@ -333,10 +354,17 @@ def read_version_rows(out_dir, kcdx_id):
     NEWEST-first is ordered by the row's valid_from ORDINAL descending (the version
     a row is valid from -- not the internal autoincrement id), so the current
     (highest valid_from) row leads. Returns [] for an unknown kcdx_id (no rows),
-    distinguishable from None by read_entity_detail. Reads READ-ONLY."""
+    distinguishable from None by read_entity_detail. Reads READ-ONLY.
+
+    EACH ROW CARRIES BOTH the FK-resolved ORDINALS (`valid_from` / `valid_through` --
+    sort + status key) AND the version-TAG STRINGS (`valid_from_version` /
+    `valid_through_version` -- the write-path identity key the maintainer tool's
+    save/confirm/resolve_tag consumes). The tags come from the same game_versions read
+    as the ordinals (`_version_tags`, the one-place FK->tag resolution -- law 6)."""
     con = _open_ro(out_dir)
     try:
         gv_ordinals = _version_ordinals(con)
+        gv_tags = _version_tags(con)
         current = _current_ordinal(con)
         kind_decode = _dict_decode(con, "address_versions", "kind")
         ek_decode = _dict_decode(con, "address_versions", "evidence_kind")
@@ -362,6 +390,13 @@ def read_version_rows(out_dir, kcdx_id):
             d = {c: r[c] for c in cols}
             window = _version_window_ordinals(d, gv_ordinals)
             d["status"] = derive_status(current, window, entity)
+            # The version-TAG STRINGS alongside the FK-resolved ordinals: the write
+            # identity key the save/confirm path keys a row by (resolve_tag rejects the
+            # ordinal). Resolved from the SAME game_versions read as the ordinal (law 6).
+            # None when the FK is None (an open-interval row's valid_through, or a row
+            # whose FK resolves to no tag) -- the same as the ordinal's None.
+            d["valid_from_version"] = gv_tags.get(d.get("valid_from"))
+            d["valid_through_version"] = gv_tags.get(d.get("valid_through"))
             # Decode the dict-encoded display columns to their string values (the
             # version table renders the kind/evidence_kind text, not the dict id).
             if d.get("kind") is not None:

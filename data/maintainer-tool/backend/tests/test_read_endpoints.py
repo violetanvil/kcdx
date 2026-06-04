@@ -232,6 +232,27 @@ def test_get_entity_versions_newest_first_with_status(resolved_checkout, client_
     for row in body:
         assert row.get("status") in VALID_STATUS, row.get("status")
 
+    # THE FIX (the maintainer-tool 422 bug): the version-rows endpoint exposes the
+    # version-TAG STRING `valid_from_version` (the write-path identity key the editor
+    # sends to save/confirm -- resolve_tag rejects the FK ordinal), ALONGSIDE the
+    # `valid_from` ordinal (sort/status). The TAG must be a real server-known game
+    # version (a known_version_tag), NOT the stringified ordinal. Read the server's
+    # known tags from /health to assert the surfaced tag is one of them.
+    known_tags = set(client.get("/health").json()["known_version_tags"])
+    for row in body:
+        assert "valid_from" in row, row              # the ordinal still ships (sort/status)
+        assert "valid_from_version" in row, row      # the tag ships alongside (write identity)
+        assert "valid_through_version" in row, row
+        # The current (open-interval) row's valid_from_version is a real known tag, never
+        # the ordinal -- a row sending the ordinal as version_tag is the 422 bug.
+        if row["valid_from_version"] is not None:
+            assert row["valid_from_version"] in known_tags, (
+                f"valid_from_version {row['valid_from_version']!r} is not a known game "
+                f"version {known_tags!r} -- the ordinal must not be surfaced as the tag")
+            assert str(row["valid_from_version"]) != str(row["valid_from"]), (
+                f"valid_from_version equals the ordinal {row['valid_from']!r} -- it must "
+                f"be the TAG, not the FK ordinal (the maintainer-tool 422 bug)")
+
 
 # ----------------------------------------------------------------------------
 # Case 4b: GET /modules surfaces the module registry (s04 `module` Select source).

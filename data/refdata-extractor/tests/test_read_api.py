@@ -441,6 +441,10 @@ _EXPECTED_VERSION_ROW_KEYS = {
     "aob", "anchor_string", "rule", "slot_count", "expect_unique", "derives_from",
     "last_verified_at_version", "verified_by", "verified_date", "evidence_kind",
     "valid_from", "valid_through",
+    # The version-TAG STRINGS alongside the FK-resolved ordinals: the WRITE-path
+    # identity key the maintainer tool's save/confirm/resolve_tag consumes (the ordinal
+    # is internal sort/status only; resolve_tag rejects it). Both representations ship.
+    "valid_from_version", "valid_through_version",
     "status",
 }
 # The columns the contract DROPS -- they exist on the DB row but must NEVER cross the
@@ -502,11 +506,47 @@ def _version_rows_carry_status_and_newest_first(b):
         try:
             gv = {r2[0]: r2[1] for r2 in con.execute(
                 "SELECT id, ordinal FROM game_versions")}
+            # id -> tag (the independent oracle for the row's valid_from_version tag).
+            gv_tag = {r2[0]: r2[1] for r2 in con.execute(
+                "SELECT id, tag FROM game_versions")}
+            # tag -> ordinal (proves valid_from_version is the TAG, NOT the ordinal: the
+            # tag must NOT equal the stringified ordinal it resolves to).
+            tag_set = set(gv_tag.values())
         finally:
             con.close()
         ords = [gv.get(r.get("valid_from"), -1) for r in rows]
         assert ords == sorted(ords, reverse=True), (
             f"version rows not newest-first by valid_from ordinal: {ords}")
+
+        # THE FIX (the maintainer-tool 422 bug): each row carries BOTH the FK-resolved
+        # valid_from ORDINAL (sort/status key) AND the valid_from_version TAG STRING (the
+        # write identity key resolve_tag accepts). The tag is the REAL game-version tag,
+        # NOT the ordinal -- a row sending the ordinal as version_tag is the bug. The
+        # ordinal coexists (not removed); the tag is the resolve_tag-accepted identity.
+        for r in rows:
+            # The ordinal is STILL present (display/sort/status key on it -- not removed).
+            assert "valid_from" in r, r
+            # The tag is present and is the game_versions.tag for the row's valid_from FK.
+            assert "valid_from_version" in r, r
+            assert r["valid_from_version"] == gv_tag.get(r["valid_from"]), (
+                f"valid_from_version {r['valid_from_version']!r} != the tag for FK "
+                f"{r['valid_from']!r} ({gv_tag.get(r['valid_from'])!r})")
+            # It is a REAL known tag, NOT the stringified ordinal (the 422 cause). The
+            # tag and the ordinal are different representations -- assert the value sent
+            # to the write path is the tag string, never the ordinal.
+            assert r["valid_from_version"] in tag_set, (
+                f"valid_from_version {r['valid_from_version']!r} is not a known game-"
+                f"version tag {tag_set!r} -- the ordinal must NOT be sent as the tag")
+            assert str(r["valid_from_version"]) != str(r["valid_from"]), (
+                f"valid_from_version equals the ordinal {r['valid_from']!r} -- it must "
+                f"be the TAG STRING, not the FK ordinal (the maintainer-tool 422 bug)")
+            # valid_through_version coexists too: null for an open-interval current row
+            # (valid_through None), else the tag for that FK.
+            assert "valid_through_version" in r, r
+            if r.get("valid_through") is None:
+                assert r["valid_through_version"] is None, r
+            else:
+                assert r["valid_through_version"] == gv_tag.get(r["valid_through"]), r
 
         # The dict-encoded kind is decoded to its display string, not a bare int.
         assert isinstance(rows[0].get("kind"), str), rows[0]
