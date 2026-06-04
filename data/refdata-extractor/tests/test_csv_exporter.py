@@ -182,6 +182,90 @@ def _byte_identity(b):
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def _survival_cols_source_the_av_fold(b):
+    """The exported `survival_*` CSV columns are sourced from the av row's FOLDED
+    columns (D22 / design S11.2 -- the av row is the flat source), NOT the survival
+    sibling table. This PROVES the fold-forward source: when the survival table is
+    deleted (Phase 3 step 6) the export is unchanged, because the exporter never
+    reads that table.
+
+    Falsifiable + survival-table-independent: drop the survival table from a COPY of
+    the DB entirely, export, and assert (a) the export still succeeds and (b) each
+    exported `survival_*` cell equals the av row's folded column read straight from
+    the DB. A reader of the survival table would error/blank here; only an av-row
+    reader reproduces the cells. The derives_from cell is checked as the inverted
+    kcdx_id (the CSV carries the dependency entity's kcdx_id; the av column the
+    resolved av_id)."""
+    import csv
+    import sqlite3
+
+    work = tempfile.mkdtemp(prefix="export_avfold_")
+    try:
+        # A copy of the DB with the survival table DROPPED -- so a survival-reading
+        # exporter would fail/blank, and only an av-row reader reproduces the cells.
+        db = os.path.join(work, "reference.sqlite")
+        shutil.copy2(b["user_db"], db)
+        con = sqlite3.connect(db)
+        try:
+            con.execute("DROP TABLE survival")
+            con.commit()
+            # Ground truth read straight from the av row's folded columns, keyed by
+            # kcdx_id, with derives_from inverted av_id -> kcdx_id (the CSV form).
+            av_to_kcdx = {r[0]: r[1] for r in con.execute(
+                "SELECT id, kcdx_id FROM address_versions")}
+
+            def _txt(v):
+                return "" if v is None else str(v)
+
+            expected = {}
+            for (kcdx_id, aob, anchor, rule, slot, eu, df_av) in con.execute(
+                    "SELECT kcdx_id, aob, anchor_string, rule, slot_count, "
+                    "expect_unique, derives_from FROM address_versions "
+                    "WHERE kcdx_id IS NOT NULL"):
+                df_kid = av_to_kcdx.get(df_av) if df_av is not None else None
+                expected[str(kcdx_id)] = {
+                    "survival_aob": _txt(aob),
+                    "survival_anchor_string": _txt(anchor),
+                    "survival_rule": _txt(rule),
+                    "survival_slot_count": _txt(slot),
+                    "survival_expect_unique": _txt(eu),
+                    "survival_derives_from": _txt(df_kid),
+                }
+        finally:
+            con.close()
+
+        out_dir = os.path.join(work, "out")
+        # Export must SUCCEED with the survival table gone (proves no read of it).
+        written = export_seeds(db, out_dir)
+        assert "address_versions_seed.csv" in written, (
+            "export_seeds did not write the address_versions seed")
+
+        # Parse the exported CSV; assert each survival_* cell matches the av-row
+        # ground truth (a non-empty fold somewhere proves the columns carry data).
+        path = os.path.join(out_dir, "address_versions_seed.csv")
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(
+                (ln for ln in fh if not ln.lstrip().startswith("#")))
+            rows = list(reader)
+        assert rows, "exported address_versions seed had no data rows"
+        any_nonempty = False
+        for row in rows:
+            kid = row["kcdx_id"]
+            exp = expected.get(kid)
+            assert exp is not None, f"exported kcdx_id={kid} not in the av-row set"
+            for col, want in exp.items():
+                assert row[col] == want, (
+                    f"kcdx_id={kid} CSV {col}={row[col]!r} != av-row fold {want!r} "
+                    f"(the exporter must source survival_* from the av fold)")
+                if want:
+                    any_nonempty = True
+        assert any_nonempty, (
+            "no survival_* cell carried a value -- the assertion would pass "
+            "vacuously; the committed seed must have at least one folded datum")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def _comment_preservation(b):
     """A `#`-comment line injected into the committed module seed survives the
     export verbatim and in position (diff-preservation S4). The committed seeds
@@ -225,6 +309,10 @@ def test_export_byte_identical_to_committed_seeds(baseline):  # noqa: F811
     _byte_identity(baseline)
 
 
+def test_export_survival_cols_source_the_av_fold(baseline):  # noqa: F811
+    _survival_cols_source_the_av_fold(baseline)
+
+
 def test_export_preserves_comments_and_trailing_newline(baseline):  # noqa: F811
     _comment_preservation(baseline)
 
@@ -234,6 +322,8 @@ if __name__ == "__main__":
         b = _get_baseline()
         _byte_identity(b)
         print("PASS test_export_byte_identical_to_committed_seeds")
+        _survival_cols_source_the_av_fold(b)
+        print("PASS test_export_survival_cols_source_the_av_fold")
         _comment_preservation(b)
         print("PASS test_export_preserves_comments_and_trailing_newline")
         print("\nall csv_exporter round-trip oracle tests passed")

@@ -24,8 +24,12 @@ This exporter inverts each reshape:
   address_names_seed.csv     <- address_names            (id == kcdx_id; the
                                 supersession/deprecation FK ids -> names/tags)
   address_versions_seed.csv  <- address_versions JOIN modules JOIN game_versions
-                                JOIN survival             (the curated rows; the
-                                survival_* cells reconstructed from the survival row)
+                                (the curated rows; the survival_* CSV cells come
+                                from the av row's FOLDED columns -- aob/anchor_string/
+                                rule/slot_count/expect_unique/derives_from -- now
+                                that the survival sibling table is folded INTO
+                                address_versions, the flat source of truth. D22 /
+                                design S11.2.)
 
 REUSE (no duplicated column knowledge):
   - seeds_shared.schema      -- USER_COLUMNS (the per-table column projection) +
@@ -298,7 +302,7 @@ def _export_address_names(con):
 
 
 def _export_address_versions(con):
-    """address_versions (curated only) JOIN modules/game_versions/survival ->
+    """address_versions (curated only) JOIN modules/game_versions ->
     address_versions_seed.csv rows. Inverts every importer reshape:
 
       kcdx_id            <- address_versions.kcdx_id (curated rows only)
@@ -310,10 +314,25 @@ def _export_address_versions(con):
       last_verified_at_version <- game_versions.tag via the FK
       verified_by/_date  <- TEXT direct
       evidence_kind      <- _dict_address_versions_evidence_kind id -> text
-      survival_*         <- the 1:1 survival row (kind_form-dispatched payload):
-                            aob/anchor_string/rule/slot_count/expect_unique
-                            direct; survival_derives_from <- reverse-map the
-                            survival.derives_from av_id -> its kcdx_id
+      survival_*         <- the FOLDED av-row columns (D22 / design S11.2 -- the
+                            survival sibling table folded INTO address_versions; the
+                            av row is the flat source of truth). The CSV columns keep
+                            their `survival_`-prefixed names (the existing export
+                            contract; the importer reads them into the same av-row
+                            folded columns) but their SOURCE is now the av row's
+                            aob/anchor_string/rule/slot_count/expect_unique/
+                            derives_from columns -- NOT the survival table. This is
+                            the fold-forward source: when the survival table is
+                            deleted (Phase 3 step 6) this export is unchanged. The av
+                            folded cells equal the survival row's cells row-for-row by
+                            construction (the 157/157 equivalence -- one per-kind
+                            dispatch, two write targets; survival_builder.
+                            folded_av_cells), so the byte-identical re-export proves
+                            the source switch is lossless. survival_derives_from <-
+                            reverse-map the av row's derives_from av_id -> its kcdx_id
+                            (the av `derives_from` column carries the SAME resolved
+                            av_id the survival table's `derives_from` did -- the CSV
+                            carries the kcdx_id, so the export must invert it back).
       offset/vtable_slot/struct_offset <- INTEGER -> decimal text
       value              <- the seed's authored `value` cell, which is empty on
                             every committed row; DB `value` is a derived mirror of
@@ -335,28 +354,21 @@ def _export_address_versions(con):
     av_to_kcdx = {row[0]: row[1] for row in con.execute(
         "SELECT id, kcdx_id FROM address_versions")}
 
-    # survival rows keyed by their owning address_versions.id (1:1 with curated).
-    survival_by_av = {}
-    for row in con.execute(
-            "SELECT address_version_id, derives_from, aob, anchor_string, rule, "
-            "slot_count, expect_unique FROM survival"):
-        survival_by_av[row[0]] = {
-            "derives_from": row[1], "aob": row[2], "anchor_string": row[3],
-            "rule": row[4], "slot_count": row[5], "expect_unique": row[6],
-        }
-
     rows = []
     for r in con.execute(
             "SELECT id, kcdx_id, kind, module_id, rva, signature, "
             "last_verified_at_version, verified_by, verified_date, evidence_kind, "
-            "offset, vtable_slot, struct_offset, valid_from "
+            "offset, vtable_slot, struct_offset, valid_from, "
+            "aob, anchor_string, rule, slot_count, expect_unique, derives_from "
             "FROM address_versions WHERE kcdx_id IS NOT NULL"):
         (av_id, kcdx_id, kind_id, module_id, rva, signature, lvv_id, vby, vdt,
-         ek_id, offset, vslot, struct_offset, valid_from_id) = r
+         ek_id, offset, vslot, struct_offset, valid_from_id,
+         fold_aob, fold_anchor, fold_rule, fold_slot, fold_eu, fold_df_av) = r
 
-        sv = survival_by_av.get(av_id, {})
-        df_av = sv.get("derives_from")
-        df_kid = av_to_kcdx.get(df_av) if df_av is not None else None
+        # survival_derives_from CSV cell: the av row's derives_from is the resolved
+        # av_id (same value the survival table carried); the CSV carries the
+        # dependency entity's kcdx_id, so invert av_id -> kcdx_id.
+        df_kid = av_to_kcdx.get(fold_df_av) if fold_df_av is not None else None
 
         rows.append({
             "_sort": (kcdx_id, gv_tag.get(valid_from_id) or ""),
@@ -372,12 +384,16 @@ def _export_address_versions(con):
             "verified_date": _text(vdt),
             "evidence_kind": _text(ek_decode.get(ek_id)
                                    if ek_id is not None else None),
-            "survival_aob": _text(sv.get("aob")),
-            "survival_anchor_string": _text(sv.get("anchor_string")),
+            # The `survival_*` CSV columns now source the FOLDED av-row columns
+            # (D22 / design S11.2 -- the av row is the flat source). Names unchanged
+            # (the export contract); source switched off the survival table so the
+            # export survives that table's deletion (Phase 3 step 6).
+            "survival_aob": _text(fold_aob),
+            "survival_anchor_string": _text(fold_anchor),
             "survival_derives_from": _int_to_text(df_kid),
-            "survival_rule": _text(sv.get("rule")),
-            "survival_slot_count": _int_to_text(sv.get("slot_count")),
-            "survival_expect_unique": _int_to_text(sv.get("expect_unique")),
+            "survival_rule": _text(fold_rule),
+            "survival_slot_count": _int_to_text(fold_slot),
+            "survival_expect_unique": _int_to_text(fold_eu),
             # `value`: NOT emitted from the DB (derived mirror; see docstring).
             "value": "",
             "offset": _int_to_text(offset),
