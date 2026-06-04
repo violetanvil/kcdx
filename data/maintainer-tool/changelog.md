@@ -3,6 +3,25 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-03 — the frontend is a SEPARATE git repository (D23)
+
+The React frontend (`data/maintainer-tool/frontend/`) becomes its own git repository nested at
+its design-specified path, NOT an in-tree kcdx package. kcdx gitignores the path; the frontend
+carries its own MIT LICENSE (matching kcdx) and pushes to its own remote. The path (§5) and the
+dependency direction are unchanged — only version-control ownership moves out of the kcdx tree,
+so the frontend's npm dependency tree / lockfile / source never enter kcdx's history, build gate,
+or publish allowlist.
+
+- **D23 (new) — the frontend is its own repo.** Gitignored from kcdx; own MIT LICENSE; own
+  remote; own gate (`npm run build` + Vitest in the nested repo). The kcdx `/feature` ledger
+  flip + build gate do not apply to frontend commits.
+- **§5 (amended)** — the frontend bullet records the separate-repo ownership (path + dependency
+  direction unchanged).
+
+**Integrated in:** §10 D23, §5.
+**Why:** the user wants the maintainer-tool frontend separately versioned, licensed, and pushed
+— out of the kcdx tree — while keeping its design-specified path under `data/maintainer-tool/`.
+
 ## 2026-06-03 — robust rollback: two mechanisms split at the irreversible commit (D21); correct the contradictory D19/§7 text
 
 The earlier D19/§7 text claimed "the deferred-commit ROLLBACK gives the robust post-failure
