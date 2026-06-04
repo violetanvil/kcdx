@@ -14,7 +14,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). Design:
 | Step | Status | Commit |
 |---|---|---|
 | 1 schema + row-builder — add aob/anchor_string/rule/slot_count/expect_unique + derives_from (self-FK) to address_versions (SCHEMA + USER_COLUMNS + DICT_COLS); additive, no reader yet | DONE | bf25924 |
-| 2 importer populate-on-av + dual-write — _apply_one_db + rebuild write the per-kind survival cells onto the av row (reusing _KIND_TO_FORM); survival table still written in parallel; assert av-columns == survival-row (the 157/157 equivalence) | NOT STARTED | — |
+| 2 importer populate-on-av + dual-write — _apply_one_db + rebuild write the per-kind survival cells onto the av row (reusing _KIND_TO_FORM); survival table still written in parallel; assert av-columns == survival-row (the 157/157 equivalence) | DONE | 72a6aa3 |
 | 3 exporter + round-trip — csv_exporter emits/reads the folded columns; round_trip asserts byte-identity with them present | NOT STARTED | — |
 
 ## Step docs
