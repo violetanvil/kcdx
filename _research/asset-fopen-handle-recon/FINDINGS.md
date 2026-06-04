@@ -88,3 +88,37 @@ Static precondition MET (pending the re-gate): the Around-FOpen hook returns a r
 CRT `FILE*`; FRead serves it. The runtime probe (does a substitute `.lua` serve
 end-to-end) is the next step — agent writes/builds/deploys, user launches, agent
 reads the log.
+
+## Runtime confirmation (2026-06-04) — cross-runtime `FILE*` PORTABLE (memory-mapped lane), handle-consumed lane unexercisable at boot
+
+HOOK 1 + HOOK 2 built + deployed (uncommitted). Live runs:
+
+- **Cross-runtime `FILE*` portability: CONFIRMED.** HOOK 2 opened the `.dds` overlay
+  via kcdx's `/MT`-static-CRT `_wfopen` and returned that `FILE*`; the engine's own
+  (separate static) CRT read family rendered the zeroed payload (user saw the gray
+  rectangle), no crash. So a `FILE*` minted by kcdx's CRT IS readable by the game's
+  CRT — the dual-static-CRT hazard (the dual-Lua-sentinel class) does NOT bite for
+  this read path. Log: `overlay_opened vpath="libs/ui/textures/kcdlogo.dds" mode="rb"`
+  (run 09-28). This was the load-bearing escalation question; it is settled.
+- **The handle-consumed lane (`.lua`/`.xml`) is NOT exercisable at boot-to-menu.**
+  The probe fixture's `scripts/main.lua` overlay was keyed in the map (`overlay_entry
+  vpath="scripts/main.lua"`) but NEVER opened — no `overlay_resolved`/`overlay_opened`
+  for it, no `KCDX_SEAMA_LUA_LOADED` in `kcd.log`. A bounded boot-vpath observer added
+  to the resolver (logging every `.cfg`/`.xml`/`.lua` vpath AdjustFileName saw) fired
+  **ZERO** lines across a boot — while the `.dds` HIT fired normally. Ground truth:
+  the engine does NOT open handle-consumed config/script files through
+  `CCryPak::AdjustFileName`/`FOpen` during boot-to-menu (config/cfg + boot Lua use
+  separate loaders; front-1's "config" slots are CVar/string accessors, not file
+  opens). The observer was removed after (no residue, working-artifacts.md).
+- **Why this is NOT a HOOK 2 defect:** HOOK 2 installs + fires + serves correctly for
+  every asset the boot path actually opens via FOpen (the `.dds`). The handle-consumed
+  lane simply isn't opened that early. Per the recon §63 the two lanes share the
+  IDENTICAL read mechanism (FOpen→FRead→OS-arm; they differ only in what the engine
+  does with the bytes AFTER — memory-map vs Lua-parse), so the `.dds` cross-runtime
+  serve is strong evidence the handle-consumed lane works too. The one residual
+  (§"Verified vs unverified" #2 — is FRead the SOLE read entry a `.lua` consumer uses,
+  vs a CCryFile buffer) is unprovable at boot.
+- **The handle-consumed lane needs an IN-GAME gesture** (load a save/level so the
+  engine opens game scripts/data through CCryPak), not a boot-only fixture — the
+  natural home is the step-10 permanent regression plugin (a `console`/`in-game`-mode
+  test), not a boot-to-menu probe.

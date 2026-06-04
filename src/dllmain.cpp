@@ -23,8 +23,10 @@
 
 #include "probes/bugsplat_ctor_probe.h"  // KEEP — proven before_game-hook install
                                          // machinery; a later phase generalizes it
-#include "asset_overlay.h"               // production pak-resolver overlay hook
-                                         // (CCryPak::FOpen, via the conflict engine)
+#include "asset_overlay.h"               // production asset-overlay seam: HOOK 1
+                                         // (CCryPak::AdjustFileName resolver) + HOOK 2
+                                         // (CCryPak::FOpen own-FILE* loose open),
+                                         // both via the conflict engine
 #include "mod_absorb/select_detour.h"    // Worker-side enabled-list build +
                                          // readiness event (the SELECT detour
                                          // itself was retired when kcdx took

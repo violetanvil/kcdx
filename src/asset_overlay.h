@@ -3,26 +3,37 @@
 #include <string>
 #include <unordered_map>
 
-// === Asset overlay — production HOOK 1 on the game's resolution decision ====
+// === Asset overlay — the two-hook asset-resolution seam (HOOK 1 + HOOK 2) ===
 //
-// kcdx absorbs pak mods. HOOK 1 of the two-hook asset-resolution seam: kcdx
-// REPLACES CCryPak::AdjustFileName (vtable slot 1, the resolution-DECISION
-// root) so kcdx owns which file a virtual path resolves to — for every asset
-// class and both byte-lanes, above the sys_pakPriority existence gate.
+// kcdx absorbs pak mods. The seam is TWO coordinated engine hooks, both
+// installed by Install() through the conflict engine (hook_chain::AddCEngine,
+// Around mode — engine-stamped, the chain owns the MinHook detour), NOT raw
+// MinHook: a production hook is engine-owned and must go through the chain so
+// two installs on one site can't silently clobber each other (hook-engine.md).
+// Each target is resolved by NAME — the engine carries the address AND the
+// verified ABI; no RVA literal, no new seed row.
 //
-// The hook installs through the conflict engine (hook_chain::AddCEngine, Around
-// mode — engine-stamped, the chain owns the MinHook detour), NOT raw MinHook: a
-// production hook is engine-owned and must go through the chain so two installs
-// on one site can't silently clobber each other (hook-engine.md). The target is
-// resolved by NAME ("CCryPak_AdjustFileName", id 152) — the engine carries the
-// address AND the verified ABI; no RVA literal, no new seed row.
+// HOOK 1 — the resolution DECISION. Replaces CCryPak::AdjustFileName (vtable
+// slot 1, id 152) so kcdx owns which file a virtual path resolves to — for
+// every asset class and both byte-lanes, above the sys_pakPriority existence
+// gate (the pak/mount lane, replace-vanilla). Body: normalize the requested
+// vpath -> overlay-map lookup. On a HIT, write the overlay's concrete disk path
+// into the caller's outBuf (bounded to 2048, the engine's universal path cap)
+// and return a char* to it. On a MISS, call through (stock resolution
+// byte-identical; the original itself falls to the pak/disk/root leaves).
 //
-// The body: normalize the requested vpath -> overlay-map lookup. On a HIT, write
-// the overlay's concrete disk path into the caller's outBuf (bounded to 2048,
-// the engine's universal path cap) and return a char* to it — kcdx decides its
-// overlay wins. On a MISS, call through to the original (stock resolution
-// byte-identical; the original itself falls to the pak/disk/root leaves). HOOK 2
-// (the own-FILE* loose open) is a later step; HOOK 1 ships the DECISION + write.
+// HOOK 2 — the loose OPEN. An Around hook on CCryPak::FOpen (vtable slot 36,
+// id 131, the engine-wide open-by-path that mints the file handle). On a HIT
+// for a loose overlay, kcdx opens the file ITSELF (CRT _wfopen on the plugin's
+// assets/ disk path) and returns that raw CRT FILE* as the open result —
+// bypassing the engine's open + loose-search entirely. The engine's UNMODIFIED
+// read family then serves kcdx's bytes (FRead routes any real heap FILE* to its
+// OS arm — handle−1 ≫ pak-count). This serves the loose lane (add-new assets +
+// the loose side of replace) without depending on the engine's loose-search
+// (the layer the v1 path-redirect failed at). On a MISS, call through (the
+// engine opens stock content normally). On a HIT whose open fails, fail loud
+// and fall through to the original (never a silent broken handle). The two
+// hooks key off the SAME overlay map.
 
 namespace kcdx::asset_overlay {
 

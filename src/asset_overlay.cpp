@@ -11,12 +11,16 @@
 
 #include "asset_overlay.h"
 
+#include <windows.h>  // MultiByteToWideChar / CP_UTF8 — widen the disk path for
+                      // _wfopen_s on a HOOK-2 loose-overlay open
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <iterator>  // std::size (wmode bound)
 #include <system_error>
 #include <vector>
 
@@ -49,6 +53,11 @@ OverlayMap g_overlayMap;
 // literal, no new seed row (AP1, no-hardcoded-addresses.md).
 constexpr const char* kNameAdjustFileName = "CCryPak_AdjustFileName";
 
+// Canonical refdb name for the open-by-path handle minter (HOOK 2). Seed row
+// kcdx_id 131 (CCryPak_FOpen, vtable slot 36) exists — resolve by NAME, no RVA
+// literal, no new seed row (AP1, no-hardcoded-addresses.md).
+constexpr const char* kNameFOpen = "CCryPak_FOpen";
+
 // SOURCE: verified seed signature for kcdx_id 152 (data/seeds/
 // address_versions_seed.csv) — `ptr (ptr this, cstr pName, ptr outBuf, u32
 // nFlags)`. Win64 __fastcall: RCX=this, RDX=pName, R8=outBuf, R9D=nFlags;
@@ -57,6 +66,20 @@ constexpr const char* kNameAdjustFileName = "CCryPak_AdjustFileName";
 // below carries the matching Around-mode cFn ABI.
 constexpr const char* kAdjustFileNameSig =
     "ptr (ptr this, cstr pName, ptr outBuf, u32 nFlags)";
+
+// SOURCE: verified seed signature for kcdx_id 131 (data/seeds/
+// address_versions_seed.csv) — `ptr (ptr this, cstr pName, cstr szMode, u32
+// nFlags)`. Win64 __fastcall: RCX=this, RDX=pName, R8=szMode, R9D=nFlags;
+// returns a FILE*-like open handle (null on miss). On a loose open the engine's
+// FOpen mints a CRT FILE* (_wfopen via the loose producer); the unmodified read
+// family routes any real FILE* to its OS arm (FRead's handle−1-vs-pak-count
+// dispatch — a heap FILE* always exceeds the small pak count). HOOK 2 returns
+// kcdx's OWN _wfopen FILE* from the Around cFn, which the read family then
+// serves directly. The ptr return threads through the chain's Around-mode JIT
+// exactly as HOOK 1's ptr return does (dynamic_call_jit.cpp StoreReturn — the
+// 8-byte qword store for a Ptr/Cstr/Wstr return).
+constexpr const char* kFOpenSig =
+    "ptr (ptr this, cstr pName, cstr szMode, u32 nFlags)";
 
 // INVARIANT (the HIT write contract — outBuf bound): the engine's universal path
 // cap, CryEngine ICryPak::g_nMaxPath. Every AdjustFileName caller read passes a
@@ -76,6 +99,15 @@ std::atomic<bool> g_installed{false};
 using AdjustFileName_t = void* (*)(void* self, const char* pName,
                                    void* outBuf, uint32_t nFlags);
 
+// Typed call_original for HOOK 2's Around cFn — matches the FOpen seed ABI
+// exactly. Same chain mechanism as AdjustFileName_t: the chain prepends this as
+// a pointer-width fnptr in RCX, then the typed args; the body calls it on a
+// MISS (and on a HIT whose open failed). Returns the FOpen handle (a CRT FILE*
+// on a loose open, an index+1 on a pak open) — kcdx returns its own FILE* on a
+// HIT instead.
+using FOpen_t = void* (*)(void* self, const char* pName, const char* szMode,
+                          uint32_t nFlags);
+
 // One-shot HIT latch so the HOT resolver does NOT log per call (AdjustFileName
 // fires constantly — logging.md / memory.md). The first overlay HIT of the
 // session emits exactly one debug line naming the winning vpath -> diskPath;
@@ -83,6 +115,12 @@ using AdjustFileName_t = void* (*)(void* self, const char* pName,
 // this yet" latch with no happens-before edge to publish (concurrency.md — a
 // counter nobody synchronizes against).
 std::atomic<bool> g_loggedFirstHit{false};
+
+// One-shot HIT latch for HOOK 2's FOpen open (same rationale as
+// g_loggedFirstHit above — FOpen is hot; the first served-loose-overlay open of
+// the session logs once, the rest are silent). Relaxed: a pure logged-yet latch
+// with no happens-before edge (concurrency.md).
+std::atomic<bool> g_loggedFirstFOpen{false};
 
 }  // namespace
 
@@ -172,6 +210,120 @@ extern "C" void* AdjustFileNameResolver(AdjustFileName_t call_original,
     return out;
 }
 
+// === HOOK 2 — the loose OPEN: return kcdx's own CRT FILE* ===================
+//
+// The Around cFn the chain installs on CCryPak::FOpen (id 131, slot 36). ABI
+// per the seed signature + dynamic_call_jit.cpp CFnSigFor Around shape:
+// call_original arrives pointer-width in RCX, then the typed args (this, pName,
+// szMode, nFlags); the cFn's returned ptr is written into the dispatch thunk's
+// rv slot (StoreReturn — the 8-byte qword store for a Ptr return) and BECOMES
+// FOpen's result. This mirrors HOOK 1's AdjustFileNameResolver return mechanism
+// EXACTLY (both return a void* ptr from an Around cFn) — the proven pointer-
+// return precedent.
+//
+// HIT  (pName normalizes to a key in the overlay map): open the overlay's disk
+//       file ourselves (_wfopen) and RETURN that CRT FILE* WITHOUT calling the
+//       original. The engine's unmodified read family serves it via its OS arm
+//       (FRead routes any real heap FILE* there — handle−1 ≫ pak-count;
+//       gate-verified, _research/asset-fopen-handle-recon/FINDINGS.md). This
+//       serves add-new assets + the loose side of replace, for every class,
+//       without depending on the engine's loose-search (the layer the v1 path-
+//       redirect failed at). Handle lifecycle (close) follows the engine's
+//       normal FClose on the returned handle (touch nothing in the read family
+//       / FClose).
+// HIT-OPEN-FAILURE (the loose file is declared but unopenable): FAIL LOUD
+//       (LOG_WARN_KV naming vpath + disk + errno) and FALL THROUGH to the
+//       original — let the engine try stock content. Do NOT return a null
+//       handle as if it were a valid open (AP14 silent-success); a degraded-
+//       but-loud miss beats a silent broken handle.
+// MISS (every other vpath): call the original — the engine opens stock content
+//       normally (the hottest path; FOpen fires constantly — keep it clean, no
+//       per-call log).
+//
+// INVARIANT: null/guard everything; an empty overlay map (early boot, before
+// the map is built) is a clean MISS -> call original.
+extern "C" void* FOpenLooseOverlay(FOpen_t     call_original,
+                                   void*       self,
+                                   const char* pName,
+                                   const char* szMode,
+                                   uint32_t    nFlags) {
+    // MISS guard: a null pName -> straight call-original (the engine handles its
+    // own null-arg contract). The hottest path.
+    if (!pName) return call_original(self, pName, szMode, nFlags);
+
+    const std::string key = NormalizeVPath(pName);
+    const OverlayMap& m = GetOverlayMap();
+    auto found = m.find(key);
+    if (found == m.end()) {
+        // MISS — stock open preserved. The hottest path: straight fall-through.
+        return call_original(self, pName, szMode, nFlags);
+    }
+
+    // HIT — kcdx owns this open. Open the overlay's loose disk file ourselves
+    // and return that CRT FILE* (the engine's read family serves it via the OS
+    // arm). Preserve the caller's mode string verbatim so a write-mode open
+    // ("wb"/"ab"/"w+b") is honored exactly as the engine would; default to a
+    // binary read when the engine passed no mode.
+    const std::string& diskPath = found->second.diskPath;
+    const char* mode = (szMode && szMode[0]) ? szMode : "rb";
+
+    // _wfopen on the wide disk path: diskPath is a UTF-8/ASCII std::string built
+    // from std::filesystem (BuildOverlayMap's disk.string()); widen it to the
+    // engine's path cap so a non-ASCII path on disk opens correctly. fopen
+    // (narrow) would mojibake a non-ASCII path; _wfopen is the correct CRT entry
+    // for a wide path on Windows.
+    wchar_t wpath[kMaxPath];
+    const int wlen = MultiByteToWideChar(CP_UTF8, 0, diskPath.c_str(), -1,
+                                         wpath, static_cast<int>(kMaxPath));
+    wchar_t wmode[16];
+    const int wmlen = MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode,
+                                          static_cast<int>(std::size(wmode)));
+
+    FILE* fp = nullptr;
+    errno_t oerr = 0;
+    if (wlen > 0 && wmlen > 0) {
+        oerr = _wfopen_s(&fp, wpath, wmode);
+    } else {
+        oerr = -1;  // path/mode widening overflowed the cap or failed
+    }
+
+    if (oerr != 0 || !fp) {
+        // HIT-OPEN-FAILURE — fail LOUD, then fall through to the original (AP14:
+        // never return a silent null/broken handle as if it were a valid open).
+        // The engine then tries stock content: a degraded-but-LOUD miss, not a
+        // silently broken serve. Logged once-per-call here is acceptable — a HIT
+        // open-failure is a rare error path (a declared overlay that won't open),
+        // not the hot MISS path (logging.md: every failure state is logged).
+        LOG_WARN_KV(kCat, "overlay_open_failed",
+                    kcdx::log::KV("vpath", key),
+                    kcdx::log::KV("plugin", found->second.owningPlugin),
+                    kcdx::log::KV("disk", diskPath),
+                    kcdx::log::KV("mode", mode),
+                    kcdx::log::KV("errno", static_cast<long long>(oerr)));
+        return call_original(self, pName, szMode, nFlags);
+    }
+
+    // One-shot served-open marker (deduped — never per-call; FOpen is hot).
+    // Names the vpath -> diskPath whose loose open kcdx served, so the SERVE is
+    // observable in kcdx-dev.log (the step's test bar: a declared loose overlay
+    // is opened by kcdx and served by the engine's read family).
+    bool expected = false;
+    if (g_loggedFirstFOpen.compare_exchange_strong(expected, true,
+                                                    std::memory_order_relaxed)) {
+        LOG_DEBUG_KV(kCat, "overlay_opened",
+                     kcdx::log::KV("vpath", key),
+                     kcdx::log::KV("winner", found->second.owningPlugin),
+                     kcdx::log::KV("disk", diskPath),
+                     kcdx::log::KV("mode", mode));
+    }
+
+    // Return our own CRT FILE* as FOpen's result. The chain's Around-mode JIT
+    // writes this pointer-width value into FOpen's rv slot (the same path HOOK
+    // 1's char* return takes); the engine's read family then serves kcdx's bytes
+    // off this handle without ever consulting the engine's loose-search.
+    return static_cast<void*>(fp);
+}
+
 bool Install() {
     bool expected = false;
     if (!g_installed.compare_exchange_strong(expected, true,
@@ -236,6 +388,60 @@ bool Install() {
                "— overlay HIT writes the kcdx path into outBuf (bounded %zu) and "
                "returns it; MISS calls original",
                reinterpret_cast<void*>(adjustVA), kMaxPath);
+
+    // === HOOK 2 — the loose OPEN, alongside HOOK 1 in the SAME ready-bracket
+    // install window (design §8 — both hooks live before the first asset read).
+    // A second independent AddCEngine on a DISTINCT target (FOpen, id 131, vs
+    // HOOK 1's AdjustFileName, id 152) — each builds its own signature, payload,
+    // chain entry, and MinHook detour; registering two engine hooks from one
+    // Install() is the same pattern hooks.cpp uses for lua_pcall + update. If
+    // HOOK 2 fails to install, the whole Install() fails loud (g_installed reset)
+    // — the seam is incomplete without both hooks; never ship a half-seam silently.
+    auto fopenSigParse = kcdx::hook_signature::Parse(kFOpenSig);
+    if (!fopenSigParse.ok) {
+        log::ErrorF("engine.ccrypak_fopen: signature parse failed: %s",
+                    fopenSigParse.error.c_str());
+        g_installed.store(false, std::memory_order_release);
+        return false;
+    }
+
+    kcdx::hook_payload::HookPayload pf;
+    pf.mode         = kcdx::hook_payload::Mode::Around;
+    pf.addressName  = kNameFOpen;
+    pf.signature    = fopenSigParse.sig;
+    pf.hasSignature = true;
+    pf.owningPlugin = "kcdx";
+    pf.owningAuthor = "kcdx";
+    pf.name         = "engine.ccrypak_fopen";
+
+    auto addF = kcdx::hook_chain::AddCEngine(
+        pf, reinterpret_cast<void*>(&FOpenLooseOverlay),
+        fopenSigParse.sig, /*pluginName=*/"kcdx",
+        /*priority=*/0, /*name=*/"engine.ccrypak_fopen",
+        /*handleId=*/0);
+    if (!addF.ok) {
+        log::ErrorF("engine.ccrypak_fopen: AddCEngine failed: %s",
+                    addF.reason.c_str());
+        g_installed.store(false, std::memory_order_release);
+        return false;
+    }
+
+    uintptr_t fopenVA = kcdx::refdb::ResolveAddrByName(kNameFOpen);
+    if (fopenVA) {
+        kcdx::modification_inventory::RegisterModification(
+            fopenVA, kcdx::modification_inventory::Category::Engine,
+            "fopen_loose_overlay");
+    } else {
+        log::Warn("engine.ccrypak_fopen: refdb name \"CCryPak_FOpen\" did not "
+                  "resolve for the modification-inventory record (hook still "
+                  "installed via the chain by name)");
+    }
+
+    log::InfoF("engine.ccrypak_fopen: production FOpen loose-overlay hook live "
+               "(via hook_chain::AddCEngine, Around) at %p — overlay HIT opens "
+               "the kcdx loose file and returns its own CRT FILE*; MISS calls "
+               "original",
+               reinterpret_cast<void*>(fopenVA));
     return true;
 }
 
