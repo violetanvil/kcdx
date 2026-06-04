@@ -22,7 +22,7 @@ Shared spec: [`plan-spec.md`](plan-spec.md). Settled design:
 |---|---|---|
 | Phase 1 — the data-core fold (schema + populate-on-av + dual-write + export/round-trip; oracle-verified each step) | DONE | 11a9c09 |
 | Phase 2 — engine + consumers read the folded columns (engine SELECT/decode/ResolveResult + read seam/backend) | DONE | 428c7cd |
-| Phase 3 — delete the sibling + finalize (drop survival table + kind_form, deletion-hygiene sweep, 156/157 slot/offset into columns, baseline re-capture) | NOT STARTED | — |
+| Phase 3 — delete the sibling + finalize (drop survival table + kind_form, deletion-hygiene sweep, 156/157 slot/offset into columns, baseline re-capture) | DONE | 36d2682 |
 
 The per-step ledgers live in each `phase-NN-*/README.md`. A top row flips to `DONE` only when
 every step in the phase is `DONE`.

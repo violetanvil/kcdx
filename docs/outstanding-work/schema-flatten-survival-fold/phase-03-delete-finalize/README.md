@@ -15,7 +15,7 @@ delete) + §11.5 (the migration checklist's final re-capture step).
 
 | Step | Status | Commit |
 |---|---|---|
-| 6 delete the survival table + kind_form + redundant dupes; deletion-hygiene sweep (tests/docs); populate 156/157 vtable_slot/struct_offset into the columns; re-capture the rebuild-oracle baseline with survival gone | NOT STARTED | — |
+| 6 delete the survival table + kind_form + redundant dupes; deletion-hygiene sweep (tests/docs); populate 156/157 vtable_slot/struct_offset into the columns; re-capture the rebuild-oracle baseline with survival gone | DONE | 36d2682 |
 
 ## Step docs
 
