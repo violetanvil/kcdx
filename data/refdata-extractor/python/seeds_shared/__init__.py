@@ -79,6 +79,7 @@ from .read_api import (
     read_curated_set,
     read_entity_detail,
     read_version_rows,
+    read_modules,
     DbReadError,
 )
 
@@ -129,7 +130,7 @@ __all__ = [
     "EDITABLE_VERSION_COLUMNS", "DbEditError",
     "field_delta", "is_new_version_nothing_changed",
     "derive_status", "read_curated_set", "read_entity_detail",
-    "read_version_rows", "DbReadError",
+    "read_version_rows", "read_modules", "DbReadError",
     # Lazily re-exported from import_to_sqlite via __getattr__ (the deferred-commit
     # write mechanism -- step 4a): the handle type, its misuse error, and the
     # commit/rollback the maintainer-tool backend drives on confirm/cancel.

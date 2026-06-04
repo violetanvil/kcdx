@@ -229,6 +229,40 @@ def test_get_entity_versions_newest_first_with_status(resolved_checkout, client_
 
 
 # ----------------------------------------------------------------------------
+# Case 4b: GET /modules surfaces the module registry (s04 `module` Select source).
+# ----------------------------------------------------------------------------
+def test_list_modules_surfaces_module_registry(resolved_checkout, client_at):
+    client = client_at(resolved_checkout)
+    resp = client.get("/modules")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert isinstance(body, list) and body, "expected a non-empty module registry"
+
+    # Thin caller: the endpoint passes through read_modules verbatim (modulo the
+    # JSON-boundary serialization seam -- recurse, reshape nothing). The data-core
+    # returns {id, name, path} as JSON-native scalars, so applying the same seam to
+    # its raw return proves the endpoint reshapes NOTHING (D13/R3).
+    expected = _json_safe(data_core.read_modules(_out_dir(resolved_checkout)))
+    assert body == expected, "endpoint must surface read_modules verbatim"
+
+    for row in body:
+        assert set(row) == {"id", "name", "path"}, row
+        assert isinstance(row["id"], int)
+        assert isinstance(row["name"], str) and row["name"]
+        assert isinstance(row["path"], str) and row["path"]
+
+
+def test_modules_no_db_checkout_returns_empty_signal(empty_checkout, client_at):
+    """A no-DB checkout -> GET /modules returns the same empty SIGNAL (200,
+    state="empty") the other read endpoints return, not a 500 -- the s01 empty
+    state the frontend binds."""
+    client = client_at(empty_checkout)
+    resp = client.get("/modules")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "empty", resp.json()
+
+
+# ----------------------------------------------------------------------------
 # Case 5: a no-DB checkout -> the empty/error SIGNAL (200, state="empty"), logged --
 # not a 500 crash. The s01 empty-state the frontend binds (mirrors /health).
 # ----------------------------------------------------------------------------

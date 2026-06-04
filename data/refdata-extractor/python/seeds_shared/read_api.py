@@ -379,3 +379,26 @@ def read_version_rows(out_dir, kcdx_id):
         return out
     finally:
         con.close()
+
+
+def read_modules(out_dir):
+    """The module registry for the s04 field editor's `module` Select: one dict per
+    curated module
+
+        {"id": int, "name": str, "path": str}
+
+    Reads the `modules` table from the USER reference.sqlite (schema.py: id (the
+    seed-assigned canonical module id, not autoincrement), name, path -- the
+    install-relative module path). id-ascending (a stable registry order; modules.id
+    comes from the seed, not a version ordinal). The backend SURFACES this as
+    GET /modules -- it derives nothing (D13/law 6); this seam does the DB read. Reads
+    READ-ONLY; raises DbReadError when no curated DB resolves under out_dir (the same
+    no-DB signal the other read functions raise, so GET /modules surfaces the s01
+    empty state, not a crash)."""
+    con = _open_ro(out_dir)
+    try:
+        return [{"id": r["id"], "name": r["name"], "path": r["path"]}
+                for r in con.execute(
+                    "SELECT id, name, path FROM modules ORDER BY id")]
+    finally:
+        con.close()

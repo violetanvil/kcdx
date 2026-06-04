@@ -13,7 +13,8 @@ dirty fields validate; it opens the save-confirm (step 10). No save/commit yet (
 
 **Scope.** The field editor: read-only + editable rendering, the `Select`s, the dirty markers
 + "was:" lines, the inline validation (calling the API — the read/field-delta endpoints for
-"was:" old values + the save endpoint's dry validation), the edit-existing confirmation, the
+"was:" old values + the preview-only save endpoint `POST /save/update-version`, which validates
+and returns `valid: true/false` + the validator's verdict without writing), the edit-existing confirmation, the
 `[Review changes]` enablement. Covers the version-row UPDATE shape (audit trio + full column).
 No save chain (step 10), no create (Phase 4).
 

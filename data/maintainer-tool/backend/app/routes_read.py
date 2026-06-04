@@ -110,6 +110,23 @@ def get_entity(kcdx_id: int):
     return _json_safe(detail)
 
 
+@router.get("/modules")
+def list_modules():
+    """The module registry for s04's `module` field (a Select over the real module
+    list).
+
+    Returns [{id, name, path}] -- exactly what read_modules returns; the backend
+    derives nothing (D13/R3), it surfaces the data-core's `modules` table read. A
+    missing curated DB yields the same 200 {state, detail} empty signal the other
+    read endpoints use (state="empty"), NOT an HTTP error -- the s01 empty state the
+    frontend already binds."""
+    config = load_config()
+    try:
+        return _json_safe(data_core.read_modules(config.out_dir))
+    except data_core.DbReadError as exc:
+        return _no_db_signal(exc, config)
+
+
 @router.get("/entities/{kcdx_id}/versions")
 def get_entity_versions(kcdx_id: int):
     """The entity's version rows, NEWEST-first, each with its derived status (s02

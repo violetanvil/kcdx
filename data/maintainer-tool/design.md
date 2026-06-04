@@ -245,7 +245,12 @@ Each new unit's single responsibility (`structure-by-responsibility.md`):
   save spine on a confirmed edit, and performs the git commit + push (D16) using the
   injected identity + env credential (D17). It adapts a chosen version tag → the data-core's
   parameters (no DLL server-side). It holds NO validation/SQL/export rule logic — it calls
-  the data-core (R3).
+  the data-core (R3). The browse/view read API is `GET /entities`, `GET /entities/{id}`,
+  `GET /entities/{id}/versions`, and **`GET /modules`** — a thin module-registry read seam
+  surfacing the data-core's `modules` table (`read_modules` → `[{id, name, path}]`), added
+  because the s04 field editor's `module` field is an editable `Select` over the real module
+  list (Phase 2 exposed no module-list read). Like the other read endpoints it derives
+  nothing (law 6) and returns the same 200 empty signal on a missing checkout.
 - **The frontend (`data/maintainer-tool/frontend/`, `ui/`)** — presentation only (D14). The
   React app renders the navigator, entity detail, version history/compare, field editor,
   create flows, and the field-delta confirm (the seven screens, re-expressed for web in the

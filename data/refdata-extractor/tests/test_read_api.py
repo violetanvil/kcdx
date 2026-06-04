@@ -70,7 +70,7 @@ PYDIR = os.path.normpath(os.path.join(HERE, "..", "python"))
 sys.path.insert(0, PYDIR)
 from seeds_shared import (  # noqa: E402
     derive_status, read_curated_set, read_entity_detail, read_version_rows,
-    DbReadError,
+    read_modules, DbReadError,
 )
 from seeds_shared.read_api import (  # noqa: E402
     STATUS_DEPRECATED, STATUS_SUPERSEDED, STATUS_VERIFIED, STATUS_UNVERIFIED,
@@ -295,6 +295,19 @@ def _curated_entity_count(out_dir):
     con = sqlite3.connect(os.path.join(out_dir, "reference.sqlite"))
     try:
         return con.execute("SELECT COUNT(*) FROM address_names").fetchone()[0]
+    finally:
+        con.close()
+
+
+def _modules_from_db(out_dir):
+    """The modules table rows {id, name, path} read independently from the DB (the
+    test's own read, not read_modules) -- the oracle read_modules is asserted
+    against. id-ascending, mirroring read_modules' ORDER BY."""
+    con = sqlite3.connect(os.path.join(out_dir, "reference.sqlite"))
+    try:
+        return [{"id": r[0], "name": r[1], "path": r[2]}
+                for r in con.execute(
+                    "SELECT id, name, path FROM modules ORDER BY id")]
     finally:
         con.close()
 
@@ -531,6 +544,34 @@ def _version_rows_unknown_id_returns_empty(b):
         shutil.rmtree(out, ignore_errors=True)
 
 
+# --- read_modules --------------------------------------------------------------
+def _modules_shape_and_contents(b):
+    # read_modules returns the modules registry {id, name, path}, id-ascending,
+    # matching an independent DB read (the oracle). The committed fixture carries the
+    # WHGame.dll module (module_seed.csv); assert read_modules surfaces it verbatim.
+    out = _fresh_db(b)
+    try:
+        mods = read_modules(out)
+        expected = _modules_from_db(out)
+        assert mods, "read_modules returned no modules for the built fixture DB"
+        assert mods == expected, (
+            f"read_modules drifted from an independent DB read: "
+            f"{mods!r} != {expected!r}")
+        for m in mods:
+            assert set(m) == {"id", "name", "path"}, m
+            assert isinstance(m["id"], int)
+            assert isinstance(m["name"], str) and m["name"]
+            assert isinstance(m["path"], str) and m["path"]
+        # id-ascending (a stable registry order, not a version ordinal).
+        ids = [m["id"] for m in mods]
+        assert ids == sorted(ids), f"read_modules not id-ascending: {ids}"
+        # The fixture's WHGame.dll module is present (the curated module every
+        # curated address row's module_id resolves to).
+        assert any(m["name"] == "WHGame.dll" for m in mods), mods
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 # --- read-only / missing-DB contract -------------------------------------------
 def _missing_db_raises(b):
     import tempfile
@@ -543,6 +584,25 @@ def _missing_db_raises(b):
             raised = e
         assert raised is not None, (
             "read_curated_set on a dir with no reference.sqlite did not raise "
+            "DbReadError")
+    finally:
+        shutil.rmtree(empty, ignore_errors=True)
+
+
+def _modules_missing_db_raises(b):
+    # read_modules mirrors the other read functions' no-DB contract: a dir with no
+    # reference.sqlite raises DbReadError (the consumer GET /modules maps it to the
+    # s01 empty signal).
+    import tempfile
+    empty = tempfile.mkdtemp(prefix="read_api_mod_empty_")
+    try:
+        raised = None
+        try:
+            read_modules(empty)
+        except DbReadError as e:
+            raised = e
+        assert raised is not None, (
+            "read_modules on a dir with no reference.sqlite did not raise "
             "DbReadError")
     finally:
         shutil.rmtree(empty, ignore_errors=True)
@@ -599,6 +659,14 @@ def test_missing_db_raises(baseline):  # noqa: F811
     _missing_db_raises(baseline)
 
 
+def test_modules_shape_and_contents(baseline):  # noqa: F811
+    _modules_shape_and_contents(baseline)
+
+
+def test_modules_missing_db_raises(baseline):  # noqa: F811
+    _modules_missing_db_raises(baseline)
+
+
 if __name__ == "__main__":
     # The derive_status unit cases need no DB.
     for name, fn in sorted(globals().items()):
@@ -625,6 +693,10 @@ if __name__ == "__main__":
         print("PASS test_version_rows_unknown_id_returns_empty")
         _missing_db_raises(b)
         print("PASS test_missing_db_raises")
+        _modules_shape_and_contents(b)
+        print("PASS test_modules_shape_and_contents")
+        _modules_missing_db_raises(b)
+        print("PASS test_modules_missing_db_raises")
         print("\nall read_api tests passed")
     finally:
         _cleanup_baseline()

@@ -3,6 +3,20 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-04 — `GET /modules` joins the read API (the s04 `module` Select source)
+
+A thin module-registry read endpoint `GET /modules` joins the browse/view read API, backed
+by a new data-core read seam `read_modules(out_dir)` that reads the `modules` table from the
+curated DB (`[{id, name, path}]`). Added because the s04 field editor's `module` field is an
+editable `Select` over the real module list, and Phase 2 exposed no module-list read. The
+backend derives nothing (law 6) — the data-core seam does the DB read; the endpoint returns
+the same 200 empty signal on a missing checkout as the other read endpoints.
+
+- **§5 (amended)** — the backend bullet records the read API's four endpoints incl. `GET /modules`.
+
+**Why:** the s04 spec requires `module` to be a Select over the real module registry; the
+producer (the read seam + endpoint) is built ahead of the s04 field-editor frontend that consumes it.
+
 ## 2026-06-03 — the frontend is a SEPARATE git repository (D23)
 
 The React frontend (`data/maintainer-tool/frontend/`) becomes its own git repository nested at
