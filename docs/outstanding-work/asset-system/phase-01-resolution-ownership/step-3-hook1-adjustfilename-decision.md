@@ -18,6 +18,26 @@ into the mount/stream lane). It also **removes the dead FOpen probe + the
 FOpen hook is not the mechanism (design §7); the live source returns to the
 production resolver hook with no probe residue (`working-artifacts.md`).
 
+## The HIT-write contract (VERIFIED + gated, `c28f53d`)
+
+The probe phase deferred the HIT-path `outBuf` write because the caller-side
+buffer capacity was unconfirmed. Now verified (`_research/adjustfilename-outbuf-recon/`,
+gated PROCEED): every `AdjustFileName` caller passes a **2048-byte buffer as
+`outBuf`** (read in 3 caller bodies — FOpen / FOpenRaw / GetFileSize-by-name;
+2048 = CryEngine `ICryPak::g_nMaxPath`). `AdjustFileName` also RETURNS a `char*`
+(FOpen consumes the return). So on a HIT kcdx's replacement:
+
+- **Writes the overlay's concrete path into `outBuf`, bounded to 2048** — a
+  bounded `snprintf(outBuf, 2048, …)` with loud truncation, NEVER an unbounded
+  copy. Bound to 2048 AS the engine's universal path cap (`g_nMaxPath`), an
+  invariant robust to unread callers — not "because these 3 callers allocate it"
+  (the KI-0004 stack-overflow discipline: a bounded write, never trust caller
+  capacity). A real filesystem path is always well under 2048.
+- **Returns a `char*` to that resolved path** (point at `outBuf` after the write,
+  matching the engine's return==outBuf convention so return-consuming callers
+  like FOpen get the overlay path too).
+- **MISS** → call through to the original (stock resolution byte-identical).
+
 ## Scope
 
 - `src/asset_overlay.{h,cpp}`: install the `AdjustFileName` resolver hook —
@@ -25,8 +45,9 @@ production resolver hook with no probe residue (`working-artifacts.md`).
   literal RVA — AP1, `no-hardcoded-addresses.md`); install through
   `hook_chain::AddCEngine` (NOT raw MinHook — AP4, `hook-engine.md`); the body:
   normalize the requested vpath (`NormalizeVPath`, built) → overlay-map lookup →
-  HIT decides kcdx's overlay path / MISS calls through to the leaves (153/154/155)
-  by name.
+  HIT writes the overlay path into `outBuf` bounded to 2048 + returns the ptr
+  (the verified write contract above) / MISS calls through to the original (which
+  itself falls to the leaves 153/154/155).
 - Install in the ready-bracket window (before `SetEvent(g_kcdxReadyEvent)`) per
   step 1's confirmed ordering. (HOOK 2, step 4, installs alongside it.) If step 1
   surfaced the falsifying ordering outcome, this step is BLOCKED on the user's
