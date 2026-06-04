@@ -11,6 +11,7 @@
 
 #include "MinHook.h"
 #include "console.h"
+#include "cvar.h"
 #include "console_commands_scan.h"
 #include "init_phase.h"
 #include "modification_inventory.h"
@@ -423,6 +424,12 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // kcdx.command dispatch surface. After this returns true,
                 // plugin RegisterCommand calls succeed.
                 kcdx::console::Init();
+
+                // Arm the kcdx.cvar.* read surface alongside console::Init() —
+                // it shares the gEnv->pConsole availability precondition
+                // (same console-ready first-update-tick latch). After this,
+                // cvar::Get{Int,Float} can read game CVars by name.
+                kcdx::cvar::Init();
 
                 // Register the engine-owned kcdx_scan console command now that
                 // the console surface is armed. Sits after Init() so the

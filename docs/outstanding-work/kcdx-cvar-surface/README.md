@@ -18,8 +18,8 @@ when `DONE` (`(landed)` until backfilled), `—` otherwise. **Step 0 is EXTERNAL
 steps below are BLOCKED until it lands.
 
 | Step | Status | Commit |
-| 0 — EXTERNAL (maintainer-tool): record `ICVar_GetIVal` + `ICVar_GetFVal` + fix id-16 prose, rebuild reference.sqlite | BLOCKED (maintainer-tool lane; spec = `_research/icvar-getival-recon/MAINTAINER-TOOL-HANDOFF.md`) | — |
-| [1 — engine CVar-read core (`src/cvar.{h,cpp}`)](phase-01-cvar-read/step-1-engine-cvar-core.md) | BLOCKED (on step 0) | — |
+| 0 — EXTERNAL (maintainer-tool): record `ICVar_GetIVal` + `ICVar_GetFVal` + fix id-16 prose, rebuild reference.sqlite | DONE (external — ids 156/157 in seeds, prose fixed, reference.sqlite rebuilt) | — |
+| [1 — engine CVar-read core (`src/cvar.{h,cpp}`)](phase-01-cvar-read/step-1-engine-cvar-core.md) | DONE | (landed) |
 | [2 — Lua surface `kcdx.cvar.get_int/get_bool/get_float`](phase-01-cvar-read/step-2-lua-surface.md) | NOT STARTED | — |
 | [3 — C++ mirror `kcdxConsoleInterface::GetCVar{Int,Bool,Float}` (v2→3)](phase-01-cvar-read/step-3-cpp-mirror.md) | NOT STARTED | — |
 | [4 — regression plugin `cap-71-cvar-read` (both surfaces)](phase-01-cvar-read/step-4-test-plugin.md) | NOT STARTED | — |

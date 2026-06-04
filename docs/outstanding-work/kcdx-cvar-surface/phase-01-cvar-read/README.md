@@ -9,7 +9,7 @@ when it lands (`incremental-delivery.md`).
 ## Step ledger
 
 | Step | Status | Commit |
-| [1 — engine CVar-read core](step-1-engine-cvar-core.md) | BLOCKED (on step 0) | — |
+| [1 — engine CVar-read core](step-1-engine-cvar-core.md) | DONE | (landed) |
 | [2 — Lua surface](step-2-lua-surface.md) | NOT STARTED | — |
 | [3 — C++ mirror](step-3-cpp-mirror.md) | NOT STARTED | — |
 | [4 — regression plugin cap-71](step-4-test-plugin.md) | NOT STARTED | — |
