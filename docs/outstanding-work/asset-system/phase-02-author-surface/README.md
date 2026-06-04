@@ -15,8 +15,8 @@ when `DONE`, `—` otherwise.
 
 | Step | Status | Commit |
 |---|---|---|
-| [6 — navigable namespace `kcdx.plugin.<author>.<plugin>.*` (`__index` chain)](step-6-navigable-namespace.md) | DONE | (landed) |
-| [7 — stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose)](step-7-stale-prose-sweep.md) | NOT STARTED | — |
+| [6 — navigable namespace `kcdx.plugin.<author>.<plugin>.*` (`__index` chain)](step-6-navigable-namespace.md) | DONE | a3961df |
+| [7 — stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose)](step-7-stale-prose-sweep.md) | DONE | (landed) |
 | [8 — `kcdx.assets.*` Lua surface (reference/publish/register/replace)](step-8-lua-surface.md) | NOT STARTED | — |
 | [9 — `kcdxAssetInterface` C++ mirror (full parity)](step-9-cpp-mirror.md) | NOT STARTED | — |
 
