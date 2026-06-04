@@ -55,6 +55,7 @@
 8. [Constraints](#8-constraints)
 9. [Scope — in / out / deferred](#9-scope)
 10. [Decision record](#10-decision-record)
+11. [The reference-DB schema — flat + final](#11-schema-flat-final)
 
 ---
 
@@ -538,6 +539,126 @@ hostable web app instead of a PySide6 desktop `.exe`):
 | D20 | Seeds vs the derived export (the two CSV roles, separated) | The three CSVs serve TWO roles, now **physically separated**. **`data/seeds/*.csv` = the bootstrap seeds** (genesis): `run_rebuild` reads them for ONE FINAL from-dump rebuild to construct the DB, after which they are frozen genesis input — never written by the maintainer tool. **`data/db-export/*.csv` = the derived export record** (the living history): the maintainer tool exports the DB here on every confirmed save (diff-preserved) and git-commits it — the git-trackable diff/review layer D1 names. The DB is the originator; `data/db-export/` is its exported record, distinct from the seeds the DB was born from. `data/db-export/` is a new private path (defaults to private — the publish allowlist is opt-in). | Keep writing the export back to `data/seeds/` (conflates the genesis seeds with the living export; "seeds" misleads — it implies the DB is rebuilt FROM them, the exact wrong model). Rename/move `data/seeds/` itself (a large survivor sweep across the bootstrap pipeline + allowlist + every reference, for the incremental path's benefit only — deferred; the seeds keep their path + name for the final rebuild). |
 | D21 | The robust rollback — pre-commit vs post-commit (two mechanisms) | "On Confirm one atomic transaction; on ANY failure nothing lands, including PK auto-increment reset" (the user's explicit, non-negotiable requirement) is delivered by **TWO mechanisms split at the irreversible DB commit**, because the data-core's `commit(handle)` COMMITs+closes both connections one-way (after it, the deferred rollback is gone) AND the export must run POST-commit (`export_seeds` opens its own fresh connection and cannot read the uncommitted held txn). **(a) PRE-commit failure** (validation) → the **deferred-commit `ROLLBACK`** (4a) discards the held txn incl. `sqlite_sequence`/PK bumps — nothing committed. **(b) POST-commit failure** (export / integrity / git) → a **SCOPED restore-point**, a DATA-CORE capability (D13/law 6 — it owns the write semantics + the open connections + knows exactly which rows it touched): before the irreversible commit it captures ONLY the touched rows (across `address_versions` / `survival` / `game_versions` / `address_names` in both DBs) + each DB's `sqlite_sequence` values + the `data/db-export/` CSVs; on a post-commit failure it restores those rows, resets the sequence, and reverts the CSVs. A few-KB capture regardless of DB size — the ~1.3GB DEV DB is never copied. | A full-file snapshot (`shutil.copy2` both DB files before commit) — same guarantee but copies the ~1.3GB DEV DB per committing confirm, the worse mechanism the cornerstone order (UX > Capability > Performance; the cheaper mechanism for the same guarantee wins) rejects. Accept "git failure leaves the DB ahead, retryable" — contradicts the user's explicit "nothing lands" (a deferred-correctness-gap, AP). Put the restore-point in the BACKEND — it would hold write-semantics rule logic (which rows each job touches), a D13/law-6 violation. *(Settled 2026-06-03 — corrects the earlier D19/§7 text that wrongly said the deferred-commit ROLLBACK alone covers a post-commit failure; surfaced via architect-review, the user chose the scoped data-core restore-point.)* |
 
+Settled in the schema-finality dialogue 2026-06-03 (the fourth pass — making the
+reference-DB schema flat + final so it never migrates again except on a new kind):
+
+| # | Decision | Settled value | Rejected alternative |
+|---|---|---|---|
+| D22 | The reference-DB schema is FLAT + FINAL | The reference DB is **one flat table per concern with one typed column per fact** — `address_names` (entity-stable) + `address_versions` (per-version-interval resolve facts), no polymorphic / discriminated-union / EAV structure anywhere. **The `survival` sibling table is folded into `address_versions` and deleted** (it was the design's only polymorphic structure — a `kind_form` discriminator + mutually-exclusive payload — and the recurring schema-churn source): its genuinely-survival-only columns (`aob`, `anchor_string`, `rule`, `slot_count`, `expect_unique`, `derives_from`) move up as nullable typed columns; `survival.content_hash`/`length` are DROPPED as redundant (they were a verified row-for-row copy of the av row's body fingerprint — 157/157 rows identical, zero independent values — so the existing `address_versions.content_hash`/`length` serve both the resolve path and the function-hash survival check); `kind_form` is deleted (the `kind` column already determines which cells a row populates); `derives_from` folds in as a nullable self-FK (the same shape as `valid_through` / `superseded_by` — not polymorphism). **Comprehensiveness is a checkable invariant, not a hope:** the schema is the back-projection of the engine's `ResolveResult` struct (`src/refdb.h`) — every column maps to a field a resolve site consumes; a column with no consuming field is dead weight, a `ResolveResult` field with no backing column is a hole (caught at decode/compile, never silently). The **`kind` enum (`data/seeds/policy.md`) is the CLOSED universe of resolvable things**; **a genuinely new kind is the ONLY event that grows the schema** — and it is a deliberate, surfaced, AP18-class migration with a fixed checklist (§11), never a silent or frequent churn. "Never migrate again" = "migrate only on a new kind, which is rare and deliberate" (stated plainly — not literal immutability). Full schema inventory, the fold mapping, the contract, and the new-kind migration checklist: §11. | A flat schema + a nullable `extra` JSON/TEXT escape column (absorbs any future fact with zero migration — but re-introduces an opt-in polymorphism bag against the "every item its own column / no polymorphic relationships" goal; the user chose the fully-legible no-escape schema, accepting a rare per-new-kind migration over an opaque bag). A generic `(kcdx_id, version, attr_name, attr_value)` EAV attribute table (truly never-migrate, but the OPPOSITE of "every item its own column" — no typed columns, stringly-typed rows, the maintainer tool can't show typed fields, the engine loses its typed contract). Keeping the `survival` sibling (preserves a hot/cold resolve-path separation, but it is the polymorphic churn source the goal exists to kill, and the separation buys ~nothing for a once-per-`refdb::Open()` cold read — UX > Performance, `cornerstones.md`). |
+
 These supersede the earlier repo-owns-the-format / CSV-editor decisions recorded in
-`requirements.md` R1/R6 and `plan.md` §"two-phase", the Job-2-only MVP framing, **and the
-PySide6 desktop-`.exe` delivery (D14–D18 — the tool is now a hostable web app).**
+`requirements.md` R1/R6 and `plan.md` §"two-phase", the Job-2-only MVP framing, **the
+PySide6 desktop-`.exe` delivery (D14–D18 — the tool is now a hostable web app), and the
+`survival` sibling-table shape (D22 folds it into `address_versions`).**
+
+## 11. The reference-DB schema — flat + final <a name="11-schema-flat-final"></a>
+
+The schema the maintainer tool authors into. Settled D22. The goal: **never migrate
+the schema again — except when a genuinely new `kind` of resolvable thing is added,
+which is rare and deliberate.** This section is the durable guarantee that makes that
+checkable rather than hopeful.
+
+### 11.1 The shape — two flat tables, one typed column per fact
+
+The reference DB is **two flat tables, no polymorphic structure anywhere**:
+
+- **`address_names`** — one row per curated entity (entity-stable facts): the stable
+  `id` (== the `kcdx_id` plugins reference), `name`, the supersession pair
+  (`superseded_by` + `superseded_at_version`), the deprecation pair (`is_deprecated` +
+  `deprecated_at_version` + `deprecation_replacement`), `notes`.
+- **`address_versions`** — one row per (entity, version-interval) with every per-version
+  RESOLVE FACT as its own typed column: identity (`kcdx_id`, `kind`, `module_id`,
+  `valid_from`, `valid_through`), location (`rva`, `offset`, `vtable_slot`,
+  `struct_offset`, `value`), ABI (`signature`, `observed_arg_slots`,
+  `caller_reg_arg_count`, `caller_arg_agreement`, `length`), trust (`last_verified_at_version`,
+  `verified_by`, `verified_date`, `evidence_kind`), survival/re-find (`content_hash` +
+  `length`, OR `aob` / `anchor_string` / `rule` / `slot_count` / `expect_unique` /
+  `derives_from`).
+
+`kind` (the address-kind enum) gates which cells a given row populates — a `function`
+row carries `rva` + `content_hash`/`length`; a `callsite` carries `offset` + `aob`; a
+`vtable_index` carries `vtable_slot` + `value`; etc. The cells a kind does not use are
+NULL. **This per-kind NULL-ing is NOT polymorphism** — every column is a plain typed
+column present on every row; `kind` is just authored metadata, not a discriminator that
+changes the row's structure. There is no discriminated-union table, no `kind_form`
+sub-type table, no EAV attribute bag, no JSON blob. One row = every fact that row can
+carry, each its own cell. This is what makes the maintainer tool a flat row editor with
+no joins and no per-kind form-switching beyond which cells are relevant.
+
+### 11.2 The `survival` fold (D22) — the one structure removed
+
+The former `survival` sibling table (a `kind_form` discriminator + mutually-exclusive
+payload columns, the design's only polymorphic structure and its recurring
+schema-churn source) is folded into `address_versions` and deleted:
+
+| Former `survival` column | Folds to | Note |
+|---|---|---|
+| `aob`, `anchor_string`, `rule`, `slot_count`, `expect_unique` | new nullable typed columns on `address_versions` | the genuinely-survival-only facts; gated by `kind` like every other location/ABI cell |
+| `derives_from` | a nullable self-FK column on `address_versions` (→ `address_versions.id`) | the survival-DAG edge; same shape as the existing `valid_through` / `superseded_by` self-FKs — not polymorphism |
+| `content_hash`, `length` | **dropped** (redundant) | were a verified row-for-row copy of the av row's body fingerprint (157/157 rows identical, never independently set); the existing `address_versions.content_hash`/`length` serve both the resolve path and the function-hash survival check |
+| `kind_form` | **deleted** (the discriminator) | `kind` already determines the survival form (`function` → reuse the body hash; `callsite`/`instruction_anchor` → `aob`; `string_anchor` → `anchor_string`; `data_slot` → `rule`; `vtable_base` → `slot_count`; `vtable_index` → deferred) |
+| `id`, `address_version_id` | gone | the 1:1 sibling row is gone; the facts live on the av row itself |
+
+The fold loses nothing: every survival fact either moves to its own av column or was a
+proven duplicate of an existing av column. (The hot/cold resolve-path separation the
+sibling provided is given up deliberately — survival is a once-per-`refdb::Open()` cold
+read, and `cornerstones.md` ranks authoring-UX + schema-stability above that
+performance nicety.)
+
+### 11.3 The comprehensiveness contract — `ResolveResult` is the authority
+
+How you KNOW the schema is comprehensive (and that a hole cannot open silently):
+
+**The schema is the back-projection of the engine's `ResolveResult` struct
+(`src/refdb.h`).** Every resolve site in the engine consumes a `ResolveResult` (the
+engine serves from in-memory maps built from the DB at `refdb::Open()`, never SQL at
+runtime — `address-library.md`). So:
+
+- **Every `address_versions` column maps to a `ResolveResult` field** a resolve site
+  reads. A column with no consuming field is dead weight (remove it).
+- **Every `ResolveResult` field maps back to a column** (or is derived at decode from
+  columns that exist — e.g. the verification state). A field with no backing column is
+  a HOLE — and it surfaces at `DecodeVersionRow` / compile time, never silently in
+  production.
+
+This turns "is the schema comprehensive?" into a mechanical check anyone can run: diff
+the `ResolveResult` struct against the `address_versions` column set; a field on one
+side with no counterpart on the other is the defect. Comprehensiveness is an invariant
+the build can hold, not a judgment call.
+
+### 11.4 The closed universe — `kind` is the only growth axis
+
+**The `kind` enum (`data/seeds/policy.md` §"kind") is the closed set of things the
+engine resolves by address.** Everything the kcdx engine references by address — a
+function, a callsite, a vtable slot, a vtable base, a data slot, a string anchor, an
+instruction anchor — is one of those kinds. A new entity at an existing kind is pure
+data (an AP18-gated row, zero schema change). A new *location form* for an existing
+kind that an existing column already expresses is also zero-schema. **The ONLY event
+that grows the schema is a genuinely new `kind`** — a new class of resolvable thing not
+expressible by any current kind's columns. That is rare, deliberate, and surfaced (a
+design decision the user owns) — never a silent or incremental churn.
+
+### 11.5 The new-kind migration checklist (the only sanctioned schema change)
+
+When a genuinely new `kind` is added (the rare, deliberate event), the migration is
+mechanical, not archaeology — do all of, in one coordinated change:
+
+1. **`ResolveResult`** (`src/refdb.h`) — add the field(s) the new kind's resolve sites
+   consume (append-only, per the struct's append convention).
+2. **Schema** (`seeds_shared/schema.py`) — add the new typed column(s) to
+   `address_versions` (+ the USER projection allowlist if the column ships to USER) and
+   the new value to the `kind` enum.
+3. **Importer** (`import_to_sqlite` / the row + survival builders) — populate the new
+   column(s) for the new kind; gate the fingerprint-vs-NULL / promote-vs-mint branch on
+   the new kind if it carries a body hash.
+4. **Exporter** (`csv_exporter.py`) — round-trip the new column(s) to/from the seed CSV
+   (byte-identity preserved).
+5. **Engine SELECT / `DecodeVersionRow`** (`src/refdb.cpp`) — decode the new column(s)
+   into the new `ResolveResult` field(s).
+6. **Baseline re-capture** (`test_rebuild_oracle.py --capture`) — deliberate + inspected,
+   documented in the oracle's BASELINE PROVENANCE log (the new column drifts the
+   `address_versions` hash; confirm nothing else moved before recording).
+
+A change that is NOT a new kind (a new entity, a re-verify, a value correction) touches
+NONE of the above — only data. That asymmetry is the point: the schema is stable; the
+data grows freely.
