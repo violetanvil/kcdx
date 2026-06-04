@@ -43,7 +43,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). UI design:
 
 | Step | Status | Commit |
 |---|---|---|
-| 6 frontend skeleton + Mantine theme (tokens) + responsive app shell + API client | NOT STARTED | — |
+| 6 frontend skeleton + Mantine theme (tokens) + responsive app shell + API client | DONE | frontend-repo 845e694 |
 | 7 s01 navigator — search + status/kind filters + entity list + status chips | NOT STARTED | — |
 | 8 s02 entity detail (read) — header + version table + version dropdown + default-row | NOT STARTED | — |
 | 9 s04 field editor — view/edit a version row, dirty markers + "was:", inline validation | NOT STARTED | — |
