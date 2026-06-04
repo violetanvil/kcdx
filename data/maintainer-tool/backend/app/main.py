@@ -14,9 +14,10 @@ import logging
 import os
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from . import adapter
-from .config import load_config
+from .config import cors_origins, load_config
 from .routes_confirm import router as confirm_router
 from .routes_delta import router as delta_router
 from .routes_read import router as read_router
@@ -33,6 +34,23 @@ app = FastAPI(
                 "version-tag adapter + health/load. Step 2b: read endpoints "
                 "(curated set / entity detail / version rows).",
     version="0.1.0",
+)
+
+# CORS: the served frontend (a separate origin -- vite preview :4173 / dev :5173, or the
+# operator's production origin) calls this backend cross-origin, so the browser needs an
+# Access-Control-Allow-Origin header or it blocks the call. The allowed origins are an
+# env-configurable ALLOWLIST (KCDX_CORS_ORIGINS, localhost dev default) -- NEVER a wildcard:
+# the maintainer tool writes + commits the Address Library, so a tight allowlist is the
+# security-correct choice (D17 operator-wired seam; security-invariants.md). Methods are
+# GET + POST only (the API's whole surface -- read endpoints are GET, save/confirm/cancel are
+# POST; OPTIONS preflight is handled by the middleware automatically). allow_credentials is
+# False: the frontend sends no cookies/credentials (auth is the operator-wired seam, D17).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins(),
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+    allow_credentials=False,
 )
 
 # The read-for-display endpoints (GET /entities, /entities/{id}, /.../versions) --

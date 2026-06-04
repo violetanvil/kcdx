@@ -250,7 +250,16 @@ Each new unit's single responsibility (`structure-by-responsibility.md`):
   surfacing the data-core's `modules` table (`read_modules` → `[{id, name, path}]`), added
   because the s04 field editor's `module` field is an editable `Select` over the real module
   list (Phase 2 exposed no module-list read). Like the other read endpoints it derives
-  nothing (law 6) and returns the same 200 empty signal on a missing checkout.
+  nothing (law 6) and returns the same 200 empty signal on a missing checkout. **The
+  browser-served frontend is a SEPARATE ORIGIN** (vite preview `:4173` / dev `:5173`, or the
+  operator's production origin), so the backend sets a **CORS allowlist** — an
+  env-configurable list of allowed origins (`KCDX_CORS_ORIGINS`, comma-separated; localhost
+  dev default), joining the operator-wired seams (D17, alongside `KCDX_CHECKOUT` /
+  `KCDX_PUSH_TOKEN`): the operator wires the real frontend origin in production (or, in the
+  Docker same-origin deployment D18, CORS may not apply). It is a tight allowlist, **never a
+  wildcard origin** — the tool writes + commits the Address Library, so a wildcard CORS on a
+  mutating API is a finding (`security-invariants.md`); allowed methods are `GET` + `POST`
+  (the API's whole surface), credentials off (auth is the operator's seam, not built).
 - **The frontend (`data/maintainer-tool/frontend/`, `ui/`)** — presentation only (D14). The
   React app renders the navigator, entity detail, version history/compare, field editor,
   create flows, and the field-delta confirm (the seven screens, re-expressed for web in the

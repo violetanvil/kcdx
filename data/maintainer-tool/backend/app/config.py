@@ -24,6 +24,25 @@ from dataclasses import dataclass
 # The env var the operator wires to the mounted-volume checkout (D18).
 CHECKOUT_ENV_VAR = "KCDX_CHECKOUT"
 
+# The env var the operator wires to the real frontend origin(s) in production (D17 --
+# the operator-wired seam, alongside KCDX_CHECKOUT / KCDX_PUSH_TOKEN). A comma-separated
+# allowlist of browser ORIGINS the served frontend calls the backend from. Unset/empty ->
+# the localhost dev default below, so the app boots + runs locally without the operator's
+# env (the same boot-without-config posture as the checkout dev default).
+CORS_ORIGINS_ENV_VAR = "KCDX_CORS_ORIGINS"
+
+# The localhost dev default (D17): the vite `preview` port (4173) + the vite `dev` port
+# (5173), in BOTH the localhost and 127.0.0.1 spellings -- a browser treats localhost and
+# 127.0.0.1 as DISTINCT origins, so a dev hitting either reaches the backend without wiring
+# KCDX_CORS_ORIGINS. NOT a wildcard origin: the maintainer tool writes + commits the
+# Address Library, so a tight allowlist is the security-correct default (security-invariants.md).
+_DEV_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:4173",
+    "http://localhost:5173",
+    "http://127.0.0.1:4173",
+    "http://127.0.0.1:5173",
+)
+
 # Sub-paths of a checkout the data-core reads. These mirror the data-core's own
 # layout constants (seeds_shared / import_to_sqlite) -- the backend names WHERE
 # the checkout puts them; the data-core owns what they contain.
@@ -110,3 +129,18 @@ def load_config(checkout_override=None):
         return Config(checkout_path=os.path.abspath(env), checkout_source="env")
     return Config(checkout_path=_repo_root_from_here(),
                   checkout_source="dev-default")
+
+
+def cors_origins():
+    """The allowed browser ORIGINS the served frontend calls the backend from (D17 --
+    the operator-wired CORS seam). KCDX_CORS_ORIGINS (a comma-separated list the operator
+    wires to the real production origin), else the localhost dev default. Never a wildcard
+    -- a mutating API on a wildcard CORS is a finding (security-invariants.md); the
+    allowlist is the security-correct default. Read fresh each call (mirrors load_config),
+    so a test can set the env and re-construct the middleware deterministically."""
+    env = os.environ.get(CORS_ORIGINS_ENV_VAR)
+    if env:
+        origins = [o.strip() for o in env.split(",") if o.strip()]
+        if origins:
+            return origins
+    return list(_DEV_DEFAULT_CORS_ORIGINS)

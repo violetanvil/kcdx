@@ -3,6 +3,29 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-04 — backend CORS allowlist (the served frontend is a separate origin)
+
+The FastAPI backend now sets a `CORSMiddleware` so the browser-served frontend (a separate
+origin — vite preview `:4173` / dev `:5173`, or the operator's production origin) can call it
+cross-origin; without it the browser blocks every frontend→backend fetch (no
+`Access-Control-Allow-Origin` header). Found during live acceptance. The allowed origins are an
+env-configurable allowlist (`KCDX_CORS_ORIGINS`, comma-separated; localhost dev default),
+joining the operator-wired seams (D17, alongside `KCDX_CHECKOUT` / `KCDX_PUSH_TOKEN`) — the
+operator wires the real frontend origin in production (or, in the Docker same-origin deployment
+D18, CORS may not apply). **Never a wildcard origin:** the tool writes + commits the Address
+Library, so a wildcard CORS on a mutating API is a finding (`security-invariants.md`); allowed
+methods are `GET` + `POST` (the API's whole surface), credentials off (auth is the operator's
+seam, not built).
+
+- **§5 (amended)** — the backend bullet records the CORS allowlist seam (`KCDX_CORS_ORIGINS`,
+  localhost dev default, tight allowlist, GET/POST, credentials off).
+
+**Why:** the served frontend and the backend run on different ports = different origins; the
+browser's same-origin policy blocks the call until the backend sends the allow-origin header.
+The configurable-allowlist-with-localhost-default approach (env-wired in production) was the
+user's settled choice; a wildcard was rejected (a mutating Address-Library API must not accept
+any origin).
+
 ## 2026-06-04 — `GET /modules` joins the read API (the s04 `module` Select source)
 
 A thin module-registry read endpoint `GET /modules` joins the browse/view read API, backed
