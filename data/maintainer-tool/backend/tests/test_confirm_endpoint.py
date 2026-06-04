@@ -39,6 +39,7 @@ RUN
 """
 import hashlib
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -86,6 +87,13 @@ NEW_ROW_TAG = "1.6.2000000"         # a new game tag for a create-version-at-a-n
 
 AUTHOR_NAME = "Test Maintainer"
 AUTHOR_EMAIL = "test.maintainer@example.invalid"
+
+# LAW 5 (design S7 / ui/screens/s06-save-confirm.md): git is INVISIBLE to the maintainer.
+# A maintainer-FACING failure `detail` (the string the page renders as the write-failure
+# reason) must contain NO git vocabulary. The git stage + raw git stderr are the operator's
+# diagnostic -- they live in the log, never in the rendered detail. This is the law-5 grep.
+_GIT_VOCAB_RE = re.compile(r"\b(git|index\.lock|push|fetch|stage|remote|commit hash)\b",
+                           re.IGNORECASE)
 
 
 def _git(checkout, *args, env=None, check=True):
@@ -625,3 +633,65 @@ def test_confirm_unknown_tag_aborts_before_txn(checkout, client_at):
     assert "not a known game version" in resp.text
     assert _state_hash(root) == state_before, "an unknown tag must not write"
     assert _head_sha(root) == head_before, "an unknown tag must not commit"
+
+
+# ============================================================================
+# LAW 5 (git invisible) -- the maintainer-facing write-failure `detail` for a git failure
+# is GIT-FREE, while the structured `git_stage` field still carries the stage (the operator
+# diagnostic lives in the log + git_stage, NEVER in the rendered detail). A directly-runnable
+# UNIT test of _failed_response (no git subprocess) -- the exact contract the GitCommitError
+# handler now uses (design S7 / ui/screens/s06-save-confirm.md law 5).
+# ============================================================================
+def test_failed_response_detail_is_git_free_on_a_git_failure():
+    from app.routes_confirm import _failed_response
+
+    # Call _failed_response EXACTLY as the GitCommitError handler now does: a git-free
+    # maintainer detail + git_stage as the structured operator field.
+    resp = _failed_response(
+        "version-row kcdx_id=1",
+        "the save couldn't be recorded and was rolled back -- nothing landed.",
+        git_stage="push")
+
+    assert resp["status"] == "failed", resp
+    assert resp["committed"] is False, resp
+    assert resp["retry"] is False, resp
+    # LAW 5: the maintainer-rendered reason carries NO git vocabulary.
+    leak = _GIT_VOCAB_RE.search(resp["detail"])
+    assert leak is None, \
+        f"law-5 violation: maintainer-facing detail leaks git vocab {leak.group(0)!r}: " \
+        f"{resp['detail']!r}"
+    # The structured operator field STILL carries the stage (the frontend uses git_stage for
+    # its own logic; it renders `detail`, never git_stage).
+    assert resp["git_stage"] == "push", resp
+
+
+# ============================================================================
+# LAW 5 (git invisible) -- the post-commit git-push-failure path: the maintainer-facing
+# `detail` the page renders is GIT-FREE end-to-end through the real app. (This rides the
+# same real-git fixture as the rollback test; if that fixture's environment cannot run the
+# git subprocess, this skips with it -- the directly-runnable unit test above is the
+# always-green law-5 proof.)
+# ============================================================================
+def test_confirm_git_push_failure_detail_is_git_free(checkout, client_at):
+    root, bare = checkout
+    client = client_at(root, push=True)
+
+    # Point the `private` remote at a non-existent path so the push fails AFTER the DB
+    # commit -> the GitCommitError write-failure path (the law-5 leak site).
+    dead = os.path.join(tempfile.gettempdir(), "confirm_no_such_remote_law5.git")
+    _git(root, "remote", "set-url", PRIVATE_REMOTE, dead)
+
+    resp = client.post("/confirm/update-version", json=_confirm_body(
+        version_tag=GVT, kcdx_id=1, valid_from_version=GVT,
+        edits={"verified_by": "Law5Reviewer"},
+    ))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "failed", body
+    assert body.get("git_stage") == "push", body          # structured field unchanged
+    # LAW 5: the rendered reason leaks no git vocabulary (the operator's git detail is in
+    # the log + the structured git_stage, NOT in this maintainer-facing string).
+    leak = _GIT_VOCAB_RE.search(body["detail"])
+    assert leak is None, \
+        f"law-5 violation: rendered detail leaks git vocab {leak.group(0)!r}: " \
+        f"{body['detail']!r}"

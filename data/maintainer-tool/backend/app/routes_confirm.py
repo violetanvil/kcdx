@@ -328,10 +328,15 @@ def _run_confirm(body, *, entity_label, write, author):
                     "pre-Confirm DB + db-export (robust rollback)", entity_label,
                     exc.stage, exc)
         _robust_rollback(handle, csv_revert)
+        # The maintainer-facing detail is GIT-FREE (design S7 law 5 -- git is invisible to
+        # the maintainer). The git stage + the raw git stderr (exc) are the OPERATOR's
+        # diagnostic and stay in the log.warning above; they NEVER reach the rendered
+        # detail. git_stage is a structured field for the frontend's own logic, not a
+        # maintainer-rendered string (the frontend shows `detail`, never git_stage).
         return _failed_response(
             entity_label,
-            f"the git {exc.stage} failed and the save was rolled back (nothing landed): "
-            f"{exc}", git_stage=exc.stage)
+            "the save couldn't be recorded and was rolled back -- nothing landed.",
+            git_stage=exc.stage)
     except Exception as exc:
         # Any other post-commit failure (a stray export error, an unexpected raise) ->
         # restore + FAILED. Never leave the DB ahead (the user's robust-rollback req.).
