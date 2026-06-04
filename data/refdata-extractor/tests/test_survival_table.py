@@ -332,11 +332,14 @@ def _expect_unique_set_on_unique_locators(out):
 def _av_folded_columns_present(out):
     """schema-flatten-survival-fold Phase 1 step 1: the six folded survival
     columns exist on address_versions with the right SQL types after a rebuild,
-    in BOTH DBs (they ship to USER + DEV). ADDITIVE first move -- this step adds
-    the columns and asserts they are NULL on every row (no populate logic yet;
-    step 2 fills them). The SQL types match the former `survival` SCHEMA entry's
-    same-named columns (aob/anchor_string/rule TEXT; slot_count/expect_unique/
-    derives_from INTEGER)."""
+    in BOTH DBs (they ship to USER + DEV). The SQL types match the former
+    `survival` SCHEMA entry's same-named columns (aob/anchor_string/rule TEXT;
+    slot_count/expect_unique/derives_from INTEGER).
+
+    (Step 1's all-NULL invariant is SUPERSEDED by step 2, which populates these
+    columns from the per-kind dispatch -- the populate + the equivalence-vs-survival
+    proof are _av_folded_cells_equal_survival. This assertion now owns only the
+    column PRESENCE + TYPE contract, the part step 2 does not change.)"""
     expected_types = {
         "aob": "TEXT", "anchor_string": "TEXT", "rule": "TEXT",
         "slot_count": "INTEGER", "expect_unique": "INTEGER",
@@ -354,16 +357,112 @@ def _av_folded_columns_present(out):
                 assert info[col] == ty, (
                     f"[{which}] address_versions.{col} type={info[col]!r} "
                     f"!= expected {ty!r} (must match survival's SQL type)")
-            # Additive invariant for THIS step: every folded cell is NULL (no
-            # populate logic yet -- step 2). A non-NULL cell here means a
-            # populate path leaked in early.
-            for col in expected_types:
-                n = con.execute(
-                    f'SELECT COUNT(*) FROM address_versions '
-                    f'WHERE "{col}" IS NOT NULL').fetchone()[0]
-                assert n == 0, (
-                    f"[{which}] {n} address_versions row(s) have a non-NULL "
-                    f"{col} (this additive step populates none)")
+        finally:
+            con.close()
+
+
+def _av_folded_cells_equal_survival(out):
+    """schema-flatten-survival-fold Phase 1 step 2 -- THE equivalence proof (the
+    safety proof the Phase-3 survival-table delete rests on).
+
+    For EVERY curated address_versions row, its six folded cells
+    (aob/anchor_string/rule/slot_count/expect_unique/derives_from) EQUAL its 1:1
+    `survival` row's corresponding cells, row-for-row, across BOTH DBs. This is a
+    real per-row join+compare that goes RED if ANY cell diverges -- the falsifiable
+    proof that the av folded columns carry exactly what the survival table carries,
+    so dropping the survival table loses nothing.
+
+    Falsifiable: it joins survival -> address_versions on address_version_id and
+    asserts each of the six folded columns is pairwise-equal (NULL==NULL included);
+    a populate path that wrote a different value to the av column than to the
+    survival cell -- or skipped a kind -- would surface as a non-empty mismatch
+    list. It also asserts the join is COMPLETE (every curated av row compared) and
+    that the compared count == the curated count (no row silently skipped), and
+    that the av columns are actually POPULATED where the kind uses them (not
+    vacuously all-NULL on both sides)."""
+    folded = ("aob", "anchor_string", "rule", "slot_count", "expect_unique",
+              "derives_from")
+    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
+        con = sqlite3.connect(os.path.join(out, fn))
+        try:
+            # 1:1 join survival -> its owning curated av row. Compare each folded
+            # column pairwise; IS-based equality so NULL==NULL counts as equal and
+            # a NULL-vs-value divergence counts as a mismatch.
+            n_compared = 0
+            mismatches = []
+            for row in con.execute(
+                    "SELECT a.id, a.kcdx_id, "
+                    "a.aob, s.aob, a.anchor_string, s.anchor_string, "
+                    "a.rule, s.rule, a.slot_count, s.slot_count, "
+                    "a.expect_unique, s.expect_unique, "
+                    "a.derives_from, s.derives_from "
+                    "FROM address_versions a JOIN survival s "
+                    "ON s.address_version_id = a.id "
+                    "WHERE a.kcdx_id IS NOT NULL"):
+                av_id, kid = row[0], row[1]
+                n_compared += 1
+                pairs = row[2:]
+                for i, col in enumerate(folded):
+                    av_val = pairs[2 * i]
+                    sv_val = pairs[2 * i + 1]
+                    if av_val != sv_val:
+                        mismatches.append(
+                            f"av id={av_id} kid={kid} col={col}: "
+                            f"av={av_val!r} != survival={sv_val!r}")
+            assert not mismatches, (
+                f"[{which}] {len(mismatches)} folded-cell divergence(s) between the "
+                f"av row and its survival row (the fold is NOT equivalent):\n  "
+                + "\n  ".join(mismatches[:20]))
+
+            # The join is complete: every curated av row was compared (none lacked a
+            # survival row to join, which would silently DROP it from the proof).
+            n_curated = con.execute(
+                "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL"
+            ).fetchone()[0]
+            assert n_compared == n_curated, (
+                f"[{which}] equivalence compared {n_compared} rows but there are "
+                f"{n_curated} curated av rows -- {n_curated - n_compared} were not "
+                f"joined (a curated av row with no survival row would escape the proof)")
+
+            # Not vacuous: the av folded columns are actually POPULATED where a kind
+            # uses them (callsite/string_anchor/data_slot/vtable_base rows gained
+            # their cells), not all-NULL on both sides (which would pass trivially).
+            n_av_populated = con.execute(
+                "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NOT NULL AND "
+                "(aob IS NOT NULL OR anchor_string IS NOT NULL OR rule IS NOT NULL "
+                "OR slot_count IS NOT NULL OR expect_unique IS NOT NULL "
+                "OR derives_from IS NOT NULL)").fetchone()[0]
+            assert n_av_populated > 0, (
+                f"[{which}] no curated av row carries a folded cell -- the populate "
+                f"path looks dead (equivalence would pass vacuously all-NULL)")
+        finally:
+            con.close()
+
+
+def _function_rows_have_null_folded_cells(out):
+    """schema-flatten-survival-fold step 2: a function-kind curated av row carries
+    NO folded survival cell (aob/anchor_string/rule/slot_count/expect_unique all
+    NULL; derives_from NULL unless the seed supplied survival_derives_from). Its
+    content_hash/length stay on the av row as the body fingerprint (NOT folded
+    columns -- untouched by the fold). Mirrors the survival-row invariant
+    (_function_rows_carry_hash's _NON_FUNCTION_PAYLOAD check) on the av side."""
+    for which, fn in (("user", "reference.sqlite"), ("dev", "reference-dev.sqlite")):
+        con = sqlite3.connect(os.path.join(out, fn))
+        try:
+            kind_by_av = _decoded_kind_by_av(con)
+            fn_avs = [av for av, k in kind_by_av.items()
+                      if k in ("function", "function_no_sig", "function_variadic")]
+            assert fn_avs, f"[{which}] no function-kind curated rows in the fixture"
+            ph = ",".join("?" * len(fn_avs))
+            bad = con.execute(
+                f"SELECT COUNT(*) FROM address_versions WHERE id IN ({ph}) AND "
+                f"(aob IS NOT NULL OR anchor_string IS NOT NULL OR rule IS NOT NULL "
+                f"OR slot_count IS NOT NULL OR expect_unique IS NOT NULL)",
+                fn_avs).fetchone()[0]
+            assert bad == 0, (
+                f"[{which}] {bad} function-kind av row(s) carry a folded "
+                f"search/derivation cell (function_hash uses only the body "
+                f"fingerprint, not the folded columns)")
         finally:
             con.close()
 
@@ -434,6 +533,14 @@ def test_av_folded_columns_present(rebuilt):  # noqa: F811
     _av_folded_columns_present(rebuilt)
 
 
+def test_av_folded_cells_equal_survival(rebuilt):  # noqa: F811
+    _av_folded_cells_equal_survival(rebuilt)
+
+
+def test_function_rows_have_null_folded_cells(rebuilt):  # noqa: F811
+    _function_rows_have_null_folded_cells(rebuilt)
+
+
 if __name__ == "__main__":
     try:
         out = _get_rebuild()
@@ -451,6 +558,10 @@ if __name__ == "__main__":
         print("PASS test_survival_derives_from_chain")
         _av_folded_columns_present(out)
         print("PASS test_av_folded_columns_present")
+        _av_folded_cells_equal_survival(out)
+        print("PASS test_av_folded_cells_equal_survival")
+        _function_rows_have_null_folded_cells(out)
+        print("PASS test_function_rows_have_null_folded_cells")
         print("\nall survival-table oracle tests passed")
     finally:
         _cleanup_rebuild()

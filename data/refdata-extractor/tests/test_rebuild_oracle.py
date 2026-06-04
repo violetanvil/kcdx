@@ -105,6 +105,31 @@ both DBs, content-hash only; survival + every other table byte-identical; the ne
 cells are all NULL because every build_curated_row caller passes None) before
 recording.
 
+It was RE-CAPTURED AGAIN at the schema-flatten-survival-fold Phase 1 step 2 when
+the six folded survival columns were POPULATED on the curated address_versions
+rows (D22 / design §11.2 -- the dual-write step that proves the fold equivalent).
+The importer's rebuild + _apply_one_db now write each curated row's
+aob/anchor_string/rule/slot_count/expect_unique/derives_from cells from the SAME
+per-kind dispatch (survival_builder._KIND_TO_FORM) that builds the (STILL-written)
+survival row -- so each av folded cell equals its survival row's cell, row-for-row
+(the equivalence the Phase-3 survival-table delete rests on, asserted by
+test_survival_table.py::test_av_folded_cells_equal_survival). The DUAL-WRITE is the
+point of this step: the `survival` table is written UNCHANGED in parallel. So the
+ONLY drift is the two `address_versions` content hashes (USER + DEV) -- the folded
+cells flip from NULL (step 1's additive add) to their per-kind values on the rows
+whose kind populates them (callsite/instruction_anchor -> aob+expect_unique,
+string_anchor -> anchor_string+expect_unique, data_slot -> rule+derives_from,
+vtable_base -> slot_count, function/vtable_index rows stay NULL except a seeded
+derives_from) -- with NO row-count change, NO table-set change, and -- critically
+for a dual-write step -- the `survival` table BYTE-IDENTICAL (its content hash +
+row count unchanged in both DBs: the fold writes the av columns, it does NOT touch
+the survival table this step) and no other table moved. The verify was run FIRST
+and confirmed the ONLY drift was the two `address_versions` content hashes (USER +
+DEV) -- survival + every other table byte-identical; the re-capture was deliberate
+and inspected (only address_versions drifted, both DBs, content-hash only; the av
+folded cells now equal the survival cells row-for-row; the survival table did NOT
+move) before recording.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 

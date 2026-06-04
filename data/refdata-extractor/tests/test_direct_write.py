@@ -448,6 +448,120 @@ def _convergence_full_column(b):
     _converge(b, direct, fold, "full-column UPDATE")
 
 
+def _pick_search_locating_row(db_path):
+    """A curated row of a kind that POPULATES the folded survival columns (a
+    callsite / instruction_anchor / string_anchor / data_slot / vtable_base) -- a
+    fold-populate convergence target. Returns (kcdx_id, valid_from_tag, kind)."""
+    con = sqlite3.connect(db_path)
+    try:
+        gv = {r[0]: r[1] for r in con.execute("SELECT id, tag FROM game_versions")}
+        kdec = _dict_id_to_val(con, "address_versions", "kind")
+        for kid, vf, kindid in con.execute(
+                "SELECT kcdx_id, valid_from, kind FROM address_versions "
+                "WHERE kcdx_id IS NOT NULL"):
+            k = kdec.get(kindid)
+            if k in ("callsite", "instruction_anchor", "string_anchor"):
+                return (kid, gv.get(vf), k)
+        return None
+    finally:
+        con.close()
+
+
+def _convergence_fold_populate(b):
+    # schema-flatten-survival-fold step 2: a full-column UPDATE that CHANGES a folded
+    # survival cell (here a search-locating row's survival_aob/anchor_string +
+    # survival_expect_unique) drives _apply_one_db's full-column path on BOTH the direct
+    # and the seed-rebuild side, so they write the SAME folded av cell + the SAME survival
+    # cell. Convergence pins that the fold's av-column populate is byte-identical between
+    # the direct-write path and the rebuild path (the av folded columns are part of the
+    # whole-DB _db_fingerprint). NON-VACUOUS: the edit sets a folded cell to a NEW value,
+    # so a fold that wrote the av column differently than the survival cell (or differed
+    # direct-vs-rebuild) would surface as a differing address_versions table.
+    user_db = os.path.join(b["out"], "reference.sqlite")
+    picked = _pick_search_locating_row(user_db)
+    assert picked is not None, "no search-locating curated row in the fixture"
+    kid, vf_tag, kind = picked
+    if kind == "string_anchor":
+        edits = {"survival_anchor_string": "exec convergence.cfg",
+                 "survival_expect_unique": "1"}
+    else:  # callsite / instruction_anchor -> aob form
+        edits = {"survival_aob": "48 89 5C 24 ?? 57 48 83 EC 20",
+                 "survival_expect_unique": "1"}
+
+    def direct(out):
+        _commit_direct(db_editor.update_version_row(
+            out, None, kid, vf_tag, dict(edits), version=_ver(b), defer_commit=True))
+
+    def fold(p):
+        seed_csv_edit.update_row_in_place(
+            os.path.join(p, ADDRESS_VERSIONS_SEED_NAME),
+            key_columns=("kcdx_id", "valid_from_version"),
+            key_values=(str(kid), str(vf_tag)), edits=dict(edits))
+
+    _converge(b, direct, fold, "fold-populate (folded survival cell)")
+
+
+def _fold_av_equals_survival_after_direct_write(b):
+    """schema-flatten-survival-fold step 2: AFTER a direct-write that populates a folded
+    cell, the av row's folded columns EQUAL its 1:1 survival row's cells in BOTH DBs --
+    the same equivalence proof the rebuild oracle (test_survival_table.py) carries, here
+    on the DIRECT-write path. Falsifiable: a join+compare that goes RED if the direct
+    write put a different value on the av column than on the survival cell."""
+    user_db = os.path.join(b["out"], "reference.sqlite")
+    picked = _pick_search_locating_row(user_db)
+    assert picked is not None, "no search-locating curated row in the fixture"
+    kid, vf_tag, kind = picked
+    if kind == "string_anchor":
+        edits = {"survival_anchor_string": "exec convergence.cfg",
+                 "survival_expect_unique": "1"}
+    else:
+        edits = {"survival_aob": "48 89 5C 24 ?? 57 48 83 EC 20",
+                 "survival_expect_unique": "1"}
+    out = _fresh_db(b)
+    try:
+        _commit_direct(db_editor.update_version_row(
+            out, None, kid, vf_tag, dict(edits), version=_ver(b), defer_commit=True))
+        folded = ("aob", "anchor_string", "rule", "slot_count", "expect_unique",
+                  "derives_from")
+        for which in ("reference.sqlite", "reference-dev.sqlite"):
+            con = sqlite3.connect(os.path.join(out, which))
+            try:
+                row = con.execute(
+                    "SELECT a.aob, s.aob, a.anchor_string, s.anchor_string, "
+                    "a.rule, s.rule, a.slot_count, s.slot_count, "
+                    "a.expect_unique, s.expect_unique, a.derives_from, s.derives_from "
+                    "FROM address_versions a JOIN survival s "
+                    "ON s.address_version_id = a.id "
+                    "WHERE a.kcdx_id = ? AND a.valid_from = "
+                    "(SELECT id FROM game_versions WHERE tag = ?)",
+                    (kid, vf_tag)).fetchone()
+                assert row is not None, (
+                    f"[{which}] no joined av+survival row for the edited entity")
+                for i, col in enumerate(folded):
+                    assert row[2 * i] == row[2 * i + 1], (
+                        f"[{which}] edited row folded {col}: av={row[2 * i]!r} != "
+                        f"survival={row[2 * i + 1]!r} (direct-write fold diverged)")
+                # The edit actually landed (non-vacuous): the aob/anchor_string the
+                # edit set is present on the av row.
+                if kind == "string_anchor":
+                    av_val = con.execute(
+                        "SELECT anchor_string FROM address_versions WHERE kcdx_id = ?",
+                        (kid,)).fetchone()[0]
+                    assert av_val == "exec convergence.cfg", (
+                        f"[{which}] the edited anchor_string did not land on the av "
+                        f"row: {av_val!r}")
+                else:
+                    av_val = con.execute(
+                        "SELECT aob FROM address_versions WHERE kcdx_id = ?",
+                        (kid,)).fetchone()[0]
+                    assert av_val == "48 89 5C 24 ?? 57 48 83 EC 20", (
+                        f"[{which}] the edited aob did not land on the av row: {av_val!r}")
+            finally:
+                con.close()
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 def _convergence_create_entity(b):
     rva = _a_non_function_rva()
     first = {"valid_from_version": GVT, "module": "WHGame.dll",
@@ -922,6 +1036,14 @@ def test_convergence_full_column(baseline):  # noqa: F811
     _convergence_full_column(baseline)
 
 
+def test_convergence_fold_populate(baseline):  # noqa: F811
+    _convergence_fold_populate(baseline)
+
+
+def test_fold_av_equals_survival_after_direct_write(baseline):  # noqa: F811
+    _fold_av_equals_survival_after_direct_write(baseline)
+
+
 def test_convergence_create_entity(baseline):  # noqa: F811
     _convergence_create_entity(baseline)
 
@@ -963,6 +1085,9 @@ if __name__ == "__main__":
         b = _get_baseline()
         _convergence_reverify(b);              print("PASS convergence: re-verify")
         _convergence_full_column(b);           print("PASS convergence: full-column UPDATE")
+        _convergence_fold_populate(b);         print("PASS convergence: fold-populate (folded survival cell)")
+        _fold_av_equals_survival_after_direct_write(b)
+        print("PASS fold: av folded cells == survival after direct-write")
         _convergence_create_entity(b);         print("PASS convergence: create-entity")
         _convergence_supersede(b);             print("PASS convergence: supersede")
         _convergence_deprecate(b);             print("PASS convergence: deprecate")

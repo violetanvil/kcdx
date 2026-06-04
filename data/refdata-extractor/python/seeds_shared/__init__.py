@@ -43,6 +43,8 @@ from .row_builder import (
 from .survival_builder import (
     build_survival_row,
     survival_kind_form,
+    folded_av_cells,
+    FOLDED_SURVIVAL_COLS,
 )
 from .version_resolver import (
     resolve_version,
@@ -118,6 +120,7 @@ __all__ = [
     "check_survival_derives_from_known",
     "build_bulk_row", "build_curated_row",
     "build_survival_row", "survival_kind_form",
+    "folded_av_cells", "FOLDED_SURVIVAL_COLS",
     "resolve_version", "VersionResolveError",
     "export_seeds",
     "round_trip", "hash_curated_tables", "RoundTripError",

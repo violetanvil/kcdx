@@ -652,7 +652,7 @@ def build_rows(dump_dir, dicts):
                 f"(kcdx_id={v['kcdx_id']}) has no survival input captured")
         df_kid = si["derives_from_kid"]
         derives_from_av_id = kid_to_av_id.get(df_kid) if df_kid is not None else None
-        rows["survival"].append(ss.build_survival_row(
+        sv_row = ss.build_survival_row(
             av_id, si["kind"],
             survival_aob=si["survival_aob"],
             anchor_string=si["anchor_string"],
@@ -661,7 +661,18 @@ def build_rows(dump_dir, dicts):
             expect_unique=si["expect_unique"],
             derives_from_av_id=derives_from_av_id,
             content_hash=v.get("content_hash"),
-            length=v.get("length")))
+            length=v.get("length"))
+        rows["survival"].append(sv_row)
+        # FOLD (D22 / design §11.2): write the SAME per-kind dispatch's six payload
+        # cells onto the av row's folded columns -- in place, so the row already
+        # emitted into rows["address_versions"] (same dict object) carries them.
+        # The dual-write: the survival row above is STILL written; this populates
+        # the av columns from the SAME built dict, so each av folded cell EQUALS its
+        # survival row's cell by construction (the 157/157 equivalence). One source
+        # (build_survival_row's _KIND_TO_FORM dispatch), two write targets. The av
+        # row's content_hash/length are NOT touched (they are the resolve-path body
+        # fingerprint already on the row, not folded columns).
+        v.update(ss.folded_av_cells(sv_row))
         n_surv += 1
     print(f"  survival: {n_surv} rows (1:1 with curated address_versions)",
           flush=True)
@@ -1561,6 +1572,25 @@ def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
     module_id = _resolve_module_id(con, a["module"], where)
     kind_id = _db_dict_id(con, "address_versions", "kind", a["kind"], where)
 
+    # FOLD (D22 / design §11.2): the six folded av columns come from the SAME per-kind
+    # dispatch the (still-rebuilt) survival row uses below. Resolve derives_from + build
+    # the folded cells ONCE here (derives_from points at a DIFFERENT entity's OPEN row,
+    # unaffected by THIS row's UPDATE), pass them into build_curated_row below, and reuse
+    # the resolved derives_from for the survival DELETE+INSERT -- one source, two write
+    # targets. content_hash/length are NOT folded columns (they are the av row's body
+    # fingerprint, set by build_curated_row's promote/mint gate), so the av-id/fingerprint
+    # args to this throwaway build_survival_row do not affect the extracted folded cells.
+    derives_from_av_id = _resolve_derives_from_av_id(
+        con, a["survival_derives_from_kid"])
+    folded = ss.folded_av_cells(ss.build_survival_row(
+        None, a["kind"],
+        survival_aob=a["survival_aob"],
+        anchor_string=a["survival_anchor_string"],
+        rule=a["survival_rule"],
+        slot_count=a["survival_slot_count"],
+        expect_unique=a["survival_expect_unique"],
+        derives_from_av_id=derives_from_av_id))
+
     if a["kind"] in ss.FUNCTION_KINDS:
         # FUNCTION-KIND fingerprint source -- two sub-cases, decided by whether the
         # row is ALREADY a fingerprinted function at the SAME rva:
@@ -1624,7 +1654,8 @@ def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
             signature=a["signature"], lvv_id=lvv_id,
             verified_by=a["verified_by"], verified_date=a["verified_date"],
             evidence_kind_id=ekn_id, offset=a["offset"],
-            vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
+            vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"],
+            **folded)
         # build_curated_row(base_row=...) keeps base_row's OWN id (it does v =
         # dict(base_row); it never resets v["id"] to the av_id arg -- the ADD
         # promote relies on that, using av_id = base_row["id"]). For an UPDATE we
@@ -1647,7 +1678,8 @@ def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
             signature=a["signature"], lvv_id=lvv_id,
             verified_by=a["verified_by"], verified_date=a["verified_date"],
             evidence_kind_id=ekn_id, offset=a["offset"],
-            vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
+            vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"],
+            **folded)
 
     # UPDATE the row in place (id reused -- the direct-write id-stable model). The
     # full-row write covers every projected curated column at once, so module/kind/
@@ -1662,8 +1694,10 @@ def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
     # carries the seed datum). DELETE the stale survival row + INSERT the rebuilt
     # one (the survival id is autoincrement; a fresh id is id-agnostic to the oracle,
     # the same handle-vs-payload split the ADD path's survival INSERT relies on).
-    derives_from_av_id = _resolve_derives_from_av_id(
-        con, a["survival_derives_from_kid"])
+    # DUAL-WRITE (D22 / design §11.2): the survival row is STILL rebuilt here -- the av
+    # row's folded cells were populated from this SAME per-kind dispatch (the `folded`
+    # cells above), so each av folded cell equals this survival row's cell. derives_from
+    # was resolved once at the top of this function and is reused (not re-resolved).
     sv_row = ss.build_survival_row(
         av_id, a["kind"],
         survival_aob=a["survival_aob"],
@@ -1835,6 +1869,28 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
         module_id = _resolve_module_id(con, a["module"], where)
         kind_id = _db_dict_id(con, "address_versions", "kind", a["kind"], where)
 
+        # FOLD (D22 / design §11.2): the six folded av columns come from the SAME
+        # per-kind dispatch the (still-written) survival row uses. Build the survival
+        # row's folded cells ONCE here -- derives_from resolves against the dependency
+        # entity's OPEN-interval row (a DIFFERENT entity, unaffected by this action's
+        # write) -- and pass them into build_curated_row below + reuse the resolved
+        # derives_from for the in-tx survival INSERT. content_hash/length are the
+        # survival row's body-fingerprint args (function_hash form) but are NOT folded
+        # columns, so an av_id placeholder is fine for the folded-cell extraction. The
+        # in-tx survival INSERT (still written) rebuilds the row with the real av_id +
+        # fingerprint; folded_av_cells reads only the six kind-dispatched cells, which
+        # depend on neither av_id nor the fingerprint. One source, two write targets.
+        derives_from_av_id = _resolve_derives_from_av_id(
+            con, a["survival_derives_from_kid"])
+        folded = ss.folded_av_cells(ss.build_survival_row(
+            None, a["kind"],
+            survival_aob=a["survival_aob"],
+            anchor_string=a["survival_anchor_string"],
+            rule=a["survival_rule"],
+            slot_count=a["survival_slot_count"],
+            expect_unique=a["survival_expect_unique"],
+            derives_from_av_id=derives_from_av_id))
+
         if a["kind"] in ss.FUNCTION_KINDS:
             # (a) PROMOTE. The baseline-present gate: the DEV DB must carry a bulk
             # row at this rva. No bulk row -> REFUSE (never mint a NULL-finger-
@@ -1860,7 +1916,8 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
                     signature=a["signature"], lvv_id=lvv_id,
                     verified_by=a["verified_by"], verified_date=a["verified_date"],
                     evidence_kind_id=ekn_id, offset=a["offset"],
-                    vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
+                    vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"],
+                    **folded)
             else:
                 # DEV does an IN-PLACE UPDATE of the bulk row (reuse its id; keep
                 # fingerprint), mirroring the rebuild's promote-in-place.
@@ -1871,7 +1928,8 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
                     signature=a["signature"], lvv_id=lvv_id,
                     verified_by=a["verified_by"], verified_date=a["verified_date"],
                     evidence_kind_id=ekn_id, offset=a["offset"],
-                    vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
+                    vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"],
+                    **folded)
         else:
             # (b)/(c) MINT, fingerprint NULL. base_row=None for both; rva is None
             # for vtable_index. No baseline gate (these never read a bulk row).
@@ -1882,7 +1940,8 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
                 signature=a["signature"], lvv_id=lvv_id,
                 verified_by=a["verified_by"], verified_date=a["verified_date"],
                 evidence_kind_id=ekn_id, offset=a["offset"],
-                vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
+                vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"],
+                **folded)
 
         # One per-action transaction (tx -- BEGIN/COMMIT immediate, SAVEPOINT/RELEASE
         # deferred). add-versions-row closes the prior open interval FIRST (so
@@ -1919,11 +1978,13 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
             # Survival row for the new curated entity (db-updator step 5.1), in
             # the SAME transaction + via the SAME shared builder the rebuild uses,
             # so apply's survival row is byte-identical to a rebuild's. function
-            # kinds reuse the av row's fingerprint; the rest carry the seed datum
-            # (empty until step 5.2). derives_from: map the seed kcdx_id -> the
-            # dependency's curated av_id in this DB.
-            derives_from_av_id = _resolve_derives_from_av_id(
-                con, a["survival_derives_from_kid"])
+            # kinds reuse the av row's fingerprint; the rest carry the seed datum.
+            # DUAL-WRITE (D22 / design §11.2): the survival table is STILL written
+            # here (unchanged) -- the av folded columns above were populated from this
+            # SAME per-kind dispatch (the `folded` cells), so each av folded cell
+            # equals this survival row's cell by construction. derives_from was
+            # resolved once above (a DIFFERENT entity's OPEN row -- this action's
+            # write does not move it) and is reused here, not re-resolved.
             sv_row = ss.build_survival_row(
                 av_row["id"], a["kind"],
                 survival_aob=a["survival_aob"],
