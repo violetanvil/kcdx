@@ -28,9 +28,9 @@ web-pivoted, `32df16d`) +
 | Phase 5 — Docker packaging (image + volume layout) | NOT STARTED | — |
 
 The per-step ledgers live in each `phase-NN-*/README.md`. A top row flips to `DONE` only
-when every step in the phase is `DONE`. **Phase 1 is DONE** (8 steps landed, all oracles
-green); two follow-ons remain filed but out of this re-plan: step 3c (full-column
-correction, probe-first) + TD-0004 (the rebuild-oracle baseline re-capture).
+when every step in the phase is `DONE`. **Phase 1 is DONE** (all steps landed, all oracles
+green) — the two former follow-ons are now closed: step 3c (full-column correction,
+probe-first; `f0dbf10`) and the rebuild-oracle baseline re-capture to 157 (`71cfce3`).
 
 ## Phases
 
