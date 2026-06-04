@@ -46,7 +46,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). UI design:
 | 6 frontend skeleton + Mantine theme (tokens) + responsive app shell + API client | DONE | frontend-repo 845e694 |
 | 7 s01 navigator — search + status/kind filters + entity list + status chips | DONE | frontend-repo eb9e497 |
 | 8 s02 entity detail (read) — header + version table + version dropdown + default-row | DONE | frontend-repo 65cb234 |
-| 9 s04 field editor — view/edit a version row, dirty markers + "was:", inline validation | NOT STARTED | — |
+| 9 s04 field editor — view/edit a version row, dirty markers + "was:", inline validation | DONE | kcdx 7c2f91c (9a GET /modules) + frontend-repo 499060a (9b editor) |
 | 10 s06 save-confirm (field delta + approval) + toast + atomic save→commit | NOT STARTED | — |
 
 ## Step docs
