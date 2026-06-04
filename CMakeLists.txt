@@ -206,6 +206,7 @@ add_library(kcdx SHARED
     src/dynamic_call_jit.cpp
     src/probes/bugsplat_ctor_probe.cpp
     src/asset_overlay.cpp
+    src/asset_namespace.cpp
     src/asset_sidecar.cpp
     src/mod_absorb/record_synth.cpp
     src/mod_absorb/record_synth_selftest.cpp

@@ -22,6 +22,8 @@
 #include <iterator>  // std::size (wmode bound)
 #include <vector>
 
+#include "asset_namespace.h"  // LookupRuntimeOverlay — the RUNTIME store consulted
+                              // ALONGSIDE g_overlayMap on a build-time MISS
 #include "asset_sidecar.h"  // LoadDeclarationsFor — the no-code declaration parse
 #include "hook_chain.h"
 #include "hook_payload.h"
@@ -156,17 +158,36 @@ extern "C" void* AdjustFileNameResolver(AdjustFileName_t call_original,
     const std::string key = NormalizeVPath(pName);
     const OverlayMap& m = GetOverlayMap();
     auto found = m.find(key);
-    if (found == m.end()) {
-        // MISS — stock resolution preserved. The hottest path: straight
-        // fall-through, no allocation beyond the lookup key above.
+
+    // Resolve the winning disk path + winner from the build-time map FIRST, then
+    // the RUNTIME store on a build-time MISS (design §5.1: the resolver consults
+    // the separate runtime store ALONGSIDE the build-time map; a runtime register/
+    // replace serves the same way a build-time HIT does). Both reads are lock-
+    // free — the build-time map is not-mutated-after-build, the runtime snapshot
+    // is read load-acquire (asset_namespace RCU). The build-time map WINS a
+    // collision (it is the declared discovery-time overlay; a runtime override of
+    // a build-time slot is out of this step's scope — the runtime store serves
+    // only vpaths the build-time map does not already own).
+    std::string diskPath;
+    std::string winnerPlugin;
+    bool runtimeHit = false;
+    if (found != m.end()) {
+        diskPath = found->second.diskPath;
+        winnerPlugin = found->second.owningPlugin;
+    } else if (asset_namespace::LookupRuntimeOverlay(key, diskPath,
+                                                     &winnerPlugin)) {
+        runtimeHit = true;
+    } else {
+        // MISS in BOTH stores — stock resolution preserved. The hottest path:
+        // straight fall-through, no allocation beyond the lookup key + the two
+        // lock-free map probes above.
         return call_original(self, pName, outBuf, nFlags);
     }
 
-    // HIT — kcdx owns this resolution. Write the overlay's concrete disk path
-    // into the caller's outBuf, BOUNDED to kMaxPath (g_nMaxPath), then return a
-    // char* to it (the engine's return==outBuf convention so return-consuming
-    // callers like FOpen get the overlay path too).
-    const std::string& diskPath = found->second.diskPath;
+    // HIT (build-time or runtime) — kcdx owns this resolution. Write the overlay's
+    // concrete disk path into the caller's outBuf, BOUNDED to kMaxPath
+    // (g_nMaxPath), then return a char* to it (the engine's return==outBuf
+    // convention so return-consuming callers like FOpen get the overlay path too).
     char* out = static_cast<char*>(outBuf);
 
     // Bounded copy: snprintf caps at kMaxPath and always NUL-terminates. Its
@@ -183,7 +204,7 @@ extern "C" void* AdjustFileNameResolver(AdjustFileName_t call_original,
     if (written < 0 || static_cast<size_t>(written) >= kMaxPath) {
         LOG_WARN_KV(kCat, "overlay_path_over_cap",
                     kcdx::log::KV("vpath", key),
-                    kcdx::log::KV("plugin", found->second.owningPlugin),
+                    kcdx::log::KV("plugin", winnerPlugin),
                     kcdx::log::KV("cap", static_cast<unsigned long long>(kMaxPath)),
                     kcdx::log::KV("disk", diskPath));
         // outBuf may hold a truncated string; the engine's original resolver
@@ -200,7 +221,9 @@ extern "C" void* AdjustFileNameResolver(AdjustFileName_t call_original,
                                                   std::memory_order_relaxed)) {
         LOG_DEBUG_KV(kCat, "overlay_resolved",
                      kcdx::log::KV("vpath", key),
-                     kcdx::log::KV("winner", found->second.owningPlugin),
+                     kcdx::log::KV("winner", winnerPlugin),
+                     kcdx::log::KV("source",
+                         std::string(runtimeHit ? "runtime" : "build-time")),
                      kcdx::log::KV("disk", diskPath));
     }
 
@@ -251,8 +274,25 @@ extern "C" void* FOpenLooseOverlay(FOpen_t     call_original,
     const std::string key = NormalizeVPath(pName);
     const OverlayMap& m = GetOverlayMap();
     auto found = m.find(key);
-    if (found == m.end()) {
-        // MISS — stock open preserved. The hottest path: straight fall-through.
+
+    // Resolve the winning disk path + winner from the build-time map FIRST, then
+    // the RUNTIME store on a build-time MISS (design §5.1 — same dual-store
+    // consult as HOOK 1; both lock-free). A runtime register/replace's loose file
+    // is opened + served IDENTICALLY to a build-time overlay's. The build-time
+    // map wins a collision (this step's runtime store serves only vpaths the
+    // build-time map does not own).
+    std::string diskPath;
+    std::string winnerPlugin;
+    bool runtimeHit = false;
+    if (found != m.end()) {
+        diskPath = found->second.diskPath;
+        winnerPlugin = found->second.owningPlugin;
+    } else if (asset_namespace::LookupRuntimeOverlay(key, diskPath,
+                                                     &winnerPlugin)) {
+        runtimeHit = true;
+    } else {
+        // MISS in BOTH stores — stock open preserved. The hottest path: straight
+        // fall-through (the two lock-free probes are the only added cost).
         return call_original(self, pName, szMode, nFlags);
     }
 
@@ -261,7 +301,6 @@ extern "C" void* FOpenLooseOverlay(FOpen_t     call_original,
     // arm). Preserve the caller's mode string verbatim so a write-mode open
     // ("wb"/"ab"/"w+b") is honored exactly as the engine would; default to a
     // binary read when the engine passed no mode.
-    const std::string& diskPath = found->second.diskPath;
     const char* mode = (szMode && szMode[0]) ? szMode : "rb";
 
     // _wfopen on the wide disk path: diskPath is a UTF-8/ASCII std::string built
@@ -293,7 +332,7 @@ extern "C" void* FOpenLooseOverlay(FOpen_t     call_original,
         // not the hot MISS path (logging.md: every failure state is logged).
         LOG_WARN_KV(kCat, "overlay_open_failed",
                     kcdx::log::KV("vpath", key),
-                    kcdx::log::KV("plugin", found->second.owningPlugin),
+                    kcdx::log::KV("plugin", winnerPlugin),
                     kcdx::log::KV("disk", diskPath),
                     kcdx::log::KV("mode", mode),
                     kcdx::log::KV("errno", static_cast<long long>(oerr)));
@@ -309,7 +348,9 @@ extern "C" void* FOpenLooseOverlay(FOpen_t     call_original,
                                                     std::memory_order_relaxed)) {
         LOG_DEBUG_KV(kCat, "overlay_opened",
                      kcdx::log::KV("vpath", key),
-                     kcdx::log::KV("winner", found->second.owningPlugin),
+                     kcdx::log::KV("winner", winnerPlugin),
+                     kcdx::log::KV("source",
+                         std::string(runtimeHit ? "runtime" : "build-time")),
                      kcdx::log::KV("disk", diskPath),
                      kcdx::log::KV("mode", mode));
     }

@@ -110,15 +110,15 @@ The sidecar above is the no-code path. To reference an asset *from your
 | Call | Args | Returns |
 |---|---|---|
 | `kcdx.assets.get_by_path(path)` | string path, relative to *your* `assets/` | a loadable path (string) for *your own* asset; `(nil, err)` if the path is not a file in your `assets/`, or on a non-string/empty argument. |
-| `kcdx.assets.get_by_name(name)` | string published name | **NYI** — resolve your own published asset → a loadable path. |
-| `kcdx.assets.declare(name, file)` | string name, string file | **NYI** — publish a name in code (the programmatic peer of a sidecar `name`). |
-| `kcdx.assets.register(vpath, file)` | string vpath, string file | **NYI** — make a not-at-load asset available at runtime. |
-| `kcdx.assets.replace(target, with)` | string target, string with | **NYI** — register a replacement in code at runtime. |
+| `kcdx.assets.get_by_name(name)` | string published name | a loadable path (string) for *your own* published asset; `(nil, err)` if you never declared that name. |
+| `kcdx.assets.declare(name, file)` | string name, string file | publishes `<author>.<plugin>.<name>` → the file's loadable path; returns that path. `(nil, err)` if the file is not in your `assets/`. |
+| `kcdx.assets.register(vpath, file)` | string vpath, string file | makes `file` serve when the game opens `vpath`, for opens *after* the call; returns the loadable path. `(nil, err)` if the file is not in your `assets/`. |
+| `kcdx.assets.replace(target, with)` | string target, string with | makes `with` serve where a **vanilla-path** `target` was opened, for opens *after* the call; returns the loadable path. `(nil, err)` if `with` is not in your `assets/`. A **packed cross-mod** `target` (`"author.plugin.name"`) returns `(nil, err)` for now — it resolves with cross-mod resolution, a later step (see Status). |
 
-The four **NYI** verbs are not callable yet — calling one today raises Lua's
-stock "attempt to call a nil value". They land in a later phase (see
-[planned.md](planned.md)); their shapes are fixed here so you can see the whole
-surface.
+Every verb resolves your `file` / `with` through your `assets/` folder, so a
+mistyped or missing asset is a loud `(nil, err)` naming the path — never a silent
+`nil`. The C++ mirror (`kcdxAssetInterface` — `K.assets->GetByName` / `Declare` /
+`Register` / `Replace`) is a later phase; see [planned.md](planned.md).
 
 ### `kcdx.assets.get_by_path(path)` — a loadable path to your own asset
 
@@ -152,23 +152,101 @@ end
 -- use `path` with a game asset API
 ```
 
-### Reference another mod's asset — the navigable namespace
+### `kcdx.assets.declare(name, file)` / `get_by_name(name)` — publish + resolve a name
 
-To reference *another mod's* asset by path, navigate the cross-plugin namespace
-([`kcdx.plugin`](plugin.md)) and call `get_by_path` on its `.assets`:
+Publish a stable **name** for one of your assets so other mods can reference it
+as a contract — the code-side peer of a sidecar `name`. You declare the bare
+name; the engine publishes it as `<author>.<plugin>.<name>` (it knows who you
+are — you never type your own prefix). Resolve your own published name back to a
+loadable path with `get_by_name`.
 
 ```lua
-local shirt = kcdx.plugin.redmoon.outfit_swap.assets.get_by_path("male/shirt.dds")
+-- publish "shirt" -> your assets/male/shirt.dds
+kcdx.assets.declare("shirt", "male/shirt.dds")
+
+-- later, resolve your own published name to a loadable path
+local shirt = kcdx.assets.get_by_name("shirt")
 ```
 
-`kcdx.plugin.<author>.<plugin>.assets.get_by_path(path)` reads as native dotted
-Lua — the namespace segments are bare (no quoted-namespace ceremony), and the
-asset path stays a quoted string (it is data). The same teaching-error behaviour
-applies: a path not in *that* mod's `assets/`, or a non-existent `<author>` /
-`<plugin>`, fails loud. Your own asset needs no namespace at all — call
-`kcdx.assets.get_by_path` directly.
+| Arg | Type | Meaning |
+|---|---|---|
+| `name` (declare / get_by_name) | string | The bare published name (e.g. `"shirt"`). The engine prefixes it with your `<author>.<plugin>`. You write a name — never a class, address, or handle. |
+| `file` (declare) | string | The asset to publish, **relative to your `assets/` folder** (resolved exactly like `get_by_path`). |
 
-The C++ mirror (`K.assets->GetByPath`) is a later phase — see
+**Returns:** `declare` publishes the name and returns the file's loadable path;
+`get_by_name` returns the loadable path a published name resolves to. A `file`
+not in your `assets/` (declare), or a `name` you never published (get_by_name),
+returns `(nil, err)` naming what was wrong — a loud error, never a silent `nil`.
+
+### `kcdx.assets.register(vpath, file)` — add an asset at runtime
+
+Make an asset available that was not in `assets/` at load — generated at runtime,
+or chosen conditionally. The game serves your `file` when it opens `vpath`, for
+opens **after** the call (an already-open handle is not re-resolved).
+
+```lua
+-- serve your assets/gen/portrait.dds when the game opens this virtual path
+kcdx.assets.register("Libs/UI/Textures/MyPortrait.dds", "gen/portrait.dds")
+```
+
+| Arg | Type | Meaning |
+|---|---|---|
+| `vpath` | string | The virtual path the game opens (the path it asks for). |
+| `file` | string | The asset that serves it, **relative to your `assets/` folder**. |
+
+**Returns:** the file's loadable path on success; `(nil, err)` if `file` is not in
+your `assets/`. **Takes effect thereafter** — an asset the game already opened
+before the call is unaffected; the overlay applies to the next open.
+
+### `kcdx.assets.replace(target, with)` — replace an asset at runtime
+
+Register a replacement in code — the conditional-replacement case (the code-side
+peer of a `replaces.toml`). `with` serves where `target` was opened, for opens
+**after** the call.
+
+```lua
+-- conditionally swap a vanilla texture for your own
+if some_condition then
+    kcdx.assets.replace("Libs/UI/Textures/KCDLogo.dds", "branding/logo.dds")
+end
+```
+
+| Arg | Type | Meaning |
+|---|---|---|
+| `target` | string | What to replace. A **vanilla asset path** (`"Libs/UI/Textures/KCDLogo.dds"`) **serves now**. Another mod's **packed name** (`"redmoon.outfit.shirt"`) — the string-key form of the cross-plugin namespace, for a key the dotted form can't express — **resolves with cross-mod resolution, a later step** (see Status); until then a packed target returns a teaching error rather than silently not serving. |
+| `with` | string | The replacement asset, **relative to your `assets/` folder**. |
+
+**Returns:** for a **vanilla-path** `target`, the replacement's loadable path on
+success — and **takes effect thereafter**, like `register`. `(nil, err)` if
+`with` is not in your `assets/`. A **packed cross-mod** `target`
+(`"author.plugin.name"`) returns `(nil, err)` for now — cross-mod resolution
+(resolving the packed name to the vpath the other mod's asset serves at) lands in
+a later step; the error tells you so, never a silent no-op.
+
+### Reference another mod's asset — the navigable namespace
+
+To reference *another mod's* asset, navigate the cross-plugin namespace
+([`kcdx.plugin`](plugin.md)) and call `get_by_path` (by path) or `get_by_name`
+(by that mod's published name) on its `.assets`:
+
+```lua
+-- by path
+local shirt = kcdx.plugin.redmoon.outfit_swap.assets.get_by_path("male/shirt.dds")
+-- by the other mod's published name
+local belt  = kcdx.plugin.redmoon.outfit_swap.assets.get_by_name("belt")
+```
+
+`kcdx.plugin.<author>.<plugin>.assets.get_by_path(path)` /
+`.get_by_name(name)` read as native dotted Lua — the namespace segments are bare
+(no quoted-namespace ceremony), and the path/name stays a quoted string (it is
+data). The same teaching-error behaviour applies: a path/name not in *that* mod's
+`assets/` or published set, or a non-existent `<author>` / `<plugin>`, fails loud.
+Your own asset needs no namespace — call `kcdx.assets.get_by_path` /
+`.get_by_name` directly. (`declare` / `register` / `replace` are own-namespace
+only — you publish and register into *your own* namespace, so they are not on the
+cross-plugin `.assets` leaf.)
+
+The C++ mirror (`K.assets->GetByPath` / `GetByName`) is a later phase — see
 [planned.md](planned.md).
 
 ## Status
@@ -176,21 +254,26 @@ The C++ mirror (`K.assets->GetByPath`) is a later phase — see
 - **The no-code declarative path (this page) is LIVE** for declaring a vanilla
   replacement. The engine keys your declared target into the asset-resolution
   map and serves your file.
-- **`kcdx.assets.get_by_path` (Lua) is LIVE** for your own asset and for another
-  mod's asset via the navigable namespace. The four other `kcdx.assets.*` verbs
-  (`get_by_name` / `declare` / `register` / `replace`) and the C++
-  `kcdxAssetInterface` mirror are a later phase — their shapes are shown above
-  and in [planned.md](planned.md) so the whole surface is visible.
-- **Referencing / replacing another mod's asset by published name or by the
-  cross-mod pair** parses and validates today, but the cross-mod *resolution*
-  (turning a published name into the other mod's file) lands with the
-  published-name namespace in a later phase. Until then, a cross-mod row is
-  recorded and reported; it does not yet serve.
-- **Publishing a `name`** is parsed today but not yet resolvable from another
-  mod — the published-name namespace for assets is a later phase.
-- **The programmatic equivalents** — `kcdx.assets.replace` / `kcdx.assets.declare`
-  / `kcdx.assets.register` (Lua) and their C++ mirrors, for replacement decided
-  in code — are a later phase. See [planned.md](planned.md).
+- **All five `kcdx.assets.*` verbs (Lua) are LIVE** — `get_by_path` /
+  `get_by_name` / `declare` / `register` / `replace` for your own asset, plus
+  `get_by_path` / `get_by_name` for another mod's asset via the navigable
+  namespace. The C++ `kcdxAssetInterface` mirror is a later phase — its shape is
+  shown above and in [planned.md](planned.md) so the whole surface is visible.
+- **Code-side publishing + resolution is LIVE.** `declare` publishes a name into
+  your namespace and `get_by_name` resolves it (your own, or another mod's via
+  the cross-plugin namespace). `register` / a **vanilla-path** `replace` write a
+  runtime overlay that takes effect for opens **after** the call.
+- **`replace` with a packed cross-mod target is a later step.** A `replace`
+  whose `target` is another mod's packed name (`"author.plugin.name"`) needs
+  cross-mod *resolution* — resolving the packed name to the vpath the other mod's
+  asset serves at — which lands with the cross-mod resolution phase. Until then a
+  packed `replace` target returns a teaching `(nil, err)` saying so, never a
+  silent no-op. The **vanilla-path** `replace` form serves now.
+- **The declarative `replaces.toml` cross-mod *resolution*** (a sidecar
+  `replaces` naming another mod's published name / the cross-mod pair) still
+  lands with the sidecar published-name namespace in a later phase — a cross-mod
+  *sidecar* row is recorded and reported but does not yet serve. The *code-side*
+  `declare` / `get_by_name` published-name path above is live now.
 
 ## Glossary
 
@@ -212,3 +295,15 @@ The C++ mirror (`K.assets->GetByPath`) is a later phase — see
   asset API. You write a path *relative to your `assets/` folder*; the engine
   returns the loadable path. The opposite direction of the sidecar — the sidecar
   declares *what an asset replaces*; `get_by_path` reads *where an asset lives*.
+- **published name** — a stable, dot-addressable name you give one of your
+  assets with `kcdx.assets.declare(name, file)` (or a sidecar `name`), published
+  as `<author>.<plugin>.<name>` so other mods can reference it as a contract. You
+  type only the bare name; the engine adds your prefix. Resolve a published name
+  back to a loadable path with `kcdx.assets.get_by_name` (your own) or
+  `kcdx.plugin.<author>.<plugin>.assets.get_by_name` (another mod's).
+- **runtime overlay** — an asset override registered in code at runtime with
+  `kcdx.assets.register(vpath, file)` or `kcdx.assets.replace(target, with)`,
+  rather than declared in a `replaces.toml` at load. It **takes effect
+  thereafter** — it applies to opens *after* the call; an asset the game already
+  opened is not re-resolved. The programmatic peer of the sidecar's load-time
+  declaration, for a generated or conditionally-chosen asset.

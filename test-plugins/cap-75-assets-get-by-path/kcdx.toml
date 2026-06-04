@@ -1,51 +1,59 @@
-# CAP-75 — kcdx.assets.get_by_path: the author's code-side read of their OWN
-# asset -> a loadable path, AND the cross-plugin form through the step-6
-# navigable namespace.
+# CAP-75 — the kcdx.assets.* author surface: the five runtime/read verbs
+# (get_by_path / get_by_name / declare / register / replace), own + cross-plugin
+# forms, against the §5.1 runtime store.
 #
-# kcdx.assets.get_by_path(path) resolves the CALLING plugin's own asset (no
-# owner prefix — the engine knows who you are) to a loadable on-disk path: the
-# absolute disk path the asset-resolution seam opens to serve the file. It is a
-# PURE READ (no store mutation). A path to a file NOT in the plugin's assets/
-# returns a TEACHING ERROR naming the missing path, never a silent nil.
+# get_by_path resolves the calling plugin's own asset (no owner prefix) to a
+# loadable on-disk path (a pure read). declare publishes <author>.<plugin>.<name>
+# -> a file; get_by_name resolves a published name back. register adds a runtime
+# vpath -> file overlay; replace registers a runtime replacement keyed by the
+# target. All four runtime verbs resolve `file` through the caller's assets/
+# (like get_by_path); a bad path / name / target -> a teaching error naming it,
+# never a silent nil (AP14).
 #
-# The cross-plugin form kcdx.plugin.<author>.<plugin>.assets.get_by_path(path)
-# resolves through the navigable namespace (cap-74) — the .assets leaf on a
-# resolved plugin handle binds get_by_path to the NAVIGATED plugin. This row
-# navigates THIS plugin's OWN identity (author "ts", plugin
+# The cross-plugin forms kcdx.plugin.<author>.<plugin>.assets.get_by_path /
+# .get_by_name resolve through the cap-74 navigable namespace — the .assets leaf
+# on a resolved plugin handle binds the read verb to the NAVIGATED plugin. These
+# rows navigate THIS plugin's OWN identity (author "ts", plugin
 # "cap_75_assets_get_by_path") because self > engine > other guarantees it is
-# loaded and resolvable — the reliable known-present target, independent of
-# which OTHER plugins the suite loads this session (the cap-74 rationale).
+# loaded — the reliable known-present target (the cap-74 rationale).
 #
 # This plugin ships a real asset under assets/icons/ so the own + cross-plugin
-# reads resolve to a real file; the missing-path row asks for a path that is
-# NOT in assets/ to prove the teaching error fires (never a silent nil).
+# reads resolve to a real file; the missing rows ask for a path / name NOT
+# present to prove the teaching errors fire (never a silent nil).
 #
-# Five falsifiable rows, all reported synchronously at plugin load
-# (boot-only — every check is a pure read of the in-process plugin registry +
-# the on-disk assets/ tree, no player gesture):
+# Eight falsifiable rows, all boot-only (every check is a pure in-process store
+# write+read + the on-disk assets/ tree, no player gesture):
 #
-#   * CAP-75-own            — get_by_path("icons/marker.txt") returns a
-#       non-nil, non-empty string (the loadable path) that ENDS with the asset's
-#       relative path. FALSIFIABLE: nil / empty / wrong path -> FAIL.
+#   * CAP-75-own            — get_by_path("icons/marker.txt") returns the
+#       loadable path ending with the relative path. FALSIFIABLE: nil / empty /
+#       wrong path -> FAIL.
 #   * CAP-75-missing        — get_by_path("icons/does_not_exist.dds") returns
-#       (nil, err) with `err` a string naming the missing path — the teaching
-#       error, NOT a silent nil. FALSIFIABLE: a bare nil (no err) / a non-nil
-#       return / err not naming the path -> FAIL.
-#   * CAP-75-cross          — kcdx.plugin.ts.<this plugin>.assets.get_by_path(
-#       "icons/marker.txt") resolves through the namespace to a non-nil loadable
-#       path. FALSIFIABLE: the chain raises / returns nil -> FAIL (the .assets
-#       leaf did not bind get_by_path to the navigated plugin).
-#   * CAP-75-nyi-declare    — kcdx.assets.declare is NOT bound yet (a later
-#       step). DELIBERATELY-FAILING contract pin: PASSES only when declare
-#       becomes a callable function; FAILS (type ~= "function") until the
-#       runtime-store step lands it. Mirrors the get_by_name/register/replace
-#       rows — the contract is pinned, not lost.
-#   * CAP-75-nyi-runtime    — the runtime-store verbs get_by_name / register /
-#       replace are NOT bound yet. DELIBERATELY-FAILING contract pin: PASSES
-#       only when ALL THREE are callable functions; FAILS until the runtime-
-#       store step lands them.
+#       (nil, err) naming the missing path. FALSIFIABLE: bare nil / non-nil /
+#       err not naming the path -> FAIL.
+#   * CAP-75-cross          — kcdx.plugin.ts.<this>.assets.get_by_path(...)
+#       resolves through the namespace. FALSIFIABLE: chain raises / nil -> FAIL.
+#   * CAP-75-declare        — declare("shirt", "icons/marker.txt") publishes,
+#       and get_by_name("shirt") resolves it back to the same file's path — a
+#       store round-trip. FALSIFIABLE: declare nil for a real file / get_by_name
+#       nil after declaring / a path not the declared file -> FAIL.
+#   * CAP-75-getbyname-missing — get_by_name("never_declared_name") returns
+#       (nil, err) naming it. FALSIFIABLE: non-nil / bare nil / err not naming
+#       the name -> FAIL.
+#   * CAP-75-getbyname-cross — kcdx.plugin.ts.<this>.assets.get_by_name("shirt")
+#       resolves the name declared in CAP-75-declare through the namespace (§6).
+#       FALSIFIABLE: chain raises / nil / wrong file -> FAIL.
+#   * CAP-75-register       — register(vpath, real file) returns the loadable
+#       path (overlay written); register(vpath, missing file) teaches loud.
+#       FALSIFIABLE: nil for a real file / non-nil-or-bare-nil for a missing
+#       file -> FAIL. (The in-game SERVE is CAP-75-register-serve, README.)
+#   * CAP-75-replace        — replace(target, real file) returns the loadable
+#       path (overlay keyed by target written); replace(target, missing file)
+#       teaches loud. FALSIFIABLE: same shape as register.
 #
-# Test mode: boot-only.
+# Test mode: boot-only (the eight rows above). The register/replace IN-GAME
+# serve (engine opens a registered vpath -> kcdx's file, confirmed by the agent
+# reading `overlay_opened ... source=runtime`) is the [manual]/in-game
+# CAP-75-register-serve matrix row in test-plugins/README.md.
 
 [kcdx]
 test_suite_only = true
@@ -54,15 +62,18 @@ test_suite_only = true
 name                = "cap_75_assets_get_by_path"
 display_name        = "CAP-75 kcdx.assets.get_by_path"
 author              = "ts"
-description         = "Pure-Lua kcdx.assets.get_by_path self-test: the own-asset read resolves a real file under assets/ to a loadable path; a path NOT in assets/ yields a teaching error naming the missing path (never a silent nil, AP14); the cross-plugin form kcdx.plugin.<author>.<plugin>.assets.get_by_path resolves through the step-6 navigable namespace to a loadable path. Two deliberately-failing rows pin the four deferred runtime verbs (declare / get_by_name / register / replace) — they FAIL until the runtime-store step binds them, keeping the contract visible, not lost."
+description         = "Pure-Lua kcdx.assets.* runtime-surface self-test: get_by_path own/missing/cross; declare publishes a name and get_by_name resolves it back (a published-name store round-trip, own + the §6 cross-plugin form); get_by_name for an undeclared name teaches loud; register and replace write the runtime-overlay store and return the loadable path, with a missing source file teaching loud (AP14). Eight boot-only falsifiable rows; the register/replace in-game serve is the [manual] CAP-75-register-serve matrix row."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
 test_names          = ["CAP-75-own",
                        "CAP-75-missing",
                        "CAP-75-cross",
-                       "CAP-75-nyi-declare",
-                       "CAP-75-nyi-runtime"]
+                       "CAP-75-declare",
+                       "CAP-75-getbyname-missing",
+                       "CAP-75-getbyname-cross",
+                       "CAP-75-register",
+                       "CAP-75-replace"]
 
 [entrypoints]
 lua    = "plugin.lua"

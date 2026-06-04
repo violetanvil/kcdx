@@ -54,6 +54,10 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "asset_namespace.h"  // the RUNTIME stores: RegisterRuntimeOverlay /
+                              // PublishName / LookupPublishedName (the four
+                              // runtime verbs read/write these — design §5.1)
+#include "asset_overlay.h"    // NormalizeVPath — the shared key fold for register
 #include "log.h"
 #include "lua_registry.h"   // OwningPluginForCurrentCall — the calling-plugin seam
 #include "plugin_loader.h"  // g_plugins, PluginManifest (folderPath / assetsEntrypointRel)
@@ -89,6 +93,344 @@ const plugins::PluginManifest* FindManifest(const std::string& author,
         }
     }
     return nullptr;
+}
+
+// Pack a (author, plugin, bare) triple into the published-name store key
+// "<author>.<plugin>.<bare>" (naming-namespaces.md — the shared-name model). The
+// legacy 1-dot tier (author empty) packs as "<plugin>.<bare>" so an own declare
+// and an own get_by_name agree on the key even before [plugin].author is
+// declared everywhere. ASCII-lowercased so a declare and a later get_by_name
+// agree case-insensitively (the namespace is case-insensitive, like the vpath
+// fold); the bare name and the prefix are author-typed text.
+std::string PackName(const std::string& author, const std::string& plugin,
+                     const std::string& bare) {
+    std::string packed = author.empty() ? (plugin + "." + bare)
+                                        : (author + "." + plugin + "." + bare);
+    for (char& c : packed) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return packed;
+}
+
+// Is `target` a PACKED CROSS-MOD published name ("<author>.<plugin>.<bare>") vs
+// a vanilla vpath (a file path)? MIRRORS the sidecar's classifier exactly
+// (asset_sidecar.cpp `LooksLikePublishedName`, the authority for this same
+// vanilla-vs-published disambiguation): a separator ('/' or '\\') means a path,
+// not a name; a published name is <author>.<plugin>.<bare> → at least two dots.
+// A bare-but-unslashed token with < 2 dots is a vanilla path (the engine's open
+// is the arbiter). REUSED, not a third classifier — `LooksLikePublishedName`
+// lives in asset_sidecar.cpp's anonymous namespace (not header-exposed), so this
+// is its exact rule, cited. (naming-namespaces.md — the dot-separated
+// <author>.<plugin>.<bare> shared-namespace shape.)
+bool LooksLikePackedCrossModName(const std::string& s) {
+    if (s.find('/') != std::string::npos ||
+        s.find('\\') != std::string::npos) {
+        return false;  // has a separator → a path, not a name
+    }
+    size_t dots = 0;
+    for (char c : s) if (c == '.') ++dots;
+    return dots >= 2;
+}
+
+// Resolve the CALLING plugin's (author, plugin) for the own-form runtime verbs
+// (declare / get_by_name / register / replace). Walks the Lua callstack to the
+// nearest attributed plugin script (OwningPluginForCurrentCall); an anonymous
+// caller (console / pak Lua / ad-hoc) returns false — those verbs resolve the
+// CALLER's own namespace, which an anonymous caller does not have. On success
+// fills `outAuthor` / `outPlugin`. Mirrors Lua_AssetsGetByPath's owner resolve.
+bool ResolveCaller(lua_State* L, std::string& outAuthor,
+                   std::string& outPlugin) {
+    std::string callSiteFile;
+    int callSiteLine = 0;
+    const kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(L, callSiteFile,
+                                                       callSiteLine);
+    if (owner.plugin.empty()) return false;
+    outAuthor = owner.author;
+    outPlugin = owner.plugin;
+    return true;
+}
+
+// kcdx.assets.declare(name, file) — publish the caller's <author>.<plugin>.<name>
+// -> the resolved disk path of `file` (US-5; the programmatic peer of a sidecar
+// `name`). `file` is resolved like get_by_path (the caller's assets/, '..'-reject
+// + is_regular_file), so a declared name always points at a real loadable file.
+// Two failure shapes, the kcdx-binder idiom: bad arg / no caller / unresolvable
+// file -> (nil, teaching err), never a silent nil (AP14). On success returns the
+// loadable path (the same value a later get_by_name yields) so the author can use
+// it immediately AND publish it in one call.
+int Lua_AssetsDeclare(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING || lua_type(L, 2) != LUA_TSTRING) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.declare(name, file): expects two string arguments — a "
+            "stable published NAME (e.g. \"shirt\") and the FILE it names, "
+            "relative to YOUR OWN assets/ folder (e.g. "
+            "kcdx.assets.declare(\"shirt\", \"male/shirt.dds\")). The name "
+            "publishes as <author>.<plugin>.shirt so other mods can reference "
+            "it; you type only the bare name.");
+        return 2;
+    }
+    size_t nlen = 0, flen = 0;
+    const char* ns = lua_tolstring(L, 1, &nlen);
+    const char* fs = lua_tolstring(L, 2, &flen);
+    const std::string bare = (ns && nlen) ? std::string(ns, nlen) : std::string();
+    const std::string file = (fs && flen) ? std::string(fs, flen) : std::string();
+    if (bare.empty() || file.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.declare(name, file): `name` and `file` must both be "
+            "non-empty — a stable published name and the asset it names "
+            "(relative to your assets/ folder).");
+        return 2;
+    }
+
+    std::string author, plugin;
+    if (!ResolveCaller(L, author, plugin)) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.declare(name, file): no calling plugin — declare "
+            "publishes a name in YOUR OWN namespace, so it must be called from "
+            "a plugin's plugin.lua (or a file it require()s). An anonymous "
+            "caller (console / ad-hoc Lua) has no namespace to publish into.");
+        return 2;
+    }
+
+    // Resolve `file` to a loadable disk path through the caller's assets/ (the
+    // SAME resolver get_by_path uses — a published name always points at a real
+    // file). A bad file fails loud with the resolver's teaching error (AP14).
+    std::string disk, err;
+    if (!ResolveAssetPath(author, plugin, file, disk, err)) {
+        lua_pushnil(L);
+        lua_pushlstring(L, err.data(), err.size());
+        return 2;
+    }
+
+    // Publish <author>.<plugin>.<bare> -> disk into the runtime published-name
+    // store (RCU write). A later get_by_name(bare) from this plugin (or
+    // kcdx.plugin.<a>.<p>.assets.get_by_name(bare) from another) resolves it.
+    kcdx::asset_namespace::PublishName(PackName(author, plugin, bare), disk);
+    LOG_DEBUG_KV(kCat, "declared",
+        kcdx::log::KV("name", PackName(author, plugin, bare)),
+        kcdx::log::KV("disk", disk));
+
+    lua_pushlstring(L, disk.data(), disk.size());
+    return 1;
+}
+
+// kcdx.assets.get_by_name(name) — resolve the caller's OWN published name to a
+// loadable path (US-5; the read peer of declare). Builds the caller's packed
+// <author>.<plugin>.<name> and looks it up in the published-name store. A name
+// the caller never declared -> a teaching error naming it (AP14), never a silent
+// nil. The §6 cross-plugin form is the separate Lua_CrossPluginGetByName closure.
+int Lua_AssetsGetByName(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.get_by_name(name): expects a single string argument — "
+            "a name YOU published with kcdx.assets.declare (e.g. "
+            "kcdx.assets.get_by_name(\"shirt\")). Returns a loadable path. To "
+            "resolve ANOTHER mod's published name, navigate the namespace: "
+            "kcdx.plugin.<author>.<plugin>.assets.get_by_name(name).");
+        return 2;
+    }
+    size_t nlen = 0;
+    const char* ns = lua_tolstring(L, 1, &nlen);
+    const std::string bare = (ns && nlen) ? std::string(ns, nlen) : std::string();
+    if (bare.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.get_by_name(name): `name` must be non-empty — a name "
+            "you published with kcdx.assets.declare.");
+        return 2;
+    }
+
+    std::string author, plugin;
+    if (!ResolveCaller(L, author, plugin)) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.get_by_name(name): no calling plugin — get_by_name "
+            "resolves YOUR OWN published name, so it must be called from a "
+            "plugin's plugin.lua (or a file it require()s). To resolve a "
+            "specific plugin's published name use "
+            "kcdx.plugin.<author>.<plugin>.assets.get_by_name(name).");
+        return 2;
+    }
+
+    const std::string packed = PackName(author, plugin, bare);
+    std::string disk;
+    if (!kcdx::asset_namespace::LookupPublishedName(packed, disk)) {
+        lua_pushnil(L);
+        const std::string ident =
+            author.empty() ? plugin : (author + "." + plugin);
+        lua_pushstring(L,
+            ("kcdx.assets.get_by_name(\"" + bare + "\"): no published name '" +
+             bare + "' in plugin '" + ident + "' — publish it first with "
+             "kcdx.assets.declare(\"" + bare + "\", \"<your asset path>\"). "
+             "Only names you declared are resolvable; a typo is a loud error, "
+             "never a silent nil.").c_str());
+        return 2;
+    }
+    lua_pushlstring(L, disk.data(), disk.size());
+    return 1;
+}
+
+// kcdx.assets.register(vpath, file) — add a runtime vpath -> file overlay (US-6;
+// make a not-at-load asset available, taking effect for opens THEREAFTER). `file`
+// is resolved like get_by_path (the caller's assets/), so the served file is
+// always a real loadable file. Writes the runtime-overlay store (RCU) keyed by
+// the NORMALIZED vpath; the resolver serves it the same way a build-time overlay
+// is served. Bad arg / no caller / unresolvable file -> teaching error (AP14).
+int Lua_AssetsRegister(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING || lua_type(L, 2) != LUA_TSTRING) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.register(vpath, file): expects two string arguments — "
+            "the VIRTUAL PATH the game will open (e.g. "
+            "\"Libs/UI/Textures/MyGen.dds\") and the FILE that serves it, "
+            "relative to YOUR OWN assets/ folder. The asset becomes resolvable "
+            "for opens AFTER this call.");
+        return 2;
+    }
+    size_t vlen = 0, flen = 0;
+    const char* vs = lua_tolstring(L, 1, &vlen);
+    const char* fs = lua_tolstring(L, 2, &flen);
+    const std::string vpath = (vs && vlen) ? std::string(vs, vlen) : std::string();
+    const std::string file = (fs && flen) ? std::string(fs, flen) : std::string();
+    if (vpath.empty() || file.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.register(vpath, file): `vpath` and `file` must both be "
+            "non-empty — the virtual path the game opens and the asset that "
+            "serves it (relative to your assets/ folder).");
+        return 2;
+    }
+
+    std::string author, plugin;
+    if (!ResolveCaller(L, author, plugin)) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.register(vpath, file): no calling plugin — register "
+            "adds an overlay from YOUR OWN asset, so it must be called from a "
+            "plugin's plugin.lua (or a file it require()s).");
+        return 2;
+    }
+
+    std::string disk, err;
+    if (!ResolveAssetPath(author, plugin, file, disk, err)) {
+        lua_pushnil(L);
+        lua_pushlstring(L, err.data(), err.size());
+        return 2;
+    }
+
+    // Write the runtime-overlay store (RCU). Keyed by NORMALIZED vpath inside
+    // RegisterRuntimeOverlay (the SAME fold the resolver uses), so a runtime open
+    // of `vpath` hits regardless of the engine's case/separator form. Take-effect
+    // = thereafter (§3 US-6) — an already-open handle is NOT re-resolved.
+    kcdx::asset_namespace::RegisterRuntimeOverlay(vpath, disk, plugin);
+
+    lua_pushlstring(L, disk.data(), disk.size());
+    return 1;
+}
+
+// kcdx.assets.replace(target, with) — register a runtime REPLACEMENT keyed by the
+// target (US-6; the conditional-replacement case). THIS STEP serves only the
+// VANILLA-PATH `target` form (\"Libs/UI/Textures/KCDLogo.dds\"): it writes the
+// runtime-overlay store keyed by the NORMALIZED vpath — the same store register
+// writes; a vanilla replace is a register whose key is an EXISTING vpath rather
+// than a new one. `with` is the replacement FILE, relative to the caller's
+// assets/ (resolved like get_by_path). Bad arg / no caller / unresolvable file
+// -> teaching error (AP14).
+//
+// The PACKED cross-mod `target` form (\"author.plugin.bare\", the §6 string-key
+// peer of kcdx.plugin.<a>.<p>.*) needs cross-mod RESOLUTION — resolve the packed
+// name to the vpath the other mod's asset SERVES AT, then key the overlay store
+// by THAT vpath (design §5.3). That resolution lands in a LATER step; the
+// resolver only ever looks up the vanilla vpaths the engine opens, never a packed
+// name, so a packed-name overlay-store write could NEVER be hit. Writing it +
+// returning the path would be a silent non-serve (AP13/AP14). So a packed cross-
+// mod target fails LOUD with a teaching error here, NOT a silent store-write.
+int Lua_AssetsReplace(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING || lua_type(L, 2) != LUA_TSTRING) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.replace(target, with): expects two string arguments — "
+            "the TARGET to replace (a vanilla asset path like "
+            "\"Libs/UI/Textures/KCDLogo.dds\") and the FILE that replaces it, "
+            "relative to YOUR OWN assets/ folder. Takes effect for opens AFTER "
+            "the call. (Replacing another mod's packed "
+            "<author>.<plugin>.<name> lands with cross-mod resolution, a later "
+            "step.)");
+        return 2;
+    }
+    size_t tlen = 0, wlen = 0;
+    const char* ts = lua_tolstring(L, 1, &tlen);
+    const char* ws = lua_tolstring(L, 2, &wlen);
+    const std::string target =
+        (ts && tlen) ? std::string(ts, tlen) : std::string();
+    const std::string with =
+        (ws && wlen) ? std::string(ws, wlen) : std::string();
+    if (target.empty() || with.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.replace(target, with): `target` and `with` must both "
+            "be non-empty — the asset to replace and the file that replaces it "
+            "(relative to your assets/ folder).");
+        return 2;
+    }
+
+    // A PACKED cross-mod target ("<author>.<plugin>.<bare>") needs cross-mod
+    // resolution (name -> the other mod's serve-vpath, design §5.3) that lands in
+    // a LATER step. The resolver only looks up vanilla vpaths the engine opens —
+    // never a packed name — so keying the overlay store by a packed name writes
+    // an entry that can NEVER be hit. Fail LOUD with a teaching error rather than
+    // a silent non-serving store-write (AP13/AP14). The vanilla-path form below
+    // serves now. (Classified by the sidecar's exact rule —
+    // LooksLikePackedCrossModName mirrors asset_sidecar.cpp::LooksLikePublishedName.)
+    if (LooksLikePackedCrossModName(target)) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            ("kcdx.assets.replace: cross-mod replace of a published name ('" +
+             target + "') resolves in a later step — for now, replace a vanilla "
+             "asset path (e.g. \"Libs/UI/Textures/KCDLogo.dds\"). (The packed "
+             "<author>.<plugin>.<name> form lands with cross-mod resolution.)")
+                .c_str());
+        LOG_WARN_KV(kCat, "rejected",
+            kcdx::log::KV("verb", std::string("replace")),
+            kcdx::log::KV("reason",
+                std::string("packed cross-mod target — cross-mod resolution is "
+                            "a later step")),
+            kcdx::log::KV("target", target));
+        return 2;
+    }
+
+    std::string author, plugin;
+    if (!ResolveCaller(L, author, plugin)) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "kcdx.assets.replace(target, with): no calling plugin — replace "
+            "serves YOUR OWN file, so it must be called from a plugin's "
+            "plugin.lua (or a file it require()s).");
+        return 2;
+    }
+
+    std::string disk, err;
+    if (!ResolveAssetPath(author, plugin, with, disk, err)) {
+        lua_pushnil(L);
+        lua_pushlstring(L, err.data(), err.size());
+        return 2;
+    }
+
+    // Write the runtime-overlay store keyed by the NORMALIZED vanilla vpath (the
+    // same store register writes — replace IS register against an existing
+    // target). Only a vanilla-path target reaches here (the packed cross-mod form
+    // was rejected above); the engine requests that vpath and the resolver hits
+    // the runtime overlay. RegisterRuntimeOverlay normalizes via the shared fold.
+    // Take-effect = thereafter (§3 US-6).
+    kcdx::asset_namespace::RegisterRuntimeOverlay(target, disk, plugin);
+
+    lua_pushlstring(L, disk.data(), disk.size());
+    return 1;
 }
 
 // kcdx.assets.get_by_path(path) — the own-asset reader. Resolves the CALLING
@@ -196,30 +538,83 @@ int Lua_CrossPluginGetByPath(lua_State* L) {
     return 1;
 }
 
+// The cross-plugin get_by_name closure body (§6: kcdx.plugin.<a>.<p>.assets.
+// get_by_name resolves ANOTHER plugin's published name). A C closure carrying the
+// navigated (author, plugin) as upvalues (1 = author, 2 = plugin). It builds the
+// NAVIGATED plugin's packed <author>.<plugin>.<name> from the upvalues — NOT
+// ResolveCaller (that resolves the CALLER, the wrong plugin) — and looks it up in
+// the published-name store. Same teaching-error idiom as the own-form
+// Lua_AssetsGetByName, against the bound plugin.
+int Lua_CrossPluginGetByName(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "assets.get_by_name(name): expects a single string argument — a "
+            "name that plugin published (e.g. "
+            "...assets.get_by_name(\"shirt\")).");
+        return 2;
+    }
+    size_t nlen = 0;
+    const char* ns = lua_tolstring(L, 1, &nlen);
+    const std::string bare = (ns && nlen) ? std::string(ns, nlen) : std::string();
+    if (bare.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L,
+            "assets.get_by_name(name): `name` must be non-empty — a name that "
+            "plugin published.");
+        return 2;
+    }
+    const char* aC = lua_tostring(L, lua_upvalueindex(1));
+    const char* pC = lua_tostring(L, lua_upvalueindex(2));
+    const std::string author = aC ? aC : "";
+    const std::string plugin = pC ? pC : "";
+
+    const std::string packed = PackName(author, plugin, bare);
+    std::string disk;
+    if (!kcdx::asset_namespace::LookupPublishedName(packed, disk)) {
+        lua_pushnil(L);
+        const std::string ident =
+            author.empty() ? plugin : (author + "." + plugin);
+        lua_pushstring(L,
+            ("assets.get_by_name(\"" + bare + "\"): plugin '" + ident +
+             "' has not published a name '" + bare + "' — only names that "
+             "plugin declared with kcdx.assets.declare are resolvable. A typo "
+             "is a loud error, never a silent nil.").c_str());
+        return 2;
+    }
+    lua_pushlstring(L, disk.data(), disk.size());
+    return 1;
+}
+
 // __index on a cross-plugin assets-domain userdata. arg 1 = the userdata
 // (carrying the navigated author+plugin on its envtable); arg 2 = the accessed
-// key. The ONLY surface this step exposes is get_by_path; any other key is a
-// navigation miss -> nil (the kcdx.hook / step-6 navigation-miss idiom — the
-// next access raises Lua's stock index error naming the bad surface segment).
-// The four runtime verbs are NOT exposed here (later step), so e.g.
-// kcdx.plugin.<a>.<p>.assets.get_by_name resolves to nil today, consistent with
-// the own-form's not-yet-bound verbs.
+// key. Exposes the cross-plugin READ surface — get_by_path AND get_by_name (§6;
+// both resolve the NAVIGATED plugin). register / declare / replace are NOT
+// cross-plugin verbs (an author publishes/registers into their OWN namespace, not
+// another's), so they are correctly absent here; any other key is a navigation
+// miss -> nil (the kcdx.hook / step-6 navigation-miss idiom — the next access
+// raises Lua's stock index error naming the bad surface segment).
 int Lua_PluginAssetsIndex(lua_State* L) {
     if (lua_type(L, 2) != LUA_TSTRING) { lua_pushnil(L); return 1; }
     const char* keyC = lua_tostring(L, 2);
     const std::string key = keyC ? keyC : "";
-    if (key != "get_by_path") {
+    lua_CFunction closure = nullptr;
+    if (key == "get_by_path") {
+        closure = Lua_CrossPluginGetByPath;
+    } else if (key == "get_by_name") {
+        closure = Lua_CrossPluginGetByName;
+    } else {
         lua_pushnil(L);
         return 1;
     }
-    // Return Lua_CrossPluginGetByPath bound to the navigated (author, plugin)
-    // carried on the userdata's envtable (as upvalues 1 = author, 2 = plugin).
+    // Return the matched closure bound to the navigated (author, plugin) carried
+    // on the userdata's envtable (as upvalues 1 = author, 2 = plugin).
     lua_getfenv(L, 1);
     lua_getfield(L, -1, "author");
     lua_getfield(L, -2, "plugin");
     // Stack: ... envtable, author, plugin. lua_pushcclosure pops author+plugin
     // as the closure's 2 upvalues; pop the leftover envtable after.
-    lua_pushcclosure(L, Lua_CrossPluginGetByPath, 2);
+    lua_pushcclosure(L, closure, 2);
     // Stack now: ... envtable, closure. Tidy the envtable out from under it.
     lua_remove(L, -2);
     return 1;
@@ -241,6 +636,10 @@ void EnsurePluginAssetsMetatable(lua_State* L) {
 
 const luaL_Reg kFunctions[] = {
     {"get_by_path", Lua_AssetsGetByPath},
+    {"get_by_name", Lua_AssetsGetByName},
+    {"declare", Lua_AssetsDeclare},
+    {"register", Lua_AssetsRegister},
+    {"replace", Lua_AssetsReplace},
     {nullptr, nullptr},
 };
 
