@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "crash_guard.h"
+#include "cvar.h"
 #include "dev.h"
 #include "log.h"
 #include "plugin_loader.h"
@@ -330,6 +331,30 @@ bool Thunk_Print(const char* text) {
     return PrintLine(text);
 }
 
+// Plugin-facing thunks for kcdxConsoleInterface::GetCVar{Int,Bool,Float}.
+// Each is a thin pass-through to the cvar:: engine core (src/cvar.h), the
+// same shape as Thunk_Print over console::PrintLine — the interface mirrors
+// the kcdx.cvar.* Lua surface, both routing through one engine code path.
+// cvar::Get* owns the no-garbage-write contract: false leaves *out untouched.
+bool Thunk_GetCVarInt(const char* name, int* out) {
+    return cvar::GetInt(name, out);
+}
+
+// No cvar::GetBool — bool is derived from the int accessor (the settled
+// get_bool = (int != 0) decision). On a miss cvar::GetInt returns false
+// without touching the local, so *out stays untouched (the miss is
+// observable via the bool return, never a fabricated false).
+bool Thunk_GetCVarBool(const char* name, bool* out) {
+    int v = 0;
+    if (!cvar::GetInt(name, &v)) return false;
+    if (out) *out = (v != 0);
+    return true;
+}
+
+bool Thunk_GetCVarFloat(const char* name, float* out) {
+    return cvar::GetFloat(name, out);
+}
+
 // Drain g_pendingCommands through the ONE registration path (RegisterCommandNow)
 // in FIFO order, then clear the queue. Caller holds g_slotsMutex; g_ready must
 // already be true (the surface is armed). Called once, from Init(), right after
@@ -386,6 +411,11 @@ kcdxConsoleInterface g_iface = {
     /*GetCommandLine=*/   Thunk_GetCommandLine,
     /*ExecuteString=*/    Thunk_ExecuteString,
     /*Print=*/            Thunk_Print,
+    // Append-only (see Interfaces.h marker): new pointers go at the END,
+    // in struct order, so v2-compiled plugins keep every existing offset.
+    /*GetCVarInt=*/       Thunk_GetCVarInt,
+    /*GetCVarBool=*/      Thunk_GetCVarBool,
+    /*GetCVarFloat=*/     Thunk_GetCVarFloat,
 };
 
 }  // namespace

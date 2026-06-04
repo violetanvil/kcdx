@@ -1275,7 +1275,7 @@ typedef struct kcdxConsoleCmdArgs kcdxConsoleCmdArgs;
 // signature and pass it to RegisterCommand. Called on the main thread.
 typedef void (*kcdxConsoleCommandCallback)(const kcdxConsoleCmdArgs* args);
 
-#define kcdxConsoleInterface_Version 2u
+#define kcdxConsoleInterface_Version 3u
 
 typedef struct kcdxConsoleInterface {
     // Register a console command. `name` must be unique across the
@@ -1338,6 +1338,30 @@ typedef struct kcdxConsoleInterface {
     // path could not be resolved on this game build, or for a null/empty
     // string. A refusal is logged — it is never a silent no-op.
     bool         (*Print)(const char* text);
+
+    // Read a game CVar's 32-bit int value by name. The name supplies
+    // both the lookup and the verified accessor — you write the CVar
+    // string you already hold (a modding wiki, the in-game `~` console,
+    // a config); the engine resolves the console + the ICVar accessor.
+    //
+    // Returns true and writes `*out` on success. Returns false and
+    // leaves `*out` UNTOUCHED if the CVar does not exist, or if the
+    // console surface isn't ready (before kcdxMessage_InputLoaded), or
+    // for a null/empty name. The out-param + bool-return shape makes a
+    // "CVar missing" distinguishable from a real value of 0 — a failed
+    // read never writes garbage. A refusal is logged.
+    bool         (*GetCVarInt)(const char* name, int* out);
+
+    // Read a game CVar as a bool: `*out = (the CVar's int value != 0)`.
+    // No separate engine entity — the bool is derived from the int
+    // accessor. Same true-writes-/false-leaves-untouched contract as
+    // GetCVarInt; `*out` is untouched on any miss.
+    bool         (*GetCVarBool)(const char* name, bool* out);
+
+    // Read a game CVar's float value by name. Same contract as
+    // GetCVarInt via the ICVar's float accessor — true writes `*out`,
+    // false leaves it untouched on any miss.
+    bool         (*GetCVarFloat)(const char* name, float* out);
 } kcdxConsoleInterface;
 
 // -----------------------------------------------------------------------------
