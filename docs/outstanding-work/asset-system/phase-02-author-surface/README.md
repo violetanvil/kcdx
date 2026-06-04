@@ -16,8 +16,8 @@ when `DONE`, `—` otherwise.
 | Step | Status | Commit |
 |---|---|---|
 | [6 — navigable namespace `kcdx.plugin.<author>.<plugin>.*` (`__index` chain)](step-6-navigable-namespace.md) | DONE | a3961df |
-| [7 — stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose)](step-7-stale-prose-sweep.md) | DONE | (landed) |
-| [8 — `kcdx.assets.get_by_path` (the pure-read verb; the `kcdx.assets.*` table + the cross-plugin `.assets` leaf)](step-8-lua-surface.md) | NOT STARTED | — |
+| [7 — stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose)](step-7-stale-prose-sweep.md) | DONE | 3cc6a67 |
+| [8 — `kcdx.assets.get_by_path` (the pure-read verb; the `kcdx.assets.*` table + the cross-plugin `.assets` leaf)](step-8-lua-surface.md) | DONE | (landed) |
 | [8b — the four runtime verbs (`get_by_name`/`declare`/`register`/`replace`) + the `asset_namespace` runtime store (design §5.1)](step-8b-runtime-store-verbs.md) | NOT STARTED | — |
 | [9 — `kcdxAssetInterface` C++ mirror (full parity)](step-9-cpp-mirror.md) | NOT STARTED | — |
 

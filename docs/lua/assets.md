@@ -101,11 +101,86 @@ the same file. Rejected shapes:
   `replaces_plugin`, `replaces_path`, `file`, or `name`, or one carrying the
   wrong type.
 
+## Reference an asset in code — `kcdx.assets.*`
+
+The sidecar above is the no-code path. To reference an asset *from your
+`plugin.lua`* — to get a loadable path you hand to a game asset API — use the
+`kcdx.assets.*` domain.
+
+| Call | Args | Returns |
+|---|---|---|
+| `kcdx.assets.get_by_path(path)` | string path, relative to *your* `assets/` | a loadable path (string) for *your own* asset; `(nil, err)` if the path is not a file in your `assets/`, or on a non-string/empty argument. |
+| `kcdx.assets.get_by_name(name)` | string published name | **NYI** — resolve your own published asset → a loadable path. |
+| `kcdx.assets.declare(name, file)` | string name, string file | **NYI** — publish a name in code (the programmatic peer of a sidecar `name`). |
+| `kcdx.assets.register(vpath, file)` | string vpath, string file | **NYI** — make a not-at-load asset available at runtime. |
+| `kcdx.assets.replace(target, with)` | string target, string with | **NYI** — register a replacement in code at runtime. |
+
+The four **NYI** verbs are not callable yet — calling one today raises Lua's
+stock "attempt to call a nil value". They land in a later phase (see
+[planned.md](planned.md)); their shapes are fixed here so you can see the whole
+surface.
+
+### `kcdx.assets.get_by_path(path)` — a loadable path to your own asset
+
+Resolves an asset in *your own* `assets/` folder to a loadable on-disk path —
+the path you hand to a game asset API (set a UI texture, load a model, …). You
+write the path **relative to your `assets/` folder**, with no owner prefix: the
+engine knows which plugin is calling, so your own asset needs no namespace.
+
+```lua
+local icon = kcdx.assets.get_by_path("icons/my_icon.dds")
+-- icon is a loadable path; hand it to a game asset API.
+```
+
+| Arg | Type | Meaning |
+|---|---|---|
+| `path` | string | The asset's path **relative to your plugin's `assets/` folder** (e.g. `"icons/my_icon.dds"`). You write a path — never an address, an asset class, or a handle. |
+
+**Returns:** a loadable path (a string) on success — the disk path the engine
+serves the asset from. A path to a file **not** in your `assets/` returns
+`(nil, err)`, where `err` is a teaching string naming the missing path so you
+can fix the typo — a mistyped path is a loud error, never a silent `nil`. A
+non-string or empty `path` is the same `(nil, err)` shape (the standard
+kcdx-binder bad-argument idiom).
+
+```lua
+local path, err = kcdx.assets.get_by_path("icons/my_icon.dds")
+if not path then
+    kcdx.log.warn("MYMOD", "asset not found: " .. err)
+    return
+end
+-- use `path` with a game asset API
+```
+
+### Reference another mod's asset — the navigable namespace
+
+To reference *another mod's* asset by path, navigate the cross-plugin namespace
+([`kcdx.plugin`](plugin.md)) and call `get_by_path` on its `.assets`:
+
+```lua
+local shirt = kcdx.plugin.redmoon.outfit_swap.assets.get_by_path("male/shirt.dds")
+```
+
+`kcdx.plugin.<author>.<plugin>.assets.get_by_path(path)` reads as native dotted
+Lua — the namespace segments are bare (no quoted-namespace ceremony), and the
+asset path stays a quoted string (it is data). The same teaching-error behaviour
+applies: a path not in *that* mod's `assets/`, or a non-existent `<author>` /
+`<plugin>`, fails loud. Your own asset needs no namespace at all — call
+`kcdx.assets.get_by_path` directly.
+
+The C++ mirror (`K.assets->GetByPath`) is a later phase — see
+[planned.md](planned.md).
+
 ## Status
 
 - **The no-code declarative path (this page) is LIVE** for declaring a vanilla
   replacement. The engine keys your declared target into the asset-resolution
   map and serves your file.
+- **`kcdx.assets.get_by_path` (Lua) is LIVE** for your own asset and for another
+  mod's asset via the navigable namespace. The four other `kcdx.assets.*` verbs
+  (`get_by_name` / `declare` / `register` / `replace`) and the C++
+  `kcdxAssetInterface` mirror are a later phase — their shapes are shown above
+  and in [planned.md](planned.md) so the whole surface is visible.
 - **Referencing / replacing another mod's asset by published name or by the
   cross-mod pair** parses and validates today, but the cross-mod *resolution*
   (turning a published name into the other mod's file) lands with the
@@ -132,3 +207,8 @@ the same file. Rejected shapes:
 - **replacement target** — what a declaration replaces: a vanilla asset path, or
   (later phase) another mod's published name / its asset by the
   `replaces_plugin`+`replaces_path` pair.
+- **loadable path** — the on-disk path `kcdx.assets.get_by_path` returns: the
+  concrete file path the engine serves the asset from, ready to hand to a game
+  asset API. You write a path *relative to your `assets/` folder*; the engine
+  returns the loadable path. The opposite direction of the sidecar — the sidecar
+  declares *what an asset replaces*; `get_by_path` reads *where an asset lives*.

@@ -1,0 +1,4 @@
+cap-75 placeholder asset — a real file under the plugin's assets/ tree so
+kcdx.assets.get_by_path("icons/marker.txt") resolves to a loadable on-disk
+path. Content is irrelevant; only its PRESENCE under assets/ matters (the
+resolver confirms the file exists, then returns its absolute disk path).

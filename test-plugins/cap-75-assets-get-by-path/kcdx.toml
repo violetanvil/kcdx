@@ -1,0 +1,69 @@
+# CAP-75 — kcdx.assets.get_by_path: the author's code-side read of their OWN
+# asset -> a loadable path, AND the cross-plugin form through the step-6
+# navigable namespace.
+#
+# kcdx.assets.get_by_path(path) resolves the CALLING plugin's own asset (no
+# owner prefix — the engine knows who you are) to a loadable on-disk path: the
+# absolute disk path the asset-resolution seam opens to serve the file. It is a
+# PURE READ (no store mutation). A path to a file NOT in the plugin's assets/
+# returns a TEACHING ERROR naming the missing path, never a silent nil.
+#
+# The cross-plugin form kcdx.plugin.<author>.<plugin>.assets.get_by_path(path)
+# resolves through the navigable namespace (cap-74) — the .assets leaf on a
+# resolved plugin handle binds get_by_path to the NAVIGATED plugin. This row
+# navigates THIS plugin's OWN identity (author "ts", plugin
+# "cap_75_assets_get_by_path") because self > engine > other guarantees it is
+# loaded and resolvable — the reliable known-present target, independent of
+# which OTHER plugins the suite loads this session (the cap-74 rationale).
+#
+# This plugin ships a real asset under assets/icons/ so the own + cross-plugin
+# reads resolve to a real file; the missing-path row asks for a path that is
+# NOT in assets/ to prove the teaching error fires (never a silent nil).
+#
+# Five falsifiable rows, all reported synchronously at plugin load
+# (boot-only — every check is a pure read of the in-process plugin registry +
+# the on-disk assets/ tree, no player gesture):
+#
+#   * CAP-75-own            — get_by_path("icons/marker.txt") returns a
+#       non-nil, non-empty string (the loadable path) that ENDS with the asset's
+#       relative path. FALSIFIABLE: nil / empty / wrong path -> FAIL.
+#   * CAP-75-missing        — get_by_path("icons/does_not_exist.dds") returns
+#       (nil, err) with `err` a string naming the missing path — the teaching
+#       error, NOT a silent nil. FALSIFIABLE: a bare nil (no err) / a non-nil
+#       return / err not naming the path -> FAIL.
+#   * CAP-75-cross          — kcdx.plugin.ts.<this plugin>.assets.get_by_path(
+#       "icons/marker.txt") resolves through the namespace to a non-nil loadable
+#       path. FALSIFIABLE: the chain raises / returns nil -> FAIL (the .assets
+#       leaf did not bind get_by_path to the navigated plugin).
+#   * CAP-75-nyi-declare    — kcdx.assets.declare is NOT bound yet (a later
+#       step). DELIBERATELY-FAILING contract pin: PASSES only when declare
+#       becomes a callable function; FAILS (type ~= "function") until the
+#       runtime-store step lands it. Mirrors the get_by_name/register/replace
+#       rows — the contract is pinned, not lost.
+#   * CAP-75-nyi-runtime    — the runtime-store verbs get_by_name / register /
+#       replace are NOT bound yet. DELIBERATELY-FAILING contract pin: PASSES
+#       only when ALL THREE are callable functions; FAILS until the runtime-
+#       store step lands them.
+#
+# Test mode: boot-only.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_75_assets_get_by_path"
+display_name        = "CAP-75 kcdx.assets.get_by_path"
+author              = "ts"
+description         = "Pure-Lua kcdx.assets.get_by_path self-test: the own-asset read resolves a real file under assets/ to a loadable path; a path NOT in assets/ yields a teaching error naming the missing path (never a silent nil, AP14); the cross-plugin form kcdx.plugin.<author>.<plugin>.assets.get_by_path resolves through the step-6 navigable namespace to a loadable path. Two deliberately-failing rows pin the four deferred runtime verbs (declare / get_by_name / register / replace) — they FAIL until the runtime-store step binds them, keeping the contract visible, not lost."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-75-own",
+                       "CAP-75-missing",
+                       "CAP-75-cross",
+                       "CAP-75-nyi-declare",
+                       "CAP-75-nyi-runtime"]
+
+[entrypoints]
+lua    = "plugin.lua"
+assets = "assets/"

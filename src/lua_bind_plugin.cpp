@@ -78,6 +78,7 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "lua_bind_assets.h"  // PushPluginAssetsDomain — the cross-plugin .assets leaf
 #include "plugin_loader.h"
 #include "zone_gate.h"
 
@@ -182,17 +183,35 @@ kcdxPluginHandle HandleForAuthorPlugin(const std::string& author,
 
 // __index on a PLUGIN-HANDLE userdata. The step-6 deliverable is the
 // handle that resolves the author+plugin segments (reached here means
-// both resolved). What `.assets` (and any future cross-plugin surface)
-// RETURNS is step 8's deliverable: until step 8 attaches the asset
-// operations, every access on the handle is a navigation miss -> nil,
-// so kcdx.plugin.<a>.<p>.assets raises the stock index error at the
-// .assets slot (the chain composes cleanly when step 8 wires the leaf).
+// both resolved). What `.assets` RETURNS is the asset surface: this hop
+// resolves .assets to the cross-plugin assets DOMAIN bound to the
+// navigated (author, plugin) — PushPluginAssetsDomain, owned by
+// lua_bind_assets (the asset concern lives there; this file owns only the
+// navigation chain). Any OTHER key is still a navigation miss -> nil, so
+// the next access raises the stock index error naming the bad surface
+// segment (the navigation-miss idiom). A FUTURE cross-plugin surface
+// adds its own key alongside .assets here.
 int Lua_PluginHandleIndex(lua_State* L) {
     // arg 1 = the plugin-handle userdata; arg 2 = the accessed key
-    // (.assets, or a future surface). Step 8 attaches the .assets leaf
-    // here, reading (author, plugin, handle) off the userdata's envtable
-    // (lua_getfenv(L, 1)). Step 6 ships the resolved handle; the leaf is
-    // not yet wired, so a miss is correct (nil -> stock index error).
+    // (.assets, or a future surface). Read (author, plugin) off the
+    // userdata's envtable and dispatch the .assets leaf to the asset
+    // binder bound to that pair (NOT the calling plugin — a cross-plugin
+    // read resolves the NAVIGATED plugin's asset).
+    if (lua_type(L, 2) == LUA_TSTRING) {
+        const char* keyC = lua_tostring(L, 2);
+        const std::string key = keyC ? keyC : "";
+        if (key == "assets") {
+            lua_getfenv(L, 1);
+            lua_getfield(L, -1, "author");
+            lua_getfield(L, -2, "plugin");
+            std::string author = lua_isstring(L, -2) ? lua_tostring(L, -2) : "";
+            std::string plugin = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+            lua_pop(L, 3);  // plugin + author + envtable
+            return kcdx::lua_bind_assets::PushPluginAssetsDomain(L, author,
+                                                                 plugin);
+        }
+    }
+    // Any non-.assets key (or a non-string key) is a navigation miss.
     lua_pushnil(L);
     return 1;
 }
