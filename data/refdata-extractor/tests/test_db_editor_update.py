@@ -17,18 +17,35 @@ wrapper, no stubbed gate). Cases:
      (module_id, rva, kind, signature, fingerprint) -- is byte-unchanged; every
      OTHER ROW is byte-unchanged.
 
-  2. FULL-COLUMN UPDATE (US-5: correct an rva + a signature on an EXISTING row).
-     SURFACED BLOCKER -- see the module note below + the step report. The existing
-     applier's present-row branch (import_to_sqlite._apply_one_db) updates ONLY
-     the four audit-trio columns ("the audit trio is the only mutable part"); a
-     non-trio change to an already-present row (rva/signature/kind/module/survival)
-     is silently a no-op. D13 presumed the applier already handles the full-column
-     correction; the code shows it does not. Landing US-5 needs an applier
-     extension (a present-row full-column UPDATE) whose semantics for a kind/rva
-     change (re-promote? survival rebuild?) are an undecided design call -- so this
-     case is asserted as the GAP (the edit is currently a no-op), not silently
-     "passed" against a capability the gate does not have. It flips to a positive
-     assertion when the applier extension lands.
+  2. FULL-COLUMN UPDATE (US-5: correct an rva / signature / kind on an EXISTING
+     row) -- a POSITIVE oracle (the step-3c applier extension landed). The applier's
+     present-row branch (import_to_sqlite._apply_one_db) now detects a non-trio
+     change and runs a full-column UPDATE through the SAME machinery the ADD path
+     uses (build_curated_row + the kind-class PROMOTE/mint/REFUSE gate +
+     build_survival_row), as an UPDATE of the existing row (same av_id, same
+     identity key), NOT an INSERT. The settled semantics (step report / design.md
+     §6 US-5 + §10 D13/D19), asserted below:
+       1. rva change (function) to an rva WITH a bulk baseline -> RE-PROMOTE: the
+          row carries the NEW bulk fn's content_hash + length; the survival
+          function_hash carries the new fingerprint.
+       2. rva change (function) to an rva with NO bulk baseline -> REFUSE
+          (BaselineRefusal), NO write. The ONE designed apply != rebuild seam (a
+          from-scratch rebuild would silently MINT a NULL-fingerprint function; the
+          interactive applier refuses rather than mint -- user-approved). Asserted
+          as the refusal, NOT a byte-match.
+       3. kind change -> the survival kind_form rebuilds, the av fingerprint
+          recomputes by kind-class (function -> PROMOTE/REFUSE; non-function ->
+          mint, fingerprint NULL).
+       4. signature-only change -> the fingerprint + survival row are UNTOUCHED;
+          only the signature cell changes.
+       5. audit-trio-only change -> the existing trio-UPDATE path (byte-identical;
+          covered by case 1 above -- not regressed).
+     apply==rebuild is proven by the whole-DB convergence fingerprint: the direct
+     UPDATE produces a DB byte-identical to the seed-rebuild apply of the same
+     edit, AND the edited row reaches the same logical curated state a from-scratch
+     run_rebuild describes (asserted id-agnostically -- the direct-write model is
+     id-stable, design D19; run_rebuild re-keys ids, so the curated row, not the
+     internal id, is the comparand). Case 2 is the sole non-convergent case.
 
   3. INVALID edits abort with NO write (the single shared gate). For each of:
      malformed verified_date, out-of-enum evidence_kind, out-of-enum kind, a
@@ -163,6 +180,34 @@ def _av_row_decoded(db_path, kcdx_id, valid_from_tag):
         con.close()
 
 
+def _survival_for(db_path, kcdx_id, valid_from_tag):
+    """The 1:1 survival row for the curated (kcdx_id, valid_from) entity as a dict,
+    with the autoincrement `id` + the FK `address_version_id` excluded (internal
+    handles that legitimately differ by id), so the comparison is the survival
+    payload + kind_form, not its numbering. content_hash stays bytes (comparable)."""
+    con = sqlite3.connect(db_path)
+    try:
+        vf = con.execute("SELECT id FROM game_versions WHERE tag = ?",
+                         (valid_from_tag,)).fetchone()[0]
+        av = con.execute(
+            "SELECT id FROM address_versions WHERE kcdx_id = ? AND valid_from = ?",
+            (kcdx_id, vf)).fetchone()
+        if av is None:
+            return None
+        cols = [c[1] for c in con.execute('PRAGMA table_info("survival")')]
+        row = con.execute(
+            f'SELECT {",".join(chr(34)+c+chr(34) for c in cols)} '
+            f'FROM survival WHERE address_version_id = ?', (av[0],)).fetchone()
+        if row is None:
+            return None
+        d = dict(zip(cols, row))
+        d.pop("id", None)
+        d.pop("address_version_id", None)
+        return d
+    finally:
+        con.close()
+
+
 def _module_name(db_path, kcdx_id, valid_from_tag):
     """The module NAME the curated row resolves to (module_id excluded above, so a
     full-column module edit is checked by its resolved name)."""
@@ -265,6 +310,89 @@ def _pick_nonfunction_row(db_path):
         return None
     finally:
         con.close()
+
+
+def _pick_function_row_and_other_bulk_rva(user_db, dev_db):
+    """A curated FUNCTION-kind row (the re-promote subject) PLUS a DIFFERENT bulk
+    function rva that carries a body fingerprint (the new rva to re-promote to).
+    Returns (kcdx_id, valid_from_tag, current_rva, new_rva). The new rva is an
+    uncurated bulk fn (kcdx_id IS NULL, content_hash NOT NULL) other than the row's
+    own rva -- so the re-promote carries that bulk fn's NEW fingerprint."""
+    ucon = sqlite3.connect(user_db)
+    try:
+        gv = {r[0]: r[1] for r in ucon.execute("SELECT id, tag FROM game_versions")}
+        kdec = _dict_id_to_val(ucon, "address_versions", "kind")
+        target = None
+        for kid, vf, rva, kindid in ucon.execute(
+                "SELECT kcdx_id, valid_from, rva, kind FROM address_versions "
+                "WHERE kcdx_id IS NOT NULL AND rva IS NOT NULL"):
+            if kdec.get(kindid) in ("function", "function_variadic",
+                                    "function_no_sig"):
+                target = (kid, gv.get(vf), rva)
+                break
+    finally:
+        ucon.close()
+    if target is None:
+        return None
+    kid, vf_tag, cur_rva = target
+    dcon = sqlite3.connect(dev_db)
+    try:
+        row = dcon.execute(
+            "SELECT rva FROM address_versions WHERE kcdx_id IS NULL AND "
+            "content_hash IS NOT NULL AND rva != ? ORDER BY rva LIMIT 1",
+            (cur_rva,)).fetchone()
+    finally:
+        dcon.close()
+    if row is None:
+        return None
+    return (kid, vf_tag, cur_rva, row[0])
+
+
+def _a_no_baseline_rva(dev_db):
+    """An rva past the DEV DB's max bulk function entry -- a function-kind re-promote
+    to it has NO bulk baseline (the case-2 REFUSE)."""
+    con = sqlite3.connect(dev_db)
+    try:
+        mx = con.execute(
+            "SELECT MAX(rva) FROM address_versions WHERE kcdx_id IS NULL").fetchone()[0]
+        return (mx or 0) + 0x100000
+    finally:
+        con.close()
+
+
+def _db_fingerprint(out_dir):
+    """Whole-DB byte fingerprint: a per-table content hash over EVERY table in both
+    reference DBs (the same comparator test_direct_write.py uses). Two out_dirs with
+    the same fingerprint hold byte-identical DBs."""
+    fp = {}
+    for which in ("reference.sqlite", "reference-dev.sqlite"):
+        dbp = os.path.join(out_dir, which)
+        con = sqlite3.connect(dbp)
+        try:
+            tables = [r[0] for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        finally:
+            con.close()
+        for t in tables:
+            fp[(which, t)] = _hash_table(dbp, t)
+    return fp
+
+
+def _rebuild_edited_seed(b, kid, vf_tag, edits):
+    """Rebuild a FRESH DB pair from scratch off the committed seed with the one-row
+    edit folded in -- the apply==rebuild reference. Returns the out_dir (caller
+    removes it). Reuses the baseline's seed source so only `edits` differs."""
+    from seeds_shared import seed_csv_edit
+    out = tempfile.mkdtemp(prefix="db_editor_rebuild_")
+    seed_dir = os.path.join(out, "seed_src")
+    _copy_seeds(seed_dir)
+    seed_csv_edit.update_row_in_place(
+        os.path.join(seed_dir, "address_versions_seed.csv"),
+        key_columns=("kcdx_id", "valid_from_version"),
+        key_values=(str(kid), str(vf_tag)), edits=dict(edits))
+    rebuild_out = os.path.join(out, "rebuild")
+    _rebuild_into(seed_dir, rebuild_out)
+    return out, rebuild_out
 
 
 def _present_evidence_kinds(db_path):
@@ -394,42 +522,187 @@ def _audit_trio_only_update(b):
 
 
 # --------------------------------------------------------------------------
-# Case 2: full-column UPDATE (rva + signature) -- the SURFACED BLOCKER.
+# Case 2: full-column UPDATE (US-5) -- the POSITIVE oracle (step-3c applier
+# extension landed). Five sub-cases, each proving apply==rebuild EXCEPT the one
+# designed refusal seam (sub-case 2 below).
 #
-# SKIPPED, not asserted either way. The full-column US-5 correction cannot land
-# through the existing applier: its present-row branch updates ONLY the audit trio
-# (a non-trio change to an already-present row is silently a no-op). D13 presumed
-# the applier already classified the full-column correction; it does not. Closing
-# it needs an applier extension (a present-row full-column UPDATE) whose semantics
-# for a kind/rva change (re-promote? survival rebuild?) are an undecided design
-# call -- surfaced in the step report for the user to settle. The case is NOT
-# asserted as a "pass" against a capability the gate lacks (that would game the
-# bar) and NOT asserted as a failure of the in-scope work; it is skipped with this
-# reason and becomes a positive oracle when the extension lands.
+# THE apply==rebuild PROOF (two oracles, both validated by the step-3c probe):
+#   - WHOLE-DB byte-identity: the direct full-column UPDATE produces a DB
+#     byte-identical (_db_fingerprint over every table in both DBs) to the
+#     SEED-REBUILD APPLY of the same edit -- the design's convergence contract
+#     (D13/D19: db_editor's direct write and the seed-rebuild path BOTH drive the
+#     SAME _apply_one_db, so they converge by construction). This is the
+#     test_direct_write.py convergence comparator, applied here per sub-case.
+#   - CURATED-ROW logical equivalence vs a from-scratch run_rebuild: the edited
+#     row reaches the SAME logical curated state a run_rebuild of the edited seed
+#     describes, asserted ID-AGNOSTICALLY (_av_row_decoded drops `id`/`module_id`).
+#     run_rebuild RE-KEYS internal ids (a function promote keys the curated row at
+#     the bulk fn's ordinal id; a kind change mints a fresh id), which a DIRECT
+#     UPDATE cannot reproduce -- the direct-write model is ID-STABLE by design
+#     (D19 §3/§4: a maintainer edit is a DIRECT in-place UPDATE, NOT a re-keying
+#     rebuild; run_rebuild is the one-time genesis bootstrap, never re-run for an
+#     edit). So the comparand is the curated ROW's content, not its internal id.
+#     (A whole-DB byte-match vs run_rebuild is NOT the contract and is impossible
+#     by UPDATE -- a step-3c finding; the convergence target is the seed-rebuild
+#     apply, which is itself an _apply_one_db drive.)
 # --------------------------------------------------------------------------
-_FULL_COLUMN_BLOCKED_REASON = (
-    "full-column US-5 correction blocked: import_to_sqlite._apply_one_db's "
-    "present-row branch updates only the audit trio; landing a non-trio "
-    "correction on an existing row needs an applier extension whose re-promote / "
-    "survival-rebuild semantics are an undecided design call (surfaced in the "
-    "step report). db_editor + the bridge are ready; only the applier sub-"
-    "capability is missing.")
+def _seed_rebuild_apply(out, kid, vf_tag, edits):
+    """Reconstruct the OLD seed-rebuild write for ONE edit and commit it (the
+    convergence reference). Export the committed DB -> fold the edit into the temp
+    seed -> repoint the importer's seed constants -> apply_seeds(defer_commit) +
+    commit. Both this and the direct path drive _apply_one_db, so a divergence is a
+    real applier bug. Mutates `out`'s DBs in place."""
+    from seeds_shared import seed_csv_edit
+    user_db = os.path.join(out, "reference.sqlite")
+    work = tempfile.mkdtemp(prefix="db_editor_seedrebuild_")
+    try:
+        from seeds_shared.csv_exporter import export_seeds
+        prospective = os.path.join(work, "prospective_seed")
+        os.makedirs(prospective, exist_ok=True)
+        export_seeds(user_db, prospective)
+        seed_csv_edit.update_row_in_place(
+            os.path.join(prospective, "address_versions_seed.csv"),
+            key_columns=("kcdx_id", "valid_from_version"),
+            key_values=(str(kid), str(vf_tag)), edits=dict(edits))
+        version = (GVT, imp.GAME_VERSION_ORDINAL)
+        with _seeds_pointed_at(prospective):
+            handle = imp.apply_seeds(out, None, version=version, defer_commit=True)
+        imp.commit(handle)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _assert_apply_equals_rebuild(b, kid, vf_tag, edits, label):
+    """Apply `edits` to (kid, vf_tag) via the DIRECT path on one fresh DB and via
+    the SEED-REBUILD path on another, assert the two DBs are byte-identical
+    (whole-DB convergence), AND assert the direct-edited curated row matches a
+    from-scratch run_rebuild of the edited seed id-agnostically. Returns the direct
+    out_dir (caller may inspect specific cells before removing it)."""
+    out_direct = _fresh_db(b)
+    out_seed = _fresh_db(b)
+    rebuild_root = None
+    try:
+        db_editor.update_version_row(out_direct, DLL_PATH, kid, vf_tag, dict(edits))
+        _seed_rebuild_apply(out_seed, kid, vf_tag, edits)
+        fp_d = _db_fingerprint(out_direct)
+        fp_s = _db_fingerprint(out_seed)
+        assert fp_d == fp_s, (
+            f"[{label}] direct full-column UPDATE did NOT converge with the "
+            f"seed-rebuild apply (apply==rebuild broken); differing tables: "
+            f"{sorted(k for k in fp_d if fp_d.get(k) != fp_s.get(k))}")
+        # Curated row logical-equivalence vs a from-scratch run_rebuild (id-agnostic).
+        rebuild_root, rebuild_out = _rebuild_edited_seed(b, kid, vf_tag, edits)
+        after_direct = _av_row_decoded(
+            os.path.join(out_direct, "reference.sqlite"), kid, vf_tag)
+        after_rebuild = _av_row_decoded(
+            os.path.join(rebuild_out, "reference.sqlite"), kid, vf_tag)
+        assert after_direct == after_rebuild, (
+            f"[{label}] the direct-edited curated row does not match a from-scratch "
+            f"run_rebuild of the edited seed (id-agnostic): direct={after_direct} "
+            f"rebuild={after_rebuild}")
+        return out_direct
+    finally:
+        shutil.rmtree(out_seed, ignore_errors=True)
+        if rebuild_root is not None:
+            shutil.rmtree(rebuild_root, ignore_errors=True)
+        # out_direct is NOT removed here -- the caller removes it after inspecting.
 
 
 def _full_column_update(b):
-    # Confirms the bridge + validator ACCEPT a valid full-column edit (db_editor
-    # does not raise on it) -- the part this step owns is correct -- then stops:
-    # the applier sub-capability that would make rva/signature actually change is
-    # the surfaced blocker, so the post-state is not asserted.
+    user_db = os.path.join(b["out"], "reference.sqlite")
+    dev_db = os.path.join(b["out"], "reference-dev.sqlite")
+
+    # ---- sub-case 1: rva re-promote (function row -> a DIFFERENT bulk fn's rva).
+    # The row's content_hash + length become the NEW bulk fn's; the survival
+    # function_hash carries the new fingerprint; apply==rebuild.
+    picked = _pick_function_row_and_other_bulk_rva(user_db, dev_db)
+    assert picked is not None, "no function row + alternate bulk rva in the fixture"
+    kid, vf_tag, cur_rva, new_rva = picked
+    before = _av_row_decoded(user_db, kid, vf_tag)
+    out = _assert_apply_equals_rebuild(
+        b, kid, vf_tag, {"rva": "0x%X" % new_rva}, "rva re-promote")
+    try:
+        udb = os.path.join(out, "reference.sqlite")
+        after = _av_row_decoded(udb, kid, vf_tag)
+        assert after["rva"] != before["rva"], "[rva re-promote] rva did not change"
+        assert after["content_hash"] != before["content_hash"], (
+            "[rva re-promote] content_hash did not re-promote to the new bulk fn")
+        assert after["content_hash"] is not None and after["length"] is not None, (
+            "[rva re-promote] re-promoted row lost its fingerprint")
+        # survival function_hash carries the NEW fingerprint.
+        sv = _survival_for(udb, kid, vf_tag)
+        assert sv is not None and sv["kind_form"] == "function_hash", (
+            "[rva re-promote] survival not function_hash")
+        assert sv["content_hash"] == after["content_hash"], (
+            "[rva re-promote] survival fingerprint not the new body hash")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+    # ---- sub-case 2: no-baseline REFUSAL -- the DESIGNED apply != rebuild seam.
+    # Re-promoting a function row to an rva with NO bulk baseline RAISES
+    # BaselineRefusal and writes NOTHING (both DBs byte-identical to before). This
+    # is the ONE place the interactive applier is STRICTER than a from-scratch
+    # rebuild BY DESIGN (user-approved): a rebuild would silently MINT a
+    # NULL-fingerprint function; the applier refuses rather than mint, preserving
+    # the no-NULL-fingerprint-function invariant. Asserted as the REFUSAL (not a
+    # byte-match) -- a future reader must NOT "fix" the applier to mint here (that
+    # silently reopens the missing-baseline-disguised-as-an-entity hole).
     out = _fresh_db(b)
     try:
-        user_db = os.path.join(out, "reference.sqlite")
-        target = _pick_nonfunction_row(user_db)
-        assert target is not None, "no non-function curated row in the fixture"
-        kid, vf_tag = target
-        edits = {"rva": "0x7F000000", "signature": "void (ptr corrected)"}
-        # Drives cleanly (no raise): the edit is valid + the bridge accepts it.
-        db_editor.update_version_row(out, DLL_PATH, kid, vf_tag, edits)
+        no_base = _a_no_baseline_rva(dev_db)
+        before_fp = _db_fingerprint(out)
+        raised = None
+        try:
+            db_editor.update_version_row(
+                out, DLL_PATH, kid, vf_tag, {"rva": "0x%X" % no_base})
+        except imp.BaselineRefusal as e:
+            raised = e
+        assert raised is not None, (
+            "[no-baseline refusal] re-promoting a function row to a no-baseline rva "
+            "did NOT raise BaselineRefusal (the applier must refuse, never mint a "
+            "NULL-fingerprint function -- the designed apply != rebuild seam)")
+        assert _db_fingerprint(out) == before_fp, (
+            "[no-baseline refusal] the refusal left a partial write (both DBs must "
+            "be byte-identical to before the attempt)")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+    # ---- sub-case 3: kind change (function -> non-function). The survival
+    # kind_form rebuilds; the av fingerprint recomputes by kind-class (a
+    # non-function kind mints -> content_hash/length NULL); apply==rebuild.
+    out = _assert_apply_equals_rebuild(
+        b, kid, vf_tag, {"kind": "data_slot"}, "kind fn->non-fn")
+    try:
+        udb = os.path.join(out, "reference.sqlite")
+        after = _av_row_decoded(udb, kid, vf_tag)
+        assert after["kind"] == "data_slot", "[kind change] kind did not change"
+        assert after["content_hash"] is None and after["length"] is None, (
+            "[kind change] non-function kind kept a fingerprint (must mint NULL)")
+        sv = _survival_for(udb, kid, vf_tag)
+        assert sv is not None and sv["kind_form"] == "derivation", (
+            "[kind change] survival kind_form did not rebuild for the new kind")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+    # ---- sub-case 4: signature-only. The fingerprint + survival row are
+    # UNTOUCHED (signature is not part of the body hash); only the signature cell
+    # changes; apply==rebuild.
+    before = _av_row_decoded(user_db, kid, vf_tag)
+    before_sv = _survival_for(user_db, kid, vf_tag)
+    out = _assert_apply_equals_rebuild(
+        b, kid, vf_tag, {"signature": "void (corrected sig)"}, "signature-only")
+    try:
+        udb = os.path.join(out, "reference.sqlite")
+        after = _av_row_decoded(udb, kid, vf_tag)
+        assert after["signature"] == "void (corrected sig)", (
+            "[signature-only] signature did not change")
+        assert after["content_hash"] == before["content_hash"], (
+            "[signature-only] fingerprint changed (must be untouched)")
+        assert after["length"] == before["length"], (
+            "[signature-only] length changed (must be untouched)")
+        after_sv = _survival_for(udb, kid, vf_tag)
+        assert after_sv == before_sv, (
+            "[signature-only] survival row changed (must be untouched)")
     finally:
         shutil.rmtree(out, ignore_errors=True)
 
@@ -510,8 +783,6 @@ def test_audit_trio_only_update_lands_atomically(baseline):  # noqa: F811
 
 
 def test_full_column_update_lands_atomically(baseline):  # noqa: F811
-    if pytest is not None:
-        pytest.skip(_FULL_COLUMN_BLOCKED_REASON)
     _full_column_update(baseline)
 
 
@@ -524,9 +795,8 @@ if __name__ == "__main__":
         b = _get_baseline()
         _audit_trio_only_update(b)
         print("PASS test_audit_trio_only_update_lands_atomically")
-        _full_column_update(b)   # bridge accepts the valid edit; applier no-ops it
-        print("SKIP test_full_column_update_lands_atomically -- "
-              + _FULL_COLUMN_BLOCKED_REASON)
+        _full_column_update(b)
+        print("PASS test_full_column_update_lands_atomically")
         _invalid_aborts_with_no_write(b)
         print("PASS test_invalid_edit_aborts_with_no_write")
         print("\nall db_editor update oracle tests passed")

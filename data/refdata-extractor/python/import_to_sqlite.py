@@ -1260,6 +1260,24 @@ def _read_bulk_row(con, rva):
     return dict(zip(cols, row))
 
 
+def _read_curated_row(con, av_id):
+    """Read the existing address_versions row `av_id` from the DEV DB as a full
+    DEV-column dict (the same keys build_curated_row's base_row carries). Used by the
+    full-column UPDATE's function-kind path when the rva is UNCHANGED: the existing
+    curated row already carries the body fingerprint (content_hash/length + the DEV
+    abi_walker columns) promoted at genesis, so it IS the promote base -- re-reading
+    the now-curated bulk row at that rva would find nothing (it was promoted in place)
+    and wrongly refuse. Returns None if the row is absent (never expected -- the
+    caller already matched it as PRESENT)."""
+    cols = [c for c, _ in SCHEMA["address_versions"]]
+    sel = ",".join('"' + c + '"' for c in cols)
+    row = con.execute(
+        'SELECT %s FROM address_versions WHERE id = ?' % sel, (av_id,)).fetchone()
+    if row is None:
+        return None
+    return dict(zip(cols, row))
+
+
 def _projected_insert(con, av_row, user_projection):
     """INSERT one fully-built address_versions row dict into the open DB, applying
     the same column projection write_db uses (USER drops the DEV-only columns).
@@ -1458,6 +1476,228 @@ def _apply_supersede(con, action, tx):
         raise
 
 
+# The curated address_versions columns a full-column UPDATE (US-5) may change
+# OUTSIDE the audit trio. These are the cells build_curated_row + build_survival_row
+# derive from the authored seed (module/kind/rva/signature + the per-kind datum +
+# the survival cells); a change to any of them is what distinguishes a full-column
+# correction from a trio-only re-verify. The audit trio (last_verified_at_version /
+# verified_by / verified_date / evidence_kind) is handled by the trio-UPDATE path,
+# so it is NOT in this set. (offset/vtable_slot/struct_offset map to the av columns;
+# the survival_* cells map to the survival row -- both rebuilt by the full-column
+# UPDATE.) The identity key (kcdx_id, valid_from) is immutable and never compared.
+def _present_row_non_trio_differs(con, av_id, a, *, module_id_fn, kind_id_fn):
+    """Does the prospective edit change any NON-trio curated cell of the present
+    row `av_id`? Compares the action's resolved curated values + survival cells
+    against the row's CURRENT DB values. Returns True iff something beyond the
+    audit trio differs -- the signal to take the full-column UPDATE path instead
+    of the trio-only path. A trio-only edit (or a pure no-op) returns False so the
+    pre-US-5 trio path stays byte-identical (an idempotent rewrite).
+
+    The comparison is on the address_versions curated cells the edit could move
+    (module_id / kind / rva / signature / offset / vtable_slot / struct_offset)
+    PLUS the survival row's authored payload cells. The fingerprint columns
+    (content_hash/length) are NOT compared here -- they are DERIVED from the kind
+    + rva via the PROMOTE/mint gate, so a fingerprint change is a CONSEQUENCE of a
+    kind/rva change (already caught), never an independent edit."""
+    av = con.execute(
+        'SELECT kind, module_id, rva, signature, offset, vtable_slot, '
+        'struct_offset FROM address_versions WHERE id = ?', (av_id,)).fetchone()
+    db_kind, db_module_id, db_rva, db_sig, db_off, db_vslot, db_struct = av
+
+    # The action's resolved curated values (the same resolution the write does).
+    a_kind_id = kind_id_fn()
+    a_module_id = module_id_fn()
+    a_sig = a["signature"] or None
+    if (a_kind_id != db_kind or a_module_id != db_module_id
+            or a["rva"] != db_rva or a_sig != db_sig
+            or a["offset"] != db_off or a["vtable_slot"] != db_vslot
+            or a["struct_offset"] != db_struct):
+        return True
+
+    # The survival payload cells (compared decoded, kind-agnostically): a survival
+    # edit (e.g. survival_aob / survival_rule / survival_slot_count) with no av-cell
+    # change still requires a full-column UPDATE to rebuild the survival row.
+    sv = con.execute(
+        'SELECT aob, anchor_string, rule, slot_count, expect_unique, derives_from '
+        'FROM survival WHERE address_version_id = ?', (av_id,)).fetchone()
+    if sv is not None:
+        db_aob, db_anchor, db_rule, db_slot, db_eu, db_derives = sv
+        a_derives = _resolve_derives_from_av_id(
+            con, a["survival_derives_from_kid"])
+        if (a["survival_aob"] != db_aob
+                or a["survival_anchor_string"] != db_anchor
+                or a["survival_rule"] != db_rule
+                or a["survival_slot_count"] != db_slot
+                or a["survival_expect_unique"] != db_eu
+                or a_derives != db_derives):
+            return True
+    return False
+
+
+def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
+                            vf_id, lvv_id, ekn_id):
+    """Apply ONE full-column correction (US-5) to the EXISTING curated row `av_id`,
+    reusing the ADD path's machinery as an in-place UPDATE (same av_id, same
+    (kcdx_id, valid_from) identity key; valid_through unchanged). Caller wraps this
+    in the per-action tx (BEGIN/COMMIT immediate; SAVEPOINT/RELEASE deferred) +
+    rollback-on-raise -- mirroring every other write site.
+
+    Same kind-class gate the ADD path runs (~_apply_one_db's add tail):
+      - function kind  -> PROMOTE: read the DEV bulk row at the (possibly NEW) rva
+        via _read_bulk_row(dev_con, rva); build_curated_row(base_row=<bulk>) carries
+        the NEW content_hash + length; the survival row is the function_hash form
+        with the new fingerprint. NO bulk baseline -> RAISE BaselineRefusal (the
+        ONE designed apply != rebuild seam -- see the comment below).
+      - non-function   -> MINT: build_curated_row(base_row=None), content_hash/length
+        NULL; the survival row is the kind's non-function kind_form.
+    Both DBs: USER projects the curated row; DEV carries the full DEV column set.
+    The av row is UPDATEd in place (its id reused -- the direct-write model is
+    id-stable, design D19 §3/§4: an edit is a DIRECT UPDATE, NOT a re-keying rebuild)
+    and its 1:1 survival row is rebuilt (DELETE the stale row + INSERT the rebuilt
+    one) so apply reaches the SAME logical curated state a from-scratch rebuild would
+    describe for this entity (the design's convergence contract -- proven against the
+    seed-rebuild path by the convergence oracle), id-agnostically."""
+    kid = a["kcdx_id"]
+    module_id = _resolve_module_id(con, a["module"], where)
+    kind_id = _db_dict_id(con, "address_versions", "kind", a["kind"], where)
+
+    if a["kind"] in ss.FUNCTION_KINDS:
+        # FUNCTION-KIND fingerprint source -- two sub-cases, decided by whether the
+        # row is ALREADY a fingerprinted function at the SAME rva:
+        #   - RE-PROMOTE (case 1 rva change; case 3 a non-function kind PROMOTED into
+        #     a function): re-read the DEV bulk row at the (new) rva so the row carries
+        #     that rva's body fingerprint (content_hash/length). No bulk baseline at
+        #     the rva -> REFUSE (the designed seam below). This is the case whenever
+        #     the rva MOVED, OR the existing row is not already a fingerprinted
+        #     function (its kind was non-function, so it carried no body hash) -- both
+        #     need the fingerprint (re)derived from the bulk row at the rva.
+        #   - KEEP the existing fingerprint (case 4 signature-only / case 5 trio on a
+        #     function row, rva unchanged): the curated row is ALREADY a fingerprinted
+        #     function at this rva (its content_hash/length are the body hash promoted
+        #     at genesis), and the bulk row at that rva is no longer uncurated (it WAS
+        #     promoted in place on the DEV side), so _read_bulk_row would (correctly)
+        #     find nothing -- re-reading it would wrongly REFUSE a legitimate edit. The
+        #     existing curated row IS its own promote base; the fingerprint stays
+        #     UNTOUCHED (signature is not part of the body hash -- case 4, by probe).
+        # The USER pass reads the DEV connection in `state` (USER carries no bulk).
+        cur = con.execute(
+            "SELECT rva, content_hash FROM address_versions WHERE id = ?",
+            (av_id,)).fetchone()
+        cur_rva, cur_hash = cur
+        already_fingerprinted_fn = (a["rva"] == cur_rva and cur_hash is not None)
+        dev_con = state["dev_con"]
+        if already_fingerprinted_fn:
+            # KEEP: the current DEV curated row's full column dict IS the promote base
+            # (its content_hash/length are the body fingerprint already carried). Read
+            # from the DEV connection so the USER pass (no bulk, no fingerprint columns)
+            # sources the fingerprint identically -- the same DEV-sourced-fingerprint
+            # split the ADD path uses.
+            base_row = _read_curated_row(dev_con, av_id)
+        else:
+            # RE-PROMOTE: read the bulk row at the rva (the new rva for case 1; the
+            # row's rva for a non-function->function promote whose own row carries no
+            # fingerprint).
+            base_row = _read_bulk_row(dev_con, a["rva"]) if a["rva"] is not None else None
+        if base_row is None:
+            # === DESIGNED apply != rebuild SEAM (the ONE place they diverge) ===
+            # A from-scratch rebuild would SILENTLY MINT a NULL-fingerprint function
+            # here (its curated promote falls through to base_row=None when no bulk
+            # rva matches). The interactive-edit applier is STRICTER BY DESIGN
+            # (user-approved): it REFUSES rather than mint, so a maintainer cannot
+            # turn a real function into a NULL-fingerprint ghost by mistyping an rva
+            # -- it instructs them to rebuild for that version first. This preserves
+            # the no-NULL-fingerprint-function invariant the ADD path's same gate
+            # protects (~its BaselineRefusal). Do NOT "fix" this to mint: minting
+            # silently reopens the missing-baseline-disguised-as-an-entity hole.
+            raise BaselineRefusal(
+                f"{where}: no bulk baseline at rva "
+                f"{('0x%X' % a['rva']) if a['rva'] is not None else None}; a "
+                f"full-column correction cannot re-promote a function-kind row to "
+                f"an rva with no bulk baseline (the applier refuses rather than mint "
+                f"a NULL-fingerprint function -- run --rebuild for "
+                f"{a['valid_from_tag']} first). Stricter than a from-scratch rebuild "
+                f"by design (it would mint NULL); this preserves the no-NULL-"
+                f"fingerprint-function invariant.")
+        av_row = ss.build_curated_row(
+            av_id, kid, base_row=base_row, module_id=module_id,
+            rva=a["rva"], valid_from_id=vf_id, kind_id=kind_id,
+            signature=a["signature"], lvv_id=lvv_id,
+            verified_by=a["verified_by"], verified_date=a["verified_date"],
+            evidence_kind_id=ekn_id, offset=a["offset"],
+            vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
+        # build_curated_row(base_row=...) keeps base_row's OWN id (it does v =
+        # dict(base_row); it never resets v["id"] to the av_id arg -- the ADD
+        # promote relies on that, using av_id = base_row["id"]). For an UPDATE we
+        # must keep the EXISTING curated row's id (the direct-write id-stable
+        # model): a function re-promote carries the NEW bulk fingerprint onto the
+        # SAME curated row, NOT a re-key to the new bulk row's id. So override the
+        # id back to the row being edited; the new bulk row stays uncurated (its
+        # own row untouched, the same shape a non-function mint-at-a-bulk-rva
+        # already leaves, ix_av_rva is non-unique). Writing the new fingerprint to
+        # the existing id avoids the (kcdx_id) open-unique collision a re-key would
+        # cause and keeps DEV + USER id-aligned with the seed-rebuild path the
+        # convergence oracle pins.
+        av_row["id"] = av_id
+    else:
+        # MINT (non-function kind) -- fingerprint NULL; the SAME base_row=None path
+        # the ADD path's non-function branch uses.
+        av_row = ss.build_curated_row(
+            av_id, kid, base_row=None, module_id=module_id,
+            rva=a["rva"], valid_from_id=vf_id, kind_id=kind_id,
+            signature=a["signature"], lvv_id=lvv_id,
+            verified_by=a["verified_by"], verified_date=a["verified_date"],
+            evidence_kind_id=ekn_id, offset=a["offset"],
+            vtable_slot=a["vtable_slot"], struct_offset=a["struct_offset"])
+
+    # UPDATE the row in place (id reused -- the direct-write id-stable model). The
+    # full-row write covers every projected curated column at once, so module/kind/
+    # rva/signature/the per-kind datum AND the fingerprint (PROMOTE-carried or
+    # NULL-minted) all land together. USER drops the DEV-only columns (same
+    # projection write_db + _projected_insert use).
+    _projected_update(con, av_row, user_projection)
+
+    # Rebuild the 1:1 survival row through the SAME builder the ADD path uses, so
+    # the survival kind_form + payload match what a rebuild would describe for the
+    # new kind (function_hash carries the new fingerprint; a non-function kind_form
+    # carries the seed datum). DELETE the stale survival row + INSERT the rebuilt
+    # one (the survival id is autoincrement; a fresh id is id-agnostic to the oracle,
+    # the same handle-vs-payload split the ADD path's survival INSERT relies on).
+    derives_from_av_id = _resolve_derives_from_av_id(
+        con, a["survival_derives_from_kid"])
+    sv_row = ss.build_survival_row(
+        av_id, a["kind"],
+        survival_aob=a["survival_aob"],
+        anchor_string=a["survival_anchor_string"],
+        rule=a["survival_rule"],
+        slot_count=a["survival_slot_count"],
+        expect_unique=a["survival_expect_unique"],
+        derives_from_av_id=derives_from_av_id,
+        content_hash=av_row.get("content_hash"),
+        length=av_row.get("length"))
+    con.execute("DELETE FROM survival WHERE address_version_id = ?", (av_id,))
+    _insert_survival_row(con, sv_row, user_projection)
+
+
+def _projected_update(con, av_row, user_projection):
+    """UPDATE one fully-built address_versions row dict in place (matched by its
+    `id`), applying the same column projection write_db / _projected_insert use
+    (USER drops the DEV-only columns). The row dict is build_curated_row output (all
+    DEV columns present); USER writes only USER_COLUMNS['address_versions']. Every
+    non-id column is set, so a re-promote's fingerprint columns (content_hash/length
+    + the DEV abi_walker columns on the DEV pass) and a mint's NULLs both land in one
+    statement -- mirroring _promote_bulk_in_place's full-row-write rationale, but
+    keyed on the curated row's own id rather than a bulk row's."""
+    cols = [c for c, _ in SCHEMA["address_versions"]]
+    if user_projection:
+        allowed = USER_COLUMNS["address_versions"]
+        cols = [c for c in cols if c in allowed]
+    set_cols = [c for c in cols if c != "id"]
+    set_clause = ",".join(f'"{c}" = ?' for c in set_cols)
+    con.execute(
+        f'UPDATE address_versions SET {set_clause} WHERE id = ?',
+        [av_row.get(c) for c in set_cols] + [av_row["id"]])
+
+
 def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
     """Compute + apply the full apply delta for one open DB connection.
 
@@ -1491,7 +1731,7 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
     tx = _Tx(con, deferred)
     counts = {"reverified": 0, "noop": 0, "added_entity": 0,
               "added_versions_row": 0, "deprecated": 0, "superseded": 0,
-              "skipped_dep_sup": 0}
+              "skipped_dep_sup": 0, "full_column_updated": 0}
 
     # Classify the entity-level deprecation/supersession edits on EXISTING names
     # rows: compare the resolved seed names row against the DB names row for every
@@ -1520,32 +1760,68 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
         ekn_id = _db_evidence_kind_id(con, a["evidence_kind"], where)
 
         existing = con.execute(
-            "SELECT last_verified_at_version, verified_by, verified_date, "
+            "SELECT id, last_verified_at_version, verified_by, verified_date, "
             "evidence_kind FROM address_versions WHERE kcdx_id = ? AND "
             "valid_from = ?", (kid, vf_id)).fetchone()
 
         if existing is not None:
-            # PRESENT -> re-verify or no-op. The audit trio is the only mutable
-            # part (plan.md S2). A change to a deprecation/supersession edge on
-            # the names row is step-5 scope and not handled here.
-            cur = (existing[0], existing[1], existing[2], existing[3])
-            new = (lvv_id, a["verified_by"], a["verified_date"], ekn_id)
-            if cur == new:
-                counts["noop"] += 1
+            # PRESENT -> re-verify (audit-trio UPDATE), full-column correction
+            # (US-5), or no-op. The row's (kcdx_id, valid_from) identity key is
+            # immutable (the validator rejects a kcdx_id change); valid_through
+            # stays as-is (an UPDATE-in-place of the current row, no interval
+            # change). A change to a deprecation/supersession edge on the names
+            # row is the names-side path above, not handled here.
+            av_id = existing[0]
+            cur_trio = (existing[1], existing[2], existing[3], existing[4])
+            new_trio = (lvv_id, a["verified_by"], a["verified_date"], ekn_id)
+
+            # Detect whether the edit touches any NON-trio curated column
+            # (module/kind/rva/signature/the authored survival+offset columns).
+            # Only-trio differs -> the unchanged trio-UPDATE path below
+            # (byte-identical -- an idempotent rewrite of the four audit cells).
+            # A non-trio column differs -> the full-column UPDATE: rebuild the
+            # curated row + its survival row through the SAME machinery the ADD
+            # path uses (build_curated_row + the kind-class PROMOTE/mint/REFUSE
+            # gate + build_survival_row), as an UPDATE of THIS row (same av_id,
+            # same identity key), NOT an INSERT.
+            non_trio_changed = _present_row_non_trio_differs(
+                con, av_id, a, module_id_fn=lambda: _resolve_module_id(
+                    con, a["module"], where),
+                kind_id_fn=lambda: _db_dict_id(
+                    con, "address_versions", "kind", a["kind"], where))
+
+            if not non_trio_changed:
+                # Trio-only (or pure no-op). UNCHANGED from before US-5.
+                if cur_trio == new_trio:
+                    counts["noop"] += 1
+                    continue
+                tx.begin()
+                try:
+                    con.execute(
+                        "UPDATE address_versions SET last_verified_at_version = ?, "
+                        "verified_by = ?, verified_date = ?, evidence_kind = ? "
+                        "WHERE kcdx_id = ? AND valid_from = ?",
+                        (lvv_id, a["verified_by"], a["verified_date"], ekn_id,
+                         kid, vf_id))
+                    tx.commit()
+                except Exception:
+                    tx.rollback()
+                    raise
+                counts["reverified"] += 1
                 continue
+
+            # FULL-COLUMN UPDATE (US-5). Reuses the ADD path's machinery as an
+            # in-place UPDATE of the existing row.
             tx.begin()
             try:
-                con.execute(
-                    "UPDATE address_versions SET last_verified_at_version = ?, "
-                    "verified_by = ?, verified_date = ?, evidence_kind = ? "
-                    "WHERE kcdx_id = ? AND valid_from = ?",
-                    (lvv_id, a["verified_by"], a["verified_date"], ekn_id,
-                     kid, vf_id))
+                _full_column_update_one(
+                    con, av_id, a, state, where, user_projection,
+                    vf_id=vf_id, lvv_id=lvv_id, ekn_id=ekn_id)
                 tx.commit()
             except Exception:
                 tx.rollback()
                 raise
-            counts["reverified"] += 1
+            counts["full_column_updated"] += 1
             continue
 
         # ABSENT -> an ADD. Distinguish add-entity (kcdx_id unknown to the DB)

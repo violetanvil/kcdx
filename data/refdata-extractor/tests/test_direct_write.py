@@ -425,10 +425,12 @@ def _convergence_reverify(b):
 
 
 def _convergence_full_column(b):
-    # A full-column correction on an existing row. The applier's present-row branch
-    # updates ONLY the audit trio (a non-trio change is a no-op) -- so DIRECT and
-    # seed-rebuild BOTH no-op the non-trio cells. Convergence pins that the direct
-    # path replicates the seed-rebuild's exact present-row behavior (no drift).
+    # A full-column correction on an existing row (US-5; the applier's present-row
+    # branch now does a full-column UPDATE, not a trio-only one -- step-3c). DIRECT
+    # and seed-rebuild BOTH drive _apply_one_db's full-column path, so they apply the
+    # SAME non-trio change (here a non-function row's rva + signature). Convergence
+    # pins that the direct path replicates the seed-rebuild's exact present-row
+    # behavior (no drift) -- the full-column write, not a no-op.
     user_db = os.path.join(b["out"], "reference.sqlite")
     kid, vf_tag = _pick_nonfunction_row(user_db)
     edits = {"rva": "0x7F000000", "signature": "void (ptr corrected)"}
