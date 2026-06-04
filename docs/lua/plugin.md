@@ -60,9 +60,60 @@ kcdx.hook{ target = "redmoon.outfit.open_inventory", before = function(...) ... 
 The C++ mirror of this surface is [`kcdxPluginInfoInterface`](../cpp/plugin.md)
 (NYI).
 
+## `kcdx.plugin.<author>.<plugin>.*` — the navigable cross-plugin namespace
+
+Reach another mod's published surface by a native dotted path — no quoted
+strings, no ceremony. Each dot is a resolution hop: `kcdx.plugin.<author>`
+resolves the author, `.<plugin>` resolves the plugin within that author, and the
+result is a handle on which a cross-plugin surface (e.g. `.assets.*`) resolves.
+
+```lua
+-- Reference another mod's published asset by its native dotted path:
+kcdx.plugin.redmoon.outfit_swap.assets.get_by_name("shirt")
+```
+
+This is the SAME dotted-resolution mechanism `kcdx.hook.<name>` uses — the
+segments are bare identifiers (not quoted strings), all under the one `kcdx`
+global. The path/name you pass to a leaf surface stays a quoted string argument
+(`"shirt"` above) — it is data; the *namespace* is the bare dotted path.
+
+You never type your own prefix to reach your OWN assets — own-plugin references
+use `kcdx.assets.*` directly (the engine knows the calling plugin). The
+navigable `kcdx.plugin.<author>.<plugin>.*` form is for reaching ANOTHER mod.
+Resolution follows **self > engine > other**: a name your own plugin owns wins
+when present (see the [naming model](index.md#2-glossary)).
+
+| Hop | Resolves | Miss behaviour |
+|---|---|---|
+| `kcdx.plugin.<author>` | the `<author>` segment, to any loaded plugin's author | a non-existent `<author>` errors at the next hop (below) |
+| `.<plugin>` | the `<plugin>` segment, to the loaded `(author, plugin)` pair | a non-existent `<plugin>` errors at the next hop |
+| `.assets.*` / a future surface | the cross-plugin operation on the resolved plugin | — |
+
+**A non-existent segment is a loud teaching error, never a silent `nil`.** When
+`<author>` or `<plugin>` names nothing loaded, that segment resolves to `nil`,
+and the next dotted access raises Lua's *"attempt to index a nil value (field
+'…')"* — naming the exact segment you typed wrong. A typo in a cross-plugin
+reference fails immediately at the bad segment, not later with an opaque error.
+This is the same fail-fast idiom `kcdx.hook.<name>` uses for a misspelled target.
+
+> **Note:** this surface ships the navigation *primitive* — the `<author>` and
+> `<plugin>` segments resolve to a plugin handle. The `.assets.*` leaf it fronts
+> is delivered with the [asset surface](assets.md); a resolved handle exposes
+> it once that surface lands.
+
 ---
 
 ## Glossary
+
+- **navigable namespace** — the dotted `kcdx.plugin.<author>.<plugin>.*` path by
+  which one plugin reaches another's published surface. Each dot is a resolution
+  hop against the engine's view of the loaded plugins — `<author>` then
+  `<plugin>` resolve to a plugin handle, on which a cross-plugin surface (e.g.
+  `.assets.*`) resolves. The segments are bare identifiers, not quoted strings;
+  a segment that names nothing loaded resolves to `nil`, so the next access
+  raises a teaching error naming the bad segment. Resolution follows
+  **self > engine > other** (see the [naming model](index.md#2-glossary)); you
+  never type your own prefix to reach your own surfaces.
 
 - **zone gate** — the engine's plugin-init capability check. After
   [load order](index.md#2-glossary) resolves every plugin's zone, the gate

@@ -299,7 +299,7 @@ it does not exist yet.
 | `kcdx.cvar.get_float` | read a game CVar's float value by name | [cvar.md](cvar.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
 | `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |
-| `kcdx.plugin.*` | plugin introspection (is another plugin rejected/loaded) | [plugin.md](plugin.md) |
+| `kcdx.plugin.*` | plugin introspection (is another plugin rejected/loaded) + the navigable cross-plugin namespace (`kcdx.plugin.<author>.<plugin>.*` reaches another mod's published surface by a native dotted path) | [plugin.md](plugin.md) |
 | `kcdx.dev.*` | dev-mode introspection sugar | [dev.md](dev.md) |
 | the `kcdx.lua` domain | VM-introspection (cfunction_address, _probe_numbers) | [lua.md](lua.md) |
 

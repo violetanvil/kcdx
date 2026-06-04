@@ -1,0 +1,62 @@
+# CAP-74 — navigable cross-plugin namespace (kcdx.plugin.<author>.<plugin>.*).
+#
+# Exercises the __index resolver chain on kcdx.plugin: each dotted segment
+# is a resolution hop against engine-side namespace data (g_plugins). The
+# SAME chained-__index mechanism kcdx.hook.<name> uses — kcdx.plugin gains
+# an __index that resolves <author> to an author resolver, whose __index
+# resolves <plugin> to a plugin handle. Three falsifiable claims, all
+# reported synchronously at plugin load (boot-only — every check is a
+# pure read of the in-process plugin registry, no player gesture):
+#
+#   * CAP-74-resolves — the chain resolves each segment to a real
+#       engine-side handle. Navigates kcdx.plugin.<this author>.<this
+#       plugin> (the plugin's OWN identity — self is guaranteed loaded,
+#       so it is the reliable known-present navigation target) and
+#       asserts the access does NOT raise and yields a non-nil handle.
+#       FALSIFIABLE: if the __index chain fails to resolve either segment
+#       it returns nil and a downstream access raises / the handle is nil
+#       → FAIL. (Self > engine > other: the plugin's own (author, plugin)
+#       must resolve.)
+#
+#   * CAP-74-bad-author — a NON-EXISTENT <author> segment yields a
+#       teaching error, never a silent nil. Accesses
+#       kcdx.plugin.<nonexistent>.<anything> and asserts the .<anything>
+#       hop RAISES Lua's stock "attempt to index a nil value (field ...)"
+#       — the navigation-miss idiom kcdx.hook established (the bad author
+#       resolved to nil, so indexing it errors loud, naming the segment).
+#       FALSIFIABLE: if a bad <author> segment returns a silent nil that
+#       does NOT raise on the next hop (AP14 — a confusing downstream nil
+#       instead of a teaching error) → FAIL.
+#
+#   * CAP-74-bad-plugin — a real <author> but a NON-EXISTENT <plugin>
+#       segment yields the teaching error. Accesses
+#       kcdx.plugin.<this author>.<nonexistent plugin>.<anything> and
+#       asserts the .<anything> hop RAISES (the bad plugin resolved to
+#       nil). FALSIFIABLE: a silent nil that does not raise → FAIL. This
+#       row proves the SECOND hop's miss path independently of the first.
+#
+# is_rejected coexistence: the function members shadow the __index, so
+# kcdx.plugin.is_rejected is still the C function (a sanity row below
+# confirms it stays callable — the navigation surface is ADDITIVE).
+#
+# Test mode: boot-only. All four rows self-report at plugin load (the
+# navigation reads the in-process plugin registry synchronously).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_74_plugin_namespace_nav"
+display_name        = "CAP-74 navigable cross-plugin namespace"
+author              = "ts"
+description         = "Pure-Lua kcdx.plugin.<author>.<plugin> navigable-namespace self-test: the __index resolver chain resolves each dotted segment to a real engine-side handle (navigating the plugin's OWN identity, guaranteed loaded), a non-existent <author> segment raises a teaching error at the next hop (the kcdx.hook navigation-miss idiom — never a silent nil, AP14), a non-existent <plugin> under a real author likewise raises, and kcdx.plugin.is_rejected stays callable (the navigation __index is additive — function members shadow it)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-74-resolves",
+                       "CAP-74-bad-author",
+                       "CAP-74-bad-plugin",
+                       "CAP-74-is-rejected-coexists"]
+
+[entrypoints]
+lua = "plugin.lua"
