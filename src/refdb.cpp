@@ -143,6 +143,17 @@ struct CachedEntity {
     int64_t      observed_arg_slots = 0;
     int64_t      caller_reg_arg_count = 0;
 
+    // Folded survival/re-find columns (D22) — carried picked-row → cache → result.
+    std::string  aob;
+    std::string  anchor_string;
+    std::string  rule;
+    int64_t      slot_count = 0;
+    bool         has_slot_count = false;
+    int64_t      expect_unique = 0;
+    bool         has_expect_unique = false;
+    int64_t      derives_from = 0;
+    bool         has_derives_from = false;
+
     std::vector<uint8_t> content_hash;
     std::string  content_hash_hex;
 
@@ -461,6 +472,18 @@ struct VersionRow {
     int64_t     observed_arg_slots = 0;
     int64_t     caller_reg_arg_count = 0;
     int64_t     last_verified_at_version_id = 0;  // 0 == NULL.
+
+    // Folded survival/re-find columns (D22). TEXT → empty on NULL; INTEGER →
+    // has_* flag (a 0 is real). Same convention as offset/vtable_slot/struct_offset.
+    std::string aob;
+    std::string anchor_string;
+    std::string rule;
+    bool        has_slot_count = false;
+    int64_t     slot_count = 0;
+    bool        has_expect_unique = false;
+    int64_t     expect_unique = 0;
+    bool        has_derives_from = false;
+    int64_t     derives_from = 0;
 };
 
 // Decode an address_versions row from a statement positioned on it. The
@@ -482,6 +505,12 @@ struct VersionRow {
 //   12 valid_from
 //   13 valid_through
 //   14 struct_offset
+//   15 aob              (folded survival/re-find — D22)
+//   16 anchor_string    (folded survival/re-find — D22)
+//   17 rule             (folded survival/re-find — D22)
+//   18 slot_count       (folded survival/re-find — D22)
+//   19 expect_unique    (folded survival/re-find — D22)
+//   20 derives_from     (folded survival/re-find — D22)
 void DecodeVersionRow(sqlite3_stmt* st, VersionRow* row) {
     row->valid = true;
     row->kcdx_id = sqlite3_column_int64(st, 0);
@@ -535,6 +564,34 @@ void DecodeVersionRow(sqlite3_stmt* st, VersionRow* row) {
         row->has_struct_offset = true;
         row->struct_offset = sqlite3_column_int64(st, 14);
     }
+    // Folded survival/re-find columns (D22). TEXT (aob/anchor_string/rule) →
+    // std::string, empty on NULL. INTEGER (slot_count/expect_unique/derives_from)
+    // → has_* flag set only when non-NULL (a 0 is a real value). Same NULL test
+    // as struct_offset above.
+    if (sqlite3_column_type(st, 15) != SQLITE_NULL) {
+        const unsigned char* p = sqlite3_column_text(st, 15);
+        row->aob = p ? reinterpret_cast<const char*>(p) : "";
+    }
+    if (sqlite3_column_type(st, 16) != SQLITE_NULL) {
+        const unsigned char* p = sqlite3_column_text(st, 16);
+        row->anchor_string = p ? reinterpret_cast<const char*>(p) : "";
+    }
+    if (sqlite3_column_type(st, 17) != SQLITE_NULL) {
+        const unsigned char* p = sqlite3_column_text(st, 17);
+        row->rule = p ? reinterpret_cast<const char*>(p) : "";
+    }
+    if (sqlite3_column_type(st, 18) != SQLITE_NULL) {
+        row->has_slot_count = true;
+        row->slot_count = sqlite3_column_int64(st, 18);
+    }
+    if (sqlite3_column_type(st, 19) != SQLITE_NULL) {
+        row->has_expect_unique = true;
+        row->expect_unique = sqlite3_column_int64(st, 19);
+    }
+    if (sqlite3_column_type(st, 20) != SQLITE_NULL) {
+        row->has_derives_from = true;
+        row->derives_from = sqlite3_column_int64(st, 20);
+    }
 
     // Parse the interval endpoint tags. valid_through NULL ("open") parses
     // as (0,0,0) but is never used for distance — the cover-wins branch
@@ -552,7 +609,10 @@ constexpr const char* kVersionSelectColumns =
     "v.length, v.offset, v.vtable_slot, "
     "v.observed_arg_slots, v.caller_reg_arg_count, "
     "v.last_verified_at_version, v.valid_from, v.valid_through, "
-    "v.struct_offset";
+    "v.struct_offset, "
+    // Folded survival/re-find columns (D22) — appended at the END so existing
+    // positional indices (0..14) are undisturbed; decoded at indices 15..20.
+    "v.aob, v.anchor_string, v.rule, v.slot_count, v.expect_unique, v.derives_from";
 
 // Compare two parsed tag triples lexicographically (major→minor→build).
 // Returns <0 if a < b, 0 if equal, >0 if a > b.
@@ -877,6 +937,16 @@ CachedEntity MakeCachedEntity(const std::string& inputName,
     c.length = picked.length;
     c.observed_arg_slots = picked.observed_arg_slots;
     c.caller_reg_arg_count = picked.caller_reg_arg_count;
+    // Folded survival/re-find columns (D22).
+    c.aob = picked.aob;
+    c.anchor_string = picked.anchor_string;
+    c.rule = picked.rule;
+    c.has_slot_count = picked.has_slot_count;
+    c.slot_count = picked.slot_count;
+    c.has_expect_unique = picked.has_expect_unique;
+    c.expect_unique = picked.expect_unique;
+    c.has_derives_from = picked.has_derives_from;
+    c.derives_from = picked.derives_from;
     c.content_hash = picked.content_hash;
     c.content_hash_hex = HashToHex(picked.content_hash.data(),
                                     static_cast<int>(picked.content_hash.size()));
@@ -1081,6 +1151,18 @@ NameResolution ProjectName(const CachedEntity& c,
     r.value = c.value;
     r.has_struct_offset = c.has_struct_offset;
     r.struct_offset = c.struct_offset;
+    // Folded survival/re-find columns (D22) — NameResolution carries the full
+    // curated location/survival fact set (same path as struct_offset, which the
+    // by-id IdResolution likewise omits).
+    r.aob = c.aob;
+    r.anchor_string = c.anchor_string;
+    r.rule = c.rule;
+    r.has_slot_count = c.has_slot_count;
+    r.slot_count = c.slot_count;
+    r.has_expect_unique = c.has_expect_unique;
+    r.expect_unique = c.expect_unique;
+    r.has_derives_from = c.has_derives_from;
+    r.derives_from = c.derives_from;
     r.content_hash_hex = c.content_hash_hex;
     r.content_hash = c.content_hash;
     r.has_length = c.has_length;

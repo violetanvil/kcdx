@@ -183,6 +183,46 @@ struct NameResolution {
     // consumer).
     bool        has_struct_offset = false;
     int64_t     struct_offset = 0;
+
+    // === FOLDED SURVIVAL/RE-FIND COLUMNS (D22 — the survival sibling table's
+    // genuinely-survival-only facts, now nullable typed columns ON
+    // address_versions). Each maps 1:1 to its av column (§11.3 comprehensiveness
+    // contract: every folded column the engine consumes has a field here, every
+    // field here has a backing column). Gated by `kind` like every other
+    // location/survival cell. Appended at the END (append-only). Plumbed but not
+    // yet consumed by any caller (the survival pass reads content_hash/length
+    // today; these carry the re-find forms a future survival/re-find path uses). ===
+
+    // address_versions.aob — the AOB pattern (bytes + folded '?' wildcard mask)
+    // for an aob-form kind (callsite / instruction_anchor). Empty when NULL —
+    // empty is legitimate (the kind carries no aob), like verified_signature.
+    std::string aob;
+
+    // address_versions.anchor_string — the literal anchor bytes for a
+    // string_anchor kind. Empty when NULL (legitimate).
+    std::string anchor_string;
+
+    // address_versions.rule — the derivation rule for a data_slot kind
+    // (e.g. disp32@<kid> / <kid>-0xA8). Empty when NULL (legitimate).
+    std::string rule;
+
+    // address_versions.slot_count — the expected slot count for a table_shape
+    // kind (vtable_base); NULL (has_slot_count=false) otherwise — a 0 is a real
+    // value, not a sentinel for missing.
+    bool        has_slot_count = false;
+    int64_t     slot_count = 0;
+
+    // address_versions.expect_unique — the 0/1 AOB-unique / unique-xref
+    // assertion for a search-locating kind; NULL (has_expect_unique=false)
+    // otherwise — a 0 (assert NOT unique) is a real value.
+    bool        has_expect_unique = false;
+    int64_t     expect_unique = 0;
+
+    // address_versions.derives_from — the survival-DAG self-FK
+    // (→ address_versions.id) for a derivation form; NULL
+    // (has_derives_from=false) otherwise — a 0 is a real value.
+    bool        has_derives_from = false;
+    int64_t     derives_from = 0;
 };
 
 // Result of a resolve-by-KCDX_ID lookup (the by-id path).
