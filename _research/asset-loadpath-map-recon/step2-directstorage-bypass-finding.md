@@ -119,6 +119,17 @@ path goes through CCryPak. (A future runtime probe could confirm the DS arm's
 interior IF a user ever enables the cvar — but that is out of v1 scope and not
 needed to ship the seam.)
 
+### Live confirmation (2026-06-03 — the static read held live)
+
+The default-0 read WAS independently confirmed at runtime, once `kcdx.cvar.get_int`
+existed: a throwaway probe read `wh_sys_streaming_directstorage_enabled` via the
+CVar-read surface at `input_loaded` and logged **`KCDX_DSCVAR=0`**
+(`kcdx-dev_2026-06-03_23-57-22.log`). So the static default-0 binding holds live in
+the verified build — the DS texture arm is dead at the as-shipped default, and the
+two-hook seam covers textures on the common (CCryPak) path. The probe was removed
+after the read (no residue — `working-artifacts.md`); this is its captured finding.
+Confirms the verdict above with a live fact, not just the decompile.
+
 ## AP18 — no seed rows written
 
 No Address Library row added. The DS-arm functions (`FUN_180d2ad38` selector;
