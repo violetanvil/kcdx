@@ -282,6 +282,58 @@ C++ mirrors: `kcdxAssetInterface` / `K.assets->GetByPath` / `GetByName` /
 Each verb ships its `docs/lua/` + `docs/cpp/` entry + glossary term + a
 test-plugin row in the SAME change (`docs-discipline.md`, `test-suite.md`).
 
+### §5.1 The runtime-store mechanism (settled 2026-06-04)
+
+Two of the five verbs READ engine state that already exists; four MUTATE or READ
+a runtime store. The mechanism behind the runtime four was unspecified in v2 and
+is settled here (consult 2026-06-04; the build splits accordingly — §5.2).
+
+**`get_by_path(path)` is a pure read** — it resolves the calling plugin's
+identity + its `assets/` root → a loadable disk path the HOOK-2 open already
+serves. It mutates nothing and depends on no runtime store; it is buildable
+against existing engine state.
+
+**The other four (`get_by_name` / `declare` / `register` / `replace`) need a
+runtime store** that does not exist yet. The settled mechanism:
+
+- **A SEPARATE runtime store, NOT a mutation of the build-time `g_overlayMap`.**
+  The discovery-built overlay map (`src/asset_overlay.cpp`) stays
+  *not-mutated-after-build* and lock-free — the two resolver hooks keep reading
+  it with zero synchronization. Runtime additions live in a separate store the
+  resolver consults ALONGSIDE the build-time map. (Preserves the hot resolver's
+  lock-free read; isolates all mutation concurrency in the rarely-written store —
+  `concurrency.md`, `memory.md`.)
+- **Lock-free reads via an atomic-pointer (RCU) snapshot.** The store is an
+  immutable snapshot behind an `atomic<const RuntimeStore*>`. A writer
+  (`register`/`declare`/`replace`, a one-off author call) builds a new snapshot
+  and swaps the pointer (release); the hot resolver reads load-acquire and reads
+  a never-mutated snapshot — wait-free, allocation-free on the read path
+  (`concurrency.md` atomics-first/locks-last; `memory.md` hot-path). Writes are
+  rare, so the copy-on-write cost is irrelevant; old-snapshot reclamation is an
+  implementation detail (a generation/epoch, or retain-for-session given the few
+  author writes).
+- **Take-effect = "thereafter" (design-determined, §3 US-6).** A runtime
+  `register`/`replace` affects assets opened AFTER the call; no re-resolve of
+  already-open handles. Consistent with §8 (the seam is live before the first
+  read; a later mutation joins the resolution path going forward).
+- **A new responsibility unit owns both runtime stores:
+  `src/asset_namespace.{h,cpp}`.** It holds the runtime-overlay store (for
+  `register`/`replace`) AND the published-name→path store (for
+  `declare`/`get_by_name`/the §6 `get_by_name` cross-plugin form). Distinct
+  responsibility from `asset_overlay.cpp` (the build-time map + the hooks), so it
+  is its own unit (`structure-by-responsibility.md`, `no-monolith.md`), not bolted
+  onto the hot-path resolver file. The resolver consults this unit alongside the
+  build-time map.
+
+### §5.2 Build split — `get_by_path` ships first; the runtime four follow
+
+`get_by_path` (the pure read) is built + shipped on its own (it depends on none
+of §5.1's store); the four store-dependent verbs are built in a later step AGAINST
+the §5.1 mechanism. The four carry an NYI doc entry + a deliberately-failing
+matrix row pinning their contract until built (`docs-discipline.md`,
+`test-suite.md`). This is dependency-ordering (`incremental-delivery.md`), not a
+capability cut — the end state is all five verbs at full Lua↔C++ parity.
+
 ---
 
 ## §6 The navigable cross-plugin namespace — `kcdx.plugin.<author>.<plugin>.*`

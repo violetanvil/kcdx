@@ -110,12 +110,14 @@ whole design (v2).
 | US-7 — stock Nexus/Workshop pak loads unchanged | P1-s3 (MISS fall-through) + P3-s10 (regression row) | backward-compat |
 | §6 navigable `kcdx.plugin.<author>.<plugin>.*` namespace (`__index` chain) | P2-s6 | the general cross-plugin primitive; US-3 enabler |
 | §10.2 stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose) | P2-s7 (own step) | TWO targets; commit-grain on its own; the seed-prose fix is an AP19/AP2 correction |
-| §5 `kcdx.assets.*` Lua surface (`get_by_path`/`get_by_name`/`replace`/`declare`/`register`) | P2-s8 | + the string-key cross-plugin form |
+| §5 `kcdx.assets.get_by_path` (the pure-read verb) + the `kcdx.assets.*` table | P2-s8 | depends on no runtime store; ships first (§5.2 build split) |
+| §5 `kcdx.assets.{get_by_name,declare,register,replace}` (the four runtime verbs) | P2-s8b | + the string-key cross-plugin form; depend on the §5.1 store |
+| §5.1 runtime-store mechanism (`asset_namespace` unit, RCU snapshot, separate from the build-time map) | P2-s8b | settled 2026-06-04 (consult); the four runtime verbs build to it |
 | US-2 — reference own asset by path | P2-s8 (`get_by_path`) | own = no owner prefix |
-| US-3 — reference another mod's asset (navigable ns) | P2-s6 (namespace) + P2-s8 (surface) | `kcdx.plugin.<a>.<p>.assets.*` |
-| US-5 — publish a name as a contract | P1-s5 (`name` sidecar) + P2-s8 (`declare`) | only named assets published; no enumeration |
-| US-6 — runtime register / replace | P2-s8 (`register` / `replace`) | programmatic equivalents of the sidecar |
-| §5 / §10.1 C++ mirror (`kcdxAssetInterface`, full parity) | P2-s9 | each Lua verb's mirror, append-only ABI |
+| US-3 — reference another mod's asset (navigable ns) | P2-s6 (namespace) + P2-s8 (`get_by_path` form) + P2-s8b (`get_by_name` form) | `kcdx.plugin.<a>.<p>.assets.*` |
+| US-5 — publish a name as a contract | P1-s5 (`name` sidecar) + P2-s8b (`declare` + `get_by_name`) | only named assets published; no enumeration |
+| US-6 — runtime register / replace | P2-s8b (`register` / `replace`) | programmatic equivalents of the sidecar; take-effect "thereafter" (§3 US-6) |
+| §5 / §10.1 C++ mirror (`kcdxAssetInterface`, full parity) | P2-s9 | each BUILT Lua verb's mirror, append-only ABI; ordered after s8b (mirrors the full surface) |
 | §9 per-lane runtime acceptance (HOOK 2 serves `.lua`; HOOK 1 reaches pak/mount lane for vanilla replace) | P1-s4 (live check) + P3-s10 | the static seam is gated; this is runtime acceptance |
 | §9 cFn-ABI pointer-return (HOOK 2's `FILE*` through the hook chain) | P1-s4 | hook-chain mechanics, settled at build |
 | §11 manipulation (texture transforms) | **DEFERRED (§11)** | reserved + NYI doc entry; heavy codec dep, use case not concrete |

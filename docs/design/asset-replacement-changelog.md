@@ -1,5 +1,33 @@
 # Asset-replacement design — changelog (newest first)
 
+## 2026-06-04 — §5.1/§5.2: the runtime-store mechanism settled (the §5 verb-table gap)
+
+- **The gap.** v2 specified the five `kcdx.assets.*` verb SHAPES (§5) but was
+  silent on the engine-side STORE the runtime verbs need. Step-8 build surfaced
+  it; architect-review confirmed it genuine (no store mechanism anywhere in the
+  design); a focused consult (2026-06-04) settled it.
+- **§5.1 settled (all forks the user's call):** (a) a SEPARATE runtime store, NOT
+  a mutation of the lock-free build-time `g_overlayMap` (the resolver consults
+  both); (b) lock-free reads via an atomic-pointer (RCU) snapshot — wait-free,
+  allocation-free hot read; copy-on-write writer (writes are rare author calls);
+  (c) take-effect = "thereafter" (design-determined by §3 US-6 — after-the-call,
+  no re-resolve of open handles); (d) a new responsibility unit
+  `src/asset_namespace.{h,cpp}` owns BOTH the runtime-overlay store AND the
+  published-name store (distinct concern from the build-time map + hooks —
+  `structure-by-responsibility.md`).
+- **§5.2 build split:** `get_by_path` (a pure read, depends on none of §5.1)
+  ships first; the four store-dependent verbs (`get_by_name` / `declare` /
+  `register` / `replace`) build later AGAINST §5.1, carrying an NYI doc entry +
+  a deliberately-failing matrix row until built (`incremental-delivery.md` —
+  dependency ordering, NOT a capability cut; end state is all five at full
+  parity).
+- **Integrated in:** §5 (new §5.1 + §5.2 after the verb table).
+- **Why:** the runtime store is cross-thread shared state (written from Lua,
+  read by the hot resolver on engine I/O threads); the mechanism is a
+  concurrency design call the user owns (`concurrency.md`, `memory.md`,
+  `design-authority.md`), not an executor default (`spec-conformance.md`,
+  `anti-patterns.md` AP13). The author surface (§5 shapes) is UNCHANGED.
+
 ## 2026-06-03 — v2: the seam corrected to TWO hooks (resolver decision + own-FILE* open), on the gated load-path research
 
 - **The seam is two coordinated hooks, not one.** kcdx owns (1) the resolution

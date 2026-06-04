@@ -17,7 +17,8 @@ when `DONE`, `—` otherwise.
 |---|---|---|
 | [6 — navigable namespace `kcdx.plugin.<author>.<plugin>.*` (`__index` chain)](step-6-navigable-namespace.md) | DONE | a3961df |
 | [7 — stale-prose sweep (dotted-`__index` prose + the falsified id-152 seed prose)](step-7-stale-prose-sweep.md) | DONE | (landed) |
-| [8 — `kcdx.assets.*` Lua surface (reference/publish/register/replace)](step-8-lua-surface.md) | NOT STARTED | — |
+| [8 — `kcdx.assets.get_by_path` (the pure-read verb; the `kcdx.assets.*` table + the cross-plugin `.assets` leaf)](step-8-lua-surface.md) | NOT STARTED | — |
+| [8b — the four runtime verbs (`get_by_name`/`declare`/`register`/`replace`) + the `asset_namespace` runtime store (design §5.1)](step-8b-runtime-store-verbs.md) | NOT STARTED | — |
 | [9 — `kcdxAssetInterface` C++ mirror (full parity)](step-9-cpp-mirror.md) | NOT STARTED | — |
 
 ## Phase verification gate
@@ -30,13 +31,25 @@ when `DONE`, `—` otherwise.
   resolver (no doc claim that dotted dynamic resolution is impossible survives) AND
   the falsified id-152 seed prose corrected to the v2 two-lane/two-hook model
   (design §10.2 — its two sweep targets).
-- **Step 8** verified (live) by a plugin referencing its own asset (`get_by_path`),
-  referencing another mod's asset (`kcdx.plugin.<a>.<p>.assets.get_by_name`),
-  publishing (`declare`), and registering at runtime (`register`) — each returning
-  a loadable path / applying.
-- **Step 9** verified by the C++ mirror of each verb producing the SAME result as
-  its Lua peer (parity), with the InputLoaded listener-count check confirming no
-  ABI break (AP11).
+- **Step 8** verified (live) by a plugin referencing its OWN asset
+  (`kcdx.assets.get_by_path`) — returns a loadable path — and the cross-plugin
+  `kcdx.plugin.<a>.<p>.assets.get_by_path` form resolving through the step-6
+  namespace; a path not in the plugin's `assets/` is a teaching error. The other
+  four verbs ship as NYI doc entries + deliberately-failing matrix rows pinning
+  their contract (design §5.2). (Scope narrowed from the original five-verb step:
+  the runtime four depend on the §5.1 store mechanism, settled 2026-06-04 — see
+  step 8b. The verb SHAPES were always settled; only the runtime store was the gap.)
+- **Step 8b** verified (live) by `get_by_name` / `declare` / `register` /
+  `replace` each working against the new `asset_namespace` runtime store (design
+  §5.1): publish (`declare`) → resolvable by `get_by_name` (own) and the §6
+  cross-plugin form; runtime `register`/`replace` take effect "thereafter" (an
+  asset opened after the call resolves to kcdx's file). The NYI rows from step 8
+  flip to PASS. The runtime store's RCU-snapshot reads are lock-free (the
+  build-time `g_overlayMap` stays untouched) — reviewed against `concurrency.md`.
+- **Step 9** verified by the C++ mirror of each BUILT verb producing the SAME
+  result as its Lua peer (parity), with the InputLoaded listener-count check
+  confirming no ABI break (AP11). (Mirrors whichever verbs exist when it runs —
+  ordered after 8b so it mirrors the full surface.)
 - This phase touches an authoring API surface, not UI — no end-user visual UX gate;
   the "experience" gate is the author-UX bar (disassembler test, errors that teach,
   glanceable docs — `cornerstones.md`, `docs-discipline.md`), verified per step.
