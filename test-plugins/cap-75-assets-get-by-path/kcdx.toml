@@ -21,7 +21,7 @@
 # reads resolve to a real file; the missing rows ask for a path / name NOT
 # present to prove the teaching errors fire (never a silent nil).
 #
-# Eight falsifiable rows, all boot-only (every check is a pure in-process store
+# Eleven falsifiable rows, all boot-only (every check is a pure in-process store
 # write+read + the on-disk assets/ tree, no player gesture):
 #
 #   * CAP-75-own            — get_by_path("icons/marker.txt") returns the
@@ -50,7 +50,7 @@
 #       path (overlay keyed by target written); replace(target, missing file)
 #       teaches loud. FALSIFIABLE: same shape as register.
 #
-# Test mode: boot-only (the eight rows above). The register/replace IN-GAME
+# Test mode: boot-only (the eleven rows above). The register/replace IN-GAME
 # serve (engine opens a registered vpath -> kcdx's file, confirmed by the agent
 # reading `overlay_opened ... source=runtime`) is the [manual]/in-game
 # CAP-75-register-serve matrix row in test-plugins/README.md.
@@ -62,7 +62,7 @@ test_suite_only = true
 name                = "cap_75_assets_get_by_path"
 display_name        = "CAP-75 kcdx.assets.get_by_path"
 author              = "ts"
-description         = "Pure-Lua kcdx.assets.* runtime-surface self-test: get_by_path own/missing/cross; declare publishes a name and get_by_name resolves it back (a published-name store round-trip, own + the §6 cross-plugin form); get_by_name for an undeclared name teaches loud; register and replace write the runtime-overlay store and return the loadable path, with a missing source file teaching loud (AP14). Eight boot-only falsifiable rows; the register/replace in-game serve is the [manual] CAP-75-register-serve matrix row."
+description         = "Pure-Lua kcdx.assets.* runtime-surface self-test: get_by_path own/missing/cross; declare publishes a name and get_by_name resolves it back (a published-name store round-trip, own + the §6 cross-plugin form); get_by_name for an undeclared name teaches loud; register and replace write the runtime-overlay store and return the loadable path, with a missing source file teaching loud (AP14); a boot-opened vpath teaches loud (the runtime overlay can't serve a boot-cached asset — use the declarative sidecar). Eleven boot-only falsifiable rows; the register/replace in-game serve is the [manual] CAP-75-register-serve matrix row."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
@@ -74,7 +74,9 @@ test_names          = ["CAP-75-own",
                        "CAP-75-getbyname-cross",
                        "CAP-75-register",
                        "CAP-75-replace",
-                       "CAP-75-replace-crossmod-unresolvable-teach"]
+                       "CAP-75-replace-real-vpath",
+                       "CAP-75-replace-crossmod-unresolvable-teach",
+                       "CAP-75-replace-boot-asset-warn"]
 
 [entrypoints]
 lua    = "plugin.lua"

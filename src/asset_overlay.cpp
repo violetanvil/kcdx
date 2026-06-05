@@ -160,6 +160,15 @@ extern "C" void* AdjustFileNameResolver(AdjustFileName_t call_original,
     if (!pName || !outBuf) return call_original(self, pName, outBuf, nFlags);
 
     const std::string key = NormalizeVPath(pName);
+
+    // KI-0005 boot-window record: note this vpath as boot-opened WHILE the engine's
+    // Lua VM is not yet up. RegisterRuntimeOverlay later checks WasBootOpened(key) to
+    // teach an author replacing a boot-cached asset (whose runtime overlay can never
+    // serve). HOT-PATH-CLEAN post-boot: RecordBootOpen short-circuits on its atomic
+    // VM-up flag (one acquire load + branch — no lock, no insert, no allocation) once
+    // the VM is captured, so the resolver storm pays nothing here after boot.
+    asset_namespace::RecordBootOpen(key);
+
     const OverlayMap& m = GetOverlayMap();
     auto found = m.find(key);
 
@@ -276,6 +285,14 @@ extern "C" void* FOpenLooseOverlay(FOpen_t     call_original,
     if (!pName) return call_original(self, pName, szMode, nFlags);
 
     const std::string key = NormalizeVPath(pName);
+
+    // KI-0005 boot-window record (same as HOOK 1): note this vpath as boot-opened
+    // while the VM is not yet up, so a later runtime register/replace of a boot-cached
+    // asset can teach instead of silently never serving. HOT-PATH-CLEAN post-boot —
+    // RecordBootOpen early-returns on its atomic VM-up flag (no lock/alloc) after the
+    // freeze; FOpen fires constantly, so this adds one atomic load per open post-boot.
+    asset_namespace::RecordBootOpen(key);
+
     const OverlayMap& m = GetOverlayMap();
     auto found = m.find(key);
 

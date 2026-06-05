@@ -382,6 +382,46 @@ do
 end
 
 -- ====================================================================
+-- (8b) CAP-75-replace-real-vpath — replace a REAL vanilla vpath the engine
+--      actually opens, so the in-game serve fires the resolver's runtime-store
+--      consult (source=runtime). Targets Libs/UI/Textures/KCDLogo.dds — a
+--      memory-mapped .dds the engine opens at the menu (crash-safe: a .dds
+--      overwrite renders altered, never faults). The replacement is cap-75's
+--      own valid placeholder .dds (textures/cap75_runtime_logo.dds, a zeroed
+--      payload = a gray rectangle). Boot: the path-return self-reports here;
+--      the SERVE is the in-game CAP-75-register-serve row (overlay_resolved/
+--      opened source=runtime). This is the REAL-vpath serve vehicle (the prior
+--      synthetic Data/cap75_runtime_gen.txt is never opened by the engine).
+--
+-- FALSIFIABLE: replace of the real vpath returns nil/empty -> FAIL (the runtime
+-- overlay was not keyed at a vpath the engine opens).
+-- ====================================================================
+do
+    local LOGO_VPATH = "Libs/UI/Textures/KCDLogo.dds"  -- a real, engine-opened vanilla vpath
+    local LOGO_WITH  = "textures/cap75_runtime_logo.dds"  -- cap-75's own placeholder .dds
+    local ret, err = kcdx.assets.replace(LOGO_VPATH, LOGO_WITH)
+
+    if type(ret) ~= "string" or ret == "" then
+        kcdx.test.report("CAP-75-replace-real-vpath", false,
+            "kcdx.assets.replace(\"" .. LOGO_VPATH .. "\", \"" .. LOGO_WITH
+            .. "\") returned " .. tostring(ret) .. " (err: " .. tostring(err)
+            .. ") — replacing a REAL engine-opened vanilla vpath must key the "
+            .. "runtime-overlay store and return the loadable path; nil means the "
+            .. "runtime store was not keyed at a vpath the engine opens")
+    else
+        kcdx.test.report("CAP-75-replace-real-vpath", true,
+            "kcdx.assets.replace(\"" .. LOGO_VPATH .. "\", \"" .. LOGO_WITH
+            .. "\") keyed the runtime-overlay store at a REAL engine-opened "
+            .. "vanilla vpath and returned the loadable path (\"" .. ret .. "\"). "
+            .. "The engine's in-game open of " .. LOGO_VPATH .. " now consults "
+            .. "the runtime store and serves cap-75's .dds — confirmed by the "
+            .. "[manual] CAP-75-register-serve row (overlay_resolved/opened "
+            .. "source=runtime), and visibly by the logo rendering cap-75's "
+            .. "placeholder")
+    end
+end
+
+-- ====================================================================
 -- (9) CAP-75-replace-crossmod-unresolvable-teach — replace(target, with)
 --     where TARGET is a PACKED CROSS-MOD published name
 --     ("<author>.<plugin>.<bare>") that resolves to NO published asset
@@ -441,10 +481,71 @@ do
     end
 end
 
+-- ====================================================================
+-- (8d) CAP-75-replace-boot-asset-warn — replacing a vpath the engine
+--      opened at BOOT (before plugin.lua ran) emits a ONE-TIME teaching
+--      warn (KI-0005): the runtime overlay can never serve a boot-cached
+--      asset (take-effect="thereafter", the engine opens + caches it once
+--      at boot, before this call), so kcdx teaches the author to use the
+--      declarative replaces.toml sidecar instead — never a SILENT
+--      non-serve (AP14). Targets Libs/UI/Textures/KCDLogo.dds — PROBE B
+--      (KI-0005) proved the engine opens it EXACTLY ONCE at boot, before
+--      plugin.lua. (Row 8b above already replaces this vpath, so the warn
+--      fires for that call too; this row documents + agent-verifies it.)
+--
+--      TEST MODE — [manual]/boot-only, agent reads the log. The warn is a
+--      LOG line (LOG_WARN_KV, category ASSET_RUNTIME, action
+--      `runtime_overlay_boot_asset`), NOT a Lua return value — the Lua side
+--      cannot observe it. So the Lua self-report here asserts only the
+--      ADDITIVE-no-break half (the warn does NOT break replace's path
+--      return — replace still returns a non-nil loadable path for the boot
+--      target). The WARN itself is the AGENT's falsifiable log-read
+--      observable: the agent greps kcdx-dev.log for
+--      `ASSET_RUNTIME runtime_overlay_boot_asset vpath="libs/ui/textures/kcdlogo.dds"`
+--      after the launch-to-menu run.
+--
+-- FALSIFIABLE (Lua half): replace of the boot vpath returns nil/empty (the
+--      warn broke the additive path return) -> FAIL.
+-- FALSIFIABLE (agent log-read half, the KI-0005 fix proper): the replace of
+--      a boot-opened target produces NO `runtime_overlay_boot_asset` warn
+--      line for libs/ui/textures/kcdlogo.dds (the silent no-op KI-0005 is
+--      closing) -> FAIL.
+-- ====================================================================
+do
+    local BOOT_VPATH = "Libs/UI/Textures/KCDLogo.dds"  -- PROBE B: opened once at boot
+    local BOOT_WITH  = "textures/cap75_runtime_logo.dds"  -- cap-75's placeholder .dds
+    -- A distinct register of the boot vpath (separate from row 8b's replace)
+    -- so the warn-bearing register/replace path is exercised regardless of 8b's
+    -- ordering; the per-vpath warn dedup means the warn line still appears once.
+    local ret, err = kcdx.assets.register(BOOT_VPATH, BOOT_WITH)
+
+    if type(ret) ~= "string" or ret == "" then
+        kcdx.test.report("CAP-75-replace-boot-asset-warn", false,
+            "kcdx.assets.register(\"" .. BOOT_VPATH .. "\", \"" .. BOOT_WITH
+            .. "\") returned " .. tostring(ret) .. " (err: " .. tostring(err)
+            .. ") — registering a boot-opened vpath must STILL return the loadable "
+            .. "path (the KI-0005 teaching warn is ADDITIVE, it must not break the "
+            .. "store write / return). The agent confirms the warn fired by reading "
+            .. "the `ASSET_RUNTIME runtime_overlay_boot_asset` line in kcdx-dev.log")
+    else
+        kcdx.test.report("CAP-75-replace-boot-asset-warn", true,
+            "kcdx.assets.register(\"" .. BOOT_VPATH .. "\", \"" .. BOOT_WITH
+            .. "\") returned the loadable path (\"" .. ret .. "\") — the KI-0005 "
+            .. "teaching warn for a boot-opened vpath is ADDITIVE (the store write "
+            .. "+ path return are unchanged). The WARN itself is the agent's "
+            .. "falsifiable observable: grep kcdx-dev.log for "
+            .. "`ASSET_RUNTIME runtime_overlay_boot_asset "
+            .. "vpath=\"libs/ui/textures/kcdlogo.dds\"` — its ABSENCE for a "
+            .. "boot-opened target is the silent no-op KI-0005 closes (FAIL)")
+    end
+end
+
 kcdx.log.info("CAP75",
     "ran the kcdx.assets.* runtime self-test (get_by_path own/missing/cross; "
     .. "declare+get_by_name round-trip own + cross; get_by_name teaching error; "
     .. "register + replace path-return + teaching errors; replace cross-mod "
-    .. "packed-target teaching error) — all reported synchronously at load. The "
-    .. "register/replace IN-GAME serve is the [manual] CAP-75-register-serve row "
-    .. "(agent reads overlay_opened source=runtime).")
+    .. "packed-target teaching error; boot-asset teaching warn KI-0005) — all "
+    .. "reported synchronously at load. The register/replace IN-GAME serve is the "
+    .. "[manual] CAP-75-register-serve row; the KI-0005 boot-asset warn is the "
+    .. "[manual] CAP-75-replace-boot-asset-warn row (agent reads "
+    .. "runtime_overlay_boot_asset in kcdx-dev.log).")

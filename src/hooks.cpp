@@ -10,6 +10,7 @@
 #include <cstring>  // strcmp  (cap-47 owner-name check)
 
 #include "MinHook.h"
+#include "asset_namespace.h"  // NotifyVmReady — freeze the KI-0005 boot-opened set
 #include "console.h"
 #include "cvar.h"
 #include "console_commands_scan.h"
@@ -290,6 +291,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
             if (done.compare_exchange_strong(expected, true,
                                              std::memory_order_acq_rel)) {
                 log::Info("First update tick with live lua_State — registering kcdx + applying patches/hooks");
+
+                // KI-0005: FREEZE the boot-opened-vpath set NOW — the engine's Lua
+                // VM is captured (this latch is the VM-up boundary), so every asset
+                // the engine opened during the boot window has been recorded, and
+                // plugin.lua (RunAll below) is about to run. Freezing here, BEFORE
+                // RunAll, guarantees a plugin's kcdx.assets.register/replace sees a
+                // frozen set when it checks WasBootOpened (the warn-check). The latch
+                // (done) makes this one-shot; NotifyVmReady is idempotent regardless.
+                kcdx::asset_namespace::NotifyVmReady();
+
                 kcdx::lua_bind::RegisterKcdxTable(L);
                 kcdx::scripting::set_lua_state(L);
                 kcdx::hook_chain::SetLuaState(L);

@@ -127,6 +127,84 @@ bool LookupRuntimeOverlay(const std::string& keyAlreadyNormalized,
                           std::string& outDisk,
                           std::string* outOwningPlugin);
 
+// ---- The boot-opened-vpath set: the boot-window teaching-warn support --------
+//
+// The boot-cached-asset problem: the engine opens a boot/menu asset (e.g.
+// `Libs/UI/Textures/KCDLogo.dds`) EXACTLY ONCE per session, inside `CSystem::Init`
+// — the same phase that creates the engine's Lua VM. The author's
+// `kcdx.assets.register`/`replace` runs in `plugin.lua`, which fires AFTER that VM
+// exists (`hooks.cpp` first-update-tick `RunAll`) — i.e. AFTER the boot open. So a
+// runtime overlay (take-effect="thereafter") is never consulted for a boot asset
+// the engine opened once and cached. A Lua runtime replace of such a vpath is a
+// SILENT NON-SERVE today (the boot path is the declarative sidecar; a Lua-runtime
+// boot serve depends on a Lua VM that comes up before the boot open — a later kcdx
+// release). This set lets RegisterRuntimeOverlay detect that case and emit a
+// one-time teaching warn instead of a silent no-op (a loud teach, never a silent
+// drop).
+//
+// === Concurrency: the BOUNDED-BOOT-WINDOW temporal-serialization model =========
+//
+// This is NOT an always-on set — it is WRITTEN only during the boot window (before
+// the engine's Lua VM is captured) and READ only after it (the warn-check runs from
+// RegisterRuntimeOverlay, which an author calls from plugin.lua — strictly post-VM).
+// The set's lifetime is two non-overlapping phases the VM-up flag (`g_vmUp`)
+// orders:
+//
+//   1. WRITE phase (VM NOT up): the resolver (HOOK 1 / HOOK 2, on the engine's
+//      file-I/O threads) calls RecordBootOpen(key) for every vpath the engine
+//      resolves/opens. Multiple engine I/O threads can open concurrently, so the
+//      insert is MUTEX-guarded — but ONLY in this window (the lock cost is paid on
+//      a path that runs strictly before the VM/plugins/post-boot resolver storm).
+//   2. FREEZE: NotifyVmReady() flips `g_vmUp` to true (RELEASE). After this the set
+//      is NEVER written again (RecordBootOpen short-circuits on the atomic BEFORE
+//      the lock — see below), so it is effectively IMMUTABLE.
+//   3. READ phase (VM up): WasBootOpened(vpath) reads the now-frozen set. The
+//      caller (RegisterRuntimeOverlay → author plugin.lua) runs strictly post-VM,
+//      so the set is no longer mutating; no read-lock is needed PROVIDED the
+//      reader establishes happens-before with the freeze (it acquire-loads
+//      `g_vmUp` first — the release/acquire pair on `g_vmUp` is the edge that makes
+//      every WRITE-phase insert visible to the READ-phase reader, concurrency.md
+//      §"Memory ordering"). NOT relaxed: a relaxed read could observe the frozen
+//      flag without the set's inserts being visible — a data race on the set.
+//
+// This mirrors the runtime-overlay/published-name stores' TEMPORAL serialization
+// (writes-then-reads, no concurrent overlap) — here the serialization point is the
+// VM-up freeze rather than the build-then-runtime lifecycle. The hot-path constraint
+// is the load-bearing one: post-boot the resolver fires CONSTANTLY, so RecordBootOpen
+// must early-return on a single relaxed-vs-acquire atomic load with NO lock and NO
+// allocation once the VM is up (memory.md hot-path — the set is never touched again).
+
+// Record a vpath the engine opened during the BOOT WINDOW (resolver-side). While
+// the VM is NOT up: ASCII-fold the key via the shared NormalizeVPath caller-side
+// (the caller passes the already-normalized resolver key) and insert it under the
+// boot-window mutex. Once the VM is up: `g_vmUp` short-circuits BEFORE the lock — a
+// single ACQUIRE atomic load + branch, no lock, no insert, no allocation (the
+// resolver hot path stays allocation-free post-boot, memory.md). `keyNormalized`
+// is the resolver's already-computed NormalizeVPath(pName) — no re-normalization on
+// the hot path. Safe to call from multiple engine I/O threads during the boot
+// window (mutex-guarded); a no-op after the freeze.
+void RecordBootOpen(const std::string& keyNormalized);
+
+// Flip the VM-up flag (RELEASE) — FREEZES the boot-opened set (RecordBootOpen is a
+// no-op thereafter; the set is never written again). Called once when the engine's
+// Lua VM is captured (`hooks.cpp` first-update-tick latch, after `RunAll`). The
+// release store is the happens-before publish of every WRITE-phase insert; a reader
+// acquire-loading `g_vmUp` in WasBootOpened consumes them. Idempotent + one-shot:
+// a redundant call is harmless (the flag stays true; the set stays frozen) — but
+// the caller already guards it behind a one-shot latch.
+void NotifyVmReady();
+
+// Was `vpath` opened during the boot window? Reads the (frozen) boot-opened set.
+// Caller MUST run post-VM (RegisterRuntimeOverlay does — it is reached only from an
+// author plugin.lua call, strictly after NotifyVmReady). Acquire-loads `g_vmUp`
+// FIRST to establish happens-before with the freeze (so every WRITE-phase insert is
+// visible); if the VM is somehow not yet up the set may still be mutating, so this
+// returns false (defensive — never a torn read of a live-mutating set). `vpath` is
+// raw (un-normalized): normalized HERE via the shared NormalizeVPath so the lookup
+// folds identically to the resolver's RecordBootOpen key. No lock on the post-freeze
+// read — the freeze established the happens-before, the set is immutable thereafter.
+bool WasBootOpened(const std::string& vpath);
+
 // ---- The published-name store: declare WRITES, get_by_name + cross-mod READ ---
 //
 // declare publishes <author>.<plugin>.<bare> -> { resolved disk path, resolved

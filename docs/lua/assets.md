@@ -198,6 +198,20 @@ kcdx.assets.register("Libs/UI/Textures/MyPortrait.dds", "gen/portrait.dds")
 your `assets/`. **Takes effect thereafter** — an asset the game already opened
 before the call is unaffected; the overlay applies to the next open.
 
+> **Boot/menu assets — use the declarative sidecar, not a runtime replace.** Some
+> assets (the main-menu logo, early UI textures) are opened **once at boot** —
+> before your `plugin.lua` runs — and cached for the session, so the engine never
+> re-opens the file. A runtime `register`/`replace` of such a vpath takes effect
+> *thereafter*, but there is no "thereafter" open to serve — your overlay is never
+> consulted, and the asset renders vanilla. **Replace a boot/menu asset with the
+> declarative [`replaces.toml` sidecar](#the-common-path)** (it parses at load,
+> before the boot open, and wins it). To stop a silent surprise, kcdx emits a
+> **one-time teaching warn** in `kcdx-dev.log` (category `ASSET_RUNTIME`) when a
+> runtime `register`/`replace` targets a vpath the engine already boot-opened —
+> naming the vpath and pointing you at the sidecar. (A *Lua-runtime* replace of a
+> boot asset depends on a Lua VM coming up before the boot open — a later kcdx
+> release; the sidecar is the path today.)
+
 ### `kcdx.assets.replace(target, with)` — replace an asset at runtime
 
 Register a replacement in code — the conditional-replacement case (the code-side
@@ -314,3 +328,11 @@ The C++ mirror (`K.assets->GetByPath` / `GetByName`) is a later phase — see
   thereafter** — it applies to opens *after* the call; an asset the game already
   opened is not re-resolved. The programmatic peer of the sidecar's load-time
   declaration, for a generated or conditionally-chosen asset.
+- **boot/menu asset** — an asset the engine opens once at boot (before your
+  `plugin.lua` runs) and caches for the session — the main-menu logo, early UI
+  textures. Because a **runtime overlay** takes effect *thereafter* and the engine
+  never re-opens a boot asset, a `register`/`replace` of a boot vpath is never
+  consulted: kcdx emits a one-time **boot-asset teaching warn** (`ASSET_RUNTIME` in
+  `kcdx-dev.log`) and you replace it with the declarative `replaces.toml`
+  [sidecar](#the-common-path) instead (it wins the boot open). The opposite of an
+  asset opened *after* `plugin.lua` runs, which a runtime overlay serves normally.
