@@ -58,6 +58,24 @@ when `DONE`, `—` otherwise.
   deferral removed); the runtime `replace` packed-form teaching error flips to a
   real serve. Both the runtime verb and the declarative sidecar form resolve
   identically (the one §5.3 resolution).
+- **In-game SERVE confirmation (8b/8c) is DEFERRED → Phase 11.** Steps 8b/8c are
+  DONE: the runtime verbs build, the runtime store keys correctly, the path-return
+  + the two-hop cross-mod resolution PASS at boot (CAP-75-register/replace/-real-vpath,
+  COMP-16-replace-code, all ✅). What does NOT confirm pre-Phase-11 is the *in-game
+  SERVE* of a Lua runtime register/replace: a Lua verb runs at `plugin.lua` time
+  (post-VM), but every vanilla vpath worth replacing (a UI texture / menu asset) is
+  opened at BOOT and GPU-cached before then (KI-0005, closed `4029d51`), so the
+  post-VM store key can never win the open. A 2026-06-04 attempt to find an
+  after-VM serve vehicle by the FOPEN open-count failed — the picked vpaths
+  (`apse/item.dds`, `apse/attack_mode.dds`) were themselves boot-cached (the AP14
+  warn fired for them); the open-count cannot distinguish a first-open from a
+  cache-refresh (`_research/probe-archive/ki0005-resolver-dds-observer.md` §"DEAD
+  END"). The serve rows CAP-75-register-serve + COMP-16-serve-code are marked
+  **DEFERRED → Phase 11** in `test-plugins/README.md`; the DllMain Lua VM
+  (`docs/outstanding-work/before-game-hooks.md` §6b) lets the register run before
+  the boot open and owns re-running PROBE B to confirm `seq=1 rt=HIT`. The teaching
+  warn that makes the boot-cached non-serve LOUD (not silent — AP14) shipped + PASSED
+  this run (CAP-75-replace-boot-asset-warn ✅).
 - **Step 9** verified by the C++ mirror of each BUILT verb producing the SAME
   result as its Lua peer (parity), with the InputLoaded listener-count check
   confirming no ABI break (AP11). (Mirrors whichever verbs exist when it runs —

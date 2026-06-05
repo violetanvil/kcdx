@@ -65,3 +65,33 @@ boot asset after wiring an early Lua register: a `seq=1` (or early) open with
 `rt=HIT` confirms the runtime overlay now wins the boot open. Until then, the
 after-VM serve confirmation uses a gameplay/on-demand asset opened after
 `plugin.lua` runs.
+
+## DEAD END (2026-06-04) — the FOPEN observer count does NOT identify an after-VM serve vehicle
+
+An attempt to confirm the in-game serve NOW (pre-Phase-11) by re-vehicling the
+serve rows to a "real after-VM UI texture" FAILED, for a root reason worth not
+repeating:
+
+- The vehicles picked (`libs/ui/textures/apse/item.dds` for cap-75,
+  `apse/attack_mode.dds` for comp-16) were chosen from the FOPEN observer's raw
+  open-count ("5,542 `libs/ui/` `.dds` open on a save-load"). That count records
+  OPEN-EVENTS, not whether each was a FIRST-EVER open vs. a GPU-cache refresh.
+- Both vehicles turned out to be BOOT-CACHED atlases: the AP14 teaching warn
+  (`runtime_overlay_boot_asset`) fired for `apse/item.dds` AND `kcdlogo.dds` on
+  the `19-44-47` run, proving the engine opened them PRE-VM (`RecordBootOpen`
+  populated the boot set before `plugin.lua`'s register). Boot-cached = the
+  exact KI-0005 mechanism = cannot serve via a post-VM runtime register.
+- The run produced ZERO real `overlay_resolved`/`overlay_opened` serve lines for
+  any runtime vpath (the `g_loggedFirst*` one-shot markers never fired for a
+  runtime hit) — no registered vpath served in-game, confirming the whole class
+  is boot-cache-gated, not vehicle-tuning-gated.
+
+**Lesson for the Phase-11 confirmation:** the after-VM vehicle must be proven
+post-VM by INSTRUMENTATION, not inferred from an open-count. The correct probe
+(when an early Lua slot exists OR to find a pre-Phase-11 vehicle): instrument the
+resolver to log the FIRST vpath opened strictly AFTER `NotifyVmReady` fires
+(check `asset_namespace::WasBootOpened(key) == false` at open time) — that vpath
+is genuinely after-VM and non-boot-cached. Re-vehicle to a PROVEN such vpath, not
+a guessed one. The serve rows (CAP-75-register-serve, COMP-16-serve-code) are
+marked DEFERRED → Phase 11 in `test-plugins/README.md`, not PENDING — there is
+no pre-Phase-11 in-game serve to confirm for a boot-cached target.
