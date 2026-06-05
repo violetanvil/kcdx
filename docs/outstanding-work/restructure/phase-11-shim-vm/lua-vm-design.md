@@ -15,11 +15,12 @@ consumers bundled here.
 
 ## §1 Vision
 
-**kcdx force-loads WHGame.dll from its own DllMain, builds the ONE Lua VM itself
-through the FIX A symbol shim, and makes the engine ADOPT that state instead of
-creating its own.** One compiled Lua body in the process (WHGame's, reached through
-the shim), one sentinel set — the dual-Lua sentinel hazard dies by construction, in
-both directions (FIX C's kcdx→WHGame and KI-0001's WHGame→kcdx).
+**kcdx builds the ONE Lua VM itself on its worker thread (after the game maps
+WHGame — NO force-load, §6.2) through the FIX A symbol shim, and makes the engine
+ADOPT that state instead of creating its own.** One compiled Lua body in the process
+(WHGame's, reached through the shim), one sentinel set — the dual-Lua sentinel hazard
+dies by construction, in both directions (FIX C's kcdx→WHGame and KI-0001's
+WHGame→kcdx).
 
 **v1 success criteria (measurable):**
 
@@ -94,8 +95,8 @@ The mechanism (kcdx owns the VM, the engine adopts it) is settled. **Which
 interception point is safe is a checkable unknown** — resolved by a probe FIRST, not
 a guess (`.claude/rules/results-driven.md`; the agent writes/builds/deploys the
 probe, the user only launches, `.claude/rules/agent-builds-and-deploys.md`). The
-probe instruments `CScriptSystem::Init` + `lua_newstate` under the force-load and
-observes ground truth across four questions, each with a pre-committed, flat,
+probe instruments `CScriptSystem::Init` + `lua_newstate` live and observes ground
+truth across four questions, each with a pre-committed, flat,
 theory-independent outcome→meaning map.
 
 > **PROBE STATUS — RAN + SETTLED (PROBE P11 v2, 2026-06-05; archive
@@ -237,14 +238,40 @@ list as a hard constraint on the shim build, with a test row per GC-touching stu
 the plugin-facing `kcdxLuaApi` — exposing them would let a mod author destroy or
 replace the game's VM.
 
-### 6.2 Force-load + the before_game apply pass
+### 6.2 WHGame mapping + the before_game apply pass — NO force-load (corrected by PROBE P3, 2026-06-05)
 
-- `LoadLibraryW(L"WHGame.dll")` in kcdx.dll DllMain, BEFORE the before_game
-  registration pass. The LDR notification (`src/ldr_notify.cpp`, verified to fire
-  synchronously inside the `LoadLibraryW`) fires per newly-mapped module; before_game
-  patches/hooks declaring that module apply at its mapping (the bugsplat fix's
-  `BugSplat64.dll` target lands here when WHGame's chain maps it).
-- A bad force-load AVs at startup — boot is the falsifiable observable.
+**A kcdx DllMain force-load of WHGame is IMPOSSIBLE and is NOT done.** PROBE P3
+(archive `_research/probe-archive/p3-vm-build-timing.md`) verified against the live
+boot: kcdx is injected into a `CREATE_SUSPENDED` game, so at kcdx's DllMain WHGame is
+not mapped (`GetModuleHandleW` null) and `LoadLibraryW` is loader-lock-forbidden; the
+probe further found WHGame is not even mapped when kcdx's WORKER thread starts
+(`whgame_already_mapped=0` at worker entry) — the game maps WHGame itself, on its own
+thread, after `ResumeThread`. The earlier design wording ("`LoadLibraryW` in kcdx
+DllMain") was a defect (it predated the probe); it is dropped.
+
+- **The game maps WHGame; kcdx waits.** kcdx's worker thread blocks on
+  `ldr_notify::WaitForGameDll` (an LDR-notification event signaled when WHGame maps)
+  — already built (`src/dllmain.cpp`, `src/ldr_notify.cpp`). No kcdx force-load.
+- **The before_game apply pass ALREADY EXISTS and works** (not new Phase-11 work):
+  `ldr_notify.cpp`'s LDR callback runs `ApplyEntriesForModule` per newly-mapped
+  module (the bugsplat fix's `BugSplat64.dll` target applies when WHGame's chain maps
+  it) AND `SetEvent`s the WHGame-loaded gate. Phase 11 CONFIRMS this pass, it does not
+  rebuild it.
+- **The VM is built on the worker** at the post-`WaitForGameDll` / post-`refdb::Open`
+  point (WHGame mapped, `lua_newstate` resolvable — PROBE P3 `vm_buildable
+  whgame_mapped=1 lua_newstate_resolved=1`). This worker point precedes the
+  game-main-thread engine Init by ~2 s (cross-thread — the worker builds, the game
+  thread adopts via the §5 gate). See §6.4.
+- A bad mapping/boot AVs at startup — boot is the falsifiable observable.
+
+### 6.4 VM build on the worker + the cross-thread adoption (PROBE P3-settled)
+
+kcdx builds the one `lua_State` on the WORKER thread, at the point above. The engine's
+`CScriptSystem::Init` (game-main thread, ~2 s later) adopts it via the
+`lua_newstate`-callee intercept (§4.1, the narrow hook P1 settled). The worker-builds
+→ game-adopts handoff is a cross-thread dependency, ordered by the §5 mandatory
+event gate (worker publishes the built VM + `kcdx.*` tables with a release edge; the
+game thread's intercept observes them after the acquire) — NEVER a wall-clock margin.
 
 ### 6.3 Drop static Lua (the hazard-killing step)
 
@@ -315,8 +342,8 @@ addressed and a far more instrumentable execution path.
 | Unit | Responsibility | New / changed |
 |---|---|---|
 | `src/lua_shim.{h,cpp}` | resolve + forward every `lua_*`/`luaL_*` through WHGame; stub the inlined/stripped set | NEW |
-| `src/dllmain.cpp` | force-load WHGame, drive the early Lua slot + the VM build + the Init interception, order the early slot vs the boot open | CHANGED |
-| `src/ldr_notify.cpp` | the LDR-notification before_game apply pass (exists; verify synchronous fire) | reused |
+| `src/dllmain.cpp` | on the WORKER thread (post-`WaitForGameDll`), build the VM + install the Init interception; drive the early Lua slot; order the early slot vs the boot open. NO force-load (§6.2). | CHANGED |
+| `src/ldr_notify.cpp` | the LDR-notification before_game apply pass + the WHGame-loaded gate (ALREADY built + working; Phase 11 confirms, does not rebuild) | reused |
 | `src/address_library.*` (DB seeds) | the Lua RVAs (already seeded, low ids ~1–130, resolved by name) | reused |
 | `src/early_hook.{h,cpp}` (from `src/probes/bugsplat_ctor_probe`) | the generalized author-parameterized early-install primitive (`before-game-hooks.md` §5) | relocated/generalized |
 | `vendor/lua/` | `*.c` dropped from build; `*.h` kept; FIX C patch reverted | CHANGED |
@@ -331,27 +358,28 @@ Dependency-ordered; each step independently verifiable when it lands
 resolves the intercept point + the boot-swap reachability + the early-slot shape
 that every later step rests on.
 
-1. **Keystone probe (§4)** — observe `CScriptSystem::Init` + `lua_newstate` under the
-   force-load; settle the intercept point, the boot-swap reachability, the early-slot
-   shape. Output: the decided mechanism details. (Probe; its captured finding +
-   wiring archive to `_research/probe-archive/`, no residue in live source.)
-2. **Shim build (§6.1)** — `src/lua_shim.{h,cpp}`: forward the 93, stub the ~24
-   (GC-barrier-safe), `Resolve()` bails loud. Coexists with static Lua at this point.
-   Test: a shim call (`g_api.lua_pushinteger(L, 42)`) lands on the stack; PROBE Q
-   silent.
-3. **Force-load (§6.2)** — `LoadLibraryW(WHGame.dll)` from DllMain + the LDR apply
-   pass; loader-lock budget measured (<200ms target, <500ms hard). Test: boots; LDR
-   fires per module; before_game targets apply.
-4. **VM build + Init interception (§4.1 result)** — kcdx builds the one state via the
-   shim; the engine adopts it via the probe-decided hook. Test: single-state
-   assertion; `kcdx.*` tables present; CryEngine scripts still run on our state.
-5. **Early Lua slot + boot-asset serve (§5, §7.1)** — the probe-decided slot shape +
-   the ordering guard; an early-slot `kcdx.assets.replace` wins a boot asset
-   (`rt=HIT`); the AP14 warn narrowed/removed per the build-time decision.
-6. **Drop static Lua (§6.3)** — `vendor/lua/*.c` out, FIX C reverted, `kcdxLuaApi` →
+1. **Keystone probe (§4)** — observe `CScriptSystem::Init` + `lua_newstate` live;
+   settle the intercept point, the boot-swap reachability, the early-slot shape.
+   Output: the decided mechanism details. (Probe; its captured finding + wiring
+   archive to `_research/probe-archive/`, no residue in live source.) DONE.
+2. **Shim build (§6.1)** — `src/lua_shim.{h,cpp}`: forward the 90 (by name), stub the
+   31 catalogued (GC-barrier-safe), `Resolve()` bails loud. Coexists with static Lua
+   at this point. Test: a shim round-trip lands on the stack; PROBE Q silent. DONE.
+3. **VM build + Init interception on the worker (§6.2, §6.4, §4.1 result)** — NO
+   force-load: kcdx's worker waits for WHGame (`WaitForGameDll`, exists), then at the
+   post-`refdb::Open` point builds the one state via the shim's `lua_newstate` and
+   installs the narrow `lua_newstate`-callee intercept; the game-main `CScriptSystem::Init`
+   adopts it via the §5 cross-thread gate. Confirms (does NOT rebuild) the existing LDR
+   before_game apply pass; loader/worker-startup budget measured. Test: boots; single-state
+   assertion; `kcdx.*` tables present; CryEngine scripts still run on our state. (This
+   folds the prior "force-load" step — there is no force-load to build.)
+4. **Early Lua slot + boot-asset serve (§5, §7.1)** — the probe-decided slot shape +
+   the mandatory event gate; an early-slot `kcdx.assets.replace` wins a boot asset
+   (`rt=HIT` via the gate); the AP14 warn narrowed/removed per the build-time decision.
+5. **Drop static Lua (§6.3)** — `vendor/lua/*.c` out, FIX C reverted, `kcdxLuaApi` →
    shim forwarder. Test: suite green with static Lua dropped; PROBE Q silent across
    save-load; a `before_game`-zone Lua plugin's hook fires before CryEngine init.
-7. **Serve-execute confirmation (§7.2)** — a served `.lua` executes via the kcdx slot;
+6. **Serve-execute confirmation (§7.2)** — a served `.lua` executes via the kcdx slot;
    KI-0006 execute-leg confirmed (re-attempt crash root-cause only if it reproduces).
 
 Each step ships its permanent `test-plugins/` regression row

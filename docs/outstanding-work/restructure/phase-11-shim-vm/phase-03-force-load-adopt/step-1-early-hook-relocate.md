@@ -5,8 +5,8 @@
 Relocate the proven before_game-hook install machinery out of `src/probes/` into a
 permanent engine home (`src/early_hook.{h,cpp}`), generalizing it from the one baked
 bugsplat-ctor target into an author-parameterized install (module + export +
-signature + the plugin's named detour). This is the engine half the force-load +
-before_game apply pass (step 2) drives.
+signature + the plugin's named detour). This is the engine half the before_game apply
+pass (the existing LDR-notification pipeline confirmed in step 2) drives.
 
 ## Scope
 
@@ -32,8 +32,9 @@ Runnable at this step (no VM needed — MinHook is up in DllMain). Build green.
 ## Dependencies
 
 None on Phases 1–2 (this is engine-install plumbing, independent of the shim). Placed
-in Phase 3 because step 2 (force-load) drives it. The source primitive
-(`bugsplat_ctor_probe`) exists and is live-confirmed (`before-game-hooks.md` §5).
+in Phase 3 because step 2 (the worker VM-build + the before_game apply confirm) uses
+it. The source primitive (`bugsplat_ctor_probe`) exists and is live-confirmed
+(`before-game-hooks.md` §5).
 
 ## Design authority
 

@@ -35,8 +35,9 @@ question resolves to exactly one mapped outcome.
 
 ## Dependencies
 
-None (step 1). The force-load harness it needs is the minimal `LoadLibraryW` the
-probe sets up itself for observation; the production force-load is P3 step 2 (this
+None (step 1). The probe sets up its own minimal observation harness; there is NO
+production force-load (PROBE P3 settled: kcdx waits for the game to map WHGame, no
+force-load — the VM is built on the worker in P3 step 2). (this
 probe does not ship it).
 
 ## Design authority
