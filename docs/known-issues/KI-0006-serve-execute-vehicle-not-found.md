@@ -31,6 +31,19 @@ What is unconfirmed is only that a SERVED `.lua` then EXECUTES — and that need
 | 2026-06-04 | Phase-1 acceptance: key the overlay on `scripts/main.lua`, assert the marker | Served (own-`FILE*` returned) but NOT executed — `main.lua` is the already-init'd boot chunk, opened-not-rerun mid-game. Residual deferred to step-10. |
 | 2026-06-04 | Step-10 (`23-11-37` run): re-vehicle to `scripts/startup/sl_saveload.lua` (the FOPEN recon's first candidate), Continue→load-into-world | Overlay KEYED (`overlay_entry vpath="scripts/startup/sl_saveload.lua" winner="cap_77_serve_execute"`; `CAP-77-keyed` PASS) but the engine NEVER OPENED `sl_saveload.lua` — no marker, no `overlay_opened` for it. Vehicle FALSIFIED for the Continue/Load gesture. |
 | 2026-06-04 | Same run: grep `kcd.log` for every `.lua` the engine actually RAN (`Loading file [scripts/<x>.lua] ... loaded`) | 20 `.lua` ran — ALL `scripts/cheat/*.lua`, and ONLY because a third-party `cheat` mod is installed (`Loading lua init script for mod cheat` → `Cheat:OnInit`). ZERO base-game `.lua` emitted a `Loading file` execute trace. |
+| 2026-06-04 | STATIC re-ground (results-driven §4 — reuse the recon before a live probe): read the loadpath-map recon + the Warhorse wiki + the `23-11-37` mod-init log | RE-FRAMED. (1) The engine RELIABLY runs `scripts/mods/<modid>.lua` via mod-init for EVERY installed mod, every boot (`Loading lua init script for mod <modid>` → `Loading and executing script file 'scripts/mods/<modid>.lua'`; wiki KM-A-15; 14+ mods did it the `23-11-37` run incl. kcdx's own `kcdx_test_paklua` / `lua_memory_verify`). (2) Recon F2 (verified static): a LOOSE `.lua` opens via `CCryFile::Open` → `ICryPak::FOpen` slot 36 — HOOK 2's exact lane; a PAK-resident `.lua` uses the mount lane (bypasses HOOK 2). (3) kcdx's mod fixtures keep `<modid>.lua` INSIDE a pak → mount lane → that is why `[KCDX_PROBE]` proved execution but NOT via HOOK 2. The vehicle is a mod whose `<modid>.lua` is LOOSE. |
+| pending    | PROBE A: a test mod with a LOOSE `Mods/<modid>/<modid>.lua` + a kcdx sidecar overlaying that vpath with a marker `.lua`; instrument HOOK 2 for the serve | pending |
+
+## Probe plan (persisted — `plan-persistence.md`)
+
+| # | Probe | Status |
+|---|-------|--------|
+| A | Loose-mod-init vehicle: ship a test mod whose `<modid>.lua` is LOOSE (`Mods/<modid>/<modid>.lua`, NOT in a pak). The engine runs it via mod-init AND opens it via the FOpen loose lane (recon F2). Overlay that vpath via kcdx's sidecar with a marker `.lua` (`System.LogAlways`). Instrument HOOK 2 (`FOpenLooseOverlay`) to log the serve for the vpath. ONE variable: does the engine's mod-init open of a loose `<modid>.lua` route through HOOK 2's FOpen seam? | NOT STARTED |
+
+**Outcome→meaning map (committed up front, theory-independent):**
+- Marker PRESENT **AND** HOOK 2 logs a serve (`overlay_resolved`/`overlay_opened`) for the vpath → the mod-init open routed through FOpen, HOOK 2 served kcdx's bytes, they EXECUTED → **SERVE-AND-EXECUTE PROVEN, KI-0006 closes** (re-vehicle cap-77 to this form; step 10 → DONE).
+- Marker PRESENT **but NO** HOOK 2 serve for the vpath → the mod-init open BYPASSED FOpen (the engine read the original loose file some other way, or the overlay didn't win) → a CAPABILITY/serve finding → re-observe (which open path did mod-init use?), surface the design fork if real.
+- NO marker → the engine did not run this test mod's `<modid>.lua` → the mod fixture's structure is wrong (check `mod.manifest` / `mod_order` / the loose-`.lua` placement) → fix the fixture, re-run.
 
 ## Facts
 
