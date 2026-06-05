@@ -56,6 +56,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
+| [KI-0005](KI-0005-runtime-overlay-serve-not-firing-ingame.md) | 2026-06-04 | Asset runtime-overlay (register/replace) is provably KEYED but does not SERVE in-game for a re-opened vanilla vpath — resolver fired zero overlay HITs for the re-opened logo; PROBE A pending (reach-resolver? key-mismatch? cache?) — OPEN |
 | [KI-0004](closed/KI-0004-cvar-lua-input-loaded-crash.md) | 2026-06-03 | cap-72 test plugin's unbounded wsprintfA overran char buf[256] → /GS stack-cookie __fastfail mid-boot; fixed with bounded snprintf — FIXED |
 | [KI-0003](KI-0003-engine-hang-during-boot-while-multitasking.md) | 2026-06-02 | Engine hung during boot while multitasking; force-quit; did not recur — OPEN |
 | [KI-0002](closed/KI-0002-scan-zero-matches-at-input-loaded.md) | 2026-06-01 | CAP-70 scan found 0 at input_loaded — fixture scanned a co-resident-hooked site, not a scan bug — FIXED |
