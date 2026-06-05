@@ -129,26 +129,31 @@ it can win a boot asset (KI-0005; `asset-replacement.md` §5.4). The early Lua s
 built for the Lua-callback tier is the same machinery the boot-asset serve needs —
 one early-run primitive, three consumers.
 
-## 5. The proven install machinery (KEEP — it is the engine half of the fix)
+## 5. The proven install machinery (now the engine half of the fix)
 
-`src/probes/bugsplat_ctor_probe.{h,cpp}` (currently dev-gated, wired into
-`dllmain.cpp` `RunBeforeGameZoneInDllMain` via `ArmLdrInstall()`, committed
-`f42c7bd`) IS the prototype of the §5 primitive — KEEP it, relocate out of
-`src/probes/` into a permanent engine home (e.g. `src/early_hook.{h,cpp}` or an
-extension of `ldr_notify`) when Phase 11 builds. It provides:
+`src/early_hook.{h,cpp}` — the generalized author-parameterized early-install
+primitive — is the §5 primitive, relocated + generalized out of the original
+`src/probes/` prototype (PROBE S/T) into a permanent engine home and exposed as
+a by-(module + export + signature + detour) API. The BugSplat ctor install is
+its FIRST CONSUMER (`early_hook::bugsplat::Arm`, dev-gated, log-only today),
+wired into `dllmain.cpp` `RunBeforeGameZoneInDllMain`. It provides:
 
-- `ArmLdrInstall()` — if the target's module is already mapped at kcdx DllMain,
-  install immediately; else register an `LdrRegisterDllNotification` callback to
-  install the instant the module maps (pre-its-own-DllMain).
-- `HookedCtor` — a raw `__fastcall` MinHook detour. `MH_Initialize` is idempotent
+- `early_hook::Arm(req)` / `early_hook::Install(req)` — if the request's module
+  is already mapped at kcdx DllMain, install immediately; else register an
+  `LdrRegisterDllNotification` callback to install the instant the module maps
+  (pre-its-own-DllMain). Author-parameterized: module name + exported symbol +
+  ABI signature + the named detour, resolved via GetModuleHandleW +
+  GetProcAddress + MinHook.
+- The detour is a raw `__fastcall` MinHook detour. `MH_Initialize` is idempotent
   under loader lock; `GetProcAddress` on the mangled export; `MH_CreateHook` +
   `MH_EnableHook`. **PROBE T (live 2026-05-26 09:01) CONFIRMED all of this works
   under loader lock** — the LDR notification armed, fired when BugSplat64.dll
   mapped, installed the hook, and the ctor then fired with the colon string.
 
-The Phase 11 work generalizes this from one baked target into an
-author-parameterized install (module + export + signature + the plugin's named
-detour) driven by the before_game-zoned plugin's own DllMain.
+The generalization from one baked target to the author-parameterized install is
+DONE (this primitive); the remaining Phase 11 work drives it from a
+before_game-zoned plugin's own DllMain and changes the BugSplat consumer's
+detour body from log-only to the szApp rewrite.
 
 ## 6. The bugsplat fix specifics (the first consumer)
 
@@ -294,9 +299,9 @@ before_game-plugin sweep must account for it).
 
 ## 8. Files that need to change (Phase 11 change set)
 
-- `src/probes/bugsplat_ctor_probe.{h,cpp}` → relocate to a permanent engine home
-  (`src/early_hook.{h,cpp}` or extend `src/ldr_notify.{h,cpp}`); generalize
-  `ArmLdrInstall` + `HookedCtor` into a parameterized install primitive.
+- `src/early_hook.{h,cpp}` (DONE — relocated + generalized from the original
+  `src/probes/` prototype) → the parameterized install primitive (module +
+  export + signature + detour) + the BugSplat ctor first consumer.
 - `src/ldr_notify.{h,cpp}` — the natural home for the before_game-hook install
   path (it already owns the LDR notification + the already-loaded sweep for
   patches; extend to also install before_game HOOKS). Confirm `MH_Initialize` +
@@ -328,4 +333,4 @@ before_game-plugin sweep must account for it).
 - `fix-a-drop-static-lua.md` — the Phase 11 dependency the Lua tier needs.
 - `restructure/00-original-plan.md:159-176` (Capability gating) + `:96-98` (zone declaration,
   Lua-before_game Phase 11 constraint) + `:166` (`kcdx.hook` After→Either).
-- `src/probes/bugsplat_ctor_probe.cpp` — the proven install machinery to generalize.
+- `src/early_hook.{h,cpp}` — the proven install machinery, relocated + generalized.

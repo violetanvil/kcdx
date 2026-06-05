@@ -1076,6 +1076,21 @@ what the live result is.
 
 ---
 
+## CAP-80: early-hook author-parameterized install primitive
+
+| Field | Value |
+|---|---|
+| What | The generalized author-parameterized early-install primitive (`src/early_hook.{h,cpp}`) — installs a MinHook detour by (module name + exported symbol + ABI signature + the named detour), resolving the target by NAME (`GetModuleHandleW` + `GetProcAddress` on the export) and installing immediately if the module is mapped, else via an `LdrRegisterDllNotification` callback the instant it maps (pre-its-own-DllMain). Relocated + generalized out of the original `src/probes/bugsplat_ctor_probe.{h,cpp}` prototype (one baked BugSplat ctor target) into a permanent engine home; the BugSplat ctor install is now its FIRST CONSUMER (`early_hook::bugsplat::Arm`, dev-gated, log-only — behavior unchanged from the prototype). This row proves the GENERALIZED, author-parameterized path works on an arbitrary by-name target, not just the baked one. |
+| Channels | Engine self-test (`src/early_hook_selftest.cpp`) — no plugin DLL, like cap-52 / cap-66. `early_hook::Install` is an engine-internal symbol (VM/boot plumbing, not a plugin export — the author-facing before_game-hook surface is a later consumer), so it self-reports from engine code via `kcdx::test::ReportResult`. Single-surface (engine-internal). |
+| Engine status | LIVE — `src/early_hook.{h,cpp}` ships the primitive + the BugSplat consumer; `dllmain.cpp` calls `early_hook::bugsplat::Arm()`. Build/matrix UNCONFIRMED by the implementing agent (the user runs `pwsh ./build.ps1` + the launch; the agent reads the log). |
+| Test plugin | none — engine self-test (`src/early_hook_selftest.cpp`, `RunSelfTestOnce()` one-shot from the per-tick self-report block right after cap-66). Targets a dedicated exported no-op (`kcdx_cap80_early_hook_target`) on kcdx's OWN always-mapped engine DLL. |
+| Auto-pass check | `boot-only`. One row, **CAP-80-early-hook**: resolves kcdx's own module base name at runtime, builds an `InstallRequest{ module, export="kcdx_cap80_early_hook_target", signature="int __fastcall(int)", detour, trampoline }`, calls `early_hook::Install(req)`, then CALLS the export and asserts the detour FIRED (a flag the detour sets) AND passed through to the original (return == `arg ^ sentinel`). No player input — runs on the first suite tick. |
+| Last result | pending — confirmed at the next launch (agent reads `suite: X/Y` + any `FAIL CAP-80-early-hook` from `kcdx-dev.log`). |
+| Falsifiable claim / FAIL condition | The author-parameterized early-install (resolve a target by module+export NAME and install a MinHook detour) works on an arbitrary already-mapped target, not only the baked BugSplat one. **FAILS if** `early_hook::Install` returns false (module/export did not resolve, or MinHook rejected the install), **or** the detour did not fire on the post-install call (`fired==0` — the install did not actually arm), **or** pass-through did not reach the original body (`ret != arg^sentinel` — the trampoline is wrong). |
+| Notes | The deferred-LDR-callback path (module not yet mapped at arm time → install fires from the LDR notification when it maps) is exercised LIVE by the BugSplat consumer (`early_hook::bugsplat::Arm`) against `BugSplat64.dll` — its `early_hook: installed ... via LDR callback` / `BUGSPLAT_CTOR fire` log lines confirm the deferred path; cap-80's self-test target is kcdx's own already-mapped DLL, so it exercises the immediate-install path. The required-miss BAIL paths (incomplete request, export-not-found, MinHook failure) fail loud (`LOG_ERROR_KV`/`LOG_WARN` + `return false`, latch rolled back) rather than swallow — verified by code review. |
+
+---
+
 ## CAP-64: `kcdxHookInterface::Before` fires on `lua_pcall` (engine-direct migration)
 
 | Field | Value |

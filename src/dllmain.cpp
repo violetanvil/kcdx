@@ -21,8 +21,10 @@
 #include "serialization.h"
 #include "watchdog_spawn.h"
 
-#include "probes/bugsplat_ctor_probe.h"  // KEEP — proven before_game-hook install
-                                         // machinery; a later phase generalizes it
+#include "early_hook.h"                  // generalized author-parameterized
+                                         // before_game-hook install primitive +
+                                         // its first consumer (the BugSplat
+                                         // ctor hook)
 #include "asset_overlay.h"               // production asset-overlay seam: HOOK 1
                                          // (CCryPak::AdjustFileName resolver) + HOOK 2
                                          // (CCryPak::FOpen own-FILE* loose open),
@@ -421,17 +423,17 @@ static void RunBeforeGameZoneInDllMain() {
     // targeting it.
     kcdx::ldr_notify::Register();
 
-    // KEEP: install the BugSplat ctor
-    // log-only hook at DllMain time (immediate if BugSplat64.dll is
-    // already mapped, otherwise via LDR notification). DllMain-time install
-    // timing catches the ctor call that worker-thread install missed
-    // (confirmed live). This is the proven before_game-hook install machinery —
-    // later work generalizes it into the real builtin; it is NOT removed here.
-    kcdx::probes::bugsplat_ctor_probe::ArmLdrInstall();
+    // Install the BugSplat ctor log-only hook at DllMain time (immediate if
+    // BugSplat64.dll is already mapped, otherwise via LDR notification).
+    // DllMain-time install timing catches the ctor call that worker-thread
+    // install missed (confirmed live). This is now the first consumer of the
+    // generalized early_hook primitive (module+export+signature+detour); the
+    // before_game-hook builtin work changes its detour to rewrite szApp.
+    kcdx::early_hook::bugsplat::Arm();
 
     // STEP 2 (ctx A): BeforeGameApply — the before_game load-order slice is
     // applied (ApplyAlreadyLoaded) and the LDR notifications are armed
-    // (Register + ArmLdrInstall). DllMain returns right after this; the
+    // (Register + early_hook::bugsplat::Arm). DllMain returns right after this; the
     // WorkerThread (ctx B) was already spawned by the caller below.
     // (VersionDetected sits AFTER this in the enum but advances later, in
     // ctx B — it cannot run in this ctx-A function; see the note above.)

@@ -24,7 +24,9 @@ reconstruct the wiring without it living in `src/`.
 
 ## NOT archived here (still LIVE in src/)
 
-- `src/probes/bugsplat_ctor_probe.{cpp,h}` — LIVE before_game-hook install machinery, KEEP
-  for the deferred before_game-hook work (`ArmLdrInstall()` live at `dllmain.cpp`). Its
-  *internal* PROBE Z `#if 0` block (loader-lock asmjit smoke test) WAS extracted — see
+- `src/early_hook.{cpp,h}` — LIVE before_game-hook install machinery, relocated +
+  generalized out of the original `src/probes/bugsplat_ctor_probe.{cpp,h}` into the
+  permanent engine home (an author-parameterized install primitive +
+  `early_hook::bugsplat::Arm`, live at `dllmain.cpp`). Its *internal* PROBE Z
+  `#if 0` block (loader-lock asmjit smoke test) WAS extracted — see
   [bugsplat-probe-z.md](bugsplat-probe-z.md). The live install machinery stays in src/.

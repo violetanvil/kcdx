@@ -59,7 +59,7 @@ InitPhase (ordered)                  ctx  what is guaranteed up by this phase
                                            armed. ⚠️ NOT YET WIRED — no
                                            ApplyZone(BeforeGame) call site exists;
                                            today only LDR notifications + the
-                                           hardcoded bugsplat_ctor_probe dev-probe
+                                           early_hook BugSplat ctor install
                                            run here. before_game APPLY is deferred
                                            (see §As-is).
 ─── (DllMain returns; WorkerThread already spawned) ───
@@ -149,7 +149,7 @@ the zone split doesn't exist.
 > (1) `ldr_notify`, which iterates the legacy `patch::g_patches` vector that has
 > had no populator since the legacy byte-patch parser was removed (so it applies
 > NOTHING), and (2) the
-> HARDCODED `bugsplat_ctor_probe::ArmLdrInstall` dev-probe wired directly into
+> `early_hook::bugsplat::Arm` BugSplat ctor install wired directly into
 > `dllmain.cpp`'s `RunBeforeGameZoneInDllMain` — not a load-order entry, not
 > driven by the apply-driver. **before_game application applies nothing through
 > the registry today; it is deferred.**
@@ -188,8 +188,8 @@ The current boot does the SAME operations in the SAME order, but expressed as
 statement order in two functions + comment paragraphs — NOT a phase enum, no
 asserts. Summary of where the code is now:
 - `dllmain.cpp` `RunBeforeGameZoneInDllMain()` = ctx A (phases 0–3, un-enumerated).
-  ⚠️ It arms LDR notifications and runs the hardcoded `bugsplat_ctor_probe::
-  ArmLdrInstall` dev-probe — but it does NOT apply any before_game registry
+  ⚠️ It arms LDR notifications and runs the `early_hook::bugsplat::Arm` BugSplat
+  ctor install — but it does NOT apply any before_game registry
   slice (there is no `ApplyZone(BeforeGame)` call). The before_game apply path
   is STUBBED: `ldr_notify` walks the empty `patch::g_patches` (no populator
   since the legacy byte-patch parser was removed) and applies nothing;

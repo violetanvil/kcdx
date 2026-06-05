@@ -288,7 +288,7 @@ today:
   ship-disabled (`enabled = false`). It is a placeholder a later rewrite
   lands in place.
 - The ONLY before_game thing actually running is
-  `bugsplat_ctor_probe::ArmLdrInstall` — a dev-probe HARDCODED in
+  `early_hook::bugsplat::Arm` — the BugSplat ctor install in
   `dllmain.cpp` (`RunBeforeGameZoneInDllMain`), NOT a load-order entry.
 
 before_game application is **aspirational / deferred** —

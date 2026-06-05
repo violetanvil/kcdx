@@ -43,9 +43,11 @@
 #include "version_check_selftest.h"                // cap-60 engine self-report
 #include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
+#include "early_hook_selftest.h"                    // cap-80 early-hook primitive
 
-// bugsplat_ctor_probe.h is included from dllmain.cpp now — the BugSplat
-// ctor probe installs from kcdx.dll DllMain, not from hooks::Install.
+// early_hook.h is included from dllmain.cpp now — the BugSplat ctor hook
+// installs from kcdx.dll DllMain (early_hook::bugsplat::Arm), not from
+// hooks::Install.
 
 extern "C" {
 #include "lua.h"
@@ -694,6 +696,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // save-load heap corruption). Boot-only, one-shot guarded internally.
     kcdx::ki0001::RunSelfTestOnce();
 
+    // cap-80-early-hook: engine self-report for the author-parameterized
+    // early-install primitive (src/early_hook.{h,cpp}). Boot-only, same timing
+    // as cap-66 — no hook-fire / "ready" / VM dependency; MinHook is up by the
+    // first suite tick. It installs a detour by (module + export + signature +
+    // detour) on a known already-mapped module (kcdx's own DLL) targeting a
+    // dedicated exported no-op, then calls the export and asserts the detour
+    // FIRED and passed through — proving the GENERALIZED install works, not just
+    // the baked BugSplat target. One-shot guarded internally.
+    kcdx::early_hook_selftest::RunSelfTestOnce();
+
     // cap-79-lua-shim-forward: engine self-report for the Lua symbol shim's
     // forward layer (src/lua_shim.{h,cpp}, restructure Phase 11 P2 step 1).
     // Unlike cap-52..66, it DOES depend on the live lua_State — it pushes a
@@ -876,11 +888,10 @@ bool Install() {
     log::Info("Hooks installed: lua_pcall (via hook_chain::AddCEngine) + "
               "update (direct MH — the documented bootstrap exception)");
 
-    // bugsplat_ctor_probe install timing note: worker-thread install was too
+    // BugSplat ctor hook install timing note: worker-thread install was too
     // late — the ctor fired before this code ran. The install lives in
-    // src/dllmain.cpp RunBeforeGameZoneInDllMain via LdrRegisterDllNotification,
-    // NOT here. That probe is KEEP (the proven before_game-hook install
-    // machinery).
+    // src/dllmain.cpp RunBeforeGameZoneInDllMain via the early_hook primitive
+    // (early_hook::bugsplat::Arm → LdrRegisterDllNotification), NOT here.
 
     return true;
 }

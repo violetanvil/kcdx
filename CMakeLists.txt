@@ -208,7 +208,7 @@ add_library(kcdx SHARED
     src/declare_interface.cpp
     src/asset_interface.cpp
     src/dynamic_call_jit.cpp
-    src/probes/bugsplat_ctor_probe.cpp
+    src/early_hook.cpp
     src/asset_overlay.cpp
     src/asset_namespace.cpp
     src/asset_sidecar.cpp
@@ -236,6 +236,7 @@ add_library(kcdx SHARED
     src/survival_pass.cpp
     src/version_check_selftest.cpp
     src/ki0001_node_classifier_selftest.cpp
+    src/early_hook_selftest.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

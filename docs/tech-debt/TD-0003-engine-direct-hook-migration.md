@@ -13,7 +13,7 @@ Independent of any other phase — pick by leverage. Recommended order:
 1. **`frealloc` canary** first. Cleanest semantics (read-only fingerprint, `before` mode, post-`SetLuaState` install — no carve-out edge case). PROBE Q contract preservation already documented in `lua-callback-threading.md` § Engine bootstrap carve-out. Exercises the machinery at site #2, which is the real test of whether the cycle-1 machinery is reusable.
 2. **`SaveGame` + `LoadGame`** together. Both at `src/save_load_hooks.cpp:467` via the same `InstallOne` helper. Both post-`SetLuaState`. TC mods' natural extension points (a TC mod wanting save/load lifecycle without writing a cosave record needs to `kcdx.hook` these). Ship as one cycle.
 3. **`ModManager_ctor`** (mod-absorb bracket). Different mode (`replace`) — the bracket fully replaces the native ctor; `pOriginal` intentionally discarded. The engine-replace contract teaching text from cycle 1 (`hook_chain::CanCoexist`) already covers this case; a plugin install at this target is now rejected with the teaching error, which is the correct end state.
-4. **`MiniDmpSender` ctor** (BugSplat probe). Pre-VM install under Windows loader lock. PROBE Z (cycle 1, archived in `src/probes/bugsplat_ctor_probe.cpp`) verified `runtime_func_t::make_jit_func` + `branch_pool::AllocateBranch` are loader-lock-safe at this site. The carve-out at `hook_chain.cpp:1075/1209/1341` handles the dead-classifier pre-bootstrap fire path. Lowest-risk migration of the four.
+4. **`MiniDmpSender` ctor** (the BugSplat ctor install). Pre-VM install under Windows loader lock, now in `src/early_hook.cpp` (the generalized early-install primitive + its BugSplat consumer). PROBE Z (cycle 1, archived in `_research/probe-archive/bugsplat-probe-z.md`) verified `runtime_func_t::make_jit_func` + `branch_pool::AllocateBranch` are loader-lock-safe at this site. The carve-out at `hook_chain.cpp:1075/1209/1341` handles the dead-classifier pre-bootstrap fire path. Lowest-risk migration of the four.
 
 Trigger for picking any one up: an `/execute` cycle slot opens AND no higher-priority phase is in flight.
 
@@ -34,7 +34,7 @@ Per-site migration shape (uniform):
 | `src/mod_absorb/ctor_bracket.cpp:365` HookedCtor | `replace` | `Kind::Engine`, `name="engine.modmanager_ctor"` | `ModManager_ctor` seed row (kcdx_id=134) | Bracket fully replaces native ctor; `pOriginal` slot wired by chain but unused by callback. |
 | `src/save_load_hooks.cpp:467` (SaveGame) | `before` | `Kind::Engine`, `name="engine.savegame"` | AOB-resolved in-source; install builds the signature inline | Post-`SetLuaState` install (`phase6_install_after_lua_ready`); carve-out not load-bearing but uniform. |
 | `src/save_load_hooks.cpp:467` (LoadGame) | `before` | `Kind::Engine`, `name="engine.loadgame"` | AOB-resolved in-source; install builds the signature inline | Same as SaveGame. |
-| `src/probes/bugsplat_ctor_probe.cpp:149` HookedCtor | `before` | `Kind::Engine`, `name="engine.bugsplat_ctor"` | `GetProcAddress(BugSplat64.dll, "??0MiniDmpSender@@QEAA@PEB_W000K@Z")`; install builds signature from the typedef | Pre-VM install under loader lock. Carve-out's pre-bootstrap path is load-bearing here. PROBE Z verified loader-lock-safe. |
+| `src/early_hook.cpp` (BugSplat ctor consumer) | `before` | `Kind::Engine`, `name="engine.bugsplat_ctor"` | `GetProcAddress(BugSplat64.dll, "??0MiniDmpSender@@QEAA@PEB_W000K@Z")`; install builds signature from the typedef | Pre-VM install under loader lock via the early_hook primitive. Carve-out's pre-bootstrap path is load-bearing here. PROBE Z verified loader-lock-safe. |
 
 ABI fit-up per site:
 
@@ -84,7 +84,7 @@ Cycle-by-cycle, NOT all at once:
 - Docs flip + add the engine-replace teaching error reference.
 
 **`MiniDmpSender` ctor cycle:**
-- `src/probes/bugsplat_ctor_probe.cpp` — install via `hook_chain::AddCEngine`. PROBE Z already archived in this file; revival hint at the archive header.
+- `src/early_hook.cpp` (the BugSplat ctor consumer) — install via `hook_chain::AddCEngine`. PROBE Z archived in `_research/probe-archive/bugsplat-probe-z.md`; revival hint at the archive header.
 - Test plugins (2 — Lua + C++).
 - Docs flip.
 
@@ -94,4 +94,4 @@ Each cycle is one `/execute` brief; the manager runs the build gate, step-review
 
 - The cycle-1 mechanism + the dead-classifier carve-out's reason: `docs/known-issues/closed/cap-59-fires picked a one-shot VM-init target that already ran by plugin load.md` § Reframe 2026-05-29c.
 - The KI-0001 sentinel-mirror fix (the FIX-C inverse) is unrelated to this entry — it landed at `vendor/lua/ltable.c` and is closed; it shipped while cycle-1 was verifying.
-- The PROBE Z verdict (loader-lock safety at the bugsplat install site): `src/probes/bugsplat_ctor_probe.cpp` archive header + the closed cap-59 known-issue § Reframe 2026-05-29b.
+- The PROBE Z verdict (loader-lock safety at the bugsplat install site): `_research/probe-archive/bugsplat-probe-z.md` + the closed cap-59 known-issue § Reframe 2026-05-29b.
