@@ -316,6 +316,19 @@ runtime store** that does not exist yet. The settled mechanism:
   `register`/`replace` affects assets opened AFTER the call; no re-resolve of
   already-open handles. Consistent with §8 (the seam is live before the first
   read; a later mutation joins the resolution path going forward).
+  - **"Thereafter" is bounded by WHEN the author's Lua code runs, NOT by the seam
+    (§5.4).** The seam installs early (in `DiscoverAndLoad`, before the engine's
+    first asset read); the declarative sidecar parses there too (data, no VM) and
+    so wins a boot asset open. But a Lua `register`/`replace` runs in `plugin.lua`,
+    which fires from a game lifecycle hook AFTER the engine's Lua VM exists
+    (`CSystem::Init`) — the same phase that opens (and then caches) boot/menu
+    assets. So a Lua runtime `register`/`replace` CANNOT win a boot-cached asset's
+    open: that open already happened, before `plugin.lua` ran, and the engine
+    re-uses the cached texture without re-opening the file (KI-0005, root-caused
+    by PROBE B). This is the Lua-VM-lifecycle boundary, NOT a store limitation —
+    the store keys correctly; the verb just runs too late for a boot asset. The
+    fix (a Lua VM at DllMain so `plugin.lua` can run before the boot open) is
+    **Phase 11**, the same trigger as before_game Lua hooks (§5.4).
 - **A new responsibility unit owns both runtime stores:
   `src/asset_namespace.{h,cpp}`.** It holds the runtime-overlay store (for
   `register`/`replace`) AND the **published-name store** (for
@@ -390,6 +403,51 @@ the same name→serve-vpath lookup, the same overlay-store keying, the same
 load-order conflict. The build-time `BuildOverlayMap` path keys the resolved vpath
 (NOT the prior `overlay_decl_scoped_out` deferral); the runtime path keys the
 runtime store.
+
+### §5.4 Boot/early assets vs runtime — the WHEN, and the Phase-11 boundary (settled 2026-06-04)
+
+A runtime `register`/`replace` serves an asset opened AFTER the call (§5.1
+take-effect). Whether that reaches a BOOT asset depends on WHEN the author's code
+runs relative to the engine's boot asset open — and today that is the
+Lua-VM-lifecycle boundary:
+
+| The author's surface | Runs at | Can win a BOOT asset open? |
+|---|---|---|
+| **Declarative sidecar** (`replaces.toml`, §4.2) | `DiscoverAndLoad` (data parse, no VM) — BEFORE the boot open | **YES** — this is today's boot-asset path |
+| **C++ `kcdxPlugin_Load`** | `DiscoverAndLoad` (early, no VM) | YES (a C++ plugin can register a boot overlay) |
+| **Lua `kcdx.assets.register`/`replace`** in `plugin.lua` | a game lifecycle hook, AFTER the engine's Lua VM exists (`CSystem::Init`) — AFTER the boot open | **NO (today)** — runs too late; the boot asset already opened + cached |
+
+**The author rule today:** a boot/menu/early asset is replaced **declaratively**
+(the sidecar — it applies before the boot open and works, KI-0005 / Phase-1 gray
+rectangle); the Lua **runtime** verb is for assets opened later (gameplay /
+on-demand / conditional, after `plugin.lua` runs). The disassembler test holds —
+the author declares intent; kcdx applies it at the right time for the surface
+they chose.
+
+**The Phase-11 unlock (the deferred capability — `before-game-hooks.md` precedent).**
+The reason a Lua runtime verb can't win a boot open is the SAME root as before_game
+Lua hooks: the engine's Lua VM is created in `CSystem::Init` (after the boot open),
+so `plugin.lua` can't run earlier. **FIX A (`fix-a-drop-static-lua.md`) brings a
+Lua VM up at DllMain** — at which point `plugin.lua` (or an early Lua slot) can run
+in the `DiscoverAndLoad` window, BEFORE the boot open, so a Lua runtime
+`register`/`replace` of a boot asset WINS. This is **build-deferred to Phase 11**,
+the same trigger and the same VM unlock as before_game Lua hooks — kept as one
+coherent Phase-11 deliverable rather than a now-workaround that duplicates the VM
+work (the user's settled call, 2026-06-04; mirrors the before_game-hooks
+sequencing decision). **Phase 11's design explicitly accounts for the boot-asset
+runtime serve** (`before-game-hooks.md` §"Boot-asset runtime serve") — the early
+Lua slot, the order vs the boot asset open, and the serve confirmation are a named
+Phase-11 deliverable, not assumed-to-just-work.
+
+**Until Phase 11 — fail loud, not silent (AP14).** A Lua runtime `register`/
+`replace` whose target is a vpath the engine already boot-opened serves nothing;
+that MUST teach, not silently no-op (`anti-patterns.md` AP14, errors-that-teach).
+The engine records the set of vpaths opened before the Lua VM came up (a
+boot-opened set); a runtime verb targeting one emits a one-time teaching warn
+("`<vpath>` was opened at boot before your `plugin.lua` ran — replace a boot asset
+with a declarative `replaces.toml` sidecar; a Lua runtime replace of a boot asset
+lands in Phase 11"). (The boot-opened-set + the warn are a small same-change
+addition; tracked with KI-0005's close.)
 
 ---
 

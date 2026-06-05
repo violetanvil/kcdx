@@ -122,6 +122,13 @@ Build both at Phase 11 so `kcdx.hook` flips to `Either` once for both surfaces.
 The C++ tier needs no VM but was deferred with the Lua tier by the user's
 sequencing choice (one coherent capability, not a C++-only subset early).
 
+**A THIRD consumer of the DllMain VM rides this phase: the boot-asset runtime
+serve (§6b).** The same FIX-A VM that lets a Lua callback fire at DllMain also lets
+a Lua `kcdx.assets.register`/`replace` run before the engine's boot asset open, so
+it can win a boot asset (KI-0005; `asset-replacement.md` §5.4). The early Lua slot
+built for the Lua-callback tier is the same machinery the boot-asset serve needs —
+one early-run primitive, three consumers.
+
 ## 5. The proven install machinery (KEEP — it is the engine half of the fix)
 
 `src/probes/bugsplat_ctor_probe.{h,cpp}` (currently dev-gated, wired into
@@ -159,6 +166,62 @@ detour) driven by the before_game-zoned plugin's own DllMain.
   is LOG-ONLY today; the fix changes it to rewrite szApp.
 - Full investigation trail: `docs/known-issues/BugSplat dmp files don't reach
   disk for AV crashes.md` (PROBE R/S/T + the 2026-05-26 reframe).
+
+## 6b. The boot-asset runtime serve — a SECOND Phase-11 consumer of the DllMain VM (settled 2026-06-04)
+
+The DllMain Lua VM (FIX A) unlocks more than before_game Lua hooks. It is also what
+lets a Lua `kcdx.assets.register`/`replace` win a BOOT asset's open — a capability
+the asset system designed but deferred to Phase 11 for the SAME root cause. This is
+a named Phase-11 deliverable, set up + accounted for here (the user's instruction:
+Phase 11 explicitly owns getting this running, not assuming it).
+
+**The root (KI-0005, root-caused by PROBE B; design `asset-replacement.md` §5.4).**
+The engine opens a boot/menu asset ONCE — at boot, in `CSystem::Init`, which is
+also where the engine's Lua VM is created. `plugin.lua` (the author's Lua runtime
+`register`/`replace`) fires from a game lifecycle hook AFTER that VM exists — so it
+runs AFTER the boot open, and the engine re-uses the cached texture without
+re-opening the file. The asset SEAM is up early (installed in `DiscoverAndLoad`,
+before the boot open — `dllmain.cpp:354`); the runtime STORE keys correctly; only
+the author's Lua CODE runs too late. The declarative sidecar already wins boot
+assets (it parses as DATA in `DiscoverAndLoad`, pre-VM); the Lua runtime verb is
+the gap, and the gap is exactly the VM-at-DllMain FIX A provides.
+
+**What Phase 11 must SET UP + GET RUNNING for this (the named deliverable):**
+
+1. **An early Lua slot that runs in the pre-boot-open window.** Once FIX A's VM
+   exists at DllMain, run a plugin's early Lua (a new `lua_before`-style slot, OR
+   the existing `plugin.lua` if it can be moved into the `DiscoverAndLoad` window)
+   on the DllMain VM, BEFORE the engine opens its boot assets. A
+   `kcdx.assets.register`/`replace` in that early slot keys the runtime store
+   before the boot open, so the resolver's runtime consult HITS when the engine
+   opens the boot asset. (The seam + the runtime-store consult already exist — this
+   is purely about WHEN the author's Lua runs.)
+2. **Order vs the boot asset open — make it explicit.** The early Lua slot must
+   complete (or at least the asset-declaration calls must complete) BEFORE
+   `CSystem::Init` opens the boot assets. Establish + probe this ordering the same
+   way `g_kcdxReadyEvent` orders the seam install vs the first read (§8 of the
+   asset design). A boot asset open before the early slot ran is the failure to
+   guard against (the same class as the before_game-hook ordering this doc's §5
+   machinery already handles).
+3. **Serve confirmation (re-run PROBE B's recipe).** Confirm the early-slot
+   register actually serves a boot asset: re-instrument the resolver per
+   `_research/probe-archive/ki0005-resolver-dds-observer.md` and verify a boot
+   asset opens with `rt=HIT` from the early-registered overlay (the user sees the
+   replacement render — e.g. the gray-rectangle logo, now via the RUNTIME path).
+4. **Retire the interim AP14 teaching warn.** Until Phase 11, a Lua runtime verb
+   targeting a boot-opened vpath emits a teaching warn ("use the declarative
+   sidecar; runtime boot replace is Phase 11" — `asset-replacement.md` §5.4). When
+   the early slot lands, that warn's condition narrows (a boot asset declared in
+   the EARLY slot now serves; only a boot asset targeted from the LATE
+   `plugin.lua` still warns) or is removed if the early slot subsumes the late
+   path. Decide as part of this deliverable.
+
+**Why bundled here, not its own phase.** Same VM unlock, same DllMain-timing
+machinery (§5's `ArmLdrInstall`/early-run infrastructure), same author-mental-model
+goal (declare intent; kcdx applies it at the right time). Building the early Lua
+slot once serves both before_game Lua hooks AND the boot-asset runtime serve — one
+coherent Phase-11 deliverable, the user's settled sequencing call (mirrors §1's
+"one capability, not a subset early").
 
 ## 7. The zone_gate interaction (MUST resolve at Phase 11)
 

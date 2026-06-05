@@ -1,5 +1,45 @@
 # Asset-replacement design — changelog (newest first)
 
+## 2026-06-04 (latest) — §5.4: boot-asset runtime serve is the Lua-VM-lifecycle boundary, deferred to Phase 11
+
+- **The finding (KI-0005, root-caused by PROBE B).** A Lua runtime
+  `register`/`replace` of a BOOT asset (cap-75 replacing the menu logo) did not
+  serve in-game. Root cause: the engine opens the boot logo ONCE, at boot, BEFORE
+  `plugin.lua` runs the register (the Lua VM is created in `CSystem::Init`, the
+  same phase that opens + caches the logo), then re-uses the cached texture
+  without re-opening the file. The runtime store is NOT buggy — its lookup was a
+  correct pre-register MISS; the verb simply runs too late for a boot asset.
+- **The framing corrected.** §5.1 take-effect="thereafter" was being read as a
+  hard contract boundary ("a boot-cached asset is unreachable, period"). The user
+  reframed it correctly: it is the Lua-VM-LIFECYCLE boundary, not a store limit —
+  kcdx controls WHEN it applies a declaration (the declarative sidecar already
+  wins boot assets, parsed pre-VM in `DiscoverAndLoad`). The Lua runtime verb just
+  doesn't reach the early window because the engine VM isn't up yet.
+- **§5.4 (new) — the WHEN, by surface.** Declarative sidecar (data, no VM, early)
+  + C++ `Plugin_Load` (early) win a boot open; the Lua runtime verb (post-VM,
+  late) does not, TODAY. The author rule: a boot/early asset → declarative sidecar;
+  the Lua runtime verb → assets opened later (gameplay/on-demand).
+- **Deferred to Phase 11 (the user's call, mirroring before_game-hooks).** The
+  root is identical to before_game Lua hooks (the Lua VM not up at DllMain); FIX A
+  (`fix-a-drop-static-lua.md`) brings the VM up at DllMain so `plugin.lua` can run
+  before the boot open. Kept as one coherent Phase-11 deliverable, not a
+  now-workaround that duplicates the VM work. **Phase 11's design (`before-game-
+  hooks.md`) explicitly accounts for the boot-asset runtime serve** — the early
+  Lua slot, the order vs the boot open, and the serve confirmation are a named
+  Phase-11 deliverable (the user's instruction).
+- **Until Phase 11 — AP14 teaching, not silence.** A Lua runtime verb targeting a
+  boot-opened vpath emits a one-time teaching warn (use the sidecar; runtime boot
+  replace is Phase 11) — never a silent non-serve. Tracked with KI-0005's close.
+- **§9 serve confirmation re-vehicled.** The runtime-store live serve confirmation
+  uses an AFTER-VM asset (opened after `plugin.lua` runs), independent of the boot
+  window — it proves the store serves live now.
+- **Integrated in:** §5.1 (take-effect bullet — the VM-lifecycle clarification),
+  §5.4 (new), the changelog.
+- **Why:** building/closing on "a boot-cached asset is just out of scope" would
+  silently drop a real capability the user wants (`spec-conformance.md` §"No
+  filling a spec gap"; `anti-patterns.md` AP13) — it is deferred with a named
+  trigger (Phase 11) + an explicit Phase-11 design account, not dropped.
+
 ## 2026-06-04 (later) — §5.3: cross-mod resolution defined; the "later phase" over-deferral corrected
 
 - **The error corrected.** §12 "Cross-plugin reference shape" SETTLED the cross-mod
