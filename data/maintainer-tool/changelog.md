@@ -3,6 +3,33 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-05 — verification-engine follow-on forks (settled by `/plan` decomposition)
+
+Decomposing the verification engine (D24–D30) surfaced three forks `/plan` could not resolve
+itself; settled before re-planning (D31):
+
+- **Callsite ambiguity posture** — a callsite AOB matching multiple `.text` sites is an
+  advisory `Ambiguous` that STEERS the maintainer to extend the pattern (context bytes until
+  unique), never a hard refuse (advisory-never-blocks, D9). Settles `fingerprint-per-kind.md`
+  §"Open decisions" 3.
+- **Report ingest path** — the frontend reads the in-game plugin's `report.json` directly via
+  the File API (in-page parse, no backend seam) — resolves D28's "frontend + a backend read
+  seam" to frontend-only, consistent with the client-side / DLL-never-uploaded stance (D15).
+- **Ingest progress state** — parsing a report over the full curated set (157+ rows) shows an
+  ingesting progress bar; it joins the worklist surface's state set (empty / loading-with-progress
+  / populated / error). A first-class loading state, not a silent blocking parse.
+
+`/plan` also HALTED on a `/ui-design` gap: the verification engine's 4 new UI surfaces (the
+per-module link table, the per-author check-result display, the report-ingestion worklist, the
+link-to-create prompt) have NO screen specs in `ui/screens/` (those cover only the version-READ
+control). The user chose to author those screen specs via `/ui-design` FIRST, then re-invoke
+`/plan` with the specs as each UI step's build authority (`spec-conformance.md`).
+
+**Integrated in:** §10 D31.
+**Why:** the forks are settled design the future `/plan` + `/ui-design` need; the screen specs
+are the missing build authority `/plan` cannot invent (a UI step with no screen spec is
+incomplete — `ux-first-class.md` / `spec-conformance.md`).
+
 ## 2026-06-04 — the verification engine (un-defer R5 + restore R12's DLL link table)
 
 The deferred "driven evidence flows" (R5) and the dropped R12 per-module DLL link table are
