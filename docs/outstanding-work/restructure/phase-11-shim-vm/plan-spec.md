@@ -68,7 +68,10 @@ element ships.
 | `Resolve()` bail-loud + internal-only gating | §6.1 | P2 step 1 | |
 | Force-load WHGame + LDR before_game apply | §6.2 | P3 step 2 | loader-lock budget measured |
 | VM build + `Init` interception (engine adopts) | §1, §4.1 | P3 step 3 | consumes P1's intercept verdict |
-| Early Lua slot + ordering guard vs boot open | §5 | P4 step 1 | consumes P1's slot-shape verdict |
+| Early Lua slot + the ordering-guard EVENT GATE | §5 | P4 step 1 | consumes P1's slot-shape verdict; builds the slot |
+| Mandatory happens-before event gate (worker signals → boot-open path waits-and-blocks; NEW edge, no existing one covers it) | §5 | P4 step 1 | PROBE P11 v2 found the dependency cross-thread + ungated — the gate is the fix, not timing |
+| Order-inversion regression (FAILS if boot open resolves before the slot signaled) | §5 | P4 step 1 + step 2 | the falsifiable proof the gate holds |
+| Cross-thread VM-adoption publish (release/acquire; worker builds, game thread adopts) | §5 | P3 step 3 | the adoption handoff is gated/published, never timed |
 | Boot-asset Lua swap delivered (KI-0005) | §7.1 | P4 step 2 | early-slot replace wins boot open |
 | AP14 warn build-time decision | §7.1 | P4 step 2 | narrow/remove per observed serve |
 | Drop static Lua + FIX C revert + `kcdxLuaApi`→shim | §6.3 | P5 step 1 | hazard-killing step |
