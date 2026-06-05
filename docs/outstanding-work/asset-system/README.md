@@ -33,30 +33,36 @@ when `DONE`, `—` otherwise.
 |---|---|---|
 | [1 — resolution ownership (the TWO-hook seam, probe-gated)](phase-01-resolution-ownership/README.md) | DONE | 2b0bd1b |
 | [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | DONE (6/6: steps 6/7/8/8b/8c/9 DONE) | (landed) |
-| [3 — regression coverage](phase-03-regression/README.md) | DONE (step 10 — the 2 gaps cap-77 + comp-17 + the consolidated coverage matrix; the 2 new rows are [manual] PENDING the acceptance launch) | (landed) |
+| [3 — regression coverage](phase-03-regression/README.md) | IN PROGRESS — step 10 landed (cap-77 + comp-17 + the matrix; CAP-77-keyed + COMP-17 PASS), but a CORE acceptance criterion is UNCONFIRMED: a served `.lua` EXECUTING (design §3, the handle-consumed-lane completeness). KI-0006 — the `.lua` serve-AND-EXECUTE gap, being closed NOW (not deferred). The serve mechanism is proven (CAP-73); whether a served `.lua` executes through this seam is unverified + possibly a CAPABILITY gap (does CryEngine Lua `require`/`dofile` route through `CCryPak::FOpen`?). | (landed) |
 
-## Where we are (2026-06-04) — ALL 3 PHASES BUILT (Phase 1 acceptance-closed; Phases 2–3 built, two acceptance launches owed)
+## Where we are (2026-06-04) — Phases 1–2 built + acceptance-confirmed; Phase 3 IN PROGRESS (one core acceptance criterion UNCONFIRMED — `.lua` serve-AND-EXECUTE, KI-0006, closing NOW)
 
-**The whole asset system is built (Phases 1–3 DONE).** Phase 1 (the two-hook
-resolution seam) is acceptance-closed (`2b0bd1b`). Phase 2 (author surface) is
-6/6: steps 6 (`a3961df`), 7 (`3cc6a67`), 8 (`c39ac3a`), 8b (`b7ae899`), 8c
-(`2259a76`), 9 (`fe879d0` — the C++ mirror, cap-76 parity rows ALL PASS live).
-The full `kcdx.assets.*` surface is live on BOTH languages: Lua
-`get_by_path`/`get_by_name`/`declare`/`register`/`replace` (incl. cross-mod — B
-serves where A's published asset would) AND the C++ mirror
-`K.assets->GetByPath`/`GetByName`/`Declare`/`Register`/`Replace`, both calling ONE
-shared resolution path (full parity). Phase 3 (regression) is step 10: the
-consolidated coverage matrix (6 cases — 4 already covered by earlier steps'
-same-change tests, cited not rebuilt) + the 2 genuine gaps it built — cap-77
-(serve-AND-EXECUTE, the Phase-1 residual) + comp-17 (US-7 stock-pak MISS
-fall-through). cap-77/comp-17 are `[manual]` rows PENDING the acceptance launch.
+**Phases 1–2 are built and acceptance-confirmed.** Phase 1 (the two-hook
+resolution seam) is acceptance-closed (`2b0bd1b`). Phase 2 (author surface) is 6/6
+and live-verified: steps 6 (`a3961df`), 7 (`3cc6a67`), 8 (`c39ac3a`), 8b
+(`b7ae899`), 8c (`2259a76`), 9 (`fe879d0` — the C++ mirror, cap-76 parity rows ALL
+PASS live). The full `kcdx.assets.*` surface is live on BOTH languages, one shared
+resolution path, full parity. Proven live: replace-vanilla (sidecar), add-new
+(loose lane, HOOK 2 serves bytes), cross-mod, conflict, stock-pak transparency
+(US-7, COMP-17 PASS).
 
-**Owed:** TWO acceptance launches confirm the `[manual]` rows — step-9's cap-76
-boot rows (the engine + cap-76.dll are built; they self-report at boot) and
-step-10's cap-77 serve-execute (a save-load gesture) + comp-17 (boot). The
-in-game register/replace SERVE remains DEFERRED → Phase 11 on BOTH surfaces
-(KI-0005, the boot-cache lifecycle gap — the DllMain Lua VM unlocks it). With the
-launches confirmed, the asset system is complete through Phase 3.
+**Phase 3 is NOT complete — and we are NOT deferring the gap.** Step 10 landed the
+matrix + cap-77 + comp-17 (CAP-77-keyed + COMP-17 PASS), but ONE core acceptance
+criterion is UNCONFIRMED: **a served `.lua` actually EXECUTING** (design §3 — the
+handle-consumed-lane completeness; the highest-value case for a *scripting* TC).
+The serve MECHANISM is proven (CAP-73 — bytes are served), but whether a served
+`.lua` then RUNS through this seam has never been confirmed, and it may be a
+**CAPABILITY gap, not just a test-vehicle gap** — the open question is whether
+CryEngine's Lua `require`/`dofile` routes through `CCryPak::FOpen` (the path HOOK 2
+intercepts) at all. This is **KI-0006**, being closed NOW via an instrumented
+probe (a driver `.lua` that `require`s a served asset + instrumentation on whether
+HOOK 2 serves the require). Until KI-0006 closes, `.lua` REPLACEMENT is not
+confirmed to work — so the asset system is NOT complete.
+
+**Also owed:** step-9's cap-76 boot rows confirmed live (`fe879d0`, all PASS); the
+in-game register/replace SERVE for a boot-cached asset remains DEFERRED → Phase 11
+(KI-0005, the boot-cache lifecycle gap — a user-approved deferral, distinct from
+KI-0006 which we are NOT deferring).
 
 Two design gaps were caught + settled mid-build (not assumed): the **runtime-store
 mechanism** (§5.1 — the RCU `asset_namespace` store, settled by consult) and

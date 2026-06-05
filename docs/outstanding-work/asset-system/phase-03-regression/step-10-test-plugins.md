@@ -1,6 +1,6 @@
 # Phase 3 step 10 — permanent asset-system test plugin(s) + matrix rows
 
-**Status: DONE.** Ledger: [`README.md`](README.md) → step 10.
+**Status: NEEDS REWORK.** Ledger: [`README.md`](README.md) → step 10. The matrix + cap-77 + comp-17 landed (`2087368`; CAP-77-keyed + COMP-17 PASS), but a CORE acceptance criterion is UNCONFIRMED: a served `.lua` EXECUTING (the serve-AND-EXECUTE case — design §3, the handle-consumed-lane completeness). The `sl_saveload.lua` vehicle was falsified at the `23-11-37` acceptance launch; the gap is **KI-0006** (the serve-execute vehicle AND whether the seam supports `.lua` execution at all — does CryEngine Lua route through `CCryPak::FOpen`?), being closed NOW (NOT deferred — a known capability/acceptance gap is fixed at its source). Returns to DONE when KI-0006 lands a confirmed serve-AND-EXECUTE row.
 
 **Scope (settled 2026-06-04):** 4 of 6 cases (US-1, add-new, US-3, US-4) already
 covered by earlier steps' same-change tests; step 10 built the 2 genuine gaps —
