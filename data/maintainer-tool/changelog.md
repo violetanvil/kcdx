@@ -3,6 +3,25 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-05 — the save spine supports a BATCH mutation (bulk re-verify, D32)
+
+The `/ui-design` pass for the verification engine surfaced one functional gap the TRD should
+own (reconciled here via the `/ui-design` §E rectifying pass — user-approved): the save spine,
+designed one-mutation-per-transaction (D5/D16, law 5), also supports a **batch mutation**. The
+bulk re-verify (s08, the verification report worklist) commits **N audit-trio UPDATEs as ONE
+atomic transaction** with **one batched field-delta confirm**, reusing the spine at batch scale
+(same validator gate, same deferred-commit + D21 robust rollback — **all-or-nothing**, one row
+failing rolls back the whole batch, one git commit/push). The batch is all-UPDATE (re-verify
+never creates a row), so the new-row approval gate (law 8/AP18) does not apply. "One mutation =
+one transaction" now reads "one confirmed UNIT = one transaction" (a single edit OR an
+explicitly-selected batch).
+
+**Integrated in:** §7 (the save-spine paragraph), §10 D32.
+**Why:** s08's batched bulk-re-verify confirm needs a save-spine that batches; without this the
+TRD's law-5 "one mutation per transaction" reads against the batch path (an executor builds it
+wrong, or a reviewer flags the batch as a law-5 violation). The functional contract belongs in
+the TRD, not only the s08 screen spec (`spec-conformance.md`).
+
 ## 2026-06-05 — verification-engine follow-on forks (settled by `/plan` decomposition)
 
 Decomposing the verification engine (D24–D30) surfaced three forks `/plan` could not resolve
