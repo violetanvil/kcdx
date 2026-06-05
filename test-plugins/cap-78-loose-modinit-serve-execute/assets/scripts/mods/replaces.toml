@@ -1,0 +1,19 @@
+# File-scope sidecar (one sibling asset, no `file` key — asset design §4.2).
+# Declares the co-located ki6_loose_modinit.lua overlay replaces the mod-init
+# vpath of the same name. Under declaration-required keying (§4.1) THIS line is
+# why the file overlays the target — not a path coincidence; an undeclared file
+# replaces nothing.
+#
+# The target is the mod-init vpath the engine RUNS right after scripts/main.lua
+# for every installed mod (wiki KM-A-3) — chosen because a LOOSE copy of it (the
+# cap-ki6-loose-modinit fixture) opens via CCryFile::Open -> ICryPak::FOpen slot
+# 36 (HOOK 2's lane, recon F2), so kcdx can win the open and serve THIS overlay.
+# Whether the mod-init open actually routes through HOOK 2 is the probe's
+# checkable unknown — observed via the PROBE KI6 open log + the two markers.
+#
+# NOTE (the keyed-vpath is the engine's virtual open path, observed-correctable):
+# scripts/mods/<modid>.lua is the documented + pak-fixture-confirmed internal
+# vpath. If the live PROBE KI6 open log shows the engine opens the loose file at a
+# different normalized vpath, re-key this `replaces` to that observed vpath.
+[[asset]]
+replaces = "scripts/mods/ki6_loose_modinit.lua"

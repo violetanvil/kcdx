@@ -1,0 +1,64 @@
+# CAP-78 — a SERVED .lua at the mod-init vpath actually EXECUTES through
+# HOOK 2's loose-open lane.
+#
+# This is the serve-AND-EXECUTE vehicle the asset seam was owed. The prior cap-77
+# vehicles (scripts/main.lua, scripts/startup/sl_saveload.lua) were FALSIFIED:
+# main.lua is opened-not-rerun mid-game, and sl_saveload.lua was never opened on
+# a Continue/Load gesture. The re-grounded static fact (wiki KM-A-3 + the
+# asset-loadpath analysis): the engine RELIABLY runs scripts/mods/<modid>.lua via
+# mod-init for every installed mod, every boot, AND a LOOSE .lua opens via
+# CCryFile::Open -> ICryPak::FOpen slot 36 — HOOK 2's exact lane. So the vehicle
+# is a mod whose <modid>.lua is LOOSE, with a kcdx overlay of that vpath.
+#
+# This plugin ships:
+#   * assets/scripts/mods/ki6_loose_modinit.lua — the OVERLAY .lua. Its file
+#       scope calls System.LogAlways("KCDX_KI6_OVERLAY_SERVED_AND_RAN") — the
+#       DISTINCT marker that proves kcdx's overlay BYTES executed (vs the
+#       original loose file's KCDX_KI6_MODINIT_RAN).
+#   * assets/scripts/mods/replaces.toml — the no-code sidecar declaring the
+#       overlay replaces the mod-init vpath scripts/mods/ki6_loose_modinit.lua
+#       (declaration-required keying, asset design §4.1/§4.2).
+#   * plugin.lua — the PASSIVE boot self-report: assert the overlay asset is
+#       present + resolvable under this plugin's assets/ (the keying half is the
+#       agent's overlay_entry grep; the EXECUTE half is the agent's post-launch
+#       game-log read of the two markers).
+#
+# Test mode: [manual] in-game (mod-init runs on a boot that loads the world —
+# the engine runs scripts/mods/<modid>.lua right after scripts/main.lua). The
+# passive keying check self-reports at boot; the serve-AND-EXECUTE confirmation
+# is the agent's post-launch read of kcd.log for the two markers + kcdx-dev.log
+# for the PROBE KI6 open log. The plugin NEVER reports PASS for the EXECUTE
+# before a marker is confirmed (a non-falsifiable PASS is the bar this clears).
+#
+# THEORY-INDEPENDENT outcome→meaning map (this row IS the probe):
+#   KCDX_KI6_OVERLAY_SERVED_AND_RAN present → HOOK 2 served kcdx's overlay bytes
+#       AND they EXECUTED → SERVE-AND-EXECUTE PROVEN, the seam acceptance closes.
+#   only KCDX_KI6_MODINIT_RAN present → the engine ran the ORIGINAL loose file;
+#       HOOK 2's overlay did NOT win the open → mod-init bypassed HOOK 2 (a
+#       capability finding) → re-observe via the PROBE KI6 open log.
+#   neither marker present → the engine did not run the mod's init at all →
+#       fixture structure wrong (mod.manifest / mod_order.txt / loose placement).
+# This FALSIFIES "the mod-init open routes through HOOK 2" (the "only MODINIT_RAN"
+# outcome is a designed-for result that kills the theory).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_78_loose_modinit"
+display_name        = "CAP-78 served .lua at the mod-init vpath EXECUTES through HOOK 2"
+author              = "ts"
+description         = "A SERVED .lua at the mod-init vpath (scripts/mods/<modid>.lua) actually EXECUTES through HOOK 2's loose-open lane — a kcdx overlay (declarative replaces.toml sidecar) of a loose mod-init script carries a DISTINCT file-scope marker; PASS iff the overlay marker reaches kcd.log when the engine runs the mod-init chunk. The KI-0006 serve-AND-EXECUTE vehicle the cap-77 candidates could not reach. [manual]/in-game: the passive keying check self-reports at boot; the agent reads kcd.log for the two markers (overlay vs original) after a boot-into-world."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+# Only the boot-checkable passive row is a plugin test_name (it self-reports via
+# kcdx.test.report at boot). CAP-78-serve-execute is the agent's post-launch
+# game-log read (the two markers) — a README matrix row, NOT a plugin test_name,
+# the same shape as cap-77's manual serve-execute row. The plugin never reports a
+# PASS for the EXECUTE before a marker is confirmed.
+test_names          = ["CAP-78-keyed"]
+
+[entrypoints]
+lua    = "plugin.lua"
+assets = "assets/"
