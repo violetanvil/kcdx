@@ -15,7 +15,7 @@ kcdx's `build.ps1`.
 | Step | Status | Commit |
 |---|---|---|
 | [2.1 [FE] PE-section scanning foundation + the 4 verdict types](step-1-fe-pe-section-foundation.md) | DONE | FE:1459367 |
-| [2.2 [FE] The minimal in-browser x86 decoder (RIP-relative `disp32` follow)](step-2-fe-x86-decoder.md) | NOT STARTED | — |
+| [2.2 [FE] The minimal in-browser x86 decoder (RIP-relative `disp32` follow)](step-2-fe-x86-decoder.md) | DONE | FE:66f4716 |
 | [2.3 [FE] The 4 pure-byte kind checks + the JS↔Python agreement test](step-3-fe-pure-byte-checks.md) | NOT STARTED | — |
 | [2.4 [FE] The 2 derivation-kind checks + the anchor-dependency DAG ordering](step-4-fe-derivation-checks-dag.md) | NOT STARTED | — |
 | [2.5 [FE] s02 per-module link table + version-match gate + the 7 verify states](step-5-fe-s02-link-table.md) | NOT STARTED | — |
