@@ -42,6 +42,8 @@ invented.
 | `verified_date` | `field row (editable)` → `text well` (`YYYY-MM-DD`) | audit trio | `edit_field(...)` |
 | `evidence_kind` | `field row (editable)` → `Select` | audit trio (5-value ranked enum) | `edit_field(...)` |
 | six survival columns | `field row (editable)` ×6 | `survival_aob` … `survival_expect_unique` | `edit_field(...)` |
+| **Check-vs-DLL verdict** | `verdict badge` (+ reserved detail line) | the per-kind static check result against the linked, version-matching DLL | — (advisory result; the override is `accept_unverified()` → s06) |
+| `[show matches]` (Ambiguous only) | `button` (subtle) | the callsite AOB's N `.text` match locations | `show_match_locations()` |
 | Revert-field | `button` (subtle) per dirty field | — | `revert_field(name)` |
 | `[Review changes (N)]` | `button` (primary) | enabled when ≥1 dirty AND valid | `review_changes()` → s06 |
 
@@ -85,6 +87,40 @@ authoring.
 a resolver failure), a `warning banner` (`Alert`) notes *"Not verified against a game DLL."*
 The edit still proceeds; the warning is advisory. A resolver failure surfaces the same way,
 with the "I accept — save anyway" override carried into s06 (D15).
+
+**The per-author static check (TRD D24–D27, D31).** When a **version-matching** DLL is linked
+(the s02 link table), the editor runs the row's **per-kind static survival check** against the
+DLL's bytes IN THE BROWSER (no upload) and renders the `verdict badge` inline, in the row's
+verification region — **directly below the kind-relevant fields the check is about** (`rva` /
+`signature` for a `function`; `survival_aob` for a `callsite` / `instruction_anchor`;
+`survival_anchor_string` for a `string_anchor`; `survival_slot_count` for a `vtable_base`;
+`survival_rule` for a `data_slot`). The check re-runs as those fields change (a dirty
+re-check). The badge's space is **always reserved** (law 1 — no reflow when the verdict
+appears/changes). The four verdicts (glyph+text, law 7):
+
+- **Unchanged** ✓ — *"matches the binary at `<resolved site>`"* (the authored value resolves
+  uniquely / hashes equal in the linked DLL).
+- **Changed** — *"does NOT match the binary (`<what was observed>`)"* (the body hash differs /
+  the AOB has zero hits / the anchor literal is gone). Advisory; the override (`accept_unverified`)
+  carries to s06.
+- **Ambiguous** (callsite/anchor multiple hits) — the **warn-and-steer** verdict (TRD D31):
+  *"pattern matches `<N>` sites in `.text` — add context bytes to make it unique"* + a
+  `[show matches]` affordance listing the `<N>` match locations (a nudge to extend the
+  `survival_aob` / `signature` field right here). Advisory — never refuses; the maintainer
+  extends the pattern and the check re-runs, or overrides.
+- **CannotCheck** — *"can't check this kind against the DLL (`<reason>`)"* (a `vtable_index`,
+  whose survival is deferred; or a dependent kind whose anchor is itself Changed — the
+  transitive case, TRD `fingerprint-per-kind.md` anchor-dependency).
+
+**No matching DLL linked → no badge** — the check is **unavailable**, the existing "Not verified
+against a game DLL" advisory stands (the degraded state, TRD D30); authoring proceeds.
+
+**evidence_kind from the check (TRD D29).** A passing static check (Unchanged) refines the
+audit trio's `evidence_kind` from its auto-filled default (`maintainer_ghidra`, set when
+`last_verified_at_version` is filled) to the tier the check establishes — a browser
+AOB-uniqueness pass → `pattern_scan`. The maintainer can still edit `evidence_kind`; the check
+sets the strongest tier it proves, never over-claims. (A `live_production` tier comes only from
+the in-game live check, ingested via s08 — not from a browser static check.)
 
 ## Field relevance by kind
 Each `kind` populates only certain columns; the rest stay NULL (`../../seeds/policy.md`
@@ -141,6 +177,15 @@ sends nothing (it was NULL anyway); a shown stray with a value is editable as no
   offered (e.g. a non-selected compare column before `[Edit]`): fields render read-only.
 - **Unverified / resolver-failure** — the advisory `warning banner` (`Alert`) + the override
   carried to save (law 4, D15).
+- **Check verdict states** (the `verdict badge`, when a version-matching DLL is linked — TRD
+  D24–D31): **no badge** (no matching DLL linked → degraded, the unverified advisory stands);
+  **checking** (a brief loading state in the reserved badge region while the per-kind check runs
+  over the DLL bytes — law 1, the region is reserved); **Unchanged** ✓ / **Changed** /
+  **Ambiguous** (+ `[show matches]` steer) / **CannotCheck** — each with its reserved detail
+  line; the badge re-evaluates as the kind-relevant fields change (a dirty re-check). All
+  advisory (law 4) — `[Review changes]` is NOT gated on the verdict (only on validator
+  validity, law 6); a Changed/Ambiguous verdict warns + carries the "I accept — save anyway"
+  override to s06, it never disables save.
 - **Edge content** — a long `signature` / survival AOB wraps within its well; the field
   list scrolls; many survival columns stay grouped under a "Survival" sub-heading so the
   trio + resolve facts aren't buried. A `kind` with few used fields renders a short grid

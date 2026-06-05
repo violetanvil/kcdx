@@ -4,6 +4,43 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-05 — the verification-engine surfaces (link table · per-author check · s08 worklist)
+
+The visual + interaction layer for the verification engine (functional TRD D24–D31, US-11).
+Four surfaces, settled through the `/ui-design` dialogue:
+
+- **Layer 1 (`design.md`):** **law 4 extended** from version-resolve-advisory to cover the
+  per-author verification checks + the ingested live report (all advisory, no-upload, never
+  block; an Ambiguous callsite steers, never refuses); **four new component silhouettes** —
+  `per-module link row`, `verdict badge` (Unchanged / Changed / Ambiguous / CannotCheck, glyph+
+  text per law 7), `ingest progress bar` (determinate + row count), `batch field-delta list`
+  (the bulk-re-verify confirm); the `version & verify surface` silhouette grew the link table +
+  link-to-create; the **screen index + navigation map** gained s08.
+- **s02 (extended):** the one-shot "check against a local DLL" control became the **per-module
+  DLL link table** (link/re-pick per module each session, the resolved version + a version-match
+  indicator — D30) + the **link-to-create prompt** (a linked DLL newer than the entity's rows →
+  inline "[Add a version row at `<v>`]" → s05 prefilled, user-action per law 3, AP18 per law 8).
+  The verify states grew the link/match/mismatch/degraded set.
+- **s04 (extended):** the **per-author static check verdict** renders inline (the `verdict
+  badge`) below the kind-relevant fields it checks, re-evaluating on a dirty edit; the
+  **Ambiguous** verdict shows match locations + steers to extend the pattern (D31); a passing
+  check refines `evidence_kind` (→ `pattern_scan`, D29); advisory — never gates `[Review
+  changes]` (law 4). New verdict states added (no-badge / checking / the four verdicts).
+- **s08 (new):** the **verification report worklist** — import the in-game plugin's `report.json`
+  via the File API (D31), a determinate **ingest progress bar**, a pass/fail split, and **batched
+  bulk re-verify** → one s06 batch-delta confirm → one atomic transaction (law 5 at batch scale;
+  re-verify is an UPDATE, so law 8 doesn't apply). Full state set incl. empty / ingesting / error
+  (malformed report, stale-id row) / all-pass / all-fail / long-report.
+
+**Integrated in:** `design.md` (law 4, component silhouettes, screen index, nav map),
+`screens/s02-entity-detail.md`, `screens/s04-field-editor.md`, `screens/s08-verification-worklist.md`
+(new), `screens/README.md` (index).
+**Why:** the verification engine's 4 new UI surfaces had no screen specs (s02's covered only the
+version-read control); `/plan` HALTED on the gap and the user chose to author them via
+`/ui-design` first. These are the build authority each UI step conforms to
+(`spec-conformance.md`). One functional gap surfaced — the batched bulk-re-verify confirm
+(law-5 save-spine designed one-at-a-time) — recorded for the §E TRD rectifying pass.
+
 ## 2026-06-04 — s04 field-editor: per-field tooltips + kind-conditional field visibility
 
 - **s04 §"Contents" / §"Region & position" / new §"Field relevance by kind"** — the field editor

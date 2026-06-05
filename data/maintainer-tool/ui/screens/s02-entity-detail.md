@@ -23,7 +23,9 @@ s01.
 |---|---|---|---|
 | Entity title | `title` text | `name` · `kcdx_id` (mono) | — (read-only, law 7) |
 | Identity block | `field row (read-only)` ×2 | `kcdx_id`, `name` | — (never editable, law 7) |
-| **Version & verify surface** | `version & verify surface` (`Select` + a "check against a local DLL" control) | the targeted game version (a `game_versions` tag); the advisory verify state | `pick_version(tag)` / `check_local_dll()` (client-side, D15) |
+| **Version & verify surface** | `version & verify surface` (`Select` version dropdown + the per-module DLL link table) | the targeted game version (a `game_versions` tag); the per-module linked DLL + resolved version; the advisory verify state | `pick_version(tag)` / `link_dll(module)` / `repick_dll(module)` (client-side, D15/D24–D30) |
+| Per-module link rows | `per-module link row` ×M (one per module) | each module's linked DLL filename + resolved version + version-match indicator | `link_dll(module)` / `repick_dll(module)` |
+| Link-to-create prompt | `warning banner` (advisory, info) | shown when a linked DLL's version is uncovered by the entity's rows | `open_new_version(source=selected_row, version=<dll_version>)` → s05 |
 | **Lifecycle — supersede** | `field row (editable)` (`Select` + version) | `superseded_by` (target entity) + `superseded_at_version` | `edit_lifecycle(...)` → s06 |
 | **Lifecycle — deprecate** | `field row (editable)` (`Checkbox` + version + `Select`) | `is_deprecated` + `deprecated_at_version` + `deprecation_replacement` | `edit_lifecycle(...)` → s06 |
 | `notes` | `text well` (`TextInput`/`Textarea`) | `notes` (entity-level) | `edit_lifecycle(...)` → s06 |
@@ -34,15 +36,36 @@ s01.
 | `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
 | Selected-row editor | `s04 field editor` (inline) | the selected version row | (see s04) |
 
-**The version & verify surface (the relocated s07).** A **version dropdown** (`Select`,
-populated from the server-known `game_versions` tags) is the default way the maintainer
-states which version an edit targets; the picked version default-selects/marks the matching
-row. A **"check against a local DLL"** control runs the **client-side** `.rdata` scan (TRD
-D15): the browser reads a locally-picked DLL via the File API and resolves the version
-in-page — only the version tag is used, the DLL is never uploaded. Resolving marks the
-matching row "checks out against your DLL: `<version>`". **Advisory, never required**
-(law 4): with just a picked version (or none → newest-row default — TRD D10), every flow
-proceeds; an unresolved/unverified state warns and is overridable downstream (s06).
+**The version & verify surface (the relocated s07 + the verification engine, TRD D24–D31).**
+A **version dropdown** (`Select`, populated from the server-known `game_versions` tags) is the
+default way the maintainer states which version an edit targets; the picked version
+default-selects/marks the matching row.
+
+Beneath it, a **per-module DLL link table** (`per-module link row` ×M — one per module the
+entity's rows reference; today only `WHGame.dll`). Each row lets the maintainer **link** a
+local DLL for that module (browser File API — the DLL is read in-page, **never uploaded**, TRD
+D15/D26) and shows the linked DLL's filename + its **resolved version** (the `.rdata` version
+scan) + a **version-match indicator** (✓ matches the selected row's version / ≠ no match —
+glyph+text, law 7). The link is **re-picked each session** (no persisted path — TRD D30); a
+`[re-pick]` swaps the DLL.
+
+Linking a version-matching DLL is what enables the **per-author static verification check**
+(the per-kind survival check against the DLL's bytes) — whose verdict renders inline in **s04**
+(the field editor, where the `rva` / `signature` being checked are authored), NOT here. The
+link table is the verification *context*; the per-row verdict lives where the row is authored.
+
+**Link-to-create (TRD D30).** When a linked DLL resolves to a version **not covered** by any of
+the entity's `address_versions` rows (a build newer than the DB knows), the surface shows an
+inline advisory prompt (`warning banner`): *"`<dll>` is `<version>` — this entity has no row for
+it. [Add a version row at `<version>`]"*. The maintainer clicks (a user action, law 3 — never
+auto-opened) → the s05 create-version overlay, **prefilled at the DLL's version**
+(`valid_from_version = <dll version>`) → author `rva`/`signature` → the check runs against the
+linked DLL → on a passing check the audit trio auto-fills (TRD D29) → save (AP18 confirm, law 8).
+
+**Advisory, never required** (law 4): with just a picked version (or none → newest-row default —
+TRD D10), every flow proceeds; an unresolved/unverified/Changed/Ambiguous state warns and is
+overridable downstream (s06); no matching DLL linked → the check is unavailable + noted (a
+degraded state — TRD D30), authoring still proceeds.
 
 **Lifecycle pair-integrity** (`policy.md`, enforced by the shared validator — law 6):
 supersede sets `superseded_by` AND `superseded_at_version` together (both-or-neither, no
@@ -59,10 +82,17 @@ fields together and the validator's verdict inline; a partial pair is a validati
   (On phone there is no empty detail — you arrive only by drilling into an entity.)
 - **Loading** — an entity's version rows loading (a brief indication in the version area).
 - **Error (entity load failed)** — *"Couldn't load entity `<name>`: `<reason>`."* + retry.
-- **Verify states** (the version&verify surface): a **picked version** (the default), or
-  **"checks out against your DLL: `<v>`"** (client resolve), or **"not verified against a
-  DLL"** (advisory, normal — never a block), or **"couldn't resolve a version from that DLL
-  (interns disagree)"** (advisory + override; system-caused copy naming the cause).
+- **Verify states** (the version&verify surface): a **picked version** (the default); a
+  **module not linked** — *"`<module>` not linked — link a DLL to verify"* (degraded, never a
+  block, TRD D30); a **linked DLL resolving** — the per-module link row shows a brief
+  loading indication while the browser reads the DLL's bytes (an 86 MB ArrayBuffer + the
+  `.rdata` version scan — law 1, the row reserves its space); a **linked + version match** —
+  *"`<dll>`: `<version>` ✓ matches"* (the per-author check is now available in s04); a **linked
+  + version mismatch** — *"`<dll>`: `<version>` ≠ no row at this version"* (which surfaces the
+  link-to-create prompt); a **resolve failure** — *"couldn't resolve a version from that DLL
+  (interns disagree)"* (advisory + override; system-caused copy naming the cause); a **non-PE /
+  unreadable pick** — *"that file isn't a readable DLL (`<reason>`)"* (system-caused). All
+  advisory (law 4) — none blocks authoring.
 - **Disabled** — lifecycle edits on an already-superseded entity follow `policy.md` (the
   successor chain); the validator gates an illegal transition with an inline error; the
   control is not silently hidden.

@@ -113,11 +113,21 @@ Numbered, enforceable. A screen cites "law N". Each states what it FORBIDS.
 4. **Verification is advisory; the maintainer is final authority.** The version an edit
    targets comes from a **version dropdown** (the default — server-known game versions) or
    from a **client-side check against a local DLL** (the browser reads a locally-picked DLL
-   and runs the `.rdata` scan in-page, sending only the resolved version tag — TRD D15).
-   Either path is advisory: an unresolved/unverified state WARNS, never blocks, and carries
-   an explicit **"I accept — save anyway"** override. **Forbids:** a hard block on a
-   missing/unverified version; a silent bypass with no explicit maintainer acknowledgment;
-   uploading a DLL to the server.
+   and runs the `.rdata` scan in-page, sending only the resolved version tag — TRD D15). The
+   same client-side, no-upload posture extends to the **per-author verification checks** (the
+   per-kind static survival check against the linked DLL's bytes — TRD D24–D27) and to the
+   **ingested live-verification report** (the in-game plugin's verdicts — TRD D28): every
+   verification result — version-resolve, a per-kind static verdict (Unchanged / Changed /
+   Ambiguous / CannotCheck), an imported live verdict — is **advisory**. An
+   unresolved/unverified/Changed/Ambiguous state WARNS, never blocks, and carries an explicit
+   **"I accept — save anyway"** override; an Ambiguous callsite STEERS the maintainer to
+   extend the pattern (TRD D31), it does not refuse. A check runs only against a linked DLL
+   whose resolved version **matches** the row's version; no matching DLL → the check is
+   **unavailable + noted**, never a block (degraded — TRD D30). **Forbids:** a hard block on a
+   missing/unverified version OR a Changed/Ambiguous check verdict; a silent bypass with no
+   explicit maintainer acknowledgment; uploading a DLL (or a report whose verdicts re-verify
+   rows) without the per-mutation confirm (law 5); auto-acting on a verification result
+   (law 3).
 
 5. **A mutation is one atomic, confirmed transaction.** Every save runs validate → write DB
    → export CSVs → round-trip → commit + push (server-side, TRD D16) as ONE transaction,
@@ -293,9 +303,25 @@ diff cell) are app components built FROM these.
   nothing-changed) with its override / acknowledge affordance.
 - **toast** → `Notification`/`notifications` — top-anchored, transient: last-save result +
   non-blocking notices (replaces the dissolved status bar).
-- **version & verify surface** → the s02-header composite: the version `Select` + a "check
-  against a local DLL" control (browser File API → the client-side `.rdata` scan, D15) + the
-  advisory verify state.
+- **version & verify surface** → the s02-header composite: the version `Select` + the
+  **per-module DLL link table** (browser File API → the client-side `.rdata` version scan +
+  the per-kind static checks, D15/D24–D30) + the advisory verify state + the link-to-create
+  prompt.
+- **per-module link row** → a `Group` row per module: the module name (mono) · the linked
+  DLL's filename + resolved version (or "not linked") · a `[re-pick]`/`[link…]` affordance ·
+  a **version-match indicator** (glyph+text — "✓ matches row" / "≠ no match", never
+  color-alone, law 7). Re-pick each session (D30); no persisted path shown.
+- **verdict badge** → a `Badge`+text composite rendering a per-kind check verdict — one of
+  **Unchanged** / **Changed** / **Ambiguous** / **CannotCheck** — as glyph + label (never
+  color-alone, law 7), with a reserved detail line beneath (law 1). The advisory carrier for
+  the static check result in s04 and the live verdict in s08.
+- **ingest progress bar** → a determinate `Progress` + count label ("Parsing report… N / M
+  rows") shown while s08 parses an imported report; resolves in place to the worklist (law 1
+  — it occupies the worklist's region).
+- **batch field-delta list** → the s06 confirm composite at batch scale: a scrollable list of
+  per-row `field: old → new` deltas (one group per affected row) under one confirm action —
+  the bulk-re-verify surface (law 5 at batch scale; the single-row `field-delta list` is its
+  one-row case).
 - **drill-down back** → a `‹ back` affordance (phone only) returning to the navigator.
 
 ---
@@ -310,10 +336,17 @@ diff cell) are app components built FROM these.
 | [`screens/s04-field-editor.md`](screens/s04-field-editor.md) | Field editor (view/edit a version row) | detail | v1 |
 | [`screens/s05-create.md`](screens/s05-create.md) | Create new entity / new version | overlay (modal/sheet) + detail | v1 |
 | [`screens/s06-save-confirm.md`](screens/s06-save-confirm.md) | Save confirm (field delta + approval) + the toast/overlay concern | overlay | v1 |
+| [`screens/s08-verification-worklist.md`](screens/s08-verification-worklist.md) | Verification report worklist (import the in-game plugin's report → pass/fail → batched bulk re-verify) | right pane / phone drill-down | v1 |
 
 *(s07 — the desktop status bar — is dissolved in the web pivot: its version/verify content
 moved into s02's header; its save-result + notices became the top-anchored toast, specified
 in s06's overlay concern.)*
+
+*(s08 is the verification engine's review surface — TRD D28/US-11. The per-module DLL link
+table + the link-to-create prompt live in s02's verify surface; the per-author static check
+verdict lives inline in s04; s08 is the BULK live-report review screen. The version&verify
+surface, the s04 check verdict, and s08 together cover the verification engine's UI — TRD
+D24–D31.)*
 
 ---
 
@@ -321,7 +354,7 @@ in s06's overlay concern.)*
 
 ```
 s01 navigator ── the home view (phone) / left pane (wide); search + filters + list;
- │                [+ New entity ▸ s05]
+ │                [+ New entity ▸ s05]   [Import verification report ▸ s08]
  │  select/tap an entity ──▶ s02 entity detail (right pane / drill-down)
  │
  └─ s02 entity detail ── header (identity read-only + the version & verify surface) +
@@ -342,10 +375,21 @@ s01 navigator ── the home view (phone) / left pane (wide); search + filters 
                     [Save] ──▶ one atomic commit+push ──▶ toast "Saved" (or "blocked — Retry")
                     [Cancel] ──▶ back to s04, nothing lands
 
+s08 verification worklist ── [Import verification report] (s01) ──▶ pick report.json (File API)
+ │   ──▶ ingest progress (N/M rows) ──▶ the worklist (pass/fail split, every row + verdict)
+ │   select passing rows ▸ [Re-verify] ──▶ s06 BATCH confirm (per-row delta list, one txn)
+ │   a failing row ──▶ s02/s04 to fix (user-action navigation, law 3)
+ │   ‹ back (phone) ──▶ s01
+
+s02 verify surface (the per-module DLL link table) ── link/re-pick a DLL per module (D30);
+     a linked DLL newer than the entity's rows ──▶ inline "[Add a version row at <v>]" ──▶ s05
+     create-version, prefilled at the DLL's version (user-action, law 3; AP18 confirm, law 8).
+     A per-author STATIC check verdict renders inline in s04 (the row being authored).
+
 overlay layer ── confirm/create/dialogs (centered modal on wide, full-screen sheet on phone);
      toast (top-anchored, transient: save result + notices). Floats above; never navigates
-     (law 3). The version & verify surface (version dropdown + client DLL check, D15) lives
-     in s02's header, NOT a global bar.
+     (law 3). The version & verify surface (version dropdown + the per-module DLL link table +
+     the client checks, D15/D24–D30) lives in s02's header, NOT a global bar.
 ```
 
 ---

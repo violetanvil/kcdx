@@ -13,7 +13,12 @@ reference it by name (a value or law duplicated into a screen is drift).
 | s04 — Field editor (view / edit a version row) | detail | [s04-field-editor.md](s04-field-editor.md) |
 | s05 — Create new entity / new version | overlay (modal/sheet) + detail | [s05-create.md](s05-create.md) |
 | s06 — Save confirm (field delta · approval) + the toast/overlay concern | overlay | [s06-save-confirm.md](s06-save-confirm.md) |
+| s08 — Verification report worklist (import · pass/fail · batched bulk re-verify) | right pane / phone drill-down | [s08-verification-worklist.md](s08-verification-worklist.md) |
 
 *(s07 — the desktop status bar + DLL link — is **dissolved** in the web pivot: its
 version/verify content moved into s02's header (the version&verify surface); its
 save-result + notices became the top-anchored toast, specified in s06's overlay concern.)*
+
+*(s08 — the verification worklist — is NEW, the verification engine's bulk review surface
+(TRD D28/US-11). The per-module DLL link table + link-to-create live in s02's verify surface;
+the per-author static check verdict lives inline in s04. There is no s07.)*
