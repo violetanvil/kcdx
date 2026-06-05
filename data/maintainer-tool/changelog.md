@@ -3,6 +3,25 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-05 — survivor sweeps: §5 report-ingestion (D31b) + s08 verdict prose (D25)
+
+Two stale references an independent coverage re-derivation caught after the D25 correction +
+the D31 follow-on landed (`deletion-hygiene` — sweeping survivors of already-settled decisions):
+
+- **§5** — the report-ingestion unit was described "(frontend + a backend read seam)", superseded
+  by **D31b** (frontend File-API only, NO backend read seam). Swept to match D31b.
+- **`ui/screens/s08-verification-worklist.md` §"The verdict (per row)"** — the verdict mapping
+  still read in the superseded runtime-body-hash framing ("landed on real working code" /
+  "resolved to a body that no longer matches"). Re-grounded to the corrected **D25**:
+  `resolves+works` = on-disk hash matches (right version for this build) AND resolves into live
+  `.text` (reachable); `wrong-target`/`changed` = on-disk hash mismatches (build diverged);
+  `dead` = unreachable in live `.text`; not a runtime "does it still work" body hash.
+
+**Integrated in:** §5 (the report-ingestion unit), `ui/screens/s08-verification-worklist.md`.
+**Why:** the s08 screen spec is the build authority a UI step conforms to (`spec-conformance.md`);
+leaving the superseded verdict prose would have re-introduced the D25 drift at build time. The §5
+line was a pre-existing survivor of D31b's "no backend seam" decision.
+
 ## 2026-06-05 — D25 correction: "verify" = version-applicability + reachability, NOT a runtime body hash
 
 Phase-0 probe 0.4 (the in-game live-functional probe) + reading `src/survival.cpp` proved the

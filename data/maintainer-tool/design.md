@@ -291,7 +291,7 @@ Each new unit's single responsibility (`structure-by-responsibility.md`):
 - **The in-game verification plugin** (kcdx `test-plugins/`) — a suite-gated plugin whose ONE
   job is to drive the engine checker over every DB row and emit the JSON verification report
   (D28). A standing regression + the batch-sweep producer; governed by kcdx's `test-suite.md`.
-- **The report-ingestion unit** (frontend + a backend read seam) — its ONE job: parse an
+- **The report-ingestion unit** (frontend only — File-API client-side, NO backend read seam, D31b) — its ONE job: parse an
   imported verification report, present the worklist, and route each applied verdict through
   the existing save spine (D28). It authors nothing itself — it drives the existing
   validate→confirm→commit path with the report's verdicts; the data-core remains the sole

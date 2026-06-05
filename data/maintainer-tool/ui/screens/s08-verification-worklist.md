@@ -32,13 +32,18 @@ around it (law 2); `‹ back` (phone) returns to s01.
 | A failing row's `[Fix ▸]` | `button` (subtle) | the failing row | `select_entity(kcdx_id)` → s02 / s04 |
 | `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
 
-**The verdict (per row).** The in-game LIVE check reports one of (TRD D25/D28): **resolves+works**
-(the address resolved via the real engine path + landed on real working code) → the `verdict
-badge` reads **Unchanged**; **dead** (resolved to 0 / garbage) or **wrong-target** (resolved to
-a body that no longer matches) → **Changed**; **cannot-check** (the row's kind can't be checked
-this run — e.g. a deferred `vtable_index`) → **CannotCheck**. (The static `Ambiguous` verdict is
-an s04 author-time outcome, not a live-report one — s08's report carries live verdicts only.)
-The badge is glyph+text, never color-alone (law 7); the detail line names the cause.
+**The verdict (per row).** The in-game startup verification pass reports one of (TRD D25/D28):
+**resolves+works** (the entry's on-disk body hash matches the DB `content_hash` — the right
+version for this build — AND the address resolves into the live module's `.text` — reachable) →
+the `verdict badge` reads **Unchanged**; **wrong-target** / **changed** (the on-disk hash
+**mismatches** — the running build diverged from the DB's recorded version) or **dead** (the
+address does not resolve into live `.text` — unreachable) → **Changed**; **cannot-check** (the
+row's kind can't be checked this run — e.g. a deferred `vtable_index`, or no `content_hash`) →
+**CannotCheck**. (The verdict is version-applicability + reachability — NOT a runtime "does the
+code still work" body hash, per the corrected D25; the hash is computed on-disk. The static
+`Ambiguous` verdict is an s04 author-time outcome, not a report one — s08's report carries the
+startup-pass verdicts only.) The badge is glyph+text, never color-alone (law 7); the detail line
+names the cause.
 
 **Bulk re-verify = ONE batched confirm (law 5 at batch scale, TRD D28).** Selecting passing
 rows + `[Re-verify N rows]` opens an **s06 batch confirm** (the `batch field-delta list`): every
