@@ -14,8 +14,8 @@ findings are captured as durable process-output (`.claude/rules/working-artifact
 | [0.1 [FE] Probe: 86MB ArrayBuffer + full `.text` AOB scan in-browser](step-1-fe-probe-arraybuffer-scan.md) | DONE | 860a060 |
 | [0.2 [FE] Probe: minimal JS x86 decoder follows RIP-relative `disp32`](step-2-fe-probe-x86-decoder.md) | DONE | 384407d |
 | [0.3 [ENG] Probe: read the C++ pe_helpers surface (spans + disp32 follower?)](step-3-eng-probe-pe-helpers-surface.md) | DONE | fab2c7b |
-| [0.4 [TEST] Probe: the in-game reachability/version-applicability resolves+works/dead/wrong-target signal](step-4-test-probe-live-functional-signal.md) | DONE | (landed) |
-| [0.5 [CORE] Establish the cross-impl known-DLL fixture + known per-kind verdicts](step-5-core-cross-impl-fixture.md) | NOT STARTED | — |
+| [0.4 [TEST] Probe: the in-game reachability/version-applicability resolves+works/dead/wrong-target signal](step-4-test-probe-live-functional-signal.md) | DONE | 480c59c |
+| [0.5 [CORE] Establish the cross-impl known-DLL fixture + known per-kind verdicts](step-5-core-cross-impl-fixture.md) | DONE | (landed) |
 
 ## Phase verification gate
 

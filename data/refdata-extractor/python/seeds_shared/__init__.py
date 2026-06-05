@@ -49,6 +49,18 @@ from .version_resolver import (
     resolve_version,
     VersionResolveError,
 )
+from .cross_impl_fixture import (
+    load_fixture,
+    rows_for_kind,
+    expected_verdict,
+    FIXTURE_ROWS,
+    IN_SCOPE_KINDS,
+    VERDICTS,
+    VERDICT_UNCHANGED,
+    VERDICT_CHANGED,
+    VERDICT_AMBIGUOUS,
+    VERDICT_CANNOT_CHECK,
+)
 from .csv_exporter import (
     export_seeds,
 )
@@ -123,6 +135,10 @@ __all__ = [
     "build_survival_row", "survival_kind_form",
     "folded_av_cells", "FOLDED_SURVIVAL_COLS",
     "resolve_version", "VersionResolveError",
+    "load_fixture", "rows_for_kind", "expected_verdict", "FIXTURE_ROWS",
+    "IN_SCOPE_KINDS", "VERDICTS",
+    "VERDICT_UNCHANGED", "VERDICT_CHANGED", "VERDICT_AMBIGUOUS",
+    "VERDICT_CANNOT_CHECK",
     "export_seeds",
     "round_trip", "hash_curated_tables", "RoundTripError",
     "update_row_in_place", "append_row",
