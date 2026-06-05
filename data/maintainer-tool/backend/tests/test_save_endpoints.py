@@ -267,6 +267,27 @@ def test_deprecate_previews_valid(checkout, client_at):
     assert _db_hash(checkout) == db_before, "the deprecate preview wrote nothing"
 
 
+def test_edit_notes_previews_valid(checkout, client_at):
+    client = client_at(checkout)
+    db_before = _db_hash(checkout)
+    # Edit entity 1's notes -- a standalone curated prose column (no pair rule). The field delta
+    # surfaces the notes change; an UPDATE -> NOT AP18-gated; the preview writes nothing.
+    resp = client.post("/save/edit-notes", json={
+        "version_tag": GVT,
+        "kcdx_id": 1,
+        "notes": "verified against the 1.5 build",
+        "saved": {"notes": ""},
+        "prospective": {"notes": "verified against the 1.5 build"},
+    })
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valid"] is True, body
+    # The field-delta carries the notes change (record_kind "names").
+    assert _field(body, "notes") == ("", "verified against the 1.5 build"), body
+    assert "ap18_new_row" not in body, "edit-notes is an UPDATE, not AP18-gated"
+    assert _db_hash(checkout) == db_before, "the edit-notes preview wrote nothing"
+
+
 # ============================================================================
 # The D12 nothing-changed verdict fires for an identical new version preview.
 # ============================================================================

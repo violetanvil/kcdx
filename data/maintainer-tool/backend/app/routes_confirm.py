@@ -119,7 +119,7 @@ from .config import load_config
 from .csv_revert import CsvRevert
 from .routes_save import (
     UpdateVersionSave, CreateVersionSave, CreateEntitySave,
-    SupersedeSave, DeprecateSave,
+    SupersedeSave, DeprecateSave, EditNotesSave,
 )
 
 log = logging.getLogger(__name__)
@@ -178,6 +178,10 @@ class ConfirmSupersede(SupersedeSave, _AuthContext):
 
 
 class ConfirmDeprecate(DeprecateSave, _AuthContext):
+    pass
+
+
+class ConfirmEditNotes(EditNotesSave, _AuthContext):
     pass
 
 
@@ -531,6 +535,21 @@ def confirm_deprecate(
             is_deprecated=body.is_deprecated,
             deprecated_at_version=body.deprecated_at_version,
             deprecation_replacement=body.deprecation_replacement,
+            version=version, defer_commit=True))
+
+
+@router.post("/confirm/edit-notes")
+def confirm_edit_notes(
+        body: ConfirmEditNotes,
+        x_kcdx_author_name: Optional[str] = Header(default=None),
+        x_kcdx_author_email: Optional[str] = Header(default=None)):
+    """Confirm a notes edit: an UPDATE to the existing names row -- not AP18-gated."""
+    author = _resolve_author(body.author_name, body.author_email,
+                             x_kcdx_author_name, x_kcdx_author_email)
+    return _run_confirm(
+        body, entity_label=f"edit-notes kcdx_id={body.kcdx_id}", author=author,
+        write=lambda version: data_core.edit_notes(
+            load_config().out_dir, None, body.kcdx_id, body.notes,
             version=version, defer_commit=True))
 
 

@@ -42,6 +42,7 @@ create_version = _seeds_shared.create_version
 create_entity = _seeds_shared.create_entity
 supersede_entity = _seeds_shared.supersede_entity
 deprecate_entity = _seeds_shared.deprecate_entity
+edit_notes = _seeds_shared.edit_notes
 DbEditError = _seeds_shared.DbEditError
 
 # The read-for-display surface (read_api) the backend's read endpoints call

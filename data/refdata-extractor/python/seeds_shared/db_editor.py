@@ -975,3 +975,53 @@ def deprecate_entity(out_dir, dll_path, kcdx_id, *, is_deprecated=True,
         out_dir, dll_path, kcdx_id, edits,
         action="deprecate", log=log, work_dir=work_dir, version=version,
         defer_commit=defer_commit, validate_only=validate_only)
+
+
+def edit_notes(out_dir, dll_path, kcdx_id, notes, *, version=None, log=None,
+               work_dir=None, defer_commit=False, validate_only=False):
+    """Validate + atomically set the curated `notes` prose on the existing address_names
+    row `kcdx_id`, via the SAME DIRECT-DB names-UPDATE path supersede_entity /
+    deprecate_entity drive (_drive_names_lifecycle_edit, edits={"notes": notes}). notes is
+    a standalone prose column (USER + DEV -- schema.py USER_COLUMNS["address_names"]);
+    unlike the supersede/deprecate pairs it carries NO pair-integrity rule, so the only
+    validation is the whole-state validator's (the entity must exist + the prospective DB
+    state must validate -- the same gate the other lifecycle edits run, NOT reimplemented
+    here). This is an UPDATE to an approved entity, NOT a new row -- NOT AP18-gated (the
+    returned dict carries no ap18_new_row). The entity identity (id, name) is never mutated.
+
+    Parameters:
+      out_dir       -- the directory holding reference.sqlite + reference-dev.sqlite.
+      dll_path      -- the linked WHGame.dll the version resolver reads. Supply EXACTLY ONE
+                       of dll_path / version (the web backend passes version=, NO DLL --
+                       design D15).
+      version       -- a pre-resolved (tag, ordinal); when given, the DLL is not read.
+      kcdx_id       -- the entity id (int) whose notes are edited.
+      notes         -- the new notes text (str). Free text; '' CLEARS the notes (an empty
+                       cell == NULL on import). A None is written as '' (the cleared cell).
+      log           -- optional callable(str) for the applier's progress lines.
+      work_dir      -- optional scratch dir for the export + edit; a temp dir is created +
+                       removed when omitted. NOTHING is written under data/seeds/.
+
+    `defer_commit` (DEFAULT False): when True the notes edit lands under a HELD outer txn --
+    the returned "result" is a DeferredCommit handle the caller commits/rolls back later.
+
+    `validate_only` (the Save-PREVIEW seam): when True the prospective notes edit is
+    VALIDATED through the data-core's gate and the drive STOPS before any DB open -- the
+    returned "result" is the validator's {"tag","ordinal"} verdict, NO write.
+
+    Returns {"result": <apply result>, "action": "edit_notes", "kcdx_id": <int>} on
+    success (committed in immediate mode, HELD uncommitted in deferred mode; the validator's
+    verdict in validate_only mode). NO ap18_new_row -- this is an UPDATE.
+
+    Raises (no DB write occurs unless the apply reaches the per-DB BEGIN/COMMIT):
+      DbEditError  -- `kcdx_id` matches no existing entity in the exported seed.
+      RuntimeError -- the shared validator rejected the prospective DB state. The DB is
+                      byte-identical to before.
+      VersionResolveError -- a dll_path route whose .rdata version could not be resolved;
+                      BaselineRefusal -- as the direct drive raises it. Each before/without
+                      a committed write."""
+    edits = {"notes": "" if notes is None else str(notes)}
+    return _drive_names_lifecycle_edit(
+        out_dir, dll_path, kcdx_id, edits,
+        action="edit_notes", log=log, work_dir=work_dir, version=version,
+        defer_commit=defer_commit, validate_only=validate_only)

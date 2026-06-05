@@ -137,6 +137,14 @@ class DeprecateSave(_SaveBody):
     deprecation_replacement: Optional[str] = None
 
 
+class EditNotesSave(_SaveBody):
+    """Edit an entity's curated `notes` prose (the names row `kcdx_id`): a standalone
+    free-text column, no pair-integrity rule. An UPDATE -- NOT AP18-gated. `notes` '' clears
+    the cell."""
+    kcdx_id: int
+    notes: str
+
+
 # ---------------------------------------------------------------------------
 # The shared drive: resolve the tag, run the chosen data-core DRY-VALIDATE (no DB
 # write), and assemble the PREVIEW response. EVERY endpoint is a thin wrapper that
@@ -328,4 +336,18 @@ def save_deprecate(body: DeprecateSave):
             is_deprecated=body.is_deprecated,
             deprecated_at_version=body.deprecated_at_version,
             deprecation_replacement=body.deprecation_replacement,
+            version=version, validate_only=True))
+
+
+@router.post("/save/edit-notes")
+def save_edit_notes(body: EditNotesSave):
+    """Edit an entity's curated `notes` (the names row) -- PREVIEW: validate the prospective
+    notes edit + return the field delta; writes NOTHING. An UPDATE -- NOT AP18-gated.
+    record_kind is "names" (the field delta orders by the address_names header). notes has no
+    pair-integrity rule, so a valid preview needs only the entity to exist + the prospective
+    DB state to validate (the data-core's gate)."""
+    return _run_preview(
+        body, kind="edit-notes", record_kind="names",
+        validate=lambda version: data_core.edit_notes(
+            load_config().out_dir, None, body.kcdx_id, body.notes,
             version=version, validate_only=True))

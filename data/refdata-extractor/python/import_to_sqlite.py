@@ -1341,8 +1341,11 @@ def _resolve_derives_from_av_id(con, df_kid):
 # The supersession + deprecation columns -- the names-side entity-level state.
 # A change to any of these on an EXISTING names row is the deprecate/supersede
 # delta this step classifies + applies (db-updator step 6).
+# The entity-level names columns the direct-write classifier compares + writes: the
+# supersession edge, the deprecation flags, AND the curated `notes` prose. notes is a
+# standalone column (no pair rule); it is classified into its own notes_actions bucket.
 _NAME_DEP_SUP_COLS = ("superseded_by", "superseded_at_version", "is_deprecated",
-                      "deprecated_at_version", "deprecation_replacement")
+                      "deprecated_at_version", "deprecation_replacement", "notes")
 
 # The supersession (predecessor-edge) subset and the deprecation subset. A names
 # edit is classified by which subset changed; both are independent names-side
@@ -1353,12 +1356,12 @@ _DEP_COLS = ("is_deprecated", "deprecated_at_version", "deprecation_replacement"
 
 
 def _classify_name_edits(con, state):
-    """Classify (do NOT write) the deprecate/supersede edits on EXISTING names
+    """Classify (do NOT write) the deprecate/supersede/notes edits on EXISTING names
     rows for one open DB.
 
     For every kcdx_id whose names row is already in this DB, compare the resolved
-    seed names row's entity-level supersession/deprecation columns against the DB
-    row. Returns (deprecate_actions, supersede_actions, n_other_skipped):
+    seed names row's entity-level supersession/deprecation/notes columns against the
+    DB row. Returns (deprecate_actions, supersede_actions, notes_actions, n_other_skipped):
       - supersede_actions -- the supersession-edge subset changed (the
         predecessor gained/changed superseded_by + superseded_at_version). Each is
         {kcdx_id, superseded_by, superseded_at_version} -- the resolved ids to
@@ -1367,16 +1370,21 @@ def _classify_name_edits(con, state):
       - deprecate_actions -- the deprecation subset changed (is_deprecated +
         deprecated_at_version + optional deprecation_replacement). Each is
         {kcdx_id, is_deprecated, deprecated_at_version, deprecation_replacement}.
-      - n_other_skipped -- a names row whose columns differ but in neither subset
-        we apply (e.g. an UN-deprecate / UN-supersede back to NULL, which Phase 1
-        does not yet model); counted, not written.
+      - notes_actions -- the curated `notes` prose changed (a standalone column, no
+        pair rule). Each is {kcdx_id, notes} -- the new text to write ('' clears it).
+        Notes can be SET, REWRITTEN, or CLEARED (any diff is a write) -- unlike the
+        dep/sup edges (Phase 1 models setting only those), notes has no edge to clear.
+      - n_other_skipped -- a names row whose columns differ but in NONE of the subsets
+        above (e.g. an UN-deprecate / UN-supersede back to NULL, which Phase 1 does not
+        yet model); counted, not written.
 
     `is_deprecated` is normalized (DB stores 0/1; the resolved seed row already
     carries 0/1). A brand-new entity (no DB names row) is the add path's job and
-    is not classified here. A row whose dep/sup columns already MATCH the DB is a
-    no-op (not counted in any bucket -- nothing to do)."""
+    is not classified here. A row whose dep/sup/notes columns already MATCH the DB
+    is a no-op (not counted in any bucket -- nothing to do)."""
     deprecate_actions = []
     supersede_actions = []
+    notes_actions = []
     n_other = 0
     for kid, name_row in state["names_by_id"].items():
         db = con.execute(
@@ -1387,10 +1395,11 @@ def _classify_name_edits(con, state):
         db_map = dict(zip(_NAME_DEP_SUP_COLS, db))
         seed_map = {
             c: ((1 if name_row.get(c) else 0) if c == "is_deprecated"
+                else (name_row.get(c) or None) if c == "notes"
                 else name_row.get(c))
             for c in _NAME_DEP_SUP_COLS}
         if db_map == seed_map:
-            continue   # no-op: nothing changed on this entity's edges
+            continue   # no-op: nothing changed on this entity's edges/notes
 
         # A NEW supersession edge: the predecessor had no superseded_by in the DB
         # and the seed now sets one (Phase 1 models setting the edge, not clearing
@@ -1403,6 +1412,9 @@ def _classify_name_edits(con, state):
         dep_changed = any(db_map[c] != seed_map[c] for c in _DEP_COLS)
         new_deprecate = (dep_changed and not db_map["is_deprecated"]
                          and seed_map["is_deprecated"])
+        # A NOTES change: any diff on the standalone prose column (set / rewrite /
+        # clear) is a write -- notes has no edge to set-only, so every diff applies.
+        notes_changed = (db_map.get("notes") or None) != (seed_map.get("notes") or None)
 
         if new_supersede:
             supersede_actions.append({
@@ -1417,11 +1429,16 @@ def _classify_name_edits(con, state):
                 "deprecated_at_version": seed_map["deprecated_at_version"],
                 "deprecation_replacement": seed_map["deprecation_replacement"],
             })
-        if not (new_supersede or new_deprecate):
+        if notes_changed:
+            notes_actions.append({
+                "kcdx_id": kid,
+                "notes": seed_map.get("notes"),
+            })
+        if not (new_supersede or new_deprecate or notes_changed):
             # A diff we do not yet model (un-deprecate, un-supersede, or rewriting
             # an existing edge) -> count skipped, leave the DB untouched.
             n_other += 1
-    return deprecate_actions, supersede_actions, n_other
+    return deprecate_actions, supersede_actions, notes_actions, n_other
 
 
 def _apply_deprecate(con, action, tx):
@@ -1462,6 +1479,24 @@ def _apply_supersede(con, action, tx):
             "UPDATE address_names SET superseded_by = ?, "
             "superseded_at_version = ? WHERE id = ?",
             (action["superseded_by"], action["superseded_at_version"], kid))
+        tx.commit()
+    except Exception:
+        tx.rollback()
+        raise
+
+
+def _apply_edit_notes(con, action, tx):
+    """Apply one notes action: UPDATE the entity's address_names row to set the curated
+    `notes` prose (a standalone column -- no pair rule; '' / None clears it). Its own
+    per-action transaction via `tx` (BEGIN/COMMIT immediate, SAVEPOINT/RELEASE inside the
+    held outer txn deferred), mirroring _apply_deprecate / _apply_supersede. address_names
+    is all-rows in BOTH DBs, so the UPDATE is the same for user + dev."""
+    kid = action["kcdx_id"]
+    tx.begin()
+    try:
+        con.execute(
+            "UPDATE address_names SET notes = ? WHERE id = ?",
+            (action["notes"], kid))
         tx.commit()
     except Exception:
         tx.rollback()
@@ -1730,7 +1765,7 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
     tx = _Tx(con, deferred)
     counts = {"reverified": 0, "noop": 0, "added_entity": 0,
               "added_versions_row": 0, "deprecated": 0, "superseded": 0,
-              "skipped_dep_sup": 0, "full_column_updated": 0}
+              "notes_edited": 0, "skipped_dep_sup": 0, "full_column_updated": 0}
 
     # Classify the entity-level deprecation/supersession edits on EXISTING names
     # rows: compare the resolved seed names row against the DB names row for every
@@ -1741,8 +1776,8 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
     # is INSERTed there), so they are not classified here. The full-seed validator
     # already ran the pair-integrity + acyclicity gate, so no cycle / half-set pair
     # can reach the write below.
-    deprecate_actions, supersede_actions, n_skipped = _classify_name_edits(
-        con, state)
+    deprecate_actions, supersede_actions, notes_actions, n_skipped = \
+        _classify_name_edits(con, state)
     counts["skipped_dep_sup"] = n_skipped
     for da in deprecate_actions:
         _apply_deprecate(con, da, tx)
@@ -1750,6 +1785,9 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
     for sa in supersede_actions:
         _apply_supersede(con, sa, tx)
         counts["superseded"] += 1
+    for na in notes_actions:
+        _apply_edit_notes(con, na, tx)
+        counts["notes_edited"] += 1
 
     for a in actions:
         kid = a["kcdx_id"]
@@ -2281,8 +2319,9 @@ def _writing_kcdx_ids(con, actions, state, new_tag_kcdx_id):
         no-op (no write) -> excluded;
       - a versions action that is PRESENT-and-changed (re-verify) or ABSENT (add) ->
         a write -> included;
-      - a deprecate/supersede edit on an EXISTING names row (from _classify_name_edits,
-        the same classifier _apply_one_db uses) -> a names-side write -> included;
+      - a deprecate/supersede/notes edit on an EXISTING names row (from
+        _classify_name_edits, the same classifier _apply_one_db uses) -> a names-side
+        write -> included;
       - the new-tag entity (NOT in `actions`) -> a write -> included.
 
     A SUPERSET is safe (still byte-identical on restore); the point of the minimal set
@@ -2316,12 +2355,15 @@ def _writing_kcdx_ids(con, actions, state, new_tag_kcdx_id):
             writing.add(kid)            # PRESENT-and-changed -> re-verify (a write)
         # else: a no-op -> not written, not captured.
 
-    # Names-side: the SAME classifier _apply_one_db uses for deprecate/supersede.
-    deprecate_actions, supersede_actions, _ = _classify_name_edits(con, state)
+    # Names-side: the SAME classifier _apply_one_db uses for deprecate/supersede/notes.
+    deprecate_actions, supersede_actions, notes_actions, _ = \
+        _classify_name_edits(con, state)
     for da in deprecate_actions:
         writing.add(da["kcdx_id"])
     for sa in supersede_actions:
         writing.add(sa["kcdx_id"])
+    for na in notes_actions:
+        writing.add(na["kcdx_id"])
 
     if new_tag_kcdx_id is not None:
         writing.add(int(new_tag_kcdx_id))
@@ -3318,6 +3360,7 @@ def run_apply(out_dir, dll_path):
               f"{c['added_entity']} added-entity, "
               f"{c['added_versions_row']} added-versions-row, "
               f"{c['deprecated']} deprecated, {c['superseded']} superseded, "
+              f"{c['notes_edited']} notes-edited, "
               f"{c['skipped_dep_sup']} skipped (unmodeled names edit)")
     print(bar)
 

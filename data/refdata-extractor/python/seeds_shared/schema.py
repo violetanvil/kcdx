@@ -47,7 +47,8 @@ USER_COLUMNS = {
                          "deprecation_replacement", "notes"],
     # `id` IS the kcdx_id (the stable cross-version handle); no separate kcdx_id
     # column. address_versions.kcdx_id references address_names.id.
-    # excludes notes (DEV-only).
+    # INCLUDES notes -- a curated entity-level prose column (maintainer-authored;
+    # ships to USER), maintained via the names-UPDATE path (db_editor.edit_notes).
     # The verification audit columns ship to USER -- the engine needs them to
     # derive status at resolve time (a plugin author resolving target="X" at
     # current game_version V needs to see "is this row verified at V?", which
@@ -124,8 +125,11 @@ SCHEMA = {
         ("is_deprecated", "INTEGER"),                  # 0/1
         ("deprecated_at_version", "INTEGER"),          # FK to game_versions.id; deprecation applies >= this
         ("deprecation_replacement", "INTEGER"),        # nullable FK to address_names.id; "consider switching to" advisory
-        # prose (DEV only)
-        ("notes", "TEXT"),                             # DEV-ONLY (entity-level prose)
+        # prose (curated entity-level prose -- USER + DEV; a maintainer-authored notes
+        # column, in USER_COLUMNS["address_names"] above + the seed CSV header + the
+        # exported address_names_seed.csv. Free text, nullable; the maintainer tool edits
+        # it via the same names-UPDATE path supersede/deprecate use.)
+        ("notes", "TEXT"),                             # curated entity-level prose (USER + DEV)
     ],
     # address_versions: per-(entity, version-interval) resolve facts. kcdx_id
     # is NULLABLE -- set when the row is a curated entity (FK to address_names.id),

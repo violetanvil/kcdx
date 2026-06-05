@@ -67,6 +67,7 @@ from .db_editor import (
     create_entity,
     supersede_entity,
     deprecate_entity,
+    edit_notes,
     EDITABLE_VERSION_COLUMNS,
     DbEditError,
 )
@@ -126,7 +127,7 @@ __all__ = [
     "round_trip", "hash_curated_tables", "RoundTripError",
     "update_row_in_place", "append_row",
     "update_version_row", "create_version", "create_entity",
-    "supersede_entity", "deprecate_entity",
+    "supersede_entity", "deprecate_entity", "edit_notes",
     "EDITABLE_VERSION_COLUMNS", "DbEditError",
     "field_delta", "is_new_version_nothing_changed",
     "derive_status", "read_curated_set", "read_entity_detail",

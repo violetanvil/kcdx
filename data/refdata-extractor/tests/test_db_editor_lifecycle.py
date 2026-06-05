@@ -41,6 +41,16 @@ mini-dump fixture (no wrapper, no stubbed gate). Cases:
      set while is_deprecated is NOT set -> the validator's
      replacement-requires-deprecated HARD ERROR; both DBs byte-identical.
 
+  7. VALID EDIT-NOTES (step 14b): set the curated `notes` prose on an existing plain
+     entity via the SAME names-UPDATE path (edits={"notes": ...}). The notes cell lands
+     in BOTH DBs; the identity (id, name) + every other lifecycle cell is untouched; the
+     return carries NO ap18_new_row (an UPDATE). notes has NO pair-integrity rule, so a
+     valid entity validates with any notes text. Also: clearing the notes ('') removes the
+     cell, and the export still carries the `notes` column (a curated USER + DEV column).
+
+  8. EDIT-NOTES VALIDATE-ONLY (the Save-preview seam): the validate_only path returns the
+     validator's verdict WITHOUT touching either DB (both byte-identical).
+
 WHY THE BRIDGE IS SOUND (no separate write/validate path -- D13)
 ----------------------------------------------------------------
 supersede_entity / deprecate_entity write NOTHING under data/seeds/ -- each exports
@@ -356,6 +366,92 @@ def _replacement_without_deprecated_aborts(b):
 
 
 # --------------------------------------------------------------------------
+# Case 7: a valid notes edit sets the prose atomically (both DBs); the export
+# still carries the notes column; clearing it removes the cell. (step 14b)
+# --------------------------------------------------------------------------
+def _valid_edit_notes(b):
+    out = _fresh_db(b)
+    try:
+        user_db = os.path.join(out, "reference.sqlite")
+        dev_db = os.path.join(out, "reference-dev.sqlite")
+        x_kid, _x_name = _first_plain_entity(user_db)
+        assert x_kid is not None, "no plain entity to edit-notes in the fixture"
+
+        ret = db_editor.edit_notes(out, DLL_PATH, x_kid, "verified against the 1.5 build")
+        assert ret["action"] == "edit_notes", \
+            f"action != 'edit_notes': {ret['action']!r}"
+        assert ret["kcdx_id"] == x_kid
+        # NOT AP18-gated -- a notes UPDATE is not a new row.
+        assert "ap18_new_row" not in ret, \
+            "edit_notes (an UPDATE) wrongly carried the AP18 new-row flag"
+
+        for label, dbp in (("user", user_db), ("dev", dev_db)):
+            row = _names_row(dbp, x_kid)
+            assert row is not None, f"[{label}] X names row vanished"
+            assert row["notes"] == "verified against the 1.5 build", \
+                f"[{label}] notes not set: {row['notes']!r}"
+            # Identity + the lifecycle cells are untouched (only notes changed).
+            assert row["id"] == x_kid and row["name"] == _x_name, \
+                f"[{label}] entity identity mutated: {row}"
+            assert row["superseded_by"] is None and not row["is_deprecated"], \
+                f"[{label}] a lifecycle cell changed on a notes-only edit: {row}"
+
+        # The export (the seed CSV the git-tracked record uses) still carries the notes
+        # column AND the new value -- notes is a curated USER + DEV column.
+        import tempfile
+        from seeds_shared.csv_exporter import (
+            export_seeds, ADDRESS_NAMES_CSV_HEADER, ADDRESS_NAMES_SEED_NAME)
+        exp = tempfile.mkdtemp(prefix="edit_notes_export_")
+        try:
+            export_seeds(user_db, exp)
+            assert "notes" in ADDRESS_NAMES_CSV_HEADER, \
+                "notes dropped from the address_names export header"
+            import csv as _csv
+            names_csv = os.path.join(exp, ADDRESS_NAMES_SEED_NAME)
+            with open(names_csv, newline="", encoding="utf-8") as f:
+                lines = [ln for ln in f if not ln.lstrip().startswith("#")]
+            rows = {r["id"]: r for r in _csv.DictReader(lines)}
+            assert "notes" in rows[str(x_kid)], "notes column absent from the export row"
+            assert rows[str(x_kid)]["notes"] == "verified against the 1.5 build", \
+                f"exported notes mismatch: {rows[str(x_kid)]['notes']!r}"
+        finally:
+            shutil.rmtree(exp, ignore_errors=True)
+
+        # Clearing the notes ('') removes the cell (the cleared value lands as NULL/empty).
+        db_editor.edit_notes(out, DLL_PATH, x_kid, "")
+        for label, dbp in (("user", user_db), ("dev", dev_db)):
+            row = _names_row(dbp, x_kid)
+            assert row["notes"] in (None, ""), \
+                f"[{label}] notes not cleared: {row['notes']!r}"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+# Case 8: edit_notes validate_only validates WITHOUT touching either DB.
+# --------------------------------------------------------------------------
+def _edit_notes_validate_only_no_write(b):
+    out = _fresh_db(b)
+    try:
+        user_db = os.path.join(out, "reference.sqlite")
+        x_kid, _ = _first_plain_entity(user_db)
+
+        snap = _snapshot(out)
+        ret = db_editor.edit_notes(
+            out, DLL_PATH, x_kid, "a previewed note", validate_only=True)
+        # The validate_only result is the validator's {"tag","ordinal"} verdict -- a
+        # valid prospective state (notes has no integrity rule) -> a dict, NO write.
+        assert isinstance(ret["result"], dict), \
+            f"validate_only result not the verdict dict: {ret['result']!r}"
+        assert "ap18_new_row" not in ret, \
+            "edit_notes validate_only wrongly carried the AP18 new-row flag"
+        assert _snapshot(out) == snap, \
+            "edit_notes validate_only wrote to a DB (the preview must touch nothing)"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 # pytest entry points (reuse the insert module's `baseline` fixture).
 # --------------------------------------------------------------------------
 try:
@@ -394,6 +490,14 @@ def test_replacement_without_deprecated_aborts_with_no_write(baseline):  # noqa:
     _replacement_without_deprecated_aborts(baseline)
 
 
+def test_valid_edit_notes_sets_prose_atomically(baseline):  # noqa: F811
+    _valid_edit_notes(baseline)
+
+
+def test_edit_notes_validate_only_no_write(baseline):  # noqa: F811
+    _edit_notes_validate_only_no_write(baseline)
+
+
 if __name__ == "__main__":
     try:
         b = _get_baseline()
@@ -409,6 +513,10 @@ if __name__ == "__main__":
         print("PASS test_supersession_cycle_aborts_with_no_write")
         _replacement_without_deprecated_aborts(b)
         print("PASS test_replacement_without_deprecated_aborts_with_no_write")
+        _valid_edit_notes(b)
+        print("PASS test_valid_edit_notes_sets_prose_atomically")
+        _edit_notes_validate_only_no_write(b)
+        print("PASS test_edit_notes_validate_only_no_write")
         print("\nall db_editor lifecycle oracle tests passed")
     finally:
         _cleanup_baseline()

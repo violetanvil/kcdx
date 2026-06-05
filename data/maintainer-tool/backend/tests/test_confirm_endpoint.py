@@ -309,6 +309,19 @@ def _db_av_value(root, kcdx_id, column):
         con.close()
 
 
+def _db_names_value(root, kcdx_id, column):
+    """A column of the address_names row for kcdx_id in the USER DB -- to prove a names-row
+    UPDATE (e.g. notes) landed."""
+    import sqlite3
+    con = sqlite3.connect(_user_db(root))
+    try:
+        row = con.execute(
+            f"SELECT {column} FROM address_names WHERE id = ?", (kcdx_id,)).fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
+
+
 def _confirm_body(**kw):
     """A confirm body with the request-context author fields + the given edit fields."""
     return dict(author_name=AUTHOR_NAME, author_email=AUTHOR_EMAIL, **kw)
@@ -362,6 +375,43 @@ def test_confirm_update_commits_dbexport_csvs_and_db_and_pushes(checkout, client
     # The PUSH reached the throwaway bare remote (its HEAD advanced to our commit).
     assert _head_sha(bare) != bare_before, "the bare remote HEAD did not advance"
     assert _head_sha(bare) == head, "the bare remote HEAD != the committed HEAD"
+
+
+# ============================================================================
+# SUCCESS -- an EDIT-NOTES UPDATE (step 14b): the DB names row holds the new notes, the
+# db-export CSVs update, ONE git commit (exact-path), request-context author, pushed. An
+# UPDATE -- NOT AP18-gated (no approval gate exists server-side; the confirm just transacts).
+# ============================================================================
+def test_confirm_edit_notes_commits_db_and_pushes(checkout, client_at):
+    root, bare = checkout
+    client = client_at(root, push=True)
+    parent = _head_sha(root)
+
+    resp = client.post("/confirm/edit-notes", json=_confirm_body(
+        version_tag=GVT, kcdx_id=1, notes="confirmed against the 1.5 build"))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "saved", body
+    assert body["pushed"] is True, body
+
+    # A NEW commit landed, staging a SUBSET of EXACTLY the DB + 3 db-export CSVs.
+    head = _head_sha(root)
+    assert head != parent, "the edit-notes Confirm must create a commit"
+    changed = _changed_files_in_head(root)
+    assert set(changed).issubset(set(STAGED_REL_PATHS)), \
+        f"staged files outside the exact set: {changed}"
+    # The notes change lands in the db-export NAMES CSV (the names-row column).
+    assert "data/db-export/address_names_seed.csv" in changed, changed
+
+    # The request-context identity is the commit author (D17).
+    assert _head_author(root) == (AUTHOR_NAME, AUTHOR_EMAIL), _head_author(root)
+
+    # The DB names row holds the new notes (the UPDATE landed).
+    assert _db_names_value(root, 1, "notes") == "confirmed against the 1.5 build", \
+        "the DB notes column was not updated"
+
+    # The push reached the throwaway bare remote.
+    assert _head_sha(bare) == head, "the push did not reach the bare remote"
 
 
 # ============================================================================
