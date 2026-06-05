@@ -3,9 +3,9 @@
 **Intent:** link a game DLL on your machine and the tool verifies what you author against
 the real binary (not record-only) — static per-author in the browser + version-applicability +
 reachability in-game in bulk (at startup); the un-deferred R5 + restored R12 link table. Settled design:
-[`plan-spec.md`](plan-spec.md) (TRD `data/maintainer-tool/design.md` §6 US-11 + D24–D32; the
-s02/s04/s08 screen specs + the Layer-1 `ui/design.md`; per-kind checks in
-`data/maintainer-tool/fingerprint-per-kind.md`).
+[`plan-spec.md`](plan-spec.md) (TRD `data/maintainer-tool/design.md` §6 US-11 + D24–D35 — the
+batch-verify loop D33–D35 added 2026-06-05; the s02/s04/s08 screen specs + the Layer-1
+`ui/design.md`; per-kind checks in `data/maintainer-tool/fingerprint-per-kind.md`).
 
 Authored by `/plan` (structure only — no code built). A later `/execute` / `/feature` cycle
 reads a step doc as its `Source work-item` and flips its ledger row. Two-repo split: **[FE]**
@@ -18,7 +18,7 @@ steps land in the SEPARATE gitignored frontend repo (gate `npm run build` + Vite
 | Step | Status | Commit |
 |---|---|---|
 | [Phase 0 — Probes](phase-00-probes/README.md) | DONE | (landed) |
-| [Phase 1 — Shared contracts](phase-01-contracts/README.md) | DONE | 35445b7 |
+| [Phase 1 — Shared contracts](phase-01-contracts/README.md) | NOT STARTED | 1.1+1.2 landed (e8a06cc, 35445b7); reopened for 1.3 |
 | [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | NOT STARTED | — |
 | [Phase 3 — C++ engine survival extension](phase-03-engine-survival/README.md) | NOT STARTED | — |
 | [Phase 4 — In-game plugin + report](phase-04-ingame-plugin/README.md) | NOT STARTED | — |

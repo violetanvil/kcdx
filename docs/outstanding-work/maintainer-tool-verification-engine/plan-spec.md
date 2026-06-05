@@ -88,13 +88,33 @@ authoritative artifacts, verbatim with their source:
   refuse; settles `fingerprint-per-kind.md` §"Open decisions" 3. **(b)** report ingest
   is the frontend reading `report.json` directly via the File API — NO backend read
   seam. **(c)** the report-ingest UX has an explicit ingest progress/loading state.
-- **D32** — the save spine supports a BATCH mutation: bulk re-verify commits N
-  audit-trio UPDATEs as ONE atomic transaction with ONE batched field-delta confirm.
+- **D32** (revised) — the save spine supports a BATCH mutation: bulk re-verify commits
+  N UPDATEs as ONE atomic transaction with ONE batched field-delta confirm. There are
+  **TWO batch actions** (D35): **verify-all** (the trio + a gap-pass `valid_through`
+  extend, D34) and **close-intervals** (a failed row's `valid_through` retract, D35).
   Same validator gate (each row validated), same deferred-commit + D21 robust rollback
   (**all-or-nothing — one row failing rolls back the WHOLE batch**), one git
-  commit/push. All-UPDATE (re-verify never creates a row) → the new-row approval gate
-  (law 8/AP18) does NOT apply. "One mutation = one transaction" reads as "one confirmed
-  UNIT = one transaction."
+  commit/push. Both all-UPDATE (re-verify never creates a row; the `valid_through` edits
+  + the trio are UPDATEs) → the new-row approval gate (law 8/AP18) does NOT apply; a
+  new/variant row is authored per-row via `[Fix ▸]` (AP18 per-row).
+- **D33** — the in-game sweep is a **dev-mode-gated** test plugin, runs **once at engine
+  startup** (self-skips outside `dev_mode`), over the **curated USER set only** (the
+  `kcdx_id` rows — the worklist scale; NOT the ~321k DEV bulk discovery rows, which carry
+  no audit trio).
+- **D34** — the sweep **ATTRIBUTES** each result to the `address_version` row whose
+  fingerprint the swept bytes match (the `content_hash` for a function, the per-kind datum
+  otherwise); the report carries the **`matched_address_version_id`** per row (null on a
+  non-match/uncheckable). A passing version that fell in a GAP between an entity's intervals
+  is attributed to the matched row, and verify-all **extends that row's `valid_through`
+  forward** to the swept version (the 1.4-in-the-gap-of-id-1 case). Still all-UPDATE (a
+  passing check found the bytes UNCHANGED — nothing new to describe, only coverage to record).
+- **D35** — the import shows a **reviewed diff, never an auto-write** — a **verified block**
+  (verify-all) + a **failing block** (close-intervals). A failing row's `valid_through`
+  retracts to its `last_verified_at_version` (the last version it passed — the sweep
+  disproved validity beyond it). A failure needs **no "failed" field**: not advancing
+  `last_verified_at_version` already reads UNVERIFIED at the new version by the existing
+  derivation (`data/seeds/policy.md`); the seed schema is unchanged. The maintainer fixes a
+  failed function individually via `[Fix ▸]` (AP18 per-row).
 - **§7 — the save spine** — validate → write → export → round-trip → field-delta
   confirm → atomic commit + push, shared by every mutating story; plus the §7 batch
   mutation (D32) the bulk re-verify reuses at batch scale.
@@ -237,24 +257,31 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| The batch verification plugin (drives the engine checker over EVERY DB row) | P4 step 1 | A kcdx test-suite plugin (D28) |
-| The JSON verification report schema (the cross-repo contract) | P1 step 2 | Frozen versioned schema (D28/D31b) |
-| Report emission to schema (per row: kcdx_id, version, verdict, detail) | P4 step 1 | Written alongside `kcdx-dev.log` (D28) |
+| The batch verification plugin (drives the engine checker over the curated set) | P4 step 1 | A kcdx test-suite plugin (D28) |
+| The JSON verification report schema v1 (the cross-repo contract) | P1 step 2 | Frozen versioned schema (D28/D31b) |
+| Report schema **v2** — `matched_address_version_id` + `schema_version` 1→2 | **P1 step 3** | The attribution field (D34); a versioned bump of the frozen schema |
+| Sweep dev-mode-gated, runs at startup | P4 step 1 | Self-skips outside `dev_mode`, once at startup (D33) |
+| Sweep scope = curated USER set only | P4 step 1 | The `kcdx_id` rows; NOT the ~321k DEV bulk rows (D33) |
+| Attribution: match swept bytes vs each candidate row's fingerprint → matched id | P3 step 3 | Engine reports WHICH row matched (D34) |
+| Report emission to v2 schema (per row: kcdx_id, version, verdict, detail, matched_address_version_id) | P4 step 1 | Written alongside `kcdx-dev.log` (D28/D34) |
 | Report write-location | P4 step 1 | Alongside `kcdx-dev.log` (D28) |
 | The test-suite matrix row + deploy to all 3 plugin trees | P4 step 1 | `test-suite.md`; matrix row + 3-tree deploy |
 | C++ read pe_helpers surface scoping (does it expose spans + a disp32 follower?) | P0 step 3 | Probe — scoping finding for P3 |
-| The in-game version-applicability + reachability signal (resolves+works / dead / wrong-target) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / P4 |
+| The in-game version-applicability + reachability signal (resolves_works / dead / wrong_target) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / P4 |
 
 ### Group E — report ingestion
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| Import (File API, client-side) | P5 step 1 | Frontend reads `report.json` (D31b) |
+| Import (File API, client-side, v2 schema) | P5 step 1 | Frontend reads `report.json` (D31b); validates against v2 (D34) |
 | Ingest progress bar | P5 step 1 | Determinate progress (D31c) |
-| Pass/fail split + the worklist | P5 step 1 | s08 populated state (D28) |
-| The 9 s08 states | P5 step 1 | Built to s08 spec |
-| Bulk re-verify → s06 batch field-delta confirm (D32) | P5 step 2 | One batched confirm, all-or-nothing (D32) |
-| Confirm-spine routing (per-verdict through validate→confirm→commit) | P5 step 2 | Data-core sole writer (D28/law 6) |
+| The TWO-block worklist (verified / failing) | P5 step 1 | s08 populated state, two blocks (D35) |
+| The matched-`address_version`-id column + snake_case verdict tokens | P5 step 1 | The matched id (D34); the frozen snake_case tokens |
+| The s08 states (incl. per-block disabled) | P5 step 1 | Built to the revised s08 spec |
+| Verify-all → s06 batch confirm (trio + gap-pass `valid_through` extend) | P5 step 2 | One batched confirm; the matched row's interval extended on a gap-pass (D32/D34) |
+| Close-intervals → s06 batch confirm (`valid_through` → `last_verified_at_version`) | P5 step 2 | The failing block's batch action (D35) |
+| A failure = UNVERIFIED-by-derivation (no "failed" field) | P5 step 2 | Not advancing `last_verified_at_version` (D35; `policy.md`) |
+| Confirm-spine routing (both batches through validate→confirm→commit) | P5 step 2 | Data-core sole writer (D28/law 6) |
 
 ### Group F — link table
 
@@ -318,8 +345,8 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| 12 Contents elements (import entry, summary header, ingest progress, split control, worklist table, per-row select, select-all-passing, re-verify-N, fix-row, back, + the verdict per-row + the batched confirm prose) | P5 step 1 (import/progress/split/worklist/select/fix/back); P5 step 2 (re-verify-N → batch confirm) | Built to s08 Contents |
-| The 9 states (empty / loading-ingesting / populated / error-malformed / error-unknown-id / disabled / edge-0-fail / edge-0-pass / edge-long) | P5 step 1 (ingest/worklist states); P5 step 2 (batch-action disabled/edge) | s08 §"States & variants" |
+| The revised Contents elements (import entry, summary header, ingest progress, split control, two-block worklist table + matched-id column, per-block selects, select-all per block, the two bulk actions, fix-row, back, + the verdict per-row + the two batched-confirm prose) | P5 step 1 (import/progress/split/two-block worklist/per-block select/fix/back); P5 step 2 (the two actions → batch confirms) | Built to the revised s08 Contents (D34/D35) |
+| The s08 states (empty / loading-ingesting / populated-two-block / error-malformed / error-unknown-id / per-block-disabled / edge-0-fail / edge-0-pass / edge-long) | P5 step 1 (ingest/worklist states); P5 step 2 (per-block batch-action disabled/edge) | s08 §"States & variants" (revised) |
 
 ## What is NOT in this plan
 
