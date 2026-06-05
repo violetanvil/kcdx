@@ -19,11 +19,15 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>  // lexically_relative — the publisher's add-new vpath (§5.3)
 #include <iterator>  // std::size (wmode bound)
+#include <string>
+#include <unordered_map>
 #include <vector>
 
-#include "asset_namespace.h"  // LookupRuntimeOverlay — the RUNTIME store consulted
-                              // ALONGSIDE g_overlayMap on a build-time MISS
+#include "asset_namespace.h"  // LookupRuntimeOverlay (resolver) + PublishName (a
+                              // build-time sidecar `name` writes the ONE published-
+                              // name store — design §5.1/§5.3)
 #include "asset_sidecar.h"  // LoadDeclarationsFor — the no-code declaration parse
 #include "hook_chain.h"
 #include "hook_payload.h"
@@ -538,6 +542,105 @@ std::vector<const plugins::LoadedPlugin*> PluginsInLoadOrder() {
     return ordered;
 }
 
+// Pack a (author, plugin, bare) triple into the published-name store key
+// "<author>.<plugin>.<bare>" (naming-namespaces.md), ASCII-lowercased so a
+// build-time publish, a runtime declare, and a cross-mod replace target agree on
+// the key case-insensitively. MIRRORS lua_bind_assets.cpp::PackName exactly (the
+// legacy 1-dot tier — author empty — packs "<plugin>.<bare>"); kept in sync as
+// the one packed-name shape across the runtime + build-time stores.
+std::string PackName(const std::string& author, const std::string& plugin,
+                     const std::string& bare) {
+    std::string packed = author.empty() ? (plugin + "." + bare)
+                                        : (author + "." + plugin + "." + bare);
+    for (char& c : packed) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return packed;
+}
+
+// Lowercase an already-packed author-written cross-mod name ("a.b.bare") so it
+// matches a published-name store key. MIRRORS lua_bind_assets.cpp::LowerPackedName
+// (the namespace is case-insensitive, like the vpath fold).
+std::string LowerPackedName(const std::string& packed) {
+    std::string out = packed;
+    for (char& c : out) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return out;
+}
+
+// The publisher-asset index built in PASS 1: it answers a cross-mod target's
+// "what vpath does THIS published asset serve at?" (design §5.3 — a name resolves
+// to the vpath its asset SERVES AT). Two lookups, both keyed against build-time
+// sidecar declarations seen this build:
+//   * byPublishedName  — packed "<author>.<plugin>.<bare>" -> serve-vpath, for a
+//     PublishedName cross-mod target (`replaces = "redmoon.outfit.belt"`).
+//   * byPluginPath     — "<author>.<plugin>|<normalized-rel-path>" -> serve-vpath,
+//     for a PluginPathPair cross-mod target (replaces_plugin + replaces_path).
+// Both map to the publisher's serve-vpath: the vanilla vpath it replaces (a
+// publish-and-replace asset's overlayKey), or — when the publisher's asset at
+// that path is an add-new with no vanilla target — the asset's own add-new vpath.
+struct PublisherIndex {
+    std::unordered_map<std::string, std::string> byPublishedName;
+    std::unordered_map<std::string, std::string> byPluginPath;
+};
+
+// The publisher-asset key for the PluginPathPair lookup: the publisher's
+// "<author>.<plugin>" (lowercased, the 2-dot identity form) joined to the
+// NORMALIZED asset rel-path with a '|' (a separator that cannot appear in either
+// half — the identity is [a-z0-9_]. and the vpath is normalized to '/').
+std::string PluginPathKey(const std::string& author, const std::string& plugin,
+                          const std::string& normRelPath) {
+    std::string ident = author.empty() ? plugin : (author + "." + plugin);
+    for (char& c : ident) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return ident + "|" + normRelPath;
+}
+
+// The publisher asset's path relative to its assets/ root, NORMALIZED — the
+// add-new vpath of a published asset (design §5.3: a pure add-new publish's
+// serve-vpath = the asset's path relative to assets/). Derived from the declaring
+// file's absolute diskPath and the publisher's assets/ root (folderPath /
+// assetsEntrypointRel). Returns "" if the path cannot be made relative (a defect
+// — the diskPath was built FROM that root, so this should never fail).
+std::string AssetRelVpath(const plugins::LoadedPlugin& pub,
+                          const std::string& diskPath) {
+    if (pub.manifest.assetsEntrypointRel.empty()) return std::string();
+    const std::filesystem::path root =
+        pub.manifest.folderPath / pub.manifest.assetsEntrypointRel;
+    std::error_code ec;
+    const std::filesystem::path rel =
+        std::filesystem::path(diskPath).lexically_relative(root);
+    if (rel.empty() || rel.native().rfind(L"..", 0) == 0) return std::string();
+    return NormalizeVPath(rel.generic_string());
+}
+
+// Find a LOADED plugin by its <author>.<plugin> identity (the form a cross-mod
+// PluginPathPair's `replaces_plugin` carries). Matches on (author, plugin) when
+// both are present; the legacy 1-dot tier (the `replaces_plugin` is a bare plugin
+// name with no author dot) matches on plugin alone — mirrors lua_bind_assets.cpp
+// ::FindManifest's match-on-both discipline (FindByName keys on plugin alone and
+// cannot disambiguate two authors). Returns nullptr if no such plugin is loaded.
+const plugins::LoadedPlugin* FindLoadedByIdentity(const std::string& ident) {
+    // Split "<author>.<plugin>" on the FIRST dot; a bare token (no dot) is the
+    // legacy plugin-only form.
+    std::string author, plugin;
+    const size_t dot = ident.find('.');
+    if (dot == std::string::npos) {
+        plugin = ident;
+    } else {
+        author = ident.substr(0, dot);
+        plugin = ident.substr(dot + 1);
+    }
+    if (plugin.empty()) return nullptr;
+    for (const auto& p : plugins::g_plugins) {
+        if (p.manifest.name != plugin) continue;
+        if (author.empty() || p.manifest.author == author) return &p;
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 void BuildOverlayMap() {
@@ -569,12 +672,35 @@ void BuildOverlayMap() {
     // live 153/154 vanilla-existence oracle is a scoped follow-up gated on the
     // §8 install-timing probe.
 
-    size_t walked        = 0;  // plugins scanned for sidecars
-    size_t entries       = 0;  // vanilla-path declarations keyed into the map
-    size_t suppressed    = 0;  // declarations that lost a target to an earlier one
-    size_t scopedOut     = 0;  // cross-mod/published-name targets (later phase)
-    size_t published     = 0;  // declarations carrying a `name` (publish — later)
+    // TWO-PASS build (design §5.3 cross-mod resolution needs the publisher's
+    // declaration visible before a consumer's cross-mod target resolves; a single
+    // forward pass over plugins-in-load-order would miss a publisher that loads
+    // AFTER its consumer). PASS 1 parses every sidecar, keys the vanilla-path
+    // declarations, and builds the PublisherIndex (every published asset's
+    // serve-vpath). PASS 2 resolves each cross-mod target against that index and
+    // keys the overlay map by the resolved serve-vpath (the SAME §4.4 conflict as
+    // a vanilla target). A cross-mod target that resolves to no published asset is
+    // an AP14 loud report (no silent drop — the prior overlay_decl_scoped_out
+    // deferral is removed, design §12 cross-mod-resolution row).
 
+    // The whole build's declarations, kept WITH their declaring plugin so PASS 2
+    // can derive a publisher's serve-vpath (AssetRelVpath needs the manifest). In
+    // load order, so PASS 2's §4.4 conflict (earliest-wins) is order-correct.
+    struct DeclWithPlugin {
+        asset_sidecar::Declaration decl;
+        const plugins::LoadedPlugin* plugin;
+    };
+    std::vector<DeclWithPlugin> all;
+    PublisherIndex pubIndex;
+
+    size_t walked        = 0;  // plugins scanned for sidecars
+    size_t entries       = 0;  // declarations keyed into the map (both target forms)
+    size_t suppressed    = 0;  // declarations that lost a target to an earlier one
+    size_t crossmod      = 0;  // cross-mod targets resolved + keyed (PASS 2)
+    size_t unresolved    = 0;  // cross-mod targets resolving to no published asset
+    size_t published     = 0;  // declarations carrying a `name` (published to store)
+
+    // --- PASS 1: parse, key the vanilla targets, build the PublisherIndex ------
     for (const plugins::LoadedPlugin* pp : PluginsInLoadOrder()) {
         if (pp->manifest.assetsEntrypointRel.empty()) continue;
         ++walked;
@@ -587,51 +713,193 @@ void BuildOverlayMap() {
         asset_sidecar::LoadDeclarationsFor(*pp, /*vanillaExists=*/nullptr, decls);
 
         for (auto& d : decls) {
-            if (!d.publishName.empty()) ++published;
-
-            if (!d.routesToOverlay) {
-                // A cross-mod / published-name target — NOT a vanilla vpath the
-                // engine requests (it is a US-3/US-4 reference resolved by a
-                // later phase). Out of THIS step's resolver/FOpen lookup; report
-                // it so the declaration is observable, do not key the map.
-                ++scopedOut;
-                LOG_DEBUG_KV(kCat, "overlay_decl_scoped_out",
-                             kcdx::log::KV("plugin", d.owningPlugin),
-                             kcdx::log::KV("target", d.kind ==
-                                 asset_sidecar::TargetKind::PluginPathPair
-                                 ? (d.replacesPlugin + ":" + d.replacesPath)
-                                 : d.target),
-                             kcdx::log::KV("disk", d.diskPath),
-                             kcdx::log::KV("why",
-                                 std::string("cross-mod reference — resolved by "
-                                 "a later phase, not this step's vpath lookup")));
-                continue;
+            // Index every published asset's serve-vpath for PASS-2 cross-mod
+            // resolution AND publish it into the runtime published-name store
+            // (the ONE store — §5.1/§5.3 — so a runtime replace / get_by_name and
+            // a build-time cross-mod target all resolve a sidecar-published name).
+            //
+            // A sidecar publish always carries a TARGET (a `name`-only row is
+            // rejected as missing-target in the parser), so a published asset's
+            // serve-vpath is its TARGET's serve-vpath:
+            //   * VanillaPath target  -> the vanilla vpath it replaces (overlayKey);
+            //     known DIRECTLY here (§5.3 "the vanilla vpath it replaces").
+            //   * cross-mod target    -> the resolved cross-mod serve-vpath, only
+            //     known after PASS 1 builds the index; a chained publish (publish
+            //     while replacing ANOTHER mod's published asset) is resolved in
+            //     PASS 2 along with the target.
+            // The add-new index entry (byPluginPath) records the asset's OWN
+            // add-new vpath for the PluginPathPair form — §5.3's "its own add-new
+            // vpath if the published asset is an add-new".
+            const std::string relVpath = AssetRelVpath(*pp, d.diskPath);
+            if (!d.publishName.empty() && d.routesToOverlay) {
+                // A publish-and-replace-VANILLA asset: serve-vpath = the vanilla
+                // vpath (overlayKey). Publish it now (directly known).
+                const std::string packed = PackName(
+                    d.owningAuthor, d.owningPlugin, d.publishName);
+                asset_namespace::PublishName(packed, d.diskPath, d.overlayKey);
+                pubIndex.byPublishedName[packed] = d.overlayKey;
+                ++published;
+            }
+            // The by-(plugin,path) index entry: a PluginPathPair consumer names a
+            // publisher's asset by its rel-path. Map it to the publisher's serve-
+            // vpath — the vanilla vpath it replaces (overlayKey) when this row
+            // replaces a vanilla target, else the asset's own add-new vpath.
+            if (!relVpath.empty()) {
+                pubIndex.byPluginPath[PluginPathKey(
+                    d.owningAuthor, d.owningPlugin, relVpath)] =
+                    d.routesToOverlay ? d.overlayKey : relVpath;
             }
 
-            // A vanilla-path declaration — key the map by the DECLARED TARGET.
-            // Load-order precedence: the FIRST plugin (earliest in load order)
-            // to declare a target WINS the slot; a later plugin declaring the
-            // SAME target is suppressed with the established winner/suppressed
-            // conflict-report line (the §4.4 conflict, reused from the prior
-            // build — name winner / suppressed / why (load order) / the fix).
-            const std::string& key = d.overlayKey;
-            auto found = g_overlayMap.find(key);
-            if (found != g_overlayMap.end()) {
-                log::WarnF("Asset replacement conflict on target '%s': plugin "
-                           "'%s' wins (it loads earlier); plugin '%s' is "
-                           "suppressed for this target. If you wanted '%s' to "
-                           "win, give it a lower 'priority' number in its "
-                           "kcdx.toml.",
-                           d.target.c_str(), found->second.owningPlugin.c_str(),
-                           d.owningPlugin.c_str(), d.owningPlugin.c_str());
-                ++suppressed;
-                continue;
+            // Key the overlay map for a VANILLA-PATH target now (the dominant
+            // US-1 case). Cross-mod targets are deferred to PASS 2 (their key —
+            // the resolved serve-vpath — needs the full index).
+            if (d.routesToOverlay) {
+                const std::string& key = d.overlayKey;
+                auto found = g_overlayMap.find(key);
+                if (found != g_overlayMap.end()) {
+                    log::WarnF("Asset replacement conflict on target '%s': plugin "
+                               "'%s' wins (it loads earlier); plugin '%s' is "
+                               "suppressed for this target. If you wanted '%s' to "
+                               "win, give it a lower 'priority' number in its "
+                               "kcdx.toml.",
+                               d.target.c_str(),
+                               found->second.owningPlugin.c_str(),
+                               d.owningPlugin.c_str(), d.owningPlugin.c_str());
+                    ++suppressed;
+                } else {
+                    g_overlayMap.emplace(key,
+                                         OverlayEntry{d.owningPlugin, d.diskPath});
+                    ++entries;
+                }
+            } else {
+                // Cross-mod target — defer to PASS 2 (keep it WITH its plugin).
+                all.push_back(DeclWithPlugin{std::move(d), pp});
             }
-
-            g_overlayMap.emplace(key,
-                                 OverlayEntry{d.owningPlugin, d.diskPath});
-            ++entries;
         }
+    }
+
+    // --- PASS 2: resolve cross-mod targets against the index, key the map ------
+    // Each cross-mod target (PublishedName or PluginPathPair) resolves to the
+    // vpath the OTHER mod's asset SERVES AT (design §5.3, hop 1); the map is keyed
+    // by THAT vpath (hop 2), so B's loose file serves where A's published asset
+    // would. The §4.4 conflict + load-order winner apply EXACTLY as for a vanilla
+    // target. `all` is in load order (PASS 1 appended in load order), so the
+    // earliest declarer of a resolved serve-vpath wins.
+    for (auto& dp : all) {
+        const asset_sidecar::Declaration& d = dp.decl;
+
+        // Hop 1 — resolve the cross-mod target to the publisher's serve-vpath.
+        std::string serveVpath;
+        bool resolved = false;
+        if (d.kind == asset_sidecar::TargetKind::PublishedName) {
+            const std::string packed = LowerPackedName(d.target);
+            auto it = pubIndex.byPublishedName.find(packed);
+            if (it != pubIndex.byPublishedName.end()) {
+                serveVpath = it->second;
+                resolved = true;
+            }
+        } else if (d.kind == asset_sidecar::TargetKind::PluginPathPair) {
+            const std::string normPath = NormalizeVPath(d.replacesPath);
+            // replacesPlugin is the "<author>.<plugin>" the consumer wrote; it is
+            // ALREADY the 2-dot identity, so pass it as the plugin half with an
+            // empty author (PluginPathKey lowercases + joins it verbatim).
+            const std::string key = PluginPathKey(
+                /*author=*/std::string(), d.replacesPlugin, normPath);
+            auto it = pubIndex.byPluginPath.find(key);
+            if (it != pubIndex.byPluginPath.end()) {
+                // The publisher has a sidecar at that path — serve-vpath is its
+                // declared target's serve-vpath (a publish-and-replace's vanilla
+                // vpath, or that asset's own add-new vpath; §5.3).
+                serveVpath = it->second;
+                resolved = true;
+            } else {
+                // No sidecar at that path — the publisher's asset there is a PURE
+                // ADD-NEW (referenceable but replacing nothing). §5.3: its serve-
+                // vpath = its OWN add-new vpath = replaces_path. Resolve ONLY if
+                // the publisher is LOADED and the file actually exists under its
+                // assets/ (else B would key a vpath the publisher never serves —
+                // an AP14 non-serving entry; fail loud below). The add-new vpath
+                // IS replaces_path (the engine opens an add-new asset at its own
+                // assets-relative path).
+                const plugins::LoadedPlugin* pub =
+                    FindLoadedByIdentity(d.replacesPlugin);
+                if (pub && !pub->manifest.assetsEntrypointRel.empty()) {
+                    std::error_code ec;
+                    const std::filesystem::path file =
+                        (pub->manifest.folderPath /
+                         pub->manifest.assetsEntrypointRel /
+                         std::filesystem::path(d.replacesPath))
+                            .lexically_normal();
+                    if (std::filesystem::is_regular_file(file, ec)) {
+                        serveVpath = normPath;  // the add-new vpath = replaces_path
+                        resolved = true;
+                    }
+                }
+            }
+        }
+
+        if (!resolved) {
+            // Hop 1 failed — the cross-mod target resolves to no published asset
+            // seen this build. FAIL LOUD (AP14): name the unresolved target +
+            // declaring plugin, do NOT silently drop it (the removed
+            // overlay_decl_scoped_out deferral). A consumer whose publisher is not
+            // loaded, or a mistyped published name / pair, lands here.
+            ++unresolved;
+            const std::string tgt =
+                d.kind == asset_sidecar::TargetKind::PluginPathPair
+                    ? (d.replacesPlugin + ":" + d.replacesPath)
+                    : d.target;
+            log::WarnF("Cross-mod asset replacement target '%s' (declared by "
+                       "plugin '%s') resolves to no published asset — the owning "
+                       "mod must publish that name/asset (a sidecar `name`, or "
+                       "kcdx.assets.declare), and it must be loaded. Check the "
+                       "<author>.<plugin>.<bare> / replaces_plugin+replaces_path "
+                       "spelling; an unresolved cross-mod target is a loud error, "
+                       "never a silent no-op.",
+                       tgt.c_str(), d.owningPlugin.c_str());
+            continue;
+        }
+
+        // A CHAINED publish: this cross-mod declaration ALSO carries a `name`
+        // (publish-while-cross-mod-replacing). Its serve-vpath is the resolved
+        // cross-mod serve-vpath (§5.3 "the vanilla vpath it replaces" applied
+        // transitively). Publish it now so a downstream consumer of THIS name
+        // resolves it — best-effort within PASS 2's load order; a consumer
+        // processed earlier in `all` than this publisher gets the loud unresolved
+        // report (never a silent gap). The dominant publish (publish-and-replace-
+        // vanilla) was already published in PASS 1.
+        if (!d.publishName.empty()) {
+            const std::string packed = PackName(
+                d.owningAuthor, d.owningPlugin, d.publishName);
+            asset_namespace::PublishName(packed, d.diskPath, serveVpath);
+            pubIndex.byPublishedName[packed] = serveVpath;
+            ++published;
+        }
+
+        // Hop 2 — key the overlay map by the resolved serve-vpath (§4.4 conflict).
+        auto found = g_overlayMap.find(serveVpath);
+        if (found != g_overlayMap.end()) {
+            log::WarnF("Asset replacement conflict on cross-mod target (serves at "
+                       "'%s'): plugin '%s' wins (it loads earlier); plugin '%s' is "
+                       "suppressed for this target. If you wanted '%s' to win, "
+                       "give it a lower 'priority' number in its kcdx.toml.",
+                       serveVpath.c_str(), found->second.owningPlugin.c_str(),
+                       d.owningPlugin.c_str(), d.owningPlugin.c_str());
+            ++suppressed;
+            continue;
+        }
+        g_overlayMap.emplace(serveVpath,
+                             OverlayEntry{d.owningPlugin, d.diskPath});
+        ++crossmod;
+        ++entries;
+        LOG_DEBUG_KV(kCat, "crossmod_resolved",
+                     kcdx::log::KV("plugin", d.owningPlugin),
+                     kcdx::log::KV("target",
+                         d.kind == asset_sidecar::TargetKind::PluginPathPair
+                             ? (d.replacesPlugin + ":" + d.replacesPath)
+                             : d.target),
+                     kcdx::log::KV("serve_vpath", serveVpath),
+                     kcdx::log::KV("disk", d.diskPath));
     }
 
     // Discovery summary — the build's observability. One event-driven line at
@@ -641,8 +909,9 @@ void BuildOverlayMap() {
                  kcdx::log::KV("plugins_with_assets", walked),
                  kcdx::log::KV("entries", entries),
                  kcdx::log::KV("suppressed", suppressed),
-                 kcdx::log::KV("scoped_out", scopedOut),
-                 kcdx::log::KV("published_pending", published));
+                 kcdx::log::KV("crossmod_resolved", crossmod),
+                 kcdx::log::KV("crossmod_unresolved", unresolved),
+                 kcdx::log::KV("published", published));
 
     // Per-entry dump (vpath -> winning plugin) so the map is fully observable
     // in kcdx-dev.log. Discovery-time, bounded by the loaded plugin set — not a

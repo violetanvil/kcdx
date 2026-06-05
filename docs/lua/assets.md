@@ -113,7 +113,7 @@ The sidecar above is the no-code path. To reference an asset *from your
 | `kcdx.assets.get_by_name(name)` | string published name | a loadable path (string) for *your own* published asset; `(nil, err)` if you never declared that name. |
 | `kcdx.assets.declare(name, file)` | string name, string file | publishes `<author>.<plugin>.<name>` → the file's loadable path; returns that path. `(nil, err)` if the file is not in your `assets/`. |
 | `kcdx.assets.register(vpath, file)` | string vpath, string file | makes `file` serve when the game opens `vpath`, for opens *after* the call; returns the loadable path. `(nil, err)` if the file is not in your `assets/`. |
-| `kcdx.assets.replace(target, with)` | string target, string with | makes `with` serve where a **vanilla-path** `target` was opened, for opens *after* the call; returns the loadable path. `(nil, err)` if `with` is not in your `assets/`. A **packed cross-mod** `target` (`"author.plugin.name"`) returns `(nil, err)` for now — it resolves with cross-mod resolution, a later step (see Status). |
+| `kcdx.assets.replace(target, with)` | string target, string with | makes `with` serve where `target` was opened, for opens *after* the call; returns the loadable path. `target` is a **vanilla-path** OR another mod's **packed name** (`"author.plugin.name"` — resolves to the vpath that mod's asset serves at). `(nil, err)` if `with` is not in your `assets/`, or a packed target resolves to no published asset. |
 
 Every verb resolves your `file` / `with` through your `assets/` folder, so a
 mistyped or missing asset is a loud `(nil, err)` naming the path — never a silent
@@ -213,15 +213,14 @@ end
 
 | Arg | Type | Meaning |
 |---|---|---|
-| `target` | string | What to replace. A **vanilla asset path** (`"Libs/UI/Textures/KCDLogo.dds"`) **serves now**. Another mod's **packed name** (`"redmoon.outfit.shirt"`) — the string-key form of the cross-plugin namespace, for a key the dotted form can't express — **resolves with cross-mod resolution, a later step** (see Status); until then a packed target returns a teaching error rather than silently not serving. |
+| `target` | string | What to replace. A **vanilla asset path** (`"Libs/UI/Textures/KCDLogo.dds"`) — your file serves where the vanilla asset would. OR another mod's **packed name** (`"redmoon.outfit.shirt"`) — the string-key form of the cross-plugin namespace, for a key the dotted form can't express — your file serves where **that mod's published asset** would (the engine resolves the name to the vpath that asset serves at). You write a path or a name; never the vpath the other mod's asset occupies. |
 | `with` | string | The replacement asset, **relative to your `assets/` folder**. |
 
-**Returns:** for a **vanilla-path** `target`, the replacement's loadable path on
-success — and **takes effect thereafter**, like `register`. `(nil, err)` if
-`with` is not in your `assets/`. A **packed cross-mod** `target`
-(`"author.plugin.name"`) returns `(nil, err)` for now — cross-mod resolution
-(resolving the packed name to the vpath the other mod's asset serves at) lands in
-a later step; the error tells you so, never a silent no-op.
+**Returns:** the replacement's loadable path on success — and **takes effect
+thereafter**, like `register`. `(nil, err)` if `with` is not in your `assets/`,
+or if a packed cross-mod `target` resolves to no published asset (the owner is
+not loaded, or never published that name) — a teaching error naming the
+unresolved target, never a silent no-op.
 
 ### Reference another mod's asset — the navigable namespace
 
@@ -261,19 +260,22 @@ The C++ mirror (`K.assets->GetByPath` / `GetByName`) is a later phase — see
   shown above and in [planned.md](planned.md) so the whole surface is visible.
 - **Code-side publishing + resolution is LIVE.** `declare` publishes a name into
   your namespace and `get_by_name` resolves it (your own, or another mod's via
-  the cross-plugin namespace). `register` / a **vanilla-path** `replace` write a
-  runtime overlay that takes effect for opens **after** the call.
-- **`replace` with a packed cross-mod target is a later step.** A `replace`
-  whose `target` is another mod's packed name (`"author.plugin.name"`) needs
-  cross-mod *resolution* — resolving the packed name to the vpath the other mod's
-  asset serves at — which lands with the cross-mod resolution phase. Until then a
-  packed `replace` target returns a teaching `(nil, err)` saying so, never a
-  silent no-op. The **vanilla-path** `replace` form serves now.
-- **The declarative `replaces.toml` cross-mod *resolution*** (a sidecar
-  `replaces` naming another mod's published name / the cross-mod pair) still
-  lands with the sidecar published-name namespace in a later phase — a cross-mod
-  *sidecar* row is recorded and reported but does not yet serve. The *code-side*
-  `declare` / `get_by_name` published-name path above is live now.
+  the cross-plugin namespace). `register` / `replace` write a runtime overlay
+  that takes effect for opens **after** the call.
+- **Cross-mod `replace` is LIVE.** `replace` whose `target` is another mod's
+  packed name (`"author.plugin.name"`) resolves the name to the vpath that mod's
+  published asset serves at, and your file serves where theirs would — the same
+  name→target resolution every shared name uses (you write the name, the engine
+  resolves the vpath). A packed target that resolves to no published asset (the
+  owner is not loaded, or never published that name) returns a teaching error
+  naming it, never a silent no-op.
+- **The declarative `replaces.toml` cross-mod *resolution* is LIVE.** A sidecar
+  `replaces` naming another mod's published name (or the
+  `replaces_plugin`+`replaces_path` pair) resolves at map-build to the vpath that
+  mod's asset serves at, and your file serves where theirs would (the load-order
+  winner among same-target declarations serves; the loser gets the conflict
+  line). The same resolution the code-side `replace` uses — sidecar and code form
+  resolve identically.
 
 ## Glossary
 
@@ -288,8 +290,13 @@ The C++ mirror (`K.assets->GetByPath` / `GetByName`) is a later phase — see
   from a path coincidence: a file with no declaration is referenceable but
   replaces nothing.
 - **replacement target** — what a declaration replaces: a vanilla asset path, or
-  (later phase) another mod's published name / its asset by the
-  `replaces_plugin`+`replaces_path` pair.
+  another mod's published name (or its asset by the
+  `replaces_plugin`+`replaces_path` pair) — the cross-mod name resolves to the
+  vpath that mod's asset serves at.
+- **serve-vpath** — the vpath a published asset serves at: its own add-new vpath,
+  or the vanilla vpath it replaces if the asset is itself a replacement. A
+  cross-mod `replace`/sidecar resolves another mod's published name to its
+  serve-vpath, then serves your file there.
 - **loadable path** — the on-disk path `kcdx.assets.get_by_path` returns: the
   concrete file path the engine serves the asset from, ready to hand to a game
   asset API. You write a path *relative to your `assets/` folder*; the engine

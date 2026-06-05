@@ -1,0 +1,7 @@
+<!-- COMP-16 consumer B (code-form) replacement asset — a real file under B's
+     assets/ so the runtime replace resolves `with` to a loadable disk path. B's
+     code-form replace("ts.comp_16_publisher_a.belt", "data/comp16_b.xml") keys
+     the runtime-overlay store at A's serve-vpath with THIS file; the engine
+     opening A's serve-vpath serves these bytes (US-4). Content is irrelevant;
+     only its PRESENCE under assets/ matters. -->
+<comp16 marker="consumer-B-code"/>

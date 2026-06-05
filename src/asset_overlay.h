@@ -84,10 +84,16 @@ std::string NormalizeVPath(const std::string& vpath);
 // overlay). Declarations are processed in load order, so the LOAD-ORDER WINNER
 // occupies a target's slot and a later plugin declaring the SAME target is
 // reported as suppressed (the established winner/suppressed conflict-report
-// line, §4.4). A cross-mod / published-name target (a US-3/US-4 reference) is
-// NOT a vanilla vpath the engine requests — it is reported (overlay_decl_-
-// scoped_out) and consumed by a later phase, not keyed here. Emits one
-// discovery summary at LOG_DEBUG so the build is observable in kcdx-dev.log.
+// line, §4.4). A cross-mod / published-name target (a US-3/US-4 reference —
+// `replaces` naming another mod's published name, or the
+// `replaces_plugin`+`replaces_path` pair) is RESOLVED here (design §5.3):
+// TWO-PASS — PASS 1 keys the vanilla-path declarations and builds a
+// PublisherIndex of every published asset's serve-vpath; PASS 2 resolves each
+// cross-mod target against that complete index to the vpath its asset serves at
+// and keys the map by THAT vpath, with the same §4.4 load-order conflict. A
+// cross-mod target resolving to no published asset is a LOUD report (AP14),
+// never a silent drop. Emits one discovery summary at LOG_DEBUG so the build is
+// observable in kcdx-dev.log.
 //
 // Call AFTER load-order resolution (g_plugins populated, load_order::Resolve
 // run) and BEFORE the resolver hook would first read the map. Reuses

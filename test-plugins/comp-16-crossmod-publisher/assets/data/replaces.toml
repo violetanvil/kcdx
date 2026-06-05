@@ -1,0 +1,18 @@
+# COMP-16 publisher (A) — sidecar publish-and-replace.
+#
+# A's `belt` asset (comp16_belt.xml) REPLACES the vanilla path
+# Data/comp16_crossmod_target.xml AND is PUBLISHED under the bare name `belt`.
+# Because it is a publish-and-replace, its SERVE-VPATH is the vanilla vpath it
+# replaces (design §5.3) — "data/comp16_crossmod_target.xml" (normalized). The
+# consumers' cross-mod targets resolve to THAT vpath, so their files serve where
+# A's belt would: i.e. wherever the game opens Data/comp16_crossmod_target.xml.
+#
+# BuildOverlayMap (PASS 1) publishes ts.comp_16_publisher_a.belt ->
+# { serve_vpath = "data/comp16_crossmod_target.xml", disk = <.../comp16_belt.xml> }
+# into the published-name store AND keys the overlay map by that vpath for A
+# (A's own vanilla replacement). The consumers (PASS 2) key the SAME vpath for
+# their files; the §4.4 load-order winner among them serves.
+[[asset]]
+file     = "comp16_belt.xml"
+replaces = "Data/comp16_crossmod_target.xml"
+name     = "belt"

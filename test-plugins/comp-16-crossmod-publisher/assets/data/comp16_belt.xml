@@ -1,0 +1,7 @@
+<!-- COMP-16 publisher (A) `belt` asset — a real file under A's assets/ so the
+     publish resolves to a loadable disk path and the consumers' cross-mod
+     targets resolve to a real published asset. Content is irrelevant; only its
+     PRESENCE under assets/ matters (the build-time path confirms the file
+     exists, then publishes/keys its absolute disk path). This is A's "belt"
+     replacement for Data/comp16_crossmod_target.xml. -->
+<comp16 marker="publisher-A-belt"/>

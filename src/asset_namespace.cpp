@@ -4,18 +4,22 @@
 // implements the two runtime stores behind atomic-pointer (RCU) snapshots:
 //   * g_runtimeOverlay  — vpath -> winning file (register/replace write; the two
 //     resolver hooks read lock-free, ALONGSIDE the build-time g_overlayMap);
-//   * g_publishedNames  — packed <author>.<plugin>.<bare> -> disk path (declare
-//     writes; get_by_name reads).
+//   * g_publishedNames  — packed <author>.<plugin>.<bare> -> { disk path, serve-
+//     vpath } (declare writes; get_by_name reads the disk path, cross-mod replace
+//     reads the serve-vpath — design §5.3).
 //
 // Memory ordering (concurrency.md §"Memory ordering"): the writer's pointer swap
 // is store-RELEASE (publishes the new snapshot's fully-built contents); every
 // reader's load is ACQUIRE (consumes them) — the happens-before edge a reader-
 // consumes-writer-published store requires. NOT relaxed: a relaxed load could
 // observe the new pointer before the snapshot's map contents are visible, a data
-// race on the snapshot. Writer serialization: a SINGLE writer (the Lua main
-// thread — plugin.lua + its require()s run on the one Lua VM thread), so the
-// read-copy-update needs no write-lock and the swap is a plain store-release, not
-// a compare-exchange loop (no second writer races it).
+// race on the snapshot. Writer serialization (no write-lock, plain store-release,
+// no CAS): the runtime-overlay store has ONE writer (register/replace, the Lua
+// main thread). The published-name store has TWO writers — build-time PublishName
+// (BuildOverlayMap, the worker thread) and runtime declare (Lua main thread) —
+// serialized TEMPORALLY (worker discovery completes before the Lua entrypoints
+// fire; see the header), so at most one is ever live and no two writes overlap.
+// A CAS retry becomes required only if any two writes could overlap.
 
 #include "asset_namespace.h"
 
@@ -107,17 +111,24 @@ bool LookupRuntimeOverlay(const std::string& keyAlreadyNormalized,
 
 // ---- Published names -------------------------------------------------------
 
-void PublishName(const std::string& packedName, const std::string& diskPath) {
-    // SINGLE-WRITER read-copy-update, same RCU shape as RegisterRuntimeOverlay.
+void PublishName(const std::string& packedName, const std::string& diskPath,
+                 const std::string& serveVpath) {
+    // TWO-WRITER (temporally serialized) read-copy-update, same RCU shape as
+    // RegisterRuntimeOverlay. PublishName is called by BOTH build-time
+    // BuildOverlayMap (the worker thread, at discovery) AND runtime declare (the
+    // Lua main thread) — but never concurrently: worker discovery completes
+    // before the Lua entrypoints fire (see the header). So the plain
+    // load-copy-store-release is correct without a CAS (no two writes overlap).
     const PublishedNameMap* cur =
         g_publishedNames.load(std::memory_order_acquire);
     PublishedNameMap* next = new PublishedNameMap(*cur);  // retained for session
-    (*next)[packedName] = diskPath;
+    (*next)[packedName] = PublishedNameEntry{diskPath, serveVpath};
     g_publishedNames.store(next, std::memory_order_release);
 
     LOG_DEBUG_KV(kCat, "published_name_declared",
                  kcdx::log::KV("name", packedName),
                  kcdx::log::KV("disk", diskPath),
+                 kcdx::log::KV("serve_vpath", serveVpath),
                  kcdx::log::KV("entries",
                      static_cast<unsigned long long>(next->size())));
 }
@@ -127,7 +138,17 @@ bool LookupPublishedName(const std::string& packedName, std::string& outDisk) {
         g_publishedNames.load(std::memory_order_acquire);
     auto found = snap->find(packedName);
     if (found == snap->end()) return false;
-    outDisk = found->second;
+    outDisk = found->second.diskPath;
+    return true;
+}
+
+bool ResolvePublishedVpath(const std::string& packedName,
+                           std::string& outVpath) {
+    const PublishedNameMap* snap =
+        g_publishedNames.load(std::memory_order_acquire);
+    auto found = snap->find(packedName);
+    if (found == snap->end()) return false;
+    outVpath = found->second.serveVpath;
     return true;
 }
 

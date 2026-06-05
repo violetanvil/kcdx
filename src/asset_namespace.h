@@ -17,10 +17,14 @@
 //     build-time map (on a build-time MISS) so a runtime add/replace serves the
 //     same way a build-time overlay does. Take-effect = "thereafter" (§3 US-6):
 //     a register/replace affects assets opened AFTER the call; no re-resolve.
-//   * the PUBLISHED-NAME store  — <author>.<plugin>.<name> -> resolved disk
-//     path, written by kcdx.assets.declare; read by kcdx.assets.get_by_name (own
-//     + the §6 cross-plugin form). NOT consulted by the resolver — a published
-//     name is a code-side reference contract, not an engine open-by-path target.
+//   * the PUBLISHED-NAME store  — <author>.<plugin>.<name> -> { resolved disk
+//     path, resolved SERVE-VPATH }, written by kcdx.assets.declare; the disk path
+//     read by kcdx.assets.get_by_name (own + the §6 cross-plugin form), the
+//     serve-vpath read by cross-mod replace (design §5.3). NOT consulted by the
+//     resolver hooks — a published name is a code-side reference contract, not an
+//     engine open-by-path target. The serve-vpath it carries IS what a cross-mod
+//     replace keys the OVERLAY store by (a name resolves to the vpath its asset
+//     serves at — the SAME index every shared name uses, naming-namespaces.md).
 //
 // === Concurrency: lock-free RCU-snapshot reads (design §5.1, concurrency.md) ==
 //
@@ -41,13 +45,21 @@
 //     (concurrency.md §"Memory ordering"): the writer publishes, the reader
 //     consumes; NOT relaxed.
 //
-// WRITER SERIALIZATION: register/declare/replace run on the Lua MAIN thread
-// (plugin.lua + every file it require()s execute on the single Lua VM thread —
-// there is no second writer thread). A single writer needs no write-lock for the
-// read-copy-update. The functions here are documented + built for that single-
-// writer assumption; a CAS loop is NOT used because no second writer exists to
-// race the swap. (If a second writer thread is ever introduced, the swap must
-// become a compare-exchange retry loop — flagged at each writer below.)
+// WRITER SERIALIZATION: the published-name store has TWO writers, serialized
+// TEMPORALLY (never concurrent), so the plain read-copy-update + store-release
+// is correct without a CAS loop:
+//   1. BUILD-TIME — BuildOverlayMap (asset_overlay.cpp) calls PublishName for
+//      every sidecar `name` on the plugin-loader WORKER thread, at discovery.
+//   2. RUNTIME — register/declare/replace run on the Lua MAIN thread (plugin.lua
+//      + every file it require()s execute on the single Lua VM thread; the author
+//      verbs only QUEUE during entrypoint parse, then run post-entrypoint).
+// These never overlap: worker discovery (writer 1) COMPLETES before the Lua
+// entrypoints fire (writer 2) — the lifecycle orders them (plugin_loader runs
+// discovery + BuildOverlayMap, THEN the Lua entrypoints). So at most one writer
+// is ever live; the read-copy-update needs no write-lock and the swap is a plain
+// store-release, not a CAS. (If a build-time and a runtime write could ever
+// overlap — e.g. a runtime write fired before discovery completed — the swap
+// would need a compare-exchange retry loop; flagged at each writer below.)
 //
 // OLD-SNAPSHOT RECLAMATION — retain-for-session (the bounded, sanctioned choice):
 // when the writer swaps in a new snapshot, a resolver thread may still be reading
@@ -115,25 +127,47 @@ bool LookupRuntimeOverlay(const std::string& keyAlreadyNormalized,
                           std::string& outDisk,
                           std::string* outOwningPlugin);
 
-// ---- The published-name store: declare WRITES, get_by_name READS -------------
+// ---- The published-name store: declare WRITES, get_by_name + cross-mod READ ---
 //
-// declare publishes <author>.<plugin>.<bare> -> a resolved disk path; get_by_name
-// resolves a published name (own, or the §6 cross-plugin form) back to that path.
-// This store is NOT consulted by the resolver hooks — it is a code-side reference
-// contract. It uses the SAME RCU-snapshot shape as the runtime-overlay store (the
-// writer is the same single Lua main thread; reads are from the binder, also main
-// thread today, but the RCU shape keeps it uniform + future-thread-safe).
+// declare publishes <author>.<plugin>.<bare> -> { resolved disk path, resolved
+// SERVE-VPATH }; get_by_name resolves a published name (own, or the §6 cross-
+// plugin form) back to the DISK PATH; cross-mod replace resolves it to the
+// SERVE-VPATH (design §5.3). This store is NOT consulted by the resolver hooks —
+// it is a code-side reference contract. It uses the SAME RCU-snapshot shape as
+// the runtime-overlay store (the writer is the same single Lua main thread; reads
+// are from the binder, also main thread today, but the RCU shape keeps it uniform
+// + future-thread-safe).
 
-// The published-name snapshot: packed "<author>.<plugin>.<bare>" -> disk path.
-using PublishedNameMap = std::unordered_map<std::string, std::string>;
+// One published-name slot: the loadable disk path get_by_name returns (US-3,
+// unchanged) AND the resolved SERVE-VPATH cross-mod replace keys the overlay
+// store by (design §5.3 — a published name resolves to the vpath its asset
+// SERVES AT). serveVpath is NORMALIZED via asset_overlay::NormalizeVPath (the
+// SAME fold the overlay map + the resolver use — one key contract across all
+// stores), so a cross-mod replace keys the overlay store with a key the resolver
+// will match when the engine opens that vpath. For a PUBLISH-AND-REPLACE asset
+// the serve-vpath is the vanilla vpath it replaces; for a PURE ADD-NEW publish it
+// is the asset's own add-new vpath (its path relative to assets/) — the binder /
+// build-time path derives it and hands the normalized form here.
+struct PublishedNameEntry {
+    std::string diskPath;    // loadable disk path (get_by_name — US-3)
+    std::string serveVpath;  // normalized serve-vpath (cross-mod replace — §5.3)
+};
 
-// Publish a name (kcdx.assets.declare). Build-new + release-swap: copy the
-// current snapshot, insert/overwrite the packed-key -> diskPath slot, publish.
-// `packedName` is the full "<author>.<plugin>.<bare>" the binder built from the
-// caller's identity + the bare name. `diskPath` is the resolved loadable path of
-// the declared `file` (resolved by ResolveAssetPath in the binder, like
-// get_by_path). Single-writer — no write-lock.
-void PublishName(const std::string& packedName, const std::string& diskPath);
+// The published-name snapshot: packed "<author>.<plugin>.<bare>" -> entry.
+using PublishedNameMap =
+    std::unordered_map<std::string, PublishedNameEntry>;
+
+// Publish a name (kcdx.assets.declare, the sidecar `name`). Build-new + release-
+// swap: copy the current snapshot, insert/overwrite the packed-key -> entry slot,
+// publish. `packedName` is the full "<author>.<plugin>.<bare>" the binder built
+// from the caller's identity + the bare name. `diskPath` is the resolved loadable
+// path of the declared `file` (resolved by ResolveAssetPath in the binder, like
+// get_by_path). `serveVpath` is the resolved serve-vpath (already NORMALIZED by
+// the caller via asset_overlay::NormalizeVPath — the vanilla vpath the published
+// asset replaces, or its own add-new vpath; design §5.3). Single-writer — no
+// write-lock.
+void PublishName(const std::string& packedName, const std::string& diskPath,
+                 const std::string& serveVpath);
 
 // Resolve a published name to its disk path (kcdx.assets.get_by_name + the §6
 // cross-plugin form). Loads the published-name snapshot acquire, looks up the
@@ -141,5 +175,16 @@ void PublishName(const std::string& packedName, const std::string& diskPath);
 // MISS into the teaching error). `packedName` is the full
 // "<author>.<plugin>.<bare>" the binder built.
 bool LookupPublishedName(const std::string& packedName, std::string& outDisk);
+
+// Resolve a published name to its SERVE-VPATH for cross-mod-replace keying
+// (design §5.3 — hop 1 of the two-hop cross-mod replace: name -> serve-vpath,
+// then key the overlay store by it). Loads the published-name snapshot acquire,
+// looks up the packed key, returns the NORMALIZED serve-vpath via `outVpath`.
+// Returns true on HIT, false on MISS (the caller turns a MISS into the AP14
+// teaching error naming the unresolved name). `packedName` is the full
+// "<author>.<plugin>.<bare>" the caller built. Distinct accessor from
+// LookupPublishedName (disk path) so a cross-mod replace keys by the serve-vpath
+// without also resolving the disk path it does not need.
+bool ResolvePublishedVpath(const std::string& packedName, std::string& outVpath);
 
 }  // namespace kcdx::asset_namespace

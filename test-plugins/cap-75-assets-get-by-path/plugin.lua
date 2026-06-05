@@ -382,58 +382,62 @@ do
 end
 
 -- ====================================================================
--- (9) CAP-75-replace-crossmod-teach — replace(target, with) where TARGET
---     is a PACKED CROSS-MOD published name ("<author>.<plugin>.<bare>")
+-- (9) CAP-75-replace-crossmod-unresolvable-teach — replace(target, with)
+--     where TARGET is a PACKED CROSS-MOD published name
+--     ("<author>.<plugin>.<bare>") that resolves to NO published asset
+--     (the owner plugin is not loaded / the name was never published)
 --     returns a TEACHING ERROR (nil, err), NOT a path / silent nil.
 --
---     Cross-mod RESOLUTION (a packed name -> the other mod's serve-vpath,
---     design §5.3) lands in a LATER step. The resolver only ever looks up
---     vanilla vpaths the engine opens — never a packed name — so writing
---     a packed-name overlay entry can NEVER be hit. replace() must reject
---     it loud (AP13 no silent deferred non-serve / AP14 fail loud), never
---     write the store and return a loadable path that never serves.
+--     Cross-mod RESOLUTION (a packed name -> the publisher's serve-vpath,
+--     design §5.3) is LIVE (step 8c). A packed name that RESOLVES serves
+--     (the comp-16 cross-mod fixtures prove the resolving path). This row
+--     proves the OTHER half: an UNRESOLVABLE packed name (here
+--     "redmoon.outfit.belt" — redmoon.outfit is not a loaded plugin in
+--     this suite, so nothing published `belt`) fails LOUD (AP14), never a
+--     silent nil and never a path keyed at a non-existent serve-vpath.
 --
 --     `with` is a REAL file (icons/marker.txt) so the only reason for a
---     (nil, err) here is the packed target — isolating the cross-mod
---     guard from the missing-file path (row 8).
+--     (nil, err) here is the unresolvable packed target — isolating the
+--     cross-mod-resolution-miss path from the missing-`with`-file path (row 8).
 --
--- FALSIFIABLE: a non-nil return (the packed target "resolved" / the store
--- was written + a loadable path returned — the exact silent non-serve
--- this guards), OR a bare nil with no err (silent nil), OR an err that
--- does not name the packed target -> FAIL. Only (nil, err) naming the
--- packed target is PASS.
+-- FALSIFIABLE: a non-nil return (the unresolvable packed name "resolved"
+-- to some serve-vpath / a path was returned — wrong), OR a bare nil with
+-- no err (silent nil), OR an err that does not name the packed target
+-- -> FAIL. Only (nil, err) naming the packed target is PASS.
 -- ====================================================================
 do
     local PACKED = "redmoon.outfit.belt"  -- a packed <author>.<plugin>.<bare>
+                                          -- whose owner is NOT loaded here
     local ret, err = kcdx.assets.replace(PACKED, OWN_ASSET)
 
     if ret ~= nil then
-        kcdx.test.report("CAP-75-replace-crossmod-teach", false,
+        kcdx.test.report("CAP-75-replace-crossmod-unresolvable-teach", false,
             "kcdx.assets.replace(\"" .. PACKED .. "\", \"" .. OWN_ASSET
             .. "\") returned a non-nil value (" .. tostring(ret) .. ") for a "
-            .. "PACKED cross-mod target — cross-mod resolution is a later step, "
-            .. "so a packed target must NOT write the overlay store (the entry "
-            .. "could never be hit) and must NOT return a path. That is a silent "
-            .. "non-serve (AP13/AP14); it must teach loud instead")
+            .. "PACKED cross-mod target that resolves to NO published asset "
+            .. "(redmoon.outfit is not loaded). An unresolvable cross-mod name "
+            .. "must NOT return a path (there is no serve-vpath to key); it must "
+            .. "teach loud (AP14)")
     elseif type(err) ~= "string" then
-        kcdx.test.report("CAP-75-replace-crossmod-teach", false,
+        kcdx.test.report("CAP-75-replace-crossmod-unresolvable-teach", false,
             "kcdx.assets.replace(\"" .. PACKED .. "\", ...) returned a bare nil "
-            .. "with no error string (err = " .. tostring(err) .. ") — a packed "
-            .. "cross-mod target is a silent nil here. It must return (nil, "
-            .. "teaching_err) explaining the form lands with cross-mod resolution")
+            .. "with no error string (err = " .. tostring(err) .. ") — an "
+            .. "unresolvable packed cross-mod target is a silent nil here. It "
+            .. "must return (nil, teaching_err) naming the unresolved name")
     elseif not err:find(PACKED, 1, true) then
-        kcdx.test.report("CAP-75-replace-crossmod-teach", false,
+        kcdx.test.report("CAP-75-replace-crossmod-unresolvable-teach", false,
             "kcdx.assets.replace(\"" .. PACKED .. "\", ...) returned (nil, err) "
             .. "but the error (\"" .. err .. "\") does NOT name the packed "
             .. "target — a teaching error must name what was rejected so the "
             .. "author knows which call to change")
     else
-        kcdx.test.report("CAP-75-replace-crossmod-teach", true,
+        kcdx.test.report("CAP-75-replace-crossmod-unresolvable-teach", true,
             "kcdx.assets.replace(\"" .. PACKED .. "\", \"" .. OWN_ASSET
-            .. "\") returned (nil, err) naming the packed target — a packed "
-            .. "cross-mod replace target fails LOUD (cross-mod resolution is a "
-            .. "later step), never a silent overlay-store write that could never "
-            .. "be hit (AP13/AP14). The vanilla-path form (row 8) serves now")
+            .. "\") returned (nil, err) naming the packed target — an "
+            .. "UNRESOLVABLE cross-mod name (owner not loaded / never published) "
+            .. "fails LOUD (AP14), never a path keyed at a non-existent "
+            .. "serve-vpath. A RESOLVABLE cross-mod name serves (the comp-16 "
+            .. "fixtures); the vanilla-path form (row 8) serves now")
     end
 end
 

@@ -73,7 +73,8 @@ test_names          = ["CAP-75-own",
                        "CAP-75-getbyname-missing",
                        "CAP-75-getbyname-cross",
                        "CAP-75-register",
-                       "CAP-75-replace"]
+                       "CAP-75-replace",
+                       "CAP-75-replace-crossmod-unresolvable-teach"]
 
 [entrypoints]
 lua    = "plugin.lua"

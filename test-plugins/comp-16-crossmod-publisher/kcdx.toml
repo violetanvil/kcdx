@@ -1,0 +1,50 @@
+# COMP-16 publisher (A) — the cross-mod RESOLUTION fixture's PUBLISHER.
+#
+# A publishes an asset under the name `belt` AND replaces a vanilla path with it,
+# so the published asset's SERVE-VPATH is the vanilla vpath it replaces (design
+# §5.3: a published name resolves to the vpath its asset SERVES AT — its replaced
+# vanilla vpath when it is itself a replacement). Two publish forms are exercised:
+#
+#   * SIDECAR publish (build-time) — assets/data/replaces.toml declares
+#       replaces = "Data/comp16_crossmod_target.xml", name = "belt"
+#     so BuildOverlayMap publishes ts.comp_16_publisher_a.belt -> serve-vpath
+#     "data/comp16_crossmod_target.xml" into the published-name store AND keys the
+#     overlay map by that vpath (A's own vanilla replacement).
+#   * CODE publish (runtime) — plugin.lua additionally does
+#       kcdx.assets.declare("belt_code", "data/comp16_belt.xml")
+#     so the runtime published-name store carries a name a runtime cross-mod
+#     replace (consumer B) can resolve. (Distinct bare name so the two publish
+#     surfaces do not collide — sidecar publishes `belt`, code publishes
+#     `belt_code`.)
+#
+# A asserts NOTHING — the consumers (comp-16-consumer-*) own the COMP-16 rows. A
+# exists so a published asset is visible for the consumers to resolve.
+#
+# LOAD ORDER — A is the LATEST priority (90) so it loads AFTER its sidecar
+# consumers (C/D at 30/40). This deliberately stresses the TWO-PASS build (design
+# §5.3): PASS 1 collects every publisher (incl. A, loaded last) into the index;
+# PASS 2 resolves each consumer's cross-mod target against that complete index.
+# A single forward pass would miss A (it loads after the consumers) — the two-pass
+# is exactly for a publisher declared LATER in load order than a consumer.
+#
+# Test mode: boot-only. The publisher is confirmed indirectly — the consumers'
+# cross-mod targets resolve to A's serve-vpath (the agent greps the
+# crossmod_resolved / published_name_declared log lines).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_16_publisher_a"
+display_name        = "COMP-16 cross-mod publisher (A — publishes `belt`, loads LAST)"
+author              = "ts"
+description         = "The cross-mod resolution fixture's publisher. Publishes an asset under the name `belt` via a replaces.toml sidecar (which also replaces a vanilla path, so belt's serve-vpath is that vanilla vpath, design §5.3) and under `belt_code` via kcdx.assets.declare (the runtime published-name store). Loads LATEST (priority 90) so it publishes AFTER its sidecar consumers load — stressing the two-pass build (PASS 1 collects publishers, PASS 2 resolves cross-mod targets). Asserts nothing; the consumers own the COMP-16 rows."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+
+[load_order]
+priority = 90
+
+[entrypoints]
+lua    = "plugin.lua"
+assets = "assets/"

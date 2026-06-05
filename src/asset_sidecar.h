@@ -44,10 +44,11 @@
 //                                        # row speaks to, relative to the sidecar
 //                                        # dir).
 //   name            = "logo"             # OPTIONAL: publish as
-//                                        # <author>.<plugin>.<name> (US-5). The
-//                                        # asset-namespace store is a LATER phase
-//                                        # — this step PARSES + reports `name`
-//                                        # but does not publish it (see .cpp).
+//                                        # <author>.<plugin>.<name> (US-5).
+//                                        # BuildOverlayMap publishes it into the
+//                                        # asset-namespace published-name store
+//                                        # with the asset's serve-vpath (§5.3), so
+//                                        # a cross-mod replace resolves it.
 //
 // FAIL LOUD (AP14, logging.md structured KV) — a malformed declaration is a
 // teaching error naming the bad row + the sidecar + the plugin, never a silent
@@ -68,24 +69,27 @@ namespace kcdx::asset_sidecar {
 // What a single resolved declaration replaces — exactly one form.
 enum class TargetKind {
     VanillaPath,    // `replaces = "<vanilla vpath>"` — keys the overlay map by
-                    // that vpath; the resolver/FOpen lookup finds it (this step).
+                    // that vpath directly; the resolver/FOpen lookup finds it.
     PublishedName,  // `replaces = "<author>.<plugin>.<bare>"` — a cross-mod
-                    // reference resolved by US-3 reference resolution, a LATER
-                    // phase. NOT a vpath the engine requests, so a name-target
-                    // overlay is NOT consumed by the FOpen/AdjustFileName lookup.
+                    // reference. BuildOverlayMap's PASS 2 resolves the name to
+                    // the publisher's SERVE-VPATH (design §5.3) and keys the
+                    // overlay map by THAT vpath, so the engine's open of the
+                    // publisher's serve-vpath hits this declaration's loose file.
     PluginPathPair, // `replaces_plugin` + `replaces_path` — an unnamed cross-mod
-                    // asset by path; resolves to the named plugin's asset's own
-                    // vpath. Same cross-mod / later-phase consumption as a
-                    // PublishedName when the target is another mod (see .cpp).
+                    // asset by path. Resolves the SAME two-hop way as a
+                    // PublishedName (by (owner, path) instead of by name) to the
+                    // named plugin's asset's serve-vpath (its vanilla replacement
+                    // target, or its own add-new vpath); §5.3.
 };
 
 // One resolved sidecar declaration (a valid `[[asset]]` row whose target was
 // confirmed to exist). `diskPath` is the absolute path of the declaring
 // plugin's loose file that wins the target; `overlayKey` is the normalized
-// vpath the overlay map is keyed by, present ONLY for a VanillaPath target this
-// step routes into the resolver/FOpen lookup. A PublishedName / cross-mod
-// PluginPathPair target carries no `overlayKey` (it is out of this step's
-// resolver path — see .cpp scope-out) and is reported, not mapped.
+// vpath the overlay map is keyed by, present ONLY for a VanillaPath target
+// (`routesToOverlay`). A PublishedName / cross-mod PluginPathPair target carries
+// no `overlayKey` — BuildOverlayMap's PASS 2 resolves it to the publisher's
+// serve-vpath (design §5.3) and keys the map by THAT vpath; the raw `target` /
+// `replacesPlugin`+`replacesPath` carry the cross-mod reference PASS 2 resolves.
 struct Declaration {
     std::string owningPlugin;   // the declaring plugin's [plugin].name
     std::string owningAuthor;   // the declaring plugin's [plugin].author
@@ -97,9 +101,9 @@ struct Declaration {
     std::string replacesPlugin; // PluginPathPair: the <author>.<plugin>
     std::string replacesPath;   // PluginPathPair: the path within that plugin
     std::string publishName;    // optional `name` (empty = not published)
-    bool        routesToOverlay; // true ⇔ a VanillaPath target this step keys
-                                 // into the overlay map; false ⇔ a cross-mod
-                                 // reference scoped out of THIS step's lookup.
+    bool        routesToOverlay; // true ⇔ a VanillaPath target keyed directly in
+                                 // BuildOverlayMap PASS 1; false ⇔ a cross-mod
+                                 // reference resolved + keyed in PASS 2 (§5.3).
     std::string overlayKey;      // normalized vpath key (set ⇔ routesToOverlay)
 };
 
@@ -113,12 +117,14 @@ struct Declaration {
 // of valid declarations appended; rejected rows are logged + skipped, not
 // counted. No-op (appends nothing) when the plugin ships no sidecar.
 //
-// PublishedName-existence: a published name's target resolves against the
-// asset-namespace store, which is a LATER phase. Until it exists, a
-// PublishedName / cross-mod PluginPathPair target's existence is NOT checkable
-// here — such a row is parsed, reported as scoped-out, and NOT rejected for
-// "missing target" (it would false-reject every valid cross-mod declaration).
-// The vanilla-path existence check (the dominant US-1 case) IS enforced now.
+// PublishedName-existence: a cross-mod target (a PublishedName / PluginPathPair)
+// names ANOTHER plugin's published asset, which this per-plugin PARSE pass cannot
+// see (it parses one plugin's sidecars in isolation). So such a row is parsed
+// here and NOT existence-checked here — its target is resolved later, in
+// BuildOverlayMap's PASS 2, against the complete cross-plugin PublisherIndex
+// (design §5.3); a target resolving to no published asset is a LOUD report there
+// (AP14), never a silent drop. The vanilla-path existence check (the dominant
+// US-1 case) IS enforced now, in this pass.
 size_t LoadDeclarationsFor(const plugins::LoadedPlugin& plugin,
                            bool (*vanillaExists)(const std::string& normVPath),
                            std::vector<Declaration>& out);

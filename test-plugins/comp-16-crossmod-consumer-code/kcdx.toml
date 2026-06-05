@@ -1,0 +1,45 @@
+# COMP-16 consumer B (CODE form) — runtime kcdx.assets.replace of a cross-mod
+# PUBLISHED NAME. Owns the COMP-16-replace-code row.
+#
+# B's plugin.lua does:
+#   kcdx.assets.replace("ts.comp_16_publisher_a.belt", "data/comp16_b.xml")
+# the PACKED cross-mod form. The two-hop §5.3 resolution: (1) resolve the packed
+# name -> A's `belt` serve-vpath (the vanilla vpath A's belt replaces,
+# "data/comp16_crossmod_target.xml"); (2) key the RUNTIME-overlay store by THAT
+# vpath. The engine opening A's serve-vpath then serves B's file (US-4).
+#
+# `belt` is published by A's SIDECAR at BUILD time (BuildOverlayMap PASS 1 writes
+# the runtime published-name store before any plugin.lua runs), so B's resolution
+# does NOT depend on A's plugin.lua ordering — `belt` is in the store at boot
+# regardless of A's priority. (Contrast A's `belt_code`, a RUNTIME declare in A's
+# plugin.lua, which WOULD require A.lua before B.lua; B resolves `belt` to stay
+# ordering-independent.)
+#
+# What B's row proves (BOOT-checkable): the packed cross-mod name RESOLVES to A's
+# serve-vpath and the runtime replace returns a loadable path keyed by it (step
+# 8b returned a teaching error here — "cross-mod resolution lands next step"; this
+# step makes it resolve). FALSIFIABLE: replace returns (nil, err) for a resolvable
+# published name -> FAIL (the resolution stub was not replaced).
+#
+# The actual SERVE (engine opens A's serve-vpath -> B's file) is IN-GAME — the
+# [manual] COMP-16-serve-code row (agent reads overlay_resolved source=runtime
+# naming B as winner). B's BOOT row proves the name->serve-vpath resolution; the
+# serve is the in-game half.
+#
+# Test mode: boot-only (the resolution + path-return self-report at load).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_16_consumer_code"
+display_name        = "COMP-16 cross-mod consumer (B — code-form replace of `belt`)"
+author              = "ts"
+description         = "Code-form cross-mod replace: kcdx.assets.replace(\"ts.comp_16_publisher_a.belt\", with) resolves the packed published name to publisher A's serve-vpath (design §5.3 two-hop) and keys the runtime-overlay store by it. Owns COMP-16-replace-code (boot: the packed name resolves + replace returns a loadable path — step 8b returned a teaching error here). The in-game serve at A's vpath is the [manual] COMP-16-serve-code row."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+test_names          = ["COMP-16-replace-code"]
+
+[entrypoints]
+lua    = "plugin.lua"
+assets = "assets/"

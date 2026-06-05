@@ -170,8 +170,10 @@ bool ResolveDeclaringFile(const fs::path& sidecarDir, const toml::table& row,
 // when the row was valid + its target confirmed; on any shape/ambiguity/missing-
 // target error fills `err` (the caller logs the teach + skips the row). The
 // missing-target check uses `vanillaExists` for a VanillaPath target (the
-// dominant US-1 case); a cross-mod/published-name target is parsed + scoped out,
-// NOT existence-checked here (the asset-namespace store is a later phase).
+// dominant US-1 case); a cross-mod/published-name target is parsed but NOT
+// existence-checked in this per-plugin pass (it names ANOTHER plugin's published
+// asset, invisible here) — its target is resolved in BuildOverlayMap PASS 2
+// against the cross-plugin PublisherIndex (§5.3; a loud AP14 report on no-match).
 bool ResolveOneRow(const toml::table& row, const fs::path& sidecarDir,
                    const std::string& sidecarPath,
                    const plugins::LoadedPlugin& plugin,
@@ -224,10 +226,11 @@ bool ResolveOneRow(const toml::table& row, const fs::path& sidecarDir,
     d.routesToOverlay = false;
 
     if (hasPair) {
-        // Unnamed cross-mod by path — a reference to ANOTHER plugin's asset.
-        // Out of THIS step's resolver/FOpen lookup path (it is not a vanilla
-        // vpath the engine requests; US-3/US-4 reference resolution, a later
-        // phase, consumes it). Parsed + reported, NOT keyed into the map.
+        // Unnamed cross-mod by path — a reference to ANOTHER plugin's asset (its
+        // own vpath is not knowable in this per-plugin pass). Parsed here; the
+        // raw replaces_plugin+replaces_path is resolved to the publisher's
+        // serve-vpath in BuildOverlayMap PASS 2 (§5.3 / US-3/US-4) and keyed
+        // there — not keyed in this pass.
         d.kind           = TargetKind::PluginPathPair;
         d.replacesPlugin = replacesPlugin;
         d.replacesPath   = replacesPath;
@@ -237,11 +240,12 @@ bool ResolveOneRow(const toml::table& row, const fs::path& sidecarDir,
 
     // One-string form: a published name OR a vanilla path (§4.2 / §6).
     if (LooksLikePublishedName(replaces)) {
-        // A cross-mod published-name target — same later-phase consumption as
-        // the pair; scoped out of this step's lookup, parsed + reported. NOT
-        // existence-checked (the asset-namespace store is a later phase; a
-        // missing-target check here would false-reject every valid cross-mod
-        // reference).
+        // A cross-mod published-name target — same PASS-2 resolution as the pair:
+        // parsed here, resolved to the publisher's serve-vpath in BuildOverlayMap
+        // PASS 2 (§5.3) and keyed there. NOT existence-checked in this per-plugin
+        // pass (the publisher's name is invisible here; a check now would
+        // false-reject every valid cross-mod reference — PASS 2 does the loud
+        // AP14 report on a genuine no-match against the complete PublisherIndex).
         d.kind   = TargetKind::PublishedName;
         d.target = replaces;
         out.push_back(std::move(d));
