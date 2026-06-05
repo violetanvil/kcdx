@@ -15,19 +15,31 @@ before the engine's boot asset open.
     in the early window; `after_game` plugins keep the late slot.
   - **Candidate B** — a new `lua_before` entrypoint, `plugin.lua` untouched.
   - P1's §4.4 outcome picks which; build that one.
-- The **ordering guard**: the early slot's asset-declaration calls complete BEFORE
-  `CSystem::Init` opens the boot assets — ordered the way `g_kcdxReadyEvent` orders
-  the seam install vs the first read (asset design §8). A boot open preceding the
-  early slot is the failure to guard against.
+- The **ordering guard — a MANDATORY happens-before EVENT GATE** (design §5, hard
+  invariant; verified by PROBE P11 v2 that the slot runs on the worker thread and the
+  boot open on the game-main thread — two threads, a cross-thread dependency, and
+  currently UNGATED). Build it as: the early slot (worker), after its
+  asset-declaration calls, **signals a new readiness event**; the boot-open path
+  (`asset_overlay.cpp` HOOK 1 + HOOK 2, game-main thread) **waits on that event and
+  BLOCKS until signaled** before resolving a boot-asset overlay. No existing edge
+  covers this (`g_kcdxReadyEvent` gates the ctor-bracket, not the boot open;
+  `g_whgameLoadedEvent` gates the worker's WHGame-mapped wait) — P3/P4 ADDS the edge.
+  **Timing-based ordering ("run the slot earlier so it finishes first") is FORBIDDEN
+  — it is the cross-thread race the gate exists to kill** (`.claude/rules/concurrency.md`,
+  `.claude/rules/polling.md`). An ungated boot open is a DEFECT fixed at source, never
+  a sleep/retry workaround. Confirm the exact event + its bounded-timeout fallback
+  under this step's architect-review.
 - Lift the manifest-load error for the chosen shape so an author can declare it.
 
 ## Test bar
 
-A `test-plugins/cap-NN-early-lua-slot/` regression: an early-slot Lua body runs and
-self-reports a marker BEFORE a sentinel boot-phase log line (proving the ordering
-guard holds), via the canonical acceptance signal. Runnable at this step (the VM is
-up from P3). PROBE Q silent. Confirmed by the user's launch + the agent's dev-log
-read.
+A `test-plugins/cap-NN-early-lua-slot/` regression that proves the GATE, not a timing
+margin: the boot-open path observed the early-slot readiness event as SIGNALED before
+it resolved the overlay (the happens-before edge held). **An order-inversion row that
+FAILS if the boot open resolved the store BEFORE the slot signaled** — the falsifiable
+proof the gate holds (design §5). NOT "marker logged before boot-phase line" (that is
+the forbidden wall-clock check). Runnable at this step (the VM is up from P3). PROBE Q
+silent. Confirmed by the user's launch + the agent's dev-log read.
 
 ## Dependencies
 

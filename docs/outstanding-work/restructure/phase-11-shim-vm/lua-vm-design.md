@@ -96,6 +96,16 @@ probe instruments `CScriptSystem::Init` + `lua_newstate` under the force-load an
 observes ground truth across four questions, each with a pre-committed, flat,
 theory-independent outcome→meaning map.
 
+> **PROBE STATUS — RAN + SETTLED (PROBE P11 v2, 2026-06-05; archive
+> `_research/probe-archive/p11-keystone-init-vm-ordering.md`).** §4.1 = the narrow
+> hook (`lua_newstate` callee) is SAFE (state virgin `storedebug=1` at creation,
+> static evidence confirms Init overwrites with no read-branch). §4.2 = one VM,
+> `[L->l_G+0xB0]==L` holds. §4.3 = **the VM-build (worker thread) → boot-open (game
+> main thread) dependency is CROSS-THREAD and was UNGATED** — the §5 ordering guard
+> was a timing defect, now corrected to a mandatory happens-before EVENT GATE (P3/P4
+> builds a NEW edge; no existing event covers it). §4.4 = the slot-shape decision is
+> unaffected, still P4-gated. P2–P6 build against this corrected design.
+
 ### 4.1 Intercept-point safety — where does the interception sit?
 
 **Lean (user, 2026-06-05): hook `lua_newstate` (the callee, `0x14492A8`); let the
@@ -132,11 +142,17 @@ game-load items.** A `kcdx.assets.replace` registered in the early Lua slot, bef
 the engine's boot asset open, must be HIT by the resolver. Re-instrument the
 resolver per `_research/probe-archive/ki0005-resolver-dds-observer.md`.
 
+The reachability is NOT a timing question — it is a GATING question (§5 "ordering
+guard"). The early slot (worker thread) and the boot open (game-main thread) are two
+threads; the boot open must be **gated** to wait on the slot's registration, never
+merely happen-after it by wall-clock. So the outcome map below reads in terms of the
+event gate, not a timing margin.
+
 | Outcome | Meaning | Next action |
 |---|---|---|
-| The early-slot register keys the runtime store BEFORE the boot open; the boot asset opens with `rt=HIT` from the overlay | **KI-0005 boot-swap delivered** — the design's core asset goal holds | confirm + close the KI-0005 boot-serve deliverable; retire/narrow the AP14 warn (§7) |
-| The early-slot register fires AFTER the boot open (ordering wrong) | the early slot is not early enough vs `CSystem::Init` | adjust the slot's run point earlier in DllMain; the boot open must follow the register (the §6b ordering guard) |
-| The register is before the open but the resolver MISSES | a store/key issue independent of timing | re-observe the key fold; this is a store bug, not a timing bug |
+| The boot-open path WAITS on the early-slot's readiness gate and resolves the overlay only after it is signaled; the boot asset opens with `rt=HIT` | **KI-0005 boot-swap delivered** — gated, not raced | confirm + close the KI-0005 boot-serve deliverable; retire/narrow the AP14 warn (§7) |
+| The boot open is UNGATED relative to the VM-build / early slot (the two run on different threads with no synchronization edge) | the cross-thread dependency is a race — a DEFECT (§5) | **fix in the design + P3/P4: add the mandatory happens-before event gate** (worker signals, boot-open path waits-and-blocks). NOT a timing fix ("run the slot earlier") — that is the forbidden race. (This is the outcome PROBE P11 v2 found: the boot-open path is currently ungated — §5 now mandates the gate.) |
+| The boot open is gated and after the signal but the resolver MISSES | a store/key issue independent of the gate | re-observe the key fold; this is a store bug, not an ordering bug |
 
 ### 4.4 Early-slot shape — which author surface runs safely this early?
 
@@ -177,10 +193,13 @@ Only if early-run `plugin.lua` is unsafe (§4.4 outcome 2) settle to **candidate
 The design does not pre-commit the answer — the probe's observed behavior settles it,
 and the settled shape is captured back into this §5 + the changelog when it lands.
 
-**The ordering guard (both candidates).** The early slot must complete its
-asset-declaration calls BEFORE `CSystem::Init` opens the boot assets. Establish +
-probe this ordering the same way `g_kcdxReadyEvent` orders the seam install vs the
-first read. A boot open that precedes the early slot is the failure to guard against.
+**The ordering guard — a MANDATORY happens-before EVENT GATE, never a timing margin (hard invariant).** The early Lua slot runs on the **kcdx worker thread**; the engine's boot-asset open runs on the **game main thread** (verified by PROBE P11 v2, 2026-06-05: `dllmain_vm_point`/VM-build on the worker, `boot_open.first` + the engine's `lua_newstate` on game-main `tid`). These are two threads with a cross-thread data dependency (the boot open must see the early slot's runtime-overlay registration). **A cross-thread dependency is permitted ONLY when an explicit synchronization edge GATES it** — multiple threads are allowed for non-conflicting work, but a dependent thread MUST be stopped by a gate until the thread it depends on has finished. Therefore:
+
+- **The gate is mandatory and explicit.** The early Lua slot (worker), after its asset-declaration calls complete, **signals a readiness event** (a new manual-reset event — call it `g_kcdxLuaSlotReadyEvent` pending P3/P4 naming). The boot-asset-open path (`asset_overlay.cpp` HOOK 1 `AdjustFileNameResolver` + HOOK 2 `FOpenLooseOverlay`, game-main thread) **waits on that event (`WaitForSingleObject`, the bounded-timeout form) and BLOCKS until it is signaled, before resolving the overlay** for a boot asset. An unsignaled boot open **blocks**; it does NOT proceed on a timing assumption and it does NOT race.
+- **No existing edge covers this** (verified 2026-06-05): the boot-open path is currently UNGATED relative to the VM-build (`asset_overlay.cpp` calls `RecordBootOpen` and proceeds with "the Lua VM not yet up"; `g_kcdxReadyEvent` gates the `ModManager` ctor-bracket, NOT the boot-asset open; `g_whgameLoadedEvent` gates the worker's WHGame-mapped wait, NOT this). So P3/P4 **adds** this edge — it cannot reuse one. (P3/P4 confirms the exact event + the bounded-timeout fallback behavior under its own architect-review.)
+- **Timing-based ordering is FORBIDDEN.** "The early slot completes ~Nms before the boot open" is NOT the guarantee and is never accepted as one (it is the cross-thread race this gate exists to kill). The happens-before EVENT EDGE is the guarantee; the wall-clock margin is irrelevant.
+- **A boot open that proceeds without the gate signaled is a DEFECT, not a deferral** — fixed at source, never worked around with a sleep, a retry, or a "usually it's ready by then." The gate is the bar (`.claude/rules/concurrency.md` — a cross-boundary dependency is gated, not timed; `.claude/rules/polling.md` — no sample-and-hope).
+- **Regression:** a permanent test row that FAILS if the boot open observes the overlay store BEFORE the slot signaled (order inversion) — the falsifiable proof the gate holds, not the timing.
 
 ---
 
