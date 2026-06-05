@@ -13,7 +13,7 @@ Ordered before Phase 2–5 so every consumer has a settled contract to build to
 |---|---|---|
 | [1.1 [CORE] The Python per-kind reference checker (test-of-record)](step-1-core-python-reference-checker.md) | DONE | e8a06cc |
 | [1.2 The JSON verification report schema (the cross-repo contract)](step-2-json-report-schema.md) | DONE | 35445b7 |
-| [1.3 [CORE] Report schema v2 — add `matched_address_version_id`, bump `schema_version` 1→2](step-3-core-report-schema-v2.md) | NOT STARTED | — |
+| [1.3 [CORE] Report schema v2 — add `matched_address_version_id`, bump `schema_version` 1→2](step-3-core-report-schema-v2.md) | DONE | ccd37e1 |
 
 ## Phase verification gate
 
