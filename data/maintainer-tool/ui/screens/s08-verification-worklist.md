@@ -25,34 +25,52 @@ around it (law 2); `‹ back` (phone) returns to s01.
 | Report summary header | `section header` | the imported report's source filename + `M/N passing` | — (status, read-only) |
 | Ingest progress | `ingest progress bar` | parsed-row count `N / M` | — (transient; resolves to the worklist) |
 | Pass/fail split control | `filter control` (`SegmentedControl`) | `Passing` / `Failing` / `All` | `filter_verdicts(group)` |
-| Worklist table | `version table row` ×N (one per reported row) | `kcdx_id` · `name` (mono) · resolved version · `verdict badge` · detail | `select_row(kcdx_id)` (drills to fix) |
-| Per-row select | `Checkbox` (passing rows only) | the row's inclusion in the batch | `toggle_select(kcdx_id)` |
-| `[Select all passing]` | `button` (subtle) | toggles all passing rows | `select_all_passing()` |
-| `[Re-verify N rows]` | `button` (primary) | the selected passing rows | `bulk_reverify(selected)` → s06 batch confirm |
+| Worklist table | `version table row` ×N (one per reported row) | `kcdx_id` · `name` (mono) · resolved version · matched `address_version` id (TRD D34) · `verdict badge` · detail | `select_row(kcdx_id)` (drills to fix) |
+| Per-row select (verified block) | `Checkbox` (passing rows only) | the row's inclusion in the verify-all batch | `toggle_select(kcdx_id)` |
+| Per-row select (failing block) | `Checkbox` (failing rows only) | the row's inclusion in the close-intervals batch | `toggle_select_failing(kcdx_id)` |
+| `[Select all passing]` / `[Select all failing]` | `button` (subtle) | toggles all rows in the block | `select_all_passing()` / `select_all_failing()` |
+| `[Verify N rows]` | `button` (primary) | the selected passing rows | `bulk_verify(selected)` → s06 batch confirm (TRD D32/D35) |
+| `[Close intervals · N rows]` | `button` (primary, failing block) | the selected failing rows | `bulk_close_intervals(selected)` → s06 batch confirm (TRD D35) |
 | A failing row's `[Fix ▸]` | `button` (subtle) | the failing row | `select_entity(kcdx_id)` → s02 / s04 |
 | `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
 
-**The verdict (per row).** The in-game startup verification pass reports one of (TRD D25/D28):
-**resolves+works** (the entry's on-disk body hash matches the DB `content_hash` — the right
-version for this build — AND the address resolves into the live module's `.text` — reachable) →
-the `verdict badge` reads **Unchanged**; **wrong-target** / **changed** (the on-disk hash
-**mismatches** — the running build diverged from the DB's recorded version) or **dead** (the
-address does not resolve into live `.text` — unreachable) → **Changed**; **cannot-check** (the
-row's kind can't be checked this run — e.g. a deferred `vtable_index`, or no `content_hash`) →
-**CannotCheck**. (The verdict is version-applicability + reachability — NOT a runtime "does the
-code still work" body hash, per the corrected D25; the hash is computed on-disk. The static
-`Ambiguous` verdict is an s04 author-time outcome, not a report one — s08's report carries the
+**The verdict (per row).** The in-game startup verification pass reports one of the four frozen
+report-schema tokens (TRD D25/D28; the JSON wire tokens are snake_case per the report schema):
+**`resolves_works`** (the swept bytes match the matched `address_version` row's `content_hash`/
+per-kind datum — the right version for this build — AND the address resolves into the live
+module's `.text` — reachable) → the `verdict badge` reads **Unchanged**; **`wrong_target`** (the
+bytes match NO candidate row's fingerprint — the function changed; the build diverged from the
+DB's recorded versions) or **`dead`** (the address does not resolve into live `.text` —
+unreachable) → **Changed**; **`cannot_check`** (the row's kind can't be checked this run — e.g. a
+deferred `vtable_index`, or no `content_hash`) → **CannotCheck**. (The verdict is
+version-applicability + reachability — NOT a runtime "does the code still work" body hash, per the
+corrected D25; the hash is computed on-disk. The static `Ambiguous` verdict is an s04 author-time
+outcome, NOT a report token — it is deliberately absent from the report enum; s08 carries the
 startup-pass verdicts only.) The badge is glyph+text, never color-alone (law 7); the detail line
-names the cause.
+names the cause; the matched `address_version` id is shown for an attributed row (TRD D34).
 
-**Bulk re-verify = ONE batched confirm (law 5 at batch scale, TRD D28).** Selecting passing
-rows + `[Re-verify N rows]` opens an **s06 batch confirm** (the `batch field-delta list`): every
-selected row's audit-trio change shown as `field: old → new` (per row: `last_verified_at_version
-→ <report version>`, `evidence_kind → live_production` per D29, `verified_date → today`,
-`verified_by → <injected identity>`), under ONE confirm action. The maintainer reviews the whole
-batch delta, confirms once → ONE atomic transaction (validate → write → export → commit + push,
-law 5). Re-verify is an UPDATE, so the new-row approval gate (law 8) does NOT apply. No silent
-bulk write — the delta is always shown before anything lands.
+**Two batched bulk actions, each ONE batched confirm (law 5 at batch scale, TRD D32/D35).** The
+worklist splits into a **verified block** (`resolves_works`) and a **failing block**
+(`wrong_target`/`dead`); each has its own bulk action + s06 batch confirm. Neither auto-writes —
+the maintainer reviews the whole batch delta and confirms once → ONE atomic transaction (validate
+→ write → export → commit + push, law 5); both are all-UPDATE so the new-row gate (law 8) does NOT
+apply.
+
+- **Verify-all** (verified block, `[Verify N rows]`) — every selected passing row's `field: old →
+  new` delta: `last_verified_at_version → <report version>`, `evidence_kind → live_production`
+  (D29), `verified_date → today`, `verified_by → <injected identity>`, AND — when the report's
+  version sat in a GAP or beyond the matched row's interval — `valid_through → <report version>`
+  on the matched `address_version` row (TRD D34, the gap-pass extension). A row already covered
+  (`last_verified_at_version >= report version`) is not in the verified block (nothing to add).
+- **Close-intervals** (failing block, `[Close intervals · N rows]`) — every selected failing
+  row's `valid_through → <its last_verified_at_version>` delta: the failed row's interval retracts
+  to the last version it passed, because the sweep disproved validity beyond it (TRD D35). No
+  "failed" field is written — not advancing `last_verified_at_version` already leaves the row
+  UNVERIFIED at the new version by the existing derivation. The maintainer then fixes the function
+  individually via `[Fix ▸]` (a corrected/variant row via the author flow, AP18 per-row — never in
+  the batch).
+
+No silent bulk write — the delta is always shown before anything lands.
 
 ## States & variants
 - **Empty (no report imported)** — the screen's resting state before an import: a neutral
@@ -72,23 +90,27 @@ bulk write — the delta is always shown before anything lands.
   loaded DB doesn't have (a stale report against a changed DB): the row renders with a
   **CannotCheck** badge + *"row `<id>` is not in the current database (stale report?)"* and is
   excluded from bulk-select. Never silently dropped (law: no silent-success).
-- **Disabled** — `[Re-verify N rows]` is disabled (not hidden) when zero passing rows are
-  selected; the disabled state is conveyed by more than color (law 7). A failing row's select
-  checkbox is absent (only passing rows are batch-re-verifiable) — its `[Fix ▸]` is the action.
+- **Disabled** — each block's bulk action is disabled (not hidden) when zero rows in that block
+  are selected: `[Verify N rows]` when no passing row is selected, `[Close intervals · N rows]`
+  when no failing row is selected; the disabled state is conveyed by more than color (law 7).
+  Passing rows carry the verify checkbox; failing rows carry the close-intervals checkbox AND a
+  `[Fix ▸]` (the close retracts the interval; the fix authors the correction — distinct actions).
 - **Edge content** — a report with **0 failing** (all pass) → the split defaults to Passing,
-  the summary reads *"All `N` rows still resolve"*; **0 passing** (all fail) → the batch action
-  is disabled, every row offers `[Fix ▸]`; a **very long report** (157+ rows) scrolls the
+  the summary reads *"All `N` rows still resolve"*, only the verify-all action is active; **0
+  passing** (all fail) → the verify action is disabled, the failing block's close-intervals action
+  is active, and every row also offers `[Fix ▸]`; a **very long report** (157+ rows) scrolls the
   worklist table, the summary header + the action bar stay fixed (law 1); a long `name` /
   detail wraps within its cell without pushing siblings (law 1).
 
 ## Links in / out
 - **In:** s01 `[Import verification report]` (`import_report` → the File API picker → this
   screen). (There is no auto-navigation to s08 — the maintainer chooses to import, law 3.)
-- **Out:** `bulk_reverify` → s06 (batch confirm overlay) → on confirm, one atomic txn → toast
-  *"Re-verified `N` rows"* (or *"blocked — Retry"*), returns to the worklist with the re-verified
-  rows updated IN PLACE (law 3 — the result updates status in place, never re-navigates); a
-  failing row's `[Fix ▸]` → `select_entity` → s02 (then s04 to author the corrected `rva` /
-  `signature`); `back_to_list` (phone) → s01.
+- **Out:** `bulk_verify` / `bulk_close_intervals` → s06 (batch confirm overlay) → on confirm, one
+  atomic txn → toast *"Verified `N` rows"* / *"Closed intervals on `N` rows"* (or *"blocked —
+  Retry"*), returns to the worklist with the actioned rows updated IN PLACE (law 3 — the result
+  updates status in place, never re-navigates); a failing row's `[Fix ▸]` → `select_entity` → s02
+  (then s04 to author the corrected `rva` / `signature`, possibly a new/variant version row — AP18
+  per-row); `back_to_list` (phone) → s01.
 
 ## Applicable laws
 - **Law 1** — the summary header + action bar never reflow as rows scroll or verdicts update;

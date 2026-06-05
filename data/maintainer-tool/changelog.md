@@ -3,6 +3,42 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-05 — batch-verify flow settled end-to-end (D33–D35; D28/D29/D32/US-11/§7/s08 revised)
+
+A full end-to-end design pass on the in-game sweep → JSON report → import → bulk re-verify loop,
+before Phases 4–5 build the producer plugin + the report ingestion. Pieces existed (D28 producer,
+D32 batch mutation, s08 worklist); this settles the seams between them. Three new decisions + the
+attribution/interval-honesty model none of them spelled out:
+
+- **D33 — sweep gating + scope.** The batch plugin is dev-mode-gated, runs once at engine startup
+  (a normal suite-gated test, self-skips for a player), and sweeps the **curated USER set only**
+  (the `kcdx_id` rows — the worklist scale), NOT the ~321k DEV bulk discovery rows.
+- **D34 — attribution + gap-pass extension.** The sweep matches the swept bytes against each
+  candidate `address_version` row's fingerprint and reports the **matched `address_version_id`**.
+  A passing version that fell in a GAP between an entity's intervals is attributed to the matched
+  row, and a verify-all **extends that row's `valid_through` forward** to the swept version
+  (the 1.4-in-the-gap-of-id-1 case). Still an UPDATE — a passing check found the bytes unchanged.
+- **D35 — two-block worklist; a failure CLOSES the over-claimed interval.** The import shows a
+  reviewed diff (never auto-write): a **verified block** (verify-all) and a **failing block**
+  (close-intervals → each failed row's `valid_through` retracts to its `last_verified_at_version`,
+  the last version it passed). A failure needs **no "failed" field** — not advancing
+  `last_verified_at_version` already reads UNVERIFIED by the existing derivation
+  (`data/seeds/policy.md`); the seed schema is unchanged.
+- **Report schema (1.2) consequence.** The frozen `report-schema/verification-report.schema.json`
+  gains a nullable per-row `matched_address_version_id` (D34) → a `schema_version` bump 1 → 2. The
+  schema FILE edit is a build follow-on (a `/plan`/`/execute` task), not this design revision; the
+  contract change is recorded here so the build picks it up.
+
+**Integrated in:** §10 D28 / D29 / D32 (revised) + D33 / D34 / D35 (new); §6 US-11; §7 (batch
+mutation); `ui/screens/s08-verification-worklist.md` (two-block worklist, the close-intervals
+action, the matched-id column, snake_case verdict tokens).
+**Why:** Phases 4 (producer plugin) + 5 (report ingestion) build to this loop; settling the
+attribution + interval-honesty model now (before those phases) keeps the executor from inventing
+the load-bearing "which row does an uncovered version belong to" + "what does a failure do to the
+interval" semantics at build time (`spec-conformance.md`). The model uses only existing seed
+fields (no schema churn against the frozen-schema guarantee) and stays all-UPDATE (D32's no-AP18
+holds; new/variant rows are authored per-row via [Fix ▸]).
+
 ## 2026-06-05 — survivor sweeps: §5 report-ingestion (D31b) + s08 verdict prose (D25)
 
 Two stale references an independent coverage re-derivation caught after the D25 correction +
