@@ -46,7 +46,7 @@ Status vocabulary: `NOT STARTED` · `IN PROGRESS` · `DONE` · `BLOCKED` ·
 | [8.5 — asset replacement (pak overlay)](phase-08.5-asset-replacement/README.md) | SUPERSEDED → [`asset-system/`](../asset-system/README.md) (Phases 1–2 DONE + confirmed; Phase 3 BLOCKED → Phase 11 — the `.lua`-execute confirmation = KI-0006, bundled into Phase 11 alongside KI-0005's boot-cache serve) | — |
 | [9 — high-level Lua surface (player/inventory + namespace stubs)](phase-09-high-level-lua/README.md) | NOT STARTED | — |
 | [9.1 — SQLite reference DB + lookup primitive + verification cache](phase-09.1-reference-db/README.md) | DONE | 498934c |
-| [9.2 — unified named-target surface (kcdx.declare + smart resolver)](phase-09.2-declare-surface/README.md) | IN PROGRESS | 2dac79b / 1c01c9d |
+| [9.2 — unified named-target surface (kcdx.declare + smart resolver)](phase-09.2-declare-surface/README.md) | DONE | 2dac79b / 1c01c9d / CAP-70 |
 | [9.3 — kcdx.hook.* / kcdx.statement.* split + locator/op namespaces + multi-region trampoline](phase-09.3-namespaces/README.md) | NOT STARTED | — |
 | [9.4 — kcdx.find{...} discovery + kcdx_dev_inspect console](phase-09.4-discovery/README.md) | NOT STARTED | — |
 | [9.5 — kcdx.behavior.* named-behavior catalog](phase-09.5-behaviors/README.md) | NOT STARTED | — |
@@ -57,10 +57,12 @@ Status vocabulary: `NOT STARTED` · `IN PROGRESS` · `DONE` · `BLOCKED` ·
 | 12 — C++ empowered-wrapper sweep + correctness fix + UX polish | NOT STARTED | — |
 
 Notes on non-obvious rows:
-- **9.2 IN PROGRESS** — declare store + smart-resolver sub-verb surface + C++
-  mirror + `kcdx.scan{...}` Lua diagnostic landed; the `kcdx_scan` console
-  command (in-game iterative AOB discovery) is the lone residual. See the phase
-  subdir.
+- **9.2 DONE** — declare store + smart-resolver sub-verb surface + C++ mirror +
+  `kcdx.scan{...}` Lua diagnostic + the `kcdx_scan` console command (in-game
+  iterative AOB discovery) all landed. The `kcdx_scan` residual shipped as
+  CAP-70 (live-verified 2026-06-01) ahead of this tracking tree's split; its
+  step doc was reconciled from a drift-authored `NOT STARTED` to `DONE`. See the
+  phase subdir.
 - **9.7 SUPERSEDED** — merged into Phase 9.2 (the declare store and the smart
   resolver were two halves of one surface). No subdir; the redirect detail lives
   in [`00-original-plan.md`](00-original-plan.md) §"Phase 9.7".
@@ -73,7 +75,6 @@ Notes on non-obvious rows:
 ## Substantive next-pickups
 
 Independent work that can land now (each by leverage, not phase order):
-- **Phase 9.2 residual** — the `kcdx_scan` console command closes 9.2.
 - **Engine-direct hook migration** — 5 remaining `MH_CreateHook` sites move to
   `hook_chain::AddCEngine`; one `/execute` cycle per site; full spec at
   [`../../tech-debt/TD-0003-engine-direct-hook-migration.md`](../../tech-debt/TD-0003-engine-direct-hook-migration.md).

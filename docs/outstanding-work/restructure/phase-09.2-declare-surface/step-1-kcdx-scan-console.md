@@ -1,9 +1,17 @@
 # Phase 9.2 step 1 — `kcdx_scan` console command
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → "kcdx_scan console command". Closes Phase 9.2.
+**Status: DONE** — shipped as **CAP-70**, live-verified PASS (kcdx-dev 2026-06-01
+19:52, all three sub-tests). Ledger row: [`README.md`](README.md) → "kcdx_scan
+console command". Closes Phase 9.2.
 
-One `/execute` cycle. Source work-item for the cycle:
-`docs/outstanding-work/restructure/phase-09.2-declare-surface/step-1-kcdx-scan-console.md → README.md "kcdx_scan console command"`.
+This step doc was authored by the `3ee79ee` restructure-tree split AFTER the
+capability had already shipped, so it was created reading `NOT STARTED` and never
+reconciled against the as-built command — pure tracking drift, not unbuilt work.
+The capability is live: the engine-owned `kcdx_scan` `~`-console command is in
+`src/console_commands_scan.cpp`, registered unconditionally at `console::Init`
+(`src/hooks.cpp:451` → `console_commands_scan::Register()`), built
+(`CMakeLists.txt:148`), and exercised by `test-plugins/cap-70-scan-console/`. No
+`/execute` cycle is owed — the work below was satisfied on landing CAP-70.
 
 ## What
 
@@ -17,7 +25,33 @@ then hands the result to `kcdx.declare`.
 
 The discover-then-declare loop is gated behind it — without the console verb the
 author can run the Lua diagnostic but cannot iterate on a pattern live at the `~`
-console. It is the lone residual keeping Phase 9.2 from `DONE`.
+console. It was the lone residual keeping Phase 9.2 from `DONE`; it shipped as
+CAP-70 (below) and 9.2 is now `DONE`.
+
+## As built (CAP-70)
+
+The shipped command matches the settled scope's intent with two surface
+specifics that landed differently than the sketch below — recorded here so the
+spec stays the record of intent and this note is the as-built truth:
+
+- **Registration path** — registers through the kcdx console interface wrapper
+  (`console::GetInterface()->RegisterCommand(...)` in
+  `src/console_commands_scan.cpp`), the engine-owned-command path, NOT a raw
+  `IConsole::AddCommand` vtable call. The Phase-7 console-slot fact still holds
+  underneath the wrapper; the command does not re-derive the slot itself.
+- **Console output** — prints `[scan] <N> matches:` + one `<module>+0x<relOffset>`
+  line per match, capped at 16 printed lines with a `... and <K> more` overflow
+  line (the readable-cap guard). It does NOT paint the surrounding bytes to the
+  overlay (the sketch's "surrounding bytes" landed only on the dormant
+  `scan_engine` RunOne dev-log path, not the console overlay).
+- **Resolver reuse** — invokes `scan_engine::RunScan` (which wraps
+  `ResolveScan`), the exact shared path `kcdx.scan{...}` uses — no forked scan
+  path, as the scope required.
+- **Test** — `test-plugins/cap-70-scan-console/` (pure-Lua, drives the command
+  via `kcdx.console.execute`): CAP-70-dispatch + CAP-70-badargv (`console` mode)
+  + CAP-70-result (`boot-only`, asserts the resolve FINDS the verified
+  deep-interior site over the shared `RunScan` path). All three live-verified
+  PASS (kcdx-dev 2026-06-01 19:52).
 
 ## Scope (settled)
 
