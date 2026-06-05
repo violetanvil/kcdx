@@ -1,0 +1,314 @@
+# Verification engine — plan spec (the shared authority every step leans on)
+
+## Goal
+
+Build the maintainer-tool **DLL verification engine** — link a game DLL on your
+machine and the tool **verifies what you author against the real binary** (not
+record-only audit-trio capture), so a wrong RVA / signature / AOB is caught before
+it lands, and a whole-DB in-game sweep tells you which rows survived a game update.
+This un-defers requirement R5 (driven evidence flows) + restores R12's per-module
+DLL link table. Two verify meanings, each run where only it can: **static per-author
+in the browser** (no upload), and **live functional in-game in bulk** (a kcdx
+test-suite plugin → a JSON report → fed back into the tool).
+
+## The settled design — the authority (read these; build to them; never re-decide)
+
+This plan decomposes an ALREADY-SETTLED design. Every decision below is the user's
+call (`.claude/rules/design-authority.md`); a step never re-decides one. The
+authoritative artifacts, verbatim with their source:
+
+### TRD — `data/maintainer-tool/design.md`
+
+- **US-11 (§6)** — Verification engine. Two verify meanings (static browser / live
+  in-game). All 9 kinds DESIGNED; only `vtable_index` population deferred. Static
+  mismatch is an **advisory** Changed/Ambiguous, **never a block** (overridable "I
+  accept — save anyway"). The browser (JS) static check and the C++ engine check
+  AGREE on the same bytes (cross-impl agreement test). The in-game batch plugin
+  reports every row's LIVE verdict → JSON report → import drives bulk re-verify +
+  fix-me worklist; every applied verdict passes the normal validate→field-delta→
+  confirm→commit spine. A linked DLL whose version is uncovered offers "add a
+  version row at `<v>`" → create-version flow.
+- **D24** — UN-DEFER R5 + RESTORE the R12 link table. The DLL actually checks what
+  you author. Supersedes §9's "driven evidence flows out of v1" + D15's
+  version-read-only narrowing of R12.
+- **D25** — TWO verify meanings split by layer: **STATIC** (do the authored
+  bytes/AOB/hash still match the DLL file? browser, no game) vs **LIVE FUNCTIONAL**
+  (does the address resolved via the real engine path land on real working code?
+  in-game). Static catches "binary changed"; live catches "resolves to wrong/dead
+  code even if bytes look right."
+- **D26** — the engine runs CLIENT-SIDE (JS port); the DLL never leaves the machine.
+  All 9 kinds designed. Pure-byte kinds (function body-hash, `string_anchor` `.rdata`
+  search, `vtable_base` table-shape, `callsite` AOB scan) are straightforward;
+  `instruction_anchor` + `data_slot` need a **minimal in-browser x86 decoder** (just
+  enough to follow a RIP-relative LEA/MOV `disp32` — not a full disassembler);
+  `vtable_index` datum SHAPE defined, population DEFERRED.
+- **D27** — TWO checkers — the C++ ENGINE is authority, the JS browser checker
+  MIRRORS it. A cross-implementation agreement test pins the two to the SAME verdict
+  on the same DLL bytes (the `version_resolver.py` test-of-record pattern, extended
+  to the full per-kind survival check). The live-functional half is engine-only.
+- **D28** — the batch verification is an in-game test-suite plugin → a JSON report →
+  fed back into the tool. Per row: `kcdx_id`, resolved version, verdict
+  (`resolves+works` / `dead` / `wrong-target` / `cannot-check`), detail. The report
+  writes alongside `kcdx-dev.log`. Import → worklist: passing → one-click bulk
+  re-verify (audit trio auto-filled, `evidence_kind` from the check); failing →
+  flagged. Advisory throughout (every verdict through the confirm spine; nothing lands
+  silently). NOT report-writes-straight-to-DB; NOT log-only.
+- **D29** — a passing check determines `evidence_kind` (verification IS the audit
+  evidence): in-game LIVE → `live_production`; browser static AOB-uniqueness →
+  `pattern_scan`; manual Ghidra → `maintainer_ghidra` (the default). All editable.
+  Composes with the audit-trio auto-fill (the check refines `evidence_kind` from the
+  default to the tier it actually establishes).
+- **D30** — the link table is in-memory, re-picked each session (no persistence). The
+  **version-matching gate**: a check runs only against a linked DLL whose resolved
+  version matches the row's version; no matching DLL → unavailable + noted, never
+  blocks. **Link-to-create**: a DLL resolving to a version uncovered by any of the
+  entity's rows offers "add a version row at `<v>`" → the create-version flow
+  prefilled at the DLL's version → author + check → on pass trio auto-fills → save
+  (AP18 gates the new row).
+- **D31** — verification-engine follow-on forks: **(a)** a callsite AOB matching
+  MULTIPLE `.text` sites is an advisory `Ambiguous` that STEERS the maintainer to
+  extend the pattern (`survival_expect_unique` / id-6 context-extension), NEVER a hard
+  refuse; settles `fingerprint-per-kind.md` §"Open decisions" 3. **(b)** report ingest
+  is the frontend reading `report.json` directly via the File API — NO backend read
+  seam. **(c)** the report-ingest UX has an explicit ingest progress/loading state.
+- **D32** — the save spine supports a BATCH mutation: bulk re-verify commits N
+  audit-trio UPDATEs as ONE atomic transaction with ONE batched field-delta confirm.
+  Same validator gate (each row validated), same deferred-commit + D21 robust rollback
+  (**all-or-nothing — one row failing rolls back the WHOLE batch**), one git
+  commit/push. All-UPDATE (re-verify never creates a row) → the new-row approval gate
+  (law 8/AP18) does NOT apply. "One mutation = one transaction" reads as "one confirmed
+  UNIT = one transaction."
+- **§7 — the save spine** — validate → write → export → round-trip → field-delta
+  confirm → atomic commit + push, shared by every mutating story; plus the §7 batch
+  mutation (D32) the bulk re-verify reuses at batch scale.
+
+### Per-kind check definitions — `data/maintainer-tool/fingerprint-per-kind.md`
+
+The authority for WHAT each kind's check IS. The survival datum mirrors the resolution
+mechanism — a hash answers byte-identity, but most kinds' survival question is a
+re-find procedure, not a byte comparison:
+
+- **function / function_no_sig / function_variadic** — re-hash `[rva, rva+length)`
+  vs `content_hash`. (Exists today in `survival.cpp`.)
+- **callsite** — scan `.text` for the AOB pattern+mask: unique hit → Unchanged
+  (relocate RVA); zero → Changed; multiple → Ambiguous (extend the pattern, D31a).
+- **string_anchor** — search `.rdata` for the literal (+ optional `expect_unique`
+  single-`.text`-LEA-xref assert): present → Unchanged; absent → Changed.
+- **instruction_anchor** — re-run the resolver chain (find the `.rdata` anchor, scan
+  `.text` for the LEA whose RIP-relative target == the string, walk the byte-shape
+  back); verify the final instruction matches the stored shape.
+- **data_slot** — re-run the derivation (follow `disp32` from the anchor / a fixed
+  offset from another slot); Unchanged iff it still lands in `.data` at a consistent
+  offset. NO content hash (a `.data` byte hash is an anti-signal).
+- **vtable_base** — at the stored RVA read N qwords; Unchanged iff there are N and each
+  resolves into `.text`. NOT a byte hash (the slot pointers relocate every build).
+- **vtable_index** — resolve base → read slot → hash that function's body vs the stored
+  expected hash. **Population DEFERRED** (needs a verified runtime slot target); the
+  datum SHAPE is defined.
+- **The anchor dependency (DAG)** — `data_slot` → `instruction_anchor` →
+  `string_anchor`; `vtable_index` → `vtable_base`. Survival runs in dependency order: a
+  dead `string_anchor` makes everything downstream transitively CannotCheck. The
+  `derives_from` column captures the edge.
+
+### Screen specs (the build authority for every FE UI step — `.claude/rules/spec-conformance.md`)
+
+- **`data/maintainer-tool/ui/screens/s02-entity-detail.md`** — the per-module DLL link
+  table + the version-match indicator + the link-to-create prompt + the 7 verify states.
+- **`data/maintainer-tool/ui/screens/s04-field-editor.md`** — the per-author check
+  verdict badge inline + the Ambiguous `[show matches]` steer + `evidence_kind`-from-check
+  + the 6 check verdict states.
+- **`data/maintainer-tool/ui/screens/s08-verification-worklist.md`** — NEW screen: import
+  (File API) + ingest progress bar + pass/fail split + batched bulk re-verify + the 9
+  states.
+- **`data/maintainer-tool/ui/design.md`** — Layer-1: law 4 (verification is advisory)
+  extension to per-author static verdicts + the ingested live report; the 4 new component
+  silhouettes (`verdict badge`, `ingest progress bar`, `batch field-delta list`,
+  `per-module link row` already named); the version&verify surface growth; the screen
+  index + nav map carrying s08.
+
+### Existing built slice (extend, don't rebuild)
+
+- **`data/maintainer-tool/frontend/src/dll-resolver/versionResolver.ts`** — the PE-parse
+  foundation (the `.rdata` version scan). The static checker reuses its PE-parse + section
+  access. *(The frontend is a SEPARATE gitignored git repo — D23; FE steps gate in the
+  nested repo via `npm run build` + Vitest, NOT kcdx's `build.ps1`.)*
+- **`src/survival.cpp` + `src/survival_pass.cpp`** — the C++ engine survival checker,
+  function-hash-only today; extended to all 9 kinds.
+- **`data/refdata-extractor/python/seeds_shared/`** — the headless data-core (pytest); the
+  Python per-kind reference checker (the test-of-record) extends `version_resolver.py`'s
+  role here.
+
+## Cross-step invariants (every step holds these — they are not re-decided per step)
+
+1. **Client-side / no-upload (D15/D26).** The DLL bytes NEVER cross the wire — every
+   static check runs in the browser over a locally-picked ArrayBuffer; only a resolved
+   version tag (and, for the report, a maintainer-picked local `report.json`, read via the
+   File API — D31b) ever touches the app. No backend read seam for the DLL or the report.
+2. **Advisory — never blocks (law 4 / D9).** Every verdict (version-resolve, a per-kind
+   static Unchanged/Changed/Ambiguous/CannotCheck, an imported live verdict) is advisory;
+   an unverified/Changed/Ambiguous state WARNS + carries "I accept — save anyway", never a
+   hard block. Ambiguous STEERS (extend the pattern), never refuses (D31a).
+3. **Engine is authority; JS mirrors it (D27).** The C++ engine survival check is the
+   batch in-game authority; the JS browser check is the per-author static mirror. A
+   cross-impl agreement test pins them to the SAME verdict on the SAME bytes. The
+   live-functional half (resolve-and-confirm-it-works) is engine-only by nature.
+4. **The two-repo split + the cross-repo JSON-report contract.** The browser checker +
+   report-ingestion live in the SEPARATE frontend repo (D23, gated by `npm run build` +
+   Vitest); the engine checker + in-game plugin live in the kcdx tree (gated by
+   `build.ps1` + a live launch). The ONE contract crossing the two repos is the **JSON
+   verification report schema** (Phase 1 §1.2) — produced by the TEST plugin, consumed by
+   FE s08. A frozen, versioned schema is the cross-repo seam.
+5. **All-or-nothing batch rollback (D32/D21).** Bulk re-verify is ONE atomic transaction;
+   one row failing rolls back the WHOLE batch (deferred-commit pre-commit + D21 scoped
+   restore-point post-commit). One batched field-delta confirm; one git commit/push.
+6. **The data-core remains the sole writer (D13/law 6).** Report ingestion authors
+   nothing itself — it drives the existing validate→confirm→commit save spine with the
+   report's verdicts. No verdict writes straight to the DB.
+
+## Coverage map — every design element → its step (or DEFERRED)
+
+Exhaustive. Every enumerated element from the coverage universe (groups A–I engine-side +
+the UI-side groups) maps to a step or an explicit user-decided DEFERRED. A `DEFERRED` cell
+records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
+
+### Group A — browser static checker
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Feasibility: 86MB WHGame.dll ArrayBuffer + full `.text` AOB scan in-browser | P0 step 1 | Probe — perf/feasibility (D26 "within browser limits") |
+| Minimal JS x86 decoder follows RIP-relative `disp32` (feasibility) | P0 step 2 | Probe — id-9/id-10 derivation vs a Ghidra-confirmed target (D26) |
+| PE-section scanning foundation (`.text`/`.data` beyond `.rdata`; RVA→file-offset) | P2 step 1 | Extends `versionResolver.ts` PE-parse (D26) |
+| The 4 verdict types (Unchanged / Changed / Ambiguous / CannotCheck) | P2 step 1 | The verdict enum the checks return (D26/US-11) |
+| The minimal in-browser x86 decoder (RIP-relative `disp32` follow) — named sub-unit | P2 step 2 | Its own sub-unit, not folded into the checker (D26/§5) |
+| `function*` body-hash check (re-hash `[rva,rva+length)`) | P2 step 3 | Pure-byte kind (`fingerprint-per-kind.md` §function) |
+| `string_anchor` `.rdata`-search check (+ `expect_unique` xref assert) | P2 step 3 | Pure-byte kind (`fingerprint-per-kind.md` §string_anchor) |
+| `vtable_base` table-shape check (N qwords each → `.text`) | P2 step 3 | Pure-byte kind (`fingerprint-per-kind.md` §vtable_base) |
+| `callsite` AOB-scan check (unique/zero/multiple → Unchanged/Changed/Ambiguous) | P2 step 3 | Pure-byte kind (`fingerprint-per-kind.md` §callsite; D31a) |
+| `instruction_anchor` derivation check (resolver-chain re-run) | P2 step 4 | Derivation kind (`fingerprint-per-kind.md` §instruction_anchor) |
+| `data_slot` derivation check (follow `disp32`; no content hash) | P2 step 4 | Derivation kind (`fingerprint-per-kind.md` §data_slot) |
+| The anchor-dependency DAG ordering (browser) | P2 step 4 | Dependent kind transitively CannotCheck if anchor Changed |
+| Advisory-never-blocks (browser verdicts) | P2 step 5, P2 step 6 | Surfaced as warning, override carried (law 4 / D9) |
+| Version-match gate (check runs only vs a version-matching DLL) | P2 step 5 | s02 link-table gate (D30) |
+
+### Group B — engine checker
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Per-kind dispatch + payload model | P3 step 1 | `SurvivalCheck(kind, payload, derives_from, dll)` (`fingerprint-per-kind.md`) |
+| `Ambiguous` status added to `survival::Status` | P3 step 1 | New status (callsite multiple-hit; D31a) |
+| function-hash-exists (already in `survival.cpp`) | P3 step 1 | The existing function-body check, kept under dispatch |
+| `callsite` static C++ check | P3 step 2 | AOB scan of `.text` |
+| `string_anchor` static C++ check | P3 step 2 | `.rdata` literal search |
+| `instruction_anchor` static C++ check | P3 step 2 | Resolver-chain re-derivation |
+| `data_slot` static C++ check | P3 step 2 | Derivation re-run (no hash) |
+| `vtable_base` static C++ check | P3 step 2 | Table-shape (N qwords → `.text`) |
+| The anchor-dependency ordering (engine) | P3 step 2 | Dependency-order survival walk |
+| The LIVE functional check (resolve via real engine path, lands on real working code) | P3 step 3 | resolves+works / dead / wrong-target (D25) |
+
+### Group C — cross-impl
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Python per-kind reference checker (test-of-record) | P1 step 1 | Extends `version_resolver.py`'s role (D27) |
+| JS↔C++ agreement test (browser checker == engine checker on same bytes) | P3 step 4 | The cross-impl authority pin (D27) |
+| JS↔Python agreement test (the pure-byte + derivation kinds) | P2 step 3, P2 step 4 | JS checked against the Python reference (D27) |
+| The cross-impl known-DLL fixture + known per-kind verdicts | P0 step 5 | The fixture the agreement tests pin against |
+
+### Group D — in-game plugin
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| The batch verification plugin (drives the engine checker over EVERY DB row) | P4 step 1 | A kcdx test-suite plugin (D28) |
+| The JSON verification report schema (the cross-repo contract) | P1 step 2 | Frozen versioned schema (D28/D31b) |
+| Report emission to schema (per row: kcdx_id, version, verdict, detail) | P4 step 1 | Written alongside `kcdx-dev.log` (D28) |
+| Report write-location | P4 step 1 | Alongside `kcdx-dev.log` (D28) |
+| The test-suite matrix row + deploy to all 3 plugin trees | P4 step 1 | `test-suite.md`; matrix row + 3-tree deploy |
+| C++ read pe_helpers surface scoping (does it expose spans + a disp32 follower?) | P0 step 3 | Probe — scoping finding for P3 |
+| The live-functional in-game signal (resolves+works / dead / wrong-target) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / P4 |
+
+### Group E — report ingestion
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Import (File API, client-side) | P5 step 1 | Frontend reads `report.json` (D31b) |
+| Ingest progress bar | P5 step 1 | Determinate progress (D31c) |
+| Pass/fail split + the worklist | P5 step 1 | s08 populated state (D28) |
+| The 9 s08 states | P5 step 1 | Built to s08 spec |
+| Bulk re-verify → s06 batch field-delta confirm (D32) | P5 step 2 | One batched confirm, all-or-nothing (D32) |
+| Confirm-spine routing (per-verdict through validate→confirm→commit) | P5 step 2 | Data-core sole writer (D28/law 6) |
+
+### Group F — link table
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Re-pick link table (in-memory, per session) | P2 step 5 | s02 per-module link rows (D30) |
+| Version-match gate | P2 step 5 | Check runs only vs matching DLL (D30) |
+| Degraded (no matching DLL → unavailable + noted) | P2 step 5, P2 step 6 | Never blocks (D30) |
+| Link-to-create (uncovered version → add-a-row on-ramp) | P2 step 7 | → s05 prefill (D30) |
+
+### Group G — evidence_kind
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| auto-fill `evidence_kind` by check (static → `pattern_scan`) | P2 step 7, P2 step 6 | The check refines the tier (D29) |
+| compose with the audit-trio auto-fill | P2 step 7 | Check refines from the `maintainer_ghidra` default (D29) |
+| `evidence_kind` `live_production` from the in-game check (via s08) | P5 step 2 | Set on bulk re-verify (D28/D29) |
+
+### Group H — UX surfaces (covered within the UI steps that build them)
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| s02 verify-surface UX (link rows, match indicator, link-to-create banner) | P2 step 5, P2 step 7 | Built to s02 spec |
+| s04 verdict-badge UX (inline, reserved, `[show matches]` steer) | P2 step 6 | Built to s04 spec |
+| s08 worklist UX (import, progress, split, batch action) | P5 step 1 | Built to s08 spec |
+| s06 batch-confirm UX (per-row delta list) | P5 step 2 | Built to s08/§7 (D32) |
+
+### Group I — deferred (user-decided)
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| `vtable_index` survival POPULATION | **DEFERRED** | User-decided (§9 + D26): needs a verified runtime vtable slot target; the datum SHAPE is designed, only population waits. The other 8 kinds ARE in scope. |
+| Job-3 campaign-orchestration UI | **DEFERRED** | User-decided (§9): D28's in-game batch sweep is the producer; the campaign-orchestration UI on top is out of v1. |
+
+### UI-side — Layer-1 (`ui/design.md`)
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Law-4 extension (advisory) — 6 clauses (static verdicts + ingested live report + Ambiguous-steers + version-match-gate + no-DLL-upload + no auto-act) | P2 step 5, P2 step 6, P5 step 1, P5 step 2 | Each clause holds in the screen that exercises it (law 4) |
+| 4 new component silhouettes (`verdict badge`, `ingest progress bar`, `batch field-delta list`, `per-module link row`) | `per-module link row` P2 step 5; `verdict badge` P2 step 6 + P5 step 1; `ingest progress bar` P5 step 1; `batch field-delta list` P5 step 2 | Each rendered once in the screen that owns it |
+| Version&verify-surface growth (the s02-header composite) | P2 step 5 | The version `Select` + per-module link table (D24–D30) |
+| Screen-index / nav-map carrying s08 | P5 step 1 | s08 reached from s01 `[Import verification report]` |
+
+### UI-side — s02 (`s02-entity-detail.md`)
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Link table (Contents rows + prose) | P2 step 5 | per-module link row ×M + the surface prose |
+| Link-to-create (Contents + prose) | P2 step 7 | warning banner → s05 (D30) |
+| The 7 verify states (picked-version / not-linked / resolving / match / mismatch / resolve-failure / non-PE) | P2 step 5, P2 step 7 | s02 §States; mismatch surfaces link-to-create (step 7) |
+
+### UI-side — s04 (`s04-field-editor.md`)
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| Verdict (Contents + prose) | P2 step 6 | the inline `verdict badge` (D24–D27/D31) |
+| `evidence_kind` from check | P2 step 6 | static pass → `pattern_scan` refine (D29) |
+| The 6 check verdict states (no-badge / checking / Unchanged / Changed / Ambiguous+show-matches / CannotCheck) | P2 step 6 | s04 §"Check verdict states" |
+
+### UI-side — s08 (`s08-verification-worklist.md`)
+
+| Design element | Covered by | Notes |
+|---|---|---|
+| 12 Contents elements (import entry, summary header, ingest progress, split control, worklist table, per-row select, select-all-passing, re-verify-N, fix-row, back, + the verdict per-row + the batched confirm prose) | P5 step 1 (import/progress/split/worklist/select/fix/back); P5 step 2 (re-verify-N → batch confirm) | Built to s08 Contents |
+| The 9 states (empty / loading-ingesting / populated / error-malformed / error-unknown-id / disabled / edge-0-fail / edge-0-pass / edge-long) | P5 step 1 (ingest/worklist states); P5 step 2 (batch-action disabled/edge) | s08 §"States & variants" |
+
+## What is NOT in this plan
+
+- **`vtable_index` survival POPULATION** — DEFERRED (user-decided, §9 + D26). The datum
+  SHAPE is in scope (the 9-kind dispatch carries it; the check returns CannotCheck for it).
+  Only the runtime-slot-target population waits.
+- **Job-3 campaign-orchestration UI** — DEFERRED (user-decided, §9). The in-game batch
+  sweep (D28, Phase 4) is the producer; the campaign UI on top is out of v1.
+- **No design decisions.** A fork surfaced during build routes to `/design` /
+  `senior-architect-consult` (`.claude/rules/design-authority.md`); a step never invents a
+  default for a spec gap (`.claude/rules/spec-conformance.md`).
