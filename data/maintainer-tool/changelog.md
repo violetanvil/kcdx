@@ -3,6 +3,53 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-04 — the verification engine (un-defer R5 + restore R12's DLL link table)
+
+The deferred "driven evidence flows" (R5) and the dropped R12 per-module DLL link table are
+**pulled back into scope** as one coherent **verification engine**: the maintainer links a game
+DLL on their machine and the tool **verifies what they author against the real binary** — not
+record-only audit-trio capture. This supersedes §9's "Driven evidence flows (R5) — out of v1"
+and corrects D15's narrowing of R12 to a version-read-only one-shot picker (the built step-11
+slice reads only the version tag — the original R4/R5 requirement was to *check the author's
+RVA/signature/AOB against the binary*).
+
+The settled architecture (D24–D30):
+
+- **Two verify meanings, split by layer (D25):** STATIC (do the authored bytes/AOB/hash still
+  match the DLL *file* — needs no game; runs client-side in the browser for instant per-author
+  feedback) vs LIVE FUNCTIONAL (does the address *resolve + work* in the running process — needs
+  the game; runs as an in-game kcdx test-suite plugin). The static check catches "the binary
+  changed"; the live check catches "resolves to wrong/dead code even if the bytes look right."
+- **Client-side JS, no upload (D26):** the per-kind static checks port to JS over the picked
+  DLL's ArrayBuffer (WHGame.dll ≈ 86 MB, within browser limits) — the DLL never leaves the
+  machine (D15). All 9 kinds designed (defer nothing); `instruction_anchor`/`data_slot` need a
+  minimal in-browser x86 decoder (RIP-relative `disp32` follow); `vtable_index` *population*
+  stays deferred (needs a verified runtime slot target, `fingerprint-per-kind.md`).
+- **Two checkers, engine = authority, JS mirrors (D27):** C++ `survival.cpp` (extended
+  function-hash-only → all 9 kinds) is the batch in-game authority; the JS browser check is the
+  per-author mirror; a cross-impl agreement test pins them (the `version_resolver.py`
+  test-of-record pattern, now at full per-kind scale).
+- **Batch = an in-game test-suite plugin → JSON report → fed back into the tool (D28):** the
+  plugin runs the LIVE check over every DB row, writes a JSON report; the maintainer imports it
+  → a worklist (passing rows → one-click bulk re-verify; failing → flagged), every applied
+  verdict through the normal validate→field-delta→confirm→commit spine (advisory, nothing lands
+  silently).
+- **A passing check determines `evidence_kind` (D29):** in-game live → `live_production`,
+  browser AOB-unique → `pattern_scan`, manual → `maintainer_ghidra` — composing with the
+  just-built audit-trio auto-fill.
+- **Link table = re-pick each session, no persistence (D30):** in-memory current pick per
+  module; a no-matching-version DLL → check unavailable + noted, never blocks (degraded, D9); a
+  DLL newer than any of the entity's rows offers "add a version row at `<v>`" → the
+  create-version flow prefilled (AP18-gated) — linking a new build is the on-ramp to versioning
+  the entity forward.
+
+**Integrated in:** §5 (the verification units), §6 (US-11), §9 (un-defer R5 / restore R12),
+§10 (D24–D30).
+**Why:** the user un-deferred the original requirement — "you load the dll in and it can run
+the verification checks on your computer for what you author if you have a matching version."
+The built D15 slice only read the version tag; this restores the verify-against-the-binary
+capability R4/R5/R12 specified. Large addition; `/plan` sequences it into phases.
+
 ## 2026-06-04 — `verified_date` defaults to today (overrideable); s04 field grid
 
 Two UX decisions settled during the Phase-3 live acceptance:

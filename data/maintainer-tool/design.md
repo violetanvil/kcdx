@@ -1,6 +1,7 @@
 # Maintainer tool — design (DB-direct authoring with CSV auto-export)
 
-> **Status:** v1 (settled). Date: 2026-06-02 (write mechanism revised 2026-06-03).
+> **Status:** v1 (settled). Date: 2026-06-02 (write mechanism revised 2026-06-03;
+> verification engine added 2026-06-04 — §10 D24–D30, US-11).
 > **Write mechanism (revised 2026-06-03 — §10 D19/D20):** a maintainer edit is a
 > **DIRECT INSERT/UPDATE on the DB** (the DB is the originator, D1), reusing the applier's
 > existing `_apply_one_db` write helpers — NOT the seed-CSV-rebuild bridge the original D13
@@ -269,9 +270,41 @@ Each new unit's single responsibility (`structure-by-responsibility.md`):
   remote independent of kcdx. The path + the dependency direction below are unchanged; only
   the version-control ownership differs (kcdx does not track the frontend source).
 
+**The verification engine units (D24–D30, US-11).** One responsibility each:
+
+- **The browser static checker** (frontend repo, alongside the JS version resolver) — its ONE
+  job: given a picked DLL's bytes + an authored row, run that row's per-kind static survival
+  check IN THE BROWSER and return a verdict (Unchanged / Changed / Ambiguous / CannotCheck).
+  Pure byte/pattern/derivation logic over an ArrayBuffer; no upload, no authoring, no API call
+  for the check itself (D26). It mirrors the engine checker (D27) and reuses the version
+  resolver's PE-parse foundation. The minimal in-browser x86 decoder (RIP-relative `disp32`
+  follow for `instruction_anchor` / `data_slot`) is its own named sub-unit, not folded into
+  the checker.
+- **The engine survival checker** (kcdx engine, `src/survival.cpp` extended) — the **authority**
+  (D27): the per-kind static + live-functional check in the running game, extended from
+  function-hash-only to all 9 kinds. Its single job is "is this row's named thing still valid
+  at this DLL/runtime." Lives in the kcdx tree (not the maintainer-tool), governed by kcdx's
+  own rules; the maintainer-tool design references it as the cross-impl authority.
+- **The in-game verification plugin** (kcdx `test-plugins/`) — a suite-gated plugin whose ONE
+  job is to drive the engine checker over every DB row and emit the JSON verification report
+  (D28). A standing regression + the batch-sweep producer; governed by kcdx's `test-suite.md`.
+- **The report-ingestion unit** (frontend + a backend read seam) — its ONE job: parse an
+  imported verification report, present the worklist, and route each applied verdict through
+  the existing save spine (D28). It authors nothing itself — it drives the existing
+  validate→confirm→commit path with the report's verdicts; the data-core remains the sole
+  writer (D13/law 6).
+
+The cross-implementation agreement (D27) is a shared contract, not a unit: the browser checker
+and the engine checker MUST return the same verdict on the same bytes, pinned by a test
+(the version-resolver test-of-record pattern). The Python `version_resolver.py`'s role as
+test-of-record extends to a Python per-kind reference the JS port is checked against.
+
 Dependency direction: frontend → backend (API) → data-core → (schema, validators). The
 data-core depends on nothing in the shell (backend or frontend); it is delivery-agnostic.
-The round-trip oracle is a data-core test, no UI.
+The round-trip oracle is a data-core test, no UI. **The verification checkers are off this
+spine** — the browser checker reads a local DLL directly (no backend), the engine checker +
+in-game plugin live in the kcdx engine; only the report-ingestion unit rejoins the
+frontend→backend→data-core spine (it drives the existing save path).
 
 ## 6. User stories & acceptance — the full six-job tool <a name="6-user-stories"></a>
 
@@ -387,6 +420,52 @@ cross-implementation test asserts the JS port and the Python resolver agree on a
 (D15). **When no version is resolved/picked, the app default-selects the newest authored
 row** (highest `valid_from_version`) — deterministic, always-works; no blocking "degraded
 mode" (D10).
+
+**US-11 — Verification engine (the DLL actually checks what you author).** As a maintainer,
+I link a game DLL on my machine and the tool **verifies what I author against the real
+binary** — not just records that I claim it — so a wrong RVA / signature / AOB is caught
+before it lands, and a whole-DB sweep tells me which rows survived a game update. This
+un-defers R5 + restores R12's link table (§9, D24); it is the survival check
+(`fingerprint-per-kind.md`) run interactively + in bulk. The capability splits into two
+verify meanings, each run where only it can (D25):
+
+- **Static, per-author, in the browser (D26).** When I link a DLL whose version matches the
+  row I'm authoring/verifying, the tool runs the per-kind **static** check on the DLL's bytes
+  IN THE BROWSER (no upload, D15) and tells me instantly whether what I authored matches the
+  binary. Per `kind` (`fingerprint-per-kind.md`): `function*` → re-hash `[rva, rva+length)`
+  vs `content_hash`; `callsite` → scan `.text` for the AOB (unique → Unchanged + relocate the
+  RVA; zero → Changed; multiple → Ambiguous, extend the pattern); `string_anchor` → search
+  `.rdata` for the literal (+ optional single-xref assert); `vtable_base` → read N qwords,
+  each must resolve into `.text`; `instruction_anchor` / `data_slot` → re-run the
+  RIP-relative derivation chain (a minimal in-browser x86 decoder, D26); `vtable_index` →
+  datum shape defined, population deferred (needs a verified runtime slot target). All 9 kinds
+  designed (defer nothing); only `vtable_index` population waits.
+- **Live functional, in bulk, in-game (D25/D28).** A kcdx **test-suite plugin** runs the
+  LIVE check in the running game over **every** DB row — resolve the address via the real
+  engine path, confirm it lands on real working code (the body-hash at the *resolved runtime
+  address* matches; not `0`/garbage) — and writes a **JSON report** (per row: resolves+works /
+  dead / wrong-target / cannot-check). I **import that report** into the tool → a worklist:
+  passing rows → one-click bulk re-verify (the audit trio auto-fills, `evidence_kind` from the
+  check — D29); failing rows → flagged to fix.
+
+**Acceptance:**
+- Linking a version-matching DLL and authoring a row runs the static per-kind check in the
+  browser (no upload — the DLL bytes never cross the wire, D15/D26); a mismatch surfaces as
+  an **advisory** Changed/Ambiguous warning, **never a block** — overridable by "I accept —
+  save anyway" (D9/law 4). No matching-version DLL linked → the check is unavailable + noted,
+  authoring proceeds normally (degraded, D30).
+- The browser (JS) static check and the C++ engine (`survival.cpp`, all 9 kinds) agree on the
+  same DLL bytes — the **cross-implementation agreement test** (D27); the engine is the
+  authority, the JS check is its at-author mirror.
+- The in-game batch plugin reports every row's LIVE verdict to a JSON report; importing it
+  drives bulk re-verify (passing rows' audit trio auto-filled, `evidence_kind` = the check's
+  tier — D29) + a fix-me worklist for failing rows; every applied verdict passes through the
+  normal validate → field-delta → confirm → commit spine (advisory, nothing lands silently —
+  D28).
+- A linked DLL whose resolved version is **not covered** by any of the entity's
+  `address_versions` rows (a build newer than the DB knows) offers **"add a version row at
+  `<v>`"** → the create-version flow (US-6) prefilled at the DLL's version → author + check
+  against the linked DLL → on pass the trio auto-fills → save (AP18 gates the new row — D30).
 
 ## 7. UX & states <a name="7-ux-states"></a>
 
@@ -507,15 +586,28 @@ catalog job is out of scope. (Supersedes the first draft's Job-2-only MVP scope 
   credential + hosts the container. The build delivers the Docker image + the seams, not
   the surrounding deployment.
 
+**In (the verification engine — un-deferred 2026-06-04, D24/US-11):** the DLL-as-verification
+capability (R4/R5's "more than record-only verification" + R12's per-module DLL link table)
+is **pulled back into scope** — see US-11 + D24–D30. The static per-author check (client-side
+JS, all 9 kinds, D26), the cross-impl agreement test vs the C++ engine (D27), the in-game
+batch test-suite plugin + its JSON report + the tool's report-ingestion worklist (D28), the
+`evidence_kind`-from-check tie-in (D29), and the re-pick link table + link-to-create on-ramp
+(D30). The C++ `survival.cpp` extends from function-hash-only to all 9 kinds. This is a large
+addition; `/plan` sequences it into phases (the in-browser checker, the engine extension, the
+in-game plugin, the report round-trip) — but no part is out of scope.
+
 **Out of v1 (deferred, as before):**
 
 - **Job 3 — the new-game-version campaign** (the bulk delta report unchanged/moved/gone
   against a fresh dump dir). Job 3 is a batch *workflow* over the same primitives v1
   builds (re-verify / deprecate / supersede across many entities at once); the per-entity
-  primitives are in v1, the campaign orchestration UI is not.
-- **Driven evidence flows (R5)** — `pattern_scan` AOB-uniqueness automation, the
-  `live_test_plugin` coverage convention. (The `evidence_kind` values are authorable in
-  v1; the automated evidence-gathering flows are not.)
+  primitives are in v1, the campaign orchestration UI is not. *(The verification engine's
+  in-game batch sweep — D28 — overlaps Job 3's "check every entry against a new build"; Job 3
+  proper remains the campaign-orchestration UI on top of the per-entity primitives + the
+  verification report.)*
+- **`vtable_index` survival population (D26)** — the datum SHAPE is designed; populating it
+  needs a verified runtime vtable slot target, itself gated on the runtime-vtable verification
+  path (`fingerprint-per-kind.md`). The other 8 kinds' checks are in scope.
 - **The multi-file rename-sequence journal (R11)** — reserved, not built until the
   atomic-rename window bites in practice.
 
@@ -570,6 +662,13 @@ reference-DB schema flat + final so it never migrates again except on a new kind
 |---|---|---|---|
 | D22 | The reference-DB schema is FLAT + FINAL | The reference DB is **one flat table per concern with one typed column per fact** — `address_names` (entity-stable) + `address_versions` (per-version-interval resolve facts), no polymorphic / discriminated-union / EAV structure anywhere. **The `survival` sibling table is folded into `address_versions` and deleted** (it was the design's only polymorphic structure — a `kind_form` discriminator + mutually-exclusive payload — and the recurring schema-churn source): its genuinely-survival-only columns (`aob`, `anchor_string`, `rule`, `slot_count`, `expect_unique`, `derives_from`) move up as nullable typed columns; `survival.content_hash`/`length` are DROPPED as redundant (they were a verified row-for-row copy of the av row's body fingerprint — 157/157 rows identical, zero independent values — so the existing `address_versions.content_hash`/`length` serve both the resolve path and the function-hash survival check); `kind_form` is deleted (the `kind` column already determines which cells a row populates); `derives_from` folds in as a nullable self-FK (the same shape as `valid_through` / `superseded_by` — not polymorphism). **Comprehensiveness is a checkable invariant, not a hope:** the schema is the back-projection of the engine's `ResolveResult` struct (`src/refdb.h`) — every column maps to a field a resolve site consumes; a column with no consuming field is dead weight, a `ResolveResult` field with no backing column is a hole (caught at decode/compile, never silently). The **`kind` enum (`data/seeds/policy.md`) is the CLOSED universe of resolvable things**; **a genuinely new kind is the ONLY event that grows the schema** — and it is a deliberate, surfaced, AP18-class migration with a fixed checklist (§11), never a silent or frequent churn. "Never migrate again" = "migrate only on a new kind, which is rare and deliberate" (stated plainly — not literal immutability). Full schema inventory, the fold mapping, the contract, and the new-kind migration checklist: §11. | A flat schema + a nullable `extra` JSON/TEXT escape column (absorbs any future fact with zero migration — but re-introduces an opt-in polymorphism bag against the "every item its own column / no polymorphic relationships" goal; the user chose the fully-legible no-escape schema, accepting a rare per-new-kind migration over an opaque bag). A generic `(kcdx_id, version, attr_name, attr_value)` EAV attribute table (truly never-migrate, but the OPPOSITE of "every item its own column" — no typed columns, stringly-typed rows, the maintainer tool can't show typed fields, the engine loses its typed contract). Keeping the `survival` sibling (preserves a hot/cold resolve-path separation, but it is the polymorphic churn source the goal exists to kill, and the separation buys ~nothing for a once-per-`refdb::Open()` cold read — UX > Performance, `cornerstones.md`). |
 | D23 | The frontend is a SEPARATE git repository | The React frontend (`data/maintainer-tool/frontend/`) is its **own git repository nested at that path**, NOT part of the kcdx tree. kcdx **gitignores** `data/maintainer-tool/frontend/` (the nested `.git` + its source are invisible to kcdx's git); the frontend carries its own **MIT `LICENSE`** (matching kcdx's license) and pushes to its **own remote**, independent of kcdx's private/public remotes. The design path (`data/maintainer-tool/frontend/`, §5) and the dependency direction (frontend → backend API) are UNCHANGED — only version-control ownership moves: the frontend's npm dependency tree, lockfile, and source live in the frontend repo, so they never enter kcdx's history, its build gate, or its publish allowlist. The kcdx-side `/feature` ledger flips + build gate do not apply to frontend commits (the frontend has its own gate: `npm run build` + Vitest, run in the nested repo). | Keep the frontend as an in-tree kcdx package (the prior framing — D14/§5 "a new package"): kcdx would track the npm dependency tree + lockfile in its own history, the publish allowlist would need a carve-out reasoned about per-file, and the JS-ecosystem churn would mix into kcdx's commit stream. A git submodule (kcdx records a pinned frontend-commit pointer — still couples the two repos, against the "out of the kcdx tree" intent). Moving the frontend outside `data/maintainer-tool/` entirely (breaks design §5's path + every step doc + the backend-relative dev assumptions). *(Settled 2026-06-03 — the user chose the gitignored-nested-repo form so the maintainer-tool frontend is a separately-versioned, separately-licensed, separately-pushed package while keeping its design-specified path.)* |
+| D24 | The verification engine — UN-DEFER R5 + RESTORE the R12 link table (the DLL actually checks what you author) | The deferred "driven evidence flows" (R5) + the dropped R12 per-module DLL link table are **pulled back into scope** as one coherent **verification engine**: the maintainer links a game DLL on their machine and the tool **verifies what they author against the real binary** — not record-only audit-trio capture. The capability is the survival check (`fingerprint-per-kind.md`) run interactively + in bulk: "at the linked DLL's version, is the thing this row names still the thing it was verified to be?" This supersedes design §9's "Driven evidence flows (R5) — out of v1" and D15's narrowing of R12 to a version-read-only one-shot picker. The full architecture is D25–D30 + US-11 (§6) + the new verification unit (§5). | Leave R5 deferred + R12 dropped (the built D15 slice reads only the version tag — it never checks an authored RVA/signature against the binary, the original requirement R4/R5). Build only the streamlined audit-trio capture (record-only — the exact "more than record-only" gap R4/R5 named). *(Settled 2026-06-04 — the user un-deferred the original requirement: "you load the dll in and it can run the verification checks on your computer for what you author if you have a matching version.")* |
+| D25 | TWO verify meanings, split by layer — STATIC (browser) vs LIVE FUNCTIONAL (in-game) | "Verify" splits into two genuinely different checks, each run where only it can: **STATIC** — do the authored bytes/AOB/hash still match the **DLL file** on disk? Needs only the DLL bytes, no game; runs **client-side in the browser** for instant per-author feedback. **LIVE FUNCTIONAL** — does the address, resolved via the real engine path in the **running game**, land on real working code (not `0`/garbage; the body-hash at the *resolved runtime address* matches; where feasible a probe hook fires / a vtable slot points at a real method)? Needs the game; runs as an **in-game kcdx test-suite plugin**. The static check catches "the binary changed"; the live check catches "resolves to wrong/dead code even if the bytes look right." | A single "verify" that re-hashes bytes from inside a launched game — pointless (re-reading a file does not need the game running; it would launch the game to do a static byte-check the browser already does). Only-static (misses resolve-to-dead-code) or only-live (forces a game launch for every author-time check, loses instant feedback). *(Settled 2026-06-04 — the user caught the conflation: "how does it actually verify functionality though if the game isn't running?" → the in-game plugin does LIVE functional verification; the browser does static.)* |
+| D26 | The verification engine runs CLIENT-SIDE (JS port); the DLL never leaves the machine | The browser-side static verification ports the per-kind checks to **JS** and runs them on the locally-picked DLL's ArrayBuffer (WHGame.dll ≈ 86 MB — within browser limits) — **no upload**, consistent with D15. All 9 kinds are designed (defer nothing): the pure-byte kinds (`function`/`function_no_sig`/`function_variadic` body-hash, `string_anchor` `.rdata` search, `vtable_base` table-shape, `callsite` AOB scan) are straightforward; `instruction_anchor` + `data_slot` need a **minimal in-browser x86 decoder** (just enough to follow a RIP-relative LEA/MOV `disp32` — not a full disassembler); `vtable_index` datum SHAPE is defined but its **population stays deferred** (it needs a verified runtime slot target — `fingerprint-per-kind.md` already marks it deferred-within-design). | Server-side checks (upload the 86 MB proprietary DLL to the backend, or the server ships multi-GB of DLLs in the image) — breaks D15 (the DLL leaves the machine; licensing; the no-upload privacy stance) and only covers versions the server holds. Pyodide (CPython-in-WASM to run the Python resolver unchanged — a ~6–10 MB runtime for a per-kind scan). Defer the 2 derivation kinds + ship only the 4 pure-byte kinds (the user chose defer-nothing — design the whole picture). *(Settled 2026-06-04.)* |
+| D27 | TWO checkers — the C++ ENGINE is authority, the JS browser checker MIRRORS it (cross-impl agreement) | The C++ engine survival check (`survival.cpp`, today function-hash only — extended to all 9 kinds) is the **batch in-game authority**; the JS in-browser check is the **per-author static mirror**. A **cross-implementation agreement test** pins the two to the SAME verdict on the same DLL bytes — the exact pattern D15 already established for `version_resolver.py` (test-of-record) vs the JS version-read port, now applied to the full per-kind survival check. (The live-functional half of the in-game plugin — resolve-and-confirm-it-works — is engine-only by nature; only the static byte-level checks are mirrored in JS.) | Engine-only (no JS per-author checker — every check needs a game launch; no instant author-time feedback). JS-only (no in-game plugin — drops the live-functional batch the user specified as a test-suite plugin). One impl shared via Pyodide (the ~6–10 MB WASM runtime cost, rejected in D26). *(Settled 2026-06-04 — engine = authority because the live functional check is the strongest evidence; JS mirrors it for author-time speed.)* |
+| D28 | The batch verification is an in-game test-suite plugin → a JSON report → fed back into the tool | The bulk "check every DB entry" flow is a **kcdx test-suite plugin** (runs in the live game like every `cap-NN`/`comp-NN` test): for every row it runs the LIVE functional check (D25) and writes a **structured JSON report** alongside `kcdx-dev.log` (per row: `kcdx_id`, resolved version, verdict `resolves+works` / `dead` / `wrong-target` / `cannot-check`, detail). The maintainer **imports that report file** into the tool, which shows a **worklist**: passing rows → one-click **bulk re-verify** (the normal validate→field-delta→confirm→commit spine, the audit trio auto-filled with `evidence_kind` from the check, D29); failing rows → **flagged to fix**. Advisory throughout — each verdict still passes through the confirm spine; nothing lands silently. | Report writes verdicts straight to the DB (bypasses the validate→confirm→commit spine — no field-delta review — and couples the in-game plugin to the DB write path + the data-repo location, against the tool-as-sole-writer model). Log-only (reuse `suite: X/Y` + `FAIL` lines; loses the structured per-row detail + the "feed the report back in" bulk automation the user asked for). *(Settled 2026-06-04 — the user: "the batch is supposed to be a normal kcdx test suite plugin that reports every row true/false for still valid… that report it outputs then can be fed back into the maintainer tool.")* |
+| D29 | A passing check determines `evidence_kind` (verification IS the audit evidence) | A passing verification check **auto-fills `evidence_kind`** by WHAT the check was — tying verification directly to the audit trail (the record of HOW a row was verified, not a guess): the in-game LIVE check → `live_production` (it ran in the real game); the browser static AOB-uniqueness check → `pattern_scan`; a maintainer eyeballing Ghidra with no automated check → `maintainer_ghidra` (the manual default already built). All editable. This composes with the just-built audit-trio auto-fill (setting `last_verified_at_version` auto-completes `verified_date`=today + `verified_by`=injected identity + `evidence_kind`) — the check refines `evidence_kind` from the default to the tier the check actually establishes. | `evidence_kind` stays a manual pick decoupled from the check (the maintainer chooses the tier; no auto-attribution — but then a real passing check and a guess record the same evidence label, losing the "verified by HOW" signal the trio exists to carry). *(Settled 2026-06-04.)* |
+| D30 | The link table = re-pick each session (no persistence); a newer-than-DB DLL is the on-ramp to add a version row | The per-module DLL "link table" is **in-memory, re-picked each session** — the current pick per module, lost on reload; no IndexedDB / File System Access API handle persistence (works in every browser; re-pick when you sit down to verify). The **version-matching gate** (the user's "if you have a matching version"): a check runs only against a linked DLL whose resolved version matches the row's version; **no matching DLL → the check is unavailable + noted, never blocks** (D9 degraded mode — author/save proceeds with the "not verified against a DLL" notice). **Link-to-create:** when a linked DLL resolves to a version NOT covered by any of the entity's `address_versions` rows (a build newer than the DB knows), the tool offers **"add a version row at `<v>`"** → opens the existing create-version flow (US-6/step 12) prefilled at the DLL's version → the maintainer authors `rva`/`signature` for the new build → the check runs against the linked DLL → on pass the audit trio auto-fills (D29) → save (AP18 gates the new version row). Linking a newer build becomes the natural on-ramp to versioning an entity forward. | Persist handles via File System Access API + IndexedDB (R12's "remembered recent paths" — Chromium-only; the user chose zero persistence machinery over the convenience). A backend-config DLL-paths model (the server reads the DLL — breaks D15). Keep link-check and create-version separate (the maintainer manually re-types the version after noticing the gap — loses the prefill on-ramp). *(Settled 2026-06-04 — the user: re-pick each session; "they are supposed to be able to add their version if needed if the thing they are checking isn't already covered by the range of the entity.")* |
 
 These supersede the earlier repo-owns-the-format / CSV-editor decisions recorded in
 `requirements.md` R1/R6 and `plan.md` §"two-phase", the Job-2-only MVP framing, **the
