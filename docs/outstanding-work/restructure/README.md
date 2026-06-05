@@ -43,7 +43,7 @@ Status vocabulary: `NOT STARTED` · `IN PROGRESS` · `DONE` · `BLOCKED` ·
 | [6 — probe code cleanup (narrow subset)](phase-06-probe-cleanup/README.md) | DONE | 3f66c47 |
 | [7 — zone-rework subset + before_game doc widening](phase-07-zone-rework/README.md) | DONE | 54d7d4d / 9264d6a |
 | [8 — ASI-loader cleanup (docs)](phase-08-asi-cleanup/README.md) | DONE | — |
-| [8.5 — asset replacement (pak overlay)](phase-08.5-asset-replacement/README.md) | SUPERSEDED → [`asset-system/`](../asset-system/README.md) (Phases 1–2 DONE + confirmed; Phase 3 IN PROGRESS — a served `.lua` EXECUTING is UNCONFIRMED, KI-0006, closing now; the Phase-11 serve remains) | — |
+| [8.5 — asset replacement (pak overlay)](phase-08.5-asset-replacement/README.md) | SUPERSEDED → [`asset-system/`](../asset-system/README.md) (Phases 1–2 DONE + confirmed; Phase 3 BLOCKED → Phase 11 — the `.lua`-execute confirmation = KI-0006, bundled into Phase 11 alongside KI-0005's boot-cache serve) | — |
 | [9 — high-level Lua surface (player/inventory + namespace stubs)](phase-09-high-level-lua/README.md) | NOT STARTED | — |
 | [9.1 — SQLite reference DB + lookup primitive + verification cache](phase-09.1-reference-db/README.md) | DONE | 498934c |
 | [9.2 — unified named-target surface (kcdx.declare + smart resolver)](phase-09.2-declare-surface/README.md) | IN PROGRESS | 2dac79b / 1c01c9d |
@@ -80,9 +80,12 @@ Independent work that can land now (each by leverage, not phase order):
 - **Phase 8.5 asset overlay** — SUPERSEDED; re-planned + spun out to the
   standalone [`asset-system/`](../asset-system/README.md) tree (Phases 1–2 DONE +
   acceptance-confirmed — the two-hook seam + the full Lua+C++ `kcdx.assets.*`
-  surface). Phase 3 is IN PROGRESS: a served `.lua` EXECUTING is UNCONFIRMED and
-  possibly a capability gap (`KI-0006`, closing now — NOT deferred); the Phase-11
-  in-game serve (`KI-0005`) is the separate user-approved deferral.
+  surface). Phase 3 is BLOCKED → Phase 11: the served-`.lua` EXECUTE confirmation
+  (`KI-0006` — a heap-corruption bug when a mod-init `.lua` overlay is keyed) is
+  bundled into Phase 11 (FIX A collapses the dual-runtime + reworks serve-execute;
+  user-approved deferral 2026-06-05), alongside the boot-cache in-game serve
+  (`KI-0005`). The shipping capability (textures, XML, cross-mod, conflict,
+  stock-pak) is proven + confirmed; only the `.lua`-execute leg waits.
 - **Phase 9 high-level Lua surface** — independent, pure RE + binder work; one
   `/feature` cycle.
 

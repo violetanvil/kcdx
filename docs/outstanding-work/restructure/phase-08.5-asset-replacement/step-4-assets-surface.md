@@ -1,6 +1,8 @@
 # Phase 8.5 step 4 — `kcdx.assets.*` Lua surface + `kcdxAssetInterface`
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 4.
+> **SUPERSEDED (2026-06-04) — historical record.** This 5-step stub was re-planned into the standalone [`../../asset-system/`](../../asset-system/README.md) tree (see this dir's [`README.md`](README.md)); the asset-system step docs are authoritative. Kept as the pre-spinout authoring record — NOT live work. (This step's intent — the `kcdx.assets.*` Lua surface + `kcdxAssetInterface` — was BUILT as asset-system Phase 2.)
+
+**Status: NOT STARTED (superseded before build).** Ledger row: [`README.md`](README.md) → step 4.
 
 ## What
 

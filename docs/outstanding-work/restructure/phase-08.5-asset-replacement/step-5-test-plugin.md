@@ -1,6 +1,8 @@
 # Phase 8.5 step 5 — `cap-XX-asset-replace` test plugin
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 5.
+> **SUPERSEDED (2026-06-04) — historical record.** This 5-step stub was re-planned into the standalone [`../../asset-system/`](../../asset-system/README.md) tree (see this dir's [`README.md`](README.md)); the asset-system step docs are authoritative. Kept as the pre-spinout authoring record — NOT live work. (This step's intent — the asset-replace regression plugin — was BUILT as asset-system Phase 3 step 10.)
+
+**Status: NOT STARTED (superseded before build).** Ledger row: [`README.md`](README.md) → step 5.
 
 ## What
 

@@ -1,6 +1,8 @@
 # Phase 8.5 step 1 — hook the game's pak resolver (production overlay hook)
 
-**Status: DONE.** Ledger row: [`README.md`](README.md) → step 1.
+> **SUPERSEDED (2026-06-04) — historical record.** This 5-step stub was re-planned into the standalone [`../../asset-system/`](../../asset-system/README.md) tree (see this dir's [`README.md`](README.md)); the asset-system step docs are authoritative. Kept as the pre-spinout authoring record; the status line below is where it stood at spinout, NOT live work.
+
+**Status: DONE (at spinout).** Ledger row: [`README.md`](README.md) → step 1.
 
 ## What
 
