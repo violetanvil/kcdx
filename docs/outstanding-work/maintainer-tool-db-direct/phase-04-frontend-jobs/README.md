@@ -24,7 +24,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md). UI design:
 | 12 s05 create new version (Job 6) — prefill, nothing-changed guard, AP18 approval | DONE | frontend-repo 7e4ac3d |
 | 13 s05 create new entity (Job 1) — id-assignment, first version row, AP18 approval | DONE | frontend-repo 4ac95f9 |
 | 14 s02 lifecycle editing (Jobs 4/5) — supersede + deprecate forms, pair-integrity + notes | DONE | frontend 902fc21+95fdc9d, kcdx f12d6ad (14b: notes-write path — edit-notes data-core+backend; closed an applier silent-no-op AP14) |
-| 15 s03 version history + side-by-side compare — N-column, marked diffs, edit-from-compare | NOT STARTED | — |
+| 15 s03 version history + side-by-side compare — N-column, marked diffs, edit-from-compare | DONE | frontend-repo 9190efc |
 
 ## Step docs
 

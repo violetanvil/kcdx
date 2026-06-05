@@ -24,7 +24,7 @@ web-pivoted, `32df16d`) +
 | Phase 1 — data-core (exporter + round-trip + db_editor UPDATE/INSERT/lifecycle + field-delta) | DONE | 044fe03 |
 | Phase 2 — backend (FastAPI over the data-core: skeleton+adapter, read API, field-delta, preview-Save, DIRECT-DB write + scoped restore-point + Confirm commit+push+seams — DB-direct model D19/D20/D21) | DONE | 75442e0 |
 | Phase 3 — frontend spine (React+Mantine: shell+theme, navigator, detail-read, field editor, save-confirm+toast) | DONE | frontend-repo 239757f (+ kcdx 7c2f91c/af094cc backend seam+fix; per-step in phase-03 ledger) |
-| Phase 4 — frontend full-jobs (client JS resolver, create version/entity, lifecycle, compare) | NOT STARTED | — |
+| Phase 4 — frontend full-jobs (client JS resolver, create version/entity, lifecycle, compare) | DONE | frontend-repo 9190efc (+ kcdx 631b9c9/f12d6ad: DLL agreement test + edit-notes path; per-step in phase-04 ledger) |
 | Phase 5 — Docker packaging (image + volume layout) | NOT STARTED | — |
 
 The per-step ledgers live in each `phase-NN-*/README.md`. A top row flips to `DONE` only
