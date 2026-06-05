@@ -66,6 +66,14 @@ claim (AP15 — FAILS if B does not serve at A's vpath, or no conflict line fire
 The owner+path pair form gets its own row. Build green; live-confirmed via the
 launch.
 
+> **In-game SERVE confirmation is DEFERRED → Phase 11** (the boot-cache lifecycle
+> gap, KI-0005 closed `4029d51`; see the phase README §"In-game SERVE confirmation
+> (8b/8c)"). The cross-mod RESOLUTION (the two-hop §5.3 name→serve-vpath→store-key)
+> PASSES at boot (`COMP-16-replace-code` ✅). Only the in-game SERVE — B serving at
+> A's boot-cached serve-vpath via a post-VM consumer `replace` — is Phase-11-gated
+> (`before-game-hooks.md` §6b). The matrix row `COMP-16-serve-code` is marked
+> DEFERRED → Phase 11, not PENDING.
+
 ## Dependencies
 
 **Step 8b** (the `asset_namespace` runtime store + the four verbs + the vanilla

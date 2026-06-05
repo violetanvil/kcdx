@@ -53,17 +53,24 @@ mechanism** (§5.1 — the RCU `asset_namespace` store, settled by consult) and
 serves at; the "later phase" over-deferral corrected). Both built to the settled
 design (`asset-replacement.md` changelog 2026-06-04).
 
-**Phase-2 acceptance launch — boot rows PASSED** (the 2026-06-04 18:30 run,
-`test-plugins/README.md`): cap-74 (namespace nav ×4), cap-75 (the 11 `kcdx.assets.*`
-boot rows), COMP-16-replace-code (cross-mod resolution). The runtime store keys +
-resolves + serves live (the after-VM path). **One in-game serve gap → KI-0005
-(closed, resolved-by-design):** a runtime `register`/`replace` can't serve a
-boot-cached asset (the engine opens it before `plugin.lua`'s Lua VM exists) — boot
-assets use the declarative sidecar today; the Lua-runtime boot serve is deferred to
-the DllMain-VM phase (`before-game-hooks.md` §6b). An AP14 teaching warn shipped
-(`4eaa60d`). The two in-game serve matrix rows (`CAP-75-register-serve`,
-`COMP-16-serve-code`) stay PENDING (a fresh-loaded after-VM asset is the vehicle —
-re-confirmed at step 10).
+**Phase-2 acceptance launch — boot rows PASSED** (the 2026-06-04 runs,
+`test-plugins/README.md`): cap-74 (namespace nav ×4), cap-75 (the boot
+`kcdx.assets.*` rows incl. the path-return + the boot-asset teaching warn),
+COMP-16-replace-code (cross-mod resolution). The runtime store keys + resolves the
+verbs correctly at boot (path-return + the two-hop §5.3 resolution PASS). **The
+in-game SERVE of a runtime register/replace is DEFERRED → Phase 11 → KI-0005
+(closed, resolved-by-design):** a Lua runtime `register`/`replace` runs at
+`plugin.lua` time, after the engine opens (and GPU-caches) every boot/menu asset,
+so the post-VM store key can never win the open — boot assets use the declarative
+sidecar today; the Lua-runtime boot serve is deferred to the DllMain-VM phase
+(`before-game-hooks.md` §6b). An AP14 teaching warn shipped (`4eaa60d`) and PASSED
+(`19-44-47` run). The two in-game serve matrix rows (`CAP-75-register-serve`,
+`COMP-16-serve-code`) are **DEFERRED → Phase 11** (`dd231cc`): a 2026-06-04 attempt
+to find an after-VM serve vehicle by the FOPEN open-count failed — the picked
+vpaths (`apse/*.dds`) were themselves boot-cached, and the open-count cannot
+distinguish a first-open from a cache-refresh
+(`_research/probe-archive/ki0005-resolver-dds-observer.md` §"DEAD END"). Phase 11's
+DllMain VM + an instrumented after-`NotifyVmReady` probe owns the confirmation.
 
 ---
 

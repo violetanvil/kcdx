@@ -70,6 +70,13 @@ file thereafter. Each a FALSIFIABLE claim (AP15 — FAILS if the verb returns
 nil/a wrong path, or the runtime overlay does not take effect). Build green;
 live-confirmed via the launch (`acceptance-signal.md`).
 
+> **In-game SERVE confirmation is DEFERRED → Phase 11** (the boot-cache lifecycle
+> gap, KI-0005 closed `4029d51`; see the phase README §"In-game SERVE confirmation
+> (8b/8c)"). The verb path-return + the runtime-store key PASS at boot; the
+> *in-game serve* of a post-VM register/replace can't reach a boot-cached vpath
+> until the DllMain Lua VM lands (`before-game-hooks.md` §6b). The matrix rows
+> `CAP-75-register-serve` are marked DEFERRED → Phase 11, not PENDING.
+
 ## Dependencies
 
 **Step 8** (the `kcdx.assets.*` table + `src/lua_bind_assets.cpp` + the
