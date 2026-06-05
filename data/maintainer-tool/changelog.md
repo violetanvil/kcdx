@@ -3,6 +3,46 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-05 — D25 correction: "verify" = version-applicability + reachability, NOT a runtime body hash
+
+Phase-0 probe 0.4 (the in-game live-functional probe) + reading `src/survival.cpp` proved the
+original D25 wording wrong and the user settled the correction. D25 framed the in-game "LIVE
+functional" check as "the body-hash at the *resolved runtime address* matches." That is wrong:
+hashing the **loaded** body of a known-good function (`lua_pcall`) reads a false MISMATCH, because
+the loaded image carries applied relocations AND kcdx detours the function every session
+(overwrites its prologue). The shipping engine check (`survival.cpp::SurvivalCheck`) deliberately
+hashes the **ON-DISK file** ("the ON-DISK backing file (NOT live memory — the crux)") — and that
+matches; `survival.cpp` was never broken, the TRD wording mis-specced it.
+
+The corrected model (settled with the user):
+- **"Verify" = is this DB entry safe to APPLY on the build the user is actually running** — two
+  checks, both run ONCE (per-author in the browser; at engine startup in-game — never during
+  gameplay, never the hot path; running either during gameplay would be pointless polling):
+  1. **Version-applicability (the hash check)** — does the body at the entry's `rva` match the DB
+     `content_hash`, hashed **ON-DISK** (not the loaded image)? Match → valid for this build →
+     apply; mismatch → the build diverged → AVOID (self-protect, esp. on a version the DB lacks).
+     This is what `survival.cpp` + `fingerprint-per-kind.md` §function already do/specify.
+  2. **Reachability (the loaded-image check)** — does the address resolve into live `.text` at
+     all? Reads the **live loaded image** (the only sense of "live" — it reads memory, it does
+     NOT re-run during gameplay). Catches an entry whose on-disk hash matches but whose live
+     resolve is dead/wrong.
+- **Verdict vocabulary re-grounded:** `resolves+works` = on-disk hash matches (right version) AND
+  resolves into live `.text`; `wrong-target`/`changed` = on-disk hash mismatch (build diverged);
+  `dead` = unreachable in live `.text`; `cannot-check` = no hash / non-byte or deferred kind.
+
+**Integrated in:** §10 D25 (rewritten), D27 (both checkers hash on-disk; reachability engine-only),
+D28 (report verdict meanings re-grounded); §6 US-11 (the in-bulk-in-game bullet + the acceptance
+verdict line); §5 (the engine survival-checker unit).
+**Why:** the probe correctly triggered a STOP-and-re-design before Phase 3 built on a wrong
+assumption. D24 (un-deferral), D26 (client-side/no-upload — the browser already hashes the picked
+DLL *file* on-disk), and D28's report round-trip mechanism are unchanged; only the verify
+SEMANTICS are corrected. Re-grounds Phase 3's step docs (the engine extension builds on-disk
+hashing + a loaded-image reachability check at startup, not a runtime body hash).
+**UI follow-on (flagged, not edited here):** the s08/s04 screen-spec wording frames the verdict
+as verification; if any of it reads as "does the code still work" rather than "is this version
+applicable + reachable," a `/ui-design` pass should re-ground that copy — surfaced, not edited
+from `/design`.
+
 ## 2026-06-05 — the save spine supports a BATCH mutation (bulk re-verify, D32)
 
 The `/ui-design` pass for the verification engine surfaced one functional gap the TRD should
