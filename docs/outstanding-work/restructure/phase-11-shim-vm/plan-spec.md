@@ -43,8 +43,10 @@ sentinel set — the dual-Lua sentinel hazard dies by construction. Delivers the
 
 This tree rests on game-binary facts verified in the FIX A harvest. The canonical
 source is [`../fix-a-drop-static-lua.md`](../../fix-a-drop-static-lua.md); seed rows
-`data/seeds/address_names_seed.csv` (ids 114, 116, 117, 121 + the 1100-range Lua
-API) + `address_versions_seed.csv`. The design §3 tabulates the load-bearing facts
+`data/seeds/address_names_seed.csv` (ids 114, 116, 117, 121 + the Lua-API rows at
+low ids ~1–130, resolved by NAME not a baked id range — "1100-range" was the
+pre-2026-05-28 numbering, renumbered in the three-file split) +
+`address_versions_seed.csv`. The design §3 tabulates the load-bearing facts
 (Init `@ 0x1448F38` sole-caller of `lua_newstate @ 0x14492A8`; the post-newstate
 sequence; the layout constants). A step turning on such a fact cites it from there,
 never a bare RVA.
@@ -61,7 +63,7 @@ element ships.
 | Single-VM validation (one state, PROBE Q silent) | §4.2 | P1 step 1 (probe) + P3 step 3 (build assertion) | probe observes, build asserts |
 | Boot-asset swap reachability (KI-0005, required) | §4.3 | P1 step 1 | required outcome — gates P4 |
 | Early-slot shape (probe all to see) | §4.4 | P1 step 1 | settles candidate A vs B |
-| Symbol shim — forward 93 resolved fns | §6.1 | P2 step 1 | through Address Library 1100-range |
+| Symbol shim — forward 93 resolved fns | §6.1 | P2 step 1 | resolve each by canonical NAME (`refdb::ResolveAddrByName`), not a baked id range |
 | Shim — stub ~24 inlined/stripped fns | §6.1 | P2 step 2 | layout-const based |
 | Stub GC-barrier safety (`luaC_barrierf`) | §6.1 | P2 step 2 | hard constraint, per-stub test |
 | Stub layout-const validation at init (mainthread self-pointer) | §6.1 | P2 step 2 | future game-update struct shift fails loud |

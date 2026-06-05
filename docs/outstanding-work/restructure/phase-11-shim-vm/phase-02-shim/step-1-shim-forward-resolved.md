@@ -4,18 +4,28 @@
 
 Create `src/lua_shim.{h,cpp}`: the `kcdx::lua_shim::LuaApi` function-pointer struct
 sized for all 117 `LUA_API`/`LUALIB_API` symbols, and `kcdx::lua_shim::Resolve()`
-that populates it. This step wires the 93 RESOLVED functions (forward through
-`address_library::Resolve(id)`, the 1100-range ids), the bail-loud-on-required-miss
-behavior, and the internal-only gating. The ~24 stubs are the next step.
+that populates it. This step wires the RESOLVED functions (forward each by resolving
+its CANONICAL NAME through `refdb::ResolveAddrByName("<lua_fn>")` — the same by-name
+resolution the keystone probe used; NOT a hardcoded id range), the
+bail-loud-on-required-miss behavior, and the internal-only gating. The ~24 stubs are
+the next step.
+
+> **Seed reality (verified 2026-06-05, supersedes the design's stale "1100-range"
+> note):** the Lua API surface is seeded at LOW ids (~1–130: `lua_pcall`=1,
+> `luaL_loadfile`=3, `luaL_ref`=125, `luaC_barrierf`=127, the internal helpers
+> 128–130) — NOT a "1100-range" (that was the pre-2026-05-28 single-CSV numbering,
+> renumbered in the three-file seed split per `lua-bridge.md`). 111 lua-named rows
+> exist. **Resolve by NAME, never by a baked id range** — it is robust against exactly
+> this renumbering and is the established `refdb` pattern.
 
 ## Scope
 
 - `src/lua_shim.h` — declare `LuaApi` (the fn-ptr struct) + `Resolve()` + the
   `g_api` accessor.
-- `src/lua_shim.cpp` — for the 93 resolved fns, populate `g_api.<fn>` from
-  `address_library::Resolve(<id>)`. `Resolve()` returns false + logs loud if any
-  REQUIRED symbol fails (a known-stripped fn without a stub is not yet wired — that
-  is step 2).
+- `src/lua_shim.cpp` — for each resolved fn, populate `g_api.<fn>` from
+  `refdb::ResolveAddrByName("<canonical lua name>")`. `Resolve()` returns false + logs
+  loud if any REQUIRED symbol fails (a known-stripped fn without a stub is not yet
+  wired — that is step 2).
 - Internal-only gating: `lua_close`/`lua_newstate`/`lua_setallocf`/`lua_atpanic`
   resolvable internally but NOT exposed through `kcdxLuaApi`.
 - Coexists with the static-linked Lua at this point (no `vendor/lua` change here).
@@ -33,7 +43,8 @@ Lua — a live `lua_State` exists to call into). PROBE Q silent.
 
 P1 step 1 (the probe confirms the resolution targets behave as the harvest says —
 the shim's resolved-fn list rests on the harvest, which the probe's single-VM
-observation corroborates). The Address Library 1100-range seeds already exist.
+observation corroborates). The Address Library Lua-API seed rows already exist (low
+ids ~1–130, resolved by name).
 
 ## Design authority
 
@@ -44,9 +55,11 @@ need to change" is the load-bearing spec for the fn list + signatures.
 
 ## RE / author-burden note
 
-Every Lua symbol resolves by NAME/id through the Address Library, never a hardcoded
-RVA (AP1, `.claude/rules/no-hardcoded-addresses.md`). The 1100-range ids are already
-seeded; this step adds NO new DB rows (AP18 not triggered).
+Every Lua symbol resolves by canonical NAME through the Address Library
+(`refdb::ResolveAddrByName`), never a hardcoded RVA (AP1,
+`.claude/rules/no-hardcoded-addresses.md`) and never a baked id (robust against the
+id renumbering that already happened). The Lua-API rows are already seeded (~ids
+1–130); this step adds NO new DB rows (AP18 not triggered).
 
 ## Reference
 

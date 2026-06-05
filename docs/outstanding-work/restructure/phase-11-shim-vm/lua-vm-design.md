@@ -67,8 +67,10 @@ its evidence tier on the reuse-first ladder, per
 [`.claude/rules/reverse-engineering.md`](../../../../.claude/rules/reverse-engineering.md).
 The canonical consolidated source is
 [`fix-a-drop-static-lua.md`](../../fix-a-drop-static-lua.md); the seed rows are
-`data/seeds/address_names_seed.csv` (ids 114, 116, 117, 121 + the 1100-range Lua
-API rows) + `address_versions_seed.csv`.
+`data/seeds/address_names_seed.csv` (ids 114, 116, 117, 121 + the Lua-API rows at
+low ids ~1–130 — resolved by NAME, not by a baked id range; the old "1100-range" was
+the pre-2026-05-28 single-CSV numbering, renumbered in the three-file split) +
+`address_versions_seed.csv`.
 
 | Fact | Verified value | Evidence tier |
 |---|---|---|
@@ -77,7 +79,7 @@ API rows) + `address_versions_seed.csv`.
 | Init's post-`lua_newstate` sequence | stores L on instance (+0x10) and global (.data `0x549A0E8`) → **sets storedebug=0** (`[g+0x22]=0`, overriding `lua_newstate`'s default =1) → `luaL_openlibs(L)` → 3 extension-lib registrars (`0x1449698`, `0x1449410`, `0x1449584`) | maintainer_ghidra (seed id 121) |
 | `lua_newstate` body | allocates `0x268` (sizeof LG); sets `storedebug=1` @ g+0x22, gcpause/gcstepmul=200 @ g+0x90/0x94, totalbytes=0x268 @ g+0x78, mainthread=L @ g+0xB0, L->l_G @ L+0x20; final `luaD_rawrunprotected(L, f_luaopen, NULL)` @ `0x14493F0` | maintainer_ghidra (seed id 114) |
 | `gEnv->pScriptSystem` write target | .data RVA `0x549A0E8` (NOT the stale muyuanjin `0x4092B828`) | maintainer_ghidra |
-| Lua API harvest | 93/117 `LUA_API`/`LUALIB_API` resolved + 13 internal helpers + 4 CScriptSystem anchors; ~24 inlined/stripped catalogued with per-function stub strategies + GC-barrier hazards | maintainer_ghidra (seed rows 1100-range; consolidated in the harvest doc) |
+| Lua API harvest | 93/117 `LUA_API`/`LUALIB_API` resolved + 13 internal helpers + 4 CScriptSystem anchors; ~24 inlined/stripped catalogued with per-function stub strategies + GC-barrier hazards | maintainer_ghidra (seeded at low ids ~1–130, resolved by name; consolidated in the harvest doc) |
 | Layout constants (sizeof LG, field offsets, `LUA_NUMBER=float`, `TValue=0x10`, …) | per the harvest doc's "Layout constants" table | maintainer_ghidra |
 
 **The README "~38% / BLOCKED" note is STALE** (it predates the 2026-05-21 harvest
@@ -210,8 +212,9 @@ and the settled shape is captured back into this §5 + the changelog when it lan
 - A function-pointer struct (`kcdx::lua_shim::LuaApi`) sized for all 117
   `LUA_API`/`LUALIB_API` symbols. `kcdx::lua_shim::Resolve()` populates it after
   WHGame.dll is mapped and the Address Library is up, before any Lua VM touch.
-- **The 93 resolved functions** forward through `address_library::Resolve(id)` (the
-  1100-range ids).
+- **The 93 resolved functions** forward by resolving each function's canonical NAME
+  through `refdb::ResolveAddrByName("<lua_fn>")` (the by-name resolution the keystone
+  probe used; robust against id renumbering — NOT a baked id range).
 - **The ~24 inlined/stripped functions** get kcdx-side stubs per the harvest doc's
   verified per-function strategies (e.g. `lua_gettop` → `(int)(L->top - L->base)`;
   `lua_pushnil/boolean/number/...` → direct TValue write + `L->top++`;
@@ -314,7 +317,7 @@ addressed and a far more instrumentable execution path.
 | `src/lua_shim.{h,cpp}` | resolve + forward every `lua_*`/`luaL_*` through WHGame; stub the inlined/stripped set | NEW |
 | `src/dllmain.cpp` | force-load WHGame, drive the early Lua slot + the VM build + the Init interception, order the early slot vs the boot open | CHANGED |
 | `src/ldr_notify.cpp` | the LDR-notification before_game apply pass (exists; verify synchronous fire) | reused |
-| `src/address_library.*` (DB seeds) | the 1100-range Lua RVAs (already seeded) | reused |
+| `src/address_library.*` (DB seeds) | the Lua RVAs (already seeded, low ids ~1–130, resolved by name) | reused |
 | `src/early_hook.{h,cpp}` (from `src/probes/bugsplat_ctor_probe`) | the generalized author-parameterized early-install primitive (`before-game-hooks.md` §5) | relocated/generalized |
 | `vendor/lua/` | `*.c` dropped from build; `*.h` kept; FIX C patch reverted | CHANGED |
 | `src/hooks.cpp` PROBE Q | the permanent dual-Lua canary | reused, unchanged |
