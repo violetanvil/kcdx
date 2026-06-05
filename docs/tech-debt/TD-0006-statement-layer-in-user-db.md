@@ -2,9 +2,9 @@
 id: TD-0006
 opened: 2026-06-05
 status: Open
-area: reference DB (data/reference.sqlite) schema — the statement/instruction layer + the named-entity kind model
-closure_gate: a dedicated build phase that ships the statement layer in the USER DB (the Phase 9.3 statement-dependent surfaces' producer)
-owner: the statement-layer build phase (when scheduled) — the producer Phase 9.3's locator/op/statement steps consume
+area: maintainer tool (data/maintainer-tool/) — its capability to OWN statement-kind entities + the open per-kind model; and the reference DB (data/reference.sqlite) USER-tier projection it exports
+closure_gate: the maintainer tool gaining the capability to author/own these item kinds (the statement layer + the open per-kind contract) and project them into the USER DB
+owner: the maintainer-tool build effort (data/maintainer-tool/) — the AUTHORING AUTHORITY for the reference DB; nothing else may author these items (it owns INSERT/UPDATE + validation + export, per data/maintainer-tool/design.md D19)
 commit_at_filing: ac42d800e55c60df9cd5267aa36231a6ffff208d
 related:
   - TD-0005 (high-level Lua surface — a sibling deferred-surface; unrelated data need)
@@ -13,6 +13,13 @@ related:
 ---
 
 # TD-0006 — the statement/instruction layer is DEV-only; the USER DB cannot back any named statement-level thing
+
+> **Blocked on:** the maintainer tool (`data/maintainer-tool/`) gaining the
+> capability to OWN these item kinds (the statement layer + an open per-kind
+> model) and project them into the USER DB. The maintainer tool is the sole
+> authoring authority for the reference DB; nothing else may author these items.
+> **A maintainer-tool agent can act on this doc directly — see
+> §"For the maintainer-tool agent" for the self-contained handoff.**
 
 ## Context
 
@@ -262,24 +269,117 @@ This keeps the general model without a super-wide table.
 
 ## Closure blocker
 
-**A dedicated build phase that ships the statement layer in the USER DB** — the
-producer the Phase 9.3 statement-dependent surfaces (and Phase 9.4's `kcdx.find`)
-consume. The phase delivers, in one coherent effort:
-1. the §A fill — `statements` (+ `referenced_vars`, + `call_edges` if 9.4 rides
-   along) present in the USER DB at the decided scope (§A.4), the engine loading
-   them at `refdb::Open()`;
-2. the §B generalization — `entity_type` as an open dict with a per-kind
-   required-columns contract (§B.4), validated at import/build, so any future
-   named kind needs no schema migration;
-3. the cut-column resolution — `cvar_ref` / `condition_text` populated by the
-   extractor (or the locators depending on them explicitly dropped as a surfaced
-   decision).
+**The maintainer tool (`data/maintainer-tool/`) gaining the capability to OWN
+these item kinds and project them into the USER DB.** The maintainer tool is the
+sole authoring authority for the reference DB — it owns every INSERT/UPDATE
+(`db_editor.py` via the `_apply_one_db` write helpers), the single whole-state
+validator gate, and the CSV/DB export (`data/maintainer-tool/design.md` D19/D20).
+Nothing else may author these items. So this debt closes ONLY when the maintainer
+tool can author and own:
 
-On that phase's acceptance this TD closes, and Phase 9.3's statement-dependent
-steps (locator content-shortcuts, `kcdx.op.*`, `kcdx.statement.*`, insert-captures)
-unblock. The phase is the named producer; its scheduling+execution is the blocker
-(every prerequisite — the DEV dump, the extractor, the §11.9 schema — already
-exists; this is a ship-it-to-USER + generalize-the-kind-model effort, not new RE).
+1. **The statement layer as owned entities (§A).** The tool can author/own
+   `statement`-kind entities (and `referenced_vars` / `call_edges` as their
+   supporting data) and project them into the USER-tier `reference.sqlite` at the
+   decided fill scope (§A.4) — not leave them DEV-only. Today the tool ships
+   them DEV-only; closure is the tool being ABLE to promote/own them for USER.
+2. **The open per-kind model (§B).** The tool's `entity_type` handling becomes an
+   open `_dict`-driven model with a per-kind required-columns CONTRACT (§B.4) the
+   validator enforces — so the tool can own ANY named kind (today's + `statement`
+   + future `struct_field` / `cvar` / …) with no schema migration and no
+   per-kind code in the tool. The user's directive: the DB must back **any**
+   named thing, and adding a kind is data (a `_dict` row + its contract), not code.
+3. **The cut-column resolution (§A.1 gaps).** The tool can author `cvar_ref` /
+   `condition_text` for the locators that need them (or those locators are
+   explicitly dropped as a surfaced decision) — the tool owns whether that data
+   exists.
+
+On the maintainer tool acquiring this capability (and authoring the needed
+items), this TD closes, and Phase 9.3's statement-dependent steps (locator
+content-shortcuts, `kcdx.op.*`, `kcdx.statement.*`, insert-captures) unblock.
+Every prerequisite the DATA needs already exists (the DEV dump, the extractor,
+the §11.9 schema) — the blocker is the maintainer TOOL's capability to own and
+project these kinds, not new reverse-engineering.
+
+---
+
+## For the maintainer-tool agent — exactly what the tool must gain (self-contained handoff)
+
+This section is written so a maintainer-tool agent can act on it without reading
+the rest of this doc. The reference: `data/maintainer-tool/design.md` (the
+tool's authoring model) + `parallel-ghidra-research.md` §11.9 (the schema).
+
+**The ask, in one sentence:** the maintainer tool must be able to own and author
+**any named kind of reference-DB item** — including the statement/instruction
+layer it currently keeps DEV-only — with a per-kind required-columns contract
+that the validator enforces, and project the owned items into the USER-tier DB.
+
+### Capability 1 — own an OPEN set of kinds (no per-kind code in the tool)
+
+- Today the tool's authoring (`db_editor.py` / `_apply_one_db`) and validator
+  branch on a CLOSED set of `entity_type`s (function / vtable_slot / data_slot /
+  callsite, with `statement` reserved-unpopulated). Replace that with an
+  **`entity_type` dictionary** (`_dict_entity_type`) where each row carries the
+  kind's name AND its **required-columns mask** (which `entity_versions` /
+  `entities` columns must be non-NULL for that kind, which must be NULL).
+- The tool reads the contract from the dict; it does NOT hardcode the kind list.
+  Adding a future kind (e.g. `struct_field`, `cvar`) is **inserting a `_dict`
+  row + its contract** — no change to `db_editor.py`, the validator, or the
+  exporter. This is the property that makes the tool able to own "any named
+  thing, no matter what it is."
+
+### Capability 2 — enforce required-columns-PER-KIND in the validator
+
+- The single whole-state validator gate (the one `db_editor` already runs before
+  any write) gains a **per-kind required-columns check**: for each entity row,
+  look up its kind's contract in `_dict_entity_type` and assert every REQUIRED
+  column is non-NULL and every N/A column is NULL. A violation aborts the edit
+  with no write (the tool's existing fail-loud / no-write-on-validation-failure
+  behavior, D19).
+- The authoritative per-kind contract is the table in **§B.4 of this doc** — copy
+  it into the validator as data. The kinds + their required columns are listed
+  there exhaustively (function, function_no_sig, function_variadic, vtable_base,
+  vtable_index, data_slot, callsite, string_anchor, instruction_anchor,
+  **statement**, **struct_field**, **cvar**).
+
+### Capability 3 — author + own the statement-kind entities, project to USER
+
+- The tool must be able to author `statement`-kind entities and own the
+  statement-layer data (§A.1/§A.2): the `statements` columns (`idx`, `kind`,
+  `byte_range_start`, `byte_range_len`, `callee`, `string_ref`, `content_hash`,
+  + the cut `cvar_ref` / `condition_text` per Capability 4) and `referenced_vars`
+  (for captures). **Recommended shape (§B.5):** keep the dedicated `statements`
+  table that already exists in the DEV DB and indexed; the `statement` entity row
+  points at it (its contract names that FK as the required field). Do NOT build a
+  5.24 M-row-capable super-wide `entity_versions`.
+- **The fill-scope decision (§A.4) is the tool's to surface, not pre-decided:**
+  curated-only (statements for the ~139 curated-overlay functions) vs.
+  curated+on-demand vs. full (the 1.13 GB problem). The §11.9 finding that
+  statement survival rides the owning function's interval for free
+  (function-hash-unchanged ⟹ every statement byte-identical) means statement
+  rows need NO separate cross-version matcher — they ride the function interval,
+  which removes the hardest part of owning them.
+- The export side (`csv_exporter` / the per-DB column projection in
+  `_apply_one_db`) must include the statement-kind items in the **USER** tier
+  projection, not only DEV — today the two-DB split keeps them DEV-only.
+
+### Capability 4 — own the cut columns the locators need
+
+- `cvar_ref` (for `kcdx.locator.first_read_of_cvar` + `matching{reads_cvar=}`)
+  and `condition_text` (for `matching{condition_contains=}`) were CUT from the
+  dump as 100%-empty / never-extracted. The tool owns whether they exist:
+  populate them (a new extractor decompiler pass feeding the tool) OR surface the
+  decision that those specific locators are dropped. This is a surfaced
+  decision, recorded at closure — not pre-decided here.
+
+### What the tool does NOT need to do
+
+- No new reverse-engineering — the DEV dump already has 5.24 M statements /
+  10.88 M referenced_vars / 1.52 M call_edges (`parallel-ghidra-research.md`
+  §11.9). The data exists; the tool needs to OWN and PROJECT it, plus the
+  cut-column resolution.
+- No engine-side change is in THIS scope (the engine consumer `src/refdb.cpp`
+  loading the shipped statement layer is the downstream Phase 9.3 consumer's
+  concern, tracked by this TD's unblock, not the maintainer tool's job).
 
 ## Affected sites
 
@@ -303,6 +403,12 @@ exists; this is a ship-it-to-USER + generalize-the-kind-model effort, not new RE
   general "any named thing, required-columns-per-kind" model the user requested.
   The function-level half of 9.3 is NOT blocked by this and can proceed
   separately.
+- **2026-06-05** — Re-pointed the closure blocker at the **maintainer tool's
+  capability to own these item kinds** (the tool is the sole authoring authority
+  for the reference DB — `data/maintainer-tool/design.md` D19/D20). Added the
+  self-contained §"For the maintainer-tool agent" handoff (the four capabilities
+  the tool must gain) so a maintainer-tool agent can read this doc and know
+  exactly what is needed.
 
 ## What this entry does NOT do
 
@@ -311,6 +417,8 @@ exists; this is a ship-it-to-USER + generalize-the-kind-model effort, not new RE
 - Does not decide the fill scope (§A.4) or the wide-vs-dedicated-table choice
   (§B.5) — those are closure-time decisions surfaced to the user, recorded here
   as the open questions.
-- Closure (the build phase shipping the layer + generalizing the model) is
-  appended by the skill that lands it (`/feature` / `/execute`), which then moves
-  this file to `closed/` + reindexes per `doc-organization.md` — never at filing.
+- Closure (the maintainer tool gaining the capability to own these kinds +
+  project them to the USER DB + generalize the per-kind model) is appended by the
+  skill that lands it (`/feature` / `/execute` on the maintainer tool), which then
+  moves this file to `closed/` + reindexes per `doc-organization.md` — never at
+  filing.
