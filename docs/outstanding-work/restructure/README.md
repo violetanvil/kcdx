@@ -43,7 +43,7 @@ Status vocabulary: `NOT STARTED` · `IN PROGRESS` · `DONE` · `BLOCKED` ·
 | [6 — probe code cleanup (narrow subset)](phase-06-probe-cleanup/README.md) | DONE | 3f66c47 |
 | [7 — zone-rework subset + before_game doc widening](phase-07-zone-rework/README.md) | DONE | 54d7d4d / 9264d6a |
 | [8 — ASI-loader cleanup (docs)](phase-08-asi-cleanup/README.md) | DONE | — |
-| [8.5 — asset replacement (pak overlay)](phase-08.5-asset-replacement/README.md) | NOT STARTED | — |
+| [8.5 — asset replacement (pak overlay)](phase-08.5-asset-replacement/README.md) | SUPERSEDED → [`asset-system/`](../asset-system/README.md) (Phases 1–2 DONE; Phase 3 + the Phase-11 serve remain) | — |
 | [9 — high-level Lua surface (player/inventory + namespace stubs)](phase-09-high-level-lua/README.md) | NOT STARTED | — |
 | [9.1 — SQLite reference DB + lookup primitive + verification cache](phase-09.1-reference-db/README.md) | DONE | 498934c |
 | [9.2 — unified named-target surface (kcdx.declare + smart resolver)](phase-09.2-declare-surface/README.md) | IN PROGRESS | 2dac79b / 1c01c9d |
@@ -77,8 +77,10 @@ Independent work that can land now (each by leverage, not phase order):
 - **Engine-direct hook migration** — 5 remaining `MH_CreateHook` sites move to
   `hook_chain::AddCEngine`; one `/execute` cycle per site; full spec at
   [`../../tech-debt/TD-0003-engine-direct-hook-migration.md`](../../tech-debt/TD-0003-engine-direct-hook-migration.md).
-- **Phase 8.5 asset overlay** — independent, high user-visible leverage; one
-  `/feature` cycle.
+- **Phase 8.5 asset overlay** — SUPERSEDED; re-planned + spun out to the
+  standalone [`asset-system/`](../asset-system/README.md) tree (Phases 1–2 DONE
+  — the two-hook seam + the full Lua+C++ `kcdx.assets.*` surface; Phase 3
+  regression + the Phase-11 in-game serve remain).
 - **Phase 9 high-level Lua surface** — independent, pure RE + binder work; one
   `/feature` cycle.
 

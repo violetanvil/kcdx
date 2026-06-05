@@ -1,31 +1,23 @@
-# Phase 8.5 — asset replacement (kcdx absorbs pak mods)
+# Phase 8.5 — asset replacement (kcdx absorbs pak mods) — SUPERSEDED
 
-**Status: IN PROGRESS** (step 1 landed — production overlay hook installed; steps 2–5 not built). Detail: [`../00-original-plan.md`](../00-original-plan.md) §"Phase 8.5" + §"kcdx replaces pak mods".
+**Status: SUPERSEDED** (2026-06-04) — re-planned and spun out into the standalone
+**[`asset-system/`](../../asset-system/README.md)** tree. The original 5-step stub
+below proved too coarse once the work began (the seam was a two-coordinated-hook
+design, the author surface a full Lua+C++ parity surface, and the cross-mod /
+runtime-store concerns needed their own steps); `/plan` re-decomposed it into a
+richer 3-phase tree under `docs/outstanding-work/asset-system/`. That tree is the
+live ledger; this stub is retained only as the supersession pointer.
 
-This phase is **OVERLAY**: a kcdx plugin shipping a single loose file that
-OVERRIDES a pak-resident asset by virtual path. (The pak-mod ABSORB path —
-landing pak mods into MOUNT verbatim — is a SEPARATE, already-complete feature,
-NOT this phase.) One `/feature` cycle; independent of the other live phases; high
-user-visible leverage.
+**Where the work actually is (the `asset-system/` tree):**
 
-After this phase, `pak-mods.md` is rewritten to "pak mods are deprecated; use
-`[entrypoints].assets`". Existing pak mods keep working; kcdx is the path forward
-for new TC asset work.
-
-## Step ledger
-
-| Step | Status | Commit |
+| asset-system phase | covers old 8.5 steps | Status |
 |---|---|---|
-| [1 — hook the game's pak resolver (production overlay hook)](step-1-pak-resolver-hook.md) | DONE — production overlay hook installed via hook_chain::AddCEngine (pass-through body); FOPEN probe archived + removed | 9e524ae |
-| [2 — parse `[entrypoints].assets` + build overlay map](step-2-parse-assets-overlay-map.md) | DONE — `assets` key parsed (strict), `assetsEntrypointRel` on the manifest, load-order overlay map + normalization helper built at discovery | (landed) |
-| [3 — overlay-map check in the resolver hook](step-3-resolver-overlay-check.md) | NOT STARTED | — |
-| [4 — `kcdx.assets.*` Lua surface + `kcdxAssetInterface`](step-4-assets-surface.md) | NOT STARTED | — |
-| [5 — `cap-XX-asset-replace` test plugin](step-5-test-plugin.md) | NOT STARTED | — |
+| [Phase 1 — resolution ownership (the two-hook seam)](../../asset-system/phase-01-resolution-ownership/README.md) | 1 (hook) + 3 (overlay-map check) | **DONE** (`2b0bd1b`) |
+| [Phase 2 — author surface (Lua + C++ `kcdx.assets.*` / `kcdxAssetInterface`)](../../asset-system/phase-02-author-surface/README.md) | 4 (the surface) | **DONE** (6/6, full Lua↔C++ parity) |
+| [Phase 3 — regression coverage](../../asset-system/phase-03-regression/README.md) | 5 (test plugin) | **NOT STARTED** |
 
-## Verification gate (whole phase)
-
-A TOML-only plugin with `[entrypoints].assets = "assets/"` containing a
-known-safe replacement (e.g. a UI string in a menu) loads; the in-game UI shows
-the replacement; the engine log emits the overlay-hit line; a second plugin
-replacing the same file gets a "lost to plugin X" log line per the existing
-conflict-report shape.
+The in-game register/replace SERVE of a runtime overlay is **DEFERRED → Phase 11**
+(the boot-cache lifecycle gap, KI-0005). The `pak-mods.md` "deprecated; use
+`[entrypoints].assets`" rewrite the original gate named lands with asset-system
+Phase 3. The original step docs (`step-1`…`step-5`) remain in this directory as
+historical authoring records; the `asset-system/` step docs are authoritative.
