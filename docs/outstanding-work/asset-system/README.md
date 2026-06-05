@@ -32,10 +32,40 @@ when `DONE`, `—` otherwise.
 | Phase | Status | Commit |
 |---|---|---|
 | [1 — resolution ownership (the TWO-hook seam, probe-gated)](phase-01-resolution-ownership/README.md) | DONE | 2b0bd1b |
-| [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | NOT STARTED | — |
+| [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | IN PROGRESS (5/6: steps 6/7/8/8b/8c DONE; step 9 C++ mirror NOT STARTED) | — |
 | [3 — regression coverage](phase-03-regression/README.md) | NOT STARTED | — |
 
-## Where we are (2026-06-04) — Phase 1 ACCEPTANCE-CLOSED; Phase 2 next
+## Where we are (2026-06-04) — Phase 1 acceptance-closed; Phase 2 at 5/6 (step 9 C++ mirror remains)
+
+**Phase 2 (author surface) is 5/6 built + committed + boot-acceptance-passed.**
+Steps 6 (navigable `kcdx.plugin.<a>.<p>.*` namespace, `a3961df`), 7 (stale-prose
+sweep, `3cc6a67`), 8 (`kcdx.assets.get_by_path` + the table, `c39ac3a`), 8b (the
+4 runtime verbs + the `asset_namespace` RCU store, `b7ae899`), 8c (cross-mod
+resolution — a published name → the serve-vpath, `2259a76`). The full Lua
+`kcdx.assets.*` surface is live: `get_by_path`/`get_by_name`/`declare`/`register`/
+`replace` incl. cross-mod (B serves where A's published asset would). **Step 9**
+(the `kcdxAssetInterface` C++ mirror, full Lua↔C++ parity) is the remaining
+Phase-2 step.
+
+Two design gaps were caught + settled mid-build (not assumed): the **runtime-store
+mechanism** (§5.1 — the RCU `asset_namespace` store, settled by consult) and
+**cross-mod resolution** (§5.3 — a published name resolves to the vpath its asset
+serves at; the "later phase" over-deferral corrected). Both built to the settled
+design (`asset-replacement.md` changelog 2026-06-04).
+
+**Phase-2 acceptance launch — boot rows PASSED** (the 2026-06-04 18:30 run,
+`test-plugins/README.md`): cap-74 (namespace nav ×4), cap-75 (the 11 `kcdx.assets.*`
+boot rows), COMP-16-replace-code (cross-mod resolution). The runtime store keys +
+resolves + serves live (the after-VM path). **One in-game serve gap → KI-0005
+(closed, resolved-by-design):** a runtime `register`/`replace` can't serve a
+boot-cached asset (the engine opens it before `plugin.lua`'s Lua VM exists) — boot
+assets use the declarative sidecar today; the Lua-runtime boot serve is deferred to
+the DllMain-VM phase (`before-game-hooks.md` §6b). An AP14 teaching warn shipped
+(`4eaa60d`). The two in-game serve matrix rows (`CAP-75-register-serve`,
+`COMP-16-serve-code`) stay PENDING (a fresh-loaded after-VM asset is the vehicle —
+re-confirmed at step 10).
+
+---
 
 **Phase 1 is fully built, committed, and acceptance-closed** (every step DONE in
 the phase-1 ledger): the two-hook seam (HOOK 1 AdjustFileName resolver `4a687f3`;
