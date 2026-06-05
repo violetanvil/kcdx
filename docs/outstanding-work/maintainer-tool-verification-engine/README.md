@@ -1,8 +1,8 @@
 # Maintainer-tool verification engine
 
 **Intent:** link a game DLL on your machine and the tool verifies what you author against
-the real binary (not record-only) — static per-author in the browser + live functional
-in-game in bulk; the un-deferred R5 + restored R12 link table. Settled design:
+the real binary (not record-only) — static per-author in the browser + version-applicability +
+reachability in-game in bulk (at startup); the un-deferred R5 + restored R12 link table. Settled design:
 [`plan-spec.md`](plan-spec.md) (TRD `data/maintainer-tool/design.md` §6 US-11 + D24–D32; the
 s02/s04/s08 screen specs + the Layer-1 `ui/design.md`; per-kind checks in
 `data/maintainer-tool/fingerprint-per-kind.md`).

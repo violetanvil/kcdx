@@ -1,5 +1,14 @@
 # 0.4 [TEST] Probe — the live-functional resolves+works / dead / wrong-target signal in-game
 
+> **## Corrected — this probe's RESULT corrected D25.** This step doc's original "live functional"
+> framing (hash the live runtime body at the resolved address) was the HYPOTHESIS the probe
+> KILLED: hashing the loaded `lua_pcall` body read a false mismatch because the live image is
+> relocated + kcdx-detoured. The corrected model — version-applicability via an **on-disk** hash +
+> **reachability** into the loaded image's `.text`, both once at startup — is the current
+> `data/maintainer-tool/design.md` D25 (corrected 2026-06-05). The probe's finding carries the
+> corrected verdict: `_research/maintainer-tool-verification-engine/probe-0.4-live-functional-finding.md`.
+> The historical prose below is preserved as the disproven hypothesis; read D25 for the settled model.
+
 ## What
 
 Probe, in the running game, that the LIVE functional check (D25) produces an observable,

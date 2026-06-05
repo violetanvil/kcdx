@@ -7,7 +7,9 @@ authority and the browser checker its faithful mirror (D27): the JS browser stat
 C++ engine static check MUST return the SAME verdict on the SAME DLL bytes for every in-scope
 kind. This is the conformance gate that proves the two implementations agree (the
 `version_resolver.py` test-of-record pattern, now applied to the full per-kind survival check).
-Only the static byte-level checks are mirrored (the live-functional half is engine-only).
+Both checkers compute the on-disk version-applicability byte/AOB/hash checks — that is what they
+agree on; the loaded-image reachability check is engine-only (the browser cannot read the loaded
+image), so it is outside the agreement pin.
 
 ## Scope
 
@@ -42,8 +44,10 @@ exist) — `.claude/rules/test-discipline.md`, `.claude/rules/incremental-delive
 
 `data/maintainer-tool/design.md` **D27** — "a cross-implementation agreement test pins the two
 to the SAME verdict on the same DLL bytes — the exact pattern D15 already established for
-`version_resolver.py` (test-of-record); the live-functional half is engine-only." Build the test
-to D27's contract, not to this doc's summary.
+`version_resolver.py` (test-of-record). BOTH checkers compute the version-applicability hash over
+the ON-DISK DLL file — that on-disk hash is what they agree on; the reachability check
+(resolve-into-live-`.text`) is engine-only." Build the test to the CURRENT D27 contract, not to
+this doc's summary.
 
 ## UX
 

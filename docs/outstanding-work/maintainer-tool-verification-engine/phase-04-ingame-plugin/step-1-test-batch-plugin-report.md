@@ -3,8 +3,9 @@
 ## What
 
 Build the batch verification plugin — a kcdx test-suite plugin (runs in the live game like every
-`cap-NN` / `comp-NN` test) whose ONE job is to drive the engine LIVE functional check (Phase 3
-step 3) over EVERY DB row and emit a structured **JSON verification report** (to the Phase-1
+`cap-NN` / `comp-NN` test) whose ONE job is to drive the engine startup verification pass
+(version-applicability + reachability, Phase 3 step 3) over EVERY DB row and emit a structured
+**JSON verification report** (to the Phase-1
 schema) alongside `kcdx-dev.log`: per row `kcdx_id`, resolved version, verdict (`resolves+works`
 / `dead` / `wrong-target` / `cannot-check`), detail (D28). This is the producer of the cross-repo
 report contract the FE s08 worklist (Phase 5) consumes — a standing regression + the batch-sweep
@@ -32,7 +33,8 @@ matrix row is recorded. Runnable at this step (the engine live check + the schem
 
 ## Dependencies
 
-- **3.3** — the engine LIVE functional check (the plugin drives it per row).
+- **3.3** — the engine startup verification pass (version-applicability + reachability; the
+  plugin drives it per row).
 - **1.2** — the JSON report schema (the report is emitted to it).
 
 ## Reference
@@ -42,11 +44,15 @@ matrix row + 3-tree deploy); cross-step invariant 4 (the JSON report is the cros
 
 ## Design authority
 
-`data/maintainer-tool/design.md` **D28** — "a kcdx test-suite plugin … for every row runs the
-LIVE functional check (D25) and writes a structured JSON report alongside `kcdx-dev.log` (per
-row: `kcdx_id`, resolved version, verdict `resolves+works` / `dead` / `wrong-target` /
-`cannot-check`, detail)". The report's schema is Phase 1 step 1.2 (the frozen contract). Build to
-D28's named fields + verdict enum, not to this doc's summary.
+`data/maintainer-tool/design.md` **D28** — "a kcdx test-suite plugin … at engine startup runs
+BOTH D25 checks (the on-disk version-applicability hash + the loaded-image reachability check)
+over every row and writes a structured JSON report alongside `kcdx-dev.log` (per row: `kcdx_id`,
+resolved version, verdict `resolves+works` / `dead` / `wrong-target` / `cannot-check`, detail)".
+The verdict **ENUM** and the report **SCHEMA** are unchanged by the D25 correction — only the
+per-verdict MEANINGS re-grounded (`resolves+works` = on-disk hash matches AND resolves into live
+`.text`; `wrong-target`/`changed` = on-disk hash mismatch; `dead` = unreachable). It is NOT a
+runtime "does the code still work" body hash. The report's schema is Phase 1 step 1.2 (the frozen
+contract). Build to D28's named fields + verdict enum, not to this doc's summary.
 
 ## UX
 

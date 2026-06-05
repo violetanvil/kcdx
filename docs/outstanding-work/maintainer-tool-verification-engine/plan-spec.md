@@ -7,9 +7,12 @@ machine and the tool **verifies what you author against the real binary** (not
 record-only audit-trio capture), so a wrong RVA / signature / AOB is caught before
 it lands, and a whole-DB in-game sweep tells you which rows survived a game update.
 This un-defers requirement R5 (driven evidence flows) + restores R12's per-module
-DLL link table. Two verify meanings, each run where only it can: **static per-author
-in the browser** (no upload), and **live functional in-game in bulk** (a kcdx
-test-suite plugin → a JSON report → fed back into the tool).
+DLL link table. The check answers "is this DB entry safe to APPLY on the build the
+user is running" — two checks (version-applicability via an on-disk hash +
+reachability into live `.text`), run ONCE per author (in the browser) and ONCE at
+engine startup in-game, never during gameplay: **version-applicability + reachability
+in-game in bulk (at startup)** via a kcdx test-suite plugin → a JSON report → fed
+back into the tool.
 
 ## The settled design — the authority (read these; build to them; never re-decide)
 
@@ -19,23 +22,34 @@ authoritative artifacts, verbatim with their source:
 
 ### TRD — `data/maintainer-tool/design.md`
 
-- **US-11 (§6)** — Verification engine. Two verify meanings (static browser / live
-  in-game). All 9 kinds DESIGNED; only `vtable_index` population deferred. Static
+- **US-11 (§6)** — Verification engine. Two checks (version-applicability + reachability),
+  run once per-author in the browser + once at engine startup in-game. All 9 kinds
+  DESIGNED; only `vtable_index` population deferred. Static
   mismatch is an **advisory** Changed/Ambiguous, **never a block** (overridable "I
-  accept — save anyway"). The browser (JS) static check and the C++ engine check
-  AGREE on the same bytes (cross-impl agreement test). The in-game batch plugin
-  reports every row's LIVE verdict → JSON report → import drives bulk re-verify +
-  fix-me worklist; every applied verdict passes the normal validate→field-delta→
-  confirm→commit spine. A linked DLL whose version is uncovered offers "add a
-  version row at `<v>`" → create-version flow.
+  accept — save anyway"). The browser (JS) check and the C++ engine check
+  AGREE on the same on-disk bytes (cross-impl agreement test). The in-game batch plugin
+  reports every row's startup verdict (version-applicability + reachability) → JSON
+  report → import drives bulk re-verify + fix-me worklist; every applied verdict passes
+  the normal validate→field-delta→confirm→commit spine. A linked DLL whose version is
+  uncovered offers "add a version row at `<v>`" → create-version flow.
 - **D24** — UN-DEFER R5 + RESTORE the R12 link table. The DLL actually checks what
   you author. Supersedes §9's "driven evidence flows out of v1" + D15's
   version-read-only narrowing of R12.
-- **D25** — TWO verify meanings split by layer: **STATIC** (do the authored
-  bytes/AOB/hash still match the DLL file? browser, no game) vs **LIVE FUNCTIONAL**
-  (does the address resolved via the real engine path land on real working code?
-  in-game). Static catches "binary changed"; live catches "resolves to wrong/dead
-  code even if bytes look right."
+- **D25** — "Verify" = is this DB entry **safe to APPLY on the build the user is
+  running**. TWO checks, BOTH run ONCE (per-author in the browser; at engine STARTUP
+  in-game; NEVER during gameplay / the hot path): **(1) version-applicability (the
+  HASH check)** — does the body at the entry's `rva` match the DB `content_hash`,
+  hashed from the **ON-DISK DLL FILE** (NOT the loaded image, which is relocated +
+  kcdx-detoured)? Match → valid for this build → apply; mismatch → the build diverged
+  → AVOID. This is what `survival.cpp` already does. **(2) reachability (the
+  loaded-image check)** — does the address resolve into the live module's executable
+  `.text` at all? Reads the loaded image (the only sense of "live" — it reads memory,
+  it does NOT re-run during gameplay); catches an entry whose on-disk hash matches but
+  whose live resolve is dead/wrong. The in-game check is **NOT a runtime body-hash**
+  (the framing this decision corrects). Verdict words unchanged; meanings re-grounded:
+  `resolves+works` = on-disk hash matches AND resolves into live `.text`;
+  `wrong-target`/`changed` = on-disk hash mismatch (build diverged); `dead` =
+  unreachable in live `.text`; `cannot-check` = no hash / non-byte or deferred kind.
 - **D26** — the engine runs CLIENT-SIDE (JS port); the DLL never leaves the machine.
   All 9 kinds designed. Pure-byte kinds (function body-hash, `string_anchor` `.rdata`
   search, `vtable_base` table-shape, `callsite` AOB scan) are straightforward;
@@ -45,7 +59,10 @@ authoritative artifacts, verbatim with their source:
 - **D27** — TWO checkers — the C++ ENGINE is authority, the JS browser checker
   MIRRORS it. A cross-implementation agreement test pins the two to the SAME verdict
   on the same DLL bytes (the `version_resolver.py` test-of-record pattern, extended
-  to the full per-kind survival check). The live-functional half is engine-only.
+  to the full per-kind survival check). BOTH checkers compute the **on-disk
+  version-applicability hash** — that on-disk hash is what they agree on; the
+  **REACHABILITY (loaded-image) half is engine-only** (the browser can't read the
+  loaded image).
 - **D28** — the batch verification is an in-game test-suite plugin → a JSON report →
   fed back into the tool. Per row: `kcdx_id`, resolved version, verdict
   (`resolves+works` / `dead` / `wrong-target` / `cannot-check`), detail. The report
@@ -150,8 +167,10 @@ re-find procedure, not a byte comparison:
    hard block. Ambiguous STEERS (extend the pattern), never refuses (D31a).
 3. **Engine is authority; JS mirrors it (D27).** The C++ engine survival check is the
    batch in-game authority; the JS browser check is the per-author static mirror. A
-   cross-impl agreement test pins them to the SAME verdict on the SAME bytes. The
-   live-functional half (resolve-and-confirm-it-works) is engine-only by nature.
+   cross-impl agreement test pins them to the SAME verdict on the SAME bytes. Both
+   checkers hash the **on-disk** file for version-applicability; the **loaded-image
+   reachability check** (does the resolve land in live `.text`) is engine-only (the
+   browser cannot read the loaded image).
 4. **The two-repo split + the cross-repo JSON-report contract.** The browser checker +
    report-ingestion live in the SEPARATE frontend repo (D23, gated by `npm run build` +
    Vitest); the engine checker + in-game plugin live in the kcdx tree (gated by
@@ -203,7 +222,7 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 | `data_slot` static C++ check | P3 step 2 | Derivation re-run (no hash) |
 | `vtable_base` static C++ check | P3 step 2 | Table-shape (N qwords → `.text`) |
 | The anchor-dependency ordering (engine) | P3 step 2 | Dependency-order survival walk |
-| The LIVE functional check (resolve via real engine path, lands on real working code) | P3 step 3 | resolves+works / dead / wrong-target (D25) |
+| The reachability check (resolve lands in live `.text`) + the on-disk version-applicability hash | P3 step 3 | resolves+works (on-disk hash matches AND reachable) / dead (unreachable) / wrong-target (on-disk hash mismatch) — D25 |
 
 ### Group C — cross-impl
 
@@ -224,7 +243,7 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 | Report write-location | P4 step 1 | Alongside `kcdx-dev.log` (D28) |
 | The test-suite matrix row + deploy to all 3 plugin trees | P4 step 1 | `test-suite.md`; matrix row + 3-tree deploy |
 | C++ read pe_helpers surface scoping (does it expose spans + a disp32 follower?) | P0 step 3 | Probe — scoping finding for P3 |
-| The live-functional in-game signal (resolves+works / dead / wrong-target) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / P4 |
+| The in-game version-applicability + reachability signal (resolves+works / dead / wrong-target) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / P4 |
 
 ### Group E — report ingestion
 

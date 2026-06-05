@@ -1,7 +1,8 @@
 # Phase 4 — In-game plugin + report
 
 **Intent:** build the batch verification plugin — a kcdx test-suite plugin that drives the
-engine LIVE functional check (Phase 3 step 3) over EVERY DB row in the running game and emits the
+engine startup verification pass (version-applicability + reachability, Phase 3 step 3) over EVERY
+DB row in the running game and emits the
 **JSON verification report** (to the Phase-1 schema) alongside `kcdx-dev.log` (D28). This is the
 producer side of the cross-repo report contract; the FE consumer is Phase 5. In kcdx
 `test-plugins/` — gated by `pwsh ./build.ps1` + a live launch + the test-suite matrix

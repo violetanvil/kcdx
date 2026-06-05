@@ -14,8 +14,8 @@ This makes the engine the full per-kind static authority the JS browser checker 
 
 One commit in kcdx `src/`: the 5 non-function static check implementations + the
 dependency-ordered survival walk + the vtable_index → CannotCheck path, on the step-1 dispatch
-(adding the pe_helpers infra step 0.3 flagged as missing, if any). No live functional check
-(step 3); no agreement test (step 4).
+(adding the pe_helpers infra step 0.3 flagged as missing, if any). No reachability check / startup
+verification pass (step 3); no agreement test (step 4).
 
 ## Test bar
 
