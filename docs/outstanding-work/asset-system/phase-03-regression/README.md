@@ -11,7 +11,7 @@ when `DONE`, `—` otherwise.
 
 | Step | Status | Commit |
 |---|---|---|
-| [10 — permanent asset-system test plugin(s) + matrix rows](step-10-test-plugins.md) | NOT STARTED | — |
+| [10 — permanent asset-system test plugin(s) + matrix rows](step-10-test-plugins.md) | DONE | (landed) |
 
 ## Phase verification gate
 

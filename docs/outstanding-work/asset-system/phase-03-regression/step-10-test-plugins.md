@@ -1,6 +1,19 @@
 # Phase 3 step 10 — permanent asset-system test plugin(s) + matrix rows
 
-**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 10.
+**Status: DONE.** Ledger: [`README.md`](README.md) → step 10.
+
+**Scope (settled 2026-06-04):** 4 of 6 cases (US-1, add-new, US-3, US-4) already
+covered by earlier steps' same-change tests; step 10 built the 2 genuine gaps —
+serve-AND-EXECUTE (cap-77) + US-7 (comp-17, the stock-pak MISS fall-through via an
+existing pak fixture's self-report) — plus the consolidated coverage matrix. Per
+`test-suite.md` / `feedback_test_suite_must_grow`. US-7/comp-17 is the Option-A
+falsifiable `.lua` row: it deploys the existing `test-fixtures/pak-mods/lua-sandbox-probe`
+stock pak and the agent reads its in-pak `[KCDX_PROBE]` marker from `kcd.log` —
+the marker reaching the log proves HOOK 1's resolver MISS fell through to the
+pak-membership leaf (id 153) and the engine's mount/stream lane served + ran the
+pak's `.lua` UNCHANGED. No new test-plugin dir (deploy existing fixture + the
+matrix row); no kcdx-side MISS log line (the resolver MISS path stays log-free by
+design — it is the hot path).
 
 ## What
 
@@ -40,9 +53,14 @@ backward-compat pak) that no single earlier step owned.
     returns a loadable path).
   - **US-4** the chain/conflict path: two plugins replace the same target → the
     load-order winner serves, the loser is reported (the §4.4 conflict line).
-  - **US-7** a stock Nexus/Workshop pak (a `test-fixtures/pak-mods/` fixture)
-    resolves unchanged through HOOK 1's MISS fall-through to the pak-membership
-    leaf (id 153).
+  - **US-7 (comp-17)** a stock Nexus/Workshop pak (the existing
+    `test-fixtures/pak-mods/lua-sandbox-probe` fixture) resolves unchanged through
+    HOOK 1's MISS fall-through to the pak-membership leaf (id 153) + the engine's
+    mount/stream lane. The fixture's in-pak Lua self-reports `[KCDX_PROBE]` to
+    `kcd.log` at boot; the agent reads that marker. FALSIFIABLE: marker absent →
+    FAIL (the MISS branch blocked/corrupted a non-overlay pak asset). `[manual]`
+    (boot gesture; the marker lands in the game log, not via `kcdx.test.report`).
+    Deploy-existing-fixture + matrix row only — no new test-plugin dir.
 - Each row carries a FALSIFIABLE claim (AP15 — state what makes it FAIL); prefer an
   auto-pass boot check, flag `[manual]` only where an in-game gesture is irreducible.
 

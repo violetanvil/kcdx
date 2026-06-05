@@ -1,0 +1,12 @@
+# File-scope sidecar (one sibling asset, no `file` key — asset design §4.2).
+# Declares the co-located sl_saveload.lua overlay replaces the vanilla startup
+# script of the same vpath. Under declaration-required keying (§4.1) THIS line is
+# why the file overlays the target — not a path coincidence; an undeclared file
+# replaces nothing.
+#
+# The target is a STARTUP script the engine RUNS on a save load (a handle-consumed
+# `.lua` the FOpen observer saw reach CCryPak::FOpen on a save+level load), chosen
+# so the served chunk EXECUTES — unlike scripts/main.lua, the already-init'd boot
+# chunk that is opened-but-not-rerun mid-game.
+[[asset]]
+replaces = "scripts/startup/sl_saveload.lua"

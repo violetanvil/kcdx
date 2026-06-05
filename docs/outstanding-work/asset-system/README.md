@@ -33,26 +33,30 @@ when `DONE`, `—` otherwise.
 |---|---|---|
 | [1 — resolution ownership (the TWO-hook seam, probe-gated)](phase-01-resolution-ownership/README.md) | DONE | 2b0bd1b |
 | [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | DONE (6/6: steps 6/7/8/8b/8c/9 DONE) | (landed) |
-| [3 — regression coverage](phase-03-regression/README.md) | NOT STARTED | — |
+| [3 — regression coverage](phase-03-regression/README.md) | DONE (step 10 — the 2 gaps cap-77 + comp-17 + the consolidated coverage matrix; the 2 new rows are [manual] PENDING the acceptance launch) | (landed) |
 
-## Where we are (2026-06-04) — Phase 1 acceptance-closed; Phase 2 DONE (6/6, boot-acceptance pending the step-9 launch)
+## Where we are (2026-06-04) — ALL 3 PHASES BUILT (Phase 1 acceptance-closed; Phases 2–3 built, two acceptance launches owed)
 
-**Phase 2 (author surface) is 6/6 built + committed.**
-Steps 6 (navigable `kcdx.plugin.<a>.<p>.*` namespace, `a3961df`), 7 (stale-prose
-sweep, `3cc6a67`), 8 (`kcdx.assets.get_by_path` + the table, `c39ac3a`), 8b (the
-4 runtime verbs + the `asset_namespace` RCU store, `b7ae899`), 8c (cross-mod
-resolution — a published name → the serve-vpath, `2259a76`), 9 (the
-`kcdxAssetInterface` C++ mirror — full Lua↔C++ parity). The full `kcdx.assets.*`
-surface is live on BOTH languages: Lua `get_by_path`/`get_by_name`/`declare`/
-`register`/`replace` (incl. cross-mod — B serves where A's published asset
-would) AND the C++ mirror `K.assets->GetByPath`/`GetByName`/`Declare`/`Register`/
-`Replace`, both calling ONE shared resolution path (the Lua binder and the C++
-thunks share the `lua_bind_assets` helpers — full parity). Steps 6/7/8/8b/8c are
-boot-acceptance-passed; step 9's cap-76 C++ parity rows confirm at the next
-launch (the engine + cap-76.dll are built; the boot rows self-report). The
+**The whole asset system is built (Phases 1–3 DONE).** Phase 1 (the two-hook
+resolution seam) is acceptance-closed (`2b0bd1b`). Phase 2 (author surface) is
+6/6: steps 6 (`a3961df`), 7 (`3cc6a67`), 8 (`c39ac3a`), 8b (`b7ae899`), 8c
+(`2259a76`), 9 (`fe879d0` — the C++ mirror, cap-76 parity rows ALL PASS live).
+The full `kcdx.assets.*` surface is live on BOTH languages: Lua
+`get_by_path`/`get_by_name`/`declare`/`register`/`replace` (incl. cross-mod — B
+serves where A's published asset would) AND the C++ mirror
+`K.assets->GetByPath`/`GetByName`/`Declare`/`Register`/`Replace`, both calling ONE
+shared resolution path (full parity). Phase 3 (regression) is step 10: the
+consolidated coverage matrix (6 cases — 4 already covered by earlier steps'
+same-change tests, cited not rebuilt) + the 2 genuine gaps it built — cap-77
+(serve-AND-EXECUTE, the Phase-1 residual) + comp-17 (US-7 stock-pak MISS
+fall-through). cap-77/comp-17 are `[manual]` rows PENDING the acceptance launch.
+
+**Owed:** TWO acceptance launches confirm the `[manual]` rows — step-9's cap-76
+boot rows (the engine + cap-76.dll are built; they self-report at boot) and
+step-10's cap-77 serve-execute (a save-load gesture) + comp-17 (boot). The
 in-game register/replace SERVE remains DEFERRED → Phase 11 on BOTH surfaces
-(KI-0005, the boot-cache lifecycle gap). NEXT: Phase 3 (regression) — or the
-step-9 acceptance launch closes Phase 2's last boot rows.
+(KI-0005, the boot-cache lifecycle gap — the DllMain Lua VM unlocks it). With the
+launches confirmed, the asset system is complete through Phase 3.
 
 Two design gaps were caught + settled mid-build (not assumed): the **runtime-store
 mechanism** (§5.1 — the RCU `asset_namespace` store, settled by consult) and

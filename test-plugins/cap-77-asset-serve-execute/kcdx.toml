@@ -1,0 +1,83 @@
+# CAP-77 — a handle-consumed (.lua) overlay served by HOOK 2 actually EXECUTES
+# on a save load (closes the only remaining handle-consumed-lane acceptance the
+# earlier in-game serve proof could not reach).
+#
+# Background (the serve was already proven, the EXECUTE was not):
+#   A prior in-game run proved HOOK 2 SERVES a handle-consumed `.lua` overlay
+#   end-to-end — the engine opened a `.lua` through CCryPak::FOpen, HOOK 2
+#   recognized the keyed overlay and returned its OWN CRT FILE*, the engine's
+#   read family read kcdx's bytes (the same own-FILE* mechanism the
+#   memory-mapped .dds lane proved). What that run did NOT prove is the served
+#   chunk EXECUTING: it keyed `scripts/main.lua`, which is the already-init'd
+#   boot chunk — opened by HOOK 2 but NOT re-compiled/run on a mid-game load, so
+#   its served bytes never ran. CAP-77 keys a STARTUP script the engine RUNS on
+#   a save load instead, with a file-scope marker, and asserts the marker reaches
+#   the game log → the served `.lua` EXECUTED.
+#
+# This plugin ships:
+#   * assets/scripts/startup/sl_saveload.lua  — the overlay .lua. Its file scope
+#       calls System.LogAlways("KCDX_SEAMA_LUA_LOADED cap-77") (the marker the
+#       game-script runtime writes to the game log when it RUNS the chunk).
+#   * assets/scripts/startup/replaces.toml     — the no-code sidecar declaring the
+#       overlay replaces the vanilla `scripts/startup/sl_saveload.lua` (the
+#       declaration-required keying, asset design §4.1/§4.2 — existence ≠ replace).
+#   * plugin.lua                               — the PASSIVE self-report: at boot,
+#       assert kcdx is alive + the suite ran (CAP-77-keyed). The agent additionally
+#       greps the boot `overlay_entry` line to confirm the overlay was KEYED into
+#       the map; the EXECUTE confirmation is the agent's post-launch game-log read.
+#
+# Two rows:
+#   * CAP-77-keyed         — PASSIVE, boot-checkable (a plugin test_name). At boot
+#       the plugin asserts kcdx.assets.get_by_path("scripts/startup/sl_saveload.lua")
+#       resolves the overlay to a loadable path under THIS plugin's assets/ (the
+#       overlay file is present + resolvable — the prerequisite for a serve).
+#       FALSIFIABLE: nil/empty, or a path not ending with the overlay's relative
+#       path → FAIL. The agent ADDITIONALLY greps the boot `overlay_entry` line
+#       (`ASSET_OVERLAY overlay_entry vpath=scripts/startup/sl_saveload.lua
+#       winner=cap_77_serve_execute`) to confirm the declarative sidecar keyed the
+#       overlay into the build-time map by its declared target (the keying half).
+#   * CAP-77-serve-execute — the EXECUTE proof. On a SAVE LOAD, the agent greps
+#       the GAME log (kcd.log) for `KCDX_SEAMA_LUA_LOADED cap-77`.
+#       FALSIFIABLE OUTCOME→MEANING MAP (this row IS the probe — whether the
+#       engine actually re-RUNS a scripts/startup/*.lua on a save load is the
+#       CHECKABLE UNKNOWN; main.lua was opened-not-rerun):
+#         marker PRESENT → the served .lua EXECUTED → PASS (residual closed).
+#         marker ABSENT  → FAIL, and the cause is one of:
+#           (a) the chosen startup script is NOT re-run on this save load (like
+#               main.lua) → re-vehicle to a peer the FOpen observer saw run
+#               (scripts/startup/tutorials.lua or a scripts/startup/*_startup.lua);
+#           (b) the overlay did not SERVE → check the resolver HIT line
+#               (`ASSET_OVERLAY overlay_resolved`/`overlay_opened
+#               vpath=scripts/startup/sl_saveload.lua winner=cap_77_serve_execute`):
+#               absent ⇒ a serve regression (CAP-73-handle-consumed-serve broke);
+#               present-but-no-marker ⇒ outcome (a).
+#
+# Test mode: [manual] in-game. The plugin's PASSIVE check (CAP-77-keyed) self-
+# reports at boot; the EXECUTE confirmation (CAP-77-serve-execute) is the agent's
+# post-launch log read after the user's save-load gesture. The plugin NEVER reports
+# PASS for the EXECUTE before the marker is confirmed (a non-falsifiable PASS is the
+# bar this row exists to clear).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_77_serve_execute"
+display_name        = "CAP-77 served .lua overlay EXECUTES on a save load"
+author              = "ts"
+description         = "A handle-consumed (.lua) overlay served by HOOK 2 actually EXECUTES on a save load — a startup-script overlay (declarative replaces.toml sidecar) carries a file-scope marker; PASS iff the marker reaches the game log when the engine re-runs the script. Closes the handle-consumed-lane EXECUTE residual the serve proof could not reach (main.lua is opened-not-rerun). [manual]/in-game: the passive keying check self-reports at boot; the agent reads the game log for the marker after the save-load gesture."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+# Only the boot-checkable passive row is a plugin test_name (it self-reports via
+# kcdx.test.report at boot). CAP-77-serve-execute is the agent's post-launch
+# game-log read (the EXECUTE marker) — a README matrix row, NOT a plugin
+# test_name, the same shape as the manual CAP-75-register-serve row. The plugin
+# never reports a PASS for the EXECUTE before the marker is confirmed — a
+# premature / non-falsifiable PASS (a row that reports PASS before the behavior
+# under test could fire) is the exact defect this row exists to clear.
+test_names          = ["CAP-77-keyed"]
+
+[entrypoints]
+lua    = "plugin.lua"
+assets = "assets/"
