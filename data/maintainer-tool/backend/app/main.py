@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import adapter
-from .config import cors_origins, load_config
+from .config import cors_origins, load_config, maintainer_identity
 from .routes_confirm import router as confirm_router
 from .routes_delta import router as delta_router
 from .routes_read import router as read_router
@@ -77,6 +77,19 @@ app.include_router(save_router)
 app.include_router(confirm_router)
 
 
+def _version_tags_newest_first(versions):
+    """Order a {tag: ordinal} map's TAGS newest-first by the data-core's version
+    ordinal -- NOT a lexicographic tag sort ("1.10" < "1.9" as strings but is the
+    newer build). The frontend + spec treat known_version_tags[0] as the current
+    (newest) version (the verified-at default + the version-dropdown order), so the
+    list is surfaced ordinal-descending. Ties on ordinal fall back to the tag string
+    (descending) for a deterministic order."""
+    return [
+        tag for tag, _ord in sorted(
+            versions.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
+    ]
+
+
 def _checkout_status(config):
     """Resolve what the configured checkout actually holds -- the load endpoint's
     core. Reports each required artifact's presence so the empty/error state can
@@ -133,7 +146,15 @@ def _checkout_status(config):
             "dev_db": dev_db_present,
             "seed_files": seed_files,
         },
-        "known_version_tags": sorted(versions),
+        # NEWEST-FIRST by the data-core's version ordinal (see _version_tags_newest_first).
+        "known_version_tags": _version_tags_newest_first(versions),
+        # The configured maintainer identity (FIX 3) -- a NON-SECRET public author identity
+        # (name + email, the shape of a git author line) the frontend uses as the
+        # verified_by default for the audit trio. Surfaced here because the frontend already
+        # consumes /health (the lighter touch over a new endpoint). The push CREDENTIAL
+        # (KCDX_PUSH_TOKEN) is a SECRET and is NEVER read or surfaced here
+        # (security-invariants.md -- secrets never enter an exposed surface).
+        "maintainer_identity": maintainer_identity(),
     }
 
 

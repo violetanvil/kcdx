@@ -71,7 +71,7 @@ sys.path.insert(0, DATA_CORE_PYDIR)
 import import_to_sqlite as imp                      # noqa: E402
 from app import adapter                             # noqa: E402
 from app.config import load_config                  # noqa: E402
-from app.main import app, _checkout_status          # noqa: E402
+from app.main import app, _checkout_status, _version_tags_newest_first  # noqa: E402
 
 # The mini-dump excerpt the data-core tests rebuild from (a fast real rebuild).
 DUMP_DIR = os.path.join(DATA_CORE_TESTS, "fixtures", "mini-dump",
@@ -178,6 +178,31 @@ def test_empty_checkout_reports_empty_and_names_missing(empty_checkout):
     # An empty checkout still offers the data-core baseline tag (the floor) so the
     # dropdown is never blank -- known_versions falls back to the baseline constant.
     assert status["known_version_tags"] == [GVT], status["known_version_tags"]
+
+
+# ----------------------------------------------------------------------------
+# Case 3b: known_version_tags is ordered NEWEST-FIRST by the data-core ordinal,
+# NOT lexicographically. The frontend + spec treat [0] as the current (newest)
+# version (the verified-at default + the version dropdown order), so a build with
+# a higher ordinal must come first EVEN WHEN its tag sorts lexicographically lower
+# ("1.9" > "1.10" as strings, but build 1100000 is newer than 900000).
+# ----------------------------------------------------------------------------
+def test_version_tags_ordered_newest_first_by_ordinal():
+    # Lexicographic order here is ["1.10", "1.5", "1.9"] -- the WRONG order. The real
+    # newest-first by ordinal is the higher build first.
+    versions = {
+        "1.5.900000": 900000,
+        "1.10.1100000": 1100000,   # newest by ordinal, but "1.10" < "1.9" as a string
+        "1.9.1000000": 1000000,
+    }
+    ordered = _version_tags_newest_first(versions)
+    assert ordered == ["1.10.1100000", "1.9.1000000", "1.5.900000"], ordered
+    # [0] is the genuine newest (the current-version default the verified-at field uses).
+    assert ordered[0] == "1.10.1100000", ordered
+    # Sanity: a plain lexicographic sort produces a DIFFERENT (wrong) order -- "1.5" sorts
+    # before "1.9" as a string, but build 900000 is OLDER than 1000000, so ordinal order
+    # reverses them. The lists differ -> the ordinal sort is doing real work, not coinciding.
+    assert sorted(versions, reverse=True) != ordered, sorted(versions, reverse=True)
 
 
 # ----------------------------------------------------------------------------

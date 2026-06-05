@@ -116,7 +116,7 @@ from . import csv_integrity
 from . import data_core
 from . import git_commit
 from .adapter import resolve_tag, VersionTagError
-from .config import load_config
+from .config import load_config, maintainer_identity
 from .csv_revert import CsvRevert
 from .routes_save import (
     UpdateVersionSave, CreateVersionSave, CreateEntitySave,
@@ -127,24 +127,21 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# The dev-default commit identity (D17): when the request context carries no author
-# (the operator's login layer is not wired -- local/test), the app still commits, with
-# this documented fallback. The app builds no login; this is the boot-without-auth seam.
-DEV_DEFAULT_AUTHOR_NAME = "kcdx maintainer-tool (dev)"
-DEV_DEFAULT_AUTHOR_EMAIL = "maintainer-tool@kcdx.local"
-
-
 def _resolve_author(name_field, email_field, header_name, header_email):
     """The commit author identity, request-context-first (D17 -- the auth-ready seam).
 
     Priority: an explicit body field > the request header the operator's login populates
-    > the documented dev default. Both halves (name + email) resolve independently so a
-    partial context still authors a complete identity. The app reads the identity; it
-    builds no login layer."""
-    name = (name_field or header_name or DEV_DEFAULT_AUTHOR_NAME).strip() \
-        or DEV_DEFAULT_AUTHOR_NAME
-    email = (email_field or header_email or DEV_DEFAULT_AUTHOR_EMAIL).strip() \
-        or DEV_DEFAULT_AUTHOR_EMAIL
+    > the CONFIGURED maintainer identity (FIX 3: KCDX_MAINTAINER_NAME/EMAIL env, else the
+    documented dev defaults). Both halves (name + email) resolve independently so a partial
+    context still authors a complete identity. The configured identity is the SAME one
+    surfaced to the GUI as the verified_by default (config.maintainer_identity), so the git
+    author and the audit-trio signer are one identity. The app reads the identity; it builds
+    no login layer."""
+    configured = maintainer_identity()
+    name = (name_field or header_name or configured["name"]).strip() \
+        or configured["name"]
+    email = (email_field or header_email or configured["email"]).strip() \
+        or configured["email"]
     return name, email
 
 

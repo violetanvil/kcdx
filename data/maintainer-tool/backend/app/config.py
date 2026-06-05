@@ -24,6 +24,24 @@ from dataclasses import dataclass
 # The env var the operator wires to the mounted-volume checkout (D18).
 CHECKOUT_ENV_VAR = "KCDX_CHECKOUT"
 
+# The env vars the operator wires to the configured maintainer IDENTITY (FIX 3): a single
+# name + email used for BOTH the GUI's verified_by default (the audit-trio author the
+# maintainer is signing rows off as) AND the git commit author. A non-secret PUBLIC author
+# identity (the same shape as a git author line) -- safe to surface to the frontend, unlike
+# the push CREDENTIAL (KCDX_PUSH_TOKEN, git_commit.py), which is a SECRET and is NEVER
+# exposed (security-invariants.md -- secrets never enter a readable/exposed surface).
+# Unset/empty -> the documented dev defaults below, so the app boots + commits + defaults
+# verified_by locally without the operator's env (the same boot-without-config posture as
+# the checkout / CORS dev defaults).
+MAINTAINER_NAME_ENV_VAR = "KCDX_MAINTAINER_NAME"
+MAINTAINER_EMAIL_ENV_VAR = "KCDX_MAINTAINER_EMAIL"
+
+# The documented dev-default maintainer identity (the boot-without-config seam). A real,
+# non-secret author identity so the app + the verified_by default + the git author all work
+# locally with no env wired. The operator overrides both via the env vars above.
+DEV_DEFAULT_MAINTAINER_NAME = "VioletAnvil"
+DEV_DEFAULT_MAINTAINER_EMAIL = "maintainer-tool@kcdx.local"
+
 # The env var the operator wires to the real frontend origin(s) in production (D17 --
 # the operator-wired seam, alongside KCDX_CHECKOUT / KCDX_PUSH_TOKEN). A comma-separated
 # allowlist of browser ORIGINS the served frontend calls the backend from. Unset/empty ->
@@ -147,3 +165,21 @@ def cors_origins():
         if origins:
             return origins
     return list(_DEV_DEFAULT_CORS_ORIGINS)
+
+
+def maintainer_identity():
+    """The configured maintainer IDENTITY (FIX 3): (name, email) from
+    KCDX_MAINTAINER_NAME / KCDX_MAINTAINER_EMAIL, else the documented dev defaults. Used for
+    BOTH the GUI's verified_by default (surfaced via /health) AND the git commit author's
+    fallback (routes_confirm._resolve_author). Each half resolves independently so a partial
+    env still yields a complete identity. A NON-SECRET public author identity -- it is safe
+    to surface to the frontend (the health body); the push CREDENTIAL (KCDX_PUSH_TOKEN) is a
+    SECRET and is NEVER read here or exposed (security-invariants.md). Read fresh each call
+    (mirrors cors_origins / load_config) so a test can set the env deterministically.
+
+    Returns {"name": <str>, "email": <str>} -- the shape surfaced in the health body."""
+    name = (os.environ.get(MAINTAINER_NAME_ENV_VAR) or "").strip() \
+        or DEV_DEFAULT_MAINTAINER_NAME
+    email = (os.environ.get(MAINTAINER_EMAIL_ENV_VAR) or "").strip() \
+        or DEV_DEFAULT_MAINTAINER_EMAIL
+    return {"name": name, "email": email}
