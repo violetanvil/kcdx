@@ -10,9 +10,13 @@ the now-observable early-slot behavior.
 
 ## Scope
 
-- Confirm the early-slot register keys the runtime store before the boot open (the
-  store + resolver consult already exist — KI-0005 root-caused the gap as purely the
-  author's-Lua-runs-too-late timing, which step 1 fixes).
+- Confirm the boot-open path observes the early-slot's runtime-store registration
+  because it is GATED on the slot's readiness event (step 1's gate), not because the
+  register happened to run first. The store + resolver consult already exist; KI-0005's
+  gap was the author's Lua running after the boot open — and the FIX is step 1's
+  mandatory event gate (the boot open blocks until the slot signals), NOT a timing
+  adjustment ("run the slot earlier"). A boot serve that works only because of
+  wall-clock ordering is the cross-thread race the gate exists to kill (design §5).
 - Re-instrument the resolver per
   `_research/probe-archive/ki0005-resolver-dds-observer.md` to confirm the boot asset
   opens with `rt=HIT` from the early-registered overlay (the user sees the
@@ -28,12 +32,15 @@ the now-observable early-slot behavior.
 ## Test bar
 
 A `test-plugins/cap-NN-boot-asset-swap/` regression: an early-slot `kcdx.assets.replace`
-of a boot asset serves with `rt=HIT`, self-reporting via the canonical signal. **A
-KI-0005-regression row** asserts a LATE-slot boot target still warns (FAILS on a
-silent no-op — the exact regression KI-0005's warn prevents). **User-facing
-acceptance** (`.claude/rules/ux-first-class.md`): the user confirms the visible boot
-asset (e.g. the menu logo) renders replaced via the runtime path; the agent confirms
-`rt=HIT`. Confirmed by the user's launch + the agent's dev-log read.
+of a boot asset serves with `rt=HIT`, and the boot open observed the slot's readiness
+event SIGNALED before resolving (the gate held — the same falsifiable proof as step
+1's order-inversion row, design §5; `rt=HIT` via the GATE, not via wall-clock luck).
+Self-reports via the canonical signal. **A KI-0005-regression row** asserts a
+LATE-slot boot target still warns (FAILS on a silent no-op — the exact regression
+KI-0005's warn prevents). **User-facing acceptance** (`.claude/rules/ux-first-class.md`):
+the user confirms the visible boot asset (e.g. the menu logo) renders replaced via the
+runtime path; the agent confirms `rt=HIT`. Confirmed by the user's launch + the
+agent's dev-log read.
 
 ## Dependencies
 
