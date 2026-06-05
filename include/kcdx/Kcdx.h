@@ -111,6 +111,7 @@ struct Kcdx {
     const kcdxHookInterface*          hook         = nullptr;  // floor-4 hook drop-down
     const kcdxBytesInterface*         bytes        = nullptr;  // kcdx.bytes peer
     const kcdxDeclareInterface*       declare      = nullptr;  // kcdx.declare / kcdx.declared peer
+    const kcdxAssetInterface*         assets       = nullptr;  // kcdx.assets.* peer
     const kcdxMemoryInterface*        memory       = nullptr;
     const kcdxConsoleInterface*       console      = nullptr;
     const kcdxTrampolineInterface*    code         = nullptr;  // kcdx.code peer
@@ -145,6 +146,9 @@ struct Kcdx {
         declare = static_cast<const kcdxDeclareInterface*>(
             api->QueryInterface(kcdxInterface_Declare,
                                 kcdxDeclareInterface_Version));
+        assets = static_cast<const kcdxAssetInterface*>(
+            api->QueryInterface(kcdxInterface_Assets,
+                                kcdxAssetInterface_Version));
         memory = static_cast<const kcdxMemoryInterface*>(
             api->QueryInterface(kcdxInterface_Memory, kcdxMemoryInterface_Version));
         console = static_cast<const kcdxConsoleInterface*>(

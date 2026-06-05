@@ -13,8 +13,8 @@
 // name -> the publisher's serve-vpath (design §5.3) and keys the runtime-overlay
 // store by THAT vpath, so B's `with` serves where A's published asset would. A
 // packed target resolving to no published asset is an AP14 teaching error naming
-// it, never a silent non-serve. The C++ mirror (kcdxAssetInterface) is a later
-// step (docs/cpp NYI markers).
+// it, never a silent non-serve. The C++ mirror (kcdxAssetInterface) is built and
+// calls the SAME shared helpers this file exposes (declared in the header).
 //
 //   kcdx.assets.get_by_path(path) -> loadable path | (nil, err)
 //
@@ -215,37 +215,12 @@ int Lua_AssetsDeclare(lua_State* L) {
         return 2;
     }
 
-    // Resolve `file` to a loadable disk path through the caller's assets/ (the
-    // SAME resolver get_by_path uses — a published name always points at a real
-    // file). A bad file fails loud with the resolver's teaching error (AP14).
     std::string disk, err;
-    if (!ResolveAssetPath(author, plugin, file, disk, err)) {
+    if (!DeclareAsset(author, plugin, bare, file, disk, err)) {
         lua_pushnil(L);
         lua_pushlstring(L, err.data(), err.size());
         return 2;
     }
-
-    // Publish <author>.<plugin>.<bare> -> { disk, serve-vpath } into the runtime
-    // published-name store (RCU write). A later get_by_name(bare) from this plugin
-    // (or kcdx.plugin.<a>.<p>.assets.get_by_name(bare) from another) resolves the
-    // disk path; a cross-mod replace("<a>.<p>.bare", with) resolves the SERVE-
-    // VPATH (design §5.3). A runtime declare is a PURE ADD-NEW publish — its
-    // serve-vpath is the asset's OWN add-new vpath = `file`'s path relative to the
-    // caller's assets/ (the vpath the engine opens it at), which is exactly the
-    // `file` arg the author named. Normalize it through the SHARED fold (the same
-    // NormalizeVPath the overlay map + resolver use) so a B-side cross-mod replace
-    // keys the overlay store with a key the resolver matches when the engine opens
-    // that vpath. (If the author ALSO runtime-replaces this file at a vanilla
-    // vpath, that is a separate replace call keyed independently; declare itself
-    // publishes the add-new vpath — §5.3 settled reading.)
-    const std::string packed = PackName(author, plugin, bare);
-    const std::string serveVpath = asset_overlay::NormalizeVPath(file);
-    kcdx::asset_namespace::PublishName(packed, disk, serveVpath);
-    LOG_DEBUG_KV(kCat, "declared",
-        kcdx::log::KV("name", packed),
-        kcdx::log::KV("disk", disk),
-        kcdx::log::KV("serve_vpath", serveVpath));
-
     lua_pushlstring(L, disk.data(), disk.size());
     return 1;
 }
@@ -289,18 +264,10 @@ int Lua_AssetsGetByName(lua_State* L) {
         return 2;
     }
 
-    const std::string packed = PackName(author, plugin, bare);
-    std::string disk;
-    if (!kcdx::asset_namespace::LookupPublishedName(packed, disk)) {
+    std::string disk, err;
+    if (!GetPublishedAsset(author, plugin, bare, disk, err)) {
         lua_pushnil(L);
-        const std::string ident =
-            author.empty() ? plugin : (author + "." + plugin);
-        lua_pushstring(L,
-            ("kcdx.assets.get_by_name(\"" + bare + "\"): no published name '" +
-             bare + "' in plugin '" + ident + "' — publish it first with "
-             "kcdx.assets.declare(\"" + bare + "\", \"<your asset path>\"). "
-             "Only names you declared are resolvable; a typo is a loud error, "
-             "never a silent nil.").c_str());
+        lua_pushlstring(L, err.data(), err.size());
         return 2;
     }
     lua_pushlstring(L, disk.data(), disk.size());
@@ -349,18 +316,11 @@ int Lua_AssetsRegister(lua_State* L) {
     }
 
     std::string disk, err;
-    if (!ResolveAssetPath(author, plugin, file, disk, err)) {
+    if (!RegisterAsset(author, plugin, vpath, file, disk, err)) {
         lua_pushnil(L);
         lua_pushlstring(L, err.data(), err.size());
         return 2;
     }
-
-    // Write the runtime-overlay store (RCU). Keyed by NORMALIZED vpath inside
-    // RegisterRuntimeOverlay (the SAME fold the resolver uses), so a runtime open
-    // of `vpath` hits regardless of the engine's case/separator form. Take-effect
-    // = thereafter (§3 US-6) — an already-open handle is NOT re-resolved.
-    kcdx::asset_namespace::RegisterRuntimeOverlay(vpath, disk, plugin);
-
     lua_pushlstring(L, disk.data(), disk.size());
     return 1;
 }
@@ -428,70 +388,11 @@ int Lua_AssetsReplace(lua_State* L) {
     }
 
     std::string disk, err;
-    if (!ResolveAssetPath(author, plugin, with, disk, err)) {
+    if (!ReplaceAsset(author, plugin, target, with, disk, err)) {
         lua_pushnil(L);
         lua_pushlstring(L, err.data(), err.size());
         return 2;
     }
-
-    // Determine the overlay KEY the runtime-overlay store is keyed by.
-    //   * PACKED cross-mod name ("<author>.<plugin>.<bare>") — the two-hop §5.3
-    //     resolution: resolve the packed name -> the publisher's SERVE-VPATH
-    //     (ResolvePublishedVpath), and key the overlay store by THAT vpath so B's
-    //     `with` wins where A's published asset serves. A name resolving to NO
-    //     published asset is an AP14 teaching error naming the unresolved name
-    //     (A must declare it first, AND before B's replace — §3 US-6 "thereafter"
-    //     ordering). The author writes A's NAME, never A's vpath (the disassembler
-    //     test). (Classified by the sidecar's exact rule — LooksLikePackedCross-
-    //     ModName mirrors asset_sidecar.cpp::LooksLikePublishedName.)
-    //   * VANILLA path — key by the path itself (the dominant US-6 case, unchanged
-    //     from step 8b). RegisterRuntimeOverlay normalizes via the shared fold.
-    std::string overlayKey = target;  // vanilla form: the target IS the key
-    if (LooksLikePackedCrossModName(target)) {
-        const std::string packed = LowerPackedName(target);
-        std::string serveVpath;
-        if (!kcdx::asset_namespace::ResolvePublishedVpath(packed, serveVpath)) {
-            // Hop 1 failed — no published asset under this name (AP14: fail LOUD
-            // naming the unresolved name; the author must publish it first, and
-            // before this replace runs — the take-effect-thereafter ordering of
-            // §3 US-6). Never a silent store-write the resolver could never hit.
-            lua_pushnil(L);
-            lua_pushstring(L,
-                ("kcdx.assets.replace: cross-mod replace target '" + target +
-                 "' resolves to no published asset — the owning mod must publish "
-                 "that name (with kcdx.assets.declare(\"<bare>\", \"<file>\") or "
-                 "a sidecar `name`), and it must be published BEFORE this replace "
-                 "runs (a cross-mod replace takes effect for opens after the "
-                 "call). Check the <author>.<plugin>.<bare> spelling; a name "
-                 "resolving to nothing is a loud error, never a silent no-op.")
-                    .c_str());
-            LOG_WARN_KV(kCat, "rejected",
-                kcdx::log::KV("verb", std::string("replace")),
-                kcdx::log::KV("reason",
-                    std::string("packed cross-mod target resolves to no "
-                                "published asset")),
-                kcdx::log::KV("target", target));
-            return 2;
-        }
-        // Hop 1 succeeded — key by the publisher's serve-vpath (already
-        // normalized in the published-name store). RegisterRuntimeOverlay
-        // normalizes again (idempotent on an already-normalized key).
-        overlayKey = serveVpath;
-        LOG_DEBUG_KV(kCat, "crossmod_resolved",
-            kcdx::log::KV("target", target),
-            kcdx::log::KV("serve_vpath", serveVpath),
-            kcdx::log::KV("with_disk", disk),
-            kcdx::log::KV("by", author.empty() ? plugin
-                                               : (author + "." + plugin)));
-    }
-
-    // Hop 2: write the runtime-overlay store keyed by the resolved vpath (the
-    // same store register writes — replace IS register against an existing
-    // target). The engine requests that vpath and the resolver hits the runtime
-    // overlay, serving B's `with`. RegisterRuntimeOverlay normalizes via the
-    // shared fold. Take-effect = thereafter (§3 US-6).
-    kcdx::asset_namespace::RegisterRuntimeOverlay(overlayKey, disk, plugin);
-
     lua_pushlstring(L, disk.data(), disk.size());
     return 1;
 }
@@ -788,6 +689,147 @@ bool ResolveAssetPath(const std::string& author, const std::string& plugin,
     }
 
     outDisk = disk.string();
+    return true;
+}
+
+// === Shared runtime-verb operations (declared in lua_bind_assets.h) ===========
+// The semantic core of each runtime verb, factored so the Lua thunks AND the
+// C++ kcdxAssetInterface thunks call the SAME code — the (author, plugin) is
+// already resolved by the caller (Lua callstack walk OR the `self` handle). On
+// failure each fills outErr (the teaching message) AND emits the structured
+// LOG_*_KV teaching line, so a caller with no return-side err (the C++ author)
+// still reads the cause in the dev log.
+
+bool DeclareAsset(const std::string& author, const std::string& plugin,
+                  const std::string& bare, const std::string& file,
+                  std::string& outDisk, std::string& outErr) {
+    // Resolve `file` to a loadable disk path through the caller's assets/ (the
+    // SAME resolver get_by_path uses — a published name always points at a real
+    // file). A bad file fails loud naming the rejected target, never a silent
+    // nil (ResolveAssetPath already logged it).
+    std::string disk;
+    if (!ResolveAssetPath(author, plugin, file, disk, outErr)) {
+        return false;
+    }
+
+    // Publish <author>.<plugin>.<bare> -> { disk, serve-vpath } into the runtime
+    // published-name store (RCU write). A later get_by_name(bare) resolves the
+    // disk path; a cross-mod replace("<a>.<p>.bare", with) resolves the SERVE-
+    // VPATH (design §5.3). A runtime declare is a PURE ADD-NEW publish — its
+    // serve-vpath is the asset's OWN add-new vpath = `file`'s path relative to the
+    // caller's assets/, normalized through the SHARED fold so a B-side cross-mod
+    // replace keys the overlay store with a key the resolver matches.
+    const std::string packed = PackName(author, plugin, bare);
+    const std::string serveVpath = asset_overlay::NormalizeVPath(file);
+    kcdx::asset_namespace::PublishName(packed, disk, serveVpath);
+    LOG_DEBUG_KV(kCat, "declared",
+        kcdx::log::KV("name", packed),
+        kcdx::log::KV("disk", disk),
+        kcdx::log::KV("serve_vpath", serveVpath));
+
+    outDisk = disk;
+    return true;
+}
+
+bool GetPublishedAsset(const std::string& author, const std::string& plugin,
+                       const std::string& bare, std::string& outDisk,
+                       std::string& outErr) {
+    const std::string packed = PackName(author, plugin, bare);
+    if (!kcdx::asset_namespace::LookupPublishedName(packed, outDisk)) {
+        const std::string ident =
+            author.empty() ? plugin : (author + "." + plugin);
+        outErr =
+            "kcdx.assets.get_by_name(\"" + bare + "\"): no published name '" +
+            bare + "' in plugin '" + ident + "' — publish it first with "
+            "kcdx.assets.declare(\"" + bare + "\", \"<your asset path>\"). "
+            "Only names you declared are resolvable; a typo is a loud error, "
+            "never a silent nil.";
+        LOG_WARN_KV(kCat, "rejected",
+            kcdx::log::KV("verb", std::string("get_by_name")),
+            kcdx::log::KV("reason", std::string("no published name")),
+            kcdx::log::KV("name", packed));
+        return false;
+    }
+    return true;
+}
+
+bool RegisterAsset(const std::string& author, const std::string& plugin,
+                   const std::string& vpath, const std::string& file,
+                   std::string& outDisk, std::string& outErr) {
+    std::string disk;
+    if (!ResolveAssetPath(author, plugin, file, disk, outErr)) {
+        return false;
+    }
+    // Write the runtime-overlay store (RCU). Keyed by NORMALIZED vpath inside
+    // RegisterRuntimeOverlay (the SAME fold the resolver uses), so a runtime open
+    // of `vpath` hits regardless of the engine's case/separator form. Take-effect
+    // = thereafter (§3 US-6) — an already-open handle is NOT re-resolved.
+    kcdx::asset_namespace::RegisterRuntimeOverlay(vpath, disk, plugin);
+    outDisk = disk;
+    return true;
+}
+
+bool ReplaceAsset(const std::string& author, const std::string& plugin,
+                  const std::string& target, const std::string& with,
+                  std::string& outDisk, std::string& outErr) {
+    // Resolve the `with` file FIRST (shared by both target forms — replace
+    // serves YOUR OWN file). The overlay KEY then depends on the target form.
+    std::string disk;
+    if (!ResolveAssetPath(author, plugin, with, disk, outErr)) {
+        return false;
+    }
+
+    // Determine the overlay KEY the runtime-overlay store is keyed by.
+    //   * PACKED cross-mod name ("<author>.<plugin>.<bare>") — the two-hop §5.3
+    //     resolution: resolve the packed name -> the publisher's SERVE-VPATH
+    //     (ResolvePublishedVpath), key the overlay by THAT vpath so B's `with`
+    //     wins where A's published asset serves. A name resolving to NO published
+    //     asset is a loud teaching error naming the unresolved name (A must
+    //     publish it first, AND before this replace runs). The author writes A's
+    //     NAME, never A's vpath (the disassembler test).
+    //   * VANILLA path — key by the path itself. RegisterRuntimeOverlay normalizes
+    //     via the shared fold.
+    std::string overlayKey = target;  // vanilla form: the target IS the key
+    if (LooksLikePackedCrossModName(target)) {
+        const std::string packed = LowerPackedName(target);
+        std::string serveVpath;
+        if (!kcdx::asset_namespace::ResolvePublishedVpath(packed, serveVpath)) {
+            // Hop 1 failed — no published asset under this name (fail LOUD
+            // naming the unresolved name, never a silent nil). Never a silent
+            // store-write the resolver could never hit.
+            outErr =
+                "kcdx.assets.replace: cross-mod replace target '" + target +
+                "' resolves to no published asset — the owning mod must publish "
+                "that name (with kcdx.assets.declare(\"<bare>\", \"<file>\") or "
+                "a sidecar `name`), and it must be published BEFORE this replace "
+                "runs (a cross-mod replace takes effect for opens after the "
+                "call). Check the <author>.<plugin>.<bare> spelling; a name "
+                "resolving to nothing is a loud error, never a silent no-op.";
+            LOG_WARN_KV(kCat, "rejected",
+                kcdx::log::KV("verb", std::string("replace")),
+                kcdx::log::KV("reason",
+                    std::string("packed cross-mod target resolves to no "
+                                "published asset")),
+                kcdx::log::KV("target", target));
+            return false;
+        }
+        // Hop 1 succeeded — key by the publisher's serve-vpath (already
+        // normalized). RegisterRuntimeOverlay normalizes again (idempotent).
+        overlayKey = serveVpath;
+        LOG_DEBUG_KV(kCat, "crossmod_resolved",
+            kcdx::log::KV("target", target),
+            kcdx::log::KV("serve_vpath", serveVpath),
+            kcdx::log::KV("with_disk", disk),
+            kcdx::log::KV("by", author.empty() ? plugin
+                                               : (author + "." + plugin)));
+    }
+
+    // Hop 2: write the runtime-overlay store keyed by the resolved vpath (the
+    // same store register writes — replace IS register against an existing
+    // target). RegisterRuntimeOverlay normalizes via the shared fold. Take-effect
+    // = thereafter (§3 US-6).
+    kcdx::asset_namespace::RegisterRuntimeOverlay(overlayKey, disk, plugin);
+    outDisk = disk;
     return true;
 }
 

@@ -168,6 +168,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Hook           = 8,  // C++ kcdx.hook mirror
     kcdxInterface_Bytes          = 9,  // C++ kcdx.bytes mirror
     kcdxInterface_Declare        = 10, // C++ kcdx.declare / kcdx.declared mirror
+    kcdxInterface_Assets         = 11, // C++ kcdx.assets.* mirror
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -2247,6 +2248,162 @@ typedef struct kcdxDeclareInterface {
     // against an older version reads the prefix members at their original
     // offsets, so appending cannot shift them (append-only ABI).
 } kcdxDeclareInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxAssetInterface — C++ mirror of the Lua kcdx.assets.* surface
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Assets,
+// kcdxAssetInterface_Version). The C++ author's mirror of the programmatic
+// asset surface (the no-code `replaces.toml` sidecar is language-neutral and
+// works the same for a C++ plugin — see the asset-replacement docs; this
+// interface is the IN-CODE replace/declare/register/resolve path). Full Lua
+// <-> C++ parity (ONE model, two languages): every verb produces the SAME
+// result as its Lua peer (kcdx.assets.get_by_path / get_by_name / declare /
+// register / replace), routed through the SAME engine-side resolution + the
+// SAME runtime stores the Lua binder writes — a C++-declared name and a Lua-
+// declared name are indistinguishable; a Lua plugin resolves a name a C++
+// plugin published and vice versa.
+//
+// RETURN SHAPE — every method returns `const char*`: the resolved LOADABLE
+// PATH on success (the absolute on-disk path the asset-resolution seam opens
+// to serve the file — exactly the value the Lua peer returns), or `nullptr`
+// on failure. The teaching error is LOGGED to the dev log (the ASSET_GET /
+// ASSET_RUNTIME structured lines the engine already emits on every failure
+// path), NOT handed back in code — the path is used directly by the author;
+// the error teaches via the dev log (the C++ author's native channel, the
+// same convention as kcdxConsoleInterface::GetCVar* and
+// kcdxDeclareInterface::Declare). A nullptr return with a dev-log line is the
+// loud failure (never a silent empty string).
+//
+// OWN vs CROSS-PLUGIN — every method here is the author's OWN-namespace form:
+// the engine resolves the CALLING plugin from `self` (the owningPlugin
+// handle), so the author never types their own <author>.<plugin> prefix.
+// The Lua kcdx.plugin.<a>.<p>.assets.* navigable cross-plugin READ form has no
+// C++ navigable-namespace analogue; a C++ author reaches another mod's
+// published asset by passing its packed "<author>.<plugin>.<bare>" name to
+// Replace's `target` (the string-key cross-plugin form, design §5.3) — the
+// same packed-name route the Lua kcdx.assets.replace cross-mod target uses.
+//
+// Phase gating: the runtime stores are reachable from kcdxPlugin_Load (the
+// same init phase the Lua binder reaches synchronously); Declare / Register /
+// Replace are intended to be called from kcdxPlugin_Load. GetByPath is a pure
+// read with no store dependency.
+
+#define kcdxAssetInterface_Version 1u
+
+typedef struct kcdxAssetInterface {
+    // ------------------------------------------------------------------
+    // Resolve YOUR OWN asset (a path relative to your plugin's assets/
+    // folder) to its loadable on-disk path. The common path — the C++
+    // spelling of Lua kcdx.assets.get_by_path(path). A PURE READ: it
+    // mutates no store and depends on none.
+    //
+    //   self  — REQUIRED. Your own plugin handle (from
+    //           api->GetPluginHandle("<[plugin].name>")). The engine
+    //           resolves the calling plugin from it — you never type your
+    //           own <author>.<plugin> prefix.
+    //   path  — REQUIRED. The path to your asset, relative to your assets/
+    //           folder (e.g. "icons/my_icon.dds"). '..' traversal is
+    //           rejected.
+    //
+    // Returns the LOADABLE PATH (the absolute disk path the seam opens) on
+    // success; nullptr on failure (no such asset under your assets/, no
+    // assets/ entrypoint declared, an unattributed self, or a '..' escape).
+    // The teaching error naming the missing path is in the dev log (category
+    // ASSET_GET) — never a silent nullptr for a typo.
+    //
+    //   const char* icon = K.assets->GetByPath(self, "icons/my_icon.dds");
+    //   if (icon) { /* hand `icon` to a game asset API */ }
+    //   else      { /* the dev log says exactly which path missed */ }
+    const char* (*GetByPath)(kcdxPluginHandle self, const char* path);
+
+    // ------------------------------------------------------------------
+    // Resolve a name YOU published (with Declare, below) to its loadable
+    // path. The C++ spelling of Lua kcdx.assets.get_by_name(name) — the
+    // read peer of Declare.
+    //
+    //   self  — REQUIRED. Your own plugin handle (resolves your namespace).
+    //   name  — REQUIRED. The bare name you published (e.g. "shirt"). The
+    //           engine resolves it against YOUR OWN <author>.<plugin>
+    //           namespace — you type only the bare name.
+    //
+    // Returns the published asset's loadable path on success; nullptr on a
+    // name you never declared (the teaching error naming it is in the dev
+    // log, category ASSET_GET) — never a silent nullptr for a typo.
+    const char* (*GetByName)(kcdxPluginHandle self, const char* name);
+
+    // ------------------------------------------------------------------
+    // Publish a stable NAME for one of your assets as a shared contract.
+    // The C++ spelling of Lua kcdx.assets.declare(name, file). Publishes
+    // YOUR <author>.<plugin>.<name> -> the resolved disk path of `file`,
+    // so another mod can reference your asset by name.
+    //
+    //   self  — REQUIRED. Your own plugin handle (the namespace to publish
+    //           into).
+    //   name  — REQUIRED. The bare published name (e.g. "shirt"). The engine
+    //           stamps it as <author>.<plugin>.<name>; you type only the bare
+    //           name.
+    //   file  — REQUIRED. The file the name names, relative to your assets/
+    //           folder (resolved like GetByPath — '..'-reject + must exist).
+    //
+    // Returns the declared file's LOADABLE PATH on success — the SAME value a
+    // later GetByName(self, name) yields, so you can use it immediately AND
+    // publish it in one call (mirrors the Lua declare's path-return). nullptr
+    // on failure (unresolvable file, anonymous self, empty name/file); the
+    // teaching error is in the dev log (category ASSET_GET / ASSET_RUNTIME).
+    const char* (*Declare)(kcdxPluginHandle self, const char* name,
+                           const char* file);
+
+    // ------------------------------------------------------------------
+    // Make a not-at-load asset available at a runtime virtual path. The C++
+    // spelling of Lua kcdx.assets.register(vpath, file). Writes a runtime
+    // overlay: the engine serves `file` where it opens `vpath` AFTER this
+    // call (take-effect = thereafter).
+    //
+    //   self  — REQUIRED. Your own plugin handle.
+    //   vpath — REQUIRED. The virtual path the game opens (e.g.
+    //           "Libs/UI/Textures/MyGen.dds").
+    //   file  — REQUIRED. The file that serves it, relative to your assets/
+    //           folder (resolved like GetByPath).
+    //
+    // Returns the loadable path of `file` on success; nullptr on failure
+    // (unresolvable file, anonymous self, empty arg). The teaching error is
+    // in the dev log (category ASSET_GET / ASSET_RUNTIME).
+    const char* (*Register)(kcdxPluginHandle self, const char* vpath,
+                            const char* file);
+
+    // ------------------------------------------------------------------
+    // Register a runtime REPLACEMENT keyed by a target. The C++ spelling of
+    // Lua kcdx.assets.replace(target, with). Two target forms (the engine
+    // disambiguates, mirroring the Lua replace):
+    //   * a VANILLA asset path ("Libs/UI/Textures/KCDLogo.dds") — keys the
+    //     runtime overlay by that vpath directly.
+    //   * a packed CROSS-MOD published name ("<author>.<plugin>.<bare>") —
+    //     resolves the name to the publisher's serve-vpath (design §5.3) and
+    //     keys the overlay by THAT, so your `with` wins where the other mod's
+    //     published asset serves. The packed-name route is also how a C++
+    //     author replaces another mod's asset (no navigable-namespace form).
+    //
+    //   self   — REQUIRED. Your own plugin handle.
+    //   target — REQUIRED. The vanilla vpath OR the packed cross-mod name.
+    //   file   — REQUIRED. The replacement file, relative to your assets/
+    //            folder (resolved like GetByPath).
+    //
+    // Returns the loadable path of `file` on success; nullptr on failure
+    // (unresolvable file, an unresolvable packed cross-mod target — the owner
+    // never published that name — anonymous self, empty arg). The teaching
+    // error naming the unresolved target / missing file is in the dev log
+    // (category ASSET_GET / ASSET_RUNTIME) — never a silent overlay write the
+    // resolver could never hit.
+    const char* (*Replace)(kcdxPluginHandle self, const char* target,
+                           const char* file);
+
+    // --- APPEND-ONLY BELOW (kcdxAssetInterface_Version >= 2) -------------
+    // New members go HERE, at the END, never mid-struct: a plugin DLL built
+    // against an older version reads the prefix members at their original
+    // offsets, so appending cannot shift them (append-only ABI).
+} kcdxAssetInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)

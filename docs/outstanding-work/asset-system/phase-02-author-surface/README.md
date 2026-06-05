@@ -20,7 +20,7 @@ when `DONE`, `—` otherwise.
 | [8 — `kcdx.assets.get_by_path` (the pure-read verb; the `kcdx.assets.*` table + the cross-plugin `.assets` leaf)](step-8-lua-surface.md) | DONE | c39ac3a |
 | [8b — the four runtime verbs (`get_by_name`/`declare`/`register`/`replace`, vanilla-path) + the `asset_namespace` runtime store (design §5.1)](step-8b-runtime-store-verbs.md) | DONE | b7ae899 |
 | [8c — cross-mod resolution (a published name / owner+path → the serve-vpath; runtime `replace` packed form + the declarative sidecar `PublishedName`/`PluginPathPair`; the build-time `scoped_out` path → keys the resolved vpath) (design §5.3)](step-8c-cross-mod-resolution.md) | DONE | 2259a76 |
-| [9 — `kcdxAssetInterface` C++ mirror (full parity)](step-9-cpp-mirror.md) | NOT STARTED | — |
+| [9 — `kcdxAssetInterface` C++ mirror (full parity)](step-9-cpp-mirror.md) | DONE | (landed) |
 
 ## Phase verification gate
 

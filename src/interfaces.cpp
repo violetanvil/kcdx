@@ -9,6 +9,7 @@
 
 #include "kcdx/Interfaces.h"
 #include "address_library.h"
+#include "asset_interface.h"
 #include "bytes_interface.h"
 #include "conflict_engine.h"
 #include "console.h"
@@ -92,6 +93,11 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxDeclareInterface_Version) return nullptr;
         return const_cast<kcdxDeclareInterface*>(
             kcdx::declare_interface::GetInterface());
+
+    case kcdxInterface_Assets:
+        if (version > kcdxAssetInterface_Version) return nullptr;
+        return const_cast<kcdxAssetInterface*>(
+            kcdx::asset_interface::GetInterface());
 
     default:
         return nullptr;

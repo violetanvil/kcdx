@@ -1,0 +1,2 @@
+cap-76 C++ asset-interface test marker. A real file under this plugin's assets/
+so K.assets->GetByPath / Declare / Register / Replace resolve a loadable path.

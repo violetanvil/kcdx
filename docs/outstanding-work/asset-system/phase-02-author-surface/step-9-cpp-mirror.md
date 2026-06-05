@@ -1,6 +1,6 @@
 # Phase 2 step 9 — `kcdxAssetInterface` C++ mirror (full parity)
 
-**Status: NOT STARTED.** Ledger: [`README.md`](README.md) → step 9.
+**Status: DONE.** Ledger: [`README.md`](README.md) → step 9.
 
 ## What
 

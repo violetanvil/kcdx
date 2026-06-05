@@ -1,0 +1,81 @@
+# CAP-76 — kcdxAssetInterface (C++ mirror of kcdx.assets.*) end-to-end parity.
+#
+# C++ DLL plugin that exercises the kcdxAssetInterface ABI through the Kcdx.h
+# wrapper's K.assets accessor — the C++ peer of the Lua cap-75 surface. Every
+# row is a BOOT-CHECKABLE PARITY row: the C++ verb produces the SAME result as
+# its Lua peer (the resolved loadable path on success, nullptr on failure with
+# the teaching error in the dev log). FALSIFIABLE — each row FAILS if the C++
+# path diverges from the Lua path (returns nullptr for a real input, a non-null
+# for a missing input, or the wrong file).
+#
+# Return shape (design Option A): every method returns const char* — the
+# loadable path on success, nullptr on failure; the teaching error is LOGGED
+# (ASSET_GET / ASSET_RUNTIME), not handed back in code (mirrors GetCVar* /
+# Declare). A row asserts on the const char* return; the dev-log teach is the
+# agent's corroborating signal, not the Lua-style return-side err.
+#
+# Seven falsifiable rows, all boot-only (every check is a pure in-process store
+# write+read + the on-disk assets/ tree at kcdxPlugin_Load — the same init phase
+# the Lua binder reaches; no player gesture):
+#
+#   * CAP-76-own        — GetByPath(self, "icons/marker.txt") returns a non-null
+#       loadable path ending with the relative path. FALSIFIABLE: nullptr /
+#       empty / a path not ending with the asset's relative path -> FAIL.
+#   * CAP-76-missing    — GetByPath(self, "icons/does_not_exist.dds") (NOT under
+#       assets/) returns nullptr — the loud failure (the teaching error is in
+#       the dev log, category ASSET_GET). FALSIFIABLE: a non-null return (a
+#       missing asset "resolved") -> FAIL.
+#   * CAP-76-declare    — Declare(self, "shirt", "icons/marker.txt") returns the
+#       file's path, and GetByName(self, "shirt") resolves the SAME path back —
+#       a published-name store round-trip (a write the read reflects).
+#       FALSIFIABLE: Declare nullptr for a real file / GetByName nullptr after
+#       declaring / a path not the declared file -> FAIL.
+#   * CAP-76-getbyname-missing — GetByName(self, "never_declared_name") returns
+#       nullptr (the teaching error is in the dev log). FALSIFIABLE: a non-null
+#       return for an undeclared name -> FAIL.
+#   * CAP-76-register   — Register(self, vpath, "icons/marker.txt") returns the
+#       loadable path (overlay written); Register(self, vpath2, missing file)
+#       returns nullptr (the loud failure). FALSIFIABLE: nullptr for a real file
+#       OR a non-null for a missing file -> FAIL.
+#   * CAP-76-replace    — Replace(self, vanilla-vpath, "icons/marker.txt")
+#       returns the loadable path (overlay keyed by target); Replace(self,
+#       target2, missing file) returns nullptr. FALSIFIABLE: same shape as
+#       register.
+#   * CAP-76-replace-crossmod-unresolvable — Replace(self,
+#       "redmoon.outfit.belt", "icons/marker.txt") — a PACKED cross-mod target
+#       whose owner (redmoon.outfit) is NOT loaded, so it resolves to NO
+#       published asset — returns nullptr (the teaching error naming the packed
+#       target is in the dev log, ASSET_GET). `with` is a REAL file so the only
+#       reason for nullptr is the unresolvable packed target. FALSIFIABLE: a
+#       non-null return (the unresolvable name "resolved" to some path) -> FAIL.
+#
+# The register/replace IN-GAME SERVE (engine opens a registered/replaced vpath
+# -> kcdx's file) is the SAME Phase-11-deferred gap as the Lua side (KI-0005 —
+# a runtime register/replace runs after the boot asset open). It is NOT a row
+# here; it rides the [manual] DEFERRED CAP-75-register-serve coverage.
+#
+# Test mode: boot-only. All seven rows self-verify at kcdxPlugin_Load. NO
+# console gestures, NO save/load.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_76_cpp_asset_interface"
+display_name        = "CAP-76 kcdxAssetInterface (C++)"
+author              = "ts"
+description         = "C++ DLL exercising kcdxAssetInterface end-to-end via K.assets — the C++ parity mirror of the Lua cap-75 kcdx.assets.* surface. Seven boot-only falsifiable rows: GetByPath own + missing-teaches, Declare+GetByName round-trip, GetByName-missing, Register (real path-return + missing-file nullptr), Replace (vanilla path-return + missing-file nullptr), and an unresolvable packed cross-mod Replace target returning nullptr. Each row asserts the C++ const char* return equals its Lua peer's result; the teaching error is logged (ASSET_GET / ASSET_RUNTIME), not returned in code."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-76-own",
+                       "CAP-76-missing",
+                       "CAP-76-declare",
+                       "CAP-76-getbyname-missing",
+                       "CAP-76-register",
+                       "CAP-76-replace",
+                       "CAP-76-replace-crossmod-unresolvable"]
+
+[entrypoints]
+dll    = "cap-76.dll"
+assets = "assets/"

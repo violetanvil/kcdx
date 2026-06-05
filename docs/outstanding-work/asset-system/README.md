@@ -32,20 +32,27 @@ when `DONE`, `—` otherwise.
 | Phase | Status | Commit |
 |---|---|---|
 | [1 — resolution ownership (the TWO-hook seam, probe-gated)](phase-01-resolution-ownership/README.md) | DONE | 2b0bd1b |
-| [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | IN PROGRESS (5/6: steps 6/7/8/8b/8c DONE; step 9 C++ mirror NOT STARTED) | — |
+| [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | DONE (6/6: steps 6/7/8/8b/8c/9 DONE) | (landed) |
 | [3 — regression coverage](phase-03-regression/README.md) | NOT STARTED | — |
 
-## Where we are (2026-06-04) — Phase 1 acceptance-closed; Phase 2 at 5/6 (step 9 C++ mirror remains)
+## Where we are (2026-06-04) — Phase 1 acceptance-closed; Phase 2 DONE (6/6, boot-acceptance pending the step-9 launch)
 
-**Phase 2 (author surface) is 5/6 built + committed + boot-acceptance-passed.**
+**Phase 2 (author surface) is 6/6 built + committed.**
 Steps 6 (navigable `kcdx.plugin.<a>.<p>.*` namespace, `a3961df`), 7 (stale-prose
 sweep, `3cc6a67`), 8 (`kcdx.assets.get_by_path` + the table, `c39ac3a`), 8b (the
 4 runtime verbs + the `asset_namespace` RCU store, `b7ae899`), 8c (cross-mod
-resolution — a published name → the serve-vpath, `2259a76`). The full Lua
-`kcdx.assets.*` surface is live: `get_by_path`/`get_by_name`/`declare`/`register`/
-`replace` incl. cross-mod (B serves where A's published asset would). **Step 9**
-(the `kcdxAssetInterface` C++ mirror, full Lua↔C++ parity) is the remaining
-Phase-2 step.
+resolution — a published name → the serve-vpath, `2259a76`), 9 (the
+`kcdxAssetInterface` C++ mirror — full Lua↔C++ parity). The full `kcdx.assets.*`
+surface is live on BOTH languages: Lua `get_by_path`/`get_by_name`/`declare`/
+`register`/`replace` (incl. cross-mod — B serves where A's published asset
+would) AND the C++ mirror `K.assets->GetByPath`/`GetByName`/`Declare`/`Register`/
+`Replace`, both calling ONE shared resolution path (the Lua binder and the C++
+thunks share the `lua_bind_assets` helpers — full parity). Steps 6/7/8/8b/8c are
+boot-acceptance-passed; step 9's cap-76 C++ parity rows confirm at the next
+launch (the engine + cap-76.dll are built; the boot rows self-report). The
+in-game register/replace SERVE remains DEFERRED → Phase 11 on BOTH surfaces
+(KI-0005, the boot-cache lifecycle gap). NEXT: Phase 3 (regression) — or the
+step-9 acceptance launch closes Phase 2's last boot rows.
 
 Two design gaps were caught + settled mid-build (not assumed): the **runtime-store
 mechanism** (§5.1 — the RCU `asset_namespace` store, settled by consult) and
