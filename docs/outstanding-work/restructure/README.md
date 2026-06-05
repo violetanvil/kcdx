@@ -55,7 +55,7 @@ hash when `DONE`, `—` otherwise.
 | [9.6 — kcdx.bytes narrowing + Lua-API rule update + final migration](phase-09.6-bytes-narrowing/README.md) | NOT STARTED | — |
 | 9.7 — curated-target sub-verb resolver | SUPERSEDED | — |
 | [10 — gameplay event catalog (kcdx.on)](phase-10-event-catalog/README.md) | NOT STARTED | — |
-| [11 — force-load WHGame.dll + use its compiled Lua](phase-11-shim-vm/README.md) | BLOCKED | — |
+| [11 — force-load WHGame.dll + kcdx owns the one Lua VM](phase-11-shim-vm/README.md) | NOT STARTED | — |
 | 12 — C++ empowered-wrapper sweep + correctness fix + UX polish | NOT STARTED | — |
 
 Notes on non-obvious rows:
@@ -68,8 +68,13 @@ Notes on non-obvious rows:
 - **9.7 SUPERSEDED** — merged into Phase 9.2 (the declare store and the smart
   resolver were two halves of one surface). No subdir; the redirect detail lives
   in [`00-original-plan.md`](00-original-plan.md) §"Phase 9.7".
-- **11 BLOCKED** — on the FIX A Lua-symbol harvest (`_research/phase8-fix-a/`,
-  ~38% of ~110 RVAs mapped at last writing). Phases 1–10 run in parallel with it.
+- **11 NOT STARTED (design settled 2026-06-05)** — the prior "BLOCKED on the FIX A
+  harvest, ~38% mapped" note was STALE; the harvest is substantially complete (93/117
+  LUA_API resolved + ~24 inlined/stripped catalogued). The settled design
+  ([`phase-11-shim-vm/lua-vm-design.md`](phase-11-shim-vm/lua-vm-design.md)) is
+  decomposed into a 6-phase build tree (keystone probe → shim → force-load+adopt →
+  early-slot+boot-swap → drop-static → serve-execute). kcdx builds the one VM; the
+  engine adopts it. Phases 1–10 ran in parallel with the harvest.
 - **12 NOT STARTED** — the C++ empowered-wrapper sweep + `sig_traits` correctness
   fix + UX polish; design-settled, detail in [`00-original-plan.md`](00-original-plan.md)
   §"Phase 12". Subdir authored when the phase is picked up.

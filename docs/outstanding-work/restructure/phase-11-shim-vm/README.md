@@ -1,41 +1,57 @@
-# Phase 11 — force-load WHGame.dll + use its compiled Lua
+# Phase 11 — force-load WHGame.dll + kcdx owns the one Lua VM
 
-**Status: BLOCKED** on the FIX A Lua-symbol harvest. Detail:
-[`../00-original-plan.md`](../00-original-plan.md) §"Phase 11" + the four sub-phase
-sections; unblocker spec at [`../fix-a-drop-static-lua.md`](../../fix-a-drop-static-lua.md).
+**Status: READY (design settled 2026-06-05, decomposed into this tree).**
 
-kcdx.dll's DllMain force-loads WHGame.dll, then uses the FIX A symbol shim to spin
-up the Lua VM via WHGame's compiled `luaL_newstate`. ONE compiled Lua body in the
-process (WHGame's) — the dual-Lua sentinel hazard dies by construction (kcdx has no
-compiled Lua of its own post-FIX-A). Lua plugins gain the `before_game` zone.
+kcdx.dll's DllMain force-loads WHGame.dll, then **kcdx builds the ONE Lua VM itself**
+via the FIX A symbol shim and the engine ADOPTS it — its `CScriptSystem::Init`
+VM-creation is intercepted so the engine never creates its own. ONE compiled Lua body
+in the process; the dual-Lua sentinel hazard dies by construction. Lua plugins gain
+the `before_game` zone; boot-asset Lua swaps (KI-0005) + served-`.lua` execute
+(KI-0006) become reachable.
 
-## Blocker
+- **Settled design:** [`lua-vm-design.md`](lua-vm-design.md).
+- **Shared spec + coverage map:** [`plan-spec.md`](plan-spec.md).
+- **FIX A harvest (the RE evidence):** [`../fix-a-drop-static-lua.md`](../../fix-a-drop-static-lua.md) (93/117 LUA_API resolved + ~24 inlined/stripped catalogued).
 
-FIX A symbol harvest must hit 100% (~110 Lua RVAs verified, Address Library
-populated). At last writing ~38% mapped (`_research/phase8-fix-a/`). Phases 1–10
-run in parallel with the remaining harvest; Phase 11a starts when FIX A reports
-done.
+## No longer blocked
 
-## Step ledger
+The prior "~38% mapped / BLOCKED" note was STALE — it predated the 2026-05-21 harvest
+completion (93/117 + the inlined/stripped catalogue). The harvest is done enough to
+build; what remained was design + build, now settled in the design doc and decomposed
+below. Step 1 of the build is the keystone probe (observe `CScriptSystem::Init`
+before wiring the interception — `.claude/rules/results-driven.md`).
 
-| Step | Status | Commit |
+The legacy 11a–11d step stubs that lived here described the superseded "hook game's
+`luaL_newstate`" framing; the settled design corrected the mechanism (kcdx builds the
+state, the engine adopts it). The build order below replaces them.
+
+## Phase ledger (phase-grain)
+
+Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short hash when
+`DONE`, `—` otherwise. A landed step flips its row in its phase README; the last step
+of a phase flips that phase's row here (the orchestrator owns the cascade).
+
+| Phase | Status | Commit |
 |---|---|---|
-| [11a — FIX A shim integration](step-1-shim-integration.md) | BLOCKED — on FIX A 100% | — |
-| [11b — force-load WHGame.dll from kcdx.dll DllMain](step-2-force-load.md) | BLOCKED — on 11a | — |
-| [11c — Lua VM startup via shim, hook game's luaL_newstate](step-3-vm-startup.md) | BLOCKED — on 11a | — |
-| [11d — lift Lua-in-before_game restriction, drop static Lua](step-4-drop-static-lua.md) | BLOCKED — on 11a–c | — |
+| [1 — keystone probe (Init + lua_newstate observation)](phase-01-probe/README.md) | NOT STARTED | — |
+| [2 — the symbol shim (forward 93 + stub ~24)](phase-02-shim/README.md) | NOT STARTED | — |
+| [3 — force-load WHGame + VM build + Init adoption](phase-03-force-load-adopt/README.md) | NOT STARTED | — |
+| [4 — early Lua slot + boot-asset swap (KI-0005)](phase-04-early-slot-boot-swap/README.md) | NOT STARTED | — |
+| [5 — drop static Lua (hazard-killing step)](phase-05-drop-static-lua/README.md) | NOT STARTED | — |
+| [6 — served-.lua execute confirmation (KI-0006)](phase-06-serve-execute/README.md) | NOT STARTED | — |
 
-## Why this kills the hazard
+## Build order rationale
 
-The dual-Lua sentinel hazard exists because two compiled Lua bodies (kcdx's
-static-linked + WHGame's) operate on one `lua_State`, each comparing against its
-own `.rdata` sentinels. After FIX A, kcdx has NO compiled Lua — all forwarded
-through the shim to WHGame's functions. One body, one sentinel set, hazard
-impossible. (The bidirectional sentinel hazard — KI-0001's reverse direction —
-also retires here.)
+Dependency-topological (`.claude/rules/incremental-delivery.md`): the probe (P1)
+resolves the intercept point + boot-swap reachability + early-slot shape that every
+later phase rests on; the shim (P2) is the machinery the VM build needs; force-load +
+adopt (P3) stands up the one VM; the early slot + boot swap (P4) consumes the running
+VM; dropping static Lua (P5) is the final hazard-killing collapse; serve-execute (P6)
+confirms the last open capability. Each phase ends buildable; each step is
+independently verifiable when it lands.
 
-## First consumer
+## First consumer (rides this phase, not a step here)
 
 The bugsplat-filename-fix builtin DLL (deferred from Phase 4) — the canonical
-"intercept a function in a non-WHGame DLL, mutate a string arg, call original"
-case, via before_game hooks ([`../before-game-hooks.md`](../../before-game-hooks.md)).
+"intercept a function in a non-WHGame DLL, mutate a string arg, call original" case,
+via before_game hooks ([`../before-game-hooks.md`](../../before-game-hooks.md) §6).
