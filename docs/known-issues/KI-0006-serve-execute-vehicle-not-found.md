@@ -7,7 +7,21 @@ commit_at_filing: 20873682510339e83f92afac6cf2f6e84fb0382f
 
 # KI-0006 — serve-AND-EXECUTE confirmation owed a verified vehicle (which served `.lua` does the engine re-run on a save load?)
 
-**Status:** open (investigation — the serve mechanism is PROVEN; only the EXECUTE-leg test vehicle is unfound)
+**Status:** open — **BUNDLED → Phase 11 (FIX A / the DllMain Lua VM)** (user-approved deferral, 2026-06-05; trigger = Phase 11). The serve-execute confirmation AND the heap-corruption root-cause are re-attempted AFTER Phase 11, not now.
+
+## Resolution path (settled 2026-06-05) — re-attempt under Phase 11, do NOT root-cause against the pre-Phase-11 architecture
+
+The crash is NOT root-caused (3 theories falsified; the cross-CRT FClose confirmed-real but not the trigger; the crash tracks cap-78's keyed-but-unopened `overlay_entry`, an unexplained shape). Rather than keep probing the current architecture, KI-0006 is bundled into Phase 11 because:
+
+- **Phase 11 / FIX A retires the confirmed-real hazard underneath it.** The cross-CRT `FILE*` free (PROBE D confirmed WHGame's `fclose` frees kcdx's `/MT` handle) exists because kcdx statically links its own Lua/CRT runtime alongside WHGame's. FIX A drops the static vendored Lua and routes through WHGame's symbols — collapsing the dual-runtime that *creates* the cross-CRT-free hazard class (`lua-bridge.md`: "Both FIX C and this fix retire under FIX A / Phase 11").
+- **Phase 11 reworks the exact serve-execute / VM-lifecycle area** (`before-game-hooks.md` §6b is the named owner of the serve-execute confirmation) — so a fix attempted now risks being rebuilt by Phase 11.
+- **Phase 11 gives a kcdx-CONTROLLED, instrumentable execution slot** — the serve-execute test no longer needs to ride the engine's opaque mod-init loader (whose handle-close behavior is unobservable).
+
+NOT a guaranteed fix: KI-0006's specific corrupting write is unidentified and not provably in Phase 11's path. The bundle means the re-attempt happens against the architecture KI-0006 will ship on, with the confirmed hazard structurally addressed and a far more instrumentable execution path — not that Phase 11 auto-fixes it.
+
+**Phase-11 re-attempt plan (when the trigger fires):** (1) with FIX A's single runtime, re-run the serve-execute confirmation via the early kcdx-owned Lua slot (not a mod-init overlay); (2) if a crash still reproduces, root-cause it against the post-FIX-A architecture with the cross-CRT variable eliminated — the surviving facts (the `WHGame+0xB2DBA0` mangled-pointer victim, the cap-78-`overlay_entry`-keyed correlation) carry forward as the starting evidence; (3) the falsified theories below (record-synth, re-entrancy, mod-init-serve) stay falsified — do not re-test them.
+
+**Status:** open (the serve mechanism is PROVEN; the EXECUTE-leg confirmation + the heap-corruption root-cause are Phase-11-gated).
 
 ## Symptom
 

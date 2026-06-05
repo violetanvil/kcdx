@@ -35,7 +35,7 @@ when `DONE`, `—` otherwise.
 | [2 — author surface (namespace + Lua + C++)](phase-02-author-surface/README.md) | DONE (6/6: steps 6/7/8/8b/8c/9 DONE) | (landed) |
 | [3 — regression coverage](phase-03-regression/README.md) | IN PROGRESS — step 10 landed (cap-77 + comp-17 + the matrix; CAP-77-keyed + COMP-17 PASS), but a CORE acceptance criterion is UNCONFIRMED: a served `.lua` EXECUTING (design §3, the handle-consumed-lane completeness). KI-0006 — the `.lua` serve-AND-EXECUTE gap, being closed NOW (not deferred). The serve mechanism is proven (CAP-73); whether a served `.lua` executes through this seam is unverified + possibly a CAPABILITY gap (does CryEngine Lua `require`/`dofile` route through `CCryPak::FOpen`?). | (landed) |
 
-## Where we are (2026-06-04) — Phases 1–2 built + acceptance-confirmed; Phase 3 IN PROGRESS (one core acceptance criterion UNCONFIRMED — `.lua` serve-AND-EXECUTE, KI-0006, closing NOW)
+## Where we are (2026-06-05) — Phases 1–2 built + acceptance-confirmed; Phase 3 BLOCKED → Phase 11 (the `.lua`-execute confirmation = KI-0006, bundled into Phase 11)
 
 **Phases 1–2 are built and acceptance-confirmed.** Phase 1 (the two-hook
 resolution seam) is acceptance-closed (`2b0bd1b`). Phase 2 (author surface) is 6/6
@@ -46,18 +46,23 @@ resolution path, full parity. Proven live: replace-vanilla (sidecar), add-new
 (loose lane, HOOK 2 serves bytes), cross-mod, conflict, stock-pak transparency
 (US-7, COMP-17 PASS).
 
-**Phase 3 is NOT complete — and we are NOT deferring the gap.** Step 10 landed the
-matrix + cap-77 + comp-17 (CAP-77-keyed + COMP-17 PASS), but ONE core acceptance
-criterion is UNCONFIRMED: **a served `.lua` actually EXECUTING** (design §3 — the
-handle-consumed-lane completeness; the highest-value case for a *scripting* TC).
-The serve MECHANISM is proven (CAP-73 — bytes are served), but whether a served
-`.lua` then RUNS through this seam has never been confirmed, and it may be a
-**CAPABILITY gap, not just a test-vehicle gap** — the open question is whether
-CryEngine's Lua `require`/`dofile` routes through `CCryPak::FOpen` (the path HOOK 2
-intercepts) at all. This is **KI-0006**, being closed NOW via an instrumented
-probe (a driver `.lua` that `require`s a served asset + instrumentation on whether
-HOOK 2 serves the require). Until KI-0006 closes, `.lua` REPLACEMENT is not
-confirmed to work — so the asset system is NOT complete.
+**Phase 3 is BLOCKED on KI-0006, which is now bundled into Phase 11.** Step 10
+landed the matrix + cap-77 + comp-17 (CAP-77-keyed + COMP-17 PASS), but ONE core
+acceptance criterion is UNCONFIRMED: **a served `.lua` actually EXECUTING** (design
+§3 — the handle-consumed-lane completeness; the highest-value case for a *scripting*
+TC). The serve MECHANISM is proven (CAP-73 — bytes are served); the execute leg is
+**KI-0006**. Investigation (4 probes) established: serving a `scripts/mods/<modid>.lua`
+overlay correlates with a heap-corruption crash; 3 theories falsified (record-synth,
+re-entrancy, mod-init-serve); the cross-CRT `FILE*` free is confirmed-real (WHGame's
+`fclose` frees kcdx's `/MT` handle) but is NOT the trigger; the crash tracks a
+keyed-but-unopened `overlay_entry` (unexplained). **Bundled into Phase 11**
+(user-approved deferral 2026-06-05): FIX A collapses the dual-runtime that creates
+the confirmed cross-CRT-free hazard, reworks the serve-execute / VM-lifecycle area,
+and gives a kcdx-controlled instrumentable execution slot — so the re-attempt
+happens against the architecture KI-0006 ships on, not the soon-replaced one. NOT a
+guaranteed fix (the corrupting write is unidentified), but the right sequencing.
+Until then, `.lua` REPLACEMENT's execute leg is unconfirmed; the rest of the asset
+system (textures, XML, cross-mod, conflict, stock-pak) ships value and is confirmed.
 
 **Also owed:** step-9's cap-76 boot rows confirmed live (`fe879d0`, all PASS); the
 in-game register/replace SERVE for a boot-cached asset remains DEFERRED → Phase 11

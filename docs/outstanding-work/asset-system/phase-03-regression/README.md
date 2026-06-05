@@ -11,7 +11,7 @@ when `DONE`, `—` otherwise.
 
 | Step | Status | Commit |
 |---|---|---|
-| [10 — permanent asset-system test plugin(s) + matrix rows](step-10-test-plugins.md) | NEEDS REWORK — the matrix + cap-77 + comp-17 landed (`2087368`), but a CORE acceptance criterion (a served `.lua` EXECUTING, design §3) is UNCONFIRMED; the `sl_saveload.lua` vehicle was falsified live. KI-0006 closes it (the serve-execute vehicle + whether the seam supports `.lua` execution at all) — being done NOW, not deferred. Returns to DONE when KI-0006 lands a confirmed serve-AND-EXECUTE row. | 2087368 |
+| [10 — permanent asset-system test plugin(s) + matrix rows](step-10-test-plugins.md) | BLOCKED → Phase 11 — the matrix + cap-77 + comp-17 landed (`2087368`); CAP-77-keyed + COMP-17 PASS; the one unconfirmed acceptance criterion (a served `.lua` EXECUTING, design §3) is **KI-0006**, BUNDLED into Phase 11 (FIX A collapses the dual-runtime that underlies the confirmed cross-CRT-free hazard + reworks the serve-execute area; user-approved deferral 2026-06-05). Step 10 returns to DONE when KI-0006's Phase-11 re-attempt lands a confirmed serve-AND-EXECUTE row. | 2087368 |
 
 ## Phase verification gate
 

@@ -223,6 +223,42 @@ slot once serves both before_game Lua hooks AND the boot-asset runtime serve —
 coherent Phase-11 deliverable, the user's settled sequencing call (mirrors §1's
 "one capability, not a subset early").
 
+## 6c. The served-`.lua` EXECUTE confirmation + its heap-corruption bug (KI-0006) — a THIRD Phase-11 consumer (bundled 2026-06-05)
+
+**The root (KI-0006).** The asset system proves kcdx SERVES a handle-consumed
+`.lua` (`CAP-73-handle-consumed-serve` — HOOK 2 returns its own `FILE*`), but never
+confirmed a served `.lua` then EXECUTES end-to-end. The serve-execute test needs a
+`.lua` the engine reliably RUNS; the only reliable run channel is the engine's
+mod-init loader (`scripts/mods/<modid>.lua`). A 4-probe investigation found that
+keying a kcdx overlay for a mod-init `.lua` correlates with a HEAP-CORRUPTION crash
+(`WHGame+0xB2DBA0`, a mangled-pointer renderer-init AV) — 3 theories falsified, the
+cross-CRT `FILE*` free confirmed-real (WHGame's `fclose` frees kcdx's `/MT` handle)
+but NOT the trigger; the crash tracks a keyed-but-unopened `overlay_entry`. Full
+trail: `docs/known-issues/KI-0006-serve-execute-vehicle-not-found.md`.
+
+**Why bundled into Phase 11.** FIX A drops kcdx's statically-linked vendored Lua and
+routes through WHGame's symbols (one runtime) — collapsing the dual-CRT/dual-runtime
+that CREATES the confirmed cross-CRT-free hazard (`lua-bridge.md`: FIX C + the
+KI-0001 fix "retire under FIX A / Phase 11"). The early kcdx-owned Lua slot (§6b)
+gives an instrumentable execution path that does NOT ride the engine's opaque
+mod-init loader. So the KI-0006 re-attempt belongs here, not against the
+pre-Phase-11 architecture.
+
+**The Phase-11 deliverable (when this phase runs):**
+1. With FIX A's single runtime, re-run the serve-AND-EXECUTE confirmation via the
+   early kcdx-owned Lua slot — NOT a mod-init `scripts/mods/*.lua` overlay (the
+   crashing path). A served `.lua` the kcdx slot runs proves execute end-to-end.
+2. If a crash still reproduces post-FIX-A, root-cause it with the cross-CRT
+   variable eliminated; the surviving evidence (the `WHGame+0xB2DBA0` victim site,
+   the cap-78-`overlay_entry`-keyed correlation) is the starting point. The
+   falsified theories (record-synth, re-entrancy, mod-init-serve) stay falsified.
+3. NOT a guaranteed fix — KI-0006's corrupting write is unidentified and not
+   provably in Phase 11's path; the bundle ensures the re-attempt is against the
+   shipping architecture with the confirmed hazard structurally addressed.
+
+This is the THIRD consumer of the DllMain VM / FIX A runtime collapse, alongside
+the before_game Lua hooks (§1–§5) and the boot-asset runtime serve (§6b).
+
 ## 7. The zone_gate interaction (MUST resolve at Phase 11)
 
 The zone_gate is NOT buggy — it is correctly enforcing "no before_game hooks
