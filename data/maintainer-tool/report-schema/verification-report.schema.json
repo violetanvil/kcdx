@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kcdx/maintainer-tool/verification-report.schema.json",
+  "title": "kcdx verification report",
+  "description": "The frozen cross-repo contract for the in-game verification report. Produced by the in-game kcdx verification test-suite plugin (writes one report file alongside kcdx-dev.log at engine startup, design D28); consumed client-side by the maintainer-tool frontend's verification worklist via the File API (design D31b, no backend read seam). Per-row verdict carries the version-applicability + reachability meaning (design D25), NOT a runtime body hash. The producer emits kcdx_id + resolved version + verdict + detail per row; the consumer resolves the entity name from its own loaded DB by kcdx_id (a kcdx_id absent from the DB is the stale-report case the consumer surfaces).",
+  "type": "object",
+  "required": ["schema_version", "game_version", "summary", "rows"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "The pinned contract version. A consumer rejects a report whose schema_version it does not recognize. Frozen at this step to the value 1.",
+      "const": 1
+    },
+    "game_version": {
+      "description": "The resolved game/DLL version the report was produced against (design D28 'version stamp'). The version-applicability hash and reachability checks were run on the build that resolved to this version; the consumer shows it in the worklist and matches it against its DB version intervals. A free-form version string in the project's resolved-tag form (e.g. 'release_1_5_1164953_841' or '1.5.1164953').",
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "description": "The roll-up the consumer's 'M/N passing' header binds (design D28 + s08). passing = count of rows whose verdict is resolves_works; total = count of rows in the report.",
+      "type": "object",
+      "required": ["passing", "total"],
+      "additionalProperties": false,
+      "properties": {
+        "passing": {
+          "description": "Count of rows with verdict resolves_works.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "description": "Count of rows in the report (== rows array length).",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "rows": {
+      "description": "One entry per DB row the in-game pass checked.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kcdx_id", "version", "verdict", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "kcdx_id": {
+            "description": "The curated entity id (== the address_names.id the engine plugins reference). The consumer resolves the entity name from its own loaded DB by this id; an id not present in the DB is the stale-report row the consumer flags.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "version": {
+            "description": "The resolved address_versions version the row was checked at (the version interval the running build fell into for this entity). Free-form version string in the project's resolved-tag form.",
+            "type": "string",
+            "minLength": 1
+          },
+          "verdict": {
+            "description": "The startup-pass verdict (design D25/D28). EXACTLY these four snake_case tokens are valid report verdicts. resolves_works = on-disk version-applicability hash matches AND the address resolves into live .text. wrong_target = the on-disk hash mismatches (the build diverged from the DB's recorded version) -> avoid applying. dead = the address does not resolve into live .text (unreachable) -> avoid. cannot_check = no content_hash / a non-byte kind / a deferred kind (e.g. vtable_index) -> not checkable this run. Note: 'ambiguous' is an author-time static (s04) outcome, NOT a report verdict -- it is deliberately absent from this enum.",
+            "type": "string",
+            "enum": ["resolves_works", "wrong_target", "dead", "cannot_check"]
+          },
+          "detail": {
+            "description": "A free-text cause string naming what the check observed (the consumer renders it as the per-row detail line). Required and present on every row; the empty string is permitted (e.g. a clean resolves_works row may carry no extra cause).",
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

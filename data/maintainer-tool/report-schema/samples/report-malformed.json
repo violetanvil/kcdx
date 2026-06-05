@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "game_version": "release_1_5_1164953_841",
+  "summary": {
+    "passing": 1,
+    "total": 2
+  },
+  "rows": [
+    {
+      "kcdx_id": 16,
+      "version": "1.5.1164953",
+      "verdict": "resolves_works",
+      "detail": ""
+    },
+    {
+      "kcdx_id": 7,
+      "version": "1.5.1164953",
+      "verdict": "resolves+works",
+      "detail": "OLD PROSE SPELLING with a + — must be REJECTED; the wire token is frozen snake_case (resolves_works)"
+    }
+  ]
+}
