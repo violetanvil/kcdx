@@ -42,6 +42,7 @@
 #include "blake3_selftest.h"                       // cap-59 engine self-report
 #include "version_check_selftest.h"                // cap-60 engine self-report
 #include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
+#include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
 
 // bugsplat_ctor_probe.h is included from dllmain.cpp now — the BugSplat
 // ctor probe installs from kcdx.dll DllMain, not from hooks::Install.
@@ -692,6 +693,18 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // never hands a foreign Lua copy's dummynode to frealloc (the 0xC0000374
     // save-load heap corruption). Boot-only, one-shot guarded internally.
     kcdx::ki0001::RunSelfTestOnce();
+
+    // cap-79-lua-shim-forward: engine self-report for the Lua symbol shim's
+    // forward layer (src/lua_shim.{h,cpp}, restructure Phase 11 P2 step 1).
+    // Unlike cap-52..66, it DOES depend on the live lua_State — it pushes a
+    // string through a FORWARDED shim member and reads it back, so it needs the
+    // VM captured at the first lua_pcall. The self-test early-returns (no
+    // report, retries next tick) while CurrentLuaState() is null, then reports
+    // once the VM is up — mirrors cap-47's "retry until the dependency lands."
+    // One-shot guarded internally. (The shim coexists with the static-linked
+    // Lua this step — vendor/lua/*.c is dropped in P5 — so a live VM exists to
+    // call into; PROBE Q stays silent because this step adds no new sentinel.)
+    kcdx::lua_shim::RunSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

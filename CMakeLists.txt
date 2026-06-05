@@ -140,6 +140,8 @@ add_library(kcdx SHARED
     src/patch_engine.cpp
     src/config.cpp
     src/hooks.cpp
+    src/lua_shim.cpp
+    src/lua_shim_selftest.cpp
     src/save_load_hooks.cpp
     src/serialization.cpp
     src/address_library.cpp

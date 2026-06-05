@@ -12,7 +12,7 @@ Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short h
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — forward the 93 resolved fns + Resolve() + gating](step-1-shim-forward-resolved.md) | NOT STARTED | — |
+| [1 — forward the 90 resolved fns by name + Resolve() + gating](step-1-shim-forward-resolved.md) | DONE | (landed) |
 | [2 — kcdx-side stubs for the ~24 inlined/stripped (GC-barrier-safe)](step-2-shim-stub-inlined.md) | NOT STARTED | — |
 
 ## Phase verification gate
