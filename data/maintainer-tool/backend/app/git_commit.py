@@ -3,9 +3,12 @@ backend's OWN concern, NOT data-core rule logic).
 
 WHAT THIS OWNS (and what it does NOT)
 -------------------------------------
-The git commit + push half of the Confirm transaction (step 5): stage the DB + the
-three seed CSVs by EXACT PATH, author the commit with the request-context identity,
-and push to the PRIVATE remote with the env-injected credential. This is plumbing the
+The git commit + push half of the Confirm transaction (step 5): stage the three
+data/db-export/ CSVs by EXACT PATH (the DB is the local originator, NOT git-tracked --
+D1/D20; only its derived CSV export is the git record), author the commit with the
+request-context identity, and push to the PRIVATE remote with the env-injected
+credential. This module stages whatever exact-path list the caller hands it; the
+caller (routes_confirm._staged_rel_paths) decides the set. This is plumbing the
 backend owns -- it computes nothing the data-core owns (validate / SQL / delta /
 round-trip are the data-core's; staging+committing+pushing the resulting files is the
 backend's, design S5 law 6). It runs `git` via subprocess with `git -C <checkout>`
@@ -13,11 +16,12 @@ backend's, design S5 law 6). It runs `git` via subprocess with `git -C <checkout
 
 THE GIT DISCIPLINE (`.claude/rules/concurrency-git.md`, the load-bearing contract)
 ----------------------------------------------------------------------------------
-  - EXACT-PATH STAGING: `git -C <checkout> add -- <db> <csv> <csv> <csv>` -- only the
-    four files the Confirm wrote, BY NAME. NEVER `-A` / `.` / `-u` / `--all`: the index
-    is shared across parallel chats, so a broad add sweeps another chat's in-flight
-    files into this commit (the documented contamination vector). Staging only the
-    named files is what keeps Confirm's commit clean.
+  - EXACT-PATH STAGING: `git -C <checkout> add -- <csv> <csv> <csv>` -- only the three
+    db-export CSVs the Confirm wrote, BY NAME (the DB is the local originator, NOT
+    committed -- D1/D20). NEVER `-A` / `.` / `-u` / `--all`: the index is shared across
+    parallel chats, so a broad add sweeps another chat's in-flight files into this commit
+    (the documented contamination vector). Staging only the named files is what keeps
+    Confirm's commit clean.
   - NO AUTO-BRANCH: Confirm commits to the CURRENT branch (`main`). It never runs
     `checkout -b` / `switch -c` / `branch` -- that is global state tangling parallel
     histories. (This module issues no branch command at all.)
@@ -162,8 +166,9 @@ def commit_and_push(checkout_path, rel_paths, *, message, author_name, author_em
     Parameters:
       checkout_path -- the git repo root (config.checkout_path). `git -C` targets it;
                        the CWD is never changed (shell-cwd-stability.md).
-      rel_paths     -- the files to stage, as paths RELATIVE to checkout_path (the DB
-                       files + the 3 CSVs). Staged BY NAME -- never `-A`/`.`/`-u`
+      rel_paths     -- the files to stage, as paths RELATIVE to checkout_path (the 3
+                       data/db-export/ CSVs; the DB is the local originator, NOT staged --
+                       D1/D20). Staged BY NAME -- never `-A`/`.`/`-u`
                        (concurrency-git.md rule 2 -- the shared-index contamination vector).
       message       -- the commit message body (the caller authors it -- "Saved <entity>
                        <version>" style; git is invisible to the maintainer, design S7).

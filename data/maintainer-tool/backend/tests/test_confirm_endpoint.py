@@ -10,10 +10,12 @@ THROWAWAY LOCAL BARE remote -- NOT real GitHub). The transaction opens AND close
 the one request (no held state). The cases assert the load-bearing properties:
 
   - SUCCESS (an UPDATE + a CREATE-entity): the DB holds the new value AND the 3
-    data/db-export/ CSVs are updated AND a git commit landed staging ONLY the DB +
-    3 data/db-export/ CSVs BY EXACT PATH (the commit's changed files are a subset of
-    EXACTLY that set, with the edited file present) with the request-context identity as
-    author, AND the push reached the throwaway bare remote (its HEAD advanced).
+    data/db-export/ CSVs are updated AND a git commit landed staging ONLY the 3
+    data/db-export/ CSVs BY EXACT PATH -- NO .sqlite (the DB is the local originator,
+    D1/D20, NOT git-tracked) -- (the commit's changed files are a subset of EXACTLY that
+    set, with the edited file present, and neither reference DB present) with the
+    request-context identity as author, AND the push reached the throwaway bare remote
+    (its HEAD advanced).
   - ROBUST ROLLBACK -- on a failure at EACH step (an invalid edit pre-commit; a post-
     commit git push failure; a live index.lock): NOTHING lands -- the DB + db-export CSVs
     are byte-identical INCLUDING the sqlite_sequence values (the robust-rollback proof),
@@ -72,16 +74,27 @@ SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
 DB_FILES = ("reference.sqlite", "reference-dev.sqlite")
 
 # The exact paths Confirm stages, relative to the checkout root (must match
-# routes_confirm._staged_rel_paths): the two DBs at data/ (config.out_dir, where the
-# data-core builds them) + the three derived CSVs at data/db-export/ (D20 -- the export
-# target). NOT data/seeds/ -- that holds the frozen bootstrap CSVs only.
+# routes_confirm._staged_rel_paths): ONLY the three derived CSVs at data/db-export/ (D20
+# -- the export target). The two reference DBs are the LOCAL ORIGINATOR (D1) -- amended in
+# place at config.out_dir (data/) but NOT git-tracked; only the derived CSV export is the
+# git record (D20, whose rejected alternative was DB-tracked-as-binary). A confirm that
+# staged a .sqlite would contradict D1/D20 (and the real checkout gitignores the DB, so
+# `git add` of it is rejected and rolls the transaction back). NOT data/seeds/ either --
+# that holds the frozen bootstrap CSVs only.
 STAGED_REL_PATHS = sorted([
-    "data/reference.sqlite",
-    "data/reference-dev.sqlite",
     "data/db-export/module_seed.csv",
     "data/db-export/address_names_seed.csv",
     "data/db-export/address_versions_seed.csv",
 ])
+
+# The reference DBs -- the LOCAL ORIGINATOR (D1), present on disk + amended by the
+# data-core, but NEVER git-tracked (D20). Listed so the robust-rollback state hash can
+# read them off disk AND so the "DB is NOT in the commit" regression assertions can name
+# them explicitly. They are deliberately NOT in STAGED_REL_PATHS.
+DB_REL_PATHS = [
+    "data/reference.sqlite",
+    "data/reference-dev.sqlite",
+]
 
 GVT = imp.GAME_VERSION_TAG          # "1.5.1164953"
 NEW_ROW_TAG = "1.6.2000000"         # a new game tag for a create-version-at-a-new-tag row
@@ -328,6 +341,31 @@ def _confirm_body(**kw):
 
 
 # ============================================================================
+# _staged_rel_paths -- the staged-set contract, a DIRECTLY-RUNNABLE unit test (no git
+# subprocess, no fixture -- so it is ALWAYS green regardless of the git-env). Confirm
+# stages EXACTLY the 3 data/db-export/ CSVs and NO .sqlite: the DB is the local originator
+# (D1) and is NOT git-tracked; only its derived CSV export is the git record (D20). This
+# is the cleanest regression guard for the staged-the-DB bug -- it pins the exact list.
+# ============================================================================
+def test_staged_rel_paths_is_the_three_db_export_csvs_only():
+    from app.routes_confirm import _staged_rel_paths
+
+    staged = _staged_rel_paths()
+    # EXACTLY the three derived-export CSVs (D20) -- nothing more, nothing less.
+    assert sorted(staged) == STAGED_REL_PATHS, staged
+    # NO .sqlite -- the DB is the local originator (D1/D20), never staged. The bug this
+    # guards: _staged_rel_paths returning the reference DBs alongside the CSVs.
+    assert not any(p.endswith(".sqlite") for p in staged), \
+        f"a .sqlite was staged -- the DB is the local originator, never committed: {staged}"
+    # Neither reference DB by name (the explicit form of the .sqlite check above).
+    for db in DB_REL_PATHS:
+        assert db not in staged, f"the DB {db} must not be staged (D1/D20): {staged}"
+    # All three db-export CSVs ARE staged (the git-tracked record).
+    for csv in STAGED_REL_PATHS:
+        assert csv in staged, f"the db-export CSV {csv} must be staged (D20): {staged}"
+
+
+# ============================================================================
 # SUCCESS -- an UPDATE: DB holds the new value, the 3 data/db-export/ CSVs updated, ONE git
 # commit staging a SUBSET of EXACTLY {DB + 3 db-export CSVs} by exact path (the edited file
 # present), request-context author, push reached the bare remote.
@@ -361,7 +399,15 @@ def test_confirm_update_commits_dbexport_csvs_and_db_and_pushes(checkout, client
     # The edit lands in the DB-EXPORT versions CSV (D20 target), NOT data/seeds/.
     assert "data/db-export/address_versions_seed.csv" in changed, \
         f"the edited db-export CSV must be in the commit: {changed}"
-    # NOTHING under data/seeds/ except the DBs (the bootstrap CSVs are never written).
+    # NEITHER reference DB is in the commit -- the DB is the local originator (D1), NOT
+    # git-tracked; only its derived CSV export is the git record (D20). Staging a .sqlite
+    # would contradict D1/D20 (and is rejected in the real gitignored checkout). This is
+    # the regression guard for the staged-the-DB bug.
+    for db in DB_REL_PATHS:
+        assert db not in changed, \
+            f"a reference DB was staged -- the DB is the local originator, never " \
+            f"committed (D1/D20): {changed}"
+    # NOTHING under data/seeds/ (the bootstrap CSVs are never written).
     assert "data/seeds/module_seed.csv" not in changed, \
         f"a data/seeds/ bootstrap CSV was written -- it must never be: {changed}"
 

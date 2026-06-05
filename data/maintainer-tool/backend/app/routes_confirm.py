@@ -39,8 +39,9 @@ THE SEQUENCE AS BUILT (read the two subtleties below)
      layer, NOT data/seeds/ the frozen bootstrap).
   6. INTEGRITY: the CHEAP CSV byte-identity re-export over data/db-export/ (csv_integrity
      -- the round-trip-cost resolution; NOT a 1.3GB full rebuild per save).
-  7. GIT: stage the DB files (at config.out_dir) + the 3 data/db-export/ CSVs BY EXACT
-     PATH, author with the request-context identity, push to `private` (git_commit).
+  7. GIT: stage the 3 data/db-export/ CSVs BY EXACT PATH (the git-tracked record; the
+     DB is the local originator, NOT committed -- D1/D20), author with the request-context
+     identity, push to `private` (git_commit).
   ROBUST ROLLBACK: a failure at ANY of 4-7 calls data_core.restore(handle) (undoes the
   committed DB write -- the touched rows + sqlite_sequence, byte-identical incl. PK) AND
   reverts the data/db-export/ CSVs from the pre-edit copy -> the DB + db-export CSVs are
@@ -294,8 +295,9 @@ def _run_confirm(body, *, entity_label, write, author):
         csv_integrity.assert_csv_export_deterministic(
             config.user_db, config.db_export_dir)
 
-        # 7. GIT: stage the DB files (at config.out_dir) + the 3 data/db-export/ CSVs BY
-        #    EXACT PATH, author with the request-context identity, push to `private`.
+        # 7. GIT: stage the 3 data/db-export/ CSVs BY EXACT PATH (the git-tracked record;
+        #    the DB is the local originator, NOT committed -- D1/D20), author with the
+        #    request-context identity, push to `private`.
         rel_paths = _staged_rel_paths()
         message = _commit_message(entity_label, version)
         git_report = git_commit.commit_and_push(
@@ -385,17 +387,17 @@ def _extract_handle(write_result):
 
 def _staged_rel_paths():
     """The files Confirm stages, as paths RELATIVE to the checkout root, BY EXACT NAME
-    (never a broad add): the two reference DBs (at config.out_dir -- data/, where the
-    data-core builds + amends them) PLUS the three derived-export CSVs at
-    data/db-export/ (D20 -- NOT data/seeds/, which holds the frozen bootstrap CSVs the
-    maintainer tool never writes). The DB is the originator; the data/db-export/ CSVs are
-    its git-tracked diff record. These DB paths MUST match config.out_dir (data/) --
-    staging a path the data-core never wrote would commit a stale/absent file."""
+    (never a broad add): ONLY the three derived-export CSVs at data/db-export/ (D20 --
+    NOT data/seeds/, which holds the frozen bootstrap CSVs the maintainer tool never
+    writes). The DB is the ORIGINATOR (D1) -- it is amended locally at config.out_dir
+    (data/) but is NOT git-tracked; only its derived CSV export is the git record (D20,
+    whose rejected alternative was DB-tracked-as-binary). Staging the DB is wrong: it
+    contradicts D1/D20, and the real checkout gitignores the DB, so `git add` of it is
+    rejected and rolls the whole transaction back. The data/db-export/ CSVs are the DB's
+    git-tracked diff record -- the only files committed."""
     return [
-        # The reference DBs -- the data-core amends them in place at config.out_dir (data/).
-        "data/reference.sqlite",
-        "data/reference-dev.sqlite",
-        # The derived CSV record (D20) -- the export target, NOT the bootstrap seeds.
+        # The derived CSV record (D20) -- the export target, NOT the bootstrap seeds, and
+        # NOT the DB (the DB is the local originator, never committed -- D1/D20).
         "data/db-export/module_seed.csv",
         "data/db-export/address_names_seed.csv",
         "data/db-export/address_versions_seed.csv",
@@ -425,7 +427,8 @@ def _commit_message(entity_label, version):
     reviewer reads in the private repo's history."""
     return (f"maintainer-tool: save {entity_label} ({version[0]})\n\n"
             f"DB-direct edit committed via the maintainer tool Confirm transaction "
-            f"(DB + 3 db-export CSVs, exact-path staged).\n")
+            f"(3 db-export CSVs, exact-path staged; the DB is the local originator, "
+            f"not committed -- D1/D20).\n")
 
 
 def _failed_response(entity_label, detail, *, git_stage=None):
