@@ -18,6 +18,25 @@ the agent builds, deploys, hash-verifies, enables dev mode, reads the log; the u
 | [3.3 [ENG] The LIVE functional check (resolve via the real engine path)](step-3-eng-live-functional-check.md) | NOT STARTED | — |
 | [3.4 [ENG] The cross-impl agreement test (JS browser == C++ engine)](step-4-eng-cross-impl-agreement.md) | NOT STARTED | — |
 
+## Phase-0 scoping inputs (probe 0.3 — read before steps 1–3 build)
+
+Probe 0.3 (`_research/maintainer-tool-verification-engine/probe-0.3-pe-helpers-surface-finding.md`)
+scoped the existing `src/pe_helpers.*` surface — outcome **ROW 1 (reuse, not new-build)**:
+
+- **Reusable primitives already exist.** Section spans (`ExecutableSections` / `ReadOnlyDataSections`),
+  a RIP-relative `disp32` follower (`FindLeaXrefsTo`), the `.rdata` literal search (`FindCStringsIn`),
+  and a LIVE resolver chain (`patch_engine.cpp` `ResolveAnchor` already chains
+  string_anchor→instruction_anchor in production). The per-kind checks are THIN adaptations.
+- **4 thin named gaps to build** (none new infra): G1 forward-`disp32` helper (the reverse follower
+  exists; lift its decode), G2 a `.data` (`WritableDataSections`) predicate, G3 confirm
+  `patch::Pattern` `?`-wildcard support, G4 a vtable-qword→`.text`-pointer classifier.
+- **A per-kind DESIGN FORK to surface before steps 1–3 (`.claude/rules/design-authority.md`):**
+  the rich primitives run on a **live loaded `ModuleView`** (relocated bytes), while `survival.cpp`
+  reads the **raw on-disk file** (un-relocated, for stable hashing). Each static check must choose
+  on-disk vs live access per kind (`fingerprint-per-kind.md` already flags `.data` content as
+  unstable → data_slot is a derivation check, not a hash). This is the manager's to surface to the
+  user when Phase 3 starts — NOT decided here.
+
 ## Phase verification gate
 
 Phase 3 is done when: the engine checker (steps 1–3) builds clean (`pwsh ./build.ps1`,
