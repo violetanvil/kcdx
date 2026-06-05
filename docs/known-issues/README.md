@@ -56,6 +56,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
+| [KI-0006](KI-0006-serve-execute-vehicle-not-found.md) | 2026-06-04 | serve-AND-EXECUTE confirmation (CAP-77-serve-execute) owed a verified vehicle — the served `.lua` MECHANISM is proven (CAP-73-handle-consumed-serve), but the EXECUTE-leg test needs a `.lua` the engine demonstrably re-runs on a save load; `sl_saveload.lua` falsified (engine doesn't run it on a Continue/Load gesture; only a third-party cheat mod's `.lua` ran). Owed an instrumented probe to OBSERVE which served `.lua` executes — OPEN |
 | [KI-0005](closed/KI-0005-runtime-overlay-serve-not-firing-ingame.md) | 2026-06-04 | Asset runtime register/replace keys correctly but can't serve a boot-cached asset — root cause = the Lua VM (which plugin.lua needs) is created after the boot open; resolved-by-design (boot assets use the declarative sidecar; the Lua-runtime boot serve is deferred to the DllMain-VM phase); interim AP14 teaching warn shipped 4eaa60d — Closed 2026-06-04 |
 | [KI-0004](closed/KI-0004-cvar-lua-input-loaded-crash.md) | 2026-06-03 | cap-72 test plugin's unbounded wsprintfA overran char buf[256] → /GS stack-cookie __fastfail mid-boot; fixed with bounded snprintf — FIXED |
 | [KI-0003](KI-0003-engine-hang-during-boot-while-multitasking.md) | 2026-06-02 | Engine hung during boot while multitasking; force-quit; did not recur — OPEN |

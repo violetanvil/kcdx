@@ -76,6 +76,37 @@ the `.dds` consumed it first — caught + corrected mid-investigation):
   served handle-consumed `.lua` — owed a startup-script vehicle the engine runs
   on save load.
 
+## Step-10 follow-up (2026-06-04, `23-11-37` run) — the `sl_saveload.lua` vehicle is FALSIFIED
+
+cap-77 keyed an overlay on `scripts/startup/sl_saveload.lua` (the recon's first-named
+candidate above) and asserted the file-scope marker `KCDX_SEAMA_LUA_LOADED cap-77`
+reaches `kcd.log` on a save load (a Continue → load-into-world gesture).
+
+- **The overlay WAS keyed** — `overlay_entry vpath="scripts/startup/sl_saveload.lua"
+  winner="cap_77_serve_execute"` (the sidecar declared it; CAP-77-keyed PASS).
+- **The engine NEVER opened `sl_saveload.lua` this run** — zero mentions in
+  `kcd.log`, no `overlay_resolved`/`overlay_opened` for the vpath in the dev log.
+  So this is NOT served-but-not-executed; the vpath was never requested on this
+  gesture. The recon listed `sl_saveload.lua` as a hypothesis ("the observer saw it
+  reach FOpen"); the marker run FALSIFIES it for the Continue/Load gesture.
+- **GROUND TRUTH on which `.lua` the engine RUNS this save-load:** the engine emits
+  `Loading file [scripts/<x>.lua] ... [DEBUG] <x> loaded` for every `.lua` it
+  compiles+runs. This run ran exactly 20 `.lua` — **ALL `scripts/cheat/*.lua`**, and
+  ONLY because a third-party `cheat` mod is installed (`Loading lua init script for
+  mod cheat` → `Cheat:OnInit` → the cheat scripts). **ZERO base-game `.lua` emitted a
+  `Loading file` line.** Base-game scripts do NOT surface a per-file execute log the
+  way mod-author source `.lua` does (they are likely bytecode-precompiled in paks,
+  loaded via the script system without the mod-init `Loading file` trace).
+- **CONCLUSION:** the serve-AND-EXECUTE vehicle needs a `.lua` that BOTH (a) the
+  engine demonstrably RE-RUNS on a save-load AND (b) emits an observable execute
+  signal. The mod-init path (`Loading lua init script for mod <name>` → the mod's
+  scripts run + log) is the one observed execute channel — so the vehicle is likely
+  a MOD-OWNED `.lua` (a kcdx-plugin-shipped script the engine runs via the mod-init
+  hook), NOT a base-game `scripts/startup/*.lua`. The next probe must OBSERVE which
+  served `.lua` actually executes (instrument the serve + correlate with a run
+  signal), not guess a third candidate. Tracked as a known-issue (the cap-77
+  serve-execute confirmation is OPEN, owed a verified vehicle).
+
 ## Probe wiring (reconstructable; removed from live source after capture)
 
 The observer was a `// === DIAGNOSTIC (PROBE FOPEN-HC)` block in
