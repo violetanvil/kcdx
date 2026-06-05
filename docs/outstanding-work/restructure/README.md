@@ -31,7 +31,9 @@ plan) and is the cross-link target for peer docs that cite section/line anchors.
 ## Phase ledger
 
 Status vocabulary: `NOT STARTED` · `IN PROGRESS` · `DONE` · `BLOCKED` ·
-`SUPERSEDED`. Commit cell carries the short hash when `DONE`, `—` otherwise.
+`SUPERSEDED` · `DEFERRED → <TD>` (re-homed to a tech-debt entry — the spec stays
+in its subdir, the TD is the tracked-debt handle). Commit cell carries the short
+hash when `DONE`, `—` otherwise.
 
 | Phase | Status | Commit |
 |---|---|---|
@@ -44,7 +46,7 @@ Status vocabulary: `NOT STARTED` · `IN PROGRESS` · `DONE` · `BLOCKED` ·
 | [7 — zone-rework subset + before_game doc widening](phase-07-zone-rework/README.md) | DONE | 54d7d4d / 9264d6a |
 | [8 — ASI-loader cleanup (docs)](phase-08-asi-cleanup/README.md) | DONE | — |
 | [8.5 — asset replacement (pak overlay)](phase-08.5-asset-replacement/README.md) | SUPERSEDED → [`asset-system/`](../asset-system/README.md) (Phases 1–2 DONE + confirmed; Phase 3 BLOCKED → Phase 11 — the `.lua`-execute confirmation = KI-0006, bundled into Phase 11 alongside KI-0005's boot-cache serve) | — |
-| [9 — high-level Lua surface (player/inventory + namespace stubs)](phase-09-high-level-lua/README.md) | NOT STARTED | — |
+| [9 — high-level Lua surface (player/inventory + namespace stubs)](phase-09-high-level-lua/README.md) | DEFERRED → [`TD-0005`](../../tech-debt/TD-0005-high-level-lua-surface.md) | — |
 | [9.1 — SQLite reference DB + lookup primitive + verification cache](phase-09.1-reference-db/README.md) | DONE | 498934c |
 | [9.2 — unified named-target surface (kcdx.declare + smart resolver)](phase-09.2-declare-surface/README.md) | DONE | 2dac79b / 1c01c9d / CAP-70 |
 | [9.3 — kcdx.hook.* / kcdx.statement.* split + locator/op namespaces + multi-region trampoline](phase-09.3-namespaces/README.md) | NOT STARTED | — |
@@ -87,8 +89,11 @@ Independent work that can land now (each by leverage, not phase order):
   user-approved deferral 2026-06-05), alongside the boot-cache in-game serve
   (`KI-0005`). The shipping capability (textures, XML, cross-mod, conflict,
   stock-pak) is proven + confirmed; only the `.lua`-execute leg waits.
-- **Phase 9 high-level Lua surface** — independent, pure RE + binder work; one
-  `/feature` cycle.
+- **Phase 9 high-level Lua surface** — DEFERRED → [`TD-0005`](../../tech-debt/TD-0005-high-level-lua-surface.md).
+  Independent, pure RE + binder work (a non-blocking leaf); re-homed to carried
+  debt rather than held open on the active ledger. Picked up by scheduling its
+  dedicated build phase — the per-step spec stays at
+  [`phase-09-high-level-lua/`](phase-09-high-level-lua/README.md).
 
 ## Cross-cutting (tracked in `../`, not phase-counted)
 

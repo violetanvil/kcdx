@@ -1,6 +1,6 @@
 # Phase 9 step 4 — namespace stubs
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 4.
+**Status: DEFERRED → [`TD-0005`](../../../tech-debt/TD-0005-high-level-lua-surface.md)** (item 4). Ledger row: [`README.md`](README.md) → step 4.
 
 ## What
 

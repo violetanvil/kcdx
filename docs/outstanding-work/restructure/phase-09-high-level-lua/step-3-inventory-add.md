@@ -1,6 +1,6 @@
 # Phase 9 step 3 — `kcdx.inventory.add(item_id, count)`
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 3.
+**Status: DEFERRED → [`TD-0005`](../../../tech-debt/TD-0005-high-level-lua-surface.md)** (item 3). Ledger row: [`README.md`](README.md) → step 3.
 
 ## What
 

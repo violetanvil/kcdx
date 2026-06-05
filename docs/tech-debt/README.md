@@ -35,6 +35,7 @@ engine capability (`FIX-A`, `Phase-11`), or a named source-fix mechanism.
 | [TD-0002](TD-0002-lua-callback-main-thread-guard.md) | 2026-06-01 | Open | dynamic dispatchers `lua_pcall` with no main-thread check (AP13 gap) | the `GetCurrentThreadId()` guard in `src/scripting.cpp` |
 | [TD-0003](TD-0003-engine-direct-hook-migration.md) | 2026-06-01 | Open | 5 engine-direct `MH_CreateHook` sites bypass `hook_chain` (AP4 gap) | migrate all 5 to `hook_chain::AddCEngine` (+ 10 test rows) |
 | [TD-0004](TD-0004-rebuild-oracle-baseline-recapture.md) | 2026-06-02 | Open | rebuild-oracle baseline stale (8 entities + no-prose rewrite + sig-NULL) | inspected `--capture` of `oracle_baseline.json` + provenance note |
+| [TD-0005](TD-0005-high-level-lua-surface.md) | 2026-06-05 | Open | high-level Lua gameplay surface (player/inventory/world/dialogue/quest) deferred | a dedicated high-level-Lua-surface build phase |
 
 ## Closed
 

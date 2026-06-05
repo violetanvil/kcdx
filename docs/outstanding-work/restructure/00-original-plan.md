@@ -1375,7 +1375,7 @@ After Phase 8.5, the `pak-mods.md` workspace rule is rewritten to "pak mods are 
 
 **Verification gate**: a TOML-only plugin with `[entrypoints].assets = "assets/"` containing a known-safe replacement (e.g. a UI string in a menu) loads, the in-game UI shows the replacement, the engine log emits the overlay-hit line, and a second plugin replacing the same file gets a "lost to plugin X" log line per existing conflict-report shape.
 
-### Phase 9 — High-level Lua surface: 3 real capabilities + namespace structure for the rest — **NOT STARTED**
+### Phase 9 — High-level Lua surface: 3 real capabilities + namespace structure for the rest — **DEFERRED → `TD-0005`** (`../../tech-debt/TD-0005-high-level-lua-surface.md`; re-homed to carried debt — this section stays the authoritative build spec)
 
 **Status (2026-05-28 audit):** zero `kcdx.player.*` / `kcdx.inventory.*` / `kcdx.world.*` / `kcdx.dialogue.*` / `kcdx.quest.*` binder in `src/lua_bind*.cpp`. None of the three "ships real" items (player.health, player.position, inventory.add) are built; the namespace stub tables are not registered. No `cap-XX-player-*` / `cap-XX-inventory-*` test plugin.
 

@@ -1,6 +1,6 @@
 # Phase 9 step 1 — `kcdx.player.health`
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 1.
+**Status: DEFERRED → [`TD-0005`](../../../tech-debt/TD-0005-high-level-lua-surface.md)** (item 1). Ledger row: [`README.md`](README.md) → step 1.
 
 ## What
 

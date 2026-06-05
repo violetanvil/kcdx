@@ -1,6 +1,6 @@
 # Phase 9 step 5 — test plugins
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 5.
+**Status: DEFERRED → [`TD-0005`](../../../tech-debt/TD-0005-high-level-lua-surface.md)** (item 5). Ledger row: [`README.md`](README.md) → step 5.
 
 ## What
 
