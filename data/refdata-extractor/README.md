@@ -205,3 +205,12 @@ The content_hash wire format between this producer and the engine consumer is
 the raw on-disk function-body bytes `[rva, rva+length)`, no normalization — the
 engine reads the same span from the on-disk module file so the static-dump hash and
 the runtime hash compare directly.
+
+## Python dependencies
+
+The Python passes need `pefile` 2024.8.26 + `capstone` 5.0.7 (PE section mapping +
+disassembly). The `seeds_shared/survival_checker.py` per-kind survival checker adds:
+
+| Package | Version | License (elected) | Purpose |
+|---|---|---|---|
+| `blake3` | 1.0.8 | **Apache-2.0** (the package is `CC0-1.0 OR Apache-2.0`; the Apache-2.0 branch is elected, matching the vendored Java BLAKE3 at `ghidra/blake3/`, which is Apache Commons Codec, Apache-2.0) | Canonical BLAKE3 for the survival checker's function body-hash kind. stdlib `hashlib` has no blake3; the body-hash re-hashes `[rva, rva+length)` and compares to the stored `content_hash`. Agrees with the production content_hash and the Java oracle via the 35 official BLAKE3 vectors (the canonicality gate; `ghidra/BLAKE3-HASH-CONTRACT.md` §1). |

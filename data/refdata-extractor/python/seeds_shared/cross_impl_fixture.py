@@ -385,22 +385,23 @@ _ROW_DATA_SLOT = _row(
 #
 # REAL DATUM: seed id 138 (kind=vtable_base, survival_slot_count=3) -- a compact real
 # vtable_base with a small N so the slice is small. (The .text range is the structural
-# assertion "each qword resolves into .text"; the fixture documents a synthetic
-# `.text` window [0x1000, 0x900000) covering the synthetic pointers so the agreement
-# is over the SHAPE check -- N qwords, each a plausible code pointer -- not real
-# relocated values.)
+# assertion "each qword resolves into .text"; the window is the REAL WHGame.dll .text
+# range [0x1000, 0x3A01E1A), and the three qwords are real id-138 .text RVAs that
+# resolve into it -- so the agreement is over the SHAPE check, N qwords each a code
+# pointer into .text. The pointer VALUES are not hashed; they relocate per build.)
 # ===========================================================================
 _VB_SLOT_COUNT = 3
-# A synthetic `.text` RVA window the qwords must fall inside (the structural assertion).
+# The `.text` RVA window the qwords must fall inside (the structural assertion) -- the
+# real WHGame.dll .text range [0x1000, 0x3A01E1A); all three id-138 RVAs resolve into it.
 _VB_TEXT_LO = 0x1000
-_VB_TEXT_HI = 0x900000
+_VB_TEXT_HI = 0x3A01E1A
 
 
 def _qwords(*vals):
     return b"".join(int(v).to_bytes(8, "little") for v in vals)
 
 
-_VB_GOOD_TABLE = _qwords(0x0071A5A4, 0x00667B24, 0x03993898)   # 3 plausible .text RVAs
+_VB_GOOD_TABLE = _qwords(0x0071A5A4, 0x00667B24, 0x03993898)   # 3 real id-138 .text RVAs (all in [0x1000,0x3A01E1A))
 # Shrunk to 2 valid pointers + a non-pointer (0 is not a `.text` RVA) -> the N-qword
 # shape no longer holds.
 _VB_BAD_TABLE = _qwords(0x0071A5A4, 0x00667B24, 0x00000000)
@@ -413,15 +414,16 @@ _ROW_VTABLE_BASE = _row(
     },
     source=(
         "Real seed row id 138 (kind=vtable_base, survival_slot_count=3). The qword "
-        "values are documented synthetic `.text`-range RVAs (real vtable pointers are "
-        "relocated per build and are NOT hashed -- the survival check is the SHAPE: N "
-        "qwords each resolving into `.text`)."
+        "values are real id-138 `.text` RVAs that resolve into the real WHGame.dll "
+        ".text window [0x1000, 0x3A01E1A) (vtable pointers relocate per build and are "
+        "NOT hashed -- the survival check is the SHAPE: N qwords each resolving into "
+        "`.text`)."
     ),
     slices=[
         _slice(
             "unchanged_n_valid_pointers", _VB_GOOD_TABLE, VERDICT_UNCHANGED,
             "fingerprint-per-kind.md vtable_base table-shape: read N=3 qwords; each is a "
-            "plausible `.text`-range RVA (within [0x1000,0x900000)) -> Unchanged. "
+            "real id-138 `.text` RVA (within [0x1000,0x3A01E1A)) -> Unchanged. "
             "FALSIFIES if a qword outside `.text` is accepted or the count check is "
             "skipped.",
         ),
