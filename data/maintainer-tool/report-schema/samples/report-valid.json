@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "game_version": "release_1_5_1164953_841",
   "summary": {
     "passing": 2,
@@ -10,31 +10,36 @@
       "kcdx_id": 16,
       "version": "1.5.1164953",
       "verdict": "resolves_works",
-      "detail": ""
+      "detail": "",
+      "matched_address_version_id": 42
     },
     {
       "kcdx_id": 156,
       "version": "1.5.1164953",
       "verdict": "resolves_works",
-      "detail": "on-disk body hash matches; resolves into .text at 0x1a2b3c0"
+      "detail": "on-disk body hash matches; resolves into .text at 0x1a2b3c0",
+      "matched_address_version_id": 318
     },
     {
       "kcdx_id": 7,
       "version": "1.5.1164953",
       "verdict": "wrong_target",
-      "detail": "on-disk body hash mismatch: build diverged from the recorded version"
+      "detail": "on-disk body hash mismatch: build diverged from the recorded version",
+      "matched_address_version_id": null
     },
     {
       "kcdx_id": 1194,
       "version": "1.5.1164953",
       "verdict": "dead",
-      "detail": "address does not resolve into live .text (off-image)"
+      "detail": "address does not resolve into live .text (off-image)",
+      "matched_address_version_id": null
     },
     {
       "kcdx_id": 3000,
       "version": "1.5.1164953",
       "verdict": "cannot_check",
-      "detail": "vtable_index kind: deferred (no static slot target)"
+      "detail": "vtable_index kind: deferred (no static slot target)",
+      "matched_address_version_id": null
     }
   ]
 }

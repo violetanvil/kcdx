@@ -8,8 +8,8 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "The pinned contract version. A consumer rejects a report whose schema_version it does not recognize. Frozen at this step to the value 1.",
-      "const": 1
+      "description": "The pinned contract version. A consumer rejects a report whose schema_version it does not recognize. Frozen to the value 2 (v1 was the original frozen shape; v2 adds the per-row matched_address_version_id attribution field).",
+      "const": 2
     },
     "game_version": {
       "description": "The resolved game/DLL version the report was produced against (design D28 'version stamp'). The version-applicability hash and reachability checks were run on the build that resolved to this version; the consumer shows it in the worklist and matches it against its DB version intervals. A free-form version string in the project's resolved-tag form (e.g. 'release_1_5_1164953_841' or '1.5.1164953').",
@@ -39,8 +39,23 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["kcdx_id", "version", "verdict", "detail"],
+        "required": ["kcdx_id", "version", "verdict", "detail", "matched_address_version_id"],
         "additionalProperties": false,
+        "if": {
+          "properties": {
+            "verdict": { "const": "resolves_works" }
+          }
+        },
+        "then": {
+          "properties": {
+            "matched_address_version_id": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "else": {
+          "properties": {
+            "matched_address_version_id": { "type": "null" }
+          }
+        },
         "properties": {
           "kcdx_id": {
             "description": "The curated entity id (== the address_names.id the engine plugins reference). The consumer resolves the entity name from its own loaded DB by this id; an id not present in the DB is the stale-report row the consumer flags.",
@@ -60,6 +75,11 @@
           "detail": {
             "description": "A free-text cause string naming what the check observed (the consumer renders it as the per-row detail line). Required and present on every row; the empty string is permitted (e.g. a clean resolves_works row may carry no extra cause).",
             "type": "string"
+          },
+          "matched_address_version_id": {
+            "description": "The id of the address_version row whose fingerprint the swept bytes matched (the row attribution). Present on every row; an integer (>= 0) on a resolves_works row, null otherwise. The in-game sweep tries each candidate address_version row's fingerprint (content_hash for a function, the per-kind datum otherwise) and records WHICH row matched; the importer uses this id to extend the matched row's interval forward when the swept version sat in a gap (a passing gap-pass grows that one row's coverage). The attribution invariant: a resolves_works row matched SOME candidate row, so it carries a non-null integer that names which; a wrong_target row matched NO candidate row, and a dead / cannot_check row was not byte-matched at all, so each carries null. A non-pass row never names a matched row; a pass row always does. (The integer-or-null type + the verdict-conditional are enforced by the row-object if/then/else.)",
+            "type": ["integer", "null"],
+            "minimum": 0
           }
         }
       }
