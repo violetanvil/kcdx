@@ -1,8 +1,8 @@
-// See lua_shim.h. P2 step 1: forward the RESOLVED LUA_API/LUALIB_API symbols
-// through WHGame.dll's compiled Lua, resolving each by CANONICAL NAME via the
-// Address Library (AP1 — never a literal RVA). The inlined/stripped seam
-// members are left null this step (P2 step 2 stubs them); Resolve() skips them
-// without failing.
+// See lua_shim.h. Forward the RESOLVED LUA_API/LUALIB_API symbols through
+// WHGame.dll's compiled Lua, resolving each by CANONICAL NAME via the Address
+// Library — never a literal RVA. The inlined/stripped seam members are filled
+// by the stub layer (lua_shim_stubs.cpp); a still-unclassified symbol is left
+// null and skipped by Resolve() without failing.
 
 #include "lua_shim.h"
 
@@ -18,17 +18,17 @@ namespace {
 constexpr const char* kCategory = "LUA_SHIM";
 
 // The single table the engine calls through. Zero-initialized: every member
-// starts null, so a seam member never forwarded this step is a clean nullptr
-// (P2 step 2 fills them; a call through a still-null seam member before then
-// is a programming error, not a resolve miss).
+// starts null, so a seam member never forwarded in the forward layer is a clean
+// nullptr (the stub layer fills them; a call through a still-null seam member
+// before then is a programming error, not a resolve miss).
 LuaApi g_table{};
 
 // Resolve one canonical Lua symbol by NAME and store it into `g_table.<member>`
 // with the member's exact function-pointer type. Bails loud on a REQUIRED
 // miss: a seeded symbol that does not resolve (0) means WHGame.dll is not
 // mapped, the Address Library is not up, or the seed is wrong for this build —
-// kcdx must not touch the VM with an incomplete shim (AP14: fail loud, never
-// swallow a miss and return true). `name` is the canonical lua.h spelling and
+// kcdx must not touch the VM with an incomplete shim (fail loud on a miss,
+// never swallow it and return true). `name` is the canonical lua.h spelling and
 // is the member name, so the grep target + the resolved name are the same
 // token.
 #define FORWARD(member)                                                        \
@@ -47,10 +47,11 @@ LuaApi g_table{};
             reinterpret_cast<decltype(g_table.member)>(va);                    \
     } while (0)
 
-// The internal-only set (harvest doc §"What NOT to do"): resolvable into
-// g_api for the engine's own VM build/teardown, but NEVER exposed through the
-// plugin-facing kcdxLuaApi (the P5 rewire reads IsInternalOnly to gate them) —
-// exposing them lets a mod author destroy or replace the game's Lua VM.
+// The internal-only set (the "Don't expose" set from the RE analysis of
+// WHGame's Lua): resolvable into g_api for the engine's own VM build/teardown,
+// but NEVER exposed through the plugin-facing kcdxLuaApi (the rewire reads
+// IsInternalOnly to gate them) — exposing them lets a mod author destroy or
+// replace the game's Lua VM.
 constexpr const char* kInternalOnly[] = {
     "lua_newstate",    // build the VM
     "lua_close",       // tear down the VM
@@ -193,42 +194,50 @@ bool Resolve() {
     FORWARD(luaL_addvalue);
     FORWARD(luaL_pushresult);
 
-    // === SEAM — NOT WIRED THIS STEP (P2 step 2 fills these) ===
+    // === SEAM — STUB LAYER ===
     // 34 LUA_API/LUALIB_API symbols are inlined-by-PGO, linker-stripped, or
-    // otherwise not present in WHGame.dll as a callable RVA — so they are NOT
-    // in the Address Library seed and CANNOT be resolved by name. Resolve()
-    // leaves their g_table members null and does NOT bail on them. P2 step 2
-    // reimplements each kcdx-side using the verified layout constants
-    // (fix-a-drop-static-lua.md §"Stripped or inlined functions") — several
-    // GC-pointer writers (lua_pushthread, lua_replace-kin) MUST call
-    // luaC_barrierf (harvest §"What NOT to do"). The seam set:
+    // otherwise not present in WHGame.dll as a callable RVA — so they are NOT in
+    // the Address Library seed and CANNOT be resolved by name. They split TWO
+    // ways:
+    //   - 31 are CATALOGUED stubs — inlined/stripped with a verified per-function
+    //     kcdx-side strategy (from the RE analysis of WHGame's stripped/inlined
+    //     functions). Reimplemented in lua_shim_stubs.cpp from the verified
+    //     layout constants + the resolved primitives; wired below.
+    //   - 3 are UNCLASSIFIED — luaL_loadbuffer / luaL_loadstring / luaL_gsub,
+    //     neither seeded NOR reconstructable from the catalogue. An RE
+    //     classification pass settles each (resolved in the binary → seed it →
+    //     forward; inlined → add to the stub catalogue) BEFORE the static Lua is
+    //     dropped. They stay NULL here (skipped by WireStubs, kept at their
+    //     [stub seam] marker).
     //
-    //   lua_storedebuginfo, lua_isstoredebuginfo, lua_newthread, lua_atpanic,
-    //   lua_gettop, lua_isuserdata, lua_equal, lua_tocfunction, lua_pushnil,
-    //   lua_pushnumber, lua_pushinteger, lua_pushvfstring, lua_pushboolean,
-    //   lua_pushlightuserdata, lua_pushthread, lua_cpcall, lua_yield,
-    //   lua_status, lua_getallocf, lua_setallocf, lua_gethook, lua_gethookmask,
-    //   lua_gethookcount, luaI_openlib, luaL_register, luaL_callmeta,
-    //   luaL_optnumber, luaL_newmetatable, luaL_unref, luaL_loadbuffer,
-    //   luaL_loadstring, luaL_newstate, luaL_gsub, luaL_buffinit
-    //
-    // NOTE for the maintainer: the design's headline "93 resolved / ~24 stubs"
-    // does NOT match the current three-file seed (90 LUA_API/LUALIB_API rows
-    // resolve by name; 34 are seam). The 90/34 split here is built against the
-    // seed as it actually exists today (the authority for what resolves), not
-    // the headline count. The 34 seam members are TWO kinds:
-    //   - most are P2 step-2 STUBS — inlined/stripped with a catalogued kcdx-side
-    //     stub strategy (harvest doc "Stripped or inlined functions").
-    //   - luaL_loadbuffer / luaL_loadstring / luaL_gsub are UNCLASSIFIED — neither
-    //     seeded NOR catalogued. They are TD-0007: a /research-disassembly pass
-    //     classifies each (resolved -> seed it AP18-gated -> forward; inlined ->
-    //     add to the step-2 stub catalogue) BEFORE Phase 11 P5 drops static Lua.
-    //     See docs/tech-debt/TD-0007-unclassified-lua-loader-symbols.md.
+    // NOTE: the actual split, built against the seed as it exists today (the
+    // authority for what resolves): 90 forwarded + 31 stubbed + 3 unclassified.
+    // The stubs rely on the live VM's struct layout matching the offsets verified
+    // against the binary — ValidateLayout() (the mainthread self-pointer
+    // invariant) is the falsifiable guard the self-test runs against the live
+    // state so a future game-update struct shift fails LOUD.
+
+    // Resolve the by-name internal helpers the stubs call (luaC_barrierf,
+    // luaC_step, luaO_pushvfstring, luaG_runerror). A required miss is a hard
+    // bail — kcdx must not wire a stub that would dereference a null primitive
+    // (fail loud, never proceed on a missing primitive). lua_shim_stubs.cpp
+    // logs which one missed.
+    if (!BindStubPrimitives()) {
+        return false;
+    }
+
+    // Point the 31 catalogued seam members at their kcdx-side stub bodies. The 3
+    // unclassified members stay null.
+    WireStubs(g_table);
 
     LOG_INFO_KV(kCategory, "resolve_ok",
         ::kcdx::log::KV("resolved", "90"),
-        ::kcdx::log::KV("seam_pending_step2", "34"),
-        ::kcdx::log::KV("note", "forward layer up; stubs are P2 step 2"));
+        ::kcdx::log::KV("stubbed", "31"),
+        ::kcdx::log::KV("unclassified_pending", "3"),
+        ::kcdx::log::KV("note",
+            "forward + stub layers up; 3 unclassified symbols stay null "
+            "(pending an RE classification pass). Layout validated against the "
+            "live VM at first self-test (mainthread self-pointer invariant)."));
     return true;
 }
 

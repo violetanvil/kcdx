@@ -37,7 +37,7 @@ engine capability (`FIX-A`, `Phase-11`), or a named source-fix mechanism.
 | [TD-0004](TD-0004-rebuild-oracle-baseline-recapture.md) | 2026-06-02 | Open | rebuild-oracle baseline stale (8 entities + no-prose rewrite + sig-NULL) | inspected `--capture` of `oracle_baseline.json` + provenance note |
 | [TD-0005](TD-0005-high-level-lua-surface.md) | 2026-06-05 | Open | high-level Lua gameplay surface (player/inventory/world/dialogue/quest) deferred | a dedicated high-level-Lua-surface build phase |
 | [TD-0006](TD-0006-statement-layer-in-user-db.md) | 2026-06-05 | Open | statement layer DEV-only — USER DB can't back statement-level named things + needs open kind model | the maintainer tool gaining the capability to own these kinds + project them to the USER DB |
-| [TD-0007](TD-0007-unclassified-lua-loader-symbols.md) | 2026-06-05 | Open | 3 Lua C API fns (luaL_loadbuffer/loadstring/gsub) neither seeded nor catalogued — shim can't forward or stub them | classify via /research-disassembly before Phase-11 P5 drops static Lua |
+| [TD-0007](TD-0007-unclassified-lua-loader-symbols.md) | 2026-06-05 | Open | 5 Lua C API fns unclassified (loadbuffer/loadstring/gsub unwired + newthread/cpcall fail-loud) — shim can't fully serve them | classify via /research-disassembly before Phase-11 P5 drops static Lua |
 
 ## Closed
 

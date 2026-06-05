@@ -33,8 +33,8 @@ of a phase flips that phase's row here (the orchestrator owns the cascade).
 
 | Phase | Status | Commit |
 |---|---|---|
-| [1 — keystone probe (Init + lua_newstate observation)](phase-01-probe/README.md) | NOT STARTED | — |
-| [2 — the symbol shim (forward 93 + stub ~24)](phase-02-shim/README.md) | NOT STARTED | — |
+| [1 — keystone probe (Init + lua_newstate observation)](phase-01-probe/README.md) | DONE | f0a0dc9 |
+| [2 — the symbol shim (forward 90 by name + stub 31; 3 unclassified + 2 not-usable carried)](phase-02-shim/README.md) | DONE | (landed) |
 | [3 — force-load WHGame + VM build + Init adoption](phase-03-force-load-adopt/README.md) | NOT STARTED | — |
 | [4 — early Lua slot + boot-asset swap (KI-0005)](phase-04-early-slot-boot-swap/README.md) | NOT STARTED | — |
 | [5 — drop static Lua (hazard-killing step)](phase-05-drop-static-lua/README.md) | NOT STARTED | — |

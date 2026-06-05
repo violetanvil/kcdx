@@ -4,7 +4,8 @@
 #include <cstring>  // strcmp, memcmp, strlen
 
 extern "C" {
-#include "lua.h"    // LUA_TSTRING, lua_State
+#include "lua.h"      // LUA_TSTRING/TNIL/TNUMBER/TTABLE, LUA_GLOBALSINDEX, lua_State
+#include "lauxlib.h"  // luaL_Reg (the cap-79-stubs luaL_register row)
 }
 
 #include "hooks.h"  // kcdx::hooks::CurrentLuaState — the live VM the shim calls into
@@ -20,6 +21,9 @@ namespace {
 
 constexpr const char* kRowRoundtrip = "cap-79-roundtrip";
 constexpr const char* kRowGated     = "cap-79-internal-gated";
+constexpr const char* kRowStubs     = "cap-79-stubs";
+constexpr const char* kRowGcBarrier = "cap-79-gc-barrier";
+constexpr const char* kRowLayout    = "cap-79-layout";
 constexpr const char* kCategory     = "LUA_SHIM";
 
 // The probe value: a fixed token (the "42" the brief names, carried in a string
@@ -151,7 +155,7 @@ void RunSelfTestOnce() {
         std::snprintf(reason, sizeof(reason),
             "PASS: IsInternalOnly gates lua_newstate/lua_close/lua_setallocf/"
             "lua_atpanic (true) and passes lua_pushlstring/lua_pcall/lua_settop "
-            "(false) — the plugin-surface gate the P5 kcdxLuaApi rewire reads "
+            "(false) — the plugin-surface gate the kcdxLuaApi rewire reads "
             "discriminates correctly (not a tautology).");
         LOG_INFO_KV(kCategory, "gating_pass",
             ::kcdx::log::KV("internal_gated", "4/4"),
@@ -174,7 +178,174 @@ void RunSelfTestOnce() {
         kcdx::test::ReportResult(kRowGated, false, reason);
     }
 
-    kcdx::test::EmitSummaryIfChanged("cap-79 lua-shim-forward");
+    // --- CAP-79-stubs -------------------------------------------------------
+    // Exercise representative seam STUB classes through g_api against the
+    // live VM (L is non-null here — RunSelfTestOnce returns early above while it
+    // is not yet captured). Each sub-check is falsifiable; the row FAILS if any
+    // reads back wrong. The live state is restored to the entry depth at the end.
+    {
+        const bool stubsWired =
+            api.lua_pushnil != nullptr && api.lua_pushboolean != nullptr &&
+            api.lua_pushinteger != nullptr && api.lua_gettop != nullptr &&
+            api.luaL_register != nullptr && api.lua_getfield != nullptr &&
+            api.lua_settop != nullptr && api.lua_toboolean != nullptr &&
+            api.lua_tointeger != nullptr;
+
+        if (!stubsWired) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a seam stub member is null — pushnil=%p "
+                "pushboolean=%p pushinteger=%p gettop=%p luaL_register=%p. "
+                "Resolve() did not wire the stub layer (WireStubs not called or "
+                "a stub address is null).",
+                (void*)api.lua_pushnil, (void*)api.lua_pushboolean,
+                (void*)api.lua_pushinteger, (void*)api.lua_gettop,
+                (void*)api.luaL_register);
+            LOG_ERROR_KV(kCategory, "stubs_null_member",
+                ::kcdx::log::KV("lua_pushnil", (const void*)api.lua_pushnil),
+                ::kcdx::log::KV("lua_gettop", (const void*)api.lua_gettop),
+                ::kcdx::log::KV("luaL_register",
+                    (const void*)api.luaL_register));
+            kcdx::test::ReportResult(kRowStubs, false, reason);
+        } else {
+            const int entryTop = api.lua_gettop(L);  // gettop stub: baseline
+
+            // (a) pushnil → type LUA_TNIL.
+            api.lua_pushnil(L);
+            const bool nilOk = (api.lua_type(L, -1) == LUA_TNIL);
+
+            // (b) pushboolean(1) → toboolean true.
+            api.lua_pushboolean(L, 1);
+            const bool boolOk = (api.lua_toboolean(L, -1) != 0);
+
+            // (c) pushinteger(42) → type LUA_TNUMBER and tointeger == 42.
+            api.lua_pushinteger(L, 42);
+            const bool intTypeOk = (api.lua_type(L, -1) == LUA_TNUMBER);
+            const bool intValOk  = (api.lua_tointeger(L, -1) == 42);
+
+            // (d) gettop arithmetic: three values pushed since entryTop.
+            const int afterTop = api.lua_gettop(L);
+            const bool depthOk = (afterTop == entryTop + 3);
+
+            // (e) luaL_register installs a named global table read back via
+            // lua_getfield. An empty reg list (only the {NULL,NULL} sentinel)
+            // installs the table without any functions — the table's presence is
+            // the assertion. Register under a kcdx-private name so it cannot
+            // collide with an engine library.
+            static const luaL_Reg kEmptyReg[] = {{nullptr, nullptr}};
+            api.luaL_register(L, "kcdx_shim_selftest_tbl", kEmptyReg);
+            // luaL_register leaves the new lib table on the stack top.
+            const bool regOnStackOk = (api.lua_type(L, -1) == LUA_TTABLE);
+            // and it is reachable as a global of that name.
+            api.lua_getfield(L, LUA_GLOBALSINDEX, "kcdx_shim_selftest_tbl");
+            const bool regGlobalOk = (api.lua_type(L, -1) == LUA_TTABLE);
+
+            // Restore the live stack to the entry depth (drop everything pushed:
+            // nil, bool, int, the lib table left by luaL_register, and the
+            // getfield result). settop(entryTop) trims back exactly.
+            api.lua_settop(L, entryTop);
+
+            const bool allOk = nilOk && boolOk && intTypeOk && intValOk &&
+                               depthOk && regOnStackOk && regGlobalOk;
+            if (allOk) {
+                std::snprintf(reason, sizeof(reason),
+                    "PASS: stub classes exercised against the live VM — "
+                    "pushnil→nil, pushboolean→true, pushinteger(42)→TNUMBER+42, "
+                    "gettop counted +3 from entry depth %d, luaL_register "
+                    "installed a global table read back via getfield. The "
+                    "kcdx-side stub bodies reach WHGame's live state correctly.",
+                    entryTop);
+                LOG_INFO_KV(kCategory, "stubs_pass",
+                    ::kcdx::log::KV("entry_top", (long long)entryTop),
+                    ::kcdx::log::KV("after_top", (long long)afterTop));
+                kcdx::test::ReportResult(kRowStubs, true, reason);
+            } else {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: a stub class read back wrong — nil=%d bool=%d "
+                    "intType=%d intVal=%d depth=%d(entry %d, after %d) "
+                    "regOnStack=%d regGlobal=%d. A kcdx-side stub body does not "
+                    "match the verified Lua semantics on this build.",
+                    nilOk, boolOk, intTypeOk, intValOk, depthOk, entryTop,
+                    afterTop, regOnStackOk, regGlobalOk);
+                LOG_ERROR_KV(kCategory, "stubs_fail",
+                    ::kcdx::log::KV("nil_ok", (long long)nilOk),
+                    ::kcdx::log::KV("bool_ok", (long long)boolOk),
+                    ::kcdx::log::KV("int_type_ok", (long long)intTypeOk),
+                    ::kcdx::log::KV("int_val_ok", (long long)intValOk),
+                    ::kcdx::log::KV("depth_ok", (long long)depthOk),
+                    ::kcdx::log::KV("reg_on_stack_ok",
+                        (long long)regOnStackOk),
+                    ::kcdx::log::KV("reg_global_ok", (long long)regGlobalOk));
+                kcdx::test::ReportResult(kRowStubs, false, reason);
+            }
+        }
+    }
+
+    // --- CAP-79-gc-barrier --------------------------------------------------
+    // The GC-barrier-safety invariant: the barrier primitive (luaC_barrierf, id
+    // 127) is resolved and available to any GC-pointer-writing stub. No seam
+    // stub writes a GC pointer into a black object (the verified push bodies
+    // write only stack slots, which need no barrier; the barrier-callers are
+    // RESOLVED forwarders), so a live barrier-CALL is not constructible here —
+    // the falsifiable row is the structural availability the design names. FAILS
+    // if luaC_barrierf did not resolve.
+    {
+        const bool barrierOk = GcBarrierBacked();
+        if (barrierOk) {
+            std::snprintf(reason, sizeof(reason),
+                "PASS: the GC write-barrier primitive luaC_barrierf (id 127) "
+                "resolved by name and is backed — any GC-pointer-writing stub "
+                "has its barrier available (the GC-barrier-safety invariant). No "
+                "seam stub writes a GC pointer into a black object, so "
+                "this asserts availability, not a live call.");
+            LOG_INFO_KV(kCategory, "gc_barrier_pass",
+                ::kcdx::log::KV("luaC_barrierf", "resolved"));
+            kcdx::test::ReportResult(kRowGcBarrier, true, reason);
+        } else {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: luaC_barrierf (id 127) did NOT resolve — a future "
+                "GC-pointer-writing stub would write into a black GC object "
+                "WITHOUT the barrier, letting the incremental GC free live "
+                "objects. BindStubPrimitives should have bailed; this row is "
+                "the live guard that it did not silently proceed.");
+            LOG_ERROR_KV(kCategory, "gc_barrier_fail",
+                ::kcdx::log::KV("luaC_barrierf", "unresolved"));
+            kcdx::test::ReportResult(kRowGcBarrier, false, reason);
+        }
+    }
+
+    // --- CAP-79-layout ------------------------------------------------------
+    // The mainthread self-pointer invariant: G(L)->mainthread (g+0xB0) == L,
+    // validated against the LIVE state. This is the falsifiable proof that
+    // WHGame's lua_State/global_State layout still matches the verified offsets
+    // every stub reads — a future game update that shifts a struct field fails
+    // LOUD here, not silently in a stub's wrong-offset read.
+    {
+        const bool layoutOk = ValidateLayout(L);
+        if (layoutOk) {
+            std::snprintf(reason, sizeof(reason),
+                "PASS: the mainthread self-pointer invariant holds against the "
+                "live VM — G(L)->mainthread (g+0xB0) == L. The verified "
+                "lua_State/global_State offsets the stubs read (l_G @ L+0x20, "
+                "mainthread @ g+0xB0) match this game build; the stubs' field "
+                "reads are correct.");
+            LOG_INFO_KV(kCategory, "layout_pass",
+                ::kcdx::log::KV("invariant", "mainthread_self_pointer"));
+            kcdx::test::ReportResult(kRowLayout, true, reason);
+        } else {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: the mainthread self-pointer invariant is BROKEN — "
+                "G(L)->mainthread != L. WHGame's struct layout no longer matches "
+                "the verified offsets (a game update shifted a field). Every "
+                "stub reading these offsets is now wrong; kcdx must NOT touch the "
+                "VM. See the LUA_SHIM layout_validate_* ERROR line for which "
+                "field diverged.");
+            LOG_ERROR_KV(kCategory, "layout_fail",
+                ::kcdx::log::KV("invariant", "mainthread_self_pointer"));
+            kcdx::test::ReportResult(kRowLayout, false, reason);
+        }
+    }
+
+    kcdx::test::EmitSummaryIfChanged("cap-79 lua-shim");
 }
 
 }  // namespace kcdx::lua_shim

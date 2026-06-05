@@ -18,7 +18,7 @@ Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short h
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — probe Init + lua_newstate; settle intercept/boot-swap/slot](step-1-probe-init-vm-adoption.md) | NOT STARTED | — |
+| [1 — probe Init + lua_newstate; settle intercept/boot-swap/slot](step-1-probe-init-vm-adoption.md) | DONE | f0a0dc9 |
 
 ## Phase verification gate
 

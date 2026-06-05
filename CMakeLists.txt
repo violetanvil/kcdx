@@ -141,6 +141,7 @@ add_library(kcdx SHARED
     src/config.cpp
     src/hooks.cpp
     src/lua_shim.cpp
+    src/lua_shim_stubs.cpp
     src/lua_shim_selftest.cpp
     src/save_load_hooks.cpp
     src/serialization.cpp
