@@ -18,7 +18,7 @@ steps land in the SEPARATE gitignored frontend repo (gate `npm run build` + Vite
 | Step | Status | Commit |
 |---|---|---|
 | [Phase 0 — Probes](phase-00-probes/README.md) | DONE | (landed) |
-| [Phase 1 — Shared contracts](phase-01-contracts/README.md) | NOT STARTED | — |
+| [Phase 1 — Shared contracts](phase-01-contracts/README.md) | DONE | 35445b7 |
 | [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | NOT STARTED | — |
 | [Phase 3 — C++ engine survival extension](phase-03-engine-survival/README.md) | NOT STARTED | — |
 | [Phase 4 — In-game plugin + report](phase-04-ingame-plugin/README.md) | NOT STARTED | — |
