@@ -1,5 +1,17 @@
 # P4 step 1 — the early Lua slot + ordering guard vs the boot open
 
+> **RE-SCOPED 2026-06-05 — read [`../RESUME-STATE.md`](../RESUME-STATE.md) first.**
+> This step now builds the FOUNDATION ONLY (the cross-thread event gate + the
+> `RegisterRuntimeOverlay` two-writer CAS + the cap-82 order-inversion
+> regression). The worker slot-RUNNER shape + the early-bind surface set below
+> are DEFERRED to the new Phase 5 (`bring-forward-early-capability`), which
+> `/design` settles (it generalizes the runner to Lua+C++ per the approved
+> early-C++/Lua-capability decision). A worker-GC-safety probe (subset-bind +
+> RCU-write on the worker VM, PROBE Q silent) is owed before the foundation
+> build. The "Scope"/"Test bar" below describe the FULL early-slot and are the
+> Phase-5 input, NOT this step's current build. Do not build the slot-runner
+> here.
+
 ## What
 
 Build the early Lua slot — the pre-boot-open execution window that runs a plugin's

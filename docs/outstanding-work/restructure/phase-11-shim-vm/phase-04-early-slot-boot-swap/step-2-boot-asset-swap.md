@@ -1,5 +1,12 @@
 # P4 step 2 — boot-asset swap serves (KI-0005) + AP14 warn decision
 
+> **BLOCKED on the new Phase 5 — read [`../RESUME-STATE.md`](../RESUME-STATE.md) first.**
+> This step consumes the worker early-slot RUNNER, whose shape was deferred to
+> the new Phase 5 (`bring-forward-early-capability`). It rides the Phase-5-settled
+> slot shape; it cannot build until that design + the runner land. P4 step 1 now
+> ships only the foundation (gate + CAS); the slot this step needs comes from
+> Phase 5.
+
 ## What
 
 Deliver the user-required capability: a `kcdx.assets.replace` registered in the early
