@@ -157,19 +157,22 @@ event gate, not a timing margin.
 | The boot open is UNGATED relative to the VM-build / early slot (the two run on different threads with no synchronization edge) | the cross-thread dependency is a race — a DEFECT (§5) | **fix in the design + P3/P4: add the mandatory happens-before event gate** (worker signals, boot-open path waits-and-blocks). NOT a timing fix ("run the slot earlier") — that is the forbidden race. (This is the outcome PROBE P11 v2 found: the boot-open path is currently ungated — §5 now mandates the gate.) |
 | The boot open is gated and after the signal but the resolver MISSES | a store/key issue independent of the gate | re-observe the key fold; this is a store bug, not an ordering bug |
 
-### 4.4 Early-slot shape — which author surface runs safely this early?
+### 4.4 Early-slot shape — SETTLED to candidate B (PROBE P4, 2026-06-05)
 
-**Settled to: probe all to see** (user, 2026-06-05). The probe observes which slot
-shapes run safely in the pre-boot-open window; §5 records the candidates and the
-decision criterion. **Observe:** run a trial early-Lua body (a `System.LogAlways` +
-a `kcdx.assets.replace`) via each candidate shape and record whether it executes
-cleanly that early without touching post-init engine state.
+**SETTLED: candidate B (a new worker-run early entrypoint).** PROBE P4
+(`_research/probe-archive/p4-early-slot-thread-topology.md`) observed the thread
+topology and it resolves the shape by elimination, not preference: the only Lua point
+early enough to precede the boot open is on the WORKER thread (the post-VM-publish
+point, `A.wall < B.wall` by ~1.5 s, `A.tid` = worker ≠ `B.tid` = game-main). The
+existing `plugin.lua` (RunAll) runs on the GAME-MAIN first-tick latch ~10 s AFTER the
+boot open (`C.wall > B.wall`) — so candidate A (reuse `plugin.lua` early) is RULED OUT:
+`plugin.lua` cannot move to the worker without moving all of RunAll, which the keystone
+keeps game-thread for the `kcdx.*` registration (PROBE FIXC). The slot is therefore a
+new worker-run early entrypoint — candidate B.
 
-| Outcome | Meaning | Next action |
+| Outcome (PROBE P4 result) | Meaning | Settled |
 |---|---|---|
-| A `before_game`-zoned `plugin.lua` runs cleanly in the early window | reuse the existing entrypoint (§5 candidate A) is viable — fewest surfaces | settle the slot to **reuse `plugin.lua` early** |
-| `plugin.lua` early-run touches post-init state and faults/misbehaves, but a minimal dedicated body is clean | the existing entrypoint is unsafe early; a separate slot is needed | settle the slot to a **new `lua_before` entrypoint** (§5 candidate B) |
-| Neither runs cleanly this early | the VM-up point is later than the boot open | re-observe the VM-up timing vs the boot open; the slot window may not exist where assumed — surface |
+| Worker VM-publish precedes the boot open, cross-thread (A.tid≠B.tid); no viable game-main point before the boot open (C is 10 s late) | a worker slot is the only early-enough point; it is cross-thread from the boot open | **candidate B (new worker-run early entrypoint) + the §5 event gate** — both proven, see §5 |
 
 ---
 
@@ -177,29 +180,23 @@ cleanly that early without touching post-init engine state.
 
 The early Lua slot is the one primitive three Phase-11 consumers share: before_game
 Lua hooks (`before-game-hooks.md` §1–§5), the boot-asset runtime serve (§6b), and
-the served-`.lua` execute path (§6c). Its **author-facing shape is settled by §4.4's
-probe**, against these two candidates:
+the served-`.lua` execute path (§6c).
 
-- **Candidate A — reuse `plugin.lua`, run early for `before_game`-zoned plugins.** No
-  new entrypoint. A plugin declaring `zone = "before_game"` gets its existing
-  `plugin.lua` run in the early window on the DllMain VM; `after_game` plugins keep
-  the late slot. One file, one mental model; timing follows the `zone` the author
-  already sets.
-- **Candidate B — a new `lua_before` entrypoint.** A separate early-only entrypoint
-  distinct from `plugin.lua`; the author opts a file into the early window
-  explicitly, and `plugin.lua` keeps its current post-init timing untouched.
+**SETTLED (PROBE P4, 2026-06-05): candidate B — a new WORKER-RUN early entrypoint.**
+A separate early-only entrypoint distinct from `plugin.lua`, run on the kcdx WORKER
+thread right after the VM is published (before the engine's game-main boot open);
+`plugin.lua` (RunAll) keeps its existing game-main first-tick timing untouched. The
+rejected alternative — **candidate A (reuse `plugin.lua`, run it early)** — is RULED
+OUT by the topology: PROBE P4 showed `plugin.lua`/RunAll runs game-main ~10 s AFTER
+the boot open, and it cannot move to the worker without moving all of RunAll (which
+the keystone keeps game-thread for `kcdx.*` registration, PROBE FIXC). The only Lua
+point early enough to precede the boot open is the worker post-VM-publish point —
+hence a new worker-run entrypoint, not the game-main `plugin.lua`.
 
-**Decision criterion (pre-committed):** if a `before_game`-zoned `plugin.lua` runs
-cleanly in the pre-boot-open window (§4.4 outcome 1), settle to **candidate A** (the
-fewest surfaces wins, no new author-facing entrypoint to document/test/teach).
-Only if early-run `plugin.lua` is unsafe (§4.4 outcome 2) settle to **candidate B**.
-The design does not pre-commit the answer — the probe's observed behavior settles it,
-and the settled shape is captured back into this §5 + the changelog when it lands.
-
-**The ordering guard — a MANDATORY happens-before EVENT GATE, never a timing margin (hard invariant).** The early Lua slot runs on the **kcdx worker thread**; the engine's boot-asset open runs on the **game main thread** (verified by PROBE P11 v2, 2026-06-05: `dllmain_vm_point`/VM-build on the worker, `boot_open.first` + the engine's `lua_newstate` on game-main `tid`). These are two threads with a cross-thread data dependency (the boot open must see the early slot's runtime-overlay registration). **A cross-thread dependency is permitted ONLY when an explicit synchronization edge GATES it** — multiple threads are allowed for non-conflicting work, but a dependent thread MUST be stopped by a gate until the thread it depends on has finished. Therefore:
+**The ordering guard — a MANDATORY happens-before EVENT GATE, never a timing margin (hard invariant; PROBE P4-CONFIRMED cross-thread).** The early Lua slot runs on the **kcdx worker thread**; the engine's boot-asset open runs on the **game main thread** — verified live by PROBE P4 (2026-06-05): the worker VM-publish point (`A.tid`=worker) precedes the first boot open (`B.tid`=game-main) by ~1.5 s, and there is NO viable game-main slot point before the boot open (the game-main `plugin.lua` latch is ~10 s late). These are two threads with a cross-thread data dependency (the boot open must see the early slot's runtime-overlay registration) — confirmed genuinely cross-thread, so the event gate is the proven mechanism (NOT same-thread program-order, NOT the late-path `NotifyVmReady` freeze). **A cross-thread dependency is permitted ONLY when an explicit synchronization edge GATES it** — multiple threads are allowed for non-conflicting work, but a dependent thread MUST be stopped by a gate until the thread it depends on has finished. Therefore:
 
 - **The gate is mandatory and explicit.** The early Lua slot (worker), after its asset-declaration calls complete, **signals a readiness event** (a new manual-reset event — call it `g_kcdxLuaSlotReadyEvent` pending P3/P4 naming). The boot-asset-open path (`asset_overlay.cpp` HOOK 1 `AdjustFileNameResolver` + HOOK 2 `FOpenLooseOverlay`, game-main thread) **waits on that event (`WaitForSingleObject`, the bounded-timeout form) and BLOCKS until it is signaled, before resolving the overlay** for a boot asset. An unsignaled boot open **blocks**; it does NOT proceed on a timing assumption and it does NOT race.
-- **No existing edge covers this** (verified 2026-06-05): the boot-open path is currently UNGATED relative to the VM-build (`asset_overlay.cpp` calls `RecordBootOpen` and proceeds with "the Lua VM not yet up"; `g_kcdxReadyEvent` gates the `ModManager` ctor-bracket, NOT the boot-asset open; `g_whgameLoadedEvent` gates the worker's WHGame-mapped wait, NOT this). So P3/P4 **adds** this edge — it cannot reuse one. (P3/P4 confirms the exact event + the bounded-timeout fallback behavior under its own architect-review.)
+- **No existing edge covers this** (verified 2026-06-05): the boot-open path is currently UNGATED relative to the VM-build (`asset_overlay.cpp` calls `RecordBootOpen` and proceeds with "the Lua VM not yet up"; `g_kcdxReadyEvent` gates the `ModManager` ctor-bracket, NOT the boot-asset open; `g_whgameLoadedEvent` gates the worker's WHGame-mapped wait, NOT this). So **P4 adds** this edge — it cannot reuse one. (P4 builds the exact event + the bounded-timeout fallback under its architect-review; PROBE P4 confirmed the dependency is genuinely cross-thread, so the edge is required.)
 - **Timing-based ordering is FORBIDDEN.** "The early slot completes ~Nms before the boot open" is NOT the guarantee and is never accepted as one (it is the cross-thread race this gate exists to kill). The happens-before EVENT EDGE is the guarantee; the wall-clock margin is irrelevant.
 - **A boot open that proceeds without the gate signaled is a DEFECT, not a deferral** — fixed at source, never worked around with a sleep, a retry, or a "usually it's ready by then." The gate is the bar (`.claude/rules/concurrency.md` — a cross-boundary dependency is gated, not timed; `.claude/rules/polling.md` — no sample-and-hope).
 - **Regression:** a permanent test row that FAILS if the boot open observes the overlay store BEFORE the slot signaled (order inversion) — the falsifiable proof the gate holds, not the timing.

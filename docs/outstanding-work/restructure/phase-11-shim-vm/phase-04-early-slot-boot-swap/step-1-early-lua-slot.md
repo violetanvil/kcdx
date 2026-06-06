@@ -10,15 +10,20 @@ before the engine's boot asset open.
 
 ## Scope
 
-- Implement the slot in the P1-decided shape:
-  - **Candidate A (lean)** — run a `before_game`-zoned plugin's existing `plugin.lua`
-    in the early window; `after_game` plugins keep the late slot.
-  - **Candidate B** — a new `lua_before` entrypoint, `plugin.lua` untouched.
-  - P1's §4.4 outcome picks which; build that one.
+- Implement the slot in the SETTLED shape (PROBE P4, 2026-06-05 — candidate B):
+  a **new WORKER-RUN early entrypoint** (e.g. `lua_before`), run on the kcdx worker
+  thread right after the VM is published (before the engine's game-main boot open);
+  `plugin.lua` (RunAll) keeps its existing game-main first-tick timing. Candidate A
+  (reuse `plugin.lua` early) is RULED OUT: PROBE P4 showed `plugin.lua`/RunAll runs
+  game-main ~10 s after the boot open and cannot move to the worker without moving all
+  of RunAll (kept game-thread for `kcdx.*` registration). Design §5/§4.4 + the
+  archive `_research/probe-archive/p4-early-slot-thread-topology.md`.
 - The **ordering guard — a MANDATORY happens-before EVENT GATE** (design §5, hard
-  invariant; verified by PROBE P11 v2 that the slot runs on the worker thread and the
-  boot open on the game-main thread — two threads, a cross-thread dependency, and
-  currently UNGATED). Build it as: the early slot (worker), after its
+  invariant; PROBE P4-CONFIRMED cross-thread, 2026-06-05: the worker VM-publish point
+  precedes the first boot open by ~1.5 s and on a DIFFERENT thread, with no viable
+  game-main slot point before the boot open — genuinely cross-thread, the gate is the
+  proven mechanism, not same-thread program-order). Build it as: the early slot
+  (worker), after its
   asset-declaration calls, **signals a new readiness event**; the boot-open path
   (`asset_overlay.cpp` HOOK 1 + HOOK 2, game-main thread) **waits on that event and
   BLOCKS until signaled** before resolving a boot-asset overlay. No existing edge
