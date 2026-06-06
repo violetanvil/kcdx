@@ -18,7 +18,7 @@ kcdx's `build.ps1`.
 | [2.2 [FE] The minimal in-browser x86 decoder (RIP-relative `disp32` follow)](step-2-fe-x86-decoder.md) | DONE | FE:66f4716 |
 | [2.3 [FE] The 4 pure-byte kind checks + the JS↔Python agreement test](step-3-fe-pure-byte-checks.md) | DONE | FE:d611c21 |
 | [2.4 [FE] The 2 derivation-kind checks + the anchor-dependency DAG ordering](step-4-fe-derivation-checks-dag.md) | DONE | FE:e83a57c |
-| [2.5 [FE] s02 per-module link table + version-match gate + the 7 verify states](step-5-fe-s02-link-table.md) | DONE | FE:6e704ba |
+| [2.5 [FE] s02 per-module link table + version-match gate + the 7 verify states](step-5-fe-s02-link-table.md) | NEEDS REWORK | FE:6e704ba (milestone UAT: reflow bug + all-DLLs /design + s02-layout /ui-design) |
 | [2.6 [FE] s04 per-author verdict badge + Ambiguous steer + the 6 check verdict states](step-6-fe-s04-verdict-badge.md) | NOT STARTED | — |
 | [2.7 [FE] s02 link-to-create prompt → s05 prefill + evidence_kind-from-check](step-7-fe-link-to-create.md) | NOT STARTED | — |
 
