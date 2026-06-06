@@ -41,13 +41,22 @@ A **version dropdown** (`Select`, populated from the server-known `game_versions
 default way the maintainer states which version an edit targets; the picked version
 default-selects/marks the matching row.
 
-Beneath it, a **per-module DLL link table** (`per-module link row` ×M — one per module the
-entity's rows reference; today only `WHGame.dll`). Each row lets the maintainer **link** a
-local DLL for that module (browser File API — the DLL is read in-page, **never uploaded**, TRD
-D15/D26) and shows the linked DLL's filename + its **resolved version** (the `.rdata` version
-scan) + a **version-match indicator** (✓ matches the selected row's version / ≠ no match —
-glyph+text, law 7). The link is **re-picked each session** (no persisted path — TRD D30); a
-`[re-pick]` swaps the DLL.
+Beneath it, the **DLL link surface** — the maintainer **links the game's Bin folder once** (a
+single in-session `<input webkitdirectory>` directory pick — the DLLs read in-page, **never
+uploaded**, TRD D15/D26; the **install-set** model, TRD D30). The tool reads **WHGame.dll** from
+the folder to resolve the install's game version (the `.rdata` `release_M_N_BUILD` scan) and finds
+**every referenced module's DLL by its filename** in that same folder. The surface then shows a
+**`per-module link row` ×M** (one per module the entity's rows reference; today `WHGame.dll`, but
+multi-module once the DB carries CryEngine entities): each row shows the module name + the DLL's
+status in the linked folder (found / **not found in the linked folder**) + a **version-match
+indicator** (✓ the install's version matches the selected row's version / ≠ no match — glyph+text,
+law 7). A **non-WHGame module inherits the install's version from WHGame.dll** (the CryEngine DLLs
+carry no KCD2 version string of their own — TRD D30). The folder link is **re-picked each session**
+(no persisted handle — TRD D30, which rejects only File-System-Access *persistence*, not the
+in-session pick); a `[re-pick folder]` swaps the linked install. A **new module** (a CryEngine
+module not yet in the `module` table) is **registered as a surfaced step** when the maintainer
+authors the first address for it (the AP18 deliberate-addition posture — TRD D30). **Multi-store is
+out of scope** (TRD §9): the install-set keys on the game version only.
 
 Linking a version-matching DLL is what enables the **per-author static verification check**
 (the per-kind survival check against the DLL's bytes) — whose verdict renders inline in **s04**
@@ -82,17 +91,22 @@ fields together and the validator's verdict inline; a partial pair is a validati
   (On phone there is no empty detail — you arrive only by drilling into an entity.)
 - **Loading** — an entity's version rows loading (a brief indication in the version area).
 - **Error (entity load failed)** — *"Couldn't load entity `<name>`: `<reason>`."* + retry.
-- **Verify states** (the version&verify surface): a **picked version** (the default); a
-  **module not linked** — *"`<module>` not linked — link a DLL to verify"* (degraded, never a
-  block, TRD D30); a **linked DLL resolving** — the per-module link row shows a brief
-  loading indication while the browser reads the DLL's bytes (an 86 MB ArrayBuffer + the
-  `.rdata` version scan — law 1, the row reserves its space); a **linked + version match** —
-  *"`<dll>`: `<version>` ✓ matches"* (the per-author check is now available in s04); a **linked
-  + version mismatch** — *"`<dll>`: `<version>` ≠ no row at this version"* (which surfaces the
-  link-to-create prompt); a **resolve failure** — *"couldn't resolve a version from that DLL
-  (interns disagree)"* (advisory + override; system-caused copy naming the cause); a **non-PE /
-  unreadable pick** — *"that file isn't a readable DLL (`<reason>`)"* (system-caused). All
-  advisory (law 4) — none blocks authoring.
+- **Verify states** (the version&verify surface — the folder-pick install-set, TRD D30): a
+  **picked version** (the default, no folder linked); a **no folder linked** — *"link the game
+  Bin folder to verify"* (degraded, never a block, TRD D30); a **folder resolving** — a brief
+  loading indication while the browser reads the folder's DLLs (the WHGame.dll `.rdata` version
+  scan over the ~86 MB ArrayBuffer — law 1, the surface reserves its space, no reflow); a
+  **not a KCD2 Bin folder** — *"that folder has no WHGame.dll — pick the game Bin folder"*
+  (WHGame.dll absent, the install version can't resolve; system-caused); a **resolve failure** —
+  *"couldn't resolve a version from WHGame.dll (interns disagree)"* (the folder has WHGame.dll but
+  its `.rdata` gave no agreed version; advisory + override). Then **per module** (the
+  `per-module link row`): a **module DLL not found** — *"`<module>` not found in the linked
+  folder"* (that module's check unavailable, the others + authoring proceed; advisory); a
+  **version match** — *"`<module>` (`<install-version>`) ✓ matches"* (the per-author check is now
+  available in s04 for that module); a **version mismatch** — *"`<module>` (`<install-version>`)
+  ≠ no row at this version"* (surfaces the link-to-create prompt). All advisory (law 4) — none
+  blocks authoring; every indicator is glyph+text, never color-alone (law 7); the surface reserves
+  its space across every state (law 1, no reflow — the affordance never moves as a message wraps).
 - **Disabled** — lifecycle edits on an already-superseded entity follow `policy.md` (the
   successor chain); the validator gates an illegal transition with an inline error; the
   control is not silently hidden.

@@ -3,6 +3,40 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-05 — D30 revised: the DLL link is a Bin-FOLDER pick (the install-set); multi-store dropped from scope
+
+The milestone UAT of the s02 link table surfaced that the maintainer wants to verify addresses in
+ANY game DLL (the CryEngine modules — CrySystem.dll etc.), not just WHGame.dll. A
+`senior-architect-consult` on the related store-version question grounded that verification stays
+byte-correct on any binary (the content_hash check, not the version string, is the verification),
+so the store question is separable from the multi-DLL one. Settled:
+
+- **D30 — the install-set model.** The link is now a **single in-session game Bin FOLDER pick**
+  (`<input webkitdirectory>` — portable, read in-page, never uploaded), replacing the per-DLL pick.
+  The tool resolves the install version from WHGame.dll and finds every referenced module's DLL by
+  filename in that folder; a **non-WHGame module inherits the install's version from WHGame.dll**
+  (the CryEngine DLLs carry no KCD2 version string). The folder is re-picked each session (no
+  persistence — D30 still rejects File-System-Access *persistence*, only the in-session pick is
+  used). Degraded states never block: no folder / no WHGame.dll / a module's DLL not found. A new
+  CryEngine module is registered as a surfaced step (the AP18 deliberate-addition posture).
+- **§9 — multi-STORE dropped from scope.** Steam/Epic/GOG/Game Pass may ship different binaries at
+  the same version (the DB is the Steam PGO build — `SteamPGO` token), but **whether they actually
+  differ is UNVERIFIED** (no non-Steam binary checked). Per `results-driven.md` the store dimension
+  is NOT designed on the un-probed assumption. The content_hash keeps verification correct + fails
+  safe regardless. Revisit trigger: a non-Steam no-op report → probe a non-Steam binary → only a
+  confirmed divergence warrants a store/build discriminator.
+
+**Integrated in:** §10 D30 (revised); §6 US-11 (acceptance — the folder-pick install-set, the
+new-module step, the multi-store out-of-scope note); §9 (the multi-store deferral + its revisit
+trigger); `ui/screens/s02-entity-detail.md` §"The version & verify surface" + §"Verify states"
+(the folder-pick affordance, the per-module not-found/match/mismatch states, the install-version-
+inherited indicator, the explicit no-reflow law-1 note).
+**Why:** the milestone UAT (step 2.5) rejected the per-DLL link model — the maintainer needs to
+verify any game DLL, and the reflow bug showed the verify line must hold its layout. The install-set
+(one folder pick = the install, all DLLs share the game version) is the store-agnostic model that
+serves "link any game DLL" without a store dimension; multi-store is a separate, unverified concern
+deferred with a probe-gated revisit trigger.
+
 ## 2026-06-05 — batch-verify flow settled end-to-end (D33–D35; D28/D29/D32/US-11/§7/s08 revised)
 
 A full end-to-end design pass on the in-game sweep → JSON report → import → bulk re-verify loop,
