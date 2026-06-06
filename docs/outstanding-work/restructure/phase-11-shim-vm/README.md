@@ -36,7 +36,7 @@ of a phase flips that phase's row here (the orchestrator owns the cascade).
 |---|---|---|
 | [1 — keystone probe (Init + lua_newstate observation)](phase-01-probe/README.md) | DONE | f0a0dc9 |
 | [2 — the symbol shim (forward 90 by name + stub 31; 3 unclassified + 2 not-usable carried)](phase-02-shim/README.md) | DONE | 54d98c8 |
-| [3 — worker builds the VM + Init adoption (no force-load — PROBE P3)](phase-03-force-load-adopt/README.md) | DONE | (landed) |
+| [3 — worker builds the VM + Init adoption (no force-load — PROBE P3)](phase-03-force-load-adopt/README.md) | DONE | 3b99fea |
 | [4 — early Lua slot + boot-asset swap (KI-0005)](phase-04-early-slot-boot-swap/README.md) | NOT STARTED | — |
 | [5 — drop static Lua (hazard-killing step)](phase-05-drop-static-lua/README.md) | NOT STARTED | — |
 | [6 — served-.lua execute confirmation (KI-0006)](phase-06-serve-execute/README.md) | NOT STARTED | — |
