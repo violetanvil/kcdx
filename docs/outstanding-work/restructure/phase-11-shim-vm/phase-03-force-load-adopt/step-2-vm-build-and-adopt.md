@@ -35,6 +35,22 @@ it, does not rebuild it.
   hook-`CScriptSystem::Init`-itself fallback is NOT needed (P1 falsified the
   read-branch risk) — do not build it.
 - Validate the single-state + mainthread (`[L->l_G+0xB0]==L`) invariants at install.
+- **VM acquisition — build+adopt is AUTHORITATIVE; `g_L` published once, the
+  `lua_pcall` capture becomes a guarded confirmation (settled 2026-06-05).** TODAY
+  kcdx passively captures the engine's own state: the `engine.lua_pcall` chain hook
+  does `g_L.store(L)` on the game thread, and `HookedUpdate`'s first tick reads `g_L`
+  → `hook_chain::SetLuaState(L)` to bind the chain. The keystone INVERTS this: the
+  worker builds the VM and stores it into `g_L` with a RELEASE edge — the single
+  authoritative publish. The existing `engine.lua_pcall` hook KEEPS its store but it
+  now **asserts the incoming `L` equals the kcdx-built `g_L`** (acquire) — a guarded
+  CONFIRMATION, loud on mismatch (a different `L` from the engine's `lua_pcall` = a
+  silent second VM = a hard failure, never tolerated). `HookedUpdate`'s `SetLuaState`
+  bootstrap (`g_L.load(acquire)`) is UNCHANGED — it now reads the worker-built state.
+  So: one authoritative writer (worker, at build, release), one guarded confirmer
+  (game thread, asserts equality); the cross-thread publish IS the worker's release →
+  the game thread's acquire. Do NOT remove the `lua_pcall` store (it is the
+  divergence guard + keeps the live bootstrap path intact — no fallback removed in
+  the keystone step).
 - **Cross-thread adoption — published, never timed (hard).** PROBE P3 + P1 v2
   verified: kcdx builds the VM on the **worker thread**; the engine reaches
   `CScriptSystem::Init` (the `lua_newstate` call this step intercepts) on the **game

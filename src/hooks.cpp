@@ -44,6 +44,7 @@
 #include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
 #include "early_hook_selftest.h"                    // cap-80 early-hook primitive
+#include "cap81_vm_adopt_selftest.h"                // cap-81 keystone: VM build + engine adopt
 
 // early_hook.h is included from dllmain.cpp now — the BugSplat ctor hook
 // installs from kcdx.dll DllMain (early_hook::bugsplat::Arm), not from
@@ -70,13 +71,32 @@ update_t g_orig_update = nullptr;
 // Pre-migration this was a direct MinHook detour calling g_orig_lua_pcall.
 // Post-migration this is a Before-mode chain entry registered as
 // engine.lua_pcall via AddCEngine; the chain owns the MinHook detour and
-// runs the original after every chain entry's Before callback. We keep the
-// SAME side-effect — g_L.store(L) is the live lua_State capture
-// HookedUpdate's first-tick latch reads to call hook_chain::SetLuaState — so
-// the bootstrap chain (lua_pcall captures L -> update tick reads L -> chain
-// dispatchers run callbacks) is unbroken across the migration. The
-// distinct-L diagnostic stays as-is (it was the dual-Lua sentinel canary;
-// noise-throttled to first 8 Ls).
+// runs the original after every chain entry's Before callback.
+//
+// KEYSTONE CHANGE: g_L is now AUTHORITATIVELY published by
+// the worker thread (lua_vm_build::BuildAndAdoptVM → hooks::PublishLuaState,
+// RELEASE) — kcdx builds the one VM, the engine adopts it. So this hook's
+// historical g_L.store is now a GUARDED CONFIRMATION, not the publisher:
+//   - If g_L already holds the worker-built state (the expected keystone path),
+//     this asserts the engine's incoming L EQUALS it. A MISMATCH means the
+//     engine's lua_pcall is running on a DIFFERENT lua_State than the one kcdx
+//     built and the intercept was supposed to make Init adopt — i.e. a silent
+//     SECOND VM. That is a hard failure (the exact dual-Lua hazard the keystone
+//     kills); fail LOUD (Error) and do NOT overwrite the authoritative g_L.
+//   - If g_L is still null (the worker build failed / the intercept never armed),
+//     fall back to the legacy CAPTURE behavior: store L (release) so the live
+//     bootstrap path stays intact (HookedUpdate's first-tick latch reads g_L →
+//     hook_chain::SetLuaState; without it no Lua callback ever fires). This keeps
+//     the engine-builds-its-own-VM fallback working — the keystone step does not
+//     remove any fallback (design §VM acquisition).
+//
+// HookedUpdate's first-tick SetLuaState bootstrap (g_L.load ACQUIRE) is UNCHANGED
+// — it now reads the worker-published state on the keystone path, or the
+// captured state on the fallback path.
+//
+// The distinct-L diagnostic stays as-is (it was the dual-Lua sentinel canary;
+// noise-throttled to first 8 Ls), and is the breadcrumb that pairs with the loud
+// mismatch ERROR below.
 //
 // Per-mode ABI: Before is `void cFn(uintptr_t args[], int* outCount,
 // /* typed args... */)`. The Before mode never returns a value to the
@@ -90,10 +110,48 @@ extern "C" void HookedLuaPcall_Engine(uintptr_t args[], int* /*outCount*/,
                                       int /*nargs*/, int /*nresults*/,
                                       int /*errfunc*/) {
     (void)args;
-    // L-bootstrap (load-bearing — see hook-engine.md §Engine-owned chain
-    // entries). HookedUpdate's first-tick latch reads g_L and only then
-    // calls hook_chain::SetLuaState(L); without this store the chain's
-    // dispatchers never bind to a live VM and no Lua callback ever fires.
+
+    // Guarded-confirm vs. fallback-capture (load-bearing — see hook-engine.md
+    // §Engine-owned chain entries + the keystone change note above).
+    lua_State* published = g_L.load(std::memory_order_acquire);
+    if (published != nullptr) {
+        // Keystone path: the worker authoritatively published g_L. CONFIRM the
+        // engine's state matches; loud on a mismatch. Do NOT store (the worker
+        // owns g_L). Mismatch fires ONCE per distinct bad L (the seen[] guard
+        // below throttles the per-frame lua_pcall flood).
+        if (published != L) {
+            static std::atomic<lua_State*> mismatchSeen[8] = {};
+            bool firstMismatch = true;
+            for (int i = 0; i < 8; ++i) {
+                lua_State* s = mismatchSeen[i].load(std::memory_order_relaxed);
+                if (s == L) { firstMismatch = false; break; }
+                if (!s) {
+                    lua_State* expected = nullptr;
+                    if (mismatchSeen[i].compare_exchange_strong(
+                            expected, L, std::memory_order_acq_rel)) {
+                    }
+                    break;
+                }
+            }
+            if (firstMismatch) {
+                LOG_ERROR_KV("MID_HOOK", "lua_pcall.divergent_L",
+                    log::KV("engine_L",   (void*)L),
+                    log::KV("kcdx_g_L",   (void*)published),
+                    log::KV("detail",
+                        "the engine's lua_pcall is running on a DIFFERENT "
+                        "lua_State than the one kcdx built + published — the "
+                        "lua_newstate intercept did NOT make CScriptSystem::Init "
+                        "adopt kcdx's state, so a SECOND VM exists (the dual-Lua "
+                        "hazard the keystone kills). kcdx does NOT overwrite the "
+                        "authoritative g_L; this is a hard adoption failure."));
+            }
+        }
+        return;
+    }
+
+    // Fallback-capture path: g_L still null (worker build failed / intercept
+    // never armed). Store L (release) so the legacy bootstrap chain stays intact
+    // (lua_pcall captures L -> update tick reads L -> chain dispatchers bind).
     static std::atomic<lua_State*> seen[8] = {};
     static std::atomic<int> seen_n{0};
     lua_State* prev = g_L.load(std::memory_order_relaxed);
@@ -321,6 +379,7 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // kcdx-static dummynode address. Runs once per session.
                 // See the function definition above for the design.
                 ArmFreallocProbe(L);
+
                 // Trampolines populate the symbol table so any
                 // target_symbol locator resolves correctly. The legacy
                 // unified patch+hook apply orchestration that once ran here
@@ -718,6 +777,18 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // call into; PROBE Q stays silent because this step adds no new sentinel.)
     kcdx::lua_shim::RunSelfTestOnce();
 
+    // cap-81-vm-adopt: engine self-report for the KEYSTONE — kcdx builds the one
+    // Lua VM on its worker thread (lua_vm_build::BuildAndAdoptVM) and the engine
+    // ADOPTS it via the lua_newstate-callee intercept. Like cap-79 it depends on
+    // the live state (captured at the first lua_pcall) AND on the intercept
+    // having fired (at CScriptSystem::Init) — it early-returns (retries next
+    // tick) until both have landed, then asserts ONE state (live==built),
+    // the mainthread invariant on the adopted state, and that both kcdx.* and
+    // CryEngine's own scripts live on it. One-shot guarded internally. The game
+    // BOOTING is itself the falsifiable observable (a bad adoption AVs before any
+    // report).
+    kcdx::cap81_vm_adopt_selftest::RunSelfTestOnce();
+
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification
     // inventory as Category::Bytes (the RegisterModification(Category::Bytes,
@@ -792,6 +863,18 @@ bool VerifyExecutable(void* p, const char* label) {
 
 lua_State* CurrentLuaState() {
     return g_L.load(std::memory_order_acquire);
+}
+
+lua_State* PublishLuaState(lua_State* L) {
+    // The single authoritative writer of g_L (the keystone — see
+    // HookedLuaPcall_Engine's guarded-confirm note). RELEASE store: this is the
+    // cross-thread happens-before edge the game-thread lua_newstate intercept's
+    // ACQUIRE load (and HookedUpdate's first-tick ACQUIRE load) pair with. The
+    // caller (lua_vm_build, worker thread) has fully built + validated the state
+    // BEFORE this store, so the release edge guarantees the game thread observes
+    // a complete VM. exchange (not store) so the caller can detect a
+    // double-publish (a non-null prior return means publish ran twice — a bug).
+    return g_L.exchange(L, std::memory_order_release);
 }
 
 bool Install() {

@@ -143,6 +143,8 @@ add_library(kcdx SHARED
     src/lua_shim.cpp
     src/lua_shim_stubs.cpp
     src/lua_shim_selftest.cpp
+    src/lua_vm_build.cpp
+    src/cap81_vm_adopt_selftest.cpp
     src/save_load_hooks.cpp
     src/serialization.cpp
     src/address_library.cpp

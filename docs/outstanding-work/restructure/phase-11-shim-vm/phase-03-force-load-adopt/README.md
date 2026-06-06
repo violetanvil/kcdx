@@ -19,8 +19,8 @@ Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short h
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — relocate/generalize the early-install primitive → src/early_hook](step-1-early-hook-relocate.md) | DONE | (landed) |
-| [2 — worker builds the one state; engine adopts it (Init interception, no force-load)](step-2-vm-build-and-adopt.md) | NOT STARTED | — |
+| [1 — relocate/generalize the early-install primitive → src/early_hook](step-1-early-hook-relocate.md) | DONE | 18c0ac5 |
+| [2 — worker builds the one state; engine adopts it (Init interception, no force-load)](step-2-vm-build-and-adopt.md) | DONE | (landed) |
 
 ## Phase verification gate
 

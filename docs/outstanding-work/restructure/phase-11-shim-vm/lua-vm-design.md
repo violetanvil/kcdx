@@ -257,21 +257,41 @@ DllMain") was a defect (it predated the probe); it is dropped.
   module (the bugsplat fix's `BugSplat64.dll` target applies when WHGame's chain maps
   it) AND `SetEvent`s the WHGame-loaded gate. Phase 11 CONFIRMS this pass, it does not
   rebuild it.
-- **The VM is built on the worker** at the post-`WaitForGameDll` / post-`refdb::Open`
-  point (WHGame mapped, `lua_newstate` resolvable — PROBE P3 `vm_buildable
-  whgame_mapped=1 lua_newstate_resolved=1`). This worker point precedes the
-  game-main-thread engine Init by ~2 s (cross-thread — the worker builds, the game
-  thread adopts via the §5 gate). See §6.4.
+- **The VM is built + published on the worker** at the post-`WaitForGameDll` /
+  post-`refdb::Open` point (WHGame mapped, `lua_newstate` resolvable — PROBE P3
+  `vm_buildable whgame_mapped=1 lua_newstate_resolved=1`). This worker point precedes
+  the game-main-thread engine Init by ~2 s (cross-thread — the worker builds + publishes
+  the VM, the game thread adopts via the §5 release/acquire edge AND registers `kcdx.*`
+  on the adopted state). See §6.4 (proven live 2026-06-05).
 - A bad mapping/boot AVs at startup — boot is the falsifiable observable.
 
-### 6.4 VM build on the worker + the cross-thread adoption (PROBE P3-settled)
+### 6.4 VM build on the worker + the cross-thread adoption (PROBE P3 + the keystone live run-settled)
 
-kcdx builds the one `lua_State` on the WORKER thread, at the point above. The engine's
-`CScriptSystem::Init` (game-main thread, ~2 s later) adopts it via the
-`lua_newstate`-callee intercept (§4.1, the narrow hook P1 settled). The worker-builds
-→ game-adopts handoff is a cross-thread dependency, ordered by the §5 mandatory
-event gate (worker publishes the built VM + `kcdx.*` tables with a release edge; the
-game thread's intercept observes them after the acquire) — NEVER a wall-clock margin.
+kcdx builds the one `lua_State` on the WORKER thread, at the point above, and
+PUBLISHES it into `hooks::g_L` with a RELEASE edge — the single authoritative publish.
+The engine's `CScriptSystem::Init` (game-main thread, ~2 s later) adopts it via the
+`lua_newstate`-callee intercept (§4.1, the narrow hook P1 settled): the intercept
+returns the published state (ACQUIRE load), the original `lua_newstate` never runs, no
+second VM. The worker-builds → game-adopts handoff is a cross-thread dependency,
+ordered by an explicit release/acquire happens-before edge — NEVER a wall-clock
+margin. (Proven live 2026-06-05: `engine_adopted_kcdx_state` fired; built == live;
+cap-81 single-state PASS.)
+
+**`kcdx.*` table registration stays on the GAME-THREAD first-tick path (NOT the
+worker) — settled by PROBE FIXC, not reasoned.** The worker publishes the VM; the
+existing game-thread first-tick latch (`hooks.cpp`) registers the `kcdx.*` tables on
+the adopted state via the static-linked Lua binder. The thread is IMMATERIAL to
+safety: PROBE FIXC (`_research/probe-archive/p-fixc-table-registration-hazard.md`)
+exercised a static-Lua table registration + a forced GC + a save-load on the adopted
+WHGame state and PROBE Q stayed silent — because FIX C's `setnodevector` patch makes
+kcdx's dummynode a HEAP allocation, not a kcdx-image sentinel (`probe_q.dummynode
+in_kcdx_image=0`), so a static-Lua table write embeds NO kcdx-image sentinel to trip
+the dual-Lua write hazard, on any thread. (The earlier "the worker registers kcdx.*
+tables" wording assumed a worker-registration that a probe showed is unnecessary for
+safety; the game-thread path is kept — it satisfies the cap-81 "kcdx.* present on the
+adopted state" assertion and avoids no real hazard by moving.) The full
+shim-routing of the binder (so registration uses WHGame's Lua, not the static one) is
+the §6.3 static-Lua-drop step's concern, not this one.
 
 ### 6.3 Drop static Lua (the hazard-killing step)
 

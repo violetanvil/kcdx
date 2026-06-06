@@ -12,6 +12,7 @@
 #include "log.h"
 #include "lua_bind_bytes.h"   // RegisterHandlers() — Kind::Bytes apply handler
 #include "lua_bind_hook.h"    // RegisterHandlers() — Kind::Hook apply handler
+#include "lua_vm_build.h"     // KEYSTONE: worker builds the VM + engine adopts it
 #include "mod_absorb/pak_mod_registry.h"  // pak-mod version gate (step 3)
 #include "mod_absorb/order_persist.h"     // order persistence (step 5)
 #include "paths.h"
@@ -213,6 +214,30 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // (lua_pcall + update hooked; MinHook live). Reached only on the success
     // path (the failure return above precedes this).
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::EngineHooksInstalled);
+
+    // KEYSTONE: kcdx builds the ONE Lua VM on THIS worker thread (via the Lua
+    // symbol shim, on WHGame's compiled Lua body — NO force-load) and installs
+    // the lua_newstate-callee intercept so the engine's CScriptSystem::Init (game
+    // main thread, ~2s later) ADOPTS kcdx's state instead of allocating its own.
+    // This is the earliest correct point: WHGame is mapped (WaitForGameDll
+    // returned), refdb is open (the shim resolves lua_newstate by name through
+    // it), and hooks::Install just brought MinHook + the conflict-engine hook
+    // chain up (the intercept is an engine-stamped Mode::Replace chain entry,
+    // routed through the conflict engine so overlap detection stays
+    // authoritative). The worker PUBLISHES g_L with a RELEASE edge inside
+    // BuildAndAdoptVM; the game thread's intercept ACQUIRE-loads it — an explicit
+    // cross-thread happens-before edge, never a timing margin. A false return is
+    // fail-loud-and-continue: the engine builds its own VM, the static-Lua
+    // bootstrap (HookedUpdate first tick) still binds, and the engine.lua_pcall
+    // guard flags any divergent state. (Coexists with the static-linked Lua at
+    // this stage — that drop is a later step.)
+    if (!kcdx::lua_vm_build::BuildAndAdoptVM()) {
+        kcdx::log::Warn("lua_vm_build: kcdx VM build / engine-adoption intercept "
+                        "did not complete — the engine will build its own Lua VM "
+                        "(see the LUA_VM_BUILD ERROR for the failing step). The "
+                        "static-Lua bootstrap still binds; this session runs "
+                        "without the single-VM adoption.");
+    }
 
     // Create the ctor-bracket readiness event NOW — BEFORE InstallCtorBracket
     // below. The bracket goes live the moment InstallCtorBracket returns, and
