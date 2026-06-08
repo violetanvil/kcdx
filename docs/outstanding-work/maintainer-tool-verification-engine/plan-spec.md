@@ -283,14 +283,18 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 | A failure = UNVERIFIED-by-derivation (no "failed" field) | P5 step 2 | Not advancing `last_verified_at_version` (D35; `policy.md`) |
 | Confirm-spine routing (both batches through validate→confirm→commit) | P5 step 2 | Data-core sole writer (D28/law 6) |
 
-### Group F — link table
+### Group F — install-set link surface (D30 revised)
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| Re-pick link table (in-memory, per session) | P2 step 5 | s02 per-module link rows (D30) |
-| Version-match gate | P2 step 5 | Check runs only vs matching DLL (D30) |
-| Degraded (no matching DLL → unavailable + noted) | P2 step 5, P2 step 6 | Never blocks (D30) |
-| Link-to-create (uncovered version → add-a-row on-ramp) | P2 step 7 | → s05 prefill (D30) |
+| Bin-FOLDER pick (`<input webkitdirectory>`, in-session, no persistence) | P2 step 5 | The install-set; one folder pick covers all modules (D30) |
+| WHGame.dll resolves the install version; each module's DLL found by filename | P2 step 5 | The `.rdata` scan + per-module DLL-by-filename lookup (D30) |
+| Non-WHGame module inherits the install version from WHGame.dll | P2 step 5 | CryEngine DLLs carry no KCD2 version string (D30) |
+| Version-match gate (per-module: DLL present AND install version matches the row) | P2 step 5 | The check runs only when matched; exposed for s04 (D30) |
+| New-module registration (a surfaced step, AP18 posture) | P2 step 5 | A CryEngine module not yet in the `module` table (D30) |
+| Degraded states never block (no folder / no WHGame.dll / module DLL not found) | P2 step 5, P2 step 6 | Advisory, law 4 (D30) |
+| Link-to-create (uncovered INSTALL version → add-a-row on-ramp) | P2 step 7 | → s05 prefill at the install version (D30) |
+| Multi-store support | **DEFERRED** | User-decided (§9): stores-differ is UNVERIFIED; the content_hash keeps verification correct + fails safe; revisit on a confirmed cross-store binary divergence (a non-Steam probe). |
 
 ### Group G — evidence_kind
 
@@ -304,7 +308,9 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| s02 verify-surface UX (link rows, match indicator, link-to-create banner) | P2 step 5, P2 step 7 | Built to s02 spec |
+| s02 verify-surface UX (folder pick, per-module rows, install-version match, link-to-create banner) | P2 step 5, P2 step 7 | Built to the revised s02 spec (D30 install-set) |
+| s02 LAYOUT (compact pinned header + one-line verify summary + collapsible Verify/Lifecycle sections + the work surface gets the room) | P2 step 5 | Built to the revised s02 §"Region & position" + the detail-pane model |
+| s02 per-module link-row REFLOW-SAFE structure (stable top line + reserved message space) | P2 step 5 | Built to the revised s02 §"States & variants" (the reflow fix, law 1) |
 | s04 verdict-badge UX (inline, reserved, `[show matches]` steer) | P2 step 6 | Built to s04 spec |
 | s08 worklist UX (import, progress, split, batch action) | P5 step 1 | Built to s08 spec |
 | s06 batch-confirm UX (per-row delta list) | P5 step 2 | Built to s08/§7 (D32) |
@@ -321,17 +327,22 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 | Design element | Covered by | Notes |
 |---|---|---|
 | Law-4 extension (advisory) — 6 clauses (static verdicts + ingested live report + Ambiguous-steers + version-match-gate + no-DLL-upload + no auto-act) | P2 step 5, P2 step 6, P5 step 1, P5 step 2 | Each clause holds in the screen that exercises it (law 4) |
-| 4 new component silhouettes (`verdict badge`, `ingest progress bar`, `batch field-delta list`, `per-module link row`) | `per-module link row` P2 step 5; `verdict badge` P2 step 6 + P5 step 1; `ingest progress bar` P5 step 1; `batch field-delta list` P5 step 2 | Each rendered once in the screen that owns it |
-| Version&verify-surface growth (the s02-header composite) | P2 step 5 | The version `Select` + per-module link table (D24–D30) |
+| 5 component silhouettes (`verdict badge`, `ingest progress bar`, `batch field-delta list`, `per-module link row`, `collapsible section`) | `per-module link row` + `collapsible section` P2 step 5; `verdict badge` P2 step 6 + P5 step 1; `ingest progress bar` P5 step 1; `batch field-delta list` P5 step 2 | Each rendered once in the screen that owns it; `collapsible section` is the s02-layout disclosure |
+| Version&verify-surface (the compact summary + the collapsible install-set link section) | P2 step 5 | The version `Select` + the one-line verify summary + the Bin-folder pick + per-module rows (revised D30 + the s02 layout) |
+| The detail-pane responsive model (lead with the work surface; compact-header + collapse on both breakpoints) | P2 step 5 | `ui/design.md` §"Responsiveness & sizing" |
 | Screen-index / nav-map carrying s08 | P5 step 1 | s08 reached from s01 `[Import verification report]` |
 
 ### UI-side — s02 (`s02-entity-detail.md`)
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| Link table (Contents rows + prose) | P2 step 5 | per-module link row ×M + the surface prose |
-| Link-to-create (Contents + prose) | P2 step 7 | warning banner → s05 (D30) |
-| The 7 verify states (picked-version / not-linked / resolving / match / mismatch / resolve-failure / non-PE) | P2 step 5, P2 step 7 | s02 §States; mismatch surfaces link-to-create (step 7) |
+| Compact pinned header (identity + version Select + one-line verify summary) | P2 step 5 | s02 §"Region & position" + §Contents (the layout revision) |
+| Collapsible "Verify against a DLL" + "Lifecycle" sections (collapsed by default) | P2 step 5 | s02 §"Region & position" + §Contents (the `collapsible section`) |
+| The install-set link surface (Bin-folder pick + per-module rows) | P2 step 5 | per-module link row ×M + the surface prose (revised D30) |
+| Per-module row reflow-safe structure (stable top line + reserved message) | P2 step 5 | s02 §States (the reflow fix, law 1) |
+| Link-to-create (Contents + prose) | P2 step 7 | warning banner → s05 at the install version (D30) |
+| The verify states (no-folder / folder-resolving / not-a-Bin-folder / resolve-failure / per-module-DLL-not-found / match / mismatch) | P2 step 5, P2 step 7 | s02 §States; mismatch surfaces link-to-create (step 7) |
+| The section collapsed/expanded state | P2 step 5 | s02 §States (the disclosure, law 1) |
 
 ### UI-side — s04 (`s04-field-editor.md`)
 
