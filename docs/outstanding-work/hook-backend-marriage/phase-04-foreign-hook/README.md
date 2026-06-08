@@ -1,12 +1,22 @@
-# Phase 4 — foreign-hook coexistence
+# Phase 4 — foreign-hook coexistence (core pillar)
 
 **Intent.** Make kcdx a good citizen alongside another mod that hooks the same
-function. Two ordered steps: detect a pre-existing foreign hook (the prologue
-classifier — clean / kcdx-trampoline / foreign), then chain onto it (follow the
-foreign jump, capture the foreign detour as kcdx's "original") so both mods'
-hooks fire. The `comp-NN` two-mod fixture proves both fire in a defined order.
-This is the one capability ADDED above the patcher (design §4.3, §6) — the chain
-itself is unchanged for the kcdx-vs-kcdx case.
+function — a CORE v1 pillar (design §6), not final-phase polish. The extreme-mod
+consumer (a multiplayer mod, a total conversion in a heavy load order) hooks the
+same functions other mods hook; for it, "kcdx silently wins the prologue and the
+other mod's hook vanishes" is a failure, not an edge case. Two ordered steps:
+detect a pre-existing foreign hook (the prologue classifier — clean /
+kcdx-trampoline / foreign), then chain onto it (follow the foreign jump, capture
+the foreign detour as kcdx's "original") so both mods' hooks fire. The `comp-NN`
+two-mod fixture proves both fire in a defined order. This is a capability ADDED
+above the patcher (design §4.3, §6) — the chain itself is unchanged for the
+kcdx-vs-kcdx case; the thread-safe safetyhook install (Phase 2) is what makes
+patching a prologue another mod is actively in SAFE to do at all.
+
+**Ordering.** Built after Phase 2 (it rests on the safetyhook backend being the
+patcher) and after Phase 3 in the phase sequence, but its PRIORITY is elevated —
+it is a core deliverable, not the last functional phase (only the reference doc,
+Phase 6, closes after it).
 
 Shared spec: [`../context.md`](../context.md).
 

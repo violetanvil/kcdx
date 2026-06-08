@@ -5,7 +5,15 @@ current MinHook calls into a `MinHookBackend` implementation; `detour_hook`
 becomes a thin coordinator that holds a backend and delegates to it. This is a
 BEHAVIOR-PRESERVING refactor — every hook still runs on MinHook, exactly as
 today — that establishes the seam Step 4 swaps safetyhook into. Covers design
-elements E1, E2, E4 (`../context.md`).
+elements E1, E2 (`../context.md`).
+
+> **DONE — `64fba7d`.** Landed correctly: `IDetourBackend` + `MinHookBackend`
+> exist, behind `detour_hook`, behavior-preserving (the 187/218 FAIL set is
+> identical pre/post). The §4 re-grounding moved the backend's permanent home from
+> `detour_hook` to `hook_engine::InstallRuntime` — this step's interface + bodies
+> are CORRECT and reused verbatim; Step 4 relocates their attachment point and
+> dissolves the `detour_hook` coordinator husk (E4 moved to Step 4). No rework of
+> the landed code; only its seam relocates.
 
 **Scope (commit-grain).**
 - Define `IDetourBackend` (design §4.1): `create(target, detour) -> original_ptr |

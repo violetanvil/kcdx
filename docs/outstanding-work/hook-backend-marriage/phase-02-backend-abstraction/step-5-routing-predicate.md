@@ -1,9 +1,10 @@
-# Step 5 — install-context routing predicate
+# Step 5 — install-context routing predicate at InstallRuntime
 
 **What.** Make the backend selection automatic and correct-by-construction: a
-routing predicate reads the install context and picks MinHook for the loader-lock
-(`early_hook`) + bootstrap-pump (`HookedUpdate`) paths and safetyhook for
-everything else. This is the design's ONE safety-critical mechanism — a
+routing predicate at `hook_engine::InstallRuntime` (the backend dispatch site,
+relocated in Step 4) reads the install context and picks MinHook for the
+loader-lock (`early_hook`) + bootstrap-pump (`HookedUpdate`) paths and safetyhook
+for everything else. This is the design's ONE safety-critical mechanism — a
 loader-lock install misrouted to safetyhook is a deadlock (safetyhook's
 unconditional thread-suspend under the loader lock). Covers E5, E18; resolves U5
 (`../context.md`).
@@ -15,14 +16,15 @@ unconditional thread-suspend under the loader lock). Covers E5, E18; resolves U5
   - `HookedUpdate` bootstrap pump → MinHook
   - the frealloc canary (bootstrap-timing) → MinHook
   - `hook_chain` function-entry + mid → safetyhook
-- **The mechanism resolves U5** — HOW the context is read. Pick the form that
-  makes a loader-lock-install misroute IMPOSSIBLE, not merely unlikely (the design
-  bar): the strongest is an explicit engine-internal backend argument at each
-  install site (compile-time obvious, no runtime predicate to get wrong) OR a
-  context flag whose loader-lock case is assert-guarded. Surface the chosen
-  mechanism in the commit body; if the only safe form is a genuine design choice
-  between two safe mechanisms, that is settled HERE by the impossible-misroute bar,
-  not a user fork (the OUTCOME table is already the user's settled decision).
+- **The mechanism resolves U5** — HOW the context is read at `InstallRuntime`.
+  Pick the form that makes a loader-lock-install misroute IMPOSSIBLE, not merely
+  unlikely (the design bar): the strongest is an explicit engine-internal backend
+  argument threaded into the `InstallRuntime` call (compile-time obvious, no
+  runtime predicate to get wrong) OR a context flag whose loader-lock case is
+  assert-guarded. Surface the chosen mechanism in the commit body; if the only safe
+  form is a genuine design choice between two safe mechanisms, that is settled HERE
+  by the impossible-misroute bar, not a user fork (the OUTCOME table is already the
+  user's settled decision).
 - `early_hook` keeps calling MinHook (its body is unchanged, design §8) — the
   predicate formalizes that it MUST, rather than it happening to. The update pump
   + frealloc canary likewise.

@@ -1,4 +1,4 @@
-# Step 9 — backend-layer subsystem/reference doc
+# Step 11 — backend-layer subsystem/reference doc
 
 **What.** Write the reference / subsystem doc for the detour-backend layer the
 prior phases built (design §8: a new responsibility unit gets its reference doc,
@@ -14,7 +14,13 @@ understand the layer cover-to-cover — not a grep of the source. Covers E19
 - Cover:
   - **The `IDetourBackend` contract** — the four methods, the get_original
     guarantee (a stable callable trampoline-original pointer for the hook's
-    lifetime), and that the chain + JIT marshaling sit unchanged above it.
+    lifetime, the slot the backend OWNS), and that the chain + JIT marshaling sit
+    unchanged above it.
+  - **The `InstallRuntime` seam** — `hook_engine::InstallRuntime` is the install
+    chokepoint where the backend dispatches; WHY the seam is here and not behind
+    the (now-dissolved) `detour_hook` (which was only the JIT slot owner). The
+    single conflict model — the chain's `FindChain`/`CanCoexist`, with `g_installed`
+    retired — and why two models was the drift.
   - **The two backends** — `MinHookBackend` (when + why: loader-lock + bootstrap
     paths) and `SafetyhookBackend` (the bulk: thread-safe install, E9→FF
     far-target reach, the mid-hook `MidHook`).
@@ -26,8 +32,12 @@ understand the layer cover-to-cover — not a grep of the source. Covers E19
   - **Foreign-hook detection + chaining** — the prologue classifier + the
     follow-the-jump capture; the v1 scope boundaries (chain-always; foreign
     unhook/install-later out of scope).
-  - **How to add a third backend** — implement `IDetourBackend`, add a routing-table
-    row; the interface is the future-proofing (design §10).
+  - **The batch-install path** — install N detours under one thread-suspend window
+    (`StartDisabled` + `trap_threads` on safetyhook; the queue API on MinHook); when
+    the engine batches (a boot/plugin install set) vs the per-install path.
+  - **How to add a third backend** — implement `IDetourBackend` (incl. its batch
+    method), add a routing-table row; the interface is the future-proofing
+    (design §10).
 - Cross-link the settled design (`docs/design/hook-backend-marriage.md`) as the
   authority; the reference doc is the HOW-IT-WORKS, the design is the WHY-IT-IS.
 - This is a PUBLIC-tree doc (`docs/` is allowlisted) → it references nothing
@@ -40,10 +50,11 @@ two backends exist, (b) name which path uses which engine and why, and (c)
 describe how to add a third backend — from the doc alone. (The `/code-review` /
 `step-review` doc-completeness check is the gate; no launch.)
 
-**Dependencies.** Phases 1–4 (the doc describes the built layer — the interface,
-both backends, routing, the mid-hook path, foreign-hook chaining all exist). It is
-last because it documents what was built; writing it earlier would document an
-intended layer, not the as-built one.
+**Dependencies.** Phases 1–5 (the doc describes the built layer — the interface,
+the `InstallRuntime` seam, both backends, routing, the mid-hook path, foreign-hook
+chaining, and the batch-install path all exist). It is last because it documents
+what was built; writing it earlier would document an intended layer, not the
+as-built one.
 
 **Design authority.** [`hook-backend-marriage.md §8`](../../../design/hook-backend-marriage.md)
 + the whole doc (the reference doc summarizes the built layer the design
