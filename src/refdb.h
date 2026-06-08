@@ -279,6 +279,105 @@ struct IdResolution {
     VerificationState verification_state = VerificationState::Verified;
 };
 
+// =============================================================================
+// Statement-resolution surface (Phase 9.3 prerequisite — the consumer the
+// kcdx.locator.* / kcdx.op.* / kcdx.statement.* binders call).
+//
+// A curated function's statements ship in reference.sqlite (the curated subset)
+// and are eager-loaded at Open() into per-function idx-ordered vectors keyed by
+// the function's address_versions.id. This surface resolves a §9.3 LOCATOR
+// descriptor (a "which statement" selector) to a statement INDEX within a
+// resolved function, and exposes the per-statement reads the binders need.
+//
+// Resolution is a startup/install-time concern (a hook installs once, or the
+// self-test runs at init) — NOT a per-call hot path. It reads the in-memory
+// statement cache (no per-call SQL).
+// =============================================================================
+
+// The §9.3 locator catalog (00-original-plan.md "Phase 9.3" — the kcdx.locator.*
+// values). Every form below resolves against the in-memory statement cache,
+// EXCEPT MatchingPattern (the labeled expert raw-AOB hatch), which resolves
+// against BYTES elsewhere (the byte-scan path) — NOT statement metadata. A
+// StatementLocator carrying MatchingPattern returns found=false here with the
+// reason `matching_pattern_not_statement_locator`; the byte hatch is resolved by
+// a different path, not this one.
+enum class StatementLocatorKind {
+    FunctionEntry,       // function_entry()       — first statement by idx.
+    FunctionExit,        // function_exit()        — last statement by idx.
+    FirstCallTo,         // first_call_to(fn)      — first statement, callee == fn.
+    LastCallTo,          // last_call_to(fn)       — last statement, callee == fn.
+    CallTo,              // call_to(fn)            — unique statement, callee == fn (ERROR if multiple).
+    FirstReturn,         // first_return()         — first statement, kind == "return".
+    LastReturn,          // last_return()          — last statement, kind == "return".
+    ReturnValue,         // return_value(v)        — first return statement whose pseudo_text references v.
+    ReferencesString,    // references_string(s)   — first statement, string_ref == s.
+    FirstReadOfCvar,     // first_read_of_cvar(n)  — first statement, string_ref == n (cvar name in string_ref).
+    Matching,            // matching{...}          — first statement matching ALL provided keys (AND).
+    MatchingPattern,     // matching_pattern("..") — expert raw-AOB hatch; NOT a statement-metadata locator.
+};
+
+// A §9.3 locator descriptor: the kind + the operands the kind consumes. Unused
+// fields stay empty/false for kinds that don't read them. For Matching, any
+// SUBSET of the has_* keys may be set; the matcher ANDs every provided key.
+//
+//   FirstCallTo/LastCallTo/CallTo   read `callee_or_fn`.
+//   ReturnValue                     reads `return_value_operand`.
+//   ReferencesString/FirstReadOfCvar read `string_arg`.
+//   Matching reads the has_*-gated keys: match_kind, match_callee,
+//     match_condition_contains, match_reads_cvar, match_references_string.
+//   MatchingPattern                 reads `aob_pattern` (resolved elsewhere, not here).
+struct StatementLocator {
+    StatementLocatorKind kind = StatementLocatorKind::FunctionEntry;
+
+    std::string callee_or_fn;          // FirstCallTo / LastCallTo / CallTo.
+    std::string return_value_operand;  // ReturnValue — the operand text matched in pseudo_text.
+    std::string string_arg;            // ReferencesString / FirstReadOfCvar.
+    std::string aob_pattern;           // MatchingPattern (the labeled expert hatch).
+
+    // Matching{} keys — each gated by its has_ flag (any subset; ANDed). An
+    // empty has_-set Matching{} matches the FIRST statement (no constraint).
+    bool        has_match_kind = false;               std::string match_kind;                // → CachedStatement.kind
+    bool        has_match_callee = false;             std::string match_callee;              // → callee
+    bool        has_match_condition_contains = false; std::string match_condition_contains;  // → pseudo_text (substring)
+    bool        has_match_reads_cvar = false;         std::string match_reads_cvar;          // → string_ref
+    bool        has_match_references_string = false;  std::string match_references_string;   // → string_ref
+};
+
+// Result of a statement-locator resolution within a resolved curated function.
+//
+// found=true → statement_idx is the resolved statement's idx (within the
+// function's idx-ordered vector) and the per-statement reads below are that
+// statement's facts. found=false → a logged reason token (below), NEVER a
+// silent empty (AP14). The reason tokens:
+//   db_not_loaded                  — the database is not open.
+//   function_no_statements         — the av_id has no statement vector (the
+//                                     function is non-curated, a non-function
+//                                     kind with no statements, or unknown).
+//   locator_no_match               — the locator matched zero statements.
+//   call_to_ambiguous              — call_to(fn) matched MULTIPLE statements
+//                                     (the §9.3 "errors if multiple" form).
+//   matching_pattern_not_statement_locator — a MatchingPattern locator (the
+//                                     expert AOB hatch) was handed to this
+//                                     statement-metadata path; it resolves
+//                                     against bytes elsewhere, not here.
+struct StatementResolution {
+    bool        found = false;
+    int64_t     statement_idx = 0;     // the resolved statement's idx.
+
+    // Per-statement reads for the resolved statement (the kcdx.op.* fit
+    // decision reads byte_range_len). callee / string_ref empty when the
+    // column is NULL (legitimate). has_byte_range_* distinguishes "carries a
+    // value" from "absent" — a 0 is a real value.
+    std::string kind;                  // decoded statements.kind (e.g. "call", "return").
+    std::string callee;                // statements.callee; empty when NULL.
+    std::string string_ref;            // statements.string_ref; empty when NULL.
+    std::string pseudo_text;           // statements.pseudo_text; empty when NULL.
+    bool        has_byte_range_start = false;
+    int64_t     byte_range_start = 0;
+    bool        has_byte_range_len = false;
+    int64_t     byte_range_len = 0;
+};
+
 // Caller context for a Resolve* call.
 //
 // Refdb routes its SUPERSEDED / DEPRECATED / UNVERIFIED warnings to two
@@ -404,5 +503,33 @@ size_t CachedRowCount();
 // engine seed and an author-declared target without surfacing a per-state
 // warning at every collision check.
 bool HasName(const std::string& name);
+
+// =============================================================================
+// Statement-locator resolution — resolve a §9.3 locator within a resolved
+// curated function (identified by name or kcdx_id) to a statement index +
+// per-statement reads. The function's address_versions.id (carried on the
+// resolved cache entry) keys the eager-loaded statement vectors.
+//
+// These run the SAME supersession walk + closest-match version pick as
+// ResolveByName / ResolveById (they reuse the cache entry), then resolve the
+// locator against that entity's statement vector. found=false carries a logged
+// reason (StatementResolution above) — name_unknown when the function name/id
+// does not resolve, function_no_statements when it resolves but carries no
+// statements, locator_no_match / call_to_ambiguous / etc. per the locator.
+//
+// Resolution is startup/install-time — an in-memory hash hit + a linear scan of
+// the function's statement vector (curated functions carry tens of statements,
+// not thousands). No SQL, no per-call cost.
+// =============================================================================
+
+// Resolve a locator within the curated function named `functionName`.
+StatementResolution ResolveStatementByName(const std::string& functionName,
+                                           const StatementLocator& locator,
+                                           const CallerContext& ctx = {});
+
+// Resolve a locator within the curated function with stable id `kcdx_id`.
+StatementResolution ResolveStatementById(uint64_t kcdx_id,
+                                         const StatementLocator& locator,
+                                         const CallerContext& ctx = {});
 
 }  // namespace kcdx::refdb

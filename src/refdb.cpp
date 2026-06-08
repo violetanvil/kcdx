@@ -123,6 +123,9 @@ std::set<WarnKey> g_warnedUnverified;
 
 struct CachedEntity {
     uint64_t     kcdx_id = 0;       // post-supersession kcdx_id (the resolved identity).
+    int64_t      address_version_id = 0;  // the picked address_versions row's OWN id —
+                                          // the key into g_statementsByAv for this
+                                          // resolved function's statements.
     std::string  name;              // post-supersession name (the resolved identity).
     std::string  input_name;        // pre-supersession (the originally-keyed name in g_byName).
     std::string  description;       // address_names.notes (post-supersession entity's notes).
@@ -544,6 +547,8 @@ void DecodeNameRow(sqlite3_stmt* st, NameRow* row) {
 
 struct VersionRow {
     bool        valid = false;       // row decode succeeded.
+    int64_t     address_version_id = 0;  // the row's OWN address_versions.id (the
+                                         // statement-cache key g_statementsByAv uses).
     int64_t     valid_from_id = 0;
     int64_t     valid_through_id = 0;        // 0 == NULL == open.
     bool        has_valid_through = false;
@@ -610,6 +615,8 @@ struct VersionRow {
 //   18 slot_count       (folded survival/re-find — D22)
 //   19 expect_unique    (folded survival/re-find — D22)
 //   20 derives_from     (folded survival/re-find — D22)
+//   21 id               (the row's OWN address_versions.id — statement-cache key;
+//                        appended LAST so 0..20 are undisturbed)
 void DecodeVersionRow(sqlite3_stmt* st, VersionRow* row) {
     row->valid = true;
     row->kcdx_id = sqlite3_column_int64(st, 0);
@@ -691,6 +698,9 @@ void DecodeVersionRow(sqlite3_stmt* st, VersionRow* row) {
         row->has_derives_from = true;
         row->derives_from = sqlite3_column_int64(st, 20);
     }
+    // The row's OWN address_versions.id (index 21 — appended LAST). NOT NULL in
+    // schema (a PK); the statement cache (g_statementsByAv) keys by it.
+    row->address_version_id = sqlite3_column_int64(st, 21);
 
     // Parse the interval endpoint tags. valid_through NULL ("open") parses
     // as (0,0,0) but is never used for distance — the cover-wins branch
@@ -711,7 +721,10 @@ constexpr const char* kVersionSelectColumns =
     "v.struct_offset, "
     // Folded survival/re-find columns (D22) — appended at the END so existing
     // positional indices (0..14) are undisturbed; decoded at indices 15..20.
-    "v.aob, v.anchor_string, v.rule, v.slot_count, v.expect_unique, v.derives_from";
+    "v.aob, v.anchor_string, v.rule, v.slot_count, v.expect_unique, v.derives_from, "
+    // The row's OWN id — appended LAST (index 21) so 0..20 are undisturbed. Keys
+    // the statement cache (g_statementsByAv) for a resolved function's statements.
+    "v.id";
 
 // Compare two parsed tag triples lexicographically (major→minor→build).
 // Returns <0 if a < b, 0 if equal, >0 if a > b.
@@ -1018,6 +1031,7 @@ CachedEntity MakeCachedEntity(const std::string& inputName,
                               bool entityDeprecatedAtV) {
     CachedEntity c;
     c.kcdx_id = static_cast<uint64_t>(picked.kcdx_id);
+    c.address_version_id = picked.address_version_id;  // statement-cache key.
     c.name = effective.name;
     c.input_name = inputName;
     c.description = description;
@@ -1475,6 +1489,214 @@ IdResolution ProjectId(const CachedEntity& c, uint64_t inputId,
     return r;
 }
 
+// ---------------------------------------------------------------------------
+// Statement-locator resolution.
+//
+// Given a resolved function's statement vector (idx-ordered, from
+// g_statementsByAv[av_id]) and a §9.3 locator, find the matching statement
+// INDEX and project its per-statement reads into a StatementResolution. Every
+// not-found branch logs a structured reason (AP14 — never a silent empty).
+//
+// The return-kind string is the dict value "return" (id 3 in
+// _dict_statements_kind); the "call" / "branch" kinds likewise. Matching is by
+// the decoded kind string (CachedStatement.kind already holds the decoded
+// value), so the comparison is against the dict's text, not a raw id.
+// ---------------------------------------------------------------------------
+
+const char* kStmtCategory = "REFDB_STMT";
+
+// Project a CachedStatement at index `idx` into a found StatementResolution.
+StatementResolution MakeStatementResolution(const CachedStatement& s) {
+    StatementResolution r;
+    r.found = true;
+    r.statement_idx = s.idx;
+    r.kind = s.kind;
+    r.callee = s.callee;
+    r.string_ref = s.string_ref;
+    r.pseudo_text = s.pseudo_text;
+    r.has_byte_range_start = s.has_byte_range_start;
+    r.byte_range_start = s.byte_range_start;
+    r.has_byte_range_len = s.has_byte_range_len;
+    r.byte_range_len = s.byte_range_len;
+    return r;
+}
+
+// Emit a fail-loud not-found StatementResolution with a reason token.
+StatementResolution StmtNotFound(const char* reason,
+                                 const std::string& functionId,
+                                 const StatementLocator& loc,
+                                 const char* detail) {
+    LOG_DEBUG_KV(kStmtCategory, "statement_locator_no_resolve",
+        log::KV::BareStr("reason", reason),
+        log::KV("function", functionId),
+        log::KV("locator_kind", (long long)static_cast<int>(loc.kind)),
+        log::KV::BareStr("detail", detail));
+    return StatementResolution{};  // found=false.
+}
+
+// Does this statement satisfy a Matching{} locator's provided keys (ANDed)?
+// An empty key set is vacuously true (matches the first statement).
+//   kind=                → exact kind string.
+//   callee=              → exact callee string.
+//   condition_contains=  → SUBSTRING of pseudo_text (the branch condition text
+//                          lives in pseudo_text — §9.3 / plan-spec coverage map).
+//   reads_cvar= / references_string= → exact string_ref (both back onto
+//                          string_ref per the coverage map).
+bool MatchesMatching(const CachedStatement& s, const StatementLocator& loc) {
+    if (loc.has_match_kind && s.kind != loc.match_kind) return false;
+    if (loc.has_match_callee && s.callee != loc.match_callee) return false;
+    if (loc.has_match_condition_contains &&
+        s.pseudo_text.find(loc.match_condition_contains) == std::string::npos) return false;
+    if (loc.has_match_reads_cvar && s.string_ref != loc.match_reads_cvar) return false;
+    if (loc.has_match_references_string &&
+        s.string_ref != loc.match_references_string) return false;
+    return true;
+}
+
+// The kind string for a return statement (decoded _dict_statements_kind id 3).
+const char* kReturnKind = "return";
+
+// Resolve a locator against an idx-ordered statement vector. `functionId` is a
+// label for the not-found logs (the resolved name or "id:<n>").
+StatementResolution ResolveLocatorInVector(const std::vector<CachedStatement>& stmts,
+                                           const StatementLocator& loc,
+                                           const std::string& functionId) {
+    if (stmts.empty()) {
+        return StmtNotFound("function_no_statements", functionId, loc,
+            "the resolved function carries no statements in the curated "
+            "statement cache (a non-function kind, or no curated coverage)");
+    }
+
+    switch (loc.kind) {
+    case StatementLocatorKind::FunctionEntry:
+        // First statement by idx. The vector is built idx-ascending.
+        return MakeStatementResolution(stmts.front());
+
+    case StatementLocatorKind::FunctionExit:
+        // Last statement by idx.
+        return MakeStatementResolution(stmts.back());
+
+    case StatementLocatorKind::FirstCallTo: {
+        for (const auto& s : stmts) {
+            if (s.callee == loc.callee_or_fn) return MakeStatementResolution(s);
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "first_call_to: no statement in the function calls the named callee");
+    }
+
+    case StatementLocatorKind::LastCallTo: {
+        for (auto it = stmts.rbegin(); it != stmts.rend(); ++it) {
+            if (it->callee == loc.callee_or_fn) return MakeStatementResolution(*it);
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "last_call_to: no statement in the function calls the named callee");
+    }
+
+    case StatementLocatorKind::CallTo: {
+        // The UNIQUE statement whose callee == fn. Multiple → §9.3 ambiguity error.
+        const CachedStatement* hit = nullptr;
+        size_t count = 0;
+        for (const auto& s : stmts) {
+            if (s.callee == loc.callee_or_fn) { hit = &s; ++count; }
+        }
+        if (count == 0) {
+            return StmtNotFound("locator_no_match", functionId, loc,
+                "call_to: no statement in the function calls the named callee");
+        }
+        if (count > 1) {
+            LOG_DEBUG_KV(kStmtCategory, "statement_locator_no_resolve",
+                log::KV::BareStr("reason", "call_to_ambiguous"),
+                log::KV("function", functionId),
+                log::KV("callee", loc.callee_or_fn),
+                log::KV("match_count", (long long)count),
+                log::KV::BareStr("detail",
+                    "call_to(fn) requires a UNIQUE call to the named callee but "
+                    "the function calls it more than once (the §9.3 'errors if "
+                    "multiple' form) — use first_call_to / last_call_to instead"));
+            return StatementResolution{};  // found=false.
+        }
+        return MakeStatementResolution(*hit);
+    }
+
+    case StatementLocatorKind::FirstReturn: {
+        for (const auto& s : stmts) {
+            if (s.kind == kReturnKind) return MakeStatementResolution(s);
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "first_return: the function carries no return-kind statement");
+    }
+
+    case StatementLocatorKind::LastReturn: {
+        for (auto it = stmts.rbegin(); it != stmts.rend(); ++it) {
+            if (it->kind == kReturnKind) return MakeStatementResolution(*it);
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "last_return: the function carries no return-kind statement");
+    }
+
+    case StatementLocatorKind::ReturnValue: {
+        // The first return-kind statement whose pseudo_text references the
+        // operand v. The return pseudo_text shape is "return <operand>" (DEV-DB
+        // ground truth, e.g. "return -1" / "return iVar1" / "return 0xffffffff").
+        // Match = a SUBSTRING of pseudo_text, scoped to return-kind statements.
+        // Simple + documented per §9.3 (return_value resolves from pseudo_text).
+        for (const auto& s : stmts) {
+            if (s.kind == kReturnKind &&
+                s.pseudo_text.find(loc.return_value_operand) != std::string::npos) {
+                return MakeStatementResolution(s);
+            }
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "return_value: no return-kind statement's pseudo_text references the "
+            "named operand");
+    }
+
+    case StatementLocatorKind::ReferencesString: {
+        for (const auto& s : stmts) {
+            if (s.string_ref == loc.string_arg) return MakeStatementResolution(s);
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "references_string: no statement references the named string");
+    }
+
+    case StatementLocatorKind::FirstReadOfCvar: {
+        // The cvar name is carried in string_ref (same column as a string ref —
+        // §9.3 / plan-spec coverage map groups reads_cvar + references_string
+        // under string_ref). First statement whose string_ref == the cvar name.
+        for (const auto& s : stmts) {
+            if (s.string_ref == loc.string_arg) return MakeStatementResolution(s);
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "first_read_of_cvar: no statement reads the named cvar (no statement "
+            "whose string_ref equals the cvar name)");
+    }
+
+    case StatementLocatorKind::Matching: {
+        for (const auto& s : stmts) {
+            if (MatchesMatching(s, loc)) return MakeStatementResolution(s);
+        }
+        return StmtNotFound("locator_no_match", functionId, loc,
+            "matching{}: no statement satisfies all the provided match keys");
+    }
+
+    case StatementLocatorKind::MatchingPattern:
+        // The labeled expert raw-AOB hatch — resolves against BYTES, not the
+        // statement metadata. Not this path's job. Return a clearly-marked
+        // not-found so a caller never silently mis-resolves the AOB hatch to a
+        // statement-content match.
+        return StmtNotFound("matching_pattern_not_statement_locator", functionId, loc,
+            "matching_pattern is the expert raw-AOB hatch — it resolves against "
+            "the binary's bytes via the byte-scan path, NOT the statement "
+            "metadata cache; this statement-resolution path does not handle it");
+    }
+
+    // Unreachable — every enum value is handled above. A future enum value with
+    // no case falls here (fail loud, never a silent empty).
+    return StmtNotFound("locator_no_match", functionId, loc,
+        "unhandled locator kind (internal: a StatementLocatorKind value with no "
+        "resolution case)");
+}
+
 }  // namespace
 
 const char* SqliteVersion() {
@@ -1799,6 +2021,77 @@ size_t CachedRowCount() {
 
 bool HasName(const std::string& name) {
     return g_byName.find(name) != g_byName.end();
+}
+
+// Resolve a locator within a curated function's statements, given the resolved
+// cache entry. Shared by the by-name and by-id entry points: fetch the
+// function's statement vector by its address_version_id, then resolve.
+static StatementResolution ResolveStatementForEntity(const CachedEntity& c,
+                                                     const std::string& functionId,
+                                                     const StatementLocator& locator) {
+    auto it = g_statementsByAv.find(c.address_version_id);
+    if (it == g_statementsByAv.end()) {
+        // The function resolved but carries no statement vector — a non-function
+        // kind (vtable/data slot), a function with no curated statement coverage,
+        // or the pre-deploy state where the statement tables loaded empty. Loud,
+        // never a silent empty (AP14).
+        LOG_DEBUG_KV(kStmtCategory, "statement_locator_no_resolve",
+            log::KV::BareStr("reason", "function_no_statements"),
+            log::KV("function", functionId),
+            log::KV("address_version_id", (long long)c.address_version_id),
+            log::KV("locator_kind", (long long)static_cast<int>(locator.kind)),
+            log::KV::BareStr("detail",
+                "the resolved function has no statements in the curated cache "
+                "(a non-function kind, no curated statement coverage, or the "
+                "statement tables are not deployed yet)"));
+        return StatementResolution{};  // found=false.
+    }
+    return ResolveLocatorInVector(it->second, locator, functionId);
+}
+
+StatementResolution ResolveStatementByName(const std::string& functionName,
+                                           const StatementLocator& locator,
+                                           const CallerContext& ctx) {
+    (void)ctx;  // statement resolution is engine-internal scaffolding — the
+                // per-state warnings are an address-resolution concern (the
+                // caller resolves the address separately if it needs one).
+    if (!IsLoaded()) {
+        LogNotLoaded("ResolveStatementByName");
+        return StatementResolution{};  // found=false, reason db_not_loaded logged.
+    }
+    auto it = g_byName.find(functionName);
+    if (it == g_byName.end()) {
+        LOG_DEBUG_KV(kStmtCategory, "statement_locator_no_resolve",
+            log::KV::BareStr("reason", "name_unknown"),
+            log::KV("function", functionName),
+            log::KV::BareStr("detail",
+                "no curated entity carries this name — the statement locator "
+                "cannot resolve against an unknown function"));
+        return StatementResolution{};  // found=false.
+    }
+    return ResolveStatementForEntity(it->second, functionName, locator);
+}
+
+StatementResolution ResolveStatementById(uint64_t kcdx_id,
+                                         const StatementLocator& locator,
+                                         const CallerContext& ctx) {
+    (void)ctx;
+    if (!IsLoaded()) {
+        LogNotLoaded("ResolveStatementById");
+        return StatementResolution{};  // found=false, reason db_not_loaded logged.
+    }
+    auto it = g_byId.find(kcdx_id);
+    if (it == g_byId.end()) {
+        LOG_DEBUG_KV(kStmtCategory, "statement_locator_no_resolve",
+            log::KV::BareStr("reason", "name_unknown"),
+            log::KV("function", std::string("id:") + std::to_string(kcdx_id)),
+            log::KV::BareStr("detail",
+                "no curated entity carries this kcdx_id — the statement locator "
+                "cannot resolve against an unknown function"));
+        return StatementResolution{};  // found=false.
+    }
+    return ResolveStatementForEntity(it->second, std::string("id:") + std::to_string(kcdx_id),
+                                     locator);
 }
 
 void Close() {

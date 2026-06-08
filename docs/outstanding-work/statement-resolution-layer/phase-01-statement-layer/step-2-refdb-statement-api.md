@@ -16,8 +16,8 @@ both pull a surface forward ahead of its design).
 
 | Sub-step | Status | Commit |
 |---|---|---|
-| 2a — statement data model + eager-load in `Open()` (per-`address_version_id` statement vectors + the `referenced_vars` join); init-time curated-count assertion | DONE | (landed) |
-| 2b — the full §9.3 locator-resolution catalog + per-statement reads (`kind`/`callee`/`string_ref`/`byte_range_*`) | NOT STARTED | — |
+| 2a — statement data model + eager-load in `Open()` (per-`address_version_id` statement vectors + the `referenced_vars` join); init-time curated-count assertion | DONE | f26c819 |
+| 2b — the full §9.3 locator-resolution catalog + per-statement reads (`kind`/`callee`/`string_ref`/`byte_range_*`) | DONE | (landed) |
 | 2c — captures-by-name join + the engine-internal self-test (the seam) + the `cap-79-stmt-resolve` thin shell plugin + matrix row | NOT STARTED | — |
 
 ## What
