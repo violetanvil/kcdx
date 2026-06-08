@@ -72,19 +72,49 @@ element ships.
 | `Resolve()` bail-loud + internal-only gating | §6.1 | P2 step 1 | |
 | WHGame mapping pipeline (`WaitForGameDll` + LDR before_game apply) — NO force-load | §6.2 | P3 step 2 | PROBE P3: force-load impossible/unnecessary; the pipeline ALREADY EXISTS — confirmed, not built |
 | VM build (on the worker) + `Init` interception (engine adopts) | §1, §4.1, §6.4 | P3 step 2 | consumes P1's intercept verdict; folds the old force-load step |
-| Early Lua slot + the ordering-guard EVENT GATE | §5 | P4 step 1 | consumes P1's slot-shape verdict; builds the slot |
-| Mandatory happens-before event gate (worker signals → boot-open path waits-and-blocks; NEW edge, no existing one covers it) | §5 | P4 step 1 | PROBE P11 v2 found the dependency cross-thread + ungated — the gate is the fix, not timing |
-| Order-inversion regression (FAILS if boot open resolves before the slot signaled) | §5 | P4 step 1 + step 2 | the falsifiable proof the gate holds |
+| Mandatory happens-before event gate (worker signals → boot-open path waits-and-blocks; NEW edge, no existing one covers it) | §5 | P4 step 1 (FOUNDATION) | PROBE P11 v2 found the dependency cross-thread + ungated — the gate is the fix, not timing |
+| `RegisterRuntimeOverlay` two-writer CAS (worker writer + game-main writer) | §5 | P4 step 1 (FOUNDATION) | race-safety infra reused by the P5 early surface |
+| Order-inversion regression (FAILS if boot open resolves before the slot signaled) | §5 | P4 step 1 (cap-82) | the falsifiable proof the gate holds |
 | Cross-thread VM-adoption publish (release/acquire; worker builds, game thread adopts) | §5, §6.4 | P3 step 2 | the adoption handoff is published, never timed (PROBE P3: worker-build → game-thread-adopt) |
-| Boot-asset Lua swap delivered (KI-0005) | §7.1 | P4 step 2 | early-slot replace wins boot open |
-| AP14 warn build-time decision | §7.1 | P4 step 2 | narrow/remove per observed serve |
-| Drop static Lua + FIX C revert + `kcdxLuaApi`→shim | §6.3 | P5 step 1 | hazard-killing step |
-| PROBE Q stays as permanent canary | §6.3 | P5 step 1 | unchanged, carried |
-| Served-`.lua` execute confirm (KI-0006) | §7.2 | P6 step 1 | via kcdx slot, not mod-init |
-| KI-0006 residual-crash root-cause if reproduces | §7.2 | P6 step 1 | honest scope, not guaranteed fix |
+| Early Lua slot + boot-asset Lua swap delivered (KI-0005) | §7.1 | **P5 (startup contract)** — see `phase-05-startup-sequence-contract/` coverage below | the early-slot SHAPE moved from P4 to the startup-contract phase |
+| AP14 warn build-time decision | §7.1 | **P5** (startup contract) | narrow/remove per observed serve |
+| Drop static Lua + FIX C revert + `kcdxLuaApi`→shim | §6.3 | P6 step 1 | hazard-killing step |
+| PROBE Q stays as permanent canary | §6.3 | P6 step 1 | unchanged, carried |
+| Served-`.lua` execute confirm (KI-0006) | §7.2 | P7 step 1 | via kcdx slot, not mod-init |
+| KI-0006 residual-crash root-cause if reproduces | §7.2 | P7 step 1 | honest scope, not guaranteed fix |
 | `early_hook.{h,cpp}` relocate/generalize | §8 | P3 step 1 | from `src/probes/bugsplat_ctor_probe` |
-| `before_game`-zone Lua capability (lift zone gate) | §1, §6.3 | P5 step 1 | the zone-gate's synthetic restriction lifts |
+| `before_game`-zone Lua capability (lift zone gate) | §1, §6.3 | P6 step 1 | the zone-gate's synthetic restriction lifts |
 | Per-step permanent test-plugins/ rows | §9 | every step's Test bar | suite grows per step |
+
+## Phase 5 — the startup-sequence author contract: coverage map
+
+Design source: [`phase-05-startup-sequence-contract/bring-forward-design.md`](phase-05-startup-sequence-contract/bring-forward-design.md) (v2, committed `ee9c744`, design-fidelity gated PROCEED). Steps live in [`phase-05-startup-sequence-contract/`](phase-05-startup-sequence-contract/README.md).
+
+| Design element | Source § | Covered by | Notes |
+|---|---|---|---|
+| Worker GC-safety of each early subsystem bind (probe) | §8.2 | P5 step 1 | PROBE INITORDER proved the ordering; this confirms the bind is GC-safe + PROBE-Q-silent |
+| console::Init + cvar::Init move to the worker | §3, §9 | P5 step 2 | PROBE INITORDER: gEnv->pConsole non-null at the worker point |
+| New ctx-B phase: kcdx-subsystems-ready | §3, §4, §9 | P5 step 2 | the ordered-init signal; precedes the boot open |
+| Phase model promoted to author-facing (init_phase.h tokens) | §1, §4, §9 | P5 step 2 (phase added) + step 3 (events) + step 4 (query) | one timeline = control + visibility + docs |
+| Lifecycle event per author-reachable phase (kcdx.on / RegisterListener, parity) | §5.1, §9 | P5 step 3 | fired on the existing bus at each AdvanceTo |
+| Existing messages reconciled as timeline points | §5.1, §8.5 | P5 step 3 | PostLoad/PostPostLoad/InputLoaded/LuaReady; build-time read of the firing sites |
+| Late-subscribe-fires-immediately | §5.1, US-1 | P5 step 3 | the on-ready discipline generalized |
+| New phase `kcdxMessageType` values (append-only) | §9 | P5 step 3 | AP11-safe additions at the END |
+| `kcdx.startup.phase()` + `.at_least()` (Lua) + C++ accessor (query API, parity) | §5.2, US-2, §9 | P5 step 4 | thin read over g_phase + Name() |
+| ctx-A shown-not-subscribable; internal-plumbing phases internal | §4, §12 | OUT-OF-SCOPE (user-decided) | shown on the timeline doc as internal markers, no event |
+| New ctx-B phase: before_game early-slot | §4, §7, §9 | P5 step 5 | where lua_before / the C++ entry runs |
+| `lua_before` `[entrypoints]` key + `luaBeforeEntrypointsRel` | §7.1, §9 | P5 step 5 | mirrors `lua_after` |
+| The worker before-game runner (runs lua_before + C++ entry; signals the gate) | §7.1, §7.4, §9 | P5 step 5 | the new coordinator unit |
+| Declarative / needs-only-kcdx early-bind surface on the worker | §7.3, §7.4 | P5 step 5 | needs-only-kcdx vs needs-the-live-game |
+| US-7 out-of-window call fails loud (teaching error) | §6 US-7, §10 | P5 step 5 | AP14 — never a silent no-op |
+| Boot-asset serve via the early slot (KI-0005) + AP14 warn | §6 US-5, §11 | P5 step 6 | early-slot replace wins boot open; user sees the swap |
+| The kcdx-driven C++ before-game entry export | §7.1, US-4, §9 | P5 step 7 | new export; name resolved at step head (§8.3 probe) |
+| C++ export-name determination (new export vs reuse Preload) | §8.3 | P5 step 7 | build-time read of Preload's fire timing |
+| The author startup-sequence doc (the timeline) | §5.3, §11 | P5 step 8 | + cross-link docs/init.md |
+| Per-call doc entries + Lua/C++ parity + tests per surface | §10 | each P5 surface step's deliverable | docs-discipline: docs move with the surface |
+| Self-registration expert hatch (US-6) | §7.2 | NOT a step — retained from before-game-hooks.md §5/§6 | BugSplat builtin rides as a consumer |
+| Event gate + RegisterRuntimeOverlay CAS | §7.4, §9 | P4 foundation (reused) | not a P5 step — built in Phase 4 |
+| Boot-cvar read-in-window; phase-token reconciliation; gate timeout | §8.4-6 | build-time determinations within P5 steps 3/5/6 | provisional per §8 |
 
 ## Consumers riding this phase (out of scope here — see design §10)
 

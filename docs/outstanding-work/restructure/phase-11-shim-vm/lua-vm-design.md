@@ -390,17 +390,26 @@ that every later step rests on.
    before_game apply pass; loader/worker-startup budget measured. Test: boots; single-state
    assertion; `kcdx.*` tables present; CryEngine scripts still run on our state. (This
    folds the prior "force-load" step — there is no force-load to build.)
-4. **Early Lua slot + boot-asset serve (§5, §7.1)** — the probe-decided slot shape +
-   the mandatory event gate; an early-slot `kcdx.assets.replace` wins a boot asset
-   (`rt=HIT` via the gate); the AP14 warn narrowed/removed per the build-time decision.
-5. **Drop static Lua (§6.3)** — `vendor/lua/*.c` out, FIX C reverted, `kcdxLuaApi` →
+4. **The cross-thread foundation (§5)** — the mandatory event gate (worker signals →
+   the boot-open path waits-and-blocks) + the `RegisterRuntimeOverlay` two-writer CAS,
+   the race-safety infrastructure the early surface reuses. (The early-slot SHAPE
+   moved to the startup-contract phase below; this phase is foundation-only — the
+   live decomposition is the tree's README ledger.)
+5. **The startup-sequence author contract (§5, §7.1 + `phase-05-startup-sequence-contract/bring-forward-design.md`)**
+   — promote the internal phase model to the author-facing control/visibility/docs
+   surface; move console+cvar to the worker (ordered-init, PROBE INITORDER); the
+   `lua_before` early slot + the C++ before-game entry; an early-slot
+   `kcdx.assets.replace` wins a boot asset (`rt=HIT` via the gate, KI-0005); the AP14
+   warn narrowed.
+6. **Drop static Lua (§6.3)** — `vendor/lua/*.c` out, FIX C reverted, `kcdxLuaApi` →
    shim forwarder. Test: suite green with static Lua dropped; PROBE Q silent across
    save-load; a `before_game`-zone Lua plugin's hook fires before CryEngine init.
-6. **Serve-execute confirmation (§7.2)** — a served `.lua` executes via the kcdx slot;
+7. **Serve-execute confirmation (§7.2)** — a served `.lua` executes via the kcdx slot;
    KI-0006 execute-leg confirmed (re-attempt crash root-cause only if it reproduces).
 
 Each step ships its permanent `test-plugins/` regression row
-(`.claude/rules/test-suite.md`).
+(`.claude/rules/test-suite.md`). The phase TREE (the README ledger) is the canonical
+decomposition + status surface; this §9 is the mechanism design's roadmap sketch.
 
 ---
 

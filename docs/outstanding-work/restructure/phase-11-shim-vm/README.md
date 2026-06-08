@@ -37,18 +37,23 @@ of a phase flips that phase's row here (the orchestrator owns the cascade).
 | [1 — keystone probe (Init + lua_newstate observation)](phase-01-probe/README.md) | DONE | f0a0dc9 |
 | [2 — the symbol shim (forward 90 by name + stub 31; 3 unclassified + 2 not-usable carried)](phase-02-shim/README.md) | DONE | 54d98c8 |
 | [3 — worker builds the VM + Init adoption (no force-load — PROBE P3)](phase-03-force-load-adopt/README.md) | DONE | 3b99fea |
-| [4 — early Lua slot + boot-asset swap (KI-0005)](phase-04-early-slot-boot-swap/README.md) | NOT STARTED | — |
-| [5 — drop static Lua (hazard-killing step)](phase-05-drop-static-lua/README.md) | NOT STARTED | — |
-| [6 — served-.lua execute confirmation (KI-0006)](phase-06-serve-execute/README.md) | NOT STARTED | — |
+| [4 — the cross-thread foundation (event gate + RegisterRuntimeOverlay CAS)](phase-04-early-slot-boot-swap/README.md) | NOT STARTED | — |
+| [5 — the startup-sequence author contract (control · visibility · docs)](phase-05-startup-sequence-contract/README.md) | NOT STARTED | — |
+| [6 — drop static Lua (hazard-killing step)](phase-06-drop-static-lua/README.md) | NOT STARTED | — |
+| [7 — served-.lua execute confirmation (KI-0006)](phase-07-serve-execute/README.md) | NOT STARTED | — |
 
 ## Build order rationale
 
 Dependency-topological (`.claude/rules/incremental-delivery.md`): the probe (P1)
 resolves the intercept point + boot-swap reachability + early-slot shape that every
 later phase rests on; the shim (P2) is the machinery the VM build needs; worker
-VM-build + adopt (P3) stands up the one VM (no force-load — PROBE P3); the early slot
-+ boot swap (P4) consumes the running
-VM; dropping static Lua (P5) is the final hazard-killing collapse; serve-execute (P6)
+VM-build + adopt (P3) stands up the one VM (no force-load — PROBE P3); the
+cross-thread foundation (P4) — the event gate + the two-writer CAS — is the
+race-safety infrastructure the early surface reuses; the startup-sequence author
+contract (P5) promotes the internal phase model to the author-facing
+control/visibility/docs surface, moves console+cvar to the worker (ordered-init,
+PROBE INITORDER), and delivers the before_game early slot + boot swap (KI-0005);
+dropping static Lua (P6) is the final hazard-killing collapse; serve-execute (P7)
 confirms the last open capability. Each phase ends buildable; each step is
 independently verifiable when it lands.
 
