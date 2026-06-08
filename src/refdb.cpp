@@ -168,6 +168,86 @@ struct CachedEntity {
 std::unordered_map<std::string, CachedEntity> g_byName;
 std::unordered_map<uint64_t,    CachedEntity> g_byId;
 
+// ---------------------------------------------------------------------------
+// In-memory STATEMENT cache — parallel to the address cache above.
+//
+// Open() eager-loads the curated `statements` + `referenced_vars` tables once
+// (the same startup pass that builds g_byName/g_byId), so the Phase-9.3
+// locator/op/statement surface resolves against in-memory data with no
+// per-call SQL. Mirrors the CachedEntity / g_byName pattern: dict columns are
+// decoded against the statement dicts, nullable ints carry a has_-flag (a 0 is
+// a real value, not a sentinel).
+//
+// Column contract (USER projection of reference.sqlite — the pinned set the
+// later sub-steps read): statements(id, address_version_id, idx, kind, callee,
+// string_ref, byte_range_start, byte_range_len, pseudo_text); referenced_vars(
+// id, address_version_id, statement_idx, var_name, storage_kind,
+// storage_detail, size_bytes, data_type). content_hash + kcdx_id are dropped
+// from the USER projection and not read here.
+//
+// The shipped reference.sqlite MAY or MAY NOT carry these tables depending on
+// deploy freshness (the schema exists in DEV; the shipped USER DB is
+// regenerated on deploy). Their ABSENCE is the pre-deploy state — handled
+// graceful-loud (one INFO line, empty caches), never a hard Open() failure.
+// Address resolution (BuildCache) is unaffected by a missing statement table.
+// ---------------------------------------------------------------------------
+
+// The statement dicts. Loaded the same way g_kindDict is for address_versions.
+std::unordered_map<int64_t, std::string> g_statementKindDict;     // _dict_statements_kind
+std::unordered_map<int64_t, std::string> g_refVarStorageKindDict; // _dict_referenced_vars_storage_kind
+std::unordered_map<int64_t, std::string> g_refVarDataTypeDict;    // _dict_referenced_vars_data_type
+
+struct CachedStatement {
+    int64_t      idx = 0;                 // statement ordering within the function.
+    std::string  kind;                    // decoded via _dict_statements_kind.
+    std::string  callee;                  // statements.callee; empty when NULL.
+    std::string  string_ref;              // statements.string_ref; empty when NULL.
+    std::string  pseudo_text;             // sole carrier of return_value(v) + condition_contains.
+
+    int64_t      byte_range_start = 0;
+    bool         has_byte_range_start = false;
+    int64_t      byte_range_len = 0;
+    bool         has_byte_range_len = false;
+};
+
+struct CachedReferencedVar {
+    int64_t      statement_idx = 0;       // links to CachedStatement.idx (the join key).
+    std::string  var_name;                // referenced_vars.var_name; empty when NULL.
+    std::string  storage_kind;            // decoded via _dict_referenced_vars_storage_kind.
+    std::string  storage_detail;          // referenced_vars.storage_detail; empty when NULL.
+    std::string  data_type;               // decoded via _dict_referenced_vars_data_type.
+
+    int64_t      size_bytes = 0;
+    bool         has_size_bytes = false;
+};
+
+// statements grouped by address_version_id; each vector ordered by idx (the
+// SELECT streams them idx-ascending). A resolved function's statements are an
+// in-memory hash hit by its address_version_id.
+std::unordered_map<int64_t, std::vector<CachedStatement>> g_statementsByAv;
+
+// referenced_vars joinable by (address_version_id, statement_idx) — the
+// captures-by-name join 2c reads. Keyed by the packed pair so the per-statement
+// captures lookup is one hash hit.
+struct AvStmtKey {
+    int64_t av_id;
+    int64_t stmt_idx;
+    bool operator==(const AvStmtKey& o) const {
+        return av_id == o.av_id && stmt_idx == o.stmt_idx;
+    }
+};
+struct AvStmtKeyHash {
+    size_t operator()(const AvStmtKey& k) const {
+        // Mix the two ids; av_id is small (one row per curated entity) and
+        // stmt_idx is function-local, so a shift-xor mix has no realistic
+        // collision pressure across the ~5.6k curated capture rows.
+        std::hash<int64_t> h;
+        return h(k.av_id) ^ (h(k.stmt_idx) * 0x9E3779B97F4A7C15ULL);
+    }
+};
+std::unordered_map<AvStmtKey, std::vector<CachedReferencedVar>, AvStmtKeyHash>
+    g_refVarsByAvStmt;
+
 // Resolve the WHGame.dll module base for RVA→VA conversion. Cached after the
 // first non-null hit; refdb's cache stores RVAs, and the WhgameBase() + rva
 // composition happens at lookup time so the value matches the loaded module
@@ -311,6 +391,25 @@ bool LoadDict(const char* table, std::unordered_map<int64_t, std::string>& out) 
         return false;
     }
     return true;
+}
+
+// True iff `table` exists in the open database. Used to detect the
+// pre-deploy state where the shipped reference.sqlite has not yet been
+// regenerated with the curated statement tables (graceful-absence, not a
+// fail-loud). A prepare/step error reads as "absent" — the caller logs the
+// absence loud either way; this helper does not distinguish a malformed
+// sqlite_master from a genuinely missing table (both mean "no statement data
+// to load").
+bool TableExists(const char* table) {
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;",
+        -1, &st, nullptr);
+    if (rc != SQLITE_OK) return false;
+    sqlite3_bind_text(st, 1, table, -1, SQLITE_TRANSIENT);
+    bool exists = (sqlite3_step(st) == SQLITE_ROW);
+    sqlite3_finalize(st);
+    return exists;
 }
 
 // Read meta.schema_version. Writes *out and returns true on success; on any
@@ -1121,6 +1220,174 @@ bool BuildCache() {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Statement cache build — eager-load the curated statements + referenced_vars
+// tables once at Open(), AFTER the dicts + BuildCache() have run.
+//
+// Graceful absence: if either table is missing from the shipped DB (the
+// pre-deploy state), log ONE structured line and leave the statement caches
+// empty — address resolution is unaffected. A genuine query error on a PRESENT
+// table is fail-loud (the existing pattern). Always emits the REFDB_STMT count
+// line so the load is observable even when empty.
+//
+// Returns true on success (incl. the graceful-absence path); false only on a
+// query error against a present table (which Open() does NOT treat as fatal —
+// the statement surface is non-essential to address resolution).
+// ---------------------------------------------------------------------------
+bool BuildStatementCache() {
+    g_statementsByAv.clear();
+    g_refVarsByAvStmt.clear();
+
+    const char* kStatementCategory = "REFDB_STMT";
+
+    bool haveStatements = TableExists("statements");
+    bool haveRefVars = TableExists("referenced_vars");
+
+    if (!haveStatements || !haveRefVars) {
+        // Pre-deploy state: the DEV schema carries these tables but the shipped
+        // USER DB has not been regenerated yet. Loud INFO, empty caches, no
+        // failure — AP14: the absence is reported, never a silent empty.
+        LOG_INFO_KV(kStatementCategory, "statements_table_absent",
+            log::KV::BareStr("reason", "statements_table_absent"),
+            log::KV("statements_present", haveStatements ? "true" : "false"),
+            log::KV("referenced_vars_present", haveRefVars ? "true" : "false"),
+            log::KV::BareStr("detail",
+                "the shipped reference.sqlite does not carry the curated "
+                "statement tables yet (pre-deploy state) \xe2\x80\x94 the "
+                "statement-resolution surface loads empty; address resolution "
+                "is unaffected"));
+        LOG_INFO_KV(kStatementCategory, "statements_loaded",
+            log::KV("statements", 0LL),
+            log::KV("referenced_vars", 0LL),
+            log::KV("functions_with_statements", 0LL));
+        return true;
+    }
+
+    // ---- statements: one prepared statement, streamed idx-ascending per
+    // address_version_id so each per-function vector comes out idx-ordered. ----
+    {
+        sqlite3_stmt* st = nullptr;
+        int rc = sqlite3_prepare_v2(g_db,
+            "SELECT address_version_id, idx, kind, callee, string_ref, "
+            "       byte_range_start, byte_range_len, pseudo_text "
+            "FROM statements "
+            "ORDER BY address_version_id, idx;",
+            -1, &st, nullptr);
+        if (rc != SQLITE_OK) {
+            LOG_ERROR_KV(kStatementCategory, "statement_cache_failed",
+                log::KV::BareStr("reason", "query_error"),
+                log::KV("stage", "statements_scan"),
+                log::KV("sqlite_rc", (long long)rc),
+                log::KV("sqlite_msg", sqlite3_errmsg(g_db)));
+            return false;
+        }
+        while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+            int64_t avId = sqlite3_column_int64(st, 0);
+            CachedStatement s;
+            s.idx = sqlite3_column_int64(st, 1);
+            if (sqlite3_column_type(st, 2) != SQLITE_NULL) {
+                s.kind = DecodeDict(g_statementKindDict, sqlite3_column_int64(st, 2));
+            }
+            const unsigned char* callee = sqlite3_column_text(st, 3);
+            if (callee) s.callee = reinterpret_cast<const char*>(callee);
+            const unsigned char* sref = sqlite3_column_text(st, 4);
+            if (sref) s.string_ref = reinterpret_cast<const char*>(sref);
+            if (sqlite3_column_type(st, 5) != SQLITE_NULL) {
+                s.has_byte_range_start = true;
+                s.byte_range_start = sqlite3_column_int64(st, 5);
+            }
+            if (sqlite3_column_type(st, 6) != SQLITE_NULL) {
+                s.has_byte_range_len = true;
+                s.byte_range_len = sqlite3_column_int64(st, 6);
+            }
+            const unsigned char* pt = sqlite3_column_text(st, 7);
+            if (pt) s.pseudo_text = reinterpret_cast<const char*>(pt);
+            g_statementsByAv[avId].push_back(std::move(s));
+        }
+        sqlite3_finalize(st);
+        if (rc != SQLITE_DONE) {
+            LOG_ERROR_KV(kStatementCategory, "statement_cache_failed",
+                log::KV::BareStr("reason", "query_error"),
+                log::KV("stage", "statements_scan"),
+                log::KV("sqlite_rc", (long long)rc),
+                log::KV("sqlite_msg", sqlite3_errmsg(g_db)));
+            return false;
+        }
+    }
+
+    // ---- referenced_vars: keyed by (address_version_id, statement_idx). ----
+    {
+        sqlite3_stmt* st = nullptr;
+        int rc = sqlite3_prepare_v2(g_db,
+            "SELECT address_version_id, statement_idx, var_name, storage_kind, "
+            "       storage_detail, size_bytes, data_type "
+            "FROM referenced_vars "
+            "ORDER BY address_version_id, statement_idx;",
+            -1, &st, nullptr);
+        if (rc != SQLITE_OK) {
+            LOG_ERROR_KV(kStatementCategory, "statement_cache_failed",
+                log::KV::BareStr("reason", "query_error"),
+                log::KV("stage", "referenced_vars_scan"),
+                log::KV("sqlite_rc", (long long)rc),
+                log::KV("sqlite_msg", sqlite3_errmsg(g_db)));
+            return false;
+        }
+        while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+            int64_t avId = sqlite3_column_int64(st, 0);
+            CachedReferencedVar v;
+            v.statement_idx = sqlite3_column_int64(st, 1);
+            const unsigned char* vname = sqlite3_column_text(st, 2);
+            if (vname) v.var_name = reinterpret_cast<const char*>(vname);
+            if (sqlite3_column_type(st, 3) != SQLITE_NULL) {
+                v.storage_kind = DecodeDict(g_refVarStorageKindDict,
+                                            sqlite3_column_int64(st, 3));
+            }
+            const unsigned char* sdetail = sqlite3_column_text(st, 4);
+            if (sdetail) v.storage_detail = reinterpret_cast<const char*>(sdetail);
+            if (sqlite3_column_type(st, 5) != SQLITE_NULL) {
+                v.has_size_bytes = true;
+                v.size_bytes = sqlite3_column_int64(st, 5);
+            }
+            if (sqlite3_column_type(st, 6) != SQLITE_NULL) {
+                v.data_type = DecodeDict(g_refVarDataTypeDict,
+                                         sqlite3_column_int64(st, 6));
+            }
+            AvStmtKey key{ avId, v.statement_idx };
+            g_refVarsByAvStmt[key].push_back(std::move(v));
+        }
+        sqlite3_finalize(st);
+        if (rc != SQLITE_DONE) {
+            LOG_ERROR_KV(kStatementCategory, "statement_cache_failed",
+                log::KV::BareStr("reason", "query_error"),
+                log::KV("stage", "referenced_vars_scan"),
+                log::KV("sqlite_rc", (long long)rc),
+                log::KV("sqlite_msg", sqlite3_errmsg(g_db)));
+            return false;
+        }
+    }
+
+    // The 2a verification signal — counts the manager/self-test reads from
+    // kcdx-dev.log against the curated expectation (~2,385 statements,
+    // ~5,595 referenced_vars, 133 functions with statement coverage). Counts
+    // are LOGGED, not hardcode-asserted (the hard self-test is 2c). A broken
+    // load shows wrong/zero counts.
+    size_t totalStatements = 0;
+    for (const auto& [avId, vec] : g_statementsByAv) {
+        (void)avId;
+        totalStatements += vec.size();
+    }
+    size_t totalRefVars = 0;
+    for (const auto& [key, vec] : g_refVarsByAvStmt) {
+        (void)key;
+        totalRefVars += vec.size();
+    }
+    LOG_INFO_KV(kStatementCategory, "statements_loaded",
+        log::KV("statements", (long long)totalStatements),
+        log::KV("referenced_vars", (long long)totalRefVars),
+        log::KV("functions_with_statements", (long long)g_statementsByAv.size()));
+    return true;
+}
+
 // Project a cached entity into a NameResolution, firing any per-state warning
 // (deduped by ctx).
 NameResolution ProjectName(const CachedEntity& c,
@@ -1276,14 +1543,34 @@ bool Open() {
         return false;
     }
 
-    // Load the kind dict (the only dict the engine consumes at resolve time;
-    // the other dicts are author/audit-only).
+    // Load the kind dict (the only address_versions dict the engine consumes
+    // at resolve time; the other address_versions dicts are author/audit-only).
     if (!LoadDict("_dict_address_versions_kind", g_kindDict)) {
         LOG_ERROR_KV(kCategory, "open_failed",
             log::KV::BareStr("reason", "query_error"),
             log::KV("path", dbPathUtf8),
             log::KV::BareStr("detail",
                 "failed to load reference.sqlite kind dictionary "
+                "\xe2\x80\x94 the file is present but malformed; reinstall "
+                "the kcdx release"));
+        Close();
+        return false;
+    }
+
+    // Load the statement dicts (consumed by BuildStatementCache to decode
+    // statements.kind / referenced_vars.storage_kind / referenced_vars.data_type).
+    // These dict tables are present in reference.sqlite even before the
+    // statement tables themselves deploy, so a load failure here is a malformed
+    // DB (fail-loud), not the graceful pre-deploy absence BuildStatementCache
+    // handles for the statement tables.
+    if (!LoadDict("_dict_statements_kind", g_statementKindDict) ||
+        !LoadDict("_dict_referenced_vars_storage_kind", g_refVarStorageKindDict) ||
+        !LoadDict("_dict_referenced_vars_data_type", g_refVarDataTypeDict)) {
+        LOG_ERROR_KV(kCategory, "open_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("path", dbPathUtf8),
+            log::KV::BareStr("detail",
+                "failed to load reference.sqlite statement dictionaries "
                 "\xe2\x80\x94 the file is present but malformed; reinstall "
                 "the kcdx release"));
         Close();
@@ -1343,6 +1630,10 @@ bool Open() {
             Close();
             return false;
         }
+        // The statement cache is non-essential to address resolution; a query
+        // error against a present statement table is logged but does NOT fail
+        // Open() (the address surface remains live).
+        BuildStatementCache();
         g_loaded = true;
         LOG_INFO_KV(kCategory, "opened",
             log::KV("path", dbPathUtf8),
@@ -1363,6 +1654,10 @@ bool Open() {
         Close();
         return false;
     }
+    // The statement cache is non-essential to address resolution; a query
+    // error against a present statement table is logged but does NOT fail
+    // Open() (the address surface remains live).
+    BuildStatementCache();
     g_loaded = true;
     LOG_INFO_KV(kCategory, "opened",
         log::KV("path", dbPathUtf8),
@@ -1527,6 +1822,11 @@ void Close() {
     g_warnedUnverified.clear();
     g_byName.clear();
     g_byId.clear();
+    g_statementKindDict.clear();
+    g_refVarStorageKindDict.clear();
+    g_refVarDataTypeDict.clear();
+    g_statementsByAv.clear();
+    g_refVarsByAvStmt.clear();
 }
 
 }  // namespace kcdx::refdb

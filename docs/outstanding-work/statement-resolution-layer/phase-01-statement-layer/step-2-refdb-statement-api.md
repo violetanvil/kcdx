@@ -1,7 +1,24 @@
 # Step 2 — refdb statement-resolution API, eager-load (engine lane)
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 2.
+**Status: IN PROGRESS.** Ledger row: [`README.md`](README.md) → step 2.
 **Lane: engine / consumer.**
+
+## Sub-step ledger (commit-grain decomposition)
+
+The step is multi-commit; each sub-step is independently verifiable when it lands
+(`.claude/rules/incremental-delivery.md`). Verified in-game by an **engine-internal
+statement-resolution self-test at init** (user decision 2026-06-08): the engine runs
+the resolution self-checks at startup and reports each as a suite row to
+`kcdx-dev.log`; the `cap-79-stmt-resolve` plugin is a thin suite-gated shell. No
+Phase-9.3 author surface (`kcdx.locator.*`/`kcdx.statement.*`) is built early — the seam
+is engine-owned test scaffolding (rejected: a dev-only Lua probe / `kcdx_dev_inspect`,
+both pull a surface forward ahead of its design).
+
+| Sub-step | Status | Commit |
+|---|---|---|
+| 2a — statement data model + eager-load in `Open()` (per-`address_version_id` statement vectors + the `referenced_vars` join); init-time curated-count assertion | DONE | (landed) |
+| 2b — the full §9.3 locator-resolution catalog + per-statement reads (`kind`/`callee`/`string_ref`/`byte_range_*`) | NOT STARTED | — |
+| 2c — captures-by-name join + the engine-internal self-test (the seam) + the `cap-79-stmt-resolve` thin shell plugin + matrix row | NOT STARTED | — |
 
 ## What
 
