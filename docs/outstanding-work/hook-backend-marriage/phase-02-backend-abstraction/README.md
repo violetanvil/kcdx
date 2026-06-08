@@ -15,7 +15,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| Step 3 — IDetourBackend + MinHookBackend (refactor) | NOT STARTED | — |
+| Step 3 — IDetourBackend + MinHookBackend (refactor) | DONE | (landed) |
 | Step 4 — SafetyhookBackend + get_original bridge | NOT STARTED | — |
 | Step 5 — install-context routing predicate | NOT STARTED | — |
 

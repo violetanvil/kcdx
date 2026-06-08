@@ -1,21 +1,27 @@
 #pragma once
-// detour_hook — thin MinHook wrapper that shape-matches RoM's
-// big::detour_hook so the vendored runtime_func_t code can call this
-// class with near-zero diff against upstream.
+// detour_hook — the coordinator over a detour backend. Shape-matches RoM's
+// big::detour_hook so the vendored runtime_func_t code calls this class with
+// near-zero diff against upstream.
 //
-// RoM uses PolyHook2 (via its detour_hook). kcdx uses MinHook (already
-// vendored, already used for the engine's lua_pcall / update hooks +
-// the kcdx.hook surface). This class encapsulates the adaptation so the
-// rest of the rom-borrowed code doesn't need PolyHook2 references.
+// RoM uses PolyHook2 (via its detour_hook). kcdx routes each install to an
+// IDetourBackend (MinHook today; safetyhook + context routing land in later
+// steps). detour_hook holds one backend and delegates every call to it —
+// carrying no patching logic of its own. The public face here is UNCHANGED so
+// runtime_func_t's three JIT-thunk sites see identical behavior.
 
-#include <cstdint>
+#include <memory>
 #include <string>
+
+#include "detour_backend.h"
 
 namespace kcdx {
 
 class detour_hook {
 public:
-    detour_hook() = default;
+    // Defaults to a MinHookBackend — no routing yet (that is a later step).
+    // The backend lives on the heap behind unique_ptr (a stable address), so
+    // the slot get_original_ptr() returns stays put for the hook's lifetime.
+    detour_hook();
     ~detour_hook();
 
     detour_hook(const detour_hook&) = delete;
@@ -31,33 +37,29 @@ public:
     // shape-compatible; we silently ignore the flag.
     void set_is_follow_call_on_fn_address(bool /*follow*/) { /* noop */ }
 
-    // Install the hook (MH_CreateHook + MH_EnableHook). Idempotent —
-    // calling enable() repeatedly is a no-op.
+    // Install the hook. Idempotent — calling enable() repeatedly is a no-op.
     void enable();
 
-    // Uninstall the hook (MH_DisableHook + MH_RemoveHook).
+    // Uninstall the hook.
     void disable();
 
-    // Pointer-to-the-slot-where-MinHook-stored-pOriginal.
+    // Pointer-to-the-slot-where-the-backend-stored-the-relocated-original.
     //
-    // CRITICAL: this returns void** (a stable address INTO this object),
-    // not void* (the value of the slot). RoM's JIT code bakes the
-    // address returned here as an asmjit qword_ptr; the JIT'd
-    // instruction reads the CURRENT value of m_original at runtime.
-    // If we returned void* (the value), the JIT would bake whatever
-    // m_original was at JIT time — which is null because we JIT
-    // BEFORE calling MH_CreateHook.
+    // CRITICAL: this returns void** (a stable address, owned by the backend),
+    // not void* (the value of the slot). RoM's JIT code bakes the address
+    // returned here as an asmjit qword_ptr; the JIT'd instruction reads the
+    // CURRENT value of the slot at runtime. If we returned void* (the value),
+    // the JIT would bake whatever the slot was at JIT time — which is null
+    // because we JIT BEFORE the backend's enable() populates it. The backend
+    // is held by unique_ptr (stable heap address) and never moved, so the
+    // returned address is valid for the hook's lifetime.
     //
     // Verified against RoM upstream src/hooks/detour_hook.hpp
     // @ commit d30217b6 (2026-05-19 investigation).
-    void** get_original_ptr() { return &original_; }
+    void** get_original_ptr() { return backend_->get_original(); }
 
 private:
-    std::string name_;
-    void* target_   = nullptr;
-    void* detour_   = nullptr;
-    void* original_ = nullptr;
-    bool  enabled_  = false;
+    std::unique_ptr<IDetourBackend> backend_;
 };
 
 }  // namespace kcdx
