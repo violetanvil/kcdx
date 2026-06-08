@@ -27,9 +27,10 @@ that fits it, behind one interface, with the chain unchanged on top.
 
 ## §1 Vision
 
-**One uniform detour-backend interface under `detour_hook`; MinHook and
-safetyhook are two interchangeable implementations; each install path is routed
-to the backend whose strengths fit it — automatically, by install context.**
+**One uniform detour-backend interface at the install chokepoint
+(`hook_engine::InstallRuntime`); MinHook and safetyhook are two interchangeable
+implementations; each install path is routed to the backend whose strengths fit
+it — automatically, by install context.**
 
 The chain (`hook_chain`), the conflict model (`CanCoexist`, one detour per
 target, ordered callbacks), and the Lua/ABI marshaling (`PushSlot`/`WriteSlot`,
@@ -37,6 +38,13 @@ the per-slot type JIT) are untouched: they sit above the backend layer and do no
 know which engine patched the bytes underneath. The marriage is a substitution at
 the byte-patcher layer only — plus two capabilities it unlocks (a vetted mid-hook
 primitive, foreign-hook chaining) that the bespoke MinHook layer could not give.
+
+The backend seam lands where the install actually bottoms out: `InstallRuntime`
+is the single function every chain install calls to create + enable the one
+detour per target (it calls raw `MH_CreateHook` today). `detour_hook` — the
+former JIT call-original slot owner — **dissolves**: the backend owns its own
+relocated-original slot (the `void**` the JIT bakes), so there is no separate
+adapter layer between the chain and the patcher.
 
 ### v1 success criteria (measurable)
 
@@ -53,16 +61,25 @@ primitive, foreign-hook chaining) that the bespoke MinHook layer could not give.
   per-module-pool special-casing required (safetyhook's E9→FF fallback reaches any
   64-bit address) — the cap-21/cap-22 engine gap is closed by the backend, not by
   kcdx's branch-pool anchoring.
-- **Foreign-hook coexistence.** A two-mod fixture (kcdx + a synthetic foreign E9
-  on a shared target) shows BOTH detours fire — the foreign mod's hook runs in the
-  chain, kcdx's runs too. (`comp-NN` row.)
+- **Foreign-hook coexistence (a core pillar, §6).** A two-mod fixture (kcdx + a
+  synthetic foreign E9 on a shared target) shows BOTH detours fire — the foreign
+  mod's hook runs in the chain, kcdx's runs too. (`comp-NN` row.) This is a v1
+  pillar, not deferred polish — the extreme-mod (multiplayer) consumer lives or
+  dies on chaining onto foreign detours.
+- **Batch install at scale.** A fixture installing N function-entry hooks at boot
+  (a TC/multiplayer-scale install set) completes through a single thread-suspend
+  window rather than N — the safetyhook per-`enable()` suspend cost does not scale
+  linearly with hook count. (`comp-NN` row; the batch mechanism is §4.5.)
 
 ### The top-level architecture decision
 
-A **backend abstraction behind `detour_hook`** (not a wholesale MinHook removal,
+A **backend abstraction at `InstallRuntime`** (not a wholesale MinHook removal,
 not a no-abstraction per-path hard-wire). MinHook stays permanently for the two
 loader-lock/bootstrap paths; safetyhook serves everything else; one interface
-makes them interchangeable and a future third backend a drop-in.
+makes them interchangeable and a future third backend a drop-in. The seam sits at
+the install chokepoint every chain hook already funnels through, so `detour_hook`
+(a redundant slot-owner adapter once the backend owns its slot) dissolves rather
+than being reshaped.
 
 ---
 
@@ -76,12 +93,26 @@ makes them interchangeable and a future third backend a drop-in.
   the Lua marshaling.
 - **`IDetourBackend`** — the uniform interface the marriage introduces (working
   name; the executor may rename). Methods: `create(target, detour) -> original`,
-  `enable()`, `disable()`, `get_original() -> trampoline_ptr`. `detour_hook`
-  becomes the selector + adapter onto whichever backend the install context picks.
+  `enable()`, `disable()`, `get_original() -> trampoline_ptr`. `InstallRuntime`
+  selects a backend by install context and drives it; the backend owns its own
+  relocated-original slot. (Already built in step 3 as `IDetourBackend` +
+  `MinHookBackend` — the interface is correct; the marriage relocates where it
+  attaches, from the now-dissolved `detour_hook` to `InstallRuntime`.)
+- **`InstallRuntime`** — `hook_engine::InstallRuntime(name, target, detour)`: the
+  single function the chain's first hook per target calls to create + enable that
+  target's one detour. It calls raw `MH_CreateHook` today; the marriage makes it
+  the backend-dispatching install. The real install chokepoint — `detour_hook`
+  was not (its `enable()`/`disable()` are dead on the chain path).
 - **Install context** — the runtime condition at the moment a hook is installed:
   whether the caller holds the loader lock, whether `MH_Initialize` has run,
   whether the install is on the per-frame bootstrap path. The routing predicate
   reads this to pick the backend.
+- **Batch install** — installing N detours under ONE thread-suspend window
+  instead of N. safetyhook's `enable()` suspends all threads per call; at
+  TC/multiplayer scale (hundreds of boot installs) that is hundreds of
+  stop-the-world cycles. The batch path creates all N hooks disabled, then patches
+  them in a single frozen window. A kcdx-authored mechanism over safetyhook's
+  primitives (§4.5), not a safetyhook feature.
 - **Loader-lock path** — `early_hook`: installs a detour from inside an LDR
   notification callback, which fires under the Windows loader lock during DLL
   mapping. Thread suspension here deadlocks (a suspended thread may hold the
@@ -173,12 +204,18 @@ verified by the routing predicate selecting MinHook for a loader-lock install.
 
 ## §4 The model — one interface, two backends, context-routed
 
-### §4.1 The backend interface (`IDetourBackend`)
+### §4.1 The backend interface (`IDetourBackend`) lands at `InstallRuntime`
 
-`detour_hook` today is the single chokepoint for every chain hook
-(`set_instance` / `enable` / `disable` / `get_original_ptr`, read at
-`src/detour_hook.cpp`). The marriage turns `detour_hook` into a thin selector +
-adapter over an `IDetourBackend` interface:
+The real install chokepoint is `hook_engine::InstallRuntime(name, target, detour)`
+(`src/hook_engine.cpp`) — the single function the chain's first hook per target
+calls to create + enable that target's one detour. It calls raw `MH_CreateHook`
+today (`src/hook_engine.cpp:66`), then writes MinHook's `pOriginal` into the slot
+the JIT baked. `detour_hook` was NOT the chokepoint — it is only the JIT
+call-original slot owner; its `enable()`/`disable()` are dead on the chain path
+(`src/rom_borrowed/runtime_func_t.h:80-86` — the install path bypasses `m_detour`
+because `InstallRuntime` calls `MH_CreateHook` directly). The marriage therefore
+lands the backend at `InstallRuntime` and **dissolves `detour_hook`**: the backend
+owns its own relocated-original slot, so no separate slot-owner adapter remains.
 
 ```
 IDetourBackend (interface):
@@ -191,18 +228,31 @@ MinHookBackend     implements IDetourBackend  // wraps MH_CreateHook/Enable/Disa
 SafetyhookBackend  implements IDetourBackend  // wraps safetyhook::InlineHook
 ```
 
-The interface is the SEAM. Above it, nothing changes: `runtime_func_t` reads
-`get_original()` to bake the trampoline pointer into its JIT'd call-original code
-(three sites today — the call-original deref, the around path, the mid-resume
-slot); the chain reads it for `BuildNativeCallThunk`. Below it, each backend owns
-its own trampoline + patch mechanism.
+`IDetourBackend` + `MinHookBackend` already exist (step 3, commit 64fba7d) —
+built behind `detour_hook`, but the interface itself is correct and unchanged;
+the marriage relocates its attachment point to `InstallRuntime` and reuses
+`MinHookBackend`'s create/enable/get_original bodies verbatim.
 
-**The one contract the interface must honor:** `get_original()` returns a stable,
+`InstallRuntime` becomes the backend-dispatching install: pick the backend by
+install context (§4.2), `create(target, detour)`, `enable()`, return the backend's
+relocated-original pointer for the JIT slot. Above it, nothing changes:
+`runtime_func_t` bakes the slot the backend populates into its JIT'd call-original
+code (the call-original deref, the around path, the mid-resume slot); the chain
+reads it for `BuildNativeCallThunk`. Below it, each backend owns its own
+trampoline + patch mechanism.
+
+**The one contract the backend must honor:** `get_original()` returns a stable,
 callable pointer to the relocated-original entry point, valid for the hook's
-lifetime. MinHook returns its `pOriginal`; safetyhook returns its `InlineHook`'s
-`.original()` / trampoline address. Both must satisfy the existing JIT contract
-(the asmjit thunks deref a pointer slot — the backend writes the right value into
-that slot, §4.4).
+lifetime, written into the JIT slot. MinHook returns its `pOriginal`; safetyhook
+returns its `InlineHook`'s `.original()` / trampoline address. Both satisfy the
+existing JIT contract (the asmjit thunks deref a pointer slot — the backend writes
+the right value into that slot, §4.4).
+
+The redundant first-wins map retires with this seam (§4.6): `g_installed`
+(`src/hook_engine.cpp:51`) was a v0.1 second conflict model layered over the
+chain's own. The chain's `FindChain` + `CanCoexist` already prevents a
+double-install per target; `g_installed` duplicated that decision in a second
+place. It is removed, not ported.
 
 ### §4.2 Backend routing — install-context-driven, automatic
 
@@ -243,19 +293,84 @@ time, not the patcher.)
 
 This is the load-bearing integration detail. `runtime_func_t` bakes the
 trampoline pointer into JIT'd asm by dereferencing a raw `original_` storage slot
-(`m_detour->get_original_ptr()`, read at three asmjit sites). MinHook hands back a
-`pOriginal` that fits this directly. safetyhook owns its trampoline inside the
-`InlineHook` object and exposes `.original()` / `.call()`.
+(the `void**` the JIT bakes the address of, at three asmjit sites). Today
+`InstallRuntime` writes MinHook's `pOriginal` into that slot after `MH_CreateHook`;
+the slot's storage is the backend's to own once `detour_hook` dissolves. MinHook
+hands back a `pOriginal` that fits this directly. safetyhook owns its trampoline
+inside the `InlineHook` object and exposes `.original()` / `.call()`.
 
-The adapter resolves the mismatch: `SafetyhookBackend::get_original()` returns the
-address of safetyhook's trampoline (the relocated-original entry), written into
-the same slot the JIT thunks already deref. The JIT codegen does NOT change — it
-still reads a pointer slot; the backend writes the right pointer into it. (This is
-why the abstraction lands at `detour_hook`/`get_original` and not deeper: the JIT
+The backend resolves the mismatch by populating the slot: `MinHookBackend` writes
+its `pOriginal`, `SafetyhookBackend` writes the address of safetyhook's trampoline
+(the relocated-original entry) — both into the same slot the JIT thunks already
+deref. The JIT codegen does NOT change — it still reads a pointer slot; the
+backend (via `InstallRuntime`) writes the right pointer into it. (This is why the
+abstraction lands at `InstallRuntime`/`get_original` and not deeper: the JIT
 contract is "deref this slot for the original," and both backends satisfy it by
-populating the slot. **Marked assumption-to-probe:** that safetyhook's trampoline
-entry is directly callable with the original ABI from the JIT thunk the same way
-MinHook's `pOriginal` is — verify in the spike alongside the mid-hook proof, §9.)
+populating the slot the backend now owns. **Marked assumption-to-probe:** that
+safetyhook's trampoline entry is directly callable with the original ABI from the
+JIT thunk the same way MinHook's `pOriginal` is — verify in the spike alongside
+the mid-hook proof, §9.)
+
+### §4.5 Batch install — N detours, one thread-suspend window
+
+The cost that does not scale: `safetyhook::InlineHook::enable()` calls
+`trap_threads(...)` — suspend ALL threads, patch, resume — once **per hook**
+(`vendor/safetyhook/src/inline_hook.cpp:383`). One hook: one stop-the-world
+cycle, fine. A TC's hundreds of boot installs, or a multiplayer mod's
+cross-cutting hook set: hundreds of stop-the-world cycles back-to-back, each
+suspending and resuming every game thread. This is a real scale wall for the
+extreme-mod consumer, not a micro-optimization.
+
+safetyhook exposes **no batch primitive** — no `enable_all`, no multi-hook install
+(verified: read of `vendor/safetyhook/` this session). It DOES expose the two
+building blocks a kcdx-authored batch path needs:
+
+- **`StartDisabled`** (`vendor/safetyhook/include/safetyhook/inline_hook.hpp:118`,
+  a `Flags` bit) — `create` the hook with its trampoline allocated + relocated but
+  the prologue jump NOT yet written. Defers the patch (and its thread-suspend) to
+  a later `enable()`.
+- **`trap_threads(from, to, len, run_fn)`** (`vendor/safetyhook/include/safetyhook/os.hpp:70`)
+  — the exposed suspend-all-threads-and-run-`run_fn` primitive `enable()` itself
+  uses. It runs an arbitrary closure inside the frozen window.
+
+The batch mechanism kcdx builds over these: at a known batch boundary (boot, a
+plugin's install set), `create` all N hooks with `StartDisabled`, then run ONE
+`trap_threads`-equivalent whose `run_fn` writes all N prologue jumps inside a
+single frozen window. N installs, one stop-the-world cycle.
+
+**Marked assumption-to-probe (§9):** that a single `trap_threads` window can patch
+N independent targets safely — the primitive is documented for one
+`[from, to)` range, and the multi-target frozen-window patch (iterating N
+prologue writes inside one `run_fn`) is feasible-from-the-primitive but NOT yet
+observed end-to-end. The batch path is provisional on a probe that installs N>1
+hooks through one window and confirms all N fire (a `comp-NN` fixture);
+falsification falls back to per-hook `enable()` (the unbatched baseline, correct
+but unscaled). This is a backend-layer mechanism — `MinHookBackend` has its own
+batch story (MinHook exposes `MH_QueueEnableHook` + `MH_ApplyQueued`, verified
+present in `vendor/minhook/include/MinHook.h`, to batch-apply queued hooks in one
+pass; **marked assumption-to-probe:** that MinHook's apply imposes no per-hook
+thread-suspend the batch would still pay — verify against MinHook's source at
+batch-implementation time), so the batch API is expressed on `IDetourBackend` and
+each backend implements it natively.
+
+### §4.6 The single conflict model — `g_installed` retires
+
+The chain already owns conflict resolution: `FindChain(target)` returns the one
+existing chain for a target (or none), `CanCoexist` is the sole predicate for
+whether a new hook joins it, and the first hook per target installs the one detour
+while the rest append a `ChainEntry`. `g_installed` (`src/hook_engine.cpp:51`) was
+a SECOND model for the same concern — a first-wins map `InstallRuntime` consulted
+to refuse a double-install per target. With the chain's `FindChain` gate already
+preventing exactly that, `g_installed` is redundant: two conflict models for one
+concern, the precise drift this re-grounding exposed (the design had layered the
+backend behind a slot-owner while the real install — and a duplicate conflict
+check — lived elsewhere).
+
+`g_installed` is **removed, not ported** onto the backend seam. `InstallRuntime`'s
+single caller is the chain's first-hook-per-target path, which `FindChain` already
+gates; the map guarded a double-install the chain structurally cannot reach. (If a
+non-chain caller of `InstallRuntime` exists, it surfaces during the removal — a
+checkable fact, resolved by reading the call sites, not assumed here.)
 
 ---
 
@@ -316,13 +431,25 @@ register-capture mechanism, NOT the dispatch/marshaling layer above it.
 
 ---
 
-## §6 Foreign-hook detection + chaining
+## §6 Foreign-hook detection + chaining — a core v1 pillar
 
 The capability neither engine gives for free: when kcdx installs a hook on a
 target another mod has already hooked, kcdx **detects the foreign hook, follows
 it, and chains onto it** so both mods' hooks fire. This is the true cross-mod
 coexistence answer — kcdx becomes a good citizen instead of silently winning the
 prologue.
+
+**This is a core pillar of the marriage, not deferred polish.** The extreme-mod
+consumer — a multiplayer mod, a total conversion running alongside other mods —
+is exactly the case that hooks functions OTHER mods also hook (camera, input,
+networking, save, the update pump). For that consumer, "kcdx silently wins the
+prologue and the other mod's hook vanishes" is a failure, not an edge case;
+chaining onto foreign detours is the difference between kcdx coexisting in a heavy
+load order and breaking it. The thread-safe, IP-fixing safetyhook install (§7) is
+what makes patching a prologue another mod is actively in SAFE to do at all —
+which is why foreign-hook coexistence is a first-class outcome the backend
+marriage unlocks, surfaced in §1's success criteria and built as a v1 pillar
+rather than a final-phase addition.
 
 ### §6.1 Detection — read the prologue before patching
 
@@ -363,9 +490,10 @@ jmp-following; kcdx builds the detection + capture.
   internally — stated, not silently chosen.
 - **The foreign mod unhooks later.** If the foreign mod removes its hook after
   kcdx chained onto it, kcdx's captured "original" now points at a restored-or-
-  freed foreign trampoline. v1 contract: kcdx hooks live for the session
-  (`detour_hook` — "no FreeLibrary, no teardown," matching SKSE), and kcdx assumes
-  the foreign hook does too (the common mod-loader model). A foreign mod that
+  freed foreign trampoline. v1 contract: kcdx hooks live for the session (the
+  backend installs are never disabled/removed — "no FreeLibrary, no teardown,"
+  matching SKSE), and kcdx assumes the foreign hook does too (the common
+  mod-loader model). A foreign mod that
   unhooks mid-session is OUT OF SCOPE for v1 coexistence — surfaced as a known
   limitation, not silently mishandled (a foreign unhook kcdx cannot observe is a
   documented risk, §11).
@@ -414,13 +542,28 @@ to the kcdx-source + library-source reads done this session):
   invariant, not a kcdx finding) + kcdx's own `early_hook.cpp` comment that the
   LDR path "runs under the loader lock during kcdx.dll DllMain." Tier: established
   platform fact + in-repo confirmation of the loader-lock timing.
-- **kcdx's install paths all bottom out at MinHook today.** `hook_chain` →
-  `runtime_func_t` → `detour_hook` → `MH_CreateHook`; `early_hook` → `MH_CreateHook`
-  under the loader lock; `HookedUpdate` → direct `MH_CreateHook` (bootstrap
-  exception); the frealloc canary → direct `MH_CreateHook`. Evidence: grep +
-  read of `src/detour_hook.cpp`, `src/early_hook.cpp`, `src/hooks.cpp`,
-  `src/hook_chain.cpp` this session. **This is why `detour_hook` is the correct
-  seam — it is already the single chokepoint for the chain path.**
+- **kcdx's install paths all bottom out at MinHook today — and the chain path's
+  chokepoint is `InstallRuntime`, not `detour_hook`.** `hook_chain` → first hook
+  per target calls `hook_engine::InstallRuntime` → raw `MH_CreateHook`
+  (`src/hook_engine.cpp:66`), which then writes `pOriginal` into the JIT slot;
+  `early_hook` → `MH_CreateHook` under the loader lock; `HookedUpdate` → direct
+  `MH_CreateHook` (bootstrap exception); the frealloc canary → direct
+  `MH_CreateHook`. `detour_hook` is only the JIT call-original slot owner — its
+  `enable()`/`disable()` are DEAD on the chain path (`InstallRuntime` calls
+  `MH_CreateHook` directly, bypassing `m_detour`; `src/rom_borrowed/runtime_func_t.h:80-86`).
+  Evidence: grep + read of `src/hook_engine.cpp`, `src/hook_chain.cpp`,
+  `src/rom_borrowed/runtime_func_t.{h,cpp}`, `src/early_hook.cpp`, `src/hooks.cpp`
+  this session. **This is why the backend seam lands at `InstallRuntime` and
+  `detour_hook` dissolves — `InstallRuntime` is the actual single chokepoint for
+  the chain path; the original design named the wrong layer.**
+- **`g_installed` is a redundant second conflict model.** `InstallRuntime`
+  consults a first-wins `g_installed` map (`src/hook_engine.cpp:51`) to refuse a
+  double-install — but the chain's `FindChain(target)` already returns the one
+  existing chain per target before a second install is ever attempted, so the map
+  guards a case the chain structurally prevents. Evidence: read of
+  `src/hook_engine.cpp` + `src/hook_chain.cpp` (`FindChain` at `:468`/`:906`/`:1922`,
+  the first-hook-installs-rest-append gate at `:1922-1995`) this session. **This is
+  why `g_installed` is removed, not ported (§4.6).**
 - **The cap-04 / cap-21-cap-22 scar tissue.** The mid-hook skip codegen and the
   far-target trampoline were each multi-launch live-debugged fixes. Evidence:
   `docs/known-issues/closed/cap-04 ...md`, `docs/known-issues/closed/cap-21-cap-22
@@ -439,25 +582,48 @@ mechanism EXISTS, not proof it carries kcdx's exact three modes end-to-end).
 
 The marriage introduces / reshapes these units (`structure-by-responsibility.md`):
 
-- **`IDetourBackend`** (new, a core contract) — the backend interface. Core-layer:
-  depends on nothing kcdx-specific; both backends + `detour_hook` depend on it.
-  One responsibility: the byte-patcher/trampoline/install contract.
-- **`MinHookBackend`** (new leaf) — implements `IDetourBackend` over MinHook
-  (`MH_CreateHook`/`Enable`/`Disable`/`Remove`). Absorbs the current body of
-  `detour_hook`'s MinHook calls. One responsibility: MinHook-backed detours.
+- **`IDetourBackend`** (new, a core contract — already built, step 3) — the
+  backend interface (`create`/`enable`/`disable`/`get_original`, plus the batch
+  API §4.5). Core-layer: depends on nothing kcdx-specific; both backends depend on
+  it; `InstallRuntime` drives it. One responsibility: the byte-patcher/
+  trampoline/install contract. Built correctly in step 3; the marriage only
+  relocates its attachment point (from `detour_hook` to `InstallRuntime`).
+- **`MinHookBackend`** (new leaf — already built, step 3) — implements
+  `IDetourBackend` over MinHook (`MH_CreateHook`/`Enable`/`Disable`/`Remove`,
+  + `MH_QueueEnableHook`/`MH_ApplyQueued` for batch). Holds the relocated-original
+  slot the JIT bakes; `get_original()` returns it. Reused verbatim — the bodies
+  do not change, only where they are called from. One responsibility: MinHook-
+  backed detours.
 - **`SafetyhookBackend`** (new leaf) — implements `IDetourBackend` over
-  `safetyhook::InlineHook`. One responsibility: safetyhook-backed detours.
-- **`detour_hook`** (reshaped, coordinator) — becomes the selector + adapter:
-  reads the install context, picks a backend, presents the unchanged
-  `set_instance`/`enable`/`disable`/`get_original_ptr` face to `runtime_func_t`.
-  Carries no patching logic of its own (it delegates to a backend).
+  `safetyhook::InlineHook` (+ the `StartDisabled` + `trap_threads` batch path,
+  §4.5). One responsibility: safetyhook-backed detours.
+- **`hook_engine::InstallRuntime`** (reshaped, the backend dispatch site) — the
+  single install chokepoint becomes backend-dispatching: read the install context,
+  pick a backend, `create` → `enable`, write the backend's relocated-original into
+  the JIT slot. The `g_installed` first-wins map is REMOVED (§4.6 — the chain's
+  `FindChain`/`CanCoexist` is the sole conflict model). Owns no patching logic of
+  its own (it delegates to a backend).
+- **`detour_hook`** (DISSOLVED) — the former JIT call-original slot owner is
+  removed: it was only the slot owner (its `enable()`/`disable()` were dead on the
+  chain path), and the backend now owns its own slot. The slot the JIT bakes
+  becomes the backend's; no separate adapter layer remains between the chain and
+  the patcher. (Step 3 placed `IDetourBackend`/`MinHookBackend` BEHIND
+  `detour_hook`; this step moves them out from behind it and removes the husk.)
 - **`runtime_func_t`** (reshaped) — the function-entry path keeps its asmjit
-  pre/post JIT (reading `get_original()` from whichever backend); the mid-function
-  path (`make_jit_midfunc`) is REMOVED and replaced by a `safetyhook::MidHook`
-  adapter that calls the existing `MidDispatch` from a `Context64` callback.
-- **A foreign-hook-detection unit** (new) — the prologue classifier + the
-  follow-the-jump capture (§6). One responsibility: detect + capture a foreign
-  detour at install time. Used by the `hook_chain` install path, above the backend.
+  pre/post JIT (the call-original slot is now the backend's, populated via
+  `InstallRuntime`); the mid-function path (`make_jit_midfunc`) is REMOVED and
+  replaced by a `safetyhook::MidHook` adapter that calls the existing `MidDispatch`
+  from a `Context64` callback. The dead `m_detour` member + its slot plumbing are
+  removed with `detour_hook`.
+- **A batch-install unit** (new) — owns the "install N detours under one
+  thread-suspend window" mechanism (§4.5): create-all-disabled, then one frozen
+  window patches N. Expressed on `IDetourBackend` (each backend implements it
+  natively — safetyhook via `StartDisabled` + `trap_threads`, MinHook via the
+  queue API). One responsibility: batched detour application at a known boundary.
+- **A foreign-hook-detection unit** (new, a core pillar §6) — the prologue
+  classifier + the follow-the-jump capture. One responsibility: detect + capture a
+  foreign detour at install time. Used by the `hook_chain` install path, above the
+  backend.
 - **`early_hook`, `HookedUpdate`, the frealloc canary** (unchanged backend) —
   stay on MinHook; the routing predicate selects MinHook for them. `early_hook`'s
   body is unchanged (it already calls MinHook directly under the loader lock).
@@ -504,6 +670,24 @@ probe that proves it).
    license against the repo allowlist BEFORE vendoring; record the manifest row in
    the same change. (safetyhook is permissive — confirm at vendor time, both
    registry + source.)
+7. **The batch-install trap_threads-reuse mechanism (§4.5, gates the batch path).**
+   Does a single `trap_threads` frozen window safely patch N independent targets
+   (iterating N prologue writes inside one `run_fn`), the way `enable()` patches
+   one? `trap_threads(from, to, len, run_fn)` is documented for one `[from, to)`
+   range; the multi-target reuse is feasible-from-the-primitive but NOT yet
+   observed end-to-end. Probe: a `comp-NN` fixture creates N>1 hooks with
+   `StartDisabled`, patches all N in one window, confirms all N fire. Outcome map:
+   all fire → the batch path proceeds; any miss / instability → fall back to
+   per-hook `enable()` (unbatched but correct). **The §4.5 batch path is
+   provisional on this probe.**
+8. **`InstallRuntime`'s caller set (gates the `g_installed` removal, §4.6).** Is
+   `InstallRuntime`'s ONLY caller the chain's first-hook-per-target path (which
+   `FindChain` already gates against a double-install), or does a non-chain caller
+   exist that `g_installed` was guarding? A checkable fact — grep the
+   `InstallRuntime` call sites before removing the map. Outcome map: chain-only →
+   remove `g_installed` (the chain's `FindChain` is the sole gate); a non-chain
+   caller exists → that caller's double-install guard is surfaced and re-homed
+   before the map is removed, never dropped silently.
 
 ---
 
@@ -531,7 +715,11 @@ probe that proves it).
 
 | Concern | Pick | Rejected — why |
 |---|---|---|
-| Core architecture | **Backend abstraction behind `detour_hook`** | *safetyhook-primary-with-MinHook-fallback* — the auto-selection is the same predicate either way, but framing safetyhook as "primary" understates that MinHook is mandatory-not-fallback on two paths; the abstraction framing is honest about two co-equal backends. *Per-capability hard-wire, no interface* — two hooking idioms with no unifying seam; least designed, a future change touches both. |
+| Core architecture | **Backend abstraction at `InstallRuntime` (the install chokepoint); `detour_hook` dissolves** | *Backend behind `detour_hook`* — the original pick, FALSIFIED this re-grounding: `detour_hook` is only the JIT slot owner (its `enable()`/`disable()` are dead on the chain path); the real install chokepoint every chain hook funnels through is `InstallRuntime` → `MH_CreateHook`. A seam behind `detour_hook` would not be on the install path at all. *safetyhook-primary-with-MinHook-fallback* — the auto-selection is the same predicate either way, but framing safetyhook as "primary" understates that MinHook is mandatory-not-fallback on two paths. *Per-capability hard-wire, no interface* — two hooking idioms with no unifying seam; a future change touches both. |
+| Backend seam home | **`InstallRuntime` — the backend dispatches there; the backend owns its slot; `detour_hook` is removed** | *Keep `detour_hook` as the adapter* — keeps a husk whose only job (own the JIT slot) the backend now does, leaving two layers where one suffices and the slot owned in the wrong place. *Relocate the step-3 interface unchanged* is exactly the pick — `IDetourBackend`/`MinHookBackend` are correct as built, only their attachment point moves. |
+| Conflict model | **One model — the chain's `FindChain`/`CanCoexist`; `g_installed` removed** | *Port `g_installed` onto the backend seam* — carries a redundant first-wins map forward; the chain's `FindChain` already prevents the double-install the map guarded, so two conflict models for one concern (the drift this re-grounding exposed). Removed, pending the caller-set check (§9.8). |
+| Foreign-hook priority | **Core v1 pillar (built up front, §6), driven by the multiplayer/extreme-mod lens** | *Final-phase polish* — the original placement; understates that the extreme-mod consumer (multiplayer, heavy TC load orders) hooks the same functions other mods hook, so foreign-detour chaining is existential for that consumer, not an edge case. Policy unchanged (chain-always); only the priority/placement elevated. |
+| Batch install | **kcdx-authored over safetyhook's primitives (`StartDisabled` + `trap_threads`), designed now** | *Per-hook `enable()` only* — N stop-the-world suspend cycles at TC/multiplayer scale; the unbatched baseline, kept as the §9.7 fallback if the batch probe fails, not as the v1 target. *Wait for a safetyhook batch primitive* — none exists (verified); building over the exposed primitives is the only path, and it is constructible. Provisional on the §9.7 multi-target-window probe. |
 | Mid-hook scope | **Full `make_jit_midfunc` replacement with `safetyhook::MidHook`** | *Keep `make_jit_midfunc`, safetyhook function-entry only* — leaves the most fragile code (the cap-04 scar tissue) in place, forgoes the single biggest maintenance win. *Decide after a spike* — folded IN as the §9 gate rather than rejected: the replacement is the decision, the spike PROVES it before landing (not a separate decision). |
 | Conflict / coexistence | **Add foreign-hook detection + chaining on top** | *Keep the chain as-is, safetyhook is just the patcher* — forgoes the cross-mod coexistence the thread-safe patch enables; tkhquang's actual concern goes unaddressed. (The chain IS kept as-is for kcdx-vs-kcdx; foreign-detection is added above it, not instead of it.) |
 | Foreign-hook policy | **Chain onto it (follow the foreign jmp)** | *Detect + warn, install anyway* — doesn't solve coexistence, one mod still loses. *Detect + configurable policy* — most flexible but most surface; reserved (§10) for if an unsafe-to-chain target surfaces. |
