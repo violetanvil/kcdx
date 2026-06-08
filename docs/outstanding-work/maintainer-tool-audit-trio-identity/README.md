@@ -15,4 +15,4 @@ kcdx ledger references the FE commits with `FE:<hash>`.
 
 | Phase | Status | Commit |
 |---|---|---|
-| [Phase 01 — audit-trio identity + verified_date](phase-01-audit-trio-identity/README.md) | NOT STARTED | — |
+| [Phase 01 — audit-trio identity + verified_date](phase-01-audit-trio-identity/README.md) | DONE | FE:6bfa833 + FE:0cc6d2d (milestone UAT accepted) |
