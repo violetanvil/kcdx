@@ -69,6 +69,27 @@ USER_COLUMNS = {
                          "expect_unique", "derives_from"],
     # excludes auto_name, decompile_quality (DEV-only discovery labels)
     "meta":             ["id", "schema_version", "abi_confidence"],
+    # statements + referenced_vars ship to USER for the CURATED subset only
+    # (rows whose address_version_id belongs to a curated entity -- the same
+    # curated filter address_versions uses; the row-filter lives in
+    # import_to_sqlite.write_db/filter_rows). The 5.24M-row bulk statements and
+    # all of call_edges stay DEV-only (call_edges is absent from USER_TABLES).
+    # These back the Phase 9.3 kcdx.locator.* / kcdx.op.* / kcdx.statement.*
+    # runtime resolution (statement-resolution-layer step 1).
+    #
+    # PINNED column contract (statement-resolution-layer/plan-spec.md §"The
+    # column contract" + HANDOFF §3). statements DROPS content_hash + kcdx_id
+    # from USER: the engine joins via address_version_id and does not read the
+    # per-statement survival hash at runtime. pseudo_text IS kept -- it is the
+    # SOLE backing of two runtime locator forms (return_value(v) +
+    # matching{condition_contains=}); dropping it strands both. referenced_vars
+    # DROPS kcdx_id (joined via address_version_id).
+    "statements":       ["id", "address_version_id", "idx", "kind", "callee",
+                         "string_ref", "byte_range_start", "byte_range_len",
+                         "pseudo_text"],
+    "referenced_vars":  ["id", "address_version_id", "statement_idx", "var_name",
+                         "storage_kind", "storage_detail", "size_bytes",
+                         "data_type"],
 }
 
 # Full schema (DEV): every table, every column, with its SQL column type.
@@ -239,8 +260,11 @@ SCHEMA = {
 # columns), so there is no separate survival table in either set.
 DEV_TABLES = ["modules", "game_versions", "address_names", "address_versions",
               "meta", "statements", "referenced_vars", "call_edges"]
+# USER ships the curated statement metadata (statements + referenced_vars,
+# curated-row-filtered) for the Phase 9.3 runtime resolution surface; the 5.24M
+# bulk statements + all of call_edges stay DEV-only (call_edges is NOT here).
 USER_TABLES = ["modules", "game_versions", "address_names", "address_versions",
-               "meta"]
+               "meta", "statements", "referenced_vars"]
 
 # The 9 kinds for address_versions.kind (covering every curated row type seen
 # in the address seeds + the bulk function default).

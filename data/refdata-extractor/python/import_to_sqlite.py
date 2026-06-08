@@ -797,14 +797,31 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
     # them via the dict id).
     dict_entries = dicts.materialize(con)
 
+    # The curated address_version id set the USER projection ships: the `id` of
+    # every address_versions row with a curated kcdx_id (kcdx_id IS NOT NULL).
+    # This is the SAME curated set the address_versions row-filter keeps;
+    # statements + referenced_vars narrow to rows whose address_version_id is in
+    # it, so they ship the curated-function subset only (the 5.24M-row bulk
+    # statements -- whose owning function is uncurated -- stay DEV-only by
+    # construction). Built once here; consumed by filter_rows below.
+    curated_av_ids = None
+    if user_projection:
+        curated_av_ids = {r["id"] for r in rows["address_versions"]
+                          if r["kcdx_id"] is not None}
+
     # USER row-filter: address_versions narrows to rows with a curated kcdx_id
     # (kcdx_id IS NOT NULL = curated). Bulk uncurated rows (kcdx_id NULL) are
-    # DEV-only by construction. DEV writes all rows.
+    # DEV-only by construction. statements + referenced_vars narrow to rows whose
+    # address_version_id is in the curated av-id set above (the curated-function
+    # subset; the bulk + all of call_edges stay DEV-only -- call_edges is not in
+    # USER_TABLES). DEV writes all rows.
     def filter_rows(t, rs):
         if not user_projection:
             return rs
         if t == "address_versions":
             return [r for r in rs if r["kcdx_id"] is not None]
+        if t in ("statements", "referenced_vars"):
+            return [r for r in rs if r["address_version_id"] in curated_av_ids]
         return rs   # modules, game_versions, address_names, meta: no row filter
 
     for t in tables:
@@ -842,12 +859,19 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
     con.execute('CREATE INDEX ix_an_name ON address_names(name)')
     if "statements" in tables:
         # Index by av_id (the universal handle kcdx.find walks) + idx for the
-        # statement-ordering query. kcdx_id is nullable; index it separately.
+        # statement-ordering query -- the engine's USER-tier lookup path. The
+        # kcdx_id index is DEV-only: the USER projection DROPS the kcdx_id column
+        # (pinned contract; the engine joins via address_version_id), so creating
+        # an index on it would fail at rebuild. Guard it to DEV.
         con.execute('CREATE INDEX ix_st_av ON statements(address_version_id, idx)')
-        con.execute('CREATE INDEX ix_st_kcdx ON statements(kcdx_id)')
+        if not user_projection:
+            con.execute('CREATE INDEX ix_st_kcdx ON statements(kcdx_id)')
     if "referenced_vars" in tables:
+        # Same as statements: the kcdx_id index is DEV-only (USER drops the
+        # kcdx_id column, so the index would reference a non-existent column).
         con.execute('CREATE INDEX ix_rv_av ON referenced_vars(address_version_id)')
-        con.execute('CREATE INDEX ix_rv_kcdx ON referenced_vars(kcdx_id)')
+        if not user_projection:
+            con.execute('CREATE INDEX ix_rv_kcdx ON referenced_vars(kcdx_id)')
     if "call_edges" in tables:
         con.execute('CREATE INDEX ix_ce_caller_av ON call_edges(caller_address_version_id)')
         con.execute('CREATE INDEX ix_ce_callee_av ON call_edges(callee_address_version_id)')

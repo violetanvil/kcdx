@@ -145,13 +145,36 @@ def run_checks(dump_dir, user_db, dev_db):
                "meta", "statements", "referenced_vars", "call_edges"}
     check("DEV has all 8 schema tables", dev_set.issubset(dt),
           "missing=%s" % (dev_set - dt))
+    # USER ships the 5 core tables PLUS the curated statement metadata
+    # (statements + referenced_vars) for the Phase 9.3 runtime resolution surface
+    # (statement-resolution-layer step 1). call_edges + the 5.24M bulk statements
+    # stay DEV-only.
     user_set = {"modules", "game_versions", "address_names", "address_versions",
-                "meta"}
-    check("USER has the 5 user tables", user_set.issubset(ut),
-          "missing=%s" % (user_set - ut))
-    dev_only = {"statements", "referenced_vars", "call_edges"}
-    check("USER does NOT have statements/referenced_vars/call_edges",
-          not (dev_only & ut), "present=%s" % (dev_only & ut))
+                "meta", "statements", "referenced_vars"}
+    check("USER has the 7 user tables (incl. curated statements/referenced_vars)",
+          user_set.issubset(ut), "missing=%s" % (user_set - ut))
+    check("USER does NOT have call_edges (DEV-only)",
+          "call_edges" not in ut, "present=%s" % ({"call_edges"} & ut))
+    # The PINNED USER column contract on the two statement tables: statements
+    # KEEPS pseudo_text (it backs the return_value(v) + condition_contains=
+    # locator forms) and DROPS content_hash + kcdx_id; referenced_vars DROPS
+    # kcdx_id. A stray/missing column is a contract-drift FAIL.
+    st_cols = set(columns(uc, "statements"))
+    rv_cols = set(columns(uc, "referenced_vars"))
+    st_expected = {"id", "address_version_id", "idx", "kind", "callee",
+                   "string_ref", "byte_range_start", "byte_range_len",
+                   "pseudo_text"}
+    rv_expected = {"id", "address_version_id", "statement_idx", "var_name",
+                   "storage_kind", "storage_detail", "size_bytes", "data_type"}
+    check("USER statements columns == pinned contract (pseudo_text kept; "
+          "content_hash/kcdx_id dropped)",
+          st_cols == st_expected,
+          "extra=%s missing=%s" % (sorted(st_cols - st_expected),
+                                   sorted(st_expected - st_cols)))
+    check("USER referenced_vars columns == pinned contract (kcdx_id dropped)",
+          rv_cols == rv_expected,
+          "extra=%s missing=%s" % (sorted(rv_cols - rv_expected),
+                                   sorted(rv_expected - rv_cols)))
 
     # --- 2. address_versions: every function rva from the dump has a row, +
     #        curated-minted-with-rva rows + curated-minted-no-rva rows.
