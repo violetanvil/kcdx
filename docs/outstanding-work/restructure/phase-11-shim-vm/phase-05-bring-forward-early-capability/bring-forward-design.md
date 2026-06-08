@@ -1,63 +1,73 @@
-# Phase 5 — bring-forward early capability (the before-game author surface)
+# Phase 5 — the startup-sequence author contract (control · visibility · docs)
 
-**Status:** v1 (settled 2026-06-05)
-**Owns:** the GENERAL early-capability author surface for the kcdx restructure —
-the before-game execution window for both Lua and C++ plugins, and the rule for
-what is callable there. The Phase-11 VM design ([`../lua-vm-design.md`](../lua-vm-design.md))
-built the one VM + the worker-run early slot + the event gate as MECHANISM, scoped
-narrowly to the boot-asset case; this design generalizes that slot into the full
-early author surface (the `declare-vs-act` rule below) and adds the early C++ entry
-+ the early notification.
-**Consumes:** [`../lua-vm-design.md`](../lua-vm-design.md) §5 (the worker-run slot +
-the event gate — the mechanism this surface rides), [`before-game-hooks.md`](../../../before-game-hooks.md)
-§3/§5/§6 (the before_game-hook model + the self-registration install machinery +
-the BugSplat consumer), the Phase-4 FOUNDATION (the cross-thread event gate + the
-`RegisterRuntimeOverlay` two-writer CAS — see [`../RESUME-STATE.md`](../RESUME-STATE.md)).
+**Status:** v2 (settled 2026-06-07 — broadened from the v1 "before-game early
+capability" design; the before-game window is now ONE part of the full startup
+contract).
+**Owns:** kcdx's startup sequence as a single AUTHOR-FACING contract — one
+documented timeline the engine ORDERS by (control), authors OBSERVE + REACT to
+(visibility), and authors LEARN from (docs). Includes the before-game early
+author surface (the v1 scope, now §7) as the early-slot section of that timeline.
+**Consumes:** [`../lua-vm-design.md`](../lua-vm-design.md) §5 (the worker-run slot
++ the event gate — the mechanism the before-game window rides),
+[`before-game-hooks.md`](../../../before-game-hooks.md) §3/§5/§6 (the before_game-hook
+model + self-registration + the BugSplat consumer), the Phase-4 FOUNDATION (the
+cross-thread event gate + the `RegisterRuntimeOverlay` two-writer CAS —
+[`../RESUME-STATE.md`](../RESUME-STATE.md)). The internal phase model
+[`src/init_phase.h`](../../../../../src/init_phase.h) + [`docs/init.md`](../../../../init.md)
+(the engine-internal contract this promotes to author-facing).
 **Builds on:** the keystone (the worker builds + publishes the one VM; the early
-slot reads `g_L`, never calls `SetLuaState` — PROBE FIXC, prior session).
+slot reads `g_L`, never calls `SetLuaState` — PROBE FIXC); PROBE INITORDER
+([`../../../../../\_research/probe-archive/p5-subsystem-init-vs-boot-open-ordering.md`](../../../../../_research/probe-archive/p5-subsystem-init-vs-boot-open-ordering.md))
+— the ordered-init rule is proven buildable (console + cvar move to the worker).
 
 ---
 
 ## §1 Vision
 
-**kcdx exposes a general EARLY author surface — for both Lua and C++ — at the
-worker's before-game window (post-VM-build, pre-boot-open), so a plugin can DECLARE
-everything the engine consumes during init BEFORE it is consumed.** A
-total-conversion author replaces boot/menu assets, hooks init-time game functions,
-and registers for the before-game point without owning a native-DllMain detour or
-hitting a "too late" wall.
+**kcdx's startup sequence is a single author-facing CONTRACT — one documented
+timeline that the engine orders by, that authors observe and react to, and that
+authors learn from — so a plugin author always knows exactly when their code runs
+relative to everything kcdx and the engine do.** Full control (kcdx deliberately
+orders every part), full visibility (the author can know + react to every
+reachable phase), well-documented (one timeline an author learns once). This is
+paramount: a total-conversion author writing across Lua and C++ must place their
+code with certainty, not guess at timing.
 
-**The bar (settled this session):** a surface is brought forward iff leaving it
-late costs **capability, user UX, or performance**. "It would break if moved" is an
-engineering task to solve (the gate, the CAS, decouple), NEVER a reason to keep
-something late. The complement also holds: a surface with no before-game consumer
-is NOT moved (moving it buys nothing on the three axes and widens the worker-side
-hazard surface).
+**The unifying decision (settled this dialogue):** promote the rich INTERNAL phase
+model ([`src/init_phase.h`](../../../../../src/init_phase.h) — `InitPhase`,
+monotonic `g_phase`, logged advances, the `KCDX_REQUIRE_PHASE` guard) to THE
+author-facing startup contract. One timeline serves three jobs: control (the engine
+advances `g_phase` through it), visibility (authors subscribe + query it), docs (one
+timeline reference). The existing lifecycle messages
+(`PostLoad`/`PostPostLoad`/`InputLoaded`/`LuaReady`) reconcile as named points ON
+this timeline — not a separate, drifting set.
 
 **v1 success criteria (measurable):**
 
-- A `before_game`-zoned Lua plugin's `lua_before` entrypoint runs on the worker,
-  before the engine's boot-asset open, on the published VM.
-- A C++ plugin's before-game entry is invoked by the worker in the same window
-  (the kcdx-driven entry), AND a true-load-time native detour still installs via
-  self-registration from the plugin's own DllMain (the expert hatch).
-- A plugin that owns no early entrypoint can REGISTER for the before-game point
-  (a new `kcdxMessage_BeforeGame` listener — Lua and C++) and kcdx FIRES it at the
-  gated point, on the right thread.
-- An early DECLARATIVE call (`kcdx.assets.register`, before_game `kcdx.hook`
-  intent, a name declaration, a listener registration) succeeds early; an early
-  IMPERATIVE call (fire a callback / call live game state) fails LOUD with a
-  teaching error, never a silent no-op.
-- The full test suite stays green; PROBE Q stays silent (the early surface adds no
-  kcdx-image sentinel — it rides the one VM).
+- An author can SUBSCRIBE to every author-reachable startup phase (a lifecycle
+  event per phase via `kcdx.on` / C++ `RegisterListener`, full parity) and the
+  listener fires at exactly that phase, on the correct thread; subscribing to an
+  already-past phase fires immediately (the on-ready discipline, generalized).
+- An author can QUERY the current phase: `kcdx.startup.phase()` returns the current
+  named phase; `kcdx.startup.at_least(phase)` returns whether startup has reached a
+  given phase; a C++ accessor mirrors both (parity).
+- The author-reachable phases are the curated set (§4): the ctx-B worker milestones
+  (WHGame-mapped, refdb/Address-Library ready, **kcdx-subsystems-ready**, the
+  **before_game early-slot**) + the ctx-C game-live points (`PostLoad`/`PostPostLoad`/
+  `InputLoaded`/`LuaReady`, reconciled). ctx-A (DllMain, loader-lock, pre-plugin) is
+  SHOWN on the timeline doc but carries no subscribe-able event.
+- A `before_game`-zoned Lua plugin's `lua_before` entrypoint + a C++ plugin's
+  kcdx-driven before-game entry run on the worker, before the engine's boot-asset
+  open, against a FULLY-INITIALIZED kcdx (all subsystems up — §3).
+- The full test suite stays green; PROBE Q stays silent; every author-facing phase
+  event + the query API + the timeline doc exist with Lua+C++ parity and a test.
 
-**Top-level architecture decision (settled):** the early surface is scoped by the
-`declare-vs-act` rule (§4), not a fixed verb allowlist — so a TC need we cannot
-enumerate today is early iff it is declarative. Rejected: a fixed early allowlist
-(assets + before_game hook + listener-register, expand on request) — it
-under-scopes and forces a later rebuild of the early surface the moment a TC author
-needs a declarative verb we did not list, which is the exact rebuild this phase
-exists to prevent.
+**Top-level architecture decision (settled):** ONE author-facing timeline (the
+promoted phase model), not a separate curated event set drifting from the internal
+phases. Rejected: keep the phase model internal + add a curated author-event subset
+— that perpetuates the two-models-can-drift gap this design closes, and makes "full
+visibility" partial by construction (a reachable phase with no curated event leaves
+the author stuck).
 
 ---
 
@@ -65,298 +75,390 @@ exists to prevent.
 
 | Term | Meaning |
 |---|---|
-| **The before-game window** | the worker-thread interval AFTER the VM is built + published (`lua_vm_build`) and BEFORE the engine's game-main boot-asset open. The only point early enough to precede the boot open (PROBE P4: worker VM-publish precedes the boot open by ~1.5s, cross-thread). |
-| **The early Lua slot** | a new worker-run `lua_before` `[entrypoints]` key — a plugin's early Lua, run on the published VM in the before-game window (VM design §5, candidate B). Mirrors the existing `lua_after`. |
-| **The early C++ entry** | a NEW kcdx-driven export the worker invokes in the before-game window (the common path), symmetric with the Lua slot. Distinct from **self-registration** (the plugin's OWN DllMain installs an LDR-time native detour — the expert hatch for hooks the worker entry is too late for). |
-| **`declare-vs-act`** | the rule scoping the early surface (§4): a verb is callable early iff it DECLARES intent to a store kcdx applies at the gated point (a store-write); a verb that ACTS (fires a callback / calls or reads live game state) stays late. |
-| **The event gate** | the Phase-4 cross-thread happens-before edge: the early slot/entry signals readiness (release); the boot-open path waits-and-blocks (acquire). Orders every cross-thread effect of an early declaration. (VM design §5; the FOUNDATION step builds it.) |
-| **`kcdxMessage_BeforeGame`** | a NEW lifecycle message fired at the before-game point on the messaging bus, for a plugin that wants notification without owning an entrypoint (Lua: `kcdx.on`/on-ready-style; C++: `RegisterListener`). Mirrors `kcdxMessage_LuaReady`. |
+| **The startup timeline** | the ordered sequence of `InitPhase` values (corrected for ordered-init, §3), promoted to the author-facing contract. The engine advances `g_phase` through it (control); authors subscribe + query it (visibility); one doc describes it (docs). |
+| **Author-reachable phase** | a phase an author plugin can act at: the ctx-B worker milestones + the ctx-C game-live points. Each exposes a lifecycle event + appears on the timeline doc. (ctx-A is shown-not-subscribable — §4.) |
+| **The three contexts** | A = DllMain (loader-lock, pre-WHGame — internal only); B = worker thread (WHGame mapped, full capability — where kcdx inits its subsystems + runs the before_game slot); C = game main thread (engine live). From `init_phase.h`. |
+| **kcdx-subsystems-ready** | the ctx-B phase where ALL kcdx subsystems (refdb, console, cvar, asset seam, serialization, hook/bytes handlers) are initialized on the worker, BEFORE the boot-asset open. The ordered-init signal (§3); proven reachable by PROBE INITORDER. |
+| **The before-game early-slot** | the ctx-B phase (after kcdx-subsystems-ready, before the boot open) where a plugin's early Lua (`lua_before`) / C++ before-game entry runs against fully-initialized kcdx. The v1 scope, now §7. |
+| **`declare-vs-act` → needs-only-kcdx-vs-needs-live-game** | the rule scoping what is callable in the before-game window (§7.3): early iff it needs only kcdx (+ mapped WHGame); late iff it needs the LIVE GAME. Subsystem-readiness is structural (kcdx fully inits before the slot), not a per-verb probe-around. |
+| **The event gate** | the Phase-4 cross-thread happens-before edge: the early slot signals readiness (release); the boot-open path waits-and-blocks (acquire). Orders the cross-thread worker→boot-open dependency. |
+| **`kcdx.startup.*`** | the new author domain sub-table for the query API (`phase()`, `at_least()`), per the author-surface law (`kcdx.<domain>.<verb>`). |
 
 ---
 
-## §3 User stories & acceptance criteria
+## §3 The ordered-init rule (PROBE INITORDER-proven) — the timeline's worker spine
 
-Organized by author concern, not phase.
+The startup timeline's ctx-B (worker) spine is the **ordered-init rule**: kcdx
+initializes ALL its early-relevant subsystems in dependency order on the worker,
+THEN runs the before-game plugins against a fully-initialized kcdx, THEN the game
+launches (boot-asset open), THEN the after-game (game-live) surface runs.
 
-### US-1 — A Lua plugin replaces a boot/menu asset (KI-0005)
-A `before_game`-zoned plugin declares a `lua_before` entrypoint that calls
-`kcdx.assets.replace("Libs/UI/Textures/KCDLogo.dds", ...)`. The replacement wins
-the boot-asset open.
-**Acceptance:** the boot asset opens with `rt=HIT` from the early-registered
-overlay (agent reads the dev log); the user sees the replaced asset render
-(perceptual confirm); the boot-open path observed the slot's readiness event
-SIGNALED before resolving (the gate held — the falsifiable order-inversion row).
+**Proven by PROBE INITORDER (2026-06-07, archive
+`_research/probe-archive/p5-subsystem-init-vs-boot-open-ordering.md`):**
 
-### US-2 — A Lua plugin hooks an init-time game function
-A `before_game`-zoned plugin's `lua_before` entrypoint calls `kcdx.hook` on a
-function the engine calls during init. The hook intent is queued early and applied
-before the engine reaches that call.
-**Acceptance:** the hook fires when the engine calls the target during init (a
-self-reporting test row that FAILS if the hook never fired); the apply ordered
-before the init call via the gate.
+- **5 of 6 early-relevant subsystems already init on the worker before the boot
+  open** — refdb::Open, the hook/bytes apply handlers, save_load_hooks, serialization,
+  asset_overlay (all worker tid, all preceding the first boot open by 0.6–2.9 s).
+- **`console::Init` is the only one currently late** (game-main first-tick, +11.2 s
+  after the boot open). It MOVES to the worker — **proven safe**: `gEnv->pConsole`
+  (its only hard dependency) is non-null at the worker pre-boot-open point
+  (`iconsole=0x1CE58A699C0`). `cvar::Init` rides the same precondition and moves with
+  it.
+- **kcdx-subsystems-ready** is therefore a real, reachable ctx-B phase: the point on
+  the worker where every kcdx subsystem is up, BEFORE the boot open.
 
-### US-3 — A C++ plugin does early work via the kcdx-driven entry (the common path)
-A C++ plugin exports the before-game entry; the worker invokes it in the
-before-game window with a live root pointer. The plugin does declarative early work
-(`kcdx.assets.register`, before_game hook intent, a name declaration) WITHOUT
-writing a DllMain detour.
-**Acceptance:** the export is invoked on the worker pre-boot-open (a test row
-self-reports it ran + on the worker tid); its declarations take effect at the gated
-point exactly as the Lua slot's do.
+**The early/late split is needs-only-kcdx-vs-needs-the-live-game**, and
+subsystem-readiness is a STRUCTURAL guarantee (kcdx fully inits on the worker before
+the slot), not a per-verb probe-around. This supersedes the v1 "declarative
+(store-write) vs imperative" axis, which a completeness sweep found conflated
+"declarative" with "early-safe" for three verbs that call a live kcdx subsystem at
+registration. Those three now dissolve:
 
-### US-4 — A C++ plugin installs a true-load-time native detour (the expert hatch)
-A plugin needing to hook a foreign DLL's function that fires BEFORE the worker runs
-(BugSplat's ctor at LDR-notification time) self-registers from its own DllMain via
-the `early_hook` primitive ([`before-game-hooks.md`](../../../before-game-hooks.md) §5).
-**Acceptance:** unchanged from before-game-hooks.md §6 — the LDR notification arms,
-fires when the foreign DLL maps, installs the detour (PROBE T-confirmed). This story
-is RETAINED, not rebuilt; this design only adds US-3 alongside it.
+- **`kcdx.command`** — console is up by the slot → registering a command early is
+  fine (console::Init moved to the worker).
+- **`kcdx.cosave` registration** — serialization is up by the slot → early.
+- **`kcdx.scan`** — imperative-but-early-RUNNABLE (it scans live module memory; WHGame
+  is mapped at the slot) — docs say it ACTS (reads memory now), not declares.
 
-### US-5 — A plugin is notified at before-game without owning an entrypoint
-A plugin (Lua or C++) already loaded registers a listener for the before-game
-point. kcdx fires `kcdxMessage_BeforeGame` at the gated point, on the right thread.
-**Acceptance:** the listener fires once, at before-game, before the boot-asset open;
-registering is a store-write (early-safe); firing is kcdx's, on the correct thread.
-
-### US-6 — An imperative early call fails loud
-A plugin's early entrypoint calls an IMPERATIVE verb (fires a callback, calls live
-game state). The call fails with a teaching error naming the before-game constraint
-and the late slot to use.
-**Acceptance:** a structured error (AP14 — never a silent no-op); the message teaches
-(use the late slot / this is before-game); a test row asserts the reject is loud +
-reads the actual reject path, not a tautology (AP15).
+The boot open is CROSS-THREAD from the worker (game-main vs worker — PROBE INITORDER
+confirmed, consistent with PROBE P4), so the worker→boot-open dependency stays gated
+by the Phase-4 event gate, never a wall-clock margin.
 
 ---
 
-## §4 The early-surface scoping rule — `declare-vs-act` (the load-bearing principle)
+## §4 The author-facing phase set (curated, reachable)
 
-**The early surface exposes the whole DECLARATIVE subset of `kcdx.*`; the IMPERATIVE
-subset stays late.** This is the rule, not a fixed list — a verb (existing or future)
-is early iff it is declarative.
+Not all internal phases are author-reachable. The author-facing set is curated by
+REACHABILITY; ctx-A is shown on the timeline doc but carries no event.
 
-### Declarative (callable early) — writes intent to a store kcdx applies at the gated point
-A declarative verb writes to a kcdx-owned store and returns; kcdx applies the stored
-intent at the right time (the gated point / the apply pass). It embeds no
-game-thread semantics, so it is GC-safe on the worker by the same reasoning that
-cleared the asset write (PROBE FIXC: a store-write on the adopted state embeds no
-kcdx-image sentinel — `setnodevector` makes kcdx's dummynode a heap allocation). The
-declarative set:
+### Author-reachable — a subscribe-able lifecycle event + a query value + a doc entry
 
-- **`kcdx.assets.register` / `.replace`** — writes the runtime-overlay store (KI-0005).
-- **`kcdx.hook` (before_game intent)** — queues a hook into the registry; the apply
-  pass installs it before the engine's init call.
-- **name / namespace declaration** (`kcdx.assets.declare`, `kcdx.publish`'s
-  name-declaration leg) — writes the published-name store.
-- **listener registration** (`kcdx.on` / C++ `RegisterListener`, incl. for
-  `kcdxMessage_BeforeGame`) — stores a registry ref; the LISTENER FIRES later, on
-  the right thread.
-- **boot-cvar set** — *assumes the engine reads the cvar during the before-game
-  window — UNVERIFIED, probe before relying on it (§6).* Where the engine reads + caches
-  a cvar at init, setting it early is declarative (write a value the engine reads).
-  Provisional until the probe confirms a given cvar is read in the window.
+- **ctx-B (worker) milestones:**
+  - **WHGame-mapped** (`GameDllMapped`) — the game binary is mapped; an author hook
+    on a WHGame export becomes installable.
+  - **Address-Library ready** (`RefdbOpened`) — every name/id resolve is live; an
+    author can resolve targets.
+  - **kcdx-subsystems-ready** (NEW, §3) — every kcdx subsystem is up on the worker
+    (console, cvar, asset seam, serialization, hook/bytes handlers), before the boot
+    open. The "kcdx is fully ready, and the game has not started" point.
+  - **before_game early-slot** (NEW, §7) — the author's early Lua / C++ entry runs.
+- **ctx-C (game-live) points** — the existing lifecycle messages, reconciled as
+  timeline points (§5): `PostLoad`, `PostPostLoad`, `InputLoaded`, `LuaReady`.
 
-### Imperative (stays late) — fires a callback, or calls/reads live game state
-An imperative verb acts on the running game: it fires a registered callback, calls
-into a live engine subsystem, or reads a live game object. These are **meaningless
-before the game exists** — so excluding them costs the author ZERO capability — and
-they are the off-thread re-entrancy hazard (firing a listener on the worker
-re-enters game-thread-assuming code, the same reason `SetLuaState` / `LuaReady` stay
-game-thread). They stay at the game-thread first-tick / runtime.
+### ctx-A (DllMain, loader-lock, pre-plugin) — shown, NOT subscribe-able
 
-### Why a rule, not a list
-A TC author's need we cannot enumerate today is correctly classified by the rule:
-declarative → early, imperative → late. The rule matches the kcdx mental model
-(*declare intent; the engine applies it at the right time*) and keeps the worker
-surface GC-safe by construction (store-writes only).
+The ctx-A phases (`PreInit`, `ConfigLoaded`, `BeforeGameApply`) run under the loader
+lock, before WHGame is mapped and before any author plugin DLL is loaded. An author
+event there is **unsubscribable by construction** (the author's DLL is not loaded)
+and **actively dangerous** (a loader-lock callback can silently deadlock the game —
+the footgun [`before-game-hooks.md`](../../../before-game-hooks.md) §3 decision 5
+warns about). So ctx-A appears ON the timeline doc (the author sees the WHOLE
+sequence) but carries NO subscribe-able event, marked "engine-internal, pre-plugin".
 
-### Per-verb classification is settled at build, by the GC-safety probe
-The declarative/imperative LABEL on each concrete verb is confirmed at build by the
-worker GC-safety probe (§6) — the design fixes the RULE; the probe confirms each
-verb's worker-bind is GC-safe + PROBE-Q-silent before that verb is bound early. A
-verb that cannot be made GC-safe early is treated as imperative for v1 and surfaced.
+### Why curation, not 1:1
+
+Exposing every internal phase 1:1 would ship unsubscribable/hazardous ctx-A events
+that mislead authors into an unsafe pattern. Curation by reachability gives "every
+MEANINGFUL part" (the ask's spirit) — every phase an author can reach is visible +
+reactable; ctx-A is excluded by physics, not omitted (the doc still shows it).
+Internal phases that are pure plumbing with no author meaning
+(`EnabledListBuiltAndReady`, the internal mod-loader build) likewise stay
+engine-internal (shown on the timeline as internal markers, no event).
 
 ---
 
-## §5 The author surfaces
+## §5 The author surfaces — react + query
 
-### 5.1 Lua — the `lua_before` entrypoint
-A new `[entrypoints]` key, `lua_before`, mirroring the existing `lua_after`
-(`src/config.cpp` allowlist + parser; string-or-array). A `before_game`-zoned plugin
-declares it; the worker runs it on the published VM in the before-game window. The
-existing `lua` (first-tick) + `lua_after` keys are untouched.
+### 5.1 React — a lifecycle event per author-reachable phase (determined by the author-surface law)
+
+Each author-reachable phase (§4) fires a lifecycle event through the existing message
+bus. An author subscribes via the existing lifecycle verb — `kcdx.on(event, fn)`
+(Lua) / `RegisterListener` (C++) — full Lua+C++ parity
+([`.claude/rules/lua-api-surface.md`](../../../../../.claude/rules/lua-api-surface.md)).
+This is DETERMINED by the author-surface law (the lifecycle subscription mechanism
+already exists; the new phases get events on it), not a new fork.
+
+- The phase events are named on the timeline (stable tokens reconciled to
+  author-friendly names — e.g. `kcdx.on("kcdx.subsystems_ready", fn)`,
+  `kcdx.on("kcdx.before_game", fn)`). The exact token-per-phase reconciliation is a
+  build-time read of the firing sites (§8).
+- **Subscribing to an already-past phase fires immediately** — the
+  `kcdx.dev.on_ready` "already-ready vs subscribe-and-wait" discipline, generalized
+  to every phase. An author never misses a phase by subscribing late.
+- The existing append-only `kcdxMessageType` enum carries the new phase messages
+  (AP11-safe, new values at the END).
+
+### 5.2 Query — `kcdx.startup.*` (NEW)
+
+A new author domain sub-table (`kcdx.<domain>.<verb>`, per the author-surface law):
+
+```lua
+kcdx.startup.phase()          -- returns the current named phase (a stable token)
+kcdx.startup.at_least(phase)  -- returns whether startup has reached `phase`
+```
+
+C++ mirrors both via the interface (parity). Backed by the existing `g_phase` atomic
++ `init::Name()` — a thin READ surface over what already exists internally (the
+internal `KCDX_REQUIRE_PHASE` guard already proves the query is useful; this exposes
+the same to authors). Lets an author BRANCH on the current state, not only react to
+a transition ("if `kcdx.startup.at_least("kcdx.subsystems_ready")` then do X now;
+else `kcdx.on("kcdx.subsystems_ready", do_x)`").
+
+### 5.3 The timeline doc — the author learns the whole sequence (well-documented)
+
+A NEW author-facing startup-sequence reference (the timeline authors read), per
+[`.claude/rules/docs-discipline.md`](../../../../../.claude/rules/docs-discipline.md):
+every phase in real-time order, what kcdx does at it, what subsystems are up, what
+the author can SAFELY do at it (and what they can't yet), the event token to
+subscribe to, the query value it returns, which context (A/B/C) it runs in, and the
+ctx-A "shown-not-subscribable" markers. `docs/init.md` STAYS the internal engine
+contract; the new author doc and `docs/init.md` cross-reference (the author doc is
+the WHAT-can-I-do-when view; init.md is the engine's internal ordering contract).
+
+---
+
+## §6 User stories & acceptance criteria
+
+Organized by author concern.
+
+### US-1 — An author subscribes to a startup phase
+A plugin (Lua or C++) registers for an author-reachable phase
+(`kcdx.on("kcdx.subsystems_ready", fn)` / C++ `RegisterListener`).
+**Acceptance:** the listener fires at exactly that phase, on the correct thread (a
+self-reporting test row that FAILS if it fired at the wrong phase or wrong thread).
+A subscription to an already-past phase fires immediately (a row asserting the
+fire-now path).
+
+### US-2 — An author queries the current phase
+A plugin calls `kcdx.startup.phase()` / `kcdx.startup.at_least(p)` (+ the C++
+accessor).
+**Acceptance:** returns the correct current named phase / the correct reached-yet
+boolean (a row that FAILS if the query disagrees with the actual `g_phase`); Lua and
+C++ return the same value (parity row).
+
+### US-3 — A Lua plugin runs early Lua against fully-initialized kcdx
+A `before_game`-zoned plugin declares a `lua_before` entrypoint; the worker runs it
+at the before-game early-slot phase, with every kcdx subsystem up (§3).
+**Acceptance:** the entrypoint runs on the worker tid, pre-boot-open (a self-reporting
+row); a `kcdx.command` / `kcdx.assets.register` call in it succeeds (the subsystem is
+up — §3).
+
+### US-4 — A C++ plugin does early work via the kcdx-driven entry
+A C++ plugin exports the before-game entry; the worker invokes it at the early-slot
+phase with a live root pointer.
+**Acceptance:** the export runs on the worker pre-boot-open (a row self-reports it ran
++ on the worker tid) without the plugin writing a DllMain detour.
+
+### US-5 — A Lua plugin replaces a boot/menu asset (KI-0005)
+A `before_game`-zoned plugin's `lua_before` calls
+`kcdx.assets.replace("Libs/UI/Textures/KCDLogo.dds", ...)`; the replacement wins the
+boot-asset open.
+**Acceptance:** the boot asset opens with `rt=HIT` from the early-registered overlay
+(agent reads the dev log); the user sees the replaced asset render (perceptual
+confirm); the boot-open path observed the slot's readiness event SIGNALED before
+resolving (the gate held — the falsifiable order-inversion row).
+
+### US-6 — A C++ plugin installs a true-load-time native detour (the expert hatch)
+A plugin needing a hook that fires BEFORE the worker runs (BugSplat's ctor at
+LDR-notification time) self-registers from its own DllMain via `early_hook`
+([`before-game-hooks.md`](../../../before-game-hooks.md) §5).
+**Acceptance:** unchanged from before-game-hooks.md §6 (PROBE T-confirmed). RETAINED,
+not rebuilt — this design adds the kcdx-driven entry (US-4) alongside it.
+
+### US-7 — An out-of-window call is handled honestly
+A plugin calls a verb that needs the live game from the before-game window (a verb
+that reads/calls live game state — §7.3 late set).
+**Acceptance:** a structured teaching error (AP14 — never a silent no-op) naming the
+constraint + the phase to use; a row asserts the reject is loud + reads the actual
+reject path, not a tautology (AP15).
+
+---
+
+## §7 The before-game window (the early-slot phase — the v1 scope, folded in)
+
+The before-game early-slot phase (§4) is where a plugin's early Lua / C++ runs. This
+is the v1 "bring-forward early capability" design, now one section of the timeline.
+
+### 7.1 The early entries
+- **Lua — the `lua_before` `[entrypoints]` key** (mirrors `lua_after` in
+  `src/config.cpp`; `src/plugin_loader.h` gains `luaBeforeEntrypointsRel`). A
+  `before_game`-zoned plugin declares it; the worker runs it on the published VM at
+  the early-slot phase via the existing `RunOneEntrypointFile` (SEH-guard,
+  owner-attribution).
+- **C++ — the kcdx-driven before-game entry** — a NEW exported function the worker
+  invokes (mirrors the existing `kcdxPlugin_Preload`/`Load`/`PostGameLoad` set in
+  `include/kcdx/Interfaces.h`), receiving the read-only root pointer. *The export NAME
+  is a build-time determination (§8): new export `kcdxPlugin_BeforeGame` (lean) vs.
+  reuse `kcdxPlugin_Preload` — turns on Preload's CURRENT fire timing, UNVERIFIED.*
 
 ```toml
 [load_order]
 zone = "before_game"
-
 [entrypoints]
-lua_before = "early.lua"   # runs on the worker, pre-boot-open
+lua_before = "early.lua"   # runs on the worker at the early-slot phase, pre-boot-open
 lua        = "plugin.lua"  # runs game-thread first-tick (unchanged)
 ```
 
-### 5.2 C++ — the kcdx-driven before-game entry
-A NEW exported function the worker invokes in the before-game window, mirroring the
-existing `kcdxPlugin_Preload` / `kcdxPlugin_Load` / `kcdxPlugin_PostGameLoad` set
-(`include/kcdx/Interfaces.h`). It receives the read-only root pointer like the other
-entry points. The plugin does declarative early work from it.
+### 7.2 Self-registration — the retained expert hatch (US-6)
+Unchanged from [`before-game-hooks.md`](../../../before-game-hooks.md) §5/§6: a plugin
+needing a hook that fires before the worker runs installs from its own DllMain via
+`src/early_hook.{h,cpp}`. The labeled expert hatch for true LDR-time native hooks the
+kcdx-driven entry is too late for. Docs distinguish the two by timing need
+(worker-time → §7.1; LDR-time → §7.2).
 
-> **The export NAME is a build-time determination, not settled here** — a new export
-> (lean: `kcdxPlugin_BeforeGame`) vs. reusing the existing `kcdxPlugin_Preload`
-> (currently "early-phase setup, optional"). *This turns on Preload's CURRENT fire
-> timing relative to the VM build + boot open — a checkable fact, UNVERIFIED here
-> (§6). Lean: a NEW export (no risk to existing Preload users' timing assumptions);
-> reuse only if the probe shows Preload already fires in the before-game window.*
+### 7.3 What's callable in the window — needs-only-kcdx vs needs-the-live-game (§3)
+Because kcdx is fully initialized at the early-slot phase (§3), the author can do
+anything that needs only kcdx + the mapped WHGame: register assets, register a
+console command, queue a before_game hook, declare a name, register a listener, scan
+memory. What stays late is what needs the LIVE GAME (fire a callback into game logic,
+read a game object, call a live gameplay system) — meaningless before the game
+exists, so zero capability cost. An out-of-window call fails loud (US-7).
 
-### 5.3 Self-registration — the retained expert hatch (US-4)
-Unchanged from [`before-game-hooks.md`](../../../before-game-hooks.md) §5/§6:
-a plugin needing a hook that fires before the worker runs installs from its own
-DllMain via `src/early_hook.{h,cpp}` (module + export + signature + detour). This is
-the labeled expert hatch for true LDR-time native hooks the kcdx-driven entry (§5.2)
-is structurally too late for. The docs distinguish the two by timing need
-(worker-time → §5.2; LDR-time → §5.3).
-
-### 5.4 The early notification — `kcdxMessage_BeforeGame`
-A new lifecycle message (an append-only addition to `kcdxMessageType` — AP11-safe,
-new value at the END), fired at the before-game gated point. A plugin that owns no
-early entrypoint registers for it: Lua via `kcdx.on` / an on-ready-style helper, C++
-via `RegisterListener`. **Registration is declarative (early-safe, a store-write);
-kcdx FIRES the message at the gated point on the right thread.** Owning a `lua_before`
-entrypoint or the C++ before-game export is ALSO a notification (it is invoked at the
-same point) — the message serves the listen-without-entrypoint case.
+### 7.4 The early-bind surface + the event gate
+The worker binds the kcdx subsystems' author surfaces before the early slot runs
+(§3). The slot's cross-thread effects (a `kcdx.assets.register` the boot open must
+see) are ordered by the Phase-4 event gate: the slot signals readiness after its
+calls; the boot-open path (`asset_overlay` HOOK 1/2, game-main) waits-and-blocks on
+it before resolving an overlay. `RegisterRuntimeOverlay` gets the Phase-4 two-writer
+CAS (a worker writer + the game-main writer).
 
 ---
 
-## §6 Runtime-mechanism claims — provisional until probed (results-driven)
+## §8 Runtime-mechanism claims — provisional until probed (results-driven)
 
 Per [`.claude/rules/results-driven.md`](../../../../../.claude/rules/results-driven.md),
-each clause below asserts a RUNTIME MECHANISM that is NOT observed this session. Each
-is a probe target, not a settled requirement; the design is provisional on each until
-its probe lands (ordered before the step that builds on it — the incremental-delivery
-discipline: a dependency lands before its consumer).
+each clause below is a checkable runtime mechanism NOT yet observed; the design is
+provisional on it until its probe lands (ordered before the step that builds on it).
 
-1. **Worker GC-safety of each early DECLARATIVE bind** — *assumes a `kcdx.assets`
-   subset bind + a `RegisterRuntimeOverlay` write (and each other declarative verb's
-   worker-bind) on the worker VM is GC-safe + PROBE-Q-silent — UNVERIFIED.* The
-   keystone proved build+adopt on the worker; it did NOT prove subset-bind + RCU-write
-   on the worker. This probe gates the per-verb declarative classification (§4) AND the
-   Phase-4 foundation's CAS-on-worker assumption. (Recorded in
-   [`../RESUME-STATE.md`](../RESUME-STATE.md).)
-2. **C++ `kcdxPlugin_Preload` current fire timing** — *assumes Preload fires at a
-   determinable point relative to the VM build + boot open — its CURRENT timing is
-   UNVERIFIED here.* Settles §5.2's new-export-vs-reuse determination (read the fire
-   site / probe; lean new export if not pre-boot-open).
-3. **Boot-cvar read-in-window** — *assumes the engine reads + caches a given cvar
-   during the before-game window — UNVERIFIED.* Settles whether boot-cvar-set is
-   genuinely early-declarative (§4) for a specific cvar. Probe per-cvar before relying.
-4. **The gate timeout value + degraded behavior** — the bounded-timeout fallback
-   (worker never signals → boot-open proceeds vanilla, fail-loud) — value decided at
-   build under architect-review (VM design §5; lean 5000ms + vanilla-serve + WARN).
-
-A step whose first action rests on one of these opens with the probe that proves it
-(`.claude/rules/results-driven.md` §"a design clause asserting a runtime mechanism is
-a probe target").
+1. **The subsystem-init-vs-boot-open ordering + console-movability** — *PROVEN*
+   (PROBE INITORDER, §3). No longer provisional; cited as settled.
+2. **Worker GC-safety of each early subsystem bind** — *assumes binding each kcdx
+   subsystem's author surface on the worker VM is GC-safe + PROBE-Q-silent —
+   UNVERIFIED for the binds beyond what PROBE INITORDER + FIXC covered.* The probe
+   that opens the build (§9) confirms a worker-bind + the relevant store write is
+   PROBE-Q-silent before the binds land.
+3. **C++ before-game export name** — *assumes `kcdxPlugin_Preload`'s current fire
+   timing is determinable relative to the VM build + boot open — UNVERIFIED.* Settles
+   §7.1's new-export-vs-reuse (read the fire site; lean new export).
+4. **Boot-cvar read-in-window** — *assumes the engine reads + caches a given cvar
+   during the before-game window — UNVERIFIED.* Settles whether an early cvar-set
+   actually takes effect for a specific cvar (now that console+cvar are up early,
+   §3). Probe per-cvar before relying.
+5. **The phase-token reconciliation** — *assumes each existing lifecycle message
+   (`PostLoad`/`PostPostLoad`/`InputLoaded`/`LuaReady`) maps to a determinable point
+   on the timeline — a build-time READ of each message's firing site, not a guess.*
+6. **The gate timeout value + degraded behavior** — bounded-timeout fallback (worker
+   never signals → boot-open proceeds vanilla, fail-loud); value decided at build
+   under architect-review (lean 5000 ms + vanilla-serve + WARN).
 
 ---
 
-## §7 Structure (units this design introduces / touches)
+## §9 Structure (units this design introduces / touches)
 
 | Unit | Responsibility | New / changed |
 |---|---|---|
-| `src/config.cpp` (`[entrypoints]` parser + allowlist) | recognize the `lua_before` key (string-or-array), mirror `lua_after` | CHANGED |
-| `src/plugin_loader.h` (`PluginManifest`) | a `luaBeforeEntrypointsRel` field, mirroring `luaAfterEntrypointsRel` | CHANGED |
-| the worker before-game runner (in `src/lua_vm_build.cpp` / `src/dllmain.cpp`, post-VM-publish) | run each before_game plugin's `lua_before` entrypoint + invoke each C++ before-game entry, on the worker; signal the gate | NEW behavior |
-| `src/lua_plugin_loader.cpp` (`RunOneEntrypointFile`) | reused for the per-file run (SEH-guard, owner-attribution) — invoked from the worker runner for `lua_before` | reused |
-| the early-bind surface (a worker-bound declarative `kcdx.*` subset) | bind ONLY the declarative subset on the worker before the slot runs (§4); the full table stays game-thread | NEW |
-| `src/asset_namespace.cpp` (`RegisterRuntimeOverlay`) | two-writer CAS (the Phase-4 FOUNDATION step — a worker writer + the game-main writer) | CHANGED (foundation) |
-| `include/kcdx/Interfaces.h` | the C++ before-game export declaration + `kcdxMessage_BeforeGame` (append-only) | CHANGED (append-only) |
-| the messaging bus | fire `kcdxMessage_BeforeGame` at the gated point | CHANGED |
-| `src/early_hook.{h,cpp}` | the self-registration expert hatch (US-4) | reused, unchanged |
-| the event gate (`g_kcdxLuaSlotReadyEvent` + the boot-open wait) | the Phase-4 FOUNDATION; this surface signals it after its declarations | reused (foundation) |
+| `src/init_phase.h` | the phase enum gains the new ctx-B phases (kcdx-subsystems-ready, before-game early-slot) per §3/§4; the enum's append-discipline governs the additions; the model is PROMOTED to author-facing (a stable author token per reachable phase) | CHANGED |
+| `src/dllmain.cpp` / `src/hooks.cpp` | `console::Init` + `cvar::Init` MOVE from the game-thread first-tick to the worker (after `asset_overlay::Install`, the proven point — §3); the worker advances `g_phase` through the new phases | CHANGED |
+| the phase-event firing | each author-reachable phase fires its lifecycle message on the existing bus at its `AdvanceTo` point | NEW behavior |
+| `kcdx.startup.*` domain (Lua) + the C++ accessor | the query API (`phase()`, `at_least()`) — a thin read over `g_phase` + `Name()` | NEW |
+| `include/kcdx/Interfaces.h` | the new phase `kcdxMessageType` values + the C++ before-game export + the C++ startup-query accessor (all append-only) | CHANGED (append-only) |
+| `src/config.cpp` + `src/plugin_loader.h` | the `lua_before` `[entrypoints]` key + `luaBeforeEntrypointsRel` (mirror `lua_after`) | CHANGED |
+| the worker before-game runner (`src/lua_vm_build.cpp` / `src/dllmain.cpp`) | run each before_game plugin's `lua_before` + invoke each C++ before-game entry on the worker; signal the event gate | NEW behavior |
+| `src/lua_plugin_loader.cpp` (`RunOneEntrypointFile`) | reused for the per-file run | reused |
+| `src/asset_namespace.cpp` (`RegisterRuntimeOverlay`) | two-writer CAS (Phase-4 FOUNDATION) | CHANGED (foundation) |
+| `src/early_hook.{h,cpp}` | the self-registration expert hatch (US-6) | reused, unchanged |
+| the event gate (`g_kcdxLuaSlotReadyEvent` + the boot-open wait) | Phase-4 FOUNDATION | reused (foundation) |
 
-The new responsibility unit is **the worker before-game runner** — its single job:
-in the before-game window, drive the declarative early entries (Lua `lua_before` + the
-C++ before-game export), then signal the gate. It is a coordinator (it sequences the
-existing per-file runner + the bind surface), not new business logic.
-
----
-
-## §8 UX (author-facing — first-class, cornerstone #1)
-
-**Declare intent; the engine handles timing.** The author declares a `lua_before`
-entrypoint, exports the C++ before-game entry, or registers for
-`kcdxMessage_BeforeGame` — and kcdx runs it at the right point. The author never
-wires the timing, never touches a thread, never writes a DllMain detour for the
-common case (that is the §5.3 expert hatch, explicitly labeled).
-
-- **What the author sees / does:** one new TOML key (`lua_before`) or one new C++
-  export, parallel to the keys/exports they already know (`lua_after`, `kcdxPlugin_Load`).
-  The declarative surface inside it is the SAME `kcdx.assets` / `kcdx.hook` /
-  `kcdx.on` they use elsewhere — no new vocabulary for the verbs, only a new TIMING.
-- **The teaching error (US-6) — the non-happy path:** an imperative call attempted
-  early fails LOUD with a message that names the before-game constraint and points at
-  the late slot ("`kcdx.<verb>` acts on the running game and is not available in the
-  before_game window; call it from `plugin.lua` / a lifecycle listener"). Never a
-  silent no-op (AP14). This is the disassembler-test posture rendered in errors: the
-  engine teaches the author the timing model rather than failing opaquely.
-- **Consistency:** the Lua + C++ surfaces MIRROR (`lua_before` ↔ the C++ before-game
-  export; both fire `kcdxMessage_BeforeGame`); the early surface reuses the existing
-  verb spellings; docs land in the same per-call files (`docs/lua/`, `docs/cpp/`) with
-  the NYI/parity discipline (`.claude/rules/docs-discipline.md`).
-- **Discoverability:** the new key + export + message appear in `docs/lua/index.md` /
-  `docs/cpp/index.md` maps; the declarative-vs-imperative rule is documented as the
-  author's mental model for "what can I do early."
+The new responsibility units: **the startup-contract surface** (the phase-event
+firing + the `kcdx.startup.*` query — visibility over the existing phase model) and
+**the worker before-game runner** (drives the early entries, signals the gate). The
+phase model itself is promoted in place, not rebuilt.
 
 ---
 
-## §9 Phases / roadmap (build order — for `/plan` to decompose)
+## §10 UX (author-facing — first-class, cornerstone #1)
 
-Dependency-ordered; each step independently verifiable when it lands (the
-incremental-delivery discipline — a dependency lands before its consumer). This phase
-runs AFTER Phase 4 (it needs the foundation gate + CAS) and BEFORE the drop-static-Lua
-phase.
+**Declare intent; the engine handles timing. Know where you are; react when you
+want.** The author learns the WHOLE startup sequence from ONE timeline doc, then
+places code by phase with certainty.
 
-1. **Worker GC-safety probe (§6 claim 1)** — observe a declarative worker-bind +
-   RCU-write on the worker VM, PROBE Q silent. Settles the per-verb classification +
-   the CAS-on-worker assumption. (Probe; archive to `_research/probe-archive/`.) Opens
-   the phase because §4's classification + the binds rest on it.
-2. **The `lua_before` entrypoint + the worker runner** — the manifest key + parser
-   (`config.cpp`), the worker before-game runner (run `lua_before` on the published
-   VM, signal the gate), the declarative early-bind subset bound on the worker. Test:
-   a `before_game` plugin's `lua_before` runs on the worker tid, pre-boot-open; an
-   imperative call fails loud (US-6).
-3. **Boot-asset serve via the early slot (KI-0005, US-1)** — an early-slot
+- **One mental model:** the startup timeline. The author reads it once, then knows
+  every point their code can run, what's safe there, and how to hook it (subscribe or
+  query). No guessing at timing.
+- **The surfaces are the ones the author already knows:** `kcdx.on(event, fn)` for
+  reacting (the existing lifecycle verb — the new phases are just new events on it);
+  `kcdx.startup.phase()`/`.at_least()` as a new `kcdx.<domain>.<verb>` (per the
+  author-surface law); `lua_before` parallel to `lua_after`. No novel shapes.
+- **Errors teach:** an out-of-window call (US-7) fails LOUD with a message naming the
+  constraint + the phase to use ("`kcdx.<verb>` needs the live game; it is not
+  available at the before_game phase — call it from `plugin.lua` or subscribe to
+  `kcdx.on("kcdx.input_loaded", ...)`"). Never a silent no-op (AP14). A late
+  subscription fires immediately, never silently missed.
+- **Full Lua+C++ parity:** every phase event, the query API, and the entries mirror
+  across both surfaces (`lua_before` ↔ the C++ before-game export; `kcdx.startup.*` ↔
+  the C++ accessor; same events on both buses), tested both surfaces
+  ([`.claude/rules/lua-api-surface.md`](../../../../../.claude/rules/lua-api-surface.md)).
+- **Discoverability + docs:** the timeline doc (§5.3) is the front door; the
+  `kcdx.startup.*` calls + the new events + `lua_before` appear in
+  `docs/lua/index.md` / `docs/cpp/index.md` with the NYI/parity discipline
+  ([`.claude/rules/docs-discipline.md`](../../../../../.claude/rules/docs-discipline.md)).
+
+---
+
+## §11 Phases / roadmap (build order — for `/plan` to decompose)
+
+Dependency-ordered; each step independently verifiable when it lands
+(incremental-delivery — a dependency lands before its consumer). Runs AFTER Phase 4
+(needs the foundation gate + CAS) and BEFORE the drop-static-Lua phase. (`/plan`
+restructures the phase tree + the dir name to match this broadened scope; the v1
+6-step decomposition is superseded by this order.)
+
+1. **Worker GC-safety probe (§8 claim 2)** — observe a worker subsystem-bind +
+   the relevant store write on the worker VM, PROBE Q silent. (The subsystem-ordering
+   itself is already PROVEN — §3, PROBE INITORDER.) Opens the phase.
+2. **Move console + cvar to the worker; add the kcdx-subsystems-ready phase** (§3) —
+   `console::Init`/`cvar::Init` move to the worker after `asset_overlay::Install`;
+   `init_phase.h` gains the kcdx-subsystems-ready phase; the worker advances `g_phase`
+   to it. Test: a worker-registered console command dispatches; the phase advances on
+   the worker pre-boot-open (a row reading `g_phase` + tid).
+3. **Promote the phase model to author-facing: the phase events + the
+   `kcdx.startup.*` query** (§5.1, §5.2) — fire a lifecycle message per
+   author-reachable phase; add the `kcdx.startup.phase()`/`at_least()` Lua surface +
+   the C++ accessor; reconcile the existing messages as timeline points (§8 claim 5).
+   Test: a listener fires at its phase on the right thread; a late subscription fires
+   immediately; the query agrees with `g_phase`; Lua/C++ parity.
+4. **The before-game early-slot: `lua_before` + the worker runner** (§7.1) — the
+   manifest key + parser, the worker before-game runner (run `lua_before`, signal the
+   gate). Test: `lua_before` runs on the worker tid pre-boot-open; an out-of-window
+   call fails loud (US-7).
+5. **Boot-asset serve via the early slot (KI-0005, US-5)** — an early-slot
    `kcdx.assets.replace` wins a boot asset (`rt=HIT` via the gate); the AP14 warn
-   narrowed/removed per the VM-design §7.1 build-time decision. (This is the
-   capability the deferred P4-step-2 delivers, now on the settled slot shape.)
-4. **The C++ before-game entry (US-3)** — the new export (name per §6 claim 2's
-   probe), invoked by the worker runner; a C++ plugin does declarative early work.
-   Test: the export runs on the worker pre-boot-open; its declarations take effect.
-5. **`kcdxMessage_BeforeGame` (US-5)** — the append-only message + the gated fire
-   site + the Lua/C++ registration path. Test: a listener-only plugin fires once at
-   before-game, on the right thread.
-6. **before_game `kcdx.hook` intent + apply (US-2)** — the early hook-intent queue +
-   the apply pass ordered before the engine's init call. (May fold into step 2/4 if
-   the hook intent rides the same declarative bind; `/plan` decides the grain.)
+   narrowed per the build-time decision.
+6. **The C++ before-game entry (US-4)** — the new export (name per §8 claim 3),
+   invoked by the worker runner. Test: the export runs on the worker pre-boot-open.
+7. **The author startup-sequence doc (§5.3)** — the timeline reference; cross-link
+   `docs/init.md`. (Docs move with each surface step per docs-discipline; this step
+   is the dedicated timeline doc beyond the per-call entries.)
 
-Each step ships its permanent `test-plugins/` regression row
-(`.claude/rules/test-suite.md`); build-green is necessary, not sufficient — the
-matrix is confirmed by the user's launch + the agent's `kcdx-dev.log` read.
+Each step ships its permanent `test-plugins/` regression row + its doc entries
+(`.claude/rules/test-suite.md`, `docs-discipline.md`); build-green is necessary, not
+sufficient — confirmed by the user's launch + the agent's `kcdx-dev.log` read.
 
-The self-registration expert hatch (US-4) is NOT a step here — it is retained from
-before-game-hooks.md §5/§6 unchanged; its first consumer (the BugSplat builtin) rides
-this phase as a consumer, not a step (VM design §10).
+The self-registration expert hatch (US-6) is NOT a step here (retained from
+before-game-hooks.md §5/§6; the BugSplat builtin rides as a consumer).
 
 ---
 
-## §10 Out of scope / deferrals
+## §12 Out of scope / deferrals
 
-- **The Phase-4 foundation itself** (the event gate + the `RegisterRuntimeOverlay`
-  CAS) — its own foundation step (Phase 4), reused here, not rebuilt.
-- **The per-verb GC-safety probe is a build step (§9 step 1), not design** — the
-  design fixes the `declare-vs-act` rule; the probe confirms each verb.
-- **The AP14 warn narrowing** — carried from VM design §7.1, decided at build.
-- **Full plugin migration to the early surface** beyond the test vehicles — authors
-  adopt the before-game window as they choose; v1 ships the capability + regression
-  vehicles.
-- **The C++ export-name + boot-cvar-read + Preload-timing** — build-time
-  determinations gated by §6 probes, not settled here.
+- **The Phase-4 foundation** (the event gate + the CAS) — its own foundation step,
+  reused here.
+- **ctx-A author events** — excluded by design (§4): shown on the timeline doc,
+  never subscribe-able (loader-lock, pre-plugin).
+- **The internal-plumbing phases** (`EnabledListBuiltAndReady`, the mod-loader build)
+  — stay engine-internal (shown as internal markers, no event).
+- **The per-verb GC-safety, the C++ export name, the boot-cvar read, the
+  phase-token reconciliation, the gate timeout** — build-time determinations gated by
+  §8 probes, not settled here.
+- **Full plugin migration to the startup surfaces** — authors adopt as they choose;
+  v1 ships the contract + the query + regression vehicles + the doc.
