@@ -91,6 +91,40 @@ OWN tag (the `version=(tag,ordinal)` already passed to `apply_direct_edit`),
 without breaking the baseline-rebuild action set or the new-tag create path —
 routes through Gate A (architect-review) before landing.
 
+## Fix design (Gate A architect-review: `hold` — design-determined, no user fork)
+
+US-5 (`design.md:360-367`) requires editing ANY existing version row, so the
+non-baseline no-op is a design-conformance defect, not a choice. The
+`GAME_VERSION_TAG` filter in `_seed_action_rows` is load-bearing for the
+baseline-REBUILD path (the convergence oracle's reference `apply_seeds`, whose
+import resolves only `GAME_VERSION_TAG`, `import_to_sqlite.py:445/453`) — it must
+NOT be touched. So the only valid fix:
+
+**Add a single-row UPDATE action for the edited non-baseline-tag row in the
+interactive update path (`apply_direct_edit`).** The edited tag is already in hand
+(`version=(tag,ordinal)`, currently unused for action-building, `:3176`). When
+`version`'s tag != `GAME_VERSION_TAG` AND `new_tag is None`, build ONE UPDATE
+action for the edited `(kcdx_id, tag)` from the prospective seed — mirroring the
+existing `_new_tag_action_from_seed` precedent (`:3083`) but as a PRESENT/UPDATE
+action, not an INSERT — and apply it through the existing `_apply_one_db` PRESENT
+path (which already matches any tag by `(kcdx_id, valid_from)`,
+`:1825-1889`). `_seed_action_rows` + the rebuild/oracle path stay UNTOUCHED.
+(Rejected: parameterizing `_seed_action_rows`'s filter — it would emit an action
+for EVERY non-baseline row, a multi-row write blowout worse than the no-op.)
+
+**Note (not a fork, surfaced to the user):** the new non-baseline UPDATE path is
+NOT convergence-oracle-coverable — the rebuild reference is structurally
+baseline-only, so it cannot reach this path. Its correctness rests on the
+cause-test + the reused PRESENT machinery, a deliberate consequence of the
+rebuild being baseline-only.
+
+**Cause-test:** a DB with an existing NON-baseline-tag row (a v1.6 row) + the
+baseline v1.5 row; edit a non-trio column on the v1.6 row via the update path;
+assert (1) the v1.6 edit PERSISTS (the mechanism check), (2) the baseline v1.5
+edit still persists (no regression), (3) no OTHER v1.6 row is touched (guards the
+multi-row blowout), (4) the v1.6 row's kcdx_id/valid_from/valid_through unchanged
+(the KI-0007 identity-preservation lesson, pinned for the non-baseline path).
+
 ## Trail
 
 | Date       | Action                                                                                  | Result  |
