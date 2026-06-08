@@ -22,13 +22,21 @@ production replacement on an unproven mechanism.
 
 | Step | Status | Commit |
 |---|---|---|
-| Step 6 — replace make_jit_midfunc with MidHook adapter | NOT STARTED | — |
+| Step 6a — capture-form enumeration + Context64 mapping (probe, resolves U4) | NOT STARTED | — |
+| Step 6b — replace make_jit_midfunc with the MidHook adapter | NOT STARTED | — |
 
 ## Verification gate
 
-- Step 6: the cap-04 matrix (CAP-04a/b/c/d — True/False/Auto) AND cap-21 (mid
+- Step 6a: every capture form `make_jit_midfunc` supports AND every form cap-21 +
+  the mid-hook tests exercise is enumerated and mapped to a `Context64` field
+  (register → `ctx.<reg>`; stack-expr `[rbp+N]` → `ctx` via `trampoline_rsp`+offset).
+  A form with NO `Context64` equivalent (U4) is SURFACED, not silently dropped. The
+  deliverable is the capture map (a durable finding in `_research/`), no code change
+  to the live mid path yet — its verification is the map's completeness (every form
+  covered or surfaced), not a live run.
+- Step 6b: the cap-04 matrix (CAP-04a/b/c/d — True/False/Auto) AND cap-21 (mid
   hook with captures) pass live on the production `safetyhook::MidHook` adapter;
-  named-capture read + writeback confirmed (an author mutating a captured register
-  sees it take effect). `make_jit_midfunc` is deleted, the live source returns to
-  pure production logic. Agent builds + deploys, user launches, agent reads the
-  log.
+  named-capture read + WRITEBACK confirmed (an author mutating a captured register
+  sees it take effect — the writeback half the spike did NOT exercise, proven live
+  HERE). `make_jit_midfunc` is deleted, the live source returns to pure production
+  logic. Agent builds + deploys, user launches, agent reads the log.

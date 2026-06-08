@@ -175,11 +175,11 @@ reserved items are the design's settled out-of-scope (decided by the user during
 | E5 — install-context routing predicate @ `InstallRuntime` | §4.2, §9.5 | Phase 2 step 5 | misroute-impossible (U5) |
 | E6 — call-original `get_original` bridge | §4.4 | Phase 2 step 4b (+ proven in P1 step 2) | both backends populate the backend-owned JIT slot |
 | E7 — mid-hook spike (cap-04 port) | §9.1, §9.2 | Phase 1 step 2 | gates Phase 3 (U1, U2, U3, U4) |
-| E8 — `make_jit_midfunc` full replacement | §5, §5.1 | Phase 3 step 6 | the three modes via `ctx.rip` |
-| E9 — named captures → Context64 writeback | §5.2 | Phase 3 step 6 | `args.rdx:get/set` rewired |
-| E10 — resume_addr ownership | §5.1, §9.3 | Phase 1 step 2 | resolved by the spike (U3) |
-| E11 — stack-expression capture coverage | §5.2, §9.4 | Phase 1 step 2 | resolved by the spike (U4) |
-| E12 — Lua dispatch rewired onto Context64 | §5.3 | Phase 3 step 6 | `MidDispatch` reads Context64 |
+| E8 — `make_jit_midfunc` full replacement | §5, §5.1 | Phase 3 step 6b | the three modes via `ctx.rip` |
+| E9 — named captures → Context64 writeback | §5.2 | Phase 3 step 6a (map) + 6b (build + live writeback proof) | `args.rdx:get/set` rewired; the spike proved READ, 6b proves WRITEBACK |
+| E10 — resume_addr ownership | §5.1, §9.3 | Phase 1 step 2 | resolved by the spike (U3): kcdx computes `target + instruction LENGTH`; small length-decode helper, NOT the codegen |
+| E11 — stack-expression capture coverage | §5.2, §9.4 | Phase 3 step 6a | the spike tested only a register; 6a enumerates ALL forms + maps each to Context64, surfaces a U4 gap |
+| E12 — Lua dispatch rewired onto Context64 | §5.3 | Phase 3 step 6b | `MidDispatch` reads Context64 |
 | E13 — foreign-hook detection (classifier) | §6.1 | Phase 4 step 7 | clean / kcdx-tramp / foreign |
 | E14 — foreign-hook chaining | §6.2, §6.3 | Phase 4 step 8 | follow jmp, capture as original |
 | E15 — safetyhook license + vendoring | §9.6 | Phase 1 step 1 | U6; manifest row same-change |
