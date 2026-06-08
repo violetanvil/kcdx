@@ -1,6 +1,6 @@
 # Step 3 — reconcile the DEV-only doc drift (both lanes)
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 3.
+**Status: DONE.** Ledger row: [`README.md`](README.md) → step 3.
 
 ## What
 

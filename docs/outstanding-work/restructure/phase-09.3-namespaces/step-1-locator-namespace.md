@@ -24,7 +24,10 @@ expected statement against a reference-DB function).
 - Default: `kcdx.locator.function_entry()` when omitted on a verb that accepts a
   default. (Module is NOT defaulted — required first positional per the phase rule.)
 - A locator value resolves against the reference-DB `statements` metadata
-  (`statements.captures` / `statements.kind` / `byte_range_len`), via `refdb`.
+  (`statements.kind` / `callee` / `string_ref` / `byte_range_len`), via `refdb`.
+  Captures (the per-statement variables, for insert-callbacks) are the joined
+  `referenced_vars` rows, matched by `(address_version_id, statement_idx)` — a
+  separate table, not a column on `statements`.
 
 ## Test bar (runs AT this step)
 
@@ -38,8 +41,13 @@ or statement verb consuming it. PROBE Q silent.
 
 ## Dependencies
 
-Phase 9.1 (the reference DB + `refdb` resolution — DONE) for the `statements`
-metadata a locator resolves against.
+The statement-resolution-layer prerequisite
+([`../../statement-resolution-layer/`](../../statement-resolution-layer/), steps
+1+2 landed) — it ships the curated-function `statements` metadata into
+`reference.sqlite` and exposes the `refdb` statement-resolution API a locator
+resolves against. This extends the Phase 9.1 foundation (the reference DB +
+`refdb` ADDRESS resolution — DONE), which shipped address resolution but not the
+statement data.
 
 ## Design authority
 

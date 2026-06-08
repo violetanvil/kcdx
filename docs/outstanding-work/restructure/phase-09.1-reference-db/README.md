@@ -21,6 +21,11 @@ production FEED awaits Phase 9.2's binder wiring.
 The originally-planned standalone `hash_at(name, version)` helper was never built
 as a separate symbol — the cached `content_hash` + `length` are fields on
 `refdb::NameResolution` accessed via the existing resolve. The `behaviors` /
-`applicable_ops` DB tables were never built (no current consumer). The
-`statements` / `referenced_vars` / `call_edges` tables are DEV-only (Phase 9.4's
-`kcdx.find` discovery; not consumed by production).
+`applicable_ops` DB tables were never built (no current consumer — op-fit is
+computed at apply-time from `byte_range_len`, not stored). The BULK
+`statements` / `referenced_vars` (5.24M rows) + ALL of `call_edges` stay DEV-only
+(Phase 9.4's `kcdx.find` discovery; not consumed by production). The
+CURATED-FUNCTION SUBSET of `statements` / `referenced_vars` (2,385 statements /
+5,595 referenced_vars across 133 functions) DOES ship to `reference.sqlite` for
+the Phase 9.3 runtime surface — delivered by the statement-resolution-layer
+prerequisite ([`../../statement-resolution-layer/`](../../statement-resolution-layer/)).
