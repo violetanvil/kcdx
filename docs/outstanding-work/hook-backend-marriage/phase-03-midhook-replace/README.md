@@ -22,7 +22,7 @@ production replacement on an unproven mechanism.
 
 | Step | Status | Commit |
 |---|---|---|
-| Step 6a — capture-form enumeration + Context64 mapping (probe, resolves U4) | NOT STARTED | — |
+| Step 6a — capture-form enumeration + Context64 mapping (probe, resolves U4) | DONE | (landed) |
 | Step 6b — replace make_jit_midfunc with the MidHook adapter | NOT STARTED | — |
 
 ## Verification gate
