@@ -13,7 +13,7 @@ The step-1 DB requirements hand-off (a separate lane's work):
 
 | Phase | Status | Commit |
 |---|---|---|
-| [1 — statement data ships + refdb resolves + docs reconciled](phase-01-statement-layer/README.md) | DONE | (landed) — step 1 (a9b0e8a, DB lane: curated subset ships) + step 2 (2a f26c819 / 2b abdbee3 / 2c a60e63b, engine lane: refdb statement-resolution API, cap-83 PASS live) + step 3 (this commit, doc reconcile). Unblocks Phase 9.3 steps 1/2/5. |
+| [1 — statement data ships + refdb resolves + docs reconciled](phase-01-statement-layer/README.md) | DONE | 6ac47fe — step 1 (a9b0e8a, DB lane: curated subset ships) + step 2 (2a f26c819 / 2b abdbee3 / 2c a60e63b, engine lane: refdb statement-resolution API, cap-83 PASS live) + step 3 (6ac47fe, doc reconcile). Unblocks Phase 9.3 steps 1/2/5. |
 
 ## Lane split
 

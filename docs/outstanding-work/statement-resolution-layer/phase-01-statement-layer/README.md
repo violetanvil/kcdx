@@ -13,7 +13,7 @@ Shared spec + decisions + coverage map: [`../plan-spec.md`](../plan-spec.md).
 |---|---|---|
 | [1 — ship curated statement subset into reference.sqlite (DB lane)](step-1-ship-curated-statements.md) | DONE | a9b0e8a — USER projection ships statements (2,385) + referenced_vars (5,595), pinned columns, bulk+call_edges DEV-only; DB-shape ACCEPT 17/17. DBs are gitignored regenerated artifacts (code committed; rebuild locally). |
 | [2 — refdb statement-resolution API, eager-load (engine lane)](step-2-refdb-statement-api.md) | DONE | a60e63b — refdb eager-loads the curated statement metadata + resolves the full §9.3 locator catalog + the captures-by-name join; cap-83-stmt-resolve engine self-test (2a f26c819 / 2b abdbee3 / 2c a60e63b). Final suite-green acceptance gates on the deployed USER DB carrying the statement tables (regenerate + deploy at acceptance). |
-| [3 — reconcile the DEV-only doc drift (both lanes)](step-3-doc-reconcile.md) | DONE | (landed) — survivor sweep: phase-09.1 README "DEV-only" claim corrected to the bulk-vs-curated split; phase-09.3 step-1 `statements.captures` → the `referenced_vars` join + the provider repointed to this prerequisite. Docs-only. |
+| [3 — reconcile the DEV-only doc drift (both lanes)](step-3-doc-reconcile.md) | DONE | 6ac47fe — survivor sweep: phase-09.1 README "DEV-only" claim corrected to the bulk-vs-curated split; phase-09.3 step-1 `statements.captures` → the `referenced_vars` join + the provider repointed to this prerequisite. Docs-only. |
 
 ## Verification gate
 
