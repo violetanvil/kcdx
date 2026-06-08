@@ -20,8 +20,8 @@ Shared spec: [`../context.md`](../context.md).
 | Step | Status | Commit |
 |---|---|---|
 | Step 3 — IDetourBackend + MinHookBackend (refactor) | DONE | `64fba7d` |
-| Step 4a — relocate seam → InstallRuntime; dissolve detour_hook; retire g_installed (behavior-preserving, still MinHook) | DONE | (landed) |
-| Step 4b — SafetyhookBackend + route function-entry; far-target reach (behavior change) | NOT STARTED | — |
+| Step 4a — relocate seam → InstallRuntime; dissolve detour_hook; retire g_installed (behavior-preserving, still MinHook) | DONE | `ed9ff7f` |
+| Step 4b — SafetyhookBackend + route function-entry; far-target reach (behavior change) | DONE | (landed) |
 | Step 5 — install-context routing predicate at InstallRuntime | NOT STARTED | — |
 
 ## Verification gate

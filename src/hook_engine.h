@@ -190,9 +190,22 @@ struct RuntimeInstallResult {
                                       // into every consumer of this header.
 };
 
+// Which detour backend InstallRuntime drives for a given install. The caller
+// picks it explicitly per call site (design §9.5 — the explicit engine-internal
+// backend arg): the function-entry chain path passes Safetyhook; mid + the
+// MinHook bootstrap paths + dynamic_hook pass MinHook. Step 5 replaces the
+// literal arg with a context-driven predicate computing this same param; making
+// the choice explicit here is that seam. There is no author knob — the engine
+// alone selects the backend (cornerstones.md: the engine does the heavy lifting).
+enum class Backend {
+    MinHook,     // byte-patch without thread-suspend; the loader-lock-safe path
+    Safetyhook,  // thread-safe install + far-target reach (E9->FF fallback)
+};
+
 RuntimeInstallResult InstallRuntime(const std::string& name,
                                     uintptr_t          target_addr,
-                                    void*              detour_addr);
+                                    void*              detour_addr,
+                                    Backend            backend);
 
 // NOTE: the load-path engine-modification inventory moved to
 // src/modification_inventory.{h,cpp}. It used to read this TU's legacy

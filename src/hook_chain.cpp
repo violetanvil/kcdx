@@ -1992,7 +1992,13 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    auto install = kcdx::hook_engine::InstallRuntime(name, targetVa, (void*)jit);
+    // Mid-function install stays on MinHook this step (Phase 3 replaces the
+    // mid path with safetyhook::MidHook; only function-entry moves to
+    // safetyhook here). A blanket swap at this shared chokepoint would wrongly
+    // route mid here too — the explicit per-site Backend arg is how only
+    // function-entry moves.
+    auto install = kcdx::hook_engine::InstallRuntime(
+        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::MinHook);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;
@@ -2312,14 +2318,20 @@ AddResult Add(lua_State*                             L,
         return res;
     }
 
-    auto install = kcdx::hook_engine::InstallRuntime(name, targetVa, (void*)jit);
+    // Function-entry install routes to safetyhook (design §4.1/§4.3 —
+    // safetyhook is "just the patcher" under the one detour the chain installs
+    // per target; the chain/CanCoexist/ordered ChainEntry vector/engine-stamp/
+    // off-thread marshaling are unchanged). safetyhook's E9->FF fallback reaches
+    // any 64-bit target, closing the cap-21/cap-22 far-target gap.
+    auto install = kcdx::hook_engine::InstallRuntime(
+        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::Safetyhook);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;
     }
-    // Wire MinHook's pOriginal into the JIT trampoline's call-original
-    // slot (same as the dynamic_hook path; without this the thunk's
-    // call-through reads null).
+    // Wire the backend's relocated-original into the JIT trampoline's
+    // call-original slot (same as the dynamic_hook path; without this the
+    // thunk's call-through reads null).
     if (void** slot = newChain->rf->get_jit_original_slot()) {
         *slot = install.pOriginal;
     } else {
@@ -2475,7 +2487,11 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    auto install = kcdx::hook_engine::InstallRuntime(name, targetVa, (void*)jit);
+    // Mid-function install stays on MinHook this step (Phase 3 replaces the
+    // mid path with safetyhook::MidHook; only function-entry moves to
+    // safetyhook here).
+    auto install = kcdx::hook_engine::InstallRuntime(
+        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::MinHook);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;
@@ -2775,7 +2791,11 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    auto install = kcdx::hook_engine::InstallRuntime(name, targetVa, (void*)jit);
+    // Function-entry install routes to safetyhook (design §4.1/§4.3 — the chain
+    // is unchanged; safetyhook is just the patcher under the one detour, and its
+    // E9->FF fallback reaches any 64-bit target).
+    auto install = kcdx::hook_engine::InstallRuntime(
+        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::Safetyhook);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;

@@ -218,6 +218,7 @@ add_library(kcdx SHARED
     src/zone_gate.cpp
     src/ldr_notify.cpp
     src/minhook_backend.cpp
+    src/safetyhook_backend.cpp
     src/scripting.cpp
     src/lua_memory.cpp
     src/lua_bind_helpers.cpp

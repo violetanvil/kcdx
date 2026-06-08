@@ -15,11 +15,12 @@ E6, E16, E17 (`../context.md`).
   kcdx's install-result reason strings (`logging.md` — name the failure with
   context; the typed errors are richer than MinHook's `MH_ERROR_*`).
 - **The get_original bridge (design §4.4 — the load-bearing integration detail):**
-  `SafetyhookBackend::get_original()` writes safetyhook's trampoline entry into the
-  SAME backend-owned JIT slot the asmjit call-original thunks deref (the slot 4a
-  made the backend's). The JIT codegen does NOT change. **This rests on U2** (the
-  trampoline-callable contract) — proven in Phase 1 step 2; a surfaced mismatch is
-  resolved here, not worked around silently.
+  `SafetyhookBackend::get_original()` returns safetyhook's trampoline entry, which
+  `InstallRuntime` writes into `runtime_func_t`'s call-original slot — the SAME slot
+  the asmjit thunks deref, the one 4a moved onto `runtime_func_t` (the backend
+  PRODUCES the value, `runtime_func_t` owns the slot; §4.4). The JIT codegen does
+  NOT change. **This rests on U2** (the trampoline-callable contract) — proven in
+  Phase 1 step 2; a surfaced mismatch is resolved here, not worked around silently.
 - Route the function-entry `hook_chain` install (the chain's one-detour-per-target
   path that calls `InstallRuntime`) to use `SafetyhookBackend`. The chain,
   `CanCoexist`, the ordered `ChainEntry` vector, the engine-stamp, the off-thread

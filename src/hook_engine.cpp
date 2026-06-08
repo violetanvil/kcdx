@@ -8,6 +8,7 @@
 
 #include "log.h"
 #include "minhook_backend.h"
+#include "safetyhook_backend.h"
 
 namespace kcdx::hook_engine {
 
@@ -19,8 +20,11 @@ namespace kcdx::hook_engine {
 // loop in hooks.cpp that dispatched them was dead. The LIVE hook path is
 // kcdx.hook / kcdxHookInterface routed through src/hook_chain.cpp; both it
 // and kcdx.memory.dynamic_hook install via InstallRuntime (below). The
-// backend seam lives HERE: InstallRuntime owns an IDetourBackend (MinHook
-// this step — no routing predicate yet) and drives create -> enable.
+// backend seam lives HERE: InstallRuntime owns an IDetourBackend selected by
+// the caller's explicit Backend arg (the function-entry chain path passes
+// Safetyhook; mid + the MinHook bootstrap paths + dynamic_hook pass MinHook)
+// and drives create -> enable. Step 5 replaces the literal arg with a
+// context-driven routing predicate computing the same param.
 
 namespace {
 
@@ -36,7 +40,8 @@ std::unordered_map<uintptr_t, std::string> g_installed;
 
 RuntimeInstallResult InstallRuntime(const std::string& name,
                                     uintptr_t          target_addr,
-                                    void*              detour_addr) {
+                                    void*              detour_addr,
+                                    Backend            backend) {
     RuntimeInstallResult out;
 
     if (target_addr == 0) {
@@ -66,27 +71,32 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
         return out;
     }
 
-    // Drive the detour backend. MinHook this step (no routing predicate yet —
-    // that is a later step). detour_addr is expected to already be within
-    // ±2 GB of target_addr (caller's responsibility; e.g.,
+    // Drive the detour backend, selected by the caller's explicit Backend arg.
+    // MinHook patches without thread-suspend (the loader-lock-safe path);
+    // safetyhook is thread-safe and reaches any 64-bit target via its E9->FF
+    // fallback (the function-entry chain path). detour_addr is expected to
+    // already be within ±2 GB of target_addr (caller's responsibility; e.g.,
     // runtime_func_t::make_jit_func routes through branch_pool). The backend
     // is leaked deliberately: kcdx never unhooks (session-lifetime, SKSE
     // "no FreeLibrary, no teardown" model), and the backend must outlive this
     // call for the relocated-original it owns to stay valid for the session.
-    auto* backend = new MinHookBackend();
-    backend->set_instance(name, reinterpret_cast<void*>(target_addr), detour_addr);
-    backend->enable();
+    IDetourBackend* impl =
+        (backend == Backend::Safetyhook)
+            ? static_cast<IDetourBackend*>(new SafetyhookBackend())
+            : static_cast<IDetourBackend*>(new MinHookBackend());
+    impl->set_instance(name, reinterpret_cast<void*>(target_addr), detour_addr);
+    impl->enable();
 
-    // enable() logs the specific MH_* failure itself; a null relocated-original
-    // is the create/enable-failed signal (MinHookBackend resets original_ to
-    // null on enable failure and never sets it on create failure).
-    void* pOriginal = *backend->get_original();
+    // enable() logs the specific backend failure itself; a null relocated-
+    // original is the create/enable-failed signal (each backend resets
+    // original_ to null on enable failure and never sets it on create failure).
+    void* pOriginal = *impl->get_original();
     if (!pOriginal) {
         out.reason = "detour backend install failed (see kcdx.log)";
         log::ErrorF("[hook '%s'] aborted: %s at 0x%p",
                     name.c_str(), out.reason.c_str(),
                     reinterpret_cast<void*>(target_addr));
-        delete backend;
+        delete impl;
         return out;
     }
     out.pOriginal = pOriginal;
