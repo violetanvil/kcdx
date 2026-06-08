@@ -11,30 +11,54 @@ deprecate — Jobs 4/5), and the entry point to its version rows (current row, h
 compare, new version). Single-row field editing lives in s04; history/compare in s03.
 
 ## Region & position
-The detail region of the app shell. Vertically stacked sections: **header** (identity +
-the version & verify surface, fixed top) → **lifecycle** (editable flags) → **version area**
-(current row + the history / compare / new-version actions). The version area's field editor
-(s04) renders inline below the version table. The region scrolls if content exceeds height;
-section positions are stable (law 1). On phone the header carries the `‹ back` affordance to
-s01.
+The detail region of the app shell. The layout **leads with the work surface** (the
+`ui/design.md` §"Responsiveness & sizing" detail-pane model — the heavy verify/lifecycle
+machinery must not eat the pane):
+
+- **Compact pinned summary** (always visible, top): the entity identity (read-only) + the
+  version `Select` + a **one-line verify summary** ("Bin folder linked — `<version>` ✓" / "no
+  folder linked"). On phone it also carries the `‹ back` affordance to s01.
+- **Collapsible "Verify against a DLL" section** (`collapsible section`, **collapsed by
+  default**): the install-set link surface — the Bin-folder pick + the per-module link rows +
+  the link-to-create prompt.
+- **Collapsible "Lifecycle" section** (`collapsible section`, **collapsed by default**):
+  supersede / deprecate / notes.
+- **Work surface** (**expanded by default**, takes the majority of the pane, scrolls within
+  it): the version table + the inline field editor (s04, rendered below the selected row).
+
+A collapsible section's header row never moves; expanding pushes the sections BELOW it down,
+never reflowing the work surface above (law 1 — a user-toggled disclosure, not a state-change
+reflow). The compact summary stays pinned; the work surface scrolls.
 
 ## Contents
 | Element | Component (Mantine) | Data bound | Intent emitted |
 |---|---|---|---|
-| Entity title | `title` text | `name` · `kcdx_id` (mono) | — (read-only, law 7) |
-| Identity block | `field row (read-only)` ×2 | `kcdx_id`, `name` | — (never editable, law 7) |
-| **Version & verify surface** | `version & verify surface` (`Select` version dropdown + the per-module DLL link table) | the targeted game version (a `game_versions` tag); the per-module linked DLL + resolved version; the advisory verify state | `pick_version(tag)` / `link_dll(module)` / `repick_dll(module)` (client-side, D15/D24–D30) |
-| Per-module link rows | `per-module link row` ×M (one per module) | each module's linked DLL filename + resolved version + version-match indicator | `link_dll(module)` / `repick_dll(module)` |
-| Link-to-create prompt | `warning banner` (advisory, info) | shown when a linked DLL's version is uncovered by the entity's rows | `open_new_version(source=selected_row, version=<dll_version>)` → s05 |
-| **Lifecycle — supersede** | `field row (editable)` (`Select` + version) | `superseded_by` (target entity) + `superseded_at_version` | `edit_lifecycle(...)` → s06 |
-| **Lifecycle — deprecate** | `field row (editable)` (`Checkbox` + version + `Select`) | `is_deprecated` + `deprecated_at_version` + `deprecation_replacement` | `edit_lifecycle(...)` → s06 |
+| **Compact pinned summary** (always visible, top) | | | |
+| Entity title + identity | `title` text + `field row (read-only)` ×2 | `name` · `kcdx_id` (mono) | — (read-only, never editable, law 7) |
+| Version `Select` | `select / dropdown` | the targeted game version (a `game_versions` tag) | `pick_version(tag)` |
+| One-line verify summary | text + glyph (status role) | the install link state ("Bin folder linked — `<version>` ✓" / "no folder linked") | — (status, read-only; glyph+text, law 7) |
+| `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
+| **Verify against a DLL** (`collapsible section`, collapsed by default) | | | |
+| Section header | `collapsible section` header | collapsed/expanded state (chevron + aria-expanded) | `toggle_verify_section()` (user action, law 1) |
+| Link the Bin folder | folder-pick affordance (`<input webkitdirectory>`) | the picked install's directory (read in-page, never uploaded — D15/D26/D30) | `link_bin_folder()` / `relink_bin_folder()` |
+| Per-module link rows | `per-module link row` ×M (one per module the entity references) | each module's DLL status in the linked folder (found / not-found) + the version-match indicator (the install version inherited for non-WHGame — D30) | — (the row reflects the install link; the affordance is the folder pick above) |
+| Link-to-create prompt | `warning banner` (advisory, info) | shown when the linked install's version is uncovered by the entity's rows | `open_new_version(source=selected_row, version=<install_version>)` → s05 |
+| **Lifecycle** (`collapsible section`, collapsed by default) | | | |
+| Section header | `collapsible section` header | collapsed/expanded state | `toggle_lifecycle_section()` (user action, law 1) |
+| Lifecycle — supersede | `field row (editable)` (`Select` + version) | `superseded_by` (target entity) + `superseded_at_version` | `edit_lifecycle(...)` → s06 |
+| Lifecycle — deprecate | `field row (editable)` (`Checkbox` + version + `Select`) | `is_deprecated` + `deprecated_at_version` + `deprecation_replacement` | `edit_lifecycle(...)` → s06 |
 | `notes` | `text well` (`TextInput`/`Textarea`) | `notes` (entity-level) | `edit_lifecycle(...)` → s06 |
+| **Work surface** (expanded by default, scrolls) | | | |
 | Version table | `version table row` ×N (newest first) | the entity's `address_versions` rows | `select_version(valid_from)` → s04 |
 | `[Show history]` | `button` (subtle) | toggles full-history vs current-row-only | `toggle_history()` → s03 |
 | `[Compare versions]` | `button` (subtle) | enters compare multi-select | `open_compare()` → s03 |
 | `[+ New version]` | `button` (default) | — | `open_new_version(source=selected_row)` → s05 |
-| `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
 | Selected-row editor | `s04 field editor` (inline) | the selected version row | (see s04) |
+
+A **new module** (a CryEngine module not yet in the `module` table — TRD D30) is registered as a
+surfaced step when the maintainer authors the first address for it (the AP18 deliberate-addition
+posture, law 8); the link table then shows its `per-module link row`, found by name in the linked
+folder.
 
 **The version & verify surface (the relocated s07 + the verification engine, TRD D24–D31).**
 A **version dropdown** (`Select`, populated from the server-known `game_versions` tags) is the
@@ -105,14 +129,28 @@ fields together and the validator's verdict inline; a partial pair is a validati
   **version match** — *"`<module>` (`<install-version>`) ✓ matches"* (the per-author check is now
   available in s04 for that module); a **version mismatch** — *"`<module>` (`<install-version>`)
   ≠ no row at this version"* (surfaces the link-to-create prompt). All advisory (law 4) — none
-  blocks authoring; every indicator is glyph+text, never color-alone (law 7); the surface reserves
-  its space across every state (law 1, no reflow — the affordance never moves as a message wraps).
+  blocks authoring; every indicator is glyph+text, never color-alone (law 7).
+- **Section collapsed / expanded** (the `collapsible section` — "Verify against a DLL",
+  "Lifecycle"): on open, both are **collapsed by default** (the work surface gets the room); the
+  one-line verify summary in the compact header still shows the verify state. The section header
+  shows its state (chevron `›` collapsed / `⌄` expanded + `aria-expanded`, glyph+text — law 7);
+  toggling expands the body IN PLACE below the header (the header row never moves, the work
+  surface above is never reflowed — law 1, a user-toggled disclosure). Keyboard: the header is
+  focusable, Enter/Space toggles.
+- **Per-module row — reflow-safe** (within the expanded Verify section): the row's **top line**
+  (module name + the link/re-pick affordance + the match glyph) holds a **fixed position**; a
+  long verify message (the not-found / not-a-Bin-folder / resolve-failure copy) **wraps in the
+  reserved multi-line space below the top line**, growing downward — the affordance never shifts
+  sideways off the row regardless of message length (law 1, the reserved-space structure; this is
+  the fix for the prior reflow defect).
 - **Disabled** — lifecycle edits on an already-superseded entity follow `policy.md` (the
   successor chain); the validator gates an illegal transition with an inline error; the
   control is not silently hidden.
 - **Edge content** — a long `signature` / `notes` wraps within its field without pushing
-  siblings (law 1); an entity with many version rows scrolls the version table, header stays
-  fixed; a deprecated/superseded entity shows its state prominently in the header.
+  siblings (law 1); an entity with many version rows scrolls the work surface (the version table),
+  the compact header + the collapsible-section headers stay fixed; a long DLL filename or a
+  multi-line verify message wraps within its `per-module link row` without pushing siblings (law
+  1); a deprecated/superseded entity shows its state prominently in the compact header.
 
 ## Links in / out
 - **In:** s01 `select_entity` (drill-down on phone).
@@ -134,10 +172,14 @@ fields together and the validator's verdict inline; a partial pair is a validati
 - **Law 9** — tokens only.
 
 ## Responsive behavior
-- **Wide:** the right pane; the version&verify surface sits in the header alongside the
-  identity block.
-- **Phone:** the full-screen drill-down; the header stacks the identity + the version&verify
-  surface vertically and carries `‹ back`; the version table + the inline editor get the
-  full viewport width (the table scrolls horizontally if needed). The "check against a local
-  DLL" control uses the device's file picker (only meaningful where the device has the
-  game — otherwise the maintainer uses the version dropdown, D15/D10).
+- **Wide:** the right pane. The compact pinned summary (identity + version `Select` + the
+  one-line verify summary) sits at the top; the collapsible Verify + Lifecycle sections + the
+  work surface (version table + inline editor) stack below, the work surface taking the majority
+  of the pane height and scrolling within it (the compact summary + the section headers stay
+  pinned).
+- **Phone:** the full-screen drill-down. The same compact summary pins at the top (and carries
+  `‹ back`); the collapsible sections + the work surface get the full viewport width; the work
+  surface scrolls (the version table scrolls horizontally if needed). The compact-header + collapse
+  model holds — the work surface gets the room, Verify/Lifecycle collapsed by default. The folder
+  pick (`<input webkitdirectory>`) uses the device's native directory picker (only meaningful where
+  the device has the game install — otherwise the maintainer uses the version dropdown, D15/D10).

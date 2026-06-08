@@ -4,6 +4,43 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-06 — s02 layout reworked: compact pinned header + collapsible sections; the link-row reflow fix
+
+The milestone UAT of the s02 link table surfaced that the screen lost most of its real estate —
+the header + verify + lifecycle sections each took natural height and ate the pane, leaving only
+the version area scrollable — and the link-row affordance moved off-screen when a long verify
+message wrapped (a law-1 reflow defect). The s02 layout is reworked + the install-set link surface
+(the prior TRD D30 revision) is laid out:
+
+- **Compact pinned header + collapsible sections (the detail-pane model).** A compact pinned summary
+  (identity + the version `Select` + a one-line verify summary — "Bin folder linked — `<v>` ✓" / "no
+  folder linked") stays visible; the heavy/secondary sections (the DLL link table → "Verify against
+  a DLL", lifecycle) are **collapsible sections, collapsed by default**; the **work surface (version
+  table + inline editor) is expanded by default and takes the majority of the pane**, scrolling
+  within it. The screen leads with what the maintainer works on.
+- **A new `collapsible section` Layer-1 silhouette** — a clickable section header (label + state
+  chevron) that expands its body IN PLACE; the header row never moves (a user-toggled disclosure,
+  not a state-change reflow — law 1); glyph+text state (law 7), keyboard-operable.
+- **The `version & verify surface` + `per-module link row` silhouettes revised** to the install-set:
+  the version&verify surface splits into the compact summary + the collapsible "Verify against a
+  DLL" section (the Bin-folder pick — `<input webkitdirectory>` — + the per-module rows). The
+  per-module link row gains the **reflow-safe structure** — a stable top line (module name +
+  affordance + match glyph) that never moves, with the verify message wrapping in reserved space
+  BELOW it (growing downward, never pushing the affordance off-screen — the fix for the reflow bug).
+- **§"Responsiveness & sizing" gains the detail-pane model** (lead with the work surface; the
+  compact-header + collapse on both breakpoints). The nav-map prose swept to the folder-pick
+  install-set (deletion-hygiene — the stale "link a DLL per module" prescription removed).
+
+**Integrated in:** `design.md` §"Responsiveness & sizing" + the `collapsible section` /
+`version & verify surface` / `per-module link row` silhouettes + the nav map;
+`screens/s02-entity-detail.md` §"Region & position" + §"Contents" + §"States & variants" +
+§"Responsive behavior".
+**Why:** the milestone UAT (step 2.5) rejected the per-DLL-stacked s02 layout — the screen wasted
+real estate and the link row reflowed. The compact-header + collapsible-sections model gives the
+work surface the room and the reserved-space row structure fixes the reflow; both are built to in
+the 2.5 rework. Pure visual/interaction revision — no functional (TRD) gap surfaced (the install-set
+functional model was settled in the prior `design.md` D30 revision).
+
 ## 2026-06-05 — the verification-engine surfaces (link table · per-author check · s08 worklist)
 
 The visual + interaction layer for the verification engine (functional TRD D24–D31, US-11).

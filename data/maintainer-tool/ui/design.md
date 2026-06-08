@@ -80,6 +80,17 @@ within the detail view. **No element jumps position on a state change** (law 1) 
 space for conditional affordances (the "was:" line, the dirty marker, the validation-error
 line) is always allocated, rendered empty when inactive, at every breakpoint.
 
+**The detail pane (s02) leads with the work surface.** A detail screen with heavy secondary
+machinery (the version & verify surface, lifecycle) does NOT stack every section at natural
+height — that lets the header eat the pane and starves the work surface. Instead: a **compact
+pinned summary** (identity + the version `Select` + the one-line verify summary) stays visible
+at the top, the **heavy/secondary sections** (the DLL link table, lifecycle) are **collapsible
+sections** (collapsed by default — the `collapsible section` silhouette), and the **work surface
+(the version table + the inline field editor) is expanded by default and takes the majority of
+the pane**, scrolling within it. The screen leads with what the maintainer works on; the
+verify/lifecycle machinery is one disclosure away, never consuming the viewport. The same
+compact-header + collapse model holds on phone (within the full-viewport drill-down).
+
 ---
 
 ## Global interaction laws (non-negotiable, responsive-aware)
@@ -303,14 +314,33 @@ diff cell) are app components built FROM these.
   nothing-changed) with its override / acknowledge affordance.
 - **toast** → `Notification`/`notifications` — top-anchored, transient: last-save result +
   non-blocking notices (replaces the dissolved status bar).
-- **version & verify surface** → the s02-header composite: the version `Select` + the
-  **per-module DLL link table** (browser File API → the client-side `.rdata` version scan +
-  the per-kind static checks, D15/D24–D30) + the advisory verify state + the link-to-create
-  prompt.
-- **per-module link row** → a `Group` row per module: the module name (mono) · the linked
-  DLL's filename + resolved version (or "not linked") · a `[re-pick]`/`[link…]` affordance ·
-  a **version-match indicator** (glyph+text — "✓ matches row" / "≠ no match", never
-  color-alone, law 7). Re-pick each session (D30); no persisted path shown.
+- **collapsible section** → a `Group`/`UnstyledButton` section header (a label + a state
+  chevron `›`/`⌄`) over a collapsible body (`Collapse`). Clicking/Enter/Space toggles; the
+  **header row never moves** (the body expands IN PLACE below it, pushing the sections below it
+  down — a user-toggled disclosure, not a state-change reflow, so law 1's no-reflow-on-state-
+  change is honored). Collapsed/expanded state is glyph+text (the chevron + an aria-expanded),
+  never color-alone (law 7); the header is keyboard-reachable and a button role. The grouping
+  primitive for a heavy/secondary s02 section (the DLL link table, lifecycle) so the work
+  surface keeps the room.
+- **version & verify surface** → the s02-header composite, split into a **compact pinned
+  summary** (always visible: the version `Select` + a **one-line verify summary** — e.g. "Bin
+  folder linked — `<version>` ✓" / "no folder linked") and a **collapsible "Verify against a
+  DLL" section** (the install-set link surface: the **Bin-folder pick** + the per-module link
+  rows + the link-to-create prompt). The maintainer links the game's **Bin FOLDER once** (a
+  single in-session `<input webkitdirectory>` directory pick — portable, the DLLs read in-page,
+  never uploaded, D15/D26; the install-set, D30); the tool resolves the install version from
+  WHGame.dll and finds each referenced module's DLL by filename in that folder. The full link
+  table collapses (collapsed by default — D30/the s02 layout); the one-line summary keeps the
+  verify state glanceable without it.
+- **per-module link row** → a row per module with a **stable top line that never moves** (the
+  module name (mono) · the DLL's status in the linked folder — found / "not found in the linked
+  folder" · a **version-match indicator** glyph+text — "✓ matches row" / "≠ no match", never
+  color-alone, law 7) AND a **verify message in reserved multi-line space BELOW** the top line
+  (a long system-caused message — "that folder has no WHGame.dll", "couldn't resolve a version"
+  — wraps DOWNWARD into the reserved space, never pushing the top-line affordance sideways off
+  the row; law 1, the reserved-space reflow-safe structure). A **non-WHGame module inherits the
+  install's version from WHGame.dll** (the CryEngine DLLs carry no KCD2 version string — D30).
+  The folder link is re-picked each session (D30); no persisted handle.
 - **verdict badge** → a `Badge`+text composite rendering a per-kind check verdict — one of
   **Unchanged** / **Changed** / **Ambiguous** / **CannotCheck** — as glyph + label (never
   color-alone, law 7), with a reserved detail line beneath (law 1). The advisory carrier for
@@ -381,15 +411,17 @@ s08 verification worklist ── [Import verification report] (s01) ──▶ pi
  │   a failing row ──▶ s02/s04 to fix (user-action navigation, law 3)
  │   ‹ back (phone) ──▶ s01
 
-s02 verify surface (the per-module DLL link table) ── link/re-pick a DLL per module (D30);
-     a linked DLL newer than the entity's rows ──▶ inline "[Add a version row at <v>]" ──▶ s05
-     create-version, prefilled at the DLL's version (user-action, law 3; AP18 confirm, law 8).
-     A per-author STATIC check verdict renders inline in s04 (the row being authored).
+s02 verify surface (the install-set link table, a collapsible section) ── link the game Bin
+     FOLDER once (D30; the per-module rows resolve from that folder); a linked install newer
+     than the entity's rows ──▶ inline "[Add a version row at <v>]" ──▶ s05 create-version,
+     prefilled at the install's version (user-action, law 3; AP18 confirm, law 8). A per-author
+     STATIC check verdict renders inline in s04 (the row being authored).
 
 overlay layer ── confirm/create/dialogs (centered modal on wide, full-screen sheet on phone);
      toast (top-anchored, transient: save result + notices). Floats above; never navigates
-     (law 3). The version & verify surface (version dropdown + the per-module DLL link table +
-     the client checks, D15/D24–D30) lives in s02's header, NOT a global bar.
+     (law 3). The version & verify surface (the compact summary: version dropdown + the one-line
+     verify state; the collapsible install-set link table + the client checks, D15/D24–D30) lives
+     in s02's header, NOT a global bar.
 ```
 
 ---
