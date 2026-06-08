@@ -49,7 +49,7 @@ hash when `DONE`, `—` otherwise.
 | [9 — high-level Lua surface (player/inventory + namespace stubs)](phase-09-high-level-lua/README.md) | DEFERRED → [`TD-0005`](../../tech-debt/TD-0005-high-level-lua-surface.md) | — |
 | [9.1 — SQLite reference DB + lookup primitive + verification cache](phase-09.1-reference-db/README.md) | DONE | 498934c |
 | [9.2 — unified named-target surface (kcdx.declare + smart resolver)](phase-09.2-declare-surface/README.md) | DONE | 2dac79b / 1c01c9d / CAP-70 |
-| [9.3 — kcdx.hook.* / kcdx.statement.* split + locator/op namespaces + multi-region trampoline](phase-09.3-namespaces/README.md) | NOT STARTED | — |
+| [9.3 — kcdx.hook.* / kcdx.statement.* split + locator/op namespaces + kcdx.functions.*/kcdx.dll.declare (author self-declaration) + multi-region trampoline](phase-09.3-namespaces/README.md) | NOT STARTED | — |
 | [9.4 — kcdx.find{...} discovery + kcdx_dev_inspect console](phase-09.4-discovery/README.md) | NOT STARTED | — |
 | [9.5 — kcdx.behavior.* named-behavior catalog](phase-09.5-behaviors/README.md) | NOT STARTED | — |
 | [9.6 — kcdx.bytes narrowing + Lua-API rule update + final migration](phase-09.6-bytes-narrowing/README.md) | NOT STARTED | — |

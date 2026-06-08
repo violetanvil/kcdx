@@ -5,32 +5,54 @@
 ## What
 
 The `kcdx.locator.*` value namespace — locator values that say WHERE in a function
-a hook/statement applies. Consumed by the hook (step 3) and statement (step 4)
-verbs.
+a hook/statement applies. A new, ADDITIVE namespace (no existing surface replaced):
+the hook (step 4) and statement (step 5) verbs consume these values, but the
+namespace stands alone and self-verifies at this step (each locator resolves to the
+expected statement against a reference-DB function).
 
-## Scope (`src/lua_bind_locator.cpp`)
+## Scope (`src/lua_bind_locator.cpp`, new file)
 
-- Function-level: `function_entry()`, `function_exit()`.
-- Statement-content shortcuts (documented common path): `first_call_to(fn)`,
+- Function-level: `kcdx.locator.function_entry()`, `function_exit()`.
+- Statement-content shortcuts (the documented common path): `first_call_to(fn)`,
   `last_call_to(fn)`, `call_to(fn)` (errors if multiple), `first_return()`,
   `last_return()`, `return_value(v)`, `first_read_of_cvar(name)`.
 - General matcher: `matching{kind=, callee=, condition_contains=, reads_cvar=,
   references_string=}`.
 - Labeled expert hatch: `matching_pattern("48 8B C1 ...")` — raw-AOB cases,
-  explicitly labeled expert.
-- Default: `kcdx.locator.function_entry()` when omitted on verbs that accept a
-  default. (Module is NOT defaulted — required first positional per the phase
-  rule.)
+  explicitly labeled expert (`.claude/rules/cornerstones.md` — the common-path
+  locators are the default; the pattern form is the labeled escape hatch).
+- Default: `kcdx.locator.function_entry()` when omitted on a verb that accepts a
+  default. (Module is NOT defaulted — required first positional per the phase rule.)
+- A locator value resolves against the reference-DB `statements` metadata
+  (`statements.captures` / `statements.kind` / `byte_range_len`), via `refdb`.
 
-## Disassembler test
+## Test bar (runs AT this step)
+
+A `test-plugins/cap-NN-locator-resolve/` (next free cap-NN, suite-gated): for a
+known reference-DB function, EACH locator form resolves to the EXPECTED statement
+index (a row per locator family — `function_entry`, `first_call_to`, `matching{}`,
+`matching_pattern` — that FAILS if the locator resolves to the wrong statement or
+fails to resolve). NOT deferred to steps 4/5 — the namespace self-verifies here:
+the locator → statement mapping is checkable against the reference DB without a hook
+or statement verb consuming it. PROBE Q silent.
+
+## Dependencies
+
+Phase 9.1 (the reference DB + `refdb` resolution — DONE) for the `statements`
+metadata a locator resolves against.
+
+## Design authority
+
+[`../00-original-plan.md`](../00-original-plan.md) §"Phase 9.3" → "`kcdx.locator.*` —
+locator values" (the locator catalog + the default + the expert-hatch labeling).
+Build to that §, not this doc's summary.
+
+## Disassembler-test / author-burden note
 
 The common-path locators (`first_call_to`, `first_return`, …) name what the author
-already understands. `matching_pattern` is the labeled escape hatch. Clean.
-
-## Test bar
-
-Exercised by steps 3/4's tests; this step self-checks each locator resolves to the
-expected statement against a reference-DB function.
+already understands — no hex. `matching_pattern` is the LABELED expert hatch for the
+rare raw-AOB case (`.claude/rules/cornerstones.md`, AP12). No new DB rows — locators
+resolve against existing reference-DB statement metadata.
 
 ## Reference
 
