@@ -18,7 +18,7 @@ from Phase 11".
 
 | Step | Status | Commit |
 |---|---|---|
-| Phase 1 — vendor safetyhook + prove the seam | NOT STARTED | — |
+| Phase 1 — vendor safetyhook + prove the seam | DONE | (landed) |
 | Phase 2 — the backend abstraction (function-entry) | NOT STARTED | — |
 | Phase 3 — retire make_jit_midfunc (gated on Phase 1 step 2) | NOT STARTED | — |
 | Phase 4 — foreign-hook coexistence | NOT STARTED | — |
