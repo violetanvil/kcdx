@@ -426,11 +426,13 @@ def _entity_detail_not_found_returns_none(b):
 
 
 # --- read_version_rows ---------------------------------------------------------
-# The read CONTRACT for read_version_rows: the EXACT key set every returned row
-# carries -- the design DISPLAY/EDITABLE columns (US-5 + s02/s03) PLUS the derived
-# "status". This pins the column allowlist (_VERSION_DISPLAY_COLUMNS) so a future
-# widening (e.g. content_hash leaking back) breaks the test, not the wire contract.
-_EXPECTED_VERSION_ROW_KEYS = {
+# The read CONTRACT for read_version_rows. THE DISPLAY/EDITABLE column set (US-5 +
+# s02/s03) -- the _VERSION_DISPLAY_COLUMNS allowlist as it appears in the returned
+# dict (kind/evidence_kind decoded, valid_from/valid_through ordinals). This pins the
+# DISPLAY set so a future widening (a real column leaking IN, or content_hash being
+# mis-added to the display set) breaks the test, not the wire contract. content_hash
+# is DELIBERATELY ABSENT here -- it is verify-only, never a display column.
+_DISPLAY_VERSION_COLUMNS = {
     "kcdx_id", "kind", "module_id", "rva", "length", "value", "signature",
     "observed_arg_slots", "caller_reg_arg_count", "caller_arg_agreement",
     "offset", "vtable_slot", "struct_offset",
@@ -445,12 +447,16 @@ _EXPECTED_VERSION_ROW_KEYS = {
     # identity key the maintainer tool's save/confirm/resolve_tag consumes (the ordinal
     # is internal sort/status only; resolve_tag rejects it). Both representations ship.
     "valid_from_version", "valid_through_version",
-    "status",
 }
+# The EXACT key set every returned row carries: the display columns + the derived
+# "status" + the VERIFY-ONLY "content_hash" (the s04 function check's recorded hash --
+# returned alongside the display set, NOT a display column; see _DISPLAY_VERSION_COLUMNS
+# above for the display set that must NOT contain it).
+_EXPECTED_VERSION_ROW_KEYS = _DISPLAY_VERSION_COLUMNS | {"status", "content_hash"}
 # The columns the contract DROPS -- they exist on the DB row but must NEVER cross the
-# wire: content_hash (engine-computed BLAKE3 fingerprint, policy.md), auto_name /
-# decompile_quality (DEV-ONLY, schema.py), id (internal PK row handle).
-_DROPPED_VERSION_COLUMNS = ("content_hash", "auto_name", "decompile_quality", "id")
+# wire: auto_name / decompile_quality (DEV-ONLY, schema.py), id (internal PK row
+# handle). content_hash is NOT here -- it now crosses as the verify-only field.
+_DROPPED_VERSION_COLUMNS = ("auto_name", "decompile_quality", "id")
 
 
 def _version_rows_carry_status_and_newest_first(b):
@@ -463,33 +469,64 @@ def _version_rows_carry_status_and_newest_first(b):
         cur = _current_ordinal_from_db(out)
 
         # THE READ CONTRACT: each row's key set is EXACTLY the display columns + status
-        # -- the dropped columns (content_hash / auto_name / decompile_quality / id)
-        # never cross the wire even when present on the DB row. content_hash in
-        # particular is populated on a function row by the bulk promote, so its absence
-        # from the output is a real "present in DB, dropped from contract" assertion.
+        # + the verify-only content_hash. The DEV-ONLY/internal columns (auto_name /
+        # decompile_quality / id) never cross the wire. content_hash DOES cross now (as
+        # the verify-only field), but is NOT in the DISPLAY set -- asserted separately
+        # below so the display-set guarantee stays falsifiable.
         for r in rows:
             assert set(r) == _EXPECTED_VERSION_ROW_KEYS, (
-                f"version row key set drifted from the display contract: "
+                f"version row key set drifted from the read contract: "
                 f"unexpected {set(r) - _EXPECTED_VERSION_ROW_KEYS}, "
                 f"missing {_EXPECTED_VERSION_ROW_KEYS - set(r)}")
             for dropped in _DROPPED_VERSION_COLUMNS:
                 assert dropped not in r, (
                     f"{dropped!r} leaked into the version-row read contract: {r}")
+            # content_hash is VERIFY-ONLY, NOT a display column: it is present in the
+            # row but must NOT be in the display/edit set (s02/s03 never render it).
+            # This is the load-bearing separation -- if a future change folded
+            # content_hash into _VERSION_DISPLAY_COLUMNS, this breaks.
+            assert "content_hash" in r, (
+                f"verify-only content_hash missing from the read contract: {r}")
+            assert "content_hash" not in _DISPLAY_VERSION_COLUMNS, (
+                "content_hash leaked into the DISPLAY column set -- it is verify-only, "
+                "returned alongside but NEVER a display/edit column (s02/s03 unaffected)")
 
         # content_hash is genuinely ON the underlying DB row for this entity (a
-        # function row carries the bulk-promote fingerprint) -- proving the absence
-        # above is a DROP, not just an unpopulated column.
+        # function row carries the bulk-promote fingerprint) -- the verify-only field
+        # below is asserted to match it, hex-encoded.
         con = sqlite3.connect(os.path.join(out, "reference.sqlite"))
         try:
-            ch = con.execute(
+            db_row = con.execute(
                 "SELECT content_hash FROM address_versions "
                 "WHERE kcdx_id = ? AND content_hash IS NOT NULL LIMIT 1",
                 (kid,)).fetchone()
         finally:
             con.close()
-        assert ch is not None, (
+        assert db_row is not None, (
             "fixture precondition: the chosen entity's DB row should carry a "
-            "content_hash (bulk-promote fingerprint) so the drop assertion is real")
+            "content_hash (bulk-promote fingerprint) so the verify-only assertion is real")
+        # (a) A FUNCTION row that HAS a content_hash returns it as a lowercase-hex string
+        # under the verify-only `content_hash` key -- 64-char (32-byte BLAKE3 -> hex),
+        # all-lowercase (the client compares got.toLowerCase() === stored.toLowerCase()),
+        # and == the stored BLOB hex-encoded (not a fabricated or truncated value).
+        stored_hex = bytes(db_row[0]).hex()
+        assert len(stored_hex) == 64, stored_hex  # 32-byte BLAKE3 -> 64 hex chars
+        hashed_rows = [r for r in rows if r["content_hash"] is not None]
+        assert hashed_rows, (
+            "the entity's fingerprinted DB row should surface a non-None verify-only "
+            "content_hash in the read output")
+        for r in hashed_rows:
+            ch = r["content_hash"]
+            assert isinstance(ch, str), (f"content_hash must be a hex STRING, got {ch!r}")
+            assert ch == ch.lower(), (f"content_hash must be lowercase hex: {ch!r}")
+            assert len(ch) == 64, (f"content_hash must be 64-char (32-byte) hex: {ch!r}")
+            assert all(c in "0123456789abcdef" for c in ch), (
+                f"content_hash must be lowercase hex chars only: {ch!r}")
+        # The fingerprinted DB row's stored hash appears verbatim (hex-encoded) in the
+        # read output -- the verify-only field IS the recorded hash, not a placeholder.
+        assert any(r["content_hash"] == stored_hex for r in hashed_rows), (
+            f"the stored content_hash {stored_hex!r} did not appear hex-encoded in the "
+            f"verify-only field: {[r['content_hash'] for r in hashed_rows]}")
 
         # Each row carries a derived status.
         for r in rows:
@@ -582,6 +619,62 @@ def _version_rows_unknown_id_returns_empty(b):
             "read_version_rows did not return [] for an unknown kcdx_id")
     finally:
         shutil.rmtree(out, ignore_errors=True)
+
+
+def _version_rows_null_content_hash_returns_none(b):
+    # (c) A row with NULL content_hash (never fingerprinted) returns None for the
+    # verify-only field -- NOT an absent key (no KeyError/crash), NOT a fabricated
+    # value. A non-function kind (data_slot) carries no body fingerprint: content_hash
+    # is NULL on the av row. CONSTRUCT one via the landed db_editor.create_entity (a
+    # real validated edit, same harness the superseded oracle uses), then assert the
+    # read output surfaces content_hash == None for it.
+    out = _fresh_db(b)
+    try:
+        name = "read_api_null_hash_data_slot"
+        db_editor.create_entity(
+            out, DLL_PATH, name,
+            first_version_columns={
+                "valid_from_version": GVT, "module": "WHGame.dll",
+                "kind": "data_slot", "rva": "0x%08X" % _a_non_function_rva()})
+        kid = {nm: i for i, nm in
+               _name_id_pairs(os.path.join(out, "reference.sqlite"))}[name]
+        # Fixture precondition: this data_slot row's content_hash is NULL in the DB
+        # (only function rows carry the bulk-promote fingerprint).
+        con = sqlite3.connect(os.path.join(out, "reference.sqlite"))
+        try:
+            db_ch = con.execute(
+                "SELECT content_hash FROM address_versions WHERE kcdx_id = ?",
+                (kid,)).fetchone()
+        finally:
+            con.close()
+        assert db_ch is not None, "the minted entity should have a version row"
+        assert db_ch[0] is None, (
+            "fixture precondition: a data_slot row's content_hash should be NULL "
+            "so the None-not-fabricated assertion is real")
+        rows = read_version_rows(out, kid)
+        assert rows, "read_version_rows returned no rows for the minted entity"
+        for r in rows:
+            # Present (not an absent key -- no crash), and None (not fabricated).
+            assert "content_hash" in r, (
+                f"content_hash key absent for a NULL-hash row (must be present as "
+                f"None, not crash): {r}")
+            assert r["content_hash"] is None, (
+                f"a NULL content_hash must surface as None, never a fabricated value: "
+                f"{r['content_hash']!r}")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+def _name_id_pairs(db_path):
+    """(id, name) for every address_names row -- a small local reader so the NULL-hash
+    test can resolve the minted entity's kcdx_id by name (the insert harness exposes
+    next-free-id and all-ids, not a by-name lookup)."""
+    con = sqlite3.connect(db_path)
+    try:
+        return [(r[0], r[1]) for r in
+                con.execute("SELECT id, name FROM address_names")]
+    finally:
+        con.close()
 
 
 # --- read_modules --------------------------------------------------------------
@@ -695,6 +788,10 @@ def test_version_rows_unknown_id_returns_empty(baseline):  # noqa: F811
     _version_rows_unknown_id_returns_empty(baseline)
 
 
+def test_version_rows_null_content_hash_returns_none(baseline):  # noqa: F811
+    _version_rows_null_content_hash_returns_none(baseline)
+
+
 def test_missing_db_raises(baseline):  # noqa: F811
     _missing_db_raises(baseline)
 
@@ -731,6 +828,8 @@ if __name__ == "__main__":
         print("PASS test_version_rows_deprecated_entity_rows_show_deprecated")
         _version_rows_unknown_id_returns_empty(b)
         print("PASS test_version_rows_unknown_id_returns_empty")
+        _version_rows_null_content_hash_returns_none(b)
+        print("PASS test_version_rows_null_content_hash_returns_none")
         _missing_db_raises(b)
         print("PASS test_missing_db_raises")
         _modules_shape_and_contents(b)

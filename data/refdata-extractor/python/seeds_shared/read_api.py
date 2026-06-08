@@ -349,12 +349,18 @@ _VERSION_DISPLAY_COLUMNS = (
 def read_version_rows(out_dir, kcdx_id):
     """The entity's address_versions rows, NEWEST-first (s02 S"Contents": newest
     first), each as a display-column dict carrying its derived `status` (via
-    derive_status). Only the design DISPLAY/EDITABLE columns are returned (the
-    _VERSION_DISPLAY_COLUMNS allowlist above -- s02 version table + s03 history/
-    compare; the engine-computed content_hash and the DEV-ONLY columns never cross
-    the wire); the dict-encoded `kind` / `evidence_kind` cells are decoded to their
-    display strings, and an extra "status" key carries the per-row derived status at
-    the DB's current ordinal.
+    derive_status). The DISPLAY/EDITABLE columns are the _VERSION_DISPLAY_COLUMNS
+    allowlist above (s02 version table + s03 history/compare; the DEV-ONLY columns
+    never cross the wire); the dict-encoded `kind` / `evidence_kind` cells are decoded
+    to their display strings, and an extra "status" key carries the per-row derived
+    status at the DB's current ordinal.
+
+    The engine-computed `content_hash` is NOT in the display set (s02/s03 still never
+    render it) but IS returned as a SEPARATE VERIFY-ONLY field -- the s04 per-author
+    function check compares the freshly-hashed DLL body against it (read-contract
+    above). It is HEX-ENCODED (the stored 32-byte BLAKE3 BLOB -> lowercase 64-hex), or
+    None for a never-fingerprinted row. Added AFTER the display columns + `status`, so
+    the display set stays contiguous and the verify-only field rides alongside.
 
     NEWEST-first is ordered by the row's valid_from ORDINAL descending (the version
     a row is valid from -- not the internal autoincrement id), so the current
@@ -385,9 +391,12 @@ def read_version_rows(out_dir, kcdx_id):
             return []
         entity = _entity_lifecycle_ordinals(nrow, gv_ordinals)
 
+        # The display columns crossing the wire (the allowlist). content_hash is
+        # fetched ALONGSIDE -- NOT added to _VERSION_DISPLAY_COLUMNS (the display/edit
+        # set stays byte-identical for s02/s03) -- as the verify-only field below.
         cols = _VERSION_DISPLAY_COLUMNS
         rows = con.execute(
-            f'SELECT {",".join(chr(34) + c + chr(34) for c in cols)} '
+            f'SELECT {",".join(chr(34) + c + chr(34) for c in cols)},"content_hash" '
             f'FROM address_versions WHERE kcdx_id = ?', (kcdx_id,)).fetchall()
 
         out = []
@@ -395,6 +404,15 @@ def read_version_rows(out_dir, kcdx_id):
             d = {c: r[c] for c in cols}
             window = _version_window_ordinals(d, gv_ordinals)
             d["status"] = derive_status(current, window, entity)
+            # VERIFY-ONLY (added AFTER the display columns + status so the display set
+            # stays contiguous): the engine-computed BLAKE3 fingerprint the s04 function
+            # check compares the freshly-hashed DLL body against. Stored as a 32-byte
+            # raw BLOB -> emitted as lowercase 64-hex (bytes.hex() is lowercase) so the
+            # client compares got.toLowerCase() === stored.toLowerCase() against its own
+            # 64-hex digest. None (NULL BLOB -> never fingerprinted) passes through as
+            # None -- not fabricated, not an absent key.
+            ch = r["content_hash"]
+            d["content_hash"] = bytes(ch).hex() if ch is not None else None
             # The version-TAG STRINGS alongside the FK-resolved ordinals: the write
             # identity key the save/confirm path keys a row by (resolve_tag rejects the
             # ordinal). Resolved from the SAME game_versions read as the ordinal (law 6).

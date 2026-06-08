@@ -133,11 +133,14 @@ def get_entity_versions(kcdx_id: int):
     version table, s03 history/compare).
 
     Returns read_version_rows' list verbatim -- the curated display columns (the
-    data-core's _VERSION_DISPLAY_COLUMNS allowlist; the engine-computed content_hash
-    and the dev-only columns never cross the wire), the per-row `status` already
-    derived and `kind`/`evidence_kind` already decoded by the data-core. An unknown
-    id yields [] (the 2a no-rows contract), distinct from the entity-detail 404; the
-    frontend treats [] as "no versions" for that id."""
+    data-core's _VERSION_DISPLAY_COLUMNS allowlist; the dev-only columns never cross
+    the wire), the per-row `status` already derived and `kind`/`evidence_kind` already
+    decoded by the data-core, PLUS the verify-only `content_hash` (hex or null) the s04
+    function check reads -- a separate field, NOT a display/edit column. The endpoint
+    is a thin caller: _json_safe passes the hex string (already a str) through
+    unchanged; it derives nothing. An unknown id yields [] (the 2a no-rows contract),
+    distinct from the entity-detail 404; the frontend treats [] as "no versions" for
+    that id."""
     config = load_config()
     try:
         return _json_safe(data_core.read_version_rows(config.out_dir, kcdx_id))

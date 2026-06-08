@@ -232,6 +232,26 @@ def test_get_entity_versions_newest_first_with_status(resolved_checkout, client_
     for row in body:
         assert row.get("status") in VALID_STATUS, row.get("status")
 
+    # The verify-only content_hash crosses the wire (s04 function check): every row
+    # carries it, as a lowercase-64-hex STRING (a fingerprinted row) or null (a
+    # never-fingerprinted row) -- never absent, never a non-string non-null. It is a
+    # SEPARATE field from the display columns (the endpoint surfaces it as the data-core
+    # returns it; _json_safe passes the hex str through unchanged).
+    for row in body:
+        assert "content_hash" in row, f"verify-only content_hash absent: {row}"
+        ch = row["content_hash"]
+        assert ch is None or isinstance(ch, str), (
+            f"content_hash must be a hex string or null, got {ch!r}")
+        if ch is not None:
+            assert len(ch) == 64 and ch == ch.lower() and all(
+                c in "0123456789abcdef" for c in ch), (
+                f"content_hash must be lowercase 64-char hex: {ch!r}")
+    # At least one fingerprinted row exists in the fixture (a function row carries the
+    # bulk-promote hash) -- proves content_hash genuinely crossed, not vacuously all-null.
+    assert any(row["content_hash"] is not None for row in body), (
+        "expected at least one fingerprinted (function) version row to surface a "
+        "non-null verify-only content_hash")
+
     # THE FIX (the maintainer-tool 422 bug): the version-rows endpoint exposes the
     # version-TAG STRING `valid_from_version` (the write-path identity key the editor
     # sends to save/confirm -- resolve_tag rejects the FK ordinal), ALONGSIDE the
