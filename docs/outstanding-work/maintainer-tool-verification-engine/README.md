@@ -13,13 +13,29 @@ steps land in the SEPARATE gitignored frontend repo (gate `npm run build` + Vite
 **[ENG]** in kcdx `src/` (gate `pwsh ./build.ps1` + live launch); **[TEST]** in kcdx
 `test-plugins/`; **[CORE]** in `data/refdata-extractor/python/seeds_shared/` (gate pytest).
 
+## Current state + what's next (2026-06-08)
+
+**Where we are:** Phase 2 is all but complete — the browser static checker (2.1–2.4), the s02
+install-set link surface (2.5), and the s04 per-author verdict badge (2.6a–2.6e, milestone UAT
+accepted) are landed. **2.7 (the s02 link-to-create prompt → s05 prefill + evidence_kind-from-check)
+is the only Phase-2 step left.** Phases 3–5 (the C++ engine survival extension, the in-game batch
+plugin, the report ingestion) are NOT STARTED.
+
+**Sequencing — underlying-data updates come BEFORE 2.7 (and any further UI):** the user has
+pending updates to the underlying data (the reference DB / seed content/model) that carry UI
+implications. **Those data updates are done FIRST**; 2.7 and any dependent UI work wait until they
+land, because the UI surfaces/edits that data and would otherwise be built against a stale model.
+The data-update work itself is tracked where its concern lives (the schema/content/model change
+routes to its own plan / KI / `/design` as appropriate — see the plans-root index); this plan's
+2.7 resumes once the data settles. Do NOT start 2.7 until the data updates are landed.
+
 ## Phase-grain status ledger
 
 | Step | Status | Commit |
 |---|---|---|
 | [Phase 0 — Probes](phase-00-probes/README.md) | DONE | (landed) |
 | [Phase 1 — Shared contracts](phase-01-contracts/README.md) | DONE | ccd37e1 (1.1 e8a06cc, 1.2 35445b7, 1.3 ccd37e1) |
-| [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | NOT STARTED | — |
+| [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | IN PROGRESS | 2.1–2.6 DONE (FE:1459367/66f4716/d611c21/e83a57c/0ed135d+bfdff6f/00b2e78…27aa470 + 2.6a 9d84fcf); 2.7 (link-to-create) the only step left — see the phase ledger |
 | [Phase 3 — C++ engine survival extension](phase-03-engine-survival/README.md) | NOT STARTED | — |
 | [Phase 4 — In-game plugin + report](phase-04-ingame-plugin/README.md) | NOT STARTED | — |
 | [Phase 5 — Frontend report ingestion](phase-05-report-ingestion/README.md) | NOT STARTED | — |
