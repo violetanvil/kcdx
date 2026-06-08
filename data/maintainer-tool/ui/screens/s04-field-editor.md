@@ -38,8 +38,8 @@ invented.
 | `rva` | `field row (editable)` → `text well` (`TextInput`, mono) | `rva` | `edit_field('rva', v)` |
 | `signature` | `field row (editable)` → `text well` (`TextInput`, mono) | `signature` | `edit_field('signature', v)` |
 | `last_verified_at_version` | `field row (editable)` → `text well` | audit trio | `edit_field(...)` |
-| `verified_by` | `field row (editable)` → `text well` | audit trio | `edit_field(...)` |
-| `verified_date` | `field row (editable)` → `text well` (`YYYY-MM-DD`) | audit trio | `edit_field(...)` |
+| `verified_by` | `field row (editable)` → `text well`, **prefilled from the resolved identity, overrideable** (TRD D17a) | audit trio — the signer; on Confirm it is SENT as the request `author_name` (the git commit author) | `edit_field(...)` |
+| `verified_date` | `field row (read-only)`, **shown only when the row is verified** (`last_verified_at_version` non-empty); system-set to today on verify (TRD D17b) | audit trio — a SYSTEM fact (when verification happened), never hand-typed | — (read-only, system-set, law 7) |
 | `evidence_kind` | `field row (editable)` → `Select` | audit trio (5-value ranked enum) | `edit_field(...)` |
 | six survival columns | `field row (editable)` ×6 | `survival_aob` … `survival_expect_unique` | `edit_field(...)` |
 | **Check-vs-DLL verdict** | `verdict badge` (+ reserved detail line) | the per-kind static check result against the linked, version-matching DLL | — (advisory result; the override is `accept_unverified()` → s06) |
@@ -70,11 +70,13 @@ reflow when it appears. An unchanged field shows "(unchanged)" muted or nothing 
 reserved line.
 
 **Validation (law 6):** each field's validity comes from the shared validator (the
-data-core, via the API), rendered inline in the reserved error line: a malformed
-`verified_date` shape, an out-of-enum `evidence_kind`/`kind`, a partial audit trio (the trio
-is all-set-or-all-null — `policy.md`), `last_verified_at_version < valid_from_version`, an
-unresolvable `module` FK. The error names what's wrong; `[Review changes]` stays disabled
-while any dirty field is invalid. No rule is reimplemented in the frontend.
+data-core, via the API), rendered inline in the reserved error line: an out-of-enum
+`evidence_kind`/`kind`, a partial audit trio (the trio is all-set-or-all-null — `policy.md`),
+`last_verified_at_version < valid_from_version`, an unresolvable `module` FK. The error names
+what's wrong; `[Review changes]` stays disabled while any dirty field is invalid. No rule is
+reimplemented in the frontend. (The validator remains the authority on `verified_date`'s shape —
+law 6 — but the FE never surfaces a malformed-date entry path: `verified_date` is system-set,
+read-only, never hand-typed (TRD D17b), so the maintainer cannot author a bad date.)
 
 **Edit-existing confirmation (law 5):** opening an already-decided version for editing
 raises a one-time confirmation — *"Editing existing version `<v>` of `<name>`. Changes
@@ -142,9 +144,11 @@ authoritative per-survival-column map). The editor shows the fields the current 
 the empty-irrelevant ones, and ALWAYS shows an irrelevant field that carries a non-NULL value
 (flagged "not used by this kind", so the maintainer can clear it).
 
-**Always shown (every kind):** `kind`, `module`, the audit trio (`last_verified_at_version`,
-`verified_by`, `verified_date`, `evidence_kind`). `valid_from_version` is always shown read-only
-(identity key, law 7).
+**Always shown (every kind):** `kind`, `module`, and the audit-trio editable cells
+`last_verified_at_version`, `verified_by`, `evidence_kind`. `valid_from_version` is always shown
+read-only (identity key, law 7). **`verified_date` is NOT in the always-shown set** — it renders
+ONLY when the row is verified (`last_verified_at_version` non-empty), read-only and system-set
+(TRD D17b); an unverified row shows no `verified_date` cell at all.
 
 **Per-kind used set** (the kind-specific fields shown; grounded in policy.md + schema.py — the map
 the build encodes in `frontend/src/editor/fieldModel.ts` `KIND_FIELD_RELEVANCE`):

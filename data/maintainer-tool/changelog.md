@@ -3,6 +3,30 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-08 — audit-trio identity + verified_date model (D17a / D17b; US-3)
+
+The s04 milestone UAT surfaced two audit-trio corrections. (1) `verified_by` is a free-text
+field and the FE sends NO author identity on confirm, so D17's "the commit author and the
+audit-trio signer are one identity" is violated on the FE side (the backend always commits as the
+configured identity regardless of the typed signer). (2) `verified_date` is hand-editable and
+always shown, even on an unverified row — but it is a SYSTEM fact (WHEN verification happened),
+not a maintainer choice. Settled:
+- **D17a** — `verified_by` is **prefilled from the resolved identity, overrideable, and SENT as
+  the confirm `author_name`** (the `_AuthContext`/`X-Kcdx-Author-Name` seam D17 built), so the
+  signer becomes the git commit author. Prefill source is the configured `/health` identity today;
+  a login portal later injects the per-session identity into that surface (the seam unchanged, the
+  portal its own feature). The user chose overrideable (on-behalf / correction) over the stricter
+  read-only-locked identity.
+- **D17b** — `verified_date` is a **read-only SYSTEM value**: set to today on verify, never
+  hand-typed, and **shown only when the row is verified** (`last_verified_at_version` non-empty).
+  It leaves the maintainer-editable set; the all-or-null trio coupling sets/clears it with the rest.
+  Supersedes the prior overrideable-default-today behavior.
+
+**Integrated in:** §6 US-3, §10 D17a + D17b (new rows). The s04 screen-spec render revisions are in
+the UI changelog ([`ui/changelog.md`](ui/changelog.md)).
+**Why:** honor D17's one-identity intent on the FE (wire the signer→commit-author seam) + make
+`verified_date` a trustworthy system fact (no back-dating, no clutter on unverified rows).
+
 ## 2026-06-05 — D30 revised: the DLL link is a Bin-FOLDER pick (the install-set); multi-store dropped from scope
 
 The milestone UAT of the s02 link table surfaced that the maintainer wants to verify addresses in

@@ -4,6 +4,25 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-08 — s04 audit-trio render: verified_by identity-prefilled; verified_date read-only + conditional
+
+The s04 milestone UAT settled the audit-trio identity + verified_date model (TRD D17a/D17b). The
+s04 screen spec's `verified_by` / `verified_date` render is revised to match:
+- **`verified_by`** — `field row (editable)` → `text well`, **prefilled from the resolved identity
+  (`/health` `maintainer_identity.name`), overrideable**; on Confirm its value is SENT as the
+  request `author_name` (the signer becomes the git commit author, D17a).
+- **`verified_date`** — `field row (read-only)`, **moved OUT of the always-shown set**: it renders
+  ONLY when the row is verified (`last_verified_at_version` non-empty), read-only, system-set to
+  today on verify (D17b); an unverified row shows no `verified_date` cell. The validation line
+  drops the maintainer-facing "malformed verified_date" path (the FE never authors the date; the
+  validator stays the authority — law 6).
+
+**Integrated in:** `screens/s04-field-editor.md` §"Contents" (the two field rows), §"Field
+relevance by kind" (always-shown set), §"Validation". The functional decision is in the TRD
+changelog ([`../changelog.md`](../changelog.md), D17a/D17b).
+**Why:** honor D17's one-identity intent on the FE + render `verified_date` as the system fact it
+is (read-only, only-when-verified).
+
 ## 2026-06-06 — s02 layout reworked: compact pinned header + collapsible sections; the link-row reflow fix
 
 The milestone UAT of the s02 link table surfaced that the screen lost most of its real estate —
