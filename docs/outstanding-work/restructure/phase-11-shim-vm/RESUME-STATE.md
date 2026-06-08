@@ -1,26 +1,97 @@
 # RESUME STATE — Phase 11, mid-flight (2026-06-05)
 
-Where work stands the moment the user paused to `/design` the new Phase 5.
-Delete this file once the Phase-5 design + plan land and P4-step-1-foundation
-is building (it is a transient handoff note, not a tracked lifecycle artifact).
+Where work stands. Delete this file once the Phase-5 design revision + plan land
+and P4-step-1-foundation is building (it is a transient handoff note, not a
+tracked lifecycle artifact).
 
-## The exact spot we paused at
+## CURRENT SPOT (2026-06-07) — /plan PAUSED, design revision owed, probe owed first
 
-The user invoked `/design` ("design it, then we will plan") to design the NEW
-Phase 5 (bring-forward early capability). Immediately before, two decisions had
-been made (via AskUserQuestion, both answered) but **NOT YET APPLIED to the
-tree**. This file records them so the next session applies them, then runs the
-design.
+The Phase-5 design landed (`4e19e77`, fidelity-gated PROCEED). `/plan` was
+decomposing it when a "are we confident the early-surface enumeration is
+complete?" check (a dispatched sweep of every kcdx.* verb + the worker/first-tick
+init sequence) found a REAL GAP, and the user settled a design correction that
+SUPERSEDES part of the landed design. So `/plan` is paused: it cannot decompose a
+design that is being revised, and the revision rests on a probe not yet run.
 
-**Sequence to resume:**
-1. Apply the two pending tree edits below (P4-step-1 re-scope + the new-phase
-   insert/renumber) — the ledger must reflect reality before anything builds.
-2. Run `/design` for the new Phase 5 (the user's current invocation) — see
-   "The new Phase 5 — design scope" below for what it must settle.
-3. Then `/plan` decomposes the settled Phase-5 design into steps.
-4. Then build P4-step-1-FOUNDATION (gate + CAS only) — it does NOT depend on
-   the Phase-5 design (pure infra), so it can land before OR after the Phase-5
-   plan; sequence at the user's preference.
+**THE GAP the sweep found:** the design's `declare-vs-act` rule (§4) conflates
+"declarative (store-write)" with "early-safe." Three verbs look declarative but
+call a LIVE engine subsystem at registration, so early-safety actually depends on
+SUBSYSTEM-READINESS at the slot point — a second axis the rule lacks:
+- `kcdx.command` — registers IMMEDIATELY via `console::RegisterCommand` (a
+  documented "register immediately, no deferred apply" lock in
+  `src/lua_bind_command.cpp`). Early-safe only if `console::Init` precedes the
+  slot. AND the design omitted console-command registration from the early set
+  entirely (a real TC need — register TC commands before the menu).
+- `kcdx.cosave` (on_save/on_load) — a store-write, but calls `SetSaveCallback`
+  into `serialization::Init`, which runs LATE in worker init
+  (`src/dllmain.cpp:359`, after `save_load_hooks::Install`).
+- `kcdx.scan` — actually IMPERATIVE (scans live module memory at the call), not
+  the store-write the design implied; early-runnable (WHGame mapped) but the rule
+  mis-labels it.
+And: the §6/step-1 probe as designed checks GC-safety ONLY, not
+subsystem-readiness — so `kcdx.command`/`kcdx.cosave` would slip through it.
+(Sweep cleared: kcdx.assets.* ARE pure store-writes; the full first-tick latch is
+correctly late; pak-mount is already gated by the existing ctor-bracket;
+localization needs NO new surface — a TC overrides loc via kcdx.assets.replace on
+the loc vpath. Files: src/lua_bind_command.cpp, src/lua_bind_cosave.cpp,
+src/lua_bind_scan.cpp, src/lua_bind_assets.cpp:756-834, src/dllmain.cpp:180-383,
+src/hooks.cpp:346-460.)
+
+**THE DECISION the user settled (supersedes design §4/§6) — the ORDERED-INIT
+RULE:** kcdx initializes ALL its early-relevant subsystems in dependency order on
+the worker → signals "kcdx ready" → runs the early before_game plugins (Lua+C++)
+against a FULLY-INITIALIZED kcdx → signals "early slot done" → the game launches
+(boot-asset open proceeds) → after the game is up, the after-game plugin surface
+runs. The early/late split is no longer "store-write vs not" — it is **"needs only
+kcdx (+ mapped WHGame) vs needs the LIVE GAME."** Subsystem-readiness becomes a
+STRUCTURAL guarantee (kcdx fully inits before the slot, by construction), NOT a
+per-verb probe-around. This dissolves all three gap verbs: console + serialization
+are up by the slot, so kcdx.command + kcdx.cosave are just early; kcdx.scan stays
+imperative-but-early-runnable (WHGame mapped), docs corrected to say it ACTS.
+
+**THE PROBE OWED FIRST (the user's choice — probe before revising the design):**
+the ordered-init rule rests on a CHECKABLE RUNTIME-MECHANISM CLAIM the keystone
+did NOT prove — that the full early-relevant kcdx subsystem set (refdb, console,
+the asset seam, serialization, the hook/bytes apply handlers) CAN init before the
+engine's boot-asset open WITHOUT breaking their existing init-order dependencies
+(serialization deliberately runs after save_load_hooks::Install today). The
+keystone proved only the VM build can move ahead of the boot open. Per
+results-driven.md (a design clause asserting a runtime mechanism is a probe
+target), probe this before the design revision commits to it. Agent-built /
+deployed, user launches, agent reads the log (agent-builds-and-deploys.md).
+
+**Sequence to resume (CORRECTED):**
+1. PROBE the full subsystem-init-before-boot-open ordering (design + outcome→
+   meaning map, then agent build/deploy, user launch, agent log-read). Outcome
+   settles whether the full set CAN init before the boot open, and in what order.
+2. REVISE the Phase-5 design (`/design` on bring-forward-design.md §4/§6) — fold
+   in the ordered-init rule + the probe findings: §4 becomes the
+   needs-only-kcdx-vs-needs-live-game split with the structural init-order
+   guarantee; §5/§6 add the kcdx-subsystem-init-phase ordering + the
+   console/serialization placement; add kcdx.command (now early) + correct
+   kcdx.cosave (early) + kcdx.scan (imperative-but-early-runnable). Re-run the
+   §C.5 design-fidelity gate.
+3. RE-RUN `/plan` on the corrected design (the decomposition below is STALE — it
+   was built on the pre-correction design; redo it after the revision).
+4. Then build P4-step-1-FOUNDATION (gate + CAS only) — still independent of the
+   Phase-5 design; can land before OR after the Phase-5 plan.
+
+**The STALE /plan decomposition (pre-correction — redo after the design revision,
+do NOT build from this):** P5 was decomposed into 6 steps (s1 worker GC-safety
+probe; s2 lua_before slot+runner+declarative-bind+fail-loud; s3 boot-asset serve
+KI-0005 + AP14; s4 C++ before-game entry; s5 kcdxMessage_BeforeGame; s6
+before_game kcdx.hook intent+apply) + the renumber (drop-static-lua→6,
+serve-execute→7). The renumber + the 6-step shape MOSTLY survive the correction,
+but s1's probe widens (subsystem-readiness, not GC-only), a new subsystem-init-
+ordering step is added, and kcdx.command joins the early set — so the
+decomposition is re-derived from the revised design, not reused as-is.
+
+## (Earlier-session decisions, still standing) ──────────────────────────────
+
+**Sequence already DONE since these were written:** the two pending tree edits
+below (P4-step-1 re-scope + the new-phase insert/renumber) — the re-scope landed
+(the P4 step docs carry forward-pointers, committed `1f501c8`); the new-phase
+insert/renumber is STILL the pending tree-work `/plan` does at resume.
 
 ## Decision 1 (ANSWERED) — P4 step 1 re-scoped to FOUNDATION ONLY
 
