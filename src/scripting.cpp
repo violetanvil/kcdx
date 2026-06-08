@@ -588,8 +588,7 @@ uintptr_t dynamic_hook_mid(const kcdx::rom::runtime_func_t::parameters_t* params
         log::KV("hook",       (void*)hook),
         log::KV("jit_buf",    const_cast<kcdx::rom::runtime_func_t*>(hook)->get_jit_buffer()),
         log::KV("fnv_jit",    hook->fingerprint_jit_buffer()),
-        log::KV("fnv_self",   hook->fingerprint_self()),
-        log::KV("fnv_detour", hook->fingerprint_detour()));
+        log::KV("fnv_self",   hook->fingerprint_self()));
 
     // Clear the skip-original flag at the start of each dispatch.
     // The JIT trampoline reads this after we return; we want to

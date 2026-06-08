@@ -4,10 +4,13 @@
 // Source: https://github.com/xiaoxiao921/ReturnOfModdingBase/blob/master/src/lua/bindings/runtime_func_t.hpp
 // License: MIT. Modifications for kcdx:
 //   - namespace lua::memory -> kcdx::rom
-//   - PolyHook2's big::detour_hook -> kcdx::detour_hook shim (MinHook-backed)
+//   - PolyHook2's big::detour_hook removed; the JIT call-original slot it
+//     owned now lives directly on runtime_func_t (m_original_slot). The
+//     detour install is driven at hook_engine::InstallRuntime (the backend
+//     seam), which POPULATES the slot; runtime_func_t owns the storage.
 //   - destructor's lua_manager-singleton cleanup gated behind kcdx::scripting
-//     existing (a later step); for now the destructor just disables
-//     the hook
+//     existing (a later step); the detour is never torn down here (kcdx
+//     hooks live for the session)
 //
 // Public-facing types (parameters_t, return_value_t, the pre/post/mid
 // callback typedefs) are bytes-only — no Sol2 dependency in this file.
@@ -16,11 +19,9 @@
 
 #include <asmjit/asmjit.h>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <vector>
 
-#include "../detour_hook.h"
 #include "asmjit_helper.h"  // for is_general_register, get_call_convention etc.
 #include "type_info_t.h"
 
@@ -36,7 +37,16 @@ class runtime_func_t {
     void*                         m_jit_function_buffer = nullptr;
     size_t                        m_jit_function_size   = 0;
     asmjit::x86::Mem              m_args_stack;
-    std::unique_ptr<kcdx::detour_hook> m_detour;
+    // The JIT call-original slot. runtime_func_t OWNS this storage at a
+    // STABLE address the JIT bakes (get_jit_original_slot()); a producer
+    // POPULATES it (InstallRuntime writes the backend's relocated-original
+    // for a function-entry/mid chain hook or a dynamic_hook; the callsite
+    // path writes the callee VA directly with no backend). The JIT'd asm
+    // derefs the CURRENT slot value at runtime — so the slot's ADDRESS is
+    // baked once at JIT time and the VALUE is filled later by the producer.
+    // The slot lives directly on runtime_func_t (not in a backend object)
+    // precisely because the callsite path needs it without ANY install.
+    void*                         m_original_slot = nullptr;
     uintptr_t                     m_target_func_ptr{};
 
 public:
@@ -74,22 +84,21 @@ public:
 
     uintptr_t get_target_func_ptr() const { return m_target_func_ptr; }
 
-    void enable_hook()  { if (m_detour) m_detour->enable();  }
-    void disable_hook() { if (m_detour) m_detour->disable(); }
-
-    // When the install path bypasses m_detour (e.g.,
-    // hook_engine::InstallRuntime calls MH_CreateHook directly to
-    // share its g_installed first-wins map across TOML + runtime
-    // hooks), the caller must write MinHook's returned pOriginal
-    // here so the JIT'd trampoline's `push qword [&original_]` reads
-    // the correct value at runtime. Without this, the trampoline
-    // pushes null and the subsequent `ret` jumps to address 0.
+    // Pointer-to-the-slot-holding-the-relocated-original-entry.
     //
-    // Returns &original_ — the same pointer `get_original_ptr()` bakes
-    // into the JIT'd asm at JIT time.
-    void** get_jit_original_slot() {
-        return m_detour ? m_detour->get_original_ptr() : nullptr;
-    }
+    // CRITICAL: returns void** (a STABLE address into this object), not
+    // void* (the slot value). The JIT bakes the address returned here as an
+    // asmjit qword_ptr; the JIT'd instruction reads the CURRENT value of the
+    // slot at runtime. The producer writes the value here AFTER the JIT runs:
+    // InstallRuntime writes the backend's relocated-original (pOriginal) for
+    // a function-entry/mid chain hook or a dynamic_hook; the callsite path
+    // writes the callee VA directly with no install. Without this write the
+    // trampoline reads null and the closing `ret` jumps to address 0.
+    //
+    // Always non-null now that runtime_func_t owns the slot member directly
+    // (the slot can no longer be missing the way it could when it lived in a
+    // separately-allocated backend object).
+    void** get_jit_original_slot() { return &m_original_slot; }
 
     // Diagnostic accessors used by hook_engine + scripting for structured
     // logging of JIT-buffer state. Cheap; safe to call at any time after
@@ -109,10 +118,6 @@ public:
     // m_jit_function_size, m_param_types vector, etc.) is part of
     // the fingerprint.
     uint64_t fingerprint_self() const;
-
-    // FNV-1a over the bytes of the detour_hook on the heap. Returns 0
-    // if m_detour was reset.
-    uint64_t fingerprint_detour() const;
 
     void debug_print_args(const asmjit::FuncSignature& sig);
 
@@ -171,11 +176,6 @@ public:
                                const asmjit::Arch arch,
                                mid_callback_t mid_callback,
                                const uintptr_t target_func_ptr);
-
-    void create_and_enable_hook(const std::string& hook_name,
-                                uintptr_t target_func_ptr,
-                                uintptr_t jitted_func_ptr,
-                                bool is_follow_call_on_fn_address = true);
 };
 
 }  // namespace kcdx::rom

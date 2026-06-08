@@ -6,8 +6,8 @@
 #include <string>
 #include <unordered_map>
 
-#include "MinHook.h"
 #include "log.h"
+#include "minhook_backend.h"
 
 namespace kcdx::hook_engine {
 
@@ -18,15 +18,18 @@ namespace kcdx::hook_engine {
 // tables were removed, so the apply
 // loop in hooks.cpp that dispatched them was dead. The LIVE hook path is
 // kcdx.hook / kcdxHookInterface routed through src/hook_chain.cpp; both it
-// and kcdx.memory.dynamic_hook install via InstallRuntime (below), which
-// still owns the shared first-wins g_installed map.
+// and kcdx.memory.dynamic_hook install via InstallRuntime (below). The
+// backend seam lives HERE: InstallRuntime owns an IDetourBackend (MinHook
+// this step — no routing predicate yet) and drives create -> enable.
 
 namespace {
 
-// Track which target addresses already have a hook installed, so we can
-// detect hook-on-hook collisions in v0.1's first-wins policy. Maps
-// targetAddr -> name of the first hook that grabbed it. Live: shared by
-// InstallRuntime (the kcdx.hook / dynamic_hook install path).
+// The re-homed cross-registry double-install guard. Maps targetAddr ->
+// name of the first hook that grabbed it. The chain's FindChain front-runs
+// this for chain hooks (so this never fires redundantly for them); it is
+// load-bearing ONLY for the cross-registry collision FindChain cannot see —
+// kcdx.memory.dynamic_hook (a NON-chain caller registering in a separate
+// registry) colliding with a chain hook, or two dynamic_hooks, on one VA.
 std::unordered_map<uintptr_t, std::string> g_installed;
 
 }  // namespace
@@ -47,7 +50,11 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
         return out;
     }
 
-    // First-wins collision check. Mirrors ApplyOneHook line 82-90.
+    // Cross-registry double-install refusal (the load-bearing guard re-homed
+    // from the old v0.1 first-wins role). FindChain already gates a chain
+    // hook before it reaches here, so for chain hooks this never fires; it
+    // refuses the cross-registry case FindChain is blind to (a dynamic_hook
+    // colliding with a chain hook / another dynamic_hook on a shared VA).
     if (auto it = g_installed.find(target_addr); it != g_installed.end()) {
         char buf[256];
         snprintf(buf, sizeof(buf),
@@ -59,34 +66,30 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
         return out;
     }
 
-    // Hand to MinHook. detour_addr is expected to already be within
+    // Drive the detour backend. MinHook this step (no routing predicate yet —
+    // that is a later step). detour_addr is expected to already be within
     // ±2 GB of target_addr (caller's responsibility; e.g.,
-    // runtime_func_t::make_jit_func now routes through branch_pool).
-    LPVOID pOriginalLp = nullptr;
-    MH_STATUS rc = MH_CreateHook(reinterpret_cast<LPVOID>(target_addr),
-                                 detour_addr,
-                                 &pOriginalLp);
-    out.pOriginal = pOriginalLp;
-    if (rc != MH_OK) {
-        char buf[256];
-        snprintf(buf, sizeof(buf),
-                 "MH_CreateHook failed (%s) at 0x%p",
-                 MH_StatusToString(rc), reinterpret_cast<void*>(target_addr));
-        out.reason = buf;
-        log::ErrorF("[hook '%s'] aborted: %s", name.c_str(), out.reason.c_str());
+    // runtime_func_t::make_jit_func routes through branch_pool). The backend
+    // is leaked deliberately: kcdx never unhooks (session-lifetime, SKSE
+    // "no FreeLibrary, no teardown" model), and the backend must outlive this
+    // call for the relocated-original it owns to stay valid for the session.
+    auto* backend = new MinHookBackend();
+    backend->set_instance(name, reinterpret_cast<void*>(target_addr), detour_addr);
+    backend->enable();
+
+    // enable() logs the specific MH_* failure itself; a null relocated-original
+    // is the create/enable-failed signal (MinHookBackend resets original_ to
+    // null on enable failure and never sets it on create failure).
+    void* pOriginal = *backend->get_original();
+    if (!pOriginal) {
+        out.reason = "detour backend install failed (see kcdx.log)";
+        log::ErrorF("[hook '%s'] aborted: %s at 0x%p",
+                    name.c_str(), out.reason.c_str(),
+                    reinterpret_cast<void*>(target_addr));
+        delete backend;
         return out;
     }
-    rc = MH_EnableHook(reinterpret_cast<LPVOID>(target_addr));
-    if (rc != MH_OK) {
-        char buf[256];
-        snprintf(buf, sizeof(buf),
-                 "MH_EnableHook failed (%s) at 0x%p",
-                 MH_StatusToString(rc), reinterpret_cast<void*>(target_addr));
-        out.reason = buf;
-        log::ErrorF("[hook '%s'] aborted: %s", name.c_str(), out.reason.c_str());
-        MH_RemoveHook(reinterpret_cast<LPVOID>(target_addr));
-        return out;
-    }
+    out.pOriginal = pOriginal;
 
     g_installed.emplace(target_addr, name);
 
@@ -94,7 +97,7 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
                name.c_str(),
                reinterpret_cast<void*>(target_addr), detour_addr);
 
-    // Diagnostic — same post-install probe as ApplyOneHook so log readers
+    // Diagnostic — same post-install probe as the legacy path so log readers
     // see the same "this is what the target looks like now" line.
     const uint8_t* siteBytes = reinterpret_cast<const uint8_t*>(target_addr);
     log::InfoF("[hook '%s'] post-install bytes at target: %02X %02X %02X %02X %02X",

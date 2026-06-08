@@ -21,7 +21,10 @@
 //   - ErrorHandler::handleError -> handle_error
 //   - ankerl::unordered_dense::map -> std::unordered_map
 //   - LOG(LEVEL) << msg -> kcdx::log::Level(msg) / log::LevelF for printf-style
-//   - big::detour_hook -> kcdx::detour_hook (MinHook-backed shim)
+//   - big::detour_hook + the JIT call-original slot it owned -> the slot
+//     storage moved onto runtime_func_t (m_original_slot); the backend the
+//     install drives is now owned at hook_engine::InstallRuntime, which
+//     POPULATES this slot. The dissolved adapter held no logic of its own.
 //   - dtor's lua-manager cleanup deferred to a later step (scripting module)
 #include "runtime_func_t.h"
 
@@ -42,18 +45,15 @@ unsigned char* runtime_func_t::return_value_t::get() const {
 }
 
 runtime_func_t::runtime_func_t() {
-    m_detour      = std::make_unique<kcdx::detour_hook>();
     m_return_type = {type_info_t::none_};
 }
 
 runtime_func_t::~runtime_func_t() {
     // A later step will add a scripting-module singleton equivalent of
-    // big::g_lua_manager and erase this hook's entry from it here. For
-    // now, just disable the hook (kcdx::detour_hook's dtor also does this
-    // best-effort, so this is belt-and-suspenders).
-    if (m_detour) {
-        m_detour->disable();
-    }
+    // big::g_lua_manager and erase this hook's entry from it here. The
+    // detour itself is owned at the install seam (hook_engine::InstallRuntime
+    // drives the backend); kcdx never unhooks (session-lifetime, SKSE model),
+    // so there is no MinHook teardown to do here.
 }
 
 uint64_t runtime_func_t::fingerprint_jit_buffer() const {
@@ -71,17 +71,6 @@ uint64_t runtime_func_t::fingerprint_self() const {
     uint64_t h = 0xcbf29ce484222325ULL;
     const uint8_t* b = reinterpret_cast<const uint8_t*>(this);
     for (size_t i = 0; i < sizeof(*this); ++i) {
-        h ^= b[i];
-        h *= 0x100000001b3ULL;
-    }
-    return h;
-}
-
-uint64_t runtime_func_t::fingerprint_detour() const {
-    if (!m_detour) return 0;
-    uint64_t h = 0xcbf29ce484222325ULL;
-    const uint8_t* b = reinterpret_cast<const uint8_t*>(m_detour.get());
-    for (size_t i = 0; i < sizeof(*m_detour); ++i) {
         h ^= b[i];
         h *= 0x100000001b3ULL;
     }
@@ -240,7 +229,7 @@ uintptr_t runtime_func_t::make_jit_func(const asmjit::FuncSignature& sig,
 
     // deref the trampoline ptr (holder must live longer, must be concrete reg since push later)
     asmjit::x86::Gp original_ptr = cc.new_gp_ptr();
-    cc.mov(original_ptr, (uintptr_t)m_detour->get_original_ptr());
+    cc.mov(original_ptr, (uintptr_t)get_jit_original_slot());
     cc.mov(original_ptr, asmjit::x86::ptr(original_ptr));
 
     asmjit::InvokeNode* original_invoke_node;
@@ -383,8 +372,7 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
         log::KV("resume_addr",          (void*)resume_addr),
         log::KV("param_count",          (int64_t)param_types.size()),
         log::KV("this",                 (void*)this),
-        log::KV("m_detour",             (void*)m_detour.get()),
-        log::KV("original_ptr",         (void*)(m_detour ? m_detour->get_original_ptr() : nullptr)));
+        log::KV("original_slot",        (void*)get_jit_original_slot()));
     for (const std::string& s : param_types) {
         m_param_types.push_back(get_type_info_from_string(s));
     }
@@ -412,7 +400,7 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     // First slot pushed is the resume target — read at the closing
     // `ret`. Three modes:
     //
-    //   True  — slot = MinHook trampoline_ptr (= *m_detour->original_).
+    //   True  — slot = MinHook trampoline_ptr (= *m_original_slot).
     //           Ret jumps into MinHook's relocated-original buffer,
     //           which re-executes the captured instruction and then
     //           jumps back to the function body. Original runs.
@@ -433,10 +421,10 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
     // encoding (FF /6 with a 32-bit signed disp). asmjit's relocator
     // silently truncates to disp=0 when the storage is > ±2 GB from the
     // JIT buffer — which is exactly our layout: JIT pool sits adjacent
-    // to WHGame.dll at ~0x7FFD146C0000, but detour_hook's `original_`
-    // field is in a `new`'d allocation at ~0x1DC1xxxxxxx (heap, ~100 TB
-    // away). Result: the JIT pushed garbage from inside its own buffer
-    // and the closing `ret` jumped to it → crash.
+    // to WHGame.dll at ~0x7FFD146C0000, but the runtime_func_t's
+    // m_original_slot field is in a `new`'d allocation at ~0x1DC1xxxxxxx
+    // (heap, ~100 TB away). Result: the JIT pushed garbage from inside its
+    // own buffer and the closing `ret` jumped to it → crash.
     //
     // Fix: load the absolute address into rax via mov-imm64, deref, then
     // place the value into the would-be-pushed slot using xchg with the
@@ -451,8 +439,8 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
         cc.mov(asmjit::x86::rax, resume_addr);
     } else {
         // True or Auto — deref trampoline_ptr storage.
-        cc.mov(asmjit::x86::rax, (uintptr_t)m_detour->get_original_ptr());    // rax = &original_
-        cc.mov(asmjit::x86::rax, asmjit::x86::ptr(asmjit::x86::rax));         // rax = *(&original_)
+        cc.mov(asmjit::x86::rax, (uintptr_t)get_jit_original_slot());         // rax = &m_original_slot
+        cc.mov(asmjit::x86::rax, asmjit::x86::ptr(asmjit::x86::rax));         // rax = *(&m_original_slot)
     }
     cc.xchg(asmjit::x86::ptr(asmjit::x86::rsp), asmjit::x86::rax);            // swap with saved-rax slot
     cc.pushfq();
@@ -732,17 +720,6 @@ uintptr_t runtime_func_t::make_jit_midfunc(const std::vector<std::string>& param
         log::KV("fnv1a",           (uint64_t)fnv));
 
     return (uintptr_t)m_jit_function_buffer;
-}
-
-void runtime_func_t::create_and_enable_hook(const std::string& hook_name,
-                                            uintptr_t target_func_ptr,
-                                            uintptr_t jitted_func_ptr,
-                                            bool is_follow_call_on_fn_address) {
-    m_target_func_ptr = target_func_ptr;
-
-    m_detour->set_instance(hook_name, (void*)target_func_ptr, (void*)jitted_func_ptr);
-    m_detour->set_is_follow_call_on_fn_address(is_follow_call_on_fn_address);
-    m_detour->enable();
 }
 
 }  // namespace kcdx::rom

@@ -26,8 +26,8 @@
 //
 // The target VA is BAKED into the emitted code as an immediate. For
 // call_original this is fine: pass MinHook's trampoline-to-original VA
-// (read from detour_hook::get_original_ptr() AFTER InstallRuntime has
-// populated it). MinHook never relocates a trampoline post-create, so a
+// (read from runtime_func_t::get_jit_original_slot() AFTER InstallRuntime
+// has populated it). MinHook never relocates a trampoline post-create, so a
 // baked VA is stable for the session (kcdx never unhooks — hooks live
 // for the session).
 //

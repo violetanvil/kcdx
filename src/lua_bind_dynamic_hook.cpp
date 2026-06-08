@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <new>
 #include <string>
 #include <vector>
@@ -47,14 +48,16 @@ namespace {
 constexpr const char* kHandleMetatable = "kcdx.memory.dynamic_hook_handle";
 
 // Userdata payload. Holds a unique_ptr to the runtime_func_t so the JIT
-// state, asmjit code buffer, and MinHook bookkeeping stay alive for as
-// long as the Lua handle exists. __gc destroys the runtime_func_t which
-// triggers its dtor (disables the hook via detour_hook::disable).
+// state and asmjit code buffer stay alive for as long as the Lua handle
+// exists. __gc destroys the runtime_func_t; the MinHook detour itself is
+// owned at the install seam (hook_engine::InstallRuntime drives the backend)
+// and is never torn down — kcdx hooks live for the session.
 //
 // Note: in practice plugins keep the handle in a persistent table so it
 // never gets GC'd. If they drop it, the hook's MinHook trampoline AND
-// the JIT'd detour code stay in branch_pool (alloc-only) even though
-// the hook gets disabled. That's a small leak per session, acceptable.
+// the JIT'd detour code stay in branch_pool (alloc-only); the detour also
+// stays installed (kcdx never unhooks). That's a small leak per session,
+// acceptable.
 struct HandleUd {
     std::unique_ptr<kcdx::rom::runtime_func_t> rf;
     uintptr_t target_addr = 0;
@@ -163,8 +166,9 @@ int Handle_Gc(lua_State* L) {
         kcdx::scripting::clear_callbacks(ud->target_addr);
         kcdx::scripting::unregister_hook(ud->target_addr);
     }
-    // Destruct in-place; runtime_func_t::~runtime_func_t calls
-    // m_detour->disable() to MH_RemoveHook the MinHook entry.
+    // Destruct in-place; runtime_func_t::~runtime_func_t frees the JIT
+    // state. The MinHook detour is owned at the install seam and is NOT
+    // removed here — kcdx hooks live for the session.
     ud->~HandleUd();
     return 0;
 }

@@ -1,12 +1,14 @@
 #pragma once
 // MinHookBackend — IDetourBackend over MinHook (MH_CreateHook / EnableHook /
-// DisableHook / RemoveHook). Holds the original_ slot MinHook populates and
-// the JIT bakes the address of. One responsibility: MinHook-backed detours.
+// DisableHook / RemoveHook). Holds the original_ slot MinHook populates;
+// InstallRuntime reads it out and writes it into runtime_func_t's JIT slot.
+// One responsibility: MinHook-backed detours.
 //
 // RoM uses PolyHook2; kcdx uses MinHook (already vendored — the engine's
-// lua_pcall / update hooks + the kcdx.hook surface). This is the verbatim body
-// detour_hook held before the backend seam; behavior is byte-for-byte
+// lua_pcall / update hooks + the kcdx.hook surface). The MH_* bodies below are
+// reused verbatim across the seam relocation; behavior is byte-for-byte
 // unchanged (same MH_* calls, same order, same logging, same enabled_ flag).
+// hook_engine::InstallRuntime is the only driver of this backend.
 
 #include <string>
 

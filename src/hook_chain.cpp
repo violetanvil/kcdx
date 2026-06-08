@@ -2128,12 +2128,14 @@ AddResult AddCallsite(const kcdx::hook_payload::HookPayload& payload,
 
     // 5. Build the chain trampoline over the ORIGINAL CALLEE, reusing the
     //    function-entry spine. make_jit_func bakes the address of the
-    //    runtime_func_t's own detour `original_` slot into the emitted
+    //    runtime_func_t's own call-original slot into the emitted
     //    call-original path; we then write the callee VA into that slot
     //    (no MinHook detour is installed — this trampoline is a standalone
     //    function the E8 will point at). The slot is valid even without
-    //    InstallRuntime (the detour_hook is default-constructed in the
-    //    runtime_func_t ctor; get_jit_original_slot() == &original_).
+    //    InstallRuntime because runtime_func_t OWNS the slot storage
+    //    (m_original_slot, a plain member); get_jit_original_slot() returns
+    //    &m_original_slot. This is the falsifying case for a backend-owned
+    //    slot — the callsite path needs the slot with no backend at all.
     auto newChain = std::make_unique<Chain>();
     newChain->targetVa   = callsiteVa;
     newChain->isCallsite = true;
