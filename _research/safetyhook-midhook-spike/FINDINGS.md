@@ -54,16 +54,27 @@ stub (mov / add / nop×16 / ret) and `ctx.rip = the ret`.
   - **False** (skip) = `ctx.rip = resume_addr` where `resume_addr` = the
     captured instruction's VA + its length (the next original instruction).
   - **Auto** = the callback conditionally sets `ctx.rip` from callback state.
-- **resume_addr ownership (U3 detail):** safetyhook does NOT hand back the
-  resume address; kcdx computes it as `target + instruction_length`. The existing
-  hde64 length-decode (or the new Zydis decoder) supplies the length — kcdx keeps
-  a small length-decode helper, not the whole `make_jit_midfunc` codegen.
+- **resume_addr ownership (U3 detail) — CORRECTED in Phase 3 step 6b (commit
+  `aabd37f`).** This spike's original wording said kcdx computes resume as
+  `target + instruction_length`. That is IMPRECISE and crashes for a sub-5-byte
+  captured instruction: safetyhook's `e9_hook` relocates WHOLE instructions until
+  the patched span reaches 5 bytes (`vendor/safetyhook/src/inline_hook.cpp:201`),
+  so for a 2-byte `mov` / 4-byte `add` the patch swallows the following
+  instructions, and `target + instruction_length` lands INSIDE the E9 jump bytes
+  (the cap-04b crash). The CORRECT resume is **`target + hook.original_bytes().size()`**
+  — safetyhook's own relocated-region size, read after a `StartDisabled` create —
+  the first clean byte past everything the patch swallowed. This equals a single
+  instruction length ONLY when the captured instruction is already ≥5 bytes (which
+  this spike's roomy 24-byte stub happened to satisfy, masking the imprecision). No
+  hde64/length decoder is needed — safetyhook computes the boundary; kcdx reads it.
 - **Stub/patch caution for the production path:** safetyhook used a 5-byte E9
   here; for a real game target near a far module it may use the 14-byte FF
-  absolute (the E9->FF fallback). The resume-offset computation is independent of
-  the patch width (it's `captured-instruction VA + its length`), so this does not
-  change the mode mapping — but the production mid-hook adapter must compute
-  resume from the instruction length, never from the patch width.
+  absolute (the E9->FF fallback). The resume target is read from safetyhook's own
+  relocated-region size (`target + original_bytes().size()`, per the correction
+  above), which already accounts for whatever the patch swallowed — so it is
+  correct regardless of the patch width. The production mid-hook adapter reads this
+  boundary from safetyhook; it does NOT recompute it from an instruction length or
+  a patch width.
 
 ## The spike code (removed from source after capture)
 
