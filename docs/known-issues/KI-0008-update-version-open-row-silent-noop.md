@@ -7,7 +7,7 @@ commit_at_filing: 68fc4719e3a8c0a0e8c0e8c0e8c0e8c0e8c0e8c0
 
 # KI-0008 — editing an OPEN-interval version row silently no-ops (the value never persists)
 
-**Status:** open (root cause narrowed to the action-derivation layer; not yet fully isolated)
+**Status:** open (root cause CONFIRMED — `_seed_action_rows` filters out non-baseline-tag rows; fix design pending Gate A)
 
 ## Symptom
 
@@ -56,24 +56,44 @@ copy — nothing real mutated):
   (`f0dbf10`) as KI-0007 — distinct mechanism (KI-0007 was the
   `valid_through`-clobber CRASH, now fixed).
 
-## Open questions
+## Root cause (CONFIRMED — static probe of `_seed_action_rows`)
 
-- **Why does the action-derivation produce a v1.5 (closed) action with rva=1
-  instead of a v1.6 (open) action with rva=2?** The edited prospective seed has
-  v1.6→rva2 correctly, but the action that reaches `_full_column_update_one` is
-  for v1.5 with the unchanged value. The defect is in how `apply_direct_edit` /
-  `_seed_action_rows` / the current-DB-vs-prospective-seed diff converts the
-  edited seed into per-row actions — it is mis-attributing the v1.6 change (or
-  dropping it and emitting only the unchanged v1.5 action). [causal — unverified]
-- Candidate: the diff/action-builder keys the changed row on something that maps
-  the open-interval (`valid_through IS NULL`) row's edit onto the closed sibling,
-  OR the open-interval row is excluded from the action set entirely (so only the
-  unchanged v1.5 action is emitted). Probe `_seed_action_rows` / the
-  prospective-vs-current diff for the 158 rows to see which action(s) it builds
-  and from which seed row. [causal — unverified]
+`apply_direct_edit` builds its action set via `_seed_action_rows(state)`
+(`import_to_sqlite.py:3187`, commented "current-(GAME_VERSION_)tag actions
+only"). `_seed_action_rows` (`import_to_sqlite.py:1154`) **filters out every seed
+row whose `valid_from_version` is not `GAME_VERSION_TAG`** (`= "1.5.1164953"`,
+`import_to_sqlite.py:133`):
+
+```python
+vfv_tag = vs["valid_from_version"].strip()
+if vfv_tag != GAME_VERSION_TAG:      # import_to_sqlite.py:1170-1172
+    continue
+```
+
+So editing the **v1.6** row produces a prospective seed with v1.6→rva2 correctly,
+but `_seed_action_rows` SKIPS the v1.6 row (its tag `1.6` ≠ `1.5.1164953`) and
+emits only the (unchanged) v1.5 action → `_present_row_non_trio_differs` returns
+False → no write → silent no-op + a 200 confirm. A v1.5 (baseline-tag) edit is
+NOT filtered, so it writes — the exact closed-vs-open discriminator.
+
+**Why inevitable:** the action-derivation was written for the baseline-rebuild
+path, where only `GAME_VERSION_TAG` rows are actions. It was never extended to
+emit an UPDATE action for an edit to an existing NON-baseline-tag row. The
+`new_tag` create-version path (`apply_direct_edit`'s `new_tag`/`new_tag_kcdx_id`)
+handles a non-baseline tag, but ONLY as an INSERT of a brand-new version — not an
+UPDATE of an existing non-baseline-tag row. So editing any version row that is
+NOT at the baseline tag falls through the gap: filtered out of the action set,
+and not a new-tag insert.
+
+This is a genuine action-derivation gap (a design-surface boundary), not a typo.
+The fix must make the update path emit an UPDATE action for the edited row at its
+OWN tag (the `version=(tag,ordinal)` already passed to `apply_direct_edit`),
+without breaking the baseline-rebuild action set or the new-tag create path —
+routes through Gate A (architect-review) before landing.
 
 ## Trail
 
 | Date       | Action                                                                                  | Result  |
 |------------|-----------------------------------------------------------------------------------------|---------|
 | 2026-06-08 | Filed from the live session; probed the update path on a throwaway DB copy (closed-row edit writes; open-row edit drops, even in the in-flight txn). Narrowed to the action-derivation: the action reaching the apply targets the WRONG row (v1.5 closed) with the UNCHANGED value, not v1.6 with rva=2. Seed-edit layer verified correct. | symptom + facts captured; the action-derivation probe is the next step (which action(s) `_seed_action_rows`/the diff builds for the 158 edit) |
+| 2026-06-08 | PROBE (static): read `_seed_action_rows` (`import_to_sqlite.py:1154`) + its caller `apply_direct_edit:3187` — does it filter actions by tag? | ROOT CAUSE FOUND. `_seed_action_rows` does `if vfv_tag != GAME_VERSION_TAG ("1.5.1164953"): continue` (`:1170-1172`) — it SKIPS every non-baseline-tag seed row. A v1.6 edit's row is filtered out → no action → no write → silent no-op. The baseline-tag (v1.5) edit is not filtered → writes. The update path was never extended to emit an UPDATE action for an existing non-baseline-tag row (only the baseline-rebuild action set + the new-tag INSERT path exist). Design-surface gap → Gate A next. |
