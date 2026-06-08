@@ -80,3 +80,27 @@ tells the author whether their authored `rva`/`signature`/`aob` matches the bina
 AOB is non-unique, points at the exact sites to extend, instead of making the author hunt in a
 disassembler. This is the disassembler-test direction realized: the engine carries the verify
 work, the author declares intent.
+
+## Settled decision (mid-build, user-approved 2026-06-07) — the function-kind verify-only hash
+
+Building the badge surfaced a contract gap: the **function**-kind check (the dominant kind) needs
+the row's recorded `content_hash` to compare the freshly-hashed DLL body against, but `content_hash`
+was deliberately EXCLUDED from the read payload (the read-contract refinement — it is the
+engine-computed BLAKE3 fingerprint, internal, never displayed). As-is, every function badge would be
+`CannotCheck`. **User decision: add `content_hash` to the read payload as a VERIFY-ONLY field** — it
+crosses the wire for the in-browser check ONLY, never enters the display/edit column set (s02/s03
+still never render it). Captured in `read_api.py` §"The READ CONTRACT" + `ui/screens/s04-field-editor.md`
+§"The per-author static check" (the function-kind verify-only addendum). This makes 2.6 a TWO-repo
+step; the read-contract change (producer) lands before the badge (consumer), per
+`.claude/rules/incremental-delivery.md`.
+
+## Sub-step ledger (2.6 spans multiple commits across two repos — `.claude/rules/plan-persistence.md`)
+
+| Sub-step | Repo / gate | Status | Commit |
+|---|---|---|---|
+| 2.6a — `read_api.read_version_rows` returns verify-only `content_hash` (hex-encoded BLOB), the read endpoint passes it through, + the VersionRow type gains the verify-only field; tests assert it crosses for a fingerprinted function row + stays OUT of the display/edit set (s02/s03 unaffected) | kcdx (data-core pytest + backend pytest) | NOT STARTED | — |
+| 2.6b — the `extractSurvivalCheck(row, pe, buffer)` producer: maps a `VersionRow` + the matched DLL's `ParsedPe`/bytes → `{ datum: SurvivalDatum, body, deriveCtx }` per kind (function body span + verify-only content_hash; callsite/anchor `.text`/`.rdata` spans; vtable_base qword table + derived `text_range`; the derivation ctx) → ready for `checkRow`; Vitest units against the cross-impl fixture shapes for every in-scope kind | FE (`npm run build` + Vitest) | NOT STARTED | — |
+| 2.6c — thread the matched buffer + verify-only hash to `FieldEditor`; the debounced dirty-re-check effect; the inline `verdict badge` (6 states, reserved region law 1) directly below the kind-relevant fields; the Ambiguous `[show matches]` steer (D31a); the Unchanged → `evidence_kind = pattern_scan` refine (D29); never gates `[Review changes]` (law 6 only) | FE (`npm run build` + Vitest) | NOT STARTED | — |
+
+The parent **2.6 row** in [`README.md`](README.md) flips to DONE when all three sub-steps land and
+the milestone UAT (the badge is substantive + under-specified UI) is accepted.

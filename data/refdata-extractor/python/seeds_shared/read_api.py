@@ -296,15 +296,20 @@ def read_entity_detail(out_dir, kcdx_id):
 # the maintainer sees on s02 (version table) + s03 (full-record compare), per design
 # US-5 (the editable-columns spec) + policy.md. This is an allowlist: only these
 # cross the wire. Three classes of address_versions column are DELIBERATELY EXCLUDED
-# and never returned --
+# from the DISPLAY set and never shown/edited --
 #   * content_hash -- the engine-computed BLAKE3 body fingerprint (a BLOB). DERIVED,
 #     not maintainer-authored (policy.md S"function kinds need no survival authoring":
 #     a function's survival datum is content_hash+length, reused by the importer,
-#     never hand-authored); never shown on s02/s03. Dropping it is the point of this
-#     contract -- the engine fingerprint stays out of the display surface.
+#     never hand-authored); never SHOWN/EDITED on s02/s03. It is, however, returned as
+#     a separate VERIFY-ONLY field (below) -- the s04 per-author function check needs
+#     the recorded hash to compare the freshly-hashed DLL body against (the in-browser
+#     survival check, design D29/D24-D27). Verify-only != display: it crosses the wire
+#     for the client-side check but never enters the display/edit column set, so s02/s03
+#     still never render it (this contract's point -- the fingerprint stays off the
+#     display surface -- holds; the badge reads it from a distinct field).
 #   * auto_name / decompile_quality -- schema.py marks both DEV-ONLY (bulk-discovery
-#     scaffolding, not a curated display column).
-#   * id -- the internal autoincrement PRIMARY KEY row handle, never a display column.
+#     scaffolding, not a curated display column). NOT verify-only -- never returned.
+#   * id -- the internal autoincrement PRIMARY KEY row handle, never returned.
 # The six folded survival columns (aob/anchor_string/rule/slot_count/expect_unique/
 # derives_from -- D22/S11.2, the former `survival` sibling folded onto address_versions)
 # ARE in the allowlist: they are the survival re-find data the maintainer authors and

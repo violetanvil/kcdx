@@ -115,6 +115,19 @@ appears/changes). The four verdicts (glyph+text, law 7):
 **No matching DLL linked → no badge** — the check is **unavailable**, the existing "Not verified
 against a game DLL" advisory stands (the degraded state, TRD D30); authoring proceeds.
 
+**The function-kind check reads a verify-only `content_hash` (read-contract addendum).** A
+`function` row's check re-hashes the on-disk body and compares it to the row's **recorded**
+`content_hash` (the engine-computed BLAKE3, TRD `fingerprint-per-kind.md` §function). That hash is
+the engine fingerprint and is **never shown or edited** on s02/s03 (the read contract excludes it
+from the display/edit column set). To make the function badge work, the read API returns
+`content_hash` as a **verify-only field** — it crosses the wire for the in-browser check ONLY, never
+enters the display/edit surfaces (s02/s03 still never render it). A function row whose verify-only
+`content_hash` is absent (a row never fingerprinted) renders **CannotCheck** *"no recorded body
+fingerprint to compare against"* — honest, advisory. The AOB/string/vtable/derivation kinds need no
+such addendum (their survival data is already in the display set). The `text_range` a `vtable_base`
+check needs is **derived from the linked DLL's `.text` section bounds** (computed in-browser from the
+parsed PE), not a stored column.
+
 **evidence_kind from the check (TRD D29).** A passing static check (Unchanged) refines the
 audit trio's `evidence_kind` from its auto-filled default (`maintainer_ghidra`, set when
 `last_verified_at_version` is filled) to the tier the check establishes — a browser
