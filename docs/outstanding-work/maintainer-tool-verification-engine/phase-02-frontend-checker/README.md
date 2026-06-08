@@ -21,7 +21,7 @@ kcdx's `build.ps1`.
 | [2.3 [FE] The 4 pure-byte kind checks + the JS↔Python agreement test](step-3-fe-pure-byte-checks.md) | DONE | FE:d611c21 |
 | [2.4 [FE] The 2 derivation-kind checks + the anchor-dependency DAG ordering](step-4-fe-derivation-checks-dag.md) | DONE | FE:e83a57c |
 | [2.5 [FE] s02 install-set link surface (Bin-folder pick) + version-match gate + the layout + verify states](step-5-fe-s02-link-table.md) | DONE | FE:0ed135d + FE:bfdff6f (install-set D30 + compact-header/collapsible s02 layout + reflow-safe row; doc-header fix) |
-| [2.6 [FE] s04 per-author verdict badge + Ambiguous steer + the 6 check verdict states](step-6-fe-s04-verdict-badge.md) | IN PROGRESS | decomposed into 2.6a/b/c (verify-only content_hash decision, user-approved) — see the step doc's sub-step ledger |
+| [2.6 [FE] s04 per-author verdict badge + Ambiguous steer + the 6 check verdict states](step-6-fe-s04-verdict-badge.md) | DONE | 2.6a 9d84fcf + FE:00b2e78/64424a6/2cb2cee/27aa470 (a–e: verify-only content_hash, extractor, badge, cross-row DAG, cross-entity fetch) — milestone UAT accepted; see the step doc's sub-step ledger |
 | [2.7 [FE] s02 link-to-create prompt → s05 prefill + evidence_kind-from-check](step-7-fe-link-to-create.md) | NOT STARTED | — |
 
 ## Phase verification gate
