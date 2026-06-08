@@ -8,7 +8,7 @@ render (Step 2). Both FE-repo, both independently verifiable at their position v
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — verified_by → the confirm author identity (D17a)](step-1-verified-by-confirm-author.md) | NOT STARTED | — |
+| [1 — verified_by → the confirm author identity (D17a)](step-1-verified-by-confirm-author.md) | DONE | FE:6bfa833 |
 | [2 — verified_date read-only + shown-only-when-verified (D17b)](step-2-verified-date-readonly-conditional.md) | NOT STARTED | — |
 
 ## Phase verification gate
