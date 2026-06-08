@@ -1,13 +1,15 @@
 ---
 id: KI-0007
 opened: 2026-06-07
-status: open
+status: Closed
+closed: 2026-06-08
+closed_by_commit: 68fc471
 commit_at_filing: 55b5c2129b311450cb3ecee11cfab940e29bb0d4
 ---
 
 # KI-0007 — /confirm/update-version 500s on a version-row edit (partial-unique-index collision)
 
-**Status:** open (investigating)
+**Status:** closed (root cause = the full-column UPDATE clobbered `valid_through` to NULL, re-opening a closed interval → the `ix_av_open_unique` partial index tripped; fixed in `68fc471` by excluding the non-editable identity/interval columns from the UPDATE). User-confirmed: the IntegrityError/500 no longer fires on a version-row edit. A SEPARATE, distinct defect — an OPEN-interval row's edit silently no-ops (the value never lands) — surfaced during verification and is tracked as its own known-issue (the action-derivation drops the current-row edit; NOT this crash, NOT this fix).
 
 ## Symptom
 
@@ -113,3 +115,65 @@ is UNCHANGED (the closed interval PRESERVED — the AP17 mechanism check), (3)
 | 2026-06-07 | Filed from the live 8000 session; schema read refuted the composite-key lead → partial unique index `(kcdx_id) WHERE valid_through IS NULL` is the real constraint | symptom + facts captured; PROBE A pending |
 | 2026-06-07 | PROBE A: read-only dump of entity 158's address_versions rows + the index DDL from the live USER DB | 158 has exactly 1 open-interval row (id=321146 valid_through=NULL; id=321145 valid_through=1, CLOSED). DB is CLEAN — the create-version closed the prior interval correctly. Refutes "two open rows pre-existing"; the collision is manufactured BY the update. Index confirmed: `ix_av_open_unique ON address_versions(kcdx_id) WHERE valid_through IS NULL`. |
 | 2026-06-07 | PROBE B (static): read `_full_column_update_one` (1672/1696) + `build_curated_row` (row_builder.py) — what `valid_through` does the built av_row carry? | CONFIRMED nulled. The MINT branch hardcodes `"valid_through": None` (row_builder.py:159); the PROMOTE branch `v = dict(base_row)` carries the bulk row's `valid_through` (also None — bulk rows are open) and never overrides it. Neither call site (1672/1696) passes valid_through. `_projected_update` writes EVERY column → editing a CLOSED row (valid_through=1) overwrites it to NULL → a 2nd open-interval row → `ix_av_open_unique` trips. Root cause established (static evidence, no live mutation). |
+| 2026-06-07 | FIX (B): exclude `kcdx_id`/`valid_from`/`valid_through` from the US-5 UPDATE's set_cols (`_UPDATE_PRESERVE_COLUMNS`, `import_to_sqlite.py:1732`); cause-test `test_closed_row_edit_preserves_interval` asserts a CLOSED-row edit preserves valid_through | landed `68fc471`. Gate: data-core 139 passed (the 1 red is the pre-existing rebuild-oracle seed-drift), backend 66/66. Step-review PROCEED (all 5 properties; revert-to-red confirmed the cause-test fails with the exact KI IntegrityError without the fix). |
+
+## Resolution
+
+- **Root cause:** the US-5 in-place version-row UPDATE was a *full-column* write
+  that rewrote a column it must never touch. `_full_column_update_one`
+  (`import_to_sqlite.py:1712`) built a fresh `av_row` via `build_curated_row` —
+  which **always** produces `valid_through = None` (the MINT branch hardcodes it,
+  `row_builder.py:159`; the PROMOTE branch copies a bulk `base_row` whose
+  `valid_through` is also `None`, `row_builder.py:88`, and never overrides it) —
+  and neither call site (`import_to_sqlite.py:1672/1696`) passed a
+  `valid_through`. `_projected_update` then wrote **every** column except the
+  autoincrement `id`, so editing a CLOSED row (one with a real `valid_through`
+  ordinal — e.g. entity 158 "test", `id=321145 valid_through=1`, closed when its
+  sibling `id=321146` was authored as a newer version) overwrote that row's
+  `valid_through` from its real ordinal to `NULL`. That re-opened the closed
+  interval, leaving the entity with **two** rows where `valid_through IS NULL`
+  (321145 + 321146), which violates the partial unique index `ix_av_open_unique
+  ON address_versions(kcdx_id) WHERE kcdx_id IS NOT NULL AND valid_through IS
+  NULL` ("at most one open-interval row per curated entity",
+  `schema.py:136-139`). SQLite raised `IntegrityError: UNIQUE constraint failed:
+  address_versions.kcdx_id` (the error truncates to the indexed column), the
+  transaction rolled back, and the endpoint returned 500 — so nothing persisted
+  (the UI's "saved-then-NetworkError" was the browser rendering that 500). The
+  original path made the wrong write inevitable because a full-column UPDATE
+  rewrites the interval/identity columns US-5 declares non-editable from a builder
+  that has no knowledge of the existing row's interval; `kcdx_id` and `valid_from`
+  escaped corruption only because they are sourced from the row's own match key,
+  while `valid_through` had no such protection.
+
+- **Fix (`68fc471`):** exclude the three non-editable identity/interval columns —
+  `kcdx_id`, `valid_from`, `valid_through` — from the US-5 UPDATE's `set_cols`
+  (`_UPDATE_PRESERVE_COLUMNS` in `import_to_sqlite.py`). The UPDATE no longer
+  touches those columns, so the DB keeps their stored values (a closed interval
+  stays closed); every other editable column still writes. This makes the code
+  match its own docstring contract (it already claimed the `(kcdx_id, valid_from)`
+  identity key + `valid_through` were preserved — a claim the code violated for
+  `valid_through`). Scoped to the UPDATE path: `_projected_update` has exactly one
+  caller (`_full_column_update_one`); the ADD/promote path uses the separate
+  `_projected_insert` / `_promote_bulk_in_place`, so a freshly-authored row still
+  correctly gets `valid_through = None` (a new row is open). Architect-review
+  (Gate A): `hold` — design-determined by US-5 + the interval model, no user fork.
+
+- **Verification:** the cause-test `test_closed_row_edit_preserves_interval`
+  (`test_db_editor_update.py`) reproduces the closed+open two-row shape, edits the
+  CLOSED row, and asserts (1) no `IntegrityError`/500, (2) the closed row's
+  `valid_through` is PRESERVED (the mechanism check), (3) `kcdx_id`/`valid_from`
+  unchanged, (4) the edit applied, (5) exactly one open-interval row remains.
+  Revert-to-red confirmed: without the fix the test fails with the exact KI
+  `IntegrityError` at `import_to_sqlite.py:1730`. Gate B (root-cause-verifier):
+  `land-fix`. User-confirmed: on the live re-run the user did NOT hit the
+  IntegrityError/500 (the original symptom — "i didnt hit the error message
+  this time"), and a throwaway-DB probe of the live update path confirms a
+  CLOSED-row edit now succeeds + persists (`id=321145 rva→9`, `valid_through=1`
+  preserved, no IntegrityError). The crash this KI tracked is gone.
+
+- **Distinct follow-on (NOT this crash):** during verification the user hit a
+  SEPARATE defect — editing an OPEN-interval (current) row silently no-ops (the
+  value never lands, the confirm returns 200, nothing persists). Probed to the
+  action-derivation layer (the closed-row edit writes; the open-row edit's value
+  is dropped before the apply). Tracked as its own known-issue; it is a different
+  mechanism from the `valid_through`-clobber crash fixed here.
