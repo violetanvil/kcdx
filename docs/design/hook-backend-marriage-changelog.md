@@ -1,5 +1,41 @@
 # Hook-backend marriage design — changelog (newest first)
 
+## 2026-06-08 — slot-ownership + g_installed model corrected (step-4a build findings)
+
+Building Phase 2 step 4a, the U8 caller-set probe (§9.8) ran against the real
+install code and a cold architect-review confirmed two gaps where the §4
+re-grounding's prose assumed a clean 1:1 relocation the live code does not have.
+Both settled by the user:
+
+- **JIT slot ownership: `runtime_func_t` owns the storage, the backend POPULATES
+  the value.** §4.1/§8 said "the backend owns its slot" but §4.4 said "the backend
+  populates it" — an internal contradiction. The callsite path (`AddCallsite`)
+  falsifies the "backend owns" reading: it installs NO backend yet still needs the
+  slot (it writes the callee VA directly). So the slot STORAGE moves onto
+  `runtime_func_t` (a plain member the JIT bakes); each producer (a backend via
+  `InstallRuntime`, the callsite path directly, `dynamic_hook`) writes the value
+  in. Resolves the tension in §4.4's favor — what the live code already does.
+- **`g_installed`: its redundant role retires, its unique cross-registry guard
+  re-homes (NOT removed outright).** The U8 check resolved that `InstallRuntime`
+  has TWO callers: the chain's `FindChain`-gated sites (where `g_installed` is
+  redundant) AND `kcdx.memory.dynamic_hook` (a non-chain caller in a separate
+  registry, for which `g_installed` is the ONLY cross-registry double-install
+  refusal, with a loud owner-naming message `FindChain` cannot produce). Per
+  §9.8's own "re-home before removing, never drop silently," the unique guard
+  re-homes into `InstallRuntime` (a minimal per-target installed-set at the seam);
+  dropping it would lose a load-bearing loud refusal (AP14).
+
+**Integrated in:** §4.1, §4.4, §4.6, §7 (the g_installed evidence bullet), §8
+(the `MinHookBackend`/`InstallRuntime`/`detour_hook`/`runtime_func_t` units), §9.8
+(U8 RESOLVED), §11 (the "Backend seam home" + "Conflict model" rows corrected, a
+"JIT slot ownership" row added).
+**Why:** the §4 re-grounding correctly relocated the seam to `InstallRuntime` but
+its prose assumed a backend-owns-the-slot, remove-the-map-outright model the real
+code does not support — the callsite path needs a backend-independent slot, and
+`dynamic_hook` needs the cross-registry guard. Building step 4a on the
+contradictory prose would have broken cap-21/cap-22 or silently dropped a refusal;
+correcting the doc first keeps step 4a (and 4b/5) building to accurate authority.
+
 ## 2026-06-08 — §4 re-grounded against the real install architecture
 
 The code revealed the v1 design had the install layering inverted: §4.1 named

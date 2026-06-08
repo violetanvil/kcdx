@@ -42,9 +42,9 @@ primitive, foreign-hook chaining) that the bespoke MinHook layer could not give.
 The backend seam lands where the install actually bottoms out: `InstallRuntime`
 is the single function every chain install calls to create + enable the one
 detour per target (it calls raw `MH_CreateHook` today). `detour_hook` — the
-former JIT call-original slot owner — **dissolves**: the backend owns its own
-relocated-original slot (the `void**` the JIT bakes), so there is no separate
-adapter layer between the chain and the patcher.
+former JIT call-original slot owner — **dissolves**: the slot's storage moves onto
+`runtime_func_t` and the backend merely populates it (§4.4), so there is no
+separate adapter layer between the chain and the patcher.
 
 ### v1 success criteria (measurable)
 
@@ -78,8 +78,8 @@ not a no-abstraction per-path hard-wire). MinHook stays permanently for the two
 loader-lock/bootstrap paths; safetyhook serves everything else; one interface
 makes them interchangeable and a future third backend a drop-in. The seam sits at
 the install chokepoint every chain hook already funnels through, so `detour_hook`
-(a redundant slot-owner adapter once the backend owns its slot) dissolves rather
-than being reshaped.
+(a redundant slot-owner adapter once `runtime_func_t` owns the slot and the backend
+merely populates it, §4.4) dissolves rather than being reshaped.
 
 ---
 
@@ -214,8 +214,11 @@ the JIT baked. `detour_hook` was NOT the chokepoint — it is only the JIT
 call-original slot owner; its `enable()`/`disable()` are dead on the chain path
 (`src/rom_borrowed/runtime_func_t.h:80-86` — the install path bypasses `m_detour`
 because `InstallRuntime` calls `MH_CreateHook` directly). The marriage therefore
-lands the backend at `InstallRuntime` and **dissolves `detour_hook`**: the backend
-owns its own relocated-original slot, so no separate slot-owner adapter remains.
+lands the backend at `InstallRuntime` and **dissolves `detour_hook`**: the slot's
+STORAGE moves onto `runtime_func_t` itself (`runtime_func_t` owns a plain
+relocated-original slot member whose stable address the JIT bakes), and the
+backend POPULATES that slot with the relocated-original value — it does not own the
+storage (§4.4). No separate slot-owner adapter remains.
 
 ```
 IDetourBackend (interface):
@@ -243,16 +246,18 @@ trampoline + patch mechanism.
 
 **The one contract the backend must honor:** `get_original()` returns a stable,
 callable pointer to the relocated-original entry point, valid for the hook's
-lifetime, written into the JIT slot. MinHook returns its `pOriginal`; safetyhook
-returns its `InlineHook`'s `.original()` / trampoline address. Both satisfy the
-existing JIT contract (the asmjit thunks deref a pointer slot — the backend writes
-the right value into that slot, §4.4).
+lifetime, which `InstallRuntime` writes into `runtime_func_t`'s slot. MinHook
+returns its `pOriginal`; safetyhook returns its `InlineHook`'s `.original()` /
+trampoline address. Both satisfy the existing JIT contract (the asmjit thunks
+deref a pointer slot — the backend produces the value, `InstallRuntime` writes it
+into the `runtime_func_t`-owned slot, §4.4).
 
-The redundant first-wins map retires with this seam (§4.6): `g_installed`
-(`src/hook_engine.cpp:51`) was a v0.1 second conflict model layered over the
-chain's own. The chain's `FindChain` + `CanCoexist` already prevents a
-double-install per target; `g_installed` duplicated that decision in a second
-place. It is removed, not ported.
+The v0.1 first-wins map's REDUNDANT role retires with this seam (§4.6):
+`g_installed` (`src/hook_engine.cpp:51`) duplicated the chain's own per-target
+gate. But it ALSO uniquely guarded a cross-registry double-install the chain's
+`FindChain` cannot see (a non-chain `dynamic_hook` caller, §4.6) — so the unique
+guard re-homes into `InstallRuntime`, it is not dropped. The v0.1 framing retires;
+the cross-registry refusal is load-bearing and stays.
 
 ### §4.2 Backend routing — install-context-driven, automatic
 
@@ -289,27 +294,36 @@ order"; the backend owns "patch the bytes safely." (Foreign-hook detection, §6,
 is the one addition ABOVE the patcher — it extends what the chain does at install
 time, not the patcher.)
 
-### §4.4 The call-original contract — bridging two trampoline models
+### §4.4 The call-original contract — `runtime_func_t` owns the slot, the backend populates it
 
-This is the load-bearing integration detail. `runtime_func_t` bakes the
-trampoline pointer into JIT'd asm by dereferencing a raw `original_` storage slot
-(the `void**` the JIT bakes the address of, at three asmjit sites). Today
-`InstallRuntime` writes MinHook's `pOriginal` into that slot after `MH_CreateHook`;
-the slot's storage is the backend's to own once `detour_hook` dissolves. MinHook
-hands back a `pOriginal` that fits this directly. safetyhook owns its trampoline
-inside the `InlineHook` object and exposes `.original()` / `.call()`.
+This is the load-bearing integration detail, and the slot-ownership model is
+settled here. `runtime_func_t` bakes the trampoline pointer into JIT'd asm by
+dereferencing a `void**` call-original slot (the JIT bakes the slot's address at
+three asmjit sites). **`runtime_func_t` OWNS the slot STORAGE** — a plain member
+with a stable address — and each producer WRITES the relocated-original value into
+it. The backend POPULATES the slot; it does not own it.
 
-The backend resolves the mismatch by populating the slot: `MinHookBackend` writes
-its `pOriginal`, `SafetyhookBackend` writes the address of safetyhook's trampoline
-(the relocated-original entry) — both into the same slot the JIT thunks already
-deref. The JIT codegen does NOT change — it still reads a pointer slot; the
-backend (via `InstallRuntime`) writes the right pointer into it. (This is why the
-abstraction lands at `InstallRuntime`/`get_original` and not deeper: the JIT
-contract is "deref this slot for the original," and both backends satisfy it by
-populating the slot the backend now owns. **Marked assumption-to-probe:** that
-safetyhook's trampoline entry is directly callable with the original ABI from the
-JIT thunk the same way MinHook's `pOriginal` is — verify in the spike alongside
-the mid-hook proof, §9.)
+This split (storage on `runtime_func_t`, value from the producer) is forced by the
+**callsite path**, the falsifying case for a backend-owns-the-slot model: the
+callsite hook (`AddCallsite`, `src/hook_chain.cpp`) rewrites an `E8` call
+displacement and installs **NO detour at all** — it writes the callee VA directly
+into the slot (`*slot = calleeVa`), and the slot is valid precisely because
+`runtime_func_t` owns it independent of any install. If the slot's storage lived
+inside a backend object that an install creates, the callsite path — which has no
+backend — would have no slot, and the cap-21/cap-22 callsite rows would break. So
+the slot CANNOT live in a backend; it lives on `runtime_func_t`, and a backend (or
+the callsite path, or `dynamic_hook`) writes into it.
+
+The three producers each populate the same `runtime_func_t`-owned slot: a
+function-entry / mid chain hook → `InstallRuntime` writes the backend's
+relocated-original (`MinHookBackend`'s `pOriginal`, or `SafetyhookBackend`'s
+trampoline `.original()`); the callsite path → writes the callee VA directly, no
+backend; `dynamic_hook` → `InstallRuntime` writes the backend's `pOriginal`. The
+JIT codegen does NOT change — it still derefs the slot for the original; the slot's
+HOME just moves from `detour_hook` onto `runtime_func_t`. (**Marked
+assumption-to-probe:** that safetyhook's trampoline entry is directly callable with
+the original ABI from the JIT thunk the same way MinHook's `pOriginal` is — verify
+in the spike alongside the mid-hook proof, §9.)
 
 ### §4.5 Batch install — N detours, one thread-suspend window
 
@@ -353,24 +367,40 @@ thread-suspend the batch would still pay — verify against MinHook's source at
 batch-implementation time), so the batch API is expressed on `IDetourBackend` and
 each backend implements it natively.
 
-### §4.6 The single conflict model — `g_installed` retires
+### §4.6 The single conflict model — `g_installed`'s redundant role retires; its unique guard re-homes
 
 The chain already owns conflict resolution: `FindChain(target)` returns the one
 existing chain for a target (or none), `CanCoexist` is the sole predicate for
 whether a new hook joins it, and the first hook per target installs the one detour
 while the rest append a `ChainEntry`. `g_installed` (`src/hook_engine.cpp:51`) was
-a SECOND model for the same concern — a first-wins map `InstallRuntime` consulted
-to refuse a double-install per target. With the chain's `FindChain` gate already
-preventing exactly that, `g_installed` is redundant: two conflict models for one
-concern, the precise drift this re-grounding exposed (the design had layered the
-backend behind a slot-owner while the real install — and a duplicate conflict
-check — lived elsewhere).
+framed as a v0.1 SECOND model — a first-wins map `InstallRuntime` consulted to
+refuse a double-install per target ("first-wins; chained hooks are v0.2+"). For
+the chain's callers that framing is redundant: `FindChain` already prevents the
+double-install. The redundant role is what retires.
 
-`g_installed` is **removed, not ported** onto the backend seam. `InstallRuntime`'s
-single caller is the chain's first-hook-per-target path, which `FindChain` already
-gates; the map guarded a double-install the chain structurally cannot reach. (If a
-non-chain caller of `InstallRuntime` exists, it surfaces during the removal — a
-checkable fact, resolved by reading the call sites, not assumed here.)
+**But `g_installed` is NOT purely redundant** — the U8 caller-set check (§9.8)
+resolved that `InstallRuntime` has TWO caller families, not one:
+
+- The chain's first-hook-per-target sites (`hook_chain.cpp` `Add`/`AddMid`/
+  `AddCMid`/`AddC`), all gated by `FindChain` — `g_installed` adds nothing here.
+- `kcdx.memory.dynamic_hook` (`src/lua_bind_dynamic_hook.cpp`) — a NON-chain
+  caller that does NOT consult `FindChain` and registers in a SEPARATE registry
+  (`scripting::register_hook`). For it, `g_installed` is the ONLY thing refusing a
+  cross-registry double-install on a shared target VA (a `dynamic_hook` colliding
+  with a chain hook, or two `dynamic_hooks` on one VA) — and refusing it with a
+  loud, owner-naming message ("already hooked by '<first owner>'"). `FindChain`
+  cannot see `dynamic_hook` installs; the two registries are disjoint.
+
+So the unique cross-registry guard **re-homes into `InstallRuntime`** (per §9.8's
+own "re-home before removing, never drop silently"): a minimal per-target
+installed-set owned at the seam, preserving the exact loud owner-naming refusal.
+The chain's `FindChain` front-runs it for chain hooks (so it never fires
+redundantly there); the seam guard only actually fires for the cross-registry
+collision `FindChain` structurally cannot see. The "one conflict model" headline
+holds in the right sense: `FindChain` and the seam guard do not OVERLAP —
+`FindChain` decides chain coexistence, the seam guard backstops the disjoint
+non-chain case. What retires is the v0.1 duplication; what stays (re-homed) is the
+load-bearing cross-registry refusal.
 
 ---
 
@@ -556,14 +586,21 @@ to the kcdx-source + library-source reads done this session):
   this session. **This is why the backend seam lands at `InstallRuntime` and
   `detour_hook` dissolves — `InstallRuntime` is the actual single chokepoint for
   the chain path; the original design named the wrong layer.**
-- **`g_installed` is a redundant second conflict model.** `InstallRuntime`
-  consults a first-wins `g_installed` map (`src/hook_engine.cpp:51`) to refuse a
-  double-install — but the chain's `FindChain(target)` already returns the one
-  existing chain per target before a second install is ever attempted, so the map
-  guards a case the chain structurally prevents. Evidence: read of
-  `src/hook_engine.cpp` + `src/hook_chain.cpp` (`FindChain` at `:468`/`:906`/`:1922`,
-  the first-hook-installs-rest-append gate at `:1922-1995`) this session. **This is
-  why `g_installed` is removed, not ported (§4.6).**
+- **`g_installed` is redundant for chain hooks but uniquely guards the non-chain
+  caller.** `InstallRuntime` consults a first-wins `g_installed` map
+  (`src/hook_engine.cpp:51`) to refuse a double-install. For the chain's callers
+  the map is redundant — `FindChain(target)` already returns the one existing chain
+  per target before a second install. But `InstallRuntime` has a SECOND caller:
+  `kcdx.memory.dynamic_hook` (`src/lua_bind_dynamic_hook.cpp:343`), which does NOT
+  consult `FindChain` and registers in a separate registry
+  (`scripting::register_hook`, `src/scripting.cpp:330`) — for it, `g_installed` is
+  the ONLY refusal of a cross-registry double-install on a shared VA, with a loud
+  owner-naming message. Evidence: read of `src/hook_engine.cpp`,
+  `src/hook_chain.cpp` (the 4 `FindChain`-gated `InstallRuntime` sites),
+  `src/lua_bind_dynamic_hook.cpp`, `src/scripting.cpp` this session (the U8
+  caller-set check, §9.8), architect-verified. **This is why `g_installed`'s
+  redundant role retires but its unique cross-registry guard re-homes into
+  `InstallRuntime`, not dropped (§4.6).**
 - **The cap-04 / cap-21-cap-22 scar tissue.** The mid-hook skip codegen and the
   far-target trampoline were each multi-launch live-debugged fixes. Evidence:
   `docs/known-issues/closed/cap-04 ...md`, `docs/known-issues/closed/cap-21-cap-22
@@ -590,31 +627,38 @@ The marriage introduces / reshapes these units (`structure-by-responsibility.md`
   relocates its attachment point (from `detour_hook` to `InstallRuntime`).
 - **`MinHookBackend`** (new leaf — already built, step 3) — implements
   `IDetourBackend` over MinHook (`MH_CreateHook`/`Enable`/`Disable`/`Remove`,
-  + `MH_QueueEnableHook`/`MH_ApplyQueued` for batch). Holds the relocated-original
-  slot the JIT bakes; `get_original()` returns it. Reused verbatim — the bodies
-  do not change, only where they are called from. One responsibility: MinHook-
-  backed detours.
+  + `MH_QueueEnableHook`/`MH_ApplyQueued` for batch). `get_original()` returns
+  MinHook's `pOriginal` for `InstallRuntime` to write into `runtime_func_t`'s slot
+  — the backend produces the value, it does NOT own the slot storage (§4.4).
+  Reused verbatim — the bodies do not change, only where they are called from. One
+  responsibility: MinHook-backed detours.
 - **`SafetyhookBackend`** (new leaf) — implements `IDetourBackend` over
   `safetyhook::InlineHook` (+ the `StartDisabled` + `trap_threads` batch path,
   §4.5). One responsibility: safetyhook-backed detours.
 - **`hook_engine::InstallRuntime`** (reshaped, the backend dispatch site) — the
   single install chokepoint becomes backend-dispatching: read the install context,
   pick a backend, `create` → `enable`, write the backend's relocated-original into
-  the JIT slot. The `g_installed` first-wins map is REMOVED (§4.6 — the chain's
-  `FindChain`/`CanCoexist` is the sole conflict model). Owns no patching logic of
-  its own (it delegates to a backend).
+  `runtime_func_t`'s call-original slot. The `g_installed` first-wins map's
+  REDUNDANT role is removed (§4.6 — the chain's `FindChain`/`CanCoexist` is the
+  sole conflict model for chain hooks), but its unique cross-registry double-install
+  guard re-homes HERE — a minimal per-target installed-set at the seam, preserving
+  the loud owner-naming refusal the non-chain `dynamic_hook` caller depends on
+  (§4.6, §9.8). Owns no patching logic of its own (it delegates to a backend).
 - **`detour_hook`** (DISSOLVED) — the former JIT call-original slot owner is
   removed: it was only the slot owner (its `enable()`/`disable()` were dead on the
-  chain path), and the backend now owns its own slot. The slot the JIT bakes
-  becomes the backend's; no separate adapter layer remains between the chain and
-  the patcher. (Step 3 placed `IDetourBackend`/`MinHookBackend` BEHIND
-  `detour_hook`; this step moves them out from behind it and removes the husk.)
-- **`runtime_func_t`** (reshaped) — the function-entry path keeps its asmjit
-  pre/post JIT (the call-original slot is now the backend's, populated via
-  `InstallRuntime`); the mid-function path (`make_jit_midfunc`) is REMOVED and
-  replaced by a `safetyhook::MidHook` adapter that calls the existing `MidDispatch`
-  from a `Context64` callback. The dead `m_detour` member + its slot plumbing are
-  removed with `detour_hook`.
+  chain path), and the slot STORAGE moves onto `runtime_func_t` (§4.4 — the backend
+  populates the slot, it does not own it). No separate adapter layer remains
+  between the chain and the patcher. (Step 3 placed `IDetourBackend`/`MinHookBackend`
+  BEHIND `detour_hook`; this step moves them out from behind it and removes the
+  husk.)
+- **`runtime_func_t`** (reshaped) — OWNS the call-original slot STORAGE (a plain
+  member with a stable address the JIT bakes; §4.4), populated by whichever producer
+  applies (a backend via `InstallRuntime` for an installed detour, or the callsite
+  path directly with no backend). The function-entry path keeps its asmjit pre/post
+  JIT; the mid-function path (`make_jit_midfunc`) is REMOVED and replaced by a
+  `safetyhook::MidHook` adapter that calls the existing `MidDispatch` from a
+  `Context64` callback. The dead `m_detour` member is removed with `detour_hook`;
+  the slot it used to hold becomes `runtime_func_t`'s own member.
 - **A batch-install unit** (new) — owns the "install N detours under one
   thread-suspend window" mechanism (§4.5): create-all-disabled, then one frozen
   window patches N. Expressed on `IDetourBackend` (each backend implements it
@@ -680,14 +724,18 @@ probe that proves it).
    all fire → the batch path proceeds; any miss / instability → fall back to
    per-hook `enable()` (unbatched but correct). **The §4.5 batch path is
    provisional on this probe.**
-8. **`InstallRuntime`'s caller set (gates the `g_installed` removal, §4.6).** Is
-   `InstallRuntime`'s ONLY caller the chain's first-hook-per-target path (which
-   `FindChain` already gates against a double-install), or does a non-chain caller
-   exist that `g_installed` was guarding? A checkable fact — grep the
-   `InstallRuntime` call sites before removing the map. Outcome map: chain-only →
-   remove `g_installed` (the chain's `FindChain` is the sole gate); a non-chain
-   caller exists → that caller's double-install guard is surfaced and re-homed
-   before the map is removed, never dropped silently.
+8. **`InstallRuntime`'s caller set (gated the `g_installed` removal, §4.6) —
+   RESOLVED.** The check ran (read of the call sites this session, architect-
+   verified): `InstallRuntime` has TWO caller families — the chain's 4
+   `FindChain`-gated sites (`hook_chain.cpp`), AND `kcdx.memory.dynamic_hook`
+   (`src/lua_bind_dynamic_hook.cpp:343`), a NON-chain caller that registers in a
+   separate registry (`scripting::register_hook`, `src/scripting.cpp:330`). The
+   non-chain branch of the outcome map applies: `g_installed`'s redundant role
+   (for chain hooks) retires, and its unique cross-registry double-install guard
+   (the only refusal of a `dynamic_hook` colliding with a chain hook / another
+   `dynamic_hook` on a shared VA) re-homes into `InstallRuntime` — a minimal
+   per-target installed-set at the seam, preserving the loud owner-naming refusal,
+   never dropped (§4.6). Settled; this is no longer an open probe.
 
 ---
 
@@ -716,8 +764,9 @@ probe that proves it).
 | Concern | Pick | Rejected — why |
 |---|---|---|
 | Core architecture | **Backend abstraction at `InstallRuntime` (the install chokepoint); `detour_hook` dissolves** | *Backend behind `detour_hook`* — the original pick, FALSIFIED this re-grounding: `detour_hook` is only the JIT slot owner (its `enable()`/`disable()` are dead on the chain path); the real install chokepoint every chain hook funnels through is `InstallRuntime` → `MH_CreateHook`. A seam behind `detour_hook` would not be on the install path at all. *safetyhook-primary-with-MinHook-fallback* — the auto-selection is the same predicate either way, but framing safetyhook as "primary" understates that MinHook is mandatory-not-fallback on two paths. *Per-capability hard-wire, no interface* — two hooking idioms with no unifying seam; a future change touches both. |
-| Backend seam home | **`InstallRuntime` — the backend dispatches there; the backend owns its slot; `detour_hook` is removed** | *Keep `detour_hook` as the adapter* — keeps a husk whose only job (own the JIT slot) the backend now does, leaving two layers where one suffices and the slot owned in the wrong place. *Relocate the step-3 interface unchanged* is exactly the pick — `IDetourBackend`/`MinHookBackend` are correct as built, only their attachment point moves. |
-| Conflict model | **One model — the chain's `FindChain`/`CanCoexist`; `g_installed` removed** | *Port `g_installed` onto the backend seam* — carries a redundant first-wins map forward; the chain's `FindChain` already prevents the double-install the map guarded, so two conflict models for one concern (the drift this re-grounding exposed). Removed, pending the caller-set check (§9.8). |
+| Backend seam home | **`InstallRuntime` — the backend dispatches there; `runtime_func_t` owns the slot, the backend populates it; `detour_hook` is removed** | *Keep `detour_hook` as the adapter* — keeps a husk whose only job (own the JIT slot) is now `runtime_func_t`'s, leaving two layers where one suffices. *Relocate the step-3 interface unchanged* is exactly the pick — `IDetourBackend`/`MinHookBackend` are correct as built, only their attachment point moves. |
+| JIT slot ownership | **`runtime_func_t` owns the slot STORAGE; the backend POPULATES the value** | *The backend owns the slot storage* — FALSIFIED by the callsite path (`AddCallsite`), which installs NO backend yet still needs the slot (it writes the callee VA directly); a backend-owned slot leaves that path with no slot and breaks cap-21/cap-22. Resolves the §4.1-vs-§4.4 wording tension ("owns" vs "populates") in §4.4's favor — which is what the live code already implements. Settled here (§4.4), surfaced by the step-4a build. |
+| Conflict model | **One model for chain hooks — the chain's `FindChain`/`CanCoexist`; `g_installed`'s redundant role retires, its unique cross-registry guard re-homes into `InstallRuntime`** | *Remove `g_installed` outright* — FALSIFIED by the U8 caller-set check (§9.8): `dynamic_hook` is a non-chain caller for which `g_installed` is the ONLY cross-registry double-install refusal (FindChain can't see it), so dropping the map loses a load-bearing loud refusal (AP14). *Port the whole v0.1 map forward* — carries the redundant first-wins framing too. The split pick: retire the redundant role, re-home the unique guard at the seam (§9.8's own "re-home, never drop"). |
 | Foreign-hook priority | **Core v1 pillar (built up front, §6), driven by the multiplayer/extreme-mod lens** | *Final-phase polish* — the original placement; understates that the extreme-mod consumer (multiplayer, heavy TC load orders) hooks the same functions other mods hook, so foreign-detour chaining is existential for that consumer, not an edge case. Policy unchanged (chain-always); only the priority/placement elevated. |
 | Batch install | **kcdx-authored over safetyhook's primitives (`StartDisabled` + `trap_threads`), designed now** | *Per-hook `enable()` only* — N stop-the-world suspend cycles at TC/multiplayer scale; the unbatched baseline, kept as the §9.7 fallback if the batch probe fails, not as the v1 target. *Wait for a safetyhook batch primitive* — none exists (verified); building over the exposed primitives is the only path, and it is constructible. Provisional on the §9.7 multi-target-window probe. |
 | Mid-hook scope | **Full `make_jit_midfunc` replacement with `safetyhook::MidHook`** | *Keep `make_jit_midfunc`, safetyhook function-entry only* — leaves the most fragile code (the cap-04 scar tissue) in place, forgoes the single biggest maintenance win. *Decide after a spike* — folded IN as the §9 gate rather than rejected: the replacement is the decision, the spike PROVES it before landing (not a separate decision). |
