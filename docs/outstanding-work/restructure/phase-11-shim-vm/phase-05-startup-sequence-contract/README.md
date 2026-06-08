@@ -24,9 +24,10 @@ Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short h
 | [3 — promote the phase model: lifecycle event per phase + reconcile existing messages](step-3-phase-events-reconcile.md) | NOT STARTED | — |
 | [4 — the `kcdx.startup.*` query API (phase / at_least + C++ accessor)](step-4-startup-query-api.md) | NOT STARTED | — |
 | [5 — the `lua_before` early slot + the worker before-game runner](step-5-lua-before-runner.md) | NOT STARTED | — |
-| [6 — boot-asset serve via the early slot (KI-0005) + the AP14 warn decision](step-6-boot-asset-serve.md) | NOT STARTED | — |
-| [7 — the kcdx-driven C++ before-game entry](step-7-cpp-before-game-entry.md) | NOT STARTED | — |
-| [8 — the author startup-sequence doc (the timeline)](step-8-startup-doc.md) | NOT STARTED | — |
+| [6 — the before_game apply-driver (queued hook/bytes ACTUALLY INSTALLS early)](step-6-before-game-apply-driver.md) | NOT STARTED | — |
+| [7 — boot-asset serve via the early slot (KI-0005) + the AP14 warn decision](step-7-boot-asset-serve.md) | NOT STARTED | — |
+| [8 — the kcdx-driven C++ before-game entry](step-8-cpp-before-game-entry.md) | NOT STARTED | — |
+| [9 — the author startup-sequence doc (the timeline)](step-9-startup-doc.md) | NOT STARTED | — |
 
 ## Phase verification gate
 
@@ -39,6 +40,10 @@ Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short h
   `cvar::Init` run on the worker before the boot open; a worker-registered console
   command dispatches; the kcdx-subsystems-ready phase advances on the worker
   pre-boot-open. PROBE Q stays silent across the moves + the worker binds.
+- **Full before_game CONTROL** (the apply-driver, design §7.5/§8.7): a before_game
+  `kcdx.hook` declared in the early slot ACTUALLY INSTALLS — it FIRES when the engine
+  calls the target during init (proving `ApplyZone(BeforeGame)` drained the slice, not
+  just that the slot ran). Closes `docs/init.md`'s STUBBED before_game apply path.
 - **The boot-asset swap serves** (KI-0005, user-facing acceptance per
   `.claude/rules/ux-first-class.md`): the user sees a boot asset render REPLACED via
   the early-slot runtime path; the agent confirms `rt=HIT` from the dev log; the

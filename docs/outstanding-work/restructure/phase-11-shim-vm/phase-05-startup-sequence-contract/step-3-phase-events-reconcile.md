@@ -31,7 +31,7 @@ immediately (the `kcdx.dev.on_ready` discipline, generalized to every phase).
   buses; a Lua plugin AND a C++ plugin (or one driving both) exercise it.
 - Docs (`.claude/rules/docs-discipline.md`): the new events get their `docs/lua/` +
   `docs/cpp/` entries + glossary terms (the per-event entries; the whole-timeline doc
-  is step 8).
+  is step 9).
 
 ## Test bar
 

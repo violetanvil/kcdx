@@ -41,7 +41,7 @@ dev-log read.
 
 P5 step 2 (the phase enum must carry the new phases for the query to return them) +
 P5 step 3 (the author-friendly phase tokens are reconciled in step 3; the query
-returns the same tokens). Can land after step 3; independent of steps 5-8.
+returns the same tokens). Can land after step 3; independent of steps 5-9.
 
 ## Design authority
 

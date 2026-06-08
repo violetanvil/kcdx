@@ -29,7 +29,7 @@ LIVE GAME) fails LOUD (US-7).
   by the Phase-4 event gate (the slot signals; the boot-open path waits-and-blocks) —
   the gate is the Phase-4 foundation, reused.
 - Docs: `lua_before` gets its `docs/lua/` entry + a `before_game` early-slot glossary
-  term; the C++ before-game entry's mirror entry is NYI here (built in step 7).
+  term; the C++ before-game entry's mirror entry is NYI here (built in step 8).
 
 ## Test bar
 

@@ -1,4 +1,4 @@
-# Phase 5 — drop static Lua (the hazard-killing step)
+# Phase 6 — drop static Lua (the hazard-killing step)
 
 With the one VM running and adopted (Phase 3), drop kcdx's own compiled Lua entirely.
 `vendor/lua/*.c` leaves the build; every `lua_*`/`luaL_*` forwards through the shim.

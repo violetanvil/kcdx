@@ -1,9 +1,10 @@
-# P5 step 1 — drop vendor/lua *.c, revert FIX C, kcdxLuaApi→shim, lift zone gate
+# P6 step 1 — drop vendor/lua *.c, revert FIX C, kcdxLuaApi→shim, lift zone gate
 
 ## What
 
-The hazard-killing step. With the one VM running and adopted (P3) and the slot/swap
-proven (P4), drop kcdx's own compiled Lua entirely — every `lua_*`/`luaL_*` forwards
+The hazard-killing step. With the one VM running and adopted (P3) and the startup
+contract + early slot proven (P5), drop kcdx's own compiled Lua entirely — every
+`lua_*`/`luaL_*` forwards
 through the shim. One compiled Lua body remains; the dual-Lua sentinel hazard is
 impossible by construction. Lift the `before_game` Lua zone gate (the VM is up at
 DllMain now).
@@ -40,8 +41,8 @@ launch + the agent's dev-log read.
 
 P3 step 3 (the adopted VM must work before kcdx's own Lua can be dropped — dropping
 static Lua before adoption works leaves no Lua at all), P2 (the shim must forward
-every symbol the dropped `.c` provided), P4 (the slot/swap are verified on the
-coexisting build before the drop changes linkage).
+every symbol the dropped `.c` provided), P5 (the startup contract + the early
+slot/swap are verified on the coexisting build before the drop changes linkage).
 
 ## Design authority
 

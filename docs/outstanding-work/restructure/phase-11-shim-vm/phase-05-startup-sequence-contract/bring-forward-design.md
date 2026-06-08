@@ -59,6 +59,10 @@ this timeline — not a separate, drifting set.
 - A `before_game`-zoned Lua plugin's `lua_before` entrypoint + a C++ plugin's
   kcdx-driven before-game entry run on the worker, before the engine's boot-asset
   open, against a FULLY-INITIALIZED kcdx (all subsystems up — §3).
+- A before_game `kcdx.hook` / `kcdx.bytes` declared in the early slot ACTUALLY
+  INSTALLS before the engine's init call (the before_game apply-driver, §7.5) — not
+  just runs the slot. This is the "full CONTROL" half: the early window can hook the
+  engine's own init, closing `docs/init.md`'s STUBBED before_game apply path.
 - The full test suite stays green; PROBE Q stays silent; every author-facing phase
   event + the query API + the timeline doc exist with Lua+C++ parity and a test.
 
@@ -272,6 +276,17 @@ that reads/calls live game state — §7.3 late set).
 constraint + the phase to use; a row asserts the reject is loud + reads the actual
 reject path, not a tautology (AP15).
 
+### US-8 — A before_game hook/patch declared in the early slot ACTUALLY INSTALLS early
+A `before_game`-zoned plugin's `lua_before` (or C++ before-game entry) calls
+`kcdx.hook` / `kcdx.bytes` on a function the engine calls during its own init; the
+queued registry entry is INSTALLED by the before_game apply-driver (§7.5) before the
+engine reaches that init call.
+**Acceptance:** the hook FIRES when the engine calls the target during init (a
+self-reporting row that FAILS if the hook never fired — proving the apply-driver
+drained the before_game slice, not just that the slot ran); the install ordered
+before the init call. This is the load-bearing "hook any part" capability — without
+§7.5's apply-driver the queue is never drained and the hook never installs.
+
 ---
 
 ## §7 The before-game window (the early-slot phase — the v1 scope, folded in)
@@ -322,6 +337,42 @@ calls; the boot-open path (`asset_overlay` HOOK 1/2, game-main) waits-and-blocks
 it before resolving an overlay. `RegisterRuntimeOverlay` gets the Phase-4 two-writer
 CAS (a worker writer + the game-main writer).
 
+### 7.5 The before_game apply-driver — queued intent ACTUALLY INSTALLS early (the missing half of "full control")
+
+A `kcdx.hook` / `kcdx.bytes` called in the early slot (§7.1) writes intent to
+`lua_registry` (a Kind::Hook / Kind::Bytes entry) — but writing intent is not
+installing it. Today the ONE registry apply-driver (`lua_registry::ApplyZone`) is
+invoked ONLY for the `AfterGame` slice (`hooks.cpp` first-tick); **there is no
+`ApplyZone(BeforeGame)` call site** — so a before_game-zoned hook/patch declared
+through the registry applies NOTHING (confirmed: `docs/init.md` §"STUBBED";
+`ldr_notify` walks an unpopulated `patch::g_patches`). This is the "one apply-driver
+unification" `docs/init.md` migration step 3 names as pending.
+
+**This phase wires the `before_game` slice invocation** so the early slot delivers
+CONTROL, not just execution:
+
+- After the early slot runs (its `kcdx.hook`/`kcdx.bytes` calls have queued their
+  registry entries) and BEFORE the engine reaches the init call those entries target,
+  the worker invokes `ApplyZone(BeforeGame)` — the SAME one apply-driver, with the
+  `before_game` slice of the resolved load-order list. Every Kind (Hook, Bytes) routes
+  through the one driver, in load-order order, exactly as the `AfterGame` slice does.
+- **This is what makes US-8 buildable:** "queue a before_game hook, it applies before
+  the init call" requires the apply-driver to DRAIN the before_game slice — the early
+  slot running (§7.1) only queues; this installs.
+- Ordering: the before_game apply runs on the worker, in the same before-game window,
+  and its install completing before the engine's init call is the cross-thread
+  dependency the Phase-4 event gate orders (the same gate the boot-asset serve uses —
+  the apply must complete before the game-main reaches the targeted init call). *Assumes
+  the targeted init calls occur AFTER the worker's before_game apply point —
+  UNVERIFIED for a specific target; the apply-driver wiring is general, but a given
+  before_game hook's target must be one the engine calls after the apply (§8 claim 7;
+  the BugSplat-class LDR-time targets that fire BEFORE the worker stay the
+  self-registration hatch's job, §7.2).*
+- Scope note: this wires the `before_game` INVOCATION of the existing one driver — it
+  does NOT redesign the after_game path (live + correct) and does NOT build a separate
+  before_game apply logic (the zones are two invocation points of ONE driver,
+  `docs/init.md` §"The ONE apply-in-load-order flow").
+
 ---
 
 ## §8 Runtime-mechanism claims — provisional until probed (results-driven)
@@ -350,6 +401,15 @@ provisional on it until its probe lands (ordered before the step that builds on 
 6. **The gate timeout value + degraded behavior** — bounded-timeout fallback (worker
    never signals → boot-open proceeds vanilla, fail-loud); value decided at build
    under architect-review (lean 5000 ms + vanilla-serve + WARN).
+7. **The before_game apply-driver target-ordering (§7.5)** — *assumes the engine's
+   init calls a before_game hook would target occur AFTER the worker's
+   `ApplyZone(BeforeGame)` point — UNVERIFIED for a specific target.* The apply-driver
+   WIRING is general (it drains the before_game slice through the one driver); but a
+   given before_game hook only fires if its target is an init call the engine makes
+   after the apply. A target the engine calls BEFORE the worker reaches the apply
+   point (the BugSplat-class LDR-time case) stays the self-registration hatch's job
+   (§7.2). Probe a representative before_game target's call timing vs. the apply point
+   before relying on it for that target.
 
 ---
 
@@ -364,6 +424,7 @@ provisional on it until its probe lands (ordered before the step that builds on 
 | `include/kcdx/Interfaces.h` | the new phase `kcdxMessageType` values + the C++ before-game export + the C++ startup-query accessor (all append-only) | CHANGED (append-only) |
 | `src/config.cpp` + `src/plugin_loader.h` | the `lua_before` `[entrypoints]` key + `luaBeforeEntrypointsRel` (mirror `lua_after`) | CHANGED |
 | the worker before-game runner (`src/lua_vm_build.cpp` / `src/dllmain.cpp`) | run each before_game plugin's `lua_before` + invoke each C++ before-game entry on the worker; signal the event gate | NEW behavior |
+| the before_game apply-driver invocation (`src/lua_registry.cpp` `ApplyZone` + a `src/dllmain.cpp` call site) | invoke `ApplyZone(BeforeGame)` on the worker after the early slot queues its entries — the SAME one driver, before_game slice; drains Kind::Hook/Kind::Bytes so a before_game hook/patch ACTUALLY INSTALLS (§7.5). `docs/init.md` migration step 3 (the one apply-driver unification), before_game zone | NEW behavior (closes the STUBBED before_game apply path) |
 | `src/lua_plugin_loader.cpp` (`RunOneEntrypointFile`) | reused for the per-file run | reused |
 | `src/asset_namespace.cpp` (`RegisterRuntimeOverlay`) | two-writer CAS (Phase-4 FOUNDATION) | CHANGED (foundation) |
 | `src/early_hook.{h,cpp}` | the self-registration expert hatch (US-6) | reused, unchanged |
@@ -431,12 +492,19 @@ restructures the phase tree + the dir name to match this broadened scope; the v1
    manifest key + parser, the worker before-game runner (run `lua_before`, signal the
    gate). Test: `lua_before` runs on the worker tid pre-boot-open; an out-of-window
    call fails loud (US-7).
-5. **Boot-asset serve via the early slot (KI-0005, US-5)** — an early-slot
+5. **The before_game apply-driver: wire `ApplyZone(BeforeGame)`** (§7.5, US-8) — the
+   worker invokes the one apply-driver's before_game slice after the early slot queues
+   its entries, so a before_game `kcdx.hook`/`kcdx.bytes` ACTUALLY INSTALLS before the
+   engine's init call (closes `docs/init.md`'s STUBBED before_game apply path). Test:
+   a before_game hook queued in `lua_before` FIRES when the engine calls the target
+   during init (FAILS if the queue was never drained — the apply-driver, not just the
+   slot, is what makes it install).
+6. **Boot-asset serve via the early slot (KI-0005, US-5)** — an early-slot
    `kcdx.assets.replace` wins a boot asset (`rt=HIT` via the gate); the AP14 warn
    narrowed per the build-time decision.
-6. **The C++ before-game entry (US-4)** — the new export (name per §8 claim 3),
+7. **The C++ before-game entry (US-4)** — the new export (name per §8 claim 3),
    invoked by the worker runner. Test: the export runs on the worker pre-boot-open.
-7. **The author startup-sequence doc (§5.3)** — the timeline reference; cross-link
+8. **The author startup-sequence doc (§5.3)** — the timeline reference; cross-link
    `docs/init.md`. (Docs move with each surface step per docs-discipline; this step
    is the dedicated timeline doc beyond the per-call entries.)
 

@@ -107,14 +107,17 @@ Design source: [`phase-05-startup-sequence-contract/bring-forward-design.md`](ph
 | The worker before-game runner (runs lua_before + C++ entry; signals the gate) | §7.1, §7.4, §9 | P5 step 5 | the new coordinator unit |
 | Declarative / needs-only-kcdx early-bind surface on the worker | §7.3, §7.4 | P5 step 5 | needs-only-kcdx vs needs-the-live-game |
 | US-7 out-of-window call fails loud (teaching error) | §6 US-7, §10 | P5 step 5 | AP14 — never a silent no-op |
-| Boot-asset serve via the early slot (KI-0005) + AP14 warn | §6 US-5, §11 | P5 step 6 | early-slot replace wins boot open; user sees the swap |
-| The kcdx-driven C++ before-game entry export | §7.1, US-4, §9 | P5 step 7 | new export; name resolved at step head (§8.3 probe) |
-| C++ export-name determination (new export vs reuse Preload) | §8.3 | P5 step 7 | build-time read of Preload's fire timing |
-| The author startup-sequence doc (the timeline) | §5.3, §11 | P5 step 8 | + cross-link docs/init.md |
+| The before_game apply-driver (`ApplyZone(BeforeGame)`) — queued hook/bytes ACTUALLY INSTALLS early | §7.5, §6 US-8, §11 | P5 step 6 | the before_game invocation of the ONE driver; closes init.md's STUBBED before_game apply path (migration step 3); the "full CONTROL" half |
+| US-8 — a before_game hook declared in the slot installs + fires before the init call | §6 US-8 | P5 step 6 | FAILS if the queue was never drained (the apply-driver, not just the slot) |
+| before_game apply-driver target-ordering (engine calls the target after the apply point) | §8.7 | P5 step 6 (probe at step head) | UNVERIFIED per-target; LDR-time targets → self-registration hatch §7.2 |
+| Boot-asset serve via the early slot (KI-0005) + AP14 warn | §6 US-5, §11 | P5 step 7 | early-slot replace wins boot open; user sees the swap |
+| The kcdx-driven C++ before-game entry export | §7.1, US-4, §9 | P5 step 8 | new export; name resolved at step head (§8.3 probe) |
+| C++ export-name determination (new export vs reuse Preload) | §8.3 | P5 step 8 | build-time read of Preload's fire timing |
+| The author startup-sequence doc (the timeline) | §5.3, §11 | P5 step 9 | + cross-link docs/init.md |
 | Per-call doc entries + Lua/C++ parity + tests per surface | §10 | each P5 surface step's deliverable | docs-discipline: docs move with the surface |
 | Self-registration expert hatch (US-6) | §7.2 | NOT a step — retained from before-game-hooks.md §5/§6 | BugSplat builtin rides as a consumer |
 | Event gate + RegisterRuntimeOverlay CAS | §7.4, §9 | P4 foundation (reused) | not a P5 step — built in Phase 4 |
-| Boot-cvar read-in-window; phase-token reconciliation; gate timeout | §8.4-6 | build-time determinations within P5 steps 3/5/6 | provisional per §8 |
+| Boot-cvar read-in-window; phase-token reconciliation; gate timeout | §8.4-6 | build-time determinations within P5 steps 3/5/7 | provisional per §8 |
 
 ## Consumers riding this phase (out of scope here — see design §10)
 

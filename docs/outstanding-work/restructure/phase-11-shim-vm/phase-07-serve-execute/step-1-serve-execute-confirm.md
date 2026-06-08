@@ -1,10 +1,10 @@
-# P6 step 1 — serve-AND-execute via the kcdx slot; KI-0006 execute-leg
+# P7 step 1 — serve-AND-execute via the kcdx slot; KI-0006 execute-leg
 
 ## What
 
 Confirm KI-0006's open criterion: a served `.lua` EXECUTES end-to-end — run via the
-early kcdx-owned slot (P4), NOT the engine's crashing mod-init loader. With FIX A's
-single runtime (P5), the dual-CRT/dual-runtime that created the confirmed cross-CRT
+early kcdx-owned slot (P5), NOT the engine's crashing mod-init loader. With FIX A's
+single runtime (P6), the dual-CRT/dual-runtime that created the confirmed cross-CRT
 hazard class is collapsed; this step proves the execute leg and, if a crash still
 reproduces, root-causes it with that variable eliminated.
 
@@ -37,8 +37,8 @@ reproduces (not a guaranteed crash-fix — `lua-vm-design.md` §7.2).
 
 ## Dependencies
 
-P5 step 1 (the single runtime must be in place — FIX A is what collapses the hazard
-class this re-attempt depends on), P4 (the early kcdx slot is the instrumentable
+P6 step 1 (the single runtime must be in place — FIX A is what collapses the hazard
+class this re-attempt depends on), P5 (the early kcdx slot is the instrumentable
 execution path).
 
 ## Design authority

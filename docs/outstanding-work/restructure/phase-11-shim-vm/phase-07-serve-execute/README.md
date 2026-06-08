@@ -1,7 +1,7 @@
-# Phase 6 — served-.lua execute confirmation (KI-0006)
+# Phase 7 — served-.lua execute confirmation (KI-0006)
 
-The last open asset-system capability. With FIX A's single runtime (Phase 5) and the
-early kcdx-owned slot (Phase 4), confirm a served `.lua` EXECUTES end-to-end — via the
+The last open asset-system capability. With FIX A's single runtime (Phase 6) and the
+early kcdx-owned slot (Phase 5), confirm a served `.lua` EXECUTES end-to-end — via the
 instrumentable kcdx slot, NOT the engine's crashing mod-init loader. KI-0006's
 execute-leg is the deliverable; a residual crash is root-caused only if it reproduces.
 
