@@ -1,7 +1,7 @@
 # TD-0004 — rebuild-oracle baseline is stale; needs a deliberate, inspected re-capture
 
 **Reported:** 2026-06-02
-**Status:** Open
+**Status:** Closed 2026-06-08
 **Closure trigger (named):** a deliberate `--capture` of
 `data/refdata-extractor/tests/oracle_baseline.json` from the corrected full-dump
 rebuild, with each drift source inspected and a provenance note appended to
@@ -63,3 +63,24 @@ The oracle was ALREADY red before step 1b (sources 1 + 2 predate it); step 1b ad
    entries).
 4. Confirm `test_rebuild_oracle.py` is green, commit, close this entry (move to `closed/`,
    reindex).
+
+## Resolution (2026-06-08, via KI-0009)
+
+The closure trigger fired: a deliberate, inspected `--capture` of `oracle_baseline.json`
+from the current full-dump rebuild, with each drift source inspected and a provenance entry
+appended to `test_rebuild_oracle.py`'s `BASELINE PROVENANCE` docstring — landing in its own
+commit (this one).
+
+The specific drift sources enumerated above (sources 1+2+3, measured at the old `78f7f27`
+baseline) had been progressively folded into the recorded baseline by the intervening
+survival-fold + importer-no-prose-derivation re-captures (each documented in the docstring),
+so the baseline's last capture was at `36d2682`. KI-0009 then root-caused the LIVE instance
+of this same debt — the oracle red on `main` — to the two output changes that postdate
+`36d2682`: `3cc6a67` (a prose-only correction to address_names row id 152's `notes`, drifting
+the `address_names` content hash identically in both DBs) and `a9b0e8a` (the curated
+statement-subset, adding `statements`+`referenced_vars` to the USER projection → the USER
+table set + the `sqlite_sequence` 3→5 bump). The complete drift set mapped 1:1 onto those two
+commits with nothing left over; no untouched table moved; `test_csv_exporter`/`test_round_trip`
+stayed green. Re-captured deliberately after that inspection; `test_rebuild_oracle.py` now
+PASSES (USER 15 tables, DEV 16 tables, all hashes match). Root-cause-verifier (Gate B) returned
+`land-fix`. Full investigation trail: `docs/known-issues/closed/KI-0009-oracle-baseline-address-names-drift.md`.

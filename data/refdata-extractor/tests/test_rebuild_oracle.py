@@ -151,6 +151,25 @@ cells); the re-capture was deliberate and inspected (survival gone, the table se
 shrunk by one, the 156/157 cells carry their slot/offset, nothing else moved) before
 recording.
 
+It was RE-CAPTURED AGAIN (KI-0009, 2026-06-08) for two coordinated, already-committed
+output changes the prior baseline predated, verified FIRST before recording (the
+complete drift set mapped 1:1 onto the two commits with nothing left over): (1) `3cc6a67`
+-- a prose-only correction to `address_names_seed.csv` row id 152's (`CCryPak_AdjustFileName`)
+`notes` column (the v1 "every by-name consumer calls slot 1" model rewritten to the
+corrected two-lane/two-hook model; NO row/id/column/count change, 157 rows both before
+and after). The `notes` column ships to USER and DEV identically, so the rebuilt
+`address_names` content hash moves in BOTH DBs (2e046c36.. -> 77b6fab9..). (2) the
+curated statement-subset (`a9b0e8a`) added `statements` + `referenced_vars` to the USER
+projection (USER_TABLES / USER_COLUMNS) -- so the USER table set gains those two entries
+(statements 2385, referenced_vars 5595, the curated address_version_id subset of the DEV
+tables), and because both are autoincrement, USER `sqlite_sequence` bumps 3 -> 5 (count +
+hash). NO table that should be untouched moved (address_versions / game_versions / meta /
+modules / call_edges / every _dict_* table BYTE-IDENTICAL; DEV's statements/
+referenced_vars/call_edges unchanged). The re-capture was deliberate and inspected (only
+the four explained drifts: USER address_names + the two new USER tables + USER
+sqlite_sequence, plus DEV address_names; the drift fully attributed to `3cc6a67` +
+`a9b0e8a`, root-cause-verifier `land-fix`) before recording.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 

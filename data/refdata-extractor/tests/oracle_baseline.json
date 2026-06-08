@@ -30,7 +30,7 @@
     },
     "address_names": {
       "count": 157,
-      "hash": "2e046c3649444073bf06b28c2ac1864f87a573f16fb807176d484141694c7835"
+      "hash": "77b6fab9dab06cdc344e2b8081d6ceca16eea25d84822431cebe185aab0c7af3"
     },
     "address_versions": {
       "count": 321144,
@@ -96,7 +96,7 @@
     },
     "address_names": {
       "count": 157,
-      "hash": "2e046c3649444073bf06b28c2ac1864f87a573f16fb807176d484141694c7835"
+      "hash": "77b6fab9dab06cdc344e2b8081d6ceca16eea25d84822431cebe185aab0c7af3"
     },
     "address_versions": {
       "count": 157,
@@ -114,9 +114,17 @@
       "count": 1,
       "hash": "e718bfb08d3b6b4565309825a0487060d08e6efcacd754b508982c1b789ab13f"
     },
+    "referenced_vars": {
+      "count": 5595,
+      "hash": "b5863c672c7340decf0635c1498df06bc6d91fdb14f2c150abe6bb85fa211277"
+    },
     "sqlite_sequence": {
-      "count": 3,
-      "hash": "745c68f906bda85ecb44ce3f2990b658531233b48262c1884413be6088b5e705"
+      "count": 5,
+      "hash": "c18f8dcaa25dba2803461c3376c546401d4f0af5880646fd137cf820e60fd874"
+    },
+    "statements": {
+      "count": 2385,
+      "hash": "37b4e06513426ebcc5912a5915d0a33859b78256bd2235b79b880b21bafe2d3e"
     }
   }
 }
