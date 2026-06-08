@@ -9,6 +9,7 @@
 #include "toml.hpp"
 
 #include "log.h"
+#include "paths.h"   // ToUtf8 (path -> std::string under C++20+ char8_t)
 #include "plugin_loader.h"
 #include "mod_absorb/pak_mod_registry.h"
 
@@ -56,7 +57,7 @@ void Read(const fs::path& loadOrderPath) {
 
     toml::table doc;
     try {
-        doc = toml::parse_file(loadOrderPath.u8string());
+        doc = toml::parse_file(kcdx::paths::ToUtf8(loadOrderPath));
     } catch (const toml::parse_error& e) {
         log::WarnF("load_order.toml: parse error at %s: %s",
                    e.source().path ? e.source().path->c_str() : "<input>",
@@ -190,7 +191,7 @@ void Read(const fs::path& loadOrderPath) {
     }
 
     log::InfoF("load_order.toml: loaded %zu user override row(s) from %s",
-               loaded, loadOrderPath.u8string().c_str());
+               loaded, kcdx::paths::ToUtf8(loadOrderPath).c_str());
 }
 
 void Resolve() {
@@ -216,7 +217,7 @@ void Resolve() {
             // under <game-bin>/kcdx-engine/builtin/.
             bool isEngineBuiltin = false;
             {
-                auto pathStr = m.tomlPath.u8string();
+                auto pathStr = kcdx::paths::ToUtf8(m.tomlPath);
                 // Cheap substring check. The two discovery roots are
                 // <game-bin>/kcdx-engine/builtin/ (engine fixes) and
                 // <game-bin>/kcdx-plugins/ (user). "kcdx-engine" only

@@ -15,7 +15,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| Step 1 — license-check + vendor safetyhook | NOT STARTED | — |
+| Step 1 — license-check + vendor safetyhook | DONE | (landed) |
 | Step 2 — keystone spike: cap-04 on safetyhook::MidHook | NOT STARTED | — |
 
 ## Verification gate

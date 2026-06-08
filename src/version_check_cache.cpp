@@ -192,7 +192,7 @@ bool Load() {
     if (!fs::exists(path, ec)) {
         // First launch / fresh install — not an error. Empty cache, all recheck.
         LOG_DEBUG_KV(kCategory, "cache_absent",
-            ::kcdx::log::KV("path", path.u8string()),
+            ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)),
             ::kcdx::log::KV("note", "no version_check.bin yet — every plugin rechecks (first launch)"));
         return false;
     }
@@ -201,7 +201,7 @@ bool Load() {
     if (!ReadWholeFile(path, buf)) {
         LOG_WARN_KV(kCategory, "cache_read_error",
             ::kcdx::log::KV("reason", "file_read_error"),
-            ::kcdx::log::KV("path", path.u8string()),
+            ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)),
             ::kcdx::log::KV("note", "could not read version_check.bin — treating as empty; every plugin rechecks"));
         return false;
     }
@@ -214,14 +214,14 @@ bool Load() {
         !r.TakeU8(wire) || !r.TakeU8(schema)) {
         LOG_WARN_KV(kCategory, "cache_corrupt",
             ::kcdx::log::KV("reason", "truncated_header"),
-            ::kcdx::log::KV("path", path.u8string()),
+            ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)),
             ::kcdx::log::KV("note", "version_check.bin too small for its header — treating as empty"));
         return false;
     }
     if (m0 != kMagic0 || m1 != kMagic1) {
         LOG_WARN_KV(kCategory, "cache_corrupt",
             ::kcdx::log::KV("reason", "bad_magic"),
-            ::kcdx::log::KV("path", path.u8string()),
+            ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)),
             ::kcdx::log::KV("note", "version_check.bin is not a kcdx cache file (bad magic) — treating as empty"));
         return false;
     }
@@ -246,7 +246,7 @@ bool Load() {
     if (!r.TakeU32(recCount)) {
         LOG_WARN_KV(kCategory, "cache_corrupt",
             ::kcdx::log::KV("reason", "truncated_record_count"),
-            ::kcdx::log::KV("path", path.u8string()));
+            ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)));
         return false;
     }
 
@@ -295,7 +295,7 @@ bool Load() {
 
     g_records = std::move(parsed);
     LOG_DEBUG_KV(kCategory, "cache_loaded",
-        ::kcdx::log::KV("path", path.u8string()),
+        ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)),
         ::kcdx::log::KV("records", (unsigned long long)g_records.size()));
     return true;
 }
@@ -359,7 +359,7 @@ bool Save() {
     if (ec) {
         LOG_WARN_KV(kCategory, "cache_write_error",
             ::kcdx::log::KV("reason", "mkdir_failed"),
-            ::kcdx::log::KV("path", path.parent_path().u8string()),
+            ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path.parent_path())),
             ::kcdx::log::KV("note", "could not create the cache directory — the cache is not persisted this launch; the next launch rechecks"));
         return false;
     }
@@ -371,7 +371,7 @@ bool Save() {
     if (!WriteWholeFile(tmp, buf)) {
         LOG_WARN_KV(kCategory, "cache_write_error",
             ::kcdx::log::KV("reason", "temp_write_failed"),
-            ::kcdx::log::KV("path", tmp.u8string()),
+            ::kcdx::log::KV("path", kcdx::paths::ToUtf8(tmp)),
             ::kcdx::log::KV("note", "could not write the cache temp file — the cache is not persisted this launch; the next launch rechecks"));
         return false;
     }
@@ -384,14 +384,14 @@ bool Save() {
         if (!WriteWholeFile(path, buf)) {
             LOG_WARN_KV(kCategory, "cache_write_error",
                 ::kcdx::log::KV("reason", "rename_and_overwrite_failed"),
-                ::kcdx::log::KV("path", path.u8string()),
+                ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)),
                 ::kcdx::log::KV("note", "could not persist the cache — the next launch rechecks"));
             return false;
         }
     }
 
     LOG_DEBUG_KV(kCategory, "cache_saved",
-        ::kcdx::log::KV("path", path.u8string()),
+        ::kcdx::log::KV("path", kcdx::paths::ToUtf8(path)),
         ::kcdx::log::KV("records", (unsigned long long)g_records.size()));
     return true;
 }

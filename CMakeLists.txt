@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(kcdx C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# C++23: safetyhook (the vendored detour backend, hook-backend-marriage) requires
+# it (std::expected in its public headers), and its headers are included by kcdx
+# engine code, so the whole project compiles as C++23. MSVC maps this to
+# /std:c++latest, which carries std::expected on the toolset in use.
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -111,6 +115,53 @@ set(ASMJIT_STATIC ON CACHE BOOL "" FORCE)
 add_subdirectory(vendor/asmjit)
 
 # -----------------------------------------------------------------------------
+# Zydis 4.1.0 (vendored amalgamation, MIT license)
+#
+# The runtime instruction decoder safetyhook requires: at hook-install time it
+# decodes the target's live prologue bytes in-process to find a safe instruction
+# boundary, size the trampoline, and fix up RIP-relative instructions that move
+# into it. kcdx never calls Zydis directly — safetyhook consumes it internally.
+# The single-file amalgamation (Zydis.c + Zydis.h) is functionally identical to
+# the full source; it is the maintainer's recommended consumption path for a
+# consumer that only needs it to link. The MIT notice is carried inline at the
+# top of both files.
+# -----------------------------------------------------------------------------
+add_library(zydis STATIC vendor/zydis/Zydis.c)
+target_include_directories(zydis PUBLIC vendor/zydis)
+# Static build: make the export macros no-ops so the declarations (Zydis.h) and
+# definitions (Zydis.c) agree on linkage. The amalgamation's own note: "For
+# static builds, our CMakeList will define ZYDIS_STATIC_BUILD." PUBLIC so
+# safetyhook (which includes Zydis.h) compiles against the same decoration.
+target_compile_definitions(zydis PUBLIC ZYDIS_STATIC_BUILD ZYAN_STATIC_BUILD)
+
+# -----------------------------------------------------------------------------
+# safetyhook 0.6.9 (vendored full source, Boost Software License 1.0)
+#
+# The thread-safe detour backend kcdx is marrying with MinHook (the
+# hook-backend-marriage build): it suspends other threads + fixes their
+# instruction pointer while patching, falls back to a far-target absolute jump
+# (E9->FF), and provides a vetted mid-hook primitive (MidHook + Context64).
+# BSL-1.0 requires the notice only in source copies, not the shipped binary.
+# Links Zydis (its required decoder). The Windows mid-hook asm stub
+# (mid_hook.x86_64-windows.asm) is NASM syntax (`bits 64`, `[rel x]`), so it
+# assembles with NASM, not MASM — build.ps1 puts nasm.exe on PATH for the
+# configure step so the VS generator finds it.
+# -----------------------------------------------------------------------------
+enable_language(ASM_NASM)
+add_library(safetyhook STATIC
+    vendor/safetyhook/src/allocator.cpp
+    vendor/safetyhook/src/inline_hook.cpp
+    vendor/safetyhook/src/mid_hook.cpp
+    vendor/safetyhook/src/os.windows.cpp
+    vendor/safetyhook/src/utility.cpp
+    vendor/safetyhook/src/vmt_hook.cpp
+    vendor/safetyhook/src/easy.cpp
+    vendor/safetyhook/src/mid_hook.x86_64-windows.asm
+)
+target_include_directories(safetyhook PUBLIC vendor/safetyhook/include)
+target_link_libraries(safetyhook PUBLIC zydis)
+
+# -----------------------------------------------------------------------------
 # rom-borrowed (vendored RoM source files for dynamic_hook bindings)
 # -----------------------------------------------------------------------------
 # add_library(rom_borrowed STATIC
@@ -145,6 +196,7 @@ add_library(kcdx SHARED
     src/lua_shim_selftest.cpp
     src/lua_vm_build.cpp
     src/cap81_vm_adopt_selftest.cpp
+    src/safetyhook_link_selftest.cpp
     src/save_load_hooks.cpp
     src/serialization.cpp
     src/address_library.cpp
@@ -261,7 +313,7 @@ target_include_directories(kcdx PRIVATE
 # asmjit is linked even when no hook uses lua_callback yet — the
 # typed-marshaling code references it; the linker dead-strips unused
 # asmjit code per-symbol.
-target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 blake3 version)
+target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 blake3 safetyhook version)
 
 if(MSVC)
     target_compile_definitions(kcdx PRIVATE
@@ -275,6 +327,8 @@ if(MSVC)
     set_property(TARGET minhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET sqlite3 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET blake3  PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    set_property(TARGET zydis      PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    set_property(TARGET safetyhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
     # Emit a PDB beside build/Release/kcdx.dll so a kcdx crash frame
     # symbolicates offline (kcdx+offset crash dumps would otherwise have

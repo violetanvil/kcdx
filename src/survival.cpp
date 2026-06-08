@@ -4,12 +4,13 @@
 
 #include <cstdio>      // FILE i/o
 #include <cstring>     // memcmp
-#include <filesystem>  // path::u8string (lossless wide->UTF-8)
+#include <filesystem>  // std::filesystem::path
 #include <string>
 #include <vector>
 
 #include "blake3.h"
 #include "log.h"
+#include "paths.h"     // ToUtf8 (path -> std::string under C++20+ char8_t)
 #include "pe_helpers.h"
 
 namespace kcdx::survival {
@@ -143,7 +144,7 @@ Result SurvivalCheck(uint32_t rva, size_t length,
     // --- Read the ON-DISK backing file (NOT live memory — the crux). --------
     std::vector<uint8_t> fileData;
     if (!ReadWholeFile(modulePath, fileData)) {
-        std::string path8 = std::filesystem::path(modulePath).u8string();
+        std::string path8 = kcdx::paths::ToUtf8(std::filesystem::path(modulePath));
         LOG_ERROR_KV(kCategory, "file_open_error",
             ::kcdx::log::KV("reason", "file_open_error"),
             ::kcdx::log::KV("path", path8),

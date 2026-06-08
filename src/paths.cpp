@@ -159,6 +159,15 @@ fs::path EngineDataDirPath() {
     return p;
 }
 
+std::string ToUtf8(const fs::path& p) {
+    // path::u8string() yields std::u8string (char8_t) under C++20+; its bytes
+    // ARE UTF-8, so a char8_t->char copy is lossless. (reinterpret of the
+    // pointer would alias; copying byte-for-byte into std::string is the clean
+    // form.)
+    const std::u8string s = p.u8string();
+    return std::string(s.begin(), s.end());
+}
+
 fs::path SteamLibraryRoot() {
     // KCD2's game root is <lib>/steamapps/common/KingdomComeDeliverance2/.
     // Three parent_path() climbs land on the library root:

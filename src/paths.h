@@ -80,6 +80,13 @@ const std::wstring& EngineDataDir();
 std::filesystem::path PluginsDirPath();
 std::filesystem::path EngineDataDirPath();
 
+// Lossless UTF-8 std::string view of a path. Under C++20+, path::u8string()
+// returns std::u8string (char8_t), which no longer implicitly converts to the
+// std::string most call sites + the logger want; this bridges it (the bytes are
+// identical UTF-8, only the element type differs). Use this anywhere a path
+// needs to become a std::string / a const char* for logging or a UTF-8 API.
+std::string ToUtf8(const std::filesystem::path& p);
+
 // The KCD2 GAME ROOT — the install directory that holds system.cfg, the
 // mods/ folder, and the Bin/ tree. Derived from EngineDataDir by climbing
 // out of the bin layout: EngineDataDir is <game-root>/Bin/<flavour>/

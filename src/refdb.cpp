@@ -1225,7 +1225,7 @@ bool Open() {
 
     std::filesystem::path dbPath =
         kcdx::paths::EngineDataDirPath() / "data" / "reference.sqlite";
-    std::string dbPathUtf8 = dbPath.u8string();
+    std::string dbPathUtf8 = kcdx::paths::ToUtf8(dbPath);
 
     // READ-ONLY: the engine never writes the database. SQLITE_OPEN_READONLY
     // also means open fails (rather than creating) if the file is absent —
