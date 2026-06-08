@@ -41,6 +41,7 @@ reflow). The compact summary stays pinned; the work surface scrolls.
 | **Verify against a DLL** (`collapsible section`, collapsed by default) | | | |
 | Section header | `collapsible section` header | collapsed/expanded state (chevron + aria-expanded) | `toggle_verify_section()` (user action, law 1) |
 | Link the Bin folder | folder-pick affordance (`<input webkitdirectory>`) | the picked install's directory (read in-page, never uploaded — D15/D26/D30) | `link_bin_folder()` / `relink_bin_folder()` |
+| No-upload reassurance | static note (caption, `🔒` glyph + text — law 7) directly beneath the link affordance | — (fixed copy) | — (informational) |
 | Per-module link rows | `per-module link row` ×M (one per module the entity references) | each module's DLL status in the linked folder (found / not-found) + the version-match indicator (the install version inherited for non-WHGame — D30) | — (the row reflects the install link; the affordance is the folder pick above) |
 | Link-to-create prompt | `warning banner` (advisory, info) | shown when the linked install's version is uncovered by the entity's rows | `open_new_version(source=selected_row, version=<install_version>)` → s05 |
 | **Lifecycle** (`collapsible section`, collapsed by default) | | | |
@@ -81,6 +82,17 @@ in-session pick); a `[re-pick folder]` swaps the linked install. A **new module*
 module not yet in the `module` table) is **registered as a surfaced step** when the maintainer
 authors the first address for it (the AP18 deliberate-addition posture — TRD D30). **Multi-store is
 out of scope** (TRD §9): the install-set keys on the game version only.
+
+**No-upload reassurance (a static caption directly beneath the link affordance).** The browser's
+OWN native directory-picker dialog labels the action **"Upload"** and warns the site can **"read
+all files in this folder"** — Chromium/WebKit hardcode that copy for *any* `<input
+webkitdirectory>` and a page cannot relabel or suppress it. It is misleading here: nothing is
+uploaded (the DLL bytes are read in-page via `File.arrayBuffer` and never leave the browser — the
+no-upload invariant above). To keep the maintainer from reading the browser's generic wording as
+data exfiltration, the surface renders a **fixed caption beneath the link button** — `🔒 Your DLLs
+are read in your browser and never uploaded. Your browser's folder dialog may say "upload" —
+that's its generic wording; nothing is sent.` (glyph + text, law 7). The note is informational,
+always shown (not state-dependent), and addresses the confusion at the exact point it occurs.
 
 Linking a version-matching DLL is what enables the **per-author static verification check**
 (the per-kind survival check against the DLL's bytes) — whose verdict renders inline in **s04**
