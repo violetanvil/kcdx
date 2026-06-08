@@ -1712,20 +1712,46 @@ def _full_column_update_one(con, av_id, a, state, where, user_projection, *,
     _projected_update(con, av_row, user_projection)
 
 
+# The non-editable identity/interval columns a US-5 in-place UPDATE must NEVER
+# rewrite (design.md §US-5 + the interval model): `kcdx_id` + `valid_from` are the
+# entity/identity key US-5 declares immutable; `valid_through` is the interval
+# marker only create-version (US-6) and re-verify open/close -- an US-5 column edit
+# never touches the interval. build_curated_row ALWAYS mints valid_through=None
+# (row_builder.py: mint hardcodes None; promote copies a bulk row whose
+# valid_through is also None), so writing the full column set onto a CLOSED row
+# (valid_through = a real ordinal) would NULL it -> a 2nd open-interval row ->
+# ix_av_open_unique (kcdx_id WHERE valid_through IS NULL) trips -> IntegrityError.
+# Excluding the three from the SET leaves the row's stored values as-is, so the
+# closed interval stays closed -- correct BY CONTRACT, not by the round-trip
+# accident (kcdx_id/valid_from happen to round-trip today; this makes all three
+# non-editable explicitly). Same collision class as the `av_row["id"] = av_id`
+# override in _full_column_update_one. ONLY the US-5 UPDATE path (this helper's sole
+# caller) is affected; the ADD/promote path uses _projected_insert /
+# _promote_bulk_in_place, which keep the full-column write so a freshly-added row
+# correctly gets valid_through=None (a new row is OPEN).
+_UPDATE_PRESERVE_COLUMNS = ("kcdx_id", "valid_from", "valid_through")
+
+
 def _projected_update(con, av_row, user_projection):
     """UPDATE one fully-built address_versions row dict in place (matched by its
     `id`), applying the same column projection write_db / _projected_insert use
     (USER drops the DEV-only columns). The row dict is build_curated_row output (all
     DEV columns present); USER writes only USER_COLUMNS['address_versions']. Every
-    non-id column is set, so a re-promote's fingerprint columns (content_hash/length
-    + the DEV abi_walker columns on the DEV pass) and a mint's NULLs both land in one
-    statement -- mirroring _promote_bulk_in_place's full-row-write rationale, but
-    keyed on the curated row's own id rather than a bulk row's."""
+    editable non-id column is set, so a re-promote's fingerprint columns
+    (content_hash/length + the DEV abi_walker columns on the DEV pass) and a mint's
+    NULLs both land in one statement -- mirroring _promote_bulk_in_place's
+    full-row-write rationale, but keyed on the curated row's own id rather than a bulk
+    row's. The identity/interval columns _UPDATE_PRESERVE_COLUMNS (kcdx_id /
+    valid_from / valid_through) are EXCLUDED from the SET -- they are non-editable
+    (US-5 + the interval model), so the UPDATE leaves their stored values untouched
+    (the docstring's "(kcdx_id, valid_from) identity key ... valid_through unchanged"
+    is now true by construction)."""
     cols = [c for c, _ in SCHEMA["address_versions"]]
     if user_projection:
         allowed = USER_COLUMNS["address_versions"]
         cols = [c for c in cols if c in allowed]
-    set_cols = [c for c in cols if c != "id"]
+    set_cols = [c for c in cols
+                if c != "id" and c not in _UPDATE_PRESERVE_COLUMNS]
     set_clause = ",".join(f'"{c}" = ?' for c in set_cols)
     con.execute(
         f'UPDATE address_versions SET {set_clause} WHERE id = ?',

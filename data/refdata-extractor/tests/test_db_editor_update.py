@@ -780,6 +780,174 @@ def _invalid_aborts_with_no_write(b):
 
 
 # --------------------------------------------------------------------------
+# Case 4: KI-0007 -- editing a CLOSED version row PRESERVES its closed interval
+# (the US-5 full-column UPDATE must NOT rewrite the non-editable identity/interval
+# columns kcdx_id / valid_from / valid_through).
+#
+# THE BUG: the US-5 full-column UPDATE (_full_column_update_one -> _projected_update)
+# wrote EVERY column incl. valid_through, and build_curated_row ALWAYS mints
+# valid_through=None. So editing a CLOSED row (valid_through = a real ordinal) NULLed
+# its interval -> a SECOND open-interval row for that kcdx_id -> the partial unique
+# index ix_av_open_unique (kcdx_id WHERE valid_through IS NULL) tripped ->
+# IntegrityError -> the /confirm/update-version 500. PROBE A/B (the KI) proved the
+# pre-edit DB is CLEAN (exactly one open row); the collision is MANUFACTURED by the
+# update. This is the AP17 mechanism assertion: a test that only checked "no 500"
+# could not tell a real fix from masking; assertion (2) -- the closed interval is
+# PRESERVED -- is the load-bearing one.
+#
+# SETUP reproduces the entity-158 shape via the LANDED create_version (D19, new-tag):
+# pick a curated non-function entity (so create_version does not hit the
+# function-kind baseline gate), create a 2nd version at a NEW tag -> the direct path
+# closes the 1st row's interval (valid_through := the prior version) + inserts the
+# new OPEN row. The 1st (now CLOSED) row is then edited via the SAME entry the
+# endpoint calls (db_editor.update_version_row).
+_NEW_TAG_KI7 = "1.6.2000000"
+
+
+def _open_row_count(db_path, kcdx_id):
+    """Count the OPEN-interval rows (valid_through IS NULL) for one entity -- the
+    quantity ix_av_open_unique caps at 1 (kcdx_id WHERE valid_through IS NULL)."""
+    con = sqlite3.connect(db_path)
+    try:
+        return con.execute(
+            "SELECT COUNT(*) FROM address_versions "
+            "WHERE kcdx_id = ? AND valid_through IS NULL", (kcdx_id,)).fetchone()[0]
+    finally:
+        con.close()
+
+
+def _raw_interval(db_path, kcdx_id, valid_from_tag):
+    """The raw (valid_from, valid_through, kcdx_id) ids of the (kcdx_id, valid_from)
+    row -- raw stored ids (NOT tag-normalized), so a clobber of the closed-interval
+    ordinal to NULL is directly observable. Returns (valid_from_id, valid_through_id,
+    kcdx_id) or None."""
+    con = sqlite3.connect(db_path)
+    try:
+        vf = con.execute("SELECT id FROM game_versions WHERE tag = ?",
+                         (valid_from_tag,)).fetchone()[0]
+        row = con.execute(
+            "SELECT valid_from, valid_through, kcdx_id FROM address_versions "
+            "WHERE kcdx_id = ? AND valid_from = ?", (kcdx_id, vf)).fetchone()
+        return tuple(row) if row is not None else None
+    finally:
+        con.close()
+
+
+def _closed_row_edit_preserves_interval(b):
+    """KI-0007: an US-5 full-column edit (rva) of a CLOSED row succeeds and leaves the
+    closed interval + the identity key intact; the edit applies; exactly one open row
+    remains. Asserted on BOTH DBs (the bug tripped on whichever pass ran the UPDATE)."""
+    out = _fresh_db(b)
+    try:
+        user_db = os.path.join(out, "reference.sqlite")
+        dev_db = os.path.join(out, "reference-dev.sqlite")
+
+        # Pick a curated NON-function entity (create_version on a function row would
+        # hit the function-kind baseline gate -- an unrelated path).
+        picked = _pick_nonfunction_row(user_db)
+        assert picked is not None, "no curated non-function row in the fixture"
+        kid, vf_tag = picked
+
+        # Source the 1st row's authored cells (the create_version prefill) from the
+        # exported seed, so the 2nd version is a faithful copy at a new tag.
+        from seeds_shared.csv_exporter import ADDRESS_VERSIONS_SEED_NAME
+        from seeds_shared.csv_exporter import export_seeds as _export_seeds
+        exp = tempfile.mkdtemp(prefix="ki7_src_")
+        try:
+            _export_seeds(user_db, exp)
+            with open(os.path.join(exp, ADDRESS_VERSIONS_SEED_NAME),
+                      newline="", encoding="utf-8") as f:
+                import csv as _csv
+                lines = [ln for ln in f if not ln.lstrip().startswith("#")]
+                src = None
+                for r in _csv.DictReader(lines):
+                    if ((r.get("kcdx_id") or "").strip() == str(kid)
+                            and (r.get("valid_from_version") or "").strip() == vf_tag):
+                        src = {k: v for k, v in r.items()
+                               if k not in ("kcdx_id", "valid_from_version")}
+                        break
+            assert src is not None, "could not read the source seed row"
+        finally:
+            shutil.rmtree(exp, ignore_errors=True)
+
+        # NULL the audit trio in the 2nd-version prefill: a copy carrying the source
+        # row's last_verified_at_version=<OLD tag> at a NEWER valid_from would trip
+        # the validator's `last_verified >= valid_from` HARD ERROR (an unrelated rule
+        # -- the insert oracle dodges it the same way via a NULL-trio source). A
+        # brand-new unverified version leaves the trio all-null, which is apply-valid.
+        for _c in ("last_verified_at_version", "verified_by", "verified_date",
+                   "evidence_kind"):
+            if _c in src:
+                src[_c] = ""
+
+        # Create a 2nd version at a NEW tag -> the LANDED D19 direct path INSERTs the
+        # new game_versions row, CLOSES the 1st row's interval, and INSERTs the new
+        # OPEN row (the entity-158 shape: one CLOSED + one OPEN).
+        db_editor.create_version(out, DLL_PATH, kid, _NEW_TAG_KI7, dict(src))
+
+        # Pre-edit ground truth: the DB is CLEAN (exactly one open row), the 1st row
+        # is CLOSED (valid_through is a real ordinal, NOT NULL). (PROBE A's invariant.)
+        before = _raw_interval(user_db, kid, vf_tag)
+        assert before is not None, "the 1st (closed) row vanished after create_version"
+        vf_id_before, vt_id_before, kid_before = before
+        assert vt_id_before is not None, (
+            "setup precondition failed: the 1st row is NOT closed after create_version "
+            "(valid_through is NULL) -- the new-tag interval-close did not fire")
+        assert _open_row_count(user_db, kid) == 1, (
+            "setup precondition failed: not exactly one open-interval row before the "
+            "edit (the partial unique index would already be violated)")
+        before_row = _av_row_decoded(user_db, kid, vf_tag)
+        old_rva = before_row["rva"]
+
+        # ACTION: edit a real EDITABLE column (rva) on the CLOSED 1st-version row via
+        # the SAME entry the endpoint calls. Pre-fix this raised IntegrityError (500).
+        new_rva = (old_rva or 0) + 0x10
+        db_editor.update_version_row(
+            out, DLL_PATH, kid, vf_tag, {"rva": "0x%X" % new_rva})
+
+        for label, dbp in (("user", user_db), ("dev", dev_db)):
+            # (1) The update SUCCEEDED -- no IntegrityError, no 500. (Reaching here
+            #     without an exception from update_version_row is that assertion;
+            #     the row is present + intact below.)
+            after = _raw_interval(dbp, kid, vf_tag)
+            assert after is not None, f"[{label}] the edited (closed) row vanished"
+            vf_id_after, vt_id_after, kid_after = after
+
+            # (2) THE LOAD-BEARING AP17 ASSERTION: the edited closed row's
+            #     valid_through is UNCHANGED -- the closed interval is PRESERVED, NOT
+            #     nulled. (Distinguishes a real fix from masking.)
+            assert vt_id_after == vt_id_before, (
+                f"[{label}] valid_through CLOBBERED on a closed-row edit: "
+                f"{vt_id_before!r} -> {vt_id_after!r} (the closed interval was not "
+                f"preserved -- KI-0007 is NOT fixed)")
+            assert vt_id_after is not None, (
+                f"[{label}] the edited row's interval is OPEN after the edit (the "
+                f"closed marker was lost)")
+
+            # (3) kcdx_id + valid_from are unchanged (the non-editable identity key).
+            assert kid_after == kid_before, (
+                f"[{label}] kcdx_id changed on an edit: {kid_before!r} -> {kid_after!r}")
+            assert vf_id_after == vf_id_before, (
+                f"[{label}] valid_from changed on an edit: {vf_id_before!r} -> "
+                f"{vf_id_after!r}")
+
+            # (4) the edited EDITABLE column (rva) IS the new value (the edit applied).
+            after_row = _av_row_decoded(dbp, kid, vf_tag)
+            assert after_row["rva"] == new_rva, (
+                f"[{label}] rva not updated: expected {new_rva!r}, got "
+                f"{after_row['rva']!r} (the editable column did not change)")
+
+            # (5) exactly ONE open-interval row remains for the entity (the index
+            #     invariant ix_av_open_unique holds -- no 2nd open row was manufactured).
+            assert _open_row_count(dbp, kid) == 1, (
+                f"[{label}] {_open_row_count(dbp, kid)} open-interval rows for "
+                f"kcdx_id={kid} (expected exactly 1 -- editing the closed row "
+                f"manufactured a 2nd open row, the KI-0007 collision)")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 # pytest entry points.
 # --------------------------------------------------------------------------
 def test_audit_trio_only_update_lands_atomically(baseline):  # noqa: F811
@@ -794,6 +962,10 @@ def test_invalid_edit_aborts_with_no_write(baseline):  # noqa: F811
     _invalid_aborts_with_no_write(baseline)
 
 
+def test_closed_row_edit_preserves_interval(baseline):  # noqa: F811
+    _closed_row_edit_preserves_interval(baseline)
+
+
 if __name__ == "__main__":
     try:
         b = _get_baseline()
@@ -803,6 +975,8 @@ if __name__ == "__main__":
         print("PASS test_full_column_update_lands_atomically")
         _invalid_aborts_with_no_write(b)
         print("PASS test_invalid_edit_aborts_with_no_write")
+        _closed_row_edit_preserves_interval(b)
+        print("PASS test_closed_row_edit_preserves_interval")
         print("\nall db_editor update oracle tests passed")
     finally:
         _cleanup_baseline()
