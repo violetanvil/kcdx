@@ -179,7 +179,7 @@ def _resolve_version_param(dll_path, version):
 def _drive_direct_over_prospective_seed(out_dir, prospective_seed_dir, *, version,
                                         log=None, defer_commit=False,
                                         validate_only=False, new_tag=None,
-                                        new_tag_kcdx_id=None):
+                                        new_tag_kcdx_id=None, update_target=None):
     """Drive the DIRECT-WRITE path over the prospective seed under
     prospective_seed_dir (design D19). The prospective seed = export(committed DB) +
     the GUI's one edit folded in -- a FAITHFUL serialisation of the prospective DB
@@ -209,6 +209,14 @@ def _drive_direct_over_prospective_seed(out_dir, prospective_seed_dir, *, versio
     new_tag_kcdx_id so apply_direct_edit INSERTs the new game_versions row + the new
     address_versions row (the write the seed-rebuild bridge could never do).
 
+    For an INTERACTIVE update of an EXISTING row, the caller passes update_target -- the
+    edited row's OWN (kcdx_id, valid_from_version) identity (NOT `version`, which is the
+    DLL-resolved/pre-resolved version and does not name the edited row's tag).
+    apply_direct_edit adds the single UPDATE action when the edited row's tag is
+    non-baseline (KI-0008: _seed_action_rows drops a non-baseline row, so without this the
+    edit silently no-ops). It is inert on a baseline-tag edit (the edited tag ==
+    GAME_VERSION_TAG -- the baseline action is already emitted by _seed_action_rows).
+
     import_to_sqlite is imported lazily so this seeds_shared submodule carries no
     import-time dependency on import_to_sqlite (which imports seeds_shared). The
     prospective-seed-path repointing for the validator is internal to
@@ -222,7 +230,7 @@ def _drive_direct_over_prospective_seed(out_dir, prospective_seed_dir, *, versio
     return imp.apply_direct_edit(
         out_dir, prospective_seed_dir, version=version, log=log,
         defer_commit=defer_commit, new_tag=new_tag,
-        new_tag_kcdx_id=new_tag_kcdx_id)
+        new_tag_kcdx_id=new_tag_kcdx_id, update_target=update_target)
 
 
 def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
@@ -338,9 +346,17 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
         #    state BEFORE any DB open and a valid edit writes DIRECTLY via
         #    _apply_one_db on the held connections (immediate commit+close, or a held
         #    outer txn returned as a DeferredCommit handle when defer_commit=True).
+        # update_target carries the EDITED ROW's own (kcdx_id, valid_from_version) -- NOT
+        # resolved_version, which is the DLL-resolved/pre-resolved version (GAME_VERSION_TAG
+        # for a DLL-linked client) and does not name the edited row's tag. apply_direct_edit
+        # adds the single UPDATE action when the edited row's tag is NON-baseline (KI-0008:
+        # _seed_action_rows would otherwise drop it -> a silent no-op); inert on a
+        # baseline-tag edit. The validate_only preview takes no DB action, so the thread is
+        # harmless there too.
         return _drive_direct_over_prospective_seed(
             out_dir, prospective, version=resolved_version, log=log,
-            defer_commit=defer_commit, validate_only=validate_only)
+            defer_commit=defer_commit, validate_only=validate_only,
+            update_target=(int(kcdx_id), str(valid_from_version)))
     finally:
         if owns_work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)

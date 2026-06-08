@@ -54,6 +54,16 @@ wrapper, no stubbed gate). Cases:
      snapshot. Plus the caller-shape guards (mutating the identity key, an unknown
      column, a stale identity key) raise DbEditError with no write.
 
+  4. KI-0007: editing a CLOSED row PRESERVES its closed interval (the US-5 update
+     must not rewrite kcdx_id / valid_from / valid_through).
+
+  5. KI-0008: editing a NON-baseline-tag (v1.6) row PERSISTS the edit. apply_direct_edit
+     built its action set via _seed_action_rows, which FILTERS to GAME_VERSION_TAG, so a
+     non-baseline-tag edit produced zero actions -> a silent no-op + a 200 confirm. The
+     fix adds the single (kcdx_id, tag) UPDATE action for tag != GAME_VERSION_TAG. The
+     load-bearing assertion is that the v1.6 edit lands (the no-op also returned 200, so
+     "no 500" cannot distinguish a fix from masking -- the AP17 mechanism check).
+
 WHY THE BRIDGE IS SOUND (no separate write path -- D13)
 -------------------------------------------------------
 update_version_row writes NOTHING under data/seeds/ -- it exports the current DB to
@@ -301,6 +311,26 @@ def _pick_nonfunction_row(db_path):
                 "WHERE kcdx_id IS NOT NULL AND rva IS NOT NULL"):
             if kdec.get(kindid) not in ("function", "function_variadic",
                                         "function_no_sig"):
+                return (kid, gv.get(vf))
+        return None
+    finally:
+        con.close()
+
+
+def _pick_second_nonfunction_row(db_path, *, exclude_kid):
+    """A SECOND curated non-function entity distinct from exclude_kid (the bystander whose
+    v1.6 row a single-entity edit must not touch -- assertion 3). Returns
+    (kcdx_id, valid_from_tag), or None if the fixture has only one non-function entity (the
+    bystander assertion then has no row to protect and is skipped)."""
+    con = sqlite3.connect(db_path)
+    try:
+        gv = {r[0]: r[1] for r in con.execute("SELECT id, tag FROM game_versions")}
+        kdec = _dict_id_to_val(con, "address_versions", "kind")
+        for kid, vf, kindid in con.execute(
+                "SELECT kcdx_id, valid_from, kind FROM address_versions "
+                "WHERE kcdx_id IS NOT NULL AND rva IS NOT NULL"):
+            if (kid != exclude_kid and kdec.get(kindid) not in (
+                    "function", "function_variadic", "function_no_sig")):
                 return (kid, gv.get(vf))
         return None
     finally:
@@ -948,6 +978,180 @@ def _closed_row_edit_preserves_interval(b):
 
 
 # --------------------------------------------------------------------------
+# Case 5: KI-0008 -- editing a NON-baseline-tag version row PERSISTS the edit (the
+# US-5 full-column UPDATE must reach a row whose valid_from_version != GAME_VERSION_TAG,
+# not silently drop it).
+#
+# THE BUG: apply_direct_edit built its action set via _seed_action_rows, which FILTERS
+# OUT every prospective-seed row whose valid_from_version != GAME_VERSION_TAG (the
+# baseline-rebuild oracle reuses that filter). So an edit to a NON-baseline-tag row
+# (e.g. a v1.6 row) produced ZERO actions -> no UPDATE -> a silent no-op + a 200
+# /confirm/update-version. A BASELINE (v1.5) edit was NOT filtered, so it wrote -- the
+# tell. THE FIX adds the single (kcdx_id, tag) UPDATE action for the edited
+# non-baseline-tag row in apply_direct_edit, fired ONLY for tag != GAME_VERSION_TAG, so
+# it flows through _apply_one_db's PRESENT path -> _full_column_update_one (identity/
+# interval preserved by _UPDATE_PRESERVE_COLUMNS, the KI-0007 mechanism).
+#
+# AP17 mechanism assertion: a test that only checked "no 500" could not tell a real fix
+# from the pre-fix no-op (the no-op ALSO returns 200 / does not raise). Assertion (1) --
+# the v1.6 edit PERSISTS in the committed DB -- is the load-bearing one; the pre-fix code
+# fails it (the edit never lands), a correct fix passes it.
+#
+# SETUP reuses case 4's two-row shape via the LANDED create_version (D19, new-tag): pick
+# a curated non-function entity, create a 2nd version at _NEW_TAG_KI8 -> the direct path
+# adds a NEW OPEN row at that non-baseline tag (and closes the v1.5 row). The edit then
+# targets the NON-baseline (v1.6) row -- the one the bug dropped.
+_NEW_TAG_KI8 = "1.6.2000000"
+
+
+def _all_open_rows_at_tag(db_path, valid_from_tag):
+    """Every (kcdx_id, rva) at the given valid_from tag -- used to prove no OTHER
+    entity's row at the same non-baseline tag is touched by a single-entity edit."""
+    con = sqlite3.connect(db_path)
+    try:
+        vf = con.execute("SELECT id FROM game_versions WHERE tag = ?",
+                         (valid_from_tag,)).fetchone()
+        if vf is None:
+            return {}
+        vf = vf[0]
+        return {r[0]: r[1] for r in con.execute(
+            "SELECT kcdx_id, rva FROM address_versions WHERE valid_from = ?", (vf,))}
+    finally:
+        con.close()
+
+
+def _seed_source_row_for_create(user_db, kid, vf_tag):
+    """The v1.5 row's authored cells (the create_version prefill) read from the exported
+    seed, with the audit trio NULLed (a brand-new unverified version) -- the same prefill
+    shape case 4 uses, factored for reuse by case 5."""
+    from seeds_shared.csv_exporter import ADDRESS_VERSIONS_SEED_NAME
+    from seeds_shared.csv_exporter import export_seeds as _export_seeds
+    exp = tempfile.mkdtemp(prefix="ki8_src_")
+    try:
+        _export_seeds(user_db, exp)
+        with open(os.path.join(exp, ADDRESS_VERSIONS_SEED_NAME),
+                  newline="", encoding="utf-8") as f:
+            import csv as _csv
+            lines = [ln for ln in f if not ln.lstrip().startswith("#")]
+            src = None
+            for r in _csv.DictReader(lines):
+                if ((r.get("kcdx_id") or "").strip() == str(kid)
+                        and (r.get("valid_from_version") or "").strip() == vf_tag):
+                    src = {k: v for k, v in r.items()
+                           if k not in ("kcdx_id", "valid_from_version")}
+                    break
+        assert src is not None, "could not read the source seed row"
+    finally:
+        shutil.rmtree(exp, ignore_errors=True)
+    for _c in ("last_verified_at_version", "verified_by", "verified_date",
+               "evidence_kind"):
+        if _c in src:
+            src[_c] = ""
+    return src
+
+
+def _nonbaseline_tag_edit_persists(b):
+    """KI-0008: a US-5 full-column edit (rva) of a NON-baseline-tag (v1.6) row LANDS in
+    the committed DB. Asserted on BOTH DBs (the bug dropped the action on both passes).
+    Four falsifiable assertions: (1) the v1.6 edit PERSISTS [the load-bearing no-op
+    check]; (2) a separate BASELINE (v1.5) edit still persists [the working path is not
+    regressed]; (3) no OTHER entity's v1.6 row is touched [the single-entity scope holds];
+    (4) the v1.6 row's kcdx_id/valid_from/valid_through are unchanged [identity preserved,
+    the KI-0007 lesson pinned for the non-baseline path]."""
+    out = _fresh_db(b)
+    try:
+        user_db = os.path.join(out, "reference.sqlite")
+        dev_db = os.path.join(out, "reference-dev.sqlite")
+
+        # Pick TWO distinct curated non-function entities: the edit subject + a bystander
+        # whose v1.6 row must stay untouched (assertion 3). create_version on a function
+        # row would hit the function-kind baseline gate (an unrelated path).
+        subject = _pick_nonfunction_row(user_db)
+        assert subject is not None, "no curated non-function row in the fixture"
+        kid, vf_tag = subject
+        bystander = _pick_second_nonfunction_row(user_db, exclude_kid=kid)
+
+        # Give BOTH entities a v1.6 row (the bystander only if the fixture has a 2nd
+        # non-function entity) so the same-tag, other-entity guard has a row to protect.
+        db_editor.create_version(
+            out, DLL_PATH, kid, _NEW_TAG_KI8,
+            _seed_source_row_for_create(user_db, kid, vf_tag))
+        if bystander is not None:
+            b_kid, b_vf_tag = bystander
+            db_editor.create_version(
+                out, DLL_PATH, b_kid, _NEW_TAG_KI8,
+                _seed_source_row_for_create(user_db, b_kid, b_vf_tag))
+
+        # Pre-edit ground truth on the NON-baseline (v1.6) row: present, OPEN, an rva to
+        # bump, and its identity/interval ids (assertion 4 baseline).
+        before_v16 = _raw_interval(user_db, kid, _NEW_TAG_KI8)
+        assert before_v16 is not None, "the new v1.6 row vanished after create_version"
+        vf16_before, vt16_before, kid16_before = before_v16
+        before_v16_row = _av_row_decoded(user_db, kid, _NEW_TAG_KI8)
+        old_v16_rva = before_v16_row["rva"]
+        # The bystander's v1.6 row snapshot (assertion 3 baseline).
+        before_other = _all_open_rows_at_tag(user_db, _NEW_TAG_KI8)
+
+        # ACTION 1: edit the NON-baseline (v1.6) row's rva via the SAME entry the endpoint
+        # calls. PRE-FIX this is the silent no-op (zero actions -> no UPDATE).
+        new_v16_rva = (old_v16_rva or 0) + 0x40
+        db_editor.update_version_row(
+            out, DLL_PATH, kid, _NEW_TAG_KI8, {"rva": "0x%X" % new_v16_rva})
+
+        # ACTION 2: edit the BASELINE (v1.5) row's rva (a separate edit) -- the working
+        # path must still write (assertion 2, no regression).
+        before_v15_row = _av_row_decoded(user_db, kid, vf_tag)
+        old_v15_rva = before_v15_row["rva"]
+        new_v15_rva = (old_v15_rva or 0) + 0x40
+        db_editor.update_version_row(
+            out, DLL_PATH, kid, vf_tag, {"rva": "0x%X" % new_v15_rva})
+
+        for label, dbp in (("user", user_db), ("dev", dev_db)):
+            # (1) THE LOAD-BEARING KI-0008 ASSERTION: the v1.6 edit PERSISTS. Re-read the
+            #     committed DB; the value is the NEW value (pre-fix: the no-op left it old).
+            after_v16_row = _av_row_decoded(dbp, kid, _NEW_TAG_KI8)
+            assert after_v16_row is not None, f"[{label}] the v1.6 row vanished"
+            assert after_v16_row["rva"] == new_v16_rva, (
+                f"[{label}] the NON-baseline (v1.6) rva edit did NOT persist: expected "
+                f"{new_v16_rva!r}, got {after_v16_row['rva']!r} -- the edit was silently "
+                f"dropped (KI-0008 is NOT fixed; _seed_action_rows filtered the row out)")
+
+            # (2) the BASELINE (v1.5) edit still persists -- the working path unregressed.
+            after_v15_row = _av_row_decoded(dbp, kid, vf_tag)
+            assert after_v15_row is not None, f"[{label}] the v1.5 row vanished"
+            assert after_v15_row["rva"] == new_v15_rva, (
+                f"[{label}] the BASELINE (v1.5) rva edit did NOT persist: expected "
+                f"{new_v15_rva!r}, got {after_v15_row['rva']!r} -- the working baseline "
+                f"path regressed")
+
+            # (3) no OTHER entity's v1.6 row is touched (the single-entity edit scope).
+            after_other = _all_open_rows_at_tag(dbp, _NEW_TAG_KI8)
+            for other_kid, other_rva in before_other.items():
+                if other_kid == kid:
+                    continue
+                assert after_other.get(other_kid) == other_rva, (
+                    f"[{label}] a DIFFERENT entity's v1.6 row changed (kcdx_id="
+                    f"{other_kid}: {other_rva!r} -> {after_other.get(other_kid)!r}) -- a "
+                    f"single-entity edit must not touch another entity's row")
+
+            # (4) the v1.6 row's identity/interval (kcdx_id/valid_from/valid_through) are
+            #     unchanged after the UPDATE (the KI-0007 preservation, non-baseline path).
+            after_v16 = _raw_interval(dbp, kid, _NEW_TAG_KI8)
+            vf16_after, vt16_after, kid16_after = after_v16
+            assert kid16_after == kid16_before, (
+                f"[{label}] kcdx_id changed on the v1.6 edit: {kid16_before!r} -> "
+                f"{kid16_after!r}")
+            assert vf16_after == vf16_before, (
+                f"[{label}] valid_from changed on the v1.6 edit: {vf16_before!r} -> "
+                f"{vf16_after!r}")
+            assert vt16_after == vt16_before, (
+                f"[{label}] valid_through changed on the v1.6 edit: {vt16_before!r} -> "
+                f"{vt16_after!r} (the v1.6 row is OPEN; its interval must stay as-is)")
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 # pytest entry points.
 # --------------------------------------------------------------------------
 def test_audit_trio_only_update_lands_atomically(baseline):  # noqa: F811
@@ -966,6 +1170,10 @@ def test_closed_row_edit_preserves_interval(baseline):  # noqa: F811
     _closed_row_edit_preserves_interval(baseline)
 
 
+def test_nonbaseline_tag_edit_persists(baseline):  # noqa: F811
+    _nonbaseline_tag_edit_persists(baseline)
+
+
 if __name__ == "__main__":
     try:
         b = _get_baseline()
@@ -977,6 +1185,8 @@ if __name__ == "__main__":
         print("PASS test_invalid_edit_aborts_with_no_write")
         _closed_row_edit_preserves_interval(b)
         print("PASS test_closed_row_edit_preserves_interval")
+        _nonbaseline_tag_edit_persists(b)
+        print("PASS test_nonbaseline_tag_edit_persists")
         print("\nall db_editor update oracle tests passed")
     finally:
         _cleanup_baseline()

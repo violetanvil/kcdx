@@ -3080,24 +3080,30 @@ def _apply_new_tag_version(con, action, state, which, user_projection, tx,
         raise
 
 
-def _new_tag_action_from_seed(prospective_seed_dir, state, kcdx_id, new_tag):
-    """Build the single add-versions-row action for the create-version-at-a-NEW-tag
-    path. _seed_action_rows FILTERS to GAME_VERSION_TAG, so it never emits the new-tag
-    row; this reads the SAME prospective versions seed and builds the one action for
-    the (kcdx_id, new_tag) row using the SAME column derivation _seed_action_rows uses
-    (ss.authored_kind + parse_int over the authored cells), so the resulting row is
-    identical in shape to any other add action -- only the valid_from tag differs."""
+def _single_row_action_from_seed(prospective_seed_dir, kcdx_id, tag, *, where):
+    """Build ONE action dict for the prospective-seed row identified by
+    (kcdx_id, valid_from_version=tag), using the SAME column derivation _seed_action_rows
+    uses (ss.authored_kind + parse_int over the authored cells). _seed_action_rows FILTERS
+    to GAME_VERSION_TAG, so it never emits a row at any OTHER tag; this reads the SAME
+    prospective versions seed and builds the one action for the named (kcdx_id, tag) row,
+    identical in shape to any _seed_action_rows action -- only the valid_from tag differs.
+
+    The SAME action dict serves BOTH the create-version-at-a-NEW-tag INSERT and an
+    interactive UPDATE of an existing non-baseline-tag row: _apply_one_db decides
+    ADD-vs-PRESENT by looking the row up in the DB (by (kcdx_id, valid_from-as-id)), NOT
+    from the action -- so the action carries no INSERT/UPDATE intent, only the row's
+    facts. `where` names the calling path for the not-found RuntimeError."""
     versions_seed = read_address_versions_seed(
         os.path.join(prospective_seed_dir, "address_versions_seed.csv"))
     for vs in versions_seed:
         if (int(vs["kcdx_id"]) == int(kcdx_id)
-                and vs["valid_from_version"].strip() == new_tag):
+                and vs["valid_from_version"].strip() == tag):
             srva = (vs.get("rva") or "").strip()
             sdf = (vs.get("survival_derives_from") or "").strip()
             return {
                 "kcdx_id": int(kcdx_id),
                 "module": vs["module"].strip(),
-                "valid_from_tag": new_tag,
+                "valid_from_tag": tag,
                 "rva": parse_int(srva) if srva else None,
                 "kind": ss.authored_kind(vs),
                 "signature": (vs.get("signature") or "").strip(),
@@ -3118,13 +3124,39 @@ def _new_tag_action_from_seed(prospective_seed_dir, state, kcdx_id, new_tag):
                 "survival_derives_from_kid": int(sdf) if sdf else None,
             }
     raise RuntimeError(
-        f"create-version-at-new-tag: no prospective seed row for "
-        f"(kcdx_id={kcdx_id}, valid_from_version={new_tag!r}) -- the append did not "
-        f"land (an internal db_editor error, not a maintainer edit error)")
+        f"{where}: no prospective seed row for (kcdx_id={kcdx_id}, "
+        f"valid_from_version={tag!r}) -- the append/edit did not land (an internal "
+        f"db_editor error, not a maintainer edit error)")
+
+
+def _new_tag_action_from_seed(prospective_seed_dir, state, kcdx_id, new_tag):
+    """Build the single add-versions-row action for the create-version-at-a-NEW-tag
+    path. A thin wrapper over _single_row_action_from_seed (the shared seed-read +
+    action-build); the create-version caller drives it through _apply_new_tag_version
+    (the game_versions INSERT + interval-close the bridge could never do)."""
+    return _single_row_action_from_seed(
+        prospective_seed_dir, kcdx_id, new_tag,
+        where="create-version-at-new-tag")
+
+
+def _nonbaseline_update_action_from_seed(prospective_seed_dir, kcdx_id, tag):
+    """Build the single UPDATE action for an interactive edit of an EXISTING
+    non-baseline-tag version row (KI-0008). _seed_action_rows emits ONLY GAME_VERSION_TAG
+    actions, so an edit to a row at any other tag (e.g. a v1.6 row) is dropped from the
+    action set -> no UPDATE -> a silent no-op + a 200 confirm. This reads the SAME
+    prospective seed and builds the one (kcdx_id, tag) action _seed_action_rows omits, so
+    the edit flows through _apply_one_db's PRESENT path (match by (kcdx_id, valid_from),
+    no tag restriction) -> _full_column_update_one, identity preserved by
+    _UPDATE_PRESERVE_COLUMNS. Fired ONLY for tag != GAME_VERSION_TAG (a baseline-tag edit
+    is already covered by _seed_action_rows -- the caller does NOT call this for it)."""
+    return _single_row_action_from_seed(
+        prospective_seed_dir, kcdx_id, tag,
+        where="non-baseline-tag update")
 
 
 def apply_direct_edit(out_dir, prospective_seed_dir, *, version, log=None,
-                      defer_commit=False, new_tag=None, new_tag_kcdx_id=None):
+                      defer_commit=False, new_tag=None, new_tag_kcdx_id=None,
+                      update_target=None):
     """DIRECT-WRITE drive (design D19): validate the prospective DB state, then write
     the edit DIRECTLY to BOTH DBs via _apply_one_db's write helpers -- NOT through
     apply_seeds' seed-rebuild wrapper. THE maintainer-tool incremental write path; the
@@ -3162,6 +3194,16 @@ def apply_direct_edit(out_dir, prospective_seed_dir, *, version, log=None,
       new_tag/new_tag_kcdx_id -- set together for create-version-at-a-NEW-tag: the new
                               game tag + the entity it adds a version for. None for every
                               current-tag job.
+      update_target        -- set on the INTERACTIVE update path: the edited row's own
+                              (kcdx_id, valid_from_version) identity. This is the EDITED
+                              ROW's tag -- NOT `version`, which is the DLL-resolved/
+                              pre-resolved version (GAME_VERSION_TAG for a DLL-linked
+                              client) and does not name the edited row's tag (KI-0008).
+                              When the edited row's tag != GAME_VERSION_TAG, _seed_action_rows
+                              drops it (it emits only GAME_VERSION_TAG actions) -> a silent
+                              no-op; this adds the single (kcdx_id, edited-tag) UPDATE action
+                              so the edit lands. None for the rebuild/oracle path; inert for
+                              a baseline-tag edit (already covered by _seed_action_rows).
 
     Returns: a DeferredCommit handle (defer_commit=True) or a result dict
     {"tag","ordinal","n_actions","counts"} (defer_commit=False).
@@ -3183,7 +3225,29 @@ def apply_direct_edit(out_dir, prospective_seed_dir, *, version, log=None,
     #    failure raises here -- NO DB open below.
     state = _validate_prospective_db_state(prospective_seed_dir)
     actions = _seed_action_rows(state)   # current-(GAME_VERSION_)tag actions only
+
+    # KI-0008: an interactive edit to an EXISTING row at a NON-baseline tag is dropped by
+    # _seed_action_rows (it FILTERS to GAME_VERSION_TAG), so it would silently no-op. The
+    # gate keys off the EDITED ROW's OWN tag (update_target[1]) -- NOT `version`, which is
+    # the DLL-resolved/pre-resolved version (== GAME_VERSION_TAG for a DLL-linked client)
+    # and never names the edited row's tag. When the edited row's tag != GAME_VERSION_TAG
+    # (and this is not a new-tag create), add the ONE (kcdx_id, edited-tag) UPDATE action
+    # _seed_action_rows omits. It flows through _apply_one_db's PRESENT path unchanged
+    # (match by (kcdx_id, valid_from), no tag restriction -> _full_column_update_one,
+    # identity preserved by _UPDATE_PRESERVE_COLUMNS). A BASELINE-tag edit has the edited
+    # tag == GAME_VERSION_TAG, so this branch does NOT fire -- _seed_action_rows already
+    # emitted that action; no double-emit.
+    nonbaseline_added = 0
+    if update_target is not None and new_tag is None:
+        upd_kid, upd_tag = update_target
+        if upd_tag != GAME_VERSION_TAG:
+            actions = actions + [_nonbaseline_update_action_from_seed(
+                prospective_seed_dir, upd_kid, upd_tag)]
+            nonbaseline_added = 1
+
     _emit(f"  prospective DB state validated; {len(actions)} current-tag action(s)"
+          + (f" + 1 non-baseline-tag update at {update_target[1]}"
+             if nonbaseline_added else "")
           + (f" + 1 new-tag create at {new_tag}" if new_tag else ""))
 
     user_db = os.path.join(out_dir, "reference.sqlite")
