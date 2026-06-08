@@ -16,11 +16,15 @@
 #   4. kcdxMessage_InputLoaded fires (AFTER apply): the DLL calls each stub
 #      directly and checks the captured-instruction behavior, reports CAP-21*.
 #
-# Sub-tests (all capture rax at the `add rax,0x64` site, seed=10):
+# Sub-tests (the rax rows capture rax at the `add rax,0x64` site, seed=10):
 #   CAP-21-read   callback asserts c.rax:get()==10, returns nothing -> 110
 #   CAP-21-write  callback c.rax:set(1000), returns nothing -> 1100
 #   CAP-21-skip   callback returns "skip" -> add skipped -> 10
 #   CAP-21-run    callback returns nothing -> add runs -> 110 (control)
+#   CAP-21-mem    MEMORY capture [rcx]:set(1000) -> mov re-reads 1000 -> 1100
+#                 (proves the Context64 memory-deref writeback, not just F1 GPR)
+#   CAP-21-xmm    XMM capture xmm0:set(50.0) -> cvttss2si converts 50.0 -> 50
+#                 (proves the Context64 XMM-lane read/write)
 
 [kcdx]
 test_suite_only = true
@@ -34,7 +38,7 @@ version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
 test_names          = ["CAP-21-read", "CAP-21-write", "CAP-21-skip",
-                       "CAP-21-run"]
+                       "CAP-21-run", "CAP-21-mem", "CAP-21-xmm"]
 
 [entrypoints]
 dll = "cap-21.dll"

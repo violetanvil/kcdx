@@ -45,8 +45,31 @@ extern "C" {
 
 #include "hook_payload.h"
 #include "hook_signature.h"
+#include "rom_borrowed/runtime_func_t.h"  // parameters_t (MidDispatch payload shape)
 
 namespace kcdx::hook_chain {
+
+// The C callback the mid-hook adapter invokes per captured-instruction hit.
+// Builds the capture-handle table, runs the author's mid callback (Lua or C),
+// and records run-vs-skip into the skip flag (read via ConsumeMidSkip). The
+// dispatch/marshaling layer (off-thread filter, engine-bootstrap carve-out,
+// re-entrancy, pin-arena, Lua/C marshaling) is UNCHANGED by the make_jit_midfunc
+// retirement (design §5.3) — only its CALLER moved from the JIT trampoline to
+// safetyhook_midhook's Context64 adapter. `params` points at a 16-byte-stride
+// capture payload (params->m_arguments is the base; slot i = base + 16*i);
+// `target_func_ptr` is the chain-lookup key. Returns 0 (the resume decision is
+// the skip flag, read by the adapter via ConsumeMidSkip after this returns).
+uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
+                      size_t                                         param_count,
+                      uintptr_t                                      target_func_ptr);
+
+// Read-and-clear the mid skip-original flag set by the most recent MidDispatch
+// on this thread. Returns true if the captured instruction should be SKIPPED
+// (the callback returned "skip"/true, or a C mid returned kcdxMidResult_Skip).
+// The mid adapter calls this immediately after MidDispatch to decide ctx.rip
+// (true -> ctx.rip = resume_addr; false -> leave it, the trampoline re-runs the
+// captured instruction). Main-thread-only mid dispatch makes a plain byte safe.
+bool ConsumeMidSkip();
 
 // Outcome of trying to add a hook to a target's chain. On failure,
 // `reason` is a ready-to-surface diagnostic (goes to handle:reason()).

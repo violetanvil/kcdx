@@ -165,8 +165,9 @@ struct HookPayload {
     // splits each author entry into a register/memory EXPRESSION
     // ("rax", "[rcx+0x10]") and a TYPE ("i64" default, or the `:type`
     // suffix). Parallel vectors, same length:
-    //   captureExprs[i]  — the reg/mem expr (make_jit_midfunc param_capture)
-    //   captureTypes[i]  — the type string  (make_jit_midfunc param_type)
+    //   captureExprs[i]  — the reg/mem expr (the safetyhook::MidHook adapter's
+    //                      capture-source: a Context64 field or a memory deref)
+    //   captureTypes[i]  — the type string  (selects the read/write width + lane)
     //   captureNames[i]  — the author's name for this capture, or "" when
     //                      the author used the positional list form. Drives
     //                      whether the callback's handle table is keyed by

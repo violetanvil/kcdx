@@ -77,7 +77,9 @@ public:
 
     typedef bool      (*user_pre_callback_t) (const parameters_t* params, const uint8_t parameters_count, return_value_t* return_value, const uintptr_t target_func_ptr);
     typedef void      (*user_post_callback_t)(const parameters_t* params, const uint8_t parameters_count, return_value_t* return_value, const uintptr_t target_func_ptr);
-    typedef uintptr_t (*mid_callback_t)      (const parameters_t* params, const size_t param_count, const uintptr_t target_func_ptr);
+    // mid_callback_t (the make_jit_midfunc mid-dispatch fn-ptr type) was removed
+    // with the mid JIT; the mid path now calls hook_chain::MidDispatch directly
+    // from the safetyhook::MidHook adapter (src/safetyhook_midhook.cpp).
 
     runtime_func_t();
     ~runtime_func_t();
@@ -140,42 +142,11 @@ public:
                             const uintptr_t target_func_ptr,
                             std::string call_convention = "");
 
-    // Mid-function hook variant. param_captures are register/memory
-    // expressions ("rax", "[rcx+0x10]", etc.); stack_restore_offset is
-    // how many bytes the captured instruction took (so we resume past it).
-    //
-    // call_original_mode controls whether the captured instruction runs
-    // after the Lua callback returns:
-    //   0 (True)  — original runs; JIT pushes MinHook's trampoline_ptr,
-    //                ret jumps into the relocated-original at the end.
-    //   1 (False) — original NEVER runs; JIT pushes resume_addr (= target
-    //                + stack_restore_offset), ret jumps past the captured
-    //                instruction.
-    //   2 (Auto)  — runtime decision via kcdx::scripting::g_mid_skip_original.
-    //                JIT pushes trampoline_ptr by default; after the
-    //                callback returns, JIT reads the skip flag's byte
-    //                (mov al, [flag_addr]; test al, al). If non-zero,
-    //                JIT overwrites the trampoline_ptr stack slot with
-    //                resume_addr, so the closing ret jumps past instead.
-    //
-    // skip_flag_addr is the absolute byte address of
-    // kcdx::scripting::g_mid_skip_original. Only used when
-    // call_original_mode == 2 (Auto). Pass 0 for True/False modes; JIT
-    // ignores it.
-    //
-    // resume_addr is the absolute address to jump to when skipping the
-    // original (= target_func_ptr + stack_restore_offset, precomputed
-    // by the caller so the JIT emits a single mov-imm64). Only used
-    // for False/Auto modes; pass 0 for True.
-    uintptr_t make_jit_midfunc(const std::vector<std::string>& param_types,
-                               const std::vector<std::string>& param_captures,
-                               const int stack_restore_offset,
-                               const int call_original_mode,
-                               const uintptr_t skip_flag_addr,
-                               const uintptr_t resume_addr,
-                               const asmjit::Arch arch,
-                               mid_callback_t mid_callback,
-                               const uintptr_t target_func_ptr);
+    // The mid-function JIT variant (make_jit_midfunc) was REMOVED — the mid path
+    // is now a safetyhook::MidHook adapter (src/safetyhook_midhook.{cpp,h}) that
+    // reads/writes named captures through Context64 and routes each fire to
+    // hook_chain::MidDispatch. Only the function-entry JIT (make_jit_func above)
+    // + the call-original slot remain on runtime_func_t.
 };
 
 }  // namespace kcdx::rom

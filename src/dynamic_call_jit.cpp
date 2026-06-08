@@ -252,10 +252,10 @@ void* BuildNativeCallThunk(uintptr_t                       targetVa,
 //
 // Slot stride: parameters_t::get_arg_ptr uses 8-byte stride (sizeof
 // uintptr_t per slot — runtime_func_t.cpp:36). Mid uses a DIFFERENT
-// stride: the JIT writes the capture payload at 16-byte stride per
-// slot (make_jit_midfunc convention; see hook_chain.cpp's
-// PushCaptureHandle slot pointer arithmetic). The Mid path indexes
-// into payload_base by 16*i; the non-Mid paths use 8*i.
+// stride: the mid capture payload is 16-byte stride per slot (the
+// safetyhook::MidHook adapter builds it from Context64 at this stride;
+// see hook_chain.cpp's PushCaptureHandle slot pointer arithmetic). The
+// Mid path indexes into payload_base by 16*i; the non-Mid paths use 8*i.
 
 namespace {
 

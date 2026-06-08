@@ -38,13 +38,37 @@ enumeration.**
   dropped) — 6b does NOT re-decide it.
 - **`MidDispatch` rewired (design §5.3):** the off-thread filter, the
   engine-bootstrap carve-out, the re-entrancy depth tracking, the pin-arena — ALL
-  UNCHANGED. safetyhook's `MidHook` calls a `void(Context64&)` C callback; that
-  callback IS the `MidDispatch` adapter, doing the same Lua marshaling it does
-  today, reading from `Context64`. The replacement is the codegen +
-  register-capture mechanism, NOT the dispatch/marshaling layer.
-- **Route mid-function installs through the safetyhook backend** (the §4.2 table
-  already routes mid to safetyhook; Step 5 set the predicate — this step makes the
-  mid path actually use `MidHook`).
+  UNCHANGED. safetyhook's `MidHook` calls a bare `void(*)(Context64&)` callback;
+  that callback routes (via the trampoline pool below) to the existing
+  `MidDispatch(target)` path, doing the same Lua marshaling it does today, reading
+  from `Context64`. The replacement is the codegen + register-capture mechanism,
+  NOT the dispatch/marshaling layer.
+- **The integration STRUCTURE + MECHANISM (settled via senior-architect-consult —
+  verified against safetyhook's source):** the mid path is a DEDICATED adapter unit
+  (`src/safetyhook_midhook.{cpp,h}` or similar), installed DIRECTLY from
+  `AddMid`/`AddCMid` — NOT through `IDetourBackend`/`InstallRuntime` (design §5.3/§8:
+  "a `safetyhook::MidHook` adapter that calls the existing `MidDispatch`", distinct
+  from `SafetyhookBackend`). **The `InstallKind::ChainMid` seam RETIRES** (it only
+  ever faked a function-entry install; the step-5 `select_backend` `ChainMid` arm +
+  its `static_assert` are REMOVED, not flipped — `spec-conformance.md`: build to the
+  design, not the step doc's earlier "flip the marker" wording).
+  - **Target-identity recovery — a fixed C-trampoline pool (NOT codegen).**
+    `safetyhook::MidHookFn` is a bare `void(*)(Context&)` with NO userdata channel
+    (`vendor/safetyhook/include/safetyhook/mid_hook.hpp:22`), and `ctx.rip` is the
+    SAFETYHOOK TRAMPOLINE, not the target VA (`context.hpp:27`) — so neither a
+    userdata closure nor a `ctx.rip` key recovers identity. The mechanism: a STATIC
+    source-written array of N tiny C trampolines `mid_trampoline_0..N-1`, each
+    literally `void mid_trampoline_K(Context& c){ MidDispatchFromContext(c, K); }`
+    (written ONCE in C++, compiled normally — ZERO runtime codegen, the whole point
+    of retiring the per-target JIT). Install claims a free slot K, binds
+    `slot K → (targetVA)`, and registers `mid_trampoline_K` as the `MidHookFn`. Fire:
+    `mid_trampoline_K` → `MidDispatchFromContext(ctx, K)` → look up targetVA →
+    the existing `MidDispatch(target)` path, reading captures from `ctx` per the 6a
+    map. **Pool: a fixed generous cap (e.g. 64 or 128); exhaustion fails LOUD**
+    (a surfaced error, never a silent drop — AP14), since mid-targets are few and a
+    fixed array keeps the trampolines compile-time-constant.
+  - kcdx holds each per-target `safetyhook::MidHook` for the session (kcdx never
+    unhooks — SKSE "no FreeLibrary, no teardown" model).
 - `make_jit_midfunc` + its dead helpers are DELETED — no `#if 0` corpse, no
   dormant branch (`working-artifacts.md`: live source returns to pure production
   logic). The deletion sweeps any prescriptive doc reference to `make_jit_midfunc`
@@ -56,6 +80,14 @@ enumeration.**
 - cap-21 (mid hook with named captures) — read + WRITEBACK confirmed: a sub-test
   mutates a captured register via `:set()` and asserts the mutation took effect
   downstream (FALSIFIABLE: FAILS if the original register value survives).
+- **New-form coverage (the same-change bar — user-settled; the 6a map flagged
+  F2–F9 as supported-but-untested):** add at least one **memory-capture** row
+  (`[base+disp]`, e.g. `[rbp-0x8]`) and one **XMM-capture** row (an `xmm` lane) to
+  an existing mid-hook plugin (cap-21 or cap-04), each read + writeback asserted, so
+  the new `Context64` memory-deref + XMM-lane machinery ships PROVEN, not just F1
+  (the 64-bit-GPR form the existing rows already cover). FALSIFIABLE: the memory row
+  FAILS if the deref reads/writes the wrong address; the XMM row FAILS if the lane
+  read/writeback is wrong. (`test-suite.md` — the new mechanism ships with its test.)
 - Agent builds + deploys + enables dev mode, user launches once, agent reads
   `kcdx-dev.log` for the cap-04 + cap-21 rows (`agent-builds-and-deploys.md`).
 - Build-green is necessary, not sufficient — the codegen has asm subtleties; only

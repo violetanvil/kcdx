@@ -40,14 +40,12 @@ std::unordered_map<uintptr_t, std::string> g_installed;
 
 // Compile-time proof the §4.2 routing table is correct — the unit-level
 // predicate check (zero runtime cost; verified by the build gate itself, no
-// live launch and no DI seam). The OUTCOME here is identical to the pre-Step-5
-// literals each call site passed: function-entry -> safetyhook, mid + dynamic
-// -> MinHook. Flip the ChainMid line + this assert together when Phase 3 moves
-// mid onto safetyhook::MidHook.
+// live launch and no DI seam). Function-entry -> safetyhook, dynamic -> MinHook.
+// Mid no longer routes through InstallRuntime (the safetyhook::MidHook adapter
+// installs directly from AddMid/AddCMid; the ChainMid kind retired with the
+// make_jit_midfunc replacement, design §5.3).
 static_assert(select_backend(InstallKind::ChainFunctionEntry) == Backend::Safetyhook,
               "chain function-entry must route to safetyhook (design §4.2)");
-static_assert(select_backend(InstallKind::ChainMid) == Backend::MinHook,
-              "chain mid must route to MinHook until Phase 3 (design §4.2/§5/§9)");
 static_assert(select_backend(InstallKind::DynamicHook) == Backend::MinHook,
               "dynamic_hook must route to MinHook (design §4.2)");
 

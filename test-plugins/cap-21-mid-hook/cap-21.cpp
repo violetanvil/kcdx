@@ -55,10 +55,51 @@ constexpr int kMidOffset = 2;  // capture site (the `add rax`)
 
 using StubFn = int (*)(int);
 
-// Four distinct RWX allocations (distinct pages -> distinct VAs; no ICF
-// concern since these are runtime data, not linker-folded functions).
+// MEMORY-capture stub: int fn(int* slot) -> *slot + 100. HOOK at +0, capturing
+// the memory expr `[rcx]` (rcx = the int* arg, MS x64 ABI). The callback writes
+// a new value through `[rcx]:set(v)`; the captured `mov eax,[rcx]` then RE-runs
+// and reads the mutated value, so the add lands on v. Proves the new Context64
+// memory-deref WRITEBACK machinery (F4-F9), not just the F1 GPR form.
+//
+//   +0:  8B 01           mov eax, [rcx]   ; eax = *slot   <-- HOOK, capture [rcx]
+//   +2:  48 83 C0 64     add rax, 0x64    ; rax += 100
+//   +6:  90 90           nop nop
+//   +8:  C3              ret
+const unsigned char kMemStub[] = {
+    0x8B, 0x01,                   // +0  mov eax, [rcx]   (hook here, capture [rcx])
+    0x48, 0x83, 0xC0, 0x64,       // +2  add rax, 0x64
+    0x90, 0x90,                   // +6  nop nop
+    0xC3,                         // +8  ret
+};
+constexpr int kMemMidOffset = 0;  // capture site (the `mov eax,[rcx]`)
+using MemStubFn = int (*)(int*);
+
+// XMM-capture stub: int fn(float seed) -> (int)seed. HOOK at +0, capturing
+// `xmm0` (seed, MS x64 ABI). The callback writes a new float via `xmm0:set(v)`;
+// the captured `cvttss2si rax, xmm0` then RE-runs and converts the mutated lane,
+// so the result is (int)v. Proves the new Context64 XMM-lane read/write
+// machinery (F3), beyond the GPR form.
+//
+//   +0:  F3 48 0F 2C C0  cvttss2si rax, xmm0  ; rax = (int)xmm0  <-- HOOK, capture xmm0
+//   +5:  90 90 90        nop nop nop
+//   +8:  C3              ret
+const unsigned char kXmmStub[] = {
+    0xF3, 0x48, 0x0F, 0x2C, 0xC0, // +0  cvttss2si rax, xmm0  (hook here, capture xmm0)
+    0x90, 0x90, 0x90,             // +5  nop nop nop
+    0xC3,                         // +8  ret
+};
+constexpr int kXmmMidOffset = 0;  // capture site (the `cvttss2si`)
+using XmmStubFn = int (*)(float);
+
+// Four GPR-form RWX allocations + one memory-form + one XMM-form (distinct pages
+// -> distinct VAs; no ICF concern since these are runtime data, not linker-
+// folded functions).
 struct Stub { void* mem = nullptr; StubFn fn = nullptr; };
 Stub g_read, g_write, g_skip, g_run;
+struct MemStub { void* mem = nullptr; MemStubFn fn = nullptr; };
+MemStub g_mem;
+struct XmmStub { void* mem = nullptr; XmmStubFn fn = nullptr; };
+XmmStub g_xmm;
 
 // Allocate the stub from the kcdx BRANCH POOL (RWX memory within ±2 GB of
 // WHGame.dll's .text), NOT raw VirtualAlloc(nullptr, ...). A real plugin
@@ -81,6 +122,26 @@ bool AllocStub(Stub& s) {
     return true;
 }
 
+bool AllocMemStub(MemStub& s) {
+    if (!g_tramp) return false;
+    s.mem = g_tramp->AllocateFromBranchPool(g_self, sizeof(kMemStub));
+    if (!s.mem) return false;
+    memcpy(s.mem, kMemStub, sizeof(kMemStub));
+    FlushInstructionCache(GetCurrentProcess(), s.mem, sizeof(kMemStub));
+    s.fn = reinterpret_cast<MemStubFn>(s.mem);
+    return true;
+}
+
+bool AllocXmmStub(XmmStub& s) {
+    if (!g_tramp) return false;
+    s.mem = g_tramp->AllocateFromBranchPool(g_self, sizeof(kXmmStub));
+    if (!s.mem) return false;
+    memcpy(s.mem, kXmmStub, sizeof(kXmmStub));
+    FlushInstructionCache(GetCurrentProcess(), s.mem, sizeof(kXmmStub));
+    s.fn = reinterpret_cast<XmmStubFn>(s.mem);
+    return true;
+}
+
 // Hand a stub's exact (capture-site) address to Lua. The hook installs at
 // the capture site itself — base + kMidOffset — so the author passes the
 // resolved capture VA as `address` and uses offset=0 (the address already
@@ -98,6 +159,17 @@ ADDR_FN(Lua_AddrSkip,  g_skip)
 ADDR_FN(Lua_AddrRun,   g_run)
 #undef ADDR_FN
 
+// The mem + xmm stubs hook at offset +0 (the captured instruction is first), so
+// the capture-site VA IS the base. Separate macro (different offset constant).
+#define ADDR_FN0(luaName, stub) \
+    static int luaName(struct lua_State* L, void* ud) { \
+        static_cast<const kcdxLuaApi*>(ud)->PushLightUserdata( \
+            L, stub.mem); \
+        return 1; }
+ADDR_FN0(Lua_AddrMem, g_mem)
+ADDR_FN0(Lua_AddrXmm, g_xmm)
+#undef ADDR_FN0
+
 void Check(const char* sub, bool pass, const char* reasonPass,
            const char* reasonFail) {
     if (pass) {
@@ -110,8 +182,8 @@ void Check(const char* sub, bool pass, const char* reasonPass,
 }
 
 // Fires AFTER the kcdx.hook mid chain is applied (InputLoaded follows
-// ApplyZone). Call each stub directly — the MinHook detour fires for any
-// caller — and assert the captured-instruction behavior.
+// ApplyZone). Call each stub directly — the mid detour fires for any caller —
+// and assert the captured-instruction behavior.
 void OnMessage(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
     gLog.Info("VERIFY", "InputLoaded — invoking mid-hooked stubs");
@@ -139,6 +211,31 @@ void OnMessage(kcdxMessage* msg) {
           "callback returned nothing; add ran -> 110",
           "mid return-nothing did not run the captured instruction "
           "(expected 110)");
+
+    // CAP-21-mem — MEMORY capture writeback. The stub is `*slot + 100`; the mid
+    // captures `[rcx]` (= *slot) at the `mov eax,[rcx]` site and :set(1000)s the
+    // memory. The captured mov then reads 1000 -> add -> 1100. FALSIFIABLE: 110
+    // means the deref-write missed (*slot stayed 10); any other value means the
+    // address computation from Context64 register fields was wrong.
+    static int memSlot = 10;
+    int rm = g_mem.fn(&memSlot);
+    Check("CAP-21-mem", rm == 1100,
+          "memory capture [rcx]:set(1000) wrote through the derefed address; "
+          "mov re-read 1000 -> add -> 1100",
+          "mid memory-capture writeback wrong (expected 1100; 110 = write "
+          "missed, *slot stayed 10)");
+
+    // CAP-21-xmm — XMM lane capture writeback. The stub is `(int)seed`; the mid
+    // captures `xmm0` (the float seed) at the `cvttss2si rax,xmm0` site and
+    // :set(50.0)s the lane. The captured cvttss2si then converts 50.0 -> rax=50.
+    // FALSIFIABLE: 10 means the xmm lane write missed (seed survived); any other
+    // value means the lane read/write was wrong.
+    int rx = g_xmm.fn(10.0f);
+    Check("CAP-21-xmm", rx == 50,
+          "xmm0 capture :set(50.0) wrote the lane; cvttss2si converted 50.0 "
+          "-> 50",
+          "mid XMM-capture writeback wrong (expected 50; 10 = lane write "
+          "missed, seed survived)");
 }
 
 }  // namespace
@@ -171,7 +268,8 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     // alloc fails LOUD — no silent fall back to VirtualAlloc (that would
     // reintroduce the ASLR flakiness this fix removes).
     if (!AllocStub(g_read) || !AllocStub(g_write) ||
-        !AllocStub(g_skip) || !AllocStub(g_run)) {
+        !AllocStub(g_skip) || !AllocStub(g_run) ||
+        !AllocMemStub(g_mem) || !AllocXmmStub(g_xmm)) {
         gLog.Error("INIT", "AllocateFromBranchPool for a stub failed");
         api->ReportTestResult(g_self, "CAP-21-read", 0,
             "AllocateFromBranchPool(branch) for a stub returned null");
@@ -184,6 +282,8 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     ok = scripting->RegisterFunction(g_self, "cap21", "addr_write", Lua_AddrWrite, luaApi) && ok;
     ok = scripting->RegisterFunction(g_self, "cap21", "addr_skip",  Lua_AddrSkip,  luaApi) && ok;
     ok = scripting->RegisterFunction(g_self, "cap21", "addr_run",   Lua_AddrRun,   luaApi) && ok;
+    ok = scripting->RegisterFunction(g_self, "cap21", "addr_mem",   Lua_AddrMem,   luaApi) && ok;
+    ok = scripting->RegisterFunction(g_self, "cap21", "addr_xmm",   Lua_AddrXmm,   luaApi) && ok;
     if (!ok) {
         gLog.Error("INIT", "RegisterFunction failed");
         api->ReportTestResult(g_self, "CAP-21-read", 0,

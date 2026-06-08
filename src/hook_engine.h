@@ -71,9 +71,9 @@ struct HookEntry {
 };
 
 // Mid-function hook entries (kcdx.hook mode=mid). Distinct from HookEntry
-// because the install path is different (runtime_func_t::make_jit_midfunc
-// instead of make_jit_func) and the schema fields are different (captures
-// + stack_restore_offset instead of return_type).
+// because the install path is different (a safetyhook::MidHook adapter —
+// src/safetyhook_midhook.{cpp,h} — instead of make_jit_func) and the schema
+// fields are different (captures + stack_restore_offset instead of return_type).
 //
 // Mid-hooks land at an arbitrary offset inside a function — typically
 // pointing at a specific instruction whose effect the plugin wants to
@@ -207,9 +207,14 @@ enum class Backend {
 // paths (early_hook, the HookedUpdate pump, the frealloc canary) install via
 // raw MH_CreateHook and never reach this seam, so they have no InstallKind — the
 // documented bootstrap exceptions (hook-engine.md), structurally outside the seam.
+// Mid-function hooks do NOT route through InstallRuntime — the mid path is a
+// safetyhook::MidHook adapter (src/safetyhook_midhook.{cpp,h}) installed DIRECTLY
+// from AddMid / AddCMid, never through this seam (the former ChainMid kind only
+// ever faked a function-entry install; it retired with the make_jit_midfunc
+// replacement, design §5.3/§8). InstallRuntime now serves only function-entry +
+// dynamic_hook.
 enum class InstallKind {
     ChainFunctionEntry,  // hook_chain function-entry (Add / AddC) — safetyhook
-    ChainMid,            // hook_chain mid-function (AddMid / AddCMid) — MinHook now
     DynamicHook,         // kcdx.memory.dynamic_hook (non-chain caller) — MinHook
 };
 
@@ -218,15 +223,9 @@ enum class InstallKind {
 // computes the backend. `constexpr` so the mapping is a compile-time fact (the
 // predicate-correctness static_asserts in InstallRuntime's TU verify it with
 // zero runtime cost — no live launch, no DI seam).
-//
-// ChainMid maps to MinHook UNTIL Phase 3 (the §4.2 "mid -> safetyhook" row is
-// gated on the make_jit_midfunc -> safetyhook::MidHook replacement, design §5/§9);
-// mid is still make_jit_midfunc here, which safetyhook cannot back yet, so
-// current-correct routing keeps it on MinHook. Flip this one arm when Phase 3 lands.
 constexpr Backend select_backend(InstallKind kind) {
     switch (kind) {
         case InstallKind::ChainFunctionEntry: return Backend::Safetyhook;
-        case InstallKind::ChainMid:           return Backend::MinHook;  // until Phase 3
         case InstallKind::DynamicHook:        return Backend::MinHook;
     }
     return Backend::MinHook;  // unreachable; loader-lock-safe default fail-closed

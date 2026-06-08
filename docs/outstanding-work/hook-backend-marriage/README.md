@@ -21,7 +21,7 @@ from Phase 11".
 |---|---|---|
 | Phase 1 — vendor safetyhook + prove the seam | DONE | `9de81ea` / `9862bf1` |
 | Phase 2 — backend seam at InstallRuntime (function-entry) | DONE | (landed) |
-| Phase 3 — retire make_jit_midfunc (gated on Phase 1 step 2) | NOT STARTED | — |
+| Phase 3 — retire make_jit_midfunc (gated on Phase 1 step 2) | DONE | (landed) |
 | Phase 4 — foreign-hook coexistence (core pillar) | NOT STARTED | — |
 | Phase 5 — batch install | NOT STARTED | — |
 | Phase 6 — backend reference doc | NOT STARTED | — |

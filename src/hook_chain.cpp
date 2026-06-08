@@ -41,8 +41,7 @@ extern "C" {
 #include "address_library.h"   // ResolveByName (address_id = "name")
 #include "refdb.h"             // ResolveAddrById (address_id = numeric kcdx_id)
 #include "dynamic_call_jit.h"  // BuildLuaCallThunk (call_original over pOriginal)
-#include "hde/hde64.h"         // hde64_disasm (auto-decode mid resume offset)
-#include "hook_engine.h"       // InstallRuntime
+#include "hook_engine.h"       // InstallRuntime (function-entry / callsite paths)
 #include "log.h"
 #include "lua_bind_helpers.h"  // PushPointer
 #include "lua_memory.h"        // pointer, kPointerMetatable
@@ -51,6 +50,7 @@ extern "C" {
 #include "pe_helpers.h"        // OpenModule (callsite rva -> module base)
 #include "rom_borrowed/runtime_func_t.h"
 #include "rom_borrowed/type_info_t.h"
+#include "safetyhook_midhook.h"  // mid-function adapter (make_jit_midfunc retired)
 
 namespace kcdx::hook_chain {
 
@@ -232,7 +232,7 @@ struct RejectedEntry {
 //
 // A mid Chain (isMid) is a DIFFERENT install: a mid-function detour at
 // the captured-instruction VA (targetVa already includes `offset`), built
-// with make_jit_midfunc + the MidDispatch C callback, carrying its own
+// with the safetyhook::MidHook adapter + the MidDispatch C callback, carrying its own
 // capture layout instead of a function signature. v1 keeps one mid hook
 // per VA (the JIT bakes one capture layout); a second mid hook on the
 // same VA loses by load order (CanCoexist's mid branch). The struct is
@@ -760,28 +760,30 @@ void WriteReturn(lua_State* L, int idx, const Chain& chain,
 // function. The author's callback receives a table of capture HANDLES —
 // one per capture — each a small userdata with :get() / :set(). :get()
 // reads the captured value (as a Lua number/pointer); :set(v) writes it
-// back into the JIT capture slot, which make_jit_midfunc's unconditional
-// "apply change" loop then stores into the real register/memory after the
-// callback returns (runtime_func_t.cpp:608+).
+// back into the capture slot, which the safetyhook::MidHook adapter
+// (safetyhook_midhook.cpp) then writes from the slot back into the real
+// register/memory (Context64) after the callback returns.
 //
-// Slots live in the JIT trampoline's STACK payload for the duration of
-// the dispatch only. A handle is valid ONLY inside the callback; stashing
-// one and using it later reads freed stack (author bug — same hazard as
-// retaining any by-reference callback argument).
+// Slots live in the dispatch capture payload for the duration of the dispatch
+// only (the adapter builds it from Context64 on the stack and writes it back
+// after). A handle is valid ONLY inside the callback; stashing one and using it
+// later reads freed memory (author bug — same hazard as retaining any
+// by-reference callback argument).
 //
-// The capture payload uses a 16-BYTE slot stride (the JIT writes
-// [rsp + 16*i]) — NOT parameters_t::get_arg_ptr's 8-byte stride. We index
-// the payload base directly. (cap-04 has one capture so slot0 coincides
-// in both strides; the mismatch only bites 2+ captures — see
-// project_kcdx_phase2b_hook_restructure memory.)
+// The capture payload uses a 16-BYTE slot stride (slot i = base + 16*i) — NOT
+// parameters_t::get_arg_ptr's 8-byte stride. We index the payload base directly.
+// The adapter builds the same 16-byte-stride payload from Context64; the C-mid
+// dispatch thunk (dynamic_call_jit) consumes it at the same stride. (cap-04 has
+// one capture so slot0 coincides in both strides; the mismatch only bites 2+
+// captures — see project_kcdx_phase2b_hook_restructure memory.)
 
-// Skip-original flag: a single byte make_jit_midfunc reads (Auto mode)
-// after MidDispatch returns. Non-zero => the captured instruction is
-// skipped (resume past it). hook_chain owns its OWN flag (not
-// scripting::g_mid_skip_original) so it stays self-contained for the
-// eventual legacy-scripting discard. Main-thread-only dispatch
-// (the engine marshals off-thread hits) means a plain byte suffices;
-// MidDispatch clears it at entry and sets it from the callback's return.
+// Skip-original flag: a single byte the safetyhook::MidHook adapter reads via
+// ConsumeMidSkip after MidDispatch returns. Non-zero => the captured instruction
+// is skipped (the adapter sets ctx.rip past it). hook_chain owns its OWN flag
+// (not scripting::g_mid_skip_original) so it stays self-contained for the
+// eventual legacy-scripting discard. Main-thread-only dispatch (the engine
+// marshals off-thread hits) means a plain byte suffices; MidDispatch clears it
+// at entry and sets it from the callback's return; ConsumeMidSkip read-clears it.
 uint8_t g_midSkipOriginal = 0;
 
 // One capture handle: a pointer into the live JIT slot payload + the
@@ -1325,7 +1327,7 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* params,
 }
 
 // ===========================================================================
-// §6b  MidDispatch — the C callback make_jit_midfunc invokes
+// §6b  MidDispatch — the dispatch invoked by the safetyhook::MidHook adapter
 // ===========================================================================
 //
 // Runs once per call to the captured instruction. Builds a table of
@@ -1342,11 +1344,13 @@ void DispatchPost(const kcdx::rom::runtime_func_t::parameters_t* params,
 // lua_insert/lua_pushvalue juggle to read `args._skip` post-pcall). Here
 // the decision rides the return value — no global args._skip, no juggle.
 //
-// Returns 0: the JIT no longer reads rax (resume is decided by the skip
-// flag in Auto mode).
-uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
-                      const size_t  param_count,
-                      const uintptr_t target_func_ptr) {
+// Returns 0: the resume decision rides the skip flag (read by the mid adapter
+// via ConsumeMidSkip after this returns, which sets ctx.rip). Internal impl;
+// the public kcdx::hook_chain::MidDispatch wrapper (below the anonymous
+// namespace) forwards to it so the safetyhook_midhook adapter can call it.
+uintptr_t MidDispatchImpl(const kcdx::rom::runtime_func_t::parameters_t* params,
+                          const size_t  param_count,
+                          const uintptr_t target_func_ptr) {
     // Clear the skip flag at entry — start from a known state so a stale
     // "set" from a previous mid dispatch can't carry over.
     g_midSkipOriginal = 0;
@@ -1845,6 +1849,25 @@ void InsertOrdered(Chain& chain, ChainEntry&& e) {
 
 }  // namespace
 
+// Public seam for the safetyhook_midhook adapter (declared in hook_chain.h).
+// The adapter reads captures out of Context64 into the 16-byte-stride payload,
+// calls this, then writes mutated captures back and reads ConsumeMidSkip to set
+// ctx.rip. The dispatch/marshaling layer (MidDispatchImpl) is UNCHANGED (§5.3).
+uintptr_t MidDispatch(const kcdx::rom::runtime_func_t::parameters_t* params,
+                      const size_t  param_count,
+                      const uintptr_t target_func_ptr) {
+    return MidDispatchImpl(params, param_count, target_func_ptr);
+}
+
+// Read-and-clear the skip flag MidDispatchImpl set from the callback's return.
+// Main-thread-only mid dispatch makes the plain byte safe (no atomic needed —
+// the same property make_jit_midfunc's Auto-mode flag read relied on).
+bool ConsumeMidSkip() {
+    const bool skip = (g_midSkipOriginal != 0);
+    g_midSkipOriginal = 0;
+    return skip;
+}
+
 // Byte-compatibility of two signatures for sharing ONE marshaling thunk
 // (§1.1 of the spec). v1 rule: same arg count and each slot maps to the
 // same JIT type-string + same return type-string. This is conservative
@@ -1899,10 +1922,10 @@ void SetLuaState(lua_State* L) {
 
 // Install a mode=mid hook: a mid-function detour at the captured-
 // instruction VA (payload's locator already resolved to it, offset
-// included), built with make_jit_midfunc + MidDispatch. v1 keeps one mid
-// hook per VA — the JIT bakes one capture layout, so a second mid hook on
-// the same VA loses by load order (it cannot share the layout). This is
-// the safe-but-blunt v1, consistent with the around/replace exclusivity;
+// included), built with the safetyhook::MidHook adapter + MidDispatch. v1 keeps
+// one mid hook per VA — the adapter binds one capture layout per site, so a
+// second mid hook on the same VA loses by load order (it cannot share the
+// layout). This is the safe-but-blunt v1, consistent with around/replace exclusivity;
 // footprint-based mid coexistence is the same future work as the
 // signature path (smart-replace-conflict-detection.md). The runtime_func_t
 // holds the detour for the session.
@@ -1930,35 +1953,6 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    // Auto-decode the resume offset (how many bytes to skip past so the
-    // resume lands on an instruction boundary beyond MinHook's patched
-    // region). hde64-disassemble forward from the capture site until the
-    // accumulated length covers MinHook's minimum 5-byte rel32 jmp. Same
-    // algorithm as hook_engine::ApplyOneMidHook — better UX than making
-    // the author count instruction bytes.
-    constexpr int kMinHookPatchBytes = 5;
-    int stackRestoreOffset = 0;
-    {
-        uintptr_t scan = targetVa;
-        int accumulated = 0;
-        while (accumulated < kMinHookPatchBytes) {
-            hde64s hs{};
-            unsigned int len =
-                hde64_disasm(reinterpret_cast<const void*>(scan), &hs);
-            if (len == 0 || (hs.flags & F_ERROR) != 0) {
-                res.reason =
-                    "could not disassemble the capture site to compute the "
-                    "resume point (hde64 failed at the mid offset); the "
-                    "`offset` may not land on an instruction boundary";
-                return res;
-            }
-            scan += len;
-            accumulated += static_cast<int>(len);
-        }
-        stackRestoreOffset = accumulated;
-    }
-    const uintptr_t resumeAddr = targetVa + (uintptr_t)stackRestoreOffset;
-
     auto newChain = std::make_unique<Chain>();
     newChain->targetVa       = targetVa;
     newChain->isMid          = true;
@@ -1970,65 +1964,29 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
     newChain->capTypes       = payload.captureTypes;
     newChain->capNames       = payload.captureNames;
     newChain->midOffThread   = payload.offThread;
-    newChain->rf             = std::make_unique<kcdx::rom::runtime_func_t>();
+    // No runtime_func_t for a mid chain — the make_jit_midfunc JIT is retired.
+    // The mid path installs a safetyhook::MidHook adapter directly (NOT through
+    // InstallRuntime); the adapter reads/writes captures off Context64 and
+    // routes every fire to MidDispatch(targetVa) — design §5.3.
 
-    // call_original_mode = 2 (Auto): the JIT pushes MinHook's trampoline
-    // by default and, after MidDispatch returns, reads our skip-flag byte;
-    // if set, it resumes past the captured instruction instead. This is
-    // the return-value model (the callback returns "skip"/true to skip).
-    uintptr_t jit = newChain->rf->make_jit_midfunc(
-        newChain->capTypes,
-        newChain->capExprs,
-        stackRestoreOffset,
-        /*call_original_mode=*/2,
-        /*skip_flag_addr=*/reinterpret_cast<uintptr_t>(&g_midSkipOriginal),
-        resumeAddr,
-        asmjit::Arch::kX64,
-        &MidDispatch,
-        targetVa);
-    if (!jit) {
-        res.reason = "make_jit_midfunc failed (capture/codegen — check the "
-                     "capture exprs + types; see kcdx.log)";
-        return res;
-    }
-
-    // This call site IS a chain mid-function install — it declares its KIND;
-    // the engine selects the backend (select_backend maps ChainMid -> MinHook
-    // until Phase 3 moves mid onto safetyhook::MidHook, design §4.2/§5). The
-    // call site cannot name a backend, so it cannot misroute.
-    auto install = kcdx::hook_engine::InstallRuntime(
-        name, targetVa, (void*)jit, kcdx::hook_engine::InstallKind::ChainMid);
+    // Install the mid adapter (safetyhook::MidHook + the fixed C-trampoline
+    // pool). The adapter computes resume = targetVa + the captured instruction's
+    // LENGTH (NOT the patch width, NOT the old >=5-byte MinHook floor — spike
+    // U3) and binds the slot before enabling. MidDispatch + run-vs-skip are
+    // unchanged; the adapter sets ctx.rip from ConsumeMidSkip after dispatch.
+    auto install = kcdx::safetyhook_midhook::Install(
+        targetVa, newChain->capExprs, newChain->capTypes, name);
     if (!install.ok) {
-        res.reason = "InstallRuntime failed: " + install.reason;
-        return res;
-    }
-    // Wire MinHook's pOriginal into the JIT trampoline's call-original
-    // slot — Auto mode's default path rets into it (runs the captured
-    // instruction). Without this the trampoline reads null and rets to 0.
-    if (void** slot = newChain->rf->get_jit_original_slot()) {
-        *slot = install.pOriginal;
-    } else {
-        // #14 — null call-original slot. The runtime_func_t ctor
-        // default-constructs the detour non-null, so this is normally
-        // unreachable; but a null slot means the JIT trampoline's
-        // call-original path reads null and any around / auto-mid that rets
-        // into it jumps to 0 → crash. Pre-Batch-E this silently proceeded and
-        // reported install SUCCESS (the two AddCallsite variants already failed
-        // the install here; the others did not). Make them CONSISTENT: fail the
-        // install with a reason, exactly as AddCallsite does — Error-class
-        // (a later around/auto-mid on this target would deref null and crash).
-        res.reason = "internal: runtime_func_t has no call-original slot "
-                     "(detour_hook missing) — a later around/auto-mid on this "
-                     "target would deref null and crash; install aborted";
+        res.reason = std::move(install.reason);
         return res;
     }
 
     g_chains.emplace(targetVa, std::move(newChain));
     res.ok = true;
     log::InfoF("hook_chain: installed mid '%s' (plugin '%s') at 0x%p "
-               "(%zu captures, resume +%d, JIT detour 0x%p)",
+               "(%zu captures, safetyhook::MidHook adapter)",
                name.c_str(), pluginName.c_str(), (void*)targetVa,
-               payload.captureExprs.size(), stackRestoreOffset, (void*)jit);
+               payload.captureExprs.size());
     return res;
 }
 
@@ -2425,29 +2383,6 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    constexpr int kMinHookPatchBytes = 5;
-    int stackRestoreOffset = 0;
-    {
-        uintptr_t scan = targetVa;
-        int accumulated = 0;
-        while (accumulated < kMinHookPatchBytes) {
-            hde64s hs{};
-            unsigned int len =
-                hde64_disasm(reinterpret_cast<const void*>(scan), &hs);
-            if (len == 0 || (hs.flags & F_ERROR) != 0) {
-                res.reason =
-                    "could not disassemble the capture site to compute the "
-                    "resume point (hde64 failed at the mid offset); the "
-                    "`offset` may not land on an instruction boundary";
-                return res;
-            }
-            scan += len;
-            accumulated += static_cast<int>(len);
-        }
-        stackRestoreOffset = accumulated;
-    }
-    const uintptr_t resumeAddr = targetVa + (uintptr_t)stackRestoreOffset;
-
     auto newChain = std::make_unique<Chain>();
     newChain->targetVa          = targetVa;
     newChain->isMid             = true;
@@ -2462,7 +2397,11 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
     newChain->capNames          = payload.captureNames;
     newChain->midOffThread      = payload.offThread;
     newChain->isMidEngine       = midStamp;
-    newChain->rf                = std::make_unique<kcdx::rom::runtime_func_t>();
+    // No runtime_func_t for a mid chain — the make_jit_midfunc JIT is retired
+    // (the mid path is a safetyhook::MidHook adapter, design §5.3). The C-mid
+    // dispatch THUNK stays: MidDispatch's C branch still marshals the 16-byte
+    // payload into the typed kcdxHookCaptureValue[] via this thunk; the adapter
+    // builds that same payload from Context64.
     newChain->midCDispatchThunk =
         kcdx::dynamic_call_jit::BuildCDispatchThunk(
             cFn, cSig, kcdx::hook_payload::Mode::Mid);
@@ -2471,55 +2410,25 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    uintptr_t jit = newChain->rf->make_jit_midfunc(
-        newChain->capTypes,
-        newChain->capExprs,
-        stackRestoreOffset,
-        /*call_original_mode=*/2,
-        /*skip_flag_addr=*/reinterpret_cast<uintptr_t>(&g_midSkipOriginal),
-        resumeAddr,
-        asmjit::Arch::kX64,
-        &MidDispatch,
-        targetVa);
-    if (!jit) {
-        res.reason = "make_jit_midfunc failed (capture/codegen — check the "
-                     "capture exprs + types; see kcdx.log)";
-        return res;
-    }
-
-    // This call site IS a chain mid-function install — it declares its KIND;
-    // the engine selects the backend (select_backend maps ChainMid -> MinHook
-    // until Phase 3, design §4.2/§5).
-    auto install = kcdx::hook_engine::InstallRuntime(
-        name, targetVa, (void*)jit, kcdx::hook_engine::InstallKind::ChainMid);
+    // Install the mid adapter directly (NOT through InstallRuntime; safetyhook::
+    // MidHook + the fixed C-trampoline pool). Resume = targetVa +
+    // original_bytes().size() (safetyhook's relocated-region size), NOT the
+    // captured-instruction length — the patch swallows whole instructions until
+    // the span reaches 5 bytes, so a sub-5-byte capture's resume must clear the
+    // whole patched region. Computed inside the adapter.
+    auto install = kcdx::safetyhook_midhook::Install(
+        targetVa, newChain->capExprs, newChain->capTypes, name);
     if (!install.ok) {
-        res.reason = "InstallRuntime failed: " + install.reason;
-        return res;
-    }
-    if (void** slot = newChain->rf->get_jit_original_slot()) {
-        *slot = install.pOriginal;
-    } else {
-        // #14 — null call-original slot. The runtime_func_t ctor
-        // default-constructs the detour non-null, so this is normally
-        // unreachable; but a null slot means the JIT trampoline's
-        // call-original path reads null and any around / auto-mid that rets
-        // into it jumps to 0 → crash. Pre-Batch-E this silently proceeded and
-        // reported install SUCCESS (the two AddCallsite variants already failed
-        // the install here; the others did not). Make them CONSISTENT: fail the
-        // install with a reason, exactly as AddCallsite does — Error-class
-        // (a later around/auto-mid on this target would deref null and crash).
-        res.reason = "internal: runtime_func_t has no call-original slot "
-                     "(detour_hook missing) — a later around/auto-mid on this "
-                     "target would deref null and crash; install aborted";
+        res.reason = std::move(install.reason);
         return res;
     }
 
     g_chains.emplace(targetVa, std::move(newChain));
     res.ok = true;
     log::InfoF("hook_chain: installed C mid '%s' (plugin '%s') at 0x%p "
-               "(%zu captures, resume +%d, JIT detour 0x%p)",
+               "(%zu captures, safetyhook::MidHook adapter)",
                name.c_str(), pluginName.c_str(), (void*)targetVa,
-               payload.captureExprs.size(), stackRestoreOffset, (void*)jit);
+               payload.captureExprs.size());
     return res;
 }
 

@@ -1461,6 +1461,8 @@ schema — CAP-04 is now the mid-on-`kcdx.code` composition). Earlier roll-up:
 | CAP-21-write | ✅ LIVE | mid | mode=mid capture WRITE: `c.rax:set(1000)` lands in the real register; add runs on 1000 → 1100 |
 | CAP-21-skip | ✅ LIVE | mid | mode=mid run/skip: callback returns `"skip"` → captured `add` never runs → 10 (positional-list captures `c[1]`). Proves the fresh dispatcher does NOT inherit the cap-04-c `args._skip` bug |
 | CAP-21-run | ✅ LIVE | mid | mode=mid control: callback returns nothing → captured `add` runs → 110 |
+| CAP-21-mem | ✅ LIVE | mid | mode=mid MEMORY capture writeback: `[rcx]:i32` captures `*slot` at a `mov eax,[rcx]` site, `:set(1000)` writes through the derefed address, mov re-reads 1000 → add → 1100. Proves the Context64 memory-deref path (F4-F9), beyond the F1 GPR form. FALSIFIABLE: 110 → the deref-write missed (*slot stayed 10) |
+| CAP-21-xmm | ✅ LIVE | mid | mode=mid XMM lane capture writeback: `xmm0:f32` captures the float seed at a `cvttss2si rax,xmm0` site, `:set(50.0)` writes the lane, cvttss2si converts 50.0 → 50. Proves the Context64 XMM-lane read/write (F3). FALSIFIABLE: 10 → the lane write missed (seed survived) |
 | CAP-22-before | ✅ LIVE | callsite | `kcdx.hook` mode=callsite before: redirected E8 site, Helper sees 10→11 → 111 (`cap-22-callsite-redirect`) |
 | CAP-22-after | ✅ LIVE | callsite | mode=callsite after: redirected E8 site, Helper return 110 → 1110 |
 | CAP-22-around | ✅ LIVE | callsite | mode=callsite around: redirected E8 site, 2 * orig(10)=2*110 → 220 |

@@ -67,4 +67,32 @@ kcdx.hook{
     end,
 }
 
-kcdx.log.info("CAP21", "installed all cap-21 mid hooks (read/write/skip/run)")
+-- CAP-21-mem: MEMORY capture writeback. Capture `[rcx]` (the int the stub's
+-- `mov eax,[rcx]` is about to read; rcx = the int* arg). :set(1000) writes 1000
+-- THROUGH the derefed address; the captured mov re-reads 1000 -> add -> 1100.
+-- Exercises the new Context64 memory-deref path (F4-F9), beyond the GPR form.
+kcdx.hook{
+    name     = "cap21_mem",
+    address  = cap21.addr_mem(),
+    captures = { slot = "[rcx]:i32" },   -- i32: the stub's `mov eax,[rcx]` is 32-bit
+    mid      = function(c)
+        c.slot:set(1000)
+        -- return nothing -> the `mov eax,[rcx]` re-reads 1000, add -> 1100
+    end,
+}
+
+-- CAP-21-xmm: XMM lane capture writeback. Capture `xmm0` (the float seed) at the
+-- `cvttss2si rax,xmm0` site. :set(50.0) writes the lane; the captured cvttss2si
+-- then converts 50.0 -> rax=50. Exercises the new Context64 XMM-lane path (F3).
+kcdx.hook{
+    name     = "cap21_xmm",
+    address  = cap21.addr_xmm(),
+    captures = { seed = "xmm0:f32" },   -- "expr:type" string; f32 selects the XMM lane
+    mid      = function(c)
+        c.seed:set(50.0)
+        -- return nothing -> cvttss2si converts the mutated 50.0 -> 50
+    end,
+}
+
+kcdx.log.info("CAP21",
+    "installed all cap-21 mid hooks (read/write/skip/run/mem/xmm)")
