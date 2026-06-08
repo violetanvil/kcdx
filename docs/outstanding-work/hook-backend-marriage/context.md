@@ -170,10 +170,10 @@ reserved items are the design's settled out-of-scope (decided by the user during
 |---|---|---|---|
 | E1 — `IDetourBackend` interface | §4.1, §8 | Phase 2 step 3 | create/enable/disable/get_original; built behind `detour_hook`, relocated in step 4 |
 | E2 — `MinHookBackend` | §4.1, §8 | Phase 2 step 3 | the MinHook bodies, reused verbatim |
-| E3 — `SafetyhookBackend` | §4.1, §8 | Phase 2 step 4 | over `safetyhook::InlineHook` |
-| E4 — backend seam relocates to `InstallRuntime`; `detour_hook` dissolves | §4.1, §8 | Phase 2 step 4 | the seam moves out from behind `detour_hook`; the husk is removed |
+| E3 — `SafetyhookBackend` | §4.1, §8 | Phase 2 step 4b | over `safetyhook::InlineHook` |
+| E4 — backend seam relocates to `InstallRuntime`; `detour_hook` dissolves | §4.1, §8 | Phase 2 step 4a | the seam moves out from behind `detour_hook`; the husk is removed (behavior-preserving, still MinHook) |
 | E5 — install-context routing predicate @ `InstallRuntime` | §4.2, §9.5 | Phase 2 step 5 | misroute-impossible (U5) |
-| E6 — call-original `get_original` bridge | §4.4 | Phase 2 step 4 (+ proven in P1 step 2) | both backends populate the JIT slot |
+| E6 — call-original `get_original` bridge | §4.4 | Phase 2 step 4b (+ proven in P1 step 2) | both backends populate the backend-owned JIT slot |
 | E7 — mid-hook spike (cap-04 port) | §9.1, §9.2 | Phase 1 step 2 | gates Phase 3 (U1, U2, U3, U4) |
 | E8 — `make_jit_midfunc` full replacement | §5, §5.1 | Phase 3 step 6 | the three modes via `ctx.rip` |
 | E9 — named captures → Context64 writeback | §5.2 | Phase 3 step 6 | `args.rdx:get/set` rewired |
@@ -183,13 +183,13 @@ reserved items are the design's settled out-of-scope (decided by the user during
 | E13 — foreign-hook detection (classifier) | §6.1 | Phase 4 step 7 | clean / kcdx-tramp / foreign |
 | E14 — foreign-hook chaining | §6.2, §6.3 | Phase 4 step 8 | follow jmp, capture as original |
 | E15 — safetyhook license + vendoring | §9.6 | Phase 1 step 1 | U6; manifest row same-change |
-| E16 — far-target reach (E9→FF, cap-22) | US-2, §1 | Phase 2 step 4 | falls out of `SafetyhookBackend` |
-| E17 — function-entry parity (all cap-NN) | US-1, §1 | Phase 2 step 4 | all rows green on safetyhook |
+| E16 — far-target reach (E9→FF, cap-22) | US-2, §1 | Phase 2 step 4b | falls out of `SafetyhookBackend` |
+| E17 — function-entry parity (all cap-NN) | US-1, §1 | Phase 2 step 4b | all rows green on safetyhook |
 | E18 — loader-lock safety preserved | US-5, §1 | Phase 2 step 5 | early_hook stays MinHook |
 | E19 — backend-layer reference doc | §8 | Phase 6 step 11 | new unit gets its subsystem doc |
 | E20 — comp-NN two-mod foreign fixture | US-4, §1 | Phase 4 step 8 | both detours fire, defined order |
-| E21 — `g_installed` retires (one conflict model) | §4.6 | Phase 2 step 4 | gated on U8 caller-set check |
-| E22 — `InstallRuntime` caller-set probe | §9.8 | Phase 2 step 4 (sub-check) | U8; chain-only → remove; non-chain → re-home guard |
+| E21 — `g_installed` retires (one conflict model) | §4.6 | Phase 2 step 4a | gated on U8 caller-set check |
+| E22 — `InstallRuntime` caller-set probe | §9.8 | Phase 2 step 4a (sub-check) | U8; chain-only → remove; non-chain → re-home guard |
 | E23 — batch install (`StartDisabled` + `trap_threads`) | §4.5, §1 | Phase 5 step 9 | create-all-disabled → one frozen window |
 | E24 — multi-target batch-window probe | §9.7 | Phase 5 step 9 (probe) | U7; gates the batch path, per-hook fallback |
 | E25 — `IDetourBackend` batch API (both backends) | §4.5, §8 | Phase 5 step 9 | safetyhook via trap_threads; MinHook via queue API |

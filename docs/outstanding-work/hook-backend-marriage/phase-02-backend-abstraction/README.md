@@ -20,7 +20,8 @@ Shared spec: [`../context.md`](../context.md).
 | Step | Status | Commit |
 |---|---|---|
 | Step 3 — IDetourBackend + MinHookBackend (refactor) | DONE | `64fba7d` |
-| Step 4 — SafetyhookBackend; seam → InstallRuntime; detour_hook dissolves; g_installed retires | NOT STARTED | — |
+| Step 4a — relocate seam → InstallRuntime; dissolve detour_hook; retire g_installed (behavior-preserving, still MinHook) | NOT STARTED | — |
+| Step 4b — SafetyhookBackend + route function-entry; far-target reach (behavior change) | NOT STARTED | — |
 | Step 5 — install-context routing predicate at InstallRuntime | NOT STARTED | — |
 
 ## Verification gate
@@ -28,14 +29,19 @@ Shared spec: [`../context.md`](../context.md).
 - Step 3: `pwsh ./build.ps1` green; ALL existing cap-NN hook rows pass live
   (the refactor is behavior-preserving — every hook is still MinHook, just behind
   the interface). The proof the seam introduced no regression. **(DONE — `64fba7d`;
-  the interface was built behind `detour_hook` and relocates in step 4.)**
-- Step 4: function-entry cap-NN rows pass live on the safetyhook backend with the
-  install routed through `InstallRuntime`; the cap-22 far-module rows pass with NO
-  per-module-pool special-case as the saving mechanism (E9→FF fallback);
-  `detour_hook` is removed and `g_installed` is retired with the full suite
-  unchanged (the U8 caller-set check confirms chain-only before the map is removed,
-  or re-homes a non-chain guard). Agent builds+deploys, user launches, agent reads
-  the log.
+  the interface was built behind `detour_hook` and relocates in step 4a.)**
+- Step 4a (behavior-preserving): the backend seam relocates from `detour_hook` to
+  `InstallRuntime`; `detour_hook` is removed (the backend owns its slot);
+  `g_installed` is retired (U8 caller-set check confirms chain-only before removal,
+  or re-homes a non-chain guard). EVERY hook is STILL MinHook — the proof is the
+  FULL cap-NN matrix unchanged from the step-3 baseline (the exact step-3 proof
+  shape: a structural move that changed no behavior). Agent builds+deploys, user
+  launches, agent reads the log.
+- Step 4b (behavior change): the function-entry `hook_chain` install routes through
+  `InstallRuntime` to `SafetyhookBackend`; cap-NN function-entry rows pass live on
+  safetyhook; the cap-22 far-module rows pass with NO per-module-pool special-case
+  as the saving mechanism (E9→FF fallback). Agent builds+deploys, user launches,
+  agent reads the log.
 - Step 5: the routing predicate at `InstallRuntime` selects MinHook for
   early_hook + the update pump (loader-lock safety preserved — early_hook installs
   under the loader lock with zero deadlock, incl. under multitasking load) and
