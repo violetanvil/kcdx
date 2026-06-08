@@ -1,13 +1,15 @@
 ---
 id: KI-0008
 opened: 2026-06-08
-status: open
+status: Closed
+closed: 2026-06-08
+closed_by_commit: 69bafc9
 commit_at_filing: 68fc4719e3a8c0a0e8c0e8c0e8c0e8c0e8c0e8c0
 ---
 
 # KI-0008 — editing an OPEN-interval version row silently no-ops (the value never persists)
 
-**Status:** open (root cause CONFIRMED — `_seed_action_rows` filters out non-baseline-tag rows; fix design pending Gate A)
+**Status:** closed (root cause = the interactive update path reused the baseline-rebuild action builder, which filters out every non-baseline-tag row, so a non-baseline-version edit produced no UPDATE action → silent no-op; fixed in `69bafc9` by emitting a single-row UPDATE action for the edited non-baseline-tag row). User-confirmed: the v1.6 (non-baseline) edit now persists across a refresh.
 
 ## Symptom
 
@@ -131,3 +133,62 @@ multi-row blowout), (4) the v1.6 row's kcdx_id/valid_from/valid_through unchange
 |------------|-----------------------------------------------------------------------------------------|---------|
 | 2026-06-08 | Filed from the live session; probed the update path on a throwaway DB copy (closed-row edit writes; open-row edit drops, even in the in-flight txn). Narrowed to the action-derivation: the action reaching the apply targets the WRONG row (v1.5 closed) with the UNCHANGED value, not v1.6 with rva=2. Seed-edit layer verified correct. | symptom + facts captured; the action-derivation probe is the next step (which action(s) `_seed_action_rows`/the diff builds for the 158 edit) |
 | 2026-06-08 | PROBE (static): read `_seed_action_rows` (`import_to_sqlite.py:1154`) + its caller `apply_direct_edit:3187` — does it filter actions by tag? | ROOT CAUSE FOUND. `_seed_action_rows` does `if vfv_tag != GAME_VERSION_TAG ("1.5.1164953"): continue` (`:1170-1172`) — it SKIPS every non-baseline-tag seed row. A v1.6 edit's row is filtered out → no action → no write → silent no-op. The baseline-tag (v1.5) edit is not filtered → writes. The update path was never extended to emit an UPDATE action for an existing non-baseline-tag row (only the baseline-rebuild action set + the new-tag INSERT path exist). Design-surface gap → Gate A next. |
+| 2026-06-08 | FIX: `_single_row_action_from_seed` helper + an additive branch in `apply_direct_edit` (gated on `update_target[1] != GAME_VERSION_TAG` && `new_tag is None`); `update_version_row` threads the edited row's own `(kcdx_id, valid_from_version)` as `update_target`. `_seed_action_rows`/filter/rebuild/oracle untouched. Cause-test `test_nonbaseline_tag_edit_persists`. | landed `69bafc9`. Gate: data-core 140 passed (1 pre-existing rebuild-oracle red), update-path 22/22, convergence oracle passes. Step-review PROCEED (all 8 properties; revert-to-red confirmed the v1.6 edit drops without the fix). Correction: `version` resolves to the DLL's baseline tag, NOT the edited row's tag → gate keys off `update_target`. |
+
+## Resolution
+
+- **Root cause:** the interactive `/confirm/update-version` path reused the
+  baseline-REBUILD action builder, which silently dropped any edit to a
+  non-baseline-tag row. `apply_direct_edit` (`import_to_sqlite.py`) built its
+  action set via `_seed_action_rows(state)`, and `_seed_action_rows`
+  (`:1154`) **skips every prospective-seed row whose `valid_from_version !=
+  GAME_VERSION_TAG`** (`= "1.5.1164953"`, `:133`): `if vfv_tag !=
+  GAME_VERSION_TAG: continue` (`:1170-1172`). That filter is correct for the
+  baseline-rebuild path (the convergence oracle's reference `apply_seeds`
+  resolves only `GAME_VERSION_TAG`, `:445/453`) — but the interactive update
+  path reused the same builder. So editing the v1.6 row (entity 158 "test")
+  produced a prospective seed with `v1.6 → rva=2` correctly, but
+  `_seed_action_rows` filtered the v1.6 row out (its tag `1.6` ≠ the baseline)
+  and emitted only the (unchanged) v1.5 action → `_present_row_non_trio_differs`
+  returned False for that → no write → a silent no-op that nonetheless returned
+  a 200 confirm. A v1.5 (baseline-tag) edit was NOT filtered, so it wrote — the
+  closed-vs-open / baseline-vs-non-baseline discriminator. The original path made
+  the drop inevitable because the action-derivation only ever built actions for
+  the baseline tag, and editing an existing non-baseline-tag row matches neither
+  the baseline action set nor the `new_tag` create-version INSERT path — it fell
+  through the gap with no UPDATE action.
+
+- **Fix (`69bafc9`):** ADD a single-row UPDATE action for the edited
+  non-baseline-tag row in the interactive update path, leaving
+  `_seed_action_rows` / the `GAME_VERSION_TAG` filter / the rebuild path / the
+  convergence oracle byte-unchanged. `_single_row_action_from_seed` (factored out
+  of `_new_tag_action_from_seed`) reads the prospective seed and builds ONE
+  action for the edited `(kcdx_id, valid_from_version=tag)`, identical in shape to
+  `_seed_action_rows`' output, applied through the existing `_apply_one_db`
+  PRESENT path. `apply_direct_edit` gains `update_target=None`; the branch fires
+  only when `update_target` is set, `new_tag is None`, and the edited tag !=
+  `GAME_VERSION_TAG` (so a baseline edit does not double-emit).
+  `update_version_row` threads the edited row's own `(kcdx_id,
+  valid_from_version)` as `update_target`. **Correction over the initial design:**
+  `version=(tag,ordinal)` resolves to the linked DLL's OWN game version (the
+  baseline for a baseline DLL), NOT the edited row's tag — so the gate keys off
+  `update_target`, never `version`. Identity preserved via the existing
+  `_UPDATE_PRESERVE_COLUMNS` exclusion (KI-0007's fix). Architect-review (Gate A):
+  `hold` — design-determined (US-5 requires editing any existing row; the filter
+  is load-bearing for the rebuild/oracle, so the only valid fix is the additive
+  single-row action). **Note:** the new non-baseline UPDATE path is NOT
+  convergence-oracle-coverable (the rebuild reference is structurally
+  baseline-only) — its correctness rests on the cause-test + the reused PRESENT
+  machinery.
+
+- **Verification:** the cause-test `test_nonbaseline_tag_edit_persists`
+  (`test_db_editor_update.py`) sets up an existing non-baseline-tag (v1.6) row +
+  the baseline v1.5 row, edits the v1.6 row's rva, and asserts (1) the v1.6 edit
+  PERSISTS (the mechanism check), (2) the baseline v1.5 edit still persists, (3)
+  no other entity's v1.6 row is touched (the multi-row-blowout guard), (4) the
+  v1.6 row's `kcdx_id`/`valid_from`/`valid_through` are unchanged — on both user +
+  dev DBs. Revert-to-red confirmed: without the fix the test fails on assertion 1
+  (the v1.6 edit silently drops). The direct-write convergence oracle passes (the
+  baseline path + apply==rebuild unbroken). Gate B (root-cause-verifier):
+  `land-fix`. User-confirmed: on the live re-run the v1.6 (non-baseline-tag) row
+  edit now SAVES and PERSISTS across a page refresh — the silent no-op is gone.
