@@ -42,6 +42,7 @@
 #include "blake3_selftest.h"                       // cap-59 engine self-report
 #include "version_check_selftest.h"                // cap-60 engine self-report
 #include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
+#include "statement_resolve_selftest.h"             // cap-83 refdb statement-resolution API
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
 #include "early_hook_selftest.h"                    // cap-80 early-hook primitive
 #include "cap81_vm_adopt_selftest.h"                // cap-81 keystone: VM build + engine adopt
@@ -754,6 +755,15 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // never hands a foreign Lua copy's dummynode to frealloc (the 0xC0000374
     // save-load heap corruption). Boot-only, one-shot guarded internally.
     kcdx::ki0001::RunSelfTestOnce();
+
+    // cap-83-stmt-resolve: engine self-report for the refdb statement-resolution
+    // API (the §9.3 locator catalog + the captures-by-name join). Resolves
+    // SaveGame's locator families against the in-memory statement cache and
+    // asserts each against ground truth measured from the curated DB. Boot-only,
+    // no hook-fire / "ready" dependency (refdb is open by the first suite tick).
+    // GRACEFUL on the pre-deploy state (statement tables absent) — reports a
+    // clear DEGRADED PASS, never a hard FAIL or crash. One-shot guarded internally.
+    kcdx::stmt_resolve::RunSelfTestOnce();
 
     // cap-80-early-hook: engine self-report for the author-parameterized
     // early-install primitive (src/early_hook.{h,cpp}). Boot-only, same timing

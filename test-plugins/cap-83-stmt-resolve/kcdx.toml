@@ -1,0 +1,57 @@
+# CAP-83 — refdb statement-resolution API (the §9.3 locator catalog + the
+# captures-by-name join).
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# refdb statement-resolution surface (src/refdb.{h,cpp}) —
+# refdb::ResolveStatementByName resolves a §9.3 LOCATOR descriptor to a
+# statement INDEX within a curated function, exposes that statement's
+# per-statement reads (kind / callee / byte_range_len / ...), and joins the
+# statement's captured variables (referenced_vars by
+# (address_version_id, statement_idx)) onto the result. This kcdx.toml is a
+# MANIFEST-ONLY STUB — no plugin.lua, no DLL — whose sole job is to pre-register
+# the matrix row via test_names so it shows PENDING until the engine reports it.
+# Same pattern as cap-45-load-hook-inventory / cap-46-session-stamp /
+# cap-66-node-classifier (engine self-reports directly via
+# kcdx::test::ReportResult from src/statement_resolve_selftest.cpp; a manifest
+# stub holds the name).
+#
+# What it proves:
+#   cap-83-stmt-resolve  SaveGame's (kcdx_id 144, 59 statements) §9.3 locator
+#                        families resolve to GROUND-TRUTH values measured from
+#                        the curated reference.sqlite:
+#                          function_entry              → idx 0, kind "assign", brl 3
+#                          function_exit               → idx 58, kind "return", brl 30
+#                          first_call_to(FUN_1804d455c)→ idx 8, brl 5
+#                          first_return                → idx 13, kind "return"
+#                          last_return                 → idx 58
+#                          captures @ function_entry   → EXACTLY 2:
+#                            param_7 (stack, size 8) AND puVar6 (register, size 8)
+#                        Reported by the engine at boot (no save-load gesture, no
+#                        hook-fire dependency — refdb is open by the first suite
+#                        tick).
+#
+# FALSIFIABLE: the row goes RED if any locator resolves to the WRONG
+# index/byte_range_len/kind, or the captures join returns the wrong set, or a
+# resolution returns found=false when the statement data IS present.
+#
+# GRACEFUL on absent data: the curated statement tables ship in the DEV
+# reference.sqlite; the deployed USER projection regenerates them on deploy. If
+# SaveGame does not resolve or carries no statements (the pre-deploy state where
+# the shipped USER DB lacks the statement tables), the self-test reports a clear
+# DEGRADED PASS (a deploy-state observation), NOT a hard FAIL and NOT a crash.
+#
+# Test mode: boot-only. Resolves + reports synchronously on the first suite tick.
+# No console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_83_stmt_resolve"
+display_name        = "CAP-83 refdb statement-resolution API"
+author              = "ts"
+description         = "Engine self-test: SaveGame's §9.3 locator families (function_entry/exit, first_call_to, first/last_return) resolve to ground-truth statement indices/byte_range_len/kind measured from the curated DB, and the captures-by-name join returns exactly the 2 captured vars at function_entry. Engine self-reports; graceful-degraded when the statement tables are not deployed."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-83-stmt-resolve"]

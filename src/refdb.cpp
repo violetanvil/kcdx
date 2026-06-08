@@ -2046,7 +2046,30 @@ static StatementResolution ResolveStatementForEntity(const CachedEntity& c,
                 "statement tables are not deployed yet)"));
         return StatementResolution{};  // found=false.
     }
-    return ResolveLocatorInVector(it->second, locator, functionId);
+    StatementResolution r = ResolveLocatorInVector(it->second, locator, functionId);
+    if (r.found) {
+        // Captures-by-name join (2c): the resolved statement's captured vars,
+        // joined from g_refVarsByAvStmt by (address_version_id, statement_idx).
+        // One in-memory hash hit, built ONCE here at resolution — no per-call
+        // SQL (memory.md). A statement with no captured vars → the lookup misses
+        // and `captures` stays empty (legitimate, not an error — AP14).
+        auto cit = g_refVarsByAvStmt.find(
+            AvStmtKey{c.address_version_id, r.statement_idx});
+        if (cit != g_refVarsByAvStmt.end()) {
+            r.captures.reserve(cit->second.size());
+            for (const auto& v : cit->second) {
+                StatementCapture sc;
+                sc.var_name = v.var_name;
+                sc.storage_kind = v.storage_kind;
+                sc.storage_detail = v.storage_detail;
+                sc.data_type = v.data_type;
+                sc.size_bytes = v.size_bytes;
+                sc.has_size_bytes = v.has_size_bytes;
+                r.captures.push_back(std::move(sc));
+            }
+        }
+    }
+    return r;
 }
 
 StatementResolution ResolveStatementByName(const std::string& functionName,

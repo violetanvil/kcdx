@@ -343,6 +343,21 @@ struct StatementLocator {
     bool        has_match_references_string = false;  std::string match_references_string;   // → string_ref
 };
 
+// A captured variable joined onto a resolved statement (the captures-by-name
+// join, 2c). Mirrors the PUBLIC shape of refdb.cpp's CachedReferencedVar: the
+// per-variable facts the kcdx.captures.* surface reads (storage_kind /
+// storage_detail decode the var's location; data_type + size_bytes its type).
+// has_size_bytes distinguishes "the row carries a size" (size_bytes may be any
+// value, including 0) from "absent" — a 0 is a real value, not a sentinel.
+struct StatementCapture {
+    std::string var_name;        // referenced_vars.var_name; empty when NULL.
+    std::string storage_kind;    // decoded (e.g. "stack", "register").
+    std::string storage_detail;  // referenced_vars.storage_detail; empty when NULL.
+    std::string data_type;       // decoded (e.g. "int", "ptr"); empty when NULL.
+    int64_t     size_bytes = 0;
+    bool        has_size_bytes = false;
+};
+
 // Result of a statement-locator resolution within a resolved curated function.
 //
 // found=true → statement_idx is the resolved statement's idx (within the
@@ -376,6 +391,14 @@ struct StatementResolution {
     int64_t     byte_range_start = 0;
     bool        has_byte_range_len = false;
     int64_t     byte_range_len = 0;
+
+    // The resolved statement's captured variables (the captures-by-name join,
+    // 2c): joined from referenced_vars by (address_version_id, statement_idx)
+    // at resolution. A statement with no captured vars → an EMPTY vector
+    // (legitimate, not an error — AP14: absence is observable, not silent). The
+    // join is an in-memory hash hit built ONCE at resolution (no per-call SQL —
+    // memory.md). Appended at the END (append-only, free struct shape).
+    std::vector<StatementCapture> captures;
 };
 
 // Caller context for a Resolve* call.

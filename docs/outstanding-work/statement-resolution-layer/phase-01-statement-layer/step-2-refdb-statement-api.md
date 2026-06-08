@@ -1,6 +1,6 @@
 # Step 2 — refdb statement-resolution API, eager-load (engine lane)
 
-**Status: IN PROGRESS.** Ledger row: [`README.md`](README.md) → step 2.
+**Status: DONE.** Ledger row: [`README.md`](README.md) → step 2.
 **Lane: engine / consumer.**
 
 ## Sub-step ledger (commit-grain decomposition)
@@ -17,8 +17,8 @@ both pull a surface forward ahead of its design).
 | Sub-step | Status | Commit |
 |---|---|---|
 | 2a — statement data model + eager-load in `Open()` (per-`address_version_id` statement vectors + the `referenced_vars` join); init-time curated-count assertion | DONE | f26c819 |
-| 2b — the full §9.3 locator-resolution catalog + per-statement reads (`kind`/`callee`/`string_ref`/`byte_range_*`) | DONE | (landed) |
-| 2c — captures-by-name join + the engine-internal self-test (the seam) + the `cap-79-stmt-resolve` thin shell plugin + matrix row | NOT STARTED | — |
+| 2b — the full §9.3 locator-resolution catalog + per-statement reads (`kind`/`callee`/`string_ref`/`byte_range_*`) | DONE | abdbee3 |
+| 2c — captures-by-name join + the engine-internal self-test (the seam) + the `cap-83-stmt-resolve` thin shell plugin + matrix row (`cap-79` was taken; `cap-83` is next-free) | DONE | (landed) |
 
 ## What
 

@@ -291,6 +291,7 @@ add_library(kcdx SHARED
     src/survival_pass.cpp
     src/version_check_selftest.cpp
     src/ki0001_node_classifier_selftest.cpp
+    src/statement_resolve_selftest.cpp
     src/early_hook_selftest.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
