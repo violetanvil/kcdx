@@ -20,11 +20,13 @@ namespace kcdx::hook_engine {
 // loop in hooks.cpp that dispatched them was dead. The LIVE hook path is
 // kcdx.hook / kcdxHookInterface routed through src/hook_chain.cpp; both it
 // and kcdx.memory.dynamic_hook install via InstallRuntime (below). The
-// backend seam lives HERE: InstallRuntime owns an IDetourBackend selected by
-// the caller's explicit Backend arg (the function-entry chain path passes
-// Safetyhook; mid + the MinHook bootstrap paths + dynamic_hook pass MinHook)
-// and drives create -> enable. Step 5 replaces the literal arg with a
-// context-driven routing predicate computing the same param.
+// backend seam lives HERE: a caller passes its InstallKind (what the install
+// IS), and InstallRuntime selects the IDetourBackend via select_backend (the
+// single-sourced §4.2 routing table) and drives create -> enable. The caller
+// names no backend, so a wrong-backend literal is unwriteable (the
+// misroute-impossible bar). The loader-lock + bootstrap paths (early_hook, the
+// HookedUpdate pump, the frealloc canary) install via raw MH_CreateHook and
+// never reach this seam — the documented bootstrap exceptions (hook-engine.md).
 
 namespace {
 
@@ -36,13 +38,28 @@ namespace {
 // registry) colliding with a chain hook, or two dynamic_hooks, on one VA.
 std::unordered_map<uintptr_t, std::string> g_installed;
 
+// Compile-time proof the §4.2 routing table is correct — the unit-level
+// predicate check (zero runtime cost; verified by the build gate itself, no
+// live launch and no DI seam). The OUTCOME here is identical to the pre-Step-5
+// literals each call site passed: function-entry -> safetyhook, mid + dynamic
+// -> MinHook. Flip the ChainMid line + this assert together when Phase 3 moves
+// mid onto safetyhook::MidHook.
+static_assert(select_backend(InstallKind::ChainFunctionEntry) == Backend::Safetyhook,
+              "chain function-entry must route to safetyhook (design §4.2)");
+static_assert(select_backend(InstallKind::ChainMid) == Backend::MinHook,
+              "chain mid must route to MinHook until Phase 3 (design §4.2/§5/§9)");
+static_assert(select_backend(InstallKind::DynamicHook) == Backend::MinHook,
+              "dynamic_hook must route to MinHook (design §4.2)");
+
 }  // namespace
 
 RuntimeInstallResult InstallRuntime(const std::string& name,
                                     uintptr_t          target_addr,
                                     void*              detour_addr,
-                                    Backend            backend) {
+                                    InstallKind        kind) {
     RuntimeInstallResult out;
+
+    const Backend backend = select_backend(kind);
 
     if (target_addr == 0) {
         out.reason = "target_addr is 0";
@@ -52,6 +69,23 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
     if (!detour_addr) {
         out.reason = "detour_addr is null";
         log::ErrorF("[hook '%s'] aborted: %s", name.c_str(), out.reason.c_str());
+        return out;
+    }
+
+    // Misroute-impossible forward guard (E18, the design's one safety-critical
+    // mechanism). The loader-lock + bootstrap paths NEVER reach InstallRuntime
+    // (raw MH_CreateHook), so this is a forward guard for a FUTURE install path:
+    // any kind that must stay on MinHook (mid + dynamic_hook today; a
+    // hypothetical loader-lock kind tomorrow) resolving to safetyhook is the
+    // bug the guard catches. A safetyhook install under the loader lock is a
+    // deadlock (its unconditional thread-suspend) — fail LOUD and refuse, never
+    // a silent wrong-backend (logging.md; AP14). Only ChainFunctionEntry may
+    // ever select safetyhook; any other kind that does is a select_backend defect.
+    if (backend == Backend::Safetyhook && kind != InstallKind::ChainFunctionEntry) {
+        out.reason = "routing predicate selected safetyhook for a non-function-entry "
+                     "install kind (loader-lock-unsafe misroute)";
+        log::ErrorF("[hook '%s'] aborted: %s (kind=%d)",
+                    name.c_str(), out.reason.c_str(), static_cast<int>(kind));
         return out;
     }
 
@@ -71,8 +105,10 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
         return out;
     }
 
-    // Drive the detour backend, selected by the caller's explicit Backend arg.
-    // MinHook patches without thread-suspend (the loader-lock-safe path);
+    // Drive the detour backend, selected from the caller's InstallKind via
+    // select_backend (the single-sourced §4.2 table; the guard above proved the
+    // selection cannot misroute). MinHook patches without thread-suspend (the
+    // loader-lock-safe path);
     // safetyhook is thread-safe and reaches any 64-bit target via its E9->FF
     // fallback (the function-entry chain path). detour_addr is expected to
     // already be within ±2 GB of target_addr (caller's responsibility; e.g.,

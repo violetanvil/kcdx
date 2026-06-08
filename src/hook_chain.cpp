@@ -1992,13 +1992,12 @@ AddResult AddMid(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    // Mid-function install stays on MinHook this step (Phase 3 replaces the
-    // mid path with safetyhook::MidHook; only function-entry moves to
-    // safetyhook here). A blanket swap at this shared chokepoint would wrongly
-    // route mid here too — the explicit per-site Backend arg is how only
-    // function-entry moves.
+    // This call site IS a chain mid-function install — it declares its KIND;
+    // the engine selects the backend (select_backend maps ChainMid -> MinHook
+    // until Phase 3 moves mid onto safetyhook::MidHook, design §4.2/§5). The
+    // call site cannot name a backend, so it cannot misroute.
     auto install = kcdx::hook_engine::InstallRuntime(
-        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::MinHook);
+        name, targetVa, (void*)jit, kcdx::hook_engine::InstallKind::ChainMid);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;
@@ -2318,13 +2317,14 @@ AddResult Add(lua_State*                             L,
         return res;
     }
 
-    // Function-entry install routes to safetyhook (design §4.1/§4.3 —
-    // safetyhook is "just the patcher" under the one detour the chain installs
-    // per target; the chain/CanCoexist/ordered ChainEntry vector/engine-stamp/
-    // off-thread marshaling are unchanged). safetyhook's E9->FF fallback reaches
-    // any 64-bit target, closing the cap-21/cap-22 far-target gap.
+    // This call site IS a chain function-entry install — it declares its KIND;
+    // the engine selects the backend (select_backend maps ChainFunctionEntry ->
+    // safetyhook, design §4.1/§4.2/§4.3 — safetyhook is "just the patcher" under
+    // the one detour the chain installs per target; the chain/CanCoexist/ordered
+    // ChainEntry vector/engine-stamp/off-thread marshaling are unchanged, and its
+    // E9->FF fallback reaches any 64-bit target, closing the cap-21/cap-22 gap).
     auto install = kcdx::hook_engine::InstallRuntime(
-        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::Safetyhook);
+        name, targetVa, (void*)jit, kcdx::hook_engine::InstallKind::ChainFunctionEntry);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;
@@ -2487,11 +2487,11 @@ AddResult AddCMid(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    // Mid-function install stays on MinHook this step (Phase 3 replaces the
-    // mid path with safetyhook::MidHook; only function-entry moves to
-    // safetyhook here).
+    // This call site IS a chain mid-function install — it declares its KIND;
+    // the engine selects the backend (select_backend maps ChainMid -> MinHook
+    // until Phase 3, design §4.2/§5).
     auto install = kcdx::hook_engine::InstallRuntime(
-        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::MinHook);
+        name, targetVa, (void*)jit, kcdx::hook_engine::InstallKind::ChainMid);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;
@@ -2791,11 +2791,13 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
         return res;
     }
 
-    // Function-entry install routes to safetyhook (design §4.1/§4.3 — the chain
-    // is unchanged; safetyhook is just the patcher under the one detour, and its
-    // E9->FF fallback reaches any 64-bit target).
+    // This call site IS a chain function-entry install — it declares its KIND;
+    // the engine selects the backend (select_backend maps ChainFunctionEntry ->
+    // safetyhook, design §4.1/§4.2/§4.3 — the chain is unchanged; safetyhook is
+    // just the patcher under the one detour, its E9->FF fallback reaching any
+    // 64-bit target).
     auto install = kcdx::hook_engine::InstallRuntime(
-        name, targetVa, (void*)jit, kcdx::hook_engine::Backend::Safetyhook);
+        name, targetVa, (void*)jit, kcdx::hook_engine::InstallKind::ChainFunctionEntry);
     if (!install.ok) {
         res.reason = "InstallRuntime failed: " + install.reason;
         return res;

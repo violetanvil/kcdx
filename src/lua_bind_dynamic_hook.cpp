@@ -344,11 +344,11 @@ int Lua_DynamicHook(lua_State* L) {
         kcdx::dev::KV("jit_addr", (void*)jit_addr));
 
     // Install via hook_engine — same conflict matrix + first-wins as TOML hooks.
-    // dynamic_hook stays on MinHook this step (a non-chain caller; only the
-    // function-entry chain path moves to safetyhook here. Step 5 formalizes the
-    // selection at InstallRuntime via a context predicate).
+    // dynamic_hook is a NON-chain caller — it declares its KIND; the engine
+    // selects the backend (select_backend maps DynamicHook -> MinHook, design
+    // §4.2). The call site cannot name a backend, so it cannot misroute.
     auto install = kcdx::hook_engine::InstallRuntime(
-        name, target_addr, (void*)jit_addr, kcdx::hook_engine::Backend::MinHook);
+        name, target_addr, (void*)jit_addr, kcdx::hook_engine::InstallKind::DynamicHook);
     if (!install.ok) {
         KCDX_DEV("LUA", "DYNAMIC_HOOK/install-failed",
             kcdx::dev::KV("name",   name),
