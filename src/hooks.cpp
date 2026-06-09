@@ -47,6 +47,7 @@
 #include "early_hook_selftest.h"                    // cap-80 early-hook primitive
 #include "cap81_vm_adopt_selftest.h"                // cap-81 keystone: VM build + engine adopt
 #include "foreign_hook_detect_selftest.h"           // comp-18 foreign-hook prologue classifier
+#include "foreign_hook_chain_selftest.h"            // comp-19 foreign-hook chaining
 
 // early_hook.h is included from dllmain.cpp now — the BugSplat ctor hook
 // installs from kcdx.dll DllMain (early_hook::bugsplat::Arm), not from
@@ -810,6 +811,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // is a faithful prologue. Boot-only, no hook-fire / "ready" / VM dependency.
     // One-shot guarded internally.
     kcdx::foreign_hook_detect_selftest::RunSelfTestOnce();
+
+    // comp-19-foreign-chaining: engine self-report for foreign-hook CHAINING
+    // (foreign_hook_detect §6.2/§6.3; Phase 4 step 8, E14/E20 — comp-18 proved
+    // DETECTION, this proves CHAINING). Installs a synthetic FOREIGN E9 on a
+    // kcdx-controlled stub, then hooks the SAME stub with kcdx's own detour;
+    // asserts BOTH fire in order game->kcdx->foreign->original (the chaining
+    // falls out of safetyhook relocating the foreign jump into kcdx's
+    // trampoline). Dev-gated (installs real safetyhook detours), boot-only,
+    // one-shot guarded internally; no hook-fire / "ready" / VM dependency.
+    kcdx::foreign_hook_chain_selftest::RunSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

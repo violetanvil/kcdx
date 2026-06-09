@@ -5,8 +5,11 @@
 // target's prologue and classify it — Clean (real game instructions),
 // KcdxTrampoline (a jump into a range kcdx itself allocated — already in a kcdx
 // chain), or Foreign (an E9/FF25 jump pointing OUTSIDE every kcdx-owned
-// trampoline range — another mod hooked it first). DETECTION only; following a
-// foreign jump + chaining onto it is Step 8 (foreign_hook_chain). Design §6.1.
+// trampoline range — another mod hooked it first). This classifier is DETECTION
+// only — its one job is the verdict. CHAINING onto a Foreign verdict (Step 8,
+// §6.2/§6.3) lives in the install path that consumes the verdict (hook_chain
+// DetectForeignBeforeInstall → the normal SafetyhookBackend install, which
+// relocates the foreign jump into kcdx's trampoline), NOT here. Design §6.1.
 //
 // The discriminator is kcdx's OWN trampoline records, NOT a query into
 // safetyhook: safetyhook's Allocator does NOT expose its ranges — m_memory is

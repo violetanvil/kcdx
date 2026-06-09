@@ -17,13 +17,34 @@ const char* InlineErrorToString(const safetyhook::InlineHook::Error& e) {
     case safetyhook::InlineHook::Error::BAD_ALLOCATION:
         return "BAD_ALLOCATION (trampoline allocation failed)";
     case safetyhook::InlineHook::Error::FAILED_TO_DECODE_INSTRUCTION:
-        return "FAILED_TO_DECODE_INSTRUCTION (could not decode the target prologue)";
+        // The prologue could not be decoded for relocation. On a FOREIGN target
+        // (another mod already hooked it, foreign_hook_detect §6.1) this is the
+        // unrelocatable-foreign-shape case (design §6.3): kcdx cannot safely chain
+        // onto a foreign jump it can't relocate, so the install fails LOUD here
+        // and the foreign mod's hook is left intact (the prologue is restored by
+        // reset() below) — never a silent mis-install or a corrupted prologue
+        // (AP14). On a CLEAN target it is a genuinely undecodable game prologue.
+        return "FAILED_TO_DECODE_INSTRUCTION (could not decode the target prologue "
+               "for relocation; if the target carries a foreign hook, its jump is "
+               "an unrelocatable shape and kcdx cannot safely chain onto it — the "
+               "foreign hook is left intact and kcdx's is not installed)";
     case safetyhook::InlineHook::Error::SHORT_JUMP_IN_TRAMPOLINE:
         return "SHORT_JUMP_IN_TRAMPOLINE (a relocated short jump can't reach)";
     case safetyhook::InlineHook::Error::IP_RELATIVE_INSTRUCTION_OUT_OF_RANGE:
         return "IP_RELATIVE_INSTRUCTION_OUT_OF_RANGE (a relocated RIP-relative insn is out of range)";
     case safetyhook::InlineHook::Error::UNSUPPORTED_INSTRUCTION_IN_TRAMPOLINE:
-        return "UNSUPPORTED_INSTRUCTION_IN_TRAMPOLINE (an unrelocatable instruction in the prologue)";
+        // An instruction in the prologue cannot be relocated into the trampoline.
+        // On a FOREIGN target this is the unrelocatable-foreign-shape case the
+        // §6.3 chaining contract names: kcdx cannot safely chain onto a foreign
+        // detour whose jump form safetyhook can't relocate, so the install fails
+        // LOUD and the foreign mod's hook survives (prologue restored by reset())
+        // — better than corrupting a prologue another mod is actively in (AP14,
+        // §6.3 surface-don't-mishandle). On a CLEAN target it is an unrelocatable
+        // game prologue instruction.
+        return "UNSUPPORTED_INSTRUCTION_IN_TRAMPOLINE (an unrelocatable instruction "
+               "in the prologue; if the target carries a foreign hook, its jump is "
+               "a shape kcdx cannot safely chain onto — the foreign hook is left "
+               "intact and kcdx's is not installed)";
     case safetyhook::InlineHook::Error::FAILED_TO_UNPROTECT:
         return "FAILED_TO_UNPROTECT (could not unprotect the target/trampoline memory)";
     case safetyhook::InlineHook::Error::NOT_ENOUGH_SPACE:

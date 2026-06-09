@@ -471,20 +471,62 @@ Chain* FindChain(uintptr_t va) {
     return it == g_chains.end() ? nullptr : it->second.get();
 }
 
-// Foreign-hook DETECTION at the first-touch install (design §6.1). Reads the
-// target's prologue and classifies it (Clean / KcdxTrampoline / Foreign /
-// Unknown). DETECTION only — Step 8 (foreign_hook_chain) chains onto a Foreign
-// verdict; this step installs normally over it, logging the foreign branch as a
-// no-op-but-logged stub. Shared by Add (Lua) + AddC (C++), the two first-touch
-// sites that build a detour. Called ONLY on the FindChain==null first-touch
-// path, so it never runs for an existing-chain append and never alters the
-// clean-prologue common path (Clean/Unknown both fall through to install).
+// Foreign-hook DETECTION + CHAINING at the first-touch install (design §6.1,
+// §6.2, §6.3). Reads the target's prologue and classifies it (Clean /
+// KcdxTrampoline / Foreign / Unknown). A Foreign verdict CHAINS onto the foreign
+// mod's detour — and the chaining is done by the NORMAL install path that
+// follows this call, not here: the same SafetyhookBackend install a Clean target
+// takes ALSO chains a Foreign one, because safetyhook's InlineHook::create
+// RELOCATES a relative prologue jump (a foreign E9 rel32 / FF25) into kcdx's
+// trampoline with an IP-fixed displacement, so the relocated foreign jump still
+// lands at the foreign detour. kcdx's trampoline-original (install.pOriginal, the
+// JIT call-original slot) therefore runs the FOREIGN mod's detour, which runs the
+// real function: game → kcdx → foreign → original (design §6.2, kcdx-first load
+// order §6.3). kcdx does NOT follow the jump or capture the detour by hand —
+// safetyhook's relocation already captures it as the trampoline-original.
+// SOURCE: vendor/safetyhook/src/inline_hook.cpp e9_hook — a relative instruction
+// (disp.size==32 / imm[0].size==32) is decoded (lines 209-217) and relocated into
+// the trampoline with a recomputed new_disp (lines 248-259), read this session.
+//
+// So this function's ONLY job for a Foreign verdict is to LOG the chain (the
+// install that follows does the rest). The one case it must surface LOUD is the
+// foreign shape safetyhook canNOT relocate: when create returns
+// UNSUPPORTED_INSTRUCTION_IN_TRAMPOLINE / FAILED_TO_DECODE_INSTRUCTION
+// (inline_hook.cpp:227, :203), the install FAILS — InstallRuntime returns
+// install.ok == false, the caller aborts the Add with a reason, and
+// SafetyhookBackend's enable() already restored the prologue (hook_.reset()), so
+// the FOREIGN mod's hook SURVIVES and kcdx's does not (better than corrupting a
+// prologue another mod is in — AP14, §6.3 surface-don't-mishandle). That loud
+// failure is owned by SafetyhookBackend::enable()'s error log + the caller's
+// "InstallRuntime failed" reason; this function logs the chain INTENT, the
+// install reports the outcome.
+//
+// OUT OF SCOPE for v1 (design §6.3, §10 — NOT built): a foreign mod that unhooks
+// mid-session, or installs AFTER kcdx. v1 chains onto a foreign hook PRESENT at
+// kcdx's install time, living for the session. Chain-always — no configurable
+// policy (§6.4).
+//
+// Shared by Add (Lua) + AddC (C++), the two first-touch sites that build a
+// detour. Called ONLY on the FindChain==null first-touch path, so it never runs
+// for an existing-chain append and never alters the clean-prologue common path
+// (Clean/Unknown both fall through to install — the Foreign path takes the SAME
+// install, only the log line differs).
 void DetectForeignBeforeInstall(uintptr_t targetVa, const std::string& name) {
     switch (kcdx::foreign_hook_detect::Classify(targetVa, name.c_str())) {
     case kcdx::foreign_hook_detect::Prologue::Foreign:
-        log::WarnF("hook_chain: '%s' target 0x%p carries a FOREIGN detour — "
-                   "installing over it (chaining onto it is Step 8, not yet "
-                   "built); the foreign mod's hook may be displaced until then",
+        // CHAINING (design §6.2): the install that follows is the SAME
+        // SafetyhookBackend install a Clean target takes — safetyhook relocates
+        // the foreign jump into kcdx's trampoline IP-fixed, so kcdx's
+        // call-original runs the foreign detour → real function. kcdx runs first
+        // (§6.3). If the foreign shape is one safetyhook can't relocate, the
+        // install fails LOUD (SafetyhookBackend::enable + the caller's reason) and
+        // the foreign hook survives — kcdx does not corrupt the prologue.
+        log::InfoF("hook_chain: '%s' target 0x%p carries a FOREIGN detour — "
+                   "CHAINING onto it (game -> kcdx -> foreign -> original): "
+                   "safetyhook relocates the foreign jump into kcdx's trampoline, "
+                   "so kcdx's call-original runs the foreign mod's hook. If the "
+                   "foreign jump is an unrelocatable shape, the install fails "
+                   "loud below and the foreign hook is left intact.",
                    name.c_str(), reinterpret_cast<void*>(targetVa));
         break;
     case kcdx::foreign_hook_detect::Prologue::Unknown:

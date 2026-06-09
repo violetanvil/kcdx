@@ -297,6 +297,7 @@ add_library(kcdx SHARED
     src/statement_resolve_selftest.cpp
     src/early_hook_selftest.cpp
     src/foreign_hook_detect_selftest.cpp
+    src/foreign_hook_chain_selftest.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

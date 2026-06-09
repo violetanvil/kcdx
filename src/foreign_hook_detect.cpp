@@ -46,13 +46,28 @@ JumpDecode DecodeJump(const uint8_t* bytes) {
     }
 
     // FF 25 disp32 [target8] — 6-byte instruction (FF 25 + a 4-byte
-    // displacement, =0 in safetyhook's form) followed by the 8-byte ABSOLUTE
-    // target the jump reads THROUGH (rip-relative [rip+0] in 64-bit mode, so
-    // the pointer sits immediately after the 6-byte instruction). target =
-    // *(uint64*)(bytes + 6). SOURCE: Intel SDM Vol.2 FF /4 + modrm 25
+    // displacement) followed by the 8-byte ABSOLUTE target the jump reads
+    // THROUGH (rip-relative [rip+disp32] in 64-bit mode). target =
+    // *(uint64*)(bytes + 6 + disp32). SOURCE: Intel SDM Vol.2 FF /4 + modrm 25
     // (rip-relative); the safetyhook far-target fallback writes exactly this
-    // (vendor/safetyhook ff_hook — read this session).
+    // with disp32 == 0 (vendor/safetyhook ff_hook — read this session).
+    //
+    // disp32 != 0 — the pointer is NOT at [rip+0]: reading bytes+6 as the
+    // absolute target would decode the WRONG VA (the bytes there are an
+    // instruction, not the pointer). The reader buffer only guarantees the
+    // 14-byte safetyhook form (disp32 == 0), and following a non-zero
+    // displacement could read outside it. So a non-zero disp32 is NOT decoded as
+    // a recognized jump — isJump stays false, and Classify surfaces it as
+    // Unknown (conservative, never silently mis-decoded → never mis-chained,
+    // AP14). A foreign FF25 with a non-zero disp32 is still correctly NOT
+    // mis-classified; its verdict becomes the surfaced Unknown rather than a
+    // Foreign with a wrong jumps_to VA.
     if (bytes[0] == kFF && bytes[1] == kModrm25) {
+        int32_t disp32 = 0;
+        std::memcpy(&disp32, bytes + 2, sizeof(disp32));  // little-endian int32
+        if (disp32 != 0) {
+            return out;  // not the [rip+0] form this decoder reads — surfaced as Unknown
+        }
         uint64_t abs = 0;
         std::memcpy(&abs, bytes + 6, sizeof(abs));  // little-endian uint64 absolute target
         out.isJump = true;
@@ -118,12 +133,21 @@ Prologue Classify(uintptr_t targetVa, const char* hookName) {
         return Prologue::KcdxTrampoline;
     }
 
+    // `jumps_to` is INFORMATIONAL only — the decoded foreign-detour VA for the
+    // log. It is NOT load-bearing for chaining: kcdx does not follow this jump by
+    // hand. The install that follows (DetectForeignBeforeInstall's Foreign branch
+    // → the normal SafetyhookBackend install) chains by safetyhook RELOCATING the
+    // foreign prologue jump into kcdx's trampoline IP-fixed (§6.2), which captures
+    // the foreign detour correctly regardless of what jumps_to decoded. (An FF25
+    // with a non-zero disp32 never reaches here — DecodeJump returns the
+    // surfaced-Unknown verdict for it, so jumps_to is always the [rip+0] /
+    // E9-relative target.)
     LOG_INFO_KV(kCategory, "foreign_hook_detected",
         ::kcdx::log::KV("hook", who),
         ::kcdx::log::KV("target", reinterpret_cast<void*>(targetVa)),
         ::kcdx::log::KV("jumps_to", reinterpret_cast<void*>(jumpTarget)),
         ::kcdx::log::KV("form", IsAbsoluteFF25(p) ? "ff25" : "e9"),
-        ::kcdx::log::KV("note", "chaining is Step 8 — not chained yet"));
+        ::kcdx::log::KV("note", "chaining onto it via safetyhook relocation (Step 8)"));
     return Prologue::Foreign;
 }
 
