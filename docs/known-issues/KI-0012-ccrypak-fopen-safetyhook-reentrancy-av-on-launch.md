@@ -906,6 +906,35 @@ nested inside one). NEXT: a bisect probe — call SELECT's sub-calls individuall
 SELECT) and find the minimal set that makes the boot clean; that names the exact call kcdx must make.
 Then the production fix calls JUST that, by refdb name (AP1), from HookedCtor.
 
+## PROBE O RESULT — it is the ENABLED-LIST, not a side effect (the N-vs-O isolation)
+
+PROBE O: call native SELECT (side effects done), THEN restore kcdx's enabled-list over SELECT's →
+**CRASH, same FSR2 AV** (`module_rva=11723296`). The one-variable comparison is decisive:
+- **PROBE N:** call SELECT, KEEP SELECT's list → CLEAN.
+- **PROBE O:** call SELECT, RESTORE kcdx's list → CRASH.
+
+N and O differ in EXACTLY ONE variable: the enabled-list. SELECT's side effects ran in BOTH. So the
+fix is NOT a missing side effect — **it is the ENABLED-LIST itself.** The "missing side effect"
+conclusion (PROBE N) is FALSIFIED: PROBE N booted clean because it kept SELECT's LIST, not (only)
+because of side effects. With SELECT's genuine list → clean; with kcdx's list → crash.
+
+**The difference is kcdx's enabled-list vs the genuine one** (PROBE L data): genuine count=**14**, kcdx
+count=**104**; both have I_Mod* entries with the correct vtable, but the records + count differ. The
+graphics path reads the enabled-list (or something derived from it), and kcdx's 104-entry list breaks
+it where SELECT's 14-entry list does not. Candidates for the fatal difference:
+- **The COUNT (104 vs 14):** kcdx enables every discovered plugin (104 — incl. all test-plugins);
+  genuine enables 14 real mods. Does graphics size something by the enabled-list count? 104 vs 14 is a
+  big delta.
+- **kcdx's synthesized I_Mod records:** record_synth builds 0x70-byte records with harvested vtables +
+  CryString fields. A field graphics reads (NOT the vtable, which matches) may be malformed in kcdx's
+  records vs genuine ones — a string field, a flag, an offset the graphics path touches.
+
+This is the tightest isolation in the trail (N vs O = one variable, flips the outcome). NEXT: narrow
+WHAT about kcdx's list breaks graphics — the count, or the record contents. Probe: (a) does a kcdx
+list TRUNCATED to ~14 entries boot clean (count); (b) does deep-diffing one kcdx I_Mod record vs a
+genuine one (within 0x70) show a field graphics-relevant. The fix then makes kcdx's list/records match
+what graphics needs — while kcdx keeps full ownership + order.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
