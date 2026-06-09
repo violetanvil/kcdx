@@ -499,6 +499,48 @@ the missing/wrong field IS the bug. Reuse-first per `reverse-engineering.md` (re
 `_research` → Ghidra). The crash being in graphics init that reads a C_ModManager field is itself a
 checkable RE question (what does the FSR2/CreateInstance path read off the modMgr / csys slot).
 
+## ROOT CAUSE (PROBE I — static RE, prior `_research/init-cycle-recon`) — kcdx leaves the SCANNED-LIST (+0x18/+0x20/+0x28) NULL
+
+The native `C_ModManager` ctor + its inline SELECT driver populate TWO vectors in the 0x68 object
+(`_research/init-cycle-recon/FINDINGS.md`, live-probed in two boots, POINT B vs POINT C):
+- **scanned-list** at +0x18/+0x20/+0x28 — a `std::vector<I_Mod>` of **0x70-stride INLINE records**
+  (the actual mod records; SELECT's "scan `mods/` + Steam-workshop" pass writes it: 7 records boot 1,
+  15 boot 2).
+- **enabled-list** at +0x30/+0x38/+0x40 — a `std::vector<I_Mod*>` (8-byte pointers into the scanned
+  records; SELECT's "read mod_order + enable" pass writes it).
+
+**kcdx's `HookedCtor` populates ONLY the enabled-list (+0x30/+0x38/+0x40) and leaves the scanned-list
+(+0x18/+0x20/+0x28) NULL** — mislabeling those three slots "unused" (`ctor_bracket.cpp:197`). But the
+scanned-list is NOT unused: the engine populates it natively and READS it downstream (MOUNT, the
+report cmd, and — per the crash — a graphics/`CreateInstance` consumer). With +0x18/+0x20/+0x28 all
+null, a consumer that iterates the scanned list computes `(end-begin)/0x70` over nulls or derefs a
+scanned `I_Mod` record at a null/garbage base → the FSR2/NGX invalid-pointer read. The
+garbage-varies-per-boot signature (PROBE F) fits: a null vector deref'd reads whatever adjacent heap
+holds that boot.
+
+**This is the falsifiable mechanism:** the wrong VALUE is the null scanned-list begin/end/cap; the
+WRONG WRITE is kcdx skipping SELECT (which would populate it) AND not populating it itself; the
+ORIGINAL PATH made it inevitable because kcdx "fully replaces the ctor, no original SELECT call"
+(logged every boot) while only rebuilding the enabled-list — so the scanned-list the engine still
+reads is never built. PROBE H proved it: with the takeover OFF (native ctor + SELECT run), the
+scanned-list IS populated and the crash is gone.
+
+**Also explains the user's symptom** ("mods didn't load from the Workshop" with the takeover off):
+SELECT's Steam-workshop scan is what kcdx's takeover replaces — so kcdx's absorption is HOW workshop
+mods normally load; disabling it dropped them. The fix must keep mod-loading working AND give the
+engine a valid scanned-list.
+
+## The fix is a design fork (for the user — surfaced after root-cause verification)
+
+Root cause is identified; the FIX is a real design decision (how to give the engine a valid
+scanned-list while keeping kcdx's mod-absorption). Candidate approaches (to surface, not decide):
+(a) kcdx populates the scanned-list +0x18/+0x20/+0x28 with the `I_Mod` records its enabled-list
+points at (a valid `std::vector<I_Mod>` of the 0x70-stride records); (b) the takeover CALLS the
+native ctor (which runs SELECT → builds both lists natively), then kcdx re-orders the enabled-list on
+top (the "bracket" model rather than "full replace"); (c) point the scanned-list at the same records
+the enabled-list does, if the layout allows. Each has different RE + correctness implications. This
+goes to Gate B (root-cause-verifier) first, then to the user as a design fork (`/debug` §2.5 Gate A).
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
