@@ -1,45 +1,47 @@
 # CAP-84 — survival per-kind DISPATCH + the Ambiguous status.
 #
 # The behavior under test is ENGINE machinery, not an author surface: the
-# survival checker (src/survival.{h,cpp}) gained a per-kind DISPATCH entry point
+# survival checker (src/survival.{h,cpp}) is a per-kind DISPATCH entry point
 # (SurvivalCheck(Payload{kind,...}, rva, derivesFrom, dll)) with a kind-
-# discriminated payload — the foundation step-3.2's 5 non-function checks and
-# step-3.3's live reachability check plug into. This step (3.1) builds ONLY: the
-# dispatch + the payload model + the Ambiguous status + the EXISTING function-
-# hash check moved under the dispatch (verdict UNCHANGED); every other kind is a
-# DEFINED fail-loud step-3.2 stub. This kcdx.toml is a MANIFEST-ONLY STUB — no
-# plugin.lua, no DLL — whose sole job is to pre-register the matrix row via
-# test_names so it shows PENDING until the engine reports it. Same pattern as
-# cap-60-version-check-cache / cap-83-stmt-resolve / cap-66-node-classifier (the
-# engine self-reports directly via kcdx::test::ReportResult from
-# src/survival_dispatch_selftest.cpp; a manifest stub holds the name).
+# discriminated payload. Step 3.1 built the dispatch + payload + the Ambiguous
+# status + the function-hash path; step 3.2 (this step) added the 5 STATIC
+# non-function checks (callsite / string_anchor / instruction_anchor / data_slot
+# / vtable_base, ALL on-disk per D25) + the anchor-dependency ordering
+# (CheckOrdered — a Changed anchor transitively blocks dependents). vtable_index
+# stays a DEFINED deferral; the live reachability check is step 3.3. This
+# kcdx.toml is a MANIFEST-ONLY STUB — no plugin.lua, no DLL — whose sole job is
+# to pre-register the matrix row via test_names so it shows PENDING until the
+# engine reports it. Same pattern as cap-60-version-check-cache /
+# cap-83-stmt-resolve / cap-66-node-classifier (the engine self-reports directly
+# via kcdx::test::ReportResult from src/survival_dispatch_selftest.cpp).
 #
-# What it proves:
-#   cap-84-survival-dispatch  The per-kind survival dispatch:
+# What it proves (six sub-checks):
+#   cap-84-survival-dispatch  The per-kind survival dispatch + 5 static checks:
 #     1. FUNCTION VERDICT UNCHANGED — the dispatch's function path returns the
 #        IDENTICAL Result the legacy SurvivalCheck(rva,length,hash,len) entry
-#        returns for the same inputs (legacy IS today's behavior, so
-#        dispatch==legacy IS "the function verdict is unchanged"). Asserted over
-#        3 deterministic cases (not_applicable / expected_hash_bad_length /
-#        length_zero) + 1 REAL on-disk SaveGame check when the DB carries its
-#        content_hash+length (DEGRADED PASS otherwise — like cap-83).
-#     2. NON-FUNCTION STUBS ARE FAIL-LOUD — every non-function kind dispatched
-#        returns CannotCheck with a DEFINED token (callsite/string_anchor/
-#        instruction_anchor/data_slot/vtable_base → "not_implemented_3_2";
-#        vtable_index → "vtable_index_deferred"), NEVER Unchanged/Changed/empty.
-#     3. AMBIGUOUS IS REPORTABLE — survival::Status::Ambiguous maps through the
-#        pass to vcc::FuncStatus::Ambiguous (its own value, not collapsed to
-#        CannotCheck) and round-trips through the cache codec byte-identically.
-#        Reported by the engine at boot (no save-load gesture, no hook-fire
-#        dependency).
+#        returns (3 deterministic cases + 1 REAL on-disk SaveGame check; DEGRADED
+#        PASS when the DB lacks content_hash+length — like cap-83).
+#     2. vtable_index DEFERRAL — dispatched vtable_index returns CannotCheck /
+#        "vtable_index_deferred", never a false verdict.
+#     3. AMBIGUOUS IS REPORTABLE — survival::Status::Ambiguous round-trips the
+#        cache codec byte-identically + the pass maps a non-byte ref to CannotCheck.
+#     4. CALLSITE — a synthetic improbable AOB → Changed, an ultra-common 2-byte
+#        AOB → Ambiguous, a REAL curated callsite → Unchanged (DEGRADED if absent).
+#     5. STRING_ANCHOR — a synthetic absent literal → Changed, a REAL curated
+#        anchor → Unchanged (DEGRADED if absent).
+#     6. TRANSITIVE ANCHOR-CHANGED — a 2-row CheckOrdered set (a Changed anchor +
+#        a dependent) MUST short-circuit the dependent to CannotCheck /
+#        "anchor_changed", never a silent pass.
 #
-# FALSIFIABLE: the row goes RED if the dispatch's function path diverges from the
-# legacy verdict (a changed function verdict), or any non-function kind
-# fabricates a non-CannotCheck verdict / silent empty reason, or Ambiguous is not
-# a usable status that survives the pass + codec.
+# FALSIFIABLE: the row goes RED if the function path diverges from legacy, or
+# vtable_index returns a non-deferred verdict, or Ambiguous does not survive the
+# pass+codec, or a gone callsite reads Unchanged / a multi-hit AOB does not read
+# Ambiguous, or an absent string literal reads Unchanged, or a Changed anchor
+# does not transitively block its dependent.
 #
 # Test mode: boot-only. Resolves + reports synchronously on the first suite tick.
-# No console typing, no in-game gesture.
+# No console typing, no in-game gesture. The on-disk sub-checks DEGRADE-pass when
+# WHGame.dll is not mapped (a non-game host); the synthetic cases need no DB.
 
 [kcdx]
 test_suite_only = true

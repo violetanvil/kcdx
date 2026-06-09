@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 
 namespace kcdx::pe {
 
@@ -56,6 +57,21 @@ std::vector<SectionView> ReadOnlyDataSections(const ModuleView& m) {
                                  bool readable = s.characteristics & IMAGE_SCN_MEM_READ;
                                  bool exec = s.characteristics & IMAGE_SCN_MEM_EXECUTE;
                                  return !(readable && !exec);
+                             }),
+              all.end());
+    return all;
+}
+
+std::vector<SectionView> WritableDataSections(const ModuleView& m) {
+    // G2 — writable + not executable (= .data-class). The mirror of
+    // ReadOnlyDataSections with the write bit required, so .data (filtered OUT
+    // of both Executable and ReadOnly because it is writable) gets a predicate.
+    auto all = Sections(m);
+    all.erase(std::remove_if(all.begin(), all.end(),
+                             [](const SectionView& s) {
+                                 bool writable = s.characteristics & IMAGE_SCN_MEM_WRITE;
+                                 bool exec = s.characteristics & IMAGE_SCN_MEM_EXECUTE;
+                                 return !(writable && !exec);
                              }),
               all.end());
     return all;
@@ -195,6 +211,175 @@ bool FindFunctionBoundsViaPdata(const ModuleView& m,
         }
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// ON-DISK section span access (D25 — the survival static checks read the
+// on-disk file, not the live relocated image). Shares the DOS+NT header parse
+// RvaToFileOffsetOnDisk uses; returns spans bounded by SizeOfRawData.
+
+namespace {
+
+// Validate the on-disk PE headers and return the NT header pointer, or nullptr
+// on any malformed/truncated buffer. Mirrors RvaToFileOffsetOnDisk's header
+// checks so the on-disk accessors fail loud exactly where the offset mapper
+// does. The caller separately bounds the section table against the buffer
+// before walking it.
+const IMAGE_NT_HEADERS* ParseOnDiskNt(const uint8_t* fileData, size_t fileSize) {
+    if (!fileData) return nullptr;
+    if (fileSize < sizeof(IMAGE_DOS_HEADER)) return nullptr;
+    auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(fileData);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return nullptr;
+    if (dos->e_lfanew < 0) return nullptr;
+    auto ntOff = static_cast<size_t>(dos->e_lfanew);
+    if (ntOff > fileSize || fileSize - ntOff < sizeof(IMAGE_NT_HEADERS)) return nullptr;
+    auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(fileData + ntOff);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return nullptr;
+    return nt;
+}
+
+}  // namespace
+
+std::vector<OnDiskSection> OnDiskSections(const uint8_t* fileData, size_t fileSize) {
+    std::vector<OnDiskSection> result;
+    const IMAGE_NT_HEADERS* nt = ParseOnDiskNt(fileData, fileSize);
+    if (!nt) return result;  // fail-loud empty — the caller treats it as unparseable.
+
+    const WORD numSections = nt->FileHeader.NumberOfSections;
+    auto firstSec = IMAGE_FIRST_SECTION(nt);
+    auto secTableOff =
+        static_cast<size_t>(reinterpret_cast<const uint8_t*>(firstSec) - fileData);
+    if (secTableOff > fileSize) return result;
+    if ((fileSize - secTableOff) / sizeof(IMAGE_SECTION_HEADER) < numSections) {
+        return result;  // section table runs past the buffer — malformed.
+    }
+
+    for (WORD i = 0; i < numSections; ++i) {
+        const auto& sh = firstSec[i];
+        const uint64_t rawBase = sh.PointerToRawData;
+        const uint64_t rawSize = sh.SizeOfRawData;
+        const uint64_t rawEnd = rawBase + rawSize;
+        // Drop a section whose raw span overflows or runs past the buffer — its
+        // bytes are not on-disk-readable, so a scan over it would read OOB.
+        if (rawEnd < rawBase) continue;
+        if (rawEnd > fileSize) continue;
+
+        OnDiskSection v;
+        v.name.assign(reinterpret_cast<const char*>(sh.Name),
+                      strnlen(reinterpret_cast<const char*>(sh.Name), 8));
+        v.data = fileData + rawBase;
+        v.size = static_cast<size_t>(rawSize);
+        v.rva = sh.VirtualAddress;
+        v.virtualSize = sh.Misc.VirtualSize;
+        v.characteristics = sh.Characteristics;
+        result.push_back(std::move(v));
+    }
+    return result;
+}
+
+std::vector<OnDiskSection> OnDiskExecutableSections(const uint8_t* fileData, size_t fileSize) {
+    auto all = OnDiskSections(fileData, fileSize);
+    all.erase(std::remove_if(all.begin(), all.end(),
+                             [](const OnDiskSection& s) {
+                                 return !(s.characteristics & IMAGE_SCN_MEM_EXECUTE);
+                             }),
+              all.end());
+    return all;
+}
+
+std::vector<OnDiskSection> OnDiskReadOnlyDataSections(const uint8_t* fileData, size_t fileSize) {
+    auto all = OnDiskSections(fileData, fileSize);
+    all.erase(std::remove_if(all.begin(), all.end(),
+                             [](const OnDiskSection& s) {
+                                 bool readable = s.characteristics & IMAGE_SCN_MEM_READ;
+                                 bool exec = s.characteristics & IMAGE_SCN_MEM_EXECUTE;
+                                 return !(readable && !exec);
+                             }),
+              all.end());
+    return all;
+}
+
+std::vector<OnDiskSection> OnDiskWritableDataSections(const uint8_t* fileData, size_t fileSize) {
+    auto all = OnDiskSections(fileData, fileSize);
+    all.erase(std::remove_if(all.begin(), all.end(),
+                             [](const OnDiskSection& s) {
+                                 bool writable = s.characteristics & IMAGE_SCN_MEM_WRITE;
+                                 bool exec = s.characteristics & IMAGE_SCN_MEM_EXECUTE;
+                                 return !(writable && !exec);
+                             }),
+              all.end());
+    return all;
+}
+
+bool FindDisp32Forward(const uint8_t* fileData, size_t fileSize,
+                       uint32_t instrRva, uint32_t dispOffsetInInstr,
+                       uint32_t instrLen, uint32_t& targetRvaOut) {
+    // The disp32 field must fit within the instruction.
+    if (instrLen < 4) return false;
+    if (dispOffsetInInstr > instrLen - 4) return false;
+
+    // Map the 4-byte disp32 field's RVA to its on-disk file offset (fail-loud
+    // false if it lies in no on-disk section).
+    const uint64_t dispRva64 = static_cast<uint64_t>(instrRva) + dispOffsetInInstr;
+    if (dispRva64 > std::numeric_limits<uint32_t>::max()) return false;
+    size_t dispFileOff = 0;
+    if (!RvaToFileOffsetOnDisk(fileData, fileSize,
+                               static_cast<uint32_t>(dispRva64), 4, dispFileOff)) {
+        return false;
+    }
+
+    // SOURCE: x64 RIP-relative addressing — the displacement is relative to the
+    // address of the NEXT instruction (instrEnd = instrRva + instrLen). Same
+    // little-endian decode + instrEnd-relative arithmetic as FindLeaXrefsTo
+    // (.cpp:96-100), applied FORWARD (instruction-known → target).
+    const uint8_t* p = fileData + dispFileOff;
+    int32_t disp = static_cast<int32_t>(
+        p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+    const int64_t instrEnd = static_cast<int64_t>(instrRva) + instrLen;
+    const int64_t target = instrEnd + disp;
+    if (target < 0 || target > std::numeric_limits<uint32_t>::max()) return false;
+    targetRvaOut = static_cast<uint32_t>(target);
+    return true;
+}
+
+bool IsRvaInExecutableSection(const uint8_t* fileData, size_t fileSize, uint32_t rva) {
+    // VirtualSize bounds the in-memory extent (the SizeOfRawData on-disk extent
+    // can be smaller, padded by FileAlignment) — use the larger of the two so a
+    // code pointer into a section's zero-padded tail still classifies as .text.
+    const IMAGE_NT_HEADERS* nt = ParseOnDiskNt(fileData, fileSize);
+    if (!nt) return false;
+    const WORD numSections = nt->FileHeader.NumberOfSections;
+    auto firstSec = IMAGE_FIRST_SECTION(nt);
+    auto secTableOff =
+        static_cast<size_t>(reinterpret_cast<const uint8_t*>(firstSec) - fileData);
+    if (secTableOff > fileSize) return false;
+    if ((fileSize - secTableOff) / sizeof(IMAGE_SECTION_HEADER) < numSections) return false;
+
+    for (WORD i = 0; i < numSections; ++i) {
+        const auto& sh = firstSec[i];
+        if (!(sh.Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+        const uint64_t secVa = sh.VirtualAddress;
+        uint64_t extent = sh.Misc.VirtualSize;
+        if (extent < sh.SizeOfRawData) extent = sh.SizeOfRawData;
+        const uint64_t secEnd = secVa + extent;
+        if (secEnd < secVa) continue;  // malformed
+        if (rva >= secVa && rva < secEnd) return true;
+    }
+    return false;
+}
+
+bool IsTextPointerOnDisk(const uint8_t* fileData, size_t fileSize, uint64_t slotValue) {
+    // An on-disk vtable slot holds the PREFERRED-base absolute (no relocations
+    // applied on disk). Convert to an RVA by subtracting ImageBase, then test
+    // against the executable sections. A 0/below-base slot (a load-time reloc
+    // placeholder or an import thunk) is not a plausible .text pointer.
+    const IMAGE_NT_HEADERS* nt = ParseOnDiskNt(fileData, fileSize);
+    if (!nt) return false;
+    const uint64_t imageBase = nt->OptionalHeader.ImageBase;
+    if (slotValue < imageBase) return false;
+    const uint64_t rva64 = slotValue - imageBase;
+    if (rva64 > std::numeric_limits<uint32_t>::max()) return false;
+    return IsRvaInExecutableSection(fileData, fileSize, static_cast<uint32_t>(rva64));
 }
 
 }  // namespace kcdx::pe

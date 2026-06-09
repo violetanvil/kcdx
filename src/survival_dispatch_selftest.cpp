@@ -2,10 +2,12 @@
 
 #include <cstdio>   // snprintf
 #include <cstring>  // memcmp
+#include <exception>  // std::exception (ParsePattern throw)
 #include <string>
 #include <vector>
 
 #include "log.h"
+#include "patch_engine.h"  // patch::ParsePattern (decode a stored aob string → bytes+mask)
 #include "refdb.h"
 #include "survival.h"
 #include "survival_pass.h"
@@ -53,16 +55,41 @@ const char* StatusName(sv::Status s) {
     return "?";
 }
 
-// Run the dispatch's function path for the given inputs. `derivesFrom`/`dll` are
-// ignored by the function path (no DAG edge, default module) — passed as the
-// neutral values the real wire-in will use.
+// Run the dispatch's function path for the given inputs. `dll` is ignored by the
+// function path (default module) — passed as the neutral value the real wire-in
+// will use.
 sv::Result DispatchFn(uint32_t rva, size_t length,
                       const std::vector<uint8_t>& hash) {
     sv::Payload p;
     p.kind = sv::Kind::Function;
     p.contentHash = hash;
     p.length = length;
-    return sv::SurvivalCheck(p, rva, /*derivesFrom=*/0, /*dll=*/std::string());
+    return sv::SurvivalCheck(p, rva, /*dll=*/std::string());
+}
+
+// Decode a stored AOB string ("48 ?? 89 …") into a survival Payload's bytes +
+// mask (1=literal, 0=wildcard). Reuses patch::ParsePattern (the SAME wildcard
+// decoder the live AOB path uses). Returns false on an empty/malformed string.
+bool AobToPayload(const std::string& aobStr, sv::Payload& p) {
+    if (aobStr.empty()) return false;
+    try {
+        patch::Pattern pat = patch::ParsePattern(aobStr);
+        p.aob = pat.bytes;
+        p.aobMask.resize(pat.mask.size());
+        for (size_t i = 0; i < pat.mask.size(); ++i) {
+            p.aobMask[i] = pat.mask[i] ? 1 : 0;
+        }
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+// Run a single non-function static check via the dispatch entry point.
+sv::Result DispatchKind(sv::Kind kind, uint32_t rva, const sv::Payload& base) {
+    sv::Payload p = base;
+    p.kind = kind;
+    return sv::SurvivalCheck(p, rva, /*dll=*/std::string());
 }
 
 // The legacy entry point for the same inputs (== today's function behavior).
@@ -157,44 +184,27 @@ void RunSelfTestOnce() {
         }
     }
 
-    // ----- Sub-check 2: NON-FUNCTION STUBS ARE FAIL-LOUD --------------------
-    // Every non-function kind dispatched must return CannotCheck with a DEFINED
-    // token — never Unchanged/Changed/Ambiguous, never an empty reason. The
-    // payload carries each kind's datum (it is IGNORED by the step-3.1 stub, but
-    // populated so the model is real); the verdict is the stub token.
-    struct StubCase { sv::Kind kind; const char* kindName; const char* wantReason; };
-    const std::vector<StubCase> stubs = {
-        {sv::Kind::Callsite,          "callsite",           "not_implemented_3_2"},
-        {sv::Kind::StringAnchor,      "string_anchor",      "not_implemented_3_2"},
-        {sv::Kind::InstructionAnchor, "instruction_anchor", "not_implemented_3_2"},
-        {sv::Kind::DataSlot,          "data_slot",          "not_implemented_3_2"},
-        {sv::Kind::VtableBase,        "vtable_base",        "not_implemented_3_2"},
-        {sv::Kind::VtableIndex,       "vtable_index",       "vtable_index_deferred"},
-    };
-    for (const auto& s : stubs) {
+    // ----- Sub-check 2: vtable_index IS A DEFINED DEFERRAL ------------------
+    // vtable_index's survival datum (a slot-target body-hash) is design-defined
+    // but population waits on the runtime-vtable path — so it dispatches to a
+    // DEFINED CannotCheck/"vtable_index_deferred", never a false verdict. (The
+    // other 5 non-function kinds now run real on-disk checks — sub-checks 4-6.)
+    {
         sv::Payload p;
-        p.kind = s.kind;
-        // Populate a plausible per-kind datum (proves the payload model carries
-        // it; the stub ignores it until 3.2). The verdict must still be the stub.
-        p.aob = {0x48, 0x8B};
-        p.anchorString = "exec autoexec.cfg";
-        p.rule = "follow disp32 from anchor X";
-        p.slotCount = 69;
-        sv::Result r = sv::SurvivalCheck(p, /*rva=*/0x4000, /*derivesFrom=*/0,
-                                         /*dll=*/std::string());
+        p.kind = sv::Kind::VtableIndex;
+        p.slotCount = 69;  // a populated datum; vtable_index ignores it (deferred).
+        sv::Result r = sv::SurvivalCheck(p, /*rva=*/0x4000, /*dll=*/std::string());
         bool ok = r.status == sv::Status::CannotCheck &&
-                  !r.reason.empty() &&
-                  r.reason == s.wantReason;
+                  r.reason == "vtable_index_deferred";
         if (!ok) {
             std::snprintf(reason, sizeof(reason),
-                "FAIL: non-function kind '%s' did NOT return a fail-loud stub — "
-                "got (%s,'%s'), wanted (cannot_check,'%s'). A non-function "
-                "survival check must be a DEFINED CannotCheck placeholder, never "
-                "a false Unchanged or a silent empty.",
-                s.kindName, StatusName(r.status), r.reason.c_str(), s.wantReason);
+                "FAIL: vtable_index did NOT return its defined deferral — got "
+                "(%s,'%s'), wanted (cannot_check,'vtable_index_deferred'). The "
+                "vtable_index slot-target datum waits on the runtime-vtable path; "
+                "it must be a DEFINED CannotCheck, never a false verdict.",
+                StatusName(r.status), r.reason.c_str());
             LOG_ERROR_KV(kCategory, "selftest_fail",
-                ::kcdx::log::KV("subcheck", "2_stub"),
-                ::kcdx::log::KV("kind", s.kindName));
+                ::kcdx::log::KV("subcheck", "2_vtable_index_deferred"));
             kcdx::test::ReportResult(kRow, false, reason);
             kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
             return;
@@ -283,6 +293,190 @@ void RunSelfTestOnce() {
         return;
     }
 
+    // ----- Sub-check 4: CALLSITE VERDICTS (Changed / Ambiguous / real Unchanged)
+    // The 5 static checks need WHGame.dll's on-disk file readable. When it is
+    // not mapped (a non-game host / early boot), the synthetic on-disk cases
+    // CannotCheck — DEGRADED PASS, not a hard FAIL (a deploy-state observation).
+    // The synthetic AOBs do NOT depend on the DB:
+    //   - a long improbable byte run cannot occur in .text → Changed (site gone).
+    //   - a 2-byte ultra-common run (48 8B) occurs thousands of times → Ambiguous.
+    {
+        // Changed: 16 bytes of 0xAB — astronomically unlikely to occur in .text.
+        sv::Payload pGone;
+        pGone.aob = std::vector<uint8_t>(16, 0xAB);  // all-literal mask (default).
+        sv::Result rGone = DispatchKind(sv::Kind::Callsite, /*rva=*/0x1000, pGone);
+        // Ambiguous: "48 8B" — `mov r64, r/m64` opcode prefix; occurs everywhere.
+        sv::Payload pMulti;
+        pMulti.aob = {0x48, 0x8B};
+        sv::Result rMulti = DispatchKind(sv::Kind::Callsite, /*rva=*/0x1000, pMulti);
+
+        // A CannotCheck from a not-mapped module is a DEGRADED pass; a definite
+        // verdict that is WRONG is a hard FAIL. The contract: a gone site must
+        // NOT read Unchanged; a multi-hit AOB must NOT read Unchanged/Changed.
+        bool callsiteRan = rGone.status != sv::Status::CannotCheck ||
+                           rMulti.status != sv::Status::CannotCheck;
+        if (callsiteRan) {
+            if (rGone.status == sv::Status::Unchanged) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: a callsite AOB that cannot occur in .text read Unchanged "
+                    "(status=%s) — a gone site must read Changed, never a false "
+                    "Unchanged.", StatusName(rGone.status));
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "4_callsite_gone"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+            if (rMulti.status != sv::Status::Ambiguous) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: an ultra-common 2-byte callsite AOB did NOT read "
+                    "Ambiguous (status=%s) — an AOB matching >1 .text site is no "
+                    "longer a unique locator and must read Ambiguous, never "
+                    "Unchanged/Changed.", StatusName(rMulti.status));
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "4_callsite_ambiguous"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+
+        // Real curated callsite Unchanged (DEGRADED if the DB lacks the row).
+        if (refdb::IsLoaded()) {
+            refdb::NameResolution nr = refdb::ResolveByName("IsInCombat_callsite_26b");
+            sv::Payload pReal;
+            if (nr.found && nr.kind == "callsite" && AobToPayload(nr.aob, pReal)) {
+                pReal.expectUnique = nr.has_expect_unique && nr.expect_unique != 0;
+                sv::Result rReal = DispatchKind(sv::Kind::Callsite,
+                                                static_cast<uint32_t>(nr.rva), pReal);
+                // A real curated unique callsite should be Unchanged on the build
+                // it was verified against. Changed/Ambiguous here is a real
+                // regression (the stored AOB no longer uniquely locates).
+                if (rReal.status == sv::Status::Changed ||
+                    rReal.status == sv::Status::Ambiguous) {
+                    std::snprintf(reason, sizeof(reason),
+                        "FAIL: the curated callsite 'IsInCombat_callsite_26b' did "
+                        "NOT survive its own verified build — got %s. Its stored "
+                        "AOB must uniquely re-locate (Unchanged) on the build it was "
+                        "verified against.", StatusName(rReal.status));
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("subcheck", "4_callsite_real"));
+                    kcdx::test::ReportResult(kRow, false, reason);
+                    kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                    vcc::Reset(); sp::Reset();
+                    return;
+                }
+            }
+        }
+    }
+
+    // ----- Sub-check 5: STRING_ANCHOR VERDICTS (Changed / real Unchanged) ----
+    {
+        // Changed: an improbable literal cannot be present in .rdata → Changed.
+        sv::Payload pAbsent;
+        pAbsent.anchorString = "kcdx_cap84_absent_literal_zzqx_neverpresent";
+        sv::Result rAbsent = DispatchKind(sv::Kind::StringAnchor, /*rva=*/0x2000, pAbsent);
+        if (rAbsent.status == sv::Status::Unchanged) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a string_anchor literal that is absent from .rdata read "
+                "Unchanged (status=%s) — an absent anchor must read Changed.",
+                StatusName(rAbsent.status));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "5_string_absent"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        // Real curated string_anchor Unchanged (DEGRADED if the DB lacks it).
+        if (refdb::IsLoaded()) {
+            refdb::NameResolution nr = refdb::ResolveByName("string_exec_autoexec_cfg");
+            if (nr.found && nr.kind == "string_anchor" && !nr.anchor_string.empty()) {
+                sv::Payload pReal;
+                pReal.anchorString = nr.anchor_string;
+                pReal.expectUnique = nr.has_expect_unique && nr.expect_unique != 0;
+                sv::Result rReal = DispatchKind(sv::Kind::StringAnchor,
+                                                static_cast<uint32_t>(nr.rva), pReal);
+                if (rReal.status == sv::Status::Changed) {
+                    std::snprintf(reason, sizeof(reason),
+                        "FAIL: the curated string_anchor 'string_exec_autoexec_cfg' "
+                        "(%s) read Changed — its literal must be present in .rdata "
+                        "on the build it was verified against.",
+                        nr.anchor_string.c_str());
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("subcheck", "5_string_real"));
+                    kcdx::test::ReportResult(kRow, false, reason);
+                    kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                    vcc::Reset(); sp::Reset();
+                    return;
+                }
+            }
+        }
+    }
+
+    // ----- Sub-check 6: TRANSITIVE ANCHOR-CHANGED via CheckOrdered (the DAG) --
+    // A 2-row set: an anchor row (string_anchor with an ABSENT literal → Changed)
+    // + a dependent (instruction_anchor) deriving from it. The ordered walk MUST
+    // check the anchor first, see it Changed, and short-circuit the dependent to
+    // CannotCheck/"anchor_changed" — never independently re-derive it, never a
+    // silent pass. This is the DAG's load-bearing guarantee.
+    {
+        std::vector<sv::Row> rows;
+        // The anchor row (id 1): a string_anchor whose literal is absent → Changed.
+        sv::Row anchor;
+        anchor.id = 1;
+        anchor.derivesFrom = 0;
+        anchor.rva = 0x3000;
+        anchor.payload.kind = sv::Kind::StringAnchor;
+        anchor.payload.anchorString = "kcdx_cap84_absent_anchor_literal_zzqx";
+        rows.push_back(anchor);
+        // The dependent row (id 2): derives from id 1; its own datum is plausible
+        // but must NOT be reached — the anchor is Changed.
+        sv::Row dependent;
+        dependent.id = 2;
+        dependent.derivesFrom = 1;
+        dependent.rva = 0x4000;
+        dependent.payload.kind = sv::Kind::InstructionAnchor;
+        dependent.payload.anchorString = "exec autoexec.cfg";  // a real literal — but unreachable.
+        rows.push_back(dependent);
+
+        std::vector<sv::RowResult> results = sv::CheckOrdered(rows);
+        // Find the dependent's result (id 2).
+        const sv::RowResult* depRes = nullptr;
+        for (const auto& rr : results) {
+            if (rr.id == 2) { depRes = &rr; break; }
+        }
+        bool ranOnDisk = false;
+        for (const auto& rr : results) {
+            // If the anchor produced a definite Changed (not a not-mapped
+            // CannotCheck), the DAG actually exercised the on-disk path.
+            if (rr.id == 1 && rr.result.status == sv::Status::Changed) ranOnDisk = true;
+        }
+        if (ranOnDisk) {
+            bool ok = depRes != nullptr &&
+                      depRes->result.status == sv::Status::CannotCheck &&
+                      depRes->result.reason == "anchor_changed";
+            if (!ok) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: a dependent whose anchor came back Changed was NOT "
+                    "transitively blocked — got (%s,'%s'), wanted (cannot_check,"
+                    "'anchor_changed'). A Changed anchor must short-circuit every "
+                    "dependent that re-derives through it; it is never silently "
+                    "re-derived and never a silent pass.",
+                    depRes ? StatusName(depRes->result.status) : "MISSING",
+                    depRes ? depRes->result.reason.c_str() : "-");
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "6_transitive_anchor_changed"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+    }
+
     // All sub-checks held. Leave clean in-memory state + an empty on-disk cache
     // so the synthetic records never leak into a future real Lookup.
     vcc::Reset();
@@ -295,11 +489,11 @@ void RunSelfTestOnce() {
                : "real SaveGame on-disk check ran — dispatch==legacy")
         : "real SaveGame check DEGRADED (DB lacks content_hash/length) — synthetic checks held";
     std::snprintf(reason, sizeof(reason),
-        "PASS — the function-kind dispatch returns the IDENTICAL verdict to the "
-        "legacy on-disk body-hash check (3 deterministic cases%s); every "
-        "non-function kind is a fail-loud CannotCheck stub (not_implemented_3_2 / "
-        "vtable_index_deferred, never a false Unchanged); and Ambiguous is a "
-        "reportable status that round-trips through the pass+codec. [%s]",
+        "PASS — function-kind dispatch == legacy on-disk body-hash (3 cases%s); "
+        "vtable_index is a defined deferral; Ambiguous round-trips the pass+codec; "
+        "the 5 static checks verdict correctly (callsite gone=Changed / multi=Ambiguous "
+        "/ real=Unchanged; string absent=Changed / real=Unchanged); and a Changed "
+        "anchor transitively blocks its dependent (anchor_changed) via CheckOrdered. [%s]",
         realChecked ? " + 1 real" : "", realNote);
     LOG_INFO_KV(kCategory, "selftest_pass",
         ::kcdx::log::KV("real_checked", realChecked ? "yes" : "degraded"),

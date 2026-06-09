@@ -33,10 +33,31 @@
 //   file_open_error         — the on-disk file could not be opened/read.
 //   rva_out_of_range        — [rva,rva+length) maps to no on-disk section.
 //   read_error              — the mapped file span could not be read.
-//   not_implemented_3_2     — a non-function kind whose check lands in step 3.2;
-//                             a DEFINED fail-loud placeholder, never a silent
-//                             empty/false-Unchanged. See `Kind` + the
-//                             per-kind stubs below.
+//   vtable_index_deferred   — a vtable_index row; its survival datum (a slot
+//                             target body-hash) is design-defined but population
+//                             waits on the runtime-vtable verification path. A
+//                             DEFINED, longer-lived deferral, never a 3.2-pending.
+//
+//   The per-kind STATIC checks (step 3.2) add these fail-loud CannotCheck
+//   reasons (each names a specific failure, never a false Unchanged):
+//   anchor_changed          — a dependent row whose anchor (derivesFrom) came
+//                             back Changed; transitively un-derivable.
+//   anchor_unresolved       — the anchor's resolved RVA was not threaded in (a
+//                             dependent dispatched WITHOUT the ordered walk).
+//   no_aob                  — a callsite / instruction_anchor with an empty aob.
+//   no_anchor_string        — a string_anchor / instruction_anchor with no literal.
+//   bad_rule                — a data_slot whose rule descriptor could not be parsed.
+//   no_slot_count           — a vtable_base with slotCount == 0.
+//   derivation_off_data     — a data_slot whose derivation did not land in .data.
+//   on_disk_unreadable       — the on-disk module could not be parsed for a section scan.
+//
+//   And these Changed/Ambiguous verdicts (NOT CannotCheck — a definite result):
+//   Changed   — a callsite AOB with zero hits, a string_anchor that is absent, a
+//               vtable_base of the wrong shape, an instruction_anchor whose chain
+//               broke, a data_slot whose derivation no longer lands consistently.
+//   Ambiguous — a callsite AOB matching MORE THAN ONE .text site (no longer a
+//               unique locator), or a unique-asserting string_anchor with the
+//               wrong xref count.
 //
 // ---------------------------------------------------------------------------
 // PER-KIND DISPATCH (the survival-fingerprint-per-kind model)
@@ -49,11 +70,16 @@
 // per-kind. The check is therefore ONE entry point dispatched on `Kind`, with a
 // KIND-DISCRIMINATED PAYLOAD carrying that kind's datum.
 //
-// This step (3.1) builds the dispatch + the payload model + the function-kind
-// path (the EXISTING on-disk body-hash check, verdict UNCHANGED) + the
-// Ambiguous status. Every NON-function kind routes to a DEFINED fail-loud stub
-// (CannotCheck / "not_implemented_3_2") until step 3.2 implements its real
-// check. NO non-function check logic and NO live/reachability check land here.
+// Step 3.1 built the dispatch + the payload model + the function-kind path + the
+// Ambiguous status. Step 3.2 (this step) implements the 5 STATIC non-function
+// per-kind checks (callsite / string_anchor / instruction_anchor / data_slot /
+// vtable_base) under the dispatch, ALL running against the ON-DISK DLL (D25 —
+// the same on-disk read the function-hash kind uses, NOT live memory), plus the
+// anchor-dependency ordering (a dependent whose anchor is Changed → transitively
+// CannotCheck/"anchor_changed"). vtable_index stays a DEFINED deferral
+// (CannotCheck / "vtable_index_deferred" — population waits on the runtime-vtable
+// path). NO live/reachability check (that is step 3.3, the only check that reads
+// the live image) and NO cross-implementation agreement test (step 3.4) land here.
 
 #include <cstddef>
 #include <cstdint>
@@ -115,14 +141,34 @@ struct Payload {
     std::vector<uint8_t> contentHash;  // raw 32-byte BLAKE3; empty = none.
     size_t               length = 0;   // span the hash covers.
 
-    // The search/derivation datums (populated + consumed by step 3.2; carried
-    // here so the model is complete and 3.2 plugs in without a signature churn).
+    // The search/derivation datums (populated + consumed by the step-3.2 checks).
     std::vector<uint8_t> aob;            // callsite / instruction_anchor pattern.
     std::vector<uint8_t> aobMask;        // wildcard mask for `aob` (1 = match).
-    std::string          anchorString;   // string_anchor literal.
+    std::string          anchorString;   // string_anchor / instruction_anchor literal.
     bool                 expectUnique = false;  // string_anchor single-xref assert.
     std::string          rule;           // data_slot derivation descriptor.
     uint32_t             slotCount = 0;   // vtable_base expected slot count.
+
+    // --- The anchor's resolved result, threaded in by the dependency-ordered
+    // walk (CheckOrdered). A dependent kind (data_slot through an
+    // instruction_anchor; instruction_anchor through a string_anchor;
+    // vtable_index through a vtable_base) re-derives THROUGH its anchor row, so
+    // it needs the anchor's resolved address AND whether the anchor itself
+    // survived. The ordered walk resolves anchors FIRST and fills these before
+    // dispatching the dependent. The single-row entry consumes them; an
+    // independent (anchor-less) kind leaves them default. ---
+    bool     hasAnchor = false;          // this row derives THROUGH an anchor.
+    bool     anchorChanged = false;      // the anchor's verdict was Changed/CannotCheck.
+    uint32_t anchorResolvedRva = 0;      // the anchor's resolved RVA (where it relocated to).
+
+    // For a data_slot rule of the form "disp32@<kid>": the byte offset of the
+    // disp32 field within the anchor instruction + the instruction length.
+    // Defaulted to the canonical `48 8B 0D <disp32>` MOV shape (REX.W + opcode +
+    // modrm = 3-byte disp offset, 7-byte instruction) — the gEnv_pConsole form.
+    // A future non-MOV anchor sets these explicitly. Only read on the
+    // disp32-rule data_slot path.
+    uint32_t dispOffsetInAnchorInstr = 3;
+    uint32_t anchorInstrLen = 7;
 };
 
 struct Result {
@@ -134,24 +180,66 @@ struct Result {
 // ---------------------------------------------------------------------------
 // THE DISPATCH ENTRY POINT — one entry point, dispatched on `payload.kind`.
 //
-// `derivesFrom` is the survival-DAG edge (the row a dependent kind re-derives
-// THROUGH — a data_slot through an instruction_anchor, etc.). It is carried
-// through the signature so step 3.2 can check in dependency order; the
-// function-kind path ignores it. `dll` selects the bytes the check runs against
-// (the on-disk backing file for the on-disk version-applicability hash — the
-// SETTLED on-disk read; the live/reachability check is a separate step). Today
-// the function path always reads WHGame.dll's on-disk file (dll is reserved for
-// the per-module check step 3.2/3.3 wires); an empty dll = the default module.
+// The single-row entry does NOT resolve the survival-DAG edge itself. The DAG
+// edge (`Row::derivesFrom` — a dependent kind re-derives THROUGH an anchor:
+// a data_slot through an instruction_anchor, etc.) is resolved by the
+// dependency-ordered walk (CheckOrdered, below), which threads the anchor's
+// resolved RVA + verdict onto the Payload (anchorResolvedRva / anchorChanged).
+// A dependent dispatched directly with anchorChanged set short-circuits to
+// CannotCheck/"anchor_changed". `dll` selects the bytes the check runs against
+// (the on-disk backing file — the SETTLED on-disk read, D25; the
+// live/reachability check is step 3.3). Today every check reads WHGame.dll's
+// on-disk file (dll is reserved for the per-module step 3.3 wires); empty dll =
+// the default module.
 //
 // Function kinds → the existing on-disk body-hash check (verdict UNCHANGED from
-// the legacy SurvivalCheck below). Every other kind → its DEFINED step-3.2 stub
-// (CannotCheck / "not_implemented_3_2"), or vtable_index → CannotCheck /
-// "vtable_index_deferred". A multi-hit callsite, once 3.2 lands, returns
-// Ambiguous.
+// the legacy SurvivalCheck below). The 5 static non-function kinds (callsite /
+// string_anchor / instruction_anchor / data_slot / vtable_base) → their real
+// on-disk check (Unchanged / Changed / Ambiguous / a CannotCheck reason).
+// vtable_index → CannotCheck / "vtable_index_deferred" (population deferred).
 Result SurvivalCheck(const Payload& payload,
                      uint32_t rva,
-                     uint32_t derivesFrom,
                      const std::string& dll);
+
+// ---------------------------------------------------------------------------
+// THE DEPENDENCY-ORDERED WALK — checks a SET of rows anchors-first so a
+// dependent kind that re-derives THROUGH an anchor (data_slot → instruction_anchor
+// → string_anchor; vtable_index → vtable_base) is checked only AFTER its anchor,
+// with the anchor's resolved RVA + verdict threaded into the dependent's Payload.
+//
+// The single-row SurvivalCheck above cannot do a derivation in isolation: a
+// data_slot's check ("follow disp32 from the instruction_anchor" / "anchor RVA −
+// 0xA8") needs the ANCHOR's resolved address, which only exists after the anchor
+// is checked. So the ordering — the survival DAG — lives HERE, where a row set is
+// available, NOT in the single-row entry. A row whose anchor (derivesFrom) came
+// back Changed/CannotCheck short-circuits to CannotCheck/"anchor_changed" — never
+// silently re-derived through a dead anchor, never a silent pass.
+//
+// The DAG edge is `Row::derivesFrom` — the row IDENTITY (the caller's stable id;
+// today the reference-DB address_versions.id) of the anchor this row derives
+// through. 0 = no anchor (an independent row). Rows are walked in topological
+// order (anchors before dependents); a cycle or a missing anchor id is reported
+// as CannotCheck on the affected dependents (fail-loud, never a hang/silent pass).
+struct Row {
+    uint64_t    id = 0;            // this row's stable identity (the DAG node).
+    uint64_t    derivesFrom = 0;   // the anchor row's id (the DAG edge); 0 = none.
+    Payload     payload;
+    uint32_t    rva = 0;
+    std::string dll;               // empty = the default module (WHGame.dll).
+};
+
+struct RowResult {
+    uint64_t id = 0;
+    Result   result;
+};
+
+// Check a row set in dependency order. For each row: an anchor-less row is
+// checked directly; a dependent row is checked AFTER its anchor with the
+// anchor's resolved RVA + Changed-verdict threaded into its Payload (so the
+// single-row check can re-run the derivation). Returns one RowResult per input
+// row, in input order. Anchors-first means a Changed/CannotCheck anchor
+// transitively blocks every dependent with reason "anchor_changed".
+std::vector<RowResult> CheckOrdered(const std::vector<Row>& rows);
 
 // Check whether WHGame.dll's on-disk bytes at [rva, rva+length) still BLAKE3 to
 // expectedHash32 (a 32-byte raw digest; the reference DB's content_hash blob).
