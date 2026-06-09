@@ -8,8 +8,8 @@ loader-lock/bootstrap paths it alone can serve. The chain, conflict model, and
 Lua/ABI marshaling stay unchanged above the backend layer.
 
 Settled design: [`docs/design/hook-backend-marriage.md`](../../design/hook-backend-marriage.md)
-(`62046c3` — v1 + the §4 re-grounding). Shared spec + coverage map:
-[`context.md`](context.md).
+(`03c934c` — v1 + the §4 re-grounding + the §4.5 batch DROP). Shared spec +
+coverage map: [`context.md`](context.md).
 
 **Independent of Phase 11 (shim-VM)** — different layers, no build-order
 dependency; may run in parallel. See [`context.md`](context.md) §"Independence
@@ -20,10 +20,10 @@ from Phase 11".
 | Step | Status | Commit |
 |---|---|---|
 | Phase 1 — vendor safetyhook + prove the seam | DONE | `9de81ea` / `9862bf1` |
-| Phase 2 — backend seam at InstallRuntime (function-entry) | DONE | (landed) |
+| Phase 2 — backend seam at InstallRuntime (function-entry) | DONE | `ed9ff7f` / `8a02bd8` / `6a3d15b` |
 | Phase 3 — retire make_jit_midfunc (gated on Phase 1 step 2) | DONE | `aabd37f` |
-| Phase 4 — foreign-hook coexistence (core pillar) | DONE | (landed) |
-| Phase 5 — batch install | NOT STARTED | — |
+| Phase 4 — foreign-hook coexistence (core pillar) | DONE | `1b6500c` / `aca788e` / `847e573` |
+| Phase 5 — batch install (CLOSED: dropped on measured evidence — no batch) | DONE | `03c934c` |
 | Phase 6 — backend reference doc | NOT STARTED | — |
 
 The per-step ledgers live in each `phase-NN-*/README.md`. A top row flips to
@@ -61,12 +61,14 @@ cascade).
   multiplayer/extreme-mod consumer hooks the same functions other mods hook), not
   final-phase polish — built once the safetyhook swap makes patching a shared
   prologue safe.
-- **[Phase 5 — batch install](phase-05-batch-install/README.md)**
-  — install N detours under ONE thread-suspend window instead of N (safetyhook's
-  `enable()` suspends all threads per hook; at TC/multiplayer scale that is
-  hundreds of stop-the-world cycles). A kcdx-authored path over safetyhook's
-  `StartDisabled` + `trap_threads` (create-all-disabled → one frozen window patches
-  N); the multi-target-window reuse is probe-gated, with a per-hook fallback.
+- **[Phase 5 — batch install](phase-05-batch-install/README.md)** — **CLOSED as a
+  design correction: there is no batch.** The premise (safetyhook's `enable()`
+  suspends all threads per hook) was FALSE — `trap_threads` is VEH +
+  `VirtualProtect`, not stop-the-world (`os.windows.cpp:268-318`), so there is no
+  cost to amortize. The U7 probe resolved it by a static source read; the batch is
+  dropped on measured evidence, per-hook `enable()` stays. The former step 9
+  (mechanism) + step 10 (fixture) are retired. See design §4.5 "No batch install —
+  why".
 - **[Phase 6 — backend reference doc](phase-06-reference-doc/README.md)**
   — the backend-layer subsystem/reference doc (a new responsibility unit gets its
   doc, `structure-by-responsibility.md` §6).

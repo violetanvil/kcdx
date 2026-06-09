@@ -50,13 +50,13 @@ as re-grounded 2026-06-08:
    functions other mods hook, so foreign-detour chaining is existential for it.
    Built after the safetyhook swap (the thread-safe install is what makes patching
    a prologue another mod is actively in SAFE — design §6), priority elevated.
-6. **kcdx-authored batch install** (design §4.5) — install N detours under ONE
-   thread-suspend window instead of N. safetyhook's `enable()` suspends all
-   threads per hook (`inline_hook.cpp:383`); at TC/multiplayer scale that is
-   hundreds of stop-the-world cycles. No safetyhook batch primitive exists; a
-   kcdx-authored path over `StartDisabled` + `trap_threads` is constructible
-   (create-all-disabled → one frozen window patches N). The multi-target
-   frozen-window patch is PROVISIONAL, gated on the U7 probe.
+6. **~~kcdx-authored batch install~~ — DROPPED on measured evidence** (design
+   §4.5 "No batch install — why"). The original premise was FALSE: safetyhook's
+   `enable()` does NOT suspend threads — `trap_threads`
+   (`os.windows.cpp:268-318`) is VEH + `VirtualProtect`, not stop-the-world — so
+   there is no thread-suspend cost to amortize. The U7 probe (below) resolved this
+   by a static source read; the batch is dropped, per-hook `enable()` stays. No
+   Phase 5 mechanism is built. See design §4.5 for the institutional-memory record.
 7. **The mid-hook replacement is gated on a spike** (design §9.1) — the
    `ctx.rip`→three-modes mapping is read-feasible from safetyhook's header but
    UNOBSERVED at runtime (`.claude/rules/results-driven.md`). The spike (port
@@ -118,15 +118,16 @@ Each resolved by a probe at/before its dependent step (`results-driven.md`):
   the repo allowlist BEFORE vendoring; record the manifest row same-change
   (`dependencies.md`). Re-confirm the header facts (`Context64`, `enable()`
   thread-suspend, E9→FF) against the source once on disk. (DONE — Phase 1 step 1.)
-- **U7 — multi-target batch window (gates the batch path, design §9.7).** Does a
-  single `trap_threads` frozen window safely patch N independent targets
-  (iterating N prologue writes inside one `run_fn`), the way `enable()` patches
-  one? The primitive is documented for one `[from, to)` range; the multi-target
-  reuse is feasible-from-the-primitive but UNOBSERVED end-to-end. A `comp-NN`
-  fixture creates N>1 hooks `StartDisabled`, patches all in one window, confirms
-  all fire. Outcome: all fire → the batch path proceeds; any miss/instability →
-  fall back to per-hook `enable()` (unbatched but correct). **The batch path is
-  provisional on this.**
+- **U7 — multi-target batch window (design §9.7) — RESOLVED: there is no batch.**
+  The question (can one `trap_threads` window safely patch N targets to amortize
+  the per-`enable()` thread-suspend?) was resolved by a static read of the
+  vendored safetyhook source: `trap_threads` does NOT suspend threads — it is VEH
+  + `VirtualProtect` (`os.windows.cpp:268-318`), zero `SuspendThread` in the tree
+  — so there is no suspend cost to amortize, the only safe multi-target collapse
+  saves ~0 (scattered `VirtualProtect`s can't coalesce) and widens the
+  mid-prologue safety window, and MinHook's real batch is immaterial at its N≈1-4.
+  The batch is DROPPED, not pending a live probe. Full record: design §4.5 +
+  `_research/batch-install-cost/FINDINGS.md`.
 - **U8 — `InstallRuntime` caller-set (gates the `g_installed` removal, design
   §9.8).** Is `InstallRuntime`'s ONLY caller the chain's first-hook-per-target
   path (which `FindChain` already gates), or does a non-chain caller exist that
@@ -190,10 +191,10 @@ reserved items are the design's settled out-of-scope (decided by the user during
 | E20 — comp-NN two-mod foreign fixture | US-4, §1 | Phase 4 step 8 | both detours fire, defined order |
 | E21 — `g_installed` retires (one conflict model) | §4.6 | Phase 2 step 4a | gated on U8 caller-set check |
 | E22 — `InstallRuntime` caller-set probe | §9.8 | Phase 2 step 4a (sub-check) | U8; chain-only → remove; non-chain → re-home guard |
-| E23 — batch install (`StartDisabled` + `trap_threads`) | §4.5, §1 | Phase 5 step 9 | create-all-disabled → one frozen window |
-| E24 — multi-target batch-window probe | §9.7 | Phase 5 step 9 (probe) | U7; gates the batch path, per-hook fallback |
-| E25 — `IDetourBackend` batch API (both backends) | §4.5, §8 | Phase 5 step 9 | safetyhook via trap_threads; MinHook via queue API |
-| E26 — comp-NN N-hook batch fixture | §1 | Phase 5 step 10 | N installs through one suspend window |
+| ~~E23 — batch install~~ | §4.5 | **DROPPED** (measured) | premise false (safetyhook is VEH-not-suspend); no cost to amortize |
+| E24 — multi-target batch-window probe (U7) | §9.7 | **RESOLVED → drop** | static source read settled it; batch dropped, not built |
+| ~~E25 — `IDetourBackend` batch API~~ | §4.5, §8 | **DROPPED** (measured) | an API that does not batch overstates itself; per-hook stays |
+| ~~E26 — comp-NN N-hook batch fixture~~ | §1 | **DROPPED** (measured) | no batch path to exercise |
 | (reserved) full MinHook removal | §10 | OUT-OF-SCOPE | design-settled; loader-lock constraint |
 | (reserved) configurable foreign policy | §10 | OUT-OF-SCOPE | design-settled; reopens if unsafe-to-chain target surfaces |
 | (reserved) foreign unhook/install-later | §6.3, §10 | OUT-OF-SCOPE | design-settled; documented limitation |
