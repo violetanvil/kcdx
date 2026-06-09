@@ -283,15 +283,50 @@ follows — off the kcdx stack, in `C_Game::CreateInstance`. **This is the other
 mine); attribution is now strongly the survival-verification work, pinned by the launch-log boundary
 + the mechanism shape.
 
-## PROBE D — disable the survival startup verification pass (one variable, current tree)
+## PROBE D — bisect the WHOLE survival lane out (build at `288e8fa`, pre-survival)
 
-The decisive next probe: on the current crash-DLL tree, DISABLE the survival startup verification
-pass (the `69c7cc2` 3.3 entry point) and re-launch — one variable, like PROBE C.
-- **Boots clean** → the survival startup verification pass IS the cause; hand the mechanism +
-  attribution to the survival lane for the fix.
-- **Still crashes** → survival-verify is exonerated too; widen to a full known-good bisect at
-  `3b99fea` (the last pre-today engine state — what this morning booted clean) to confirm code-vs-
-  environment.
+Refined from "disable the self-tests" to the more decisive form: the survival self-tests were
+`PENDING` (not yet run) at crash time, so disabling just them could be inconclusive — the survival
+lane's LOAD-TIME footprint (`survival.cpp:50` `GetModuleHandleW(WHGame.dll)` + `pe_helpers` PE-header
+parsing, the registration path) is also a suspect. So PROBE D builds at **`288e8fa`** — the last
+commit BEFORE survival 3.1 (`8008e3d`). This tree has ALL of hook-backend (through Phase 5) + the
+statement-layer + foreign-hook work, but ZERO survival 3.x code (`survival_verify.cpp` absent,
+confirmed). One variable removed: the entire survival lane (`8008e3d..ffc51ae` engine code).
+- **Boots clean** → the survival lane IS the cause; attribution + the mechanism hunt hand to the
+  survival chat for the fix (a load-time PE-parse / memory-walk that corrupts graphics-init state).
+- **Still crashes (same FSR2 AV)** → survival is exonerated too; the regression predates survival,
+  in the hook-backend Phase 1-4 BEHAVIORAL changes (the backend seam / foreign-hook / mid adapter) —
+  bisect the earlier window. (My comment-scrubs are zero-behavior, already excluded by PROBE C.)
+- DEPLOYED, awaiting launch.
+
+## PROBE D RESULT — the survival lane is EXONERATED too (pre-survival build crashes identically)
+
+Built at `288e8fa` (zero survival 3.x code, `survival_verify.cpp` absent), deployed 21:54, relaunched
+→ **byte-for-byte identical crash** (21:57): `mov rax,[rdx]` at `ffxFsr2ResourceIsNull+0x633120`,
+garbage `rdx`, the same `CreateInstance+0x306c3 → NGX → FSR2` stack, `INVALID_POINTER_READ`. Removing
+the ENTIRE survival lane changed nothing. The launch-log boundary (18:34 clean → 20:48 crash) was
+real but its survival-lane attribution is WRONG — the survival code is not the cause.
+
+**Three things now exonerated by direct probe:** the safetyhook function-entry swap (PROBE C), the
+survival lane (PROBE D). The crash reproduces at `288e8fa`, which still contains ALL of today's
+hook-backend Phase 1-5 BEHAVIORAL work (the backend seam, foreign-hook detection/chaining, the
+make_jit_midfunc→MidHook adapter) + the statement-layer. Two live hypotheses remain:
+1. The hook-backend Phase 1-5 behavioral changes regressed it (present at `288e8fa`).
+2. It is NOT a code regression — the 18:34 "clean" boot was a FLAKE (an intermittent graphics-init
+   AV), and the crash is environmental / pre-existing. (The 2/2-then-3/3 determinism today argues
+   against a flake, but a build that flips clean↔crash run-to-run would not have shown it yet.)
+
+## PROBE E — the pre-today known-good bisect (build at `3b99fea`, June 5)
+
+The decisive split between hypotheses 1 and 2: build at `3b99fea` (the last pre-today engine commit —
+the engine state this morning's clean boots ran, BEFORE any of today's hook-backend / statement /
+survival work) and launch.
+- **Boots clean** → today's hook-backend Phase 1-5 behavioral work regressed it (hypothesis 1);
+  bisect the `9de81ea..288e8fa` hook-backend range next.
+- **Crashes (same FSR2 AV)** → it is NOT today's code at all (hypothesis 2) — the crash predates
+  today / is environmental / is a flake. The fix axis is then a graphics-settings / driver / FSR2
+  angle, and code-bisecting today's range is pointless. The launch-clean history would then be luck,
+  not a real known-good.
 
 ## Open questions (reframed — the real mechanism)
 
