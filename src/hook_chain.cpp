@@ -41,6 +41,7 @@ extern "C" {
 #include "address_library.h"   // ResolveByName (address_id = "name")
 #include "refdb.h"             // ResolveAddrById (address_id = numeric kcdx_id)
 #include "dynamic_call_jit.h"  // BuildLuaCallThunk (call_original over pOriginal)
+#include "foreign_hook_detect.h"  // Classify (prologue classifier — foreign-hook detection, §6.1)
 #include "hook_engine.h"       // InstallRuntime (function-entry / callsite paths)
 #include "log.h"
 #include "lua_bind_helpers.h"  // PushPointer
@@ -468,6 +469,29 @@ bool DeadRefFirstObservation(uint64_t dedupKey) {
 Chain* FindChain(uintptr_t va) {
     auto it = g_chains.find(va);
     return it == g_chains.end() ? nullptr : it->second.get();
+}
+
+// Foreign-hook DETECTION at the first-touch install (design §6.1). Reads the
+// target's prologue and classifies it (Clean / KcdxTrampoline / Foreign /
+// Unknown). DETECTION only — Step 8 (foreign_hook_chain) chains onto a Foreign
+// verdict; this step installs normally over it, logging the foreign branch as a
+// no-op-but-logged stub. Shared by Add (Lua) + AddC (C++), the two first-touch
+// sites that build a detour. Called ONLY on the FindChain==null first-touch
+// path, so it never runs for an existing-chain append and never alters the
+// clean-prologue common path (Clean/Unknown both fall through to install).
+void DetectForeignBeforeInstall(uintptr_t targetVa, const std::string& name) {
+    switch (kcdx::foreign_hook_detect::Classify(targetVa, name.c_str())) {
+    case kcdx::foreign_hook_detect::Prologue::Foreign:
+        log::WarnF("hook_chain: '%s' target 0x%p carries a FOREIGN detour — "
+                   "installing over it (chaining onto it is Step 8, not yet "
+                   "built); the foreign mod's hook may be displaced until then",
+                   name.c_str(), reinterpret_cast<void*>(targetVa));
+        break;
+    case kcdx::foreign_hook_detect::Prologue::Unknown:
+    case kcdx::foreign_hook_detect::Prologue::KcdxTrampoline:
+    case kcdx::foreign_hook_detect::Prologue::Clean:
+        break;  // install normally (Unknown already logged its surfaced warning)
+    }
 }
 
 // ===========================================================================
@@ -2275,6 +2299,11 @@ AddResult Add(lua_State*                             L,
         return res;
     }
 
+    // FOREIGN-HOOK DETECTION (design §6.1) — read the prologue BEFORE installing.
+    // First-touch only (FindChain returned null above), so it never runs for an
+    // existing-chain append and never alters the clean-prologue common path.
+    DetectForeignBeforeInstall(targetVa, name);
+
     // This call site IS a chain function-entry install — it declares its KIND;
     // the engine selects the backend (select_backend maps ChainFunctionEntry ->
     // safetyhook, design §4.1/§4.2/§4.3 — safetyhook is "just the patcher" under
@@ -2699,6 +2728,11 @@ AddResult AddC(const kcdx::hook_payload::HookPayload& payload,
         res.reason = "make_jit_func failed (signature/codegen — see kcdx.log)";
         return res;
     }
+
+    // FOREIGN-HOOK DETECTION (design §6.1) — read the prologue BEFORE installing.
+    // First-touch only (FindChain returned null above), so it never runs for an
+    // existing-chain append and never alters the clean-prologue common path.
+    DetectForeignBeforeInstall(targetVa, name);
 
     // This call site IS a chain function-entry install — it declares its KIND;
     // the engine selects the backend (select_backend maps ChainFunctionEntry ->

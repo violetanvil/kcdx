@@ -46,6 +46,7 @@
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
 #include "early_hook_selftest.h"                    // cap-80 early-hook primitive
 #include "cap81_vm_adopt_selftest.h"                // cap-81 keystone: VM build + engine adopt
+#include "foreign_hook_detect_selftest.h"           // comp-18 foreign-hook prologue classifier
 
 // early_hook.h is included from dllmain.cpp now — the BugSplat ctor hook
 // installs from kcdx.dll DllMain (early_hook::bugsplat::Arm), not from
@@ -798,6 +799,17 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // BOOTING is itself the falsifiable observable (a bad adoption AVs before any
     // report).
     kcdx::cap81_vm_adopt_selftest::RunSelfTestOnce();
+
+    // comp-18-foreign-classifier: engine self-report for the foreign-hook
+    // prologue classifier (foreign_hook_detect, design §6.1; Phase 4 step 7).
+    // Feeds SYNTHETIC prologues (a clean prologue, an E9 into a registered
+    // kcdx-owned range, a foreign E9 + foreign FF25 into an unregistered range,
+    // an unrecognized FF shape) through Classify + the E9/FF25 byte decode and
+    // asserts each verdict against ground truth. Needs NO live target — the
+    // classifier reads bytes kcdx owns the address of, so a static byte buffer
+    // is a faithful prologue. Boot-only, no hook-fire / "ready" / VM dependency.
+    // One-shot guarded internally.
+    kcdx::foreign_hook_detect_selftest::RunSelfTestOnce();
 
     // cap-39-bytes-in-inventory: engine self-report that a successful
     // kcdx.bytes / kcdxBytesInterface byte rewrite reaches the modification

@@ -23,7 +23,7 @@ production replacement on an unproven mechanism.
 | Step | Status | Commit |
 |---|---|---|
 | Step 6a — capture-form enumeration + Context64 mapping (probe, resolves U4) | DONE | `b568600` |
-| Step 6b — replace make_jit_midfunc with the MidHook adapter | DONE | (landed) |
+| Step 6b — replace make_jit_midfunc with the MidHook adapter | DONE | `aabd37f` |
 
 ## Verification gate
 

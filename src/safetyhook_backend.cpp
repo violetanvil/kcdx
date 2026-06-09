@@ -1,5 +1,7 @@
 #include "safetyhook_backend.h"
 
+#include "kcdx_trampoline_registry.h"  // record this trampoline's range for the
+                                       // foreign-hook classifier (§6.1)
 #include "log.h"
 
 namespace kcdx {
@@ -75,6 +77,21 @@ void SafetyhookBackend::enable() {
     // The relocated-original entry the JIT thunk derefs (U2 — callable with the
     // original ABI from the asmjit thunk, like MinHook's pOriginal).
     original_ = hook_.original<void*>();
+
+    // Record this InlineHook's trampoline range as a KCDX-OWNED range so the
+    // foreign-hook classifier (foreign_hook_detect, §6.1) recognizes a future
+    // hook landing on THIS target as KcdxTrampoline (already in a kcdx chain),
+    // not as a foreign detour. The trampoline range comes from safetyhook's own
+    // Allocation (address + size), which the InlineHook exposes via trampoline()
+    // — kcdx does NOT (and cannot) query safetyhook's private allocator; it
+    // records the range of the trampoline IT installed. SOURCE:
+    // vendor/safetyhook/include/safetyhook/inline_hook.hpp:196 (trampoline() ->
+    // const Allocation&) + allocator.hpp:41/45 (Allocation::address()/.size()) —
+    // read this session.
+    const auto& tramp = hook_.trampoline();
+    kcdx::kcdx_trampoline_registry::Register(
+        tramp.address(), tramp.size(),
+        kcdx::kcdx_trampoline_registry::Kind::SafetyhookInline);
 
     enabled_ = true;
     log::InfoF("safetyhook_backend '%s': installed at 0x%p (detour=0x%p, original=0x%p)",

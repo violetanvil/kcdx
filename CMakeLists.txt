@@ -219,6 +219,8 @@ add_library(kcdx SHARED
     src/ldr_notify.cpp
     src/minhook_backend.cpp
     src/safetyhook_backend.cpp
+    src/kcdx_trampoline_registry.cpp
+    src/foreign_hook_detect.cpp
     src/scripting.cpp
     src/lua_memory.cpp
     src/lua_bind_helpers.cpp
@@ -294,6 +296,7 @@ add_library(kcdx SHARED
     src/ki0001_node_classifier_selftest.cpp
     src/statement_resolve_selftest.cpp
     src/early_hook_selftest.cpp
+    src/foreign_hook_detect_selftest.cpp
     src/rom_borrowed/type_info_t.cpp
     src/rom_borrowed/asmjit_helper.cpp
     src/rom_borrowed/runtime_func_t.cpp

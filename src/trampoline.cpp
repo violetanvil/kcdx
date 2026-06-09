@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "kcdx_trampoline_registry.h"  // record branch-pool ranges as kcdx-owned
+                                       // for the foreign-hook classifier (§6.1)
 #include "log.h"
 #include "pe_helpers.h"
 #include "plugin_loader.h"  // AuthorForHandle / NameForHandle (owner -> author/plugin)
@@ -254,6 +256,18 @@ void* Allocate(bool branchPool, kcdxPluginHandle owner, size_t size,
     if (!r.base) return nullptr;
     void* p = BumpAlloc(r, size);
     g_reservations.push_back(r);
+    // Record the BRANCH reservation as a kcdx-owned trampoline range for the
+    // foreign-hook classifier (§6.1) — branch-pool reservations hold the detour
+    // BODIES kcdx allocates near hook sites. The local pool is anywhere and is
+    // not a hook-prologue jump target, so it is not registered. Register the
+    // whole reservation once on creation (the registry de-dupes an exact
+    // repeat); a per-bump-allocation register would add many overlapping
+    // sub-ranges for no benefit.
+    if (branchPool) {
+        kcdx::kcdx_trampoline_registry::Register(
+            reinterpret_cast<uintptr_t>(r.base), r.size,
+            kcdx::kcdx_trampoline_registry::Kind::BranchPool);
+    }
     log::InfoF("Trampoline %s pool: allocated %zu bytes at 0x%p (owner=%u, %zu/%zu used)",
                branchPool ? "branch" : "local", size, p, owner,
                g_reservations.back().used, g_reservations.back().size);

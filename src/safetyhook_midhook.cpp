@@ -549,6 +549,21 @@ InstallResult Install(uintptr_t                       targetVa,
         return res;
     }
 
+    // FOREIGN-HOOK REGISTRY (§6.1) — the mid trampoline range is NOT registered
+    // here because safetyhook::MidHook does NOT expose its stub/trampoline range
+    // publicly: its inner InlineHook (m_hook) and its mid stub Allocation
+    // (m_stub) are PRIVATE with no public accessor — only original_bytes() (the
+    // relocated TARGET bytes, not the trampoline) is reachable. SOURCE:
+    // vendor/safetyhook/include/safetyhook/mid_hook.hpp:156-160 (m_hook / m_stub
+    // private; no trampoline()/stub() accessor) — read this session. Registering
+    // a mid trampoline would require a vendored-header accessor; that is a
+    // surfaced decision, NOT guessed here (the function-entry InlineHook DOES
+    // expose trampoline(), so SafetyhookBackend registers its range). The
+    // practical gap is narrow: a mid hook's prologue jump lands at a mid-function
+    // VA (not a function entry), and the chain keeps one mid per VA — a later
+    // function-entry hook does not target a mid VA, so a mid trampoline is rarely
+    // a classifier jump target in v1. Surfaced as a finding for Step 8 to weigh
+    // against the foreign-mid-hook case.
     res.ok = true;
     log::InfoF("safetyhook_midhook: installed mid '%s' at 0x%p (slot %zu, "
                "%zu captures, resume +%zu)",
