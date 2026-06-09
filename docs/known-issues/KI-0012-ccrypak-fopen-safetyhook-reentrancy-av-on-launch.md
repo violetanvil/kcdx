@@ -355,6 +355,32 @@ behavioral work regressed it" vs "not a code regression (the graphics-init state
 DLSS/FSR2 init-order / config issue, or environmental)". The crash log is now good enough that the
 remaining work is a focused lane-attribution, not a blind dump-archaeology grind.
 
+## PROBE E RESULT — pre-today code (June 5) crashes IDENTICALLY → NOT a kcdx code regression
+
+Built at `3b99fea` (the last pre-today engine commit, June 5 — a week older than today, before ALL
+of today's work across every lane; safetyhook_backend absent, MinHook-era `hook_chain` confirmed
+installing `ccrypak_fopen`), deployed, relaunched → **the SAME FSR2 AV**: `ACCESS_VIOLATION` in
+`WHGame.DLL` at `module_rva=11723296` (`0xB2E220` = `ffxFsr2ResourceIsNull+0x633120`), identical to
+all four prior crashes. The crash reproduces on code from BEFORE today entirely.
+
+**This exonerates today's code completely.** Every lane is now killed by direct probe: the safetyhook
+swap (C), the survival lane (D), and now ALL of today's code (E — the crash predates it). The AV is
+NOT a kcdx code regression — it reproduces across a week of kcdx versions.
+
+**The remaining variable is ENVIRONMENTAL.** The user reported a clean boot THIS MORNING before the
+changes. If even June-5 code crashes now, the morning-clean → now-crash difference is not in any
+kcdx code — it is something on the machine that changed today (a GPU driver update, a graphics /
+DLSS-FSR2 / upscaler setting, GPU memory/VRAM state, a Windows update, a config file), OR the
+morning's clean boots were intermittent luck on a flaky graphics-init AV. The fault is in WHGame's
+DLSS/FSR2 upscaling init reading an uninitialized/wrong-struct pointer (PROBE F) — a base-game
+graphics-init defect kcdx does not touch (no kcdx frame on the 20-frame stack across every run).
+
+**Disposition (for the user):** this is not a kcdx bug to fix in code. Options: (a) check/repair the
+environment (GPU driver, graphics settings — esp. DLSS/FSR upscaling, which the faulting symbols name
+directly; try disabling upscaling or resetting graphics config); (b) confirm with a fully vanilla
+launch (KingdomCome.exe with kcdx un-injected) that the base game crashes the same way; (c) close
+KI-0012 as an external/base-game graphics-init crash (not kcdx), keeping the full investigation record.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
