@@ -21,6 +21,7 @@
 #include "messaging.h"
 #include "paths.h"
 #include "pe_helpers.h"
+#include "plugin_pdb.h"  // PopulateFromPdb() — PDB-sourced internal-fn addresses
 #include "version_compat.h"  // shared game-version compat decision (pak-mod path shares it)
 #include "zone_gate.h"  // RejectReason() — distinguish engine-reject from user-disabled in skip-logs
 
@@ -845,6 +846,23 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
             log::InfoF("Plugin '%s' kcdxPlugin_Load OK", p.manifest.name.c_str());
         }
         p.loaded = ok;
+
+        // PDB auto-load — populate kcdx.functions["<author>.<plugin>"].* with
+        // every internal (non-exported) FUNCTION's address from the plugin
+        // DLL's sidecar .pdb, so a static op / a hook by name on an undeclared
+        // internal resolves with zero author friction. This is the proven-
+        // correct call site: the module is mapped (p.module) and its on-disk
+        // path is in hand (p.filePath), exactly the state the probe ran in.
+        // Runs for every DLL-bearing plugin that loaded; purely additive and
+        // graceful — no PDB (or a FASTLINK stub) loses nothing (declared +
+        // exports still resolve), each fallback case teaches via its own log
+        // line. The <author>.<plugin> namespace is composed the same way the
+        // zone_gate / resolver paths compose it (per naming-namespaces.md).
+        if (ok && p.module != nullptr && !p.filePath.empty()) {
+            plugin_pdb::PopulateFromPdb(
+                p.module, p.filePath,
+                p.manifest.author + "." + p.manifest.name);
+        }
     }
 
     size_t okCount = 0;

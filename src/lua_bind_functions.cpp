@@ -163,6 +163,33 @@ bool LookupDeclared(const std::string& ns, const std::string& fn,
     return true;
 }
 
+// ---- the plugin-function ADDRESS store -----------------------------------
+//
+// The address half the declare path leaves unfilled. plugin_pdb::PopulateFromPdb
+// writes here at C++ plugin load (PDB-sourced internal addresses); ResolveRef
+// reads it. Keyed identically to g_declared ("<ns>\0<fn>"). SEPARATE from
+// g_declared so the two facts are orthogonal: a plugin function can have a
+// declared signature with no PDB address (a callback hook works, a static op
+// is unresolvable yet), a PDB address with no declared signature (a static op
+// works, a callback hook reports "declare the signature"), or both.
+//
+// A second mutex (not g_declared_mutex) so the PDB-load write path and the
+// declare write path never contend; declaration and PDB-load are both
+// launch-time concerns (memory.md — never a hot path, lock cost irrelevant).
+std::mutex g_pdb_addr_mutex;
+std::map<std::string, uintptr_t> g_pdb_addr;
+
+// Look up a PDB-sourced plugin-function address. Returns true + fills `addrOut`
+// iff (ns, fn) has a recorded address.
+bool LookupPluginAddress(const std::string& ns, const std::string& fn,
+                         uintptr_t& addrOut) {
+    std::lock_guard<std::mutex> lk(g_pdb_addr_mutex);
+    auto it = g_pdb_addr.find(DeclaredKey(ns, fn));
+    if (it == g_pdb_addr.end()) return false;
+    addrOut = it->second;
+    return true;
+}
+
 // ---- the function-reference value ----------------------------------------
 //
 // The userdata payload. is_game distinguishes a game-DLL (DB-sourced) reference
@@ -241,21 +268,32 @@ RefResolution ResolveRef(const FunctionRef& ref) {
         return out;
     }
 
-    // Plugin reference: the declared store carries the signature; the address
-    // enters via PDB auto-load / the C export table (a later additive path, not
-    // yet built).
+    // Plugin reference: two INDEPENDENT facts may exist for (stem, name) —
+    // the declared signature (kcdx.dll.declare → g_declared) and the
+    // PDB-sourced address (plugin_pdb → g_pdb_addr). Either alone resolves the
+    // reference; the reference is found if EITHER is present.
+    //   - signature only (declared, no PDB)  → has_address=false; a callback
+    //     hook works, a static op has no address yet.
+    //   - address only (PDB internal, never declared) → signature="";
+    //     has_address=true; a static op works, a callback hook reports
+    //     "signature needed — declare it" (it has no ABI to marshal).
+    //   - both                               → the full reference.
     std::string sig;
-    if (!LookupDeclared(ref.stem, ref.name, sig)) {
+    const bool declared = LookupDeclared(ref.stem, ref.name, sig);
+    uintptr_t va = 0;
+    const bool hasAddr = LookupPluginAddress(ref.stem, ref.name, va);
+
+    if (!declared && !hasAddr) {
         out.found = false;
         out.reason = "not_declared";
         return out;
     }
     out.found = true;
-    out.signature = sig;
-    // has_address stays false: a plugin function's address arrives via the
-    // later additive PDB/C-export path (not yet built). A declared plugin
-    // reference carries its signature (the one irreducible thing a callback
-    // hook needs); the static-op address path is that later additive path.
+    out.signature = declared ? sig : "";  // "" for a PDB-only (undeclared) internal.
+    if (hasAddr) {
+        out.has_address = true;
+        out.address = va;
+    }
     return out;
 }
 
@@ -587,6 +625,15 @@ void bind(lua_State* L) {
     lua_pushcfunction(L, Lua_DllDeclare);
     lua_setfield(L, -2, "declare");
     lua_setfield(L, kcdx_idx, "dll");
+}
+
+// Record a PDB-sourced address for a plugin function (the address half a
+// declared reference leaves unfilled). Called from plugin_pdb at plugin load;
+// the matching read is LookupPluginAddress in ResolveRef.
+void RecordPluginAddress(const std::string& ns, const std::string& fn,
+                         uintptr_t address) {
+    std::lock_guard<std::mutex> lk(g_pdb_addr_mutex);
+    g_pdb_addr[DeclaredKey(ns, fn)] = address;
 }
 
 }  // namespace kcdx::lua_bind_functions

@@ -1,0 +1,52 @@
+# CAP-90 — PDB auto-load of plugin-DLL internal-function addresses.
+#
+# The behavior under test is the FEATURE built in src/plugin_pdb.{cpp,h}: at C++
+# plugin load, the engine parses this plugin's sidecar /DEBUG:FULL .pdb via
+# DbgHelp (SymInitialize + SymLoadModuleEx + SymEnumSymbols) and populates every
+# internal (non-exported) FUNCTION's address into
+# kcdx.functions["<author>.<plugin>"].* — so a static op / a hook by name on an
+# undeclared internal resolves its address with zero author friction.
+#
+# This plugin is BOTH a C++ DLL and a Lua self-check, ONE plugin (one manifest →
+# one <author>.<plugin> namespace = ts.cap_90_pdb_autoload):
+#   - the DLL (cap-90.cpp) ships a deliberately NON-EXPORTED internal function
+#     (cap90_internal_target — verify with dumpbin /EXPORTS: ONLY kcdxPlugin_Load
+#     is exported) and a /DEBUG:FULL sidecar .pdb;
+#   - the Lua entrypoint (plugin.lua) reads back
+#     kcdx.functions["ts.cap_90_pdb_autoload"].cap90_internal_target:resolve()
+#     at ready and reports the falsifiable row.
+#
+# FALSIFIABLE: the row goes RED if the internal's address did NOT populate —
+# has_address=false / nil address (PDB auto-load did not run, the /DEBUG:FULL PDB
+# was absent/mismatched, or the FASTLINK fallback silently dropped on a present
+# FULL PDB). The internal is non-exported by construction, so the ONLY way an
+# address appears for it is the PDB auto-load path under test — there is no other
+# source it could leak in from. A static op needs only the address; no signature
+# is declared for this internal (it is PDB-sourced address-only).
+#
+# Test mode: boot-only. The DLL's kcdxPlugin_Load fires at plugin load (PDB
+# auto-load runs there); the Lua row resolves + reports at kcdx.on("ready").
+# No console typing, no in-game gesture.
+#
+# Build requirement: cap-90.dll MUST ship with a /DEBUG:FULL sidecar cap-90.pdb
+# (the CMakeLists pins /DEBUG:FULL). A FASTLINK PDB carries no internals when
+# deployed — the engine would fall back to exports-only and the row would go RED.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_90_pdb_autoload"
+display_name        = "CAP-90 PDB auto-load (internal-fn addresses)"
+author              = "ts"
+description         = "Self-test of PDB auto-load: a C++ plugin ships a deliberately non-exported internal function (cap90_internal_target) + a /DEBUG:FULL sidecar .pdb; the engine populates the internal's address into kcdx.functions[\"ts.cap_90_pdb_autoload\"] at plugin load, and the Lua entrypoint reads it back at ready — kcdx.functions[\"ts.cap_90_pdb_autoload\"].cap90_internal_target:resolve() must report has_address=true with a non-zero address."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "cap-90-pdb-internal-address",
+]
+
+[entrypoints]
+dll = "cap-90.dll"
+lua = "plugin.lua"

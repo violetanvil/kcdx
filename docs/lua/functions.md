@@ -33,8 +33,10 @@ tells them apart at a glance:
   only.**
 - **Plugin functions — a dotted `<author>.<plugin>` stem**, bracket-indexed
   because the stem has dots: `kcdx.functions["redmoon.outfit_mod"].SomeFn`. These
-  come from the owning plugin's own declaration ([`kcdx.dll.declare`](dll.md)) —
-  the author wrote the DLL and knows every function's name and signature, so a
+  come from the owning plugin itself — its own declaration
+  ([`kcdx.dll.declare`](dll.md)) and/or its shipped PDB (see
+  [Internal functions from a shipped PDB](#internal-functions-from-a-shipped-pdb)).
+  The author wrote the DLL and knows every function's name and signature, so a
   plugin function does NOT go through the reference database and is not tracked
   against it.
 
@@ -88,13 +90,54 @@ end
 A game-engine reference resolves to an address **and** a signature (both live in
 the reference database). A plugin reference resolves to its declared **signature**
 immediately — that is the one thing a callback hook needs and the engine cannot
-read from a compiled DLL — while its **address** is filled by a separate
-mechanism for plugin DLLs; until then `has_address` is `false`, which is not a
-failure (the signature half is what a callback hook depends on).
+read from a compiled DLL — while its **address** comes from the owning plugin's
+shipped PDB (next section); until an address is available `has_address` is
+`false`, which is not a failure (the signature half is what a callback hook
+depends on).
 
 `:resolve()` reads the reference database, which is open after the engine finishes
 loading — call it from a `kcdx.on("ready", …)` callback (or later) when you need
 it at a defined point.
+
+## Internal functions from a shipped PDB
+
+Ship your plugin DLL's PDB next to the DLL and **every internal (non-exported)
+function becomes reachable by name** — no `kcdx.dll.declare`, no disassembly. The
+engine reads the PDB once at plugin load and fills in the address for each of your
+DLL's own functions, so another plugin can name `kcdx.functions["you.yourmod"].SomeInternalFn`
+and apply a [static byte op](statement.md) to it. The address is the part that is
+otherwise hard to get; the PDB hands it over for free.
+
+**Build your PDB with `/DEBUG:FULL`** — this is the one requirement. In Visual
+Studio set *Linker → Debugging → Generate Debug Info* to **Generate Debug
+Information (`/DEBUG:FULL`)**; on a CMake/MSVC target add `/DEBUG:FULL` to the link
+options. The default since Visual Studio 2017 is `/DEBUG:FASTLINK`, which produces
+a PDB that only points back at the object files on your build machine — it carries
+none of your functions' symbols once the DLL is shipped to someone else's game.
+`/DEBUG:FULL` produces a self-contained PDB that travels with the DLL. Ship the
+DLL and the `.pdb` together; that is the whole step.
+
+A callback hook on a PDB-sourced internal still needs the function's signature —
+the address comes from the PDB, but compiled C++ carries no runtime-readable ABI,
+so either declare the function ([`kcdx.dll.declare`](dll.md)) or supply the
+signature where you hook it. A **static byte op** needs only the address and works
+with the PDB alone.
+
+**It is purely additive — ship no PDB and you lose nothing.** Your declared
+functions and your DLL's exports still resolve exactly as before. When a PDB is
+absent or the wrong kind, the engine logs one teaching line and falls back to
+exports + declared functions:
+
+| What you shipped | What happens | Log line |
+|---|---|---|
+| A `/DEBUG:FULL` PDB beside the DLL | Internal functions resolve by name | `PDB auto-load populated internal-function addresses` |
+| No PDB | Exports + declared functions only | `no PDB beside plugin DLL; internal-function auto-load unavailable` |
+| A PDB that doesn't match the DLL (stale / rebuilt) | Exports + declared functions only | `PDB for plugin doesn't match its DLL` |
+| A `/DEBUG:FASTLINK` PDB | Exports + declared functions only | `plugin ships a FASTLINK PDB; rebuild with /DEBUG:FULL for internal-function auto-load` |
+
+The last row is the one to watch: a FASTLINK PDB *loads* but carries none of your
+internals when deployed, so the log tells you to rebuild with `/DEBUG:FULL` rather
+than leaving you guessing why your internals did not appear.
 
 ## Glossary
 

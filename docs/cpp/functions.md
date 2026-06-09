@@ -62,8 +62,12 @@ The mirror is one-to-one with the Lua forms ([`kcdx.functions.*`](../lua/functio
 `kcdx.functions["a.b"].Fn` to `PluginByName("a.b", "Fn")`. The Lua
 `value:resolve()` table maps to `kcdxFunctionResolution`. A game reference
 resolves to an address + signature; a plugin reference resolves to its declared
-signature with `hasAddress = false` until the plugin-DLL symbol path fills the
-address — the same contract as the Lua side.
+signature, and its address is filled from the owning plugin's shipped `/DEBUG:FULL`
+PDB at plugin load (the same
+[internal-function-from-PDB](../lua/functions.md#internal-functions-from-a-shipped-pdb)
+mechanism the Lua side describes — it is driven engine-side at plugin load, not a
+C++ author call), with `hasAddress = false` until an address is available — the
+same contract as the Lua side.
 
 ---
 
