@@ -22,7 +22,7 @@ kcdx's `build.ps1`.
 | [2.4 [FE] The 2 derivation-kind checks + the anchor-dependency DAG ordering](step-4-fe-derivation-checks-dag.md) | DONE | FE:e83a57c |
 | [2.5 [FE] s02 install-set link surface (Bin-folder pick) + version-match gate + the layout + verify states](step-5-fe-s02-link-table.md) | DONE | FE:0ed135d + FE:bfdff6f (install-set D30 + compact-header/collapsible s02 layout + reflow-safe row; doc-header fix) |
 | [2.6 [FE] s04 per-author verdict badge + Ambiguous steer + the 6 check verdict states](step-6-fe-s04-verdict-badge.md) | DONE | 2.6a 9d84fcf + FE:00b2e78/64424a6/2cb2cee/27aa470 (a–e: verify-only content_hash, extractor, badge, cross-row DAG, cross-entity fetch) — milestone UAT accepted; see the step doc's sub-step ledger |
-| [2.7 [FE] s02 link-to-create prompt → s05 prefill + evidence_kind-from-check](step-7-fe-link-to-create.md) | BLOCKED | gated on the pending underlying-data updates (DB/seed content/model with UI implications) — do those FIRST; 2.7 builds against the settled data (see the plan README §"Current state + what's next") |
+| [2.7 [FE] s02 link-to-create prompt → s05 prefill + evidence_kind-from-check](step-7-fe-link-to-create.md) | DONE | FE:7d2d6fa — the link-to-create on-ramp (uncovered-install-version → advisory banner → s05 prefilled at install version, law 3 click-only) + the D29 evidence_kind-from-check refine (Unchanged → pattern_scan, fill-empty-only) + AP18-gated. Gate green (typecheck/418 vitest/build); step-review land-fix. Unblocked by the statement-resolution-layer data update landing. |
 
 ## Phase verification gate
 

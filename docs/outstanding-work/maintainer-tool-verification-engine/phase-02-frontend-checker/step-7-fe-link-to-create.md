@@ -1,10 +1,10 @@
 # 2.7 [FE] s02 link-to-create prompt → s05 prefill + evidence_kind-from-check
 
-> **BLOCKED (2026-06-08):** do the pending underlying-data updates (the reference DB / seed
-> content/model changes the user has queued — they carry UI implications) FIRST. 2.7 builds the
-> s02 link-to-create + s05 prefill against that data; building it against the current (about-to-
-> change) model risks off-spec work. Resume 2.7 once the data updates land. See the plan README
-> §"Current state + what's next".
+> **DONE (2026-06-08, FE:7d2d6fa):** the link-to-create on-ramp + s05 prefill + the D29
+> evidence_kind-from-check composition. Gate green (typecheck / vitest 418/418 / build); step-review
+> land-fix (law 3 never-auto-open + law 4 advisory + AP18-not-bypassed + the D29 fill-empty-only
+> refine all verified). Pending the milestone UAT (the maintainer experiences the prompt + the
+> prefilled-s05 on-ramp against a real linked Bin folder).
 
 ## What
 
