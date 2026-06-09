@@ -510,3 +510,176 @@ def expected_verdict(kcdx_id, slice_name):
                 if s["name"] == slice_name:
                     return s["verdict"]
     raise KeyError("no fixture slice (%r, %r)" % (kcdx_id, slice_name))
+
+
+# ---------------------------------------------------------------------------
+# JSON EXPORT -- the cross-LANGUAGE contract (the Python source-of-truth -> JSON ->
+# the C++ engine-agreement consumer). The Phase-3 (JS<->C++) agreement test runs the
+# C++ engine static check over THESE byte-slices; the C++ side cannot import this
+# Python module, so the fixture is exported to a JSON file the C++ test reads. This is
+# the anticipated shape the header doc names ("an exported JSON, the C++ side, a Python
+# test -- reads the same shape; no class coupling").
+#
+# The JSON is LOSSLESS (working-artifacts.md trust axis; AP14 -- never silently drops a
+# row): every FIXTURE_ROWS row + every slice + every verdict round-trips. A slice's
+# `body` is hex-encoded (JSON has no byte type); a checker re-derives the exact bytes
+# with bytes.fromhex(slice["body"]). The derivation rows carry `anchor_rva` (the RVA the
+# anchor instruction is planted at in a synthetic PE so the disp32-follow re-derives the
+# recorded target); the datum carries the kind's recorded survival datum so a consumer
+# builds the engine Payload without re-deriving it.
+#
+# The format is FLAT + self-describing: a top-level object {format_version, in_scope_kinds,
+# verdicts, rows:[...]} so a C++ JSON reader walks rows -> slices with no schema lookup.
+# ---------------------------------------------------------------------------
+JSON_FORMAT_VERSION = 1
+
+
+def _datum_to_json(datum):
+    """Render a row's `datum` dict to a JSON-safe shape. The datum is already plain
+    JSON types (strings/ints/bools/lists) for every kind -- no bytes live in a datum
+    (the bytes are the slice bodies) -- so the datum passes through unchanged. Asserts
+    that so a future datum that smuggles in bytes is caught loudly, never silently
+    dropped (AP14)."""
+    def _check(v):
+        assert not isinstance(v, (bytes, bytearray)), \
+            "datum carries raw bytes %r -- bytes belong in a slice body, not a datum" % (v,)
+        if isinstance(v, dict):
+            for vv in v.values():
+                _check(vv)
+        elif isinstance(v, (list, tuple)):
+            for vv in v:
+                _check(vv)
+    _check(datum)
+    return datum
+
+
+def fixture_to_json_obj():
+    """Build the lossless JSON-serializable object mirroring FIXTURE_ROWS. Every row +
+    slice + verdict is present; slice bodies are hex strings (bytes.fromhex round-trips
+    them exactly). This is the in-memory form; dump_fixture_json() writes it to disk."""
+    rows = []
+    for r in FIXTURE_ROWS:
+        slices = [
+            {
+                "name": s["name"],
+                "body": bytes(s["body"]).hex(),   # "" for an empty body (vtable_index).
+                "verdict": s["verdict"],
+                "detail": s["detail"],
+            }
+            for s in r["slices"]
+        ]
+        rows.append({
+            "kcdx_id": r["kcdx_id"],
+            "kind": r["kind"],
+            "name": r["name"],
+            "datum": _datum_to_json(r["datum"]),
+            "source": r["source"],
+            "slices": slices,
+        })
+    return {
+        "format_version": JSON_FORMAT_VERSION,
+        "in_scope_kinds": list(IN_SCOPE_KINDS),
+        "verdicts": sorted(VERDICTS),
+        "rows": rows,
+    }
+
+
+def parse_json_obj(obj):
+    """The inverse of fixture_to_json_obj(): parse a loaded JSON object back into the
+    FIXTURE_ROWS shape (slice bodies decoded from hex back to bytes). Used by the
+    round-trip test to prove load_fixture() == the JSON's parse -- so a drift between
+    the Python source-of-truth and the emitted JSON is caught. Raises on a malformed
+    object (a missing key / a bad verdict), never a silent partial parse."""
+    rows = []
+    for r in obj["rows"]:
+        slices = []
+        for s in r["slices"]:
+            verdict = s["verdict"]
+            if verdict not in VERDICTS:
+                raise ValueError("unknown verdict %r in JSON slice %r" % (verdict, s.get("name")))
+            slices.append({
+                "name": s["name"],
+                "body": bytes.fromhex(s["body"]),
+                "verdict": verdict,
+                "detail": s["detail"],
+            })
+        rows.append({
+            "kcdx_id": r["kcdx_id"],
+            "kind": r["kind"],
+            "name": r["name"],
+            "datum": r["datum"],
+            "source": r["source"],
+            "slices": slices,
+        })
+    return rows
+
+
+def fixture_json_text():
+    """The deterministic JSON text of the fixture (sorted keys, 2-space indent, trailing
+    newline). The single rendering used by both the committed .json file and the embedded
+    C++ header, so the two can never disagree about the bytes."""
+    import json
+    return json.dumps(fixture_to_json_obj(), indent=2, sort_keys=True) + "\n"
+
+
+def dump_fixture_json(path):
+    """Write the lossless fixture JSON to `path` (the committed cross-language contract
+    the C++ engine-agreement consumer reads). Deterministic output (sorted keys,
+    2-space indent, trailing newline) so a re-emit produces a byte-identical file unless
+    the fixture changed -- a git diff then shows EXACTLY what changed in the contract."""
+    import os
+    obj = fixture_to_json_obj()
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(fixture_json_text())
+    return obj
+
+
+def fixture_header_text():
+    """Render the C++ engine-embedded header carrying the fixture JSON as a raw string
+    literal. The C++ agreement consumer (the cap-NN in-engine self-test) includes this
+    header + parses the embedded JSON with its compact reader, so it runs over the EXACT
+    bytes the Python source-of-truth pins -- no runtime file I/O, no deploy step, no path
+    resolution. The JSON is emitted as a C++ raw string literal (R"FIXJSON(...)FIXJSON")
+    so the embedded text needs no per-character escaping; the delimiter is chosen to never
+    occur in the JSON. GENERATED -- do not hand-edit; re-run the Python emitter."""
+    text = fixture_json_text()
+    delim = "FIXJSON"
+    assert (")" + delim + '"') not in text, \
+        "the raw-string delimiter %r collides with the JSON content" % (delim,)
+    lines = [
+        "#pragma once",
+        "",
+        "// GENERATED FILE -- DO NOT EDIT. The cross-implementation per-kind survival",
+        "// fixture (TRD D27), emitted from the Python source-of-truth",
+        "// data/refdata-extractor/python/seeds_shared/cross_impl_fixture.py (FIXTURE_ROWS)",
+        "// via fixture_header_text(). Regenerate by running",
+        "// `python tests/test_cross_impl_fixture_json.py` (it re-emits this header + the",
+        "// committed .json). The cap-NN engine agreement self-test embeds this JSON, plants",
+        "// each slice in a synthetic PE, runs the REAL engine static check, and asserts the",
+        "// engine verdict == the pinned verdict (== the Python == the JS).",
+        "//",
+        "// The JSON is the lossless contract: every FIXTURE_ROWS row + slice + verdict",
+        "// round-trips (a Python round-trip test pins it). A drift between this header and",
+        "// the fixture is caught by test_cross_impl_fixture_json.py (header-current check).",
+        "",
+        "namespace kcdx::survival_agreement_fixture {",
+        "",
+        "// The fixture JSON, verbatim from the Python emitter (raw string -- no escaping).",
+        'inline constexpr const char* kFixtureJson = R"' + delim + "(",
+        text.rstrip("\n"),
+        ")" + delim + '";',
+        "",
+        "}  // namespace kcdx::survival_agreement_fixture",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def dump_fixture_header(path):
+    """Write the C++ engine-embedded fixture header to `path`. GENERATED; the round-trip
+    test re-emits it so a fixture change never leaves the embedded contract stale."""
+    import os
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(fixture_header_text())

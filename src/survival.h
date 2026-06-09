@@ -202,6 +202,32 @@ Result SurvivalCheck(const Payload& payload,
                      const std::string& dll);
 
 // ---------------------------------------------------------------------------
+// THE BUFFER-INJECTION SEAM — run the SAME per-kind static dispatch over a
+// CALLER-SUPPLIED on-disk PE buffer, instead of reading WHGame.dll's backing
+// file. The production SurvivalCheck above resolves + reads WHGame.dll itself
+// (the live game's on-disk module); this overload takes the bytes directly so a
+// test can drive the EXACT per-kind check over a fixture / synthetic PE the
+// caller built. It runs the IDENTICAL check logic (the function-kind body hash,
+// the 5 static non-function checks, the vtable_index deferral, the anchor-changed
+// short-circuit) — only the source of the on-disk bytes differs. This is the
+// headless-testability seam the cross-implementation agreement test (D27) drives:
+// it plants each fixture byte-slice in a synthetic PE and asserts the engine
+// verdict == the fixture's pinned verdict.
+//
+// `fileBuffer` is a raw on-disk PE image (DOS+NT+section headers + section raw
+// data) the pe:: OnDisk* accessors parse — NOT a live relocated image. An empty
+// buffer for a kind that needs the on-disk read yields CannotCheck/"on_disk_unreadable"
+// (never a false verdict). The function-kind body hash reads [rva, rva+length)
+// from this buffer (the same RvaToFileOffsetOnDisk mapping the production path
+// uses on WHGame.dll's bytes). vtable_index → its defined deferral; an
+// anchor-changed dependent → the same short-circuit. The verdict is byte-identical
+// to what SurvivalCheck would return on a WHGame.dll buffer with the same bytes
+// at the same rva.
+Result SurvivalCheckOnBuffer(const Payload& payload,
+                             uint32_t rva,
+                             const std::vector<uint8_t>& fileBuffer);
+
+// ---------------------------------------------------------------------------
 // THE DEPENDENCY-ORDERED WALK — checks a SET of rows anchors-first so a
 // dependent kind that re-derives THROUGH an anchor (data_slot → instruction_anchor
 // → string_anchor; vtable_index → vtable_base) is checked only AFTER its anchor,

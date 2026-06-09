@@ -1,0 +1,52 @@
+# CAP-85 — JS<->C++ cross-implementation survival agreement (TRD D27, step 3.4).
+#
+# The conformance pin that proves the C++ ENGINE static survival check and the JS
+# BROWSER static check return the SAME verdict on the SAME DLL bytes for every
+# in-scope kind — the engine is the authority, the browser its faithful mirror.
+# The behavior under test is ENGINE machinery (survival::SurvivalCheckOnBuffer —
+# the buffer-injection seam), not an author surface, so it self-reports from
+# engine code via kcdx::test::ReportResult (src/survival_agreement_selftest.cpp).
+# This kcdx.toml is a MANIFEST-ONLY STUB — no plugin.lua, no DLL — whose sole job
+# is to pre-register the matrix row via test_names so it shows PENDING until the
+# engine reports it. Same pattern as cap-84-survival-dispatch / cap-83-stmt-resolve
+# / cap-60-version-check-cache.
+#
+# What it proves (the cross-impl agreement, one assertion per fixture slice):
+#   The cross-implementation fixture (cross_impl_fixture.py — the source-of-truth,
+#   derived from fingerprint-per-kind.md, NOT from any checker) is emitted to a
+#   JSON contract embedded in the engine (survival_agreement_fixture.h, GENERATED).
+#   For each fixture row's slice, the engine: builds the survival Payload, plants
+#   the slice's raw bytes in a SYNTHETIC PE at the right section/rva (the C++
+#   analogue of the JS makeAnchorPE/makeFakePE planting — the engine's static
+#   checks scan PE SECTIONS, the slices are just the kind's bytes), runs the REAL
+#   engine static check via the buffer seam, and asserts:
+#       engine_verdict == the fixture's pinned verdict  (== the Python == the JS).
+#   Covers every in-scope kind: function (body hash — incl. the BLAKE3 hash
+#   agreement: the engine's vendored BLAKE3 must reproduce the pinned content_hash),
+#   callsite (AOB unique/zero/multi → Unchanged/Changed/Ambiguous), string_anchor
+#   (.rdata literal present/absent), instruction_anchor + data_slot (disp32
+#   derivation), vtable_base (table-shape), + the vtable_index CannotCheck row.
+#
+# FALSIFIABLE (AP15): the row goes RED if the engine verdict DIVERGES from the
+# fixture's pinned verdict for ANY kind/slice. The assertion is never weakened and
+# the fixture is never adjusted to mask a divergence — a genuine engine divergence
+# is a 3.1/3.2 engine bug the conformance test caught, reported as a FAIL naming
+# the kind + the two verdicts.
+#
+# Test mode: boot-only, HARD pass/fail (NOT degraded). The synthetic PEs + the
+# embedded fixture are self-contained — no WHGame.dll mapping and no deployed DB
+# are required, so the pin runs identically on any host. Resolves + reports
+# synchronously on the first suite tick. No console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_85_survival_agreement"
+display_name        = "CAP-85 JS<->C++ survival agreement"
+author              = "ts"
+description         = "Engine self-test: the cross-implementation agreement pin (D27). For every cross-impl-fixture byte-slice, the C++ engine static survival check (run over a synthetic PE planting the slice bytes, via the SurvivalCheckOnBuffer seam) returns the SAME verdict the fixture pins (== the Python reference == the JS browser checker) — function/callsite/string_anchor/instruction_anchor/data_slot/vtable_base + vtable_index CannotCheck. Self-contained (synthetic PEs + an embedded JSON fixture), so a HARD pass/fail. A divergence is a real engine bug the conformance test caught, never masked."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-85-survival-agreement"]

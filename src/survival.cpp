@@ -585,6 +585,129 @@ Result CheckVtableBase(const std::vector<uint8_t>& file, const Payload& p, uint3
     return Unchanged();
 }
 
+// The function-kind body-hash check over an ALREADY-READ on-disk buffer. The
+// production legacy SurvivalCheck(rva,length,hash,len) resolves + reads
+// WHGame.dll itself; this is the SAME logic (precondition checks identical to
+// the legacy path, then RvaToFileOffsetOnDisk + BLAKE3 + memcmp) over a
+// caller-supplied buffer, so the buffer-injection seam can drive the function
+// kind without touching WHGame.dll. Verdict is byte-identical to the legacy
+// entry on the same bytes at the same rva.
+Result CheckFunctionOnBuffer(const std::vector<uint8_t>& file,
+                             uint32_t rva, size_t length,
+                             const std::vector<uint8_t>& expectedHash) {
+    if (expectedHash.empty()) {
+        LOG_DEBUG_KV(kCategory, "not_applicable",
+            ::kcdx::log::KV("reason", "not_applicable"),
+            ::kcdx::log::KV("rva", (unsigned long long)rva),
+            ::kcdx::log::KV("note", "empty expected hash — non-byte entity, no check"));
+        return CannotCheck("not_applicable");
+    }
+    if (expectedHash.size() != kHashLen) {
+        LOG_ERROR_KV(kCategory, "expected_hash_bad_length",
+            ::kcdx::log::KV("reason", "expected_hash_bad_length"),
+            ::kcdx::log::KV("rva", (unsigned long long)rva),
+            ::kcdx::log::KV("expected_len", (unsigned long long)expectedHash.size()),
+            ::kcdx::log::KV("want_len", (unsigned long long)kHashLen));
+        return CannotCheck("expected_hash_bad_length");
+    }
+    if (length == 0) {
+        LOG_ERROR_KV(kCategory, "length_zero",
+            ::kcdx::log::KV("reason", "length_zero"),
+            ::kcdx::log::KV("rva", (unsigned long long)rva),
+            ::kcdx::log::KV("note", "zero-length span — nothing to hash"));
+        return CannotCheck("length_zero");
+    }
+    size_t fileOffset = 0;
+    if (!pe::RvaToFileOffsetOnDisk(file.data(), file.size(), rva, length, fileOffset)) {
+        LOG_ERROR_KV(kCategory, "rva_out_of_range",
+            ::kcdx::log::KV("reason", "rva_out_of_range"),
+            ::kcdx::log::KV("rva", (unsigned long long)rva),
+            ::kcdx::log::KV("length", (unsigned long long)length),
+            ::kcdx::log::KV("file_size", (unsigned long long)file.size()),
+            ::kcdx::log::KV("note", "span maps to no on-disk section"));
+        return CannotCheck("rva_out_of_range");
+    }
+    if (fileOffset > file.size() || length > file.size() - fileOffset) {
+        LOG_ERROR_KV(kCategory, "read_error",
+            ::kcdx::log::KV("reason", "read_error"),
+            ::kcdx::log::KV("note", "mapped span runs past the file buffer"));
+        return CannotCheck("read_error");
+    }
+    uint8_t got[blake3::kHashLen];
+    blake3::Hash256(file.data() + fileOffset, length, got);
+    if (std::memcmp(got, expectedHash.data(), kHashLen) == 0) {
+        LOG_DEBUG_KV(kCategory, "unchanged",
+            ::kcdx::log::KV("rva", (unsigned long long)rva),
+            ::kcdx::log::KV("length", (unsigned long long)length),
+            ::kcdx::log::KV("hash", ToHex(got, kHashLen)));
+        return Unchanged();
+    }
+    LOG_WARN_KV(kCategory, "changed",
+        ::kcdx::log::KV("rva", (unsigned long long)rva),
+        ::kcdx::log::KV("length", (unsigned long long)length),
+        ::kcdx::log::KV("computed", ToHex(got, kHashLen)),
+        ::kcdx::log::KV("expected", ToHex(expectedHash.data(), kHashLen)));
+    return Changed();
+}
+
+// The vtable_index deferral + the anchor-changed short-circuit — decided BEFORE
+// any on-disk read, so a non-mapped module / empty buffer never masks them. Both
+// entry points (production SurvivalCheck and the buffer seam) run this first.
+// Returns true + writes `out` when the kind is decided here (deferral / blocked);
+// false when the caller must run the per-kind on-disk check.
+bool PreReadDecision(const Payload& payload, uint32_t rva, Result& out) {
+    if (payload.kind == Kind::VtableIndex) {
+        LOG_DEBUG_KV(kCategory, "vtable_index_deferred",
+            ::kcdx::log::KV("reason", "vtable_index_deferred"),
+            ::kcdx::log::KV("kind", "vtable_index"),
+            ::kcdx::log::KV("rva", (unsigned long long)rva),
+            ::kcdx::log::KV("note", "slot-target body-hash population waits on the runtime-vtable path"));
+        out = CannotCheck("vtable_index_deferred");
+        return true;
+    }
+    const bool nonFunctionStatic =
+        payload.kind == Kind::Callsite || payload.kind == Kind::StringAnchor ||
+        payload.kind == Kind::InstructionAnchor || payload.kind == Kind::DataSlot ||
+        payload.kind == Kind::VtableBase;
+    if (nonFunctionStatic && payload.hasAnchor && payload.anchorChanged) {
+        LOG_WARN_KV(kCategory, "anchor_changed",
+            ::kcdx::log::KV("reason", "anchor_changed"),
+            ::kcdx::log::KV("kind", KindName(payload.kind)),
+            ::kcdx::log::KV("rva", (unsigned long long)rva),
+            ::kcdx::log::KV("note", "anchor (derivesFrom) came back Changed — dependent transitively un-derivable"));
+        out = CannotCheck("anchor_changed");
+        return true;
+    }
+    return false;
+}
+
+// The per-kind on-disk check over an ALREADY-READ buffer — the shared core of
+// BOTH the production SurvivalCheck (which reads WHGame.dll, then calls this) and
+// the buffer-injection seam SurvivalCheckOnBuffer (which is handed a fixture
+// buffer). Centralizing the kind switch means the two entry points run the
+// IDENTICAL check logic; only the SOURCE of `file` differs. vtable_index +
+// anchor-changed are already decided by PreReadDecision before this runs.
+Result CheckKindOverBuffer(const Payload& payload, uint32_t rva,
+                           const std::vector<uint8_t>& file) {
+    switch (payload.kind) {
+        case Kind::Function:
+        case Kind::FunctionNoSig:
+        case Kind::FunctionVariadic:
+            return CheckFunctionOnBuffer(file, rva, payload.length, payload.contentHash);
+        case Kind::Callsite:          return CheckCallsite(file, payload, rva);
+        case Kind::StringAnchor:      return CheckStringAnchor(file, payload, rva);
+        case Kind::InstructionAnchor: return CheckInstructionAnchor(file, payload, rva);
+        case Kind::DataSlot:          return CheckDataSlot(file, payload, rva);
+        case Kind::VtableBase:        return CheckVtableBase(file, payload, rva);
+        case Kind::VtableIndex:       break;  // decided by PreReadDecision — unreachable here.
+    }
+    LOG_ERROR_KV(kCategory, "kind_unknown",
+        ::kcdx::log::KV("reason", "on_disk_unreadable"),
+        ::kcdx::log::KV("kind_value", (unsigned long long)static_cast<int>(payload.kind)),
+        ::kcdx::log::KV("note", "unmapped survival kind reached the dispatch"));
+    return CannotCheck("on_disk_unreadable");
+}
+
 }  // namespace
 
 Result SurvivalCheck(const Payload& payload,
@@ -592,74 +715,45 @@ Result SurvivalCheck(const Payload& payload,
                      const std::string& dll) {
     (void)dll;  // reserved for the per-module on-disk read (step 3.2/3.3 wires
                 // the module selection); the function path reads WHGame.dll.
-    switch (payload.kind) {
-        // --- Function kinds: the EXISTING on-disk body-hash check, UNCHANGED. ---
-        // Route through the legacy entry point so its verdict is byte-identical
-        // to today (the test asserts this). An empty contentHash here is a
-        // non-byte entity → the legacy path returns CannotCheck "not_applicable",
-        // exactly as before.
-        case Kind::Function:
-        case Kind::FunctionNoSig:
-        case Kind::FunctionVariadic: {
-            return SurvivalCheck(
-                rva, payload.length,
-                payload.contentHash.empty() ? nullptr : payload.contentHash.data(),
-                payload.contentHash.size());
-        }
 
-        // --- vtable_index: a DEFINED, longer-lived deferral. ------------------
-        // Its survival datum (a slot-target body-hash) is design-defined but
-        // population waits on the runtime-vtable verification path. CannotCheck
-        // with its own token, never a false Unchanged or a 3.2-pending stub.
-        case Kind::VtableIndex: {
-            LOG_DEBUG_KV(kCategory, "vtable_index_deferred",
-                ::kcdx::log::KV("reason", "vtable_index_deferred"),
-                ::kcdx::log::KV("kind", "vtable_index"),
-                ::kcdx::log::KV("rva", (unsigned long long)rva),
-                ::kcdx::log::KV("note", "slot-target body-hash population waits on the runtime-vtable path"));
-            return CannotCheck("vtable_index_deferred");
-        }
+    Result early;
+    if (PreReadDecision(payload, rva, early)) return early;  // deferral / anchor-changed.
 
-        // --- The 5 STATIC non-function checks (D25 — on-disk). ----------------
-        // A dependent row whose anchor came back Changed short-circuits to
-        // CannotCheck/"anchor_changed" — never silently re-derived through a dead
-        // anchor (the ordered walk sets payload.anchorChanged). Each check reads
-        // the on-disk DLL and returns a DEFINED verdict.
-        case Kind::Callsite:
-        case Kind::StringAnchor:
-        case Kind::InstructionAnchor:
-        case Kind::DataSlot:
-        case Kind::VtableBase: {
-            if (payload.hasAnchor && payload.anchorChanged) {
-                LOG_WARN_KV(kCategory, "anchor_changed",
-                    ::kcdx::log::KV("reason", "anchor_changed"),
-                    ::kcdx::log::KV("kind", KindName(payload.kind)),
-                    ::kcdx::log::KV("rva", (unsigned long long)rva),
-                    ::kcdx::log::KV("note", "anchor (derivesFrom) came back Changed — dependent transitively un-derivable"));
-                return CannotCheck("anchor_changed");
-            }
-            std::vector<uint8_t> file;
-            if (const char* reason = ReadOnDiskModule(file)) {
-                return CannotCheck(reason);
-            }
-            switch (payload.kind) {
-                case Kind::Callsite:          return CheckCallsite(file, payload, rva);
-                case Kind::StringAnchor:      return CheckStringAnchor(file, payload, rva);
-                case Kind::InstructionAnchor: return CheckInstructionAnchor(file, payload, rva);
-                case Kind::DataSlot:          return CheckDataSlot(file, payload, rva);
-                case Kind::VtableBase:        return CheckVtableBase(file, payload, rva);
-                default: break;  // unreachable — outer switch already gated these.
-            }
-            return CannotCheck("on_disk_unreadable");  // unreachable.
-        }
+    // --- Function kinds: route through the legacy on-disk body-hash entry,
+    // UNCHANGED. It does its OWN precondition checks (empty-hash / bad-length /
+    // length-zero) BEFORE resolving WHGame.dll, so its verdict is byte-identical
+    // to before this restructure (cap-84 sub-check 1 asserts dispatch == legacy,
+    // including the module-not-mapped ordering — preserved by keeping this path on
+    // the legacy entry rather than the read-first buffer core). -----------------
+    if (payload.kind == Kind::Function || payload.kind == Kind::FunctionNoSig ||
+        payload.kind == Kind::FunctionVariadic) {
+        return SurvivalCheck(
+            rva, payload.length,
+            payload.contentHash.empty() ? nullptr : payload.contentHash.data(),
+            payload.contentHash.size());
     }
 
-    // Exhaustive above; an unmapped kind is a defect, not a silent pass.
-    LOG_ERROR_KV(kCategory, "kind_unknown",
-        ::kcdx::log::KV("reason", "on_disk_unreadable"),
-        ::kcdx::log::KV("kind_value", (unsigned long long)static_cast<int>(payload.kind)),
-        ::kcdx::log::KV("note", "unmapped survival kind reached the dispatch"));
-    return CannotCheck("on_disk_unreadable");
+    // --- The 5 STATIC non-function checks: read WHGame.dll, then the shared
+    // per-kind dispatch over its bytes (the SAME core the buffer seam runs). ----
+    std::vector<uint8_t> file;
+    if (const char* reason = ReadOnDiskModule(file)) {
+        return CannotCheck(reason);
+    }
+    return CheckKindOverBuffer(payload, rva, file);
+}
+
+Result SurvivalCheckOnBuffer(const Payload& payload,
+                             uint32_t rva,
+                             const std::vector<uint8_t>& fileBuffer) {
+    // The buffer-injection seam: the IDENTICAL pre-read decision + per-kind
+    // dispatch the production SurvivalCheck runs, but over the caller-supplied
+    // buffer instead of WHGame.dll's backing file. The function kind reads its
+    // body hash from THIS buffer (CheckFunctionOnBuffer — the same logic as the
+    // legacy entry, minus the WHGame.dll resolve). The verdict matches
+    // SurvivalCheck byte-for-byte on the same bytes at the same rva.
+    Result early;
+    if (PreReadDecision(payload, rva, early)) return early;  // deferral / anchor-changed.
+    return CheckKindOverBuffer(payload, rva, fileBuffer);
 }
 
 Result SurvivalCheck(uint32_t rva, size_t length,

@@ -42,6 +42,7 @@
 #include "blake3_selftest.h"                       // cap-59 engine self-report
 #include "version_check_selftest.h"                // cap-60 engine self-report
 #include "survival_dispatch_selftest.h"            // cap-84 survival per-kind dispatch + Ambiguous
+#include "survival_agreement_selftest.h"           // cap-85 JS<->C++ cross-impl survival agreement
 #include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
 #include "statement_resolve_selftest.h"             // cap-83 refdb statement-resolution API
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
@@ -761,6 +762,15 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // row's content_hash/length (DEGRADED PASS otherwise — like cap-83). RESETS
     // the cache's in-memory + on-disk state afterward. One-shot guarded.
     kcdx::survival_dispatch_selftest::RunSelfTestOnce();
+
+    // cap-85-survival-agreement: the JS<->C++ cross-implementation agreement pin
+    // (D27). For every cross-impl-fixture byte-slice, the C++ engine static
+    // survival check (run over a SYNTHETIC PE planting the slice bytes, via the
+    // survival::SurvivalCheckOnBuffer seam) returns the SAME verdict the fixture
+    // pins (== the Python reference == the JS browser checker). Self-contained
+    // (synthetic PEs + an embedded JSON fixture) — a HARD pass/fail, no WHGame.dll
+    // / DB dependency. Boot-only, one-shot guarded.
+    kcdx::survival_agreement_selftest::RunSelfTestOnce();
 
     // cap-66-node-classifier: KI-0001 permanent regression. Asserts the
     // vendored-Lua crash guard (kcdx_node_freeable in vendor/lua/ltable.c)
