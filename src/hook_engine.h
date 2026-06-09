@@ -196,7 +196,7 @@ struct RuntimeInstallResult {
 // engine alone selects the backend (cornerstones.md: the engine does the heavy
 // lifting). See safetyhook_backend.h / minhook_backend.h for the two backends.
 enum class Backend {
-    MinHook,     // byte-patch without thread-suspend; the loader-lock-safe path
+    MinHook,     // plain byte-write; the conservative loader-lock-safe path
     Safetyhook,  // thread-safe install + far-target reach (E9->FF fallback)
 };
 

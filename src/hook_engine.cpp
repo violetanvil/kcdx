@@ -75,9 +75,12 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
     // (raw MH_CreateHook), so this is a forward guard for a FUTURE install path:
     // any kind that must stay on MinHook (mid + dynamic_hook today; a
     // hypothetical loader-lock kind tomorrow) resolving to safetyhook is the
-    // bug the guard catches. A safetyhook install under the loader lock is a
-    // deadlock (its unconditional thread-suspend) — fail LOUD and refuse, never
-    // a silent wrong-backend (logging.md; AP14). Only ChainFunctionEntry may
+    // bug the guard catches. MinHook is the conservative, loader-lock-safe path
+    // for those kinds — a plain byte-write with no known loader-lock hazard;
+    // safetyhook's VEH + VirtualProtect install is UNVERIFIED under the loader
+    // lock, so routing a loader-lock / non-function-entry kind to it is the
+    // misroute the guard catches. Fail LOUD and refuse on a wrong-backend
+    // selection — never a silent misroute. Only ChainFunctionEntry may
     // ever select safetyhook; any other kind that does is a select_backend defect.
     if (backend == Backend::Safetyhook && kind != InstallKind::ChainFunctionEntry) {
         out.reason = "routing predicate selected safetyhook for a non-function-entry "
@@ -104,11 +107,12 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
     }
 
     // Drive the detour backend, selected from the caller's InstallKind via
-    // select_backend (the single-sourced §4.2 table; the guard above proved the
-    // selection cannot misroute). MinHook patches without thread-suspend (the
-    // loader-lock-safe path);
-    // safetyhook is thread-safe and reaches any 64-bit target via its E9->FF
-    // fallback (the function-entry chain path). detour_addr is expected to
+    // select_backend (the single-sourced routing table; the guard above proved
+    // the selection cannot misroute). MinHook is a plain byte-write with no
+    // known loader-lock hazard (the conservative loader-lock path); safetyhook
+    // is thread-safe (its VEH + VirtualProtect install needs no first-wins lock)
+    // and reaches any 64-bit target via its E9->FF fallback (the function-entry
+    // chain path). detour_addr is expected to
     // already be within ±2 GB of target_addr (caller's responsibility; e.g.,
     // runtime_func_t::make_jit_func routes through branch_pool). The backend
     // is leaked deliberately: kcdx never unhooks (session-lifetime, SKSE
