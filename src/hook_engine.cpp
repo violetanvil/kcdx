@@ -22,11 +22,11 @@ namespace kcdx::hook_engine {
 // and kcdx.memory.dynamic_hook install via InstallRuntime (below). The
 // backend seam lives HERE: a caller passes its InstallKind (what the install
 // IS), and InstallRuntime selects the IDetourBackend via select_backend (the
-// single-sourced §4.2 routing table) and drives create -> enable. The caller
+// single-sourced routing table) and drives create -> enable. The caller
 // names no backend, so a wrong-backend literal is unwriteable (the
 // misroute-impossible bar). The loader-lock + bootstrap paths (early_hook, the
 // HookedUpdate pump, the frealloc canary) install via raw MH_CreateHook and
-// never reach this seam — the documented bootstrap exceptions (hook-engine.md).
+// never reach this seam — the documented bootstrap exceptions.
 
 namespace {
 
@@ -38,16 +38,16 @@ namespace {
 // registry) colliding with a chain hook, or two dynamic_hooks, on one VA.
 std::unordered_map<uintptr_t, std::string> g_installed;
 
-// Compile-time proof the §4.2 routing table is correct — the unit-level
+// Compile-time proof the routing table is correct — the unit-level
 // predicate check (zero runtime cost; verified by the build gate itself, no
-// live launch and no DI seam). Function-entry -> safetyhook, dynamic -> MinHook.
+// live launch and no test-only seam). Function-entry -> safetyhook, dynamic -> MinHook.
 // Mid no longer routes through InstallRuntime (the safetyhook::MidHook adapter
 // installs directly from AddMid/AddCMid; the ChainMid kind retired with the
-// make_jit_midfunc replacement, design §5.3).
+// make_jit_midfunc replacement).
 static_assert(select_backend(InstallKind::ChainFunctionEntry) == Backend::Safetyhook,
-              "chain function-entry must route to safetyhook (design §4.2)");
+              "chain function-entry must route to safetyhook");
 static_assert(select_backend(InstallKind::DynamicHook) == Backend::MinHook,
-              "dynamic_hook must route to MinHook (design §4.2)");
+              "dynamic_hook must route to MinHook");
 
 }  // namespace
 
@@ -70,8 +70,8 @@ RuntimeInstallResult InstallRuntime(const std::string& name,
         return out;
     }
 
-    // Misroute-impossible forward guard (E18, the design's one safety-critical
-    // mechanism). The loader-lock + bootstrap paths NEVER reach InstallRuntime
+    // Misroute-impossible forward guard — the one safety-critical mechanism in
+    // this seam. The loader-lock + bootstrap paths NEVER reach InstallRuntime
     // (raw MH_CreateHook), so this is a forward guard for a FUTURE install path:
     // any kind that must stay on MinHook (mid + dynamic_hook today; a
     // hypothetical loader-lock kind tomorrow) resolving to safetyhook is the

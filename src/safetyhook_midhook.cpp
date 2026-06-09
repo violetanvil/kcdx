@@ -2,7 +2,7 @@
 // See safetyhook_midhook.h for WHY this is a dedicated unit (not an
 // IDetourBackend / InstallRuntime route).
 //
-// SOURCE (all read this session — dependencies.md; a safetyhook API claim cites
+// SOURCE (all read this session — a safetyhook API claim cites
 // the vendored header, never recall):
 //   - MidHookFn is `void(*)(Context&)`, no userdata
 //        vendor/safetyhook/include/safetyhook/mid_hook.hpp:22
@@ -18,8 +18,8 @@
 //     spanning >= sizeof(JmpE9)) — the skip/resume boundary
 //        vendor/safetyhook/include/safetyhook/inline_hook.hpp:209 +
 //        src/inline_hook.cpp e9_hook() (decode-until->=5 loop)
-// The capture-form -> Context64 map this file wires against is the 6a finding
-// (_research/midhook-capture-map/FINDINGS.md): F1 GPR -> ctx.<reg>; F2 sub-width
+// The capture-form -> Context64 map this file wires against (verified against the
+// safetyhook headers + the binary): F1 GPR -> ctx.<reg>; F2 sub-width
 // masked [H2]; F3 XMM -> ctx.xmm<N>.<lane>; F4-F9 memory -> addr from ctx field
 // values, deref [H3]; F9 [rsp+N] -> ctx.rsp raw, read-only [H1]. The JIT's
 // rsp_offset frame-delta DROPS — Context64 hands back the original rsp.
@@ -36,7 +36,7 @@
 #include <safetyhook/context.hpp>
 
 #include "hook_chain.h"  // MidDispatch / ConsumeMidSkip (the dispatch/marshaling
-                         // layer stays in hook_chain, UNCHANGED — design §5.3)
+                         // layer stays in hook_chain, UNCHANGED)
 #include "log.h"
 #include "rom_borrowed/asmjit_helper.h"  // get_gp_from_name / get_xmm_from_name /
                                          // get_addr_from_name / parse_number_from_string
@@ -342,7 +342,7 @@ void MidDispatchFromContext(safetyhook::Context64& ctx, size_t slotIndex) {
     // SKSE session-lifetime model), so a fire reads a fully-bound, immutable
     // slot. The lock in Install only serializes installs against each other, not
     // against fires. Copying the capture vectors per fire would allocate on the
-    // hot path (memory.md / logging.md) — exactly what the retired JIT avoided
+    // hot path — exactly what the retired JIT avoided
     // by baking the layout; reading by reference keeps the fire allocation-free.
     const MidSlot& s = g_slots[slotIndex];
     if (!s.inUse) return;
@@ -366,7 +366,7 @@ void MidDispatchFromContext(safetyhook::Context64& ctx, size_t slotIndex) {
     }
 
     // DISPATCH: the existing MidDispatch (off-thread filter, engine carve-out,
-    // re-entrancy, pin-arena, Lua/C marshaling) — UNCHANGED (§5.3). It clears
+    // re-entrancy, pin-arena, Lua/C marshaling) — UNCHANGED. It clears
     // and may set the skip flag; we read the result via ConsumeMidSkip below.
     kcdx::hook_chain::MidDispatch(
         reinterpret_cast<const kcdx::rom::runtime_func_t::parameters_t*>(payload),
@@ -379,7 +379,7 @@ void MidDispatchFromContext(safetyhook::Context64& ctx, size_t slotIndex) {
                                    payload + kMidStride * i);
     }
 
-    // CALL-ORIGINAL via ctx.rip (design §5.1; spike-proven). The chain decides
+    // CALL-ORIGINAL via ctx.rip (spike-proven against the binary). The chain decides
     // run-vs-skip exactly as today (return "skip"/true sets the flag); Auto IS
     // this conditional set. True/run = leave ctx.rip alone (safetyhook's
     // trampoline re-runs the captured instruction). False/skip = ctx.rip =
@@ -437,7 +437,7 @@ InstallResult Install(uintptr_t                       targetVa,
     // GPR / sub-width GPR / XMM name; a memory form must parse (a Context64
     // snapshot is needed for the live address, but the grammar — base reg etc. —
     // is validated against the acceptor here). Replaces the validation
-    // make_jit_midfunc did via get_addr_from_name (AP14 — fail loud, never drop).
+    // make_jit_midfunc did via get_addr_from_name (fail loud, never drop).
     for (size_t i = 0; i < captureExprs.size(); ++i) {
         const std::string& e = captureExprs[i];
         if (e.empty()) {
@@ -468,8 +468,8 @@ InstallResult Install(uintptr_t                       targetVa,
 
     size_t k = claim_slot_locked();
     if (k >= kMidTrampolinePoolSize) {
-        // FAIL LOUD (AP14, logging.md) — never a silent drop. A fixed pool of N
-        // is exhausted only with an unrealistic number of distinct mid targets;
+        // FAIL LOUD — never a silent drop; the failure is logged with context. A
+        // fixed pool of N is exhausted only with an unrealistic number of distinct mid targets;
         // surface it so the cap can be raised deliberately.
         res.reason =
             "mid-hook trampoline pool exhausted (all " +
@@ -550,7 +550,7 @@ InstallResult Install(uintptr_t                       targetVa,
         return res;
     }
 
-    // FOREIGN-HOOK REGISTRY (§6.1) — the mid trampoline range is NOT registered
+    // FOREIGN-HOOK REGISTRY — the mid trampoline range is NOT registered
     // here because safetyhook::MidHook does NOT expose its stub/trampoline range
     // publicly: its inner InlineHook (m_hook) and its mid stub Allocation
     // (m_stub) are PRIVATE with no public accessor — only original_bytes() (the
@@ -563,8 +563,8 @@ InstallResult Install(uintptr_t                       targetVa,
     // practical gap is narrow: a mid hook's prologue jump lands at a mid-function
     // VA (not a function entry), and the chain keeps one mid per VA — a later
     // function-entry hook does not target a mid VA, so a mid trampoline is rarely
-    // a classifier jump target in v1. Surfaced as a finding for Step 8 to weigh
-    // against the foreign-mid-hook case.
+    // a classifier jump target in v1. Surfaced as a finding for the foreign-hook
+    // chaining work to weigh against the foreign-mid-hook case.
     res.ok = true;
     log::InfoF("safetyhook_midhook: installed mid '%s' at 0x%p (slot %zu, "
                "%zu captures, resume +%zu)",

@@ -25,7 +25,7 @@
 // get_original() returns the trampoline entry (InlineHook::original() ->
 // m_trampoline.address()), which InstallRuntime writes into runtime_func_t's
 // JIT call-original slot — the backend PRODUCES the value, it does NOT own that
-// slot (runtime_func_t does). U2 (proven Phase 1 step 2): the trampoline entry
+// slot (runtime_func_t does). The trampoline entry
 // is callable with the original ABI from the asmjit thunk like MinHook's
 // pOriginal.
 //

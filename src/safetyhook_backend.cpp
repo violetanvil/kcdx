@@ -1,7 +1,7 @@
 #include "safetyhook_backend.h"
 
 #include "kcdx_trampoline_registry.h"  // record this trampoline's range for the
-                                       // foreign-hook classifier (§6.1)
+                                       // foreign-hook classifier
 #include "log.h"
 
 namespace kcdx {
@@ -10,7 +10,7 @@ namespace {
 
 // Map safetyhook's typed InlineHook::Error onto a stable reason string. The
 // typed errors are richer than MinHook's MH_ERROR_* — name the specific failure
-// so log readers can act on it (logging.md). SOURCE: the InlineHook::Error enum
+// so log readers can act on it. SOURCE: the InlineHook::Error enum
 // in vendor/safetyhook/include/safetyhook/inline_hook.hpp — read this session.
 const char* InlineErrorToString(const safetyhook::InlineHook::Error& e) {
     switch (e.type) {
@@ -18,12 +18,12 @@ const char* InlineErrorToString(const safetyhook::InlineHook::Error& e) {
         return "BAD_ALLOCATION (trampoline allocation failed)";
     case safetyhook::InlineHook::Error::FAILED_TO_DECODE_INSTRUCTION:
         // The prologue could not be decoded for relocation. On a FOREIGN target
-        // (another mod already hooked it, foreign_hook_detect §6.1) this is the
-        // unrelocatable-foreign-shape case (design §6.3): kcdx cannot safely chain
+        // (another mod already hooked it, foreign_hook_detect) this is the
+        // unrelocatable-foreign-shape case: kcdx cannot safely chain
         // onto a foreign jump it can't relocate, so the install fails LOUD here
         // and the foreign mod's hook is left intact (the prologue is restored by
         // reset() below) — never a silent mis-install or a corrupted prologue
-        // (AP14). On a CLEAN target it is a genuinely undecodable game prologue.
+        // (fail loud, never silently drop). On a CLEAN target it is a genuinely undecodable game prologue.
         return "FAILED_TO_DECODE_INSTRUCTION (could not decode the target prologue "
                "for relocation; if the target carries a foreign hook, its jump is "
                "an unrelocatable shape and kcdx cannot safely chain onto it — the "
@@ -35,12 +35,12 @@ const char* InlineErrorToString(const safetyhook::InlineHook::Error& e) {
     case safetyhook::InlineHook::Error::UNSUPPORTED_INSTRUCTION_IN_TRAMPOLINE:
         // An instruction in the prologue cannot be relocated into the trampoline.
         // On a FOREIGN target this is the unrelocatable-foreign-shape case the
-        // §6.3 chaining contract names: kcdx cannot safely chain onto a foreign
+        // chaining contract names: kcdx cannot safely chain onto a foreign
         // detour whose jump form safetyhook can't relocate, so the install fails
         // LOUD and the foreign mod's hook survives (prologue restored by reset())
-        // — better than corrupting a prologue another mod is actively in (AP14,
-        // §6.3 surface-don't-mishandle). On a CLEAN target it is an unrelocatable
-        // game prologue instruction.
+        // — better than corrupting a prologue another mod is actively in (fail
+        // loud and surface, never silently mis-handle). On a CLEAN target it is
+        // an unrelocatable game prologue instruction.
         return "UNSUPPORTED_INSTRUCTION_IN_TRAMPOLINE (an unrelocatable instruction "
                "in the prologue; if the target carries a foreign hook, its jump is "
                "a shape kcdx cannot safely chain onto — the foreign hook is left "
@@ -95,12 +95,12 @@ void SafetyhookBackend::enable() {
         return;
     }
 
-    // The relocated-original entry the JIT thunk derefs (U2 — callable with the
+    // The relocated-original entry the JIT thunk derefs (callable with the
     // original ABI from the asmjit thunk, like MinHook's pOriginal).
     original_ = hook_.original<void*>();
 
     // Record this InlineHook's trampoline range as a KCDX-OWNED range so the
-    // foreign-hook classifier (foreign_hook_detect, §6.1) recognizes a future
+    // foreign-hook classifier (foreign_hook_detect) recognizes a future
     // hook landing on THIS target as KcdxTrampoline (already in a kcdx chain),
     // not as a foreign detour. The trampoline range comes from safetyhook's own
     // Allocation (address + size), which the InlineHook exposes via trampoline()

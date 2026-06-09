@@ -58,8 +58,8 @@ JumpDecode DecodeJump(const uint8_t* bytes) {
     // 14-byte safetyhook form (disp32 == 0), and following a non-zero
     // displacement could read outside it. So a non-zero disp32 is NOT decoded as
     // a recognized jump — isJump stays false, and Classify surfaces it as
-    // Unknown (conservative, never silently mis-decoded → never mis-chained,
-    // AP14). A foreign FF25 with a non-zero disp32 is still correctly NOT
+    // Unknown (conservative, never silently mis-decoded → never mis-chained —
+    // fail loud, never silently drop). A foreign FF25 with a non-zero disp32 is still correctly NOT
     // mis-classified; its verdict becomes the surfaced Unknown rather than a
     // Foreign with a wrong jumps_to VA.
     if (bytes[0] == kFF && bytes[1] == kModrm25) {
@@ -109,8 +109,9 @@ Prologue Classify(uintptr_t targetVa, const char* hookName) {
     JumpDecode d = DecodeJump(p);
     if (!d.isJump) {
         // op was E9 or FF but the full form didn't decode (an FF not /4-rip).
-        // This is the conservative branch (AP14): surfaced + logged, NOT
-        // treated as foreign, NEVER chained. The caller installs normally.
+        // This is the conservative branch (fail loud, never silently drop):
+        // surfaced + logged, NOT treated as foreign, NEVER chained. The caller
+        // installs normally.
         LOG_WARN_KV(kCategory, "unknown_prologue",
             ::kcdx::log::KV("hook", who),
             ::kcdx::log::KV("target", reinterpret_cast<void*>(targetVa)),
@@ -125,7 +126,7 @@ Prologue Classify(uintptr_t targetVa, const char* hookName) {
         ? d.target
         : (targetVa + d.target);
 
-    // The discriminator (design §6.1): the jump target falls inside a range
+    // The discriminator: the jump target falls inside a range
     // KCDX ITSELF allocated → it is a kcdx trampoline (the target is already in
     // a kcdx chain), so the existing CanCoexist / append path owns it. A target
     // elsewhere is FOREIGN — another mod's detour.
@@ -137,7 +138,7 @@ Prologue Classify(uintptr_t targetVa, const char* hookName) {
     // log. It is NOT load-bearing for chaining: kcdx does not follow this jump by
     // hand. The install that follows (DetectForeignBeforeInstall's Foreign branch
     // → the normal SafetyhookBackend install) chains by safetyhook RELOCATING the
-    // foreign prologue jump into kcdx's trampoline IP-fixed (§6.2), which captures
+    // foreign prologue jump into kcdx's trampoline IP-fixed, which captures
     // the foreign detour correctly regardless of what jumps_to decoded. (An FF25
     // with a non-zero disp32 never reaches here — DecodeJump returns the
     // surfaced-Unknown verdict for it, so jumps_to is always the [rip+0] /
@@ -147,7 +148,7 @@ Prologue Classify(uintptr_t targetVa, const char* hookName) {
         ::kcdx::log::KV("target", reinterpret_cast<void*>(targetVa)),
         ::kcdx::log::KV("jumps_to", reinterpret_cast<void*>(jumpTarget)),
         ::kcdx::log::KV("form", IsAbsoluteFF25(p) ? "ff25" : "e9"),
-        ::kcdx::log::KV("note", "chaining onto it via safetyhook relocation (Step 8)"));
+        ::kcdx::log::KV("note", "chaining onto it via safetyhook relocation"));
     return Prologue::Foreign;
 }
 

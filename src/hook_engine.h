@@ -193,36 +193,36 @@ struct RuntimeInstallResult {
 // Which detour backend InstallRuntime drives for a given install. Engine-internal
 // only — never a literal at a call site (callers pass an InstallKind; the engine
 // selects the Backend via select_backend below). There is no author knob — the
-// engine alone selects the backend (cornerstones.md: the engine does the heavy
-// lifting). See safetyhook_backend.h / minhook_backend.h for the two backends.
+// engine alone selects the backend (the engine does the heavy lifting). See
+// safetyhook_backend.h / minhook_backend.h for the two backends.
 enum class Backend {
     MinHook,     // plain byte-write; the conservative loader-lock-safe path
     Safetyhook,  // thread-safe install + far-target reach (E9->FF fallback)
 };
 
-// What an install IS — the call-site context the routing predicate keys on
-// (design §4.2). A caller declares its KIND, never a Backend: the engine maps
+// What an install IS — the call-site context the routing predicate keys on.
+// A caller declares its KIND, never a Backend: the engine maps
 // kind -> backend in select_backend, so a wrong-backend literal is unwriteable
-// (the misroute-impossible bar, U5 / design §9.5). The loader-lock + bootstrap
+// (the misroute-impossible bar). The loader-lock + bootstrap
 // paths (early_hook, the HookedUpdate pump, the frealloc canary) install via
 // raw MH_CreateHook and never reach this seam, so they have no InstallKind — the
-// documented bootstrap exceptions (hook-engine.md), structurally outside the seam.
+// documented bootstrap exceptions, structurally outside the seam.
 // Mid-function hooks do NOT route through InstallRuntime — the mid path is a
 // safetyhook::MidHook adapter (src/safetyhook_midhook.{cpp,h}) installed DIRECTLY
 // from AddMid / AddCMid, never through this seam (the former ChainMid kind only
 // ever faked a function-entry install; it retired with the make_jit_midfunc
-// replacement, design §5.3/§8). InstallRuntime now serves only function-entry +
+// replacement). InstallRuntime now serves only function-entry +
 // dynamic_hook.
 enum class InstallKind {
     ChainFunctionEntry,  // hook_chain function-entry (Add / AddC) — safetyhook
     DynamicHook,         // kcdx.memory.dynamic_hook (non-chain caller) — MinHook
 };
 
-// The single-sourced §4.2 routing table: kind -> backend. The ONLY place the
+// The single-sourced routing table: kind -> backend. The ONLY place the
 // routing decision lives; every InstallRuntime caller passes its kind and this
 // computes the backend. `constexpr` so the mapping is a compile-time fact (the
 // predicate-correctness static_asserts in InstallRuntime's TU verify it with
-// zero runtime cost — no live launch, no DI seam).
+// zero runtime cost — no live launch, no test-only seam).
 constexpr Backend select_backend(InstallKind kind) {
     switch (kind) {
         case InstallKind::ChainFunctionEntry: return Backend::Safetyhook;
@@ -233,7 +233,7 @@ constexpr Backend select_backend(InstallKind kind) {
 
 // The caller passes its InstallKind; InstallRuntime selects the backend via
 // select_backend and asserts the selection cannot misroute a loader-lock /
-// bootstrap context onto safetyhook (the forward guard, design §4.2). A caller
+// bootstrap context onto safetyhook (the forward guard). A caller
 // literally cannot name a backend, so a wrong-backend literal is unwriteable.
 RuntimeInstallResult InstallRuntime(const std::string& name,
                                     uintptr_t          target_addr,

@@ -11,9 +11,9 @@
 // (create()+enable()), takes no external detour pointer, returns no pOriginal
 // trampoline for a JIT call-original slot, and its callback is a bare
 // void(*)(Context&) with NO userdata channel. So the mid path installs the
-// MidHook DIRECTLY (from AddMid / AddCMid), never through InstallRuntime — the
-// design's §5.3 / §8 "a safetyhook::MidHook adapter that calls the existing
-// MidDispatch", distinct from SafetyhookBackend.
+// MidHook DIRECTLY (from AddMid / AddCMid), never through InstallRuntime — a
+// safetyhook::MidHook adapter that calls the existing MidDispatch, distinct
+// from SafetyhookBackend.
 //
 // TARGET-IDENTITY RECOVERY — a fixed C-trampoline pool (ZERO runtime codegen):
 // safetyhook::MidHookFn is a bare void(*)(Context&) with no userdata

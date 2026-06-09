@@ -6,10 +6,10 @@
 // KcdxTrampoline (a jump into a range kcdx itself allocated — already in a kcdx
 // chain), or Foreign (an E9/FF25 jump pointing OUTSIDE every kcdx-owned
 // trampoline range — another mod hooked it first). This classifier is DETECTION
-// only — its one job is the verdict. CHAINING onto a Foreign verdict (Step 8,
-// §6.2/§6.3) lives in the install path that consumes the verdict (hook_chain
+// only — its one job is the verdict. CHAINING onto a Foreign verdict lives in
+// the install path that consumes the verdict (hook_chain
 // DetectForeignBeforeInstall → the normal SafetyhookBackend install, which
-// relocates the foreign jump into kcdx's trampoline), NOT here. Design §6.1.
+// relocates the foreign jump into kcdx's trampoline), NOT here.
 //
 // The discriminator is kcdx's OWN trampoline records, NOT a query into
 // safetyhook: safetyhook's Allocator does NOT expose its ranges — m_memory is
@@ -26,7 +26,7 @@
 
 namespace kcdx::foreign_hook_detect {
 
-// The classifier verdict (design §6.1).
+// The classifier verdict.
 enum class Prologue {
     // Real game instructions, no prologue jump → install normally.
     Clean,
@@ -35,21 +35,21 @@ enum class Prologue {
     // path handles it, unchanged.
     KcdxTrampoline,
     // An E9/FF25 jump pointing OUTSIDE every kcdx-owned trampoline range →
-    // another mod hooked this target first. Step 8 chains onto it.
+    // another mod hooked this target first. The install path chains onto it.
     Foreign,
     // A prologue that begins with a jump-OPCODE byte (E9 / FF) the decoder could
     // not fully decode into a valid 5-byte E9 / 14-byte FF25 form (a truncated
     // read, an unrecognized FF /4 modrm). Conservative: NOT treated as foreign,
     // NEVER chained — surfaced + logged so an unrecognized shape is never
-    // silently mis-handled (AP14). The caller installs normally (treat-as-clean)
-    // but the LOG records the unknown shape.
+    // silently mis-handled (fail loud, never silently drop). The caller installs
+    // normally (treat-as-clean) but the LOG records the unknown shape.
     Unknown,
 };
 
 // Read the prologue at `targetVa` and classify it. `targetVa` is a VA kcdx
 // already owns the address of (it is about to hook there) — reading its first
-// bytes is reading a known prologue, NOT inventing an ABI/offset (AP2/AP3 do
-// not apply). `hookName` is used only in the log line for an Unknown/Foreign
+// bytes is reading a known prologue, NOT inventing an ABI/offset or a vtable
+// slot. `hookName` is used only in the log line for an Unknown/Foreign
 // prologue. Pure read; installs nothing, follows no jump.
 Prologue Classify(uintptr_t targetVa, const char* hookName);
 
