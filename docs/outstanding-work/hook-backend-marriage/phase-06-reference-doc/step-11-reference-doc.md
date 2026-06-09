@@ -32,11 +32,15 @@ understand the layer cover-to-cover — not a grep of the source. Covers E19
   - **Foreign-hook detection + chaining** — the prologue classifier + the
     follow-the-jump capture; the v1 scope boundaries (chain-always; foreign
     unhook/install-later out of scope).
-  - **The batch-install path** — install N detours under one thread-suspend window
-    (`StartDisabled` + `trap_threads` on safetyhook; the queue API on MinHook); when
-    the engine batches (a boot/plugin install set) vs the per-install path.
-  - **How to add a third backend** — implement `IDetourBackend` (incl. its batch
-    method), add a routing-table row; the interface is the future-proofing
+  - **Why install is per-hook (no batch)** — the layer installs each detour with
+    its own `enable()`; there is NO batch-install path. Record the WHY (the
+    institutional memory): the original batch premise — that safetyhook's
+    `enable()` suspends all threads per hook, so N installs should collapse into
+    one window — was false (`trap_threads` is VEH + `VirtualProtect`, not
+    stop-the-world), so there is no cost to amortize and per-hook install is the
+    measured-correct path (design §4.5 "No batch install — why").
+  - **How to add a third backend** — implement `IDetourBackend` (the four
+    methods), add a routing-table row; the interface is the future-proofing
     (design §10).
 - Cross-link the settled design (`docs/design/hook-backend-marriage.md`) as the
   authority; the reference doc is the HOW-IT-WORKS, the design is the WHY-IT-IS.
