@@ -24,7 +24,7 @@ from Phase 11".
 | Phase 3 — retire make_jit_midfunc (gated on Phase 1 step 2) | DONE | `aabd37f` |
 | Phase 4 — foreign-hook coexistence (core pillar) | DONE | `1b6500c` / `aca788e` / `847e573` |
 | Phase 5 — batch install (CLOSED: dropped on measured evidence — no batch) | DONE | `03c934c` |
-| Phase 6 — backend reference doc | DONE | (landed) |
+| Phase 6 — backend reference doc | DONE | `554288f` |
 
 The per-step ledgers live in each `phase-NN-*/README.md`. A top row flips to
 `DONE` only when every step in that phase is `DONE` (the orchestrator owns the

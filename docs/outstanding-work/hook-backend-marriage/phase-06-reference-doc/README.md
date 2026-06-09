@@ -13,7 +13,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| Step 11 — backend-layer subsystem/reference doc | DONE | (landed) |
+| Step 11 — backend-layer subsystem/reference doc | DONE | `554288f` |
 
 ## Verification gate
 
