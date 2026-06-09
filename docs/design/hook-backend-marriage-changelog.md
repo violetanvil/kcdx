@@ -1,5 +1,48 @@
 # Hook-backend marriage design — changelog (newest first)
 
+## 2026-06-08 — §4.5 batch install DROPPED; the false thread-suspend premise corrected
+
+Phase 5 (batch install) opened with the §9.7 U7 probe, resolved by a static read of
+the vendored safetyhook source (`results-driven.md` §4 — static evidence settling a
+checkable unknown), confirmed by an independent cold architect-review and a read-only
+cost investigation. The finding: the design's §4.5 batch premise is FALSE for this
+safetyhook build, so the batch is DROPPED on measured evidence.
+
+- **§4.5 — the batch mechanism is REMOVED, replaced with a measured "why no batch"
+  note.** safetyhook's `enable()` does NOT suspend threads: `trap_threads`
+  (`vendor/safetyhook/src/os.windows.cpp:268-318`) is VEH + `VirtualProtect`, not
+  stop-the-world (zero `SuspendThread` in the vendored tree). So there is no
+  thread-suspend cost to amortize. The measured per-`enable()` cost (≈4
+  `VirtualProtect` + a trap-map insert + a once-shared VEH) is single-digit ms total
+  at boot scale = premature optimization; the only safe multi-target window-collapse
+  saves ~0 (scattered `VirtualProtect`s can't coalesce) and widens the mid-prologue
+  safety window. MinHook's real batch (`MH_ApplyQueued`) is immaterial at its N≈1-4.
+  The note is the institutional-memory record so the question isn't re-investigated.
+- **§7 — the "safetyhook suspends all threads" evidence bullet corrected.** The
+  earlier read confirmed only that `enable()` CALLS `trap_threads`; it never read
+  what `trap_threads` DOES (an unbacked runtime-mechanism assertion). Corrected to
+  the verified VEH+`VirtualProtect` mechanism. The loader-lock bullet corrected: the
+  "suspend-deadlocks-under-the-loader-lock" reason is false; MinHook stays the
+  conservative choice and safetyhook's actual VEH-under-loader-lock safety is a
+  marked assumption-to-probe.
+- **§4.2 — the loader-lock routing WHY corrected** (user-decided): remove the false
+  suspend-deadlock reason; keep the MinHook OUTCOME (the conservative LDR-callback
+  choice); mark safetyhook's loader-lock safety as an assumption-to-probe.
+- **§1 batch success criterion, §8 batch-install unit, §2 "Batch install" glossary
+  term — all DROPPED** (the mechanism doesn't exist). **§9.7 U7 — RESOLVED** (batch
+  dropped, not pending a probe). **§11 batch row — corrected** to record the drop on
+  evidence (a Performance add-on that delivers nothing; an honest interface stays
+  per-hook). **§8 backend units** — the batch-API mentions on `MinHookBackend` /
+  `SafetyhookBackend` removed.
+
+**Integrated in:** §1, §2, §4.2, §4.5, §7, §8, §9.7, §11.
+**Why:** the probe-first discipline killed a wrong design assumption (a falsified
+runtime-mechanism claim) before it shipped — a finding, not a failure. The corrected
+design speaks with one voice (no known-false clause) and carries the measured cost as
+institutional memory. The marriage's delivered value (Phases 1–4: the InstallRuntime
+seam, function-entry on safetyhook, the mid-hook retirement, foreign-hook coexistence
+— all live-verified) is untouched; only the §4.5 Performance add-on is dropped.
+
 ## 2026-06-08 — slot-ownership + g_installed model corrected (step-4a build findings)
 
 Building Phase 2 step 4a, the U8 caller-set probe (§9.8) ran against the real

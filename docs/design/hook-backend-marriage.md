@@ -16,12 +16,14 @@ author surface is not a UX fork).
 
 **The core insight that shapes everything below:** there is no single best detour
 engine for kcdx. safetyhook is strictly better for the bulk (thread-safe install,
-far-target reach, a vetted mid-hook primitive, typed errors) but its sole install
-primitive — unconditional thread-suspend in `enable()` — is **unsafe under the
-Windows loader lock**, and kcdx has a path (`early_hook`) that installs under the
-loader lock by necessity. MinHook patches bytes without suspending threads, which
-is exactly what that path needs. The marriage routes each install to the engine
-that fits it, behind one interface, with the chain unchanged on top.
+far-target reach, a vetted mid-hook primitive, typed errors), but kcdx has a path
+(`early_hook`) that installs under the Windows loader lock by necessity, and
+whether safetyhook's install mechanism (a VEH + `VirtualProtect` fault-and-fix, NOT
+a thread-suspend — §4.5/§7) is safe under the loader lock is UNVERIFIED. MinHook
+patches bytes with a plain write under the loader lock, a path with no known
+loader-lock hazard — the conservative choice that path needs. The marriage routes
+each install to the engine that fits it, behind one interface, with the chain
+unchanged on top.
 
 ---
 
@@ -66,10 +68,6 @@ separate adapter layer between the chain and the patcher.
   mod's hook runs in the chain, kcdx's runs too. (`comp-NN` row.) This is a v1
   pillar, not deferred polish — the extreme-mod (multiplayer) consumer lives or
   dies on chaining onto foreign detours.
-- **Batch install at scale.** A fixture installing N function-entry hooks at boot
-  (a TC/multiplayer-scale install set) completes through a single thread-suspend
-  window rather than N — the safetyhook per-`enable()` suspend cost does not scale
-  linearly with hook count. (`comp-NN` row; the batch mechanism is §4.5.)
 
 ### The top-level architecture decision
 
@@ -107,20 +105,15 @@ merely populates it, §4.4) dissolves rather than being reshaped.
   whether the caller holds the loader lock, whether `MH_Initialize` has run,
   whether the install is on the per-frame bootstrap path. The routing predicate
   reads this to pick the backend.
-- **Batch install** — installing N detours under ONE thread-suspend window
-  instead of N. safetyhook's `enable()` suspends all threads per call; at
-  TC/multiplayer scale (hundreds of boot installs) that is hundreds of
-  stop-the-world cycles. The batch path creates all N hooks disabled, then patches
-  them in a single frozen window. A kcdx-authored mechanism over safetyhook's
-  primitives (§4.5), not a safetyhook feature.
 - **Loader-lock path** — `early_hook`: installs a detour from inside an LDR
   notification callback, which fires under the Windows loader lock during DLL
-  mapping. Thread suspension here deadlocks (a suspended thread may hold the
-  loader lock the installer is inside). MinHook-only by construction.
+  mapping. MinHook (a plain byte-write, no known loader-lock hazard) by
+  construction; whether safetyhook's VEH + `VirtualProtect` mechanism is safe here
+  is an unverified assumption (§4.2/§7).
 - **Bootstrap pump** — `HookedUpdate` (the per-frame `CGame_Update` detour): the
   one engine hook that drives the chain dispatcher itself, so it cannot be a chain
-  entry without self-deadlock, and cannot take a thread-suspending install in the
-  frame loop. Direct MinHook, the documented bootstrap exception
+  entry without self-deadlock (it installs before the dispatcher it would chain
+  into exists). Direct MinHook, the documented bootstrap exception
   (`hook-engine.md`).
 - **`Context64`** — safetyhook's mid-hook callback parameter: every GPR + all 16
   XMM registers + `rflags`, by value with writeback (a write to `ctx.rdx` lands in
@@ -267,21 +260,25 @@ goes through `hook_chain` and never names a backend):
 
 | Install path | Backend | Why |
 |---|---|---|
-| `early_hook` (loader-lock, during DllMain / LDR callback) | **MinHook** | safetyhook's `enable()` suspends all threads unconditionally — a deadlock under the loader lock. MinHook patches without suspending. Hard correctness constraint. |
-| `HookedUpdate` bootstrap pump (per-frame, drives the chain dispatcher) | **MinHook** | Can't be a chain entry (self-deadlock); a thread-suspending install in the frame loop is wrong. Direct MinHook, the documented bootstrap exception. |
+| `early_hook` (loader-lock, during DllMain / LDR callback) | **MinHook** | The conservative LDR-callback choice. MinHook patches with a plain byte-write under the loader lock, a path with no known loader-lock hazard. **Marked assumption-to-probe:** whether safetyhook's VEH + `VirtualProtect` install (§4.5 — it does NOT suspend threads, the original "thread-suspend deadlocks under the loader lock" reason was FALSE) is ACTUALLY safe under the Windows loader lock is UNVERIFIED — does `AddVectoredExceptionHandler` / a `VirtualProtect`-during-DllMain / a fault-in-the-VEH-window-while-`LdrpLoaderLock`-is-held have its own hazard? Probe before EVER routing a loader-lock install to safetyhook. `early_hook` is a handful of bootstrap hooks that never needed safetyhook's gains, so MinHook stays by construction. |
+| `HookedUpdate` bootstrap pump (per-frame, drives the chain dispatcher) | **MinHook** | Can't be a chain entry (self-deadlock); the bootstrap pump installs before the chain dispatcher it drives exists. Direct MinHook, the documented bootstrap exception. |
 | `hook_chain` function-entry (all plugin + engine-stamped hooks) | **safetyhook** | Thread-safe install, far-target reach, typed errors. The bulk. |
 | `hook_chain` mid-function (`make_jit_midfunc` replacement) | **safetyhook** | `safetyhook::MidHook` — `ctx.rip` + register writeback. §9. |
 
 **The routing predicate is the one safety-critical mechanism in this design.** A
-loader-lock install misrouted to safetyhook is a deadlock; a path that should be
-safetyhook misrouted to MinHook silently forgoes the thread-safety gain. The
-predicate is: *is the caller on a loader-lock / pre-`MH_Initialize` / bootstrap-pump
-context?* → MinHook; else → safetyhook. (The build resolves HOW the predicate
-reads the context — a flag threaded through the install call, an explicit
-backend argument at the engine-internal install site, or a context probe. This
-is a §9 build-gated unknown, not a design fork — the OUTCOME is the table above;
-the mechanism is the executor's, settled against the constraint that misrouting a
-loader-lock install must be impossible, not merely unlikely.)
+path that should be safetyhook misrouted to MinHook silently forgoes the
+thread-safety gain. The predicate is: *is the caller on a loader-lock /
+pre-`MH_Initialize` / bootstrap-pump context?* → MinHook; else → safetyhook. (The
+build resolves HOW the predicate reads the context — a flag threaded through the
+install call, an explicit backend argument at the engine-internal install site,
+or a context probe. This is a §9 build-gated unknown, not a design fork — the
+OUTCOME is the table above; the mechanism is the executor's, settled against the
+constraint that a loader-lock install routes to the conservative MinHook by
+construction, not merely by likelihood. NOTE: the original "misrouting a
+loader-lock install to safetyhook is a deadlock" framing rested on the FALSE
+suspend claim — corrected above; the loader-lock-safety of safetyhook's actual
+VEH mechanism is the marked assumption-to-probe, and MinHook is the conservative
+default until it is.)
 
 ### §4.3 The chain is untouched — safetyhook is "just the patcher" for it
 
@@ -325,47 +322,64 @@ assumption-to-probe:** that safetyhook's trampoline entry is directly callable w
 the original ABI from the JIT thunk the same way MinHook's `pOriginal` is — verify
 in the spike alongside the mid-hook proof, §9.)
 
-### §4.5 Batch install — N detours, one thread-suspend window
+### §4.5 No batch install — why (the institutional-memory record)
 
-The cost that does not scale: `safetyhook::InlineHook::enable()` calls
-`trap_threads(...)` — suspend ALL threads, patch, resume — once **per hook**
-(`vendor/safetyhook/src/inline_hook.cpp:383`). One hook: one stop-the-world
-cycle, fine. A TC's hundreds of boot installs, or a multiplayer mod's
-cross-cutting hook set: hundreds of stop-the-world cycles back-to-back, each
-suspending and resuming every game thread. This is a real scale wall for the
-extreme-mod consumer, not a micro-optimization.
+**There is no batch-install mechanism, and there should not be.** An earlier
+revision of this section specified a batch path to amortize "hundreds of
+stop-the-world thread-suspend cycles at TC/multiplayer boot" — that premise was
+FALSIFIED against the vendored safetyhook source (resolved as the §9.7 U7 probe,
+by a static source read — `results-driven.md` §4, static evidence settling a
+checkable unknown). This note records the measured truth so the next person who
+asks "should we batch installs?" finds the answer instead of re-running the
+investigation.
 
-safetyhook exposes **no batch primitive** — no `enable_all`, no multi-hook install
-(verified: read of `vendor/safetyhook/` this session). It DOES expose the two
-building blocks a kcdx-authored batch path needs:
+**safetyhook does NOT suspend threads.** `InlineHook::enable()` calls
+`trap_threads(...)` (`vendor/safetyhook/src/inline_hook.cpp:383`), but
+`trap_threads` itself (`vendor/safetyhook/src/os.windows.cpp:268-318`) is **VEH +
+`VirtualProtect`, NOT suspend**: it registers a per-target trap in a global map,
+`VirtualProtect`s the target + trampoline pages, runs the patch closure under a
+mutex, restores protection; a thread that faults into a trapped page gets its IP
+fixed on demand by a Vectored Exception Handler (`trap_handler`,
+`os.windows.cpp:230-256`). There is **zero `SuspendThread`/`ResumeThread` in the
+entire vendored safetyhook tree** (whole-tree grep this session; the
+`FAILED_TO_FREEZE_THREAD`/`FAILED_TO_UNFREEZE_THREAD` enum constants at
+`os.hpp:23-24` are dead/unused — vestigial from an upstream suspend-based build
+this one does not use). So there is **no stop-the-world cost to amortize** on the
+safetyhook path.
 
-- **`StartDisabled`** (`vendor/safetyhook/include/safetyhook/inline_hook.hpp:118`,
-  a `Flags` bit) — `create` the hook with its trampoline allocated + relocated but
-  the prologue jump NOT yet written. Defers the patch (and its thread-suspend) to
-  a later `enable()`.
-- **`trap_threads(from, to, len, run_fn)`** (`vendor/safetyhook/include/safetyhook/os.hpp:70`)
-  — the exposed suspend-all-threads-and-run-`run_fn` primitive `enable()` itself
-  uses. It runs an arbitrary closure inside the frozen window.
+**The measured per-`enable()` cost** (`os.windows.cpp:268-318` + the cost finding
+`_research/batch-install-cost/FINDINGS.md`): ≈4 `VirtualProtect` syscalls + a cheap
+trap-map insert + a ≤14-byte prologue write; the VEH is installed once-and-shared
+(0 per hook). The DOMINANT cost is the `VirtualProtect`s on N **scattered game
+prologues** (different pages → cannot coalesce).
 
-The batch mechanism kcdx builds over these: at a known batch boundary (boot, a
-plugin's install set), `create` all N hooks with `StartDisabled`, then run ONE
-`trap_threads`-equivalent whose `run_fn` writes all N prologue jumps inside a
-single frozen window. N installs, one stop-the-world cycle.
+**Why no batch — even the safe one saves nothing:**
 
-**Marked assumption-to-probe (§9):** that a single `trap_threads` window can patch
-N independent targets safely — the primitive is documented for one
-`[from, to)` range, and the multi-target frozen-window patch (iterating N
-prologue writes inside one `run_fn`) is feasible-from-the-primitive but NOT yet
-observed end-to-end. The batch path is provisional on a probe that installs N>1
-hooks through one window and confirms all N fire (a `comp-NN` fixture);
-falsification falls back to per-hook `enable()` (the unbatched baseline, correct
-but unscaled). This is a backend-layer mechanism — `MinHookBackend` has its own
-batch story (MinHook exposes `MH_QueueEnableHook` + `MH_ApplyQueued`, verified
-present in `vendor/minhook/include/MinHook.h`, to batch-apply queued hooks in one
-pass; **marked assumption-to-probe:** that MinHook's apply imposes no per-hook
-thread-suspend the batch would still pay — verify against MinHook's source at
-batch-implementation time), so the batch API is expressed on `IDetourBackend` and
-each backend implements it natively.
+- At realistic N (~hundreds at a heavy-load-order boot), the per-install cost is
+  single-digit milliseconds TOTAL, once, during a multi-second boot loading
+  gigabytes. Batching it is premature optimization.
+- The only SAFE multi-target window-collapse (register all N traps FIRST so a fault
+  into any of the N finds its trap — `find_trap` scans the whole map,
+  `os.windows.cpp:181-191) saves ~0 anyway (the dominant `VirtualProtect`s on
+  scattered pages cannot coalesce) AND it WIDENS the mid-prologue residual safety
+  window across N targets — a net negative. (The naive one-outer-window-N-writes
+  collapse is outright unsafe: it registers only target-0's trap, so a thread
+  faulting in target-K>0 hits no trap → an access violation.)
+
+**The MinHook contrast (why no batch there either, for completeness):** MinHook is
+the OPPOSITE — its `enable()` DOES `SuspendThread` per hook, and
+`MH_QueueEnableHook` + `MH_ApplyQueued` (`vendor/minhook/include/MinHook.h`)
+collapse N freezes into one (a REAL batch — the genuine version of what this
+section once wrongly assumed safetyhook did). BUT MinHook serves ONLY the
+loader-lock/bootstrap paths (§4.2), N≈1-4, so the saving is a few suspend-cycles
+once and immaterial at that tiny N. Hence no batch on either path; per-hook
+`enable()` is correct everywhere.
+
+**`IDetourBackend` has no batch entry point** — adding one whose safetyhook impl is
+just sequential `enable()` would be an API that overstates what it does
+(`cornerstones.md` — clarity/errors-that-teach is the UX cornerstone; a "batch"
+that does not batch is the inverse). The interface stays honest: install is
+per-hook, and that is the measured-correct choice.
 
 ### §4.6 The single conflict model — `g_installed`'s redundant role retires; its unique guard re-homes
 
@@ -549,12 +563,21 @@ This design turns on library + OS facts, not (primarily) game-binary facts. Each
 load-bearing claim with its evidence tier (`reverse-engineering.md` ladder applies
 to the kcdx-source + library-source reads done this session):
 
-- **safetyhook `enable()` suspends all threads unconditionally — no opt-out.**
-  Evidence: read of safetyhook `src/inline_hook.cpp` this session — `enable()`
-  calls `trap_threads(...)` unconditionally; `StartDisabled` only defers `enable()`,
-  it does not avoid the suspend; the `unsafe_*` variants concern calling the
-  ORIGINAL without a mutex, not a no-freeze install. No `unsafe_enable` exists.
-  **This is the fact that forces MinHook-permanent on the loader-lock path.**
+- **safetyhook `enable()` does NOT suspend threads — it is VEH + `VirtualProtect`
+  (the earlier "suspends all threads" claim was FALSE).** Evidence: read of the
+  `trap_threads` BODY (`vendor/safetyhook/src/os.windows.cpp:268-318`) this session
+  — `enable()` calls `trap_threads(...)` (`src/inline_hook.cpp:383`), but
+  `trap_threads` registers a per-target trap, `VirtualProtect`s the pages, runs the
+  patch, restores; a thread that faults into a trapped page gets its IP fixed by a
+  Vectored Exception Handler (`trap_handler`, `os.windows.cpp:230-256`). There is
+  ZERO `SuspendThread`/`ResumeThread` in the entire vendored safetyhook tree
+  (whole-tree grep this session; the `FAILED_TO_FREEZE_THREAD`/`UNFREEZE_THREAD`
+  enum constants at `os.hpp:23-24` are dead/unused). **The earlier bullet asserted
+  "suspends all threads" from a read that confirmed only that `enable()` CALLS
+  `trap_threads` — it never read what `trap_threads` DOES (an unbacked
+  runtime-mechanism assertion, `results-driven.md`).** This corrected fact means:
+  there is no thread-suspend cost to batch (§4.5 — no batch), and the
+  loader-lock-MinHook routing's WHY is re-grounded (below + §4.2).
 - **safetyhook `Context64` layout** — full GPR + 16 XMM + rflags, by-value with
   writeback ("modifications affect the context of the hooked function"), `rip`
   points at a trampoline of the replaced instruction, `rsp` read-only with
@@ -566,12 +589,20 @@ to the kcdx-source + library-source reads done this session):
   the typed `Error` enum (`NOT_ENOUGH_SPACE`, `SHORT_JUMP_IN_TRAMPOLINE`,
   `IP_RELATIVE_INSTRUCTION_OUT_OF_RANGE`). **This is the fact that closes the
   cap-21/cap-22 far-target gap natively.**
-- **The Windows loader-lock deadlock constraint.** Suspending a thread that may
-  hold (or be waiting on) the loader lock, from inside the loader lock, is the
-  canonical Win32 DLL deadlock. Evidence: Win32 DLL-best-practices (a known OS
-  invariant, not a kcdx finding) + kcdx's own `early_hook.cpp` comment that the
-  LDR path "runs under the loader lock during kcdx.dll DllMain." Tier: established
-  platform fact + in-repo confirmation of the loader-lock timing.
+- **The loader-lock routing — MinHook is the conservative choice; safetyhook's
+  loader-lock safety is a marked assumption-to-probe.** The earlier rationale
+  ("safetyhook's thread-suspend deadlocks under the loader lock") is FALSE —
+  safetyhook does not suspend (above). MinHook stays permanent on `early_hook`
+  because a plain byte-write under the loader lock has no known loader-lock hazard,
+  and `early_hook` is a handful of bootstrap hooks that never needed safetyhook's
+  gains — so MinHook is correct by construction. **Marked assumption-to-probe
+  (§4.2):** whether safetyhook's actual VEH + `VirtualProtect` mechanism is safe
+  under the Windows loader lock (does `AddVectoredExceptionHandler` /
+  `VirtualProtect` during DllMain / a fault-in-the-VEH-window while `LdrpLoaderLock`
+  is held carry its own hazard?) is UNVERIFIED — this would need a probe before
+  EVER routing a loader-lock install to safetyhook, which the design does not do.
+  Tier: the suspend-deadlock claim is corrected-false; the VEH-under-loader-lock
+  safety is an open assumption, MinHook the conservative default until it is probed.
 - **kcdx's install paths all bottom out at MinHook today — and the chain path's
   chokepoint is `InstallRuntime`, not `detour_hook`.** `hook_chain` → first hook
   per target calls `hook_engine::InstallRuntime` → raw `MH_CreateHook`
@@ -620,21 +651,20 @@ mechanism EXISTS, not proof it carries kcdx's exact three modes end-to-end).
 The marriage introduces / reshapes these units (`structure-by-responsibility.md`):
 
 - **`IDetourBackend`** (new, a core contract — already built, step 3) — the
-  backend interface (`create`/`enable`/`disable`/`get_original`, plus the batch
-  API §4.5). Core-layer: depends on nothing kcdx-specific; both backends depend on
+  backend interface (`create`/`enable`/`disable`/`get_original`). Core-layer:
+  depends on nothing kcdx-specific; both backends depend on
   it; `InstallRuntime` drives it. One responsibility: the byte-patcher/
   trampoline/install contract. Built correctly in step 3; the marriage only
   relocates its attachment point (from `detour_hook` to `InstallRuntime`).
 - **`MinHookBackend`** (new leaf — already built, step 3) — implements
-  `IDetourBackend` over MinHook (`MH_CreateHook`/`Enable`/`Disable`/`Remove`,
-  + `MH_QueueEnableHook`/`MH_ApplyQueued` for batch). `get_original()` returns
-  MinHook's `pOriginal` for `InstallRuntime` to write into `runtime_func_t`'s slot
-  — the backend produces the value, it does NOT own the slot storage (§4.4).
-  Reused verbatim — the bodies do not change, only where they are called from. One
-  responsibility: MinHook-backed detours.
+  `IDetourBackend` over MinHook (`MH_CreateHook`/`Enable`/`Disable`/`Remove`).
+  `get_original()` returns MinHook's `pOriginal` for `InstallRuntime` to write into
+  `runtime_func_t`'s slot — the backend produces the value, it does NOT own the slot
+  storage (§4.4). Reused verbatim — the bodies do not change, only where they are
+  called from. One responsibility: MinHook-backed detours.
 - **`SafetyhookBackend`** (new leaf) — implements `IDetourBackend` over
-  `safetyhook::InlineHook` (+ the `StartDisabled` + `trap_threads` batch path,
-  §4.5). One responsibility: safetyhook-backed detours.
+  `safetyhook::InlineHook`. One responsibility: safetyhook-backed detours. (No batch
+  API — install is per-hook, §4.5.)
 - **`hook_engine::InstallRuntime`** (reshaped, the backend dispatch site) — the
   single install chokepoint becomes backend-dispatching: read the install context,
   pick a backend, `create` → `enable`, write the backend's relocated-original into
@@ -659,11 +689,6 @@ The marriage introduces / reshapes these units (`structure-by-responsibility.md`
   `safetyhook::MidHook` adapter that calls the existing `MidDispatch` from a
   `Context64` callback. The dead `m_detour` member is removed with `detour_hook`;
   the slot it used to hold becomes `runtime_func_t`'s own member.
-- **A batch-install unit** (new) — owns the "install N detours under one
-  thread-suspend window" mechanism (§4.5): create-all-disabled, then one frozen
-  window patches N. Expressed on `IDetourBackend` (each backend implements it
-  natively — safetyhook via `StartDisabled` + `trap_threads`, MinHook via the
-  queue API). One responsibility: batched detour application at a known boundary.
 - **A foreign-hook-detection unit** (new, a core pillar §6) — the prologue
   classifier + the follow-the-jump capture. One responsibility: detect + capture a
   foreign detour at install time. Used by the `hook_chain` install path, above the
@@ -714,16 +739,18 @@ probe that proves it).
    license against the repo allowlist BEFORE vendoring; record the manifest row in
    the same change. (safetyhook is permissive — confirm at vendor time, both
    registry + source.)
-7. **The batch-install trap_threads-reuse mechanism (§4.5, gates the batch path).**
-   Does a single `trap_threads` frozen window safely patch N independent targets
-   (iterating N prologue writes inside one `run_fn`), the way `enable()` patches
-   one? `trap_threads(from, to, len, run_fn)` is documented for one `[from, to)`
-   range; the multi-target reuse is feasible-from-the-primitive but NOT yet
-   observed end-to-end. Probe: a `comp-NN` fixture creates N>1 hooks with
-   `StartDisabled`, patches all N in one window, confirms all N fire. Outcome map:
-   all fire → the batch path proceeds; any miss / instability → fall back to
-   per-hook `enable()` (unbatched but correct). **The §4.5 batch path is
-   provisional on this probe.**
+7. **The batch-install premise (§4.5) — RESOLVED: there is NO batch.** This U7
+   probe asked whether a single `trap_threads` window can safely patch N targets to
+   amortize the per-`enable()` thread-suspend. RESOLVED by a static source read
+   (`results-driven.md` §4 — static evidence settling a checkable unknown):
+   `trap_threads` does NOT suspend threads (it is VEH + `VirtualProtect`,
+   `vendor/safetyhook/src/os.windows.cpp:268-318`), so there is no suspend cost to
+   amortize; the only SAFE multi-target collapse saves ~0 (the dominant
+   `VirtualProtect`s on scattered prologues cannot coalesce) while widening the
+   mid-prologue safety window; and MinHook's real batch is immaterial at its N≈1-4.
+   So the batch is DROPPED, not pending a live probe — per-hook `enable()` is the
+   measured-correct path. Full record + the measured cost: §4.5 +
+   `_research/batch-install-cost/FINDINGS.md`. Architect-verified this session.
 8. **`InstallRuntime`'s caller set (gated the `g_installed` removal, §4.6) —
    RESOLVED.** The check ran (read of the call sites this session, architect-
    verified): `InstallRuntime` has TWO caller families — the chain's 4
@@ -744,7 +771,8 @@ probe that proves it).
 - **Removing MinHook entirely.** MinHook is PERMANENT for `early_hook` (loader
   lock) and the `HookedUpdate` bootstrap pump (and likely the frealloc canary).
   "Complete replacement" is impossible on the merits (§7 — safetyhook's
-  unconditional thread-suspend is unsafe on those paths), not deferred for effort.
+  loader-lock safety is UNVERIFIED, so MinHook stays the conservative choice on
+  those paths by construction), not deferred for effort.
 - **Author-configurable foreign-hook policy.** v1 chains onto a foreign hook
   always (§6.4). A policy model (chain / warn-and-take / refuse-and-yield, per
   target, author- or engine-set) is reserved — reopens only if a target where
@@ -768,7 +796,7 @@ probe that proves it).
 | JIT slot ownership | **`runtime_func_t` owns the slot STORAGE; the backend POPULATES the value** | *The backend owns the slot storage* — FALSIFIED by the callsite path (`AddCallsite`), which installs NO backend yet still needs the slot (it writes the callee VA directly); a backend-owned slot leaves that path with no slot and breaks cap-21/cap-22. Resolves the §4.1-vs-§4.4 wording tension ("owns" vs "populates") in §4.4's favor — which is what the live code already implements. Settled here (§4.4), surfaced by the step-4a build. |
 | Conflict model | **One model for chain hooks — the chain's `FindChain`/`CanCoexist`; `g_installed`'s redundant role retires, its unique cross-registry guard re-homes into `InstallRuntime`** | *Remove `g_installed` outright* — FALSIFIED by the U8 caller-set check (§9.8): `dynamic_hook` is a non-chain caller for which `g_installed` is the ONLY cross-registry double-install refusal (FindChain can't see it), so dropping the map loses a load-bearing loud refusal (AP14). *Port the whole v0.1 map forward* — carries the redundant first-wins framing too. The split pick: retire the redundant role, re-home the unique guard at the seam (§9.8's own "re-home, never drop"). |
 | Foreign-hook priority | **Core v1 pillar (built up front, §6), driven by the multiplayer/extreme-mod lens** | *Final-phase polish* — the original placement; understates that the extreme-mod consumer (multiplayer, heavy TC load orders) hooks the same functions other mods hook, so foreign-detour chaining is existential for that consumer, not an edge case. Policy unchanged (chain-always); only the priority/placement elevated. |
-| Batch install | **kcdx-authored over safetyhook's primitives (`StartDisabled` + `trap_threads`), designed now** | *Per-hook `enable()` only* — N stop-the-world suspend cycles at TC/multiplayer scale; the unbatched baseline, kept as the §9.7 fallback if the batch probe fails, not as the v1 target. *Wait for a safetyhook batch primitive* — none exists (verified); building over the exposed primitives is the only path, and it is constructible. Provisional on the §9.7 multi-target-window probe. |
+| Batch install | **NO batch — per-hook `enable()` is the measured-correct path** | *kcdx-authored batch over safetyhook's primitives* — the original pick, FALSIFIED against the vendored source (§4.5, §9.7 U7): safetyhook is VEH + `VirtualProtect`, NOT thread-suspend, so there is no stop-the-world cost to amortize; the only SAFE multi-target window-collapse saves ~0 (scattered `VirtualProtect`s can't coalesce) and widens the mid-prologue safety window; MinHook's real batch is immaterial at its N≈1-4. *An `IDetourBackend` batch API that wraps sequential `enable()`* — an API that overstates what it does (the UX cornerstone, `cornerstones.md`); the interface stays honest, install is per-hook. The batch was a Performance add-on (cornerstone #3) that the measurement shows delivers nothing — dropped on evidence, recorded in §4.5 as institutional memory. |
 | Mid-hook scope | **Full `make_jit_midfunc` replacement with `safetyhook::MidHook`** | *Keep `make_jit_midfunc`, safetyhook function-entry only* — leaves the most fragile code (the cap-04 scar tissue) in place, forgoes the single biggest maintenance win. *Decide after a spike* — folded IN as the §9 gate rather than rejected: the replacement is the decision, the spike PROVES it before landing (not a separate decision). |
 | Conflict / coexistence | **Add foreign-hook detection + chaining on top** | *Keep the chain as-is, safetyhook is just the patcher* — forgoes the cross-mod coexistence the thread-safe patch enables; tkhquang's actual concern goes unaddressed. (The chain IS kept as-is for kcdx-vs-kcdx; foreign-detection is added above it, not instead of it.) |
 | Foreign-hook policy | **Chain onto it (follow the foreign jmp)** | *Detect + warn, install anyway* — doesn't solve coexistence, one mod still loses. *Detect + configurable policy* — most flexible but most surface; reserved (§10) for if an unsafe-to-chain target surfaces. |
