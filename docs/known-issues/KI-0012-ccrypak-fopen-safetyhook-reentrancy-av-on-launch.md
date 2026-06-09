@@ -888,6 +888,24 @@ Root cause is confirmed; the FIX is a real design decision:
 This needs Gate B (root-cause-verifier) on the confirmed mechanism, then the user picks A vs B. NEXT:
 surface the A-vs-B fork; if B, a probe to narrow WHICH SELECT sub-call is the needed side effect.
 
+## FIX DIRECTION (user-decided) — isolate the specific native side-effect call, invoke it from kcdx's init
+
+The takeover stays a COMPLETE hijack: kcdx keeps full ownership of the C_ModManager object AND the
+enabled-list order (this is the design intent, not scope to walk back). The fix ADDS the one engine
+SIDE EFFECT the engine needs — by calling the SPECIFIC native function that produces it, from inside
+`HookedCtor` — the SAME pattern kcdx already uses to call native helpers (the allocator, the CryString
+builders). NOT calling native SELECT wholesale (that would surrender list-building to the engine =
+LESS hijack). NOT replicating from scratch (keeps missing side effects).
+
+**The open RE fact to isolate:** WHICH native function (a `ModManager_Select` sub-call, or an engine-
+init call SELECT makes) produces the graphics-needed side effect. PROBE N proved calling FULL SELECT
+fixes it; the isolation narrows that to the minimal call. SELECT's sub-calls (from `_disasm_modmanager.txt`
+CALL sites): `FUN_180da0fb0`, `FUN_1804d4510`, a vtable call `[rax+0x20]`, `FUN_180da1178` (the mods/
+scan), `FUN_180da1294` (ReadModOrder). The graphics side effect is one of these (or an engine call
+nested inside one). NEXT: a bisect probe — call SELECT's sub-calls individually (instead of full
+SELECT) and find the minimal set that makes the boot clean; that names the exact call kcdx must make.
+Then the production fix calls JUST that, by refdb name (AP1), from HookedCtor.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
