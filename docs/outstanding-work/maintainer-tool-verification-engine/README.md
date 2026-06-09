@@ -17,7 +17,7 @@ steps land in the SEPARATE gitignored frontend repo (gate `npm run build` + Vite
 
 **Where we are: Phase 2 is COMPLETE** — the browser static checker (2.1–2.4), the s02 install-set
 link surface (2.5), the s04 per-author verdict badge (2.6a–2.6e), and the s02 link-to-create
-on-ramp (2.7, FE:7d2d6fa) are all landed; the 2.6 + (pending) 2.7 milestone UATs cover the
+on-ramp (2.7, FE:7d2d6fa) are all landed; the 2.6 + 2.7 milestone UATs (both accepted) cover the
 substantive UI. The statement-resolution-layer data update that gated 2.7 landed + was live-accepted;
 2.7 built against the settled model. **Next: Phases 3–5** (the C++ engine survival extension, the
 in-game batch plugin, the frontend report ingestion) are NOT STARTED — Phase 3 [ENG] is the next
@@ -29,7 +29,7 @@ build (the in-game bulk reachability check at startup).
 |---|---|---|
 | [Phase 0 — Probes](phase-00-probes/README.md) | DONE | (landed) |
 | [Phase 1 — Shared contracts](phase-01-contracts/README.md) | DONE | ccd37e1 (1.1 e8a06cc, 1.2 35445b7, 1.3 ccd37e1) |
-| [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | DONE | (landed) — 2.1–2.7 all DONE (FE:1459367/66f4716/d611c21/e83a57c/0ed135d+bfdff6f/00b2e78…27aa470 + 2.6a 9d84fcf + 2.7 FE:7d2d6fa); the browser checker + s02 install-set link + s04 verdict badge + the link-to-create on-ramp. 2.6 milestone UAT accepted; 2.7 milestone UAT pending |
+| [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | DONE | (landed) — 2.1–2.7 all DONE (FE:1459367/66f4716/d611c21/e83a57c/0ed135d+bfdff6f/00b2e78…27aa470 + 2.6a 9d84fcf + 2.7 FE:7d2d6fa); the browser checker + s02 install-set link + s04 verdict badge + the link-to-create on-ramp. 2.6 + 2.7 milestone UATs both accepted |
 | [Phase 3 — C++ engine survival extension](phase-03-engine-survival/README.md) | NOT STARTED | — |
 | [Phase 4 — In-game plugin + report](phase-04-ingame-plugin/README.md) | NOT STARTED | — |
 | [Phase 5 — Frontend report ingestion](phase-05-report-ingestion/README.md) | NOT STARTED | — |
