@@ -3,7 +3,7 @@ id: KI-0012
 opened: 2026-06-08
 status: closed
 closed: 2026-06-09
-closed_by_commit: <fix-commit>
+closed_by_commit: e8d8084
 commit_at_filing: 369a99cca57b3094c90a03a28fa5a8f1b370c185
 ---
 
@@ -1083,7 +1083,7 @@ deref. Per AP17 this is a real, non-masking mechanism — the wrong value, who w
 order, and the false premise that made it inevitable are all named and bisect-proven; only the
 internal graphics-read step is marked untraced rather than asserted as fact.)
 
-**Fix** (`<fix-commit>`, `src/mod_absorb/enabled_list_builder.cpp`): kcdx still resolves the ONE
+**Fix** (`e8d8084`, `src/mod_absorb/enabled_list_builder.cpp`): kcdx still resolves the ONE
 unified load order over ALL enabled candidates (native pak mods + plugins, interleaved — the order
 kcdx owns, unchanged), but a new `PluginShipsPak` gate synthesizes an engine MOUNT record ONLY for
 pak-mountable entries: native pak mods, plus any plugin that ships a `Data/*.pak` (the same
