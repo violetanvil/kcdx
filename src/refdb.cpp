@@ -2019,6 +2019,22 @@ size_t CachedRowCount() {
     return g_byId.size();
 }
 
+bool CachedAddressVersionId(uint64_t resolvedKcdxId, int64_t& avIdOut) {
+    // The picked address_versions.id for a resolved (post-supersession) entity —
+    // the D34 attribution handle. g_byId is keyed by the ORIGINAL kcdx_id, but a
+    // caller iterating ForEachCached holds the RESOLVED (post-supersession)
+    // kcdx_id (c.kcdx_id), so match on the cached entity's kcdx_id, not the map
+    // key. Returns false (no write) when no cached entity carries that id.
+    for (const auto& [id, c] : g_byId) {
+        (void)id;
+        if (c.kcdx_id == resolvedKcdxId) {
+            avIdOut = c.address_version_id;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool HasName(const std::string& name) {
     return g_byName.find(name) != g_byName.end();
 }

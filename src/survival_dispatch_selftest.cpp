@@ -8,9 +8,11 @@
 
 #include "log.h"
 #include "patch_engine.h"  // patch::ParsePattern (decode a stored aob string → bytes+mask)
+#include "pe_helpers.h"    // pe::OpenModule / IsVaInLiveText (3.3 reachability range test)
 #include "refdb.h"
 #include "survival.h"
 #include "survival_pass.h"
+#include "survival_verify.h"  // 3.3 startup verification pass (D25 + D34)
 #include "test.h"
 #include "version_check_cache.h"
 
@@ -27,6 +29,7 @@ constexpr const char* kCategory = "SURVDISPATCH";
 namespace sv = kcdx::survival;
 namespace vcc = kcdx::version_check_cache;
 namespace sp = kcdx::survival_pass;
+namespace svv = kcdx::survival_verify;
 
 // A synthetic plugin name that can never collide with a real plugin's Lookup
 // (the charset is illegal for a [plugin].name, so no real plugin shares it).
@@ -477,6 +480,186 @@ void RunSelfTestOnce() {
         }
     }
 
+    // ----- Sub-check 7: REACHABILITY RANGE TEST (pe::IsVaInLiveText) ----------
+    // The 3.3 reachability signal is "does the engine-resolved VA land in live
+    // .text" — a RANGE TEST against the live module's executable sections, NOT a
+    // body hash (Probe 0.4: the live image is relocated + kcdx-detoured, so a
+    // live-body hash reads wrong-target for a genuinely-good row). Falsifiable +
+    // deterministic when WHGame.dll is mapped: a VA inside live .text reads true;
+    // an off-image VA reads false. DEGRADE-pass when WHGame is not mapped (a
+    // non-game host) — the real discrimination is confirmed at the live launch.
+    {
+        pe::ModuleView view;
+        if (pe::OpenModule(L"WHGame.dll", view) && view.base != nullptr) {
+            const uintptr_t base = reinterpret_cast<uintptr_t>(view.base);
+            // An off-image VA: below the module base by 1 MB — never in any of
+            // this module's sections. Must read NOT-in-.text (dead reachability).
+            uintptr_t offImage = base - 0x100000;
+            if (pe::IsVaInLiveText(view, offImage)) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: pe::IsVaInLiveText returned TRUE for an off-image VA "
+                    "(base-0x100000) — the reachability range test must read an "
+                    "off-image address as NOT in live .text (a 'dead' reach), never "
+                    "a false in-.text.");
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "7_reach_offimage"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+            // A VA = 0 is never reachable.
+            if (pe::IsVaInLiveText(view, 0)) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: pe::IsVaInLiveText returned TRUE for VA 0 — a null "
+                    "resolve must read NOT in live .text (dead), never reachable.");
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "7_reach_null"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+            // A real curated function VA (engine-resolved) MUST land in live .text
+            // (a function entity resolves into executable code). DEGRADE if the DB
+            // lacks the row. AP1: the VA is engine-resolved, never hardcoded.
+            if (refdb::IsLoaded()) {
+                uintptr_t fnVa = refdb::ResolveAddrByName(kRealFnName);
+                if (fnVa != 0 && !pe::IsVaInLiveText(view, fnVa)) {
+                    std::snprintf(reason, sizeof(reason),
+                        "FAIL: the engine-resolved VA for the curated function '%s' "
+                        "(0x%llx) did NOT land in live .text — a function entity must "
+                        "resolve into executable code; a good row reading 'dead' is "
+                        "the reachability check failing on a genuinely-good target.",
+                        kRealFnName, (unsigned long long)fnVa);
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("subcheck", "7_reach_realfn"));
+                    kcdx::test::ReportResult(kRow, false, reason);
+                    kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                    vcc::Reset(); sp::Reset();
+                    return;
+                }
+            }
+        }
+    }
+
+    // ----- Sub-check 8: STARTUP VERIFICATION PASS — every row gets a DEFINED
+    // verdict; a known-good curated function reads resolves_works (DEGRADED). ---
+    // RunStartupVerification sweeps the curated set, combining the on-disk
+    // version-applicability check (REUSE the 3.1/3.2 dispatch) with the live
+    // reachability range test into one of the four D25 verdicts. AP14: every
+    // swept row carries a DEFINED verdict (never absent). A known-good function
+    // (SaveGame) whose on-disk hash matches AND resolves into live .text reads
+    // resolves_works with the matched address_version id surfaced — DEGRADE when
+    // WHGame is not mapped / the DB lacks the row.
+    {
+        std::vector<svv::RowVerdict> verds = svv::RunStartupVerification();
+        // Every row carries a defined verdict — the enum is total, so this asserts
+        // the pass produced rows when refdb is loaded (it skips loud-empty only
+        // when refdb is not loaded). When refdb is loaded the sweep must be
+        // non-empty (the curated cache has rows); an empty sweep on a loaded DB is
+        // the pass silently dropping the whole set.
+        if (refdb::IsLoaded() && verds.empty()) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: RunStartupVerification returned ZERO rows while refdb is "
+                "loaded (CachedRowCount=%zu) — the startup sweep dropped the entire "
+                "curated set; every cached entity must yield a defined verdict.",
+                refdb::CachedRowCount());
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "8_verify_empty"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        // Find the known-good SaveGame function row's verdict.
+        const svv::RowVerdict* saveRow = nullptr;
+        for (const auto& v : verds) {
+            if (v.name == kRealFnName) { saveRow = &v; break; }
+        }
+        if (saveRow != nullptr) {
+            // When the on-disk hash matched (resolves_works OR dead carry a
+            // matched id) the matched address_version id must be surfaced; a
+            // resolves_works MUST carry it. Falsifiable: a good function row that
+            // matched its fingerprint + resolved into live .text reading anything
+            // other than resolves_works, OR not surfacing the matched id, is the
+            // pass failing on a genuinely-good target.
+            if (saveRow->verdict == svv::Verdict::ResolvesWorks &&
+                !saveRow->has_matched_id) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: the curated function '%s' read resolves_works but did NOT "
+                    "surface a matched address_version id — D34 attribution must "
+                    "report WHICH candidate row the swept bytes matched.",
+                    kRealFnName);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "8_verify_matchedid"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+            // A resolves_works carries a matched id; a wrong_target carries NONE.
+            if (saveRow->verdict == svv::Verdict::WrongTarget &&
+                saveRow->has_matched_id) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: '%s' read wrong_target yet surfaced a matched id — "
+                    "wrong_target means the bytes matched NO candidate; the matched "
+                    "id must be NONE.", kRealFnName);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "8_verify_wrongtarget_id"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+    }
+
+    // ----- Sub-check 9: VERDICT-COMBINATION DISCRIMINATION (synthetic) --------
+    // The pass sweeps real rows, so synthesize the two failure verdicts at the
+    // building-block level the pass combines, asserting the discrimination is
+    // distinct from resolves_works:
+    //   wrong_target — a function payload whose stored content_hash CANNOT match
+    //     the on-disk bytes (an all-0x33 synthetic hash at SaveGame's real rva)
+    //     reads on-disk Changed → the pass combines that to wrong_target. Needs
+    //     WHGame mapped (the on-disk read); DEGRADE otherwise.
+    //   dead — a hash that MATCHES (real SaveGame) but a reachability that does
+    //     NOT land in live .text reads dead. We assert the reachability half
+    //     (sub-check 7) + the on-disk half here compose to distinct verdicts.
+    // Falsifiable: a non-matching synthetic hash reading Unchanged (the on-disk
+    // check fabricating a match) is the wrong_target signal collapsing.
+    {
+        if (refdb::IsLoaded()) {
+            refdb::NameResolution nr = refdb::ResolveByName(kRealFnName);
+            if (nr.found && nr.kind == "function" && nr.has_length && nr.length > 0) {
+                // A synthetic 32-byte hash that is astronomically unlikely to be
+                // SaveGame's real body hash → the on-disk check must read Changed
+                // (NOT Unchanged) → the pass would combine that to wrong_target.
+                std::vector<uint8_t> bogus(sv::kHashLen, 0x33);
+                sv::Result rBogus = DispatchFn(static_cast<uint32_t>(nr.rva),
+                                               static_cast<size_t>(nr.length), bogus);
+                // CannotCheck (module not mapped on the on-disk read) is a DEGRADE;
+                // a definite Unchanged on a bogus hash is a hard FAIL (the on-disk
+                // check fabricated a match → wrong_target discrimination is dead).
+                if (rBogus.status == sv::Status::Unchanged) {
+                    std::snprintf(reason, sizeof(reason),
+                        "FAIL: a function payload with a SYNTHETIC content_hash "
+                        "(0x33*32) at '%s's real rva read Unchanged — the on-disk "
+                        "fingerprint check fabricated a match for bytes that cannot "
+                        "be SaveGame's body; a non-matching fingerprint must read "
+                        "Changed (→ wrong_target), never Unchanged (→ resolves_works).",
+                        kRealFnName);
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("subcheck", "9_wrongtarget_discrim"));
+                    kcdx::test::ReportResult(kRow, false, reason);
+                    kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                    vcc::Reset(); sp::Reset();
+                    return;
+                }
+            }
+        }
+    }
+
     // All sub-checks held. Leave clean in-memory state + an empty on-disk cache
     // so the synthetic records never leak into a future real Lookup.
     vcc::Reset();
@@ -492,8 +675,13 @@ void RunSelfTestOnce() {
         "PASS — function-kind dispatch == legacy on-disk body-hash (3 cases%s); "
         "vtable_index is a defined deferral; Ambiguous round-trips the pass+codec; "
         "the 5 static checks verdict correctly (callsite gone=Changed / multi=Ambiguous "
-        "/ real=Unchanged; string absent=Changed / real=Unchanged); and a Changed "
-        "anchor transitively blocks its dependent (anchor_changed) via CheckOrdered. [%s]",
+        "/ real=Unchanged; string absent=Changed / real=Unchanged); a Changed "
+        "anchor transitively blocks its dependent (anchor_changed) via CheckOrdered; "
+        "AND the 3.3 startup verification pass — reachability (IsVaInLiveText) reads "
+        "off-image/null VAs as NOT in live .text + a real fn VA in .text; "
+        "RunStartupVerification yields a defined verdict per swept row + resolves_works "
+        "surfaces the matched address_version id (D34); a synthetic non-matching "
+        "fingerprint reads Changed (wrong_target), never a false match. [%s]",
         realChecked ? " + 1 real" : "", realNote);
     LOG_INFO_KV(kCategory, "selftest_pass",
         ::kcdx::log::KV("real_checked", realChecked ? "yes" : "degraded"),

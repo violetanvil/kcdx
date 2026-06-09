@@ -520,6 +520,16 @@ void ForEachCached(
 // Number of cache rows (== entities resolvable at the running game version).
 size_t CachedRowCount();
 
+// The picked address_versions.id for a resolved (post-supersession) entity —
+// the D34 attribution handle the startup verification pass reports as the
+// matched row. The input is the RESOLVED kcdx_id (the value ForEachCached
+// yields), not the original. Returns true + writes avIdOut iff a cached entity
+// carries that id; false (no write) on miss. Read-only cache lookup, launch-time
+// safe. (NameResolution/IdResolution deliberately do not carry the
+// address_versions.id; this thin accessor surfaces it for D34 attribution
+// without widening either public resolve struct.)
+bool CachedAddressVersionId(uint64_t resolvedKcdxId, int64_t& avIdOut);
+
 // True iff the cache carries an entry for this name. Does NOT fire any
 // SUPERSEDED/DEPRECATED/UNVERIFIED warning — pure presence check. Used by the
 // address_library precedence walk to detect bare-name collisions between the

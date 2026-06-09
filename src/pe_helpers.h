@@ -152,4 +152,19 @@ bool IsRvaInExecutableSection(const uint8_t* fileData, size_t fileSize, uint32_t
 // Unchanged). Reads ImageBase from the on-disk OptionalHeader.
 bool IsTextPointerOnDisk(const uint8_t* fileData, size_t fileSize, uint64_t slotValue);
 
+// Is the absolute VA `va` inside any executable (.text-class) section of the
+// LIVE loaded module `m`? The reachability half of the D25 startup verification
+// pass (step 3.3): the resolved runtime address must land in live `.text` — a
+// RANGE TEST against the live ExecutableSections, NOT a body hash (the live
+// image is relocated + kcdx-detoured, so a live-body hash reads wrong-target for
+// a genuinely-good row; this asks only "does the resolve land in code at all").
+//
+// A live SectionView's in-memory span is [m.base + sec.rva, m.base + sec.rva +
+// sec.size) — sec.size is the section's VirtualSize (Sections() reads
+// Misc.VirtualSize), the in-memory extent. va==0 / off-image / a non-.text
+// section all return false (fail toward "dead", never a false reachable). The
+// caller passes a VA already resolved via the engine path (WhgameBase()+rva) —
+// this never resolves an address itself (AP1: no hardcoded address here).
+bool IsVaInLiveText(const ModuleView& m, uintptr_t va);
+
 }  // namespace kcdx::pe

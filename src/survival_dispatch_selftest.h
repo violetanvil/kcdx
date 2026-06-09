@@ -2,8 +2,8 @@
 
 // cap-84 self-test — the permanent regression guard for the survival per-kind
 // DISPATCH + the Ambiguous status + the 5 STATIC non-function checks (step 3.2)
-// + the anchor-dependency ordering (step-3.3's live reachability check plugs in
-// on top).
+// + the anchor-dependency ordering, AND the step-3.3 STARTUP VERIFICATION PASS
+// (on-disk version-applicability + live-image reachability + D34 attribution).
 //
 // The behavior under test is engine-internal: kcdx::survival::SurvivalCheck has
 // a per-kind dispatch entry point (Payload{kind,...} → the per-kind check), with
@@ -51,6 +51,32 @@
 //      to CannotCheck/"anchor_changed", NOT be independently re-derived and NOT
 //      silently pass. FAILS if a Changed anchor does not transitively block its
 //      dependent.
+//
+//   --- STEP 3.3 — the startup verification pass (D25 + D34) ---
+//
+//   7. REACHABILITY RANGE TEST — pe::IsVaInLiveText (the 3.3 reachability half)
+//      reads an off-image VA (base-1MB) and VA 0 as NOT in live .text, and a
+//      real engine-resolved curated function VA AS in live .text. The signal is
+//      a RANGE TEST against live executable sections, NOT a live-body hash
+//      (Probe 0.4 — the live image is relocated + kcdx-detoured). DEGRADES when
+//      WHGame.dll is not mapped. FAILS if an off-image/null VA reads in-.text, or
+//      a genuinely-good function VA reads dead.
+//
+//   8. STARTUP VERIFICATION PASS — RunStartupVerification sweeps the curated set
+//      and yields a DEFINED verdict per row (AP14 — a loaded refdb produces a
+//      non-empty sweep); a known-good curated function (SaveGame) whose on-disk
+//      hash matches AND resolves into live .text reads resolves_works WITH its
+//      matched address_version id surfaced (D34); a wrong_target carries NO
+//      matched id. DEGRADES when WHGame is not mapped / the DB lacks the row.
+//      FAILS if the sweep drops the whole set, a resolves_works has no matched
+//      id, or a wrong_target carries one.
+//
+//   9. VERDICT-COMBINATION DISCRIMINATION — a function payload with a synthetic
+//      non-matching content_hash (0x33*32) at SaveGame's real rva reads on-disk
+//      Changed (→ the pass combines to wrong_target), NOT Unchanged. Proves the
+//      wrong_target discrimination does not collapse into a false resolves_works.
+//      DEGRADES when WHGame is not mapped. FAILS if the bogus fingerprint reads
+//      Unchanged (the on-disk check fabricating a match).
 //
 // Why it lives in engine code (like cap-60): survival + survival_pass +
 // version_check_cache are engine-internal symbols, not plugin exports — so

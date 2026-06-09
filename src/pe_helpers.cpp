@@ -382,4 +382,20 @@ bool IsTextPointerOnDisk(const uint8_t* fileData, size_t fileSize, uint64_t slot
     return IsRvaInExecutableSection(fileData, fileSize, static_cast<uint32_t>(rva64));
 }
 
+bool IsVaInLiveText(const ModuleView& m, uintptr_t va) {
+    // The reachability range test (D25 step 3.3): does `va` land in a live
+    // executable section? A live SectionView spans [base+rva, base+rva+size)
+    // where size is the section's VirtualSize (the in-memory extent). va==0 or
+    // any VA outside every executable section → false (fail toward "dead").
+    if (va == 0 || m.base == nullptr) return false;
+    const uintptr_t base = reinterpret_cast<uintptr_t>(m.base);
+    for (const auto& sec : ExecutableSections(m)) {
+        const uintptr_t secStart = base + sec.rva;
+        const uintptr_t secEnd = secStart + sec.size;
+        if (secEnd < secStart) continue;  // overflow guard (malformed extent).
+        if (va >= secStart && va < secEnd) return true;
+    }
+    return false;
+}
+
 }  // namespace kcdx::pe
