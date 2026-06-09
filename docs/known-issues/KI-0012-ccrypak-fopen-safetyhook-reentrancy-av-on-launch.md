@@ -328,6 +328,33 @@ survival work) and launch.
   angle, and code-bisecting today's range is pointless. The launch-clean history would then be luck,
   not a real known-good.
 
+## PROBE F — the improved crash log (KI-0013) characterizes the garbage: an UNINITIALIZED / wrong-struct read
+
+With KI-0013's full crash logging live, the AV's nature is now readable from the log directly (no
+minidump dive). Across the FOUR reproductions, the faulting source pointer (`rdx`, = `rbx`) is:
+- run 20-48: `0x580000019a3019ad`
+- run 21-41: `0x0000000020c00fdd`
+- run 21-56: `0xe6000002 0c124023`
+- run 22-15: `0x670000017884B334`
+
+**The high bits vary wildly run-to-run (`0x58` / `0x00` / `0xe6` / `0x67`)** — this is NOT a
+consistent corrupted pointer (a fixed-offset overwrite would land a stable wrong value). It is the
+signature of an **uninitialized / wrong-structure read**: the graphics code (`ffxFsr2ResourceIsNull
++0x633120`, a `*dst=*src` 8-byte copy) is handed a SOURCE pointer field that holds whatever garbage
+is at that address that boot — i.e. either a structure read at the wrong base/offset, or a field
+never initialized before this DLSS/FSR2 path consumed it. The full 20-frame `FAULTED_FRAME` chain is
+entirely WHGame graphics init (`CreateInstance → NGX (NVSDK_NGX_UpdateFeature) → FSR2`) →
+`KingdomCome.exe` → `KERNEL32`/`ntdll`; no kcdx frame anywhere. `FAULTED_INVENTORY = (inventory not
+yet captured)` — the crash is EARLY, before kcdx records its modification inventory.
+
+**Where this leaves KI-0012 (honest):** the AV is a deterministic uninitialized/wrong-struct read in
+WHGame's DLSS/FSR2 upscaling init. THREE lanes exonerated by direct probe (the safetyhook swap, the
+survival lane); the crash reproduces at `288e8fa` (all hook-backend Phase 1-5 behavioral work
+present). The next probe (PROBE E, build at `3b99fea`, pre-today) still splits "today's hook-backend
+behavioral work regressed it" vs "not a code regression (the graphics-init state kcdx perturbs is a
+DLSS/FSR2 init-order / config issue, or environmental)". The crash log is now good enough that the
+remaining work is a focused lane-attribution, not a blind dump-archaeology grind.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
