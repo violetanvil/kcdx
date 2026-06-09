@@ -811,6 +811,46 @@ the enabled-list vs a second iterator, and what does +0x48..0x58 hold in the gen
 inferring from filtered dumps. Then attribute which PROBE-L divergence is the fault. (Dispatched to a
 focused RE pass; no more in-line dump mis-reads.)
 
+## PROBE M (instruction-level RE) — NONE of the field divergences is read on the graphics path; it is a MISSING SIDE EFFECT
+
+A rigorous instruction-cited RE pass (`_research/ki0012-modmanager-size-recon/`) attributed the PROBE-L
+divergences and cleared them ALL as the graphics-crash cause:
+- **SELECT (`FUN_180da104c`) writes NOTHING to the modMgr object** — it only READS it (+0x18/+0x20/
+  +0x30/+0x38) and writes its own stack frame (`mov rax,rsp` at entry; the `[rax+0x10..]` are
+  register-home spills, NOT object writes — the exact false-positive I nearly made). +0x48..0x58 are
+  written by neither the ctor nor SELECT nor SELECT's helpers.
+- **No consumer on the crash path reads the divergent fields.** The enabled-walker reads ONLY +0x30;
+  MOUNT reads ONLY +0x30/+0x38. Nothing reads +0x48..0x58, the enabled-list COUNT, or the scanned
+  list on the graphics path.
+- **The faulting `{ptr,count@+8,cap@+0xC,stride 0x10}` array is a DLSS/NGX feature-parameter array
+  under `NVSDK_NGX_UpdateFeature`, NOT the C_ModManager** (whose vectors are 8-byte-stride
+  `{begin,end,eos}` triples — a different shape). The copy helper at the fault is a generic 872-call-
+  site `*dst=*src` utility, not modMgr-specific.
+- The modsDir **nRefs=2** over-ref is mechanistically real (kcdx's two-step init→placement bumps the
+  source refcount, `FUN_1804fd468`) but an over-ref DELAYS free, never dangles → cannot cause a
+  graphics AV.
+
+**Conclusion (the pivot):** the bug is NOT a wrong byte/value in the 0x68 object — the object's
+graphics-relevant fields (+0x00 vtable, +0x08 sys, +0x30 enabled-list) are all CORRECT (PROBE L). The
+crash is a **missing INIT / SIDE EFFECT** that kcdx's full replacement of ctor+SELECT skips, which the
+engine's DLSS/FSR2 init depends on. The native ctor does `call 0x180b99098` (console AddCommand — J
+restored ONLY this, crash persisted) AND the native SELECT runs a whole body of engine interactions
+(the Steam-workshop scan, mod_order read, per-mod manifest validate via the engine's own paths) that
+kcdx replaces wholesale. One of those side effects sets up state the DLSS feature array later reads;
+kcdx skips it → the array's base is uninitialized garbage (per-boot-varying, PROBE F). AddCommand
+alone wasn't enough → it is a DIFFERENT or ADDITIONAL SELECT side effect.
+
+## PROBE N — trace the DLSS array's garbage base to its origin (the decisive observation)
+
+The RE names the one decisive probe: a READ-ONLY hook on the DLSS-feature caller frame the dump names
+(`C_Game::CreateInstance+0x303xx`, the frame that builds the `{ptr,count@+8,cap@+0xC,stride 0x10}`
+array + calls `NVSDK_NGX_UpdateFeature`), logging where that array's `base`/`count`/`cap` come from —
+does the garbage base trace (through any pointer chain) back to a C_ModManager field, OR to an engine
+structure (a CVar/registry/feature table) that an engine init step kcdx SUPPRESSED populates? That
+distinguishes "wrong modMgr field after all" from "missing engine-init side effect," and names the
+exact suppressed step. This is the next step — but it is a NEW KIND of probe (instrument WHGame's
+graphics code, not the modMgr), and the direction (which side effect to restore) is a real call.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
