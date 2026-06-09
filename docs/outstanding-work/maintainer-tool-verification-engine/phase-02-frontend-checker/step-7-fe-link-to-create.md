@@ -1,10 +1,12 @@
 # 2.7 [FE] s02 link-to-create prompt → s05 prefill + evidence_kind-from-check
 
-> **DONE (2026-06-08, FE:7d2d6fa):** the link-to-create on-ramp + s05 prefill + the D29
-> evidence_kind-from-check composition. Gate green (typecheck / vitest 418/418 / build); step-review
-> land-fix (law 3 never-auto-open + law 4 advisory + AP18-not-bypassed + the D29 fill-empty-only
-> refine all verified). Pending the milestone UAT (the maintainer experiences the prompt + the
-> prefilled-s05 on-ramp against a real linked Bin folder).
+> **DONE + milestone UAT ACCEPTED (2026-06-08, FE:7d2d6fa):** the link-to-create on-ramp + s05
+> prefill + the D29 evidence_kind-from-check composition. Gate green (typecheck / vitest 418/418 /
+> build); step-review land-fix (law 3 never-auto-open + law 4 advisory + AP18-not-bypassed + the D29
+> fill-empty-only refine all verified). Milestone UAT accepted on the automated verification (the 5
+> behavior assertions + error/edge states in vitest); the one surfaced design call — the create-path
+> verdict badge (s05-spec-silent) — was confirmed KEEP (the maintainer sees the verdict driving the
+> evidence_kind refine, mirroring s04).
 
 ## What
 
