@@ -381,6 +381,50 @@ directly; try disabling upscaling or resetting graphics config); (b) confirm wit
 launch (KingdomCome.exe with kcdx un-injected) that the base game crashes the same way; (c) close
 KI-0012 as an external/base-game graphics-init crash (not kcdx), keeping the full investigation record.
 
+## REFRAME (user direction) — it IS kcdx; PROBE E tested the wrong variable
+
+User: "it worked today. so it's something that's making us think it's that. something we hook or
+something is changing an address the engine is trying to use. it is 100% kcdx." This is correct and
+PROBE E does NOT contradict it — June-5 code is STILL kcdx (still hooks `ccrypak_fopen`, still does
+the ModManager ctor takeover, still builds the Lua VM). "Pre-today code crashes too" means the kcdx
+mechanism at fault is OLDER than today and present in every build tested — which is exactly why
+swapping today's lanes (C/D/E) never moved it. The off-stack-corruption shape (no kcdx frame; the
+engine reads a value kcdx perturbed earlier) fits "kcdx changes an address/value the engine's
+graphics init later reads."
+
+**PROBE E reinterpreted:** not "not kcdx" — it RULES OUT today's lane-swaps and points at a
+LONG-STANDING kcdx mechanism. The variable to test is kcdx-vs-NO-kcdx, never yet run.
+
+## Prime mechanism candidate — the ModManager ctor takeover (an RE'd field map)
+
+`src/mod_absorb/ctor_bracket.cpp` `HookedCtor` FULLY replaces the engine's `C_ModManager` constructor
+— "no original ctor call, no original SELECT call" (logged every boot). It allocates a `kObjectSize =
+0x68` block via WHGame's allocator, `memset`s it to zero, and writes a REVERSE-ENGINEERED field map
+(+0x00 vtable, +0x08 sys, +0x10 modsDir CryString, +0x30/0x38/0x40 enabled-list triple, +0x60 init
+flag). The object itself is zeroed, so it is not a raw uninitialized read — BUT this is a hand-built
+reconstruction from an RE'd layout. If the field map is INCOMPLETE or WRONG (the real C_ModManager is
+larger than 0x68; a field at an offset kcdx does not know the engine later reads; the modsDir/sys/
+enabled-list values differ subtly from the native ctor's), the engine reads a field kcdx got wrong
+and faults downstream — and graphics init (or something it transitively reaches) could be that
+consumer. The garbage-varies-per-boot signature (PROBE F) fits a field whose VALUE kcdx leaves zero/
+wrong where the engine expects a live pointer. This is the strongest "kcdx changes an address the
+engine uses" candidate; it is OLD (present in June-5), matching PROBE E.
+
+(Other long-standing kcdx surfaces that perturb engine state, lower priority: the 4 engine hooks —
+`ccrypak_fopen`, `ccrypak_adjustfilename`, `lua_pcall`, `lua_newstate`; the Lua VM build-and-adopt
+keystone; any byte patch.)
+
+## PROBE G — vanilla baseline (the foundation: kcdx vs NO kcdx)
+
+Never actually run. Launch `KingdomCome.exe` with kcdx FULLY un-injected (no `kcdx.dll` loaded at
+all — bypass `kcdx.exe`, or rename it so Steam's launch option no-ops to the raw game). This is the
+clean kcdx-vs-no-kcdx test the whole investigation rests on:
+- **Vanilla boots clean** → it is DEFINITIVELY kcdx (confirms the user's call); the ModManager ctor
+  takeover is the prime mechanism to instrument next (probe what field the engine reads post-ctor
+  that kcdx's 0x68 map gets wrong).
+- **Vanilla ALSO crashes (same FSR2 AV)** → genuinely base-game/environmental after all. (The user's
+  strong prior is that this will NOT happen — vanilla will be clean.)
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
