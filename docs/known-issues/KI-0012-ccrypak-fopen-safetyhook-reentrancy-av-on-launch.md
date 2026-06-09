@@ -710,6 +710,54 @@ goes through Gate B (root-cause-verifier) then `/execute`.
 NEXT: identify RVA `0x2113A60` (what +0x70 points at) + confirm the true object size, then build the
 production fix.
 
+## PROBE K ROOT CAUSE — FALSIFIED by instruction-level RE (the +0x70 reading was a heap-adjacency artifact)
+
+A focused RE pass (capstone against the binary, `_research/ki0012-modmanager-size-recon/`) DISPROVED
+the +0x70 root cause:
+- **The object IS exactly 0x68.** `0x180da0ed1 lea ecx,[rdi+0x68]` (rdi=0 → ecx=0x68) → the allocator
+  call; the size arg is provably 0x68 (the allocator records rcx into its byte-counter). kcdx's
+  `kObjectSize = 0x68` is CORRECT — do not grow it.
+- **Nothing writes [modMgr+0x70]** — not the ctor (highest write +0x60), not SELECT (writes only its
+  own stack frame; reads modMgr +0x18..+0x40), not AddCommand (operates on the console singleton).
+- **`0x2113A60` (FUN_182113a60) is a process-init magic-static factory callback**, in ZERO .rdata
+  vtable slots — not a C_ModManager member.
+- **The artifact:** PROBE K's genuine scratch object sat exactly 0x70 above kcdx's object on the heap
+  (`genuine_obj - kcdx_obj = 0x70`). So my "kcdx +0x70 = PAST_OUR_0x68 / genuine +0x70 = a pointer"
+  diff read ONE QWORD PAST a 0x68 object on BOTH sides — into the heap neighbor. Every +0x70/+0x78
+  diff row is OUT-OF-BOUNDS NOISE, not a field. My method error: I diffed 0x00..0x88 over a 0x68
+  object and treated the out-of-bounds tail as signal — I even noted the two objects were 0x70 apart
+  and failed to connect it. This is the SAME phantom-field error `init-cycle-recon/FINDINGS.md`
+  documents (the original narrow probe read the caller's stack and reported "+0x48=15").
+
+So PROBE K's "ROOT CAUSE / The fix" above is WRONG and withdrawn (do NOT grow the alloc, do NOT write
+0x2113A60 at +0x70 — that would be an AP1 raw-RVA violation AND make kcdx DIVERGE from the genuine
+0x68 object). FOUR theories now falsified: scanned-list (I), AddCommand (J), +0x70/size (K). The
+discipline lesson the trail keeps teaching: a byte-diff that reaches past the object is noise; observe
+WITHIN the real bounds, value-by-value, or trace the fault to the exact field.
+
+## What is STILL solid (bisect-proven, survives every falsification)
+
+- The ctor takeover IS the cause (PROBE H: takeover off → clean; genuine object → clean).
+- kcdx's object is 0x68, correctly sized; +0x00 vtable, +0x08 sys, +0x60 flag all MATCH genuine.
+- The wrong thing is a VALUE within the 0x68 block kcdx writes (the modsDir CryString, or the
+  enabled-list begin/end/eos triple at +0x30/0x38/0x40, or +0x18..+0x58), OR a construction-time
+  SIDE EFFECT the native ctor produces that kcdx omits (the AddCommand call J restored did not fix
+  it, so re-observe rather than assume the registry).
+
+## PROBE L — within-bounds field-value diff (the RIGHT observation, bounded to 0x68)
+
+The corrected PROBE K: byte-diff ONLY 0x00..0x68 (NEVER past), and for each DIFFERING field understand
+its VALUE SEMANTICS (is kcdx's enabled-list begin/end/eos a VALID std::vector triple the way the
+genuine one is? is the modsDir CryString header correct? what does SELECT write at +0x18..+0x40 that
+kcdx's hand-built lists get subtly wrong?). The enabled-list (+0x30/0x38/0x40) is the prime suspect:
+kcdx points it at `g_enabledList` (a `std::vector<void*>` of synthesized I_Mod* records); the genuine
+one is SELECT's own. If kcdx's I_Mod* records (record_synth) are malformed in a way a graphics
+consumer that walks the enabled list chokes on, that is the bug — within 0x68, a wrong VALUE.
+ALTERNATIVELY: trace the faulting graphics `rdx` back to the exact field it derived from (PROBE J
+option 2, never run) — disassemble what frame-2/3 read off the C_ModManager (or `csys[+0x2B30]`) to
+produce the garbage pointer. Both are within-bounds observations; no more out-of-bounds dumps, no more
+field guesses.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
