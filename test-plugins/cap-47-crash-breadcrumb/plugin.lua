@@ -45,12 +45,11 @@ end
 
 -- Install a `before` hook on the stub's entry. Pure observer: pass the arg
 -- through unchanged (return it) so the original `mov/add/ret` runs untouched.
-local hook = kcdx.hook{
-    name      = "cap47_breadcrumb_fire",
-    address   = region,        -- kcdx.code pointer at the stub entry (+0)
-    signature = SIG,
-    before    = function(seed) return seed end,  -- no-op passthrough
-}
+-- The kcdx.code region pointer is the raw target positional; the signature
+-- rides in [opts] (a raw VA carries no name-supplied ABI).
+local hook = kcdx.hook.before("WHGame.dll", region,  -- kcdx.code pointer at the stub entry (+0)
+    function(seed) return seed end,                  -- no-op passthrough
+    { name = "cap47_breadcrumb_fire", signature = SIG })
 
 -- At "ready" (InputLoaded — AFTER ApplyZone installs the hook above), CALL the
 -- stub so the detour fires and RecordFire writes the breadcrumb. dynamic_call

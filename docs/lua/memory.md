@@ -23,7 +23,7 @@ these calls; only call `:get_address()` for a display/opaque integer.
 
 > **Note:** these `kcdx.memory` calls are an advanced/expert surface — pattern
 > scanning, raw allocation, and runtime ABI declaration ask you to do work the
-> name-based `kcdx.hook{ target = }` path does for you. For function
+> name-based `kcdx.hook` (name target) path does for you. For function
 > interception prefer `kcdx.hook`; reach for `dynamic_hook`/`dynamic_call` only
 > when you need runtime installation against an address you already hold.
 

@@ -54,7 +54,7 @@ if kcdx.plugin.is_rejected("redmoon.outfit") then
 end
 
 -- Dependency is live — proceed with the integration.
-kcdx.hook{ target = "redmoon.outfit.open_inventory", before = function(...) ... end }
+kcdx.hook.before("WHGame.dll", "redmoon.outfit.open_inventory", function(...) ... end)
 ```
 
 The C++ mirror of this surface is [`kcdxPluginInfoInterface`](../cpp/plugin.md)

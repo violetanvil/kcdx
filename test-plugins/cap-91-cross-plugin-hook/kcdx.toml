@@ -1,0 +1,65 @@
+# CAP-91 — hook a function BY ITS kcdx.functions.* REFERENCE VALUE.
+#
+# The extensibility keystone for the kcdx.hook sub-verb split: a hook sub-verb
+# accepts a kcdx.functions.* REFERENCE VALUE as its target (the 2nd positional),
+# not only a name string. The engine dispatches by arg-2 type — a reference
+# userdata yields its resolved name + carried signature, routed through the same
+# name path a string target takes. This is what lets one author hook another's
+# function BY NAME with no disassembly: the reference carries the address AND the
+# ABI, so the consumer writes zero hex.
+#
+# What it proves (boot-only, no player gesture):
+#
+#   * cap-91-game-ref-hook-fires — kcdx.hook.before("WHGame.dll",
+#       kcdx.functions.WHGame.lua_pcall, fn) installs AND fires. The target is a
+#       GAME-DLL reference VALUE (not a string): the engine reads the reference's
+#       resolved name (lua_pcall) + its verified ABI from the reference DB and
+#       wires the detour. lua_pcall is called continuously from plugin-load
+#       onward (every Lua-from-C dispatch), so the callback fires within
+#       milliseconds; the row self-reports PASS from the FIRST fire (one-shot
+#       guarded). This is the reference-value-as-target dispatch end-to-end — the
+#       half of "hook by reference value" that is wired today.
+#       FALSIFIABLE: if the binder does NOT accept the reference value (treats it
+#       as a non-string/non-locator and rejects, or mis-resolves it), the hook
+#       returns nil at registration; if it accepts but never fires, the
+#       InputLoaded backstop reports FAIL. Either denies the row.
+#
+#   * cap-91-plugin-ref-hook-shape — kcdx.hook.before(.., a DECLARED plugin
+#       reference) is REJECTED predictably (not silently accepted). A
+#       kcdx.dll.declare'd plugin function carries a signature but NO address
+#       until a PDB / C-export backs it (that address path is a later additive
+#       step). So a callback hook on a declare-only plugin reference cannot
+#       resolve an address to detour — the binder must reject it with a teaching
+#       error, never fake-install a hook that can never fire.
+#       FALSIFIABLE: if the binder accepts the declare-only plugin reference and
+#       returns a live handle (claiming an install that has no address to fire
+#       on), the row FAILS — a silent no-fire install is the defect.
+#
+# DEFERRED (surfaced, not faked): the FULL cross-plugin proof — plugin B hooks
+# plugin A's DECLARED function by reference value AND the hook FIRES — needs the
+# plugin-function ADDRESS path (PDB auto-load / C-export resolution), which is a
+# later additive step (see cap-89 / cap-90 pdb-autoload). Until an address backs
+# a declared plugin function, a callback hook on it cannot fire; this plugin
+# proves the reference-value DISPATCH (game ref fires) + the honest rejection of
+# the not-yet-addressable plugin ref, rather than a vacuous green.
+#
+# Test mode: boot-only. cap-91-plugin-ref-hook-shape self-reports at plugin load
+# (synchronous reject). cap-91-game-ref-hook-fires self-reports from the
+# callback's first fire (one-shot guarded), with an InputLoaded backstop FAIL.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_91_cross_plugin_hook"
+display_name        = "CAP-91 hook by kcdx.functions.* reference value"
+author              = "ts"
+description         = "Pure-Lua self-test of hooking BY a kcdx.functions.* reference value (the engine dispatches the hook sub-verb's target by arg-2 type — a reference userdata yields its resolved name + carried ABI). A GAME-DLL reference (kcdx.functions.WHGame.lua_pcall) installs AND fires; a declare-only PLUGIN reference is rejected predictably (no address to fire on until a later PDB/C-export path backs it). Proves the reference-value dispatch end-to-end without disassembly."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-91-game-ref-hook-fires",
+                       "cap-91-plugin-ref-hook-shape"]
+
+[entrypoints]
+lua = "plugin.lua"

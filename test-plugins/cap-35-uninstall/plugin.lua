@@ -33,11 +33,9 @@
 -- did not flip the status atomic, the post-uninstall :applied() would
 -- still read true (or nil if Pending) — the row FAILs.
 -- ====================================================================
-local hBasic = kcdx.hook{
-    name   = "cap35_uninstall_basic",
-    target = "kcdx.luaopen_math",            -- 2-segment engine-seed form
-    before = function() end,                 -- no-op (never fires this run)
-}
+local hBasic = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_math",  -- 2-segment engine-seed form
+    function() end,                                                -- no-op (never fires this run)
+    { name = "cap35_uninstall_basic" })
 
 -- ====================================================================
 -- (2) CAP-35-uninstall-idempotent — install a second no-op before-hook;
@@ -50,11 +48,9 @@ local hBasic = kcdx.hook{
 -- hook_chain.cpp:1767 returns true if no match found) so the second
 -- :uninstall() on an already-Removed entry must be a safe no-op.
 -- ====================================================================
-local hIdem = kcdx.hook{
-    name   = "cap35_uninstall_idempotent",
-    target = "kcdx.luaopen_math",
-    before = function() end,
-}
+local hIdem = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_math",
+    function() end,
+    { name = "cap35_uninstall_idempotent" })
 
 -- ====================================================================
 -- (3) CAP-35-uninstall-tostring — install a third no-op before-hook;
@@ -67,11 +63,9 @@ local hIdem = kcdx.hook{
 -- would still render "applied" (or some other status), and the substring
 -- check would fail.
 -- ====================================================================
-local hTostr = kcdx.hook{
-    name   = "cap35_uninstall_tostring",
-    target = "kcdx.luaopen_math",
-    before = function() end,
-}
+local hTostr = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_math",
+    function() end,
+    { name = "cap35_uninstall_tostring" })
 
 -- ====================================================================
 -- (4) CAP-35-uninstall-chain-survives — install TWO before-hooks on the
@@ -87,16 +81,12 @@ local hTostr = kcdx.hook{
 -- wrong entry, removed both entries, or tore down the chain wholesale,
 -- the surviving hook's :applied()==true assertion would fail.
 -- ====================================================================
-local hChainA = kcdx.hook{
-    name   = "cap35_uninstall_chain_a",
-    target = "kcdx.luaopen_math",
-    before = function() end,
-}
-local hChainB = kcdx.hook{
-    name   = "cap35_uninstall_chain_b",
-    target = "kcdx.luaopen_math",
-    before = function() end,
-}
+local hChainA = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_math",
+    function() end,
+    { name = "cap35_uninstall_chain_a" })
+local hChainB = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_math",
+    function() end,
+    { name = "cap35_uninstall_chain_b" })
 
 -- ====================================================================
 -- (5) CAP-35-uninstall-bytes-error — the non-Hook teaching-error proof
@@ -154,12 +144,9 @@ end
 -- comparison), kcdx.hook returns nil + err → the assert fires → no
 -- report → the matrix row sits PENDING.
 -- ====================================================================
-local hSkip = kcdx.hook{
-    name      = "cap35_off_thread_skip",
-    target    = "kcdx.luaopen_math",
-    off_thread = "skip",
-    before    = function() end,
-}
+local hSkip = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_math",
+    function() end,
+    { name = "cap35_off_thread_skip", off_thread = "skip" })
 kcdx.test.report("CAP-35-off-thread-skip", hSkip ~= nil,
     (hSkip ~= nil)
       and "off_thread=\"skip\" parsed; binder returned a handle"
@@ -177,12 +164,9 @@ kcdx.test.report("CAP-35-off-thread-skip", hSkip ~= nil,
 -- fails — the teaching contract is "name the field so the author can
 -- find + fix it" (errors teach — the message names the offending input).
 -- ====================================================================
-local hBogus, hBogusErr = kcdx.hook{
-    name      = "cap35_off_thread_bogus",
-    target    = "kcdx.luaopen_math",
-    off_thread = "bogus",
-    before    = function() end,
-}
+local hBogus, hBogusErr = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_math",
+    function() end,
+    { name = "cap35_off_thread_bogus", off_thread = "bogus" })
 do
     local errStr   = tostring(hBogusErr)
     local nilOk    = (hBogus == nil)

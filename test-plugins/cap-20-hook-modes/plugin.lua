@@ -7,62 +7,54 @@
 -- exact lightuserdata). RegisterFunction installs plugin C functions
 -- under the kcdx table (kcdx.<table>.<fn>), NOT at global scope — so the
 -- DLL's RegisterFunction(self,"cap20","addr_before",...) lives at
--- kcdx.cap20.addr_before. We hook via kcdx.hook{ address=<that>, <mode>=fn }.
+-- kcdx.cap20.addr_before. We hook via the kcdx.hook.<mode> sub-verbs.
 -- Signature is "i32 (i32 seed)" for the Add_* targets, "i32 (wstr s)"
 -- for WLen. The DLL calls the targets after ApplyZone and asserts.
 
+-- We hook via the sub-verb form kcdx.hook.<mode>(module, <raw-address target>,
+-- fn, { signature=, name= }): a raw VA passed as the target positional is the
+-- advanced raw-locator form (the address IS the target), with the signature in
+-- the trailing [opts] table (the engine has no name to carry the ABI for a raw
+-- VA). MOD is the required first positional (cosmetic for a raw absolute VA —
+-- the apply path resolves the address directly).
+local MOD   = "WHGame.dll"
 local cap20 = kcdx.cap20   -- the DLL-registered target-address accessors
 local SIG = "i32 (i32 seed)"
 
 -- CAP-20-before: massage the arg (seed -> seed+1). Original still runs.
-kcdx.hook{
-    name    = "cap20_before",
-    address = cap20.addr_before(),
-    signature = SIG,
-    before  = function(seed) return seed + 1 end,
-}
+kcdx.hook.before(MOD, cap20.addr_before(),
+    function(seed) return seed + 1 end,
+    { name = "cap20_before", signature = SIG })
 
 -- CAP-20-after: transform the return value (+1000).
-kcdx.hook{
-    name    = "cap20_after",
-    address = cap20.addr_after(),
-    signature = SIG,
-    after   = function(ret) return ret + 1000 end,
-}
+kcdx.hook.after(MOD, cap20.addr_after(),
+    function(ret) return ret + 1000 end,
+    { name = "cap20_after", signature = SIG })
 
 -- CAP-20-replace: original never runs; return a constant.
-kcdx.hook{
-    name    = "cap20_replace",
-    address = cap20.addr_replace(),
-    signature = SIG,
-    replace = function(seed) return 42 end,
-}
+kcdx.hook.replace(MOD, cap20.addr_replace(),
+    function(seed) return 42 end,
+    { name = "cap20_replace", signature = SIG })
 
 -- CAP-20-around: wrap the original — call it, double the result.
-kcdx.hook{
-    name    = "cap20_around",
-    address = cap20.addr_around(),
-    signature = SIG,
-    around  = function(orig, seed) return 2 * orig(seed) end,
-}
+kcdx.hook.around(MOD, cap20.addr_around(),
+    function(orig, seed) return 2 * orig(seed) end,
+    { name = "cap20_around", signature = SIG })
 
 -- CAP-20-chain: two before hooks on ONE target. Both fire, in load
 -- order (intra-plugin: registration order). First adds 1, second
 -- doubles. (10+1)*2 = 22, then original +100 = 122.
 local chainAddr = cap20.addr_chain()
-kcdx.hook{ name = "cap20_chain_a", address = chainAddr, signature = SIG,
-           before = function(seed) return seed + 1 end }
-kcdx.hook{ name = "cap20_chain_b", address = chainAddr, signature = SIG,
-           before = function(seed) return seed * 2 end }
+kcdx.hook.before(MOD, chainAddr, function(seed) return seed + 1 end,
+                 { name = "cap20_chain_a", signature = SIG })
+kcdx.hook.before(MOD, chainAddr, function(seed) return seed * 2 end,
+                 { name = "cap20_chain_b", signature = SIG })
 
 -- CAP-20-wstr: read + mutate a wide-string arg. Replace 'abc' with
 -- 'abcd' so the native WLen sees length 4.
-kcdx.hook{
-    name    = "cap20_wstr",
-    address = cap20.addr_wlen(),
-    signature = "i32 (wstr s)",
-    before  = function(s) return s .. "d" end,
-}
+kcdx.hook.before(MOD, cap20.addr_wlen(),
+    function(s) return s .. "d" end,
+    { name = "cap20_wstr", signature = "i32 (wstr s)" })
 
 -- CAP-20-conflict: TWO replace hooks on one target, returning DIFFERENT
 -- constants (7 then 99). They cannot coexist (replace is exclusive in
@@ -73,14 +65,12 @@ kcdx.hook{
 -- (hConflictB:applied()==false + reason) is asserted in Lua from the
 -- "ready" callback below (CAP-20-conflict-rejected).
 local conflictAddr = cap20.addr_conflict()
-local hConflictA = kcdx.hook{
-    name = "cap20_conflict_a", address = conflictAddr, signature = SIG,
-    replace = function(seed) return 7 end,
-}
-local hConflictB = kcdx.hook{
-    name = "cap20_conflict_b", address = conflictAddr, signature = SIG,
-    replace = function(seed) return 99 end,
-}
+local hConflictA = kcdx.hook.replace(MOD, conflictAddr,
+    function(seed) return 7 end,
+    { name = "cap20_conflict_a", signature = SIG })
+local hConflictB = kcdx.hook.replace(MOD, conflictAddr,
+    function(seed) return 99 end,
+    { name = "cap20_conflict_b", signature = SIG })
 
 -- CAP-20-dyncall: regression for the shared JitTrampoline arg+return
 -- round-trip (kcdx.memory.dynamic_call). This is the path whose
@@ -121,12 +111,12 @@ end
 -- on a real target. We capture its handle and assert (in "ready")
 -- :applied()==false with a non-empty :reason(). before=function is a
 -- no-op stub: the hook never installs, so it never runs.
-local hAddrnameMiss = kcdx.hook{
-    name       = "cap20_addrname_miss",
-    address_id = "cap20_addrname_miss",   -- not a real Address Library name
-    signature  = SIG,
-    before     = function(seed) return seed end,
-}
+-- The name is passed as the `target` positional (an unknown name resolves to
+-- nothing → the hook fails to APPLY, which is the test). signature in [opts]
+-- (an advanced/unverified name carries no ABI of its own).
+local hAddrnameMiss = kcdx.hook.before(MOD, "cap20_addrname_miss",
+    function(seed) return seed end,
+    { name = "cap20_addrname_miss", signature = SIG })
 
 -- CAP-20-target: the NAME-supplies-the-ABI path (the headline disassembler-
 -- test win — the engine resolves address AND signature from a name). This
@@ -144,11 +134,9 @@ local hAddrnameMiss = kcdx.hook{
 -- — which we deliberately do NOT hook here) and NOT hooked by any other
 -- test. We assert install success in "ready"; the hook need not fire (a
 -- dormant target) — the install IS the proof the ABI was supplied.
-local hTargetAbi = kcdx.hook{
-    name   = "cap20_target_abi",
-    target = "luaL_loadfile",      -- name resolves address AND signature
-    before = function(L, filename) return L, filename end,  -- no-op passthrough
-}
+local hTargetAbi = kcdx.hook.before(MOD, "luaL_loadfile",  -- name resolves address AND signature
+    function(L, filename) return L, filename end,          -- no-op passthrough
+    { name = "cap20_target_abi" })
 
 -- CAP-20-target-nosig: the unverified-signature path. target="IConsole_AddCommand"
 -- (id 2000) resolves an address but its signature column is "" (left
@@ -164,11 +152,9 @@ local hTargetAbi = kcdx.hook{
 -- disassembler-test cornerstone), so we assert the reason text, not just
 -- nil — a future regression returning nil with no message must not pass.
 do
-    local h, err = kcdx.hook{
-        name   = "cap20_target_nosig",
-        target = "IConsole_AddCommand",   -- resolves an address; no seed signature
-        before = function() end,          -- (would never install)
-    }
+    local h, err = kcdx.hook.before(MOD, "IConsole_AddCommand",  -- resolves an address; no seed signature
+        function() end,                                          -- (would never install)
+        { name = "cap20_target_nosig" })
     -- The engine returns nil + a teaching error that names the missing
     -- signature ("has no signature — a hook needs an ABI"). We assert the
     -- STABLE, load-bearing parts of that message ("has no signature" AND
@@ -208,11 +194,9 @@ end
 -- unknown name is told to supply a signature), the error contains "has no
 -- signature" / "needs an ABI" instead of "did not resolve" → this row FAILS.
 do
-    local h, err = kcdx.hook{
-        name   = "cap20_unknown_target",
-        target = "cap20_definitely_nonexistent_target",  -- resolves to NOTHING
-        before = function() end,                         -- (would never install)
-    }
+    local h, err = kcdx.hook.before(MOD, "cap20_definitely_nonexistent_target",  -- resolves to NOTHING
+        function() end,                                                          -- (would never install)
+        { name = "cap20_unknown_target" })
     -- The engine returns nil + the UNKNOWN-target teaching error. Assert the
     -- stable load-bearing parts: it names the target as unresolved/unknown, and
     -- it does NOT route to the known-but-no-ABI "supply a signature" message
@@ -248,10 +232,11 @@ end
 -- just nil — wording is the observable contract (assert the behavior, don't
 -- theorize it).
 do
-    local h, err = kcdx.hook{
-        name   = "cap20_no_locator",
-        before = function() end,
-    }
+    -- No locator at all: nil target AND no advanced [opts] locator. The binder
+    -- REJECTS synchronously and the error LEADS with the common path (a target
+    -- name), naming both "target" and "name".
+    local h, err = kcdx.hook.before(MOD, nil, function() end,
+        { name = "cap20_no_locator" })
     local pass = (h == nil)
                  and type(err) == "string"
                  and err:find("target") ~= nil
@@ -270,12 +255,12 @@ end
 -- advanced ones as mutually exclusive (the two-tier surface). We assert
 -- the "ONE" wording — the exactly-one-locator contract.
 do
-    local h, err = kcdx.hook{
-        name    = "cap20_two_locators",
-        target  = "luaL_loadfile",   -- a name-based locator (addressName)
-        address = 0x1000,            -- AND a raw address (different slot)
-        before  = function() end,
-    }
+    -- TWO locators: a name target positional AND a raw address in [opts]. They
+    -- land in different locator slots → entryLocatorCount==2 → the binder
+    -- REJECTS with the exactly-ONE-locator error.
+    local h, err = kcdx.hook.before(MOD, "luaL_loadfile",  -- a name-based locator (addressName)
+        function() end,
+        { name = "cap20_two_locators", address = 0x1000 })  -- AND a raw address (different slot)
     local pass = (h == nil)
                  and type(err) == "string"
                  and err:find("ONE") ~= nil

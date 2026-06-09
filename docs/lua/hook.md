@@ -4,191 +4,262 @@
 Intercept a game function: run your Lua callback when the game calls it, and
 optionally change its arguments, its return value, or whether it runs at all.
 
-## Common path — `kcdx.hook.<name>.<mode>(callback)`
-
-The everyday shape: name the target, pick a mode, pass your callback.
-
-```lua
-local h = kcdx.hook.IsInCombat.before(function(self) end)
-```
-
-`<name>` is any name in the unified named-target table — a curated engine
-entry (e.g. `IsInCombat`), your own [author-declared target](targets.md), or a
-name you exposed via `kcdx.declare`. `<mode>` is one of `before` / `after` /
-`around` / `replace` / `mid` (for a kind=`function` target). The engine
-resolves the address AND the verified ABI from the name — you write no hex
-and no signature.
-
-**Fail-loud resolution** (every wrong step errors at the wrong-step's access,
-not later at install time):
-
-1. **Typo at `<name>`** → the engine returns `nil` from the name index, so
-   `kcdx.hook.IsInComat.before(fn)` raises Lua's "attempt to index a nil
-   value" naming the typoed slot. The author sees WHICH name they got wrong.
-2. **Invalid mode for the resolved kind** → kind-aware filter rejects a hook
-   mode the target cannot accept (a vtable-only entity rejects `.before` at
-   the mode access, not at install). The next access raises "attempt to call
-   a nil value" naming the mode slot.
-3. **Valid resolve + valid mode** → the engine dispatches the install with
-   the target pre-resolved (the name carries the address; if it carries a
-   verified signature, the ABI carries too).
-4. **Apply-time failure** (the locator resolves but the conflict is lost, or
-   the running build has moved the row) → registration still returns a real
-   handle; `:applied()` reads `false` and `:reason()` carries the apply-time
-   message. Read those in a `kcdx.on("ready", ...)` callback (same contract
-   as the flat-table form below).
-
-The callback signature follows the resolved ABI exactly the same as the
-flat-table form — see [Modes](#modes) for the per-mode callback shapes.
-
-An optional knob table can follow the callback:
-`kcdx.hook.IsInCombat.before(fn, { off_thread = "marshal" })`. The keys it
-accepts are everything the flat-table form accepts EXCEPT the locator-
-providing keys (`target` / `address` / `address_id` / `pattern` /
-`target_symbol` / `target_lua_cfunction`) and the mode keys (`before` /
-`after` / `around` / `replace` / `mid`) — those are fixed by the
-`kcdx.hook.<name>.<mode>` shape. Passing a forbidden key is a teaching
-error.
-
-## Fallback — `kcdx.hook{...}` flat-table form
-
-The flat-table form remains available for cases the smart-resolver shape does
-not cover: dynamic target selection at runtime, the advanced/expert locators
-(`pattern` / `address` / `address_id` / `target_symbol` /
-`target_lua_cfunction`), and `mode = "callsite"`. **Call shape:** a single
-named-field table. Returns a **handle** on successful registration, or
-`(nil, err)` on a bad call.
+`kcdx.hook` is a table of **sub-verbs**, one per interception mode. You pick the
+mode by the sub-verb you call:
 
 ```lua
-local h = kcdx.hook{ name = "...", target = "...", before = function(...) ... end }
+kcdx.hook.before("WHGame.dll", "IsInCombat", function(self) ... end)
 ```
 
-## Fields
+Every sub-verb takes the **module** name as its required first argument, the
+**target** as its second, then the callback (and, for some, a locator). The name
+resolves the address AND the verified ABI — you write no hex and no signature on
+the common path.
 
-| Field | Type | Meaning |
-|---|---|---|
-| `name` | string | Optional label for logs and conflict messages (default `"lua_hook"`). |
-| `description` | string | Optional free text. |
-| one behaviour key | function | **Required, exactly one** of `before` / `after` / `around` / `replace` / `mid` — see [Modes](#modes). |
-| one locator | — | **Required, exactly one** function-entry locator — see [Locators](#locators). (For `mode = "callsite"`, use `target_callsite` instead.) |
-| `signature` | string | The ABI string. Required for `before`/`after`/`around`/`replace` **unless** `target` carries a verified one. Not used by `mid`. See [Signature grammar](#signature-grammar). |
-| `mode` | string | Scope selector. The only value is `"callsite"`; omit for the default function-entry scope. **`mode` never names a behaviour** — the behaviour is the key (`before=`, etc.). |
-| `captures` | table | **Required for `mid` only** — the register/memory values to read/write. See [mid](#mid). |
-| `target_callsite` | table | **Required for `mode = "callsite"` only** — locates the call instruction. See [callsite](#callsite-scope). |
-| `module` | string | Module the locator resolves against (default `"WHGame.dll"`). |
-| `offset` | integer | For `mid`: the offset inside the function of the captured instruction. |
+## The call shape (every sub-verb)
 
-## Returns
+```
+kcdx.hook.before (module, target, [locator], callback, [opts])
+kcdx.hook.after  (module, target, [locator], callback, [opts])
+kcdx.hook.around (module, target, [locator], callback, [opts])
+kcdx.hook.replace(module, target, [locator], callback, [opts])
+kcdx.hook.insert_before(module, target, locator, callback, [opts])  -- locator REQUIRED
+kcdx.hook.insert_after (module, target, locator, callback, [opts])  -- locator REQUIRED
+```
 
-A **handle** userdata (see [Handle methods](#handle-methods)). The hook is not
-installed yet — installation is [deferred](index.md#2-glossary) to the end-of-zone
-apply pass. The handle's `:applied()` reads `nil` until then.
+- **`module`** (required, 1st) — the DLL the target lives in, e.g.
+  `"WHGame.dll"`. There is **no default** — you type it every time. This is
+  honest about multi-DLL coverage: copy an example and you cannot accidentally
+  hook the wrong module via a hidden default.
+- **`target`** (required, 2nd) — the function to hook, as **either**:
+    - a **name string** — a curated engine name, your own
+      [author-declared target](targets.md), or a name you exposed via
+      `kcdx.declare`. The name resolves both the address and the verified ABI.
+    - a **[`kcdx.functions.*` reference value](functions.md)** — e.g.
+      `kcdx.functions.WHGame.IsInCombat`. The engine dispatches by type: a
+      reference carries its resolved name and signature, so you hook another
+      author's function BY NAME with no disassembly.
+- **`[locator]`** (optional 3rd for before/after/around/replace; **required**
+  for the insert verbs) — a [`kcdx.locator.*`](locator.md) value naming a point
+  inside the function. Omit it on before/after/around/replace to hook the
+  **function entry** (the everyday case).
+- **`callback`** (required) — your Lua function. Its parameters arrive
+  positionally, typed by the signature; you name them in your own `function(...)`
+  list. **Mutation is by return — what you return is what flows forward.**
+- **`[opts]`** (optional, trailing table) — the non-positional knobs:
+  `name`, `description`, `signature` (only when you use an advanced raw locator
+  the engine cannot carry an ABI for), `off_thread`, and the advanced/expert
+  locators (`address` / `pattern` / `address_id` / `target_symbol` /
+  `target_lua_cfunction`). Required → positional; optional → this table.
 
-## Errors
-
-Registration validates immediately and returns `(nil, err)` (the second value
-is a teaching string) when:
-- the argument is not a table;
-- you attach zero, or more than one, behaviour key;
-- you set zero, or more than one, function-entry locator;
-- you pass an unknown/echoed `mode`;
-- a `signature` / `pattern` / `target_callsite` fails to parse;
-- a `before`/`after`/`around`/`replace` hook has no signature and `target`
-  carries none (the engine will not invent an ABI);
-- `mid` has no `captures`.
-
-A failure that only becomes knowable at apply time (the locator does not
-resolve on the running build, or a conflict is lost) does **not** return
-`(nil, err)` — registration succeeds with a real handle, and the handle goes
-`:applied() == false` with a `:reason()`. Read those in a
-`kcdx.on("ready", ...)` callback.
+Each sub-verb returns a **handle** on successful registration, or `(nil, err)`
+(a teaching string) on a bad call. The hook is not installed yet — installation
+is [deferred](index.md#2-glossary) to the end-of-zone apply pass, so `:applied()`
+reads `nil` until then.
 
 ## Minimal snippet
 
 ```lua
-local h = kcdx.hook{
-    name   = "double_ui_pump",
-    target = "CGame_per_frame_ui_pump",   -- name supplies address AND signature
-    after  = function(ret) return ret * 2 end,
-}
+-- Double a return value. The name supplies address AND signature — no hex,
+-- no signature string.
+local h = kcdx.hook.after("WHGame.dll", "CGame_per_frame_ui_pump",
+    function(ret) return ret * 2 end)
 ```
 
-## Locators
+## Modes (the sub-verbs)
 
-The flat-table form needs to find its target. By name (the same name the
-smart-resolver shape consumes):
+- **`before(module, target, [locator], fn)`** — runs before the original, which
+  **always** runs afterwards. Return nothing to leave the args unchanged; return
+  N values to replace the args. Use it to massage inputs.
 
-- **`target = "<name>"`** — a named function. The name resolves **both** the
-  address and the verified signature, so you write no hex and no ABI. This is
-  the path the engine is built around — the engine does the heavy lifting; you
-  declare intent.
-  The name resolves three ways, by [precedence](targets.md#resolving-a-name--self--engine--other)
-  (self > engine > other):
-    - an **engine** [Address Library](addr.md) name (`kcdx.addr` lists what is
-      named on your build);
-    - one of **your own** [author-declared targets](targets.md) — including a
-      `pattern`- or `target_symbol`-located target, resolved by name
-      end-to-end (the engine carries the hex and ABI you declared once);
-    - another plugin's target, by its explicit `"<author>.<plugin>.<name>"`
-      form (e.g. `target = "redmoon.outfit.open_inventory"`).
+  ```lua
+  kcdx.hook.before("WHGame.dll", "Add", function(seed) return seed + 1 end,
+      { signature = "i32 (i32 seed)" })
+  ```
 
-  When a `pattern`/`rva` author-target supplies the address, its `signature`
-  carries the ABI — so a named pattern site needs no `signature =` on the hook.
+- **`after(module, target, [locator], fn)`** — receives the original's return
+  value; returns the (possibly changed) value. Use it to transform a result.
 
-> **Named target + explicit `signature` — conflict contract.** If you name a
-> target that carries a verified ABI **and** also pass `signature = "..."`, the
-> **explicit signature wins** (the deliberate-override case — you may know
-> better than the seed, or be overriding a stale row). The engine consults the
-> verified ABI only to **detect** a conflict, not to override yours: when your
-> explicit signature is **not** compatible with the verified ABI, the engine
-> emits a teaching diagnostic (`HOOK_SIG_GATE`, naming the target, both
-> signatures, and that the explicit one is used as authored) and then
-> **proceeds with your explicit signature**. The diagnostic **severity** tells
-> you how serious the disagreement is:
->
-> - **Hard conflict → `ERROR`** (action `explicit_overrides_verified_hard`,
->   `severity=hard`, `crash_risk=true`). A different **argument count** or a
->   different **return-register width** — your signature mis-describes the call
->   frame of a **live engine function**, a known crash risk. The hook still
->   installs (the override is honored), but if the game crashes in or after this
->   hook, this is the cause. Double-check it is a deliberate override.
-> - **Soft conflict → `WARN`** (action `explicit_overrides_verified`,
->   `severity=soft`). Same arg count and same return width — only a per-slot
->   type nuance differs (e.g. `ptr` vs `i64`). A value-level heads-up, not a
->   frame mis-description.
->
-> The hook still installs either way. To silence the diagnostic, drop
-> `signature =` (let the name carry the verified ABI) or correct it to match.
+  ```lua
+  kcdx.hook.after("WHGame.dll", "Score", function(ret) return ret + 1000 end,
+      { signature = "i32 (i32)" })
+  ```
+
+- **`replace(module, target, [locator], fn)`** — the original never runs; your
+  return is the result. An empty `function() end` suppresses the call entirely.
+  Use it to substitute behaviour.
+
+  ```lua
+  kcdx.hook.replace("WHGame.dll", "Cost", function(seed) return 42 end,
+      { signature = "i32 (i32)" })
+  ```
+
+- **`around(module, target, [locator], fn)`** — receives the original as a
+  callable first parameter; call it zero, one, or many times, and return the
+  result. The full wrap — the only mode that can conditionally skip the original.
+
+  ```lua
+  kcdx.hook.around("WHGame.dll", "Calc", function(orig, seed) return 2 * orig(seed) end,
+      { signature = "i32 (i32)" })
+  ```
+
+### insert_before / insert_after
+
+`insert_before` / `insert_after` run your callback at a **statement inside** the
+function (not at the entry), located by a required [`kcdx.locator.*`](locator.md)
+value. The callback receives a **named table of captures** — the live
+register/memory values at that point:
+
+```lua
+kcdx.hook.insert_after("WHGame.dll", "CheckOutfitSwap",
+    kcdx.locator.first_call_to("IsInCombat"),
+    function(captures)
+        kcdx.log.info("OUTFIT", "rax=%d", captures.rax)
+        -- return nothing → captures unchanged, execution continues
+        -- return a table with capture-name keys → those captures are written
+        --   back to the registers/memory after the callback returns
+    end)
+```
+
+Which captures are available depends on the located statement (the curated
+statement metadata determines what is live there). Returning a table writes the
+named captures back — the same return-flow shape as `before`.
+
+> **Engine support.** The `insert_before` / `insert_after` sub-verbs and their
+> registration validate today; the engine's curated-statement capture-thunk
+> apply path lands in a later step, so an insert is currently deferred at apply
+> with a teaching reason (`:applied() == false`). For an **offset-based**
+> capture today, use [`mid`](#mid).
+
+## Advanced sub-verbs
+
+These two are beyond the six common verbs, for cases the statement locators do
+not yet cover.
+
+### mid
+
+`kcdx.hook.mid(module, target, offset, captures, callback, [opts])` intercepts a
+**single instruction at a byte offset** inside the function (or a raw code
+region) and reads/writes named register/memory captures. It does **not** take a
+signature (it does not need the function's ABI) — it takes a `captures` table.
+
+- `target` — typically a raw address (a [`kcdx.memory.pointer`](memory.md), e.g.
+  a `kcdx.code` region) pointing at or near the captured instruction.
+- `offset` — the byte offset of the captured instruction from `target`.
+- `captures` — the register/memory values to read/write. Two forms:
+    - **positional list** — `{ "rax", "[rcx+0x10]:i32" }` → handles keyed `c[1]`, `c[2]`, …
+    - **name map** — `{ hp = "rax", x = "[rcx+0x10]:i32" }` → handles keyed `c.hp`, `c.x`.
+  Each entry is a register/memory expression with an optional `:type` suffix
+  (default `i64`), written straight off a disassembler. Recognized type tokens:
+  `i8`–`i64`, `u8`–`u64`, `ptr`, `f32`, `f64`, `float`, `double`, `bool`.
+
+Each capture handle has `:get()` and `:set(v)`. Return nothing to run the
+captured instruction; return `"skip"` to skip it.
+
+```lua
+kcdx.hook.mid("WHGame.dll", some_capture_site_pointer, 0, { hp = "rax" },
+    function(c)
+        if c.hp:get() > 1000 then c.hp:set(1000) end
+        -- return nothing → the captured instruction runs
+        -- return "skip"  → it is skipped
+    end)
+```
+
+> **C++ mirror.** The C++ peer is `kcdxHookInterface::Mid`
+> ([../cpp/hook.md#mid](../cpp/hook.md#mid)); its callback returns an `int`
+> `kcdxMidResult` (`Run = 0` / `Skip = 1`) where Lua returns nothing / `"skip"`.
+
+### callsite
+
+`kcdx.hook.callsite(module, callsite, mode, callback, [opts])` redirects **one
+call instruction** (rather than the function entry) — only that caller is
+affected; every other caller of the same callee is untouched.
+
+- `callsite` — a `target_callsite` table locating the call instruction; set
+  **exactly one** of `rva` (a `"<module> @ rva 0x…"` string), `pattern` (an AOB),
+  or `address_id` (an Address Library id). An optional `offset` refines the match.
+- `mode` — the wrapping behaviour, one of `"before"` / `"after"` / `"around"` /
+  `"replace"`. It operates on the **called** function's ABI, so pass its
+  `signature` in `[opts]`.
+
+```lua
+kcdx.hook.callsite("WHGame.dll", { rva = some_call_site_rva }, "before",
+    function(x) return x + 1 end,
+    { signature = "i32 (i32 x)" })
+```
+
+## Locators (the common path and the escape hatch)
+
+The **common path is the target name** — it resolves both the address and the
+verified signature, so you write no hex and no ABI. The name resolves three ways,
+by [precedence](targets.md#resolving-a-name--self--engine--other) (self > engine
+> other):
+
+- an **engine** [Address Library](addr.md) name (`kcdx.addr` lists what is named
+  on your build);
+- one of **your own** [author-declared targets](targets.md) — including a
+  `pattern`- or `target_symbol`-located target, resolved by name end-to-end (the
+  engine carries the hex and ABI you declared once);
+- another plugin's target, by its explicit `"<author>.<plugin>.<name>"` form
+  (e.g. `"redmoon.outfit.open_inventory"`).
+
+When a `pattern`/`rva` author-target supplies the address, its `signature`
+carries the ABI — so a named pattern site needs no `signature` in `[opts]`.
 
 The remaining locators are an **advanced/expert escape hatch** for targets the
-library cannot name yet. When you use one you must supply `signature = "..."`
-yourself, because there is no name for the engine to carry the ABI from. Set
-**exactly one**:
+library cannot name yet. When you use one you must supply `signature = "..."` in
+`[opts]`, because there is no name for the engine to carry the ABI from. Pass
+**exactly one**, either as the `target` positional (a raw address) or an `[opts]`
+key:
 
-- **`address = <pointer|integer>`** — a raw VA. Pass a `kcdx.memory.pointer`
-  userdata or lightuserdata (exact); an integer is accepted but is lossy at
-  pointer magnitudes (Lua's `LUA_NUMBER` is float — integers beyond 2^24 round).
+- **a raw VA as `target`, or `address = <pointer|integer>` in `[opts]`** — a raw
+  virtual address. Pass a `kcdx.memory.pointer` userdata or lightuserdata
+  (exact); an integer is accepted but is lossy at pointer magnitudes (Lua's
+  `LUA_NUMBER` is float — integers beyond 2^24 round).
 - **`address_id = <number>`** — a numeric Address Library id.
 - **`address_id = "<name>"`** — a string here is the same name-based locator as
-  `target` (the readable name you see in `kcdx.addr`). Do not set both `target`
-  and a string `address_id` — they are one slot.
+  the target name. Do not set both the target name and a string `address_id`.
 - **`pattern = "<AOB>"`** — a byte/wildcard pattern scanned in `module`.
   `context` and `anchor_string` refine it (same shape as `kcdx.bytes`).
 - **`target_symbol = "<name>"`** — an exported symbol name.
 - **`target_lua_cfunction = "<name>"`** — a Lua C-function target.
 
+> **Named target + explicit `signature` — conflict contract.** If you name a
+> target that carries a verified ABI **and** also pass `signature = "..."` in
+> `[opts]`, the **explicit signature wins** (the deliberate-override case — you
+> may know better than the seed, or be overriding a stale row). The engine
+> consults the verified ABI only to **detect** a conflict, not to override
+> yours: when your explicit signature is **not** compatible with the verified
+> ABI, the engine emits a teaching diagnostic (`HOOK_SIG_GATE`, naming the
+> target, both signatures, and that the explicit one is used as authored) and
+> then **proceeds with your explicit signature**. The severity tells you how
+> serious the disagreement is:
+>
+> - **Hard conflict → `ERROR`** (action `explicit_overrides_verified_hard`,
+>   `severity=hard`, `crash_risk=true`). A different **argument count** or
+>   **return-register width** — your signature mis-describes the call frame of a
+>   **live engine function**, a known crash risk. The hook still installs (the
+>   override is honored), but if the game crashes in or after this hook, this is
+>   the cause.
+> - **Soft conflict → `WARN`** (action `explicit_overrides_verified`,
+>   `severity=soft`). Same arg count and return width — only a per-slot type
+>   nuance differs (e.g. `ptr` vs `i64`).
+>
+> To silence the diagnostic, drop `signature` (let the name carry the verified
+> ABI) or correct it to match.
+
 ## Signature grammar
 
-The signature tells the engine the function's ABI. Form:
+When you use an advanced raw locator (so the engine has no name to carry the
+ABI), the signature in `[opts]` tells the engine the function's ABI. Form:
 
 ```
 <return-type> ( <arg> , <arg> , ... )
 ```
 
 Each `<arg>` is `<type>` optionally preceded by a register pin (`<reg>:<type>`)
-and optionally followed by an argument name (`<type> name` or
-`<reg>:<type> name`). The arg name is yours; the engine ignores it (it is for
-your readability). Examples:
+and optionally followed by an argument name. The arg name is yours; the engine
+ignores it. Examples:
 
 ```
 "void ()"
@@ -198,127 +269,40 @@ your readability). Examples:
 "f64 (xmm0:f64 x, xmm1:f64 y)"
 ```
 
-**Types:** `void` (return only), `i8` `i16` `i32` `i64`, `u8` `u16` `u32`
-`u64`, `f32` `f64`, `ptr`, `bool`, `wstr` (wide string), `cstr` (C string).
-`int` is an accepted alias for `i32`.
+**Types:** `void` (return only), `i8` `i16` `i32` `i64`, `u8` `u16` `u32` `u64`,
+`f32` `f64`, `ptr`, `bool`, `wstr` (wide string), `cstr` (C string). `int` is an
+accepted alias for `i32`.
 
-**Register pins** (advanced): `rax rcx rdx rbx rsi rdi r8`–`r15` for
-non-float types; `xmm0`–`xmm15` for `f32`/`f64`. A GPR cannot hold a float type
-and an XMM cannot hold a non-float — the parser rejects the mismatch. The arg
-names `hook_skip` and `hook_retval` are reserved by the engine.
+**Register pins** (advanced): `rax rcx rdx rbx rsi rdi r8`–`r15` for non-float
+types; `xmm0`–`xmm15` for `f32`/`f64`. A GPR cannot hold a float type and an XMM
+cannot hold a non-float — the parser rejects the mismatch. The arg names
+`hook_skip` and `hook_retval` are reserved by the engine. Parse errors come back
+as `(nil, err)` with a 1-based column index pointing at the offending token.
 
-Parse errors come back as `(nil, err)` with a 1-based column index pointing at
-the offending token.
+## Errors
 
-## Modes
+Registration validates immediately and returns `(nil, err)` when:
+- `module` (the 1st positional) is missing or not a string;
+- the callback is missing or not a function;
+- you set zero, or more than one, function-entry locator;
+- a `signature` / `pattern` / `target_callsite` fails to parse;
+- a `before`/`after`/`around`/`replace` hook has no signature and the target
+  carries none (the engine will not invent an ABI);
+- `mid` has no `captures`;
+- an `insert_before`/`insert_after` has no required locator;
+- an `[opts]` table carries an unrecognized key (a typo fails loud).
 
-Attach **exactly one** behaviour, under its own key. The callback's parameters
-arrive positionally, typed by the signature; you name them in your own
-`function(...)` list. **Mutation is by return — what you return is what flows
-forward.**
-
-- **`before = function(...args) ... end`** — runs before the original, which
-  **always** runs afterwards. Return nothing to leave the args unchanged;
-  return N values to replace the args. Use it to massage inputs.
-
-  ```lua
-  kcdx.hook{ name="bump", target="Add", signature="i32 (i32 seed)",
-             before = function(seed) return seed + 1 end }
-  ```
-
-- **`after = function(ret) ... end`** — receives the original's return value;
-  returns the (possibly changed) value. Use it to transform a result.
-
-  ```lua
-  kcdx.hook{ name="boost", target="Score", signature="i32 (i32)",
-             after = function(ret) return ret + 1000 end }
-  ```
-
-- **`replace = function(...args) ... end`** — the original never runs; your
-  return is the result. An empty `replace = function() end` suppresses the call
-  entirely. Use it to substitute behaviour.
-
-  ```lua
-  kcdx.hook{ name="const", target="Cost", signature="i32 (i32)",
-             replace = function(seed) return 42 end }
-  ```
-
-- **`around = function(orig, ...args) ... end`** — receives the original as a
-  callable first parameter; call it zero, one, or many times, and return the
-  result. The full wrap — the only mode that can conditionally skip the
-  original.
-
-  ```lua
-  kcdx.hook{ name="wrap", target="Calc", signature="i32 (i32)",
-             around = function(orig, seed) return 2 * orig(seed) end }
-  ```
-
-- **`mid = function(c) ... end`** — see [mid](#mid).
-
-### mid
-
-A mid-function hook intercepts a single instruction at `offset` inside the
-function and reads/writes named register/memory captures. It does **not** take
-a `signature` (it doesn't need the function's ABI) — it takes `captures`.
-
-The callback receives one argument: a table of capture handles. Each handle has
-`:get()` and `:set(v)`. Return nothing to run the captured instruction; return
-`"skip"` to skip it.
-
-> **C++ mirror.** The C++ peer is `kcdxHookInterface::Mid`
-> ([../cpp/hook.md#mid](../cpp/hook.md#mid)); its callback returns an `int`
-> `kcdxMidResult` (`Run = 0` / `Skip = 1`) where Lua returns nothing / `"skip"`.
-> Both surfaces have the run/skip channel (full parity).
-
-`captures` accepts two forms:
-
-- **positional list** — `captures = { "rax", "[rcx+0x10]:i32" }` → handles
-  keyed `c[1]`, `c[2]`, …
-- **name map** — `captures = { hp = "rax", x = "[rcx+0x10]:i32" }` → handles
-  keyed `c.hp`, `c.x`.
-
-Each capture entry is a register/memory expression with an optional `:type`
-suffix (the type defaults to `i64`). The expression is written straight off a
-disassembler; recognized type tokens are `i8`–`i64`, `u8`–`u64`, `ptr`, `f32`,
-`f64`, `float`, `double`, `bool`.
-
-```lua
-kcdx.hook{
-    name     = "clamp_hp",
-    address  = some_capture_site_pointer,
-    offset   = 0,
-    captures = { hp = "rax" },
-    mid      = function(c)
-        if c.hp:get() > 1000 then c.hp:set(1000) end
-        -- return nothing → the captured instruction runs
-        -- return "skip"  → it is skipped
-    end,
-}
-```
-
-### callsite scope
-
-`mode = "callsite"` redirects **one call instruction** (rather than the function
-entry). It accepts the function-wrapping behaviours (`before` / `after` /
-`around` / `replace`) but **not** `mid`. The patch target is given by a
-`target_callsite` table — set **exactly one** of its locators:
-
-| `target_callsite` key | Type | Meaning |
-|---|---|---|
-| `pattern` | string | AOB pattern of the call site. |
-| `address_id` | number | Address Library id of the call site. |
-| `rva` | string | Raw RVA. |
-| `offset` | integer | Optional offset from the located point. |
-
-When you use `mode = "callsite"`, do **not** also set a function-entry locator
-(`target`/`address`/`pattern`/…) — the `target_callsite` carries the target.
+A failure that only becomes knowable at apply time (the locator does not resolve
+on the running build, or a conflict is lost) does **not** return `(nil, err)` —
+registration succeeds with a real handle, and the handle goes `:applied() ==
+false` with a `:reason()`. Read those in a `kcdx.on("ready", ...)` callback.
 
 ## Chaining
 
 Multiple hooks can coexist on one target — kcdx installs one detour and fires an
 ordered chain of your callbacks in load order. Several `before`s, several
-`after`s, `before` + `after`, etc. all stack. To put more than one behaviour on
-a target, make **separate** `kcdx.hook` calls (one behaviour per call).
+`after`s, `before` + `after`, etc. all stack. To put more than one behaviour on a
+target, make **separate** sub-verb calls (one behaviour per call).
 
 When two hooks genuinely cannot coexist (incompatible signature on the shared
 target, or two `replace`/`around` which the engine treats as exclusive), the
@@ -330,89 +314,83 @@ reason, and the earlier one wins.
 At a shared site, a bytes-patch (`kcdx.bytes`) applies **before** a hook
 (`kcdx.hook`): the patch rewrites the bytes first, then the hook detours the
 patched prologue. So a `kcdx.bytes` patch and a `kcdx.hook` on the **same**
-function coexist — both apply. (The patch's optional `original` byte-verify
-sees the pristine bytes because it runs first; if the order were reversed it
-would see the hook's detour and abort.) Ordering is by *kind* — a patch always
-precedes a hook at the same site regardless of declaration or load order.
+function coexist — both apply. Ordering is by *kind* — a patch always precedes a
+hook at the same site regardless of declaration or load order.
 
 ## Bootstrap targets
 
-kcdx itself hooks a handful of game and runtime functions during engine boot
-(to drive the per-frame dispatch pump, capture the Lua state, gate
-save / load lifecycles, etc.). Every engine-internal hook now registers
-through the same `hook_chain` machinery your plugin uses, so a plugin hook on
-the same target chains alongside the engine's hook by load order — no
-"already hooked" rejection at the install path. The engine's chain entries
-always sort to the FRONT of the chain regardless of declared priority, so
-your plugin's `before` callback sees arguments after the engine's `before`
-ran (the engine's diagnostic instrumentation sees the call first, but your
-mutations still take effect for the actual call to the original).
+kcdx itself hooks a handful of game and runtime functions during engine boot.
+Every engine-internal hook registers through the same `hook_chain` machinery your
+plugin uses, so a plugin hook on the same target chains alongside the engine's by
+load order — no "already hooked" rejection. The engine's chain entries always
+sort to the FRONT of the chain regardless of declared priority.
 
 ### Hookable engine targets
 
-These six targets are first-class `kcdx.hook` targets — install a hook on
-them the same way as any other named target. Each carries a verified ABI in
-the engine, so the name alone supplies address + signature for the
-function-entry targets named here:
+These six targets are first-class hook targets — install on them the same way as
+any other named target. Each carries a verified ABI, so the name alone supplies
+address + signature:
 
 | Target name | Mode contract | What the engine itself does at this site |
 |---|---|---|
 | `lua_pcall` | shareable (before/after/around) | Captures the live `lua_State*` so the chain dispatchers can bind to the VM. |
-| `engine.frealloc_canary` | shareable (before/after/around) | Read-only image-range fingerprint of every `frealloc` call (the dual-Lua sentinel canary). The fingerprint check stays unperturbed by chain mediation — your hook sees every call too. |
-| `engine.modmanager_ctor` | **rejects all plugin coexistence** (engine `replace` contract) | kcdx fully replaces the game's mod-manager constructor with a `replace` chain entry: a plugin install on this target is rejected with `:applied() == false` and `:reason()` containing the substring `"engine bootstrap point"`. To react to mod load, subscribe to a `kcdx.publish` event the bracket emits (extension point TBD). |
-| `engine.bugsplat_ctor` | shareable | Hook on the BugSplat crash-reporter constructor (when present); the engine logs and lets the original run. |
+| `engine.frealloc_canary` | shareable (before/after/around) | Read-only image-range fingerprint of every `frealloc` call (the dual-Lua sentinel canary). |
+| `engine.modmanager_ctor` | **rejects all plugin coexistence** (engine `replace` contract) | kcdx fully replaces the game's mod-manager constructor; a plugin install on this target is rejected with `:applied() == false` and `:reason()` containing `"engine bootstrap point"`. |
+| `engine.bugsplat_ctor` | shareable | Hook on the BugSplat crash-reporter constructor (when present). |
 | `engine.savegame` | shareable | Fires `kcdx.on("save_game", ...)`; your `before` runs alongside. |
 | `engine.loadgame` | shareable | Fires `kcdx.on("pre_load_game", ...)`; your `before` runs alongside. |
 
 ### One un-hookable target
 
 `update` (the per-frame loop that drives every other hook's dispatch) **cannot
-be hooked** from authors. The per-frame loop that drives every other hook's
-dispatch can't itself be hooked from authors without deadlocking the loop —
-the chain's per-frame dispatcher would be the function the chain dispatches
-through. If you need a per-tick hook, subscribe to
-`kcdx.on("input_loaded", ...)` + schedule work via a `kcdx.task.*` API —
-that fires on every game-main-thread tick without the dispatcher-recursion
-problem.
-
-### The engine-replace teaching error
-
-When you install on `engine.modmanager_ctor` (or any future engine `replace`
-site), the install returns `(nil, err)` and the engine logs:
-
-```
-engine.modmanager_ctor is an engine bootstrap point with a replace
-contract; cannot be additionally hooked. See docs/lua/hook.md §
-Bootstrap targets.
-```
-
-`h:reason()` returns the same text. The substring `"engine bootstrap point"`
-is the stable signal regression tests grep for.
+be hooked** from authors — the chain's per-frame dispatcher would be the function
+the chain dispatches through. If you need a per-tick hook, subscribe to
+`kcdx.on("input_loaded", ...)` and schedule work via a `kcdx.task.*` API.
 
 ### Minimal snippet (a hook on `lua_pcall`)
 
 ```lua
-kcdx.hook.lua_pcall.before(function(L, nargs, nresults, errfunc)
-    kcdx.log.info("PCALL", "fired")
-end)
+kcdx.hook.before("WHGame.dll", "lua_pcall",
+    function(L, nargs, nresults, errfunc)
+        kcdx.log.info("PCALL", "fired")
+    end)
 ```
 
-The name `"lua_pcall"` resolves to the same target the engine's own
-`engine.lua_pcall` chain entry sits on — your `before` callback runs after
-the engine's `before` for every `lua_pcall` the game makes.
+The name `"lua_pcall"` resolves to the same target the engine's own chain entry
+sits on — your `before` callback runs after the engine's `before` for every
+`lua_pcall` the game makes.
 
 ## Handle methods
 
-The userdata returned by `kcdx.hook` and `kcdx.bytes`:
+The userdata returned by a `kcdx.hook` sub-verb (and `kcdx.bytes`):
 
 | Method | Returns | Meaning |
 |---|---|---|
 | `h:name()` | string | The entry's name. |
 | `h:applied()` | `nil` / `true` / `false` | `nil` = pending (apply pass hasn't run); `true` = applied; `false` = failed OR removed (after `:uninstall()`). |
 | `h:reason()` | string or `nil` | The failure reason when `:applied() == false`; `nil` otherwise. |
-| `h:wait_applied()` | — | **Not available yet.** Raises a clear error directing you to use `kcdx.on("ready", ...)`. (Returns self if already resolved — including after `:uninstall()`.) |
-| `h:uninstall()` | self | **`kcdx.hook` handles only.** Logically removes the hook. After this returns, `:applied() == false` and the callback no longer fires. Idempotent (calling on an already-uninstalled handle is a no-op). The underlying MinHook detour stays installed for the session — engine reuses it if another `kcdx.hook` lands on the same target later. Returns self for chaining. Calling `:uninstall()` on a `kcdx.bytes` handle raises a teaching error today (the patch engine has no revert path yet — a future feature ships per-kind uninstall). |
+| `h:wait_applied()` | — | **Not available yet.** Raises a clear error directing you to use `kcdx.on("ready", ...)`. |
+| `h:uninstall()` | self | **`kcdx.hook` handles only.** Logically removes the hook. After this returns, `:applied() == false` and the callback no longer fires. Idempotent. The underlying detour stays installed for the session. Calling `:uninstall()` on a `kcdx.bytes` handle raises a teaching error today (the patch engine has no revert path yet). |
 | `tostring(h)` | string | `kcdx.handle<id=… name=… status=…>`. |
 
 Because `:applied()` is `nil` in straight-line `plugin.lua` code, read final
 status from a `kcdx.on("ready", ...)` callback (it fires after the apply pass).
+
+## Glossary
+
+- **sub-verb** — a mode-named function on `kcdx.hook` (`before` / `after` /
+  `around` / `replace` / `insert_before` / `insert_after`, plus the advanced
+  `mid` / `callsite`). You pick the mode by which sub-verb you call.
+- **module** — the DLL the target lives in, the required first argument. No
+  default.
+- **target** — the function to hook: a name string OR a `kcdx.functions.*`
+  reference value. The name carries the address and verified ABI.
+- **locator** — a [`kcdx.locator.*`](locator.md) value naming a point inside the
+  function. Omitted on before/after/around/replace → the function entry;
+  required for the insert verbs.
+- **opts** — the trailing optional table for non-positional knobs (`name`,
+  `signature`, `off_thread`, the advanced raw locators).
+- **captures** — for `mid` / the insert verbs: the named register/memory values
+  live at the located point, each a `:get()`/`:set()` handle.
+- **handle** — the userdata a sub-verb returns; read `:applied()` / `:reason()`
+  at `kcdx.on("ready")`.

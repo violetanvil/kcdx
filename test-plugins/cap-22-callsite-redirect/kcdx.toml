@@ -7,8 +7,8 @@
 # restructured-model surfaces:
 #   - a C++ DLL entrypoint (shared callee + 5 distinct callers; locates
 #     each redirected caller's E8 call site; drives verify)
-#   - plugin.lua calling kcdx.hook{ mode="callsite", target_callsite={rva=},
-#     before=/after=/around=/replace= }
+#   - plugin.lua calling kcdx.hook.callsite(module, {rva=...}, mode, callback, [opts])
+#     with mode = "before"/"after"/"around"/"replace"
 # No legacy [[hook]]/[[mid_hook]]/[[trampoline]] behavior TOML.
 #
 # Flow (single update tick, in strict order):

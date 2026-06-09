@@ -11,8 +11,8 @@ post-apply moment when every handle your plugin captured has a final
 your hooks installed.
 
 ```lua
-local h = kcdx.hook{ name="x", target="Add", signature="i32 (i32)",
-                     before=function(s) return s end }
+local h = kcdx.hook.before("WHGame.dll", "Add", function(s) return s end,
+                           { name = "x", signature = "i32 (i32)" })
 kcdx.on("ready", function()
     if h:applied() then kcdx.log.info("MYMOD", "hooked")
     else kcdx.log.warn("MYMOD", "hook failed: " .. tostring(h:reason())) end

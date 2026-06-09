@@ -26,11 +26,9 @@ signature = "void (ptr self, i32 slot)"
 
 ```lua
 -- plugin.lua — refer to it by the BARE name; the engine knows where AND the ABI
-kcdx.hook{
-    name   = "log_inventory_open",
-    target = "open_inventory",   -- resolves address (from the pattern) AND signature
-    before = function(self, slot) kcdx.log.info("INV", "opening slot " .. slot) end,
-}
+kcdx.hook.before("WHGame.dll", "open_inventory",   -- resolves address (from the pattern) AND signature
+    function(self, slot) kcdx.log.info("INV", "opening slot " .. slot) end,
+    { name = "log_inventory_open" })
 ```
 
 You wrote the AOB and the ABI **once**, in the target row. Every hook/byte

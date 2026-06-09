@@ -30,14 +30,18 @@ shape it takes:
    without a flat wall of names. It mirrors Lua's own idiom (`string.`,
    `table.`, `os.`).
 
-3. **Call shape: configuring → `{ named table }`, doing → positional.**
-   - When you *configure* a thing with several options, you pass a single
-     named-field table: `kcdx.hook{ name=, target=, before= }`,
-     `kcdx.bytes{...}`, `kcdx.command{...}`. Named fields are self-documenting,
-     order-free, and omit optionals cleanly.
-   - When you just *do* a thing with one to three obvious arguments, you pass
-     them positionally: `kcdx.log.info(category, msg)`, `kcdx.on(event, fn)`,
-     `kcdx.test.report(name, pass, reason)`.
+3. **Call shape: required → positional, optional → trailing `{ table }`;
+   behavioural variants → sub-verbs.**
+   - Required arguments are positional, so you cannot forget one:
+     `kcdx.hook.before(module, target, callback)`,
+     `kcdx.log.info(category, msg)`, `kcdx.on(event, fn)`. Optional knobs go in
+     a trailing table: `kcdx.hook.before(module, target, callback, { signature = ... })`.
+   - A verb with discrete behavioural variants splits them into **sub-verbs**
+     (one C function each, impossible to misspell into another):
+     `kcdx.hook.before/after/around/replace`, `kcdx.log.info/warn/error`. You
+     pick the mode by which sub-verb you call.
+   - A configuring verb with "at least one of N" options still takes a single
+     table: `kcdx.bytes{...}`, `kcdx.command{...}`.
 
 That is the whole surface model. A call you have never seen still resolves to
 the right place by these rules.
@@ -170,12 +174,13 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   unified named-target table; the plugin-supplied peer of a curated target.
   See [declare.md](declare.md).
 
-- **smart resolver** — the engine's name → address-and-verified-ABI lookup
-  the hook / bytes verbs route through. The `__index`-driven Lua shape
-  (`kcdx.hook.<name>.<mode>(fn)`, `kcdx.bytes.<name>{...}`) resolves a named
-  target to its install function on demand: a typo fails fast at the name
-  access (the `__index` returns nil); a kind-mismatch (e.g.
-  `kcdx.hook.<value-only-name>.before`) fails at the mode access. Walks
+- **name resolution** — the engine's name → address-and-verified-ABI lookup
+  the hook / bytes verbs route through. You name the target (the `target`
+  argument of a `kcdx.hook` sub-verb, or `target = "<name>"` on `kcdx.bytes`)
+  and the engine resolves both its address and its verified signature, so you
+  write no hex and no ABI. An unknown name is rejected with a teaching error
+  (no silent skip); a target with no verified ABI and no `signature` you
+  supplied is rejected (the engine never invents an ABI). Walks
   **self > engine > other-plugin** precedence: a bare name resolves to the
   calling plugin's own declarations first, then engine-shipped names, then
   other plugins' declarations. Explicit `"<author>.<plugin>.<bare>"` and

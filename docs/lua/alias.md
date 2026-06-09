@@ -11,7 +11,7 @@ target name is expected (a [`kcdx.hook`](hook.md) / [`kcdx.bytes`](bytes.md)
 
 ```lua
 kcdx.alias("inv", "redmoon.outfit.open_inventory")
-kcdx.hook{ name = "log_open", target = "inv", before = function() ... end }
+kcdx.hook.before("WHGame.dll", "inv", function() ... end, { name = "log_open" })
 ```
 
 ## Arguments
@@ -47,11 +47,9 @@ no plugin to scope to, so it is rejected).
 -- alias another plugin's named target, then hook it through the short handle
 kcdx.alias("inv", "redmoon.outfit.open_inventory")
 
-kcdx.hook{
-    name   = "log_inventory_open",
-    target = "inv",                       -- substituted to redmoon.outfit.open_inventory
-    before = function() kcdx.log.info("INV", "opened") end,
-}
+kcdx.hook.before("WHGame.dll", "inv",     -- "inv" → redmoon.outfit.open_inventory
+    function() kcdx.log.info("INV", "opened") end,
+    { name = "log_inventory_open" })
 ```
 
 ## Glossary

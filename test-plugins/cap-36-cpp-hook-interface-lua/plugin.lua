@@ -55,11 +55,10 @@ kcdx.log.info("CAP36_LUA",
     "installing Lua before-hook on Cap36_Crosslang (addr handed over by "
     .. "C++ plugin via kcdx.cap36.addr_crosslang)")
 
-kcdx.hook{
-    name      = "cap36_crosslang_lua",
-    address   = addr,
-    signature = "i32 (i32 seed)",
-    before    = function(seed)
+-- Raw VA (the C++-handed stub address) passed as the target positional; the
+-- signature rides in [opts] (a raw VA carries no name-supplied ABI).
+kcdx.hook.before("WHGame.dll", addr,
+    function(seed)
         -- Notify the C++ plugin that the Lua callback fired AND the
         -- seed value we observed. The C++ before fires FIRST (priority
         -- 30 < 70) and writes args[0]=seed+1, so this Lua callback
@@ -69,7 +68,7 @@ kcdx.hook{
         cap36.set_lua_fired(seed)
         return seed * 2
     end,
-}
+    { name = "cap36_crosslang_lua", signature = "i32 (i32 seed)" })
 
 kcdx.log.info("CAP36_LUA",
     "Lua before-hook registered (priority 70, fires after C++ priority "

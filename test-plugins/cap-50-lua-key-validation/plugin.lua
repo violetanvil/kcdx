@@ -26,12 +26,14 @@
 -- (h ~= nil) OR returns an error that does NOT name 'signagure' → FAIL". The
 -- pass reads the actual err string the gate produced.
 do
-    local h, err = kcdx.hook{
-        name      = "cap50_unknown_key",
-        target    = "luaL_loadfile",   -- a valid name-based locator
-        signagure = "i32 (ptr L, cstr filename)",  -- TYPO: should be `signature`
-        before    = function(L, filename) return L, filename end,
-    }
+    -- The typo'd key lives in the [opts] table (where signature= belongs); the
+    -- [opts] unknown-key gate rejects it up front, naming the bad key.
+    local h, err = kcdx.hook.before("WHGame.dll", "luaL_loadfile",  -- a valid name-based locator
+        function(L, filename) return L, filename end,
+        {
+            name      = "cap50_unknown_key",
+            signagure = "i32 (ptr L, cstr filename)",  -- TYPO: should be `signature`
+        })
     local pass = (h == nil)
                  and type(err) == "string"
                  and err:find("signagure", 1, true) ~= nil

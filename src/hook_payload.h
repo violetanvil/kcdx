@@ -136,6 +136,16 @@ struct HookPayload {
     uint32_t                      maxAnchorDistance = 4096;
     std::string                   module = "WHGame.dll";
 
+    // --- insert_before / insert_after pending (statement-locator) ------
+    // True iff the binder enqueued a kcdx.hook.insert_before/insert_after with
+    // a statement locator whose engine capture-thunk apply path is NOT yet
+    // wired. The apply pass fails this entry LOUD with a teaching reason (never
+    // a faked-green install). The sub-verb + registration validation run; the
+    // install is deferred until the curated-statement capture path lands.
+    // Engine-internal field (not in include/kcdx/Interfaces.h) — appending here
+    // is free of the append-only ABI discipline.
+    bool insertPending = false;
+
     // --- Callsite scope (mode = "callsite") ----------------------------
     // True iff the author wrote `mode = "callsite"`. This is the explicit
     // SCOPE selector ("redirect ONE call instruction"); the BEHAVIOR

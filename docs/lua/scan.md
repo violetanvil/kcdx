@@ -116,9 +116,10 @@ in code, rather than type a pattern at the console.
 
 `kcdx.scan` takes a hand-written `pattern` because that is its whole job: it is
 the **labelled expert AOB hatch**, by design. It is NOT the everyday way to find
-an address. The common path for actually hooking a function is
-`kcdx.hook{ target = "<name>" }` ([hook.md](hook.md)), where the engine resolves
-both the address **and** the verified ABI from a name — you do not write hex.
+an address. The common path for actually hooking a function is a `kcdx.hook`
+sub-verb with a name target — `kcdx.hook.before("WHGame.dll", "<name>", fn)`
+([hook.md](hook.md)), where the engine resolves both the address **and** the
+verified ABI from a name — you do not write hex.
 Use `kcdx.scan` as the expert workbench to discover and validate a site that has
 no engine name yet; once it resolves uniquely, you name it and refer to it by
 name thereafter.
@@ -178,7 +179,7 @@ legacy scan path, not this Lua path.)
 ```lua
 -- Workbench idiom: validate that a hand-written pattern resolves to exactly
 -- one site before you commit to it. Once unique, you would NAME that site and
--- hook it by name (kcdx.hook{ target = "<name>" }) — pattern is the expert form.
+-- hook it by name (kcdx.hook.before("WHGame.dll", "<name>", fn)) — pattern is the expert form.
 local r = kcdx.scan{
     name    = "find_outfit_swap",
     pattern = "48 8B 88 ?? ?? ?? ?? 48",   -- expert AOB hatch

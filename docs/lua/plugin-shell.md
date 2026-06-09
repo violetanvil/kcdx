@@ -95,7 +95,7 @@ priority within each phase.
 
 ## Cross-plugin ordering
 
-A `priority` field on an individual `kcdx.hook{}` / `kcdx.bytes{}` call is **no
+A `priority` field on an individual `kcdx.hook` / `kcdx.bytes` call is **no
 longer honoured** (kcdx logs a once-per-session notice if you set it).
 Cross-plugin ordering comes from the plugin's `[load_order].priority` (or the
 engine `load_order.toml`); intra-plugin ordering is the order your `plugin.lua`

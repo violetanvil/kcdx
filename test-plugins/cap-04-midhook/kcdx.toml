@@ -28,8 +28,8 @@
 # stub comes from + WHAT the hook targets):
 #   1. plugin.lua: for each sub-test, kcdx.code{ bytes=<9 bytes>, size=16,
 #      pool="branch", export="stub_<sub>" } allocates a fresh stub and publishes
-#      its base address as a symbol; then kcdx.hook{ address=region:add(3),
-#      captures={"rax"}, mid=function(c) ... end } installs the mid hook at +3.
+#      its base address as a symbol; then kcdx.hook.mid(.., region:add(3), 0,
+#      {"rax"}, function(c) ... end) installs the mid hook at +3.
 #   2. ApplyZone installs the mid detours.
 #   3. cap-04.dll (C++ companion) resolves each export via
 #      ResolveSymbolAs(self, "stub_<sub>"), casts it to int(*)(int), and CALLS

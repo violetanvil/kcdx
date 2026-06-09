@@ -24,7 +24,7 @@ The Lua surface has two halves; the C++ mirror owes both:
 2. **Referring to one by name.** The built [`kcdxHookInterface`](hook.md) and the
    NYI locator-based byte-rewrite mirror ([bytes.md](bytes.md)) take a
    `target = "<name>"` locator that resolves an author target exactly as Lua's
-   `kcdx.hook{ target }` / `kcdx.bytes{ target }` do.
+   `kcdx.hook` name target / `kcdx.bytes{ target }` do.
 
 ## Planned mirror shape (NYI)
 

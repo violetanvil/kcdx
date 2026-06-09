@@ -155,7 +155,7 @@ kcdx.declare("WHGame.dll", "combat_resolver", {
 
 -- The hook verb consumes the declared pattern by name — same shape as
 -- a curated engine name.
-kcdx.hook.combat_resolver.before(function(arg) -- ...
+kcdx.hook.before("WHGame.dll", "combat_resolver", function(arg) -- ...
 end)
 ```
 

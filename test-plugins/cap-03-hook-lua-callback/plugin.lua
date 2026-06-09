@@ -1,5 +1,5 @@
 -- CAP-03 plugin.lua — CAP-03 migrated from
--- [[hook]] + pak-Lua-callback to kcdx.hook{before}; same site, same
+-- [[hook]] + pak-Lua-callback to kcdx.hook.before; same site, same
 -- observable (the hook callback fires), pure-Lua now.
 --
 -- The target is the menu/UI pump — a direct callee of CGame::Update — now
@@ -59,19 +59,18 @@ local function report_fired(fire_count)
         "update-callee hook fired (count=" .. fire_count .. ") — the before "
         .. "callback ran on the hooked CGame::Update callee. Migration off "
         .. "legacy [[hook]]+pak; same site, same observable, "
-        .. "kcdx.hook{before} mechanism.")
+        .. "kcdx.hook.before mechanism.")
 end
 
 local fire_count = 0
 
-local h = kcdx.hook{
-    name      = "cap03_update_callee",
-    target    = "CGame_per_frame_ui_pump",  -- curated Address Library name: carries the address AND the verified ABI
-    before    = function(this_ptr)  -- single `this` arg; we only count fires
+-- curated Address Library name: carries the address AND the verified ABI.
+local h = kcdx.hook.before("WHGame.dll", "CGame_per_frame_ui_pump",
+    function(this_ptr)  -- single `this` arg; we only count fires
         fire_count = fire_count + 1
         report_fired(fire_count)    -- self-report PASS on the first fire
     end,
-}
+    { name = "cap03_update_callee" })
 
 if h == nil then
     kcdx.test.report("CAP-03", false,

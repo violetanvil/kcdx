@@ -601,7 +601,39 @@ int Lua_DllDeclare(lua_State* L) {
     return 1;
 }
 
+// Non-raising detector: is the value at `idx` a kcdx.functions.value userdata?
+// luaL_checkudata raises on a mismatch; this returns nullptr instead, so the
+// hook/statement verbs can do arg-1-type dispatch (string vs reference value)
+// without a pcall. Compares the value's metatable against the registered
+// kFunctionRefMetatable (identity), the same discriminator luaL_checkudata uses.
+const FunctionRef* TestRef(lua_State* L, int idx) {
+    if (lua_type(L, idx) != LUA_TUSERDATA) return nullptr;
+    void* p = lua_touserdata(L, idx);
+    if (!p) return nullptr;
+    if (!lua_getmetatable(L, idx)) return nullptr;             // no metatable → not ours.
+    luaL_getmetatable(L, kFunctionRefMetatable);               // the registered one.
+    const bool same = lua_rawequal(L, -1, -2) != 0;
+    lua_pop(L, 2);                                             // pop both metatables.
+    return same ? static_cast<const FunctionRef*>(p) : nullptr;
+}
+
 }  // namespace
+
+// Public arg-1-type-dispatch accessor — the hook/statement verbs call this on
+// their `target` positional. A reference value yields its (stem, name, is_game,
+// id) view so the verb routes it through the same name path a string target
+// takes; a non-reference value returns false (the verb then treats the arg as a
+// string/locator). Reads nothing from Lua beyond the metatable identity test.
+bool ReadFunctionRef(lua_State* L, int idx, FunctionRefView& out) {
+    const FunctionRef* ref = TestRef(L, idx);
+    if (!ref) return false;
+    out.is_game = ref->is_game;
+    out.stem    = ref->stem;
+    out.name    = ref->name;
+    out.has_id  = ref->has_id;
+    out.kcdx_id = ref->kcdx_id;
+    return true;
+}
 
 // Called from lua_bind.cpp::RegisterKcdxTable with the kcdx global table on top
 // of the stack. Registers the function-reference-value metatable, the

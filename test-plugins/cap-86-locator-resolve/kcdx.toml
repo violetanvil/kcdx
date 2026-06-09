@@ -86,6 +86,7 @@ test_names          = [
     "cap-86-first-read-of-cvar",
     "cap-86-matching",
     "cap-86-matching-pattern",
+    "cap-86-insert-registers-pending",
 ]
 
 [entrypoints]

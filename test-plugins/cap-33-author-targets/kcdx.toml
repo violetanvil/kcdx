@@ -10,9 +10,9 @@
 #
 # What it proves (all boot-only, no player gesture):
 #   * CAP-33-pattern-by-name (THE SHARE-GUARANTEE HEADLINE — BLOCKED, NOT silenced):
-#     kcdx.hook{ target = "ui_pump_by_pattern" } is the pure "author names a
+#     kcdx.hook.before(.., "ui_pump_by_pattern") is the pure "author names a
 #     target BY AOB PATTERN and hooks it by name" proof (pattern → address,
-#     target signature → ABI, both from the bare name; NO signature= on the
+#     target signature → ABI, both from the bare name; NO signature on the
 #     hook). It is BLOCKED: the AOB matches the ENTRY prologue of
 #     CGame_per_frame_ui_pump (seed id 1003), which cap-03 hooks in production —
 #     the detour overwrites the prologue, so the post-patch pattern scan finds
@@ -20,7 +20,7 @@
 #     exists yet for a function NOTHING entry-hooks; minting one is bounded
 #     tier-5 work. This row will fail/parse-skip at apply until that AOB is
 #     minted — EXPECTED and TRACKED.
-#   * CAP-33-engine-tier: kcdx.hook{ target = "luaL_loadfile" } (an ENGINE seed
+#   * CAP-33-engine-tier: kcdx.hook.before(.., "luaL_loadfile") (an ENGINE seed
 #     name) still resolves — the engine tier of self>engine>other coexists with
 #     the author's own targets.
 #   * CAP-33-prefixed: the explicit "<pluginname>.<target>" form
@@ -36,7 +36,7 @@
 #     over the existing 0x48 — byte 0 of the lua_toboolean entry, read from
 #     WHGame.dll) :applied()==true proves the resolution.
 #   * CAP-33-alias: kcdx.alias("up", "ts.cap_33_author_targets.luaopen_math_by_id")
-#     then kcdx.hook{ target = "up" } resolves the hook via the local alias to
+#     then kcdx.hook.before(.., "up") resolves the hook via the local alias to
 #     the same VERIFIED-ID target, so it proves ALIAS resolution and can pass.
 #
 # Test mode: boot-only. Every target/alias resolution + apply happens during

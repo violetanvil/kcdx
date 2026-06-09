@@ -21,9 +21,11 @@
 -- ±2 GB of WHGame.dll's .text for the branch to reach.
 --
 -- The hook target is `region:add(3)` — a kcdx.memory.pointer userdata pointing
--- AT the `add rax,0x64` instruction. kcdx.hook{ address = <pointer> } accepts a
--- pointer userdata as the locator (the exact NOVEL surface: a mode=mid hook
--- whose address comes from a kcdx.code pointer, not a C++-handed lightuserdata).
+-- AT the `add rax,0x64` instruction. kcdx.hook.mid(module, target, offset,
+-- captures, callback) accepts that pointer as the raw target positional (the
+-- exact NOVEL surface: a mid hook whose address comes from a kcdx.code pointer,
+-- not a C++-handed lightuserdata). The pointer already points AT the capture
+-- site, so the offset positional is 0.
 
 local STUB_BYTES = "48 89 C8 48 83 C0 64 90 C3"  -- 9 bytes; mov/add/nop/ret
 local STUB_SIZE  = 16   -- > 9, NOP-pads the tail past the +3..+7 patch site
@@ -55,18 +57,15 @@ end
 do
     local region = alloc_stub("cap04_stub_run", "stub_run")
     if region ~= nil then
-        kcdx.hook{
-            name     = "cap04_mid_run",
-            address  = region:add(MID_OFFSET),   -- kcdx.code pointer -> the `add`
-            captures = { "rax" },
-            mid      = function(c)
+        kcdx.hook.mid("WHGame.dll", region:add(MID_OFFSET), 0, { "rax" },
+            function(c)
                 -- rax holds seed (10) at the capture site, before `add rax,0x64`.
                 assert(c[1]:get() == 10,
                     "CAP-04-mid-on-code-run: expected rax==10, got "
                     .. tostring(c[1]:get()))
                 -- return nothing -> the captured `add` runs (10 -> 110)
             end,
-        }
+            { name = "cap04_mid_run" })
     end
 end
 
@@ -78,17 +77,14 @@ end
 do
     local region = alloc_stub("cap04_stub_skip", "stub_skip")
     if region ~= nil then
-        kcdx.hook{
-            name     = "cap04_mid_skip",
-            address  = region:add(MID_OFFSET),
-            captures = { "rax" },
-            mid      = function(c)
+        kcdx.hook.mid("WHGame.dll", region:add(MID_OFFSET), 0, { "rax" },
+            function(c)
                 assert(c[1]:get() == 10,
                     "CAP-04-mid-on-code-skip: expected rax==10, got "
                     .. tostring(c[1]:get()))
                 return "skip"   -- the `add rax,0x64` is skipped (10 stays 10)
             end,
-        }
+            { name = "cap04_mid_skip" })
     end
 end
 

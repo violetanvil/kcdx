@@ -1,12 +1,12 @@
-# CAP-59 — kcdx.hook smart-resolver shape (kcdx.hook.<name>.<mode>(fn)).
+# CAP-59 — kcdx.hook name-resolved sub-verb (kcdx.hook.before(module, name, fn)).
 #
-# Exercises the __index-driven Lua shape on kcdx.hook that resolves a named
-# target + mode to its install closure on demand. Two falsifiable claims,
-# both reported synchronously at plugin load OR from the first callback
-# fire (boot-only):
+# Exercises the name-resolved sub-verb form on kcdx.hook: a target NAME (the
+# 2nd positional) resolves via self > engine > other and carries its verified
+# ABI. Two falsifiable claims, both reported synchronously at plugin load OR
+# from the first callback fire (boot-only):
 #
-#   * CAP-59-fires — `kcdx.hook.lua_pcall.before(fn)` on the curated
-#       engine-seed entry (`lua_pcall` — called continuously by every
+#   * CAP-59-fires — `kcdx.hook.before("WHGame.dll", "lua_pcall", fn)` on the
+#       curated engine-seed entry (`lua_pcall` — called continuously by every
 #       Lua-from-C dispatch, including those that fire from the moment the
 #       plugin Lua surface comes online) actually installs and FIRES. The
 #       test self-reports PASS from the FIRST callback fire (a one-shot
@@ -17,45 +17,42 @@
 #       Lua-VM init (e.g. luaopen_math, called once during luaL_openlibs
 #       at VM creation) have already executed by the time plugin scripts
 #       run, so a hook installed at boot has zero future call sites to
-#       fire on. FAILS if the callback never fires (the smart resolver's
-#       install path never wired the detour) OR if the install returns
-#       nil at registration (the resolver did not produce a callable for
-#       a known-good curated name + valid mode).
+#       fire on. FAILS if the callback never fires (the install path never
+#       wired the detour) OR if the before sub-verb returns nil at
+#       registration (the name did not resolve to a known-good curated
+#       entry + verified ABI).
 #
-#   * CAP-59-invalid-mode-nil — the smart resolver's kind-aware filter
-#       rejects an INVALID-MODE-FOR-KIND access by returning nil at the
-#       mode key, so the subsequent call raises "attempt to call a nil
-#       value". To exercise this loudly we DECLARE a target ourselves with
-#       kind = "data_slot" (the kindTag is honored AS AUTHORED by the
-#       declared store; IsValidHookModeForKind returns false for any kind
-#       that is not "function" or empty), then assert kcdx.hook.<declared>.
-#       before returns nil (via pcall-catch of the resulting error). FAILS
-#       if the smart resolver does NOT honor the kindTag (returns a real
-#       installer for a non-function-kind name) OR the typed access does
-#       not raise the expected error — either way the kind-aware filter is
-#       broken.
+#   * CAP-59-no-abi-rejected — a function hook on a NON-FUNCTION-KIND target
+#       is rejected. We DECLARE a target ourselves with kind = "data_slot"
+#       (the kindTag is honored AS AUTHORED by the declared store and opts the
+#       entry out of the pattern-without-signature gate, so it carries NO
+#       signature). A function detour NEEDS an ABI to marshal, so the before
+#       sub-verb rejects the install SYNCHRONOUSLY with a "no signature /
+#       needs an ABI" teaching error — the kind mismatch surfacing through the
+#       irreducible-signature requirement. FAILS if the hook is NOT rejected
+#       (a function detour installed against a no-ABI target would silently
+#       mis-marshal).
 #
-# Test mode: boot-only. CAP-59-invalid-mode-nil self-reports at plugin
-# load (the nil access raises synchronously). CAP-59-fires self-reports
+# Test mode: boot-only. CAP-59-no-abi-rejected self-reports at plugin
+# load (the binder rejects synchronously). CAP-59-fires self-reports
 # from the callback's first fire (one-shot guarded). An InputLoaded
 # backstop reports FAIL on CAP-59-fires if the callback never fires by
 # then — lua_pcall fires continuously from plugin load onward, so a
-# missed fire by InputLoaded is a real regression in the smart-resolver
-# install path.
+# missed fire by InputLoaded is a real regression in the install path.
 
 [kcdx]
 test_suite_only = true
 
 [plugin]
 name                = "cap_59_lua_hook_smart_resolver"
-display_name        = "CAP-59 kcdx.hook smart-resolver shape"
+display_name        = "CAP-59 kcdx.hook name-resolved sub-verb"
 author              = "ts"
-description         = "Pure-Lua kcdx.hook smart-resolver self-test: kcdx.hook.lua_pcall.before(fn) on a curated engine-seed entry installs AND fires (one-shot guarded self-report from the first callback fire — lua_pcall is called continuously from plugin load onward, unlike one-shot VM-init functions like luaopen_math that fire before plugin scripts run), and kcdx.hook.<declared-data_slot-name>.before returns nil at the mode access (the kind-aware filter rejects an invalid mode for a non-function-kind declared target — exercised via a self-declared kind=data_slot entry so the test is independent of which curated entries currently carry a non-function kind in the runtime DB)."
+description         = "Pure-Lua kcdx.hook name-resolved sub-verb self-test: kcdx.hook.before(\"WHGame.dll\", \"lua_pcall\", fn) on a curated engine-seed entry installs AND fires (one-shot guarded self-report from the first callback fire — lua_pcall is called continuously from plugin load onward, unlike one-shot VM-init functions like luaopen_math that fire before plugin scripts run), and a function hook on a self-declared kind=data_slot target (no signature) is rejected synchronously with a no-ABI teaching error (a non-function-kind target cannot take a function detour — the kind mismatch surfaces through the irreducible-signature requirement)."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
 test_names          = ["CAP-59-fires",
-                       "CAP-59-invalid-mode-nil"]
+                       "CAP-59-no-abi-rejected"]
 
 [entrypoints]
 lua = "plugin.lua"

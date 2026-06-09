@@ -18,5 +18,6 @@ local p = kcdx.addr.lua_pcall    -- pointer userdata, or nil if unnamed here
 ```
 
 There is no `kcdx.address(...)` function in the Lua surface — name lookup is
-this table, and the `kcdx.hook{ target = "<name>" }` / `address_id = "<name>"`
-locators resolve names directly.
+this table, and the hook/bytes name locators (a `kcdx.hook` sub-verb's name
+target, `kcdx.bytes{ target = "<name>" }`, `address_id = "<name>"`) resolve
+names directly.

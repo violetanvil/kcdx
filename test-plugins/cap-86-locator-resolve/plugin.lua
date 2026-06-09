@@ -309,7 +309,85 @@ kcdx.on("ready", function()
         end
     end
 
+    -- cap-86-insert-registers-pending — a CONSUMER of a kcdx.locator.* value:
+    -- kcdx.hook.insert_before(module, target, locator, fn) accepts a valid
+    -- locator, registers (handle non-nil), but the curated-statement
+    -- capture-thunk apply path is NOT yet wired, so the entry is DEFERRED at
+    -- apply: by ready it is Failed (:applied()==false) with a teaching reason
+    -- naming the not-yet-wired path — NEVER silently applied.
+    --
+    -- This pins BOTH halves of the as-built insert contract: the registration
+    -- shape (a locator value is accepted as the required 3rd positional and a
+    -- handle comes back) AND the honest deferral (the entry does not fake-green;
+    -- it fails LOUD at apply with the not-yet-wired reason).
+    --
+    -- PENDING-CONTRACT row: it pins the registration + honest-deferral contract
+    -- of the BUILT insert sub-verbs while the statement-capture apply path is
+    -- unwired. When that path lands, this row flips to a fire-assert (a real
+    -- insert that fires) — the reason substring is the seam that catches the
+    -- transition (a wired apply path no longer emits "not yet wired").
+    --
+    -- FALSIFIABLE three ways: insert_before does NOT register (handle nil) →
+    -- FAIL (the locator was not accepted as the required positional, or the
+    -- curated target/ABI did not resolve); the entry SILENTLY applies
+    -- (:applied()==true — the deferral broke and a never-firing statement hook
+    -- went live) → FAIL; the reason no longer contains the not-yet-wired text →
+    -- FAIL (the apply-path state changed without this row being updated).
+    do
+        local row = "cap-86-insert-registers-pending"
+        -- A valid kcdx.locator.* value (the same family the rows above prove
+        -- resolves against SaveGame) as the REQUIRED 3rd positional.
+        local loc = kcdx.locator.function_entry()
+        if loc == nil then
+            kcdx.test.report(row, false,
+                "kcdx.locator.function_entry() returned nil — cannot supply the "
+                .. "required locator positional to insert_before")
+        else
+            -- SaveGame is a curated name carrying a verified ABI, so target +
+            -- signature resolution succeed; the locator is valid; the callback
+            -- is a function — registration must succeed and return a handle.
+            local h, err = kcdx.hook.insert_before(MODULE, FN, loc,
+                function() end, { name = "cap86_insert_pending" })
+            if h == nil then
+                kcdx.test.report(row, false,
+                    "kcdx.hook.insert_before(\"" .. MODULE .. "\", \"" .. FN
+                    .. "\", kcdx.locator.function_entry(), fn) returned nil at "
+                    .. "registration: " .. tostring(err) .. " — the built "
+                    .. "insert sub-verb did not accept a valid locator + curated "
+                    .. "target (registration shape regressed)")
+            else
+                -- By ready the apply pass has run; the insertPending entry is
+                -- Failed with the not-yet-wired teaching reason. Assert it did
+                -- NOT silently apply, and the reason names the unwired path.
+                local applied = h:applied()
+                local reason  = tostring(h:reason())
+                local deferred = (applied == false)
+                    and (reason:find("not yet wired in the engine", 1, true) ~= nil)
+                if deferred then
+                    kcdx.test.report(row, true,
+                        "insert_before registered (handle non-nil) and the entry "
+                        .. "is HONESTLY DEFERRED at apply — :applied()==false, "
+                        .. ":reason()=\"" .. reason .. "\". The registration shape "
+                        .. "+ the not-yet-wired rejection both hold; this flips to "
+                        .. "a fire-assert when the statement-capture apply path "
+                        .. "lands (PENDING-CONTRACT row)")
+                else
+                    kcdx.test.report(row, false,
+                        "insert_before handle :applied()=" .. tostring(applied)
+                        .. " :reason()=\"" .. reason .. "\" — expected "
+                        .. ":applied()==false AND the reason to contain \"not yet "
+                        .. "wired in the engine\". A silent apply (applied true) "
+                        .. "means a never-firing statement hook went live (the "
+                        .. "deferral broke); a changed reason means the apply-path "
+                        .. "state moved without this row being updated")
+                end
+            end
+        end
+    end
+
     kcdx.log.info("CAP86",
         "kcdx.locator.* :resolve self-test reported all 12 rows against "
-        .. FN .. " in " .. MODULE)
+        .. FN .. " in " .. MODULE
+        .. "; + the insert_before pending-contract row "
+        .. "(cap-86-insert-registers-pending)")
 end)

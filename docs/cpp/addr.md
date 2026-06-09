@@ -42,8 +42,9 @@ runs before that message).
 The identity-carrying form of `ResolveAddressByName` — it resolves an
 author-target / Address Library name with the **caller's own plugin as the
 `self` tier**, so resolution is full `self > engine > other` precedence. This
-is the C++ mirror of the Lua `kcdx.hook{ target = "<name>" }` path, which
-threads the calling plugin's identity natively.
+is the C++ mirror of the Lua name-target hook path
+(`kcdx.hook.before("WHGame.dll", "<name>", fn)`), which threads the calling
+plugin's identity natively.
 
 ```cpp
 uintptr_t (*ResolveAddressByNameAs)(kcdxPluginHandle owner, const char* name);

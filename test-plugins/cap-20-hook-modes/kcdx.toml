@@ -3,7 +3,7 @@
 # The first test of the NEW kcdx.hook surface. Uses
 # ONLY restructured-model surfaces:
 #   - a C++ DLL entrypoint (exposes the native targets + drives verify)
-#   - plugin.lua calling kcdx.hook{ address=, before=/after=/around=/replace= }
+#   - plugin.lua calling kcdx.hook.before/after/around/replace(module, target, fn, [opts])
 # No legacy [[hook]]/[[mid_hook]]/[[trampoline]] behavior TOML (that
 # path is being deleted; this test must not depend on it).
 #

@@ -27,10 +27,10 @@ a new addressable site rather than acting on an existing one.
 > **There is no `kcdx.code.<name>{...}` form.** `kcdx.code` produces new
 > executable regions; it doesn't operate against an existing named site. To
 > publish your allocated region under a name other plugins can reach, set
-> `export = "..."` on the call below; consumers reach it via
-> [`kcdx.hook{ target_symbol = "..." }`](hook.md) (or `kcdx.bytes` with
-> `target_symbol`). The named-target sub-verb shape on `kcdx.hook` /
-> `kcdx.bytes` dispatches against an already-resolved site; `kcdx.code` is
+> `export = "..."` on the call below; consumers reach it via a
+> [`kcdx.hook` sub-verb with a `target_symbol` `[opts]` locator](hook.md) (or
+> `kcdx.bytes` with `target_symbol`). The named-target hook sub-verbs dispatch
+> against an already-resolved site; `kcdx.code` is
 > the producer side of that boundary.
 
 **Call shape:** a single named-field table. Unlike `kcdx.hook`/`kcdx.bytes`,
@@ -47,7 +47,7 @@ target right away). Returns `(nil, err)` on a bad call.
 | `bytes` | string | Optional initial machine code as a hex string, e.g. `"48 83 EC 28"`. Copied to the head of the region. |
 | `size` | integer | Optional total bytes to allocate. Defaults to the length of `bytes`. If larger than `bytes`, the tail is **NOP-padded** (`0x90`) so other plugins can patch into the unused space. Must be ≥ the length of `bytes`. |
 | `pool` | string | Optional. `"branch"` (default) places the region within ±2 GB of `WHGame.dll`'s code so a `rel32` branch can reach it; `"local"` places it anywhere (use when ±2 GB reachability is not required). |
-| `export` | string | Optional. Bare symbol name to publish the allocated address under; the engine stamps your `<author>.<plugin>` prefix (from `[plugin].author` + `[plugin].name`) automatically — you never type it. A later `kcdx.hook{ target_symbol = ... }` or `kcdx.bytes{ target_symbol = ... }` resolves to it: bare from your own plugin (self), prefixed `<author>.<plugin>.<name>` from anywhere else. |
+| `export` | string | Optional. Bare symbol name to publish the allocated address under; the engine stamps your `<author>.<plugin>` prefix (from `[plugin].author` + `[plugin].name`) automatically — you never type it. A later `kcdx.hook` sub-verb (with a `target_symbol` `[opts]` locator) or `kcdx.bytes{ target_symbol = ... }` resolves to it: bare from your own plugin (self), prefixed `<author>.<plugin>.<name>` from anywhere else. |
 
 You must declare `bytes` or `size` (or both).
 
@@ -74,9 +74,10 @@ local region = kcdx.code{
 }
 region:set_byte(0xC3)   -- write a RET into the base (the region is live now)
 -- elsewhere (another plugin):
---   kcdx.hook{ target_symbol = "walkabout.violetanvil.outfit_gate_logic", ... }
+--   kcdx.hook.replace("WHGame.dll", nil, fn,
+--       { target_symbol = "walkabout.violetanvil.outfit_gate_logic" })
 -- in this same plugin a bare reference also works:
---   kcdx.hook{ target_symbol = "outfit_gate_logic", ... }
+--   kcdx.hook.replace("WHGame.dll", nil, fn, { target_symbol = "outfit_gate_logic" })
 ```
 
 The returned pointer is a live hook target right away — you can mid-hook *into*

@@ -42,7 +42,7 @@
 
 -- ====================================================================
 -- (1) CAP-33-pattern-by-name — THE SHARE-GUARANTEE HEADLINE.
--- kcdx.hook{ target = "<own pattern target>" } with NO signature=. The pure
+-- kcdx.hook.before(module, "<own pattern target>") with NO signature. The pure
 -- "author names a target BY AOB PATTERN and hooks it by name" proof: the
 -- pattern carries the ADDRESS (a .text-unique entry AOB) and the target's
 -- signature carries the ABI, both delivered by the bare name with zero hex at
@@ -58,11 +58,9 @@
 -- binder did not get the signature FROM the target it would reject ("a signature
 -- is required"); install with no inline sig IS the proof the name supplied both.
 -- ====================================================================
-local hPattern = kcdx.hook{
-    name   = "cap33_pattern_by_name",
-    target = "openlibs_by_pattern",      -- author-declared PATTERN target; carries the sig
-    before = function(self) return self end,  -- no-op passthrough
-}
+local hPattern = kcdx.hook.before("WHGame.dll", "openlibs_by_pattern",  -- author-declared PATTERN target; carries the sig
+    function(self) return self end,  -- no-op passthrough
+    { name = "cap33_pattern_by_name" })
 
 -- ====================================================================
 -- (2) CAP-33-engine-tier — the ENGINE tier of self>engine>other still works.
@@ -70,11 +68,9 @@ local hPattern = kcdx.hook{
 -- the engine's own target. Proves the author's targets COEXIST with the
 -- engine name table (precedence, not partition).
 -- ====================================================================
-local hEngine = kcdx.hook{
-    name   = "cap33_engine_tier",
-    target = "luaL_loadfile",           -- ENGINE seed name (resolves + carries ABI)
-    before = function(L, filename) return L, filename end,
-}
+local hEngine = kcdx.hook.before("WHGame.dll", "luaL_loadfile",  -- ENGINE seed name (resolves + carries ABI)
+    function(L, filename) return L, filename end,
+    { name = "cap33_engine_tier" })
 
 -- ====================================================================
 -- (3) CAP-33-prefixed — the explicit "<pluginname>.<target>" form.
@@ -85,11 +81,10 @@ local hEngine = kcdx.hook{
 -- Carries no signature= (the target does). Empty before-hook (returns nothing →
 -- original runs unchanged; the install IS the proof).
 -- ====================================================================
-local hPrefixed = kcdx.hook{
-    name   = "cap33_prefixed",
-    target = "ts.cap_33_author_targets.luaopen_math_by_id",  -- explicit prefix → verified-id target
-    before = function() end,                              -- no-op (returns nothing)
-}
+local hPrefixed = kcdx.hook.before("WHGame.dll",
+    "ts.cap_33_author_targets.luaopen_math_by_id",  -- explicit prefix → verified-id target
+    function() end,                                 -- no-op (returns nothing)
+    { name = "cap33_prefixed" })
 
 -- ====================================================================
 -- (4) CAP-33-alias — kcdx.alias declares a local handle, then hook via it.
@@ -103,11 +98,9 @@ local aliasOk, aliasErr = kcdx.alias("up", "ts.cap_33_author_targets.luaopen_mat
 if aliasOk ~= true then
     kcdx.log.error("CAP33", "kcdx.alias failed: " .. tostring(aliasErr))
 end
-local hAlias = kcdx.hook{
-    name   = "cap33_alias",
-    target = "up",                      -- the local alias → the verified-id target
-    before = function() end,            -- no-op (returns nothing)
-}
+local hAlias = kcdx.hook.before("WHGame.dll", "up",  -- the local alias → the verified-id target
+    function() end,                                  -- no-op (returns nothing)
+    { name = "cap33_alias" })
 
 -- ====================================================================
 -- (5) CAP-33-bytes-by-name — kcdx.bytes{ target = "<name>" } resolution.
@@ -135,7 +128,7 @@ kcdx.on("ready", function()
         local applied = hPattern:applied()
         kcdx.test.report("CAP-33-pattern-by-name", applied == true,
             applied == true
-              and ("kcdx.hook{ target=\"openlibs_by_pattern\" } applied with NO "
+              and ("kcdx.hook.before(.., \"openlibs_by_pattern\") applied with NO "
                    .. "signature= — the author-declared PATTERN target supplied "
                    .. "BOTH address (.text-unique AOB) and ABI by name "
                    .. "(the share guarantee: name once, hook by name forever)")
@@ -149,7 +142,7 @@ kcdx.on("ready", function()
         local applied = hEngine:applied()
         kcdx.test.report("CAP-33-engine-tier", applied == true,
             applied == true
-              and "kcdx.hook{ target=\"luaL_loadfile\" } (engine seed) resolved — engine tier coexists with author targets"
+              and "kcdx.hook.before(.., \"luaL_loadfile\") (engine seed) resolved — engine tier coexists with author targets"
               or  ("expected applied()==true for the engine seed name; got "
                    .. "applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hEngine:reason())))
@@ -171,7 +164,7 @@ kcdx.on("ready", function()
         local applied = hAlias:applied()
         kcdx.test.report("CAP-33-alias", applied == true and aliasOk == true,
             (applied == true and aliasOk == true)
-              and "kcdx.alias(\"up\", \"...luaopen_math_by_id\") + kcdx.hook{ target=\"up\" } resolved via the alias"
+              and "kcdx.alias(\"up\", \"...luaopen_math_by_id\") + kcdx.hook.before(.., \"up\") resolved via the alias"
               or  ("expected aliasOk==true AND applied()==true; got aliasOk="
                    .. tostring(aliasOk) .. " applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hAlias:reason())))

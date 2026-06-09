@@ -4,7 +4,7 @@
 # ONLY restructured-model surfaces:
 #   - a C++ DLL entrypoint (hand-writes controlled stubs into RWX memory,
 #     hands their capture-site addresses to Lua, drives verify)
-#   - plugin.lua calling kcdx.hook{ address=, mode="mid", captures=, mid= }
+#   - plugin.lua calling kcdx.hook.mid(module, target, offset, captures, callback, [opts])
 # No legacy [[hook]]/[[mid_hook]]/[[trampoline]] behavior TOML.
 #
 # Flow (single update tick, in strict order):

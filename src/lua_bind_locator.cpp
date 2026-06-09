@@ -440,7 +440,55 @@ const luaL_Reg kFunctions[] = {
     {nullptr, nullptr},
 };
 
+// Non-raising detector: is the value at `idx` a kcdx.locator.value userdata?
+// Returns the StatementLocator* on a hit, nullptr otherwise (CheckLocator
+// raises; this does not, so a hook/statement verb can do arg-type dispatch on
+// its optional locator slot). Metatable-identity discriminator.
+const refdb::StatementLocator* TestLocator(lua_State* L, int idx) {
+    if (lua_type(L, idx) != LUA_TUSERDATA) return nullptr;
+    void* p = lua_touserdata(L, idx);
+    if (!p) return nullptr;
+    if (!lua_getmetatable(L, idx)) return nullptr;
+    luaL_getmetatable(L, kLocatorMetatable);
+    const bool same = lua_rawequal(L, -1, -2) != 0;
+    lua_pop(L, 2);
+    return same ? static_cast<const refdb::StatementLocator*>(p) : nullptr;
+}
+
+// A short label for a locator kind, for the not-yet-wired teaching diagnostic.
+const char* LocatorKindLabel(refdb::StatementLocatorKind k) {
+    switch (k) {
+        case refdb::StatementLocatorKind::FunctionEntry:    return "function_entry";
+        case refdb::StatementLocatorKind::FunctionExit:     return "function_exit";
+        case refdb::StatementLocatorKind::FirstCallTo:      return "first_call_to";
+        case refdb::StatementLocatorKind::LastCallTo:       return "last_call_to";
+        case refdb::StatementLocatorKind::CallTo:           return "call_to";
+        case refdb::StatementLocatorKind::FirstReturn:      return "first_return";
+        case refdb::StatementLocatorKind::LastReturn:       return "last_return";
+        case refdb::StatementLocatorKind::ReturnValue:      return "return_value";
+        case refdb::StatementLocatorKind::ReferencesString: return "references_string";
+        case refdb::StatementLocatorKind::FirstReadOfCvar:  return "first_read_of_cvar";
+        case refdb::StatementLocatorKind::Matching:         return "matching";
+        case refdb::StatementLocatorKind::MatchingPattern:  return "matching_pattern";
+    }
+    return "locator";
+}
+
 }  // namespace
+
+// Public arg-type-dispatch accessor for the hook/statement verbs' optional
+// `[locator]` positional. function_entry() is the one kind the function-entry
+// hook path already honors (it means "the entry" — the existing default); every
+// other kind is a statement-level locator surfaced by kind_label for the
+// not-yet-wired teaching error. Reads nothing beyond the metatable identity.
+bool ReadLocator(lua_State* L, int idx, LocatorView& out) {
+    const refdb::StatementLocator* loc = TestLocator(L, idx);
+    if (!loc) return false;
+    out.is_function_entry =
+        (loc->kind == refdb::StatementLocatorKind::FunctionEntry);
+    out.kind_label = LocatorKindLabel(loc->kind);
+    return true;
+}
 
 // Called from lua_bind.cpp::RegisterKcdxTable with the kcdx global table on top
 // of the stack. Registers the locator-value metatable, then creates the

@@ -1,7 +1,7 @@
 # COMP-03 plugin A — winner half of the cross-plugin hook-on-hook pair.
 #
 # Migration: was a legacy [[hook]] with bytes= first-wins;
-# now a pure-Lua kcdx.hook{replace} on the SAME named site. Two plugins
+# now a pure-Lua kcdx.hook.replace on the SAME named site. Two plugins
 # (this one and comp-03-hook-on-hook-B) install a `replace` at the same
 # function entry — replace-vs-replace is exclusive in the hook_chain
 # (CanCoexist rejects the second), so one wins and one is rejected.

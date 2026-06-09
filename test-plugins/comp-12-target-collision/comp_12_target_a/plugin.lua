@@ -22,11 +22,9 @@
 -- legacy first-wins path — A's install lost there for a reason unrelated to
 -- precedence; repointed to the unhooked luaopen_math.)
 
-local hSelf = kcdx.hook{
-    name   = "comp12_self",
-    target = "combat_check",   -- BARE name: A owns one, B owns one → self wins
-    before = function() end,   -- no-op (returns nothing → original runs unchanged)
-}
+local hSelf = kcdx.hook.before("WHGame.dll", "combat_check",  -- BARE name: A owns one, B owns one → self wins
+    function() end,                                          -- no-op (returns nothing → original runs unchanged)
+    { name = "comp12_self" })
 
 kcdx.on("ready", function()
     local applied = hSelf:applied()

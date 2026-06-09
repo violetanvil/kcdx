@@ -51,17 +51,18 @@
 -- the observer is — the observer's politeness was never the safety property,
 -- a cold no-fire target is.
 
-local h = kcdx.hook{
-    name      = "cap38_lua_gate",
-    target    = "kcdx.luaopen_table",     -- verified ABI "i32 (ptr L)"
-    signature = "void (ptr L)",            -- WRONG on purpose (return-width delta)
-    before    = function(L)
+-- Named target carries verified ABI "i32 (ptr L)"; the [opts] signature is
+-- WRONG on purpose (return-width delta) — the sig-mismatch gate detects the
+-- conflict, logs at ERROR (hard), and the install PROCEEDS with the explicit
+-- sig (behavior-c).
+local h = kcdx.hook.before("WHGame.dll", "kcdx.luaopen_table",
+    function(L)
         -- No-op observer. Never relied upon to fire — the target is
         -- gameplay-cold (luaopen_table runs once at boot, before this hook
         -- installs), so this thunk is installed but never invoked.
         return
     end,
-}
+    { name = "cap38_lua_gate", signature = "void (ptr L)" })
 
 if not h then
     kcdx.log.error("CAP38_LUA",

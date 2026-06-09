@@ -50,8 +50,10 @@ it takes:
    C++ spelling of Lua's `{ named table }` — e.g. a future `kcdxHookOptions`);
    a simple "do a thing" call takes positional typed parameters (the C++
    spelling of Lua's positional calls — `Log(self, level, category, msg)`,
-   `RegisterListener(self, sender, cb)`). The verb `kcdx.hook{...}` (Lua)
-   becomes `kcdxHookInterface::Install(...)` / `K.hook->Install(...)` (C++).
+   `RegisterListener(self, sender, cb)`). The Lua hook sub-verbs
+   `kcdx.hook.before/after/around/replace(...)` become
+   `kcdxHookInterface::Before/After/Around/Replace(...)` /
+   `K.hook->Before(...)` (C++).
 
 That is the whole surface model. A call you have never seen still resolves to
 the right place by these rules — and to its Lua counterpart by the same model.

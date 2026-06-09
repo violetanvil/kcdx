@@ -3,7 +3,8 @@
 
 Intercept a game function: run your C++ callback when the game calls it, and
 optionally change its arguments, return value, or whether it runs at all. The
-C++ mirror of the core Lua verb `kcdx.hook{...}` ([../lua/hook.md](../lua/hook.md)).
+C++ mirror of the core Lua hook sub-verbs `kcdx.hook.before/after/around/replace`
+([../lua/hook.md](../lua/hook.md)).
 
 This page documents `kcdxHookInterface` **v2** as built and verified
 (`kcdxHookInterface_Version == 2`, [`Interfaces.h`](../../include/kcdx/Interfaces.h)).
@@ -395,6 +396,27 @@ The `cFn` ABI matches the selected behavior's shape (the four under
 [the mangled cFn ABI](#the-mangled-cfn-abi-the-raw-floor)). Like Mid, `Callsite`
 is **raw-floor-only** — its call-instruction sub-locators don't templatize, so
 the wrapper does not wrap it and this is its only doc.
+
+## Not yet implemented — the Lua peers awaiting C++ parity
+
+Two Lua-side hook capabilities have **no C++ mirror yet** — they land when the
+C++ surface catches up (the cross-surface map stays parallel while the engine
+does, per the documentation-parity discipline). Both are marked NYI here so a
+C++ author knows the shape that is coming and that it is not callable today:
+
+- **`InsertBefore` / `InsertAfter` (↔ Lua `kcdx.hook.insert_before` /
+  `insert_after`)** — install a callback at a **statement inside** the function,
+  located by a `kcdxLocator` value, receiving the live captures as a named
+  struct. The Lua sub-verbs validate today; the engine's curated-statement
+  capture-thunk apply path (and this C++ mirror) land together in a later step.
+- **A `kcdxFunctionRef` target (↔ Lua hooking by a `kcdx.functions.*` reference
+  value)** — pass a resolved function-reference value as the install target
+  (instead of a name string), so the reference carries the address and ABI. The
+  Lua side dispatches a reference value today; the C++ `kcdxHookInterface`
+  overload taking a `kcdxFunctionRef` is the NYI peer.
+
+These are mapped NYI, not omitted, so the two surfaces stay structurally
+parallel; the markers are removed when each is built and verified callable.
 
 ## Query / control methods
 

@@ -33,11 +33,10 @@
 -- ui_pump_self` resolves directly via the parsed 3-segment form. Unambiguous
 -- from anywhere; never warns. No signature= (the target carries the ABI).
 -- ====================================================================
-local hExplicit2Dot = kcdx.hook{
-    name   = "cap34_explicit_2dot",
-    target = "ts.cap_34_two_dot_namespace.ui_pump_self",  -- 3-segment author.plugin.bare
-    before = function() end,                              -- no-op
-}
+local hExplicit2Dot = kcdx.hook.before("WHGame.dll",
+    "ts.cap_34_two_dot_namespace.ui_pump_self",  -- 3-segment author.plugin.bare
+    function() end,                              -- no-op
+    { name = "cap34_explicit_2dot" })
 
 -- ====================================================================
 -- (2) CAP-34-explicit-1dot-kcdx — the 2-segment kcdx.<seedname> form.
@@ -46,11 +45,10 @@ local hExplicit2Dot = kcdx.hook{
 -- "plugin" half of the namespace collapses into the reserved root). Proves
 -- the kcdx.* root resolves under the 2-dot model.
 -- ====================================================================
-local hExplicit1DotKcdx = kcdx.hook{
-    name   = "cap34_explicit_1dot_kcdx",
-    target = "kcdx.luaL_loadfile",      -- 2-segment kcdx.<seedname> (engine root)
-    before = function(L, filename) return L, filename end,
-}
+local hExplicit1DotKcdx = kcdx.hook.before("WHGame.dll",
+    "kcdx.luaL_loadfile",      -- 2-segment kcdx.<seedname> (engine root)
+    function(L, filename) return L, filename end,
+    { name = "cap34_explicit_1dot_kcdx" })
 
 -- ====================================================================
 -- (3) CAP-34-bare-self — the bare name resolves to THIS plugin's target via
@@ -59,11 +57,9 @@ local hExplicit1DotKcdx = kcdx.hook{
 -- falling through to engine or other-plugin. Proves bare-name self-tier
 -- resolution works under the 2-dot model.
 -- ====================================================================
-local hBareSelf = kcdx.hook{
-    name   = "cap34_bare_self",
-    target = "ui_pump_self",            -- BARE — no author/plugin prefix
-    before = function() end,            -- no-op
-}
+local hBareSelf = kcdx.hook.before("WHGame.dll", "ui_pump_self",  -- BARE — no author/plugin prefix
+    function() end,                                              -- no-op
+    { name = "cap34_bare_self" })
 
 -- ====================================================================
 -- (4) CAP-34-alias-2dot — kcdx.alias("short", "<3-segment>") then hook via the
@@ -75,11 +71,9 @@ local aliasOk, aliasErr = kcdx.alias("short", "ts.cap_34_two_dot_namespace.ui_pu
 if aliasOk ~= true then
     kcdx.log.error("CAP34", "kcdx.alias failed: " .. tostring(aliasErr))
 end
-local hAlias2Dot = kcdx.hook{
-    name   = "cap34_alias_2dot",
-    target = "short",                   -- the local alias → the 3-segment target
-    before = function() end,            -- no-op
-}
+local hAlias2Dot = kcdx.hook.before("WHGame.dll", "short",  -- the local alias → the 3-segment target
+    function() end,                                        -- no-op
+    { name = "cap34_alias_2dot" })
 
 -- ====================================================================
 -- (5) CAP-34-cross-plugin-2dot — a 3-segment reference to ANOTHER plugin's
@@ -90,11 +84,10 @@ local hAlias2Dot = kcdx.hook{
 -- isolation, this row fails gracefully via :applied()==false — fine, no other
 -- assertion depends on it.
 -- ====================================================================
-local hCrossPlugin = kcdx.hook{
-    name   = "cap34_cross_plugin_2dot",
-    target = "ts.cap_33_author_targets.luaopen_math_by_id",  -- 3-segment, other-plugin's bare
-    before = function() end,                                  -- no-op
-}
+local hCrossPlugin = kcdx.hook.before("WHGame.dll",
+    "ts.cap_33_author_targets.luaopen_math_by_id",  -- 3-segment, other-plugin's bare
+    function() end,                                 -- no-op
+    { name = "cap34_cross_plugin_2dot" })
 
 -- Handles resolve to a final :applied() only AFTER the zone apply pass, which
 -- runs after this plugin.lua returns. Read them in kcdx.on("ready").
@@ -104,7 +97,7 @@ kcdx.on("ready", function()
         local applied = hExplicit2Dot:applied()
         kcdx.test.report("CAP-34-explicit-2dot", applied == true,
             applied == true
-              and ("kcdx.hook{ target=\"ts.cap_34_two_dot_namespace.ui_pump_self\" } "
+              and ("kcdx.hook.before(.., \"ts.cap_34_two_dot_namespace.ui_pump_self\") "
                    .. "applied — explicit 3-segment author.plugin.bare form resolves "
                    .. "directly under the 2-dot model")
               or  ("expected applied()==true for the explicit 3-segment form; got "
@@ -117,7 +110,7 @@ kcdx.on("ready", function()
         local applied = hExplicit1DotKcdx:applied()
         kcdx.test.report("CAP-34-explicit-1dot-kcdx", applied == true,
             applied == true
-              and ("kcdx.hook{ target=\"kcdx.luaL_loadfile\" } applied — the "
+              and ("kcdx.hook.before(.., \"kcdx.luaL_loadfile\") applied — the "
                    .. "2-segment kcdx.<seedname> form (reserved 'kcdx' author "
                    .. "for engine seed) resolves")
               or  ("expected applied()==true for the kcdx.<seedname> form; got "
@@ -130,7 +123,7 @@ kcdx.on("ready", function()
         local applied = hBareSelf:applied()
         kcdx.test.report("CAP-34-bare-self", applied == true,
             applied == true
-              and ("kcdx.hook{ target=\"ui_pump_self\" } applied — bare-name "
+              and ("kcdx.hook.before(.., \"ui_pump_self\") applied — bare-name "
                    .. "self-tier resolution found (author=ts, plugin="
                    .. "cap_34_two_dot_namespace, bare=ui_pump_self)")
               or  ("expected applied()==true for bare-name self-tier resolution; "
@@ -144,7 +137,7 @@ kcdx.on("ready", function()
         kcdx.test.report("CAP-34-alias-2dot", applied == true and aliasOk == true,
             (applied == true and aliasOk == true)
               and ("kcdx.alias(\"short\", \"ts.cap_34_two_dot_namespace.ui_pump_self\") "
-                   .. "+ kcdx.hook{ target=\"short\" } applied — alias substitution "
+                   .. "+ kcdx.hook.before(.., \"short\") applied — alias substitution "
                    .. "composes with the 3-segment form")
               or  ("expected aliasOk==true AND applied()==true; got aliasOk="
                    .. tostring(aliasOk) .. " applied=" .. tostring(applied)
@@ -156,7 +149,7 @@ kcdx.on("ready", function()
         local applied = hCrossPlugin:applied()
         kcdx.test.report("CAP-34-cross-plugin-2dot", applied == true,
             applied == true
-              and ("kcdx.hook{ target=\"ts.cap_33_author_targets.luaopen_math_by_id\" } "
+              and ("kcdx.hook.before(.., \"ts.cap_33_author_targets.luaopen_math_by_id\") "
                    .. "applied — 3-segment cross-plugin reference resolves "
                    .. "(other-plugin tier of self>engine>other)")
               or  ("expected applied()==true for cross-plugin 3-segment lookup; got "
