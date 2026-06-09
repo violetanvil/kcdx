@@ -46,6 +46,7 @@ log_level           = "info"
 test_names          = [
     "cap-90-pdb-internal-address",
     "cap-90-crt-filtered",
+    "cap-90-stl-no-source-filtered",
 ]
 
 [entrypoints]

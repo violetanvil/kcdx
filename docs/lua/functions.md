@@ -108,12 +108,17 @@ DLL's own functions, so another plugin can name `kcdx.functions["you.yourmod"].S
 and apply a [static byte op](statement.md) to it. The address is the part that is
 otherwise hard to get; the PDB hands it over for free.
 
-**Only your OWN functions are exposed.** Your DLL links the C runtime, so the
-compiler and linker pull their own internal functions (`operator delete`,
-`_set_new_handler`, and the like) into the image. The engine filters those out by
-source file and records only the functions from your own source — so your
-`kcdx.functions["you.yourmod"]` namespace stays clean and holds the code you wrote,
-not the runtime plumbing nobody hooks.
+**Only your OWN functions are exposed — and your functions are never dropped.**
+Your DLL links the C runtime, so the compiler and linker pull their own internal
+functions (`operator delete`, `std::bad_exception`, `_set_new_handler`, and the
+like) into the image. The engine drops that plumbing, but it identifies it
+**positively** — a function is recorded by default and removed only when the
+engine can confirm it is C-runtime or compiler plumbing, either by its source path
+(a known C-runtime/compiler build tree) or, for a function the PDB gives no source
+line, by a known C-runtime/STL name. A function the engine cannot positively
+identify as plumbing is **kept** — your own functions are never dropped on a guess,
+so your `kcdx.functions["you.yourmod"]` namespace holds the code you wrote, and
+only the runtime plumbing nobody hooks is filtered out.
 
 **Build your PDB with `/DEBUG:FULL`** — this is the one requirement. In Visual
 Studio set *Linker → Debugging → Generate Debug Info* to **Generate Debug

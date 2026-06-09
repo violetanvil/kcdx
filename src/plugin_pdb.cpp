@@ -12,8 +12,10 @@
 //   SymEnumSymbols(proc, base, "*", cb, ctx)
 //   SymUnloadModule64 / SymCleanup
 // The enumerate yields BOTH the plugin's own functions AND CRT/compiler privates;
-// the in-range + FUNCTION + author-source filter (below) isolates the plugin's
-// own authored functions, dropping the CRT/compiler plumbing nobody hooks.
+// the in-range + FUNCTION + positive-CRT filter (below) isolates the plugin's own
+// authored functions by KEEPING by default and dropping ONLY the CRT/compiler
+// plumbing it can POSITIVELY identify — an author's function is never dropped on a
+// guess.
 //
 // THE LOAD-BEARING CONSTRAINT: internal auto-load works ONLY with a /DEBUG:FULL
 // (self-contained) PDB. A FASTLINK PDB (the VS2017+ default) is a build-machine-
@@ -60,17 +62,17 @@ struct EnumCtx {
     uint32_t    inRangeFuncs = 0;  // plugin's own functions recorded.
     uint32_t    capDropped = 0;    // functions skipped after hitting kMaxFunctions.
     uint32_t    badName = 0;       // symbols rejected on name validation.
-    uint32_t    crtFiltered = 0;   // in-range functions rejected: a CRT/compiler source.
-    uint32_t    noSource = 0;      // in-range functions rejected: no source line at all.
+    uint32_t    crtFiltered = 0;   // functions rejected: positively a CRT (source path OR name).
+    uint32_t    keptNoSource = 0;  // functions KEPT despite no source line (no CRT-name match).
 };
 
-// A function's per-symbol source file (from SymGetLineFromAddr64) separates the
-// author's own translation units from the C-runtime / compiler-internal code the
-// linker pulls into the image. The author's functions report a source under the
-// plugin's own .cpp; CRT/compiler internals report a build path under one of these
-// markers (the MSVC CRT/vcruntime/ucrt build trees). Match is a case-insensitive
-// substring — the markers are stable MSVC source-tree path fragments, not the
-// author's possible build dirs.
+// A function's per-symbol source file (from SymGetLineFromAddr64) positively
+// IDENTIFIES the C-runtime / compiler-internal code the linker pulls into the
+// image: those internals report a build path under one of these markers (the MSVC
+// CRT/vcruntime/ucrt build trees). Match is a case-insensitive substring — the
+// markers are stable MSVC source-tree path fragments, not the author's possible
+// build dirs. This is a POSITIVE-ID gate: a CRT source path REJECTS; anything else
+// (incl. the author's own .cpp) falls through to KEEP.
 constexpr const char* kCrtSourceMarkers[] = {
     "vctools\\crt", "ucrt", "vcruntime", "vccrt", "vcstartup", "minkernel\\crts",
 };
@@ -85,6 +87,43 @@ std::string ToLowerAscii(const char* s) {
         if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + ('a' - 'A'));
     }
     return out;
+}
+
+// Positive CRT/STL-name identification for a function the PDB gives NO source
+// line. The hardened filter defaults to KEEP — a function is dropped ONLY when it
+// is POSITIVELY identified as runtime plumbing, so an author's own no-source
+// function is never dropped on a guess. These patterns are exact C++ identifiers
+// the undecorated (SYMOPT_UNDNAME) name carries; the match is case-sensitive
+// because they are literal identifiers, not free text. A name matching NONE of
+// these is KEPT — it might be the author's.
+//
+// `$` anywhere is a compiler-generated SEH/funclet (fin$/filt$/dtor$/catch$) — an
+// author never types `$` in a C++ identifier, so it is an unconditional CRT tell.
+bool LooksLikeCrtName(const std::string& name) {
+    // A compiler-generated funclet — never an author function.
+    if (name.find('$') != std::string::npos) return true;
+
+    // Prefix-matched CRT/STL plumbing patterns (the name STARTS WITH one of these).
+    static constexpr const char* kCrtNamePrefixes[] = {
+        "std::",            // the STL namespace (std::exception, std::bad_exception, …)
+        "type_info",        // RTTI type_info (incl. its `scalar deleting destructor')
+        "__acrt_", "__crt_", "_CRT", "__scrt_",  // CRT internal families
+        "_set_new_handler", "_set_new_mode", "__set_flsgetvalue",  // CRT new-handler / FLS
+        "_purecall", "__std_", "_Xlength_error", "_Xout_of_range",  // CRT/STL helpers
+    };
+    for (const char* p : kCrtNamePrefixes) {
+        if (name.rfind(p, 0) == 0) return true;  // rfind(..,0)==0 ⇒ starts-with.
+    }
+
+    // Exact-match CRT operators (the whole name IS one of these).
+    static constexpr const char* kCrtNameExact[] = {
+        "operator new", "operator delete", "operator new[]", "operator delete[]",
+    };
+    for (const char* e : kCrtNameExact) {
+        if (name == e) return true;
+    }
+
+    return false;  // not positively CRT — KEEP (it might be the author's).
 }
 
 // Validate a symbol name before it becomes a map key (input-validation.md —
@@ -136,12 +175,16 @@ std::string BareLeaf(const std::string& full, bool& qualified) {
 //      absent here. The CRT data publics in the same stream carry Tag==SymTagData
 //      (7). So the kind test is Tag, NOT the flag: filtering on SYMFLAG_FUNCTION
 //      rejects every plugin function (none in the publics-only stream carries it).
-//   3. AUTHOR'S OWN source: SymGetLineFromAddr64 reports a per-symbol source file.
-//      An in-range SymTagFunction can still be CRT/compiler plumbing the linker
-//      pulled into the image (operator delete, _set_new_handler, …) — those carry
-//      a CRT/compiler build path (kCrtSourceMarkers) as their source, or no source
-//      line. The author's own function carries a source under its own .cpp. Record
-//      only an in-range function whose source is present AND not a CRT path.
+//   3. NOT POSITIVELY CRT (default KEEP): an in-range SymTagFunction is KEPT
+//      UNLESS it is POSITIVELY identified as CRT/compiler plumbing — the hard
+//      requirement is that an author's OWN function is NEVER dropped, so the
+//      default is keep, and only a positive CRT match rejects. Two positive
+//      signals: (a) a source line under a CRT/compiler build path
+//      (kCrtSourceMarkers), (b) for a function with NO source line, a CRT/STL
+//      name pattern (LooksLikeCrtName). A function matching neither — including
+//      one with no source line and a plain name — is KEPT (it might be the
+//      author's). There is NO path that drops a function for an unrecognized
+//      reason.
 BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
     auto* ctx = static_cast<EnumCtx*>(userCtx);
 
@@ -168,31 +211,54 @@ BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
         return TRUE;  // keep counting drops for the WARN, but record no more.
     }
 
-    // (3) source-file filter — record ONLY the author's own functions, not the
-    // CRT/compiler-internal functions the linker pulls into the plugin's image.
-    // The enumerate also yields in-range SymTagFunction symbols for runtime
-    // plumbing (operator delete, _set_new_handler, __crt_seh_guarded_call, …);
-    // those carry a CRT/compiler build path as their source, OR no source line.
-    // The author's own function carries a source line under its own .cpp. So:
-    //   - no source line at all → CRT plumbing / not the author's → reject.
-    //   - a source line under a CRT/compiler build tree → reject.
-    //   - a source line that is NOT a CRT path → the author's function → keep.
-    // SYMOPT_LOAD_LINES (set in PopulateFromPdb) is required for line info.
+    // The undecorated name (SYMOPT_UNDNAME) — needed by the positive-CRT name
+    // check below AND by the per-reject DEBUG log, so compute it before the gate.
+    const std::string full(sym->Name, sym->NameLen);
+
+    // (3) POSITIVE-CRT filter — default KEEP; drop ONLY a function POSITIVELY
+    // identified as CRT/compiler plumbing. The hard requirement: an author's own
+    // function is NEVER dropped, so an UNKNOWN function is KEPT, never dropped for
+    // an unrecognized reason. SYMOPT_LOAD_LINES (set in PopulateFromPdb) gives the
+    // line info.
     IMAGEHLP_LINE64 line{};
     line.SizeOfStruct = sizeof(line);
     DWORD displacement = 0;
-    if (!SymGetLineFromAddr64(GetCurrentProcess(), sym->Address, &displacement,
-                              &line) ||
-        line.FileName == nullptr || line.FileName[0] == '\0') {
-        ++ctx->noSource;
-        return TRUE;  // no source = CRT plumbing, not the author's function.
-    }
-    const std::string srcLower = ToLowerAscii(line.FileName);
-    for (const char* marker : kCrtSourceMarkers) {
-        if (srcLower.find(marker) != std::string::npos) {
-            ++ctx->crtFiltered;
-            return TRUE;  // a CRT/compiler translation unit — not the author's.
+    const bool hasSource =
+        SymGetLineFromAddr64(GetCurrentProcess(), sym->Address, &displacement,
+                             &line) &&
+        line.FileName != nullptr && line.FileName[0] != '\0';
+
+    if (hasSource) {
+        // A source line exists → reject ONLY if it is a CRT/compiler build path
+        // (positive ID by source path). Any other source (incl. the author's own
+        // .cpp) falls through to KEEP.
+        const std::string srcLower = ToLowerAscii(line.FileName);
+        for (const char* marker : kCrtSourceMarkers) {
+            if (srcLower.find(marker) != std::string::npos) {
+                ++ctx->crtFiltered;
+                LOG_DEBUG_KV("PDB", "filtered",
+                             ::kcdx::log::KV("namespace", ctx->ns),
+                             ::kcdx::log::KV("name", full),
+                             ::kcdx::log::KV("reason", "crt_source"));
+                return TRUE;  // a CRT/compiler translation unit — not the author's.
+            }
         }
+        // Source line, non-CRT path → the author's function → KEEP (fall through).
+    } else if (LooksLikeCrtName(full)) {
+        // No source line, and the NAME positively matches a CRT/STL plumbing
+        // pattern → reject (positive ID by name).
+        ++ctx->crtFiltered;
+        LOG_DEBUG_KV("PDB", "filtered",
+                     ::kcdx::log::KV("namespace", ctx->ns),
+                     ::kcdx::log::KV("name", full),
+                     ::kcdx::log::KV("reason", "crt_name"));
+        return TRUE;
+    } else {
+        // No source line, and the name matches NO CRT pattern → KEEP. We must not
+        // drop an author's own function the PDB happened to give no source line
+        // for. Counted separately so the success line distinguishes these.
+        ++ctx->keptNoSource;
+        // fall through to record.
     }
 
     // Key by the bare leaf (the name the author types), per the naming model. A
@@ -200,7 +266,6 @@ BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
     // unambiguous disambiguation key for a leaf collision (two shareable funcs
     // with the same leaf in different classes). A name that is only "::" (no leaf)
     // is malformed — skip it rather than record an empty key.
-    const std::string full(sym->Name, sym->NameLen);
     bool qualified = false;
     const std::string leaf = BareLeaf(full, qualified);
     if (leaf.empty()) { ++ctx->badName; return TRUE; }
@@ -290,9 +355,9 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
         return;
     }
 
-    // Enumerate. The in-range + FUNCTION-kind + author-source filter (EnumCb)
-    // records only the plugin's own authored functions; everything else (CRT/
-    // compiler-internal functions, data publics, out-of-range symbols) is skipped.
+    // Enumerate. The in-range + FUNCTION-kind + positive-CRT filter (EnumCb) keeps
+    // by default and drops only positively-identified CRT/compiler plumbing; the
+    // rest (data publics, out-of-range symbols) is skipped by the earlier gates.
     EnumCtx ctx;
     ctx.base = base;
     ctx.end = base + imageSize;
@@ -315,8 +380,11 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
 
     if (ctx.inRangeFuncs == 0) {
         // No author function recorded. Two distinct causes, each its own teaching
-        // line — the source-file filter (crt_filtered/no_source) discriminates:
-        if (ctx.crtFiltered == 0 && ctx.noSource == 0) {
+        // line — crt_filtered discriminates: a function was POSITIVELY rejected as
+        // CRT plumbing (crt_filtered>0) vs the enumerate yielded nothing at all.
+        // (keptNoSource is necessarily 0 here — a kept function increments
+        // inRangeFuncs, so zero in-range functions means zero kept.)
+        if (ctx.crtFiltered == 0) {
             // THE FASTLINK/STUB CASE: the enumerate yielded NO in-range function
             // at all — a /DEBUG:FASTLINK stub indexes the build-machine OBJs, not
             // a self-contained copy, so the plugin's own functions are absent when
@@ -329,24 +397,26 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
                         ::kcdx::log::KV("dll", dllPath));
         } else {
             // A FULL PDB DID enumerate in-range functions, but every one was
-            // CRT/compiler plumbing (no author translation unit) — the author's
-            // own functions are not in this image. Not a FASTLINK problem; do not
-            // tell them to rebuild with a flag they already used.
+            // POSITIVELY identified as CRT/compiler plumbing (no author translation
+            // unit) — the author's own functions are not in this image. Not a
+            // FASTLINK problem; do not tell them to rebuild with a flag they used.
             LOG_WARN_KV("PDB", "PDB loaded but no author functions found; only "
                         "CRT/compiler-internal functions are present; falling back "
                         "to exports + declared functions",
                         ::kcdx::log::KV("namespace", pluginNamespace),
                         ::kcdx::log::KV("dll", dllPath),
                         ::kcdx::log::KV("crt_filtered",
-                            static_cast<unsigned long long>(ctx.crtFiltered)),
-                        ::kcdx::log::KV("no_source",
-                            static_cast<unsigned long long>(ctx.noSource)));
+                            static_cast<unsigned long long>(ctx.crtFiltered)));
         }
         return;
     }
 
     // Success — a /DEBUG:FULL PDB surfaced the plugin's own internals. One info
     // line per the populated lifecycle event (logging.md).
+    // crt_filtered = the count POSITIVELY rejected as CRT plumbing (a CRT source
+    // path OR a CRT/STL name); kept_no_source = functions KEPT despite no source
+    // line (no CRT-name match) — the keep-by-default safety, recorded so an author
+    // sees them. Per-reject names are in the DEBUG "filtered" lines above.
     LOG_INFO_KV("PDB", "PDB auto-load populated internal-function addresses",
                 ::kcdx::log::KV("namespace", pluginNamespace),
                 ::kcdx::log::KV("dll", dllPath),
@@ -354,8 +424,8 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
                     static_cast<unsigned long long>(ctx.inRangeFuncs)),
                 ::kcdx::log::KV("crt_filtered",
                     static_cast<unsigned long long>(ctx.crtFiltered)),
-                ::kcdx::log::KV("no_source",
-                    static_cast<unsigned long long>(ctx.noSource)),
+                ::kcdx::log::KV("kept_no_source",
+                    static_cast<unsigned long long>(ctx.keptNoSource)),
                 ::kcdx::log::KV("dropped_over_cap",
                     static_cast<unsigned long long>(ctx.capDropped)),
                 ::kcdx::log::KV("rejected_bad_name",

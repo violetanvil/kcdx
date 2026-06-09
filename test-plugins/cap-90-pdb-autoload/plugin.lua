@@ -28,6 +28,12 @@ local INTERNAL_FN = "cap90_internal_target"
 -- under the plugin's namespace. Its undecorated leaf is exactly "operator delete"
 -- (no "::"), so it keys as the bracket-index ["operator delete"].
 local CRT_FN = "operator delete"
+-- An STL function the linker pulls in that the PDB gives NO source line — it is
+-- positively identified as CRT plumbing ONLY by its NAME (it starts with "std::").
+-- Its qualified form is "std::bad_exception::bad_exception"; its bare leaf is
+-- "bad_exception". The NAME-based reject (the hardened filter's no-source branch)
+-- must catch it, so it must NOT resolve under the plugin's namespace.
+local STL_NOSRC_FN = "bad_exception"
 
 kcdx.on("ready", function()
     local row = "cap-90-pdb-internal-address"
@@ -119,9 +125,54 @@ kcdx.on("ready", function()
         end
     end
 
+    -- Third row: the NAME-based CRT reject (the hardened keep-by-default filter).
+    -- The filter defaults to KEEP and drops a function only when it is POSITIVELY
+    -- identified as CRT plumbing. cap-90-crt-filtered above proves the SOURCE-PATH
+    -- reject; this proves the NAME reject for a function the PDB gives NO source
+    -- line. STL_NOSRC_FN ("bad_exception", from std::bad_exception::bad_exception)
+    -- has no source line, so it is rejected ONLY by the name check (it starts with
+    -- "std::"). If the name check did not run, this no-source function would be
+    -- KEPT by default and would RESOLVE — so a found=false here proves the name
+    -- branch caught it.
+    --
+    -- FALSIFIABLE: the row goes RED if STL_NOSRC_FN RESOLVES (found=true). That
+    -- happens only if the no-source name-reject path did not run or the pattern
+    -- list omits "std::". This complements the keep-by-default safety: an author's
+    -- no-source NON-CRT-named function is kept (the design guarantee), while a
+    -- no-source CRT-NAMED function is dropped (proven here).
+    local stl_row = "cap-90-stl-no-source-filtered"
+    if kcdx.functions == nil then
+        kcdx.test.report(stl_row, false,
+            "kcdx.functions namespace is not registered — cannot check the filter")
+    else
+        local stl_ref = kcdx.functions[PLUGIN_NS][STL_NOSRC_FN]
+        local sr = stl_ref ~= nil and stl_ref:resolve() or nil
+        if sr ~= nil and sr.found == true then
+            kcdx.test.report(stl_row, false,
+                "kcdx.functions[\"" .. PLUGIN_NS .. "\"][\"" .. STL_NOSRC_FN .. "\"]"
+                .. ":resolve -> found=true has_address=" .. tostring(sr.has_address)
+                .. " — a no-source STL function (std::bad_exception) was recorded "
+                .. "under the plugin namespace. The hardened filter keeps a "
+                .. "no-source function by default and drops it ONLY on a positive "
+                .. "CRT NAME match; a found=true here means the name-based reject "
+                .. "did not run or its pattern list omits the \"std::\" prefix, so "
+                .. "STL plumbing leaked into the namespace")
+        else
+            kcdx.test.report(stl_row, true,
+                "kcdx.functions[\"" .. PLUGIN_NS .. "\"][\"" .. STL_NOSRC_FN .. "\"]"
+                .. ":resolve -> found=false — a no-source STL function "
+                .. "(std::bad_exception, leaf \"bad_exception\") was rejected by "
+                .. "the name-based CRT check (it starts with \"std::\"), even with "
+                .. "no source line. This proves the keep-by-default filter still "
+                .. "drops positively-CRT-named plumbing; the author's own functions "
+                .. "are never dropped on a guess")
+        end
+    end
+
     kcdx.log.info("CAP90",
         "PDB auto-load self-test reported: a non-exported internal's address "
         .. "populated into the plugin's own kcdx.functions namespace from its "
-        .. "shipped /DEBUG:FULL PDB, and the CRT/compiler-internal functions "
-        .. "were filtered out")
+        .. "shipped /DEBUG:FULL PDB, the CRT/compiler-internal functions were "
+        .. "filtered out (by source path AND by name), and the keep-by-default "
+        .. "filter never drops the author's own functions")
 end)
