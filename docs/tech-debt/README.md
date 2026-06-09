@@ -37,6 +37,7 @@ engine capability (`FIX-A`, `Phase-11`), or a named source-fix mechanism.
 | [TD-0005](TD-0005-high-level-lua-surface.md) | 2026-06-05 | Open | high-level Lua gameplay surface (player/inventory/world/dialogue/quest) deferred | a dedicated high-level-Lua-surface build phase |
 | [TD-0006](TD-0006-statement-layer-in-user-db.md) | 2026-06-05 | Open | statement layer DEV-only — USER DB can't back statement-level named things + needs open kind model | the maintainer tool gaining the capability to own these kinds + project them to the USER DB |
 | [TD-0007](TD-0007-unclassified-lua-loader-symbols.md) | 2026-06-05 | Open | 5 Lua C API fns unclassified (loadbuffer/loadstring/gsub unwired + newthread/cpcall fail-loud) — shim can't fully serve them | classify via /research-disassembly before Phase-11 P5 drops static Lua |
+| [TD-0008](TD-0008-stale-address-id-test-fixtures.md) | 2026-06-08 | Open | 9 addr-library caps (CAP-20/28/33/34, COMP-12) reference retired ids 1172/1124 after the 1–157 renumber | repoint fixtures to current curated ids (or re-mint, AP18) → all 9 PASS |
 
 ## Closed
 
