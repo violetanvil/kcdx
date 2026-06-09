@@ -541,6 +541,46 @@ top (the "bracket" model rather than "full replace"); (c) point the scanned-list
 the enabled-list does, if the layout allows. Each has different RE + correctness implications. This
 goes to Gate B (root-cause-verifier) first, then to the user as a design fork (`/debug` §2.5 Gate A).
 
+## PROBE I-fix RESULT — the null scanned-list theory is FALSIFIED (populating it changed nothing)
+
+Built the candidate fix (takeover ON + the scanned-list +0x18/+0x20/+0x28 populated with a contiguous
+0x70-stride copy of the 104 enabled records — `ctor_bracket_scanned_list_probe records=104` confirms
+it fired), relaunched → **STILL CRASHES, identical FSR2 AV** (`module_rva=11723296`, same stack). So
+the null scanned-list is NOT the cause. My ROOT CAUSE (PROBE I) was a wrong INFERENCE from the
+field-map RE — I built a fix for an unverified theory instead of first OBSERVING what the engine
+actually reads. That is the fix-#2-on-a-theory anti-pattern; correcting course.
+
+**What IS still solid (bisect-proven, not inferred):** the ctor takeover IS the cause (PROBE H:
+takeover off → clean; PROBE I-fix: takeover on + scanned-list populated → still crashes, so the
+specific field is something ELSE the takeover gets wrong, not +0x18/+0x20/+0x28).
+
+## The logging gap (user's question) — the crash log shows WHERE it died, not WHAT kcdx corrupted
+
+KI-0013 made the CRASH well-logged (full stack + registers) — a real improvement. But it does NOT
+tell us what kcdx did wrong: the fault is in WHGame's graphics init reading a bad value, and nothing
+in the log shows (a) what value/pointer the engine read, (b) which kcdx action produced the object
+the engine choked on, or (c) how kcdx's C_ModManager differs from a native one. The crash log is a
+WHERE-it-died tool; diagnosing a kcdx-caused off-stack corruption needs a WHAT-kcdx-DID tool — an
+OBSERVATION of the engine's own data structures (the C_ModManager the engine reads) vs. what the
+native ctor would produce. This is the gap PROBE J addresses, and it is itself a candidate
+diagnostics improvement.
+
+## PROBE J — OBSERVE, don't theorize: dump the native vs kcdx C_ModManager + trace the fault source
+
+Stop guessing which field is wrong. Two theory-independent observations:
+1. **Run the native ctor in PARALLEL and DIFF.** In `HookedCtor`, ALSO call the original
+   `ModManager_ctor` (via the MinHook trampoline kept this time) into a scratch slot to get a
+   GENUINE engine-built C_ModManager, then byte-DIFF the native object vs kcdx's reconstruction
+   field-by-field (all 0x68 bytes, and probe whether the native object is LARGER than 0x68). Log
+   every differing offset. The differing field the graphics path reads IS the bug — observed, not
+   inferred. (This needs the trampoline, currently discarded at `ctor_bracket.cpp:377`.)
+2. **Trace the faulting `rdx` to its source.** The faulting instruction is `*dst=*src` with `rdx`
+   (src) garbage. Frame 1 (`CreateInstance+0x306c3`) loaded `rdx` from somewhere — instrument /
+   disassemble what frame-1..frame-3 read to produce `rdx`, walking back to the C_ModManager field
+   (or whatever object) it came from. That names the exact field.
+Both are OBSERVATIONS (ground truth) that kill the guessing. Start with #1 (the parallel-native diff)
+— it directly shows every way kcdx's object differs from a correct one.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
