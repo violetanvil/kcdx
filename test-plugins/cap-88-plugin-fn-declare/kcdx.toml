@@ -1,0 +1,66 @@
+# CAP-88 — kcdx.functions.* reference namespace + kcdx.dll.declare.
+#
+# The behavior under test is the AUTHOR SURFACE (the Lua binding) built in
+# src/lua_bind_functions.cpp: the kcdx.functions.* function-reference value
+# namespace + the kcdx.dll.declare(plugin_namespace, function_map) verb. Each
+# kcdx.functions.X.Y access returns a function-reference VALUE (a userdata) whose
+# :resolve() accessor reports { found, is_game, stem, name, signature,
+# has_address, address }. The reference SELF-VERIFIES here via :resolve — no
+# hook/statement verb consumes it yet (those verbs are not built); :resolve is the seam.
+#
+# TWO populations proven (the structurally-disjoint stems):
+#   - PLUGIN-DLL (declare-sourced, dotted stem): kcdx.dll.declare("a.test",
+#     { DeclaredFn = { signature = "bool (ptr self)" } }) populates
+#     kcdx.functions["a.test"].DeclaredFn — a reference carrying the AUTHOR-
+#     DECLARED signature. The signature comes from the author's source — the
+#     author declares from their own source; the engine never makes them
+#     hand-write an ABI. The ADDRESS arrives via a later additive path
+#     (PDB auto-load / C export, not yet built), so has_address=false here — NOT
+#     a failure (a callback hook needs the signature; the declare path here
+#     establishes declaration + signature).
+#   - GAME-DLL (DB-sourced, no-dot stem): kcdx.functions.WHGame.SaveGame resolves
+#     against the reference DB to a non-zero address + the verified signature.
+#     kcdx.functions.by_id[131] (CCryPak_FOpen, a current curated id) resolves
+#     the same function by its stable id.
+#
+# CURRENT curated names/ids ONLY — a retired id resolves to nothing. SaveGame and
+# CCryPak_FOpen (id 131) are present in the shipped data/reference.sqlite.
+#
+# The CROSS-PLUGIN hook-and-fire half (plugin B hooks A's declared fn) rides a
+# later hook verb (the reference-accepting hook does not exist yet) — this proves
+# the declaration + resolution machinery only.
+#
+# FALSIFIABLE per row: the declare row goes RED if kcdx.functions["a.test"]
+# .DeclaredFn does NOT carry the declared signature (declare didn't populate the
+# namespace, or the reference lost the signature); the game-resolve row goes RED
+# if SaveGame does not resolve to a non-zero address; the by_id row goes RED if
+# id 131 does not resolve. Each row reads the ACTUAL :resolve output.
+#
+# Test mode: boot-only. The kcdx.functions / kcdx.dll namespaces register at
+# bind; the rows declare + resolve + report at kcdx.on("ready") (refdb is open by
+# then). No console typing, no in-game gesture.
+#
+# GRACEFUL on absent data: if the reference DB is not open (a pre-deploy state),
+# the game-resolve rows report DEGRADED PASS (a deploy-state observation: the
+# namespace + :resolve are wired; the ground-truth address check is skipped),
+# never a hard FAIL or crash. The declare row is DB-INDEPENDENT (no degraded path).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_88_plugin_fn_declare"
+display_name        = "CAP-88 kcdx.functions.* + kcdx.dll.declare"
+author              = "ts"
+description         = "Pure-Lua self-test of the kcdx.functions.* function-reference value namespace + kcdx.dll.declare: a declared plugin function (a.test.DeclaredFn) resolves to a reference carrying its author-declared signature; a game-DLL function (WHGame.SaveGame) and a by-id reference (id 131 CCryPak_FOpen) resolve against the reference DB to a non-zero address + verified signature. Reports from Lua at ready."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "cap-88-declare-populates-namespace",
+    "cap-88-game-fn-resolves",
+    "cap-88-by-id-resolves",
+]
+
+[entrypoints]
+lua = "plugin.lua"

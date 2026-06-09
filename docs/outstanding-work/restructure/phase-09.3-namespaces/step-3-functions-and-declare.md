@@ -1,6 +1,19 @@
 # Phase 9.3 step 3 — `kcdx.functions.*` + `kcdx.dll.declare` + PDB auto-load
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 3.
+**Status: NOT STARTED.** Ledger rows: [`README.md`](README.md) → 3a, 3-probe, 3b.
+
+**Split (2026-06-09, user-settled) — three ordered items.** The PDB-autoload half
+rests on an unverified runtime mechanism (does `DbgHelp` `SymEnumSymbols` enumerate a
+foreign plugin DLL's *non-exported internal* functions from a release-build sidecar
+`.pdb`?). Per results-driven.md it is probed before built:
+- **3a** — `kcdx.functions.*` reference namespace + `kcdx.dll.declare` (deterministic:
+  DB read + author-declared map; no runtime unknown). Lands now; fully unblocks
+  steps 4/5 with the reference-value type.
+- **3-probe** — a minimal DbgHelp probe plugin shipping a `.pdb` with a known
+  non-exported function; proves `SymEnumSymbols` enumerates it. Outcome→meaning:
+  internal resolves → 3b buildable as designed; does NOT → re-design 3b's
+  internal-address source before building (surface to user).
+- **3b** — `plugin_pdb.{cpp,h}`, built ONLY after 3-probe confirms.
 
 ## What
 

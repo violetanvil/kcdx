@@ -244,6 +244,7 @@ add_library(kcdx SHARED
     src/lua_bind_scan.cpp
     src/lua_bind_locator.cpp
     src/lua_bind_op.cpp
+    src/lua_bind_functions.cpp
     src/lua_bind_hook.cpp
     src/lua_bind_on.cpp
     src/lua_bind_publish.cpp

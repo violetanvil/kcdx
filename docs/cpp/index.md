@@ -166,6 +166,8 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
 | `kcdxLocatorInterface` (locator values + `Resolve(module, target)` — where in a function an op applies) | **NYI** | `kcdx.locator.*` | [locator.md](locator.md) |
 | `kcdxOpInterface` (static-bytes op values + `EmitFor(kind, byteRangeLen)` — what static change an op makes) | **NYI** | `kcdx.op.*` | [op.md](op.md) |
+| `kcdxFunctionsInterface` (function-reference values + `Resolve` — name a game-engine or plugin function → address + verified signature) | **NYI** | `kcdx.functions.*` | [functions.md](functions.md) |
+| `kcdxDllInterface::Declare` (declare your own DLL's functions, signature from source → exposed for cross-plugin hooking by name) | **NYI** | `kcdx.dll.declare` | [dll.md](dll.md) |
 | `kcdxDeclareInterface::Declare` / `Get` (author-declared per-version named targets + value reads) | Built | `kcdx.declare` / `kcdx.declared` | [declare.md](declare.md) |
 | `kcdxTargetInterface::RegisterTarget` (author-declared named targets) | **NYI** | author-declared targets (`targets.toml`) | [targets.md](targets.md) |
 | asset replacement — the `replaces.toml` sidecar (no-code, language-neutral) + `kcdxAssetInterface::GetByPath` / `GetByName` / `Declare` / `Register` / `Replace` (programmatic, in-code) | Built | asset replacement (`replaces.toml`) + `kcdx.assets.*` | [assets.md](assets.md) |

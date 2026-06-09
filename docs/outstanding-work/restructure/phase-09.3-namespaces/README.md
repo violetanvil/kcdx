@@ -27,7 +27,9 @@ goes red); each new `cap-NN` row lands with its feature step, not piled at the e
 |---|---|---|
 | [1 — `kcdx.locator.*` value namespace](step-1-locator-namespace.md) | DONE | 9802a5e |
 | [2 — `kcdx.op.*` static-op value namespace](step-2-op-namespace.md) | DONE | (landed) |
-| [3 — `kcdx.functions.*` + `kcdx.dll.declare` + PDB auto-load](step-3-functions-and-declare.md) | NOT STARTED | — |
+| [3a — `kcdx.functions.*` + `kcdx.dll.declare` (deterministic half)](step-3-functions-and-declare.md) | NOT STARTED | — |
+| [3-probe — DbgHelp `SymEnumSymbols` enumerates a foreign DLL's non-exported internals](step-3-functions-and-declare.md) | NOT STARTED | — |
+| [3b — PDB auto-load (`plugin_pdb.{cpp,h}`), built ONLY after 3-probe confirms](step-3-functions-and-declare.md) | NOT STARTED | — |
 | [4 — `kcdx.hook.*` sub-verb split + migrate the existing hook plugins (same commit)](step-4-hook-subverbs-migrate.md) | NOT STARTED | — |
 | [5 — `kcdx.statement.*` static-bytes namespace](step-5-statement-namespace.md) | NOT STARTED | — |
 | [6 — multi-region trampoline-pool expansion](step-6-multi-region-trampoline.md) | NOT STARTED | — |
@@ -36,10 +38,24 @@ goes red); each new `cap-NN` row lands with its feature step, not piled at the e
 ## Ordering note (the re-decomposition's dependency order)
 
 Value namespaces (1 locators, 2 ops) land first — independent, additive, each
-self-verifies. The function-reference namespace + author-declaration (3) lands
+self-verifies. The function-reference namespace + author-declaration (3a) lands
 BEFORE the hook (4) and statement (5) verbs that accept a `kcdx.functions.*`
-reference value — its own declare + PDB tests run at step 3; the cross-plugin
+reference value — its own declare test runs at 3a; the cross-plugin
 hook-by-reference test fires at step 4 where the reference-accepting hook exists.
+
+**Step 3 split (2026-06-09, user-settled).** The original step 3 bundled three
+surfaces; the PDB-autoload half rests on an UNVERIFIED runtime mechanism (does
+`DbgHelp` `SymEnumSymbols` enumerate a foreign plugin DLL's *non-exported internal*
+functions from a release-build sidecar `.pdb`? — `src/crash_guard.cpp` uses
+`DbgHelp` only to symbolize its own backtrace, never a foreign DLL's internals).
+Per results-driven.md (probe the asserted mechanism before the phase builds on it)
+the step is ordered: **3a** deterministic `kcdx.functions.*` + `kcdx.dll.declare`
+(DB read + author-declared map — no runtime unknown; fully unblocks steps 4/5 with
+the reference-value type) → **3-probe** a minimal DbgHelp probe plugin shipping a
+`.pdb` with a known non-exported function, proving `SymEnumSymbols` enumerates it
+(outcome→meaning: internal resolves → 3b is buildable as designed; does NOT →
+re-design 3b's source-of-internal-addresses before building) → **3b** `plugin_pdb`
+built only after 3-probe confirms. 3a's resolvability is independent of the probe.
 The hook split (4) REPLACES `lua_bind_hook.cpp` AND migrates the existing hook test
 plugins in the SAME commit (suite stays green). Statement (5) consumes 1+2+3.
 Trampoline (6) is independent (the single-target tests of 4/5 don't need it; it is
@@ -55,10 +71,12 @@ buildable + its same-change test runnable.
 - **`cap-NN-plugin-fn-declare`** — plugin A declares a function via `kcdx.dll.declare`;
   plugin B (depending on A) hooks it by name and the hook FIRES — cross-plugin access
   without disassembly (the extensibility proof). Declare machinery + resolvability at
-  step 3; the cross-plugin hook fires at step 4.
-- **`cap-NN-pdb-autoload`** (step 3) — a PDB-shipped plugin's non-exported internal
+  step 3a; the cross-plugin hook fires at step 4.
+- **`cap-NN-pdb-autoload`** (step 3b) — a PDB-shipped plugin's non-exported internal
   resolves to its address; a static `replace_with_noop` applies — PDB-sourced
-  addresses work without declaration.
+  addresses work without declaration. Gated upstream by **3-probe**: runs only after
+  the probe proves `SymEnumSymbols` enumerates internals (a red row here is then a
+  build defect, not a disproven assumption — the assumption was proven before 3b built).
 - **`cap-NN-statement-replace`** (step 5) — a `kcdx.statement.replace_with(...)`
   produces ZERO per-call Lua dispatch (verified by absence of dispatch log lines
   during a tight loop hitting the target).

@@ -199,6 +199,21 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   declared with `kcdx.alias(short, target)`. Only adds a handle — never shadows
   or displaces resolution. See [alias.md](alias.md).
 
+- **function reference** — a value naming a function (a game-engine function or
+  a plugin's), carrying its address and (where known) its verified signature.
+  Reached through `kcdx.functions.*` and handed to a hook/statement verb as the
+  *what to hook* — you never write an address or an ABI. A dot-free stem
+  (`kcdx.functions.WHGame.SaveGame`, or `kcdx.functions.by_id[N]`) names a
+  game-engine function from the reference database; a dotted `<author>.<plugin>`
+  stem (`kcdx.functions["redmoon.outfit_mod"].Fn`) names a plugin function the
+  owning plugin declared. See [functions.md](functions.md).
+
+- **declared DLL function** — a plugin function exposed via `kcdx.dll.declare`
+  (a signature copied from the author's own source, no disassembly), reachable by
+  name at `kcdx.functions["<author>.<plugin>"].<name>` so any plugin can hook it
+  without a disassembler. Distinct from a *declared target* (`kcdx.declare`,
+  which names a per-version game-binary site by AOB pattern). See [dll.md](dll.md).
+
 - **signature** — the ABI string telling the engine a function's argument and
   return types, e.g. `"i32 (i32 seed)"`. The `target = "<name>"` path supplies
   it for you; the advanced locators require you to write it.
@@ -301,6 +316,8 @@ it does not exist yet.
 | `kcdx.cvar.get_float` | read a game CVar's float value by name | [cvar.md](cvar.md) |
 | `kcdx.locator.*` | locator values — where in a function a hook/statement op applies (`function_entry`/`first_call_to`/`first_return`/`matching{…}`/…); `:resolve(module, target)` inspects what one picks | [locator.md](locator.md) |
 | `kcdx.op.*` | static-bytes op values — what static change a `kcdx.statement` op makes, named not hex (`replace_with_return`/`replace_with_noop`/`never_take_branch`/`skip_call_void`/…); `:emit_for(kind, byte_range_len)` inspects what one emits | [op.md](op.md) |
+| `kcdx.functions.*` | function-reference values — name a function (game-engine or plugin) → a value carrying its address + verified signature, for a hook/statement verb. Game-DLL: dot-free stem (`kcdx.functions.WHGame.SaveGame`) + `by_id[N]`; plugin-DLL: dotted stem (`kcdx.functions["<author>.<plugin>"].Fn`). `:resolve()` inspects one | [functions.md](functions.md) |
+| `kcdx.dll.declare` | declare your own DLL's functions (signature from your source, no disassembly) → exposed at `kcdx.functions["<your-namespace>"].*` for cross-plugin hooking by name | [dll.md](dll.md) |
 | `kcdx.assets.get_by_path` | resolve your own asset by path → a loadable path you hand to a game asset API (cross-plugin via `kcdx.plugin.<a>.<p>.assets.get_by_path`) | [assets.md](assets.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
 | `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |
