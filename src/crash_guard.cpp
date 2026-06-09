@@ -234,6 +234,103 @@ bool WalkToCulprit(CONTEXT* ctx, char* outModule, size_t outModuleLen,
     return false;
 }
 
+// Walk the FULL stack from the faulting context and emit one
+// FAULTED_FRAME line per frame (frame index + module leaf + module_rva)
+// — the dev's symbolication input (module + hex rva, pastable into a
+// symbol tool). Unlike WalkToCulprit (which STOPS at the first non-kernel
+// frame and reports one culprit), this does NOT stop: it logs every
+// frame, kernel and non-kernel alike, for the full call chain.
+//
+// IMPLEMENTATION: the SAME x64-native unwind-advance WalkToCulprit uses
+// (RtlLookupFunctionEntry + RtlVirtualUnwind, leaf-frame
+// ReadProcessMemory-guarded return-address pop) — no SymInitialize, no
+// dbghelp StackWalk64. The advance logic is duplicated rather than shared
+// so WalkToCulprit (the culprit summary) stays untouched.
+//
+// SEH-filter contract — preserved exactly as WalkToCulprit:
+//   - Copies the CONTEXT (CONTEXT local = *ctx) so the live faulting
+//     context WriteOwnMinidump still needs is never perturbed.
+//   - No allocation, no lock, no throwable call — only fixed-format KV
+//     log emits (the same LOG_ERROR_KV mechanism every FAULTED line uses).
+//   - Bounded at 64 frames; every leaf-frame stack read guarded with
+//     ReadProcessMemory and bails on failure; bails on no-progress.
+//
+// On a stack read that faults / a no-progress bail, the frames already
+// emitted stand and one FAULTED_FRAMES_END line names WHY the walk
+// stopped early ("stack_unreadable" / "no_progress") — never a silent
+// truncation. A clean exhaustion (top of stack / 64-frame bound)
+// emits FAULTED_FRAMES_END with "complete".
+void LogFullStack(CONTEXT* ctx, const char* site) {
+    if (!ctx) return;  // caller already gates on ctx; defensive.
+
+    // RtlVirtualUnwind mutates the CONTEXT it advances — copy so the live
+    // faulting context is never disturbed.
+    CONTEXT local = *ctx;
+
+    const char* endReason = "complete";
+    int emitted = 0;
+
+    for (int i = 0; i < 64; ++i) {
+        const uint64_t pc = local.Rip;
+        if (pc == 0) { endReason = "complete"; break; }
+
+        char mod[128] = "?";
+        void* modBase = nullptr;
+        uint64_t modRva = 0;
+        if (ModuleForAddress(reinterpret_cast<void*>(pc), mod, sizeof(mod),
+                             &modBase)) {
+            modRva = pc - reinterpret_cast<uint64_t>(modBase);
+        }
+        // Emit the frame regardless of whether a module resolved — an
+        // unresolved frame still carries its raw pc, and "?" + the pc is
+        // more useful to the dev than a dropped frame.
+        LOG_ERROR_KV("GUARD", "FAULTED_FRAME",
+            KV::BareStr("site",   site ? site : "?"),
+            KV("frame",  i),
+            KV::BareStr("module", mod),
+            KV("module_rva", modRva),
+            KV("pc",     reinterpret_cast<void*>(pc)));
+        ++emitted;
+
+        // Advance one frame via the x64 unwinder — same logic as
+        // WalkToCulprit.
+        DWORD64           imageBase = 0;
+        PRUNTIME_FUNCTION funcEntry =
+            RtlLookupFunctionEntry(pc, &imageBase, nullptr);
+        if (funcEntry) {
+            PVOID   handlerData      = nullptr;
+            DWORD64 establisherFrame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, pc, funcEntry,
+                             &local, &handlerData, &establisherFrame,
+                             nullptr);
+        } else {
+            // Leaf frame: read the return address off the stack and pop it.
+            // Guard the read — a corrupt Rsp must not fault inside the SEH
+            // filter.
+            if (local.Rsp == 0) { endReason = "stack_unreadable"; break; }
+            uint64_t retAddr = 0;
+            if (::ReadProcessMemory(GetCurrentProcess(),
+                                    reinterpret_cast<LPCVOID>(local.Rsp),
+                                    &retAddr, sizeof(retAddr), nullptr) == 0) {
+                endReason = "stack_unreadable";
+                break;
+            }
+            local.Rip  = retAddr;
+            local.Rsp += 8;
+        }
+
+        if (local.Rip == pc) { endReason = "no_progress"; break; }
+    }
+
+    // Always emit a terminator naming how the walk ended + how many frames
+    // landed — so a truncated stack (read fault / no-progress) is loud, not
+    // a silent short dump. endReason is a fixed string literal (no alloc).
+    LOG_ERROR_KV("GUARD", "FAULTED_FRAMES_END",
+        KV::BareStr("site",   site ? site : "?"),
+        KV("frames",          emitted),
+        KV::BareStr("reason", endReason));
+}
+
 // Build the FAULTED log line. Always lands in the engine log
 // (engine view of the fault). When pluginName resolves to a loaded
 // plugin handle, the same line ALSO lands in that plugin's own
@@ -281,11 +378,56 @@ void LogFault(const char* site, const char* pluginName,
             KV("thread", (unsigned long)GetCurrentThreadId()));
     }
 
+    // Dump the faulting GPRs (Error, always-on) when the CONTEXT is
+    // available. The UnhandledFilter path has it; the Call()/InvokeGuarded()
+    // path passes ctx == nullptr (only an EXCEPTION_RECORD was saved) and
+    // skips this — exactly as the stack walk below is skipped on that path.
+    // Fixed format, zero allocation: each register is a KV value (pointer
+    // registers as void*, rip/rsp/rbp as void* too — the same KV mechanism
+    // the FAULTED line uses), built on the stack into the initializer_list.
+    // No std::string, no snprintf-into-a-heap-buffer. The garbage operand
+    // register a deref fault leaves in (e.g. rdx) is the dev's smoking gun.
+    if (ctx) {
+        LOG_ERROR_KV("GUARD", "FAULTED_REGS",
+            KV::BareStr("site", site ? site : "?"),
+            KV("rax", reinterpret_cast<void*>(ctx->Rax)),
+            KV("rbx", reinterpret_cast<void*>(ctx->Rbx)),
+            KV("rcx", reinterpret_cast<void*>(ctx->Rcx)),
+            KV("rdx", reinterpret_cast<void*>(ctx->Rdx)),
+            KV("rsi", reinterpret_cast<void*>(ctx->Rsi)),
+            KV("rdi", reinterpret_cast<void*>(ctx->Rdi)),
+            KV("rbp", reinterpret_cast<void*>(ctx->Rbp)),
+            KV("rsp", reinterpret_cast<void*>(ctx->Rsp)),
+            KV("r8",  reinterpret_cast<void*>(ctx->R8)),
+            KV("r9",  reinterpret_cast<void*>(ctx->R9)),
+            KV("r10", reinterpret_cast<void*>(ctx->R10)),
+            KV("r11", reinterpret_cast<void*>(ctx->R11)),
+            KV("r12", reinterpret_cast<void*>(ctx->R12)),
+            KV("r13", reinterpret_cast<void*>(ctx->R13)),
+            KV("r14", reinterpret_cast<void*>(ctx->R14)),
+            KV("r15", reinterpret_cast<void*>(ctx->R15)),
+            KV("rip", reinterpret_cast<void*>(ctx->Rip)));
+    }
+
+    // Walk + log the FULL stack frame-by-frame on EVERY fault (one
+    // FAULTED_FRAME line per frame: index + module leaf + module_rva + raw
+    // pc — the dev's symbolication input). Runs UNCONDITIONALLY when ctx is
+    // available — NOT gated on IsKernelOrNtdll, so a direct AV in WHGame.dll
+    // (the common case) gets its full call chain, not just the one raw frame.
+    // SEH-safe + allocation-free (copies the CONTEXT, bounded at 64, every
+    // stack read ReadProcessMemory-guarded). Context-available path only;
+    // the Call()/InvokeGuarded() path (ctx == nullptr) skips it.
+    if (ctx) {
+        LogFullStack(ctx, site);
+    }
+
     // For a RaiseException-class fault (the raw RIP resolves to
     // KERNELBASE / ntdll — e.g. the 0xC8 CryEngine fatal-assert path),
     // walk the stack to the first non-kernel frame and log THAT module +
     // rva as the real culprit. Keeps the raw rip/module fields above
-    // intact. Context-available path only (UnhandledFilter); the
+    // intact. This is a useful SUMMARY on top of the full stack above —
+    // it names the RaiseException-class culprit in one line. Context-
+    // available path only (UnhandledFilter); the
     // Call()/InvokeGuarded() path passes ctx == nullptr and skips the
     // walk (no context to walk from) — it still gets the inventory dump
     // below. WalkToCulprit is no-throw + allocation-free here; on its
