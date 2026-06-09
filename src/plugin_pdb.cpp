@@ -79,6 +79,22 @@ bool ValidSymbolName(const SYMBOL_INFO* sym) {
     return true;
 }
 
+// Extract the bare leaf name from a DbgHelp-undecorated function name — the
+// substring after the last "::". A plugin function the author intends to share
+// has a clean name (RecalcWeight); the C++ qualifier DbgHelp prepends
+// (CombatState::RecalcWeight, outfit::RecalcWeight, `anonymous namespace'::X) is
+// engine-side decoration the author never typed. kcdx keys a shared name by its
+// <author>.<plugin>.<bare> form per the naming model — the author writes the bare
+// leaf, the engine owns the namespace. The full qualified name is recorded too
+// (a second key) as the unambiguous disambiguation form for a leaf collision.
+// Returns the leaf; `qualified` reports whether the input carried a "::" (so the
+// caller records the second, qualified key only when it differs).
+std::string BareLeaf(const std::string& full, bool& qualified) {
+    const size_t pos = full.rfind("::");
+    qualified = (pos != std::string::npos);
+    return qualified ? full.substr(pos + 2) : full;
+}
+
 // SymEnumSymbols callback. Records ONE plugin-own FUNCTION per accepted symbol.
 // The two-part filter that isolates the plugin's own functions from the CRT/
 // linker privates the enumerate also yields:
@@ -86,9 +102,14 @@ bool ValidSymbolName(const SYMBOL_INFO* sym) {
 //      module's own image is a CRT private pulled from the CRT's PDBs / lives
 //      elsewhere — reject (input-validation.md: an address outside the module's
 //      range is rejected).
-//   2. FUNCTION: SYMFLAG_FUNCTION set (or Tag == SymTagFunction). A "*" enumerate
-//      yields mostly CRT DATA privates; the plugin's own hookable target is an
-//      in-range function. Data symbols are not hookable targets — reject.
+//   2. FUNCTION: Tag == SymTagFunction. For these MSVC /DEBUG:FULL plugin PDBs,
+//      DbgHelp serves the PUBLIC symbol stream (the private/DBI stream is not
+//      loaded — SymGetModuleInfo64 reports NumSyms=0), and in the public stream a
+//      function carries Tag==SymTagFunction (5) with Flags==0 — the
+//      SYMFLAG_FUNCTION bit (0x800) is set ONLY on private-DBI function records,
+//      absent here. The CRT data publics in the same stream carry Tag==SymTagData
+//      (7). So the kind test is Tag, NOT the flag: filtering on SYMFLAG_FUNCTION
+//      rejects every plugin function (none in the publics-only stream carries it).
 BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
     auto* ctx = static_cast<EnumCtx*>(userCtx);
 
@@ -96,13 +117,14 @@ BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
     if (sym->Address < ctx->base || sym->Address >= ctx->end) {
         return TRUE;  // keep enumerating; this is a foreign/CRT symbol.
     }
-    // (2) function filter — SYMFLAG_FUNCTION is the documented flag DbgHelp
-    // sets on a function symbol; the in-range DATA privates (CRT statics etc.)
-    // the enumerate also yields do not carry it, so this isolates the plugin's
-    // own functions. (SymTagFunction lives in <cvconst.h>, which <dbghelp.h>
-    // does not pull in; the flag is the portable, documented check.)
-    if ((sym->Flags & SYMFLAG_FUNCTION) == 0) {
-        return TRUE;  // an in-range DATA private — not a hookable target.
+    // (2) function filter — SymTagFunction is the symbol KIND DbgHelp reports for
+    // a function in BOTH the private and public streams (unlike SYMFLAG_FUNCTION,
+    // which is private-stream-only and absent from these publics-only PDB loads).
+    // SymTagFunction == 5 (from <cvconst.h>, which <dbghelp.h> does not pull in —
+    // the value is a stable CodeView constant).
+    constexpr ULONG kSymTagFunction = 5;  // SymTagFunction (cvconst.h)
+    if (sym->Tag != kSymTagFunction) {
+        return TRUE;  // an in-range DATA symbol — not a hookable target.
     }
     if (!ValidSymbolName(sym)) {
         ++ctx->badName;
@@ -114,9 +136,20 @@ BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
         return TRUE;  // keep counting drops for the WARN, but record no more.
     }
 
-    ::kcdx::lua_bind_functions::RecordPluginAddress(
-        ctx->ns, std::string(sym->Name, sym->NameLen),
-        static_cast<uintptr_t>(sym->Address));
+    // Key by the bare leaf (the name the author types), per the naming model. A
+    // function in a C++ namespace/class records its qualified name too, as the
+    // unambiguous disambiguation key for a leaf collision (two shareable funcs
+    // with the same leaf in different classes). A name that is only "::" (no leaf)
+    // is malformed — skip it rather than record an empty key.
+    const std::string full(sym->Name, sym->NameLen);
+    bool qualified = false;
+    const std::string leaf = BareLeaf(full, qualified);
+    if (leaf.empty()) { ++ctx->badName; return TRUE; }
+    const uintptr_t addr = static_cast<uintptr_t>(sym->Address);
+    ::kcdx::lua_bind_functions::RecordPluginAddress(ctx->ns, leaf, addr);
+    if (qualified) {
+        ::kcdx::lua_bind_functions::RecordPluginAddress(ctx->ns, full, addr);
+    }
     ++ctx->inRangeFuncs;
     return TRUE;
 }
@@ -198,9 +231,9 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
         return;
     }
 
-    // Enumerate. The in-range + FUNCTION filter (EnumCb) records only the
-    // plugin's own functions; everything else (CRT/linker privates, out-of-range
-    // symbols, data) is skipped.
+    // Enumerate. The in-range + FUNCTION-kind filter (EnumCb) records only the
+    // plugin's own functions; everything else (CRT/linker data publics,
+    // out-of-range symbols) is skipped.
     EnumCtx ctx;
     ctx.base = base;
     ctx.end = base + imageSize;

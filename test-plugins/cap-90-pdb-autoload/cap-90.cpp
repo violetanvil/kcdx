@@ -32,18 +32,20 @@
 
 #include "kcdx/Interfaces.h"
 
-namespace {
-
 // Sink the compiler cannot reason away — forces the call below to be emitted
 // and the target retained with a real address in the .pdb.
 volatile int g_cap90_sink = 0;
 
 // === The NON-EXPORTED internal under test =============================
 //
-// Plain internal-linkage free function. NOT __declspec(dllexport), NOT an
-// extern "C" export — absent from the DLL export table by construction. A
-// recognizable, unambiguous name the Lua row indexes exactly
-// (kcdx.functions["ts.cap_90_pdb_autoload"].cap90_internal_target).
+// A normal file-scope free function with EXTERNAL linkage — NOT
+// __declspec(dllexport), so it is absent from the DLL export table, but it has a
+// unique, addressable symbol in the .pdb (this is what a real plugin author
+// ships for cross-mod hooking: a plain named function, not exported, not in an
+// anonymous namespace). The PDB records it under its bare name
+// `cap90_internal_target`, which the Lua row indexes exactly as
+// kcdx.functions["ts.cap_90_pdb_autoload"].cap90_internal_target — the author
+// types the bare name, the engine owns the namespace.
 //
 // noinline so it keeps its own distinct entry in the .pdb (an inlined body has
 // no standalone symbol/address to enumerate).
@@ -51,8 +53,6 @@ __declspec(noinline) int cap90_internal_target(int seed) {
     volatile int s = seed;
     return s * 7 + 90;
 }
-
-}  // namespace
 
 // === kcdxPlugin_Load — the standard C++ plugin entry ==================
 //

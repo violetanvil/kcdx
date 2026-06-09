@@ -106,6 +106,7 @@
 #include <cstdint>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 
 extern "C" {
@@ -178,6 +179,8 @@ bool LookupDeclared(const std::string& ns, const std::string& fn,
 // launch-time concerns (memory.md — never a hot path, lock cost irrelevant).
 std::mutex g_pdb_addr_mutex;
 std::map<std::string, uintptr_t> g_pdb_addr;
+// Bare-leaf keys already warned-about (collision warn-once, under g_pdb_addr_mutex).
+std::set<std::string> g_pdb_collision_warned;
 
 // Look up a PDB-sourced plugin-function address. Returns true + fills `addrOut`
 // iff (ns, fn) has a recorded address.
@@ -630,10 +633,32 @@ void bind(lua_State* L) {
 // Record a PDB-sourced address for a plugin function (the address half a
 // declared reference leaves unfilled). Called from plugin_pdb at plugin load;
 // the matching read is LookupPluginAddress in ResolveRef.
+//
+// A bare-LEAF key can collide: two shareable functions in one plugin with the
+// same leaf (Inventory::Clear + Equipment::Clear both record leaf "Clear"). Per
+// the naming model (naming-namespaces.md — warn once per colliding bare name,
+// the explicit/qualified form disambiguates), the first leaf record wins for the
+// bare key and the collision warns once; both still resolve by their unambiguous
+// QUALIFIED key (recorded separately by plugin_pdb). A re-record of the SAME
+// address (e.g. a duplicate enumerate entry) is not a collision.
 void RecordPluginAddress(const std::string& ns, const std::string& fn,
                          uintptr_t address) {
     std::lock_guard<std::mutex> lk(g_pdb_addr_mutex);
-    g_pdb_addr[DeclaredKey(ns, fn)] = address;
+    const std::string key = DeclaredKey(ns, fn);
+    auto it = g_pdb_addr.find(key);
+    if (it != g_pdb_addr.end() && it->second != address) {
+        // A different function already owns this bare leaf — warn once, keep the
+        // first (first-wins); the qualified key reaches the shadowed one.
+        if (g_pdb_collision_warned.insert(key).second) {
+            LOG_WARN_KV("PDB", "two plugin functions share a bare name; the "
+                        "first resolves by it, name the other by its qualified "
+                        "form (Class::name)",
+                        ::kcdx::log::KV("namespace", ns),
+                        ::kcdx::log::KV("name", fn));
+        }
+        return;  // first-wins for the bare key
+    }
+    g_pdb_addr[key] = address;
 }
 
 }  // namespace kcdx::lua_bind_functions
