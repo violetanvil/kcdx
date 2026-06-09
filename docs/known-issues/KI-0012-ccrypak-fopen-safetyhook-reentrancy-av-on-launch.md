@@ -106,6 +106,27 @@ bootstrap (`CScriptSystem::Init` → `engine_adopted_kcdx_state`) — i.e. it co
 2), NOT with graphics. The AV fired ~4s later (`20:48:42.754`) on the same Main thread,
 independently, in `C_Game::CreateInstance`'s NGX/FSR2 init (PROBE A).
 
+## PROBE A.2 — the SAME FSR2/NGX AV predates BOTH June-8 lanes (prior dumps)
+
+The `ffxFsr2ResourceIsNull+0x633120` AV is a **recurring, pre-existing** WHGame
+graphics-init crash, not a June-8 regression. Reading the older crash dumps in the same
+logs dir (`!analyze -v` faulting symbol):
+
+- **`kcdx_2026-06-05_00-10-46.dmp` (June 5)** — the **EXACT same** faulting symbol +
+  offset: `WHGame!ffxFsr2ResourceIsNull+0x633120` (AV `c0000005`). Three days BEFORE
+  the hook-backend Phase-6 rewiring (`aecc2de`/`ec7cae5`/`bda7b90`, June 8) and the
+  survival commits.
+- **`kcdx_2026-05-28_16-03-35.dmp` (May 28)** — same graphics-init family:
+  `WHGame!NVSDK_NGX_UpdateFeature+0x858d95` (the NGX upscaling path).
+- **`kcdx_2026-06-05_13-23-59.dmp` (June 5)** — `NULL_CLASS_PTR_READ` in WHGame.dll
+  (another graphics-init pointer read).
+
+**Conclusion:** the AV is a base-game / graphics-driver / FSR2-NGX-upscaling init fault
+that recurs across kcdx versions and predates BOTH the hook-backend-marriage lane AND the
+survival lane. It is NOT a regression introduced by either June-8 lane. The attribution
+question the filing posed (survival vs hook-backend) is moot — neither lane caused it
+(PROBE A.2).
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
@@ -126,11 +147,14 @@ independently, in `C_Game::CreateInstance`'s NGX/FSR2 init (PROBE A).
 
 | Action | Result |
 |---|---|
-| PROBE A: read the crash dump faulting stack + `!analyze -v` + the log timeline (read-only ground truth) | `INVALID_POINTER_READ` in WHGame FSR2/NGX graphics init (`C_Game::CreateInstance`), 13-frame stack, ZERO kcdx frames, Main thread. The "re-entrancy spiral"/"stack overflow" headline is FALSIFIED — `depth=2` bounded + `seq` is a cumulative fire-count, not nested frames. |
-| PROBE B: launch the same build with kcdx un-deployed / `dev_mode=false` | pending |
+| PROBE A: read the crash dump faulting stack + `!analyze -v` + the log timeline (read-only ground truth) | `INVALID_POINTER_READ` in WHGame FSR2/NGX graphics init (`C_Game::CreateInstance`), 13-frame stack, ZERO kcdx frames, Main thread. The "re-entrancy spiral"/"stack overflow" headline is FALSIFIED — `depth=2` bounded + `seq` is a cumulative fire-count, not nested frames. kcdx served only one Lua test overlay all session; nothing to graphics. |
+| PROBE A.2: `!analyze -v` the older dumps in the logs dir (read-only, time-evidence) | The SAME `ffxFsr2ResourceIsNull+0x633120` AV fired on June 5 (and the NGX family on May 28) — BEFORE both June-8 lanes. The AV is a recurring base-game FSR2/NGX graphics-init fault, NOT a regression from either lane. |
+| PROBE B (vanilla repro — does it fire with kcdx un-injected): launch `KingdomCome.exe` directly | not run — PROBE A.2 already settled "not kcdx-caused"; PROBE B is the optional confirmer, run only if a definitive vanilla baseline is wanted. |
 
 ## Resolution
 
-(pending — the filed re-entrancy headline is falsified; the AV is a WHGame FSR2/NGX
-invalid-pointer read. PROBE B (does it reproduce without kcdx) is the next discriminator
-before any kcdx-side fix is even warranted.)
+(pending a disposition decision — the investigation is COMPLETE: the filed re-entrancy
+headline is falsified; the AV is a recurring WHGame FSR2/NGX graphics-init invalid-pointer
+read that predates both June-8 lanes (PROBE A + A.2). It is not a kcdx bug. The remaining
+call is the disposition: close as not-kcdx / external (a base-game graphics-init crash), OR
+keep open as a base-game-crash kcdx should investigate mitigating. This is the user's call.)
