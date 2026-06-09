@@ -935,6 +935,45 @@ list TRUNCATED to ~14 entries boot clean (count); (b) does deep-diffing one kcdx
 genuine one (within 0x70) show a field graphics-relevant. The fix then makes kcdx's list/records match
 what graphics needs — while kcdx keeps full ownership + order.
 
+## ROOT CAUSE CONFIRMED (PROBE P) — kcdx puts its own `kind="plugin"` entries in the engine's mod-mount list
+
+PROBE P (truncate kcdx's enabled-list to 14) booted CLEAN. The log shows WHY — the enabled-list
+breakdown by kind:
+- **17 `kind="pak_mod"`** (real game/Workshop mods — `FastLaunch`, `cheat`, `ebapmod`, `instagather`,
+  … from `mods/` + `steamapps/workshop/`). The genuine SELECT enables ~14 of THESE.
+- **90 `kind="plugin"`** (kcdx's OWN test-suite plugins — `cap_01_patch`, `comp_03_a`,
+  `cap_36_cpp_hook_interface`, … from `kcdx-plugins/test-suite/`, DLL/Lua plugins with NO pak).
+
+The truncate-to-14 kept (mostly) the real pak mods + dropped the 90 plugins → clean. **The bug: kcdx
+adds its own `kind="plugin"` entries to the engine's `C_ModManager` enabled-list as synthesized
+`I_Mod` records.** That list is the ENGINE's mod-MOUNT list — for real **pak mods** the engine mounts
+(each a valid pak with a manifest, the full I_Mod contract the engine understands). A kcdx PLUGIN (a
+DLL or Lua script loaded by KCDX'S OWN loader, no pak) is NOT a thing the engine's mod-mount path can
+process; synthesized as a fake `I_Mod` and put in the engine's list, the 90 plugin entries are
+malformed for the engine, and the DLSS/FSR2 init (which walks/sizes by this list) chokes on them →
+the AV. The genuine SELECT's list has ONLY pak mods → clean.
+
+**This is the confirmed root cause** — observed (truncate-to-14-real-mods = clean; the 90 plugin
+entries are the crash-causers), and it matches the user's hypothesis exactly ("perhaps a specific
+plugin, engine test possibly"). The whole probe trail converges: it's the enabled-list (N vs O), and
+specifically the `kind="plugin"` entries kcdx wrongly enables (P).
+
+## The fix (clean + architecturally correct)
+
+kcdx's enabled-list handed to the engine's `C_ModManager` must contain ONLY real pak mods
+(`kind="pak_mod"`), NOT kcdx's own plugins. kcdx plugins are loaded by KCDX's loader — they do not
+belong in the ENGINE's mod manager at all. Fix in the enabled-list builder
+(`src/mod_absorb/enabled_list_builder.cpp` + `record_synth`): FILTER OUT `kind="plugin"` entries when
+building the engine enabled-list (keep them in kcdx's own plugin pipeline). This both FIXES the crash
+AND is correct (the engine should only ever see real mods; kcdx plugins are a separate kcdx concern).
+kcdx keeps full ownership + order of the REAL mods; it just stops polluting the engine list with its
+own plugins. Routes through Gate B (root-cause-verifier) then `/execute`.
+
+(Open sub-question for the fix: do the ~17 pak_mod entries need kcdx's RECORDS, or do real pak mods
+also need the genuine engine record? The 17 pak_mods booted fine in the truncate, so kcdx's pak_mod
+records are OK; only the plugin entries are the problem. Confirm the filter is `kind=="plugin"` →
+exclude, all else → keep.)
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
