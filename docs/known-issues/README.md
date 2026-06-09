@@ -56,7 +56,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
-| [KI-0012](KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md) | 2026-06-08 | Launch ACCESS_VIOLATION — the `engine.ccrypak_fopen` safetyhook-installed hook re-enters itself thousands of times (`hook_chain` re-entrant depth=2 + a FAULTED_FIRE stack, seq counting down from 17844) → AV in WHGame.dll (rip 0x0B2E220). Surfaced on the Phase-3 `kcdx.dll` deploy, but the faulting subsystem is the hook backend / asset FOpen hook (safetyhook_backend install), NOT survival code — the deployed DLL interleaves both lanes; attribution unresolved, a `/debug` bisect (survival-only vs hook-backend-only) settles it — OPEN |
+| [KI-0012](closed/KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md) | 2026-06-08 | Launch ACCESS_VIOLATION in WHGame's DLSS/FSR2 graphics init (`C_Game::CreateInstance → NVSDK_NGX_UpdateFeature → FSR2`). The filed safetyhook-re-entrancy headline was FALSIFIED early. Root cause (bisect-proven, PROBE Q): kcdx's mod-loader takeover put its own `kind="plugin"` records (~90 DLL/Lua test plugins) into the engine `C_ModManager` enabled-list (the engine's mod-MOUNT list, walked by graphics init) — a pak-less plugin record is malformed for the engine and crashes init. Fixed: the engine MOUNT list now gets only pak-mountable entries (native pak mods + pak-bearing plugins); pak-less plugins load via kcdx's own loader at their unified-order position. Closed 2026-06-09 |
 | [KI-0011](KI-0011-smart-resolver-typo-error-omits-bad-slot-name.md) | 2026-06-08 | `cap-28-lua-bytes-smart-resolver` (CAP-28-typo-fails-fast) red — a typoed target name raises a generic Lua `attempt to call field '?' (a nil value)` instead of a structured error naming the bad slot; the author can't tell WHICH slot was wrong (errors-that-teach gap, AP14). NOT a stale-fixture issue (mis-scoped into TD-0008 at filing) — a real smart-resolver error-path defect — OPEN |
 | [KI-0010](KI-0010-resolvebyid-returns-null-while-byname-resolves.md) | 2026-06-08 | `cap-20-hook-modes` (CAP-20-addrname) red — name/id resolve mismatch: `byName` returns a valid VA but `byId=0x0`. The entity resolves by name but `ResolveById` returns NULL. NOT a stale-fixture issue (mis-scoped into TD-0008 at filing); discriminator probe owed (stale cap-20 id vs a genuine refdb by-id defect) — OPEN |
 | [KI-0009](closed/KI-0009-oracle-baseline-address-names-drift.md) | 2026-06-08 | rebuild oracle red — `address_names` content-hash drift in both DBs. Stale baseline, not a code defect: the recorded `oracle_baseline.json` predated `3cc6a67` (id-152 notes prose correction) + `a9b0e8a` (the curated statement-subset USER tables). Fixed by a deliberate, Gate-B-verified oracle re-capture — Closed 2026-06-08 |
@@ -95,7 +95,24 @@ allocation sequence.
 
 ## Closed (historical reference)
 
-- [closed/KI-0013-dev-mode-crash-log-omits-full-stack-symbols-registers.md](closed/KI-0013-dev-mode-crash-log-omits-full-stack-symbols-registers.md)
+- [closed/KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md](closed/KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md)
+  — Launch ACCESS_VIOLATION in WHGame's DLSS/FSR2 graphics init. The filed
+  safetyhook-re-entrancy headline was falsified early (PROBE A/C); a long
+  observe-bisect-falsify investigation (PROBEs A–Q) nailed it. Root cause
+  (bisect-proven): kcdx's mod-loader takeover (`HookedCtor` fully replaces
+  `ModManager_ctor`) populated the synthesized `C_ModManager` enabled-list — the
+  engine's mod-MOUNT list, walked/sized by FSR2/NGX init — from BOTH sources of
+  kcdx's SUPERSET model, including ~90 `kind="plugin"` records (DLL/Lua test
+  plugins with no pak). A pak-less plugin record is not a thing the engine can
+  mount; the polluted list crashed graphics init (vanilla clean, takeover-off
+  clean, exclude-plugins clean — one variable). Fixed: a `PluginShipsPak` gate in
+  `BuildEnabledList` synthesizes an engine MOUNT record only for pak-mountable
+  entries (native pak mods + plugins shipping a `Data/*.pak`), at their position
+  in kcdx's unified load order; a pak-less plugin loads via kcdx's own loader,
+  not the engine list — preserving the unified-order capability. cap-55 self-test
+  gained a falsifiable regression assertion (a pak-less plugin must stay out of
+  the engine list). Live-confirmed: clean boot, `enabled_list_built count=15
+  plugins=0`, suite `202/225` at baseline. Closed 2026-06-09.
   — Dev-mode crash log was not self-sufficient: for a direct AV in WHGame.dll the
   `[GUARD] FAULTED` block logged only one raw frame, no full stack, no
   symbolication, no registers. Root cause: the SEH-safe x64 stack walk was gated

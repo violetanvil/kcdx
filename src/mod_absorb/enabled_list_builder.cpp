@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cwchar>      // _wcsicmp — case-insensitive .pak extension match
+#include <filesystem>  // PluginShipsPak — Data/*.pak detection
 #include <tuple>
 
 #include "record_synth.h"
@@ -44,6 +46,32 @@ std::tuple<int, int, int, std::string> SortKey(const std::string& loadOrderName)
         eff.orderIndex,
         loadOrderName,
     };
+}
+
+// INVARIANT: the engine's C_ModManager enabled-list is its mod-MOUNT list, and
+// WHGame's DLSS/FSR2 graphics init walks+sizes it (KI-0012). A record in it must
+// point at something the engine can MOUNT — a folder with a Data/*.pak. A pak-LESS
+// kcdx plugin (DLL/Lua-only) has nothing to mount; a synthesized record for it is
+// malformed for the engine's purposes and crashed graphics init (KI-0012). So a
+// plugin earns an engine MOUNT record ONLY if it ships a pak; pak-less plugins load
+// via kcdx's OWN loader (plugin_loader.cpp DiscoverAndLoad), out of the engine list.
+// A native pak mod always ships a pak (pak_mod_registry only registers mod.manifest
+// + Data/*.pak folders), so this gate applies only to the plugin source.
+//
+// "Ships a pak" == the plugin folder has a Data/ subdir containing >=1 *.pak — the
+// SAME <folder>/Data/*.pak layout pak_mod_registry::Discover keys native pak mods on.
+bool PluginShipsPak(const std::filesystem::path& folderPath) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path dataDir = folderPath / "Data";
+    if (!fs::is_directory(dataDir, ec)) return false;  // no Data/ → nothing to mount.
+    for (const auto& entry : fs::directory_iterator(dataDir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec)) continue;
+        const std::wstring ext = entry.path().extension().wstring();
+        if (_wcsicmp(ext.c_str(), L".pak") == 0) return true;  // first pak settles it.
+    }
+    return false;
 }
 
 }  // namespace
@@ -98,16 +126,37 @@ std::vector<void*> BuildEnabledList(std::vector<EnabledListEntry>* outEntries) {
         candidates.push_back(std::move(c));
     }
 
-    // kcdx plugins (from the plugin manifests). A plugin ALSO gets a record
-    // pointed at its folder so its Data/*.pak (if any) mounts; a pak-less plugin
-    // gets a record too (MOUNT finds no *.pak, opens nothing — harmless,
-    // uniform, NO special-casing on pak-presence). Its behavior layer
-    // (plugin.lua/DLL) runs separately through kcdx's own loader (unchanged by
-    // this step). The plugin's load-order name is its [plugin].name.
+    // kcdx plugins (from the plugin manifests) — ONLY a plugin that SHIPS a
+    // Data/*.pak earns an engine MOUNT record, at its position in the unified
+    // load order. A pak-less plugin (DLL/Lua-only) is NOT placed in the engine's
+    // enabled-list: it has nothing for the engine to mount, and a malformed
+    // pak-less record crashed WHGame's graphics init (KI-0012 — the enabled-list
+    // is the engine's mod-MOUNT list, sized/walked by DLSS/FSR2 init). The
+    // pak-less plugin's behavior layer (plugin.lua / DLL) still loads in load
+    // order through kcdx's OWN loader (plugin_loader.cpp DiscoverAndLoad +
+    // RunPostGameLoad, both ordered by load_order::Of independently of this
+    // list) — excluding it here does NOT drop it or reorder it. The plugin's
+    // load-order name is its [plugin].name.
+    //
+    // This preserves kcdx's UNIFIED load order (plugins + pak mods interleaved):
+    // the order is resolved over every enabled candidate; the engine MOUNT list
+    // is the pak-mountable SUBSET of that order (native pak mods + pak-bearing
+    // plugins), and kcdx's plugin loader walks the same order for the rest.
     for (const kcdx::plugins::PluginManifest& m : kcdx::plugins::g_manifests) {
         if (m.name.empty()) continue;  // anonymous (no [plugin] table) — no record.
         if (!kcdx::load_order::IsPluginEnabled(m.name)) {
             continue;  // user-disabled OR engine-rejected (zone_gate).
+        }
+        if (!PluginShipsPak(m.folderPath)) {
+            // Pak-less plugin — loads via kcdx's loader, NOT the engine list.
+            LOG_DEBUG_KV(kCat, "enabled_list_plugin_no_pak",
+                kcdx::log::KV("load_order_name", m.name),
+                kcdx::log::KV("folder", m.folderPath.string()),
+                kcdx::log::KV::BareStr("detail",
+                    "plugin ships no Data/*.pak — excluded from the engine MOUNT "
+                    "list (nothing to mount); its DLL/Lua loads via kcdx's own "
+                    "loader at its load-order position (KI-0012)"));
+            continue;
         }
         Candidate c;
         c.loadOrderName = m.name;

@@ -1,13 +1,16 @@
 ---
 id: KI-0012
 opened: 2026-06-08
-status: open
+status: closed
+closed: 2026-06-09
+closed_by_commit: <fix-commit>
 commit_at_filing: 369a99cca57b3094c90a03a28fa5a8f1b370c185
 ---
 
-# Launch AV — `engine.ccrypak_fopen` safetyhook-installed hook re-enters itself thousands of times → ACCESS_VIOLATION
+# Launch AV — kcdx puts pak-less plugin records in the engine mod-mount list → DLSS/FSR2 init ACCESS_VIOLATION
 
-**Status:** open
+**Status:** closed — the filed headline (safetyhook re-entrancy) was FALSIFIED early; the real cause is
+the takeover polluting the engine `C_ModManager` enabled-list with `kind="plugin"` records. See Resolution.
 
 ## Summary
 
@@ -1038,9 +1041,70 @@ updates to record the engine-list-is-mountable-only rule.
 
 ## Resolution
 
-(RE-OPENED — the earlier exoneration was WRONG. User ground truth: a clean boot today
-before the changes, no game patch → a same-day regression in today's deployed engine code.
-The prime suspect is the MinHook→safetyhook swap of `ccrypak_fopen`'s Around hook
-(`8a02bd8`), with a concrete falsifiable mechanism (a corrupted 64-bit Around-return used
-as a pointer by a graphics-init FOpen consumer — PROBE A.3). PROBE C (bisect the swap) is
-the next step.)
+> NOTE: the trail above is the chronological probe ledger; several intermediate "ROOT CAUSE
+> CONFIRMED" sections (PROBE I scanned-list, J AddCommand, K +0x70/size, N missing-side-effect)
+> were each later FALSIFIED by a subsequent probe (O falsifies N; P/Q nail the real cause). This
+> Resolution is the single authoritative final word; where it conflicts with an earlier trail
+> section, this supersedes.
+
+**Root cause:** kcdx's mod-loader takeover (`HookedCtor` in `src/mod_absorb/ctor_bracket.cpp`
+fully replaces `ModManager_ctor`) writes a kcdx-built enabled-list into the synthesized
+`C_ModManager`'s `std::vector<I_Mod*>` triple at +0x30/+0x38/+0x40 (`ctor_bracket.cpp:244-264`).
+`BuildEnabledList` populated that list from BOTH sources of kcdx's SUPERSET model: native pak
+mods (`kind=pak_mod`, ~17) AND kcdx plugins (`kind=plugin`, ~90 — the DLL/Lua test-suite
+plugins). The engine's `C_ModManager` enabled-list is its mod-MOUNT list, and WHGame's DLSS/FSR2
+graphics init (reached via `C_Game::CreateInstance → NVSDK_NGX_UpdateFeature → FSR2`) consumes it.
+
+A synthesized `I_Mod` record for a pak-less plugin is not a thing the engine's mod-mount path can
+process (a kcdx plugin is a DLL/Lua unit with no pak — no valid `I_Mod` mount contract).
+Populating the engine enabled-list with the ~90 such records is bisect-proven to be what causes
+WHGame's DLSS/FSR2 init to fault on a garbage pointer: with the genuine 17-pak-mod list the boot
+is clean (PROBE N/P), and with kcdx's list including the 90 plugin records the FSR2 AV fires
+(PROBE O), differing in exactly one variable — the enabled-list contents. The EXACT field the
+graphics-init path reads to derive the faulting pointer was NOT traced (the minidump ceiling was
+reached, and instruction-level RE (PROBE M) showed the faulting `{ptr,count,cap,stride-0x10}`
+array is an NGX feature-parameter array, not the `C_ModManager` vector itself — so the corruption
+reaches graphics init through an untraced intermediary, not a direct read of the record). What is
+established: the wrong INPUT (the pak-less plugin records in the engine mount list), that it is
+what the engine's graphics init chokes on (one-variable flip), and that the engine should never
+see kcdx plugins at all.
+
+The original code path made the wrong write inevitable because `BuildEnabledList` unconditionally
+added a record for EVERY enabled candidate including pak-less plugins, on the false premise (the
+old `enabled_list_builder.cpp` comment — "a pak-less plugin record is harmless, MOUNT opens
+nothing"). In fact the engine's graphics init faults on the polluted list (the precise consumer
+untraced); MOUNT's pak-open was a red herring — the list is consumed beyond MOUNT.
+
+(The internal graphics-read pathway — which field/structure threads the bad value into the NGX
+feature-parameter array — is honestly UNTRACED, blocked by the minidump ceiling; the never-run
+trace probe (PROBE N option-2 / J option-2) would nail it. This is optional hardening, not a
+blocker: the fix corrects a proven-wrong INPUT at its source regardless of the exact downstream
+deref. Per AP17 this is a real, non-masking mechanism — the wrong value, who wrote it, in what
+order, and the false premise that made it inevitable are all named and bisect-proven; only the
+internal graphics-read step is marked untraced rather than asserted as fact.)
+
+**Fix** (`<fix-commit>`, `src/mod_absorb/enabled_list_builder.cpp`): kcdx still resolves the ONE
+unified load order over ALL enabled candidates (native pak mods + plugins, interleaved — the order
+kcdx owns, unchanged), but a new `PluginShipsPak` gate synthesizes an engine MOUNT record ONLY for
+pak-mountable entries: native pak mods, plus any plugin that ships a `Data/*.pak` (the same
+`<folder>/Data/*.pak` layout `pak_mod_registry::Discover` keys native pak mods on, at the plugin's
+position in the unified order). A pak-less plugin is excluded from the engine MOUNT list — it has
+nothing to mount — and loads via kcdx's OWN loader (`plugin_loader.cpp DiscoverAndLoad` +
+`RunPostGameLoad`, both ordered by `load_order::Of` independently of this list), so excluding it
+does NOT drop or reorder it. This preserves kcdx's unified-load-order capability (a user orders
+plugins AND native pak mods together) while feeding the engine only what it can mount. The
+mod-loader-absorb design records the engine-list-is-pak-mountable-only rule + the pak-bearing-plugin
+decision (a pak-bearing plugin gets an engine MOUNT record at its ordered position).
+
+**Verification:** the `cap-55-enabled-list-builder` self-test (`enabled_list_builder_selftest.cpp`)
+gains a falsifiable regression assertion — a synthetic pak-LESS plugin (`p_bare`, no `Data/*.pak`)
+must be EXCLUDED from the engine MOUNT list and a pak-BEARING plugin (`p_pak`, real `Data/*.pak`)
+INCLUDED at its ordered position; the engine list is `[mods.zeta, mods.alpha, p_pak]` count 3,
+FAILing if `p_bare` re-enters (a real red state, not a tautology). `pwsh ./build.ps1` green (all
+three artifacts). Live acceptance: the game boots clean with the test suite still green
+(`ACCEPT-SUITE` unchanged from the pre-fix baseline), confirmed by the user's launch (the agent
+reads `kcdx-dev.log`).
+
+Gate B (`root-cause-verifier`, WITHHELD context) returned `rewrite-resolution` on the first draft
+(it overclaimed the untraced graphics-read step); this Resolution applies the verifier's verbatim
+correction (the correlational-not-traced framing above).

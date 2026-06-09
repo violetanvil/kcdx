@@ -241,31 +241,52 @@ a prior probe. The diagnostic edit was reverted per probe hygiene.
 
 ## Settled design (vision-preserving — approved + this session's audit)
 
-**A kcdx plugin is a SUPERSET of a vanilla pak mod.**
-The defining principle for what the rebuilt enabled list contains. A vanilla pak
-mod and a kcdx plugin load the SAME content the SAME way; adding a `kcdx.toml` at
-the mod root is purely ADDITIVE — it unlocks kcdx's extra capabilities and takes
-nothing away. A mod author turns a vanilla pak mod into a kcdx plugin by dropping
-in a `kcdx.toml`, and the pak content keeps loading exactly as before.
+**A kcdx plugin is a SUPERSET of a vanilla pak mod — for the unified load ORDER.
+The engine MOUNT list is the pak-mountable SUBSET of that order.**
+The defining principle, with a load-bearing distinction KI-0012 forced. A vanilla
+pak mod and a kcdx plugin both participate in kcdx's ONE unified load order;
+adding a `kcdx.toml` at the mod root is purely ADDITIVE — it unlocks kcdx's extra
+capabilities and takes nothing away. A mod author turns a vanilla pak mod into a
+kcdx plugin by dropping in a `kcdx.toml`, and the pak content keeps loading.
 
-Therefore EVERY discovered mod — vanilla pak (`mod.manifest`, no `kcdx.toml`) OR
-kcdx plugin (`kcdx.toml` at the content root) — gets a synthesized native I_Mod
-record pointed at its folder, so its `Data/*.pak` mounts and its
-localization/table-patch/mod.cfg passes run IDENTICALLY via the native MOUNT (the
-mount is path-driven, not identity-driven — it never checks vanilla-vs-plugin). A
-kcdx plugin ADDITIONALLY runs its `kcdx.toml`/`plugin.lua`/DLL through kcdx's own
-loader for the extra capabilities. So:
+kcdx owns TWO things that must not be conflated:
 
-- `kcdx.toml` presence gates the EXTRA kcdx behavior layer, NOT the asset/pak
-  path. The asset path is uniform for every mod.
-- A pak-less pure-Lua/DLL plugin still gets a native record (pointed at its
-  folder); the native MOUNT finds no `*.pak` and opens nothing — harmless and
-  uniform, no special-casing.
-- The classification (content-bearing root has `kcdx.toml` → plugin; else →
-  vanilla) decides the BEHAVIOR path, not whether content loads.
+- **The unified load ORDER** (pak mods + plugins, interleaved by the load-order
+  key). kcdx resolves this over EVERY enabled mod. It drives both the engine's
+  pak-mount sequence AND kcdx's own plugin-load sequence.
+- **The engine `C_ModManager` enabled-list** (at `+0x30`) — the engine's mod-MOUNT
+  list. It gets a synthesized native I_Mod record ONLY for the PAK-MOUNTABLE
+  subset of the unified order: a vanilla pak mod, OR a kcdx plugin that actually
+  ships a `Data/*.pak` (detected as the same `<folder>/Data/*.pak` layout the pak
+  registry keys native mods on). Each such record is pointed at its folder, at its
+  position in the unified order, so its pak mounts via the native MOUNT.
+
+**A pak-LESS plugin is NOT placed in the engine enabled-list** (`enabled_list_builder.cpp`
+`PluginShipsPak` gate). The earlier design asserted a pak-less plugin record was
+"harmless — the native MOUNT finds no `*.pak` and opens nothing." **That premise was
+FALSE and is the KI-0012 root cause:** the engine enabled-list is consumed BEYOND
+MOUNT — WHGame's DLSS/FSR2 graphics init (`C_Game::CreateInstance → NVSDK_NGX_UpdateFeature
+→ FSR2`) walks/sizes it, and a synthesized record for a pak-less plugin (no valid
+I_Mod mount contract) crashes that graphics init with an ACCESS_VIOLATION. The fix:
+only pak-mountable entries enter the engine list. A pak-less plugin still loads in
+load order through kcdx's OWN loader (`plugin_loader.cpp DiscoverAndLoad` +
+`RunPostGameLoad`, ordered by `load_order::Of` independently of this list) — so
+excluding it from the engine list does NOT drop or reorder it.
+
+So:
+- `kcdx.toml` presence gates the EXTRA kcdx behavior layer; pak PRESENCE (a
+  `Data/*.pak`) gates engine-MOUNT-list membership. A mod ships a pak → it mounts
+  via the engine; a plugin ships logic-only → it loads via kcdx's loader. Both are
+  ordered by the one unified order.
+- A pak-BEARING plugin gets a native record at its ordered position (it mounts like
+  a pak mod AND runs its behavior layer via kcdx's loader). A pak-LESS plugin gets
+  NO engine record (nothing to mount).
+- The classification decides BOTH the behavior path (does it run kcdx's loader?)
+  and engine-list membership (does it ship a pak?), independently.
 
 This is why `cap-05-paklua-runtime` (a kcdx plugin that ships a `Data/*.pak` +
-a `mod.manifest`) loads its pak exactly like a vanilla mod would.
+a `mod.manifest`) is in the engine MOUNT list and loads its pak exactly like a
+vanilla mod would, while the pak-less DLL/Lua test plugins are not.
 
 **Takeover depth = NARROW.** Detour ONLY the SELECT phase (3100). kcdx rebuilds
 the enabled I_Mod list (at `C_ModManager+0x30`) in ITS order, then lets the
@@ -519,14 +540,19 @@ walks.
 the plugin manifests — and produces the rebuilt enabled I_Mod\* list:
 
 - One synthesized record (`record_synth::BuildRecord`, Step 1) per ENABLED
-  discovered mod. The SUPERSET model: a vanilla pak mod and a kcdx plugin alike
-  get a record pointed at their folder, so the path-driven native MOUNT loads
-  their content identically. A pak-less plugin gets a record too — MOUNT finds
-  no `*.pak` and opens nothing, which is harmless and uniform (no special-casing
-  on pak presence).
+  PAK-MOUNTABLE mod, at its position in the unified order: a vanilla pak mod, OR
+  a kcdx plugin that ships a `Data/*.pak` (the `PluginShipsPak` gate — same
+  `<folder>/Data/*.pak` layout the pak registry keys native mods on). Each gets a
+  record pointed at its folder so the path-driven native MOUNT loads its pak. A
+  pak-LESS plugin gets NO engine record — it has nothing for the engine to mount,
+  and a pak-less record crashes WHGame's graphics init (KI-0012); it loads in load
+  order via kcdx's own loader instead (`plugin_loader.cpp`). The engine
+  enabled-list is the pak-mountable SUBSET of the unified order, NOT every mod.
 - ENABLED is `IsPluginEnabled(name)`: a user-disabled mod, a version-rejected
   pak mod (the Step-3 version gate), and a zone-rejected plugin are all
-  excluded. Pak mods key `mods.<modid>`; plugins key `[plugin].name`.
+  excluded. Pak mods key `mods.<modid>`; plugins key `[plugin].name`. A pak-less
+  plugin is additionally excluded from the engine list by the `PluginShipsPak`
+  gate above (it still loads via kcdx's loader).
 - ORDER is the one load-order sort key `(zone, priority, orderIndex, name)` —
   the SAME key the load-order surface resolves, so pak mods and plugins sort
   into one unified order.

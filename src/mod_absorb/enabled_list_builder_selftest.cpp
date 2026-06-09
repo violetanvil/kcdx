@@ -104,19 +104,48 @@ void RunEnabledListSelfTestOnce() {
         kcdx::load_order::RestoreState(savedLoadOrder);
     };
 
-    // Synthetic resolved set:
-    //   pak "zeta"  : after_game, priority 0, orderIndex 0  -> 1st
-    //   pak "alpha" : after_game, priority 0, orderIndex 1  -> 2nd (index beats name)
+    // A pak-bearing plugin needs a REAL folder with a Data/*.pak so
+    // PluginShipsPak (the KI-0012 gate) returns true. A pak-LESS plugin points
+    // at a folder with no Data/*.pak so the gate returns false. Build both under
+    // the engine-data dir; cleanup removes them.
+    const std::filesystem::path tmpRoot =
+        kcdx::paths::EngineDataDirPath() / L"kcdx_cap55_tmp_plugins";
+    const std::filesystem::path pakPluginDir  = tmpRoot / L"p_pak";
+    const std::filesystem::path pakDataDir     = pakPluginDir / L"Data";
+    const std::filesystem::path barePluginDir = tmpRoot / L"p_bare";
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(pakDataDir, ec);
+        std::filesystem::create_directories(barePluginDir, ec);  // NO Data/ → pak-less.
+        std::ofstream(pakDataDir / L"assets.pak",
+                      std::ios::binary | std::ios::trunc).put('P');  // a real *.pak file.
+    }
+
+    // Synthetic resolved set (KI-0012 fix — the engine MOUNT list is the
+    // pak-mountable SUBSET of the unified order):
+    //   pak "zeta"  : after_game, priority 0, orderIndex 0  -> 1st (mounts)
+    //   pak "alpha" : after_game, priority 0, orderIndex 1  -> 2nd (mounts; index beats name)
     //   pak "gone"  : DISABLED via load_order.toml enabled=false -> EXCLUDED
-    //   plugin "p_one" : after_game, priority 50 -> after the pak block
-    // Expected enabled-list order: [mods.zeta, mods.alpha, p_one], count 3.
+    //   plugin "p_pak"  : after_game, priority 50, SHIPS Data/*.pak -> in the list, after the paks
+    //   plugin "p_bare" : after_game, priority 60, NO pak -> EXCLUDED from the engine list
+    //                     (loads via kcdx's own loader; KI-0012 — a pak-less record
+    //                     crashed graphics init).
+    // Expected engine MOUNT list: [mods.zeta, mods.alpha, p_pak], count 3 (NOT p_bare).
     ClearRegistry();
     Registry().push_back(MakePak("zeta",  0));
     Registry().push_back(MakePak("alpha", 1));
     Registry().push_back(MakePak("gone",  2));
 
     kcdx::plugins::g_manifests.clear();
-    kcdx::plugins::g_manifests.push_back(MakePlugin("p_one", "Y:/plugins/p_one"));
+    {
+        kcdx::plugins::PluginManifest pakPlugin =
+            MakePlugin("p_pak", pakPluginDir.string());
+        kcdx::plugins::PluginManifest barePlugin =
+            MakePlugin("p_bare", barePluginDir.string());
+        barePlugin.defaultPriority = 60;  // sorts AFTER p_pak — proves order, not luck.
+        kcdx::plugins::g_manifests.push_back(std::move(pakPlugin));
+        kcdx::plugins::g_manifests.push_back(std::move(barePlugin));
+    }
 
     // A temp load_order.toml disabling "mods.gone".
     const std::filesystem::path tempLoadOrder =
@@ -138,20 +167,26 @@ void RunEnabledListSelfTestOnce() {
         restore();
         std::error_code ec;
         std::filesystem::remove(tempLoadOrder, ec);
+        std::filesystem::remove_all(tmpRoot, ec);
     };
 
     // ========================================================================
-    // Assertion 2 (COUNT): the disabled "mods.gone" is EXCLUDED; the list has
-    // exactly 3 entries (2 enabled pak mods + 1 plugin), and the void* array
-    // length == the diagnostic-entry length.
-    // [broken: IsPluginEnabled gate not honored -> "gone" included -> count 4 ->
-    //  FAIL; a null record inserted instead of dropped -> length mismatch -> FAIL]
+    // Assertion 2 (COUNT + KI-0012 pak-gate): the disabled "mods.gone" is
+    // EXCLUDED, AND the pak-LESS plugin "p_bare" is EXCLUDED from the engine
+    // MOUNT list (it has no Data/*.pak — a pak-less record crashed graphics
+    // init). The list has exactly 3 entries (2 enabled pak mods + 1 pak-bearing
+    // plugin), and the void* array length == the diagnostic-entry length.
+    // [broken: IsPluginEnabled gate not honored -> "gone" in -> count 4 -> FAIL;
+    //  KI-0012 regression: a pak-less plugin re-enters the engine list ->
+    //  "p_bare" in -> count 4 -> FAIL; a null record inserted instead of dropped
+    //  -> length mismatch -> FAIL]
     // ========================================================================
     if (list.size() != 3 || entries.size() != 3) {
         std::snprintf(reason, sizeof(reason),
-            "FAIL: rebuilt list has %zu entries (diag entries %zu), expected 3 "
-            "(2 enabled pak mods + 1 plugin; 'mods.gone' is disabled and must be "
-            "EXCLUDED) — the IsPluginEnabled gate is not honored, or a record "
+            "FAIL: engine MOUNT list has %zu entries (diag entries %zu), expected "
+            "3 (2 enabled pak mods + 1 pak-BEARING plugin; 'mods.gone' is disabled "
+            "and the pak-LESS 'p_bare' must BOTH be EXCLUDED) — the IsPluginEnabled "
+            "gate or the KI-0012 PluginShipsPak gate is not honored, or a record "
             "was inserted/dropped wrongly", list.size(), entries.size());
         cleanup();
         Fail(reason);
@@ -159,27 +194,31 @@ void RunEnabledListSelfTestOnce() {
     }
 
     // ========================================================================
-    // Assertion 3 (ORDER): resolved load order. zeta (orderIndex 0) before
-    // alpha (orderIndex 1) — orderIndex beats name; both pak mods (priority 0)
-    // before the plugin (priority 50).
+    // Assertion 3 (ORDER + pak-gate identity): resolved load order. zeta
+    // (orderIndex 0) before alpha (orderIndex 1) — orderIndex beats name; both
+    // pak mods (priority 0) before the pak-bearing plugin (priority 50). The
+    // 3rd entry is "p_pak" (the pak-bearing plugin), NEVER "p_bare" (pak-less,
+    // even though it sorts adjacent at priority 60) — proving the gate excludes
+    // by pak-presence, not by order/count luck.
     // [broken: not sorted by the (zone,priority,orderIndex,name) key -> wrong
-    //  order -> FAIL; plugin not after the pak block -> FAIL]
+    //  order -> FAIL; pak-less p_bare admitted instead of p_pak -> FAIL]
     // ========================================================================
     {
         const bool orderOk =
             entries[0].loadOrderName == "mods.zeta" &&
             entries[1].loadOrderName == "mods.alpha" &&
-            entries[2].loadOrderName == "p_one" &&
+            entries[2].loadOrderName == "p_pak" &&
             entries[0].isPlugin == false &&
             entries[1].isPlugin == false &&
             entries[2].isPlugin == true;
         if (!orderOk) {
             std::snprintf(reason, sizeof(reason),
-                "FAIL: rebuilt order = [%s, %s, %s], expected [mods.zeta, "
-                "mods.alpha, p_one] — the list must sort by the load-order key "
+                "FAIL: engine MOUNT order = [%s, %s, %s], expected [mods.zeta, "
+                "mods.alpha, p_pak] — the list must sort by the load-order key "
                 "(zone, priority, orderIndex, name): orderIndex 0 before 1 "
-                "(despite 'zeta' > 'alpha'), and the priority-0 pak block before "
-                "the priority-50 plugin",
+                "(despite 'zeta' > 'alpha'), the priority-0 pak block before the "
+                "pak-bearing plugin, and the pak-LESS 'p_bare' EXCLUDED (KI-0012 "
+                "— only pak-mountable entries enter the engine list)",
                 entries[0].loadOrderName.c_str(),
                 entries[1].loadOrderName.c_str(),
                 entries[2].loadOrderName.c_str());
@@ -192,24 +231,29 @@ void RunEnabledListSelfTestOnce() {
     // ========================================================================
     // Assertion 4 (PATH): each record's path field is the mod's normalized
     // folder path in the native form (backslash body + trailing '/'). zeta's
-    // folder "X:\fake\mods\zeta" -> "X:\fake\mods\zeta/"; the plugin's
-    // "Y:/plugins/p_one" -> "Y:\plugins\p_one/".
+    // folder "X:\fake\mods\zeta" -> "X:\fake\mods\zeta/"; the pak-bearing plugin
+    // p_pak's real folder normalized likewise (it is in the engine list).
     // [broken: path not normalized -> forward slashes survive -> FAIL; wrong
     //  field copied -> FAIL]
     // ========================================================================
     {
+        std::string expectPakPlugin;
+        {
+            std::string slash, noSlash;
+            NormalizeToNativeRecordForm(pakPluginDir.string(), slash, noSlash);
+            expectPakPlugin = slash;
+        }
         const bool pathOk =
             entries[0].rootPathSlash == "X:\\fake\\mods\\zeta/" &&
-            entries[2].rootPathSlash == "Y:\\plugins\\p_one/";
+            entries[2].rootPathSlash == expectPakPlugin;
         if (!pathOk) {
             std::snprintf(reason, sizeof(reason),
                 "FAIL: rebuilt path fields wrong — mods.zeta=\"%s\" (expected "
-                "\"X:\\fake\\mods\\zeta/\"), p_one=\"%s\" (expected "
-                "\"Y:\\plugins\\p_one/\") — each record's +0x08 path must be the "
-                "mod's folder normalized to the native form (backslash body + "
-                "trailing '/')",
+                "\"X:\\fake\\mods\\zeta/\"), p_pak=\"%s\" (expected \"%s\") — each "
+                "record's +0x08 path must be the mod's folder normalized to the "
+                "native form (backslash body + trailing '/')",
                 entries[0].rootPathSlash.c_str(),
-                entries[2].rootPathSlash.c_str());
+                entries[2].rootPathSlash.c_str(), expectPakPlugin.c_str());
             cleanup();
             Fail(reason);
             return;
@@ -220,12 +264,13 @@ void RunEnabledListSelfTestOnce() {
 
     std::snprintf(reason, sizeof(reason),
         "NormalizeToNativeRecordForm maps a mixed-separator input to the native "
-        "form (backslash body + trailing '/'); BuildEnabledList excludes the "
-        "disabled mod (count 3, not 4), orders by the (zone,priority,orderIndex,"
-        "name) key (mods.zeta[0] before mods.alpha[1] despite name; both pak mods "
-        "before the priority-50 plugin), and each record's path field is the "
-        "normalized folder. Live state restored. (Live MOUNT end-to-end is the "
-        "verification checkpoint.)");
+        "form; BuildEnabledList excludes the disabled mod AND the pak-LESS plugin "
+        "'p_bare' (KI-0012 — only pak-mountable entries enter the engine MOUNT "
+        "list; count 3, not 4 or 5), admits the pak-BEARING plugin 'p_pak' at its "
+        "ordered position, orders by the (zone,priority,orderIndex,name) key "
+        "(mods.zeta[0] before mods.alpha[1]; pak block before the plugin), and "
+        "each record's path is the normalized folder. Live state restored. (Live "
+        "MOUNT end-to-end is the verification checkpoint.)");
     kcdx::test::ReportResult(kRow, true, reason);
     kcdx::test::EmitSummaryIfChanged("cap-55 enabled-list-builder");
 }
