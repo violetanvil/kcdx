@@ -66,24 +66,71 @@ blame — it captures the evidence so `/debug` can root-cause the actual mechani
 - **The dump:** `kcdx_2026-06-08_20-48-29.dmp` (96,372,754 bytes) — readable with the
   cdb one-liner for the faulting stack (`.ecxr; !analyze -v; k 30; q`).
 
-## Open questions (for /debug — not answered here)
+## Reframe — the filed headline is FALSIFIED by the dump (the AV is NOT a hook re-entrancy spiral)
 
-- Did the survival-verify startup pass RUN before the `ccrypak_fopen` spiral, and could
-  its on-disk WHGame.dll file-open (`CreateFileW`/`GetModuleFileNameW`) have re-entered
-  the FOpen hook to seed the recursion — OR is the re-entrancy independent of survival
-  (a safetyhook-FOpen-detour self-recursion the hook-backend rewiring introduced)?
-- Is `0x7FF9864C14A0` (the hooked FOpen) recursing because the safetyhook detour's
-  `original`-call path itself routes back through the detour (a backend-install defect),
-  or because a consumer (asset resolution, a plugin, the survival on-disk read) calls
-  `FOpen` from inside the FOpen callback?
-- What is at WHGame.dll `0x0B2E220` (the AV rip) — is the AV the stack-overflow endpoint
-  of the recursion, or a separate fault the recursion led to?
-- Bisect: does the crash reproduce with ONLY the survival commits (`8008e3d`..`ffc51ae`)
-  deployed (the hook-backend Phase-6 reverted), or ONLY the hook-backend commits (survival
-  reverted)? That cleanly attributes the lane. (A `git worktree` time-bisect per
-  `results-driven.md` / the `/debug` probe-shapes.)
+The `/report-bug` headline ("re-entrancy spiral on `ccrypak_fopen` → stack-overflow → AV")
+is wrong. Ground truth from the crash dump + the failing-session log
+(`kcdx_2026-06-08_20-48-29.dmp`):
+
+- **The AV is `INVALID_POINTER_READ`, not `STACK_OVERFLOW`** (`!analyze -v` bucket
+  `INVALID_POINTER_READ_c0000005_WHGame.dll!Unknown`). The faulting instruction is
+  `mov rax, qword ptr [rdx]` with `rdx = 580000019a3019ad` — a **non-canonical garbage
+  pointer** (the `5800…` high bits are not a valid x64 user address) (PROBE A).
+- **The faulting stack is 13 frames and contains ZERO kcdx frames.** It is entirely
+  WHGame.dll's own graphics/upscaling init: `KingdomCome.exe → WHGame → NGX
+  (`NVSDK_NGX_UpdateFeature`) → `C_Game::CreateInstance` → the AV in an FSR2-region
+  function (`ffxFsr2ResourceIsNull+0x633120`). No hook chain, no detour, no
+  `ccrypak_fopen` frame on the stack (PROBE A).
+- **The faulting thread is Main** (`tid 0xC528 = 50472`, thread name "Main") (PROBE A).
+- **The "spiral" is a log artifact, not a runaway.** The `re-entrant dispatch depth=2`
+  lines are bounded at **depth 2** (the chain explicitly allows + logs it: "a
+  non-terminating loop here is the hook author's bug"). The `FAULTED_FIRE seq=17844`
+  countdown is the crash handler dumping its **cumulative fire-history ring** (17844 =
+  total `ccrypak_fopen` fires this session, newest-first), NOT 17844 nested frames — the
+  13-frame stack proves there is no deep recursion (PROBE A). The crash handler prints
+  `ccrypak_fopen`'s history because it is the kcdx hook with recent activity, not because
+  it is on the faulting stack.
+
+**Consequence for attribution:** the hook-backend-marriage lane is EXONERATED from the
+AV mechanism — the AV is an invalid-pointer read inside WHGame's FSR2/NGX graphics init,
+not in any kcdx hook / backend / detour path. The `FOpenLooseOverlay` Around callback
+(`src/asset_overlay.cpp:278`) was read and is clean: MISS → straight `call_original`,
+HIT → returns its own `FILE*` without re-entering; no recursion source (PROBE A, static).
+
+**kcdx served the graphics path NOTHING.** The session logged exactly ONE `overlay_opened`
+— `scripts/startup/sl_saveload.lua` (the `cap-77` test-suite Lua file) at `20:48:40.918`;
+zero graphics/FSR2/shader overlays served. So kcdx did not hand graphics-init a wrong
+file. The `depth=2` re-entrancy began at `20:48:38.565`, immediately after the Lua VM
+bootstrap (`CScriptSystem::Init` → `engine_adopted_kcdx_state`) — i.e. it correlates with
+`FOpen`-during-script-loading (a benign FOpen-from-within-FOpen the chain bounds at depth
+2), NOT with graphics. The AV fired ~4s later (`20:48:42.754`) on the same Main thread,
+independently, in `C_Game::CreateInstance`'s NGX/FSR2 init (PROBE A).
+
+## Open questions (reframed — the real mechanism)
+
+- **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
+  open question is whether kcdx perturbs the state FSR2/NGX reads (an asset-overlay
+  serving a wrong file to a graphics-init asset open? a corrupted graphics config/shader
+  resource?), or whether this is a graphics/driver/FSR2-state fault independent of the mod.
+- **Does it reproduce without kcdx?** The cleanest discriminator (PROBE B): launch the
+  same KCD2 build with kcdx NOT deployed (or `dev_mode = false`) — if the FSR2/NGX AV
+  still fires, it is a base-game/driver issue, not a kcdx regression. If it only fires
+  with kcdx, narrow to which lane.
+- **Does it reproduce on an OLDER kcdx?** (PROBE C, only if B implicates kcdx): a
+  `git worktree` time-bisect — does the AV fire with a pre-Phase-6 / pre-survival kcdx?
+  This attributes the regression to a commit range.
+- **Is it deterministic or a flake?** A single crash sample cannot tell a hard regression
+  from an intermittent graphics-init flake. The repro rate is unknown (one launch).
+
+## Trail
+
+| Action | Result |
+|---|---|
+| PROBE A: read the crash dump faulting stack + `!analyze -v` + the log timeline (read-only ground truth) | `INVALID_POINTER_READ` in WHGame FSR2/NGX graphics init (`C_Game::CreateInstance`), 13-frame stack, ZERO kcdx frames, Main thread. The "re-entrancy spiral"/"stack overflow" headline is FALSIFIED — `depth=2` bounded + `seq` is a cumulative fire-count, not nested frames. |
+| PROBE B: launch the same build with kcdx un-deployed / `dev_mode=false` | pending |
 
 ## Resolution
 
-(pending — `/debug KI-0012`: root-cause the `ccrypak_fopen` re-entrancy mechanism; the
-bisect above cleanly settles survival-vs-hook-backend attribution before any fix.)
+(pending — the filed re-entrancy headline is falsified; the AV is a WHGame FSR2/NGX
+invalid-pointer read. PROBE B (does it reproduce without kcdx) is the next discriminator
+before any kcdx-side fix is even warranted.)
