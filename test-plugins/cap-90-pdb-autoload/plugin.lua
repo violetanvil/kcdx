@@ -22,6 +22,12 @@ local PLUGIN_NS = "ts.cap_90_pdb_autoload"
 -- The deliberately non-exported internal the DLL ships; the name the PDB
 -- enumeration surfaces (undecorated) and PopulateFromPdb records under PLUGIN_NS.
 local INTERNAL_FN = "cap90_internal_target"
+-- A C-runtime function the linker pulls into EVERY plugin DLL. The PDB enumerate
+-- yields it (its source is a CRT build tree), but the author never wrote it and
+-- nobody hooks it — the source-file filter must REJECT it, so it must NOT resolve
+-- under the plugin's namespace. Its undecorated leaf is exactly "operator delete"
+-- (no "::"), so it keys as the bracket-index ["operator delete"].
+local CRT_FN = "operator delete"
 
 kcdx.on("ready", function()
     local row = "cap-90-pdb-internal-address"
@@ -75,8 +81,47 @@ kcdx.on("ready", function()
             .. "no signature is declared for it, hence signature=\"\")")
     end
 
+    -- Second row: the source-file filter dropped the CRT/compiler plumbing.
+    -- The plugin DLL links the C runtime, so the PDB enumerate yields CRT
+    -- functions (operator delete, _set_new_handler, …) as in-range SymTagFunction
+    -- symbols. PopulateFromPdb's source-file filter REJECTS them (their source is
+    -- a CRT build tree, not the plugin's .cpp), so they must NOT be recorded under
+    -- the plugin namespace. This row is the falsifiable proof the noise is gone.
+    --
+    -- FALSIFIABLE: the row goes RED if CRT_FN RESOLVES (found=true). That can only
+    -- happen if the filter did not run or is too loose (it recorded a CRT internal
+    -- the author never wrote). The author's own function above STILL resolving +
+    -- this CRT name NOT resolving together prove the filter keeps the author's
+    -- code while dropping the plumbing.
+    local crt_row = "cap-90-crt-filtered"
+    if kcdx.functions == nil then
+        kcdx.test.report(crt_row, false,
+            "kcdx.functions namespace is not registered — cannot check the filter")
+    else
+        local crt_ref = kcdx.functions[PLUGIN_NS][CRT_FN]
+        local cr = crt_ref ~= nil and crt_ref:resolve() or nil
+        if cr ~= nil and cr.found == true then
+            kcdx.test.report(crt_row, false,
+                "kcdx.functions[\"" .. PLUGIN_NS .. "\"][\"" .. CRT_FN .. "\"]"
+                .. ":resolve -> found=true has_address=" .. tostring(cr.has_address)
+                .. " — a C-runtime function was recorded under the plugin namespace. "
+                .. "The source-file filter must REJECT CRT/compiler-internal "
+                .. "functions (their source is a CRT build tree, not the author's "
+                .. ".cpp); a found=true here means the filter did not run or is too "
+                .. "loose, leaving runtime plumbing nobody hooks in the namespace")
+        else
+            kcdx.test.report(crt_row, true,
+                "kcdx.functions[\"" .. PLUGIN_NS .. "\"][\"" .. CRT_FN .. "\"]"
+                .. ":resolve -> found=false — the C-runtime function was filtered "
+                .. "out (its PDB source is a CRT build tree, not the plugin's own "
+                .. ".cpp), so only the author's own functions populate the "
+                .. "namespace; the CRT/compiler plumbing nobody hooks is dropped")
+        end
+    end
+
     kcdx.log.info("CAP90",
         "PDB auto-load self-test reported: a non-exported internal's address "
         .. "populated into the plugin's own kcdx.functions namespace from its "
-        .. "shipped /DEBUG:FULL PDB")
+        .. "shipped /DEBUG:FULL PDB, and the CRT/compiler-internal functions "
+        .. "were filtered out")
 end)

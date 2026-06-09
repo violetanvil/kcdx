@@ -11,8 +11,9 @@
 //   SymLoadModuleEx(proc, nullptr, dllPath, nullptr, base, imageSize, ...)
 //   SymEnumSymbols(proc, base, "*", cb, ctx)
 //   SymUnloadModule64 / SymCleanup
-// The enumerate yields BOTH the plugin's own functions AND CRT/linker privates;
-// the in-range + FUNCTION filter (below) isolates the plugin's own functions.
+// The enumerate yields BOTH the plugin's own functions AND CRT/compiler privates;
+// the in-range + FUNCTION + author-source filter (below) isolates the plugin's
+// own authored functions, dropping the CRT/compiler plumbing nobody hooks.
 //
 // THE LOAD-BEARING CONSTRAINT: internal auto-load works ONLY with a /DEBUG:FULL
 // (self-contained) PDB. A FASTLINK PDB (the VS2017+ default) is a build-machine-
@@ -59,7 +60,32 @@ struct EnumCtx {
     uint32_t    inRangeFuncs = 0;  // plugin's own functions recorded.
     uint32_t    capDropped = 0;    // functions skipped after hitting kMaxFunctions.
     uint32_t    badName = 0;       // symbols rejected on name validation.
+    uint32_t    crtFiltered = 0;   // in-range functions rejected: a CRT/compiler source.
+    uint32_t    noSource = 0;      // in-range functions rejected: no source line at all.
 };
+
+// A function's per-symbol source file (from SymGetLineFromAddr64) separates the
+// author's own translation units from the C-runtime / compiler-internal code the
+// linker pulls into the image. The author's functions report a source under the
+// plugin's own .cpp; CRT/compiler internals report a build path under one of these
+// markers (the MSVC CRT/vcruntime/ucrt build trees). Match is a case-insensitive
+// substring — the markers are stable MSVC source-tree path fragments, not the
+// author's possible build dirs.
+constexpr const char* kCrtSourceMarkers[] = {
+    "vctools\\crt", "ucrt", "vcruntime", "vccrt", "vcstartup", "minkernel\\crts",
+};
+
+// Lowercase ASCII — the source-file string is matched against the lowercase
+// CRT markers. The PDB-supplied FileName is external-authored data
+// (input-validation.md): it is only lowercased + substring-scanned here, never
+// passed to a path/filesystem API, so a hostile value cannot escape this check.
+std::string ToLowerAscii(const char* s) {
+    std::string out(s);
+    for (char& c : out) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + ('a' - 'A'));
+    }
+    return out;
+}
 
 // Validate a symbol name before it becomes a map key (input-validation.md —
 // "validate the content, not just the structure"): non-empty, under the length
@@ -96,8 +122,8 @@ std::string BareLeaf(const std::string& full, bool& qualified) {
 }
 
 // SymEnumSymbols callback. Records ONE plugin-own FUNCTION per accepted symbol.
-// The two-part filter that isolates the plugin's own functions from the CRT/
-// linker privates the enumerate also yields:
+// The three-part filter that isolates the plugin's OWN authored functions from
+// the CRT/compiler plumbing the enumerate also yields:
 //   1. In-range: sym->Address ∈ [base, base+imageSize). A symbol outside this
 //      module's own image is a CRT private pulled from the CRT's PDBs / lives
 //      elsewhere — reject (input-validation.md: an address outside the module's
@@ -110,6 +136,12 @@ std::string BareLeaf(const std::string& full, bool& qualified) {
 //      absent here. The CRT data publics in the same stream carry Tag==SymTagData
 //      (7). So the kind test is Tag, NOT the flag: filtering on SYMFLAG_FUNCTION
 //      rejects every plugin function (none in the publics-only stream carries it).
+//   3. AUTHOR'S OWN source: SymGetLineFromAddr64 reports a per-symbol source file.
+//      An in-range SymTagFunction can still be CRT/compiler plumbing the linker
+//      pulled into the image (operator delete, _set_new_handler, …) — those carry
+//      a CRT/compiler build path (kCrtSourceMarkers) as their source, or no source
+//      line. The author's own function carries a source under its own .cpp. Record
+//      only an in-range function whose source is present AND not a CRT path.
 BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
     auto* ctx = static_cast<EnumCtx*>(userCtx);
 
@@ -134,6 +166,33 @@ BOOL CALLBACK EnumCb(PSYMBOL_INFO sym, ULONG /*symSize*/, PVOID userCtx) {
     if (ctx->inRangeFuncs >= kMaxFunctions) {
         ++ctx->capDropped;
         return TRUE;  // keep counting drops for the WARN, but record no more.
+    }
+
+    // (3) source-file filter — record ONLY the author's own functions, not the
+    // CRT/compiler-internal functions the linker pulls into the plugin's image.
+    // The enumerate also yields in-range SymTagFunction symbols for runtime
+    // plumbing (operator delete, _set_new_handler, __crt_seh_guarded_call, …);
+    // those carry a CRT/compiler build path as their source, OR no source line.
+    // The author's own function carries a source line under its own .cpp. So:
+    //   - no source line at all → CRT plumbing / not the author's → reject.
+    //   - a source line under a CRT/compiler build tree → reject.
+    //   - a source line that is NOT a CRT path → the author's function → keep.
+    // SYMOPT_LOAD_LINES (set in PopulateFromPdb) is required for line info.
+    IMAGEHLP_LINE64 line{};
+    line.SizeOfStruct = sizeof(line);
+    DWORD displacement = 0;
+    if (!SymGetLineFromAddr64(GetCurrentProcess(), sym->Address, &displacement,
+                              &line) ||
+        line.FileName == nullptr || line.FileName[0] == '\0') {
+        ++ctx->noSource;
+        return TRUE;  // no source = CRT plumbing, not the author's function.
+    }
+    const std::string srcLower = ToLowerAscii(line.FileName);
+    for (const char* marker : kCrtSourceMarkers) {
+        if (srcLower.find(marker) != std::string::npos) {
+            ++ctx->crtFiltered;
+            return TRUE;  // a CRT/compiler translation unit — not the author's.
+        }
     }
 
     // Key by the bare leaf (the name the author types), per the naming model. A
@@ -231,9 +290,9 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
         return;
     }
 
-    // Enumerate. The in-range + FUNCTION-kind filter (EnumCb) records only the
-    // plugin's own functions; everything else (CRT/linker data publics,
-    // out-of-range symbols) is skipped.
+    // Enumerate. The in-range + FUNCTION-kind + author-source filter (EnumCb)
+    // records only the plugin's own authored functions; everything else (CRT/
+    // compiler-internal functions, data publics, out-of-range symbols) is skipped.
     EnumCtx ctx;
     ctx.base = base;
     ctx.end = base + imageSize;
@@ -255,16 +314,34 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
     }
 
     if (ctx.inRangeFuncs == 0) {
-        // THE FASTLINK/STUB CASE: the PDB
-        // loaded but carries NONE of the plugin's own functions when deployed —
-        // a /DEBUG:FASTLINK stub indexes the build-machine OBJs, not a
-        // self-contained copy. Tell the author exactly that — NOT the generic
-        // "no PDB" line; their PDB loaded, it was the wrong KIND.
-        LOG_WARN_KV("PDB", "plugin ships a FASTLINK PDB; rebuild with "
-                    "/DEBUG:FULL for internal-function auto-load; falling back "
-                    "to exports + declared functions",
-                    ::kcdx::log::KV("namespace", pluginNamespace),
-                    ::kcdx::log::KV("dll", dllPath));
+        // No author function recorded. Two distinct causes, each its own teaching
+        // line — the source-file filter (crt_filtered/no_source) discriminates:
+        if (ctx.crtFiltered == 0 && ctx.noSource == 0) {
+            // THE FASTLINK/STUB CASE: the enumerate yielded NO in-range function
+            // at all — a /DEBUG:FASTLINK stub indexes the build-machine OBJs, not
+            // a self-contained copy, so the plugin's own functions are absent when
+            // deployed. Tell the author exactly that — NOT the generic "no PDB"
+            // line; their PDB loaded, it was the wrong KIND.
+            LOG_WARN_KV("PDB", "plugin ships a FASTLINK PDB; rebuild with "
+                        "/DEBUG:FULL for internal-function auto-load; falling back "
+                        "to exports + declared functions",
+                        ::kcdx::log::KV("namespace", pluginNamespace),
+                        ::kcdx::log::KV("dll", dllPath));
+        } else {
+            // A FULL PDB DID enumerate in-range functions, but every one was
+            // CRT/compiler plumbing (no author translation unit) — the author's
+            // own functions are not in this image. Not a FASTLINK problem; do not
+            // tell them to rebuild with a flag they already used.
+            LOG_WARN_KV("PDB", "PDB loaded but no author functions found; only "
+                        "CRT/compiler-internal functions are present; falling back "
+                        "to exports + declared functions",
+                        ::kcdx::log::KV("namespace", pluginNamespace),
+                        ::kcdx::log::KV("dll", dllPath),
+                        ::kcdx::log::KV("crt_filtered",
+                            static_cast<unsigned long long>(ctx.crtFiltered)),
+                        ::kcdx::log::KV("no_source",
+                            static_cast<unsigned long long>(ctx.noSource)));
+        }
         return;
     }
 
@@ -275,6 +352,10 @@ void PopulateFromPdb(HMODULE module, const std::string& dllPath,
                 ::kcdx::log::KV("dll", dllPath),
                 ::kcdx::log::KV("functions",
                     static_cast<unsigned long long>(ctx.inRangeFuncs)),
+                ::kcdx::log::KV("crt_filtered",
+                    static_cast<unsigned long long>(ctx.crtFiltered)),
+                ::kcdx::log::KV("no_source",
+                    static_cast<unsigned long long>(ctx.noSource)),
                 ::kcdx::log::KV("dropped_over_cap",
                     static_cast<unsigned long long>(ctx.capDropped)),
                 ::kcdx::log::KV("rejected_bad_name",
