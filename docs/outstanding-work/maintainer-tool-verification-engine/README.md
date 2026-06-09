@@ -1,5 +1,17 @@
 # Maintainer-tool verification engine
 
+> **Orientation — "the maintainer tool" is THREE separate efforts (don't conflate them):**
+>
+> | Plan tree | What it is | State |
+> |---|---|---|
+> | [`maintainer-tool-db-direct/`](../maintainer-tool-db-direct/README.md) | The DB-authoring **web app** — browse/search/author the reference DB (the six jobs), CSV auto-export, server-side commit. The tool itself. | Phases 1–4 DONE + running; **only Phase 5 (Docker packaging) left.** Functionally complete. |
+> | [`maintainer-tool-audit-trio-identity/`](../maintainer-tool-audit-trio-identity/README.md) | A frontend refinement of that app — `verified_by` as the signer/commit-author identity + read-only `verified_date`. | **COMPLETE** (FE:6bfa833 + FE:0cc6d2d, UAT accepted). |
+> | **THIS tree** (`maintainer-tool-verification-engine/`) | The **"link a DLL, verify what you author against the real binary"** feature — a separate capability bolted onto the tool. | **Phases 0–3 DONE + accepted; Phases 4–5 NOT STARTED.** |
+>
+> So **the maintainer tool as a whole is NOT 100% complete.** The authoring app is functionally done (Docker pending); THIS verification-engine feature is **3 of 5 phases**. The end-to-end verification loop is not live yet — the engine *can* verify (Phase 3), but nothing drives it in bulk in-game (Phase 4) and nothing surfaces the bulk result to the author (Phase 5).
+>
+> **The "front end" next step is Phase 5 of THIS tree — and it has a hard upstream dependency on Phase 4.** Phase 5 ingests the JSON report that Phase 4's in-game plugin *produces*; there is no report to ingest until Phase 4 lands. Phase 4 (engine `src/` + a `test-plugins/` driver, gated by `build.ps1` + a live launch) must come first, THEN Phase 5 (the `[FE]` report-ingestion UI in the separate frontend repo).
+
 **Intent:** link a game DLL on your machine and the tool verifies what you author against
 the real binary (not record-only) — static per-author in the browser + version-applicability +
 reachability in-game in bulk (at startup); the un-deferred R5 + restored R12 link table. Settled design:
