@@ -1,0 +1,55 @@
+# CAP-84 — survival per-kind DISPATCH + the Ambiguous status.
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# survival checker (src/survival.{h,cpp}) gained a per-kind DISPATCH entry point
+# (SurvivalCheck(Payload{kind,...}, rva, derivesFrom, dll)) with a kind-
+# discriminated payload — the foundation step-3.2's 5 non-function checks and
+# step-3.3's live reachability check plug into. This step (3.1) builds ONLY: the
+# dispatch + the payload model + the Ambiguous status + the EXISTING function-
+# hash check moved under the dispatch (verdict UNCHANGED); every other kind is a
+# DEFINED fail-loud step-3.2 stub. This kcdx.toml is a MANIFEST-ONLY STUB — no
+# plugin.lua, no DLL — whose sole job is to pre-register the matrix row via
+# test_names so it shows PENDING until the engine reports it. Same pattern as
+# cap-60-version-check-cache / cap-83-stmt-resolve / cap-66-node-classifier (the
+# engine self-reports directly via kcdx::test::ReportResult from
+# src/survival_dispatch_selftest.cpp; a manifest stub holds the name).
+#
+# What it proves:
+#   cap-84-survival-dispatch  The per-kind survival dispatch:
+#     1. FUNCTION VERDICT UNCHANGED — the dispatch's function path returns the
+#        IDENTICAL Result the legacy SurvivalCheck(rva,length,hash,len) entry
+#        returns for the same inputs (legacy IS today's behavior, so
+#        dispatch==legacy IS "the function verdict is unchanged"). Asserted over
+#        3 deterministic cases (not_applicable / expected_hash_bad_length /
+#        length_zero) + 1 REAL on-disk SaveGame check when the DB carries its
+#        content_hash+length (DEGRADED PASS otherwise — like cap-83).
+#     2. NON-FUNCTION STUBS ARE FAIL-LOUD — every non-function kind dispatched
+#        returns CannotCheck with a DEFINED token (callsite/string_anchor/
+#        instruction_anchor/data_slot/vtable_base → "not_implemented_3_2";
+#        vtable_index → "vtable_index_deferred"), NEVER Unchanged/Changed/empty.
+#     3. AMBIGUOUS IS REPORTABLE — survival::Status::Ambiguous maps through the
+#        pass to vcc::FuncStatus::Ambiguous (its own value, not collapsed to
+#        CannotCheck) and round-trips through the cache codec byte-identically.
+#        Reported by the engine at boot (no save-load gesture, no hook-fire
+#        dependency).
+#
+# FALSIFIABLE: the row goes RED if the dispatch's function path diverges from the
+# legacy verdict (a changed function verdict), or any non-function kind
+# fabricates a non-CannotCheck verdict / silent empty reason, or Ambiguous is not
+# a usable status that survives the pass + codec.
+#
+# Test mode: boot-only. Resolves + reports synchronously on the first suite tick.
+# No console typing, no in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_84_survival_dispatch"
+display_name        = "CAP-84 survival per-kind dispatch + Ambiguous"
+author              = "ts"
+description         = "Engine self-test: the survival per-kind dispatch routes function kinds to the EXISTING on-disk body-hash check with an IDENTICAL verdict (dispatch==legacy), routes every non-function kind to a DEFINED fail-loud CannotCheck stub (not_implemented_3_2 / vtable_index_deferred, never a false Unchanged), and makes the new Ambiguous status reportable end-to-end (pass + cache codec round-trip). Engine self-reports; real-row check graceful-degraded when the DB lacks the function fingerprint."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-84-survival-dispatch"]

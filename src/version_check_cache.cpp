@@ -166,6 +166,7 @@ FuncStatus DecodeFuncStatus(uint8_t v) {
     switch (v) {
         case 0: return FuncStatus::Unchanged;
         case 1: return FuncStatus::Changed;
+        case 3: return FuncStatus::Ambiguous;
         default: return FuncStatus::CannotCheck;  // 2 and any unknown → safe-side.
     }
 }

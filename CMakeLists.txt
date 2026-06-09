@@ -293,6 +293,7 @@ add_library(kcdx SHARED
     src/version_check_cache.cpp
     src/survival_pass.cpp
     src/version_check_selftest.cpp
+    src/survival_dispatch_selftest.cpp
     src/ki0001_node_classifier_selftest.cpp
     src/statement_resolve_selftest.cpp
     src/early_hook_selftest.cpp

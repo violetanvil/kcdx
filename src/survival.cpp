@@ -90,7 +90,97 @@ bool ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& out) {
     return true;
 }
 
+// Map a non-function Kind → its step-3.2 stub reason token. Each is a DEFINED,
+// fail-loud placeholder (CannotCheck, never a false Unchanged / silent empty):
+// the kind ROUTES through the dispatch today and reports a distinct,
+// grep-able token naming the step-3.2 landing point, instead of silently
+// skipping or fabricating a verdict. vtable_index is a longer-lived deferral
+// (population waits on the runtime-vtable verification path) and gets its own
+// token so it is distinguishable from a 3.2-pending kind.
+const char* StubReasonForKind(Kind k) {
+    switch (k) {
+        case Kind::Callsite:           return "not_implemented_3_2";  // AOB re-match.
+        case Kind::StringAnchor:       return "not_implemented_3_2";  // .rdata literal presence.
+        case Kind::InstructionAnchor:  return "not_implemented_3_2";  // resolver-chain re-derivation.
+        case Kind::DataSlot:           return "not_implemented_3_2";  // structural derivation.
+        case Kind::VtableBase:         return "not_implemented_3_2";  // table-shape check.
+        case Kind::VtableIndex:        return "vtable_index_deferred"; // population deferred (runtime slot target).
+        // The function kinds never reach this map — they dispatch to the
+        // body-hash path. Listed so the switch is exhaustive (no silent default
+        // that could swallow a future kind).
+        case Kind::Function:
+        case Kind::FunctionNoSig:
+        case Kind::FunctionVariadic:   return "not_implemented_3_2";
+    }
+    return "not_implemented_3_2";  // unreachable; keeps the compiler happy.
+}
+
+const char* KindName(Kind k) {
+    switch (k) {
+        case Kind::Function:           return "function";
+        case Kind::FunctionNoSig:      return "function_no_sig";
+        case Kind::FunctionVariadic:   return "function_variadic";
+        case Kind::Callsite:           return "callsite";
+        case Kind::StringAnchor:       return "string_anchor";
+        case Kind::InstructionAnchor:  return "instruction_anchor";
+        case Kind::DataSlot:           return "data_slot";
+        case Kind::VtableBase:         return "vtable_base";
+        case Kind::VtableIndex:        return "vtable_index";
+    }
+    return "unknown";
+}
+
 }  // namespace
+
+Result SurvivalCheck(const Payload& payload,
+                     uint32_t rva,
+                     uint32_t derivesFrom,
+                     const std::string& dll) {
+    (void)dll;  // reserved for the per-module on-disk read (step 3.2/3.3 wires
+                // the module selection); the function path reads WHGame.dll.
+    switch (payload.kind) {
+        // --- Function kinds: the EXISTING on-disk body-hash check, UNCHANGED. ---
+        // Route through the legacy entry point so its verdict is byte-identical
+        // to today (the test asserts this). An empty contentHash here is a
+        // non-byte entity → the legacy path returns CannotCheck "not_applicable",
+        // exactly as before.
+        case Kind::Function:
+        case Kind::FunctionNoSig:
+        case Kind::FunctionVariadic: {
+            (void)derivesFrom;  // function identity is its own body; no DAG edge.
+            return SurvivalCheck(
+                rva, payload.length,
+                payload.contentHash.empty() ? nullptr : payload.contentHash.data(),
+                payload.contentHash.size());
+        }
+
+        // --- Every other kind: a DEFINED fail-loud step-3.2 stub. -------------
+        // CannotCheck with a distinct, grep-able token — NEVER a false Unchanged
+        // or a silent skip. Step 3.2 replaces each `case` with its real per-kind
+        // check (a multi-hit callsite then returns Ambiguous).
+        case Kind::Callsite:
+        case Kind::StringAnchor:
+        case Kind::InstructionAnchor:
+        case Kind::DataSlot:
+        case Kind::VtableBase:
+        case Kind::VtableIndex: {
+            const char* reason = StubReasonForKind(payload.kind);
+            LOG_DEBUG_KV(kCategory, "kind_not_implemented",
+                ::kcdx::log::KV("reason", reason),
+                ::kcdx::log::KV("kind", KindName(payload.kind)),
+                ::kcdx::log::KV("rva", (unsigned long long)rva),
+                ::kcdx::log::KV("note", "non-function survival check lands in step 3.2 — not yet implemented"));
+            return CannotCheck(reason);
+        }
+    }
+
+    // Exhaustive above; an unmapped kind is a defect, not a silent pass.
+    LOG_ERROR_KV(kCategory, "kind_unknown",
+        ::kcdx::log::KV("reason", "not_implemented_3_2"),
+        ::kcdx::log::KV("kind_value", (unsigned long long)static_cast<int>(payload.kind)),
+        ::kcdx::log::KV("note", "unmapped survival kind reached the dispatch"));
+    return CannotCheck("not_implemented_3_2");
+}
 
 Result SurvivalCheck(uint32_t rva, size_t length,
                      const uint8_t* expectedHash32, size_t expectedLen) {

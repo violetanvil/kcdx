@@ -47,21 +47,27 @@ std::map<std::string, PluginCollected> g_collected;
 // pluginName for ResultsForPlugin(). Populated by RunPass.
 std::map<std::pair<std::string, std::string>, PassResult> g_results;
 
-// Map kcdx::survival::Status → the cache/pass FuncStatus.
+// Map kcdx::survival::Status → the cache/pass FuncStatus. Explicit per case (no
+// silent default that could swallow a new status) — Ambiguous maps to its own
+// FuncStatus value, never collapsed to CannotCheck.
 vcc::FuncStatus MapStatus(kcdx::survival::Status s) {
     switch (s) {
-        case kcdx::survival::Status::Unchanged: return vcc::FuncStatus::Unchanged;
-        case kcdx::survival::Status::Changed:   return vcc::FuncStatus::Changed;
-        default:                                return vcc::FuncStatus::CannotCheck;
+        case kcdx::survival::Status::Unchanged:   return vcc::FuncStatus::Unchanged;
+        case kcdx::survival::Status::Changed:     return vcc::FuncStatus::Changed;
+        case kcdx::survival::Status::Ambiguous:   return vcc::FuncStatus::Ambiguous;
+        case kcdx::survival::Status::CannotCheck: return vcc::FuncStatus::CannotCheck;
     }
+    return vcc::FuncStatus::CannotCheck;  // unreachable; the switch is exhaustive.
 }
 
 const char* FuncStatusName(vcc::FuncStatus s) {
     switch (s) {
         case vcc::FuncStatus::Unchanged:   return "unchanged";
         case vcc::FuncStatus::Changed:     return "changed";
-        default:                           return "cannot_check";
+        case vcc::FuncStatus::Ambiguous:   return "ambiguous";
+        case vcc::FuncStatus::CannotCheck: return "cannot_check";
     }
+    return "cannot_check";  // unreachable; the switch is exhaustive.
 }
 
 }  // namespace

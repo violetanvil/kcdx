@@ -47,15 +47,27 @@ namespace kcdx::version_check_cache {
 // survival-check logic changes (NOT on every kcdx release) — a bump rejects the
 // entire on-disk cache so no record is reused under different check semantics.
 // One byte: the on-disk slot is a single byte (see the header layout).
-constexpr uint8_t kCacheSchemaVersion = 1;
+//
+// v2: the survival-result universe grew — FuncStatus::Ambiguous (3) was added
+// (the per-kind dispatch's callsite multiple-hit verdict). A new status the
+// check can emit IS a check-logic change, so the bump cleanly rejects any v1
+// cache (which never knew the value) rather than read it under different
+// semantics.
+constexpr uint8_t kCacheSchemaVersion = 2;
 
 // The per-function survival outcome stored in a record. Mirrors
 // kcdx::survival::Status; kept as its own enum so the codec's on-disk byte
 // values are pinned independently of the survival header's enum order.
+//
+// APPEND-ONLY: the on-disk byte values are pinned (0/1/2/3) and NEVER reused —
+// a new value appends at the next integer + bumps kCacheSchemaVersion (above).
 enum class FuncStatus : uint8_t {
     Unchanged   = 0,  // on-disk bytes matched the recorded content_hash.
     Changed     = 1,  // on-disk bytes differ — a byte shift / patched binary.
     CannotCheck = 2,  // the check could not run (non-byte entity, missing DB row, …).
+    Ambiguous   = 3,  // the locator no longer resolves UNIQUELY (a callsite AOB
+                      // matching >1 site) — not Changed, not Unchanged. Produced
+                      // by the per-kind dispatch's non-function checks.
 };
 
 // The plugin's on_changed posture as observed at the time the record was

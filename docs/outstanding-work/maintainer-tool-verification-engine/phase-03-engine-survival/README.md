@@ -13,7 +13,7 @@ the agent builds, deploys, hash-verifies, enables dev mode, reads the log; the u
 
 | Step | Status | Commit |
 |---|---|---|
-| [3.1 [ENG] Per-kind dispatch + payload model + the Ambiguous status](step-1-eng-dispatch-payload-ambiguous.md) | NOT STARTED | — |
+| [3.1 [ENG] Per-kind dispatch + payload model + the Ambiguous status](step-1-eng-dispatch-payload-ambiguous.md) | DONE | (landed) — survival checker restructured into a per-kind dispatch + kind-discriminated Payload + the Ambiguous status; function-hash check preserved byte-identical under the dispatch, every non-function kind → a fail-loud stub (not_implemented_3_2 / vtable_index_deferred). cap-84 self-test (build green; step-review land-fix after the AP16 scrub). Live verdict batched to the end-of-feature launch. |
 | [3.2 [ENG] The 5 static non-function kind checks + anchor-dependency ordering](step-2-eng-static-non-function-checks.md) | NOT STARTED | — |
 | [3.3 [ENG] The reachability check + the on-disk version-applicability hash](step-3-eng-live-functional-check.md) | NOT STARTED | — |
 | [3.4 [ENG] The cross-impl agreement test (JS browser == C++ engine)](step-4-eng-cross-impl-agreement.md) | NOT STARTED | — |

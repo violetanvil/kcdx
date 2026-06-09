@@ -41,6 +41,7 @@
 #include "mod_absorb/record_validate_selftest.h"  // cap-58 engine self-report
 #include "blake3_selftest.h"                       // cap-59 engine self-report
 #include "version_check_selftest.h"                // cap-60 engine self-report
+#include "survival_dispatch_selftest.h"            // cap-84 survival per-kind dispatch + Ambiguous
 #include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
 #include "statement_resolve_selftest.h"             // cap-83 refdb statement-resolution API
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
@@ -750,6 +751,16 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // path). Drives + RESETS both modules' in-memory state in isolation and
     // leaves an empty on-disk cache behind. One-shot guarded internally.
     kcdx::version_check_selftest::RunSelfTestOnce();
+
+    // cap-84-survival-dispatch: engine self-report for the survival per-kind
+    // DISPATCH + the Ambiguous status (the foundation step-3.2's non-function
+    // checks plug into). Boot-only, same timing as cap-60 — no hook-fire /
+    // "ready" dependency: the function-verdict-unchanged + non-function-stub +
+    // Ambiguous-reportable sub-checks run on SYNTHETIC data + the file-private
+    // cache codec; a real SaveGame on-disk check runs when refdb carries the
+    // row's content_hash/length (DEGRADED PASS otherwise — like cap-83). RESETS
+    // the cache's in-memory + on-disk state afterward. One-shot guarded.
+    kcdx::survival_dispatch_selftest::RunSelfTestOnce();
 
     // cap-66-node-classifier: KI-0001 permanent regression. Asserts the
     // vendored-Lua crash guard (kcdx_node_freeable in vendor/lua/ltable.c)
