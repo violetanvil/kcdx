@@ -581,6 +581,46 @@ Stop guessing which field is wrong. Two theory-independent observations:
 Both are OBSERVATIONS (ground truth) that kill the guessing. Start with #1 (the parallel-native diff)
 — it directly shows every way kcdx's object differs from a correct one.
 
+## ROOT CAUSE (PROBE J — full native-ctor disassembly, OBSERVED) — our replacement SKIPS the ctor's `IConsole::AddCommand` call
+
+Read the COMPLETE native `ModManager_ctor` body (`_research/init-cycle-recon/_disasm_full_bodies.txt`,
+56 instructions). The ctor does EXACTLY (in order):
+1. `xor edi,edi` → rdi = 0 (so the +0x18..+0x58 writes store ZERO — confirming the scanned-list SHOULD
+   be null; PROBE I-fix populating it was WRONG, now explained).
+2. alloc 0x68 (`call 0x4f7820`), build modsDir CryString (`0x4f692c` + `0x4fd468`).
+3. write +0x08 sys, +0x00 vtable, +0x10 modsDir, +0x18..+0x58 = 0, +0x60 = 1.  ← our replacement does ALL of this.
+4. **`call 0x180b99098`** ← `IConsole::AddCommand` wrapper (seed id 17: `void(cstr name, ptr func,
+   i32 nFlags, cstr sHelp)`; the ModManager_ctor seed prose: "registers console cmd
+   `wh_mod_GenerateReport`"). **OUR REPLACEMENT SKIPS THIS ENTIRELY.**
+5. `call 0x180da104c` (SELECT) — we skip intentionally (we build the enabled list ourselves).
+6. `mov [rsi], rbx` (return the obj), then a conditional `call 0x1804fc884` (CryString cleanup of the
+   stack-local modsDir temp).
+
+**The bug: our replacement never calls `0x180b99098` (`IConsole::AddCommand`) to register
+`wh_mod_GenerateReport`.** The native ctor registers a console command as part of construction; we
+omit it. The crash is the engine iterating a `{base, count@+0x08, cap@+0x0C, stride 0x10}` array
+(disasm of the faulting frames) — **the shape of the engine's console-command / CVar registry**. The
+`AddCommand` call grows/initializes that registry; skipping it leaves the registry in a state a later
+graphics-init consumer (DLSS/FSR2 reads CVars for upscaler config — `ffxFsr2GetUpscaleRatioFromQualityMode`
+is ON the faulting stack) iterates and faults on a garbage base pointer (uninitialized → garbage
+varies per boot, PROBE F). Every prior probe is consistent: bisect → the takeover (H); not the
+scanned-list (I-fix); the ctor's own disassembly names the one call we drop.
+
+This is OBSERVED (the native ctor's instruction-level body + the seed-verified identity of
+`0xb99098`), not inferred. The fix: our replacement must ALSO register the console command via
+`IConsole::AddCommand` — i.e. replicate `call 0x180b99098`'s effect (register `wh_mod_GenerateReport`),
+completing the replacement. Still a FULL replacement (no original ctor call) — we just stopped
+omitting one of the ctor's steps.
+
+## Fix + verification
+
+The fix completes the replacement: in `HookedCtor`, after the field writes + before/around the
+return, call `IConsole::AddCommand` (the `0xb99098` wrapper, resolvable by refdb name) to register
+the same `wh_mod_GenerateReport` command the native ctor registers. Verify: build + launch → boots
+clean (the registry is properly initialized) AND mods still load (full replacement intact). Then Gate
+B (root-cause-verifier) on the mechanism, land via `/execute`, close. First a PROBE to CONFIRM adding
+the AddCommand call fixes it (the last observation before the production fix).
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
