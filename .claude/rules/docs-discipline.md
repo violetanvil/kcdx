@@ -61,8 +61,8 @@ A capability is documented when ALL of these landed with it:
    **full entry marked "not yet implemented (NYI)"** in the same change —
    build `kcdx.code` in Lua → `docs/cpp/code.md` gets a NYI entry, and the
    reverse for a C++-first capability. The NYI entry maps the planned mirror
-   (same model, the other language's spelling — `kcdx.hook{...}` ↔
-   `kcdxHookInterface::Install` / `K.hook->Install`) so both docs stay
+   (same model, the other language's spelling — `kcdx.hook.before(...)` ↔
+   `kcdxHookInterface::Before` / `K.hook->Before`) so both docs stay
    structurally parallel while the engine catches up. The NYI marker is
    removed when that side is built and verified callable. A built capability
    with no mirror entry — not even NYI — is the violation.

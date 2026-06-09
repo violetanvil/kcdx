@@ -61,9 +61,9 @@ Engine-internal hooks register with the chain as engine-stamped entries via `hoo
 
 PROBE Q canary preservation: `frealloc`'s `block ∈ kcdx.dll image` check is a read-only fingerprint that survives chain mediation — the chain's `DispatchPre` calls the registered Before callback, which still sees every call; nothing the chain does between MinHook's trampoline entry and the callback's read of `block` perturbs PROBE Q's contract. (Same shape applies to any other read-only fingerprint a future engine-direct site needs to preserve.)
 
-## Mid hooks are a first-class primitive (`kcdx.hook mode=mid`)
+## Mid hooks are a first-class primitive (`kcdx.hook.mid`)
 
-Mid-function hooks with named register/stack captures are strictly more powerful than function-entry hooks — a first-class primitive, not a niche feature. Authored via `kcdx.hook{ captures=, mid= }` (Lua) / `kcdxHookInterface::Mid` (C++); both can skip the captured instruction (`return "skip"` / `kcdxMidResult_Skip`). (The legacy `[[mid_hook]]` TOML entry point was deleted in Phase 5.)
+Mid-function hooks with named register/stack captures are strictly more powerful than function-entry hooks — a first-class primitive, not a niche feature. Authored via `kcdx.hook.mid(module, target, offset, captures, callback)` (Lua) / `kcdxHookInterface::Mid` (C++); both can skip the captured instruction (`return "skip"` / `kcdxMidResult_Skip`). (The legacy `[[mid_hook]]` TOML entry point was deleted in Phase 5.)
 
 ## Byte-patch semantics (`kcdx.bytes` / `kcdxBytesInterface`)
 

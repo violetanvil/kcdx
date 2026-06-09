@@ -143,20 +143,21 @@ plugin-scoped to the calling plugin:
 ## Examples
 
 - **Own-plugin (bare) reference** — calling plugin's own target:
-  `kcdx.hook{ target = "open_inventory" }`. The engine stamps it as
-  `<owningAuthor>.<owningPlugin>.open_inventory` and resolves it self-first.
+  `kcdx.hook.before("WHGame.dll", "open_inventory", fn)`. The engine stamps it
+  as `<owningAuthor>.<owningPlugin>.open_inventory` and resolves it self-first.
 - **Cross-plugin reference** — referring to another plugin's published target:
-  `kcdx.hook{ target = "redmoon.outfit.open_inventory" }`. Three-segment
-  explicit form, resolved directly.
+  `kcdx.hook.before("WHGame.dll", "redmoon.outfit.open_inventory", fn)`.
+  Three-segment explicit form, resolved directly.
 - **Explicit engine seed reference** — bypassing the bare-name precedence walk
-  for an engine-supplied locator: `kcdx.hook{ target = "kcdx.luaL_loadfile" }`.
-  Two-segment explicit form.
+  for an engine-supplied locator:
+  `kcdx.hook.before("WHGame.dll", "kcdx.luaL_loadfile", fn)`. Two-segment
+  explicit form.
 - **Pub/sub event** — publishing and subscribing to a custom event:
   `kcdx.publish("inventory_opened")` from plugin `redmoon.outfit` stamps the
   event as `redmoon.outfit.inventory_opened`; another plugin subscribes with
   `kcdx.on("redmoon.outfit.inventory_opened", fn)`.
 - **Alias** — `kcdx.alias("inv", "redmoon.outfit.open_inventory")` then
-  `kcdx.hook{ target = "inv" }` in the declaring plugin.
+  `kcdx.hook.before("WHGame.dll", "inv", fn)` in the declaring plugin.
 
 ## How to apply
 

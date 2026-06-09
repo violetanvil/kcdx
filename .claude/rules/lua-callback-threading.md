@@ -22,7 +22,7 @@ Every dispatch site (`DispatchPre` / `DispatchPost` / `MidDispatch` in `hook_cha
 
 ## Per-hook opt-out
 
-`kcdx.hook{ off_thread = ... }`:
+`off_thread` in a hook sub-verb's `[opts]` table (`kcdx.hook.before(module, target, fn, { off_thread = ... })`):
 
 - `"marshal"` (default) — auto-queue per above.
 - `"skip"` — silently drop off-thread fires; warn-once-per-hook in the engine log. Right choice for high-frequency off-thread sites (audio mixer at kHz) the author doesn't want flooding the queue.

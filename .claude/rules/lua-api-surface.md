@@ -101,10 +101,10 @@ HOW. The full doctrine — the disassembler test, name-supplies-address-AND-ABI,
 expert-hatch labeling, declare-once/share/coexist, surface-the-exception —
 is in `cornerstones.md` (AP12 in `anti-patterns.md`). On this surface:
 
-- ❌ `kcdx.hook{ address_id = "IsInCombat", signature = "i32 (i32)" }`
+- ❌ `kcdx.hook.before("WHGame.dll", "IsInCombat", fn, { signature = "i32 (i32)" })`
   — the author hand-writes the ABI.
-- ✅ `kcdx.hook{ target = "IsInCombat" }` — the name resolves to address
-  **and** verified signature.
+- ✅ `kcdx.hook.before("WHGame.dll", "IsInCombat", fn)` — the name resolves to
+  address **and** verified signature.
 
 ## The rules
 
@@ -118,7 +118,8 @@ is in `cornerstones.md` (AP12 in `anti-patterns.md`). On this surface:
    CLOSED set — the actions every plugin uses to register intent with
    the engine, one per engine primitive:
 
-   - `kcdx.hook{...}` — function interception (→ `hook_chain`)
+   - `kcdx.hook.*` — function interception (→ `hook_chain`); sub-verbs
+     `before` / `after` / `around` / `replace` / `insert_before` / `insert_after`
    - `kcdx.bytes{...}` — byte rewrite (→ patch engine)
    - `kcdx.code{...}` — trampoline / code allocation
    - `kcdx.on(event, fn)` — lifecycle / event subscription

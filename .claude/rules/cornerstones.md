@@ -26,8 +26,8 @@ UX, Capability, Performance are **cornerstones**, not priorities to weigh agains
 
 A modder hooking a game function writes a **name** and gets the address **and** the verified ABI for free. The engine already carries `address_id = "IsInCombat" → address`; it must likewise carry the signature, so the name supplies the ABI.
 
-- ❌ `kcdx.hook{ address_id = "IsInCombat", signature = "i32 (i32)" }` — the author hand-writes the ABI. That is disassembler-tier reverse-engineering pushed onto everyone.
-- ✅ `kcdx.hook{ target = "IsInCombat" }` — the name resolves to address **and** verified signature; the engine knows both.
+- ❌ `kcdx.hook.before("WHGame.dll", "IsInCombat", fn, { signature = "i32 (i32)" })` — the author hand-writes the ABI. That is disassembler-tier reverse-engineering pushed onto everyone.
+- ✅ `kcdx.hook.before("WHGame.dll", "IsInCombat", fn)` — the name resolves to address **and** verified signature; the engine knows both.
 
 **Hard rule — author hex/ABI burden is a defect, not a default (AP12).** Any capability that forces the author to supply an address / offset / register / instruction length / hand-written signature for a common task MUST have a name-based equivalent where the engine carries that detail. The author-supplies-hex path as the *only* path is a violation to fix at the source — not tracked debt, not "expert-only-for-now."
 
