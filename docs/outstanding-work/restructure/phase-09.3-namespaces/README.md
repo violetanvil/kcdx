@@ -25,8 +25,8 @@ goes red); each new `cap-NN` row lands with its feature step, not piled at the e
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — `kcdx.locator.*` value namespace](step-1-locator-namespace.md) | DONE | (landed) |
-| [2 — `kcdx.op.*` static-op value namespace](step-2-op-namespace.md) | NOT STARTED | — |
+| [1 — `kcdx.locator.*` value namespace](step-1-locator-namespace.md) | DONE | 9802a5e |
+| [2 — `kcdx.op.*` static-op value namespace](step-2-op-namespace.md) | DONE | (landed) |
 | [3 — `kcdx.functions.*` + `kcdx.dll.declare` + PDB auto-load](step-3-functions-and-declare.md) | NOT STARTED | — |
 | [4 — `kcdx.hook.*` sub-verb split + migrate the existing hook plugins (same commit)](step-4-hook-subverbs-migrate.md) | NOT STARTED | — |
 | [5 — `kcdx.statement.*` static-bytes namespace](step-5-statement-namespace.md) | NOT STARTED | — |

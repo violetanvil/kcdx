@@ -1,0 +1,76 @@
+# CAP-87 — kcdx.op.* static-bytes op value namespace + the :emit_for accessor.
+#
+# The behavior under test is the AUTHOR SURFACE (the Lua binding) built in
+# src/lua_bind_op.cpp: each kcdx.op.* call produces an OP VALUE (a userdata
+# carrying an op descriptor) whose :emit_for(kind, byte_range_len) accessor
+# returns the emitted bytes (for the statement-bytes-INDEPENDENT ops) or a
+# deferral verdict (for the statement-bytes-DEPENDENT ops), plus a kind-mismatch
+# teaching error. The op SELF-VERIFIES here against SYNTHETIC kind+range inputs —
+# no statement verb (step 5) applies it; :emit_for is the seam.
+#
+# DB-INDEPENDENT by construction: the op's byte-emit produces bytes for a given
+# kind + byte_range, so the rows feed synthetic kind/range pairs and assert the
+# exact bytes — NO reference-DB resolve, NO hardcoded address_id, NO fixture-
+# currency dependency (the op-emit is checkable without resolving any function).
+#
+# The op catalog (descriptive primary names + aliases), grouped by emit class:
+#
+#   DETERMINATE (emit asserted EXACTLY against synthetic kind+range):
+#     replace_with_noop / noop        -> N × 0x90 over an N-byte range
+#     skip_call_void                  -> N × 0x90 over the call's N-byte range
+#     never_take_branch               -> N × 0x90 (fall through = neutralize jump)
+#     replace_with_return(v)/return_const(v) -> set eax to v + ret + NOP-pad
+#     replace_return_value(v)         -> set eax to v + NOP-pad (no ret)
+#     skip_call_return_value(v)       -> set eax to v + NOP-pad (call NOP'd)
+#       v==0  -> 31 C0 (xor eax,eax) ; nonzero v -> B8 <imm32-le> (mov eax,imm32)
+#
+#   DEFERRED (final bytes need the APPLY-TIME statement bytes; :emit_for reports
+#   deferred=true, bytes=nil — never a fabricated byte, AP14):
+#     always_take_branch              -> needs the original Jcc displacement
+#     invert_branch_condition         -> needs the original Jcc opcode
+#     replace_call_target(name)       -> needs the call site + the resolved addr
+#     replace_assignment_value(v)     -> needs the assignment's operand encoding
+#     replace_compare_constant(v)     -> needs the compare's operand encoding
+#
+# THE KIND MISMATCH (the §9.3 teaching error): always_take_branch requires a
+# conditional-jump (branch) statement; handed a "call" statement, :emit_for
+# returns kind_ok=false with a reason NAMING the actual kind ("call") and the
+# required kind ("branch"). The reject row reads the ACTUAL reason text and
+# asserts it names "call" — NOT a tautology (AP15).
+#
+# FALSIFIABLE per row: a determinate row goes RED if the emitted bytes differ
+# from the verified expectation; a deferred row goes RED if it emits fabricated
+# bytes instead of deferring; the kind-mismatch row goes RED if it does NOT
+# reject, or rejects with a reason that does not name the actual kind. Each row
+# reads the ACTUAL :emit_for output.
+#
+# Test mode: boot-only. The op namespace is registered at bind; the rows run +
+# report at kcdx.on("ready"). No reference DB, no console typing, no in-game
+# gesture, no graceful-degraded path (nothing to resolve — the emit is
+# synthetic).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_87_op_emit"
+display_name        = "CAP-87 kcdx.op.* value namespace + :emit_for"
+author              = "ts"
+description         = "Pure-Lua self-test of the kcdx.op.* static-bytes op value namespace: each op family's :emit_for(kind, byte_range_len) accessor emits the expected bytes for a determinate op (asserted exactly against synthetic kind+range) or defers for a statement-bytes-dependent op, and a kind-mismatch (always_take_branch on a call statement) is rejected with a teaching error naming the actual kind. Reports from Lua at ready; DB-independent (synthetic inputs, no resolve)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "cap-87-noop-emit",
+    "cap-87-skip-call-void-emit",
+    "cap-87-never-take-branch-emit",
+    "cap-87-replace-with-return-zero",
+    "cap-87-replace-with-return-nonzero",
+    "cap-87-replace-return-value-emit",
+    "cap-87-skip-call-return-value-emit",
+    "cap-87-deferred-ops",
+    "cap-87-kind-mismatch-reject",
+]
+
+[entrypoints]
+lua = "plugin.lua"
