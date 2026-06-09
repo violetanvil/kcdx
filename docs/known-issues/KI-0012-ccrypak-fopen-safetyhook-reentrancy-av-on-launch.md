@@ -851,6 +851,43 @@ distinguishes "wrong modMgr field after all" from "missing engine-init side effe
 exact suppressed step. This is the next step — but it is a NEW KIND of probe (instrument WHGame's
 graphics code, not the modMgr), and the direction (which side effect to restore) is a real call.
 
+## ROOT CAUSE CONFIRMED (PROBE N) — a native SELECT SIDE EFFECT is the missing piece
+
+kcdx built its object as normal, then called native `ModManager_Select` on it
+(`ctor_bracket_select_probe` → `..._returned` → `ctor_bracket_complete`), and the boot went **CLEAN
+to the ready tick** (`CAP-61-bracket-reached-ready pass=true ... reached the first update tick
+end-to-end past C_ModManager construction`; ZERO FAULTED). SELECT writes nothing to the object (RE-
+proven) — so running it adds only its ENGINE SIDE EFFECTS, and that fixes the graphics crash.
+
+**Confirmed mechanism:** kcdx's full ctor+SELECT replacement skips `ModManager_Select`, which performs
+an engine side effect (in its Steam-workshop scan / mod_order read / per-mod manifest-validate passes,
+all via the engine's own code paths) that WHGame's DLSS/FSR2 graphics init later depends on. Without
+that side effect, an engine structure the DLSS feature-array builder reads is left uninitialized → the
+per-boot-varying garbage base → the AV. With SELECT's side effects present, the structure is
+initialized and the crash is gone. This is OBSERVED (crash present without SELECT, absent with it),
+not inferred — the cleanest confirmation in the whole trail.
+
+**Architectural finding (for the user):** the takeover's design — "fully replace ctor + SELECT, never
+call the originals" — is the ROOT of this bug class. SELECT does more than build the two mod lists; it
+performs engine interactions (a CVar/console/feature-registry touch, or an engine-init call inside its
+scan/validate path) with effects beyond the C_ModManager object. A from-scratch replacement that
+reproduces only the OBJECT and not these side effects will keep hitting "engine state X wasn't set up"
+crashes. KI-0012 is the first symptom to surface.
+
+## The fix is a design fork (surfaced to the user)
+
+Root cause is confirmed; the FIX is a real design decision:
+- **(A) Call native SELECT, re-order on top.** Let native SELECT run (it builds the lists + does all
+  side effects correctly via the engine), then kcdx re-orders/overlays the enabled-list afterward.
+  Drops the "fully replace SELECT" tenet but eliminates this entire bug class (every SELECT side effect
+  is correct by construction). Smaller, most robust — but is NOT a full SELECT replacement.
+- **(B) Keep full replacement; replicate the missing side effect(s).** Stay 100% replacement, but
+  identify the SPECIFIC engine side effect(s) SELECT performs that graphics needs and reproduce them in
+  HookedCtor (a further probe narrows which — bisect SELECT's sub-calls). Preserves the tenet but is
+  more RE surface + risks the next un-replicated side effect.
+This needs Gate B (root-cause-verifier) on the confirmed mechanism, then the user picks A vs B. NEXT:
+surface the A-vs-B fork; if B, a probe to narrow WHICH SELECT sub-call is the needed side effect.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
