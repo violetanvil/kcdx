@@ -28,8 +28,9 @@ goes red); each new `cap-NN` row lands with its feature step, not piled at the e
 | [1 — `kcdx.locator.*` value namespace](step-1-locator-namespace.md) | DONE | 9802a5e |
 | [2 — `kcdx.op.*` static-op value namespace](step-2-op-namespace.md) | DONE | dce5c35 |
 | [3a — `kcdx.functions.*` + `kcdx.dll.declare` (deterministic half)](step-3-functions-and-declare.md) | DONE | b290d9e |
-| [3-probe — DbgHelp `SymEnumSymbols` enumerates a foreign DLL's non-exported internals](step-3-functions-and-declare.md) | NOT STARTED | — |
-| [3b — PDB auto-load (`plugin_pdb.{cpp,h}`), built ONLY after 3-probe confirms](step-3-functions-and-declare.md) | NOT STARTED | — |
+| [3-probe — DbgHelp `SymEnumSymbols` enumerates a foreign DLL's non-exported internals](step-3-functions-and-declare.md) | DONE | f51b847 — Outcome B (FALSIFIED) |
+| [3-probe-2 — does `/DEBUG:FULL` (not the FASTLINK default) make the plugin's own internals enumerable?](step-3-functions-and-declare.md) | DONE | Outcome A (CONFIRMED) — see archive |
+| [3b — PDB auto-load (`plugin_pdb.{cpp,h}`) — UNBLOCKED: build as designed, with the `/DEBUG:FULL` constraint + FASTLINK-detection teaching log](step-3-functions-and-declare.md) | NOT STARTED | — |
 | [4 — `kcdx.hook.*` sub-verb split + migrate the existing hook plugins (same commit)](step-4-hook-subverbs-migrate.md) | NOT STARTED | — |
 | [5 — `kcdx.statement.*` static-bytes namespace](step-5-statement-namespace.md) | NOT STARTED | — |
 | [6 — multi-region trampoline-pool expansion](step-6-multi-region-trampoline.md) | NOT STARTED | — |

@@ -15,6 +15,25 @@ foreign plugin DLL's *non-exported internal* functions from a release-build side
   internal-address source before building (surface to user).
 - **3b** — `plugin_pdb.{cpp,h}`, built ONLY after 3-probe confirms.
 
+**Probe RESULT (2026-06-09) — 3b is buildable as designed, with one constraint.**
+A falsify-then-confirm pair settled it (full finding:
+`_research/probe-archive/pdb-autoload-symenum-internals.md`):
+- 3-probe (default `/DEBUG` → FASTLINK PDB): Outcome B — `SymEnumSymbols` did NOT
+  surface the plugin's own non-exported internal from the deployed PDB.
+- 3-probe-2 (explicit `/DEBUG:FULL` PDB): Outcome A — `SymEnumSymbols` DID surface
+  it (name + a real loaded VA). Only the PDB link-flag changed between the two.
+
+So PDB-autoload-for-internals WORKS, but ONLY with a `/DEBUG:FULL` (self-contained)
+PDB. A FASTLINK PDB (the VS2017+ default) is a build-machine-OBJ-indexing stub that
+carries no private symbols when deployed — `SymLoadModuleEx` succeeds, the enumerate
+returns CRT-privates only, the author's own internals are silently absent. **3b's
+graceful-fallback path MUST therefore detect the FASTLINK/stub case and emit a
+teaching log line** ("plugin X ships a FASTLINK PDB; rebuild with /DEBUG:FULL for
+internal-function auto-load; falling back to exports + declared functions") — NOT
+just the "no PDB → exports-only" fallback. Document the `/DEBUG:FULL` requirement in
+the author-facing PDB-autoload doc. The "every internal, zero-friction" promise holds
+for a FULL PDB; the constraint is "ship a FULL PDB," not "no auto-load."
+
 ## What
 
 The author-self-declaration keystone — the proof a TC author extends without an
