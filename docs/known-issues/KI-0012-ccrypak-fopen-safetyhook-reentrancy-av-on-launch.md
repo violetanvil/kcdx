@@ -758,6 +758,59 @@ option 2, never run) — disassemble what frame-2/3 read off the C_ModManager (o
 produce the garbage pointer. Both are within-bounds observations; no more out-of-bounds dumps, no more
 field guesses.
 
+## PROBE L — WITHIN-0x68 field-value diff (clean, no out-of-bounds). The real divergences:
+
+Bounded diff (0x00..0x68 ONLY) + deref of the list fields + the modsDir CryString. Genuine object
+booted clean. The divergences, with semantics:
+
+| Field | genuine | kcdx | verdict |
+|---|---|---|---|
+| +0x00 vtable | `0x…B02E60` | SAME | ✓ correct |
+| +0x08 sys | same | SAME | ✓ correct |
+| +0x10 modsDir CryString | data ptr → "mods", **nRefs=1**, nLength=4, nAllocSize=4 | "mods", **nRefs=2**, nLength=4, nAllocSize=4 | **refcount differs (1 vs 2)** — kcdx's CryString has an extra ref. Likely benign (a CoW over-ref) but NOTED. |
+| +0x18/0x20/0x28 scanned-list | 16 records (0x70-stride) | NULL (count -1) | by design (kcdx leaves null); PROBE I-fix proved populating it ≠ the fix |
+| +0x30/0x38/0x40 enabled-list | **count=14**, I_Mod* entries vtable `0x…A70AF00` | **count=104**, entries vtable `0x…A70AF00` (SAME vtable) | **count 14 vs 104** — kcdx enables 104, genuine 14. kcdx's I_Mod* records have the CORRECT vtable. |
+| +0x48/0x50/0x58 | genuine: scanned-list tail ptrs (`0x…A36B0/A3720/A3748` — INSIDE the scanned range) | kcdx: repeats enabled begin/end-ish | genuine's +0x48..0x58 point INTO its scanned-list; kcdx's are different (it has no scanned list) |
+| +0x60 flag | `0x1` | SAME | ✓ correct |
+
+**Key observations (NOT yet a root-cause claim — observed facts):**
+1. **+0x48/+0x50/+0x58 are NOT "unused/zero"** — the genuine object has them pointing INTO its
+   scanned-list (`0x1A9375A36B0` etc., within the scanned range). The earlier RE + kcdx's code call
+   these "unused, leave zero" — but the GENUINE object populates them. kcdx's are NON-zero too but
+   point at different (enabled-related) memory. This is a SECOND vector/iterator the genuine object
+   has that kcdx's lacks correct values for. (In the diff, +0x48..0x58 were "DIFF".)
+2. **The enabled-list +0x30..0x40 also feeds +0x48..0x58 in the genuine object** — a `{begin,end,eos}`
+   at +0x30 AND a related triple at +0x48 (genuine: +0x48/0x50/0x58 = `A36B0/A3720/A3748`, and
+   +0x30/0x38/0x40 = the SAME `A36B0/A3720/...`? No — genuine +0x30..0x40 read as the enabled-list
+   begin/end/eos. Need to recheck: genuine +0x48=A36B0 EQUALS genuine enabled begin=A36B0!). So in the
+   genuine object the enabled-list triple appears at BOTH +0x30..0x40 AND +0x48..0x58 region — OR the
+   object has two vectors and kcdx mismapped which offset is the enabled list.
+
+**The likely bug, to verify:** kcdx may have the enabled-list at the WRONG offset, OR there is a
+SECOND list (+0x48..0x58) the engine reads that kcdx leaves wrong. The genuine enabled begin
+(`0x1A9375A36B0`) == genuine +0x48 (`0x1A9375A36B0`) — they MATCH, meaning +0x30..0x40 and +0x48..0x58
+may be TWO vectors sharing data, or the real enabled-list is at +0x48 not +0x30. kcdx writes the
+enabled list ONLY at +0x30..0x40 and leaves +0x48..0x58 as stale/wrong — so if the engine reads the
+enabled list at +0x48..0x58, kcdx's is wrong there.
+
+**CORRECTION (avoiding another mis-read):** I started to claim "SELECT writes +0x48, kcdx omits it" —
+but the dump's `[rax+0x10/0x18/0x20]` writes are to `rax = rsp` (SELECT's STACK FRAME, `mov rax,rsp`
+at entry), and the `[r11+0x38/0x40/0x48]` entries are in the READS section over an inner object that
+may not be the modMgr. The filtered dump is NOT sufficient to claim what SELECT writes to the modMgr;
+asserting +0x48 from it would repeat the +0x70 over-reach. Pulling back to OBSERVED facts only.
+
+**OBSERVED, in-bounds, not-yet-attributed divergences (PROBE L):**
+- +0x10 modsDir: kcdx `nRefs=2` vs genuine `nRefs=1` (a CryString over-ref).
+- enabled-list count: kcdx 104 vs genuine 14 (kcdx enables every discovered plugin; genuine 14 mods).
+- +0x48/0x50/0x58: genuine points INTO its scanned-list; kcdx differs (it has no scanned list).
+- scanned-list (+0x18..0x28): genuine 16 records; kcdx null.
+
+NEXT (static, no launch): a CAREFUL instruction-level RE of SELECT (FUN_180da104c) + the genuine
+object — what EXACTLY does the object look like field-by-field after construction, which offsets hold
+the enabled-list vs a second iterator, and what does +0x48..0x58 hold in the genuine object — WITHOUT
+inferring from filtered dumps. Then attribute which PROBE-L divergence is the fault. (Dispatched to a
+focused RE pass; no more in-line dump mis-reads.)
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
