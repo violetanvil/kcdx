@@ -1,7 +1,9 @@
 ---
 id: KI-0014
 opened: 2026-06-09
-status: open
+status: Closed
+closed: 2026-06-09
+closed_by_commit: a29bf8f
 commit_at_filing: a7925ee53f03b2890e0ac4cece610c79375b12e2
 ---
 
@@ -134,6 +136,110 @@ without a launch.)
 - **B-1** — with a once-per-process `SymInitialize` (no per-plugin `SymCleanup`), cap-90 enumerates `cap90_internal_target` (`is_func=yes`, `in_range=yes`, recorded) → the per-call init/cleanup churn was the cause → the fix is handler-lifecycle: initialize once, load/unload per module, cleanup at teardown (or never). 
 - **B-2** — cap-90 STILL shows only publics → the handler lifecycle is NOT the variable; re-observe (the difference is elsewhere — module load/unload accumulation, or a SymLoadModuleEx flag, or PDB search-path state). Do NOT propose a fix; design Probe C from the new ground truth.
 
+## Fix verification (2026-06-09 launch, kcdx-dev_12-46-54)
+
+The Tag-based filter fix WORKS at the engine level: `[INFO] PDB auto-load
+populated internal-function addresses … functions=408 dropped_over_cap=0
+rejected_bad_name=0` for cap-90 — was 0, the FASTLINK WARN is gone, the private
+functions are now read (via `Tag == SymTagFunction`). The root cause (wrong-field
+filter) is FIXED.
+
+BUT `cap-90-pdb-internal-address` still reds: `:resolve found=false
+reason=not_declared` for `cap90_internal_target`. A SECOND, distinct defect
+surfaced behind the first: the PDB records the function under its
+qualifier-decorated name `` `anonymous namespace'::cap90_internal_target ``
+(Probe F observed this exact name), but the test (and an author) indexes the
+BARE name `cap90_internal_target`. So 408 functions are stored under their
+qualified names and the bare-name lookup misses. This is a NAME-KEYING design
+question (how `kcdx.functions[ns]` keys PDB-sourced functions — bare /
+qualified / both), surfaced to the user. Not the engine filter — that is fixed.
+
+Suite `205/229` — no regression (the fix changed only the function-kind filter;
+CAP-20/CAP-28 are the pre-existing KI-0010/KI-0011).
+
+### Second defect (behind the first) + its fix — name keying
+
+The PDB records a function under its DbgHelp-undecorated QUALIFIED name
+(`` `anonymous namespace'::cap90_internal_target ``, `CombatState::CanSwap`), but
+an author indexes the BARE name (`cap90_internal_target`) per the settled
+`<author>.<plugin>.<bare>` naming model (the engine owns the namespace; the
+author types the bare leaf). The feature keyed by the full decorated string, so
+the bare-name lookup missed. FIX: `plugin_pdb` extracts the bare leaf (substring
+after the last `::`) and keys under it; a function in a C++ namespace/class is
+ALSO keyed under its qualified name (the unambiguous disambiguation form for a
+leaf collision); `lua_bind_functions::RecordPluginAddress` warns once + keeps
+first-wins on a bare-leaf collision (per naming-namespaces.md). The fixture's
+anonymous-namespace target (the pathological un-shareable case that produced the
+ugly decoration) was changed to a normal file-scope external-linkage function —
+what a real author ships for cross-mod hooking.
+
+### Verified GREEN (2026-06-09, kcdx-dev_14-37-23)
+
+`cap-90-pdb-internal-address` PASS: `kcdx.functions["ts.cap_90_pdb_autoload"]
+.cap90_internal_target:resolve -> found=true has_address=true address=...`. The
+full chain works: Tag-based filter reads 408 functions → keyed by bare name →
+the author's bare-name lookup hits. `[INFO] PDB auto-load populated
+internal-function addresses functions=408`. Suite `206/229` (cap-90 flipped
+green; CAP-20/CAP-28 are the pre-existing KIs).
+
+### Surfaced follow-up (NOT this bug — for the user)
+
+The bare-leaf collision warn-once fired for ~9 CRT/compiler-internal functions
+the PDB enumerates inside the plugin image (`operator delete`, `bad_exception`,
+`_set_new_handler`, `fin$0`, `` `scalar deleting destructor' ``, `operator()`,
+…). The warn is working correctly, but it is NOISE — these are C-runtime
+plumbing functions no author references; the warn should fire only on a
+collision among the AUTHOR'S OWN functions. The 408 count also includes these
+CRT internals (they are in-range + Tag=Function), so the namespace carries
+runtime plumbing alongside the author's functions. Both are a follow-up quality
+item (filter the recorded set to the author's own translation units, e.g. by
+source-file or a CRT-name denylist) — surfaced to the user, not folded into this
+close. Does not affect the cause-test (the author's function resolves correctly).
+
+## Resolution
+
+**Closed 2026-06-09, fix `a29bf8f`, user-confirmed via the cap-90 launch.**
+
+**Root cause (two layered defects, one symptom).**
+1. PDB auto-load classified a plugin function with `(sym->Flags &
+   SYMFLAG_FUNCTION)`. For these MSVC `/DEBUG:FULL` plugin PDBs DbgHelp serves
+   only the PUBLIC symbol stream (`SymGetModuleInfo64` reports `NumSyms=0`,
+   `SymType=SymPdb`, matched — the private/DBI stream is never loaded), where a
+   function carries `Tag==SymTagFunction` (5) but `Flags==0` (the
+   `SYMFLAG_FUNCTION` bit is set only on private-DBI function records, structurally
+   absent here); CRT data publics carry `Tag==SymTagData` (7). So the flag test
+   rejected EVERY plugin function — making the `inRangeFuncs==0` FASTLINK-fallback
+   fire on a matched FULL PDB inevitable. Established by an offline
+   DbgHelp-via-ctypes probe set that reproduced `NumSyms=0`/`funcs=0` in isolation
+   across 6 load-param variants, and a control run against a second fixture; the
+   earlier "PDB auto-load works" reading was a false positive (that probe matched
+   by NAME with no kind filter, so it never exercised the flag).
+2. Behind the first: a recorded function was keyed by its DbgHelp-undecorated
+   QUALIFIED name, but an author indexes the BARE name per the
+   `<author>.<plugin>.<bare>` model — so the bare-name lookup missed.
+
+**Fix (`a29bf8f`).**
+- `src/plugin_pdb.cpp` — filter on `sym->Tag == SymTagFunction` (the field
+  populated on public-stream functions), not the flag; extract the bare leaf
+  (after the last `::`) and key under it, plus the qualified name as the
+  disambiguation key.
+- `src/lua_bind_functions.cpp` — `RecordPluginAddress` warns-once + first-wins on
+  a bare-leaf collision (the existing warn-once + qualified-disambiguates model).
+- `test-plugins/cap-90-pdb-autoload/cap-90.cpp` — the target moved out of an
+  anonymous namespace (internal linkage, un-shareable, the source of the
+  pathological decoration) to a normal file-scope external-linkage non-exported
+  function — what a real plugin ships for cross-mod hooking.
+
+**Verification.** `cap-90-pdb-internal-address` PASS (user launch
+`kcdx-dev_14-37-23`): `kcdx.functions["ts.cap_90_pdb_autoload"]
+.cap90_internal_target:resolve -> found=true has_address=true`; `functions=408`;
+suite `206/229` (no regression). Gate B (root-cause-verifier) returned `land-fix`.
+
+**Open follow-up (NOT this bug).** The recorded set + the collision warn include
+CRT/compiler-internal functions the PDB enumerates inside the plugin image —
+filter to the author's own translation units (surfaced above; does not affect the
+author's-own-function resolution).
+
 ## Activity log
 
 - **2026-06-09** — Filed. Ground truth (the Evidence facts above) established
@@ -142,3 +248,7 @@ without a launch.)
   bounds correct, target absent). B0 (static source diff) eliminated the fixture
   as the variable. Probe B isolates the DbgHelp handler-lifecycle (per-call
   init/cleanup churn) hypothesis.
+- **2026-06-09** — CLOSED. Probes A→F (incl. offline ctypes D/E/F) nailed the
+  wrong-filter-field mechanism + the name-keying second defect; both fixed
+  (`a29bf8f`), cap-90 user-confirmed green, Gate B `land-fix`. The
+  CRT-internal-noise quality item is the open follow-up.
