@@ -164,6 +164,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxTrampolineInterface` (code allocation) — `Allocate` (all-in-one alloc+fill+pad+export) + `Export` (standalone publish) + the raw `AllocateFromBranchPool`/`LocalPool` floor (v2) | Built | `kcdx.code` | [code.md](code.md) |
 | `kcdxInterface::GetConflictReport` (enumerate patch / hook / kcdx.hook entries at a target — winners + rejected losers) | Built | `kcdx.conflict` (**NYI** — owed Lua mirror) | [hook.md](hook.md#conflict-report) |
 | `kcdxScanInterface` (diagnostic AOB scan / address-discovery workbench) | **NYI** | `kcdx.scan` | [scan.md](scan.md) |
+| `kcdxLocatorInterface` (locator values + `Resolve(module, target)` — where in a function an op applies) | **NYI** | `kcdx.locator.*` | [locator.md](locator.md) |
 | `kcdxDeclareInterface::Declare` / `Get` (author-declared per-version named targets + value reads) | Built | `kcdx.declare` / `kcdx.declared` | [declare.md](declare.md) |
 | `kcdxTargetInterface::RegisterTarget` (author-declared named targets) | **NYI** | author-declared targets (`targets.toml`) | [targets.md](targets.md) |
 | asset replacement — the `replaces.toml` sidecar (no-code, language-neutral) + `kcdxAssetInterface::GetByPath` / `GetByName` / `Declare` / `Register` / `Replace` (programmatic, in-code) | Built | asset replacement (`replaces.toml`) + `kcdx.assets.*` | [assets.md](assets.md) |

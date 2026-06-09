@@ -1,0 +1,92 @@
+# CAP-86 — kcdx.locator.* value namespace + the :resolve introspection accessor.
+#
+# The behavior under test is the AUTHOR SURFACE (the Lua binding), distinct from
+# cap-83-stmt-resolve (which tests the ENGINE machinery refdb::ResolveStatement*
+# via a C++ self-test). This pure-Lua plugin exercises the kcdx.locator.* value
+# namespace built in src/lua_bind_locator.cpp: each locator family
+# (function_entry / function_exit / first_call_to / last_call_to / call_to /
+# first_return / last_return / return_value / references_string /
+# first_read_of_cvar / matching{} / matching_pattern)
+# produces a locator value whose :resolve("WHGame.dll", "SaveGame") accessor
+# resolves it against the curated reference DB and returns the resolved
+# statement (idx / kind / byte_range_len / callee + captures), or found=false +
+# a reason token. The locator SELF-VERIFIES here — no hook or statement verb
+# consumes it; :resolve is the seam.
+#
+# Fixture: the curated function SaveGame, referenced BY NAME (resolved against
+# the shipped reference.sqlite) — NO hardcoded address_id (the curated set was
+# renumbered 1-157; resolving by name is currency-stable). Ground truth measured
+# from data/reference.sqlite (SaveGame, 59 statements, idx 0..58):
+#   function_entry             -> idx 0,  kind "assign", byte_range_len 3
+#   function_exit              -> idx 58, kind "return", byte_range_len 30
+#   first_call_to(FUN_1804d455c) -> idx 8, kind "call", callee FUN_1804d455c, brl 5
+#   last_call_to(FUN_1804d455c)  -> idx 53, kind "call", callee FUN_1804d455c, brl 48
+#   call_to(FUN_1805c38c8)     -> idx 20 (UNIQUE call -> resolves); AND
+#     call_to(FUN_1804d455c)   -> found=false, reason "call_to_ambiguous"
+#                                  (SaveGame calls it twice: idx 8 and idx 53 —
+#                                  the §9.3 "errors if multiple" form)
+#   first_return               -> idx 13, kind "return"
+#   last_return                -> idx 58, kind "return"
+#   return_value("cVar2")      -> idx 55, kind "return" (first return whose text
+#                                  references cVar2: "return cVar2")
+#   references_string(" ignoring delay") -> idx 1, kind "assign", brl 7 (the
+#                                  FIRST statement whose string_ref equals the
+#                                  arg; SaveGame's string_ref stmts: idx 1
+#                                  " ignoring delay", 3 " immediately", 5
+#                                  "Quick-saving", 6 "Saving")
+#   first_read_of_cvar("Quick-saving") -> idx 5, kind "assign", brl 7 (cvar name
+#                                  carried in the SAME string_ref column as a
+#                                  string ref; a DISTINCT value from
+#                                  references_string proves the resolver reads
+#                                  the supplied name)
+#   matching{}                 -> idx 0  (empty matcher = first statement)
+#   matching{kind="call"}      -> idx 8  (first call statement)
+#   matching_pattern("48 8B C1") -> found=false, reason
+#                                  "matching_pattern_not_statement_locator"
+#                                  (the labeled expert raw-AOB hatch is NOT a
+#                                  statement-metadata locator — refdb's contract)
+#
+# Reported from Lua at kcdx.on("ready") (refdb is open by then).
+#
+# FALSIFIABLE per row: a row goes RED if its locator resolves to the WRONG
+# index / kind / byte_range_len / callee, fails to resolve when the statement
+# data IS present, or (matching_pattern) does NOT reject with the documented
+# reason. Each row reads the ACTUAL accessor output, never a value it set.
+#
+# GRACEFUL on absent data: the curated statement tables ship in the reference
+# DB. If SaveGame does not resolve or carries no statements (a pre-deploy state
+# where the deployed projection lacks the statement tables), the affected rows
+# report a clear DEGRADED PASS (a deploy-state observation) rather than a hard
+# FAIL or a crash — the same posture as cap-83.
+#
+# Test mode: boot-only. Resolves + reports at ready; no console typing, no
+# in-game gesture.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_86_locator_resolve"
+display_name        = "CAP-86 kcdx.locator.* value namespace + :resolve"
+author              = "ts"
+description         = "Pure-Lua self-test of the kcdx.locator.* value namespace: each locator family's :resolve(module, target) accessor resolves against SaveGame in the curated reference DB to the ground-truth statement idx/kind/byte_range_len/callee (and matching_pattern rejects with reason matching_pattern_not_statement_locator). Reports from Lua at ready; graceful-degraded when the statement tables are not deployed."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "cap-86-function-entry",
+    "cap-86-function-exit",
+    "cap-86-first-call-to",
+    "cap-86-last-call-to",
+    "cap-86-call-to",
+    "cap-86-first-return",
+    "cap-86-last-return",
+    "cap-86-return-value",
+    "cap-86-references-string",
+    "cap-86-first-read-of-cvar",
+    "cap-86-matching",
+    "cap-86-matching-pattern",
+]
+
+[entrypoints]
+lua = "plugin.lua"

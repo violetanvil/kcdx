@@ -125,7 +125,9 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   signature). The name may be an engine [Address Library](addr.md) name or one
   you declared yourself (see *author-target* below). Advanced/expert locators
   (`address`, `address_id`, `pattern`, `target_symbol`) make you supply hex/ABI
-  yourself.
+  yourself. **A `kcdx.locator.*` value** is a finer-grained locator that names
+  *where within a function* an op applies (a call, a return, a matching
+  statement) — see [locator.md](locator.md).
 
 - **author-target / `targets.toml`** — a code site you name yourself in a
   `targets.toml` sidecar (`[[target]]` rows: a bare `name` + one locator +
@@ -297,6 +299,7 @@ it does not exist yet.
 | `kcdx.cvar.get_int` | read a game CVar's integer value by name | [cvar.md](cvar.md) |
 | `kcdx.cvar.get_bool` | read a game CVar as on/off (its int value `!= 0`) | [cvar.md](cvar.md) |
 | `kcdx.cvar.get_float` | read a game CVar's float value by name | [cvar.md](cvar.md) |
+| `kcdx.locator.*` | locator values — where in a function a hook/statement op applies (`function_entry`/`first_call_to`/`first_return`/`matching{…}`/…); `:resolve(module, target)` inspects what one picks | [locator.md](locator.md) |
 | `kcdx.assets.get_by_path` | resolve your own asset by path → a loadable path you hand to a game asset API (cross-plugin via `kcdx.plugin.<a>.<p>.assets.get_by_path`) | [assets.md](assets.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
 | `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |

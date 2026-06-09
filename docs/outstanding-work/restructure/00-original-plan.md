@@ -1731,8 +1731,9 @@ If the callback returns a table, the engine writes the returned values back to t
 **`kcdx.locator.*` — locator values:**
 
 - `function_entry()`, `function_exit()` — function-level common cases
-- `first_call_to(fn)`, `last_call_to(fn)`, `call_to(fn)` (errors if multiple), `first_return()`, `last_return()`, `return_value(v)`, `first_read_of_cvar(name)` — statement-content shortcuts (documented common path)
+- `first_call_to(fn)`, `last_call_to(fn)`, `call_to(fn)` (errors if multiple), `first_return()`, `last_return()`, `return_value(v)`, `first_read_of_cvar(name)`, `references_string(s)` — statement-content shortcuts (documented common path)
 - `matching{kind=, callee=, condition_contains=, reads_cvar=, references_string=}` — general statement-content matcher
+- Addendum (user-settled 2026-06-09): the standalone `references_string(s)` shortcut is kept — a shortcut for `matching{ references_string = s }`, symmetric with `first_read_of_cvar(name)` (both name a `string_ref` match by a single arg). It serves the learnable-surface cornerstone alongside the other standalone shortcuts; `references_string` thus has BOTH a standalone form and a `matching{}` key.
 - `matching_pattern("48 8B C1 ...")` — labeled expert hatch for raw-AOB cases
 
 Locator defaults to `kcdx.locator.function_entry()` when omitted on verbs that accept the default. (Module is NOT defaulted — it is the required first positional arg per the rule above.)

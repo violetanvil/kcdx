@@ -1531,7 +1531,9 @@ StatementResolution StmtNotFound(const char* reason,
         log::KV("function", functionId),
         log::KV("locator_kind", (long long)static_cast<int>(loc.kind)),
         log::KV::BareStr("detail", detail));
-    return StatementResolution{};  // found=false.
+    StatementResolution r;  // found=false.
+    r.reason = reason;      // surface the token to a consumer (e.g. :resolve).
+    return r;
 }
 
 // Does this statement satisfy a Matching{} locator's provided keys (ANDed)?
@@ -1613,7 +1615,9 @@ StatementResolution ResolveLocatorInVector(const std::vector<CachedStatement>& s
                     "call_to(fn) requires a UNIQUE call to the named callee but "
                     "the function calls it more than once (the §9.3 'errors if "
                     "multiple' form) — use first_call_to / last_call_to instead"));
-            return StatementResolution{};  // found=false.
+            StatementResolution amb;  // found=false.
+            amb.reason = "call_to_ambiguous";
+            return amb;
         }
         return MakeStatementResolution(*hit);
     }
@@ -2060,7 +2064,9 @@ static StatementResolution ResolveStatementForEntity(const CachedEntity& c,
                 "the resolved function has no statements in the curated cache "
                 "(a non-function kind, no curated statement coverage, or the "
                 "statement tables are not deployed yet)"));
-        return StatementResolution{};  // found=false.
+        StatementResolution r;  // found=false.
+        r.reason = "function_no_statements";
+        return r;
     }
     StatementResolution r = ResolveLocatorInVector(it->second, locator, functionId);
     if (r.found) {
@@ -2096,7 +2102,9 @@ StatementResolution ResolveStatementByName(const std::string& functionName,
                 // caller resolves the address separately if it needs one).
     if (!IsLoaded()) {
         LogNotLoaded("ResolveStatementByName");
-        return StatementResolution{};  // found=false, reason db_not_loaded logged.
+        StatementResolution r;  // found=false, reason db_not_loaded logged.
+        r.reason = "db_not_loaded";
+        return r;
     }
     auto it = g_byName.find(functionName);
     if (it == g_byName.end()) {
@@ -2106,7 +2114,9 @@ StatementResolution ResolveStatementByName(const std::string& functionName,
             log::KV::BareStr("detail",
                 "no curated entity carries this name — the statement locator "
                 "cannot resolve against an unknown function"));
-        return StatementResolution{};  // found=false.
+        StatementResolution r;  // found=false.
+        r.reason = "name_unknown";
+        return r;
     }
     return ResolveStatementForEntity(it->second, functionName, locator);
 }
@@ -2117,7 +2127,9 @@ StatementResolution ResolveStatementById(uint64_t kcdx_id,
     (void)ctx;
     if (!IsLoaded()) {
         LogNotLoaded("ResolveStatementById");
-        return StatementResolution{};  // found=false, reason db_not_loaded logged.
+        StatementResolution r;  // found=false, reason db_not_loaded logged.
+        r.reason = "db_not_loaded";
+        return r;
     }
     auto it = g_byId.find(kcdx_id);
     if (it == g_byId.end()) {
@@ -2127,7 +2139,9 @@ StatementResolution ResolveStatementById(uint64_t kcdx_id,
             log::KV::BareStr("detail",
                 "no curated entity carries this kcdx_id — the statement locator "
                 "cannot resolve against an unknown function"));
-        return StatementResolution{};  // found=false.
+        StatementResolution r;  // found=false.
+        r.reason = "name_unknown";
+        return r;
     }
     return ResolveStatementForEntity(it->second, std::string("id:") + std::to_string(kcdx_id),
                                      locator);

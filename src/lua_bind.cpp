@@ -23,6 +23,7 @@ namespace kcdx::lua_bind_code  { void bind(lua_State* L); }
 namespace kcdx::lua_bind_alias { void bind(lua_State* L); }
 namespace kcdx::lua_bind_declare { void bind(lua_State* L); }
 namespace kcdx::lua_bind_scan  { void bind(lua_State* L); }
+namespace kcdx::lua_bind_locator { void bind(lua_State* L); }
 namespace kcdx::lua_bind_hook  { void bind(lua_State* L); }
 namespace kcdx::lua_bind_on      { void bind(lua_State* L); }
 namespace kcdx::lua_bind_publish { void bind(lua_State* L); }
@@ -103,6 +104,10 @@ void RegisterKcdxTable(lua_State* L) {
     LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_scan::bind");
     kcdx::lua_bind_scan::bind(L);
     LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_scan::bind");
+
+    LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_locator::bind");
+    kcdx::lua_bind_locator::bind(L);
+    LOG_INFO("LUA_BIND", "    after  kcdx::lua_bind_locator::bind");
 
     LOG_INFO("LUA_BIND", "    before kcdx::lua_bind_hook::bind");
     kcdx::lua_bind_hook::bind(L);

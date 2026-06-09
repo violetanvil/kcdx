@@ -375,6 +375,9 @@ struct StatementCapture {
 //                                     expert AOB hatch) was handed to this
 //                                     statement-metadata path; it resolves
 //                                     against bytes elsewhere, not here.
+//   name_unknown                   — the by-name resolve (ResolveStatementByName
+//                                     / ById) found no curated function of that
+//                                     name/id; set by the name/id resolvers.
 struct StatementResolution {
     bool        found = false;
     int64_t     statement_idx = 0;     // the resolved statement's idx.
@@ -399,6 +402,15 @@ struct StatementResolution {
     // join is an in-memory hash hit built ONCE at resolution (no per-call SQL —
     // memory.md). Appended at the END (append-only, free struct shape).
     std::vector<StatementCapture> captures;
+
+    // The not-found reason token, populated on found=false (one of the tokens
+    // documented above: db_not_loaded / function_no_statements /
+    // locator_no_match / call_to_ambiguous / matching_pattern_not_statement_locator
+    // / name_unknown). Empty when found=true. Carries the SAME token the
+    // not-found log line records, so a consumer that surfaces resolution to the
+    // user (the kcdx.locator.* :resolve accessor) can report WHICH miss happened
+    // without re-deriving it from the log. Appended at the END (append-only).
+    std::string reason;
 };
 
 // Caller context for a Resolve* call.
