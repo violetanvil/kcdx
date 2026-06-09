@@ -65,4 +65,13 @@ buildable + its same-change test runnable.
 - **Full Lua+C++ parity** (`.claude/rules/lua-api-surface.md`) — every capability
   reachable + tested from BOTH surfaces (step 7's C++ interfaces + their C++ test
   plugins).
+- **Fixture currency — every new `cap-NN` plugin references a CURRENT curated id/name,
+  resolved against the shipped `reference.sqlite` at author time, never a hardcoded id
+  from an older curated set.** The curated entity set was renumbered to a contiguous
+  1–157 scheme (the DB↔Address-Library unification); a fixture written against a retired
+  id (the [`TD-0008`](../../../tech-debt/TD-0008-stale-address-id-test-fixtures.md)
+  class — `address_id` 1172/1124 etc.) ships a red row. Each step's plugin verifies its
+  `target` / `address_id` / `kcdx.functions.*` reference resolves in the shipped DB
+  before the step lands (a name resolves to address AND ABI per
+  `.claude/rules/cornerstones.md`; the engine carries the curated detail).
 - Confirmed by the user's launch + the agent's `kcdx-dev.log` read at each step.

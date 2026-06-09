@@ -39,10 +39,16 @@ Q silent. Confirmed by the user's launch + the agent's dev-log read.
 ## Dependencies
 
 Step 1 (locators) + step 2 (ops — `replace_with` consumes them) + step 3 (the
-`kcdx.functions.*` reference the target accepts). The auto-pad-and-trampoline relies
-on step 6 for capacity AT SCALE — but this step's single-target test does NOT cross
-the pool's threshold, so it runs against the current single-region pool; step 6 is a
-TC-scale capacity dependency, not a single-test dependency.
+`kcdx.functions.*` reference the target accepts) — and, underneath them, the
+statement-resolution-layer prerequisite
+([`../../statement-resolution-layer/`](../../statement-resolution-layer/), landed) that
+ships the curated `statements` / `referenced_vars` data + the `refdb` resolution API
+the locator/op steps resolve through (the `replace_with` fit decision reads
+`statements.byte_range_len`; insert-callback captures read the joined `referenced_vars`
+rows). The auto-pad-and-trampoline relies on step 6 for capacity AT SCALE — but this
+step's single-target test does NOT cross the pool's threshold, so it runs against the
+current single-region pool; step 6 is a TC-scale capacity dependency, not a single-test
+dependency.
 
 ## Design authority
 

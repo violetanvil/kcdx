@@ -41,8 +41,13 @@ verb applying them. PROBE Q silent.
 
 ## Dependencies
 
-Phase 9.1 (the reference DB `statements.kind` / `byte_range_len` an op's bytes are
-checked against — DONE). Independent of step 1.
+The statement-resolution-layer prerequisite
+([`../../statement-resolution-layer/`](../../statement-resolution-layer/), steps 1+2
+landed) — it ships the curated-function `statements` metadata (incl. `kind` /
+`byte_range_len`) into `reference.sqlite` and exposes the `refdb` statement-resolution
+API an op's bytes are checked against. (Phase 9.1 shipped the reference DB + `refdb`
+ADDRESS resolution — DONE — but NOT the statement data; the prerequisite added it.)
+Independent of step 1.
 
 ## Design authority
 
