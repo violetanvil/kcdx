@@ -247,6 +247,52 @@ or (b) disable the strongest single suspect (the survival startup pass) on the c
 re-launch (one-variable, like PROBE C). Option (b) is cheaper if the survival-startup suspicion is
 right; (a) is the definitive bisect if (b) misses.
 
+## PROBE C.2 — the re-entrancy is `ccrypak_fopen` ⟷ `lua_pcall`, a pre-existing benign pattern (red herring)
+
+The `depth=2` re-entrant dispatch alternates between TWO VAs: `ccrypak_fopen` and a second hook
+at `…8EA5A4` = **`engine.lua_pcall`** (the foundational Lua-bridge hook, present for many
+versions — `detour_hook 'engine.lua_pcall': installed at …8EA5A4`). So the "spiral" is
+`ccrypak_fopen ⟷ lua_pcall` ping-ponging during Lua script loading (a script open routes through
+FOpen; FOpen's path touches Lua) — a NORMAL, depth-bounded, pre-existing pattern on every boot, NOT
+a runaway and NOT new. The re-entrancy is fully a red herring; both hooks are old + exonerated
+(PROBE C.2).
+
+## PROBE C.3 — the launch-log boundary pins the regression window to the SURVIVAL lane
+
+The session logs (`kcdx-dev_2026-06-08_*.log`, grep `FAULTED`) give the exact clean→crash boundary
+today:
+
+- `15:18`, `16:53`, `17:43`, `17:49`, `18:28`, **`18:34` — all CLEAN** (FAULTED=0; the last clean
+  boot).
+- `20:48` (the KI crash) + `21:41` (PROBE C) — **CRASHED.**
+
+So the regression landed in the engine code deployed between the `18:34` clean boot and the `20:48`
+crash. The commits in that window, by whether they change behavior:
+
+- **My hook-backend commits (`aecc2de` 19:16, `ec7cae5` 19:41, `bda7b90` 19:54) are COMMENT/AP16-
+  scrub ONLY** — zero behavior change (and PROBE C already proved the backend swap is irrelevant).
+- **The SURVIVAL lane is the only substantive engine change in the window:** `8008e3d` (3.1 —
+  `hooks.cpp` + `survival.{cpp,h}` + `survival_pass.cpp`), `3c5e065` (3.2), **`69c7cc2` (3.3 — a NEW
+  310-line `src/survival_verify.{cpp,h}` startup verification pass + `src/pe_helpers.{cpp,h}` PE-
+  header parsing + `refdb.cpp`)**, `ffc51ae` (3.4).
+
+`survival_verify` + `pe_helpers` is exactly the shape that can corrupt graphics-init: a startup pass
+that PARSES a loaded module's PE headers + walks/reads process memory during init. If it mis-reads,
+writes out of bounds, or perturbs a structure FSR2/NGX later reads, the garbage graphics pointer
+follows — off the kcdx stack, in `C_Game::CreateInstance`. **This is the other chat's lane** (not
+mine); attribution is now strongly the survival-verification work, pinned by the launch-log boundary
++ the mechanism shape.
+
+## PROBE D — disable the survival startup verification pass (one variable, current tree)
+
+The decisive next probe: on the current crash-DLL tree, DISABLE the survival startup verification
+pass (the `69c7cc2` 3.3 entry point) and re-launch — one variable, like PROBE C.
+- **Boots clean** → the survival startup verification pass IS the cause; hand the mechanism +
+  attribution to the survival lane for the fix.
+- **Still crashes** → survival-verify is exonerated too; widen to a full known-good bisect at
+  `3b99fea` (the last pre-today engine state — what this morning booted clean) to confirm code-vs-
+  environment.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
