@@ -26,8 +26,8 @@ goes red); each new `cap-NN` row lands with its feature step, not piled at the e
 | Step | Status | Commit |
 |---|---|---|
 | [1 — `kcdx.locator.*` value namespace](step-1-locator-namespace.md) | DONE | 9802a5e |
-| [2 — `kcdx.op.*` static-op value namespace](step-2-op-namespace.md) | DONE | (landed) |
-| [3a — `kcdx.functions.*` + `kcdx.dll.declare` (deterministic half)](step-3-functions-and-declare.md) | NOT STARTED | — |
+| [2 — `kcdx.op.*` static-op value namespace](step-2-op-namespace.md) | DONE | dce5c35 |
+| [3a — `kcdx.functions.*` + `kcdx.dll.declare` (deterministic half)](step-3-functions-and-declare.md) | DONE | b290d9e |
 | [3-probe — DbgHelp `SymEnumSymbols` enumerates a foreign DLL's non-exported internals](step-3-functions-and-declare.md) | NOT STARTED | — |
 | [3b — PDB auto-load (`plugin_pdb.{cpp,h}`), built ONLY after 3-probe confirms](step-3-functions-and-declare.md) | NOT STARTED | — |
 | [4 — `kcdx.hook.*` sub-verb split + migrate the existing hook plugins (same commit)](step-4-hook-subverbs-migrate.md) | NOT STARTED | — |

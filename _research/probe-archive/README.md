@@ -21,6 +21,7 @@ reconstruct the wiring without it living in `src/`.
 | [loc_dump_probe.cpp.txt](loc_dump_probe.cpp.txt) + [.h.txt](loc_dump_probe.h.txt) — LOC-DUMP probe (ctor capture + slot 21/22 LocalizeString) | `src/probes/loc_dump_probe.{cpp,h}` (whole files `git rm`'d) | loc RE phase COMPLETE; find{text=} settled; text→gameplay-fn proven impossible via loc path | cap-43 |
 | [bugsplat-probe-z.md](bugsplat-probe-z.md) — PROBE Z (loader-lock asmjit smoke test) | `src/probes/bugsplat_ctor_probe.cpp` INTERNAL `#if 0` strip (file's live install machinery KEPT) | VERIFIED — codegen + branch_pool VirtualAlloc + dtor all loader-lock-safe | cap-59 KI; TD-0003 |
 | [fopen-override.md](fopen-override.md) — FOPEN probe (U.1 read-fires + U.4 override acceptance) | `src/probes/fopen_override_probe.{cpp,h}` (whole files `git rm`'d) | unknown #1 PASS; U.4 override CONFIRMED (`KCDX_U4_OVERRIDE_ACTIVE` reached kcd.log) | Phase 8.5; superseded by `src/asset_overlay.cpp` |
+| [pdb-autoload-symenum-internals.md](pdb-autoload-symenum-internals.md) — PROBE PDB-AUTOLOAD (SymEnumSymbols on a foreign release-PDB) | `src/plugin_loader.cpp` working-tree block (never committed; removed in-place) | Outcome B — `symload_ok=yes` but `internal_enumerated=no` (717 CRT-privates enumerated, the plugin's own non-exported fn ABSENT); the "PDB carries every internal address" assumption is FALSE for a release `/Zi`+`/DEBUG` PDB | Phase 9.3 step 3b (PDB auto-load — internal-address source must be re-designed) |
 
 ## NOT archived here (still LIVE in src/)
 
