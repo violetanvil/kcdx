@@ -49,3 +49,15 @@ checks PASSES at a live launch (the matrix row reads PASS in `kcdx-dev.log`, rea
 engine and the browser checker return the SAME verdict on the SAME bytes (D27). Not a UI phase —
 no maintainer-tool UI acceptance; the user gesture is the game launch only. Build-green is
 necessary, not sufficient — the matrix is confirmed by the launch (`.claude/rules/skeptical-expert.md`).
+
+**Gate MET — accepted at the live launch 2026-06-09.** Deployed DLL hash-verified
+(`AB48333923E820DB4664A9873BE5402BC998EFE75E2763BC3415731A8D4243FC`); the clean launch
+(`kcdx-dev_2026-06-09_12-46-54.log`, after the KI-0012 boot crash was fixed) reported both
+survival rows PASS: `RESULT name=cap-84-survival-dispatch verdict=PASS` (per-kind dispatch +
+the 5 static checks + the 3.3 startup verification pass — IsVaInLiveText reachability,
+RunStartupVerification per-row verdicts, D34 matched-id attribution, wrong_target on a
+non-matching fingerprint) and `RESULT name=cap-85-survival-agreement verdict=PASS` (cross-impl
+agreement on the 8 planted-PE slices, the 4 algorithm-identical kinds). The 3 unrelated suite
+FAILs that run (CAP-20-addrname, CAP-28-typo-fails-fast, cap-90-pdb-internal-address) are other
+lanes, not Phase-3 rows. TD-0009 (the 3 superset-kind engine↔browser reconciliation) remains
+the deferred follow-up.

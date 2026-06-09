@@ -13,28 +13,26 @@ steps land in the SEPARATE gitignored frontend repo (gate `npm run build` + Vite
 **[ENG]** in kcdx `src/` (gate `pwsh ./build.ps1` + live launch); **[TEST]** in kcdx
 `test-plugins/`; **[CORE]** in `data/refdata-extractor/python/seeds_shared/` (gate pytest).
 
-## Current state + what's next (2026-06-08)
+## Current state + what's next (2026-06-09)
 
-**Where we are: Phases 0–3 are COMPLETE.** Phase 2 (the browser static checker + the per-author UI)
-landed; Phase 3 (the C++ engine survival extension — the AUTHORITY the browser mirrors, D27) is now
-DONE: 3.1 the per-kind dispatch + Ambiguous (8008e3d), 3.2 the 5 static non-function checks + the
-anchor-dependency DAG (3c5e065), 3.3 the startup reachability + on-disk version-applicability +
-D34 attribution pass (69c7cc2), 3.4 the JS↔C++ cross-impl agreement pin (this commit). One follow-up
-filed: TD-0009 (the engine↔browser agreement is HARD-pinned for the 4 algorithm-identical kinds; the
-3 superset kinds, where the engine computes more than the browser/Python subset by design, are
-deferred for reconciliation). **Next: Phases 4–5** (the in-game batch plugin that drives the 3.3
-startup verification pass + writes the JSON report; the frontend report ingestion / two-block
-worklist).
+**Where we are: Phases 0–3 are COMPLETE AND ACCEPTED.** Phase 2 (the browser static checker + the
+per-author UI) landed; Phase 3 (the C++ engine survival extension — the AUTHORITY the browser
+mirrors, D27) is DONE: 3.1 the per-kind dispatch + Ambiguous (8008e3d), 3.2 the 5 static
+non-function checks + the anchor-dependency DAG (3c5e065), 3.3 the startup reachability + on-disk
+version-applicability + D34 attribution pass (69c7cc2), 3.4 the JS↔C++ cross-impl agreement pin
+(ffc51ae). One follow-up filed: TD-0009 (the engine↔browser agreement is HARD-pinned for the 4
+algorithm-identical kinds; the 3 superset kinds, where the engine computes more than the
+browser/Python subset by design, are deferred for reconciliation). **Next: Phases 4–5** (the in-game
+batch plugin that drives the 3.3 startup verification pass + writes the JSON report; the frontend
+report ingestion / two-block worklist).
 
-**Phase-3 in-game acceptance: BLOCKED on KI-0012 (a parallel-lane crash, NOT survival code).** The
-Phase-3 work is built/committed/ledger-closed; the one batched live launch (the cap-84 + cap-85
-matrix from kcdx-dev.log) is the remaining gate. The 2026-06-08 launch crashed during boot with a
-launch ACCESS_VIOLATION (KI-0012 — the `engine.ccrypak_fopen` safetyhook re-entrancy in the
-HOOK-BACKEND lane, the parallel chat's work, NOT survival code) BEFORE the per-tick self-report
-block fired — cap-84 + cap-85 registered + loaded (handles 68/69) but sit `PENDING` (no verdict).
-The deployed `kcdx.dll` interleaves both lanes; the crash is pre-self-test. Acceptance resumes on a
-clean launch once KI-0012 lands (the parallel chat is fixing it) — re-deploy the then-current DLL,
-relaunch, read the cap-84/cap-85 verdicts. No survival-code change is implicated.
+**Phase-3 in-game acceptance: ACCEPTED at the 2026-06-09 live launch.** Once KI-0012 (the
+parallel-lane boot crash, NOT survival code) landed and the then-current DLL was re-deployed +
+hash-verified (`AB48333923E820DB4664A9873BE5402BC998EFE75E2763BC3415731A8D4243FC`), the clean launch
+(`kcdx-dev_2026-06-09_12-46-54.log`) reported both survival rows PASS:
+`RESULT name=cap-84-survival-dispatch verdict=PASS` + `RESULT name=cap-85-survival-agreement
+verdict=PASS`. The 3 unrelated suite FAILs in the run (CAP-20-addrname / CAP-28-typo-fails-fast /
+cap-90-pdb-internal-address) are other lanes, not Phase-3 rows. The phase gate is MET.
 
 ## Phase-grain status ledger
 
