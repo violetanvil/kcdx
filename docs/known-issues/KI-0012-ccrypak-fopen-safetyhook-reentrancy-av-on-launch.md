@@ -176,6 +176,49 @@ resource via FOpen during `C_Game::CreateInstance` gets a corrupted handle/point
 faults deref'ing it — OFF the kcdx stack, LATER. This is a falsifiable hypothesis; the
 bisect (PROBE C) tests it directly.
 
+## PROBE A.4 — the corrupt pointer is a GRAPHICS-config value, NOT a FILE* (the FOpen-return hypothesis is falsified)
+
+Tracing the corrupt `rdx` back through the caller's disassembly + the dump memory map:
+
+- **Origin (caller disasm, `C_Game::CreateInstance+0x30674`):** the garbage value was already in
+  `rdx` when this graphics-config function was entered. It is `mov rbx,rdx` (saved) BEFORE the
+  `NVSDK_NGX_UpdateFeature+0x13380` (DLSS/NGX) call, then `mov rdx,rbx` (restored) and passed to
+  the `*dst=*src` copy helper that faults. So `rdx` is an **incoming argument** to this graphics
+  function, threaded down from the NGX/FSR2 init chain (frames 02-09), NOT produced locally
+  (PROBE A.4).
+- **The value is wholly invalid, not a tainted-good-pointer.** `!address 0x0000019a3019ad` (the
+  low part, stripping the `0x58` high byte) is UNMAPPED (`????`), same as the full
+  `0x580000019a3019ad`. So it is NOT "a valid `0x019a…` heap pointer with a corrupted high byte" —
+  the whole qword is junk (or a non-pointer value being deref'd as a pointer). By contrast
+  `r12 = 0x0000019a25b23594` IS a valid 1 KB heap region, so the graphics code holds valid
+  `0x019a…`-family pointers nearby; the faulting `rdx` is a different, bad value (PROBE A.4).
+
+**Consequence:** the PROBE A.3 hypothesis (a corrupted `ccrypak_fopen` Around-return used as a
+pointer) is FALSIFIED — the corrupt pointer is a graphics-config value in the DLSS/FSR2 init path,
+not a `FILE*`. The `ccrypak_fopen` Around-return marshaling (`dynamic_call_jit.cpp` `StoreReturn`)
+is ALSO backend-independent (shared JIT, unchanged by the swap), further weakening "the swap
+corrupted a return". What the swap DID change is `get_original()` (safetyhook's relocated
+trampoline vs MinHook's `pOriginal`) — but that affects FOpen's own call-original, not a graphics
+pointer.
+
+**Dump ceiling reached.** This is a minidump (registers + stack + partial memory); the heap is not
+fully committed, so the corruption ORIGIN cannot be traced further statically (the search/walk hits
+unmapped regions). Establishing CAUSATION (is kcdx upstream of this graphics-pointer corruption at
+all?) requires the bisect + live instrumentation, not more dump reading.
+
+## Where the investigation stands (honest)
+
+- CONFIRMED (dump): the AV is an invalid-pointer read of a GRAPHICS-config value in WHGame's
+  DLSS/FSR2 init on the Main thread; no kcdx frame on the stack; the "spiral"/"stack-overflow"
+  headline is a log-reading artifact (PROBE A, A.4).
+- CONFIRMED (user): a clean boot today before the changes, no game patch → a same-day regression in
+  today's deployed engine code (not the base game).
+- NOT YET CONFIRMED: WHICH lane/commit regressed it, and the MECHANISM. The FOpen-return hypothesis
+  is falsified; the live suspects are now broader (any of today's engine changes that could perturb
+  graphics-init state — a hook mis-firing, a heap/allocation perturbation, an asset/overlay or
+  survival-startup interaction). The bisect (PROBE C) is the REQUIRED next step to attribute the
+  lane before any mechanism theory.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
@@ -199,7 +242,8 @@ bisect (PROBE C) tests it directly.
 | PROBE A: read the crash dump faulting stack + `!analyze -v` + the log timeline (read-only ground truth) | `INVALID_POINTER_READ` in WHGame FSR2/NGX graphics init (`C_Game::CreateInstance`), 13-frame stack, ZERO kcdx frames, Main thread. The "re-entrancy spiral"/"stack overflow" headline is FALSIFIED — `depth=2` bounded + `seq` is a cumulative fire-count, not nested frames. kcdx served only one Lua test overlay all session; nothing to graphics. |
 | PROBE A.2: `!analyze -v` the older dumps (claimed pre-existing base-game crash) | **WITHDRAWN — flawed reasoning.** Older dumps are also kcdx sessions; a symbol match does not prove base-game. User reports a CLEAN boot today before the changes (no game patch) → a same-day clean→crash IS a regression in today's code. The hook-backend swap is back in scope. |
 | PROBE A.3: disassemble the faulting site (read-only) | A `*dst=*src` 8-byte copy helper; the SOURCE pointer (`rdx=0x580000019a3019ad`) is corrupt while DEST/frame are valid. The garbage = a plausible `0x019a…` heap ptr with a `0x58` high byte — the signature of a mis-produced 64-bit value used as a pointer. Fits the `ccrypak_fopen` Around-return failure mode. |
-| PROBE C (bisect — does reverting the safetyhook `ccrypak_fopen` swap fix it): build the DLL pre-`8a02bd8` (all-MinHook), user launches | pending — needs the last-clean-boot commit to scope the window. |
+| PROBE A.4: trace the corrupt `rdx` back via caller disasm + `!address` (read-only) | The corrupt value is a GRAPHICS-config pointer threaded from the NGX/FSR2 init chain (an incoming arg, saved across the NGX call), NOT a `FILE*`. The whole qword is unmapped (not a tainted-good-pointer). FALSIFIES the FOpen-return hypothesis (A.3). Dump ceiling reached — causation needs the bisect. |
+| PROBE C (bisect — attribute the regressing lane): build the DLL at `ed9ff7f` (pre-safetyhook-swap, all function-entry hooks still MinHook), deploy, user launches | pending — the required next step (the dump can't establish causation). |
 
 ## Resolution
 
