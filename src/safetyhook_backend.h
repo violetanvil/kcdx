@@ -10,10 +10,17 @@
 // SOURCE: vendor/safetyhook/src/inline_hook.cpp setup()/e9_hook()/ff_hook() +
 // the typed InlineHook::Error enum — read this session.
 //
-// SAFETY: safetyhook's enable() thread-suspends ALL threads while it patches
-// (trap_threads, inline_hook.cpp:372). Correct for the function-entry chain
-// path (the only caller this step); the loader-lock paths (early_hook, the
-// update pump) stay MinHook because suspending under the loader lock deadlocks.
+// SAFETY: safetyhook's enable() patches via a VEH + VirtualProtect mechanism,
+// NOT a thread suspend — trap_threads registers a per-target trap and
+// VirtualProtects the target pages, and any thread faulting on a trapped page
+// is IP-fixed by the registered vectored exception handler. Fine for the
+// function-entry chain path (the only caller this step). The loader-lock paths
+// (early_hook, the update pump) stay MinHook as the CONSERVATIVE choice —
+// MinHook is a plain byte-write with no known loader-lock hazard; whether
+// safetyhook's VEH+VirtualProtect install is loader-lock-safe is UNVERIFIED, an
+// open question, not a known deadlock. SOURCE: vendor/safetyhook/src/
+// os.windows.cpp:268-318 (trap_threads body) + os.windows.cpp:230-256 (the VEH
+// handler) — read this session.
 //
 // get_original() returns the trampoline entry (InlineHook::original() ->
 // m_trampoline.address()), which InstallRuntime writes into runtime_func_t's

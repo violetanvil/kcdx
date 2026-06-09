@@ -496,11 +496,12 @@ InstallResult Install(uintptr_t                       targetVa,
     // Create the MidHook DISABLED so the relocated-region size is known and the
     // slot's resumeAddr is set BEFORE the patch goes live (no fire can read a
     // resumeAddr==0). create(StartDisabled) builds the stub + trampoline only;
-    // the separate enable() writes the patch under trap_threads (suspends all
-    // threads — fine for a mid chain install, never under the loader lock; the
-    // loader-lock paths are function-entry MinHook only). SOURCE: mid_hook.hpp:75
+    // the separate enable() writes the patch under trap_threads — a VEH +
+    // VirtualProtect mechanism, NOT a thread suspend — fine for a mid chain
+    // install. Never under the loader lock; the loader-lock paths are
+    // function-entry MinHook only, the conservative choice. SOURCE: mid_hook.hpp:75
     // + mid_hook.cpp:115-156 (create=setup, no patch under StartDisabled);
-    // inline_hook.cpp:373 (enable → trap_threads).
+    // os.windows.cpp:268-318 (enable → trap_threads VEH+VirtualProtect body).
     // + src/mid_hook.cpp:71-91, this session.
     auto created = safetyhook::MidHook::create(
         reinterpret_cast<void*>(targetVa), g_trampolines[k],
