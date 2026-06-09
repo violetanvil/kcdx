@@ -1,7 +1,8 @@
 # COMP-12 plugin A — declares the bare target name `combat_check`.
 #
-# A's `combat_check` is the GOOD locator: luaopen_math by address_id=1172
-# (verified RVA 0x009299AC in seed.csv) + its ABI "i32 (ptr L)". Located by id
+# A's `combat_check` is the GOOD locator: luaopen_math by address_id=97
+# (formerly 1172 before the 1–157 curated-set renumber; verified RVA 0x009299AC
+# in seed.csv) + its ABI "i32 (ptr L)". Located by id
 # (RVA, no scan), so it resolves and applies regardless of any hook on the
 # function. Chosen as a VERIFIED leaf that NOTHING entry-hooks (the live run
 # hooks only CGame_per_frame_ui_pump id 1003 + the IsInCombat callsites
@@ -28,5 +29,5 @@
 # (asserted [manual]; the auto-assertion is that SELF resolved, not OTHER).
 [[target]]
 name       = "combat_check"
-address_id = 1172
+address_id = 97
 signature  = "i32 (ptr L)"

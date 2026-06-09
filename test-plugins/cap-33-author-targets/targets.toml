@@ -34,8 +34,9 @@
 # unaffected because it resolves at registration; a scan-finding assertion at
 # input_loaded must use a detour-immune deep-interior site (see cap-70). It is
 # called EXACTLY ONCE at Lua boot (CScriptSystem::Init), so a no-op before-hook is
-# minimal-frequency, and it is DISTINCT from the prefix/alias target (id 1172) and
-# the bytes target (id 1124) — no overlap. The minting is recorded in seed.csv
+# minimal-frequency, and it is DISTINCT from the prefix/alias target (id 97 —
+# formerly 1172 before the 1–157 curated-set renumber) and the bytes target
+# (id 49 — formerly 1124) — no overlap. The minting is recorded in seed.csv
 # id 115's notes.
 [[target]]
 name      = "openlibs_by_pattern"
@@ -43,14 +44,15 @@ pattern   = "48 89 5C 24 08 57 48 83 EC 20 48 8B F9 48 8D 1D"
 signature = "void (ptr L)"
 
 # --- A VERIFIED-ID author-target for the prefix / alias resolution proofs. ---
-# luaopen_math (Address Library id 1172, verified RVA 0x009299AC, sig
+# luaopen_math (Address Library id 97 — formerly 1172 before the 1–157
+# curated-set renumber; same function, verified RVA 0x009299AC, sig
 # "i32 (ptr L)"). Located by address_id — RVA-resolved, NO scan, so it is IMMUNE
 # to the prologue-overwrite problem the pattern row hits. Chosen because it is a
 # VERIFIED leaf that NOTHING entry-hooks: the live run only hooks
 # CGame_per_frame_ui_pump (id 1003) + the two IsInCombat callsites (1006/1007),
 # engine production hooks lua_pcall (1000) / CGame::Update (1001) / l_alloc via
-# g->frealloc (1192), and no test-plugin hooks/targets this function or id 1172.
-# This is DISTINCT from the bytes target lua_toboolean (id 1124) below, so the
+# g->frealloc (1192), and no test-plugin hooks/targets this function or id 97.
+# This is DISTINCT from the bytes target lua_toboolean (id 49) below, so the
 # hook target and the bytes target never overlap.
 #
 # NOTE on the EARLIER target (id 1003, CGame_per_frame_ui_pump): cap-03 ALREADY
@@ -68,11 +70,12 @@ signature = "void (ptr L)"
 # instead of inheriting the pattern row's blocker.
 [[target]]
 name       = "luaopen_math_by_id"
-address_id = 1172
+address_id = 97
 signature  = "i32 (ptr L)"
 
 # --- A VERIFIED-ID author-target for the kcdx.bytes resolution proof. -------
-# lua_toboolean (Address Library id 1124 in seed.csv — verified RVA 0x00B9C1AC,
+# lua_toboolean (Address Library id 49 — formerly 1124 before the 1–157
+# curated-set renumber; same function, verified RVA 0x00B9C1AC,
 # sig "i32 (ptr L, i32 idx)"). A DISTINCT, verified leaf that NOTHING hooks:
 # production hooks lua_pcall (1000) + CGame::Update; cap-03/cap-33 hook
 # CGame_per_frame_ui_pump (1003) — none touch this function, so its prologue is
@@ -85,4 +88,4 @@ signature  = "i32 (ptr L)"
 # untyped — no signature needed.)
 [[target]]
 name       = "bool_leaf_safe_site"
-address_id = 1124
+address_id = 49

@@ -23,7 +23,8 @@
 #                                target (cap-33's luaopen_math_by_id) resolves.
 #
 # Each assertion installs a no-op before-hook against a verified-unhooked leaf
-# (luaopen_math, address_id=1172, RVA — no scan, immune to prologue overwrite;
+# (luaopen_math, address_id=97 — formerly 1172 before the 1–157 curated-set
+# renumber; RVA — no scan, immune to prologue overwrite;
 # entry-hooked by nobody in production or in the test suite). The install IS
 # the proof the name resolved; the hook never needs to fire. The luaopen_math
 # leaf choice mirrors cap-33's prefix/alias rows.

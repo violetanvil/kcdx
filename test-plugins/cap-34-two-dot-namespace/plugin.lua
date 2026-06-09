@@ -3,7 +3,8 @@
 -- The targets.toml sidecar declared ONE bare target under this plugin's
 -- namespace (author=ts, name=cap_34_two_dot_namespace → registered as
 -- `ts.cap_34_two_dot_namespace.ui_pump_self`, locating luaopen_math by
--- address_id=1172). The five assertions below exercise the resolver tiers
+-- address_id=97 — formerly 1172 before the 1–157 curated-set renumber). The
+-- five assertions below exercise the resolver tiers
 -- the 2-dot refactor cares about:
 --
 --   (1) CAP-34-explicit-2dot       — the explicit 3-segment author.plugin.bare
@@ -20,7 +21,7 @@
 --
 -- Every hook below is a no-op before-hook whose ONLY job is to resolve a NAME
 -- and apply. We assert :applied() at kcdx.on("ready") (after the apply pass).
--- Target choice (luaopen_math, id 1172) and rationale mirror cap-33's prefix/
+-- Target choice (luaopen_math, id 97 — formerly 1172) and rationale mirror cap-33's prefix/
 -- alias rows; the install IS the proof, the hook never needs to fire. Cap-33
 -- already installs multiple before-hooks on this leaf, so the chain semantics
 -- here are an established pattern (CAP-20-chain: "two before hooks on one
@@ -166,5 +167,5 @@ end)
 
 kcdx.log.info("CAP34",
     "registered 2-dot namespace hooks (explicit-2dot, explicit-1dot-kcdx, "
-    .. "bare-self, alias-2dot, cross-plugin-2dot) on verified-unhooked id 1172 "
+    .. "bare-self, alias-2dot, cross-plugin-2dot) on verified-unhooked id 97 "
     .. "luaopen_math + id 1002 luaL_loadfile; applied() asserted at ready")

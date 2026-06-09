@@ -14,14 +14,16 @@
 --                            which is what proves the share guarantee; by the time
 --                            the detour is installed the prologue's first 5 bytes
 --                            are a JMP, but the resolution already happened.
---   * luaopen_math_by_id   — luaopen_math by address_id=1172 (RVA, no scan →
+--   * luaopen_math_by_id   — luaopen_math by address_id=97 (formerly 1172 before
+--                            the 1–157 curated-set renumber; RVA, no scan →
 --                            immune to the prologue overwrite). A VERIFIED leaf
 --                            that NOTHING entry-hooks (distinct from the bytes
---                            target id 1124). The prefix + alias proofs point
+--                            target id 49). The prefix + alias proofs point
 --                            HERE so they pass.
---   * bool_leaf_safe_site  — lua_toboolean by address_id=1124, a DISTINCT
---                            verified leaf that NOTHING hooks (pristine
---                            prologue) for the kcdx.bytes resolution proof.
+--   * bool_leaf_safe_site  — lua_toboolean by address_id=49 (formerly 1124
+--                            before the renumber), a DISTINCT verified leaf that
+--                            NOTHING hooks (pristine prologue) for the kcdx.bytes
+--                            resolution proof.
 --
 -- Every hook below is a no-op passthrough whose ONLY job is to resolve a NAME
 -- and apply. We assert :applied() at kcdx.on("ready") (after the apply pass).
@@ -77,7 +79,7 @@ local hEngine = kcdx.hook{
 -- ====================================================================
 -- (3) CAP-33-prefixed — the explicit "<pluginname>.<target>" form.
 -- Unambiguous from anywhere and never warns. Resolves the VERIFIED-ID target
--- luaopen_math_by_id (address_id=1172 — RVA, no scan), so this proves PREFIX
+-- luaopen_math_by_id (address_id=97, formerly 1172 — RVA, no scan), so this proves PREFIX
 -- resolution end-to-end and can PASS (immune to the pattern row's blocker, and
 -- on a function NOTHING entry-hooks so the install is not first-wins-blocked).
 -- Carries no signature= (the target does). Empty before-hook (returns nothing →
@@ -110,7 +112,7 @@ local hAlias = kcdx.hook{
 -- ====================================================================
 -- (5) CAP-33-bytes-by-name — kcdx.bytes{ target = "<name>" } resolution.
 -- Resolves the author-declared VERIFIED-ID target "bool_leaf_safe_site" to
--- lua_toboolean's entry VA (address_id=1124) — a DISTINCT verified leaf that
+-- lua_toboolean's entry VA (address_id=49, formerly 1124) — a DISTINCT verified leaf that
 -- NOTHING hooks, so the prologue is pristine and the original-byte verify is
 -- correct (no detour bytes). Byte 0 of the lua_toboolean entry is 0x48 (read
 -- directly from WHGame.dll: "48 83 EC 28 ..."), so writing 0x48 over 0x48 is
@@ -158,7 +160,7 @@ kcdx.on("ready", function()
         local applied = hPrefixed:applied()
         kcdx.test.report("CAP-33-prefixed", applied == true,
             applied == true
-              and "explicit \"ts.cap_33_author_targets.luaopen_math_by_id\" (address_id=1172) resolved directly"
+              and "explicit \"ts.cap_33_author_targets.luaopen_math_by_id\" (address_id=97) resolved directly"
               or  ("expected applied()==true for the prefixed form; got "
                    .. "applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hPrefixed:reason())))
@@ -180,7 +182,7 @@ kcdx.on("ready", function()
         local applied = hBytes:applied()
         kcdx.test.report("CAP-33-bytes-by-name", applied == true,
             applied == true
-              and "kcdx.bytes{ target=\"bool_leaf_safe_site\" } (address_id=1124) resolved the author-target to a writable VA; idempotent no-op write applied"
+              and "kcdx.bytes{ target=\"bool_leaf_safe_site\" } (address_id=49) resolved the author-target to a writable VA; idempotent no-op write applied"
               or  ("expected applied()==true (name resolved to a writable VA); "
                    .. "got applied=" .. tostring(applied)
                    .. " reason=" .. tostring(hBytes:reason())))
@@ -189,5 +191,5 @@ end)
 
 kcdx.log.info("CAP33",
     "registered author-target hooks (pattern-by-name BLOCKED, engine-tier, "
-    .. "prefixed+alias on verified-unhooked id 1172 luaopen_math) + kcdx.bytes target=bool_leaf_safe_site "
-    .. "(verified id 1124); applied() asserted at ready")
+    .. "prefixed+alias on verified-unhooked id 97 luaopen_math) + kcdx.bytes target=bool_leaf_safe_site "
+    .. "(verified id 49); applied() asserted at ready")

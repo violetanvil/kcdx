@@ -16,7 +16,9 @@
 -- (target="kcdx.luaopen_math") — engine-seed reference under the reserved
 -- "kcdx" author root. The same shape cap-34's CAP-34-explicit-1dot-kcdx
 -- row uses; the seed's signature ("i32 (ptr L)", confirmed in seed.csv
--- row 1172) is carried by the name so no inline signature= is needed.
+-- row 97 — formerly 1172 before the 1–157 curated-set renumber; by-name
+-- resolution is renumber-immune) is carried by the name so no inline
+-- signature= is needed.
 -- luaopen_math is an UNHOOKED verified leaf called EXACTLY ONCE during
 -- Lua boot and never again — established prior art (cap-33/cap-34/comp-12
 -- all install no-op hooks on it without colliding with production hooks).

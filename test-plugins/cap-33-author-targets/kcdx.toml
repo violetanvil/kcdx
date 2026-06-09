@@ -25,11 +25,13 @@
 #     the author's own targets.
 #   * CAP-33-prefixed: the explicit "<pluginname>.<target>" form
 #     ("ts.cap_33_author_targets.luaopen_math_by_id") resolves directly. Points at
-#     the VERIFIED-ID target (luaopen_math by address_id=1172 — an UNHOOKED verified
-#     leaf; RVA-resolved, no scan), so it proves PREFIX resolution and passes.
+#     the VERIFIED-ID target (luaopen_math by address_id=97 — formerly 1172 before
+#     the 1–157 curated-set renumber; an UNHOOKED verified leaf; RVA-resolved, no
+#     scan), so it proves PREFIX resolution and passes.
 #   * CAP-33-bytes-by-name: kcdx.bytes{ target = "bool_leaf_safe_site" }
 #     resolves an author-declared VERIFIED-ID target (lua_toboolean,
-#     address_id=1124 — a DISTINCT verified leaf that NOTHING hooks, so its
+#     address_id=49 — formerly 1124 before the renumber; a DISTINCT verified
+#     leaf that NOTHING hooks, so its
 #     prologue is pristine) to a writable VA; an idempotent no-op write (0x48
 #     over the existing 0x48 — byte 0 of the lua_toboolean entry, read from
 #     WHGame.dll) :applied()==true proves the resolution.

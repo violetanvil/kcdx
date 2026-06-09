@@ -16,8 +16,10 @@
 # the same shape cap-34's CAP-34-explicit-1dot-kcdx row uses). Author='ts',
 # plugin='cap_35_uninstall'.
 #
-# All five hooks below target luaopen_math (address_id=1172, RVA, no scan
-# — an UNHOOKED verified leaf called EXACTLY ONCE during Lua boot and
+# All five hooks below target luaopen_math BY NAME (target="kcdx.luaopen_math";
+# the engine seed resolves by name, renumber-immune — its curated row is 97,
+# formerly 1172 before the 1–157 renumber). An UNHOOKED verified leaf called
+# EXACTLY ONCE during Lua boot and
 # never again, entry-hooked by nobody — the same prior art cap-33's
 # prefix/alias rows + cap-34's namespace rows + comp-12's collision rows
 # all use). The hooks never need to fire during the test run: it's the

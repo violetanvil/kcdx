@@ -1,7 +1,8 @@
 -- COMP-12 plugin A — self-wins asserter.
 --
 -- A's targets.toml declared bare `combat_check` = luaopen_math by
--- address_id=1172 (verified RVA 0x009299AC + ABI "i32 (ptr L)"; located by id,
+-- address_id=97 (formerly 1172 before the 1–157 curated-set renumber; verified
+-- RVA 0x009299AC + ABI "i32 (ptr L)"; located by id,
 -- so it resolves and applies regardless of any hook on the function). Plugin B
 -- (sibling) declared bare `combat_check` = a bogus non-matching pattern. Both
 -- own the bare name → a cross-plugin collision.
