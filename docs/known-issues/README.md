@@ -56,7 +56,6 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
-| [KI-0013](KI-0013-dev-mode-crash-log-omits-full-stack-symbols-registers.md) | 2026-06-08 | Dev-mode crash log is not self-sufficient — for a direct AV in WHGame.dll the `[GUARD] FAULTED` block logs only the single faulting frame (raw `rip`/`module`/`module_rva`), NO full stack, NO per-frame symbolication, NO registers; the SEH-safe x64 stack walker (`WalkToCulprit`) exists but is gated to kernel/ntdll-origin faults only and emits one culprit frame. Devs debug their mods from the dev log, not a debugger — surfaced during KI-0012 (every probe needed a manual cdb minidump dive). Fix via `/execute` (full stack + regs) — OPEN |
 | [KI-0012](KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md) | 2026-06-08 | Launch ACCESS_VIOLATION — the `engine.ccrypak_fopen` safetyhook-installed hook re-enters itself thousands of times (`hook_chain` re-entrant depth=2 + a FAULTED_FIRE stack, seq counting down from 17844) → AV in WHGame.dll (rip 0x0B2E220). Surfaced on the Phase-3 `kcdx.dll` deploy, but the faulting subsystem is the hook backend / asset FOpen hook (safetyhook_backend install), NOT survival code — the deployed DLL interleaves both lanes; attribution unresolved, a `/debug` bisect (survival-only vs hook-backend-only) settles it — OPEN |
 | [KI-0011](KI-0011-smart-resolver-typo-error-omits-bad-slot-name.md) | 2026-06-08 | `cap-28-lua-bytes-smart-resolver` (CAP-28-typo-fails-fast) red — a typoed target name raises a generic Lua `attempt to call field '?' (a nil value)` instead of a structured error naming the bad slot; the author can't tell WHICH slot was wrong (errors-that-teach gap, AP14). NOT a stale-fixture issue (mis-scoped into TD-0008 at filing) — a real smart-resolver error-path defect — OPEN |
 | [KI-0010](KI-0010-resolvebyid-returns-null-while-byname-resolves.md) | 2026-06-08 | `cap-20-hook-modes` (CAP-20-addrname) red — name/id resolve mismatch: `byName` returns a valid VA but `byId=0x0`. The entity resolves by name but `ResolveById` returns NULL. NOT a stale-fixture issue (mis-scoped into TD-0008 at filing); discriminator probe owed (stale cap-20 id vs a genuine refdb by-id defect) — OPEN |
@@ -96,6 +95,16 @@ allocation sequence.
 
 ## Closed (historical reference)
 
+- [closed/KI-0013-dev-mode-crash-log-omits-full-stack-symbols-registers.md](closed/KI-0013-dev-mode-crash-log-omits-full-stack-symbols-registers.md)
+  — Dev-mode crash log was not self-sufficient: for a direct AV in WHGame.dll the
+  `[GUARD] FAULTED` block logged only one raw frame, no full stack, no
+  symbolication, no registers. Root cause: the SEH-safe x64 stack walk was gated
+  to kernel/ntdll-origin faults only (`crash_guard.cpp:294`) and emitted one
+  culprit frame; the faulting `CONTEXT` was available but no GPRs were logged.
+  Fixed `f6a0d2c` — `FAULTED_REGS` (all GPRs) + `LogFullStack` (full
+  `FAULTED_FRAME` chain on every fault) + a `FAULTED_FRAMES_END` terminator,
+  reusing the proven walker, SEH-safe. User-confirmed against the live crash log
+  (session `22-15-16`: full 20-frame stack + the garbage `rdx`). Closed 2026-06-08.
 - [closed/KI-0002-scan-zero-matches-at-input-loaded.md](closed/KI-0002-scan-zero-matches-at-input-loaded.md)
   — CAP-70-result found 0 matches at `input_loaded` for a verified site.
   Root cause: NOT a scan bug — the fixture scanned the luaL_openlibs entry
