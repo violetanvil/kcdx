@@ -106,26 +106,75 @@ bootstrap (`CScriptSystem::Init` → `engine_adopted_kcdx_state`) — i.e. it co
 2), NOT with graphics. The AV fired ~4s later (`20:48:42.754`) on the same Main thread,
 independently, in `C_Game::CreateInstance`'s NGX/FSR2 init (PROBE A).
 
-## PROBE A.2 — the SAME FSR2/NGX AV predates BOTH June-8 lanes (prior dumps)
+## PROBE A.2 — WITHDRAWN (the reasoning was flawed; user reports a clean boot TODAY before the changes)
 
-The `ffxFsr2ResourceIsNull+0x633120` AV is a **recurring, pre-existing** WHGame
-graphics-init crash, not a June-8 regression. Reading the older crash dumps in the same
-logs dir (`!analyze -v` faulting symbol):
+PROBE A.2 originally argued the FSR2/NGX AV is a pre-existing base-game crash because the
+same `ffxFsr2ResourceIsNull+0x633120` symbol appears in June-5/May-28 dumps. **That
+reasoning is WRONG and is withdrawn:**
 
-- **`kcdx_2026-06-05_00-10-46.dmp` (June 5)** — the **EXACT same** faulting symbol +
-  offset: `WHGame!ffxFsr2ResourceIsNull+0x633120` (AV `c0000005`). Three days BEFORE
-  the hook-backend Phase-6 rewiring (`aecc2de`/`ec7cae5`/`bda7b90`, June 8) and the
-  survival commits.
-- **`kcdx_2026-05-28_16-03-35.dmp` (May 28)** — same graphics-init family:
-  `WHGame!NVSDK_NGX_UpdateFeature+0x858d95` (the NGX upscaling path).
-- **`kcdx_2026-06-05_13-23-59.dmp` (June 5)** — `NULL_CLASS_PTR_READ` in WHGame.dll
-  (another graphics-init pointer read).
+- Those older dumps were ALSO kcdx-loaded sessions (every dump in `kcdx-engine/logs/` is a
+  kcdx launch). "kcdx crashed in FSR2 before" does NOT prove "the BASE GAME crashes in
+  FSR2" — it only shows kcdx-loaded sessions have hit this region before. The
+  base-game-exoneration was an unsupported leap from a symbol match.
+- **Decisive correction (user ground truth):** the game **booted CLEANLY today, BEFORE the
+  changes, with NO game patch.** A clean boot today + a crash today on the same base game
+  means SOMETHING in today's deployed DLL changed between the two — and the only thing that
+  changed is the AGENTS' engine code (the day's interleaved `src/` work), not the base game.
+  A same-day clean→crash transition with no game patch IS a regression in today's code, by
+  definition.
 
-**Conclusion:** the AV is a base-game / graphics-driver / FSR2-NGX-upscaling init fault
-that recurs across kcdx versions and predates BOTH the hook-backend-marriage lane AND the
-survival lane. It is NOT a regression introduced by either June-8 lane. The attribution
-question the filing posed (survival vs hook-backend) is moot — neither lane caused it
-(PROBE A.2).
+**The hook-backend swap is BACK IN SCOPE as the prime suspect.** `8a02bd8` (14:38 today,
+"SafetyhookBackend on the function-entry path") moved `ccrypak_fopen`'s function-entry
+install from MinHook to safetyhook. The crash DLL (`369a99c`) carries this swap. "Zero kcdx
+frames on the faulting stack" does NOT exonerate it — a detour that changes what `FOpen`
+returns, or how the prologue is relocated for the `call_original` trampoline, can feed a
+consumer (incl. graphics init reading an asset/config via FOpen) a bad pointer that faults
+LATER, off the kcdx stack. The investigation re-opens on this axis.
+
+## Engine-code suspects in the crash DLL (369a99c) — today's interleaved `src/` lanes
+
+The crash DLL was built from a tree interleaving THREE lanes' engine changes today
+(chronological, `src/`-touching):
+- **hook-backend** (the prime suspect — it changed the detour backend under EVERY
+  function-entry hook incl. `ccrypak_fopen`): `64fba7d` IDetourBackend+MinHookBackend →
+  `ed9ff7f` relocate seam to InstallRuntime + dissolve detour_hook → **`8a02bd8`
+  SafetyhookBackend on function-entry (the MinHook→safetyhook swap)** → `6a3d15b` routing
+  predicate → `aabd37f` make_jit_midfunc→MidHook → `1b6500c`/`847e573`/`aca788e`
+  foreign-hook → `aecc2de`/`ec7cae5`/`bda7b90` comment/AP16 scrubs (no-behavior).
+- **survival/verification** (`8008e3d` 3.1 → `3c5e065` 3.2 → `69c7cc2` 3.3 startup pass +
+  on-disk hash → `ffc51ae` 3.4) — touches `survival.cpp` + a startup verification pass that
+  reads WHGame.dll on disk.
+- **statement-layer** (`f26c819`/`abdbee3`/`a60e63b`) — `refdb` eager-load + a self-test.
+
+The clean→crash transition isolates to this commit set. The bisect (PROBE C) splits it.
+
+## PROBE A.3 — the faulting instruction is a pointer-copy fed a corrupt SOURCE pointer (mechanism shape)
+
+Disassembling the faulting site (`WHGame!ffxFsr2ResourceIsNull+0x633120`) shows a tiny leaf
+copy helper:
+```
+mov rax, qword ptr [rdx]   ; load 8 bytes from [rdx]  ← AV: rdx is garbage
+mov qword ptr [rcx], rax   ; store to [rcx]
+mov rax, rcx ; ret         ; return rcx  (a *dst = *src primitive)
+```
+- `rdx` (the SOURCE) = `0x580000019a3019ad` — garbage. `rcx`/`rax`/`rdi` (the DEST + frame)
+  are all valid stack addresses (`0x565350e…`). So the DESTINATION is fine; the SOURCE
+  pointer handed to this copy is corrupt (PROBE A.3).
+- The garbage value's fingerprint: the low 5 bytes `0x019a3019ad` look like a **plausible
+  heap pointer** (cf. `r12 = 0x0000019a25b23594`, the same `0x19a…` heap region), with a
+  high byte `0x58` bolted on making it non-canonical. A valid-looking `0x019a…` pointer
+  wearing a `0x58` high byte is the signature of a value that was MIS-PRODUCED — e.g. a
+  64-bit return value corrupted in its high bits, then used as a pointer by a consumer.
+
+**This fits the `ccrypak_fopen` Around-return mechanism's failure mode.** `ccrypak_fopen`
+is an Around hook whose cFn return value BECOMES `FOpen`'s result for every caller
+(`asset_overlay.cpp:379` — the JIT writes the returned ptr into FOpen's rv slot). If the
+MinHook→safetyhook swap (`8a02bd8`) changed how the Around return / `call_original`
+trampoline marshals the 64-bit return (a high-bits clobber, a wrong rv-slot width, a
+trampoline-relocation that returns a bad value), then a consumer that opens a graphics
+resource via FOpen during `C_Game::CreateInstance` gets a corrupted handle/pointer and
+faults deref'ing it — OFF the kcdx stack, LATER. This is a falsifiable hypothesis; the
+bisect (PROBE C) tests it directly.
 
 ## Open questions (reframed — the real mechanism)
 
@@ -148,13 +197,15 @@ question the filing posed (survival vs hook-backend) is moot — neither lane ca
 | Action | Result |
 |---|---|
 | PROBE A: read the crash dump faulting stack + `!analyze -v` + the log timeline (read-only ground truth) | `INVALID_POINTER_READ` in WHGame FSR2/NGX graphics init (`C_Game::CreateInstance`), 13-frame stack, ZERO kcdx frames, Main thread. The "re-entrancy spiral"/"stack overflow" headline is FALSIFIED — `depth=2` bounded + `seq` is a cumulative fire-count, not nested frames. kcdx served only one Lua test overlay all session; nothing to graphics. |
-| PROBE A.2: `!analyze -v` the older dumps in the logs dir (read-only, time-evidence) | The SAME `ffxFsr2ResourceIsNull+0x633120` AV fired on June 5 (and the NGX family on May 28) — BEFORE both June-8 lanes. The AV is a recurring base-game FSR2/NGX graphics-init fault, NOT a regression from either lane. |
-| PROBE B (vanilla repro — does it fire with kcdx un-injected): launch `KingdomCome.exe` directly | not run — PROBE A.2 already settled "not kcdx-caused"; PROBE B is the optional confirmer, run only if a definitive vanilla baseline is wanted. |
+| PROBE A.2: `!analyze -v` the older dumps (claimed pre-existing base-game crash) | **WITHDRAWN — flawed reasoning.** Older dumps are also kcdx sessions; a symbol match does not prove base-game. User reports a CLEAN boot today before the changes (no game patch) → a same-day clean→crash IS a regression in today's code. The hook-backend swap is back in scope. |
+| PROBE A.3: disassemble the faulting site (read-only) | A `*dst=*src` 8-byte copy helper; the SOURCE pointer (`rdx=0x580000019a3019ad`) is corrupt while DEST/frame are valid. The garbage = a plausible `0x019a…` heap ptr with a `0x58` high byte — the signature of a mis-produced 64-bit value used as a pointer. Fits the `ccrypak_fopen` Around-return failure mode. |
+| PROBE C (bisect — does reverting the safetyhook `ccrypak_fopen` swap fix it): build the DLL pre-`8a02bd8` (all-MinHook), user launches | pending — needs the last-clean-boot commit to scope the window. |
 
 ## Resolution
 
-(pending a disposition decision — the investigation is COMPLETE: the filed re-entrancy
-headline is falsified; the AV is a recurring WHGame FSR2/NGX graphics-init invalid-pointer
-read that predates both June-8 lanes (PROBE A + A.2). It is not a kcdx bug. The remaining
-call is the disposition: close as not-kcdx / external (a base-game graphics-init crash), OR
-keep open as a base-game-crash kcdx should investigate mitigating. This is the user's call.)
+(RE-OPENED — the earlier exoneration was WRONG. User ground truth: a clean boot today
+before the changes, no game patch → a same-day regression in today's deployed engine code.
+The prime suspect is the MinHook→safetyhook swap of `ccrypak_fopen`'s Around hook
+(`8a02bd8`), with a concrete falsifiable mechanism (a corrupted 64-bit Around-return used
+as a pointer by a graphics-init FOpen consumer — PROBE A.3). PROBE C (bisect the swap) is
+the next step.)
