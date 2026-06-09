@@ -666,6 +666,50 @@ signal: for any object kcdx synthesizes to hand the engine, kcdx should be able 
 built" (and, where an oracle exists, "here is how it differs from the genuine one"). That is a real
 diagnostics improvement (a follow-up KI candidate) the takeover specifically needs.
 
+## ROOT CAUSE — OBSERVED (PROBE K divergence oracle): the object is UNDERSIZED + missing a pointer at +0x70
+
+PROBE K ran the genuine engine ctor into a scratch slot, returned the genuine object (booted CLEAN —
+confirming kcdx's reconstruction is the bug), and byte-diffed genuine vs kcdx. The diff names the
+fatal divergence unambiguously:
+
+| Offset | genuine | kcdx | meaning |
+|---|---|---|---|
+| +0x00 vtable | `0x…8B2E60` | SAME | correct |
+| +0x08 sys | same | SAME | correct |
+| +0x10 modsDir | per-boot ptr | differs (both valid CryString) | expected value diff |
+| +0x18..+0x40 | scanned/enabled lists | differ (kcdx's lists) | expected value diff (both valid heap) |
+| +0x48..+0x58 | scanned-list tails | differ | value diff, in-bounds |
+| +0x60 init flag | `0x1` | `0x1` SAME | correct |
+| +0x68 | `0x0` | `0x0` SAME | correct |
+| **+0x70** | **`0x7FF976F23A60` (WHGame code/data ptr, RVA `0x2113A60`)** | **PAST OUR 0x68 ALLOC** | **THE BUG** |
+| +0x78+ | `0x0` | — | zero |
+
+**The real `C_ModManager` is LARGER than 0x68 — at least 0x78 bytes — with a non-null pointer at
++0x70 (RVA `0x2113A60`, a WHGame address).** kcdx allocates `kObjectSize = 0x68` and writes nothing
+at +0x70. When the engine reads the object's +0x70 field (a graphics/DLSS-FSR2-init consumer does —
+the faulting `mov rax,[rdx]` derefs it), it reads **past kcdx's 0x68 heap block into adjacent
+memory** = whatever garbage is there that boot (the per-boot-varying garbage signature, PROBE F,
+EXACTLY explained). genuine has a valid `0x7FF9…` pointer at +0x70; kcdx has un-allocated garbage.
+
+This is OBSERVED, not inferred — the byte-level diff against a genuine object. Every prior probe is
+now explained: the AddCommand (J) and scanned-list (I) weren't it because the real defect is the
+OBJECT SIZE + the missing +0x70 field. The earlier RE (`init-cycle-recon` "0x68-byte object, +0x48..
++0x58 unused") was WRONG on the size — it stopped at 0x68 and never saw +0x70.
+
+## The fix (observed, precise)
+
+1. **Allocate the correct size.** The object is ≥0x78 (+0x70 populated, +0x78 zero in this boot — the
+   true size needs confirming: re-RE the ctor's alloc-size arg, OR observe how far the engine reads).
+   Our `kObjectSize = 0x68` is too small — bump it to the true size.
+2. **Write +0x70 with the correct value** (RVA `0x2113A60` this boot → resolve what it IS: likely a
+   second vtable / interface sub-object pointer the engine derefs). Identify it by RE (`0x2113A60`)
+   and write it in HookedCtor like the other fields (by refdb name per AP1, not a raw RVA).
+Still a FULL replacement — now COMPLETE (correct size + the +0x70 field we were missing). The fix
+goes through Gate B (root-cause-verifier) then `/execute`.
+
+NEXT: identify RVA `0x2113A60` (what +0x70 points at) + confirm the true object size, then build the
+production fix.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
