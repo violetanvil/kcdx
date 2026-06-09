@@ -30,7 +30,7 @@ goes red); each new `cap-NN` row lands with its feature step, not piled at the e
 | [3a — `kcdx.functions.*` + `kcdx.dll.declare` (deterministic half)](step-3-functions-and-declare.md) | DONE | b290d9e |
 | [3-probe — DbgHelp `SymEnumSymbols` enumerates a foreign DLL's non-exported internals](step-3-functions-and-declare.md) | DONE | f51b847 — Outcome B (FALSIFIED) |
 | [3-probe-2 — does `/DEBUG:FULL` (not the FASTLINK default) make the plugin's own internals enumerable?](step-3-functions-and-declare.md) | DONE | ac12caa — Outcome A (CONFIRMED) |
-| [3b — PDB auto-load (`plugin_pdb.{cpp,h}`) — internal addresses from a `/DEBUG:FULL` PDB + FASTLINK-detection teaching fallback](step-3-functions-and-declare.md) | DONE | 54d004d |
+| [3b — PDB auto-load (`plugin_pdb.{cpp,h}`) — internal addresses from a `/DEBUG:FULL` PDB, resolved by the author's bare name](step-3-functions-and-declare.md) | DONE | 54d004d + a29bf8f — cap-90 acceptance RED at first launch surfaced two defects (wrong function-kind filter field + decorated-name keying), both fixed under KI-0014 (`a29bf8f`); cap-90-pdb-internal-address user-confirmed GREEN (resolves by bare name, suite 206/229) |
 | [4 — `kcdx.hook.*` sub-verb split + migrate the existing hook plugins (same commit)](step-4-hook-subverbs-migrate.md) | NOT STARTED | — |
 | [5 — `kcdx.statement.*` static-bytes namespace](step-5-statement-namespace.md) | NOT STARTED | — |
 | [6 — multi-region trampoline-pool expansion](step-6-multi-region-trampoline.md) | NOT STARTED | — |
