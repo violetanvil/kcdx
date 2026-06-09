@@ -464,6 +464,41 @@ makes the boot clean. Start by disabling the ModManager ctor takeover (the prime
 launching: clean → the takeover's field map is the bug (instrument it); still crashes → move to the
 hook set.
 
+## PROBE H RESULT — the ModManager ctor takeover IS the cause (CONFIRMED)
+
+Disabled the ModManager ctor takeover (`InstallCtorBracket()` commented out, `dllmain.cpp:280`), so
+the engine runs its OWN native `C_ModManager` ctor + SELECT (the documented fallback). One variable
+changed; everything else in kcdx identical. **Result: NO CRASH — booted clean to menu.** The user
+also observed "my mods/plugins didn't load from the Workshop" — which is the EXPECTED fallback (no
+takeover → no kcdx mod-absorption → mods don't mount), confirming the diagnostic took effect.
+
+**CONFIRMED: the cause of KI-0012 is `src/mod_absorb/ctor_bracket.cpp` `HookedCtor` — kcdx's full
+replacement of the engine's `C_ModManager` constructor.** With the engine building its own object,
+the FSR2/NGX graphics-init AV is gone. With kcdx's reverse-engineered 0x68-byte reconstruction, the
+engine later reads a field kcdx got wrong/missing and faults in DLSS/FSR2 init. The bisect chain:
+vanilla clean (G) · every kcdx build crashes (E) · takeover-off clean (H) → the takeover, specifically.
+
+## The root-cause hunt — WHAT in the reconstructed C_ModManager is wrong
+
+`HookedCtor` allocates `kObjectSize = 0x68` (104 bytes), `memset`s it to 0, and writes a hand-RE'd
+field map: +0x00 vtable · +0x08 sys · +0x10 modsDir CryString · +0x30/0x38/0x40 enabled-list triple ·
++0x60 init flag. Slots +0x18/0x20/0x28 and +0x48/0x50/0x58 are deliberately left zero. The engine's
+graphics/FSR2 init (or something it transitively reads off the C_ModManager / the csys[+0x2B30] slot
+the ctor installs) reads a field this map gets wrong. Candidate root causes (one of these):
+- **The object is LARGER than 0x68** — the real C_ModManager has fields past 0x68 the native ctor
+  initializes; kcdx's undersized alloc means the engine reads PAST kcdx's block into adjacent heap
+  (garbage that varies per boot — matches PROBE F exactly).
+- **A field kcdx leaves zero (+0x18/0x20/0x28/0x48/0x50/0x58) is actually live** — the native ctor
+  writes a pointer there the graphics path later derefs; kcdx's zero → a null/garbage deref.
+- **A written field has a wrong value** — the modsDir CryString, the sys ptr, or the enabled-list
+  triple is subtly off in a way a graphics consumer chokes on.
+
+NEXT (root cause): disassemble the native `C_ModManager` ctor (refdb `ModManager_ctor`) to recover
+the TRUE object size + the COMPLETE field-init map, and diff against kcdx's 0x68 reconstruction —
+the missing/wrong field IS the bug. Reuse-first per `reverse-engineering.md` (refdb row → prior
+`_research` → Ghidra). The crash being in graphics init that reads a C_ModManager field is itself a
+checkable RE question (what does the FSR2/CreateInstance path read off the modMgr / csys slot).
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
