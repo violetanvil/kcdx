@@ -974,6 +974,42 @@ also need the genuine engine record? The 17 pak_mods booted fine in the truncate
 records are OK; only the plugin entries are the problem. Confirm the filter is `kind=="plugin"` →
 exclude, all else → keep.)
 
+## ROOT CAUSE + FIX CONFIRMED (PROBE Q) — kcdx plugins do NOT belong in the engine's enabled-list
+
+PROBE Q (exclude kcdx plugins from the engine `C_ModManager` enabled-list — `enabled_list_builder.cpp`
+plugin loop disabled) booted **CLEAN** with all **17 `kind="pak_mod"`** entries (more than the 14-truncate
+→ confirms it's `kind`, not count), AND the test suite STILL RAN (`SUMMARY passing=201/225`), AND kcdx
+plugins still loaded via kcdx's own loader (`TARGETS loaded plugin=...`). Confirmed three ways:
+1. The crash is the 90 `kind="plugin"` records kcdx synthesized into the engine's mod-mount list.
+2. kcdx plugins do NOT need to be in the engine list — they load through kcdx's OWN loader regardless
+   (the test suite ran with zero plugins in the engine list).
+3. No kcdx plugin ships a `Data/*.pak` today (the test-suite plugins are DLL/Lua, pak-less) — so the
+   engine has nothing to mount for them.
+
+The earlier code comment (`enabled_list_builder.cpp:102` — "a pak-less plugin record is harmless,
+MOUNT opens nothing") is FALSE: the engine's DLSS/FSR2 init walks/sizes the enabled-list and crashes on
+the synthesized plugin records.
+
+## The fix — preserve the UNIFIED ORDER (user goal), filter the ENGINE LIST to mountable entries
+
+User goal: kcdx must let a user order BOTH kcdx plugins AND native pak mods together (one interleaved
+load order kcdx owns). The fix MUST preserve that — so it is NOT "drop plugins." Two separate concerns
+kcdx was conflating:
+- **The unified load ORDER** (plugins + pak mods interleaved) — kcdx owns this, correctly; it drives
+  BOTH the pak-mount sequence AND kcdx's own plugin-load sequence. KEEP IT.
+- **The engine's enabled-list** (what the engine MOUNTS) — must contain ONLY entries the engine can
+  mount: real **pak mods**, plus any plugin that actually ships a `Data/*.pak`, in their kcdx-resolved
+  relative order. A pak-less plugin is NOT in the engine list (it has nothing to mount; it loads via
+  kcdx's loader at its ordered position).
+
+So the fix: in `BuildEnabledList`, still resolve the ONE unified order over all candidates, but only
+SYNTHESIZE+INSERT engine `I_Mod` records for entries the engine mounts (pak mods + pak-bearing
+plugins). kcdx's plugin loader already loads plugins in the unified order independently (confirmed:
+the test suite ran). This satisfies the user goal (unified ordering preserved) AND fixes the crash
+(no fake plugin records in the engine list). Production fix is a proper `isPlugin && !hasPak` filter
+(not the probe's `if(false)`), routed through Gate B + `/execute`. The mod-loader-absorb design doc
+updates to record the engine-list-is-mountable-only rule.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
