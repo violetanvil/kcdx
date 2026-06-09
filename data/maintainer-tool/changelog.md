@@ -3,6 +3,39 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-09 — active-attempt verification: the 7-state verdict enum + the 5-rank proof ladder + the live-exercise tier (D36; revises D25/D28/D33)
+
+The verification sweep was a passive static survey (D25's 4-token vocabulary: `resolves_works` /
+`wrong_target` / `dead` / `cannot_check`) run boot-automatically (D33). Two corrections settled
+the sweep into an ACTIVE, honestly-tiered test:
+- **Every row gets an active attempt + a structured response** — no passive "couldn't determine."
+  The response is a triple + a flag: `{ verdict, method_rank, detail, invoke_attempted,
+  invoke_skip_reason }`.
+- **The verdict is the CEILING of the strongest method that ran.** Only rank-1 (observed live
+  execution — kcdx's own hook-fire + pass-through, or its own production call) earns
+  `verified_working`; ranks 2–5 (safe-read / reachability / on-disk hash / resolution) cap at
+  `passed_not_verified`. A green static check is "passed tests," NOT "verified working."
+- **The 7-state enum** (`verified_working` / `passed_not_verified` / `failed` / `not_applicable` /
+  `cannot_check` / `skipped` / `error`) splits the old "did not pass" so each verdict drives a
+  distinct worklist action (`failed`-vs-`error`, `not_applicable`-vs-`cannot_check`). (The
+  originally-proposed 8th state `not_exercisable` was removed — folded into `passed_not_verified` +
+  `invoke_attempted: false` — so every row gets an active attempt + a real response, never a passive
+  "couldn't determine.")
+- **The live-exercise tier** (rank-1) is the new top rung; it observes the game's own calls (zero
+  synthetic-invoke risk — a general "will this corrupt before I call it?" pre-flight is not
+  reliably constructible, the KI-0001 silent-write class). An uncallable foreign function still
+  gets an active static attempt + a real response with `invoke_attempted: false`.
+- **Trigger reversed (D33):** a console command (`kcdx_verify_all`) run AFTER save-load, NOT a boot
+  sweep — the live tier needs a loaded world. The sweep streams a per-row console line so a 157-row
+  pass never reads as a hang. cap-84/85 stay boot-time checker self-tests.
+- **The per-kind ceiling matrix** is §11.6; **the report schema bumps v2 → v3** (`method_rank`,
+  `invoke_attempted`, `invoke_skip_reason`, the 7-verdict enum).
+
+**Integrated in:** §5 (the engine-checker + in-game-plugin units), §10 D36 (new) + D25/D28/D33
+(revised), §11.6 (new — the per-kind matrix).
+**Why:** the user — bucket every attempt by what it can prove without a shadow of a doubt; do
+something active for every row; only observed-execution earns "verified working."
+
 ## 2026-06-08 — audit-trio identity + verified_date model (D17a / D17b; US-3)
 
 The s04 milestone UAT surfaced two audit-trio corrections. (1) `verified_by` is a free-text
