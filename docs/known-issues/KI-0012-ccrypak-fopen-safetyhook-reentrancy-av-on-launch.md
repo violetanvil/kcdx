@@ -621,6 +621,51 @@ clean (the registry is properly initialized) AND mods still load (full replaceme
 B (root-cause-verifier) on the mechanism, land via `/execute`, close. First a PROBE to CONFIRM adding
 the AddCommand call fixes it (the last observation before the production fix).
 
+## PROBE J-fix RESULT — the skipped AddCommand is NOT the cause either (FALSIFIED)
+
+Restored the native ctor's `IConsole::AddCommand` call (the probe fired:
+`ctor_bracket_addcommand_probe name=wh_mod_GenerateReport` BEFORE the crash), relaunched → STILL
+CRASHES, identical FSR2 AV (`module_rva=11723296`, same frame chain). The skipped AddCommand is a
+REAL gap in our replacement (the ctor does call it, we don't) — but it is NOT the cause of THIS crash.
+Two theories now falsified by direct probe (scanned-list I-fix; AddCommand J-fix).
+
+## Method failure (must fix) — guess-a-field → launch → "did it move" is the wrong loop
+
+I have been GUESSING which field of our replacement is wrong (scanned-list, then AddCommand) and
+confirming only by whether the crash moves — each guess a full launch. That is the
+fix-#2-on-a-theory anti-pattern repeated. The logs show WHERE it died (graphics init, the same
+{base,count,cap,stride-0x10} array iteration) but never WHAT VALUE was garbage or WHERE in our object
+it came from — so every probe is a blind yes/no. Stop guessing; OBSERVE the divergence directly.
+
+## PROBE K — the divergence oracle (capture a GENUINE ctor object, byte-DIFF vs ours)
+
+The user authorized: use the original ctor ONCE as a diagnostic ORACLE to learn exactly what a
+correct C_ModManager contains, understanding it fully (the full 56-instruction body is now read), then
+our FULL replacement reproduces it completely. The probe (observe-only, then we still ship a full
+replacement):
+1. In `HookedCtor`, call the original ctor (via the MinHook trampoline, kept this once) into a SCRATCH
+   outResult slot → a genuine engine-built C_ModManager at `*scratch`.
+2. Byte-DIFF the genuine object vs kcdx's reconstruction: dump BOTH objects' 0x68 bytes (and read
+   past 0x68 — is the real object LARGER than our allocation?), log every differing offset with both
+   values. The differing field(s) ARE the divergence — observed, complete, no guessing.
+3. Let the engine use kcdx's object (unchanged behavior) so the crash still reproduces, OR (cleaner)
+   for this ONE diagnostic boot let the engine use the GENUINE object to confirm it boots — separating
+   "our object is wrong" from "something else."
+   The side-effects (SELECT runs, AddCommand registers, an alloc) are understood from the full disasm;
+   the scratch object is the throwaway. This is a one-boot observation, then removed — the production
+   code stays a 100% replacement, now COMPLETE because we KNOW the full correct object.
+
+This ends the guess loop: one launch yields the exact byte-level divergence.
+
+## The logging gap is the SAME problem (user's repeated question)
+
+Our crash log (post KI-0013) shows the full stack + registers — WHERE it died — but for a
+kcdx-OBJECT-TAKEOVER bug it cannot show WHAT we built wrong, because we never log what our
+reconstructed object looks like vs. a correct one. The PROBE-K divergence dump is exactly the missing
+signal: for any object kcdx synthesizes to hand the engine, kcdx should be able to log "here is what I
+built" (and, where an oracle exists, "here is how it differs from the genuine one"). That is a real
+diagnostics improvement (a follow-up KI candidate) the takeover specifically needs.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
