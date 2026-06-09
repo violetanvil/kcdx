@@ -10,6 +10,8 @@
 #include "log.h"
 #include "test.h"
 
+#include <limits>  // int32 disp range-guard in WriteE9
+
 namespace kcdx::foreign_hook_detect_selftest {
 
 namespace {
@@ -31,10 +33,29 @@ struct alignas(16) Prologue16 {
 
 // Write an E9 rel32 into `buf` that jumps to absolute `dstVa`. target = bufVa +
 // 5 + disp  =>  disp = dstVa - (bufVa + 5).
+//
+// A real E9 can only reach ±2GB by definition, so dstVa MUST be rel32-reachable
+// from buf — that is a production invariant, not a test convenience. The
+// range-guard below catches a TEST-SETUP bug (a synthetic target placed >±2GB
+// from buf, e.g. a static/global range buffer vs a stack jump buffer): without
+// it the int64→int32 cast TRUNCATES the displacement silently, the written E9
+// misses its intended target, and the resulting mis-classification reads as an
+// engine bug when it is really a bad test input. On an out-of-range disp it logs
+// loudly and writes the full 64-bit delta truncated (so the downstream verdict
+// goes RED with a traceable cause) rather than pretending success.
 void WriteE9(Prologue16& buf, uintptr_t dstVa) {
     const uintptr_t bufVa = reinterpret_cast<uintptr_t>(&buf);
-    const int32_t disp = static_cast<int32_t>(
-        static_cast<intptr_t>(dstVa) - static_cast<intptr_t>(bufVa + 5));
+    const intptr_t disp64 =
+        static_cast<intptr_t>(dstVa) - static_cast<intptr_t>(bufVa + 5);
+    if (disp64 < std::numeric_limits<int32_t>::min() ||
+        disp64 > std::numeric_limits<int32_t>::max()) {
+        LOG_ERROR_KV(kCategory, "selftest_writee9_disp_out_of_rel32",
+            ::kcdx::log::KV("buf", reinterpret_cast<void*>(bufVa)),
+            ::kcdx::log::KV("dst", reinterpret_cast<void*>(dstVa)),
+            ::kcdx::log::KV("note",
+                "test-setup bug: E9 target not rel32-reachable; disp truncates"));
+    }
+    const int32_t disp = static_cast<int32_t>(disp64);
     buf.b[0] = 0xE9;
     std::memcpy(buf.b + 1, &disp, sizeof(disp));
 }
@@ -61,14 +82,25 @@ void RunSelfTestOnce() {
 
     char reason[768];
 
-    // A synthetic kcdx-owned trampoline range: a static buffer registered as a
-    // BranchPool-kind range. Static (not heap) so its VA is stable for the whole
-    // session and the registry's session-lifetime model holds. A computed E9
-    // target landing INSIDE [&kKcdxRange, +sizeof) must classify KcdxTrampoline.
-    static uint8_t kKcdxRange[256] = {};
-    const uintptr_t kcdxBase = reinterpret_cast<uintptr_t>(kKcdxRange);
+    // A synthetic kcdx-owned trampoline range: a STACK-LOCAL buffer registered as
+    // a BranchPool-kind range. Stack-local (not static/global) so it sits next to
+    // the jump buffer `kcdxJmp` below — within rel32 reach — and the computed E9
+    // in WriteE9 produces an in-range int32 displacement (matching the production
+    // invariant that an E9 hook always jumps within ±2GB; a real kcdx trampoline
+    // is always rel32-reachable from the prologue it detours). A static/global
+    // range can sit >±2GB from a stack jump buffer, truncating the int32 disp so
+    // the written E9 misses the range — an impossible-in-production out-of-range
+    // jump that does NOT exercise the engine's discriminator.
+    //
+    // Lifetime: the registry holds (base,size) BY VALUE, and the classify +
+    // decode below run synchronously between Register and this buffer going out
+    // of scope — the already-completed classification is unaffected by any later
+    // stack reuse (same RAII-locals model as comp-19). A computed E9 target
+    // landing INSIDE [&kcdxRange, +sizeof) must classify KcdxTrampoline.
+    uint8_t kcdxRange[256] = {};
+    const uintptr_t kcdxBase = reinterpret_cast<uintptr_t>(kcdxRange);
     kcdx::kcdx_trampoline_registry::Register(
-        kcdxBase, sizeof(kKcdxRange),
+        kcdxBase, sizeof(kcdxRange),
         kcdx::kcdx_trampoline_registry::Kind::BranchPool);
 
     // An address far outside any kcdx range (a foreign mod's detour stand-in).

@@ -24,7 +24,7 @@ Shared spec: [`../context.md`](../context.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| Step 7 — foreign-hook detection (prologue classifier) | DONE | `1b6500c` |
+| Step 7 — foreign-hook detection (prologue classifier) | DONE | (landed) |
 | Step 8 — foreign-hook chaining + comp-NN fixture | DONE | (landed) |
 
 ## Verification gate
