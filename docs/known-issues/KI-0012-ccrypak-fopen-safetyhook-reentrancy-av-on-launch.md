@@ -219,6 +219,34 @@ all?) requires the bisect + live instrumentation, not more dump reading.
   survival-startup interaction). The bisect (PROBE C) is the REQUIRED next step to attribute the
   lane before any mechanism theory.
 
+## Reframe after PROBE C — the swap is exonerated; re-observe, don't theory-hop
+
+PROBE C cleanly killed the safetyhook-swap theory (the AV is byte-identical with `ccrypak_fopen`
+on MinHook). Per the discipline, re-observe ground truth rather than jump to the next suspect.
+Established facts now:
+
+- The AV is a stable, reproducible `INVALID_POINTER_READ` of a garbage pointer in WHGame's
+  DLSS/FSR2 graphics init (`C_Game::CreateInstance → NVSDK_NGX_UpdateFeature → FSR2`), Main thread,
+  no kcdx frame, deterministic across two launches (different garbage address each run = ASLR/heap
+  layout, same corruption shape) (PROBE A, A.4, C).
+- It is NOT the hook backend (PROBE C). The remaining today's-engine-work suspects that could
+  perturb graphics-init / process state:
+  - **survival-startup (`69c7cc2`, 3.3)** — a startup verification pass that READS + HASHES
+    WHGame.dll on disk + walks reachability. Touches process/module state during init; STRONG
+    suspect (timing, a module read, an allocation, a thread).
+  - survival 3.1/3.2/3.4 (`8008e3d`/`3c5e065`/`ffc51ae`) — per-kind dispatch + static checks +
+    the JS↔C++ agreement pin.
+  - statement-layer (`f26c819`/`abdbee3`/`a60e63b`) — refdb eager-load + a self-test.
+  - The non-backend hook-backend changes (foreign-hook detection `1b6500c`/`847e573`, the mid
+    adapter `aabd37f`) — less likely (they don't touch graphics), but not yet excluded.
+
+NEXT bisect (PROBE D): establish a clean known-good anchor + narrow the lane. Two options —
+(a) build at the FIRST engine commit of today (or last-known-good before today) and confirm clean
+(proves "today regressed it", gives the bisect floor), then binary-search the today's-commit range;
+or (b) disable the strongest single suspect (the survival startup pass) on the current tree and
+re-launch (one-variable, like PROBE C). Option (b) is cheaper if the survival-startup suspicion is
+right; (a) is the definitive bisect if (b) misses.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
@@ -243,7 +271,7 @@ all?) requires the bisect + live instrumentation, not more dump reading.
 | PROBE A.2: `!analyze -v` the older dumps (claimed pre-existing base-game crash) | **WITHDRAWN — flawed reasoning.** Older dumps are also kcdx sessions; a symbol match does not prove base-game. User reports a CLEAN boot today before the changes (no game patch) → a same-day clean→crash IS a regression in today's code. The hook-backend swap is back in scope. |
 | PROBE A.3: disassemble the faulting site (read-only) | A `*dst=*src` 8-byte copy helper; the SOURCE pointer (`rdx=0x580000019a3019ad`) is corrupt while DEST/frame are valid. The garbage = a plausible `0x019a…` heap ptr with a `0x58` high byte — the signature of a mis-produced 64-bit value used as a pointer. Fits the `ccrypak_fopen` Around-return failure mode. |
 | PROBE A.4: trace the corrupt `rdx` back via caller disasm + `!address` (read-only) | The corrupt value is a GRAPHICS-config pointer threaded from the NGX/FSR2 init chain (an incoming arg, saved across the NGX call), NOT a `FILE*`. The whole qword is unmapped (not a tainted-good-pointer). FALSIFIES the FOpen-return hypothesis (A.3). Dump ceiling reached — causation needs the bisect. |
-| PROBE C (bisect — attribute the regressing lane): build the DLL at `ed9ff7f` (pre-safetyhook-swap, all function-entry hooks still MinHook), deploy, user launches | pending — the required next step (the dump can't establish causation). |
+| PROBE C (one-variable bisect of the safetyhook swap): on the SAME crash-DLL tree, force `select_backend(ChainFunctionEntry)` → MinHook (a 1-line routing diagnostic in a worktree, everything else identical); deploy, user launches | **CRASHED IDENTICALLY.** With `ccrypak_fopen` installed via MinHook (`detour_hook`, confirmed in the log — not `safetyhook_backend`), the AV is byte-for-byte the same: `mov rax,[rdx]` at `ffxFsr2ResourceIsNull+0x633120`, `INVALID_POINTER_READ`, same `CreateInstance→NGX→FSR2` stack, garbage `rdx`. The safetyhook function-entry swap is **EXONERATED** — it is NOT the cause. |
 
 ## Resolution
 
