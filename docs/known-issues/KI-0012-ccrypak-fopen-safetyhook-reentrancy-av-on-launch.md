@@ -425,6 +425,45 @@ clean kcdx-vs-no-kcdx test the whole investigation rests on:
 - **Vanilla ALSO crashes (same FSR2 AV)** → genuinely base-game/environmental after all. (The user's
   strong prior is that this will NOT happen — vanilla will be clean.)
 
+## PROBE G RESULT — VANILLA BOOTS CLEAN → it is kcdx, 100%, CONFIRMED
+
+Launched `KingdomCome.exe` with kcdx fully un-injected (no `kcdx.dll` loaded — kcdx injects only via
+the `kcdx.exe` launcher, no auto-inject DLL). **Vanilla booted clean to menu, no crash** (user-
+observed). Combined with: every kcdx build crashes — today's (run 1-4) AND a week-old June-5 build
+(PROBE E) — and vanilla is clean (PROBE G).
+
+**CONFIRMED: the FSR2/NGX boot AV is caused by kcdx.** Not the base game, not the environment, not
+today's lanes specifically. It is a LONG-STANDING kcdx mechanism (present in June-5) that perturbs
+state the engine's DLSS/FSR2 graphics init later reads — the off-stack-corruption shape (no kcdx
+frame; the engine derefs a value kcdx changed earlier; the garbage varies per boot, PROBE F). Every
+earlier "not kcdx" lean is dead; the user's call was right.
+
+## The hunt — what kcdx does that the engine's graphics init reads (in priority order)
+
+The mechanism is one of kcdx's long-standing engine perturbations. The crash is EARLY (inventory not
+yet captured) — around the ModManager takeover / Lua VM bootstrap, BEFORE `C_Game::CreateInstance`'s
+graphics init. Candidates, by how directly they "change an address the engine uses":
+
+1. **ModManager ctor takeover (PRIME, `ctor_bracket.cpp` `HookedCtor`)** — kcdx fully replaces the
+   engine's `C_ModManager` constructor with a reverse-engineered 0x68 field map (no original ctor
+   call). If `kObjectSize=0x68` is too small, or a field the engine later reads lives at an offset
+   kcdx doesn't write, or the modsDir/sys/enabled-list values differ from the native ctor's, the
+   engine reads a wrong field. NEXT PROBE: instrument what the engine reads from the C_ModManager
+   object (or the csys install slot it returns) AFTER the ctor, and compare a kcdx-built object's
+   bytes vs what the native ctor would produce.
+2. **The 4 engine hooks** (`ccrypak_fopen`, `ccrypak_adjustfilename`, `lua_pcall`, `lua_newstate`) —
+   a hook whose trampoline/relocation or callback corrupts a value a graphics consumer reads.
+   (`ccrypak_fopen` swap already exonerated by PROBE C, but the OTHER hooks / the chain itself not.)
+3. **The Lua VM build-and-adopt keystone** — kcdx builds the VM and the engine adopts it; if a
+   structure the engine expects from its own `lua_newstate` differs, a downstream read could fault.
+4. Any byte patch / the allocator hook / the early_hook bugsplat install.
+
+NEXT PROBE (H): the cheapest decisive narrowing is a HOOK-SET bisect — disable kcdx's engine hooks /
+the ctor takeover one group at a time (one-variable, like PROBE C) and find which one, when removed,
+makes the boot clean. Start by disabling the ModManager ctor takeover (the prime suspect) and
+launching: clean → the takeover's field map is the bug (instrument it); still crashes → move to the
+hook set.
+
 ## Open questions (reframed — the real mechanism)
 
 - **Is the garbage pointer kcdx-caused at all?** The AV is in WHGame's graphics init. The
