@@ -21,6 +21,9 @@
 #include "save_load_hooks.h"  // WorldLoadedThisSession — the save-load precondition
                               // the kcdx_verify_all handler reads to gate the
                               // sweep's live-exercise tier (no console back-edge).
+#include "survival_report.h"  // the verification-sweep report producer — its OnRow
+                              // is the per-row sink threaded into the sweep (the
+                              // incremental flush) and Finalize wraps the v3 report.
 #include "survival_verify.h"  // RecordKcdxInvocation — the CALLED-by-kcdx rank-1
                               // signal for AddCommand/ExecuteString; and
                               // RunStartupVerification — the sweep the
@@ -395,11 +398,12 @@ bool Thunk_GetCVarFloat(const char* name, float* out) {
 // needs a loaded save," never a fabricated pass) — the maintainer is told
 // plainly to load a save and re-run.
 //
-// SCOPE: this step lands the command entry point + the precondition gate + the
-// wiring that invokes the verification ladder. The per-row console streaming +
-// the structured report emission are the next step; this handler runs the
-// sweep and prints a one-line outcome summary to the overlay so a run is never
-// a silent no-op.
+// The handler constructs the report producer, threads its per-row OnRow sink
+// into the sweep (each row is streamed to the console AND incrementally
+// flushed to the JSONL sink the instant it resolves, never bulk-written at end),
+// then finalizes the accumulated rows into the v3 JSON report alongside
+// kcdx-dev.log. The sweep is the engine doing the heavy lifting (the maintainer
+// never hand-checks rows one by one — the cornerstone).
 void VerifyAllCallback(const kcdxConsoleCmdArgs* /*args*/) {
     const bool worldLoaded = save_load_hooks::WorldLoadedThisSession();
 
@@ -417,31 +421,30 @@ void VerifyAllCallback(const kcdxConsoleCmdArgs* /*args*/) {
                            "against the loaded build...");
     }
 
-    std::vector<kcdx::survival_verify::RowVerdict> verds =
-        kcdx::survival_verify::RunStartupVerification(worldLoaded);
+    // The report producer owns all JSON/file I/O (structure-by-responsibility —
+    // survival_verify verifies, survival_report serializes). Begin opens the
+    // incremental JSONL sink keyed by the curated-set size + running version; a
+    // sink-open failure is LOGGED loud and degrades (Finalize still writes the v3
+    // doc) — never a silent empty report.
+    survival_report::Reporter reporter;
+    const size_t rowsExpected = refdb::CachedRowCount();
+    reporter.Begin(rowsExpected, kcdx::plugins::g_runtimeGameVersionString);
 
-    // A one-line outcome summary so a run reports it did something (the per-row
-    // stream + the structured report are the next step). Tally the verdicts.
-    size_t verified = 0, passed = 0, failed = 0, notApplicable = 0,
-           cannotCheck = 0, skipped = 0, errored = 0;
-    for (const auto& v : verds) {
-        switch (v.verdict) {
-            case kcdx::survival_verify::Verdict::VerifiedWorking:   ++verified;      break;
-            case kcdx::survival_verify::Verdict::PassedNotVerified: ++passed;        break;
-            case kcdx::survival_verify::Verdict::Failed:            ++failed;        break;
-            case kcdx::survival_verify::Verdict::NotApplicable:     ++notApplicable; break;
-            case kcdx::survival_verify::Verdict::CannotCheck:       ++cannotCheck;   break;
-            case kcdx::survival_verify::Verdict::Skipped:           ++skipped;       break;
-            case kcdx::survival_verify::Verdict::Error:             ++errored;       break;
-        }
-    }
-    char summary[256];
-    std::snprintf(summary, sizeof(summary),
-        "[verify] swept %zu rows: %zu verified_working, %zu passed_not_verified, "
-        "%zu failed, %zu not_applicable, %zu cannot_check, %zu skipped, %zu error.",
-        verds.size(), verified, passed, failed, notApplicable, cannotCheck,
-        skipped, errored);
-    console::PrintLine(summary);
+    // Thread the producer's per-row sink into the sweep: OnRow streams the
+    // console line AND appends+flushes the JSONL line in the SAME per-row tick,
+    // the instant each verdict resolves. The sweep still returns the full vector.
+    std::vector<kcdx::survival_verify::RowVerdict> verds =
+        kcdx::survival_verify::RunStartupVerification(
+            worldLoaded,
+            [&reporter](const kcdx::survival_verify::RowVerdict& rv) {
+                reporter.OnRow(rv);
+            });
+
+    // Finalize: wrap the accumulated rows into the v3 document (complete iff the
+    // sweep covered the whole curated set) + emit the canonical acceptance
+    // signal. A finalize failure is LOGGED loud.
+    const bool complete = (verds.size() == rowsExpected);
+    reporter.Finalize(complete);
 }
 
 // Drain g_pendingCommands through the ONE registration path (RegisterCommandNow)

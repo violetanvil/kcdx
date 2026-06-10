@@ -14,6 +14,8 @@
 #include "refdb.h"
 #include "survival.h"
 #include "survival_pass.h"
+#include "survival_report.h"  // cap-95 producer sub-checks — the v3 report producer
+                              // (finalize + incremental flush + string escape).
 #include "survival_verify.h"  // 3.3 startup verification pass (D25 + D34)
 #include "test.h"
 #include "version_check_cache.h"
@@ -32,6 +34,28 @@ namespace sv = kcdx::survival;
 namespace vcc = kcdx::version_check_cache;
 namespace sp = kcdx::survival_pass;
 namespace svv = kcdx::survival_verify;
+namespace srep = kcdx::survival_report;
+
+// Read a whole file into a string. Returns false (empty out) if the file cannot
+// be opened / read — used by the cap-95 producer sub-checks to read the on-disk
+// JSONL + v3 report back and assert their shape. Cold path (boot self-test).
+bool ReadWholeFile(const std::string& path, std::string& out) {
+    out.clear();
+    std::FILE* f = nullptr;
+    if (::fopen_s(&f, path.c_str(), "rb") != 0 || f == nullptr) return false;
+    char buf[4096];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) out.append(buf, n);
+    std::fclose(f);
+    return true;
+}
+
+// Count '\n'-terminated lines in a string (the JSONL sink's per-row line count).
+size_t CountLines(const std::string& s) {
+    size_t n = 0;
+    for (char c : s) if (c == '\n') ++n;
+    return n;
+}
 
 // A synthetic plugin name that can never collide with a real plugin's Lookup
 // (the charset is illegal for a [plugin].name, so no real plugin shares it).
@@ -283,20 +307,218 @@ void ReportVerifyCommandOnce() {
             ++skippedFunctionRows;
         }
 
+        // --- Sub-check 3: THE REPORT PRODUCER — finalize + incremental flush +
+        // string escaping. Drives the v3 report producer (survival_report) over
+        // SYNTHETIC RowVerdicts (no live launch needed for the producer mechanics)
+        // and asserts three FALSIFIABLE properties. Reported under THIS row
+        // (cap-95) — the producer is the second half of the kcdx_verify_all
+        // capability the command triggers.
+        //
+        //   3a (INCREMENTAL FLUSH — the load-bearing assertion) — the JSONL sink
+        //      grows DURING the sweep, NOT all at once at the end. The producer's
+        //      FlushedRowCount() advances per OnRow that flushed; the test checks
+        //      the counter rose ROW-BY-ROW (after each OnRow it is exactly the
+        //      number of rows fed so far) AND the on-disk JSONL carries that many
+        //      lines BEFORE Finalize runs. A BULK-write implementation (accumulate
+        //      in memory, one write at Finalize) FAILS this: its flush counter
+        //      stays 0 until Finalize and the on-disk JSONL is empty mid-sweep.
+        //   3b (FINALIZES + VALIDATES-SHAPED) — Finalize writes a v3 document that
+        //      parses-shaped: schema_version 3, summary.passing/total, one rows[]
+        //      element per fed row, complete:true, rows_expected == fed count, and
+        //      each row carries a verdict token + method_rank + invoke fields + a
+        //      matched-id shape (integer on a verified-block row, null otherwise).
+        //   3c (STRING ESCAPING) — a row whose detail carries a `"` and `\`
+        //      produces a VALID JSON line (the quote/backslash are escaped, the
+        //      round-trip through JsonEscape is reversible-shaped). A broken escape
+        //      yields an unparseable line.
+        {
+            // Three synthetic rows exercising the matched-id if/then/else + the
+            // escaping path: a verified-block row (carries an integer matched id),
+            // a non-verified row (carries null), and a row whose detail has a quote
+            // + backslash. method_rank values are in the schema's 1-5 range.
+            std::vector<svv::RowVerdict> synth(3);
+            synth[0].kcdx_id = 9001;
+            synth[0].name = "cap95_synth_verified";
+            synth[0].resolved_version = "cap95.1.5.x";
+            synth[0].verdict = svv::Verdict::PassedNotVerified;  // verified block
+            synth[0].method_rank = 3;
+            synth[0].has_matched_id = true;
+            synth[0].matched_address_version_id = 4242;
+            synth[0].detail = "synthetic_pass";
+            synth[0].invoke_attempted = false;
+            synth[0].invoke_skip_reason = svv::InvokeSkipReason::UnsafeToCall;
+
+            synth[1].kcdx_id = 9002;
+            synth[1].name = "cap95_synth_failed";
+            synth[1].resolved_version = "cap95.1.5.x";
+            synth[1].verdict = svv::Verdict::Failed;             // non-verified → null id
+            synth[1].method_rank = 4;
+            synth[1].has_matched_id = false;
+            synth[1].detail = "fingerprint_mismatch";
+            synth[1].invoke_attempted = false;
+            synth[1].invoke_skip_reason = svv::InvokeSkipReason::None;
+
+            synth[2].kcdx_id = 9003;
+            synth[2].name = "cap95_synth_escaped";
+            synth[2].resolved_version = "cap95.1.5.x";
+            synth[2].verdict = svv::Verdict::CannotCheck;
+            synth[2].method_rank = 4;
+            synth[2].has_matched_id = false;
+            // The escaping torture row: a literal double-quote AND a backslash in
+            // the detail. A broken escaper yields an unparseable JSON line.
+            synth[2].detail = "needs \"escaping\" and a back\\slash";
+            synth[2].invoke_attempted = true;
+            synth[2].invoke_skip_reason = svv::InvokeSkipReason::None;
+
+            srep::Reporter rep;
+            rep.Begin(synth.size(), "cap95.1.5.x");
+
+            // 3a — feed each row and assert the flush counter rose row-by-row AND
+            // the on-disk JSONL line count matches the rows fed so far, BEFORE
+            // Finalize. This is the incrementality: a bulk-write impl would leave
+            // both at 0 until Finalize.
+            for (size_t i = 0; i < synth.size(); ++i) {
+                rep.OnRow(synth[i]);
+                const size_t want = i + 1;
+                if (rep.FlushedRowCount() != want) {
+                    s_reported = true;
+                    std::snprintf(vreason, sizeof(vreason),
+                        "FAIL: after feeding %zu row(s) the producer's flushed-row "
+                        "counter read %zu, not %zu — the report must flush each "
+                        "row's result to disk the INSTANT it resolves, NOT "
+                        "accumulate in memory for one bulk write at the end. A "
+                        "bulk-write implementation leaves this counter at 0 until "
+                        "finalize.", want, rep.FlushedRowCount(), want);
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("row", kVerifyRow),
+                        ::kcdx::log::KV("subcheck", "3a_incremental_flush_counter"));
+                    kcdx::test::ReportResult(kVerifyRow, false, vreason);
+                    kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+                    return;
+                }
+                // The on-disk JSONL must already carry `want` lines mid-sweep — the
+                // durable per-row record exists BEFORE finalize (a mid-sweep death
+                // leaves a complete-up-to-N JSONL). A bulk impl writes nothing here.
+                std::string jsonlMid;
+                if (ReadWholeFile(rep.JsonlPath(), jsonlMid)) {
+                    const size_t lines = CountLines(jsonlMid);
+                    if (lines != want) {
+                        s_reported = true;
+                        std::snprintf(vreason, sizeof(vreason),
+                            "FAIL: mid-sweep the on-disk JSONL carried %zu line(s) "
+                            "after %zu row(s) fed — the per-row flush must land each "
+                            "line on disk as the row resolves; a JSONL that appears "
+                            "only as one bulk write at sweep end is the violation.",
+                            lines, want);
+                        LOG_ERROR_KV(kCategory, "selftest_fail",
+                            ::kcdx::log::KV("row", kVerifyRow),
+                            ::kcdx::log::KV("subcheck", "3a_incremental_jsonl_grows"));
+                        kcdx::test::ReportResult(kVerifyRow, false, vreason);
+                        kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+                        return;
+                    }
+                }
+            }
+
+            // 3b — finalize + assert the v3 document validates-shaped.
+            const bool finalized = rep.Finalize(/*complete=*/true);
+            std::string doc;
+            const bool readBack = ReadWholeFile(rep.ReportPath(), doc);
+            // Required shape tokens (no JSON lib vendored — assert the contract's
+            // key fields are present; the FE consumer validates against the schema).
+            const bool shapeOk =
+                finalized && readBack &&
+                doc.find("\"schema_version\":3") != std::string::npos &&
+                doc.find("\"game_version\":\"cap95.1.5.x\"") != std::string::npos &&
+                doc.find("\"summary\":") != std::string::npos &&
+                doc.find("\"passing\":1") != std::string::npos &&   // only synth[0] is verified-block
+                doc.find("\"total\":3") != std::string::npos &&
+                doc.find("\"complete\":true") != std::string::npos &&
+                doc.find("\"rows_expected\":3") != std::string::npos &&
+                doc.find("\"verdict\":\"passed_not_verified\"") != std::string::npos &&
+                doc.find("\"verdict\":\"failed\"") != std::string::npos &&
+                doc.find("\"method_rank\":3") != std::string::npos &&
+                doc.find("\"invoke_attempted\":") != std::string::npos &&
+                doc.find("\"invoke_skip_reason\":") != std::string::npos &&
+                // matched-id if/then/else: verified-block row → the integer id;
+                // a failed row → null.
+                doc.find("\"matched_address_version_id\":4242") != std::string::npos &&
+                doc.find("\"matched_address_version_id\":null") != std::string::npos;
+            if (!shapeOk) {
+                s_reported = true;
+                std::snprintf(vreason, sizeof(vreason),
+                    "FAIL: the finalized v3 report did NOT validate-shaped "
+                    "(finalized=%d, read=%d) — it must carry schema_version 3, a "
+                    "summary (passing 1 / total 3), one rows[] element per fed row "
+                    "with a verdict token + method_rank + invoke fields, the "
+                    "matched-id if/then/else (4242 on the verified-block row, null "
+                    "on the failed row), complete:true and rows_expected 3. A row "
+                    "with no verdict (a passive non-result) or a missing "
+                    "complete/rows_expected fails.",
+                    finalized ? 1 : 0, readBack ? 1 : 0);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("row", kVerifyRow),
+                    ::kcdx::log::KV("subcheck", "3b_v3_validates"));
+                kcdx::test::ReportResult(kVerifyRow, false, vreason);
+                kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+                return;
+            }
+
+            // 3c — string escaping: the torture-row's detail (with a `"` and `\`)
+            // round-trips through JsonEscape to a body whose quote/backslash are
+            // escaped (\" and \\) and whose unescape reproduces the original. A
+            // broken escaper would emit a raw `"` (breaking the JSON line) or fail
+            // to double the backslash.
+            const std::string raw = synth[2].detail;
+            const std::string esc = srep::JsonEscape(raw);
+            // The escaped body must contain NO bare double-quote (every `"` →
+            // `\"`) and the lone backslash must be doubled. Reconstruct by
+            // unescaping the two sequences and compare to the original.
+            bool escapeOk = true;
+            std::string unesc;
+            for (size_t i = 0; i < esc.size(); ++i) {
+                if (esc[i] == '\\' && i + 1 < esc.size()) {
+                    char n = esc[i + 1];
+                    if (n == '"')  { unesc += '"';  ++i; continue; }
+                    if (n == '\\') { unesc += '\\'; ++i; continue; }
+                }
+                if (esc[i] == '"') { escapeOk = false; break; }  // a BARE quote → broken.
+                unesc += esc[i];
+            }
+            if (!escapeOk || unesc != raw) {
+                s_reported = true;
+                std::snprintf(vreason, sizeof(vreason),
+                    "FAIL: a detail string with a quote + backslash did NOT escape "
+                    "to a valid, reversible JSON body (bare_quote=%d, "
+                    "round_trip_ok=%d) — a broken escaper yields an unparseable "
+                    "JSON line that fails v3 validation.",
+                    escapeOk ? 0 : 1, (unesc == raw) ? 1 : 0);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("row", kVerifyRow),
+                    ::kcdx::log::KV("subcheck", "3c_string_escape"));
+                kcdx::test::ReportResult(kVerifyRow, false, vreason);
+                kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+                return;
+            }
+        }
+
         // PASS — the command is registered AND the save-load precondition gated
-        // the live-exercise tier as documented: every un-observed function row
-        // resolved 'skipped', and every kept verified_working row carries a backing
-        // pre-menu observation (no fabricated top rung). DEGRADE when no function
-        // row exists.
+        // the live-exercise tier as documented (every un-observed function row
+        // resolved 'skipped', every kept verified_working row carries a backing
+        // pre-menu observation) AND the report producer flushes incrementally,
+        // finalizes a v3 report that validates-shaped, and escapes strings
+        // correctly. DEGRADE when no function row exists.
         s_reported = true;
         std::snprintf(vreason, sizeof(vreason),
-            "PASS — kcdx_verify_all is registered in the console command table; and "
-            "the save-load precondition gates the live-exercise tier: of %zu "
-            "function (live-exercise-eligible) rows, %zu un-observed resolved "
-            "'skipped' (precondition_no_world_loaded — needs a loaded save) and %zu "
-            "kept verified_working each backed by a real pre-menu observation "
-            "(engine-hook fire or kcdx invocation) — no static-ceiling pass and no "
-            "fabricated top rung%s.",
+            "PASS — kcdx_verify_all is registered in the console command table; the "
+            "save-load precondition gates the live-exercise tier (of %zu function "
+            "rows, %zu un-observed resolved 'skipped', %zu kept verified_working "
+            "each backed by a real pre-menu observation — no static-ceiling pass, no "
+            "fabricated top rung); and the report producer flushes each row "
+            "incrementally (the JSONL grows row-by-row, never one bulk write at "
+            "end), finalizes a v3 report that validates-shaped (schema_version 3 "
+            "+ summary + per-row verdict/rank/invoke/matched-id + complete + "
+            "rows_expected), and escapes quotes/backslashes to valid JSON%s.",
             functionRows, skippedFunctionRows, observedKeptRows,
             functionRows == 0
                 ? " [DEGRADED: the deployed DB carried no function row to gate]"

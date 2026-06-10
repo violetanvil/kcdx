@@ -43,6 +43,7 @@
 // fabricate a passing verdict).
 
 #include <cstdint>
+#include <functional>  // the per-row sink callback (the incremental-flush seam).
 #include <string>
 #include <vector>
 
@@ -448,7 +449,19 @@ bool SafeReadToVerdict(const SafeReadResult& sr, int passRank, int failedRank,
 // skipped — the static / safe-read / observed tiers run as before. The static
 // ranks (3-5) are unaffected by this gate either way; only the live-exercise
 // tier is precondition-gated.
-std::vector<RowVerdict> RunStartupVerification(bool worldLoaded = true);
+//
+// `onRow` is the PER-ROW SINK — invoked as each RowVerdict FINALIZES inside
+// the sweep loop (BEFORE the next row's attempt), so the caller can stream +
+// durably flush each row's result the instant it resolves, NOT in a bulk pass
+// over the returned vector (the bulk shape loses everything on a mid-sweep
+// death). The sweep STILL returns the full vector for the suite tally — onRow
+// and the return value are complementary, not exclusive. Default `{}` (no sink):
+// the existing self-test callers (which post-process the returned vector) are
+// unaffected. The report producer (survival_report) passes its OnRow here so the
+// console stream + the incremental JSONL flush happen in the same per-row tick.
+std::vector<RowVerdict> RunStartupVerification(
+    bool worldLoaded = true,
+    const std::function<void(const RowVerdict&)>& onRow = {});
 
 // Decode a Verdict to its stable token (for logs / the later JSON report).
 const char* VerdictName(Verdict v);

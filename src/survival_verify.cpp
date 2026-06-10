@@ -2,6 +2,7 @@
 
 #include <cstring>    // strcmp / strncmp (engine-stamp identity on a chain entry)
 #include <exception>  // std::exception (ParsePattern throw)
+#include <functional> // the per-row sink callback (the incremental-flush seam)
 #include <mutex>      // the invocation-record store guard
 #include <string>
 #include <unordered_set>  // the CALLED-by-kcdx invocation record
@@ -565,8 +566,23 @@ bool SafeReadToVerdict(const SafeReadResult& sr, int passRank, int failedRank,
     return true;
 }
 
-std::vector<RowVerdict> RunStartupVerification(bool worldLoaded) {
+std::vector<RowVerdict> RunStartupVerification(
+    bool worldLoaded,
+    const std::function<void(const RowVerdict&)>& onRow) {
     std::vector<RowVerdict> out;
+
+    // The per-row finalization seam: every row exits the loop through emit(),
+    // which fires the per-row sink (the report producer's stream + incremental
+    // flush — printed AND durably written together) the instant the row
+    // resolves, BEFORE the next row's attempt, THEN appends to the returned
+    // vector. onRow reads the finalized row; the move into `out` happens after, so
+    // the sink sees the complete RowVerdict. A null sink (the self-test callers)
+    // is the plain push. This single seam replaces every scattered push so the
+    // sink fires exactly once per row.
+    auto emit = [&out, &onRow](RowVerdict& rv) {
+        if (onRow) onRow(rv);
+        out.push_back(std::move(rv));
+    };
 
     // Precondition: refdb must be open (the curated cache is the input set). An
     // unloaded refdb yields an empty result with a logged reason — never silent.
@@ -641,7 +657,7 @@ std::vector<RowVerdict> RunStartupVerification(bool worldLoaded) {
                     ::kcdx::log::KV("name", name),
                     ::kcdx::log::KV("reason", "name_unresolved"));
                 ++cannotCheck;
-                out.push_back(std::move(rv));
+                emit(rv);
                 return true;
             }
 
@@ -657,7 +673,7 @@ std::vector<RowVerdict> RunStartupVerification(bool worldLoaded) {
                     ::kcdx::log::KV("kind", nr.kind),
                     ::kcdx::log::KV("reason", "kind_unknown"));
                 ++cannotCheck;
-                out.push_back(std::move(rv));
+                emit(rv);
                 return true;
             }
 
@@ -679,7 +695,7 @@ std::vector<RowVerdict> RunStartupVerification(bool worldLoaded) {
                     ::kcdx::log::KV("kind", nr.kind),
                     ::kcdx::log::KV("reason", buildReason));
                 ++cannotCheck;
-                out.push_back(std::move(rv));
+                emit(rv);
                 return true;
             }
 
@@ -945,7 +961,7 @@ std::vector<RowVerdict> RunStartupVerification(bool worldLoaded) {
                     rv.has_matched_id ? (long long)rv.matched_address_version_id : (long long)-1),
                 ::kcdx::log::KV("detail", rv.detail.empty() ? "-" : rv.detail.c_str()));
 
-            out.push_back(std::move(rv));
+            emit(rv);
             return true;  // continue the sweep.
             } catch (const std::exception& e) {
                 // The verification harness faulted on this row (a check threw,
@@ -962,7 +978,7 @@ std::vector<RowVerdict> RunStartupVerification(bool worldLoaded) {
                     ::kcdx::log::KV("reason", "harness_fault"),
                     ::kcdx::log::KV("what", e.what()));
                 ++errored;
-                out.push_back(std::move(rv));
+                emit(rv);
                 return true;  // a faulted row does not stop the sweep.
             }
         });

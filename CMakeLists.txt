@@ -299,6 +299,7 @@ add_library(kcdx SHARED
     src/blake3_selftest.cpp
     src/survival.cpp
     src/survival_verify.cpp
+    src/survival_report.cpp
     src/version_check_cache.cpp
     src/survival_pass.cpp
     src/version_check_selftest.cpp
