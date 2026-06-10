@@ -17,7 +17,7 @@ divergence, this phase does not start until the user reconciles the D38 model.
 
 | Step | Status | Commit |
 |---|---|---|
-| [1.1 [CORE] Extend the exporter to capture the bulk half losslessly → data/db-export-bulk/](step-1-exporter-bulk.md) | NOT STARTED | — |
+| [1.1 [CORE] Extend the exporter to capture the bulk half losslessly → data/db-export-bulk/](step-1-exporter-bulk.md) | DONE | 6af2d80 — new seeds_shared/bulk_exporter.py (export_bulk): the 3 DEV-only tables + kcdx_id-NULL av rows → data/db-export-bulk/, lossless (probe-verbatim encoder). Gate: pytest 3 passed + the real 1.3GB DEV DB exports with every CSV-record count == DB. Step-review PROCEED. |
 | [1.2 [CORE] Git LFS tracking for data/db-export-bulk/ (.gitattributes + LFS init)](step-2-lfs-tracking.md) | NOT STARTED | — |
 | [1.3 [CORE] Repoint run_rebuild genesis to the tracked CSVs; the dump → expert-only](step-3-rebuild-genesis.md) | NOT STARTED | — |
 | [1.4 [CORE] Widen the round-trip oracle over the bulk (the completeness bar)](step-4-roundtrip-oracle.md) | NOT STARTED | — |
