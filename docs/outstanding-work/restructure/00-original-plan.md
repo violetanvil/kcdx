@@ -1766,7 +1766,149 @@ Each op carries a byte-emit function the engine invokes at apply time. The engin
 - New `src/plugin_pdb.{cpp,h}` — PDB auto-load via `DbgHelp` (`SymLoadModuleEx` + `SymEnumSymbols`); parses a plugin DLL's sidecar `.pdb` at plugin load, populates internal-function addresses into `kcdx.functions["<author>.<plugin>"]`; graceful fallback on missing/mismatched PDB. Links `dbghelp.lib`.
 - `src/trampoline.cpp` extended for multi-region
 
-**C++ side parity:** `kcdxHookInterface` gets `Before/After/Around/Replace/InsertBefore/InsertAfter` methods (sub-methods per mode, mirroring the Lua sub-verb shape). New `kcdxStatementInterface` for static-bytes work with the same shape. `kcdxFunctionsInterface` mirrors `kcdx.dll.declare` (a C++ plugin declares its own functions via `K.functions->Declare(...)`). The in-flight Phase 3 mode-as-field shape migrates to sub-method shape in this phase. C++ test plugins migrate alongside Lua test plugins.
+**C++ side parity (§9.3-C — settled 2026-06-09).** Phase 9.3's three new Lua
+surfaces (`kcdx.functions.*` + `kcdx.dll.declare`, `kcdx.statement.*`, and the
+`kcdx.hook.insert_*` sub-verbs) get their C++ mirrors at full feature parity
+(the authoring-surface invariant — Lua↔C++ parity on the shipped product,
+`.claude/rules/lua-api-surface.md`). All three are NEW interfaces or append-only
+additions; the C++ hook interface is ALREADY sub-method-shaped
+(`Before/After/Around/Replace/Mid/Callsite` at `kcdxHookInterface_Version 2`,
+`include/kcdx/Interfaces.h`), so this ADDS the missing pieces — it is not a
+mode-as-field→sub-method migration. Each surface ships its own C++ test plugin
+(parity is tested, not assumed) + its `docs/cpp/` per-interface entry (the
+existing NYI/parity rows resolve to built); every interface change is APPEND-ONLY
+(`anti-patterns.md` AP11 — new members at the struct END, never mid-struct; a
+pre-built plugin AVs on load otherwise) and is ABI-verified by re-launching with
+the EXISTING (not-rebuilt) plugin set and confirming the InputLoaded listener
+count is unchanged.
+
+**§9.3-C.1 — `kcdxFunctionsInterface` (new) + `kcdxDllInterface` (new): full
+parity, declare AND resolution.** The C++ author gets the SAME function-reference
+capability a Lua author does — declare your own DLL's functions, and resolve a
+function reference (game or plugin) by name or id. Two SEPARATE interfaces,
+preserving the Lua surface's two distinct paths (`kcdx.dll.declare` ≠
+`kcdx.functions.*`) — the surfaces-mirror cornerstone (`cornerstones.md`,
+`lua-api-surface.md`): the C++ namespacing matches the Lua namespacing, so an
+author who knows one predicts the other. (Disjoint from the EXISTING built
+`kcdxDeclareInterface` (ID 10) — that is the Address-Library declare, a different
+concept.)
+
+- **`kcdxFunctionsInterface`** (new QueryInterface ID) mints a **passable
+  by-value `kcdxFunctionRef`** carrying `{ found, isGame, stem, name, address,
+  hasAddress, signature, reason }` — the C++ peer of the Lua reference VALUE.
+  The reference BOTH carries its resolution (the author reads the fields
+  directly — no separate `Resolve(handle)` call, no opaque engine-owned handle,
+  no two-call dance) AND is the value the hook/statement verbs accept as a
+  target. One value, used two ways — minimal ceremony (the minimal-ceremony
+  cornerstone collapses the handle dance; C++ model rule "doing→typed params")
+  and full capability (the capability cornerstone — a C++ author resolves a
+  reference ONCE and passes it to N verbs, exactly as the Lua reference value is
+  passed to `kcdx.hook.before(...)` / `kcdx.statement.replace_with(...)`). Mint
+  forms mirror the Lua accesses one-to-one: `GameByName(stem, name)` ↔
+  `kcdx.functions.WHGame.SaveGame`; `GameById(kcdxId)` ↔
+  `kcdx.functions.by_id[N]` (game-only stable id); `PluginByName(namespace,
+  name)` ↔ `kcdx.functions["a.b"].Fn`. Each returns a `kcdxFunctionRef` by
+  value; a miss returns a ref with `found=false` + a `reason` token
+  (`name_unknown` / `db_not_loaded` / `not_declared`), never a silent empty
+  (fail-loud, `anti-patterns.md` AP14). The `address` field is a real resolved
+  VA when `hasAddress` (a game reference from the DB; a plugin reference from
+  the PDB-auto-load path); the field is a raw `void*`, NOT a Lua-number-rounded
+  value (the C++ side has no `LUA_NUMBER=float` precision hazard). The `const
+  char*` fields point at engine-owned, process-lifetime strings (the repo idiom —
+  do not free).
+
+- **`kcdxDllInterface`** (new QueryInterface ID) mirrors `kcdx.dll.declare`: a
+  C++ plugin declares its own DLL's functions with signatures COPIED FROM ITS
+  OWN SOURCE (no disassembly — the strongest disassembler-test win, the author
+  has the types for free because they wrote the function). `Declare(const char*
+  pluginNamespace, const kcdxDeclaredFn* fns, int count) → bool`, where
+  `kcdxDeclaredFn = { const char* name; const char* signature; }`. Maps the Lua
+  `function_map` (`{ FnName = { signature = "…" } }`) to the typed array. A
+  malformed entry is rejected with a logged teaching diagnostic (the C++ peer of
+  the Lua call's raised error); `signature` is required on every entry (a
+  callback hook needs the ABI the compiled DLL does not carry). Declared
+  functions land under the same in-memory per-stem map the Lua `kcdx.dll.declare`
+  populates, so they resolve identically via `PluginByName` (C++) and
+  `kcdx.functions["<ns>"]` (Lua) — one store, both surfaces.
+
+**§9.3-C.2 — `kcdxStatementInterface` (new): `ReplaceWith` / `InsertBefore` /
+`InsertAfter`.** The C++ mirror of `kcdx.statement.*` (static-bytes
+modification). New QueryInterface ID + `kcdxStatementInterface_Version`.
+
+- `ReplaceWith(target, op, opts) → kcdxStatementHandle` — takes a STATIC op (the
+  C++ peer of a `kcdx.op.*` value; NOT a callback), an optional locator (in
+  opts; defaults to function-entry), and resolves + kind-checks + emits the
+  determinate op's bytes + writes them as a deferred-apply entry, mirroring the
+  built `kcdx.statement.replace_with`.
+- `InsertBefore(target, locator, callback, opts)` / `InsertAfter(...)` —
+  callback form, locator REQUIRED ("insert before what?" has no default).
+- **The insert methods mirror the register-and-DEFER contract, not a firing
+  feature.** The Lua `kcdx.statement.insert_*` apply path is unwired today (it
+  registers, then fails LOUD at apply — an honest deferral, never faked-green);
+  the C++ mirror has the SAME contract: `Insert*` returns a handle,
+  `IsApplied(h)` is false, `GetReason(h)` carries the not-yet-wired teaching
+  reason. Wiring the insert apply-path to actually FIRE is separate deferred
+  work on BOTH surfaces and is OUT of this phase's scope — the C++ side mirrors
+  the deferral, it does not get ahead of the Lua side.
+- `target` is a name string (`const char*` — the common path, the
+  disassembler-test default); a `kcdxFunctionRef` (§9.3-C.1 — the passable
+  reference) is passed instead via the `targetRef` opts field (§9.3-C.4). The
+  handle carries `IsApplied`/`GetReason`/`GetName`/`Uninstall`, mirroring
+  `kcdxHookHandle`.
+
+**§9.3-C.3 — `kcdxHookInterface` gains `InsertBefore` / `InsertAfter`
+(append-only).** Two methods appended after the `--- APPEND-ONLY BELOW
+(kcdxHookInterface_Version >= 2) ---` marker, same shape as the existing
+sub-verbs (`(const char* target, void* callback, const kcdxHookOptions* opts) →
+kcdxHookHandle`); a `kcdxFunctionRef` target is passed via the `targetRef` opts
+field (§9.3-C.4 — the same opts-field shape every hook verb uses). Bumps
+`kcdxHookInterface_Version` to 3. These ALSO mirror the register-and-defer
+contract (the Lua `kcdx.hook.insert_*` apply path is unwired — same deferral as
+§9.3-C.2); the existing handle contract (a non-zero handle ≠ applied; `IsApplied`
+false until the apply pass) already expresses it, so no new query mechanism is
+needed.
+
+**§9.3-C.4 — target-by-reference C-ABI shape: a ref field in the opts struct
+(settled 2026-06-09).** Each verb keeps its bare `const char* target` first
+param as the common path — a name string, the disassembler-test default, the
+engine carries the address + ABI. This stays primary and unchanged (the 90%
+case: an author writes a name). To pass a `kcdxFunctionRef` (§9.3-C.1) instead, a
+`const kcdxFunctionRef* targetRef` field is **appended to the verb's options
+struct** (`kcdxHookOptions`, the new `kcdxStatementOptions`) — AP11-clean (it
+appends after the existing opts-struct marker, adds NO new methods, and does not
+churn the method set). When `targetRef` is set it wins; otherwise the positional
+string `target` is used. ZERO new methods: the whole verb family stays
+one-method-per-verb.
+
+This is the cornerstone-anchored shape (`cornerstones.md` — minimal ceremony +
+common-path-first). The rejected alternatives, weighed at design time: a
+`*FromRef` sibling method per verb (~6-9 new methods — heaviest surface, and the
+Lua side is ONE type-dispatched verb not two, so a Ref-doubling DIVERGES from the
+surfaces-mirror rule rather than honoring it); and a tagged-target struct
+replacing the `const char* target` param (changes the common-path signature so
+every author builds a struct even for the plain-name case — fails
+common-path-first). The opts-field shape is the lightest and keeps the common
+path a bare name. It mirrors the Lua reality where the ref-vs-name is ONE
+positional slot disambiguated by type (`ReadTargetName` / the hook arg-2
+dispatch): in C, the "or use this reference instead" lives in the already-present
+knobs struct. (Note: the today-wired Lua path collapses a passed reference to its
+carried NAME before resolution, so `targetRef` is, in the path that works today,
+equivalent to passing `ref->name` — the field is the parity affordance for
+"resolve once, pass to N verbs," not a separate resolution mechanism.)
+
+**Survivor-comment fix (carried with the C++ mirror).** The header comment in
+`src/lua_bind_functions.cpp` still says "the hook and statement verbs that consume
+this value as arg-1 are not yet built" — stale, since the Lua hook/statement
+verbs DO consume the reference value as a target today. That comment is corrected
+in the same change that lands the C++ functions mirror (the additive-doc /
+survivor-sweep discipline, `.claude/rules/deletion-hygiene.md` /
+`docs-discipline.md`).
+
+**The in-flight Phase 3 work is already sub-method-shaped** (the hook interface
+ships `Before/After/...` at v2), so there is no mode-as-field→sub-method
+migration in this phase — only the additions above. C++ test plugins migrate
+alongside the Lua ones (both surfaces of each capability under permanent
+regression; the suite stays green — no C++ red window).
 
 **Verification gate:** every existing hook test plugin (`cap-03-hook-lua-callback`, `cap-04-midhook`, `cap-20-hook-modes`, `cap-21-mid`, `cap-22-callsite`, etc.) migrates to the new sub-verb shape; suite stays 21/21 green. New `cap-XX-statement-replace` test verifies `kcdx.statement.replace_with(kcdx.functions.WHGame.fn, kcdx.op.return_const(0))` produces the expected runtime cost shape (zero per-call Lua dispatch — verified by absence of dispatch log lines during a tight loop hitting the target). New `cap-XX-plugin-fn-declare` test: plugin A declares a function via `kcdx.dll.declare`; plugin B (depending on A) hooks `kcdx.functions["a.test"].DeclaredFn` and the hook fires — proves cross-plugin function access without disassembly. New `cap-XX-pdb-autoload` test: a test plugin ships a PDB; `kcdx.functions["test.pdbmod"].InternalNonExportedFn` resolves to a non-exported function's address; a static `replace_with_noop` on it applies — proves PDB-sourced addresses work without declaration.
 
