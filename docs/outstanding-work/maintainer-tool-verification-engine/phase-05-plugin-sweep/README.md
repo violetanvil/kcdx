@@ -21,7 +21,7 @@ those, not this README's summary.
 |---|---|---|
 | [5.1 [CORE] Report schema v3 — the 7-state enum + method_rank/invoke fields + redefined summary](step-1-core-report-schema-v3.md) | DONE | (landed) |
 | [5.2 [ENG/TEST] The kcdx_verify_all console command + the save-load precondition](step-2-eng-console-command-trigger.md) | DONE | 187ad3d |
-| [5.3 [TEST] The sweep over the curated set + per-row streaming + v3 report emission + matrix row + 3-tree deploy](step-3-test-sweep-stream-report.md) | NOT STARTED | — |
+| [5.3 [TEST] The sweep over the curated set + per-row streaming + v3 report emission + matrix row + 3-tree deploy](step-3-test-sweep-stream-report.md) | DONE | 9b0ee59 |
 
 ## Phase verification gate
 
