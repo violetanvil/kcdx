@@ -168,18 +168,21 @@ ABI_CONFIDENCE = "count+width+caller_reg"
 #                                  row; (kcdx_id, game_version) is unique.
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # data/refdata-extractor/python -> repo
-SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
+# The curated seed-path constants resolve the D38 CSV-genesis location: the three
+# seed-shaped CSVs at data/db-export/ (the retired data/seeds/ is gone -- D38).
+# build_rows / the validators / the rebuild oracle read MODULE_SEED_CSV / etc. by
+# name, so this default makes their curated reads resolve the tracked CSV export.
+SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 MODULE_SEED_CSV           = os.path.join(SEED_DIR, "module_seed.csv")
 ADDRESS_NAMES_SEED_CSV    = os.path.join(SEED_DIR, "address_names_seed.csv")
 ADDRESS_VERSIONS_SEED_CSV = os.path.join(SEED_DIR, "address_versions_seed.csv")
 
-# D38 CSV-genesis source dirs (the tracked CSV export run_rebuild now reads INSTEAD
-# of the dump + data/seeds/). The curated half is the three seed-shaped CSVs at
-# data/db-export/ (csv_exporter's targets); the bulk half is the raw lossless
-# bundle at data/db-export-bulk/ (bulk_exporter's targets). The genesis logic
-# reads from these dirs; the SEED_DIR-constant repoint (step 2.1) is what makes
-# build_rows' curated seed reads resolve data/db-export/ instead of data/seeds/ --
-# this step (1.3) changes the GENESIS read LOGIC, not the path constants.
+# D38 CSV-genesis source dirs (the tracked CSV export run_rebuild reads INSTEAD of
+# the dump + the retired data/seeds/). The curated half is the three seed-shaped
+# CSVs at data/db-export/ (csv_exporter's targets; SEED_DIR above resolves the same
+# dir -- the curated seed-path constants' default IS this genesis location); the
+# bulk half is the raw lossless bundle at data/db-export-bulk/ (bulk_exporter's
+# targets). The 1.3 genesis logic reads from these dirs.
 CURATED_EXPORT_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 BULK_EXPORT_DIR    = os.path.join(REPO_ROOT, "data", "db-export-bulk")
 
@@ -1022,14 +1025,14 @@ def build_rows_from_csv(curated_dir, bulk_dir, dicts):
     next_av_id = max(versions_by_av_id.keys(), default=0) + 1
 
     # --- CURATED half (the three seed-shaped CSVs at data/db-export/) ---
-    # Point the importer's seed-path constants at the curated export dir for the
-    # duration of the curated read (the same global-constant convention the round-trip
+    # Point the importer's seed-path constants at the caller-supplied curated_dir for
+    # the duration of the curated read (the same global-constant convention the round-trip
     # oracle + the direct-write validator use). build_rows reads MODULE_SEED_CSV / etc.
     # by name; the curated overlay below reads the same three names, so repointing them
-    # at data/db-export/ makes the curated read resolve the export. Restored on every
-    # path. (Step 2.1 makes data/db-export/ the DEFAULT for these constants; until then
-    # this scoped repoint is how the genesis read resolves the curated CSVs without
-    # changing the constants' default.)
+    # at curated_dir makes the curated read resolve the supplied export. Restored on
+    # every path. (The seed-path constants already DEFAULT to data/db-export/ -- step
+    # 2.1; this scoped repoint honors the curated_dir PARAMETER, which an oracle / test
+    # caller may point at a temp export dir rather than the default.)
     saved = (MODULE_SEED_CSV, ADDRESS_NAMES_SEED_CSV, ADDRESS_VERSIONS_SEED_CSV)
     g = globals()
     g["MODULE_SEED_CSV"]           = os.path.join(curated_dir, "module_seed.csv")
