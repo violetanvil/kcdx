@@ -111,6 +111,8 @@ struct Kcdx {
     const kcdxHookInterface*          hook         = nullptr;  // floor-4 hook drop-down
     const kcdxBytesInterface*         bytes        = nullptr;  // kcdx.bytes peer
     const kcdxDeclareInterface*       declare      = nullptr;  // kcdx.declare / kcdx.declared peer
+    const kcdxFunctionsInterface*     functions    = nullptr;  // kcdx.functions.* peer (function refs)
+    const kcdxDllInterface*           dll          = nullptr;  // kcdx.dll.declare peer (declare own DLL fns)
     const kcdxAssetInterface*         assets       = nullptr;  // kcdx.assets.* peer
     const kcdxMemoryInterface*        memory       = nullptr;
     const kcdxConsoleInterface*       console      = nullptr;
@@ -146,6 +148,11 @@ struct Kcdx {
         declare = static_cast<const kcdxDeclareInterface*>(
             api->QueryInterface(kcdxInterface_Declare,
                                 kcdxDeclareInterface_Version));
+        functions = static_cast<const kcdxFunctionsInterface*>(
+            api->QueryInterface(kcdxInterface_Functions,
+                                kcdxFunctionsInterface_Version));
+        dll = static_cast<const kcdxDllInterface*>(
+            api->QueryInterface(kcdxInterface_Dll, kcdxDllInterface_Version));
         assets = static_cast<const kcdxAssetInterface*>(
             api->QueryInterface(kcdxInterface_Assets,
                                 kcdxAssetInterface_Version));

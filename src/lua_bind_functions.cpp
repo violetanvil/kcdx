@@ -1,11 +1,14 @@
 // kcdx.functions.* — the function-reference value namespace + kcdx.dll.declare.
 //
 // A function-reference VALUE names a function (game or plugin) and carries its
-// address (+ its signature, when known). The hook and statement verbs that
-// consume this value as arg-1 are not yet built; this namespace stands alone
-// and SELF-VERIFIES here via the `:resolve()` introspection accessor
-// (mirroring the `kcdx.locator.*` value's `:resolve` and the `kcdx.op.*`
-// value's `:emit_for`).
+// address (+ its signature, when known). The hook and statement verbs consume
+// this value as arg-1 (a reference target installs + fires by name with no
+// disassembly); the value ALSO self-verifies here via the `:resolve()`
+// introspection accessor (mirroring the `kcdx.locator.*` value's `:resolve` and
+// the `kcdx.op.*` value's `:emit_for`). The C++ peer of this whole surface is
+// kcdxFunctionsInterface (the reference mints) + kcdxDllInterface (declare),
+// both resolving against the SAME stores this file owns via the public seams in
+// the header (one store, both languages).
 //
 // TWO structurally-disjoint populations, distinguished at the call site by the
 // stem:
@@ -32,9 +35,9 @@
 //
 // THE REFERENCE VALUE. A `kcdx.functions.X.Y` access returns a function-
 // reference userdata carrying { stem, name, is_game, va, signature }. It is the
-// value the LATER hook/statement verbs (not yet built) accept as arg-1. The
-// settled-fork `:resolve()` accessor returns an introspection table the test
-// asserts against (the value self-checks with NO consuming verb):
+// value the hook/statement verbs accept as arg-1. The settled-fork `:resolve()`
+// accessor returns an introspection table the test asserts against (the value
+// also self-checks with NO consuming verb):
 //
 //   local ref = kcdx.functions.WHGame.SaveGame
 //   local r = ref:resolve()
@@ -348,8 +351,8 @@ int Lua_RefResolve(lua_State* L) {
 }
 
 // :name() / :stem() / :signature() are folded into :resolve()'s table; the
-// value carries no other methods. A future hook/statement verb (not yet built)
-// reads the FunctionRef payload directly via CheckRef, not through Lua.
+// value carries no other methods. The hook/statement verbs read the FunctionRef
+// payload directly via CheckRef (through ReadFunctionRef), not through Lua.
 
 // Install the function-reference-value metatable. Idempotent. Stack effect: 0.
 void SetupMetatable(lua_State* L) {
@@ -585,10 +588,11 @@ int Lua_DllDeclare(lua_State* L) {
                 "\"bool (ptr self)\").", ns.c_str(), fnName.c_str());
         }
 
-        {
-            std::lock_guard<std::mutex> lk(g_declared_mutex);
-            g_declared[DeclaredKey(ns, fnName)] = DeclaredFn{ sig };
-        }
+        // Write through the shared seam (the ONE store-insert both the Lua
+        // binder and the C++ kcdxDllInterface::Declare use — no duplicate map
+        // write). ns / fnName / sig are all validated non-empty above, so the
+        // seam's own empty-guard never fires here.
+        DeclareFunction(ns, fnName, sig);
         ++declared;
         lua_pop(L, 1);  // pop value, keep key for the next lua_next.
     }
@@ -660,6 +664,45 @@ void bind(lua_State* L) {
     lua_pushcfunction(L, Lua_DllDeclare);
     lua_setfield(L, -2, "declare");
     lua_setfield(L, kcdx_idx, "dll");
+}
+
+// Public write-seam — the ONE declared-store insert the Lua kcdx.dll.declare
+// binder and the C++ kcdxDllInterface::Declare both call (single-sourced; no
+// duplicate map write). Empty ns / fn / signature → false, write nothing (the
+// caller fails loud at its own surface). Same mutex-guarded, launch-time store
+// as the Lua path; a re-declare of (ns, fn) overwrites.
+bool DeclareFunction(const std::string& ns, const std::string& fn,
+                     const std::string& signature) {
+    if (ns.empty() || fn.empty() || signature.empty()) return false;
+    std::lock_guard<std::mutex> lk(g_declared_mutex);
+    g_declared[DeclaredKey(ns, fn)] = DeclaredFn{ signature };
+    return true;
+}
+
+// Public resolution seam — the C++ kcdxFunctionsInterface mint forms call this
+// to resolve a reference's 8 fields. Reuses the same FunctionRef + ResolveRef
+// path the Lua `:resolve()` accessor runs (one resolution, both surfaces); no
+// reimplementation of the refdb / declared-store walk.
+ResolvedFunctionRef ResolveFunctionRef(bool is_game, const std::string& stem,
+                                       const std::string& name, bool has_id,
+                                       uint64_t kcdx_id) {
+    FunctionRef ref;
+    ref.is_game = is_game;
+    ref.stem    = stem;
+    ref.name    = name;
+    ref.has_id  = has_id;
+    ref.kcdx_id = kcdx_id;
+
+    RefResolution r = ResolveRef(ref);
+
+    ResolvedFunctionRef out;
+    out.is_game     = is_game;
+    out.found       = r.found;
+    out.has_address = r.has_address;
+    out.address     = r.address;
+    out.signature   = r.signature;
+    out.reason      = r.reason;
+    return out;
 }
 
 // Record a PDB-sourced address for a plugin function (the address half a

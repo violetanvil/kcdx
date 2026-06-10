@@ -270,6 +270,8 @@ add_library(kcdx SHARED
     src/hook_interface.cpp
     src/bytes_interface.cpp
     src/declare_interface.cpp
+    src/functions_interface.cpp
+    src/dll_interface.cpp
     src/asset_interface.cpp
     src/dynamic_call_jit.cpp
     src/early_hook.cpp

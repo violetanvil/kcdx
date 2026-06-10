@@ -169,6 +169,8 @@ enum kcdxInterfaceID {
     kcdxInterface_Bytes          = 9,  // C++ kcdx.bytes mirror
     kcdxInterface_Declare        = 10, // C++ kcdx.declare / kcdx.declared mirror
     kcdxInterface_Assets         = 11, // C++ kcdx.assets.* mirror
+    kcdxInterface_Functions      = 12, // C++ kcdx.functions.* mirror (function references)
+    kcdxInterface_Dll            = 13, // C++ kcdx.dll.declare mirror (declare own DLL fns)
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -2248,6 +2250,168 @@ typedef struct kcdxDeclareInterface {
     // against an older version reads the prefix members at their original
     // offsets, so appending cannot shift them (append-only ABI).
 } kcdxDeclareInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxFunctionsInterface — C++ mirror of the Lua kcdx.functions.* surface
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Functions,
+// kcdxFunctionsInterface_Version). Mints a PASSABLE BY-VALUE function reference
+// (kcdxFunctionRef) that names a function — a game-engine function (resolved
+// from the reference database) or another plugin's function (declared via
+// kcdxDllInterface::Declare) — and carries its resolution DIRECTLY in its
+// fields: the author reads found / isGame / address / signature off the value
+// itself. No separate Resolve() call, no opaque engine-owned handle, no
+// two-call dance — the reference IS the resolution. Full Lua <-> C++ parity:
+// the same two structurally-disjoint populations (game-DLL dot-free stem vs
+// plugin-DLL <author>.<plugin> stem) resolving against the SAME stores the Lua
+// kcdx.functions.* binder reads (one store, both languages).
+//
+// DISJOINT from kcdxDeclareInterface (kcdxInterface_Declare) — that is the
+// Address-Library declare (per-version named targets / value reads), a
+// different concept. This interface is the function-REFERENCE surface.
+//
+// The reference value is the value the hook / statement verbs accept as a
+// target (resolve once, pass to N verbs) — the C++ peer of passing a
+// kcdx.functions.* value to kcdx.hook.before(...).
+
+#define kcdxFunctionsInterface_Version 1u
+
+// A function reference, passed BY VALUE. The reference carries its own
+// resolution — read the fields directly; there is no separate resolve step.
+//
+//   - found       : true on a resolvable reference. On a miss this is false and
+//                   `reason` carries a teaching token (never a silent empty).
+//   - isGame      : true for a game-DLL (database-sourced) reference; false for
+//                   a plugin-DLL (declare-sourced) reference.
+//   - stem        : "WHGame" (game) / "<author>.<plugin>" (plugin) / "by_id"
+//                   (a GameById reference). Engine-owned, process-lifetime.
+//   - name        : the bare function name ("" for a GameById reference — the
+//                   id is the handle, not the name). Engine-owned.
+//   - address     : the resolved virtual address when hasAddress; a raw void*,
+//                   NOT a rounded value (the C++ side has no LUA_NUMBER=float
+//                   precision hazard). null when !hasAddress.
+//   - hasAddress  : true when `address` is a real resolved VA. A game reference
+//                   resolves its address from the database; a plugin reference
+//                   from the PDB-auto-load path (false until an address is
+//                   available — a declared plugin function carries its signature
+//                   with hasAddress=false, which is correct: a callback hook
+//                   needs the signature, a static byte op needs the address).
+//   - signature   : the verified ABI (game, from the database) / the author-
+//                   declared ABI (plugin, from Declare); "" when the kind carries
+//                   none (legitimate, not a failure).
+//   - reason      : set ONLY when !found — the miss token (name_unknown /
+//                   db_not_loaded / not_declared). Engine-owned, process-lifetime.
+//
+// All const char* fields point at engine-owned, process-lifetime strings — do
+// NOT free them; they outlive the call. The struct is returned BY VALUE; copy
+// it freely (the pointers stay valid).
+typedef struct kcdxFunctionRef {
+    bool        found;
+    bool        isGame;
+    const char* stem;
+    const char* name;
+    void*       address;
+    bool        hasAddress;
+    const char* signature;
+    const char* reason;
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New fields go HERE, never mid-struct. A mid-struct insert shifts every
+    // subsequent field's offset; a plugin DLL compiled against the older
+    // header would read through the wrong offset → ACCESS_VIOLATION.
+} kcdxFunctionRef;
+
+typedef struct kcdxFunctionsInterface {
+    // ------------------------------------------------------------------
+    // Mint a GAME-DLL function reference by name. Mirrors the Lua
+    // kcdx.functions.<stem>.<name> access (e.g. GameByName("WHGame",
+    // "SaveGame") ↔ kcdx.functions.WHGame.SaveGame). `stem` is the DLL
+    // filename minus extension (dot-free); `name` the bare function name.
+    // Resolves against the reference database by name. On a miss the
+    // returned ref has found=false + a reason token (name_unknown /
+    // db_not_loaded), never a silent empty.
+    kcdxFunctionRef (*GameByName)(const char* stem, const char* name);
+
+    // Mint a GAME-DLL function reference by stable id. Mirrors the Lua
+    // kcdx.functions.by_id[N] access (game-only stable-across-versions id).
+    // Resolves against the reference database by id. On a miss: found=false
+    // + a reason token (db_not_loaded when the reference database is not open,
+    // else name_unknown when no entity carries the id).
+    kcdxFunctionRef (*GameById)(unsigned long long kcdxId);
+
+    // Mint a PLUGIN-DLL function reference by its <author>.<plugin> stem +
+    // bare name. Mirrors the Lua kcdx.functions["<ns>"].<name> access
+    // (e.g. PluginByName("redmoon.outfit", "CanSwapInCombat") ↔
+    // kcdx.functions["redmoon.outfit"].CanSwapInCombat). Resolves against the
+    // declared-signature store (kcdxDllInterface::Declare / kcdx.dll.declare)
+    // and the PDB-auto-load address store. A declared-but-not-yet-addressed
+    // function resolves with its signature + hasAddress=false. On a miss
+    // (neither declared nor PDB-addressed): found=false + reason="not_declared".
+    kcdxFunctionRef (*PluginByName)(const char* pluginNamespace,
+                                    const char* name);
+
+    // --- APPEND-ONLY BELOW (kcdxFunctionsInterface_Version >= 2) ---------
+    // New members go HERE, at the END, never mid-struct (append-only ABI).
+} kcdxFunctionsInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxDllInterface — C++ mirror of the Lua kcdx.dll.declare surface
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Dll,
+// kcdxDllInterface_Version). A C++ plugin declares its OWN DLL's functions with
+// signatures COPIED FROM ITS OWN SOURCE (no disassembly — the author wrote the
+// function, so they have the types for free; the strongest disassembler-test
+// win). The declared functions are then resolvable by name through
+// kcdxFunctionsInterface::PluginByName (C++) AND kcdx.functions["<ns>"].<name>
+// (Lua) — they land in the SAME in-memory per-stem store the Lua
+// kcdx.dll.declare binder populates (one store, both surfaces; vice-versa too).
+//
+// DISJOINT from kcdxDeclareInterface (kcdxInterface_Declare) — that is the
+// Address-Library declare (per-version named targets). This is the plugin's
+// own-DLL function declaration.
+
+#define kcdxDllInterface_Version 1u
+
+// One function declaration: a bare name + its ABI signature (from the author's
+// source — a callback hook needs the ABI the compiled DLL does not carry).
+typedef struct kcdxDeclaredFn {
+    const char* name;        // the bare function name (REQUIRED, non-empty).
+    const char* signature;   // the function's ABI, e.g. "bool (ptr self)" (REQUIRED).
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New fields go HERE, never mid-struct (append-only ABI).
+} kcdxDeclaredFn;
+
+typedef struct kcdxDllInterface {
+    // ------------------------------------------------------------------
+    // Declare `count` functions under the plugin's <author>.<plugin>
+    // namespace. Mirrors the Lua kcdx.dll.declare(plugin_namespace,
+    // function_map) call: the Lua function_map ({ FnName = { signature =
+    // "…" } }) maps to the typed kcdxDeclaredFn array.
+    //
+    //   pluginNamespace — REQUIRED, the author's <author>.<plugin> string
+    //                     (e.g. "redmoon.outfit_mod"). The functions land
+    //                     under kcdx.functions["<pluginNamespace>"].*.
+    //   fns             — REQUIRED, a non-null array of `count` entries.
+    //   count           — the entry count (> 0).
+    //
+    // Every entry REQUIRES a non-null/non-empty name AND signature — a
+    // malformed entry is REJECTED with a logged teaching diagnostic (the C++
+    // peer of the Lua call's raised error) and Declare returns false (no
+    // partial accept). Returns true when every entry was accepted. The
+    // declared signatures are COPIED at Declare time (the caller need not
+    // retain the array or its strings afterward).
+    //
+    // Launch-time only — intended to be called from kcdxPlugin_Load (the same
+    // phase the Lua kcdx.dll.declare runs from).
+    bool (*Declare)(const char* pluginNamespace,
+                    const kcdxDeclaredFn* fns, int count);
+
+    // --- APPEND-ONLY BELOW (kcdxDllInterface_Version >= 2) --------------
+    // New members go HERE, at the END, never mid-struct (append-only ABI).
+} kcdxDllInterface;
 
 // -----------------------------------------------------------------------------
 // kcdxAssetInterface — C++ mirror of the Lua kcdx.assets.* surface

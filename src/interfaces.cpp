@@ -14,6 +14,8 @@
 #include "conflict_engine.h"
 #include "console.h"
 #include "declare_interface.h"
+#include "dll_interface.h"
+#include "functions_interface.h"
 #include "hook_chain.h"
 #include "hook_interface.h"
 #include "load_order.h"
@@ -98,6 +100,16 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxAssetInterface_Version) return nullptr;
         return const_cast<kcdxAssetInterface*>(
             kcdx::asset_interface::GetInterface());
+
+    case kcdxInterface_Functions:
+        if (version > kcdxFunctionsInterface_Version) return nullptr;
+        return const_cast<kcdxFunctionsInterface*>(
+            kcdx::functions_interface::GetInterface());
+
+    case kcdxInterface_Dll:
+        if (version > kcdxDllInterface_Version) return nullptr;
+        return const_cast<kcdxDllInterface*>(
+            kcdx::dll_interface::GetInterface());
 
     default:
         return nullptr;

@@ -1,0 +1,54 @@
+# CAP-94 — kcdxFunctionsInterface + kcdxDllInterface (C++ mirror of
+# kcdx.functions.* + kcdx.dll.declare) parity.
+#
+# C++ DLL plugin that exercises the two new function-reference interfaces
+# through the Kcdx.h wrapper's K.functions / K.dll accessors — the C++ peer of
+# the Lua cap-88 surface. Proves ONE STORE, both languages: a function declared
+# via the C++ K.dll->Declare resolves through K.functions->PluginByName exactly
+# as the Lua kcdx.dll.declare path resolves through kcdx.functions["<ns>"].
+#
+# Three falsifiable rows, all boot-only (resolved from the InputLoaded readiness
+# gate — the reference DB is open by then, the same gate cap-72 uses; no player
+# gesture):
+#
+#   * CAP-94-declare-resolve — K.dll->Declare("ts.cap_94_cpp_functions_declare",
+#       { { "CanSwapInCombat", "bool (ptr self)" } }, 1) returns true, then
+#       K.functions->PluginByName(ns, "CanSwapInCombat") returns a ref with
+#       found==true, signature=="bool (ptr self)" (the author-declared ABI), and
+#       isGame==false. FALSIFIABLE: found is false (the C++ Declare did not write
+#       the store the resolution reads — NOT one store), the signature is
+#       lost/wrong, or isGame is true -> FAIL.
+#   * CAP-94-game-resolve — K.functions->GameByName("WHGame", "SaveGame") AND
+#       GameById(144) (SaveGame's stable id) both return found==true,
+#       isGame==true, hasAddress==true + a non-zero address. DEGRADED PASS if the
+#       reference DB is not loaded (reason db_not_loaded — a pre-deploy state,
+#       mirroring the cap-88 degraded posture). FALSIFIABLE: a known game
+#       function does NOT resolve (reason name_unknown — a real
+#       rename/renumber regression, NOT degraded), isGame is false, or a
+#       non-deploy-state miss -> FAIL.
+#   * CAP-94-miss-reason — K.functions->PluginByName("nope.nope", "DoesNotExist")
+#       returns found==false AND a non-empty reason token (never a silent empty).
+#       FALSIFIABLE: a miss returns found==true or an empty reason -> FAIL.
+#
+# SaveGame is referenced BY NAME (no hardcoded address) and by its stable id 144
+# (a curated entity in the contiguous 1-157 id scheme — a version-stable handle,
+# not a per-version RVA). Test mode: boot-only — all three rows self-verify from
+# the InputLoaded listener; NO console gestures, NO save/load.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_94_cpp_functions_declare"
+display_name        = "CAP-94 kcdxFunctionsInterface + kcdxDllInterface (C++)"
+author              = "ts"
+description         = "C++ DLL exercising kcdxFunctionsInterface (by-value kcdxFunctionRef mints) + kcdxDllInterface::Declare through K.functions / K.dll — the C++ parity mirror of the Lua cap-88 kcdx.functions.* + kcdx.dll.declare surface. Three boot-only falsifiable rows: declare-then-resolve a plugin function (one store, both languages), resolve a curated game function by name + by stable id, and an unknown-name miss carrying a teaching reason token. Proves a function declared via the C++ Declare resolves identically through PluginByName as via the Lua path."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-94-declare-resolve",
+                       "CAP-94-game-resolve",
+                       "CAP-94-miss-reason"]
+
+[entrypoints]
+dll    = "cap-94.dll"
