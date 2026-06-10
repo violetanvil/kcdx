@@ -64,6 +64,15 @@ from .cross_impl_fixture import (
 from .csv_exporter import (
     export_seeds,
 )
+from .bulk_exporter import (
+    export_bulk,
+    cell_to_csv,
+    BulkExportError,
+    BULK_DEV_ONLY_TABLES,
+    BULK_AV_TABLE,
+    BULK_CSV_NAMES,
+    DEFAULT_BULK_DIR,
+)
 from .round_trip import (
     round_trip,
     hash_curated_tables,
@@ -140,6 +149,9 @@ __all__ = [
     "VERDICT_UNCHANGED", "VERDICT_CHANGED", "VERDICT_AMBIGUOUS",
     "VERDICT_CANNOT_CHECK",
     "export_seeds",
+    "export_bulk", "cell_to_csv", "BulkExportError",
+    "BULK_DEV_ONLY_TABLES", "BULK_AV_TABLE", "BULK_CSV_NAMES",
+    "DEFAULT_BULK_DIR",
     "round_trip", "hash_curated_tables", "RoundTripError",
     "update_row_in_place", "append_row",
     "update_version_row", "create_version", "create_entity",
