@@ -1,30 +1,51 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "game_version": "release_1_5_1164953_841",
+  "complete": true,
+  "rows_expected": 4,
   "summary": {
     "passing": 1,
-    "total": 3
+    "total": 4
   },
   "rows": [
     {
       "kcdx_id": 16,
       "version": "1.5.1164953",
-      "verdict": "resolves_works",
-      "detail": "",
+      "verdict": "verified_working",
+      "method_rank": 1,
+      "invoke_attempted": false,
+      "invoke_skip_reason": null,
+      "detail": "a clean valid row, to isolate the defects below to their own rows",
       "matched_address_version_id": 42
     },
     {
       "kcdx_id": 7,
       "version": "1.5.1164953",
       "verdict": "resolves+works",
-      "detail": "OLD PROSE SPELLING with a + — must be REJECTED; the wire token is frozen snake_case (resolves_works)",
+      "method_rank": 4,
+      "invoke_attempted": false,
+      "invoke_skip_reason": "unsafe_to_call",
+      "detail": "OLD PROSE SPELLING with a + — must be REJECTED; the wire token is frozen snake_case",
+      "matched_address_version_id": null
+    },
+    {
+      "kcdx_id": 22,
+      "version": "1.5.1164953",
+      "verdict": "resolves_works",
+      "method_rank": 4,
+      "invoke_attempted": false,
+      "invoke_skip_reason": "unsafe_to_call",
+      "detail": "OLD v2 4-TOKEN verdict — out of the v3 7-state enum; must be REJECTED",
       "matched_address_version_id": null
     },
     {
       "kcdx_id": 88,
       "version": "1.5.1164953",
-      "verdict": "resolves_works",
-      "detail": "NEW v2 DEFECT — a resolves_works row carrying a null matched id; the attribution invariant requires a non-null integer here, so this MUST be REJECTED",
+      "verdict": "passed_not_verified",
+      "method_rank": 4,
+      "invoke_attempted": false,
+      "invoke_skip_reason": "unsafe_to_call",
+      "detail": "v3 ATTRIBUTION DEFECT — a verified-block row carrying a null matched id; the invariant requires a non-null integer here, so this MUST be REJECTED",
       "matched_address_version_id": null
     }
   ]

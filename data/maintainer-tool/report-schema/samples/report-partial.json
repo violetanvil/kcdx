@@ -1,0 +1,32 @@
+{
+  "schema_version": 3,
+  "game_version": "release_1_5_1164953_841",
+  "complete": false,
+  "rows_expected": 6,
+  "summary": {
+    "passing": 1,
+    "total": 2
+  },
+  "rows": [
+    {
+      "kcdx_id": 16,
+      "version": "1.5.1164953",
+      "verdict": "verified_working",
+      "method_rank": 1,
+      "invoke_attempted": false,
+      "invoke_skip_reason": null,
+      "detail": "observed: kcdx hook fired this session with correct pass-through",
+      "matched_address_version_id": 42
+    },
+    {
+      "kcdx_id": 156,
+      "version": "1.5.1164953",
+      "verdict": "passed_not_verified",
+      "method_rank": 4,
+      "invoke_attempted": false,
+      "invoke_skip_reason": "unsafe_to_call",
+      "detail": "on-disk hash + reachability pass; the sweep then died before the remaining rows resolved",
+      "matched_address_version_id": 318
+    }
+  ]
+}

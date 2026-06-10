@@ -2,28 +2,28 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://kcdx/maintainer-tool/verification-report.schema.json",
   "title": "kcdx verification report",
-  "description": "The frozen cross-repo contract for the in-game verification report. Produced by the in-game kcdx verification test-suite plugin (writes one report file alongside kcdx-dev.log at engine startup, design D28); consumed client-side by the maintainer-tool frontend's verification worklist via the File API (design D31b, no backend read seam). Per-row verdict carries the version-applicability + reachability meaning (design D25), NOT a runtime body hash. The producer emits kcdx_id + resolved version + verdict + detail per row; the consumer resolves the entity name from its own loaded DB by kcdx_id (a kcdx_id absent from the DB is the stale-report case the consumer surfaces).",
+  "description": "The frozen cross-repo contract for the in-game verification report. Produced by the in-game kcdx verification test-suite plugin (a dev-mode console sweep run after a save loads, which writes the report alongside kcdx-dev.log); consumed client-side by the maintainer-tool frontend's verification worklist via the File API (no backend read seam). Every curated row gets its strongest applicable active attempt and a structured response — a verdict, the proof-strength rank that produced it, and an invocation-attempt record. The producer emits kcdx_id + resolved version + verdict + method_rank + invoke flags + detail per row; the consumer resolves the entity name from its own loaded DB by kcdx_id (a kcdx_id absent from the DB is the stale-report case the consumer surfaces). DURABILITY (the incremental-flush contract): the sweep flushes one row-result per line to disk the instant each row's attempt completes — never a bulk write at sweep end — so a mid-sweep death still leaves an ingestible report. This schema therefore validates BOTH shapes: a single per-row line equals exactly one rows[] element (validate it against the rows.items subschema), and the finalized document wraps the accumulated rows into schema_version + game_version + summary + rows[] plus the complete / rows_expected partial-report signal. A PARTIAL finalized document (complete:false, fewer rows than rows_expected — a sweep that stopped early) is a VALID report, not a malformed one.",
   "type": "object",
-  "required": ["schema_version", "game_version", "summary", "rows"],
+  "required": ["schema_version", "game_version", "summary", "rows", "complete", "rows_expected"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "description": "The pinned contract version. A consumer rejects a report whose schema_version it does not recognize. Frozen to the value 2 (v1 was the original frozen shape; v2 adds the per-row matched_address_version_id attribution field).",
-      "const": 2
+      "description": "The pinned contract version. A consumer rejects a report whose schema_version it does not recognize. Frozen to the value 3 (the active-attempt model: the 7-state verdict enum, the method_rank proof-strength ladder, the invoke_attempted / invoke_skip_reason fields, and the complete / rows_expected partial-report signal).",
+      "const": 3
     },
     "game_version": {
-      "description": "The resolved game/DLL version the report was produced against (design D28 'version stamp'). The version-applicability hash and reachability checks were run on the build that resolved to this version; the consumer shows it in the worklist and matches it against its DB version intervals. A free-form version string in the project's resolved-tag form (e.g. 'release_1_5_1164953_841' or '1.5.1164953').",
+      "description": "The resolved game/DLL version the report was produced against (the version stamp). The version-applicability hash and reachability checks were run on the build that resolved to this version; the consumer shows it in the worklist and matches it against its DB version intervals. A free-form version string in the project's resolved-tag form (e.g. 'release_1_5_1164953_841' or '1.5.1164953').",
       "type": "string",
       "minLength": 1
     },
     "summary": {
-      "description": "The roll-up the consumer's 'M/N passing' header binds (design D28 + s08). passing = count of rows whose verdict is resolves_works; total = count of rows in the report.",
+      "description": "The roll-up the consumer's 'M/N passing' header binds. passing = count of rows in the verified block — verdict verified_working OR passed_not_verified (the strongest applicable attempt passed, whether or not execution was observed); total = count of rows in the report.",
       "type": "object",
       "required": ["passing", "total"],
       "additionalProperties": false,
       "properties": {
         "passing": {
-          "description": "Count of rows with verdict resolves_works.",
+          "description": "Count of rows whose verdict is verified_working OR passed_not_verified (the verified block).",
           "type": "integer",
           "minimum": 0
         },
@@ -34,16 +34,25 @@
         }
       }
     },
+    "complete": {
+      "description": "Whether the sweep ran to the end of the curated set. true = every expected row resolved and was flushed (rows length == rows_expected); false = the sweep stopped early (a mid-sweep fault/hang/crash) and the report is partial. A partial report (complete:false) is a valid, ingestible report — the durability contract guarantees a complete-up-to-N report on any mid-sweep death; the consumer distinguishes it from a whole-set sweep by this flag.",
+      "type": "boolean"
+    },
+    "rows_expected": {
+      "description": "The count of rows the sweep intended to attempt (the size of the curated set this run targets). The consumer compares rows length against this: equal with complete:true is a whole-set sweep; fewer with complete:false is a report that stopped early. rows_expected is the denominator the consumer can show against the rows actually present.",
+      "type": "integer",
+      "minimum": 0
+    },
     "rows": {
-      "description": "One entry per DB row the in-game pass checked.",
+      "description": "One entry per curated row the in-game sweep attempted, in resolution order. Each element is also the per-row line shape the sweep flushes to disk as that row's attempt completes (one rows[] element per line); a partial report carries fewer than rows_expected of these.",
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["kcdx_id", "version", "verdict", "detail", "matched_address_version_id"],
+        "required": ["kcdx_id", "version", "verdict", "method_rank", "invoke_attempted", "invoke_skip_reason", "detail", "matched_address_version_id"],
         "additionalProperties": false,
         "if": {
           "properties": {
-            "verdict": { "const": "resolves_works" }
+            "verdict": { "enum": ["verified_working", "passed_not_verified"] }
           }
         },
         "then": {
@@ -68,16 +77,31 @@
             "minLength": 1
           },
           "verdict": {
-            "description": "The startup-pass verdict (design D25/D28). EXACTLY these four snake_case tokens are valid report verdicts. resolves_works = on-disk version-applicability hash matches AND the address resolves into live .text. wrong_target = the on-disk hash mismatches (the build diverged from the DB's recorded version) -> avoid applying. dead = the address does not resolve into live .text (unreachable) -> avoid. cannot_check = no content_hash / a non-byte kind / a deferred kind (e.g. vtable_index) -> not checkable this run. Note: 'ambiguous' is an author-time static (s04) outcome, NOT a report verdict -- it is deliberately absent from this enum.",
+            "description": "The active-attempt verdict for this row — EXACTLY these seven snake_case tokens. A verdict is the CEILING of the strongest method that ran; only observed live execution (rank 1) earns verified_working, and every other passing attempt caps at passed_not_verified. verified_working = the function was observed executing correctly this session (a kcdx hook fired with correct pass-through, or kcdx's own production call already ran). passed_not_verified = the strongest applicable attempt PASSED (bytes / resolution / wiring) but execution could not be observed — passing tests, not proof-of-working. failed = an attempt the row should pass returned wrong (diverged bytes / dead resolve / wrong target / a thrown exercise). not_applicable = the running build's version is not covered by this row (the version check ran and found non-coverage — a gap). cannot_check = the attempt ran but the row lacks the inputs the check needs (no fingerprint, or a deferred kind such as vtable_index). skipped = a precondition was not met this run (needs a loaded save, run from the menu, module absent) — the only 'did not run', and it names why. error = the harness itself faulted on this row (the row is fine, the test blew up — distinct from failed).",
             "type": "string",
-            "enum": ["resolves_works", "wrong_target", "dead", "cannot_check"]
+            "enum": ["verified_working", "passed_not_verified", "failed", "not_applicable", "cannot_check", "skipped", "error"]
+          },
+          "method_rank": {
+            "description": "The proof-strength rank of the strongest method that actually ran for this row, weakest to strongest: 5 = existence/resolution; 4 = on-disk version-applicability hash; 3 = loaded-image reachability; 2 = safe-read exercise (a live value read with zero mutation); 1 = observed live execution (the function fired in the running process and passed through correctly). The report carries BOTH the verdict and the rank that produced it: a passing rank 2-5 caps at passed_not_verified; only rank 1 can award verified_working.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "invoke_attempted": {
+            "description": "Whether the sweep actively invoked or exercised the target this run. false for an observed-execution row (the game calls it and the sweep observes — the sweep never mints a synthetic call to a foreign function) and for any row whose strongest applicable method was a static check. true only where the sweep performed a safe-read exercise (a zero-mutation live read). The 'could not safely invoke' fact is a structured property of the response (see invoke_skip_reason), never a verdict meaning 'gave up'.",
+            "type": "boolean"
+          },
+          "invoke_skip_reason": {
+            "description": "When invoke_attempted is false, why no active invocation was performed — one of: unsafe_to_call (a foreign function the sweep must not synthetically call, e.g. the lua_pcall class — its strongest applicable attempt is the static check); uncontainable (an invocation whose side effects cannot be contained); not_a_callable_kind (a kind with no call ABI to invoke at all — a data slot, an anchor, a vtable entry). null when invoke_attempted is true (an exercise ran, so there is no skip reason).",
+            "type": ["string", "null"],
+            "enum": ["unsafe_to_call", "uncontainable", "not_a_callable_kind", null]
           },
           "detail": {
-            "description": "A free-text cause string naming what the check observed (the consumer renders it as the per-row detail line). Required and present on every row; the empty string is permitted (e.g. a clean resolves_works row may carry no extra cause).",
+            "description": "A free-text cause string naming what the attempt observed (the consumer renders it as the per-row detail line). Required and present on every row; the empty string is permitted (e.g. a clean verified_working row may carry no extra cause).",
             "type": "string"
           },
           "matched_address_version_id": {
-            "description": "The id of the address_version row whose fingerprint the swept bytes matched (the row attribution). Present on every row; an integer (>= 0) on a resolves_works row, null otherwise. The in-game sweep tries each candidate address_version row's fingerprint (content_hash for a function, the per-kind datum otherwise) and records WHICH row matched; the importer uses this id to extend the matched row's interval forward when the swept version sat in a gap (a passing gap-pass grows that one row's coverage). The attribution invariant: a resolves_works row matched SOME candidate row, so it carries a non-null integer that names which; a wrong_target row matched NO candidate row, and a dead / cannot_check row was not byte-matched at all, so each carries null. A non-pass row never names a matched row; a pass row always does. (The integer-or-null type + the verdict-conditional are enforced by the row-object if/then/else.)",
+            "description": "The id of the address_version row whose fingerprint the swept bytes matched (the row attribution). Present on every row; an integer (>= 0) on a verified_working / passed_not_verified row, null otherwise. The in-game sweep tries each candidate address_version row's fingerprint (content_hash for a function, the per-kind datum otherwise) and records WHICH row matched; the importer uses this id to extend the matched row's interval forward when the swept version sat in a gap (a passing gap-pass grows that one row's coverage). The attribution invariant: a row in the verified block (verified_working / passed_not_verified) matched SOME candidate row, so it carries a non-null integer that names which; a failed / not_applicable / cannot_check / skipped / error row matched no candidate row, so each carries null. A verified-block row always names its matched row; every other verdict carries null. (The integer-or-null type + the verdict-conditional are enforced by the row-object if/then/else.)",
             "type": ["integer", "null"],
             "minimum": 0
           }
