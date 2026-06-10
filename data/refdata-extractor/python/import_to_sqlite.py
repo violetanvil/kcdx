@@ -173,6 +173,16 @@ MODULE_SEED_CSV           = os.path.join(SEED_DIR, "module_seed.csv")
 ADDRESS_NAMES_SEED_CSV    = os.path.join(SEED_DIR, "address_names_seed.csv")
 ADDRESS_VERSIONS_SEED_CSV = os.path.join(SEED_DIR, "address_versions_seed.csv")
 
+# D38 CSV-genesis source dirs (the tracked CSV export run_rebuild now reads INSTEAD
+# of the dump + data/seeds/). The curated half is the three seed-shaped CSVs at
+# data/db-export/ (csv_exporter's targets); the bulk half is the raw lossless
+# bundle at data/db-export-bulk/ (bulk_exporter's targets). The genesis logic
+# reads from these dirs; the SEED_DIR-constant repoint (step 2.1) is what makes
+# build_rows' curated seed reads resolve data/db-export/ instead of data/seeds/ --
+# this step (1.3) changes the GENESIS read LOGIC, not the path constants.
+CURATED_EXPORT_DIR = os.path.join(REPO_ROOT, "data", "db-export")
+BULK_EXPORT_DIR    = os.path.join(REPO_ROOT, "data", "db-export-bulk")
+
 
 # ---------------------------------------------------------------------------
 # Dump readers.
@@ -772,6 +782,508 @@ def build_rows(dump_dir, dicts):
     return rows, counts
 
 
+# ===========================================================================
+# CSV-GENESIS rebuild (D38): build the `rows` dict + `Dicts` from the tracked
+# CSV export -- data/db-export/ (curated, csv_exporter's three seed CSVs) +
+# data/db-export-bulk/ (bulk, bulk_exporter's raw lossless bundle) -- INSTEAD of
+# the Ghidra dump. The from-dump build_rows above is RETAINED and DEMOTED to an
+# expert-only mode (run_rebuild_from_dump) that REGENERATES the bulk CSVs when
+# the dump itself changes (a new game version's fresh disassembly); it is NO
+# LONGER the routine rebuild input (run_rebuild reads the CSVs, no dump).
+#
+# WHY a SECOND row-builder, not a refactor of build_rows: the bulk SOURCE differs
+# fundamentally. build_rows CONSTRUCTS each bulk address_versions row from the
+# dump via build_bulk_row (av_id from the rva-sort 1..N, kind encoded fresh, the
+# fingerprint from the dump) and TRANSFORMS each statements/refs/edges dump row
+# (the rva->av_id / rva->kcdx_id lookups, the callee-auto-name NULLing, the dict
+# encode). The CSV path reads the bulk rows VERBATIM -- the bulk CSVs were
+# exported from the live DB where every FK/kcdx_id/dict-id transform is ALREADY
+# baked into the stored integers (the P0.1 probe's load-bearing finding), so the
+# bulk rows need NO transform and MUST keep their stored values byte-for-byte.
+# The two genesis paths share every ROW BUILDER (the seeds_shared functions +
+# build_curated_row) -- only the bulk SOURCE + the dev-table SOURCE differ -- so
+# a curated row's shape cannot drift between them (the same no-drift discipline
+# build_rows + _apply_one_db already share). write_db is UNCHANGED: it does a
+# CREATE TABLE from SCHEMA (literal types incl. AUTOINCREMENT) + an explicit-column
+# INSERT incl. the `id` PK, so an explicit id is written VERBATIM (no AUTOINCREMENT
+# renumber) -- the exact stored-id-preservation property the P0.1 probe proved.
+#
+# DICT-ID CONSISTENCY (the byte-identity crux, resolved from source -- NOT assumed):
+#   The bulk rows store their dict columns (kind / caller_arg_agreement /
+#   decompile_quality; the statements/referenced_vars dict columns) as the stored
+#   INTEGER ids -- kept VERBATIM, never re-encoded -- so the bulk rows are
+#   byte-identical to the dump build with no Dicts involvement. The Dicts encoder
+#   here therefore learns ONLY the curated dict columns (kind, evidence_kind). The
+#   dump build encodes `function`->1 in its bulk pass FIRST; the CSV build's first
+#   curated function row encodes `function`->1 into the fresh Dicts -- the SAME id.
+#   The remaining curated kinds + evidence_kinds encode in the curated-CSV first-seen
+#   order, which (verified against the live _dict_* tables) reproduces the dump's
+#   _dict_address_versions_kind (1..9) + _dict_address_versions_evidence_kind (1..5)
+#   id assignment exactly, because the curated CSV is exported sorted by the same
+#   (kcdx_id, valid_from) key the dump's seed loop reads in. So the curated REAL-TABLE
+#   rows are byte-identical to the dump build.
+#
+#   KNOWN GAP (surfaced, not papered over): the BULK-ONLY _dict_* tables
+#   (_dict_address_versions_caller_arg_agreement, _dict_address_versions_decompile_quality,
+#   _dict_statements_kind, _dict_referenced_vars_storage_kind, _dict_referenced_vars_data_type)
+#   carry STRINGS that originate ONLY in the dump corpus; the bulk CSVs store the
+#   ENCODED INTEGER ids, not those strings, so a CSV-genesis rebuild canNOT reconstruct
+#   those _dict_* TABLES byte-identically -- the strings are not in the export. The
+#   REAL-table data is unaffected (the bulk rows keep their verbatim int dict-ids; the
+#   ints resolve to the same logical values). This is a known carry-forward for the 1.1
+#   exporter / 1.4 oracle (the _dict_* id<->string mapping must be exported too if full
+#   _dict_* byte-identity is required); see the step deliverable. This step's rebuild
+#   reproduces every REAL-table row byte-identically.
+# ===========================================================================
+def _bulk_csv_decode_cell(s, decl_type):
+    """The proven inverse of bulk_exporter.cell_to_csv (the P0.1-verified decoder,
+    `csv_to_cell`): the \\N sentinel -> None (NULL, distinct from an empty TEXT ''),
+    a `blob:`<hex> token -> the BLOB bytes, and a type-aware decode of the raw stored
+    value (INTEGER text -> int, REAL -> float, everything else -> the TEXT verbatim,
+    incl. the empty string ''). `decl_type` is the column's SCHEMA SQL type.
+
+    CARRY-FORWARD (the step-review's note on 1.1's encoder): the \\N / blob: sentinels
+    are UNESCAPED -- a genuine TEXT cell whose literal value is exactly '\\N' or starts
+    with 'blob:' would MISDECODE. No such cell exists in the corpus today (the bulk
+    TEXT columns are auto_name=FUN_<rva>, pseudo_text disassembly, var_name, callee,
+    string_ref, storage_detail -- none can equal the two-char '\\N' nor start with
+    'blob:'; signature is curated, not bulk). This decode is the verbatim inverse of
+    the committed 1.1 encoder; ADDING escaping is a SYMMETRIC change to BOTH the 1.1
+    encoder + this decoder and touches a committed step, so it is SURFACED as a
+    decision rather than decided here (see the step deliverable). 1.4's round-trip
+    oracle is the standing guard against a collision."""
+    if s == r"\N":
+        return None
+    if s.startswith("blob:"):
+        return bytes.fromhex(s[5:])
+    t = (decl_type or "").upper()
+    if "INT" in t:
+        return int(s) if s != "" else None
+    if t in ("REAL", "FLOA", "DOUB"):
+        return float(s) if s != "" else None
+    return s   # TEXT (incl. the empty string '', preserved distinct from NULL)
+
+
+class CsvGenesisError(RuntimeError):
+    """A malformed / missing / drifted CSV-genesis source caught at read time (AP14):
+    a missing curated or bulk CSV, a bulk CSV whose header drifts from the SCHEMA
+    column declaration. Raised LOUD so a CSV-genesis rebuild never produces a silent
+    partial DB from an incomplete export."""
+
+
+def _read_bulk_table_csv(bulk_dir, table):
+    """Read one raw lossless bulk CSV (bulk_exporter's output) into a list of row
+    dicts, every cell decoded VERBATIM via _bulk_csv_decode_cell. The header MUST
+    equal the table's SCHEMA column declaration (order included) -- a drift is a
+    CsvGenesisError (AP14: never a silent column drop/misorder). Returns the row
+    list (each a dict column->stored value)."""
+    path = os.path.join(bulk_dir, f"{table}.csv")
+    if not os.path.isfile(path):
+        raise CsvGenesisError(
+            f"CSV-genesis: bulk CSV {path!r} is missing -- the bulk export is "
+            f"incomplete (run the bulk export, or `git lfs pull`). A rebuild from "
+            f"an incomplete export would silently drop the {table!r} rows.")
+    decl = {name: sqltype for (name, sqltype) in SCHEMA[table]}
+    schema_cols = [name for (name, _t) in SCHEMA[table]]
+    out = []
+    with open(path, newline="", encoding="utf-8") as f:
+        rd = csv.reader(f)
+        header = next(rd, None)
+        if header is None:
+            raise CsvGenesisError(
+                f"CSV-genesis: bulk CSV {path!r} is empty (no header) -- a malformed "
+                f"export; refusing rather than build a partial DB.")
+        if header != schema_cols:
+            raise CsvGenesisError(
+                f"CSV-genesis: bulk CSV {path!r} header drifted from the SCHEMA "
+                f"declaration.\n  csv:    {header}\n  schema: {schema_cols}\n"
+                f"The rebuild reinserts SCHEMA's columns; a drift would drop or "
+                f"misorder a column. Re-export the bulk from the current schema.")
+        for line in rd:
+            out.append({header[i]: _bulk_csv_decode_cell(line[i], decl[header[i]])
+                        for i in range(len(header))})
+    return out
+
+
+def _read_curated_av_derived_csv(bulk_dir):
+    """Read address_versions_derived.csv (bulk_exporter's curated-derived overlay) into
+    a kcdx_id -> {derived column -> stored value} map. The overlay carries, per CURATED
+    av row, the row's PROMOTED id + the DUMP-DERIVED columns the curated seed CSV cannot
+    (length / content_hash / observed_arg_slots / caller_reg_arg_count /
+    caller_arg_agreement / auto_name / decompile_quality / valid_through). The rebuild
+    merges this onto the seed-built curated row (by kcdx_id), restoring the full curated
+    av row byte-identical to the dump build -- incl. the promoted id, so the dependent
+    curated statements/referenced_vars subset (filtered by the curated av_id set) is not
+    perturbed.
+
+    Header MUST equal AV_DERIVED_CSV_COLS (id, kcdx_id, then the derived payload) -- a
+    drift is a CsvGenesisError (AP14: never a silent column drop/misorder). Each cell is
+    decoded via the SAME verbatim _bulk_csv_decode_cell the bulk tables use; the SCHEMA
+    av column types drive the type-aware decode (id/kcdx_id/length/... INTEGER,
+    content_hash BLOB, auto_name TEXT). One row per curated kcdx_id (1:1 at baseline);
+    a duplicate kcdx_id is a malformed overlay (CsvGenesisError)."""
+    path = os.path.join(bulk_dir, "address_versions_derived.csv")
+    if not os.path.isfile(path):
+        raise CsvGenesisError(
+            f"CSV-genesis: curated-derived overlay {path!r} is missing -- the bulk "
+            f"export is incomplete (run the bulk export, or `git lfs pull`). Without it "
+            f"the curated function fingerprint (content_hash/length/...) cannot be "
+            f"reconstructed and the round-trip is lossy.")
+    # The av column SQL types (for the type-aware decode) -- the overlay carries a
+    # PROJECTED subset of address_versions, so its cells decode by the av column types.
+    av_decl = {name: sqltype for (name, sqltype) in SCHEMA["address_versions"]}
+    out = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        rd = csv.reader(f)
+        header = next(rd, None)
+        if header is None:
+            raise CsvGenesisError(
+                f"CSV-genesis: curated-derived overlay {path!r} is empty (no header) -- "
+                f"a malformed export; refusing rather than build a partial DB.")
+        from seeds_shared import AV_DERIVED_CSV_COLS
+        if header != AV_DERIVED_CSV_COLS:
+            raise CsvGenesisError(
+                f"CSV-genesis: curated-derived overlay {path!r} header drifted from the "
+                f"expected column set.\n  csv:      {header}\n  expected: "
+                f"{AV_DERIVED_CSV_COLS}\nRe-export the bulk from the current schema "
+                f"(the authored/derived av split changed).")
+        for line in rd:
+            rec = {header[i]: _bulk_csv_decode_cell(line[i], av_decl[header[i]])
+                   for i in range(len(header))}
+            kid = rec["kcdx_id"]
+            if kid in out:
+                raise CsvGenesisError(
+                    f"CSV-genesis: curated-derived overlay {path!r} has a duplicate "
+                    f"kcdx_id={kid!r} -- each curated entity has one baseline av row; "
+                    f"a duplicate is a malformed overlay.")
+            out[kid] = rec
+    return out
+
+
+def build_rows_from_csv(curated_dir, bulk_dir, dicts):
+    """CSV-GENESIS: build the SAME `rows` dict shape build_rows produces (table ->
+    list[dict-of-column->value]) + populate the shared `dicts` encoder, sourcing the
+    BULK half from data/db-export-bulk/ (verbatim) and the CURATED half from
+    data/db-export/'s three seed CSVs (via the SAME seeds_shared row builders +
+    validators build_rows uses). No dump. write_db consumes the result UNCHANGED.
+
+    The bulk address_versions rows (kcdx_id IS NULL) + statements / referenced_vars /
+    call_edges are read VERBATIM (their stored ids / FK integers / dict-encoded ids /
+    BLOB content_hash kept byte-for-byte -- the P0.1 round-trip property). The curated
+    overlay (address_names + the curated address_versions) is rebuilt from the curated
+    seed CSVs through the shared builders (the AUTHORED half), then MERGED with the
+    curated-derived overlay (address_versions_derived.csv -- the DUMP-DERIVED half: the
+    function fingerprint + the promoted id) so each curated row is byte-identical to
+    build_rows' (which PROMOTED the matched bulk dump row). The merge restores the
+    promoted id, so the curated av_id set -- and the curated statements/referenced_vars
+    subset filtered by it -- matches the dump build exactly."""
+    rows = {t: [] for t in DEV_TABLES}
+
+    # --- BULK half (verbatim from data/db-export-bulk/) ---
+    # The three DEV-only bulk tables + the kcdx_id-NULL address_versions discovery
+    # rows. Read VERBATIM (no transform, no re-encode): the export baked every
+    # rva->av_id / rva->kcdx_id / dict-id / FK transform into the stored integers
+    # (P0.1), so reinserting the stored values reproduces the dump-built bulk rows
+    # byte-for-byte. The bulk av rows seed rva_to_av_id so a curated function-kind
+    # PROMOTE can find its bulk base (the dump build's rva_to_av_id, reconstructed
+    # from the stored bulk rows rather than the dump's rva-sort).
+    bulk_av = _read_bulk_table_csv(bulk_dir, "address_versions")
+    rows["statements"]      = _read_bulk_table_csv(bulk_dir, "statements")
+    rows["referenced_vars"] = _read_bulk_table_csv(bulk_dir, "referenced_vars")
+    rows["call_edges"]      = _read_bulk_table_csv(bulk_dir, "call_edges")
+
+    # The curated-derived overlay (kcdx_id -> the curated row's derived columns + its
+    # PROMOTED id). Merged onto the seed-built curated rows below so the curated
+    # function fingerprint + the promoted id round-trip (D38's lossless bar). Read here
+    # so a missing/drifted overlay fails loud BEFORE the curated build.
+    curated_derived = _read_curated_av_derived_csv(bulk_dir)
+    print(f"  curated-derived overlay: {len(curated_derived)} rows "
+          f"(fingerprint + promoted id, merged onto seed-built curated rows)",
+          flush=True)
+
+    rva_to_av_id = {}            # function rva -> address_versions.id (bulk)
+    versions_by_av_id = {}       # av_id -> bulk row dict (curated overlay amends)
+    for r in bulk_av:
+        av_id = r["id"]
+        versions_by_av_id[av_id] = r
+        rv = r.get("rva")
+        if rv is not None:
+            rva_to_av_id[rv] = av_id
+    n_functions = len(bulk_av)
+    print(f"  bulk address_versions: {n_functions} rows (verbatim, kcdx_id NULL)",
+          flush=True)
+    print(f"  bulk DEV tables: statements={len(rows['statements'])} "
+          f"referenced_vars={len(rows['referenced_vars'])} "
+          f"call_edges={len(rows['call_edges'])}", flush=True)
+
+    # The next minted curated av id continues ABOVE the bulk id space (the dump build
+    # mints from n_functions+1; here n_functions is the bulk count, so the same
+    # boundary holds -- the minted curated ids land above every bulk id).
+    next_av_id = max(versions_by_av_id.keys(), default=0) + 1
+
+    # --- CURATED half (the three seed-shaped CSVs at data/db-export/) ---
+    # Point the importer's seed-path constants at the curated export dir for the
+    # duration of the curated read (the same global-constant convention the round-trip
+    # oracle + the direct-write validator use). build_rows reads MODULE_SEED_CSV / etc.
+    # by name; the curated overlay below reads the same three names, so repointing them
+    # at data/db-export/ makes the curated read resolve the export. Restored on every
+    # path. (Step 2.1 makes data/db-export/ the DEFAULT for these constants; until then
+    # this scoped repoint is how the genesis read resolves the curated CSVs without
+    # changing the constants' default.)
+    saved = (MODULE_SEED_CSV, ADDRESS_NAMES_SEED_CSV, ADDRESS_VERSIONS_SEED_CSV)
+    g = globals()
+    g["MODULE_SEED_CSV"]           = os.path.join(curated_dir, "module_seed.csv")
+    g["ADDRESS_NAMES_SEED_CSV"]    = os.path.join(curated_dir, "address_names_seed.csv")
+    g["ADDRESS_VERSIONS_SEED_CSV"] = os.path.join(curated_dir, "address_versions_seed.csv")
+    try:
+        for p in (MODULE_SEED_CSV, ADDRESS_NAMES_SEED_CSV, ADDRESS_VERSIONS_SEED_CSV):
+            if not os.path.isfile(p):
+                raise CsvGenesisError(
+                    f"CSV-genesis: curated CSV {p!r} is missing -- the curated export "
+                    f"(data/db-export/) is incomplete; refusing rather than build a "
+                    f"partial DB.")
+        rva_to_kcdx_id = _build_curated_overlay(
+            rows, dicts, n_functions, rva_to_av_id, versions_by_av_id, next_av_id,
+            curated_derived)
+    finally:
+        (g["MODULE_SEED_CSV"], g["ADDRESS_NAMES_SEED_CSV"],
+         g["ADDRESS_VERSIONS_SEED_CSV"]) = saved
+
+    n_addr_versions = len(rows["address_versions"])
+    n_curated_kcdx_ids = len(rows["address_names"])
+    counts = {
+        "functions": n_functions,
+        "seed_minted_no_rva": 0,
+        "seed_minted_with_rva": 0,
+        "address_names": n_curated_kcdx_ids,
+        "address_versions": n_addr_versions,
+        "curated_kcdx_ids": n_curated_kcdx_ids,
+    }
+    return rows, counts
+
+
+def _build_curated_overlay(rows, dicts, n_functions, rva_to_av_id,
+                           versions_by_av_id, next_av_id, curated_derived):
+    """The CURATED overlay, sourced from the curated seed CSVs (at the repointed
+    MODULE_SEED_CSV / ADDRESS_NAMES_SEED_CSV / ADDRESS_VERSIONS_SEED_CSV) via the SAME
+    seeds_shared builders + validators build_rows uses -- so each curated row's AUTHORED
+    shape is byte-identical to the dump build's -- then MERGED with the curated-derived
+    overlay (`curated_derived`: kcdx_id -> the row's derived columns + its PROMOTED id).
+
+    THE MERGE (D38's lossless-round-trip fix): the dump build PROMOTES a curated
+    function row from its matched bulk dump row, reusing the bulk av_id and KEEPING the
+    fingerprint (content_hash/length/observed_arg_slots/caller_reg_arg_count/
+    caller_arg_agreement/auto_name/decompile_quality). The bulk CSV no longer carries
+    those promoted rows (kcdx_id NOT NULL), so the CSV path cannot re-find a bulk base
+    by rva. Instead it sources each curated row's PROMOTED id + DERIVED columns from
+    `curated_derived` (keyed by kcdx_id) and overlays them onto the seed-built authored
+    row -- restoring the dump build's exact av_id + fingerprint. So the curated av_id
+    set is identical to the dump build, and the curated statements/referenced_vars
+    subset (filtered by it) is not perturbed.
+
+    Reads modules / game_versions / meta / address_names / the curated address_versions
+    (build authored half -> merge derived half -> fold survival cells); emits the
+    curated + bulk address_versions rows into rows["address_versions"] in id order.
+    Returns rva_to_kcdx_id (the curated rva->kcdx_id map). `next_av_id` is unused now
+    (every curated row's id comes from `curated_derived`, never minted) -- kept in the
+    signature for parity with build_rows' contract; an asserted invariant below proves
+    every curated kcdx_id has an overlay row (no fallback mint)."""
+    # --- modules from module_seed.csv ---
+    module_rows = read_module_seed(MODULE_SEED_CSV)
+    modules_by_id   = {}
+    modules_by_name = {}
+    for m in module_rows:
+        mid = int(m["id"])
+        rows["modules"].append({"id": mid, "name": m["name"].strip(),
+                                "path": m["path"].strip()})
+        modules_by_id[mid]    = mid
+        modules_by_name[m["name"].strip()] = mid
+    print(f"  module_seed.csv: {len(module_rows)} module(s)", flush=True)
+
+    rows["game_versions"].append({"id": GAME_VERSION_ID, "tag": GAME_VERSION_TAG,
+                                  "ordinal": GAME_VERSION_ORDINAL, "released": None})
+    rows["meta"].append({"id": 1, "schema_version": SCHEMA_VERSION,
+                         "abi_confidence": ABI_CONFIDENCE})
+
+    # --- address_names_seed.csv -> address_names (pre-resolution strings) ---
+    names_seed = read_address_names_seed(ADDRESS_NAMES_SEED_CSV)
+    print(f"  address_names_seed.csv: {len(names_seed)} curated entities", flush=True)
+    valid_kcdx_ids = set()
+    for ns in names_seed:
+        nid = int(ns["id"])
+        valid_kcdx_ids.add(nid)
+        dep = (ns.get("is_deprecated") or "").strip()
+        rows["address_names"].append({
+            "id": nid,
+            "name": ns["name"].strip(),
+            "superseded_by":          (ns.get("superseded_by") or "").strip() or None,
+            "superseded_at_version":  (ns.get("superseded_at_version") or "").strip() or None,
+            "is_deprecated":          1 if dep in ("1", "true", "yes") else 0,
+            "deprecated_at_version":  (ns.get("deprecated_at_version") or "").strip() or None,
+            "deprecation_replacement": (ns.get("deprecation_replacement") or "").strip() or None,
+            "notes": (ns.get("notes") or None),
+        })
+
+    # --- address_versions_seed.csv -> curated address_versions (PROMOTE/mint) ---
+    versions_seed = read_address_versions_seed(ADDRESS_VERSIONS_SEED_CSV)
+    print(f"  address_versions_seed.csv: {len(versions_seed)} curated facts", flush=True)
+
+    def _resolve_module(raw, where):
+        try:
+            mid = int(raw)
+            if mid in modules_by_id:
+                return mid
+            raise RuntimeError(
+                f"{where}: module={raw!r} parses as int but no module_seed.csv "
+                f"row has id={mid}")
+        except ValueError:
+            pass
+        mid = modules_by_name.get(raw)
+        if mid is None:
+            raise RuntimeError(
+                f"{where}: module={raw!r} matches no module_seed.csv row by name")
+        return mid
+
+    def _resolve_version_tag(tag, where):
+        if not tag:
+            return None
+        for gv in rows["game_versions"]:
+            if gv["tag"] == tag:
+                return gv["id"]
+        raise RuntimeError(
+            f"{where}: version tag {tag!r} matches no game_versions row "
+            f"(this baseline import only knows {GAME_VERSION_TAG!r})")
+
+    # The DERIVED columns the overlay carries (the dump build's promote-kept
+    # fingerprint + DEV labels + valid_through), merged onto the seed-built authored
+    # row. The KEYS (id, kcdx_id) are NOT in this payload set -- `id` is applied as the
+    # row's av_id; `kcdx_id` is already the authored handle. Sourced from the overlay's
+    # own column declaration so it cannot drift from the exporter.
+    from seeds_shared import AV_DERIVED_CSV_COLS
+    _DERIVED_PAYLOAD = [c for c in AV_DERIVED_CSV_COLS if c not in ("id", "kcdx_id")]
+
+    def _merge_derived(av_row, kid):
+        """Overlay the curated-derived columns + the PROMOTED id from `curated_derived`
+        onto a seed-built authored row, in place. The result is byte-identical to the
+        dump build's PROMOTED row: authored columns from the seed builder, fingerprint +
+        DEV columns + valid_through from the overlay, and the row's stored id == the
+        dump's promoted av_id. A curated kcdx_id absent from the overlay is a lossy/
+        incomplete export -> CsvGenesisError (AP14: never a silent NULL-fingerprint mint
+        masquerading as a complete rebuild). Returns the row's restored av_id."""
+        rec = curated_derived.get(kid)
+        if rec is None:
+            raise CsvGenesisError(
+                f"CSV-genesis: curated kcdx_id={kid} has no row in "
+                f"address_versions_derived.csv -- the curated-derived overlay is "
+                f"incomplete; a rebuild would mint a NULL-fingerprint row instead of "
+                f"reproducing the dump build's promoted fingerprint. Re-export the bulk.")
+        av_row["id"] = rec["id"]
+        for c in _DERIVED_PAYLOAD:
+            av_row[c] = rec[c]
+        return rec["id"]
+
+    survival_inputs_by_kid = {}
+    for vs in versions_seed:
+        kid = int(vs["kcdx_id"])
+        vfv_tag = vs["valid_from_version"].strip()
+        ss.check_kcdx_id_known(kid, vfv_tag, valid_kcdx_ids)
+        if vfv_tag != GAME_VERSION_TAG:
+            continue
+        where = (f"address_versions_seed.csv (kcdx_id={kid}, "
+                 f"valid_from_version={vfv_tag!r})")
+        module_id = _resolve_module(vs["module"].strip(), where)
+
+        srva = (vs.get("rva") or "").strip()
+        sig  = (vs.get("signature") or "").strip()
+        lvv  = (vs.get("last_verified_at_version") or "").strip()
+        vby  = (vs.get("verified_by") or "").strip()
+        vdt  = (vs.get("verified_date") or "").strip()
+        ekn  = (vs.get("evidence_kind") or "").strip()
+        lvv_id = _resolve_version_tag(lvv, where) if lvv else None
+        ekn_id = dicts.encode("address_versions", "evidence_kind", ekn) if ekn else None
+
+        kind = ss.authored_kind(vs)
+        offset = parse_int(vs.get("offset") or "")
+        vslot  = parse_int(vs.get("vtable_slot") or "")
+        struct_offset = parse_int(vs.get("struct_offset") or "")
+        kind_id = dicts.encode("address_versions", "kind", kind)
+
+        sdf = (vs.get("survival_derives_from") or "").strip()
+        seu = (vs.get("survival_expect_unique") or "").strip()
+        survival_inputs_by_kid[kid] = {
+            "kind": kind,
+            "survival_aob": (vs.get("survival_aob") or "").strip() or None,
+            "anchor_string": (vs.get("survival_anchor_string") or "").strip() or None,
+            "rule": (vs.get("survival_rule") or "").strip() or None,
+            "slot_count": parse_int(vs.get("survival_slot_count") or ""),
+            "expect_unique": int(seu) if seu else None,
+            "derives_from_kid": int(sdf) if sdf else None,
+        }
+
+        # Build the AUTHORED half from the seed (base_row=None -> clean authored row;
+        # the derived columns the dump build would PROMOTE come from the overlay, not a
+        # bulk-row copy). The av_id is the placeholder the builder needs; _merge_derived
+        # then OVERWRITES it with the overlay's PROMOTED id (the dump's stored av_id),
+        # so a function row that PROMOTED in the dump build lands at the SAME id here.
+        rv = parse_int(srva) if srva else None
+        av_row = ss.build_curated_row(
+            0, kid, base_row=None, module_id=module_id, rva=rv,
+            valid_from_id=GAME_VERSION_ID, kind_id=kind_id,
+            signature=sig, lvv_id=lvv_id, verified_by=vby,
+            verified_date=vdt, evidence_kind_id=ekn_id,
+            offset=offset, vtable_slot=vslot, struct_offset=struct_offset)
+        av_id = _merge_derived(av_row, kid)
+        versions_by_av_id[av_id] = av_row
+
+    covered_kids = {v["kcdx_id"] for v in versions_by_av_id.values()
+                    if v["kcdx_id"] is not None}
+    ss.check_every_entity_covered(valid_kcdx_ids, covered_kids, GAME_VERSION_TAG)
+    ss.check_survival_derives_from_known(versions_seed, valid_kcdx_ids)
+
+    rva_to_kcdx_id = {v["rva"]: v["kcdx_id"]
+                      for v in versions_by_av_id.values()
+                      if v["rva"] is not None and v["kcdx_id"] is not None}
+
+    # Resolve supersession / deprecation refs + integrity checks (shared validators).
+    name_to_id = {r["name"]: r["id"] for r in rows["address_names"] if r["name"]}
+    tag_to_id  = {gv["tag"]: gv["id"] for gv in rows["game_versions"]}
+    ss.resolve_and_check_name_refs(rows["address_names"], name_to_id, tag_to_id)
+    ss.check_supersession_acyclic(rows["address_names"])
+
+    # Emit address_versions in id order (curated + verbatim bulk).
+    for av_id in sorted(versions_by_av_id.keys()):
+        rows["address_versions"].append(versions_by_av_id[av_id])
+
+    # --- folded survival/re-find cells (D22 / design §11.2) -- the SAME per-kind
+    # dispatch build_rows uses, so the folded columns are byte-identical. ---
+    kid_to_av_id = {v["kcdx_id"]: v["id"]
+                    for v in versions_by_av_id.values()
+                    if v["kcdx_id"] is not None}
+    for av_id in sorted(versions_by_av_id.keys()):
+        v = versions_by_av_id[av_id]
+        if v["kcdx_id"] is None:
+            continue
+        si = survival_inputs_by_kid.get(v["kcdx_id"])
+        if si is None:
+            raise RuntimeError(
+                f"build_rows_from_csv: curated address_versions id={av_id} "
+                f"(kcdx_id={v['kcdx_id']}) has no survival input captured")
+        df_kid = si["derives_from_kid"]
+        derives_from_av_id = kid_to_av_id.get(df_kid) if df_kid is not None else None
+        v.update(ss.folded_av_cells(ss.build_survival_row(
+            av_id, si["kind"],
+            survival_aob=si["survival_aob"],
+            anchor_string=si["anchor_string"],
+            rule=si["rule"],
+            slot_count=si["slot_count"],
+            expect_unique=si["expect_unique"],
+            derives_from_av_id=derives_from_av_id)))
+
+    print(f"  curated overlay: address_names={len(rows['address_names'])} "
+          f"address_versions(total)={len(rows['address_versions'])}", flush=True)
+    return rva_to_kcdx_id
+
+
 # ---------------------------------------------------------------------------
 # Write one db (USER or DEV) from the shared row sets.
 #
@@ -884,33 +1396,19 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
     return dict_entries
 
 
-def run_rebuild(dump_dir, out_dir):
-    """REBUILD mode: from-scratch baseline build of both DBs from a dump dir."""
+def _write_both_dbs(out_dir, rows, counts, dicts):
+    """Write both reference DBs (DEV bulk superset + USER curated-only) from a
+    prepared `rows` dict + `dicts` encoder, print the summary. The shared tail of
+    BOTH genesis paths (CSV-genesis run_rebuild + the expert-only dump regenerate),
+    so the write side is identical regardless of where the rows came from."""
     os.makedirs(out_dir, exist_ok=True)
     user_db = os.path.join(out_dir, "reference.sqlite")
     dev_db = os.path.join(out_dir, "reference-dev.sqlite")
-
     bar = "=" * 70
-    print(bar)
-    print(f"[import_to_sqlite] mode: REBUILD (from-scratch baseline)")
-    print(f"[import_to_sqlite] dump: {dump_dir}")
-    print(f"[import_to_sqlite] module           seed: {MODULE_SEED_CSV}")
-    print(f"[import_to_sqlite] address names    seed: {ADDRESS_NAMES_SEED_CSV}")
-    print(f"[import_to_sqlite] address versions seed: {ADDRESS_VERSIONS_SEED_CSV}")
-    print(bar)
 
-    # Build the row sets ONCE (shared by both dbs). The dict encoder is shared.
-    dicts = Dicts()
-    t0 = time.time()
-    print("\n== TRANSFORM (dump + seed -> schema rows)")
-    rows, counts = build_rows(dump_dir, dicts)
-    print(f"  transform done in {time.time()-t0:.0f}s")
     print(f"  address_names={counts['address_names']} "
           f"address_versions={counts['address_versions']} "
           f"curated_kcdx_ids={counts['curated_kcdx_ids']}")
-
-    # USER ships address_versions rows whose kcdx_id IS NOT NULL (the curated
-    # subset); the filter is now structural to the row (kcdx_id NULL <=> bulk).
     print(f"  curated kcdx_ids: {counts['curated_kcdx_ids']} (USER will ship only these)")
 
     print(f"\n== DEV DB (bulk discovery superset) -> {dev_db}")
@@ -933,6 +1431,66 @@ def run_rebuild(dump_dir, out_dir):
           f"seed_minted_with_rva={counts['seed_minted_with_rva']} "
           f"seed_minted_no_rva={counts['seed_minted_no_rva']}")
     print(bar)
+
+
+def run_rebuild_from_csv(out_dir, curated_dir=None, bulk_dir=None):
+    """REBUILD mode (D38, THE ROUTINE genesis): from-scratch baseline build of both DBs
+    from the TRACKED CSV EXPORT -- the curated half at data/db-export/ + the bulk half
+    at data/db-export-bulk/ -- with NO Ghidra dump. `clone + git lfs pull +
+    run_rebuild_from_csv` reproduces both DBs with zero dump dependency (D38). This is
+    the path the CLI default routes to; the dump path (run_rebuild) is demoted to the
+    EXPERT-ONLY bulk-regenerate one-off (see its docstring).
+
+    `curated_dir` / `bulk_dir` default to the canonical CURATED_EXPORT_DIR /
+    BULK_EXPORT_DIR (data/db-export/ + data/db-export-bulk/); callers (tests) pass
+    explicit dirs to rebuild from a fixture export."""
+    curated_dir = curated_dir or CURATED_EXPORT_DIR
+    bulk_dir = bulk_dir or BULK_EXPORT_DIR
+
+    bar = "=" * 70
+    print(bar)
+    print(f"[import_to_sqlite] mode: REBUILD (D38 CSV-genesis -- no dump; routine)")
+    print(f"[import_to_sqlite] curated CSVs: {curated_dir}")
+    print(f"[import_to_sqlite] bulk CSVs   : {bulk_dir}")
+    print(bar)
+
+    dicts = Dicts()
+    t0 = time.time()
+    print("\n== TRANSFORM (tracked CSV export -> schema rows)")
+    rows, counts = build_rows_from_csv(curated_dir, bulk_dir, dicts)
+    print(f"  transform done in {time.time()-t0:.0f}s")
+
+    _write_both_dbs(out_dir, rows, counts, dicts)
+
+
+def run_rebuild(dump_dir, out_dir):
+    """REBUILD mode (D38: EXPERT-ONLY from-dump, NO LONGER the routine path): the
+    from-Ghidra-dump baseline build. D38 demoted this to an expert-only one-off -- it
+    is kept ONLY to REGENERATE the bulk CSVs (data/db-export-bulk/) when the dump
+    itself changes (a new game version's fresh disassembly). The ROUTINE rebuild is
+    run_rebuild_from_csv above (the tracked CSV export, no dump); the CLI default
+    routes there. Do NOT reach for this as a normal rebuild input -- it requires the
+    ~1.3 GB Ghidra dump the migration retired (D38).
+
+    The signature + build LOGIC (build_rows) are UNCHANGED so the existing from-dump
+    callers (the rebuild oracle, the round-trip oracle -- repointed by step 2.3) stay
+    green this step; only this path's ROLE moved from default to expert-only."""
+    bar = "=" * 70
+    print(bar)
+    print(f"[import_to_sqlite] mode: REBUILD (EXPERT-ONLY from-dump; D38 demoted this)")
+    print(f"[import_to_sqlite] dump: {dump_dir}")
+    print(f"[import_to_sqlite] module           seed: {MODULE_SEED_CSV}")
+    print(f"[import_to_sqlite] address names    seed: {ADDRESS_NAMES_SEED_CSV}")
+    print(f"[import_to_sqlite] address versions seed: {ADDRESS_VERSIONS_SEED_CSV}")
+    print(bar)
+
+    dicts = Dicts()
+    t0 = time.time()
+    print("\n== TRANSFORM (dump + seed -> schema rows)")
+    rows, counts = build_rows(dump_dir, dicts)
+    print(f"  transform done in {time.time()-t0:.0f}s")
+
+    _write_both_dbs(out_dir, rows, counts, dicts)
 
 
 def run_update(out_dir, game_dir):
@@ -3482,8 +4040,14 @@ def run_apply(out_dir, dll_path):
 def _usage(code):
     print("usage (default UPDATE mode): "
           "python import_to_sqlite.py <out_dir> <game_dir>")
-    print("       (rebuild):            "
-          "python import_to_sqlite.py --rebuild <dump_dir> <out_dir>")
+    print("       (rebuild, routine):   "
+          "python import_to_sqlite.py --rebuild <out_dir> "
+          "[<curated_dir> <bulk_dir>]")
+    print("         -> D38 CSV-genesis: rebuilds from data/db-export/ + "
+          "data/db-export-bulk/ (no dump)")
+    print("       (rebuild, EXPERT from-dump bulk regenerate):")
+    print("                             "
+          "python import_to_sqlite.py --rebuild-from-dump <dump_dir> <out_dir>")
     print("       (apply):              "
           "python import_to_sqlite.py apply <out_dir> --dll <path-to-WHGame.dll>")
     sys.exit(code)
@@ -3517,20 +4081,35 @@ def main():
         run_apply(positional[0], dll_path)
         return
 
-    rebuild = False
-    if args and args[0] == "--rebuild":
-        rebuild = True
-        args = args[1:]
-
-    if rebuild:
-        if len(args) < 2:
-            print("usage: python import_to_sqlite.py --rebuild <dump_dir> <out_dir>")
+    # --rebuild-from-dump: the EXPERT-ONLY from-dump bulk regenerate (D38 demoted
+    # it). Kept as a distinct subcommand so the routine --rebuild needs no dump.
+    if args and args[0] == "--rebuild-from-dump":
+        rest = args[1:]
+        if len(rest) < 2:
+            print("usage: python import_to_sqlite.py --rebuild-from-dump "
+                  "<dump_dir> <out_dir>")
             sys.exit(2)
-        run_rebuild(args[0], args[1])
-    else:
-        if len(args) < 2:
-            _usage(2)
-        run_update(args[0], args[1])
+        run_rebuild(rest[0], rest[1])
+        return
+
+    # --rebuild: the ROUTINE D38 CSV-genesis (no dump). Reads the tracked CSV export
+    # (data/db-export/ + data/db-export-bulk/, the defaults) into both DBs. Optional
+    # positional <curated_dir> <bulk_dir> override the export dirs (a fixture rebuild).
+    if args and args[0] == "--rebuild":
+        rest = args[1:]
+        if len(rest) < 1:
+            print("usage: python import_to_sqlite.py --rebuild <out_dir> "
+                  "[<curated_dir> <bulk_dir>]")
+            sys.exit(2)
+        out_dir = rest[0]
+        curated_dir = rest[1] if len(rest) >= 2 else None
+        bulk_dir = rest[2] if len(rest) >= 3 else None
+        run_rebuild_from_csv(out_dir, curated_dir, bulk_dir)
+        return
+
+    if len(args) < 2:
+        _usage(2)
+    run_update(args[0], args[1])
 
 
 if __name__ == "__main__":

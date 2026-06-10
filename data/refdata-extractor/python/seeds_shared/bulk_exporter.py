@@ -22,12 +22,34 @@ WHAT it captures (D38's bulk half):
   - statements        (DEV-only)  -- all rows
   - referenced_vars   (DEV-only)  -- all rows
   - call_edges        (DEV-only)  -- all rows
-  - address_versions  -- the kcdx_id IS NULL subset ONLY (the ~321k bulk discovery
-    rows). The curated kcdx_id-NOT-NULL rows are exported by the EXISTING curated
-    path (csv_exporter.export_seeds -> data/db-export/address_versions_seed.csv).
-    The two halves PARTITION the table by the kcdx_id seam, so each av row is
-    exported exactly once and run_rebuild reconstructs the full table as the union
-    (curated-CSV reshape + bulk-CSV verbatim) with no dedupe.
+  - address_versions  -- the kcdx_id IS NULL subset, FULL ROW verbatim (the ~321k
+    bulk discovery rows). They are all-derived (no authored half), so the bulk CSV
+    carries every column and the rebuild reinserts them byte-for-byte.
+  - address_versions_derived  -- the kcdx_id IS NOT NULL (CURATED) subset, the
+    DERIVED COLUMNS ONLY (keyed by id + kcdx_id). The curated av rows have BOTH an
+    authored half (-> the curated seed CSV, csv_exporter.export_seeds) AND a derived
+    half. Their authored columns (kind/rva/signature/offset/.../survival_*) come
+    from the curated seed CSV; their DUMP-DERIVED columns (length, content_hash,
+    observed_arg_slots, caller_reg_arg_count, caller_arg_agreement, auto_name,
+    decompile_quality, valid_through) plus the PROMOTED id are carried HERE. The
+    curated seed CSV forbids a derived column on the authored surface
+    (csv_exporter:15), so without this overlay a CSV-genesis rebuild could not
+    reconstruct the curated function fingerprint (D38's lossless-round-trip gap).
+    The rebuild MERGES this overlay onto the curated rows it builds from the seed
+    CSV (by kcdx_id key), restoring the full curated av row byte-identical to the
+    dump build -- including the original promoted av_id, so the dependent curated
+    statements/referenced_vars subset (filtered by the curated av_id set) is not
+    perturbed.
+
+WHY a SEPARATE address_versions_derived.csv (not the derived columns folded into
+address_versions.csv): the kcdx_id-NULL bulk rows are read VERBATIM by the rebuild
++ the bulk round-trip oracle (every column reinserted as-is). Keeping
+address_versions.csv as the pristine all-columns verbatim dump of ONLY the
+kcdx_id-NULL rows leaves that proven round-trip untouched; the curated derived data
+is a small, clearly-named OVERLAY (id + kcdx_id + the derived subset) the rebuild
+merges onto the seed-built curated rows. One file per responsibility: one verbatim
+bulk dump, one curated-derived overlay -- not a mixed file with NULLed authored
+columns for the curated rows.
 
 The lossless encoding (lifted verbatim from the P0.1 probe -- the verified-correct
 encoding, reused, not re-invented):
@@ -67,14 +89,120 @@ BULK_DEV_ONLY_TABLES = ["statements", "referenced_vars", "call_edges"]
 assert all(t in SCHEMA and t in DEV_TABLES for t in BULK_DEV_ONLY_TABLES), (
     "bulk_exporter: a BULK_DEV_ONLY_TABLES entry is not a DEV-DB table in schema.py")
 
-# address_versions is exported as its kcdx_id-NULL subset (the bulk discovery
-# rows); the curated subset is the existing curated path's job (see module
-# docstring). Named separately because it carries a WHERE filter the DEV-only
-# tables do not.
+# address_versions: the kcdx_id-NULL subset is exported FULL-ROW (the bulk
+# discovery rows; all-derived). Named separately because it carries a WHERE filter
+# the DEV-only tables do not.
 BULK_AV_TABLE = "address_versions"
 
-# The CSV file names under data/db-export-bulk/ (one per captured table).
+# The CURATED av rows (kcdx_id IS NOT NULL) carry a DERIVED half the curated seed
+# CSV cannot (a derived column is forbidden on the authored surface,
+# csv_exporter:15). That derived half is exported HERE, keyed by the row's id +
+# kcdx_id, as a small overlay the rebuild merges onto the seed-built curated rows.
+#
+# The AUTHORED set (-> curated seed CSV, reconstructed by the seeds_shared row
+# builders): kcdx_id, valid_from, module_id, rva, kind, signature,
+# last_verified_at_version, verified_by, verified_date, evidence_kind, offset,
+# vtable_slot, struct_offset, aob, anchor_string, rule, slot_count, expect_unique,
+# derives_from. (`value` is NOT carried by either file -- the curated builder
+# synthesizes value=vtable_slot, so it is reconstructed from the authored
+# vtable_slot, not stored.)
+#
+# The DERIVED set is an EXPLICIT allowlist (_AV_DERIVED_COLS below) -- the 8
+# dump-derived av columns the overlay carries. It is NOT computed as (all_cols -
+# authored - keys): a computed complement makes the coverage assert a tautology (a
+# NEW SCHEMA av column would be swept silently into the complement instead of being
+# flagged). With three EXPLICIT sets (authored / key / derived), the coverage assert
+# in _curated_av_derived_cols is REAL -- a new SCHEMA column in NONE of the three
+# leaves (authored | key | derived) != all_cols and FIRES at import time (AP14: a
+# lossy/misclassified export is loud, not quiet). The KEYS (id, kcdx_id) lead the
+# overlay row so the merge joins by kcdx_id and restores the promoted id.
+AV_DERIVED_TABLE = "address_versions_derived"
+
+# The authored av columns the curated SEED CSV round-trips (its DB-column targets).
+# `value` is excluded from the OVERLAY but listed here: it is builder-synthesized
+# (value=vtable_slot), carried by neither CSV, so for the av-column PARTITION it sits
+# on the authored side (reconstructed from authored vtable_slot). One of the three
+# EXPLICIT, DISJOINT partition sets (authored / key / derived) the coverage assert
+# checks -- so it carries NO key column (kcdx_id is the KEY partition's, below): the
+# seed CSV does author a kcdx_id cell, but for the av-column PARTITION kcdx_id belongs
+# to exactly one set, and that set is the keys (it is the overlay's join key).
+_AV_AUTHORED_COLS = frozenset({
+    "valid_from", "module_id", "rva", "kind", "signature",
+    "last_verified_at_version", "verified_by", "verified_date", "evidence_kind",
+    "offset", "vtable_slot", "struct_offset",
+    "aob", "anchor_string", "rule", "slot_count", "expect_unique", "derives_from",
+    "value",   # builder-synthesized from vtable_slot; in neither CSV, reconstructed
+})
+# The two key columns (carried in the derived overlay as the join keys, NOT part of
+# the derived payload). One of the three EXPLICIT partition sets.
+_AV_KEY_COLS = ("id", "kcdx_id")
+# The DERIVED av columns (in SCHEMA order) the curated-derived overlay carries as its
+# PAYLOAD -- an EXPLICIT allowlist, NOT a computed complement. These are the 8
+# dump-derived columns: the function fingerprint (content_hash / length / arg-slot
+# observations / caller-agreement), the DEV-only discovery fields (auto_name /
+# decompile_quality), and the interval-close column (valid_through). Explicit so the
+# coverage assert in _curated_av_derived_cols can FIRE on a new unclassified SCHEMA
+# column instead of silently sweeping it in (the third partition set).
+_AV_DERIVED_COLS = frozenset({
+    "length", "content_hash", "observed_arg_slots", "caller_reg_arg_count",
+    "caller_arg_agreement", "auto_name", "decompile_quality", "valid_through",
+})
+
+
+def _curated_av_derived_cols():
+    """The DERIVED av column list (in SCHEMA order) the curated-derived overlay
+    carries as its PAYLOAD: the explicit _AV_DERIVED_COLS allowlist, returned in
+    SCHEMA column order.
+
+    The three sets (authored / key / derived) are each EXPLICIT, so the partition
+    asserts below are REAL, not tautological:
+      - COVERAGE: authored | key | derived == every SCHEMA av column. A NEW SCHEMA
+        column classified into NONE of the three is reported by name and FIRES --
+        the future-gap guard (AP14: a lossy/misclassified export is loud, not quiet).
+        (A computed `derived = all - authored - keys` would make this true by
+        construction and the new column would be silently swept into the overlay.)
+      - DISJOINT: authored, key, derived do not overlap -- a column claimed by two
+        sets (a mis-edit) FIRES rather than producing a double-counted/ambiguous
+        export."""
+    all_cols = [name for (name, _t) in SCHEMA[BULK_AV_TABLE]]
+    all_set = set(all_cols)
+    authored = set(_AV_AUTHORED_COLS)
+    keys = set(_AV_KEY_COLS)
+    derived = set(_AV_DERIVED_COLS)
+
+    # DISJOINT: no column is claimed by two partition sets.
+    ak = authored & keys
+    ad = authored & derived
+    kd = keys & derived
+    assert not (ak or ad or kd), (
+        f"bulk_exporter: address_versions partition OVERLAP -- "
+        f"authored&key={sorted(ak)}, authored&derived={sorted(ad)}, "
+        f"key&derived={sorted(kd)}; each av column belongs to exactly ONE of "
+        f"authored / key / derived.")
+
+    # COVERAGE: every SCHEMA av column is in exactly one of the three explicit sets.
+    # A NEW unclassified column fires here (the guard the comment promises); a set
+    # naming a column that is NOT in the SCHEMA (a typo / stale entry) fires too.
+    covered = authored | keys | derived
+    unclassified = all_set - covered  # in SCHEMA, in no set -> the future-gap
+    stale = covered - all_set         # in a set, not in SCHEMA -> a typo/stale entry
+    assert not unclassified and not stale, (
+        f"bulk_exporter: address_versions column partition gap/mismatch -- "
+        f"unclassified (in SCHEMA, in no authored/key/derived set): "
+        f"{sorted(unclassified)}; stale (in a set, not in SCHEMA): {sorted(stale)}. "
+        f"Classify every SCHEMA av column into exactly one set.")
+
+    # Return the derived payload in SCHEMA column order (the overlay's column order).
+    return [c for c in all_cols if c in derived]
+
+
+# The curated-derived overlay column order: the two keys, then the derived payload.
+AV_DERIVED_CSV_COLS = list(_AV_KEY_COLS) + _curated_av_derived_cols()
+
+# The CSV file names under data/db-export-bulk/ (one per captured table + the
+# curated-derived overlay).
 BULK_CSV_NAMES = {t: f"{t}.csv" for t in BULK_DEV_ONLY_TABLES + [BULK_AV_TABLE]}
+BULK_CSV_NAMES[AV_DERIVED_TABLE] = f"{AV_DERIVED_TABLE}.csv"
 
 # The default output dir, relative to the repo root (D38: the bulk bundle at
 # data/db-export-bulk/). Callers pass an explicit out_dir; this names the canonical
@@ -168,6 +296,29 @@ def _export_one_table(con, table, out_path, *, where=None):
     return n
 
 
+def _export_curated_av_derived(con, out_path):
+    """Write the CURATED av rows' (kcdx_id IS NOT NULL) DERIVED columns to out_path
+    as a raw lossless CSV, keyed by id + kcdx_id (AV_DERIVED_CSV_COLS): the two keys
+    then the derived payload (length / content_hash / observed_arg_slots / ... /
+    valid_through), each cell cell_to_csv-encoded. A PROJECTED-column write (not the
+    full SCHEMA row _export_one_table does), so it carries ONLY the derived half --
+    the authored half lives in the curated seed CSV; the rebuild merges the two.
+    Returns the row count. Streams via the cursor (curated set is small, but the
+    pattern matches the rest of the module)."""
+    cols = AV_DERIVED_CSV_COLS
+    col_list = ", ".join(f'"{c}"' for c in cols)
+    sql = (f'SELECT {col_list} FROM "{BULK_AV_TABLE}" '
+           f"WHERE kcdx_id IS NOT NULL ORDER BY id")
+    n = 0
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        for row in con.execute(sql):
+            w.writerow([cell_to_csv(v) for v in row])
+            n += 1
+    return n
+
+
 # ---------------------------------------------------------------------------
 # Public API.
 # ---------------------------------------------------------------------------
@@ -178,14 +329,21 @@ def export_bulk(dev_db_path, out_dir):
     Writes one CSV per captured table under `out_dir`:
       - statements.csv / referenced_vars.csv / call_edges.csv  -- the DEV-only
         bulk tables, every row.
-      - address_versions.csv  -- the kcdx_id IS NULL subset ONLY (the bulk
-        discovery rows; the curated rows are the curated export's job).
+      - address_versions.csv  -- the kcdx_id IS NULL subset, FULL ROW verbatim
+        (the bulk discovery rows; all-derived).
+      - address_versions_derived.csv  -- the kcdx_id IS NOT NULL (curated) subset,
+        the DERIVED columns ONLY (keyed by id + kcdx_id). The curated rows' authored
+        half is the curated seed CSV's job (csv_exporter.export_seeds); the rebuild
+        merges this derived overlay onto the seed-built curated rows so the full
+        curated av row round-trips byte-identical (incl. the promoted id).
 
-    Each CSV captures every SCHEMA column verbatim (the id PK, the FK integers, the
-    dict-encoded ids as stored, the BLOB content_hash) with NULL distinguished from
-    '' -- so run_rebuild (P1.3) reinserts them byte/value-identical. SEPARATE from
-    csv_exporter.export_seeds (the curated half) -- this does not touch the curated
-    export, and the two PARTITION address_versions by the kcdx_id seam.
+    The full-row CSVs capture every SCHEMA column verbatim (the id PK, the FK
+    integers, the dict-encoded ids as stored, the BLOB content_hash) with NULL
+    distinguished from '' -- so run_rebuild (P1.3) reinserts them byte/value-
+    identical. The derived overlay carries only the curated rows' derived half +
+    keys. Together with csv_exporter.export_seeds (the curated authored half) every
+    av row -- bulk and curated -- round-trips with no column lost: bulk = full
+    verbatim; curated = authored (seed CSV) merged with derived (this overlay).
 
     `dev_db_path` -- the DEV reference-dev.sqlite (carries the bulk tables + the
                      kcdx_id-NULL av rows). A USER DB lacks call_edges + the bulk
@@ -219,12 +377,22 @@ def _export_all(con, out_dir):
         out_path = os.path.join(out_dir, name)
         written[name] = _export_one_table(con, table, out_path)
 
-    # address_versions: the kcdx_id-NULL (bulk discovery) subset ONLY. The curated
-    # kcdx_id-NOT-NULL rows are exported by csv_exporter.export_seeds; the two
-    # halves partition the table, so each av row is exported exactly once.
+    # address_versions: the kcdx_id-NULL (bulk discovery) subset, FULL ROW verbatim
+    # (all-derived rows; read back verbatim by the rebuild). The curated
+    # kcdx_id-NOT-NULL rows' DERIVED half goes to the overlay below; their authored
+    # half is csv_exporter.export_seeds' job.
     av_name = BULK_CSV_NAMES[BULK_AV_TABLE]
     av_path = os.path.join(out_dir, av_name)
     written[av_name] = _export_one_table(
         con, BULK_AV_TABLE, av_path, where="kcdx_id IS NULL")
+
+    # address_versions_derived: the CURATED av rows' DERIVED columns + keys (the
+    # overlay the rebuild merges onto the seed-built curated rows). This is the
+    # column the production export previously DROPPED -- the curated function
+    # fingerprint (content_hash/length/...) fell through both CSV halves, breaking
+    # D38's lossless round-trip. Carrying it here closes the gap.
+    avd_name = BULK_CSV_NAMES[AV_DERIVED_TABLE]
+    avd_path = os.path.join(out_dir, avd_name)
+    written[avd_name] = _export_curated_av_derived(con, avd_path)
 
     return written

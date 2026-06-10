@@ -11,6 +11,18 @@ the BLOB content_hash), with NULL distinguished from the empty string ''. The
 production counterpart to the P0.1 round-trip probe, which proved the ~17.7M-row
 DEV bulk round-trips DB->CSV->DB byte/value-identical.
 
+PLUS the curated-derived OVERLAY (the seam-correction this migration adds):
+address_versions_derived.csv carries, per CURATED av row (kcdx_id NOT NULL), the
+row's DERIVED columns (content_hash / length / observed_arg_slots /
+caller_reg_arg_count / caller_arg_agreement / auto_name / decompile_quality /
+valid_through) + its promoted id, keyed by id + kcdx_id. The curated seed CSV
+cannot carry these (a derived column is forbidden on the authored surface), so
+without this overlay the curated function fingerprint falls through both CSV halves
+-- D38's lossless-round-trip gap. This test asserts the overlay is present, has the
+expected columns, covers exactly the curated rows, and carries the curated function
+fingerprint with its exact stored values (FALSIFIABLE: a curated row exported
+WITHOUT its fingerprint -- the pre-fix behaviour -- fails).
+
 FIXTURE -- a tiny SYNTHETIC DEV DB (not the live dump)
 -----------------------------------------------------
 The round-trip is a pure DB->CSV->DB property; it needs no real dump data, only a
@@ -65,7 +77,7 @@ PYDIR = os.path.normpath(os.path.join(HERE, "..", "python"))
 sys.path.insert(0, PYDIR)
 from seeds_shared import (  # noqa: E402
     export_bulk, BulkExportError, BULK_DEV_ONLY_TABLES, BULK_AV_TABLE,
-    BULK_CSV_NAMES, SCHEMA,
+    AV_DERIVED_TABLE, AV_DERIVED_CSV_COLS, BULK_CSV_NAMES, SCHEMA,
 )
 
 
@@ -346,6 +358,77 @@ def _run_assertions(dev_db, out_dir):
                 dst.close()
         finally:
             shutil.rmtree(rebuilt, ignore_errors=True)
+
+        # (5) THE CURATED-DERIVED OVERLAY -- the seam-correction this migration adds.
+        # address_versions_derived.csv carries, per CURATED av row (kcdx_id NOT NULL),
+        # the row's DERIVED columns + its promoted id + kcdx_id key. The curated seed
+        # CSV cannot carry these (a derived column is forbidden on the authored
+        # surface), so without this overlay the curated function fingerprint falls
+        # through both CSV halves (D38's lossless-round-trip gap).
+        avd_name = BULK_CSV_NAMES[AV_DERIVED_TABLE]
+        avd_path = os.path.join(out_dir, avd_name)
+        # (5a) overlay present + header == AV_DERIVED_CSV_COLS (id, kcdx_id, then the
+        # derived payload). FALSIFIABLE: a dropped/misordered column fails.
+        import csv as _csv2
+        present = avd_name in written and os.path.isfile(avd_path)
+        record("av-derived-overlay-present", present,
+               f"{avd_name} missing from output" if not present else "")
+        if present:
+            with open(avd_path, newline="", encoding="utf-8") as f:
+                avd_header = next(_csv2.reader(f))
+            record("av-derived-header", avd_header == AV_DERIVED_CSV_COLS,
+                   f"header={avd_header} != expected={AV_DERIVED_CSV_COLS}")
+
+        # (5b) the overlay carries exactly the CURATED av rows (kcdx_id NOT NULL),
+        # keyed by id + kcdx_id. FALSIFIABLE: a short/over export fails.
+        curated_av = _src_count(src, BULK_AV_TABLE, where="kcdx_id IS NOT NULL")
+        record("av-derived-rowcount", written.get(avd_name, -1) == curated_av,
+               f"overlay rows={written.get(avd_name, -1)} != curated av rows={curated_av}")
+
+        # (5c) THE LOAD-BEARING falsifiable assert: the curated row's DERIVED columns
+        # (content_hash/length/observed_arg_slots/caller_reg_arg_count/...) are present
+        # in the overlay with their EXACT stored values. The fixture's curated row
+        # (id=5, kcdx_id=101) seeds content_hash=_HASH_A, length=64,
+        # observed_arg_slots=1, caller_reg_arg_count=1. FALSIFIABLE: a curated function
+        # row exported WITHOUT its fingerprint (the pre-fix behaviour -- the gap)
+        # leaves these NULL/absent and fails. Reinsert the overlay verbatim + read back.
+        if present:
+            rebuilt2 = tempfile.mkdtemp(prefix="avd_rt_")
+            try:
+                d2 = sqlite3.connect(os.path.join(rebuilt2, "ov.sqlite"))
+                try:
+                    # A table holding just the overlay columns, reinserted verbatim.
+                    coldefs = ", ".join(f'"{c}"' for c in AV_DERIVED_CSV_COLS)
+                    d2.execute(f'CREATE TABLE av_derived ({coldefs})')
+                    av_decl = {n: t for (n, t) in SCHEMA["address_versions"]}
+                    with open(avd_path, newline="", encoding="utf-8") as f:
+                        r = _csv2.reader(f)
+                        cols = next(r)
+                        ph = ", ".join("?" for _ in cols)
+                        ins = (f'INSERT INTO av_derived '
+                               f'({", ".join(chr(34)+c+chr(34) for c in cols)}) '
+                               f"VALUES ({ph})")
+                        rows = [[_csv_to_cell(line[i], av_decl[cols[i]])
+                                 for i in range(len(cols))] for line in r]
+                        d2.executemany(ins, rows)
+                    d2.commit()
+                    rec = d2.execute(
+                        "SELECT id, content_hash, length, observed_arg_slots, "
+                        "caller_reg_arg_count FROM av_derived WHERE kcdx_id=101"
+                    ).fetchone()
+                    ok5c = (rec is not None and rec[0] == 5
+                            and bytes(rec[1]) == _HASH_A and rec[2] == 64
+                            and rec[3] == 1 and rec[4] == 1)
+                    record("av-derived-carries-curated-fingerprint", ok5c,
+                           f"curated kcdx_id=101 overlay row={rec!r} -- expected "
+                           f"(id=5, content_hash=_HASH_A, length=64, "
+                           f"observed_arg_slots=1, caller_reg_arg_count=1); a curated "
+                           f"function row exported WITHOUT its fingerprint fails here "
+                           f"(the pre-fix gap)")
+                finally:
+                    d2.close()
+            finally:
+                shutil.rmtree(rebuilt2, ignore_errors=True)
     finally:
         src.close()
 
@@ -450,6 +533,108 @@ def test_bulk_export_null_distinct_from_empty_string():
             dst.close()
             src.close()
     _with_fixture(run)
+
+
+def test_curated_derived_overlay_carries_fingerprint():
+    """The seam-correction: address_versions_derived.csv carries each CURATED av row's
+    DERIVED columns + promoted id, so the curated function fingerprint round-trips
+    (D38's lossless bar). The fixture's curated row (kcdx_id=101) seeds a real
+    fingerprint (content_hash=_HASH_A, length=64, observed_arg_slots=1,
+    caller_reg_arg_count=1); the overlay must carry it with the exact stored values.
+    FALSIFIABLE: a curated function row exported WITHOUT its fingerprint -- the pre-fix
+    behaviour the curated/bulk split caused -- leaves these absent and fails."""
+    def run(dev_db, out_dir, root):
+        export_bulk(dev_db, out_dir)
+        avd_path = os.path.join(out_dir, BULK_CSV_NAMES[AV_DERIVED_TABLE])
+        assert os.path.isfile(avd_path), (
+            "export_bulk must write address_versions_derived.csv -- the curated-derived "
+            "overlay is missing, the curated fingerprint would be lost")
+        import csv as _csv
+        rebuilt = os.path.join(root, "ov.sqlite")
+        d2 = sqlite3.connect(rebuilt)
+        try:
+            coldefs = ", ".join(f'"{c}"' for c in AV_DERIVED_CSV_COLS)
+            d2.execute(f'CREATE TABLE av_derived ({coldefs})')
+            av_decl = {n: t for (n, t) in SCHEMA["address_versions"]}
+            with open(avd_path, newline="", encoding="utf-8") as f:
+                r = _csv.reader(f)
+                cols = next(r)
+                assert cols == AV_DERIVED_CSV_COLS, (
+                    f"overlay header {cols} != expected {AV_DERIVED_CSV_COLS}")
+                ph = ", ".join("?" for _ in cols)
+                ins = (f'INSERT INTO av_derived '
+                       f'({", ".join(chr(34)+c+chr(34) for c in cols)}) VALUES ({ph})')
+                rows = [[_csv_to_cell(line[i], av_decl[cols[i]])
+                         for i in range(len(cols))] for line in r]
+                d2.executemany(ins, rows)
+            d2.commit()
+            # The curated row (kcdx_id=101) seeded id=5, content_hash=_HASH_A, length=64,
+            # observed_arg_slots=1, caller_reg_arg_count=1 in the fixture.
+            rec = d2.execute(
+                "SELECT id, content_hash, length, observed_arg_slots, "
+                "caller_reg_arg_count FROM av_derived WHERE kcdx_id=101").fetchone()
+            assert rec is not None, "curated kcdx_id=101 absent from the overlay"
+            assert rec[0] == 5, f"promoted id round-tripped as {rec[0]!r} (want 5)"
+            assert bytes(rec[1]) == _HASH_A, "curated content_hash did not round-trip"
+            assert rec[2] == 64, f"curated length round-tripped as {rec[2]!r} (want 64)"
+            assert rec[3] == 1, f"observed_arg_slots round-tripped as {rec[3]!r} (want 1)"
+            assert rec[4] == 1, (
+                f"caller_reg_arg_count round-tripped as {rec[4]!r} (want 1)")
+        finally:
+            d2.close()
+    _with_fixture(run)
+
+
+def test_av_derived_partition_coverage_assert_is_real():
+    """The av-column PARTITION coverage assert in _curated_av_derived_cols is REAL,
+    not a tautology: a NEW SCHEMA address_versions column classified into NONE of the
+    three explicit sets (authored / key / derived) makes the partition incomplete and
+    FIRES at call time, naming the unclassified column.
+
+    This is the guard the module comment promises -- the future-gap protection a
+    column added to the SCHEMA but to no partition set is NOT silently swept into the
+    derived overlay. FALSIFIABLE: if `derived` were still computed as
+    (all_cols - authored - keys), the injected column would land in `derived` by
+    construction, the assert could never fire, and this test would FAIL (no
+    AssertionError raised). The test injects a synthetic SCHEMA column, confirms the
+    assert raises and names it, then restores the SCHEMA so no other test is affected.
+    """
+    from seeds_shared import bulk_exporter as _bx
+
+    sentinel = "synthetic_unclassified_col_for_test"
+    av = _bx.SCHEMA[BULK_AV_TABLE]
+    assert sentinel not in {n for (n, _t) in av}, (
+        "the sentinel column must not already exist in the SCHEMA")
+    # Inject a SCHEMA column that is in NONE of authored/key/derived.
+    av.append((sentinel, "INTEGER"))
+    try:
+        raised = False
+        msg = ""
+        try:
+            _bx._curated_av_derived_cols()
+        except AssertionError as e:
+            raised = True
+            msg = str(e)
+        assert raised, (
+            "_curated_av_derived_cols did NOT raise on an unclassified SCHEMA av "
+            "column -- the coverage assert is a tautology (a new column would be "
+            "silently swept into the derived overlay)")
+        assert sentinel in msg, (
+            f"the assert fired but did not name the unclassified column {sentinel!r} "
+            f"(AP14: the failure must name what was misclassified); message={msg!r}")
+    finally:
+        # Restore the SCHEMA exactly (remove only the column this test appended).
+        if av and av[-1][0] == sentinel:
+            av.pop()
+        assert sentinel not in {n for (n, _t) in _bx.SCHEMA[BULK_AV_TABLE]}, (
+            "SCHEMA restoration failed -- the sentinel column leaked to other tests")
+    # The unpatched partition is well-formed: the normal call returns the 8 derived
+    # columns in SCHEMA order, no assert. (Confirms restore + the happy path.)
+    derived = _bx._curated_av_derived_cols()
+    assert derived == [
+        "length", "content_hash", "observed_arg_slots", "caller_reg_arg_count",
+        "caller_arg_agreement", "auto_name", "decompile_quality", "valid_through",
+    ], f"derived payload drifted from the expected 8 columns: {derived}"
 
 
 if __name__ == "__main__":

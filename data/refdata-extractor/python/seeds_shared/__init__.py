@@ -70,6 +70,8 @@ from .bulk_exporter import (
     BulkExportError,
     BULK_DEV_ONLY_TABLES,
     BULK_AV_TABLE,
+    AV_DERIVED_TABLE,
+    AV_DERIVED_CSV_COLS,
     BULK_CSV_NAMES,
     DEFAULT_BULK_DIR,
 )
@@ -150,7 +152,8 @@ __all__ = [
     "VERDICT_CANNOT_CHECK",
     "export_seeds",
     "export_bulk", "cell_to_csv", "BulkExportError",
-    "BULK_DEV_ONLY_TABLES", "BULK_AV_TABLE", "BULK_CSV_NAMES",
+    "BULK_DEV_ONLY_TABLES", "BULK_AV_TABLE",
+    "AV_DERIVED_TABLE", "AV_DERIVED_CSV_COLS", "BULK_CSV_NAMES",
     "DEFAULT_BULK_DIR",
     "round_trip", "hash_curated_tables", "RoundTripError",
     "update_row_in_place", "append_row",
