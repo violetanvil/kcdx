@@ -3,6 +3,31 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-10 — seeds RETIRE; both DBs rebuild from tracked CSVs (curated git + bulk Git LFS); the dump retires to expert-only (D38, supersedes D20)
+
+`data/seeds/` is fully deprecated — nothing reads it (archived at `data/seeds - deprecated/`
+pending deletion). The from-dump `run_rebuild` genesis is replaced by a rebuild from committed
+CSVs, so neither reference DB is reconstructed from the ~1.3 GB Ghidra dump in normal operation.
+- The DB stays the authoring source-of-truth, OUT of git (D1 holds — both `.sqlite` files stay
+  git-ignored derived artifacts).
+- The tracked CSV export splits by the existing `kcdx_id IS NOT NULL` curated/bulk seam: the
+  **curated half** → `data/db-export/*.csv` (plain git-tracked text, the D1/D20 diff layer, unchanged);
+  the **bulk half** (the `kcdx_id`-NULL discovery rows + the DEV-only `statements` [~5.24M],
+  `referenced_vars`, `call_edges`) → a CSV bundle under **Git LFS** at `data/db-export-bulk/`.
+- `run_rebuild`'s genesis: `data/db-export/ + data/db-export-bulk/ → both DBs`. The dump retires
+  to an expert-only one-off (regenerate the bulk CSVs when the dump itself changes), never a routine
+  input. Both DBs reproduce via `clone + git lfs pull + run_rebuild-from-CSV`, zero dump dependency.
+- The exporter extends to capture BOTH DBs losslessly (today it filters to curated); the bar is a
+  round-trip oracle widened over the bulk (rebuild-from-CSV → DB → re-export → byte-identical).
+**Integrated in:** §10 D38 (new) + D20 (marked superseded); §body the rebuild/authoring dataflow
+diagram; the header data-flow framing; §2 glossary ("Bootstrap seeds" → retired, "The derived
+export" → two halves); the supersession-summary paragraph.
+**Why:** the user fully deprecated the seeds ("we shouldn't be using the seeds at all anymore") and
+required the DEV DB be tracked rather than reconstructed ("we don't want to have to reconstruct...
+we should be tracking the dev db as csv(s) as well"). The curated→git / bulk→Git-LFS split + the
+dump-retires-to-expert-only + the lossless round-trip-over-bulk bar were settled via
+`senior-architect-consult`; Git LFS chosen over a release-page artifact for version control over the bulk.
+
 ## 2026-06-09 — the in-game `evidence_kind` is keyed by the D36 proof rank (D29)
 
 D36 split the in-game pass into two proof tiers, but D29 still wrote `live_production` for every
