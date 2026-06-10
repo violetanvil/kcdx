@@ -15,6 +15,7 @@
 #include "cvar.h"
 #include "console_commands_scan.h"
 #include "console_commands_find.h"
+#include "console_commands_dev_inspect.h"
 #include "init_phase.h"
 #include "modification_inventory.h"
 #include "log.h"
@@ -525,6 +526,14 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // at search time, not registration — a non-dev user typing it
                 // gets the teaching message, never a missing command.
                 kcdx::console_commands_find::Register();
+
+                // Register the engine-owned kcdx_dev_inspect dev-discovery
+                // console command alongside kcdx_find (same console-armed
+                // precondition, same accept-defer queue, same dev-DB layer). The
+                // dev-mode/dev-DB gate is enforced at enumerate time, not
+                // registration — a non-dev user typing it gets the teaching
+                // message, never a missing command.
+                kcdx::console_commands_dev_inspect::Register();
 
                 // Apply the after_game registration queue NOW — before
                 // any "ready" signal. plugin.lua (RunAll, above) queued

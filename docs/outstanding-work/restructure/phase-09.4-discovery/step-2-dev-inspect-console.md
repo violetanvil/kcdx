@@ -1,6 +1,6 @@
 # Phase 9.4 step 2 — `kcdx_dev_inspect` console command
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 2.
+**Status: DONE** (landed; console command + shared teaching constant, step-review GREEN). Ledger row: [`README.md`](README.md) → step 2.
 
 ## What
 

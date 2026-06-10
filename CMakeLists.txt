@@ -204,6 +204,7 @@ add_library(kcdx SHARED
     src/cvar.cpp
     src/console_commands_scan.cpp
     src/console_commands_find.cpp
+    src/console_commands_dev_inspect.cpp
     src/lua_bind.cpp
     src/plugin_loader.cpp
     src/plugin_pdb.cpp

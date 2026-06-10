@@ -26,8 +26,8 @@ corpus. The decision is recorded in [`step-1-find-surface.md`](step-1-find-surfa
 | Step | Status | Commit |
 |---|---|---|
 | [0 — refdb dev-DB connection + cross-function search layer](step-0-devdb-search-layer.md) | DONE | 98acc8e |
-| [1 — `kcdx.find{...}` Lua surface + `kcdx_find` console](step-1-find-surface.md) | DONE | (landed) |
-| [2 — `kcdx_dev_inspect` console command](step-2-dev-inspect-console.md) | NOT STARTED | — |
+| [1 — `kcdx.find{...}` Lua surface + `kcdx_find` console](step-1-find-surface.md) | DONE | e83d1a4 |
+| [2 — `kcdx_dev_inspect` console command](step-2-dev-inspect-console.md) | DONE | (landed) |
 | [3 — test plugin + console-path tests](step-3-test.md) | NOT STARTED | — |
 
 **Step 0 added 2026-06-10** (the `/feature` audit): the original 3 steps assumed a

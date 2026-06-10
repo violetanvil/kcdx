@@ -152,3 +152,60 @@ decompile-quality, statement count), capped so an over-broad query can't flood
 the overlay. Like every console command it is not part of the
 [Lua API call map](index.md#3-the-map) — you type it at the `~` console, you do
 not call it from `plugin.lua`.
+
+## Inspecting one function — `kcdx_dev_inspect`
+
+Once `kcdx_find` (or your own knowledge) hands you a function name, the
+`~`-console command `kcdx_dev_inspect` prints that function's **full statement
+list** — the same `statements` array a `kcdx.find` record carries, rendered as a
+table you read at a glance:
+
+```
+kcdx_dev_inspect <module> <function>
+```
+
+e.g. `kcdx_dev_inspect WHGame.dll IsInCombat`. Two positional arguments — the
+module and the function name. It uses the same dev-DB layer, the same
+dev-mode/dev-DB gate, and prints the same dev-tool-unavailable teaching message
+on the gated-off path. Like every console command it is not part of the
+[Lua API call map](index.md#3-the-map) — you type it at the `~` console.
+
+### What it prints
+
+A header line, then one row per statement:
+
+```
+[dev_inspect] IsInCombat  WHGame.dll+0x1A2B3C0  [clean]  (5 stmts)
+  [0] call      caps:-                ops:skip_call_void replace_with_noop  combat = GetCombatState(actor)
+  [1] branch    caps:flag:int         ops:always_take_branch never_take_branch invert_branch_condition replace_with_noop  if (flag != 0)
+  [2] return    caps:-                ops:replace_with_return replace_return_value replace_with_noop  return 1
+  ...
+```
+
+- **Header** — the function's name, its module + address, the decompile-quality
+  label (`?` when unknown), and the statement count.
+- **Each row** — the statement's `idx`, its `kind`, its captured variables
+  (`caps:` — `name:type` pairs, or `-` when none), the [`kcdx.op.*`](op.md) op
+  names that fit it (`ops:` — copy one verbatim into
+  `kcdx.statement.replace_with(...)`, or `-` when none), then the decompiled
+  pseudo-text. A long function's rows are capped with a loud `... and N more
+  statements elided` line.
+
+### The not-found teaching error
+
+When the function name is unknown (the dev DB is present but no curated name or
+auto-name matches), `kcdx_dev_inspect` does not fail silently — it prints a
+teaching error with the **nearest curated name** by edit-distance, so a one-char
+typo resolves to its intended target:
+
+```
+[dev_inspect] no function 'IsInCombatt' in WHGame.dll.
+  Did you mean: IsInCombat? Try:
+      kcdx_dev_inspect WHGame.dll IsInCombat
+  Or search by content:
+      kcdx_find WHGame.dll --name_contains IsInCombatt
+```
+
+The suggestion is the closest name by Levenshtein edit-distance — the dev DB
+ranks it for you. If even the nearest name is not what you wanted, the
+`kcdx_find --name_contains` line searches by substring instead.

@@ -29,6 +29,7 @@
 #include <string>
 
 #include "console.h"          // console::GetInterface, console::PrintLine
+#include "find_dev_teaching.h"  // find_dev_teaching::kUnavailableConsole (shared)
 #include "kcdx/Interfaces.h"  // kcdxConsoleCmdArgs, kcdxInvalidPluginHandle
 #include "refdb.h"            // refdb::FindCriteria / FindResult / FindFunctions
 
@@ -46,16 +47,10 @@ const char* kUsage =
     "(criteria: --string --cvar --callers_of --callee --name_contains "
     "--callee_in_subsystem; e.g. kcdx_find WHGame.dll --string \"test_marker\")";
 
-// The dev-tool-unavailable teaching message (design step-1 §What — verbatim;
-// the SAME text kcdx.find logs). Printed to the overlay on the gated-off path.
-const char* kUnavailableTeaching =
-    "[kcdx.find] dev tool unavailable. kcdx.find / kcdx_dev_inspect need dev mode "
-    "AND the dev reference DB: "
-    "1. set dev_mode = true in <game-bin>/kcdx-engine/engine.toml; "
-    "2. place reference-dev.sqlite (a separate download, NOT in the release zip) "
-    "at <game-bin>/kcdx-engine/data/reference-dev.sqlite. "
-    "These are authoring tools — discover a function here, then write your "
-    "kcdx.statement.* / kcdx.locator.* code against it.";
+// The dev-tool-unavailable teaching message is the shared
+// find_dev_teaching::kUnavailableConsole (one source of truth for the console
+// rendering, also used by kcdx_dev_inspect — no drift). Printed on the gated-off
+// path below.
 
 // Map a --flag name to its FindCriteria slot. Returns false (no slot set) for an
 // unrecognized flag — the caller treats that as a fail-loud usage error, never a
@@ -148,7 +143,7 @@ void Callback(const kcdxConsoleCmdArgs* args) {
     // Dev gate failed (dev mode off OR dev DB absent): print the same teaching
     // message kcdx.find logs — never a silent no-op.
     if (result.unavailable) {
-        console::PrintLine(kUnavailableTeaching);
+        console::PrintLine(find_dev_teaching::kUnavailableConsole);
         return;
     }
 
