@@ -655,7 +655,9 @@ void CloseDevDb();
 //   callee               — statements.callee = ? (owning functions)
 //   name_contains        — address_names.name LIKE %?% (curated) UNION
 //                          address_versions.auto_name LIKE %?%
-//   callee_in_subsystem  — statements.callee LIKE <prefix>%
+//   callee_in_subsystem  — statements.callee prefix match, as the sargable
+//                          range callee >= <prefix> AND callee < <prefix_upper>
+//                          (seeks ix_st_callee; a LIKE prefix% would SCAN)
 //
 // call_edges is UNUSED (user-confirmed; it is curated-only, NULL for 320,987 of
 // 321,144 functions — useless for discovery). The TEXT statements.callee is the

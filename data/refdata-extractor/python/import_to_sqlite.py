@@ -1378,6 +1378,13 @@ def write_db(db_path, rows, dicts, tables, user_projection, curated_kcdx_ids=Non
         con.execute('CREATE INDEX ix_st_av ON statements(address_version_id, idx)')
         if not user_projection:
             con.execute('CREATE INDEX ix_st_kcdx ON statements(kcdx_id)')
+            # kcdx.find criterion-query indexes (DEV-only — the USER projection
+            # drops statements entirely). string_ref backs string/cvar; callee
+            # backs callee/callers_of (callee=?) AND callee_in_subsystem (the
+            # range form callee>=? AND callee<?, refdb.cpp). Without these each
+            # criterion is a full 5.24M-row scan (~20s cold) -> boot hang.
+            con.execute('CREATE INDEX ix_st_string_ref ON statements(string_ref)')
+            con.execute('CREATE INDEX ix_st_callee ON statements(callee)')
     if "referenced_vars" in tables:
         # Same as statements: the kcdx_id index is DEV-only (USER drops the
         # kcdx_id column, so the index would reference a non-existent column).

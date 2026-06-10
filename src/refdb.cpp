@@ -2707,6 +2707,30 @@ bool CollectAvIds(const char* sql, const std::string& arg,
     return true;
 }
 
+// Run one criterion's query bound with TWO ? parameters (a sargable range:
+// `col >= ?1 AND col < ?2`) and collect the owning address_version_ids. The
+// two-param sibling of CollectAvIds — the prefix-range form needs a lower AND
+// an upper bound, where CollectAvIds binds a single ?.
+bool CollectAvIds2(const char* sql, const std::string& a1, const std::string& a2,
+                   std::set<int64_t>& ids) {
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb, sql, -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_criterion_query_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    sqlite3_bind_text(st, 1, a1.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, a2.c_str(), -1, SQLITE_TRANSIENT);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        ids.insert(sqlite3_column_int64(st, 0));
+    }
+    sqlite3_finalize(st);
+    return true;
+}
+
 // Escape a user string for a LIKE %?% / prefix% pattern (ESCAPE '\\'). Escapes
 // the LIKE metacharacters % and _ so a search for a literal name fragment is not
 // silently widened by a stray % the author typed.
@@ -2718,6 +2742,30 @@ std::string EscapeLike(const std::string& s) {
         out.push_back(ch);
     }
     return out;
+}
+
+// Compute the exclusive upper bound for a prefix range `col >= prefix AND
+// col < upper`: the prefix with its last byte incremented (the standard
+// prefix-range upper bound — e.g. "CCryPak" -> "CCryPal"). Returns true with
+// `upper` set when a clean range is formable; false when it is NOT (an empty
+// prefix, or a prefix whose every trailing byte is 0xFF and so cannot be
+// incremented without overflow). The caller falls back to the LIKE scan on
+// false — never a silent wrong range (AP14).
+bool PrefixUpperBound(const std::string& prefix, std::string& upper) {
+    if (prefix.empty()) return false;  // no prefix -> no range; fall back.
+    upper = prefix;
+    // Increment the last byte; on 0xFF carry, drop it and increment the next.
+    // If every byte is 0xFF the prefix has no finite upper bound -> fall back.
+    for (size_t i = upper.size(); i-- > 0;) {
+        unsigned char b = static_cast<unsigned char>(upper[i]);
+        if (b != 0xFF) {
+            upper[i] = static_cast<char>(b + 1);
+            upper.resize(i + 1);
+            return true;
+        }
+        // b == 0xFF: this byte rolls over; carry to the byte before it.
+    }
+    return false;  // all-0xFF prefix — no clean upper bound.
 }
 
 }  // namespace
@@ -2795,15 +2843,33 @@ FindResult FindFunctions(const FindCriteria& c) {
                 "WHERE callee = ?;", c.callers_of, got)) queryFailed = true;
         else intersect(got);
     }
-    // callee_in_subsystem — statements.callee LIKE <prefix>% (escaped).
+    // callee_in_subsystem — a prefix match on statements.callee. The sargable
+    // range form `callee >= prefix AND callee < prefix_upper` SEEKS the callee
+    // index (SEARCH ... USING INDEX, 0.0001s); a `callee LIKE prefix%` does NOT
+    // (SQLite's default LIKE is case-insensitive -> SCAN, ~20s cold = the boot
+    // hang KI-0016). The range and the case-sensitive prefix LIKE are identical
+    // semantics for these ASCII function-name prefixes. The range bounds are
+    // bound as parameters (no concatenation into SQL); the range is not a LIKE,
+    // so the prefix is NOT LIKE-escaped. A prefix that cannot form a clean range
+    // (empty, or all-0xFF) falls back to the (slow) escaped LIKE scan rather
+    // than a silent wrong query (AP14).
     if (!queryFailed && c.has_callee_in_subsystem) {
         anyCriterion = true;
         std::set<int64_t> got;
-        std::string pat = EscapeLike(c.callee_in_subsystem) + "%";
-        if (!CollectAvIds(
-                "SELECT DISTINCT address_version_id FROM statements "
-                "WHERE callee LIKE ? ESCAPE '\\';", pat, got)) queryFailed = true;
-        else intersect(got);
+        std::string upper;
+        if (PrefixUpperBound(c.callee_in_subsystem, upper)) {
+            if (!CollectAvIds2(
+                    "SELECT DISTINCT address_version_id FROM statements "
+                    "WHERE callee >= ? AND callee < ?;",
+                    c.callee_in_subsystem, upper, got)) queryFailed = true;
+            else intersect(got);
+        } else {
+            std::string pat = EscapeLike(c.callee_in_subsystem) + "%";
+            if (!CollectAvIds(
+                    "SELECT DISTINCT address_version_id FROM statements "
+                    "WHERE callee LIKE ? ESCAPE '\\';", pat, got)) queryFailed = true;
+            else intersect(got);
+        }
     }
     // name_contains — curated name LIKE %?% UNION auto_name LIKE %?%. Both sides
     // yield address_versions.id directly (the function id).
