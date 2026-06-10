@@ -1,47 +1,59 @@
-"""seeds_shared.round_trip -- the bidirectional byte-identity round-trip oracle.
+"""seeds_shared.round_trip -- the byte-identity round-trip oracle(s).
 
-The correctness contract that binds the exporter (csv_exporter) and the importer
-(import_to_sqlite) together, asserting BOTH directions of the round-trip
-(data/maintainer-tool/design.md S4 / S10 D2):
+The correctness contract that binds the exporter (csv_exporter / bulk_exporter) and
+the importer (import_to_sqlite) together. TWO oracles live here, sharing one cell
+canonicaliser + one comparator:
 
-    import(export(DB)) == DB       (curated DB rows byte-identical after a CSV bounce)
-    export(import(CSVs)) == CSVs   (the seed CSVs byte-identical after a DB bounce)
+  round_trip()       -- the CURATED build-time oracle (design S4 / S10 D2). Asserts
+                        BOTH directions over the curated authored surface:
+                            import(export(DB)) == DB     (curated DB rows identical)
+                            export(import(CSVs)) == CSVs (the seed CSVs identical)
+                        Rebuilds the curated half via the EXPERT-only from-dump path
+                        (run_rebuild). The GUI/build-time curated correctness gate;
+                        re-exported on the data-core API surface (data_core.round_trip).
 
-A divergence is a TOOL BUG -- a column the export invents or the import drops, a
-diff the export reformats, a derived value leaking onto the authored surface. The
-GUI save chain (design S5 / US-4) calls this after every write to confirm the DB
-and the CSVs are still information-equivalent before the change commits; the
-round-trip oracle test (tests/test_round_trip.py) drives it on the mini-dump
-fixture as the same-change correctness gate.
+  round_trip_full()  -- the WIDENED completeness oracle (D38; seeds-to-tracked-csv-
+                        migration P1.4). Asserts the FULL corpus round-trips through
+                        the D38 CSV-genesis path -- rebuild-from-CSV -> DB -> re-export
+                        -> byte-identical for BOTH the curated half AND the bulk half
+                        (statements / referenced_vars / call_edges + the kcdx_id-NULL
+                        bulk address_versions rows). This is D38's standing completeness
+                        bar: the durable proof the export captures ALL the data the dump
+                        carried, so the dump-retirement is safe. The import half is
+                        run_rebuild_from_csv (NO dump, the 1.3 genesis); the bar is
+                        EVERY real table byte-identical, not the curated subset alone.
+
+A divergence in either oracle is a TOOL BUG -- a column the export invents or the
+import drops, a diff the export reformats, a derived value leaking onto the authored
+surface, a bulk column that does not survive the CSV bounce. round_trip_full() FAILS
+LOUD (AP14), naming the divergent table/column.
 
 WHY THIS LIVES IN seeds_shared/ (design S5): the round-trip is a data-core concern
--- a headless, Qt-free callable the GUI calls and the test drives. Its two halves
-are the REAL export (csv_exporter.export_seeds) and the REAL import
-(import_to_sqlite.run_rebuild) -- this module re-uses both, re-implementing
-neither.
+-- a headless, Qt-free callable the GUI calls and the tests drive. Both oracles reuse
+the REAL export (csv_exporter.export_seeds / bulk_exporter.export_bulk) and the REAL
+import (import_to_sqlite.run_rebuild / run_rebuild_from_csv) -- re-implementing neither.
+import_to_sqlite is imported LAZILY inside each function so this seeds_shared submodule
+carries no import-time dependency on it (import_to_sqlite imports seeds_shared).
 
-THE TWO HALVES (both reuse production code -- no re-implementation):
-  - export half: seeds_shared.csv_exporter.export_seeds(db_path, seed_dir).
-  - import half: import_to_sqlite.run_rebuild(dump_dir, out_dir), with its seed-
-    path module constants pointed at the seed dir under test (the existing oracle
-    convention in test_apply_reverify.py / test_csv_exporter.py). run_rebuild is
-    imported lazily inside the function so this seeds_shared submodule carries no
-    import-time dependency on import_to_sqlite (which imports seeds_shared).
+WHAT round_trip() "== DB" COMPARES (the curated authored surface only): the per-table
+content hash of the USER curated tables -- schema.USER_TABLES. The DEV-only bulk
+discovery tables are NOT part of the curated authored surface, so the curated oracle
+does not compare them (round_trip_full() is the oracle that does).
 
-WHAT "== DB" COMPARES (the curated authored surface, NOT the bulk dev tables):
-  the per-table content hash of the USER curated tables only --
-  schema.USER_TABLES (modules, game_versions, address_names, address_versions,
-  meta). The DEV-only bulk discovery tables (call_edges / statements /
-  referenced_vars / the _dict_* discovery lookups in the dev superset) are NOT
-  part of the round-trip authored surface (design S4: a derived/cache column
-  belongs to the bulk-dump dev-only tables, which the export does not touch), so
-  comparing them would compare importer-discovery noise, not the authored round
-  trip. The comparison is at the CONTENT-HASH level (every cell canonicalized,
-  ordered rows) -- a byte/value-identity check, not a loose field compare.
+WHAT round_trip_full() COMPARES (the FULL corpus, both halves): EVERY real table in
+BOTH the USER and DEV DBs -- the curated authored tables AND the bulk DEV tables
+(statements / referenced_vars / call_edges) AND the full address_versions table split
+bulk (kcdx_id IS NULL) vs curated (kcdx_id IS NOT NULL). Only the _dict_* encoding-
+artifact lookups + sqlite_sequence are excluded (the documented CSV-genesis gap, per
+test_rebuild_from_csv.py: the bulk-only _dict_* string mapping lives only in the dump;
+the REAL-table data is unaffected, the rows keep their verbatim int dict-ids). The
+comparison is at the CONTENT-HASH level (every cell canonicalised, ORDER-INDEPENDENT
+so an autoincrement renumber across two independent builds is not a false mismatch) --
+a byte/value-identity check, not a loose field compare.
 
-WHAT "== CSVs" COMPARES: the raw bytes of each of the three seed CSVs before vs.
-after the DB bounce -- the strongest diff-preservation assertion (row order,
-#-comments, QUOTE_MINIMAL quoting, line terminator, trailing newline, in one
+WHAT "== CSVs" COMPARES (round_trip only): the raw bytes of each of the three seed
+CSVs before vs. after the DB bounce -- the strongest diff-preservation assertion (row
+order, #-comments, QUOTE_MINIMAL quoting, line terminator, trailing newline, in one
 comparison).
 """
 import hashlib
@@ -57,6 +69,7 @@ from .csv_exporter import (
     ADDRESS_NAMES_SEED_NAME,
     ADDRESS_VERSIONS_SEED_NAME,
 )
+from .bulk_exporter import export_bulk
 
 SEED_FILES = (MODULE_SEED_NAME, ADDRESS_NAMES_SEED_NAME, ADDRESS_VERSIONS_SEED_NAME)
 
@@ -101,6 +114,67 @@ def hash_curated_tables(db_path):
                 out[t] = {"count": 0, "hash": "<absent>"}
                 continue
             cols = [c[1] for c in con.execute(f'PRAGMA table_info("{t}")')]
+            rendered = []
+            for row in con.execute(
+                    f'SELECT {",".join(chr(34)+c+chr(34) for c in cols)} FROM "{t}"'):
+                rendered.append("\x1e".join(_canon(c) for c in row))
+            h = hashlib.sha256()
+            for line in sorted(rendered):
+                h.update((line + "\x1d").encode("utf-8", "surrogatepass"))
+            out[t] = {"count": len(rendered), "hash": h.hexdigest()}
+        return out
+    finally:
+        con.close()
+
+
+# ---------------------------------------------------------------------------
+# Full-corpus content hashing -- the WIDENED comparator (round_trip_full, D38).
+# Drops the curated-only exclusion hash_curated_tables applies: it hashes EVERY
+# real table (the curated authored tables AND the bulk DEV tables statements /
+# referenced_vars / call_edges), excluding ONLY the _dict_* encoding-artifact
+# lookups + sqlite_sequence (the documented CSV-genesis gap; the real-table data
+# is unaffected). Order-independent (rows sorted by canonical tuple) so an
+# autoincrement renumber across two independent builds is not a false mismatch --
+# the round-trip preserves CONTENT, not the internal rowid. Mirrors the
+# _hash_tables / _real_table_names comparator test_rebuild_from_csv.py (P1.3) uses,
+# lifted here so the standing oracle owns it.
+# ---------------------------------------------------------------------------
+def _real_table_names(con):
+    """The real tables in `con`: every table except the _dict_* encoding-artifact
+    lookups + sqlite_sequence (which a CSV-genesis rebuild cannot reconstruct from
+    the CSVs -- the documented gap; the real-table data keeps its verbatim int
+    dict-ids regardless)."""
+    return [r[0] for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE '#_dict#_%' ESCAPE '#' "
+        "AND name <> 'sqlite_sequence' ORDER BY name")]
+
+
+# The USER-projection tables whose `id` PK is a NON-SEMANTIC autoincrement that
+# legitimately RENUMBERS between the from-dump and CSV-genesis builds (the dump
+# USER build inserts statements/referenced_vars with no explicit id -> 1..N; the
+# CSV build reads them VERBATIM with their DEV-stored ids). The engine joins these
+# via address_version_id, NEVER the statement PK -- so the byte-identity compare
+# excludes the id in the USER projection (CONTENT must match, not the renumbering
+# artifact). The DEV statements/referenced_vars round-trip WITH the id, verbatim.
+# (Same exclusion + rationale as test_rebuild_from_csv.py's _USER_AUTOINC_ID_TABLES.)
+_USER_AUTOINC_ID_TABLES = frozenset({"statements", "referenced_vars"})
+
+
+def hash_real_tables(db_path, *, user_projection=False):
+    """Return {table: {"count": N, "hash": sha256hex}} for EVERY real table in
+    `db_path` (the widened oracle's comparator -- the bulk DEV tables INCLUDED,
+    only the _dict_* lookups + sqlite_sequence excluded). Order-independent. When
+    `user_projection` is set, the statements/referenced_vars autoincrement `id`
+    PK is excluded from the hash (it legitimately renumbers between the two genesis
+    paths; the engine joins via address_version_id)."""
+    con = sqlite3.connect(db_path)
+    try:
+        out = {}
+        for t in _real_table_names(con):
+            cols = [c[1] for c in con.execute(f'PRAGMA table_info("{t}")')]
+            if user_projection and t in _USER_AUTOINC_ID_TABLES:
+                cols = [c for c in cols if c != "id"]
             rendered = []
             for row in con.execute(
                     f'SELECT {",".join(chr(34)+c+chr(34) for c in cols)} FROM "{t}"'):
@@ -252,6 +326,174 @@ def round_trip(db_path, seed_dir, dump_dir, *, work_dir=None):
             "csv_identical": True,
             "db_tables": sorted(orig_hashes),
             "csv_files": list(SEED_FILES),
+        }
+    finally:
+        if owns_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# round_trip_full -- the WIDENED completeness oracle (D38; P1.4).
+# ---------------------------------------------------------------------------
+def _av_hash(db_path, where):
+    """Content hash + count of the address_versions rows matching `where`, ALL
+    columns (no exclusion -- the curated subset must carry the merged fingerprint +
+    the promoted id). Order-independent. Used to split the av byte-identity check
+    bulk (kcdx_id IS NULL) vs curated (kcdx_id IS NOT NULL) so a failure localises."""
+    con = sqlite3.connect(db_path)
+    try:
+        cols = [c[1] for c in con.execute('PRAGMA table_info("address_versions")')]
+        rendered = []
+        for row in con.execute(
+                f'SELECT {",".join(chr(34)+c+chr(34) for c in cols)} '
+                f"FROM address_versions WHERE {where}"):
+            rendered.append("\x1e".join(_canon(c) for c in row))
+        h = hashlib.sha256()
+        for line in sorted(rendered):
+            h.update((line + "\x1d").encode("utf-8", "surrogatepass"))
+        return len(rendered), h.hexdigest()
+    finally:
+        con.close()
+
+
+def round_trip_full(dump_dir, curated_export_dir, *, work_dir=None):
+    """Assert the D38 FULL-corpus round-trip: rebuild-from-CSV -> DB -> re-export ->
+    byte-identical for BOTH the curated half AND the bulk half (the P1.4 widened
+    oracle -- D38's standing completeness bar). Raises RoundTripError on ANY
+    divergence (AP14: the message names the divergent table/column); returns a dict
+    report on success.
+
+    The mechanism (every half reuses production code -- nothing re-implemented):
+
+      1. Build a REFERENCE DB pair from `dump_dir` + the curated CSVs at
+         `curated_export_dir` via the EXPERT-only from-dump path (run_rebuild). This
+         is the ground-truth the CSV-genesis must reproduce -- it carries the FULL
+         corpus (curated + bulk discovery rows, statements/referenced_vars/call_edges).
+      2. Export BOTH halves FROM that reference: export_seeds (curated, from the DEV
+         DB so the curated WHERE applies) + export_bulk (the bulk DEV tables + the
+         kcdx_id-NULL av rows + the curated-derived overlay).
+      3. Rebuild BOTH DBs from the CSV export ALONE via run_rebuild_from_csv -- NO
+         dump (the D38 routine genesis, the 1.3 path).
+      4. Assert EVERY real table is byte-identical between the reference (from-dump)
+         and the CSV-genesis rebuild, for BOTH USER and DEV -- the bulk DEV tables
+         INCLUDED (the dropped curated-only exclusion). Plus the full address_versions
+         table split bulk vs curated so an av failure localises.
+
+    The D38 completeness bar made a standing gate: a divergence in ANY bulk
+    table/column (e.g. the exporter dropping a statements field the rebuild cannot
+    reconstruct) FAILS here -- this oracle asserts FULL-corpus byte-identity, not the
+    curated subset alone.
+
+    Parameters:
+      dump_dir           -- the Ghidra dump the REFERENCE build reads (the test passes
+                            the committed mini-dump excerpt -- fast; the full ~1.3 GB
+                            DEV dump is the expert-regenerate input, not the routine
+                            gate -- see the SCALE note in tests/test_round_trip.py).
+      curated_export_dir -- the curated CSV export dir (D38's data/db-export/; the
+                            three seed CSVs the from-dump build reads as its curated
+                            seeds AND the CSV-genesis reads as its curated half). NOT
+                            mutated.
+      work_dir           -- optional scratch dir for the build/export/rebuild
+                            artifacts; a temp dir is created + removed when omitted.
+
+    HEADLESS + Qt-free (design S5). Owns NO export/import logic -- every half is a
+    production function (run_rebuild / export_seeds / export_bulk / run_rebuild_from_csv).
+    """
+    import import_to_sqlite as imp
+
+    owns_work_dir = work_dir is None
+    work_dir = work_dir or tempfile.mkdtemp(prefix="round_trip_full_")
+    try:
+        # 1. Reference build: dump + curated CSVs -> both DBs (the ground truth).
+        #    Point the importer's seed-path constants at curated_export_dir (the
+        #    standard oracle convention) so run_rebuild reads the curated half there.
+        ref_out = os.path.join(work_dir, "ref_db")
+        os.makedirs(ref_out, exist_ok=True)
+        saved = (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
+                 imp.ADDRESS_VERSIONS_SEED_CSV)
+        imp.MODULE_SEED_CSV = os.path.join(curated_export_dir, MODULE_SEED_NAME)
+        imp.ADDRESS_NAMES_SEED_CSV = os.path.join(curated_export_dir,
+                                                  ADDRESS_NAMES_SEED_NAME)
+        imp.ADDRESS_VERSIONS_SEED_CSV = os.path.join(curated_export_dir,
+                                                     ADDRESS_VERSIONS_SEED_NAME)
+        try:
+            imp.run_rebuild(dump_dir, ref_out)
+        finally:
+            (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
+             imp.ADDRESS_VERSIONS_SEED_CSV) = saved
+        ref_user = os.path.join(ref_out, "reference.sqlite")
+        ref_dev = os.path.join(ref_out, "reference-dev.sqlite")
+
+        # 2. Export BOTH halves from the reference. Curated from the DEV DB (so the
+        #    curated WHERE filter applies); seed the curated dir with the committed
+        #    CSV format first (diff-preservation honours the existing header/comments).
+        curated_csv = os.path.join(work_dir, "export_curated")
+        os.makedirs(curated_csv, exist_ok=True)
+        for f in SEED_FILES:
+            shutil.copy2(os.path.join(curated_export_dir, f),
+                         os.path.join(curated_csv, f))
+        export_seeds(ref_dev, curated_csv)
+        bulk_csv = os.path.join(work_dir, "export_bulk")
+        export_bulk(ref_dev, bulk_csv)
+
+        # 3. Rebuild BOTH DBs from the CSV export ALONE -- NO dump (the D38 genesis).
+        csv_out = os.path.join(work_dir, "csv_db")
+        imp.run_rebuild_from_csv(csv_out, curated_csv, bulk_csv)
+        csv_user = os.path.join(csv_out, "reference.sqlite")
+        csv_dev = os.path.join(csv_out, "reference-dev.sqlite")
+
+        # 4. Assert EVERY real table byte-identical, BOTH DBs -- bulk INCLUDED.
+        diffs = []
+        for label, ref_db, gen_db in (("user", ref_user, csv_user),
+                                      ("dev", ref_dev, csv_dev)):
+            is_user = (label == "user")
+            rh = hash_real_tables(ref_db, user_projection=is_user)
+            gh = hash_real_tables(gen_db, user_projection=is_user)
+            rt, gt = set(rh), set(gh)
+            if rt != gt:
+                diffs.append(
+                    f"[{label}] real-table set differs: only-reference="
+                    f"{sorted(rt - gt)} only-csv-genesis={sorted(gt - rt)}")
+            for t in sorted(rt & gt):
+                if rh[t]["count"] != gh[t]["count"]:
+                    diffs.append(
+                        f"[{label}.{t}] row count {gh[t]['count']} != reference "
+                        f"{rh[t]['count']}")
+                elif rh[t]["hash"] != gh[t]["hash"]:
+                    diffs.append(
+                        f"[{label}.{t}] content hash differs (reference "
+                        f"{rh[t]['hash'][:12]}.., csv-genesis {gh[t]['hash'][:12]}..)")
+
+        # The full address_versions split bulk vs curated (DEV DB) -- so an av
+        # divergence localises to the half that broke. The curated subset compares
+        # ALL columns (the merged fingerprint + the promoted id must reproduce the
+        # dump's PROMOTE byte-identical -- the load-bearing seam the bulk export's
+        # derived-overlay closes).
+        for half, where in (("bulk-av (kcdx_id IS NULL)", "kcdx_id IS NULL"),
+                            ("curated-av (kcdx_id IS NOT NULL)", "kcdx_id IS NOT NULL")):
+            rc, rhsh = _av_hash(ref_dev, where)
+            gc, ghsh = _av_hash(csv_dev, where)
+            if rc != gc:
+                diffs.append(
+                    f"[dev.address_versions {half}] row count {gc} != reference {rc}")
+            elif rhsh != ghsh:
+                diffs.append(
+                    f"[dev.address_versions {half}] content hash differs "
+                    f"(reference {rhsh[:12]}.., csv-genesis {ghsh[:12]}..)")
+
+        if diffs:
+            raise RoundTripError(
+                "round_trip_full FAILED -- the CSV export is NOT lossless over the "
+                "full corpus (a real-table column did not round-trip through the D38 "
+                "CSV-genesis):\n  " + "\n  ".join(diffs))
+
+        # The table set actually compared (for the test's assertion + the report).
+        compared = sorted(set(hash_real_tables(ref_dev)) | set(hash_real_tables(ref_user)))
+        return {
+            "full_identical": True,
+            "real_tables_compared": compared,
+            "bulk_av_identical": True,
+            "curated_av_identical": True,
         }
     finally:
         if owns_work_dir:
