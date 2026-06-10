@@ -9,6 +9,10 @@ extern "C" {
 #include "lua.h"
 }
 
+// Forward-declare the locator descriptor the value carries (defined in refdb.h);
+// the descriptor accessor below returns a pointer into the live userdata.
+namespace kcdx::refdb { struct StatementLocator; }
+
 namespace kcdx::lua_bind_locator {
 
 // Register the `kcdx.locator` sub-table (a grouped capability DOMAIN, like
@@ -33,5 +37,16 @@ struct LocatorView {
 // true; otherwise return false (leaves `out` untouched, raises nothing). The
 // arg-type dispatch a hook/statement verb runs on its optional locator slot.
 bool ReadLocator(lua_State* L, int idx, LocatorView& out);
+
+// If the value at `idx` is a kcdx.locator.value userdata, return a pointer to
+// the FULL refdb::StatementLocator descriptor it carries (the kind + every
+// operand the statement-resolution layer needs); nullptr otherwise. ReadLocator
+// surfaces only the kind label + is_function_entry flag (enough to disambiguate
+// a positional + render a teaching error); the statement verb's APPLY path needs
+// the whole descriptor to call refdb::ResolveStatementByName, so this returns it
+// directly. The pointer is into the live userdata — valid only while the value
+// stays on the stack at `idx`; the caller copies it (a value copy) before the
+// stack changes. Reads nothing beyond the metatable identity.
+const kcdx::refdb::StatementLocator* ReadLocatorDescriptor(lua_State* L, int idx);
 
 }  // namespace kcdx::lua_bind_locator

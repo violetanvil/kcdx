@@ -160,6 +160,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxHookInterface` bootstrap targets (hook the engine's own boot/runtime sites — `lua_pcall`, `engine.savegame`, …; they chain like any other target) | Built | `kcdx.hook` bootstrap targets | [hook.md](hook.md#bootstrap-targets) |
 | **`Kcdx.h` empowered wrapper (the common path)** — `kcdx::bytes::Write(K, target, replacement)` + `struct Kcdx` | Built | `kcdx.bytes` (positional name + replacement, auto-threaded `owningPlugin`) | [wrapper.md](wrapper.md) |
 | `kcdxBytesInterface::Register` (raw floor under the wrapper; the only path for the `[advanced]` `pattern` / `addressId` / `targetSymbol` locators) + `kcdxMemoryInterface::WriteBytes`/`ReadBytes` (immediate raw write) | Built | `kcdx.bytes` raw `{...}` form | [bytes.md](bytes.md) |
+| `kcdxStatementInterface` (static-bytes modification at a located statement — `ReplaceWith` writes an op's bytes natively, zero per-call cost; `InsertBefore`/`InsertAfter` a callback at a statement) | **NYI** | `kcdx.statement.*` | [statement.md](statement.md) |
 | `kcdxMessagingInterface::RegisterListener` (event/lifecycle) | Built | `kcdx.on` | [on.md](on.md) |
 | `kcdxConsoleInterface::RegisterCommand`/`GetArg*` (console command) | Built | `kcdx.command` | [command.md](command.md) |
 | `kcdxMessagingInterface::Dispatch` (custom event broadcast) | Built | `kcdx.publish` | [publish.md](publish.md) |

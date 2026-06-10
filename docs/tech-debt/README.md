@@ -38,6 +38,7 @@ engine capability (`FIX-A`, `Phase-11`), or a named source-fix mechanism.
 | [TD-0006](TD-0006-statement-layer-in-user-db.md) | 2026-06-05 | Open | statement layer DEV-only — USER DB can't back statement-level named things + needs open kind model | the maintainer tool gaining the capability to own these kinds + project them to the USER DB |
 | [TD-0007](TD-0007-unclassified-lua-loader-symbols.md) | 2026-06-05 | Open | 5 Lua C API fns unclassified (loadbuffer/loadstring/gsub unwired + newthread/cpcall fail-loud) — shim can't fully serve them | classify via /research-disassembly before Phase-11 P5 drops static Lua |
 | [TD-0009](TD-0009-engine-browser-agreement-superset-kinds.md) | 2026-06-08 | Open | engine↔browser survival-agreement (D27) pinned for 4 algorithm-identical kinds; 3 superset kinds (string_anchor/instruction_anchor/data_slot) unpinned — the engine's checks are a documented superset of the browser/Python subset | reconcile (teach the browser the fuller checks) OR formalize per-kind agreement scope (annotate the fixture + amend D27) |
+| [TD-0010](TD-0010-statement-replace-live-native-execution-readback.md) | 2026-06-09 | Open | cap-92 proves `replace_with` STRUCTURALLY (static-op-only, no callback can fire); the live native-execution readback (tight-loop, zero dispatch lines) is deferred | a maintainer-chosen boot-safe statically-neutralizable target + a cap-92 live-readback row |
 
 ## Closed
 

@@ -43,6 +43,7 @@ namespace kcdx::lua_registry {
 enum class Kind {
     Bytes,        // the kcdx.bytes surface (succeeds the legacy patch table)
     Hook,         // the kcdx.hook surface incl. mode=mid + dynamic_hook (succeeds the legacy hook tables)
+    Statement,    // the kcdx.statement.* surface (static-bytes modification: resolve a curated statement, emit an op's bytes, write or trampoline)
     // Code, Command, Cosave, Scan ... added by later commits.
 };
 

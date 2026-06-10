@@ -1,0 +1,89 @@
+# CAP-92 — kcdx.statement.replace_with static-bytes modification.
+#
+# Proves the AUTHOR SURFACE + the apply path built in
+# src/lua_bind_statement.cpp: kcdx.statement.replace_with(module, target,
+# [locator], op) resolves a curated statement, runs the op KIND check, emits the
+# DETERMINATE op's bytes, and writes them in place — as a Kind::Statement
+# deferred-apply entry, with ZERO per-call Lua dispatch (no callback is ever
+# taken; the modified bytes execute natively).
+#
+# THE ZERO-PER-CALL-DISPATCH PROPERTY IS STRUCTURAL: replace_with takes a STATIC
+# kcdx.op.* value, NOT a callback. The registry entry is Kind::Statement, not
+# Kind::Hook — so no Lua callback ref exists and no per-call dispatch CAN fire.
+# This is the static-bytes-vs-callback distinction (vs kcdx.hook, which dispatches
+# per call). The proof is the ABSENCE of any per-call dispatch line for the site
+# AND the apply path's honest applied/deferred verdict.
+#
+# Fixture: the curated function SaveGame (resolved BY NAME against
+# reference.sqlite — no hardcoded address_id; the curated set was renumbered, so
+# resolving by name is currency-stable), the same fixture cap-86 (locators) +
+# cap-83 (statement resolve) use. Ground truth from data/reference.sqlite:
+#   function_entry  -> statement idx 0, kind "assign", byte_range_len 3
+#   first_return    -> statement idx 13, kind "return"
+#
+# SAFETY — the rows do NOT destructively rewrite a live game function. A
+# replace_with that ACTUALLY neutralized SaveGame's bytes would break saving;
+# choosing a curated function that is boot-safe to statically neutralize is a
+# surfaced DECISION for the maintainer, not the test's to make. So the rows pin
+# the apply path's RESOLVE + KIND-CHECK + REGISTER-AS-Kind::Statement +
+# honest-applied/deferred verdict — the full wiring up to (and including) the
+# write decision — using kind-MATCHED and kind-MISMATCHED ops, plus the
+# zero-dispatch-by-construction property. A row flips to a live byte-readback
+# assert when the boot-safe live-write target is chosen.
+#
+# FALSIFIABLE per row (a row that can never go red proves nothing):
+#   - cap-92-replace-with-registers : replace_with(SaveGame, function_entry,
+#       kcdx.op.replace_with_noop()) MUST register (handle non-nil — the op value
+#       is accepted as the required positional and the curated target resolves);
+#       and the entry MUST NOT be a Kind::Hook (no callback was taken). RED if the
+#       handle is nil (the surface regressed) OR the entry silently became a
+#       callback path.
+#   - cap-92-kind-mismatch : replace_with(SaveGame, function_entry [an "assign"
+#       statement], kcdx.op.always_take_branch() [requires "branch"]) MUST be
+#       REJECTED at apply with a teaching reason naming the actual kind
+#       ("assign") AND the required kind ("branch") — the engine catches a
+#       kind/type mismatch (cornerstones errors-that-teach), but does NOT
+#       gate on semantic-purpose correctness. RED if it applies silently
+#       (:applied()==true) or the reason omits either kind.
+#   - cap-92-deferred-op : replace_with(SaveGame, first_return,
+#       kcdx.op.invert_branch_condition()) — a DEFERRED op (its final bytes need
+#       the apply-time statement's own bytes, which the resolution layer does not
+#       expose) — MUST surface a not-yet-emittable deferral at apply, NEVER a
+#       fabricated byte. RED if it applies silently or the reason does not say the
+#       op is not yet emittable.
+#   - cap-92-zero-dispatch : replace_with took NO callback, so the handle's site
+#       can produce NO per-call Lua dispatch — distinct from kcdx.hook. The row
+#       asserts the static-bytes contract: registration via a static op only, no
+#       callback positional accepted (a function in the op slot is REJECTED). RED
+#       if replace_with accepts a function as the op (which would mean a per-call
+#       callback path crept in, defeating the zero-cost claim).
+#
+# GRACEFUL on absent data: a resolve miss whose reason is the deploy-state
+# function_no_statements / db_not_loaded reports DEGRADED PASS (the wiring is
+# proven; the ground-truth statement data is simply not deployed) rather than a
+# hard FAIL — the same posture as cap-83 / cap-86.
+#
+# Test mode: boot-only. Registers + reports at ready; no console typing, no
+# in-game gesture. The agent reads the absence of a per-call STATEMENT dispatch
+# line from the dev log (there is none by construction — the static-bytes proof).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_92_statement_replace"
+display_name        = "CAP-92 kcdx.statement.replace_with static-bytes"
+author              = "ts"
+description         = "Pure-Lua self-test of kcdx.statement.replace_with: resolves a curated statement, runs the op kind-check (matched + mismatched), surfaces a deferred-op deferral, and pins the Kind::Statement zero-per-call-dispatch contract (a static op only, no callback). Reports from Lua at ready; graceful-degraded when the statement tables are not deployed."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "cap-92-replace-with-registers",
+    "cap-92-kind-mismatch",
+    "cap-92-deferred-op",
+    "cap-92-zero-dispatch",
+]
+
+[entrypoints]
+lua = "plugin.lua"

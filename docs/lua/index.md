@@ -297,6 +297,7 @@ it does not exist yet.
 | `kcdx.hook` | intercept a game function (before/after/around/replace/mid) | [hook.md](hook.md) |
 | `kcdx.hook` bootstrap targets | hook the engine's own boot/runtime sites (`lua_pcall`, `engine.savegame`, …) — they chain like any other target | [hook.md](hook.md#bootstrap-targets) |
 | `kcdx.bytes` | rewrite bytes at a located site | [bytes.md](bytes.md) |
+| `kcdx.statement.*` | static-bytes modification at a located statement (`replace_with` writes an op's bytes natively — zero per-call cost; `insert_before`/`insert_after` run a callback at a statement) — the static-bytes sibling of `kcdx.hook` | [statement.md](statement.md) |
 | `kcdx.on` | subscribe to a lifecycle or custom event | [on.md](on.md) |
 | `kcdx.command` | register a console command | [command.md](command.md) |
 | `kcdx.publish` | broadcast a custom event to subscribers | [publish.md](publish.md) |

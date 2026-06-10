@@ -490,6 +490,15 @@ bool ReadLocator(lua_State* L, int idx, LocatorView& out) {
     return true;
 }
 
+// The FULL descriptor accessor — the statement verb's apply path needs every
+// operand (callee_or_fn / return_value_operand / string_arg / the matching{}
+// keys) to call refdb::ResolveStatementByName, which the LocatorView does not
+// carry. Returns the live-userdata pointer (the same one TestLocator yields);
+// the caller value-copies it before the stack changes.
+const refdb::StatementLocator* ReadLocatorDescriptor(lua_State* L, int idx) {
+    return TestLocator(L, idx);
+}
+
 // Called from lua_bind.cpp::RegisterKcdxTable with the kcdx global table on top
 // of the stack. Registers the locator-value metatable, then creates the
 // `locator` sub-table inside kcdx. Stack effect: 0.

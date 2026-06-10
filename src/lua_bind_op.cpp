@@ -166,6 +166,22 @@ OpDescriptor* CheckOp(lua_State* L, int idx) {
     return static_cast<OpDescriptor*>(luaL_checkudata(L, idx, kOpMetatable));
 }
 
+// Non-raising detector: is the value at `idx` a kcdx.op.value userdata? Returns
+// the OpDescriptor* on a hit, nullptr otherwise (CheckOp raises; this does not,
+// so the statement verb can do arg-type dispatch on its required `op`
+// positional). Metatable-identity discriminator (the same shape TestLocator /
+// TestRef use).
+const OpDescriptor* TestOp(lua_State* L, int idx) {
+    if (lua_type(L, idx) != LUA_TUSERDATA) return nullptr;
+    void* p = lua_touserdata(L, idx);
+    if (!p) return nullptr;
+    if (!lua_getmetatable(L, idx)) return nullptr;
+    luaL_getmetatable(L, kOpMetatable);
+    const bool same = lua_rawequal(L, -1, -2) != 0;
+    lua_pop(L, 2);
+    return same ? static_cast<const OpDescriptor*>(p) : nullptr;
+}
+
 int Lua_OpGc(lua_State* L) {
     auto* op = CheckOp(L, 1);
     op->~OpDescriptor();
@@ -231,6 +247,42 @@ OpContract ContractFor(OpKind k) {
     return { RequiredKind::Any, "any statement", true };  // unreachable.
 }
 
+// The decoded refdb kind STRING an op requires (the value a resolved
+// statement's StatementResolution.kind would carry). "" for RequiredKind::Any
+// (the op applies to any statement). Used by the cross-binder OpView so the
+// statement verb can compare against the resolved statement's kind without
+// re-deriving the contract.
+const char* RequiredKindString(RequiredKind req) {
+    switch (req) {
+        case RequiredKind::Any:     return "";
+        case RequiredKind::Return:  return "return";
+        case RequiredKind::Call:    return "call";
+        case RequiredKind::Branch:  return "branch";
+        case RequiredKind::Assign:  return "assign";
+        case RequiredKind::Compare: return "compare";
+    }
+    return "";
+}
+
+// The descriptive primary label for an op kind (the catalog name). Used by the
+// OpView for the statement verb's logged attribution + diagnostics.
+const char* OpKindLabel(OpKind k) {
+    switch (k) {
+        case OpKind::ReplaceWithReturn:      return "replace_with_return";
+        case OpKind::ReplaceReturnValue:     return "replace_return_value";
+        case OpKind::ReplaceWithNoop:        return "replace_with_noop";
+        case OpKind::SkipCallVoid:           return "skip_call_void";
+        case OpKind::SkipCallReturnValue:    return "skip_call_return_value";
+        case OpKind::ReplaceCallTarget:      return "replace_call_target";
+        case OpKind::AlwaysTakeBranch:       return "always_take_branch";
+        case OpKind::NeverTakeBranch:        return "never_take_branch";
+        case OpKind::InvertBranchCondition:  return "invert_branch_condition";
+        case OpKind::ReplaceAssignmentValue: return "replace_assignment_value";
+        case OpKind::ReplaceCompareConstant: return "replace_compare_constant";
+    }
+    return "op";
+}
+
 // Does a resolved statement's decoded kind string satisfy the op's required
 // kind? The decoded strings come from refdb (statements.kind): "return",
 // "call", "branch", "assign", "compare"/"cmp". Any matches everything.
@@ -280,7 +332,7 @@ void EmitSetEaxConst(std::vector<uint8_t>& out, int64_t value) {
 // range is NOP-padded to length when it fits; when the instruction is LONGER
 // than the range, the bytes are returned at their natural length (apply-time
 // trampolines).
-std::vector<uint8_t> EmitDeterminate(const OpDescriptor& op, int64_t range) {
+std::vector<uint8_t> EmitDeterminateImpl(const OpDescriptor& op, int64_t range) {
     std::vector<uint8_t> out;
     switch (op.kind) {
         case OpKind::ReplaceWithNoop:
@@ -392,7 +444,7 @@ int Lua_OpEmitFor(lua_State* L) {
     lua_pushboolean(L, 0);
     lua_setfield(L, t, "deferred");
 
-    std::vector<uint8_t> bytes = EmitDeterminate(*op, range);
+    std::vector<uint8_t> bytes = EmitDeterminateImpl(*op, range);
 
     lua_newtable(L);
     int b = lua_gettop(L);
@@ -569,6 +621,66 @@ const luaL_Reg kFunctions[] = {
 };
 
 }  // namespace
+
+// ---- the cross-binder seam (the statement verb reads an op value) --------
+//
+// Public arg-type-dispatch accessor for kcdx.statement.replace_with's required
+// `op` positional. Mirrors lua_bind_locator::ReadLocator and
+// lua_bind_functions::ReadFunctionRef: a metatable-identity test → a flat view
+// the consuming verb reads, never a reach into the anonymous-namespace
+// OpDescriptor type. Reads nothing beyond the metatable identity + the
+// descriptor's already-public-shaped fields.
+bool ReadOp(lua_State* L, int idx, OpView& out) {
+    const OpDescriptor* op = TestOp(L, idx);
+    if (!op) return false;
+    OpContract c = ContractFor(op->kind);
+    out.op_label         = OpKindLabel(op->kind);
+    out.required_kind    = RequiredKindString(c.required);
+    out.required_label   = c.required_label;
+    out.emit_determinate = c.emit_determinate;
+    out.has_value        = op->has_value;
+    out.value            = op->value;
+    out.target_fn        = op->target_fn;
+    return true;
+}
+
+// The kind-mismatch gate the statement verb runs at registration. An empty
+// required_kind (the op applies to any statement) always satisfies. Otherwise
+// the resolved statement's decoded kind must equal the op's required kind (with
+// the compare/cmp alias the in-Lua KindSatisfies already honors).
+bool OpKindSatisfies(const OpView& view, const std::string& stmtKind) {
+    if (view.required_kind.empty()) return true;
+    if (stmtKind == view.required_kind) return true;
+    // The one decoded-kind alias refdb may emit (compare/cmp), kept in lockstep
+    // with the in-Lua KindSatisfies so the verb and :emit_for agree.
+    if (view.required_kind == "compare" && stmtKind == "cmp") return true;
+    return false;
+}
+
+// Emit the determinate bytes for `view` over `byteRangeLen` — the SAME emit
+// :emit_for exposes to Lua, surfaced for the apply path so the byte sequence the
+// test asserts and the byte sequence the engine writes are one source of truth.
+// Reconstructs the minimal OpDescriptor the TU-local emit needs (kind + value);
+// returns the natural-length bytes (the caller decides same-size pad vs
+// trampoline). A deferred op returns empty (the caller checks emit_determinate
+// first and surfaces the deferral — NEVER a fabricated byte).
+std::vector<uint8_t> EmitDeterminate(const OpView& view, int64_t byteRangeLen) {
+    if (!view.emit_determinate) return {};
+    // Map the catalog label back to the OpKind the TU-local emit switches on.
+    // Only the determinate ops reach here (emit_determinate gated above); the
+    // deferred labels are never matched.
+    OpDescriptor op;
+    op.has_value = view.has_value;
+    op.value     = view.value;
+    if      (view.op_label == "replace_with_noop")        op.kind = OpKind::ReplaceWithNoop;
+    else if (view.op_label == "skip_call_void")           op.kind = OpKind::SkipCallVoid;
+    else if (view.op_label == "never_take_branch")        op.kind = OpKind::NeverTakeBranch;
+    else if (view.op_label == "replace_with_return")      op.kind = OpKind::ReplaceWithReturn;
+    else if (view.op_label == "replace_return_value")     op.kind = OpKind::ReplaceReturnValue;
+    else if (view.op_label == "skip_call_return_value")   op.kind = OpKind::SkipCallReturnValue;
+    else return {};  // an unexpected label — emit nothing rather than a guess.
+    return EmitDeterminateImpl(op, byteRangeLen);
+}
 
 // Called from lua_bind.cpp::RegisterKcdxTable with the kcdx global table on top
 // of the stack. Registers the op-value metatable, then creates the `op`

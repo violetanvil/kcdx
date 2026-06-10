@@ -12,6 +12,7 @@
 #include "log.h"
 #include "lua_bind_bytes.h"   // RegisterHandlers() — Kind::Bytes apply handler
 #include "lua_bind_hook.h"    // RegisterHandlers() — Kind::Hook apply handler
+#include "lua_bind_statement.h"  // RegisterHandlers() — Kind::Statement apply handler
 #include "lua_vm_build.h"     // KEYSTONE: worker builds the VM + engine adopts it
 #include "mod_absorb/pak_mod_registry.h"  // pak-mod version gate (step 3)
 #include "mod_absorb/order_persist.h"     // order persistence (step 5)
@@ -291,6 +292,7 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // state, not Lua-surface state, so they register at engine init.
     kcdx::lua_bind_hook::RegisterHandlers();
     kcdx::lua_bind_bytes::RegisterHandlers();
+    kcdx::lua_bind_statement::RegisterHandlers();
 
     // Plugin DLL discovery + load. Runs after the engine's own hooks are
     // installed so plugins can rely on the MinHook + lua_State infrastructure
