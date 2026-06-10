@@ -21,6 +21,6 @@ before P1 lands green (`.claude/rules/incremental-delivery.md`, `results-driven.
 | Step | Status | Commit |
 |---|---|---|
 | [Phase 0 — Probe: the bulk round-trips CSV-losslessly (the gating unknown)](phase-00-probe/README.md) | DONE | (landed) — 0.1 PASS: the DEV bulk round-trips DB→CSV→DB byte-identical (no dump), ~17.7M rows; D38's rebuild-from-CSV premise verified. Phase 1 proceeds. |
-| [Phase 1 — The exporter-over-bulk + the tracked CSV genesis + the widened oracle](phase-01-exporter-genesis/README.md) | NOT STARTED | — |
+| [Phase 1 — The exporter-over-bulk + the tracked CSV genesis + the widened oracle](phase-01-exporter-genesis/README.md) | NOT STARTED | 1.1 (6af2d80) + 1.1-fix/1.3 (40d58b6) + 1.2 (99a1aab) landed; 1.4 (widened round-trip oracle) remaining — phase flips DONE when 1.4 lands. |
 | [Phase 2 — The backend + toolchain migration off data/seeds](phase-02-backend-toolchain/README.md) | NOT STARTED | — |
 | [Phase 3 — Close the deprecation (delete data/seeds - deprecated)](phase-03-close-deprecation/README.md) | NOT STARTED | — |
