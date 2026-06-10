@@ -1,4 +1,4 @@
-# 6.2 [FE] The two batch actions — verify-all (proof-rank `evidence_kind` + `valid_through` extend) + close-intervals → the s06 batch confirm (D32/D34/D35)
+# 6.3 [FE] The two batch actions — verify-all (proof-rank `evidence_kind` + `valid_through` extend) + close-intervals → the s06 batch confirm (D32/D34/D35)
 
 ## What
 
@@ -43,16 +43,17 @@ AND a `valid_through → <report version>` delta on a gap-pass row (the matched 
 transaction; a simulated one-row failure rolls back the WHOLE batch (nothing partial lands —
 D32/D21); the actioned rows update in place, never re-navigating (law 3); both batches are
 all-UPDATE so no AP18 gate fires (law 8 N/A). Runnable at this step (the 6.1 three-block s08
-worklist + the save-spine batch support exist) — `.claude/rules/test-discipline.md`,
-`.claude/rules/incremental-delivery.md`.
+worklist + the 6.2 `/confirm/batch` endpoint + `confirmBatch` client both exist) —
+`.claude/rules/test-discipline.md`, `.claude/rules/incremental-delivery.md`.
 
 ## Dependencies
 
 - **6.1** — the three-block s08 worklist (the per-block selected rows + the `[Verify N rows]` /
   `[Close intervals · N rows]` buttons it renders).
-- The existing maintainer-tool save spine + its D32 batch-transaction support (the backend the
-  batch confirms drive). The `valid_through` UPDATE on the matched row is within the existing
-  full-column UPDATE the spine already supports.
+- **6.2** — the D32 `/confirm/batch` endpoint + the `confirmBatch` FE client method (the
+  batch-transaction this step DRIVES). Built in 6.2 so this FE wiring drives a real endpoint, not a
+  non-existent one. The `valid_through` UPDATE on the matched row is within the per-row UPDATE the
+  batch edit-spec carries.
 
 ## Reference
 

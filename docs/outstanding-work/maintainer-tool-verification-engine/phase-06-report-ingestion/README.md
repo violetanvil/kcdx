@@ -23,17 +23,20 @@ this README's summary.
 | Step | Status | Commit |
 |---|---|---|
 | [6.1 [FE] s08 worklist: import (v3) + ingest progress + the THREE-block worklist + the s08 states](step-1-fe-s08-worklist.md) | NOT STARTED | — |
-| [6.2 [FE] The two batch actions — verify-all (proof-rank `evidence_kind` + `valid_through` extend) + close-intervals → s06 batch confirm](step-2-fe-bulk-reverify-batch-confirm.md) | NOT STARTED | — |
+| [6.2 [BE/CORE] The D32 batch-confirm transaction — `/confirm/batch` endpoint + `confirmBatch` client](step-2-be-batch-confirm-endpoint.md) | NOT STARTED | — |
+| [6.3 [FE] The two batch actions — verify-all (proof-rank `evidence_kind` + `valid_through` extend) + close-intervals → s06 batch confirm](step-3-fe-bulk-reverify-batch-confirm.md) | NOT STARTED | — |
 
 ## Phase verification gate
 
 A UI-touching phase — the gate INCLUDES user-facing acceptance (`.claude/rules/ux-first-class.md`),
-not only build/test green. Phase 6 is done when: s08 (steps 1–2) builds to the reconciled s08 screen
-spec and passes `npm run build` + Vitest (incl. ingesting a real Phase-5 **v3** report; the
-three-block verified/failing/no-action split keyed on the 7-state verdicts; the per-row `live verdict
-badge` + `proof-rank chip`; the partial-report banner driven by `complete`/`rows_expected`; the
-**verify-all** batch — incl. the proof-rank-keyed `evidence_kind` and a gap-pass `valid_through`
-extension on the matched row — and the **close-intervals** batch through the save spine). The
+not only build/test green. Phase 6 is done when: the s08 FE (steps 6.1, 6.3) builds to the
+reconciled s08 screen spec and passes `npm run build` + Vitest, AND the D32 batch endpoint (step
+6.2) passes the data-core pytest + the backend test (incl. ingesting a real Phase-5 **v3** report;
+the three-block verified/failing/no-action split keyed on the 7-state verdicts; the per-row `live
+verdict badge` + `proof-rank chip`; the partial-report banner driven by `complete`/`rows_expected`;
+the **verify-all** batch — incl. the proof-rank-keyed `evidence_kind` and a gap-pass `valid_through`
+extension on the matched row — and the **close-intervals** batch through the `/confirm/batch`
+all-or-nothing transaction). The
 **milestone user-acceptance checkpoint** fires for the substantive + under-specified UI (s08 is a
 NEW screen): the maintainer experiences importing a v3 report, the ingest progress bar, the
 three-block worklist (verdict badge + proof-rank per row), the partial-report banner, selecting rows
