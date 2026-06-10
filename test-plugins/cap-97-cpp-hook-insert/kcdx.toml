@@ -1,0 +1,58 @@
+# CAP-97 — kcdxHookInterface v3 inserts (C++ mirror of kcdx.hook.insert_*) +
+# the targetRef opts field on every hook verb.
+#
+# C++ DLL plugin that exercises the two v3 append-only additions to the
+# EXISTING kcdxHookInterface: the InsertBefore/InsertAfter sub-verbs (the C++
+# peer of the Lua kcdx.hook.insert_before / insert_after — the register-and-
+# DEFER contract; the statement capture-thunk apply path is unwired on BOTH
+# surfaces) and the kcdxHookOptions.targetRef field (a kcdxFunctionRef passed
+# as the target — resolve once, pass to N verbs — accepted by EVERY hook verb,
+# not just the inserts).
+#
+# Three falsifiable rows, all boot-only (rows 1-2 register at kcdxPlugin_Load
+# so the engine's apply pass processes them before the InputLoaded report
+# point; row 3 registers at the gate because its reference mint needs the
+# reference DB; no player gesture):
+#
+#   * CAP-97-insert-defers — K.hook->InsertBefore("SaveGame", cb,
+#       opts{module="WHGame.dll", statementLocator=first_return}) returns a
+#       NON-ZERO handle AND IsApplied==false AND GetReason non-empty — the
+#       register-and-DEFER contract (the insert apply path is unwired; the
+#       deferral is LOUD). FALSIFIABLE: handle 0 (registration broken) ->
+#       FAIL; IsApplied true (a deferred insert silently applied — the
+#       over-claim) -> FAIL; GetReason null/empty (a silent deferral) -> FAIL.
+#   * CAP-97-insert-requires-locator — InsertBefore("SaveGame", cb, opts)
+#       with NO statementLocator returns handle 0 (a loud registration
+#       reject — "insert before what?" has no default). FALSIFIABLE: a
+#       locator-less insert registers (non-zero handle — the required
+#       locator was silently defaulted) -> FAIL.
+#   * CAP-97-targetref-hook — K.functions->GameByName("WHGame", "SaveGame")
+#       set as opts.targetRef with a NULL positional target; a plain
+#       K.hook->Before(nullptr, cb, opts) returns a NON-ZERO handle (the
+#       ref-as-target affordance works on the EXISTING verbs too, not just
+#       the inserts). DEGRADED PASS when the reference DB is not loaded
+#       (mint reason db_not_loaded — a pre-deploy state). FALSIFIABLE: a
+#       FOUND ref as targetRef rejected at registration (handle 0) -> FAIL;
+#       a name_unknown mint miss (a real regression, NOT degraded) -> FAIL.
+#
+# SaveGame is referenced BY NAME (no hardcoded address) — the same curated
+# fixture cap-96 uses. Test mode: boot-only — all three rows self-verify from
+# the InputLoaded listener; NO console gestures, NO save/load.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_97_cpp_hook_insert"
+display_name        = "CAP-97 kcdxHookInterface v3 inserts (C++)"
+author              = "ts"
+description         = "C++ DLL exercising the kcdxHookInterface v3 additions through K.hook — the InsertBefore/InsertAfter sub-verbs (the C++ parity mirror of the Lua kcdx.hook.insert_before / insert_after register-and-defer contract: a well-formed insert registers, IsApplied stays false, GetReason carries the not-yet-wired teaching reason) and the kcdxHookOptions.targetRef field (a kcdxFunctionRef accepted as the target by every hook verb — resolve once, pass to N verbs). Three boot-only falsifiable rows: an insert registers-and-defers LOUD, a locator-less insert is rejected loud at registration, and a found reference passed via opts.targetRef installs a plain Before hook."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-97-insert-defers",
+                       "CAP-97-insert-requires-locator",
+                       "CAP-97-targetref-hook"]
+
+[entrypoints]
+dll    = "cap-97.dll"

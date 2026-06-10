@@ -1561,7 +1561,15 @@ typedef struct kcdxSerializationInterface {
 // channel). The return slot was previously unused (a mid hook never returns a
 // value to the hooked function — that is `Replace`/`Around`), so repurposing
 // it costs no prior capability. See kcdxMidResult + the Mid ABI note below.
-#define kcdxHookInterface_Version 2u
+//
+// Version 3: InsertBefore / InsertAfter appended at the struct END (the
+// statement-locator inserts — register-and-defer; the statement capture-thunk
+// apply path is not yet wired), plus the targetRef / statementLocator fields
+// appended at the END of kcdxHookOptions. All additions land after the
+// append-only markers, so a plugin built against the v2 header reads every
+// prefix member at its original offset — a v2 QueryInterface request is still
+// served this struct unchanged.
+#define kcdxHookInterface_Version 3u
 
 // Mid-callback result — what a C++ Mid callback returns to tell the engine
 // whether to RUN or SKIP the captured instruction. Mirrors the Lua mid
@@ -1675,6 +1683,14 @@ typedef struct kcdxHookCaptureValue {
 // handle (from kcdxInterface::GetPluginHandle). Pass kcdxInvalidPluginHandle
 // to disable self-tier resolution (engine-seed + other-plugin only,
 // anonymous path).
+// Forward declarations — the appended target-by-reference / statement-locator
+// opts fields below point at types whose FULL definitions live later in this
+// header (kcdxFunctionRef with kcdxFunctionsInterface; kcdxLocator with
+// kcdxStatementInterface). A pointer field needs only the struct tag declared,
+// so the typedef order stays valid in both C and C++.
+struct kcdxFunctionRef;
+struct kcdxLocator;
+
 typedef struct kcdxHookOptions {
     // --- Identity ---------------------------------------------------------
     // Optional override of the engine-synthesized identity. The engine
@@ -1770,6 +1786,27 @@ typedef struct kcdxHookOptions {
     // before=/after=/around=/replace= function; this field is the C++
     // mirror.
     kcdxHookCallsiteBehavior callsiteBehavior;
+
+    // Target-by-reference (EVERY install sub-verb — Before / After / Around /
+    // Replace / Mid / Callsite / InsertBefore / InsertAfter). When set, this
+    // kcdxFunctionRef (minted by kcdxFunctionsInterface — resolve once, pass
+    // to N verbs) WINS over the verb's positional `target` string: the
+    // reference collapses to its carried name for resolution. The reference
+    // must carry found=true and a name (a GameByName / PluginByName
+    // reference; a GameById reference carries no name string to resolve by) —
+    // a not-found or nameless reference is a LOUD registration error (zero
+    // handle + the logged teaching reason), never a silent fallback to the
+    // positional string. Null = the positional `target` is used (the common
+    // path). Same field shape as kcdxStatementOptions.targetRef.
+    const struct kcdxFunctionRef* targetRef;
+
+    // InsertBefore / InsertAfter ONLY — the statement locator naming WHERE
+    // inside the target function the insert lands. REQUIRED on the insert
+    // methods ("insert before what?" has no default — a null locator is a
+    // LOUD registration error: zero handle + the logged teaching reason);
+    // ignored by every other sub-verb. The kcdxLocator catalog + per-kind
+    // field contract live with kcdxStatementInterface below.
+    const struct kcdxLocator* statementLocator;
 } kcdxHookOptions;
 
 typedef struct kcdxHookInterface {
@@ -1877,6 +1914,24 @@ typedef struct kcdxHookInterface {
     // New members go HERE, at the END, never mid-struct: a plugin DLL
     // built against an older version reads the prefix members at their
     // original offsets, so appending cannot shift them (append-only ABI).
+
+    // v3: InsertBefore / InsertAfter — run the callback at a STATEMENT inside
+    // the target function (not at its entry), located by the REQUIRED
+    // opts->statementLocator (a kcdxLocator value; null = a loud registration
+    // error — "insert before what?" has no default). Mirrors the Lua
+    // kcdx.hook.insert_before / insert_after sub-verbs; the same 3-param
+    // shape as every other install sub-verb.
+    //
+    // REGISTER-AND-DEFER — not a firing feature yet. The statement-locator
+    // capture-thunk apply path is not wired on either surface: a well-formed
+    // insert returns a NON-ZERO handle, then the apply pass fails it LOUD —
+    // IsApplied(h) stays false and GetReason(h) carries the not-yet-wired
+    // teaching reason. Never a silent or faked install. Wiring the insert
+    // apply path to actually fire is separate, later work on both surfaces.
+    kcdxHookHandle (*InsertBefore)(const char* target, void* callback,
+                                   const kcdxHookOptions* opts /* statementLocator REQUIRED */);
+    kcdxHookHandle (*InsertAfter) (const char* target, void* callback,
+                                   const kcdxHookOptions* opts /* statementLocator REQUIRED */);
 } kcdxHookInterface;
 
 // -----------------------------------------------------------------------------

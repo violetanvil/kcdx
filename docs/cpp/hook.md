@@ -6,11 +6,14 @@ optionally change its arguments, return value, or whether it runs at all. The
 C++ mirror of the core Lua hook sub-verbs `kcdx.hook.before/after/around/replace`
 ([../lua/hook.md](../lua/hook.md)).
 
-This page documents `kcdxHookInterface` **v2** as built and verified
-(`kcdxHookInterface_Version == 2`, [`Interfaces.h`](../../include/kcdx/Interfaces.h)).
-The `cap-36-cpp-hook-interface` regression plugin exercises every method
+This page documents `kcdxHookInterface` **v3**
+(`kcdxHookInterface_Version == 3`, [`Interfaces.h`](../../include/kcdx/Interfaces.h)).
+The `cap-36-cpp-hook-interface` regression plugin exercises the v1/v2 methods
 end-to-end (7/7 PASS); `cap-42-cpp-mid-skip` exercises the v2 `Mid` int-return
-run/skip (the C++ mirror of the Lua mid `return "skip"`).
+run/skip (the C++ mirror of the Lua mid `return "skip"`);
+`cap-97-cpp-hook-insert` exercises the v3 additions ([InsertBefore /
+InsertAfter](#insertbefore--insertafter) + the [`targetRef`
+option](#target-by-reference-opts-targetref)).
 
 ## The common path — `kcdx::hook::Before<Sig, &fn>(K, target)` (the wrapper floor)
 
@@ -66,6 +69,18 @@ reachable through it directly (see [wrapper.md §3-floor model](wrapper.md#the-3
 > a value to the hooked function), so this costs no prior capability — every
 > other sub-verb is unchanged from v1.
 
+> **v3 — `InsertBefore` / `InsertAfter` + the `targetRef` option.** Two install
+> methods appended at the struct end ([InsertBefore /
+> InsertAfter](#insertbefore--insertafter) — the C++ mirror of the Lua
+> `kcdx.hook.insert_before` / `insert_after` sub-verbs; **register-and-defer**,
+> the insert apply path is not wired to fire yet), and two fields appended at
+> the end of `kcdxHookOptions`: [`targetRef`](#target-by-reference-opts-targetref)
+> (pass a `kcdxFunctionRef` as the target — accepted by **every** install
+> sub-verb) and `statementLocator` (the insert methods' required locator). All
+> additions are appended after the append-only markers, so a plugin built
+> against the v2 header is unaffected — every prior member keeps its offset,
+> and a v2 `QueryInterface` request is still served.
+
 ## Fetching the interface
 
 Like every capability interface, fetch it once via `QueryInterface` and cache
@@ -80,15 +95,16 @@ if (!hook) { /* engine version mismatch — fail loud, do not skip silently */ }
 A null return means the running engine does not implement that
 interface/version.
 
-## The surface — six install sub-verbs + four query methods
+## The surface — eight install sub-verbs + four query methods
 
 `kcdxHookInterface` mirrors the Lua `kcdx.hook.before / .after / .around /
-.replace / .mid / .callsite` sub-verbs **one-to-one** as six method pointers —
+.replace / .mid / .callsite / .insert_before / .insert_after` sub-verbs
+**one-to-one** as eight method pointers —
 the variant IS the method name, there is no shared `Install` with a `mode`
 enum (discrete behavioral variants are sub-verbs, not a mode key). Four query/control methods operate on a
 returned handle.
 
-Every install method has the **same shape** ([`Interfaces.h:1571-1596`](../../include/kcdx/Interfaces.h)):
+Every install method has the **same shape** ([`Interfaces.h:1852-1934`](../../include/kcdx/Interfaces.h)):
 
 ```cpp
 kcdxHookHandle (*Before)  (const char* target, void* callback,
@@ -98,9 +114,14 @@ kcdxHookHandle (*Around)  (const char* target, void* callback, const kcdxHookOpt
 kcdxHookHandle (*Replace) (const char* target, void* callback, const kcdxHookOptions* opts);
 kcdxHookHandle (*Mid)     (const char* target, void* callback, const kcdxHookOptions* opts);
 kcdxHookHandle (*Callsite)(const char* target, void* callback, const kcdxHookOptions* opts);
+// v3 — appended at the struct end (append-only ABI):
+kcdxHookHandle (*InsertBefore)(const char* target, void* callback,
+                               const kcdxHookOptions* opts /* statementLocator REQUIRED */);
+kcdxHookHandle (*InsertAfter) (const char* target, void* callback,
+                               const kcdxHookOptions* opts /* statementLocator REQUIRED */);
 ```
 
-### Arguments (shared by all six install methods)
+### Arguments (shared by all eight install methods)
 
 | Arg | Type | Meaning |
 |---|---|---|
@@ -185,6 +206,34 @@ The hook needs to find its target. The **common path is by name** — the
 > `opts->signature` (let the name carry the verified ABI) or correct it to
 > match.
 
+### Target by reference (`opts->targetRef`)
+
+Every install sub-verb (Before / After / Around / Replace / Mid / Callsite /
+InsertBefore / InsertAfter) also accepts a **function reference** as its
+target: set `opts->targetRef` to a [`kcdxFunctionRef`](functions.md) minted by
+`kcdxFunctionsInterface` — resolve once, pass to N verbs:
+
+```cpp
+const kcdxFunctionRef ref = K.functions->GameByName("WHGame", "SaveGame");
+if (ref.found) {
+    kcdxHookOptions opts = {};
+    opts.owningPlugin = K.self;
+    opts.targetRef    = &ref;            // the reference IS the target
+    K.hook->Before(nullptr, (void*)&cb, &opts);
+}
+```
+
+- **When set, `targetRef` WINS** over the positional `target` string — pass
+  `nullptr`/`""` as the positional. The reference collapses to its carried
+  name for resolution (the same semantics as `kcdxStatementOptions.targetRef`,
+  and the C++ peer of passing a `kcdx.functions.*` value to a Lua hook verb).
+- **A `found == false` reference, or a nameless one** (a `GameById` reference —
+  the id is its handle, not a name) **is a loud registration error**: the
+  install returns a zero handle and logs the teaching reason. Never a silent
+  fallback to the positional string, never an empty-name resolve.
+- The common path stays the positional name string; `targetRef` is the
+  resolve-once affordance, not a replacement.
+
 ### Advanced locators (expert-only escape hatch)
 
 The fields below in `kcdxHookOptions` are the `[advanced]` escape hatch for
@@ -227,6 +276,8 @@ fields you use. Sentinel for unset: `null` for strings, `0` for numerics.
 | `offThread` | `kcdxHookOffThread` | 1503 | Off-thread routing policy. Default 0 = `Marshal`. See [Threading](#threading). |
 | `owningPlugin` | `kcdxPluginHandle` | 1513 | Your plugin handle (from `api->GetPluginHandle("<name>")`). Drives the self-tier of self > engine > other for a bare-name `target`. Pass `kcdxInvalidPluginHandle` (or 0) for the anonymous path. The wrapper threads this for you; **raw-interface callers set it themselves**. |
 | `callsiteBehavior` | `kcdxHookCallsiteBehavior` | 1528 | (Callsite only) which behavior the callsite redirect uses. Default 0 = `Before`. See [Callsite](#callsite). |
+| `targetRef` | `const kcdxFunctionRef*` | 1801 | (v3, every sub-verb) a [function reference](functions.md) used as the target — WINS over the positional `target` when set; a not-found or nameless ref is a loud zero-handle error. See [Target by reference](#target-by-reference-opts-targetref). |
+| `statementLocator` | `const kcdxLocator*` | 1809 | (v3, InsertBefore/InsertAfter only) **REQUIRED** — the [`kcdxLocator`](locator.md) naming the statement the insert lands at; null = loud zero-handle error ("insert before what?" has no default). Ignored by every other sub-verb. See [InsertBefore / InsertAfter](#insertbefore--insertafter). |
 
 ## The mangled `cFn` ABI (the raw floor)
 
@@ -397,26 +448,45 @@ The `cFn` ABI matches the selected behavior's shape (the four under
 is **raw-floor-only** — its call-instruction sub-locators don't templatize, so
 the wrapper does not wrap it and this is its only doc.
 
-## Not yet implemented — the Lua peers awaiting C++ parity
+## InsertBefore / InsertAfter
 
-Two Lua-side hook capabilities have **no C++ mirror yet** — they land when the
-C++ surface catches up (the cross-surface map stays parallel while the engine
-does, per the documentation-parity discipline). Both are marked NYI here so a
-C++ author knows the shape that is coming and that it is not callable today:
+`InsertBefore` / `InsertAfter` (↔ Lua `kcdx.hook.insert_before` /
+`insert_after`, [../lua/hook.md#insert_before--insert_after](../lua/hook.md#insert_before--insert_after))
+install a callback at a **statement inside** the function (not at its entry),
+named by a [`kcdxLocator`](locator.md) value. Same 3-param shape as every
+other sub-verb; the locator rides in the options struct:
 
-- **`InsertBefore` / `InsertAfter` (↔ Lua `kcdx.hook.insert_before` /
-  `insert_after`)** — install a callback at a **statement inside** the function,
-  located by a `kcdxLocator` value, receiving the live captures as a named
-  struct. The Lua sub-verbs validate today; the engine's curated-statement
-  capture-thunk apply path (and this C++ mirror) land together in a later step.
-- **A `kcdxFunctionRef` target (↔ Lua hooking by a `kcdx.functions.*` reference
-  value)** — pass a resolved function-reference value as the install target
-  (instead of a name string), so the reference carries the address and ABI. The
-  Lua side dispatches a reference value today; the C++ `kcdxHookInterface`
-  overload taking a `kcdxFunctionRef` is the NYI peer.
+- **`opts->statementLocator` is REQUIRED** — "insert before what?" has no
+  default. A null locator (or one with a missing required operand) is a loud
+  registration reject: the install returns a **zero handle** and logs the
+  teaching reason. This mirrors the Lua insert's required-locator error.
+- The target is the usual positional name (or `opts->targetRef`); the
+  signature comes from the name like any other sub-verb.
 
-These are mapped NYI, not omitted, so the two surfaces stay structurally
-parallel; the markers are removed when each is built and verified callable.
+```cpp
+kcdxLocator loc = {};
+loc.kind       = kcdxLocator_FirstCallTo;
+loc.calleeOrFn = "IsInCombat";
+
+kcdxHookOptions opts = {};
+opts.owningPlugin     = self;
+opts.statementLocator = &loc;            // REQUIRED on an insert
+
+kcdxHookHandle h = hook->InsertBefore("CheckOutfitSwap", (void*)&cb, &opts);
+```
+
+> **Register-and-defer — not a firing feature yet.** The engine's
+> curated-statement capture-thunk apply path is **not wired on either
+> surface** (Lua or C++). A well-formed insert **registers** (a non-zero
+> handle), then the apply pass defers it **loud**: `IsApplied(h)` stays
+> `false` and `GetReason(h)` carries the not-yet-wired teaching reason. The
+> callback is never invoked today. Wiring the insert apply path to actually
+> fire is separate, later work on both surfaces — until then, use
+> [`mid`](#mid) for an offset-based capture, or
+> `Before`/`After`/`Around`/`Replace` at the function entry.
+
+Like Mid and Callsite, the inserts are **raw-floor-only** — the wrapper does
+not wrap them.
 
 ## Query / control methods
 

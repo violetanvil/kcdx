@@ -5,18 +5,27 @@
 // rules, same ApplyHookEntry routing — but takes raw C inputs from a
 // C++ DLL plugin via the kcdxHookInterface vtable.
 //
-// Six sub-verb installers (Before/After/Around/Replace/Mid/Callsite)
-// each:
-//   1. validate target + callback per the kcdxHookOptions contract
-//      (Interfaces.h:1402-1474),
-//   2. build a hook_payload::HookPayload from (target, callback, opts),
-//   3. resolve the signature (explicit opts->signature parse OR
+// Eight sub-verb installers (Before/After/Around/Replace/Mid/Callsite
+// + the v3 InsertBefore/InsertAfter) each:
+//   1. apply the targetRef precedence (opts->targetRef WINS over the
+//      positional target when set — one gate, shared CollapseTargetRef
+//      semantics with statement_interface),
+//   2. validate target + callback per the kcdxHookOptions contract,
+//   3. build a hook_payload::HookPayload from (target, callback, opts),
+//   4. resolve the signature (explicit opts->signature parse OR
 //      address_library::ResolveSignatureByName by target name; Mid
 //      treats signature as optional),
-//   4. set payload.cFn so ApplyHookEntry's branch routes through
+//   5. set payload.cFn so ApplyHookEntry's branch routes through
 //      hook_chain::AddC (not hook_chain::Add — that's the Lua path),
-//   5. synthesize a Kind::Hook lua_registry::Entry and Append; the
+//   6. synthesize a Kind::Hook lua_registry::Entry and Append; the
 //      returned handleId is the kcdxHookHandle the author gets back.
+//
+// The v3 insert installers additionally require opts->statementLocator
+// (validated through the shared ConvertLocator — one conversion home in
+// statement_interface) and mark the payload insertPending, so the SAME
+// apply handler the Lua kcdx.hook.insert_* path feeds (ApplyHookEntry in
+// lua_bind_hook.cpp) fails the entry LOUD with the not-yet-wired teaching
+// reason — the register-and-defer contract, identical on both surfaces.
 //
 // Four query thunks (IsApplied/GetReason/GetName/Uninstall) walk the
 // registry by handleId — the SAME Find() / SetStatus() pair the Lua
@@ -35,6 +44,8 @@
 #include "lua_registry.h"
 #include "patch_engine.h"     // patch::ParsePattern, patch::AnchorString
 #include "plugin_loader.h"    // NameForHandle / AuthorForHandle
+#include "refdb.h"            // refdb::StatementLocator (insert locator check)
+#include "statement_interface.h"  // ConvertLocator + CollapseTargetRef (shared seams)
 
 namespace kcdx::hook_interface {
 
@@ -95,6 +106,29 @@ void LogTeachingError(kcdxPluginHandle owningPlugin,
     }
 }
 
+// Target-by-reference precedence — the ONE gate where the positional target
+// is read. When opts->targetRef is set it WINS over the positional `target`
+// string: the reference collapses to its carried name (the shared
+// CollapseTargetRef in statement_interface — one home for the ref-as-target
+// semantics, both C-ABI verb families). A found=false or nameless (GameById)
+// reference returns false + a teaching reason — a loud registration error at
+// the caller (zero handle), never a silent fallback to the positional
+// string. `storage` owns the collapsed name for the caller's scope; `target`
+// is repointed at it. Called once per installer body (the two funnels every
+// sub-verb thunk routes through) — never re-derived per thunk.
+bool ApplyTargetRefPrecedence(const char*& target,
+                              const kcdxHookOptions* opts,
+                              std::string& storage,
+                              std::string& err) {
+    if (!opts || !opts->targetRef) return true;
+    if (!kcdx::statement_interface::CollapseTargetRef(*opts->targetRef,
+                                                      storage, err)) {
+        return false;
+    }
+    target = storage.c_str();
+    return true;
+}
+
 // Validate target + callback + (for Callsite) the callsite sub-locator.
 // `target` may be null/"" only when an [advanced] locator is supplied in
 // opts; `callback` must be non-null. For Callsite the caller has already
@@ -124,7 +158,9 @@ std::string ValidateBaseline(const char* target,
 
     if (!haveTarget && !haveAdvancedLocator) {
         return "specify `target` = the Address Library NAME of the function "
-               "to hook (the engine resolves address + ABI for you). "
+               "to hook (the engine resolves address + ABI for you), or set "
+               "opts.targetRef to a kcdxFunctionRef minted by "
+               "kcdxFunctionsInterface. "
                "Advanced: pass an opts.pattern / .addressId / .targetSymbol "
                "/ .targetLuaCfunction / .address for a target the library "
                "can't name yet (then supply opts.signature too — there's no "
@@ -408,15 +444,29 @@ uint64_t QueueHookEntry(const std::shared_ptr<kcdx::hook_payload::HookPayload>& 
     return handleId;
 }
 
-// One installer body shared by Before/After/Around/Replace/Mid. The
-// mode + isMid flags drive the small variations (Mid skips the
-// signature-required gate; the others require a signature).
+// One installer body shared by Before/After/Around/Replace/Mid and (via
+// InstallInsert, with insertPending=true) the v3 inserts. The mode + isMid
+// flags drive the small variations (Mid skips the signature-required gate;
+// the others require a signature). insertPending marks the payload so
+// ApplyHookEntry defers it LOUD (the not-yet-wired insert contract).
 uint64_t InstallNonCallsite(const char* target, void* callback,
                             const kcdxHookOptions* opts,
                             kcdx::hook_payload::Mode mode,
-                            const char* verbForLog) {
+                            const char* verbForLog,
+                            bool insertPending = false) {
     kcdxPluginHandle owningHandle =
         opts ? opts->owningPlugin : kcdxInvalidPluginHandle;
+
+    // targetRef precedence first — everything below reads the effective
+    // target (the collapsed reference name, or the positional string).
+    std::string refNameStorage;
+    {
+        std::string err;
+        if (!ApplyTargetRefPrecedence(target, opts, refNameStorage, err)) {
+            LogTeachingError(owningHandle, verbForLog, err);
+            return 0;
+        }
+    }
 
     {
         std::string err = ValidateBaseline(target, callback, opts,
@@ -430,6 +480,7 @@ uint64_t InstallNonCallsite(const char* target, void* callback,
     Owner owner = OwnerFromHandle(owningHandle);
     auto p = std::make_shared<kcdx::hook_payload::HookPayload>();
     p->mode          = mode;
+    p->insertPending = insertPending;
     p->owningAuthor  = owner.author;
     p->owningPlugin  = owner.plugin;
 
@@ -481,6 +532,17 @@ uint64_t InstallCallsite(const char* target, void* callback,
                          const kcdxHookOptions* opts) {
     kcdxPluginHandle owningHandle =
         opts ? opts->owningPlugin : kcdxInvalidPluginHandle;
+
+    // targetRef precedence first (same gate as InstallNonCallsite — for
+    // Callsite the collapsed name is the FUNCTION containing the call).
+    std::string refNameStorage;
+    {
+        std::string err;
+        if (!ApplyTargetRefPrecedence(target, opts, refNameStorage, err)) {
+            LogTeachingError(owningHandle, "Callsite", err);
+            return 0;
+        }
+    }
 
     {
         std::string err = ValidateBaseline(target, callback, opts,
@@ -539,8 +601,60 @@ uint64_t InstallCallsite(const char* target, void* callback,
     return QueueHookEntry(p, owner);
 }
 
+// Shared body for the v3 InsertBefore / InsertAfter — run the callback at a
+// STATEMENT inside the target function, located by the REQUIRED
+// opts->statementLocator. Mirrors the Lua kcdx.hook.insert_before /
+// insert_after registration exactly: the locator is REQUIRED ("insert before
+// what?" has no default — a null locator is a loud zero-handle reject) and
+// validated for well-formedness through the shared ConvertLocator (the one
+// kcdxLocator conversion home, in statement_interface). The converted
+// locator's CONTENT is then deliberately discarded — the Lua insert path does
+// the same (it validates the locator value and enqueues only the
+// insertPending flag), because the statement capture-thunk apply path that
+// would consume it is not yet wired on either surface. The payload carries
+// insertPending=true, so ApplyHookEntry (the SAME apply handler the Lua
+// insert entries reach) fails it LOUD with the not-yet-wired teaching reason
+// — a non-zero handle, IsApplied false, GetReason non-empty. The callback
+// lands in payload.cFn exactly as every other pre-apply C++ hook mode stores
+// its callback (the C peer of the Lua insert's registry ref).
+uint64_t InstallInsert(const char* target, void* callback,
+                       const kcdxHookOptions* opts,
+                       kcdx::hook_payload::Mode mode,
+                       const char* verbForLog) {
+    kcdxPluginHandle owningHandle =
+        opts ? opts->owningPlugin : kcdxInvalidPluginHandle;
+
+    const kcdxLocator* loc = opts ? opts->statementLocator : nullptr;
+    if (!loc) {
+        LogTeachingError(owningHandle, verbForLog,
+            "opts.statementLocator is null — the statement locator is "
+            "REQUIRED on an insert (\"insert before what?\" has no default). "
+            "Set opts.statementLocator to a kcdxLocator naming the statement, "
+            "e.g. kcdxLocator loc = { kcdxLocator_FirstCallTo }; "
+            "loc.calleeOrFn = \"IsInCombat\"; opts.statementLocator = &loc; "
+            "— or use Before/After/Around/Replace to hook the function "
+            "entry (no locator needed).");
+        return 0;
+    }
+
+    // Well-formedness check through the one conversion home; the converted
+    // value is discarded (see the function comment — the apply path that
+    // would consume it is not yet wired; the Lua insert discards it too).
+    {
+        kcdx::refdb::StatementLocator converted;
+        std::string err;
+        if (!kcdx::statement_interface::ConvertLocator(*loc, converted, err)) {
+            LogTeachingError(owningHandle, verbForLog, err);
+            return 0;
+        }
+    }
+
+    return InstallNonCallsite(target, callback, opts, mode, verbForLog,
+                              /*insertPending=*/true);
+}
+
 // -----------------------------------------------------------------------
-// Sub-verb thunks (6) — one per kcdxHookInterface install method.
+// Sub-verb thunks (8) — one per kcdxHookInterface install method.
 // -----------------------------------------------------------------------
 
 kcdxHookHandle Thunk_Before(const char* target, void* callback,
@@ -571,6 +685,16 @@ kcdxHookHandle Thunk_Mid(const char* target, void* callback,
 kcdxHookHandle Thunk_Callsite(const char* target, void* callback,
                               const kcdxHookOptions* opts) {
     return InstallCallsite(target, callback, opts);
+}
+kcdxHookHandle Thunk_InsertBefore(const char* target, void* callback,
+                                  const kcdxHookOptions* opts) {
+    return InstallInsert(target, callback, opts,
+                         kcdx::hook_payload::Mode::Before, "InsertBefore");
+}
+kcdxHookHandle Thunk_InsertAfter(const char* target, void* callback,
+                                 const kcdxHookOptions* opts) {
+    return InstallInsert(target, callback, opts,
+                         kcdx::hook_payload::Mode::After, "InsertAfter");
 }
 
 // -----------------------------------------------------------------------
@@ -627,16 +751,19 @@ bool Thunk_Uninstall(kcdxHookHandle h) {
 // -----------------------------------------------------------------------
 
 kcdxHookInterface g_hookInterface = {
-    /*Before=*/   Thunk_Before,
-    /*After=*/    Thunk_After,
-    /*Around=*/   Thunk_Around,
-    /*Replace=*/  Thunk_Replace,
-    /*Mid=*/      Thunk_Mid,
-    /*Callsite=*/ Thunk_Callsite,
-    /*IsApplied=*/Thunk_IsApplied,
-    /*GetReason=*/Thunk_GetReason,
-    /*GetName=*/  Thunk_GetName,
-    /*Uninstall=*/Thunk_Uninstall,
+    /*Before=*/      Thunk_Before,
+    /*After=*/       Thunk_After,
+    /*Around=*/      Thunk_Around,
+    /*Replace=*/     Thunk_Replace,
+    /*Mid=*/         Thunk_Mid,
+    /*Callsite=*/    Thunk_Callsite,
+    /*IsApplied=*/   Thunk_IsApplied,
+    /*GetReason=*/   Thunk_GetReason,
+    /*GetName=*/     Thunk_GetName,
+    /*Uninstall=*/   Thunk_Uninstall,
+    // v3 append-only members — same order as the struct's append zone.
+    /*InsertBefore=*/Thunk_InsertBefore,
+    /*InsertAfter=*/ Thunk_InsertAfter,
 };
 
 }  // namespace

@@ -7,9 +7,12 @@
 // owns ONLY the C-ABI edge: argument validation with teaching errors, the
 // kcdxOp → OpView classification call (lua_bind_op::BuildOpView — the one
 // shared per-op table), the kcdxLocator → refdb::StatementLocator field
-// mapping (this file is that conversion's one home), and the target-name
-// resolution (positional string, or the opts->targetRef reference which wins
-// when set). No queue/validation/emit logic is duplicated here.
+// mapping (this file is that conversion's one home — ConvertLocator, exposed
+// through statement_interface.h and shared with the hook interface's insert
+// thunks), and the target-name resolution (positional string, or the
+// opts->targetRef reference which wins when set; the ref-collapse semantics
+// are the shared CollapseTargetRef, also exposed through the header). No
+// queue/validation/emit logic is duplicated here.
 //
 // The insert thunks mirror the register-and-DEFER contract: the statement-
 // locator capture-thunk apply path is unwired on BOTH surfaces, so an insert
@@ -42,30 +45,11 @@
 
 namespace kcdx::statement_interface {
 
-namespace {
-
-// Push a teaching error to the engine log + the calling plugin's log (the
-// auto-loud-on-failure contract every registration method documents). The
-// caller's plugin handle drives the per-plugin routing; kcdxInvalidPluginHandle
-// falls back to engine-only. Same shape as the hook interface's teaching-error
-// helper so the two surfaces grep alike.
-void LogTeachingError(kcdxPluginHandle owningPlugin,
-                      const char* verb,
-                      const std::string& msg) {
-    LOG_ERROR_KV("STATEMENT_INTERFACE", "register_failed",
-        ::kcdx::log::KV("verb",   verb),
-        ::kcdx::log::KV("plugin", kcdx::plugins::NameForHandle(owningPlugin).c_str()),
-        ::kcdx::log::KV("reason", msg.c_str()));
-    if (owningPlugin != kcdxInvalidPluginHandle) {
-        LOG_PLUGIN_ERROR(owningPlugin, "STATEMENT_INTERFACE",
-            "kcdxStatementInterface::%s — %s", verb, msg.c_str());
-    }
-}
-
 // kcdxLocator → refdb::StatementLocator — the C-ABI locator's ONE conversion
-// home. A pure field mapping: each kind copies its own operand(s); a null
-// C-string maps to the empty/unset form; a non-null Matching key sets its
-// has_ flag (null = key not provided, the C-ABI spelling of the Lua
+// home (declared in statement_interface.h; shared with the hook interface's
+// insert thunks). A pure field mapping: each kind copies its own operand(s);
+// a null C-string maps to the empty/unset form; a non-null Matching key sets
+// its has_ flag (null = key not provided, the C-ABI spelling of the Lua
 // matching{} table's absent key). Returns false + a teaching reason on an
 // unrecognized kind value or a missing required operand — fail loud, never a
 // silently-defaulted locator.
@@ -171,33 +155,66 @@ bool ConvertLocator(const kcdxLocator& in, refdb::StatementLocator& out,
     return false;
 }
 
+// Collapse a target-by-reference kcdxFunctionRef to its carried name —
+// declared in statement_interface.h, the ONE home of the ref-as-target
+// semantics shared by the statement verbs' opts->targetRef AND the hook
+// verbs' opts->targetRef (src/hook_interface.cpp). The reference collapses to
+// its carried name (the same behavior the Lua verbs' reference-value target
+// path has); a not-found or nameless reference fails loud, never a silent
+// fallback.
+bool CollapseTargetRef(const kcdxFunctionRef& ref, std::string& nameOut,
+                       std::string& err) {
+    if (!ref.found) {
+        err = std::string("opts.targetRef carries found=false (reason \"") +
+              (ref.reason ? ref.reason : "") +
+              "\") — a reference that did not resolve cannot name a "
+              "target. Mint it via kcdxFunctionsInterface and check "
+              "ref.found before passing it.";
+        return false;
+    }
+    if (!ref.name || !ref.name[0]) {
+        err = "opts.targetRef carries no resolvable name (a GameById "
+              "reference — the id is its handle, not a name). The verb "
+              "resolves its target by the curated function NAME: pass a "
+              "GameByName / PluginByName reference, or the name string as "
+              "`target`.";
+        return false;
+    }
+    nameOut = ref.name;
+    return true;
+}
+
+namespace {
+
+// Push a teaching error to the engine log + the calling plugin's log (the
+// auto-loud-on-failure contract every registration method documents). The
+// caller's plugin handle drives the per-plugin routing; kcdxInvalidPluginHandle
+// falls back to engine-only. Same shape as the hook interface's teaching-error
+// helper so the two surfaces grep alike.
+void LogTeachingError(kcdxPluginHandle owningPlugin,
+                      const char* verb,
+                      const std::string& msg) {
+    LOG_ERROR_KV("STATEMENT_INTERFACE", "register_failed",
+        ::kcdx::log::KV("verb",   verb),
+        ::kcdx::log::KV("plugin", kcdx::plugins::NameForHandle(owningPlugin).c_str()),
+        ::kcdx::log::KV("reason", msg.c_str()));
+    if (owningPlugin != kcdxInvalidPluginHandle) {
+        LOG_PLUGIN_ERROR(owningPlugin, "STATEMENT_INTERFACE",
+            "kcdxStatementInterface::%s — %s", verb, msg.c_str());
+    }
+}
+
 // Resolve the registration's target NAME: opts->targetRef WINS when set (the
 // resolve-once-pass-to-N-verbs affordance — the reference collapses to its
-// carried name, the same behavior the Lua verbs' reference-value target path
-// has); otherwise the positional `target` string is used (the common path).
-// Returns false + a teaching reason on a not-found / nameless reference or a
-// missing target — fail loud, never a silent fallback.
+// carried name via the shared CollapseTargetRef, the same semantics the hook
+// verbs' opts->targetRef uses); otherwise the positional `target` string is
+// used (the common path). Returns false + a teaching reason on a not-found /
+// nameless reference or a missing target — fail loud, never a silent
+// fallback.
 bool ResolveTargetName(const char* target, const kcdxStatementOptions* opts,
                        std::string& nameOut, std::string& err) {
     if (opts && opts->targetRef) {
-        const kcdxFunctionRef* ref = opts->targetRef;
-        if (!ref->found) {
-            err = std::string("opts.targetRef carries found=false (reason \"") +
-                  (ref->reason ? ref->reason : "") +
-                  "\") — a reference that did not resolve cannot name a "
-                  "target. Mint it via kcdxFunctionsInterface and check "
-                  "ref.found before passing it.";
-            return false;
-        }
-        if (!ref->name || !ref->name[0]) {
-            err = "opts.targetRef carries no resolvable name (a GameById "
-                  "reference — the id is its handle, not a name). A statement "
-                  "resolves by the curated function NAME: pass a GameByName / "
-                  "PluginByName reference, or the name string as `target`.";
-            return false;
-        }
-        nameOut = ref->name;
-        return true;
+        return CollapseTargetRef(*opts->targetRef, nameOut, err);
     }
     if (target && target[0]) {
         nameOut = target;
