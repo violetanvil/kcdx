@@ -585,7 +585,14 @@ int BuildAndQueueHook(lua_State* L, const HookSpec& spec, const char* verb,
         // Advanced [opts] locators (the labeled escape hatch).
         p->targetSymbol       = OptString(L, optsIdx, "target_symbol");
         p->targetLuaCfunction = OptString(L, optsIdx, "target_lua_cfunction");
-        p->address            = OptAddress(L, optsIdx);
+        // An opts address= OVERRIDES, but ONLY when present — OptAddress returns 0
+        // when absent, and an unconditional assign would CLOBBER a raw VA already
+        // taken from the target positional (lines above) back to 0, leaving the
+        // hook at address 0 (installs, never fires). Only overwrite on a real opts
+        // address.
+        if (const uintptr_t optsAddr = OptAddress(L, optsIdx); optsAddr != 0) {
+            p->address = optsAddr;
+        }
         const std::string patternStr = OptString(L, optsIdx, "pattern");
         const std::string contextStr = OptString(L, optsIdx, "context");
         const std::string anchorStr  = OptString(L, optsIdx, "anchor_string");

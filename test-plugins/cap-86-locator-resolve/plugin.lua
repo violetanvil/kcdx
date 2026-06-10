@@ -356,14 +356,33 @@ kcdx.on("ready", function()
                     .. "insert sub-verb did not accept a valid locator + curated "
                     .. "target (registration shape regressed)")
             else
-                -- By ready the apply pass has run; the insertPending entry is
-                -- Failed with the not-yet-wired teaching reason. Assert it did
-                -- NOT silently apply, and the reason names the unwired path.
+                -- The insert entry must NOT silently fire. :applied() is the
+                -- 3-state handle status: nil = Pending (the end-of-zone apply
+                -- pass has not reached this site yet — registered, not installed),
+                -- false = Failed (the apply pass ran and the insertPending entry
+                -- was DEFERRED with the not-yet-wired reason), true = Applied (a
+                -- statement hook went LIVE — the deferral broke). The contract
+                -- this row pins is "insert registers AND does NOT silently apply"
+                -- — BOTH Pending (nil) and Failed-deferred (false + reason)
+                -- satisfy it; only Applied (true) is the failure. The apply pass
+                -- fires at end-of-zone, which may be after this ready callback for
+                -- this site, so Pending is a valid not-yet-applied state, not a
+                -- regression. When the statement-capture apply path lands, this
+                -- flips to a fire-assert.
                 local applied = h:applied()
                 local reason  = tostring(h:reason())
+                local pending  = (applied == nil)
                 local deferred = (applied == false)
                     and (reason:find("not yet wired in the engine", 1, true) ~= nil)
-                if deferred then
+                if pending then
+                    kcdx.test.report(row, true,
+                        "insert_before registered (handle non-nil) and the entry "
+                        .. "is PENDING at ready (:applied()==nil — the end-of-zone "
+                        .. "apply pass has not reached this site yet); it did NOT "
+                        .. "silently apply. The registration shape holds; this flips "
+                        .. "to a fire-assert when the statement-capture apply path "
+                        .. "lands (PENDING-CONTRACT row)")
+                elseif deferred then
                     kcdx.test.report(row, true,
                         "insert_before registered (handle non-nil) and the entry "
                         .. "is HONESTLY DEFERRED at apply — :applied()==false, "
@@ -374,12 +393,11 @@ kcdx.on("ready", function()
                 else
                     kcdx.test.report(row, false,
                         "insert_before handle :applied()=" .. tostring(applied)
-                        .. " :reason()=\"" .. reason .. "\" — expected "
-                        .. ":applied()==false AND the reason to contain \"not yet "
-                        .. "wired in the engine\". A silent apply (applied true) "
-                        .. "means a never-firing statement hook went live (the "
-                        .. "deferral broke); a changed reason means the apply-path "
-                        .. "state moved without this row being updated")
+                        .. " :reason()=\"" .. reason .. "\" — expected Pending "
+                        .. "(:applied()==nil) OR Failed-deferred (:applied()==false "
+                        .. "AND reason contains \"not yet wired in the engine\"). A "
+                        .. "silent apply (:applied()==true) means a never-firing "
+                        .. "statement hook went live — the deferral broke")
                 end
             end
         end
