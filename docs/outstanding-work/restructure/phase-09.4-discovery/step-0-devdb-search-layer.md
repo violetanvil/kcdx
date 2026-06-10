@@ -74,6 +74,45 @@ forces it.)
 - Record: `{function, module, rva, decompile_quality, statements = [{idx, kind,
   pseudo_text, captures, applicable_ops}]}` — `function` = curated name or `auto_name`;
   `decompile_quality` decoded from the dict; `statements` from `EnumerateStatements`.
+- **`applicable_ops` per statement (user-settled 2026-06-10) = the real `kcdx.op.*`
+  op NAMES whose declared required-statement-kind matches that statement's kind**,
+  sourced from the shipped Phase 9.3 op catalog's per-op kind declarations
+  (`src/lua_bind_op.cpp` — each op declares the statement kind(s) it applies to). The
+  kind→ops mapping, from the op catalog (NOT a placeholder kind-echo):
+
+  | statement `kind` | `applicable_ops` |
+  |---|---|
+  | `branch` (conditional jump) | `always_take_branch`, `never_take_branch`, `invert_branch_condition` |
+  | `call` | `skip_call_void`, `skip_call_return_value`, `replace_call_target` |
+  | `return` | `replace_with_return`, `replace_return_value` |
+  | `assign` | `replace_assignment_value` |
+  | (any statement) | `replace_with_noop` is appended to every kind above |
+  | `store` / `other` / `none` | `replace_with_noop` only |
+
+  **`applicable_ops` lists only catalog ops REACHABLE in the corpus** — the ops the
+  author can ACTUALLY apply to a statement the discovery tool surfaces. The op
+  `replace_compare_constant` is **deliberately omitted**: the op catalog declares it
+  requires statement kind `compare` (`src/lua_bind_op.cpp` `RequiredKind::Compare`),
+  but the dev DB corpus emits ZERO `compare` statements (the `statements.kind` dict is
+  `store/call/return/branch/assign/other/none` — no `compare`). So no statement the
+  tool can ever surface matches it; listing it under any kind would make `kcdx.find`
+  name a move that `kcdx.statement.replace_with`'s own kind-gate then REJECTS — the
+  two surfaces contradicting each other (`.claude/rules/anti-patterns.md` AP14: the
+  tool must not name a move the author cannot make). The op stays in the catalog (a
+  future corpus carrying `compare` statements re-includes it); `applicable_ops` is the
+  catalog ops reachable in the corpus, not the whole catalog.
+
+  **Why:** the discovery tool TELLS the author exactly which `kcdx.op.*` ops fit a
+  located site — the disassembler-test payoff (declare intent, the engine names the
+  moves; `.claude/rules/cornerstones.md`). The mapping is derived from the op catalog's
+  kind declarations (`src/lua_bind_op.cpp`'s kind-check) INTERSECTED with the kinds the
+  corpus actually emits — never guessed. The list is op NAMES the author then uses
+  verbatim in `kcdx.statement.replace_with(...)`. (`replace_with_noop` applies to any
+  statement, so it is always present; the kind-specific ops are added per the table.)
+  The authority for the per-op required-kind is the op catalog itself — step 0
+  reads/mirrors that table for the kinds the corpus carries, it does not re-invent
+  which op fits which kind. If a future op is added to the catalog (or the corpus gains
+  a new kind), this mapping is updated to match.
 - **Cap 500:** over-500 → first 500 + `_truncated = true` + `_total_matches = N`
   (loud, not silent).
 - **Ranking (user-settled 2026-06-10):** `ORDER BY decompile_quality DESC, rva ASC`
@@ -84,8 +123,18 @@ forces it.)
 
 Resolve `fn` (curated name or `auto_name`) → its `address_version_id` → its
 idx-ordered statements (kind / pseudo_text / captures / applicable-ops). The
-not-found path returns a name-similarity suggestion (step 2 renders the teaching
+not-found path returns a **name-similarity suggestion** (step 2 renders the teaching
 error).
+
+**Name-similarity = Levenshtein edit-distance ranked (user-settled 2026-06-10).** On a
+not-found `fn`, rank candidate names by edit-distance to `fn` (nearest first), return
+the top suggestion(s). Candidate set = the curated `address_names.name` set (157) +
+`auto_name` matches; realistically the suggestion helps on the curated set (a typo of a
+curated name) since `auto_name` is `FUN_<rva>`. **Why:** edit-distance ranks a 1-char
+typo first — the documented example `IsInCombatt` → `Did you mean: IsInCombat?`
+(distance 1) resolves correctly, which substring matching would miss when the typo is
+not a substring of the real name. A small Levenshtein helper, run ONLY on the
+not-found path (cold — not a hot path, `.claude/rules/memory.md` does not bind here).
 
 ## Scope (`src/refdb.{h,cpp}`)
 

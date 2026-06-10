@@ -21,7 +21,11 @@ dev mode + the dev DB's presence.
   the path above), never an unhandled error. The gate is checked before the
   not-found path below.
 - **Not-found UX (dev DB present, function unknown):** teaching error with
-  name-similarity suggestion + recommended next step:
+  name-similarity suggestion + recommended next step. The suggestion is **Levenshtein
+  edit-distance ranked** (user-settled 2026-06-10; the algorithm lives in step 0's
+  `EnumerateStatements` — [`step-0-devdb-search-layer.md`](step-0-devdb-search-layer.md)
+  §"`EnumerateStatements`"): the nearest curated name by edit-distance, so a 1-char
+  typo resolves to its intended target:
   ```
   [ERROR] no function 'IsInCombatt' in WHGame.dll for KCD2 1.5.1164953.
   Did you mean: IsInCombat? Try:
