@@ -67,7 +67,7 @@ DUMP_DIR = os.path.normpath(
 DLL_PATH = os.path.normpath(
     os.path.join(HERE, "..", "..", "..", "third-party-ghidra", "WHGame.dll"))
 REPO_ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
-REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
+REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
 sys.path.insert(0, PYDIR)
 import import_to_sqlite as imp  # noqa: E402

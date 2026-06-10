@@ -65,7 +65,7 @@ PYDIR = os.path.normpath(os.path.join(HERE, "..", "python"))
 DUMP_DIR = os.path.normpath(
     os.path.join(HERE, "fixtures", "mini-dump", "refdata-1.5.1164953"))
 REPO_ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
-REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
+REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
 sys.path.insert(0, PYDIR)
 import import_to_sqlite as imp  # noqa: E402
