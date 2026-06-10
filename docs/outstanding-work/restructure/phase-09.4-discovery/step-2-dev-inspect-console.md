@@ -32,8 +32,9 @@ dev mode + the dev DB's presence.
 
 ## Dependencies
 
-Independent of step 1 (different command), shares the dev-DB resolution + the
-dev-mode/dev-DB gate (step 1 establishes both; this reuses them).
+**Consumes step 0's `refdb::EnumerateStatements(fn)` + dev-DB connection + the
+dev-mode/dev-DB gate** ([`step-0-devdb-search-layer.md`](step-0-devdb-search-layer.md)).
+Independent of step 1 (different command), shares step 0's surface.
 
 ## Test bar
 

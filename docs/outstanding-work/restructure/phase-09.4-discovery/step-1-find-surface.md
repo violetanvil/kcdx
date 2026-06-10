@@ -21,13 +21,20 @@ backs `callers_of` / `callee_in_subsystem`). See [`TD-0006`](../../../tech-debt/
 
 ## Scope (`src/lua_bind_find.cpp`)
 
+- **Consumes step 0's `refdb::FindFunctions(criteria)` search surface** — this step is
+  the Lua/console binder over it, NOT the search engine (that is step 0). The dev-DB
+  connection + the per-criterion query strategy live in step 0
+  ([`step-0-devdb-search-layer.md`](step-0-devdb-search-layer.md) §"Settled
+  search-layer design").
 - `kcdx.find(criteria_table)` — table REQUIRED (the at-least-one-of-N case),
   validated at parse-time to contain at least one criterion. Criteria: `string`,
   `cvar`, `callers_of`, `callee`, `name_contains`, `callee_in_subsystem` (all
-  serveable from the dev DB; `callers_of` / `callee_in_subsystem` read `call_edges`).
-- Resolves against the **dev DB** at `<game-bin>/kcdx-engine/data/reference-dev.sqlite`
-  (a separate ~1.3GB artifact, NOT in the release zip — opened read-only, separately
-  from the shipped `reference.sqlite` the production resolver uses).
+  serveable from the dev DB; `callee` / `callers_of` / `callee_in_subsystem` resolve
+  via `statements.callee` TEXT match — `call_edges` is unused, step 0 §design).
+- Resolves through step 0's **dev-DB** surface (the connection at
+  `<game-bin>/kcdx-engine/data/reference-dev.sqlite` — a separate ~1.3GB artifact, NOT
+  in the release zip — opened read-only by step 0, separately from the shipped
+  `reference.sqlite` the production resolver uses).
 - Returns a Lua table of records: `{function, module, rva, decompile_quality,
   statements = [{idx, kind, pseudo_text, captures, applicable_ops}]}`.
 - **Dev-mode + dev-DB gate (graceful, fail-loud).** When dev mode is OFF
