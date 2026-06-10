@@ -34,9 +34,19 @@ non-function checks + the anchor-dependency DAG (3c5e065), 3.3 the startup reach
 version-applicability + D34 attribution pass (69c7cc2), 3.4 the JS↔C++ cross-impl agreement pin
 (ffc51ae). One follow-up filed: TD-0009 (the engine↔browser agreement is HARD-pinned for the 4
 algorithm-identical kinds; the 3 superset kinds, where the engine computes more than the
-browser/Python subset by design, are deferred for reconciliation). **Next: Phases 4–5** (the in-game
-batch plugin that drives the 3.3 startup verification pass + writes the JSON report; the frontend
+browser/Python subset by design, are deferred for reconciliation). **Next: Phase 4** (the engine
+rank-ladder), then Phase 5 (the console-triggered sweep + v3 report), then Phase 6 (the frontend
 report ingestion / two-block worklist).
+
+**Phases 4–5 RE-PLANNED 2026-06-09 against D36 (active-attempt verification).** The original single
+Phase 4 (a static boot-automatic sweep) was superseded by the D36 design revision (the 7-state
+verdict enum + the 5-rank proof ladder + the live-exercise tier + the console-after-save-load
+trigger). It is now TWO phases: **Phase 4** extends the engine checker into the rank-ladder + the
+per-kind matrix (§11.6) — engine-only, synthetic boot self-tests; **Phase 5** is the
+`kcdx_verify_all` console-after-save-load sweep that drives the ladder, streams per-row to the
+console, and emits the v3 report. The frontend report-ingestion phase renumbered Phase 5 → **Phase
+6** (its content unchanged; it consumes the v3 report Phase 5 produces). Design authority:
+`data/maintainer-tool/design.md` D36 + §11.6 + D33(rev) (`3ede052`).
 
 **Phase-3 in-game acceptance: ACCEPTED at the 2026-06-09 live launch.** Once KI-0012 (the
 parallel-lane boot crash, NOT survival code) landed and the then-current DLL was re-deployed +
@@ -54,5 +64,6 @@ cap-90-pdb-internal-address) are other lanes, not Phase-3 rows. The phase gate i
 | [Phase 1 — Shared contracts](phase-01-contracts/README.md) | DONE | ccd37e1 (1.1 e8a06cc, 1.2 35445b7, 1.3 ccd37e1) |
 | [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | DONE | (landed) — 2.1–2.7 all DONE (FE:1459367/66f4716/d611c21/e83a57c/0ed135d+bfdff6f/00b2e78…27aa470 + 2.6a 9d84fcf + 2.7 FE:7d2d6fa); the browser checker + s02 install-set link + s04 verdict badge + the link-to-create on-ramp. 2.6 + 2.7 milestone UATs both accepted |
 | [Phase 3 — C++ engine survival extension](phase-03-engine-survival/README.md) | DONE | ffc51ae — 3.1 per-kind dispatch + Ambiguous (8008e3d), 3.2 the 5 static non-function checks + anchor DAG (3c5e065), 3.3 the startup reachability + on-disk version-applicability + D34 attribution pass (69c7cc2), 3.4 the JS↔C++ cross-impl agreement pin (ffc51ae). The full per-kind survival authority the browser mirrors (D27); cap-84 + cap-85 self-tests. Follow-up: TD-0009 (engine↔browser agreement scoped to the 4 identical kinds; 3 superset kinds deferred). |
-| [Phase 4 — In-game plugin + report](phase-04-ingame-plugin/README.md) | NOT STARTED | — |
-| [Phase 5 — Frontend report ingestion](phase-05-report-ingestion/README.md) | NOT STARTED | — |
+| [Phase 4 — Engine rank-ladder + per-kind matrix (D36)](phase-04-engine-rank-ladder/README.md) | NOT STARTED | — |
+| [Phase 5 — Console-triggered batch sweep + v3 report (D36)](phase-05-plugin-sweep/README.md) | NOT STARTED | — |
+| [Phase 6 — Frontend report ingestion](phase-06-report-ingestion/README.md) | NOT STARTED | — |

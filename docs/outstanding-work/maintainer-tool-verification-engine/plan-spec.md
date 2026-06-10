@@ -253,35 +253,49 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 | JS↔Python agreement test (the pure-byte + derivation kinds) | P2 step 3, P2 step 4 | JS checked against the Python reference (D27) |
 | The cross-impl known-DLL fixture + known per-kind verdicts | P0 step 5 | The fixture the agreement tests pin against |
 
-### Group D — in-game plugin
+### Group D — engine rank-ladder + the in-game plugin (RE-PLANNED 2026-06-09 against D36)
+
+The original single in-game-plugin phase (a static boot-automatic sweep) was superseded by D36
+(the active-attempt model). It is now Phase 4 (the engine rank-ladder, P4) + Phase 5 (the
+console-triggered sweep, P5). The FE report-ingestion phase renumbered to Phase 6 (Groups E/H/I
+below).
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| The batch verification plugin (drives the engine checker over the curated set) | P4 step 1 | A kcdx test-suite plugin (D28) |
+| **7-state verdict enum + the ceiling rule** (verdict = ceiling of strongest method that ran; only rank-1 awards `verified_working`) | **P4 step 1** | D36 — extends the Phase-3 4-verdict `RowVerdict` |
+| **`not_applicable` verdict produced** (rank-4 version-check finds the running build's version NOT covered by the row — the gap case; distinct from `cannot_check`) | **P4 step 1** | D36 — the version-gap producer; D36 forbids collapsing it with `cannot_check` |
+| **`error` verdict produced** (a check/dispatch fault, caught — the harness blew up, the row is not condemned; distinct from `failed`) | **P4 step 1** | D36 — the harness-fault producer; D36 forbids collapsing it with `failed` |
+| **`skipped` verdict produced** (a precondition unmet this run — menu-run with no save loaded) | **P5 step 2** | D36 — produced by the save-load precondition gate |
+| **rank-1 observed-execution tier** (hook-fire + pass-through; kcdx's own production call) | **P4 step 2** | D36 — the only tier awarding `verified_working`; observe, never synthetic-invoke |
+| **rank-2 safe-read tier** (cvar read + read-only vtable_base walk) | **P4 step 3** | D36 — caps at `passed_not_verified`; reuses `cvar.cpp` |
+| **per-kind ceiling matrix** (§11.6 — each kind → highest reachable rank + default `invoke_attempted`/`invoke_skip_reason`) | **P4 step 4** | §11.6 — the per-row method dispatcher |
 | The JSON verification report schema v1 (the cross-repo contract) | P1 step 2 | Frozen versioned schema (D28/D31b) |
-| Report schema **v2** — `matched_address_version_id` + `schema_version` 1→2 | **P1 step 3** | The attribution field (D34); a versioned bump of the frozen schema |
-| Sweep dev-mode-gated, runs at startup | P4 step 1 | Self-skips outside `dev_mode`, once at startup (D33) |
-| Sweep scope = curated USER set only | P4 step 1 | The `kcdx_id` rows; NOT the ~321k DEV bulk rows (D33) |
-| Attribution: match swept bytes vs each candidate row's fingerprint → matched id | P3 step 3 | Engine reports WHICH row matched (D34) |
-| Report emission to v2 schema (per row: kcdx_id, version, verdict, detail, matched_address_version_id) | P4 step 1 | Written alongside `kcdx-dev.log` (D28/D34) |
-| Report write-location | P4 step 1 | Alongside `kcdx-dev.log` (D28) |
-| The test-suite matrix row + deploy to all 3 plugin trees | P4 step 1 | `test-suite.md`; matrix row + 3-tree deploy |
+| Report schema **v2** — `matched_address_version_id` + `schema_version` 1→2 | P1 step 3 | The attribution field (D34); a versioned bump of the frozen schema |
+| **Report schema v3** — the 7-state enum + `method_rank` + `invoke_attempted` + `invoke_skip_reason` + redefined `summary`; `schema_version` 2→3 | **P5 step 1** | D36 — the active-attempt cross-repo contract |
+| The batch verification plugin (drives the engine rank-ladder over the curated set) | P5 step 3 | A kcdx test-suite plugin (D28) |
+| **Console command `kcdx_verify_all` (dev-mode-gated) + the save-load precondition** | **P5 step 2** | D33(rev) — replaces the boot-automatic trigger; menu-run → `skipped` (D36) |
+| Sweep scope = curated USER set only | P5 step 3 | The `kcdx_id` rows; NOT the ~321k DEV bulk rows (D33) |
+| **Per-row console streaming** (a line per row as each attempt completes) | P5 step 3 | D36 — never reads as a hang |
+| Attribution: match swept bytes vs each candidate row's fingerprint → matched id | P3 step 3 | Engine reports WHICH row matched (D34); driven per row by P5 step 3 |
+| Report emission to v3 schema (per row: kcdx_id, version, the 7-state verdict, method_rank, invoke_attempted, invoke_skip_reason, detail, matched_address_version_id) | P5 step 3 | Written alongside `kcdx-dev.log` (D28/D34/D36) |
+| `evidence_kind` from the passing check's tier (live-exercise → `live_production`) | P5 step 3 | D29 — the tier sets the evidence label |
+| The test-suite matrix row + deploy to all 3 plugin trees | P5 step 3 | `test-suite.md`; matrix row + 3-tree deploy |
 | C++ read pe_helpers surface scoping (does it expose spans + a disp32 follower?) | P0 step 3 | Probe — scoping finding for P3 |
-| The in-game version-applicability + reachability signal (resolves_works / dead / wrong_target) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / P4 |
+| The in-game version-applicability + reachability signal (the static ranks 3–4 of the ladder) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / the rank-3/4 static checks |
 
 ### Group E — report ingestion
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| Import (File API, client-side, v2 schema) | P5 step 1 | Frontend reads `report.json` (D31b); validates against v2 (D34) |
-| Ingest progress bar | P5 step 1 | Determinate progress (D31c) |
-| The TWO-block worklist (verified / failing) | P5 step 1 | s08 populated state, two blocks (D35) |
-| The matched-`address_version`-id column + snake_case verdict tokens | P5 step 1 | The matched id (D34); the frozen snake_case tokens |
-| The s08 states (incl. per-block disabled) | P5 step 1 | Built to the revised s08 spec |
-| Verify-all → s06 batch confirm (trio + gap-pass `valid_through` extend) | P5 step 2 | One batched confirm; the matched row's interval extended on a gap-pass (D32/D34) |
-| Close-intervals → s06 batch confirm (`valid_through` → `last_verified_at_version`) | P5 step 2 | The failing block's batch action (D35) |
-| A failure = UNVERIFIED-by-derivation (no "failed" field) | P5 step 2 | Not advancing `last_verified_at_version` (D35; `policy.md`) |
-| Confirm-spine routing (both batches through validate→confirm→commit) | P5 step 2 | Data-core sole writer (D28/law 6) |
+| Import (File API, client-side, v3 schema) | P6 step 1 | Frontend reads `report.json` (D31b); validates against the **v3** schema (D36 — the producer emits v3) |
+| Ingest progress bar | P6 step 1 | Determinate progress (D31c) |
+| The TWO-block worklist (verified / failing) | P6 step 1 | s08 populated state, two blocks (D35); the verified block = `verified_working`+`passed_not_verified`, the failing block = `failed` (D36 mapping) |
+| The matched-`address_version`-id column + the 7-state verdict tokens | P6 step 1 | The matched id (D34); the D36 7-state verdict set + `method_rank` |
+| The s08 states (incl. per-block disabled) | P6 step 1 | Built to the revised s08 spec |
+| Verify-all → s06 batch confirm (trio + gap-pass `valid_through` extend) | P6 step 2 | One batched confirm; the matched row's interval extended on a gap-pass (D32/D34) |
+| Close-intervals → s06 batch confirm (`valid_through` → `last_verified_at_version`) | P6 step 2 | The failing block's batch action (D35) |
+| A failure = UNVERIFIED-by-derivation (no "failed" field) | P6 step 2 | Not advancing `last_verified_at_version` (D35; `policy.md`) |
+| Confirm-spine routing (both batches through validate→confirm→commit) | P6 step 2 | Data-core sole writer (D28/law 6) |
 
 ### Group F — install-set link surface (D30 revised)
 
@@ -302,7 +316,7 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 |---|---|---|
 | auto-fill `evidence_kind` by check (static → `pattern_scan`) | P2 step 7, P2 step 6 | The check refines the tier (D29) |
 | compose with the audit-trio auto-fill | P2 step 7 | Check refines from the `maintainer_ghidra` default (D29) |
-| `evidence_kind` `live_production` from the in-game check (via s08) | P5 step 2 | Set on bulk re-verify (D28/D29) |
+| `evidence_kind` `live_production` from the in-game check (via s08 bulk re-verify) | P6 step 2 | Set on bulk re-verify in the FE worklist (D28/D29); the engine-side tier-from-check is P5 step 3 |
 
 ### Group H — UX surfaces (covered within the UI steps that build them)
 
@@ -312,8 +326,8 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 | s02 LAYOUT (compact pinned header + one-line verify summary + collapsible Verify/Lifecycle sections + the work surface gets the room) | P2 step 5 | Built to the revised s02 §"Region & position" + the detail-pane model |
 | s02 per-module link-row REFLOW-SAFE structure (stable top line + reserved message space) | P2 step 5 | Built to the revised s02 §"States & variants" (the reflow fix, law 1) |
 | s04 verdict-badge UX (inline, reserved, `[show matches]` steer) | P2 step 6 | Built to s04 spec |
-| s08 worklist UX (import, progress, split, batch action) | P5 step 1 | Built to s08 spec |
-| s06 batch-confirm UX (per-row delta list) | P5 step 2 | Built to s08/§7 (D32) |
+| s08 worklist UX (import, progress, split, batch action) | P6 step 1 | Built to s08 spec |
+| s06 batch-confirm UX (per-row delta list) | P6 step 2 | Built to s08/§7 (D32) |
 
 ### Group I — deferred (user-decided)
 
@@ -326,11 +340,11 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| Law-4 extension (advisory) — 6 clauses (static verdicts + ingested live report + Ambiguous-steers + version-match-gate + no-DLL-upload + no auto-act) | P2 step 5, P2 step 6, P5 step 1, P5 step 2 | Each clause holds in the screen that exercises it (law 4) |
-| 5 component silhouettes (`verdict badge`, `ingest progress bar`, `batch field-delta list`, `per-module link row`, `collapsible section`) | `per-module link row` + `collapsible section` P2 step 5; `verdict badge` P2 step 6 + P5 step 1; `ingest progress bar` P5 step 1; `batch field-delta list` P5 step 2 | Each rendered once in the screen that owns it; `collapsible section` is the s02-layout disclosure |
+| Law-4 extension (advisory) — 6 clauses (static verdicts + ingested live report + Ambiguous-steers + version-match-gate + no-DLL-upload + no auto-act) | P2 step 5, P2 step 6, P6 step 1, P6 step 2 | Each clause holds in the screen that exercises it (law 4) |
+| 5 component silhouettes (`verdict badge`, `ingest progress bar`, `batch field-delta list`, `per-module link row`, `collapsible section`) | `per-module link row` + `collapsible section` P2 step 5; `verdict badge` P2 step 6 + P6 step 1; `ingest progress bar` P6 step 1; `batch field-delta list` P6 step 2 | Each rendered once in the screen that owns it; `collapsible section` is the s02-layout disclosure |
 | Version&verify-surface (the compact summary + the collapsible install-set link section) | P2 step 5 | The version `Select` + the one-line verify summary + the Bin-folder pick + per-module rows (revised D30 + the s02 layout) |
 | The detail-pane responsive model (lead with the work surface; compact-header + collapse on both breakpoints) | P2 step 5 | `ui/design.md` §"Responsiveness & sizing" |
-| Screen-index / nav-map carrying s08 | P5 step 1 | s08 reached from s01 `[Import verification report]` |
+| Screen-index / nav-map carrying s08 | P6 step 1 | s08 reached from s01 `[Import verification report]` |
 
 ### UI-side — s02 (`s02-entity-detail.md`)
 
@@ -356,8 +370,8 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| The revised Contents elements (import entry, summary header, ingest progress, split control, two-block worklist table + matched-id column, per-block selects, select-all per block, the two bulk actions, fix-row, back, + the verdict per-row + the two batched-confirm prose) | P5 step 1 (import/progress/split/two-block worklist/per-block select/fix/back); P5 step 2 (the two actions → batch confirms) | Built to the revised s08 Contents (D34/D35) |
-| The s08 states (empty / loading-ingesting / populated-two-block / error-malformed / error-unknown-id / per-block-disabled / edge-0-fail / edge-0-pass / edge-long) | P5 step 1 (ingest/worklist states); P5 step 2 (per-block batch-action disabled/edge) | s08 §"States & variants" (revised) |
+| The revised Contents elements (import entry, summary header, ingest progress, split control, two-block worklist table + matched-id column, per-block selects, select-all per block, the two bulk actions, fix-row, back, + the verdict per-row + the two batched-confirm prose) | P6 step 1 (import/progress/split/two-block worklist/per-block select/fix/back); P6 step 2 (the two actions → batch confirms) | Built to the revised s08 Contents (D34/D35) |
+| The s08 states (empty / loading-ingesting / populated-two-block / error-malformed / error-unknown-id / per-block-disabled / edge-0-fail / edge-0-pass / edge-long) | P6 step 1 (ingest/worklist states); P6 step 2 (per-block batch-action disabled/edge) | s08 §"States & variants" (revised) |
 
 ## What is NOT in this plan
 
@@ -365,7 +379,7 @@ records a deferral the USER decided (§9 + D26 + D24), never `/plan`'s own.
   SHAPE is in scope (the 9-kind dispatch carries it; the check returns CannotCheck for it).
   Only the runtime-slot-target population waits.
 - **Job-3 campaign-orchestration UI** — DEFERRED (user-decided, §9). The in-game batch
-  sweep (D28, Phase 4) is the producer; the campaign UI on top is out of v1.
+  sweep (D28, Phase 5) is the producer; the campaign UI on top is out of v1.
 - **No design decisions.** A fork surfaced during build routes to `/design` /
   `senior-architect-consult` (`.claude/rules/design-authority.md`); a step never invents a
   default for a spec gap (`.claude/rules/spec-conformance.md`).
