@@ -80,7 +80,38 @@ probe must DISCRIMINATE which window (if either) is responsible — observe, do 
 | 1 | PROBE A: disable the cap-98 engine self-test (suite-gate off the boot dev-DB consumer) — does the hang go? | DONE | Boot reached `update tick` 246/273, NO crash bundle (vs the hang at `cap-83` 230/259). cap-98 / dev-DB-at-boot IS the hang; 9.4 confirmed the cause, seeds-migration + pre-existing flakiness eliminated. |
 | 2 | PROBE B: re-enable cap-98 but run ONLY the cheap gate query (skip the 30,393-row truncation + the heavy FindFunctions/Enumerate calls) — is it the dev-DB OPEN/connection, or the heavy QUERY, that hangs? | DONE | Boot CLEAN to `update tick` 250/273, NO crash bundle — BUT the ONE cheap gate query took ~20s (dev_db_opened 13:47:25 → gate RESULT 13:47:45). The dev-DB OPEN is fine; the QUERY is the hang. Mechanism: the criteria queries scan `statements` on the UN-INDEXED `string_ref`/`callee` columns (full 5.24M-row scan, `SCAN statements USING INDEX ix_st_av`), ~20s each cold on the boot worker thread; cap-98's 4+ scans exceed the watchdog. |
 
-## Root cause (the falsifiable mechanism — AP17)
+## Root cause — the COMPLETE story (two instances of one pattern: find did corpus work in C++ instead of SQL)
+
+The hang had ONE root pattern with TWO instances. The index fix (`e39412b`) closed the
+first; the re-launch surfaced the second. Both are "find made the engine do corpus-scale
+work that SQL should do":
+
+1. **Unindexed full scan (fixed `e39412b`)** — the criteria queries scanned the 5.24M-row
+   `statements` table on un-indexed `string_ref`/`callee` (~20s cold). Fixed by the two
+   indexes + the sargable `callee_in_subsystem` range rewrite. After this, the QUERIES are
+   fast (measured 0.3s in the re-launch: `dev_db_opened` 14:24:03.542 → first
+   `find_truncated` 14:24:03.842).
+
+2. **Per-id ranking loop (this fix — folded into KI-0016)** — after collecting the matched
+   id set, `FindFunctions` ranked it by reading `(decompile_quality, rva)` for EVERY matched
+   id via an individual `SELECT ... WHERE id=?` round-trip, THEN `std::sort`ing, THEN capping
+   to 500. For the 30,393-match query that is **30,393 sequential SQLite round-trips** —
+   0.48s warm but **~20s COLD** on the boot thread (re-launch: first `find_truncated`
+   14:24:03.842 → cap-98 RESULT 14:24:24.360, a ~20.5s gap with the queries already fast).
+   So the boot no longer HANGS (cap-98 completes, boot reaches `update tick` 250/273, no
+   crash bundle), but the dev tool is still ~20s-slow per broad query — the same
+   UX-cornerstone problem the index fix was meant to solve.
+
+**The fix:** rank + limit IN SQL. Replace the 30,393-round-trip per-id loop with ONE
+set-based query: `SELECT id, decompile_quality, rva FROM address_versions WHERE id IN
+(<the matched set>) ORDER BY (quality, NULL/0→INT_MAX) ASC, rva ASC LIMIT 500`. The
+multi-criterion AND-intersect stays in C++ (it already builds `running`); only the
+ranking loop becomes SQL; `total_matches = running.size()` is unchanged (the truncation
+signal). **Verified byte-exact:** the set-based query's top-500 set + ordering is
+IDENTICAL to the current C++ sort (`cpp_top == sql_top` → True), and runs **0.048s vs
+~20s** (one round-trip returning only the 500 needed rows, not 30,393).
+
+## Root cause (instance 1 — the falsifiable mechanism — AP17)
 
 `refdb::FindFunctions`'s per-criterion queries filter the 5.24M-row `statements` table
 on the **un-indexed** columns `string_ref` (string/cvar criteria) and `callee`
@@ -102,6 +133,22 @@ the lean fix removed that, exposing this underlying full-scan cost.
 **Index fix verified:** adding `CREATE INDEX ON statements(string_ref)` (build ~1.3s)
 makes the gate query `0.0001s` — a ~4000× speedup that eliminates the scan cost. The same
 applies to a `callee` index.
+
+**The settled fix (Option 3 + A, user-decided 2026-06-10; architect Gate A; probed):**
+- **Two indexes in the extractor** (`data/refdata-extractor/python/import_to_sqlite.py`):
+  `statements(callee)` + `statements(string_ref)` — the two 5.24M-row scan columns. Verified:
+  with them, `callee=?` and `string_ref=?` SEEK (`SEARCH ... USING INDEX`). Covers
+  string / cvar / callee / callers_of.
+- **A `refdb.cpp` query rewrite for `callee_in_subsystem`:** its `callee LIKE 'prefix%'`
+  does NOT seek the index (SQLite's default LIKE is case-insensitive → `SCAN`, 0.451s warm /
+  ~20s cold). Rewrite it to the range form `callee >= prefix AND callee < prefix_upper`,
+  which DOES seek (`SEARCH ... USING INDEX`, 0.0001s). Same semantics for an ASCII prefix.
+- **`name_contains` needs NO new index:** the curated side already has `ix_an_name`; the
+  `auto_name` side is a leading-wildcard `%?%` an index can't seek, but it scans only the
+  321k-row `address_versions` table (61× smaller than statements) — measured **0.035s warm**
+  (both sides), fast even cold. No `auto_name` index (it would be unused — leading-wildcard).
+- **Keep cap-98's boot self-test lean** (defense-in-depth): the heavy truncation query need
+  not run at boot once the indexes make it fast; the self-test's contract is still falsifiable.
 
 ## Open questions (the fix is a design fork — Gate A)
 

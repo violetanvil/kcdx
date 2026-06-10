@@ -2911,59 +2911,119 @@ FindResult FindFunctions(const FindCriteria& c) {
 
     result.total_matches = (int64_t)running.size();
 
-    // Rank: decompile_quality ASC, rva ASC (design §"Ranking") — 1=clean before
-    // 2=unanalyzable, best-decompiled first. The id set is
-    // ordered by reading each id's (quality, rva) — done in one pass over the
-    // matched ids, then a sort. The matched-id count is bounded by the corpus
-    // but the result is capped to kFindResultCap records after ranking.
-    struct Ranked { int64_t avId; int quality; uint64_t rva; };
+    // Rank + cap IN SQL, not in C++ (KI-0016 instance 2). The matched id set can
+    // be ~30K ids; reading (decompile_quality, rva) for each via a per-id
+    // `WHERE id = ?` round-trip + std::sort was ~20s COLD on the boot thread
+    // (30,393 sequential SQLite round-trips). ONE set-based query ranks + limits,
+    // returning only the kFindResultCap records actually emitted (~0.05s).
+    //
+    // The id set is too large to bind as `IN (?,?,…)` (SQLite's host-parameter
+    // limit). Materialize it into a TEMP TABLE — N cheap PK inserts inside one
+    // transaction (a deferred-write to a temp B-tree, not N queries) — then the
+    // ranking query JOINs the corpus against it. The C++ AND-intersect that
+    // built `running` is unchanged; only the per-id read + sort becomes SQL.
+    //
+    // Ranking is byte-exact with the prior std::sort: ORDER BY
+    // (CASE WHEN decompile_quality IS NULL OR =0 THEN INT_MAX ELSE … END) ASC,
+    // rva ASC — the dict codes are 1=clean / 2=unanalyzable (quality ASC ranks
+    // clean above unanalyzable, 1 < 2); a NULL/0 ("unknown") normalizes to
+    // INT_MAX so it sorts LAST and never outranks a confirmed-clean function.
+    // LIMIT kFindResultCap caps; total_matches above carries the FULL count.
+    struct Ranked { int64_t avId; };
     std::vector<Ranked> ranked;
-    ranked.reserve(running.size());
+
+    // Fail-loud helper (AP14): on any SQL error in the temp-table lifecycle, log
+    // the reason token, mark unavailable, and DROP the temp table before
+    // returning so a partial table never leaks into the next FindFunctions call
+    // on this connection.
+    auto failRank = [&](const char* op, int rc) {
+        LOG_ERROR_KV(kDevCategory, "find_rank_query_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV::BareStr("op", op),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        sqlite3_exec(g_devDb, "DROP TABLE IF EXISTS temp._find_ids;",
+                     nullptr, nullptr, nullptr);
+        result.unavailable = true;
+    };
+
+    // Create a fresh temp table (DROP first — a prior call on this connection
+    // that errored mid-lifecycle could in principle leave one).
+    if (int rc = sqlite3_exec(g_devDb,
+            "DROP TABLE IF EXISTS temp._find_ids;"
+            "CREATE TEMP TABLE _find_ids(id INTEGER PRIMARY KEY);",
+            nullptr, nullptr, nullptr); rc != SQLITE_OK) {
+        failRank("create_temp", rc);
+        return result;
+    }
+
+    // Bulk-insert the matched ids in ONE transaction (one fsync at COMMIT, not
+    // per row) — cheap indexed PK writes, not the full-table scans that cost the
+    // ~20s in instances 1/2.
     {
-        // Read (decompile_quality, rva) for every matched id. A temp table would
-        // be cleaner for very large sets, but the per-id read is a PK lookup and
-        // the set is an author's query result (not a hot path).
-        sqlite3_stmt* st = nullptr;
+        sqlite3_exec(g_devDb, "BEGIN;", nullptr, nullptr, nullptr);
+        sqlite3_stmt* ins = nullptr;
         int rc = sqlite3_prepare_v2(g_devDb,
-            "SELECT decompile_quality, rva FROM address_versions WHERE id = ?;",
-            -1, &st, nullptr);
+            "INSERT INTO temp._find_ids(id) VALUES (?);", -1, &ins, nullptr);
         if (rc != SQLITE_OK) {
-            LOG_ERROR_KV(kDevCategory, "find_rank_query_failed",
-                log::KV::BareStr("reason", "query_error"),
-                log::KV("sqlite_rc", (long long)rc),
-                log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
-            result.unavailable = true;
+            sqlite3_exec(g_devDb, "ROLLBACK;", nullptr, nullptr, nullptr);
+            failRank("prepare_insert", rc);
             return result;
         }
+        bool insFailed = false;
         for (int64_t id : running) {
-            sqlite3_reset(st);
-            sqlite3_clear_bindings(st);
-            sqlite3_bind_int64(st, 1, id);
-            int q = 0; uint64_t rva = 0;
-            if (sqlite3_step(st) == SQLITE_ROW) {
-                q = (sqlite3_column_type(st, 0) == SQLITE_NULL)
-                    ? 0 : sqlite3_column_int(st, 0);
-                rva = (uint64_t)sqlite3_column_int64(st, 1);
+            sqlite3_reset(ins);
+            sqlite3_bind_int64(ins, 1, id);
+            if (int sr = sqlite3_step(ins); sr != SQLITE_DONE) {
+                sqlite3_finalize(ins);
+                sqlite3_exec(g_devDb, "ROLLBACK;", nullptr, nullptr, nullptr);
+                failRank("insert", sr);
+                insFailed = true;
+                break;
             }
-            ranked.push_back({ id, q, rva });
+        }
+        if (insFailed) return result;
+        sqlite3_finalize(ins);
+        if (int cr = sqlite3_exec(g_devDb, "COMMIT;", nullptr, nullptr, nullptr);
+            cr != SQLITE_OK) {
+            sqlite3_exec(g_devDb, "ROLLBACK;", nullptr, nullptr, nullptr);
+            failRank("commit", cr);
+            return result;
+        }
+    }
+
+    // The set-based rank + limit: ONE query, top kFindResultCap by
+    // (quality ASC, 0/NULL last), rva ASC. Returns only the ids to emit.
+    {
+        ranked.reserve(kFindResultCap);
+        sqlite3_stmt* st = nullptr;
+        int rc = sqlite3_prepare_v2(g_devDb,
+            "SELECT av.id "
+            "FROM address_versions av "
+            "WHERE av.id IN (SELECT id FROM temp._find_ids) "
+            "ORDER BY (CASE WHEN av.decompile_quality IS NULL "
+            "                    OR av.decompile_quality = 0 "
+            "               THEN 2147483647 ELSE av.decompile_quality END) ASC, "
+            "         av.rva ASC "
+            "LIMIT ?;", -1, &st, nullptr);
+        if (rc != SQLITE_OK) {
+            failRank("prepare_rank", rc);
+            return result;
+        }
+        sqlite3_bind_int(st, 1, kFindResultCap);
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            ranked.push_back({ sqlite3_column_int64(st, 0) });
         }
         sqlite3_finalize(st);
     }
-    // Ranking: best-decompiled first, deterministic tiebreak by address.
-    // The dict codes are 1=clean (readable) and 2=unanalyzable, so quality ASC
-    // ranks clean above unanalyzable (1 < 2). A NULL/absent quality (read as 0
-    // at the header) is "unknown" — it must not outrank a confirmed-clean
-    // function, so it sorts LAST (normalize 0 -> INT_MAX for the compare).
-    std::sort(ranked.begin(), ranked.end(),
-        [](const Ranked& a, const Ranked& b) {
-            int qa = (a.quality == 0) ? INT_MAX : a.quality;
-            int qb = (b.quality == 0) ? INT_MAX : b.quality;
-            if (qa != qb) return qa < qb;  // ASC: 1 (clean) before 2 (unanalyzable)
-            return a.rva < b.rva;          // ASC by address (deterministic tiebreak)
-        });
 
-    // Cap loud: first kFindResultCap records, truncated + total carried.
-    if ((int64_t)ranked.size() > kFindResultCap) {
+    // Temp table is consumed — drop it (no leak across calls).
+    sqlite3_exec(g_devDb, "DROP TABLE IF EXISTS temp._find_ids;",
+                 nullptr, nullptr, nullptr);
+
+    // Cap loud: the SQL LIMIT returned at most kFindResultCap; total_matches
+    // carries the FULL match count, so truncation is total > cap.
+    if (result.total_matches > kFindResultCap) {
         result.truncated = true;
         LOG_INFO_KV(kDevCategory, "find_truncated",
             log::KV("total_matches", (long long)result.total_matches),
@@ -2973,9 +3033,9 @@ FindResult FindFunctions(const FindCriteria& c) {
                 "the top-ranked cap by decompile_quality ASC, rva ASC; narrow "
                 "the criteria to see the rest"));
     }
-    int emitted = 0;
+    // Emit the ranked ids (already capped + ordered by SQL). The lean-record
+    // build (KI-0015) is UNCHANGED: header + a cheap COUNT(*), NO statement rows.
     for (const Ranked& r : ranked) {
-        if (emitted >= kFindResultCap) break;
         FindRecord rec;
         if (!LoadFindRecordHeader(r.avId, rec)) continue;  // logged; skip the racey id.
         // statement_count via a cheap SQL COUNT(*) — NOT the statement rows (the
@@ -2984,7 +3044,6 @@ FindResult FindFunctions(const FindCriteria& c) {
         // so carry it with statement_count at its 0 default rather than drop it.
         CountStatementsForFunction(r.avId, rec.statement_count);
         result.records.push_back(std::move(rec));
-        ++emitted;
     }
     return result;
 }
