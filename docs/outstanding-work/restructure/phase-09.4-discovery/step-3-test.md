@@ -1,6 +1,6 @@
 # Phase 9.4 step 3 — test plugin + console-path tests
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 3.
+**Status: DONE** (landed; cap-99-find-surface regression plugin, step-review GREEN; suite confirmed at acceptance launch). Ledger row: [`README.md`](README.md) → step 3.
 
 ## What
 

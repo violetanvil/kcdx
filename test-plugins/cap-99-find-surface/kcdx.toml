@@ -1,0 +1,105 @@
+# CAP-99 — kcdx.find Lua binder SURFACE + the kcdx_find / kcdx_dev_inspect
+# console paths (Phase 9.4 step 3).
+#
+# DISTINCT FROM cap-98: cap-98 is the ENGINE self-test (step 0) of the refdb
+# dev-DB search layer (FindFunctions / EnumerateStatements), reported from
+# engine code. THIS plugin is a real Lua plugin whose plugin.lua CALLS
+# kcdx.find and asserts on the returned table — it covers the LUA BINDER
+# surface (src/lua_bind_find.cpp), the layer the engine self-test cannot
+# observe. The console verbs (kcdx_find / kcdx_dev_inspect) are covered by
+# `console`-mode rows (the agent declares the exact command strings + the
+# falsifiable dev-log observable; the orchestrator renders the user gestures).
+#
+# Fixture (the as-built dev DB corpus, the SAME ground truth cap-98 uses,
+# verified against data/reference-dev.sqlite 2026-06-10):
+#   - the known string "   You have to set r_TexturesStreaming = 1 to see
+#     texture information!" has exactly 1 owner: av 14595 / FUN_18043ee28 /
+#     WHGame.dll. kcdx.find{string=<that>} returns a record for it.
+#   - the callee "_Init_thread_footer" is called by 30,393 functions (> the
+#     500 cap) — the deterministic over-cap truncation target.
+#
+# THE DEV-GATE GRACEFUL CONTRACT IS THE LOAD-BEARING SAFETY ROW: kcdx.find is
+# a dev-mode-only tool over a separate ~1.3 GB dev DB the shipped product does
+# NOT carry. A shipped mod that calls kcdx.find in a player's ordinary install
+# must NOT break — for a VALID criterion the binder ALWAYS returns a table
+# (never nil, never a raise), {} when the dev gate fails (dev mode off OR dev
+# DB absent) — the SAME empty contract as a genuine no-match, so the author's
+# `if #r == 0` path runs harmlessly. cap-99-graceful-contract pins that.
+#
+# GRACEFUL on absent dev DB (the same posture as cap-98 / cap-86): the
+# known-string row DEGRADE-PASSes when kcdx.find returns 0 records (the dev DB
+# is not deployed, OR dev mode is off — the empty result is deliberately
+# indistinguishable from a no-match; find.md "the empty-table result is the
+# same"). It only does the FIELD checks (and can therefore really FAIL) when a
+# record actually comes back — i.e. when the dev DB IS present. So a no-dev-DB
+# install never false-FAILs this row, while a present-but-WRONG result does.
+#
+# What it proves (Lua-surface rows — boot-time, auto-pass; report at ready):
+#   1. cap-99-known-string-find — kcdx.find{string=<known>} returns a table
+#      with >=1 record whose .function/.module are non-empty and .rva is a
+#      kcdx.memory.pointer (non-nil userdata). FALSIFIABLE: a record comes
+#      back but its function/module is empty or its rva is nil/not a pointer
+#      -> FAIL. DEGRADED PASS when 0 records (dev DB absent / dev mode off).
+#   2. cap-99-empty-criteria-rejects — kcdx.find{} (no criterion) is rejected
+#      LOUD: the binder returns (nil, teaching-error), never a table. The
+#      at-least-one-of-N parse-time check (lua_bind_find.cpp setCount==0).
+#      FALSIFIABLE: an empty-criteria call returns a TABLE (the required-
+#      criterion check silently passed) -> FAIL; a nil return with no teaching
+#      error string -> FAIL.
+#   3. cap-99-graceful-contract — the safety property: kcdx.find{string="x"}
+#      for a VALID criterion ALWAYS returns a table (type(result)=="table"),
+#      NEVER nil and NEVER a raise, in BOTH the dev-DB-present and absent
+#      cases. FALSIFIABLE: kcdx.find raises (pcall catches an error) or returns
+#      nil on a valid-criteria call -> FAIL. This is the shipped-mod-in-a-
+#      player-install contract.
+#   4. cap-99-truncates-loud — kcdx.find{callee="_Init_thread_footer"} (30,393
+#      owners) carries the loud-truncation markers: #r==500, _truncated==true,
+#      _total_matches>500. FALSIFIABLE: a silent partial (_truncated absent/
+#      false), a wrong/absent _total_matches, or a record count != 500 -> FAIL
+#      (the AP14 silent-failure shape). DEGRADED PASS when 0 records (dev DB
+#      absent).
+#
+# What it proves (console-path rows — `console` mode; the agent supplies the
+# exact command strings + the falsifiable dev-log observable, the orchestrator
+# renders the user's ~-console gestures):
+#   5. cap-99-console-find-parses — `kcdx_find WHGame.dll --string "   You have
+#      to set r_TexturesStreaming = 1 to see texture information!"` parses the
+#      module + the criterion and prints the matched function row (the same
+#      dev-DB search). FALSIFIABLE: the command errors on parse, prints no row
+#      for a known-owned string with the dev DB present, or prints the
+#      dev-tool-unavailable teaching message when the dev DB IS present -> FAIL.
+#   6. cap-99-console-inspect-not-found — `kcdx_dev_inspect WHGame.dll
+#      IsInCombatt` (a deliberate one-char typo) parses module + function and,
+#      on the not-found path, prints the documented teaching error with the
+#      nearest curated name suggestion ("Did you mean: ...") + the kcdx_find
+#      --name_contains fallback line. FALSIFIABLE: a silent no-output, a
+#      generic error with no nearest-name suggestion, or a crash -> FAIL.
+#
+# Test mode: cap-99-known-string-find / cap-99-empty-criteria-rejects /
+# cap-99-graceful-contract / cap-99-truncates-loud are boot-only (call
+# kcdx.find at ready, report from Lua — no player input). cap-99-console-* are
+# `console` (the user opens ~ and types the exact command; the agent confirms
+# the observable from the dev log after the run).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_99_find_surface"
+display_name        = "CAP-99 kcdx.find Lua surface + console paths"
+author              = "ts"
+description         = "Pure-Lua self-test of the kcdx.find binder surface: a known-string find returns the right record (function/module/pointer rva), an empty-criteria call is rejected loud (nil + teaching error), the dev-gate graceful contract holds (a valid criterion always returns a table, never nil/raise — the shipped-mod-in-a-player-install safety property), and an over-cap search truncates loudly. Plus console-path rows for kcdx_find / kcdx_dev_inspect. Degrades gracefully when the dev reference DB is absent."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "cap-99-known-string-find",
+    "cap-99-empty-criteria-rejects",
+    "cap-99-graceful-contract",
+    "cap-99-truncates-loud",
+    "cap-99-console-find-parses",
+    "cap-99-console-inspect-not-found",
+]
+
+[entrypoints]
+lua = "plugin.lua"
