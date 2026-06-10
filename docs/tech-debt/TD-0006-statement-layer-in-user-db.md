@@ -42,7 +42,7 @@ layer**, so the phase cannot be built as specced until this debt closes:
 | `kcdx.op.*` byte-emit fit decision (same-size rewrite vs trampoline) | `statements.byte_range_len` | **No** |
 | `kcdx.statement.replace_with` / `insert_before` / `insert_after` | the statement's `byte_range_start` + `byte_range_len` | **No** |
 | `insert_after` captures-by-name (`captures.rax`, `[rcx+0x10]`) | what's live at that statement (`referenced_vars` storage/type) | **No** |
-| `kcdx.find{...}` discovery (Phase 9.4 — the OTHER consumer) | the bulk statement table + `call_edges` caller-graph ranking | **No** |
+| `kcdx.find{...}` discovery (Phase 9.4) — **NO LONGER a USER-DB consumer** | reads the DEV DB directly (a dev tool — 2026-06-10 note below) | N/A (dev-only by design) |
 
 The function-level half of 9.3 (`kcdx.hook.*` at function entry, `kcdx.functions.*`,
 `kcdx.dll.declare`, PDB auto-load, multi-region trampoline, C++ parity) stands on
@@ -119,13 +119,14 @@ writes. Backs `insert_after`'s captures-by-name (`captures.rax`,
 | `data_type` | INTEGER (dict) | approximate type |
 | `storage_detail` | TEXT | high-cardinality (the actual reg/offset), un-dicted |
 
-### A.3 — `call_edges` (DEV-only today → needs USER only if `kcdx.find` ships)
+### A.3 — `call_edges` (DEV-only — and STAYS dev-only)
 
 The call graph (caller→callee). 1.52 M rows. Powers `kcdx.find`'s caller-graph
-ranking + the cross-version matcher. **Phase 9.3 itself does NOT need this** —
-it is a Phase 9.4 (`kcdx.find` discovery) need. Listed for completeness of "what
-is missing"; its closure rides 9.4, not the 9.3 statement layer, UNLESS the fill
-is done once for both.
+ranking + the cross-version matcher. **Phase 9.3 does NOT need this.** And as of
+the **2026-06-10 dev-tool decision** (activity log below), Phase 9.4's `kcdx.find`
+reads the DEV DB directly — so `call_edges` does NOT need a USER-DB fill at all;
+it correctly stays DEV-only. Listed here for completeness of "what is in DEV vs
+USER"; no USER-tier projection of `call_edges` is owed by this TD.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -392,7 +393,9 @@ that the validator enforces, and project the owned items into the USER-tier DB.
 - `parallel-ghidra-research.md` §11.9 — the authoritative schema this spec
   extends (the DEV-only markers + `entity_type='statement'` reserved note).
 - `docs/outstanding-work/restructure/phase-09.3-namespaces/` steps 1, 2, 4 — the
-  blocked consumers (locator content-shortcuts, op, statement).
+  blocked consumers (locator content-shortcuts, op, statement). NOTE: Phase 9.4
+  (`kcdx.find`) is NO LONGER a blocked consumer — it reads the DEV DB directly
+  (2026-06-10 dev-tool decision, activity log).
 
 ## Activity log
 
@@ -409,6 +412,16 @@ that the validator enforces, and project the owned items into the USER-tier DB.
   self-contained §"For the maintainer-tool agent" handoff (the four capabilities
   the tool must gain) so a maintainer-tool agent can read this doc and know
   exactly what is needed.
+- **2026-06-10** — **Phase 9.4 (`kcdx.find` / `kcdx_dev_inspect`) DE-COUPLED from
+  this TD** (user decision). `kcdx.find` is now a DEV TOOL that reads the DEV DB
+  (`reference-dev.sqlite`, the full corpus incl. `call_edges`) DIRECTLY, gated on
+  dev mode + the dev DB's presence, with a graceful teaching-message fallback when
+  unavailable. It does NOT consume the USER DB, so it needs NO USER-tier statement
+  / `call_edges` fill — `call_edges` correctly stays DEV-only (§A.3 corrected).
+  This TD's REMAINING scope is the PRODUCTION USER-DB statement layer for Phase
+  9.3's locator/op/statement surfaces + the open per-kind model (§B); Phase 9.4 is
+  no longer in scope. The decision is recorded in
+  `restructure/phase-09.4-discovery/step-1-find-surface.md` §What.
 
 ## What this entry does NOT do
 

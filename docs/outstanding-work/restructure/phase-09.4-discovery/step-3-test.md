@@ -8,11 +8,18 @@ The permanent regression coverage for discovery.
 
 ## Scope
 
-- Test plugin: `kcdx.find({string = "test_marker"})` against a reference DB with a
-  known function → expected name + statement list. Empty-criteria → `{}`. Synthetic
-  600-row search → 500 + `_truncated` + `_total_matches`.
+- Test plugin (dev mode on, dev DB present): `kcdx.find({string = "test_marker"})`
+  against the dev DB with a known function → expected name + statement list.
+  Empty-criteria → `{}`. Synthetic 600-row search → 500 + `_truncated` +
+  `_total_matches`.
+- **Dev-gate graceful-failure check** (the load-bearing safety property): with the
+  dev DB renamed/absent, `kcdx.find({string = "x"})` returns `{}` AND the dev-tool-
+  unavailable teaching message is in the log — falsifiable: FAILS if `find` raises a
+  Lua error, crashes, or returns a non-empty table. (A shipped mod calling `find` in
+  a player's non-dev install must not break — this row pins that contract.)
 - Console-path checks: `kcdx_find` and `kcdx_dev_inspect` parse module + criteria
-  correctly; the not-found path produces the documented teaching error.
+  correctly; the not-found path produces the documented teaching error; the gated-off
+  path prints the dev-tool-unavailable teaching message.
 - Matrix rows in `../../../../test-plugins/README.md`.
 
 ## Test mode

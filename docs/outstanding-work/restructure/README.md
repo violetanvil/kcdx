@@ -120,17 +120,20 @@ open items, because two of them GATE unbuilt phases.
 
 ### Tech-debt that GATES an unbuilt phase (do these first)
 
-- [`TD-0006`](../../tech-debt/TD-0006-statement-layer-in-user-db.md) — the statement
-  layer is DEV-only; the shipped `reference.sqlite` carries only the curated 133-fn
-  subset (no `call_edges`). **Same root as Phase 9.4's `kcdx.find` corpus question** —
-  a runtime in-game `find`/statement-named surface can't search the full game from
-  what ships. Blocks the as-specced 9.4 discovery surface (and any USER-DB
-  statement-backed named thing). Closure: the maintainer tool owning these kinds +
-  projecting them to the USER DB.
 - [`TD-0007`](../../tech-debt/TD-0007-unclassified-lua-loader-symbols.md) — 5 Lua C
   API fns unclassified (loadbuffer/loadstring/gsub unwired + newthread/cpcall
   fail-loud). **Must classify before Phase 11 P6 drops static Lua** (the shim can't
   fully serve them yet). Closure gate: a `/research-disassembly` pass before P6.
+
+### Tech-debt for a PRODUCTION surface (not gating an unbuilt restructure phase)
+
+- [`TD-0006`](../../tech-debt/TD-0006-statement-layer-in-user-db.md) — the production
+  statement layer is DEV-only; the shipped `reference.sqlite` carries only the curated
+  133-fn subset. Backs the PRODUCTION USER-DB statement surfaces (Phase 9.3's
+  locator/op/statement, which shipped against the curated subset) + the open per-kind
+  model. **NOT a Phase 9.4 gate** — `kcdx.find` / `kcdx_dev_inspect` are dev tools that
+  read the DEV DB directly (user-decided 2026-06-10), so 9.4 needs no USER-DB fill.
+  Closure: the maintainer tool owning these kinds + projecting them to the USER DB.
 
 ### Independent leaf debt (lands anytime, no phase gated on it)
 
