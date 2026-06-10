@@ -55,7 +55,7 @@ hash when `DONE`, `—` otherwise.
 | [9.6 — kcdx.bytes narrowing + Lua-API rule update + final migration](phase-09.6-bytes-narrowing/README.md) | NOT STARTED | — |
 | 9.7 — curated-target sub-verb resolver | SUPERSEDED | — |
 | [10 — gameplay event catalog (kcdx.on)](phase-10-event-catalog/README.md) | NOT STARTED | — |
-| [11 — force-load WHGame.dll + kcdx owns the one Lua VM](phase-11-shim-vm/README.md) | NOT STARTED | — |
+| [11 — kcdx owns the one Lua VM (worker-built, engine-adopted)](phase-11-shim-vm/README.md) | IN PROGRESS | P1 f0a0dc9 · P2 54d98c8 · P3 3b99fea (DONE); P4–P7 remain |
 | 12 — C++ empowered-wrapper sweep + correctness fix + UX polish | NOT STARTED | — |
 
 Notes on non-obvious rows:
@@ -68,13 +68,19 @@ Notes on non-obvious rows:
 - **9.7 SUPERSEDED** — merged into Phase 9.2 (the declare store and the smart
   resolver were two halves of one surface). No subdir; the redirect detail lives
   in [`00-original-plan.md`](00-original-plan.md) §"Phase 9.7".
-- **11 NOT STARTED (design settled 2026-06-05)** — the prior "BLOCKED on the FIX A
-  harvest, ~38% mapped" note was STALE; the harvest is substantially complete (93/117
-  LUA_API resolved + ~24 inlined/stripped catalogued). The settled design
+- **11 IN PROGRESS (build half-landed)** — the settled design
   ([`phase-11-shim-vm/lua-vm-design.md`](phase-11-shim-vm/lua-vm-design.md)) is
-  decomposed into a 6-phase build tree (keystone probe → shim → force-load+adopt →
-  early-slot+boot-swap → drop-static → serve-execute). kcdx builds the one VM; the
-  engine adopts it. Phases 1–10 ran in parallel with the harvest.
+  decomposed into a 7-phase build tree, and the keystone is BUILT. kcdx builds the
+  one Lua VM on its worker thread (NO force-load — PROBE P3 verified a force-load is
+  impossible + unnecessary) and the engine ADOPTS it; the dual-Lua sentinel hazard
+  dies by construction. **DONE + live-confirmed:** P1 keystone probe (f0a0dc9), P2
+  symbol shim (54d98c8), P3 worker-builds-VM + engine-adopts (3b99fea — the
+  load-bearing "kcdx owns the one VM" step). **Remaining:** P4 cross-thread
+  foundation (event gate + RegisterRuntimeOverlay CAS) → P5 startup-sequence author
+  contract (steps 7–9 in-flight) → P6 drop static Lua → P7 served-`.lua` execute
+  (KI-0006). Per-phase ledger + the P4-foundation re-scope:
+  [`phase-11-shim-vm/README.md`](phase-11-shim-vm/README.md) +
+  [`phase-11-shim-vm/RESUME-STATE.md`](phase-11-shim-vm/RESUME-STATE.md).
 - **12 NOT STARTED** — the C++ empowered-wrapper sweep + `sig_traits` correctness
   fix + UX polish; design-settled, detail in [`00-original-plan.md`](00-original-plan.md)
   §"Phase 12". Subdir authored when the phase is picked up.
@@ -93,7 +99,9 @@ Independent work that can land now (each by leverage, not phase order):
   bundled into Phase 11 (FIX A collapses the dual-runtime + reworks serve-execute;
   user-approved deferral 2026-06-05), alongside the boot-cache in-game serve
   (`KI-0005`). The shipping capability (textures, XML, cross-mod, conflict,
-  stock-pak) is proven + confirmed; only the `.lua`-execute leg waits.
+  stock-pak) is proven + confirmed; only the `.lua`-execute leg waits — now
+  tracked as Phase 11's P7 step (the one-VM adoption that reworks serve-execute
+  landed in P3 3b99fea; P7 confirms the `.lua`-execute leg on it).
 - **Phase 9 high-level Lua surface** — DEFERRED → [`TD-0005`](../../tech-debt/TD-0005-high-level-lua-surface.md).
   Independent, pure RE + binder work (a non-blocking leaf); re-homed to carried
   debt rather than held open on the active ledger. Picked up by scheduling its
@@ -105,8 +113,8 @@ Independent work that can land now (each by leverage, not phase order):
 `../` carries independent outstanding-work items — ABI extensions,
 design-settled-but-unbuilt features, tracked debt. Most relevant to the live
 phases:
-- [`../fix-a-drop-static-lua.md`](../fix-a-drop-static-lua.md) — Phase 11 unblocker.
-- [`../before-game-hooks.md`](../before-game-hooks.md) — Phase 11 consumer (bugsplat builtin).
+- [`../fix-a-drop-static-lua.md`](../fix-a-drop-static-lua.md) — the FIX A harvest; Phase 11's P2 shim + P6 drop-static rest on it (no longer an "unblocker" — P1–P3 are built).
+- [`../before-game-hooks.md`](../before-game-hooks.md) — Phase 11 consumer (bugsplat builtin; rides the phase, not a step).
 - [`../../tech-debt/TD-0003-engine-direct-hook-migration.md`](../../tech-debt/TD-0003-engine-direct-hook-migration.md) — the 5-site migration (tech-debt TD-0003).
 - [`../../tech-debt/TD-0001-declare-value-string-arena.md`](../../tech-debt/TD-0001-declare-value-string-arena.md) — declare-store completion (tech-debt TD-0001).
 - **Recovery + rollback for Track-2 plugins** — load-bearing for the §11.8
