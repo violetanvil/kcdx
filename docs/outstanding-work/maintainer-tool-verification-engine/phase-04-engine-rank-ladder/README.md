@@ -21,7 +21,7 @@ dev mode, reads the log; the user launches).
 | [4.1 [ENG] The 7-state verdict enum + the ceiling rule in survival_verify](step-1-eng-verdict-enum-ceiling.md) | DONE | 75ddd8c |
 | [4.2 [ENG] The rank-1 observed-execution tier (hook-fire + pass-through; kcdx's own production call)](step-2-eng-rank1-observed-execution.md) | DONE | 36d61a5 |
 | [4.3 [ENG] The rank-2 safe-read tier (cvar read + read-only vtable_base walk)](step-3-eng-rank2-safe-read.md) | DONE | cdabde8 |
-| [4.4 [ENG] The per-kind ceiling matrix wiring (§11.6)](step-4-eng-per-kind-matrix.md) | DONE | (landed) |
+| [4.4 [ENG] The per-kind ceiling matrix wiring (§11.6)](step-4-eng-per-kind-matrix.md) | DONE | 3921d62 |
 
 ## Phase verification gate
 
@@ -37,3 +37,13 @@ gesture is the boot launch (no save-load needed; the rank-1 observation tier is 
 the Phase-5 sweep, the engine self-test asserts the ladder mechanics on synthetic data). Build-green
 is necessary, not sufficient — the matrix is confirmed by the launch
 (`.claude/rules/skeptical-expert.md`).
+
+**Gate MET — accepted at the 2026-06-09 live launch** (`kcdx-dev_2026-06-09_21-07-33.log`,
+deployed DLL hash `FEAA5D09…6902F`). `RESULT name=cap-84-survival-dispatch verdict=PASS` — the
+REPORT confirms every Phase-4 sub-check fired: the 7-state enum (all 7 states produce + read back
+their own value), the ceiling rule (hash+reach pass → `passed_not_verified` rank 3, NOT
+`verified_working`; mismatch → `failed`), the `not_applicable` version-gap producer (distinct from
+`cannot_check`), the FuncStatus codec intact, the rank-1 observed path, the rank-2/3 checks, and
+RunStartupVerification yielding a defined verdict per row with the matched id. `cap-85` PASS (no
+regression). The 2 suite FAILs (CAP-20-addrname / CAP-28-typo-fails-fast) are pre-existing
+other-lane rows, not Phase-4.

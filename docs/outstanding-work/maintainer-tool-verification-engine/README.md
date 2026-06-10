@@ -27,16 +27,18 @@ steps land in the SEPARATE gitignored frontend repo (gate `npm run build` + Vite
 
 ## Current state + what's next (2026-06-09)
 
-**Where we are: Phases 0–3 are COMPLETE AND ACCEPTED.** Phase 2 (the browser static checker + the
-per-author UI) landed; Phase 3 (the C++ engine survival extension — the AUTHORITY the browser
-mirrors, D27) is DONE: 3.1 the per-kind dispatch + Ambiguous (8008e3d), 3.2 the 5 static
-non-function checks + the anchor-dependency DAG (3c5e065), 3.3 the startup reachability + on-disk
-version-applicability + D34 attribution pass (69c7cc2), 3.4 the JS↔C++ cross-impl agreement pin
-(ffc51ae). One follow-up filed: TD-0009 (the engine↔browser agreement is HARD-pinned for the 4
-algorithm-identical kinds; the 3 superset kinds, where the engine computes more than the
-browser/Python subset by design, are deferred for reconciliation). **Next: Phase 4** (the engine
-rank-ladder), then Phase 5 (the console-triggered sweep + v3 report), then Phase 6 (the frontend
-report ingestion / two-block worklist).
+**Where we are: Phases 0–4 are COMPLETE AND ACCEPTED.** Phase 2 (the browser static checker + the
+per-author UI) + Phase 3 (the C++ engine survival extension, D27) landed + accepted. **Phase 4 (the
+D36 engine rank-ladder + per-kind §11.6 matrix) is DONE + ACCEPTED** (the 2026-06-09 live launch,
+`kcdx-dev_2026-06-09_21-07-33.log`: cap-84-survival-dispatch PASS + cap-85 PASS): 4.1 the 7-state
+verdict enum + ceiling rule + the precise `not_applicable` signal (75ddd8c), 4.2 the rank-1
+observed-execution tier — HOOKED hook-fires + CALLED-by-kcdx invocation record (36d61a5), 4.3 the
+rank-2 cvar safe-read + rank-3 vtable_base loaded-image walk (cdabde8), 4.4 the per-kind §11.6
+dispatcher + the vtable_base reachability re-route (3921d62). cap-84 sub-checks 10–16. Follow-up
+filed: TD-0009 (the engine↔browser agreement scoped to the 4 algorithm-identical kinds; 3 superset
+kinds deferred). **Next: Phase 5** (the `kcdx_verify_all` console-after-save-load sweep + the v3
+report with incremental JSONL flush, D33/D37), then Phase 6 (the frontend report ingestion /
+two-block worklist).
 
 **Phases 4–5 RE-PLANNED 2026-06-09 against D36 (active-attempt verification).** The original single
 Phase 4 (a static boot-automatic sweep) was superseded by the D36 design revision (the 7-state
@@ -64,6 +66,6 @@ cap-90-pdb-internal-address) are other lanes, not Phase-3 rows. The phase gate i
 | [Phase 1 — Shared contracts](phase-01-contracts/README.md) | DONE | ccd37e1 (1.1 e8a06cc, 1.2 35445b7, 1.3 ccd37e1) |
 | [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | DONE | (landed) — 2.1–2.7 all DONE (FE:1459367/66f4716/d611c21/e83a57c/0ed135d+bfdff6f/00b2e78…27aa470 + 2.6a 9d84fcf + 2.7 FE:7d2d6fa); the browser checker + s02 install-set link + s04 verdict badge + the link-to-create on-ramp. 2.6 + 2.7 milestone UATs both accepted |
 | [Phase 3 — C++ engine survival extension](phase-03-engine-survival/README.md) | DONE | ffc51ae — 3.1 per-kind dispatch + Ambiguous (8008e3d), 3.2 the 5 static non-function checks + anchor DAG (3c5e065), 3.3 the startup reachability + on-disk version-applicability + D34 attribution pass (69c7cc2), 3.4 the JS↔C++ cross-impl agreement pin (ffc51ae). The full per-kind survival authority the browser mirrors (D27); cap-84 + cap-85 self-tests. Follow-up: TD-0009 (engine↔browser agreement scoped to the 4 identical kinds; 3 superset kinds deferred). |
-| [Phase 4 — Engine rank-ladder + per-kind matrix (D36)](phase-04-engine-rank-ladder/README.md) | DONE | (landed) — 4.1 75ddd8c (7-state enum + ceiling + precise not_applicable) / 4.2 36d61a5 (rank-1 observed: HOOKED + CALLED-by-kcdx) / 4.3 cdabde8 (rank-2 cvar safe-read + rank-3 vtable_base walk) / 4.4 (this commit, per-kind §11.6 dispatcher + the vtable_base reachability re-route). cap-84 sub-checks 10-16. Runtime PASS pending the Phase-4 acceptance launch. |
+| [Phase 4 — Engine rank-ladder + per-kind matrix (D36)](phase-04-engine-rank-ladder/README.md) | DONE | 3921d62 — 4.1 75ddd8c (7-state enum + ceiling + precise not_applicable) / 4.2 36d61a5 (rank-1 observed: HOOKED + CALLED-by-kcdx) / 4.3 cdabde8 (rank-2 cvar safe-read + rank-3 vtable_base walk) / 4.4 3921d62 (per-kind §11.6 dispatcher + the vtable_base reachability re-route). cap-84 sub-checks 10-16. **ACCEPTED at the 2026-06-09 live launch** (kcdx-dev_2026-06-09_21-07-33.log): cap-84-survival-dispatch PASS + cap-85 PASS (no regression). The 2 suite FAILs (CAP-20-addrname / CAP-28-typo-fails-fast) are pre-existing other-lane rows, not Phase-4. |
 | [Phase 5 — Console-triggered batch sweep + v3 report (D36)](phase-05-plugin-sweep/README.md) | NOT STARTED | — |
 | [Phase 6 — Frontend report ingestion](phase-06-report-ingestion/README.md) | NOT STARTED | — |
