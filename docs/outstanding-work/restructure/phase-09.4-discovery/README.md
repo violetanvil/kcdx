@@ -25,10 +25,10 @@ corpus. The decision is recorded in [`step-1-find-surface.md`](step-1-find-surfa
 
 | Step | Status | Commit |
 |---|---|---|
-| [0 — refdb dev-DB connection + cross-function search layer](step-0-devdb-search-layer.md) | NEEDS REWORK | 98acc8e |
+| [0 — refdb dev-DB connection + cross-function search layer](step-0-devdb-search-layer.md) | DONE | (landed) |
 | [1 — `kcdx.find{...}` Lua surface + `kcdx_find` console](step-1-find-surface.md) | DONE | e83d1a4 |
 | [2 — `kcdx_dev_inspect` console command](step-2-dev-inspect-console.md) | DONE | af1a773 |
-| [3 — test plugin + console-path tests](step-3-test.md) | DONE | (landed) |
+| [3 — test plugin + console-path tests](step-3-test.md) | DONE | 50dcbf8 |
 
 **Step 0 added 2026-06-10** (the `/feature` audit): the original 3 steps assumed a
 "resolves against the dev DB" mechanism that did not exist (`refdb::Open()` opens only

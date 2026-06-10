@@ -2608,10 +2608,12 @@ bool LoadCapturesForFunction(
     return true;
 }
 
-// Load the idx-ordered statements of one function into a FindRecord (the
-// record's header must already be filled). Joins captures by statement_idx.
-// Logged query_error on a SQL error (returns false).
-bool LoadStatementsForFunction(int64_t avId, FindRecord& rec) {
+// Load the idx-ordered statements of one function into `out` (a statement
+// vector). Joins captures by statement_idx. Logged query_error on a SQL error
+// (returns false). Used ONLY by EnumerateStatements (kcdx_dev_inspect's ONE-
+// function path) — find does NOT call this (it carries a statement_count, not
+// the rows; the boot-hang fix, KI-0015).
+bool LoadStatementsForFunction(int64_t avId, std::vector<FindStatement>& out) {
     std::unordered_map<int64_t, std::vector<FindCapture>> capturesByIdx;
     if (!LoadCapturesForFunction(avId, capturesByIdx)) return false;
 
@@ -2644,10 +2646,42 @@ bool LoadStatementsForFunction(int64_t avId, FindRecord& rec) {
         s.applicable_ops = ApplicableOpsForKind(s.kind);
         auto cIt = capturesByIdx.find(s.idx);
         if (cIt != capturesByIdx.end()) s.captures = std::move(cIt->second);
-        rec.statements.push_back(std::move(s));
+        out.push_back(std::move(s));
     }
     sqlite3_finalize(st);
     return true;
+}
+
+// Count one function's statements via SQL (SELECT COUNT(*) FROM statements WHERE
+// address_version_id = ? — a cheap count keyed on address_version_id, NOT the
+// rows; the dev-DB extractor indexes that column, but the count is correct + far
+// cheaper than materializing the bodies regardless of the index).
+// This is what find carries per record instead of the statement bodies (the
+// boot-hang fix, KI-0015): 500 records → 500 cheap counts, never ~400K nested
+// Lua tables. Writes the count into `outCount`; logged query_error on a SQL error
+// (returns false, AP14 — fail loud, the caller leaves statement_count at its
+// 0 default and keeps the still-useful header rather than dropping the record).
+bool CountStatementsForFunction(int64_t avId, int64_t& outCount) {
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb,
+        "SELECT COUNT(*) FROM statements WHERE address_version_id = ?;",
+        -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_statement_count_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("av_id", (long long)avId),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    sqlite3_bind_int64(st, 1, avId);
+    bool ok = false;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        outCount = sqlite3_column_int64(st, 0);
+        ok = true;
+    }
+    sqlite3_finalize(st);
+    return ok;
 }
 
 // Run one criterion's query and collect the owning address_version_ids into
@@ -2878,10 +2912,11 @@ FindResult FindFunctions(const FindCriteria& c) {
         if (emitted >= kFindResultCap) break;
         FindRecord rec;
         if (!LoadFindRecordHeader(r.avId, rec)) continue;  // logged; skip the racey id.
-        if (!LoadStatementsForFunction(r.avId, rec)) {
-            // statements failed to load — the header is still useful; carry it
-            // with an empty statement list rather than dropping the record.
-        }
+        // statement_count via a cheap SQL COUNT(*) — NOT the statement rows (the
+        // boot-hang fix, KI-0015: 500 records × ~400K nested Lua tables HANGS).
+        // A count failure is logged (AP14, fail loud); the header is still useful
+        // so carry it with statement_count at its 0 default rather than drop it.
+        CountStatementsForFunction(r.avId, rec.statement_count);
         result.records.push_back(std::move(rec));
         ++emitted;
     }
@@ -3015,7 +3050,10 @@ EnumerateResult EnumerateStatements(const std::string& fn) {
         // logged) — surface as not-found rather than a half-built record.
         return result;
     }
-    if (!LoadStatementsForFunction(avId, result.record)) {
+    // dev_inspect's ONE-function path DOES load the full statement bodies (into
+    // EnumerateResult.statements, NOT the lean FindRecord) — one function, never
+    // the ~400K-table blowup find avoids (KI-0015).
+    if (!LoadStatementsForFunction(avId, result.statements)) {
         // statements failed (logged) — the header is valid; return it found with
         // an empty statement list rather than dropping the resolved function.
     }

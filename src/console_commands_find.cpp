@@ -173,14 +173,16 @@ void Callback(const kcdxConsoleCmdArgs* args) {
         const refdb::FindRecord& r = result.records[i];
         char line[256];
         // One line per function: name, module+rva, decompile-quality label,
-        // statement count — the at-a-glance discovery row the author scans.
-        std::snprintf(line, sizeof(line), "  %s  %s+0x%llX  [%s]  (%zu stmts)",
+        // statement count — the at-a-glance discovery row the author scans. The
+        // count is find's SQL-computed statement_count (find carries no statement
+        // bodies; the boot-hang fix, KI-0015) — not the rows.
+        std::snprintf(line, sizeof(line), "  %s  %s+0x%llX  [%s]  (%lld stmts)",
                       r.function.c_str(), r.module.c_str(),
                       static_cast<unsigned long long>(r.rva),
                       r.decompile_quality_label.empty()
                           ? "?"
                           : r.decompile_quality_label.c_str(),
-                      r.statements.size());
+                      static_cast<long long>(r.statement_count));
         console::PrintLine(line);
     }
     if (result.records.size() > printed) {

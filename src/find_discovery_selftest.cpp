@@ -277,7 +277,9 @@ void RunSelfTestOnce() {
             kcdx::test::ReportResult(kRowOps, false, reason);
         } else {
             const refdb::FindStatement* callStmt = nullptr;
-            for (const refdb::FindStatement& s : e.record.statements) {
+            // EnumerateResult carries the full statement DETAIL (find does not —
+            // KI-0015; dev_inspect's ONE-function path still does).
+            for (const refdb::FindStatement& s : e.statements) {
                 if (s.kind == "call") { callStmt = &s; break; }
             }
             if (!callStmt) {
@@ -286,10 +288,10 @@ void RunSelfTestOnce() {
                     "NONE of kind `call`. The applicable_ops call->ops mapping "
                     "could not be exercised — the known clean function should "
                     "carry at least one call statement.",
-                    kKnownAutoName, e.record.statements.size());
+                    kKnownAutoName, e.statements.size());
                 LOG_ERROR_KV(kCategory, "ops_no_call_stmt",
                     ::kcdx::log::KV("statements",
-                        (long long)e.record.statements.size()));
+                        (long long)e.statements.size()));
                 kcdx::test::ReportResult(kRowOps, false, reason);
             } else {
                 const bool hasSkipCall =

@@ -6,11 +6,16 @@
 //   local r = kcdx.find{ string = "test_marker" }
 //   -- r is ALWAYS a table:
 //   --   no matches / dev tool unavailable -> {}  (idiomatic `if #r == 0`)
-//   --   matches -> array of records, each:
-//   --     { function, module, rva, decompile_quality,
-//   --       statements = { {idx, kind, pseudo_text, callee, string_ref,
-//   --                       captures, applicable_ops}, ... } }
+//   --   matches -> array of LEAN records, each a function HEADER:
+//   --     { function, module, rva, decompile_quality, statement_count }
 //   --   over-500 -> first 500 + r._truncated=true + r._total_matches=N
+//
+// find returns headers only — NO statement bodies (the boot-hang fix, KI-0015:
+// a broad find (30,393 owners -> 500 capped records) building every record's
+// full statement list = ~400K nested Lua tables on CryEngine's Lua 5.1 on the
+// boot worker thread -> memory/GC stall -> HANG). statement_count is a cheap SQL
+// COUNT(*) per record. To see a function's statements, the author picks one from
+// the lean list and runs `kcdx_dev_inspect <module> <function>`.
 //
 // kcdx.find is a DEV TOOL. It searches the dev reference DB
 // (reference-dev.sqlite — the full game corpus), opened by step 0 ONLY when dev
@@ -102,65 +107,13 @@ bool ReadCriterion(lua_State* L, const char* key, bool& hasFlag,
     return true;
 }
 
-// Push one FindStatement as a Lua sub-table:
-//   { idx, kind, pseudo_text, callee, string_ref, captures, applicable_ops }
-// `captures` mirrors the conventionalized kcdx.locator :resolve(...).captures
-// shape (docs/lua/locator.md): an array of
-// { name, storage_kind, storage_detail, data_type, size_bytes }. Stack +1.
-void PushStatement(lua_State* L, const refdb::FindStatement& s) {
-    lua_newtable(L);  // statement sub-table
-
-    lua_pushinteger(L, static_cast<lua_Integer>(s.idx));  // small int, not a ptr
-    lua_setfield(L, -2, "idx");
-    lua_pushstring(L, s.kind.c_str());
-    lua_setfield(L, -2, "kind");
-    lua_pushstring(L, s.pseudo_text.c_str());
-    lua_setfield(L, -2, "pseudo_text");
-    lua_pushstring(L, s.callee.c_str());
-    lua_setfield(L, -2, "callee");
-    lua_pushstring(L, s.string_ref.c_str());
-    lua_setfield(L, -2, "string_ref");
-
-    // captures — the per-statement variables (empty table when none). Mirrors
-    // the locator :resolve captures shape so the two surfaces read identically.
-    lua_newtable(L);
-    for (size_t i = 0; i < s.captures.size(); ++i) {
-        const refdb::FindCapture& c = s.captures[i];
-        lua_newtable(L);  // one capture sub-table
-
-        lua_pushstring(L, c.var_name.c_str());
-        lua_setfield(L, -2, "name");
-        lua_pushstring(L, c.storage_kind.c_str());
-        lua_setfield(L, -2, "storage_kind");
-        lua_pushstring(L, c.storage_detail.c_str());
-        lua_setfield(L, -2, "storage_detail");
-        lua_pushstring(L, c.data_type.c_str());
-        lua_setfield(L, -2, "data_type");
-        if (c.has_size_bytes) {
-            lua_pushinteger(L, static_cast<lua_Integer>(c.size_bytes));
-        } else {
-            lua_pushnil(L);
-        }
-        lua_setfield(L, -2, "size_bytes");
-
-        lua_rawseti(L, -2, static_cast<int>(i + 1));  // captures[i+1] = sub
-    }
-    lua_setfield(L, -2, "captures");
-
-    // applicable_ops — the kcdx.op.* op NAMES that fit this statement
-    // (an array of strings; the author uses them verbatim in
-    // kcdx.statement.replace_with). Empty array when the kind emits none.
-    lua_newtable(L);
-    for (size_t i = 0; i < s.applicable_ops.size(); ++i) {
-        lua_pushstring(L, s.applicable_ops[i].c_str());
-        lua_rawseti(L, -2, static_cast<int>(i + 1));
-    }
-    lua_setfield(L, -2, "applicable_ops");
-}
-
-// Push one FindRecord as a Lua sub-table:
-//   { function, module, rva, decompile_quality, statements }
-// `rva` is a kcdx.memory.pointer (lua-precision.md — VA-magnitude, exact). Stack +1.
+// Push one LEAN FindRecord as a Lua sub-table:
+//   { function, module, rva, decompile_quality, statement_count }
+// `rva` is a kcdx.memory.pointer (lua-precision.md — VA-magnitude, exact).
+// NO statements sub-table: find returns function HEADERS only (the boot-hang
+// fix, KI-0015 — a broad find building every record's full statement list was
+// ~400K nested Lua tables on the boot worker thread → memory/GC stall). The
+// statement DETAIL is kcdx_dev_inspect's per-function result, NOT find's. Stack +1.
 void PushRecord(lua_State* L, const refdb::FindRecord& r) {
     lua_newtable(L);  // record sub-table
 
@@ -178,13 +131,12 @@ void PushRecord(lua_State* L, const refdb::FindRecord& r) {
     lua_pushinteger(L, static_cast<lua_Integer>(r.decompile_quality));  // small int
     lua_setfield(L, -2, "decompile_quality");
 
-    // statements = { {idx, kind, ...}, ... } (idx-ordered).
-    lua_newtable(L);
-    for (size_t i = 0; i < r.statements.size(); ++i) {
-        PushStatement(L, r.statements[i]);
-        lua_rawseti(L, -2, static_cast<int>(i + 1));  // statements[i+1] = sub
-    }
-    lua_setfield(L, -2, "statements");
+    // statement_count — a COUNT, not a pointer (a function's statement count is
+    // well under 2^24, so lua_pushinteger is exact; lua-precision.md only forbids
+    // pushing a VA-magnitude value as a number). The author reads this to gauge a
+    // function, then runs kcdx_dev_inspect to see its actual statements.
+    lua_pushinteger(L, static_cast<lua_Integer>(r.statement_count));
+    lua_setfield(L, -2, "statement_count");
 }
 
 // kcdx.find(criteria_table)

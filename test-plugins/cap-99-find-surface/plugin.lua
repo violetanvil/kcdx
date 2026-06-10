@@ -14,7 +14,12 @@
 -- data/reference-dev.sqlite 2026-06-10 — the SAME fixture cap-98 uses):
 --   KNOWN_STRING has exactly 1 owner: FUN_18043ee28 / WHGame.dll.
 --   OVERCAP_CALLEE ("_Init_thread_footer") is called by 30,393 functions
---     (> the 500 cap) — the deterministic loud-truncation target.
+--     (> the 500 cap) — the deterministic loud-truncation target AND the
+--     KI-0015 boot-hang regression target: the original eager find built
+--     every one of the 500 capped records' full statement lists (~400K nested
+--     Lua tables) on the boot worker thread and HUNG. find now returns LEAN
+--     headers (statement_count, no statement bodies), so this row must no
+--     longer hang and asserts every record is lean.
 --
 -- THE DEV-GATE GRACEFUL CONTRACT IS THE LOAD-BEARING SAFETY ROW. kcdx.find is
 -- dev-mode-only over a separate ~1.3 GB dev DB the shipped product does NOT
@@ -59,12 +64,16 @@ kcdx.on("ready", function()
 
     -- =====================================================================
     -- cap-99-known-string-find — kcdx.find{string=<known>} returns a table
-    -- with >=1 record whose .function/.module are non-empty and .rva is a
-    -- kcdx.memory.pointer (non-nil userdata).
-    -- FALSIFIABLE: a record comes back but function/module is empty, or rva is
-    -- nil / not a pointer userdata -> FAIL. DEGRADED PASS when 0 records (dev
-    -- DB absent / dev mode off — the known string CANNOT resolve without the
-    -- dev DB, and the empty result is indistinguishable from a no-match).
+    -- with >=1 LEAN record: .function/.module non-empty, .rva a
+    -- kcdx.memory.pointer (non-nil userdata), .statement_count a number, and
+    -- NO .statements field (find returns headers only — the boot-hang fix,
+    -- KI-0015).
+    -- FALSIFIABLE: a record comes back but function/module is empty, rva is
+    -- nil / not a pointer userdata, .statement_count is not a number, OR the
+    -- record carries a .statements field (a non-lean record, the hang shape) ->
+    -- FAIL. DEGRADED PASS when 0 records (dev DB absent / dev mode off — the
+    -- known string CANNOT resolve without the dev DB, and the empty result is
+    -- indistinguishable from a no-match).
     do
         local row = "cap-99-known-string-find"
         local r = kcdx.find({ string = KNOWN_STRING })
@@ -88,6 +97,7 @@ kcdx.on("ready", function()
             local name = fn["function"]
             local mod  = fn.module
             local rva  = fn.rva
+            local sc   = fn.statement_count
             if type(name) ~= "string" or name == "" then
                 kcdx.test.report(row, false,
                     "the first record's .function is empty/non-string ("
@@ -112,13 +122,32 @@ kcdx.on("ready", function()
                     .. ", expected a kcdx.memory.pointer userdata — a VA pushed "
                     .. "as a number is lossy (lua-precision.md); the binder "
                     .. "must use PushPointer")
+            elseif type(sc) ~= "number" then
+                kcdx.test.report(row, false,
+                    "the first record's .statement_count is a " .. type(sc)
+                    .. " (expected a number) — a lean find record carries the "
+                    .. "SQL-computed statement_count; a missing/non-number count "
+                    .. "means the lean-header wiring is broken")
+            elseif fn.statements ~= nil then
+                -- A .statements field means the record is NOT lean — the
+                -- boot-hang shape (KI-0015: 500 records x full statement lists =
+                -- ~400K nested tables on the boot thread -> HANG). Find must
+                -- return headers only; the detail is kcdx_dev_inspect's.
+                kcdx.test.report(row, false,
+                    "the first record carries a .statements field (type="
+                    .. type(fn.statements) .. ") — a find record must be LEAN "
+                    .. "(headers only, no statement bodies); a non-lean record "
+                    .. "is the KI-0015 boot-hang shape. Use kcdx_dev_inspect for "
+                    .. "a function's statements")
             else
                 kcdx.test.report(row, true,
                     "kcdx.find{string=<known>} returned " .. #r .. " record(s); "
                     .. "the first is function=\"" .. name .. "\" module=\""
                     .. mod .. "\" rva=" .. tostring(rva)
-                    .. " (a kcdx.memory.pointer userdata, non-nil) — the binder "
-                    .. "builds a complete record (ground truth FUN_18043ee28 / "
+                    .. " statement_count=" .. tostring(sc)
+                    .. " (rva a kcdx.memory.pointer userdata, statement_count a "
+                    .. "number, NO .statements field) — the binder builds a "
+                    .. "complete LEAN record (ground truth FUN_18043ee28 / "
                     .. MODULE .. ")")
             end
         end
@@ -210,10 +239,18 @@ kcdx.on("ready", function()
     -- =====================================================================
     -- cap-99-truncates-loud — kcdx.find{callee=OVERCAP_CALLEE} (30,393 owners,
     -- > the 500 cap) carries the loud-truncation markers passed transparently
-    -- from FindFunctions: #r==500, _truncated==true, _total_matches>500.
+    -- from FindFunctions: #r==500, _truncated==true, _total_matches>500 — AND
+    -- each returned record is LEAN (a numeric .statement_count, NO .statements
+    -- field). THIS ROW IS THE KI-0015 REGRESSION GUARD: the original eager
+    -- design built every one of the 500 records' full statement lists (~400K
+    -- nested Lua tables) on the boot worker thread → memory/GC stall → HANG.
+    -- With the lean fix it builds 500 small header tables and returns; THIS ROW
+    -- MUST NO LONGER HANG.
     -- FALSIFIABLE: a silent partial (_truncated absent/false), a wrong/absent
-    -- _total_matches, or a record count != 500 -> FAIL (the AP14 silent-failure
-    -- shape). DEGRADED PASS when 0 records (dev DB absent).
+    -- _total_matches, a record count != 500, a non-number .statement_count, OR
+    -- a record carrying a .statements field (a non-lean record — the very shape
+    -- that hangs) -> FAIL (the AP14 silent-failure / KI-0015 shapes). DEGRADED
+    -- PASS when 0 records (dev DB absent).
     do
         local row = "cap-99-truncates-loud"
         local r = kcdx.find({ callee = OVERCAP_CALLEE })
@@ -230,6 +267,26 @@ kcdx.on("ready", function()
         else
             local trunc = r._truncated
             local total = r._total_matches
+            -- Lean-record check across the whole capped set: every record must
+            -- be a header (numeric .statement_count, no .statements). A single
+            -- non-lean record is the KI-0015 boot-hang shape.
+            local firstNonLean = nil  -- index of the first non-lean record, if any
+            local badReason    = nil
+            for i = 1, #r do
+                local rec = r[i]
+                if type(rec.statement_count) ~= "number" then
+                    firstNonLean = i
+                    badReason = ".statement_count is a "
+                        .. type(rec.statement_count) .. " (expected a number)"
+                    break
+                elseif rec.statements ~= nil then
+                    firstNonLean = i
+                    badReason = "carries a .statements field (type="
+                        .. type(rec.statements)
+                        .. ") — a non-lean record, the KI-0015 hang shape"
+                    break
+                end
+            end
             if #r ~= 500 then
                 kcdx.test.report(row, false,
                     "kcdx.find{callee=\"" .. OVERCAP_CALLEE .. "\"} returned "
@@ -252,21 +309,32 @@ kcdx.on("ready", function()
                     .. "uncapped count, ground truth 30393) — a truncated "
                     .. "result must report the true total so the author knows "
                     .. "how much to narrow")
+            elseif firstNonLean ~= nil then
+                kcdx.test.report(row, false,
+                    "kcdx.find returned 500 truncated records but record #"
+                    .. firstNonLean .. " " .. badReason .. " — every find "
+                    .. "record must be a LEAN header (headers only, no statement "
+                    .. "bodies); a non-lean record over the 500-record cap is "
+                    .. "exactly the KI-0015 boot-hang shape this row guards")
             else
                 kcdx.test.report(row, true,
                     "kcdx.find{callee=\"" .. OVERCAP_CALLEE .. "\"} truncated "
-                    .. "LOUDLY: #records==500, _truncated==true, "
+                    .. "LOUDLY and LEANLY: #records==500, _truncated==true, "
                     .. "_total_matches==" .. tostring(total) .. " (>500, ground "
-                    .. "truth 30393) — the cap is enforced and the truncation "
-                    .. "is never silent")
+                    .. "truth 30393), and all 500 records are lean headers "
+                    .. "(numeric .statement_count, no .statements) — the cap is "
+                    .. "enforced, the truncation is never silent, and the "
+                    .. "KI-0015 boot-hang (500 records x full statement lists) "
+                    .. "is gone")
             end
         end
     end
 
     kcdx.log.info("CAP99",
-        "kcdx.find Lua-surface self-test reported 4 boot rows (known-string "
+        "kcdx.find Lua-surface self-test reported 4 boot rows (lean known-string "
         .. "record, empty-criteria loud reject, the dev-gate graceful safety "
-        .. "contract, loud truncation); the console rows report at input_loaded")
+        .. "contract, lean+loud truncation / KI-0015 boot-hang guard); the "
+        .. "console rows report at input_loaded")
 end)
 
 -- ============================================================================

@@ -5,10 +5,13 @@
 `kcdx.find{...}` discovers a game function from **what you already know about it**
 — a string it references, a CVar it reads, a function it calls (or is called by),
 a substring of its name. You hand kcdx the clue; it hands you back the matching
-functions, with their statements and the ops you can apply to each. It is the
+functions as lean **headers** (name, module, address, statement count). It is the
 dev-time **function-discovery workbench** — the step that turns "the function
-that mentions `test_marker`" into a concrete function name, address, and
-statement list you then write `kcdx.statement.*` / `kcdx.locator.*` code against.
+that mentions `test_marker`" into a concrete function name and address. To see a
+function's statements (and the ops you can apply to each), run
+[`kcdx_dev_inspect <module> <function>`](#inspecting-one-function--kcdx_dev_inspect)
+on the one you picked, then write your `kcdx.statement.*` / `kcdx.locator.*` code
+against it.
 
 `kcdx.find` is a **dev tool**, and a **dev-mode-only** one (below). It searches a
 separate, large dev reference database — the full game corpus — which the shipped
@@ -73,7 +76,12 @@ it is never silently ignored.
 ## Returns
 
 `kcdx.find` **always returns a table** — never `nil`, never an error on a normal
-search. The table is an **array of record tables**, one per matched function:
+search. The table is an **array of record tables**, one per matched function.
+Each record is a **lean function header** — the clue-to-function mapping. It does
+**not** carry the function's statements; that detail is one
+[`kcdx_dev_inspect`](#inspecting-one-function--kcdx_dev_inspect) call away
+(below), so a broad search returns hundreds of small records instantly instead
+of materializing every matched function's full body.
 
 | Record key | Type | Meaning |
 |---|---|---|
@@ -81,19 +89,14 @@ search. The table is an **array of record tables**, one per matched function:
 | `module` | string | the module the function lives in (e.g. `WHGame.dll`) |
 | `rva` | pointer | the function's module-relative address, as a [`kcdx.memory.pointer`](memory.md) userdata (exact — a real address is never a lossy number) |
 | `decompile_quality` | integer | a small quality code for the decompile (0 = unknown) |
-| `statements` | array | the function's statements, in order — each a sub-table (below) |
+| `statement_count` | integer | how many statements the function has — a count to gauge the function at a glance, not the statements themselves |
 
-Each entry in `statements` is:
-
-| Statement key | Type | Meaning |
-|---|---|---|
-| `idx` | integer | the statement's position within the function |
-| `kind` | string | the statement kind (`call` / `return` / `assign` / `branch` / …) |
-| `pseudo_text` | string | the decompiled pseudo-code text of the statement |
-| `callee` | string | the call target, when the statement is a call (empty otherwise) |
-| `string_ref` | string | the string the statement references, when it has one (empty otherwise) |
-| `captures` | array | the statement's captured variables — each `{ name, storage_kind, storage_detail, data_type, size_bytes }` (empty when the statement has none); the same shape [`kcdx.locator`](locator.md) `:resolve(...).captures` returns |
-| `applicable_ops` | array | the [`kcdx.op.*`](op.md) op **names** that fit this statement (strings) — use one verbatim in `kcdx.statement.replace_with(...)` |
+To see a function's actual statements (their kind, pseudo-text, captures, and
+the [`kcdx.op.*`](op.md) ops that fit each), pick a function from the result and
+run **`kcdx_dev_inspect <module> <function>`**
+([below](#inspecting-one-function--kcdx_dev_inspect)). The two tools divide the
+work: `kcdx.find` discovers *which* function; `kcdx_dev_inspect` inspects *one
+function's* body.
 
 ### No matches
 
@@ -118,7 +121,8 @@ criterion) to bring the count under the cap.
 
 ```lua
 -- Discovery idiom: find the function that references a known string literal,
--- then inspect its statements to decide what to hook / patch.
+-- read off its name + address, then run `kcdx_dev_inspect <module> <function>`
+-- at the console to see its statements and decide what to hook / patch.
 local r = kcdx.find{ string = "test_marker" }
 
 if #r == 0 then
@@ -129,7 +133,7 @@ else
     kcdx.log.info("MYMOD",
         fn["function"] .. " in " .. fn.module ..
         " @ " .. tostring(fn.rva) ..
-        " (" .. #fn.statements .. " statements)")
+        " (" .. fn.statement_count .. " statements)")
 end
 ```
 
@@ -157,8 +161,8 @@ not call it from `plugin.lua`.
 
 Once `kcdx_find` (or your own knowledge) hands you a function name, the
 `~`-console command `kcdx_dev_inspect` prints that function's **full statement
-list** — the same `statements` array a `kcdx.find` record carries, rendered as a
-table you read at a glance:
+list** — the detail `kcdx.find` deliberately leaves out (a find record carries
+only the `statement_count`), rendered as a table you read at a glance:
 
 ```
 kcdx_dev_inspect <module> <function>

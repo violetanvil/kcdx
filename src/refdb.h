@@ -711,16 +711,25 @@ struct FindStatement {
     std::vector<std::string> applicable_ops;
 };
 
-// One found function (the design's record §"Result record": {function, module,
-// rva, decompile_quality, statements}). `function` = the curated
+// One found function — a LEAN header (the design's §"Result record": {function,
+// module, rva, decompile_quality, statement_count}). `function` = the curated
 // address_names.name when kcdx_id is non-NULL, else address_versions.auto_name.
+//
+// NO statement bodies: find is a SEARCH and returns ONLY function headers. The
+// statement DETAIL (idx/kind/pseudo_text/captures/applicable_ops) is the
+// per-function result of kcdx_dev_inspect (EnumerateResult below), NOT find's —
+// this is the boot-hang fix (KI-0015): a broad find (30,393 owners → 500 capped
+// records) building the full statement list of every record was ~400,000 nested
+// Lua tables on CryEngine's Lua 5.1 on the boot worker thread → memory/GC stall.
+// statement_count is a SQL COUNT(*) per capped record (one cheap indexed count,
+// NOT the rows), so 500 records = 500 small tables, never the ~400K blowup.
 struct FindRecord {
     std::string function;          // display name (curated name or auto_name).
     std::string module;            // module name (from modules.name via module_id).
     uint64_t    rva = 0;           // address_versions.rva.
     int         decompile_quality = 0;  // decoded _dict_address_versions_decompile_quality (0 = unknown).
     std::string decompile_quality_label;  // the decoded dict label ("clean"/"unanalyzable"/""); empty if unknown.
-    std::vector<FindStatement> statements;
+    int64_t     statement_count = 0;  // SELECT COUNT(*) FROM statements WHERE address_version_id = ? (computed in SQL).
 };
 
 // FindFunctions result. `truncated` + `total_matches` are the LOUD over-cap
@@ -744,26 +753,40 @@ struct FindResult {
 // The 500-record cap on FindFunctions (design §"Cap 500").
 constexpr int kFindResultCap = 500;
 
-// Cross-function search over the dev DB. Lazy-opens it (OpenDevDb); on gate
-// failure returns an empty FindResult with unavailable=true + a logged
-// dev_db_unavailable reason. Each set criterion yields a set of owning
-// address_version_ids; multi-criterion = AND (intersect). Results ranked
-// `decompile_quality ASC, rva ASC` (best-decompiled first — quality 1=clean
-// sorts before 2=unanalyzable; a NULL/absent quality sorts last; deterministic
-// address tiebreak), capped at kFindResultCap with the loud truncation signal.
-// No criteria set → an empty result (the binder rejects the no-criteria call).
+// Cross-function search over the dev DB. Returns LEAN function headers (each a
+// FindRecord with statement_count, NO statement bodies — the boot-hang fix,
+// KI-0015). Lazy-opens the dev DB (OpenDevDb); on gate failure returns an empty
+// FindResult with unavailable=true + a logged dev_db_unavailable reason. Each
+// set criterion yields a set of owning address_version_ids; multi-criterion =
+// AND (intersect). Results ranked `decompile_quality ASC, rva ASC` (best-
+// decompiled first — quality 1=clean sorts before 2=unanalyzable; a NULL/absent
+// quality sorts last; deterministic address tiebreak), capped at kFindResultCap
+// with the loud truncation signal. No criteria set → an empty result (the binder
+// rejects the no-criteria call). To inspect a chosen function's statements, the
+// author runs kcdx_dev_inspect (EnumerateStatements) on ONE function.
 FindResult FindFunctions(const FindCriteria& criteria);
 
 // Enumerate the idx-ordered statements of a single function, resolved by curated
 // name OR auto_name (for kcdx_dev_inspect, step 2). On a successful resolve
-// returns the full FindRecord (function/module/rva/decompile_quality +
-// statements). On not-found returns found=false with a logged name_unknown
+// returns the function header (FindRecord) PLUS the full statement list
+// (`statements`). On not-found returns found=false with a logged name_unknown
 // reason AND a name-similarity suggestion list (the candidate names step 2's
 // teaching error renders). Lazy-opens the dev DB; on gate failure returns
 // found=false + unavailable=true + a logged dev_db_unavailable reason.
+//
+// This is the ONE place the full statement DETAIL crosses the SQL→C boundary —
+// for a SINGLE function the author picked from kcdx.find's lean list. find never
+// carries statement bodies (FindRecord is a lean header; the boot-hang fix,
+// KI-0015); dev_inspect inspects ONE function's body and so the ~400K-table
+// blowup is structurally impossible here (one function's statements, not 500's).
 struct EnumerateResult {
     bool        found = false;
-    FindRecord  record;            // populated iff found.
+    FindRecord  record;            // the function header, populated iff found.
+
+    // The function's idx-ordered statements (the full DETAIL find does NOT
+    // carry). Populated iff found. Lives on EnumerateResult — NOT on the shared
+    // lean FindRecord — so find cannot accidentally materialize statements.
+    std::vector<FindStatement> statements;
 
     // Up to a few candidate function names closest to the requested `fn`, for
     // the not-found teaching error. The curated address_names.name set is ranked

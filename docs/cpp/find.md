@@ -5,7 +5,10 @@ The C++ mirror of Lua's [`kcdx.find`](../lua/find.md) — the dev-time
 function-discovery workbench: search the dev reference DB for game functions
 matching what you already know about them (a string they reference, a CVar they
 read, a function they call or are called by, a name substring), and get back the
-matching functions with their statements and applicable ops.
+matching function **headers** (name, module, rva, decompile-quality, and a
+statement count). Like the Lua surface, find returns lean headers — a function's
+actual statements are inspected one at a time via the dev-inspect path, not
+carried in the find result.
 
 **Not yet implemented (NYI).** There is no find interface in
 [`include/kcdx/Interfaces.h`](../../include/kcdx/Interfaces.h) today — do not link
@@ -42,20 +45,10 @@ struct kcdxFindCriteria {
     // each is optional (null = unset); at least one required, multiple AND-ed.
 };
 
-struct kcdxFindCapture {
-    const char* name; const char* storageKind; const char* storageDetail;
-    const char* dataType; int64_t sizeBytes; bool hasSizeBytes;
-};
-struct kcdxFindStatement {
-    int64_t idx; const char* kind; const char* pseudoText;
-    const char* callee; const char* stringRef;
-    const kcdxFindCapture* captures; size_t captureCount;
-    const char* const* applicableOps; size_t applicableOpCount;
-};
-struct kcdxFindRecord {
+struct kcdxFindRecord {           // a LEAN function header — no statement bodies
     const char* function; const char* module; uint64_t rva;
     int decompileQuality;
-    const kcdxFindStatement* statements; size_t statementCount;
+    int64_t statementCount;       // how many statements (a count, not the rows)
 };
 struct kcdxFindResult {
     const kcdxFindRecord* records; size_t recordCount;
@@ -69,7 +62,11 @@ struct kcdxFindResult {
 
 A C++ author would get the same record set as the Lua surface — `recordCount == 0`
 is a real result (no match **or** dev-tool-unavailable; `unavailable` distinguishes
-them), never an error; an over-500 search sets `truncated` + `totalMatches`.
+them), never an error; an over-500 search sets `truncated` + `totalMatches`. The
+statement DETAIL (kind, pseudo-text, captures, applicable ops) is the planned
+dev-inspect mirror for a single function, not part of the find record — the same
+two-tool division as the Lua surface (`kcdx.find` discovers which function;
+`kcdx_dev_inspect` inspects one function's body).
 
 ## Today (the built fallback)
 

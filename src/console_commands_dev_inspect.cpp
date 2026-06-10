@@ -164,7 +164,11 @@ void Callback(const kcdxConsoleCmdArgs* args) {
     // and the pseudo-text. Mirrors kcdx_find's one-line-per-record overlay
     // discipline (snprintf into a fixed buffer, a printed-cap with a loud
     // elision line).
+    // Header from the record; the full statement DETAIL now lives on
+    // EnumerateResult.statements (find carries no statement bodies — KI-0015;
+    // dev_inspect's ONE-function path still gets them).
     const refdb::FindRecord& r = result.record;
+    const std::vector<refdb::FindStatement>& stmts = result.statements;
     {
         char header[256];
         std::snprintf(header, sizeof(header),
@@ -174,11 +178,11 @@ void Callback(const kcdxConsoleCmdArgs* args) {
                       r.decompile_quality_label.empty()
                           ? "?"
                           : r.decompile_quality_label.c_str(),
-                      r.statements.size());
+                      stmts.size());
         console::PrintLine(header);
     }
 
-    if (r.statements.empty()) {
+    if (stmts.empty()) {
         // A resolved function with no statements is a legitimate observable
         // (AP14: state it, never a blank table) — e.g. a non-curated kind.
         console::PrintLine("  (no statements)");
@@ -186,10 +190,10 @@ void Callback(const kcdxConsoleCmdArgs* args) {
     }
 
     const size_t printed =
-        r.statements.size() < kMaxPrintedStatements ? r.statements.size()
-                                                    : kMaxPrintedStatements;
+        stmts.size() < kMaxPrintedStatements ? stmts.size()
+                                             : kMaxPrintedStatements;
     for (size_t i = 0; i < printed; ++i) {
-        const refdb::FindStatement& s = r.statements[i];
+        const refdb::FindStatement& s = stmts[i];
         std::string caps = FormatCaptures(s);
         std::string ops = FormatOps(s);
         char line[512];
@@ -203,10 +207,10 @@ void Callback(const kcdxConsoleCmdArgs* args) {
                       s.pseudo_text.empty() ? "" : s.pseudo_text.c_str());
         console::PrintLine(line);
     }
-    if (r.statements.size() > printed) {
+    if (stmts.size() > printed) {
         char more[64];
         std::snprintf(more, sizeof(more), "  ... and %zu more statements elided",
-                      r.statements.size() - printed);
+                      stmts.size() - printed);
         console::PrintLine(more);
     }
 }
