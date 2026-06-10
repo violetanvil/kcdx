@@ -341,10 +341,29 @@ diff cell) are app components built FROM these.
   the row; law 1, the reserved-space reflow-safe structure). A **non-WHGame module inherits the
   install's version from WHGame.dll** (the CryEngine DLLs carry no KCD2 version string — D30).
   The folder link is re-picked each session (D30); no persisted handle.
-- **verdict badge** → a `Badge`+text composite rendering a per-kind check verdict — one of
-  **Unchanged** / **Changed** / **Ambiguous** / **CannotCheck** — as glyph + label (never
-  color-alone, law 7), with a reserved detail line beneath (law 1). The advisory carrier for
-  the static check result in s04 and the live verdict in s08.
+- **verdict badge** → a `Badge`+text composite rendering the s04 author-time STATIC per-kind
+  check verdict — one of **Unchanged** / **Changed** / **Ambiguous** / **CannotCheck** — as
+  glyph + label (never color-alone, law 7), with a reserved detail line beneath (law 1). The
+  advisory carrier for the static check result in s04. (s08's live-report verdict is the
+  separate **live verdict badge** below — the static and live vocabularies diverged at TRD D36,
+  so each surface carries only the states it can actually produce.)
+- **live verdict badge** → a `Badge`+text composite rendering the s08 live-report verdict — one
+  of the **7 D36 states** `verified_working` / `passed_not_verified` / `failed` /
+  `not_applicable` / `cannot_check` / `skipped` / `error` — as glyph + label (never color-alone,
+  law 7), with a reserved detail line beneath (law 1). The verdict is the CEILING of the
+  strongest verification method that ran (TRD D36); the badge's role colour follows the verdict's
+  worklist block — `success` role for the verified block (`verified_working` / `passed_not_verified`),
+  `error` role for the failing block (`failed`), `warning`/`info` role for the no-action verdicts
+  (`not_applicable` / `cannot_check` / `skipped` / `error`). s08-only; the s04 static check uses
+  the 4-state **verdict badge** above. Composed beside a **proof-rank chip** that carries the
+  proof-strength.
+- **proof-rank chip** → a compact `Badge`-family chip rendering a live-report row's
+  `method_rank` (1–5, TRD D36's proof ladder) as **"rank N · &lt;method&gt;"** — `1 · observed` /
+  `2 · safe-read` / `3 · reachability` / `4 · on-disk hash` / `5 · resolution` — glyph + text,
+  never color-alone (law 7). It carries the "how strong is this proof" signal the verdict alone
+  cannot: a `passed_not_verified` at rank 4 (on-disk hash) reads distinctly from one at rank 2
+  (safe-read), and `verified_working` is always rank 1. s08 composes it beside the **live verdict
+  badge**; the rank→method labels live here once (no screen restates them).
 - **ingest progress bar** → a determinate `Progress` + count label ("Parsing report… N / M
   rows") shown while s08 parses an imported report; resolves in place to the worklist (law 1
   — it occupies the worklist's region).

@@ -1,16 +1,20 @@
 # s08 — Verification report worklist (import the in-game report · pass/fail · batched bulk re-verify)
 
 ## Phase & fidelity
-v1 / high. TRD authority: [`../../design.md`](../../design.md) §6 US-11 + §10 D28/D29/D31.
+v1 / high. TRD authority: [`../../design.md`](../../design.md) §6 US-11 + §10 D28/D29/D31 +
+**D36** (the 7-state verdict + the 5-rank proof ladder — the active-attempt model) + D33/D34/D35.
 
 ## Purpose / when shown
-Shown when the maintainer imports the in-game verification plugin's JSON report (the live
-per-row verdicts — every DB row checked in the running game, TRD D25/D28). The screen presents
-every reported row + its verdict, splits passing from failing, and lets the maintainer
-**bulk re-verify** the passing rows in one batched, confirmed transaction (law 5 at batch
-scale) and jump to fix a failing row. The report is read **client-side via the File API** (the
-maintainer picks `report.json` in-page; no backend read seam — TRD D31). The screen does NOT
-verify anything itself — it consumes a verdict the engine already produced.
+Shown when the maintainer imports the in-game verification plugin's **v3** JSON report (the live
+per-row verdicts — every curated DB row actively attempted in the running game, TRD D25/D28/D36).
+The report is produced by the `kcdx_verify_all` console command the maintainer runs after loading
+a save (D33/D36). The screen presents every reported row + its **7-state verdict** and the
+**proof-rank** that produced it, splits the rows into three blocks (verified / failing /
+no-action), and lets the maintainer **bulk re-verify** the verified rows and **close intervals**
+on the failing rows — each in one batched, confirmed transaction (law 5 at batch scale) — and
+jump to fix a failing row. The report is read **client-side via the File API** (the maintainer
+picks the report JSON in-page; no backend read seam — TRD D31). The screen does NOT verify
+anything itself — it consumes verdicts the engine already produced.
 
 ## Region & position
 The main content area (right pane on wide; a drilled-in full view on phone), peer to s02/s03 —
@@ -22,46 +26,82 @@ around it (law 2); `‹ back` (phone) returns to s01.
 | Element | Component (Mantine) | Data bound | Intent emitted |
 |---|---|---|---|
 | `[Import verification report]` (entry) | `button` (default) — lives in s01 | — | `import_report()` → File API picker |
-| Report summary header | `section header` | the imported report's source filename + `M/N passing` | — (status, read-only) |
+| Report summary header | `section header` | the imported report's source filename + `M/N passing` (+ a `partial` marker when `complete: false`) | — (status, read-only) |
+| Partial-report banner | `warning banner` | `complete` / `rows_expected` vs rows-actual (shown only when `complete: false`) | — (advisory; the N present rows stay actionable) |
 | Ingest progress | `ingest progress bar` | parsed-row count `N / M` | — (transient; resolves to the worklist) |
-| Pass/fail split control | `filter control` (`SegmentedControl`) | `Passing` / `Failing` / `All` | `filter_verdicts(group)` |
-| Worklist table | `version table row` ×N (one per reported row) | `kcdx_id` · `name` (mono) · resolved version · matched `address_version` id (TRD D34) · `verdict badge` · detail | `select_row(kcdx_id)` (drills to fix) |
-| Per-row select (verified block) | `Checkbox` (passing rows only) | the row's inclusion in the verify-all batch | `toggle_select(kcdx_id)` |
-| Per-row select (failing block) | `Checkbox` (failing rows only) | the row's inclusion in the close-intervals batch | `toggle_select_failing(kcdx_id)` |
-| `[Select all passing]` / `[Select all failing]` | `button` (subtle) | toggles all rows in the block | `select_all_passing()` / `select_all_failing()` |
-| `[Verify N rows]` | `button` (primary) | the selected passing rows | `bulk_verify(selected)` → s06 batch confirm (TRD D32/D35) |
+| Block split control | `filter control` (`SegmentedControl`) | `Failing` / `Verified` / `No action` / `All` | `filter_blocks(block)` |
+| Worklist table | `version table row` ×N (one per reported row) | `kcdx_id` · `name` (mono) · resolved version · matched `address_version` id (TRD D34) · `live verdict badge` · `proof-rank chip` · detail | `select_row(kcdx_id)` (drills to fix) |
+| Per-row select (verified block) | `Checkbox` (verified-block rows only) | the row's inclusion in the verify-all batch | `toggle_select(kcdx_id)` |
+| Per-row select (failing block) | `Checkbox` (failing-block rows only) | the row's inclusion in the close-intervals batch | `toggle_select_failing(kcdx_id)` |
+| No-action rows | `version table row` (no checkbox) | the 4 no-action verdicts — `not_applicable` / `cannot_check` / `skipped` / `error` | — (shown, no action — TRD D36) |
+| `[Select all verified]` / `[Select all failing]` | `button` (subtle) | toggles all rows in the block | `select_all_verified()` / `select_all_failing()` |
+| `[Verify N rows]` | `button` (primary, verified block) | the selected verified rows | `bulk_verify(selected)` → s06 batch confirm (TRD D32/D35) |
 | `[Close intervals · N rows]` | `button` (primary, failing block) | the selected failing rows | `bulk_close_intervals(selected)` → s06 batch confirm (TRD D35) |
 | A failing row's `[Fix ▸]` | `button` (subtle) | the failing row | `select_entity(kcdx_id)` → s02 / s04 |
 | `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
 
-**The verdict (per row).** The in-game startup verification pass reports one of the four frozen
-report-schema tokens (TRD D25/D28; the JSON wire tokens are snake_case per the report schema):
-**`resolves_works`** (the swept bytes match the matched `address_version` row's `content_hash`/
-per-kind datum — the right version for this build — AND the address resolves into the live
-module's `.text` — reachable) → the `verdict badge` reads **Unchanged**; **`wrong_target`** (the
-bytes match NO candidate row's fingerprint — the function changed; the build diverged from the
-DB's recorded versions) or **`dead`** (the address does not resolve into live `.text` —
-unreachable) → **Changed**; **`cannot_check`** (the row's kind can't be checked this run — e.g. a
-deferred `vtable_index`, or no `content_hash`) → **CannotCheck**. (The verdict is
-version-applicability + reachability — NOT a runtime "does the code still work" body hash, per the
-corrected D25; the hash is computed on-disk. The static `Ambiguous` verdict is an s04 author-time
-outcome, NOT a report token — it is deliberately absent from the report enum; s08 carries the
-startup-pass verdicts only.) The badge is glyph+text, never color-alone (law 7); the detail line
-names the cause; the matched `address_version` id is shown for an attributed row (TRD D34).
+**The verdict (per row) — the 7-state enum + the proof rank (TRD D36).** The in-game sweep runs
+the strongest APPLICABLE active attempt per row and reports a **7-state verdict** (the v3
+report-schema tokens, snake_case on the wire) plus the **`method_rank`** (1–5) of the method that
+produced it — a verdict is the CEILING of the strongest method that ran. The row renders the
+**`live verdict badge`** (the 7 states) beside the **`proof-rank chip`** (`rank N · <method>`),
+both glyph+text never color-alone (law 7), with the matched `address_version` id shown for an
+attributed row (TRD D34). The states:
+
+- **`verified_working`** — observed executing correctly this session (rank 1 — the only rank that
+  earns it; an engine-hooked target that fired, or a kcdx-called target that ran + returned).
+- **`passed_not_verified`** — the strongest applicable attempt PASSED but cannot prove execution
+  (ranks 2–5 — a safe-read / reachability / on-disk-hash / resolution pass); real evidence, not
+  proof-of-working, so it caps below the top rung.
+- **`failed`** — an attempt the row should pass returned wrong (diverged bytes / dead resolve /
+  wrong target / a safe-read that faulted).
+- **`not_applicable`** — the version-applicability check RAN and found the running build's version
+  isn't covered by this row (a version gap), distinct from `cannot_check`.
+- **`cannot_check`** — the attempt ran but the row lacks the inputs the check needs (no
+  fingerprint, or a deferred kind like `vtable_index`).
+- **`skipped`** — a precondition wasn't met THIS run (the live-exercise tier needed a loaded save
+  it didn't get — run from the menu; or the module DLL was absent). The only "didn't run", and it
+  names exactly why.
+- **`error`** — the verification harness itself faulted on this row (distinct from `failed`: the
+  ROW may be fine, the TEST blew up).
+
+The detail line names the cause; it ALSO surfaces the **invoke posture** (`invoke_skip_reason`)
+**only when it adds information** — `unsafe_to_call` ("couldn't safely invoke — a foreign function
+kcdx never synthetically calls") or `uncontainable` on a row that COULD have been a callable target;
+the trivially-obvious `not_a_callable_kind` / null (an anchor / data slot / vtable is obviously not
+called) is suppressed (no noise). The verdict is version-applicability + reachability + the
+live-exercise tier — NOT a runtime "does the code still work" body hash (the corrected D25; the
+hash is on-disk). The static `Ambiguous` verdict is an s04 author-time outcome, NOT a report token —
+deliberately absent from the report enum; s08 carries the live-pass verdicts only.
+
+**Three blocks — two action, one no-action (TRD D36 verdict→block mapping).** The worklist splits
+into:
+- a **verified block** — `verified_working` + `passed_not_verified` → the **verify-all** action;
+- a **failing block** — `failed` → the **close-intervals** action;
+- a **no-action / informational block** — `not_applicable` / `cannot_check` / `skipped` / `error`
+  → shown, NO action (no checkbox; the engine reported these as "nothing for the maintainer to do
+  here" — a version gap, a deferred kind, a precondition miss, a harness fault). Rendered as a
+  **`collapsible section`** (collapsed by default — it is informational, not the work surface), the
+  rows fully visible + auditable when expanded, never silently dropped (law 4 / no silent-success).
 
 **Two batched bulk actions, each ONE batched confirm (law 5 at batch scale, TRD D32/D35).** The
-worklist splits into a **verified block** (`resolves_works`) and a **failing block**
-(`wrong_target`/`dead`); each has its own bulk action + s06 batch confirm. Neither auto-writes —
-the maintainer reviews the whole batch delta and confirms once → ONE atomic transaction (validate
-→ write → export → commit + push, law 5); both are all-UPDATE so the new-row gate (law 8) does NOT
-apply.
+verified block and the failing block each have their own bulk action + s06 batch confirm. Neither
+auto-writes — the maintainer reviews the whole batch delta and confirms once → ONE atomic
+transaction (validate → write → export → commit + push, law 5); both are all-UPDATE so the new-row
+gate (law 8) does NOT apply. The no-action block has no bulk action.
 
-- **Verify-all** (verified block, `[Verify N rows]`) — every selected passing row's `field: old →
-  new` delta: `last_verified_at_version → <report version>`, `evidence_kind → live_production`
-  (D29), `verified_date → today`, `verified_by → <injected identity>`, AND — when the report's
-  version sat in a GAP or beyond the matched row's interval — `valid_through → <report version>`
-  on the matched `address_version` row (TRD D34, the gap-pass extension). A row already covered
+- **Verify-all** (verified block, `[Verify N rows]`) — every selected verified-block row's
+  `field: old → new` delta: `last_verified_at_version → <report version>`, `verified_date →
+  today`, `verified_by → <injected identity>`, `evidence_kind → <by the row's proof rank>` (D29 —
+  a `verified_working` row, rank-1 observed live execution, writes `live_production`; a
+  `passed_not_verified` row, ranks 2–5 static, writes the static-evidence tier — NOT
+  `live_production`, because it didn't execute), AND — when the report's version sat in a GAP or
+  beyond the matched row's interval — `valid_through → <report version>` on the matched
+  `address_version` row (TRD D34, the gap-pass extension). A row already covered
   (`last_verified_at_version >= report version`) is not in the verified block (nothing to add).
+  (Both `verified_working` and `passed_not_verified` are real passes the maintainer can confirm in
+  bulk; the `live verdict badge` + `proof-rank chip` make the tier visible in the batch confirm so
+  the maintainer sees which rows were observed live vs statically passed before confirming.)
 - **Close-intervals** (failing block, `[Close intervals · N rows]`) — every selected failing
   row's `valid_through → <its last_verified_at_version>` delta: the failed row's interval retracts
   to the last version it passed, because the sweep disproved validity beyond it (TRD D35). No
@@ -74,32 +114,48 @@ No silent bulk write — the delta is always shown before anything lands.
 
 ## States & variants
 - **Empty (no report imported)** — the screen's resting state before an import: a neutral
-  prompt *"Import a verification report (`report.json`) to review which rows still resolve."* +
-  the `[Import verification report]` affordance. Not a blank pane.
+  prompt *"Import a verification report to review which rows still resolve."* + the
+  `[Import verification report]` affordance. Not a blank pane.
 - **Loading (ingesting)** — while parsing the picked report: the `ingest progress bar` —
   *"Parsing report… `N` / `M` rows"* (determinate; the row count is known from the file, TRD
   D31). Occupies the worklist's region and resolves in place to the populated worklist (law 1).
-- **Populated** — the summary header (`M/N passing`) + the pass/fail split + the worklist table
-  (every reported row, passing grouped from failing) + the batch action bar. The default split
-  view is **Failing first** (the rows needing attention), then Passing.
+- **Populated** — the summary header (`M/N passing`) + the block split control + the three blocks
+  (failing / verified / no-action) + the batch action bar. The default split view is **Failing
+  first** (the rows needing attention), then Verified, then the collapsed No-action block.
+- **Partial report (`complete: false`)** — the sweep finalized after stopping early (a mid-run
+  death; the v3 report carries `complete: false` + `rows_expected` > rows-actual, the D37 partial
+  signal). A `warning banner` pins above the worklist: *"Partial report — the sweep stopped at
+  `<rows-actual>` of `<rows_expected>` rows (it may have stopped mid-run). The rows below are
+  complete; the remaining `<M−N>` were not checked — re-run `kcdx_verify_all` for a full report."*
+  (system-caused copy, law 4 advisory). The `<rows-actual>` present rows render normally and stay
+  fully actionable (the verify-all / close-intervals batches act on the real rows); the banner
+  makes the gap loud so a partial report never reads as a complete-with-fewer-rows one. The summary
+  header also carries a `partial` marker.
 - **Error (malformed / unreadable report)** — the File API read failed or the JSON is not a
-  valid report: *"Couldn't read that report — it isn't a valid verification report (`<reason>`)."*
-  (system-caused copy naming the cause) + `[Pick another file]`. The screen stays on the empty
-  state; nothing is ingested.
+  valid v3 report (fails v3-schema validation): *"Couldn't read that report — it isn't a valid
+  verification report (`<reason>`)."* (system-caused copy naming the cause) + `[Pick another
+  file]`. The screen stays on the empty state; nothing is ingested. (A v2-shaped or older report
+  is a `<reason>` here — the importer validates against v3.)
 - **Error (a row's kcdx_id is unknown to the current DB)** — a report row references an id the
-  loaded DB doesn't have (a stale report against a changed DB): the row renders with a
-  **CannotCheck** badge + *"row `<id>` is not in the current database (stale report?)"* and is
-  excluded from bulk-select. Never silently dropped (law: no silent-success).
-- **Disabled** — each block's bulk action is disabled (not hidden) when zero rows in that block
-  are selected: `[Verify N rows]` when no passing row is selected, `[Close intervals · N rows]`
-  when no failing row is selected; the disabled state is conveyed by more than color (law 7).
-  Passing rows carry the verify checkbox; failing rows carry the close-intervals checkbox AND a
-  `[Fix ▸]` (the close retracts the interval; the fix authors the correction — distinct actions).
-- **Edge content** — a report with **0 failing** (all pass) → the split defaults to Passing,
-  the summary reads *"All `N` rows still resolve"*, only the verify-all action is active; **0
-  passing** (all fail) → the verify action is disabled, the failing block's close-intervals action
-  is active, and every row also offers `[Fix ▸]`; a **very long report** (157+ rows) scrolls the
-  worklist table, the summary header + the action bar stay fixed (law 1); a long `name` /
+  loaded DB doesn't have (a stale report against a changed DB): the row renders in the no-action
+  block with a **`cannot_check`** `live verdict badge` + *"row `<id>` is not in the current
+  database (stale report?)"* and is excluded from any bulk-select (it has no checkbox). Never
+  silently dropped (law: no silent-success).
+- **Disabled** — each action block's bulk action is disabled (not hidden) when zero rows in that
+  block are selected: `[Verify N rows]` when no verified row is selected, `[Close intervals · N
+  rows]` when no failing row is selected; the disabled state is conveyed by more than color
+  (law 7). Verified-block rows carry the verify checkbox; failing-block rows carry the
+  close-intervals checkbox AND a `[Fix ▸]` (the close retracts the interval; the fix authors the
+  correction — distinct actions); no-action-block rows carry NEITHER (shown, no action — D36).
+- **Edge content** — a report with **0 failing** → the split defaults to Verified, the summary
+  reads *"All `N` checked rows still resolve"*, only the verify-all action is active; **0 verified**
+  (all fail) → the verify action is disabled, the failing block's close-intervals action is active,
+  and every failing row also offers `[Fix ▸]`; **all rows no-action** (e.g. a from-menu report
+  where the live-exercise rows all `skipped`, or every kind deferred) → the two action blocks are
+  empty (their actions disabled), the no-action block holds every row and is expanded by default
+  (it IS the content), with a note steering the maintainer to load a save and re-run for the live
+  tier; a **very long report** (157+ rows) scrolls the worklist table, the summary header + the
+  partial banner + the action bar stay fixed (law 1); a long `name` /
   detail wraps within its cell without pushing siblings (law 1).
 
 ## Links in / out
@@ -120,16 +176,17 @@ No silent bulk write — the delta is always shown before anything lands.
 - **Law 3** — importing, selecting rows, confirming, and `[Fix ▸]` are all user actions; the
   re-verify result updates the rows' status IN PLACE and never auto-navigates, auto-selects, or
   auto-opens a row.
-- **Law 4** — every imported verdict is advisory; a Changed/CannotCheck row is surfaced, never
-  a block; bulk re-verify applies only the maintainer's explicitly selected rows, through the
+- **Law 4** — every imported verdict is advisory; a `failed` row (failing block), a no-action row
+  (`not_applicable`/`cannot_check`/`skipped`/`error`), and a partial report are all SURFACED, never
+  a block; bulk verify/close applies only the maintainer's explicitly selected rows, through the
   confirm (no silent bypass); no DLL/report content is uploaded (the report is read client-side).
 - **Law 5** — bulk re-verify is ONE atomic, confirmed transaction with the batch field-delta
   shown; a failure rolls back fully; the git commit/push stays invisible plumbing ("Re-verified
   N rows", never the git mechanics).
 - **Law 6** — the audit-trio writes the re-verify performs are validated by the shared
   validator (reached through the API); s08 renders the verdict, it never reimplements a rule.
-- **Law 7** — the `verdict badge` + the pass/fail state are glyph+text, never color-alone; the
-  disabled batch action is conveyed by more than color.
+- **Law 7** — the `live verdict badge` + the `proof-rank chip` + the block state are glyph+text,
+  never color-alone; the disabled batch action is conveyed by more than color.
 - **Law 9** — every color/space/size in s08 resolves to a Layer-1 token; no raw value.
 
 ## Responsive behavior

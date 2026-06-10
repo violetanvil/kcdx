@@ -4,6 +4,35 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-09 — s08 reconciled to the v3/D36 active-attempt verification contract
+- s08 verdict surface re-keyed v2 → v3: the 4 superseded tokens (`resolves_works`/`wrong_target`/
+  `dead`/`cannot_check` → Unchanged/Changed/CannotCheck) replaced by D36's **7-state verdict**
+  (`verified_working`/`passed_not_verified`/`failed`/`not_applicable`/`cannot_check`/`skipped`/
+  `error`) + the **`method_rank`** (1–5) proof rank.
+- s08 worklist split from two blocks to **three**: verified (`verified_working`+`passed_not_verified`
+  → verify-all) · failing (`failed` → close-intervals) · a NEW **no-action / informational block**
+  (`not_applicable`/`cannot_check`/`skipped`/`error` → shown, no action, a collapsed-by-default
+  `collapsible section`).
+- New s08 **partial-report state** — a `warning banner` driven by the v3 `complete`/`rows_expected`
+  signal (D37): a sweep that died mid-run renders the N present rows actionable + names the M−N gap.
+- s08 row detail now surfaces the **invoke posture** (`invoke_skip_reason`) only when informative
+  (`unsafe_to_call`/`uncontainable`; suppresses `not_a_callable_kind`/null).
+- s08 verify-all `evidence_kind` now mapped by proof rank (rank-1 `verified_working` →
+  `live_production`; ranks 2–5 `passed_not_verified` → the static-evidence tier — NOT
+  `live_production`). A TRD-gap surfaced by this reconciliation; the user approved the rank-keyed
+  mapping; folded into the TRD (D29) via `/design` in the rectifying pass.
+- Two new Layer-1 silhouettes: **`live verdict badge`** (the s08 7-state badge — the s04 static
+  `verdict badge` stays 4-state, unchanged; the two verdict vocabularies diverged at D36) and
+  **`proof-rank chip`** (`rank N · <method>`, the proof-strength carrier composed beside it).
+**Integrated in:** `screens/s08-verification-worklist.md` (Contents, the verdict section, the
+three-block model, the verify-all delta, States & variants incl. the partial state, Laws 4 + 7);
+`design.md` (the `verdict badge` note + the new `live verdict badge` + `proof-rank chip`
+silhouettes).
+**Why:** the producer (Phase 5, live + accepted) emits a v3 report — the 7-state verdict + proof
+ladder + the complete/rows_expected partial signal — that the pre-D36 s08 spec couldn't display;
+reconciling the screen spec to it before the FE build (`.claude/rules/spec-conformance.md` — build
+to the design, not a stale spec).
+
 ## 2026-06-08 — s04 audit-trio render: verified_by identity-prefilled; verified_date read-only + conditional
 
 The s04 milestone UAT settled the audit-trio identity + verified_date model (TRD D17a/D17b). The
