@@ -112,7 +112,7 @@ void RunSelfTestOnce() {
     if (s_reported) return;
     s_reported = true;  // synthetic + deterministic — no retry needed.
 
-    char reason[1024];
+    char reason[1536];
 
     // ----- Sub-check 1: FUNCTION VERDICT UNCHANGED (dispatch == legacy) -------
     // The legacy SurvivalCheck(rva,length,hash,len) IS today's function
@@ -1358,6 +1358,239 @@ void RunSelfTestOnce() {
                 sawLiveCalled ? "yes" : "degraded_no_call_yet"));
     }
 
+    // ----- Sub-check 15: THE RANK-2 SAFE-READ TIER --------------------------
+    // The safe-read tier reads a row's live target with ZERO mutation, capping at
+    // passed_not_verified — BELOW rank-1 observed execution, ABOVE the static
+    // rank 3-5 checks. A sane read proves the target yields a plausible value, NOT
+    // that its behavior works, so it can NEVER reach verified_working. Two methods:
+    // a rank-2 cvar read (a getter row) and a rank-3 read-only vtable_base walk
+    // (each entry resolves into live .text). The lift seam (SafeReadToVerdict) is
+    // the producer the sweep calls — asserting against it tests the producer, not a
+    // re-derivation (the same pattern sub-checks 11/14/14b use for MapStaticVerdict
+    // / ObservedToVerdict). Falsifiable claims:
+    //
+    //   (a) CVAR SANE → rank-2 passed_not_verified, NEVER verified_working
+    //       (deterministic, HARD). A sane cvar SafeReadResult lifts a passing
+    //       static ceiling to (passed_not_verified, rank 2) — the rank-2 ceiling.
+    //       FAILS if a rank-2 safe-read reaches verified_working (the top rung the
+    //       safe-read tier must NOT reach) or lands a rank other than 2.
+    //   (b) CVAR FAULTED → Failed (deterministic, HARD). A read that RAN but
+    //       returned not-sane is a divergence the row should have passed → Failed,
+    //       not a pass. FAILS if a faulted read reads passed_not_verified (a
+    //       faulted read whitewashed into a pass).
+    //   (c) NOT-RUN → static ceiling stands (deterministic, HARD). A read that
+    //       could not run (attempted=false — the degrade path) leaves the static
+    //       ceiling. FAILS if a not-run read changes the verdict.
+    //   (d) VTABLE_BASE SANE → rank-3 passed_not_verified (deterministic, HARD).
+    //       A sane read-only walk result lifts to (passed_not_verified, rank 3) —
+    //       the §11.6 vtable_base rank. A broken walk (an entry not in live .text)
+    //       → Failed. FAILS if a sane walk reaches verified_working / a rank other
+    //       than 3, or a broken walk reads a pass.
+    //   (e) LIVE CVAR READ (integration, DEGRADE-pass). SafeReadCvarGetter on a
+    //       curated cvar-getter name (ICVar_GetIVal) reads sys_pakPriority through
+    //       the production accessor; when the cvar surface is ready it is
+    //       attempted && sane and lifts to (passed_not_verified, rank 2) — NEVER
+    //       verified_working. DEGRADE-pass when the cvar surface is not ready at
+    //       this one-shot report point (the read returns attempted=false), never a
+    //       hard FAIL on timing. HARD: a read that RAN must be sane (the known cvar
+    //       exists) and must NOT reach verified_working.
+    {
+        // (a) CVAR SANE → rank-2 passed_not_verified, never verified_working.
+        svv::SafeReadResult cvarSane;
+        cvarSane.attempted = true;
+        cvarSane.sane = true;
+        cvarSane.detail = "cvar_int_read_sane";
+        svv::StaticVerdict cvarCeiling;
+        cvarCeiling.verdict = svv::Verdict::PassedNotVerified;
+        cvarCeiling.method_rank = 4;  // a static rank-4 ceiling, lifted by the read.
+        bool cvarLifted = svv::SafeReadToVerdict(cvarSane, /*passRank=*/2,
+                                                 /*failedRank=*/2, cvarCeiling);
+        if (!cvarLifted || cvarCeiling.verdict != svv::Verdict::PassedNotVerified ||
+            cvarCeiling.method_rank != 2) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a SANE rank-2 cvar safe-read did NOT lift to "
+                "(passed_not_verified, rank 2) — got lifted=%d, (%s, rank %d). A "
+                "safe-read caps at passed_not_verified at rank 2; it must NEVER "
+                "reach verified_working (only rank-1 observed execution earns the "
+                "top rung).",
+                cvarLifted ? 1 : 0, svv::VerdictName(cvarCeiling.verdict),
+                cvarCeiling.method_rank);
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "15a_cvar_sane_rank2"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        if (cvarCeiling.verdict == svv::Verdict::VerifiedWorking) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a rank-2 cvar safe-read reached verified_working — the "
+                "safe-read tier caps at passed_not_verified; only observed live "
+                "execution (rank 1) earns verified_working.");
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "15a_cvar_overclaim"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (b) CVAR FAULTED → Failed (a faulted read is failed, never a pass).
+        svv::SafeReadResult cvarFault;
+        cvarFault.attempted = true;
+        cvarFault.sane = false;
+        cvarFault.detail = "cvar_read_unavailable";
+        svv::StaticVerdict faultCeiling;
+        faultCeiling.verdict = svv::Verdict::PassedNotVerified;
+        faultCeiling.method_rank = 4;
+        bool faultLifted = svv::SafeReadToVerdict(cvarFault, /*passRank=*/2,
+                                                  /*failedRank=*/2, faultCeiling);
+        if (!faultLifted || faultCeiling.verdict != svv::Verdict::Failed) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a faulted safe-read (attempted but not sane) did NOT map to "
+                "Failed — got lifted=%d, %s. A read that RAN but returned "
+                "not-sane is a divergence the row should have passed; it must read "
+                "Failed, never passed_not_verified (a faulted read whitewashed into "
+                "a pass).",
+                faultLifted ? 1 : 0, svv::VerdictName(faultCeiling.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "15b_cvar_faulted_failed"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (c) NOT-RUN → the static ceiling stands (the degrade path).
+        svv::SafeReadResult notRun;  // attempted=false (default).
+        notRun.detail = "cvar_read_unavailable";
+        svv::StaticVerdict keepCeiling;
+        keepCeiling.verdict = svv::Verdict::PassedNotVerified;
+        keepCeiling.method_rank = 4;
+        keepCeiling.detail = "matched_and_in_live_text";
+        bool keptLifted = svv::SafeReadToVerdict(notRun, /*passRank=*/2,
+                                                 /*failedRank=*/2, keepCeiling);
+        if (keptLifted || keepCeiling.verdict != svv::Verdict::PassedNotVerified ||
+            keepCeiling.method_rank != 4) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a safe-read that did NOT run (attempted=false) changed the "
+                "verdict — got lifted=%d, (%s, rank %d). A read that could not run "
+                "must leave the static ceiling untouched (the degrade path), never "
+                "alter the verdict or rank.",
+                keptLifted ? 1 : 0, svv::VerdictName(keepCeiling.verdict),
+                keepCeiling.method_rank);
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "15c_safe_read_notrun"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (d) VTABLE_BASE SANE → rank-3 passed_not_verified; BROKEN → Failed.
+        svv::SafeReadResult vtSane;
+        vtSane.attempted = true;
+        vtSane.sane = true;
+        vtSane.detail = "vtable_all_entries_in_live_text";
+        svv::StaticVerdict vtCeiling;
+        vtCeiling.verdict = svv::Verdict::PassedNotVerified;
+        vtCeiling.method_rank = 4;
+        bool vtLifted = svv::SafeReadToVerdict(vtSane, /*passRank=*/3,
+                                               /*failedRank=*/3, vtCeiling);
+        if (!vtLifted || vtCeiling.verdict != svv::Verdict::PassedNotVerified ||
+            vtCeiling.method_rank != 3 ||
+            vtCeiling.verdict == svv::Verdict::VerifiedWorking) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a SANE rank-3 vtable_base read-only walk did NOT lift to "
+                "(passed_not_verified, rank 3) — got lifted=%d, (%s, rank %d). The "
+                "§11.6 vtable_base ceiling is passed_not_verified at rank 3 via the "
+                "read-only walk; it must NEVER reach verified_working.",
+                vtLifted ? 1 : 0, svv::VerdictName(vtCeiling.verdict),
+                vtCeiling.method_rank);
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "15d_vtable_sane_rank3"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        svv::SafeReadResult vtBroken;
+        vtBroken.attempted = true;
+        vtBroken.sane = false;
+        vtBroken.detail = "vtable_entry_not_in_live_text";
+        svv::StaticVerdict vtBrokenCeiling;
+        vtBrokenCeiling.verdict = svv::Verdict::PassedNotVerified;
+        vtBrokenCeiling.method_rank = 4;
+        svv::SafeReadToVerdict(vtBroken, /*passRank=*/3, /*failedRank=*/3,
+                               vtBrokenCeiling);
+        if (vtBrokenCeiling.verdict != svv::Verdict::Failed) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a BROKEN vtable_base walk (an entry not in live .text) "
+                "mapped to %s, not Failed — a walk that found a non-.text entry is "
+                "a live table-shape divergence and must read Failed.",
+                svv::VerdictName(vtBrokenCeiling.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "15d_vtable_broken_failed"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (e) LIVE CVAR READ (integration, DEGRADE-pass). SafeReadCvarGetter on a
+        // curated cvar-getter name reads sys_pakPriority through the production
+        // accessor. When the cvar surface is ready the read is attempted && sane;
+        // a sane read lifts to (passed_not_verified, rank 2), NEVER
+        // verified_working. DEGRADE-pass when the surface is not ready (the read
+        // returns attempted=false at this one-shot report point) — never a hard
+        // FAIL on timing. HARD: a read that RAN must be sane (the known cvar
+        // exists) and a sane read must NOT reach the top rung.
+        svv::SafeReadResult liveCvar = svv::SafeReadCvarGetter("ICVar_GetIVal");
+        if (liveCvar.attempted) {
+            if (!liveCvar.sane) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: the live cvar safe-read on ICVar_GetIVal RAN "
+                    "(attempted) but read not-sane — reading a confirmed "
+                    "boot-present cvar (sys_pakPriority) through the getter must "
+                    "return a plausible value; a faulted read of a cvar that "
+                    "exists is the safe-read failing on a genuinely-good target.");
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "15e_live_cvar_notsane"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+            // A sane live read lifts a passing ceiling to (passed_not_verified,
+            // rank 2) — and never verified_working.
+            svv::StaticVerdict liveCeiling;
+            liveCeiling.verdict = svv::Verdict::PassedNotVerified;
+            liveCeiling.method_rank = 4;
+            svv::SafeReadToVerdict(liveCvar, /*passRank=*/2, /*failedRank=*/2,
+                                   liveCeiling);
+            if (liveCeiling.verdict != svv::Verdict::PassedNotVerified ||
+                liveCeiling.method_rank != 2) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: a SANE live cvar read lifted to (%s, rank %d), not "
+                    "(passed_not_verified, rank 2) — a sane safe-read of a real "
+                    "cvar caps at passed_not_verified at rank 2, never the top "
+                    "rung.",
+                    svv::VerdictName(liveCeiling.verdict), liveCeiling.method_rank);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "15e_live_cvar_rank"));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+        LOG_INFO_KV(kCategory, "rank2_cvar_live",
+            ::kcdx::log::KV("live_cvar_read",
+                liveCvar.attempted
+                    ? (liveCvar.sane ? "sane_rank2" : "ran_not_sane")
+                    : "degraded_surface_not_ready"));
+    }
+
     // All sub-checks held. Leave clean in-memory state + an empty on-disk cache
     // so the synthetic records never leak into a future real Lookup.
     vcc::Reset();
@@ -1393,7 +1626,13 @@ void RunSelfTestOnce() {
         "fabricated top rung); AND the rank-1 CALLED-by-kcdx tier — a recorded "
         "invocation VA lifts a passing ceiling to (verified_working, rank 1), a "
         "VA not in the record does NOT, and a live CALLED row reads "
-        "verified_working only from a real invocation record. [%s]",
+        "verified_working only from a real invocation record; AND the rank-2 "
+        "safe-read tier — a sane cvar read lifts to (passed_not_verified, rank 2) "
+        "NEVER verified_working, a faulted read -> failed, a not-run read leaves "
+        "the static ceiling, the vtable_base read-only walk caps at "
+        "(passed_not_verified, rank 3) with a broken-entry walk -> failed, and a "
+        "live cvar read of sys_pakPriority (when the surface is ready) reads sane "
+        "at rank 2. [%s]",
         realChecked ? " + 1 real" : "", realNote);
     LOG_INFO_KV(kCategory, "selftest_pass",
         ::kcdx::log::KV("real_checked", realChecked ? "yes" : "degraded"),

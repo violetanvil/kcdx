@@ -144,6 +144,32 @@
 //      high sentinel VAs so the synthetic records never disturb the real
 //      production record the live HOOKED+CALLED checks read.
 //
+//   --- The rank-2 safe-read tier (caps at passed_not_verified, below rank-1) ---
+//
+//  15. RANK-2 SAFE-READ — the tier that reads a row's live target with ZERO
+//      mutation and caps at passed_not_verified (NEVER verified_working — only
+//      rank-1 observed execution earns the top rung). Asserted through the
+//      SafeReadToVerdict lift seam (the producer the sweep calls) + the live
+//      SafeReadCvarGetter accessor.
+//      (a) CVAR SANE (HARD): a sane cvar safe-read lifts a passing static ceiling
+//          to (passed_not_verified, rank 2), never verified_working.
+//      (b) CVAR FAULTED (HARD): a read that RAN but read not-sane maps to Failed
+//          (a faulted read is failed, never a pass).
+//      (c) NOT-RUN (HARD): a read that could not run (attempted=false — the
+//          degrade path) leaves the static ceiling untouched.
+//      (d) VTABLE_BASE (HARD): a sane read-only loaded-image walk (each entry in
+//          live .text) lifts to (passed_not_verified, rank 3) — the §11.6
+//          vtable_base rank; a broken walk (an entry not in live .text) -> Failed.
+//      (e) LIVE CVAR READ (DEGRADE-pass): SafeReadCvarGetter("ICVar_GetIVal")
+//          reads sys_pakPriority (a confirmed boot-present cvar) through the
+//          production accessor; when the cvar surface is ready it is
+//          attempted && sane and lifts to (passed_not_verified, rank 2), never
+//          verified_working. DEGRADE-pass when the surface is not ready at this
+//          one-shot report point (the read returns attempted=false). FAILS if a
+//          rank-2 read reaches verified_working, a faulted read reads a pass, a
+//          not-run read changes the verdict, the vtable walk mis-ranks/mis-
+//          verdicts, or a live read that RAN on a cvar that exists reads not-sane.
+//
 // Why it lives in engine code (like cap-60): survival + survival_pass +
 // version_check_cache are engine-internal symbols, not plugin exports — so
 // cap-84 self-reports from ENGINE code via kcdx::test::ReportResult. The pass is

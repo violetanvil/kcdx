@@ -49,6 +49,13 @@
 #include "survival.h"  // kcdx::survival::Status — the static-check raw status the
                        // verdict mapping consumes.
 
+namespace kcdx::pe { struct ModuleView; }  // fwd-decl: the rank-3 vtable_base
+                                           // read-only walk reads the live image
+                                           // via a ModuleView, kept out of this
+                                           // header so windows.h does not leak to
+                                           // every consumer (pe_helpers.h is
+                                           // included in the .cpp).
+
 namespace kcdx::survival_verify {
 
 // The per-row verdict — the 7-state enum. A verdict is the CEILING of the
@@ -246,6 +253,86 @@ bool WasInvokedByKcdx(uintptr_t va);
 // the present/absent discrimination from a known-clean baseline without a real
 // production call having seeded the store. Never called by production code.
 void ResetInvocationRecord();
+
+// =====================================================================
+// Rank-2 SAFE-READ tier — reads a row's live target with ZERO mutation,
+// capping at PassedNotVerified.
+// =====================================================================
+//
+// Rank 2 sits BELOW rank-1 observed execution and ABOVE the rank 3-5 static
+// checks: a correct read proves the target yields a sane value, NOT that its
+// behavior works — so it caps at PassedNotVerified, never VerifiedWorking (only
+// rank-1 observed execution earns the top rung; the ceiling rule, MapStaticVerdict).
+//
+// The safe-read METHOD reads, it never CALLS a foreign function for the sake of
+// the test — a read is not an invoke. The cvar read reaches a known game cvar
+// through the getter's existing production accessor (config-value read, zero
+// mutation); the value coming back sane is the observed pass. invoke_attempted is
+// true for the cvar read (a read IS an attempt that ran), with no invoke_skip_reason.
+// The vtable_base walk reads loaded-image memory only (no call) — its
+// invoke_attempted stays false (a read-only table walk is not a callable kind).
+
+// The outcome of one rank-2/3 safe-read attempt. `attempted` is true ONLY when
+// the read actually RAN (the surface was ready, the target resolved); `sane` is
+// true ONLY when the read RAN and returned a value the safe-read asserts is
+// plausible. A read that ran but faulted/returned implausible is attempted=true,
+// sane=false → the caller maps it to Failed (a faulted read is error/failed, not
+// a pass). A read that could not run (surface unready / no target) is
+// attempted=false → the caller keeps the static ceiling (the read did not happen,
+// so it neither passes nor fails the row). Pure observation — never AWARDS a
+// verdict; SafeReadToVerdict turns a positive (attempted && sane) into the rank-2
+// verdict.
+struct SafeReadResult {
+    bool        attempted = false;  // the read actually ran.
+    bool        sane = false;       // it ran AND returned a plausible value.
+    std::string detail;             // grep-able evidence token.
+};
+
+// Rank-2 cvar SAFE-READ: read a known game cvar's live value through the getter's
+// existing production accessor (kcdx::cvar — config-value read, ZERO mutation).
+// `getterName` is the curated cvar-getter row's name (ICVar_GetIVal / ICVar_GetFVal);
+// the read picks the matching int/float accessor. `attempted` is true once the
+// cvar surface is ready (a read ran); `sane` is true when the accessor returned
+// (a value came back) — a value coming back at all is the plausible-return signal
+// for a config getter (a faulted/unresolvable read returns false → attempted but
+// not sane → Failed). Reads a stable, always-present game cvar so the read does
+// not depend on a maintainer-set value. NOT a hot path (runs once per getter row
+// in the boot/console sweep). A read that runs IS a kcdx call that returned, so
+// the production accessor also seeds the CALLED-by-kcdx record — but THIS sweep's
+// rank-1 check ran BEFORE this read, so this row honestly lands rank-2 here (a
+// LATER sweep, seeing the seeded call, reads it rank-1).
+SafeReadResult SafeReadCvarGetter(const std::string& getterName);
+
+// Rank-3 vtable_base read-only LOADED-IMAGE walk: for the row's resolved table
+// base VA, read `slotCount` qwords from the LIVE loaded image and assert each
+// entry resolves into live `.text` (pe::IsVaInLiveText). READ-ONLY — no call, no
+// mutation. This is a STRONGER live read than the base-VA reachability range test
+// (MapStaticVerdict's rank-3 only checks the base VA lands in .text); the §11.6
+// vtable_base rank-3 asserts EACH of the N entries is a live code pointer. `view`
+// is the already-opened live module; `baseVa` is the engine-resolved table base
+// (WhgameBase()+rva — AP1: never hardcoded). `attempted` is true once the live
+// module is mapped + baseVa resolved (the walk ran); `sane` is true when ALL N
+// entries land in live `.text` (a non-.text / unreadable entry → attempted but not
+// sane → Failed: the table shape broke in the live image). NOT a hot path (once
+// per vtable_base row in the sweep).
+SafeReadResult WalkVtableBaseLive(const kcdx::pe::ModuleView& view,
+                                  uintptr_t baseVa, uint32_t slotCount);
+
+// Lift a positive rank-2/3 safe-read into the verdict + rank — caps at
+// PassedNotVerified, NEVER VerifiedWorking (the safe-read ceiling). On an
+// attempted-but-not-sane read, set `out` to Failed at `failedRank` (a faulted/
+// broken read is a divergence the row should have passed). Returns true and fills
+// `out` ONLY when the read was ATTEMPTED (passed or failed it); returns false when
+// the read did not run (attempted=false) so the caller keeps the static ceiling.
+// `passRank` is the rank a sane read reports (2 for the cvar read, 3 for the
+// vtable_base walk); `failedRank` is the rank a faulted read reports (same method
+// that ran). The seam the sweep uses: try rank-1 first; on no rank-1, try the
+// safe-read and on a positive attempt OVERRIDE the static result with the
+// safe-read verdict — but only when the static result is non-divergent (the same
+// divergence-gate as rank-1: a safe-read never whitewashes a static failed/
+// not_applicable, the more honest signal).
+bool SafeReadToVerdict(const SafeReadResult& sr, int passRank, int failedRank,
+                       StaticVerdict& out);
 
 // Run the startup verification pass over the curated USER set (every cached
 // refdb entity). Returns one RowVerdict per swept row. ONCE at startup, never on

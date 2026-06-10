@@ -8,6 +8,9 @@
 #include <utility>    // std::move
 #include <vector>
 
+#include "cvar.h"                  // GetInt/GetFloat — the rank-2 cvar safe-read
+                                  // reuses the existing read-only production
+                                  // accessor (config-value read, zero mutation).
 #include "hook_chain.h"            // GetAllChainTargets — live engine/plugin chain entries
 #include "log.h"
 #include "modification_inventory.h"  // FireRecord / LastFires — the detour fire breadcrumb ring
@@ -35,6 +38,14 @@ const char* kCategory = "SURVERIFY";
 // going to attempt — the on-disk version-applicability check, rank 4.
 constexpr int kRankOnDiskHash    = 4;  // on-disk version-applicability fingerprint.
 constexpr int kRankReachability  = 3;  // live-image .text range test.
+// Rank 2 — safe-read exercise: read the row's live target with ZERO mutation (a
+// cvar value read, a read-only vtable walk). Caps at PassedNotVerified — a sane
+// read proves the target yields a plausible value, NOT that its behavior works,
+// so it stays below rank-1 observed execution. The vtable_base read-only
+// LOADED-IMAGE walk (each entry resolves into live .text) is a rank-3 method
+// (§11.6) — a stronger live read than the base-VA reachability range test, but
+// still a static-class read capped at PassedNotVerified.
+constexpr int kRankSafeRead      = 2;  // cvar live-value read (zero mutation).
 // Rank 1 — observed live execution: the function fired in the running process
 // AND passed through correctly (the engine's own hook-chain fire breadcrumb, OR
 // kcdx's own production call that already ran). The ONLY rank that awards
@@ -322,6 +333,145 @@ void ResetInvocationRecord() {
     g_invokedVas.clear();
 }
 
+// --- Rank-2/3 SAFE-READ tier -------------------------------------------------
+// Reads a row's live target with ZERO mutation; caps at PassedNotVerified (a sane
+// read proves a plausible value, not that behavior works — below rank-1 observed
+// execution). The cvar read reaches a known game cvar through the getter's
+// existing read-only production accessor; the vtable_base walk reads loaded-image
+// memory only (no call).
+
+namespace {
+// A stable, boot-present game cvar used to exercise a getter row's live read with
+// zero mutation. sys_pakPriority is a confirmed boot-present int cvar (the same
+// known-good read target cap-71/cap-72 use); reading it asserts the getter yields
+// a plausible value without depending on any maintainer-set value. NOT a game
+// address (AP1 exception): a cvar NAME string the read resolves through the DB.
+constexpr const char* kSafeReadCvar = "sys_pakPriority";
+
+// The curated cvar-getter row names (the §11.6 safe-read getter set). A row whose
+// name is one of these is a rank-2 cvar-read target — int via GetIVal, float via
+// GetFVal. Matched by the resolved (post-supersession) name the sweep carries.
+constexpr const char* kCvarGetterInt   = "ICVar_GetIVal";
+constexpr const char* kCvarGetterFloat = "ICVar_GetFVal";
+}  // namespace
+
+SafeReadResult SafeReadCvarGetter(const std::string& getterName) {
+    SafeReadResult r;
+    // Read a known game cvar through the getter's existing production accessor —
+    // a config-value read, ZERO mutation. GetInt/GetFloat return false when the
+    // cvar surface is not ready yet (cvar::Init not run / console not up at this
+    // sweep's timing) → the read did NOT run → attempted=false → the caller keeps
+    // the static ceiling (the degrade-safe path: the boot/console sweep may reach
+    // this row before the cvar surface comes up).
+    if (getterName == kCvarGetterInt) {
+        int v = 0;
+        if (!kcdx::cvar::GetInt(kSafeReadCvar, &v)) {
+            // The accessor returned false — surface unready, or the known cvar
+            // did not resolve. The read did not produce a value. attempted stays
+            // false (degrade); NOT a Failed (a read that could not run neither
+            // passes nor fails the row).
+            r.detail = "cvar_read_unavailable";
+            return r;
+        }
+        // The accessor returned true → it ran AND a value came back. A value
+        // returning at all is the plausible-return signal for a config getter
+        // (the no-garbage-write contract: GetInt returns false without writing on
+        // any miss, so a true return means a real read). Zero-mutation: a config
+        // read changes nothing.
+        r.attempted = true;
+        r.sane = true;
+        r.detail = "cvar_int_read_sane";
+        return r;
+    }
+    if (getterName == kCvarGetterFloat) {
+        float v = 0.0f;
+        if (!kcdx::cvar::GetFloat(kSafeReadCvar, &v)) {
+            r.detail = "cvar_read_unavailable";
+            return r;
+        }
+        r.attempted = true;
+        r.sane = true;
+        r.detail = "cvar_float_read_sane";
+        return r;
+    }
+    // Not a cvar-getter row — this method does not apply. attempted=false → the
+    // caller keeps the static ceiling.
+    r.detail = "not_a_cvar_getter";
+    return r;
+}
+
+SafeReadResult WalkVtableBaseLive(const pe::ModuleView& view, uintptr_t baseVa,
+                                  uint32_t slotCount) {
+    SafeReadResult r;
+    if (baseVa == 0 || slotCount == 0) {
+        // No resolved table base / no expected slot count — the walk cannot run.
+        // attempted=false → keep the static ceiling (degrade).
+        r.detail = "vtable_walk_no_base_or_count";
+        return r;
+    }
+    // The base VA itself must land in a readable image range before the walk —
+    // the table sits in .rdata, not .text, so test the base against the live
+    // image bounds (the ModuleView span), NOT IsVaInLiveText (that is for the
+    // .text ENTRIES). A base outside the mapped image cannot be walked.
+    const uintptr_t imgLo = reinterpret_cast<uintptr_t>(view.baseBytes);
+    const uintptr_t imgHi = imgLo + view.size;
+    const size_t tableBytes = static_cast<size_t>(slotCount) * 8;
+    if (imgLo == 0 || baseVa < imgLo || baseVa + tableBytes > imgHi) {
+        // The N-qword span is not within the mapped image — the table moved /
+        // shrank in the live image, or the base did not resolve into the module.
+        // The walk RAN (we attempted to read) and found the shape broken →
+        // attempted=true, sane=false → Failed (the live table shape diverged).
+        r.attempted = true;
+        r.sane = false;
+        r.detail = "vtable_base_span_off_image";
+        return r;
+    }
+    // Read each of the N qwords from the LIVE loaded image and assert each entry
+    // resolves into live .text (a plausible relocated code pointer). READ-ONLY —
+    // no call. A non-.text / null entry means the live table shape broke.
+    const uint8_t* base = reinterpret_cast<const uint8_t*>(baseVa);
+    for (uint32_t i = 0; i < slotCount; ++i) {
+        uintptr_t entry = 0;
+        std::memcpy(&entry, base + static_cast<size_t>(i) * sizeof(uintptr_t),
+                    sizeof(uintptr_t));
+        if (!pe::IsVaInLiveText(view, entry)) {
+            // An entry that is not a live .text pointer — the table shape broke
+            // in the live image. The walk ran + found the divergence → Failed.
+            r.attempted = true;
+            r.sane = false;
+            r.detail = "vtable_entry_not_in_live_text";
+            return r;
+        }
+    }
+    // All N entries resolved into live .text → a sane read-only walk.
+    r.attempted = true;
+    r.sane = true;
+    r.detail = "vtable_all_entries_in_live_text";
+    return r;
+}
+
+bool SafeReadToVerdict(const SafeReadResult& sr, int passRank, int failedRank,
+                       StaticVerdict& out) {
+    if (!sr.attempted) return false;  // read did not run → static ceiling stands.
+    if (sr.sane) {
+        // A sane read caps at PassedNotVerified — NEVER VerifiedWorking (only
+        // rank-1 observed execution earns the top rung; the ceiling rule). The
+        // rank is the safe-read method that ran (2 for cvar, 3 for the vtable
+        // walk).
+        out.verdict = Verdict::PassedNotVerified;
+        out.method_rank = passRank;
+        out.detail = sr.detail.empty() ? "safe_read_sane" : sr.detail;
+        return true;
+    }
+    // The read ran but faulted / returned implausible — a divergence the row
+    // should have passed → Failed at the method that ran (a faulted read is
+    // failed, never a pass).
+    out.verdict = Verdict::Failed;
+    out.method_rank = failedRank;
+    out.detail = sr.detail.empty() ? "safe_read_failed" : sr.detail;
+    return true;
+}
+
 std::vector<RowVerdict> RunStartupVerification() {
     std::vector<RowVerdict> out;
 
@@ -512,6 +662,49 @@ std::vector<RowVerdict> RunStartupVerification() {
                     called.fireSeq = 0;  // no fire-ring seq — this is a CALLED record, not a hook fire.
                     called.detail = "observed_kcdx_called";
                     ObservedToVerdict(called, sv_result);
+                }
+            }
+
+            // --- Rank-2/3 SAFE-READ tier — taken ABOVE the static rank 3-4-5
+            // ceiling but BELOW rank-1, and only when rank-1 did NOT observe this
+            // row. A safe-read reads the live target with ZERO mutation:
+            //   cvar getter (ICVar_GetIVal/GetFVal) → rank-2 cvar read (a known
+            //     game cvar read through the existing production accessor; a value
+            //     returning sane is the pass).
+            //   vtable_base → rank-3 read-only LOADED-IMAGE walk (each of the N
+            //     entries resolves into live .text — a stronger live read than
+            //     MapStaticVerdict's base-VA reachability range test).
+            // Same divergence-gate as rank-1: only override a non-divergent
+            // PassedNotVerified — a safe-read never whitewashes a static failed/
+            // not_applicable/cannot_check. A safe-read that RAN but faulted/broke
+            // flips the row to Failed (a faulted read is failed, never a pass); a
+            // safe-read that could not run (cvar surface unready / no base) leaves
+            // the static ceiling (degrade). rank-1 verified_working is NOT touched
+            // here (the gate requires PassedNotVerified). §11.6: the cvar getter
+            // caps at rank-2 passed_not_verified (invoke_attempted true), the
+            // vtable_base read-only walk at rank-3 passed_not_verified.
+            if (sv_result.verdict == Verdict::PassedNotVerified) {
+                if (kind == sv::Kind::Function ||
+                    kind == sv::Kind::FunctionNoSig ||
+                    kind == sv::Kind::FunctionVariadic) {
+                    // A cvar-getter row → rank-2 cvar safe-read. SafeReadCvarGetter
+                    // applies only to the getter names; any other function row
+                    // returns attempted=false → the static ceiling stands.
+                    SafeReadResult sr = SafeReadCvarGetter(name);
+                    SafeReadToVerdict(sr, /*passRank=*/kRankSafeRead,
+                                      /*failedRank=*/kRankSafeRead, sv_result);
+                } else if (kind == sv::Kind::VtableBase) {
+                    // A vtable_base row → rank-3 read-only loaded-image walk. Only
+                    // when the live image is mapped (else the walk cannot run →
+                    // attempted=false → keep the static ceiling). slotCount came
+                    // from the row's payload (no_slot_count would have CannotCheck'd
+                    // upstream, so this path only runs on a row that has it).
+                    if (liveMapped) {
+                        SafeReadResult sr =
+                            WalkVtableBaseLive(view, va, payload.slotCount);
+                        SafeReadToVerdict(sr, /*passRank=*/kRankReachability,
+                                          /*failedRank=*/kRankReachability, sv_result);
+                    }
                 }
             }
 

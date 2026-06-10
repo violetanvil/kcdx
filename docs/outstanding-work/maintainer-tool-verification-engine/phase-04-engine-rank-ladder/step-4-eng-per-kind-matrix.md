@@ -22,6 +22,17 @@ observation 4.2 → rank-2 safe-read 4.3 → rank-3/4 static Phase-3 → rank-5 
 produce the verdict. This is the step that makes the ladder a complete per-kind dispatcher; 4.2/4.3
 built the rank-1/rank-2 methods, this routes each kind to its ceiling.
 
+**Carried-forward obligation from 4.3 (the vtable_base reachability route).** 4.3 built the rank-3
+read-only loaded-image entry-walk (`WalkVtableBaseLive` — each of N table entries resolves into live
+`.text`), but it does NOT yet replace `MapStaticVerdict`'s reachability for a `vtable_base` row: that
+still tests the table BASE VA against `.text`, and a vtable base lives in `.rdata`, so a `vtable_base`
+row currently lands `failed` ("resolved_va_not_in_live_text") in the live sweep instead of its §11.6
+`passed_not_verified`. THIS step's dispatcher MUST route a `vtable_base` row's reachability to
+`WalkVtableBaseLive` (the entry-walk IS its §11.6 rank-3 reachability, replacing the base-in-`.text`
+test) so the 4 curated vtable_base rows (kcdx_id 119/138/139/140) read `passed_not_verified`, not
+`failed`. A cap-84 sub-check asserts a `vtable_base` row resolves `passed_not_verified` via the walk,
+NOT `failed` (FALSIFIABLE: a vtable_base row reading `failed` from the base-VA test fails the row).
+
 ## Test bar
 
 cap-84 sub-check: assert each of the 9 kinds reaches its §11.6 ceiling on a synthetic/curated row —
