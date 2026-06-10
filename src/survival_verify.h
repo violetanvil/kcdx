@@ -93,6 +93,25 @@ enum class Verdict {
                         // may be fine, the TEST blew up.
 };
 
+// The reason a row's strongest applicable method did NOT mint a synthetic call —
+// a STRUCTURED PROPERTY of the response, never a verdict that means "gave up".
+// The flag pairs with invoke_attempted on every row: a row that was observed
+// (game/kcdx already ran it) or safe-read carries None (no skip — it was either
+// observed without invoking, or a read was attempted); a row whose kind cannot
+// safely be invoked carries the reason WHY no invoke happened.
+enum class InvokeSkipReason {
+    None,             // no skip to report — observed (not invoked), or a read WAS
+                      // attempted (the safe-read getter). invoke_attempted carries
+                      // whether an attempt ran; this stays None for both.
+    UnsafeToCall,     // a foreign/variadic function with an ABI but no zero-risk
+                      // way to invoke it (kcdx never mints a synthetic call to a
+                      // foreign function; the corruption class is uncatchable).
+    Uncontainable,    // reserved (D36) — an invoke whose side effects cannot be
+                      // contained; no curated kind uses it yet.
+    NotACallableKind, // the kind is not a function to call at all (an anchor, a
+                      // data slot, a vtable, a no-sig function with no ABI).
+};
+
 // One curated row's combined verdict.
 struct RowVerdict {
     uint64_t    kcdx_id = 0;          // the curated entity's stable id.
@@ -124,6 +143,18 @@ struct RowVerdict {
     std::string detail;               // a human-readable + grep-able reason token
                                       // (the survival reason, or the failed/
                                       // not_applicable/cannot_check cause).
+
+    // The §11.6 invoke posture for this row — a structured property of the
+    // response (D36's `triple + a flag`). `invoke_attempted` is true ONLY for the
+    // safe-read getter path (a read IS an attempt that ran); it is false for an
+    // OBSERVED row (the game/kcdx already ran it — kcdx never mints a synthetic
+    // call) and for every non-callable kind. `invoke_skip_reason` names WHY no
+    // invoke happened: None when observed or a read was attempted; UnsafeToCall
+    // for a foreign/variadic function; NotACallableKind for an anchor / data slot
+    // / vtable / no-sig function. The per-kind dispatcher sets these from the
+    // §11.6 matrix; the function kind refines its posture by which method won.
+    bool             invoke_attempted = false;
+    InvokeSkipReason invoke_skip_reason = InvokeSkipReason::None;
 };
 
 // The outcome of the static-method verdict mapping for ONE row — the ceiling
@@ -154,6 +185,68 @@ struct StaticVerdict {
 StaticVerdict MapStaticVerdict(bool versionGap, kcdx::survival::Status onDiskStatus,
                                const std::string& onDiskReason, bool reachable,
                                bool liveMapped);
+
+// =====================================================================
+// The §11.6 per-kind verification MATRIX — the dispatcher.
+// =====================================================================
+//
+// The data-side companion to D36's enum + rank ladder: for each of the 9 curated
+// kinds, the strongest method the sweep ATTEMPTS for that kind, the verdict
+// CEILING that method can reach, and the kind's DEFAULT invoke posture. The
+// dispatcher routes each swept row to the strongest applicable method its kind
+// permits and lets the ceiling rule (MapStaticVerdict + the observed/safe-read
+// tiers) produce the verdict — so every row gets an ACTIVE attempt and a
+// structured response (no kind is a passive non-result).
+//
+// The dispatcher decides which METHOD to attempt per kind; the methods themselves
+// report what they observed at runtime (which function is in the rank-1 HOOKED/
+// CALLED set is the observation tier's runtime fact, not the dispatcher's). For
+// the function kind the dispatcher's posture is the FLOOR (the foreign-uncallable
+// default); a row that the observation/safe-read tier reaches REFINES it (an
+// observed row → invoke_attempted false + None; a safe-read getter →
+// invoke_attempted true + None). For the non-function kinds the posture is fixed.
+
+// The strongest method a kind's dispatch attempts — the §11.6 "strongest
+// applicable attempt" column, as a method-class tag. The sweep maps each to its
+// concrete method (rank-1 observation → rank-2/3 safe-read → static
+// MapStaticVerdict → the vtable_base walk → the vtable_index deferral).
+enum class DispatchMethod {
+    ObservedThenStatic,  // function: try rank-1 observation; fall to the rank-4
+                         // static check (foreign-uncallable floor).
+    SafeReadCvar,        // function (cvar getter): rank-2 safe-read; the function
+                         // dispatch refines this at runtime by the getter name.
+    StaticOnly,          // function_no_sig / function_variadic / callsite /
+                         // string_anchor / instruction_anchor / data_slot — the
+                         // static check (MapStaticVerdict) is the strongest method.
+    VtableBaseWalk,      // vtable_base: rank-3 reachability IS the read-only
+                         // entry-walk (WalkVtableBaseLive), NOT the base-VA range
+                         // test — REPLACES MapStaticVerdict's base-in-.text test.
+    Deferred,            // vtable_index: cannot_check (no live-vtable resolution).
+};
+
+// One kind's §11.6 dispatch descriptor: the method to attempt + the kind's
+// DEFAULT invoke posture (the floor; the function kind refines it by which method
+// won). `ceilingRank` is the strongest rank the method can reach for this kind —
+// used only as the documented §11.6 ceiling (the actual rank reported is the rank
+// of the method that ran). A function kind's default posture is the
+// foreign-uncallable case (invoke_attempted false, UnsafeToCall) — the observed/
+// safe-read refinement overrides it when those tiers reach the row.
+struct KindDispatch {
+    DispatchMethod   method = DispatchMethod::StaticOnly;
+    int              ceilingRank = 0;             // the §11.6 ceiling rank for this kind.
+    bool             invokeAttempted = false;     // the §11.6 default invoke_attempted.
+    InvokeSkipReason invokeSkipReason = InvokeSkipReason::NotACallableKind;
+};
+
+// The §11.6 matrix lookup: map a curated kind → its dispatch descriptor. This is
+// the per-kind routing table (the dispatcher), built verbatim from §11.6 — every
+// kind has a row, no kind is a passive non-result. The function kind returns the
+// foreign-uncallable FLOOR (ObservedThenStatic + UnsafeToCall); the sweep refines
+// its method + posture at runtime (rank-1 observed / rank-2 cvar getter).
+KindDispatch DispatchForKind(kcdx::survival::Kind kind);
+
+// Decode an InvokeSkipReason to its stable token (for logs / the later v3 report).
+const char* InvokeSkipReasonName(InvokeSkipReason r);
 
 // =====================================================================
 // Rank-1 OBSERVED-EXECUTION tier — the only method that awards

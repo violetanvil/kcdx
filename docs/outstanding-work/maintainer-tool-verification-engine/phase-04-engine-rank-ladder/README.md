@@ -20,8 +20,8 @@ dev mode, reads the log; the user launches).
 |---|---|---|
 | [4.1 [ENG] The 7-state verdict enum + the ceiling rule in survival_verify](step-1-eng-verdict-enum-ceiling.md) | DONE | 75ddd8c |
 | [4.2 [ENG] The rank-1 observed-execution tier (hook-fire + pass-through; kcdx's own production call)](step-2-eng-rank1-observed-execution.md) | DONE | 36d61a5 |
-| [4.3 [ENG] The rank-2 safe-read tier (cvar read + read-only vtable_base walk)](step-3-eng-rank2-safe-read.md) | DONE | (landed) |
-| [4.4 [ENG] The per-kind ceiling matrix wiring (§11.6)](step-4-eng-per-kind-matrix.md) | NOT STARTED | — |
+| [4.3 [ENG] The rank-2 safe-read tier (cvar read + read-only vtable_base walk)](step-3-eng-rank2-safe-read.md) | DONE | cdabde8 |
+| [4.4 [ENG] The per-kind ceiling matrix wiring (§11.6)](step-4-eng-per-kind-matrix.md) | DONE | (landed) |
 
 ## Phase verification gate
 

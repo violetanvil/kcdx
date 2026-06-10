@@ -170,6 +170,33 @@
 //          not-run read changes the verdict, the vtable walk mis-ranks/mis-
 //          verdicts, or a live read that RAN on a cvar that exists reads not-sane.
 //
+//   --- The §11.6 per-kind dispatch matrix (the dispatcher) ---
+//
+//  16. THE §11.6 PER-KIND DISPATCH MATRIX — the dispatcher routes each of the 9
+//      kinds to its strongest applicable method + its §11.6 default invoke
+//      posture; the ceiling rule caps the verdict.
+//      (a) DISPATCH TABLE (HARD): DispatchForKind returns, per kind, the §11.6
+//          ceiling rank + default invoke_attempted + invoke_skip_reason. FAILS if
+//          a callable kind carries not_a_callable_kind (or a non-callable kind
+//          does not), or a kind's dispatch ceiling rank ≠ its §11.6 value.
+//      (b) VTABLE_BASE RE-ROUTE (HARD) — the carried-forward fix: the §11.6
+//          vtable_base rank-3 reachability is the read-only ENTRY-WALK, not the
+//          base-VA range test. With the walk's reachable signal TRUE,
+//          MapStaticVerdict maps to (passed_not_verified, rank 3), NOT failed; the
+//          contrapositive (reachable=false, what IsVaInLiveText(base) returns for a
+//          .rdata base) maps to failed — the defect the walk substitution avoids.
+//          FAILS if a reachable-walk vtable_base reads failed, or the base test no
+//          longer condemns (the re-route's contrast gone).
+//      (c) LIVE PER-KIND CEILING (DEGRADE-aware) — scan the real sweep: NO row
+//          reads a verdict ABOVE its kind's §11.6 ceiling (only the function kind
+//          reaches verified_working); a curated vtable_base row reads
+//          passed_not_verified via the walk, NEVER failed from the base-VA test
+//          ('resolved_va_not_in_live_text'); every non-function kind carries its
+//          §11.6 invoke posture (invoke_attempted false + its default skip reason).
+//          DEGRADE when WHGame is not mapped / the DB lacks a kind's row. FAILS if
+//          a non-function kind reads verified_working, a vtable_base reads failed
+//          from the base-VA test, or a non-callable kind carries the wrong posture.
+//
 // Why it lives in engine code (like cap-60): survival + survival_pass +
 // version_check_cache are engine-internal symbols, not plugin exports — so
 // cap-84 self-reports from ENGINE code via kcdx::test::ReportResult. The pass is

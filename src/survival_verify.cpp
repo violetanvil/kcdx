@@ -164,6 +164,99 @@ const char* VerdictName(Verdict v) {
     return "cannot_check";  // unreachable; the switch is exhaustive.
 }
 
+const char* InvokeSkipReasonName(InvokeSkipReason r) {
+    switch (r) {
+        case InvokeSkipReason::None:             return "none";
+        case InvokeSkipReason::UnsafeToCall:     return "unsafe_to_call";
+        case InvokeSkipReason::Uncontainable:    return "uncontainable";
+        case InvokeSkipReason::NotACallableKind: return "not_a_callable_kind";
+    }
+    return "none";  // unreachable; the switch is exhaustive.
+}
+
+KindDispatch DispatchForKind(sv::Kind kind) {
+    KindDispatch d;
+    switch (kind) {
+        // function — the FLOOR is the foreign-uncallable case (§11.6 row 4):
+        // rank-4 static, invoke_attempted false, unsafe_to_call. The sweep
+        // REFINES this at runtime: a rank-1 HOOKED/CALLED observation (rows 1-2:
+        // invoke_attempted false, None) or a rank-2 cvar safe-read (row 3:
+        // invoke_attempted true, None) overrides the floor when those tiers reach
+        // the row. The ceiling rank is the top a function CAN reach (rank 1).
+        case sv::Kind::Function:
+            d.method = DispatchMethod::ObservedThenStatic;
+            d.ceilingRank = kRankObservedExecution;  // a function CAN reach rank-1.
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::UnsafeToCall;  // foreign-uncallable floor.
+            return d;
+        // function_no_sig — rank-4 static (no ABI to call) → not_a_callable_kind.
+        case sv::Kind::FunctionNoSig:
+            d.method = DispatchMethod::StaticOnly;
+            d.ceilingRank = kRankOnDiskHash;
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+            return d;
+        // function_variadic — rank-4 static, unsafe_to_call (an ABI, no zero-risk
+        // synthetic call shape).
+        case sv::Kind::FunctionVariadic:
+            d.method = DispatchMethod::StaticOnly;
+            d.ceilingRank = kRankOnDiskHash;
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::UnsafeToCall;
+            return d;
+        // callsite — rank-3/4 static (AOB uniqueness + reachability).
+        case sv::Kind::Callsite:
+            d.method = DispatchMethod::StaticOnly;
+            d.ceilingRank = kRankReachability;
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+            return d;
+        // string_anchor — rank-4 static (.rdata literal + xref).
+        case sv::Kind::StringAnchor:
+            d.method = DispatchMethod::StaticOnly;
+            d.ceilingRank = kRankOnDiskHash;
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+            return d;
+        // instruction_anchor — rank-3/4 static (resolver-chain derivation).
+        case sv::Kind::InstructionAnchor:
+            d.method = DispatchMethod::StaticOnly;
+            d.ceilingRank = kRankReachability;
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+            return d;
+        // data_slot — rank-5 derivation (no content hash).
+        case sv::Kind::DataSlot:
+            d.method = DispatchMethod::StaticOnly;
+            d.ceilingRank = 5;  // derivation/existence rank.
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+            return d;
+        // vtable_base — rank-3 via the read-only entry-walk (REPLACES the base-VA
+        // range test). The walk IS the §11.6 rank-3 reachability.
+        case sv::Kind::VtableBase:
+            d.method = DispatchMethod::VtableBaseWalk;
+            d.ceilingRank = kRankReachability;
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+            return d;
+        // vtable_index — deferred (cannot_check; no live-vtable resolution path).
+        case sv::Kind::VtableIndex:
+            d.method = DispatchMethod::Deferred;
+            d.ceilingRank = 0;  // no method reaches a verdict above cannot_check.
+            d.invokeAttempted = false;
+            d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+            return d;
+    }
+    // Unreachable (the switch is exhaustive over the 9 kinds) — the safe default
+    // is the not-a-callable static floor.
+    d.method = DispatchMethod::StaticOnly;
+    d.ceilingRank = kRankOnDiskHash;
+    d.invokeAttempted = false;
+    d.invokeSkipReason = InvokeSkipReason::NotACallableKind;
+    return d;
+}
+
 StaticVerdict MapStaticVerdict(bool versionGap, sv::Status onDiskStatus,
                                const std::string& onDiskReason, bool reachable,
                                bool liveMapped) {
@@ -537,9 +630,12 @@ std::vector<RowVerdict> RunStartupVerification() {
             refdb::NameResolution nr = refdb::ResolveByName(name);
             if (!nr.found) {
                 // The name the cache yielded does not re-resolve — a cache/DB
-                // inconsistency. Loud cannot_check, never a faked verdict.
+                // inconsistency. Loud cannot_check, never a faked verdict. The kind
+                // is undeterminable, so the invoke posture is not_a_callable_kind
+                // (nothing to call — never a blank posture, D36).
                 rv.verdict = Verdict::CannotCheck;
                 rv.detail = "name_unresolved";
+                rv.invoke_skip_reason = InvokeSkipReason::NotACallableKind;
                 LOG_WARN_KV(kCategory, "row_cannot_check",
                     ::kcdx::log::KV("kcdx_id", (unsigned long long)kcdx_id),
                     ::kcdx::log::KV("name", name),
@@ -554,6 +650,7 @@ std::vector<RowVerdict> RunStartupVerification() {
             if (!DecodeKind(nr.kind, kind)) {
                 rv.verdict = Verdict::CannotCheck;
                 rv.detail = "kind_unknown";
+                rv.invoke_skip_reason = InvokeSkipReason::NotACallableKind;
                 LOG_WARN_KV(kCategory, "row_cannot_check",
                     ::kcdx::log::KV("kcdx_id", (unsigned long long)kcdx_id),
                     ::kcdx::log::KV("name", name),
@@ -569,6 +666,13 @@ std::vector<RowVerdict> RunStartupVerification() {
             if (!BuildPayload(nr, kind, payload, buildReason)) {
                 rv.verdict = Verdict::CannotCheck;
                 rv.detail = buildReason;
+                // A cannot_check from a missing input still carries the kind's
+                // §11.6 invoke posture (an active attempt was selected; the input
+                // was absent) — never a blank posture (D36: every row gets a
+                // structured response).
+                KindDispatch disp = DispatchForKind(kind);
+                rv.invoke_attempted = disp.invokeAttempted;
+                rv.invoke_skip_reason = disp.invokeSkipReason;
                 LOG_WARN_KV(kCategory, "row_cannot_check",
                     ::kcdx::log::KV("kcdx_id", (unsigned long long)kcdx_id),
                     ::kcdx::log::KV("name", name),
@@ -578,6 +682,15 @@ std::vector<RowVerdict> RunStartupVerification() {
                 out.push_back(std::move(rv));
                 return true;
             }
+
+            // --- The §11.6 per-kind DISPATCH descriptor — the strongest method
+            // this kind attempts + its DEFAULT invoke posture (the foreign-
+            // uncallable floor for the function kind; the observed/safe-read tiers
+            // below refine it). Set the default posture now; the per-method
+            // refinement below overrides it when a stronger tier reaches the row.
+            const KindDispatch disp = DispatchForKind(kind);
+            rv.invoke_attempted = disp.invokeAttempted;
+            rv.invoke_skip_reason = disp.invokeSkipReason;
 
             // --- Version-applicability: is the running build's version covered
             // by this row's picked interval at all? interval_covers_version is the
@@ -603,11 +716,30 @@ std::vector<RowVerdict> RunStartupVerification() {
             sv::Result onDisk = sv::SurvivalCheck(payload, static_cast<uint32_t>(nr.rva),
                                                   /*dll=*/std::string());
 
-            // --- Check 2: reachability (LIVE IMAGE, rank 3) — does the
-            // engine-resolved VA land in live .text? A RANGE TEST, NOT a body
-            // hash: the live image is relocated + kcdx-detoured, so a live-body
-            // hash reads a false mismatch for a genuinely-good row.
-            bool reachable = liveMapped && pe::IsVaInLiveText(view, va);
+            // --- Check 2: reachability (LIVE IMAGE, rank 3) — does the row's
+            // resolve land in live .text? A RANGE TEST, NOT a body hash: the live
+            // image is relocated + kcdx-detoured, so a live-body hash reads a
+            // false mismatch for a genuinely-good row.
+            //
+            // The reachability SIGNAL is per-kind (§11.6, the dispatcher's job):
+            //   - VtableBaseWalk → the rank-3 reachability is the read-only
+            //     ENTRY-WALK (each of the N table entries resolves into live .text),
+            //     NOT IsVaInLiveText(base). A vtable base sits in .rdata, so the
+            //     base-VA range test reads "not in .text" and would condemn a
+            //     genuinely-good table to `failed` (the carried-forward defect).
+            //     The walk REPLACES the base test as this kind's rank-3
+            //     reachability — so `reachable` is fed TRUE here (the base test is
+            //     skipped), and the AUTHORITATIVE rank-3 verdict comes from the walk
+            //     run through the safe-read tier below (sane → passed_not_verified;
+            //     a broken entry → failed, with the walk's own detail). When the
+            //     live module is not mapped, the on-disk check is CannotCheck, so
+            //     MapStaticVerdict degrades to cannot_check BEFORE this matters (the
+            //     same off-game degrade the function kinds take).
+            //   - every other kind → IsVaInLiveText(va) (the engine-resolved VA
+            //     lands in live executable .text), the existing range test.
+            bool reachable = (disp.method == DispatchMethod::VtableBaseWalk)
+                                 ? true  // the walk decides reachability (below), not the base test.
+                                 : (liveMapped && pe::IsVaInLiveText(view, va));
 
             // --- D34 attribution: when the on-disk bytes matched the candidate
             // (Unchanged), the matched address_version row is the picked row for
@@ -651,9 +783,19 @@ std::vector<RowVerdict> RunStartupVerification() {
             // real divergence (a fingerprint mismatch / dead resolve / version gap)
             // — that contradiction keeps the static failed/not_applicable verdict,
             // the more honest signal.
-            if (sv_result.verdict == Verdict::PassedNotVerified) {
+            //
+            // §11.6 ceiling gate (the dispatcher): rank-1 is reachable ONLY for the
+            // plain `function` kind (§11.6 rows 1-2 — HOOKED/CALLED). Every other
+            // kind's §11.6 ceiling is BELOW verified_working (function_no_sig /
+            // function_variadic cap at rank-4; the anchors/data_slot/vtable_base at
+            // rank 3-5; vtable_index at cannot_check), so the observed tier is gated
+            // to the function kind — a non-function kind is never lifted above its
+            // §11.6 ceiling (a wrong-method route would be a silent mis-verdict).
+            if (sv_result.verdict == Verdict::PassedNotVerified &&
+                disp.method == DispatchMethod::ObservedThenStatic) {
                 ObservedExecution obs = ObserveHookedExecution(va);  // HOOKED.
-                if (!ObservedToVerdict(obs, sv_result) && WasInvokedByKcdx(va)) {
+                bool observedRank1 = ObservedToVerdict(obs, sv_result);
+                if (!observedRank1 && WasInvokedByKcdx(va)) {
                     // CALLED-by-kcdx: a recorded production call that returned is
                     // observed execution — lift to rank-1 through the SAME seam a
                     // synthetic positive observation uses (one rank-1 path).
@@ -661,49 +803,73 @@ std::vector<RowVerdict> RunStartupVerification() {
                     called.observed = true;
                     called.fireSeq = 0;  // no fire-ring seq — this is a CALLED record, not a hook fire.
                     called.detail = "observed_kcdx_called";
-                    ObservedToVerdict(called, sv_result);
+                    observedRank1 = ObservedToVerdict(called, sv_result);
+                }
+                if (observedRank1) {
+                    // §11.6 rows 1-2: an observed HOOKED/CALLED row is
+                    // invoke_attempted false (the game/kcdx called it — kcdx never
+                    // mints a synthetic call) with NO skip reason (it WAS observed,
+                    // not skipped). REFINE the function floor (UnsafeToCall) to the
+                    // observed posture.
+                    rv.invoke_attempted = false;
+                    rv.invoke_skip_reason = InvokeSkipReason::None;
                 }
             }
 
-            // --- Rank-2/3 SAFE-READ tier — taken ABOVE the static rank 3-4-5
-            // ceiling but BELOW rank-1, and only when rank-1 did NOT observe this
-            // row. A safe-read reads the live target with ZERO mutation:
-            //   cvar getter (ICVar_GetIVal/GetFVal) → rank-2 cvar read (a known
-            //     game cvar read through the existing production accessor; a value
-            //     returning sane is the pass).
-            //   vtable_base → rank-3 read-only LOADED-IMAGE walk (each of the N
-            //     entries resolves into live .text — a stronger live read than
-            //     MapStaticVerdict's base-VA reachability range test).
+            // --- Rank-2/3 SAFE-READ tier — taken ABOVE the static ceiling but
+            // BELOW rank-1, and only when rank-1 did NOT observe this row. The
+            // dispatcher selects the method per §11.6:
+            //   ObservedThenStatic (function) → rank-2 cvar safe-read (a getter row
+            //     reads a known game cvar through the existing production accessor;
+            //     a value returning sane is the pass, invoke_attempted true).
+            //   VtableBaseWalk (vtable_base) → rank-3 read-only LOADED-IMAGE walk
+            //     (each of the N entries resolves into live .text). This is the
+            //     AUTHORITATIVE rank-3 reachability for vtable_base (the dispatcher
+            //     fed reachable=true to MapStaticVerdict above precisely so the
+            //     base-VA test does not pre-condemn it; the walk produces the real
+            //     verdict here — sane → passed_not_verified rank 3, a broken entry →
+            //     failed rank 3 with the walk's own detail, NOT the base-test token).
             // Same divergence-gate as rank-1: only override a non-divergent
             // PassedNotVerified — a safe-read never whitewashes a static failed/
-            // not_applicable/cannot_check. A safe-read that RAN but faulted/broke
-            // flips the row to Failed (a faulted read is failed, never a pass); a
-            // safe-read that could not run (cvar surface unready / no base) leaves
-            // the static ceiling (degrade). rank-1 verified_working is NOT touched
-            // here (the gate requires PassedNotVerified). §11.6: the cvar getter
-            // caps at rank-2 passed_not_verified (invoke_attempted true), the
-            // vtable_base read-only walk at rank-3 passed_not_verified.
+            // not_applicable/cannot_check. A read that RAN but faulted flips the row
+            // to Failed (a faulted read is failed, never a pass); a read that could
+            // not run (cvar surface unready / not a getter / no base) leaves the
+            // ceiling (degrade).
             if (sv_result.verdict == Verdict::PassedNotVerified) {
-                if (kind == sv::Kind::Function ||
-                    kind == sv::Kind::FunctionNoSig ||
-                    kind == sv::Kind::FunctionVariadic) {
-                    // A cvar-getter row → rank-2 cvar safe-read. SafeReadCvarGetter
-                    // applies only to the getter names; any other function row
-                    // returns attempted=false → the static ceiling stands.
+                if (disp.method == DispatchMethod::ObservedThenStatic) {
+                    // The function kind; SafeReadCvarGetter applies only to the
+                    // getter names (ICVar_GetIVal/GetFVal) and returns
+                    // attempted=false for any other function → the ceiling stands.
                     SafeReadResult sr = SafeReadCvarGetter(name);
-                    SafeReadToVerdict(sr, /*passRank=*/kRankSafeRead,
-                                      /*failedRank=*/kRankSafeRead, sv_result);
-                } else if (kind == sv::Kind::VtableBase) {
-                    // A vtable_base row → rank-3 read-only loaded-image walk. Only
-                    // when the live image is mapped (else the walk cannot run →
-                    // attempted=false → keep the static ceiling). slotCount came
-                    // from the row's payload (no_slot_count would have CannotCheck'd
-                    // upstream, so this path only runs on a row that has it).
+                    bool readRan = SafeReadToVerdict(sr, /*passRank=*/kRankSafeRead,
+                                                     /*failedRank=*/kRankSafeRead,
+                                                     sv_result);
+                    if (readRan && sr.sane) {
+                        // §11.6 row 3: a cvar getter's rank-2 safe-read is
+                        // invoke_attempted TRUE (a read IS an attempt that ran) with
+                        // NO skip reason — REFINE the function floor (UnsafeToCall)
+                        // to the safe-read posture. A faulted read (readRan &&
+                        // !sane) flipped the row to Failed; its posture stays the
+                        // floor (the row diverged, not the §11.6 happy-path getter).
+                        rv.invoke_attempted = true;
+                        rv.invoke_skip_reason = InvokeSkipReason::None;
+                    }
+                } else if (disp.method == DispatchMethod::VtableBaseWalk) {
+                    // The vtable_base rank-3 read-only walk — the authoritative
+                    // reachability for this kind. Only when the live image is mapped
+                    // (else the walk cannot run → attempted=false → keep the ceiling;
+                    // but off-game the on-disk check already CannotCheck'd, so
+                    // sv_result is not PassedNotVerified here). slotCount came from
+                    // the row's payload (no_slot_count CannotCheck'd upstream).
                     if (liveMapped) {
                         SafeReadResult sr =
                             WalkVtableBaseLive(view, va, payload.slotCount);
                         SafeReadToVerdict(sr, /*passRank=*/kRankReachability,
                                           /*failedRank=*/kRankReachability, sv_result);
+                        // The vtable_base invoke posture stays the §11.6 default
+                        // (invoke_attempted false, not_a_callable_kind — a read-only
+                        // table walk is not a callable kind); the dispatch descriptor
+                        // already set it. No refinement.
                     }
                 }
             }
@@ -740,6 +906,9 @@ std::vector<RowVerdict> RunStartupVerification() {
                 ::kcdx::log::KV("kind", nr.kind),
                 ::kcdx::log::KV("verdict", VerdictName(rv.verdict)),
                 ::kcdx::log::KV("method_rank", (long long)rv.method_rank),
+                ::kcdx::log::KV("invoke_attempted", rv.invoke_attempted ? "yes" : "no"),
+                ::kcdx::log::KV("invoke_skip_reason",
+                    InvokeSkipReasonName(rv.invoke_skip_reason)),
                 ::kcdx::log::KV("matched_av_id",
                     rv.has_matched_id ? (long long)rv.matched_address_version_id : (long long)-1),
                 ::kcdx::log::KV("detail", rv.detail.empty() ? "-" : rv.detail.c_str()));

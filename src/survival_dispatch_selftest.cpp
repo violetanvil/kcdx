@@ -1591,6 +1591,310 @@ void RunSelfTestOnce() {
                     : "degraded_surface_not_ready"));
     }
 
+    // ----- Sub-check 16: THE §11.6 PER-KIND DISPATCH MATRIX -----------------
+    // The dispatcher routes each of the 9 curated kinds to its strongest
+    // applicable method + the §11.6 default invoke posture; the ceiling rule then
+    // caps the verdict. Three falsifiable layers:
+    //
+    //   (a) DISPATCH TABLE (deterministic, HARD) — DispatchForKind returns, per
+    //       kind, the §11.6 ceiling rank + the default invoke_attempted +
+    //       invoke_skip_reason. FALSIFIABLE: a callable kind carrying
+    //       not_a_callable_kind (or a non-callable kind NOT carrying it), or a
+    //       kind whose dispatch ceiling rank ≠ its §11.6 value, fails the row.
+    //   (b) VTABLE_BASE RE-ROUTE (deterministic, HARD) — the §11.6 vtable_base
+    //       rank-3 reachability is the read-only ENTRY-WALK, NOT the base-VA range
+    //       test. With the walk's reachable signal TRUE, MapStaticVerdict yields
+    //       passed_not_verified (rank 3), NOT failed. The contrapositive is the
+    //       carried-forward defect: a vtable_base whose reachability came from
+    //       IsVaInLiveText(base) (false — the base sits in .rdata) maps to failed.
+    //       FALSIFIABLE: a vtable_base with a reachable walk reading failed fails.
+    //   (c) LIVE PER-KIND CEILING (integration, DEGRADE-aware) — scan the real
+    //       sweep; NO row may read a verdict ABOVE its kind's §11.6 ceiling (only
+    //       the function kind may read verified_working), and a curated vtable_base
+    //       row must read passed_not_verified (via the walk), NEVER failed.
+    //       FALSIFIABLE: a non-function kind reading verified_working, or a
+    //       vtable_base reading failed, fails the row.
+    {
+        // (a) The dispatch table — every kind's §11.6 row, verbatim. ceilingRank
+        // is the strongest rank the kind's method can reach (the function kind's
+        // ceiling is rank-1; the static kinds cap at their static method's rank).
+        struct KindCase {
+            sv::Kind kind; const char* name;
+            int ceilingRank; bool invokeAttempted; svv::InvokeSkipReason skip;
+        };
+        const KindCase kindCases[] = {
+            {sv::Kind::Function,          "function",           1, false, svv::InvokeSkipReason::UnsafeToCall},
+            {sv::Kind::FunctionNoSig,     "function_no_sig",    4, false, svv::InvokeSkipReason::NotACallableKind},
+            {sv::Kind::FunctionVariadic,  "function_variadic",  4, false, svv::InvokeSkipReason::UnsafeToCall},
+            {sv::Kind::Callsite,          "callsite",           3, false, svv::InvokeSkipReason::NotACallableKind},
+            {sv::Kind::StringAnchor,      "string_anchor",      4, false, svv::InvokeSkipReason::NotACallableKind},
+            {sv::Kind::InstructionAnchor, "instruction_anchor", 3, false, svv::InvokeSkipReason::NotACallableKind},
+            {sv::Kind::DataSlot,          "data_slot",          5, false, svv::InvokeSkipReason::NotACallableKind},
+            {sv::Kind::VtableBase,        "vtable_base",        3, false, svv::InvokeSkipReason::NotACallableKind},
+            {sv::Kind::VtableIndex,       "vtable_index",       0, false, svv::InvokeSkipReason::NotACallableKind},
+        };
+        for (const auto& kc : kindCases) {
+            svv::KindDispatch d = svv::DispatchForKind(kc.kind);
+            if (d.ceilingRank != kc.ceilingRank ||
+                d.invokeAttempted != kc.invokeAttempted ||
+                d.invokeSkipReason != kc.skip) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: DispatchForKind('%s') returned the WRONG §11.6 row — got "
+                    "(ceilingRank=%d, invoke_attempted=%d, skip='%s'), wanted "
+                    "(ceilingRank=%d, invoke_attempted=%d, skip='%s'). The per-kind "
+                    "matrix must route each kind to its §11.6 ceiling + default "
+                    "invoke posture; a callable kind carrying not_a_callable_kind "
+                    "(or vice versa) is a mis-routed verdict.",
+                    kc.name, d.ceilingRank, d.invokeAttempted ? 1 : 0,
+                    svv::InvokeSkipReasonName(d.invokeSkipReason),
+                    kc.ceilingRank, kc.invokeAttempted ? 1 : 0,
+                    svv::InvokeSkipReasonName(kc.skip));
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "16a_dispatch_table"),
+                    ::kcdx::log::KV("kind", kc.name));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+
+        // (b) The vtable_base RE-ROUTE — the carried-forward fix. The §11.6
+        // vtable_base rank-3 reachability is the entry-walk, NOT IsVaInLiveText
+        // (base). With the walk's reachable signal TRUE (all N entries in live
+        // .text), MapStaticVerdict maps a hash PASS to (passed_not_verified, rank
+        // 3) — NOT failed. The contrapositive — reachable FALSE (the base-VA range
+        // test, since a vtable base sits in .rdata, would read NOT-in-.text) — maps
+        // to failed. That contrast IS why the dispatcher substitutes the walk: the
+        // walk-true path is the only one that keeps a genuinely-good vtable_base out
+        // of `failed`.
+        svv::StaticVerdict vtReachable =
+            svv::MapStaticVerdict(/*versionGap=*/false, sv::Status::Unchanged,
+                                  /*reason=*/std::string(),
+                                  /*reachable=*/true,  // the WALK's signal (all entries in .text).
+                                  /*liveMapped=*/true);
+        if (vtReachable.verdict != svv::Verdict::PassedNotVerified ||
+            vtReachable.method_rank != 3) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a vtable_base with a reachable read-only walk mapped to (%s, "
+                "rank %d), not (passed_not_verified, rank 3) — the §11.6 vtable_base "
+                "rank-3 reachability is the entry-walk; a reachable walk caps at "
+                "passed_not_verified, never failed.",
+                svv::VerdictName(vtReachable.verdict), vtReachable.method_rank);
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "16b_vtable_reroute_pass"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        // The contrapositive proving the re-route is load-bearing: the base-VA
+        // test (reachable=false, what IsVaInLiveText(base) returns for a .rdata
+        // base) maps to failed — exactly the verdict the walk substitution AVOIDS.
+        svv::StaticVerdict vtBaseTest =
+            svv::MapStaticVerdict(/*versionGap=*/false, sv::Status::Unchanged,
+                                  /*reason=*/std::string(),
+                                  /*reachable=*/false,  // IsVaInLiveText(base) for a .rdata base.
+                                  /*liveMapped=*/true);
+        if (vtBaseTest.verdict != svv::Verdict::Failed) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: the base-VA reachability test (reachable=false, what "
+                "IsVaInLiveText returns for a vtable base in .rdata) did NOT map to "
+                "failed (got %s) — this is the carried-forward defect the walk "
+                "substitution fixes; if the base test no longer condemns the row, "
+                "the re-route's contrast is gone.",
+                svv::VerdictName(vtBaseTest.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "16b_vtable_basetest_fails"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (c) LIVE per-kind ceiling scan — the real sweep. Per row: NO row reads a
+        // verdict ABOVE its kind's §11.6 ceiling (verified_working is reachable
+        // ONLY for the function kind; every other kind reading verified_working is
+        // above its ceiling), AND a curated vtable_base row reads
+        // passed_not_verified via the walk, NEVER failed (the carried-forward
+        // assertion). DEGRADE-aware: a vtable_base reading cannot_check (DB lacks
+        // the row / WHGame not mapped) is the degrade path, not a fail; only a
+        // DEFINITE `failed` from a vtable_base is the carried-forward defect.
+        std::vector<svv::RowVerdict> kindVerds = svv::RunStartupVerification();
+        for (const auto& v : kindVerds) {
+            // Re-resolve the row's kind to apply its §11.6 ceiling.
+            refdb::NameResolution nr = refdb::ResolveByName(v.name);
+            if (!nr.found) continue;  // a cannot_check'd cache-inconsistent row.
+            // A non-function kind reading verified_working is ABOVE its ceiling
+            // (only the function kind's §11.6 ceiling is verified_working).
+            if (v.verdict == svv::Verdict::VerifiedWorking &&
+                nr.kind != "function") {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: a '%s' kind row ('%s') read verified_working — only the "
+                    "function kind's §11.6 ceiling is verified_working (rank-1 "
+                    "observed execution); every other kind caps below it. A "
+                    "non-function kind at verified_working is a verdict above its "
+                    "§11.6 ceiling.",
+                    nr.kind.c_str(), v.name.c_str());
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "16c_above_ceiling"),
+                    ::kcdx::log::KV("name", v.name),
+                    ::kcdx::log::KV("kind", nr.kind));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+            // THE CARRIED-FORWARD ASSERTION: a vtable_base row must NOT read
+            // `failed` from the base-VA test. With the walk substitution it reads
+            // passed_not_verified (walk sane) or cannot_check (degrade — DB/module
+            // absent). A DEFINITE `failed` whose detail is the base-VA range test's
+            // token (resolved_va_not_in_live_text) is the un-fixed defect.
+            if (nr.kind == "vtable_base" && v.verdict == svv::Verdict::Failed &&
+                v.detail == "resolved_va_not_in_live_text") {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: the curated vtable_base row '%s' read failed "
+                    "('resolved_va_not_in_live_text') — its reachability was tested "
+                    "against the table BASE VA (which sits in .rdata, not .text) "
+                    "instead of the read-only ENTRY-WALK. The §11.6 vtable_base "
+                    "rank-3 reachability is the walk (each entry resolves into live "
+                    ".text); a vtable_base must read passed_not_verified via the "
+                    "walk, NEVER failed from the base-VA test.",
+                    v.name.c_str());
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "16c_vtable_base_failed"),
+                    ::kcdx::log::KV("name", v.name),
+                    ::kcdx::log::KV("detail", v.detail));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+            // The invoke posture must match the kind's §11.6 default for the
+            // non-callable static kinds (a callable kind carrying
+            // not_a_callable_kind, or vice versa, is a mis-routed response). The
+            // function kind's posture is method-dependent (observed → none;
+            // safe-read → attempted true; foreign → unsafe_to_call), so it is
+            // exercised by the dispatch-table (a) + the rank-1/2 tiers (14/15);
+            // here only the FIXED non-function postures are asserted.
+            if (nr.kind != "function") {
+                // Decode the kind to its dispatch posture (every non-function kind
+                // is invoke_attempted=false; its skip reason is the §11.6 default
+                // DispatchForKind returns).
+                sv::Kind dk = sv::Kind::VtableIndex;
+                bool decoded = true;
+                if      (nr.kind == "function_no_sig")    dk = sv::Kind::FunctionNoSig;
+                else if (nr.kind == "function_variadic")  dk = sv::Kind::FunctionVariadic;
+                else if (nr.kind == "callsite")           dk = sv::Kind::Callsite;
+                else if (nr.kind == "string_anchor")      dk = sv::Kind::StringAnchor;
+                else if (nr.kind == "instruction_anchor") dk = sv::Kind::InstructionAnchor;
+                else if (nr.kind == "data_slot")          dk = sv::Kind::DataSlot;
+                else if (nr.kind == "vtable_base")        dk = sv::Kind::VtableBase;
+                else if (nr.kind == "vtable_index")       dk = sv::Kind::VtableIndex;
+                else                                      decoded = false;
+                if (decoded) {
+                    svv::InvokeSkipReason want = svv::DispatchForKind(dk).invokeSkipReason;
+                    // A non-function kind is always invoke_attempted=false, and its
+                    // skip reason is the §11.6 default — and a cannot_check row (no
+                    // payload) still carries the default, so this holds for every
+                    // defined verdict.
+                    if (v.invoke_attempted ||
+                        v.invoke_skip_reason != want) {
+                        std::snprintf(reason, sizeof(reason),
+                            "FAIL: the '%s' kind row '%s' carried the WRONG invoke "
+                            "posture — got (invoke_attempted=%d, skip='%s'), wanted "
+                            "(invoke_attempted=0, skip='%s'). A non-callable kind is "
+                            "never invoke_attempted and carries its §11.6 skip "
+                            "reason; a mismatch is a mis-routed response.",
+                            nr.kind.c_str(), v.name.c_str(),
+                            v.invoke_attempted ? 1 : 0,
+                            svv::InvokeSkipReasonName(v.invoke_skip_reason),
+                            svv::InvokeSkipReasonName(want));
+                        LOG_ERROR_KV(kCategory, "selftest_fail",
+                            ::kcdx::log::KV("subcheck", "16c_invoke_posture"),
+                            ::kcdx::log::KV("name", v.name),
+                            ::kcdx::log::KV("kind", nr.kind));
+                        kcdx::test::ReportResult(kRow, false, reason);
+                        kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                        vcc::Reset(); sp::Reset();
+                        return;
+                    }
+                }
+            } else {
+                // The FUNCTION kind's posture is method-dependent (the refinement):
+                //   rank 1 (observed HOOKED/CALLED) → invoke_attempted false + None,
+                //   rank 2 (safe-read getter)       → invoke_attempted TRUE + None,
+                //   rank 3/4 (foreign-uncallable)   → invoke_attempted false +
+                //                                      unsafe_to_call (the floor).
+                // Assert the refinement on the live sweep by the reported rank.
+                // FAILS if a rank-2 function row is not invoke_attempted, or a
+                // rank-1 function row claims an invoke (the game/kcdx called it —
+                // kcdx never mints a synthetic call).
+                if (v.verdict == svv::Verdict::VerifiedWorking) {
+                    if (v.invoke_attempted ||
+                        v.invoke_skip_reason != svv::InvokeSkipReason::None) {
+                        std::snprintf(reason, sizeof(reason),
+                            "FAIL: the observed function row '%s' (verified_working) "
+                            "carried (invoke_attempted=%d, skip='%s'), wanted "
+                            "(invoke_attempted=0, skip='none') — an OBSERVED row is "
+                            "the game/kcdx calling it (kcdx never mints a synthetic "
+                            "call), so invoke_attempted is false and there is no skip "
+                            "reason (it was observed, not skipped).",
+                            v.name.c_str(), v.invoke_attempted ? 1 : 0,
+                            svv::InvokeSkipReasonName(v.invoke_skip_reason));
+                        LOG_ERROR_KV(kCategory, "selftest_fail",
+                            ::kcdx::log::KV("subcheck", "16c_fn_observed_posture"),
+                            ::kcdx::log::KV("name", v.name));
+                        kcdx::test::ReportResult(kRow, false, reason);
+                        kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                        vcc::Reset(); sp::Reset();
+                        return;
+                    }
+                } else if (v.verdict == svv::Verdict::PassedNotVerified &&
+                           v.method_rank == 2) {
+                    // A rank-2 function verdict is the safe-read getter (§11.6 row
+                    // 3): invoke_attempted TRUE (a read IS an attempt) + None.
+                    if (!v.invoke_attempted ||
+                        v.invoke_skip_reason != svv::InvokeSkipReason::None) {
+                        std::snprintf(reason, sizeof(reason),
+                            "FAIL: the rank-2 safe-read function row '%s' carried "
+                            "(invoke_attempted=%d, skip='%s'), wanted "
+                            "(invoke_attempted=1, skip='none') — a cvar getter's "
+                            "rank-2 safe-read IS an attempt that ran (§11.6 row 3: "
+                            "invoke_attempted true).",
+                            v.name.c_str(), v.invoke_attempted ? 1 : 0,
+                            svv::InvokeSkipReasonName(v.invoke_skip_reason));
+                        LOG_ERROR_KV(kCategory, "selftest_fail",
+                            ::kcdx::log::KV("subcheck", "16c_fn_saferead_posture"),
+                            ::kcdx::log::KV("name", v.name));
+                        kcdx::test::ReportResult(kRow, false, reason);
+                        kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                        vcc::Reset(); sp::Reset();
+                        return;
+                    }
+                }
+                // A rank-3/4 passed_not_verified function row is the foreign-
+                // uncallable floor (invoke_attempted false + unsafe_to_call); that
+                // is the dispatch default (16a) and is not re-asserted here (it can
+                // also legitimately be a getter whose surface was not ready, which
+                // also keeps the floor — both are the §11.6 unsafe_to_call default).
+            }
+        }
+        // Record the per-kind live coverage (which kinds the sweep actually saw) as
+        // a degrade-aware note — never a hard fail on a kind the deployed DB lacks.
+        bool sawVtableBaseDefined = false;
+        for (const auto& v : kindVerds) {
+            refdb::NameResolution nr = refdb::ResolveByName(v.name);
+            if (nr.found && nr.kind == "vtable_base" &&
+                v.verdict != svv::Verdict::CannotCheck) {
+                sawVtableBaseDefined = true; break;
+            }
+        }
+        LOG_INFO_KV(kCategory, "per_kind_live",
+            ::kcdx::log::KV("vtable_base_defined",
+                sawVtableBaseDefined ? "yes" : "degraded_db_or_module_absent"));
+    }
+
     // All sub-checks held. Leave clean in-memory state + an empty on-disk cache
     // so the synthetic records never leak into a future real Lookup.
     vcc::Reset();
@@ -1632,7 +1936,14 @@ void RunSelfTestOnce() {
         "the static ceiling, the vtable_base read-only walk caps at "
         "(passed_not_verified, rank 3) with a broken-entry walk -> failed, and a "
         "live cvar read of sys_pakPriority (when the surface is ready) reads sane "
-        "at rank 2. [%s]",
+        "at rank 2; AND the §11.6 per-kind dispatch matrix — DispatchForKind maps "
+        "each of the 9 kinds to its §11.6 ceiling rank + invoke posture; the "
+        "vtable_base re-route maps a reachable read-only walk to "
+        "(passed_not_verified, rank 3) NOT failed (the base-VA test, which a .rdata "
+        "base fails, is the defect the walk replaces); and the live sweep reads no "
+        "row above its kind's ceiling, every vtable_base passed_not_verified via the "
+        "walk (never failed from the base-VA test), and every non-function kind at "
+        "its §11.6 invoke posture. [%s]",
         realChecked ? " + 1 real" : "", realNote);
     LOG_INFO_KV(kCategory, "selftest_pass",
         ::kcdx::log::KV("real_checked", realChecked ? "yes" : "degraded"),
