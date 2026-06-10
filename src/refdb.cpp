@@ -4,6 +4,7 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <climits>
 #include <cstdint>
 #include <cstdlib>
@@ -37,6 +38,27 @@ namespace {
 
 sqlite3* g_db = nullptr;     // null = not loaded (Open failed or never ran).
 bool     g_loaded = false;   // true only after schema + version both validated.
+
+// --- Dev-DB search-layer state (Phase 9.4 step 0) --------------------------
+// A SECOND, separate connection to reference-dev.sqlite (the full corpus),
+// distinct from g_db. Opened lazily on the first find/inspect call, dev-gated,
+// never in production. THREADSAFE=2: belongs to the worker thread that called
+// OpenDevDb (the same thread Open() runs on). No in-memory cache — dev queries
+// run live SQL against the 1.3 GB corpus (a dev tool, not a hot path).
+sqlite3* g_devDb = nullptr;       // null = dev DB not open.
+bool     g_devLoaded = false;     // true only after dev schema + version validated.
+// The dev DB's statement-kind dict, loaded at OpenDevDb (decodes
+// statements.kind for FindStatement). Separate from g_statementKindDict (the
+// shipped DB's); both carry the same id→label map, kept distinct so the dev
+// connection is wholly self-contained.
+std::unordered_map<int64_t, std::string> g_devStatementKindDict;
+std::unordered_map<int64_t, std::string> g_devDecompileQualityDict;  // _dict_address_versions_decompile_quality
+std::unordered_map<int64_t, std::string> g_devRefVarStorageKindDict; // _dict_referenced_vars_storage_kind
+std::unordered_map<int64_t, std::string> g_devRefVarDataTypeDict;    // _dict_referenced_vars_data_type
+// module_id → name (from the dev DB's `modules` table), for FindRecord.module.
+std::unordered_map<int64_t, std::string> g_devModuleNameById;
+// The dev-DB log category — distinct from REFDB so dev-tool lines grep apart.
+const char* kDevCategory = "DEVDB";
 
 // The running build's game_versions row, cached at Open(). The ordinal is
 // the monotonic sort key the verification-state derivation compares against
@@ -2206,6 +2228,799 @@ void Close() {
     g_refVarDataTypeDict.clear();
     g_statementsByAv.clear();
     g_refVarsByAvStmt.clear();
+
+    // The dev-DB connection has an independent lifetime, but a full Close() of
+    // the shipped surface also tears down the dev tool (the worker thread owns
+    // both; closing one without the other would leak the dev connection).
+    CloseDevDb();
+}
+
+// =============================================================================
+// Dev-DB cross-function SEARCH layer (Phase 9.4 step 0) — implementation.
+//
+// A second, lazily-opened, dev-gated read-only connection (g_devDb) to
+// reference-dev.sqlite + a per-criterion AND-intersect search. No in-memory
+// cache: dev queries run live SQL against the full corpus (a dev tool, not a
+// hot path — memory.md scopes its allocation-free rule to hot paths; this is a
+// one-shot author-driven query). Every gate-off / missing-DB / query-error path
+// logs a structured reason token under kDevCategory, never a silent empty (AP14
+// / logging.md).
+// =============================================================================
+
+namespace {
+
+// Load a `(id INTEGER, val TEXT)` dict from the DEV connection. Mirror of
+// LoadDict but bound to g_devDb. Returns false (logged) on a prepare/step error.
+bool LoadDevDict(const char* table,
+                 std::unordered_map<int64_t, std::string>& out) {
+    std::string sql = "SELECT id, val FROM ";
+    sql += table;
+    sql += ";";
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb, sql.c_str(), -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_dict_load_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("table", table),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    out.clear();
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        int64_t id = sqlite3_column_int64(st, 0);
+        const unsigned char* val = sqlite3_column_text(st, 1);
+        out[id] = val ? reinterpret_cast<const char*>(val) : "";
+    }
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) {
+        LOG_ERROR_KV(kDevCategory, "dev_dict_load_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("table", table),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    return true;
+}
+
+// Read meta.schema_version from the DEV connection. true + *out on success.
+bool ReadDevSchemaVersion(int* out) {
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb,
+        "SELECT schema_version FROM meta WHERE id = 1;", -1, &st, nullptr);
+    if (rc != SQLITE_OK) return false;
+    rc = sqlite3_step(st);
+    bool ok = false;
+    if (rc == SQLITE_ROW) { *out = sqlite3_column_int(st, 0); ok = true; }
+    sqlite3_finalize(st);
+    return ok;
+}
+
+// Load the dev DB's modules table into id→name. Tiny (one row per module).
+bool LoadDevModules() {
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb,
+        "SELECT id, name FROM modules;", -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_modules_load_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    g_devModuleNameById.clear();
+    while ((rc = sqlite3_step(st)) == SQLITE_ROW) {
+        int64_t id = sqlite3_column_int64(st, 0);
+        const unsigned char* name = sqlite3_column_text(st, 1);
+        g_devModuleNameById[id] = name ? reinterpret_cast<const char*>(name) : "";
+    }
+    sqlite3_finalize(st);
+    return rc == SQLITE_DONE;
+}
+
+// Decode a dict value, "" when absent (an unknown id is not a hard error — the
+// caller surfaces the raw kind/quality id alongside).
+std::string DecodeDevDict(const std::unordered_map<int64_t, std::string>& dict,
+                          int64_t id) {
+    auto it = dict.find(id);
+    return it == dict.end() ? std::string() : it->second;
+}
+
+// Levenshtein edit distance between `a` and `b` (insert/delete/substitute = 1).
+// Standard iterative DP over a single rolling row — O(|a|*|b|) time, O(|b|)
+// space. Used ONLY on the EnumerateStatements not-found path (cold; a single
+// missed lookup over the 157-row curated name set), so memory.md's hot-path
+// discipline does not bind here. Ranks a 1-char typo (IsInCombatt → IsInCombat,
+// distance 1) ahead of a non-substring near-miss, which the prior LIKE %fn%
+// substring match could not (step-0 doc §"EnumerateStatements" name-similarity).
+size_t LevenshteinDistance(const std::string& a, const std::string& b) {
+    const size_t n = a.size();
+    const size_t m = b.size();
+    if (n == 0) return m;
+    if (m == 0) return n;
+    std::vector<size_t> prev(m + 1), curr(m + 1);
+    for (size_t j = 0; j <= m; ++j) prev[j] = j;
+    for (size_t i = 1; i <= n; ++i) {
+        curr[0] = i;
+        for (size_t j = 1; j <= m; ++j) {
+            const size_t cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
+            curr[j] = std::min({ prev[j] + 1,        // deletion
+                                 curr[j - 1] + 1,    // insertion
+                                 prev[j - 1] + cost  // substitution
+                               });
+        }
+        prev.swap(curr);
+    }
+    return prev[m];
+}
+
+// The kcdx.op.* op NAMES applicable to a statement of the given decoded kind
+// (design's applicable_ops — step-0 doc §"Result record + cap + ranking").
+//
+// The list is the real Phase-9.3 op-catalog names whose declared required-
+// statement-kind matches this statement's kind, RESTRICTED to the kinds the dev
+// corpus actually emits — the ops the author can verbatim hand to
+// kcdx.statement.replace_with(...) at this site. The kind→ops table mirrors
+// src/lua_bind_op.cpp's per-op ContractFor()/RequiredKind declarations (NOT a
+// re-derivation): branch→3, call→3, return→2, assign→1, replace_with_noop→Any.
+//
+// replace_with_noop (RequiredKind::Any) applies to ANY statement → appended to
+// every kind. replace_compare_constant (RequiredKind::Compare) is DELIBERATELY
+// OMITTED: the catalog requires kind `compare`, which the corpus dict
+// (store/call/return/branch/assign/other/none) never emits — listing it would
+// name a move the statement verb's kind-gate then REJECTS (AP14: the discovery
+// tool must not name a move the author cannot make). It re-includes only if a
+// future corpus carries `compare` statements. The authority for each op's
+// required-kind is the op catalog; this table mirrors it for the corpus kinds.
+std::vector<std::string> ApplicableOpsForKind(const std::string& kind) {
+    std::vector<std::string> ops;
+    // Kind-specific ops (mirrors lua_bind_op.cpp ContractFor): only the kinds
+    // the corpus emits carry a kind-specific family; store/other/none and any
+    // other kind get replace_with_noop alone.
+    if (kind == "branch") {
+        ops = { "always_take_branch", "never_take_branch",
+                "invert_branch_condition" };
+    } else if (kind == "call") {
+        ops = { "skip_call_void", "skip_call_return_value",
+                "replace_call_target" };
+    } else if (kind == "return") {
+        ops = { "replace_with_return", "replace_return_value" };
+    } else if (kind == "assign") {
+        ops = { "replace_assignment_value" };
+    }
+    // replace_with_noop (RequiredKind::Any) applies to every statement.
+    ops.push_back("replace_with_noop");
+    return ops;
+}
+
+}  // namespace
+
+bool OpenDevDb() {
+    if (g_devLoaded) return true;  // idempotent.
+
+    // Gate 1: dev mode. A find/inspect call in production must never open the
+    // 1.3 GB corpus — fail loud with the reason token, not a silent skip.
+    if (!::kcdx::log::IsDevModeEnabled()) {
+        LOG_DEBUG_KV(kDevCategory, "dev_db_open_gated",
+            log::KV::BareStr("reason", "dev_mode_off"),
+            log::KV::BareStr("detail",
+                "the dev discovery DB (reference-dev.sqlite) is only opened "
+                "with dev mode on \xe2\x80\x94 enable dev_mode in "
+                "<game-bin>/kcdx-engine/engine.toml to use kcdx.find / "
+                "kcdx_dev_inspect"));
+        return false;
+    }
+
+    std::filesystem::path dbPath =
+        kcdx::paths::EngineDataDirPath() / "data" / "reference-dev.sqlite";
+    std::string dbPathUtf8 = kcdx::paths::ToUtf8(dbPath);
+
+    // Gate 2: file present + openable. SQLITE_OPEN_READONLY also means open
+    // fails (rather than creating) if the file is absent — the fail-loud signal.
+    sqlite3* db = nullptr;
+    int rc = sqlite3_open_v2(dbPathUtf8.c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_db_open_failed",
+            log::KV::BareStr("reason", "dev_db_not_found"),
+            log::KV("path", dbPathUtf8),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", db ? sqlite3_errmsg(db) : "out of memory"),
+            log::KV::BareStr("detail",
+                "could not open the dev discovery DB at the path above "
+                "\xe2\x80\x94 kcdx.find / kcdx_dev_inspect need reference-dev."
+                "sqlite present in kcdx-engine/data; it is a maintainer/dev "
+                "artifact, not shipped to end users"));
+        if (db) sqlite3_close(db);
+        return false;
+    }
+
+    g_devDb = db;
+
+    // Gate 3: schema. Same meta.schema_version == kExpectedSchemaVersion gate
+    // the shipped DB uses — a dev DB whose shape this engine does not understand
+    // is rejected loud, not read with a guessed layout.
+    int schemaVersion = 0;
+    if (!ReadDevSchemaVersion(&schemaVersion)) {
+        LOG_ERROR_KV(kDevCategory, "dev_db_open_failed",
+            log::KV::BareStr("reason", "dev_schema_mismatch"),
+            log::KV("path", dbPathUtf8),
+            log::KV::BareStr("detail",
+                "could not read meta.schema_version from reference-dev.sqlite "
+                "\xe2\x80\x94 the file is not a recognizable kcdx reference DB; "
+                "regenerate it with the maintainer extractor"));
+        CloseDevDb();
+        return false;
+    }
+    if (schemaVersion != kExpectedSchemaVersion) {
+        LOG_ERROR_KV(kDevCategory, "dev_db_open_failed",
+            log::KV::BareStr("reason", "dev_schema_mismatch"),
+            log::KV("path", dbPathUtf8),
+            log::KV("found_schema_version", (long long)schemaVersion),
+            log::KV("expected_schema_version", (long long)kExpectedSchemaVersion),
+            log::KV::BareStr("detail",
+                "reference-dev.sqlite schema_version does not match the schema "
+                "this engine build understands \xe2\x80\x94 regenerate the dev "
+                "DB with the matching maintainer extractor"));
+        CloseDevDb();
+        return false;
+    }
+
+    // Load the small dicts + modules the search layer decodes against. A load
+    // failure here is a malformed dev DB (fail-loud), same posture as Open().
+    if (!LoadDevDict("_dict_statements_kind", g_devStatementKindDict) ||
+        !LoadDevDict("_dict_address_versions_decompile_quality",
+                     g_devDecompileQualityDict) ||
+        !LoadDevDict("_dict_referenced_vars_storage_kind",
+                     g_devRefVarStorageKindDict) ||
+        !LoadDevDict("_dict_referenced_vars_data_type",
+                     g_devRefVarDataTypeDict) ||
+        !LoadDevModules()) {
+        LOG_ERROR_KV(kDevCategory, "dev_db_open_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("path", dbPathUtf8),
+            log::KV::BareStr("detail",
+                "failed to load reference-dev.sqlite dictionaries / modules "
+                "\xe2\x80\x94 the file is present but malformed; regenerate "
+                "the dev DB"));
+        CloseDevDb();
+        return false;
+    }
+
+    g_devLoaded = true;
+    LOG_INFO_KV(kDevCategory, "dev_db_opened",
+        log::KV("path", dbPathUtf8),
+        log::KV("schema_version", (long long)schemaVersion));
+    return true;
+}
+
+bool IsDevDbLoaded() {
+    return g_devLoaded && g_devDb != nullptr;
+}
+
+void CloseDevDb() {
+    if (g_devDb) {
+        sqlite3_close(g_devDb);
+        g_devDb = nullptr;
+    }
+    g_devLoaded = false;
+    g_devStatementKindDict.clear();
+    g_devDecompileQualityDict.clear();
+    g_devRefVarStorageKindDict.clear();
+    g_devRefVarDataTypeDict.clear();
+    g_devModuleNameById.clear();
+}
+
+namespace {
+
+// Resolve one address_version_id to its FindRecord header (function/module/rva/
+// decompile_quality) — NOT its statements. Returns false (logged query_error)
+// on a SQL error; false silently only when the av id has no row (a caller-built
+// id set always points at a real row, so a miss here is a data race, logged).
+bool LoadFindRecordHeader(int64_t avId, FindRecord& out) {
+    sqlite3_stmt* st = nullptr;
+    // function display name = curated address_names.name when kcdx_id is set,
+    // else auto_name. LEFT JOIN so a non-curated function (kcdx_id NULL) still
+    // resolves via auto_name.
+    int rc = sqlite3_prepare_v2(g_devDb,
+        "SELECT av.rva, av.module_id, av.decompile_quality, av.kcdx_id, "
+        "       av.auto_name, an.name "
+        "FROM address_versions av "
+        "LEFT JOIN address_names an ON an.id = av.kcdx_id "
+        "WHERE av.id = ?;",
+        -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_record_header_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("av_id", (long long)avId),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    sqlite3_bind_int64(st, 1, avId);
+    bool found = false;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        out.rva = (uint64_t)sqlite3_column_int64(st, 0);
+        int64_t moduleId = sqlite3_column_int64(st, 1);
+        out.decompile_quality =
+            (sqlite3_column_type(st, 2) == SQLITE_NULL)
+                ? 0 : sqlite3_column_int(st, 2);
+        bool hasKcdxId = (sqlite3_column_type(st, 3) != SQLITE_NULL);
+        const unsigned char* autoName = sqlite3_column_text(st, 4);
+        const unsigned char* curatedName = sqlite3_column_text(st, 5);
+        // curated name when kcdx_id set + the name row exists, else auto_name.
+        if (hasKcdxId && curatedName) {
+            out.function = reinterpret_cast<const char*>(curatedName);
+        } else {
+            out.function = autoName ? reinterpret_cast<const char*>(autoName) : "";
+        }
+        auto mIt = g_devModuleNameById.find(moduleId);
+        out.module = (mIt != g_devModuleNameById.end()) ? mIt->second : "";
+        out.decompile_quality_label =
+            DecodeDevDict(g_devDecompileQualityDict, out.decompile_quality);
+        found = true;
+    }
+    sqlite3_finalize(st);
+    return found;
+}
+
+// Load a function's captured variables, grouped by statement_idx, for the
+// statements of one address_version_id. Fills `byIdx` (statement_idx → captures).
+// Logged query_error on a SQL error (returns false); an empty result is normal.
+bool LoadCapturesForFunction(
+        int64_t avId,
+        std::unordered_map<int64_t, std::vector<FindCapture>>& byIdx) {
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb,
+        "SELECT statement_idx, var_name, storage_kind, storage_detail, "
+        "       data_type, size_bytes "
+        "FROM referenced_vars WHERE address_version_id = ?;",
+        -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_captures_load_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("av_id", (long long)avId),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    sqlite3_bind_int64(st, 1, avId);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        int64_t stmtIdx = sqlite3_column_int64(st, 0);
+        FindCapture cap;
+        const unsigned char* vn = sqlite3_column_text(st, 1);
+        cap.var_name = vn ? reinterpret_cast<const char*>(vn) : "";
+        cap.storage_kind = (sqlite3_column_type(st, 2) == SQLITE_NULL)
+            ? "" : DecodeDevDict(g_devRefVarStorageKindDict,
+                                 sqlite3_column_int64(st, 2));
+        const unsigned char* sd = sqlite3_column_text(st, 3);
+        cap.storage_detail = sd ? reinterpret_cast<const char*>(sd) : "";
+        cap.data_type = (sqlite3_column_type(st, 4) == SQLITE_NULL)
+            ? "" : DecodeDevDict(g_devRefVarDataTypeDict,
+                                 sqlite3_column_int64(st, 4));
+        if (sqlite3_column_type(st, 5) != SQLITE_NULL) {
+            cap.size_bytes = sqlite3_column_int64(st, 5);
+            cap.has_size_bytes = true;
+        }
+        byIdx[stmtIdx].push_back(std::move(cap));
+    }
+    sqlite3_finalize(st);
+    return true;
+}
+
+// Load the idx-ordered statements of one function into a FindRecord (the
+// record's header must already be filled). Joins captures by statement_idx.
+// Logged query_error on a SQL error (returns false).
+bool LoadStatementsForFunction(int64_t avId, FindRecord& rec) {
+    std::unordered_map<int64_t, std::vector<FindCapture>> capturesByIdx;
+    if (!LoadCapturesForFunction(avId, capturesByIdx)) return false;
+
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb,
+        "SELECT idx, kind, pseudo_text, callee, string_ref "
+        "FROM statements WHERE address_version_id = ? ORDER BY idx ASC;",
+        -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_statements_load_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("av_id", (long long)avId),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    sqlite3_bind_int64(st, 1, avId);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        FindStatement s;
+        s.idx = sqlite3_column_int64(st, 0);
+        int64_t kindId = (sqlite3_column_type(st, 1) == SQLITE_NULL)
+            ? -1 : sqlite3_column_int64(st, 1);
+        s.kind = (kindId < 0) ? "" : DecodeDevDict(g_devStatementKindDict, kindId);
+        const unsigned char* pt = sqlite3_column_text(st, 2);
+        s.pseudo_text = pt ? reinterpret_cast<const char*>(pt) : "";
+        const unsigned char* ce = sqlite3_column_text(st, 3);
+        s.callee = ce ? reinterpret_cast<const char*>(ce) : "";
+        const unsigned char* sr = sqlite3_column_text(st, 4);
+        s.string_ref = sr ? reinterpret_cast<const char*>(sr) : "";
+        s.applicable_ops = ApplicableOpsForKind(s.kind);
+        auto cIt = capturesByIdx.find(s.idx);
+        if (cIt != capturesByIdx.end()) s.captures = std::move(cIt->second);
+        rec.statements.push_back(std::move(s));
+    }
+    sqlite3_finalize(st);
+    return true;
+}
+
+// Run one criterion's query and collect the owning address_version_ids into
+// `ids` (a set, distinct). `sql` is a single-? statement returning
+// address_version_id; `arg` is bound to that ?. Logged query_error on failure
+// (returns false). LIKE-pattern criteria pass the already-escaped pattern.
+bool CollectAvIds(const char* sql, const std::string& arg,
+                  std::set<int64_t>& ids) {
+    sqlite3_stmt* st = nullptr;
+    int rc = sqlite3_prepare_v2(g_devDb, sql, -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR_KV(kDevCategory, "dev_criterion_query_failed",
+            log::KV::BareStr("reason", "query_error"),
+            log::KV("sqlite_rc", (long long)rc),
+            log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        return false;
+    }
+    sqlite3_bind_text(st, 1, arg.c_str(), -1, SQLITE_TRANSIENT);
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        ids.insert(sqlite3_column_int64(st, 0));
+    }
+    sqlite3_finalize(st);
+    return true;
+}
+
+// Escape a user string for a LIKE %?% / prefix% pattern (ESCAPE '\\'). Escapes
+// the LIKE metacharacters % and _ so a search for a literal name fragment is not
+// silently widened by a stray % the author typed.
+std::string EscapeLike(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (char ch : s) {
+        if (ch == '%' || ch == '_' || ch == '\\') out.push_back('\\');
+        out.push_back(ch);
+    }
+    return out;
+}
+
+}  // namespace
+
+FindResult FindFunctions(const FindCriteria& c) {
+    FindResult result;
+
+    if (!OpenDevDb()) {
+        // Gate failure — distinct from a genuine empty match. unavailable=true
+        // is the loud signal the binder maps to the dev-tool teaching message.
+        result.unavailable = true;
+        LOG_DEBUG_KV(kDevCategory, "find_unavailable",
+            log::KV::BareStr("reason", "dev_db_unavailable"),
+            log::KV::BareStr("detail",
+                "FindFunctions could not open the dev DB \xe2\x80\x94 see the "
+                "prior dev_db_open_* line for which gate failed (dev mode off / "
+                "file absent / schema mismatch)"));
+        return result;
+    }
+
+    // Build the per-criterion id sets, intersecting (AND) across set criteria.
+    // first==true until the first criterion lands, so the running set starts
+    // from that criterion's result rather than an empty intersection.
+    std::set<int64_t> running;
+    bool first = true;
+    bool anyCriterion = false;
+    bool queryFailed = false;
+
+    auto intersect = [&](std::set<int64_t>& got) {
+        if (first) {
+            running = std::move(got);
+            first = false;
+        } else {
+            std::set<int64_t> next;
+            for (int64_t id : got) {
+                if (running.count(id)) next.insert(id);
+            }
+            running = std::move(next);
+        }
+    };
+
+    // string / cvar — both query statements.string_ref = ? (exact). cvar is the
+    // cvar-typed lens over the same column (design §"FindFunctions" table).
+    if (c.has_string) {
+        anyCriterion = true;
+        std::set<int64_t> got;
+        if (!CollectAvIds(
+                "SELECT DISTINCT address_version_id FROM statements "
+                "WHERE string_ref = ?;", c.string, got)) queryFailed = true;
+        else intersect(got);
+    }
+    if (!queryFailed && c.has_cvar) {
+        anyCriterion = true;
+        std::set<int64_t> got;
+        if (!CollectAvIds(
+                "SELECT DISTINCT address_version_id FROM statements "
+                "WHERE string_ref = ?;", c.cvar, got)) queryFailed = true;
+        else intersect(got);
+    }
+    // callee / callers_of — both query statements.callee = ? (the owning
+    // functions == the callers of ?). Full 321k coverage via the TEXT column.
+    if (!queryFailed && c.has_callee) {
+        anyCriterion = true;
+        std::set<int64_t> got;
+        if (!CollectAvIds(
+                "SELECT DISTINCT address_version_id FROM statements "
+                "WHERE callee = ?;", c.callee, got)) queryFailed = true;
+        else intersect(got);
+    }
+    if (!queryFailed && c.has_callers_of) {
+        anyCriterion = true;
+        std::set<int64_t> got;
+        if (!CollectAvIds(
+                "SELECT DISTINCT address_version_id FROM statements "
+                "WHERE callee = ?;", c.callers_of, got)) queryFailed = true;
+        else intersect(got);
+    }
+    // callee_in_subsystem — statements.callee LIKE <prefix>% (escaped).
+    if (!queryFailed && c.has_callee_in_subsystem) {
+        anyCriterion = true;
+        std::set<int64_t> got;
+        std::string pat = EscapeLike(c.callee_in_subsystem) + "%";
+        if (!CollectAvIds(
+                "SELECT DISTINCT address_version_id FROM statements "
+                "WHERE callee LIKE ? ESCAPE '\\';", pat, got)) queryFailed = true;
+        else intersect(got);
+    }
+    // name_contains — curated name LIKE %?% UNION auto_name LIKE %?%. Both sides
+    // yield address_versions.id directly (the function id).
+    if (!queryFailed && c.has_name_contains) {
+        anyCriterion = true;
+        std::set<int64_t> got;
+        std::string pat = "%" + EscapeLike(c.name_contains) + "%";
+        // curated side: address_names.name LIKE ? → its av rows (kcdx_id = an.id).
+        if (!CollectAvIds(
+                "SELECT av.id FROM address_versions av "
+                "JOIN address_names an ON an.id = av.kcdx_id "
+                "WHERE an.name LIKE ? ESCAPE '\\';", pat, got)) queryFailed = true;
+        // auto_name side: address_versions.auto_name LIKE ? → av.id.
+        if (!queryFailed &&
+            !CollectAvIds(
+                "SELECT id FROM address_versions "
+                "WHERE auto_name LIKE ? ESCAPE '\\';", pat, got)) queryFailed = true;
+        if (!queryFailed) intersect(got);
+    }
+
+    if (queryFailed) {
+        // A criterion query errored — fail loud (the reason is already logged at
+        // the CollectAvIds boundary). Return unavailable so the binder does not
+        // read a partial/empty set as a genuine zero-match.
+        result.unavailable = true;
+        return result;
+    }
+
+    // No criteria set → empty result (the binder rejects the no-criteria call
+    // earlier; this is the defensive floor — never a crash, never a full scan).
+    if (!anyCriterion) {
+        LOG_DEBUG_KV(kDevCategory, "find_no_criteria",
+            log::KV::BareStr("detail",
+                "FindFunctions called with no criteria set \xe2\x80\x94 "
+                "returning empty (the binder validates at-least-one-of-N "
+                "before calling)"));
+        return result;
+    }
+
+    result.total_matches = (int64_t)running.size();
+
+    // Rank: decompile_quality ASC, rva ASC (design §"Ranking") — 1=clean before
+    // 2=unanalyzable, best-decompiled first. The id set is
+    // ordered by reading each id's (quality, rva) — done in one pass over the
+    // matched ids, then a sort. The matched-id count is bounded by the corpus
+    // but the result is capped to kFindResultCap records after ranking.
+    struct Ranked { int64_t avId; int quality; uint64_t rva; };
+    std::vector<Ranked> ranked;
+    ranked.reserve(running.size());
+    {
+        // Read (decompile_quality, rva) for every matched id. A temp table would
+        // be cleaner for very large sets, but the per-id read is a PK lookup and
+        // the set is an author's query result (not a hot path).
+        sqlite3_stmt* st = nullptr;
+        int rc = sqlite3_prepare_v2(g_devDb,
+            "SELECT decompile_quality, rva FROM address_versions WHERE id = ?;",
+            -1, &st, nullptr);
+        if (rc != SQLITE_OK) {
+            LOG_ERROR_KV(kDevCategory, "find_rank_query_failed",
+                log::KV::BareStr("reason", "query_error"),
+                log::KV("sqlite_rc", (long long)rc),
+                log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+            result.unavailable = true;
+            return result;
+        }
+        for (int64_t id : running) {
+            sqlite3_reset(st);
+            sqlite3_clear_bindings(st);
+            sqlite3_bind_int64(st, 1, id);
+            int q = 0; uint64_t rva = 0;
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                q = (sqlite3_column_type(st, 0) == SQLITE_NULL)
+                    ? 0 : sqlite3_column_int(st, 0);
+                rva = (uint64_t)sqlite3_column_int64(st, 1);
+            }
+            ranked.push_back({ id, q, rva });
+        }
+        sqlite3_finalize(st);
+    }
+    // Ranking: best-decompiled first, deterministic tiebreak by address.
+    // The dict codes are 1=clean (readable) and 2=unanalyzable, so quality ASC
+    // ranks clean above unanalyzable (1 < 2). A NULL/absent quality (read as 0
+    // at the header) is "unknown" — it must not outrank a confirmed-clean
+    // function, so it sorts LAST (normalize 0 -> INT_MAX for the compare).
+    std::sort(ranked.begin(), ranked.end(),
+        [](const Ranked& a, const Ranked& b) {
+            int qa = (a.quality == 0) ? INT_MAX : a.quality;
+            int qb = (b.quality == 0) ? INT_MAX : b.quality;
+            if (qa != qb) return qa < qb;  // ASC: 1 (clean) before 2 (unanalyzable)
+            return a.rva < b.rva;          // ASC by address (deterministic tiebreak)
+        });
+
+    // Cap loud: first kFindResultCap records, truncated + total carried.
+    if ((int64_t)ranked.size() > kFindResultCap) {
+        result.truncated = true;
+        LOG_INFO_KV(kDevCategory, "find_truncated",
+            log::KV("total_matches", (long long)result.total_matches),
+            log::KV("cap", (long long)kFindResultCap),
+            log::KV::BareStr("detail",
+                "FindFunctions matched more than the cap \xe2\x80\x94 returning "
+                "the top-ranked cap by decompile_quality ASC, rva ASC; narrow "
+                "the criteria to see the rest"));
+    }
+    int emitted = 0;
+    for (const Ranked& r : ranked) {
+        if (emitted >= kFindResultCap) break;
+        FindRecord rec;
+        if (!LoadFindRecordHeader(r.avId, rec)) continue;  // logged; skip the racey id.
+        if (!LoadStatementsForFunction(r.avId, rec)) {
+            // statements failed to load — the header is still useful; carry it
+            // with an empty statement list rather than dropping the record.
+        }
+        result.records.push_back(std::move(rec));
+        ++emitted;
+    }
+    return result;
+}
+
+EnumerateResult EnumerateStatements(const std::string& fn) {
+    EnumerateResult result;
+
+    if (!OpenDevDb()) {
+        result.unavailable = true;
+        LOG_DEBUG_KV(kDevCategory, "enumerate_unavailable",
+            log::KV::BareStr("reason", "dev_db_unavailable"),
+            log::KV("fn", fn),
+            log::KV::BareStr("detail",
+                "EnumerateStatements could not open the dev DB \xe2\x80\x94 see "
+                "the prior dev_db_open_* line for which gate failed"));
+        return result;
+    }
+
+    // Resolve fn → address_version_id by curated name OR auto_name. Curated
+    // first (address_names.name = ? → its av), then auto_name.
+    int64_t avId = -1;
+    {
+        sqlite3_stmt* st = nullptr;
+        int rc = sqlite3_prepare_v2(g_devDb,
+            "SELECT av.id FROM address_versions av "
+            "JOIN address_names an ON an.id = av.kcdx_id "
+            "WHERE an.name = ? LIMIT 1;", -1, &st, nullptr);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, fn.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(st) == SQLITE_ROW) avId = sqlite3_column_int64(st, 0);
+        } else {
+            LOG_ERROR_KV(kDevCategory, "enumerate_resolve_failed",
+                log::KV::BareStr("reason", "query_error"),
+                log::KV("fn", fn),
+                log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+        }
+        sqlite3_finalize(st);
+    }
+    if (avId < 0) {
+        sqlite3_stmt* st = nullptr;
+        int rc = sqlite3_prepare_v2(g_devDb,
+            "SELECT id FROM address_versions WHERE auto_name = ? LIMIT 1;",
+            -1, &st, nullptr);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, fn.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(st) == SQLITE_ROW) avId = sqlite3_column_int64(st, 0);
+        }
+        sqlite3_finalize(st);
+    }
+
+    if (avId < 0) {
+        // Not found — fail loud + a name-similarity suggestion list ranked by
+        // Levenshtein edit-distance (step-0 doc §"EnumerateStatements"). The
+        // candidate set is the curated address_names.name set (157 rows; ranked
+        // by edit-distance so a 1-char typo like IsInCombatt -> IsInCombat is the
+        // nearest, distance 1) PLUS auto_name substring matches (auto_name is
+        // FUN_<rva> — useless for a typo, but a substring hit is a cheap fallback
+        // when nothing curated is close). Edit-distance ranks the curated set;
+        // substring matching could not surface a typo that is not a substring.
+        struct Cand { std::string name; size_t dist; };
+        std::vector<Cand> ranked;
+
+        // Curated names — full scan (157 rows), each scored by edit-distance.
+        {
+            sqlite3_stmt* st = nullptr;
+            int rc = sqlite3_prepare_v2(g_devDb,
+                "SELECT name FROM address_names;", -1, &st, nullptr);
+            if (rc == SQLITE_OK) {
+                while (sqlite3_step(st) == SQLITE_ROW) {
+                    const unsigned char* n = sqlite3_column_text(st, 0);
+                    if (!n) continue;
+                    std::string name = reinterpret_cast<const char*>(n);
+                    ranked.push_back({ name, LevenshteinDistance(fn, name) });
+                }
+            } else {
+                LOG_ERROR_KV(kDevCategory, "enumerate_suggest_failed",
+                    log::KV::BareStr("reason", "query_error"),
+                    log::KV("fn", fn),
+                    log::KV("sqlite_msg", sqlite3_errmsg(g_devDb)));
+            }
+            sqlite3_finalize(st);
+        }
+
+        // Nearest-first; deterministic tiebreak by name so equal-distance
+        // candidates order stably across runs (std::sort is not stable).
+        std::sort(ranked.begin(), ranked.end(),
+                  [](const Cand& x, const Cand& y) {
+                      if (x.dist != y.dist) return x.dist < y.dist;
+                      return x.name < y.name;
+                  });
+        for (const Cand& c : ranked) {
+            if (result.suggestions.size() >= 5) break;
+            result.suggestions.push_back(c.name);
+        }
+
+        // auto_name substring fallback when the curated set yielded few — the
+        // bulk of the corpus, only a substring hit is useful (FUN_<rva> names
+        // have no meaningful edit-distance to a typed name).
+        if (result.suggestions.size() < 5) {
+            std::string pat = "%" + EscapeLike(fn) + "%";
+            sqlite3_stmt* st2 = nullptr;
+            int rc2 = sqlite3_prepare_v2(g_devDb,
+                "SELECT auto_name FROM address_versions WHERE auto_name LIKE ? "
+                "ESCAPE '\\' LIMIT 5;", -1, &st2, nullptr);
+            if (rc2 == SQLITE_OK) {
+                sqlite3_bind_text(st2, 1, pat.c_str(), -1, SQLITE_TRANSIENT);
+                while (sqlite3_step(st2) == SQLITE_ROW &&
+                       result.suggestions.size() < 5) {
+                    const unsigned char* n = sqlite3_column_text(st2, 0);
+                    if (n) result.suggestions.push_back(
+                        reinterpret_cast<const char*>(n));
+                }
+            }
+            sqlite3_finalize(st2);
+        }
+        LOG_DEBUG_KV(kDevCategory, "enumerate_name_unknown",
+            log::KV::BareStr("reason", "name_unknown"),
+            log::KV("fn", fn),
+            log::KV("suggestion_count", (long long)result.suggestions.size()),
+            log::KV::BareStr("detail",
+                "EnumerateStatements found no curated name or auto_name matching "
+                "the request \xe2\x80\x94 returning the nearest-name suggestions "
+                "for the teaching error"));
+        return result;
+    }
+
+    if (!LoadFindRecordHeader(avId, result.record)) {
+        // The id resolved but the header read failed (a SQL error, already
+        // logged) — surface as not-found rather than a half-built record.
+        return result;
+    }
+    if (!LoadStatementsForFunction(avId, result.record)) {
+        // statements failed (logged) — the header is valid; return it found with
+        // an empty statement list rather than dropping the resolved function.
+    }
+    result.found = true;
+    return result;
 }
 
 }  // namespace kcdx::refdb

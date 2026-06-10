@@ -589,4 +589,198 @@ StatementResolution ResolveStatementById(uint64_t kcdx_id,
                                          const StatementLocator& locator,
                                          const CallerContext& ctx = {});
 
+// =============================================================================
+// Dev-DB cross-function SEARCH layer (Phase 9.4 step 0 — the FOUNDATION the
+// kcdx.find / kcdx_dev_inspect binders, steps 1/2, consume).
+//
+// A SECOND, separately-opened connection to reference-dev.sqlite (the full
+// ~321k-function corpus), distinct from the shipped-DB connection above. It is
+// a DEV-ONLY discovery tool: opened lazily on the first find/inspect call,
+// gated on dev mode + the file's presence, and never opened in production (the
+// 1.3 GB dev DB must not load there).
+//
+// Connection model (design: docs/outstanding-work/restructure/phase-09.4-
+// discovery/step-0-devdb-search-layer.md §"Connection model"):
+//   - g_devDb — a SECOND sqlite3*, opened lazily on the first call, NOT at
+//     Open(). Distinct from g_db (the shipped connection); g_db is untouched.
+//   - Gate (both required): dev mode ON (kcdx::log::IsDevModeEnabled()) AND the
+//     file present at <game-bin>/kcdx-engine/data/reference-dev.sqlite.
+//   - SQLITE_OPEN_READONLY + the same meta.schema_version == kExpectedSchema
+//     Version gate the shipped DB uses (fail-loud on mismatch).
+//
+// Fail-loud contract (same as the shipped surface): every gate-off / missing-DB
+// / query-error path logs a structured reason token, NEVER a silent empty. The
+// dev-DB reason tokens (logged under the DEVDB category):
+//   dev_mode_off        — OpenDevDb called with dev mode disabled.
+//   dev_db_not_found    — reference-dev.sqlite absent / could not be opened.
+//   dev_schema_mismatch — meta.schema_version != kExpectedSchemaVersion (or
+//                         unreadable).
+//   dev_db_unavailable  — a Find/Enumerate call could not lazy-open the dev DB
+//                         (one of the three gate failures above happened); the
+//                         binder maps this to the dev-tool-unavailable teaching
+//                         message.
+//   query_error         — a sqlite3 prepare/step returned an error code.
+//   name_unknown        — EnumerateStatements found no function of that
+//                         name / auto_name.
+// =============================================================================
+
+// Lazy-open the dev DB. Idempotent (a second call with the connection already
+// live returns true immediately). Gated: returns false (with a logged reason
+// token — dev_mode_off / dev_db_not_found / dev_schema_mismatch) when dev mode
+// is off, the file is absent/unopenable, or the schema_version differs. On
+// success opens a SECOND SQLITE_OPEN_READONLY connection (g_devDb); g_db is
+// untouched. Must run on the worker thread (THREADSAFE=2: one connection per
+// thread, same constraint as Open()).
+bool OpenDevDb();
+
+// True iff OpenDevDb() succeeded and the dev connection is live.
+bool IsDevDbLoaded();
+
+// Close the dev connection. Idempotent. Also called from Close().
+void CloseDevDb();
+
+// The six optional FindFunctions criteria. Each field is meaningful only when
+// its has_ flag is set; an unset field is ignored (no constraint). The
+// at-least-one-of-N validation is the BINDER's job (step 1) — this struct just
+// carries the criteria. FindFunctions with NO criteria set returns an empty
+// result (the binder rejects the no-criteria call earlier).
+//
+// Per-criterion query (design §"FindFunctions(criteria) — per-criterion query";
+// each yields a set of owning address_version_ids, multi-criterion = AND):
+//   string               — statements.string_ref = ?
+//   cvar                 — statements.string_ref = ? (cvar names live in
+//                          string_ref; same path as string, the cvar-typed lens)
+//   callers_of           — statements.callee = ? (the callers of ?; full
+//                          321k coverage via the TEXT callee column)
+//   callee               — statements.callee = ? (owning functions)
+//   name_contains        — address_names.name LIKE %?% (curated) UNION
+//                          address_versions.auto_name LIKE %?%
+//   callee_in_subsystem  — statements.callee LIKE <prefix>%
+//
+// call_edges is UNUSED (user-confirmed; it is curated-only, NULL for 320,987 of
+// 321,144 functions — useless for discovery). The TEXT statements.callee is the
+// full-coverage caller path. The omission is deliberate, the data shape forces
+// it — do NOT "fix" it to use call_edges.
+struct FindCriteria {
+    bool        has_string = false;               std::string string;
+    bool        has_cvar = false;                 std::string cvar;
+    bool        has_callers_of = false;           std::string callers_of;
+    bool        has_callee = false;               std::string callee;
+    bool        has_name_contains = false;        std::string name_contains;
+    bool        has_callee_in_subsystem = false;  std::string callee_in_subsystem;
+};
+
+// A captured variable on a found-function statement (the referenced_vars join).
+// Mirrors StatementCapture's PUBLIC shape (storage_kind/data_type decoded from
+// the dev DB's dicts); kept a distinct type so the dev-search surface is
+// self-contained. has_size_bytes distinguishes a real 0 from absent.
+struct FindCapture {
+    std::string var_name;        // referenced_vars.var_name; empty when NULL.
+    std::string storage_kind;    // decoded (e.g. "stack", "register").
+    std::string storage_detail;  // referenced_vars.storage_detail; empty when NULL.
+    std::string data_type;       // decoded (e.g. "int", "ptr"); empty when NULL.
+    int64_t     size_bytes = 0;
+    bool        has_size_bytes = false;
+};
+
+// One statement of a found function (the design's record §"statements = [{idx,
+// kind, pseudo_text, captures, applicable_ops}]"). idx/kind/pseudo_text come
+// straight from the statements row (kind decoded via _dict_statements_kind);
+// captures are the referenced_vars join for this statement.
+struct FindStatement {
+    int64_t     idx = 0;             // statements.idx (position within the function).
+    std::string kind;               // decoded statements.kind (store/call/return/…).
+    std::string pseudo_text;        // statements.pseudo_text; empty when NULL.
+    std::string callee;             // statements.callee; empty when NULL.
+    std::string string_ref;         // statements.string_ref; empty when NULL.
+
+    // The statement's captured variables (referenced_vars joined by
+    // (address_version_id, statement_idx)). Empty vector = no captures
+    // (legitimate, not an error).
+    std::vector<FindCapture> captures;
+
+    // applicable_ops (design names it on the record): the kcdx.op.* op NAMES
+    // that fit this statement, derived from kind — the real Phase-9.3 catalog
+    // names whose required-statement-kind matches, restricted to the kinds the
+    // corpus emits (branch→always/never_take_branch + invert_branch_condition;
+    // call→skip_call_void/skip_call_return_value/replace_call_target; return→
+    // replace_with_return/replace_return_value; assign→replace_assignment_value),
+    // with replace_with_noop (applies to any statement) on every kind.
+    // replace_compare_constant is omitted (its kind `compare` is never emitted).
+    // The author uses these names verbatim in kcdx.statement.replace_with(...).
+    std::vector<std::string> applicable_ops;
+};
+
+// One found function (the design's record §"Result record": {function, module,
+// rva, decompile_quality, statements}). `function` = the curated
+// address_names.name when kcdx_id is non-NULL, else address_versions.auto_name.
+struct FindRecord {
+    std::string function;          // display name (curated name or auto_name).
+    std::string module;            // module name (from modules.name via module_id).
+    uint64_t    rva = 0;           // address_versions.rva.
+    int         decompile_quality = 0;  // decoded _dict_address_versions_decompile_quality (0 = unknown).
+    std::string decompile_quality_label;  // the decoded dict label ("clean"/"unanalyzable"/""); empty if unknown.
+    std::vector<FindStatement> statements;
+};
+
+// FindFunctions result. `truncated` + `total_matches` are the LOUD over-cap
+// signal (design §"Cap 500"): when the match set exceeds 500, records carries
+// the first 500 (post-ranking), truncated = true, total_matches = the full
+// count. A gate failure (dev DB unavailable) returns an empty result whose
+// `unavailable` flag is set + a dev_db_unavailable reason logged — never a
+// silent empty the binder cannot distinguish from a genuine zero-match.
+struct FindResult {
+    std::vector<FindRecord> records;
+    bool        truncated = false;
+    int64_t     total_matches = 0;
+
+    // True when the dev DB could not be opened (gate failure) — distinct from a
+    // genuine empty match set (unavailable = false, records empty, total = 0).
+    // The binder maps unavailable=true to the dev-tool-unavailable teaching
+    // message; an empty-but-available result is a legitimate "no matches".
+    bool        unavailable = false;
+};
+
+// The 500-record cap on FindFunctions (design §"Cap 500").
+constexpr int kFindResultCap = 500;
+
+// Cross-function search over the dev DB. Lazy-opens it (OpenDevDb); on gate
+// failure returns an empty FindResult with unavailable=true + a logged
+// dev_db_unavailable reason. Each set criterion yields a set of owning
+// address_version_ids; multi-criterion = AND (intersect). Results ranked
+// `decompile_quality ASC, rva ASC` (best-decompiled first — quality 1=clean
+// sorts before 2=unanalyzable; a NULL/absent quality sorts last; deterministic
+// address tiebreak), capped at kFindResultCap with the loud truncation signal.
+// No criteria set → an empty result (the binder rejects the no-criteria call).
+FindResult FindFunctions(const FindCriteria& criteria);
+
+// Enumerate the idx-ordered statements of a single function, resolved by curated
+// name OR auto_name (for kcdx_dev_inspect, step 2). On a successful resolve
+// returns the full FindRecord (function/module/rva/decompile_quality +
+// statements). On not-found returns found=false with a logged name_unknown
+// reason AND a name-similarity suggestion list (the candidate names step 2's
+// teaching error renders). Lazy-opens the dev DB; on gate failure returns
+// found=false + unavailable=true + a logged dev_db_unavailable reason.
+struct EnumerateResult {
+    bool        found = false;
+    FindRecord  record;            // populated iff found.
+
+    // Up to a few candidate function names closest to the requested `fn`, for
+    // the not-found teaching error. The curated address_names.name set is ranked
+    // by Levenshtein edit-distance (nearest-first — a 1-char typo surfaces its
+    // intended name, e.g. IsInCombatt -> IsInCombat at distance 1); auto_name
+    // substring matches top it up when nothing curated is close. Empty when
+    // found=true or when no near-name exists.
+    std::vector<std::string> suggestions;
+
+    // Dev DB could not be opened (gate failure) — same meaning as
+    // FindResult::unavailable. Distinct from a genuine name_unknown (found=false,
+    // unavailable=false).
+    bool        unavailable = false;
+};
+
+// Enumerate one function's statements by curated name or auto_name. See
+// EnumerateResult.
+EnumerateResult EnumerateStatements(const std::string& fn);
+
 }  // namespace kcdx::refdb

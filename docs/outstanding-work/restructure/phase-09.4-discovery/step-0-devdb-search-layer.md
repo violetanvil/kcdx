@@ -1,6 +1,6 @@
 # Phase 9.4 step 0 — refdb dev-DB connection + cross-function search layer
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 0.
+**Status: DONE** (landed; engine foundation built + step-review GREEN). Ledger row: [`README.md`](README.md) → step 0.
 
 The engine FOUNDATION the discovery surfaces (steps 1/2) consume. Added 2026-06-10
 after the `/feature` audit found the 3-step plan assumed a "resolves against the dev
@@ -115,9 +115,13 @@ forces it.)
   a new kind), this mapping is updated to match.
 - **Cap 500:** over-500 → first 500 + `_truncated = true` + `_total_matches = N`
   (loud, not silent).
-- **Ranking (user-settled 2026-06-10):** `ORDER BY decompile_quality DESC, rva ASC`
+- **Ranking (user-settled 2026-06-10):** `ORDER BY decompile_quality ASC, rva ASC`
   — best-decompiled first (the readable matches a dev author wants), deterministic
-  tiebreak by address.
+  tiebreak by address. **The quality codes are `1` = clean (readable) and `2` =
+  unanalyzable**, so ASC (not DESC) puts clean above unanalyzable — `1` < `2`. (The
+  original spec said `DESC`, which inverted the intent: DESC would rank the 5
+  unanalyzable functions ABOVE the clean ones. Corrected to ASC 2026-06-10 — step-review
+  caught the spec-vs-intent contradiction; `.claude/rules/spec-conformance.md`.)
 
 ### `EnumerateStatements(fn)` — for `kcdx_dev_inspect` (step 2)
 

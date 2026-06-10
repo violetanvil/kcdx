@@ -45,6 +45,7 @@
 #include "survival_agreement_selftest.h"           // cap-85 JS<->C++ cross-impl survival agreement
 #include "ki0001_node_classifier_selftest.h"       // cap-66 KI-0001 regression
 #include "statement_resolve_selftest.h"             // cap-83 refdb statement-resolution API
+#include "find_discovery_selftest.h"                // cap-98 refdb dev-DB cross-function search
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
 #include "early_hook_selftest.h"                    // cap-80 early-hook primitive
 #include "trampoline_selftest.h"                     // cap-93 branch-pool multi-region growth
@@ -788,6 +789,18 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // GRACEFUL on the pre-deploy state (statement tables absent) — reports a
     // clear DEGRADED PASS, never a hard FAIL or crash. One-shot guarded internally.
     kcdx::stmt_resolve::RunSelfTestOnce();
+
+    // cap-98-find-discovery: engine self-report for the refdb dev-DB
+    // cross-function SEARCH layer (Phase 9.4 step 0 — the foundation kcdx.find /
+    // kcdx_dev_inspect consume). Lazy-opens a SECOND dev-gated read-only
+    // connection to reference-dev.sqlite (the full corpus) and asserts a
+    // known-string search returns the right owning function, an over-500 callee
+    // search truncates loudly, and the availability gate discriminates a genuine
+    // zero-match from a dev-DB-down state. Boot-only, no hook-fire / VM / "ready"
+    // dependency (the dev DB lazy-opens on the first FindFunctions call).
+    // GRACEFUL when reference-dev.sqlite is absent (a maintainer artifact) —
+    // reports a clear DEGRADED PASS, never a hard FAIL or crash. One-shot guarded.
+    kcdx::find_discovery_selftest::RunSelfTestOnce();
 
     // cap-80-early-hook: engine self-report for the author-parameterized
     // early-install primitive (src/early_hook.{h,cpp}). Boot-only, same timing

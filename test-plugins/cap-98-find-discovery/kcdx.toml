@@ -1,0 +1,62 @@
+# CAP-98 — refdb dev-DB cross-function SEARCH layer (Phase 9.4 step 0).
+#
+# The behavior under test is ENGINE machinery, not an author surface: refdb
+# (src/refdb.{h,cpp}) opens a SECOND, dev-gated, read-only connection to
+# reference-dev.sqlite (the full ~321k-function corpus, distinct from the
+# shipped reference.sqlite g_db) and exposes a cross-function search surface
+# (FindFunctions + EnumerateStatements) the kcdx.find / kcdx_dev_inspect binders
+# (steps 1/2) will call. A Lua/C++ plugin cannot observe the dev-DB connection
+# or the search layer directly this step (the binders are steps 1/2), so the
+# engine self-reports directly via kcdx::test::ReportResult from
+# src/find_discovery_selftest.cpp. This kcdx.toml is a MANIFEST-ONLY STUB — no
+# plugin.lua, no DLL — whose sole job is to pre-register the four matrix rows
+# via test_names so they show PENDING until the engine reports them. Same
+# pattern as cap-83 / cap-84 / cap-85 / cap-95 (engine self-test, single-surface
+# engine-internal foundation).
+#
+# What it proves (four rows, reported under cap-98-*):
+#   1. cap-98-find-string — FindFunctions({string=<a known string_ref>}) returns
+#      >= 1 record whose function/module/rva are non-empty/non-zero. FALSIFIABLE:
+#      zero records for a string known to be owned (av 14595 / FUN_18043ee28), or
+#      an empty function/module/zero rva, fails the row.
+#   2. cap-98-truncates-loud — FindFunctions({callee="_Init_thread_footer"})
+#      (30,393 owning functions, > the 500 cap) truncates LOUDLY: truncated=true,
+#      total_matches>500, records.size()==500. FALSIFIABLE: a silent partial
+#      (truncated=false), a wrong total, or a wrong record count fails the row
+#      (the AP14 silent-failure shape).
+#   3. cap-98-gate-discriminates — the dev-DB availability gate distinguishes a
+#      genuine zero-match (unavailable=false, 0 records) from a dev-DB-down state
+#      (unavailable=true). FALSIFIABLE: a clean empty search reporting
+#      unavailable=true, or OpenDevDb rejecting an available DB, fails the row.
+#   4. cap-98-applicable-ops — a `call`-kind statement of a known function
+#      (EnumerateStatements(FUN_18043ee28)) carries the REAL kcdx.op.* call
+#      family in applicable_ops: includes skip_call_void + replace_with_noop,
+#      EXCLUDES replace_compare_constant (its kind `compare` is never emitted by
+#      the corpus — naming it would name a move the statement verb rejects,
+#      AP14), and is NOT a kind-echo (["call"]). FALSIFIABLE: a kind-echo, a
+#      missing skip_call_void, or a leaked replace_compare_constant fails the row
+#      — it proves applicable_ops names real catalog ops (mirroring
+#      src/lua_bind_op.cpp's per-op required-kind), not the statement kind.
+#
+# GRACEFUL on absent data: reference-dev.sqlite is a maintainer/dev artifact
+# (~1.3 GB) deployed alongside reference.sqlite under kcdx-engine/data. If it is
+# absent (OpenDevDb returns dev_db_not_found) the self-test reports a CLEAR
+# DEGRADED PASS on all four rows (a deploy-state observation distinguishable
+# from a real defect), never a hard FAIL and never a crash.
+#
+# Test mode: boot-only. The three rows are engine self-checks that need no
+# player input — they run on the first suite tick (the dev DB lazy-opens on the
+# first FindFunctions call). Launch-to-menu confirms them.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_98_find_discovery"
+display_name        = "CAP-98 refdb dev-DB cross-function search layer"
+author              = "ts"
+description         = "Engine self-test: refdb opens a second, dev-gated, read-only connection to reference-dev.sqlite (the full corpus) and exposes FindFunctions + EnumerateStatements. Asserts a known-string search returns the right owning function, an over-500 callee search truncates loudly (never a silent partial), and the availability gate distinguishes a genuine zero-match from a dev-DB-down state. Engine self-reports; degrades when reference-dev.sqlite is absent."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-98-find-string", "cap-98-truncates-loud", "cap-98-gate-discriminates", "cap-98-applicable-ops"]

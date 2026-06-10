@@ -308,6 +308,7 @@ add_library(kcdx SHARED
     src/survival_agreement_selftest.cpp
     src/ki0001_node_classifier_selftest.cpp
     src/statement_resolve_selftest.cpp
+    src/find_discovery_selftest.cpp
     src/early_hook_selftest.cpp
     src/foreign_hook_detect_selftest.cpp
     src/foreign_hook_chain_selftest.cpp

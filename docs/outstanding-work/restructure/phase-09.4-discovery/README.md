@@ -25,7 +25,7 @@ corpus. The decision is recorded in [`step-1-find-surface.md`](step-1-find-surfa
 
 | Step | Status | Commit |
 |---|---|---|
-| [0 — refdb dev-DB connection + cross-function search layer](step-0-devdb-search-layer.md) | NOT STARTED | — |
+| [0 — refdb dev-DB connection + cross-function search layer](step-0-devdb-search-layer.md) | DONE | (landed) |
 | [1 — `kcdx.find{...}` Lua surface + `kcdx_find` console](step-1-find-surface.md) | NOT STARTED | — |
 | [2 — `kcdx_dev_inspect` console command](step-2-dev-inspect-console.md) | NOT STARTED | — |
 | [3 — test plugin + console-path tests](step-3-test.md) | NOT STARTED | — |
@@ -35,7 +35,7 @@ corpus. The decision is recorded in [`step-1-find-surface.md`](step-1-find-surfa
 the shipped `reference.sqlite`; refdb had no cross-function search). Step 0 is the
 engine foundation — the dev-DB connection + the `FindFunctions`/`EnumerateStatements`
 search layer — that steps 1/2 consume. The settled search-layer design (per-criterion
-query, `call_edges`-unused, `decompile_quality DESC, rva ASC` ranking) is
+query, `call_edges`-unused, `decompile_quality ASC, rva ASC` ranking) is
 [`step-0-devdb-search-layer.md`](step-0-devdb-search-layer.md) §"Settled search-layer
 design".
 
