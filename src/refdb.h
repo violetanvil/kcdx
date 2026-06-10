@@ -223,6 +223,18 @@ struct NameResolution {
     // (has_derives_from=false) otherwise — a 0 is a real value.
     bool        has_derives_from = false;
     int64_t     derives_from = 0;
+
+    // True iff the picked address_versions row's [valid_from, valid_through]
+    // interval ACTUALLY includes the running build version V (valid_from <= V
+    // AND V <= valid_through, with valid_through NULL meaning open-ended). This
+    // is the PRECISE coverage signal: it distinguishes the running build being
+    // genuinely outside the row's recorded interval (false — the row is not for
+    // this build) from the row covering V but not being freshly re-verified at V
+    // (true, yet verification_state may still be Unverified — covered, only the
+    // re-verification is stale). verification_state==Unverified lumps both
+    // cases; this field separates them. Default false (a not-found / unresolved
+    // result has no covering interval). Appended at the END (append-only).
+    bool        interval_covers_version = false;
 };
 
 // Result of a resolve-by-KCDX_ID lookup (the by-id path).

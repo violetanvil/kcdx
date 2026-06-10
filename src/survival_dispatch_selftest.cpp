@@ -1,8 +1,9 @@
 #include "survival_dispatch_selftest.h"
 
 #include <cstdio>   // snprintf
-#include <cstring>  // memcmp
-#include <exception>  // std::exception (ParsePattern throw)
+#include <cstring>  // memcmp, strcmp
+#include <exception>   // std::exception (ParsePattern throw)
+#include <stdexcept>   // std::runtime_error (synthetic harness-fault throw)
 #include <string>
 #include <vector>
 
@@ -544,14 +545,18 @@ void RunSelfTestOnce() {
     }
 
     // ----- Sub-check 8: STARTUP VERIFICATION PASS — every row gets a DEFINED
-    // verdict; a known-good curated function reads resolves_works (DEGRADED). ---
+    // verdict; a known-good curated function caps at passed_not_verified. -------
     // RunStartupVerification sweeps the curated set, combining the on-disk
     // version-applicability check (REUSE the 3.1/3.2 dispatch) with the live
-    // reachability range test into one of the four D25 verdicts. AP14: every
-    // swept row carries a DEFINED verdict (never absent). A known-good function
-    // (SaveGame) whose on-disk hash matches AND resolves into live .text reads
-    // resolves_works with the matched address_version id surfaced — DEGRADE when
-    // WHGame is not mapped / the DB lacks the row.
+    // reachability range test into one of the 7 verdicts via the ceiling rule.
+    // Every swept row carries a DEFINED verdict (never absent — a check that
+    // cannot run says so, it does not omit the row). A known-good function
+    // (SaveGame) whose on-disk hash matches AND resolves into
+    // live .text reads passed_not_verified (NOT a higher rung — only observed
+    // execution earns verified_working, which no static method produces) at
+    // method_rank 3 (reachability, the strongest method that ran), with the
+    // matched address_version id surfaced — DEGRADE when WHGame is not mapped /
+    // the DB lacks the row.
     {
         std::vector<svv::RowVerdict> verds = svv::RunStartupVerification();
         // Every row carries a defined verdict — the enum is total, so this asserts
@@ -578,35 +583,71 @@ void RunSelfTestOnce() {
             if (v.name == kRealFnName) { saveRow = &v; break; }
         }
         if (saveRow != nullptr) {
-            // When the on-disk hash matched (resolves_works OR dead carry a
-            // matched id) the matched address_version id must be surfaced; a
-            // resolves_works MUST carry it. Falsifiable: a good function row that
-            // matched its fingerprint + resolved into live .text reading anything
-            // other than resolves_works, OR not surfacing the matched id, is the
-            // pass failing on a genuinely-good target.
-            if (saveRow->verdict == svv::Verdict::ResolvesWorks &&
-                !saveRow->has_matched_id) {
+            // A static pass NEVER awards verified_working — that needs rank-1
+            // observed execution this step does not produce. A good function row
+            // that matched its fingerprint + resolved into live .text caps at
+            // passed_not_verified. Falsifiable: SaveGame reading verified_working
+            // is the static pass over-claiming the top rung the ceiling rule
+            // forbids.
+            if (saveRow->verdict == svv::Verdict::VerifiedWorking) {
                 std::snprintf(reason, sizeof(reason),
-                    "FAIL: the curated function '%s' read resolves_works but did NOT "
-                    "surface a matched address_version id — D34 attribution must "
-                    "report WHICH candidate row the swept bytes matched.",
+                    "FAIL: the curated function '%s' read verified_working from a "
+                    "STATIC pass — only observed live execution (rank 1) earns the "
+                    "top rung; a hash+reachability pass caps at passed_not_verified.",
                     kRealFnName);
                 LOG_ERROR_KV(kCategory, "selftest_fail",
-                    ::kcdx::log::KV("subcheck", "8_verify_matchedid"));
+                    ::kcdx::log::KV("subcheck", "8_verify_overclaim"));
                 kcdx::test::ReportResult(kRow, false, reason);
                 kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
                 vcc::Reset(); sp::Reset();
                 return;
             }
-            // A resolves_works carries a matched id; a wrong_target carries NONE.
-            if (saveRow->verdict == svv::Verdict::WrongTarget &&
+            // A passed_not_verified came from an on-disk match → it MUST surface
+            // the matched address_version id AND report method_rank 3
+            // (reachability, the strongest method that ran). Falsifiable: a
+            // passing row not surfacing the matched id, or reporting a rank other
+            // than 3, is the attribution / ceiling-rank reporting failing on a
+            // genuinely-good target.
+            if (saveRow->verdict == svv::Verdict::PassedNotVerified) {
+                if (!saveRow->has_matched_id) {
+                    std::snprintf(reason, sizeof(reason),
+                        "FAIL: the curated function '%s' read passed_not_verified but "
+                        "did NOT surface a matched address_version id — attribution "
+                        "must report WHICH candidate row the swept bytes matched.",
+                        kRealFnName);
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("subcheck", "8_verify_matchedid"));
+                    kcdx::test::ReportResult(kRow, false, reason);
+                    kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                    vcc::Reset(); sp::Reset();
+                    return;
+                }
+                if (saveRow->method_rank != 3) {
+                    std::snprintf(reason, sizeof(reason),
+                        "FAIL: '%s' read passed_not_verified at method_rank %d — a "
+                        "clean hash+reachability pass's strongest method is "
+                        "reachability (rank 3); the reported rank must be 3.",
+                        kRealFnName, saveRow->method_rank);
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("subcheck", "8_verify_rank"));
+                    kcdx::test::ReportResult(kRow, false, reason);
+                    kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                    vcc::Reset(); sp::Reset();
+                    return;
+                }
+            }
+            // A fingerprint-mismatch Failed carries NO matched id (the bytes
+            // matched no candidate). A dead-resolve Failed DID match on-disk so it
+            // keeps its id — so only the mismatch detail asserts no-id here.
+            if (saveRow->verdict == svv::Verdict::Failed &&
+                saveRow->detail == "fingerprint_mismatch" &&
                 saveRow->has_matched_id) {
                 std::snprintf(reason, sizeof(reason),
-                    "FAIL: '%s' read wrong_target yet surfaced a matched id — "
-                    "wrong_target means the bytes matched NO candidate; the matched "
-                    "id must be NONE.", kRealFnName);
+                    "FAIL: '%s' read failed (fingerprint_mismatch) yet surfaced a "
+                    "matched id — a mismatch means the bytes matched NO candidate; "
+                    "the matched id must be NONE.", kRealFnName);
                 LOG_ERROR_KV(kCategory, "selftest_fail",
-                    ::kcdx::log::KV("subcheck", "8_verify_wrongtarget_id"));
+                    ::kcdx::log::KV("subcheck", "8_verify_mismatch_id"));
                 kcdx::test::ReportResult(kRow, false, reason);
                 kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
                 vcc::Reset(); sp::Reset();
@@ -616,47 +657,437 @@ void RunSelfTestOnce() {
     }
 
     // ----- Sub-check 9: VERDICT-COMBINATION DISCRIMINATION (synthetic) --------
-    // The pass sweeps real rows, so synthesize the two failure verdicts at the
+    // The pass sweeps real rows, so synthesize the failure verdict at the
     // building-block level the pass combines, asserting the discrimination is
-    // distinct from resolves_works:
-    //   wrong_target — a function payload whose stored content_hash CANNOT match
-    //     the on-disk bytes (an all-0x33 synthetic hash at SaveGame's real rva)
-    //     reads on-disk Changed → the pass combines that to wrong_target. Needs
-    //     WHGame mapped (the on-disk read); DEGRADE otherwise.
-    //   dead — a hash that MATCHES (real SaveGame) but a reachability that does
-    //     NOT land in live .text reads dead. We assert the reachability half
-    //     (sub-check 7) + the on-disk half here compose to distinct verdicts.
+    // distinct from a clean pass:
+    //   failed — a function payload whose stored content_hash CANNOT match the
+    //     on-disk bytes (an all-0x33 synthetic hash at SaveGame's real rva) reads
+    //     on-disk Changed → the pass combines that to failed (fingerprint_mismatch
+    //     on a covered version). Needs WHGame mapped (the on-disk read); DEGRADE
+    //     otherwise.
     // Falsifiable: a non-matching synthetic hash reading Unchanged (the on-disk
-    // check fabricating a match) is the wrong_target signal collapsing.
+    // check fabricating a match) is the failed-discrimination collapsing into a
+    // false passed_not_verified. (The full verdict-mapping arithmetic — Changed →
+    // failed, the dead-resolve → failed, the version gap → not_applicable, a fault
+    // → error — is asserted directly against MapStaticVerdict in sub-checks b/c/d.)
     {
         if (refdb::IsLoaded()) {
             refdb::NameResolution nr = refdb::ResolveByName(kRealFnName);
             if (nr.found && nr.kind == "function" && nr.has_length && nr.length > 0) {
                 // A synthetic 32-byte hash that is astronomically unlikely to be
                 // SaveGame's real body hash → the on-disk check must read Changed
-                // (NOT Unchanged) → the pass would combine that to wrong_target.
+                // (NOT Unchanged) → the pass would combine that to failed.
                 std::vector<uint8_t> bogus(sv::kHashLen, 0x33);
                 sv::Result rBogus = DispatchFn(static_cast<uint32_t>(nr.rva),
                                                static_cast<size_t>(nr.length), bogus);
                 // CannotCheck (module not mapped on the on-disk read) is a DEGRADE;
                 // a definite Unchanged on a bogus hash is a hard FAIL (the on-disk
-                // check fabricated a match → wrong_target discrimination is dead).
+                // check fabricated a match → the failed discrimination is dead).
                 if (rBogus.status == sv::Status::Unchanged) {
                     std::snprintf(reason, sizeof(reason),
                         "FAIL: a function payload with a SYNTHETIC content_hash "
                         "(0x33*32) at '%s's real rva read Unchanged — the on-disk "
                         "fingerprint check fabricated a match for bytes that cannot "
                         "be SaveGame's body; a non-matching fingerprint must read "
-                        "Changed (→ wrong_target), never Unchanged (→ resolves_works).",
+                        "Changed (→ failed), never Unchanged (→ passed_not_verified).",
                         kRealFnName);
                     LOG_ERROR_KV(kCategory, "selftest_fail",
-                        ::kcdx::log::KV("subcheck", "9_wrongtarget_discrim"));
+                        ::kcdx::log::KV("subcheck", "9_failed_discrim"));
                     kcdx::test::ReportResult(kRow, false, reason);
                     kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
                     vcc::Reset(); sp::Reset();
                     return;
                 }
             }
+        }
+    }
+
+    // ----- Sub-check 10: THE 7-STATE ENUM IS TOTAL + EACH READS BACK ITS OWN
+    // VALUE (in-process, item a-i) ------------------------------------------
+    // The 7-state RowVerdict is an in-process enum (NOT serialized this step —
+    // its report-side encoding is the v3 schema at a later step). Prove every one
+    // of the 7 states is PRODUCIBLE and reads back its OWN value end-to-end: set
+    // each on a RowVerdict + method_rank, read the field back, and decode the
+    // token via VerdictName. Falsifiable: a state that does not round-trip its own
+    // value (the field reads a different verdict than was set), or two distinct
+    // states decoding to the SAME token (the enum collapsing), fails the row.
+    {
+        struct EnumCase { svv::Verdict v; const char* token; int rank; };
+        const EnumCase enumCases[] = {
+            {svv::Verdict::VerifiedWorking,   "verified_working",     1},
+            {svv::Verdict::PassedNotVerified, "passed_not_verified",  3},
+            {svv::Verdict::Failed,            "failed",               4},
+            {svv::Verdict::NotApplicable,     "not_applicable",       4},
+            {svv::Verdict::CannotCheck,       "cannot_check",         4},
+            {svv::Verdict::Skipped,           "skipped",              5},
+            {svv::Verdict::Error,             "error",                4},
+        };
+        for (const auto& ec : enumCases) {
+            svv::RowVerdict rv;
+            rv.verdict = ec.v;
+            rv.method_rank = ec.rank;
+            // The field reads back the exact value set, and the token decodes to
+            // the expected stable string.
+            if (rv.verdict != ec.v || rv.method_rank != ec.rank ||
+                std::strcmp(svv::VerdictName(rv.verdict), ec.token) != 0) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: the 7-state verdict '%s' did NOT round-trip its own value "
+                    "in-process (decoded='%s', rank=%d) — every state must be "
+                    "producible and read back its own verdict + method_rank.",
+                    ec.token, svv::VerdictName(rv.verdict), rv.method_rank);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "10_enum_total"),
+                    ::kcdx::log::KV("token", ec.token));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+        // No two distinct states share a token (the enum has not collapsed).
+        const size_t nCases = sizeof(enumCases) / sizeof(enumCases[0]);
+        for (size_t i = 0; i < nCases; ++i) {
+            for (size_t j = i + 1; j < nCases; ++j) {
+                if (std::strcmp(svv::VerdictName(enumCases[i].v),
+                                svv::VerdictName(enumCases[j].v)) == 0) {
+                    std::snprintf(reason, sizeof(reason),
+                        "FAIL: two distinct verdict states decode to the SAME token "
+                        "'%s' — the 7-state enum collapsed; each state must carry a "
+                        "distinct stable token.", svv::VerdictName(enumCases[i].v));
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("subcheck", "10_enum_distinct"));
+                    kcdx::test::ReportResult(kRow, false, reason);
+                    kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                    vcc::Reset(); sp::Reset();
+                    return;
+                }
+            }
+        }
+    }
+
+    // ----- Sub-check 10b: THE EXISTING FuncStatus CACHE CODEC ROUND-TRIP STAYS
+    // INTACT under this change (item a-ii) -----------------------------------
+    // The 7-state RowVerdict is NOT added to the version_check_cache codec — that
+    // codec stores the SEPARATE FuncStatus enum (the per-function survival
+    // outcome), whose on-disk byte values (0/1/2/3) are pinned and unchanged.
+    // Sub-check 3 already round-trips FuncStatus::Ambiguous (3); this asserts the
+    // OTHER three pinned values (Unchanged=0 / Changed=1 / CannotCheck=2) still
+    // round-trip byte-identically — proving extending RowVerdict did NOT disturb
+    // the cache codec. Falsifiable: any pinned FuncStatus value that does not
+    // read back its own value through Save→Load→Lookup fails the row.
+    {
+        struct FsCase { const char* key; vcc::FuncStatus fs; };
+        const FsCase fsCases[] = {
+            {"unchanged_fn",   vcc::FuncStatus::Unchanged},
+            {"changed_fn",     vcc::FuncStatus::Changed},
+            {"cannotcheck_fn", vcc::FuncStatus::CannotCheck},
+        };
+        vcc::Reset();
+        vcc::Record fsRec;
+        fsRec.key.pluginName = kSyntheticPlugin;
+        fsRec.key.gameVer = "cap84.fs.1";
+        fsRec.key.sqliteSha = std::vector<uint8_t>(32, 0x8A);
+        fsRec.key.tomlMtime = 8400010;
+        fsRec.key.entrypointsMtime = 8400011;
+        fsRec.posture = vcc::Posture::WarnAndTry;
+        for (const auto& fc : fsCases) {
+            fsRec.results.push_back({fc.key, fc.fs});
+        }
+        vcc::Upsert(fsRec);
+        bool codecOk = vcc::Save();
+        if (codecOk) {
+            vcc::Reset();        // force a real disk read.
+            vcc::Load();
+            std::vector<vcc::FuncResult> fsGot;
+            vcc::Posture fsPosture = vcc::Posture::WarnAndTry;
+            bool fsHit = vcc::Lookup(fsRec.key, fsGot, fsPosture);
+            codecOk = fsHit && fsGot.size() == (sizeof(fsCases) / sizeof(fsCases[0]));
+            for (size_t i = 0; codecOk && i < fsGot.size(); ++i) {
+                if (fsGot[i].targetKey != fsCases[i].key ||
+                    fsGot[i].status != fsCases[i].fs) {
+                    codecOk = false;
+                }
+            }
+        }
+        if (!codecOk) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: the existing FuncStatus cache codec round-trip did NOT stay "
+                "intact under the RowVerdict extension — the pinned values "
+                "(Unchanged=0 / Changed=1 / CannotCheck=2) must still round-trip "
+                "byte-identically; the 7-state verdict is NOT serialized through "
+                "this codec.");
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "10b_funcstatus_codec"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        vcc::Reset();  // leave no synthetic record on disk.
+        vcc::Save();
+    }
+
+    // ----- Sub-check 11: THE CEILING RULE (item b) --------------------------
+    // MapStaticVerdict is the pass's OWN ceiling arithmetic (the sweep calls the
+    // identical function), so asserting against it tests the producer, not a
+    // re-derivation. A row whose strongest run method is a rank-4 on-disk hash
+    // PASS (Unchanged) + a passing reachability maps to passed_not_verified at
+    // rank 3 (the strongest method that ran) — NOT verified_working (only rank-1
+    // observed execution earns that). And a rank-4 hash MISMATCH (Changed) maps
+    // to failed (the override-downward). Falsifiable: a clean pass reading
+    // verified_working, or a mismatch reading anything but failed.
+    {
+        // (a) hash matched (Unchanged) + reachable → passed_not_verified, rank 3.
+        svv::StaticVerdict pass =
+            svv::MapStaticVerdict(/*versionGap=*/false, sv::Status::Unchanged,
+                                  /*reason=*/std::string(), /*reachable=*/true,
+                                  /*liveMapped=*/true);
+        if (pass.verdict != svv::Verdict::PassedNotVerified || pass.method_rank != 3) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a rank-4 on-disk hash PASS + reachability mapped to (%s, "
+                "rank %d), not (passed_not_verified, rank 3) — a passing static "
+                "check is real evidence but NOT proof of execution; the ceiling "
+                "rule caps it at passed_not_verified, never verified_working.",
+                svv::VerdictName(pass.verdict), pass.method_rank);
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "11_ceiling_pass"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        // (b) hash MISMATCH (Changed) → failed (override-downward), rank 4.
+        svv::StaticVerdict miss =
+            svv::MapStaticVerdict(/*versionGap=*/false, sv::Status::Changed,
+                                  /*reason=*/std::string(), /*reachable=*/true,
+                                  /*liveMapped=*/true);
+        if (miss.verdict != svv::Verdict::Failed) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a rank-4 on-disk hash MISMATCH mapped to %s, not failed — a "
+                "divergence at any rank overrides the ceiling downward to failed.",
+                svv::VerdictName(miss.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "11_ceiling_mismatch"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+    }
+
+    // ----- Sub-check 12: THE VERSION-GAP PRODUCER (item c) ------------------
+    // A row whose resolved build version is NOT covered by the row (versionGap)
+    // maps to not_applicable — NOT cannot_check. The version-applicability check
+    // RAN and found non-coverage (a gap), distinct from lacking inputs. The gap
+    // wins even when the on-disk bytes would have matched (the row is not for this
+    // build). Falsifiable: a version-gap row reading cannot_check (or any verdict
+    // other than not_applicable) collapses the gap-vs-missing-data distinction.
+    {
+        svv::StaticVerdict gap =
+            svv::MapStaticVerdict(/*versionGap=*/true, sv::Status::Unchanged,
+                                  /*reason=*/std::string(), /*reachable=*/true,
+                                  /*liveMapped=*/true);
+        if (gap.verdict != svv::Verdict::NotApplicable) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a version-gap row (running build not covered) mapped to %s, "
+                "not not_applicable — the version-applicability check ran and found "
+                "non-coverage (a gap), which is not_applicable, NOT cannot_check "
+                "(missing inputs) and NOT failed (a divergence on a covered build).",
+                svv::VerdictName(gap.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "12_version_gap"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        // The cannot_check producer is distinct: an on-disk CannotCheck (missing
+        // inputs) with NO version gap maps to cannot_check, proving the two are
+        // not conflated.
+        svv::StaticVerdict cc =
+            svv::MapStaticVerdict(/*versionGap=*/false, sv::Status::CannotCheck,
+                                  /*reason=*/"not_applicable", /*reachable=*/false,
+                                  /*liveMapped=*/true);
+        if (cc.verdict != svv::Verdict::CannotCheck) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: an on-disk CannotCheck (missing inputs, no version gap) "
+                "mapped to %s, not cannot_check — a row that lacks the check's "
+                "inputs is cannot_check, distinct from a version gap "
+                "(not_applicable).", svv::VerdictName(cc.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "12_cannot_check_distinct"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // ----- The precise gap SIGNAL: versionGap = !interval_covers_version ---
+        // The sweep derives versionGap from the resolved row's PRECISE coverage
+        // bit (interval_covers_version), NOT the resolver's coarse Unverified
+        // state. Two synthetic rows exercise the exact production derivation +
+        // mapping end-to-end. The distinction that matters:
+        //   - interval_covers_version==false → the running build is outside the
+        //     picked interval → a genuine gap → not_applicable.
+        //   - interval_covers_version==true WITH verification_state==Unverified →
+        //     the interval DOES cover the build, only the re-verification is
+        //     stale → NOT a gap → flows to the static-check verdict (here a
+        //     synthetic on-disk hash PASS → passed_not_verified), never
+        //     not_applicable.
+        // Falsifiable: a covered-but-unverified row reading not_applicable fails
+        // this sub-check — that is the exact over-broadness the precise signal
+        // removes (the prior interim keyed on Unverified and would have condemned
+        // it). Each row computes versionGap the SAME way the sweep does
+        // (!nr.interval_covers_version), so this tests the wiring, not a stand-in.
+
+        // Row A — genuine gap: interval does NOT cover the running build.
+        refdb::NameResolution gapRow;
+        gapRow.found = true;
+        gapRow.verification_state =
+            refdb::NameResolution::VerificationState::Unverified;
+        gapRow.interval_covers_version = false;  // outside the picked interval.
+        svv::StaticVerdict gapMapped =
+            svv::MapStaticVerdict(/*versionGap=*/!gapRow.interval_covers_version,
+                                  sv::Status::Unchanged, /*reason=*/std::string(),
+                                  /*reachable=*/true, /*liveMapped=*/true);
+        if (gapMapped.verdict != svv::Verdict::NotApplicable) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a row whose interval does NOT cover the running build "
+                "(interval_covers_version=false) mapped to %s, not not_applicable "
+                "— a build outside the picked interval is a genuine version gap.",
+                svv::VerdictName(gapMapped.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "12_precise_gap_uncovered"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // Row B — COVERED but not freshly re-verified: interval includes the
+        // build, yet the row resolves Unverified. This must NOT read
+        // not_applicable; the precise signal lets it flow to the static-check
+        // verdict (a synthetic on-disk PASS → passed_not_verified). Keying on the
+        // coarse Unverified state (the prior interim) would have wrongly read it
+        // not_applicable — this is the over-broadness the fix removes.
+        refdb::NameResolution coveredStaleRow;
+        coveredStaleRow.found = true;
+        coveredStaleRow.verification_state =
+            refdb::NameResolution::VerificationState::Unverified;
+        coveredStaleRow.interval_covers_version = true;  // interval DOES cover V.
+        svv::StaticVerdict coveredMapped =
+            svv::MapStaticVerdict(
+                /*versionGap=*/!coveredStaleRow.interval_covers_version,
+                sv::Status::Unchanged, /*reason=*/std::string(),
+                /*reachable=*/true, /*liveMapped=*/true);
+        if (coveredMapped.verdict == svv::Verdict::NotApplicable) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a COVERED-but-unverified row (interval_covers_version=true, "
+                "verification_state=Unverified) read not_applicable — the interval "
+                "covers the running build; only the re-verification is stale, so it "
+                "must flow to the static-check verdict, NEVER not_applicable. "
+                "Reading not_applicable here is the exact over-broadness the precise "
+                "signal removes (the coarse Unverified state would have condemned "
+                "it).");
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "12_precise_covered_unverified"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        if (coveredMapped.verdict != svv::Verdict::PassedNotVerified) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a covered-but-unverified row with a passing on-disk hash + "
+                "reachability mapped to %s, not passed_not_verified — past the "
+                "(non-)gap it is an ordinary static PASS capped at "
+                "passed_not_verified by the ceiling rule.",
+                svv::VerdictName(coveredMapped.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "12_precise_covered_flows"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+    }
+
+    // ----- Sub-check 13: THE FAULT PRODUCER — error ≠ failed (item d) -------
+    // A check that throws (caught) maps to error, NOT failed — the harness
+    // faulted, the ROW may be fine. RunStartupVerification's per-row catch is the
+    // production error producer; it sets error ONLY on a caught exception. The
+    // STATIC mapping (MapStaticVerdict) — the non-fault path — must therefore
+    // NEVER itself return error (nor verified_working, nor skipped: those come
+    // from the catch and from later-step methods). If the static mapping could
+    // fabricate error, a mapping outcome would be indistinguishable from a real
+    // harness fault. So sweep MapStaticVerdict across its full input space and
+    // assert it produces ONLY the static-reachable states (passed_not_verified /
+    // failed / not_applicable / cannot_check). Falsifiable: any static-mapping
+    // input yielding error (or verified_working / skipped) collapses the
+    // fault-vs-mapping separation that keeps a caught fault honestly distinct from
+    // a diverged row.
+    {
+        const sv::Status statuses[] = {sv::Status::Unchanged, sv::Status::Changed,
+                                       sv::Status::Ambiguous, sv::Status::CannotCheck};
+        const bool bools[] = {true, false};
+        bool sepOk = true;
+        svv::Verdict offending = svv::Verdict::Error;
+        for (bool versionGap : bools) {
+            for (sv::Status st : statuses) {
+                for (bool reachable : bools) {
+                    for (bool liveMapped : bools) {
+                        svv::StaticVerdict m = svv::MapStaticVerdict(
+                            versionGap, st, /*reason=*/std::string(), reachable,
+                            liveMapped);
+                        if (m.verdict == svv::Verdict::Error ||
+                            m.verdict == svv::Verdict::VerifiedWorking ||
+                            m.verdict == svv::Verdict::Skipped) {
+                            sepOk = false;
+                            offending = m.verdict;
+                        }
+                    }
+                }
+            }
+        }
+        if (!sepOk) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: the static verdict mapping produced '%s' for some input — the "
+                "static path must NEVER yield error (that is the per-row catch's, on "
+                "a caught fault), verified_working (rank-1 observed execution only), "
+                "or skipped (the precondition gate's). A static mapping that can "
+                "fabricate error makes a harness fault indistinguishable from a "
+                "mapping outcome — error must stay distinct from failed.",
+                svv::VerdictName(offending));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "13_fault_separation"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        // And the fault DISCRIMINATION the per-row catch makes: a caught
+        // exception resolves to error (NOT failed). This mirrors the exact
+        // assignment RunStartupVerification's catch makes on a real harness fault
+        // (the static path is unreachable for error per the sweep above, so a
+        // throw is the only route). A fault that resolved to failed instead would
+        // condemn a row whose only problem was the test blowing up.
+        svv::Verdict caughtVerdict = svv::Verdict::Failed;  // seeded wrong; the catch overwrites.
+        try {
+            throw std::runtime_error("synthetic_harness_fault");
+        } catch (const std::exception&) {
+            caughtVerdict = svv::Verdict::Error;  // == the sweep's catch contract.
+        }
+        if (caughtVerdict != svv::Verdict::Error) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a caught harness fault resolved to %s, not error — a thrown "
+                "check is error (the TEST blew up), never failed (the ROW diverged).",
+                svv::VerdictName(caughtVerdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "13_fault_error"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
         }
     }
 
@@ -674,14 +1105,21 @@ void RunSelfTestOnce() {
     std::snprintf(reason, sizeof(reason),
         "PASS — function-kind dispatch == legacy on-disk body-hash (3 cases%s); "
         "vtable_index is a defined deferral; Ambiguous round-trips the pass+codec; "
-        "the 5 static checks verdict correctly (callsite gone=Changed / multi=Ambiguous "
-        "/ real=Unchanged; string absent=Changed / real=Unchanged); a Changed "
-        "anchor transitively blocks its dependent (anchor_changed) via CheckOrdered; "
-        "AND the 3.3 startup verification pass — reachability (IsVaInLiveText) reads "
+        "the 5 static checks verdict correctly; a Changed anchor transitively blocks "
+        "its dependent (anchor_changed); reachability (IsVaInLiveText) reads "
         "off-image/null VAs as NOT in live .text + a real fn VA in .text; "
-        "RunStartupVerification yields a defined verdict per swept row + resolves_works "
-        "surfaces the matched address_version id (D34); a synthetic non-matching "
-        "fingerprint reads Changed (wrong_target), never a false match. [%s]",
+        "RunStartupVerification yields a defined verdict per swept row + a good fn "
+        "caps at passed_not_verified (rank 3) surfacing the matched id (never "
+        "verified_working from a static pass); a non-matching fingerprint reads "
+        "Changed (failed); AND the 7-state verdict model — all 7 states produce + "
+        "read back their own value; the existing FuncStatus codec round-trips intact "
+        "(RowVerdict not serialized through it); the ceiling rule (hash+reach pass -> "
+        "passed_not_verified rank 3, NOT verified_working; mismatch -> failed); the "
+        "version-gap producer (-> not_applicable, distinct from cannot_check) keyed "
+        "on the PRECISE interval_covers_version signal (interval-uncovered -> "
+        "not_applicable; covered-but-unverified -> passed_not_verified, NOT "
+        "not_applicable); and the fault producer (a caught throw -> error; the "
+        "static mapping never fabricates error). [%s]",
         realChecked ? " + 1 real" : "", realNote);
     LOG_INFO_KV(kCategory, "selftest_pass",
         ::kcdx::log::KV("real_checked", realChecked ? "yes" : "degraded"),

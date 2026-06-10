@@ -22,6 +22,15 @@ namespace {
 
 const char* kCategory = "SURVERIFY";
 
+// The verification-method ranks this static pass produces (weakest→strongest:
+// 5 resolution, 4 on-disk version-applicability hash, 3 loaded-image
+// reachability, 2 safe-read, 1 observed execution). This pass runs ranks 4 and
+// 3; ranks 1–2 are added by later steps. A row whose strongest method could not
+// even attempt (no kind / no payload) carries the rank of the method it was
+// going to attempt — the on-disk version-applicability check, rank 4.
+constexpr int kRankOnDiskHash    = 4;  // on-disk version-applicability fingerprint.
+constexpr int kRankReachability  = 3;  // live-image .text range test.
+
 namespace sv = kcdx::survival;
 
 // Decode a refdb kind string (address_versions.kind) → a survival::Kind. An
@@ -122,12 +131,76 @@ bool BuildPayload(const refdb::NameResolution& nr, sv::Kind kind,
 
 const char* VerdictName(Verdict v) {
     switch (v) {
-        case Verdict::ResolvesWorks: return "resolves_works";
-        case Verdict::WrongTarget:   return "wrong_target";
-        case Verdict::Dead:          return "dead";
-        case Verdict::CannotCheck:   return "cannot_check";
+        case Verdict::VerifiedWorking:   return "verified_working";
+        case Verdict::PassedNotVerified: return "passed_not_verified";
+        case Verdict::Failed:            return "failed";
+        case Verdict::NotApplicable:     return "not_applicable";
+        case Verdict::CannotCheck:       return "cannot_check";
+        case Verdict::Skipped:           return "skipped";
+        case Verdict::Error:             return "error";
     }
     return "cannot_check";  // unreachable; the switch is exhaustive.
+}
+
+StaticVerdict MapStaticVerdict(bool versionGap, sv::Status onDiskStatus,
+                               const std::string& onDiskReason, bool reachable,
+                               bool liveMapped) {
+    StaticVerdict r;
+
+    // The version-applicability check ran and found the running build is NOT
+    // covered by this row — a version gap. Wins first: a row not applicable to
+    // this build is not condemned on its bytes. Distinct from cannot_check
+    // (inputs missing) and from failed (a divergence on a COVERED version).
+    if (versionGap) {
+        r.verdict = Verdict::NotApplicable;
+        r.method_rank = kRankOnDiskHash;
+        r.detail = "version_not_covered";
+        return r;
+    }
+
+    if (onDiskStatus == sv::Status::CannotCheck) {
+        // The attempt ran but the row lacks the inputs the check needs (no
+        // content_hash, module-not-mapped on the on-disk read, anchor_unresolved,
+        // a deferred kind like vtable_index, …). fail-loud cannot_check carrying
+        // the survival reason token. NEVER a faked pass (a check that cannot run
+        // must say so, never fabricate a passing verdict).
+        r.verdict = Verdict::CannotCheck;
+        r.method_rank = kRankOnDiskHash;
+        r.detail = onDiskReason.empty() ? "cannot_check" : onDiskReason;
+        return r;
+    }
+
+    if (onDiskStatus == sv::Status::Changed || onDiskStatus == sv::Status::Ambiguous) {
+        // The on-disk bytes match NO candidate's fingerprint on a COVERED version
+        // → an attempt the row should pass returned wrong → Failed. The on-disk
+        // hash (rank 4) is the method that found the divergence.
+        r.verdict = Verdict::Failed;
+        r.method_rank = kRankOnDiskHash;
+        r.detail = (onDiskStatus == sv::Status::Ambiguous)
+                       ? "ambiguous_no_unique_match" : "fingerprint_mismatch";
+        return r;
+    }
+
+    // sv::Status::Unchanged — the on-disk fingerprint matched.
+    if (reachable) {
+        // Both static methods ran and passed; the strongest is reachability
+        // (rank 3). Caps at PassedNotVerified — a passing hash + reachability is
+        // real evidence but NOT proof the code runs, so it cannot claim
+        // VerifiedWorking (the ceiling rule).
+        r.verdict = Verdict::PassedNotVerified;
+        r.method_rank = kRankReachability;
+        r.detail = "matched_and_in_live_text";
+        return r;
+    }
+
+    // On-disk hash matches but the live resolve does not land in .text (0 /
+    // off-image / non-.text, or the module is not mapped). The reachability
+    // method (rank 3) ran and FAILED → Failed overrides downward; the rank is
+    // the failing method (3).
+    r.verdict = Verdict::Failed;
+    r.method_rank = kRankReachability;
+    r.detail = liveMapped ? "resolved_va_not_in_live_text" : "live_module_not_mapped";
+    return r;
 }
 
 std::vector<RowVerdict> RunStartupVerification() {
@@ -158,7 +231,9 @@ std::vector<RowVerdict> RunStartupVerification() {
 
     const std::string runningVer = kcdx::plugins::g_runtimeGameVersionString;
 
-    size_t resolvesWorks = 0, wrongTarget = 0, dead = 0, cannotCheck = 0;
+    // Per-verdict tallies for the one teardown summary line (the 7-state enum).
+    size_t passedNotVerified = 0, failed = 0, notApplicable = 0,
+           cannotCheck = 0, errored = 0;
 
     // Sweep every cached curated entity. ForEachCached gives the resolved id +
     // name + the engine-resolved VA (WhgameBase()+rva) + verification state. The
@@ -171,6 +246,17 @@ std::vector<RowVerdict> RunStartupVerification() {
             rv.name = name;
             rv.resolved_version = runningVer;
 
+            // The static checks attempt the on-disk version-applicability method
+            // first (rank 4); a row that cannot even build its payload still
+            // carries that attempted rank. The verdict mapping below raises the
+            // rank to reachability (3) when that stronger method also ran.
+            rv.method_rank = kRankOnDiskHash;
+
+            // The whole per-row check runs under a catch: a fault inside the
+            // dispatch / on-disk read / reachability test is the HARNESS faulting
+            // on this row, NOT the row being wrong — that is `error`, distinct
+            // from `failed`: the ROW may be fine, the TEST blew up.
+            try {
             // Pull the full resolution for the kind + the fingerprint datum + the
             // folded survival columns. ResolveByName runs the same supersession
             // walk the cache used; the same resolved row.
@@ -219,25 +305,43 @@ std::vector<RowVerdict> RunStartupVerification() {
                 return true;
             }
 
-            // --- Check 1: version-applicability (ON-DISK) — REUSE the 3.1/3.2
-            // dispatch. The dll selector is the default module (WHGame.dll on
-            // disk). Verdict: Unchanged → the on-disk bytes match the candidate
-            // fingerprint; Changed/Ambiguous → they do NOT; CannotCheck → a
-            // precondition failed (no content_hash, module not mapped, etc.).
+            // --- Version-applicability: is the running build's version covered
+            // by this row's picked interval at all? interval_covers_version is the
+            // PRECISE signal — valid_from <= V <= valid_through on the picked row.
+            // A genuine version GAP is the running build falling OUTSIDE that
+            // interval (no covering row) → the version-applicability check RAN and
+            // found non-coverage → `not_applicable` for this build (distinct from a
+            // fingerprint mismatch, a divergence on a COVERED version → `failed`).
+            // A row that DOES cover V but was not freshly re-verified at V resolves
+            // verification_state Unverified yet interval_covers_version==true — it
+            // is NOT a gap: it flows past this into the static checks and lands
+            // passed_not_verified/failed per the ceiling rule. Keying on the
+            // resolver's coarse Unverified state would wrongly condemn that
+            // covered-but-stale row as not_applicable.
+            const bool versionGap = !nr.interval_covers_version;
+
+            // --- Check 1: version-applicability fingerprint (ON-DISK, rank 4) —
+            // REUSE the dispatch. The dll selector is the default module
+            // (WHGame.dll on disk). Status: Unchanged → the on-disk bytes match
+            // the candidate fingerprint; Changed/Ambiguous → they do NOT;
+            // CannotCheck → a precondition failed (no content_hash, module not
+            // mapped, etc.).
             sv::Result onDisk = sv::SurvivalCheck(payload, static_cast<uint32_t>(nr.rva),
                                                   /*dll=*/std::string());
 
-            // --- Check 2: reachability (LIVE IMAGE) — does the engine-resolved
-            // VA land in live .text? A RANGE TEST, NOT a body hash (Probe 0.4).
+            // --- Check 2: reachability (LIVE IMAGE, rank 3) — does the
+            // engine-resolved VA land in live .text? A RANGE TEST, NOT a body
+            // hash: the live image is relocated + kcdx-detoured, so a live-body
+            // hash reads a false mismatch for a genuinely-good row.
             bool reachable = liveMapped && pe::IsVaInLiveText(view, va);
 
             // --- D34 attribution: when the on-disk bytes matched the candidate
             // (Unchanged), the matched address_version row is the picked row for
             // this entity. Surface its id. (USER projection: one resolved row per
             // entity, so the candidate set is that one row; the matched id is its
-            // address_versions.id. A multi-candidate gap-pass — DEV/Phase 5 —
-            // would enumerate all of an entity's version rows and match each;
-            // the entry-point shape already returns the matched id either way.)
+            // address_versions.id. A multi-candidate gap-pass — DEV — would
+            // enumerate all of an entity's version rows and match each; the
+            // entry-point shape already returns the matched id either way.)
             if (onDisk.status == sv::Status::Unchanged) {
                 int64_t avId = 0;
                 if (refdb::CachedAddressVersionId(kcdx_id, avId)) {
@@ -246,39 +350,33 @@ std::vector<RowVerdict> RunStartupVerification() {
                 }
             }
 
-            // --- Combine into the per-row verdict (the four D25 meanings). ----
-            if (onDisk.status == sv::Status::CannotCheck) {
-                // A precondition failed (no content_hash, module-not-mapped on the
-                // on-disk read, anchor_unresolved for a data_slot, …) — fail-loud
-                // cannot_check carrying the survival reason token. NEVER a faked
-                // resolves_works (AP14).
-                rv.verdict = Verdict::CannotCheck;
-                rv.detail = onDisk.reason.empty() ? "cannot_check" : onDisk.reason;
-                ++cannotCheck;
-            } else if (onDisk.status == sv::Status::Changed ||
-                       onDisk.status == sv::Status::Ambiguous) {
-                // The on-disk bytes match NO candidate's fingerprint → the bytes
-                // at this DB-recorded address are not the recorded entity on this
-                // build → wrong_target (matched id = none).
-                rv.verdict = Verdict::WrongTarget;
+            // --- Combine into the per-row verdict (the 7-state enum + the
+            // ceiling rule) — the same MapStaticVerdict the self-test exercises
+            // per case. A divergence (fingerprint mismatch / dead resolve) is
+            // Failed; a clean pass caps at PassedNotVerified (rank 3); a version
+            // gap is NotApplicable; a missing input is CannotCheck.
+            StaticVerdict sv_result =
+                MapStaticVerdict(versionGap, onDisk.status, onDisk.reason,
+                                 reachable, liveMapped);
+            rv.verdict = sv_result.verdict;
+            rv.method_rank = sv_result.method_rank;
+            rv.detail = sv_result.detail;
+            // Attribution (above) sets has_matched_id only on an on-disk
+            // Unchanged. PassedNotVerified and a dead-resolve Failed both came
+            // from Unchanged and KEEP that id (a dead row still carries the
+            // matched row). NotApplicable wins over a coincidental on-disk match
+            // (the row is not for this build), so it must NOT surface that id —
+            // clear it for every verdict that is not the on-disk-matched pair.
+            if (rv.verdict != Verdict::PassedNotVerified &&
+                rv.verdict != Verdict::Failed) {
                 rv.has_matched_id = false;
-                rv.detail = (onDisk.status == sv::Status::Ambiguous)
-                                ? "ambiguous_no_unique_match" : "fingerprint_mismatch";
-                ++wrongTarget;
-            } else {  // sv::Status::Unchanged — the on-disk fingerprint matched.
-                if (reachable) {
-                    rv.verdict = Verdict::ResolvesWorks;
-                    rv.detail = "matched_and_in_live_text";
-                    ++resolvesWorks;
-                } else {
-                    // On-disk hash matches but the live resolve does not land in
-                    // .text (0 / off-image / non-.text, or the module is not
-                    // mapped). The signal the on-disk check alone cannot produce.
-                    rv.verdict = Verdict::Dead;
-                    rv.detail = liveMapped ? "resolved_va_not_in_live_text"
-                                           : "live_module_not_mapped";
-                    ++dead;
-                }
+            }
+            switch (rv.verdict) {
+                case Verdict::PassedNotVerified: ++passedNotVerified; break;
+                case Verdict::Failed:            ++failed;            break;
+                case Verdict::NotApplicable:     ++notApplicable;     break;
+                case Verdict::CannotCheck:       ++cannotCheck;       break;
+                default:                         break;  // Error counted in catch.
             }
 
             LOG_DEBUG_KV(kCategory, "row_verdict",
@@ -286,22 +384,44 @@ std::vector<RowVerdict> RunStartupVerification() {
                 ::kcdx::log::KV("name", name),
                 ::kcdx::log::KV("kind", nr.kind),
                 ::kcdx::log::KV("verdict", VerdictName(rv.verdict)),
+                ::kcdx::log::KV("method_rank", (long long)rv.method_rank),
                 ::kcdx::log::KV("matched_av_id",
                     rv.has_matched_id ? (long long)rv.matched_address_version_id : (long long)-1),
                 ::kcdx::log::KV("detail", rv.detail.empty() ? "-" : rv.detail.c_str()));
 
             out.push_back(std::move(rv));
             return true;  // continue the sweep.
+            } catch (const std::exception& e) {
+                // The verification harness faulted on this row (a check threw,
+                // caught) — `error`, NOT `failed`: the ROW may be fine, the TEST
+                // blew up. The on-disk version-applicability check (rank 4) is the
+                // method that was running when it faulted.
+                rv.verdict = Verdict::Error;
+                rv.method_rank = kRankOnDiskHash;
+                rv.has_matched_id = false;
+                rv.detail = std::string("harness_fault:") + e.what();
+                LOG_ERROR_KV(kCategory, "row_error",
+                    ::kcdx::log::KV("kcdx_id", (unsigned long long)kcdx_id),
+                    ::kcdx::log::KV("name", name),
+                    ::kcdx::log::KV("reason", "harness_fault"),
+                    ::kcdx::log::KV("what", e.what()));
+                ++errored;
+                out.push_back(std::move(rv));
+                return true;  // a faulted row does not stop the sweep.
+            }
         });
 
     // One lifecycle summary line (the teardown rollup — logging.md / the
-    // observability summary floor). One info line for the whole sweep.
+    // observability summary floor). One info line for the whole sweep, tallying
+    // the 7-state verdicts this static pass can produce (verified_working +
+    // skipped are produced by later steps' methods, so they stay 0 here).
     LOG_INFO_KV(kCategory, "verify_complete",
         ::kcdx::log::KV("rows", (unsigned long long)out.size()),
-        ::kcdx::log::KV("resolves_works", (unsigned long long)resolvesWorks),
-        ::kcdx::log::KV("wrong_target", (unsigned long long)wrongTarget),
-        ::kcdx::log::KV("dead", (unsigned long long)dead),
+        ::kcdx::log::KV("passed_not_verified", (unsigned long long)passedNotVerified),
+        ::kcdx::log::KV("failed", (unsigned long long)failed),
+        ::kcdx::log::KV("not_applicable", (unsigned long long)notApplicable),
         ::kcdx::log::KV("cannot_check", (unsigned long long)cannotCheck),
+        ::kcdx::log::KV("error", (unsigned long long)errored),
         ::kcdx::log::KV("live_mapped", liveMapped ? "yes" : "no"));
 
     return out;

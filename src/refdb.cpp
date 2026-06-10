@@ -164,6 +164,9 @@ struct CachedEntity {
     bool         is_deprecated = false;
     NameResolution::VerificationState verification_state =
         NameResolution::VerificationState::Verified;
+    // The picked row's interval actually covers the running build V (precise
+    // coverage, separate from verification_state — see NameResolution).
+    bool         interval_covers_version = false;
 
     std::string  deprecation_replacement_name;  // empty if no replacement.
 };
@@ -948,12 +951,36 @@ void EmitUnverifiedWarning(const CallerContext& ctx,
 // the result struct exposes.
 // ---------------------------------------------------------------------------
 
+// Does the picked row's [valid_from, valid_through] interval ACTUALLY include
+// the running build ordinal V? valid_from <= V AND (open-ended OR V <=
+// valid_through). Computes the same covering predicate as the row picker, via
+// the ordinal map (an open row — has_valid_through=false — covers everything
+// from valid_from onward). This is
+// the precise coverage signal, separate from the 4-state verification machine:
+// a row can cover V (interval includes it) yet still resolve Unverified (it was
+// not freshly re-verified at V). Returns false when either endpoint ordinal is
+// unknown (a tag absent from game_versions — no usable interval).
+bool PickedIntervalCoversVersion(const VersionRow& picked) {
+    int64_t vfOrd = OrdinalForVersionId(picked.valid_from_id);
+    if (vfOrd < 0 || vfOrd > g_gameVersionOrdinal) return false;
+    if (!picked.has_valid_through) return true;  // open row — covers V onward.
+    int64_t vtOrd = OrdinalForVersionId(picked.valid_through_id);
+    if (vtOrd < 0) return false;
+    return g_gameVersionOrdinal <= vtOrd;
+}
+
 NameResolution::VerificationState DeriveVerificationState(
         const NameRow& finalEntity,
         bool walkedSupersession,
         const VersionRow& picked,
-        bool* outIsDeprecated) {
+        bool* outIsDeprecated,
+        bool* outIntervalCoversVersion) {
     *outIsDeprecated = false;
+    // The interval-coverage signal is derived from the picked row's endpoints
+    // vs V REGARDLESS of the 4-state outcome — a Deprecated/Superseded/Unverified
+    // row can still have an interval that covers V. Computed once here where the
+    // picked row + V are both in hand.
+    *outIntervalCoversVersion = PickedIntervalCoversVersion(picked);
 
     // 1. DEPRECATED: entity.is_deprecated AND V >= deprecated_at_version.
     if (finalEntity.is_deprecated) {
@@ -1028,7 +1055,8 @@ CachedEntity MakeCachedEntity(const std::string& inputName,
                               bool walkedSupersession,
                               const VersionRow& picked,
                               NameResolution::VerificationState state,
-                              bool entityDeprecatedAtV) {
+                              bool entityDeprecatedAtV,
+                              bool intervalCoversVersion) {
     CachedEntity c;
     c.kcdx_id = static_cast<uint64_t>(picked.kcdx_id);
     c.address_version_id = picked.address_version_id;  // statement-cache key.
@@ -1066,6 +1094,7 @@ CachedEntity MakeCachedEntity(const std::string& inputName,
     c.was_superseded = walkedSupersession;
     c.is_deprecated = entityDeprecatedAtV;
     c.verification_state = state;
+    c.interval_covers_version = intervalCoversVersion;
     if (effective.deprecation_replacement_id > 0) {
         c.deprecation_replacement_name =
             LookupDeprecationReplacementName(effective.deprecation_replacement_id);
@@ -1207,8 +1236,10 @@ bool BuildCache() {
         const VersionRow& picked = rows[bestIdx];
 
         bool entityDeprecatedAtV = false;
+        bool intervalCoversVersion = false;
         NameResolution::VerificationState state = DeriveVerificationState(
-            effective, walkedSupersession, picked, &entityDeprecatedAtV);
+            effective, walkedSupersession, picked, &entityDeprecatedAtV,
+            &intervalCoversVersion);
 
         if (walkedSupersession) ++supersessionsResolved;
         if (state == NameResolution::VerificationState::Deprecated) ++deprecations;
@@ -1216,7 +1247,8 @@ bool BuildCache() {
 
         CachedEntity row = MakeCachedEntity(original.name, description,
                                             effective, walkedSupersession,
-                                            picked, state, entityDeprecatedAtV);
+                                            picked, state, entityDeprecatedAtV,
+                                            intervalCoversVersion);
         // Index BOTH maps under the input identity (so a caller asking for
         // the old name / old id keeps resolving). Multiple superseded names
         // can point at the same effective row; each gets its own map entry.
@@ -1452,6 +1484,7 @@ NameResolution ProjectName(const CachedEntity& c,
     r.was_superseded = c.was_superseded;
     r.is_deprecated = c.is_deprecated;
     r.verification_state = c.verification_state;
+    r.interval_covers_version = c.interval_covers_version;
     return r;
 }
 

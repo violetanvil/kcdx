@@ -63,20 +63,49 @@
 //      a genuinely-good function VA reads dead.
 //
 //   8. STARTUP VERIFICATION PASS — RunStartupVerification sweeps the curated set
-//      and yields a DEFINED verdict per row (AP14 — a loaded refdb produces a
-//      non-empty sweep); a known-good curated function (SaveGame) whose on-disk
-//      hash matches AND resolves into live .text reads resolves_works WITH its
-//      matched address_version id surfaced (D34); a wrong_target carries NO
-//      matched id. DEGRADES when WHGame is not mapped / the DB lacks the row.
-//      FAILS if the sweep drops the whole set, a resolves_works has no matched
-//      id, or a wrong_target carries one.
+//      and yields a DEFINED verdict per row (a loaded refdb produces a non-empty
+//      sweep); a known-good curated function (SaveGame) whose on-disk hash
+//      matches AND resolves into live .text caps at passed_not_verified (NEVER
+//      verified_working from a static pass) at method_rank 3 (reachability), WITH
+//      its matched address_version id surfaced; a fingerprint-mismatch failed
+//      carries NO matched id. DEGRADES when WHGame is not mapped / the DB lacks
+//      the row. FAILS if the sweep drops the whole set, a static pass reads
+//      verified_working, a passed_not_verified has no matched id or a rank != 3,
+//      or a mismatch-failed carries a matched id.
 //
 //   9. VERDICT-COMBINATION DISCRIMINATION — a function payload with a synthetic
 //      non-matching content_hash (0x33*32) at SaveGame's real rva reads on-disk
-//      Changed (→ the pass combines to wrong_target), NOT Unchanged. Proves the
-//      wrong_target discrimination does not collapse into a false resolves_works.
+//      Changed (→ the pass combines to failed), NOT Unchanged. Proves the failed
+//      discrimination does not collapse into a false passed_not_verified.
 //      DEGRADES when WHGame is not mapped. FAILS if the bogus fingerprint reads
 //      Unchanged (the on-disk check fabricating a match).
+//
+//   --- The 7-state verdict model + the ceiling arithmetic ---
+//
+//  10. 7-STATE ENUM TOTAL + IN-PROCESS ROUND-TRIP — every one of the 7 verdict
+//      states (verified_working / passed_not_verified / failed / not_applicable /
+//      cannot_check / skipped / error) is producible on a RowVerdict, reads back
+//      its own verdict + method_rank, and decodes to a DISTINCT stable token via
+//      VerdictName. FAILS if a state does not round-trip its value or two states
+//      share a token (the enum collapsed). (10b) The SEPARATE FuncStatus cache
+//      codec round-trip stays intact — the pinned values (0/1/2) still round-trip
+//      byte-identically; the 7-state verdict is NOT serialized through that codec.
+//
+//  11. THE CEILING RULE — MapStaticVerdict (the pass's own arithmetic): an
+//      on-disk hash PASS + reachability maps to passed_not_verified at rank 3
+//      (the strongest method that ran), NEVER verified_working; an on-disk hash
+//      MISMATCH maps to failed (the override-downward). FAILS if a clean pass
+//      reads verified_working or a mismatch reads anything but failed.
+//
+//  12. THE VERSION-GAP PRODUCER — a row whose running build is NOT covered
+//      (versionGap) maps to not_applicable, distinct from cannot_check (a missing
+//      input). FAILS if a version gap reads cannot_check (or vice versa).
+//
+//  13. THE FAULT PRODUCER (error ≠ failed) — the static mapping NEVER produces
+//      error (nor verified_working / skipped), so error is exclusively the
+//      per-row catch's output on a caught fault; a caught throw resolves to
+//      error, never failed. FAILS if the static mapping fabricates error or a
+//      caught fault resolves to failed.
 //
 // Why it lives in engine code (like cap-60): survival + survival_pass +
 // version_check_cache are engine-internal symbols, not plugin exports — so

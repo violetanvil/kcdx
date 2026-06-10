@@ -33,9 +33,13 @@ verdict producers.
 ## Test bar
 
 cap-84 self-test sub-checks (`src/survival_dispatch_selftest.cpp`, synthetic data, boot, no game
-state — the same self-test that already covers Phase-3's dispatch): assert (a) the 7-state enum
-round-trips the cache codec byte-identically (the codec already round-trips `Ambiguous`; add the
-new states); (b) the ceiling rule — a synthetic row whose strongest run method is rank-4-static-pass
+state — the same self-test that already covers Phase-3's dispatch): assert (a) the in-process
+7-state `RowVerdict` enum + `method_rank` are exercised end-to-end through `survival_verify`'s
+per-row result (each of the 7 states is producible and reads back its own value — `RowVerdict` is an
+in-process enum, NOT serialized here: its REPORT-side encoding is the v3 schema at Phase 5 step 5.1
+per D36, and the `version_check_cache` codec stores the SEPARATE Phase-3 `FuncStatus` enum, which is
+out of this step's scope — assert that existing `FuncStatus` codec round-trip stays intact under
+this change, do NOT extend the cache codec to carry `RowVerdict`); (b) the ceiling rule — a synthetic row whose strongest run method is rank-4-static-pass
 maps to `passed_not_verified` (NOT `verified_working`), and a synthetic rank-4 hash MISMATCH maps to
 `failed` (the override-downward); (c) **the version-gap producer — a synthetic row whose resolved
 build version is NOT covered by the row maps to `not_applicable`, NOT `cannot_check`** (the check
