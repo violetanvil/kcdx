@@ -1,0 +1,26 @@
+# Seeds → tracked-CSV migration
+
+**Intent:** migrate the maintainer-tool data layer off the retired `data/seeds/` to **D38** —
+both reference DBs rebuild from the tracked CSV export (curated → `data/db-export/` in git, bulk →
+`data/db-export-bulk/` under Git LFS); the ~1.3 GB Ghidra dump retires to an expert-only
+bulk-regeneration tool; the DB stays the authoring source-of-truth, OUT of git (D1 holds). Core
+data-layer migration only — the governance/doc sweep is a deferred follow-up
+([`plan-spec.md`](plan-spec.md) §Scope).
+
+**Design authority:** `data/maintainer-tool/design.md` **D38** (+ the revised D18/D19/§body
+dataflow), committed `f5023f5`. Build to D38, not this README's summary. Shared spec +
+coverage map: [`plan-spec.md`](plan-spec.md).
+
+**Load-bearing ordering (the soundness gate's carry-forward):** the dump is TODAY the sole source
+of the bulk corpus, so dump-retirement is the POST-WORK end-state — P0 probes the bulk-CSV
+round-trip first, P1 builds the exporter + widened oracle, and NO step treats the dump as retired
+before P1 lands green (`.claude/rules/incremental-delivery.md`, `results-driven.md`).
+
+## Phase-grain status ledger
+
+| Step | Status | Commit |
+|---|---|---|
+| [Phase 0 — Probe: the bulk round-trips CSV-losslessly (the gating unknown)](phase-00-probe/README.md) | NOT STARTED | — |
+| [Phase 1 — The exporter-over-bulk + the tracked CSV genesis + the widened oracle](phase-01-exporter-genesis/README.md) | NOT STARTED | — |
+| [Phase 2 — The backend + toolchain migration off data/seeds](phase-02-backend-toolchain/README.md) | NOT STARTED | — |
+| [Phase 3 — Close the deprecation (delete data/seeds - deprecated)](phase-03-close-deprecation/README.md) | NOT STARTED | — |
