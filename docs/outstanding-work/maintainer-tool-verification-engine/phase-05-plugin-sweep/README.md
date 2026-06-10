@@ -36,3 +36,20 @@ agent reads the `ACCEPT-SUITE` PASS + confirms the report validates from the liv
 matrix row is recorded (`test-suite.md`). The user gesture is: launch → load a save → open console
 (`~`) → type `kcdx_verify_all` → tell me it ran. Build-green is necessary, not sufficient — the
 report's correctness is confirmed at the launch (`.claude/rules/skeptical-expert.md`).
+
+**Gate MET — accepted at the 2026-06-09 live launch** (`kcdx-dev_2026-06-09_22-33-38.log`, deployed
+DLL hash `3F92AFE0…7D74A`). The menu run (`world_loaded=no`) correctly skipped the 121 un-observed
+live-exercise rows (the precondition gate firing); after a save was loaded the full ladder ran
+(`world_loaded=yes`, 0 skipped). The full-run signal: `ACCEPT-RESULT: PASS kcdx_verify_all — v3
+report finalized (157/157 rows, 141 passing)` + `ACCEPT-SUITE: 1/1 passing`; `RESULT
+name=cap-95-verify-all-command verdict=PASS` (all five sub-checks fired live: command registered;
+precondition gated; per-row incremental JSONL flush, never bulk; v3 validates-shaped; string
+escaping). The finalized report `kcdx-verify_2026-06-09_22-33-38.json` VALIDATES: `schema_version 3`,
+`game_version 1.5.1164953`, `complete: true`, `rows_expected: 157`, 157 rows, `summary
+passing=141/total=157` — every row an active attempt + a structured response (4→3 verified_working
+rank-1 incl. the cvar getter kcdx_id 156 via the CALLED-by-kcdx record, 138 passed_not_verified, 1
+failed, 15 cannot_check, 0 error). The 1 `failed` row (kcdx_id 12 `string_exec_autoexec_cfg`,
+`resolved_va_not_in_live_text`) is legitimate sweep output — a real DB-vs-binary divergence the
+engine exists to surface (a Phase-6 worklist item), not a producer defect; its matched id is
+correctly `null` (the verdict-keyed if/then/else). cap-84 + cap-85 PASS (no regression). The 2 suite
+FAILs (CAP-20-addrname / CAP-28-typo-fails-fast) are pre-existing other-lane rows, not Phase-5.

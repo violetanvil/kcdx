@@ -27,18 +27,23 @@ steps land in the SEPARATE gitignored frontend repo (gate `npm run build` + Vite
 
 ## Current state + what's next (2026-06-09)
 
-**Where we are: Phases 0–4 are COMPLETE AND ACCEPTED.** Phase 2 (the browser static checker + the
-per-author UI) + Phase 3 (the C++ engine survival extension, D27) landed + accepted. **Phase 4 (the
-D36 engine rank-ladder + per-kind §11.6 matrix) is DONE + ACCEPTED** (the 2026-06-09 live launch,
-`kcdx-dev_2026-06-09_21-07-33.log`: cap-84-survival-dispatch PASS + cap-85 PASS): 4.1 the 7-state
-verdict enum + ceiling rule + the precise `not_applicable` signal (75ddd8c), 4.2 the rank-1
-observed-execution tier — HOOKED hook-fires + CALLED-by-kcdx invocation record (36d61a5), 4.3 the
-rank-2 cvar safe-read + rank-3 vtable_base loaded-image walk (cdabde8), 4.4 the per-kind §11.6
-dispatcher + the vtable_base reachability re-route (3921d62). cap-84 sub-checks 10–16. Follow-up
-filed: TD-0009 (the engine↔browser agreement scoped to the 4 algorithm-identical kinds; 3 superset
-kinds deferred). **Next: Phase 5** (the `kcdx_verify_all` console-after-save-load sweep + the v3
-report with incremental JSONL flush, D33/D37), then Phase 6 (the frontend report ingestion /
-two-block worklist).
+**Where we are: Phases 0–5 are COMPLETE AND ACCEPTED.** Phase 2 (the browser static checker + the
+per-author UI) + Phase 3 (the C++ engine survival extension, D27) + Phase 4 (the D36 engine
+rank-ladder + per-kind §11.6 matrix) landed + accepted. **Phase 5 (the `kcdx_verify_all`
+console-after-save-load sweep PRODUCER — per-row stream + D37 incremental JSONL flush → v3 report)
+is DONE + ACCEPTED** (the 2026-06-09 live launch, `kcdx-dev_2026-06-09_22-33-38.log`): 5.1 the v3
+schema (7-state enum + method_rank/invoke fields + the D37 incremental contract, f07d20c), 5.2 the
+`kcdx_verify_all` command + the save-load precondition gate (187ad3d), 5.3 the producer end-to-end —
+per-row stream + incremental flush + v3 finalize, the new `src/survival_report.{cpp,h}` unit
+(9b0ee59). The full-run signal: `ACCEPT-RESULT: PASS kcdx_verify_all — v3 report finalized (157/157
+rows, 141 passing)`; `RESULT name=cap-95-verify-all-command verdict=PASS`; the report
+`kcdx-verify_2026-06-09_22-33-38.json` VALIDATES (schema_version 3, complete, 157/157 rows). Phase-4
+follow-up still open: TD-0009 (the engine↔browser agreement scoped to the 4 algorithm-identical
+kinds; 3 superset kinds deferred). A Phase-6 worklist item surfaced by the sweep: kcdx_id 12
+(`string_exec_autoexec_cfg`) read `failed` / `resolved_va_not_in_live_text` — a real DB-vs-binary
+divergence the engine correctly surfaced (a maintainable row, not a producer defect). **Next: Phase
+6** (the frontend report ingestion — the two-block worklist that imports the v3 report Phase 5 now
+produces).
 
 **Phases 4–5 RE-PLANNED 2026-06-09 against D36 (active-attempt verification).** The original single
 Phase 4 (a static boot-automatic sweep) was superseded by the D36 design revision (the 7-state
@@ -67,5 +72,5 @@ cap-90-pdb-internal-address) are other lanes, not Phase-3 rows. The phase gate i
 | [Phase 2 — Frontend static checker + per-author UI](phase-02-frontend-checker/README.md) | DONE | (landed) — 2.1–2.7 all DONE (FE:1459367/66f4716/d611c21/e83a57c/0ed135d+bfdff6f/00b2e78…27aa470 + 2.6a 9d84fcf + 2.7 FE:7d2d6fa); the browser checker + s02 install-set link + s04 verdict badge + the link-to-create on-ramp. 2.6 + 2.7 milestone UATs both accepted |
 | [Phase 3 — C++ engine survival extension](phase-03-engine-survival/README.md) | DONE | ffc51ae — 3.1 per-kind dispatch + Ambiguous (8008e3d), 3.2 the 5 static non-function checks + anchor DAG (3c5e065), 3.3 the startup reachability + on-disk version-applicability + D34 attribution pass (69c7cc2), 3.4 the JS↔C++ cross-impl agreement pin (ffc51ae). The full per-kind survival authority the browser mirrors (D27); cap-84 + cap-85 self-tests. Follow-up: TD-0009 (engine↔browser agreement scoped to the 4 identical kinds; 3 superset kinds deferred). |
 | [Phase 4 — Engine rank-ladder + per-kind matrix (D36)](phase-04-engine-rank-ladder/README.md) | DONE | 3921d62 — 4.1 75ddd8c (7-state enum + ceiling + precise not_applicable) / 4.2 36d61a5 (rank-1 observed: HOOKED + CALLED-by-kcdx) / 4.3 cdabde8 (rank-2 cvar safe-read + rank-3 vtable_base walk) / 4.4 3921d62 (per-kind §11.6 dispatcher + the vtable_base reachability re-route). cap-84 sub-checks 10-16. **ACCEPTED at the 2026-06-09 live launch** (kcdx-dev_2026-06-09_21-07-33.log): cap-84-survival-dispatch PASS + cap-85 PASS (no regression). The 2 suite FAILs (CAP-20-addrname / CAP-28-typo-fails-fast) are pre-existing other-lane rows, not Phase-4. |
-| [Phase 5 — Console-triggered batch sweep + v3 report (D36)](phase-05-plugin-sweep/README.md) | NOT STARTED | — |
+| [Phase 5 — Console-triggered batch sweep + v3 report (D36)](phase-05-plugin-sweep/README.md) | DONE | 9b0ee59 — 5.1 f07d20c (v3 schema) / 5.2 187ad3d (kcdx_verify_all command + save-load precondition) / 5.3 9b0ee59 (producer: per-row stream + D37 incremental flush + v3 finalize; new src/survival_report.{cpp,h}). **ACCEPTED at the 2026-06-09 live launch** (kcdx-dev_2026-06-09_22-33-38.log): `ACCEPT-RESULT: PASS kcdx_verify_all` (157/157 rows, 141 passing) + cap-95 PASS; the v3 report validates. 1 sweep `failed` row (kcdx_id 12, real DB-vs-binary divergence — a Phase-6 worklist item, not a defect). |
 | [Phase 6 — Frontend report ingestion](phase-06-report-ingestion/README.md) | NOT STARTED | — |
