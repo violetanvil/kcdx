@@ -21,7 +21,7 @@ after it exists.
 
 | Step | Status | Commit |
 |---|---|---|
-| [2.1 [CORE] Repoint import_to_sqlite SEED_DIR / *_SEED_CSV constants → db-export](step-1-import-seed-dir.md) | NOT STARTED | — |
+| [2.1 [CORE] Repoint import_to_sqlite SEED_DIR / *_SEED_CSV constants → db-export](step-1-import-seed-dir.md) | DONE | 076834e — SEED_DIR data/seeds → data/db-export (the 3 derived *_SEED_CSV follow); no active data/seeds literal remains in the toolchain rebuild path; 2 stale prose comments updated. Test: 10 ACCEPT items incl. a rebuild-through-default-constants resolution proof (falsifiable — un-repointed FileNotFoundErrors). Net: 6→4 failed, +10 passing. Step-review PROCEED. SURFACED (user's call, separate commit): test_rebuild_oracle red is now a pre-existing address_versions baseline drift the repoint uncovered (db-export CSV maintainer-edited post-baseline), NOT repoint-caused — a deliberate oracle baseline re-capture. |
 | [2.2 [BE] Migrate the backend (config / csv_integrity / routes_confirm) + its tests off data/seeds](step-2-backend-config.md) | NOT STARTED | — |
 | [2.3 [TEST] Repoint the broken rebuild tests + the paused 6.2 batch tests → db-export](step-3-test-repoint.md) | NOT STARTED | — |
 
