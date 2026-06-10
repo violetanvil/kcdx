@@ -94,8 +94,9 @@ gate (law 8) does NOT apply. The no-action block has no bulk action.
   `field: old → new` delta: `last_verified_at_version → <report version>`, `verified_date →
   today`, `verified_by → <injected identity>`, `evidence_kind → <by the row's proof rank>` (D29 —
   a `verified_working` row, rank-1 observed live execution, writes `live_production`; a
-  `passed_not_verified` row, ranks 2–5 static, writes the static-evidence tier — NOT
-  `live_production`, because it didn't execute), AND — when the report's version sat in a GAP or
+  `passed_not_verified` row, ranks 2–5 static, writes **`live_test_plugin`** (the in-game test
+  plugin checked it but didn't observe it execute) — NOT `live_production`, because it didn't
+  execute), AND — when the report's version sat in a GAP or
   beyond the matched row's interval — `valid_through → <report version>` on the matched
   `address_version` row (TRD D34, the gap-pass extension). A row already covered
   (`last_verified_at_version >= report version`) is not in the verified block (nothing to add).

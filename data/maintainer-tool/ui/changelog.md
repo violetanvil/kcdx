@@ -4,6 +4,18 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-10 — s08 names the static-evidence tier `live_test_plugin` (sync to the settled TRD D29)
+- s08's verify-all delta now names the ranks-2–5 `passed_not_verified` `evidence_kind` as
+  **`live_test_plugin`** (was "the static-evidence tier", left unnamed pending the TRD fold). The
+  TRD rectifying pass settled the value (D29, committed cc5e1c0): the in-game verify-all sweep IS
+  the test-suite plugin (D28/D33), so `live_test_plugin` is the honest existing tier — NOT
+  `pattern_scan` (which the design-soundness gate rejected as the weakest tier + a silent downgrade
+  of the existing `live_test_plugin` rows).
+**Integrated in:** `screens/s08-verification-worklist.md` (the verify-all delta).
+**Why:** the screen spec referenced the tier vaguely while the fold was pending; now the TRD settled
+it, the screen names the exact value the FE writes (`.claude/rules/spec-conformance.md` — build to
+the settled design, no vague pointer).
+
 ## 2026-06-09 — s08 reconciled to the v3/D36 active-attempt verification contract
 - s08 verdict surface re-keyed v2 → v3: the 4 superseded tokens (`resolves_works`/`wrong_target`/
   `dead`/`cannot_check` → Unchanged/Changed/CannotCheck) replaced by D36's **7-state verdict**
