@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "console.h"       // console::IsCommandRegistered — cap-95 registration assert
 #include "log.h"
 #include "patch_engine.h"  // patch::ParsePattern (decode a stored aob string → bytes+mask)
 #include "pe_helpers.h"    // pe::OpenModule / IsVaInLiveText (3.3 reachability range test)
@@ -105,9 +106,223 @@ sv::Result LegacyFn(uint32_t rva, size_t length,
         hash.size());
 }
 
+// cap-95 — the kcdx_verify_all console command + the save-load precondition
+// gate. Reported under its OWN matrix row (cap-95-verify-all-command), separate
+// from cap-84, and driven from cap-84's per-tick self-report block so it needs
+// no extra wiring site. Two falsifiable sub-checks:
+//
+//   1. REGISTERED — kcdx_verify_all is present in the console command table
+//      (console::IsCommandRegistered) once the console surface armed (dev mode).
+//      FAILS if the command is absent while the console is up; DEGRADES (retry)
+//      until the surface arms.
+//   2. PRECONDITION GATES (the save-load gate's documented behavior) —
+//      RunStartupVerification(worldLoaded=false) gates the live-exercise tier
+//      (the function kind) EXACTLY as the gate specifies: a function row
+//      genuinely OBSERVED pre-menu (a hooked target that fired, OR a
+//      CALLED-by-kcdx target kcdx invoked at boot) is rank-1 `verified_working`
+//      and is KEPT — real evidence is NOT downgraded; an UN-observed function
+//      row (its live-exercise tier needs a loaded world it did not get this run)
+//      resolves `skipped` (precondition_no_world_loaded), NEVER a static-ceiling
+//      pass and NEVER a fabricated verified_working. Two falsifiable guards:
+//      (a) an UN-observed function row reading anything but `skipped` is the gate
+//      failing to fire (FAIL); (b) a `verified_working` function row whose VA
+//      carries NO backing observation (no engine-hook fire in the breadcrumb
+//      ring AND not in the kcdx invocation record) is a FABRICATED top rung —
+//      the real over-claim (FAIL). A kept verified_working WITH a backing
+//      observation is correct evidence, not an over-claim. DEGRADES (still PASS)
+//      when the DB carries no function row to gate.
+//
+// Retries until the console surface is up (so a late console::Init() does not
+// fail it); one-shot once it reports a definite verdict.
+constexpr const char* kVerifyRow = "cap-95-verify-all-command";
+
+void ReportVerifyCommandOnce() {
+    static bool s_reported = false;
+    if (s_reported) return;
+
+    char vreason[1024];
+
+    // --- Sub-check 1: kcdx_verify_all is REGISTERED. The command registers in
+    // console::Init() (dev-mode-gated) on the first update tick. If the console
+    // surface has not armed yet, the command cannot be present — retry next tick
+    // rather than fail (a not-yet-armed console is timing, not a defect).
+    if (!kcdx::console::IsCommandRegistered("kcdx_verify_all")) {
+        // Not registered yet. Distinguish "console not up" (retry) from "console
+        // up but command missing" (a real failure). The presence of the
+        // always-registered kcdx_scan command is the proxy for "the surface
+        // armed + the engine commands registered": kcdx_scan registers right
+        // after console::Init(), so if kcdx_scan is present but kcdx_verify_all
+        // is not, the registration genuinely failed.
+        if (kcdx::console::IsCommandRegistered("kcdx_scan")) {
+            s_reported = true;
+            std::snprintf(vreason, sizeof(vreason),
+                "FAIL: kcdx_verify_all is NOT in the console command table even "
+                "though the console surface armed (kcdx_scan is registered) — the "
+                "verification trigger command must register when the suite runs in "
+                "dev mode.");
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("row", kVerifyRow),
+                ::kcdx::log::KV("subcheck", "1_registered"));
+            kcdx::test::ReportResult(kVerifyRow, false, vreason);
+            kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+        }
+        // else: console not up yet — leave s_reported false, retry next tick.
+        return;
+    }
+
+    // --- Sub-check 2: the save-load PRECONDITION gates the live-exercise tier,
+    // asserted against the gate's ACTUAL documented behavior. Run the sweep with
+    // worldLoaded=false (the from-menu case). The gate (RunStartupVerification's
+    // worldLoaded=false branch) does TWO things to a function-kind
+    // (ObservedThenStatic) row, and this sub-check asserts BOTH:
+    //
+    //   - An UN-observed function row (no pre-menu engine-hook fire, no
+    //     CALLED-by-kcdx record) has its live-exercise tier precondition-blocked
+    //     → `skipped` (precondition_no_world_loaded). The strongest applicable
+    //     method (rank-1 live execution) needs a loaded world it did not get this
+    //     run, so the row resolves `skipped`, NOT the weaker static-ceiling pass
+    //     and NOT a fabricated top rung. A function row reading anything but
+    //     `skipped` WHEN it was not observed is the gate failing to fire.
+    //   - An OBSERVED function row (a hooked target that fired pre-menu — e.g.
+    //     lua_pcall — or a CALLED-by-kcdx cvar/console target kcdx invoked at
+    //     boot) is rank-1 `verified_working` and is KEPT (the gate's "real
+    //     evidence is NOT downgraded" rule; rank-1 = observed execution, with NO
+    //     "only-after-save-load" qualifier). That is correct evidence, not an
+    //     over-claim — accepting it is required, not a defect.
+    //
+    // The FALSIFIABLE over-claim guard the test KEEPS: a `verified_working`
+    // function row whose engine-resolved VA carries NO backing observation (no
+    // recorded engine-hook fire AND not in the kcdx invocation record) is a
+    // FABRICATED top rung — the real over-claim — and FAILS. The guard fires on
+    // verified_working-WITHOUT-observation, never on every verified_working.
+    //
+    // To classify a row as live-exercise-eligible without re-deriving the
+    // dispatcher, re-resolve its kind: the function kind routes to
+    // ObservedThenStatic (the only kind whose ceiling reaches rank-1 live
+    // execution). The backing-observation check re-derives the row's VA
+    // (refdb::ResolveAddrByName — the SAME WhgameBase()+rva the sweep keys on,
+    // engine-resolved, never hardcoded) and reads the same two rank-1 seams the
+    // gate's observation tier reads: ObserveHookedExecution (the engine-hook fire
+    // breadcrumb) and WasInvokedByKcdx (the CALLED record). DEGRADES (still PASS)
+    // when the DB carries no function row to gate — the precondition has nothing
+    // to act on, which is not a defect.
+    {
+        std::vector<svv::RowVerdict> menuVerds =
+            svv::RunStartupVerification(/*worldLoaded=*/false);
+        size_t functionRows = 0, skippedFunctionRows = 0, observedKeptRows = 0;
+        for (const auto& v : menuVerds) {
+            // A live-exercise-eligible row is the function kind (ObservedThenStatic).
+            refdb::NameResolution nr = refdb::ResolveByName(v.name);
+            if (!nr.found) continue;
+            // The live-exercise-eligible kind is the plain "function" kind — the
+            // only kind whose §11.6 ceiling reaches rank-1 live execution
+            // (DispatchForKind maps it to ObservedThenStatic). Every other kind's
+            // ceiling is below the live tier, so the precondition does not gate it.
+            if (nr.kind != "function") continue;
+            ++functionRows;
+
+            if (v.verdict == svv::Verdict::VerifiedWorking) {
+                // The gate KEEPS a verified_working it earned from a real pre-menu
+                // observation (rank-1 = observed execution, with no after-save-load
+                // qualifier). The over-claim guard: that verdict is honest ONLY if
+                // the row's VA carries a backing observation. Re-derive the SAME VA
+                // the sweep keyed on (WhgameBase()+rva — engine-resolved) and read
+                // the two rank-1 seams the gate's own observation tier reads:
+                // an engine-hook fire (ObserveHookedExecution) OR a CALLED-by-kcdx
+                // record (WasInvokedByKcdx). NEITHER present → a fabricated top rung
+                // (the real over-claim) → FAIL.
+                uintptr_t va = refdb::ResolveAddrByName(v.name);
+                bool hookObserved = svv::ObserveHookedExecution(va).observed;
+                bool calledObserved = svv::WasInvokedByKcdx(va);
+                if (!hookObserved && !calledObserved) {
+                    s_reported = true;
+                    std::snprintf(vreason, sizeof(vreason),
+                        "FAIL: the function row '%s' read verified_working from a "
+                        "sweep with NO world loaded, yet its VA (0x%llx) carries NO "
+                        "backing observation — no recorded engine-hook fire and not "
+                        "in the kcdx invocation record. A from-menu verified_working "
+                        "with no observed fire/call is a FABRICATED top rung; the "
+                        "rank-1 verdict must rest on a real pre-menu observation.",
+                        v.name.c_str(), (unsigned long long)va);
+                    LOG_ERROR_KV(kCategory, "selftest_fail",
+                        ::kcdx::log::KV("row", kVerifyRow),
+                        ::kcdx::log::KV("subcheck", "2_overclaim_no_observation"),
+                        ::kcdx::log::KV("name", v.name),
+                        ::kcdx::log::KV("va", (unsigned long long)va));
+                    kcdx::test::ReportResult(kVerifyRow, false, vreason);
+                    kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+                    return;
+                }
+                // A real pre-menu observation backs it — correct evidence, KEPT.
+                ++observedKeptRows;
+                continue;
+            }
+
+            // Not observed pre-menu: the gate MUST have precondition-blocked the
+            // live-exercise tier to `skipped`. Any other verdict (a static-ceiling
+            // passed_not_verified, or any non-skipped state) on an un-observed
+            // function row is the save-load precondition failing to fire.
+            if (v.verdict != svv::Verdict::Skipped) {
+                s_reported = true;
+                std::snprintf(vreason, sizeof(vreason),
+                    "FAIL: the UN-observed function row '%s' read '%s' from a sweep "
+                    "with NO world loaded — its live-exercise tier needs a loaded "
+                    "save it did not get, so the save-load precondition must resolve "
+                    "it 'skipped' (precondition_no_world_loaded), never a "
+                    "static-ceiling pass or any other verdict.",
+                    v.name.c_str(), svv::VerdictName(v.verdict));
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("row", kVerifyRow),
+                    ::kcdx::log::KV("subcheck", "2_unobserved_not_skipped"),
+                    ::kcdx::log::KV("name", v.name),
+                    ::kcdx::log::KV("verdict", svv::VerdictName(v.verdict)));
+                kcdx::test::ReportResult(kVerifyRow, false, vreason);
+                kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+                return;
+            }
+            ++skippedFunctionRows;
+        }
+
+        // PASS — the command is registered AND the save-load precondition gated
+        // the live-exercise tier as documented: every un-observed function row
+        // resolved 'skipped', and every kept verified_working row carries a backing
+        // pre-menu observation (no fabricated top rung). DEGRADE when no function
+        // row exists.
+        s_reported = true;
+        std::snprintf(vreason, sizeof(vreason),
+            "PASS — kcdx_verify_all is registered in the console command table; and "
+            "the save-load precondition gates the live-exercise tier: of %zu "
+            "function (live-exercise-eligible) rows, %zu un-observed resolved "
+            "'skipped' (precondition_no_world_loaded — needs a loaded save) and %zu "
+            "kept verified_working each backed by a real pre-menu observation "
+            "(engine-hook fire or kcdx invocation) — no static-ceiling pass and no "
+            "fabricated top rung%s.",
+            functionRows, skippedFunctionRows, observedKeptRows,
+            functionRows == 0
+                ? " [DEGRADED: the deployed DB carried no function row to gate]"
+                : "");
+        LOG_INFO_KV(kCategory, "selftest_pass",
+            ::kcdx::log::KV("row", kVerifyRow),
+            ::kcdx::log::KV("function_rows", (unsigned long long)functionRows),
+            ::kcdx::log::KV("skipped_function_rows",
+                (unsigned long long)skippedFunctionRows),
+            ::kcdx::log::KV("observed_kept_rows",
+                (unsigned long long)observedKeptRows));
+        kcdx::test::ReportResult(kVerifyRow, true, vreason);
+        kcdx::test::EmitSummaryIfChanged("cap-95 verify-all-command");
+    }
+}
+
 }  // namespace
 
 void RunSelfTestOnce() {
+    // cap-95 (the kcdx_verify_all command + the save-load precondition) reports
+    // under its OWN row and has its OWN one-shot/retry guard — drive it FIRST,
+    // before cap-84's guard short-circuits, so a tick that re-enters here still
+    // gives cap-95 its retry until the console surface arms. Independent of
+    // cap-84's pass/fail.
+    ReportVerifyCommandOnce();
+
     static bool s_reported = false;
     if (s_reported) return;
     s_reported = true;  // synthetic + deterministic — no retry needed.

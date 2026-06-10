@@ -98,6 +98,15 @@ std::atomic<uint64_t> g_slot_resolver_fires     {0};
 // Cleared on PostLoadGame so the NEXT user load fires fresh.
 std::atomic<void*> g_last_resolved_record {nullptr};
 
+// Set true the first time PostLoadGame fires this session — the "a save/world
+// has loaded" signal a precondition-gated consumer reads. PostLoadGame fires
+// on successful loads only, so this latches exactly when play begins; it stays
+// false from the main menu before any load. Release on the write / acquire on
+// the read so the value publishes across threads (the detour runs on the
+// engine thread; the reader is the verification sweep). Latched, never cleared
+// — once a world has loaded this session the live-exercise tier is reachable.
+std::atomic<bool> g_world_loaded_this_session {false};
+
 // -----------------------------------------------------------------
 // Safe-read helpers (SEH-guarded so a bad pointer can't AV the game)
 // -----------------------------------------------------------------
@@ -272,6 +281,12 @@ char __fastcall HookedPostLoadGame(void* self, uint32_t arg2, void* arg3) {
     // PostLoadGame is the "world is hydrated" signal. Clear dedup
     // state again here as belt-and-suspenders.
     g_last_resolved_record.store(nullptr, std::memory_order_release);
+
+    // Latch "a world has loaded this session" — the precondition signal the
+    // verification sweep's live-exercise tier reads. Set on the hydrated-world
+    // point so a consumer can tell a from-menu run (no save loaded) from a
+    // post-load run. Release-store so the reader's acquire-load sees it.
+    g_world_loaded_this_session.store(true, std::memory_order_release);
 
     LOG_DEBUG("SAVE_LOAD", "  before FireEngineMessage(PostLoadGame)");
     kcdx::messaging::FireEngineMessage(kcdxMessage_PostLoadGame);
@@ -488,6 +503,10 @@ bool Install() {
 
     log::InfoF("[phase6] save/load hooks installed: %d/5", installed);
     return installed > 0;
+}
+
+bool WorldLoadedThisSession() {
+    return g_world_loaded_this_session.load(std::memory_order_acquire);
 }
 
 }  // namespace kcdx::save_load_hooks

@@ -1,0 +1,45 @@
+# CAP-95 — the kcdx_verify_all console command + the save-load precondition gate.
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# verification engine exposes a `~`-console command (kcdx_verify_all) that
+# triggers the batch DB verification sweep, and the sweep's live-exercise tier
+# is gated on a save being loaded this session. Run from the main menu (no save
+# loaded), the live-exercise rows resolve `skipped` (a precondition-not-met
+# response — needs a loaded save), never a fabricated pass and never a silent
+# omission. This kcdx.toml is a MANIFEST-ONLY STUB — no plugin.lua, no DLL —
+# whose sole job is to pre-register the matrix row via test_names so it shows
+# PENDING until the engine reports it. Same pattern as cap-84 / cap-85 / cap-83
+# (the engine self-reports directly via kcdx::test::ReportResult from
+# src/survival_dispatch_selftest.cpp).
+#
+# What it proves (two sub-checks, reported under cap-95-verify-all-command):
+#   1. REGISTERED — kcdx_verify_all is present in the console command table
+#      (console::IsCommandRegistered) once the console surface is armed in dev
+#      mode. FALSIFIABLE: the command absent from the table fails the row.
+#      DEGRADES when the console surface did not arm (a non-game host).
+#   2. PRECONDITION GATES — the sweep run with no world loaded
+#      (RunStartupVerification(worldLoaded=false)) resolves the live-exercise-
+#      eligible rows (the function kind) to `skipped` with the precondition
+#      reason, NOT verified_working and NOT a static-ceiling pass. FALSIFIABLE:
+#      a live-exercise row reading verified_working when no save is loaded fails
+#      the row (the precondition did not gate). DEGRADES when the DB lacks a
+#      function row to gate.
+#
+# Test mode: console. The maintainer opens the `~` console and types
+# kcdx_verify_all; the agent confirms the sweep ran from the log. The
+# registration + precondition sub-checks above are boot-only engine self-checks
+# (they need no console typing) — the console gesture exercises the full live
+# trigger the next step (the per-row stream + report) finalizes.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_95_verify_all_command"
+display_name        = "CAP-95 kcdx_verify_all console command + save-load precondition"
+author              = "ts"
+description         = "Engine self-test: the kcdx_verify_all console command is registered in the command table (dev-mode-gated), and the batch verification sweep gates its live-exercise tier on a loaded save — run with no world loaded, the live-exercise rows resolve 'skipped' (a precondition-not-met response), never a fabricated verified_working and never a silent omission. Engine self-reports; degrades when the console surface did not arm or the DB lacks a function row."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-95-verify-all-command"]

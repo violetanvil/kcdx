@@ -565,7 +565,7 @@ bool SafeReadToVerdict(const SafeReadResult& sr, int passRank, int failedRank,
     return true;
 }
 
-std::vector<RowVerdict> RunStartupVerification() {
+std::vector<RowVerdict> RunStartupVerification(bool worldLoaded) {
     std::vector<RowVerdict> out;
 
     // Precondition: refdb must be open (the curated cache is the input set). An
@@ -600,7 +600,7 @@ std::vector<RowVerdict> RunStartupVerification() {
     // awarded rank-1 by the observation tier (the rest of the static states are
     // produced by the ceiling rule).
     size_t verifiedWorking = 0, passedNotVerified = 0, failed = 0,
-           notApplicable = 0, cannotCheck = 0, errored = 0;
+           notApplicable = 0, cannotCheck = 0, skipped = 0, errored = 0;
 
     // Sweep every cached curated entity. ForEachCached gives the resolved id +
     // name + the engine-resolved VA (WhgameBase()+rva) + verification state. The
@@ -874,6 +874,36 @@ std::vector<RowVerdict> RunStartupVerification() {
                 }
             }
 
+            // --- SAVE-LOAD PRECONDITION GATE for the live-exercise tier.
+            // A live-exercise-eligible row (the function kind, whose strongest
+            // applicable method is observed live execution — DispatchMethod::
+            // ObservedThenStatic) needs a loaded world: many curated functions
+            // fire only during play, so without a save loaded this run its top
+            // rung is unreachable. When no world has loaded (!worldLoaded), such
+            // a row resolves Skipped — UNLESS the rank-1 observed tier above
+            // already lifted it to VerifiedWorking from a real pre-menu fire/call
+            // (a hooked target like lua_pcall fires pre-menu; a CALLED-by-kcdx
+            // cvar/console target ran pre-menu). An already-observed row is real
+            // evidence and is NOT downgraded. Skipped is the only "did not run"
+            // verdict and it names exactly why: the strongest applicable
+            // method (live exercise) was precondition-blocked this run — never a
+            // fabricated pass, never a silent omission (the row still gets a
+            // structured response). The static ranks (3-5) are unaffected for
+            // every other kind; only this live-exercise-eligible kind is gated.
+            // worldLoaded defaults true (the post-save-load run + the engine
+            // self-test exercise the tiers directly), so this gate is inert
+            // there.
+            if (!worldLoaded &&
+                disp.method == DispatchMethod::ObservedThenStatic &&
+                sv_result.verdict != Verdict::VerifiedWorking) {
+                sv_result.verdict = Verdict::Skipped;
+                // The rank stays the live-exercise tier this kind targets — the
+                // method that COULD NOT run (rank 1), reported with the Skipped
+                // verdict so the response says which tier was precondition-blocked.
+                sv_result.method_rank = kRankObservedExecution;
+                sv_result.detail = "precondition_no_world_loaded";
+            }
+
             rv.verdict = sv_result.verdict;
             rv.method_rank = sv_result.method_rank;
             rv.detail = sv_result.detail;
@@ -885,7 +915,8 @@ std::vector<RowVerdict> RunStartupVerification() {
             // so it KEEPS the matched id too. NotApplicable wins over a
             // coincidental on-disk match (the row is not for this build), so it
             // must NOT surface that id — clear it for every verdict that is not
-            // one of the on-disk-matched states.
+            // one of the on-disk-matched states. Skipped is a precondition
+            // outcome, not an on-disk-matched state — it surfaces no matched id.
             if (rv.verdict != Verdict::PassedNotVerified &&
                 rv.verdict != Verdict::VerifiedWorking &&
                 rv.verdict != Verdict::Failed) {
@@ -897,6 +928,7 @@ std::vector<RowVerdict> RunStartupVerification() {
                 case Verdict::Failed:            ++failed;            break;
                 case Verdict::NotApplicable:     ++notApplicable;     break;
                 case Verdict::CannotCheck:       ++cannotCheck;       break;
+                case Verdict::Skipped:           ++skipped;           break;
                 default:                         break;  // Error counted in catch.
             }
 
@@ -937,17 +969,20 @@ std::vector<RowVerdict> RunStartupVerification() {
 
     // One lifecycle summary line (the teardown rollup — logging.md / the
     // observability summary floor). One info line for the whole sweep, tallying
-    // the 7-state verdicts the pass can now produce: verified_working (rank-1
-    // observed execution, the small engine-hooked-and-fired set) + the static
-    // ceiling's states. skipped is produced by the precondition gate (a later
-    // step), so it stays 0 here.
+    // the 7-state verdicts the pass produces: verified_working (rank-1 observed
+    // execution, the small engine-hooked-and-fired set) + the static ceiling's
+    // states + skipped (the live-exercise-tier rows the save-load precondition
+    // gated off when no world was loaded this run; 0 when a world has loaded or
+    // worldLoaded was not gated).
     LOG_INFO_KV(kCategory, "verify_complete",
         ::kcdx::log::KV("rows", (unsigned long long)out.size()),
+        ::kcdx::log::KV("world_loaded", worldLoaded ? "yes" : "no"),
         ::kcdx::log::KV("verified_working", (unsigned long long)verifiedWorking),
         ::kcdx::log::KV("passed_not_verified", (unsigned long long)passedNotVerified),
         ::kcdx::log::KV("failed", (unsigned long long)failed),
         ::kcdx::log::KV("not_applicable", (unsigned long long)notApplicable),
         ::kcdx::log::KV("cannot_check", (unsigned long long)cannotCheck),
+        ::kcdx::log::KV("skipped", (unsigned long long)skipped),
         ::kcdx::log::KV("error", (unsigned long long)errored),
         ::kcdx::log::KV("live_mapped", liveMapped ? "yes" : "no"));
 

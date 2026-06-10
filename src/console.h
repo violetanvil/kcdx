@@ -31,4 +31,9 @@ bool Init();
 // string is passed through verbatim — PrintLine owns the line.
 bool PrintLine(const char* text);
 
+// True iff a console command `name` is registered (a live slot or a queued
+// pending registration). The presence query the verification self-test uses to
+// assert kcdx_verify_all is in the command table. Cheap; takes the slot lock.
+bool IsCommandRegistered(const char* name);
+
 }  // namespace kcdx::console

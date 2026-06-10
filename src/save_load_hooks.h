@@ -48,4 +48,12 @@ namespace kcdx::save_load_hooks {
 // true if at least one of the five hooks installed.
 bool Install();
 
+// True once a save/world has been loaded this session — set when the
+// PostLoadGame detour fires (the "world is hydrated" lifecycle signal; it
+// fires on successful loads only). Reads false from the main menu before any
+// load. Lets a consumer that needs a loaded world (the verification sweep's
+// live-exercise tier) gate on whether play has actually started this run, not
+// on a wall-clock guess. Pure read; cheap atomic load.
+bool WorldLoadedThisSession();
+
 }  // namespace kcdx::save_load_hooks

@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -17,8 +18,13 @@
 #include "log.h"
 #include "plugin_loader.h"
 #include "refdb.h"
+#include "save_load_hooks.h"  // WorldLoadedThisSession — the save-load precondition
+                              // the kcdx_verify_all handler reads to gate the
+                              // sweep's live-exercise tier (no console back-edge).
 #include "survival_verify.h"  // RecordKcdxInvocation — the CALLED-by-kcdx rank-1
-                              // signal for AddCommand/ExecuteString (survival_verify.h
+                              // signal for AddCommand/ExecuteString; and
+                              // RunStartupVerification — the sweep the
+                              // kcdx_verify_all command triggers (survival_verify.h
                               // pulls in only survival.h; no console back-edge).
 
 namespace kcdx::console {
@@ -370,6 +376,74 @@ bool Thunk_GetCVarFloat(const char* name, float* out) {
     return cvar::GetFloat(name, out);
 }
 
+// -----------------------------------------------------------------
+// kcdx_verify_all — engine-owned `~`-console command that triggers the
+// batch verification sweep over the curated DB set.
+// -----------------------------------------------------------------
+//
+// The maintainer loads a save, opens the console, and types `kcdx_verify_all`;
+// the sweep runs the full ladder (incl. the live-exercise tier) against the
+// running build. It is dev-mode-gated like every suite test — registered only
+// when the suite runs (self-skips outside dev mode below), so a player who
+// launches normally never has it.
+//
+// SAVE-LOAD PRECONDITION: the live-exercise tier needs a loaded world (many
+// curated functions fire only during play), so the handler reads whether a
+// save has loaded THIS session and passes it to the sweep. World loaded → the
+// full ladder runs. From the menu (no save loaded) → the live-exercise-tier
+// rows resolve `skipped` with a precondition reason (a structured "did not run,
+// needs a loaded save," never a fabricated pass) — the maintainer is told
+// plainly to load a save and re-run.
+//
+// SCOPE: this step lands the command entry point + the precondition gate + the
+// wiring that invokes the verification ladder. The per-row console streaming +
+// the structured report emission are the next step; this handler runs the
+// sweep and prints a one-line outcome summary to the overlay so a run is never
+// a silent no-op.
+void VerifyAllCallback(const kcdxConsoleCmdArgs* /*args*/) {
+    const bool worldLoaded = save_load_hooks::WorldLoadedThisSession();
+
+    if (!worldLoaded) {
+        // Loud, structured: the live-exercise tier needs a loaded world. The
+        // sweep STILL runs (the static / version / reachability tiers produce
+        // real verdicts), but the live-exercise rows resolve `skipped` with a
+        // precondition reason — tell the maintainer why and what to do.
+        console::PrintLine(
+            "[verify] no save loaded this session — running the static tiers "
+            "now; the live-exercise rows will report 'skipped'. Load a save, "
+            "then run kcdx_verify_all again for the full ladder.");
+    } else {
+        console::PrintLine("[verify] running the full verification ladder "
+                           "against the loaded build...");
+    }
+
+    std::vector<kcdx::survival_verify::RowVerdict> verds =
+        kcdx::survival_verify::RunStartupVerification(worldLoaded);
+
+    // A one-line outcome summary so a run reports it did something (the per-row
+    // stream + the structured report are the next step). Tally the verdicts.
+    size_t verified = 0, passed = 0, failed = 0, notApplicable = 0,
+           cannotCheck = 0, skipped = 0, errored = 0;
+    for (const auto& v : verds) {
+        switch (v.verdict) {
+            case kcdx::survival_verify::Verdict::VerifiedWorking:   ++verified;      break;
+            case kcdx::survival_verify::Verdict::PassedNotVerified: ++passed;        break;
+            case kcdx::survival_verify::Verdict::Failed:            ++failed;        break;
+            case kcdx::survival_verify::Verdict::NotApplicable:     ++notApplicable; break;
+            case kcdx::survival_verify::Verdict::CannotCheck:       ++cannotCheck;   break;
+            case kcdx::survival_verify::Verdict::Skipped:           ++skipped;       break;
+            case kcdx::survival_verify::Verdict::Error:             ++errored;       break;
+        }
+    }
+    char summary[256];
+    std::snprintf(summary, sizeof(summary),
+        "[verify] swept %zu rows: %zu verified_working, %zu passed_not_verified, "
+        "%zu failed, %zu not_applicable, %zu cannot_check, %zu skipped, %zu error.",
+        verds.size(), verified, passed, failed, notApplicable, cannotCheck,
+        skipped, errored);
+    console::PrintLine(summary);
+}
+
 // Drain g_pendingCommands through the ONE registration path (RegisterCommandNow)
 // in FIFO order, then clear the queue. Caller holds g_slotsMutex; g_ready must
 // already be true (the surface is armed). Called once, from Init(), right after
@@ -541,7 +615,31 @@ bool Init() {
         // FIFO, through the single RegisterCommandNow path.
         FlushPendingCommands();
     }
+
+    // Register the engine-owned kcdx_verify_all console command — the
+    // maintainer-tool batch verification trigger. Registered OUTSIDE the
+    // g_slotsMutex block above (Thunk_RegisterCommand takes the same lock). It
+    // is a developer/maintainer tool, so it is registered ONLY in dev mode —
+    // self-skips for a normal player (the suite-test convention: no dev mode,
+    // no command). kcdxInvalidPluginHandle marks it engine-owned (dispatch
+    // resolves it to no plugin name, correct for an engine command). The sweep
+    // it triggers needs a loaded save for its live-exercise tier; the handler
+    // reads that precondition itself (VerifyAllCallback).
+    if (kcdx::dev::IsEnabled()) {
+        Thunk_RegisterCommand(
+            kcdxInvalidPluginHandle, "kcdx_verify_all",
+            "kcdx_verify_all -- run the batch DB verification sweep against the "
+            "loaded build (load a save first for the live-exercise tier).",
+            &VerifyAllCallback);
+    }
     return true;
+}
+
+bool IsCommandRegistered(const char* name) {
+    if (!name || !*name) return false;
+    std::lock_guard<std::mutex> lock(g_slotsMutex);
+    kcdxPluginHandle dummy = kcdxInvalidPluginHandle;
+    return NameTaken(name, &dummy);
 }
 
 }  // namespace kcdx::console

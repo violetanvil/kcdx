@@ -427,11 +427,28 @@ SafeReadResult WalkVtableBaseLive(const kcdx::pe::ModuleView& view,
 bool SafeReadToVerdict(const SafeReadResult& sr, int passRank, int failedRank,
                        StaticVerdict& out);
 
-// Run the startup verification pass over the curated USER set (every cached
-// refdb entity). Returns one RowVerdict per swept row. ONCE at startup, never on
-// the hot path. refdb must be Open() (the cache is the input); an unloaded refdb
-// yields an empty result with a logged reason — never a silent empty.
-std::vector<RowVerdict> RunStartupVerification();
+// Run the verification pass over the curated USER set (every cached refdb
+// entity). Returns one RowVerdict per swept row. ONCE per trigger (the console
+// command, or the engine self-test), never on the hot path. refdb must be
+// Open() (the cache is the input); an unloaded refdb yields an empty result
+// with a logged reason — never a silent empty.
+//
+// `worldLoaded` is the SAVE-LOAD PRECONDITION for the live-exercise tier: the
+// rank-1 observed-execution method (the only method that awards
+// VerifiedWorking) needs a loaded world — many curated functions fire only
+// during play, so a from-menu run can observe no live fire and could never
+// honestly reach the top rung. When `worldLoaded` is false, a live-exercise-
+// eligible row (a function-kind row whose strongest applicable method is
+// observed live execution, and which was not already observed via a pre-menu
+// hook/call) resolves `Skipped` with a precondition reason — a LOUD,
+// structured "did not run THIS run, and here's exactly why," never a fabricated
+// pass and never a silent omission. Every row still gets a structured response.
+// When `worldLoaded` is true (the default; the post-save-load run and the
+// engine self-test, which exercise the tiers directly) no row is precondition-
+// skipped — the static / safe-read / observed tiers run as before. The static
+// ranks (3-5) are unaffected by this gate either way; only the live-exercise
+// tier is precondition-gated.
+std::vector<RowVerdict> RunStartupVerification(bool worldLoaded = true);
 
 // Decode a Verdict to its stable token (for logs / the later JSON report).
 const char* VerdictName(Verdict v);
