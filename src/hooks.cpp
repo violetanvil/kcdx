@@ -47,6 +47,7 @@
 #include "statement_resolve_selftest.h"             // cap-83 refdb statement-resolution API
 #include "lua_shim_selftest.h"                      // cap-79 Lua shim forward layer
 #include "early_hook_selftest.h"                    // cap-80 early-hook primitive
+#include "trampoline_selftest.h"                     // cap-93 branch-pool multi-region growth
 #include "cap81_vm_adopt_selftest.h"                // cap-81 keystone: VM build + engine adopt
 #include "foreign_hook_detect_selftest.h"           // comp-18 foreign-hook prologue classifier
 #include "foreign_hook_chain_selftest.h"            // comp-19 foreign-hook chaining
@@ -797,6 +798,17 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // FIRED and passed through — proving the GENERALIZED install works, not just
     // the baked BugSplat target. One-shot guarded internally.
     kcdx::early_hook_selftest::RunSelfTestOnce();
+
+    // cap-93-trampoline-multiregion: engine self-report for the branch trampoline
+    // pool's multi-region growth (src/trampoline.cpp) — the proactive 80%
+    // expansion, the per-anchor region cap, and the teaching exhaustion error.
+    // Boot-only, same timing as cap-80 — no hook-fire / "ready" / VM dependency;
+    // the allocator works as soon as the engine is mapped. The expansion row
+    // drives real WHGame-anchored AllocateBranch calls past 80% of a reservation
+    // and asserts the branch-reservation count GREW; the exhaustion row asserts
+    // the teaching error names the pool / percentage / region count / next step.
+    // Dev-gated (drives real, never-freed pool allocations), one-shot guarded.
+    kcdx::trampoline_selftest::RunSelfTestOnce();
 
     // cap-79-lua-shim-forward: engine self-report for the Lua symbol shim's
     // forward layer (src/lua_shim.{h,cpp}, restructure Phase 11 P2 step 1).

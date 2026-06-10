@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <cstdint>
+#include <cstdio>   // snprintf (teaching exhaustion-error formatter)
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -44,6 +45,23 @@ std::vector<Reservation>  g_reservations;
 // Branch pool defaults. Sized to handle ~100 small detour trampolines.
 constexpr size_t kBranchPoolReservationSize = 64 * 1024;  // 64 KB per reservation
 constexpr size_t kLocalPoolReservationSize  = 1024 * 1024; // 1 MB per reservation
+
+// Proactive growth + cap for the BRANCH pool (the rel32-constrained one; the
+// local pool grows lazily and is never eagerly expanded — it has no proximity
+// constraint and no rel32 pressure). When a branch reservation crosses this
+// fraction full, eagerly stage the NEXT ±2 GB-adjacent reservation for the same
+// anchor so the next request has headroom (rel32-reachable memory near a hook
+// site can be scarce — reserving ahead beats failing a hook at apply time). The
+// basis is PER-RESERVATION (the specific reservation just served), not aggregate.
+constexpr double kBranchExpandThreshold = 0.80;
+
+// The number of ±2 GB-adjacent branch reservations allowed per anchor group
+// before a request is declared exhausted rather than growing the pool without
+// bound. 16 * 64 KB = 1 MB of detour bodies reachable from one anchor — far more
+// than any realistic hook count near a single site; hitting it means something
+// is wrong (a runaway or a near-region starved of free address space), so it is
+// an explicit fail-loud, not silent unbounded growth.
+constexpr size_t kMaxBranchRegionsPerAnchor = 16;
 
 // rel32 reach window half-width, with safety margin. A signed 32-bit
 // displacement spans ±2 GB; we shave it to 0x7FFF0000 so the FAR END of a
@@ -206,6 +224,120 @@ bool BranchReservationReachesFrom(const Reservation& r, uintptr_t nearVa) {
     return rBase >= lo && rEnd <= hi;
 }
 
+// Does branch reservation `r` belong to the SAME anchor group a request with
+// this `nearVa` would use? This mirrors Allocate()'s reuse split exactly so the
+// per-anchor region count and the reuse walk can never disagree:
+//   - nearVa==0 (WHGame default): the group is the WHGame-anchored reservations.
+//   - nearVa!=0 (far target): the group is every reservation rel32-reachable
+//     from nearVa (WHGame- or target-anchored alike). Caller holds g_mutex.
+bool BranchReservationServesAnchor(const Reservation& r, uintptr_t nearVa) {
+    if (nearVa == 0) return r.whGameAnchored;
+    return BranchReservationReachesFrom(r, nearVa);
+}
+
+// Count the branch reservations already serving this anchor group, and report
+// the fullest one's used-fraction (for the exhaustion error). Caller holds
+// g_mutex. `outFullestPct` is 0 when no reservation serves the anchor.
+size_t CountBranchRegionsForAnchor(uintptr_t nearVa, double* outFullestPct) {
+    size_t count = 0;
+    double fullest = 0.0;
+    for (const auto& r : g_reservations) {
+        if (!r.branch) continue;
+        if (!BranchReservationServesAnchor(r, nearVa)) continue;
+        ++count;
+        if (r.size > 0) {
+            double pct = static_cast<double>(r.used) / static_cast<double>(r.size);
+            if (pct > fullest) fullest = pct;
+        }
+    }
+    if (outFullestPct) *outFullestPct = fullest;
+    return count;
+}
+
+// Build the teaching exhaustion error string — the author-facing, falsifiable
+// content of genuine branch-pool exhaustion. A pure formatter shared by the
+// production exhaustion path AND the self-test, so the test asserts the exact
+// text authors will read (pool name, fullest-region %, regions tried, the
+// fallback attempted, and an actionable next step) without physically
+// exhausting the live pool. Writes into `out` (truncating-safe). Caller-owned
+// buffer; returns the number of chars written (excluding the NUL), or 0 on a
+// null/zero buffer.
+size_t FormatExhaustionError(char* out, size_t outLen, double fullestPct,
+                             size_t regionsTried, uintptr_t anchor,
+                             bool whGameAnchor) {
+    if (!out || outLen == 0) return 0;
+    int n = std::snprintf(
+        out, outLen,
+        "branch trampoline pool exhausted: every one of the %zu rel32-reachable "
+        "reservation(s) near %s (anchor 0x%p) is full (fullest %.0f%% used) and "
+        "a fresh ReserveNearby found no free region within +/-2GB of the anchor. "
+        "The branch pool is capped at %zu regions per anchor (1 MB of detour "
+        "bodies reachable from one site). Next step: reduce the number of hooks "
+        "targeting functions near this anchor, or free address space within "
+        "+/-2GB of it so a new reservation can be placed; if this is a legitimate "
+        "need for more than %zu regions at one site, the per-anchor cap "
+        "(kMaxBranchRegionsPerAnchor) must be raised in the engine.",
+        regionsTried,
+        whGameAnchor ? "WHGame.dll" : "the target module",
+        reinterpret_cast<void*>(anchor),
+        fullestPct * 100.0,
+        kMaxBranchRegionsPerAnchor,
+        kMaxBranchRegionsPerAnchor);
+    if (n < 0) return 0;
+    return (static_cast<size_t>(n) < outLen) ? static_cast<size_t>(n)
+                                             : (outLen - 1);
+}
+
+// Record a BRANCH reservation as a kcdx-owned trampoline range for the
+// foreign-hook classifier (§6.1) — branch-pool reservations hold the detour
+// BODIES kcdx allocates near hook sites. The local pool is anywhere and is not
+// a hook-prologue jump target, so it is never registered. Register the whole
+// reservation once on creation (the registry de-dupes an exact repeat); a
+// per-bump-allocation register would add many overlapping sub-ranges for no
+// benefit. Shared by the on-full growth path and the eager-expansion path so
+// both stage a new reservation identically. Caller holds g_mutex.
+void RegisterBranchReservation(const Reservation& r) {
+    kcdx::kcdx_trampoline_registry::Register(
+        reinterpret_cast<uintptr_t>(r.base), r.size,
+        kcdx::kcdx_trampoline_registry::Kind::BranchPool);
+}
+
+// After a BRANCH reservation crosses kBranchExpandThreshold full, eagerly stage
+// the NEXT ±2 GB-adjacent reservation for the same anchor so the next request
+// for that anchor has headroom. Best-effort: a failed reservation does NOT fail
+// the allocation that already succeeded — it WARNs and returns; the next request
+// retries the on-full growth path. Skips when the per-anchor cap is already
+// reached (no point pre-staging a region a fresh request could not make either).
+// Caller holds g_mutex; `r` is the reservation that was just served.
+void MaybeEagerlyExpandBranch(const Reservation& r, uintptr_t nearVa) {
+    if (r.size == 0) return;
+    if (static_cast<double>(r.used) <= kBranchExpandThreshold *
+                                       static_cast<double>(r.size)) {
+        return;  // not yet across the threshold — nothing to pre-stage
+    }
+    // Don't pre-stage past the cap — exhaustion is the on-full path's call.
+    if (CountBranchRegionsForAnchor(nearVa, nullptr) >= kMaxBranchRegionsPerAnchor) {
+        return;
+    }
+    // Pass nearVa straight through so the new reservation carries the SAME
+    // anchor/whGameAnchored flags a fresh on-full reservation would (the reuse
+    // walk later matches it for this anchor exactly as it would the on-full one).
+    Reservation next = MakeBranchReservation(kBranchPoolReservationSize, nearVa);
+    if (!next.base) {
+        // No nearby free region right now — leave the current alloc standing.
+        log::WarnF("Trampoline branch pool: eager 80%%-expansion near anchor "
+                   "(nearVa=0x%p) found no free region within +/-2GB; the "
+                   "current allocation stands, the next request will retry "
+                   "on-full.", reinterpret_cast<void*>(nearVa));
+        return;
+    }
+    RegisterBranchReservation(next);
+    log::InfoF("Trampoline branch pool: eagerly expanded (reservation crossed "
+               "%.0f%% full) — pre-staged %zu bytes at 0x%p for the next request",
+               kBranchExpandThreshold * 100.0, next.size, next.base);
+    g_reservations.push_back(next);
+}
+
 // Try existing reservations of the matching pool first; if none have room,
 // make a new reservation.
 //
@@ -215,6 +347,13 @@ bool BranchReservationReachesFrom(const Reservation& r, uintptr_t nearVa) {
 // only when it is rel32-reachable from the SAME anchor we'd place a fresh one
 // at (the WHGame midpoint for nearVa==0, else nearVa itself) — never hand a
 // WHGame-anchored block to a far target, nor vice versa.
+//
+// The branch pool grows two ways: REACTIVELY (no in-range reservation has room
+// → make one) and PROACTIVELY (a served reservation crossed 80% → eagerly stage
+// the next, so a hook never fails at apply time waiting for scarce near-site
+// memory). Growth is bounded per anchor by kMaxBranchRegionsPerAnchor — past
+// that, a request that no reservation can serve is genuine exhaustion: a strong
+// teaching error, then a null return (every caller checks for null).
 void* Allocate(bool branchPool, kcdxPluginHandle owner, size_t size,
                uintptr_t nearVa = 0) {
     if (size == 0) return nullptr;
@@ -246,28 +385,56 @@ void* Allocate(bool branchPool, kcdxPluginHandle owner, size_t size,
                        "(owner=%u, %zu/%zu used)",
                        branchPool ? "branch" : "local", size, p, owner,
                        r.used, r.size);
+            // Proactive 80%-expansion: only the branch pool (the local pool has
+            // no proximity constraint / no rel32 pressure). The reservation just
+            // served is `r`; MaybeEagerlyExpandBranch may push_back a new one,
+            // so do NOT touch `r` after this call (the vector may reallocate).
+            if (branchPool) MaybeEagerlyExpandBranch(r, nearVa);
             return p;
         }
     }
 
-    // No room (or no in-range reservation) — add a new one.
+    // No in-range reservation with room. For the branch pool, enforce the
+    // per-anchor cap BEFORE growing: if this anchor already has the maximum
+    // number of reservations and none had room, a fresh one would be the
+    // (N+1)th — that is genuine exhaustion, not a reason to grow unbounded.
+    if (branchPool) {
+        double fullestPct = 0.0;
+        size_t inRange = CountBranchRegionsForAnchor(nearVa, &fullestPct);
+        if (inRange >= kMaxBranchRegionsPerAnchor) {
+            char err[768];
+            FormatExhaustionError(err, sizeof(err), fullestPct, inRange, nearVa,
+                                  /*whGameAnchor=*/ nearVa == 0);
+            // Fail loud — a strong specific error, then a null return the
+            // caller already handles. Never a silent no-op.
+            log::ErrorF("%s", err);
+            return nullptr;
+        }
+    }
+
+    // Within the cap (or local pool) — grow reactively.
     Reservation r = branchPool ? MakeBranchReservation(size, nearVa)
                                : MakeLocalReservation(size);
-    if (!r.base) return nullptr;
+    if (!r.base) {
+        // ReserveNearby found no free region within ±2GB of the anchor even
+        // though we are under the per-anchor cap — a different exhaustion
+        // (address-space starvation near the anchor, not the cap). For the
+        // branch pool, emit the same teaching error so the author sees a
+        // strong message rather than only MakeBranchReservation's lower-level
+        // ErrorF; the regionsTried count is what is in range right now.
+        if (branchPool) {
+            double fullestPct = 0.0;
+            size_t inRange = CountBranchRegionsForAnchor(nearVa, &fullestPct);
+            char err[768];
+            FormatExhaustionError(err, sizeof(err), fullestPct, inRange, nearVa,
+                                  /*whGameAnchor=*/ nearVa == 0);
+            log::ErrorF("%s", err);
+        }
+        return nullptr;
+    }
     void* p = BumpAlloc(r, size);
     g_reservations.push_back(r);
-    // Record the BRANCH reservation as a kcdx-owned trampoline range for the
-    // foreign-hook classifier (§6.1) — branch-pool reservations hold the detour
-    // BODIES kcdx allocates near hook sites. The local pool is anywhere and is
-    // not a hook-prologue jump target, so it is not registered. Register the
-    // whole reservation once on creation (the registry de-dupes an exact
-    // repeat); a per-bump-allocation register would add many overlapping
-    // sub-ranges for no benefit.
-    if (branchPool) {
-        kcdx::kcdx_trampoline_registry::Register(
-            reinterpret_cast<uintptr_t>(r.base), r.size,
-            kcdx::kcdx_trampoline_registry::Kind::BranchPool);
-    }
+    if (branchPool) RegisterBranchReservation(g_reservations.back());
     log::InfoF("Trampoline %s pool: allocated %zu bytes at 0x%p (owner=%u, %zu/%zu used)",
                branchPool ? "branch" : "local", size, p, owner,
                g_reservations.back().used, g_reservations.back().size);
@@ -480,6 +647,30 @@ void* AllocateBranch(kcdxPluginHandle owner, size_t size, uintptr_t nearVa) {
 
 void* AllocateLocal(kcdxPluginHandle owner, size_t size) {
     return Thunk_AllocateFromLocalPool(owner, size);
+}
+
+// --- Test-only introspection (definitions) ---
+
+size_t BranchReservationCountForTest() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    size_t n = 0;
+    for (const auto& r : g_reservations) {
+        if (r.branch) ++n;
+    }
+    return n;
+}
+
+bool FormatExhaustionErrorForTest(size_t syntheticRegionsTried, double fullestPct,
+                                  char* outErr, size_t outErrLen) {
+    if (!outErr || outErrLen == 0) return false;
+    // Use a fixed synthetic WHGame-style anchor so the formatted message is
+    // deterministic; the production path passes the real anchor. The pool name,
+    // percentage, region count, and next-step text are what the test asserts.
+    constexpr uintptr_t kSyntheticAnchor = 0x140000000ull;
+    size_t written = FormatExhaustionError(outErr, outErrLen, fullestPct,
+                                           syntheticRegionsTried, kSyntheticAnchor,
+                                           /*whGameAnchor=*/ true);
+    return written > 0;
 }
 
 }  // namespace kcdx::trampoline

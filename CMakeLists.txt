@@ -210,6 +210,7 @@ add_library(kcdx SHARED
     src/messaging.cpp
     src/task.cpp
     src/trampoline.cpp
+    src/trampoline_selftest.cpp
     src/hook_engine.cpp
     src/modification_inventory.cpp
     src/symbols.cpp
