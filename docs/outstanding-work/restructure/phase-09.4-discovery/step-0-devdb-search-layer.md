@@ -69,11 +69,37 @@ discovery. The TEXT `statements.callee` is the full-coverage caller path. (Recor
 so a future reader does not "fix" the omission — it is deliberate, the data shape
 forces it.)
 
+### SQL does the work — `find` never materializes the corpus into Lua (the load-bearing principle, user-settled 2026-06-10)
+
+**The dev DB is a SQL database; queries run IN SQL and return ONLY what is asked
+for.** `kcdx.find` is a SEARCH — it runs a lean SQL query returning function HEADERS
+(name / module / rva / quality + a SQL-computed `statement_count`), and STOPS. It does
+NOT pull statement bodies, captures, or applicable-ops across the SQL→Lua boundary.
+The statement bodies stay in the DB until the author asks for ONE function via
+`kcdx_dev_inspect`, which runs its OWN scoped per-function SQL query.
+
+This is the fix for the boot-hang root cause (KI on 2026-06-10): the original design
+had `find` eagerly materialize EVERY statement of EVERY one of the (up to 500) matched
+records into nested Lua tables. For a broad query (e.g. callers of a common function:
+30,393 matches → 500 capped records) that is ~131,691 statement sub-tables + ~266,737
+capture sub-tables ≈ 400,000 nested Lua tables built on CryEngine's Lua 5.1 on the boot
+worker thread — which exhausts memory/GC and HANGS (watchdog-killed, no AV). The pure
+SQL runs in ~1.5s; the stall is wholly the eager Lua materialization. The two tools
+divide cleanly: **`find` = discover WHICH function** (lean headers, SQL-paged);
+**`kcdx_dev_inspect` = inspect ONE function's body** (its statements, its own query).
+
 ### Result record + cap + ranking
 
-- Record: `{function, module, rva, decompile_quality, statements = [{idx, kind,
-  pseudo_text, captures, applicable_ops}]}` — `function` = curated name or `auto_name`;
-  `decompile_quality` decoded from the dict; `statements` from `EnumerateStatements`.
+- **`find` record (LEAN — no statement bodies):** `{function, module, rva,
+  decompile_quality, statement_count}` — `function` = curated name or `auto_name`;
+  `decompile_quality` decoded from the dict; `statement_count` = `SELECT COUNT(*) FROM
+  statements WHERE address_version_id = ?` (computed in SQL, one cheap indexed count
+  per capped record — NOT the statement rows). So 500 capped records = 500 small
+  tables, never the ~400K-table blowup. The author reads the lean list, picks a
+  function, and runs `kcdx_dev_inspect <module> <fn>` for ITS statements.
+- The statement detail (`{idx, kind, pseudo_text, captures, applicable_ops}`) is
+  `EnumerateStatements`'s / `kcdx_dev_inspect`'s result for ONE function — NOT
+  `find`'s. The `applicable_ops` mapping below applies to a statement THERE.
 - **`applicable_ops` per statement (user-settled 2026-06-10) = the real `kcdx.op.*`
   op NAMES whose declared required-statement-kind matches that statement's kind**,
   sourced from the shipped Phase 9.3 op catalog's per-op kind declarations
