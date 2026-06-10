@@ -38,6 +38,11 @@ from seeds_shared import csv_exporter as _csv_exporter  # noqa: E402
 # endpoints. Each takes (out_dir, dll_path, ...); the dll_path adapter (app.adapter)
 # owns mapping a version tag to what the data-core needs in place of a DLL.
 update_version_row = _seeds_shared.update_version_row
+# The D32 batch save-spine: N validated UPDATEs as ONE atomic transaction (all-or-
+# nothing -- one row failing rolls back the whole batch, D21). Composes the single-edit
+# primitive (one fold of all N edits onto ONE prospective seed -> ONE held DeferredCommit
+# -> ONE commit); the /confirm/batch endpoint drives it.
+update_version_rows_batch = _seeds_shared.update_version_rows_batch
 create_version = _seeds_shared.create_version
 create_entity = _seeds_shared.create_entity
 supersede_entity = _seeds_shared.supersede_entity

@@ -362,6 +362,145 @@ def update_version_row(out_dir, dll_path, kcdx_id, valid_from_version, edits,
             shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def update_version_rows_batch(out_dir, dll_path, edits_list,
+                              *, version=None, log=None, work_dir=None,
+                              defer_commit=False, validate_only=False):
+    """Validate + atomically apply N one-row UPDATEs as ONE transaction (design D32 /
+    §7 batch mutation -- the bulk re-verify / close-intervals worklist). All-UPDATE,
+    all-or-nothing: every edit lands on ONE held deferred-commit transaction, so ONE
+    row failing the shared validator rolls back the WHOLE batch -- nothing partial
+    lands (the D21 invariant at batch scale). This COMPOSES the single-edit primitive;
+    it invents NO new write mechanism.
+
+    THE MECHANISM (why this is one helper, not a loop over update_version_row)
+    -------------------------------------------------------------------------
+    update_version_row exports the COMMITTED DB and builds ITS OWN prospective seed
+    per call -- so a loop of N deferred update_version_row calls would each export the
+    same committed baseline (the edits would not see each other) AND each open its OWN
+    DeferredCommit (N transactions, not one -- a per-row-commit shape that is NOT
+    all-or-nothing). This helper instead exports the committed DB ONCE, folds ALL N
+    edits into that ONE prospective seed (each via seed_csv_edit.update_row_in_place,
+    keyed on the row's identity, accumulating onto the same file), then drives
+    apply_direct_edit ONCE over the combined prospective state. apply_direct_edit
+    opens ONE held outer txn per DB, captures ONE scoped restore-point covering every
+    touched row, and _apply_one_db UPDATEs each changed row inside that one txn (a
+    SAVEPOINT/RELEASE per row -- _Tx deferred mode). The whole-state validator runs
+    over the combined prospective seed, so EVERY edited row is validated (the per-row
+    gate at batch scale); a single invalid row raises BEFORE any DB open -> NO write.
+    ONE commit(handle) covers all N; the held txn's ROLLBACK (pre-commit) or the
+    scoped restore-point (post-commit) undoes the WHOLE batch as a unit.
+
+    Parameters:
+      out_dir       -- the directory holding reference.sqlite + reference-dev.sqlite.
+      dll_path      -- the linked WHGame.dll the version resolver reads. Supply EXACTLY
+                       ONE of dll_path / version (DbEditError on neither or both).
+      version       -- a pre-resolved (tag, ordinal); the web backend passes this (no
+                       DLL server-side, design D15). EXACTLY ONE of dll_path / version.
+      edits_list    -- the batch: a list of {kcdx_id, valid_from_version, edits} dicts,
+                       each the SAME shape update_version_row takes (kcdx_id int,
+                       valid_from_version str, edits {column: new_value_string}). Each
+                       edits dict's keys must be in EDITABLE_VERSION_COLUMNS (the
+                       identity-key / unknown-column gate runs per row). An empty list
+                       is a caller error (DbEditError -- a batch confirms >= 1 edit).
+      log/work_dir  -- as update_version_row (the export + folds live in work_dir;
+                       NOTHING under data/seeds/).
+      defer_commit  -- DEFAULT False (immediate: write + commit + close, the result
+                       dict). When True (the batch Confirm): the N edits land under ONE
+                       HELD outer txn -- the return is a SINGLE DeferredCommit handle
+                       the caller commits via commit(handle) once / restores via
+                       restore(handle) on a post-commit failure (the WHOLE batch).
+      validate_only -- DEFAULT False. When True (the batch Save-PREVIEW): the combined
+                       prospective state is validated and the call STOPS before any DB
+                       open -- NO write, the DB byte-identical. Takes precedence.
+
+    Returns:
+      validate_only=True -- {"tag","ordinal"} (the combined batch validated).
+      defer_commit=False -- the direct drive's result dict (the per-DB counts for the
+                            whole batch).
+      defer_commit=True  -- ONE DeferredCommit handle (the held, uncommitted batch).
+
+    Raises (no DB write occurs unless the direct drive reaches its per-DB write):
+      DbEditError  -- an empty batch, or a row naming a non-editable / unknown / identity
+                      column, or a row whose identity key matches no row in the exported
+                      seed (a caller-shape error, surfaced before any DB write).
+      RuntimeError -- the shared validator rejected the combined prospective DB state
+                      (the single gate, run over ALL N edits at once -- a duplicate
+                      tuple, a partial trio, ...). The DB is byte-identical to before
+                      (the validator gates before any DB open) -- the all-or-nothing
+                      guarantee: one bad row leaves NONE of the batch committed.
+      VersionResolveError -- a dll_path route whose .rdata version could not resolve.
+      BaselineRefusal     -- a function-kind add with no bulk baseline (no DB write).
+    """
+    if not edits_list:
+        raise DbEditError(
+            "update_version_rows_batch: an empty batch -- a batch confirm applies at "
+            "least one edit (the worklist had no rows)")
+    # Per-row caller-SHAPE gate BEFORE any work: every row's edits must be editable
+    # version columns (the same gate update_version_row runs, applied to each row).
+    # A malformed row fails the WHOLE batch before the export -- never a partial fold.
+    for i, spec in enumerate(edits_list):
+        try:
+            _reject_identity_and_unknown_edits(spec["edits"])
+        except KeyError as exc:
+            raise DbEditError(
+                f"update_version_rows_batch: batch row {i} is missing required key "
+                f"{exc} (each row needs kcdx_id, valid_from_version, edits)")
+    resolved_version = _resolve_version_param(dll_path, version)
+
+    user_db = os.path.join(out_dir, "reference.sqlite")
+    if not os.path.isfile(user_db):
+        raise DbEditError(
+            f"no reference.sqlite under {out_dir!r}; update_version_rows_batch amends "
+            f"an existing DB (run a rebuild to create the baseline first)")
+
+    owns_work_dir = work_dir is None
+    work_dir = work_dir or tempfile.mkdtemp(prefix="db_editor_batch_")
+    try:
+        # 1. Export the committed DB ONCE -- the single prospective-state base every
+        #    edit folds onto (the round-trip contract makes export(DB)+edits a faithful
+        #    serialisation of the post-batch DB rows). Writes NOTHING under data/seeds/.
+        prospective = os.path.join(work_dir, "prospective_seed")
+        os.makedirs(prospective, exist_ok=True)
+        export_seeds(user_db, prospective)
+        versions_csv = os.path.join(prospective, ADDRESS_VERSIONS_SEED_NAME)
+
+        # 2. Fold EVERY edit into the ONE prospective seed (accumulating -- each
+        #    update_row_in_place rewrites the file diff-preserved, so the next fold sees
+        #    the prior folds). A row whose identity key matches nothing is a caller
+        #    error -> the WHOLE batch fails before any DB open (no partial fold lands).
+        for i, spec in enumerate(edits_list):
+            kcdx_id = spec["kcdx_id"]
+            valid_from_version = spec["valid_from_version"]
+            matched = seed_csv_edit.update_row_in_place(
+                versions_csv,
+                key_columns=_VERSION_IDENTITY_COLUMNS,
+                key_values=(str(kcdx_id), str(valid_from_version)),
+                edits=spec["edits"])
+            if not matched:
+                raise DbEditError(
+                    f"update_version_rows_batch: batch row {i} "
+                    f"(kcdx_id={kcdx_id}, valid_from_version={valid_from_version!r}) "
+                    f"matches no address_versions seed row in the exported seed (a "
+                    f"stale or wrong key); the whole batch is rejected -- nothing lands")
+
+        # 3. Drive the DIRECT-WRITE path ONCE over the combined prospective state. The
+        #    whole-state validator gates the WHOLE prospective DB (every edited row);
+        #    a failure raises here with NO DB write. A valid batch writes every changed
+        #    row via _apply_one_db on ONE held outer txn (defer_commit=True) and returns
+        #    ONE DeferredCommit handle carrying ONE scoped restore-point for the whole
+        #    batch -- the all-or-nothing transaction (D32/D21). No update_target is
+        #    threaded: a bulk re-verify writes the audit trio on the BASELINE-tag rows
+        #    (_seed_action_rows already emits those actions) -- the non-baseline-tag
+        #    single-row seam (KI-0008) is the interactive single-edit path's, not the
+        #    batch worklist's.
+        return _drive_direct_over_prospective_seed(
+            out_dir, prospective, version=resolved_version, log=log,
+            defer_commit=defer_commit, validate_only=validate_only)
+    finally:
+        if owns_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def _reject_identity_and_unknown_edits(edits):
     """Guard the UPDATE's contract before any work: every edited column must be in
     EDITABLE_VERSION_COLUMNS. An identity-key column (kcdx_id / valid_from_version)

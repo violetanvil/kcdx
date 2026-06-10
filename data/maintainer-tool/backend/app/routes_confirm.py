@@ -184,6 +184,35 @@ class ConfirmEditNotes(EditNotesSave, _AuthContext):
 
 
 # ---------------------------------------------------------------------------
+# The BATCH confirm body (design D32 / §7 batch mutation -- the bulk re-verify /
+# close-intervals worklist). A LIST of per-row UPDATE specs (each mirroring the
+# UpdateVersionSave shape: kcdx_id, valid_from_version, edits) + the version_tag they
+# all resolve against + the auth-ready identity context (D17). ALL-UPDATE -- no AP18
+# new-row gate (a batch re-verify never creates a row; a genuine new/variant row is
+# authored individually via the per-row create flow). The N edits land as ONE atomic
+# transaction (all-or-nothing -- one row failing rolls back the whole batch, D21).
+# ---------------------------------------------------------------------------
+class BatchRowSpec(BaseModel):
+    """One UPDATE in the batch -- the (kcdx_id, valid_from_version) identity + the
+    `edits` cells, the SAME shape UpdateVersionSave carries (minus the per-row
+    saved/prospective preview dicts -- the batch confirm transacts, it does not
+    re-preview). `edits` keys must be editable version columns (the data-core's
+    EDITABLE_VERSION_COLUMNS gate, run per row -> 422 on a non-editable/identity col)."""
+    kcdx_id: int
+    valid_from_version: str
+    edits: dict
+
+
+class ConfirmBatch(_AuthContext):
+    """The batch confirm request: the version tag every row resolves against, the LIST
+    of per-row UPDATE specs, and the auth-ready identity context (D17). The whole list
+    is ONE atomic transaction (D32). version_tag is the resolution tag (the 1b adapter,
+    no DLL server-side -- D15); each row names its OWN edited row's identity in `rows`."""
+    version_tag: str
+    rows: list[BatchRowSpec]
+
+
+# ---------------------------------------------------------------------------
 # The shared Confirm drive: resolve the tag, run the deferred DB write, commit the DB,
 # export the CSVs, integrity-check, and git commit+push -- the whole atomic transaction
 # in one request. Each endpoint supplies its data-core write as a closure + its entity
@@ -371,6 +400,153 @@ def _run_confirm(body, *, entity_label, write, author):
     }
 
 
+def _run_confirm_batch(body, *, author):
+    """Run the synchronous atomic BATCH Confirm transaction (design D32 / §7) -- N
+    version-row UPDATEs as ONE all-or-nothing transaction. This drives the SAME
+    transaction spine as _run_confirm (resolve tag -> write onto ONE held handle ->
+    commit -> export -> integrity -> ONE git commit; robust rollback on any failure),
+    but the write step composes ALL N edits onto ONE DeferredCommit via the data-core's
+    update_version_rows_batch -- so one row failing the shared validator rolls back the
+    WHOLE batch (nothing partial lands, D21 at batch scale). It does NOT weaken
+    _run_confirm (the single-mutation path is untouched); it ADDS the batch path
+    alongside, reusing _resolve_author / _robust_rollback / CsvRevert / _staged_rel_paths
+    / git_commit -- the same robust-rollback + exact-path staging discipline.
+
+    `author` is (name, email) from the request context (D17). Returns the FastAPI
+    response dict (the same saved/busy/failed shapes _run_confirm returns -- ONE result
+    for the whole batch). ALL-UPDATE: no AP18 new-row gate (a batch re-verify never
+    creates a row)."""
+    config = load_config()
+    author_name, author_email = author
+    entity_label = f"batch ({len(body.rows)} version-row UPDATE(s))"
+
+    # 1. Resolve the chosen version tag -> (tag, ordinal). No DLL (the 1b seam). An
+    #    unknown tag is the maintainer's bad input -> 422 BEFORE any txn opens.
+    try:
+        ctx = resolve_tag(config, body.version_tag)
+    except VersionTagError as exc:
+        log.warning("batch confirm rejected -- unknown version tag (tag=%s): %s",
+                    body.version_tag, exc)
+        raise HTTPException(status_code=422, detail=str(exc))
+    version = (ctx.tag, ctx.ordinal)
+
+    # The data-core batch spec: a list of {kcdx_id, valid_from_version, edits} dicts --
+    # the exact shape update_version_rows_batch takes. An empty list is a caller bug
+    # (a batch confirms >= 1 edit) -> 422 before any txn opens.
+    if not body.rows:
+        raise HTTPException(
+            status_code=422,
+            detail="a batch confirm needs at least one row (the worklist was empty)")
+    edits_list = [{"kcdx_id": r.kcdx_id,
+                   "valid_from_version": r.valid_from_version,
+                   "edits": r.edits} for r in body.rows]
+
+    # 2. DIRECT-WRITE the WHOLE batch under ONE held deferred-commit txn. The data-core
+    #    validates the COMBINED prospective DB state (every edited row -- the per-row
+    #    gate at batch scale) BEFORE any DB open; one invalid row leaves NOTHING written
+    #    and returns NO handle (the all-or-nothing guarantee at the validator stage).
+    handle = None
+    try:
+        handle = data_core.update_version_rows_batch(
+            config.out_dir, None, edits_list, version=version, defer_commit=True)
+    except data_core.DbEditError as exc:
+        # A malformed batch row (an unknown/non-editable column, a stale identity key,
+        # an empty batch) -- the caller's bug, surfaced before any DB write. -> 422.
+        log.warning("batch confirm rejected -- malformed batch: %s", exc)
+        raise HTTPException(status_code=422, detail=str(exc))
+    except data_core.VersionResolveError as exc:
+        log.warning("batch confirm failed -- version refusal: %s", exc)
+        return _failed_response(entity_label, str(exc))
+    except (ValueError, RuntimeError) as exc:
+        # The shared validator rejected the COMBINED prospective state (a duplicate
+        # tuple, a partial trio, an out-of-enum cell on ANY row, ...). apply_direct_edit
+        # rolls back + closes the held txn on any error, so NOTHING is committed -- the
+        # all-or-nothing rollback (one bad row -> the WHOLE batch fails, nothing lands).
+        log.warning("batch confirm failed -- validator rejected the batch: %s", exc)
+        return _failed_response(entity_label, str(exc))
+
+    # The batch write succeeded -> ONE held DeferredCommit handle carrying ONE scoped
+    # restore-point covering every touched row. The transaction tail is IDENTICAL to
+    # _run_confirm's (commit -> export -> integrity -> git; robust rollback on failure).
+    csv_revert = CsvRevert(config.db_export_files).capture()
+    try:
+        try:
+            data_core.commit(handle)
+        except Exception as exc:
+            log.warning("batch confirm DB commit failed/split: %s -- restoring "
+                        "(robust rollback)", exc)
+            _robust_rollback(handle, csv_revert)
+            return _failed_response(
+                entity_label,
+                f"the DB commit failed or split across the two reference DBs and was "
+                f"rolled back (nothing landed): {exc}")
+
+        data_core.export_seeds(config.user_db, config.db_export_dir)
+        csv_integrity.assert_csv_export_deterministic(
+            config.user_db, config.db_export_dir)
+
+        rel_paths = _staged_rel_paths()
+        message = _batch_commit_message(len(body.rows), version)
+        git_report = git_commit.commit_and_push(
+            config.checkout_path, rel_paths, message=message,
+            author_name=author_name, author_email=author_email)
+    except csv_integrity.CsvIntegrityError as exc:
+        log.warning("batch confirm integrity check failed: %s -- restoring "
+                    "(robust rollback)", exc)
+        _robust_rollback(handle, csv_revert)
+        return _failed_response(
+            entity_label,
+            f"the committed CSV export did not round-trip (a tool bug) and the batch "
+            f"was rolled back (nothing landed): {exc}")
+    except git_commit.IndexLockBusy as exc:
+        log.warning("batch confirm blocked -- shared git index locked (stage=%s): %s "
+                    "-- restoring + surfacing Retry", exc.stage, exc)
+        _robust_rollback(handle, csv_revert)
+        return _lock_busy_response(entity_label, str(exc))
+    except git_commit.GitCommitError as exc:
+        log.warning("batch confirm git step failed (stage=%s): %s -- restoring "
+                    "(robust rollback)", exc.stage, exc)
+        _robust_rollback(handle, csv_revert)
+        # LAW 5 -- the maintainer-facing detail is GIT-FREE; git_stage is the structured
+        # operator field (same contract as _run_confirm's git handler).
+        return _failed_response(
+            entity_label,
+            "the batch couldn't be recorded and was rolled back -- nothing landed.",
+            git_stage=exc.stage)
+    except Exception as exc:
+        log.warning("batch confirm post-commit step failed: %s -- restoring "
+                    "(robust rollback)", exc)
+        _robust_rollback(handle, csv_revert)
+        return _failed_response(
+            entity_label,
+            f"the batch failed after the DB commit and was rolled back (nothing "
+            f"landed): {exc}")
+
+    csv_revert.discard()
+    log.info("batch confirm saved %s %s (pushed=%s, no_delta=%s)", entity_label,
+             version[0], git_report["pushed"], git_report.get("no_delta", False))
+    return {
+        "status": "saved",
+        "entity": entity_label,
+        "version": version[0],
+        "pushed": git_report["pushed"],
+        "push_skipped_reason": git_report["push_skipped_reason"],
+        "no_delta": git_report.get("no_delta", False),
+    }
+
+
+def _batch_commit_message(n_rows, version):
+    """The batch commit message body (git is invisible to the maintainer -- design S7;
+    this is the durable record a reviewer reads in the private repo's history). Names
+    the batch + its row count + the resolution version."""
+    return (f"maintainer-tool: batch save {n_rows} version-row UPDATE(s) "
+            f"({version[0]})\n\n"
+            f"DB-direct batch edit committed as ONE atomic transaction via the "
+            f"maintainer tool batch Confirm (all-or-nothing -- D32/D21; 3 db-export "
+            f"CSVs, exact-path staged; the DB is the local originator, not committed "
+            f"-- D1/D20).\n")
+
+
 def _extract_handle(write_result):
     """Normalize a db_editor write's return to the DeferredCommit handle. The
     update/lifecycle shapes return the handle directly (their _drive returns the apply
@@ -551,6 +727,21 @@ def confirm_edit_notes(
         write=lambda version: data_core.edit_notes(
             load_config().out_dir, None, body.kcdx_id, body.notes,
             version=version, defer_commit=True))
+
+
+@router.post("/confirm/batch")
+def confirm_batch(
+        body: ConfirmBatch,
+        x_kcdx_author_name: Optional[str] = Header(default=None),
+        x_kcdx_author_email: Optional[str] = Header(default=None)):
+    """Confirm a BATCH of version-row UPDATEs (design D32 / §7 -- the bulk re-verify /
+    close-intervals worklist) as ONE atomic transaction: all-or-nothing (one row
+    failing the validator rolls back the WHOLE batch -- nothing partial lands, D21),
+    one git commit. ALL-UPDATE -- not AP18-gated (a batch re-verify never creates a
+    row; a genuine new/variant row is the per-row create flow)."""
+    author = _resolve_author(body.author_name, body.author_email,
+                             x_kcdx_author_name, x_kcdx_author_email)
+    return _run_confirm_batch(body, author=author)
 
 
 # ---------------------------------------------------------------------------
