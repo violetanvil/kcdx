@@ -1,6 +1,6 @@
 # Phase 9.3 — `kcdx.hook.*` / `kcdx.statement.*` split + value namespaces + author-self-declaration + multi-region trampoline
 
-**Status: NOT STARTED.** Design source: [`../00-original-plan.md`](../00-original-plan.md) §"Phase 9.3".
+**Status: DONE** — all 7 steps live-verified, phase closed (`1c71269`; cap-94/96/97 GREEN). Per-step hashes are in the step ledger below. Design source: [`../00-original-plan.md`](../00-original-plan.md) §"Phase 9.3".
 
 The biggest author-surface phase. Lands the two distinct site-modification
 namespaces (`kcdx.hook.*` callback-based interception vs `kcdx.statement.*`

@@ -1,6 +1,6 @@
 # Phase 11 — kcdx owns the one Lua VM (worker-built, engine-adopted)
 
-**Status: READY (design settled 2026-06-05, decomposed into this tree).**
+**Status: IN PROGRESS** — P1–P3 landed (the keystone VM build + adopt is live-confirmed at `3b99fea`; P2 shim + P3 early-hook relocate are `[unverified — pending launch]`); P4–P7 remain. Design settled 2026-06-05, decomposed into this tree.
 
 **kcdx builds the ONE Lua VM itself** on its worker thread (after the game maps
 WHGame — NO force-load; PROBE P3 verified a kcdx force-load is impossible +

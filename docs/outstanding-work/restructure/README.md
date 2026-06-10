@@ -55,7 +55,7 @@ hash when `DONE`, `—` otherwise.
 | [9.6 — kcdx.bytes narrowing + Lua-API rule update + final migration](phase-09.6-bytes-narrowing/README.md) | NOT STARTED | — |
 | 9.7 — curated-target sub-verb resolver | SUPERSEDED | — |
 | [10 — gameplay event catalog (kcdx.on)](phase-10-event-catalog/README.md) | NOT STARTED | — |
-| [11 — kcdx owns the one Lua VM (worker-built, engine-adopted)](phase-11-shim-vm/README.md) | IN PROGRESS | P1 f0a0dc9 · P2 54d98c8 · P3 3b99fea (DONE); P4–P7 remain |
+| [11 — kcdx owns the one Lua VM (worker-built, engine-adopted)](phase-11-shim-vm/README.md) | IN PROGRESS | P1 f0a0dc9 · P2 3f6e09e/54d98c8 · P3 18c0ac5/3b99fea (DONE); P4–P7 remain |
 | 12 — C++ empowered-wrapper sweep + correctness fix + UX polish | NOT STARTED | — |
 
 Notes on non-obvious rows:
@@ -73,9 +73,11 @@ Notes on non-obvious rows:
   decomposed into a 7-phase build tree, and the keystone is BUILT. kcdx builds the
   one Lua VM on its worker thread (NO force-load — PROBE P3 verified a force-load is
   impossible + unnecessary) and the engine ADOPTS it; the dual-Lua sentinel hazard
-  dies by construction. **DONE + live-confirmed:** P1 keystone probe (f0a0dc9), P2
-  symbol shim (54d98c8), P3 worker-builds-VM + engine-adopts (3b99fea — the
-  load-bearing "kcdx owns the one VM" step). **Remaining:** P4 cross-thread
+  dies by construction. **DONE:** P1 keystone probe (f0a0dc9), P2 symbol shim
+  (3f6e09e forward + 54d98c8 stubs), P3 early-hook relocate (18c0ac5) + worker-builds-VM
+  + engine-adopts (3b99fea — the load-bearing "kcdx owns the one VM" step). The P3
+  keystone (3b99fea) is **live-confirmed**; the P2 shim + P3 relocate commits carry
+  `[unverified — pending launch]` (a launch confirms them alongside P4). **Remaining:** P4 cross-thread
   foundation (event gate + RegisterRuntimeOverlay CAS) → P5 startup-sequence author
   contract (steps 7–9 in-flight) → P6 drop static Lua → P7 served-`.lua` execute
   (KI-0006). Per-phase ledger + the P4-foundation re-scope:
@@ -92,31 +94,67 @@ Independent work that can land now (each by leverage, not phase order):
   `hook_chain::AddCEngine`; one `/execute` cycle per site; full spec at
   [`../../tech-debt/TD-0003-engine-direct-hook-migration.md`](../../tech-debt/TD-0003-engine-direct-hook-migration.md).
 - **Phase 8.5 asset overlay** — SUPERSEDED; re-planned + spun out to the
-  standalone [`asset-system/`](../asset-system/README.md) tree (Phases 1–2 DONE +
-  acceptance-confirmed — the two-hook seam + the full Lua+C++ `kcdx.assets.*`
-  surface). Phase 3 is BLOCKED → Phase 11: the served-`.lua` EXECUTE confirmation
-  (`KI-0006` — a heap-corruption bug when a mod-init `.lua` overlay is keyed) is
-  bundled into Phase 11 (FIX A collapses the dual-runtime + reworks serve-execute;
-  user-approved deferral 2026-06-05), alongside the boot-cache in-game serve
-  (`KI-0005`). The shipping capability (textures, XML, cross-mod, conflict,
-  stock-pak) is proven + confirmed; only the `.lua`-execute leg waits — now
-  tracked as Phase 11's P7 step (the one-VM adoption that reworks serve-execute
-  landed in P3 3b99fea; P7 confirms the `.lua`-execute leg on it).
+  standalone [`asset-system/`](../asset-system/README.md) tree (Phase 1 DONE
+  `2b0bd1b` + Phase 2 DONE — the two-hook seam + the full Lua+C++ `kcdx.assets.*`
+  surface, acceptance-confirmed). asset-system **Phase 3 is NEEDS REWORK** (step 10
+  landed `2087368` — cap-77 + comp-17 PASS — but the core served-`.lua` EXECUTE
+  criterion is UNCONFIRMED = `KI-0006`, OPEN). `KI-0006` (a heap-corruption crash
+  when a mod-init `.lua` overlay is keyed; serve mechanism proven via CAP-73, execute
+  leg unconfirmed) is bundled into Phase 11 (user-approved deferral 2026-06-05) and
+  is now Phase 11's **P7** step (the one-VM adoption that reworks serve-execute landed
+  in P3 3b99fea; P7 confirms the `.lua`-execute leg on it). The boot-cache in-game
+  serve (`KI-0005`, CLOSED resolved-by-design) is delivered by Phase 11 P4+P5. The
+  shipping capability (textures, XML, cross-mod, conflict, stock-pak) is proven +
+  confirmed; only the `.lua`-execute leg waits.
 - **Phase 9 high-level Lua surface** — DEFERRED → [`TD-0005`](../../tech-debt/TD-0005-high-level-lua-surface.md).
   Independent, pure RE + binder work (a non-blocking leaf); re-homed to carried
   debt rather than held open on the active ledger. Picked up by scheduling its
   dedicated build phase — the per-step spec stays at
   [`phase-09-high-level-lua/`](phase-09-high-level-lua/README.md).
 
-## Cross-cutting (tracked in `../`, not phase-counted)
+## Open-items map — tech-debt prerequisites + Phase-11 internal owed items
 
-`../` carries independent outstanding-work items — ABI extensions,
-design-settled-but-unbuilt features, tracked debt. Most relevant to the live
-phases:
+Full reconciliation 2026-06-10 (`LEDGER-RECONCILE-2026-06-10.md`). The phase
+ledger above is the headline; this section is the complete set of cross-cutting
+open items, because two of them GATE unbuilt phases.
+
+### Tech-debt that GATES an unbuilt phase (do these first)
+
+- [`TD-0006`](../../tech-debt/TD-0006-statement-layer-in-user-db.md) — the statement
+  layer is DEV-only; the shipped `reference.sqlite` carries only the curated 133-fn
+  subset (no `call_edges`). **Same root as Phase 9.4's `kcdx.find` corpus question** —
+  a runtime in-game `find`/statement-named surface can't search the full game from
+  what ships. Blocks the as-specced 9.4 discovery surface (and any USER-DB
+  statement-backed named thing). Closure: the maintainer tool owning these kinds +
+  projecting them to the USER DB.
+- [`TD-0007`](../../tech-debt/TD-0007-unclassified-lua-loader-symbols.md) — 5 Lua C
+  API fns unclassified (loadbuffer/loadstring/gsub unwired + newthread/cpcall
+  fail-loud). **Must classify before Phase 11 P6 drops static Lua** (the shim can't
+  fully serve them yet). Closure gate: a `/research-disassembly` pass before P6.
+
+### Independent leaf debt (lands anytime, no phase gated on it)
+
+- [`TD-0001`](../../tech-debt/TD-0001-declare-value-string-arena.md) — declare-store value-string arena (same-triple re-Declare use-after-free).
+- [`TD-0002`](../../tech-debt/TD-0002-lua-callback-main-thread-guard.md) — dynamic-dispatcher main-thread guard (AP13 gap).
+- [`TD-0003`](../../tech-debt/TD-0003-engine-direct-hook-migration.md) — 5 engine-direct `MH_CreateHook` sites → `hook_chain::AddCEngine` (one `/execute` per site).
+- [`TD-0009`](../../tech-debt/TD-0009-engine-browser-agreement-superset-kinds.md) — engine↔browser survival-agreement; 3 superset kinds unpinned.
+- [`TD-0010`](../../tech-debt/TD-0010-statement-replace-live-native-execution-readback.md) — `replace_with` live native-execution readback (structural proof landed; live proof deferred, bucket-2).
+- [`TD-0005`](../../tech-debt/TD-0005-high-level-lua-surface.md) — the DEFERRED Phase 9 itself (high-level gameplay Lua surface); the per-step spec stays at [`phase-09-high-level-lua/`](phase-09-high-level-lua/README.md).
+
+### Phase 11 internal owed items (not phase-ledger rows; see [`phase-11-shim-vm/RESUME-STATE.md`](phase-11-shim-vm/RESUME-STATE.md))
+
+- **P4 is re-scoped to FOUNDATION-ONLY** (event gate + `RegisterRuntimeOverlay`
+  two-writer CAS + cap-82 order-inversion regression); the slot-runner + early-bind
+  surface moved to P5 (steps 5/7). P4's docs are re-authored to this scope.
+- **Event-gate bounded-timeout value** (lean: 5000ms + vanilla-serve + `LOG_WARN_KV`)
+  — surfaced, **not yet user-decided**; settled at the P4 build under architect-review.
+- **Owed worker-GC-safety probe** (P5 step 1) gates the P5 surface build.
+- Step-head probes/reads owed at build: P5 s6 (before-game target ordering, design
+  claim 7), P5 s8 (export-name `kcdxPlugin_Preload`-reuse-vs-new read), P5 s7 (the
+  AP14 boot-warn narrow/remove decision).
+
+### Other cross-cutting
+
 - [`../fix-a-drop-static-lua.md`](../fix-a-drop-static-lua.md) — the FIX A harvest; Phase 11's P2 shim + P6 drop-static rest on it (no longer an "unblocker" — P1–P3 are built).
 - [`../before-game-hooks.md`](../before-game-hooks.md) — Phase 11 consumer (bugsplat builtin; rides the phase, not a step).
-- [`../../tech-debt/TD-0003-engine-direct-hook-migration.md`](../../tech-debt/TD-0003-engine-direct-hook-migration.md) — the 5-site migration (tech-debt TD-0003).
-- [`../../tech-debt/TD-0001-declare-value-string-arena.md`](../../tech-debt/TD-0001-declare-value-string-arena.md) — declare-store completion (tech-debt TD-0001).
-- **Recovery + rollback for Track-2 plugins** — load-bearing for the §11.8
-  STREAMLINE default-ON shipping; spec not yet written
-  (`../track2-recovery-rollback.md`).
+- **Recovery + rollback for Track-2 plugins** — load-bearing for the §11.8 STREAMLINE default-ON shipping; spec not yet written (`../track2-recovery-rollback.md`).
