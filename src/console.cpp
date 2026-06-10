@@ -17,6 +17,9 @@
 #include "log.h"
 #include "plugin_loader.h"
 #include "refdb.h"
+#include "survival_verify.h"  // RecordKcdxInvocation — the CALLED-by-kcdx rank-1
+                              // signal for AddCommand/ExecuteString (survival_verify.h
+                              // pulls in only survival.h; no console back-edge).
 
 namespace kcdx::console {
 
@@ -218,6 +221,12 @@ bool RegisterCommandNow(kcdxPluginHandle owner,
                  kSlotThunks[slotIdx], kVF_RESTRICTEDMODE,
                  g_slots[slotIdx].help.empty() ? nullptr
                                                : g_slots[slotIdx].help.c_str());
+    // AddCommand was actually invoked AND returned — record the curated target's
+    // VA as an OBSERVED kcdx call (the CALLED-by-kcdx rank-1 signal the startup
+    // verification sweep reads). g_AddCommand IS the row's resolved VA
+    // (WhgameBase()+rva, cast from refdb::ResolveAddrByName at Init) — the same VA
+    // the sweep keys the AddCommand row on. After the call, never before.
+    survival_verify::RecordKcdxInvocation(reinterpret_cast<uintptr_t>(g_AddCommand));
 
     log::InfoF("[console] registered '%s' (slot %zu) for handle %u",
                name, slotIdx, owner);
@@ -320,6 +329,12 @@ bool Thunk_ExecuteString(const char* commandLine) {
     // for self-test patterns where the caller wants the callback to have
     // fired by the time ExecuteString returns.
     g_ExecuteString(g_iconsole, commandLine, false, false);
+    // ExecuteString was actually invoked AND returned — record the curated
+    // target's VA as an OBSERVED kcdx call (CALLED-by-kcdx rank-1 signal).
+    // g_ExecuteString IS the row's resolved VA (WhgameBase()+rva, cast from
+    // refdb::ResolveAddrByName at Init) — the sweep's key for the ExecuteString
+    // row. After the call returns.
+    survival_verify::RecordKcdxInvocation(reinterpret_cast<uintptr_t>(g_ExecuteString));
     return true;
 }
 

@@ -148,6 +148,105 @@ StaticVerdict MapStaticVerdict(bool versionGap, kcdx::survival::Status onDiskSta
                                const std::string& onDiskReason, bool reachable,
                                bool liveMapped);
 
+// =====================================================================
+// Rank-1 OBSERVED-EXECUTION tier — the only method that awards
+// VerifiedWorking.
+// =====================================================================
+//
+// Rank 1 is the top rung of the proof ladder: the function FIRED in the running
+// process this session AND passed through correctly. kcdx NEVER mints a
+// synthetic call to a foreign function — the GAME calls it, kcdx OBSERVES. Two
+// observed sub-paths, both zero-invoke-risk:
+//
+//   HOOKED — for a row kcdx hooks via the chain (the engine-stamped chain
+//     entries: lua_pcall, lua_newstate, the ccrypak_* file paths, serialization,
+//     CGame_Update, SaveGame/LoadGame). The signal is the hook-chain fire
+//     breadcrumb: the engine-stamped chain entry sits on this row's resolved VA,
+//     AND that VA appears in the detour fire ring with a non-zero sequence (the
+//     game executed through the detour this session). A fire is an OBSERVED
+//     fact, read from the breadcrumb ring — never an assumption that a hook
+//     "should" fire.
+//
+//   CALLED-by-kcdx — for a row kcdx itself calls in production (the cvar
+//     accessors, the console command/exec thunks). Those targets are reached
+//     through a resolved function pointer (or a runtime vtable slot), not the
+//     hook chain, so they leave no fire-ring breadcrumb and no chain entry. The
+//     signal is a kcdx-side INVOCATION RECORD: each production call site records
+//     the curated target's RESOLVED VA the instant the real call RETURNS (an
+//     observed completed invocation — the game ran kcdx's own call, it came
+//     back). The record is a process-lifetime set keyed by resolved VA, written
+//     AFTER the call returns (never on "pointer resolved" — resolution is rank
+//     4–5, NOT proof of execution). The sweep reads the record for a row's VA;
+//     present → the curated target was actually invoked + returned this session
+//     → rank-1. The recorded VA is the SAME VA the sweep resolves a row to
+//     (WhgameBase()+rva via the cache), so the match is exact.
+//
+// This is the OBSERVATION PRIMITIVE + the rank-1 verdict path. The per-kind
+// dispatch that routes WHICH rows are rank-1-eligible is a later step; this
+// gives that step a callable observation it slots above the static ceiling.
+
+// The outcome of the rank-1 HOOKED observation for ONE resolved VA — read from
+// the live hook chain + the detour fire breadcrumb ring. `observed` is true
+// ONLY when an ENGINE-stamped chain entry sits on `va` AND that VA fired this
+// session (fire-ring sequence > 0). `fireSeq` is the newest recorded fire
+// sequence for the VA (0 when none) — the observed-fact evidence.
+struct ObservedExecution {
+    bool        observed = false;   // engine-stamped chain entry on va AND it fired.
+    bool        hasChainEntry = false;  // an engine-stamped chain entry sits on va.
+    uint64_t    fireSeq = 0;        // newest fire-ring seq for va (0 == no fire).
+    std::string detail;             // grep-able evidence token.
+};
+
+// Observe whether the engine's own hook on `va` FIRED this session — the rank-1
+// HOOKED signal. Reads the live chain (hook_chain::GetAllChainTargets) for an
+// ENGINE-stamped entry on `va`, and the detour fire breadcrumb
+// (modification_inventory::LastFires) for an actual fire at `va`. Pure read; no
+// mutation, no synthetic call. A row with no engine chain entry on its VA, or an
+// engine entry that has not fired this session, is NOT observed → the caller
+// falls through to the static ceiling. Never AWARDS a verdict — it reports the
+// observed fact; ObservedToVerdict turns a positive observation into the rank-1
+// verdict.
+ObservedExecution ObserveHookedExecution(uintptr_t va);
+
+// Lift a positive rank-1 observation into the verdict + rank — the ONLY path
+// that produces VerifiedWorking. Returns true and fills `out` (VerifiedWorking,
+// method_rank 1) ONLY when `obs.observed` is true; returns false otherwise (the
+// caller keeps the static-ceiling verdict). This is the seam the sweep uses:
+// observe first, and on a positive observation OVERRIDE the static result with
+// rank-1 VerifiedWorking; on no observation the static result stands.
+bool ObservedToVerdict(const ObservedExecution& obs, StaticVerdict& out);
+
+// -----------------------------------------------------------------------------
+// CALLED-by-kcdx invocation record — the rank-1 signal for a curated target
+// kcdx invokes in its own production path (the cvar accessors, the console
+// AddCommand/ExecuteString thunks), which are reached through a resolved
+// function pointer / runtime vtable slot, NOT the hook chain, and so leave no
+// fire-ring breadcrumb.
+// -----------------------------------------------------------------------------
+
+// Record that kcdx INVOKED a curated target at `va` AND the call RETURNED — an
+// OBSERVED completed invocation, the CALLED-by-kcdx analogue of the HOOKED
+// fire-ring. Call this AFTER the real call returns (so a record means
+// "invoked + came back", never "pointer resolved"). `va` is the curated row's
+// RESOLVED VA (WhgameBase()+rva via refdb) — the SAME VA the sweep resolves the
+// row to, so the read below matches exactly. va == 0 is ignored (an unresolved
+// target). The store is a small process-lifetime set; these calls are one-shot
+// config reads / console registration / command execution (never a hot path),
+// so a record-after-return is free. Thread-safe (a mutex-guarded set).
+void RecordKcdxInvocation(uintptr_t va);
+
+// True iff `va` was recorded by RecordKcdxInvocation this session — the curated
+// target at `va` was actually invoked by kcdx AND returned. Pure read; no
+// mutation, no synthetic call. The sweep's rank-1 CALLED path: a row whose VA
+// reads true was observed executing → verified_working (rank 1); a row not in
+// the record falls through to its static ceiling. A 0 VA always reads false.
+bool WasInvokedByKcdx(uintptr_t va);
+
+// Drop every recorded invocation. Test-only — lets the cap-84 self-test assert
+// the present/absent discrimination from a known-clean baseline without a real
+// production call having seeded the store. Never called by production code.
+void ResetInvocationRecord();
+
 // Run the startup verification pass over the curated USER set (every cached
 // refdb entity). Returns one RowVerdict per swept row. ONCE at startup, never on
 // the hot path. refdb must be Open() (the cache is the input); an unloaded refdb

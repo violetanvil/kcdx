@@ -112,7 +112,7 @@ void RunSelfTestOnce() {
     if (s_reported) return;
     s_reported = true;  // synthetic + deterministic — no retry needed.
 
-    char reason[768];
+    char reason[1024];
 
     // ----- Sub-check 1: FUNCTION VERDICT UNCHANGED (dispatch == legacy) -------
     // The legacy SurvivalCheck(rva,length,hash,len) IS today's function
@@ -1091,6 +1091,273 @@ void RunSelfTestOnce() {
         }
     }
 
+    // ----- Sub-check 14: THE RANK-1 OBSERVED-EXECUTION TIER ------------------
+    // The ONLY method that awards verified_working: an OBSERVED engine-hook fire,
+    // never a fabricated result. Three falsifiable claims:
+    //
+    //   (a) NEGATIVE (deterministic, HARD) — a row with NO observed fire does NOT
+    //       reach verified_working. ObserveHookedExecution on a synthetic VA that
+    //       no engine hook sits on returns observed=false; ObservedToVerdict on a
+    //       non-observation returns false and leaves the static ceiling intact.
+    //       Falsifiable: a no-fire observation lifting to verified_working fails.
+    //   (b) POSITIVE (deterministic, HARD) — a positive observation lifts to
+    //       verified_working at method_rank 1. A synthetic observed=true overrides
+    //       a PassedNotVerified static ceiling UPWARD to (verified_working, 1).
+    //       Falsifiable: an observed fire NOT reaching verified_working/rank-1
+    //       fails; a static-ceiling row reading verified_working WITHOUT an
+    //       observation fails (a).
+    //   (c) LIVE (integration, DEGRADE-pass) — when a curated engine-hooked row
+    //       (lua_pcall fires pre-menu) has a recorded fire observable AT this
+    //       report point, RunStartupVerification reads it verified_working at
+    //       rank 1 from the OBSERVED fire. DEGRADE-pass when the fire is not yet
+    //       observable (one-shot self-test reached before the first fire / WHGame
+    //       not mapped) — never a hard FAIL on timing. The HARD contradiction
+    //       guard still bites: a row reading verified_working whose VA has NO
+    //       engine chain entry + NO recorded fire is a fabricated top rung.
+    {
+        // (a) NEGATIVE — a VA no engine hook sits on is not observed, and a
+        // non-observation never lifts the verdict. 0xC0DE is a synthetic
+        // sentinel VA; no engine chain entry resolves there.
+        svv::ObservedExecution none = svv::ObserveHookedExecution(/*va=*/0xC0DE);
+        svv::StaticVerdict staticCeiling;
+        staticCeiling.verdict = svv::Verdict::PassedNotVerified;
+        staticCeiling.method_rank = 3;
+        staticCeiling.detail = "matched_and_in_live_text";
+        bool lifted = svv::ObservedToVerdict(none, staticCeiling);
+        if (none.observed || lifted ||
+            staticCeiling.verdict != svv::Verdict::PassedNotVerified) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a row with NO observed engine-hook fire reached "
+                "verified_working (observed=%d, lifted=%d, verdict=%s) — only an "
+                "OBSERVED fire earns rank-1; a no-fire row must fall through to its "
+                "static ceiling, never be awarded the top rung.",
+                none.observed ? 1 : 0, lifted ? 1 : 0,
+                svv::VerdictName(staticCeiling.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "14_rank1_negative"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (b) POSITIVE — a synthetic observed=true lifts a PassedNotVerified
+        // ceiling to (verified_working, rank 1). This is the observation→verdict
+        // seam the sweep uses; assert it directly (not a re-derivation).
+        svv::ObservedExecution obs;
+        obs.observed = true;
+        obs.hasChainEntry = true;
+        obs.fireSeq = 42;  // a non-zero recorded fire seq (the observed fact).
+        obs.detail = "observed_engine_hook_fire";
+        svv::StaticVerdict toLift;
+        toLift.verdict = svv::Verdict::PassedNotVerified;
+        toLift.method_rank = 3;
+        bool ok = svv::ObservedToVerdict(obs, toLift);
+        if (!ok || toLift.verdict != svv::Verdict::VerifiedWorking ||
+            toLift.method_rank != 1) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a POSITIVE observed-execution did NOT lift to "
+                "(verified_working, rank 1) — got lifted=%d, (%s, rank %d). An "
+                "observed engine-hook fire is the only method that awards the top "
+                "rung and must override the static ceiling upward to rank 1.",
+                ok ? 1 : 0, svv::VerdictName(toLift.verdict), toLift.method_rank);
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "14_rank1_positive"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (c) LIVE + the CONTRADICTION GUARD — scan the real sweep. Any
+        // verified_working row MUST carry an observed rank-1 signal on its VA —
+        // EITHER an engine-hook fire (HOOKED) OR a kcdx invocation record
+        // (CALLED-by-kcdx) (a HARD guard: a row with NEITHER is a fabricated top
+        // rung). A curated hooked/called row reading verified_working at rank 1
+        // is the live positive; its absence is a DEGRADE (the one-shot self-test
+        // may run before the first fire/call), never a hard FAIL.
+        std::vector<svv::RowVerdict> verds = svv::RunStartupVerification();
+        bool sawLiveVerifiedWorking = false;
+        for (const auto& v : verds) {
+            if (v.verdict != svv::Verdict::VerifiedWorking) continue;
+            sawLiveVerifiedWorking = true;
+            // HARD: a verified_working row's VA must actually carry an observed
+            // rank-1 signal — re-observe it cold. A verified_working with neither
+            // an engine-hook fire NOR an invocation record is a fabricated top
+            // rung (the exact over-claim the ceiling rule forbids). Both observed
+            // sub-paths are legitimate; the guard accepts either.
+            uintptr_t vVa = refdb::ResolveAddrByName(v.name);
+            svv::ObservedExecution reobs = svv::ObserveHookedExecution(vVa);
+            bool calledObserved = svv::WasInvokedByKcdx(vVa);
+            if (v.method_rank != 1 || (!reobs.observed && !calledObserved)) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: the row '%s' read verified_working (rank %d) but a cold "
+                    "re-observation of its VA shows NEITHER an engine-hook fire NOR "
+                    "a kcdx invocation record (hook_observed=%d, chainEntry=%d, "
+                    "fireSeq=%llu, kcdx_called=%d) — verified_working must come from "
+                    "an OBSERVED fire or call at rank 1, never a fabricated top rung.",
+                    v.name.c_str(), v.method_rank, reobs.observed ? 1 : 0,
+                    reobs.hasChainEntry ? 1 : 0,
+                    (unsigned long long)reobs.fireSeq, calledObserved ? 1 : 0);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "14_rank1_contradiction"),
+                    ::kcdx::log::KV("name", v.name));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+        // sawLiveVerifiedWorking == false is the DEGRADE path (no engine-hooked
+        // row's fire was observable at this one-shot report point) — recorded in
+        // the PASS note, never a hard FAIL on timing.
+        LOG_INFO_KV(kCategory, "rank1_live",
+            ::kcdx::log::KV("saw_verified_working",
+                sawLiveVerifiedWorking ? "yes" : "degraded_no_fire_yet"));
+    }
+
+    // ----- Sub-check 14b: THE RANK-1 CALLED-by-kcdx TIER --------------------
+    // The SECOND rank-1 observed sub-path: a curated target kcdx invokes in its
+    // own production path (the cvar accessors, the console AddCommand/ExecuteString
+    // thunks) records its RESOLVED VA after the call returns; the sweep reads that
+    // record and awards verified_working (rank 1) — the CALLED-by-kcdx analogue of
+    // the HOOKED fire. Three falsifiable claims, mirroring 14:
+    //
+    //   (a) PRESENT (deterministic, HARD) — a VA placed in the invocation record
+    //       lifts a passed_not_verified ceiling to (verified_working, rank 1)
+    //       through the SAME ObservedToVerdict seam (the CALLED observation). A
+    //       synthetic sentinel VA (never a real production target) is recorded,
+    //       then a row with that VA + a passing static ceiling is observed lifted.
+    //   (b) ABSENT (deterministic, HARD) — a VA NOT in the record is not observed
+    //       called → WasInvokedByKcdx reads false → the static ceiling stands. A
+    //       second sentinel VA, never recorded, must NOT lift.
+    //   (c) LIVE (integration, DEGRADE-pass) — when a curated CALLED row (e.g. a
+    //       cvar getter, AddCommand) was actually invoked by boot AND its row VA
+    //       resolves, its sweep verdict reads verified_working at rank 1 from the
+    //       OBSERVED call. DEGRADE-pass when no CALLED row was invoked by the
+    //       cap-84 report timing (the getters may not have been hit pre-menu) —
+    //       never a hard FAIL on timing. The HARD contradiction guard from 14c
+    //       already backs every live verified_working row (HOOKED or CALLED): a
+    //       row reading verified_working must carry an observed fire OR an
+    //       invocation record on its VA.
+    //
+    // The synthetic VAs use the high sentinel range (never a real WHGame.dll VA),
+    // so recording them does NOT disturb the real production invocation record the
+    // live sweep above reads — no ResetInvocationRecord (which would wipe real
+    // CALLED records the live check depends on).
+    {
+        // (a) PRESENT — record a sentinel VA, then assert it lifts a passing
+        // ceiling to (verified_working, rank 1) via the CALLED read + the
+        // ObservedToVerdict seam (the exact two-step the sweep runs for CALLED).
+        const uintptr_t kCalledSentinel = 0xCA11ED000000ULL;  // synthetic; no real WHGame VA here.
+        svv::RecordKcdxInvocation(kCalledSentinel);
+        if (!svv::WasInvokedByKcdx(kCalledSentinel)) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a VA recorded via RecordKcdxInvocation did NOT read back as "
+                "invoked (WasInvokedByKcdx=false) — the CALLED-by-kcdx record must "
+                "store + return a recorded invocation; without it the sweep can "
+                "never observe a kcdx-called row.");
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "14b_called_record"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+        // The sweep's CALLED lift: a recorded VA + a passing static ceiling →
+        // verified_working rank 1, through ObservedToVerdict (a synthetic
+        // observed=true mirrors the called branch's construction).
+        svv::StaticVerdict calledCeiling;
+        calledCeiling.verdict = svv::Verdict::PassedNotVerified;
+        calledCeiling.method_rank = 3;
+        bool calledLifted = false;
+        if (svv::WasInvokedByKcdx(kCalledSentinel)) {
+            svv::ObservedExecution called;
+            called.observed = true;
+            called.detail = "observed_kcdx_called";
+            calledLifted = svv::ObservedToVerdict(called, calledCeiling);
+        }
+        if (!calledLifted || calledCeiling.verdict != svv::Verdict::VerifiedWorking ||
+            calledCeiling.method_rank != 1) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a CALLED-by-kcdx invocation (recorded VA + passing static "
+                "ceiling) did NOT lift to (verified_working, rank 1) — got "
+                "lifted=%d, (%s, rank %d). A row kcdx invoked + that returned is "
+                "observed execution and must reach the top rung, same as a HOOKED "
+                "fire.",
+                calledLifted ? 1 : 0, svv::VerdictName(calledCeiling.verdict),
+                calledCeiling.method_rank);
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "14b_called_lift"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (b) ABSENT — a sentinel VA never recorded must read NOT invoked, so the
+        // static ceiling stands (no fabricated rank-1 from an un-called row).
+        const uintptr_t kAbsentSentinel = 0xABCE17000000ULL;  // synthetic; never recorded.
+        svv::StaticVerdict absentCeiling;
+        absentCeiling.verdict = svv::Verdict::PassedNotVerified;
+        absentCeiling.method_rank = 3;
+        bool absentInvoked = svv::WasInvokedByKcdx(kAbsentSentinel);
+        // Mirror the sweep's gate: only consult the record on a non-divergent
+        // ceiling, and only lift when invoked. An un-invoked VA must leave the
+        // ceiling at passed_not_verified.
+        if (absentInvoked) {
+            svv::ObservedExecution called;
+            called.observed = true;
+            svv::ObservedToVerdict(called, absentCeiling);
+        }
+        if (absentInvoked || absentCeiling.verdict != svv::Verdict::PassedNotVerified) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: a VA NOT in the invocation record read as invoked "
+                "(WasInvokedByKcdx=%d) or its ceiling changed (verdict=%s) — an "
+                "un-called row must fall through to its static ceiling, never be "
+                "awarded verified_working from a CALLED signal it never produced.",
+                absentInvoked ? 1 : 0, svv::VerdictName(absentCeiling.verdict));
+            LOG_ERROR_KV(kCategory, "selftest_fail",
+                ::kcdx::log::KV("subcheck", "14b_called_absent"));
+            kcdx::test::ReportResult(kRow, false, reason);
+            kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+            vcc::Reset(); sp::Reset();
+            return;
+        }
+
+        // (c) LIVE — scan the real sweep for a curated CALLED row that reads
+        // verified_working from an invocation record (DEGRADE-pass when no CALLED
+        // target was invoked by this one-shot report point). The HARD guard: any
+        // such row's VA must actually be in the invocation record (a fabricated
+        // CALLED top rung fails). HOOKED verified_working rows (no invocation
+        // record, an engine fire instead) are excluded — 14c already guards them.
+        std::vector<svv::RowVerdict> calledVerds = svv::RunStartupVerification();
+        bool sawLiveCalled = false;
+        for (const auto& v : calledVerds) {
+            if (v.verdict != svv::Verdict::VerifiedWorking) continue;
+            uintptr_t vVa = refdb::ResolveAddrByName(v.name);
+            if (!svv::WasInvokedByKcdx(vVa)) continue;  // a HOOKED rank-1 row, not CALLED — 14c owns it.
+            sawLiveCalled = true;
+            if (v.method_rank != 1) {
+                std::snprintf(reason, sizeof(reason),
+                    "FAIL: the CALLED-by-kcdx row '%s' read verified_working at "
+                    "rank %d — an observed kcdx invocation is rank 1; a CALLED "
+                    "verified_working at any other rank is a mis-ranked top rung.",
+                    v.name.c_str(), v.method_rank);
+                LOG_ERROR_KV(kCategory, "selftest_fail",
+                    ::kcdx::log::KV("subcheck", "14b_called_live_rank"),
+                    ::kcdx::log::KV("name", v.name));
+                kcdx::test::ReportResult(kRow, false, reason);
+                kcdx::test::EmitSummaryIfChanged("cap-84 survival-dispatch");
+                vcc::Reset(); sp::Reset();
+                return;
+            }
+        }
+        LOG_INFO_KV(kCategory, "rank1_called_live",
+            ::kcdx::log::KV("saw_called_verified_working",
+                sawLiveCalled ? "yes" : "degraded_no_call_yet"));
+    }
+
     // All sub-checks held. Leave clean in-memory state + an empty on-disk cache
     // so the synthetic records never leak into a future real Lookup.
     vcc::Reset();
@@ -1118,8 +1385,15 @@ void RunSelfTestOnce() {
         "version-gap producer (-> not_applicable, distinct from cannot_check) keyed "
         "on the PRECISE interval_covers_version signal (interval-uncovered -> "
         "not_applicable; covered-but-unverified -> passed_not_verified, NOT "
-        "not_applicable); and the fault producer (a caught throw -> error; the "
-        "static mapping never fabricates error). [%s]",
+        "not_applicable); the fault producer (a caught throw -> error; the "
+        "static mapping never fabricates error); AND the rank-1 observed-execution "
+        "tier — a no-fire row does NOT reach verified_working (falls to its static "
+        "ceiling), an observed fire lifts to (verified_working, rank 1), and every "
+        "live verified_working row carries an observed engine-hook fire (no "
+        "fabricated top rung); AND the rank-1 CALLED-by-kcdx tier — a recorded "
+        "invocation VA lifts a passing ceiling to (verified_working, rank 1), a "
+        "VA not in the record does NOT, and a live CALLED row reads "
+        "verified_working only from a real invocation record. [%s]",
         realChecked ? " + 1 real" : "", realNote);
     LOG_INFO_KV(kCategory, "selftest_pass",
         ::kcdx::log::KV("real_checked", realChecked ? "yes" : "degraded"),

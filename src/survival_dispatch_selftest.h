@@ -107,6 +107,43 @@
 //      error, never failed. FAILS if the static mapping fabricates error or a
 //      caught fault resolves to failed.
 //
+//   --- The rank-1 observed-execution tier (the only verified_working method) ---
+//
+//  14. RANK-1 OBSERVED EXECUTION (HOOKED) — the HOOKED sub-path that awards
+//      verified_working, from an OBSERVED engine-hook fire, never a fabricated
+//      result.
+//      (a) NEGATIVE (HARD): a row with no observed fire does NOT reach
+//          verified_working — ObserveHookedExecution on a VA no engine hook sits
+//          on is observed=false, and ObservedToVerdict on a non-observation
+//          leaves the static ceiling intact. (b) POSITIVE (HARD): a positive
+//          observation lifts a passed_not_verified ceiling to (verified_working,
+//          rank 1). (c) LIVE (DEGRADE-pass): a curated engine-hooked row whose
+//          hook fired pre-menu reads verified_working at rank 1 from the observed
+//          fire when observable at this one-shot report point; DEGRADE when the
+//          fire is not yet recorded. A HARD contradiction guard backs it: every
+//          live verified_working row's VA must carry an observed engine-hook fire
+//          OR a kcdx invocation record (a cold re-observation), else it is a
+//          fabricated top rung. FAILS if a no-fire row reads verified_working, an
+//          observed fire does not lift to rank-1, or a verified_working row has
+//          no observable fire/call.
+//
+//  14b. RANK-1 OBSERVED EXECUTION (CALLED-by-kcdx) — the SECOND rank-1 sub-path:
+//      a curated target kcdx invokes in its own production path (the cvar
+//      accessors, the console AddCommand/ExecuteString thunks) records its
+//      RESOLVED VA after the call returns; the sweep reads it and awards
+//      verified_working (rank 1). (a) PRESENT (HARD): a VA placed in the
+//      invocation record (RecordKcdxInvocation) reads back invoked
+//      (WasInvokedByKcdx) and lifts a passed_not_verified ceiling to
+//      (verified_working, rank 1) via ObservedToVerdict. (b) ABSENT (HARD): a VA
+//      NOT in the record reads NOT invoked and leaves the static ceiling intact.
+//      (c) LIVE (DEGRADE-pass): a curated CALLED row actually invoked by boot
+//      reads verified_working at rank 1 from its invocation record; DEGRADE when
+//      no CALLED target was invoked by this one-shot report point. FAILS if a
+//      recorded VA does not round-trip or lift, an un-recorded VA reads invoked
+//      or lifts, or a live CALLED verified_working row is not at rank 1. Uses
+//      high sentinel VAs so the synthetic records never disturb the real
+//      production record the live HOOKED+CALLED checks read.
+//
 // Why it lives in engine code (like cap-60): survival + survival_pass +
 // version_check_cache are engine-internal symbols, not plugin exports — so
 // cap-84 self-reports from ENGINE code via kcdx::test::ReportResult. The pass is

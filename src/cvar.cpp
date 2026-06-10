@@ -5,6 +5,9 @@
 
 #include "log.h"
 #include "refdb.h"
+#include "survival_verify.h"  // RecordKcdxInvocation — the CALLED-by-kcdx rank-1
+                              // signal (survival_verify.h pulls in only survival.h;
+                              // no cvar/console back-edge, so no include cycle).
 
 namespace kcdx::cvar {
 
@@ -43,6 +46,18 @@ GetCVarFn g_GetCVar        = nullptr;
 //         not hardcoded — a new game version updates the DB row, not source.
 int64_t  g_getIValSlot     = -1;
 int64_t  g_getFValSlot     = -1;
+
+// The curated ROW VAs for the GetIVal/GetFVal entities — WhgameBase()+rva, the
+// SAME VA the startup verification sweep resolves these rows to. These are NOT
+// the runtime call target (that is the live object's vtable slot, a concrete
+// subclass body); they are the curated row's identity, used ONLY to key the
+// CALLED-by-kcdx invocation record so the sweep matches "kcdx invoked the
+// GetIVal/GetFVal target + it returned" against the right row. 0 when the DB
+// predates the entity (the record is then a no-op for that row — never a wrong
+// key). Resolved from refdb at Init() (the same resolution source the sweep
+// uses), never hardcoded.
+uintptr_t g_getIValRowVa   = 0;
+uintptr_t g_getFValRowVa   = 0;
 
 std::atomic<bool> g_ready  {false};
 
@@ -105,6 +120,11 @@ bool GetInt(const char* name, int* out) {
     void* icvar = ResolveCVar(name, "get_int");
     if (!icvar) return false;
     int val = IcvarSlot<GetIValFn>(icvar, g_getIValSlot)(icvar);
+    // The GetIVal target was actually invoked AND returned — record the curated
+    // row's VA as an OBSERVED kcdx call (the CALLED-by-kcdx rank-1 signal the
+    // startup verification sweep reads). After the call, never before — a record
+    // means "invoked + came back", not "pointer resolved".
+    survival_verify::RecordKcdxInvocation(g_getIValRowVa);
     *out = val;
     return true;
 }
@@ -114,6 +134,9 @@ bool GetFloat(const char* name, float* out) {
     void* icvar = ResolveCVar(name, "get_float");
     if (!icvar) return false;
     float val = IcvarSlot<GetFValFn>(icvar, g_getFValSlot)(icvar);
+    // The GetFVal target was actually invoked AND returned — record the curated
+    // row's VA (CALLED-by-kcdx rank-1 signal). After the call returns.
+    survival_verify::RecordKcdxInvocation(g_getFValRowVa);
     *out = val;
     return true;
 }
@@ -163,6 +186,15 @@ bool Init() {
     g_GetCVar         = reinterpret_cast<GetCVarFn>(getCVarVA);
     g_getIValSlot     = iv.vtable_slot;
     g_getFValSlot     = fv.vtable_slot;
+
+    // The curated ROW VAs (WhgameBase()+rva) for the invocation record's key —
+    // the SAME VA the startup verification sweep resolves these rows to. NOT the
+    // runtime call target; the curated row's identity. ResolveAddrByName yields
+    // WhgameBase()+rva (0 on a DB that predates the entity → a harmless no-op
+    // key). Resolved here once, used to stamp the record after each Get* returns.
+    g_getIValRowVa = refdb::ResolveAddrByName("ICVar_GetIVal");
+    g_getFValRowVa = refdb::ResolveAddrByName("ICVar_GetFVal");
+
     g_ready.store(true, std::memory_order_release);
 
     LOG_INFO_KV("CVAR", "ready",

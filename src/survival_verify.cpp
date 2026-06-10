@@ -1,11 +1,16 @@
 #include "survival_verify.h"
 
+#include <cstring>    // strcmp / strncmp (engine-stamp identity on a chain entry)
 #include <exception>  // std::exception (ParsePattern throw)
+#include <mutex>      // the invocation-record store guard
 #include <string>
+#include <unordered_set>  // the CALLED-by-kcdx invocation record
 #include <utility>    // std::move
 #include <vector>
 
+#include "hook_chain.h"            // GetAllChainTargets — live engine/plugin chain entries
 #include "log.h"
+#include "modification_inventory.h"  // FireRecord / LastFires — the detour fire breadcrumb ring
 #include "patch_engine.h"   // patch::ParsePattern — decode a stored aob string → bytes+mask
 #include "pe_helpers.h"
 #include "plugin_loader.h"  // kcdx::plugins::g_runtimeGameVersionString (the running build tag)
@@ -30,6 +35,12 @@ const char* kCategory = "SURVERIFY";
 // going to attempt — the on-disk version-applicability check, rank 4.
 constexpr int kRankOnDiskHash    = 4;  // on-disk version-applicability fingerprint.
 constexpr int kRankReachability  = 3;  // live-image .text range test.
+// Rank 1 — observed live execution: the function fired in the running process
+// AND passed through correctly (the engine's own hook-chain fire breadcrumb, OR
+// kcdx's own production call that already ran). The ONLY rank that awards
+// verified_working. Produced by the observation tier below, NOT by the static
+// MapStaticVerdict (which caps at PassedNotVerified, rank 3).
+constexpr int kRankObservedExecution = 1;
 
 namespace sv = kcdx::survival;
 
@@ -203,6 +214,114 @@ StaticVerdict MapStaticVerdict(bool versionGap, sv::Status onDiskStatus,
     return r;
 }
 
+ObservedExecution ObserveHookedExecution(uintptr_t va) {
+    ObservedExecution obs;
+    if (va == 0) {
+        obs.detail = "no_va";
+        return obs;  // a row that did not resolve has no observable hook site.
+    }
+
+    // (1) Is an ENGINE-stamped chain entry installed on this VA? The engine's
+    // own hooks register via AddCEngine (pluginName "kcdx", name "engine.<site>")
+    // and are the only chain entries this rank-1 tier observes — a plugin hook on
+    // a curated target is not kcdx's own observation. GetAllChainTargets reports
+    // the owning entry's (pluginName, hookName) per chain VA; an engine entry is
+    // identified by pluginName == "kcdx" with an "engine." name prefix (the
+    // AddCEngine convention). The match is by VA — the engine entry's resolved
+    // target VA equals this row's engine-resolved VA — never by name string.
+    for (const auto& t : kcdx::hook_chain::GetAllChainTargets()) {
+        if (t.va != va) continue;
+        const bool engineStamped =
+            t.pluginName && std::strcmp(t.pluginName, "kcdx") == 0 &&
+            t.hookName && std::strncmp(t.hookName, "engine.", 7) == 0;
+        if (engineStamped) {
+            obs.hasChainEntry = true;
+            break;
+        }
+    }
+    if (!obs.hasChainEntry) {
+        // No engine hook on this VA — nothing kcdx observes the game firing.
+        // NOT a fabricated verdict: the caller falls through to the static
+        // ceiling. (A row hooked only by a plugin, or not hooked at all, is
+        // observed by some other method, not this one.)
+        obs.detail = "no_engine_chain_entry";
+        return obs;
+    }
+
+    // (2) Did the game actually FIRE that detour this session? Read the live
+    // detour fire breadcrumb ring (the same ring cap-47 reads) for a recorded
+    // fire AT this VA. A fire is an OBSERVED FACT (RecordFire stores the chain's
+    // target VA on each DispatchPre/Post), never an assumption that the hook
+    // "should" fire. The newest matching seq is the evidence; seq 0 is an empty
+    // slot the dump skips, so any matching record proves a real fire.
+    namespace mi = kcdx::modification_inventory;
+    mi::FireRecord fires[mi::kFireRingSize];
+    const unsigned n = mi::LastFires(fires, mi::kFireRingSize);
+    for (unsigned i = 0; i < n; ++i) {
+        if (fires[i].targetVa == va && fires[i].seq != 0) {
+            obs.fireSeq = fires[i].seq;  // LastFires is newest-first → first hit is newest.
+            break;
+        }
+    }
+    if (obs.fireSeq == 0) {
+        // The engine hook is installed but has NOT fired this session yet (e.g.
+        // a save/load detour before any save loads). NOT observed → the caller
+        // keeps the static ceiling; this is the design's "no observed fire ⇒ not
+        // rank-1" path, not a failure.
+        obs.detail = "engine_hook_not_fired";
+        return obs;
+    }
+
+    // Engine hook on the VA AND a recorded fire this session → observed live
+    // execution (the game ran the function, the detour passed through). Rank-1.
+    obs.observed = true;
+    obs.detail = "observed_engine_hook_fire";
+    return obs;
+}
+
+bool ObservedToVerdict(const ObservedExecution& obs, StaticVerdict& out) {
+    if (!obs.observed) return false;  // no observation → static ceiling stands.
+    // Observed live execution is the ONLY method that awards verified_working —
+    // the top rung of the ceiling. It OVERRIDES the static result (a passing
+    // static check capped at passed_not_verified) UPWARD to rank-1.
+    out.verdict = Verdict::VerifiedWorking;
+    out.method_rank = kRankObservedExecution;
+    out.detail = obs.detail.empty() ? "observed_engine_hook_fire" : obs.detail;
+    return true;
+}
+
+// --- CALLED-by-kcdx invocation record ---------------------------------------
+// A process-lifetime set of curated-target VAs kcdx invoked + that returned
+// this session. The CALLED-by-kcdx rank-1 signal: written by the production
+// call sites AFTER their real call returns, read by the sweep. Guarded by a
+// mutex — the recorders run on the engine/main thread (cvar reads, console
+// registration/exec), the reader runs in the startup sweep; one lock keeps the
+// set consistent across both. The set is tiny (the handful of curated targets
+// kcdx itself calls — the §11.6 CALLED set) and these sites are NOT hot paths
+// (one-shot config reads / console registration / command execution), so the
+// lock + insert is free.
+namespace {
+std::mutex                     g_invokedMutex;
+std::unordered_set<uintptr_t>  g_invokedVas;
+}  // namespace
+
+void RecordKcdxInvocation(uintptr_t va) {
+    if (va == 0) return;  // an unresolved target has no curated-row VA to key on.
+    std::lock_guard<std::mutex> lock(g_invokedMutex);
+    g_invokedVas.insert(va);
+}
+
+bool WasInvokedByKcdx(uintptr_t va) {
+    if (va == 0) return false;
+    std::lock_guard<std::mutex> lock(g_invokedMutex);
+    return g_invokedVas.count(va) != 0;
+}
+
+void ResetInvocationRecord() {
+    std::lock_guard<std::mutex> lock(g_invokedMutex);
+    g_invokedVas.clear();
+}
+
 std::vector<RowVerdict> RunStartupVerification() {
     std::vector<RowVerdict> out;
 
@@ -232,8 +351,13 @@ std::vector<RowVerdict> RunStartupVerification() {
     const std::string runningVer = kcdx::plugins::g_runtimeGameVersionString;
 
     // Per-verdict tallies for the one teardown summary line (the 7-state enum).
-    size_t passedNotVerified = 0, failed = 0, notApplicable = 0,
-           cannotCheck = 0, errored = 0;
+    // verified_working is now reachable via either rank-1 observed sub-path: a
+    // curated engine-HOOKED row whose hook fired this session, OR a curated
+    // CALLED-by-kcdx row whose production call ran + returned this session — both
+    // awarded rank-1 by the observation tier (the rest of the static states are
+    // produced by the ceiling rule).
+    size_t verifiedWorking = 0, passedNotVerified = 0, failed = 0,
+           notApplicable = 0, cannotCheck = 0, errored = 0;
 
     // Sweep every cached curated entity. ForEachCached gives the resolved id +
     // name + the engine-resolved VA (WhgameBase()+rva) + verification state. The
@@ -358,20 +482,58 @@ std::vector<RowVerdict> RunStartupVerification() {
             StaticVerdict sv_result =
                 MapStaticVerdict(versionGap, onDisk.status, onDisk.reason,
                                  reachable, liveMapped);
+
+            // --- Rank-1 OBSERVED-EXECUTION tier — the ceiling's top rung, taken
+            // ABOVE the static result. TWO observed sub-paths feed the one rank-1
+            // verdict, both zero-invoke-risk (kcdx never mints a synthetic call;
+            // the game/kcdx already ran it, we read the record):
+            //   HOOKED — the engine's own hook on this row's VA FIRED this session
+            //     (a read of the live chain + the detour fire ring).
+            //   CALLED-by-kcdx — kcdx's own production call to this row's VA already
+            //     ran AND returned (a read of the invocation record the cvar/console
+            //     call sites stamp after their real call returns).
+            // On a positive observation from EITHER, override the static verdict
+            // UPWARD to verified_working (rank 1) — the only method that earns the
+            // top rung. On NO observation, the static result stands (the design's
+            // "no observed fire/call ⇒ falls to the next-strongest method" — the
+            // static ceiling). The override is gated on a non-divergent static
+            // result (PassedNotVerified): an observed fire/call never whitewashes a
+            // real divergence (a fingerprint mismatch / dead resolve / version gap)
+            // — that contradiction keeps the static failed/not_applicable verdict,
+            // the more honest signal.
+            if (sv_result.verdict == Verdict::PassedNotVerified) {
+                ObservedExecution obs = ObserveHookedExecution(va);  // HOOKED.
+                if (!ObservedToVerdict(obs, sv_result) && WasInvokedByKcdx(va)) {
+                    // CALLED-by-kcdx: a recorded production call that returned is
+                    // observed execution — lift to rank-1 through the SAME seam a
+                    // synthetic positive observation uses (one rank-1 path).
+                    ObservedExecution called;
+                    called.observed = true;
+                    called.fireSeq = 0;  // no fire-ring seq — this is a CALLED record, not a hook fire.
+                    called.detail = "observed_kcdx_called";
+                    ObservedToVerdict(called, sv_result);
+                }
+            }
+
             rv.verdict = sv_result.verdict;
             rv.method_rank = sv_result.method_rank;
             rv.detail = sv_result.detail;
             // Attribution (above) sets has_matched_id only on an on-disk
             // Unchanged. PassedNotVerified and a dead-resolve Failed both came
             // from Unchanged and KEEP that id (a dead row still carries the
-            // matched row). NotApplicable wins over a coincidental on-disk match
-            // (the row is not for this build), so it must NOT surface that id —
-            // clear it for every verdict that is not the on-disk-matched pair.
+            // matched row). VerifiedWorking is an UPGRADE of a PassedNotVerified
+            // (the on-disk hash matched AND the engine hook was observed firing),
+            // so it KEEPS the matched id too. NotApplicable wins over a
+            // coincidental on-disk match (the row is not for this build), so it
+            // must NOT surface that id — clear it for every verdict that is not
+            // one of the on-disk-matched states.
             if (rv.verdict != Verdict::PassedNotVerified &&
+                rv.verdict != Verdict::VerifiedWorking &&
                 rv.verdict != Verdict::Failed) {
                 rv.has_matched_id = false;
             }
             switch (rv.verdict) {
+                case Verdict::VerifiedWorking:   ++verifiedWorking;   break;
                 case Verdict::PassedNotVerified: ++passedNotVerified; break;
                 case Verdict::Failed:            ++failed;            break;
                 case Verdict::NotApplicable:     ++notApplicable;     break;
@@ -413,10 +575,13 @@ std::vector<RowVerdict> RunStartupVerification() {
 
     // One lifecycle summary line (the teardown rollup — logging.md / the
     // observability summary floor). One info line for the whole sweep, tallying
-    // the 7-state verdicts this static pass can produce (verified_working +
-    // skipped are produced by later steps' methods, so they stay 0 here).
+    // the 7-state verdicts the pass can now produce: verified_working (rank-1
+    // observed execution, the small engine-hooked-and-fired set) + the static
+    // ceiling's states. skipped is produced by the precondition gate (a later
+    // step), so it stays 0 here.
     LOG_INFO_KV(kCategory, "verify_complete",
         ::kcdx::log::KV("rows", (unsigned long long)out.size()),
+        ::kcdx::log::KV("verified_working", (unsigned long long)verifiedWorking),
         ::kcdx::log::KV("passed_not_verified", (unsigned long long)passedNotVerified),
         ::kcdx::log::KV("failed", (unsigned long long)failed),
         ::kcdx::log::KV("not_applicable", (unsigned long long)notApplicable),
