@@ -22,7 +22,7 @@ this README's summary.
 
 | Step | Status | Commit |
 |---|---|---|
-| [6.1 [FE] s08 worklist: import (v3) + ingest progress + the THREE-block worklist + the s08 states](step-1-fe-s08-worklist.md) | NOT STARTED | — |
+| [6.1 [FE] s08 worklist: import (v3) + ingest progress + the THREE-block worklist + the s08 states](step-1-fe-s08-worklist.md) | DONE | FE:6e7f3b1 |
 | [6.2 [BE/CORE] The D32 batch-confirm transaction — `/confirm/batch` endpoint + `confirmBatch` client](step-2-be-batch-confirm-endpoint.md) | NOT STARTED | — |
 | [6.3 [FE] The two batch actions — verify-all (proof-rank `evidence_kind` + `valid_through` extend) + close-intervals → s06 batch confirm](step-3-fe-bulk-reverify-batch-confirm.md) | NOT STARTED | — |
 
