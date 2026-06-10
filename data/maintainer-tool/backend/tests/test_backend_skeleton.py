@@ -37,9 +37,9 @@ SEED/BASELINE FIXTURE
 Reuses the data-core's apply-oracle mechanism (the same one test_db_editor_*.py
 use): a module-scoped baseline DB rebuilt ONCE from the committed seeds off the
 mini-dump excerpt, copied into a temp "checkout" laid out as the backend's config
-expects (data/seeds/ holding the seeds + the two reference DBs). No real WHGame.dll
-is read -- the backend never reads a DLL (D14/D18); the rebuild path uses the dump
-excerpt only.
+expects (data/db-export/ holding the curated CSVs + data/ holding the two reference DBs --
+D38; data/seeds/ is retired). No real WHGame.dll is read -- the backend never reads a DLL
+(D14/D18); the rebuild path uses the dump excerpt only.
 
 RUN
 ---
@@ -59,7 +59,7 @@ BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))          # .../backend
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
 DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
-REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
+REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
 # The backend package imports as `app.*` -- put `backend/` on the path so
 # `import app.main` resolves (the same dir uvicorn runs `app.main:app` from).
@@ -83,27 +83,28 @@ GVO = imp.GAME_VERSION_ORDINAL      # 1164953
 
 
 # ----------------------------------------------------------------------------
-# Build a "resolved" checkout: data/seeds/ with the seeds + the two reference DBs,
-# laid out exactly as app.config derives them.
+# Build a "resolved" checkout: data/db-export/ with the curated CSVs + the two
+# reference DBs at data/, laid out exactly as app.config derives them (D38).
 # ----------------------------------------------------------------------------
 def _build_resolved_checkout():
-    """A temp dir laid out as a real checkout: <root>/data/seeds/ holds the three
-    seed CSVs (the frozen bootstrap), and <root>/data/ (config.out_dir) holds the
-    rebuilt reference.sqlite + reference-dev.sqlite. Returns the checkout root. Skips
-    (not fails) if the data-core fixture inputs are absent."""
+    """A temp dir laid out as a real checkout: <root>/data/db-export/ holds the three
+    curated CSVs (the rebuild genesis the load endpoint checks -- D38; data/seeds/ is
+    retired), and <root>/data/ (config.out_dir) holds the rebuilt reference.sqlite +
+    reference-dev.sqlite. Returns the checkout root. Skips (not fails) if the data-core
+    fixture inputs are absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_checkout_")
-    seed_dir = os.path.join(root, "data", "seeds")
+    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir (D38)
     out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
 
     # Rebuild the reference DBs into the checkout's data/ dir (config.out_dir == data/,
-    # NOT data/seeds/), pointing the importer's seed-path constants at the checkout's
-    # seeds for the duration (the data-core apply-oracle convention).
+    # NOT the CSV subdir), pointing the importer's seed-path constants at the checkout's
+    # curated CSVs for the duration (the data-core apply-oracle convention).
     saved = (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
              imp.ADDRESS_VERSIONS_SEED_CSV)
     imp.MODULE_SEED_CSV = os.path.join(seed_dir, "module_seed.csv")

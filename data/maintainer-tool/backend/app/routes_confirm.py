@@ -36,7 +36,7 @@ THE SEQUENCE AS BUILT (read the two subtleties below)
   4. COMMIT the DB: data_core.commit(handle) -- USER-first then DEV (the settled 4a
      ordering; re-raises on a DEV-commit split). IRREVERSIBLE (see below).
   5. EXPORT the committed DB -> the data/db-export/ CSV record (D20 -- the derived diff
-     layer, NOT data/seeds/ the frozen bootstrap).
+     layer; since D38 retired data/seeds/, also the rebuild genesis).
   6. INTEGRITY: the CHEAP CSV byte-identity re-export over data/db-export/ (csv_integrity
      -- the round-trip-cost resolution; NOT a 1.3GB full rebuild per save).
   7. GIT: stage the 3 data/db-export/ CSVs BY EXACT PATH (the git-tracked record; the
@@ -311,7 +311,7 @@ def _run_confirm(body, *, entity_label, write, author):
                 f"rolled back (nothing landed): {exc}")
 
         # 5. EXPORT the COMMITTED DB -> the data/db-export/ CSV record (D20 -- the derived
-        #    diff layer, NOT data/seeds/). A fresh export connection now sees the
+        #    diff layer; D38 retired data/seeds/). A fresh export connection now sees the
         #    committed change (the visibility constraint is satisfied post-commit).
         data_core.export_seeds(config.user_db, config.db_export_dir)
 
@@ -560,17 +560,17 @@ def _extract_handle(write_result):
 
 def _staged_rel_paths():
     """The files Confirm stages, as paths RELATIVE to the checkout root, BY EXACT NAME
-    (never a broad add): ONLY the three derived-export CSVs at data/db-export/ (D20 --
-    NOT data/seeds/, which holds the frozen bootstrap CSVs the maintainer tool never
-    writes). The DB is the ORIGINATOR (D1) -- it is amended locally at config.out_dir
+    (never a broad add): ONLY the three derived-export CSVs at data/db-export/ (D20).
+    data/seeds/ is RETIRED (D38) -- the maintainer tool never wrote it and now nothing
+    reads it. The DB is the ORIGINATOR (D1) -- it is amended locally at config.out_dir
     (data/) but is NOT git-tracked; only its derived CSV export is the git record (D20,
     whose rejected alternative was DB-tracked-as-binary). Staging the DB is wrong: it
     contradicts D1/D20, and the real checkout gitignores the DB, so `git add` of it is
     rejected and rolls the whole transaction back. The data/db-export/ CSVs are the DB's
     git-tracked diff record -- the only files committed."""
     return [
-        # The derived CSV record (D20) -- the export target, NOT the bootstrap seeds, and
-        # NOT the DB (the DB is the local originator, never committed -- D1/D20).
+        # The derived CSV record (D20) -- the export target (the DB is the local
+        # originator, never committed -- D1/D20).
         "data/db-export/module_seed.csv",
         "data/db-export/address_names_seed.csv",
         "data/db-export/address_versions_seed.csv",

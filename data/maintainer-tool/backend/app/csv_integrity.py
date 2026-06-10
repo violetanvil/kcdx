@@ -16,8 +16,9 @@ backend has no refdata dump_dir mounted (D18 -- the image carries only app code)
 per-save full rebuild would make every Confirm take minutes. So Confirm runs the CHEAP,
 CORRECT half: the `export(import(CSVs))==CSVs` byte-identity direction -- re-export the
 just-committed DB to a scratch dir and assert the three CSVs are byte-identical to the
-ones Confirm just wrote to data/db-export/ (the derived-export record, D20 -- NOT
-data/seeds/, the frozen bootstrap). This proves DB<->CSV information-equivalence for
+ones Confirm just wrote to data/db-export/ (the curated CSV export -- the git-tracked
+diff record AND, since D38 retired data/seeds/, the rebuild genesis). This proves
+DB<->CSV information-equivalence for
 the committed change (the export is deterministic: re-exporting the same committed DB
 reproduces the same CSV bytes) WITHOUT a rebuild.
 
@@ -79,8 +80,8 @@ def assert_csv_export_deterministic(db_path, committed_seed_dir, *, work_dir=Non
       db_path            -- the just-committed reference DB (config.user_db). The export
                             reads it; the USER DB carries the full curated set.
       committed_seed_dir -- the dir holding the three CSVs Confirm just wrote
-                            (config.db_export_dir -- data/db-export/, D20). NOT mutated --
-                            the re-export goes to a scratch copy.
+                            (config.db_export_dir -- data/db-export/, D20/D38). NOT
+                            mutated -- the re-export goes to a scratch copy.
       work_dir           -- optional scratch dir; a temp dir is created + removed when
                             omitted.
 

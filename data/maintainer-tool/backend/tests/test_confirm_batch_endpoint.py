@@ -93,17 +93,19 @@ def _git(checkout, *args, env=None, check=True):
 
 
 def _build_git_checkout():
-    """A temp checkout that is a REAL git repo (seeds + rebuilt DBs + seeded db-export
-    CSVs committed as the baseline) plus a THROWAWAY LOCAL BARE remote `private`. Mirrors
-    test_confirm_endpoint._build_git_checkout. Skips if the mini-dump fixture is absent."""
+    """A temp checkout that is a REAL git repo (curated CSVs at data/db-export/ + rebuilt
+    DBs at data/, the db-export CSVs committed as the baseline) plus a THROWAWAY LOCAL BARE
+    remote `private`. Mirrors test_confirm_endpoint._build_git_checkout. Skips if the
+    mini-dump fixture is absent. D38: data/seeds/ is retired -- the curated CSVs at
+    data/db-export/ are BOTH the rebuild genesis (config.seed_dir) AND the export target."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="batch_confirm_checkout_")
-    seed_dir = os.path.join(root, "data", "seeds")
     out_dir = os.path.join(root, "data")
+    # D38: the curated CSVs are the rebuild genesis AND the export target -- one dir.
     export_dir = os.path.join(root, "data", "db-export")
-    os.makedirs(seed_dir, exist_ok=True)
+    seed_dir = export_dir                              # config.seed_dir == db-export (D38)
     os.makedirs(export_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
@@ -127,7 +129,7 @@ def _build_git_checkout():
     _git(root, "config", "user.email", "baseline@example.invalid")
     _git(root, "config", "commit.gpgsign", "false")
     _git(root, "add", "--", *STAGED_REL_PATHS)
-    _git(root, "commit", "-q", "-m", "baseline: seeds + reference DBs + db-export record")
+    _git(root, "commit", "-q", "-m", "baseline: reference DBs + db-export record")
 
     bare = tempfile.mkdtemp(prefix="batch_confirm_bare_remote_")
     _git(bare, "init", "--bare", "-q")

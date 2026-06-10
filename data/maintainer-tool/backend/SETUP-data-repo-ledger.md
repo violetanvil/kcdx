@@ -12,11 +12,12 @@ confirm from staging the gitignored DB; this ledger relocates the CHECKOUT so th
 record lands in a dedicated repo.
 
 **Checkout layout the confirm requires (from `config.py`).** Relative to the checkout root:
-- `data/seeds/` — the 3 frozen bootstrap CSVs (read by the load endpoint; the DB's genesis).
+- `data/db-export/` — the 3 curated CSVs. Since D38 retired `data/seeds/`, these are BOTH the
+  rebuild genesis (read by the load endpoint; `config.seed_dir` resolves here) AND the derived
+  CSV record the confirm exports + `git add`s + commits (`config.db_export_dir`).
 - `data/reference.sqlite` + `data/reference-dev.sqlite` — the two DBs the data-core amends
   USER-first-then-DEV on every save (BOTH required; `reference-dev.sqlite` is ~1.26 GB).
   Gitignored — the originator, never committed.
-- `data/db-export/` — the derived CSV record the confirm exports + `git add`s + commits.
 
 **Repo location.** `<kcdx parent>/kcdx-maintainer-data/` — a sibling of the kcdx tree,
 fully outside it (so nothing lands in kcdx history).

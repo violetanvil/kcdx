@@ -64,15 +64,17 @@ _DEV_DEFAULT_CORS_ORIGINS = (
 # Sub-paths of a checkout the data-core reads. These mirror the data-core's own
 # layout constants (seeds_shared / import_to_sqlite) -- the backend names WHERE
 # the checkout puts them; the data-core owns what they contain.
-_SEED_SUBDIR = os.path.join("data", "seeds")
+# WHY data/db-export/ for BOTH (D38): data/seeds/ is RETIRED -- nothing reads it.
+# The genesis role moved to the tracked CSV export: run_rebuild now rebuilds both DBs
+# from the curated CSVs at data/db-export/ (+ the bulk under Git LFS), not the seeds
+# (D38, supersedes D20). So the bootstrap `seed_dir` the load endpoint checks for
+# presence now resolves data/db-export/ -- the SAME curated CSVs the DB's deterministic
+# per-save export writes there. seed_dir and db_export_dir collapse to one location: the
+# curated CSVs are both the rebuild genesis AND the git-tracked diff record (D1/D19 hold
+# -- the DB stays the originator, out of git; only the GENESIS source moved off the seeds).
+_SEED_SUBDIR = os.path.join("data", "db-export")
 _SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
                "address_versions_seed.csv")
-# WHY data/db-export/ (D20): the maintainer tool NEVER writes data/seeds/ -- those
-# are the frozen one-time run_rebuild bootstrap input (the DB's genesis). The DB is
-# the originator (D1/D19); its deterministic per-save CSV export is the git-tracked
-# DIFF RECORD and lands in its OWN derived location, data/db-export/. Same three
-# basenames, distinct dir. config carries BOTH: seed_dir (the bootstrap, read by the
-# load endpoint) and db_export_dir (Confirm's write target).
 _DB_EXPORT_SUBDIR = os.path.join("data", "db-export")
 # The reference DBs the data-core write path amends (out_dir holds both).
 USER_DB_NAME = "reference.sqlite"
@@ -98,6 +100,9 @@ class Config:
 
     @property
     def seed_dir(self):
+        """The bootstrap-genesis dir the load endpoint checks for presence (D38) --
+        data/db-export/ (the curated CSVs run_rebuild now rebuilds from). data/seeds/
+        is retired; under D38 this resolves the SAME location as db_export_dir."""
         return os.path.join(self.checkout_path, _SEED_SUBDIR)
 
     @property
@@ -107,8 +112,9 @@ class Config:
     @property
     def db_export_dir(self):
         """The derived-export dir Confirm writes the three CSVs to (D20) --
-        data/db-export/, NOT data/seeds/ (the frozen bootstrap). The git commit
-        stages the DB (at out_dir) + these three CSVs by exact path."""
+        data/db-export/. Since D38 retired data/seeds/, this is also the rebuild
+        genesis (seed_dir resolves the same path). The git commit stages the DB's
+        export -- these three CSVs by exact path (the DB itself is not committed, D1)."""
         return os.path.join(self.checkout_path, _DB_EXPORT_SUBDIR)
 
     @property
@@ -122,10 +128,10 @@ class Config:
         """The directory holding the two reference DBs the data-core amends
         (the data-core's `out_dir` param). The DBs live at
         <checkout>/data/{reference,reference-dev}.sqlite -- under data/, NOT
-        data/seeds/ (which holds the frozen bootstrap seed CSVs only; no .sqlite
-        is there). run_rebuild writes <out_dir>/reference.sqlite and the release
-        ships it at data/reference.sqlite, so out_dir is <checkout>/data. The
-        load endpoint reports which DBs actually resolve."""
+        data/db-export/ (which holds the curated CSV export: the rebuild genesis +
+        the git-tracked diff record, no .sqlite -- D38). run_rebuild writes
+        <out_dir>/reference.sqlite and the release ships it at data/reference.sqlite,
+        so out_dir is <checkout>/data. The load endpoint reports which DBs resolve."""
         return os.path.join(self.checkout_path, "data")
 
     @property

@@ -41,7 +41,7 @@ BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))          # .../backend
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
 DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
-REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
+REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
 sys.path.insert(0, BACKEND_DIR)
 sys.path.insert(0, DATA_CORE_PYDIR)
@@ -59,17 +59,17 @@ GVT = imp.GAME_VERSION_TAG          # "1.5.1164953" -- the only known version
 
 
 def _build_resolved_checkout():
-    """A temp checkout laid out as app.config derives it -- <root>/data/seeds/ with
-    the three seed CSVs (the frozen bootstrap) + <root>/data/ (config.out_dir) with the
-    rebuilt reference DBs (the read-test's pattern). Each save test gets a FRESH checkout
-    (function scope) -- though a preview writes nothing, a fresh DB keeps the
-    byte-identical baseline unambiguous per test. Skips (not fails) if the mini-dump
-    fixture is absent."""
+    """A temp checkout laid out as app.config derives it -- <root>/data/db-export/ with
+    the three curated CSVs (the rebuild genesis -- D38; data/seeds/ is retired) +
+    <root>/data/ (config.out_dir) with the rebuilt reference DBs (the read-test's pattern).
+    Each save test gets a FRESH checkout (function scope) -- though a preview writes
+    nothing, a fresh DB keeps the byte-identical baseline unambiguous per test. Skips
+    (not fails) if the mini-dump fixture is absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_save_checkout_")
-    seed_dir = os.path.join(root, "data", "seeds")
+    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir (D38)
     out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
@@ -109,7 +109,7 @@ def client_at(monkeypatch):
 
 
 def _out_dir(checkout_root):
-    # config.out_dir == <checkout>/data (the DBs live there, NOT data/seeds/).
+    # config.out_dir == <checkout>/data (the DBs live there, NOT the CSV subdir).
     return os.path.join(checkout_root, "data")
 
 

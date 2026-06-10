@@ -57,7 +57,7 @@ BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
 DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
-REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
+REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
 sys.path.insert(0, BACKEND_DIR)
 sys.path.insert(0, DATA_CORE_PYDIR)
@@ -79,8 +79,9 @@ DB_FILES = ("reference.sqlite", "reference-dev.sqlite")
 # place at config.out_dir (data/) but NOT git-tracked; only the derived CSV export is the
 # git record (D20, whose rejected alternative was DB-tracked-as-binary). A confirm that
 # staged a .sqlite would contradict D1/D20 (and the real checkout gitignores the DB, so
-# `git add` of it is rejected and rolls the transaction back). NOT data/seeds/ either --
-# that holds the frozen bootstrap CSVs only.
+# `git add` of it is rejected and rolls the transaction back). data/seeds/ is retired
+# (D38) -- the curated CSVs at data/db-export/ are both the export target AND the rebuild
+# genesis.
 STAGED_REL_PATHS = sorted([
     "data/db-export/module_seed.csv",
     "data/db-export/address_names_seed.csv",
@@ -111,8 +112,14 @@ _GIT_VOCAB_RE = re.compile(r"\b(git|index\.lock|push|fetch|stage|remote|commit h
 
 
 def _git(checkout, *args, env=None, check=True):
-    """Run `git -C <checkout> <args>` (never cd). Returns the CompletedProcess."""
-    proc = subprocess.run(["git", "-C", checkout, *args],
+    """Run `git -C <checkout> <args>` (never cd). Returns the CompletedProcess.
+
+    -c safe.bareRepository=all: the test creates its OWN throwaway bare remote in a temp
+    dir (see _build_git_checkout) and runs git ops against it (init --bare, push). A
+    machine configured safe.bareRepository=explicit otherwise refuses ALL bare-repo ops;
+    that guard is for untrusted bare repos in shared locations, not a test's own temp
+    remote -- so allow it for these self-created repos."""
+    proc = subprocess.run(["git", "-c", "safe.bareRepository=all", "-C", checkout, *args],
                           capture_output=True, text=True, env=env)
     if check and proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {proc.stderr or proc.stdout}")
@@ -120,29 +127,32 @@ def _git(checkout, *args, env=None, check=True):
 
 
 def _build_git_checkout():
-    """A temp checkout that is a REAL git repo (git-init'd, with the seeds + rebuilt DBs +
-    the SEEDED data/db-export/ CSVs committed as the baseline) plus a THROWAWAY LOCAL BARE
-    remote named `private` (the push target -- never real GitHub). Returns (checkout_root,
-    bare_remote_path). Skips if the mini-dump fixture is absent.
+    """A temp checkout that is a REAL git repo (git-init'd, with the curated CSVs at
+    data/db-export/ + rebuilt DBs at data/, the db-export CSVs committed as the baseline)
+    plus a THROWAWAY LOCAL BARE remote named `private` (the push target -- never real
+    GitHub). Returns (checkout_root, bare_remote_path). Skips if the mini-dump fixture is
+    absent.
 
-    The data/db-export/ CSVs are SEEDED in the baseline (one export of the rebuilt DB) so
-    they exist pre-Confirm -- the steady-state production posture (the export record already
-    tracks history). This makes the byte-identity / exact-path assertions unambiguous (the
-    Confirm UPDATES existing tracked files, not creates new ones)."""
+    Under D38 data/seeds/ is retired: the curated CSVs at data/db-export/ are BOTH the
+    rebuild genesis (config.seed_dir) AND the export target (config.db_export_dir) -- one
+    location. They are SEEDED in the baseline (one export of the rebuilt DB) so they exist
+    pre-Confirm -- the steady-state production posture (the export record already tracks
+    history). This makes the byte-identity / exact-path assertions unambiguous (the Confirm
+    UPDATES existing tracked files, not creates new ones)."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="confirm_checkout_")
-    seed_dir = os.path.join(root, "data", "seeds")
     out_dir = os.path.join(root, "data")               # config.out_dir == data/ (the DBs)
+    # D38: the curated CSVs are the rebuild genesis AND the export target -- one dir.
     export_dir = os.path.join(root, "data", "db-export")
-    os.makedirs(seed_dir, exist_ok=True)
+    seed_dir = export_dir                              # config.seed_dir == db-export (D38)
     os.makedirs(export_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
 
-    # Rebuild the two reference DBs into the checkout's data/ (config.out_dir, NOT
-    # data/seeds/), then SEED data/db-export/ with one export of the just-built USER DB.
+    # Rebuild the two reference DBs into the checkout's data/ (config.out_dir, NOT the
+    # CSV subdir), pointing the importer's curated-CSV constants at data/db-export/.
     saved = (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
              imp.ADDRESS_VERSIONS_SEED_CSV)
     imp.MODULE_SEED_CSV = os.path.join(seed_dir, "module_seed.csv")
@@ -154,8 +164,9 @@ def _build_git_checkout():
         (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
          imp.ADDRESS_VERSIONS_SEED_CSV) = saved
 
-    # Seed the derived-export record (data/db-export/) from the rebuilt DB so the export
-    # target already tracks the current DB state pre-Confirm.
+    # Re-seed the derived-export record (data/db-export/) from the rebuilt DB so the export
+    # target tracks the current DB state pre-Confirm (the export is byte-deterministic, so
+    # this reproduces the same curated CSVs the rebuild read from).
     from seeds_shared.csv_exporter import export_seeds as _export_seeds
     _export_seeds(os.path.join(out_dir, "reference.sqlite"), export_dir)
 
@@ -166,7 +177,7 @@ def _build_git_checkout():
     _git(root, "config", "user.email", "baseline@example.invalid")
     _git(root, "config", "commit.gpgsign", "false")
     _git(root, "add", "--", *STAGED_REL_PATHS)
-    _git(root, "commit", "-q", "-m", "baseline: seeds + reference DBs + db-export record")
+    _git(root, "commit", "-q", "-m", "baseline: reference DBs + db-export record")
 
     # A THROWAWAY LOCAL BARE remote named `private` -- the push target (never real GitHub).
     bare = tempfile.mkdtemp(prefix="confirm_bare_remote_")
@@ -206,11 +217,12 @@ def client_at(monkeypatch):
 
 # --- helpers over the checkout's DBs / db-export CSVs / git state -------------------
 def _seed_dir(root):
-    return os.path.join(root, "data", "seeds")
+    # config.seed_dir == <checkout>/data/db-export (D38 -- data/seeds/ retired).
+    return os.path.join(root, "data", "db-export")
 
 
 def _out_dir(root):
-    # config.out_dir == <checkout>/data -- where the reference DBs live (NOT data/seeds/).
+    # config.out_dir == <checkout>/data -- where the reference DBs live (NOT the CSV subdir).
     return os.path.join(root, "data")
 
 
@@ -396,7 +408,8 @@ def test_confirm_update_commits_dbexport_csvs_and_db_and_pushes(checkout, client
     changed = _changed_files_in_head(root)
     assert set(changed).issubset(set(STAGED_REL_PATHS)), \
         f"the commit staged files OUTSIDE the exact DB+db-export set: {changed}"
-    # The edit lands in the DB-EXPORT versions CSV (D20 target), NOT data/seeds/.
+    # The edit lands in the DB-EXPORT versions CSV (D20 target -- the only CSV record
+    # since D38 retired data/seeds/).
     assert "data/db-export/address_versions_seed.csv" in changed, \
         f"the edited db-export CSV must be in the commit: {changed}"
     # NEITHER reference DB is in the commit -- the DB is the local originator (D1), NOT
@@ -407,9 +420,12 @@ def test_confirm_update_commits_dbexport_csvs_and_db_and_pushes(checkout, client
         assert db not in changed, \
             f"a reference DB was staged -- the DB is the local originator, never " \
             f"committed (D1/D20): {changed}"
-    # NOTHING under data/seeds/ (the bootstrap CSVs are never written).
+    # RETIREMENT GUARD (D38): data/seeds/ is retired -- the Confirm never writes the
+    # old bootstrap path. Falsifiable: a regression re-introducing a data/seeds/ write
+    # would surface here (and already break the issubset(STAGED_REL_PATHS) check above,
+    # since the seeds path is not in the staged set).
     assert "data/seeds/module_seed.csv" not in changed, \
-        f"a data/seeds/ bootstrap CSV was written -- it must never be: {changed}"
+        f"a retired data/seeds/ CSV was written -- it must never be (D38): {changed}"
 
     # The request-context identity is the commit author (D17).
     assert _head_author(root) == (AUTHOR_NAME, AUTHOR_EMAIL), _head_author(root)

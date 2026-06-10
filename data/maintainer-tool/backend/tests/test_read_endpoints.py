@@ -54,7 +54,7 @@ BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))          # .../backend
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
 DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
-REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "seeds")
+REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
 sys.path.insert(0, BACKEND_DIR)
 sys.path.insert(0, DATA_CORE_PYDIR)
@@ -76,15 +76,15 @@ VALID_STATUS = {"DEPRECATED", "SUPERSEDED", "VERIFIED", "UNVERIFIED"}
 
 
 def _build_resolved_checkout():
-    """A temp checkout laid out as app.config derives it -- <root>/data/seeds/ holds
-    the three seed CSVs (the frozen bootstrap), and <root>/data/ (config.out_dir) holds
-    the rebuilt reference DBs (the skeleton test's pattern). Skips (not fails) if the
-    data-core fixture inputs are absent."""
+    """A temp checkout laid out as app.config derives it -- <root>/data/db-export/ holds
+    the three curated CSVs (the rebuild genesis -- D38; data/seeds/ is retired), and
+    <root>/data/ (config.out_dir) holds the rebuilt reference DBs (the skeleton test's
+    pattern). Skips (not fails) if the data-core fixture inputs are absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_read_checkout_")
-    seed_dir = os.path.join(root, "data", "seeds")
+    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir (D38)
     out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
@@ -98,7 +98,7 @@ def _build_resolved_checkout():
                                                  "address_versions_seed.csv")
     try:
         # Rebuild the DBs into out_dir (data/), where config.out_dir resolves them --
-        # NOT data/seeds/ (the frozen bootstrap CSVs only).
+        # NOT the genesis CSV subdir (data/db-export/ holds the curated CSVs only).
         imp.run_rebuild(DUMP_DIR, out_dir)
     finally:
         (imp.MODULE_SEED_CSV, imp.ADDRESS_NAMES_SEED_CSV,
@@ -135,7 +135,7 @@ def client_at(monkeypatch):
 def _out_dir(checkout_root):
     """The out_dir app.config derives for a checkout root (data/), for calling the 2a
     functions directly to assert the endpoint surfaces THEIR values. Mirrors
-    config.out_dir == <checkout>/data (the DBs live there, NOT data/seeds/)."""
+    config.out_dir == <checkout>/data (the DBs live there, NOT the CSV subdir)."""
     return os.path.join(checkout_root, "data")
 
 
