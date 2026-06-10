@@ -1,6 +1,6 @@
 # Phase 9.4 step 1 — `kcdx.find{...}` Lua surface + `kcdx_find` console
 
-**Status: NOT STARTED.** Ledger row: [`README.md`](README.md) → step 1.
+**Status: DONE** (landed; Lua binder + console + docs, step-review GREEN). Ledger row: [`README.md`](README.md) → step 1.
 
 ## What
 

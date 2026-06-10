@@ -14,6 +14,7 @@
 #include "console.h"
 #include "cvar.h"
 #include "console_commands_scan.h"
+#include "console_commands_find.h"
 #include "init_phase.h"
 #include "modification_inventory.h"
 #include "log.h"
@@ -517,6 +518,13 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // through the same queue plugin commands use, then drops it
                 // loudly if the surface never comes up).
                 kcdx::console_commands_scan::Register();
+
+                // Register the engine-owned kcdx_find dev-discovery console
+                // command alongside kcdx_scan (same console-armed precondition,
+                // same accept-defer queue). The dev-mode/dev-DB gate is enforced
+                // at search time, not registration — a non-dev user typing it
+                // gets the teaching message, never a missing command.
+                kcdx::console_commands_find::Register();
 
                 // Apply the after_game registration queue NOW — before
                 // any "ready" signal. plugin.lua (RunAll, above) queued

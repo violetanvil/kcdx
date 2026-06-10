@@ -203,6 +203,7 @@ add_library(kcdx SHARED
     src/console.cpp
     src/cvar.cpp
     src/console_commands_scan.cpp
+    src/console_commands_find.cpp
     src/lua_bind.cpp
     src/plugin_loader.cpp
     src/plugin_pdb.cpp
@@ -244,6 +245,7 @@ add_library(kcdx SHARED
     src/lua_bind_alias.cpp
     src/lua_bind_declare.cpp
     src/lua_bind_scan.cpp
+    src/lua_bind_find.cpp
     src/lua_bind_locator.cpp
     src/lua_bind_op.cpp
     src/lua_bind_functions.cpp
