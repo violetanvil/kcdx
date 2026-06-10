@@ -13,7 +13,7 @@ probed before it becomes the basis for the work).
 
 | Step | Status | Commit |
 |---|---|---|
-| [0.1 [PROBE] Bulk DEV DB → CSV → rebuilt DEV DB round-trips byte-identical (no dump)](step-1-probe-bulk-roundtrip.md) | NOT STARTED | — |
+| [0.1 [PROBE] Bulk DEV DB → CSV → rebuilt DEV DB round-trips byte-identical (no dump)](step-1-probe-bulk-roundtrip.md) | DONE | (landed) — PASS: ~17.7M rows round-trip DB→CSV→DB byte-identical (statements 5.24M, referenced_vars 10.88M, call_edges 1.29M, address_versions 321k incl. 320,987 bulk); the export is lossless from the DB alone, no dump. Finding: `_research/seeds-migration-probe/FINDINGS.md`. D38 buildable; Phase 1 proceeds. |
 
 ## Phase verification gate
 
