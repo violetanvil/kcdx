@@ -78,15 +78,38 @@ probe must DISCRIMINATE which window (if either) is responsible — observe, do 
 | # | Probe | Status | Result |
 |---|-------|--------|--------|
 | 1 | PROBE A: disable the cap-98 engine self-test (suite-gate off the boot dev-DB consumer) — does the hang go? | DONE | Boot reached `update tick` 246/273, NO crash bundle (vs the hang at `cap-83` 230/259). cap-98 / dev-DB-at-boot IS the hang; 9.4 confirmed the cause, seeds-migration + pre-existing flakiness eliminated. |
-| 2 | PROBE B: re-enable cap-98 but run ONLY the cheap gate query (skip the 30,393-row truncation + the 4 FindFunctions/Enumerate calls) — is it the dev-DB OPEN/connection, or the heavy QUERY, that hangs? | pending | — |
+| 2 | PROBE B: re-enable cap-98 but run ONLY the cheap gate query (skip the 30,393-row truncation + the heavy FindFunctions/Enumerate calls) — is it the dev-DB OPEN/connection, or the heavy QUERY, that hangs? | DONE | Boot CLEAN to `update tick` 250/273, NO crash bundle — BUT the ONE cheap gate query took ~20s (dev_db_opened 13:47:25 → gate RESULT 13:47:45). The dev-DB OPEN is fine; the QUERY is the hang. Mechanism: the criteria queries scan `statements` on the UN-INDEXED `string_ref`/`callee` columns (full 5.24M-row scan, `SCAN statements USING INDEX ix_st_av`), ~20s each cold on the boot worker thread; cap-98's 4+ scans exceed the watchdog. |
 
-## Open questions
+## Root cause (the falsifiable mechanism — AP17)
 
-- Is the held-open 1.3 GB dev DB connection the destabilizer (memory pressure / a
-  worker-thread-lifetime interaction) that hangs a LATER subsystem? (hypothesis — PROBE A
-  discriminates: if disabling cap-98 stops the dev DB from opening at boot and the hang
-  goes, the held-open connection is implicated.)
-- Is the seeds-migration window (the data-layer change) the cause instead, independent
-  of 9.4? (hypothesis — PROBE C discriminates.)
-- Could this be pre-existing flakiness unrelated to either window? (PROBE B discriminates
-  — does the last clean commit still boot clean on this machine today?)
+`refdb::FindFunctions`'s per-criterion queries filter the 5.24M-row `statements` table
+on the **un-indexed** columns `string_ref` (string/cvar criteria) and `callee`
+(callee/callers_of/callee_in_subsystem criteria). The dev DB indexes only
+`statements(address_version_id, idx)` (`ix_st_av`) and `statements(kcdx_id)`
+(`ix_st_kcdx`) — neither covers `string_ref` or `callee`. So every find criterion query
+is a FULL scan of all 5.24M rows (`EXPLAIN QUERY PLAN` → `SCAN statements USING INDEX
+ix_st_av` — a covering full index scan, not a seek). Measured: one such scan is 0.42s
+warm-cache in Python, but **~20s cold** on the boot worker thread (CryEngine's SQLite,
+the 1.3 GB DB not yet OS-page-cached, contending with the game's own boot I/O — PROBE B:
+`dev_db_opened` 13:47:25 → the one gate query's RESULT 13:47:45). cap-98 runs 4+ such
+scans (the gate probe + the known-string find + the 30,393-owner truncation + an
+EnumerateStatements); cumulatively they exceed the watchdog timeout on the boot thread →
+the watchdog kills the process (no AV — a hang). PROBE A (no query) booted clean; PROBE B
+(one ~20s query) booted clean-but-slow; the full cap-98 (4+ scans) hangs. The original
+KI-0015 find-hang was a DIFFERENT mechanism (eager Lua materialization) at the same site —
+the lean fix removed that, exposing this underlying full-scan cost.
+
+**Index fix verified:** adding `CREATE INDEX ON statements(string_ref)` (build ~1.3s)
+makes the gate query `0.0001s` — a ~4000× speedup that eliminates the scan cost. The same
+applies to a `callee` index.
+
+## Open questions (the fix is a design fork — Gate A)
+
+- **Where does the fix go: the dev DB schema (add the missing indexes) or the boot path
+  (don't run heavy find queries at boot)?** Adding `string_ref` + `callee` indexes to the
+  dev DB (built by the extractor) fixes find for ALL uses — including an author's in-game
+  `kcdx.find` query, which would otherwise also eat a ~20s scan. Moving cap-98 off the boot
+  thread (or making it not run the heavy queries at boot) fixes the boot hang but leaves
+  every real find query slow. The indexes are the root fix; the boot-path change is a
+  symptom mask. (Gate A architect-review decides the design surface — the fix touches the
+  dev-DB build / the self-test; surfaced to the user after.)
