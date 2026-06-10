@@ -34,7 +34,9 @@ goes red); each new `cap-NN` row lands with its feature step, not piled at the e
 | [4 — `kcdx.hook.*` sub-verb split + migrate the existing hook plugins (same commit)](step-4-hook-subverbs-migrate.md) | DONE | 4e901db + gov debecf6 + fixes — all 15 consumers migrated; launch-confirmed GREEN after 3 fixes: (1) a `p->address` clobber (an unconditional opts-address read zeroed a positional raw-VA target → hooks installed but never fired; 13 rows) fixed; (2) COMP-03 was a stale deploy (comp-03-A/comp-12-A not redeployed), not a code bug; (3) cap-86-insert's SaveGame sig parse-fail was a seed bug (`char`→`i8`, user-fixed in the maintainer tool) + a test-timing relax (Pending OR Failed-deferred both honest). suite 223/246; only pre-existing KI-0010/0011 remain red |
 | [5 — `kcdx.statement.*` static-bytes namespace](step-5-statement-namespace.md) | DONE | cca4c1c — `kcdx.statement.replace_with` (resolve + op-kind-check + determinate-op emit + same-size `patch::ApplyPatch` write, registered as `Kind::Statement`) + `insert_*` defer; cross-binder seams `ReadOp`/`ReadLocatorDescriptor`; cap-92 (4 structural rows) + docs (lua + cpp-NYI). Live native-execution readback deferred to [`TD-0010`](../../../tech-debt/TD-0010-statement-replace-live-native-execution-readback.md) (user-approved, maintainer owns the boot-safe-target choice) |
 | [6 — multi-region trampoline-pool expansion](step-6-multi-region-trampoline.md) | DONE | 879b4c7 — scope corrected (the pool was ALREADY multi-region; the real delta is proactive per-reservation 80% expansion + an N-region-per-anchor cap + a teaching exhaustion error). Built into `Allocate()`; rel32-reach reuse preserved exactly; engine self-test cap-93 (expansion + exhaustion rows). Gated step-review PROCEED |
-| [7 — C++ parity (`kcdxStatementInterface` / `kcdxFunctionsInterface` + hook insert methods)](step-7-cpp-parity.md) | NOT STARTED | — |
+| [7a — `kcdxFunctionsInterface` + `kcdxDllInterface` (C++ function-reference + declare)](step-7a-cpp-functions-declare.md) | NOT STARTED | — |
+| [7b — `kcdxStatementInterface` (C++ static-bytes mirror)](step-7b-cpp-statement.md) | NOT STARTED | — |
+| [7c — `kcdxHookInterface` insert methods + `targetRef` opts field](step-7c-cpp-hook-insert.md) | NOT STARTED | — |
 
 ## Ordering note (the re-decomposition's dependency order)
 
@@ -62,6 +64,25 @@ plugins in the SAME commit (suite stays green). Statement (5) consumes 1+2+3.
 Trampoline (6) is independent (the single-target tests of 4/5 don't need it; it is
 required at TC scale). C++ parity (7) follows the settled Lua shapes. Each step ends
 buildable + its same-change test runnable.
+
+**Step 7 split (2026-06-09, user-settled).** The original step 7 bundled THREE
+independent C++ interface surfaces (each its own ABI struct + binder + C++ test
+plugin + docs = its own commit), so it was re-decomposed into three commit-grain
+sub-steps after a `/design` pass settled the C++-parity shape
+(`../00-original-plan.md` §9.3-C, committed `4445cb9` — both design gates PROCEED):
+**7a** `kcdxFunctionsInterface` + `kcdxDllInterface` (the new function-reference +
+declare interfaces; the passable by-value `kcdxFunctionRef` 7b/7c's `targetRef`
+opts field consumes — so 7a is the producer, ordered first; independently
+verifiable via its own declare-then-resolve C++ test) → **7b**
+`kcdxStatementInterface` (the C++ mirror of `kcdx.statement.*`; depends on 7a's
+`kcdxFunctionRef`) → **7c** `kcdxHookInterface` insert methods + the `targetRef`
+opts-field append (depends on 7a's `kcdxFunctionRef`). The original
+`step-7-cpp-parity.md` is superseded by these three; its premise that the insert
+apply-paths "fire" was corrected (both Lua insert apply-paths are unwired/
+fail-loud-deferred today, so the C++ inserts mirror the register-and-DEFER
+contract — wiring them to fire is separate deferred work on both surfaces, OUT of
+this phase). Each sub-step ships its own C++ test plugin + `docs/cpp/` NYI→built
+resolution + the AP11 append-only InputLoaded-listener-count ABI check.
 
 ## Verification gate (whole phase)
 
