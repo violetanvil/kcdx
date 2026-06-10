@@ -285,19 +285,28 @@ below).
 | C++ read pe_helpers surface scoping (does it expose spans + a disp32 follower?) | P0 step 3 | Probe — scoping finding for P3 |
 | The in-game version-applicability + reachability signal (the static ranks 3–4 of the ladder) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / the rank-3/4 static checks |
 
-### Group E — report ingestion
+### Group E — report ingestion (RE-PLANNED 2026-06-10 against the reconciled v3/D36 s08 spec)
+
+The original two-block / v2-token Phase 6 was superseded by the s08 `/ui-design` reconciliation
+(`fa8db80`/`9298341`) + the TRD D29 evidence_kind fold (`cc5e1c0`): the producer emits a v3 report
+(the 7-state verdict + `method_rank` + the partial-report signal), so s08 is a THREE-block worklist
+with a per-row proof-rank chip + a partial-report banner, and verify-all writes `evidence_kind` keyed
+by proof rank. The two-step decomposition is unchanged; the content is the v3/D36 contract.
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| Import (File API, client-side, v3 schema) | P6 step 1 | Frontend reads `report.json` (D31b); validates against the **v3** schema (D36 — the producer emits v3) |
+| Import (File API, client-side, v3 schema) | P6 step 1 | Frontend reads the report JSON (D31b); validates against the **v3** schema (`schema_version: 3`; a non-v3/malformed report → error state) |
 | Ingest progress bar | P6 step 1 | Determinate progress (D31c) |
-| The TWO-block worklist (verified / failing) | P6 step 1 | s08 populated state, two blocks (D35); the verified block = `verified_working`+`passed_not_verified`, the failing block = `failed` (D36 mapping) |
-| The matched-`address_version`-id column + the 7-state verdict tokens | P6 step 1 | The matched id (D34); the D36 7-state verdict set + `method_rank` |
-| The s08 states (incl. per-block disabled) | P6 step 1 | Built to the revised s08 spec |
-| Verify-all → s06 batch confirm (trio + gap-pass `valid_through` extend) | P6 step 2 | One batched confirm; the matched row's interval extended on a gap-pass (D32/D34) |
+| The THREE-block worklist (verified / failing / no-action) | P6 step 1 | s08 populated state, three blocks (D36 verdict→block mapping); verified = `verified_working`+`passed_not_verified`, failing = `failed`, no-action (collapsible) = `not_applicable`/`cannot_check`/`skipped`/`error` |
+| The per-row `live verdict badge` (7-state) + the matched-`address_version`-id column | P6 step 1 | The 7-state verdict set → the `live verdict badge` (D36); the matched id, non-null on a verified-block row only (D34) |
+| The per-row `proof-rank chip` (`rank N · <method>` from `method_rank`) | P6 step 1 | D36 — the proof-strength the verdict alone can't carry (a rank-4 static pass vs a rank-2 safe-read) |
+| The conditional invoke-posture detail (`invoke_skip_reason` only when informative) | P6 step 1 | `unsafe_to_call`/`uncontainable` shown; `not_a_callable_kind`/null suppressed (the reconciled s08 detail rule) |
+| The partial-report warning banner (`complete: false`, rows < `rows_expected`) | P6 step 1 | D37 — the N-of-M gap named; the present rows stay actionable (a partial report is a valid ingestible report) |
+| The s08 states (empty/ingesting/populated-three-block/partial/error-malformed-non-v3/error-unknown-id/per-block-disabled/edge) | P6 step 1 | Built to the reconciled s08 spec §"States & variants" |
+| Verify-all → s06 batch confirm (trio + proof-rank `evidence_kind` + gap-pass `valid_through` extend) | P6 step 2 | One batched confirm; `evidence_kind` keyed by proof rank (D29-rev); the matched row's interval extended on a gap-pass (D32/D34) |
 | Close-intervals → s06 batch confirm (`valid_through` → `last_verified_at_version`) | P6 step 2 | The failing block's batch action (D35) |
 | A failure = UNVERIFIED-by-derivation (no "failed" field) | P6 step 2 | Not advancing `last_verified_at_version` (D35; `policy.md`) |
-| Confirm-spine routing (both batches through validate→confirm→commit) | P6 step 2 | Data-core sole writer (D28/law 6) |
+| Confirm-spine routing (both batches through validate→confirm→commit; all-or-nothing) | P6 step 2 | Data-core sole writer (D28/law 6); one atomic batch txn, one-row failure rolls back the whole batch (D32/D21) |
 
 ### Group F — install-set link surface (D30 revised)
 
@@ -318,7 +327,7 @@ below).
 |---|---|---|
 | auto-fill `evidence_kind` by check (static → `pattern_scan`) | P2 step 7, P2 step 6 | The check refines the tier (D29) |
 | compose with the audit-trio auto-fill | P2 step 7 | Check refines from the `maintainer_ghidra` default (D29) |
-| `evidence_kind` `live_production` from the in-game check (via s08 bulk re-verify) | P6 step 2 | Set on bulk re-verify in the FE worklist (D28/D29); the engine-side tier-from-check is P5 step 3 |
+| `evidence_kind` keyed by the in-game proof rank (via s08 bulk re-verify) | P6 step 2 | Set on bulk re-verify in the FE worklist (D28/D29-rev): a rank-1 `verified_working` row → `live_production`; a ranks-2-5 `passed_not_verified` row → `live_test_plugin` (the in-game-test-plugin static tier, NOT `live_production`). The engine-side tier-from-check is P5 step 3 |
 
 ### Group H — UX surfaces (covered within the UI steps that build them)
 
@@ -343,7 +352,7 @@ below).
 | Design element | Covered by | Notes |
 |---|---|---|
 | Law-4 extension (advisory) — 6 clauses (static verdicts + ingested live report + Ambiguous-steers + version-match-gate + no-DLL-upload + no auto-act) | P2 step 5, P2 step 6, P6 step 1, P6 step 2 | Each clause holds in the screen that exercises it (law 4) |
-| 5 component silhouettes (`verdict badge`, `ingest progress bar`, `batch field-delta list`, `per-module link row`, `collapsible section`) | `per-module link row` + `collapsible section` P2 step 5; `verdict badge` P2 step 6 + P6 step 1; `ingest progress bar` P6 step 1; `batch field-delta list` P6 step 2 | Each rendered once in the screen that owns it; `collapsible section` is the s02-layout disclosure |
+| Component silhouettes (`verdict badge` [s04, 4-state], `per-module link row`, `collapsible section`, `ingest progress bar`, `batch field-delta list`, `warning banner`, + the s08 reconciliation-added `live verdict badge` [7-state] + `proof-rank chip`) | `per-module link row` + `collapsible section` P2 step 5; `verdict badge` P2 step 6; `ingest progress bar` + `warning banner` + `live verdict badge` + `proof-rank chip` P6 step 1; `batch field-delta list` P6 step 2 | Each rendered once in the screen that owns it; the s04 static `verdict badge` (4-state) and the s08 `live verdict badge` (7-state) are distinct silhouettes (the verdict vocabularies diverged at D36); `collapsible section` is the s02-layout disclosure AND the s08 no-action block |
 | Version&verify-surface (the compact summary + the collapsible install-set link section) | P2 step 5 | The version `Select` + the one-line verify summary + the Bin-folder pick + per-module rows (revised D30 + the s02 layout) |
 | The detail-pane responsive model (lead with the work surface; compact-header + collapse on both breakpoints) | P2 step 5 | `ui/design.md` §"Responsiveness & sizing" |
 | Screen-index / nav-map carrying s08 | P6 step 1 | s08 reached from s01 `[Import verification report]` |
@@ -368,12 +377,13 @@ below).
 | `evidence_kind` from check | P2 step 6 | static pass → `pattern_scan` refine (D29) |
 | The 6 check verdict states (no-badge / checking / Unchanged / Changed / Ambiguous+show-matches / CannotCheck) | P2 step 6 | s04 §"Check verdict states" |
 
-### UI-side — s08 (`s08-verification-worklist.md`)
+### UI-side — s08 (`s08-verification-worklist.md` — the reconciled v3/D36 spec)
 
 | Design element | Covered by | Notes |
 |---|---|---|
-| The revised Contents elements (import entry, summary header, ingest progress, split control, two-block worklist table + matched-id column, per-block selects, select-all per block, the two bulk actions, fix-row, back, + the verdict per-row + the two batched-confirm prose) | P6 step 1 (import/progress/split/two-block worklist/per-block select/fix/back); P6 step 2 (the two actions → batch confirms) | Built to the revised s08 Contents (D34/D35) |
-| The s08 states (empty / loading-ingesting / populated-two-block / error-malformed / error-unknown-id / per-block-disabled / edge-0-fail / edge-0-pass / edge-long) | P6 step 1 (ingest/worklist states); P6 step 2 (per-block batch-action disabled/edge) | s08 §"States & variants" (revised) |
+| The Contents elements (import entry, summary header + `partial` marker, partial-report banner, ingest progress, block split control, the THREE-block worklist table + `live verdict badge` + `proof-rank chip` + matched-id column + conditional invoke-posture detail, per-block selects, select-all per action block, the two bulk actions, no-action rows, fix-row, back) | P6 step 1 (import/progress/split/three-block worklist/badge+chip/partial-banner/per-block select/no-action rows/fix/back); P6 step 2 (the two actions → batch confirms) | Built to the reconciled s08 Contents (D34/D35/D36) |
+| The s08 states (empty / loading-ingesting / populated-three-block / partial-report / error-malformed-non-v3 / error-unknown-id / per-block-disabled / edge-0-failing / edge-0-verified / edge-all-no-action / edge-long) | P6 step 1 (ingest/worklist/partial states); P6 step 2 (per-block batch-action disabled/edge) | s08 §"States & variants" (reconciled) |
+| The Layer-1 `live verdict badge` (7-state) + `proof-rank chip` silhouettes | P6 step 1 | `ui/design.md` — the two new silhouettes the reconciliation added (the s04 `verdict badge` stays 4-state, unchanged) |
 
 ## What is NOT in this plan
 
