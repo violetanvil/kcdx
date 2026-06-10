@@ -26,6 +26,7 @@
 #include "refdb.h"
 #include "scripting_interface.h"
 #include "serialization.h"
+#include "statement_interface.h"
 #include "symbols.h"
 #include "task.h"
 #include "test.h"
@@ -110,6 +111,11 @@ void* Thunk_QueryInterface(uint32_t interfaceID, uint32_t version) {
         if (version > kcdxDllInterface_Version) return nullptr;
         return const_cast<kcdxDllInterface*>(
             kcdx::dll_interface::GetInterface());
+
+    case kcdxInterface_Statement:
+        if (version > kcdxStatementInterface_Version) return nullptr;
+        return const_cast<kcdxStatementInterface*>(
+            kcdx::statement_interface::GetInterface());
 
     default:
         return nullptr;

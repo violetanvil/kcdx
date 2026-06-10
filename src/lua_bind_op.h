@@ -11,6 +11,8 @@ extern "C" {
 #include "lua.h"
 }
 
+#include "kcdx/Interfaces.h"  // kcdxOpKind — the C-ABI op catalog BuildOpView maps
+
 namespace kcdx::lua_bind_op {
 
 // Register the `kcdx.op` sub-table (a grouped capability DOMAIN, like
@@ -66,6 +68,20 @@ struct OpView {
 // otherwise return false (leaves `out` untouched, raises nothing). The
 // arg-type dispatch the statement verb runs on its required `op` positional.
 bool ReadOp(lua_State* L, int idx, OpView& out);
+
+// Build the OpView for an op identified by its C-ABI kind tag (a kcdxOp from
+// the C++ kcdxStatementInterface) — the C++ surface's entry into the SAME
+// per-op classification table the Lua constructors use (required statement
+// kind, teaching label, determinate-vs-deferred emit class, which kinds carry
+// which operand). ONE table, both surfaces — the C++ path never re-derives or
+// duplicates the classification. `value` is read only by the value-carrying
+// kinds; `targetFn` only by ReplaceCallTarget (REQUIRED there — its absence is
+// the same author bug the Lua constructor raises on). Returns true and fills
+// `out` on success; returns false and fills `err_out` with the teaching reason
+// on an unrecognized kind value or a missing required operand — the caller
+// fails loud at its own surface, never a silent default.
+bool BuildOpView(kcdxOpKind kind, long long value, const char* targetFn,
+                 OpView& out, std::string& err_out);
 
 // True iff `stmtKind` (a decoded refdb statement kind string) satisfies the op's
 // required kind. `view.required_kind == ""` (any) always satisfies. This is the

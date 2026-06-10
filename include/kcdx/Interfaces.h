@@ -171,6 +171,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Assets         = 11, // C++ kcdx.assets.* mirror
     kcdxInterface_Functions      = 12, // C++ kcdx.functions.* mirror (function references)
     kcdxInterface_Dll            = 13, // C++ kcdx.dll.declare mirror (declare own DLL fns)
+    kcdxInterface_Statement      = 14, // C++ kcdx.statement.* mirror (static-bytes modification)
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -2568,6 +2569,316 @@ typedef struct kcdxAssetInterface {
     // against an older version reads the prefix members at their original
     // offsets, so appending cannot shift them (append-only ABI).
 } kcdxAssetInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxStatementInterface — C++ mirror of the Lua kcdx.statement.* surface
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Statement,
+// kcdxStatementInterface_Version). STATIC-BYTES modification at a located
+// statement: the author names a target function + an OP (what static change to
+// make), and the engine resolves the statement from the curated reference
+// database, emits the op's bytes, and writes them in place. The modified bytes
+// then execute NATIVELY every call — ZERO per-call cost, no callback dispatch.
+// This is the static-bytes sibling of kcdxHookInterface (which pays a per-call
+// dispatch). Full Lua <-> C++ parity with kcdx.statement.replace_with /
+// .insert_before / .insert_after (ONE model, two languages): the C++ thunks
+// feed the SAME engine-side resolve -> kind-check -> emit -> write path the Lua
+// verbs feed — one queue, one apply pass, one conflict engine, both surfaces.
+//
+// The author names WHAT they want — a target function, an op, a locator —
+// never an address, an offset, an instruction length, or a byte. The engine
+// resolves the WHERE and HOW, and picks a same-size rewrite vs a trampoline at
+// apply time (the author never sees a "doesn't fit" failure).
+//
+// Deferred-apply model: ReplaceWith / InsertBefore / InsertAfter VALIDATE at
+// registration (a zero handle + a logged teaching error on a bad call) and
+// DEFER the resolve+emit+write to the engine's apply pass, so the conflict
+// engine sees every plugin's intent before any byte changes — the same model
+// as kcdxHookInterface / kcdxBytesInterface. A NON-ZERO handle does NOT mean
+// applied; query IsApplied(h) after the apply pass and GetReason(h) for the
+// teaching reason when a registered statement did not apply.
+
+#define kcdxStatementInterface_Version 1u
+
+// The op catalog — one value per kcdx.op.* constructor, mirrored one-to-one
+// (the C++ peer of a kcdx.op.* value). Every op NAMES a behavior; the engine
+// produces the bytes. Values are APPEND-ONLY: a new op gets the next free
+// integer at the END and is never renumbered (a plugin compiled against an
+// older header passes the old integer and must keep meaning the same op).
+//
+// Two emit classes, same as the Lua catalog:
+//   * DETERMINATE ops (ReplaceWithNoop / SkipCallVoid / NeverTakeBranch /
+//     ReplaceWithReturn / ReplaceReturnValue / SkipCallReturnValue) emit a
+//     statement-bytes-independent sequence and apply today.
+//   * DEFERRED ops (AlwaysTakeBranch / InvertBranchCondition /
+//     ReplaceCallTarget / ReplaceAssignmentValue / ReplaceCompareConstant)
+//     need the apply-time statement's own bytes (a branch displacement, a
+//     resolved call target, an operand encoding), which the statement-
+//     resolution layer does not yet expose. They REGISTER, and the apply pass
+//     surfaces a clear not-yet-emittable deferral (IsApplied false + a
+//     GetReason teaching string) — never a fabricated byte.
+typedef enum kcdxOpKind {
+    // Return / function-level (require a `return` statement).
+    kcdxOp_ReplaceWithReturn      = 0,   // kcdx.op.replace_with_return(value) / return_const(value)
+    kcdxOp_ReplaceReturnValue     = 1,   // kcdx.op.replace_return_value(value)
+    // Whole-statement neutralize (applies to ANY statement kind).
+    kcdxOp_ReplaceWithNoop        = 2,   // kcdx.op.replace_with_noop / noop
+    // Call statements.
+    kcdxOp_SkipCallVoid           = 3,   // kcdx.op.skip_call_void
+    kcdxOp_SkipCallReturnValue    = 4,   // kcdx.op.skip_call_return_value(value)
+    kcdxOp_ReplaceCallTarget      = 5,   // kcdx.op.replace_call_target(new_fn_name)
+    // Branch (conditional-jump) statements.
+    kcdxOp_AlwaysTakeBranch       = 6,   // kcdx.op.always_take_branch
+    kcdxOp_NeverTakeBranch        = 7,   // kcdx.op.never_take_branch
+    kcdxOp_InvertBranchCondition  = 8,   // kcdx.op.invert_branch_condition
+    // Assignment / compare statements.
+    kcdxOp_ReplaceAssignmentValue = 9,   // kcdx.op.replace_assignment_value(value)
+    kcdxOp_ReplaceCompareConstant = 10,  // kcdx.op.replace_compare_constant(value)
+} kcdxOpKind;
+
+// A static op value — the C++ peer of a kcdx.op.* value, passed by const
+// pointer to ReplaceWith. Plain data the author fills (typically a brace
+// literal: `kcdxOp op = { kcdxOp_ReplaceWithNoop };`). The engine classifies
+// the kind (which statement kind it requires; determinate vs deferred emit)
+// from the SAME per-op table the Lua constructors use — the author supplies
+// only the kind + its operand(s).
+typedef struct kcdxOp {
+    kcdxOpKind  kind;       // REQUIRED — which op (see the catalog above).
+    long long   value;      // the constant operand, read ONLY by the
+                            // value-carrying kinds (ReplaceWithReturn /
+                            // ReplaceReturnValue / SkipCallReturnValue /
+                            // ReplaceAssignmentValue / ReplaceCompareConstant);
+                            // ignored otherwise (leave 0).
+    const char* targetFn;   // ReplaceCallTarget ONLY — the new callee's curated
+                            // function NAME (never an address); null otherwise.
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New fields go HERE, never mid-struct. A mid-struct insert shifts every
+    // subsequent field's offset; a plugin DLL compiled against the older
+    // header would read through the wrong offset → ACCESS_VIOLATION.
+} kcdxOp;
+
+// The locator catalog — one value per kcdx.locator.* constructor, mirrored
+// one-to-one (the C++ peer of a kcdx.locator.* value). A locator says WHERE in
+// a curated function a statement op applies. Values are APPEND-ONLY (same
+// discipline as kcdxOpKind).
+typedef enum kcdxLocatorKind {
+    // Function-level.
+    kcdxLocator_FunctionEntry    = 0,   // kcdx.locator.function_entry() — first statement
+    kcdxLocator_FunctionExit     = 1,   // kcdx.locator.function_exit()  — last statement
+    // Statement-content shortcuts (the common path — the author names what
+    // they already understand: a call to a function, a return, a string).
+    kcdxLocator_FirstCallTo      = 2,   // kcdx.locator.first_call_to(fn)
+    kcdxLocator_LastCallTo       = 3,   // kcdx.locator.last_call_to(fn)
+    kcdxLocator_CallTo           = 4,   // kcdx.locator.call_to(fn) — the UNIQUE call (errors if many)
+    kcdxLocator_FirstReturn      = 5,   // kcdx.locator.first_return()
+    kcdxLocator_LastReturn       = 6,   // kcdx.locator.last_return()
+    kcdxLocator_ReturnValue      = 7,   // kcdx.locator.return_value(v)
+    kcdxLocator_ReferencesString = 8,   // kcdx.locator.references_string(s)
+    kcdxLocator_FirstReadOfCvar  = 9,   // kcdx.locator.first_read_of_cvar(name)
+    // General matcher (any subset of the match* fields below; ANDed).
+    kcdxLocator_Matching         = 10,  // kcdx.locator.matching{ ... }
+    // LABELED EXPERT HATCH — raw-AOB; NOT a statement-metadata locator. The
+    // common-path locators above need no hex; this is the expert escape hatch.
+    kcdxLocator_MatchingPattern  = 11,  // kcdx.locator.matching_pattern("48 8B C1 ...")
+} kcdxLocatorKind;
+
+// A locator value — the C++ peer of a kcdx.locator.* value, passed by const
+// pointer. Plain data the author fills; each kind reads only its own operand
+// field(s) (null = unset, mirroring the Lua constructors' required args):
+//   FirstCallTo / LastCallTo / CallTo  read `calleeOrFn` (REQUIRED for them).
+//   ReturnValue                        reads `returnValueOperand` (REQUIRED).
+//   ReferencesString / FirstReadOfCvar read `stringArg` (REQUIRED).
+//   Matching                           reads the match* fields — any SUBSET
+//                                      may be set (non-null); provided keys
+//                                      are ANDed. All-null matches the first
+//                                      statement (no constraint).
+//   MatchingPattern                    reads `aobPattern` (REQUIRED).
+//   FunctionEntry / FunctionExit       read no operand.
+typedef struct kcdxLocator {
+    kcdxLocatorKind kind;             // REQUIRED — which locator (catalog above).
+
+    const char* calleeOrFn;           // FirstCallTo / LastCallTo / CallTo.
+    const char* returnValueOperand;   // ReturnValue — the operand text matched.
+    const char* stringArg;            // ReferencesString / FirstReadOfCvar.
+    const char* aobPattern;           // MatchingPattern (the labeled expert hatch).
+
+    // Matching keys — null = key not provided (any subset; ANDed).
+    const char* matchKind;                // statement kind ("call"/"return"/…)
+    const char* matchCallee;              // call target name
+    const char* matchConditionContains;   // substring of the statement's text
+    const char* matchReadsCvar;           // CVar name the statement reads
+    const char* matchReferencesString;    // string the statement references
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New fields go HERE, never mid-struct (append-only ABI).
+} kcdxLocator;
+
+// Opaque handle returned by ReplaceWith / InsertBefore / InsertAfter. 0 =
+// registration failed (the engine logs the teaching error to both the engine
+// log and the calling plugin's log). A NON-ZERO handle does NOT yet mean
+// applied: kcdx defers the resolve+emit+write to the apply pass (deferred-
+// apply model); query IsApplied(h) after the apply pass to confirm, and
+// GetReason(h) for the teaching reason when it did not apply. Stable for the
+// process lifetime; never reused; safe to copy by value. Same handle space as
+// kcdxHookHandle (the engine's registration registry mints both).
+typedef uint64_t kcdxStatementHandle;
+
+// Optional knobs container shared by the three statement verbs. Pass null for
+// the simple case. POD, C-ABI shape (sentinel values for unset: null for
+// strings/pointers, 0 for numerics).
+typedef struct kcdxStatementOptions {
+    // ReplaceWith ONLY — the optional locator selecting WHICH statement of the
+    // target function the op applies to. Null = the function's first statement
+    // (the kcdx.locator.function_entry() default, mirroring the Lua
+    // replace_with's omitted-locator default). InsertBefore / InsertAfter take
+    // their locator POSITIONALLY (it is required there); this field is ignored
+    // by them.
+    const kcdxLocator* locator;
+
+    // Optional override of the engine-synthesized identity. The engine
+    // composes a default from the target name when this is null; supply a
+    // stable, human-readable string when you want log lines tagged with your
+    // own name.
+    const char* name;          // optional — null = engine synthesizes
+    const char* description;   // optional — freeform; may be null
+
+    // Module the target lives in. Default "WHGame.dll" (engine substitutes if
+    // null) — the same default kcdxHookOptions.module carries. The Lua surface
+    // spells this as the required first positional; the C++ surface carries it
+    // here with the common-case default.
+    const char* module;
+
+    // Owning plugin identity. Used for the registration's attribution (log
+    // lines, the conflict report's owner column). Your own plugin handle
+    // (from kcdxInterface::GetPluginHandle); pass kcdxInvalidPluginHandle
+    // (or 0) for an anonymous registration. Same field shape as
+    // kcdxHookOptions.owningPlugin.
+    kcdxPluginHandle owningPlugin;
+
+    // Target-by-reference: when set, this kcdxFunctionRef (minted by
+    // kcdxFunctionsInterface — resolve once, pass to N verbs) WINS over the
+    // verb's positional `target` string. The reference must carry found=true
+    // and a name (a GameByName / PluginByName reference; a GameById reference
+    // carries no name string to resolve a statement by) — a not-found or
+    // nameless reference is a loud registration error (zero handle + the
+    // teaching reason), never a silent fallback to the positional string.
+    // Null = the positional `target` string is used (the common path).
+    const kcdxFunctionRef* targetRef;
+
+    // --- APPEND-ONLY BELOW ---------------------------------------------
+    // New options fields go HERE, never mid-struct. A mid-struct insert shifts
+    // every subsequent field's offset; a plugin DLL compiled against the older
+    // header would read through the wrong offset → ACCESS_VIOLATION.
+} kcdxStatementOptions;
+
+typedef struct kcdxStatementInterface {
+    // ------------------------------------------------------------------
+    // Registration methods — one per statement verb (sub-verb-per-variant,
+    // mirroring kcdx.statement.replace_with / .insert_before / .insert_after
+    // one-to-one). There are NO Before/After/Around/Replace methods — those
+    // describe callback ordering relative to an original call, which has no
+    // static-bytes analog (use kcdxHookInterface for per-call callbacks).
+    //
+    //   `target` — the curated function NAME (the common path — the engine
+    //              resolves the statement from the reference database; the
+    //              author types one line and never hand-writes hex). To pass a
+    //              kcdxFunctionRef instead, set opts->targetRef (it wins when
+    //              set; `target` may then be null/"").
+    //   `opts`   — optional knobs container; pass nullptr for the simple
+    //              case. See kcdxStatementOptions above.
+    //
+    // Returns a handle to keep for IsApplied / GetReason / GetName. A zero
+    // handle = registration FAILED (null op, an unknown target form, a
+    // not-found targetRef, an unrecognized op/locator kind value, a missing
+    // required locator operand). The teaching reason is auto-logged at Error
+    // level to the engine log AND the calling plugin's log. A NON-ZERO handle
+    // does NOT yet mean APPLIED — use IsApplied(h) after the apply pass.
+    //
+    // The kcdxOp / kcdxLocator / kcdxStatementOptions / targetRef contents
+    // are COPIED at registration time — the caller need not retain the
+    // structs or their strings after the call returns (stack literals are
+    // fine, the same copy contract kcdxDllInterface::Declare carries).
+    // ------------------------------------------------------------------
+
+    // Static-bytes replacement: write `op`'s bytes at the located statement.
+    // Takes a STATIC op (a kcdxOp value — what change to make), NOT a
+    // callback: the modified bytes execute natively with zero per-call cost
+    // (a per-call callback is kcdxHookInterface's job). The statement is
+    // selected by opts->locator (null = the function's first statement). At
+    // apply time the engine resolves the statement, KIND-CHECKS the op
+    // against the resolved statement's kind (a mismatch fails loud with a
+    // teaching reason naming the actual + required kind — IsApplied false,
+    // never a silent wrong-kind write), emits a determinate op's bytes, and
+    // writes them in place; a deferred op surfaces its not-yet-emittable
+    // deferral (see kcdxOpKind above). Mirrors kcdx.statement.replace_with.
+    kcdxStatementHandle (*ReplaceWith)(const char* target, const kcdxOp* op,
+                                       const kcdxStatementOptions* opts /* nullable */);
+
+    // Run `callback` BEFORE the located statement executes. Callback form;
+    // `locator` is REQUIRED ("insert before what?" has no default — pass a
+    // kcdxLocator naming the statement). Mirrors kcdx.statement.insert_before.
+    //
+    // REGISTER-AND-DEFER (not yet firing): the engine's statement-locator
+    // capture-thunk apply path is not wired yet — on BOTH surfaces (the Lua
+    // kcdx.statement.insert_* has the same contract). An insert REGISTERS
+    // (returns a non-zero handle on a valid call) and fails LOUD at the apply
+    // pass: IsApplied(h) stays false and GetReason(h) carries the teaching
+    // reason. The callback does not fire until that engine path ships; the
+    // deferral is explicit, never a silently-claimed install.
+    kcdxStatementHandle (*InsertBefore)(const char* target,
+                                        const kcdxLocator* locator,
+                                        void* callback,
+                                        const kcdxStatementOptions* opts /* nullable */);
+
+    // Run `callback` AFTER the located statement executes. Same contract as
+    // InsertBefore (locator REQUIRED; register-and-defer — see above).
+    // Mirrors kcdx.statement.insert_after.
+    kcdxStatementHandle (*InsertAfter)(const char* target,
+                                       const kcdxLocator* locator,
+                                       void* callback,
+                                       const kcdxStatementOptions* opts /* nullable */);
+
+    // ------------------------------------------------------------------
+    // Query / control methods on a handle (same contract as kcdxHookHandle's
+    // query set).
+    // ------------------------------------------------------------------
+
+    // Query whether the apply pass has applied the registration described by
+    // `h`. Returns false for an unknown handle, a still-pending handle (apply
+    // pass hasn't reached it yet), or a handle that failed to apply (a kind
+    // mismatch, an unresolved statement, a deferred-op / insert deferral).
+    // Mirrors the Lua `h:applied()` query.
+    bool (*IsApplied)(kcdxStatementHandle h);
+
+    // Failure reason for a registration that did not apply. Returns null when
+    // `h` is valid AND applied; otherwise returns the engine's teaching
+    // string (what went wrong + the fix — e.g. the kind-mismatch error naming
+    // the actual + required statement kind, or the insert register-and-defer
+    // reason). String is owned by the engine and valid for the process
+    // lifetime. Mirrors the Lua `h:reason()` query.
+    const char* (*GetReason)(kcdxStatementHandle h);
+
+    // Author-supplied (or engine-synthesized) registration name. Returns null
+    // for an unknown handle. String is owned by the engine and valid for the
+    // lifetime of the handle. Mirrors the Lua `h:name()` query.
+    const char* (*GetName)(kcdxStatementHandle h);
+
+    // NOT YET SUPPORTED for statement handles: an applied statement rewrite
+    // has no byte-revert path in the engine yet (no original-bytes snapshot
+    // is stored), so there is nothing safe to revert to. Returns false and
+    // logs the teaching reason; the registration's status is unchanged —
+    // never a silently-flipped "removed" over bytes that are still live.
+    // Mirrors the Lua statement handle's :uninstall() teaching error. A
+    // per-kind uninstall (snapshot + revert) ships as its own later feature.
+    bool (*Uninstall)(kcdxStatementHandle h);
+
+    // --- APPEND-ONLY BELOW (kcdxStatementInterface_Version >= 2) ----------
+    // New members go HERE, at the END, never mid-struct: a plugin DLL built
+    // against an older version reads the prefix members at their original
+    // offsets, so appending cannot shift them (append-only ABI).
+} kcdxStatementInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)

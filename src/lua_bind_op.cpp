@@ -603,6 +603,21 @@ int Lua_InvertBranchCondition(lua_State* L) {
     return 1;
 }
 
+// Fill an OpView from a descriptor — the ONE place the per-op classification
+// (ContractFor / OpKindLabel / RequiredKindString) is projected into the
+// cross-binder view. Shared by ReadOp (the Lua userdata path) and BuildOpView
+// (the C++ interface path) so the two surfaces read identical classification.
+void FillView(const OpDescriptor& op, OpView& out) {
+    OpContract c = ContractFor(op.kind);
+    out.op_label         = OpKindLabel(op.kind);
+    out.required_kind    = RequiredKindString(c.required);
+    out.required_label   = c.required_label;
+    out.emit_determinate = c.emit_determinate;
+    out.has_value        = op.has_value;
+    out.value            = op.value;
+    out.target_fn        = op.target_fn;
+}
+
 const luaL_Reg kFunctions[] = {
     {"replace_with_return", Lua_ReplaceWithReturn},
     {"return_const", Lua_ReplaceWithReturn},          // alias
@@ -633,14 +648,65 @@ const luaL_Reg kFunctions[] = {
 bool ReadOp(lua_State* L, int idx, OpView& out) {
     const OpDescriptor* op = TestOp(L, idx);
     if (!op) return false;
-    OpContract c = ContractFor(op->kind);
-    out.op_label         = OpKindLabel(op->kind);
-    out.required_kind    = RequiredKindString(c.required);
-    out.required_label   = c.required_label;
-    out.emit_determinate = c.emit_determinate;
-    out.has_value        = op->has_value;
-    out.value            = op->value;
-    out.target_fn        = op->target_fn;
+    FillView(*op, out);
+    return true;
+}
+
+// The C-ABI op-kind tag → the internal descriptor, classified through the SAME
+// per-op table (ContractFor / OpKindLabel / the operand gating) the Lua
+// constructors use. This switch is the ONE kcdxOpKind→OpKind mapping in the
+// engine — it lives beside the classification so the two cannot drift. An
+// unrecognized kind value or a missing required operand fails loud with the
+// teaching reason in err_out (the C++ peer of the Lua constructor's raised
+// error), never a silent default op.
+bool BuildOpView(kcdxOpKind kind, long long value, const char* targetFn,
+                 OpView& out, std::string& err_out) {
+    OpDescriptor op;
+    bool hasValue = false;
+    switch (kind) {
+        case kcdxOp_ReplaceWithReturn:
+            op.kind = OpKind::ReplaceWithReturn;      hasValue = true; break;
+        case kcdxOp_ReplaceReturnValue:
+            op.kind = OpKind::ReplaceReturnValue;     hasValue = true; break;
+        case kcdxOp_ReplaceWithNoop:
+            op.kind = OpKind::ReplaceWithNoop;        break;
+        case kcdxOp_SkipCallVoid:
+            op.kind = OpKind::SkipCallVoid;           break;
+        case kcdxOp_SkipCallReturnValue:
+            op.kind = OpKind::SkipCallReturnValue;    hasValue = true; break;
+        case kcdxOp_ReplaceCallTarget:
+            op.kind = OpKind::ReplaceCallTarget;      break;
+        case kcdxOp_AlwaysTakeBranch:
+            op.kind = OpKind::AlwaysTakeBranch;       break;
+        case kcdxOp_NeverTakeBranch:
+            op.kind = OpKind::NeverTakeBranch;        break;
+        case kcdxOp_InvertBranchCondition:
+            op.kind = OpKind::InvertBranchCondition;  break;
+        case kcdxOp_ReplaceAssignmentValue:
+            op.kind = OpKind::ReplaceAssignmentValue; hasValue = true; break;
+        case kcdxOp_ReplaceCompareConstant:
+            op.kind = OpKind::ReplaceCompareConstant; hasValue = true; break;
+        default:
+            err_out = "op.kind " + std::to_string(static_cast<int>(kind)) +
+                      " is not a recognized kcdxOpKind value — use one of the "
+                      "kcdxOp_* catalog values (kcdxOp_ReplaceWithNoop, "
+                      "kcdxOp_ReplaceWithReturn, ...). The catalog is "
+                      "append-only; an unknown value usually means a header/"
+                      "engine version mismatch.";
+            return false;
+    }
+    op.has_value = hasValue;
+    op.value     = value;
+    if (op.kind == OpKind::ReplaceCallTarget) {
+        if (!targetFn || !targetFn[0]) {
+            err_out = "kcdxOp_ReplaceCallTarget requires op.targetFn — the new "
+                      "callee's curated function NAME (never an address), e.g. "
+                      "{ kcdxOp_ReplaceCallTarget, 0, \"IsInCombat\" }.";
+            return false;
+        }
+        op.target_fn = targetFn;
+    }
+    FillView(op, out);
     return true;
 }
 

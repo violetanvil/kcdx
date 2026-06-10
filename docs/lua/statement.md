@@ -120,7 +120,8 @@ end)
 ```
 
 This is the Lua surface; the C++ mirror is
-[`kcdxStatementInterface`](../cpp/statement.md) (not yet implemented).
+[`kcdxStatementInterface`](../cpp/statement.md) (built — `K.statement->ReplaceWith`
+/ `InsertBefore` / `InsertAfter`, same engine path, same contracts).
 
 ## Glossary
 

@@ -1,0 +1,65 @@
+# CAP-96 — kcdxStatementInterface (C++ mirror of kcdx.statement.*) parity.
+#
+# C++ DLL plugin that exercises the new static-bytes statement interface
+# through the Kcdx.h wrapper's K.statement accessor — the C++ peer of the Lua
+# cap-92 surface. Proves ONE ENGINE PATH, both languages: a C++ ReplaceWith /
+# InsertBefore lands as the same deferred-apply statement entry the Lua verbs
+# queue, kind-checked and emitted by the same apply handler.
+#
+# Four falsifiable rows, all boot-only (rows 1-3 register at kcdxPlugin_Load so
+# the engine's apply pass processes them before the InputLoaded report point;
+# row 4 registers at the gate because its reference mint needs the reference
+# DB; no player gesture):
+#
+#   * CAP-96-replace-registers — K.statement->ReplaceWith("SaveGame",
+#       { kcdxOp_ReplaceWithNoop }, opts{module="WHGame.dll"}) returns a
+#       NON-ZERO handle (a STATIC op accepted, no callback path, queued as a
+#       deferred-apply statement entry). Pending / applied / deploy-state-
+#       degraded at InputLoaded are all honest PASSes. FALSIFIABLE: handle 0
+#       (the static op was not accepted / the curated target did not resolve
+#       at registration) -> FAIL.
+#   * CAP-96-kind-mismatch — ReplaceWith("SaveGame",
+#       { kcdxOp_AlwaysTakeBranch } [requires a "branch" statement]) with the
+#       default function-entry locator (a non-branch statement) registers
+#       (non-zero handle — the kind check fires at APPLY) and does NOT
+#       silently apply: IsApplied==false at InputLoaded. FALSIFIABLE:
+#       IsApplied true (a silent wrong-kind apply) -> FAIL; handle 0 (a valid
+#       static op rejected at registration) -> FAIL.
+#   * CAP-96-insert-defers — K.statement->InsertBefore("SaveGame",
+#       first_return locator, cb) returns a NON-ZERO handle AND
+#       IsApplied==false AND GetReason non-empty — the register-and-DEFER
+#       contract (the statement capture-thunk apply path is unwired on both
+#       surfaces; the deferral is LOUD). FALSIFIABLE: handle 0 (registration
+#       broken) / IsApplied true (a deferred insert silently applied) /
+#       GetReason empty (a silent deferral) -> FAIL.
+#   * CAP-96-targetref — K.functions->GameByName("WHGame", "SaveGame") set as
+#       opts.targetRef with a NULL positional target; ReplaceWith(noop)
+#       returns a NON-ZERO handle (the resolve-once-pass-to-N-verbs reference
+#       affordance works as a statement target). DEGRADED PASS when the
+#       reference DB is not loaded (mint reason db_not_loaded — a pre-deploy
+#       state). FALSIFIABLE: a FOUND ref as targetRef rejected at
+#       registration -> FAIL; a name_unknown mint miss (a real regression,
+#       NOT degraded) -> FAIL.
+#
+# SaveGame is referenced BY NAME (no hardcoded address) — the same curated
+# fixture the Lua statement rows use. Test mode: boot-only — all four rows
+# self-verify from the InputLoaded listener; NO console gestures, NO save/load.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_96_cpp_statement"
+display_name        = "CAP-96 kcdxStatementInterface (C++)"
+author              = "ts"
+description         = "C++ DLL exercising kcdxStatementInterface (static-bytes modification) through K.statement — the C++ parity mirror of the Lua kcdx.statement.* surface. Four boot-only falsifiable rows: a static kcdxOp registers (no callback path), a wrong-kind op never silently applies (the apply-time kind check), an insert registers-and-defers LOUD (IsApplied false + a readable teaching reason — the apply path is unwired on both surfaces), and a kcdxFunctionRef passed via opts.targetRef is accepted as the target (resolve once, pass to N verbs). Proves a C++ registration lands in the same deferred-apply statement path the Lua verbs feed."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-96-replace-registers",
+                       "CAP-96-kind-mismatch",
+                       "CAP-96-insert-defers",
+                       "CAP-96-targetref"]
+
+[entrypoints]
+dll    = "cap-96.dll"

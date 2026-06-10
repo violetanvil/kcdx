@@ -103,33 +103,12 @@ namespace {
 // The queued payload (engine state, surface-independent).
 // =============================================================================
 //
-// A replace_with intent: the resolved-statement selector (target + locator) +
-// the op (its identity + emit classification + operands) + opts. The
-// resolve+emit+write runs at apply (the conflict engine sees every plugin's
-// intent first). An insert_* intent carries insertPending = true and fails loud
-// at apply (the capture-thunk path is unwired).
-struct StatementPayload {
-    std::string name;
-    std::string description;
-    std::string module;
-
-    std::string owningAuthor;   // 2-dot identity (self > engine > other resolve).
-    std::string owningPlugin;
-
-    // The statement selector — resolved at apply time against the curated DB.
-    std::string targetName;                 // the curated function name.
-    refdb::StatementLocator locator;        // the statement locator (function_entry default).
-
-    // The op (replace_with only). Carried as the cross-binder OpView (op label +
-    // required kind + determinate/deferred classification + operands) so the
-    // apply path emits without re-reading the Lua userdata.
-    kcdx::lua_bind_op::OpView op;
-    bool        hasOp = false;
-
-    // insert_before / insert_after: the capture-thunk apply path is unwired; the
-    // entry fails loud at apply (mirrors kcdx.hook.insert_* at step 4).
-    bool        insertPending = false;
-};
+// The payload type is the PUBLIC StatementRegistration (lua_bind_statement.h)
+// — the one shape both authoring surfaces (these Lua verbs and the C++
+// kcdxStatementInterface thunks) fill and hand to QueueStatement, and the one
+// shape the apply handler below consumes. A replace_with intent carries
+// hasOp=true; an insert_* intent carries insertPending=true and fails loud at
+// apply (the capture-thunk path is unwired).
 
 // =============================================================================
 // The apply handler (Kind::Statement).
@@ -144,8 +123,8 @@ struct StatementPayload {
 // gap — see SURFACED). On any miss the handle goes Failed with a teaching reason.
 bool ApplyStatementEntry(kcdx::lua_registry::Entry& entry,
                          std::string& reason_out) {
-    auto sp = std::static_pointer_cast<StatementPayload>(entry.payload);
-    StatementPayload* p = sp.get();
+    auto sp = std::static_pointer_cast<StatementRegistration>(entry.payload);
+    StatementRegistration* p = sp.get();
     if (!p) {
         reason_out = "internal error: statement entry payload is null";
         return false;
@@ -423,28 +402,25 @@ std::string OptsGate(lua_State* L, const char* verb, int optsIdx) {
     return "";
 }
 
-// Append the built payload to the registry + return the handle (or (nil, err)).
-int QueuePayload(lua_State* L, std::shared_ptr<StatementPayload> p,
-                 const char* verb) {
+// Stamp the Lua-surface specifics onto a verb-built registration (the owning
+// plugin from the calling script's identity, the call site, the synthesized
+// default name), queue it through the shared QueueStatement seam (the ONE
+// payload-construction + registry-append home, shared with the C++ interface
+// thunks), and push the handle (or (nil, err)).
+int QueuePayload(lua_State* L, StatementRegistration& reg, const char* verb) {
     std::string callSiteFile;
     int         callSiteLine = 0;
     kcdx::lua_registry::OwningPlugin owner =
         kcdx::lua_registry::OwningPluginForCurrentCall(
             L, callSiteFile, callSiteLine);
-    p->owningAuthor = owner.author;
-    p->owningPlugin = owner.plugin;
-    if (p->name.empty()) p->name = std::string("lua_statement_") + verb;
-
-    kcdx::lua_registry::Entry e;
-    e.kind         = kcdx::lua_registry::Kind::Statement;
-    e.name         = p->name;
-    e.payload      = p;
-    e.pluginName   = owner.plugin;
-    e.callSiteFile = callSiteFile;
-    e.callSiteLine = callSiteLine;
+    reg.owningAuthor = owner.author;
+    reg.owningPlugin = owner.plugin;
+    reg.callSiteFile = callSiteFile;
+    reg.callSiteLine = callSiteLine;
+    if (reg.name.empty()) reg.name = std::string("lua_statement_") + verb;
 
     std::string err;
-    uint64_t handleId = kcdx::lua_registry::Append(std::move(e), &err);
+    uint64_t handleId = QueueStatement(reg, &err);
     return kcdx::lua_registry::PushHandleOrError(L, handleId, err);
 }
 
@@ -511,20 +487,20 @@ int Lua_ReplaceWith(lua_State* L) {
         return 2;
     }
 
-    auto p = std::make_shared<StatementPayload>();
-    p->module      = module;
-    p->locator     = locator;
-    p->op          = op;
-    p->hasOp       = true;
-    p->name        = OptString(L, optsIdx, "name");
-    p->description = OptString(L, optsIdx, "description");
+    StatementRegistration reg;
+    reg.module      = module;
+    reg.locator     = locator;
+    reg.op          = op;
+    reg.hasOp       = true;
+    reg.name        = OptString(L, optsIdx, "name");
+    reg.description = OptString(L, optsIdx, "description");
 
-    std::string reportName = p->name.empty() ? std::string("replace_with")
-                                             : p->name;
-    if (!ReadTargetName(L, verb, /*targetIdx=*/2, reportName, p->targetName))
+    std::string reportName = reg.name.empty() ? std::string("replace_with")
+                                              : reg.name;
+    if (!ReadTargetName(L, verb, /*targetIdx=*/2, reportName, reg.targetName))
         return 2;
 
-    return QueuePayload(L, p, verb);
+    return QueuePayload(L, reg, verb);
 }
 
 // =============================================================================
@@ -573,22 +549,22 @@ int InsertVerb(lua_State* L, const char* verb) {
         return 2;
     }
 
-    auto p = std::make_shared<StatementPayload>();
-    p->module        = module;
-    p->insertPending = true;
-    p->name          = OptString(L, optsIdx, "name");
-    p->description   = OptString(L, optsIdx, "description");
+    StatementRegistration reg;
+    reg.module        = module;
+    reg.insertPending = true;
+    reg.name          = OptString(L, optsIdx, "name");
+    reg.description   = OptString(L, optsIdx, "description");
 
-    std::string reportName = p->name.empty() ? std::string(verb) : p->name;
-    if (!ReadTargetName(L, verb, /*targetIdx=*/2, reportName, p->targetName))
+    std::string reportName = reg.name.empty() ? std::string(verb) : reg.name;
+    if (!ReadTargetName(L, verb, /*targetIdx=*/2, reportName, reg.targetName))
         return 2;
     // The locator descriptor is read for completeness (the apply path will need
     // it when the capture-thunk path lands); the not-yet-wired apply ignores it.
     const refdb::StatementLocator* loc =
         kcdx::lua_bind_locator::ReadLocatorDescriptor(L, 3);
-    if (loc) p->locator = *loc;
+    if (loc) reg.locator = *loc;
 
-    return QueuePayload(L, p, verb);
+    return QueuePayload(L, reg, verb);
 }
 
 int Lua_InsertBefore(lua_State* L) { return InsertVerb(L, "insert_before"); }
@@ -596,12 +572,33 @@ int Lua_InsertAfter (lua_State* L) { return InsertVerb(L, "insert_after");  }
 
 }  // namespace
 
+// The single queue seam both surfaces share (declared in lua_bind_statement.h).
+// Payload construction + the Kind::Statement registry append live HERE only:
+// the Lua verbs above and the C++ kcdxStatementInterface thunks
+// (src/statement_interface.cpp) each validate their own surface's arguments,
+// fill a StatementRegistration, and call this — neither builds a registry
+// entry itself, so the two surfaces cannot drift.
+uint64_t QueueStatement(const StatementRegistration& reg, std::string* err_out) {
+    auto p = std::make_shared<StatementRegistration>(reg);
+
+    kcdx::lua_registry::Entry e;
+    e.kind         = kcdx::lua_registry::Kind::Statement;
+    e.name         = p->name;
+    e.payload      = p;
+    e.pluginName   = reg.owningPlugin;
+    e.callSiteFile = reg.callSiteFile;
+    e.callSiteLine = reg.callSiteLine;
+
+    return kcdx::lua_registry::Append(std::move(e), err_out);
+}
+
 // Register the Kind::Statement deferred-apply handler. ENGINE state, not
 // Lua-surface state — makes Kind::Statement appliable regardless of which
-// surface queued the entry (a future kcdxStatementInterface at C++ Load time
-// would hit the same wall the Kind::Hook handler did: lua_registry::Append
-// rejects a Kind with no handler, and bind() runs too late at first-update-tick).
-// Called at engine init (dllmain.cpp, before DiscoverAndLoad).
+// surface queued the entry (the C++ kcdxStatementInterface queues at plugin
+// Load time, which would hit the same wall the Kind::Hook handler did:
+// lua_registry::Append rejects a Kind with no handler, and bind() runs too
+// late at first-update-tick). Called at engine init (dllmain.cpp, before
+// DiscoverAndLoad).
 void RegisterHandlers() {
     kcdx::lua_registry::RegisterApplyHandler(
         kcdx::lua_registry::Kind::Statement, &ApplyStatementEntry);
