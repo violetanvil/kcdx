@@ -24,8 +24,17 @@ One commit in `data/refdata-extractor/` (the schema + its data-core test):
 - the row `if/then/else`: `matched_address_version_id` is a non-null integer on the pass verdicts
   (`verified_working` / `passed_not_verified`), null otherwise (a `failed`/`cannot_check`/etc. row
   matched no candidate row).
-- the schema `description` strings updated to the D36 meanings (drop the "v1/v2" + "4 tokens"
-  prose).
+- **the incremental-flush contract (D37) — the schema defines BOTH shapes:** (a) the **per-row JSONL
+  line** = exactly one `rows[]` element object (the same per-row shape, one per line — the durable
+  append the sweep writes as each row resolves); (b) the **finalized v3 document** (`schema_version`
+  + `game_version` + `summary` + `rows[]`) the finalize pass produces at sweep end; plus (c) a
+  **partial-report signal** — a top-level `complete` (boolean) + `rows_expected` (integer) so the FE
+  consumer distinguishes a report that swept the whole curated set from one that stopped early (a
+  mid-sweep death leaves `complete: false` / fewer rows than `rows_expected`). The FE ingest (Phase
+  6) reads the finalized document; the JSONL line shape + the partial signal are what make a
+  crashed-mid-sweep report still ingestible.
+- the schema `description` strings updated to the D36/D37 meanings (drop the "v1/v2" + "4 tokens"
+  prose; state the incremental-flush durability contract).
 
 ## Test bar
 
@@ -34,9 +43,14 @@ round-trip pattern): assert a v3 sample report VALIDATES (a `verified_working` r
 `method_rank` 1 + `invoke_attempted` + a non-null `matched_address_version_id`; a `failed` row
 carries null `matched_address_version_id`; a `passed_not_verified` foreign-function row carries
 `invoke_attempted: false` + `invoke_skip_reason: "unsafe_to_call"`), AND a report with the OLD
-4-token verdict or missing the new fields is REJECTED. FALSIFIABLE: a v3 report missing
-`method_rank` validating, or an old-enum verdict validating, fails the test. Runnable AT this step
-(pure schema + fixture, no engine, no game). Per `.claude/rules/test-discipline.md`.
+4-token verdict or missing the new fields is REJECTED. **The incremental-flush contract (D37):**
+assert a single per-row JSONL line VALIDATES as one `rows[]` element (the durable per-row shape);
+assert a finalized document carries `complete` + `rows_expected`; assert a PARTIAL report
+(`complete: false`, `rows[]` length < `rows_expected`) still VALIDATES (a crashed-mid-sweep report
+is ingestible, not malformed). FALSIFIABLE: a v3 report missing `method_rank` validating, an
+old-enum verdict validating, or a partial report (fewer rows than `rows_expected`, `complete: false`)
+being REJECTED, fails the test. Runnable AT this step (pure schema + fixture, no engine, no game).
+Per `.claude/rules/test-discipline.md`.
 
 ## Scope note — schema location + the public/private boundary
 
@@ -58,9 +72,12 @@ self-contained and free of any private citation (`.claude/rules/public-private-b
 ## Design authority
 
 `data/maintainer-tool/design.md` **D36** (the 7-state enum + the `method_rank` /
-`invoke_attempted` / `invoke_skip_reason` fields + "the report schema bumps v2 → v3") + the existing
-schema `data/maintainer-tool/report-schema/verification-report.schema.json` (the v2 shape this
-edits). Build the v3 contract to D36's field set + enum, not this doc's summary.
+`invoke_attempted` / `invoke_skip_reason` fields + "the report schema bumps v2 → v3") + **D37** (the
+incremental-flush contract — the per-row JSONL line shape + the finalized v3 document + the
+`complete` / `rows_expected` partial-report signal) + the existing schema
+`data/maintainer-tool/report-schema/verification-report.schema.json` (the v2 shape this edits). Build
+the v3 contract to D36's field set + enum AND D37's dual-shape + partial-signal, not this doc's
+summary.
 
 ## UX
 

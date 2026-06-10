@@ -272,6 +272,8 @@ below).
 | The JSON verification report schema v1 (the cross-repo contract) | P1 step 2 | Frozen versioned schema (D28/D31b) |
 | Report schema **v2** — `matched_address_version_id` + `schema_version` 1→2 | P1 step 3 | The attribution field (D34); a versioned bump of the frozen schema |
 | **Report schema v3** — the 7-state enum + `method_rank` + `invoke_attempted` + `invoke_skip_reason` + redefined `summary`; `schema_version` 2→3 | **P5 step 1** | D36 — the active-attempt cross-repo contract |
+| **The incremental-flush contract in the schema** — the per-row JSONL line shape (one `rows[]` element) + the finalized v3 document + the `complete` / `rows_expected` partial-report signal | **P5 step 1** | D37 — the schema defines both shapes so a crashed-mid-sweep report is still ingestible |
+| **Per-row incremental flush** — each row's result appended + flushed to the JSONL sink as its attempt completes; a finalize pass wraps to the v3 document at sweep end (NEVER a bulk write) | **P5 step 3** | D37 — the live-exercise tier makes a mid-sweep death a real risk; the user: "we cant bulk flush at the end" |
 | The batch verification plugin (drives the engine rank-ladder over the curated set) | P5 step 3 | A kcdx test-suite plugin (D28) |
 | **Console command `kcdx_verify_all` (dev-mode-gated) + the save-load precondition** | **P5 step 2** | D33(rev) — replaces the boot-automatic trigger; menu-run → `skipped` (D36) |
 | Sweep scope = curated USER set only | P5 step 3 | The `kcdx_id` rows; NOT the ~321k DEV bulk rows (D33) |

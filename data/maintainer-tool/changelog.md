@@ -3,6 +3,24 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-09 — the verification report flushes incrementally, never bulk-written at sweep end (D37)
+
+The active-attempt sweep (D36) drives real game code per row (the live-exercise tier can fault/hang
+the session), so the report MUST be durable mid-sweep:
+- **Append-per-row JSONL → finalized v3 JSON.** Each row's result is written + flushed to a
+  line-delimited sink the instant its attempt completes (the same per-row tick as the console
+  stream); a finalize pass wraps the lines into the v3 JSON document at sweep end. A sweep that dies
+  at row N leaves a complete-up-to-N JSONL the maintainer can still ingest — never a lost bulk write.
+- **The v3 schema carries both shapes + a partial-report signal** (the per-row JSONL line = one
+  `rows[]` element; the finalized document; a `complete`/`rows_expected` flag so the FE knows a
+  report stopped early vs. swept the whole set).
+- Folded into the plan's Phase-5 step 5.1 (schema carries the partial/finalized contract) + step 5.3
+  (the sweep flushes per-row, finalizes at end) — no new step.
+
+**Integrated in:** §10 D37 (new).
+**Why:** the user — "we must ensure we have the data flushing incrementally. we cant bulk flush at
+the end."
+
 ## 2026-06-09 — active-attempt verification: the 7-state verdict enum + the 5-rank proof ladder + the live-exercise tier (D36; revises D25/D28/D33)
 
 The verification sweep was a passive static survey (D25's 4-token vocabulary: `resolves_works` /

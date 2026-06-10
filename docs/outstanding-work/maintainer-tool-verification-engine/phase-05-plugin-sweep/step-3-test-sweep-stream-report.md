@@ -21,7 +21,15 @@ One commit in kcdx `src/` + `test-plugins/`:
 - per-row console streaming via the verified overlay print channel
   (`kcdx.console.print` / `IConsole_PrintLine`): one line per row as its attempt completes —
   `[N/total] <name> v<ver> → <verdict> (rank <r>)`.
-- v3 JSON report emission (the 5.1 schema) to the known sink alongside `kcdx-dev.log`.
+- **incremental report flush (D37) — NOT a bulk write at the end:** each row's result object is
+  appended + flushed to a line-delimited (JSONL) sink the INSTANT its attempt completes (the same
+  per-row tick as the console line above — the row is printed AND durably written together), so a
+  sweep that hangs/crashes mid-run leaves a complete-up-to-row-N JSONL on disk. When the sweep
+  finishes, a **finalize pass** wraps the accumulated lines into the v3 JSON document (the 5.1
+  schema — `schema_version` + `game_version` + `summary` + `rows[]` + `complete: true` +
+  `rows_expected`) alongside `kcdx-dev.log`. The known sink is the JSONL during the sweep, the
+  finalized v3 JSON after. (A bulk write-at-end is forbidden — D37; the live-exercise tier makes a
+  mid-sweep death a real risk, and a bulk write loses the whole report.)
 - the `ACCEPT-SUITE` / `ACCEPT-RESULT` self-report (`.claude/rules/acceptance-signal.md`).
 - the `test-plugins/README.md` matrix row + deploy to all 3 plugin trees
   (`kcdx-engine/builtin/` + `kcdx-plugins/` + `kcdx-plugins/test-suite/` — the deploy-all-trees
@@ -31,16 +39,19 @@ One commit in kcdx `src/` + `test-plugins/`:
 
 The matrix row IS the test bar (`.claude/rules/test-suite.md`): at a live launch (dev_mode on) the
 maintainer loads a save + runs `kcdx_verify_all` → the sweep streams a per-row line per curated row,
-emits a v3 JSON report that VALIDATES against the 5.1 schema (the per-row 7-state verdict +
-`method_rank` + `invoke_attempted` + `invoke_skip_reason` + matched id; the rank-1 rows
-`verified_working`, the foreign-function rows `passed_not_verified` + `invoke_attempted: false`, the
-`vtable_index` rows `cannot_check`), and self-reports `ACCEPT-SUITE` to `kcdx-dev.log`. The agent
-builds, deploys to all 3 trees, hash-verifies, enables dev mode; the user launches + loads + runs the
-command; the agent reads the `ACCEPT-SUITE` PASS + confirms the report validates against the v3
-schema. FALSIFIABLE: a report that fails v3 validation, a row with no verdict (a passive
-non-result), or `ACCEPT-SUITE` absent fails the row. Runnable AT this step (the Phase-4 ladder + the
-5.1 schema + the 5.2 command all exist). Per `.claude/rules/test-discipline.md`,
-`.claude/rules/incremental-delivery.md`.
+**flushes each row's result to the JSONL sink as it completes (D37 — the JSONL grows during the
+sweep, not all at once at the end)**, then finalizes a v3 JSON report that VALIDATES against the 5.1
+schema (the per-row 7-state verdict + `method_rank` + `invoke_attempted` + `invoke_skip_reason` +
+matched id + `complete: true` + `rows_expected`; the rank-1 rows `verified_working`, the
+foreign-function rows `passed_not_verified` + `invoke_attempted: false`, the `vtable_index` rows
+`cannot_check`), and self-reports `ACCEPT-SUITE` to `kcdx-dev.log`. The agent builds, deploys to all
+3 trees, hash-verifies, enables dev mode; the user launches + loads + runs the command; the agent
+reads the `ACCEPT-SUITE` PASS + confirms the report validates against the v3 schema. FALSIFIABLE: a
+report that fails v3 validation, a row with no verdict (a passive non-result), a JSONL that appears
+only as one bulk write at sweep end (the D37 violation — assert the sink carries ≥1 row's line
+before the finalize, e.g. the row count grows across the sweep), or `ACCEPT-SUITE` absent — each
+fails the row. Runnable AT this step (the Phase-4 ladder + the 5.1 schema + the 5.2 command all
+exist). Per `.claude/rules/test-discipline.md`, `.claude/rules/incremental-delivery.md`.
 
 ## Dependencies
 
@@ -59,8 +70,9 @@ invariant: the JSON report is the FE-consumer contract).
 `data/maintainer-tool/design.md` **D28** (the report producer + write-alongside-`kcdx-dev.log`) +
 **D33** (the curated-USER-set scope + console-after-save-load + per-row streaming) + **D34** (the
 matched `address_version_id` per row) + **D29** (`evidence_kind` from the passing check's tier) +
-**D36** (the per-row response shape) + the **v3 schema** (step 5.1, the emit target). Build to those
-named contracts, not this doc's summary.
+**D36** (the per-row response shape) + **D37** (the incremental per-row JSONL flush → finalize, never
+a bulk write at end) + the **v3 schema** (step 5.1, the emit target). Build to those named contracts,
+not this doc's summary.
 
 ## UX
 
