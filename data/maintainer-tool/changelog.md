@@ -3,6 +3,31 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-09 — the in-game `evidence_kind` is keyed by the D36 proof rank (D29)
+
+D36 split the in-game pass into two proof tiers, but D29 still wrote `live_production` for every
+in-game-passing row — over-claiming a row that never executed. The bulk re-verify (s08 verify-all)
+now writes `evidence_kind` by the row's D36 proof rank:
+- a **rank-1 `verified_working`** row (OBSERVED live execution) → `live_production` (unchanged — it
+  truly ran in-game).
+- a **ranks-2–5 `passed_not_verified`** row (the in-game STATIC pass — on-disk hash + reachability
+  + safe-read; the in-game test plugin checked it but did NOT observe execution) → `live_test_plugin`
+  (the existing rank-2 tier — the in-game verify-all sweep IS the test-suite plugin, D28/D33, so
+  "the in-game test plugin verified this row" is exactly what `live_test_plugin` records). NO new
+  `evidence_kind` enum value is added (the frozen-schema guarantee holds — `live_test_plugin` is an
+  existing member), and the existing `live_test_plugin` rows (id 7/8/115) keep their tier on
+  re-verify (no downgrade).
+
+The rest of D29 (the auto-trio composition, the D34 `valid_through` gap-extension, the
+`>=`-covered skip) is unchanged — only the `evidence_kind`-from-tier clause gained the rank split.
+**Integrated in:** §10 D29.
+**Why:** D36's active-attempt model split "pass" into live-observed (rank-1) vs statically-passed
+(ranks 2–5); `evidence_kind` (D29's purpose — record HOW a row was verified) must distinguish them
+or it over-claims a static pass as live execution. Surfaced by the s08 `/ui-design` reconciliation
+(committed fa8db80); the static-tier value was corrected from `pattern_scan` to the more-honest
+existing `live_test_plugin` by the design-soundness gate (`pattern_scan` is the weakest tier, coined
+for the browser AOB scan, and would have silently downgraded the existing `live_test_plugin` rows).
+
 ## 2026-06-09 — the verification report flushes incrementally, never bulk-written at sweep end (D37)
 
 The active-attempt sweep (D36) drives real game code per row (the live-exercise tier can fault/hang
