@@ -26,10 +26,11 @@ Phase 5 (now built there: P5 steps 5/7). The P4 step docs
 `step-2-boot-asset-swap.md`) carry forward-pointers; their full slot/serve content
 is superseded by the Phase-5 tree (P5 steps 5/6).
 
-**The P4 step docs + the Phase-4 README still describe the OLD "early slot + boot
-swap" scope** (the README ledger row was re-labeled to "the cross-thread
-foundation", but the P4 dir's own docs were not re-authored — that re-scope is the
-remaining P4 tree-cleanup, small, do it when P4 builds).
+**The P4 README + both step docs were re-authored to the foundation-only scope
+(2026-06-10 ledger reconciliation).** The P4 README now describes the gate + CAS +
+cap-82 regression; step 1 is the cross-thread event gate + `RegisterRuntimeOverlay`
+CAS; step 2 is the cap-82 order-inversion regression. The early-slot runner + boot
+serve that previously lived in these docs are redirected to Phase 5 (steps 5/7).
 
 ## The owed probe (P5 step 1 — now in the tree)
 

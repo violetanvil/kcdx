@@ -27,8 +27,13 @@ it once all rows are DONE and committed.
 |---|---|---|---|
 | 1 | Fix stale headers (9.3 → DONE, P11 → IN PROGRESS) + soften top-README "live-confirmed" overclaim | DONE | (this commit) |
 | 2 | Surface the full open-items map in the top README (5 unnamed TDs, TD-0006/0007 as prerequisites, asset-system Ph3 NEEDS REWORK, P11 internal owed items) | DONE | (this commit) |
-| 3 | Re-author Phase-11 P4 README + step-1/step-2 docs to the foundation-only scope (redirect slot/serve content to P5) | NOT STARTED | — |
+| 3 | Re-author Phase-11 P4 README + step-1/step-2 docs to the foundation-only scope (redirect slot/serve content to P5) | DONE | (this commit) |
 
-Chunks 1+2 are top-restructure-doc edits (one cohesive commit). Chunk 3 is a
-P4-sub-tree re-author (separate cohesive commit). None touches the in-flight P5
-step-7/8/9 edits (unrelated, left for their owner).
+Chunks 1+2 landed in `1348c55` (top-restructure-doc edits). Chunk 3 is the
+P4-sub-tree re-author (this commit). None touched the in-flight P5 step-7/8/9
+edits (unrelated, left for their owner).
+
+**RECONCILIATION COMPLETE.** All three chunks DONE. This tracker can be deleted —
+the reconciled state lives in the README + sub-tree docs, and the audit trail is in
+the two commits. (Left in-tree until the next pass touches the restructure root, so
+the just-completed sweep is discoverable; not a permanent lifecycle artifact.)
