@@ -170,6 +170,23 @@ the four explained drifts: USER address_names + the two new USER tables + USER
 sqlite_sequence, plus DEV address_names; the drift fully attributed to `3cc6a67` +
 `a9b0e8a`, root-cause-verifier `land-fix`) before recording.
 
+It was RE-CAPTURED AGAIN (seeds-to-tracked-csv migration, 2026-06-10) for one
+already-committed maintainer-tool edit the prior baseline (KI-0009, 2026-06-08)
+predated, verified FIRST before recording. During the migration the oracle's seed
+source moved from `data/seeds/` to the tracked `data/db-export/` export (P2.1,
+`076834e`) -- which only changed WHERE build_rows reads, not the data. The drift is
+EXACTLY one cell, fully attributed to `baae0a9` (2026-06-09, "maintainer-tool: save
+version-row kcdx_id=144"): the `address_versions` row id 144 (the function at RVA
+0x03581B04) `signature` return type was normalized `char (...)` -> `i8 (...)` (the
+same 8-bit type, vocabulary-normalized). So the `address_versions` content hash moves
+in BOTH DBs (USER ccd21220.. -> 3a7903dd..; DEV 5f85f958.. -> db2b5418..). NO
+row-count change (USER 157, DEV 321144 both before and after); address_names /
+game_versions / meta / modules / statements / referenced_vars / call_edges / every
+_dict_* table BYTE-IDENTICAL. The drift was verified first (a CSV diff isolated the
+single id-144 char->i8 cell; the post-capture baseline diff confirmed ONLY the two
+address_versions hashes moved, counts unchanged) before recording -- a legitimate
+re-capture of an explained, committed edit, NOT a paper-over.
+
 Re-capture with --capture ONLY for a deliberate, reviewed output change like
 those -- never to paper over an unexplained drift.
 
