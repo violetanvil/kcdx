@@ -58,6 +58,50 @@ Deterministic: boot-to-menu with the deployed suite (dev mode on) at commit
 `08e2f2a` — `comp-20-declarer-statement` FAILs every run; cap-92 passes. The
 fixture pair is `test-plugins/comp-20-behavior-declarer/` + `-consumer/`.
 
+## Trail
+
+| Date | Action | Result |
+|------|--------|--------|
+| 2026-06-11 | PROBE A: static read — trace who fills PatchEntry.original on the statement apply path | Hypothesis DISPROVEN. No original-capture stage exists for ANY statement entry; the defect is registration-time-independent. |
+
+## Facts
+
+- The statement apply handler resolves at apply time, emits the replacement
+  (NOP-padded to `byte_range_len`), and builds the carrier `PatchEntry` with
+  `resolvedVa` + `replacement` — `pe->original` is NEVER assigned
+  (`src/lua_bind_statement.cpp:282-297`). (PROBE A)
+- `patch::Resolve` rejects `original.size() != replacement.size()` as its FIRST
+  check, before the `resolvedVa` carrier path (`src/patch_engine.cpp:251-257`)
+  — every statement write with a non-empty emit is rejected `(0 vs N)`. (PROBE A)
+- `refdb::StatementResolution` exposes kind / callee / string_ref / pseudo_text /
+  byte_range / captures — NO instruction-bytes field (`src/refdb.h:393-416`);
+  the deferred-op comment states the layer "does NOT expose the apply-time
+  statement's actual bytes" (`src/lua_bind_statement.cpp:195-199`). (PROBE A)
+- cap-92 was never a control for the APPLY: its four rows assert registration +
+  error paths + zero-dispatch, none asserts `applied()==true` — the live-apply
+  proof is the deliberately-deferred TD-0010 (bucket-2). comp-20-declarer-statement
+  is the FIRST fixture to drive `replace_with` through a real apply. (PROBE A)
+
+## Reframe (2026-06-11)
+
+The filed title/hypothesis ("boundary-time registration misses a capture
+stage") is wrong — disproven by PROBE A. The mechanism: `kcdx.statement.
+replace_with`'s apply path has never successfully applied ANY entry; the
+carrier `PatchEntry` ships an empty `original`, and the patch engine's
+length-preserving precondition unconditionally rejects it. The boundary-time
+registration in comp-20 was merely the first caller to reach the full apply.
+TD-0010's deferred live proof is the reason this shipped unexercised.
+
+## Open questions
+
+- The fix fork (design surface — Gate A owed): what fills `original`?
+  (a) read the LIVE bytes at the statement VA at apply time (no DB baseline —
+  weaker tamper check), (b) extend the statement-resolution layer / DB to
+  expose the statement's instruction bytes (the deferred-op comment implies
+  this is the planned direction; also unblocks the site-dependent ops), or
+  (c) an explicit no-verify carrier mode in `patch::Resolve` for
+  resolvedVa-carrier entries. Labeled — not decided here.
+
 ## What this report does NOT do
 
 - Does not propose a fix.
