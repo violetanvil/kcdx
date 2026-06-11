@@ -10,6 +10,8 @@
 
 - **Test-bar shape (§A.3 / §B)** — a new `cap-NN` / `comp-NN` `test-plugins/` regression plugin + a `test-plugins/README.md` matrix row; both surfaces of a capability (Lua + C++) get rows (`.claude/rules/test-suite.md`).
 
+- **Cornerstone gate on surfaced options (Phase A forks)** — before presenting any option set, run every option past `.claude/rules/cornerstones.md`; each option's Pros/Cons states its cornerstone standing (+ the disassembler-test verdict where author-facing), and the Recommendation names the cornerstone it wins on (a fork no cornerstone bears on states so — never a fabricated standing).
+
 - **Decomposition extra** — a step needing a game-function offset / ABI that does not exist yet → the evidence-resolution (`/research-disassembly`) is step 1, before the step that consumes it.
 
 - **Acceptance shape (§C)** — one game launch per feature; the matrix is confirmed from `kcdx-dev.log` (the manual shape lives in `verification-checkpoint`).

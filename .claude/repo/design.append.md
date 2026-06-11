@@ -11,7 +11,10 @@
     declaring intent? A design making the author supply an address / offset / register / instruction
     length / hand-written signature for a common task is an AP12 UX defect — surface it ("this asks
     the author to hand-write a signature — expert-only form, or does the engine carry it?"), never
-    settle it silently.
+    settle it silently. **Every fork's options are run past the cornerstones BEFORE presenting:**
+    each option's Pros/Cons states its cornerstone standing (+ the disassembler-test verdict where
+    author-facing), and the Recommendation names the cornerstone it wins on (a fork no cornerstone
+    bears on states so — never a fabricated standing).
   - **Soundness gate (§C.4)** — the gate's brief already carries "the repo's design anchor"; that
     anchor is the cornerstones. The §C.4 `architect-review` verifies the drafted design does not
     trade a cornerstone for implementation effort and does not put author hex/ABI burden on a common
