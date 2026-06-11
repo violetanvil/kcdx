@@ -43,13 +43,17 @@ DEFERRED governance sweep, recorded as the follow-up).
 `.claude/rules/deletion-hygiene.md` (the removed surface leaves no surviving in-scope prescriptive
 reference; the governance-prose survivors are the deferred sweep).
 
-## Deferred governance sweep — the precise survivor set (NOT this step; the user-decided follow-up)
+## Governance sweep — DONE (the user chose to do it now, not defer; commits 04a8350 + badf779)
 
 The data deletion landed (the 3 `data/seeds/*.csv` `git rm`'d + the untracked `data/seeds - deprecated/`
-filesystem-deleted). `data/seeds/policy.md` was deliberately KEPT (restored from HEAD, still tracked) —
-it is the AP18 authoring-law authority, and deleting it would dangle the references below. The user
-decided (2026-06-10): delete the data CSVs now, keep `policy.md` until the governance sweep relocates it
-+ repoints its references atomically. The concrete survivor set the deferred sweep must handle:
+filesystem-deleted). `data/seeds/policy.md` was first KEPT, then the user decided (2026-06-10) to do the
+governance sweep NOW rather than defer it. The sweep landed in two commits and left ZERO active
+`data/seeds` residue: **04a8350** relocated `policy.md` → `data/maintainer-tool/policy.md` + repointed 13
+prescriptive refs + revived the dead AP18 guard (`guard-seed-approval.py`'s regex was leaf-anchored so it
+fires on the db-export export); **badf779** repointed the remaining active governance refs + synced the
+3-way private-path lists (the hook + `publish-public.ps1` + `public-private-boundary.md` all carve out
+`data/db-export/` + `data/db-export-bulk/` + `data/maintainer-tool/` + `data/refdata-extractor/`). The
+`data/seeds/` directory is fully gone. The survivor set the sweep handled:
 
 - **`data/seeds/policy.md` relocation** — move it to its new home (e.g. `data/maintainer-tool/` or
   `data/db-export/`) and repoint the 9+ prescriptive references in the SAME change (deletion-hygiene):
