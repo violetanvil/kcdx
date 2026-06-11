@@ -12,8 +12,12 @@ stale accessor errors, never dangles), coercion accessors
 (`AsBool/AsInt64/AsDouble/AsString`), table traversal, typed builders +
 C-function-pointer callable registration. The QUERY thread wall (load-wave +
 main-thread-only post-load; off-thread query → teaching error with the two
-pattern pointers). `Invoke` and the queued Set are step 2. Doc increment: the
-`docs/cpp/` interface doc.
+pattern pointers). **The VM-adoption wave-end gate builds HERE** (ruling
+2026-06-11), before the query wall that depends on it: the loader signals
+C++-wave end (`DiscoverAndLoad` end); `Intercept_lua_newstate` WAITS on that
+signal — boot-only, one-shot (observed margin ~5.6 s, typical wait zero).
+`Invoke` and the queued Set are step 2. Doc increment: the `docs/cpp/`
+interface doc.
 
 **Test bar.** C++ leg in the cap plugin: all four verbs at main-stop surfaces;
 C++-declared behavior set from Lua and Lua-declared set from C++ (main stops);
@@ -21,9 +25,14 @@ coercion-mismatch fixture; stale-handle fixture; off-thread post-load query →
 teaching error, no crash. Replaces step 4's thin C harness for the early-stop
 out-of-window fixture... (that swap completes in step 2 with the queue; this
 step carries the interface-based re-issue of the early-stop SET fixture).
+A gate regression row: the wave-end signal precedes adoption — an order
+assertion fixture (the inversion case simulated by holding the signal in a
+test hook if feasible, else the assertion row + the boot-order log check).
 
 **Dependencies.** P1 complete (the surface being mirrored); P1 s1 (VM-access
-window + C++ stop observations).
+window + C++ stop observations). The wave-end gate precedes the load-wave
+query semantics — queries are legal during the load waves only under its
+guarantee.
 
 **Reference.** [`../plan-spec.md`](../plan-spec.md).
 

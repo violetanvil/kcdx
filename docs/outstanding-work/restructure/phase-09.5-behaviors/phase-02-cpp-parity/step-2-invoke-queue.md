@@ -11,10 +11,12 @@ no new bypass). The queued Set: off-thread post-load `Set` records + queues
 for off-thread construction (scalars/strings/fn-pointers direct; table payloads
 as engine-side descriptions materialized at execution); execution at the next
 apply point on the main thread; per-disposition attribution (misuse → setter;
-declarer-code raise → declarer; all async); `get()` flips at execution. If P1
-s1's read found the pump UNBOUNDED, the overflow disposition was escalated to
-the user there — this step builds the decided shape. Doc increment: the thread
-contract section in `docs/cpp/` + `docs/lua/behavior.md`.
+declarer-code raise → declarer; all async); `get()` flips at execution. The
+pump is unbounded by ruling (2026-06-11); this step ships the shared-pump
+high-water teaching warn (attributed, depth-named, one comparison at enqueue,
+covers all producers) alongside the queue contract — no cap, no rejection, no
+coalescing. Doc increment: the thread contract section in `docs/cpp/` +
+`docs/lua/behavior.md`.
 
 **Test bar.** Cap fixtures: Invoke on a callable value (both a Lua-declared fn
 and a C++-registered fn-pointer); off-thread set → queues, executes on main,

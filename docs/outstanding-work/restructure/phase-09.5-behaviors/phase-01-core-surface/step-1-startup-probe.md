@@ -23,7 +23,8 @@ startup timeline; the rest are code reads captured as evidence.
   assumes-half — provisional until `lua_before` lands; the live confirmation
   rides that trigger with the deferred Lua fixture leg).
 - Probe leaves NO residue in live source — finding + wiring captured to
-  `_research/probe-archive/`, probe removed (`.claude/rules/working-artifacts.md`).
+  `_research/behavior-startup-recon/` (FINDINGS.md §4 carries the wiring), probe
+  removed (`.claude/rules/working-artifacts.md`).
 
 **Test bar.** The probe's outcome map IS the verification (an evidence step's
 observable outcome, per `.claude/rules/incremental-delivery.md`); the captured

@@ -1,6 +1,6 @@
 # Phase 9.5 — `kcdx.behavior.*` named-behavior catalog (two-tier)
 
-**Status: NOT STARTED.** The simple-modder surface: one line, never a function
+**Status: IN PROGRESS.** The simple-modder surface: one line, never a function
 name, statement, op, or address. Two tiers (engine catalog + plugin-declared)
 through one model and one code path.
 
@@ -15,14 +15,15 @@ through one model and one code path.
 
 ## Phase ledger (phase-grain)
 
-Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short hash
-when `DONE`, `—` otherwise. A landed step flips its row in its phase README; the
-last step of a phase flips that phase's row here; 9.5's completion flips the
-restructure top-ledger row (the orchestrator owns the cascade).
+Status: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE` · `NEEDS REWORK`.
+Commit = short hash when `DONE`, `—` otherwise. A landed step flips its row in
+its phase README; the last step of a phase flips that phase's row here; 9.5's
+completion flips the restructure top-ledger row (the orchestrator owns the
+cascade).
 
 | Phase | Status | Commit |
 |---|---|---|
-| [1 — core surface (probe · registry · boundary · window law · toggle · edges · auto-order)](phase-01-core-surface/README.md) | NOT STARTED | — |
+| [1 — core surface (probe · registry · boundary · window law · toggle · edges · auto-order)](phase-01-core-surface/README.md) | IN PROGRESS | s1 (landed) |
 | [2 — C++ parity + the command queue](phase-02-cpp-parity/README.md) | NOT STARTED | — |
 | [3 — the engine catalog](phase-03-catalog/README.md) | NOT STARTED | — |
 

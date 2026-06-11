@@ -23,6 +23,11 @@ Key changes from the original-plan section:
 - C++ parity (`kcdxBehaviorInterface`) ships **in-phase**, like 9.3.
 - The version story is re-grounded on the shipped three-track model — the baseline's
   `authored_against_game_version` field was superseded 2026-05-27 and never built (§9).
+- 2026-06-11 — probe 9.5-S1 discharged the marked runtime assumptions (boundary
+  point + self-drain, C++ stops, call-time §9 enforcement, loader-placement
+  catalog pin, invoke half-reuse); two rulings encoded: the command pump stays
+  unbounded with a shared high-water teaching warn (never rations authors), and
+  VM adoption gains an explicit wave-end gate (gated-never-timed).
 
 ## §1 Vision
 
@@ -192,10 +197,13 @@ The collect-then-apply model (the ApplyZone precedent, `hook-engine.md`):
    riding the engine's existing off-thread→main dispatch machinery
    (`lua-callback-threading.md` — no new dispatch path bypasses the guard). The
    queue contract: FIFO arrival order, each queued set executing as its own toggle
-   (no coalescing). *Assumes the existing marshal pump is reusable for queued
-   toggles AND is bounded — verify both before building; if it proves unbounded,
-   the overflow disposition is surfaced as its own user decision, never defaulted*
-   (`results-driven.md`, `.claude/rules/concurrency.md`). A queued toggle's failure logs
+   (no coalescing). Pump reuse CONFIRMED (FIFO, no coalescing, re-entrant-safe —
+   observed `src/task.cpp`); the pump is UNBOUNDED BY RULING (2026-06-11): the
+   engine never rations authors — no cap, no rejection. A high-water teaching
+   warn at the SHARED pump (attributed, depth-named, generous threshold, one
+   integer comparison at enqueue) makes a runaway diagnosable; the warn covers
+   ALL pump producers (behavior commands, hook marshaling, plugin AddTask)
+   (`.claude/rules/concurrency.md`). A queued toggle's failure logs
    attributed to the declarer (asynchronous — not returned at the call site);
    `get()` flips only when the toggle actually executes, so the surface never lies
    (an off-thread setter may briefly read the prior value — the same
@@ -215,13 +223,13 @@ The collect-then-apply model (the ApplyZone precedent, `hook-engine.md`):
    a load-time act (the window law's own premise); hot-reload revisits this (§13).
 
 The apply boundary's exact placement in the load sequence (a step after the last
-plugin's script executes, before the suite/ready events) is fixed at build —
-*assumes the loader exposes a clean after-all-plugins point, AND that hash-checked
-registrations an implementation makes AT the boundary (`kcdx.statement.*` /
-`kcdx.hook.*` calls, which queue intent for the `ApplyZone` pass) still land in the
-relevant apply pass — verify both against the load-wave sequence in
-`plugin_loader.cpp` / `lua_registry::ApplyZone` before building*
-(`results-driven.md`).
+plugin's script executes, before the suite/ready events) is fixed at build.
+OBSERVED (probe 2026-06-11, `_research/behavior-startup-recon/`): the
+point exists — post-`RunPostGameLoad`, pre-`InputLoaded`, on the game main
+thread. The boundary pass TRIGGERS ITS OWN ApplyZone drain: a registration
+queued at that point otherwise drains only post-InputLoaded (probe F2 — the
+in-block ApplyZone passes cover only post-Lua-wave registrations, not
+registrations queued at the boundary candidate itself).
 
 ## §6 Ordering — discriminating errors, persisted edges, the callable auto-order method
 
@@ -250,11 +258,13 @@ rather than any bespoke deferral:
   early-consumer→late-declarer, not C++-vs-Lua.
 - **Catalog-tier behaviors (`kcdx.behavior.*`) are settable from any stop** — the
   engine pack declares them before any plugin runs (§7).
-- *Assumes — verify before building:* where the C++ main-stop surfaces
-  (`kcdxPlugin_PostGameLoad`, event subscribers) actually sit relative to the Lua
-  wave and the apply boundary, and whether the P5 early stop runs C++ + `lua_before`
-  entries interleaved per the unified order (`results-driven.md`; read/probe against
-  the P5 tree at build).
+- OBSERVED (probe 2026-06-11, `_research/behavior-startup-recon/`):
+  `kcdxPlugin_Load` is an EARLY stop (worker thread, pre-Lua-wave);
+  `kcdxPlugin_PostGameLoad` is a MAIN stop (game-main, post-Lua-wave,
+  pre-InputLoaded); PostLoad/PostPostLoad subscribers fire on the WORKER at wave
+  end. The early-stop interleave half STAYS PROVISIONAL — the P5 tree is silent,
+  and the shipped precedent is two sequential passes, not interleaved; until
+  `lua_before` lands, §6 does not rest on intra-stop interleaving.
 
 Within the main stop, the resolution-error branches:
 
@@ -333,9 +343,12 @@ wrong root.
 
 - **Ordering guarantee:** the catalog pack loads ahead of every user plugin, so
   `kcdx.behavior.*` names are always declared before any user `set` runs — the §6
-  immediate-error model never false-positives on engine behaviors. *Assumes the
-  builtin zone/priority machinery can pin the pack ahead of all user plugins —
-  verify the builtin ordering path before building* (`results-driven.md`).
+  immediate-error model never false-positives on engine behaviors. The
+  zone/priority mechanism is DISPROVEN as the pin (`RunAll` sorts by priority
+  only; the `before_game` ApplyZone slice has no call site) — the ordering
+  guarantee is the catalog-aware loader's CALL-SITE PLACEMENT: the engine runs
+  the catalog files before `lua_plugin_loader::RunAll`
+  (`_research/behavior-startup-recon/FINDINGS.md` §2d).
 - **Promotion = file move.** A plugin-tier behavior is promoted by moving its `.lua`
   file into the catalog dir (a PR); the declare code is unchanged — only the
   stamping root differs.
@@ -375,20 +388,23 @@ interface roster (append-only ABI, `skse-parity.md` / interface versioning rules
   - **Coercion accessors** for the everyday scalars — `AsBool` / `AsInt64` /
     `AsDouble` / `AsString` (one call for the common case);
   - **Table traversal accessors** for table values;
-  - **`Invoke(handle, args…)`** for callable values — riding the engine's existing
-    C++→Lua call machinery (*assumes the existing callback-dispatch path is reusable
-    for value invocation — verify its reuse depth before building*,
-    `results-driven.md`).
+  - **`Invoke(handle, args…)`** for callable values — half-confirmed reuse of the
+    engine's existing C++→Lua call machinery: the pcall harness (ref-invoke,
+    error attribution, the string-lifetime arena, the main-thread discipline)
+    reuses; the argument-marshal layer is NEW code (the hook path's marshal is
+    ABI-typed — `_research/behavior-startup-recon/FINDINGS.md` §2b).
   C++-side value CONSTRUCTION (for `Set` and `default`): typed builders for
   scalars/strings/tables; a C function pointer + context registers as a callable
   value. Exact accessor/builder set fixed at build.
 - **Thread contract — commands queue, queries are main-thread.** One law, two
   halves:
   - **Queries** (`Get` and every handle accessor + `Invoke`) need the live VM:
-    legal during the load waves (*assumes the engine has exclusive VM access during
-    the worker wave — an unobserved ordering against the engine's adoption point;
-    verify before building*, `results-driven.md`) and **post-load only on the game
-    main thread**. An off-thread post-load query returns a teaching error naming
+    legal during the load waves under the GATED guarantee (ruling 2026-06-11):
+    the loader signals C++-wave end (`DiscoverAndLoad` end) and the engine's
+    VM-adoption intercept WAITS on that signal — one-shot, boot-only, never a
+    hot path (observed margin ~5.6 s, so the typical wait is zero); an
+    order-inversion regression rides the gate's build step — and **post-load
+    only on the game main thread**. An off-thread post-load query returns a teaching error naming
     the two sanctioned patterns: capture the value in your `implementation` at
     apply, or copy it out on the main thread. No query hides a blocking marshal.
   - **Commands** (`Set`) work from any thread — off-thread post-load sets queue per
@@ -418,9 +434,10 @@ re-grounded on the model that actually shipped.)
 - **A declarer's version story is the existing Track-1/Track-2 model** — curated
   refdb resolution for engine-known targets, `kcdx.declare` per-version specs for
   author-declared ones. **Enforcement point: the hash-checked call sites its
-  implementation reaches at the apply boundary** (call-time — *assumes the
-  named-target resolution path verifies per-version at these call sites; verify the
-  enforcement call site before building*, `results-driven.md`), NOT a load-time manifest rejection — a declarer's
+  implementation reaches at the apply boundary** (call-time — CONFIRMED by probe
+  9.5-S1: the running build's version row is cached at refdb open and consumed at
+  the bind/apply/interface call sites;
+  `_research/behavior-startup-recon/FINDINGS.md` §2c), NOT a load-time manifest rejection — a declarer's
   hash-checked calls execute only when its implementation runs, so load-time
   determination is structurally impossible and is not claimed.
 
