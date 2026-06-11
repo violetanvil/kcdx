@@ -1,16 +1,19 @@
 ---
 id: KI-0015
 opened: 2026-06-10
-status: open
+status: closed
+closed: 2026-06-10
+closed_by_commit: 40236a9
 commit_at_filing: 50dcbf8
 ---
 
 # KI-0015 — kcdx.find eagerly materializes the corpus into Lua → boot hang on a broad query
 
-**Status:** open — **root-caused (falsifiable mechanism below); fix settled
-2026-06-10** (kcdx.find returns lean function headers + a SQL `statement_count`;
-statement bodies stay in SQL until kcdx_dev_inspect asks for ONE function). Closes
-when the fix lands + the acceptance launch re-confirms cap-99 GREEN.
+**Status:** CLOSED 2026-06-10 — root-caused (falsifiable mechanism below); fixed
+`40236a9` (kcdx.find returns lean function headers + a SQL `statement_count`;
+statement bodies stay in SQL until kcdx_dev_inspect asks for ONE function);
+re-verified at the 2026-06-10 Phase 9.4 acceptance launch — `cap-99-truncates-loud`
+PASS (asserts the lean record shape: `statement_count`, no `statements` field).
 
 ## Root cause (the mechanism — AP17)
 
@@ -65,3 +68,28 @@ WHICH function; `dev_inspect` = inspect ONE function's body. Design authority up
 `docs/outstanding-work/restructure/phase-09.4-discovery/step-0-devdb-search-layer.md`
 §"SQL does the work" + §"Result record". cap-99-truncates-loud asserts the lean shape
 (records carry `statement_count`, no `statements` field).
+
+## Resolution
+
+**Root cause:** the mechanism above — `kcdx.find` returned the FULL statement list of
+every matched record (nested Lua tables for each statement + its captures + applicable-ops),
+capped to 500 RECORDS but NOT to total statements; a broad query
+(`callee="_Init_thread_footer"`, 30,393 matches) made the 500 capped records carry ~400K
+nested Lua tables, built on CryEngine's Lua 5.1 on the boot worker thread under GC
+pressure → a memory/GC stall that hung the suite thread (no AV, no minidump — the watchdog
+timed out). The original path made the hang inevitable because a SEARCH tool hauled the
+full body of every hit across the SQL→Lua boundary instead of letting SQL filter/count/page —
+the cost was wholly the eager materialization (the pure SQL ran ~1.5s).
+
+**Fix (`40236a9`):** `kcdx.find` returns LEAN function headers —
+`{function, module, rva, decompile_quality, statement_count}` — with `statement_count`
+computed in SQL (`COUNT(*)`), never the statement rows. 500 records → 500 small tables, no
+~400K blowup. Statement bodies move to `kcdx_dev_inspect`'s scoped per-function query (one
+function at a time). The two tools divide: `find` = WHICH function; `dev_inspect` = inspect
+ONE function's body.
+
+**Verification:** the 2026-06-10 Phase 9.4 acceptance launch — `cap-99-truncates-loud` PASS
+(`kcdx.find{callee="_Init_thread_footer"}` truncated loudly and returned the lean record
+shape with `statement_count`, no `statements` field), the boot reached `update tick`
+250/273, no crash bundle. (The SEPARATE, later boot hang the lean fix EXPOSED — the
+underlying un-indexed dev-DB scan — was KI-0016, also fixed + closed.)
