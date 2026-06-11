@@ -1,15 +1,19 @@
 ---
 id: KI-0016
 opened: 2026-06-10
-status: open
+status: closed
+closed: 2026-06-10
 commit_at_filing: 40236a91e1fab7c970c91e2cbb069e333a4416c5
 ---
 
 # KI-0016 — boot hang ~16s in (after the cap-83 suite summary), since the 9.4 + seeds-migration window
 
-**Status:** open — investigating. Distinct from KI-0015 (the find-path hang, confirmed
-FIXED at `40236a9`; cap-99-truncates-loud now PASSES lean). This is a SEPARATE, later
-hang.
+**Status:** CLOSED 2026-06-10 — root cause = `FindFunctions` full-scanned the dev DB's
+5.24M-row `statements` on un-indexed columns (~20s cold on the boot thread; cap-98's 4
+scans exceeded the watchdog). Fixed by two indexes + a sargable range rewrite (`e39412b`)
++ an independent SQL-ranking win (`008cd66`); Gate-B-verified; user-confirmed (boot reaches
+`update tick` 250/273, all 4 cap-98 rows PASS, no crash bundle). Distinct from KI-0015 (the
+find-path eager-materialization hang, FIXED at `40236a9`).
 
 ## Symptom
 
@@ -79,6 +83,32 @@ probe must DISCRIMINATE which window (if either) is responsible — observe, do 
 |---|-------|--------|--------|
 | 1 | PROBE A: disable the cap-98 engine self-test (suite-gate off the boot dev-DB consumer) — does the hang go? | DONE | Boot reached `update tick` 246/273, NO crash bundle (vs the hang at `cap-83` 230/259). cap-98 / dev-DB-at-boot IS the hang; 9.4 confirmed the cause, seeds-migration + pre-existing flakiness eliminated. |
 | 2 | PROBE B: re-enable cap-98 but run ONLY the cheap gate query (skip the 30,393-row truncation + the heavy FindFunctions/Enumerate calls) — is it the dev-DB OPEN/connection, or the heavy QUERY, that hangs? | DONE | Boot CLEAN to `update tick` 250/273, NO crash bundle — BUT the ONE cheap gate query took ~20s (dev_db_opened 13:47:25 → gate RESULT 13:47:45). The dev-DB OPEN is fine; the QUERY is the hang. Mechanism: the criteria queries scan `statements` on the UN-INDEXED `string_ref`/`callee` columns (full 5.24M-row scan, `SCAN statements USING INDEX ix_st_av`), ~20s each cold on the boot worker thread; cap-98's 4+ scans exceed the watchdog. |
+| 3 | PROBE C: index the scan columns (`e39412b`) + SQL-rank (`008cd66`); re-launch — is cap-98 now fast? | DONE | PARTIAL. Hang FIXED (boot completes, no crash, 250/273) but cap-98 STILL ~16.7s: dev_db_opened 15:21:34.630 → first find_truncated 15:21:34.681 (queries now 0.05s ✓) → cap-98 RESULT 15:21:51.353 (a ~16.7s gap with queries+ranking already fast). The index + SQL-rank fixes were real but the residual ~16.7s is NOT the ranking loop. **The ranking-loop theory was incomplete** — most of the time is still unexplained. |
+| 4 | PROBE D: which engine call eats the ~16.7s? Add timing log lines around each FindFunctions + EnumerateStatements call INSIDE RunSelfTestOnce, on the actual cold boot thread. | DONE | **NONE of them.** All four calls are fast: gate 0ms, find-string 1ms, truncate 65ms, enumerate 1ms — the WHOLE cap-98 block runs 16:00:53.756→53.823 = **67ms total.** The "~16.7s gap" was a MEASUREMENT ERROR: it was the wall-clock between `dev_db_opened` (early-boot, lazy-open) and cap-98's batched RESULT line — filled by THE REST OF BOOT (other plugins + self-tests), NOT by find. cap-98 fires late in the suite and completes in 67ms. The find feature is fast + fully fixed. |
+
+## Reframe (PROBE D) — the post-fix "~16.7s / ~20.5s residual" was a timestamp misread, not real find cost
+
+PROBE D timed each find call ON the boot thread and proved the WHOLE cap-98 block
+is **67ms** (gate 0ms, find-string 1ms, truncate 65ms, enumerate 1ms). Every
+"residual ~16.7s / ~20.5s" measured in PROBE C and in the instance-2 block below
+was the wall-clock between an EARLY-boot log line (`dev_db_opened`, or the first
+`find_truncated`) and cap-98's BATCHED RESULT line — and cap-98 fires LATE in the
+suite, after the rest of boot runs. The gap is rest-of-boot, NOT find. So:
+
+- **Instance 1 (the genuine hang, PROBE B):** real. One unindexed full scan ~20s
+  cold (PROBE B measured `dev_db_opened 13:47:25 → the gate query's own RESULT
+  13:47:45` — same-call start/end, a valid measurement). Fixed by the indexes.
+- **Instance 2 (the per-id ranking loop):** the SQL-ranking rewrite is a correct,
+  beneficial change in its own right (30,393 sequential SQLite round-trips → ONE
+  set-based query, verified byte-identical top-500). But the "~20s COLD" cost the
+  block below attributes to it was measured the SAME misread way (`first
+  find_truncated → cap-98 RESULT`, two non-adjacent log lines) and is therefore
+  **unproven** — PROBE D shows the truncate call (which runs that exact ranking
+  path) is **65ms**, not ~20s. The rewrite stands as a sound improvement; its cold
+  cost was never the boot problem.
+
+The original boot HANG was instance-1 (the unindexed scan), fixed. The find
+feature is fast (67ms) and fully fixed.
 
 ## Root cause — the COMPLETE story (two instances of one pattern: find did corpus work in C++ instead of SQL)
 
@@ -96,11 +126,13 @@ work that SQL should do":
    id set, `FindFunctions` ranked it by reading `(decompile_quality, rva)` for EVERY matched
    id via an individual `SELECT ... WHERE id=?` round-trip, THEN `std::sort`ing, THEN capping
    to 500. For the 30,393-match query that is **30,393 sequential SQLite round-trips** —
-   0.48s warm but **~20s COLD** on the boot thread (re-launch: first `find_truncated`
-   14:24:03.842 → cap-98 RESULT 14:24:24.360, a ~20.5s gap with the queries already fast).
-   So the boot no longer HANGS (cap-98 completes, boot reaches `update tick` 250/273, no
-   crash bundle), but the dev tool is still ~20s-slow per broad query — the same
-   UX-cornerstone problem the index fix was meant to solve.
+   0.48s warm. **(The "~20s COLD" / ~20.5s-gap cost originally written here was
+   DISCONFIRMED by PROBE D — see the Reframe section; that gap was `first
+   find_truncated → cap-98 RESULT`, two non-adjacent log lines spanning the rest of
+   boot, not the ranking loop. PROBE D times the truncate call — which runs this exact
+   ranking path — at 65ms.)** The SQL-ranking rewrite is still correct and beneficial
+   (30,393 sequential round-trips → ONE set-based query), but it was never the boot
+   problem; the boot HANG was instance-1 (the unindexed scan).
 
 **The fix:** rank + limit IN SQL. Replace the 30,393-round-trip per-id loop with ONE
 set-based query: `SELECT id, decompile_quality, rva FROM address_versions WHERE id IN
@@ -160,3 +192,49 @@ applies to a `callee` index.
   every real find query slow. The indexes are the root fix; the boot-path change is a
   symptom mask. (Gate A architect-review decides the design surface — the fix touches the
   dev-DB build / the self-test; surfaced to the user after.)
+
+## Resolution
+
+**Root cause (the falsifiable mechanism).** `refdb::FindFunctions`'s per-criterion
+queries filtered the DEV reference DB's 5.24M-row `statements` table on the columns
+`string_ref` (string/cvar criteria) and `callee` (callee/callers_of/callee_in_subsystem) —
+columns the dev DB carried **no index for** (it indexed only `(address_version_id, idx)`
+= `ix_st_av` and `(kcdx_id)` = `ix_st_kcdx`, neither covering `string_ref`/`callee`).
+SQLite therefore executed each find criterion as a **full 5.24M-row scan**
+(`EXPLAIN QUERY PLAN` → `SCAN statements USING INDEX ix_st_av` — a covering full-index
+walk, not a seek). One such scan is ~20s **cold** on the boot worker thread (the 1.3GB
+DB not yet OS-page-cached, contending with the game's own boot I/O — measured directly,
+PROBE B: `dev_db_opened 13:47:25 → that one gate query's own RESULT 13:47:45`, a 20s
+same-call span). cap-98 runs four such scans at boot; their cumulative cold cost exceeded
+the watchdog timeout on the boot thread, so the watchdog killed the process — no access
+violation, a hang (no minidump; 3-byte bugsplat). The original path made the slow boot
+inevitable because it expressed a corpus-scale filter as an un-indexed column predicate:
+the DB had the rows but no seek structure, so every find query paid a full-table scan that
+only the cold boot thread made fatal. (KI-0015 was a DIFFERENT mechanism at the same site —
+eager Lua materialization of ~400K nested tables; its lean fix removed that and EXPOSED
+this underlying scan cost.)
+
+**Fix.** Two indexes added to the DEV/bulk extractor tier
+(`data/refdata-extractor/python/import_to_sqlite.py`, under the `not user_projection`
+guard): `ix_st_string_ref ON statements(string_ref)` + `ix_st_callee ON statements(callee)`
+— the two scanned columns now SEEK (`SEARCH … USING INDEX`). Plus a `refdb.cpp` rewrite of
+`callee_in_subsystem` from `callee LIKE 'prefix%'` (which SCANs — SQLite's default LIKE is
+case-insensitive) to the sargable range `callee >= prefix AND callee < PrefixUpperBound(prefix)`
+(which SEEKs) — same semantics for an ASCII prefix. Landed `e39412b`. A second, independent
+improvement also landed (`008cd66`): the per-id ranking loop (`SELECT … WHERE id=?` per
+matched id — 30,393 round-trips on the broadest query) was replaced with one set-based
+TEMP-table query (`… WHERE id IN (SELECT id FROM temp._find_ids) ORDER BY … LIMIT 500`),
+verified byte-identical in its top-500 set + ordering. This is a sound efficiency win but was
+NOT the boot problem — see the Reframe: the "~20s cold" cost first attributed to it was a
+timestamp misread (the gap between early-boot `dev_db_opened` and cap-98's late batched
+RESULT line, filled by the rest of boot).
+
+**Verification.** PROBE D (per-call timing markers ON the boot thread, since removed —
+wiring archived at `_research/probe-archive/ki0016-find-boot-cost.md`) measured the WHOLE
+cap-98 dev-DB block at **67ms** (gate 0ms, find-string 1ms, truncate 65ms, enumerate 1ms),
+no crash bundle, suite-complete at normal boot time. The truncate call — which exercises the
+exact criteria-scan + ranking path the hang lived in — is 65ms (was the ~20s full scan). The
+cause-test is cap-98 (`find_discovery_selftest.cpp`): four falsifiable rows asserting the
+find/enumerate surface works against the dev DB at boot; if the scan cost regressed, cap-98's
+calls would re-exceed the watchdog and the boot would hang before its RESULT. User-confirmed
+via the repro below.

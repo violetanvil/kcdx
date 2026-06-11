@@ -56,7 +56,7 @@ allocation sequence.
 
 | ID | Opened | Summary |
 |----|--------|---------|
-| [KI-0016](KI-0016-boot-hang-after-cap83-since-9.4-and-seeds-migration.md) | 2026-06-10 | Boot HANG ~16s in (after the cap-83 suite summary, 230/259 passing), since the 2026-06-09 window. Watchdog timeout, NO minidump/AV. Distinct from KI-0015 (find-path hang, fixed). The last self-tests all `selftest_pass`; boot stops logging then watchdog fires. Suspect set = the diff since the last clean boot: Phase 9.4 (the held-open 1.3GB dev DB connection) OR the seeds-migration window (data-layer change) OR pre-existing flakiness. 3-probe plan persisted (PROBE A: disable cap-98 dev-DB-at-boot consumer → does the hang go?). Investigating — OPEN |
+| [KI-0016](closed/KI-0016-boot-hang-after-cap83-since-9.4-and-seeds-migration.md) | 2026-06-10 | Boot HANG ~16s in (after the cap-83 suite summary, 230/259 passing), since the 2026-06-09 window. Watchdog timeout, NO minidump/AV. Root cause (PROBE A/B, Gate-B-verified): `refdb::FindFunctions` filtered the DEV DB's 5.24M-row `statements` table on UN-INDEXED `string_ref`/`callee` → full scans ~20s COLD on the boot worker thread; cap-98's 4 scans exceeded the watchdog → hang. Fixed `e39412b` (two indexes `ix_st_string_ref`+`ix_st_callee` + sargable `callee_in_subsystem` range rewrite) + `008cd66` (SQL set-based ranking, an independent win). PROBE D: the whole cap-98 dev-DB block is 67ms; the "~16.7s residual" I chased was a timestamp misread (`dev_db_opened`→late batched cap-98 RESULT = rest-of-boot, not find). User-confirmed: boot reaches `update tick` 250/273, all 4 cap-98 rows PASS, no crash bundle. Closed 2026-06-10 |
 | [KI-0015](KI-0015-find-eager-lua-materialization-hang.md) | 2026-06-10 | Phase 9.4 acceptance: boot HANG at `cap-99-truncates-loud`. Root-caused (AP17): `kcdx.find` eagerly materialized EVERY statement of EVERY one of the 500 capped records into nested Lua tables — a broad query (callers of `_Init_thread_footer`, 30,393 matches) builds ~131,691 statement + 266,737 capture sub-tables ≈ 400K nested Lua tables on the boot worker thread → memory/GC stall → watchdog timeout (no AV/minidump). The pure SQL runs ~1.5s; the stall is wholly the SQL→Lua eager materialization. A SEARCH tool returning the full body of every hit is the defect. FIX (settled 2026-06-10): `find` returns lean function headers + a SQL-computed `statement_count`; statement bodies stay in SQL until `kcdx_dev_inspect` asks for ONE function. OPEN (fix lands next; closes at the re-verification launch) |
 | [KI-0014](closed/KI-0014-pdb-autoload-zero-functions-in-load-loop.md) | 2026-06-09 | Phase 9.3 step 3b PDB auto-load did not resolve a plugin's non-exported internal from its `/DEBUG:FULL` PDB (`cap-90-pdb-internal-address` red). Two layered defects: (1) the function filter tested `Flags & SYMFLAG_FUNCTION`, a private-DBI-stream-only bit absent from the publics-only stream DbgHelp serves these PDBs (`NumSyms=0`) where a function carries `Tag==SymTagFunction` + `Flags==0` — so it rejected every plugin function; (2) functions were keyed by their decorated qualified name, not the bare name an author types. Fixed `a29bf8f` (filter on `Tag`; key by bare leaf + qualified-disambiguation; fixture dropped its anon-namespace target). Offline DbgHelp-ctypes probes nailed it; the step-3 "PDB works" premise was a false positive. Closed 2026-06-09 |
 | [KI-0012](closed/KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md) | 2026-06-08 | Launch ACCESS_VIOLATION in WHGame's DLSS/FSR2 graphics init (`C_Game::CreateInstance → NVSDK_NGX_UpdateFeature → FSR2`). The filed safetyhook-re-entrancy headline was FALSIFIED early. Root cause (bisect-proven, PROBE Q): kcdx's mod-loader takeover put its own `kind="plugin"` records (~90 DLL/Lua test plugins) into the engine `C_ModManager` enabled-list (the engine's mod-MOUNT list, walked by graphics init) — a pak-less plugin record is malformed for the engine and crashes init. Fixed: the engine MOUNT list now gets only pak-mountable entries (native pak mods + pak-bearing plugins); pak-less plugins load via kcdx's own loader at their unified-order position. Closed 2026-06-09 |
@@ -98,6 +98,18 @@ allocation sequence.
 
 ## Closed (historical reference)
 
+- [closed/KI-0016-boot-hang-after-cap83-since-9.4-and-seeds-migration.md](closed/KI-0016-boot-hang-after-cap83-since-9.4-and-seeds-migration.md)
+  — Boot hung ~16s in (after the cap-83 suite summary), watchdog timeout, no AV.
+  Root cause: `refdb::FindFunctions` filtered the DEV reference DB's 5.24M-row
+  `statements` table on the UN-INDEXED columns `string_ref`/`callee` → a full
+  table scan per find criterion, ~20s cold on the boot worker thread; cap-98's
+  four scans cumulatively exceeded the watchdog → hang (no AV — a hang). Fixed by
+  two indexes (`ix_st_string_ref`+`ix_st_callee`) + a sargable `callee_in_subsystem`
+  range rewrite (`e39412b`); an independent SQL set-based ranking rewrite also
+  landed (`008cd66`). PROBE D timed the whole cap-98 dev-DB block at 67ms; the
+  "~16.7s residual" chased after the index fix was a timestamp misread (the gap
+  between early-boot `dev_db_opened` and cap-98's late batched RESULT line was
+  rest-of-boot, not find). Gate-B-verified. Closed 2026-06-10.
 - [closed/KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md](closed/KI-0012-ccrypak-fopen-safetyhook-reentrancy-av-on-launch.md)
   — Launch ACCESS_VIOLATION in WHGame's DLSS/FSR2 graphics init. The filed
   safetyhook-re-entrancy headline was falsified early (PROBE A/C); a long
