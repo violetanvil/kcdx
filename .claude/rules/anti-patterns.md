@@ -48,7 +48,7 @@ Each AP below is a **detection signature** — the forbidden code shape a review
 auto fn = reinterpret_cast<UpdateFn>(base + 0x180ABCDEF);  // hardcoded offset
 ```
 
-**Fix:** resolve by name/id through the DB (`kcdx::ResolveAddress` / `ResolveByName` / `target = "<name>"`); the name supplies address AND verified ABI. A new entity goes in the DB via the seed CSVs under `data/seeds/` (user-approved, AP18), never an in-source literal. IDs are append-only — never renumber. The full in-source prohibition + the narrow non-address exception: `no-hardcoded-addresses.md`. Resolution order + DB shape: `address-library.md`.
+**Fix:** resolve by name/id through the DB (`kcdx::ResolveAddress` / `ResolveByName` / `target = "<name>"`); the name supplies address AND verified ABI. A new entity goes in the DB via the seed CSVs exported to `data/db-export/` (user-approved, AP18), never an in-source literal. IDs are append-only — never renumber. The full in-source prohibition + the narrow non-address exception: `no-hardcoded-addresses.md`. Resolution order + DB shape: `address-library.md`.
 
 ---
 
@@ -228,18 +228,18 @@ See [`naming-namespaces.md`](../.claude/rules/naming-namespaces.md).   <!-- brok
 
 ## AP18 — Adding an Address Library seed row without explicit user approval
 
-**Forbidden:** appending a NEW entity/version row to `data/seeds/address_names_seed.csv` or `data/seeds/address_versions_seed.csv` without the user's explicit sign-off on that specific entity. A seed addition grows the Address Library DB — a new curated game-binary target (RVA / AOB pattern / vtable slot / game-struct offset) the project commits to maintaining across game versions — and that growth is the user's decision, not the agent's.
+**Forbidden:** appending a NEW entity/version row to `data/db-export/address_names_seed.csv` or `data/db-export/address_versions_seed.csv` without the user's explicit sign-off on that specific entity. A seed addition grows the Address Library DB — a new curated game-binary target (RVA / AOB pattern / vtable slot / game-struct offset) the project commits to maintaining across game versions — and that growth is the user's decision, not the agent's.
 
 ```diff
-# data/seeds/address_names_seed.csv
+# data/db-export/address_names_seed.csv
 +144,SaveGame,,,,,,"7-arg save hook target"        # AP18: new entity, no user approval
-# data/seeds/address_versions_seed.csv
+# data/db-export/address_versions_seed.csv
 +144,1.5.1164953,WHGame.dll,0x019DDE78,...          # AP18: lands the DB row u.gated
 ```
 
 **Detection signature (scan a diff against this shape):** a diff that ADDS a data row (not a comment, not the header) to either curated seed CSV, with no recorded user approval of the entity in the landing conversation. An UPDATE to an existing row (re-verify, bump `last_verified_at_version`, deprecate, supersede) is NOT this AP — only a NEW entity/version row is. Resolving a game address by name/id in code (AP1's fix) is NOT this AP either — that is the always-on expectation, not a gated DB addition.
 
-**Fix:** STOP before writing the row; surface the proposed entity to the user (name + what it targets + why it's needed) and get explicit approval, THEN append. Per `address-library.md` + `data/seeds/policy.md` §"DB additions require explicit approval". Warn-only `guard-seed-approval.py` flags the addition at author-time; the review gates carry the hard check.
+**Fix:** STOP before writing the row; surface the proposed entity to the user (name + what it targets + why it's needed) and get explicit approval, THEN append. Per `address-library.md` + `data/maintainer-tool/policy.md` §"DB additions require explicit approval". Warn-only `guard-seed-approval.py` flags the addition at author-time; the review gates carry the hard check.
 
 ---
 

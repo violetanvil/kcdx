@@ -8,7 +8,7 @@ by CALLING this module, never by re-querying the DB or re-deriving status itself
 The landed data-core was write+validate+export+round-trip with NO read-for-display
 surface; this module adds it, and -- the load-bearing part -- gives the status
 derivation a SINGLE home. The DEPRECATED/SUPERSEDED/VERIFIED/UNVERIFIED rule that
-previously existed only as prose in data/seeds/policy.md S"Status is NOT an
+previously existed only as prose in data/maintainer-tool/policy.md S"Status is NOT an
 authored column" is implemented ONCE here (derive_status); the backend reimplements
 nothing, the frontend derives nothing in JS (both would be law-6 violations that
 drift).

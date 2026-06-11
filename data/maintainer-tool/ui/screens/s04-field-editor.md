@@ -25,7 +25,7 @@ carries a value), plus the always-shown set; an empty-irrelevant field is hidden
 grid cell is removed — law 1 holds per SHOWN field, a hidden field reserves nothing). **Every
 shown field carries a plain-language tooltip** explaining what it IS and what it is FOR (a
 keyboard-focusable `?` help affordance beside the field label; the Survival sub-heading carries a
-group tooltip). Tooltip content is SOURCED from `../../seeds/policy.md` +
+group tooltip). Tooltip content is SOURCED from `../../policy.md` +
 `../../refdata-extractor/python/seeds_shared/schema.py` (the column comments) — domain facts, not
 invented.
 
@@ -57,7 +57,7 @@ kind-conditional** — see §"Field relevance by kind".
 plain-language tooltip on a keyboard-focusable `?` info affordance beside its label — a 1–2
 sentence explanation a maintainer who does not know the internal vocabulary understands (what the
 field IS, what it is FOR). The Survival sub-heading carries a GROUP tooltip explaining the six
-re-find columns collectively. Content is sourced from `../../seeds/policy.md` (§"Address kinds",
+re-find columns collectively. Content is sourced from `../../policy.md` (§"Address kinds",
 §"Survival columns", the audit-trio + evidence_kind sections) +
 `../../refdata-extractor/python/seeds_shared/schema.py` (the column comments) — not invented. The
 affordance is keyboard-reachable and the content available to a screen reader (Mantine `Tooltip`
@@ -138,7 +138,7 @@ sets the strongest tier it proves, never over-claims. (A `live_production` tier 
 the in-game live check, ingested via s08 — not from a browser static check.)
 
 ## Field relevance by kind
-Each `kind` populates only certain columns; the rest stay NULL (`../../seeds/policy.md`
+Each `kind` populates only certain columns; the rest stay NULL (`../../policy.md`
 §"Address kinds" + §"Survival columns" — the AUTHORITY; the "Used by kind(s)" column is the
 authoritative per-survival-column map). The editor shows the fields the current kind uses, hides
 the empty-irrelevant ones, and ALWAYS shows an irrelevant field that carries a non-NULL value

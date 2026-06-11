@@ -70,7 +70,7 @@ involves richer interactions than a CLI can carry well.
 
 The tool supports verification flows that go beyond record-only audit-trio
 capture. At minimum one evidence tier (from the `evidence_kind` enum in
-`data/seeds/policy.md`) is a DRIVEN flow — the tool surfaces evidence to the
+`policy.md`) is a DRIVEN flow — the tool surfaces evidence to the
 maintainer on the verification screen, not only captures `verified_by` /
 `verified_date` / `evidence_kind`.
 

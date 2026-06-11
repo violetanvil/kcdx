@@ -3,7 +3,7 @@
 # WARN-ONLY: never blocks. Flags a Write/Edit that ADDS a row to either curated
 # seed CSV (address_names_seed.csv / address_versions_seed.csv). A new seed row
 # is a new Address Library DB entity/version, which requires EXPLICIT user
-# approval before it lands (data/seeds/policy.md). The warn is a standing
+# approval before it lands (data/maintainer-tool/policy.md). The warn is a standing
 # reminder; the agent confirms approval in-conversation and the review gates
 # carry the hard check.
 import sys, os, re, json
@@ -36,10 +36,13 @@ def main():
         sys.exit(0)
 
     # Only the two curated seed CSVs are gated. module_seed.csv (module registry)
-    # is not an address entity — excluded. Match the leaf regardless of path shape.
+    # is not an address entity — excluded. Match the leaf regardless of path shape
+    # (the curated CSVs are the maintainer-tool's git-tracked export at
+    # data/db-export/ since D38 retired data/seeds/; matching by leaf keeps the
+    # guard firing wherever the export lands).
     # PowerShell -notmatch is case-insensitive -> re.I.
     norm = path.replace("\\", "/")
-    if not re.search(r'data/seeds/(address_names_seed|address_versions_seed)\.csv$', norm, re.I):
+    if not re.search(r'(^|/)(address_names_seed|address_versions_seed)\.csv$', norm, re.I):
         sys.exit(0)
     leaf = os.path.basename(path)
 
@@ -81,7 +84,7 @@ def main():
         sys.exit(0)   # no net new row — a pure in-place edit.
 
     msg = ("Address Library seed WARN: this edit adds {0} row(s) to {1}. ".format(added, leaf) +
-           "A new seed row is a new Address Library DB entity/version and requires EXPLICIT user approval before it lands (data/seeds/policy.md - 'DB additions require explicit user approval'). " +
+           "A new seed row is a new Address Library DB entity/version and requires EXPLICIT user approval before it lands (data/maintainer-tool/policy.md - 'DB additions require explicit user approval'). " +
            "Confirm the user explicitly approved adding this entity to the DB. An un-approved seed addition is a review-gate finding (AP18).")
     sys.stderr.write(msg)
     sys.exit(0)

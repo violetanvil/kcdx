@@ -1,7 +1,8 @@
 # Address Library — seed authoring policy
 
-**Authoritative law for the column-level invariants of the three seed files
-under `data/seeds/`.**
+**Authoritative law for the column-level invariants of the three curated seed
+CSVs — the deterministic export of the reference DB, git-tracked at
+`data/db-export/` (the DB itself is the authoring surface and is out of git).**
 
 This document governs the per-row, per-column rules — required fields, id
 assignment, the audit trio, supersession/deprecation integrity, the survival

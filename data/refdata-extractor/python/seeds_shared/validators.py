@@ -293,7 +293,7 @@ def _validate_survival_cols(r, lineno, kid, vfv):
                                  parse as int when present (FK closure checked
                                  cross-row in check_survival_derives_from_known).
       survival_rule           -- a structured derivation-rule string (the grammar
-                                 is documented in data/seeds/policy.md). The
+                                 is documented in data/maintainer-tool/policy.md). The
                                  importer does NOT parse the grammar here -- it is
                                  the future engine consumer's job; any non-empty
                                  string is accepted at author time.

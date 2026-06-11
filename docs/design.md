@@ -1010,7 +1010,7 @@ CSV schema: `id, game_version, rva, status, name, source, notes`
 
 - `id` — stable integer, never recycled (1000-range = function entries,
   2000-range = vtable-resolved RVAs, 3000-range = vtable index
-  constants — see `data/seeds/policy.md`).
+  constants — see `data/maintainer-tool/policy.md`).
 - `game_version` — KCD2 build number this row applies to (parsed from
   human form `1.5.1164953` to the `kcdxMakeGameVersion` encoding).
   Multiple rows per ID for different game versions.
@@ -1021,7 +1021,7 @@ CSV schema: `id, game_version, rva, status, name, source, notes`
   either verify-and-promote or fall back to a `pattern` locator.
 - `name` — source-level identifier (snake_case for C, CamelCase for
   CryEngine classes; matches what an author would type into
-  `kcdx.addr("...")`). See `data/seeds/policy.md` for the
+  `kcdx.addr("...")`). See `data/maintainer-tool/policy.md` for the
   naming convention.
 - `source` — provenance: who/what verified the row (e.g.
   `kcdx-engine@<sha>`, `muyuanjin/kcd2db@<sha>`).

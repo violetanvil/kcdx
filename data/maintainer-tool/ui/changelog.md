@@ -145,7 +145,7 @@ version-read control); `/plan` HALTED on the gap and the user chose to author th
   - **Per-field tooltips** — every field (editable + the read-only identity key) carries a
     plain-language tooltip on a keyboard-focusable `?` info affordance beside its label (the
     Survival sub-heading carries a group tooltip). Content is SOURCED from
-    [`../../seeds/policy.md`](../../seeds/policy.md) + the schema.py column comments — domain facts,
+    [`../policy.md`](../policy.md) + the schema.py column comments — domain facts,
     not invented. The map lives in one place (`frontend/src/editor/fieldModel.ts` `FIELD_TOOLTIPS`).
   - **Kind-conditional field visibility** — the editor shows the fields the current `kind` USES
     (the per-kind used set, grounded in policy.md §"Address kinds" + §"Survival columns"), hides the

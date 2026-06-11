@@ -182,7 +182,7 @@ attribution/interval-honesty model none of them spelled out:
   (close-intervals → each failed row's `valid_through` retracts to its `last_verified_at_version`,
   the last version it passed). A failure needs **no "failed" field** — not advancing
   `last_verified_at_version` already reads UNVERIFIED by the existing derivation
-  (`data/seeds/policy.md`); the seed schema is unchanged.
+  (`policy.md`); the seed schema is unchanged.
 - **Report schema (1.2) consequence.** The frozen `report-schema/verification-report.schema.json`
   gains a nullable per-row `matched_address_version_id` (D34) → a `schema_version` bump 1 → 2. The
   schema FILE edit is a build follow-on (a `/plan`/`/execute` task), not this design revision; the

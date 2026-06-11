@@ -12,7 +12,7 @@ Every game-binary target that shifts per KCD2 version — an RVA, an AOB/byte
 pattern, a vtable slot index, a game-struct field offset — resolves at runtime
 by **name or stable id through the Address Library**, never as a literal in
 `.cpp`/`.h`. The Address Library reference DB (`data/reference.sqlite`, authored
-via the maintainer tool, exported to `data/seeds/`) is the single source of
+via the maintainer tool, exported to `data/db-export/`) is the single source of
 truth for these facts so a new game version updates ONE place. A literal address
 in source is the defect this rule exists to stop — it is `AP1`.
 
@@ -32,7 +32,7 @@ in source is the defect this rule exists to stop — it is `AP1`.
   (`address-library.md` §"Address kinds").
 - **No new entity without approval.** Resolving by name/id is the always-on
   expectation. AUTHORING a new DB entity/version (the seed-row addition) is the
-  gated act — explicit user approval first (`AP18`; `data/seeds/policy.md`).
+  gated act — explicit user approval first (`AP18`; `data/maintainer-tool/policy.md`).
   This rule is the in-code side; that gate is the data side.
 - **A new game version updates the DB, not source.** A shifted RVA is a new
   `address_versions` row (`address-library.md` §"New game version workflow") —
@@ -58,7 +58,7 @@ note does not launder a hardcoded target.
   and the seed-authoring/versioning law; this is the standalone in-source
   prohibition that names `src/**` in its `paths:` so it loads where hardcoding
   happens. Cited, not restated.
-- NOT `AP18` / `data/seeds/policy.md` — those gate ADDING a DB entity (the data
+- NOT `AP18` / `data/maintainer-tool/policy.md` — those gate ADDING a DB entity (the data
   side, user-approved); this forbids hardcoding in CODE (the always-on side).
 - NOT `cornerstones.md` AP12 — that owns the author-facing UX (a name resolves
   address + ABI so the author does no hex work); this owns engine + plugin
