@@ -19,7 +19,7 @@ deletion step confirms no in-scope CODE path reads the deprecated copy before re
 
 | Step | Status | Commit |
 |---|---|---|
-| [3.1 [CORE] Delete data/seeds - deprecated once no in-scope reference reads it](step-1-delete-deprecated.md) | NOT STARTED | — |
+| [3.1 [CORE] Delete data/seeds - deprecated once no in-scope reference reads it](step-1-delete-deprecated.md) | DONE | 735c30e — the 3 data/seeds CSVs git rm'd + the untracked data/seeds - deprecated/ filesystem-deleted. data/seeds/policy.md DELIBERATELY KEPT (the AP18 authority cited by 9+ governance files; its relocation is the deferred sweep, recorded in the step doc — user decision 2026-06-10). Gate: full data-core (177) + backend (69) GREEN post-deletion = 246 passed, 0 errors. |
 
 ## Phase verification gate
 
