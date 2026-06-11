@@ -4,56 +4,69 @@
 
 Wire the s08 **two batch actions** (D35), each its own s06 batch confirm (the `batch field-delta
 list`), each ONE atomic transaction through the existing save spine with **all-or-nothing rollback**
-(D32/D21). **(1) Verify-all** (verified block, `[Verify N rows]`) — per selected verified-block row:
-`last_verified_at_version → <report version>`, `verified_date → today`, `verified_by → <injected
-identity>`, **`evidence_kind → <by the row's D36 proof rank>`** (D29-revised — a rank-1
-`verified_working` row → `live_production`; a ranks-2-5 `passed_not_verified` row → `live_test_plugin`,
-the in-game-test-plugin static tier, NOT `live_production`), AND — when the report version sat in a
-GAP or beyond the matched row's interval — `valid_through → <report version>` on the **matched
-`address_version` row** (the `matched_address_version_id` from the report — D34). **(2)
-Close-intervals** (failing block, `[Close intervals · N rows]`) — per selected failing row:
-`valid_through → <that row's last_verified_at_version>` (retract the over-claimed interval to the
-last version it passed — D35). Both are **all-UPDATE** (a passing check found the bytes unchanged; a
-failing one only closes an interval) → the new-row approval gate (law 8/AP18) does NOT apply; a
-genuine new/variant row is authored individually via `[Fix ▸]` (AP18 per-row). This completes the
-report-ingestion loop: the data-core remains the sole writer (law 6); nothing lands silently.
+(D32/D21). **Per D39, the FE does NOT compute the edit-specs** — it sends the report's actionable rows
+to the **`/save/reverify-batch` preview endpoint (6.2b)**, which resolves + computes them server-side
+(the data-core is the sole writer + owns interval logic — law 6) and returns the per-row field-deltas
+the FE displays; the maintainer confirms; the FE POSTs the SAME returned edits to `/confirm/batch`
+(6.2) to transact. **(1) Verify-all** (verified block, `[Verify N rows]`) — the preview returns, per
+selected verified-block row, the trio (`last_verified_at_version → <report version>`, `verified_date →
+today`, `verified_by → <injected identity>`), the **proof-rank-keyed `evidence_kind`** (D29-revised — a
+rank-1 `verified_working` row → `live_production`; a ranks-2-5 `passed_not_verified` row →
+`live_test_plugin`, NOT `live_production`), AND — on a gap-pass — `valid_through → <report version>` on
+the matched `address_version` row (D34). **(2) Close-intervals** (failing block, `[Close intervals · N
+rows]`) — the preview returns, per selected failing row, `valid_through → <that row's
+last_verified_at_version>` (the D35 retract; the data-core resolves the target row deterministically by
+`kcdx_id`+the resolved version). Both are **all-UPDATE** → the new-row approval gate (law 8/AP18) does
+NOT apply; a genuine new/variant row is authored individually via `[Fix ▸]` (AP18 per-row). This
+completes the report-ingestion loop: the data-core remains the sole writer (law 6); nothing lands
+silently.
 
 ## Scope
 
 One commit in the frontend repo: the `bulk_verify(selected)` and `bulk_close_intervals(selected)`
-→ s06 batch confirm wiring (two batched confirms, each its `batch field-delta list` under one
-confirm), the single-transaction all-or-nothing routing through the existing save-spine API for
-each, and the in-place result update (law 3). Verify-all's delta includes the **proof-rank-keyed
-`evidence_kind`** (rank-1 → `live_production`, ranks-2-5 → `live_test_plugin` — D29-revised) AND the
-D34 `valid_through` forward-extension on a gap-pass (driven by the report's
-`matched_address_version_id`); close-intervals' delta is the `valid_through` retraction. Built to the
-reconciled s08 + §7 (D32/D35) spec. The save spine + its batch-transaction support (D32) is the
-maintainer-tool backend's; this step drives it from s08.
+wiring. Each action POSTs the selected report rows + the action to **`/save/reverify-batch` (6.2b)**,
+renders the returned per-row field-deltas as the s06 batch confirm (the `batch field-delta list` under
+one confirm), and on confirm POSTs the SAME returned edits to `/confirm/batch` (6.2) — ONE atomic
+transaction, all-or-nothing — then updates the actioned rows in place (law 3). **The FE computes NO
+edit-specs** (D39): the trio + the proof-rank-keyed `evidence_kind` + the D34 gap-extension + the D35
+retract are all computed by the data-core's `reverify_resolver` (6.2b) and arrive in the preview's
+returned deltas — the FE displays them and relays the confirm. Built to the reconciled s08 + §7
+(D32/D35) + D39 spec. The resolve+preview (6.2b) and the batch-transaction (6.2) are the maintainer-tool
+backend's; this step drives them from s08.
 
 ## Test bar
 
-Vitest unit/component tests in the frontend repo: **verify-all** — `[Verify N rows]` opens the s06
-batch confirm showing the per-row `old → new` audit-trio deltas, the **proof-rank-keyed
-`evidence_kind`** delta (a `verified_working` row → `evidence_kind → live_production`; a
-`passed_not_verified` row → `evidence_kind → live_test_plugin` — NOT `live_production` — D29-revised),
-AND a `valid_through → <report version>` delta on a gap-pass row (the matched row from
-`matched_address_version_id` — D34) under one confirm; **close-intervals** —
-`[Close intervals · N rows]` opens the s06 batch confirm showing each failed row's `valid_through →
-<its last_verified_at_version>` delta under one confirm; each confirm routes ONE atomic batch
-transaction; a simulated one-row failure rolls back the WHOLE batch (nothing partial lands —
-D32/D21); the actioned rows update in place, never re-navigating (law 3); both batches are
-all-UPDATE so no AP18 gate fires (law 8 N/A). Runnable at this step (the 6.1 three-block s08
-worklist + the 6.2 `/confirm/batch` endpoint + `confirmBatch` client both exist) —
-`.claude/rules/test-discipline.md`, `.claude/rules/incremental-delivery.md`.
+Vitest unit/component tests in the frontend repo (the FE drives the seam; the deltas come from the
+mocked `/save/reverify-batch` response — the FE does NOT compute them): **verify-all** — `[Verify N
+rows]` POSTs the selected rows to `/save/reverify-batch` and opens the s06 batch confirm showing the
+per-row `old → new` deltas the preview RETURNED (the audit-trio + the **proof-rank-keyed
+`evidence_kind`** — a `verified_working` row → `live_production`; a `passed_not_verified` row →
+`live_test_plugin`, NOT `live_production` — D29-revised — AND a `valid_through → <report version>` delta
+on a gap-pass row — D34) under one confirm; **close-intervals** — `[Close intervals · N rows]` POSTs to
+`/save/reverify-batch` and opens the s06 batch confirm showing each failed row's `valid_through → <its
+last_verified_at_version>` delta the preview returned; on confirm each POSTs the SAME returned edits to
+`/confirm/batch` (ONE call, the list body — assert the call shape) routing ONE atomic batch transaction;
+a simulated one-row failure (the 200-body `failed` result) rolls back the WHOLE batch (nothing partial
+lands, the rows do NOT update in place — D32/D21); the actioned rows update in place on success, never
+re-navigating (law 3); both batches are all-UPDATE so no AP18 gate fires (law 8 N/A). FALSIFIABLE: the
+FE relays the preview's returned deltas verbatim — a test asserting the FE re-derives or mutates a
+delta (e.g. computes `evidence_kind` itself) is the D39-violation shape. Runnable at this step (6.1's
+three-block s08 worklist + 6.2's `/confirm/batch` + `confirmBatch` client + **6.2b's
+`/save/reverify-batch` preview endpoint** all exist) — `.claude/rules/test-discipline.md`,
+`.claude/rules/incremental-delivery.md`.
 
 ## Dependencies
 
 - **6.1** — the three-block s08 worklist (the per-block selected rows + the `[Verify N rows]` /
   `[Close intervals · N rows]` buttons it renders).
 - **6.2** — the D32 `/confirm/batch` endpoint + the `confirmBatch` FE client method (the
-  batch-transaction this step DRIVES). Built in 6.2 so this FE wiring drives a real endpoint, not a
-  non-existent one. The `valid_through` UPDATE on the matched row is within the per-row UPDATE the
-  batch edit-spec carries.
+  batch-transaction this step DRIVES on confirm). Built in 6.2 so this FE wiring drives a real
+  endpoint, not a non-existent one.
+- **6.2b** — the `/save/reverify-batch` preview endpoint + the `reverify_resolver` (D39): the seam this
+  step POSTs the report rows to and whose returned field-deltas it displays. Built before this so the FE
+  drives a real resolve+preview endpoint and never computes the edit-specs itself (D39 — the data-core
+  is the sole writer + owns the gap/interval logic; the FE has no `valid_from_version`/`valid_through`/
+  `last_verified_at_version` to compute with).
 
 ## Reference
 
@@ -71,9 +84,11 @@ design.md` **D29** (rev — `evidence_kind` keyed by the row's D36 proof rank: `
 `live_production`, `passed_not_verified` → `live_test_plugin`) + **D32** (the save spine's BATCH
 mutation, TWO batch actions, all-or-nothing rollback — D21) + **D34** (verify-all extends the matched
 row's `valid_through` on a gap-pass) + **D35** (close-intervals retracts `valid_through` to
-`last_verified_at_version`; a failure needs no "failed" field — UNVERIFIED by derivation) + **§7**
-"Batch mutation". Plus `ui/design.md` law 5 + the `batch field-delta list` silhouette. Build to these
-sections (the reconciled s08/§7 spec + D29-revised), not to this doc's summary.
+`last_verified_at_version`; a failure needs no "failed" field — UNVERIFIED by derivation) + **D39**
+(the data-core resolves the edit-specs via `/save/reverify-batch`/`reverify_resolver`; the FE sends
+report rows + displays the returned deltas, never computes edits) + **§7** "Batch mutation". Plus
+`ui/design.md` law 5 + the `batch field-delta list` silhouette. Build to these sections (the reconciled
+s08/§7 spec + D29-revised + D39), not to this doc's summary.
 
 ## UX
 

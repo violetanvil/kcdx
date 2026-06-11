@@ -6,17 +6,22 @@ report (File API, client-side, D31b), show the ingest progress + the **three-blo
 + proof-rank + the partial-report signal, and route the **two batch actions** (verify-all with the
 proof-rank-keyed `evidence_kind` + the matched-row `valid_through` extend on a gap-pass — D29/D34;
 close-intervals retracting `valid_through` to `last_verified_at_version` — D35) through the existing
-save spine as batched, all-or-nothing transactions (D32). This is the consumer side of the
-cross-repo report contract (Phase 5's `kcdx_verify_all` sweep is the producer; the v3 schema the
-seam). In the SEPARATE gitignored frontend repo (D23) — gated by `npm run build` + Vitest. Ordered
-last: it consumes the v3 report Phase 5 produces.
+save spine as batched, all-or-nothing transactions (D32). **Per D39 the re-verify edit-specs are
+RESOLVED + computed by the data-core** (a new `reverify_resolver` + a `/save/reverify-batch` preview
+endpoint — step 6.2b); the FE sends the report rows + displays the returned field-deltas + relays the
+confirm to `/confirm/batch`, it never computes the edits. This is the consumer side of the cross-repo
+report contract (Phase 5's `kcdx_verify_all` sweep is the producer; the v3 schema the seam). The s08 FE
+is in the SEPARATE gitignored frontend repo (D23) — gated by `npm run build` + Vitest; the data-core
+resolver + the preview endpoint (6.2b) are kcdx-tree, gated by the data-core pytest + backend test.
+Ordered last: it consumes the v3 report Phase 5 produces.
 
 **Design authority:** the **reconciled s08 screen spec**
 `data/maintainer-tool/ui/screens/s08-verification-worklist.md` (v3/D36) + the Layer-1
 `data/maintainer-tool/ui/design.md` (`live verdict badge` + `proof-rank chip` silhouettes) + the
 **v3 report schema** `data/maintainer-tool/report-schema/verification-report.schema.json` + TRD
-`data/maintainer-tool/design.md` D28 / D29 (rev) / D31b / D32 / D34 / D35 / D36. Build to those, not
-this README's summary.
+`data/maintainer-tool/design.md` D28 / D29 (rev) / D31b / D32 / D34 / D35 / D36 / **D39** (the data-core
+resolve seam — the re-verify edit-specs are computed by `reverify_resolver` via `/save/reverify-batch`,
+not the FE). Build to those, not this README's summary.
 
 ## Step-grain ledger
 
@@ -24,19 +29,22 @@ this README's summary.
 |---|---|---|
 | [6.1 [FE] s08 worklist: import (v3) + ingest progress + the THREE-block worklist + the s08 states](step-1-fe-s08-worklist.md) | DONE | FE:6e7f3b1 |
 | [6.2 [BE/CORE] The D32 batch-confirm transaction — `/confirm/batch` endpoint + `confirmBatch` client](step-2-be-batch-confirm-endpoint.md) | DONE | 42ebd79 (BE/data-core) + FE:17bfa12 (client) — update_version_rows_batch (N edits → one DeferredCommit, D21 all-or-nothing rollback) + POST /confirm/batch + the confirmBatch client method. Gate: test_db_editor_batch 5/5 + test_confirm_batch_endpoint 3/3 + FE build clean + Vitest 38/38. Two test-infra fixes greened the BE tests (REAL_SEED_DIR→db-export per 2.3, applied to 6.2's 2 tests; the _git helper passes -c safe.bareRepository=all for its own temp bare remote). |
-| [6.3 [FE] The two batch actions — verify-all (proof-rank `evidence_kind` + `valid_through` extend) + close-intervals → s06 batch confirm](step-3-fe-bulk-reverify-batch-confirm.md) | NOT STARTED | — |
+| [6.2b [BE/CORE] The re-verify resolver + the `/save/reverify-batch` preview seam (D39)](step-2b-be-reverify-resolver.md) | NOT STARTED | — |
+| [6.3 [FE] The two batch actions — send rows → `/save/reverify-batch` → s06 batch confirm → `/confirm/batch`](step-3-fe-bulk-reverify-batch-confirm.md) | NOT STARTED | — |
 
 ## Phase verification gate
 
 A UI-touching phase — the gate INCLUDES user-facing acceptance (`.claude/rules/ux-first-class.md`),
 not only build/test green. Phase 6 is done when: the s08 FE (steps 6.1, 6.3) builds to the
 reconciled s08 screen spec and passes `npm run build` + Vitest, AND the D32 batch endpoint (step
-6.2) passes the data-core pytest + the backend test (incl. ingesting a real Phase-5 **v3** report;
-the three-block verified/failing/no-action split keyed on the 7-state verdicts; the per-row `live
-verdict badge` + `proof-rank chip`; the partial-report banner driven by `complete`/`rows_expected`;
-the **verify-all** batch — incl. the proof-rank-keyed `evidence_kind` and a gap-pass `valid_through`
-extension on the matched row — and the **close-intervals** batch through the `/confirm/batch`
-all-or-nothing transaction). The
+6.2) + **the D39 re-verify resolver + `/save/reverify-batch` preview seam (step 6.2b)** pass the
+data-core pytest + the backend test (incl. ingesting a real Phase-5 **v3** report; the three-block
+verified/failing/no-action split keyed on the 7-state verdicts; the per-row `live verdict badge` +
+`proof-rank chip`; the partial-report banner driven by `complete`/`rows_expected`; the **verify-all**
+batch — incl. the data-core-computed proof-rank-keyed `evidence_kind` and a gap-pass `valid_through`
+extension on the matched row — and the **close-intervals** batch — the data-core-resolved
+deterministic close-target + the `valid_through` retract — the FE displaying the preview's returned
+deltas and relaying the confirm to the `/confirm/batch` all-or-nothing transaction). The
 **milestone user-acceptance checkpoint** fires for the substantive + under-specified UI (s08 is a
 NEW screen): the maintainer experiences importing a v3 report, the ingest progress bar, the
 three-block worklist (verdict badge + proof-rank per row), the partial-report banner, selecting rows

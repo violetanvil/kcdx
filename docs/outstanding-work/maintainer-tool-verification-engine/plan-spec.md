@@ -113,8 +113,21 @@ authoritative artifacts, verbatim with their source:
   retracts to its `last_verified_at_version` (the last version it passed — the sweep
   disproved validity beyond it). A failure needs **no "failed" field**: not advancing
   `last_verified_at_version` already reads UNVERIFIED at the new version by the existing
-  derivation (`data/seeds/policy.md`); the seed schema is unchanged. The maintainer fixes a
+  derivation (`data/maintainer-tool/policy.md`); the seed schema is unchanged. The maintainer fixes a
   failed function individually via `[Fix ▸]` (AP18 per-row).
+- **D39** (`e0b419a`) — the bulk re-verify edit-specs are **RESOLVED + computed by the
+  DATA-CORE from the report, not the frontend** (mandated by D28 "the tool computes the
+  writes" + D34 the importer uses `matched_address_version_id`). A new data-core module
+  **`reverify_resolver`** computes the per-row edit-specs (verify-all: read the matched row
+  by `matched_address_version_id` → `{kcdx_id, valid_from_version}` + current values → the
+  trio + proof-rank `evidence_kind` D29-rev + the D34 gap-extension; close-intervals: the
+  target row resolved DETERMINISTICALLY as the av row of `kcdx_id` whose interval CONTAINS
+  the resolved version — a `failed` row's version is definitionally covered, a gap is
+  `not_applicable` not `failed` → the D35 retract). A new backend **`/save/reverify-batch`**
+  preview endpoint returns the field-deltas (no write/txn — law 5/D16, mirrors
+  `routes_save.py`); the existing `/confirm/batch` transacts the returned edits UNCHANGED.
+  The FE sends report rows + displays the deltas + relays the confirm — it computes NO edits.
+  The write MECHANISM is unchanged (D19); only the edit-spec SOURCE moved FE → data-core.
 - **§7 — the save spine** — validate → write → export → round-trip → field-delta
   confirm → atomic commit + push, shared by every mutating story; plus the §7 batch
   mutation (D32) the bulk re-verify reuses at batch scale.
@@ -285,13 +298,18 @@ below).
 | C++ read pe_helpers surface scoping (does it expose spans + a disp32 follower?) | P0 step 3 | Probe — scoping finding for P3 |
 | The in-game version-applicability + reachability signal (the static ranks 3–4 of the ladder) | P0 step 4 | Probe — live-launch de-risk for P3 step 3 / the rank-3/4 static checks |
 
-### Group E — report ingestion (RE-PLANNED 2026-06-10 against the reconciled v3/D36 s08 spec)
+### Group E — report ingestion (RE-PLANNED 2026-06-10 against the reconciled v3/D36 s08 spec; again 2026-06-10 against D39)
 
 The original two-block / v2-token Phase 6 was superseded by the s08 `/ui-design` reconciliation
 (`fa8db80`/`9298341`) + the TRD D29 evidence_kind fold (`cc5e1c0`): the producer emits a v3 report
 (the 7-state verdict + `method_rank` + the partial-report signal), so s08 is a THREE-block worklist
 with a per-row proof-rank chip + a partial-report banner, and verify-all writes `evidence_kind` keyed
-by proof rank. The two-step decomposition is unchanged; the content is the v3/D36 contract.
+by proof rank. **RE-PLANNED AGAIN 2026-06-10 against D39** (`e0b419a`): the re-verify edit-specs are
+RESOLVED + computed by the data-core (a new `reverify_resolver` + a `/save/reverify-batch` preview
+endpoint — **P6 step 2b**), not the FE. The compute (the trio + the proof-rank-keyed `evidence_kind` +
+the D34 gap-extension + the D35 retract + the deterministic close-target lookup) moves from P6 step 3
+(FE) to P6 step 2b (data-core); P6 step 3 keeps only the FE WIRING (send report rows → the preview →
+display the returned deltas → relay the confirm to `/confirm/batch`).
 
 | Design element | Covered by | Notes |
 |---|---|---|
@@ -303,11 +321,15 @@ by proof rank. The two-step decomposition is unchanged; the content is the v3/D3
 | The conditional invoke-posture detail (`invoke_skip_reason` only when informative) | P6 step 1 | `unsafe_to_call`/`uncontainable` shown; `not_a_callable_kind`/null suppressed (the reconciled s08 detail rule) |
 | The partial-report warning banner (`complete: false`, rows < `rows_expected`) | P6 step 1 | D37 — the N-of-M gap named; the present rows stay actionable (a partial report is a valid ingestible report) |
 | The s08 states (empty/ingesting/populated-three-block/partial/error-malformed-non-v3/error-unknown-id/per-block-disabled/edge) | P6 step 1 | Built to the reconciled s08 spec §"States & variants" |
-| The D32 batch-confirm transaction (`/confirm/batch` endpoint + `confirmBatch` client) | P6 step 2 | NEW (re-plan 2026-06-10) — N edits → one DeferredCommit, all-or-nothing rollback (D21), one git commit, all-UPDATE. The producer step 3 drives; D32 settled the mechanism, this implements it (the single-mutation confirm + `_apply_one_db`/`DeferredCommit` primitive existed; nothing batched them) |
-| Verify-all → s06 batch confirm (trio + proof-rank `evidence_kind` + gap-pass `valid_through` extend) | P6 step 3 | One batched confirm driving the 6.2 `/confirm/batch`; `evidence_kind` keyed by proof rank (D29-rev); the matched row's interval extended on a gap-pass (D32/D34) |
-| Close-intervals → s06 batch confirm (`valid_through` → `last_verified_at_version`) | P6 step 3 | The failing block's batch action (D35), via 6.2 `/confirm/batch` |
-| A failure = UNVERIFIED-by-derivation (no "failed" field) | P6 step 3 | Not advancing `last_verified_at_version` (D35; `policy.md`) |
-| Confirm-spine routing (both batches through validate→confirm→commit; all-or-nothing) | P6 step 2 (the endpoint), P6 step 3 (the FE drive) | Data-core sole writer (D28/law 6); one atomic batch txn, one-row failure rolls back the whole batch (D32/D21) |
+| The D32 batch-confirm transaction (`/confirm/batch` endpoint + `confirmBatch` client) | P6 step 2 | DONE (`42ebd79`+FE:`17bfa12`) — N edits → one DeferredCommit, all-or-nothing rollback (D21), one git commit, all-UPDATE. D32 settled the mechanism, this implements it (the single-mutation confirm + `_apply_one_db`/`DeferredCommit` primitive existed; nothing batched them) |
+| The `reverify_resolver` data-core module — resolves report rows → edit-specs (verify-all: matched-row read by id → trio + proof-rank `evidence_kind` + D34 gap-extension; close-intervals: deterministic interval-containment lookup → D35 retract; verdict routing) | **P6 step 2b** | NEW (D39, `e0b419a`) — the data-core computes the re-verify writes (D28/D34/law 6); the FE never computes them |
+| The `/save/reverify-batch` preview endpoint (calls the resolver, returns field-deltas, no write/txn) | **P6 step 2b** | NEW (D39) — mirrors `routes_save.py`'s preview-only contract (law 5/D16); the FE displays the returned deltas before confirm |
+| Verify-all RESOLUTION/COMPUTE (trio + proof-rank `evidence_kind` + gap-pass `valid_through` extend) | **P6 step 2b** | The data-core computes it (D39); `evidence_kind` keyed by proof rank (D29-rev); the matched row's interval extended on a gap-pass (D34) |
+| Close-intervals RESOLUTION/COMPUTE (the deterministic close-target + `valid_through` → `last_verified_at_version`) | **P6 step 2b** | The data-core resolves the target by `kcdx_id`+resolved-version (interval-containment) + computes the retract (D35/D39) |
+| Verify-all FE WIRING → s06 batch confirm (send rows → preview → display deltas → relay confirm) | P6 step 3 | One batched confirm driving `/save/reverify-batch` (6.2b) then `/confirm/batch` (6.2); the FE displays the resolver's returned deltas (D39) |
+| Close-intervals FE WIRING → s06 batch confirm | P6 step 3 | The failing block's batch action drive (D35/D39), via 6.2b preview + 6.2 `/confirm/batch` |
+| A failure = UNVERIFIED-by-derivation (no "failed" field) | P6 step 2b | The resolver writes no "failed" field; not advancing `last_verified_at_version` leaves it UNVERIFIED by derivation (D35; `policy.md`) |
+| Confirm-spine routing (both batches through validate→confirm→commit; all-or-nothing) | P6 step 2b (resolve+preview), P6 step 2 (transact endpoint), P6 step 3 (the FE drive) | Data-core sole writer (D28/D39/law 6); one atomic batch txn, one-row failure rolls back the whole batch (D32/D21) |
 
 ### Group F — install-set link surface (D30 revised)
 
