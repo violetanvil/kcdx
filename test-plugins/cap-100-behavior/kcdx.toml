@@ -1,0 +1,72 @@
+# CAP-100 — kcdx.behavior.* declare/get/list (the named-behavior registry's
+# read-side surface).
+#
+# A real Lua plugin that DECLARES behaviors at load (the load-time act), then
+# asserts the read surface: declare registers under the engine-stamped
+# <author>.<plugin>.<bare> full name (this plugin's prefix:
+# ts.cap_100_behavior.); a spec missing a required field (description /
+# non-nil default / implementation) RAISES a teaching error naming the field;
+# a duplicate same-full-name declare errors on the SECOND declare while the
+# FIRST stands and keeps resolving; get returns the spec's default while a
+# behavior was never set (set is a later step — every get answers the
+# default); list([prefix]) returns the registered behaviors with
+# name/description/default/current/declarer and the prefix filter scopes to
+# this plugin's own entries.
+#
+# What it proves (all boot-only, auto-pass; declares + fixture pcalls run at
+# load, rows report at ready):
+#   1. cap-100-declare-list — two clean declares register; list() carries the
+#      stamped full names with the right description / default / declarer.
+#      FALSIFIABLE: a declare raises, the stamped name is absent from list(),
+#      or an entry field is wrong -> FAIL.
+#   2. cap-100-missing-field-errors — three bad specs (no description, nil
+#      default, no implementation) each RAISE with the missing field named in
+#      the error; none of the rejected names registers.
+#      FALSIFIABLE: a bad declare succeeds, the error text lacks the field
+#      name, or a rejected name shows up in list() -> FAIL.
+#   3. cap-100-duplicate-second-errors — the SECOND declare of one full name
+#      raises ("already declared"); the FIRST declaration still resolves via
+#      get and answers ITS default.
+#      FALSIFIABLE: the second declare succeeds, the error lacks "already
+#      declared", get raises, or get answers the second spec's default -> FAIL.
+#   4. cap-100-get-default — get on a never-set behavior returns the spec's
+#      default, via BOTH the bare self-resolved name and the explicit full
+#      <author>.<plugin>.<bare> form; get on an undeclared name raises a
+#      teaching error (never a silent nil).
+#      FALSIFIABLE: a wrong/nil value, or a silent non-raise on the unknown
+#      name -> FAIL.
+#   5. cap-100-list-prefix-filter — list("ts.cap_100_behavior.") returns
+#      EXACTLY this plugin's own successfully-declared entries (count + every
+#      name carries the prefix).
+#      FALSIFIABLE: a foreign entry passes the filter, an own entry is
+#      missing, or the count is wrong -> FAIL.
+#   6. cap-100-alias-get — a kcdx.alias local handle to a declared behavior's
+#      full name resolves through get to the same value as the direct
+#      full-name get (alias substitution feeds the behavior resolution).
+#      FALSIFIABLE: the alias path raises or returns a different value -> FAIL.
+#
+# Test mode: boot-only (launch-to-menu confirms all six rows; no player
+# input).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_100_behavior"
+display_name        = "CAP-100 kcdx.behavior declare/get/list"
+author              = "ts"
+description         = "Pure-Lua self-test of the kcdx.behavior read-side surface: declare stamps + registers, missing-field specs raise teaching errors, a duplicate declare errors on the second while the first stands, get answers the spec's default on a never-set behavior (bare + full-name resolution; unknown names raise), and list's prefix filter scopes to the plugin's own entries."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "cap-100-declare-list",
+    "cap-100-missing-field-errors",
+    "cap-100-duplicate-second-errors",
+    "cap-100-get-default",
+    "cap-100-list-prefix-filter",
+    "cap-100-alias-get",
+]
+
+[entrypoints]
+lua = "plugin.lua"

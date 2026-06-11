@@ -258,6 +258,34 @@ kcdx.log.info("MYMOD", "running on kcdx " .. kcdx.version)
   by their console name with [`kcdx.cvar.*`](cvar.md); you supply the name (from
   a modding wiki, the `~` console, or a config), the engine resolves the rest.
 
+- **behavior** — a named, settable unit of intent: a value plus the declarer's
+  `implementation` that reconfigures the game to match it, under the engine's
+  apply contract — think a CVar whose setter is mod-authored. NOT a shared
+  variable (plain cross-plugin data is `kcdx.publish`/`kcdx.on`). Two tiers
+  register through one registry: the engine catalog (`kcdx.behavior.<bare>`)
+  and plugin-declared behaviors (`<author>.<plugin>.<bare>`). See
+  [behavior.md](behavior.md).
+
+- **declarer (of a behavior)** — the plugin (or the engine catalog) that owns
+  a behavior's name and implementation, declared via
+  `kcdx.behavior.declare`. `kcdx.behavior.list()` names each entry's declarer.
+
+- **consumer (of a behavior)** — a plugin that reads (and, once `set` ships,
+  sets) a behavior it does not declare — the simple-modder role: a consumer
+  names a behavior and a value, never a function name or an address.
+
+- **apply boundary** — the single point, after all plugins have loaded, where
+  the engine invokes each *set* behavior's implementation once with the final
+  settled value. Ships with `kcdx.behavior.set` (its doc entry lands with that
+  call); today nothing can be set, so no implementation is invoked and every
+  behavior reads as its declared `default`.
+
+- **catalog tier** — the engine-shipped behaviors under the reserved
+  `kcdx.behavior.<bare>` root, declared by the engine's catalog pack ahead of
+  every user plugin (so they are always declared before any user code runs).
+  Not shipped yet; once it lands, `kcdx.behavior.list("kcdx.behavior.")`
+  browses it.
+
 - **dev mode** — an engine setting (`engine.toml`, `dev_mode = true`) that
   enables the test suite, debug/trace logging, and dev-only diagnostics.
 
@@ -325,6 +353,7 @@ it does not exist yet.
 | `kcdx.functions.*` | function-reference values — name a function (game-engine or plugin) → a value carrying its address + verified signature, for a hook/statement verb. Game-DLL: dot-free stem (`kcdx.functions.WHGame.SaveGame`) + `by_id[N]`; plugin-DLL: dotted stem (`kcdx.functions["<author>.<plugin>"].Fn`). `:resolve()` inspects one | [functions.md](functions.md) |
 | `kcdx.dll.declare` | declare your own DLL's functions (signature from your source, no disassembly) → exposed at `kcdx.functions["<your-namespace>"].*` for cross-plugin hooking by name | [dll.md](dll.md) |
 | `kcdx.assets.get_by_path` | resolve your own asset by path → a loadable path you hand to a game asset API (cross-plugin via `kcdx.plugin.<a>.<p>.assets.get_by_path`) | [assets.md](assets.md) |
+| `kcdx.behavior.declare` / `.get` / `.list` | named behaviors — declare a behavior your plugin owns (stamped `<author>.<plugin>.<bare>`; spec = description + default + implementation + optional revert); read a behavior's current-or-default value; browse the registered behaviors with an optional prefix filter. (`kcdx.behavior.set` + the apply boundary are not callable yet) | [behavior.md](behavior.md) |
 | `kcdx.find` | discover a game function from what you know about it (a string/CVar it references, a function it calls/is-called-by, a name substring) — a **dev-mode-only** discovery workbench returning matching function headers (name, module, rva, statement_count); `{}` (not nil) on no-match or when the dev tool is unavailable. Inspect one with `kcdx_dev_inspect` | [find.md](find.md) |
 | `kcdx.test.*` | record a test-suite result | [test.md](test.md) |
 | `kcdx.cosave.*` | persist plugin state across saves (write on save, read on load) | [cosave.md](cosave.md) |

@@ -8,8 +8,8 @@ edges, and the auto-order method. Design: [`../behavior-design.md`](../behavior-
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — startup-ordering probe + static-evidence reads](step-1-startup-probe.md) | DONE | (landed) |
-| [2 — behavior_registry + declare/get/list](step-2-registry-declare.md) | NOT STARTED | — |
+| [1 — startup-ordering probe + static-evidence reads](step-1-startup-probe.md) | DONE | 736481d |
+| [2 — behavior_registry + declare/get/list](step-2-registry-declare.md) | DONE | (landed) |
 | [3 — set + the apply boundary (worklist drain)](step-3-set-boundary.md) | NOT STARTED | — |
 | [4 — window law + resolution errors + in-memory edges](step-4-window-law-errors.md) | NOT STARTED | — |
 | [5 — revert / post-load toggle contract](step-5-toggle-revert.md) | NOT STARTED | — |
