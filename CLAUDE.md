@@ -16,7 +16,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 
 | Concern | File |
 |---|---|
-| Cornerstones (UX > Capability > Perf; the disassembler test) | [cornerstones.md](.claude/rules/cornerstones.md) |
+| Cornerstones (UX > Capability > Perf; the disassembler test; every surfaced option set screened first — §"Surfaced options"). Hooks: UserPromptSubmit `inject-cornerstone-reminder.py` (per-turn reminder); PreToolUse `guard-cornerstone-gate.py` (blocks an unscreened AskUserQuestion) | [cornerstones.md](.claude/rules/cornerstones.md) |
 | SKSE / F4SE parity (naming, interfaces) | [skse-parity.md](.claude/rules/skse-parity.md) |
 | TOML schema conventions | [toml-schema.md](.claude/rules/toml-schema.md) |
 | Hook engine invariants (MinHook, conflict_engine, apply order) | [hook-engine.md](.claude/rules/hook-engine.md) |
@@ -44,6 +44,7 @@ SKSE-class extender for Kingdom Come: Deliverance 2. Function hooks, trampolines
 ## Hard rules (always-on)
 
 - **Stop and ask if unsure.** No autonomous design decisions on anything not specified in `docs/design.md` or a rule file.
+- **Every surfaced option set is run past the cornerstones FIRST.** Before any options / design fork / recommendation reaches the user — tool or prose, inside a skill or bare conversation — each option states its cornerstone standing (+ the disassembler-test verdict where author-facing) or that no cornerstone bears; the Recommendation names the cornerstone it wins on. See [cornerstones.md](.claude/rules/cornerstones.md) §"Surfaced options clear the cornerstones first".
 - **Results-driven — test the unknown, don't theorize it.** A checkable question (will this hook fire? how many args? does this offset resolve? does the game still boot?) gets a probe/test with its outcome→meaning map BEFORE acting on inference. Theorizing on a checkable unknown, or fix #2 on a fresh theory after fix #1 failed, is a process violation. See [results-driven.md](.claude/rules/results-driven.md) (AP10).
 - **The disassembler test — the engine does the heavy lifting.** A design making the author supply an address / offset / register / instruction length / hand-written signature for a common task is a UX defect — the name must supply address AND verified ABI; the disassembler is an expert-only, labeled escape hatch. "The author can just provide the signature/address" is the tell. See [cornerstones.md](.claude/rules/cornerstones.md) (AP12).
 - **No hardcoded game addresses in source — resolve by name/id through the DB (AP1).** Every per-version-volatile game-binary target (RVA, AOB/byte-pattern locator, vtable slot index, game-struct offset) resolves at runtime via the Address Library (`kcdx::ResolveAddress` / `ResolveByName` / `target = "<name>"`), never a literal in `.cpp`/`.h` — the DB is the single source of truth so a new game version updates ONE place. Non-address constants (masks, sentinels, probe/test/example values) are fine. Gates the in-code side; ADDING a DB entity is the separate AP18 gate below. See [no-hardcoded-addresses.md](.claude/rules/no-hardcoded-addresses.md).

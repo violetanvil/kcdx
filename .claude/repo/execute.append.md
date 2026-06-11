@@ -4,4 +4,4 @@
 
 - **Decomposition-orchestrator name** — the §"What's out of scope" multi-step redirect is `/feature` (kcdx ships no `/slice`).
 
-- **Cornerstone gate on surfaced options (§A.3 confirm forks + every escalation)** — before presenting any option set, run every option past `.claude/rules/cornerstones.md`; each option's Pros/Cons states its cornerstone standing (+ the disassembler-test verdict where author-facing), and the Recommendation names the cornerstone it wins on (a fork no cornerstone bears on states so — never a fabricated standing).
+- **Cornerstone gate (§A.3 confirm forks + every escalation)** — every surfaced option set clears `.claude/rules/cornerstones.md` §"Surfaced options clear the cornerstones first" BEFORE presenting.

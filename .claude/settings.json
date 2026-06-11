@@ -1,6 +1,19 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/inject-cornerstone-reminder.py\"" }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-cornerstone-gate.py\"" }
+        ]
+      },
       {
         "matcher": "Write",
         "hooks": [

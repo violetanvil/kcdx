@@ -4,7 +4,7 @@
 
 - **Build command (full + fast)** — `pwsh ./build.ps1` for both (there is no separate fast variant). The §C item-1 verification bar asserts exit 0 AND that all three artifacts were produced: `build/Release/kcdx.exe` + `kcdx.dll` + `kcdx-watchdog.exe`.
 
-- **Design anchor** — `docs/design.md` (CLAUDE.md "Authoritative design"); the brief cites its §sections. Cornerstones (`.claude/rules/cornerstones.md`) decide ties. **Cornerstone gate on surfaced options (§E escalation forks):** before presenting any option set, run every option past `.claude/rules/cornerstones.md`; each option's Pros/Cons states its cornerstone standing (+ the disassembler-test verdict where author-facing), and the Recommendation names the cornerstone it wins on (a fork no cornerstone bears on states so — never a fabricated standing).
+- **Design anchor** — `docs/design.md` (CLAUDE.md "Authoritative design"); the brief cites its §sections. Cornerstones (`.claude/rules/cornerstones.md`) decide ties. **Cornerstone gate (§E escalation forks):** every surfaced option set clears `.claude/rules/cornerstones.md` §"Surfaced options clear the cornerstones first" BEFORE presenting.
 
 - **Anti-pattern range (§A.7)** — `AP1–AP18`, audited against `.claude/rules/anti-patterns.md`. Evidence rule the §A.7 self-check ADDS: any claim about a game-function offset / ABI / vtable index requires an Address Library ID, `abi_walker` evidence, or Ghidra evidence per `.claude/rules/reverse-engineering.md` — training-data recall of a canonical CryEngine layout is not evidence (AP1/AP2/AP3). Label an AP-hit option `[AP1 hit — raw RVA instead of Address Library ID]`; AP-hit options cannot be Recommended.
 

@@ -47,6 +47,16 @@ These three guarantees are IMPLEMENTED by the `<author>.<plugin>.<bare>` model a
 
 ---
 
+## Surfaced options clear the cornerstones first
+
+Before ANY option set is presented — an `AskUserQuestion` fork, a Decision/Options/Recommendation block, an escalation, a consult take; tool or prose; inside a skill or in bare conversation:
+
+- Run every option past this rule. Each option's Pros/Cons states its **cornerstone standing** (+ the disassembler-test verdict where author-facing); the Recommendation names the cornerstone it wins on.
+- A fork no cornerstone bears on **states so explicitly** — never a fabricated standing.
+- An option trading a cornerstone for implementation effort is **not a valid option** — cut it before presenting. A technically-justified trade is presented only with the trade + justification labeled (the review framework's labeled AP-hit option is this technically-justified case, never the effort case).
+
+---
+
 ## How to apply
 
 - **Designing a feature:** pick the option that wins on UX/Capability/Performance, then build it; don't pre-narrow. Run the disassembler test on every author-facing input.

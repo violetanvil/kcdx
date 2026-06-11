@@ -18,6 +18,6 @@
 
 - **Design-surface threshold (Gate A / Gate B)** — a planned fix crosses the boundary (Gate A architect-review fires; Gate B verifier's §4 design-fork check fires) when it: adds or changes a hook surface / ABI signature / vtable slot / Address Library entry / save-cosave field / `[[...]]` schema; OR adds a new `src/` or `include/` file; OR modifies >1 `src/` file; OR changes a function signature (grep every caller first); OR touches a `.claude/rules/` file or `docs/design.md`. A trivial fix (a log-message typo, a comment, a single-file ≤10-line change with no signature/rule touch) skips both gates.
 
-- **Cornerstone gate on surfaced options (Gate A design forks)** — before presenting any option set, run every option past `.claude/rules/cornerstones.md`; each option's Pros/Cons states its cornerstone standing (+ the disassembler-test verdict where author-facing), and the Recommendation names the cornerstone it wins on (a fork no cornerstone bears on states so — never a fabricated standing).
+- **Cornerstone gate (Gate A design forks)** — every surfaced option set clears `.claude/rules/cornerstones.md` §"Surfaced options clear the cornerstones first" BEFORE presenting.
 
 - **Provisional-mask policy** — the AP17 escape: a user-approved "Provisional mask, root cause unknown" Resolution label is permitted; the KI then stays OPEN and top-level (it does NOT graduate to `closed/`). Absent that explicit label, no close lands without a root-cause MECHANISM paragraph.

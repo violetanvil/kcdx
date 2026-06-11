@@ -10,4 +10,4 @@
 
 - **Design source label** — `docs/design.md` (the settled design `/plan` reads from); a design fork surfaced during planning routes to `/senior-architect-consult`.
 
-- **Cornerstone gate on surfaced options (forks, deferrals, decomposition alternatives)** — before presenting any option set, run every option past `.claude/rules/cornerstones.md`; each option's Pros/Cons states its cornerstone standing (+ the disassembler-test verdict where author-facing), and the Recommendation names the cornerstone it wins on (a fork no cornerstone bears on states so — never a fabricated standing).
+- **Cornerstone gate (forks, deferrals, decomposition alternatives)** — every surfaced option set clears `.claude/rules/cornerstones.md` §"Surfaced options clear the cornerstones first" BEFORE presenting.
