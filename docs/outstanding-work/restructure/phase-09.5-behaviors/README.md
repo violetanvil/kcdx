@@ -1,26 +1,37 @@
 # Phase 9.5 — `kcdx.behavior.*` named-behavior catalog (two-tier)
 
-**Status: NOT STARTED.** Detail: [`../00-original-plan.md`](../00-original-plan.md) §"Phase 9.5".
+**Status: NOT STARTED.** The simple-modder surface: one line, never a function
+name, statement, op, or address. Two tiers (engine catalog + plugin-declared)
+through one model and one code path.
 
-The simple-modder surface. Author writes one line; never sees a function name,
-statement, or op. Two tiers coexist through the same `set`/`get`/`list`/`declare`
-verbs: engine-shipped (reserved `kcdx.behavior.*` namespace) and plugin-declared
-(standard `<author>.<plugin>.<bare>` namespace). This is the contribution surface
-that scales the simple-modder UX organically — each TC plugin grows the named-behavior
-pool for downstream consumers.
+- **Settled design:** [`behavior-design.md`](behavior-design.md) (committed
+  `94668ea`, soundness + fidelity gated) — the build authority every step
+  back-pointers.
+- **Shared spec + coverage map:** [`plan-spec.md`](plan-spec.md).
+- Supersedes the pre-design 3-step ledger (the old step docs were removed when
+  this tree was authored; detail lived in
+  [`../00-original-plan.md`](../00-original-plan.md) §"Phase 9.5", now superseded
+  by the design doc).
 
-## Step ledger
+## Phase ledger (phase-grain)
 
-| Step | Status | Commit |
+Status: `NOT STARTED` · `BLOCKED` · `DONE` · `NEEDS REWORK`. Commit = short hash
+when `DONE`, `—` otherwise. A landed step flips its row in its phase README; the
+last step of a phase flips that phase's row here; 9.5's completion flips the
+restructure top-ledger row (the orchestrator owns the cascade).
+
+| Phase | Status | Commit |
 |---|---|---|
-| [1 — `kcdx.behavior.*` verbs (declare/set/get/list)](step-1-behavior-verbs.md) | NOT STARTED | — |
-| [2 — engine-shipped catalog (5–10 entries)](step-2-engine-catalog.md) | NOT STARTED | — |
-| [3 — test plugin (engine + cross-plugin behaviors)](step-3-test.md) | NOT STARTED | — |
+| [1 — core surface (probe · registry · boundary · window law · toggle · edges · auto-order)](phase-01-core-surface/README.md) | NOT STARTED | — |
+| [2 — C++ parity + the command queue](phase-02-cpp-parity/README.md) | NOT STARTED | — |
+| [3 — the engine catalog](phase-03-catalog/README.md) | NOT STARTED | — |
 
-## Verification gate (whole phase)
+## Build order rationale
 
-`kcdx.behavior.set("test_behavior", true)` against a catalog entry → underlying
-byte rewrite applies. A behavior-only plugin without `authored_against_game_version`
-still loads (exempt). `kcdx.behavior.list()` returns engine + plugin behaviors;
-`list("redmoon.")` filters. Cross-plugin: plugin A declares `a.test.foo`; plugin B
-calls `set("a.test.foo", "value")`; A's implementation fires with the value.
+Dependency-topological (`.claude/rules/incremental-delivery.md`): P1 s1 discharges
+the design's four marked runtime assumptions before anything builds on them
+(`.claude/rules/results-driven.md`); the registry and Lua surface stand up the one
+model both tiers share; edges + auto-order complete the ordering story; C++ parity
+(P2) mirrors a proven surface; the catalog (P3) loads through machinery P1/P2
+proved. Each phase ends buildable; each step is independently verifiable when it
+lands.
