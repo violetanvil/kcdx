@@ -29,7 +29,7 @@
 - **Doc-structure additions** — kcdx is a reverse-engineering repo, so a design decision that rests
   on a game-binary fact (an address/RVA, ABI signature, vtable slot, struct offset) carries its
   **RE primary-sources / evidence** provenance: the verified fact + where it came from on the
-  reuse-first ladder (existing `data/seeds/` rows → prior `_research/` dumps → predecessor sigs →
+  reuse-first ladder (existing `data/db-export/` rows → prior `_research/` dumps → predecessor sigs →
   the analyzed Ghidra project → fresh disassembly last), per `.claude/rules/reverse-engineering.md`
   and `/research-disassembly`. A design §section that turns on such a fact states the verified value
   AND its evidence tier, never a bare RVA.

@@ -4,10 +4,10 @@
       "name": "AP1-raw-rva",
       "mode": "delta-count",
       "pathFilter": "\\.(?:cpp|h|hpp|cc|cxx|inl)$",
-      "pathExclude": "address_library|[\\\\/]seeds[\\\\/]|[\\\\/]rom_borrowed[\\\\/]",
+      "pathExclude": "address_library|[\\\\/]seeds[\\\\/]|[\\\\/]db-export[\\\\/]|[\\\\/]rom_borrowed[\\\\/]",
       "regex": "\\b\\w+\\s*\\+\\s*0x[0-9a-fA-F]{6,}\\b",
       "action": "warn",
-      "message": "Anti-pattern WARN (AP1 raw RVA): adds a hardcoded base+offset literal. RVAs shift per KCD2 update - resolve by Address Library ID instead (add a row to the seed CSVs under data/seeds/; the reference DB regenerates from them - .claude/rules/address-library.md). Bypass: '// approved: <reason>' on the line after user sign-off."
+      "message": "Anti-pattern WARN (AP1 raw RVA): adds a hardcoded base+offset literal. RVAs shift per KCD2 update - resolve by Address Library ID instead (author a row in the reference DB via the maintainer tool; the curated CSVs export to data/db-export/, the reference DB regenerates from them - .claude/rules/address-library.md). Bypass: '// approved: <reason>' on the line after user sign-off."
     },
     {
       "name": "AP4-hook-outside-engine",

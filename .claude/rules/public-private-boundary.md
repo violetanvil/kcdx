@@ -44,8 +44,10 @@ NOT published): `docs/outstanding-work/` + `docs/known-issues/` + `docs/tech-deb
 (TRDs that state RE provenance + governance citations); the superseded/planning files `docs/design.md`, `docs/design-gaps.md`,
 `docs/phase5c7b-plan.md`, `docs/phase5-rom-port-plan.md`, `docs/migration.md`,
 `docs/VERIFY_PHASE2.md`/`3`/`4`, `docs/archive/`; the archived v0.1 example
-plugins `examples/archive/`; the RE tooling `data/refdata-extractor/`; and the
-maintainer-only seed CSVs + authoring law `data/seeds/`. The user-facing
+plugins `examples/archive/`; the RE tooling `data/refdata-extractor/`; the
+maintainer-only reference-data CSV export `data/db-export/` (curated, git text) +
+`data/db-export-bulk/` (bulk, Git LFS); and the maintainer tool + its authoring law
+`data/maintainer-tool/` (D38 retired `data/seeds/`; `policy.md` moved here). The user-facing
 reference is `docs/cpp/` + `docs/lua/` + the operational docs
 (`init.md`, `load-order.md`, `logging.md`, …).
 

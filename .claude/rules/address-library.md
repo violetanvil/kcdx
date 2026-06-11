@@ -2,7 +2,7 @@
 paths:
   - "src/**"
   - "include/**"
-  - "data/seeds/**"
+  - "data/db-export/**"
   - "**/kcdx.toml"
   - "test-plugins/**/kcdx.toml"
   - "kcdx-engine/builtin/**/kcdx.toml"

@@ -46,7 +46,8 @@ def main():
                         'docs/VERIFY_PHASE3.md', 'docs/VERIFY_PHASE4.md',
                         'docs/archive/', 'docs/phase5-rom-port-plan.md',
                         'docs/migration.md', 'examples/archive/',
-                        'data/refdata-extractor/', 'data/seeds/']
+                        'data/refdata-extractor/', 'data/db-export/',
+                        'data/db-export-bulk/', 'data/maintainer-tool/']
 
     is_public = False
     for d in public_dirs:

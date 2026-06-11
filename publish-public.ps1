@@ -90,16 +90,19 @@ $PrivateSubpaths = @(
   # (the tool's output -- the SQLite DBs -- ships from data/, so the tool
   # itself lives alongside its output rather than under tools/).
   'data/refdata-extractor/',
-  # Reference-data seed CSVs + their authoring policy. Maintainer-only law
-  # for how rows enter the curated set; the GENERATED DBs (data/*.sqlite) +
-  # their schema docs (data/reference.md, data/reference-dev.md) are public,
-  # but the seeds themselves are private.
-  'data/seeds/',
-  # Maintainer seed-editing tool. The tool consumes data/seeds/ + the shared
-  # validator module extracted from data/refdata-extractor/python/; nothing
-  # under it is for mod authors. Source, requirements doc, packaging
-  # config, and per-machine cache all stay private. See
-  # data/maintainer-tool/requirements.md R10.
+  # Reference-data CSV export (D38: data/seeds/ retired). The curated CSVs at
+  # data/db-export/ (git text) + the bulk corpus at data/db-export-bulk/ (Git LFS)
+  # are the maintainer-tool's git-tracked export of the reference DB. The GENERATED
+  # DBs (data/*.sqlite) + their schema docs (data/reference.md, data/reference-dev.md)
+  # are public, but the exported CSVs themselves are private. The authoring policy
+  # (data/maintainer-tool/policy.md) ships private with the maintainer tool below.
+  'data/db-export/',
+  'data/db-export-bulk/',
+  # Maintainer seed-editing tool + its authoring law (policy.md). The tool consumes
+  # the data/db-export/ CSVs + the shared validator module extracted from
+  # data/refdata-extractor/python/; nothing under it is for mod authors. Source,
+  # requirements doc, the authoring policy, packaging config, and per-machine cache
+  # all stay private. See data/maintainer-tool/requirements.md R10.
   'data/maintainer-tool/'
 )
 

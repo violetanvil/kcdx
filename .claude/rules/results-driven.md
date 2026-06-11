@@ -34,7 +34,7 @@ When about to write "this is likely because…" / "I think the engine…" as the
 
    Where several hypotheses could each hold, log the variable AND its confounds so one run eliminates multiple branches.
 3. **One variable per probe.** Changing N things → the outcome map must decompose into N attributable sub-outcomes; if it cannot decompose, split the probe on paper first.
-4. **Static evidence before a live probe.** The seed CSVs under `data/seeds/` (the reference-DB source), a prior `_research/` dump (`.claude/rules/working-artifacts.md` — reuse-first), predecessor sigs, Ghidra, an existing log, or a read-only in-process probe that settles it IS the test; reach for a live launch only for runtime behavior no static source answers.
+4. **Static evidence before a live probe.** The curated CSV export under `data/db-export/` (the reference-DB's git-tracked export), a prior `_research/` dump (`.claude/rules/working-artifacts.md` — reuse-first), predecessor sigs, Ghidra, an existing log, or a read-only in-process probe that settles it IS the test; reach for a live launch only for runtime behavior no static source answers.
 5. **Act on the result, not past it.** Do what the answer says; do not re-theorize beyond it. A new question is a new probe with its own map.
 
 ## The probe must be theory-INDEPENDENT
