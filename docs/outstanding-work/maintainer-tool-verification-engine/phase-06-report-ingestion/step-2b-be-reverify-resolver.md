@@ -77,6 +77,10 @@ FastAPI layer; the endpoint test exercises the thin route).
 - **6.2** — the `/confirm/batch` endpoint + `update_version_rows_batch` (the transact-half + the
   `{kcdx_id, valid_from_version, edits}` batch shape the resolver's edit-specs target). Built before this
   so the resolver produces the shape an existing endpoint consumes.
+- **6.2a-fix** — the authored `valid_through` column + the `_apply_one_db` interval-write extension (D40):
+  the resolver's D34 gap-extension / D35 close edit-specs WRITE `valid_through`, so the write path must
+  accept it first. Built before this (6.2a-fix → 6.2b) so the resolver's `valid_through` edits land through
+  a write path that transacts them, not one that rejects them.
 - The existing `routes_save.py` preview-only contract (the pattern `/save/reverify-batch` mirrors) + the
   data-core read seam (the resolver reads the matched/target row + current values).
 

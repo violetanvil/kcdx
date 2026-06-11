@@ -29,7 +29,7 @@ not the FE). Build to those, not this README's summary.
 |---|---|---|
 | [6.1 [FE] s08 worklist: import (v3) + ingest progress + the THREE-block worklist + the s08 states](step-1-fe-s08-worklist.md) | DONE | FE:6e7f3b1 |
 | [6.2 [BE/CORE] The D32 batch-confirm transaction — `/confirm/batch` endpoint + `confirmBatch` client](step-2-be-batch-confirm-endpoint.md) | NEEDS REWORK | 42ebd79 (BE/data-core) + FE:17bfa12 (client) — update_version_rows_batch + POST /confirm/batch + confirmBatch client. UNDER-SCOPED (found building 6.2b): the 6.2 step doc named `valid_through` among the batch edits, but the build never added it to EDITABLE_VERSION_COLUMNS — so the write path REJECTS the D34/D35 `valid_through` edit the resolver must produce (spec-conformance gap; no test caught it). Corrected by step 6.2a-fix; returns to DONE on that landing (loop §C.3 trigger-2). |
-| [6.2a-fix [BE/CORE] Complete the 6.2 write path — the `valid_through` interval-write affordance (D34/D35)](step-2a-fix-valid-through-write-path.md) | NOT STARTED | — |
+| [6.2a-fix [BE/CORE] `valid_through` becomes an authored + auto-filled column — the write affordance + the seam move (D40)](step-2a-fix-valid-through-write-path.md) | NOT STARTED | — |
 | [6.2b [BE/CORE] The re-verify resolver + the `/save/reverify-batch` preview seam (D39)](step-2b-be-reverify-resolver.md) | NOT STARTED | — |
 | [6.3 [FE] The two batch actions — send rows → `/save/reverify-batch` → s06 batch confirm → `/confirm/batch`](step-3-fe-bulk-reverify-batch-confirm.md) | NOT STARTED | — |
 

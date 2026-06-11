@@ -128,6 +128,22 @@ authoritative artifacts, verbatim with their source:
   `routes_save.py`); the existing `/confirm/batch` transacts the returned edits UNCHANGED.
   The FE sends report rows + displays the deltas + relays the confirm — it computes NO edits.
   The write MECHANISM is unchanged (D19); only the edit-spec SOURCE moved FE → data-core.
+- **D40** (`acdec1e`) — `valid_through` is an **AUTHORED + tool-auto-filled** column (the
+  audit-trio pattern, D17a/D17b/D29). It graduates from the bulk derived-overlay
+  (`_AV_DERIVED_COLS`) to the AUTHORED seed surface (`ADDRESS_VERSIONS_CSV_HEADER` as
+  `valid_through_version`→FK + the seed reader + the curated exporter SELECT +
+  `EDITABLE_VERSION_COLUMNS`) — a deliberate D38-seam move (re-baselines the round-trip oracle +
+  reconciles `validate_db_shape.py:197`'s all-open invariant). The re-verify (D39's resolver)
+  AUTO-FILLS it (D34 extend / D35 retract) — the common path; the maintainer HAND-OVERRIDES it in
+  the s04 single-version editor (the `verified_by`/D17a model, NOT the `verified_date`/D17b
+  system-only model), gated by an interval validator (`valid_through >= valid_from`, no overlap,
+  open-row uniqueness, FK-resolvable tag). The SCHEMA is unchanged (D22 — a reclassification), but
+  the WRITE PATH is real new work (NOT a reclassification): `_seed_action_rows` gains a
+  `valid_through` slot + the `_apply_one_db` re-verify/interval UPDATE branch emits it, reconciled
+  with `_UPDATE_PRESERVE_COLUMNS` (which guards a full-column UPDATE from NULLing a closed interval;
+  the interval edit is the distinct shape that emits a non-null ordinal). Reuses the D19 spine (law
+  6). Supersedes D39's "resolver writes a derived value" framing — the resolver still computes it;
+  D40 settles it lands in the authored column.
 - **§7 — the save spine** — validate → write → export → round-trip → field-delta
   confirm → atomic commit + push, shared by every mutating story; plus the §7 batch
   mutation (D32) the bulk re-verify reuses at batch scale.
@@ -322,7 +338,10 @@ display the returned deltas → relay the confirm to `/confirm/batch`).
 | The partial-report warning banner (`complete: false`, rows < `rows_expected`) | P6 step 1 | D37 — the N-of-M gap named; the present rows stay actionable (a partial report is a valid ingestible report) |
 | The s08 states (empty/ingesting/populated-three-block/partial/error-malformed-non-v3/error-unknown-id/per-block-disabled/edge) | P6 step 1 | Built to the reconciled s08 spec §"States & variants" |
 | The D32 batch-confirm transaction (`/confirm/batch` endpoint + `confirmBatch` client) | P6 step 2 | `42ebd79`+FE:`17bfa12` — N edits → one DeferredCommit, all-or-nothing rollback (D21), one git commit, all-UPDATE. **UNDER-SCOPED (NEEDS REWORK until 6.2a-fix lands):** the trio + `evidence_kind` are editable, but `valid_through` was never added to `EDITABLE_VERSION_COLUMNS`, so the path rejects the D34/D35 interval edit (spec-conformance gap surfaced building 6.2b) |
-| The `valid_through` interval-write affordance (extend/close-window through the `_apply_one_db` spine) + the `validate_db_shape.py` baseline-open-invariant reconciliation | **P6 step 2a-fix** | NEW (surfaced building 6.2b, 2026-06-10) — completes 6.2's under-scoped write path so the batch path can transact a `valid_through` edit (D34 extend / D35 close); `valid_through` is a stored cell (schema.py:188) written through the existing D19 spine (no schema change, law 6/D22 hold). On its landing 6.2 returns NEEDS REWORK → DONE |
+| `valid_through` reclassified to an AUTHORED column (seed CSV header + reader + curated exporter SELECT + `EDITABLE_VERSION_COLUMNS`; REMOVED from `_AV_DERIVED_COLS`) — the overlay→authored-seed SEAM MOVE | **P6 step 2a-fix** | D40 (`acdec1e`) — `valid_through` is authored + tool-auto-filled (audit-trio pattern); the move re-homes it across the D38 seam (stays curated→git, sub-classification derived→authored) |
+| The `valid_through` write-path EXTENSION (the `_seed_action_rows` slot + the `_apply_one_db` re-verify/interval UPDATE branch emitting `valid_through`, reconciled with `_UPDATE_PRESERVE_COLUMNS`) + the interval validator (`valid_through >= valid_from`, no overlap, open-row uniqueness, FK-resolvable tag) | **P6 step 2a-fix** | D40 — NOT a reclassification; real write-path work (the §C.4 soundness correction). The US-5 full-column UPDATE still PRESERVES a closed `valid_through`; the interval edit is the distinct shape that emits it. Reuses the D19 `_apply_one_db` spine (law 6) |
+| The round-trip oracle re-baseline (overlay→authored move) + the `validate_db_shape.py:197` "all baseline-open" invariant reconciliation (a legit closed interval is valid; open-row-uniqueness sub-check kept) | **P6 step 2a-fix** | D40 — the two reconciliations that land with the seam move; deliberate + inspected (like the char→i8 re-capture). On 2a-fix landing, 6.2 returns NEEDS REWORK → DONE |
+| `valid_through` hand-overrideable in the s04 single-version editor (the `verified_by`/D17a model) | P6 step 2a-fix (the BE write affordance + validator) + the FE s04 editor wiring (rides 6.2b/6.3 where the editable surface renders) | D40 — auto-fill is the common path, the s04 hand-edit the expert escape; both gated by the interval validator |
 | The `reverify_resolver` data-core module — resolves report rows → edit-specs (verify-all: matched-row read by id → trio + proof-rank `evidence_kind` + D34 gap-extension; close-intervals: deterministic interval-containment lookup → D35 retract; verdict routing) | **P6 step 2b** | NEW (D39, `e0b419a`) — the data-core computes the re-verify writes (D28/D34/law 6); the FE never computes them |
 | The `/save/reverify-batch` preview endpoint (calls the resolver, returns field-deltas, no write/txn) | **P6 step 2b** | NEW (D39) — mirrors `routes_save.py`'s preview-only contract (law 5/D16); the FE displays the returned deltas before confirm |
 | Verify-all RESOLUTION/COMPUTE (trio + proof-rank `evidence_kind` + gap-pass `valid_through` extend) | **P6 step 2b** | The data-core computes it (D39); `evidence_kind` keyed by proof rank (D29-rev); the matched row's interval extended on a gap-pass (D34) |
